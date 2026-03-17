@@ -3,6 +3,7 @@ import { RGBA, SyntaxStyle, type ThemeMode } from "@opentui/core";
 export interface AppTheme {
   id: string;
   label: string;
+  appearance: "light" | "dark";
   background: string;
   panel: string;
   panelAlt: string;
@@ -60,6 +61,7 @@ export const THEMES: AppTheme[] = [
   {
     id: "midnight",
     label: "Midnight",
+    appearance: "dark",
     background: "#08111f",
     panel: "#0e1b2e",
     panelAlt: "#13243a",
@@ -97,6 +99,7 @@ export const THEMES: AppTheme[] = [
   {
     id: "graphite",
     label: "Graphite",
+    appearance: "dark",
     background: "#111315",
     panel: "#171a1d",
     panelAlt: "#1d2126",
@@ -134,6 +137,7 @@ export const THEMES: AppTheme[] = [
   {
     id: "paper",
     label: "Paper",
+    appearance: "light",
     background: "#f4efe6",
     panel: "#fffaf3",
     panelAlt: "#f8f1e7",
@@ -171,6 +175,7 @@ export const THEMES: AppTheme[] = [
   {
     id: "ember",
     label: "Ember",
+    appearance: "dark",
     background: "#140b08",
     panel: "#22120d",
     panelAlt: "#2c1710",

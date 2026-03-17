@@ -1,8 +1,9 @@
-import type { DiffRenderable, KeyEvent, SelectOption, TabSelectOption, TabSelectRenderable } from "@opentui/core";
+import type { KeyEvent, SelectOption, TabSelectOption, TabSelectRenderable } from "@opentui/core";
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
 import type { Hunk } from "@pierre/diffs";
 import { startTransition, useDeferredValue, useEffect, useRef, useState } from "react";
 import type { AppBootstrap, DiffFile, LayoutMode } from "../core/types";
+import { PierreDiffView } from "./PierreDiffView";
 import { resolveTheme, THEMES } from "./themes";
 
 type FocusArea = "files" | "filter" | "layout" | "theme";
@@ -93,7 +94,6 @@ function cycleFocus(current: FocusArea): FocusArea {
 export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
   const renderer = useRenderer();
   const terminal = useTerminalDimensions();
-  const diffRef = useRef<DiffRenderable>(null);
   const layoutTabsRef = useRef<TabSelectRenderable>(null);
   const themeTabsRef = useRef<TabSelectRenderable>(null);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(bootstrap.initialMode);
@@ -177,23 +177,6 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     setSelectedHunkIndex((current) => clamp(current, 0, maxIndex));
   }, [selectedFile]);
 
-  useEffect(() => {
-    const diff = diffRef.current;
-    if (!diff) {
-      return;
-    }
-
-    diff.clearAllLineColors();
-
-    if (!currentHunk) {
-      return;
-    }
-
-    const start = resolvedLayout === "split" ? currentHunk.splitLineStart : currentHunk.unifiedLineStart;
-    const count = resolvedLayout === "split" ? currentHunk.splitLineCount : currentHunk.unifiedLineCount;
-    diff.highlightLines(start + 1, start + Math.max(count, 1), activeTheme.selectedHunk);
-  }, [activeTheme.selectedHunk, currentHunk, resolvedLayout, selectedFile?.id]);
-
   const moveHunk = (delta: number) => {
     if (!selectedFile || selectedFile.metadata.hunks.length === 0) {
       return;
@@ -268,6 +251,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
   const fileOptions = filteredFiles.map(buildFileOption);
   const totalAdditions = bootstrap.changeset.files.reduce((sum, file) => sum + file.stats.additions, 0);
   const totalDeletions = bootstrap.changeset.files.reduce((sum, file) => sum + file.stats.deletions, 0);
+  const diffPaneWidth = Math.max(48, terminal.width - 44 - (showAgentPanel ? 40 : 0));
 
   return (
     <box
@@ -449,30 +433,12 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
               </box>
 
               <box style={{ flexGrow: 1, width: "100%" }}>
-                <diff
-                  ref={diffRef}
-                  width="100%"
-                  height="100%"
-                  diff={selectedFile.patch}
-                  filetype={selectedFile.language}
-                  syntaxStyle={activeTheme.syntaxStyle}
-                  view={resolvedLayout === "split" ? "split" : "unified"}
-                  syncScroll={true}
-                  wrapMode="none"
-                  showLineNumbers={true}
-                  fg={activeTheme.text}
-                  lineNumberBg={activeTheme.lineNumberBg}
-                  lineNumberFg={activeTheme.lineNumberFg}
-                  addedBg={activeTheme.addedBg}
-                  removedBg={activeTheme.removedBg}
-                  contextBg={activeTheme.contextBg}
-                  addedContentBg={activeTheme.addedContentBg}
-                  removedContentBg={activeTheme.removedContentBg}
-                  contextContentBg={activeTheme.contextContentBg}
-                  addedSignColor={activeTheme.addedSignColor}
-                  removedSignColor={activeTheme.removedSignColor}
-                  addedLineNumberBg={activeTheme.addedBg}
-                  removedLineNumberBg={activeTheme.removedBg}
+                <PierreDiffView
+                  file={selectedFile}
+                  layout={resolvedLayout}
+                  theme={activeTheme}
+                  width={diffPaneWidth}
+                  selectedHunkIndex={selectedHunkIndex}
                 />
               </box>
             </>

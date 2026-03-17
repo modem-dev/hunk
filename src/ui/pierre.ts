@@ -1,0 +1,486 @@
+import {
+  cleanLastNewline,
+  getHighlighterOptions,
+  getSharedHighlighter,
+  renderDiffWithHighlighter,
+  type FileDiffMetadata,
+  type Hunk,
+} from "@pierre/diffs";
+import type { DiffFile } from "../core/types";
+import type { AppTheme } from "./themes";
+
+const PIERRE_THEME = {
+  light: "pierre-light",
+  dark: "pierre-dark",
+} as const;
+
+const PIERRE_RENDER_OPTIONS = {
+  theme: PIERRE_THEME,
+  tokenizeMaxLineLength: 1_000,
+  lineDiffType: "word-alt" as const,
+};
+
+type HastNode = HastTextNode | HastElementNode;
+
+interface HastTextNode {
+  type: "text";
+  value: string;
+}
+
+interface HastElementNode {
+  type: "element";
+  tagName: string;
+  properties?: Record<string, unknown>;
+  children?: HastNode[];
+}
+
+export interface HighlightedDiffCode {
+  deletionLines: Array<HastNode | undefined>;
+  additionLines: Array<HastNode | undefined>;
+}
+
+export interface RenderSpan {
+  text: string;
+  fg?: string;
+  bg?: string;
+}
+
+export interface SplitLineCell {
+  kind: "context" | "addition" | "deletion" | "empty";
+  sign: string;
+  lineNumber?: number;
+  spans: RenderSpan[];
+}
+
+export interface StackLineCell {
+  kind: "context" | "addition" | "deletion";
+  sign: string;
+  oldLineNumber?: number;
+  newLineNumber?: number;
+  spans: RenderSpan[];
+}
+
+export type DiffRow =
+  | {
+      type: "collapsed" | "hunk-header";
+      key: string;
+      hunkIndex: number;
+      text: string;
+    }
+  | {
+      type: "split-line";
+      key: string;
+      hunkIndex: number;
+      left: SplitLineCell;
+      right: SplitLineCell;
+    }
+  | {
+      type: "stack-line";
+      key: string;
+      hunkIndex: number;
+      cell: StackLineCell;
+    };
+
+function tabify(text: string) {
+  return text.replaceAll("\t", "  ");
+}
+
+function parseStyleValue(styleValue: unknown) {
+  const styles = new Map<string, string>();
+  if (typeof styleValue !== "string") {
+    return styles;
+  }
+
+  for (const segment of styleValue.split(";")) {
+    const separator = segment.indexOf(":");
+    if (separator <= 0) {
+      continue;
+    }
+
+    const key = segment.slice(0, separator).trim();
+    const value = segment.slice(separator + 1).trim();
+    if (key && value) {
+      styles.set(key, value);
+    }
+  }
+
+  return styles;
+}
+
+function mergeSpan(target: RenderSpan[], next: RenderSpan) {
+  if (next.text.length === 0) {
+    return;
+  }
+
+  const previous = target.at(-1);
+  if (previous && previous.fg === next.fg && previous.bg === next.bg) {
+    previous.text += next.text;
+    return;
+  }
+
+  target.push(next);
+}
+
+function flattenHighlightedLine(
+  node: HastNode | undefined,
+  appearance: AppTheme["appearance"],
+  emphasisBg: string,
+  fallbackText: string,
+) {
+  const spans: RenderSpan[] = [];
+  const colorVariable = appearance === "light" ? "--diffs-token-light" : "--diffs-token-dark";
+
+  const visit = (current: HastNode | undefined, inherited: Pick<RenderSpan, "fg" | "bg">) => {
+    if (!current) {
+      return;
+    }
+
+    if (current.type === "text") {
+      mergeSpan(spans, {
+        text: tabify(current.value),
+        fg: inherited.fg,
+        bg: inherited.bg,
+      });
+      return;
+    }
+
+    const properties = current.properties ?? {};
+    const styles = parseStyleValue(properties.style);
+    const nextStyle: Pick<RenderSpan, "fg" | "bg"> = {
+      fg: styles.get(colorVariable) ?? inherited.fg,
+      bg: Object.hasOwn(properties, "data-diff-span") ? emphasisBg : inherited.bg,
+    };
+
+    for (const child of current.children ?? []) {
+      visit(child, nextStyle);
+    }
+  };
+
+  visit(node, {});
+
+  if (spans.length > 0) {
+    return spans;
+  }
+
+  return fallbackText.length > 0 ? [{ text: fallbackText }] : [];
+}
+
+function cleanDiffLine(line: string | undefined) {
+  return tabify(cleanLastNewline(line ?? ""));
+}
+
+function makeSplitCell(
+  kind: SplitLineCell["kind"],
+  lineNumber: number | undefined,
+  rawLine: string | undefined,
+  highlightedLine: HastNode | undefined,
+  theme: AppTheme,
+) {
+  if (kind === "empty") {
+    return {
+      kind,
+      sign: " ",
+      spans: [],
+    } satisfies SplitLineCell;
+  }
+
+  return {
+    kind,
+    sign: kind === "addition" ? "+" : kind === "deletion" ? "-" : " ",
+    lineNumber,
+    spans: flattenHighlightedLine(
+      highlightedLine,
+      theme.appearance,
+      kind === "addition" ? theme.addedContentBg : kind === "deletion" ? theme.removedContentBg : theme.contextContentBg,
+      cleanDiffLine(rawLine),
+    ),
+  } satisfies SplitLineCell;
+}
+
+function makeStackCell(
+  kind: StackLineCell["kind"],
+  oldLineNumber: number | undefined,
+  newLineNumber: number | undefined,
+  rawLine: string | undefined,
+  highlightedLine: HastNode | undefined,
+  theme: AppTheme,
+) {
+  return {
+    kind,
+    sign: kind === "addition" ? "+" : kind === "deletion" ? "-" : " ",
+    oldLineNumber,
+    newLineNumber,
+    spans: flattenHighlightedLine(
+      highlightedLine,
+      theme.appearance,
+      kind === "addition" ? theme.addedContentBg : kind === "deletion" ? theme.removedContentBg : theme.contextContentBg,
+      cleanDiffLine(rawLine),
+    ),
+  } satisfies StackLineCell;
+}
+
+function hunkHeader(hunk: Hunk) {
+  const specs =
+    hunk.hunkSpecs ?? `@@ -${hunk.deletionStart},${hunk.deletionLines} +${hunk.additionStart},${hunk.additionLines} @@`;
+  return hunk.hunkContext ? `${specs} ${hunk.hunkContext}` : specs;
+}
+
+function collapsedRowText(lines: number) {
+  return `${lines} unchanged ${lines === 1 ? "line" : "lines"}`;
+}
+
+function trailingCollapsedLines(metadata: FileDiffMetadata) {
+  const lastHunk = metadata.hunks.at(-1);
+  if (!lastHunk || metadata.isPartial) {
+    return 0;
+  }
+
+  const additionRemaining = metadata.additionLines.length - (lastHunk.additionLineIndex + lastHunk.additionCount);
+  const deletionRemaining = metadata.deletionLines.length - (lastHunk.deletionLineIndex + lastHunk.deletionCount);
+
+  if (additionRemaining !== deletionRemaining) {
+    return 0;
+  }
+
+  return Math.max(additionRemaining, 0);
+}
+
+export async function loadHighlightedDiff(file: DiffFile): Promise<HighlightedDiffCode> {
+  try {
+    const highlighter = await getSharedHighlighter(
+      getHighlighterOptions(file.language, {
+        theme: PIERRE_THEME,
+      }),
+    );
+
+    const highlighted = renderDiffWithHighlighter(file.metadata, highlighter, PIERRE_RENDER_OPTIONS);
+    return {
+      deletionLines: highlighted.code.deletionLines as Array<HastNode | undefined>,
+      additionLines: highlighted.code.additionLines as Array<HastNode | undefined>,
+    };
+  } catch {
+    const highlighter = await getSharedHighlighter(
+      getHighlighterOptions("text", {
+        theme: PIERRE_THEME,
+      }),
+    );
+
+    const highlighted = renderDiffWithHighlighter({ ...file.metadata, lang: "text" }, highlighter, PIERRE_RENDER_OPTIONS);
+    return {
+      deletionLines: highlighted.code.deletionLines as Array<HastNode | undefined>,
+      additionLines: highlighted.code.additionLines as Array<HastNode | undefined>,
+    };
+  }
+}
+
+export function buildSplitRows(file: DiffFile, highlighted: HighlightedDiffCode | null, theme: AppTheme): DiffRow[] {
+  const rows: DiffRow[] = [];
+  const deletionLines = highlighted?.deletionLines ?? [];
+  const additionLines = highlighted?.additionLines ?? [];
+
+  for (const [hunkIndex, hunk] of file.metadata.hunks.entries()) {
+    if (hunk.collapsedBefore > 0) {
+      rows.push({
+        type: "collapsed",
+        key: `${file.id}:collapsed:${hunkIndex}`,
+        hunkIndex,
+        text: collapsedRowText(hunk.collapsedBefore),
+      });
+    }
+
+    rows.push({
+      type: "hunk-header",
+      key: `${file.id}:header:${hunkIndex}`,
+      hunkIndex,
+      text: hunkHeader(hunk),
+    });
+
+    let deletionLineIndex = hunk.deletionLineIndex;
+    let additionLineIndex = hunk.additionLineIndex;
+    let deletionLineNumber = hunk.deletionStart;
+    let additionLineNumber = hunk.additionStart;
+
+    for (const content of hunk.hunkContent) {
+      if (content.type === "context") {
+        for (let offset = 0; offset < content.lines; offset += 1) {
+          rows.push({
+            type: "split-line",
+            key: `${file.id}:split:${hunkIndex}:context:${deletionLineIndex + offset}:${additionLineIndex + offset}`,
+            hunkIndex,
+            left: makeSplitCell(
+              "context",
+              deletionLineNumber + offset,
+              file.metadata.deletionLines[deletionLineIndex + offset],
+              deletionLines[deletionLineIndex + offset],
+              theme,
+            ),
+            right: makeSplitCell(
+              "context",
+              additionLineNumber + offset,
+              file.metadata.additionLines[additionLineIndex + offset],
+              additionLines[additionLineIndex + offset],
+              theme,
+            ),
+          });
+        }
+
+        deletionLineIndex += content.lines;
+        additionLineIndex += content.lines;
+        deletionLineNumber += content.lines;
+        additionLineNumber += content.lines;
+        continue;
+      }
+
+      const pairedLines = Math.max(content.deletions, content.additions);
+      for (let offset = 0; offset < pairedLines; offset += 1) {
+        const hasDeletion = offset < content.deletions;
+        const hasAddition = offset < content.additions;
+
+        rows.push({
+          type: "split-line",
+          key: `${file.id}:split:${hunkIndex}:change:${deletionLineIndex + offset}:${additionLineIndex + offset}`,
+          hunkIndex,
+          left: hasDeletion
+            ? makeSplitCell(
+                "deletion",
+                deletionLineNumber + offset,
+                file.metadata.deletionLines[deletionLineIndex + offset],
+                deletionLines[deletionLineIndex + offset],
+                theme,
+              )
+            : makeSplitCell("empty", undefined, undefined, undefined, theme),
+          right: hasAddition
+            ? makeSplitCell(
+                "addition",
+                additionLineNumber + offset,
+                file.metadata.additionLines[additionLineIndex + offset],
+                additionLines[additionLineIndex + offset],
+                theme,
+              )
+            : makeSplitCell("empty", undefined, undefined, undefined, theme),
+        });
+      }
+
+      deletionLineIndex += content.deletions;
+      additionLineIndex += content.additions;
+      deletionLineNumber += content.deletions;
+      additionLineNumber += content.additions;
+    }
+  }
+
+  const trailingLines = trailingCollapsedLines(file.metadata);
+  if (trailingLines > 0) {
+    rows.push({
+      type: "collapsed",
+      key: `${file.id}:collapsed:trailing`,
+      hunkIndex: Math.max(file.metadata.hunks.length - 1, 0),
+      text: collapsedRowText(trailingLines),
+    });
+  }
+
+  return rows;
+}
+
+export function buildStackRows(file: DiffFile, highlighted: HighlightedDiffCode | null, theme: AppTheme): DiffRow[] {
+  const rows: DiffRow[] = [];
+  const deletionLines = highlighted?.deletionLines ?? [];
+  const additionLines = highlighted?.additionLines ?? [];
+
+  for (const [hunkIndex, hunk] of file.metadata.hunks.entries()) {
+    if (hunk.collapsedBefore > 0) {
+      rows.push({
+        type: "collapsed",
+        key: `${file.id}:stack:collapsed:${hunkIndex}`,
+        hunkIndex,
+        text: collapsedRowText(hunk.collapsedBefore),
+      });
+    }
+
+    rows.push({
+      type: "hunk-header",
+      key: `${file.id}:stack:header:${hunkIndex}`,
+      hunkIndex,
+      text: hunkHeader(hunk),
+    });
+
+    let deletionLineIndex = hunk.deletionLineIndex;
+    let additionLineIndex = hunk.additionLineIndex;
+    let deletionLineNumber = hunk.deletionStart;
+    let additionLineNumber = hunk.additionStart;
+
+    for (const content of hunk.hunkContent) {
+      if (content.type === "context") {
+        for (let offset = 0; offset < content.lines; offset += 1) {
+          rows.push({
+            type: "stack-line",
+            key: `${file.id}:stack:${hunkIndex}:context:${deletionLineIndex + offset}:${additionLineIndex + offset}`,
+            hunkIndex,
+            cell: makeStackCell(
+              "context",
+              deletionLineNumber + offset,
+              additionLineNumber + offset,
+              file.metadata.additionLines[additionLineIndex + offset],
+              additionLines[additionLineIndex + offset],
+              theme,
+            ),
+          });
+        }
+
+        deletionLineIndex += content.lines;
+        additionLineIndex += content.lines;
+        deletionLineNumber += content.lines;
+        additionLineNumber += content.lines;
+        continue;
+      }
+
+      for (let offset = 0; offset < content.deletions; offset += 1) {
+        rows.push({
+          type: "stack-line",
+          key: `${file.id}:stack:${hunkIndex}:deletion:${deletionLineIndex + offset}`,
+          hunkIndex,
+          cell: makeStackCell(
+            "deletion",
+            deletionLineNumber + offset,
+            undefined,
+            file.metadata.deletionLines[deletionLineIndex + offset],
+            deletionLines[deletionLineIndex + offset],
+            theme,
+          ),
+        });
+      }
+
+      for (let offset = 0; offset < content.additions; offset += 1) {
+        rows.push({
+          type: "stack-line",
+          key: `${file.id}:stack:${hunkIndex}:addition:${additionLineIndex + offset}`,
+          hunkIndex,
+          cell: makeStackCell(
+            "addition",
+            undefined,
+            additionLineNumber + offset,
+            file.metadata.additionLines[additionLineIndex + offset],
+            additionLines[additionLineIndex + offset],
+            theme,
+          ),
+        });
+      }
+
+      deletionLineIndex += content.deletions;
+      additionLineIndex += content.additions;
+      deletionLineNumber += content.deletions;
+      additionLineNumber += content.additions;
+    }
+  }
+
+  const trailingLines = trailingCollapsedLines(file.metadata);
+  if (trailingLines > 0) {
+    rows.push({
+      type: "collapsed",
+      key: `${file.id}:stack:collapsed:trailing`,
+      hunkIndex: Math.max(file.metadata.hunks.length - 1, 0),
+      text: collapsedRowText(trailingLines),
+    });
+  }
+
+  return rows;
+}
