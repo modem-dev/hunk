@@ -353,7 +353,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
         </text>
       </box>
 
-      <box style={{ flexGrow: 1, gap: 1 }}>
+      <box style={{ flexGrow: 1, flexDirection: "row", gap: 1 }}>
         <box
           title="Files"
           style={{
@@ -448,31 +448,33 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
                 </box>
               </box>
 
-              <diff
-                ref={diffRef}
-                width="100%"
-                height="100%"
-                diff={selectedFile.patch}
-                filetype={selectedFile.language}
-                syntaxStyle={activeTheme.syntaxStyle}
-                view={resolvedLayout === "split" ? "split" : "unified"}
-                syncScroll={true}
-                wrapMode="none"
-                showLineNumbers={true}
-                fg={activeTheme.text}
-                lineNumberBg={activeTheme.lineNumberBg}
-                lineNumberFg={activeTheme.lineNumberFg}
-                addedBg={activeTheme.addedBg}
-                removedBg={activeTheme.removedBg}
-                contextBg={activeTheme.contextBg}
-                addedContentBg={activeTheme.addedContentBg}
-                removedContentBg={activeTheme.removedContentBg}
-                contextContentBg={activeTheme.contextContentBg}
-                addedSignColor={activeTheme.addedSignColor}
-                removedSignColor={activeTheme.removedSignColor}
-                addedLineNumberBg={activeTheme.addedBg}
-                removedLineNumberBg={activeTheme.removedBg}
-              />
+              <box style={{ flexGrow: 1, width: "100%" }}>
+                <diff
+                  ref={diffRef}
+                  width="100%"
+                  height="100%"
+                  diff={selectedFile.patch}
+                  filetype={selectedFile.language}
+                  syntaxStyle={activeTheme.syntaxStyle}
+                  view={resolvedLayout === "split" ? "split" : "unified"}
+                  syncScroll={true}
+                  wrapMode="none"
+                  showLineNumbers={true}
+                  fg={activeTheme.text}
+                  lineNumberBg={activeTheme.lineNumberBg}
+                  lineNumberFg={activeTheme.lineNumberFg}
+                  addedBg={activeTheme.addedBg}
+                  removedBg={activeTheme.removedBg}
+                  contextBg={activeTheme.contextBg}
+                  addedContentBg={activeTheme.addedContentBg}
+                  removedContentBg={activeTheme.removedContentBg}
+                  contextContentBg={activeTheme.contextContentBg}
+                  addedSignColor={activeTheme.addedSignColor}
+                  removedSignColor={activeTheme.removedSignColor}
+                  addedLineNumberBg={activeTheme.addedBg}
+                  removedLineNumberBg={activeTheme.removedBg}
+                />
+              </box>
             </>
           ) : (
             <box style={{ flexGrow: 1, alignItems: "center", justifyContent: "center" }}>
