@@ -1,4 +1,4 @@
-import type { KeyEvent, SelectOption } from "@opentui/core";
+import { MouseButton, type KeyEvent, type SelectOption } from "@opentui/core";
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
 import type { Hunk } from "@pierre/diffs";
 import { startTransition, useDeferredValue, useEffect, useState } from "react";
@@ -190,6 +190,13 @@ function renderMenuLine(
 }
 
 export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
+  const FILES_MIN_WIDTH = 22;
+  const DIFF_MIN_WIDTH = 48;
+  const AGENT_WIDTH = 38;
+  const AGENT_GAP = 1;
+  const BODY_PADDING = 2;
+  const DIVIDER_WIDTH = 1;
+
   const renderer = useRenderer();
   const terminal = useTerminalDimensions();
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(bootstrap.initialMode);
@@ -202,6 +209,9 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
   const [activeMenuId, setActiveMenuId] = useState<MenuId | null>(null);
   const [activeMenuItemIndex, setActiveMenuItemIndex] = useState(0);
   const [filter, setFilter] = useState("");
+  const [filesPaneWidth, setFilesPaneWidth] = useState(34);
+  const [resizeDragOriginX, setResizeDragOriginX] = useState<number | null>(null);
+  const [resizeStartWidth, setResizeStartWidth] = useState<number | null>(null);
   const [selectedFileId, setSelectedFileId] = useState(bootstrap.changeset.files[0]?.id ?? "");
   const [selectedHunkIndex, setSelectedHunkIndex] = useState(0);
   const deferredFilter = useDeferredValue(filter);
@@ -226,6 +236,15 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
   const resolvedLayout = layoutMode === "auto" ? (terminal.width >= 150 ? "split" : "stack") : layoutMode;
   const currentHunk = selectedFile?.metadata.hunks[selectedHunkIndex];
   const activeAnnotations = getSelectedAnnotations(selectedFile, currentHunk);
+  const availableCenterWidth =
+    terminal.width - BODY_PADDING - DIVIDER_WIDTH - (showAgentPanel ? AGENT_WIDTH + AGENT_GAP : 0);
+  const maxFilesPaneWidth = Math.max(FILES_MIN_WIDTH, availableCenterWidth - DIFF_MIN_WIDTH);
+  const clampedFilesPaneWidth = clamp(filesPaneWidth, FILES_MIN_WIDTH, maxFilesPaneWidth);
+  const diffPaneWidth = Math.max(DIFF_MIN_WIDTH, availableCenterWidth - clampedFilesPaneWidth);
+
+  useEffect(() => {
+    setFilesPaneWidth((current) => clamp(current, FILES_MIN_WIDTH, maxFilesPaneWidth));
+  }, [maxFilesPaneWidth]);
 
   useEffect(() => {
     if (!selectedFile && filteredFiles[0]) {
@@ -480,7 +499,6 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
   const activeMenuSpec = menuSpecs.find((menu) => menu.id === activeMenuId);
   const activeMenuWidth = menuWidth(activeMenuEntries) + 2;
   const topTitle = `${bootstrap.changeset.title}  +${totalAdditions}  -${totalDeletions}`;
-  const diffPaneWidth = Math.max(48, terminal.width - 44 - (showAgentPanel ? 40 : 0));
   const helpWidth = Math.min(68, Math.max(44, terminal.width - 8));
   const helpLeft = Math.max(1, Math.floor((terminal.width - helpWidth) / 2));
 
@@ -695,8 +713,8 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
         <box
           title="Files"
           style={{
-            width: 34,
-            border: ["top", "right", "bottom", "left"],
+            width: clampedFilesPaneWidth,
+            border: ["top", "bottom", "left"],
             borderColor: activeTheme.border,
             backgroundColor: activeTheme.panel,
             padding: 1,
@@ -735,9 +753,61 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
         </box>
 
         <box
+          style={{
+            width: DIVIDER_WIDTH,
+            border: ["top", "bottom", "left"],
+            borderColor: resizeDragOriginX !== null ? activeTheme.accent : activeTheme.border,
+            backgroundColor: resizeDragOriginX !== null ? activeTheme.accentMuted : activeTheme.panel,
+          }}
+          customBorderChars={{
+            topLeft: "┬",
+            topRight: "┬",
+            bottomLeft: "┴",
+            bottomRight: "┴",
+            horizontal: "─",
+            vertical: "│",
+            topT: "┬",
+            bottomT: "┴",
+            leftT: "├",
+            rightT: "┤",
+            cross: "┼",
+          }}
+          onMouseDown={(event) => {
+            if (event.button !== MouseButton.LEFT) {
+              return;
+            }
+
+            setResizeDragOriginX(event.x);
+            setResizeStartWidth(clampedFilesPaneWidth);
+            event.stopPropagation();
+          }}
+          onMouseDrag={(event) => {
+            if (resizeDragOriginX === null || resizeStartWidth === null) {
+              return;
+            }
+
+            const nextWidth = resizeStartWidth + (event.x - resizeDragOriginX);
+            setFilesPaneWidth(clamp(nextWidth, FILES_MIN_WIDTH, maxFilesPaneWidth));
+            event.stopPropagation();
+          }}
+          onMouseUp={(event) => {
+            if (resizeDragOriginX !== null) {
+              setResizeDragOriginX(null);
+              setResizeStartWidth(null);
+              event.stopPropagation();
+            }
+          }}
+          onMouseDragEnd={(event) => {
+            setResizeDragOriginX(null);
+            setResizeStartWidth(null);
+            event.stopPropagation();
+          }}
+        />
+
+        <box
           title={selectedFile ? selectedFile.path : "Diff"}
           style={{
-            flexGrow: 1,
+            width: diffPaneWidth,
             border: ["top", "right", "bottom"],
             borderColor: activeTheme.border,
             backgroundColor: activeTheme.panel,
@@ -784,12 +854,12 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
           <box
             title="Agent"
             style={{
-              width: 38,
+              width: AGENT_WIDTH,
               border: true,
               borderColor: activeTheme.border,
               backgroundColor: activeTheme.panel,
               padding: 1,
-              marginLeft: 1,
+              marginLeft: AGENT_GAP,
             }}
           >
             <scrollbox width="100%" height="100%" scrollY={true} viewportCulling={true} focused={false}>
@@ -912,7 +982,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
         ) : (
           <text fg={activeTheme.muted}>
             {fitText(
-              `F10 menu  / filter  [ ] hunks  j k files  1 2 0 layout  t theme  a agent  q quit${filter ? `  filter=${filter}` : ""}`,
+              `F10 menu  drag divider resize  / filter  [ ] hunks  j k files  1 2 0 layout  t theme  a agent  q quit${filter ? `  filter=${filter}` : ""}`,
               terminal.width - 2,
             )}
           </text>
@@ -984,6 +1054,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
           <text fg={activeTheme.muted}>F10 menus  arrows navigate menus  Enter select  Esc close menu</text>
           <text fg={activeTheme.muted}>1 split  2 stack  0 auto  t cycle theme  a toggle agent rail</text>
           <text fg={activeTheme.muted}>[ previous hunk  ] next hunk  j next file  k previous file</text>
+          <text fg={activeTheme.muted}>drag the Files/Diff divider with the mouse to resize the columns</text>
           <text fg={activeTheme.muted}>/ focus filter  Tab swap files/filter  q quit</text>
           <text fg={activeTheme.badgeNeutral}>click anywhere on this panel to close</text>
         </box>
