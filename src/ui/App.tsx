@@ -691,37 +691,18 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
         </text>
       </box>
 
-      <box style={{ flexGrow: 1, flexDirection: "row", gap: 1, padding: 1 }} onMouseUp={() => closeMenu()}>
+      <box style={{ flexGrow: 1, flexDirection: "row", gap: 0, padding: 1 }} onMouseUp={() => closeMenu()}>
         <box
           title="Files"
           style={{
             width: 34,
-            border: true,
+            border: ["top", "right", "bottom", "left"],
             borderColor: activeTheme.border,
             backgroundColor: activeTheme.panel,
             padding: 1,
             flexDirection: "column",
-            gap: 1,
           }}
         >
-          <box
-            title="Filter"
-            style={{
-              border: true,
-              borderColor: focusArea === "filter" ? activeTheme.accent : activeTheme.accentMuted,
-              backgroundColor: activeTheme.panelAlt,
-              height: 3,
-            }}
-          >
-            <input
-              value={filter}
-              placeholder="type to filter files"
-              focused={focusArea === "filter"}
-              onInput={setFilter}
-              onSubmit={() => setFocusArea("files")}
-            />
-          </box>
-
           <select
             width="100%"
             height="100%"
@@ -757,7 +738,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
           title={selectedFile ? selectedFile.path : "Diff"}
           style={{
             flexGrow: 1,
-            border: true,
+            border: ["top", "right", "bottom"],
             borderColor: activeTheme.border,
             backgroundColor: activeTheme.panel,
             padding: 1,
@@ -808,6 +789,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
               borderColor: activeTheme.border,
               backgroundColor: activeTheme.panel,
               padding: 1,
+              marginLeft: 1,
             }}
           >
             <scrollbox width="100%" height="100%" scrollY={true} viewportCulling={true} focused={false}>
@@ -908,12 +890,33 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
           paddingLeft: 1,
           paddingRight: 1,
           alignItems: "center",
+          flexDirection: "row",
         }}
         onMouseUp={() => closeMenu()}
       >
-        <text fg={activeTheme.muted}>
-          {fitText("F10 menu  / filter  [ ] hunks  j k files  1 2 0 layout  t theme  a agent  q quit", terminal.width - 2)}
-        </text>
+        {focusArea === "filter" ? (
+          <>
+            <text fg={activeTheme.badgeNeutral}>filter:</text>
+            <box style={{ width: 1, height: 1 }}>
+              <text fg={activeTheme.muted}> </text>
+            </box>
+            <input
+              width={Math.max(12, terminal.width - 11)}
+              value={filter}
+              placeholder="type to filter files"
+              focused={true}
+              onInput={setFilter}
+              onSubmit={() => setFocusArea("files")}
+            />
+          </>
+        ) : (
+          <text fg={activeTheme.muted}>
+            {fitText(
+              `F10 menu  / filter  [ ] hunks  j k files  1 2 0 layout  t theme  a agent  q quit${filter ? `  filter=${filter}` : ""}`,
+              terminal.width - 2,
+            )}
+          </text>
+        )}
       </box>
 
       {activeMenuId && activeMenuSpec ? (
