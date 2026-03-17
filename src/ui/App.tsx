@@ -1,12 +1,36 @@
-import type { KeyEvent, SelectOption, TabSelectOption, TabSelectRenderable } from "@opentui/core";
+import type { KeyEvent, SelectOption } from "@opentui/core";
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
 import type { Hunk } from "@pierre/diffs";
-import { startTransition, useDeferredValue, useEffect, useRef, useState } from "react";
+import { startTransition, useDeferredValue, useEffect, useState } from "react";
 import type { AppBootstrap, DiffFile, LayoutMode } from "../core/types";
 import { PierreDiffView } from "./PierreDiffView";
-import { resolveTheme, THEMES } from "./themes";
+import { resolveTheme, THEMES, type AppTheme } from "./themes";
 
-type FocusArea = "files" | "filter" | "layout" | "theme";
+type FocusArea = "files" | "filter";
+type MenuId = "file" | "view" | "navigate" | "theme" | "agent" | "help";
+
+type MenuEntry =
+  | {
+      kind: "item";
+      label: string;
+      hint?: string;
+      checked?: boolean;
+      action: () => void;
+    }
+  | {
+      kind: "separator";
+    };
+
+const MENU_LABELS: Record<MenuId, string> = {
+  file: "File",
+  view: "View",
+  navigate: "Navigate",
+  theme: "Theme",
+  agent: "Agent",
+  help: "Help",
+};
+
+const MENU_ORDER = Object.keys(MENU_LABELS) as MenuId[];
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -14,6 +38,27 @@ function clamp(value: number, min: number, max: number) {
 
 function overlap(rangeA: [number, number], rangeB: [number, number]) {
   return rangeA[0] <= rangeB[1] && rangeB[0] <= rangeA[1];
+}
+
+function fitText(text: string, width: number) {
+  if (width <= 0) {
+    return "";
+  }
+
+  if (text.length <= width) {
+    return text;
+  }
+
+  if (width === 1) {
+    return ".";
+  }
+
+  return `${text.slice(0, width - 1)}.`;
+}
+
+function padText(text: string, width: number) {
+  const trimmed = fitText(text, width);
+  return trimmed.padEnd(width, " ");
 }
 
 function buildFileOption(file: DiffFile): SelectOption {
@@ -26,7 +71,7 @@ function buildFileOption(file: DiffFile): SelectOption {
           ? "R"
           : "M";
 
-  const pathLabel = file.previousPath && file.previousPath !== file.path ? `${file.previousPath} → ${file.path}` : file.path;
+  const pathLabel = file.previousPath && file.previousPath !== file.path ? `${file.previousPath} -> ${file.path}` : file.path;
 
   return {
     name: `${prefix} ${pathLabel}`,
@@ -78,45 +123,90 @@ function getHunkSummary(hunk: Hunk | undefined) {
   return hunk.hunkContext ? `${parts.join("  ")}  ${hunk.hunkContext}` : parts.join("  ");
 }
 
-function cycleFocus(current: FocusArea): FocusArea {
-  switch (current) {
-    case "files":
-      return "filter";
-    case "filter":
-      return "layout";
-    case "layout":
-      return "theme";
-    case "theme":
-      return "files";
+function nextMenuItemIndex(entries: MenuEntry[], currentIndex: number, delta: number) {
+  if (entries.length === 0) {
+    return 0;
   }
+
+  let candidate = currentIndex;
+  for (let remaining = entries.length; remaining > 0; remaining -= 1) {
+    candidate = (candidate + delta + entries.length) % entries.length;
+    const entry = entries[candidate];
+    if (entry?.kind === "item") {
+      return candidate;
+    }
+  }
+
+  return 0;
+}
+
+function menuEntryText(entry: Extract<MenuEntry, { kind: "item" }>) {
+  const check = entry.checked === undefined ? "    " : entry.checked ? "[x] " : "[ ] ";
+  const hint = entry.hint ? ` ${entry.hint}` : "";
+  return `${check}${entry.label}${hint}`;
+}
+
+function menuWidth(entries: MenuEntry[]) {
+  return Math.max(
+    18,
+    ...entries.map((entry) => (entry.kind === "separator" ? 6 : menuEntryText(entry).length)),
+  );
+}
+
+function menuBoxHeight(entries: MenuEntry[]) {
+  return entries.length + 2;
+}
+
+function fileLabel(file: DiffFile | undefined) {
+  if (!file) {
+    return "No file selected";
+  }
+
+  return file.previousPath && file.previousPath !== file.path ? `${file.previousPath} -> ${file.path}` : file.path;
+}
+
+function renderMenuLine(
+  entry: Extract<MenuEntry, { kind: "item" }>,
+  width: number,
+  theme: AppTheme,
+  selected: boolean,
+) {
+  const text = entry.checked === undefined ? `  ${entry.label}` : `${entry.checked ? "[x]" : "[ ]"} ${entry.label}`;
+  const hint = entry.hint ? entry.hint : "";
+  const leftWidth = Math.max(0, width - hint.length - (hint.length > 0 ? 1 : 0));
+
+  return (
+    <box style={{ width: "100%", height: 1, flexDirection: "row", justifyContent: "space-between" }}>
+      <box style={{ width: leftWidth, height: 1 }}>
+        <text fg={theme.text}>{padText(text, leftWidth)}</text>
+      </box>
+      {hint ? (
+        <box style={{ width: hint.length, height: 1 }}>
+          <text fg={selected ? theme.text : theme.muted}>{hint}</text>
+        </box>
+      ) : null}
+    </box>
+  );
 }
 
 export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
   const renderer = useRenderer();
   const terminal = useTerminalDimensions();
-  const layoutTabsRef = useRef<TabSelectRenderable>(null);
-  const themeTabsRef = useRef<TabSelectRenderable>(null);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(bootstrap.initialMode);
   const [themeId, setThemeId] = useState(() => resolveTheme(bootstrap.initialTheme, renderer.themeMode).id);
   const [showAgentPanel, setShowAgentPanel] = useState(
     () => Boolean(bootstrap.changeset.agentSummary) || bootstrap.changeset.files.some((file) => file.agent),
   );
+  const [showHelp, setShowHelp] = useState(false);
   const [focusArea, setFocusArea] = useState<FocusArea>("files");
+  const [activeMenuId, setActiveMenuId] = useState<MenuId | null>(null);
+  const [activeMenuItemIndex, setActiveMenuItemIndex] = useState(0);
   const [filter, setFilter] = useState("");
   const [selectedFileId, setSelectedFileId] = useState(bootstrap.changeset.files[0]?.id ?? "");
   const [selectedHunkIndex, setSelectedHunkIndex] = useState(0);
   const deferredFilter = useDeferredValue(filter);
 
   const activeTheme = resolveTheme(themeId, renderer.themeMode);
-  const layoutOptions: TabSelectOption[] = [
-    { name: "Auto", description: "Responsive" },
-    { name: "Split", description: "2 column" },
-    { name: "Stack", description: "1 column" },
-  ];
-  const themeOptions: TabSelectOption[] = THEMES.map((theme) => ({
-    name: theme.label,
-    description: theme.id,
-  }));
 
   const filteredFiles = bootstrap.changeset.files.filter((file) => {
     if (!deferredFilter.trim()) {
@@ -131,27 +221,11 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     filteredFiles.find((file) => file.id === selectedFileId) ??
     bootstrap.changeset.files.find((file) => file.id === selectedFileId) ??
     filteredFiles[0];
-  const selectedFileIndex = Math.max(
-    0,
-    filteredFiles.findIndex((file) => file.id === selectedFile?.id),
-  );
+  const selectedFileIndex = Math.max(0, filteredFiles.findIndex((file) => file.id === selectedFile?.id));
 
-  const resolvedLayout =
-    layoutMode === "auto" ? (terminal.width >= 150 ? "split" : "stack") : layoutMode;
+  const resolvedLayout = layoutMode === "auto" ? (terminal.width >= 150 ? "split" : "stack") : layoutMode;
   const currentHunk = selectedFile?.metadata.hunks[selectedHunkIndex];
   const activeAnnotations = getSelectedAnnotations(selectedFile, currentHunk);
-
-  useEffect(() => {
-    const themeIndex = THEMES.findIndex((theme) => theme.id === activeTheme.id);
-    if (themeIndex >= 0) {
-      themeTabsRef.current?.setSelectedIndex(themeIndex);
-    }
-  }, [activeTheme.id]);
-
-  useEffect(() => {
-    const layoutIndex = layoutMode === "auto" ? 0 : layoutMode === "split" ? 1 : 2;
-    layoutTabsRef.current?.setSelectedIndex(layoutIndex);
-  }, [layoutMode]);
 
   useEffect(() => {
     if (!selectedFile && filteredFiles[0]) {
@@ -185,8 +259,289 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     setSelectedHunkIndex((current) => clamp(current + delta, 0, selectedFile.metadata.hunks.length - 1));
   };
 
+  const moveFile = (delta: number) => {
+    if (filteredFiles.length === 0 || !selectedFile) {
+      return;
+    }
+
+    const currentIndex = filteredFiles.findIndex((file) => file.id === selectedFile.id);
+    const nextIndex = clamp(currentIndex + delta, 0, filteredFiles.length - 1);
+    const nextFile = filteredFiles[nextIndex];
+    if (!nextFile) {
+      return;
+    }
+
+    startTransition(() => {
+      setSelectedFileId(nextFile.id);
+      setSelectedHunkIndex(0);
+    });
+  };
+
+  const moveAnnotatedFile = (delta: number) => {
+    const annotated = filteredFiles.filter((file) => file.agent);
+    if (annotated.length === 0) {
+      return;
+    }
+
+    const currentIndex = annotated.findIndex((file) => file.id === selectedFile?.id);
+    const normalizedIndex = currentIndex >= 0 ? currentIndex : 0;
+    const nextIndex = (normalizedIndex + delta + annotated.length) % annotated.length;
+    const nextFile = annotated[nextIndex];
+    if (!nextFile) {
+      return;
+    }
+
+    startTransition(() => {
+      setSelectedFileId(nextFile.id);
+      setSelectedHunkIndex(0);
+    });
+  };
+
+  const closeMenu = () => {
+    setActiveMenuId(null);
+  };
+
+  const openMenu = (menuId: MenuId) => {
+    setActiveMenuId(menuId);
+    setActiveMenuItemIndex(nextMenuItemIndex(menus[menuId], -1, 1));
+  };
+
+  const toggleMenu = (menuId: MenuId) => {
+    if (activeMenuId === menuId) {
+      closeMenu();
+      return;
+    }
+
+    openMenu(menuId);
+  };
+
+  const switchMenu = (delta: number) => {
+    const currentIndex = Math.max(0, activeMenuId ? MENU_ORDER.indexOf(activeMenuId) : 0);
+    const nextIndex = (currentIndex + delta + MENU_ORDER.length) % MENU_ORDER.length;
+    openMenu(MENU_ORDER[nextIndex]!);
+  };
+
+  const activateCurrentMenuItem = () => {
+    if (!activeMenuId) {
+      return;
+    }
+
+    const entry = menus[activeMenuId][activeMenuItemIndex];
+    if (!entry || entry.kind !== "item") {
+      return;
+    }
+
+    entry.action();
+    closeMenu();
+  };
+
+  const themeMenuEntries: MenuEntry[] = THEMES.map((theme) => ({
+    kind: "item",
+    label: theme.label,
+    checked: theme.id === activeTheme.id,
+    action: () => {
+      setThemeId(theme.id);
+    },
+  }));
+
+  const menus: Record<MenuId, MenuEntry[]> = {
+    file: [
+      {
+        kind: "item",
+        label: "Focus files",
+        hint: "Tab",
+        action: () => setFocusArea("files"),
+      },
+      {
+        kind: "item",
+        label: "Focus filter",
+        hint: "/",
+        action: () => setFocusArea("filter"),
+      },
+      { kind: "separator" },
+      {
+        kind: "item",
+        label: "Quit",
+        hint: "q",
+        action: () => process.exit(0),
+      },
+    ],
+    view: [
+      {
+        kind: "item",
+        label: "Split view",
+        hint: "1",
+        checked: layoutMode === "split",
+        action: () => setLayoutMode("split"),
+      },
+      {
+        kind: "item",
+        label: "Stacked view",
+        hint: "2",
+        checked: layoutMode === "stack",
+        action: () => setLayoutMode("stack"),
+      },
+      {
+        kind: "item",
+        label: "Auto layout",
+        hint: "0",
+        checked: layoutMode === "auto",
+        action: () => setLayoutMode("auto"),
+      },
+      { kind: "separator" },
+      {
+        kind: "item",
+        label: "Agent rail",
+        hint: "a",
+        checked: showAgentPanel,
+        action: () => setShowAgentPanel((current) => !current),
+      },
+    ],
+    navigate: [
+      {
+        kind: "item",
+        label: "Previous hunk",
+        hint: "[",
+        action: () => moveHunk(-1),
+      },
+      {
+        kind: "item",
+        label: "Next hunk",
+        hint: "]",
+        action: () => moveHunk(1),
+      },
+      {
+        kind: "item",
+        label: "Previous file",
+        hint: "k",
+        action: () => moveFile(-1),
+      },
+      {
+        kind: "item",
+        label: "Next file",
+        hint: "j",
+        action: () => moveFile(1),
+      },
+      { kind: "separator" },
+      {
+        kind: "item",
+        label: "Focus filter",
+        hint: "/",
+        action: () => setFocusArea("filter"),
+      },
+    ],
+    theme: themeMenuEntries,
+    agent: [
+      {
+        kind: "item",
+        label: "Agent rail",
+        hint: "a",
+        checked: showAgentPanel,
+        action: () => setShowAgentPanel((current) => !current),
+      },
+      {
+        kind: "item",
+        label: "Next annotated file",
+        action: () => moveAnnotatedFile(1),
+      },
+      {
+        kind: "item",
+        label: "Previous annotated file",
+        action: () => moveAnnotatedFile(-1),
+      },
+    ],
+    help: [
+      {
+        kind: "item",
+        label: "Keyboard help",
+        hint: "?",
+        checked: showHelp,
+        action: () => setShowHelp((current) => !current),
+      },
+    ],
+  };
+
+  const menuSpecs = MENU_ORDER.reduce<{ id: MenuId; left: number; width: number; label: string }[]>((items, id) => {
+    const previous = items.at(-1);
+    const left = previous ? previous.left + previous.width + 1 : 1;
+    items.push({
+      id,
+      left,
+      width: MENU_LABELS[id].length + 2,
+      label: MENU_LABELS[id],
+    });
+    return items;
+  }, []);
+
+  const fileOptions = filteredFiles.map(buildFileOption);
+  const totalAdditions = bootstrap.changeset.files.reduce((sum, file) => sum + file.stats.additions, 0);
+  const totalDeletions = bootstrap.changeset.files.reduce((sum, file) => sum + file.stats.deletions, 0);
+  const activeMenuEntries = activeMenuId ? menus[activeMenuId] : [];
+  const activeMenuSpec = menuSpecs.find((menu) => menu.id === activeMenuId);
+  const activeMenuWidth = menuWidth(activeMenuEntries) + 2;
+  const topTitle = `${bootstrap.changeset.title}  +${totalAdditions}  -${totalDeletions}`;
+  const diffPaneWidth = Math.max(48, terminal.width - 44 - (showAgentPanel ? 40 : 0));
+  const helpWidth = Math.min(68, Math.max(44, terminal.width - 8));
+  const helpLeft = Math.max(1, Math.floor((terminal.width - helpWidth) / 2));
+
   useKeyboard((key: KeyEvent) => {
-    if (key.name === "q" || key.name === "escape") {
+    if (key.name === "f10") {
+      if (activeMenuId) {
+        closeMenu();
+      } else {
+        openMenu("file");
+      }
+      return;
+    }
+
+    if (showHelp && key.name === "escape") {
+      setShowHelp(false);
+      return;
+    }
+
+    if (activeMenuId) {
+      if (key.name === "escape") {
+        closeMenu();
+        return;
+      }
+
+      if (key.name === "left") {
+        switchMenu(-1);
+        return;
+      }
+
+      if (key.name === "right" || key.name === "tab") {
+        switchMenu(1);
+        return;
+      }
+
+      if (key.name === "up") {
+        setActiveMenuItemIndex((current) => nextMenuItemIndex(activeMenuEntries, current, -1));
+        return;
+      }
+
+      if (key.name === "down") {
+        setActiveMenuItemIndex((current) => nextMenuItemIndex(activeMenuEntries, current, 1));
+        return;
+      }
+
+      if (key.name === "return" || key.name === "enter") {
+        activateCurrentMenuItem();
+        return;
+      }
+    }
+
+    if (key.name === "q") {
+      process.exit(0);
+    }
+
+    if (key.name === "?") {
+      setShowHelp((current) => !current);
+      closeMenu();
+      return;
+    }
+
+    if (key.name === "escape") {
       if (focusArea === "filter" && filter.length > 0) {
         setFilter("");
         return;
@@ -201,7 +556,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     }
 
     if (key.name === "tab") {
-      setFocusArea((current) => cycleFocus(current));
+      setFocusArea((current) => (current === "files" ? "filter" : "files"));
       return;
     }
 
@@ -212,16 +567,19 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
 
     if (key.name === "1") {
       setLayoutMode("split");
+      closeMenu();
       return;
     }
 
     if (key.name === "2") {
       setLayoutMode("stack");
+      closeMenu();
       return;
     }
 
     if (key.name === "0") {
       setLayoutMode("auto");
+      closeMenu();
       return;
     }
 
@@ -229,29 +587,40 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
       const currentIndex = THEMES.findIndex((theme) => theme.id === activeTheme.id);
       const nextIndex = (currentIndex + 1) % THEMES.length;
       setThemeId(THEMES[nextIndex]!.id);
+      closeMenu();
       return;
     }
 
     if (key.name === "a") {
       setShowAgentPanel((current) => !current);
+      closeMenu();
       return;
     }
 
     if (key.name === "[") {
       moveHunk(-1);
+      closeMenu();
       return;
     }
 
     if (key.name === "]") {
       moveHunk(1);
+      closeMenu();
+      return;
+    }
+
+    if (key.name === "j") {
+      moveFile(1);
+      closeMenu();
+      return;
+    }
+
+    if (key.name === "k") {
+      moveFile(-1);
+      closeMenu();
       return;
     }
   });
-
-  const fileOptions = filteredFiles.map(buildFileOption);
-  const totalAdditions = bootstrap.changeset.files.reduce((sum, file) => sum + file.stats.additions, 0);
-  const totalDeletions = bootstrap.changeset.files.reduce((sum, file) => sum + file.stats.deletions, 0);
-  const diffPaneWidth = Math.max(48, terminal.width - 44 - (showAgentPanel ? 40 : 0));
 
   return (
     <box
@@ -259,85 +628,70 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
         width: "100%",
         height: "100%",
         flexDirection: "column",
-        padding: 1,
-        gap: 1,
         backgroundColor: activeTheme.background,
       }}
     >
       <box
         style={{
-          border: true,
-          borderColor: activeTheme.border,
-          backgroundColor: activeTheme.panel,
-          padding: 1,
-          flexDirection: "column",
-          gap: 1,
+          height: 1,
+          backgroundColor: activeTheme.panelAlt,
+          flexDirection: "row",
+          alignItems: "center",
+          paddingLeft: 1,
+          paddingRight: 1,
         }}
       >
-        <box style={{ justifyContent: "space-between", alignItems: "center" }}>
-          <box style={{ flexDirection: "column" }}>
-            <text fg={activeTheme.text}>{bootstrap.changeset.title}</text>
-            <text fg={activeTheme.muted}>{bootstrap.changeset.sourceLabel}</text>
-          </box>
-          <box style={{ flexDirection: "column", alignItems: "flex-end" }}>
-            <text fg={activeTheme.badgeAdded}>+{totalAdditions}</text>
-            <text fg={activeTheme.badgeRemoved}>-{totalDeletions}</text>
-          </box>
+        {menuSpecs.map((menu) => {
+          const active = activeMenuId === menu.id;
+          return (
+            <box
+              key={menu.id}
+              style={{
+                width: menu.width,
+                height: 1,
+                backgroundColor: active ? activeTheme.accentMuted : activeTheme.panelAlt,
+              }}
+              onMouseUp={() => toggleMenu(menu.id)}
+              onMouseOver={() => {
+                if (activeMenuId) {
+                  openMenu(menu.id);
+                }
+              }}
+            >
+              <text fg={active ? activeTheme.text : activeTheme.muted}>{` ${menu.label} `}</text>
+            </box>
+          );
+        })}
+
+        <box style={{ flexGrow: 1, height: 1, alignItems: "center", justifyContent: "flex-end" }}>
+          <text fg={activeTheme.muted}>{` ${fitText(topTitle, Math.max(0, terminal.width - 41))}`}</text>
         </box>
+      </box>
 
-        <box style={{ gap: 1, alignItems: "center" }}>
-          <text fg={activeTheme.muted}>layout</text>
-          <tab-select
-            ref={layoutTabsRef}
-            width={42}
-            height={3}
-            options={layoutOptions}
-            showDescription={false}
-            tabWidth={12}
-            focused={focusArea === "layout"}
-            backgroundColor={activeTheme.panelAlt}
-            textColor={activeTheme.muted}
-            selectedBackgroundColor={activeTheme.accentMuted}
-            selectedTextColor={activeTheme.text}
-            focusedBackgroundColor={activeTheme.panelAlt}
-            focusedTextColor={activeTheme.text}
-            selectedDescriptionColor={activeTheme.text}
-            onChange={(index) => {
-              setLayoutMode(index === 0 ? "auto" : index === 1 ? "split" : "stack");
-            }}
-          />
-
-          <text fg={activeTheme.muted}>theme</text>
-          <tab-select
-            ref={themeTabsRef}
-            width={56}
-            height={3}
-            options={themeOptions}
-            showDescription={false}
-            tabWidth={13}
-            focused={focusArea === "theme"}
-            backgroundColor={activeTheme.panelAlt}
-            textColor={activeTheme.muted}
-            selectedBackgroundColor={activeTheme.accentMuted}
-            selectedTextColor={activeTheme.text}
-            focusedBackgroundColor={activeTheme.panelAlt}
-            focusedTextColor={activeTheme.text}
-            selectedDescriptionColor={activeTheme.text}
-            onChange={(index) => {
-              const nextTheme = THEMES[index];
-              if (nextTheme) {
-                setThemeId(nextTheme.id);
-              }
-            }}
-          />
-        </box>
-
+      <box
+        style={{
+          height: 1,
+          backgroundColor: activeTheme.panel,
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          paddingLeft: 1,
+          paddingRight: 1,
+        }}
+        onMouseUp={() => closeMenu()}
+      >
+        <text fg={activeTheme.text}>
+          {fitText(fileLabel(selectedFile), Math.max(20, terminal.width - 34))}
+        </text>
         <text fg={activeTheme.muted}>
-          `q` quit  `tab` cycle focus  `/` filter  `[` `]` hunks  `a` agent rail  `{resolvedLayout}` at {terminal.width} cols
+          {fitText(
+            `${selectedFile ? `hunk ${selectedFile.metadata.hunks.length === 0 ? 0 : selectedHunkIndex + 1}/${selectedFile.metadata.hunks.length}` : "no file"}  ${resolvedLayout}  ${activeTheme.label}`,
+            32,
+          )}
         </text>
       </box>
 
-      <box style={{ flexGrow: 1, flexDirection: "row", gap: 1 }}>
+      <box style={{ flexGrow: 1, flexDirection: "row", gap: 1, padding: 1 }} onMouseUp={() => closeMenu()}>
         <box
           title="Files"
           style={{
@@ -415,11 +769,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
             <>
               <box style={{ justifyContent: "space-between", alignItems: "center" }}>
                 <box style={{ flexDirection: "column" }}>
-                  <text fg={activeTheme.text}>
-                    {selectedFile.previousPath && selectedFile.previousPath !== selectedFile.path
-                      ? `${selectedFile.previousPath} → ${selectedFile.path}`
-                      : selectedFile.path}
-                  </text>
+                  <text fg={activeTheme.text}>{fileLabel(selectedFile)}</text>
                   <text fg={activeTheme.muted}>
                     {selectedFile.metadata.type}  +{selectedFile.stats.additions}  -{selectedFile.stats.deletions}
                   </text>
@@ -550,6 +900,91 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
           </box>
         ) : null}
       </box>
+
+      <box
+        style={{
+          height: 1,
+          backgroundColor: activeTheme.panelAlt,
+          paddingLeft: 1,
+          paddingRight: 1,
+          alignItems: "center",
+        }}
+        onMouseUp={() => closeMenu()}
+      >
+        <text fg={activeTheme.muted}>
+          {fitText("F10 menu  / filter  [ ] hunks  j k files  1 2 0 layout  t theme  a agent  q quit", terminal.width - 2)}
+        </text>
+      </box>
+
+      {activeMenuId && activeMenuSpec ? (
+        <box
+          style={{
+            position: "absolute",
+            top: 1,
+            left: activeMenuSpec.left,
+            width: activeMenuWidth,
+            height: menuBoxHeight(activeMenuEntries),
+            zIndex: 40,
+            border: true,
+            borderColor: activeTheme.border,
+            backgroundColor: activeTheme.panel,
+            flexDirection: "column",
+          }}
+        >
+          {activeMenuEntries.map((entry, index) =>
+            entry.kind === "separator" ? (
+              <box key={`${activeMenuId}:separator:${index}`} style={{ height: 1, paddingLeft: 1, paddingRight: 1 }}>
+                <text fg={activeTheme.border}>{padText("-".repeat(activeMenuWidth - 4), activeMenuWidth - 2)}</text>
+              </box>
+            ) : (
+              <box
+                key={`${activeMenuId}:${entry.label}`}
+                style={{
+                  height: 1,
+                  paddingLeft: 1,
+                  paddingRight: 1,
+                  flexDirection: "row",
+                  backgroundColor: activeMenuItemIndex === index ? activeTheme.accentMuted : activeTheme.panel,
+                }}
+                onMouseOver={() => setActiveMenuItemIndex(index)}
+                onMouseUp={() => {
+                  entry.action();
+                  closeMenu();
+                }}
+              >
+                {renderMenuLine(entry, activeMenuWidth - 2, activeTheme, activeMenuItemIndex === index)}
+              </box>
+            ),
+          )}
+        </box>
+      ) : null}
+
+      {showHelp ? (
+        <box
+          style={{
+            position: "absolute",
+            top: 3,
+            left: helpLeft,
+            width: helpWidth,
+            height: 9,
+            zIndex: 60,
+            border: true,
+            borderColor: activeTheme.accent,
+            backgroundColor: activeTheme.panel,
+            padding: 1,
+            flexDirection: "column",
+            gap: 1,
+          }}
+          onMouseUp={() => setShowHelp(false)}
+        >
+          <text fg={activeTheme.text}>Keyboard</text>
+          <text fg={activeTheme.muted}>F10 menus  arrows navigate menus  Enter select  Esc close menu</text>
+          <text fg={activeTheme.muted}>1 split  2 stack  0 auto  t cycle theme  a toggle agent rail</text>
+          <text fg={activeTheme.muted}>[ previous hunk  ] next hunk  j next file  k previous file</text>
+          <text fg={activeTheme.muted}>/ focus filter  Tab swap files/filter  q quit</text>
+          <text fg={activeTheme.badgeNeutral}>click anywhere on this panel to close</text>
+        </box>
+      ) : null}
     </box>
   );
 }
