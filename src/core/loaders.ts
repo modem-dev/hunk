@@ -9,6 +9,7 @@ import { createTwoFilesPatch } from "diff";
 import { findAgentFileContext, loadAgentContext } from "./agent";
 import type {
   AppBootstrap,
+  AgentContext,
   Changeset,
   CliInput,
   DiffFile,
@@ -120,11 +121,9 @@ function buildDiffFile(
   patch: string,
   index: number,
   sourcePrefix: string,
-  agentContextPath?: string,
+  agentContext: AgentContext | null,
   previousPath?: string,
 ): DiffFile {
-  const agentContext = findAgentFileContext(agentContextPath ? JSON.parse(agentContextPath) : null, metadata.name, metadata.prevName);
-
   return {
     id: `${sourcePrefix}:${index}:${metadata.name}`,
     path: metadata.name,
@@ -133,7 +132,7 @@ function buildDiffFile(
     language: getFiletypeFromFileName(metadata.name) ?? undefined,
     stats: countDiffStats(metadata),
     metadata,
-    agent: agentContext,
+    agent: findAgentFileContext(agentContext, metadata.name, metadata.prevName),
   };
 }
 
@@ -141,7 +140,7 @@ function normalizePatchChangeset(
   patchText: string,
   title: string,
   sourceLabel: string,
-  agentContextPath?: string,
+  agentContext: AgentContext | null,
 ): Changeset {
   const parsedPatches = parsePatchFiles(patchText, "patch", true);
   const metadataFiles = parsedPatches.flatMap((entry) => entry.files);
@@ -152,13 +151,14 @@ function normalizePatchChangeset(
     sourceLabel,
     title,
     summary: parsedPatches.map((entry) => entry.patchMetadata).filter(Boolean).join("\n\n") || undefined,
+    agentSummary: agentContext?.summary,
     files: metadataFiles.map((metadata, index) =>
-      buildDiffFile(metadata, findPatchChunk(metadata, chunks, index), index, sourceLabel, agentContextPath),
+      buildDiffFile(metadata, findPatchChunk(metadata, chunks, index), index, sourceLabel, agentContext),
     ),
   };
 }
 
-async function loadFileDiffChangeset(input: FileCommandInput | DiffToolCommandInput, agentContextPath?: string) {
+async function loadFileDiffChangeset(input: FileCommandInput | DiffToolCommandInput, agentContext: AgentContext | null) {
   const leftText = await Bun.file(input.left).text();
   const rightText = await Bun.file(input.right).text();
   const displayPath =
@@ -188,11 +188,12 @@ async function loadFileDiffChangeset(input: FileCommandInput | DiffToolCommandIn
     id: `pair:${displayPath}`,
     sourceLabel: input.kind === "difftool" ? "git difftool" : "file compare",
     title: displayPath,
-    files: [buildDiffFile(metadata, patch, 0, displayPath, agentContextPath)],
+    agentSummary: agentContext?.summary,
+    files: [buildDiffFile(metadata, patch, 0, displayPath, agentContext)],
   } satisfies Changeset;
 }
 
-async function loadGitChangeset(input: GitCommandInput, agentContextPath?: string) {
+async function loadGitChangeset(input: GitCommandInput, agentContext: AgentContext | null) {
   const repoRoot = spawnText(["git", "rev-parse", "--show-toplevel"]).trim();
   const repoName = basename(repoRoot);
   const args = ["git", "diff", "--no-ext-diff", "--find-renames", "--no-color"];
@@ -208,37 +209,36 @@ async function loadGitChangeset(input: GitCommandInput, agentContextPath?: strin
   const patchText = spawnText(args);
   const title = input.staged ? `${repoName} staged changes` : input.range ? `${repoName} ${input.range}` : `${repoName} working tree`;
 
-  return normalizePatchChangeset(patchText, title, repoRoot, agentContextPath);
+  return normalizePatchChangeset(patchText, title, repoRoot, agentContext);
 }
 
-async function loadPatchChangeset(input: PatchCommandInput, agentContextPath?: string) {
+async function loadPatchChangeset(input: PatchCommandInput, agentContext: AgentContext | null) {
   const patchText =
     !input.file || input.file === "-"
       ? await new Response(Bun.stdin.stream()).text()
       : await Bun.file(input.file).text();
 
   const label = input.file && input.file !== "-" ? input.file : "stdin patch";
-  return normalizePatchChangeset(patchText, `Patch review: ${basename(label)}`, label, agentContextPath);
+  return normalizePatchChangeset(patchText, `Patch review: ${basename(label)}`, label, agentContext);
 }
 
 export async function loadAppBootstrap(input: CliInput): Promise<AppBootstrap> {
   const agentContext = await loadAgentContext(input.options.agentContext);
-  const agentJson = agentContext ? JSON.stringify(agentContext) : undefined;
 
   let changeset: Changeset;
 
   switch (input.kind) {
     case "git":
-      changeset = await loadGitChangeset(input, agentJson);
+      changeset = await loadGitChangeset(input, agentContext);
       break;
     case "diff":
-      changeset = await loadFileDiffChangeset(input, agentJson);
+      changeset = await loadFileDiffChangeset(input, agentContext);
       break;
     case "patch":
-      changeset = await loadPatchChangeset(input, agentJson);
+      changeset = await loadPatchChangeset(input, agentContext);
       break;
     case "difftool":
-      changeset = await loadFileDiffChangeset(input, agentJson);
+      changeset = await loadFileDiffChangeset(input, agentContext);
       break;
   }
 

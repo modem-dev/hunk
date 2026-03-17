@@ -42,6 +42,7 @@ export interface Changeset {
   sourceLabel: string;
   title: string;
   summary?: string;
+  agentSummary?: string;
   files: DiffFile[];
 }
 
