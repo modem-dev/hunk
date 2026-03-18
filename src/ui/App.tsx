@@ -558,6 +558,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
   const diffContentWidth = Math.max(12, diffPaneWidth - 2);
   const diffHeaderStatsWidth = Math.min(24, Math.max(16, Math.floor(diffContentWidth / 3)));
   const diffHeaderLabelWidth = Math.max(8, diffContentWidth - diffHeaderStatsWidth - 1);
+  const diffSeparatorWidth = Math.max(4, diffContentWidth - 2);
 
   useKeyboard((key: KeyEvent) => {
     if (key.name === "f10") {
@@ -905,10 +906,11 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
               verticalScrollbarOptions={{ visible: false }}
               horizontalScrollbarOptions={{ visible: false }}
             >
-              <box style={{ width: "100%", flexDirection: "column", gap: 1 }}>
+              <box style={{ width: "100%", flexDirection: "column" }}>
                 {filteredFiles.map((file) => {
                   const isSelected = file.id === selectedFile?.id;
-                  const stats = `${file.metadata.type}  +${file.stats.additions}  -${file.stats.deletions}`;
+                  const additionsText = `+${file.stats.additions}`;
+                  const deletionsText = `-${file.stats.deletions}`;
 
                   return (
                     <box
@@ -920,6 +922,18 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
                         backgroundColor: activeTheme.panel,
                       }}
                     >
+                      <box
+                        style={{
+                          width: "100%",
+                          height: 1,
+                          paddingLeft: 1,
+                          paddingRight: 1,
+                          backgroundColor: activeTheme.panel,
+                        }}
+                      >
+                        <text fg={activeTheme.border}>{fitText("─".repeat(diffSeparatorWidth), diffSeparatorWidth)}</text>
+                      </box>
+
                       <box
                         style={{
                           width: "100%",
@@ -937,9 +951,11 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
                         <text fg={isSelected ? activeTheme.text : activeTheme.badgeNeutral}>
                           {fitText(fileLabel(file), diffHeaderLabelWidth)}
                         </text>
-                        <text fg={isSelected ? activeTheme.text : activeTheme.muted}>
-                          {fitText(stats, diffHeaderStatsWidth)}
-                        </text>
+                        <box style={{ width: diffHeaderStatsWidth, height: 1, flexDirection: "row", justifyContent: "flex-end" }}>
+                          <text fg={activeTheme.badgeAdded}>{additionsText}</text>
+                          <text fg={activeTheme.muted}> </text>
+                          <text fg={activeTheme.badgeRemoved}>{deletionsText}</text>
+                        </box>
                       </box>
 
                       <PierreDiffView
