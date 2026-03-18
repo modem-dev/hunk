@@ -2,6 +2,7 @@ import type { AppTheme } from "../../themes";
 import { fitText } from "../../lib/text";
 
 export function StatusBar({
+  canResizeDivider = false,
   filter,
   filterFocused,
   terminalWidth,
@@ -10,6 +11,7 @@ export function StatusBar({
   onFilterInput,
   onFilterSubmit,
 }: {
+  canResizeDivider?: boolean;
   filter: string;
   filterFocused: boolean;
   terminalWidth: number;
@@ -18,6 +20,12 @@ export function StatusBar({
   onFilterInput: (value: string) => void;
   onFilterSubmit: () => void;
 }) {
+  const hintParts = ["F10 menu"];
+  if (canResizeDivider) {
+    hintParts.push("drag divider resize");
+  }
+  hintParts.push("/ filter", "[ ] hunks", "j k files", "1 2 0 layout", "t theme", "a agent", "q quit");
+
   return (
     <box
       style={{
@@ -47,10 +55,7 @@ export function StatusBar({
         </>
       ) : (
         <text fg={theme.muted}>
-          {fitText(
-            `F10 menu  drag divider resize  / filter  [ ] hunks  j k files  1 2 0 layout  t theme  a agent  q quit${filter ? `  filter=${filter}` : ""}`,
-            terminalWidth - 2,
-          )}
+          {fitText(`${hintParts.join("  ")}${filter ? `  filter=${filter}` : ""}`, terminalWidth - 2)}
         </text>
       )}
     </box>

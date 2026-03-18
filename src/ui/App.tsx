@@ -14,6 +14,7 @@ import { FilesPane } from "./components/panes/FilesPane";
 import { PaneDivider } from "./components/panes/PaneDivider";
 import { buildFileListEntry } from "./lib/files";
 import { diffSectionId, fileRowId } from "./lib/ids";
+import { resolveResponsiveLayout, resolveResponsiveViewport } from "./lib/responsive";
 import { resolveTheme, THEMES } from "./themes";
 
 type FocusArea = "files" | "filter";
@@ -106,14 +107,24 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     bootstrap.changeset.files.find((file) => file.id === selectedFileId) ??
     filteredFiles[0];
 
-  const resolvedLayout = layoutMode === "auto" ? (terminal.width >= 150 ? "split" : "stack") : layoutMode;
+  const bodyWidth = Math.max(0, terminal.width - BODY_PADDING);
+  const shellViewport = resolveResponsiveViewport(bodyWidth, FILES_MIN_WIDTH, DIFF_MIN_WIDTH, DIVIDER_WIDTH);
+  const effectiveShowAgentPanel =
+    showAgentPanel &&
+    shellViewport === "full" &&
+    bodyWidth >= FILES_MIN_WIDTH + DIVIDER_WIDTH + DIFF_MIN_WIDTH + AGENT_GAP + AGENT_WIDTH;
+  const centerWidth = Math.max(0, bodyWidth - (effectiveShowAgentPanel ? AGENT_WIDTH + AGENT_GAP : 0));
+  const responsiveLayout = resolveResponsiveLayout(layoutMode, centerWidth, FILES_MIN_WIDTH, DIFF_MIN_WIDTH, DIVIDER_WIDTH);
+  const resolvedLayout = responsiveLayout.layout;
+  const showFilesPane = responsiveLayout.showFilesPane;
   const currentHunk = selectedFile?.metadata.hunks[selectedHunkIndex];
   const activeAnnotations = getSelectedAnnotations(selectedFile, currentHunk);
-  const availableCenterWidth =
-    terminal.width - BODY_PADDING - DIVIDER_WIDTH - (showAgentPanel ? AGENT_WIDTH + AGENT_GAP : 0);
-  const maxFilesPaneWidth = Math.max(FILES_MIN_WIDTH, availableCenterWidth - DIFF_MIN_WIDTH);
-  const clampedFilesPaneWidth = clamp(filesPaneWidth, FILES_MIN_WIDTH, maxFilesPaneWidth);
-  const diffPaneWidth = Math.max(DIFF_MIN_WIDTH, availableCenterWidth - clampedFilesPaneWidth);
+  const availableCenterWidth = showFilesPane ? Math.max(0, centerWidth - DIVIDER_WIDTH) : Math.max(0, centerWidth);
+  const maxFilesPaneWidth = showFilesPane ? Math.max(FILES_MIN_WIDTH, availableCenterWidth - DIFF_MIN_WIDTH) : FILES_MIN_WIDTH;
+  const clampedFilesPaneWidth = showFilesPane ? clamp(filesPaneWidth, FILES_MIN_WIDTH, maxFilesPaneWidth) : 0;
+  const diffPaneWidth = showFilesPane
+    ? Math.max(DIFF_MIN_WIDTH, availableCenterWidth - clampedFilesPaneWidth)
+    : Math.max(0, availableCenterWidth);
   const isResizingFilesPane = resizeDragOriginX !== null && resizeStartWidth !== null;
   const dividerHitLeft = Math.max(
     1,
@@ -121,8 +132,18 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
   );
 
   useEffect(() => {
+    if (!showFilesPane) {
+      setResizeDragOriginX(null);
+      setResizeStartWidth(null);
+      return;
+    }
+
     setFilesPaneWidth((current) => clamp(current, FILES_MIN_WIDTH, maxFilesPaneWidth));
-  }, [maxFilesPaneWidth]);
+  }, [maxFilesPaneWidth, showFilesPane]);
+
+  useEffect(() => {
+    renderer.intermediateRender();
+  }, [effectiveShowAgentPanel, renderer, resolvedLayout, showFilesPane, terminal.height, terminal.width]);
 
   useEffect(() => {
     if (!selectedFile && filteredFiles[0]) {
@@ -601,30 +622,34 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
           closeMenu();
         }}
       >
-        <FilesPane
-          entries={fileEntries}
-          focused={focusArea === "files"}
-          scrollRef={filesScrollRef}
-          selectedFileId={selectedFile?.id}
-          textWidth={filesTextWidth}
-          theme={activeTheme}
-          width={clampedFilesPaneWidth}
-          onSelectFile={(fileId) => {
-            setFocusArea("files");
-            jumpToFile(fileId);
-          }}
-        />
+        {showFilesPane ? (
+          <>
+            <FilesPane
+              entries={fileEntries}
+              focused={focusArea === "files"}
+              scrollRef={filesScrollRef}
+              selectedFileId={selectedFile?.id}
+              textWidth={filesTextWidth}
+              theme={activeTheme}
+              width={clampedFilesPaneWidth}
+              onSelectFile={(fileId) => {
+                setFocusArea("files");
+                jumpToFile(fileId);
+              }}
+            />
 
-        <PaneDivider
-          dividerHitLeft={dividerHitLeft}
-          dividerHitWidth={DIVIDER_HIT_WIDTH}
-          isResizing={isResizingFilesPane}
-          theme={activeTheme}
-          onMouseDown={beginFilesPaneResize}
-          onMouseDrag={updateFilesPaneResize}
-          onMouseDragEnd={endFilesPaneResize}
-          onMouseUp={endFilesPaneResize}
-        />
+            <PaneDivider
+              dividerHitLeft={dividerHitLeft}
+              dividerHitWidth={DIVIDER_HIT_WIDTH}
+              isResizing={isResizingFilesPane}
+              theme={activeTheme}
+              onMouseDown={beginFilesPaneResize}
+              onMouseDrag={updateFilesPaneResize}
+              onMouseDragEnd={endFilesPaneResize}
+              onMouseUp={endFilesPaneResize}
+            />
+          </>
+        ) : null}
 
         <DiffPane
           diffContentWidth={diffContentWidth}
@@ -641,7 +666,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
           onSelectFile={jumpToFile}
         />
 
-        {showAgentPanel ? (
+        {effectiveShowAgentPanel ? (
           <AgentRail
             activeAnnotations={activeAnnotations}
             changesetSummary={bootstrap.changeset.summary}
@@ -655,6 +680,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
       </box>
 
       <StatusBar
+        canResizeDivider={showFilesPane}
         filter={filter}
         filterFocused={focusArea === "filter"}
         terminalWidth={terminal.width}
