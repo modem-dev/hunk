@@ -755,29 +755,6 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
       </box>
 
       <box
-        style={{
-          height: 1,
-          backgroundColor: activeTheme.panel,
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          paddingLeft: 1,
-          paddingRight: 1,
-        }}
-        onMouseUp={() => closeMenu()}
-      >
-        <text fg={activeTheme.text}>
-          {fitText(fileLabel(selectedFile), Math.max(20, terminal.width - 34))}
-        </text>
-        <text fg={activeTheme.muted}>
-          {fitText(
-            `${selectedFile ? `hunk ${selectedFile.metadata.hunks.length === 0 ? 0 : selectedHunkIndex + 1}/${selectedFile.metadata.hunks.length}` : "no file"}  ${resolvedLayout}  ${activeTheme.label}`,
-            32,
-          )}
-        </text>
-      </box>
-
-      <box
         style={{ flexGrow: 1, flexDirection: "row", gap: 0, padding: 1, position: "relative" }}
         onMouseDrag={updateFilesPaneResize}
         onMouseDragEnd={endFilesPaneResize}
@@ -790,7 +767,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
           title="Files"
           style={{
             width: clampedFilesPaneWidth,
-            border: ["top", "bottom", "left"],
+            border: ["top", "bottom"],
             borderColor: activeTheme.border,
             backgroundColor: activeTheme.panel,
             padding: 1,
@@ -898,7 +875,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
           title="Diff"
           style={{
             width: diffPaneWidth,
-            border: ["top", "right", "bottom"],
+            border: ["top", "bottom"],
             borderColor: activeTheme.border,
             backgroundColor: activeTheme.panel,
             padding: 1,
@@ -921,7 +898,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
               horizontalScrollbarOptions={{ visible: false }}
             >
               <box style={{ width: "100%", flexDirection: "column" }}>
-                {filteredFiles.map((file) => {
+                {filteredFiles.map((file, index) => {
                   const isSelected = file.id === selectedFile?.id;
                   const additionsText = `+${file.stats.additions}`;
                   const deletionsText = `-${file.stats.deletions}`;
@@ -936,17 +913,21 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
                         backgroundColor: activeTheme.panel,
                       }}
                     >
-                      <box
-                        style={{
-                          width: "100%",
-                          height: 1,
-                          paddingLeft: 1,
-                          paddingRight: 1,
-                          backgroundColor: activeTheme.panel,
-                        }}
-                      >
-                        <text fg={activeTheme.border}>{fitText("─".repeat(diffSeparatorWidth), diffSeparatorWidth)}</text>
-                      </box>
+                      {index > 0 ? (
+                        <box
+                          style={{
+                            width: "100%",
+                            height: 1,
+                            paddingLeft: 1,
+                            paddingRight: 1,
+                            backgroundColor: activeTheme.panel,
+                          }}
+                        >
+                          <text fg={activeTheme.border}>
+                            {fitText("─".repeat(diffSeparatorWidth), diffSeparatorWidth)}
+                          </text>
+                        </box>
+                      ) : null}
 
                       <box
                         style={{
@@ -997,7 +978,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
             title="Agent"
             style={{
               width: AGENT_WIDTH,
-              border: true,
+              border: ["top", "bottom", "left"],
               borderColor: activeTheme.border,
               backgroundColor: activeTheme.panel,
               padding: 1,
