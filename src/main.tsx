@@ -11,7 +11,7 @@ const cliInput = await parseCli(process.argv);
 const bootstrap = await loadAppBootstrap(cliInput);
 
 const renderer = await createCliRenderer({
-  useMouse: true,
+  useMouse: !cliInput.options.pager,
   useAlternateScreen: true,
   exitOnCtrlC: true,
   openConsoleOnError: true,

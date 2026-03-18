@@ -53,13 +53,14 @@ function createDiffFile(id: string, path: string, before: string, after: string,
   };
 }
 
-function createBootstrap(initialMode: LayoutMode = "auto"): AppBootstrap {
+function createBootstrap(initialMode: LayoutMode = "auto", pager = false): AppBootstrap {
   return {
     input: {
       kind: "git",
       staged: false,
       options: {
         mode: initialMode,
+        pager,
       },
     },
     changeset: {
@@ -165,6 +166,21 @@ describe("responsive shell", () => {
     expect(forcedStack).not.toContain("Changeset summary");
     expect(forcedStack).not.toContain("│");
     expect(forcedStack).not.toContain("drag divider resize");
+  });
+
+  test("pager mode stays responsive while hiding app chrome", async () => {
+    const wide = await captureFrameForBootstrap(createBootstrap("auto", true), 220);
+    const narrow = await captureFrameForBootstrap(createBootstrap("auto", true), 150);
+
+    expect(wide).not.toContain("File  View  Navigate  Theme  Agent  Help");
+    expect(wide).not.toContain("F10 menu");
+    expect(wide).not.toContain("M alpha.ts");
+    expect(wide).toContain("│");
+
+    expect(narrow).not.toContain("File  View  Navigate  Theme  Agent  Help");
+    expect(narrow).not.toContain("F10 menu");
+    expect(narrow).not.toContain("M alpha.ts");
+    expect(narrow).not.toContain("│");
   });
 
   test("filter focus suppresses global shortcut keys like quit", async () => {

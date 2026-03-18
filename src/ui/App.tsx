@@ -55,6 +55,7 @@ export function App({ bootstrap, onQuit = () => process.exit(0) }: { bootstrap: 
   const [selectedHunkIndex, setSelectedHunkIndex] = useState(0);
   const deferredFilter = useDeferredValue(filter);
 
+  const pagerMode = Boolean(bootstrap.input.options.pager);
   const activeTheme = resolveTheme(themeId, renderer.themeMode);
 
   const filteredFiles = bootstrap.changeset.files.filter((file) => {
@@ -72,9 +73,10 @@ export function App({ bootstrap, onQuit = () => process.exit(0) }: { bootstrap: 
     filteredFiles[0];
   const hunkCursors = buildHunkCursors(filteredFiles);
 
-  const bodyWidth = Math.max(0, terminal.width - BODY_PADDING);
+  const bodyPadding = pagerMode ? 0 : BODY_PADDING;
+  const bodyWidth = Math.max(0, terminal.width - bodyPadding);
   const responsiveLayout = resolveResponsiveLayout(layoutMode, terminal.width);
-  const showFilesPane = responsiveLayout.showFilesPane;
+  const showFilesPane = pagerMode ? false : responsiveLayout.showFilesPane;
   const centerWidth = bodyWidth;
   const resolvedLayout = responsiveLayout.layout;
   const currentHunk = selectedFile?.metadata.hunks[selectedHunkIndex];
@@ -176,6 +178,11 @@ export function App({ bootstrap, onQuit = () => process.exit(0) }: { bootstrap: 
 
     setSelectedFileId(fileId);
     setSelectedHunkIndex(nextHunkIndex);
+  };
+
+  /** Scroll the main review pane by a viewport fraction or whole-content jump. */
+  const scrollDiff = (delta: number, unit: "viewport" | "content" = "viewport") => {
+    diffScrollRef.current?.scrollBy(delta, unit);
   };
 
   /** Move file selection within the currently filtered sidebar list. */
@@ -492,12 +499,60 @@ export function App({ bootstrap, onQuit = () => process.exit(0) }: { bootstrap: 
   const diffSeparatorWidth = Math.max(4, diffContentWidth - 2);
 
   useKeyboard((key: KeyEvent) => {
+    const pageDownKey = key.name === "pagedown" || key.name === "space" || key.name === " " || key.sequence === " ";
+    const pageUpKey = key.name === "pageup" || key.name === "b" || key.sequence === "b";
+    const stepDownKey = key.name === "down" || key.name === "j" || key.sequence === "j";
+    const stepUpKey = key.name === "up" || key.name === "k" || key.sequence === "k";
+
     if (key.name === "f10") {
+      if (pagerMode) {
+        return;
+      }
+
       if (activeMenuId) {
         closeMenu();
       } else {
         openMenu("file");
       }
+      return;
+    }
+
+    if (pagerMode) {
+      if (key.name === "q" || key.name === "escape") {
+        requestQuit();
+        return;
+      }
+
+      if (pageDownKey) {
+        scrollDiff(1 / 2, "viewport");
+        return;
+      }
+
+      if (pageUpKey) {
+        scrollDiff(-1 / 2, "viewport");
+        return;
+      }
+
+      if (stepDownKey) {
+        scrollDiff(1 / 5, "viewport");
+        return;
+      }
+
+      if (stepUpKey) {
+        scrollDiff(-1 / 5, "viewport");
+        return;
+      }
+
+      if (key.name === "home") {
+        scrollDiff(-1, "content");
+        return;
+      }
+
+      if (key.name === "end") {
+        scrollDiff(1, "content");
+        return;
+      }
+
       return;
     }
 
@@ -584,6 +639,26 @@ export function App({ bootstrap, onQuit = () => process.exit(0) }: { bootstrap: 
       return;
     }
 
+    if (pageDownKey) {
+      scrollDiff(1 / 2, "viewport");
+      return;
+    }
+
+    if (pageUpKey) {
+      scrollDiff(-1 / 2, "viewport");
+      return;
+    }
+
+    if (key.name === "home") {
+      scrollDiff(-1, "content");
+      return;
+    }
+
+    if (key.name === "end") {
+      scrollDiff(1, "content");
+      return;
+    }
+
     if (focusArea === "files" && key.name === "up") {
       moveFile(-1);
       return;
@@ -666,27 +741,29 @@ export function App({ bootstrap, onQuit = () => process.exit(0) }: { bootstrap: 
         backgroundColor: activeTheme.background,
       }}
     >
-      <MenuBar
-        activeMenuId={activeMenuId}
-        menuSpecs={menuSpecs}
-        terminalWidth={terminal.width}
-        theme={activeTheme}
-        topTitle={topTitle}
-        onHoverMenu={(menuId) => {
-          if (activeMenuId) {
-            openMenu(menuId);
-          }
-        }}
-        onToggleMenu={toggleMenu}
-      />
+      {!pagerMode ? (
+        <MenuBar
+          activeMenuId={activeMenuId}
+          menuSpecs={menuSpecs}
+          terminalWidth={terminal.width}
+          theme={activeTheme}
+          topTitle={topTitle}
+          onHoverMenu={(menuId) => {
+            if (activeMenuId) {
+              openMenu(menuId);
+            }
+          }}
+          onToggleMenu={toggleMenu}
+        />
+      ) : null}
 
       <box
         style={{
           flexGrow: 1,
           flexDirection: "row",
           gap: 0,
-          paddingLeft: 1,
-          paddingRight: 1,
+          paddingLeft: bodyPadding / 2,
+          paddingRight: bodyPadding / 2,
           paddingTop: 0,
           paddingBottom: 0,
           position: "relative",
@@ -732,6 +809,7 @@ export function App({ bootstrap, onQuit = () => process.exit(0) }: { bootstrap: 
           diffContentWidth={diffContentWidth}
           dismissedAgentNoteIds={dismissedAgentNoteIds}
           files={filteredFiles}
+          pagerMode={pagerMode}
           headerLabelWidth={diffHeaderLabelWidth}
           headerStatsWidth={diffHeaderStatsWidth}
           layout={resolvedLayout}
@@ -751,18 +829,20 @@ export function App({ bootstrap, onQuit = () => process.exit(0) }: { bootstrap: 
         />
       </box>
 
-      <StatusBar
-        canResizeDivider={showFilesPane}
-        filter={filter}
-        filterFocused={focusArea === "filter"}
-        terminalWidth={terminal.width}
-        theme={activeTheme}
-        onCloseMenu={closeMenu}
-        onFilterInput={setFilter}
-        onFilterSubmit={() => setFocusArea("files")}
-      />
+      {!pagerMode ? (
+        <StatusBar
+          canResizeDivider={showFilesPane}
+          filter={filter}
+          filterFocused={focusArea === "filter"}
+          terminalWidth={terminal.width}
+          theme={activeTheme}
+          onCloseMenu={closeMenu}
+          onFilterInput={setFilter}
+          onFilterSubmit={() => setFocusArea("files")}
+        />
+      ) : null}
 
-      {activeMenuId && activeMenuSpec ? (
+      {!pagerMode && activeMenuId && activeMenuSpec ? (
         <MenuDropdown
           activeMenuId={activeMenuId}
           activeMenuEntries={activeMenuEntries}
@@ -778,7 +858,7 @@ export function App({ bootstrap, onQuit = () => process.exit(0) }: { bootstrap: 
         />
       ) : null}
 
-      {showHelp ? <HelpDialog left={helpLeft} theme={activeTheme} width={helpWidth} onClose={() => setShowHelp(false)} /> : null}
+      {!pagerMode && showHelp ? <HelpDialog left={helpLeft} theme={activeTheme} width={helpWidth} onClose={() => setShowHelp(false)} /> : null}
     </box>
   );
 }

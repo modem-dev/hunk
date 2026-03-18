@@ -20,6 +20,7 @@ export function DiffPane({
   selectedFileId,
   selectedHunkIndex,
   separatorWidth,
+  pagerMode = false,
   showAgentNotes,
   showLineNumbers,
   showHunkHeaders,
@@ -41,6 +42,7 @@ export function DiffPane({
   selectedFileId?: string;
   selectedHunkIndex: number;
   separatorWidth: number;
+  pagerMode?: boolean;
   showAgentNotes: boolean;
   showLineNumbers: boolean;
   showHunkHeaders: boolean;
@@ -78,10 +80,10 @@ export function DiffPane({
     <box
       style={{
         width,
-        border: ["top"],
+        border: pagerMode ? [] : ["top"],
         borderColor: theme.border,
         backgroundColor: theme.panel,
-        padding: 1,
+        padding: pagerMode ? 0 : 1,
         flexDirection: "column",
       }}
     >
@@ -92,7 +94,7 @@ export function DiffPane({
           height="100%"
           scrollY={true}
           viewportCulling={true}
-          focused={false}
+          focused={pagerMode}
           rootOptions={{ backgroundColor: theme.panel }}
           wrapperOptions={{ backgroundColor: theme.panel }}
           viewportOptions={{ backgroundColor: theme.panel }}

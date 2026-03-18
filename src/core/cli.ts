@@ -6,11 +6,13 @@ function buildCommonOptions(options: {
   mode?: LayoutMode;
   theme?: string;
   agentContext?: string;
+  pager?: boolean;
 }): CommonOptions {
   return {
     mode: options.mode ?? "auto",
     theme: options.theme,
     agentContext: options.agentContext,
+    pager: options.pager ?? false,
   };
 }
 
@@ -37,7 +39,8 @@ export async function parseCli(argv: string[]): Promise<CliInput> {
     command
       .option("--mode <mode>", "layout mode: auto, split, stack", "auto")
       .option("--theme <theme>", "named theme override")
-      .option("--agent-context <path>", "JSON sidecar with agent rationale");
+      .option("--agent-context <path>", "JSON sidecar with agent rationale")
+      .option("--pager", "use pager-style chrome and controls", false);
 
   applyCommonOptions(program.command("git"))
     .argument("[range]", "revision or range to diff")
@@ -51,6 +54,7 @@ export async function parseCli(argv: string[]): Promise<CliInput> {
           mode: options.mode as LayoutMode | undefined,
           theme: options.theme as string | undefined,
           agentContext: options.agentContext as string | undefined,
+          pager: options.pager as boolean | undefined,
         }),
       };
     });
@@ -67,6 +71,7 @@ export async function parseCli(argv: string[]): Promise<CliInput> {
           mode: options.mode as LayoutMode | undefined,
           theme: options.theme as string | undefined,
           agentContext: options.agentContext as string | undefined,
+          pager: options.pager as boolean | undefined,
         }),
       };
     });
@@ -81,6 +86,7 @@ export async function parseCli(argv: string[]): Promise<CliInput> {
           mode: options.mode as LayoutMode | undefined,
           theme: options.theme as string | undefined,
           agentContext: options.agentContext as string | undefined,
+          pager: options.pager as boolean | undefined,
         }),
       };
     });
@@ -99,6 +105,7 @@ export async function parseCli(argv: string[]): Promise<CliInput> {
           mode: options.mode as LayoutMode | undefined,
           theme: options.theme as string | undefined,
           agentContext: options.agentContext as string | undefined,
+          pager: options.pager as boolean | undefined,
         }),
       };
     });

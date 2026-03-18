@@ -23,6 +23,7 @@ describe("parseCli", () => {
       "paper",
       "--agent-context",
       "notes.json",
+      "--pager",
     ]);
 
     expect(parsed).toMatchObject({
@@ -33,6 +34,7 @@ describe("parseCli", () => {
         mode: "split",
         theme: "paper",
         agentContext: "notes.json",
+        pager: true,
       },
     });
   });

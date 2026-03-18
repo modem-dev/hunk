@@ -50,6 +50,7 @@ export interface CommonOptions {
   mode: LayoutMode;
   theme?: string;
   agentContext?: string;
+  pager?: boolean;
 }
 
 export interface GitCommandInput {
