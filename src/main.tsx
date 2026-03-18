@@ -16,4 +16,5 @@ const renderer = await createCliRenderer({
   openConsoleOnError: true,
 });
 
+// The app owns the full alternate screen session from this point on.
 createRoot(renderer).render(<App bootstrap={bootstrap} />);

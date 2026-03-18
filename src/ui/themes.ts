@@ -29,6 +29,7 @@ export interface AppTheme {
   syntaxStyle: SyntaxStyle;
 }
 
+/** Build the syntax palette OpenTUI should use for in-terminal code rendering. */
 function createSyntaxStyle(colors: {
   default: string;
   keyword: string;
@@ -212,6 +213,7 @@ export const THEMES: AppTheme[] = [
   },
 ];
 
+/** Resolve a named theme or fall back to a theme that matches the renderer mode. */
 export function resolveTheme(requested: string | undefined, themeMode: ThemeMode | null) {
   const exact = THEMES.find((theme) => theme.id === requested);
   if (exact) {

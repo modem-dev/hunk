@@ -3,6 +3,7 @@ import { fitText } from "../../lib/text";
 import type { AppTheme } from "../../themes";
 import { fileRowId } from "../../lib/ids";
 
+/** Render one file row in the navigation sidebar. */
 export function FileListItem({
   entry,
   selected,

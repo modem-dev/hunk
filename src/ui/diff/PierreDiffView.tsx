@@ -18,6 +18,7 @@ import {
 const EMPTY_ANNOTATED_HUNK_INDICES = new Set<number>();
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
 
+/** Clamp a label to one terminal row with an ellipsis. */
 function fitText(text: string, width: number) {
   if (width <= 0) {
     return "";
@@ -34,6 +35,7 @@ function fitText(text: string, width: number) {
   return `${text.slice(0, width - 1)}…`;
 }
 
+/** Trim styled spans to a fixed width while preserving color runs. */
 function trimSpans(spans: RenderSpan[], width: number) {
   if (width <= 0) {
     return {
@@ -78,10 +80,12 @@ function trimSpans(spans: RenderSpan[], width: number) {
   };
 }
 
+/** Render the left-edge hunk marker without changing row width. */
 function marker(selected: boolean) {
   return selected ? "▌" : " ";
 }
 
+/** Pick split-view colors from the semantic diff cell kind. */
 function splitCellPalette(kind: SplitLineCell["kind"], theme: AppTheme) {
   if (kind === "addition") {
     return {
@@ -118,6 +122,7 @@ function splitCellPalette(kind: SplitLineCell["kind"], theme: AppTheme) {
   };
 }
 
+/** Pick stack-view colors from the semantic diff cell kind. */
 function stackCellPalette(kind: StackLineCell["kind"], theme: AppTheme) {
   if (kind === "addition") {
     return {
@@ -145,6 +150,7 @@ function stackCellPalette(kind: StackLineCell["kind"], theme: AppTheme) {
   };
 }
 
+/** Render a fixed-width inline span sequence for one diff cell. */
 function renderInlineSpans(
   spans: RenderSpan[],
   width: number,
@@ -157,6 +163,9 @@ function renderInlineSpans(
 
   if (padding > 0) {
     const lastSpan = trimmed.at(-1);
+
+    // Fold trailing padding into the last span when the colors already match.
+    // That keeps the output identical while avoiding one extra rendered span.
     if (lastSpan && (lastSpan.fg ?? fallbackColor) === fallbackColor && (lastSpan.bg ?? fallbackBg) === fallbackBg) {
       lastSpan.text += " ".repeat(padding);
       padding = 0;
@@ -175,6 +184,7 @@ function renderInlineSpans(
   );
 }
 
+/** Render one split-view cell as prefix + gutter + content spans. */
 function renderSplitCell(
   cell: SplitLineCell,
   width: number,
@@ -209,6 +219,7 @@ function renderSplitCell(
   );
 }
 
+/** Render one stack-view cell as prefix + combined gutter + content spans. */
 function renderStackCell(
   cell: StackLineCell,
   width: number,
@@ -243,6 +254,7 @@ function renderStackCell(
   );
 }
 
+/** Explain why a file still appears in the review stream even when it has no textual hunks. */
 function diffMessage(file: DiffFile) {
   if (file.metadata.type === "rename-pure") {
     return "No textual hunks. This change only renames the file.";
@@ -259,6 +271,7 @@ function diffMessage(file: DiffFile) {
   return "No textual hunks to render for this file.";
 }
 
+/** Find the widest line-number column needed for this file. */
 function findMaxLineNumber(file: DiffFile) {
   let highest = 0;
 
@@ -269,6 +282,7 @@ function findMaxLineNumber(file: DiffFile) {
   return Math.max(highest, 1);
 }
 
+/** Render collapsed and hunk-header rows, including the optional AI badge target. */
 function renderHeaderRow(
   row: Extract<DiffRow, { type: "collapsed" | "hunk-header" }>,
   width: number,
@@ -335,6 +349,7 @@ function renderHeaderRow(
   );
 }
 
+/** Resolve the visual anchor line for an annotation when one exists. */
 function noteAnchor(annotation: AgentAnnotation) {
   if (annotation.newRange) {
     return {
@@ -353,6 +368,7 @@ function noteAnchor(annotation: AgentAnnotation) {
   return null;
 }
 
+/** Check whether a rendered row is the visual anchor for a note. */
 function rowMatchesNote(row: Extract<DiffRow, { type: "split-line" | "stack-line" }>, note: VisibleAgentNote) {
   const anchor = noteAnchor(note.annotation);
   if (!anchor) {
@@ -366,6 +382,7 @@ function rowMatchesNote(row: Extract<DiffRow, { type: "split-line" | "stack-line
   return anchor.side === "new" ? row.cell.newLineNumber === anchor.lineNumber : row.cell.oldLineNumber === anchor.lineNumber;
 }
 
+/** Attach visible notes to rows in the selected hunk, falling back to the hunk header when needed. */
 function buildAnchoredNotes(rows: DiffRow[], visibleAgentNotes: VisibleAgentNote[], selectedHunkIndex: number) {
   const anchoredNotes = new Map<string, VisibleAgentNote[]>();
 
@@ -394,6 +411,7 @@ function buildAnchoredNotes(rows: DiffRow[], visibleAgentNotes: VisibleAgentNote
   return anchoredNotes;
 }
 
+/** Render the visible note cards anchored near their target rows. */
 function renderAnchoredNotes(
   anchoredNotes: VisibleAgentNote[],
   file: DiffFile,
@@ -432,6 +450,7 @@ function renderAnchoredNotes(
   );
 }
 
+/** Render one diff row plus any visible note cards anchored to it. */
 function renderRow(
   row: DiffRow,
   file: DiffFile,
@@ -451,6 +470,9 @@ function renderRow(
   } else if (row.type === "split-line") {
     const markerWidth = 1;
     const separatorWidth = 1;
+
+    // Reserve fixed columns for the selection marker and split separator
+    // so both sides stay aligned across all rows.
     const usableWidth = Math.max(0, width - markerWidth - separatorWidth);
     const leftWidth = Math.max(0, markerWidth + Math.floor(usableWidth / 2));
     const rightWidth = Math.max(0, separatorWidth + usableWidth - Math.floor(usableWidth / 2));
@@ -491,6 +513,7 @@ function renderRow(
     );
   }
 
+  // Most rows do not have note cards, so keep the common path as small as possible.
   if (anchoredNotes.length === 0) {
     return baseRow;
   }
@@ -516,6 +539,7 @@ interface DiffRowViewProps {
   onOpenAgentNotesAtHunk?: (hunkIndex: number) => void;
 }
 
+/** Render one diff row, memoized to avoid unnecessary rerenders. */
 const DiffRowView = memo(
   function DiffRowViewComponent({
     row,
@@ -543,6 +567,7 @@ const DiffRowView = memo(
     );
   },
   (previous, next) => {
+    // Row and anchored-note identity are intentionally stable across many navigation updates.
     return (
       previous.row === next.row &&
       previous.file === next.file &&
@@ -556,6 +581,7 @@ const DiffRowView = memo(
   },
 );
 
+/** Render a file diff in split or stack mode, with optional inline agent notes. */
 export function PierreDiffView({
   annotatedHunkIndices = EMPTY_ANNOTATED_HUNK_INDICES,
   file,
@@ -649,6 +675,7 @@ export function PierreDiffView({
     );
   }
 
+  // Prefer cached highlights during render so revisiting a file can paint immediately.
   const resolvedHighlighted = highlightedFileId === file.id ? highlighted : (highlightedCacheRef.current.get(file.id) ?? null);
   const rows = useMemo(
     () => (layout === "split" ? buildSplitRows(file, resolvedHighlighted, theme) : buildStackRows(file, resolvedHighlighted, theme)),

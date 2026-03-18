@@ -2,6 +2,7 @@ import type { AppTheme } from "../../themes";
 import { fitText } from "../../lib/text";
 import type { MenuId, MenuSpec } from "./menu";
 
+/** Render the top menu bar and the current changeset title. */
 export function MenuBar({
   activeMenuId,
   menuSpecs,

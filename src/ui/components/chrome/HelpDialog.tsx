@@ -1,5 +1,6 @@
 import type { AppTheme } from "../../themes";
 
+/** Render the compact keyboard help overlay. */
 export function HelpDialog({
   left,
   theme,

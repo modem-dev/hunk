@@ -30,6 +30,7 @@ export const MENU_LABELS: Record<MenuId, string> = {
 
 export const MENU_ORDER = Object.keys(MENU_LABELS) as MenuId[];
 
+/** Compute menu-bar positions from the fixed top-level menu order. */
 export function buildMenuSpecs() {
   return MENU_ORDER.reduce<MenuSpec[]>((items, id) => {
     const previous = items.at(-1);
@@ -44,6 +45,7 @@ export function buildMenuSpecs() {
   }, []);
 }
 
+/** Find the next selectable menu item, skipping separators. */
 export function nextMenuItemIndex(entries: MenuEntry[], currentIndex: number, delta: number) {
   if (entries.length === 0) {
     return 0;
@@ -61,12 +63,14 @@ export function nextMenuItemIndex(entries: MenuEntry[], currentIndex: number, de
   return 0;
 }
 
+/** Build the widest text form a dropdown item may need. */
 function menuEntryText(entry: Extract<MenuEntry, { kind: "item" }>) {
   const check = entry.checked === undefined ? "    " : entry.checked ? "[x] " : "[ ] ";
   const hint = entry.hint ? ` ${entry.hint}` : "";
   return `${check}${entry.label}${hint}`;
 }
 
+/** Compute a dropdown width that fits its longest entry with a small floor. */
 export function menuWidth(entries: MenuEntry[]) {
   return Math.max(
     18,
@@ -74,6 +78,7 @@ export function menuWidth(entries: MenuEntry[]) {
   );
 }
 
+/** Return the border-inclusive height of a dropdown menu. */
 export function menuBoxHeight(entries: MenuEntry[]) {
   return entries.length + 2;
 }

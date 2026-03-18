@@ -7,10 +7,12 @@ export interface VisibleAgentNote {
   annotation: AgentAnnotation;
 }
 
+/** Check whether two inclusive line ranges overlap. */
 function overlap(rangeA: [number, number], rangeB: [number, number]) {
   return rangeA[0] <= rangeB[1] && rangeB[0] <= rangeA[1];
 }
 
+/** Compute the old/new line ranges covered by a hunk, including single-line edge cases. */
 export function hunkLineRange(hunk: Hunk) {
   const newEnd = Math.max(hunk.additionStart, hunk.additionStart + Math.max(hunk.additionLines, 1) - 1);
   const oldEnd = Math.max(hunk.deletionStart, hunk.deletionStart + Math.max(hunk.deletionLines, 1) - 1);
@@ -21,6 +23,7 @@ export function hunkLineRange(hunk: Hunk) {
   };
 }
 
+/** Check whether an annotation belongs to the visible span of a hunk. */
 export function annotationOverlapsHunk(annotation: AgentAnnotation, hunk: Hunk) {
   const hunkRange = hunkLineRange(hunk);
 
@@ -35,6 +38,7 @@ export function annotationOverlapsHunk(annotation: AgentAnnotation, hunk: Hunk) 
   return false;
 }
 
+/** Return the annotations relevant to the currently selected hunk. */
 export function getSelectedAnnotations(file: DiffFile | undefined, hunk: Hunk | undefined) {
   if (!file?.agent || !hunk) {
     return [];
@@ -43,6 +47,7 @@ export function getSelectedAnnotations(file: DiffFile | undefined, hunk: Hunk | 
   return file.agent.annotations.filter((annotation) => annotationOverlapsHunk(annotation, hunk));
 }
 
+/** Mark which hunks in a file have any agent annotations attached. */
 export function getAnnotatedHunkIndices(file: DiffFile | undefined) {
   const annotated = new Set<number>();
   if (!file?.agent) {
@@ -58,10 +63,12 @@ export function getAnnotatedHunkIndices(file: DiffFile | undefined) {
   return annotated;
 }
 
+/** Format an inclusive line range for note labels. */
 function formatRange(range: [number, number]) {
   return range[0] === range[1] ? `${range[0]}` : `${range[0]}-${range[1]}`;
 }
 
+/** Build the compact file-and-lines label shown on an inline agent note card. */
 export function annotationLocationLabel(file: DiffFile, annotation: AgentAnnotation) {
   const locationParts: string[] = [];
 

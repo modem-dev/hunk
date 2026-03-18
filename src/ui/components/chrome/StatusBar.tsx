@@ -1,6 +1,7 @@
 import type { AppTheme } from "../../themes";
 import { fitText } from "../../lib/text";
 
+/** Render either keyboard hints or the active file filter input. */
 export function StatusBar({
   canResizeDivider = false,
   filter,

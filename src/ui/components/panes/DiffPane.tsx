@@ -7,6 +7,7 @@ import { DiffSection } from "./DiffSection";
 
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
 
+/** Render the main multi-file review stream. */
 export function DiffPane({
   activeAnnotations,
   diffContentWidth,
@@ -59,6 +60,7 @@ export function DiffPane({
       }))
       .filter((note) => !dismissedIdSet.has(note.id));
 
+    // Notes only render for the currently selected file/hunk so they stay spatially anchored.
     if (visibleNotes.length > 0) {
       next.set(selectedFileId, visibleNotes);
     }

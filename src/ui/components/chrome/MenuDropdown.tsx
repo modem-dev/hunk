@@ -2,6 +2,7 @@ import type { AppTheme } from "../../themes";
 import { padText } from "../../lib/text";
 import type { MenuEntry, MenuId, MenuSpec } from "./menu";
 
+/** Render one actionable menu line with an optional keyboard hint. */
 function renderMenuLine(
   entry: Extract<MenuEntry, { kind: "item" }>,
   width: number,
@@ -26,6 +27,7 @@ function renderMenuLine(
   );
 }
 
+/** Render the dropdown for the currently active top-level menu. */
 export function MenuDropdown({
   activeMenuId,
   activeMenuEntries,

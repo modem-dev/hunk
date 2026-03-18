@@ -1,6 +1,7 @@
 import type { MouseEvent as TuiMouseEvent } from "@opentui/core";
 import type { AppTheme } from "../../themes";
 
+/** Render the visible divider plus a wider invisible drag target. */
 export function PaneDivider({
   dividerHitLeft,
   dividerHitWidth,
@@ -53,6 +54,7 @@ export function PaneDivider({
           width: dividerHitWidth,
           zIndex: 30,
         }}
+        // The visible divider is only one column wide, so dragging uses a larger hit area.
         onMouseDown={onMouseDown}
         onMouseDrag={onMouseDrag}
         onMouseUp={onMouseUp}

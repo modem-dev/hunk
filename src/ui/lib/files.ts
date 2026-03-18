@@ -6,6 +6,7 @@ export interface FileListEntry {
   description: string;
 }
 
+/** Build the sidebar label and summary text for one diff file. */
 export function buildFileListEntry(file: DiffFile): FileListEntry {
   const prefix =
     file.metadata.type === "new"
@@ -25,6 +26,7 @@ export function buildFileListEntry(file: DiffFile): FileListEntry {
   };
 }
 
+/** Build the canonical file label used across headers and note cards. */
 export function fileLabel(file: DiffFile | undefined) {
   if (!file) {
     return "No file selected";

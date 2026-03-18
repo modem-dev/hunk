@@ -18,10 +18,13 @@ import { resolveResponsiveLayout } from "./lib/responsive";
 import { resolveTheme, THEMES } from "./themes";
 
 type FocusArea = "files" | "filter";
+
+/** Clamp a value into an inclusive range. */
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
+/** Orchestrate global app state, layout, navigation, and pane coordination. */
 export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
   const FILES_MIN_WIDTH = 22;
   const DIFF_MIN_WIDTH = 48;
@@ -96,6 +99,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
   }, [maxFilesPaneWidth, showFilesPane]);
 
   useEffect(() => {
+    // Force an intermediate redraw when the shell geometry changes so pane relayout feels immediate.
     renderer.intermediateRender();
   }, [renderer, resolvedLayout, showFilesPane, terminal.height, terminal.width]);
 
@@ -138,9 +142,11 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
   }, [selectedFile, selectedHunkIndex]);
 
   useEffect(() => {
+    // Dismissed notes are hunk-local, so reset them when the review focus moves.
     setDismissedAgentNoteIds([]);
   }, [selectedFile?.id, selectedHunkIndex]);
 
+  /** Move the review focus across hunks in stream order. */
   const moveHunk = (delta: number) => {
     const nextCursor = findNextHunkCursor(hunkCursors, selectedFile?.id, selectedHunkIndex, delta);
     if (!nextCursor) {
@@ -154,6 +160,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     setSelectedHunkIndex(nextCursor.hunkIndex);
   };
 
+  /** Jump the review stream to a file and optionally a specific hunk within it. */
   const jumpToFile = (fileId: string, nextHunkIndex = 0) => {
     filesScrollRef.current?.scrollChildIntoView(fileRowId(fileId));
     const nextFile =
@@ -168,6 +175,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     setSelectedHunkIndex(nextHunkIndex);
   };
 
+  /** Move file selection within the currently filtered sidebar list. */
   const moveFile = (delta: number) => {
     if (filteredFiles.length === 0 || !selectedFile) {
       return;
@@ -183,6 +191,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     jumpToFile(nextFile.id);
   };
 
+  /** Cycle only through files that have agent context attached. */
   const moveAnnotatedFile = (delta: number) => {
     const annotated = filteredFiles.filter((file) => file.agent);
     if (annotated.length === 0) {
@@ -200,15 +209,18 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     jumpToFile(nextFile.id);
   };
 
+  /** Close any open top-level menu. */
   const closeMenu = () => {
     setActiveMenuId(null);
   };
 
+  /** Show agent notes and clear any per-hunk dismissals. */
   const openAgentNotes = () => {
     setDismissedAgentNoteIds([]);
     setShowAgentNotes(true);
   };
 
+  /** Toggle the note layer while keeping dismissals scoped to the visible hunk. */
   const toggleAgentNotes = () => {
     if (showAgentNotes) {
       setShowAgentNotes(false);
@@ -219,15 +231,18 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     openAgentNotes();
   };
 
+  /** Hide one visible note card until the selection changes. */
   const dismissAgentNote = (noteId: string) => {
     setDismissedAgentNoteIds((current) => [...current, noteId]);
   };
 
+  /** Jump to the annotated hunk before opening the note layer. */
   const openAgentNotesAtHunk = (fileId: string, hunkIndex: number) => {
     jumpToFile(fileId, hunkIndex);
     openAgentNotes();
   };
 
+  /** Start a mouse drag resize for the optional files pane. */
   const beginFilesPaneResize = (event: TuiMouseEvent) => {
     if (event.button !== MouseButton.LEFT) {
       return;
@@ -240,6 +255,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     event.stopPropagation();
   };
 
+  /** Update the files pane width while a drag resize is active. */
   const updateFilesPaneResize = (event: TuiMouseEvent) => {
     if (!isResizingFilesPane || resizeDragOriginX === null || resizeStartWidth === null) {
       return;
@@ -251,6 +267,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     event.stopPropagation();
   };
 
+  /** End the current files pane resize interaction. */
   const endFilesPaneResize = (event?: TuiMouseEvent) => {
     if (!isResizingFilesPane) {
       return;
@@ -376,11 +393,13 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     ],
   };
 
+  /** Open a menu and select its first actionable entry. */
   const openMenu = (menuId: MenuId) => {
     setActiveMenuId(menuId);
     setActiveMenuItemIndex(nextMenuItemIndex(menus[menuId], -1, 1));
   };
 
+  /** Toggle a menu open/closed from the menu bar. */
   const toggleMenu = (menuId: MenuId) => {
     if (activeMenuId === menuId) {
       closeMenu();
@@ -390,12 +409,14 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     openMenu(menuId);
   };
 
+  /** Move horizontally across top-level menus. */
   const switchMenu = (delta: number) => {
     const currentIndex = Math.max(0, activeMenuId ? MENU_ORDER.indexOf(activeMenuId) : 0);
     const nextIndex = (currentIndex + delta + MENU_ORDER.length) % MENU_ORDER.length;
     openMenu(MENU_ORDER[nextIndex]!);
   };
 
+  /** Invoke the currently highlighted menu item, if any. */
   const activateCurrentMenuItem = () => {
     if (!activeMenuId) {
       return;
@@ -489,6 +510,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
         return;
       }
 
+      // Let the input widget own typing while the filter is focused.
       return;
     }
 

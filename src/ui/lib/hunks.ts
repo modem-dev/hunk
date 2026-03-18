@@ -5,10 +5,12 @@ export interface HunkCursor {
   hunkIndex: number;
 }
 
+/** Flatten the visible files into one review-stream hunk cursor list. */
 export function buildHunkCursors(files: DiffFile[]): HunkCursor[] {
   return files.flatMap((file) => file.metadata.hunks.map((_, hunkIndex) => ({ fileId: file.id, hunkIndex })));
 }
 
+/** Move forward or backward through the review-stream hunk cursor list. */
 export function findNextHunkCursor(
   cursors: HunkCursor[],
   currentFileId: string | undefined,

@@ -4,6 +4,7 @@ import type { FileListEntry } from "../../lib/files";
 import type { AppTheme } from "../../themes";
 import { FileListItem } from "./FileListItem";
 
+/** Render the file navigation sidebar. */
 export function FilesPane({
   entries,
   focused,

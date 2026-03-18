@@ -84,10 +84,12 @@ export type DiffRow =
       cell: StackLineCell;
     };
 
+/** Replace tabs with fixed spaces so terminal cell widths stay predictable. */
 function tabify(text: string) {
   return text.replaceAll("\t", "  ");
 }
 
+/** Parse an inline CSS style string from Pierre's highlighted HAST output. */
 function parseStyleValue(styleValue: unknown) {
   const styles = new Map<string, string>();
   if (typeof styleValue !== "string") {
@@ -110,6 +112,7 @@ function parseStyleValue(styleValue: unknown) {
   return styles;
 }
 
+/** Append a span while coalescing adjacent runs with identical colors. */
 function mergeSpan(target: RenderSpan[], next: RenderSpan) {
   if (next.text.length === 0) {
     return;
@@ -124,6 +127,7 @@ function mergeSpan(target: RenderSpan[], next: RenderSpan) {
   target.push(next);
 }
 
+/** Flatten one highlighted HAST line into terminal-friendly styled text spans. */
 function flattenHighlightedLine(
   node: HastNode | undefined,
   appearance: AppTheme["appearance"],
@@ -151,6 +155,7 @@ function flattenHighlightedLine(
     const styles = parseStyleValue(properties.style);
     const nextStyle: Pick<RenderSpan, "fg" | "bg"> = {
       fg: styles.get(colorVariable) ?? inherited.fg,
+      // Pierre marks inline word-diff emphasis spans with a data attribute rather than a separate row kind.
       bg: Object.hasOwn(properties, "data-diff-span") ? emphasisBg : inherited.bg,
     };
 
@@ -168,10 +173,12 @@ function flattenHighlightedLine(
   return fallbackText.length > 0 ? [{ text: fallbackText }] : [];
 }
 
+/** Normalize one raw diff line before rendering. */
 function cleanDiffLine(line: string | undefined) {
   return tabify(cleanLastNewline(line ?? ""));
 }
 
+/** Build the normalized render model for one split-view cell. */
 function makeSplitCell(
   kind: SplitLineCell["kind"],
   lineNumber: number | undefined,
@@ -200,6 +207,7 @@ function makeSplitCell(
   } satisfies SplitLineCell;
 }
 
+/** Build the normalized render model for one stack-view cell. */
 function makeStackCell(
   kind: StackLineCell["kind"],
   oldLineNumber: number | undefined,
@@ -222,16 +230,19 @@ function makeStackCell(
   } satisfies StackLineCell;
 }
 
+/** Format a hunk header exactly as the review stream should display it. */
 function hunkHeader(hunk: Hunk) {
   const specs =
     hunk.hunkSpecs ?? `@@ -${hunk.deletionStart},${hunk.deletionLines} +${hunk.additionStart},${hunk.additionLines} @@`;
   return hunk.hunkContext ? `${specs} ${hunk.hunkContext}` : specs;
 }
 
+/** Describe a collapsed unchanged region between visible hunks. */
 function collapsedRowText(lines: number) {
   return `${lines} unchanged ${lines === 1 ? "line" : "lines"}`;
 }
 
+/** Count hidden unchanged lines after the final visible hunk when Pierre omits them. */
 function trailingCollapsedLines(metadata: FileDiffMetadata) {
   const lastHunk = metadata.hunks.at(-1);
   if (!lastHunk || metadata.isPartial) {
@@ -248,6 +259,7 @@ function trailingCollapsedLines(metadata: FileDiffMetadata) {
   return Math.max(additionRemaining, 0);
 }
 
+/** Highlight a diff file and return just the rendered line trees the UI needs. */
 export async function loadHighlightedDiff(file: DiffFile): Promise<HighlightedDiffCode> {
   try {
     const highlighter = await getSharedHighlighter(
@@ -276,6 +288,7 @@ export async function loadHighlightedDiff(file: DiffFile): Promise<HighlightedDi
   }
 }
 
+/** Expand Pierre metadata into the flat split-view row stream consumed by the renderer. */
 export function buildSplitRows(file: DiffFile, highlighted: HighlightedDiffCode | null, theme: AppTheme): DiffRow[] {
   const rows: DiffRow[] = [];
   const deletionLines = highlighted?.deletionLines ?? [];
@@ -337,6 +350,7 @@ export function buildSplitRows(file: DiffFile, highlighted: HighlightedDiffCode 
         continue;
       }
 
+      // Split mode keeps deletions and additions visually paired, padding the shorter side with empty cells.
       const pairedLines = Math.max(content.deletions, content.additions);
       for (let offset = 0; offset < pairedLines; offset += 1) {
         const hasDeletion = offset < content.deletions;
@@ -389,6 +403,7 @@ export function buildSplitRows(file: DiffFile, highlighted: HighlightedDiffCode 
   return rows;
 }
 
+/** Expand Pierre metadata into the flat stack-view row stream consumed by the renderer. */
 export function buildStackRows(file: DiffFile, highlighted: HighlightedDiffCode | null, theme: AppTheme): DiffRow[] {
   const rows: DiffRow[] = [];
   const deletionLines = highlighted?.deletionLines ?? [];

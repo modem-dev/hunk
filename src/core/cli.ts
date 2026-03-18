@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import type { CliInput, CommonOptions, LayoutMode } from "./types";
 
+/** Normalize the flags shared by every input mode. */
 function buildCommonOptions(options: {
   mode?: LayoutMode;
   theme?: string;
@@ -13,6 +14,7 @@ function buildCommonOptions(options: {
   };
 }
 
+/** Parse CLI arguments into one normalized input shape for the app loader layer. */
 export async function parseCli(argv: string[]): Promise<CliInput> {
   if (argv.length <= 2) {
     return {
@@ -30,6 +32,7 @@ export async function parseCli(argv: string[]): Promise<CliInput> {
     .description("Desktop-inspired terminal diff viewer for agent-authored changesets.")
     .showHelpAfterError();
 
+  /** Attach the shared mode/theme/agent-context flags to a subcommand. */
   const applyCommonOptions = (command: Command) =>
     command
       .option("--mode <mode>", "layout mode: auto, split, stack", "auto")

@@ -24,6 +24,7 @@ interface DiffSectionProps {
   onSelect: () => void;
 }
 
+/** Render one file section in the main review stream. */
 function DiffSectionComponent({
   file,
   headerLabelWidth,
@@ -79,6 +80,7 @@ function DiffSectionComponent({
         }}
         onMouseUp={onSelect}
       >
+        {/* Clicking the file header jumps the main stream selection without collapsing to a single-file view. */}
         <text fg={theme.text}>{fitText(fileLabel(file), headerLabelWidth)}</text>
         <box style={{ width: headerStatsWidth, height: 1, flexDirection: "row", justifyContent: "flex-end" }}>
           <text fg={theme.badgeAdded}>{additionsText}</text>
@@ -97,13 +99,16 @@ function DiffSectionComponent({
         onDismissAgentNote={onDismissAgentNote}
         onOpenAgentNotesAtHunk={onOpenAgentNotesAtHunk}
         selectedHunkIndex={selectedHunkIndex}
+        // The parent review stream owns scrolling across files.
         scrollable={false}
       />
     </box>
   );
 }
 
+/** Memoize file sections so hunk navigation does not rerender the whole review stream. */
 export const DiffSection = memo(DiffSectionComponent, (previous, next) => {
+  // This comparator relies on stable upstream object identity for files and visible-note arrays.
   return (
     previous.file === next.file &&
     previous.headerLabelWidth === next.headerLabelWidth &&

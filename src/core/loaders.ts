@@ -19,6 +19,7 @@ import type {
   PatchCommandInput,
 } from "./types";
 
+/** Run a command synchronously and return stdout as text. */
 function spawnText(cmd: string[], cwd = process.cwd()) {
   const proc = Bun.spawnSync(cmd, {
     cwd,
@@ -37,14 +38,17 @@ function spawnText(cmd: string[], cwd = process.cwd()) {
   return stdout;
 }
 
+/** Return the final path segment for display-oriented labels. */
 function basename(path: string) {
   return path.split("/").filter(Boolean).pop() ?? path;
 }
 
+/** Remove git-style a/ and b/ prefixes before matching diff paths. */
 function stripPrefixes(path: string) {
   return path.replace(/^[ab]\//, "");
 }
 
+/** Split a multi-file patch into per-file chunks so each diff file keeps its original patch text. */
 function splitPatchIntoFileChunks(rawPatch: string) {
   const patch = rawPatch.replaceAll("\r\n", "\n");
   const lines = patch.split("\n");
@@ -85,6 +89,7 @@ function splitPatchIntoFileChunks(rawPatch: string) {
   return chunks;
 }
 
+/** Count visible additions and deletions from parsed diff metadata. */
 function countDiffStats(metadata: FileDiffMetadata) {
   let additions = 0;
   let deletions = 0;
@@ -101,6 +106,7 @@ function countDiffStats(metadata: FileDiffMetadata) {
   return { additions, deletions };
 }
 
+/** Recover the original patch chunk for one parsed file, preferring index order before path matching. */
 function findPatchChunk(metadata: FileDiffMetadata, chunks: string[], index: number) {
   const byIndex = chunks[index];
   if (byIndex) {
@@ -111,11 +117,13 @@ function findPatchChunk(metadata: FileDiffMetadata, chunks: string[], index: num
     chunks.find((chunk) =>
       [metadata.name, metadata.prevName]
         .filter((value): value is string => Boolean(value))
+        .map(stripPrefixes)
         .some((path) => chunk.includes(`a/${path}`) || chunk.includes(`b/${path}`) || chunk.includes(path)),
     ) ?? ""
   );
 }
 
+/** Build the normalized per-file model used by the UI regardless of input mode. */
 function buildDiffFile(
   metadata: FileDiffMetadata,
   patch: string,
@@ -136,6 +144,7 @@ function buildDiffFile(
   };
 }
 
+/** Reorder files to follow agent-context narrative order when a sidecar provides one. */
 function orderDiffFiles(files: DiffFile[], agentContext: AgentContext | null) {
   if (!agentContext || agentContext.files.length === 0) {
     return files;
@@ -172,6 +181,7 @@ function orderDiffFiles(files: DiffFile[], agentContext: AgentContext | null) {
     .map((entry) => entry.file);
 }
 
+/** Parse raw patch text into the shared changeset model used by the app. */
 function normalizePatchChangeset(
   patchText: string,
   title: string,
@@ -194,6 +204,7 @@ function normalizePatchChangeset(
   };
 }
 
+/** Build a changeset by diffing two concrete files on disk. */
 async function loadFileDiffChangeset(input: FileCommandInput | DiffToolCommandInput, agentContext: AgentContext | null) {
   const leftText = await Bun.file(input.left).text();
   const rightText = await Bun.file(input.right).text();
@@ -230,6 +241,7 @@ async function loadFileDiffChangeset(input: FileCommandInput | DiffToolCommandIn
   } satisfies Changeset;
 }
 
+/** Build a changeset from the current repository working tree or a git range. */
 async function loadGitChangeset(input: GitCommandInput, agentContext: AgentContext | null) {
   const repoRoot = spawnText(["git", "rev-parse", "--show-toplevel"]).trim();
   const repoName = basename(repoRoot);
@@ -249,6 +261,7 @@ async function loadGitChangeset(input: GitCommandInput, agentContext: AgentConte
   return normalizePatchChangeset(patchText, title, repoRoot, agentContext);
 }
 
+/** Build a changeset from patch text supplied by file or stdin. */
 async function loadPatchChangeset(input: PatchCommandInput, agentContext: AgentContext | null) {
   const patchText =
     !input.file || input.file === "-"
@@ -259,6 +272,7 @@ async function loadPatchChangeset(input: PatchCommandInput, agentContext: AgentC
   return normalizePatchChangeset(patchText, `Patch review: ${basename(label)}`, label, agentContext);
 }
 
+/** Resolve CLI input into the fully loaded app bootstrap state. */
 export async function loadAppBootstrap(input: CliInput): Promise<AppBootstrap> {
   const agentContext = await loadAgentContext(input.options.agentContext);
 

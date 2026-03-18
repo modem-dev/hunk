@@ -1,6 +1,7 @@
 import type { AppTheme } from "../../themes";
 import { fitText } from "../../lib/text";
 
+/** Render one inline agent note card beside the diff rows it explains. */
 export function AgentCard({
   locationLabel,
   rationale,

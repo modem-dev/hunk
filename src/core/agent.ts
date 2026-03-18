@@ -1,5 +1,6 @@
 import type { AgentContext, AgentFileContext } from "./types";
 
+/** Normalize one file entry from the optional agent-context sidecar JSON. */
 function normalizeAnnotationFile(file: unknown): AgentFileContext {
   if (!file || typeof file !== "object") {
     throw new Error("Agent context files must be objects.");
@@ -27,6 +28,7 @@ function normalizeAnnotationFile(file: unknown): AgentFileContext {
         throw new Error("Each agent annotation requires a summary.");
       }
 
+      /** Normalize a line-range tuple if the sidecar provides one. */
       const normalizeRange = (range: unknown) => {
         if (!Array.isArray(range) || range.length !== 2) {
           return undefined;
@@ -61,6 +63,7 @@ function normalizeAnnotationFile(file: unknown): AgentFileContext {
   };
 }
 
+/** Load the optional agent-context sidecar from a file path or stdin. */
 export async function loadAgentContext(pathOrDash?: string): Promise<AgentContext | null> {
   if (!pathOrDash) {
     return null;
@@ -86,6 +89,7 @@ export async function loadAgentContext(pathOrDash?: string): Promise<AgentContex
   };
 }
 
+/** Match agent context to a diff file by current path first, then previous path for renames. */
 export function findAgentFileContext(
   agentContext: AgentContext | null,
   currentPath: string,
