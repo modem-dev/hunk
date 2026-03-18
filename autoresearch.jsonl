@@ -5,3 +5,4 @@
 {"run":4,"commit":"55aca80","metric":28.31,"metrics":{},"status":"keep","description":"Inline split and stack cell spans to reduce renderer node count while keeping diff formatting unchanged","timestamp":1773809550295,"segment":0}
 {"run":5,"commit":"55aca80","metric":26.02,"metrics":{},"status":"discard","description":"Memoize App-level derived lists and totals to avoid recomputing filtered files and hunk cursors on every navigation step","timestamp":1773809660947,"segment":0}
 {"run":6,"commit":"ad8e634","metric":32.58,"metrics":{},"status":"keep","description":"Skip the extra wrapper box for note-free diff rows so steady-state scrolling traverses a smaller tree","timestamp":1773809776040,"segment":0}
+{"run":7,"commit":"11f5327","metric":58.26,"metrics":{},"status":"keep","description":"Fold the hunk-selection marker into split and stack cell text to remove another per-row box","timestamp":1773809933654,"segment":0}

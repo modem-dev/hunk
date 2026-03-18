@@ -420,7 +420,7 @@ function renderRow(
     const separatorWidth = 1;
     const usableWidth = Math.max(0, width - markerWidth - separatorWidth);
     const leftWidth = Math.max(0, markerWidth + Math.floor(usableWidth / 2));
-    const rightWidth = Math.max(0, usableWidth - Math.floor(usableWidth / 2));
+    const rightWidth = Math.max(0, separatorWidth + usableWidth - Math.floor(usableWidth / 2));
 
     baseRow = (
       <box style={{ width: "100%", height: 1, flexDirection: "row" }}>
@@ -429,16 +429,11 @@ function renderRow(
           fg: selected ? theme.accent : theme.panel,
           bg: theme.panel,
         })}
-        <box
-          style={{
-            width: separatorWidth,
-            height: 1,
-            backgroundColor: theme.panel,
-          }}
-        >
-          <text fg={theme.border}>│</text>
-        </box>
-        {renderSplitCell(row.right, rightWidth, lineNumberDigits, theme, `${row.key}:right`)}
+        {renderSplitCell(row.right, rightWidth, lineNumberDigits, theme, `${row.key}:right`, {
+          text: "│",
+          fg: theme.border,
+          bg: theme.panel,
+        })}
       </box>
     );
   } else if (row.type === "stack-line") {
