@@ -114,15 +114,6 @@ function getSelectedAnnotations(file: DiffFile | undefined, hunk: Hunk | undefin
   });
 }
 
-function getHunkSummary(hunk: Hunk | undefined) {
-  if (!hunk) {
-    return "No hunks";
-  }
-
-  const parts = [`-${hunk.deletionStart},${hunk.deletionLines}`, `+${hunk.additionStart},${hunk.additionLines}`];
-  return hunk.hunkContext ? `${parts.join("  ")}  ${hunk.hunkContext}` : parts.join("  ");
-}
-
 function nextMenuItemIndex(entries: MenuEntry[], currentIndex: number, delta: number) {
   if (entries.length === 0) {
     return 0;
@@ -846,36 +837,18 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
             backgroundColor: activeTheme.panel,
             padding: 1,
             flexDirection: "column",
-            gap: 1,
           }}
         >
           {selectedFile ? (
-            <>
-              <box style={{ justifyContent: "space-between", alignItems: "center" }}>
-                <box style={{ flexDirection: "column" }}>
-                  <text fg={activeTheme.text}>{fileLabel(selectedFile)}</text>
-                  <text fg={activeTheme.muted}>
-                    {selectedFile.metadata.type}  +{selectedFile.stats.additions}  -{selectedFile.stats.deletions}
-                  </text>
-                </box>
-                <box style={{ flexDirection: "column", alignItems: "flex-end" }}>
-                  <text fg={activeTheme.badgeNeutral}>
-                    hunk {selectedFile.metadata.hunks.length === 0 ? 0 : selectedHunkIndex + 1}/{selectedFile.metadata.hunks.length}
-                  </text>
-                  <text fg={activeTheme.muted}>{getHunkSummary(currentHunk)}</text>
-                </box>
-              </box>
-
-              <box style={{ flexGrow: 1, width: "100%" }}>
-                <PierreDiffView
-                  file={selectedFile}
-                  layout={resolvedLayout}
-                  theme={activeTheme}
-                  width={diffPaneWidth}
-                  selectedHunkIndex={selectedHunkIndex}
-                />
-              </box>
-            </>
+            <box style={{ flexGrow: 1, width: "100%" }}>
+              <PierreDiffView
+                file={selectedFile}
+                layout={resolvedLayout}
+                theme={activeTheme}
+                width={diffPaneWidth}
+                selectedHunkIndex={selectedHunkIndex}
+              />
+            </box>
           ) : (
             <box style={{ flexGrow: 1, alignItems: "center", justifyContent: "center" }}>
               <text fg={activeTheme.muted}>No files match the current filter.</text>
