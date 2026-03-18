@@ -1,7 +1,7 @@
-import { MouseButton, type KeyEvent, type MouseEvent as TuiMouseEvent, type SelectOption } from "@opentui/core";
+import { MouseButton, type KeyEvent, type MouseEvent as TuiMouseEvent, type ScrollBoxRenderable } from "@opentui/core";
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
 import type { Hunk } from "@pierre/diffs";
-import { startTransition, useDeferredValue, useEffect, useState } from "react";
+import { startTransition, useDeferredValue, useEffect, useRef, useState } from "react";
 import type { AppBootstrap, DiffFile, LayoutMode } from "../core/types";
 import { PierreDiffView } from "./PierreDiffView";
 import { resolveTheme, THEMES, type AppTheme } from "./themes";
@@ -61,7 +61,7 @@ function padText(text: string, width: number) {
   return trimmed.padEnd(width, " ");
 }
 
-function buildFileOption(file: DiffFile): SelectOption {
+function buildFileListEntry(file: DiffFile) {
   const prefix =
     file.metadata.type === "new"
       ? "A"
@@ -74,9 +74,9 @@ function buildFileOption(file: DiffFile): SelectOption {
   const pathLabel = file.previousPath && file.previousPath !== file.path ? `${file.previousPath} -> ${file.path}` : file.path;
 
   return {
-    name: `${prefix} ${pathLabel}`,
+    id: file.id,
+    label: `${prefix} ${pathLabel}`,
     description: `+${file.stats.additions}  -${file.stats.deletions}${file.agent ? "  agent" : ""}`,
-    value: file.id,
   };
 }
 
@@ -156,6 +156,10 @@ function fileLabel(file: DiffFile | undefined) {
   return file.previousPath && file.previousPath !== file.path ? `${file.previousPath} -> ${file.path}` : file.path;
 }
 
+function fileRowId(fileId: string) {
+  return `file-row:${fileId}`;
+}
+
 function renderMenuLine(
   entry: Extract<MenuEntry, { kind: "item" }>,
   width: number,
@@ -191,6 +195,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
 
   const renderer = useRenderer();
   const terminal = useTerminalDimensions();
+  const filesScrollRef = useRef<ScrollBoxRenderable | null>(null);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(bootstrap.initialMode);
   const [themeId, setThemeId] = useState(() => resolveTheme(bootstrap.initialTheme, renderer.themeMode).id);
   const [showAgentPanel, setShowAgentPanel] = useState(
@@ -223,7 +228,6 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     filteredFiles.find((file) => file.id === selectedFileId) ??
     bootstrap.changeset.files.find((file) => file.id === selectedFileId) ??
     filteredFiles[0];
-  const selectedFileIndex = Math.max(0, filteredFiles.findIndex((file) => file.id === selectedFile?.id));
 
   const resolvedLayout = layoutMode === "auto" ? (terminal.width >= 150 ? "split" : "stack") : layoutMode;
   const currentHunk = selectedFile?.metadata.hunks[selectedHunkIndex];
@@ -265,6 +269,14 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
 
     const maxIndex = Math.max(0, selectedFile.metadata.hunks.length - 1);
     setSelectedHunkIndex((current) => clamp(current, 0, maxIndex));
+  }, [selectedFile]);
+
+  useEffect(() => {
+    if (!selectedFile) {
+      return;
+    }
+
+    filesScrollRef.current?.scrollChildIntoView(fileRowId(selectedFile.id));
   }, [selectedFile]);
 
   const moveHunk = (delta: number) => {
@@ -523,7 +535,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     return items;
   }, []);
 
-  const fileOptions = filteredFiles.map(buildFileOption);
+  const fileEntries = filteredFiles.map(buildFileListEntry);
   const totalAdditions = bootstrap.changeset.files.reduce((sum, file) => sum + file.stats.additions, 0);
   const totalDeletions = bootstrap.changeset.files.reduce((sum, file) => sum + file.stats.deletions, 0);
   const activeMenuEntries = activeMenuId ? menus[activeMenuId] : [];
@@ -532,6 +544,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
   const topTitle = `${bootstrap.changeset.title}  +${totalAdditions}  -${totalDeletions}`;
   const helpWidth = Math.min(68, Math.max(44, terminal.width - 8));
   const helpLeft = Math.max(1, Math.floor((terminal.width - helpWidth) / 2));
+  const filesTextWidth = Math.max(8, clampedFilesPaneWidth - 4);
 
   useKeyboard((key: KeyEvent) => {
     if (key.name === "f10") {
@@ -611,6 +624,16 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
 
     if (key.name === "/") {
       setFocusArea("filter");
+      return;
+    }
+
+    if (focusArea === "files" && key.name === "up") {
+      moveFile(-1);
+      return;
+    }
+
+    if (focusArea === "files" && key.name === "down") {
+      moveFile(1);
       return;
     }
 
@@ -760,35 +783,53 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
             flexDirection: "column",
           }}
         >
-          <select
+          <scrollbox
+            ref={filesScrollRef}
             width="100%"
             height="100%"
             focused={focusArea === "files"}
-            options={fileOptions}
-            selectedIndex={selectedFileIndex}
-            backgroundColor={activeTheme.panel}
-            textColor={activeTheme.text}
-            focusedBackgroundColor={activeTheme.panelAlt}
-            focusedTextColor={activeTheme.text}
-            selectedBackgroundColor={activeTheme.accentMuted}
-            selectedTextColor={activeTheme.text}
-            descriptionColor={activeTheme.muted}
-            selectedDescriptionColor={activeTheme.text}
-            showScrollIndicator={true}
-            showDescription={true}
-            wrapSelection={false}
-            onChange={(index, option) => {
-              const nextId = typeof option?.value === "string" ? option.value : filteredFiles[index]?.id;
-              if (!nextId) {
-                return;
-              }
+            scrollY={true}
+            viewportCulling={true}
+            rootOptions={{ backgroundColor: activeTheme.panel }}
+            wrapperOptions={{ backgroundColor: activeTheme.panel }}
+            viewportOptions={{ backgroundColor: activeTheme.panel }}
+            contentOptions={{ backgroundColor: activeTheme.panel }}
+            verticalScrollbarOptions={{ visible: false }}
+            horizontalScrollbarOptions={{ visible: false }}
+          >
+            <box style={{ width: "100%", flexDirection: "column" }}>
+              {fileEntries.map((entry) => {
+                const isSelected = entry.id === selectedFile?.id;
 
-              startTransition(() => {
-                setSelectedFileId(nextId);
-                setSelectedHunkIndex(0);
-              });
-            }}
-          />
+                return (
+                  <box
+                    key={entry.id}
+                    id={fileRowId(entry.id)}
+                    style={{
+                      width: "100%",
+                      height: 2,
+                      paddingLeft: 1,
+                      paddingRight: 1,
+                      backgroundColor: isSelected ? activeTheme.accentMuted : activeTheme.panel,
+                      flexDirection: "column",
+                    }}
+                    onMouseUp={() => {
+                      setFocusArea("files");
+                      startTransition(() => {
+                        setSelectedFileId(entry.id);
+                        setSelectedHunkIndex(0);
+                      });
+                    }}
+                  >
+                    <text fg={activeTheme.text}>{fitText(entry.label, filesTextWidth)}</text>
+                    <text fg={isSelected ? activeTheme.text : activeTheme.muted}>
+                      {fitText(entry.description, filesTextWidth)}
+                    </text>
+                  </box>
+                );
+              })}
+            </box>
+          </scrollbox>
         </box>
 
         <box
