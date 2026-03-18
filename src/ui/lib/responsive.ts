@@ -26,6 +26,14 @@ export function resolveResponsiveViewport(viewportWidth: number): ResponsiveView
 export function resolveResponsiveLayout(requestedLayout: LayoutMode, viewportWidth: number): ResponsiveLayout {
   const viewport = resolveResponsiveViewport(viewportWidth);
 
+  if (requestedLayout === "split") {
+    return {
+      viewport,
+      layout: "split",
+      showFilesPane: false,
+    };
+  }
+
   if (requestedLayout === "stack") {
     return {
       viewport,

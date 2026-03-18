@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { parseDiffFromFile } from "@pierre/diffs";
 import { act } from "react";
-import type { AppBootstrap, DiffFile } from "../src/core/types";
+import type { AppBootstrap, DiffFile, LayoutMode } from "../src/core/types";
 
 const { App } = await import("../src/ui/App");
 
@@ -53,13 +53,13 @@ function createDiffFile(id: string, path: string, before: string, after: string,
   };
 }
 
-function createBootstrap(): AppBootstrap {
+function createBootstrap(initialMode: LayoutMode = "auto"): AppBootstrap {
   return {
     input: {
       kind: "git",
       staged: false,
       options: {
-        mode: "auto",
+        mode: initialMode,
       },
     },
     changeset: {
@@ -73,9 +73,25 @@ function createBootstrap(): AppBootstrap {
         createDiffFile("beta", "beta.ts", "export const beta = 1;\n", "export const betaValue = 1;\n", false),
       ],
     },
-    initialMode: "auto",
+    initialMode,
     initialTheme: "midnight",
   };
+}
+
+async function captureFrameForBootstrap(bootstrap: AppBootstrap, width: number, height = 24) {
+  const setup = await testRender(<App bootstrap={bootstrap} />, { width, height });
+
+  try {
+    await act(async () => {
+      await setup.renderOnce();
+    });
+
+    return setup.captureCharFrame();
+  } finally {
+    await act(async () => {
+      setup.renderer.destroy();
+    });
+  }
 }
 
 async function captureResponsiveFrames() {
@@ -134,5 +150,19 @@ describe("responsive shell", () => {
     expect(tight).not.toContain("Changeset summary");
     expect(tight).not.toContain("│");
     expect(tight).not.toContain("drag divider resize");
+  });
+
+  test("explicit split and stack modes override responsive auto switching", async () => {
+    const forcedSplit = await captureFrameForBootstrap(createBootstrap("split"), 140);
+    const forcedStack = await captureFrameForBootstrap(createBootstrap("stack"), 240);
+
+    expect(forcedSplit).not.toContain("Files");
+    expect(forcedSplit).not.toContain("Changeset summary");
+    expect(forcedSplit).toContain("│");
+    expect(forcedSplit).not.toContain("drag divider resize");
+
+    expect(forcedStack).not.toContain("Files");
+    expect(forcedStack).not.toContain("│");
+    expect(forcedStack).not.toContain("drag divider resize");
   });
 });
