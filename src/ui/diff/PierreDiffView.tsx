@@ -137,20 +137,28 @@ function stackCellPalette(kind: StackLineCell["kind"], theme: AppTheme) {
   };
 }
 
-function renderSpans(spans: RenderSpan[], width: number, fallbackColor: string, keyPrefix: string) {
+function renderInlineSpans(
+  spans: RenderSpan[],
+  width: number,
+  fallbackColor: string,
+  fallbackBg: string,
+  keyPrefix: string,
+) {
   const trimmed = trimSpans(spans, width);
   const usedWidth = trimmed.reduce((sum, span) => sum + span.text.length, 0);
   const padding = Math.max(0, width - usedWidth);
 
   return (
-    <text fg={fallbackColor}>
+    <>
       {trimmed.map((span, index) => (
-        <span key={`${keyPrefix}:${index}`} fg={span.fg ?? fallbackColor} bg={span.bg}>
+        <span key={`${keyPrefix}:${index}`} fg={span.fg ?? fallbackColor} bg={span.bg ?? fallbackBg}>
           {span.text}
         </span>
       ))}
-      {padding > 0 ? <span>{`${" ".repeat(padding)}`}</span> : null}
-    </text>
+      {padding > 0 ? (
+        <span key={`${keyPrefix}:padding`} fg={fallbackColor} bg={fallbackBg}>{`${" ".repeat(padding)}`}</span>
+      ) : null}
+    </>
   );
 }
 
@@ -164,29 +172,16 @@ function renderSplitCell(
   const palette = splitCellPalette(cell.kind, theme);
   const gutterWidth = Math.min(width, lineNumberDigits + 3);
   const contentWidth = Math.max(0, width - gutterWidth);
+  const gutterText = `${cell.lineNumber ? String(cell.lineNumber).padStart(lineNumberDigits, " ") : " ".repeat(lineNumberDigits)} ${cell.sign}`.padEnd(gutterWidth);
 
   return (
-    <box key={keyPrefix} style={{ width, height: 1, flexDirection: "row" }}>
-      <box
-        style={{
-          width: gutterWidth,
-          height: 1,
-          backgroundColor: palette.gutterBg,
-        }}
-      >
-        <text fg={palette.numberColor}>
-          {`${cell.lineNumber ? String(cell.lineNumber).padStart(lineNumberDigits, " ") : " ".repeat(lineNumberDigits)} ${cell.sign}`}
-        </text>
-      </box>
-      <box
-        style={{
-          width: contentWidth,
-          height: 1,
-          backgroundColor: palette.contentBg,
-        }}
-      >
-        {renderSpans(cell.spans, contentWidth, theme.text, `${keyPrefix}:content`)}
-      </box>
+    <box key={keyPrefix} style={{ width, height: 1 }}>
+      <text>
+        <span fg={palette.numberColor} bg={palette.gutterBg}>
+          {gutterText}
+        </span>
+        {renderInlineSpans(cell.spans, contentWidth, theme.text, palette.contentBg, `${keyPrefix}:content`)}
+      </text>
     </box>
   );
 }
@@ -206,25 +201,11 @@ function renderStackCell(
   const newNumber = cell.newLineNumber ? String(cell.newLineNumber).padStart(lineNumberDigits, " ") : " ".repeat(lineNumberDigits);
 
   return (
-    <box key={keyPrefix} style={{ width, height: 1, flexDirection: "row" }}>
-      <box
-        style={{
-          width: gutterWidth,
-          height: 1,
-          backgroundColor: palette.gutterBg,
-        }}
-      >
-        <text fg={palette.numberColor}>{`${oldNumber} ${newNumber} ${cell.sign}`}</text>
-      </box>
-      <box
-        style={{
-          width: contentWidth,
-          height: 1,
-          backgroundColor: palette.contentBg,
-        }}
-      >
-        {renderSpans(cell.spans, contentWidth, theme.text, `${keyPrefix}:content`)}
-      </box>
+    <box key={keyPrefix} style={{ width, height: 1 }}>
+      <text>
+        <span fg={palette.numberColor} bg={palette.gutterBg}>{`${oldNumber} ${newNumber} ${cell.sign}`.padEnd(gutterWidth)}</span>
+        {renderInlineSpans(cell.spans, contentWidth, theme.text, palette.contentBg, `${keyPrefix}:content`)}
+      </text>
     </box>
   );
 }

@@ -1,2 +1,4 @@
 {"type":"config","name":"Improve hunk rendering and scroll performance","metricName":"fps","metricUnit":"","bestDirection":"higher"}
 {"run":1,"commit":"7b99b9e","metric":4.64,"metrics":{},"status":"keep","description":"Baseline: add representative render/scroll fps benchmark plus correctness checks for split/stack scrolling and hunk navigation","timestamp":1773808753918,"segment":0}
+{"run":2,"commit":"ff22026","metric":15.54,"metrics":{},"status":"keep","description":"Memoize diff sections and row rendering so hunk navigation only rerenders the active file and changed rows","timestamp":1773809110152,"segment":0}
+{"run":3,"commit":"ff22026","metric":15.4,"metrics":{},"status":"discard","description":"Try memoized row bodies so selected-line markers can update without rebuilding split and stack cell content","timestamp":1773809301669,"segment":0}
