@@ -214,16 +214,24 @@ function makeSplitCell(
     } satisfies SplitLineCell;
   }
 
+  const fallbackText = cleanDiffLine(rawLine);
+
+  // Startup renders often build rows before highlighted HAST exists, so keep that plain-text path cheap.
+  const spans =
+    highlightedLine === undefined
+      ? (fallbackText.length > 0 ? [{ text: fallbackText }] : [])
+      : flattenHighlightedLine(
+          highlightedLine,
+          theme.appearance,
+          kind === "addition" ? theme.addedContentBg : kind === "deletion" ? theme.removedContentBg : theme.contextContentBg,
+          fallbackText,
+        );
+
   return {
     kind,
     sign: kind === "addition" ? "+" : kind === "deletion" ? "-" : " ",
     lineNumber,
-    spans: flattenHighlightedLine(
-      highlightedLine,
-      theme.appearance,
-      kind === "addition" ? theme.addedContentBg : kind === "deletion" ? theme.removedContentBg : theme.contextContentBg,
-      cleanDiffLine(rawLine),
-    ),
+    spans,
   } satisfies SplitLineCell;
 }
 
@@ -236,17 +244,25 @@ function makeStackCell(
   highlightedLine: HastNode | undefined,
   theme: AppTheme,
 ) {
+  const fallbackText = cleanDiffLine(rawLine);
+
+  // Startup renders often build rows before highlighted HAST exists, so keep that plain-text path cheap.
+  const spans =
+    highlightedLine === undefined
+      ? (fallbackText.length > 0 ? [{ text: fallbackText }] : [])
+      : flattenHighlightedLine(
+          highlightedLine,
+          theme.appearance,
+          kind === "addition" ? theme.addedContentBg : kind === "deletion" ? theme.removedContentBg : theme.contextContentBg,
+          fallbackText,
+        );
+
   return {
     kind,
     sign: kind === "addition" ? "+" : kind === "deletion" ? "-" : " ",
     oldLineNumber,
     newLineNumber,
-    spans: flattenHighlightedLine(
-      highlightedLine,
-      theme.appearance,
-      kind === "addition" ? theme.addedContentBg : kind === "deletion" ? theme.removedContentBg : theme.contextContentBg,
-      cleanDiffLine(rawLine),
-    ),
+    spans,
   } satisfies StackLineCell;
 }
 

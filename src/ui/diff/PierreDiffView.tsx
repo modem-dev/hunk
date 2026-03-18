@@ -892,7 +892,24 @@ export function PierreDiffView({
   const [highlighted, setHighlighted] = useState<HighlightedDiffCode | null>(null);
   const [highlightedCacheKey, setHighlightedCacheKey] = useState<string | null>(null);
   const highlightedCacheRef = useRef(new Map<string, HighlightedDiffCode>());
+  const highlightPromiseRef = useRef(new Map<string, Promise<HighlightedDiffCode>>());
   const appearanceCacheKey = file ? `${theme.appearance}:${file.id}` : null;
+
+  // Start the async highlight request as soon as render knows which file/appearance is needed.
+  const pendingHighlight = useMemo(() => {
+    if (!file || !appearanceCacheKey || highlightedCacheRef.current.has(appearanceCacheKey)) {
+      return null;
+    }
+
+    const existing = highlightPromiseRef.current.get(appearanceCacheKey);
+    if (existing) {
+      return existing;
+    }
+
+    const pending = loadHighlightedDiff(file, theme.appearance);
+    highlightPromiseRef.current.set(appearanceCacheKey, pending);
+    return pending;
+  }, [appearanceCacheKey, file, theme.appearance]);
 
   useEffect(() => {
     if (!file || !appearanceCacheKey) {
@@ -915,12 +932,13 @@ export function PierreDiffView({
     let cancelled = false;
     setHighlighted(null);
 
-    loadHighlightedDiff(file, theme.appearance)
-      .then((nextHighlighted) => {
+    pendingHighlight
+      ?.then((nextHighlighted) => {
         if (cancelled) {
           return;
         }
 
+        highlightPromiseRef.current.delete(appearanceCacheKey);
         highlightedCacheRef.current.set(appearanceCacheKey, nextHighlighted);
         setHighlighted(nextHighlighted);
         setHighlightedCacheKey(appearanceCacheKey);
@@ -930,6 +948,7 @@ export function PierreDiffView({
           return;
         }
 
+        highlightPromiseRef.current.delete(appearanceCacheKey);
         const fallback = {
           deletionLines: [],
           additionLines: [],
@@ -942,7 +961,7 @@ export function PierreDiffView({
     return () => {
       cancelled = true;
     };
-  }, [appearanceCacheKey, file, highlightedCacheKey, theme.appearance]);
+  }, [appearanceCacheKey, file, highlightedCacheKey, pendingHighlight]);
 
   if (!file) {
     return (

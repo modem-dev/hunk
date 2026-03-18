@@ -17,3 +17,5 @@
 {"run":16,"commit":"df441c5","metric":97.31,"metrics":{},"status":"checks_failed","description":"perf: retry an in-flight highlighter cache on top of the lean queue","timestamp":1773846277697,"segment":0}
 {"run":17,"commit":"df441c5","metric":99.83,"metrics":{},"status":"discard","description":"perf: retry an in-flight highlighter cache with the corrected option types","timestamp":1773846346617,"segment":0}
 {"type":"config","name":"Optimize visible app startup syntax highlighting (3-run average)","metricName":"selected_highlight_ms","metricUnit":"ms","bestDirection":"lower"}
+{"run":1,"commit":"687a7f7","metric":605.13,"metrics":{},"status":"keep","description":"benchmark: measure visible app startup syntax highlighting","timestamp":1773846484355,"segment":0}
+{"run":2,"commit":"687a7f7","metric":611.56,"metrics":{},"status":"discard","description":"perf: start selected-file highlight loading during render setup","timestamp":1773846575263,"segment":0}
