@@ -11,3 +11,4 @@
 {"run":10,"commit":"704ae26","metric":137.49,"metrics":{},"status":"keep","description":"Inline the selected marker in header and collapsed rows to remove another hot-path wrapper box","timestamp":1773833422886,"segment":0}
 {"run":11,"commit":"5564f18","metric":138.27,"metrics":{},"status":"keep","description":"Use a cheaper single-box path for non-annotated header rows while preserving the badge path for annotated hunks","timestamp":1773833550117,"segment":0}
 {"run":12,"commit":"b0a0b82","metric":139.12,"metrics":{},"status":"keep","description":"Cache highlighted diffs per file so revisiting files avoids repeat highlighting work","timestamp":1773833658205,"segment":0}
+{"run":13,"commit":"23401c0","metric":141.68,"metrics":{},"status":"keep","description":"Reuse cached highlighted diffs during render so revisiting a file avoids the effect/state round-trip","timestamp":1773833769070,"segment":0}

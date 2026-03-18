@@ -422,7 +422,6 @@ function renderAnchoredNotes(
 function renderRow(
   row: DiffRow,
   file: DiffFile,
-  layout: Exclude<LayoutMode, "auto">,
   width: number,
   lineNumberDigits: number,
   theme: AppTheme,
@@ -436,7 +435,7 @@ function renderRow(
 
   if (row.type === "collapsed" || row.type === "hunk-header") {
     baseRow = renderHeaderRow(row, width, theme, selected, annotated, onOpenAgentNotesAtHunk);
-  } else if (layout === "split" && row.type === "split-line") {
+  } else if (row.type === "split-line") {
     const markerWidth = 1;
     const separatorWidth = 1;
     const usableWidth = Math.max(0, width - markerWidth - separatorWidth);
@@ -494,7 +493,6 @@ function renderRow(
 interface DiffRowViewProps {
   row: DiffRow;
   file: DiffFile;
-  layout: Exclude<LayoutMode, "auto">;
   width: number;
   lineNumberDigits: number;
   theme: AppTheme;
@@ -509,7 +507,6 @@ const DiffRowView = memo(
   function DiffRowViewComponent({
     row,
     file,
-    layout,
     width,
     lineNumberDigits,
     theme,
@@ -522,7 +519,6 @@ const DiffRowView = memo(
     return renderRow(
       row,
       file,
-      layout,
       width,
       lineNumberDigits,
       theme,
@@ -537,7 +533,6 @@ const DiffRowView = memo(
     return (
       previous.row === next.row &&
       previous.file === next.file &&
-      previous.layout === next.layout &&
       previous.width === next.width &&
       previous.lineNumberDigits === next.lineNumberDigits &&
       previous.theme === next.theme &&
@@ -658,7 +653,6 @@ export function PierreDiffView({
           key={row.key}
           row={row}
           file={file}
-          layout={layout}
           width={width}
           lineNumberDigits={lineNumberDigits}
           theme={theme}
