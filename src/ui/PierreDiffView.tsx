@@ -332,12 +332,14 @@ export function PierreDiffView({
   theme,
   width,
   selectedHunkIndex,
+  scrollable = true,
 }: {
   file: DiffFile | undefined;
   layout: Exclude<LayoutMode, "auto">;
   theme: AppTheme;
   width: number;
   selectedHunkIndex: number;
+  scrollable?: boolean;
 }) {
   const [highlightedDiffs, setHighlightedDiffs] = useState<Record<string, HighlightedDiffCode | undefined>>({});
 
@@ -380,16 +382,16 @@ export function PierreDiffView({
 
   if (!file) {
     return (
-      <box style={{ flexGrow: 1, alignItems: "center", justifyContent: "center" }}>
-        <text fg={theme.muted}>No file selected.</text>
+      <box style={{ width: "100%", paddingLeft: 1, paddingRight: 1 }}>
+        <text fg={theme.muted}>{fitText("No file selected.", Math.max(1, width - 2))}</text>
       </box>
     );
   }
 
   if (file.metadata.hunks.length === 0) {
     return (
-      <box style={{ flexGrow: 1, alignItems: "center", justifyContent: "center", padding: 1 }}>
-        <text fg={theme.muted}>{diffMessage(file)}</text>
+      <box style={{ width: "100%", paddingLeft: 1, paddingRight: 1, paddingBottom: 1 }}>
+        <text fg={theme.muted}>{fitText(diffMessage(file), Math.max(1, width - 2))}</text>
       </box>
     );
   }
@@ -397,12 +399,19 @@ export function PierreDiffView({
   const highlighted = highlightedDiffs[file.id] ?? null;
   const rows = layout === "split" ? buildSplitRows(file, highlighted, theme) : buildStackRows(file, highlighted, theme);
   const lineNumberDigits = String(findMaxLineNumber(file)).length;
+  const content = (
+    <box style={{ width: "100%", flexDirection: "column" }}>
+      {rows.map((row) => renderRow(row, layout, width, lineNumberDigits, theme, selectedHunkIndex))}
+    </box>
+  );
+
+  if (!scrollable) {
+    return content;
+  }
 
   return (
     <scrollbox width="100%" height="100%" scrollY={true} viewportCulling={true} focused={false}>
-      <box style={{ width: "100%", flexDirection: "column" }}>
-        {rows.map((row) => renderRow(row, layout, width, lineNumberDigits, theme, selectedHunkIndex))}
-      </box>
+      {content}
     </scrollbox>
   );
 }

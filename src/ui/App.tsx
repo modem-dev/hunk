@@ -160,6 +160,10 @@ function fileRowId(fileId: string) {
   return `file-row:${fileId}`;
 }
 
+function diffSectionId(fileId: string) {
+  return `diff-section:${fileId}`;
+}
+
 function renderMenuLine(
   entry: Extract<MenuEntry, { kind: "item" }>,
   width: number,
@@ -196,6 +200,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
   const renderer = useRenderer();
   const terminal = useTerminalDimensions();
   const filesScrollRef = useRef<ScrollBoxRenderable | null>(null);
+  const diffScrollRef = useRef<ScrollBoxRenderable | null>(null);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(bootstrap.initialMode);
   const [themeId, setThemeId] = useState(() => resolveTheme(bootstrap.initialTheme, renderer.themeMode).id);
   const [showAgentPanel, setShowAgentPanel] = useState(
@@ -277,6 +282,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     }
 
     filesScrollRef.current?.scrollChildIntoView(fileRowId(selectedFile.id));
+    diffScrollRef.current?.scrollChildIntoView(diffSectionId(selectedFile.id));
   }, [selectedFile]);
 
   const moveHunk = (delta: number) => {
@@ -285,6 +291,16 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     }
 
     setSelectedHunkIndex((current) => clamp(current + delta, 0, selectedFile.metadata.hunks.length - 1));
+  };
+
+  const jumpToFile = (fileId: string, nextHunkIndex = 0) => {
+    filesScrollRef.current?.scrollChildIntoView(fileRowId(fileId));
+    diffScrollRef.current?.scrollChildIntoView(diffSectionId(fileId));
+
+    startTransition(() => {
+      setSelectedFileId(fileId);
+      setSelectedHunkIndex(nextHunkIndex);
+    });
   };
 
   const moveFile = (delta: number) => {
@@ -299,10 +315,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
       return;
     }
 
-    startTransition(() => {
-      setSelectedFileId(nextFile.id);
-      setSelectedHunkIndex(0);
-    });
+    jumpToFile(nextFile.id);
   };
 
   const moveAnnotatedFile = (delta: number) => {
@@ -319,10 +332,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
       return;
     }
 
-    startTransition(() => {
-      setSelectedFileId(nextFile.id);
-      setSelectedHunkIndex(0);
-    });
+    jumpToFile(nextFile.id);
   };
 
   const closeMenu = () => {
@@ -545,6 +555,9 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
   const helpWidth = Math.min(68, Math.max(44, terminal.width - 8));
   const helpLeft = Math.max(1, Math.floor((terminal.width - helpWidth) / 2));
   const filesTextWidth = Math.max(8, clampedFilesPaneWidth - 4);
+  const diffContentWidth = Math.max(12, diffPaneWidth - 2);
+  const diffHeaderStatsWidth = Math.min(24, Math.max(16, Math.floor(diffContentWidth / 3)));
+  const diffHeaderLabelWidth = Math.max(8, diffContentWidth - diffHeaderStatsWidth - 1);
 
   useKeyboard((key: KeyEvent) => {
     if (key.name === "f10") {
@@ -815,10 +828,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
                     }}
                     onMouseUp={() => {
                       setFocusArea("files");
-                      startTransition(() => {
-                        setSelectedFileId(entry.id);
-                        setSelectedHunkIndex(0);
-                      });
+                      jumpToFile(entry.id);
                     }}
                   >
                     <text fg={activeTheme.text}>{fitText(entry.label, filesTextWidth)}</text>
@@ -870,7 +880,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
         />
 
         <box
-          title={selectedFile ? selectedFile.path : "Diff"}
+          title="Diff"
           style={{
             width: diffPaneWidth,
             border: ["top", "right", "bottom"],
@@ -880,16 +890,71 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
             flexDirection: "column",
           }}
         >
-          {selectedFile ? (
-            <box style={{ flexGrow: 1, width: "100%" }}>
-              <PierreDiffView
-                file={selectedFile}
-                layout={resolvedLayout}
-                theme={activeTheme}
-                width={diffPaneWidth}
-                selectedHunkIndex={selectedHunkIndex}
-              />
-            </box>
+          {filteredFiles.length > 0 ? (
+            <scrollbox
+              ref={diffScrollRef}
+              width="100%"
+              height="100%"
+              scrollY={true}
+              viewportCulling={true}
+              focused={false}
+              rootOptions={{ backgroundColor: activeTheme.panel }}
+              wrapperOptions={{ backgroundColor: activeTheme.panel }}
+              viewportOptions={{ backgroundColor: activeTheme.panel }}
+              contentOptions={{ backgroundColor: activeTheme.panel }}
+              verticalScrollbarOptions={{ visible: false }}
+              horizontalScrollbarOptions={{ visible: false }}
+            >
+              <box style={{ width: "100%", flexDirection: "column", gap: 1 }}>
+                {filteredFiles.map((file) => {
+                  const isSelected = file.id === selectedFile?.id;
+                  const stats = `${file.metadata.type}  +${file.stats.additions}  -${file.stats.deletions}`;
+
+                  return (
+                    <box
+                      key={file.id}
+                      id={diffSectionId(file.id)}
+                      style={{
+                        width: "100%",
+                        flexDirection: "column",
+                        backgroundColor: activeTheme.panel,
+                      }}
+                    >
+                      <box
+                        style={{
+                          width: "100%",
+                          height: 1,
+                          flexDirection: "row",
+                          justifyContent: "space-between",
+                          paddingLeft: 1,
+                          paddingRight: 1,
+                          backgroundColor: isSelected ? activeTheme.panelAlt : activeTheme.panel,
+                        }}
+                        onMouseUp={() => {
+                          jumpToFile(file.id);
+                        }}
+                      >
+                        <text fg={isSelected ? activeTheme.text : activeTheme.badgeNeutral}>
+                          {fitText(fileLabel(file), diffHeaderLabelWidth)}
+                        </text>
+                        <text fg={isSelected ? activeTheme.text : activeTheme.muted}>
+                          {fitText(stats, diffHeaderStatsWidth)}
+                        </text>
+                      </box>
+
+                      <PierreDiffView
+                        file={file}
+                        layout={resolvedLayout}
+                        theme={activeTheme}
+                        width={diffContentWidth}
+                        selectedHunkIndex={isSelected ? selectedHunkIndex : -1}
+                        scrollable={false}
+                      />
+                    </box>
+                  );
+                })}
+              </box>
+            </scrollbox>
           ) : (
             <box style={{ flexGrow: 1, alignItems: "center", justifyContent: "center" }}>
               <text fg={activeTheme.muted}>No files match the current filter.</text>
