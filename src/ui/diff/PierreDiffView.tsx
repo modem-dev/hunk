@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useState, type ReactNode } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { AgentAnnotation, DiffFile, LayoutMode } from "../../core/types";
 import { AgentCard } from "../components/panes/AgentCard";
 import { annotationLocationLabel, type VisibleAgentNote } from "../lib/agentAnnotations";
@@ -573,6 +573,7 @@ export function PierreDiffView({
 }) {
   const [highlighted, setHighlighted] = useState<HighlightedDiffCode | null>(null);
   const [highlightedFileId, setHighlightedFileId] = useState<string | null>(null);
+  const highlightedCacheRef = useRef(new Map<string, HighlightedDiffCode>());
 
   useEffect(() => {
     if (!file) {
@@ -585,6 +586,13 @@ export function PierreDiffView({
       return;
     }
 
+    const cached = highlightedCacheRef.current.get(file.id);
+    if (cached) {
+      setHighlighted(cached);
+      setHighlightedFileId(file.id);
+      return;
+    }
+
     let cancelled = false;
     setHighlighted(null);
 
@@ -594,6 +602,7 @@ export function PierreDiffView({
           return;
         }
 
+        highlightedCacheRef.current.set(file.id, nextHighlighted);
         setHighlighted(nextHighlighted);
         setHighlightedFileId(file.id);
       })
@@ -602,10 +611,12 @@ export function PierreDiffView({
           return;
         }
 
-        setHighlighted({
+        const fallback = {
           deletionLines: [],
           additionLines: [],
-        });
+        } satisfies HighlightedDiffCode;
+        highlightedCacheRef.current.set(file.id, fallback);
+        setHighlighted(fallback);
         setHighlightedFileId(file.id);
       });
 
