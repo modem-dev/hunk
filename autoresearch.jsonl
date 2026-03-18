@@ -1,0 +1,1 @@
+{"type":"config","name":"Optimize syntax highlighting startup latency (3-run average)","metricName":"selected_highlight_ms","metricUnit":"ms","bestDirection":"lower"}
