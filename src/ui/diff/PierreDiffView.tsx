@@ -36,11 +36,15 @@ function fitText(text: string, width: number) {
 
 function trimSpans(spans: RenderSpan[], width: number) {
   if (width <= 0) {
-    return [];
+    return {
+      spans: [] as RenderSpan[],
+      usedWidth: 0,
+    };
   }
 
   const trimmed: RenderSpan[] = [];
   let remaining = width;
+  let usedWidth = 0;
 
   for (const span of spans) {
     if (remaining <= 0) {
@@ -65,9 +69,13 @@ function trimSpans(spans: RenderSpan[], width: number) {
     }
 
     remaining -= text.length;
+    usedWidth += text.length;
   }
 
-  return trimmed;
+  return {
+    spans: trimmed,
+    usedWidth,
+  };
 }
 
 function marker(selected: boolean) {
@@ -144,8 +152,7 @@ function renderInlineSpans(
   fallbackBg: string,
   keyPrefix: string,
 ) {
-  const trimmed = trimSpans(spans, width);
-  const usedWidth = trimmed.reduce((sum, span) => sum + span.text.length, 0);
+  const { spans: trimmed, usedWidth } = trimSpans(spans, width);
   const padding = Math.max(0, width - usedWidth);
 
   return (

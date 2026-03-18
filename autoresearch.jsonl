@@ -12,3 +12,5 @@
 {"run":11,"commit":"5564f18","metric":138.27,"metrics":{},"status":"keep","description":"Use a cheaper single-box path for non-annotated header rows while preserving the badge path for annotated hunks","timestamp":1773833550117,"segment":0}
 {"run":12,"commit":"b0a0b82","metric":139.12,"metrics":{},"status":"keep","description":"Cache highlighted diffs per file so revisiting files avoids repeat highlighting work","timestamp":1773833658205,"segment":0}
 {"run":13,"commit":"23401c0","metric":141.68,"metrics":{},"status":"keep","description":"Reuse cached highlighted diffs during render so revisiting a file avoids the effect/state round-trip","timestamp":1773833769070,"segment":0}
+{"run":14,"commit":"8a21a30","metric":144.61,"metrics":{},"status":"keep","description":"Remove redundant layout props from memoized row views because row types already encode split versus stack","timestamp":1773833904553,"segment":0}
+{"run":15,"commit":"8a21a30","metric":137.8,"metrics":{},"status":"discard","description":"Try memoizing whole hunk groups so navigation compares fewer top-level items instead of every row","timestamp":1773834110560,"segment":0}
