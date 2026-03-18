@@ -177,7 +177,8 @@ function flattenHighlightedLine(
     const properties = current.properties ?? {};
     const styles = parseStyleValue(properties.style);
     const nextStyle: Pick<RenderSpan, "fg" | "bg"> = {
-      fg: styles.get(colorVariable) ?? inherited.fg,
+      // Newer Pierre output can emit direct `color:#...` styles instead of theme CSS variables.
+      fg: styles.get(colorVariable) ?? styles.get("color") ?? inherited.fg,
       // Pierre marks inline word-diff emphasis spans with a data attribute rather than a separate row kind.
       bg: Object.hasOwn(properties, "data-diff-span") ? emphasisBg : inherited.bg,
     };

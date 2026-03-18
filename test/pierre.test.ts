@@ -57,6 +57,7 @@ describe("Pierre diff rows", () => {
     expect(changedRow.right.spans.some((span) => span.text.includes("42"))).toBe(true);
     expect(changedRow.left.spans.some((span) => span.bg === theme.removedContentBg)).toBe(true);
     expect(changedRow.right.spans.some((span) => span.bg === theme.addedContentBg)).toBe(true);
+    expect(changedRow.right.spans.some((span) => span.text.includes("export") && typeof span.fg === "string")).toBe(true);
   });
 
   test("builds stacked rows with separate deletion and addition lines", () => {
