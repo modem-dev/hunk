@@ -182,6 +182,7 @@ describe("UI components", () => {
         separatorWidth={68}
         showAgentNotes={false}
         showLineNumbers={true}
+        showHunkHeaders={true}
         wrapLines={false}
         theme={theme}
         width={76}
@@ -219,6 +220,7 @@ describe("UI components", () => {
         separatorWidth={84}
         showAgentNotes={true}
         showLineNumbers={true}
+        showHunkHeaders={true}
         wrapLines={false}
         theme={theme}
         width={92}
@@ -249,6 +251,7 @@ describe("UI components", () => {
           { kind: "item", label: "Stacked view", hint: "2", checked: false, action: () => {} },
           { kind: "item", label: "Line numbers", hint: "l", checked: true, action: () => {} },
           { kind: "item", label: "Line wrapping", hint: "w", checked: false, action: () => {} },
+          { kind: "item", label: "Hunk metadata", hint: "m", checked: true, action: () => {} },
         ]}
         activeMenuItemIndex={0}
         activeMenuSpec={{ id: "view", left: 2, width: 6, label: "View" }}
@@ -265,10 +268,12 @@ describe("UI components", () => {
     expect(frame).toContain("[ ] Stacked view");
     expect(frame).toContain("[x] Line numbers");
     expect(frame).toContain("[ ] Line wrapping");
+    expect(frame).toContain("[x] Hunk metadata");
     expect(frame).toContain("1");
     expect(frame).toContain("2");
     expect(frame).toContain("l");
     expect(frame).toContain("w");
+    expect(frame).toContain("m");
   });
 
   test("StatusBar renders filter mode affordance", async () => {
@@ -317,6 +322,7 @@ describe("UI components", () => {
         separatorWidth={68}
         showAgentNotes={false}
         showLineNumbers={true}
+        showHunkHeaders={true}
         wrapLines={false}
         theme={theme}
         width={76}
@@ -349,6 +355,7 @@ describe("UI components", () => {
         separatorWidth={68}
         showAgentNotes={false}
         showLineNumbers={false}
+        showHunkHeaders={true}
         wrapLines={false}
         theme={theme}
         width={76}
@@ -384,6 +391,7 @@ describe("UI components", () => {
         separatorWidth={44}
         showAgentNotes={false}
         showLineNumbers={true}
+        showHunkHeaders={true}
         wrapLines={true}
         theme={theme}
         width={52}
@@ -399,6 +407,42 @@ describe("UI components", () => {
     expect(frame).toContain("e = 'this is a very");
     expect(frame).toContain("long wrapped line");
     expect(frame).toContain("for diff rendering");
+  });
+
+  test("DiffPane can hide hunk metadata rows without hiding code lines", async () => {
+    const bootstrap = createBootstrap();
+    const theme = resolveTheme("midnight", null);
+    const frame = await captureFrame(
+      <DiffPane
+        activeAnnotations={[]}
+        diffContentWidth={72}
+        dismissedAgentNoteIds={[]}
+        files={bootstrap.changeset.files}
+        headerLabelWidth={40}
+        headerStatsWidth={16}
+        layout="split"
+        scrollRef={createRef()}
+        selectedFileId="alpha"
+        selectedHunkIndex={0}
+        separatorWidth={68}
+        showAgentNotes={false}
+        showLineNumbers={true}
+        showHunkHeaders={false}
+        wrapLines={false}
+        theme={theme}
+        width={76}
+        onDismissAgentNote={() => {}}
+        onOpenAgentNotesAtHunk={() => {}}
+        onSelectFile={() => {}}
+      />,
+      80,
+      18,
+    );
+
+    expect(frame).not.toContain("@@ -1,1 +1,2 @@");
+    expect(frame).not.toContain("@@ -1,1 +1,1 @@");
+    expect(frame).toContain("1 - export const alpha = 1;");
+    expect(frame).toContain("1 + export const alpha = 2;");
   });
 
   test("App renders the menu bar, multi-file stream, and AI badges", async () => {

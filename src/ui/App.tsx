@@ -41,6 +41,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
   const [showAgentNotes, setShowAgentNotes] = useState(false);
   const [showLineNumbers, setShowLineNumbers] = useState(true);
   const [wrapLines, setWrapLines] = useState(false);
+  const [showHunkHeaders, setShowHunkHeaders] = useState(true);
   const [showHelp, setShowHelp] = useState(false);
   const [focusArea, setFocusArea] = useState<FocusArea>("files");
   const [activeMenuId, setActiveMenuId] = useState<MenuId | null>(null);
@@ -248,6 +249,11 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
     setWrapLines((current) => !current);
   };
 
+  /** Toggle visibility of hunk metadata rows without changing the actual diff lines. */
+  const toggleHunkHeaders = () => {
+    setShowHunkHeaders((current) => !current);
+  };
+
   /** Jump to the annotated hunk before opening the note layer. */
   const openAgentNotesAtHunk = (fileId: string, hunkIndex: number) => {
     jumpToFile(fileId, hunkIndex);
@@ -365,6 +371,13 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
         hint: "w",
         checked: wrapLines,
         action: toggleLineWrap,
+      },
+      {
+        kind: "item",
+        label: "Hunk metadata",
+        hint: "m",
+        checked: showHunkHeaders,
+        action: toggleHunkHeaders,
       },
     ],
     navigate: [
@@ -618,6 +631,12 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
       return;
     }
 
+    if (key.name === "m" || key.sequence === "m") {
+      toggleHunkHeaders();
+      closeMenu();
+      return;
+    }
+
     if (key.name === "[") {
       moveHunk(-1);
       closeMenu();
@@ -715,6 +734,7 @@ export function App({ bootstrap }: { bootstrap: AppBootstrap }) {
           separatorWidth={diffSeparatorWidth}
           showAgentNotes={showAgentNotes}
           showLineNumbers={showLineNumbers}
+          showHunkHeaders={showHunkHeaders}
           wrapLines={wrapLines}
           theme={activeTheme}
           width={diffPaneWidth}

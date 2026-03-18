@@ -22,6 +22,7 @@ export function DiffPane({
   separatorWidth,
   showAgentNotes,
   showLineNumbers,
+  showHunkHeaders,
   wrapLines,
   theme,
   width,
@@ -42,6 +43,7 @@ export function DiffPane({
   separatorWidth: number;
   showAgentNotes: boolean;
   showLineNumbers: boolean;
+  showHunkHeaders: boolean;
   wrapLines: boolean;
   theme: AppTheme;
   width: number;
@@ -111,6 +113,7 @@ export function DiffPane({
                 separatorWidth={separatorWidth}
                 showSeparator={index > 0}
                 showLineNumbers={showLineNumbers}
+                showHunkHeaders={showHunkHeaders}
                 wrapLines={wrapLines}
                 theme={theme}
                 viewWidth={diffContentWidth}

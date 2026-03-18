@@ -32,7 +32,7 @@ export function HelpDialog({
     >
       <text fg={theme.text}>Keyboard</text>
       <text fg={theme.muted}>F10 menus  arrows navigate menus  Enter select  Esc close menu</text>
-      <text fg={theme.muted}>1 split  2 stack  0 auto  t theme  a notes  l line numbers  w wrap</text>
+      <text fg={theme.muted}>1 split  2 stack  0 auto  t theme  a notes  l lines  w wrap  m meta</text>
       <text fg={theme.muted}>[ previous hunk in review stream  ] next hunk in review stream</text>
       <text fg={theme.muted}>drag the Files/Diff divider with the mouse to resize the columns</text>
       <text fg={theme.muted}>/ focus filter  Tab swap files/filter  q quit</text>
