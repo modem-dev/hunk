@@ -271,6 +271,29 @@ function renderHeaderRow(
       ? fitText(`··· ${row.text} ···`, Math.max(0, width - 1 - badgeWidth))
       : fitText(row.text, Math.max(0, width - 1 - badgeWidth));
 
+  if (!annotated) {
+    return (
+      <box
+        key={row.key}
+        id={row.type === "hunk-header" ? diffHunkId(row.fileId, row.hunkIndex) : undefined}
+        style={{
+          width: "100%",
+          height: 1,
+          backgroundColor: theme.panelAlt,
+        }}
+      >
+        <text>
+          <span fg={selected ? theme.accent : theme.panelAlt} bg={theme.panelAlt}>
+            {marker(selected)}
+          </span>
+          <span fg={row.type === "collapsed" ? theme.muted : theme.badgeNeutral} bg={theme.panelAlt}>
+            {label}
+          </span>
+        </text>
+      </box>
+    );
+  }
+
   return (
     <box
       key={row.key}
@@ -292,11 +315,9 @@ function renderHeaderRow(
           </span>
         </text>
       </box>
-      {annotated ? (
-        <box style={{ width: badgeWidth, height: 1 }} onMouseUp={() => onOpenAgentNotesAtHunk?.(row.hunkIndex)}>
-          <text fg={theme.accent}>{badgeText}</text>
-        </box>
-      ) : null}
+      <box style={{ width: badgeWidth, height: 1 }} onMouseUp={() => onOpenAgentNotesAtHunk?.(row.hunkIndex)}>
+        <text fg={theme.accent}>{badgeText}</text>
+      </box>
     </box>
   );
 }

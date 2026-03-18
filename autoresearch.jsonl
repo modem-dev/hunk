@@ -8,3 +8,4 @@
 {"run":7,"commit":"11f5327","metric":58.26,"metrics":{},"status":"keep","description":"Fold the hunk-selection marker into split and stack cell text to remove another per-row box","timestamp":1773809933654,"segment":0}
 {"run":8,"commit":"c7b2898","metric":77.23,"metrics":{},"status":"keep","description":"Inline the split separator inside the right cell so split rows render with one less box per line","timestamp":1773810029157,"segment":0}
 {"run":9,"commit":"90aed3f","metric":129,"metrics":{},"status":"keep","description":"Render split and stack lines as single text rows so marker, gutters, separator, and content share one row box","timestamp":1773810166788,"segment":0}
+{"run":10,"commit":"704ae26","metric":137.49,"metrics":{},"status":"keep","description":"Inline the selected marker in header and collapsed rows to remove another hot-path wrapper box","timestamp":1773833422886,"segment":0}
