@@ -6,8 +6,6 @@ import { parseDiffFromFile } from "@pierre/diffs";
 import { act } from "react";
 import type { AppBootstrap, DiffFile } from "../src/core/types";
 
-const { App } = await import("../src/ui/App");
-
 function createDiffFile(index: number): DiffFile {
   const path = `src/example${index}.ts`;
   const before = Array.from({ length: 160 }, (_, lineIndex) => {
@@ -84,6 +82,7 @@ function createBootstrap(): AppBootstrap {
 const addedContent = RGBA.fromHex("#102a1f");
 const removedContent = RGBA.fromHex("#371b1e");
 const start = performance.now();
+const { App } = await import("../src/ui/App");
 const setup = await testRender(React.createElement(App, { bootstrap: createBootstrap() }), { width: 240, height: 28 });
 
 let selectedHighlighted = false;

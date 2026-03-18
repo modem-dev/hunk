@@ -1,2 +1,2 @@
-- Benchmark the real app startup path (bootstrap + `PierreDiffView` mount) instead of direct `loadHighlightedDiff()` calls so overlap opportunities in loaders can be measured without cheating. A viable detector may need to watch for rendered emphasis-background spans rather than keyword fg colors.
-- Explore starting `prepareHighlighter()` during changeset load using the dominant visible language + current appearance, but only after the benchmark is updated to include that startup phase.
+- Explore starting `prepareHighlighter()` during startup using the default appearance or first visible file language now that the benchmark includes module import time.
+- If the benchmark plateaus again, consider extending it to include changeset loading (`loadAppBootstrap`) so prewarming during loader work can be evaluated honestly.

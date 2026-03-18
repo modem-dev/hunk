@@ -3,7 +3,7 @@
 ## Objective
 Reduce the delay before syntax highlighting visibly appears when `hunk` starts, especially on larger multi-file diffs.
 
-The benchmark now targets the real app startup path instead of calling `loadHighlightedDiff()` directly. It measures from app mount until the selected file visibly paints highlighted emphasis spans in the terminal output. This is more representative of what the user actually waits for.
+The benchmark targets the real app startup path. It now measures from **before importing `App`** until the selected file visibly paints highlighted emphasis spans in the terminal output. That means module load, app mount, and the first highlighted repaint are all included in the metric.
 
 ## Metrics
 - **Primary**: `selected_highlight_ms` (ms, lower is better)
@@ -33,6 +33,7 @@ The benchmark now targets the real app startup path instead of calling `loadHigh
 - Preserve the current diff model and renderer architecture.
 
 ## What's Been Tried
-- On the earlier helper-level benchmark, the biggest wins came from switching to the Shiki wasm engine, preparing only the active appearance theme, and serializing startup highlight work with a lean promise chain.
-- The current code on that helper benchmark reached `selected_highlight_ms=95.31ms` after caching Pierre highlighter options per appearance/language.
-- The benchmark has now changed to the real app startup path, so a fresh baseline is required before further experiments.
+- On the earlier helper-level benchmark, the biggest wins came from switching to the Shiki wasm engine, preparing only the active appearance theme, serializing startup highlight work with a lean promise chain, and caching Pierre highlighter options per appearance/language.
+- On the earlier app-mount-only benchmark, small wins came from a plain-span fast path before highlighted HAST arrived and from kicking off highlight loading in a layout effect.
+- A module-load warmup was rejected because the previous benchmark started after imports; the new benchmark includes import time so future warmup experiments can be measured honestly.
+- This benchmark definition changed again, so a fresh baseline is required before further optimization.

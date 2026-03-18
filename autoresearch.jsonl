@@ -29,3 +29,8 @@
 {"run":10,"commit":"1697f4a","metric":610.13,"metrics":{},"status":"discard","description":"perf: skip redundant clear-state updates before the first highlight arrives","timestamp":1773847339041,"segment":0}
 {"run":11,"commit":"2b73efd","metric":597.42,"metrics":{},"status":"keep","description":"perf: warm the default dark text highlighter during module load","timestamp":1773847474363,"segment":0}
 {"run":12,"commit":"2b73efd","metric":610.43,"metrics":{},"status":"discard","description":"perf: overlap selected-file highlighter prep with the first render","timestamp":1773847585373,"segment":0}
+{"run":13,"commit":"1c45daa","metric":609.38,"metrics":{},"status":"keep","description":"perf: remove invalid pre-timer module warmup and keep app-startup measurements honest","timestamp":1773847693572,"segment":0}
+{"run":14,"commit":"1c45daa","metric":608.95,"metrics":{},"status":"discard","description":"perf: try useInsertionEffect for startup highlight loading","timestamp":1773847801695,"segment":0}
+{"run":15,"commit":"1c45daa","metric":0,"metrics":{},"status":"checks_failed","description":"perf: try parent-level selected-file highlighter prep before diff mount","timestamp":1773847868661,"segment":0}
+{"run":16,"commit":"1c45daa","metric":617,"metrics":{},"status":"checks_failed","description":"perf: retry parent-level selected-file highlighter prep before diff mount","timestamp":1773847947857,"segment":0}
+{"type":"config","name":"Optimize visible app startup syntax highlighting including module load","metricName":"selected_highlight_ms","metricUnit":"ms","bestDirection":"lower"}
