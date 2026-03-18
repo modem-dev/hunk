@@ -79,7 +79,7 @@ function createBootstrap(): AppBootstrap {
 }
 
 async function captureResponsiveFrames() {
-  const setup = await testRender(<App bootstrap={createBootstrap()} />, { width: 240, height: 24 });
+  const setup = await testRender(<App bootstrap={createBootstrap()} />, { width: 280, height: 24 });
 
   try {
     await act(async () => {
@@ -88,19 +88,19 @@ async function captureResponsiveFrames() {
     const ultraWide = setup.captureCharFrame();
 
     await act(async () => {
-      setup.resize(200, 24);
+      setup.resize(220, 24);
       await setup.renderOnce();
     });
     const full = setup.captureCharFrame();
 
     await act(async () => {
-      setup.resize(150, 24);
+      setup.resize(160, 24);
       await setup.renderOnce();
     });
     const medium = setup.captureCharFrame();
 
     await act(async () => {
-      setup.resize(149, 24);
+      setup.resize(159, 24);
       await setup.renderOnce();
     });
     const tight = setup.captureCharFrame();

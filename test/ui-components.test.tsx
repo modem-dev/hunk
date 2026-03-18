@@ -286,7 +286,7 @@ describe("UI components", () => {
 
   test("App renders the menu bar, multi-file stream, and agent rail together", async () => {
     const bootstrap = createBootstrap();
-    const frame = await captureFrame(<App bootstrap={bootstrap} />, 240, 24);
+    const frame = await captureFrame(<App bootstrap={bootstrap} />, 280, 24);
 
     expect(frame).toContain("File  View  Navigate  Theme  Agent  Help");
     expect(frame).toContain("alpha.ts");
