@@ -3,3 +3,4 @@
 {"run":2,"commit":"39e3284","metric":231.56,"metrics":{},"status":"keep","description":"perf: switch shared syntax startup to the Shiki wasm engine","timestamp":1773845153236,"segment":0}
 {"run":3,"commit":"39e3284","metric":316.28,"metrics":{},"status":"discard","description":"perf: try two concurrent highlight renders with the wasm backend","timestamp":1773845178461,"segment":0}
 {"run":4,"commit":"39e3284","metric":525.65,"metrics":{},"status":"discard","description":"perf: remove startup highlight queue with the wasm backend","timestamp":1773845216374,"segment":0}
+{"run":5,"commit":"ab3f443","metric":153.37,"metrics":{},"status":"keep","description":"perf: prepare and render only the active syntax theme appearance","timestamp":1773845437833,"segment":0}

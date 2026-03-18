@@ -28,7 +28,6 @@ function pierreRenderOptions(appearance: AppTheme["appearance"]) {
   };
 }
 
-const preparedHighlighterPromises = new Map<string, Promise<Awaited<ReturnType<typeof getSharedHighlighter>>>>();
 const queuedHighlightJobs: Array<{
   run: () => HighlightedDiffCode;
   resolve: (value: HighlightedDiffCode) => void;
@@ -276,27 +275,15 @@ function trailingCollapsedLines(metadata: FileDiffMetadata) {
   return Math.max(additionRemaining, 0);
 }
 
-/** Reuse in-flight highlighter preparation so startup does not duplicate the same async setup work. */
+/** Prepare syntax highlighting for one language/appearance pair using Pierre's shared highlighter. */
 async function prepareHighlighter(language: string | undefined, appearance: AppTheme["appearance"]) {
   const resolvedLanguage = language ?? "text";
-  const cacheKey = `${appearance}:${resolvedLanguage}`;
-  const cached = preparedHighlighterPromises.get(cacheKey);
-  if (cached) {
-    return cached;
-  }
-
-  const prepared = getSharedHighlighter({
+  return getSharedHighlighter({
     ...getHighlighterOptions(resolvedLanguage, {
       theme: pierreThemeName(appearance),
     }),
     preferredHighlighter: "shiki-wasm",
-  }).catch((error) => {
-    preparedHighlighterPromises.delete(cacheKey);
-    throw error;
   });
-
-  preparedHighlighterPromises.set(cacheKey, prepared);
-  return prepared;
 }
 
 /** Drain the queued diff-highlight jobs while preserving arrival order. */
