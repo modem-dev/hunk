@@ -8,33 +8,20 @@ export interface ShutdownRenderer {
   destroy: () => void;
 }
 
-/** Minimal stdout surface needed to clear the restored terminal. */
-export interface ShutdownStdout {
-  isTTY?: boolean;
-  write: (chunk: string) => unknown;
-}
-
 /**
- * Tear down the TUI session and clear the restored terminal before exiting.
+ * Tear down the TUI session and let the renderer restore the previous terminal screen.
  * The caller owns any once-only guard around this helper.
  */
 export function shutdownSession({
   root,
   renderer,
-  stdout = process.stdout,
   exit = (code: number) => process.exit(code),
 }: {
   root: ShutdownRoot;
   renderer: ShutdownRenderer;
-  stdout?: ShutdownStdout;
   exit?: (code: number) => never | void;
 }) {
   root.unmount();
   renderer.destroy();
-
-  if (stdout.isTTY) {
-    stdout.write("\x1b[2J\x1b[H");
-  }
-
   exit(0);
 }
