@@ -21,6 +21,13 @@ const PIERRE_RENDER_OPTIONS = {
 };
 
 const preparedHighlighterPromises = new Map<string, Promise<Awaited<ReturnType<typeof getSharedHighlighter>>>>();
+const queuedHighlightJobs: Array<{
+  run: () => HighlightedDiffCode;
+  resolve: (value: HighlightedDiffCode) => void;
+  reject: (error: unknown) => void;
+}> = [];
+let activeHighlightJobs = 0;
+const MAX_CONCURRENT_HIGHLIGHTS = 1;
 
 type HastNode = HastTextNode | HastElementNode;
 
@@ -282,22 +289,57 @@ async function prepareHighlighter(language: string | undefined) {
   return prepared;
 }
 
+/** Drain the queued diff-highlight jobs while preserving arrival order. */
+function pumpHighlightQueue() {
+  while (activeHighlightJobs < MAX_CONCURRENT_HIGHLIGHTS) {
+    const nextJob = queuedHighlightJobs.shift();
+    if (!nextJob) {
+      return;
+    }
+
+    activeHighlightJobs += 1;
+
+    queueMicrotask(() => {
+      try {
+        nextJob.resolve(nextJob.run());
+      } catch (error) {
+        nextJob.reject(error);
+      } finally {
+        activeHighlightJobs -= 1;
+        pumpHighlightQueue();
+      }
+    });
+  }
+}
+
+/** Queue highlight rendering so the earliest startup requests can finish before later files compete. */
+function queueHighlightedDiff(run: () => HighlightedDiffCode) {
+  return new Promise<HighlightedDiffCode>((resolve, reject) => {
+    queuedHighlightJobs.push({ run, resolve, reject });
+    pumpHighlightQueue();
+  });
+}
+
 /** Highlight a diff file and return just the rendered line trees the UI needs. */
 export async function loadHighlightedDiff(file: DiffFile): Promise<HighlightedDiffCode> {
   try {
     const highlighter = await prepareHighlighter(file.language);
-    const highlighted = renderDiffWithHighlighter(file.metadata, highlighter, PIERRE_RENDER_OPTIONS);
-    return {
-      deletionLines: highlighted.code.deletionLines as Array<HastNode | undefined>,
-      additionLines: highlighted.code.additionLines as Array<HastNode | undefined>,
-    };
+    return queueHighlightedDiff(() => {
+      const highlighted = renderDiffWithHighlighter(file.metadata, highlighter, PIERRE_RENDER_OPTIONS);
+      return {
+        deletionLines: highlighted.code.deletionLines as Array<HastNode | undefined>,
+        additionLines: highlighted.code.additionLines as Array<HastNode | undefined>,
+      };
+    });
   } catch {
     const highlighter = await prepareHighlighter("text");
-    const highlighted = renderDiffWithHighlighter({ ...file.metadata, lang: "text" }, highlighter, PIERRE_RENDER_OPTIONS);
-    return {
-      deletionLines: highlighted.code.deletionLines as Array<HastNode | undefined>,
-      additionLines: highlighted.code.additionLines as Array<HastNode | undefined>,
-    };
+    return queueHighlightedDiff(() => {
+      const highlighted = renderDiffWithHighlighter({ ...file.metadata, lang: "text" }, highlighter, PIERRE_RENDER_OPTIONS);
+      return {
+        deletionLines: highlighted.code.deletionLines as Array<HastNode | undefined>,
+        additionLines: highlighted.code.additionLines as Array<HastNode | undefined>,
+      };
+    });
   }
 }
 

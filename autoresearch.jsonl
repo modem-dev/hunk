@@ -1,2 +1,4 @@
 {"type":"config","name":"Optimize syntax highlighting startup latency","metricName":"selected_highlight_ms","metricUnit":"ms","bestDirection":"lower"}
 {"run":1,"commit":"5dbcdf0","metric":2381.47,"metrics":{},"status":"keep","description":"benchmark: add syntax highlight startup benchmark","timestamp":1773844093954,"segment":0}
+{"run":2,"commit":"374d7dd","metric":2349.96,"metrics":{},"status":"keep","description":"perf: reuse in-flight highlighter preparation by language","timestamp":1773844307153,"segment":0}
+{"run":3,"commit":"374d7dd","metric":2359.93,"metrics":{},"status":"discard","description":"perf: start shared highlighter warmup during module load","timestamp":1773844393521,"segment":0}
