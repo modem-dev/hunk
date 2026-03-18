@@ -19,13 +19,22 @@ function pierreThemeName(appearance: AppTheme["appearance"]) {
   return PIERRE_THEME[appearance];
 }
 
-/** Build render options for one appearance so startup work only prepares the visible theme. */
-function pierreRenderOptions(appearance: AppTheme["appearance"]) {
-  return {
-    theme: pierreThemeName(appearance),
+const PIERRE_RENDER_OPTIONS_BY_APPEARANCE = {
+  light: {
+    theme: pierreThemeName("light"),
     tokenizeMaxLineLength: 1_000,
     lineDiffType: "word-alt" as const,
-  };
+  },
+  dark: {
+    theme: pierreThemeName("dark"),
+    tokenizeMaxLineLength: 1_000,
+    lineDiffType: "word-alt" as const,
+  },
+} as const;
+
+/** Reuse the render options for one appearance so startup work avoids extra object churn. */
+function pierreRenderOptions(appearance: AppTheme["appearance"]) {
+  return PIERRE_RENDER_OPTIONS_BY_APPEARANCE[appearance];
 }
 
 let queuedHighlightWork = Promise.resolve();

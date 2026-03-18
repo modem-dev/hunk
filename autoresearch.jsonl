@@ -9,3 +9,5 @@
 {"run":8,"commit":"3443377","metric":305.71,"metrics":{},"status":"discard","description":"perf: remove startup highlight queue after the appearance-specific change","timestamp":1773845552726,"segment":0}
 {"run":9,"commit":"3443377","metric":761.56,"metrics":{},"status":"discard","description":"perf: try the JavaScript Shiki engine after the appearance-specific change","timestamp":1773845592735,"segment":0}
 {"run":10,"commit":"3443377","metric":299.8,"metrics":{},"status":"discard","description":"perf: run only the very first startup highlight immediately","timestamp":1773845636382,"segment":0}
+{"run":11,"commit":"3aea0fd","metric":105.32,"metrics":{},"status":"keep","description":"perf: serialize startup highlight work with a lean promise chain","timestamp":1773846023678,"segment":0}
+{"run":12,"commit":"3aea0fd","metric":124.86,"metrics":{},"status":"discard","description":"perf: run the promise-chain startup queue without an extra microtask","timestamp":1773846050923,"segment":0}
