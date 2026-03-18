@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# Average three cold-process runs of the app-startup syntax-highlighting benchmark.
+#
+# Primary metric:
+#   selected_highlight_ms = time from before importing App until the selected file
+#   visibly paints highlighted emphasis spans.
+#
+# Output format stays as METRIC name=value lines so pi autoresearch can parse it.
 set -euo pipefail
 
 runs=3

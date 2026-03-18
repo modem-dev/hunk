@@ -1,2 +1,0 @@
-- Explore starting `prepareHighlighter()` during startup using the default appearance or first visible file language now that the benchmark includes module import time.
-- If the benchmark plateaus again, consider extending it to include changeset loading (`loadAppBootstrap`) so prewarming during loader work can be evaluated honestly.
