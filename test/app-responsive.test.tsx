@@ -142,10 +142,10 @@ describe("responsive shell", () => {
     expect(full).toContain("drag divider resize");
     expect(full).toContain("│");
 
-    expect(medium).not.toContain("Files");
+    expect(medium).toContain("M alpha.ts");
     expect(medium).not.toContain("Changeset summary");
     expect(medium).toContain("│");
-    expect(medium).not.toContain("drag divider resize");
+    expect(medium).toContain("drag divider resize");
 
     expect(tight).not.toContain("Files");
     expect(tight).not.toContain("Changeset summary");

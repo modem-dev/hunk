@@ -55,6 +55,6 @@ export function resolveResponsiveLayout(requestedLayout: LayoutMode, viewportWid
   return {
     viewport,
     layout: "split",
-    showFilesPane: viewport === "full",
+    showFilesPane: true,
   };
 }
