@@ -182,8 +182,13 @@ export function resolveConfiguredCliInput(
   };
 }
 
-/** Serialize one scalar TOML value. */
-function serializeTomlValue(value: unknown) {
+/** Return whether an array contains only TOML table objects. */
+function isRecordArray(value: unknown): value is Array<Record<string, unknown>> {
+  return Array.isArray(value) && value.every(isRecord);
+}
+
+/** Serialize one inline TOML value, including scalar arrays. */
+function serializeTomlValue(value: unknown): string | undefined {
   if (typeof value === "string") {
     return JSON.stringify(value);
   }
@@ -192,14 +197,24 @@ function serializeTomlValue(value: unknown) {
     return String(value);
   }
 
+  if (Array.isArray(value) && !isRecordArray(value)) {
+    const serializedItems = value.map((item) => serializeTomlValue(item));
+    if (serializedItems.some((item) => item === undefined)) {
+      return undefined;
+    }
+
+    return `[${serializedItems.join(", ")}]`;
+  }
+
   return undefined;
 }
 
 /** Render one TOML object recursively while keeping scalar keys above child tables. */
-function serializeTomlObject(source: Record<string, unknown>, sectionName?: string): string[] {
+function serializeTomlObject(source: Record<string, unknown>, sectionName?: string, arrayTable = false): string[] {
   const lines: string[] = [];
   const scalarEntries: Array<[string, string]> = [];
   const tableEntries: Array<[string, Record<string, unknown>]> = [];
+  const arrayTableEntries: Array<[string, Array<Record<string, unknown>>]> = [];
 
   for (const [key, value] of Object.entries(source)) {
     if (value === undefined) {
@@ -211,6 +226,11 @@ function serializeTomlObject(source: Record<string, unknown>, sectionName?: stri
       continue;
     }
 
+    if (isRecordArray(value)) {
+      arrayTableEntries.push([key, value]);
+      continue;
+    }
+
     const serialized = serializeTomlValue(value);
     if (serialized !== undefined) {
       scalarEntries.push([key, serialized]);
@@ -218,7 +238,7 @@ function serializeTomlObject(source: Record<string, unknown>, sectionName?: stri
   }
 
   if (sectionName) {
-    lines.push(`[${sectionName}]`);
+    lines.push(`${arrayTable ? "[[" : "["}${sectionName}${arrayTable ? "]]" : "]"}`);
   }
 
   for (const [key, value] of scalarEntries) {
@@ -231,6 +251,16 @@ function serializeTomlObject(source: Record<string, unknown>, sectionName?: stri
     }
 
     lines.push(...serializeTomlObject(value, sectionName ? `${sectionName}.${key}` : key));
+  }
+
+  for (const [key, values] of arrayTableEntries) {
+    for (const value of values) {
+      if (lines.length > 0) {
+        lines.push("");
+      }
+
+      lines.push(...serializeTomlObject(value, sectionName ? `${sectionName}.${key}` : key, true));
+    }
   }
 
   return lines;

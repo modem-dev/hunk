@@ -114,6 +114,8 @@ describe("config resolution", () => {
     writeFileSync(
       configPath,
       [
+        'recent_themes = ["paper", "midnight"]',
+        '',
         '[pager]',
         'mode = "stack"',
         '',
@@ -138,8 +140,45 @@ describe("config resolution", () => {
     expect(parsed.wrap_lines).toBe(true);
     expect(parsed.hunk_headers).toBe(false);
     expect(parsed.agent_notes).toBe(true);
+    expect(parsed.recent_themes).toEqual(["paper", "midnight"]);
     expect((parsed.pager as Record<string, unknown>).mode).toBe("stack");
     expect((parsed.git as Record<string, unknown>).wrap_lines).toBe(true);
+  });
+
+  test("preserves TOML array-of-table sections when persisting view preferences", () => {
+    const repo = createTempDir("hunk-config-repo-");
+    const configPath = join(repo, ".hunk", "config.toml");
+
+    mkdirSync(join(repo, ".hunk"), { recursive: true });
+    writeFileSync(
+      configPath,
+      [
+        'theme = "paper"',
+        '',
+        '[[bookmarks]]',
+        'path = "src/a.ts"',
+        'hunk = 0',
+        '',
+        '[[bookmarks]]',
+        'path = "src/b.ts"',
+        'hunk = 2',
+      ].join('\n'),
+    );
+
+    persistViewPreferences(configPath, {
+      mode: "split",
+      theme: "paper",
+      showLineNumbers: true,
+      wrapLines: false,
+      showHunkHeaders: true,
+      showAgentNotes: false,
+    });
+
+    const parsed = Bun.TOML.parse(readFileSync(configPath, "utf8")) as Record<string, unknown>;
+    expect(parsed.bookmarks).toEqual([
+      { path: "src/a.ts", hunk: 0 },
+      { path: "src/b.ts", hunk: 2 },
+    ]);
   });
 
   test("loadAppBootstrap exposes resolved initial preferences to the UI", async () => {
