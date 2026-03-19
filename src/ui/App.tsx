@@ -1,6 +1,6 @@
 import { MouseButton, type KeyEvent, type MouseEvent as TuiMouseEvent, type ScrollBoxRenderable } from "@opentui/core";
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
-import { Suspense, lazy, startTransition, useDeferredValue, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Suspense, lazy, startTransition, useDeferredValue, useEffect, useRef, useState } from "react";
 import type { AppBootstrap, LayoutMode } from "../core/types";
 import { MenuBar } from "./components/chrome/MenuBar";
 import { MENU_ORDER, buildMenuSpecs, menuWidth, nextMenuItemIndex, type MenuEntry, type MenuId } from "./components/chrome/menu";
@@ -133,29 +133,13 @@ export function App({ bootstrap, onQuit = () => process.exit(0) }: { bootstrap: 
     setSelectedHunkIndex((current) => clamp(current, 0, maxIndex));
   }, [selectedFile]);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (!selectedFile) {
       return;
     }
 
-    const scrollSelectionIntoView = () => {
-      filesScrollRef.current?.scrollChildIntoView(fileRowId(selectedFile.id));
-      if (selectedFile.metadata.hunks[selectedHunkIndex]) {
-        diffScrollRef.current?.scrollChildIntoView(diffHunkId(selectedFile.id, selectedHunkIndex));
-        return;
-      }
-
-      diffScrollRef.current?.scrollChildIntoView(diffSectionId(selectedFile.id));
-    };
-
-    // Selection changes can race with section windowing, so retry briefly while the new target mounts.
-    scrollSelectionIntoView();
-    const retryDelays = [0, 16, 48];
-    const timeouts = retryDelays.map((delay) => setTimeout(scrollSelectionIntoView, delay));
-    return () => {
-      timeouts.forEach((timeout) => clearTimeout(timeout));
-    };
-  }, [selectedFile, selectedHunkIndex]);
+    filesScrollRef.current?.scrollChildIntoView(fileRowId(selectedFile.id));
+  }, [selectedFile]);
 
   useEffect(() => {
     // Dismissed notes are hunk-local, so reset them when the review focus moves.
@@ -170,8 +154,6 @@ export function App({ bootstrap, onQuit = () => process.exit(0) }: { bootstrap: 
     }
 
     filesScrollRef.current?.scrollChildIntoView(fileRowId(nextCursor.fileId));
-    diffScrollRef.current?.scrollChildIntoView(diffHunkId(nextCursor.fileId, nextCursor.hunkIndex));
-
     setSelectedFileId(nextCursor.fileId);
     setSelectedHunkIndex(nextCursor.hunkIndex);
   };
@@ -179,14 +161,6 @@ export function App({ bootstrap, onQuit = () => process.exit(0) }: { bootstrap: 
   /** Jump the review stream to a file and optionally a specific hunk within it. */
   const jumpToFile = (fileId: string, nextHunkIndex = 0) => {
     filesScrollRef.current?.scrollChildIntoView(fileRowId(fileId));
-    const nextFile =
-      filteredFiles.find((file) => file.id === fileId) ?? bootstrap.changeset.files.find((file) => file.id === fileId);
-    if (nextFile?.metadata.hunks[nextHunkIndex]) {
-      diffScrollRef.current?.scrollChildIntoView(diffHunkId(fileId, nextHunkIndex));
-    } else {
-      diffScrollRef.current?.scrollChildIntoView(diffSectionId(fileId));
-    }
-
     setSelectedFileId(fileId);
     setSelectedHunkIndex(nextHunkIndex);
   };
