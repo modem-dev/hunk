@@ -9,7 +9,14 @@ import { shutdownSession } from "./core/shutdown";
 import { openControllingTerminal, resolveRuntimeCliInput, usesPipedPatchInput } from "./core/terminal";
 import { App } from "./ui/App";
 
-const runtimeCliInput = resolveRuntimeCliInput(await parseCli(process.argv));
+const parsedCliInput = await parseCli(process.argv);
+
+if (parsedCliInput.kind === "help") {
+  process.stdout.write(parsedCliInput.text);
+  process.exit(0);
+}
+
+const runtimeCliInput = resolveRuntimeCliInput(parsedCliInput);
 const configured = resolveConfiguredCliInput(runtimeCliInput);
 const cliInput = configured.input;
 const bootstrap = await loadAppBootstrap(cliInput);

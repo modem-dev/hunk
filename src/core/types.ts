@@ -66,10 +66,29 @@ export interface PersistedViewPreferences {
   showAgentNotes: boolean;
 }
 
+export interface HelpCommandInput {
+  kind: "help";
+  text: string;
+}
+
 export interface GitCommandInput {
   kind: "git";
   range?: string;
   staged: boolean;
+  pathspecs?: string[];
+  options: CommonOptions;
+}
+
+export interface ShowCommandInput {
+  kind: "show";
+  ref?: string;
+  pathspecs?: string[];
+  options: CommonOptions;
+}
+
+export interface StashShowCommandInput {
+  kind: "stash-show";
+  ref?: string;
   options: CommonOptions;
 }
 
@@ -96,9 +115,13 @@ export interface DiffToolCommandInput {
 
 export type CliInput =
   | GitCommandInput
+  | ShowCommandInput
+  | StashShowCommandInput
   | FileCommandInput
   | PatchCommandInput
   | DiffToolCommandInput;
+
+export type ParsedCliInput = CliInput | HelpCommandInput;
 
 export interface AppBootstrap {
   input: CliInput;

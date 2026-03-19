@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadAppBootstrap } from "../src/core/loaders";
+import type { CliInput } from "../src/core/types";
 
 const tempDirs: string[] = [];
 
@@ -26,6 +27,30 @@ function git(cwd: string, ...cmd: string[]) {
   if (proc.exitCode !== 0) {
     const stderr = Buffer.from(proc.stderr).toString("utf8");
     throw new Error(stderr.trim() || `git ${cmd.join(" ")} failed`);
+  }
+
+  return Buffer.from(proc.stdout).toString("utf8");
+}
+
+function createTempRepo(prefix: string) {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  tempDirs.push(dir);
+
+  git(dir, "init");
+  git(dir, "config", "user.name", "Test User");
+  git(dir, "config", "user.email", "test@example.com");
+
+  return dir;
+}
+
+async function loadFromRepo(dir: string, input: CliInput) {
+  const previousCwd = process.cwd();
+  process.chdir(dir);
+
+  try {
+    return await loadAppBootstrap(input);
+  } finally {
+    process.chdir(previousCwd);
   }
 }
 
@@ -75,12 +100,7 @@ describe("loadAppBootstrap", () => {
   });
 
   test("loads git working tree changes from a temporary repo", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "hunk-git-"));
-    tempDirs.push(dir);
-
-    git(dir, "init");
-    git(dir, "config", "user.name", "Test User");
-    git(dir, "config", "user.email", "test@example.com");
+    const dir = createTempRepo("hunk-git-");
 
     writeFileSync(join(dir, "example.ts"), "export const value = 1;\n");
     git(dir, "add", "example.ts");
@@ -88,31 +108,19 @@ describe("loadAppBootstrap", () => {
 
     writeFileSync(join(dir, "example.ts"), "export const value = 2;\nexport const extra = true;\n");
 
-    const previousCwd = process.cwd();
-    process.chdir(dir);
+    const bootstrap = await loadFromRepo(dir, {
+      kind: "git",
+      staged: false,
+      options: { mode: "auto" },
+    });
 
-    try {
-      const bootstrap = await loadAppBootstrap({
-        kind: "git",
-        staged: false,
-        options: { mode: "auto" },
-      });
-
-      expect(bootstrap.changeset.files).toHaveLength(1);
-      expect(bootstrap.changeset.files[0]?.path).toBe("example.ts");
-      expect(bootstrap.changeset.files[0]?.stats.additions).toBeGreaterThan(0);
-    } finally {
-      process.chdir(previousCwd);
-    }
+    expect(bootstrap.changeset.files).toHaveLength(1);
+    expect(bootstrap.changeset.files[0]?.path).toBe("example.ts");
+    expect(bootstrap.changeset.files[0]?.stats.additions).toBeGreaterThan(0);
   });
 
   test("uses agent sidecar file order for the review stream", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "hunk-git-"));
-    tempDirs.push(dir);
-
-    git(dir, "init");
-    git(dir, "config", "user.name", "Test User");
-    git(dir, "config", "user.email", "test@example.com");
+    const dir = createTempRepo("hunk-git-");
 
     writeFileSync(join(dir, "alpha.ts"), "export const alpha = 1;\n");
     writeFileSync(join(dir, "beta.ts"), "export const beta = 1;\n");
@@ -143,23 +151,130 @@ describe("loadAppBootstrap", () => {
       }),
     );
 
-    const previousCwd = process.cwd();
-    process.chdir(dir);
+    const bootstrap = await loadFromRepo(dir, {
+      kind: "git",
+      staged: false,
+      options: {
+        mode: "auto",
+        agentContext: agent,
+      },
+    });
 
-    try {
-      const bootstrap = await loadAppBootstrap({
-        kind: "git",
-        staged: false,
-        options: {
-          mode: "auto",
-          agentContext: agent,
-        },
-      });
+    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["beta.ts", "alpha.ts"]);
+  });
 
-      expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["beta.ts", "alpha.ts"]);
-    } finally {
-      process.chdir(previousCwd);
-    }
+  test("loads staged-only git diffs from the full UI command path", async () => {
+    const dir = createTempRepo("hunk-git-staged-");
+
+    writeFileSync(join(dir, "alpha.ts"), "export const alpha = 1;\n");
+    writeFileSync(join(dir, "beta.ts"), "export const beta = 1;\n");
+    git(dir, "add", "alpha.ts", "beta.ts");
+    git(dir, "commit", "-m", "initial");
+
+    writeFileSync(join(dir, "alpha.ts"), "export const alpha = 2;\n");
+    git(dir, "add", "alpha.ts");
+    writeFileSync(join(dir, "beta.ts"), "export const beta = 2;\n");
+
+    const bootstrap = await loadFromRepo(dir, {
+      kind: "git",
+      staged: true,
+      options: { mode: "auto" },
+    });
+
+    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["alpha.ts"]);
+  });
+
+  test("loads pathspec-limited git diffs from the full UI command path", async () => {
+    const dir = createTempRepo("hunk-git-pathspec-");
+
+    writeFileSync(join(dir, "alpha.ts"), "export const alpha = 1;\n");
+    writeFileSync(join(dir, "beta.ts"), "export const beta = 1;\n");
+    git(dir, "add", "alpha.ts", "beta.ts");
+    git(dir, "commit", "-m", "initial");
+
+    writeFileSync(join(dir, "alpha.ts"), "export const alpha = 2;\n");
+    writeFileSync(join(dir, "beta.ts"), "export const beta = 2;\n");
+
+    const bootstrap = await loadFromRepo(dir, {
+      kind: "git",
+      staged: false,
+      pathspecs: ["beta.ts"],
+      options: { mode: "auto" },
+    });
+
+    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["beta.ts"]);
+  });
+
+  test("loads show output for the latest commit and an explicit ref", async () => {
+    const dir = createTempRepo("hunk-show-");
+
+    writeFileSync(join(dir, "alpha.ts"), "export const alpha = 1;\n");
+    writeFileSync(join(dir, "beta.ts"), "export const beta = 1;\n");
+    git(dir, "add", "alpha.ts", "beta.ts");
+    git(dir, "commit", "-m", "initial");
+
+    writeFileSync(join(dir, "alpha.ts"), "export const alpha = 2;\n");
+    git(dir, "add", "alpha.ts");
+    git(dir, "commit", "-m", "update alpha");
+
+    writeFileSync(join(dir, "beta.ts"), "export const beta = 2;\n");
+    git(dir, "add", "beta.ts");
+    git(dir, "commit", "-m", "update beta");
+
+    const latest = await loadFromRepo(dir, {
+      kind: "show",
+      options: { mode: "auto" },
+    });
+    const previous = await loadFromRepo(dir, {
+      kind: "show",
+      ref: "HEAD~1",
+      options: { mode: "auto" },
+    });
+
+    expect(latest.changeset.files.map((file) => file.path)).toEqual(["beta.ts"]);
+    expect(previous.changeset.files.map((file) => file.path)).toEqual(["alpha.ts"]);
+  });
+
+  test("loads show output limited by pathspec", async () => {
+    const dir = createTempRepo("hunk-show-pathspec-");
+
+    writeFileSync(join(dir, "alpha.ts"), "export const alpha = 1;\n");
+    writeFileSync(join(dir, "beta.ts"), "export const beta = 1;\n");
+    git(dir, "add", "alpha.ts", "beta.ts");
+    git(dir, "commit", "-m", "initial");
+
+    writeFileSync(join(dir, "alpha.ts"), "export const alpha = 2;\n");
+    writeFileSync(join(dir, "beta.ts"), "export const beta = 2;\n");
+    git(dir, "add", "alpha.ts", "beta.ts");
+    git(dir, "commit", "-m", "update both");
+
+    const bootstrap = await loadFromRepo(dir, {
+      kind: "show",
+      ref: "HEAD",
+      pathspecs: ["alpha.ts"],
+      options: { mode: "auto" },
+    });
+
+    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["alpha.ts"]);
+  });
+
+  test("loads stash show output as a full review changeset", async () => {
+    const dir = createTempRepo("hunk-stash-");
+
+    writeFileSync(join(dir, "alpha.ts"), "export const alpha = 1;\n");
+    git(dir, "add", "alpha.ts");
+    git(dir, "commit", "-m", "initial");
+
+    writeFileSync(join(dir, "alpha.ts"), "export const alpha = 2;\n");
+    git(dir, "stash", "push", "-m", "update alpha");
+
+    const bootstrap = await loadFromRepo(dir, {
+      kind: "stash-show",
+      options: { mode: "auto" },
+    });
+
+    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["alpha.ts"]);
+    expect(bootstrap.changeset.title).toContain("stash");
   });
 
   test("loads colorized git patch files like the real pager stdin stream", async () => {

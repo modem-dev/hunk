@@ -1,5 +1,6 @@
+import { existsSync, statSync } from "node:fs";
 import { Command } from "commander";
-import type { CliInput, CommonOptions, LayoutMode } from "./types";
+import type { CliInput, CommonOptions, LayoutMode, ParsedCliInput } from "./types";
 
 /** Validate one requested layout mode from CLI input. */
 function parseLayoutMode(value: string): LayoutMode {
@@ -50,93 +51,339 @@ function buildCommonOptions(
   };
 }
 
-/** Parse CLI arguments into one normalized input shape for the app loader layer. */
-export async function parseCli(argv: string[]): Promise<CliInput> {
-  if (argv.length <= 2) {
+/** Attach the shared mode/theme/agent-context flags to a subcommand parser. */
+function applyCommonOptions(command: Command) {
+  return command
+    .option("--mode <mode>", "layout mode: auto, split, stack", parseLayoutMode)
+    .option("--theme <theme>", "named theme override")
+    .option("--agent-context <path>", "JSON sidecar with agent rationale")
+    .option("--pager", "use pager-style chrome and controls")
+    .option("--line-numbers", "show line numbers")
+    .option("--no-line-numbers", "hide line numbers")
+    .option("--wrap", "wrap long diff lines")
+    .option("--no-wrap", "truncate long diff lines to one row")
+    .option("--hunk-headers", "show hunk metadata rows")
+    .option("--no-hunk-headers", "hide hunk metadata rows")
+    .option("--agent-notes", "show agent notes by default")
+    .option("--no-agent-notes", "hide agent notes by default");
+}
+
+/** Build the top-level help text shown by bare `hunk` and `hunk --help`. */
+function renderCliHelp() {
+  return [
+    "Usage: hunk <command> [options]",
+    "",
+    "Desktop-inspired terminal diff viewer for agent-authored changesets.",
+    "",
+    "Commands:",
+    "  hunk diff [ref] [-- <pathspec...>]      review working tree changes or compare against a ref",
+    "  hunk diff --staged [-- <pathspec...>]   review staged changes",
+    "  hunk diff <left> <right>                compare two concrete files",
+    "  hunk show [ref] [-- <pathspec...>]      review the last commit or a given ref",
+    "  hunk stash show [ref]                   review a stash entry",
+    "  hunk patch [file]                       review a patch file or stdin",
+    "  hunk difftool <left> <right> [path]     review Git difftool file pairs",
+    "  hunk git [range]                        legacy alias for git diff-style review",
+    "",
+    "Options:",
+    "  -h, --help                              show help",
+    "",
+    "Examples:",
+    "  hunk diff",
+    "  hunk diff main",
+    "  hunk diff main...feature",
+    "  hunk diff --staged -- src/ui/App.tsx",
+    "  hunk show",
+    "  hunk show HEAD~1",
+    "  hunk show abc123 -- README.md",
+    "  hunk patch -",
+    "",
+  ].join("\n");
+}
+
+/** Split raw arguments into command tokens and optional pathspecs after `--`. */
+function splitPathspecArgs(tokens: string[]) {
+  const separatorIndex = tokens.indexOf("--");
+  if (separatorIndex === -1) {
+    return { commandTokens: tokens, pathspecs: [] as string[] };
+  }
+
+  return {
+    commandTokens: tokens.slice(0, separatorIndex),
+    pathspecs: tokens.slice(separatorIndex + 1),
+  };
+}
+
+/** Return whether both diff operands are concrete files on disk. */
+function areExistingFiles(left: string, right: string) {
+  return [left, right].every((path) => existsSync(path) && statSync(path).isFile());
+}
+
+/** Parse one standalone command while letting us capture `--help` as plain text. */
+async function parseStandaloneCommand<T>(command: Command, tokens: string[]): Promise<T | null> {
+  command.exitOverride();
+
+  try {
+    await command.parseAsync(["bun", "hunk", ...tokens]);
+    return null;
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "commander.helpDisplayed") {
+      return null;
+    }
+
+    throw error;
+  }
+}
+
+/** Build one command parser with the shared Hunk options attached. */
+function createCommand(name: string, description: string) {
+  return applyCommonOptions(new Command(name).description(description));
+}
+
+/** Parse the overloaded `hunk diff` command. */
+async function parseDiffCommand(tokens: string[], argv: string[]): Promise<ParsedCliInput> {
+  const { commandTokens, pathspecs } = splitPathspecArgs(tokens);
+  const command = createCommand("diff", "review Git diffs or compare two concrete files")
+    .option("--staged", "show staged changes instead of the working tree")
+    .option("--cached", "alias for --staged")
+    .argument("[targets...]");
+
+  let parsedTargets: string[] = [];
+  let parsedOptions: Record<string, unknown> = {};
+
+  command.action((targets: string[], options: Record<string, unknown>) => {
+    parsedTargets = targets;
+    parsedOptions = options;
+  });
+
+  if (commandTokens.includes("--help") || commandTokens.includes("-h")) {
+    return { kind: "help", text: `${command.helpInformation().trimEnd()}\n` };
+  }
+
+  await parseStandaloneCommand(command, commandTokens);
+
+  const staged = Boolean(parsedOptions.staged) || Boolean(parsedOptions.cached);
+  const options = buildCommonOptions(parsedOptions, argv);
+  const normalizedPathspecs = pathspecs.length > 0 ? pathspecs : undefined;
+
+  if (parsedTargets.length === 0) {
     return {
       kind: "git",
-      staged: false,
-      options: buildCommonOptions({}, argv),
+      staged,
+      pathspecs: normalizedPathspecs,
+      options,
     };
   }
 
-  let selected: CliInput | null = null;
-  const program = new Command();
-
-  program
-    .name("hunk")
-    .description("Desktop-inspired terminal diff viewer for agent-authored changesets.")
-    .showHelpAfterError();
-
-  /** Attach the shared mode/theme/agent-context flags to a subcommand. */
-  const applyCommonOptions = (command: Command) =>
-    command
-      .option("--mode <mode>", "layout mode: auto, split, stack", parseLayoutMode)
-      .option("--theme <theme>", "named theme override")
-      .option("--agent-context <path>", "JSON sidecar with agent rationale")
-      .option("--pager", "use pager-style chrome and controls")
-      .option("--line-numbers", "show line numbers")
-      .option("--no-line-numbers", "hide line numbers")
-      .option("--wrap", "wrap long diff lines")
-      .option("--no-wrap", "truncate long diff lines to one row")
-      .option("--hunk-headers", "show hunk metadata rows")
-      .option("--no-hunk-headers", "hide hunk metadata rows")
-      .option("--agent-notes", "show agent notes by default")
-      .option("--no-agent-notes", "hide agent notes by default");
-
-  applyCommonOptions(program.command("git"))
-    .argument("[range]", "revision or range to diff")
-    .option("--staged", "show staged changes instead of the working tree")
-    .action((range: string | undefined, options: Record<string, unknown>) => {
-      selected = {
-        kind: "git",
-        range,
-        staged: Boolean(options.staged),
-        options: buildCommonOptions(options, argv),
-      };
-    });
-
-  applyCommonOptions(program.command("diff"))
-    .argument("<left>", "left-hand file")
-    .argument("<right>", "right-hand file")
-    .action((left: string, right: string, options: Record<string, unknown>) => {
-      selected = {
-        kind: "diff",
-        left,
-        right,
-        options: buildCommonOptions(options, argv),
-      };
-    });
-
-  applyCommonOptions(program.command("patch"))
-    .argument("[file]", "patch file path, or omit / pass - for stdin")
-    .action((file: string | undefined, options: Record<string, unknown>) => {
-      selected = {
-        kind: "patch",
-        file,
-        options: buildCommonOptions(options, argv),
-      };
-    });
-
-  applyCommonOptions(program.command("difftool"))
-    .argument("<left>", "left-hand file from git")
-    .argument("<right>", "right-hand file from git")
-    .argument("[path]", "display path")
-    .action((left: string, right: string, path: string | undefined, options: Record<string, unknown>) => {
-      selected = {
-        kind: "difftool",
-        left,
-        right,
-        path,
-        options: buildCommonOptions(options, argv),
-      };
-    });
-
-  await program.parseAsync(argv);
-
-  if (!selected) {
-    throw new Error("No command selected.");
+  if (parsedTargets.length === 1) {
+    return {
+      kind: "git",
+      range: parsedTargets[0],
+      staged,
+      pathspecs: normalizedPathspecs,
+      options,
+    };
   }
 
-  return selected;
+  if (parsedTargets.length === 2 && !staged && !normalizedPathspecs && areExistingFiles(parsedTargets[0]!, parsedTargets[1]!)) {
+    return {
+      kind: "diff",
+      left: parsedTargets[0]!,
+      right: parsedTargets[1]!,
+      options,
+    };
+  }
+
+  throw new Error(
+    "Use `hunk diff <ref>`, `hunk diff <ref1>..<ref2>`, or `hunk diff <left> <right>` for file comparison.",
+  );
+}
+
+/** Parse the Git-style `hunk show` command. */
+async function parseShowCommand(tokens: string[], argv: string[]): Promise<ParsedCliInput> {
+  const { commandTokens, pathspecs } = splitPathspecArgs(tokens);
+  const command = createCommand("show", "review the last commit or a given ref").argument("[ref]");
+
+  let parsedRef: string | undefined;
+  let parsedOptions: Record<string, unknown> = {};
+
+  command.action((ref: string | undefined, options: Record<string, unknown>) => {
+    parsedRef = ref;
+    parsedOptions = options;
+  });
+
+  if (commandTokens.includes("--help") || commandTokens.includes("-h")) {
+    return { kind: "help", text: `${command.helpInformation().trimEnd()}\n` };
+  }
+
+  await parseStandaloneCommand(command, commandTokens);
+
+  return {
+    kind: "show",
+    ref: parsedRef,
+    pathspecs: pathspecs.length > 0 ? pathspecs : undefined,
+    options: buildCommonOptions(parsedOptions, argv),
+  };
+}
+
+/** Parse the legacy `hunk git` command. */
+async function parseGitCommand(tokens: string[], argv: string[]): Promise<ParsedCliInput> {
+  const { commandTokens, pathspecs } = splitPathspecArgs(tokens);
+  const command = createCommand("git", "legacy alias for Git diff-style review")
+    .option("--staged", "show staged changes instead of the working tree")
+    .option("--cached", "alias for --staged")
+    .argument("[range]");
+
+  let parsedRange: string | undefined;
+  let parsedOptions: Record<string, unknown> = {};
+
+  command.action((range: string | undefined, options: Record<string, unknown>) => {
+    parsedRange = range;
+    parsedOptions = options;
+  });
+
+  if (commandTokens.includes("--help") || commandTokens.includes("-h")) {
+    return { kind: "help", text: `${command.helpInformation().trimEnd()}\n` };
+  }
+
+  await parseStandaloneCommand(command, commandTokens);
+
+  return {
+    kind: "git",
+    range: parsedRange,
+    staged: Boolean(parsedOptions.staged) || Boolean(parsedOptions.cached),
+    pathspecs: pathspecs.length > 0 ? pathspecs : undefined,
+    options: buildCommonOptions(parsedOptions, argv),
+  };
+}
+
+/** Parse the patch-file / stdin patch entrypoint. */
+async function parsePatchCommand(tokens: string[], argv: string[]): Promise<ParsedCliInput> {
+  const command = createCommand("patch", "review a patch file, or read a patch from stdin").argument("[file]");
+
+  let parsedFile: string | undefined;
+  let parsedOptions: Record<string, unknown> = {};
+
+  command.action((file: string | undefined, options: Record<string, unknown>) => {
+    parsedFile = file;
+    parsedOptions = options;
+  });
+
+  if (tokens.includes("--help") || tokens.includes("-h")) {
+    return { kind: "help", text: `${command.helpInformation().trimEnd()}\n` };
+  }
+
+  await parseStandaloneCommand(command, tokens);
+
+  return {
+    kind: "patch",
+    file: parsedFile,
+    options: buildCommonOptions(parsedOptions, argv),
+  };
+}
+
+/** Parse Git difftool-style two-file review commands. */
+async function parseDifftoolCommand(tokens: string[], argv: string[]): Promise<ParsedCliInput> {
+  const command = createCommand("difftool", "review Git difftool file pairs")
+    .argument("<left>")
+    .argument("<right>")
+    .argument("[path]");
+
+  let parsedLeft = "";
+  let parsedRight = "";
+  let parsedPath: string | undefined;
+  let parsedOptions: Record<string, unknown> = {};
+
+  command.action((left: string, right: string, path: string | undefined, options: Record<string, unknown>) => {
+    parsedLeft = left;
+    parsedRight = right;
+    parsedPath = path;
+    parsedOptions = options;
+  });
+
+  if (tokens.includes("--help") || tokens.includes("-h")) {
+    return { kind: "help", text: `${command.helpInformation().trimEnd()}\n` };
+  }
+
+  await parseStandaloneCommand(command, tokens);
+
+  return {
+    kind: "difftool",
+    left: parsedLeft,
+    right: parsedRight,
+    path: parsedPath,
+    options: buildCommonOptions(parsedOptions, argv),
+  };
+}
+
+/** Parse `hunk stash show` as a full-UI stash review command. */
+async function parseStashCommand(tokens: string[], argv: string[]): Promise<ParsedCliInput> {
+  const [subcommand, ...rest] = tokens;
+  if (!subcommand || subcommand === "--help" || subcommand === "-h") {
+    return {
+      kind: "help",
+      text: [
+        "Usage: hunk stash show [ref] [options]",
+        "",
+        "Review a stash entry as a full Hunk changeset.",
+        "",
+        "Examples:",
+        "  hunk stash show",
+        "  hunk stash show stash@{1}",
+      ].join("\n") + "\n",
+    };
+  }
+
+  if (subcommand !== "show") {
+    throw new Error("Only `hunk stash show` is supported.");
+  }
+
+  const command = createCommand("stash show", "review a stash entry as a full Hunk changeset").argument("[ref]");
+
+  let parsedRef: string | undefined;
+  let parsedOptions: Record<string, unknown> = {};
+
+  command.action((ref: string | undefined, options: Record<string, unknown>) => {
+    parsedRef = ref;
+    parsedOptions = options;
+  });
+
+  if (rest.includes("--help") || rest.includes("-h")) {
+    return { kind: "help", text: `${command.helpInformation().trimEnd()}\n` };
+  }
+
+  await parseStandaloneCommand(command, rest);
+
+  return {
+    kind: "stash-show",
+    ref: parsedRef,
+    options: buildCommonOptions(parsedOptions, argv),
+  };
+}
+
+/** Parse CLI arguments into one normalized input shape for the app loader layer. */
+export async function parseCli(argv: string[]): Promise<ParsedCliInput> {
+  const args = argv.slice(2);
+  const [commandName, ...rest] = args;
+
+  if (!commandName || commandName === "help" || commandName === "--help" || commandName === "-h") {
+    return { kind: "help", text: renderCliHelp() };
+  }
+
+  switch (commandName) {
+    case "diff":
+      return parseDiffCommand(rest, argv);
+    case "show":
+      return parseShowCommand(rest, argv);
+    case "git":
+      return parseGitCommand(rest, argv);
+    case "patch":
+      return parsePatchCommand(rest, argv);
+    case "difftool":
+      return parseDifftoolCommand(rest, argv);
+    case "stash":
+      return parseStashCommand(rest, argv);
+    default:
+      throw new Error(`Unknown command: ${commandName}`);
+  }
 }

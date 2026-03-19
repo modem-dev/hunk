@@ -17,6 +17,8 @@ import type {
   FileCommandInput,
   GitCommandInput,
   PatchCommandInput,
+  ShowCommandInput,
+  StashShowCommandInput,
 } from "./types";
 
 /** Run a command synchronously and return stdout as text. */
@@ -251,6 +253,15 @@ async function loadFileDiffChangeset(input: FileCommandInput | DiffToolCommandIn
   } satisfies Changeset;
 }
 
+/** Append Git pathspec arguments only when the caller requested them. */
+function appendPathspecs(args: string[], pathspecs?: string[]) {
+  if (!pathspecs || pathspecs.length === 0) {
+    return;
+  }
+
+  args.push("--", ...pathspecs);
+}
+
 /** Build a changeset from the current repository working tree or a git range. */
 async function loadGitChangeset(input: GitCommandInput, agentContext: AgentContext | null) {
   const repoRoot = spawnText(["git", "rev-parse", "--show-toplevel"]).trim();
@@ -265,10 +276,54 @@ async function loadGitChangeset(input: GitCommandInput, agentContext: AgentConte
     args.push(input.range);
   }
 
+  appendPathspecs(args, input.pathspecs);
+
   const patchText = spawnText(args);
-  const title = input.staged ? `${repoName} staged changes` : input.range ? `${repoName} ${input.range}` : `${repoName} working tree`;
+  const title = input.staged
+    ? `${repoName} staged changes`
+    : input.range
+      ? `${repoName} ${input.range}`
+      : `${repoName} working tree`;
 
   return normalizePatchChangeset(patchText, title, repoRoot, agentContext);
+}
+
+/** Build a changeset from `git show`, suppressing commit-message chrome so only the patch feeds the UI. */
+async function loadShowChangeset(input: ShowCommandInput, agentContext: AgentContext | null) {
+  const repoRoot = spawnText(["git", "rev-parse", "--show-toplevel"]).trim();
+  const repoName = basename(repoRoot);
+  const args = ["git", "show", "--format=", "--no-ext-diff", "--find-renames", "--no-color"];
+
+  if (input.ref) {
+    args.push(input.ref);
+  }
+
+  appendPathspecs(args, input.pathspecs);
+
+  return normalizePatchChangeset(
+    spawnText(args),
+    input.ref ? `${repoName} show ${input.ref}` : `${repoName} show HEAD`,
+    repoRoot,
+    agentContext,
+  );
+}
+
+/** Build a changeset from `git stash show -p`, which naturally maps to one reviewable patch. */
+async function loadStashShowChangeset(input: StashShowCommandInput, agentContext: AgentContext | null) {
+  const repoRoot = spawnText(["git", "rev-parse", "--show-toplevel"]).trim();
+  const repoName = basename(repoRoot);
+  const args = ["git", "stash", "show", "-p", "--find-renames", "--no-color"];
+
+  if (input.ref) {
+    args.push(input.ref);
+  }
+
+  return normalizePatchChangeset(
+    spawnText(args),
+    input.ref ? `${repoName} stash ${input.ref}` : `${repoName} stash`,
+    repoRoot,
+    agentContext,
+  );
 }
 
 /** Build a changeset from patch text supplied by file or stdin. */
@@ -291,6 +346,12 @@ export async function loadAppBootstrap(input: CliInput): Promise<AppBootstrap> {
   switch (input.kind) {
     case "git":
       changeset = await loadGitChangeset(input, agentContext);
+      break;
+    case "show":
+      changeset = await loadShowChangeset(input, agentContext);
+      break;
+    case "stash-show":
+      changeset = await loadStashShowChangeset(input, agentContext);
       break;
     case "diff":
       changeset = await loadFileDiffChangeset(input, agentContext);
