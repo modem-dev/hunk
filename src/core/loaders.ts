@@ -48,6 +48,15 @@ function stripPrefixes(path: string) {
   return path.replace(/^[ab]\//, "");
 }
 
+/** Remove terminal escape sequences so Git-colored pager input still parses as plain patch text. */
+function stripTerminalControl(text: string) {
+  return text
+    .replace(/\x1bP[\s\S]*?\x1b\\/g, "")
+    .replace(/\x1b\][\s\S]*?(?:\x07|\x1b\\)/g, "")
+    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
+    .replace(/\x1b[@-_]/g, "");
+}
+
 /** Split a multi-file patch into per-file chunks so each diff file keeps its original patch text. */
 function splitPatchIntoFileChunks(rawPatch: string) {
   const patch = rawPatch.replaceAll("\r\n", "\n");
@@ -188,9 +197,10 @@ function normalizePatchChangeset(
   sourceLabel: string,
   agentContext: AgentContext | null,
 ): Changeset {
-  const parsedPatches = parsePatchFiles(patchText, "patch", true);
+  const normalizedPatchText = stripTerminalControl(patchText.replaceAll("\r\n", "\n"));
+  const parsedPatches = parsePatchFiles(normalizedPatchText, "patch", true);
   const metadataFiles = parsedPatches.flatMap((entry) => entry.files);
-  const chunks = splitPatchIntoFileChunks(patchText);
+  const chunks = splitPatchIntoFileChunks(normalizedPatchText);
 
   return {
     id: `changeset:${Date.now()}`,

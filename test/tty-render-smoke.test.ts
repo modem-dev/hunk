@@ -40,6 +40,8 @@ function createFixtureFiles() {
   const before = join(dir, "before.ts");
   const after = join(dir, "after.ts");
   const agent = join(dir, "agent.json");
+  const patch = join(dir, "input.patch");
+  const coloredPatch = join(dir, "input-colored.patch");
 
   writeFileSync(before, "export const answer = 41;\n");
   writeFileSync(after, "export const answer = 42;\nexport const added = true;\n");
@@ -56,7 +58,33 @@ function createFixtureFiles() {
     }),
   );
 
-  return { dir, before, after, agent };
+  const patchProc = Bun.spawnSync(["git", "diff", "--no-index", "--no-color", "--", before, after], {
+    cwd: dir,
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const coloredPatchProc = Bun.spawnSync(["git", "diff", "--no-index", "--color=always", "--", before, after], {
+    cwd: dir,
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+
+  if (patchProc.exitCode !== 0 && patchProc.exitCode !== 1) {
+    const stderr = Buffer.from(patchProc.stderr).toString("utf8");
+    throw new Error(stderr.trim() || `failed to build fixture patch: ${patchProc.exitCode}`);
+  }
+
+  if (coloredPatchProc.exitCode !== 0 && coloredPatchProc.exitCode !== 1) {
+    const stderr = Buffer.from(coloredPatchProc.stderr).toString("utf8");
+    throw new Error(stderr.trim() || `failed to build colored fixture patch: ${coloredPatchProc.exitCode}`);
+  }
+
+  writeFileSync(patch, Buffer.from(patchProc.stdout).toString("utf8"));
+  writeFileSync(coloredPatch, Buffer.from(coloredPatchProc.stdout).toString("utf8"));
+
+  return { dir, before, after, agent, patch, coloredPatch };
 }
 
 async function runTtySmoke(options: { mode?: "split" | "stack"; pager?: boolean; agentContext?: boolean }) {
@@ -91,6 +119,30 @@ async function runTtySmoke(options: { mode?: "split" | "stack"; pager?: boolean;
   if (proc.exitCode !== 0 && proc.exitCode !== 124) {
     const stderr = Buffer.from(proc.stderr).toString("utf8");
     throw new Error(stderr.trim() || `tty smoke command failed with exit ${proc.exitCode}`);
+  }
+
+  return stripTerminalControl(await Bun.file(transcript).text());
+}
+
+async function runStdinPagerSmoke() {
+  const fixture = createFixtureFiles();
+  const transcript = join(fixture.dir, "stdin-pager-transcript.txt");
+  const patchCommand = `cat ${shellQuote(fixture.coloredPatch)} | bun run src/main.tsx patch -`;
+  const scriptCommand = `timeout 5 script -q -f -e -c ${shellQuote(patchCommand)} ${shellQuote(transcript)}`;
+  const proc = Bun.spawnSync(["bash", "-lc", `(sleep 1; printf q) | ${scriptCommand}`], {
+    cwd: process.cwd(),
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+    env: {
+      ...process.env,
+      TERM: "xterm-256color",
+    },
+  });
+
+  if (proc.exitCode !== 0) {
+    const stderr = Buffer.from(proc.stderr).toString("utf8");
+    throw new Error(stderr.trim() || `stdin pager smoke command failed with exit ${proc.exitCode}`);
   }
 
   return stripTerminalControl(await Bun.file(transcript).text());
@@ -139,6 +191,20 @@ describe("TTY render smoke", () => {
     expect(output).not.toContain("View  Navigate  Theme  Agent  Help");
     expect(output).not.toContain("F10 menu");
     expect(output).toContain("before.ts -> after.ts");
+    expect(output).toContain("export const answer = 42;");
+  });
+
+  test("stdin patch mode auto-enters pager mode and can quit from terminal input", async () => {
+    if (!ttyToolsAvailable) {
+      return;
+    }
+
+    const output = await runStdinPagerSmoke();
+
+    expect(output).not.toContain("View  Navigate  Theme  Agent  Help");
+    expect(output).not.toContain("F10 menu");
+    expect(output).toContain("after.ts");
+    expect(output).toContain("@@ -1 +1,2 @@");
     expect(output).toContain("export const answer = 42;");
   });
 });

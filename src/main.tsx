@@ -5,16 +5,21 @@ import { createRoot } from "@opentui/react";
 import { parseCli } from "./core/cli";
 import { loadAppBootstrap } from "./core/loaders";
 import { shutdownSession } from "./core/shutdown";
+import { openControllingTerminal, resolveRuntimeCliInput, usesPipedPatchInput } from "./core/terminal";
 import { App } from "./ui/App";
 
-const cliInput = await parseCli(process.argv);
+const cliInput = resolveRuntimeCliInput(await parseCli(process.argv));
 const bootstrap = await loadAppBootstrap(cliInput);
+const controllingTerminal = usesPipedPatchInput(cliInput) ? openControllingTerminal() : null;
 
 const renderer = await createCliRenderer({
+  stdin: controllingTerminal?.stdin,
+  stdout: controllingTerminal?.stdout,
   useMouse: !cliInput.options.pager,
   useAlternateScreen: true,
   exitOnCtrlC: true,
   openConsoleOnError: true,
+  onDestroy: () => controllingTerminal?.close(),
 });
 
 const root = createRoot(renderer);

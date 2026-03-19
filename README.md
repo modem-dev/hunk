@@ -161,12 +161,20 @@ Interpretation:
 
 ## Git integration
 
-Use Hunk as the viewer for `git diff` and `git show`:
+Use Hunk as the default Git pager:
+
+```bash
+git config --global core.pager 'hunk patch -'
+```
+
+Or scope it just to `git diff` and `git show`:
 
 ```bash
 git config --global pager.diff 'hunk patch -'
 git config --global pager.show 'hunk patch -'
 ```
+
+When Hunk reads a patch from stdin, it automatically switches to pager-style chrome, strips Git's color escape sequences before parsing, and binds keyboard input to the controlling terminal so it works correctly as a Git pager.
 
 Then:
 

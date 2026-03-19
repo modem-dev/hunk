@@ -161,4 +161,40 @@ describe("loadAppBootstrap", () => {
       process.chdir(previousCwd);
     }
   });
+
+  test("loads colorized git patch files like the real pager stdin stream", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "hunk-patch-"));
+    tempDirs.push(dir);
+
+    const before = join(dir, "before.ts");
+    const after = join(dir, "after.ts");
+    const patch = join(dir, "input.patch");
+
+    writeFileSync(before, "export const answer = 41;\n");
+    writeFileSync(after, "export const answer = 42;\nexport const added = true;\n");
+
+    const diffProc = Bun.spawnSync(["git", "diff", "--no-index", "--color=always", "--", before, after], {
+      cwd: dir,
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    if (diffProc.exitCode !== 0 && diffProc.exitCode !== 1) {
+      const stderr = Buffer.from(diffProc.stderr).toString("utf8");
+      throw new Error(stderr.trim() || `git diff --color=always failed`);
+    }
+
+    writeFileSync(patch, Buffer.from(diffProc.stdout).toString("utf8"));
+
+    const bootstrap = await loadAppBootstrap({
+      kind: "patch",
+      file: patch,
+      options: { mode: "auto" },
+    });
+
+    expect(bootstrap.changeset.files).toHaveLength(1);
+    expect(bootstrap.changeset.files[0]?.path.endsWith("after.ts")).toBe(true);
+    expect(bootstrap.changeset.files[0]?.stats.additions).toBeGreaterThan(0);
+  });
 });
