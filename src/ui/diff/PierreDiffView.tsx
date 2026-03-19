@@ -17,6 +17,8 @@ import {
 
 const EMPTY_ANNOTATED_HUNK_INDICES = new Set<number>();
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
+const SHARED_HIGHLIGHTED_DIFF_CACHE = new Map<string, HighlightedDiffCode>();
+const SHARED_HIGHLIGHT_PROMISES = new Map<string, Promise<HighlightedDiffCode>>();
 
 /** Clamp a label to one terminal row with an ellipsis. */
 function fitText(text: string, width: number) {
@@ -895,23 +897,21 @@ export function PierreDiffView({
 }) {
   const [highlighted, setHighlighted] = useState<HighlightedDiffCode | null>(null);
   const [highlightedCacheKey, setHighlightedCacheKey] = useState<string | null>(null);
-  const highlightedCacheRef = useRef(new Map<string, HighlightedDiffCode>());
-  const highlightPromiseRef = useRef(new Map<string, Promise<HighlightedDiffCode>>());
   const appearanceCacheKey = file ? `${theme.appearance}:${file.id}` : null;
 
   // Selected files load immediately; background prefetch can opt neighboring files in later.
   const pendingHighlight = useMemo(() => {
-    if (!shouldLoadHighlight || !file || !appearanceCacheKey || highlightedCacheRef.current.has(appearanceCacheKey)) {
+    if (!shouldLoadHighlight || !file || !appearanceCacheKey || SHARED_HIGHLIGHTED_DIFF_CACHE.has(appearanceCacheKey)) {
       return null;
     }
 
-    const existing = highlightPromiseRef.current.get(appearanceCacheKey);
+    const existing = SHARED_HIGHLIGHT_PROMISES.get(appearanceCacheKey);
     if (existing) {
       return existing;
     }
 
     const pending = loadHighlightedDiff(file, theme.appearance);
-    highlightPromiseRef.current.set(appearanceCacheKey, pending);
+    SHARED_HIGHLIGHT_PROMISES.set(appearanceCacheKey, pending);
     return pending;
   }, [appearanceCacheKey, file, shouldLoadHighlight, theme.appearance]);
 
@@ -926,7 +926,7 @@ export function PierreDiffView({
       return;
     }
 
-    const cached = highlightedCacheRef.current.get(appearanceCacheKey);
+    const cached = SHARED_HIGHLIGHTED_DIFF_CACHE.get(appearanceCacheKey);
     if (cached) {
       setHighlighted(cached);
       setHighlightedCacheKey(appearanceCacheKey);
@@ -946,8 +946,8 @@ export function PierreDiffView({
           return;
         }
 
-        highlightPromiseRef.current.delete(appearanceCacheKey);
-        highlightedCacheRef.current.set(appearanceCacheKey, nextHighlighted);
+        SHARED_HIGHLIGHT_PROMISES.delete(appearanceCacheKey);
+        SHARED_HIGHLIGHTED_DIFF_CACHE.set(appearanceCacheKey, nextHighlighted);
         setHighlighted(nextHighlighted);
         setHighlightedCacheKey(appearanceCacheKey);
       })
@@ -956,12 +956,12 @@ export function PierreDiffView({
           return;
         }
 
-        highlightPromiseRef.current.delete(appearanceCacheKey);
+        SHARED_HIGHLIGHT_PROMISES.delete(appearanceCacheKey);
         const fallback = {
           deletionLines: [],
           additionLines: [],
         } satisfies HighlightedDiffCode;
-        highlightedCacheRef.current.set(appearanceCacheKey, fallback);
+        SHARED_HIGHLIGHTED_DIFF_CACHE.set(appearanceCacheKey, fallback);
         setHighlighted(fallback);
         setHighlightedCacheKey(appearanceCacheKey);
       });
@@ -976,7 +976,7 @@ export function PierreDiffView({
     appearanceCacheKey && highlightedCacheKey === appearanceCacheKey
       ? highlighted
       : appearanceCacheKey
-        ? (highlightedCacheRef.current.get(appearanceCacheKey) ?? null)
+        ? (SHARED_HIGHLIGHTED_DIFF_CACHE.get(appearanceCacheKey) ?? null)
         : null;
   const notifiedHighlightKeyRef = useRef<string | null>(null);
 

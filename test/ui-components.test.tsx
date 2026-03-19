@@ -12,6 +12,7 @@ const { DiffPane } = await import("../src/ui/components/panes/DiffPane");
 const { MenuDropdown } = await import("../src/ui/components/chrome/MenuDropdown");
 const { StatusBar } = await import("../src/ui/components/chrome/StatusBar");
 const { DiffSectionPlaceholder } = await import("../src/ui/components/panes/DiffSectionPlaceholder");
+const { PierreDiffView } = await import("../src/ui/diff/PierreDiffView");
 
 function createDiffFile(id: string, path: string, before: string, after: string, withAgent = false): DiffFile {
   const metadata = parseDiffFromFile(
@@ -134,6 +135,21 @@ async function captureFrame(node: ReactNode, width = 120, height = 24) {
       setup.renderer.destroy();
     });
   }
+}
+
+function frameHasHighlightedMarker(
+  frame: { lines: Array<{ spans: Array<{ text: string; fg?: unknown; bg?: unknown }> }> },
+  marker: string,
+) {
+  return frame.lines.some((line) => {
+    const text = line.spans.map((span) => span.text).join("");
+
+    if (!text.includes(marker)) {
+      return false;
+    }
+
+    return line.spans.some((span) => span.text.includes(marker) && span.text.trim().length < text.trim().length);
+  });
 }
 
 describe("UI components", () => {
@@ -468,6 +484,69 @@ describe("UI components", () => {
     expect(frame).not.toContain("@@ -1,1 +1,1 @@");
     expect(frame).toContain("1 - export const alpha = 1;");
     expect(frame).toContain("1 + export const alpha = 2;");
+  });
+
+  test("PierreDiffView reuses highlighted rows after unmounting and remounting a file section", async () => {
+    const file = createDiffFile(
+      "cache",
+      "cache.ts",
+      "export const cacheMarker = 1;\nexport function cacheKeep(value: number) { return value + 1; }\n",
+      "export const cacheMarker = 2;\nexport function cacheKeep(value: number) { return value * 2; }\n",
+    );
+    const theme = resolveTheme("midnight", null);
+
+    const firstSetup = await testRender(
+      <PierreDiffView file={file} layout="split" theme={theme} width={180} selectedHunkIndex={0} scrollable={false} />,
+      { width: 184, height: 10 },
+    );
+
+    try {
+      let ready = false;
+      for (let iteration = 0; iteration < 400; iteration += 1) {
+        await act(async () => {
+          await firstSetup.renderOnce();
+          await Bun.sleep(0);
+          await firstSetup.renderOnce();
+          await Bun.sleep(0);
+        });
+
+        if (frameHasHighlightedMarker(firstSetup.captureSpans(), "cacheMarker")) {
+          ready = true;
+          break;
+        }
+      }
+
+      expect(ready).toBe(true);
+    } finally {
+      await act(async () => {
+        firstSetup.renderer.destroy();
+      });
+    }
+
+    const secondSetup = await testRender(
+      <PierreDiffView
+        file={file}
+        layout="split"
+        theme={theme}
+        width={180}
+        selectedHunkIndex={0}
+        shouldLoadHighlight={false}
+        scrollable={false}
+      />,
+      { width: 184, height: 10 },
+    );
+
+    try {
+      await act(async () => {
+        await secondSetup.renderOnce();
+      });
+
+      expect(frameHasHighlightedMarker(secondSetup.captureSpans(), "cacheMarker")).toBe(true);
+    } finally {
+      await act(async () => {
+        secondSetup.renderer.destroy();
+      });
+    }
   });
 
   test("App renders the menu bar, multi-file stream, and AI badges", async () => {

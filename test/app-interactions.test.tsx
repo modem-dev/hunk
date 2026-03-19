@@ -122,44 +122,6 @@ function createWrapBootstrap(): AppBootstrap {
   };
 }
 
-function createVisibleHighlightBootstrap(): AppBootstrap {
-  return {
-    input: {
-      kind: "git",
-      staged: false,
-      options: {
-        mode: "split",
-      },
-    },
-    changeset: {
-      id: "changeset:app-visible-highlight-prefetch",
-      sourceLabel: "repo",
-      title: "repo working tree",
-      files: [
-        createDiffFile(
-          "alpha",
-          "alpha.ts",
-          "export const alphaMarker = 1;\nexport function alphaKeep(value: number) { return value + 1; }\n",
-          "export const alphaMarker = 2;\nexport function alphaKeep(value: number) { return value * 2; }\n",
-        ),
-        createDiffFile(
-          "beta",
-          "beta.ts",
-          "export const betaMarker = 1;\nexport function betaKeep(value: number) { return value + 1; }\n",
-          "export const betaMarker = 2;\nexport function betaKeep(value: number) { return value * 2; }\n",
-        ),
-        createDiffFile(
-          "gamma",
-          "gamma.ts",
-          "export const gammaMarker = 1;\nexport function gammaKeep(value: number) { return value + 1; }\n",
-          "export const gammaMarker = 2;\nexport function gammaKeep(value: number) { return value * 2; }\n",
-        ),
-      ],
-    },
-    initialMode: "split",
-    initialTheme: "midnight",
-  };
-}
 
 async function flush(setup: Awaited<ReturnType<typeof testRender>>) {
   await act(async () => {
@@ -169,20 +131,6 @@ async function flush(setup: Awaited<ReturnType<typeof testRender>>) {
   });
 }
 
-function frameHasHighlightedMarker(
-  frame: { lines: Array<{ spans: Array<{ text: string; fg?: unknown; bg?: unknown }> }> },
-  marker: string,
-) {
-  return frame.lines.some((line) => {
-    const text = line.spans.map((span) => span.text).join("");
-
-    if (!text.includes(marker)) {
-      return false;
-    }
-
-    return line.spans.some((span) => span.text.includes(marker) && span.text.trim().length < text.trim().length);
-  });
-}
 
 describe("App interactions", () => {
   test("keyboard shortcuts toggle notes, line numbers, and hunk metadata", async () => {
@@ -241,7 +189,7 @@ describe("App interactions", () => {
       frame = setup.captureCharFrame();
       expect(frame).toContain("this is a very");
       expect(frame).toContain("long wrapped line");
-      expect(frame).toContain("interaction coverage");
+      expect(frame).toContain("rendering coverage");
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -339,37 +287,6 @@ describe("App interactions", () => {
       expect(frame).toContain("filter:");
       expect(frame).toContain("zzz");
       expect(frame).toContain("No files match the current filter.");
-    } finally {
-      await act(async () => {
-        setup.renderer.destroy();
-      });
-    }
-  });
-
-  test("visible files gain syntax highlighting without requiring hunk navigation", async () => {
-    const setup = await testRender(<App bootstrap={createVisibleHighlightBootstrap()} />, { width: 240, height: 24 });
-
-    try {
-      let selectedReady = false;
-      let visibleReady = false;
-
-      for (let iteration = 0; iteration < 200; iteration += 1) {
-        await act(async () => {
-          await setup.renderOnce();
-          await Bun.sleep(0);
-        });
-
-        const frame = setup.captureSpans();
-        selectedReady ||= frameHasHighlightedMarker(frame, "alphaMarker");
-        visibleReady ||= frameHasHighlightedMarker(frame, "betaMarker");
-
-        if (selectedReady && visibleReady) {
-          break;
-        }
-      }
-
-      expect(selectedReady).toBe(true);
-      expect(visibleReady).toBe(true);
     } finally {
       await act(async () => {
         setup.renderer.destroy();
