@@ -329,9 +329,10 @@ async function loadStashShowChangeset(input: StashShowCommandInput, agentContext
 /** Build a changeset from patch text supplied by file or stdin. */
 async function loadPatchChangeset(input: PatchCommandInput, agentContext: AgentContext | null) {
   const patchText =
-    !input.file || input.file === "-"
+    input.text ??
+    (!input.file || input.file === "-"
       ? await new Response(Bun.stdin.stream()).text()
-      : await Bun.file(input.file).text();
+      : await Bun.file(input.file).text());
 
   const label = input.file && input.file !== "-" ? input.file : "stdin patch";
   return normalizePatchChangeset(patchText, `Patch review: ${basename(label)}`, label, agentContext);

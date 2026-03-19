@@ -1,6 +1,6 @@
 import { existsSync, statSync } from "node:fs";
 import { Command } from "commander";
-import type { CliInput, CommonOptions, LayoutMode, ParsedCliInput } from "./types";
+import type { CommonOptions, HelpCommandInput, LayoutMode, PagerCommandInput, ParsedCliInput } from "./types";
 
 /** Validate one requested layout mode from CLI input. */
 function parseLayoutMode(value: string): LayoutMode {
@@ -82,6 +82,7 @@ function renderCliHelp() {
     "  hunk show [ref] [-- <pathspec...>]      review the last commit or a given ref",
     "  hunk stash show [ref]                   review a stash entry",
     "  hunk patch [file]                       review a patch file or stdin",
+    "  hunk pager                              general Git pager wrapper with diff detection",
     "  hunk difftool <left> <right> [path]     review Git difftool file pairs",
     "  hunk git [range]                        legacy alias for git diff-style review",
     "",
@@ -97,6 +98,7 @@ function renderCliHelp() {
     "  hunk show HEAD~1",
     "  hunk show abc123 -- README.md",
     "  hunk patch -",
+    "  hunk pager",
     "",
   ].join("\n");
 }
@@ -120,15 +122,14 @@ function areExistingFiles(left: string, right: string) {
 }
 
 /** Parse one standalone command while letting us capture `--help` as plain text. */
-async function parseStandaloneCommand<T>(command: Command, tokens: string[]): Promise<T | null> {
+async function parseStandaloneCommand(command: Command, tokens: string[]) {
   command.exitOverride();
 
   try {
     await command.parseAsync(["bun", "hunk", ...tokens]);
-    return null;
   } catch (error) {
     if (error && typeof error === "object" && "code" in error && error.code === "commander.helpDisplayed") {
-      return null;
+      return;
     }
 
     throw error;
@@ -282,6 +283,27 @@ async function parsePatchCommand(tokens: string[], argv: string[]): Promise<Pars
   };
 }
 
+/** Parse the general pager wrapper command used from Git `core.pager`. */
+async function parsePagerCommand(tokens: string[], argv: string[]): Promise<PagerCommandInput | HelpCommandInput> {
+  const command = createCommand("pager", "general Git pager wrapper with diff detection");
+  let parsedOptions: Record<string, unknown> = {};
+
+  command.action((options: Record<string, unknown>) => {
+    parsedOptions = options;
+  });
+
+  if (tokens.includes("--help") || tokens.includes("-h")) {
+    return { kind: "help", text: `${command.helpInformation().trimEnd()}\n` };
+  }
+
+  await parseStandaloneCommand(command, tokens);
+
+  return {
+    kind: "pager",
+    options: buildCommonOptions(parsedOptions, argv),
+  };
+}
+
 /** Parse Git difftool-style two-file review commands. */
 async function parseDifftoolCommand(tokens: string[], argv: string[]): Promise<ParsedCliInput> {
   const command = createCommand("difftool", "review Git difftool file pairs")
@@ -379,6 +401,8 @@ export async function parseCli(argv: string[]): Promise<ParsedCliInput> {
       return parseGitCommand(rest, argv);
     case "patch":
       return parsePatchCommand(rest, argv);
+    case "pager":
+      return parsePagerCommand(rest, argv);
     case "difftool":
       return parseDifftoolCommand(rest, argv);
     case "stash":

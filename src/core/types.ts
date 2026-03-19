@@ -71,6 +71,11 @@ export interface HelpCommandInput {
   text: string;
 }
 
+export interface PagerCommandInput {
+  kind: "pager";
+  options: CommonOptions;
+}
+
 export interface GitCommandInput {
   kind: "git";
   range?: string;
@@ -102,6 +107,7 @@ export interface FileCommandInput {
 export interface PatchCommandInput {
   kind: "patch";
   file?: string;
+  text?: string;
   options: CommonOptions;
 }
 
@@ -121,7 +127,7 @@ export type CliInput =
   | PatchCommandInput
   | DiffToolCommandInput;
 
-export type ParsedCliInput = CliInput | HelpCommandInput;
+export type ParsedCliInput = CliInput | HelpCommandInput | PagerCommandInput;
 
 export interface AppBootstrap {
   input: CliInput;

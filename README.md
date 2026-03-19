@@ -50,6 +50,7 @@ If you want a different install location, set `HUNK_INSTALL_DIR` before running 
 - `hunk stash show [ref]` — review a stash entry in the full Hunk UI
 - `hunk diff <left> <right>` — compare two concrete files directly
 - `hunk patch [file|-]` — review a patch file or stdin, including pager mode
+- `hunk pager` — act as a general Git pager wrapper, opening Hunk for diff-like stdin and falling back to normal text paging otherwise
 - `hunk difftool <left> <right> [path]` — integrate with Git difftool
 - `hunk git [range]` — legacy alias for the original Git-style diff entrypoint
 
@@ -257,6 +258,12 @@ git show HEAD
 ```
 
 If you want Git to launch Hunk as a difftool for file-to-file comparisons:
+
+```bash
+git config --global diff.tool hunk
+git config --global difftool.hunk.cmd 'hunk difftool "$LOCAL" "$REMOTE" "$MERGED"'
+```
+e comparisons:
 
 ```bash
 git config --global diff.tool hunk

@@ -5,15 +5,35 @@ import { createRoot } from "@opentui/react";
 import { parseCli } from "./core/cli";
 import { persistViewPreferences, resolveConfiguredCliInput } from "./core/config";
 import { loadAppBootstrap } from "./core/loaders";
+import { looksLikePatchInput, pagePlainText } from "./core/pager";
 import { shutdownSession } from "./core/shutdown";
 import { openControllingTerminal, resolveRuntimeCliInput, usesPipedPatchInput } from "./core/terminal";
 import { App } from "./ui/App";
 
-const parsedCliInput = await parseCli(process.argv);
+let parsedCliInput = await parseCli(process.argv);
 
 if (parsedCliInput.kind === "help") {
   process.stdout.write(parsedCliInput.text);
   process.exit(0);
+}
+
+if (parsedCliInput.kind === "pager") {
+  const stdinText = await new Response(Bun.stdin.stream()).text();
+
+  if (!looksLikePatchInput(stdinText)) {
+    await pagePlainText(stdinText);
+    process.exit(0);
+  }
+
+  parsedCliInput = {
+    kind: "patch",
+    file: "-",
+    text: stdinText,
+    options: {
+      ...parsedCliInput.options,
+      pager: true,
+    },
+  };
 }
 
 const runtimeCliInput = resolveRuntimeCliInput(parsedCliInput);

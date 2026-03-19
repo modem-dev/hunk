@@ -137,10 +137,11 @@ async function runTtySmoke(options: { mode?: "split" | "stack"; pager?: boolean;
   return stripTerminalControl(await Bun.file(transcript).text());
 }
 
-async function runStdinPagerSmoke(options?: { input?: string; inputCommand?: string; lines?: number }) {
+async function runStdinPagerSmoke(options?: { input?: string; inputCommand?: string; lines?: number; command?: "patch" | "pager" }) {
   const fixture = createFixtureFiles(options?.lines ?? 1);
   const transcript = join(fixture.dir, "stdin-pager-transcript.txt");
-  const patchCommand = `cat ${shellQuote(fixture.coloredPatch)} | bun run src/main.tsx patch -`;
+  const subcommand = options?.command === "pager" ? "pager" : "patch -";
+  const patchCommand = `cat ${shellQuote(fixture.coloredPatch)} | bun run src/main.tsx ${subcommand}`;
   const scriptCommand = `timeout 5 script -q -f -e -c ${shellQuote(patchCommand)} ${shellQuote(transcript)}`;
   const inputCommand = options?.inputCommand ?? `(sleep 1; printf ${shellQuote(options?.input ?? "q")})`;
   const proc = Bun.spawnSync(["bash", "-lc", `${inputCommand} | ${scriptCommand}`], {
@@ -234,5 +235,18 @@ describe("TTY render smoke", () => {
 
     expect(output).toContain("before_23");
     expect(output).toContain("after_06");
+  });
+
+  test("general pager mode opens Hunk pager UI for diff-like stdin", async () => {
+    if (!ttyToolsAvailable) {
+      return;
+    }
+
+    const output = await runStdinPagerSmoke({ command: "pager" });
+
+    expect(output).not.toContain("View  Navigate  Theme  Agent  Help");
+    expect(output).toContain("after.ts");
+    expect(output).toContain("@@ -1 +1,2 @@");
+    expect(output).toContain("export const answer = 42;");
   });
 });

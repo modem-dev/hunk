@@ -124,6 +124,17 @@ describe("parseCli", () => {
     });
   });
 
+  test("parses general pager mode", async () => {
+    const parsed = await parseCli(["bun", "hunk", "pager", "--theme", "paper"]);
+
+    expect(parsed).toMatchObject({
+      kind: "pager",
+      options: {
+        theme: "paper",
+      },
+    });
+  });
+
   test("parses stash show mode", async () => {
     const parsed = await parseCli(["bun", "hunk", "stash", "show", "stash@{1}"]);
 
