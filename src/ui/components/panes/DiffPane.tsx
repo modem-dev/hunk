@@ -2,7 +2,7 @@ import type { ScrollBoxRenderable } from "@opentui/core";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState, type RefObject } from "react";
 import type { AgentAnnotation, DiffFile, LayoutMode } from "../../../core/types";
 import type { VisibleAgentNote } from "../../lib/agentAnnotations";
-import { estimateDiffBodyRows } from "../../lib/sectionHeights";
+import { estimateDiffBodyRows, estimateHunkAnchorRow } from "../../lib/sectionHeights";
 import { diffHunkId, diffSectionId } from "../../lib/ids";
 import type { AppTheme } from "../../themes";
 import { DiffSection } from "./DiffSection";
@@ -185,10 +185,29 @@ export function DiffPane({
     return next;
   }, [adjacentPrefetchFileIds, selectedFileId, visibleViewportFileIds, windowingEnabled]);
 
-  const selectedFile = selectedFileId ? files.find((file) => file.id === selectedFileId) : undefined;
+  const selectedFileIndex = selectedFileId ? files.findIndex((file) => file.id === selectedFileId) : -1;
+  const selectedFile = selectedFileIndex >= 0 ? files[selectedFileIndex] : undefined;
   const selectedAnchorId = selectedFile
     ? (selectedFile.metadata.hunks[selectedHunkIndex] ? diffHunkId(selectedFile.id, selectedHunkIndex) : diffSectionId(selectedFile.id))
     : null;
+  const selectedEstimatedScrollTop = useMemo(() => {
+    if (!selectedFile || selectedFileIndex < 0) {
+      return null;
+    }
+
+    let top = 0;
+    for (let index = 0; index < selectedFileIndex; index += 1) {
+      top += (index > 0 ? 1 : 0) + 1 + (estimatedBodyHeights[index] ?? 0);
+    }
+
+    if (selectedFileIndex > 0) {
+      top += 1;
+    }
+
+    top += 1;
+    top += estimateHunkAnchorRow(selectedFile, layout, showHunkHeaders, selectedHunkIndex);
+    return top;
+  }, [estimatedBodyHeights, files, layout, selectedFile, selectedFileIndex, selectedHunkIndex, showHunkHeaders]);
 
   useLayoutEffect(() => {
     if (!selectedAnchorId) {
@@ -196,7 +215,20 @@ export function DiffPane({
     }
 
     const scrollSelectionIntoView = () => {
-      scrollRef.current?.scrollChildIntoView(selectedAnchorId);
+      const scrollBox = scrollRef.current;
+      if (!scrollBox) {
+        return;
+      }
+
+      // In the common no-wrap/no-note path we can estimate the selected hunk row and keep it
+      // comfortably below the top edge instead of merely making it barely visible.
+      if (!wrapLines && visibleAgentNotesByFile.size === 0 && selectedEstimatedScrollTop !== null) {
+        const topPaddingRows = Math.max(2, Math.floor(scrollViewport.height * 0.25));
+        scrollBox.scrollTo(Math.max(0, selectedEstimatedScrollTop - topPaddingRows));
+        return;
+      }
+
+      scrollBox.scrollChildIntoView(selectedAnchorId);
     };
 
     // Run after this pane renders the selected section/hunk, then retry briefly while layout settles.
@@ -206,7 +238,7 @@ export function DiffPane({
     return () => {
       timeouts.forEach((timeout) => clearTimeout(timeout));
     };
-  }, [selectedAnchorId, scrollRef]);
+  }, [scrollRef, scrollViewport.height, selectedAnchorId, selectedEstimatedScrollTop, visibleAgentNotesByFile.size, wrapLines]);
 
   return (
     <box

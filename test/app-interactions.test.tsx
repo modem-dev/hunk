@@ -160,6 +160,10 @@ async function flush(setup: Awaited<ReturnType<typeof testRender>>) {
   });
 }
 
+function lineIndexOf(frame: string, needle: string) {
+  return frame.split("\n").findIndex((line) => line.includes(needle));
+}
+
 
 describe("App interactions", () => {
   test("keyboard shortcuts toggle notes, line numbers, and hunk metadata", async () => {
@@ -320,6 +324,10 @@ describe("App interactions", () => {
       expect(frame).toContain("epsilon.ts");
       expect(frame).toContain("▌@@ -1,1 +1,2 @@");
       expect(frame).not.toContain("alphaMarker");
+
+      const selectedHunkLine = lineIndexOf(frame, "▌@@ -1,1 +1,2 @@");
+      expect(selectedHunkLine).toBeGreaterThanOrEqual(0);
+      expect(selectedHunkLine).toBeLessThanOrEqual(8);
     } finally {
       await act(async () => {
         setup.renderer.destroy();
