@@ -8,6 +8,11 @@ on:
         required: true
         default: false
         type: boolean
+      npm_tag:
+        description: npm dist-tag to publish under (for example latest or beta)
+        required: true
+        default: latest
+        type: string
   push:
     tags:
       - "v*"
@@ -95,7 +100,7 @@ jobs:
         run: bun run check:prebuilt-pack
 
       - name: Dry-run npm publish order
-        run: bun run publish:prebuilt:npm -- --dry-run
+        run: bun run publish:prebuilt:npm -- --dry-run --tag "${{ github.event_name == 'workflow_dispatch' && inputs.npm_tag || 'latest' }}"
 
       - name: Upload staged npm release
         uses: actions/upload-artifact@v4
@@ -146,4 +151,4 @@ jobs:
       - name: Publish packages
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: bun run publish:prebuilt:npm
+        run: bun run publish:prebuilt:npm -- --tag "${{ github.event_name == 'workflow_dispatch' && inputs.npm_tag || 'latest' }}"

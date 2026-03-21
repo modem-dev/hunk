@@ -10,8 +10,33 @@ type PackageJson = {
 };
 
 function parseArgs(argv: string[]) {
+  let dryRun = false;
+  let npmTag = "latest";
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index];
+
+    if (argument === "--dry-run") {
+      dryRun = true;
+      continue;
+    }
+
+    if (argument === "--tag") {
+      const value = argv[index + 1];
+      if (!value) {
+        throw new Error("Missing value for --tag");
+      }
+      npmTag = value;
+      index += 1;
+      continue;
+    }
+
+    throw new Error(`Unknown argument: ${argument}`);
+  }
+
   return {
-    dryRun: argv.includes("--dry-run"),
+    dryRun,
+    npmTag,
   };
 }
 
@@ -26,7 +51,7 @@ function npmViewExists(name: string, version: string) {
   return proc.exitCode === 0;
 }
 
-function publishDirectory(directory: string, dryRun: boolean) {
+function publishDirectory(directory: string, dryRun: boolean, npmTag: string) {
   const packageJson = JSON.parse(readFileSync(path.join(directory, "package.json"), "utf8")) as PackageJson;
 
   if (npmViewExists(packageJson.name, packageJson.version)) {
@@ -38,7 +63,7 @@ function publishDirectory(directory: string, dryRun: boolean) {
     return;
   }
 
-  const args = ["publish", "--access", "public"];
+  const args = ["publish", "--access", "public", "--tag", npmTag];
   if (dryRun) {
     args.push("--dry-run");
   }
@@ -79,7 +104,11 @@ if (directories.length === 0) {
 }
 
 for (const directory of directories) {
-  publishDirectory(directory, options.dryRun);
+  publishDirectory(directory, options.dryRun, options.npmTag);
 }
 
-console.log(options.dryRun ? "Completed npm publish dry-run for staged prebuilt packages." : "Published staged prebuilt packages to npm.");
+console.log(
+  options.dryRun
+    ? `Completed npm publish dry-run for staged prebuilt packages with dist-tag \"${options.npmTag}\".`
+    : `Published staged prebuilt packages to npm with dist-tag \"${options.npmTag}\".`,
+);
