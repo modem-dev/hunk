@@ -140,16 +140,16 @@ describe("responsive shell", () => {
     expect(full).toContain("M alpha.ts");
     expect(full).not.toContain("Changeset summary");
     expect(full).toContain("drag divider resize");
-    expect(full).toContain("│");
+    expect(full).toMatch(/▌.*▌/);
 
     expect(medium).not.toContain("Files");
     expect(medium).not.toContain("Changeset summary");
-    expect(medium).toContain("│");
+    expect(medium).toMatch(/▌.*▌/);
     expect(medium).not.toContain("drag divider resize");
 
     expect(tight).not.toContain("Files");
     expect(tight).not.toContain("Changeset summary");
-    expect(tight).not.toContain("│");
+    expect(tight).not.toMatch(/▌.*▌/);
     expect(tight).not.toContain("drag divider resize");
   });
 
@@ -159,12 +159,12 @@ describe("responsive shell", () => {
 
     expect(forcedSplit).not.toContain("Files");
     expect(forcedSplit).not.toContain("Changeset summary");
-    expect(forcedSplit).toContain("│");
+    expect(forcedSplit).toMatch(/▌.*▌/);
     expect(forcedSplit).not.toContain("drag divider resize");
 
     expect(forcedStack).not.toContain("Files");
     expect(forcedStack).not.toContain("Changeset summary");
-    expect(forcedStack).not.toContain("│");
+    expect(forcedStack).not.toMatch(/▌.*▌/);
     expect(forcedStack).not.toContain("drag divider resize");
   });
 
@@ -175,12 +175,12 @@ describe("responsive shell", () => {
     expect(wide).not.toContain("File  View  Navigate  Theme  Agent  Help");
     expect(wide).not.toContain("F10 menu");
     expect(wide).not.toContain("M alpha.ts");
-    expect(wide).toContain("│");
+    expect(wide).toMatch(/▌.*▌/);
 
     expect(narrow).not.toContain("File  View  Navigate  Theme  Agent  Help");
     expect(narrow).not.toContain("F10 menu");
     expect(narrow).not.toContain("M alpha.ts");
-    expect(narrow).not.toContain("│");
+    expect(narrow).not.toMatch(/▌.*▌/);
   });
 
   test("filter focus suppresses global shortcut keys like quit", async () => {

@@ -82,9 +82,33 @@ function trimSpans(spans: RenderSpan[], width: number) {
   };
 }
 
-/** Render the left-edge hunk marker without changing row width. */
-function marker(selected: boolean) {
-  return selected ? "▌" : " ";
+/** Parse a hex color string into RGB components. */
+function hexToRgb(hex: string) {
+  const n = parseInt(hex.slice(1), 16);
+  return { r: (n >> 16) & 0xff, g: (n >> 8) & 0xff, b: n & 0xff };
+}
+
+/** Blend a color toward a background at a given ratio (0 = bg, 1 = fg). */
+function blendHex(fg: string, bg: string, ratio: number) {
+  const f = hexToRgb(fg);
+  const b = hexToRgb(bg);
+  const mix = (a: number, z: number) => Math.round(z + (a - z) * ratio);
+  const r = mix(f.r, b.r);
+  const g = mix(f.g, b.g);
+  const bl = mix(f.b, b.b);
+  return `#${((r << 16) | (g << 8) | bl).toString(16).padStart(6, "0")}`;
+}
+
+const INACTIVE_RAIL_BLEND = 0.35;
+
+/** Dim a rail color for inactive hunks by blending toward the panel background. */
+function dimRailColor(color: string, theme: AppTheme) {
+  return blendHex(color, theme.panel, INACTIVE_RAIL_BLEND);
+}
+
+/** The rail marker is always visible. */
+function marker() {
+  return "▌";
 }
 
 /** Return the neutral active-hunk rail color for the current theme. */
@@ -93,26 +117,30 @@ function neutralRailColor(theme: AppTheme) {
 }
 
 /** Pick the stack-view rail color for one rendered row. */
-function stackRailColor(kind: StackLineCell["kind"], theme: AppTheme) {
+function stackRailColor(kind: StackLineCell["kind"], theme: AppTheme, selected: boolean) {
+  let color: string;
+
   if (kind === "addition") {
-    return theme.addedSignColor;
+    color = theme.addedSignColor;
+  } else if (kind === "deletion") {
+    color = theme.removedSignColor;
+  } else {
+    color = neutralRailColor(theme);
   }
 
-  if (kind === "deletion") {
-    return theme.removedSignColor;
-  }
-
-  return neutralRailColor(theme);
+  return selected ? color : dimRailColor(color, theme);
 }
 
 /** Pick the left split-view rail color from the old-side cell state. */
-function splitLeftRailColor(kind: SplitLineCell["kind"], theme: AppTheme) {
-  return kind === "deletion" ? theme.removedSignColor : neutralRailColor(theme);
+function splitLeftRailColor(kind: SplitLineCell["kind"], theme: AppTheme, selected: boolean) {
+  const color = kind === "deletion" ? theme.removedSignColor : neutralRailColor(theme);
+  return selected ? color : dimRailColor(color, theme);
 }
 
 /** Pick the right split-view rail color from the new-side cell state. */
-function splitRightRailColor(kind: SplitLineCell["kind"], theme: AppTheme) {
-  return kind === "addition" ? theme.addedSignColor : neutralRailColor(theme);
+function splitRightRailColor(kind: SplitLineCell["kind"], theme: AppTheme, selected: boolean) {
+  const color = kind === "addition" ? theme.addedSignColor : neutralRailColor(theme);
+  return selected ? color : dimRailColor(color, theme);
 }
 
 /** Pick split-view colors from the semantic diff cell kind. */
@@ -510,8 +538,8 @@ function renderHeaderRow(
         }}
       >
         <text>
-          <span fg={selected ? neutralRailColor(theme) : theme.panelAlt} bg={theme.panelAlt}>
-            {marker(selected)}
+          <span fg={selected ? neutralRailColor(theme) : dimRailColor(neutralRailColor(theme), theme)} bg={theme.panelAlt}>
+            {marker()}
           </span>
           <span fg={row.type === "collapsed" ? theme.muted : theme.badgeNeutral} bg={theme.panelAlt}>
             {label}
@@ -534,8 +562,8 @@ function renderHeaderRow(
     >
       <box style={{ width: Math.max(0, width - badgeWidth), height: 1 }}>
         <text>
-          <span fg={selected ? neutralRailColor(theme) : theme.panelAlt} bg={theme.panelAlt}>
-            {marker(selected)}
+          <span fg={selected ? neutralRailColor(theme) : dimRailColor(neutralRailColor(theme), theme)} bg={theme.panelAlt}>
+            {marker()}
           </span>
           <span fg={row.type === "collapsed" ? theme.muted : theme.badgeNeutral} bg={theme.panelAlt}>
             {label}
@@ -684,13 +712,13 @@ function renderRow(
     const leftWidth = Math.max(0, markerWidth + Math.floor(usableWidth / 2));
     const rightWidth = Math.max(0, separatorWidth + usableWidth - Math.floor(usableWidth / 2));
     const leftPrefix = {
-      text: marker(selected),
-      fg: selected ? splitLeftRailColor(row.left.kind, theme) : theme.panel,
+      text: marker(),
+      fg: splitLeftRailColor(row.left.kind, theme, selected),
       bg: theme.panel,
     };
     const rightPrefix = {
-      text: selected ? "▌" : "│",
-      fg: selected ? splitRightRailColor(row.right.kind, theme) : theme.border,
+      text: "▌",
+      fg: splitRightRailColor(row.right.kind, theme, selected),
       bg: theme.panel,
     };
 
@@ -744,8 +772,8 @@ function renderRow(
     }
   } else if (row.type === "stack-line") {
     const prefix = {
-      text: marker(selected),
-      fg: selected ? stackRailColor(row.cell.kind, theme) : theme.panel,
+      text: marker(),
+      fg: stackRailColor(row.cell.kind, theme, selected),
       bg: theme.panel,
     };
 
