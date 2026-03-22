@@ -4,14 +4,14 @@ import { Suspense, lazy, startTransition, useCallback, useDeferredValue, useEffe
 import type { AppBootstrap, LayoutMode } from "../core/types";
 import { HunkHostClient } from "../mcp/client";
 import { MenuBar } from "./components/chrome/MenuBar";
-import { nextMenuItemIndex } from "./components/chrome/menu";
 import { StatusBar } from "./components/chrome/StatusBar";
 import { DiffPane } from "./components/panes/DiffPane";
 import { FilesPane } from "./components/panes/FilesPane";
 import { PaneDivider } from "./components/panes/PaneDivider";
 import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
-import { useMenuState } from "./hooks/useMenuState";
+import { useMenuController } from "./hooks/useMenuController";
 import { getSelectedAnnotations } from "./lib/agentAnnotations";
+import { buildAppMenus } from "./lib/appMenus";
 import { buildFileListEntry } from "./lib/files";
 import { buildHunkCursors, findNextHunkCursor } from "./lib/hunks";
 import { fileRowId } from "./lib/ids";
@@ -279,6 +279,51 @@ export function App({
     onQuit();
   }, [onQuit]);
 
+  const menus = useMemo(
+    () =>
+      buildAppMenus({
+        activeThemeId: activeTheme.id,
+        focusFiles: () => setFocusArea("files"),
+        focusFilter: () => setFocusArea("filter"),
+        layoutMode,
+        moveAnnotatedFile,
+        moveHunk,
+        requestQuit,
+        selectLayoutMode: setLayoutMode,
+        selectThemeId: setThemeId,
+        showAgentNotes,
+        showHelp,
+        showHunkHeaders,
+        showLineNumbers,
+        sidebarVisible,
+        toggleAgentNotes,
+        toggleHelp: () => setShowHelp((current) => !current),
+        toggleHunkHeaders,
+        toggleLineNumbers,
+        toggleLineWrap,
+        toggleSidebar,
+        wrapLines,
+      }),
+    [
+      activeTheme.id,
+      layoutMode,
+      moveAnnotatedFile,
+      moveHunk,
+      requestQuit,
+      showAgentNotes,
+      showHelp,
+      showHunkHeaders,
+      showLineNumbers,
+      sidebarVisible,
+      toggleAgentNotes,
+      toggleHunkHeaders,
+      toggleLineNumbers,
+      toggleLineWrap,
+      toggleSidebar,
+      wrapLines,
+    ],
+  );
+
   const {
     activeMenuEntries,
     activeMenuId,
@@ -288,33 +333,12 @@ export function App({
     activateCurrentMenuItem,
     closeMenu,
     menuSpecs,
+    moveMenuItem,
     openMenu,
     setActiveMenuItemIndex,
     switchMenu,
     toggleMenu,
-  } = useMenuState({
-    activeThemeId: activeTheme.id,
-    focusFiles: () => setFocusArea("files"),
-    focusFilter: () => setFocusArea("filter"),
-    layoutMode,
-    moveAnnotatedFile,
-    moveHunk,
-    requestQuit,
-    setLayoutMode,
-    setShowHelp,
-    setThemeId,
-    showAgentNotes,
-    showHelp,
-    showHunkHeaders,
-    showLineNumbers,
-    sidebarVisible,
-    toggleAgentNotes,
-    toggleHunkHeaders,
-    toggleLineNumbers,
-    toggleLineWrap,
-    toggleSidebar,
-    wrapLines,
-  });
+  } = useMenuController(menus);
 
   /** Start a mouse drag resize for the optional files pane. */
   const beginFilesPaneResize = (event: TuiMouseEvent) => {
@@ -446,12 +470,12 @@ export function App({
       }
 
       if (key.name === "up") {
-        setActiveMenuItemIndex((current) => nextMenuItemIndex(activeMenuEntries, current, -1));
+        moveMenuItem(-1);
         return;
       }
 
       if (key.name === "down") {
-        setActiveMenuItemIndex((current) => nextMenuItemIndex(activeMenuEntries, current, 1));
+        moveMenuItem(1);
         return;
       }
 

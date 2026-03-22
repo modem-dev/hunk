@@ -3,6 +3,7 @@ import { parseDiffFromFile } from "@pierre/diffs";
 import type { DiffFile } from "../src/core/types";
 import { buildMenuSpecs, menuBoxHeight, menuWidth, nextMenuItemIndex, type MenuEntry } from "../src/ui/components/chrome/menu";
 import { buildAgentPopoverContent, resolveAgentPopoverPlacement, wrapText } from "../src/ui/lib/agentPopover";
+import { buildAppMenus } from "../src/ui/lib/appMenus";
 import { fitText, padText } from "../src/ui/lib/text";
 import { estimateDiffBodyRows } from "../src/ui/lib/sectionHeights";
 import { resizeSidebarWidth } from "../src/ui/lib/sidebar";
@@ -67,6 +68,44 @@ describe("ui helpers", () => {
 
     expect(menuWidth(entries)).toBeGreaterThanOrEqual(18);
     expect(menuBoxHeight(entries)).toBe(5);
+  });
+
+  test("buildAppMenus creates checked entries from the current shell state", () => {
+    const menus = buildAppMenus({
+      activeThemeId: "midnight",
+      focusFiles: () => {},
+      focusFilter: () => {},
+      layoutMode: "stack",
+      moveAnnotatedFile: () => {},
+      moveHunk: () => {},
+      requestQuit: () => {},
+      selectLayoutMode: () => {},
+      selectThemeId: () => {},
+      showAgentNotes: true,
+      showHelp: false,
+      showHunkHeaders: false,
+      showLineNumbers: true,
+      sidebarVisible: false,
+      toggleAgentNotes: () => {},
+      toggleHelp: () => {},
+      toggleHunkHeaders: () => {},
+      toggleLineNumbers: () => {},
+      toggleLineWrap: () => {},
+      toggleSidebar: () => {},
+      wrapLines: true,
+    });
+
+    expect(
+      menus.view
+        .filter((entry): entry is Extract<MenuEntry, { kind: "item" }> => entry.kind === "item" && Boolean(entry.checked))
+        .map((entry) => entry.label),
+    ).toEqual([
+      "Stacked view",
+      "Agent notes",
+      "Line numbers",
+      "Line wrapping",
+    ]);
+    expect(menus.theme.some((entry) => entry.kind === "item" && entry.label === "Midnight" && entry.checked)).toBe(true);
   });
 
   test("fitText and padText clamp using the terminal fallback marker", () => {
