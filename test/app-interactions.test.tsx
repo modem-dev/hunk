@@ -279,7 +279,7 @@ describe("App interactions", () => {
       await flush(setup);
 
       await act(async () => {
-        setup.mockInput.pressKey("F10");
+        await setup.mockInput.pressKey("F10");
       });
       await flush(setup);
 
@@ -494,7 +494,7 @@ describe("App interactions", () => {
       await flush(setup);
 
       await act(async () => {
-        setup.mockInput.pressKey("F10");
+        await setup.mockInput.pressKey("F10");
       });
       await flush(setup);
 
