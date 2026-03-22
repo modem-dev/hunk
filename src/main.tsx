@@ -2,57 +2,36 @@
 
 import { createCliRenderer } from "@opentui/core";
 import { createRoot } from "@opentui/react";
-import { parseCli } from "./core/cli";
-import { resolveConfiguredCliInput } from "./core/config";
-import { loadAppBootstrap } from "./core/loaders";
-import { looksLikePatchInput, pagePlainText } from "./core/pager";
+import { pagePlainText } from "./core/pager";
 import { shutdownSession } from "./core/shutdown";
-import { openControllingTerminal, resolveRuntimeCliInput, usesPipedPatchInput } from "./core/terminal";
+import { prepareStartupPlan } from "./core/startup";
 import { App } from "./ui/App";
 import { HunkHostClient } from "./mcp/client";
 import { serveHunkMcpServer } from "./mcp/server";
 import { createInitialSessionSnapshot, createSessionRegistration } from "./mcp/sessionRegistration";
 
-let parsedCliInput = await parseCli(process.argv);
+const startupPlan = await prepareStartupPlan();
 
-if (parsedCliInput.kind === "help") {
-  process.stdout.write(parsedCliInput.text);
+if (startupPlan.kind === "help") {
+  process.stdout.write(startupPlan.text);
   process.exit(0);
 }
 
-if (parsedCliInput.kind === "mcp-serve") {
+if (startupPlan.kind === "mcp-serve") {
   serveHunkMcpServer();
   await new Promise<never>(() => {});
 }
 
-if (parsedCliInput.kind === "mcp-serve") {
-  throw new Error("Unreachable MCP daemon branch.");
+if (startupPlan.kind === "plain-text-pager") {
+  await pagePlainText(startupPlan.text);
+  process.exit(0);
 }
 
-if (parsedCliInput.kind === "pager") {
-  const stdinText = await new Response(Bun.stdin.stream()).text();
-
-  if (!looksLikePatchInput(stdinText)) {
-    await pagePlainText(stdinText);
-    process.exit(0);
-  }
-
-  parsedCliInput = {
-    kind: "patch",
-    file: "-",
-    text: stdinText,
-    options: {
-      ...parsedCliInput.options,
-      pager: true,
-    },
-  };
+if (startupPlan.kind !== "app") {
+  throw new Error("Unreachable startup plan.");
 }
 
-const runtimeCliInput = resolveRuntimeCliInput(parsedCliInput);
-const configured = resolveConfiguredCliInput(runtimeCliInput);
-const cliInput = configured.input;
-const bootstrap = await loadAppBootstrap(cliInput);
-const controllingTerminal = usesPipedPatchInput(cliInput) ? openControllingTerminal() : null;
+const { bootstrap, cliInput, controllingTerminal } = startupPlan;
 const hostClient = new HunkHostClient(createSessionRegistration(bootstrap), createInitialSessionSnapshot(bootstrap));
 hostClient.start();
 
