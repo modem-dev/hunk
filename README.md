@@ -98,23 +98,27 @@ Ready-to-run demo diffs live in [`examples/`](examples/README.md).
 
 Each example includes the exact command to run from the repository root.
 
-## Advanced features
+## Config
 
-- `hunk patch [file|-]` opens patch files or patch stdin
-- `hunk pager` opens Hunk for diff-like stdin and falls back to plain-text paging otherwise
-- `hunk diff --agent-context <file>` loads inline agent rationale from a JSON sidecar
-- `hunk mcp serve` runs the local MCP daemon for agent-to-diff communication
-- Hunk reads config from `~/.config/hunk/config.toml` and `.hunk/config.toml`
+Hunk reads config from:
 
-Minimal config example:
+- `~/.config/hunk/config.toml`
+- `.hunk/config.toml`
+
+Example:
 
 ```toml
-theme = "midnight"
-mode = "auto"
+theme = "midnight" # midnight, graphite, paper, ember
+mode = "auto"      # auto, split, stack
 line_numbers = true
 wrap_lines = false
 agent_notes = false
 ```
+
+## Advanced workflows
+
+- `hunk diff --agent-context <file>` loads inline agent rationale from a JSON sidecar
+- `hunk mcp serve` runs the local MCP daemon for agent-to-diff communication
 
 ## Performance notes
 
