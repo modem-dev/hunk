@@ -277,6 +277,23 @@ describe("loadAppBootstrap", () => {
     expect(bootstrap.changeset.title).toContain("stash");
   });
 
+  test("treats malformed inline patch text as an empty review instead of throwing", async () => {
+    const bootstrap = await loadAppBootstrap({
+      kind: "patch",
+      text: [
+        "\u001b]0;title\u0007not really a patch",
+        "--- separator only",
+        "@@ section heading",
+        "still plain text",
+      ].join("\n"),
+      options: { mode: "auto" },
+    });
+
+    expect(bootstrap.changeset.files).toHaveLength(0);
+    expect(bootstrap.changeset.title).toContain("Patch review");
+    expect(bootstrap.changeset.summary).toContain("not really a patch");
+  });
+
   test("loads colorized git patch files like the real pager stdin stream", async () => {
     const dir = mkdtempSync(join(tmpdir(), "hunk-patch-"));
     tempDirs.push(dir);

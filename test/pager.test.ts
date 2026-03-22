@@ -39,10 +39,53 @@ describe("general pager detection", () => {
     expect(looksLikePatchInput(patch)).toBe(true);
   });
 
-  test("does not misclassify plain git pager text as a patch", () => {
-    const branchOutput = ["* main", "  feat/persist-view-config", "  release/0.1.0"].join("\n");
+  test("detects common patch shapes across line endings and terminal wrappers", () => {
+    const patchFixtures = [
+      [
+        "diff --git a/src/example.ts b/src/example.ts",
+        "--- a/src/example.ts",
+        "+++ b/src/example.ts",
+        "@@ -1 +1 @@",
+        "-export const value = 1;",
+        "+export const value = 2;",
+      ],
+      [
+        "--- a/src/example.ts",
+        "+++ b/src/example.ts",
+        "@@ -1 +1,2 @@",
+        "-export const value = 1;",
+        "+export const value = 2;",
+        "+export const extra = true;",
+      ],
+      [
+        "header",
+        "@@ -10,0 +11,2 @@",
+        "+export const inserted = true;",
+        "+export const added = true;",
+      ],
+    ];
 
-    expect(looksLikePatchInput(branchOutput)).toBe(false);
+    for (const lines of patchFixtures) {
+      for (const newline of ["\n", "\r\n"]) {
+        const patch = lines.join(newline);
+        expect(looksLikePatchInput(patch)).toBe(true);
+        expect(looksLikePatchInput(`\u001b]0;title\u0007${patch}\u001bPignored\u001b\\`)).toBe(true);
+      }
+    }
+  });
+
+  test("does not misclassify partial diff markers or plain git pager text as a patch", () => {
+    const fixtures = [
+      ["* main", "  feat/persist-view-config", "  release/0.1.0"].join("\n"),
+      ["--- separator only", "still prose"].join("\n"),
+      ["+++ banner only", "still prose"].join("\n"),
+      ["@@section heading", "still prose"].join("\n"),
+      ["\u001b]0;title\u0007--- looks patchy", "+++but is just text"].join("\n"),
+    ];
+
+    for (const fixture of fixtures) {
+      expect(looksLikePatchInput(fixture)).toBe(false);
+    }
   });
 });
 

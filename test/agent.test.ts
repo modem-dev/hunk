@@ -80,5 +80,39 @@ describe("agent context", () => {
     );
 
     await expect(loadAgentContext(invalidRangePath)).rejects.toThrow("Annotation ranges must be integer tuples.");
+
+    const negativeRangePath = join(dir, "negative-range.json");
+    writeFileSync(
+      negativeRangePath,
+      JSON.stringify({
+        version: 1,
+        files: [
+          {
+            path: "src/example.ts",
+            annotations: [{ summary: "Bad range", newRange: [0, 2] }],
+          },
+        ],
+      }),
+    );
+
+    await expect(loadAgentContext(negativeRangePath)).rejects.toThrow(
+      "Annotation ranges must use positive 1-based line numbers.",
+    );
+
+    const reversedRangePath = join(dir, "reversed-range.json");
+    writeFileSync(
+      reversedRangePath,
+      JSON.stringify({
+        version: 1,
+        files: [
+          {
+            path: "src/example.ts",
+            annotations: [{ summary: "Bad range", newRange: [4, 2] }],
+          },
+        ],
+      }),
+    );
+
+    await expect(loadAgentContext(reversedRangePath)).rejects.toThrow("Annotation ranges must be ordered start..end tuples.");
   });
 });

@@ -45,6 +45,14 @@ function normalizeAnnotationFile(file: unknown): AgentFileContext {
           throw new Error("Annotation ranges must be integer tuples.");
         }
 
+        if (start < 1 || end < 1) {
+          throw new Error("Annotation ranges must use positive 1-based line numbers.");
+        }
+
+        if (end < start) {
+          throw new Error("Annotation ranges must be ordered start..end tuples.");
+        }
+
         return [start, end] as [number, number];
       };
 

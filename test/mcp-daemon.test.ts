@@ -217,6 +217,30 @@ describe("Hunk MCP daemon state", () => {
     await expect(pending).rejects.toThrow("disconnected");
   });
 
+  test("rejects in-flight commands when a session reconnects on a new socket", async () => {
+    const state = new HunkDaemonState();
+    const originalSocket = {
+      send() {},
+    };
+    const replacementSocket = {
+      send() {},
+    };
+
+    state.registerSession(originalSocket, createRegistration(), createSnapshot());
+    const pending = state.sendComment({
+      sessionId: "session-1",
+      filePath: "src/example.ts",
+      side: "new",
+      line: 4,
+      summary: "Review note",
+    });
+
+    state.registerSession(replacementSocket, createRegistration(), createSnapshot({ updatedAt: "2026-03-22T00:00:01.000Z" }));
+
+    await expect(pending).rejects.toThrow("reconnected before the command completed");
+    expect(state.listSessions()).toHaveLength(1);
+  });
+
   test("rejects commands immediately when the live session socket cannot accept them", async () => {
     const state = new HunkDaemonState();
     const socket = {

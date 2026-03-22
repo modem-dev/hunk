@@ -200,7 +200,21 @@ function normalizePatchChangeset(
   agentContext: AgentContext | null,
 ): Changeset {
   const normalizedPatchText = stripTerminalControl(patchText.replaceAll("\r\n", "\n"));
-  const parsedPatches = parsePatchFiles(normalizedPatchText, "patch", true);
+
+  let parsedPatches: ReturnType<typeof parsePatchFiles>;
+  try {
+    parsedPatches = parsePatchFiles(normalizedPatchText, "patch", true);
+  } catch {
+    return {
+      id: `changeset:${Date.now()}`,
+      sourceLabel,
+      title,
+      summary: normalizedPatchText.trim() || undefined,
+      agentSummary: agentContext?.summary,
+      files: [],
+    };
+  }
+
   const metadataFiles = parsedPatches.flatMap((entry) => entry.files);
   const chunks = splitPatchIntoFileChunks(normalizedPatchText);
 
