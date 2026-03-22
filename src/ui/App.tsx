@@ -17,7 +17,7 @@ import { resizeSidebarWidth } from "./lib/sidebar";
 import { resolveTheme, THEMES } from "./themes";
 import { HunkHostClient } from "../mcp/client";
 import type { LiveComment, SessionServerMessage } from "../mcp/types";
-import { buildLiveComment, findDiffFileByPath, findHunkIndexForLine } from "../core/liveComments";
+import { buildLiveComment, findDiffFileByPath, findHunkIndexForLine, hunkLineRange } from "../core/liveComments";
 
 type FocusArea = "files" | "filter";
 
@@ -272,6 +272,75 @@ export function App({
     openAgentNotes();
   };
 
+  /** Build the MCP-facing summary for whichever hunk is currently selected inside one file. */
+  const buildSelectedHunkSummary = useCallback((file: (typeof allFiles)[number], hunkIndex: number) => {
+    const hunk = file.metadata.hunks[hunkIndex];
+    return hunk
+      ? {
+          index: hunkIndex,
+          ...hunkLineRange(hunk),
+        }
+      : {
+          index: hunkIndex,
+        };
+  }, []);
+
+  /** Move the live session selection to one file and optional hunk target. */
+  const navigateToFileSelection = useCallback(
+    async (message: Extract<SessionServerMessage, { command: "navigate_to_file" }>) => {
+      const file = findDiffFileByPath(allFiles, message.input.filePath);
+      if (!file) {
+        throw new Error(`No visible diff file matches ${message.input.filePath}.`);
+      }
+
+      const hunkIndex = message.input.hunkIndex ?? 0;
+      if (hunkIndex < 0 || hunkIndex >= Math.max(file.metadata.hunks.length, 1)) {
+        throw new Error(`File ${message.input.filePath} does not have hunk index ${hunkIndex}.`);
+      }
+
+      jumpToFile(file.id, hunkIndex);
+      return {
+        fileId: file.id,
+        filePath: file.path,
+        hunkIndex,
+        selectedHunk: buildSelectedHunkSummary(file, hunkIndex),
+      };
+    },
+    [allFiles, buildSelectedHunkSummary],
+  );
+
+  /** Move the live session selection to one specific hunk by index or line lookup. */
+  const navigateToHunkSelection = useCallback(
+    async (message: Extract<SessionServerMessage, { command: "navigate_to_hunk" }>) => {
+      const file = findDiffFileByPath(allFiles, message.input.filePath);
+      if (!file) {
+        throw new Error(`No visible diff file matches ${message.input.filePath}.`);
+      }
+
+      let hunkIndex = message.input.hunkIndex;
+      if (hunkIndex === undefined) {
+        if (!message.input.side || message.input.line === undefined) {
+          throw new Error("navigate_to_hunk requires either hunkIndex or both side and line.");
+        }
+
+        hunkIndex = findHunkIndexForLine(file, message.input.side, message.input.line);
+      }
+
+      if (hunkIndex < 0 || hunkIndex >= file.metadata.hunks.length) {
+        throw new Error(`No diff hunk in ${message.input.filePath} matches the requested target.`);
+      }
+
+      jumpToFile(file.id, hunkIndex);
+      return {
+        fileId: file.id,
+        filePath: file.path,
+        hunkIndex,
+        selectedHunk: buildSelectedHunkSummary(file, hunkIndex),
+      };
+    },
+    [allFiles, buildSelectedHunkSummary],
+  );
+
   /** Apply one incoming daemon comment to the live review session and reveal it in the diff stream. */
   const applyIncomingComment = useCallback(
     async (message: Extract<SessionServerMessage, { command: "comment" }>) => {
@@ -319,23 +388,29 @@ export function App({
 
     hostClient.setBridge({
       applyComment: applyIncomingComment,
+      navigateToFile: navigateToFileSelection,
+      navigateToHunk: navigateToHunkSelection,
     });
 
     return () => {
       hostClient.setBridge(null);
     };
-  }, [applyIncomingComment, hostClient]);
+  }, [applyIncomingComment, hostClient, navigateToFileSelection, navigateToHunkSelection]);
 
   useEffect(() => {
+    const selectedRange = currentHunk ? hunkLineRange(currentHunk) : undefined;
+
     hostClient?.updateSnapshot({
       selectedFileId: selectedFile?.id,
       selectedFilePath: selectedFile?.path,
       selectedHunkIndex,
+      selectedHunkOldRange: selectedRange?.oldRange,
+      selectedHunkNewRange: selectedRange?.newRange,
       showAgentNotes,
       liveCommentCount: Object.values(liveCommentsByFileId).reduce((sum, notes) => sum + notes.length, 0),
       updatedAt: new Date().toISOString(),
     });
-  }, [hostClient, liveCommentsByFileId, selectedFile?.id, selectedFile?.path, selectedHunkIndex, showAgentNotes]);
+  }, [currentHunk, hostClient, liveCommentsByFileId, selectedFile?.id, selectedFile?.path, selectedHunkIndex, showAgentNotes]);
 
   /** Leave the app through the shell-owned shutdown path. */
   const requestQuit = () => {

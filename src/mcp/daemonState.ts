@@ -1,9 +1,23 @@
 import { randomUUID } from "node:crypto";
-import type { AppliedCommentResult, CommentToolInput, HunkSessionRegistration, HunkSessionSnapshot, ListedSession } from "./types";
+import type {
+  AppliedCommentResult,
+  CommentToolInput,
+  HunkSessionRegistration,
+  HunkSessionSnapshot,
+  ListedSession,
+  ListedSessionFile,
+  NavigateToFileToolInput,
+  NavigateToHunkToolInput,
+  NavigatedSelectionResult,
+  SelectedSessionContext,
+  SessionCommandResult,
+  SessionServerMessage,
+  SessionTargetInput,
+} from "./types";
 
 interface PendingCommand {
   sessionId: string;
-  resolve: (result: AppliedCommentResult) => void;
+  resolve: (result: SessionCommandResult) => void;
   reject: (error: Error) => void;
   timeout: Timer;
 }
@@ -27,6 +41,14 @@ export interface SessionTargetSelector {
 
 function describeSessionChoices(sessions: ListedSession[]) {
   return sessions.map((session) => `${session.sessionId} (${session.title})`).join(", ");
+}
+
+function findSelectedFile(session: ListedSession) {
+  return session.files.find(
+    (file) => file.id === session.snapshot.selectedFileId
+      || file.path === session.snapshot.selectedFilePath
+      || file.previousPath === session.snapshot.selectedFilePath,
+  ) ?? null;
 }
 
 /** Resolve which live Hunk session one external command should target. */
@@ -96,6 +118,40 @@ export class HunkDaemonState {
 
   getSession(selector: SessionTargetSelector) {
     return resolveSessionTarget(this.listSessions(), selector);
+  }
+
+  listFiles(selector: SessionTargetSelector): ListedSessionFile[] {
+    const session = this.getSession(selector);
+
+    return session.files.map((file) => ({
+      ...file,
+      selected: file.id === session.snapshot.selectedFileId
+        || file.path === session.snapshot.selectedFilePath
+        || file.previousPath === session.snapshot.selectedFilePath,
+    }));
+  }
+
+  getSelectedContext(selector: SessionTargetSelector): SelectedSessionContext {
+    const session = this.getSession(selector);
+    const selectedFile = findSelectedFile(session);
+
+    return {
+      sessionId: session.sessionId,
+      title: session.title,
+      sourceLabel: session.sourceLabel,
+      repoRoot: session.repoRoot,
+      inputKind: session.inputKind,
+      selectedFile,
+      selectedHunk: selectedFile
+        ? {
+            index: session.snapshot.selectedHunkIndex,
+            oldRange: session.snapshot.selectedHunkOldRange,
+            newRange: session.snapshot.selectedHunkNewRange,
+          }
+        : null,
+      showAgentNotes: session.snapshot.showAgentNotes,
+      liveCommentCount: session.snapshot.liveCommentCount,
+    };
   }
 
   getPendingCommandCount() {
@@ -182,52 +238,34 @@ export class HunkDaemonState {
     return removed;
   }
 
-  async sendComment(input: CommentToolInput) {
-    const session = resolveSessionTarget(this.listSessions(), {
-      sessionId: input.sessionId,
-      repoRoot: input.repoRoot,
-    });
-    const requestId = randomUUID();
-
-    return new Promise<AppliedCommentResult>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        this.pendingCommands.delete(requestId);
-        reject(new Error("Timed out waiting for the Hunk session to apply the comment."));
-      }, 15_000);
-
-      this.pendingCommands.set(requestId, {
-        sessionId: session.sessionId,
-        resolve,
-        reject,
-        timeout,
-      });
-
-      const entry = this.sessions.get(session.sessionId);
-      if (!entry) {
-        clearTimeout(timeout);
-        this.pendingCommands.delete(requestId);
-        reject(new Error("The targeted Hunk session is no longer connected."));
-        return;
-      }
-
-      try {
-        entry.socket.send(
-          JSON.stringify({
-            type: "command",
-            requestId,
-            command: "comment",
-            input,
-          }),
-        );
-      } catch (error) {
-        clearTimeout(timeout);
-        this.pendingCommands.delete(requestId);
-        reject(error instanceof Error ? error : new Error("The targeted Hunk session could not receive the command."));
-      }
-    });
+  sendComment(input: CommentToolInput) {
+    return this.sendCommand<AppliedCommentResult, "comment">(
+      { sessionId: input.sessionId, repoRoot: input.repoRoot },
+      "comment",
+      input,
+      "Timed out waiting for the Hunk session to apply the comment.",
+    );
   }
 
-  handleCommandResult(message: { requestId: string; ok: boolean; result?: AppliedCommentResult; error?: string }) {
+  sendNavigateToFile(input: NavigateToFileToolInput) {
+    return this.sendCommand<NavigatedSelectionResult, "navigate_to_file">(
+      { sessionId: input.sessionId, repoRoot: input.repoRoot },
+      "navigate_to_file",
+      input,
+      "Timed out waiting for the Hunk session to navigate to the requested file.",
+    );
+  }
+
+  sendNavigateToHunk(input: NavigateToHunkToolInput) {
+    return this.sendCommand<NavigatedSelectionResult, "navigate_to_hunk">(
+      { sessionId: input.sessionId, repoRoot: input.repoRoot },
+      "navigate_to_hunk",
+      input,
+      "Timed out waiting for the Hunk session to navigate to the requested hunk.",
+    );
+  }
+
+  handleCommandResult(message: { requestId: string; ok: boolean; result?: SessionCommandResult; error?: string }) {
     const pending = this.pendingCommands.get(message.requestId);
     if (!pending) {
       return;
@@ -253,6 +291,53 @@ export class HunkDaemonState {
 
     this.sessionIdsBySocket.clear();
     this.sessions.clear();
+  }
+
+  private sendCommand<ResultType extends SessionCommandResult, CommandName extends SessionServerMessage["command"]>(
+    selector: SessionTargetInput,
+    command: CommandName,
+    input: Extract<SessionServerMessage, { command: CommandName }>["input"],
+    timeoutMessage: string,
+  ) {
+    const session = resolveSessionTarget(this.listSessions(), selector);
+    const requestId = randomUUID();
+
+    return new Promise<ResultType>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.pendingCommands.delete(requestId);
+        reject(new Error(timeoutMessage));
+      }, 15_000);
+
+      this.pendingCommands.set(requestId, {
+        sessionId: session.sessionId,
+        resolve: (result) => resolve(result as ResultType),
+        reject,
+        timeout,
+      });
+
+      const entry = this.sessions.get(session.sessionId);
+      if (!entry) {
+        clearTimeout(timeout);
+        this.pendingCommands.delete(requestId);
+        reject(new Error("The targeted Hunk session is no longer connected."));
+        return;
+      }
+
+      try {
+        const message = {
+          type: "command",
+          requestId,
+          command,
+          input,
+        } as Extract<SessionServerMessage, { command: CommandName }>;
+
+        entry.socket.send(JSON.stringify(message));
+      } catch (error) {
+        clearTimeout(timeout);
+        this.pendingCommands.delete(requestId);
+        reject(error instanceof Error ? error : new Error("The targeted Hunk session could not receive the command."));
+      }
+    });
   }
 
   private removeSession(sessionId: string, reason: string) {

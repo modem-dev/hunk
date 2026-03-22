@@ -29,6 +29,24 @@ interface ListedSessionSummary {
   }>;
 }
 
+interface ListedSessionFileSummary {
+  path: string;
+  hunkCount: number;
+  selected: boolean;
+}
+
+interface SelectedContextSummary {
+  selectedFile: {
+    path: string;
+    hunkCount: number;
+  } | null;
+  selectedHunk: {
+    index: number;
+    oldRange?: [number, number];
+    newRange?: [number, number];
+  } | null;
+}
+
 interface FixtureFiles {
   dir: string;
   before: string;
@@ -151,6 +169,24 @@ async function listSessions(client: Client) {
   return ((result.structuredContent as { sessions?: ListedSessionSummary[] } | undefined)?.sessions ?? []);
 }
 
+async function listFiles(client: Client, sessionId: string) {
+  const result = await client.callTool({
+    name: "list_files",
+    arguments: { sessionId },
+  });
+
+  return ((result.structuredContent as { files?: ListedSessionFileSummary[] } | undefined)?.files ?? []);
+}
+
+async function getSelectedContext(client: Client, sessionId: string) {
+  const result = await client.callTool({
+    name: "get_selected_context",
+    arguments: { sessionId },
+  });
+
+  return (result.structuredContent as { context?: SelectedContextSummary } | undefined)?.context ?? null;
+}
+
 afterEach(() => {
   cleanupTempDirs();
 });
@@ -211,6 +247,122 @@ describe("MCP end-to-end", () => {
       const transcript = stripTerminalControl(await Bun.file(fixture.transcript).text());
       expect(transcript).toContain("MCP autostart note");
       expect(transcript).toContain("Injected after the Hunk");
+    } finally {
+      if (transport) {
+        await transport.close().catch(() => undefined);
+      }
+
+      hunkProc.kill();
+      await hunkProc.exited.catch(() => undefined);
+
+      if (daemonPid) {
+        try {
+          process.kill(daemonPid, "SIGTERM");
+        } catch {
+          // Ignore daemons that already exited during cleanup.
+        }
+      }
+    }
+  }, 20_000);
+
+  test("expanded MCP tools can inspect files and navigate the selected hunk in a live session", async () => {
+    if (!ttyToolsAvailable) {
+      return;
+    }
+
+    const fixture = createFixtureFiles(
+      "navigate",
+      [
+        "export const line1 = 1;",
+        "export const line2 = 2;",
+        "export const line3 = 3;",
+        "export const line4 = 4;",
+        "export const line5 = 5;",
+        "export const line6 = 6;",
+        "export const line7 = 7;",
+        "export const line8 = 8;",
+        "export const line9 = 9;",
+        "export const line10 = 10;",
+      ],
+      [
+        "export const line1 = 101;",
+        "export const line2 = 2;",
+        "export const line3 = 3;",
+        "export const line4 = 4;",
+        "export const line5 = 5;",
+        "export const line6 = 6;",
+        "export const line7 = 7;",
+        "export const line8 = 8;",
+        "export const line9 = 9;",
+        "export const line10 = 110;",
+      ],
+    );
+    const port = 48500 + Math.floor(Math.random() * 1000);
+    const hunkProc = spawnHunkSession(fixture, { port });
+
+    let daemonPid: number | null = null;
+    let transport: StreamableHTTPClientTransport | null = null;
+
+    try {
+      const health = await waitForHealth(port);
+      daemonPid = health.pid;
+      expect(health.ok).toBe(true);
+
+      const client = new Client({ name: "mcp-navigation-test", version: "1.0.0" });
+      transport = new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`));
+      await client.connect(transport);
+
+      const listed = await waitUntil("registered Hunk session", async () => {
+        const sessions = await listSessions(client);
+        return sessions.length > 0 ? sessions : null;
+      });
+      const targetSession = listed.find((session) => session.files.some((file) => file.path === fixture.afterName)) ?? listed[0]!;
+
+      const files = await listFiles(client, targetSession.sessionId);
+      expect(files).toHaveLength(1);
+      expect(files[0]?.path).toBe(fixture.afterName);
+      expect(files[0]?.hunkCount).toBe(2);
+      expect(files[0]?.selected).toBe(true);
+
+      const initialContext = await getSelectedContext(client, targetSession.sessionId);
+      expect(initialContext?.selectedFile?.path).toBe(fixture.afterName);
+      expect(initialContext?.selectedHunk?.index).toBe(0);
+
+      const navigateResult = await client.callTool({
+        name: "navigate_to_hunk",
+        arguments: {
+          sessionId: targetSession.sessionId,
+          filePath: fixture.afterName,
+          hunkIndex: 1,
+        },
+      });
+      const navigated = (navigateResult.structuredContent as { result?: { hunkIndex?: number } } | undefined)?.result;
+      expect(navigated?.hunkIndex).toBe(1);
+
+      const updatedContext = await waitUntil("selected hunk update", async () => {
+        const context = await getSelectedContext(client, targetSession.sessionId);
+        return context?.selectedHunk?.index === 1 ? context : null;
+      });
+      expect(updatedContext.selectedHunk?.newRange).toBeDefined();
+      expect(updatedContext.selectedHunk?.oldRange).toBeDefined();
+
+      await client.callTool({
+        name: "navigate_to_file",
+        arguments: {
+          sessionId: targetSession.sessionId,
+          filePath: fixture.afterName,
+          hunkIndex: 0,
+        },
+      });
+
+      const resetContext = await waitUntil("selected file reset", async () => {
+        const context = await getSelectedContext(client, targetSession.sessionId);
+        return context?.selectedHunk?.index === 0 ? context : null;
+      });
+      expect(resetContext.selectedFile?.path).toBe(fixture.afterName);
+
+      const hunkExitCode = await hunkProc.exited;
+      expect([0, 124]).toContain(hunkExitCode);
     } finally {
       if (transport) {
         await transport.close().catch(() => undefined);

@@ -1,4 +1,12 @@
-import type { AppliedCommentResult, HunkSessionRegistration, HunkSessionSnapshot, SessionClientMessage, SessionServerMessage } from "./types";
+import type {
+  AppliedCommentResult,
+  HunkSessionRegistration,
+  HunkSessionSnapshot,
+  NavigatedSelectionResult,
+  SessionClientMessage,
+  SessionCommandResult,
+  SessionServerMessage,
+} from "./types";
 import { HUNK_SESSION_SOCKET_PATH, resolveHunkMcpConfig } from "./config";
 import { isHunkDaemonHealthy, isLoopbackPortReachable, launchHunkDaemon, waitForHunkDaemonHealth } from "./daemonLauncher";
 
@@ -9,6 +17,8 @@ const HEARTBEAT_INTERVAL_MS = 10_000;
 
 export interface HunkAppBridge {
   applyComment: (message: Extract<SessionServerMessage, { command: "comment" }>) => Promise<AppliedCommentResult>;
+  navigateToFile: (message: Extract<SessionServerMessage, { command: "navigate_to_file" }>) => Promise<NavigatedSelectionResult>;
+  navigateToHunk: (message: Extract<SessionServerMessage, { command: "navigate_to_hunk" }>) => Promise<NavigatedSelectionResult>;
 }
 
 /** Keep one running Hunk TUI session registered with the local MCP daemon. */
@@ -220,7 +230,7 @@ export class HunkHostClient {
     }
 
     try {
-      const result = await this.bridge.applyComment(message);
+      const result = await this.dispatchCommand(message);
       this.send({
         type: "command-result",
         requestId: message.requestId,
@@ -234,6 +244,21 @@ export class HunkHostClient {
         ok: false,
         error: error instanceof Error ? error.message : "Unknown Hunk session error.",
       });
+    }
+  }
+
+  private dispatchCommand(message: SessionServerMessage): Promise<SessionCommandResult> {
+    if (!this.bridge) {
+      throw new Error("Hunk MCP bridge is not connected.");
+    }
+
+    switch (message.command) {
+      case "comment":
+        return this.bridge.applyComment(message);
+      case "navigate_to_file":
+        return this.bridge.navigateToFile(message);
+      case "navigate_to_hunk":
+        return this.bridge.navigateToHunk(message);
     }
   }
 

@@ -2,6 +2,11 @@ import type { AgentAnnotation, CliInput } from "../core/types";
 
 export type DiffSide = "old" | "new";
 
+export interface SessionTargetInput {
+  sessionId?: string;
+  repoRoot?: string;
+}
+
 export interface SessionFileSummary {
   id: string;
   path: string;
@@ -9,6 +14,12 @@ export interface SessionFileSummary {
   additions: number;
   deletions: number;
   hunkCount: number;
+}
+
+export interface SelectedHunkSummary {
+  index: number;
+  oldRange?: [number, number];
+  newRange?: [number, number];
 }
 
 export interface HunkSessionRegistration {
@@ -27,14 +38,14 @@ export interface HunkSessionSnapshot {
   selectedFileId?: string;
   selectedFilePath?: string;
   selectedHunkIndex: number;
+  selectedHunkOldRange?: [number, number];
+  selectedHunkNewRange?: [number, number];
   showAgentNotes: boolean;
   liveCommentCount: number;
   updatedAt: string;
 }
 
-export interface CommentToolInput {
-  sessionId?: string;
-  repoRoot?: string;
+export interface CommentToolInput extends SessionTargetInput {
   filePath: string;
   side: DiffSide;
   line: number;
@@ -42,6 +53,18 @@ export interface CommentToolInput {
   rationale?: string;
   reveal?: boolean;
   author?: string;
+}
+
+export interface NavigateToFileToolInput extends SessionTargetInput {
+  filePath: string;
+  hunkIndex?: number;
+}
+
+export interface NavigateToHunkToolInput extends SessionTargetInput {
+  filePath: string;
+  hunkIndex?: number;
+  side?: DiffSide;
+  line?: number;
 }
 
 export interface LiveComment extends AgentAnnotation {
@@ -59,6 +82,31 @@ export interface AppliedCommentResult {
   side: DiffSide;
   line: number;
 }
+
+export interface NavigatedSelectionResult {
+  fileId: string;
+  filePath: string;
+  hunkIndex: number;
+  selectedHunk?: SelectedHunkSummary;
+}
+
+export interface ListedSessionFile extends SessionFileSummary {
+  selected: boolean;
+}
+
+export interface SelectedSessionContext {
+  sessionId: string;
+  title: string;
+  sourceLabel: string;
+  repoRoot?: string;
+  inputKind: CliInput["kind"];
+  selectedFile: SessionFileSummary | null;
+  selectedHunk: SelectedHunkSummary | null;
+  showAgentNotes: boolean;
+  liveCommentCount: number;
+}
+
+export type SessionCommandResult = AppliedCommentResult | NavigatedSelectionResult;
 
 export type SessionClientMessage =
   | {
@@ -79,7 +127,7 @@ export type SessionClientMessage =
       type: "command-result";
       requestId: string;
       ok: true;
-      result: AppliedCommentResult;
+      result: SessionCommandResult;
     }
   | {
       type: "command-result";
@@ -88,12 +136,25 @@ export type SessionClientMessage =
       error: string;
     };
 
-export type SessionServerMessage = {
-  type: "command";
-  requestId: string;
-  command: "comment";
-  input: CommentToolInput;
-};
+export type SessionServerMessage =
+  | {
+      type: "command";
+      requestId: string;
+      command: "comment";
+      input: CommentToolInput;
+    }
+  | {
+      type: "command";
+      requestId: string;
+      command: "navigate_to_file";
+      input: NavigateToFileToolInput;
+    }
+  | {
+      type: "command";
+      requestId: string;
+      command: "navigate_to_hunk";
+      input: NavigateToHunkToolInput;
+    };
 
 export interface ListedSession {
   sessionId: string;

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AppBootstrap } from "../core/types";
+import { hunkLineRange } from "../core/liveComments";
 import type { HunkSessionRegistration, HunkSessionSnapshot } from "./types";
 
 function inferRepoRoot(bootstrap: AppBootstrap) {
@@ -32,10 +33,16 @@ export function createSessionRegistration(bootstrap: AppBootstrap): HunkSessionR
 
 /** Start with an empty-but-valid snapshot until the UI reports its first selection. */
 export function createInitialSessionSnapshot(bootstrap: AppBootstrap): HunkSessionSnapshot {
+  const firstFile = bootstrap.changeset.files[0];
+  const firstHunk = firstFile?.metadata.hunks[0];
+  const firstRange = firstHunk ? hunkLineRange(firstHunk) : null;
+
   return {
-    selectedFileId: bootstrap.changeset.files[0]?.id,
-    selectedFilePath: bootstrap.changeset.files[0]?.path,
+    selectedFileId: firstFile?.id,
+    selectedFilePath: firstFile?.path,
     selectedHunkIndex: 0,
+    selectedHunkOldRange: firstRange?.oldRange,
+    selectedHunkNewRange: firstRange?.newRange,
     showAgentNotes: bootstrap.initialShowAgentNotes ?? false,
     liveCommentCount: 0,
     updatedAt: new Date().toISOString(),

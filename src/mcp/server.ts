@@ -15,6 +15,24 @@ interface McpTransportEntry {
   transport: WebStandardStreamableHTTPServerTransport;
 }
 
+const sessionSelectorSchema = z.object({
+  sessionId: z.string().optional().describe("Explicit Hunk session id."),
+  repoRoot: z.string().optional().describe("Repo root fallback when exactly one session matches."),
+});
+
+const navigateToHunkSchema = sessionSelectorSchema.extend({
+  filePath: z.string().describe("Diff file path as shown by Hunk."),
+  hunkIndex: z.number().int().nonnegative().optional().describe("0-based hunk index within the file."),
+  side: z.enum(["old", "new"]).optional().describe("Optional diff side when resolving by line number."),
+  line: z.number().int().positive().optional().describe("Optional 1-based diff line number when resolving by line number."),
+}).refine(
+  (input) => input.hunkIndex !== undefined || (input.side !== undefined && input.line !== undefined),
+  {
+    error: "Provide either hunkIndex or both side and line.",
+    path: ["hunkIndex"],
+  },
+);
+
 function formatToolJson(value: unknown) {
   return JSON.stringify(value, null, 2);
 }
@@ -74,10 +92,7 @@ function createHunkMcpServer(state: HunkDaemonState) {
     {
       title: "Get one live Hunk session",
       description: "Fetch details for one live Hunk session by session id or repo root.",
-      inputSchema: z.object({
-        sessionId: z.string().optional().describe("Explicit Hunk session id."),
-        repoRoot: z.string().optional().describe("Repo root fallback when exactly one session matches."),
-      }) as any,
+      inputSchema: sessionSelectorSchema as any,
     } as any,
     (async (input: { sessionId?: string; repoRoot?: string }) => {
       const session = state.getSession({ sessionId: input.sessionId, repoRoot: input.repoRoot });
@@ -92,13 +107,102 @@ function createHunkMcpServer(state: HunkDaemonState) {
   );
 
   server.registerTool(
+    "list_files",
+    {
+      title: "List files in one live Hunk session",
+      description: "List the diff files in one live Hunk session and mark the currently selected file.",
+      inputSchema: sessionSelectorSchema as any,
+    } as any,
+    (async (input: { sessionId?: string; repoRoot?: string }) => {
+      const files = state.listFiles({ sessionId: input.sessionId, repoRoot: input.repoRoot });
+
+      return {
+        content: textContent(formatToolJson({ files })),
+        structuredContent: {
+          files,
+        },
+      };
+    }) as any,
+  );
+
+  server.registerTool(
+    "get_selected_context",
+    {
+      title: "Get the selected file and hunk",
+      description: "Inspect which file and hunk the live Hunk session is currently focused on.",
+      inputSchema: sessionSelectorSchema as any,
+    } as any,
+    (async (input: { sessionId?: string; repoRoot?: string }) => {
+      const context = state.getSelectedContext({ sessionId: input.sessionId, repoRoot: input.repoRoot });
+
+      return {
+        content: textContent(formatToolJson(context)),
+        structuredContent: {
+          context,
+        },
+      };
+    }) as any,
+  );
+
+  server.registerTool(
+    "navigate_to_file",
+    {
+      title: "Focus one diff file",
+      description: "Move the live Hunk session to one diff file and optional hunk index.",
+      inputSchema: sessionSelectorSchema.extend({
+        filePath: z.string().describe("Diff file path as shown by Hunk."),
+        hunkIndex: z.number().int().nonnegative().optional().describe("Optional 0-based hunk index within the file."),
+      }) as any,
+    } as any,
+    (async (input: {
+      sessionId?: string;
+      repoRoot?: string;
+      filePath: string;
+      hunkIndex?: number;
+    }) => {
+      const result = await state.sendNavigateToFile(input);
+
+      return {
+        content: textContent(formatToolJson(result)),
+        structuredContent: {
+          result,
+        },
+      };
+    }) as any,
+  );
+
+  server.registerTool(
+    "navigate_to_hunk",
+    {
+      title: "Focus one diff hunk",
+      description: "Move the live Hunk session to one diff hunk by index or by a specific diff line.",
+      inputSchema: navigateToHunkSchema as any,
+    } as any,
+    (async (input: {
+      sessionId?: string;
+      repoRoot?: string;
+      filePath: string;
+      hunkIndex?: number;
+      side?: "old" | "new";
+      line?: number;
+    }) => {
+      const result = await state.sendNavigateToHunk(input);
+
+      return {
+        content: textContent(formatToolJson(result)),
+        structuredContent: {
+          result,
+        },
+      };
+    }) as any,
+  );
+
+  server.registerTool(
     "comment",
     {
       title: "Comment on a live Hunk diff",
       description: "Attach an inline review note to a specific diff line in a live Hunk session.",
-      inputSchema: z.object({
-        sessionId: z.string().optional().describe("Explicit Hunk session id."),
-        repoRoot: z.string().optional().describe("Repo root fallback when exactly one session matches."),
+      inputSchema: sessionSelectorSchema.extend({
         filePath: z.string().describe("Diff file path as shown by Hunk."),
         side: z.enum(["old", "new"]).describe("Which side of the diff the line belongs to."),
         line: z.number().int().positive().describe("1-based diff line number on the chosen side."),

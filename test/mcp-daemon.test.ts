@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { HunkDaemonState, resolveSessionTarget } from "../src/mcp/daemonState";
-import type { AppliedCommentResult, HunkSessionRegistration, HunkSessionSnapshot, ListedSession } from "../src/mcp/types";
+import type { AppliedCommentResult, HunkSessionRegistration, HunkSessionSnapshot, ListedSession, NavigatedSelectionResult } from "../src/mcp/types";
 
 function createListedSession(overrides: Partial<ListedSession> = {}): ListedSession {
   return {
@@ -81,6 +81,42 @@ describe("Hunk MCP daemon state", () => {
     expect(() => resolveSessionTarget(two, { repoRoot: "/repo" })).toThrow("specify sessionId instead");
   });
 
+  test("lists files and exposes the selected session context from snapshot state", () => {
+    const state = new HunkDaemonState();
+    const socket = {
+      send() {},
+    };
+
+    state.registerSession(
+      socket,
+      createRegistration(),
+      createSnapshot({
+        selectedHunkIndex: 1,
+        selectedHunkOldRange: [8, 8],
+        selectedHunkNewRange: [8, 8],
+      }),
+    );
+
+    expect(state.listFiles({ sessionId: "session-1" })).toEqual([
+      expect.objectContaining({
+        path: "src/example.ts",
+        selected: true,
+      }),
+    ]);
+
+    expect(state.getSelectedContext({ sessionId: "session-1" })).toEqual(
+      expect.objectContaining({
+        sessionId: "session-1",
+        selectedFile: expect.objectContaining({ path: "src/example.ts" }),
+        selectedHunk: expect.objectContaining({
+          index: 1,
+          oldRange: [8, 8],
+          newRange: [8, 8],
+        }),
+      }),
+    );
+  });
+
   test("routes a comment command to the live session and resolves the async result", async () => {
     const state = new HunkDaemonState();
     const sent: string[] = [];
@@ -113,6 +149,50 @@ describe("Hunk MCP daemon state", () => {
       hunkIndex: 0,
       side: "new",
       line: 4,
+    };
+
+    state.handleCommandResult({
+      requestId: outgoing.requestId,
+      ok: true,
+      result,
+    });
+
+    await expect(pending).resolves.toEqual(result);
+  });
+
+  test("routes navigation commands to the live session and resolves the async result", async () => {
+    const state = new HunkDaemonState();
+    const sent: string[] = [];
+    const socket = {
+      send(data: string) {
+        sent.push(data);
+      },
+    };
+
+    state.registerSession(socket, createRegistration(), createSnapshot());
+
+    const pending = state.sendNavigateToHunk({
+      sessionId: "session-1",
+      filePath: "src/example.ts",
+      hunkIndex: 0,
+    });
+
+    expect(sent).toHaveLength(1);
+    const outgoing = JSON.parse(sent[0]!) as {
+      requestId: string;
+      command: string;
+    };
+    expect(outgoing.command).toBe("navigate_to_hunk");
+
+    const result: NavigatedSelectionResult = {
+      fileId: "file-1",
+      filePath: "src/example.ts",
+      hunkIndex: 0,
+      selectedHunk: {
+        index: 0,
+        oldRange: [1, 2],
+        newRange: [1, 4],
+      },
     };
 
     state.handleCommandResult({
