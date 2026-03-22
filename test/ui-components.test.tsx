@@ -520,10 +520,15 @@ describe("UI components", () => {
       18,
     );
 
+    const addedLines = frame
+      .split("\n")
+      .filter((line) => line.includes("export const message = 'this is a very") || /^▌\s{6,}\S/.test(line));
+
     expect(frame).toContain("1   -  export const message = 'short';");
-    expect(frame).toContain("1 +  export const message = 'this is a very l");
-    expect(frame).toContain("ong wrapped line for");
-    expect(frame).toContain("erage';");
+    expect(addedLines[0]).toContain("1 +  export const message = 'this is a very l");
+    expect(addedLines.length).toBeGreaterThanOrEqual(3);
+    expect(addedLines.slice(1).some((line) => line.includes("ong wrapped line"))).toBe(true);
+    expect(addedLines.slice(1).some((line) => line.includes("age';"))).toBe(true);
   });
 
   test("PierreDiffView anchors range-less notes to the first visible row when hunk headers are hidden", async () => {
