@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "summary": "Improves command-palette matching by normalizing query text and ranking stronger matches ahead of loose substring hits.",
+  "files": [
+    {
+      "path": "src/normalize.ts",
+      "summary": "Centralizes query cleanup before any matching happens.",
+      "annotations": [
+        {
+          "newRange": [1, 3],
+          "summary": "Adds one normalization helper for whitespace, case, and dashed shortcut terms.",
+          "rationale": "This lets the search layer reason about one normalized token shape instead of repeating slightly different cleanup logic in multiple places."
+        }
+      ]
+    },
+    {
+      "path": "src/search.ts",
+      "summary": "Scores and sorts matches instead of returning the first loose substring list.",
+      "annotations": [
+        {
+          "newRange": [15, 35],
+          "summary": "Prefix and exact keyword matches now outrank weaker substring hits before the result list is sorted.",
+          "rationale": "The old behavior made every match look equally good, which was fine for filtering but weak for command-palette ranking where the top result should usually be the most obvious intent."
+        }
+      ]
+    },
+    {
+      "path": "src/index.ts",
+      "summary": "Keeps the preview intentionally short.",
+      "annotations": [
+        {
+          "newRange": [1, 8],
+          "summary": "The preview now shows only the top three ranked commands.",
+          "rationale": "Once ranking is reliable, the preview can stay compact and let the best results carry the review without flooding the UI."
+        }
+      ]
+    },
+    {
+      "path": "test/search.demo.ts",
+      "summary": "Locks in normalized query handling and result ordering.",
+      "annotations": [
+        {
+          "newRange": [1, 8],
+          "summary": "The test covers a dashed query form so the new normalization helper has a visible behavioral contract.",
+          "rationale": "Without a test that exercises `short-cuts` specifically, it would be easy to regress the helper and still pass on simpler substring-only cases."
+        }
+      ]
+    }
+  ]
+}

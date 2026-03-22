@@ -1,0 +1,83 @@
+diff --git a/src/format.ts b/src/format.ts
+index fca86dc..5f86b0b 100644
+--- a/src/format.ts
++++ b/src/format.ts
+@@ -1,8 +1,17 @@
+ import type { Task } from "./tasks";
+ 
+-export function renderTaskLine(task: Task) {
+-  const marker = task.state === "done" ? "✓" : task.state === "doing" ? "•" : "○";
+-  const blocked = task.blocked ? " (blocked)" : "";
++function statusChip(task: Task) {
++  if (task.blocked) {
++    return "[blocked]";
++  }
+ 
+-  return `${marker} ${task.title} — ${task.owner}${blocked}`;
++  if (task.state === "done") {
++    return "[done]";
++  }
++
++  return task.state === "doing" ? "[active]" : "[queued]";
++}
++
++export function formatTask(task: Task) {
++  return `${statusChip(task)} ${task.title} — ${task.owner}`;
+ }
+diff --git a/src/groupTasks.ts b/src/groupTasks.ts
+new file mode 100644
+index 0000000..bbc427a
+--- /dev/null
++++ b/src/groupTasks.ts
+@@ -0,0 +1,8 @@
++import type { Task } from "./tasks";
++
++export function groupTasks(tasks: Task[]) {
++  return {
++    shippingToday: tasks.filter((task) => task.state === "done" || task.state === "doing"),
++    needsHelp: tasks.filter((task) => task.blocked),
++  };
++}
+diff --git a/src/main.ts b/src/main.ts
+index 6b7b7a1..624ed80 100644
+--- a/src/main.ts
++++ b/src/main.ts
+@@ -1,6 +1,17 @@
+-import { renderTaskLine } from "./format";
++import { formatTask } from "./format";
++import { groupTasks } from "./groupTasks";
+ import { tasks } from "./tasks";
+ 
+ export function renderMorningSummary() {
+-  return ["Morning summary", ...tasks.map(renderTaskLine)].join("\n");
++  const grouped = groupTasks(tasks);
++
++  return [
++    "Morning summary",
++    "",
++    "Shipping today",
++    ...grouped.shippingToday.map(formatTask),
++    "",
++    "Needs help",
++    ...grouped.needsHelp.map(formatTask),
++  ].join("\n");
+ }
+diff --git a/test/main.demo.ts b/test/main.demo.ts
+index b63bffa..d9d98d8 100644
+--- a/test/main.demo.ts
++++ b/test/main.demo.ts
+@@ -1,9 +1,11 @@
+ import { expect, test } from "bun:test";
+ import { renderMorningSummary } from "../src/main";
+ 
+-test("renders a flat morning summary", () => {
++test("renders grouped sections for the morning summary", () => {
+   const output = renderMorningSummary();
+ 
+-  expect(output).toContain("Morning summary");
+-  expect(output).toContain("Document keyboard shortcuts");
++  expect(output).toContain("Shipping today");
++  expect(output).toContain("[active] Polish dashboard empty state");
++  expect(output).toContain("Needs help");
++  expect(output).toContain("[blocked] Document keyboard shortcuts");
+ });

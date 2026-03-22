@@ -1,0 +1,98 @@
+diff --git a/src/commands.ts b/src/commands.ts
+index 30b8d87..028d3db 100644
+--- a/src/commands.ts
++++ b/src/commands.ts
+@@ -4,5 +4,5 @@ export const commands: Command[] = [
+   { id: "open-workspace", label: "Open workspace", keywords: ["project", "folder"] },
+   { id: "toggle-sidebar", label: "Toggle sidebar", keywords: ["files", "panel"] },
+   { id: "next-hunk", label: "Next hunk", keywords: ["jump", "change"] },
+-  { id: "open-help", label: "Open help", keywords: ["keyboard", "shortcuts"] },
++  { id: "open-help", label: "Open help", keywords: ["keyboard", "shortcuts", "short cuts"] },
+ ];
+diff --git a/src/index.ts b/src/index.ts
+index 02550b1..829f3a9 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -3,6 +3,7 @@ import { searchCommands } from "./search";
+ 
+ export function renderCommandPreview(query: string) {
+   return searchCommands(query, commands)
++    .slice(0, 3)
+     .map((command) => `• ${command.label}`)
+     .join("\n");
+ }
+diff --git a/src/normalize.ts b/src/normalize.ts
+new file mode 100644
+index 0000000..b67c56b
+--- /dev/null
++++ b/src/normalize.ts
+@@ -0,0 +1,3 @@
++export function normalizeQuery(value: string) {
++  return value.trim().toLowerCase().replace(/[-_]+/g, " ");
++}
+diff --git a/src/search.ts b/src/search.ts
+index 71c6fd1..2fd364d 100644
+--- a/src/search.ts
++++ b/src/search.ts
+@@ -1,3 +1,5 @@
++import { normalizeQuery } from "./normalize";
++
+ export type Command = {
+   id: string;
+   label: string;
+@@ -5,14 +7,34 @@ export type Command = {
+ };
+ 
+ export function searchCommands(query: string, commands: Command[]) {
+-  const needle = query.trim().toLowerCase();
++  const needle = normalizeQuery(query);
+ 
+   if (!needle) {
+     return commands;
+   }
+ 
+-  return commands.filter((command) => {
+-    const haystack = [command.label, ...(command.keywords ?? [])].join(" ").toLowerCase();
+-    return haystack.includes(needle);
+-  });
++  return commands
++    .map((command) => {
++      const label = normalizeQuery(command.label);
++      const keywords = (command.keywords ?? []).map(normalizeQuery);
++
++      let score = 0;
++      if (label.startsWith(needle)) {
++        score += 4;
++      }
++      if (label.includes(needle)) {
++        score += 2;
++      }
++      if (keywords.some((keyword) => keyword === needle)) {
++        score += 3;
++      }
++      if (keywords.some((keyword) => keyword.includes(needle))) {
++        score += 1;
++      }
++
++      return { command, score };
++    })
++    .filter((entry) => entry.score > 0)
++    .sort((left, right) => right.score - left.score || left.command.label.localeCompare(right.command.label))
++    .map((entry) => entry.command);
+ }
+diff --git a/test/search.demo.ts b/test/search.demo.ts
+index 89c23f8..9c15b8a 100644
+--- a/test/search.demo.ts
++++ b/test/search.demo.ts
+@@ -1,7 +1,9 @@
+ import { expect, test } from "bun:test";
+ import { renderCommandPreview } from "../src/index";
+ 
+-test("filters commands by substring", () => {
+-  expect(renderCommandPreview("help")).toContain("Open help");
++test("prefers normalized shortcut matches", () => {
++  const output = renderCommandPreview("short-cuts");
++
++  expect(output.split("\n")[0]).toBe("• Open help");
+   expect(renderCommandPreview("panel")).toContain("Toggle sidebar");
+ });

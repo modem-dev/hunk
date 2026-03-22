@@ -57,6 +57,15 @@ Open a patch from stdin:
 git diff --no-color | hunk patch -
 ```
 
+## Demo examples
+
+The repository includes ready-to-run demo diffs in [`examples/`](examples/README.md), including:
+
+- a tiny first-run TypeScript diff
+- a realistic multi-file refactor review
+- an agent-rationale demo with `--agent-context`
+- a tall pager tour for trying `↑`, `↓`, paging, and hunk jumps
+
 ## Feature comparison
 
 | Capability | hunk | difftastic | delta | diff |
