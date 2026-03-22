@@ -62,6 +62,7 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "@opentui/core": "^0.1.88",
     "@opentui/react": "^0.1.88",
     "@pierre/diffs": "^1.1.0",
@@ -69,7 +70,8 @@
     "commander": "^14.0.3",
     "diff": "^8.0.3",
     "parse-diff": "^0.11.1",
-    "react": "^19.2.4"
+    "react": "^19.2.4",
+    "zod": "^4.3.6"
   },
   "license": "MIT"
 }

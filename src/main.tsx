@@ -9,12 +9,24 @@ import { looksLikePatchInput, pagePlainText } from "./core/pager";
 import { shutdownSession } from "./core/shutdown";
 import { openControllingTerminal, resolveRuntimeCliInput, usesPipedPatchInput } from "./core/terminal";
 import { App } from "./ui/App";
+import { HunkHostClient } from "./mcp/client";
+import { serveHunkMcpServer } from "./mcp/server";
+import { createInitialSessionSnapshot, createSessionRegistration } from "./mcp/sessionRegistration";
 
 let parsedCliInput = await parseCli(process.argv);
 
 if (parsedCliInput.kind === "help") {
   process.stdout.write(parsedCliInput.text);
   process.exit(0);
+}
+
+if (parsedCliInput.kind === "mcp-serve") {
+  serveHunkMcpServer();
+  await new Promise<never>(() => {});
+}
+
+if (parsedCliInput.kind === "mcp-serve") {
+  throw new Error("Unreachable MCP daemon branch.");
 }
 
 if (parsedCliInput.kind === "pager") {
@@ -41,6 +53,8 @@ const configured = resolveConfiguredCliInput(runtimeCliInput);
 const cliInput = configured.input;
 const bootstrap = await loadAppBootstrap(cliInput);
 const controllingTerminal = usesPipedPatchInput(cliInput) ? openControllingTerminal() : null;
+const hostClient = new HunkHostClient(createSessionRegistration(bootstrap), createInitialSessionSnapshot(bootstrap));
+hostClient.start();
 
 const renderer = await createCliRenderer({
   stdin: controllingTerminal?.stdin,
@@ -62,6 +76,7 @@ function shutdown() {
   }
 
   shuttingDown = true;
+  hostClient.stop();
   shutdownSession({ root, renderer });
 }
 
@@ -69,6 +84,7 @@ function shutdown() {
 root.render(
   <App
     bootstrap={bootstrap}
+    hostClient={hostClient}
     onQuit={shutdown}
   />,
 );

@@ -49,6 +49,7 @@ function normalizeAnnotationFile(file: unknown): AgentFileContext {
       };
 
       return {
+        id: typeof item.id === "string" ? item.id : undefined,
         oldRange: normalizeRange(item.oldRange),
         newRange: normalizeRange(item.newRange),
         summary: item.summary,
@@ -58,6 +59,9 @@ function normalizeAnnotationFile(file: unknown): AgentFileContext {
           item.confidence === "low" || item.confidence === "medium" || item.confidence === "high"
             ? item.confidence
             : undefined,
+        source: typeof item.source === "string" ? item.source : undefined,
+        author: typeof item.author === "string" ? item.author : undefined,
+        createdAt: typeof item.createdAt === "string" ? item.createdAt : undefined,
       };
     }),
   };

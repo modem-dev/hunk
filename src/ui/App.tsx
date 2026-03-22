@@ -1,6 +1,6 @@
 import { MouseButton, type KeyEvent, type MouseEvent as TuiMouseEvent, type ScrollBoxRenderable } from "@opentui/core";
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
-import { Suspense, lazy, startTransition, useDeferredValue, useEffect, useRef, useState } from "react";
+import { Suspense, lazy, startTransition, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import type { AppBootstrap, LayoutMode } from "../core/types";
 import { MenuBar } from "./components/chrome/MenuBar";
 import { MENU_ORDER, buildMenuSpecs, menuWidth, nextMenuItemIndex, type MenuEntry, type MenuId } from "./components/chrome/menu";
@@ -14,6 +14,9 @@ import { buildHunkCursors, findNextHunkCursor } from "./lib/hunks";
 import { diffHunkId, diffSectionId, fileRowId } from "./lib/ids";
 import { resolveResponsiveLayout } from "./lib/responsive";
 import { resolveTheme, THEMES } from "./themes";
+import { HunkHostClient } from "../mcp/client";
+import type { LiveComment, SessionServerMessage } from "../mcp/types";
+import { buildLiveComment, findDiffFileByPath, findHunkIndexForLine } from "../core/liveComments";
 
 type FocusArea = "files" | "filter";
 
@@ -28,9 +31,11 @@ function clamp(value: number, min: number, max: number) {
 /** Orchestrate global app state, layout, navigation, and pane coordination. */
 export function App({
   bootstrap,
+  hostClient,
   onQuit = () => process.exit(0),
 }: {
   bootstrap: AppBootstrap;
+  hostClient?: HunkHostClient;
   onQuit?: () => void;
 }) {
   const FILES_MIN_WIDTH = 22;
@@ -61,12 +66,33 @@ export function App({
   const [dismissedAgentNoteIds, setDismissedAgentNoteIds] = useState<string[]>([]);
   const [selectedFileId, setSelectedFileId] = useState(bootstrap.changeset.files[0]?.id ?? "");
   const [selectedHunkIndex, setSelectedHunkIndex] = useState(0);
+  const [liveCommentsByFileId, setLiveCommentsByFileId] = useState<Record<string, LiveComment[]>>({});
   const deferredFilter = useDeferredValue(filter);
 
   const pagerMode = Boolean(bootstrap.input.options.pager);
   const activeTheme = resolveTheme(themeId, renderer.themeMode);
 
-  const filteredFiles = bootstrap.changeset.files.filter((file) => {
+  const allFiles = useMemo(
+    () =>
+      bootstrap.changeset.files.map((file) => {
+        const liveComments = liveCommentsByFileId[file.id];
+        if (!liveComments || liveComments.length === 0) {
+          return file;
+        }
+
+        return {
+          ...file,
+          agent: {
+            path: file.path,
+            summary: file.agent?.summary,
+            annotations: [...(file.agent?.annotations ?? []), ...liveComments],
+          },
+        };
+      }),
+    [bootstrap.changeset.files, liveCommentsByFileId],
+  );
+
+  const filteredFiles = allFiles.filter((file) => {
     if (!deferredFilter.trim()) {
       return true;
     }
@@ -75,10 +101,7 @@ export function App({
     return haystack.includes(deferredFilter.trim().toLowerCase());
   });
 
-  const selectedFile =
-    filteredFiles.find((file) => file.id === selectedFileId) ??
-    bootstrap.changeset.files.find((file) => file.id === selectedFileId) ??
-    filteredFiles[0];
+  const selectedFile = filteredFiles.find((file) => file.id === selectedFileId) ?? allFiles.find((file) => file.id === selectedFileId) ?? filteredFiles[0];
   const hunkCursors = buildHunkCursors(filteredFiles);
 
   const bodyPadding = pagerMode ? 0 : BODY_PADDING;
@@ -263,6 +286,71 @@ export function App({
     jumpToFile(fileId, hunkIndex);
     openAgentNotes();
   };
+
+  /** Apply one incoming daemon comment to the live review session and reveal it in the diff stream. */
+  const applyIncomingComment = useCallback(
+    async (message: Extract<SessionServerMessage, { command: "comment" }>) => {
+      const file = findDiffFileByPath(allFiles, message.input.filePath);
+      if (!file) {
+        throw new Error(`No visible diff file matches ${message.input.filePath}.`);
+      }
+
+      const hunkIndex = findHunkIndexForLine(file, message.input.side, message.input.line);
+      if (hunkIndex < 0) {
+        throw new Error(
+          `No ${message.input.side} diff hunk in ${message.input.filePath} covers line ${message.input.line}.`,
+        );
+      }
+
+      const commentId = `mcp:${message.requestId}`;
+      const liveComment = buildLiveComment(message.input, commentId, new Date().toISOString());
+
+      setLiveCommentsByFileId((current) => ({
+        ...current,
+        [file.id]: [...(current[file.id] ?? []), liveComment],
+      }));
+
+      if (message.input.reveal ?? true) {
+        jumpToFile(file.id, hunkIndex);
+        openAgentNotes();
+      }
+
+      return {
+        commentId,
+        fileId: file.id,
+        filePath: file.path,
+        hunkIndex,
+        side: message.input.side,
+        line: message.input.line,
+      };
+    },
+    [allFiles],
+  );
+
+  useEffect(() => {
+    if (!hostClient) {
+      return;
+    }
+
+    hostClient.setBridge({
+      applyComment: applyIncomingComment,
+    });
+
+    return () => {
+      hostClient.setBridge(null);
+    };
+  }, [applyIncomingComment, hostClient]);
+
+  useEffect(() => {
+    hostClient?.updateSnapshot({
+      selectedFileId: selectedFile?.id,
+      selectedFilePath: selectedFile?.path,
+      selectedHunkIndex,
+      showAgentNotes,
+      liveCommentCount: Object.values(liveCommentsByFileId).reduce((sum, notes) => sum + notes.length, 0),
+      updatedAt: new Date().toISOString(),
+    });
+  }, [hostClient, liveCommentsByFileId, selectedFile?.id, selectedFile?.path, selectedHunkIndex, showAgentNotes]);
 
   /** Leave the app through the shell-owned shutdown path. */
   const requestQuit = () => {

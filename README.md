@@ -98,6 +98,28 @@ Takeaway:
 - `hunk patch [file|-]` — review a patch file or stdin
 - `hunk pager` — act as a Git pager wrapper, opening Hunk for diff-like stdin and falling back to plain text paging otherwise
 - `hunk difftool <left> <right> [path]` — integrate with Git difftool
+- `hunk mcp serve` — run the local MCP daemon for agent-to-diff communication
+
+## MCP daemon (experimental)
+
+Hunk can run a local MCP daemon that brokers commands to live Hunk TUI sessions.
+
+```bash
+hunk mcp serve
+```
+
+Current v1 scope:
+
+- local loopback daemon only
+- live session discovery via `list_sessions` / `get_session`
+- inline diff comments via `comment`
+- Linux-first implementation, designed to stay portable to macOS later
+
+Environment variables:
+
+- `HUNK_MCP_HOST` — bind host for the daemon and session clients, default `127.0.0.1`
+- `HUNK_MCP_PORT` — bind port for the daemon and session clients, default `47657`
+- `HUNK_MCP_DISABLE=1` — disable background session registration for one Hunk process
 
 ## Interaction
 

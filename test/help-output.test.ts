@@ -18,6 +18,7 @@ describe("CLI help output", () => {
     expect(stdout).toContain("hunk diff");
     expect(stdout).toContain("hunk show");
     expect(stdout).toContain("hunk pager");
+    expect(stdout).toContain("hunk mcp serve");
     expect(stdout).not.toContain("hunk git");
     expect(stdout).not.toContain("\u001b[?1049h");
   });

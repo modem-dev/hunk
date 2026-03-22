@@ -84,6 +84,7 @@ function renderCliHelp() {
     "  hunk patch [file]                       review a patch file or stdin",
     "  hunk pager                              general Git pager wrapper with diff detection",
     "  hunk difftool <left> <right> [path]     review Git difftool file pairs",
+    "  hunk mcp serve                          run the local Hunk MCP daemon",
     "",
     "Options:",
     "  -h, --help                              show help",
@@ -98,6 +99,7 @@ function renderCliHelp() {
     "  hunk show abc123 -- README.md",
     "  hunk patch -",
     "  hunk pager",
+    "  hunk mcp serve",
     "",
   ].join("\n");
 }
@@ -306,6 +308,44 @@ async function parseDifftoolCommand(tokens: string[], argv: string[]): Promise<P
   };
 }
 
+/** Parse `hunk mcp serve` as the local daemon entrypoint. */
+async function parseMcpCommand(tokens: string[]): Promise<ParsedCliInput> {
+  const [subcommand, ...rest] = tokens;
+  if (!subcommand || subcommand === "--help" || subcommand === "-h") {
+    return {
+      kind: "help",
+      text: [
+        "Usage: hunk mcp serve",
+        "",
+        "Run the local Hunk MCP daemon and websocket session broker.",
+        "",
+        "Environment:",
+        "  HUNK_MCP_HOST   bind host (default 127.0.0.1)",
+        "  HUNK_MCP_PORT   bind port (default 47657)",
+      ].join("\n") + "\n",
+    };
+  }
+
+  if (subcommand !== "serve") {
+    throw new Error("Only `hunk mcp serve` is supported.");
+  }
+
+  if (rest.includes("--help") || rest.includes("-h")) {
+    return {
+      kind: "help",
+      text: [
+        "Usage: hunk mcp serve",
+        "",
+        "Run the local Hunk MCP daemon and websocket session broker.",
+      ].join("\n") + "\n",
+    };
+  }
+
+  return {
+    kind: "mcp-serve",
+  };
+}
+
 /** Parse `hunk stash show` as a full-UI stash review command. */
 async function parseStashCommand(tokens: string[], argv: string[]): Promise<ParsedCliInput> {
   const [subcommand, ...rest] = tokens;
@@ -373,6 +413,8 @@ export async function parseCli(argv: string[]): Promise<ParsedCliInput> {
       return parseDifftoolCommand(rest, argv);
     case "stash":
       return parseStashCommand(rest, argv);
+    case "mcp":
+      return parseMcpCommand(rest);
     default:
       throw new Error(`Unknown command: ${commandName}`);
   }

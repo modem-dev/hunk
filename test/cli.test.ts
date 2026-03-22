@@ -135,6 +135,14 @@ describe("parseCli", () => {
     });
   });
 
+  test("parses the MCP daemon command", async () => {
+    const parsed = await parseCli(["bun", "hunk", "mcp", "serve"]);
+
+    expect(parsed).toEqual({
+      kind: "mcp-serve",
+    });
+  });
+
   test("parses stash show mode", async () => {
     const parsed = await parseCli(["bun", "hunk", "stash", "show", "stash@{1}"]);
 

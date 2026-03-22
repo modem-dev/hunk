@@ -3,12 +3,16 @@ import type { FileDiffMetadata } from "@pierre/diffs";
 export type LayoutMode = "auto" | "split" | "stack";
 
 export interface AgentAnnotation {
+  id?: string;
   oldRange?: [number, number];
   newRange?: [number, number];
   summary: string;
   rationale?: string;
   tags?: string[];
   confidence?: "low" | "medium" | "high";
+  source?: string;
+  author?: string;
+  createdAt?: string;
 }
 
 export interface AgentFileContext {
@@ -76,6 +80,10 @@ export interface PagerCommandInput {
   options: CommonOptions;
 }
 
+export interface McpServeCommandInput {
+  kind: "mcp-serve";
+}
+
 export interface GitCommandInput {
   kind: "git";
   range?: string;
@@ -127,7 +135,7 @@ export type CliInput =
   | PatchCommandInput
   | DiffToolCommandInput;
 
-export type ParsedCliInput = CliInput | HelpCommandInput | PagerCommandInput;
+export type ParsedCliInput = CliInput | HelpCommandInput | PagerCommandInput | McpServeCommandInput;
 
 export interface AppBootstrap {
   input: CliInput;

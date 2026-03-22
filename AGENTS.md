@@ -21,6 +21,7 @@ CLI input
 - All input sources normalize into one internal changeset model.
 - Pager mode has two paths: full diff UI for patch-like stdin, plain-text fallback for non-diff pager content.
 - View defaults are layered through built-ins, user config, repo `.hunk/config.toml`, command sections, pager sections, and CLI flags.
+- `hunk mcp serve` runs one loopback daemon that brokers agent commands to many live Hunk sessions. Keep it local-only and session-brokered rather than opening per-TUI ports.
 - Agent rationale is optional sidecar JSON matched onto files/hunks.
 - The order of `files` in the sidecar is intentional. Hunk uses that order for the sidebar and main review stream.
 
