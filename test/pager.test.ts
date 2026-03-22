@@ -1,5 +1,27 @@
 import { describe, expect, test } from "bun:test";
-import { looksLikePatchInput } from "../src/core/pager";
+import { EventEmitter } from "node:events";
+import { PassThrough } from "node:stream";
+import { looksLikePatchInput, pagePlainText, resolveTextPagerCommand, type PlainTextPagerDeps } from "../src/core/pager";
+
+function createPagerDeps(overrides: Partial<PlainTextPagerDeps> = {}): PlainTextPagerDeps {
+  return {
+    stdout: {
+      isTTY: true,
+      write() {
+        return true;
+      },
+    },
+    spawnImpl() {
+      const pager = new EventEmitter() as EventEmitter & { stdin: PassThrough };
+      pager.stdin = new PassThrough();
+      queueMicrotask(() => {
+        pager.emit("close", 0);
+      });
+      return pager as never;
+    },
+    ...overrides,
+  };
+}
 
 describe("general pager detection", () => {
   test("detects git-style patch input even when ANSI-colored", () => {
@@ -21,5 +43,70 @@ describe("general pager detection", () => {
     const branchOutput = ["* main", "  feat/persist-view-config", "  release/0.1.0"].join("\n");
 
     expect(looksLikePatchInput(branchOutput)).toBe(false);
+  });
+});
+
+describe("plain text pager fallback", () => {
+  test("falls back to less when no pager is configured", () => {
+    expect(resolveTextPagerCommand({})).toBe("less -R");
+  });
+
+  test("prefers HUNK_TEXT_PAGER and avoids recursive hunk launches", () => {
+    expect(resolveTextPagerCommand({ HUNK_TEXT_PAGER: "bat --paging=always" })).toBe("bat --paging=always");
+    expect(resolveTextPagerCommand({ HUNK_TEXT_PAGER: "hunk pager" })).toBe("less -R");
+    expect(resolveTextPagerCommand({ PAGER: "env FOO=1 hunk pager" })).toBe("less -R");
+  });
+
+  test("writes directly to stdout when not attached to a terminal", async () => {
+    let written = "";
+    let spawnCalled = false;
+
+    await pagePlainText(
+      "plain text output",
+      {},
+      createPagerDeps({
+        stdout: {
+          isTTY: false,
+          write(chunk) {
+            written += String(chunk);
+            return true;
+          },
+        },
+        spawnImpl() {
+          spawnCalled = true;
+          throw new Error("spawn should not be called");
+        },
+      }),
+    );
+
+    expect(written).toBe("plain text output");
+    expect(spawnCalled).toBe(false);
+  });
+
+  test("throws when the pager exits with a non-zero status", async () => {
+    const pager = new EventEmitter() as EventEmitter & { stdin: PassThrough };
+    pager.stdin = new PassThrough();
+    let written = "";
+    pager.stdin.on("data", (chunk) => {
+      written += String(chunk);
+    });
+
+    const promise = pagePlainText(
+      "needs pager",
+      { PAGER: "less -R" },
+      createPagerDeps({
+        spawnImpl(command, options) {
+          expect(command).toBe("less -R");
+          expect(options.shell).toBe(true);
+          queueMicrotask(() => {
+            pager.emit("close", 1);
+          });
+          return pager as never;
+        },
+      }),
+    );
+
+    await expect(promise).rejects.toThrow("Pager command failed: less -R");
+    expect(written).toBe("needs pager");
   });
 });
