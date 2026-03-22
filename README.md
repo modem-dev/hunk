@@ -134,7 +134,7 @@ Hunk reads config from:
 Example:
 
 ```toml
-theme = "midnight" # midnight, graphite, paper, ember
+theme = "graphite" # graphite, midnight, paper, ember
 mode = "auto"      # auto, split, stack
 line_numbers = true
 wrap_lines = false

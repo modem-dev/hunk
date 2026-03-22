@@ -72,7 +72,7 @@ describe("ui helpers", () => {
 
   test("buildAppMenus creates checked entries from the current shell state", () => {
     const menus = buildAppMenus({
-      activeThemeId: "midnight",
+      activeThemeId: "graphite",
       focusFiles: () => {},
       focusFilter: () => {},
       layoutMode: "stack",
@@ -105,7 +105,12 @@ describe("ui helpers", () => {
       "Line numbers",
       "Line wrapping",
     ]);
-    expect(menus.theme.some((entry) => entry.kind === "item" && entry.label === "Midnight" && entry.checked)).toBe(true);
+    expect(
+      menus.theme
+        .filter((entry): entry is Extract<MenuEntry, { kind: "item" }> => entry.kind === "item")
+        .map((entry) => entry.label),
+    ).toEqual(["Graphite", "Midnight", "Paper", "Ember"]);
+    expect(menus.theme.some((entry) => entry.kind === "item" && entry.label === "Graphite" && entry.checked)).toBe(true);
   });
 
   test("fitText and padText clamp using the terminal fallback marker", () => {
@@ -180,7 +185,7 @@ describe("ui helpers", () => {
 
     expect(midnight.id).toBe("midnight");
     expect(missingLight.id).toBe("paper");
-    expect(missingDark.id).toBe("midnight");
+    expect(missingDark.id).toBe("graphite");
     expect(resolveTheme("ember", null).syntaxStyle).toBeDefined();
   });
 });
