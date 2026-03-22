@@ -13,6 +13,7 @@ import { buildFileListEntry } from "./lib/files";
 import { buildHunkCursors, findNextHunkCursor } from "./lib/hunks";
 import { diffHunkId, diffSectionId, fileRowId } from "./lib/ids";
 import { resolveResponsiveLayout } from "./lib/responsive";
+import { resizeSidebarWidth } from "./lib/sidebar";
 import { resolveTheme, THEMES } from "./themes";
 
 type FocusArea = "files" | "filter";
@@ -288,8 +289,9 @@ export function App({
       return;
     }
 
-    const nextWidth = resizeStartWidth + (event.x - resizeDragOriginX);
-    setFilesPaneWidth(clamp(nextWidth, FILES_MIN_WIDTH, maxFilesPaneWidth));
+    setFilesPaneWidth(
+      resizeSidebarWidth(resizeStartWidth, resizeDragOriginX, event.x, FILES_MIN_WIDTH, maxFilesPaneWidth),
+    );
     event.preventDefault();
     event.stopPropagation();
   };

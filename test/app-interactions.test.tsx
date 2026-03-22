@@ -151,7 +151,6 @@ function createFileScrollBootstrap(): AppBootstrap {
   };
 }
 
-
 async function flush(setup: Awaited<ReturnType<typeof testRender>>) {
   await act(async () => {
     await setup.renderOnce();
@@ -406,6 +405,117 @@ describe("App interactions", () => {
       expect(frame).toContain("filter:");
       expect(frame).toContain("zzz");
       expect(frame).toContain("No files match the current filter.");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("filtering away the selected file reselects the first visible match", async () => {
+    const setup = await testRender(<App bootstrap={createBootstrap()} />, { width: 240, height: 24 });
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.pressTab();
+      });
+      await flush(setup);
+      await act(async () => {
+        await setup.mockInput.typeText("beta");
+      });
+      await flush(setup);
+
+      let frame = setup.captureCharFrame();
+      expect(frame).toContain("filter:");
+      expect(frame).toContain("beta");
+      expect(frame).toContain("M beta.ts");
+      expect(frame).not.toContain("M alpha.ts");
+      expect(frame).toContain("beta.ts");
+      expect(frame).not.toContain("Annotation for alpha.ts");
+
+      await act(async () => {
+        await setup.mockInput.pressTab();
+      });
+      await flush(setup);
+
+      frame = setup.captureCharFrame();
+      expect(frame).toContain("filter=beta");
+      expect(frame).toContain("beta.ts");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("menu navigation wraps across the first and last top-level menus", async () => {
+    const setup = await testRender(<App bootstrap={createBootstrap()} />, { width: 220, height: 24 });
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        setup.mockInput.pressKey("F10");
+      });
+      await flush(setup);
+
+      let frame = setup.captureCharFrame();
+      expect(frame).toContain("Focus files");
+      expect(frame).not.toContain("Keyboard help");
+
+      await act(async () => {
+        await setup.mockInput.pressArrow("left");
+      });
+      await flush(setup);
+
+      frame = setup.captureCharFrame();
+      expect(frame).toContain("Keyboard help");
+      expect(frame).not.toContain("Focus files");
+
+      await act(async () => {
+        await setup.mockInput.pressArrow("right");
+      });
+      await flush(setup);
+
+      frame = setup.captureCharFrame();
+      expect(frame).toContain("Focus files");
+      expect(frame).not.toContain("Keyboard help");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("sidebar visibility can toggle off and back on", async () => {
+    const setup = await testRender(<App bootstrap={createBootstrap()} />, { width: 240, height: 24 });
+
+    try {
+      await flush(setup);
+
+      let frame = setup.captureCharFrame();
+      expect(frame).toContain("M alpha.ts");
+
+      await act(async () => {
+        await setup.mockInput.typeText("s");
+      });
+      await flush(setup);
+
+      frame = setup.captureCharFrame();
+      expect(frame).not.toContain("M alpha.ts");
+      expect(frame).toContain("alpha.ts");
+      expect(frame).not.toContain("drag divider resize");
+
+      await act(async () => {
+        await setup.mockInput.typeText("s");
+      });
+      await flush(setup);
+
+      frame = setup.captureCharFrame();
+      expect(frame).toContain("M alpha.ts");
+      expect(frame).toContain("drag divider resize");
     } finally {
       await act(async () => {
         setup.renderer.destroy();

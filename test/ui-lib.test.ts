@@ -4,6 +4,7 @@ import type { DiffFile } from "../src/core/types";
 import { buildMenuSpecs, menuBoxHeight, menuWidth, nextMenuItemIndex, type MenuEntry } from "../src/ui/components/chrome/menu";
 import { fitText, padText } from "../src/ui/lib/text";
 import { estimateDiffBodyRows } from "../src/ui/lib/sectionHeights";
+import { resizeSidebarWidth } from "../src/ui/lib/sidebar";
 import { resolveTheme } from "../src/ui/themes";
 
 function createDiffFile(): DiffFile {
@@ -73,6 +74,12 @@ describe("ui helpers", () => {
     expect(fitText("hello", 4)).toBe("hel.");
     expect(padText("hello", 4)).toBe("hel.");
     expect(padText("ok", 4)).toBe("ok  ");
+  });
+
+  test("resizeSidebarWidth clamps drag updates into the allowed sidebar range", () => {
+    expect(resizeSidebarWidth(34, 33, 60, 22, 80)).toBe(61);
+    expect(resizeSidebarWidth(34, 33, 0, 22, 80)).toBe(22);
+    expect(resizeSidebarWidth(34, 33, 120, 22, 80)).toBe(80);
   });
 
   test("estimateDiffBodyRows matches split and stack row counts for hidden-context diffs", async () => {
