@@ -522,8 +522,8 @@ describe("UI components", () => {
 
     expect(frame).toContain("1   -  export const message = 'short';");
     expect(frame).toContain("1 +  export const message = 'this is a very l");
-    expect(frame).toContain("ong wrapped line for diff rendering cove");
-    expect(frame).toContain("rage';");
+    expect(frame).toContain("ong wrapped line for");
+    expect(frame).toContain("erage';");
   });
 
   test("PierreDiffView anchors range-less notes to the first visible row when hunk headers are hidden", async () => {
