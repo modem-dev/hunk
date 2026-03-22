@@ -55,7 +55,7 @@ describe("controlling terminal attachment", () => {
 
     const controllingTerminal = openControllingTerminal({
       openSync(path, flags) {
-        calls.push([path, flags]);
+        calls.push([String(path), String(flags)]);
         return flags === "r" ? 11 : 12;
       },
       createReadStream(fd) {
