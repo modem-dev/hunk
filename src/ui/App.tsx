@@ -2,22 +2,22 @@ import { MouseButton, type KeyEvent, type MouseEvent as TuiMouseEvent, type Scro
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
 import { Suspense, lazy, startTransition, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import type { AppBootstrap, LayoutMode } from "../core/types";
+import { HunkHostClient } from "../mcp/client";
 import { MenuBar } from "./components/chrome/MenuBar";
-import { MENU_ORDER, buildMenuSpecs, menuWidth, nextMenuItemIndex, type MenuEntry, type MenuId } from "./components/chrome/menu";
+import { nextMenuItemIndex } from "./components/chrome/menu";
 import { StatusBar } from "./components/chrome/StatusBar";
 import { DiffPane } from "./components/panes/DiffPane";
 import { FilesPane } from "./components/panes/FilesPane";
 import { PaneDivider } from "./components/panes/PaneDivider";
+import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
+import { useMenuState } from "./hooks/useMenuState";
 import { getSelectedAnnotations } from "./lib/agentAnnotations";
 import { buildFileListEntry } from "./lib/files";
 import { buildHunkCursors, findNextHunkCursor } from "./lib/hunks";
-import { diffHunkId, diffSectionId, fileRowId } from "./lib/ids";
+import { fileRowId } from "./lib/ids";
 import { resolveResponsiveLayout } from "./lib/responsive";
 import { resizeSidebarWidth } from "./lib/sidebar";
 import { resolveTheme, THEMES } from "./themes";
-import { HunkHostClient } from "../mcp/client";
-import type { LiveComment, SessionServerMessage } from "../mcp/types";
-import { buildLiveComment, findDiffFileByPath, findHunkIndexForLine, hunkLineRange } from "../core/liveComments";
 
 type FocusArea = "files" | "filter";
 
@@ -58,8 +58,6 @@ export function App({
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [showHelp, setShowHelp] = useState(false);
   const [focusArea, setFocusArea] = useState<FocusArea>("files");
-  const [activeMenuId, setActiveMenuId] = useState<MenuId | null>(null);
-  const [activeMenuItemIndex, setActiveMenuItemIndex] = useState(0);
   const [filter, setFilter] = useState("");
   const [filesPaneWidth, setFilesPaneWidth] = useState(34);
   const [resizeDragOriginX, setResizeDragOriginX] = useState<number | null>(null);
@@ -67,11 +65,33 @@ export function App({
   const [dismissedAgentNoteIds, setDismissedAgentNoteIds] = useState<string[]>([]);
   const [selectedFileId, setSelectedFileId] = useState(bootstrap.changeset.files[0]?.id ?? "");
   const [selectedHunkIndex, setSelectedHunkIndex] = useState(0);
-  const [liveCommentsByFileId, setLiveCommentsByFileId] = useState<Record<string, LiveComment[]>>({});
   const deferredFilter = useDeferredValue(filter);
 
   const pagerMode = Boolean(bootstrap.input.options.pager);
   const activeTheme = resolveTheme(themeId, renderer.themeMode);
+
+  const jumpToFile = useCallback((fileId: string, nextHunkIndex = 0) => {
+    filesScrollRef.current?.scrollChildIntoView(fileRowId(fileId));
+    setSelectedFileId(fileId);
+    setSelectedHunkIndex(nextHunkIndex);
+  }, []);
+
+  const openAgentNotes = useCallback(() => {
+    setDismissedAgentNoteIds([]);
+    setShowAgentNotes(true);
+  }, []);
+
+  const baseSelectedFile = bootstrap.changeset.files.find((file) => file.id === selectedFileId) ?? bootstrap.changeset.files[0];
+  const { liveCommentsByFileId } = useHunkSessionBridge({
+    currentHunk: baseSelectedFile?.metadata.hunks[selectedHunkIndex],
+    files: bootstrap.changeset.files,
+    hostClient,
+    jumpToFile,
+    openAgentNotes,
+    selectedFile: baseSelectedFile,
+    selectedHunkIndex,
+    showAgentNotes,
+  });
 
   const allFiles = useMemo(
     () =>
@@ -189,13 +209,6 @@ export function App({
     setSelectedHunkIndex(nextCursor.hunkIndex);
   };
 
-  /** Jump the review stream to a file and optionally a specific hunk within it. */
-  const jumpToFile = (fileId: string, nextHunkIndex = 0) => {
-    filesScrollRef.current?.scrollChildIntoView(fileRowId(fileId));
-    setSelectedFileId(fileId);
-    setSelectedHunkIndex(nextHunkIndex);
-  };
-
   /** Scroll the main review pane by line steps, viewport fractions, or whole-content jumps. */
   const scrollDiff = (delta: number, unit: "step" | "viewport" | "content" = "viewport") => {
     diffScrollRef.current?.scrollBy(delta, unit);
@@ -217,17 +230,6 @@ export function App({
     }
 
     jumpToFile(nextFile.id);
-  };
-
-  /** Close any open top-level menu. */
-  const closeMenu = () => {
-    setActiveMenuId(null);
-  };
-
-  /** Show agent notes and clear any per-hunk dismissals. */
-  const openAgentNotes = () => {
-    setDismissedAgentNoteIds([]);
-    setShowAgentNotes(true);
   };
 
   /** Toggle the note layer while keeping dismissals scoped to the visible hunk. */
@@ -272,125 +274,47 @@ export function App({
     openAgentNotes();
   };
 
-  /** Build the MCP-facing summary for whichever hunk is currently selected inside one file. */
-  const buildSelectedHunkSummary = useCallback((file: (typeof allFiles)[number], hunkIndex: number) => {
-    const hunk = file.metadata.hunks[hunkIndex];
-    return hunk
-      ? {
-          index: hunkIndex,
-          ...hunkLineRange(hunk),
-        }
-      : {
-          index: hunkIndex,
-        };
-  }, []);
-
-  /** Move the live session selection to one specific hunk by index or line lookup. */
-  const navigateToHunkSelection = useCallback(
-    async (message: Extract<SessionServerMessage, { command: "navigate_to_hunk" }>) => {
-      const file = findDiffFileByPath(allFiles, message.input.filePath);
-      if (!file) {
-        throw new Error(`No visible diff file matches ${message.input.filePath}.`);
-      }
-
-      let hunkIndex = message.input.hunkIndex;
-      if (hunkIndex === undefined) {
-        if (!message.input.side || message.input.line === undefined) {
-          throw new Error("navigate_to_hunk requires either hunkIndex or both side and line.");
-        }
-
-        hunkIndex = findHunkIndexForLine(file, message.input.side, message.input.line);
-      }
-
-      if (hunkIndex < 0 || hunkIndex >= file.metadata.hunks.length) {
-        throw new Error(`No diff hunk in ${message.input.filePath} matches the requested target.`);
-      }
-
-      jumpToFile(file.id, hunkIndex);
-      return {
-        fileId: file.id,
-        filePath: file.path,
-        hunkIndex,
-        selectedHunk: buildSelectedHunkSummary(file, hunkIndex),
-      };
-    },
-    [allFiles, buildSelectedHunkSummary],
-  );
-
-  /** Apply one incoming daemon comment to the live review session and reveal it in the diff stream. */
-  const applyIncomingComment = useCallback(
-    async (message: Extract<SessionServerMessage, { command: "comment" }>) => {
-      const file = findDiffFileByPath(allFiles, message.input.filePath);
-      if (!file) {
-        throw new Error(`No visible diff file matches ${message.input.filePath}.`);
-      }
-
-      const hunkIndex = findHunkIndexForLine(file, message.input.side, message.input.line);
-      if (hunkIndex < 0) {
-        throw new Error(
-          `No ${message.input.side} diff hunk in ${message.input.filePath} covers line ${message.input.line}.`,
-        );
-      }
-
-      const commentId = `mcp:${message.requestId}`;
-      const liveComment = buildLiveComment(message.input, commentId, new Date().toISOString());
-
-      setLiveCommentsByFileId((current) => ({
-        ...current,
-        [file.id]: [...(current[file.id] ?? []), liveComment],
-      }));
-
-      if (message.input.reveal ?? true) {
-        jumpToFile(file.id, hunkIndex);
-        openAgentNotes();
-      }
-
-      return {
-        commentId,
-        fileId: file.id,
-        filePath: file.path,
-        hunkIndex,
-        side: message.input.side,
-        line: message.input.line,
-      };
-    },
-    [allFiles],
-  );
-
-  useEffect(() => {
-    if (!hostClient) {
-      return;
-    }
-
-    hostClient.setBridge({
-      applyComment: applyIncomingComment,
-      navigateToHunk: navigateToHunkSelection,
-    });
-
-    return () => {
-      hostClient.setBridge(null);
-    };
-  }, [applyIncomingComment, hostClient, navigateToHunkSelection]);
-
-  useEffect(() => {
-    const selectedRange = currentHunk ? hunkLineRange(currentHunk) : undefined;
-
-    hostClient?.updateSnapshot({
-      selectedFileId: selectedFile?.id,
-      selectedFilePath: selectedFile?.path,
-      selectedHunkIndex,
-      selectedHunkOldRange: selectedRange?.oldRange,
-      selectedHunkNewRange: selectedRange?.newRange,
-      showAgentNotes,
-      liveCommentCount: Object.values(liveCommentsByFileId).reduce((sum, notes) => sum + notes.length, 0),
-      updatedAt: new Date().toISOString(),
-    });
-  }, [currentHunk, hostClient, liveCommentsByFileId, selectedFile?.id, selectedFile?.path, selectedHunkIndex, showAgentNotes]);
-
   /** Leave the app through the shell-owned shutdown path. */
-  const requestQuit = () => {
+  const requestQuit = useCallback(() => {
     onQuit();
-  };
+  }, [onQuit]);
+
+  const {
+    activeMenuEntries,
+    activeMenuId,
+    activeMenuItemIndex,
+    activeMenuSpec,
+    activeMenuWidth,
+    activateCurrentMenuItem,
+    closeMenu,
+    menuSpecs,
+    openMenu,
+    setActiveMenuItemIndex,
+    switchMenu,
+    toggleMenu,
+  } = useMenuState({
+    activeThemeId: activeTheme.id,
+    focusFiles: () => setFocusArea("files"),
+    focusFilter: () => setFocusArea("filter"),
+    layoutMode,
+    moveAnnotatedFile,
+    moveHunk,
+    requestQuit,
+    setLayoutMode,
+    setShowHelp,
+    setThemeId,
+    showAgentNotes,
+    showHelp,
+    showHunkHeaders,
+    showLineNumbers,
+    sidebarVisible,
+    toggleAgentNotes,
+    toggleHunkHeaders,
+    toggleLineNumbers,
+    toggleLineWrap,
+    toggleSidebar,
+    wrapLines,
+  });
 
   /** Start a mouse drag resize for the optional files pane. */
   const beginFilesPaneResize = (event: TuiMouseEvent) => {
@@ -398,7 +322,7 @@ export function App({
       return;
     }
 
-    setActiveMenuId(null);
+    closeMenu();
     setResizeDragOriginX(event.x);
     setResizeStartWidth(clampedFilesPaneWidth);
     event.preventDefault();
@@ -430,194 +354,9 @@ export function App({
     event?.stopPropagation();
   };
 
-  const themeMenuEntries: MenuEntry[] = THEMES.map((theme) => ({
-    kind: "item",
-    label: theme.label,
-    checked: theme.id === activeTheme.id,
-    action: () => {
-      setThemeId(theme.id);
-    },
-  }));
-
-  const menus: Record<MenuId, MenuEntry[]> = {
-    file: [
-      {
-        kind: "item",
-        label: "Focus files",
-        hint: "Tab",
-        action: () => setFocusArea("files"),
-      },
-      {
-        kind: "item",
-        label: "Focus filter",
-        hint: "/",
-        action: () => setFocusArea("filter"),
-      },
-      { kind: "separator" },
-      {
-        kind: "item",
-        label: "Quit",
-        hint: "q",
-        action: requestQuit,
-      },
-    ],
-    view: [
-      {
-        kind: "item",
-        label: "Split view",
-        hint: "1",
-        checked: layoutMode === "split",
-        action: () => setLayoutMode("split"),
-      },
-      {
-        kind: "item",
-        label: "Stacked view",
-        hint: "2",
-        checked: layoutMode === "stack",
-        action: () => setLayoutMode("stack"),
-      },
-      {
-        kind: "item",
-        label: "Auto layout",
-        hint: "0",
-        checked: layoutMode === "auto",
-        action: () => setLayoutMode("auto"),
-      },
-      { kind: "separator" },
-      {
-        kind: "item",
-        label: "Sidebar",
-        hint: "s",
-        checked: sidebarVisible,
-        action: toggleSidebar,
-      },
-      { kind: "separator" },
-      {
-        kind: "item",
-        label: "Agent notes",
-        hint: "a",
-        checked: showAgentNotes,
-        action: toggleAgentNotes,
-      },
-      {
-        kind: "item",
-        label: "Line numbers",
-        hint: "l",
-        checked: showLineNumbers,
-        action: toggleLineNumbers,
-      },
-      {
-        kind: "item",
-        label: "Line wrapping",
-        hint: "w",
-        checked: wrapLines,
-        action: toggleLineWrap,
-      },
-      {
-        kind: "item",
-        label: "Hunk metadata",
-        hint: "m",
-        checked: showHunkHeaders,
-        action: toggleHunkHeaders,
-      },
-    ],
-    navigate: [
-      {
-        kind: "item",
-        label: "Previous hunk",
-        hint: "[",
-        action: () => moveHunk(-1),
-      },
-      {
-        kind: "item",
-        label: "Next hunk",
-        hint: "]",
-        action: () => moveHunk(1),
-      },
-      { kind: "separator" },
-      {
-        kind: "item",
-        label: "Focus filter",
-        hint: "/",
-        action: () => setFocusArea("filter"),
-      },
-    ],
-    theme: themeMenuEntries,
-    agent: [
-      {
-        kind: "item",
-        label: "Agent notes",
-        hint: "a",
-        checked: showAgentNotes,
-        action: toggleAgentNotes,
-      },
-      {
-        kind: "item",
-        label: "Next annotated file",
-        action: () => moveAnnotatedFile(1),
-      },
-      {
-        kind: "item",
-        label: "Previous annotated file",
-        action: () => moveAnnotatedFile(-1),
-      },
-    ],
-    help: [
-      {
-        kind: "item",
-        label: "Keyboard help",
-        hint: "?",
-        checked: showHelp,
-        action: () => setShowHelp((current) => !current),
-      },
-    ],
-  };
-
-  /** Open a menu and select its first actionable entry. */
-  const openMenu = (menuId: MenuId) => {
-    setActiveMenuId(menuId);
-    setActiveMenuItemIndex(nextMenuItemIndex(menus[menuId], -1, 1));
-  };
-
-  /** Toggle a menu open/closed from the menu bar. */
-  const toggleMenu = (menuId: MenuId) => {
-    if (activeMenuId === menuId) {
-      closeMenu();
-      return;
-    }
-
-    openMenu(menuId);
-  };
-
-  /** Move horizontally across top-level menus. */
-  const switchMenu = (delta: number) => {
-    const currentIndex = Math.max(0, activeMenuId ? MENU_ORDER.indexOf(activeMenuId) : 0);
-    const nextIndex = (currentIndex + delta + MENU_ORDER.length) % MENU_ORDER.length;
-    openMenu(MENU_ORDER[nextIndex]!);
-  };
-
-  /** Invoke the currently highlighted menu item, if any. */
-  const activateCurrentMenuItem = () => {
-    if (!activeMenuId) {
-      return;
-    }
-
-    const entry = menus[activeMenuId][activeMenuItemIndex];
-    if (!entry || entry.kind !== "item") {
-      return;
-    }
-
-    entry.action();
-    closeMenu();
-  };
-
-  const menuSpecs = buildMenuSpecs();
   const fileEntries = filteredFiles.map(buildFileListEntry);
   const totalAdditions = bootstrap.changeset.files.reduce((sum, file) => sum + file.stats.additions, 0);
   const totalDeletions = bootstrap.changeset.files.reduce((sum, file) => sum + file.stats.deletions, 0);
-  const activeMenuEntries = activeMenuId ? menus[activeMenuId] : [];
-  const activeMenuSpec = menuSpecs.find((menu) => menu.id === activeMenuId);
-  const activeMenuWidth = menuWidth(activeMenuEntries) + 2;
   const topTitle = `${bootstrap.changeset.title}  +${totalAdditions}  -${totalDeletions}`;
   const helpWidth = Math.min(68, Math.max(44, terminal.width - 8));
   const helpLeft = Math.max(1, Math.floor((terminal.width - helpWidth) / 2));
