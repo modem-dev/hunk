@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -75,10 +76,22 @@ function createFixtureFiles(name: string, beforeLines: string[], afterLines: str
   return { dir, before, after, transcript, afterName };
 }
 
-function spawnHunkSession(fixture: FixtureFiles, port: number) {
+function spawnHunkSession(
+  fixture: FixtureFiles,
+  {
+    port,
+    quitAfterSeconds = 6,
+    timeoutSeconds = 8,
+  }: {
+    port: number;
+    quitAfterSeconds?: number;
+    timeoutSeconds?: number;
+  },
+) {
+  const innerCommand = `bun run ${shellQuote(sourceEntrypoint)} diff ${shellQuote(fixture.before)} ${shellQuote(fixture.after)}`;
   const hunkCommand = [
-    `(sleep 6; printf q) | timeout 8 script -q -f -e -c`,
-    shellQuote(`bun run ${shellQuote(sourceEntrypoint)} diff ${shellQuote(fixture.before)} ${shellQuote(fixture.after)}`),
+    `(sleep ${quitAfterSeconds}; printf q) | timeout ${timeoutSeconds} script -q -f -e -c`,
+    shellQuote(innerCommand),
     shellQuote(fixture.transcript),
   ].join(" ");
 
@@ -154,7 +167,7 @@ describe("MCP end-to-end", () => {
       ["export const alpha = 2;", "export const keep = true;", "export const gamma = true;"],
     );
     const port = 48000 + Math.floor(Math.random() * 1000);
-    const hunkProc = spawnHunkSession(fixture, port);
+    const hunkProc = spawnHunkSession(fixture, { port });
 
     let daemonPid: number | null = null;
     let transport: StreamableHTTPClientTransport | null = null;
@@ -232,8 +245,8 @@ describe("MCP end-to-end", () => {
       ["export const beta = 2;", "export const shared = true;", "export const onlyBeta = true;"],
     );
     const port = 49000 + Math.floor(Math.random() * 1000);
-    const hunkProcA = spawnHunkSession(fixtureA, port);
-    const hunkProcB = spawnHunkSession(fixtureB, port);
+    const hunkProcA = spawnHunkSession(fixtureA, { port });
+    const hunkProcB = spawnHunkSession(fixtureB, { port });
 
     let daemonPid: number | null = null;
     let transport: StreamableHTTPClientTransport | null = null;
@@ -315,6 +328,48 @@ describe("MCP end-to-end", () => {
           // Ignore daemons that already exited during cleanup.
         }
       }
+    }
+  }, 20_000);
+
+  test("a normal Hunk session still renders and exits cleanly when a non-Hunk listener owns the MCP port", async () => {
+    if (!ttyToolsAvailable) {
+      return;
+    }
+
+    const fixture = createFixtureFiles(
+      "conflict",
+      ["export const alpha = 1;", "export const keep = true;"],
+      ["export const alpha = 2;", "export const keep = true;", "export const gamma = true;"],
+    );
+
+    const port = 50000 + Math.floor(Math.random() * 1000);
+    const conflictingListener = createServer((_request, response) => {
+      response.writeHead(404, { "content-type": "text/plain" });
+      response.end("not hunk");
+    });
+    await new Promise<void>((resolve, reject) => {
+      conflictingListener.once("error", reject);
+      conflictingListener.listen(port, "127.0.0.1", () => resolve());
+    });
+
+    const hunkProc = spawnHunkSession(fixture, {
+      port,
+      quitAfterSeconds: 6,
+      timeoutSeconds: 8,
+    });
+
+    try {
+      const exitCode = await hunkProc.exited;
+      expect([0, 124]).toContain(exitCode);
+
+      const transcript = stripTerminalControl(await Bun.file(fixture.transcript).text());
+      expect(transcript).toContain("View  Navigate  Theme  Agent  Help");
+      expect(transcript).toContain(`${fixture.afterName}`);
+      expect(transcript).toContain("export const gamma = true;");
+    } finally {
+      hunkProc.kill();
+      await hunkProc.exited.catch(() => undefined);
+      await new Promise<void>((resolve) => conflictingListener.close(() => resolve()));
     }
   }, 20_000);
 });
