@@ -1,4 +1,5 @@
-import { existsSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { Command } from "commander";
 import type { CommonOptions, HelpCommandInput, LayoutMode, PagerCommandInput, ParsedCliInput } from "./types";
 
@@ -68,6 +69,37 @@ function applyCommonOptions(command: Command) {
     .option("--no-agent-notes", "hide agent notes by default");
 }
 
+/** Resolve the CLI version from the nearest shipped package manifest. */
+function resolveCliVersion() {
+  const candidatePaths = [
+    resolve(import.meta.dir, "..", "..", "package.json"),
+    resolve(dirname(process.execPath), "..", "package.json"),
+    resolve(dirname(process.execPath), "..", "..", "package.json"),
+  ];
+
+  for (const candidatePath of candidatePaths) {
+    if (!existsSync(candidatePath)) {
+      continue;
+    }
+
+    try {
+      const parsed = JSON.parse(readFileSync(candidatePath, "utf8")) as { version?: unknown };
+      if (typeof parsed.version === "string" && parsed.version.length > 0) {
+        return parsed.version;
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return "0.0.0-unknown";
+}
+
+/** Render plain-text version output for `hunk --version`. */
+function renderCliVersion() {
+  return `${resolveCliVersion()}\n`;
+}
+
 /** Build the top-level help text shown by bare `hunk` and `hunk --help`. */
 function renderCliHelp() {
   return [
@@ -87,6 +119,7 @@ function renderCliHelp() {
     "",
     "Options:",
     "  -h, --help                              show help",
+    "  -v, --version                           show version",
     "",
     "Examples:",
     "  hunk diff",
@@ -358,6 +391,10 @@ export async function parseCli(argv: string[]): Promise<ParsedCliInput> {
 
   if (!commandName || commandName === "help" || commandName === "--help" || commandName === "-h") {
     return { kind: "help", text: renderCliHelp() };
+  }
+
+  if (commandName === "--version" || commandName === "-v" || commandName === "version") {
+    return { kind: "help", text: renderCliVersion() };
   }
 
   switch (commandName) {

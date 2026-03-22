@@ -22,6 +22,24 @@ describe("CLI help output", () => {
     expect(stdout).not.toContain("\u001b[?1049h");
   });
 
+  test("prints the package version for --version without terminal takeover sequences", () => {
+    const expectedVersion = require("../package.json").version;
+    const proc = Bun.spawnSync(["bun", "run", "src/main.tsx", "--version"], {
+      cwd: process.cwd(),
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    const stdout = Buffer.from(proc.stdout).toString("utf8");
+    const stderr = Buffer.from(proc.stderr).toString("utf8");
+
+    expect(proc.exitCode).toBe(0);
+    expect(stderr).toBe("");
+    expect(stdout).toBe(`${expectedVersion}\n`);
+    expect(stdout).not.toContain("\u001b[?1049h");
+  });
+
   test("general pager mode falls back to plain text for non-diff stdin", () => {
     const proc = Bun.spawnSync(["bash", "-lc", "printf '* main\\n  feature/demo\\n' | HUNK_TEXT_PAGER=cat bun run src/main.tsx pager"], {
       cwd: process.cwd(),

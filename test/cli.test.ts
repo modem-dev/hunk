@@ -43,6 +43,15 @@ describe("parseCli", () => {
     expect(explicit).toEqual(bare);
   });
 
+  test("prints the package version for --version and version", async () => {
+    const expectedVersion = require("../package.json").version;
+    const flag = await parseCli(["bun", "hunk", "--version"]);
+    const command = await parseCli(["bun", "hunk", "version"]);
+
+    expect(flag).toEqual({ kind: "help", text: `${expectedVersion}\n` });
+    expect(command).toEqual(flag);
+  });
+
   test("parses git-style diff mode with shared options", async () => {
     const parsed = await parseCli([
       "bun",
