@@ -77,7 +77,7 @@ Or in your Git config:
     pager = hunk pager
 ```
 
-If you want shorter Git commands, you can also add aliases for `git hdiff` and `git hshow`:
+If you’d rather keep Git’s default `diff` and `show` behavior, you can add optional aliases instead:
 
 ```bash
 git config --global alias.hdiff "-c core.pager=\"hunk pager\" diff"
