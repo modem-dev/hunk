@@ -52,7 +52,7 @@ for (const path of requiredPaths) {
 }
 
 const forbiddenPrefixes = [".github/", "src/", "test/", "scripts/", "tmp/"];
-const forbiddenPaths = ["AGENTS.md", "autoresearch.checks.sh", "autoresearch.sh", "bun.lock"];
+const forbiddenPaths = ["AGENTS.md", "bun.lock"];
 
 for (const file of pack.files) {
   if (forbiddenPrefixes.some((prefix) => file.path.startsWith(prefix)) || forbiddenPaths.includes(file.path)) {

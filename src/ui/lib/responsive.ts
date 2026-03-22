@@ -2,8 +2,8 @@ import type { LayoutMode } from "../../core/types";
 
 export type ResponsiveViewport = "full" | "medium" | "tight";
 
-export const SPLIT_VIEWPORT_MIN_WIDTH = 160;
-export const FULL_VIEWPORT_MIN_WIDTH = 220;
+const SPLIT_VIEWPORT_MIN_WIDTH = 160;
+const FULL_VIEWPORT_MIN_WIDTH = 220;
 
 export interface ResponsiveLayout {
   viewport: ResponsiveViewport;
@@ -12,7 +12,7 @@ export interface ResponsiveLayout {
 }
 
 /** Bucket terminal widths into the viewport classes the shell layout cares about. */
-export function resolveResponsiveViewport(viewportWidth: number): ResponsiveViewport {
+function resolveResponsiveViewport(viewportWidth: number): ResponsiveViewport {
   if (viewportWidth >= FULL_VIEWPORT_MIN_WIDTH) {
     return "full";
   }

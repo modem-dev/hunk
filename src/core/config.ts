@@ -181,5 +181,3 @@ export function resolveConfiguredCliInput(
   };
 }
 
-export const CONFIG_DEFAULTS = DEFAULT_VIEW_PREFERENCES;
-export const CONFIG_SECTION_KEYS = CONFIG_SECTION_NAMES;

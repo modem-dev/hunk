@@ -13,7 +13,7 @@ function overlap(rangeA: [number, number], rangeB: [number, number]) {
 }
 
 /** Compute the old/new line ranges covered by a hunk, including single-line edge cases. */
-export function hunkLineRange(hunk: Hunk) {
+function hunkLineRange(hunk: Hunk) {
   const newEnd = Math.max(hunk.additionStart, hunk.additionStart + Math.max(hunk.additionLines, 1) - 1);
   const oldEnd = Math.max(hunk.deletionStart, hunk.deletionStart + Math.max(hunk.deletionLines, 1) - 1);
 
@@ -24,7 +24,7 @@ export function hunkLineRange(hunk: Hunk) {
 }
 
 /** Check whether an annotation belongs to the visible span of a hunk. */
-export function annotationOverlapsHunk(annotation: AgentAnnotation, hunk: Hunk) {
+function annotationOverlapsHunk(annotation: AgentAnnotation, hunk: Hunk) {
   const hunkRange = hunkLineRange(hunk);
 
   if (annotation.newRange && overlap(annotation.newRange, hunkRange.newRange)) {

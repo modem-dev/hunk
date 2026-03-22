@@ -50,7 +50,7 @@ export function wrapText(text: string, width: number) {
 }
 
 /** Build the framed agent-popover title shown in the card header. */
-export function agentPopoverTitle(noteIndex: number, noteCount: number) {
+function agentPopoverTitle(noteIndex: number, noteCount: number) {
   return noteCount > 1 ? `AI note ${noteIndex + 1}/${noteCount}` : "AI note";
 }
 

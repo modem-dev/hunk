@@ -1,5 +1,5 @@
-export const DEFAULT_HUNK_MCP_HOST = "127.0.0.1";
-export const DEFAULT_HUNK_MCP_PORT = 47657;
+const DEFAULT_HUNK_MCP_HOST = "127.0.0.1";
+const DEFAULT_HUNK_MCP_PORT = 47657;
 export const HUNK_MCP_PATH = "/mcp";
 export const HUNK_SESSION_SOCKET_PATH = "/session";
 

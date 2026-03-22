@@ -15,7 +15,7 @@ const DAEMON_STARTUP_TIMEOUT_MS = 3_000;
 const RECONNECT_DELAY_MS = 3_000;
 const HEARTBEAT_INTERVAL_MS = 10_000;
 
-export interface HunkAppBridge {
+interface HunkAppBridge {
   applyComment: (message: Extract<SessionServerMessage, { command: "comment" }>) => Promise<AppliedCommentResult>;
   navigateToHunk: (message: Extract<SessionServerMessage, { command: "navigate_to_hunk" }>) => Promise<NavigatedSelectionResult>;
 }

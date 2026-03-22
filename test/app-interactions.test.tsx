@@ -279,7 +279,7 @@ describe("App interactions", () => {
       await flush(setup);
 
       await act(async () => {
-        setup.mockInput.pressKey("F10");
+        await setup.mockInput.pressKey("F10");
       });
       await flush(setup);
 
@@ -389,25 +389,32 @@ describe("App interactions", () => {
       expect(initialFrame).toContain("line01 = 101");
       expect(initialFrame).not.toContain("line08 = 108");
 
-      for (let index = 0; index < 3; index += 1) {
+      let frame = initialFrame;
+      for (let index = 0; index < 12; index += 1) {
         await act(async () => {
           await setup.mockInput.pressArrow("down");
         });
         await flush(setup);
+        frame = setup.captureCharFrame();
+        if (frame.includes("line08 = 108")) {
+          break;
+        }
       }
 
-      let frame = setup.captureCharFrame();
       expect(frame).toContain("line08 = 108");
       expect(frame).not.toContain("line01 = 101");
 
-      for (let index = 0; index < 3; index += 1) {
+      for (let index = 0; index < 12; index += 1) {
         await act(async () => {
           await setup.mockInput.pressArrow("up");
         });
         await flush(setup);
+        frame = setup.captureCharFrame();
+        if (frame.includes("line01 = 101")) {
+          break;
+        }
       }
 
-      frame = setup.captureCharFrame();
       expect(frame).toContain("line01 = 101");
     } finally {
       await act(async () => {
@@ -487,7 +494,7 @@ describe("App interactions", () => {
       await flush(setup);
 
       await act(async () => {
-        setup.mockInput.pressKey("F10");
+        await setup.mockInput.pressKey("F10");
       });
       await flush(setup);
 

@@ -19,7 +19,7 @@ export interface MenuSpec {
   label: string;
 }
 
-export const MENU_LABELS: Record<MenuId, string> = {
+const MENU_LABELS: Record<MenuId, string> = {
   file: "File",
   view: "View",
   navigate: "Navigate",

@@ -20,7 +20,7 @@ interface PendingCommand {
   timeout: Timer;
 }
 
-export interface DaemonSessionSocket {
+interface DaemonSessionSocket {
   send(data: string): unknown;
 }
 
