@@ -29,13 +29,26 @@ export interface ControllingTerminal {
   close: () => void;
 }
 
+/** Minimal terminal construction hooks so tests can cover `/dev/tty` attach behavior. */
+export interface ControllingTerminalDeps {
+  openSync: typeof fs.openSync;
+  createReadStream: (fd: number) => tty.ReadStream;
+  createWriteStream: (fd: number) => tty.WriteStream;
+}
+
 /** Open the controlling terminal so the UI can stay interactive while stdin carries patch data. */
-export function openControllingTerminal(): ControllingTerminal | null {
+export function openControllingTerminal(
+  deps: ControllingTerminalDeps = {
+    openSync: fs.openSync,
+    createReadStream: (fd) => new tty.ReadStream(fd),
+    createWriteStream: (fd) => new tty.WriteStream(fd),
+  },
+): ControllingTerminal | null {
   try {
-    const stdinFd = fs.openSync("/dev/tty", "r");
-    const stdoutFd = fs.openSync("/dev/tty", "w");
-    const stdin = new tty.ReadStream(stdinFd);
-    const stdout = new tty.WriteStream(stdoutFd);
+    const stdinFd = deps.openSync("/dev/tty", "r");
+    const stdoutFd = deps.openSync("/dev/tty", "w");
+    const stdin = deps.createReadStream(stdinFd);
+    const stdout = deps.createWriteStream(stdoutFd);
 
     return {
       stdin,

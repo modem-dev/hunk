@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { CliInput } from "../src/core/types";
-import { resolveRuntimeCliInput, shouldUsePagerMode, usesPipedPatchInput } from "../src/core/terminal";
+import { openControllingTerminal, resolveRuntimeCliInput, shouldUsePagerMode, usesPipedPatchInput } from "../src/core/terminal";
 
 function createPatchInput(file?: string, pager = false): CliInput {
   return {
@@ -33,5 +33,67 @@ describe("terminal runtime defaults", () => {
 
     expect(shouldUsePagerMode(input, true)).toBe(true);
     expect(resolveRuntimeCliInput(input, true).options.pager).toBe(true);
+  });
+});
+
+describe("controlling terminal attachment", () => {
+  test("opens /dev/tty for read and write and closes both streams", () => {
+    const calls: Array<[string, string]> = [];
+    let stdinDestroyed = false;
+    let stdoutDestroyed = false;
+
+    const stdin = {
+      destroy() {
+        stdinDestroyed = true;
+      },
+    } as never;
+    const stdout = {
+      destroy() {
+        stdoutDestroyed = true;
+      },
+    } as never;
+
+    const controllingTerminal = openControllingTerminal({
+      openSync(path, flags) {
+        calls.push([path, flags]);
+        return flags === "r" ? 11 : 12;
+      },
+      createReadStream(fd) {
+        expect(fd).toBe(11);
+        return stdin;
+      },
+      createWriteStream(fd) {
+        expect(fd).toBe(12);
+        return stdout;
+      },
+    });
+
+    expect(controllingTerminal).not.toBeNull();
+    expect(calls).toEqual([
+      ["/dev/tty", "r"],
+      ["/dev/tty", "w"],
+    ]);
+    expect(controllingTerminal?.stdin).toBe(stdin);
+    expect(controllingTerminal?.stdout).toBe(stdout);
+
+    controllingTerminal?.close();
+    expect(stdinDestroyed).toBe(true);
+    expect(stdoutDestroyed).toBe(true);
+  });
+
+  test("returns null when the controlling terminal cannot be opened", () => {
+    const controllingTerminal = openControllingTerminal({
+      openSync() {
+        throw new Error("no tty");
+      },
+      createReadStream() {
+        throw new Error("unreachable");
+      },
+      createWriteStream() {
+        throw new Error("unreachable");
+      },
+    });
+
+    expect(controllingTerminal).toBeNull();
   });
 });
