@@ -23,7 +23,7 @@ import type {
   SessionLiveCommentSummary,
 } from "../mcp/types";
 
-interface HunkDaemonCliClient {
+export interface HunkDaemonCliClient {
   connect(): Promise<void>;
   close(): Promise<void>;
   listToolNames(): Promise<Set<string>>;
@@ -44,6 +44,22 @@ const REQUIRED_TOOLS_BY_ACTION: Partial<Record<SessionCommandInput["action"], st
   "comment-rm": ["remove_comment"],
   "comment-clear": ["clear_comments"],
 };
+
+interface SessionCommandTestHooks {
+  createClient?: () => HunkDaemonCliClient;
+  resolveDaemonAvailability?: (action: SessionCommandInput["action"]) => Promise<boolean>;
+  restartDaemonForMissingTools?: (missingTools: string[], selector?: SessionSelectorInput) => Promise<void>;
+}
+
+let sessionCommandTestHooks: SessionCommandTestHooks | null = null;
+
+export function setSessionCommandTestHooks(hooks: SessionCommandTestHooks | null) {
+  sessionCommandTestHooks = hooks;
+}
+
+function createDaemonCliClient() {
+  return sessionCommandTestHooks?.createClient?.() ?? new McpHunkDaemonCliClient();
+}
 
 function extractToolValue<ResultType>(
   result: Awaited<ReturnType<Client["callTool"]>>,
@@ -271,7 +287,7 @@ async function waitForSessionRegistration(selector: SessionSelectorInput, timeou
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
-    const client = new McpHunkDaemonCliClient();
+    const client = createDaemonCliClient();
     await client.connect();
 
     try {
@@ -332,7 +348,7 @@ async function ensureRequiredTools(action: SessionCommandInput["action"], select
     return;
   }
 
-  const client = new McpHunkDaemonCliClient();
+  const client = createDaemonCliClient();
   await client.connect();
 
   try {
@@ -352,7 +368,8 @@ async function ensureRequiredTools(action: SessionCommandInput["action"], select
     await client.close();
   }
 
-  await restartDaemonForMissingTools(requiredTools, selector);
+  await (sessionCommandTestHooks?.restartDaemonForMissingTools?.(requiredTools, selector)
+    ?? restartDaemonForMissingTools(requiredTools, selector));
 }
 
 function stringifyJson(value: unknown) {
@@ -500,7 +517,7 @@ function renderOutput(output: SessionCommandOutput, value: unknown, formatText: 
 }
 
 export async function runSessionCommand(input: SessionCommandInput) {
-  const daemonAvailable = await resolveDaemonAvailability(input.action);
+  const daemonAvailable = await (sessionCommandTestHooks?.resolveDaemonAvailability?.(input.action) ?? resolveDaemonAvailability(input.action));
   if (!daemonAvailable && input.action === "list") {
     return renderOutput(input.output, { sessions: [] }, () => formatListOutput([]));
   }
@@ -508,7 +525,7 @@ export async function runSessionCommand(input: SessionCommandInput) {
   const normalizedSelector = "selector" in input ? normalizeRepoRoot(input.selector) : null;
   await ensureRequiredTools(input.action, normalizedSelector ?? undefined);
 
-  const client = new McpHunkDaemonCliClient();
+  const client = createDaemonCliClient();
   await client.connect();
 
   try {
