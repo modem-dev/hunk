@@ -121,6 +121,24 @@ function createWrapBootstrap(): AppBootstrap {
   };
 }
 
+function createEmptyDiffFile(type: "rename-pure" | "new" | "deleted"): DiffFile {
+  return {
+    id: `empty:${type}`,
+    path: `${type}.ts`,
+    patch: "",
+    language: "typescript",
+    stats: {
+      additions: 0,
+      deletions: 0,
+    },
+    metadata: {
+      hunks: [],
+      type,
+    } as never,
+    agent: null,
+  };
+}
+
 async function captureFrame(node: ReactNode, width = 120, height = 24) {
   const setup = await testRender(node, { width, height });
 
@@ -484,6 +502,106 @@ describe("UI components", () => {
     expect(frame).not.toContain("@@ -1,1 +1,1 @@");
     expect(frame).toContain("1 - export const alpha = 1;");
     expect(frame).toContain("1 + export const alpha = 2;");
+  });
+
+  test("PierreDiffView renders stack-mode wrapped continuation rows", async () => {
+    const file = createWrapBootstrap().changeset.files[0]!;
+    const theme = resolveTheme("midnight", null);
+    const frame = await captureFrame(
+      <PierreDiffView
+        file={file}
+        layout="stack"
+        theme={theme}
+        width={48}
+        selectedHunkIndex={0}
+        wrapLines={true}
+        scrollable={false}
+      />,
+      52,
+      18,
+    );
+
+    expect(frame).toContain("1   -  export const message = 'short';");
+    expect(frame).toContain("1 +  export const message = 'this is a very l");
+    expect(frame).toContain("ong wrapped line for diff rendering cove");
+    expect(frame).toContain("rage';");
+  });
+
+  test("PierreDiffView anchors range-less notes to the first visible row when hunk headers are hidden", async () => {
+    const file = createDiffFile(
+      "note-fallback",
+      "note-fallback.ts",
+      "export const value = 1;\n",
+      "export const value = 2;\nexport const added = true;\n",
+    );
+    const theme = resolveTheme("midnight", null);
+    const frame = await captureFrame(
+      <PierreDiffView
+        file={file}
+        layout="split"
+        theme={theme}
+        width={88}
+        selectedHunkIndex={0}
+        visibleAgentNotes={[
+          {
+            id: "note:ungrounded",
+            annotation: {
+              summary: "Ungrounded note",
+              rationale: "Falls back to the first visible row.",
+            },
+          },
+        ]}
+        showHunkHeaders={false}
+        scrollable={false}
+      />,
+      92,
+      18,
+    );
+
+    expect(frame).not.toContain("@@ -1,1 +1,2 @@");
+    expect(frame).toContain("Ungrounded note");
+    expect(frame).toContain("Falls back to the first visible row.");
+    expect(frame).toContain("note-fallback.ts");
+    expect(frame).toContain("1 - export const value = 1;");
+  });
+
+  test("PierreDiffView shows contextual messages when there is no selected file or no textual hunks", async () => {
+    const theme = resolveTheme("midnight", null);
+
+    const noFileFrame = await captureFrame(
+      <PierreDiffView file={undefined} layout="split" theme={theme} width={72} selectedHunkIndex={0} scrollable={false} />,
+      76,
+      6,
+    );
+    expect(noFileFrame).toContain("No file selected.");
+
+    const renameOnlyFrame = await captureFrame(
+      <PierreDiffView
+        file={createEmptyDiffFile("rename-pure")}
+        layout="split"
+        theme={theme}
+        width={72}
+        selectedHunkIndex={0}
+        scrollable={false}
+      />,
+      76,
+      6,
+    );
+    expect(renameOnlyFrame).toContain("This change only renames the file.");
+
+    const newFileFrame = await captureFrame(
+      <PierreDiffView file={createEmptyDiffFile("new")} layout="split" theme={theme} width={72} selectedHunkIndex={0} scrollable={false} />,
+      76,
+      6,
+    );
+    expect(newFileFrame).toContain("The file is marked as new.");
+
+    const deletedFileFrame = await captureFrame(
+      <PierreDiffView file={createEmptyDiffFile("deleted")} layout="split" theme={theme} width={72} selectedHunkIndex={0} scrollable={false} />,
+      76,
+      6,
+    );
+    expect(deletedFileFrame).toContain("The file is marked as deleted.");
   });
 
   test("PierreDiffView reuses highlighted rows after unmounting and remounting a file section", async () => {
