@@ -23,15 +23,16 @@ npm i -g hunkdiff
 Requirements:
 
 - Node.js 18+
+- Currently supported on macOS and Linux
 - Git is recommended for most workflows
 
-## Basic usage
+## Usage
+
+### Basics
 
 ```bash
-hunk                                # show help
-hunk --version                      # show the installed version
-hunk diff before.ts after.ts        # compare two files directly
-git diff --no-color | hunk patch -  # review a patch from stdin
+hunk           # show help
+hunk --version # get version
 ```
 
 ### Working with Git
@@ -41,6 +42,13 @@ hunk diff         # review current repo changes
 hunk diff --staged
 hunk show         # review the latest commit
 hunk show HEAD~1  # review an earlier commit
+```
+
+### Working with raw files/patches
+
+```bash
+hunk diff before.ts after.ts        # compare two files directly
+git diff --no-color | hunk patch -  # review a patch from stdin
 ```
 
 ## Feature comparison
