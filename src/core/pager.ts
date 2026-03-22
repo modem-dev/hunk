@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
 import { once } from "node:events";
 
 /** Remove terminal escape sequences before deciding whether stdin looks like a patch. */
@@ -32,22 +32,35 @@ export function resolveTextPagerCommand(env: NodeJS.ProcessEnv = process.env) {
   return candidate;
 }
 
+/** Minimal dependencies for testing pager behavior without spawning a real subprocess. */
+export interface PlainTextPagerDeps {
+  stdout: Pick<NodeJS.WriteStream, "isTTY" | "write">;
+  spawnImpl: (command: string, options: SpawnOptions) => ChildProcess;
+}
+
 /** Stream plain text through a normal pager, or write directly when not attached to a terminal. */
-export async function pagePlainText(text: string, env: NodeJS.ProcessEnv = process.env) {
-  if (!process.stdout.isTTY) {
-    process.stdout.write(text);
+export async function pagePlainText(
+  text: string,
+  env: NodeJS.ProcessEnv = process.env,
+  deps: PlainTextPagerDeps = {
+    stdout: process.stdout,
+    spawnImpl: spawn,
+  },
+) {
+  if (!deps.stdout.isTTY) {
+    deps.stdout.write(text);
     return;
   }
 
   const pagerCommand = resolveTextPagerCommand(env);
-  const pager = spawn(pagerCommand, {
+  const pager = deps.spawnImpl(pagerCommand, {
     shell: true,
     stdio: ["pipe", "inherit", "inherit"],
     env,
   });
 
   pager.stdin?.end(text);
-  const [, code] = await once(pager, "close");
+  const [code] = await once(pager, "close");
 
   if (typeof code === "number" && code !== 0) {
     throw new Error(`Pager command failed: ${pagerCommand}`);
