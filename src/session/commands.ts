@@ -11,7 +11,7 @@ import type {
   SessionNavigateCommandInput,
   SessionSelectorInput,
 } from "../core/types";
-import { isHunkDaemonHealthy, isLoopbackPortReachable } from "../mcp/daemonLauncher";
+import { isHunkDaemonHealthy, isLoopbackPortReachable, launchHunkDaemon, waitForHunkDaemonHealth } from "../mcp/daemonLauncher";
 import { resolveHunkMcpConfig } from "../mcp/config";
 import type {
   AppliedCommentResult,
@@ -26,6 +26,7 @@ import type {
 interface HunkDaemonCliClient {
   connect(): Promise<void>;
   close(): Promise<void>;
+  listToolNames(): Promise<Set<string>>;
   listSessions(): Promise<ListedSession[]>;
   getSession(selector: SessionSelectorInput): Promise<ListedSession>;
   getSelectedContext(selector: SessionSelectorInput): Promise<SelectedSessionContext>;
@@ -36,17 +37,30 @@ interface HunkDaemonCliClient {
   clearComments(input: SessionCommentClearCommandInput): Promise<ClearedCommentsResult>;
 }
 
+const REQUIRED_TOOLS_BY_ACTION: Partial<Record<SessionCommandInput["action"], string[]>> = {
+  context: ["get_selected_context"],
+  navigate: ["navigate_to_hunk"],
+  "comment-list": ["list_comments"],
+  "comment-rm": ["remove_comment"],
+  "comment-clear": ["clear_comments"],
+};
+
 function extractToolValue<ResultType>(
   result: Awaited<ReturnType<Client["callTool"]>>,
   key: string,
 ): ResultType | undefined {
+  const content = (result.content ?? []) as Array<{ type?: string; text?: string }>;
+  const text = content.find((entry) => entry.type === "text")?.text;
+
+  if (result.isError) {
+    throw new Error(text || "The Hunk daemon returned an MCP tool error.");
+  }
+
   const structured = result.structuredContent as Record<string, ResultType> | undefined;
   if (structured && key in structured) {
     return structured[key];
   }
 
-  const content = (result.content ?? []) as Array<{ type?: string; text?: string }>;
-  const text = content.find((entry) => entry.type === "text")?.text;
   if (!text) {
     return undefined;
   }
@@ -73,6 +87,11 @@ class McpHunkDaemonCliClient implements HunkDaemonCliClient {
 
   async close() {
     await this.transport.close().catch(() => undefined);
+  }
+
+  async listToolNames() {
+    const result = await this.client.listTools();
+    return new Set(result.tools.map((tool) => tool.name));
   }
 
   async listSessions() {
@@ -200,6 +219,140 @@ class McpHunkDaemonCliClient implements HunkDaemonCliClient {
 
     return cleared;
   }
+}
+
+async function readDaemonHealth() {
+  const config = resolveHunkMcpConfig();
+
+  try {
+    const response = await fetch(`${config.httpOrigin}/health`);
+    if (!response.ok) {
+      return null;
+    }
+
+    return (await response.json()) as {
+      ok: boolean;
+      pid?: number;
+      sessions?: number;
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function waitForDaemonShutdown(timeoutMs = 3_000) {
+  const config = resolveHunkMcpConfig();
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    if (!(await isHunkDaemonHealthy(config))) {
+      return true;
+    }
+
+    await Bun.sleep(100);
+  }
+
+  return false;
+}
+
+function sessionMatchesSelector(session: ListedSession, selector: SessionSelectorInput) {
+  if (selector.sessionId) {
+    return session.sessionId === selector.sessionId;
+  }
+
+  if (selector.repoRoot) {
+    return session.repoRoot === selector.repoRoot;
+  }
+
+  return true;
+}
+
+async function waitForSessionRegistration(selector: SessionSelectorInput, timeoutMs = 8_000) {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    const client = new McpHunkDaemonCliClient();
+    await client.connect();
+
+    try {
+      const sessions = await client.listSessions();
+      if (sessions.some((session) => sessionMatchesSelector(session, selector))) {
+        return true;
+      }
+    } finally {
+      await client.close();
+    }
+
+    await Bun.sleep(200);
+  }
+
+  return false;
+}
+
+async function restartDaemonForMissingTools(missingTools: string[], selector?: SessionSelectorInput) {
+  const health = await readDaemonHealth();
+  const pid = health?.pid;
+  if (!pid || pid === process.pid) {
+    throw new Error(
+      `The running Hunk MCP daemon is missing required tools (${missingTools.join(", ")}). ` +
+        `Restart Hunk so it can launch a fresh daemon from the current source tree.`,
+    );
+  }
+
+  process.kill(pid, "SIGTERM");
+
+  const shutDown = await waitForDaemonShutdown();
+  if (!shutDown) {
+    throw new Error(
+      `Stopped waiting for the old Hunk MCP daemon to exit after it was found missing required tools (${missingTools.join(", ")}).`,
+    );
+  }
+
+  launchHunkDaemon();
+
+  const config = resolveHunkMcpConfig();
+  const ready = await waitForHunkDaemonHealth({ config, timeoutMs: 3_000 });
+  if (!ready) {
+    throw new Error("Timed out waiting for the refreshed Hunk MCP daemon to start.");
+  }
+
+  if (selector) {
+    const registered = await waitForSessionRegistration(selector);
+    if (!registered) {
+      throw new Error(
+        "Timed out waiting for the live Hunk session to reconnect after refreshing the MCP daemon.",
+      );
+    }
+  }
+}
+
+async function ensureRequiredTools(action: SessionCommandInput["action"], selector?: SessionSelectorInput) {
+  const requiredTools = REQUIRED_TOOLS_BY_ACTION[action] ?? [];
+  if (requiredTools.length === 0) {
+    return;
+  }
+
+  const client = new McpHunkDaemonCliClient();
+  await client.connect();
+
+  try {
+    const toolNames = await client.listToolNames();
+    const missingTools = requiredTools.filter((tool) => !toolNames.has(tool));
+    if (missingTools.length === 0) {
+      return;
+    }
+
+    const looksLikeOlderHunkDaemon = toolNames.has("list_sessions") && toolNames.has("get_session");
+    if (!looksLikeOlderHunkDaemon) {
+      throw new Error(
+        `The Hunk MCP daemon is missing required tools (${missingTools.join(", ")}). Available tools: ${[...toolNames].join(", ") || "(none)"}.`,
+      );
+    }
+  } finally {
+    await client.close();
+  }
+
+  await restartDaemonForMissingTools(requiredTools, selector);
 }
 
 function stringifyJson(value: unknown) {
@@ -352,6 +505,9 @@ export async function runSessionCommand(input: SessionCommandInput) {
     return renderOutput(input.output, { sessions: [] }, () => formatListOutput([]));
   }
 
+  const normalizedSelector = "selector" in input ? normalizeRepoRoot(input.selector) : null;
+  await ensureRequiredTools(input.action, normalizedSelector ?? undefined);
+
   const client = new McpHunkDaemonCliClient();
   await client.connect();
 
@@ -362,45 +518,45 @@ export async function runSessionCommand(input: SessionCommandInput) {
         return renderOutput(input.output, { sessions }, () => formatListOutput(sessions));
       }
       case "get": {
-        const session = await client.getSession(normalizeRepoRoot(input.selector));
+        const session = await client.getSession(normalizedSelector!);
         return renderOutput(input.output, { session }, () => formatSessionOutput(session));
       }
       case "context": {
-        const context = await client.getSelectedContext(normalizeRepoRoot(input.selector));
+        const context = await client.getSelectedContext(normalizedSelector!);
         return renderOutput(input.output, { context }, () => formatContextOutput(context));
       }
       case "navigate": {
         const result = await client.navigateToHunk({
           ...input,
-          selector: normalizeRepoRoot(input.selector),
+          selector: normalizedSelector!,
         });
         return renderOutput(input.output, { result }, () => formatNavigationOutput(input.selector, result));
       }
       case "comment-add": {
         const result = await client.addComment({
           ...input,
-          selector: normalizeRepoRoot(input.selector),
+          selector: normalizedSelector!,
         });
         return renderOutput(input.output, { result }, () => formatCommentOutput(input.selector, result));
       }
       case "comment-list": {
         const comments = await client.listComments({
           ...input,
-          selector: normalizeRepoRoot(input.selector),
+          selector: normalizedSelector!,
         });
         return renderOutput(input.output, { comments }, () => formatCommentListOutput(input.selector, comments));
       }
       case "comment-rm": {
         const result = await client.removeComment({
           ...input,
-          selector: normalizeRepoRoot(input.selector),
+          selector: normalizedSelector!,
         });
         return renderOutput(input.output, { result }, () => formatRemoveCommentOutput(input.selector, result));
       }
       case "comment-clear": {
         const result = await client.clearComments({
           ...input,
-          selector: normalizeRepoRoot(input.selector),
+          selector: normalizedSelector!,
         });
         return renderOutput(input.output, { result }, () => formatClearCommentsOutput(input.selector, result));
       }
