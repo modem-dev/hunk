@@ -4,7 +4,9 @@ import { hunkLineRange } from "../core/liveComments";
 import type { HunkSessionRegistration, HunkSessionSnapshot } from "./types";
 
 function inferRepoRoot(bootstrap: AppBootstrap) {
-  return bootstrap.input.kind === "git" || bootstrap.input.kind === "show" || bootstrap.input.kind === "stash-show"
+  return bootstrap.input.kind === "git" ||
+    bootstrap.input.kind === "show" ||
+    bootstrap.input.kind === "stash-show"
     ? bootstrap.changeset.sourceLabel
     : undefined;
 }

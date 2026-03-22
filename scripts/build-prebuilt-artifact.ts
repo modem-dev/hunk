@@ -2,7 +2,11 @@
 
 import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { binaryFilenameForSpec, getHostPlatformPackageSpec, releaseArtifactsDir } from "./prebuilt-package-helpers";
+import {
+  binaryFilenameForSpec,
+  getHostPlatformPackageSpec,
+  releaseArtifactsDir,
+} from "./prebuilt-package-helpers";
 
 function parseArgs(argv: string[]) {
   let outputRoot: string | undefined;
@@ -37,7 +41,9 @@ const outputRoot = path.resolve(options.outputRoot ?? releaseArtifactsDir(repoRo
 const outputDir = path.join(outputRoot, spec.packageName);
 
 if (options.expectedPackage && options.expectedPackage !== spec.packageName) {
-  throw new Error(`Host build resolved to ${spec.packageName}, but the workflow expected ${options.expectedPackage}.`);
+  throw new Error(
+    `Host build resolved to ${spec.packageName}, but the workflow expected ${options.expectedPackage}.`,
+  );
 }
 
 if (!existsSync(compiledBinary)) {

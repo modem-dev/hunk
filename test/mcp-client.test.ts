@@ -103,7 +103,9 @@ describe("Hunk MCP client", () => {
       client.start();
       await waitUntil("non-loopback MCP warning", () => messages.length === 1);
 
-      expect(messages[0]).toContain("[hunk:mcp] Hunk MCP refuses to bind 0.0.0.0:47657 because the daemon is local-only by default.");
+      expect(messages[0]).toContain(
+        "[hunk:mcp] Hunk MCP refuses to bind 0.0.0.0:47657 because the daemon is local-only by default.",
+      );
       expect(messages[0]).toContain("HUNK_MCP_UNSAFE_ALLOW_REMOTE=1");
     } finally {
       client.stop();
@@ -141,8 +143,12 @@ describe("Hunk MCP client", () => {
       await Bun.sleep(2_000);
 
       expect(messages).toHaveLength(1);
-      expect(messages[0]).toContain(`[hunk:mcp] Hunk MCP port 127.0.0.1:${port} is already in use by another process.`);
-      expect(messages[0]).toContain("Stop the conflicting process or set HUNK_MCP_PORT to a different loopback port.");
+      expect(messages[0]).toContain(
+        `[hunk:mcp] Hunk MCP port 127.0.0.1:${port} is already in use by another process.`,
+      );
+      expect(messages[0]).toContain(
+        "Stop the conflicting process or set HUNK_MCP_PORT to a different loopback port.",
+      );
     } finally {
       client.stop();
       await new Promise<void>((resolve) => conflictingListener.close(() => resolve()));

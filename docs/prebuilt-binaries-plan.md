@@ -180,7 +180,8 @@ dist/
       hunkdiff-linux-x64/
       hunkdiff-darwin-arm64/
 ```
-```
+
+````
 
 The checked-in repo should contain templates and scripts, not prebuilt binaries.
 
@@ -283,7 +284,7 @@ Top-level `package.json` should eventually look more like this:
     "hunkdiff-linux-x64": "0.3.0"
   }
 }
-```
+````
 
 Notably:
 

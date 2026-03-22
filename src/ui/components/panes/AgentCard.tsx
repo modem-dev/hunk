@@ -65,7 +65,10 @@ export function AgentCard({
       </box>
 
       {popover.summaryLines.map((line, index) => (
-        <box key={`summary:${index}`} style={{ width: "100%", height: 1, backgroundColor: theme.panel }}>
+        <box
+          key={`summary:${index}`}
+          style={{ width: "100%", height: 1, backgroundColor: theme.panel }}
+        >
           <text fg={theme.text}>{padText(line, popover.innerWidth)}</text>
         </box>
       ))}
@@ -76,7 +79,10 @@ export function AgentCard({
             <text fg={theme.text}>{" ".repeat(popover.innerWidth)}</text>
           </box>
           {popover.rationaleLines.map((line, index) => (
-            <box key={`rationale:${index}`} style={{ width: "100%", height: 1, backgroundColor: theme.panel }}>
+            <box
+              key={`rationale:${index}`}
+              style={{ width: "100%", height: 1, backgroundColor: theme.panel }}
+            >
               <text fg={theme.muted}>{padText(line, popover.innerWidth)}</text>
             </box>
           ))}

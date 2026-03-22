@@ -11,11 +11,12 @@ if (enableTtySmokeTests) {
   setDefaultTimeout(15000);
 }
 
-const ttyToolsAvailable = Bun.spawnSync(["bash", "-lc", "command -v script >/dev/null && command -v timeout >/dev/null"], {
-  stdin: "ignore",
-  stdout: "ignore",
-  stderr: "ignore",
-}).exitCode === 0;
+const ttyToolsAvailable =
+  Bun.spawnSync(["bash", "-lc", "command -v script >/dev/null && command -v timeout >/dev/null"], {
+    stdin: "ignore",
+    stdout: "ignore",
+    stderr: "ignore",
+  }).exitCode === 0;
 
 function cleanupTempDirs() {
   while (tempDirs.length > 0) {
@@ -56,13 +57,17 @@ function createFixtureFiles(lines = 1) {
   } else {
     writeFileSync(
       before,
-      Array.from({ length: lines }, (_, index) => `export const before_${String(index + 1).padStart(2, "0")} = ${index + 1};`).join("\n") +
-        "\n",
+      Array.from(
+        { length: lines },
+        (_, index) => `export const before_${String(index + 1).padStart(2, "0")} = ${index + 1};`,
+      ).join("\n") + "\n",
     );
     writeFileSync(
       after,
-      Array.from({ length: lines }, (_, index) => `export const after_${String(index + 1).padStart(2, "0")} = ${index + 101};`).join("\n") +
-        "\n",
+      Array.from(
+        { length: lines },
+        (_, index) => `export const after_${String(index + 1).padStart(2, "0")} = ${index + 101};`,
+      ).join("\n") + "\n",
     );
   }
   writeFileSync(
@@ -78,18 +83,24 @@ function createFixtureFiles(lines = 1) {
     }),
   );
 
-  const patchProc = Bun.spawnSync(["git", "diff", "--no-index", "--no-color", "--", before, after], {
-    cwd: dir,
-    stdin: "ignore",
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const coloredPatchProc = Bun.spawnSync(["git", "diff", "--no-index", "--color=always", "--", before, after], {
-    cwd: dir,
-    stdin: "ignore",
-    stdout: "pipe",
-    stderr: "pipe",
-  });
+  const patchProc = Bun.spawnSync(
+    ["git", "diff", "--no-index", "--no-color", "--", before, after],
+    {
+      cwd: dir,
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  );
+  const coloredPatchProc = Bun.spawnSync(
+    ["git", "diff", "--no-index", "--color=always", "--", before, after],
+    {
+      cwd: dir,
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  );
 
   if (patchProc.exitCode !== 0 && patchProc.exitCode !== 1) {
     const stderr = Buffer.from(patchProc.stderr).toString("utf8");
@@ -98,7 +109,9 @@ function createFixtureFiles(lines = 1) {
 
   if (coloredPatchProc.exitCode !== 0 && coloredPatchProc.exitCode !== 1) {
     const stderr = Buffer.from(coloredPatchProc.stderr).toString("utf8");
-    throw new Error(stderr.trim() || `failed to build colored fixture patch: ${coloredPatchProc.exitCode}`);
+    throw new Error(
+      stderr.trim() || `failed to build colored fixture patch: ${coloredPatchProc.exitCode}`,
+    );
   }
 
   writeFileSync(patch, Buffer.from(patchProc.stdout).toString("utf8"));
@@ -107,7 +120,11 @@ function createFixtureFiles(lines = 1) {
   return { dir, before, after, agent, patch, coloredPatch };
 }
 
-async function runTtySmoke(options: { mode?: "split" | "stack"; pager?: boolean; agentContext?: boolean }) {
+async function runTtySmoke(options: {
+  mode?: "split" | "stack";
+  pager?: boolean;
+  agentContext?: boolean;
+}) {
   const fixture = createFixtureFiles();
   const transcript = join(fixture.dir, "transcript.txt");
   const args = ["diff", fixture.before, fixture.after];
@@ -147,13 +164,19 @@ async function runTtySmoke(options: { mode?: "split" | "stack"; pager?: boolean;
   return stripTerminalControl(await Bun.file(transcript).text());
 }
 
-async function runStdinPagerSmoke(options?: { input?: string; inputCommand?: string; lines?: number; command?: "patch" | "pager" }) {
+async function runStdinPagerSmoke(options?: {
+  input?: string;
+  inputCommand?: string;
+  lines?: number;
+  command?: "patch" | "pager";
+}) {
   const fixture = createFixtureFiles(options?.lines ?? 1);
   const transcript = join(fixture.dir, "stdin-pager-transcript.txt");
   const subcommand = options?.command === "pager" ? "pager" : "patch -";
   const patchCommand = `cat ${shellQuote(fixture.coloredPatch)} | bun run ${shellQuote(sourceEntrypoint)} ${subcommand}`;
   const scriptCommand = `timeout 7 script -q -f -e -c ${shellQuote(patchCommand)} ${shellQuote(transcript)}`;
-  const inputCommand = options?.inputCommand ?? `(sleep 2; printf ${shellQuote(options?.input ?? "q")})`;
+  const inputCommand =
+    options?.inputCommand ?? `(sleep 2; printf ${shellQuote(options?.input ?? "q")})`;
   const proc = Bun.spawnSync(["bash", "-lc", `${inputCommand} | ${scriptCommand}`], {
     cwd: fixture.dir,
     stdin: "ignore",
@@ -196,18 +219,21 @@ describe("TTY render smoke", () => {
     expect(output).toContain("▌1 + export const answer = 42;");
   });
 
-  ttyTest("stack mode keeps the terminal-native stacked rows without split separators", async () => {
-    if (!ttyToolsAvailable) {
-      return;
-    }
+  ttyTest(
+    "stack mode keeps the terminal-native stacked rows without split separators",
+    async () => {
+      if (!ttyToolsAvailable) {
+        return;
+      }
 
-    const output = await runTtySmoke({ mode: "stack" });
+      const output = await runTtySmoke({ mode: "stack" });
 
-    expect(output).toContain("View  Navigate  Theme  Agent  Help");
-    expect(output).toContain("▌1   -  export const answer = 41;");
-    expect(output).toContain("▌  1 +  export const answer = 42;");
-    expect(output).not.toContain("│1 + export const answer = 42;");
-  });
+      expect(output).toContain("View  Navigate  Theme  Agent  Help");
+      expect(output).toContain("▌1   -  export const answer = 41;");
+      expect(output).toContain("▌  1 +  export const answer = 42;");
+      expect(output).not.toContain("│1 + export const answer = 42;");
+    },
+  );
 
   ttyTest("pager mode hides chrome while still rendering the diff transcript", async () => {
     if (!ttyToolsAvailable) {

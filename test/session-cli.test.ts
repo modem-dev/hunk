@@ -6,11 +6,12 @@ import { join } from "node:path";
 const repoRoot = process.cwd();
 const sourceEntrypoint = join(repoRoot, "src/main.tsx");
 const tempDirs: string[] = [];
-const ttyToolsAvailable = Bun.spawnSync(["bash", "-lc", "command -v script >/dev/null && command -v timeout >/dev/null"], {
-  stdin: "ignore",
-  stdout: "ignore",
-  stderr: "ignore",
-}).exitCode === 0;
+const ttyToolsAvailable =
+  Bun.spawnSync(["bash", "-lc", "command -v script >/dev/null && command -v timeout >/dev/null"], {
+    stdin: "ignore",
+    stdout: "ignore",
+    stderr: "ignore",
+  }).exitCode === 0;
 
 interface SessionListJson {
   sessions: Array<{
@@ -34,7 +35,12 @@ function shellQuote(value: string) {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
-function waitUntil<T>(label: string, poll: () => T | null | Promise<T | null>, timeoutMs = 10_000, intervalMs = 100) {
+function waitUntil<T>(
+  label: string,
+  poll: () => T | null | Promise<T | null>,
+  timeoutMs = 10_000,
+  intervalMs = 100,
+) {
   const deadline = Date.now() + timeoutMs;
 
   return new Promise<T>(async (resolve, reject) => {
@@ -253,7 +259,9 @@ describe("session CLI", () => {
           return null;
         }
 
-        const parsed = JSON.parse(context.stdout) as { context?: { selectedHunk?: { index: number } } };
+        const parsed = JSON.parse(context.stdout) as {
+          context?: { selectedHunk?: { index: number } };
+        };
         return parsed.context?.selectedHunk?.index === 1 ? parsed : null;
       });
 
@@ -278,7 +286,15 @@ describe("session CLI", () => {
       );
       expect(comment.proc.exitCode).toBe(0);
       expect(comment.stderr).toBe("");
-      const addedComment = JSON.parse(comment.stdout) as { result?: { commentId?: string; filePath?: string; hunkIndex?: number; side?: string; line?: number } };
+      const addedComment = JSON.parse(comment.stdout) as {
+        result?: {
+          commentId?: string;
+          filePath?: string;
+          hunkIndex?: number;
+          side?: string;
+          line?: number;
+        };
+      };
       expect(addedComment).toMatchObject({
         result: {
           filePath: fixture.afterName,
@@ -289,7 +305,6 @@ describe("session CLI", () => {
       });
 
       expect(typeof addedComment.result?.commentId).toBe("string");
-
     } finally {
       session.kill();
       await session.exited;

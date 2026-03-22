@@ -5,7 +5,13 @@ import { diffHunkId } from "../lib/ids";
 import type { AppTheme } from "../themes";
 import { buildSelectedOverlayNote, renderAgentPopover } from "./agentNoteOverlay";
 import { buildSplitRows, buildStackRows } from "./pierre";
-import { diffMessage, DiffRowView, findMaxLineNumber, fitText, measureRenderedRowHeight } from "./renderRows";
+import {
+  diffMessage,
+  DiffRowView,
+  findMaxLineNumber,
+  fitText,
+  measureRenderedRowHeight,
+} from "./renderRows";
 import { useHighlightedDiff } from "./useHighlightedDiff";
 
 const EMPTY_ANNOTATED_HUNK_INDICES = new Set<number>();
@@ -53,7 +59,12 @@ export function PierreDiffView({
   });
 
   const rows = useMemo(
-    () => (file ? (layout === "split" ? buildSplitRows(file, resolvedHighlighted, theme) : buildStackRows(file, resolvedHighlighted, theme)) : []),
+    () =>
+      file
+        ? layout === "split"
+          ? buildSplitRows(file, resolvedHighlighted, theme)
+          : buildStackRows(file, resolvedHighlighted, theme)
+        : [],
     [file, layout, resolvedHighlighted, theme],
   );
   const hunkAnchorIds = useMemo(() => {
@@ -85,7 +96,15 @@ export function PierreDiffView({
     let offset = 0;
 
     for (const row of rows) {
-      const height = measureRenderedRowHeight(row, width, lineNumberDigits, showLineNumbers, showHunkHeaders, wrapLines, theme);
+      const height = measureRenderedRowHeight(
+        row,
+        width,
+        lineNumberDigits,
+        showLineNumbers,
+        showHunkHeaders,
+        wrapLines,
+        theme,
+      );
       metrics.set(row.key, { top: offset, height });
       offset += height;
     }
@@ -96,8 +115,25 @@ export function PierreDiffView({
     };
   }, [lineNumberDigits, rows, showHunkHeaders, showLineNumbers, theme, width, wrapLines]);
   const selectedOverlayNote = useMemo(
-    () => buildSelectedOverlayNote(rows, visibleAgentNotes, selectedHunkIndex, showHunkHeaders, width, lineNumberDigits, showLineNumbers),
-    [lineNumberDigits, rows, selectedHunkIndex, showHunkHeaders, showLineNumbers, visibleAgentNotes, width],
+    () =>
+      buildSelectedOverlayNote(
+        rows,
+        visibleAgentNotes,
+        selectedHunkIndex,
+        showHunkHeaders,
+        width,
+        lineNumberDigits,
+        showLineNumbers,
+      ),
+    [
+      lineNumberDigits,
+      rows,
+      selectedHunkIndex,
+      showHunkHeaders,
+      showLineNumbers,
+      visibleAgentNotes,
+      width,
+    ],
   );
 
   if (!file) {
@@ -139,7 +175,15 @@ export function PierreDiffView({
   const contentWithOverlay = (
     <box style={{ width: "100%", position: "relative", overflow: "visible" }}>
       {content}
-      {renderAgentPopover(selectedOverlayNote, file, width, rowMetrics.contentHeight, rowMetrics.metrics, theme, onDismissAgentNote)}
+      {renderAgentPopover(
+        selectedOverlayNote,
+        file,
+        width,
+        rowMetrics.contentHeight,
+        rowMetrics.metrics,
+        theme,
+        onDismissAgentNote,
+      )}
     </box>
   );
 

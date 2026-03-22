@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { parseDiffFromFile } from "@pierre/diffs";
-import { buildLiveComment, findDiffFileByPath, findHunkIndexForLine, hunkLineRange } from "../src/core/liveComments";
+import {
+  buildLiveComment,
+  findDiffFileByPath,
+  findHunkIndexForLine,
+  hunkLineRange,
+} from "../src/core/liveComments";
 import type { DiffFile } from "../src/core/types";
 
 function createDiffFile(): DiffFile {

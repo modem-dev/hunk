@@ -13,7 +13,10 @@ export function shouldUsePagerMode(input: CliInput, stdinIsTTY = Boolean(process
 }
 
 /** Apply runtime CLI defaults that depend on whether stdin is an interactive terminal. */
-export function resolveRuntimeCliInput(input: CliInput, stdinIsTTY = Boolean(process.stdin.isTTY)): CliInput {
+export function resolveRuntimeCliInput(
+  input: CliInput,
+  stdinIsTTY = Boolean(process.stdin.isTTY),
+): CliInput {
   return {
     ...input,
     options: {

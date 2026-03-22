@@ -1,6 +1,15 @@
 #!/usr/bin/env bun
 
-import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import {
   binaryFilenameForSpec,
@@ -59,7 +68,12 @@ function writeJson(filePath: string, value: unknown) {
   writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
 }
 
-function stageMetaPackage(repoRoot: string, rootPackage: RootPackageJson, releaseRoot: string, specs: readonly PlatformPackageSpec[]) {
+function stageMetaPackage(
+  repoRoot: string,
+  rootPackage: RootPackageJson,
+  releaseRoot: string,
+  specs: readonly PlatformPackageSpec[],
+) {
   const metaDir = path.join(releaseRoot, rootPackage.name);
   ensureDirectory(path.join(metaDir, "bin"));
   cpSync(path.join(repoRoot, "bin", "hunk.cjs"), path.join(metaDir, "bin", "hunk.cjs"));
@@ -131,7 +145,9 @@ function collectArtifactSpecs(artifactRoot: string) {
   }
 
   return directories.map((directory) => {
-    const metadata = JSON.parse(readFileSync(path.join(directory, "metadata.json"), "utf8")) as BinaryArtifactMetadata;
+    const metadata = JSON.parse(
+      readFileSync(path.join(directory, "metadata.json"), "utf8"),
+    ) as BinaryArtifactMetadata;
     const spec = getPlatformPackageSpecByName(metadata.packageName);
     if (!spec) {
       throw new Error(`Unknown platform package in artifact metadata: ${metadata.packageName}`);

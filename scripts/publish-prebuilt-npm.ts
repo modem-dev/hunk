@@ -52,7 +52,9 @@ function npmViewExists(name: string, version: string) {
 }
 
 function publishDirectory(directory: string, dryRun: boolean, npmTag: string) {
-  const packageJson = JSON.parse(readFileSync(path.join(directory, "package.json"), "utf8")) as PackageJson;
+  const packageJson = JSON.parse(
+    readFileSync(path.join(directory, "package.json"), "utf8"),
+  ) as PackageJson;
 
   if (npmViewExists(packageJson.name, packageJson.version)) {
     console.log(

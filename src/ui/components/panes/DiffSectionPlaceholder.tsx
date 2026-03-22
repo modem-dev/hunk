@@ -65,7 +65,14 @@ export function DiffSectionPlaceholder({
         onMouseUp={onSelect}
       >
         <text fg={theme.text}>{fitText(fileLabel(file), headerLabelWidth)}</text>
-        <box style={{ width: headerStatsWidth, height: 1, flexDirection: "row", justifyContent: "flex-end" }}>
+        <box
+          style={{
+            width: headerStatsWidth,
+            height: 1,
+            flexDirection: "row",
+            justifyContent: "flex-end",
+          }}
+        >
           <text fg={theme.badgeAdded}>{additionsText}</text>
           <text fg={theme.muted}> </text>
           <text fg={theme.badgeRemoved}>{deletionsText}</text>

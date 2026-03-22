@@ -33,27 +33,40 @@ function noteAnchor(annotation: AgentAnnotation) {
 }
 
 /** Check whether a rendered row is the visual anchor for a note. */
-function rowMatchesNote(row: Extract<DiffRow, { type: "split-line" | "stack-line" }>, note: VisibleAgentNote) {
+function rowMatchesNote(
+  row: Extract<DiffRow, { type: "split-line" | "stack-line" }>,
+  note: VisibleAgentNote,
+) {
   const anchor = noteAnchor(note.annotation);
   if (!anchor) {
     return false;
   }
 
   if (row.type === "split-line") {
-    return anchor.side === "new" ? row.right.lineNumber === anchor.lineNumber : row.left.lineNumber === anchor.lineNumber;
+    return anchor.side === "new"
+      ? row.right.lineNumber === anchor.lineNumber
+      : row.left.lineNumber === anchor.lineNumber;
   }
 
-  return anchor.side === "new" ? row.cell.newLineNumber === anchor.lineNumber : row.cell.oldLineNumber === anchor.lineNumber;
+  return anchor.side === "new"
+    ? row.cell.newLineNumber === anchor.lineNumber
+    : row.cell.oldLineNumber === anchor.lineNumber;
 }
 
 /** Resolve the rendered row for the currently visible popover note. */
-function findNoteAnchorRow(rows: DiffRow[], note: VisibleAgentNote, selectedHunkIndex: number, showHunkHeaders: boolean) {
+function findNoteAnchorRow(
+  rows: DiffRow[],
+  note: VisibleAgentNote,
+  selectedHunkIndex: number,
+  showHunkHeaders: boolean,
+) {
   const selectedHunkRows = rows.filter((row) => row.hunkIndex === selectedHunkIndex);
   const lineRows = selectedHunkRows.filter(
-    (row): row is Extract<DiffRow, { type: "split-line" | "stack-line" }> => row.type === "split-line" || row.type === "stack-line",
+    (row): row is Extract<DiffRow, { type: "split-line" | "stack-line" }> =>
+      row.type === "split-line" || row.type === "stack-line",
   );
   const headerRow = selectedHunkRows.find((row) => row.type === "hunk-header");
-  const firstVisibleRow = showHunkHeaders ? headerRow ?? lineRows[0] : lineRows[0] ?? headerRow;
+  const firstVisibleRow = showHunkHeaders ? (headerRow ?? lineRows[0]) : (lineRows[0] ?? headerRow);
 
   return lineRows.find((row) => rowMatchesNote(row, note)) ?? firstVisibleRow;
 }
@@ -160,7 +173,9 @@ export function renderAgentPopover(
         summary={selectedOverlayNote.note.annotation.summary}
         theme={theme}
         width={noteWidth}
-        onClose={onDismissAgentNote ? () => onDismissAgentNote(selectedOverlayNote.note.id) : undefined}
+        onClose={
+          onDismissAgentNote ? () => onDismissAgentNote(selectedOverlayNote.note.id) : undefined
+        }
       />
     </box>
   );

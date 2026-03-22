@@ -5,10 +5,10 @@ on:
     branches:
       - main
     paths-ignore:
-      - '**/*.md'
-      - 'docs/**'
-      - 'assets/**'
-      - 'LICENSE'
+      - "**/*.md"
+      - "docs/**"
+      - "assets/**"
+      - "LICENSE"
 
 concurrency:
   group: main-ci-${{ github.workflow }}-${{ github.ref }}
@@ -29,6 +29,9 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      - name: Format check
+        run: bun run format:check
 
       - name: Typecheck
         run: bun run typecheck

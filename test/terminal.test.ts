@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import type { CliInput } from "../src/core/types";
-import { openControllingTerminal, resolveRuntimeCliInput, shouldUsePagerMode, usesPipedPatchInput } from "../src/core/terminal";
+import {
+  openControllingTerminal,
+  resolveRuntimeCliInput,
+  shouldUsePagerMode,
+  usesPipedPatchInput,
+} from "../src/core/terminal";
 
 function createPatchInput(file?: string, pager = false): CliInput {
   return {

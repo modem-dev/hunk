@@ -9,12 +9,17 @@ function renderMenuLine(
   theme: AppTheme,
   selected: boolean,
 ) {
-  const text = entry.checked === undefined ? `  ${entry.label}` : `${entry.checked ? "[x]" : "[ ]"} ${entry.label}`;
+  const text =
+    entry.checked === undefined
+      ? `  ${entry.label}`
+      : `${entry.checked ? "[x]" : "[ ]"} ${entry.label}`;
   const hint = entry.hint ? entry.hint : "";
   const leftWidth = Math.max(0, width - hint.length - (hint.length > 0 ? 1 : 0));
 
   return (
-    <box style={{ width: "100%", height: 1, flexDirection: "row", justifyContent: "space-between" }}>
+    <box
+      style={{ width: "100%", height: 1, flexDirection: "row", justifyContent: "space-between" }}
+    >
       <box style={{ width: leftWidth, height: 1 }}>
         <text fg={theme.text}>{padText(text, leftWidth)}</text>
       </box>
@@ -64,8 +69,13 @@ export function MenuDropdown({
     >
       {activeMenuEntries.map((entry, index) =>
         entry.kind === "separator" ? (
-          <box key={`${activeMenuId}:separator:${index}`} style={{ height: 1, paddingLeft: 1, paddingRight: 1 }}>
-            <text fg={theme.border}>{padText("-".repeat(activeMenuWidth - 4), activeMenuWidth - 2)}</text>
+          <box
+            key={`${activeMenuId}:separator:${index}`}
+            style={{ height: 1, paddingLeft: 1, paddingRight: 1 }}
+          >
+            <text fg={theme.border}>
+              {padText("-".repeat(activeMenuWidth - 4), activeMenuWidth - 2)}
+            </text>
           </box>
         ) : (
           <box

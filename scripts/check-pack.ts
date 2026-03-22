@@ -55,7 +55,10 @@ const forbiddenPrefixes = [".github/", "src/", "test/", "scripts/", "tmp/"];
 const forbiddenPaths = ["AGENTS.md", "bun.lock"];
 
 for (const file of pack.files) {
-  if (forbiddenPrefixes.some((prefix) => file.path.startsWith(prefix)) || forbiddenPaths.includes(file.path)) {
+  if (
+    forbiddenPrefixes.some((prefix) => file.path.startsWith(prefix)) ||
+    forbiddenPaths.includes(file.path)
+  ) {
     throw new Error(`Unexpected file in npm package: ${file.path}`);
   }
 }
@@ -64,4 +67,6 @@ if (pack.name !== "hunkdiff") {
   throw new Error(`Expected npm package name to be hunkdiff, got ${pack.name}.`);
 }
 
-console.log(`Verified npm pack output for ${pack.name}@${pack.version} (${pack.entryCount} files).`);
+console.log(
+  `Verified npm pack output for ${pack.name}@${pack.version} (${pack.entryCount} files).`,
+);

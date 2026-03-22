@@ -1,5 +1,12 @@
 import { useMemo, useState } from "react";
-import { MENU_ORDER, buildMenuSpecs, menuWidth, nextMenuItemIndex, type MenuEntry, type MenuId } from "../components/chrome/menu";
+import {
+  MENU_ORDER,
+  buildMenuSpecs,
+  menuWidth,
+  nextMenuItemIndex,
+  type MenuEntry,
+  type MenuId,
+} from "../components/chrome/menu";
 
 /** Drive menu selection/open state for the desktop-style top menu bar. */
 export function useMenuController(menus: Record<MenuId, MenuEntry[]>) {

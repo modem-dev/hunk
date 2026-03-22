@@ -15,6 +15,7 @@ When this skill activates, start by briefly explaining what Hunk is in plain lan
 Hunk is a review-first terminal diff viewer for agent-authored changesets.
 
 Keep these product rules in mind:
+
 - the main pane is one top-to-bottom multi-file review stream
 - the sidebar is for navigation, not single-file mode switching
 - layouts are `auto`, `split`, and `stack`
@@ -28,6 +29,7 @@ If a live Hunk session already exists, prefer `hunk session ...` over launching 
 The local Hunk daemon is loopback-only by default and brokers commands to one or more live Hunk sessions.
 
 Important behavior:
+
 - normal Hunk sessions auto-start and register with the daemon when MCP is enabled
 - `hunk mcp serve` exists for manual startup or debugging, but it is not the default review path
 - `HUNK_MCP_DISABLE=1` disables daemon registration for a session
@@ -36,6 +38,7 @@ Important behavior:
 ## Recommended review loop
 
 Use this flow by default:
+
 1. `hunk session list`
 2. `hunk session context`
 3. `hunk session navigate` only if the current focus is wrong
@@ -44,6 +47,7 @@ Use this flow by default:
 Use `hunk session get` only when you need broader session metadata.
 
 Guidelines:
+
 - if multiple sessions are live, pass `sessionId` explicitly
 - prefer `hunk session context` before navigating blindly
 - use `hunk session navigate` for hunk-level movement; do not invent extra remote-control behavior
@@ -77,6 +81,7 @@ For more CLI entrypoints, read [references/commands.md](references/commands.md).
 ## Repo-specific review notes
 
 When using Hunk for agent changes:
+
 - prefer a real TTY or tmux session over redirected stdout captures
 - if a repo already has a fresh local sidecar, you can load it with `hunk diff --agent-context <file>`
 - treat `.hunk/latest.json` as an optional local convention, not required repo hygiene
@@ -85,11 +90,13 @@ When using Hunk for agent changes:
 ## What this skill should steer Pi toward
 
 Prefer a skill over a prompt dump:
+
 - keep always-loaded context small
 - load the full Hunk workflow only when the task is actually about review
 - use Hunk's session CLI rather than a separate agent-facing MCP tool surface
 
 Prefer review-oriented actions:
+
 - inspect the current live diff session
 - move to the right hunk only when needed
 - attach concise inline review comments

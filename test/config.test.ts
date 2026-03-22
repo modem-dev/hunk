@@ -66,13 +66,7 @@ describe("config resolution", () => {
     mkdirSync(join(repo, ".hunk"), { recursive: true });
     writeFileSync(
       join(repo, ".hunk", "config.toml"),
-      [
-        'theme = "paper"',
-        "wrap_lines = true",
-        "",
-        "[pager]",
-        "hunk_headers = false",
-      ].join("\n"),
+      ['theme = "paper"', "wrap_lines = true", "", "[pager]", "hunk_headers = false"].join("\n"),
     );
 
     const resolved = resolveConfiguredCliInput(createPatchPagerInput({ agentNotes: true }), {
@@ -109,11 +103,7 @@ describe("config resolution", () => {
     mkdirSync(join(home, ".config", "hunk"), { recursive: true });
     writeFileSync(
       join(home, ".config", "hunk", "config.toml"),
-      [
-        '[show]',
-        'mode = "stack"',
-        'line_numbers = false',
-      ].join('\n'),
+      ["[show]", 'mode = "stack"', "line_numbers = false"].join("\n"),
     );
 
     const resolved = resolveConfiguredCliInput(
@@ -139,11 +129,11 @@ describe("config resolution", () => {
       join(home, ".config", "hunk", "config.toml"),
       [
         'theme = "paper"',
-        'line_numbers = false',
-        'wrap_lines = true',
-        'hunk_headers = false',
-        'agent_notes = true',
-      ].join('\n'),
+        "line_numbers = false",
+        "wrap_lines = true",
+        "hunk_headers = false",
+        "agent_notes = true",
+      ].join("\n"),
     );
 
     const before = join(repo, "before.ts");

@@ -29,9 +29,9 @@ function formatDaemonServeError(error: unknown, host: string, port: number) {
   const message = error instanceof Error ? error.message : String(error);
   const normalized = message.toLowerCase();
   if (
-    normalized.includes("eaddrinuse")
-    || normalized.includes("address already in use")
-    || normalized.includes(`is port ${port} in use?`)
+    normalized.includes("eaddrinuse") ||
+    normalized.includes("address already in use") ||
+    normalized.includes(`is port ${port} in use?`)
   ) {
     return new Error(
       `Hunk MCP daemon could not bind ${host}:${port} because the port is already in use. ` +
@@ -81,7 +81,10 @@ async function handleSessionApiRequest(state: HunkDaemonState, request: Request)
         response = { context: state.getSelectedContext(input.selector) };
         break;
       case "navigate": {
-        if (input.hunkNumber === undefined && (input.side === undefined || input.line === undefined)) {
+        if (
+          input.hunkNumber === undefined &&
+          (input.side === undefined || input.line === undefined)
+        ) {
           throw new Error("navigate requires either hunkNumber or both side and line.");
         }
 
@@ -186,7 +189,10 @@ export function serveHunkMcpServer() {
         }
 
         if (url.pathname === "/mcp") {
-          return jsonError("Hunk no longer exposes agent-facing MCP tools. Use `hunk session ...` instead.", 410);
+          return jsonError(
+            "Hunk no longer exposes agent-facing MCP tools. Use `hunk session ...` instead.",
+            410,
+          );
         }
 
         if (url.pathname === HUNK_SESSION_SOCKET_PATH) {

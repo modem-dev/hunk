@@ -129,7 +129,10 @@ function findPatchChunk(metadata: FileDiffMetadata, chunks: string[], index: num
       [metadata.name, metadata.prevName]
         .filter((value): value is string => Boolean(value))
         .map(stripPrefixes)
-        .some((path) => chunk.includes(`a/${path}`) || chunk.includes(`b/${path}`) || chunk.includes(path)),
+        .some(
+          (path) =>
+            chunk.includes(`a/${path}`) || chunk.includes(`b/${path}`) || chunk.includes(path),
+        ),
     ) ?? ""
   );
 }
@@ -222,19 +225,33 @@ function normalizePatchChangeset(
     id: `changeset:${Date.now()}`,
     sourceLabel,
     title,
-    summary: parsedPatches.map((entry) => entry.patchMetadata).filter(Boolean).join("\n\n") || undefined,
+    summary:
+      parsedPatches
+        .map((entry) => entry.patchMetadata)
+        .filter(Boolean)
+        .join("\n\n") || undefined,
     agentSummary: agentContext?.summary,
     files: metadataFiles.map((metadata, index) =>
-      buildDiffFile(metadata, findPatchChunk(metadata, chunks, index), index, sourceLabel, agentContext),
+      buildDiffFile(
+        metadata,
+        findPatchChunk(metadata, chunks, index),
+        index,
+        sourceLabel,
+        agentContext,
+      ),
     ),
   };
 }
 
 /** Build a changeset by diffing two concrete files on disk. */
-async function loadFileDiffChangeset(input: FileCommandInput | DiffToolCommandInput, agentContext: AgentContext | null) {
+async function loadFileDiffChangeset(
+  input: FileCommandInput | DiffToolCommandInput,
+  agentContext: AgentContext | null,
+) {
   const leftText = await Bun.file(input.left).text();
   const rightText = await Bun.file(input.right).text();
-  const displayPath = input.kind === "difftool" ? input.path ?? basename(input.right) : basename(input.right);
+  const displayPath =
+    input.kind === "difftool" ? (input.path ?? basename(input.right)) : basename(input.right);
   const title =
     input.kind === "difftool"
       ? `git difftool: ${displayPath}`
@@ -323,7 +340,10 @@ async function loadShowChangeset(input: ShowCommandInput, agentContext: AgentCon
 }
 
 /** Build a changeset from `git stash show -p`, which naturally maps to one reviewable patch. */
-async function loadStashShowChangeset(input: StashShowCommandInput, agentContext: AgentContext | null) {
+async function loadStashShowChangeset(
+  input: StashShowCommandInput,
+  agentContext: AgentContext | null,
+) {
   const repoRoot = spawnText(["git", "rev-parse", "--show-toplevel"]).trim();
   const repoName = basename(repoRoot);
   const args = ["git", "stash", "show", "-p", "--find-renames", "--no-color"];
@@ -349,7 +369,12 @@ async function loadPatchChangeset(input: PatchCommandInput, agentContext: AgentC
       : await Bun.file(input.file).text());
 
   const label = input.file && input.file !== "-" ? input.file : "stdin patch";
-  return normalizePatchChangeset(patchText, `Patch review: ${basename(label)}`, label, agentContext);
+  return normalizePatchChangeset(
+    patchText,
+    `Patch review: ${basename(label)}`,
+    label,
+    agentContext,
+  );
 }
 
 /** Resolve CLI input into the fully loaded app bootstrap state. */

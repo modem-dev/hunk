@@ -5,10 +5,10 @@ on:
     branches:
       - main
     paths-ignore:
-      - '**/*.md'
-      - 'docs/**'
-      - 'assets/**'
-      - 'LICENSE'
+      - "**/*.md"
+      - "docs/**"
+      - "assets/**"
+      - "LICENSE"
   workflow_dispatch:
 
 concurrency:

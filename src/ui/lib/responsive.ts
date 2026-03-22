@@ -25,7 +25,10 @@ function resolveResponsiveViewport(viewportWidth: number): ResponsiveViewport {
 }
 
 /** Resolve the effective layout after combining the explicit mode with viewport size. */
-export function resolveResponsiveLayout(requestedLayout: LayoutMode, viewportWidth: number): ResponsiveLayout {
+export function resolveResponsiveLayout(
+  requestedLayout: LayoutMode,
+  viewportWidth: number,
+): ResponsiveLayout {
   const viewport = resolveResponsiveViewport(viewportWidth);
 
   if (requestedLayout === "split") {

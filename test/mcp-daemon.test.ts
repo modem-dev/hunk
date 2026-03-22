@@ -44,7 +44,9 @@ function createListedSession(overrides: Partial<ListedSession> = {}): ListedSess
   };
 }
 
-function createRegistration(overrides: Partial<HunkSessionRegistration> = {}): HunkSessionRegistration {
+function createRegistration(
+  overrides: Partial<HunkSessionRegistration> = {},
+): HunkSessionRegistration {
   return {
     sessionId: "session-1",
     pid: 123,
@@ -80,7 +82,9 @@ function createSnapshot(overrides: Partial<HunkSessionSnapshot> = {}): HunkSessi
   };
 }
 
-function createLiveComment(overrides: Partial<SessionLiveCommentSummary> = {}): SessionLiveCommentSummary {
+function createLiveComment(
+  overrides: Partial<SessionLiveCommentSummary> = {},
+): SessionLiveCommentSummary {
   return {
     commentId: "comment-1",
     filePath: "src/example.ts",
@@ -96,13 +100,21 @@ function createLiveComment(overrides: Partial<SessionLiveCommentSummary> = {}): 
 describe("Hunk MCP daemon state", () => {
   test("resolves one target session by session id, repo root, or sole-session fallback", () => {
     const one = [createListedSession()];
-    const two = [createListedSession(), createListedSession({ sessionId: "session-2", snapshot: { ...createSnapshot(), updatedAt: "2026-03-22T00:00:01.000Z" } })];
+    const two = [
+      createListedSession(),
+      createListedSession({
+        sessionId: "session-2",
+        snapshot: { ...createSnapshot(), updatedAt: "2026-03-22T00:00:01.000Z" },
+      }),
+    ];
 
     expect(resolveSessionTarget(one, {}).sessionId).toBe("session-1");
     expect(resolveSessionTarget(one, { repoRoot: "/repo" }).sessionId).toBe("session-1");
     expect(resolveSessionTarget(two, { sessionId: "session-2" }).sessionId).toBe("session-2");
     expect(() => resolveSessionTarget(two, {})).toThrow("specify sessionId or repoRoot");
-    expect(() => resolveSessionTarget(two, { repoRoot: "/repo" })).toThrow("specify sessionId instead");
+    expect(() => resolveSessionTarget(two, { repoRoot: "/repo" })).toThrow(
+      "specify sessionId instead",
+    );
   });
 
   test("exposes the selected session context from snapshot state", () => {
@@ -147,7 +159,12 @@ describe("Hunk MCP daemon state", () => {
         liveCommentCount: 2,
         liveComments: [
           createLiveComment(),
-          createLiveComment({ commentId: "comment-2", filePath: "src/other.ts", line: 9, summary: "Other" }),
+          createLiveComment({
+            commentId: "comment-2",
+            filePath: "src/other.ts",
+            line: 9,
+            summary: "Other",
+          }),
         ],
       }),
     );
@@ -359,7 +376,11 @@ describe("Hunk MCP daemon state", () => {
       summary: "Review note",
     });
 
-    state.registerSession(replacementSocket, createRegistration(), createSnapshot({ updatedAt: "2026-03-22T00:00:01.000Z" }));
+    state.registerSession(
+      replacementSocket,
+      createRegistration(),
+      createSnapshot({ updatedAt: "2026-03-22T00:00:01.000Z" }),
+    );
 
     await expect(pending).rejects.toThrow("reconnected before the command completed");
     expect(state.listSessions()).toHaveLength(1);

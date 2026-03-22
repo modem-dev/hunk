@@ -17,7 +17,9 @@ describe("prebuilt package helpers", () => {
     const version = "9.9.9";
     const dependencies = buildOptionalDependencyMap(version);
 
-    expect(Object.keys(dependencies).sort()).toEqual(PLATFORM_PACKAGE_MATRIX.map((spec) => spec.packageName).sort());
+    expect(Object.keys(dependencies).sort()).toEqual(
+      PLATFORM_PACKAGE_MATRIX.map((spec) => spec.packageName).sort(),
+    );
     expect(new Set(Object.values(dependencies))).toEqual(new Set([version]));
   });
 
@@ -57,18 +59,24 @@ describe("prebuilt package helpers", () => {
 
   test("getPlatformPackageSpecForHost resolves supported combinations and rejects unsupported ones", () => {
     expect(getPlatformPackageSpecForHost("linux", "x64").packageName).toBe("hunkdiff-linux-x64");
-    expect(getPlatformPackageSpecForHost("darwin", "arm64").packageName).toBe("hunkdiff-darwin-arm64");
+    expect(getPlatformPackageSpecForHost("darwin", "arm64").packageName).toBe(
+      "hunkdiff-darwin-arm64",
+    );
     expect(() => getPlatformPackageSpecForHost("freebsd" as NodeJS.Platform, "x64")).toThrow(
       "Unsupported host platform for prebuilt packaging: freebsd",
     );
     expect(() => getPlatformPackageSpecForHost("linux", "ia32" as NodeJS.Architecture)).toThrow(
       "Unsupported host architecture for prebuilt packaging: ia32",
     );
-    expect(() => getPlatformPackageSpecForHost("linux", "arm64")).toThrow("No published prebuilt package spec matches linux/arm64");
+    expect(() => getPlatformPackageSpecForHost("linux", "arm64")).toThrow(
+      "No published prebuilt package spec matches linux/arm64",
+    );
   });
 
   test("getHostPlatformPackageSpec resolves the current machine", () => {
-    expect(getHostPlatformPackageSpec()).toEqual(getPlatformPackageSpecForHost(process.platform, process.arch));
+    expect(getHostPlatformPackageSpec()).toEqual(
+      getPlatformPackageSpecForHost(process.platform, process.arch),
+    );
   });
 
   test("sortPlatformPackageSpecs keeps package publish order stable", () => {

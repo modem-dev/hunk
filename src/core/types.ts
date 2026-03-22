@@ -214,7 +214,12 @@ export type CliInput =
   | PatchCommandInput
   | DiffToolCommandInput;
 
-export type ParsedCliInput = CliInput | HelpCommandInput | PagerCommandInput | McpServeCommandInput | SessionCommandInput;
+export type ParsedCliInput =
+  | CliInput
+  | HelpCommandInput
+  | PagerCommandInput
+  | McpServeCommandInput
+  | SessionCommandInput;
 
 export interface AppBootstrap {
   input: CliInput;

@@ -48,11 +48,14 @@ function describeSessionChoices(sessions: ListedSession[]) {
 }
 
 function findSelectedFile(session: ListedSession) {
-  return session.files.find(
-    (file) => file.id === session.snapshot.selectedFileId
-      || file.path === session.snapshot.selectedFilePath
-      || file.previousPath === session.snapshot.selectedFilePath,
-  ) ?? null;
+  return (
+    session.files.find(
+      (file) =>
+        file.id === session.snapshot.selectedFileId ||
+        file.path === session.snapshot.selectedFilePath ||
+        file.previousPath === session.snapshot.selectedFilePath,
+    ) ?? null
+  );
 }
 
 /** Resolve which live Hunk session one external command should target. */
@@ -87,7 +90,9 @@ export function resolveSessionTarget(sessions: ListedSession[], selector: Sessio
   }
 
   if (sessions.length === 0) {
-    throw new Error("No active Hunk sessions are registered with the daemon. Open Hunk and wait for it to connect.");
+    throw new Error(
+      "No active Hunk sessions are registered with the daemon. Open Hunk and wait for it to connect.",
+    );
   }
 
   throw new Error(
@@ -162,7 +167,11 @@ export class HunkDaemonState {
     return this.pendingCommands.size;
   }
 
-  registerSession(socket: DaemonSessionSocket, registration: HunkSessionRegistration, snapshot: HunkSessionSnapshot) {
+  registerSession(
+    socket: DaemonSessionSocket,
+    registration: HunkSessionRegistration,
+    snapshot: HunkSessionSnapshot,
+  ) {
     const previousSessionId = this.sessionIdsBySocket.get(socket);
     if (previousSessionId && previousSessionId !== registration.sessionId) {
       this.unregisterSocket(socket);
@@ -171,7 +180,10 @@ export class HunkDaemonState {
     const existing = this.sessions.get(registration.sessionId);
     if (existing && existing.socket !== socket) {
       this.sessionIdsBySocket.delete(existing.socket);
-      this.rejectPendingCommandsForSession(registration.sessionId, new Error("Hunk session reconnected before the command completed."));
+      this.rejectPendingCommandsForSession(
+        registration.sessionId,
+        new Error("Hunk session reconnected before the command completed."),
+      );
     }
 
     const now = new Date().toISOString();
@@ -219,13 +231,7 @@ export class HunkDaemonState {
     this.removeSession(sessionId, "The targeted Hunk session disconnected.");
   }
 
-  pruneStaleSessions({
-    ttlMs,
-    now = Date.now(),
-  }: {
-    ttlMs: number;
-    now?: number;
-  }) {
+  pruneStaleSessions({ ttlMs, now = Date.now() }: { ttlMs: number; now?: number }) {
     let removed = 0;
     const cutoff = now - ttlMs;
 
@@ -235,7 +241,10 @@ export class HunkDaemonState {
         continue;
       }
 
-      this.removeSession(sessionId, "The targeted Hunk session became stale and was removed from the MCP daemon.");
+      this.removeSession(
+        sessionId,
+        "The targeted Hunk session became stale and was removed from the MCP daemon.",
+      );
       removed += 1;
     }
 
@@ -278,7 +287,12 @@ export class HunkDaemonState {
     );
   }
 
-  handleCommandResult(message: { requestId: string; ok: boolean; result?: SessionCommandResult; error?: string }) {
+  handleCommandResult(message: {
+    requestId: string;
+    ok: boolean;
+    result?: SessionCommandResult;
+    error?: string;
+  }) {
     const pending = this.pendingCommands.get(message.requestId);
     if (!pending) {
       return;
@@ -306,7 +320,10 @@ export class HunkDaemonState {
     this.sessions.clear();
   }
 
-  private sendCommand<ResultType extends SessionCommandResult, CommandName extends SessionServerMessage["command"]>(
+  private sendCommand<
+    ResultType extends SessionCommandResult,
+    CommandName extends SessionServerMessage["command"],
+  >(
     selector: SessionTargetInput,
     command: CommandName,
     input: Extract<SessionServerMessage, { command: CommandName }>["input"],
@@ -348,7 +365,11 @@ export class HunkDaemonState {
       } catch (error) {
         clearTimeout(timeout);
         this.pendingCommands.delete(requestId);
-        reject(error instanceof Error ? error : new Error("The targeted Hunk session could not receive the command."));
+        reject(
+          error instanceof Error
+            ? error
+            : new Error("The targeted Hunk session could not receive the command."),
+        );
       }
     });
   }

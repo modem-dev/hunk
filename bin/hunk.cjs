@@ -111,7 +111,9 @@ if (bunBinary) {
   run(bunBinary, [entrypoint, ...process.argv.slice(2)]);
 }
 
-const printablePackages = hostCandidates().map((candidate) => `"${candidate.packageName}"`).join(" or ");
+const printablePackages = hostCandidates()
+  .map((candidate) => `"${candidate.packageName}"`)
+  .join(" or ");
 console.error(
   printablePackages.length > 0
     ? `Failed to locate a matching prebuilt Hunk binary. Try reinstalling hunkdiff or manually installing ${printablePackages}.`

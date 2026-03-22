@@ -2,7 +2,15 @@ import fs from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import type { CliInput, CommonOptions, LayoutMode, PersistedViewPreferences } from "./types";
 
-const CONFIG_SECTION_NAMES = ["pager", "git", "diff", "show", "stash-show", "patch", "difftool"] as const;
+const CONFIG_SECTION_NAMES = [
+  "pager",
+  "git",
+  "diff",
+  "show",
+  "stash-show",
+  "patch",
+  "difftool",
+] as const;
 const DEFAULT_VIEW_PREFERENCES: PersistedViewPreferences = {
   mode: "auto",
   showLineNumbers: true,
@@ -20,7 +28,6 @@ interface HunkConfigResolution {
   input: CliInput;
   globalConfigPath?: string;
   repoConfigPath?: string;
-
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -152,11 +159,17 @@ export function resolveConfiguredCliInput(
   };
 
   if (userConfigPath) {
-    resolvedOptions = mergeOptions(resolvedOptions, resolveConfigLayer(readTomlRecord(userConfigPath), input));
+    resolvedOptions = mergeOptions(
+      resolvedOptions,
+      resolveConfigLayer(readTomlRecord(userConfigPath), input),
+    );
   }
 
   if (repoConfigPath) {
-    resolvedOptions = mergeOptions(resolvedOptions, resolveConfigLayer(readTomlRecord(repoConfigPath), input));
+    resolvedOptions = mergeOptions(
+      resolvedOptions,
+      resolveConfigLayer(readTomlRecord(repoConfigPath), input),
+    );
   }
 
   resolvedOptions = mergeOptions(resolvedOptions, input.options);
@@ -180,4 +193,3 @@ export function resolveConfiguredCliInput(
     repoConfigPath,
   };
 }
-

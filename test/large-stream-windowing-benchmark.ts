@@ -73,7 +73,10 @@ function createBootstrap(): AppBootstrap {
 }
 
 const start = performance.now();
-const setup = await testRender(React.createElement(App, { bootstrap: createBootstrap() }), { width: 240, height: 28 });
+const setup = await testRender(React.createElement(App, { bootstrap: createBootstrap() }), {
+  width: 240,
+  height: 28,
+});
 
 try {
   await act(async () => {

@@ -305,12 +305,15 @@ describe("loadAppBootstrap", () => {
     writeFileSync(before, "export const answer = 41;\n");
     writeFileSync(after, "export const answer = 42;\nexport const added = true;\n");
 
-    const diffProc = Bun.spawnSync(["git", "diff", "--no-index", "--color=always", "--", before, after], {
-      cwd: dir,
-      stdin: "ignore",
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    const diffProc = Bun.spawnSync(
+      ["git", "diff", "--no-index", "--color=always", "--", before, after],
+      {
+        cwd: dir,
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
 
     if (diffProc.exitCode !== 0 && diffProc.exitCode !== 1) {
       const stderr = Buffer.from(diffProc.stderr).toString("utf8");

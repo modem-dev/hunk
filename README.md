@@ -1,6 +1,5 @@
 <img width="384" height="384" alt="image" src="https://github.com/user-attachments/assets/85c5ba93-9de1-4757-87ae-4520b8fd659f" />
 
-
 # hunk - TUI diff tool that's AI-friendly
 
 [![CI status](https://img.shields.io/github/actions/workflow/status/modem-dev/hunk/ci.yml?branch=main&style=for-the-badge&label=CI)](https://github.com/modem-dev/hunk/actions/workflows/ci.yml?branch=main)
@@ -54,20 +53,20 @@ git diff --no-color | hunk patch -  # review a patch from stdin
 
 ## Feature comparison
 
-| Capability | hunk | difftastic | delta | diff |
-| --- | --- | --- | --- | --- |
-| Dedicated interactive review UI | ✅ | ❌ | ❌ | ❌ |
-| Multi-file review stream with navigation sidebar | ✅ | ❌ | ❌ | ❌ |
-| Agent / AI rationale sidecar | ✅ | ❌ | ❌ | ❌ |
-| Split diffs | ✅ | ✅ | ✅ | ✅ |
-| Stacked diffs | ✅ | ✅ | ✅ | ✅ |
-| Auto responsive layouts | ✅ | ❌ | ❌ | ❌ |
-| Themes | ✅ | ❌ | ✅ | ❌ |
-| Syntax highlighting | ✅ | ✅ | ✅ | ❌ |
-| Syntax-aware / structural diffing | ❌ | ✅ | ❌ | ❌ |
-| Mouse support inside the diff viewer | ✅ | ❌ | ❌ | ❌ |
-| Runtime toggles for wrapping / line numbers / hunk metadata | ✅ | ❌ | ❌ | ❌ |
-| Pager-compatible mode | ✅ | ✅ | ✅ | ✅ |
+| Capability                                                  | hunk | difftastic | delta | diff |
+| ----------------------------------------------------------- | ---- | ---------- | ----- | ---- |
+| Dedicated interactive review UI                             | ✅   | ❌         | ❌    | ❌   |
+| Multi-file review stream with navigation sidebar            | ✅   | ❌         | ❌    | ❌   |
+| Agent / AI rationale sidecar                                | ✅   | ❌         | ❌    | ❌   |
+| Split diffs                                                 | ✅   | ✅         | ✅    | ✅   |
+| Stacked diffs                                               | ✅   | ✅         | ✅    | ✅   |
+| Auto responsive layouts                                     | ✅   | ❌         | ❌    | ❌   |
+| Themes                                                      | ✅   | ❌         | ✅    | ❌   |
+| Syntax highlighting                                         | ✅   | ✅         | ✅    | ❌   |
+| Syntax-aware / structural diffing                           | ❌   | ✅         | ❌    | ❌   |
+| Mouse support inside the diff viewer                        | ✅   | ❌         | ❌    | ❌   |
+| Runtime toggles for wrapping / line numbers / hunk metadata | ✅   | ❌         | ❌    | ❌   |
+| Pager-compatible mode                                       | ✅   | ✅         | ✅    | ✅   |
 
 ## Git integration
 

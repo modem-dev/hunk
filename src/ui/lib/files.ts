@@ -17,7 +17,10 @@ export function buildFileListEntry(file: DiffFile): FileListEntry {
           ? "R"
           : "M";
 
-  const pathLabel = file.previousPath && file.previousPath !== file.path ? `${file.previousPath} -> ${file.path}` : file.path;
+  const pathLabel =
+    file.previousPath && file.previousPath !== file.path
+      ? `${file.previousPath} -> ${file.path}`
+      : file.path;
 
   return {
     id: file.id,
@@ -32,5 +35,7 @@ export function fileLabel(file: DiffFile | undefined) {
     return "No file selected";
   }
 
-  return file.previousPath && file.previousPath !== file.path ? `${file.previousPath} -> ${file.path}` : file.path;
+  return file.previousPath && file.previousPath !== file.path
+    ? `${file.previousPath} -> ${file.path}`
+    : file.path;
 }

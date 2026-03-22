@@ -9,8 +9,17 @@ import type {
   SessionCommandResult,
   SessionServerMessage,
 } from "./types";
-import { HUNK_SESSION_SOCKET_PATH, resolveHunkMcpConfig, type ResolvedHunkMcpConfig } from "./config";
-import { isHunkDaemonHealthy, isLoopbackPortReachable, launchHunkDaemon, waitForHunkDaemonHealth } from "./daemonLauncher";
+import {
+  HUNK_SESSION_SOCKET_PATH,
+  resolveHunkMcpConfig,
+  type ResolvedHunkMcpConfig,
+} from "./config";
+import {
+  isHunkDaemonHealthy,
+  isLoopbackPortReachable,
+  launchHunkDaemon,
+  waitForHunkDaemonHealth,
+} from "./daemonLauncher";
 
 const DAEMON_LAUNCH_COOLDOWN_MS = 5_000;
 const DAEMON_STARTUP_TIMEOUT_MS = 3_000;
@@ -18,10 +27,18 @@ const RECONNECT_DELAY_MS = 3_000;
 const HEARTBEAT_INTERVAL_MS = 10_000;
 
 interface HunkAppBridge {
-  applyComment: (message: Extract<SessionServerMessage, { command: "comment" }>) => Promise<AppliedCommentResult>;
-  navigateToHunk: (message: Extract<SessionServerMessage, { command: "navigate_to_hunk" }>) => Promise<NavigatedSelectionResult>;
-  removeComment: (message: Extract<SessionServerMessage, { command: "remove_comment" }>) => Promise<RemovedCommentResult>;
-  clearComments: (message: Extract<SessionServerMessage, { command: "clear_comments" }>) => Promise<ClearedCommentsResult>;
+  applyComment: (
+    message: Extract<SessionServerMessage, { command: "comment" }>,
+  ) => Promise<AppliedCommentResult>;
+  navigateToHunk: (
+    message: Extract<SessionServerMessage, { command: "navigate_to_hunk" }>,
+  ) => Promise<NavigatedSelectionResult>;
+  removeComment: (
+    message: Extract<SessionServerMessage, { command: "remove_comment" }>,
+  ) => Promise<RemovedCommentResult>;
+  clearComments: (
+    message: Extract<SessionServerMessage, { command: "clear_comments" }>,
+  ) => Promise<ClearedCommentsResult>;
 }
 
 /** Keep one running Hunk TUI session registered with the local MCP daemon. */

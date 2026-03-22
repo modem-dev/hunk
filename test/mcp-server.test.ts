@@ -79,7 +79,16 @@ describe("Hunk session daemon server", () => {
       expect(capabilities.status).toBe(200);
       await expect(capabilities.json()).resolves.toMatchObject({
         version: 1,
-        actions: ["list", "get", "context", "navigate", "comment-add", "comment-list", "comment-rm", "comment-clear"],
+        actions: [
+          "list",
+          "get",
+          "context",
+          "navigate",
+          "comment-add",
+          "comment-list",
+          "comment-rm",
+          "comment-clear",
+        ],
       });
 
       const legacyMcp = await fetch(`http://127.0.0.1:${port}/mcp`, {

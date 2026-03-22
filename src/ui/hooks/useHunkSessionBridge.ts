@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DiffFile } from "../../core/types";
-import { buildLiveComment, findDiffFileByPath, findHunkIndexForLine, hunkLineRange } from "../../core/liveComments";
+import {
+  buildLiveComment,
+  findDiffFileByPath,
+  findHunkIndexForLine,
+  hunkLineRange,
+} from "../../core/liveComments";
 import { HunkHostClient } from "../../mcp/client";
 import type { LiveComment, SessionLiveCommentSummary, SessionServerMessage } from "../../mcp/types";
 
@@ -24,7 +29,9 @@ export function useHunkSessionBridge({
   selectedHunkIndex: number;
   showAgentNotes: boolean;
 }) {
-  const [liveCommentsByFileId, setLiveCommentsByFileId] = useState<Record<string, LiveComment[]>>({});
+  const [liveCommentsByFileId, setLiveCommentsByFileId] = useState<Record<string, LiveComment[]>>(
+    {},
+  );
   const liveCommentsByFileIdRef = useRef<Record<string, LiveComment[]>>({});
 
   const buildSelectedHunkSummary = useCallback((file: DiffFile, hunkIndex: number) => {
@@ -85,7 +92,12 @@ export function useHunkSessionBridge({
       }
 
       const commentId = `mcp:${message.requestId}`;
-      const liveComment = buildLiveComment(message.input, commentId, new Date().toISOString(), hunkIndex);
+      const liveComment = buildLiveComment(
+        message.input,
+        commentId,
+        new Date().toISOString(),
+        hunkIndex,
+      );
 
       setLiveCommentsByFileId((current) => ({
         ...current,
@@ -203,7 +215,13 @@ export function useHunkSessionBridge({
     return () => {
       hostClient.setBridge(null);
     };
-  }, [applyIncomingComment, clearIncomingComments, hostClient, navigateToHunkSelection, removeIncomingComment]);
+  }, [
+    applyIncomingComment,
+    clearIncomingComments,
+    hostClient,
+    navigateToHunkSelection,
+    removeIncomingComment,
+  ]);
 
   const liveCommentSummaries = useMemo<SessionLiveCommentSummary[]>(
     () =>
@@ -242,7 +260,16 @@ export function useHunkSessionBridge({
       liveComments: liveCommentSummaries,
       updatedAt: new Date().toISOString(),
     });
-  }, [currentHunk, hostClient, liveCommentCount, liveCommentSummaries, selectedFile?.id, selectedFile?.path, selectedHunkIndex, showAgentNotes]);
+  }, [
+    currentHunk,
+    hostClient,
+    liveCommentCount,
+    liveCommentSummaries,
+    selectedFile?.id,
+    selectedFile?.path,
+    selectedHunkIndex,
+    showAgentNotes,
+  ]);
 
   return {
     liveCommentsByFileId,

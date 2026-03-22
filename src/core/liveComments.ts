@@ -4,8 +4,14 @@ import type { CommentToolInput, DiffSide, LiveComment } from "../mcp/types";
 
 /** Compute the inclusive old/new line spans touched by one hunk. */
 export function hunkLineRange(hunk: Hunk) {
-  const newEnd = Math.max(hunk.additionStart, hunk.additionStart + Math.max(hunk.additionLines, 1) - 1);
-  const oldEnd = Math.max(hunk.deletionStart, hunk.deletionStart + Math.max(hunk.deletionLines, 1) - 1);
+  const newEnd = Math.max(
+    hunk.additionStart,
+    hunk.additionStart + Math.max(hunk.additionLines, 1) - 1,
+  );
+  const oldEnd = Math.max(
+    hunk.deletionStart,
+    hunk.deletionStart + Math.max(hunk.deletionLines, 1) - 1,
+  );
 
   return {
     oldRange: [hunk.deletionStart, oldEnd] as [number, number],

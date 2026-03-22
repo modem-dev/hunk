@@ -62,7 +62,9 @@ function normalizeAnnotationFile(file: unknown): AgentFileContext {
         newRange: normalizeRange(item.newRange),
         summary: item.summary,
         rationale: typeof item.rationale === "string" ? item.rationale : undefined,
-        tags: Array.isArray(item.tags) ? item.tags.filter((tag): tag is string => typeof tag === "string") : undefined,
+        tags: Array.isArray(item.tags)
+          ? item.tags.filter((tag): tag is string => typeof tag === "string")
+          : undefined,
         confidence:
           item.confidence === "low" || item.confidence === "medium" || item.confidence === "high"
             ? item.confidence
@@ -112,7 +114,8 @@ export function findAgentFileContext(
   }
 
   return (
-    agentContext.files.find((file) => file.path === currentPath || (previousPath ? file.path === previousPath : false)) ??
-    null
+    agentContext.files.find(
+      (file) => file.path === currentPath || (previousPath ? file.path === previousPath : false),
+    ) ?? null
   );
 }

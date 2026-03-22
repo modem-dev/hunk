@@ -8,8 +8,10 @@ function trailingCollapsedLines(metadata: FileDiffMetadata) {
     return 0;
   }
 
-  const additionRemaining = metadata.additionLines.length - (lastHunk.additionLineIndex + lastHunk.additionCount);
-  const deletionRemaining = metadata.deletionLines.length - (lastHunk.deletionLineIndex + lastHunk.deletionCount);
+  const additionRemaining =
+    metadata.additionLines.length - (lastHunk.additionLineIndex + lastHunk.additionCount);
+  const deletionRemaining =
+    metadata.deletionLines.length - (lastHunk.deletionLineIndex + lastHunk.deletionCount);
 
   if (additionRemaining !== deletionRemaining) {
     return 0;
@@ -46,7 +48,10 @@ function estimateHunkRows(
       continue;
     }
 
-    rows += layout === "split" ? Math.max(content.deletions, content.additions) : content.deletions + content.additions;
+    rows +=
+      layout === "split"
+        ? Math.max(content.deletions, content.additions)
+        : content.deletions + content.additions;
   }
 
   return rows;

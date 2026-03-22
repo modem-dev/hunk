@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { SessionCommandInput, SessionSelectorInput } from "../src/core/types";
-import { runSessionCommand, setSessionCommandTestHooks, type HunkDaemonCliClient } from "../src/session/commands";
+import {
+  runSessionCommand,
+  setSessionCommandTestHooks,
+  type HunkDaemonCliClient,
+} from "../src/session/commands";
 
 function createListedSession(sessionId: string) {
   return {
@@ -40,7 +44,16 @@ function createClient(overrides: Partial<HunkDaemonCliClient>): HunkDaemonCliCli
   return {
     getCapabilities: async () => ({
       version: 1,
-      actions: ["list", "get", "context", "navigate", "comment-add", "comment-list", "comment-rm", "comment-clear"],
+      actions: [
+        "list",
+        "get",
+        "context",
+        "navigate",
+        "comment-add",
+        "comment-list",
+        "comment-rm",
+        "comment-clear",
+      ],
     }),
     listSessions: async () => [],
     getSession: async () => createListedSession("session-1"),
@@ -188,7 +201,16 @@ describe("session command compatibility checks", () => {
         createClient({
           getCapabilities: async () => ({
             version: 1,
-            actions: ["list", "get", "context", "navigate", "comment-add", "comment-list", "comment-rm", "comment-clear"],
+            actions: [
+              "list",
+              "get",
+              "context",
+              "navigate",
+              "comment-add",
+              "comment-list",
+              "comment-rm",
+              "comment-clear",
+            ],
           }),
         }),
       resolveDaemonAvailability: async () => true,

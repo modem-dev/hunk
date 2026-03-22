@@ -11,7 +11,10 @@ export interface DaemonLaunchCommand {
 }
 
 /** Resolve how the current Hunk process should launch a sibling `hunk mcp serve` daemon. */
-export function resolveDaemonLaunchCommand(argv = process.argv, execPath = process.execPath): DaemonLaunchCommand {
+export function resolveDaemonLaunchCommand(
+  argv = process.argv,
+  execPath = process.execPath,
+): DaemonLaunchCommand {
   const entrypoint = argv[1];
 
   if (entrypoint && !entrypoint.startsWith("-") && SCRIPT_ENTRYPOINT_PATTERN.test(entrypoint)) {
@@ -28,7 +31,10 @@ export function resolveDaemonLaunchCommand(argv = process.argv, execPath = proce
 }
 
 /** Check whether the loopback Hunk daemon already answers health probes. */
-export async function isHunkDaemonHealthy(config: ResolvedHunkMcpConfig = resolveHunkMcpConfig(), timeoutMs = 500) {
+export async function isHunkDaemonHealthy(
+  config: ResolvedHunkMcpConfig = resolveHunkMcpConfig(),
+  timeoutMs = 500,
+) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   timeout.unref?.();

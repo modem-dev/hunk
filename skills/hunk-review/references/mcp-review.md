@@ -20,6 +20,7 @@ HUNK_MCP_DISABLE=1 hunk diff
 ## User and agent interface
 
 The review-oriented interface is `hunk session ...`:
+
 - `hunk session list`
 - `hunk session get`
 - `hunk session context`
@@ -42,6 +43,7 @@ Use explicit `sessionId` or `--repo <path>` whenever more than one live session 
 ### 2. Inspect current focus
 
 Run `hunk session context` to see:
+
 - current file
 - current hunk index
 - selected hunk old/new ranges
@@ -53,6 +55,7 @@ This is the best way to respect what the human reviewer is already looking at.
 ### 3. Move only when needed
 
 If the current focus is wrong, run `hunk session navigate` with either:
+
 - `--hunk <n>`, or
 - `--old-line <n>` / `--new-line <n>`
 
@@ -61,6 +64,7 @@ Prefer hunk-level movement over adding broader remote-control actions.
 ### 4. Leave inline review notes
 
 Run `hunk session comment add` with:
+
 - `<session-id>` or `--repo <path>`
 - `--file`
 - `--old-line` or `--new-line`

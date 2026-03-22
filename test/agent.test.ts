@@ -34,7 +34,14 @@ describe("agent context", () => {
           {
             path: "src/example.ts",
             summary: "Explains the file change",
-            annotations: [{ newRange: [4, 8], summary: "Added a helper", confidence: "high", tags: ["review", 7] }],
+            annotations: [
+              {
+                newRange: [4, 8],
+                summary: "Added a helper",
+                confidence: "high",
+                tags: ["review", 7],
+              },
+            ],
           },
         ],
       }),
@@ -44,7 +51,9 @@ describe("agent context", () => {
 
     expect(context?.summary).toBe("Agent summary");
     expect(findAgentFileContext(context, "src/example.ts")?.annotations).toHaveLength(1);
-    expect(findAgentFileContext(context, "src/example.ts")?.annotations[0]?.tags).toEqual(["review"]);
+    expect(findAgentFileContext(context, "src/example.ts")?.annotations[0]?.tags).toEqual([
+      "review",
+    ]);
     expect(findAgentFileContext(context, "src/renamed.ts", "src/example.ts")?.summary).toBe(
       "Explains the file change",
     );
@@ -63,7 +72,9 @@ describe("agent context", () => {
       }),
     );
 
-    await expect(loadAgentContext(invalidFilePath)).rejects.toThrow("Agent context file entries require a non-empty path.");
+    await expect(loadAgentContext(invalidFilePath)).rejects.toThrow(
+      "Agent context file entries require a non-empty path.",
+    );
 
     const invalidRangePath = join(dir, "invalid-range.json");
     writeFileSync(
@@ -79,7 +90,9 @@ describe("agent context", () => {
       }),
     );
 
-    await expect(loadAgentContext(invalidRangePath)).rejects.toThrow("Annotation ranges must be integer tuples.");
+    await expect(loadAgentContext(invalidRangePath)).rejects.toThrow(
+      "Annotation ranges must be integer tuples.",
+    );
 
     const negativeRangePath = join(dir, "negative-range.json");
     writeFileSync(
@@ -113,6 +126,8 @@ describe("agent context", () => {
       }),
     );
 
-    await expect(loadAgentContext(reversedRangePath)).rejects.toThrow("Annotation ranges must be ordered start..end tuples.");
+    await expect(loadAgentContext(reversedRangePath)).rejects.toThrow(
+      "Annotation ranges must be ordered start..end tuples.",
+    );
   });
 });

@@ -114,7 +114,15 @@ describe("parseCli", () => {
   });
 
   test("parses pathspec-limited git diffs", async () => {
-    const parsed = await parseCli(["bun", "hunk", "diff", "main", "--", "src/app.ts", "test/app.test.ts"]);
+    const parsed = await parseCli([
+      "bun",
+      "hunk",
+      "diff",
+      "main",
+      "--",
+      "src/app.ts",
+      "test/app.test.ts",
+    ]);
 
     expect(parsed).toMatchObject({
       kind: "git",
@@ -258,7 +266,15 @@ describe("parseCli", () => {
   });
 
   test("parses session comment rm", async () => {
-    const parsed = await parseCli(["bun", "hunk", "session", "comment", "rm", "session-1", "comment-1"]);
+    const parsed = await parseCli([
+      "bun",
+      "hunk",
+      "session",
+      "comment",
+      "rm",
+      "session-1",
+      "comment-1",
+    ]);
 
     expect(parsed).toEqual({
       kind: "session",
@@ -353,7 +369,16 @@ describe("parseCli", () => {
   });
 
   test("parses difftool mode with display path", async () => {
-    const parsed = await parseCli(["bun", "hunk", "difftool", "left.ts", "right.ts", "src/example.ts", "--mode", "stack"]);
+    const parsed = await parseCli([
+      "bun",
+      "hunk",
+      "difftool",
+      "left.ts",
+      "right.ts",
+      "src/example.ts",
+      "--mode",
+      "stack",
+    ]);
 
     expect(parsed).toMatchObject({
       kind: "difftool",

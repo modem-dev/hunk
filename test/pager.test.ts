@@ -1,7 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
-import { looksLikePatchInput, pagePlainText, resolveTextPagerCommand, type PlainTextPagerDeps } from "../src/core/pager";
+import {
+  looksLikePatchInput,
+  pagePlainText,
+  resolveTextPagerCommand,
+  type PlainTextPagerDeps,
+} from "../src/core/pager";
 
 function createPagerDeps(overrides: Partial<PlainTextPagerDeps> = {}): PlainTextPagerDeps {
   return {
@@ -69,7 +74,9 @@ describe("general pager detection", () => {
       for (const newline of ["\n", "\r\n"]) {
         const patch = lines.join(newline);
         expect(looksLikePatchInput(patch)).toBe(true);
-        expect(looksLikePatchInput(`\u001b]0;title\u0007${patch}\u001bPignored\u001b\\`)).toBe(true);
+        expect(looksLikePatchInput(`\u001b]0;title\u0007${patch}\u001bPignored\u001b\\`)).toBe(
+          true,
+        );
       }
     }
   });
@@ -95,7 +102,9 @@ describe("plain text pager fallback", () => {
   });
 
   test("prefers HUNK_TEXT_PAGER and avoids recursive hunk launches", () => {
-    expect(resolveTextPagerCommand({ HUNK_TEXT_PAGER: "bat --paging=always" })).toBe("bat --paging=always");
+    expect(resolveTextPagerCommand({ HUNK_TEXT_PAGER: "bat --paging=always" })).toBe(
+      "bat --paging=always",
+    );
     expect(resolveTextPagerCommand({ HUNK_TEXT_PAGER: "hunk pager" })).toBe("less -R");
     expect(resolveTextPagerCommand({ PAGER: "env FOO=1 hunk pager" })).toBe("less -R");
   });

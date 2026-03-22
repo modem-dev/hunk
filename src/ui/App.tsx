@@ -1,6 +1,21 @@
-import { MouseButton, type KeyEvent, type MouseEvent as TuiMouseEvent, type ScrollBoxRenderable } from "@opentui/core";
+import {
+  MouseButton,
+  type KeyEvent,
+  type MouseEvent as TuiMouseEvent,
+  type ScrollBoxRenderable,
+} from "@opentui/core";
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
-import { Suspense, lazy, startTransition, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Suspense,
+  lazy,
+  startTransition,
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { AppBootstrap, LayoutMode } from "../core/types";
 import { HunkHostClient } from "../mcp/client";
 import { MenuBar } from "./components/chrome/MenuBar";
@@ -21,8 +36,12 @@ import { resolveTheme, THEMES } from "./themes";
 
 type FocusArea = "files" | "filter";
 
-const LazyHelpDialog = lazy(async () => ({ default: (await import("./components/chrome/HelpDialog")).HelpDialog }));
-const LazyMenuDropdown = lazy(async () => ({ default: (await import("./components/chrome/MenuDropdown")).MenuDropdown }));
+const LazyHelpDialog = lazy(async () => ({
+  default: (await import("./components/chrome/HelpDialog")).HelpDialog,
+}));
+const LazyMenuDropdown = lazy(async () => ({
+  default: (await import("./components/chrome/MenuDropdown")).MenuDropdown,
+}));
 
 /** Clamp a value into an inclusive range. */
 function clamp(value: number, min: number, max: number) {
@@ -50,7 +69,9 @@ export function App({
   const filesScrollRef = useRef<ScrollBoxRenderable | null>(null);
   const diffScrollRef = useRef<ScrollBoxRenderable | null>(null);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(bootstrap.initialMode);
-  const [themeId, setThemeId] = useState(() => resolveTheme(bootstrap.initialTheme, renderer.themeMode).id);
+  const [themeId, setThemeId] = useState(
+    () => resolveTheme(bootstrap.initialTheme, renderer.themeMode).id,
+  );
   const [showAgentNotes, setShowAgentNotes] = useState(bootstrap.initialShowAgentNotes ?? false);
   const [showLineNumbers, setShowLineNumbers] = useState(bootstrap.initialShowLineNumbers ?? true);
   const [wrapLines, setWrapLines] = useState(bootstrap.initialWrapLines ?? false);
@@ -82,7 +103,9 @@ export function App({
     setShowAgentNotes(true);
   }, []);
 
-  const baseSelectedFile = bootstrap.changeset.files.find((file) => file.id === selectedFileId) ?? bootstrap.changeset.files[0];
+  const baseSelectedFile =
+    bootstrap.changeset.files.find((file) => file.id === selectedFileId) ??
+    bootstrap.changeset.files[0];
   const { liveCommentsByFileId } = useHunkSessionBridge({
     currentHunk: baseSelectedFile?.metadata.hunks[selectedHunkIndex],
     files: bootstrap.changeset.files,
@@ -119,11 +142,17 @@ export function App({
       return true;
     }
 
-    const haystack = [file.path, file.previousPath, file.agent?.summary].filter(Boolean).join(" ").toLowerCase();
+    const haystack = [file.path, file.previousPath, file.agent?.summary]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
     return haystack.includes(deferredFilter.trim().toLowerCase());
   });
 
-  const selectedFile = filteredFiles.find((file) => file.id === selectedFileId) ?? allFiles.find((file) => file.id === selectedFileId) ?? filteredFiles[0];
+  const selectedFile =
+    filteredFiles.find((file) => file.id === selectedFileId) ??
+    allFiles.find((file) => file.id === selectedFileId) ??
+    filteredFiles[0];
   const hunkCursors = buildHunkCursors(filteredFiles);
 
   const bodyPadding = pagerMode ? 0 : BODY_PADDING;
@@ -132,14 +161,21 @@ export function App({
   const canForceShowFilesPane = bodyWidth >= FILES_MIN_WIDTH + DIVIDER_WIDTH + DIFF_MIN_WIDTH;
   const showFilesPane = pagerMode
     ? false
-    : sidebarVisible && (responsiveLayout.showFilesPane || (forceSidebarOpen && canForceShowFilesPane));
+    : sidebarVisible &&
+      (responsiveLayout.showFilesPane || (forceSidebarOpen && canForceShowFilesPane));
   const centerWidth = bodyWidth;
   const resolvedLayout = responsiveLayout.layout;
   const currentHunk = selectedFile?.metadata.hunks[selectedHunkIndex];
   const activeAnnotations = getSelectedAnnotations(selectedFile, currentHunk);
-  const availableCenterWidth = showFilesPane ? Math.max(0, centerWidth - DIVIDER_WIDTH) : Math.max(0, centerWidth);
-  const maxFilesPaneWidth = showFilesPane ? Math.max(FILES_MIN_WIDTH, availableCenterWidth - DIFF_MIN_WIDTH) : FILES_MIN_WIDTH;
-  const clampedFilesPaneWidth = showFilesPane ? clamp(filesPaneWidth, FILES_MIN_WIDTH, maxFilesPaneWidth) : 0;
+  const availableCenterWidth = showFilesPane
+    ? Math.max(0, centerWidth - DIVIDER_WIDTH)
+    : Math.max(0, centerWidth);
+  const maxFilesPaneWidth = showFilesPane
+    ? Math.max(FILES_MIN_WIDTH, availableCenterWidth - DIFF_MIN_WIDTH)
+    : FILES_MIN_WIDTH;
+  const clampedFilesPaneWidth = showFilesPane
+    ? clamp(filesPaneWidth, FILES_MIN_WIDTH, maxFilesPaneWidth)
+    : 0;
   const diffPaneWidth = showFilesPane
     ? Math.max(DIFF_MIN_WIDTH, availableCenterWidth - clampedFilesPaneWidth)
     : Math.max(0, availableCenterWidth);
@@ -171,7 +207,11 @@ export function App({
       return;
     }
 
-    if (selectedFile && !filteredFiles.some((file) => file.id === selectedFile.id) && filteredFiles[0]) {
+    if (
+      selectedFile &&
+      !filteredFiles.some((file) => file.id === selectedFile.id) &&
+      filteredFiles[0]
+    ) {
       startTransition(() => {
         setSelectedFileId(filteredFiles[0]!.id);
         setSelectedHunkIndex(0);
@@ -378,7 +418,13 @@ export function App({
     }
 
     setFilesPaneWidth(
-      resizeSidebarWidth(resizeStartWidth, resizeDragOriginX, event.x, FILES_MIN_WIDTH, maxFilesPaneWidth),
+      resizeSidebarWidth(
+        resizeStartWidth,
+        resizeDragOriginX,
+        event.x,
+        FILES_MIN_WIDTH,
+        maxFilesPaneWidth,
+      ),
     );
     event.preventDefault();
     event.stopPropagation();
@@ -397,8 +443,14 @@ export function App({
   };
 
   const fileEntries = filteredFiles.map(buildFileListEntry);
-  const totalAdditions = bootstrap.changeset.files.reduce((sum, file) => sum + file.stats.additions, 0);
-  const totalDeletions = bootstrap.changeset.files.reduce((sum, file) => sum + file.stats.deletions, 0);
+  const totalAdditions = bootstrap.changeset.files.reduce(
+    (sum, file) => sum + file.stats.additions,
+    0,
+  );
+  const totalDeletions = bootstrap.changeset.files.reduce(
+    (sum, file) => sum + file.stats.deletions,
+    0,
+  );
   const topTitle = `${bootstrap.changeset.title}  +${totalAdditions}  -${totalDeletions}`;
   const helpWidth = Math.min(68, Math.max(44, terminal.width - 8));
   const helpLeft = Math.max(1, Math.floor((terminal.width - helpWidth) / 2));
@@ -409,7 +461,8 @@ export function App({
   const diffSeparatorWidth = Math.max(4, diffContentWidth - 2);
 
   useKeyboard((key: KeyEvent) => {
-    const pageDownKey = key.name === "pagedown" || key.name === "space" || key.name === " " || key.sequence === " ";
+    const pageDownKey =
+      key.name === "pagedown" || key.name === "space" || key.name === " " || key.sequence === " ";
     const pageUpKey = key.name === "pageup" || key.name === "b" || key.sequence === "b";
     const stepDownKey = key.name === "down" || key.name === "j" || key.sequence === "j";
     const stepUpKey = key.name === "up" || key.name === "k" || key.sequence === "k";
@@ -777,7 +830,12 @@ export function App({
 
       {!pagerMode && showHelp ? (
         <Suspense fallback={null}>
-          <LazyHelpDialog left={helpLeft} theme={activeTheme} width={helpWidth} onClose={() => setShowHelp(false)} />
+          <LazyHelpDialog
+            left={helpLeft}
+            theme={activeTheme}
+            width={helpWidth}
+            onClose={() => setShowHelp(false)}
+          />
         </Suspense>
       ) : null}
     </box>

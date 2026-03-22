@@ -1,7 +1,13 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { Command } from "commander";
-import type { CommonOptions, HelpCommandInput, LayoutMode, PagerCommandInput, ParsedCliInput } from "./types";
+import type {
+  CommonOptions,
+  HelpCommandInput,
+  LayoutMode,
+  PagerCommandInput,
+  ParsedCliInput,
+} from "./types";
 
 /** Validate one requested layout mode from CLI input. */
 function parseLayoutMode(value: string): LayoutMode {
@@ -174,7 +180,12 @@ async function parseStandaloneCommand(command: Command, tokens: string[]) {
   try {
     await command.parseAsync(["bun", "hunk", ...tokens]);
   } catch (error) {
-    if (error && typeof error === "object" && "code" in error && error.code === "commander.helpDisplayed") {
+    if (
+      error &&
+      typeof error === "object" &&
+      "code" in error &&
+      error.code === "commander.helpDisplayed"
+    ) {
       return;
     }
 
@@ -193,7 +204,10 @@ function resolveJsonOutput(options: { json?: boolean }) {
 }
 
 /** Normalize one explicit session selector from either session id or repo root. */
-function resolveExplicitSessionSelector(sessionId: string | undefined, repoRoot: string | undefined) {
+function resolveExplicitSessionSelector(
+  sessionId: string | undefined,
+  repoRoot: string | undefined,
+) {
   if (sessionId && repoRoot) {
     throw new Error("Specify either <session-id> or --repo <path>, not both.");
   }
@@ -202,9 +216,7 @@ function resolveExplicitSessionSelector(sessionId: string | undefined, repoRoot:
     throw new Error("Specify one live Hunk session with <session-id> or --repo <path>.");
   }
 
-  return sessionId
-    ? { sessionId }
-    : { repoRoot: resolve(repoRoot!) };
+  return sessionId ? { sessionId } : { repoRoot: resolve(repoRoot!) };
 }
 
 /** Parse the overloaded `hunk diff` command. */
@@ -252,7 +264,12 @@ async function parseDiffCommand(tokens: string[], argv: string[]): Promise<Parse
     };
   }
 
-  if (parsedTargets.length === 2 && !staged && !normalizedPathspecs && areExistingFiles(parsedTargets[0]!, parsedTargets[1]!)) {
+  if (
+    parsedTargets.length === 2 &&
+    !staged &&
+    !normalizedPathspecs &&
+    areExistingFiles(parsedTargets[0]!, parsedTargets[1]!)
+  ) {
     return {
       kind: "diff",
       left: parsedTargets[0]!,
@@ -295,7 +312,10 @@ async function parseShowCommand(tokens: string[], argv: string[]): Promise<Parse
 
 /** Parse the patch-file / stdin patch entrypoint. */
 async function parsePatchCommand(tokens: string[], argv: string[]): Promise<ParsedCliInput> {
-  const command = createCommand("patch", "review a patch file, or read a patch from stdin").argument("[file]");
+  const command = createCommand(
+    "patch",
+    "review a patch file, or read a patch from stdin",
+  ).argument("[file]");
 
   let parsedFile: string | undefined;
   let parsedOptions: Record<string, unknown> = {};
@@ -319,7 +339,10 @@ async function parsePatchCommand(tokens: string[], argv: string[]): Promise<Pars
 }
 
 /** Parse the general pager wrapper command used from Git `core.pager`. */
-async function parsePagerCommand(tokens: string[], argv: string[]): Promise<PagerCommandInput | HelpCommandInput> {
+async function parsePagerCommand(
+  tokens: string[],
+  argv: string[],
+): Promise<PagerCommandInput | HelpCommandInput> {
   const command = createCommand("pager", "general Git pager wrapper with diff detection");
   let parsedOptions: Record<string, unknown> = {};
 
@@ -351,12 +374,14 @@ async function parseDifftoolCommand(tokens: string[], argv: string[]): Promise<P
   let parsedPath: string | undefined;
   let parsedOptions: Record<string, unknown> = {};
 
-  command.action((left: string, right: string, path: string | undefined, options: Record<string, unknown>) => {
-    parsedLeft = left;
-    parsedRight = right;
-    parsedPath = path;
-    parsedOptions = options;
-  });
+  command.action(
+    (left: string, right: string, path: string | undefined, options: Record<string, unknown>) => {
+      parsedLeft = left;
+      parsedRight = right;
+      parsedPath = path;
+      parsedOptions = options;
+    },
+  );
 
   if (tokens.includes("--help") || tokens.includes("-h")) {
     return { kind: "help", text: `${command.helpInformation().trimEnd()}\n` };
@@ -379,28 +404,31 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
   if (!subcommand || subcommand === "--help" || subcommand === "-h") {
     return {
       kind: "help",
-      text: [
-        "Usage: hunk session <subcommand> [options]",
-        "",
-        "Inspect and control live Hunk review sessions through the local daemon.",
-        "",
-        "Commands:",
-        "  hunk session list",
-        "  hunk session get <session-id>",
-        "  hunk session get --repo <path>",
-        "  hunk session context <session-id>",
-        "  hunk session context --repo <path>",
-        "  hunk session navigate <session-id> --file <path> (--hunk <n> | --old-line <n> | --new-line <n>)",
-        "  hunk session comment add <session-id> --file <path> (--old-line <n> | --new-line <n>) --summary <text>",
-        "  hunk session comment list <session-id>",
-        "  hunk session comment rm <session-id> <comment-id>",
-        "  hunk session comment clear <session-id> --yes",
-      ].join("\n") + "\n",
+      text:
+        [
+          "Usage: hunk session <subcommand> [options]",
+          "",
+          "Inspect and control live Hunk review sessions through the local daemon.",
+          "",
+          "Commands:",
+          "  hunk session list",
+          "  hunk session get <session-id>",
+          "  hunk session get --repo <path>",
+          "  hunk session context <session-id>",
+          "  hunk session context --repo <path>",
+          "  hunk session navigate <session-id> --file <path> (--hunk <n> | --old-line <n> | --new-line <n>)",
+          "  hunk session comment add <session-id> --file <path> (--old-line <n> | --new-line <n>) --summary <text>",
+          "  hunk session comment list <session-id>",
+          "  hunk session comment rm <session-id> <comment-id>",
+          "  hunk session comment clear <session-id> --yes",
+        ].join("\n") + "\n",
     };
   }
 
   if (subcommand === "list") {
-    const command = new Command("session list").description("list live Hunk sessions").option("--json", "emit structured JSON");
+    const command = new Command("session list")
+      .description("list live Hunk sessions")
+      .option("--json", "emit structured JSON");
     let parsedOptions: { json?: boolean } = {};
 
     command.action((options: { json?: boolean }) => {
@@ -421,7 +449,11 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
 
   if (subcommand === "get" || subcommand === "context") {
     const command = new Command(`session ${subcommand}`)
-      .description(subcommand === "get" ? "show one live Hunk session" : "show the selected file and hunk for one live Hunk session")
+      .description(
+        subcommand === "get"
+          ? "show one live Hunk session"
+          : "show the selected file and hunk for one live Hunk session",
+      )
       .argument("[sessionId]")
       .option("--repo <path>", "target the live session whose repo root matches this path")
       .option("--json", "emit structured JSON");
@@ -459,12 +491,31 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
       .option("--json", "emit structured JSON");
 
     let parsedSessionId: string | undefined;
-    let parsedOptions: { repo?: string; file: string; hunk?: number; oldLine?: number; newLine?: number; json?: boolean } = { file: "" };
+    let parsedOptions: {
+      repo?: string;
+      file: string;
+      hunk?: number;
+      oldLine?: number;
+      newLine?: number;
+      json?: boolean;
+    } = { file: "" };
 
-    command.action((sessionId: string | undefined, options: { repo?: string; file: string; hunk?: number; oldLine?: number; newLine?: number; json?: boolean }) => {
-      parsedSessionId = sessionId;
-      parsedOptions = options;
-    });
+    command.action(
+      (
+        sessionId: string | undefined,
+        options: {
+          repo?: string;
+          file: string;
+          hunk?: number;
+          oldLine?: number;
+          newLine?: number;
+          json?: boolean;
+        },
+      ) => {
+        parsedSessionId = sessionId;
+        parsedOptions = options;
+      },
+    );
 
     if (rest.includes("--help") || rest.includes("-h")) {
       return { kind: "help", text: `${command.helpInformation().trimEnd()}\n` };
@@ -472,9 +523,15 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
 
     await parseStandaloneCommand(command, rest);
 
-    const selectors = [parsedOptions.hunk !== undefined, parsedOptions.oldLine !== undefined, parsedOptions.newLine !== undefined].filter(Boolean);
+    const selectors = [
+      parsedOptions.hunk !== undefined,
+      parsedOptions.oldLine !== undefined,
+      parsedOptions.newLine !== undefined,
+    ].filter(Boolean);
     if (selectors.length !== 1) {
-      throw new Error("Specify exactly one navigation target: --hunk <n>, --old-line <n>, or --new-line <n>.");
+      throw new Error(
+        "Specify exactly one navigation target: --hunk <n>, --old-line <n>, or --new-line <n>.",
+      );
     }
 
     return {
@@ -484,7 +541,12 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
       selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
       filePath: parsedOptions.file,
       hunkNumber: parsedOptions.hunk,
-      side: parsedOptions.oldLine !== undefined ? "old" : parsedOptions.newLine !== undefined ? "new" : undefined,
+      side:
+        parsedOptions.oldLine !== undefined
+          ? "old"
+          : parsedOptions.newLine !== undefined
+            ? "new"
+            : undefined,
       line: parsedOptions.oldLine ?? parsedOptions.newLine,
     };
   }
@@ -494,13 +556,14 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
     if (!commentSubcommand || commentSubcommand === "--help" || commentSubcommand === "-h") {
       return {
         kind: "help",
-        text: [
-          "Usage:",
-          "  hunk session comment add (<session-id> | --repo <path>) --file <path> (--old-line <n> | --new-line <n>) --summary <text>",
-          "  hunk session comment list (<session-id> | --repo <path>) [--file <path>]",
-          "  hunk session comment rm (<session-id> | --repo <path>) <comment-id>",
-          "  hunk session comment clear (<session-id> | --repo <path>) [--file <path>] --yes",
-        ].join("\n") + "\n",
+        text:
+          [
+            "Usage:",
+            "  hunk session comment add (<session-id> | --repo <path>) --file <path> (--old-line <n> | --new-line <n>) --summary <text>",
+            "  hunk session comment list (<session-id> | --repo <path>) [--file <path>]",
+            "  hunk session comment rm (<session-id> | --repo <path>) <comment-id>",
+            "  hunk session comment clear (<session-id> | --repo <path>) [--file <path>] --yes",
+          ].join("\n") + "\n",
       };
     }
 
@@ -535,20 +598,25 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
         summary: "",
       };
 
-      command.action((sessionId: string | undefined, options: {
-        repo?: string;
-        file: string;
-        summary: string;
-        oldLine?: number;
-        newLine?: number;
-        rationale?: string;
-        author?: string;
-        reveal?: boolean;
-        json?: boolean;
-      }) => {
-        parsedSessionId = sessionId;
-        parsedOptions = options;
-      });
+      command.action(
+        (
+          sessionId: string | undefined,
+          options: {
+            repo?: string;
+            file: string;
+            summary: string;
+            oldLine?: number;
+            newLine?: number;
+            rationale?: string;
+            author?: string;
+            reveal?: boolean;
+            json?: boolean;
+          },
+        ) => {
+          parsedSessionId = sessionId;
+          parsedOptions = options;
+        },
+      );
 
       if (commentRest.includes("--help") || commentRest.includes("-h")) {
         return { kind: "help", text: `${command.helpInformation().trimEnd()}\n` };
@@ -556,7 +624,10 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
 
       await parseStandaloneCommand(command, commentRest);
 
-      const selectors = [parsedOptions.oldLine !== undefined, parsedOptions.newLine !== undefined].filter(Boolean);
+      const selectors = [
+        parsedOptions.oldLine !== undefined,
+        parsedOptions.newLine !== undefined,
+      ].filter(Boolean);
       if (selectors.length !== 1) {
         throw new Error("Specify exactly one comment target: --old-line <n> or --new-line <n>.");
       }
@@ -587,10 +658,15 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
       let parsedSessionId: string | undefined;
       let parsedOptions: { repo?: string; file?: string; json?: boolean } = {};
 
-      command.action((sessionId: string | undefined, options: { repo?: string; file?: string; json?: boolean }) => {
-        parsedSessionId = sessionId;
-        parsedOptions = options;
-      });
+      command.action(
+        (
+          sessionId: string | undefined,
+          options: { repo?: string; file?: string; json?: boolean },
+        ) => {
+          parsedSessionId = sessionId;
+          parsedOptions = options;
+        },
+      );
 
       if (commentRest.includes("--help") || commentRest.includes("-h")) {
         return { kind: "help", text: `${command.helpInformation().trimEnd()}\n` };
@@ -619,11 +695,17 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
       let parsedCommentId = "";
       let parsedOptions: { repo?: string; json?: boolean } = {};
 
-      command.action((sessionId: string | undefined, commentId: string, options: { repo?: string; json?: boolean }) => {
-        parsedSessionId = sessionId;
-        parsedCommentId = commentId;
-        parsedOptions = options;
-      });
+      command.action(
+        (
+          sessionId: string | undefined,
+          commentId: string,
+          options: { repo?: string; json?: boolean },
+        ) => {
+          parsedSessionId = sessionId;
+          parsedCommentId = commentId;
+          parsedOptions = options;
+        },
+      );
 
       if (commentRest.includes("--help") || commentRest.includes("-h")) {
         return { kind: "help", text: `${command.helpInformation().trimEnd()}\n` };
@@ -652,10 +734,15 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
       let parsedSessionId: string | undefined;
       let parsedOptions: { repo?: string; file?: string; yes?: boolean; json?: boolean } = {};
 
-      command.action((sessionId: string | undefined, options: { repo?: string; file?: string; yes?: boolean; json?: boolean }) => {
-        parsedSessionId = sessionId;
-        parsedOptions = options;
-      });
+      command.action(
+        (
+          sessionId: string | undefined,
+          options: { repo?: string; file?: string; yes?: boolean; json?: boolean },
+        ) => {
+          parsedSessionId = sessionId;
+          parsedOptions = options;
+        },
+      );
 
       if (commentRest.includes("--help") || commentRest.includes("-h")) {
         return { kind: "help", text: `${command.helpInformation().trimEnd()}\n` };
@@ -688,16 +775,17 @@ async function parseMcpCommand(tokens: string[]): Promise<ParsedCliInput> {
   if (!subcommand || subcommand === "--help" || subcommand === "-h") {
     return {
       kind: "help",
-      text: [
-        "Usage: hunk mcp serve",
-        "",
-        "Run the local Hunk session daemon and websocket session broker.",
-        "",
-        "Environment:",
-        "  HUNK_MCP_HOST                  bind host (default 127.0.0.1; loopback only unless explicitly overridden)",
-        "  HUNK_MCP_PORT                  bind port (default 47657)",
-        "  HUNK_MCP_UNSAFE_ALLOW_REMOTE   set to 1 to allow non-loopback binding (unsafe)",
-      ].join("\n") + "\n",
+      text:
+        [
+          "Usage: hunk mcp serve",
+          "",
+          "Run the local Hunk session daemon and websocket session broker.",
+          "",
+          "Environment:",
+          "  HUNK_MCP_HOST                  bind host (default 127.0.0.1; loopback only unless explicitly overridden)",
+          "  HUNK_MCP_PORT                  bind port (default 47657)",
+          "  HUNK_MCP_UNSAFE_ALLOW_REMOTE   set to 1 to allow non-loopback binding (unsafe)",
+        ].join("\n") + "\n",
     };
   }
 
@@ -708,11 +796,12 @@ async function parseMcpCommand(tokens: string[]): Promise<ParsedCliInput> {
   if (rest.includes("--help") || rest.includes("-h")) {
     return {
       kind: "help",
-      text: [
-        "Usage: hunk mcp serve",
-        "",
-        "Run the local Hunk session daemon and websocket session broker.",
-      ].join("\n") + "\n",
+      text:
+        [
+          "Usage: hunk mcp serve",
+          "",
+          "Run the local Hunk session daemon and websocket session broker.",
+        ].join("\n") + "\n",
     };
   }
 
@@ -727,15 +816,16 @@ async function parseStashCommand(tokens: string[], argv: string[]): Promise<Pars
   if (!subcommand || subcommand === "--help" || subcommand === "-h") {
     return {
       kind: "help",
-      text: [
-        "Usage: hunk stash show [ref] [options]",
-        "",
-        "Review a stash entry as a full Hunk changeset.",
-        "",
-        "Examples:",
-        "  hunk stash show",
-        "  hunk stash show stash@{1}",
-      ].join("\n") + "\n",
+      text:
+        [
+          "Usage: hunk stash show [ref] [options]",
+          "",
+          "Review a stash entry as a full Hunk changeset.",
+          "",
+          "Examples:",
+          "  hunk stash show",
+          "  hunk stash show stash@{1}",
+        ].join("\n") + "\n",
     };
   }
 
@@ -743,7 +833,10 @@ async function parseStashCommand(tokens: string[], argv: string[]): Promise<Pars
     throw new Error("Only `hunk stash show` is supported.");
   }
 
-  const command = createCommand("stash show", "review a stash entry as a full Hunk changeset").argument("[ref]");
+  const command = createCommand(
+    "stash show",
+    "review a stash entry as a full Hunk changeset",
+  ).argument("[ref]");
 
   let parsedRef: string | undefined;
   let parsedOptions: Record<string, unknown> = {};

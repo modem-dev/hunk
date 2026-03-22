@@ -17,14 +17,17 @@ function run(command: string[], options?: { cwd?: string; env?: NodeJS.ProcessEn
   const stderr = Buffer.from(proc.stderr).toString("utf8");
 
   if (proc.exitCode !== 0) {
-    throw new Error(`${command.join(" ")} failed with exit ${proc.exitCode}\n${stderr || stdout}`.trim());
+    throw new Error(
+      `${command.join(" ")} failed with exit ${proc.exitCode}\n${stderr || stdout}`.trim(),
+    );
   }
 
   return { stdout, stderr };
 }
 
 const repoRoot = path.resolve(import.meta.dir, "..");
-const packageVersion = JSON.parse(await Bun.file(path.join(repoRoot, "package.json")).text()).version as string;
+const packageVersion = JSON.parse(await Bun.file(path.join(repoRoot, "package.json")).text())
+  .version as string;
 const releaseRoot = releaseNpmDir(repoRoot);
 const hostSpec = getHostPlatformPackageSpec();
 const tempRoot = path.join(repoRoot, "tmp");
@@ -44,8 +47,12 @@ if (nodeBinary.exitCode !== 0 || resolvedNode.length === 0) {
 const nodeDir = path.dirname(resolvedNode);
 
 try {
-  run(["npm", "pack", "--pack-destination", packageDir], { cwd: path.join(releaseRoot, hostSpec.packageName) });
-  run(["npm", "pack", "--pack-destination", packageDir], { cwd: path.join(releaseRoot, "hunkdiff") });
+  run(["npm", "pack", "--pack-destination", packageDir], {
+    cwd: path.join(releaseRoot, hostSpec.packageName),
+  });
+  run(["npm", "pack", "--pack-destination", packageDir], {
+    cwd: path.join(releaseRoot, "hunkdiff"),
+  });
 
   const platformTarball = path.join(packageDir, `${hostSpec.packageName}-${packageVersion}.tgz`);
   const metaTarball = path.join(packageDir, `hunkdiff-${packageVersion}.tgz`);
@@ -67,7 +74,11 @@ try {
   }
 
   const bunCheck = Bun.spawnSync(
-    [resolvedNode, "-e", "const {spawnSync}=require('node:child_process'); process.exit(spawnSync('bun',['--version'],{stdio:'ignore'}).status===0?1:0);"] ,
+    [
+      resolvedNode,
+      "-e",
+      "const {spawnSync}=require('node:child_process'); process.exit(spawnSync('bun',['--version'],{stdio:'ignore'}).status===0?1:0);",
+    ],
     {
       env: {
         ...process.env,

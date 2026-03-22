@@ -24,7 +24,9 @@ function noteAnchorColumn(
   note: VisibleAgentNote,
 ) {
   if (layout === "split") {
-    return note.annotation.oldRange && !note.annotation.newRange ? 1 : Math.max(2, Math.floor(width * 0.58));
+    return note.annotation.oldRange && !note.annotation.newRange
+      ? 1
+      : Math.max(2, Math.floor(width * 0.58));
   }
 
   return showLineNumbers ? Math.max(2, String(maxLineNumber(file)).length + 4) : 2;
@@ -151,7 +153,9 @@ export function DiffPane({
       const nextHeight = scrollRef.current?.viewport.height ?? 0;
 
       setScrollViewport((current) =>
-        current.top === nextTop && current.height === nextHeight ? current : { top: nextTop, height: nextHeight },
+        current.top === nextTop && current.height === nextHeight
+          ? current
+          : { top: nextTop, height: nextHeight },
       );
     };
 
@@ -187,9 +191,19 @@ export function DiffPane({
     }
 
     sectionTop += (selectedFileIndex > 0 ? 1 : 0) + 1;
-    const anchorRowTop = sectionTop + estimateHunkAnchorRow(selectedFile, layout, showHunkHeaders, selectedHunkIndex);
-    const anchorColumn = noteAnchorColumn(selectedFile, layout, diffContentWidth, showLineNumbers, note);
-    const noteWidth = Math.min(Math.max(34, Math.floor(diffContentWidth * 0.42)), Math.max(12, diffContentWidth - 2));
+    const anchorRowTop =
+      sectionTop + estimateHunkAnchorRow(selectedFile, layout, showHunkHeaders, selectedHunkIndex);
+    const anchorColumn = noteAnchorColumn(
+      selectedFile,
+      layout,
+      diffContentWidth,
+      showLineNumbers,
+      note,
+    );
+    const noteWidth = Math.min(
+      Math.max(34, Math.floor(diffContentWidth * 0.42)),
+      Math.max(12, diffContentWidth - 2),
+    );
     const locationLabel = annotationLocationLabel(selectedFile, note.annotation);
     const popover = buildAgentPopoverContent({
       summary: note.annotation.summary,
@@ -222,7 +236,17 @@ export function DiffPane({
       top: placement.top,
       locationLabel,
     };
-  }, [diffContentWidth, estimatedBodyHeights, files, layout, selectedFileId, selectedHunkIndex, showHunkHeaders, showLineNumbers, visibleAgentNotesByFile]);
+  }, [
+    diffContentWidth,
+    estimatedBodyHeights,
+    files,
+    layout,
+    selectedFileId,
+    selectedHunkIndex,
+    showHunkHeaders,
+    showLineNumbers,
+    visibleAgentNotesByFile,
+  ]);
 
   const visibleViewportFileIds = useMemo(() => {
     const overscanRows = 8;
@@ -264,10 +288,14 @@ export function DiffPane({
     return next;
   }, [adjacentPrefetchFileIds, selectedFileId, visibleViewportFileIds, windowingEnabled]);
 
-  const selectedFileIndex = selectedFileId ? files.findIndex((file) => file.id === selectedFileId) : -1;
+  const selectedFileIndex = selectedFileId
+    ? files.findIndex((file) => file.id === selectedFileId)
+    : -1;
   const selectedFile = selectedFileIndex >= 0 ? files[selectedFileIndex] : undefined;
   const selectedAnchorId = selectedFile
-    ? (selectedFile.metadata.hunks[selectedHunkIndex] ? diffHunkId(selectedFile.id, selectedHunkIndex) : diffSectionId(selectedFile.id))
+    ? selectedFile.metadata.hunks[selectedHunkIndex]
+      ? diffHunkId(selectedFile.id, selectedHunkIndex)
+      : diffSectionId(selectedFile.id)
     : null;
   const selectedEstimatedScrollTop = useMemo(() => {
     if (!selectedFile || selectedFileIndex < 0) {
@@ -286,7 +314,15 @@ export function DiffPane({
     top += 1;
     top += estimateHunkAnchorRow(selectedFile, layout, showHunkHeaders, selectedHunkIndex);
     return top;
-  }, [estimatedBodyHeights, files, layout, selectedFile, selectedFileIndex, selectedHunkIndex, showHunkHeaders]);
+  }, [
+    estimatedBodyHeights,
+    files,
+    layout,
+    selectedFile,
+    selectedFileIndex,
+    selectedHunkIndex,
+    showHunkHeaders,
+  ]);
 
   useLayoutEffect(() => {
     if (!selectedAnchorId) {
@@ -317,7 +353,14 @@ export function DiffPane({
     return () => {
       timeouts.forEach((timeout) => clearTimeout(timeout));
     };
-  }, [scrollRef, scrollViewport.height, selectedAnchorId, selectedEstimatedScrollTop, visibleAgentNotesByFile.size, wrapLines]);
+  }, [
+    scrollRef,
+    scrollViewport.height,
+    selectedAnchorId,
+    selectedEstimatedScrollTop,
+    visibleAgentNotesByFile.size,
+    wrapLines,
+  ]);
 
   return (
     <box
@@ -346,7 +389,14 @@ export function DiffPane({
           verticalScrollbarOptions={{ visible: false }}
           horizontalScrollbarOptions={{ visible: false }}
         >
-          <box style={{ width: "100%", flexDirection: "column", position: "relative", overflow: "visible" }}>
+          <box
+            style={{
+              width: "100%",
+              flexDirection: "column",
+              position: "relative",
+              overflow: "visible",
+            }}
+          >
             {files.map((file, index) => {
               const shouldRenderSection = visibleWindowedFileIds?.has(file.id) ?? true;
               const shouldPrefetchVisibleHighlight =
@@ -364,9 +414,13 @@ export function DiffPane({
                   selected={file.id === selectedFileId}
                   selectedHunkIndex={file.id === selectedFileId ? selectedHunkIndex : -1}
                   shouldLoadHighlight={
-                    file.id === selectedFileId || adjacentPrefetchFileIds.has(file.id) || shouldPrefetchVisibleHighlight
+                    file.id === selectedFileId ||
+                    adjacentPrefetchFileIds.has(file.id) ||
+                    shouldPrefetchVisibleHighlight
                   }
-                  onHighlightReady={file.id === selectedFileId ? handleSelectedHighlightReady : undefined}
+                  onHighlightReady={
+                    file.id === selectedFileId ? handleSelectedHighlightReady : undefined
+                  }
                   separatorWidth={separatorWidth}
                   showSeparator={index > 0}
                   showLineNumbers={showLineNumbers}
@@ -394,7 +448,14 @@ export function DiffPane({
               );
             })}
             {selectedFileId && selectedOverlayNote ? (
-              <box style={{ position: "absolute", top: selectedOverlayNote.top, left: selectedOverlayNote.left, zIndex: 20 }}>
+              <box
+                style={{
+                  position: "absolute",
+                  top: selectedOverlayNote.top,
+                  left: selectedOverlayNote.left,
+                  zIndex: 20,
+                }}
+              >
                 <AgentCard
                   locationLabel={selectedOverlayNote.locationLabel}
                   noteCount={selectedOverlayNote.noteCount}

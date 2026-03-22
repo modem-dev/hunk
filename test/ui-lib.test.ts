@@ -1,8 +1,18 @@
 import { describe, expect, test } from "bun:test";
 import { parseDiffFromFile } from "@pierre/diffs";
 import type { DiffFile } from "../src/core/types";
-import { buildMenuSpecs, menuBoxHeight, menuWidth, nextMenuItemIndex, type MenuEntry } from "../src/ui/components/chrome/menu";
-import { buildAgentPopoverContent, resolveAgentPopoverPlacement, wrapText } from "../src/ui/lib/agentPopover";
+import {
+  buildMenuSpecs,
+  menuBoxHeight,
+  menuWidth,
+  nextMenuItemIndex,
+  type MenuEntry,
+} from "../src/ui/components/chrome/menu";
+import {
+  buildAgentPopoverContent,
+  resolveAgentPopoverPlacement,
+  wrapText,
+} from "../src/ui/lib/agentPopover";
 import { buildAppMenus } from "../src/ui/lib/appMenus";
 import { fitText, padText } from "../src/ui/lib/text";
 import { estimateDiffBodyRows } from "../src/ui/lib/sectionHeights";
@@ -40,7 +50,14 @@ describe("ui helpers", () => {
   test("buildMenuSpecs lays out the fixed top-level order", () => {
     const specs = buildMenuSpecs();
 
-    expect(specs.map((spec) => spec.id)).toEqual(["file", "view", "navigate", "theme", "agent", "help"]);
+    expect(specs.map((spec) => spec.id)).toEqual([
+      "file",
+      "view",
+      "navigate",
+      "theme",
+      "agent",
+      "help",
+    ]);
     expect(specs[0]).toMatchObject({ id: "file", left: 1, width: 6, label: "File" });
     expect(specs[1]?.left).toBe(specs[0]!.left + specs[0]!.width + 1);
   });
@@ -97,20 +114,22 @@ describe("ui helpers", () => {
 
     expect(
       menus.view
-        .filter((entry): entry is Extract<MenuEntry, { kind: "item" }> => entry.kind === "item" && Boolean(entry.checked))
+        .filter(
+          (entry): entry is Extract<MenuEntry, { kind: "item" }> =>
+            entry.kind === "item" && Boolean(entry.checked),
+        )
         .map((entry) => entry.label),
-    ).toEqual([
-      "Stacked view",
-      "Agent notes",
-      "Line numbers",
-      "Line wrapping",
-    ]);
+    ).toEqual(["Stacked view", "Agent notes", "Line numbers", "Line wrapping"]);
     expect(
       menus.theme
         .filter((entry): entry is Extract<MenuEntry, { kind: "item" }> => entry.kind === "item")
         .map((entry) => entry.label),
     ).toEqual(["Graphite", "Midnight", "Paper", "Ember"]);
-    expect(menus.theme.some((entry) => entry.kind === "item" && entry.label === "Graphite" && entry.checked)).toBe(true);
+    expect(
+      menus.theme.some(
+        (entry) => entry.kind === "item" && entry.label === "Graphite" && entry.checked,
+      ),
+    ).toBe(true);
   });
 
   test("fitText and padText clamp using the terminal fallback marker", () => {
@@ -174,8 +193,12 @@ describe("ui helpers", () => {
     const file = createDiffFile();
 
     expect(estimateDiffBodyRows(file, "split", true)).toBeGreaterThan(0);
-    expect(estimateDiffBodyRows(file, "stack", true)).toBeGreaterThan(estimateDiffBodyRows(file, "split", true));
-    expect(estimateDiffBodyRows(file, "split", false)).toBe(estimateDiffBodyRows(file, "split", true) - file.metadata.hunks.length);
+    expect(estimateDiffBodyRows(file, "stack", true)).toBeGreaterThan(
+      estimateDiffBodyRows(file, "split", true),
+    );
+    expect(estimateDiffBodyRows(file, "split", false)).toBe(
+      estimateDiffBodyRows(file, "split", true) - file.metadata.hunks.length,
+    );
   });
 
   test("resolveTheme falls back by requested id and renderer mode while lazily exposing syntax styles", () => {

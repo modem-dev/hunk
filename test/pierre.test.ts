@@ -1,7 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { parseDiffFromFile } from "@pierre/diffs";
 import type { DiffFile } from "../src/core/types";
-import { buildSplitRows, buildStackRows, loadHighlightedDiff, type DiffRow } from "../src/ui/diff/pierre";
+import {
+  buildSplitRows,
+  buildStackRows,
+  loadHighlightedDiff,
+  type DiffRow,
+} from "../src/ui/diff/pierre";
 import { resolveTheme } from "../src/ui/themes";
 
 function createDiffFile(): DiffFile {
@@ -13,7 +18,8 @@ function createDiffFile(): DiffFile {
     },
     {
       name: "example.ts",
-      contents: "export const answer = 42;\nexport const stable = true;\nexport const added = true;\n",
+      contents:
+        "export const answer = 42;\nexport const stable = true;\nexport const added = true;\n",
       cacheKey: "after",
     },
     { context: 3 },
@@ -74,7 +80,8 @@ describe("Pierre diff rows", () => {
     expect(rows.some((row) => row.type === "hunk-header")).toBe(true);
 
     const changedRow = rows.find(
-      (row) => row.type === "split-line" && row.left.kind === "deletion" && row.right.kind === "addition",
+      (row) =>
+        row.type === "split-line" && row.left.kind === "deletion" && row.right.kind === "addition",
     );
 
     expect(changedRow).toBeDefined();
@@ -87,7 +94,11 @@ describe("Pierre diff rows", () => {
     expect(changedRow.right.spans.some((span) => span.text.includes("42"))).toBe(true);
     expect(changedRow.left.spans.some((span) => span.bg === theme.removedContentBg)).toBe(true);
     expect(changedRow.right.spans.some((span) => span.bg === theme.addedContentBg)).toBe(true);
-    expect(changedRow.right.spans.some((span) => span.text.includes("export") && typeof span.fg === "string")).toBe(true);
+    expect(
+      changedRow.right.spans.some(
+        (span) => span.text.includes("export") && typeof span.fg === "string",
+      ),
+    ).toBe(true);
   });
 
   test("builds stacked rows with separate deletion and addition lines", () => {
@@ -95,8 +106,12 @@ describe("Pierre diff rows", () => {
     const theme = resolveTheme("paper", null);
     const rows = buildStackRows(file, null, theme);
 
-    const deletionRow = rows.find((row) => row.type === "stack-line" && row.cell.kind === "deletion");
-    const additionRow = rows.find((row) => row.type === "stack-line" && row.cell.kind === "addition");
+    const deletionRow = rows.find(
+      (row) => row.type === "stack-line" && row.cell.kind === "deletion",
+    );
+    const additionRow = rows.find(
+      (row) => row.type === "stack-line" && row.cell.kind === "addition",
+    );
 
     expect(deletionRow).toBeDefined();
     expect(additionRow).toBeDefined();
@@ -122,11 +137,16 @@ describe("Pierre diff rows", () => {
       const theme = resolveTheme(themeId, null);
       const highlighted = await loadHighlightedDiff(file, theme.appearance);
       const rows = buildStackRows(file, highlighted, theme).filter(
-        (row): row is Extract<DiffRow, { type: "stack-line" }> => row.type === "stack-line" && row.cell.kind === "addition",
+        (row): row is Extract<DiffRow, { type: "stack-line" }> =>
+          row.type === "stack-line" && row.cell.kind === "addition",
       );
 
-      const headingRow = rows.find((row) => row.cell.spans.some((span) => span.text.includes("Heading")));
-      const inlineCodeRow = rows.find((row) => row.cell.spans.some((span) => span.text.includes("inline code")));
+      const headingRow = rows.find((row) =>
+        row.cell.spans.some((span) => span.text.includes("Heading")),
+      );
+      const inlineCodeRow = rows.find((row) =>
+        row.cell.spans.some((span) => span.text.includes("inline code")),
+      );
 
       expect(headingRow).toBeDefined();
       expect(inlineCodeRow).toBeDefined();
@@ -135,10 +155,22 @@ describe("Pierre diff rows", () => {
         throw new Error("Expected highlighted markdown rows");
       }
 
-      expect(headingRow.cell.spans.some((span) => span.text.includes("Heading") && span.fg === theme.syntaxColors.keyword)).toBe(true);
-      expect(inlineCodeRow.cell.spans.some((span) => span.text.includes("inline code") && span.fg === theme.syntaxColors.string)).toBe(true);
-      expect(headingRow.cell.spans.some((span) => span.fg === "#ff6762" || span.fg === "#d52c36")).toBe(false);
-      expect(inlineCodeRow.cell.spans.some((span) => span.fg === "#5ecc71" || span.fg === "#199f43")).toBe(false);
+      expect(
+        headingRow.cell.spans.some(
+          (span) => span.text.includes("Heading") && span.fg === theme.syntaxColors.keyword,
+        ),
+      ).toBe(true);
+      expect(
+        inlineCodeRow.cell.spans.some(
+          (span) => span.text.includes("inline code") && span.fg === theme.syntaxColors.string,
+        ),
+      ).toBe(true);
+      expect(
+        headingRow.cell.spans.some((span) => span.fg === "#ff6762" || span.fg === "#d52c36"),
+      ).toBe(false);
+      expect(
+        inlineCodeRow.cell.spans.some((span) => span.fg === "#5ecc71" || span.fg === "#199f43"),
+      ).toBe(false);
     }
   });
 });

@@ -38,7 +38,10 @@ if (startupPlan.kind !== "app") {
 }
 
 const { bootstrap, cliInput, controllingTerminal } = startupPlan;
-const hostClient = new HunkHostClient(createSessionRegistration(bootstrap), createInitialSessionSnapshot(bootstrap));
+const hostClient = new HunkHostClient(
+  createSessionRegistration(bootstrap),
+  createInitialSessionSnapshot(bootstrap),
+);
 hostClient.start();
 
 const renderer = await createCliRenderer({
@@ -66,10 +69,4 @@ function shutdown() {
 }
 
 // The app owns the full alternate screen session from this point on.
-root.render(
-  <App
-    bootstrap={bootstrap}
-    hostClient={hostClient}
-    onQuit={shutdown}
-  />,
-);
+root.render(<App bootstrap={bootstrap} hostClient={hostClient} onQuit={shutdown} />);

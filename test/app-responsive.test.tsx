@@ -6,7 +6,13 @@ import type { AppBootstrap, DiffFile, LayoutMode } from "../src/core/types";
 
 const { App } = await import("../src/ui/App");
 
-function createDiffFile(id: string, path: string, before: string, after: string, withAgent = false): DiffFile {
+function createDiffFile(
+  id: string,
+  path: string,
+  before: string,
+  after: string,
+  withAgent = false,
+): DiffFile {
   const metadata = parseDiffFromFile(
     {
       name: path,
@@ -70,8 +76,20 @@ function createBootstrap(initialMode: LayoutMode = "auto", pager = false): AppBo
       summary: "Patch summary",
       agentSummary: "Changeset summary",
       files: [
-        createDiffFile("alpha", "alpha.ts", "export const alpha = 1;\n", "export const alpha = 2;\nexport const add = true;\n", true),
-        createDiffFile("beta", "beta.ts", "export const beta = 1;\n", "export const betaValue = 1;\n", false),
+        createDiffFile(
+          "alpha",
+          "alpha.ts",
+          "export const alpha = 1;\n",
+          "export const alpha = 2;\nexport const add = true;\n",
+          true,
+        ),
+        createDiffFile(
+          "beta",
+          "beta.ts",
+          "export const beta = 1;\n",
+          "export const betaValue = 1;\n",
+          false,
+        ),
       ],
     },
     initialMode,
@@ -188,7 +206,10 @@ describe("responsive shell", () => {
     const exitMock = mock(() => undefined as never);
     (process as typeof process & { exit: typeof exitMock }).exit = exitMock;
 
-    const setup = await testRender(<App bootstrap={createBootstrap()} />, { width: 240, height: 24 });
+    const setup = await testRender(<App bootstrap={createBootstrap()} />, {
+      width: 240,
+      height: 24,
+    });
 
     try {
       await act(async () => {
@@ -213,5 +234,4 @@ describe("responsive shell", () => {
       });
     }
   });
-
 });

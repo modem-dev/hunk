@@ -23,7 +23,12 @@ export function useHighlightedDiff({
 
   // Selected files load immediately; background prefetch can opt neighboring files in later.
   const pendingHighlight = useMemo(() => {
-    if (!shouldLoadHighlight || !file || !appearanceCacheKey || SHARED_HIGHLIGHTED_DIFF_CACHE.has(appearanceCacheKey)) {
+    if (
+      !shouldLoadHighlight ||
+      !file ||
+      !appearanceCacheKey ||
+      SHARED_HIGHLIGHTED_DIFF_CACHE.has(appearanceCacheKey)
+    ) {
       return null;
     }
 

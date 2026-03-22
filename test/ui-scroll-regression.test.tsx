@@ -9,7 +9,10 @@ mock.restore();
 const { App } = await import("../src/ui/App");
 
 function createScrollBootstrap(): AppBootstrap {
-  const before = Array.from({ length: 80 }, (_, index) => `line ${String(index + 1).padStart(2, "0")} old value\n`).join("");
+  const before = Array.from(
+    { length: 80 },
+    (_, index) => `line ${String(index + 1).padStart(2, "0")} old value\n`,
+  ).join("");
   const after = Array.from({ length: 80 }, (_, index) =>
     index === 35
       ? `line ${String(index + 1).padStart(2, "0")} new value with long long text abcdefghijklmnopqrstuvwxyz\n`
@@ -65,7 +68,10 @@ function createScrollBootstrap(): AppBootstrap {
 
 describe("UI scroll regression", () => {
   test("keeps split diff lines intact after a wheel scroll repaint", async () => {
-    const setup = await testRender(<App bootstrap={createScrollBootstrap()} />, { width: 160, height: 20 });
+    const setup = await testRender(<App bootstrap={createScrollBootstrap()} />, {
+      width: 160,
+      height: 20,
+    });
 
     try {
       await act(async () => {

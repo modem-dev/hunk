@@ -1,7 +1,12 @@
 import { resolveConfiguredCliInput } from "./config";
 import { loadAppBootstrap } from "./loaders";
 import { looksLikePatchInput } from "./pager";
-import { openControllingTerminal, resolveRuntimeCliInput, usesPipedPatchInput, type ControllingTerminal } from "./terminal";
+import {
+  openControllingTerminal,
+  resolveRuntimeCliInput,
+  usesPipedPatchInput,
+  type ControllingTerminal,
+} from "./terminal";
 import type { AppBootstrap, CliInput, ParsedCliInput, SessionCommandInput } from "./types";
 import { parseCli } from "./cli";
 
@@ -48,7 +53,8 @@ export async function prepareStartupPlan(
   const readStdinText = deps.readStdinText ?? (() => new Response(Bun.stdin.stream()).text());
   const looksLikePatchInputImpl = deps.looksLikePatchInputImpl ?? looksLikePatchInput;
   const resolveRuntimeCliInputImpl = deps.resolveRuntimeCliInputImpl ?? resolveRuntimeCliInput;
-  const resolveConfiguredCliInputImpl = deps.resolveConfiguredCliInputImpl ?? resolveConfiguredCliInput;
+  const resolveConfiguredCliInputImpl =
+    deps.resolveConfiguredCliInputImpl ?? resolveConfiguredCliInput;
   const loadAppBootstrapImpl = deps.loadAppBootstrapImpl ?? loadAppBootstrap;
   const usesPipedPatchInputImpl = deps.usesPipedPatchInputImpl ?? usesPipedPatchInput;
   const openControllingTerminalImpl = deps.openControllingTerminalImpl ?? openControllingTerminal;
@@ -100,7 +106,9 @@ export async function prepareStartupPlan(
   const configured = resolveConfiguredCliInputImpl(runtimeCliInput);
   const cliInput = configured.input;
   const bootstrap = await loadAppBootstrapImpl(cliInput);
-  const controllingTerminal = usesPipedPatchInputImpl(cliInput) ? openControllingTerminalImpl() : null;
+  const controllingTerminal = usesPipedPatchInputImpl(cliInput)
+    ? openControllingTerminalImpl()
+    : null;
 
   return {
     kind: "app",

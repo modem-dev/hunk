@@ -74,7 +74,8 @@ export function buildAgentPopoverContent({
   const summaryLines = wrapText(summary, innerWidth);
   const rationaleLines = rationale ? wrapText(rationale, innerWidth) : [];
   const footer = fitText(locationLabel, innerWidth);
-  const contentLineCount = 1 + summaryLines.length + (rationaleLines.length > 0 ? 1 + rationaleLines.length : 0) + 1 + 1;
+  const contentLineCount =
+    1 + summaryLines.length + (rationaleLines.length > 0 ? 1 + rationaleLines.length : 0) + 1 + 1;
 
   return {
     title: agentPopoverTitle(noteIndex, noteCount),

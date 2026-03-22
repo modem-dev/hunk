@@ -88,11 +88,16 @@ function frameHasHighlightedMarker(
 
     // Plain fallback rendering tends to collapse the whole code cell into one span,
     // while highlighted output keeps token-level segmentation around the marker.
-    return line.spans.some((span) => span.text.includes(marker) && span.text.trim().length < text.trim().length);
+    return line.spans.some(
+      (span) => span.text.includes(marker) && span.text.trim().length < text.trim().length,
+    );
   });
 }
 
-const setup = await testRender(React.createElement(App, { bootstrap: createBootstrap() }), { width: 240, height: 24 });
+const setup = await testRender(React.createElement(App, { bootstrap: createBootstrap() }), {
+  width: 240,
+  height: 24,
+});
 const start = performance.now();
 let iterations = 0;
 let selectedStartupMs = 0;

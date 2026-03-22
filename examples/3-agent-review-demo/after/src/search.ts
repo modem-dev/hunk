@@ -35,6 +35,9 @@ export function searchCommands(query: string, commands: Command[]) {
       return { command, score };
     })
     .filter((entry) => entry.score > 0)
-    .sort((left, right) => right.score - left.score || left.command.label.localeCompare(right.command.label))
+    .sort(
+      (left, right) =>
+        right.score - left.score || left.command.label.localeCompare(right.command.label),
+    )
     .map((entry) => entry.command);
 }

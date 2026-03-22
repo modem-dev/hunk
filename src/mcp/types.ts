@@ -135,7 +135,11 @@ export interface SelectedSessionContext {
   liveCommentCount: number;
 }
 
-export type SessionCommandResult = AppliedCommentResult | NavigatedSelectionResult | RemovedCommentResult | ClearedCommentsResult;
+export type SessionCommandResult =
+  | AppliedCommentResult
+  | NavigatedSelectionResult
+  | RemovedCommentResult
+  | ClearedCommentsResult;
 
 export type SessionClientMessage =
   | {

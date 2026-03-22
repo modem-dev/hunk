@@ -63,6 +63,7 @@ Use this when you already have a sidecar file for local review context. `.hunk/l
 ## TTY guidance
 
 For interactive verification:
+
 - prefer a real terminal or tmux pane
 - do not rely on redirected stdout captures for behavior verification
 - if testing local Hunk source changes, use `bun run src/main.tsx -- ...` instead of an installed `hunk` binary
