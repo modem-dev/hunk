@@ -45,14 +45,18 @@ Requirements:
 ```bash
 hunk           # show help
 hunk --version # print the installed version
+```
 
+### Working with Git
+
+```bash
 hunk diff         # review current repo changes
 hunk diff --staged
 hunk show         # review the latest commit
 hunk show HEAD~1  # review an earlier commit
 ```
 
-Open raw files or patches directly:
+### Working with raw files and patches
 
 ```bash
 hunk diff before.ts after.ts        # compare two files directly
