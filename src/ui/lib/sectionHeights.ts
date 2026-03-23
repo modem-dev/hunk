@@ -1,6 +1,8 @@
 import type { DiffFile, LayoutMode } from "../../core/types";
+import { measureAgentInlineNoteHeight } from "../components/panes/AgentInlineNote";
 import { buildSplitRows, buildStackRows } from "../diff/pierre";
 import { buildReviewRenderPlan, type PlannedReviewRow } from "../diff/reviewRenderPlan";
+import type { VisibleAgentNote } from "./agentAnnotations";
 import type { AppTheme } from "../themes";
 
 export interface DiffSectionMetrics {
@@ -8,11 +10,17 @@ export interface DiffSectionMetrics {
   hunkAnchorRows: Map<number, number>;
 }
 
+const NOTE_AWARE_SECTION_METRICS_CACHE = new WeakMap<
+  VisibleAgentNote[],
+  Map<string, DiffSectionMetrics>
+>();
+
 function buildBasePlannedRows(
   file: DiffFile,
   layout: Exclude<LayoutMode, "auto">,
   showHunkHeaders: boolean,
   theme: AppTheme,
+  visibleAgentNotes: VisibleAgentNote[],
 ) {
   const rows =
     layout === "split" ? buildSplitRows(file, null, theme) : buildStackRows(file, null, theme);
@@ -22,13 +30,27 @@ function buildBasePlannedRows(
     rows,
     selectedHunkIndex: -1,
     showHunkHeaders,
-    visibleAgentNotes: [],
+    visibleAgentNotes,
   });
 }
 
-function plannedRowHeight(row: PlannedReviewRow, showHunkHeaders: boolean) {
-  if (row.kind !== "diff-row") {
-    return 0;
+function plannedRowHeight(
+  row: PlannedReviewRow,
+  showHunkHeaders: boolean,
+  layout: Exclude<LayoutMode, "auto">,
+  width: number,
+) {
+  if (row.kind === "inline-note") {
+    return measureAgentInlineNoteHeight({
+      annotation: row.annotation,
+      anchorSide: row.anchorSide,
+      layout,
+      width,
+    });
+  }
+
+  if (row.kind === "note-guide-cap") {
+    return 1;
   }
 
   if (row.row.type === "hunk-header") {
@@ -47,6 +69,8 @@ export function measureDiffSectionMetrics(
   layout: Exclude<LayoutMode, "auto">,
   showHunkHeaders: boolean,
   theme: AppTheme,
+  visibleAgentNotes: VisibleAgentNote[] = [],
+  width = 0,
 ): DiffSectionMetrics {
   if (file.metadata.hunks.length === 0) {
     return {
@@ -55,7 +79,16 @@ export function measureDiffSectionMetrics(
     };
   }
 
-  const plannedRows = buildBasePlannedRows(file, layout, showHunkHeaders, theme);
+  const cacheKey = `${file.id}:${layout}:${showHunkHeaders ? 1 : 0}:${theme.id}:${width}`;
+  if (visibleAgentNotes.length > 0) {
+    const cachedByNotes = NOTE_AWARE_SECTION_METRICS_CACHE.get(visibleAgentNotes);
+    const cached = cachedByNotes?.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+  }
+
+  const plannedRows = buildBasePlannedRows(file, layout, showHunkHeaders, theme, visibleAgentNotes);
   const hunkAnchorRows = new Map<number, number>();
   let bodyHeight = 0;
 
@@ -64,13 +97,21 @@ export function measureDiffSectionMetrics(
       hunkAnchorRows.set(row.hunkIndex, bodyHeight);
     }
 
-    bodyHeight += plannedRowHeight(row, showHunkHeaders);
+    bodyHeight += plannedRowHeight(row, showHunkHeaders, layout, width);
   }
 
-  return {
+  const metrics = {
     bodyHeight,
     hunkAnchorRows,
   };
+
+  if (visibleAgentNotes.length > 0) {
+    const cachedByNotes = NOTE_AWARE_SECTION_METRICS_CACHE.get(visibleAgentNotes) ?? new Map();
+    cachedByNotes.set(cacheKey, metrics);
+    NOTE_AWARE_SECTION_METRICS_CACHE.set(visibleAgentNotes, cachedByNotes);
+  }
+
+  return metrics;
 }
 
 /** Estimate the number of diff-body rows for one file in the windowed path. */

@@ -249,6 +249,32 @@ describe("ui helpers", () => {
     expect(metrics.hunkAnchorRows.get(1)).toBeGreaterThan(metrics.hunkAnchorRows.get(0) ?? -1);
   });
 
+  test("measureDiffSectionMetrics includes visible inline note rows in split mode", () => {
+    const file = createDiffFile();
+    const theme = resolveTheme("midnight", null);
+    const baseMetrics = measureDiffSectionMetrics(file, "split", true, theme);
+    const noteMetrics = measureDiffSectionMetrics(
+      file,
+      "split",
+      true,
+      theme,
+      [
+        {
+          id: "annotation:example:0",
+          annotation: {
+            newRange: [1, 1],
+            summary: "Explain the changed line",
+            rationale: "Keep the inline note height in placeholder math.",
+          },
+        },
+      ],
+      120,
+    );
+
+    expect(noteMetrics.bodyHeight).toBeGreaterThan(baseMetrics.bodyHeight);
+    expect(noteMetrics.hunkAnchorRows.get(0)).toBe(baseMetrics.hunkAnchorRows.get(0));
+  });
+
   test("resolveTheme falls back by requested id and renderer mode while lazily exposing syntax styles", () => {
     const midnight = resolveTheme("midnight", null);
     const missingLight = resolveTheme("missing", "light");

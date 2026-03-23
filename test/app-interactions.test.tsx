@@ -377,7 +377,7 @@ describe("App interactions", () => {
     }
   });
 
-  test("a toggles notes for the whole review stream, not just the active hunk", async () => {
+  test("a shows notes that are visible in the current review viewport", async () => {
     const bootstrap = createBootstrap();
     bootstrap.changeset.files[1]!.agent = {
       path: "beta.ts",

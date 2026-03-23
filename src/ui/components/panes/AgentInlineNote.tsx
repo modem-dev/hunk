@@ -26,6 +26,42 @@ function splitColumnWidths(width: number) {
   return { leftWidth, rightWidth };
 }
 
+export function measureAgentInlineNoteHeight({
+  annotation,
+  anchorSide,
+  layout,
+  width,
+}: {
+  annotation: AgentAnnotation;
+  anchorSide?: "old" | "new";
+  layout: Exclude<LayoutMode, "auto">;
+  width: number;
+}) {
+  const splitWidths = splitColumnWidths(width);
+  const canDockRight = layout === "split" && anchorSide === "new" && width >= 84;
+  const canDockLeft = layout === "split" && anchorSide === "old" && width >= 84;
+  const preferredDockWidth = canDockRight
+    ? splitWidths.rightWidth
+    : canDockLeft
+      ? splitWidths.leftWidth
+      : Math.max(34, width - 4);
+  const boxWidth = clamp(preferredDockWidth, 28, Math.max(28, width - 4));
+  const innerWidth = Math.max(1, boxWidth - 2);
+  const bodyWidth = innerWidth;
+  const lines: AgentInlineNoteLine[] = [
+    ...wrapText(annotation.summary, bodyWidth).map((text) => ({ kind: "summary" as const, text })),
+    ...(annotation.rationale
+      ? wrapText(annotation.rationale, bodyWidth).map((text) => ({
+          kind: "rationale" as const,
+          text,
+        }))
+      : []),
+  ];
+
+  // top border + title row + body lines + bottom border + optional split-column guide row
+  return 3 + lines.length + (anchorSide && layout === "split" ? 1 : 0);
+}
+
 /** Render the note card itself before the start of an annotated range. */
 export function AgentInlineNote({
   annotation,

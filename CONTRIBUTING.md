@@ -57,6 +57,17 @@ bun run build:npm
 bun run check:pack
 ```
 
+Benchmark scripts live in [`benchmarks/`](benchmarks/README.md).
+
+Common runs:
+
+```bash
+bun run bench:bootstrap-load
+bun run bench:highlight-prefetch
+bun run bench:large-stream
+bun run bench:large-stream-profile
+```
+
 Build and smoke-test the prebuilt npm packages for the current host:
 
 ```bash

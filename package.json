@@ -55,9 +55,10 @@
     "smoke:prebuilt-install": "bun run ./scripts/smoke-prebuilt-install.ts",
     "publish:prebuilt:npm": "bun run ./scripts/publish-prebuilt-npm.ts",
     "prepack": "bun run build:npm",
-    "bench:bootstrap-load": "bun run test/bootstrap-load-benchmark.ts",
-    "bench:highlight-prefetch": "bun run test/adjacent-highlight-prefetch-benchmark.ts",
-    "bench:large-stream": "bun run test/large-stream-windowing-benchmark.ts"
+    "bench:bootstrap-load": "bun run benchmarks/bootstrap-load.ts",
+    "bench:highlight-prefetch": "bun run benchmarks/highlight-prefetch.ts",
+    "bench:large-stream": "bun run benchmarks/large-stream.ts",
+    "bench:large-stream-profile": "bun run benchmarks/large-stream-profile.ts"
   },
   "dependencies": {
     "@opentui/core": "^0.1.88",

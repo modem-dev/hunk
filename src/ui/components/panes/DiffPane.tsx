@@ -91,7 +91,7 @@ export function DiffPane({
     setPrefetchAnchorKey((current) => current ?? selectedHighlightKey);
   }, [selectedHighlightKey]);
 
-  const visibleAgentNotesByFile = useMemo(() => {
+  const allAgentNotesByFile = useMemo(() => {
     const next = new Map<string, VisibleAgentNote[]>();
 
     if (!showAgentNotes) {
@@ -116,9 +116,9 @@ export function DiffPane({
     return next;
   }, [files, showAgentNotes]);
 
-  // Keep exact row rendering for wrapped lines and visible notes; otherwise reserve
-  // offscreen section height and only materialize rows near the viewport.
-  const windowingEnabled = !wrapLines && visibleAgentNotesByFile.size === 0;
+  // Keep exact row rendering for wrapped lines and the selected file's visible notes;
+  // other files can still use placeholders and viewport windowing.
+  const windowingEnabled = !wrapLines;
   const [scrollViewport, setScrollViewport] = useState({ top: 0, height: 0 });
 
   useEffect(() => {
@@ -138,13 +138,13 @@ export function DiffPane({
     return () => clearInterval(interval);
   }, [scrollRef]);
 
-  const sectionMetrics = useMemo(
+  const baseSectionMetrics = useMemo(
     () => files.map((file) => measureDiffSectionMetrics(file, layout, showHunkHeaders, theme)),
     [files, layout, showHunkHeaders, theme],
   );
-  const estimatedBodyHeights = useMemo(
-    () => sectionMetrics.map((metrics) => metrics.bodyHeight),
-    [sectionMetrics],
+  const baseEstimatedBodyHeights = useMemo(
+    () => baseSectionMetrics.map((metrics) => metrics.bodyHeight),
+    [baseSectionMetrics],
   );
 
   const visibleViewportFileIds = useMemo(() => {
@@ -155,7 +155,7 @@ export function DiffPane({
     const next = new Set<string>();
 
     files.forEach((file, index) => {
-      const sectionHeight = (index > 0 ? 1 : 0) + 1 + (estimatedBodyHeights[index] ?? 0);
+      const sectionHeight = (index > 0 ? 1 : 0) + 1 + (baseEstimatedBodyHeights[index] ?? 0);
       const sectionStart = offsetY;
       const sectionEnd = sectionStart + sectionHeight;
 
@@ -167,7 +167,56 @@ export function DiffPane({
     });
 
     return next;
-  }, [estimatedBodyHeights, files, scrollViewport.height, scrollViewport.top]);
+  }, [baseEstimatedBodyHeights, files, scrollViewport.height, scrollViewport.top]);
+
+  const visibleAgentNotesByFile = useMemo(() => {
+    const next = new Map<string, VisibleAgentNote[]>();
+
+    if (!showAgentNotes) {
+      return next;
+    }
+
+    for (const fileId of visibleViewportFileIds) {
+      const visibleNotes = allAgentNotesByFile.get(fileId);
+      if (visibleNotes && visibleNotes.length > 0) {
+        next.set(fileId, visibleNotes);
+      }
+    }
+
+    return next;
+  }, [allAgentNotesByFile, showAgentNotes, visibleViewportFileIds]);
+
+  const sectionMetrics = useMemo(
+    () =>
+      files.map((file, index) => {
+        const visibleNotes = visibleAgentNotesByFile.get(file.id) ?? EMPTY_VISIBLE_AGENT_NOTES;
+        if (visibleNotes.length === 0) {
+          return baseSectionMetrics[index]!;
+        }
+
+        return measureDiffSectionMetrics(
+          file,
+          layout,
+          showHunkHeaders,
+          theme,
+          visibleNotes,
+          diffContentWidth,
+        );
+      }),
+    [
+      baseSectionMetrics,
+      diffContentWidth,
+      files,
+      layout,
+      showHunkHeaders,
+      theme,
+      visibleAgentNotesByFile,
+    ],
+  );
+  const estimatedBodyHeights = useMemo(
+    () => sectionMetrics.map((metrics) => metrics.bodyHeight),
+    [sectionMetrics],
+  );
 
   const visibleWindowedFileIds = useMemo(() => {
     if (!windowingEnabled) {

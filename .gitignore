@@ -40,3 +40,5 @@ tmp
 .hunk/latest.json
 .hunk/config.toml
 .pi/
+autoresearch.jsonl
+autoresearch.ideas.md
