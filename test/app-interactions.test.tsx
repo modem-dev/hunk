@@ -214,6 +214,14 @@ describe("App interactions", () => {
       expect(frame).toContain("Why alpha.ts changed");
 
       await act(async () => {
+        await setup.mockInput.typeText("a");
+      });
+      await flush(setup);
+
+      frame = setup.captureCharFrame();
+      expect(frame).not.toContain("Annotation for alpha.ts");
+
+      await act(async () => {
         await setup.mockInput.typeText("l");
       });
       await flush(setup);
@@ -335,6 +343,14 @@ describe("App interactions", () => {
       await flush(setup);
 
       let frame = setup.captureCharFrame();
+      if (!frame.includes("Focus files")) {
+        await act(async () => {
+          await setup.mockInput.pressKey("F10");
+        });
+        await flush(setup);
+        frame = setup.captureCharFrame();
+      }
+
       expect(frame).toContain("Focus files");
       expect(frame).toContain("Quit");
 
@@ -361,19 +377,25 @@ describe("App interactions", () => {
     }
   });
 
-  test("arrow keys keep the current file selected for agent notes", async () => {
-    const setup = await testRender(<App bootstrap={createBootstrap()} />, {
-      width: 240,
-      height: 24,
-    });
+  test("a toggles notes for the whole review stream, not just the active hunk", async () => {
+    const bootstrap = createBootstrap();
+    bootstrap.changeset.files[1]!.agent = {
+      path: "beta.ts",
+      summary: "beta.ts note",
+      annotations: [
+        {
+          newRange: [1, 1],
+          summary: "Annotation for beta.ts",
+          rationale: "Why beta.ts changed",
+        },
+      ],
+    };
+
+    const setup = await testRender(<App bootstrap={bootstrap} />, { width: 240, height: 32 });
 
     try {
       await flush(setup);
 
-      await act(async () => {
-        await setup.mockInput.pressArrow("down");
-      });
-      await flush(setup);
       await act(async () => {
         await setup.mockInput.typeText("a");
       });
@@ -382,6 +404,8 @@ describe("App interactions", () => {
       const frame = setup.captureCharFrame();
       expect(frame).toContain("Annotation for alpha.ts");
       expect(frame).toContain("Why alpha.ts changed");
+      expect(frame).toContain("Annotation for beta.ts");
+      expect(frame).toContain("Why beta.ts changed");
     } finally {
       await act(async () => {
         setup.renderer.destroy();

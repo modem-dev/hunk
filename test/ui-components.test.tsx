@@ -226,9 +226,7 @@ describe("UI components", () => {
     const theme = resolveTheme("midnight", null);
     const frame = await captureFrame(
       <DiffPane
-        activeAnnotations={[]}
         diffContentWidth={72}
-        dismissedAgentNoteIds={[]}
         files={bootstrap.changeset.files}
         headerLabelWidth={40}
         headerStatsWidth={16}
@@ -243,7 +241,6 @@ describe("UI components", () => {
         wrapLines={false}
         theme={theme}
         width={76}
-        onDismissAgentNote={() => {}}
         onOpenAgentNotesAtHunk={() => {}}
         onSelectFile={() => {}}
       />,
@@ -315,14 +312,26 @@ describe("UI components", () => {
     expect(lines[5]?.trimStart().startsWith("│")).toBe(true);
   });
 
-  test("DiffPane renders inline hunk notes beneath the anchored diff row", async () => {
+  test("DiffPane renders all visible hunk notes across the review stream", async () => {
     const bootstrap = createBootstrap();
+    bootstrap.changeset.files[1]!.agent = {
+      path: "beta.ts",
+      summary: "beta.ts note",
+      annotations: [
+        {
+          newRange: [1, 1],
+          summary: "Annotation for beta.ts",
+          rationale: "Why beta.ts changed",
+          tags: ["review"],
+          confidence: "high",
+        },
+      ],
+    };
+
     const theme = resolveTheme("midnight", null);
     const frame = await captureFrame(
       <DiffPane
-        activeAnnotations={bootstrap.changeset.files[0]?.agent?.annotations ?? []}
         diffContentWidth={88}
-        dismissedAgentNoteIds={[]}
         files={bootstrap.changeset.files}
         headerLabelWidth={48}
         headerStatsWidth={16}
@@ -337,12 +346,11 @@ describe("UI components", () => {
         wrapLines={false}
         theme={theme}
         width={92}
-        onDismissAgentNote={() => {}}
         onOpenAgentNotesAtHunk={() => {}}
         onSelectFile={() => {}}
       />,
       96,
-      18,
+      28,
     );
 
     expect(frame).toContain("AI note · ▶ new 2");
@@ -351,13 +359,15 @@ describe("UI components", () => {
     expect(frame.indexOf("AI note · ▶ new 2")).toBeLessThan(
       frame.indexOf("2 + export const add = true;"),
     );
+    expect(frame).toContain("AI note · ▶ new 1");
+    expect(frame).toContain("Annotation for beta.ts");
+    expect(frame).toContain("Why beta.ts changed");
     expect(frame).not.toContain("alpha.ts note");
     expect(frame).not.toContain("review");
     expect(frame).not.toContain("confidence");
-    expect(frame).toContain("[x]");
   });
 
-  test("DiffPane shows one inline note at a time when a hunk has multiple notes", async () => {
+  test("DiffPane shows all inline notes when a hunk has multiple notes", async () => {
     const bootstrap = createBootstrap();
     const theme = resolveTheme("midnight", null);
     const file = bootstrap.changeset.files[0]!;
@@ -379,9 +389,7 @@ describe("UI components", () => {
 
     const frame = await captureFrame(
       <DiffPane
-        activeAnnotations={file.agent.annotations}
         diffContentWidth={88}
-        dismissedAgentNoteIds={[]}
         files={bootstrap.changeset.files}
         headerLabelWidth={48}
         headerStatsWidth={16}
@@ -396,19 +404,19 @@ describe("UI components", () => {
         wrapLines={false}
         theme={theme}
         width={92}
-        onDismissAgentNote={() => {}}
         onOpenAgentNotesAtHunk={() => {}}
         onSelectFile={() => {}}
       />,
       96,
-      18,
+      24,
     );
 
     expect(frame).toContain("AI note 1/2");
+    expect(frame).toContain("AI note 2/2");
     expect(frame).toContain("First note");
     expect(frame).toContain("First rationale.");
-    expect(frame).not.toContain("Second note");
-    expect(frame).not.toContain("Second rationale.");
+    expect(frame).toContain("Second note");
+    expect(frame).toContain("Second rationale.");
   });
 
   test("MenuDropdown renders checked items and key hints", async () => {
@@ -507,9 +515,7 @@ describe("UI components", () => {
     const theme = resolveTheme("midnight", null);
     const frame = await captureFrame(
       <DiffPane
-        activeAnnotations={[]}
         diffContentWidth={72}
-        dismissedAgentNoteIds={[]}
         files={[]}
         headerLabelWidth={40}
         headerStatsWidth={16}
@@ -524,7 +530,6 @@ describe("UI components", () => {
         wrapLines={false}
         theme={theme}
         width={76}
-        onDismissAgentNote={() => {}}
         onOpenAgentNotesAtHunk={() => {}}
         onSelectFile={() => {}}
       />,
@@ -540,9 +545,7 @@ describe("UI components", () => {
     const theme = resolveTheme("midnight", null);
     const frame = await captureFrame(
       <DiffPane
-        activeAnnotations={[]}
         diffContentWidth={72}
-        dismissedAgentNoteIds={[]}
         files={bootstrap.changeset.files}
         headerLabelWidth={40}
         headerStatsWidth={16}
@@ -557,7 +560,6 @@ describe("UI components", () => {
         wrapLines={false}
         theme={theme}
         width={76}
-        onDismissAgentNote={() => {}}
         onOpenAgentNotesAtHunk={() => {}}
         onSelectFile={() => {}}
       />,
@@ -576,9 +578,7 @@ describe("UI components", () => {
     const theme = resolveTheme("midnight", null);
     const frame = await captureFrame(
       <DiffPane
-        activeAnnotations={[]}
         diffContentWidth={48}
-        dismissedAgentNoteIds={[]}
         files={bootstrap.changeset.files}
         headerLabelWidth={24}
         headerStatsWidth={12}
@@ -593,7 +593,6 @@ describe("UI components", () => {
         wrapLines={true}
         theme={theme}
         width={52}
-        onDismissAgentNote={() => {}}
         onOpenAgentNotesAtHunk={() => {}}
         onSelectFile={() => {}}
       />,
@@ -612,9 +611,7 @@ describe("UI components", () => {
     const theme = resolveTheme("midnight", null);
     const frame = await captureFrame(
       <DiffPane
-        activeAnnotations={[]}
         diffContentWidth={72}
-        dismissedAgentNoteIds={[]}
         files={bootstrap.changeset.files}
         headerLabelWidth={40}
         headerStatsWidth={16}
@@ -629,7 +626,6 @@ describe("UI components", () => {
         wrapLines={false}
         theme={theme}
         width={76}
-        onDismissAgentNote={() => {}}
         onOpenAgentNotesAtHunk={() => {}}
         onSelectFile={() => {}}
       />,

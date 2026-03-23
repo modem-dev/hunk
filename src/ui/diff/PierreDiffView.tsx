@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import type { DiffFile, LayoutMode } from "../../core/types";
 import { AgentInlineNote, AgentInlineNoteGuideCap } from "../components/panes/AgentInlineNote";
-import { type VisibleAgentNote } from "../lib/agentAnnotations";
+import type { VisibleAgentNote } from "../lib/agentAnnotations";
 import type { AppTheme } from "../themes";
 import { buildSplitRows, buildStackRows } from "./pierre";
 import { buildReviewRenderPlan } from "./reviewRenderPlan";
@@ -16,7 +16,6 @@ export function PierreDiffView({
   annotatedHunkIndices = EMPTY_ANNOTATED_HUNK_INDICES,
   file,
   layout,
-  onDismissAgentNote,
   onOpenAgentNotesAtHunk,
   onHighlightReady,
   showLineNumbers = true,
@@ -32,7 +31,6 @@ export function PierreDiffView({
   annotatedHunkIndices?: Set<number>;
   file: DiffFile | undefined;
   layout: Exclude<LayoutMode, "auto">;
-  onDismissAgentNote?: (id: string) => void;
   onOpenAgentNotesAtHunk?: (hunkIndex: number) => void;
   onHighlightReady?: () => void;
   showLineNumbers?: boolean;
@@ -67,12 +65,11 @@ export function PierreDiffView({
         ? buildReviewRenderPlan({
             fileId: file.id,
             rows,
-            selectedHunkIndex,
             showHunkHeaders,
             visibleAgentNotes,
           })
         : [],
-    [file, rows, selectedHunkIndex, showHunkHeaders, visibleAgentNotes],
+    [file, rows, showHunkHeaders, visibleAgentNotes],
   );
   const lineNumberDigits = useMemo(() => String(file ? findMaxLineNumber(file) : 1).length, [file]);
 
@@ -106,9 +103,6 @@ export function PierreDiffView({
               noteIndex={plannedRow.noteIndex}
               theme={theme}
               width={width}
-              onClose={
-                onDismissAgentNote ? () => onDismissAgentNote(plannedRow.annotationId) : undefined
-              }
             />
           );
         }

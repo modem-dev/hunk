@@ -33,7 +33,6 @@ import { FilesPane } from "./components/panes/FilesPane";
 import { PaneDivider } from "./components/panes/PaneDivider";
 import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
 import { useMenuController } from "./hooks/useMenuController";
-import { getSelectedAnnotations } from "./lib/agentAnnotations";
 import { buildAppMenus } from "./lib/appMenus";
 import { buildFileListEntry } from "./lib/files";
 import { buildHunkCursors, findNextHunkCursor } from "./lib/hunks";
@@ -94,7 +93,6 @@ function AppShell({
   const [filesPaneWidth, setFilesPaneWidth] = useState(34);
   const [resizeDragOriginX, setResizeDragOriginX] = useState<number | null>(null);
   const [resizeStartWidth, setResizeStartWidth] = useState<number | null>(null);
-  const [dismissedAgentNoteIds, setDismissedAgentNoteIds] = useState<string[]>([]);
   const [selectedFileId, setSelectedFileId] = useState(bootstrap.changeset.files[0]?.id ?? "");
   const [selectedHunkIndex, setSelectedHunkIndex] = useState(0);
   const deferredFilter = useDeferredValue(filter);
@@ -109,7 +107,6 @@ function AppShell({
   }, []);
 
   const openAgentNotes = useCallback(() => {
-    setDismissedAgentNoteIds([]);
     setShowAgentNotes(true);
   }, []);
 
@@ -176,8 +173,6 @@ function AppShell({
       (responsiveLayout.showFilesPane || (forceSidebarOpen && canForceShowFilesPane));
   const centerWidth = bodyWidth;
   const resolvedLayout = responsiveLayout.layout;
-  const currentHunk = selectedFile?.metadata.hunks[selectedHunkIndex];
-  const activeAnnotations = getSelectedAnnotations(selectedFile, currentHunk);
   const availableCenterWidth = showFilesPane
     ? Math.max(0, centerWidth - DIVIDER_WIDTH)
     : Math.max(0, centerWidth);
@@ -247,11 +242,6 @@ function AppShell({
     filesScrollRef.current?.scrollChildIntoView(fileRowId(selectedFile.id));
   }, [selectedFile]);
 
-  useEffect(() => {
-    // Dismissed notes are hunk-local, so reset them when the review focus moves.
-    setDismissedAgentNoteIds([]);
-  }, [selectedFile?.id, selectedHunkIndex]);
-
   /** Move the review focus across hunks in stream order. */
   const moveHunk = (delta: number) => {
     const nextCursor = findNextHunkCursor(hunkCursors, selectedFile?.id, selectedHunkIndex, delta);
@@ -287,20 +277,9 @@ function AppShell({
     jumpToFile(nextFile.id);
   };
 
-  /** Toggle the note layer while keeping dismissals scoped to the visible hunk. */
+  /** Toggle the global agent note layer on or off. */
   const toggleAgentNotes = () => {
-    if (showAgentNotes) {
-      setShowAgentNotes(false);
-      setDismissedAgentNoteIds([]);
-      return;
-    }
-
-    openAgentNotes();
-  };
-
-  /** Hide one visible note card until the selection changes. */
-  const dismissAgentNote = (noteId: string) => {
-    setDismissedAgentNoteIds((current) => [...current, noteId]);
+    setShowAgentNotes((current) => !current);
   };
 
   /** Toggle line-number gutters without changing the diff content itself. */
@@ -337,10 +316,9 @@ function AppShell({
     setShowHunkHeaders((current) => !current);
   };
 
-  /** Jump to the annotated hunk before opening the note layer. */
+  /** Jump to an annotated hunk without changing the global note visibility toggle. */
   const openAgentNotesAtHunk = (fileId: string, hunkIndex: number) => {
     jumpToFile(fileId, hunkIndex);
-    openAgentNotes();
   };
 
   /** Leave the app through the shell-owned shutdown path. */
@@ -784,9 +762,7 @@ function AppShell({
         ) : null}
 
         <DiffPane
-          activeAnnotations={activeAnnotations}
           diffContentWidth={diffContentWidth}
-          dismissedAgentNoteIds={dismissedAgentNoteIds}
           files={filteredFiles}
           pagerMode={pagerMode}
           headerLabelWidth={diffHeaderLabelWidth}
@@ -802,7 +778,6 @@ function AppShell({
           wrapLines={wrapLines}
           theme={activeTheme}
           width={diffPaneWidth}
-          onDismissAgentNote={dismissAgentNote}
           onOpenAgentNotesAtHunk={openAgentNotesAtHunk}
           onSelectFile={jumpToFile}
         />

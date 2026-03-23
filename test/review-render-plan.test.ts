@@ -271,7 +271,7 @@ describe("review render plan", () => {
     }
   });
 
-  test("keeps note placement scoped to the selected hunk in multi-hunk diffs", () => {
+  test("anchors notes on the matching hunk in multi-hunk diffs", () => {
     const theme = resolveTheme("midnight", null);
     const file = createDiffFile(
       "multi",
@@ -334,7 +334,7 @@ describe("review render plan", () => {
     }
   });
 
-  test("renders only the first visible note while preserving visible note count metadata", () => {
+  test("renders every visible note at its own anchor row", () => {
     const theme = resolveTheme("midnight", null);
     const file = createDiffFile(
       "counted",
@@ -371,9 +371,11 @@ describe("review render plan", () => {
         row.kind === "inline-note",
     );
 
-    expect(inlineNotes).toHaveLength(1);
-    expect(inlineNotes[0]?.annotationId).toBe("annotation:counted:0:0");
-    expect(inlineNotes[0]?.noteIndex).toBe(0);
-    expect(inlineNotes[0]?.noteCount).toBe(2);
+    expect(inlineNotes).toHaveLength(2);
+    expect(inlineNotes.map((row) => row.annotationId)).toEqual([
+      "annotation:counted:0:1",
+      "annotation:counted:0:0",
+    ]);
+    expect(inlineNotes.every((row) => row.noteIndex === 0 && row.noteCount === 1)).toBe(true);
   });
 });

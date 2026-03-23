@@ -24,7 +24,6 @@ interface DiffSectionProps {
   theme: AppTheme;
   visibleAgentNotes: VisibleAgentNote[];
   viewWidth: number;
-  onDismissAgentNote: (id: string) => void;
   onOpenAgentNotesAtHunk: (hunkIndex: number) => void;
   onSelect: () => void;
 }
@@ -47,7 +46,6 @@ function DiffSectionComponent({
   theme,
   visibleAgentNotes,
   viewWidth,
-  onDismissAgentNote,
   onOpenAgentNotesAtHunk,
   onSelect,
 }: DiffSectionProps) {
@@ -117,7 +115,6 @@ function DiffSectionComponent({
         width={viewWidth}
         annotatedHunkIndices={annotatedHunkIndices}
         visibleAgentNotes={visibleAgentNotes}
-        onDismissAgentNote={onDismissAgentNote}
         onOpenAgentNotesAtHunk={onOpenAgentNotesAtHunk}
         onHighlightReady={onHighlightReady}
         selectedHunkIndex={selectedHunkIndex}

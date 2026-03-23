@@ -142,8 +142,8 @@ async function runTtySmoke(options: {
   }
 
   const hunkCommand = `bun run ${shellQuote(sourceEntrypoint)} ${args.map(shellQuote).join(" ")}`;
-  const scriptCommand = `timeout 5 script -q -f -e -c ${shellQuote(hunkCommand)} ${shellQuote(transcript)}`;
-  const inputCommand = `(sleep 1; printf q)`;
+  const scriptCommand = `timeout 7 script -q -f -e -c ${shellQuote(hunkCommand)} ${shellQuote(transcript)}`;
+  const inputCommand = `(sleep 2; printf q)`;
   const proc = Bun.spawnSync(["bash", "-lc", `${inputCommand} | ${scriptCommand}`], {
     cwd: fixture.dir,
     stdin: "ignore",

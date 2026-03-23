@@ -4,14 +4,16 @@ import { diffHunkId } from "../lib/ids";
 import type { DiffRow } from "./pierre";
 
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
+const EMPTY_ROW_KEYS = new Set<string>();
 
 type DiffLineRow = Extract<DiffRow, { type: "split-line" | "stack-line" }>;
 
-interface PrimaryVisibleInlineNote {
+interface InlineVisibleNotePlacement {
   anchorKey: string;
   anchorSide?: "old" | "new";
-  guidedRowKeys: Set<string>;
   endGuideAfterKey?: string;
+  guidedRowKeys: Set<string>;
+  hunkIndex: number;
   note: VisibleAgentNote;
   noteCount: number;
   noteIndex: number;
@@ -46,12 +48,8 @@ export type PlannedReviewRow =
       side: "old" | "new";
     };
 
-function hunkRows(rows: DiffRow[], hunkIndex: number) {
-  return rows.filter((row) => row.hunkIndex === hunkIndex);
-}
-
-function hunkLineRows(rows: DiffRow[], hunkIndex: number) {
-  return hunkRows(rows, hunkIndex).filter(
+function lineRows(rows: DiffRow[]) {
+  return rows.filter(
     (row): row is DiffLineRow => row.type === "split-line" || row.type === "stack-line",
   );
 }
@@ -104,79 +102,95 @@ function rowOverlapsAnnotation(row: DiffLineRow, annotation: AgentAnnotation) {
 
 /**
  * Resolve the rendered diff row before which the inline note should appear.
- * Range-less notes intentionally anchor beside the first code row in the hunk,
- * not above the hunk header metadata.
+ * Range-less notes intentionally anchor beside the first code row in the file,
+ * not above hunk header metadata.
  */
-function findInlineNoteAnchorRow(
-  rows: DiffRow[],
-  annotation: AgentAnnotation,
-  selectedHunkIndex: number,
-) {
-  const selectedHunkRows = hunkRows(rows, selectedHunkIndex);
-  const lineRows = hunkLineRows(rows, selectedHunkIndex);
-  const headerRow = selectedHunkRows.find((row) => row.type === "hunk-header");
+function findInlineNoteAnchorRow(rows: DiffRow[], annotation: AgentAnnotation) {
+  const fileLineRows = lineRows(rows);
+  const headerRow = rows.find((row) => row.type === "hunk-header");
 
-  return lineRows.find((row) => rowMatchesNote(row, annotation)) ?? lineRows[0] ?? headerRow;
-}
-
-/**
- * The render plan shows at most one inline note at a time.
- * The first entry in visibleAgentNotes is the primary visible note, while
- * noteIndex/noteCount preserve its position within the current visible list.
- */
-function selectPrimaryVisibleNote(visibleAgentNotes: VisibleAgentNote[]) {
-  if (visibleAgentNotes.length === 0) {
-    return null;
-  }
-
-  return {
-    note: visibleAgentNotes[0]!,
-    noteIndex: 0,
-    noteCount: visibleAgentNotes.length,
-  };
-}
-
-/** Return the primary visible note, plus the diff rows that should show its guide rail. */
-function buildPrimaryVisibleInlineNote(
-  rows: DiffRow[],
-  visibleAgentNotes: VisibleAgentNote[],
-  selectedHunkIndex: number,
-) {
-  if (selectedHunkIndex < 0) {
-    return null;
-  }
-
-  const selectedNote = selectPrimaryVisibleNote(visibleAgentNotes);
-  if (!selectedNote) {
-    return null;
-  }
-
-  const anchorRow = findInlineNoteAnchorRow(rows, selectedNote.note.annotation, selectedHunkIndex);
-  if (!anchorRow) {
-    return null;
-  }
-
-  const selectedHunkLineRows = hunkLineRows(rows, selectedHunkIndex);
-  const anchorSide = annotationAnchor(selectedNote.note.annotation)?.side;
-  const coveredRows = selectedHunkLineRows.filter((row) =>
-    rowOverlapsAnnotation(row, selectedNote.note.annotation),
+  return (
+    fileLineRows.find((row) => rowMatchesNote(row, annotation)) ?? fileLineRows[0] ?? headerRow
   );
-  const fallbackGuideRow =
-    anchorSide && (anchorRow.type === "split-line" || anchorRow.type === "stack-line")
-      ? anchorRow
-      : undefined;
-  const guideRows =
-    coveredRows.length > 0 ? coveredRows : fallbackGuideRow ? [fallbackGuideRow] : [];
+}
 
-  return {
-    anchorKey: anchorRow.key,
-    anchorSide,
-    guidedRowKeys: new Set(guideRows.map((row) => row.key)),
-    endGuideAfterKey: guideRows.at(-1)?.key,
-    note: selectedNote.note,
-    noteIndex: selectedNote.noteIndex,
-    noteCount: selectedNote.noteCount,
-  } satisfies PrimaryVisibleInlineNote;
+function buildInlineVisibleNotePlacements(rows: DiffRow[], visibleAgentNotes: VisibleAgentNote[]) {
+  const fileLineRows = lineRows(rows);
+  const placementsByAnchor = new Map<string, InlineVisibleNotePlacement[]>();
+
+  for (const note of visibleAgentNotes) {
+    const anchorRow = findInlineNoteAnchorRow(rows, note.annotation);
+    if (!anchorRow) {
+      continue;
+    }
+
+    const anchorSide = annotationAnchor(note.annotation)?.side;
+    const coveredRows = fileLineRows.filter((row) => rowOverlapsAnnotation(row, note.annotation));
+    const fallbackGuideRow = anchorSide ? anchorRow : undefined;
+    const guideRows =
+      coveredRows.length > 0 ? coveredRows : fallbackGuideRow ? [fallbackGuideRow] : [];
+    const anchorPlacements = placementsByAnchor.get(anchorRow.key) ?? [];
+
+    anchorPlacements.push({
+      anchorKey: anchorRow.key,
+      anchorSide,
+      endGuideAfterKey: guideRows.at(-1)?.key,
+      guidedRowKeys:
+        guideRows.length > 0 ? new Set(guideRows.map((row) => row.key)) : EMPTY_ROW_KEYS,
+      hunkIndex: anchorRow.hunkIndex,
+      note,
+      noteCount: 1,
+      noteIndex: 0,
+    });
+    placementsByAnchor.set(anchorRow.key, anchorPlacements);
+  }
+
+  for (const placements of placementsByAnchor.values()) {
+    placements.forEach((placement, index) => {
+      placement.noteIndex = index;
+      placement.noteCount = placements.length;
+    });
+  }
+
+  return placementsByAnchor;
+}
+
+function buildNoteGuideSideByRowKey(placementsByAnchor: Map<string, InlineVisibleNotePlacement[]>) {
+  const guideSideByRowKey = new Map<string, "old" | "new">();
+
+  for (const placements of placementsByAnchor.values()) {
+    for (const placement of placements) {
+      if (!placement.anchorSide) {
+        continue;
+      }
+
+      for (const rowKey of placement.guidedRowKeys) {
+        if (!guideSideByRowKey.has(rowKey)) {
+          guideSideByRowKey.set(rowKey, placement.anchorSide);
+        }
+      }
+    }
+  }
+
+  return guideSideByRowKey;
+}
+
+function buildGuideCapsByRowKey(placementsByAnchor: Map<string, InlineVisibleNotePlacement[]>) {
+  const guideCapsByRowKey = new Map<string, Set<"old" | "new">>();
+
+  for (const placements of placementsByAnchor.values()) {
+    for (const placement of placements) {
+      if (!placement.anchorSide || !placement.endGuideAfterKey) {
+        continue;
+      }
+
+      const rowCaps = guideCapsByRowKey.get(placement.endGuideAfterKey) ?? new Set<"old" | "new">();
+      rowCaps.add(placement.anchorSide);
+      guideCapsByRowKey.set(placement.endGuideAfterKey, rowCaps);
+    }
+  }
+
+  return guideCapsByRowKey;
 }
 
 function rowCanAnchorHunk(row: DiffRow, showHunkHeaders: boolean) {
@@ -189,27 +203,25 @@ function rowCanAnchorHunk(row: DiffRow, showHunkHeaders: boolean) {
 
 /**
  * Build the explicit presentational row plan for one file diff body.
- * The plan always preserves diff-row order and may insert one inline note plus
- * one trailing guide cap for the primary visible note.
+ * The plan always preserves diff-row order and may insert inline notes plus
+ * trailing guide caps for every visible note anchored in this file.
  */
 export function buildReviewRenderPlan({
   fileId,
   rows,
-  selectedHunkIndex,
   showHunkHeaders,
   visibleAgentNotes = EMPTY_VISIBLE_AGENT_NOTES,
+  selectedHunkIndex: _selectedHunkIndex,
 }: {
   fileId: string;
   rows: DiffRow[];
-  selectedHunkIndex: number;
   showHunkHeaders: boolean;
   visibleAgentNotes?: VisibleAgentNote[];
+  selectedHunkIndex?: number;
 }) {
-  const primaryVisibleNote = buildPrimaryVisibleInlineNote(
-    rows,
-    visibleAgentNotes,
-    selectedHunkIndex,
-  );
+  const placementsByAnchor = buildInlineVisibleNotePlacements(rows, visibleAgentNotes);
+  const noteGuideSideByRowKey = buildNoteGuideSideByRowKey(placementsByAnchor);
+  const guideCapsByRowKey = buildGuideCapsByRowKey(placementsByAnchor);
   const plannedRows: PlannedReviewRow[] = [];
   const anchoredHunks = new Set<number>();
 
@@ -222,19 +234,20 @@ export function buildReviewRenderPlan({
       anchoredHunks.add(row.hunkIndex);
     }
 
-    if (primaryVisibleNote?.anchorKey === row.key) {
+    const anchoredNotes = placementsByAnchor.get(row.key) ?? [];
+    anchoredNotes.forEach((placement) => {
       plannedRows.push({
         kind: "inline-note",
-        key: `inline-note:${primaryVisibleNote.note.id}:${row.key}`,
+        key: `inline-note:${placement.note.id}:${row.key}:${placement.noteIndex}`,
         fileId,
-        hunkIndex: row.hunkIndex,
-        annotationId: primaryVisibleNote.note.id,
-        annotation: primaryVisibleNote.note.annotation,
-        anchorSide: primaryVisibleNote.anchorSide,
-        noteCount: primaryVisibleNote.noteCount,
-        noteIndex: primaryVisibleNote.noteIndex,
+        hunkIndex: placement.hunkIndex,
+        annotationId: placement.note.id,
+        annotation: placement.note.annotation,
+        anchorSide: placement.anchorSide,
+        noteCount: placement.noteCount,
+        noteIndex: placement.noteIndex,
       });
-    }
+    });
 
     plannedRows.push({
       kind: "diff-row",
@@ -243,18 +256,19 @@ export function buildReviewRenderPlan({
       hunkIndex: row.hunkIndex,
       row,
       anchorId,
-      noteGuideSide: primaryVisibleNote?.guidedRowKeys.has(row.key)
-        ? primaryVisibleNote.anchorSide
-        : undefined,
+      noteGuideSide: noteGuideSideByRowKey.get(row.key),
     });
 
-    if (primaryVisibleNote?.anchorSide && primaryVisibleNote.endGuideAfterKey === row.key) {
-      plannedRows.push({
-        kind: "note-guide-cap",
-        key: `note-guide-cap:${primaryVisibleNote.note.id}:${row.key}`,
-        fileId,
-        hunkIndex: row.hunkIndex,
-        side: primaryVisibleNote.anchorSide,
+    const guideCaps = guideCapsByRowKey.get(row.key);
+    if (guideCaps) {
+      Array.from(guideCaps).forEach((side) => {
+        plannedRows.push({
+          kind: "note-guide-cap",
+          key: `note-guide-cap:${row.key}:${side}`,
+          fileId,
+          hunkIndex: row.hunkIndex,
+          side,
+        });
       });
     }
   }
