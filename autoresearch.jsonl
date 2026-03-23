@@ -1,0 +1,1 @@
+{"type":"config","name":"Optimize note-enabled large split stream scroll cost","metricName":"note_scroll_ticks_ms","metricUnit":"ms","bestDirection":"lower"}
