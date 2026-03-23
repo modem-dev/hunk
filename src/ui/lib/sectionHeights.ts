@@ -1,83 +1,86 @@
-import type { FileDiffMetadata } from "@pierre/diffs";
 import type { DiffFile, LayoutMode } from "../../core/types";
+import { buildSplitRows, buildStackRows } from "../diff/pierre";
+import { buildReviewRenderPlan, type PlannedReviewRow } from "../diff/reviewRenderPlan";
+import type { AppTheme } from "../themes";
 
-/** Count hidden unchanged lines after the final visible hunk when Pierre omits them. */
-function trailingCollapsedLines(metadata: FileDiffMetadata) {
-  const lastHunk = metadata.hunks.at(-1);
-  if (!lastHunk || metadata.isPartial) {
-    return 0;
-  }
-
-  const additionRemaining =
-    metadata.additionLines.length - (lastHunk.additionLineIndex + lastHunk.additionCount);
-  const deletionRemaining =
-    metadata.deletionLines.length - (lastHunk.deletionLineIndex + lastHunk.deletionCount);
-
-  if (additionRemaining !== deletionRemaining) {
-    return 0;
-  }
-
-  return Math.max(additionRemaining, 0);
+export interface DiffSectionMetrics {
+  bodyHeight: number;
+  hunkAnchorRows: Map<number, number>;
 }
 
-/** Count render rows for one hunk when wrapping and note cards are off. */
-function estimateHunkRows(
+function buildBasePlannedRows(
   file: DiffFile,
   layout: Exclude<LayoutMode, "auto">,
   showHunkHeaders: boolean,
-  hunkIndex: number,
+  theme: AppTheme,
 ) {
-  const hunk = file.metadata.hunks[hunkIndex];
-  if (!hunk) {
+  const rows =
+    layout === "split" ? buildSplitRows(file, null, theme) : buildStackRows(file, null, theme);
+
+  return buildReviewRenderPlan({
+    fileId: file.id,
+    rows,
+    selectedHunkIndex: -1,
+    showHunkHeaders,
+    visibleAgentNotes: [],
+  });
+}
+
+function plannedRowHeight(row: PlannedReviewRow, showHunkHeaders: boolean) {
+  if (row.kind !== "diff-row") {
     return 0;
   }
 
-  let rows = 0;
-
-  if (hunk.collapsedBefore > 0) {
-    rows += 1;
+  if (row.row.type === "hunk-header") {
+    return showHunkHeaders ? 1 : 0;
   }
 
-  if (showHunkHeaders) {
-    rows += 1;
-  }
-
-  for (const content of hunk.hunkContent) {
-    if (content.type === "context") {
-      rows += content.lines;
-      continue;
-    }
-
-    rows +=
-      layout === "split"
-        ? Math.max(content.deletions, content.additions)
-        : content.deletions + content.additions;
-  }
-
-  return rows;
+  return 1;
 }
 
-/** Estimate the number of diff-body rows for one file when wrapping and note cards are off. */
+/**
+ * Measure one file section from the same render plan used by PierreDiffView.
+ * This drives the no-wrap/no-note windowing path, where every visible planned row is one terminal row.
+ */
+export function measureDiffSectionMetrics(
+  file: DiffFile,
+  layout: Exclude<LayoutMode, "auto">,
+  showHunkHeaders: boolean,
+  theme: AppTheme,
+): DiffSectionMetrics {
+  if (file.metadata.hunks.length === 0) {
+    return {
+      bodyHeight: 1,
+      hunkAnchorRows: new Map(),
+    };
+  }
+
+  const plannedRows = buildBasePlannedRows(file, layout, showHunkHeaders, theme);
+  const hunkAnchorRows = new Map<number, number>();
+  let bodyHeight = 0;
+
+  for (const row of plannedRows) {
+    if (row.kind === "diff-row" && row.anchorId && !hunkAnchorRows.has(row.hunkIndex)) {
+      hunkAnchorRows.set(row.hunkIndex, bodyHeight);
+    }
+
+    bodyHeight += plannedRowHeight(row, showHunkHeaders);
+  }
+
+  return {
+    bodyHeight,
+    hunkAnchorRows,
+  };
+}
+
+/** Estimate the number of diff-body rows for one file in the windowed path. */
 export function estimateDiffBodyRows(
   file: DiffFile,
   layout: Exclude<LayoutMode, "auto">,
   showHunkHeaders: boolean,
+  theme: AppTheme,
 ) {
-  if (file.metadata.hunks.length === 0) {
-    return 1;
-  }
-
-  let rows = 0;
-
-  for (const [hunkIndex] of file.metadata.hunks.entries()) {
-    rows += estimateHunkRows(file, layout, showHunkHeaders, hunkIndex);
-  }
-
-  if (trailingCollapsedLines(file.metadata) > 0) {
-    rows += 1;
-  }
-
-  return rows;
+  return measureDiffSectionMetrics(file, layout, showHunkHeaders, theme).bodyHeight;
 }
 
 /** Estimate the body-row offset for the anchor that should represent the selected hunk. */
@@ -86,22 +89,16 @@ export function estimateHunkAnchorRow(
   layout: Exclude<LayoutMode, "auto">,
   showHunkHeaders: boolean,
   hunkIndex: number,
+  theme: AppTheme,
 ) {
   if (file.metadata.hunks.length === 0) {
     return 0;
   }
 
   const clampedHunkIndex = Math.max(0, Math.min(hunkIndex, file.metadata.hunks.length - 1));
-  let rows = 0;
-
-  for (let index = 0; index < clampedHunkIndex; index += 1) {
-    rows += estimateHunkRows(file, layout, showHunkHeaders, index);
-  }
-
-  const selectedHunk = file.metadata.hunks[clampedHunkIndex]!;
-  if (selectedHunk.collapsedBefore > 0) {
-    rows += 1;
-  }
-
-  return rows;
+  return (
+    measureDiffSectionMetrics(file, layout, showHunkHeaders, theme).hunkAnchorRows.get(
+      clampedHunkIndex,
+    ) ?? 0
+  );
 }

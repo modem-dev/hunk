@@ -15,20 +15,27 @@ import {
 } from "../src/ui/lib/agentPopover";
 import { buildAppMenus } from "../src/ui/lib/appMenus";
 import { fitText, padText } from "../src/ui/lib/text";
-import { estimateDiffBodyRows } from "../src/ui/lib/sectionHeights";
+import { estimateDiffBodyRows, measureDiffSectionMetrics } from "../src/ui/lib/sectionHeights";
 import { resizeSidebarWidth } from "../src/ui/lib/sidebar";
 import { resolveTheme } from "../src/ui/themes";
 
-function createDiffFile(): DiffFile {
+function lines(...values: string[]) {
+  return `${values.join("\n")}\n`;
+}
+
+function createDiffFile(
+  before = "const alpha = 1;\nconst beta = 2;\nconst gamma = 3;\nconst stable = true;\n",
+  after = "const alpha = 10;\nconst beta = 2;\nconst gamma = 30;\nconst stable = true;\n",
+): DiffFile {
   const metadata = parseDiffFromFile(
     {
       name: "example.ts",
-      contents: "const alpha = 1;\nconst beta = 2;\nconst gamma = 3;\nconst stable = true;\n",
+      contents: before,
       cacheKey: "before",
     },
     {
       name: "example.ts",
-      contents: "const alpha = 10;\nconst beta = 2;\nconst gamma = 30;\nconst stable = true;\n",
+      contents: after,
       cacheKey: "after",
     },
     { context: 0 },
@@ -189,16 +196,57 @@ describe("ui helpers", () => {
     expect(resizeSidebarWidth(34, 33, 120, 22, 80)).toBe(80);
   });
 
-  test("estimateDiffBodyRows matches split and stack row counts for hidden-context diffs", async () => {
+  test("estimateDiffBodyRows matches split and stack row counts from the render plan", async () => {
     const file = createDiffFile();
+    const theme = resolveTheme("midnight", null);
 
-    expect(estimateDiffBodyRows(file, "split", true)).toBeGreaterThan(0);
-    expect(estimateDiffBodyRows(file, "stack", true)).toBeGreaterThan(
-      estimateDiffBodyRows(file, "split", true),
+    expect(estimateDiffBodyRows(file, "split", true, theme)).toBeGreaterThan(0);
+    expect(estimateDiffBodyRows(file, "stack", true, theme)).toBeGreaterThan(
+      estimateDiffBodyRows(file, "split", true, theme),
     );
-    expect(estimateDiffBodyRows(file, "split", false)).toBe(
-      estimateDiffBodyRows(file, "split", true) - file.metadata.hunks.length,
+    expect(estimateDiffBodyRows(file, "split", false, theme)).toBe(
+      estimateDiffBodyRows(file, "split", true, theme) - file.metadata.hunks.length,
     );
+  });
+
+  test("measureDiffSectionMetrics tracks hidden-header anchor rows across multiple hunks", () => {
+    const file = createDiffFile(
+      lines(
+        "const line1 = 1;",
+        "const line2 = 2;",
+        "const line3 = 3;",
+        "const line4 = 4;",
+        "const line5 = 5;",
+        "const line6 = 6;",
+        "const line7 = 7;",
+        "const line8 = 8;",
+        "const line9 = 9;",
+        "const line10 = 10;",
+        "const line11 = 11;",
+        "const line12 = 12;",
+      ),
+      lines(
+        "const line1 = 1;",
+        "const line2 = 200;",
+        "const line3 = 3;",
+        "const line4 = 4;",
+        "const line5 = 5;",
+        "const line6 = 6;",
+        "const line7 = 7;",
+        "const line8 = 8;",
+        "const line9 = 9;",
+        "const line10 = 10;",
+        "const line11 = 1100;",
+        "const line12 = 12;",
+      ),
+    );
+    const theme = resolveTheme("midnight", null);
+    const metrics = measureDiffSectionMetrics(file, "split", false, theme);
+
+    expect(metrics.bodyHeight).toBeGreaterThan(0);
+    expect(metrics.hunkAnchorRows.get(0)).toBe(1);
+    expect(metrics.hunkAnchorRows.get(1)).toBe(3);
+    expect(metrics.hunkAnchorRows.get(1)).toBeGreaterThan(metrics.hunkAnchorRows.get(0) ?? -1);
   });
 
   test("resolveTheme falls back by requested id and renderer mode while lazily exposing syntax styles", () => {

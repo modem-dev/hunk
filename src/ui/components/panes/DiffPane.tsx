@@ -2,7 +2,7 @@ import type { ScrollBoxRenderable } from "@opentui/core";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState, type RefObject } from "react";
 import type { AgentAnnotation, DiffFile, LayoutMode } from "../../../core/types";
 import type { VisibleAgentNote } from "../../lib/agentAnnotations";
-import { estimateDiffBodyRows, estimateHunkAnchorRow } from "../../lib/sectionHeights";
+import { measureDiffSectionMetrics } from "../../lib/sectionHeights";
 import { diffHunkId, diffSectionId } from "../../lib/ids";
 import type { AppTheme } from "../../themes";
 import { DiffSection } from "./DiffSection";
@@ -142,9 +142,13 @@ export function DiffPane({
     return () => clearInterval(interval);
   }, [scrollRef]);
 
+  const sectionMetrics = useMemo(
+    () => files.map((file) => measureDiffSectionMetrics(file, layout, showHunkHeaders, theme)),
+    [files, layout, showHunkHeaders, theme],
+  );
   const estimatedBodyHeights = useMemo(
-    () => files.map((file) => estimateDiffBodyRows(file, layout, showHunkHeaders)),
-    [files, layout, showHunkHeaders],
+    () => sectionMetrics.map((metrics) => metrics.bodyHeight),
+    [sectionMetrics],
   );
 
   const visibleViewportFileIds = useMemo(() => {
@@ -211,17 +215,17 @@ export function DiffPane({
     }
 
     top += 1;
-    top += estimateHunkAnchorRow(selectedFile, layout, showHunkHeaders, selectedHunkIndex);
+
+    if (selectedFile.metadata.hunks.length > 0) {
+      const clampedHunkIndex = Math.max(
+        0,
+        Math.min(selectedHunkIndex, selectedFile.metadata.hunks.length - 1),
+      );
+      top += sectionMetrics[selectedFileIndex]?.hunkAnchorRows.get(clampedHunkIndex) ?? 0;
+    }
+
     return top;
-  }, [
-    estimatedBodyHeights,
-    files,
-    layout,
-    selectedFile,
-    selectedFileIndex,
-    selectedHunkIndex,
-    showHunkHeaders,
-  ]);
+  }, [estimatedBodyHeights, sectionMetrics, selectedFile, selectedFileIndex, selectedHunkIndex]);
 
   useLayoutEffect(() => {
     if (!selectedAnchorId) {
