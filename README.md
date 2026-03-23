@@ -98,30 +98,19 @@ Ready-to-run demo diffs live in [`examples/`](examples/README.md).
 
 Each example includes the exact command to run from the repository root.
 
-## Pi integration
+## Agent skill
 
-Hunk ships a bundled Pi skill named `hunk-review`.
+Hunk ships a bundled agent skill named `hunk-review` in `skills/hunk-review/SKILL.md`.
 
-Use it from a local checkout:
+It is written as a self-contained skill for skill-aware coding agents. The skill teaches an agent to:
 
-```bash
-pi install /path/to/hunk
-# or rely on Pi's project/package discovery while working inside the repo
-```
+- briefly explain what Hunk is
+- prefer `hunk session ...` when a live Hunk review window already exists
+- inspect current review focus before navigating blindly
+- use `hunk session reload` to swap what an existing live session is showing
+- leave concise inline review comments tied to real diff lines
 
-Or install it from the published package:
-
-```bash
-pi install npm:hunkdiff
-```
-
-Then load it in Pi with:
-
-```bash
-/skill:hunk-review
-```
-
-The skill explains what Hunk is and how to use `hunk session ...` for live code review.
+If your coding agent supports packaged or repo-local skills, point it at this repository or copy the `skills/hunk-review/` directory into that agent's skill search path.
 
 ## Config
 
@@ -143,8 +132,9 @@ agent_notes = false
 ## Advanced workflows
 
 - `hunk diff --agent-context <file>` loads inline agent rationale from a JSON sidecar
-- `hunk mcp serve` runs the local Hunk session daemon and websocket broker
-  - normal Hunk sessions auto-start/register with it when MCP is enabled
+- `hunk mcp serve` runs the local Hunk session daemon and websocket broker for manual startup or debugging
+  - normal Hunk sessions auto-start/register with it by default
+  - coding agents should usually interact through `hunk session ...`, not by managing the daemon directly
   - Hunk keeps the daemon loopback-only by default
   - if you intentionally need remote access, set `HUNK_MCP_UNSAFE_ALLOW_REMOTE=1` and choose a non-loopback `HUNK_MCP_HOST`
 
@@ -162,7 +152,7 @@ hunk session reload --repo . -- diff
 hunk session reload --repo . -- show HEAD~1 -- README.md
 hunk session comment add --repo . --file README.md --new-line 103 --summary "Frame this as MCP-first"
 hunk session comment list --repo .
-hunk session comment rm --repo . mcp:1234
+hunk session comment rm --repo . <comment-id>
 hunk session comment clear --repo . --file README.md --yes
 ```
 

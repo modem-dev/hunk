@@ -1,18 +1,16 @@
 ---
 name: hunk-review
-description: Use when the task involves Hunk review sessions. Helps Pi briefly explain what Hunk is, prefer live Hunk session CLI inspection over shell parsing, inspect current review focus, navigate hunks, and leave inline review comments.
+description: Use when the task involves Hunk review sessions. Helps a coding agent explain what Hunk is, prefer live Hunk session CLI inspection over shell parsing, inspect current review focus, navigate or reload live sessions, and leave inline review comments.
 compatibility: Requires Hunk from this repo or the published hunkdiff package. Works best with a real TTY for interactive review.
 ---
 
 # Hunk Review
 
-Use this skill when working with Hunk itself or when the user wants a code-review workflow centered on Hunk.
+Use this skill when working with Hunk itself or when the user wants an interactive review workflow centered on Hunk.
 
-When this skill activates, start by briefly explaining what Hunk is in plain language before jumping into session-control details.
+Start by briefly explaining Hunk in plain language: it is a review-first terminal diff viewer for agent-authored changesets.
 
-## What Hunk is
-
-Hunk is a review-first terminal diff viewer for agent-authored changesets.
+## Core model
 
 Keep these product rules in mind:
 
@@ -22,82 +20,87 @@ Keep these product rules in mind:
 - `[` and `]` navigate hunks across the full review stream
 - agent notes belong beside the code they explain
 
-## Default rule: prefer live session CLI review
+## Default rule
 
-If a live Hunk session already exists, prefer `hunk session ...` over launching new shell commands that scrape terminal output.
+If a live Hunk session already exists, prefer `hunk session ...` over scraping terminal output or opening another review window.
 
-The local Hunk daemon is loopback-only by default and brokers commands to one or more live Hunk sessions.
+Hunk uses one local-only loopback session daemon to broker commands to live sessions. Normal Hunk sessions register automatically. `hunk mcp serve` is for manual startup or debugging only. `HUNK_MCP_DISABLE=1` disables registration for one session.
 
-Important behavior:
+## Primary goal
 
-- normal Hunk sessions auto-start and register with the daemon when MCP is enabled
-- `hunk mcp serve` exists for manual startup or debugging, but it is not the default review path
-- `HUNK_MCP_DISABLE=1` disables daemon registration for a session
-- one daemon can serve many Hunk sessions
+Use Hunk as a shared explanation surface for the code author, not just as a private inspection tool for the agent.
 
-## Recommended review loop
+- change what is visible with `hunk session reload -- <hunk command>` when a different diff, commit, or path-limited view would better explain the code
+- move to the relevant location with `hunk session navigate`
+- add concise inline annotations with `hunk session comment add`
+- prefer comments that help the author understand intent, structure, and why a hunk matters
+
+## Review loop
 
 Use this flow by default:
 
 1. `hunk session list`
 2. `hunk session context`
-3. `hunk session navigate` only if the current focus is wrong
-4. `hunk session comment add`
-
-Use `hunk session get` only when you need broader session metadata.
+3. `hunk session navigate` if the current focus is wrong
+4. `hunk session reload -- <hunk command>` if the same live window should show different contents
+5. `hunk session comment add`
 
 Guidelines:
 
 - if multiple sessions are live, pass `sessionId` explicitly
-- prefer `hunk session context` before navigating blindly
-- use `hunk session navigate` for hunk-level movement; do not invent extra remote-control behavior
-- use `hunk session comment add` for concise inline review notes tied to real diff lines
-- prefer visible, review-oriented actions over shell parsing of rendered terminal output
+- use `hunk session get` only when you need broad session metadata
+- use `navigate` to move within the current changeset
+- use `reload` to swap the loaded changeset in place
+- use concise inline comments tied to real diff lines
+- keep the visible review state aligned with the explanation you are giving
 
-For concrete review flow examples, read [references/mcp-review.md](references/mcp-review.md).
+## Common commands
 
-## Start Hunk only when needed
-
-If no live Hunk session exists and the user wants an interactive review UI, launch Hunk itself with a minimal command and let it auto-start/register with the daemon.
-
-After launching Hunk, go back to `hunk session list` rather than suggesting manual daemon management.
-
-Inside the Hunk repo, prefer the source entrypoint:
+If operating inside the Hunk source repo, prefer the source entrypoint:
 
 ```bash
 bun run src/main.tsx -- diff
 bun run src/main.tsx -- show HEAD~1
 ```
 
-Outside the repo, prefer the installed CLI:
+Otherwise use the installed CLI:
 
 ```bash
 hunk diff
 hunk show
 ```
 
-For more CLI entrypoints, read [references/commands.md](references/commands.md).
+Useful live-session commands:
 
-## Repo-specific review notes
+```bash
+hunk session list
+hunk session context --repo .
+hunk session navigate --repo . --file README.md --hunk 2
+hunk session reload --repo . -- show HEAD~1 -- README.md
+hunk session comment add --repo . --file README.md --new-line 103 --summary "Tighten this wording"
+```
 
-When using Hunk for agent changes:
+Use `hunk diff --agent-context path/to/context.json` when a local rationale sidecar already exists.
 
-- prefer a real TTY or tmux session over redirected stdout captures
-- if a repo already has a fresh local sidecar, you can load it with `hunk diff --agent-context <file>`
-- treat `.hunk/latest.json` as an optional local convention, not required repo hygiene
-- if new files should show up before commit, use `git add -N <path>`
+## When no live session exists
 
-## What this skill should steer Pi toward
+If the user wants interactive review and no live session exists, launch Hunk with a minimal review command, then go back to `hunk session list`.
 
-Prefer a skill over a prompt dump:
+Prefer a real terminal or tmux pane over redirected stdout captures.
 
-- keep always-loaded context small
-- load the full Hunk workflow only when the task is actually about review
-- use Hunk's session CLI rather than a separate agent-facing MCP tool surface
+## Repo-specific notes
 
-Prefer review-oriented actions:
+When using Hunk for agent changes in this repo:
 
-- inspect the current live diff session
-- move to the right hunk only when needed
-- attach concise inline review comments
-- keep agent rationale spatially tied to the code
+- prefer a real TTY or tmux session for verification
+- `.hunk/latest.json` is optional local context, not required repo hygiene
+- if new files should appear in review before commit, use `git add -N <path>`
+- if testing local source changes, prefer `bun run src/main.tsx -- ...` over an installed binary
+
+## What this skill should steer toward
+
+- prefer visible, review-oriented actions over shell parsing of rendered terminal output
+- use Hunk to help the code author understand the code, not just to help yourself inspect it
+- inspect the current live diff session before navigating blindly
+- reload the current live session instead of opening a second review window when the user wants to swap contents
+- keep comments concise and spatially tied to the code they describe
