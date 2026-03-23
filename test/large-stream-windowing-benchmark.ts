@@ -1,95 +1,99 @@
-// Measure first-frame cost for a very large multi-file review stream.
+// Benchmark split-mode startup and scroll behaviour on very large review streams,
+// including note-enabled cases that disable the placeholder windowing path.
 import { performance } from "perf_hooks";
 import React from "react";
 import { testRender } from "@opentui/react/test-utils";
-import { parseDiffFromFile } from "@pierre/diffs";
 import { act } from "react";
 import { App } from "../src/ui/App";
-import type { AppBootstrap, DiffFile } from "../src/core/types";
+import {
+  createLargeSplitStreamBootstrap,
+  DEFAULT_FILE_COUNT,
+  DEFAULT_LINES_PER_FILE,
+  DEFAULT_NOTES_PER_FILE,
+} from "./large-split-stream-fixture";
 
-const FILE_COUNT = 180;
-const LINES_PER_FILE = 120;
-
-function createDiffFile(index: number): DiffFile {
-  const path = `src/stream${index}.ts`;
-  const before = Array.from({ length: LINES_PER_FILE }, (_, lineIndex) => {
-    const line = lineIndex + 1;
-    return `export function stream${index}_${line}(value: number) { return value + ${line}; }\n`;
-  }).join("");
-
-  const after = Array.from({ length: LINES_PER_FILE }, (_, lineIndex) => {
-    const line = lineIndex + 1;
-    if (lineIndex >= 36 && lineIndex < 84) {
-      return `export function stream${index}_${line}(value: number) { return value * ${line} + ${index}; }\n`;
-    }
-
-    return `export function stream${index}_${line}(value: number) { return value + ${line}; }\n`;
-  }).join("");
-
-  const metadata = parseDiffFromFile(
-    {
-      name: path,
-      contents: before,
-      cacheKey: `stream:${index}:before`,
-    },
-    {
-      name: path,
-      contents: after,
-      cacheKey: `stream:${index}:after`,
-    },
-    { context: 3 },
-    true,
-  );
-
-  return {
-    id: `stream:${index}`,
-    path,
-    patch: "",
-    language: "typescript",
-    stats: { additions: 48, deletions: 48 },
-    metadata,
-    agent: null,
-  };
-}
-
-function createBootstrap(): AppBootstrap {
-  return {
-    input: {
-      kind: "git",
-      staged: false,
-      options: {
-        mode: "auto",
-      },
-    },
-    changeset: {
-      id: "changeset:large-stream-windowing",
-      sourceLabel: "repo",
-      title: "repo working tree",
-      files: Array.from({ length: FILE_COUNT }, (_, index) => createDiffFile(index + 1)),
-    },
-    initialMode: "split",
-    initialTheme: "midnight",
-  };
-}
-
-const start = performance.now();
-const setup = await testRender(React.createElement(App, { bootstrap: createBootstrap() }), {
+const VIEWPORT = {
   width: 240,
   height: 28,
-});
+} as const;
+const SCROLL_TICKS = 18;
+const SCROLL_TARGET = {
+  x: 170,
+  y: 12,
+} as const;
 
-try {
-  await act(async () => {
-    await setup.renderOnce();
-    await Bun.sleep(0);
-  });
+type BenchmarkRenderer = Awaited<ReturnType<typeof testRender>>;
 
-  const firstFrameMs = performance.now() - start;
-  console.log(`METRIC first_frame_ms=${firstFrameMs.toFixed(2)}`);
-  console.log(`METRIC files=${FILE_COUNT}`);
-  console.log(`METRIC lines_per_file=${LINES_PER_FILE}`);
-} finally {
+async function renderPass(setup: BenchmarkRenderer, passes = 1) {
+  for (let index = 0; index < passes; index += 1) {
+    await act(async () => {
+      await setup.renderOnce();
+      await Bun.sleep(0);
+    });
+  }
+}
+
+async function destroyRenderer(setup: BenchmarkRenderer) {
   await act(async () => {
     setup.renderer.destroy();
   });
 }
+
+async function measureFirstFrameMs(notesPerFile: number) {
+  const setup = await testRender(
+    React.createElement(App, {
+      bootstrap: createLargeSplitStreamBootstrap({ notesPerFile }),
+    }),
+    VIEWPORT,
+  );
+  const start = performance.now();
+
+  try {
+    await renderPass(setup);
+    return performance.now() - start;
+  } finally {
+    await destroyRenderer(setup);
+  }
+}
+
+async function measureScrollTicksMs(notesPerFile: number) {
+  const setup = await testRender(
+    React.createElement(App, {
+      bootstrap: createLargeSplitStreamBootstrap({ notesPerFile }),
+    }),
+    VIEWPORT,
+  );
+
+  try {
+    await renderPass(setup, 2);
+    const start = performance.now();
+
+    for (let index = 0; index < SCROLL_TICKS; index += 1) {
+      await act(async () => {
+        await setup.mockMouse.scroll(SCROLL_TARGET.x, SCROLL_TARGET.y, "down");
+        await setup.renderOnce();
+        await Bun.sleep(0);
+      });
+    }
+
+    return performance.now() - start;
+  } finally {
+    await destroyRenderer(setup);
+  }
+}
+
+const coldFirstFrameMs = await measureFirstFrameMs(0);
+const warmFirstFrameMs = await measureFirstFrameMs(0);
+const noteFirstFrameMs = await measureFirstFrameMs(DEFAULT_NOTES_PER_FILE);
+const windowedScrollMs = await measureScrollTicksMs(0);
+const noteScrollMs = await measureScrollTicksMs(DEFAULT_NOTES_PER_FILE);
+
+console.log(`METRIC cold_first_frame_ms=${coldFirstFrameMs.toFixed(2)}`);
+console.log(`METRIC warm_first_frame_ms=${warmFirstFrameMs.toFixed(2)}`);
+console.log(`METRIC note_first_frame_ms=${noteFirstFrameMs.toFixed(2)}`);
+console.log(`METRIC windowed_scroll_ticks_ms=${windowedScrollMs.toFixed(2)}`);
+console.log(`METRIC note_scroll_ticks_ms=${noteScrollMs.toFixed(2)}`);
+console.log(`METRIC scroll_ticks=${SCROLL_TICKS}`);
+console.log(`METRIC files=${DEFAULT_FILE_COUNT}`);
+console.log(`METRIC lines_per_file=${DEFAULT_LINES_PER_FILE}`);
+console.log(`METRIC notes_per_file=${DEFAULT_NOTES_PER_FILE}`);

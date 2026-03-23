@@ -57,7 +57,8 @@
     "prepack": "bun run build:npm",
     "bench:bootstrap-load": "bun run test/bootstrap-load-benchmark.ts",
     "bench:highlight-prefetch": "bun run test/adjacent-highlight-prefetch-benchmark.ts",
-    "bench:large-stream": "bun run test/large-stream-windowing-benchmark.ts"
+    "bench:large-stream": "bun run test/large-stream-windowing-benchmark.ts",
+    "bench:large-stream-profile": "bun run test/large-stream-profile.ts"
   },
   "dependencies": {
     "@opentui/core": "^0.1.88",

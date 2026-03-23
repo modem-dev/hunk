@@ -57,6 +57,13 @@ bun run build:npm
 bun run check:pack
 ```
 
+Benchmark large split-diff review streams:
+
+```bash
+bun run bench:large-stream
+bun run bench:large-stream-profile
+```
+
 Build and smoke-test the prebuilt npm packages for the current host:
 
 ```bash
