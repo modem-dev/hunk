@@ -1,4 +1,6 @@
+import { randomUUID } from "node:crypto";
 import { HUNK_SESSION_SOCKET_PATH, resolveHunkMcpConfig } from "./config";
+import { clearDaemonRecord, writeDaemonRecord } from "./daemonRecord";
 import { HunkDaemonState } from "./daemonState";
 import type { SessionClientMessage } from "./types";
 import {
@@ -158,6 +160,8 @@ export function serveHunkMcpServer() {
   const config = resolveHunkMcpConfig();
   const state = new HunkDaemonState();
   const startedAt = Date.now();
+  const startedAtIso = new Date(startedAt).toISOString();
+  const instanceId = randomUUID();
   let shuttingDown = false;
 
   const sweepTimer = setInterval(() => {
@@ -178,7 +182,8 @@ export function serveHunkMcpServer() {
           return Response.json({
             ok: true,
             pid: process.pid,
-            startedAt: new Date(startedAt).toISOString(),
+            startedAt: startedAtIso,
+            instanceId,
             uptimeMs: Date.now() - startedAt,
             sessionApi: `${config.httpOrigin}${HUNK_SESSION_API_PATH}`,
             sessionCapabilities: `${config.httpOrigin}${HUNK_SESSION_CAPABILITIES_PATH}`,
@@ -252,6 +257,15 @@ export function serveHunkMcpServer() {
     throw formatDaemonServeError(error, config.host, config.port);
   }
 
+  writeDaemonRecord(
+    {
+      pid: process.pid,
+      startedAt: startedAtIso,
+      instanceId,
+    },
+    config,
+  );
+
   const shutdown = () => {
     if (shuttingDown) {
       return;
@@ -262,6 +276,7 @@ export function serveHunkMcpServer() {
     process.off("SIGINT", shutdown);
     process.off("SIGTERM", shutdown);
 
+    clearDaemonRecord({ pid: process.pid, instanceId }, config);
     state.shutdown();
     server.stop(true);
   };

@@ -67,7 +67,7 @@ describe("Hunk session daemon server", () => {
     }
   });
 
-  test("exposes session capabilities and rejects the old MCP tool endpoint", async () => {
+  test("exposes health + session capabilities and rejects the old MCP tool endpoint", async () => {
     const port = await reserveLoopbackPort();
     process.env.HUNK_MCP_HOST = "127.0.0.1";
     process.env.HUNK_MCP_PORT = String(port);
@@ -75,6 +75,15 @@ describe("Hunk session daemon server", () => {
     const server = serveHunkMcpServer();
 
     try {
+      const health = await fetch(`http://127.0.0.1:${port}/health`);
+      expect(health.status).toBe(200);
+      await expect(health.json()).resolves.toMatchObject({
+        ok: true,
+        pid: process.pid,
+        startedAt: expect.any(String),
+        instanceId: expect.any(String),
+      });
+
       const capabilities = await fetch(`http://127.0.0.1:${port}/session-api/capabilities`);
       expect(capabilities.status).toBe(200);
       await expect(capabilities.json()).resolves.toMatchObject({

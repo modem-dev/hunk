@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type {
   SessionCommandInput,
@@ -17,6 +18,7 @@ import {
   waitForHunkDaemonHealth,
 } from "../mcp/daemonLauncher";
 import { resolveHunkMcpConfig } from "../mcp/config";
+import { readDaemonRecord } from "../mcp/daemonRecord";
 import type {
   AppliedCommentResult,
   ClearedCommentsResult,
@@ -214,6 +216,14 @@ class HttpHunkDaemonCliClient implements HunkDaemonCliClient {
   }
 }
 
+interface HunkDaemonHealth {
+  ok: boolean;
+  pid?: number;
+  startedAt?: string;
+  instanceId?: string;
+  sessions?: number;
+}
+
 async function readDaemonHealth() {
   const config = resolveHunkMcpConfig();
 
@@ -223,14 +233,52 @@ async function readDaemonHealth() {
       return null;
     }
 
-    return (await response.json()) as {
-      ok: boolean;
-      pid?: number;
-      sessions?: number;
-    };
+    return (await response.json()) as HunkDaemonHealth;
   } catch {
     return null;
   }
+}
+
+function looksLikeHunkDaemonProcess(pid: number) {
+  try {
+    const tokens = readFileSync(`/proc/${pid}/cmdline`, "utf8").split("\0").filter(Boolean);
+    if (tokens.length < 2 || tokens.at(-2) !== "mcp" || tokens.at(-1) !== "serve") {
+      return false;
+    }
+
+    return tokens.some(
+      (token) =>
+        /(^|[\\/])hunk(?:\.[cm]?js)?$/i.test(token) || /(^|[\\/])src[\\/]main\.tsx$/i.test(token),
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isTrustedManagedDaemon(health: HunkDaemonHealth | null) {
+  if (!health || typeof health.pid !== "number") {
+    return null;
+  }
+
+  const record = readDaemonRecord();
+  if (
+    record &&
+    record.pid === health.pid &&
+    record.startedAt === health.startedAt &&
+    record.instanceId === health.instanceId
+  ) {
+    return record;
+  }
+
+  if (looksLikeHunkDaemonProcess(health.pid)) {
+    return {
+      pid: health.pid,
+      startedAt: health.startedAt ?? "",
+      instanceId: health.instanceId ?? "legacy-daemon",
+    };
+  }
+
+  return null;
 }
 
 async function waitForDaemonShutdown(timeoutMs = 3_000) {
@@ -290,16 +338,16 @@ async function restartDaemonForMissingAction(
   selector?: SessionSelectorInput,
 ) {
   const health = await readDaemonHealth();
-  const pid = health?.pid;
+  const trustedDaemon = isTrustedManagedDaemon(health);
   const hadSessions = (health?.sessions ?? 0) > 0;
-  if (!pid || pid === process.pid) {
+  if (!trustedDaemon || trustedDaemon.pid === process.pid) {
     throw new Error(
-      `The running Hunk session daemon is missing required support for ${action}. ` +
+      `The running Hunk session daemon is missing required support for ${action}, but Hunk could not verify that it owns the process on this port. ` +
         `Restart Hunk so it can launch a fresh daemon from the current source tree.`,
     );
   }
 
-  process.kill(pid, "SIGTERM");
+  process.kill(trustedDaemon.pid, "SIGTERM");
 
   const shutDown = await waitForDaemonShutdown();
   if (!shutDown) {
