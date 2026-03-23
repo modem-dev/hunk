@@ -1,7 +1,7 @@
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState, type RefObject } from "react";
 import type { DiffFile, LayoutMode } from "../../../core/types";
-import type { VisibleAgentNote } from "../../lib/agentAnnotations";
+import { getSelectedAnnotations, type VisibleAgentNote } from "../../lib/agentAnnotations";
 import { measureDiffSectionMetrics } from "../../lib/sectionHeights";
 import { diffHunkId, diffSectionId } from "../../lib/ids";
 import type { AppTheme } from "../../themes";
@@ -94,31 +94,35 @@ export function DiffPane({
   const visibleAgentNotesByFile = useMemo(() => {
     const next = new Map<string, VisibleAgentNote[]>();
 
-    if (!showAgentNotes) {
+    if (!showAgentNotes || !selectedFileId) {
       return next;
     }
 
-    files.forEach((file) => {
-      const annotations = file.agent?.annotations ?? [];
-      if (annotations.length === 0) {
-        return;
-      }
+    const selectedFile = files.find((file) => file.id === selectedFileId);
+    if (!selectedFile) {
+      return next;
+    }
 
-      next.set(
-        file.id,
-        annotations.map((annotation, index) => ({
-          id: `annotation:${file.id}:${annotation.id ?? index}`,
-          annotation,
-        })),
-      );
-    });
+    const selectedHunk = selectedFile.metadata.hunks[selectedHunkIndex];
+    const annotations = getSelectedAnnotations(selectedFile, selectedHunk);
+    if (annotations.length === 0) {
+      return next;
+    }
+
+    next.set(
+      selectedFile.id,
+      annotations.map((annotation, index) => ({
+        id: `annotation:${selectedFile.id}:${annotation.id ?? index}`,
+        annotation,
+      })),
+    );
 
     return next;
-  }, [files, showAgentNotes]);
+  }, [files, selectedFileId, selectedHunkIndex, showAgentNotes]);
 
-  // Keep exact row rendering for wrapped lines and visible notes; otherwise reserve
-  // offscreen section height and only materialize rows near the viewport.
-  const windowingEnabled = !wrapLines && visibleAgentNotesByFile.size === 0;
+  // Keep exact row rendering for wrapped lines and the selected file's visible notes;
+  // other files can still use placeholders and viewport windowing.
+  const windowingEnabled = !wrapLines;
   const [scrollViewport, setScrollViewport] = useState({ top: 0, height: 0 });
 
   useEffect(() => {

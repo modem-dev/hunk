@@ -377,7 +377,7 @@ describe("App interactions", () => {
     }
   });
 
-  test("a toggles notes for the whole review stream, not just the active hunk", async () => {
+  test("a shows notes for the selected hunk and moves them with review focus", async () => {
     const bootstrap = createBootstrap();
     bootstrap.changeset.files[1]!.agent = {
       path: "beta.ts",
@@ -401,9 +401,20 @@ describe("App interactions", () => {
       });
       await flush(setup);
 
-      const frame = setup.captureCharFrame();
+      let frame = setup.captureCharFrame();
       expect(frame).toContain("Annotation for alpha.ts");
       expect(frame).toContain("Why alpha.ts changed");
+      expect(frame).not.toContain("Annotation for beta.ts");
+      expect(frame).not.toContain("Why beta.ts changed");
+
+      await act(async () => {
+        await setup.mockInput.typeText("]");
+      });
+      await flush(setup);
+
+      frame = setup.captureCharFrame();
+      expect(frame).not.toContain("Annotation for alpha.ts");
+      expect(frame).not.toContain("Why alpha.ts changed");
       expect(frame).toContain("Annotation for beta.ts");
       expect(frame).toContain("Why beta.ts changed");
     } finally {
