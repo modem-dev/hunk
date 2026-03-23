@@ -79,7 +79,7 @@ git diff --no-color | hunk patch -  # review a patch from stdin
 | Structural diffing                 | ❌   | ✅         | ❌    | ❌            | ❌   |
 | Pager-compatible mode              | ✅   | ✅         | ✅    | ✅            | ✅   |
 
-Hunk is optimized for reviewing a full changeset interactively. If you primarily want syntax-aware diffing, `difftastic` is still the stronger fit.
+Hunk is optimized for reviewing a full changeset interactively.
 
 ## Git integration
 
