@@ -1,7 +1,23 @@
 import { randomUUID } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import type { AppBootstrap } from "../core/types";
 import { hunkLineRange } from "../core/liveComments";
 import type { HunkSessionRegistration, HunkSessionSnapshot, SessionFileSummary } from "./types";
+
+/** Resolve the TTY device path for the current process, if available. */
+function ttyname(): string | undefined {
+  if (!process.stdin.isTTY) {
+    return undefined;
+  }
+
+  try {
+    const result = spawnSync("tty", [], { stdio: ["inherit", "pipe", "pipe"] });
+    const name = result.stdout?.toString().trim();
+    return name && !name.startsWith("not a tty") ? name : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 function inferRepoRoot(bootstrap: AppBootstrap) {
   return bootstrap.input.kind === "git" ||
@@ -33,6 +49,8 @@ export function createSessionRegistration(bootstrap: AppBootstrap): HunkSessionR
     title: bootstrap.changeset.title,
     sourceLabel: bootstrap.changeset.sourceLabel,
     launchedAt: new Date().toISOString(),
+    tty: ttyname(),
+    tmuxPane: process.env.TMUX_PANE || undefined,
     files: buildSessionFiles(bootstrap),
   };
 }

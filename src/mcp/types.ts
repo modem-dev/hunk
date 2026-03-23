@@ -31,6 +31,8 @@ export interface HunkSessionRegistration {
   title: string;
   sourceLabel: string;
   launchedAt: string;
+  tty?: string;
+  tmuxPane?: string;
   files: SessionFileSummary[];
 }
 
@@ -237,6 +239,8 @@ export interface ListedSession {
   title: string;
   sourceLabel: string;
   launchedAt: string;
+  tty?: string;
+  tmuxPane?: string;
   fileCount: number;
   files: SessionFileSummary[];
   snapshot: HunkSessionSnapshot;

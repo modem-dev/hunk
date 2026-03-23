@@ -118,6 +118,8 @@ export class HunkDaemonState {
         title: entry.registration.title,
         sourceLabel: entry.registration.sourceLabel,
         launchedAt: entry.registration.launchedAt,
+        tty: entry.registration.tty,
+        tmuxPane: entry.registration.tmuxPane,
         fileCount: entry.registration.files.length,
         files: entry.registration.files,
         snapshot: entry.snapshot,

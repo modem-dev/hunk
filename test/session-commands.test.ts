@@ -292,3 +292,101 @@ describe("session command compatibility checks", () => {
     expect(restartCalls).toEqual([]);
   });
 });
+
+describe("session list includes tty and tmux metadata", () => {
+  test("list output includes tty and tmux pane when present", async () => {
+    const session = {
+      ...createListedSession("session-1"),
+      tty: "/dev/ttys003",
+      tmuxPane: "%2",
+    };
+
+    setSessionCommandTestHooks({
+      createClient: () =>
+        createClient({
+          listSessions: async () => [session],
+        }),
+      resolveDaemonAvailability: async () => true,
+    });
+
+    const output = await runSessionCommand({
+      kind: "session",
+      action: "list",
+      output: "text",
+    } satisfies SessionCommandInput);
+
+    expect(output).toContain("tty: /dev/ttys003");
+    expect(output).toContain("tmux pane: %2");
+  });
+
+  test("list output omits tty and tmux lines when absent", async () => {
+    setSessionCommandTestHooks({
+      createClient: () =>
+        createClient({
+          listSessions: async () => [createListedSession("session-1")],
+        }),
+      resolveDaemonAvailability: async () => true,
+    });
+
+    const output = await runSessionCommand({
+      kind: "session",
+      action: "list",
+      output: "text",
+    } satisfies SessionCommandInput);
+
+    expect(output).not.toContain("tty:");
+    expect(output).not.toContain("tmux pane:");
+  });
+
+  test("get output includes tty and tmux pane when present", async () => {
+    const session = {
+      ...createListedSession("session-1"),
+      tty: "/dev/ttys005",
+      tmuxPane: "%0",
+    };
+
+    setSessionCommandTestHooks({
+      createClient: () =>
+        createClient({
+          getSession: async () => session,
+        }),
+      resolveDaemonAvailability: async () => true,
+    });
+
+    const output = await runSessionCommand({
+      kind: "session",
+      action: "get",
+      selector: { sessionId: "session-1" },
+      output: "text",
+    } satisfies SessionCommandInput);
+
+    expect(output).toContain("TTY: /dev/ttys005");
+    expect(output).toContain("Tmux pane: %0");
+  });
+
+  test("json output includes tty and tmux pane fields", async () => {
+    const session = {
+      ...createListedSession("session-1"),
+      tty: "/dev/ttys003",
+      tmuxPane: "%2",
+    };
+
+    setSessionCommandTestHooks({
+      createClient: () =>
+        createClient({
+          listSessions: async () => [session],
+        }),
+      resolveDaemonAvailability: async () => true,
+    });
+
+    const output = await runSessionCommand({
+      kind: "session",
+      action: "list",
+      output: "json",
+    } satisfies SessionCommandInput);
+
+    const parsed = JSON.parse(output);
+    expect(parsed.sessions[0].tty).toBe("/dev/ttys003");
+    expect(parsed.sessions[0].tmuxPane).toBe("%2");
+  });
+});

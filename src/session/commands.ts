@@ -369,6 +369,8 @@ function formatListOutput(sessions: ListedSession[]) {
       [
         `${session.sessionId}  ${session.title}`,
         `  repo: ${session.repoRoot ?? session.cwd}`,
+        ...(session.tty ? [`  tty: ${session.tty}`] : []),
+        ...(session.tmuxPane ? [`  tmux pane: ${session.tmuxPane}`] : []),
         `  focus: ${formatSelectedSummary(session)}`,
         `  files: ${session.fileCount}`,
         `  comments: ${session.snapshot.liveCommentCount}`,
@@ -385,6 +387,8 @@ function formatSessionOutput(session: ListedSession) {
     `Repo: ${session.repoRoot ?? session.cwd}`,
     `Input: ${session.inputKind}`,
     `Launched: ${session.launchedAt}`,
+    ...(session.tty ? [`TTY: ${session.tty}`] : []),
+    ...(session.tmuxPane ? [`Tmux pane: ${session.tmuxPane}`] : []),
     `Selected: ${formatSelectedSummary(session)}`,
     `Agent notes visible: ${session.snapshot.showAgentNotes ? "yes" : "no"}`,
     `Live comments: ${session.snapshot.liveCommentCount}`,
