@@ -6,13 +6,7 @@ import type { AppBootstrap, DiffFile, LayoutMode } from "../src/core/types";
 
 const { App } = await import("../src/ui/App");
 
-function createDiffFile(
-  id: string,
-  path: string,
-  before: string,
-  after: string,
-  withAgent = false,
-): DiffFile {
+function createDiffFile(id: string, path: string, before: string, after: string, withAgent = false): DiffFile {
   const metadata = parseDiffFromFile(
     {
       name: path,
@@ -50,13 +44,7 @@ function createDiffFile(
       ? {
           path,
           summary: `${path} note`,
-          annotations: [
-            {
-              newRange: [2, 2],
-              summary: `Annotation for ${path}`,
-              rationale: `Why ${path} changed`,
-            },
-          ],
+          annotations: [{ newRange: [2, 2], summary: `Annotation for ${path}`, rationale: `Why ${path} changed` }],
         }
       : null,
   };
@@ -77,20 +65,8 @@ function createBootstrap(initialMode: LayoutMode = "split", pager = false): AppB
       sourceLabel: "repo",
       title: "repo working tree",
       files: [
-        createDiffFile(
-          "alpha",
-          "alpha.ts",
-          "export const alpha = 1;\n",
-          "export const alpha = 2;\nexport const add = true;\n",
-          true,
-        ),
-        createDiffFile(
-          "beta",
-          "beta.ts",
-          "export const beta = 1;\n",
-          "export const betaValue = 1;\n",
-          false,
-        ),
+        createDiffFile("alpha", "alpha.ts", "export const alpha = 1;\n", "export const alpha = 2;\nexport const add = true;\n", true),
+        createDiffFile("beta", "beta.ts", "export const beta = 1;\n", "export const betaValue = 1;\n", false),
       ],
     },
     initialMode,
@@ -111,15 +87,7 @@ function createSingleFileBootstrap(): AppBootstrap {
       id: "changeset:app-single-file",
       sourceLabel: "repo",
       title: "repo working tree",
-      files: [
-        createDiffFile(
-          "alpha",
-          "alpha.ts",
-          "export const alpha = 1;\n",
-          "export const alpha = 2;\nexport const add = true;\n",
-          true,
-        ),
-      ],
+      files: [createDiffFile("alpha", "alpha.ts", "export const alpha = 1;\n", "export const alpha = 2;\nexport const add = true;\n", true)],
     },
     initialMode: "split",
     initialTheme: "midnight",
@@ -155,16 +123,8 @@ function createWrapBootstrap(): AppBootstrap {
 }
 
 function createLineScrollBootstrap(pager = false): AppBootstrap {
-  const before =
-    Array.from(
-      { length: 18 },
-      (_, index) => `export const line${String(index + 1).padStart(2, "0")} = ${index + 1};`,
-    ).join("\n") + "\n";
-  const after =
-    Array.from(
-      { length: 18 },
-      (_, index) => `export const line${String(index + 1).padStart(2, "0")} = ${index + 101};`,
-    ).join("\n") + "\n";
+  const before = Array.from({ length: 18 }, (_, index) => `export const line${String(index + 1).padStart(2, "0")} = ${index + 1};`).join("\n") + "\n";
+  const after = Array.from({ length: 18 }, (_, index) => `export const line${String(index + 1).padStart(2, "0")} = ${index + 101};`).join("\n") + "\n";
 
   return {
     input: {
@@ -196,10 +156,7 @@ async function flush(setup: Awaited<ReturnType<typeof testRender>>) {
 
 describe("App interactions", () => {
   test("keyboard shortcuts toggle notes, line numbers, and hunk metadata", async () => {
-    const setup = await testRender(<App bootstrap={createSingleFileBootstrap()} />, {
-      width: 240,
-      height: 24,
-    });
+    const setup = await testRender(<App bootstrap={createSingleFileBootstrap()} />, { width: 240, height: 24 });
 
     try {
       await flush(setup);
@@ -238,10 +195,7 @@ describe("App interactions", () => {
   });
 
   test("keyboard shortcut can wrap long lines in the app shell", async () => {
-    const setup = await testRender(<App bootstrap={createWrapBootstrap()} />, {
-      width: 140,
-      height: 20,
-    });
+    const setup = await testRender(<App bootstrap={createWrapBootstrap()} />, { width: 140, height: 20 });
 
     try {
       await flush(setup);
@@ -305,12 +259,12 @@ describe("App interactions", () => {
       await flush(setup);
 
       const frame = setup.captureCharFrame();
-      expect(frame).toContain("AI note");
+      expect(frame).toContain("AI note · ▶ new 2");
       expect(frame).toContain("Annotation for prefs.ts");
       expect(frame).toContain("Why prefs.ts changed");
       expect(frame).not.toContain("@@ -1,1 +1,2 @@");
       expect(frame).not.toContain("1 - export const message");
-      expect(frame).toContain("prefs.ts +2");
+      expect(frame.indexOf("AI note · ▶ new 2")).toBeLessThan(frame.indexOf("export const added = true;"));
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -319,10 +273,7 @@ describe("App interactions", () => {
   });
 
   test("menu navigation can switch layouts and activate view actions", async () => {
-    const setup = await testRender(<App bootstrap={createBootstrap()} />, {
-      width: 220,
-      height: 24,
-    });
+    const setup = await testRender(<App bootstrap={createBootstrap()} />, { width: 220, height: 24 });
 
     try {
       await flush(setup);
@@ -360,10 +311,7 @@ describe("App interactions", () => {
   });
 
   test("arrow keys keep the current file selected for agent notes", async () => {
-    const setup = await testRender(<App bootstrap={createBootstrap()} />, {
-      width: 240,
-      height: 24,
-    });
+    const setup = await testRender(<App bootstrap={createBootstrap()} />, { width: 240, height: 24 });
 
     try {
       await flush(setup);
@@ -388,10 +336,7 @@ describe("App interactions", () => {
   });
 
   test("arrow keys scroll the review pane line by line", async () => {
-    const setup = await testRender(<App bootstrap={createLineScrollBootstrap()} />, {
-      width: 220,
-      height: 12,
-    });
+    const setup = await testRender(<App bootstrap={createLineScrollBootstrap()} />, { width: 220, height: 12 });
 
     try {
       await flush(setup);
@@ -435,10 +380,7 @@ describe("App interactions", () => {
   });
 
   test("pager mode arrow keys also scroll line by line", async () => {
-    const setup = await testRender(<App bootstrap={createLineScrollBootstrap(true)} />, {
-      width: 220,
-      height: 8,
-    });
+    const setup = await testRender(<App bootstrap={createLineScrollBootstrap(true)} />, { width: 220, height: 8 });
 
     try {
       await flush(setup);
@@ -482,10 +424,7 @@ describe("App interactions", () => {
   });
 
   test("filter focus accepts typed input and narrows the visible file set", async () => {
-    const setup = await testRender(<App bootstrap={createBootstrap()} />, {
-      width: 240,
-      height: 24,
-    });
+    const setup = await testRender(<App bootstrap={createBootstrap()} />, { width: 240, height: 24 });
 
     try {
       await flush(setup);
@@ -511,10 +450,7 @@ describe("App interactions", () => {
   });
 
   test("filtering away the selected file reselects the first visible match", async () => {
-    const setup = await testRender(<App bootstrap={createBootstrap()} />, {
-      width: 240,
-      height: 24,
-    });
+    const setup = await testRender(<App bootstrap={createBootstrap()} />, { width: 240, height: 24 });
 
     try {
       await flush(setup);
@@ -552,10 +488,7 @@ describe("App interactions", () => {
   });
 
   test("menu navigation wraps across the first and last top-level menus", async () => {
-    const setup = await testRender(<App bootstrap={createBootstrap()} />, {
-      width: 220,
-      height: 24,
-    });
+    const setup = await testRender(<App bootstrap={createBootstrap()} />, { width: 220, height: 24 });
 
     try {
       await flush(setup);
@@ -594,10 +527,7 @@ describe("App interactions", () => {
   });
 
   test("sidebar visibility can toggle off and back on", async () => {
-    const setup = await testRender(<App bootstrap={createBootstrap()} />, {
-      width: 240,
-      height: 24,
-    });
+    const setup = await testRender(<App bootstrap={createBootstrap()} />, { width: 240, height: 24 });
 
     try {
       await flush(setup);
@@ -631,10 +561,7 @@ describe("App interactions", () => {
   });
 
   test("sidebar shortcut can force the files pane open when responsive layout hides it", async () => {
-    const setup = await testRender(<App bootstrap={createBootstrap("auto")} />, {
-      width: 160,
-      height: 24,
-    });
+    const setup = await testRender(<App bootstrap={createBootstrap("auto")} />, { width: 160, height: 24 });
 
     try {
       await flush(setup);
@@ -669,10 +596,7 @@ describe("App interactions", () => {
 
   test("quit shortcuts route through the provided onQuit handler in regular and pager modes", async () => {
     const regularQuit = mock(() => undefined);
-    const regularSetup = await testRender(
-      <App bootstrap={createBootstrap()} onQuit={regularQuit} />,
-      { width: 220, height: 24 },
-    );
+    const regularSetup = await testRender(<App bootstrap={createBootstrap()} onQuit={regularQuit} />, { width: 220, height: 24 });
 
     try {
       await flush(regularSetup);
@@ -689,10 +613,7 @@ describe("App interactions", () => {
     }
 
     const pagerQuit = mock(() => undefined);
-    const pagerSetup = await testRender(
-      <App bootstrap={createBootstrap("auto", true)} onQuit={pagerQuit} />,
-      { width: 180, height: 20 },
-    );
+    const pagerSetup = await testRender(<App bootstrap={createBootstrap("auto", true)} onQuit={pagerQuit} />, { width: 180, height: 20 });
 
     try {
       await flush(pagerSetup);
@@ -708,4 +629,5 @@ describe("App interactions", () => {
       });
     }
   });
+
 });

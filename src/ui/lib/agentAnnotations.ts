@@ -7,6 +7,11 @@ export interface VisibleAgentNote {
   annotation: AgentAnnotation;
 }
 
+export interface AnnotationAnchor {
+  side: "old" | "new";
+  lineNumber: number;
+}
+
 /** Check whether two inclusive line ranges overlap. */
 function overlap(rangeA: [number, number], rangeB: [number, number]) {
   return rangeA[0] <= rangeB[1] && rangeB[0] <= rangeA[1];
@@ -14,14 +19,8 @@ function overlap(rangeA: [number, number], rangeB: [number, number]) {
 
 /** Compute the old/new line ranges covered by a hunk, including single-line edge cases. */
 function hunkLineRange(hunk: Hunk) {
-  const newEnd = Math.max(
-    hunk.additionStart,
-    hunk.additionStart + Math.max(hunk.additionLines, 1) - 1,
-  );
-  const oldEnd = Math.max(
-    hunk.deletionStart,
-    hunk.deletionStart + Math.max(hunk.deletionLines, 1) - 1,
-  );
+  const newEnd = Math.max(hunk.additionStart, hunk.additionStart + Math.max(hunk.additionLines, 1) - 1);
+  const oldEnd = Math.max(hunk.deletionStart, hunk.deletionStart + Math.max(hunk.deletionLines, 1) - 1);
 
   return {
     oldRange: [hunk.deletionStart, oldEnd] as [number, number],
@@ -74,7 +73,41 @@ function formatRange(range: [number, number]) {
   return range[0] === range[1] ? `${range[0]}` : `${range[0]}-${range[1]}`;
 }
 
-/** Build the compact file-and-lines label shown on an inline agent note card. */
+/** Resolve the primary visual anchor for an annotation. */
+export function annotationAnchor(annotation: AgentAnnotation): AnnotationAnchor | null {
+  if (annotation.newRange) {
+    return {
+      side: "new",
+      lineNumber: annotation.newRange[0],
+    };
+  }
+
+  if (annotation.oldRange) {
+    return {
+      side: "old",
+      lineNumber: annotation.oldRange[0],
+    };
+  }
+
+  return null;
+}
+
+/** Build a concise side-aware range label for inline note rows. */
+export function annotationRangeLabel(annotation: AgentAnnotation) {
+  const locationParts: string[] = [];
+
+  if (annotation.oldRange) {
+    locationParts.push(`◀ old ${formatRange(annotation.oldRange)}`);
+  }
+
+  if (annotation.newRange) {
+    locationParts.push(`▶ new ${formatRange(annotation.newRange)}`);
+  }
+
+  return locationParts.join(" · ") || "hunk";
+}
+
+/** Build the compact file-and-lines label shown on a framed agent note card. */
 export function annotationLocationLabel(file: DiffFile, annotation: AgentAnnotation) {
   const locationParts: string[] = [];
 

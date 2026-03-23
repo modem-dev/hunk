@@ -207,11 +207,7 @@ function renderInlineSpans(
 
     // Fold trailing padding into the last span when the colors already match.
     // That keeps the output identical while avoiding one extra rendered span.
-    if (
-      lastSpan &&
-      (lastSpan.fg ?? fallbackColor) === fallbackColor &&
-      (lastSpan.bg ?? fallbackBg) === fallbackBg
-    ) {
+    if (lastSpan && (lastSpan.fg ?? fallbackColor) === fallbackColor && (lastSpan.bg ?? fallbackBg) === fallbackBg) {
       lastSpan.text += " ".repeat(padding);
       padding = 0;
     }
@@ -220,21 +216,11 @@ function renderInlineSpans(
   return (
     <>
       {trimmed.map((span, index) => (
-        <span
-          key={`${keyPrefix}:${index}`}
-          fg={span.fg ?? fallbackColor}
-          bg={span.bg ?? fallbackBg}
-        >
+        <span key={`${keyPrefix}:${index}`} fg={span.fg ?? fallbackColor} bg={span.bg ?? fallbackBg}>
           {span.text}
         </span>
       ))}
-      {padding > 0 ? (
-        <span
-          key={`${keyPrefix}:padding`}
-          fg={fallbackColor}
-          bg={fallbackBg}
-        >{`${" ".repeat(padding)}`}</span>
-      ) : null}
+      {padding > 0 ? <span key={`${keyPrefix}:padding`} fg={fallbackColor} bg={fallbackBg}>{`${" ".repeat(padding)}`}</span> : null}
     </>
   );
 }
@@ -308,9 +294,7 @@ function buildWrappedSplitCell(
   const gutterWidth = Math.min(availableWidth, showLineNumbers ? lineNumberDigits + 3 : 2);
   const contentWidth = Math.max(0, availableWidth - gutterWidth);
   const firstGutterText = showLineNumbers
-    ? `${cell.lineNumber ? String(cell.lineNumber).padStart(lineNumberDigits, " ") : " ".repeat(lineNumberDigits)} ${cell.sign}`.padEnd(
-        gutterWidth,
-      )
+    ? `${cell.lineNumber ? String(cell.lineNumber).padStart(lineNumberDigits, " ") : " ".repeat(lineNumberDigits)} ${cell.sign}`.padEnd(gutterWidth)
     : `${cell.sign} `.padEnd(gutterWidth);
   const wrappedSpans = wrapSpans(cell.spans, contentWidth);
 
@@ -337,15 +321,9 @@ function buildWrappedStackCell(
   const availableWidth = Math.max(0, width - prefixWidth);
   const gutterWidth = Math.min(availableWidth, showLineNumbers ? lineNumberDigits * 2 + 5 : 2);
   const contentWidth = Math.max(0, availableWidth - gutterWidth);
-  const oldNumber = cell.oldLineNumber
-    ? String(cell.oldLineNumber).padStart(lineNumberDigits, " ")
-    : " ".repeat(lineNumberDigits);
-  const newNumber = cell.newLineNumber
-    ? String(cell.newLineNumber).padStart(lineNumberDigits, " ")
-    : " ".repeat(lineNumberDigits);
-  const firstGutterText = (
-    showLineNumbers ? `${oldNumber} ${newNumber} ${cell.sign}` : `${cell.sign} `
-  ).padEnd(gutterWidth);
+  const oldNumber = cell.oldLineNumber ? String(cell.oldLineNumber).padStart(lineNumberDigits, " ") : " ".repeat(lineNumberDigits);
+  const newNumber = cell.newLineNumber ? String(cell.newLineNumber).padStart(lineNumberDigits, " ") : " ".repeat(lineNumberDigits);
+  const firstGutterText = (showLineNumbers ? `${oldNumber} ${newNumber} ${cell.sign}` : `${cell.sign} `).padEnd(gutterWidth);
   const wrappedSpans = wrapSpans(cell.spans, contentWidth);
 
   return {
@@ -378,9 +356,7 @@ function renderSplitCell(
   const gutterWidth = Math.min(availableWidth, showLineNumbers ? lineNumberDigits + 3 : 2);
   const contentWidth = Math.max(0, availableWidth - gutterWidth);
   const gutterText = showLineNumbers
-    ? `${cell.lineNumber ? String(cell.lineNumber).padStart(lineNumberDigits, " ") : " ".repeat(lineNumberDigits)} ${cell.sign}`.padEnd(
-        gutterWidth,
-      )
+    ? `${cell.lineNumber ? String(cell.lineNumber).padStart(lineNumberDigits, " ") : " ".repeat(lineNumberDigits)} ${cell.sign}`.padEnd(gutterWidth)
     : `${cell.sign} `.padEnd(gutterWidth);
 
   return (
@@ -393,13 +369,7 @@ function renderSplitCell(
       <span key={`${keyPrefix}:gutter`} fg={palette.numberColor} bg={palette.gutterBg}>
         {gutterText}
       </span>
-      {renderInlineSpans(
-        cell.spans,
-        contentWidth,
-        theme.text,
-        palette.contentBg,
-        `${keyPrefix}:content`,
-      )}
+      {renderInlineSpans(cell.spans, contentWidth, theme.text, palette.contentBg, `${keyPrefix}:content`)}
     </>
   );
 }
@@ -424,12 +394,8 @@ function renderStackCell(
   const gutterWidth = Math.min(availableWidth, showLineNumbers ? lineNumberDigits * 2 + 5 : 2);
   const contentWidth = Math.max(0, availableWidth - gutterWidth);
 
-  const oldNumber = cell.oldLineNumber
-    ? String(cell.oldLineNumber).padStart(lineNumberDigits, " ")
-    : " ".repeat(lineNumberDigits);
-  const newNumber = cell.newLineNumber
-    ? String(cell.newLineNumber).padStart(lineNumberDigits, " ")
-    : " ".repeat(lineNumberDigits);
+  const oldNumber = cell.oldLineNumber ? String(cell.oldLineNumber).padStart(lineNumberDigits, " ") : " ".repeat(lineNumberDigits);
+  const newNumber = cell.newLineNumber ? String(cell.newLineNumber).padStart(lineNumberDigits, " ") : " ".repeat(lineNumberDigits);
 
   return (
     <>
@@ -439,17 +405,9 @@ function renderStackCell(
         </span>
       ) : null}
       <span key={`${keyPrefix}:gutter`} fg={palette.numberColor} bg={palette.gutterBg}>
-        {(showLineNumbers ? `${oldNumber} ${newNumber} ${cell.sign}` : `${cell.sign} `).padEnd(
-          gutterWidth,
-        )}
+        {(showLineNumbers ? `${oldNumber} ${newNumber} ${cell.sign}` : `${cell.sign} `).padEnd(gutterWidth)}
       </span>
-      {renderInlineSpans(
-        cell.spans,
-        contentWidth,
-        theme.text,
-        palette.contentBg,
-        `${keyPrefix}:content`,
-      )}
+      {renderInlineSpans(cell.spans, contentWidth, theme.text, palette.contentBg, `${keyPrefix}:content`)}
     </>
   );
 }
@@ -475,13 +433,7 @@ function renderWrappedSplitCellLine(
       <span key={`${keyPrefix}:gutter`} fg={palette.numberColor} bg={palette.gutterBg}>
         {line.gutterText}
       </span>
-      {renderInlineSpans(
-        line.spans,
-        contentWidth,
-        theme.text,
-        palette.contentBg,
-        `${keyPrefix}:content`,
-      )}
+      {renderInlineSpans(line.spans, contentWidth, theme.text, palette.contentBg, `${keyPrefix}:content`)}
     </>
   );
 }
@@ -507,13 +459,7 @@ function renderWrappedStackCellLine(
       <span key={`${keyPrefix}:gutter`} fg={palette.numberColor} bg={palette.gutterBg}>
         {line.gutterText}
       </span>
-      {renderInlineSpans(
-        line.spans,
-        contentWidth,
-        theme.text,
-        palette.contentBg,
-        `${keyPrefix}:content`,
-      )}
+      {renderInlineSpans(line.spans, contentWidth, theme.text, palette.contentBg, `${keyPrefix}:content`)}
     </>
   );
 }
@@ -540,11 +486,7 @@ export function findMaxLineNumber(file: DiffFile) {
   let highest = 0;
 
   for (const hunk of file.metadata.hunks) {
-    highest = Math.max(
-      highest,
-      hunk.deletionStart + hunk.deletionCount,
-      hunk.additionStart + hunk.additionCount,
-    );
+    highest = Math.max(highest, hunk.deletionStart + hunk.deletionCount, hunk.additionStart + hunk.additionCount);
   }
 
   return Math.max(highest, 1);
@@ -579,16 +521,10 @@ function renderHeaderRow(
         }}
       >
         <text>
-          <span
-            fg={selected ? neutralRailColor(theme) : dimRailColor(neutralRailColor(theme), theme)}
-            bg={theme.panelAlt}
-          >
+          <span fg={selected ? neutralRailColor(theme) : dimRailColor(neutralRailColor(theme), theme)} bg={theme.panelAlt}>
             {marker()}
           </span>
-          <span
-            fg={row.type === "collapsed" ? theme.muted : theme.badgeNeutral}
-            bg={theme.panelAlt}
-          >
+          <span fg={row.type === "collapsed" ? theme.muted : theme.badgeNeutral} bg={theme.panelAlt}>
             {label}
           </span>
         </text>
@@ -609,24 +545,15 @@ function renderHeaderRow(
     >
       <box style={{ width: Math.max(0, width - badgeWidth), height: 1 }}>
         <text>
-          <span
-            fg={selected ? neutralRailColor(theme) : dimRailColor(neutralRailColor(theme), theme)}
-            bg={theme.panelAlt}
-          >
+          <span fg={selected ? neutralRailColor(theme) : dimRailColor(neutralRailColor(theme), theme)} bg={theme.panelAlt}>
             {marker()}
           </span>
-          <span
-            fg={row.type === "collapsed" ? theme.muted : theme.badgeNeutral}
-            bg={theme.panelAlt}
-          >
+          <span fg={row.type === "collapsed" ? theme.muted : theme.badgeNeutral} bg={theme.panelAlt}>
             {label}
           </span>
         </text>
       </box>
-      <box
-        style={{ width: badgeWidth, height: 1 }}
-        onMouseUp={() => onOpenAgentNotesAtHunk?.(row.hunkIndex)}
-      >
+      <box style={{ width: badgeWidth, height: 1 }} onMouseUp={() => onOpenAgentNotesAtHunk?.(row.hunkIndex)}>
         <text fg={theme.accent}>{badgeText}</text>
       </box>
     </box>
@@ -661,22 +588,8 @@ export function measureRenderedRowHeight(
     const usableWidth = Math.max(0, width - markerWidth - separatorWidth);
     const leftWidth = Math.max(0, markerWidth + Math.floor(usableWidth / 2));
     const rightWidth = Math.max(0, separatorWidth + usableWidth - Math.floor(usableWidth / 2));
-    const leftLayout = buildWrappedSplitCell(
-      row.left,
-      leftWidth,
-      lineNumberDigits,
-      showLineNumbers,
-      markerWidth,
-      theme,
-    );
-    const rightLayout = buildWrappedSplitCell(
-      row.right,
-      rightWidth,
-      lineNumberDigits,
-      showLineNumbers,
-      markerWidth,
-      theme,
-    );
+    const leftLayout = buildWrappedSplitCell(row.left, leftWidth, lineNumberDigits, showLineNumbers, markerWidth, theme);
+    const rightLayout = buildWrappedSplitCell(row.right, rightWidth, lineNumberDigits, showLineNumbers, markerWidth, theme);
 
     return Math.max(leftLayout.lines.length, rightLayout.lines.length);
   }
@@ -689,14 +602,7 @@ export function measureRenderedRowHeight(
     return 1;
   }
 
-  const layout = buildWrappedStackCell(
-    row.cell,
-    width,
-    lineNumberDigits,
-    showLineNumbers,
-    marker().length,
-    theme,
-  );
+  const layout = buildWrappedStackCell(row.cell, width, lineNumberDigits, showLineNumbers, marker().length, theme);
   return layout.lines.length;
 }
 
@@ -712,31 +618,23 @@ function renderRow(
   selected: boolean,
   annotated: boolean,
   anchorId?: string,
+  noteGuideSide?: "old" | "new",
   onOpenAgentNotesAtHunk?: (hunkIndex: number) => void,
 ) {
   let baseRow: ReactNode;
 
   if (row.type === "collapsed") {
-    baseRow = renderHeaderRow(
-      row,
-      width,
-      theme,
-      selected,
-      annotated,
-      anchorId,
-      onOpenAgentNotesAtHunk,
-    );
+    baseRow = renderHeaderRow(row, width, theme, selected, annotated, anchorId, onOpenAgentNotesAtHunk);
   } else if (row.type === "hunk-header") {
-    baseRow = showHunkHeaders
-      ? renderHeaderRow(row, width, theme, selected, annotated, anchorId, onOpenAgentNotesAtHunk)
-      : null;
+    baseRow = showHunkHeaders ? renderHeaderRow(row, width, theme, selected, annotated, anchorId, onOpenAgentNotesAtHunk) : null;
   } else if (row.type === "split-line") {
+    const outerGuideWidth = noteGuideSide ? 1 : 0;
+    const contentWidth = Math.max(0, width - outerGuideWidth);
     const markerWidth = 1;
     const separatorWidth = 1;
 
-    // Reserve fixed columns for the left rail and center separator slot.
-    // Active-hunk rows recolor that separator slot as the right-side rail without changing width.
-    const usableWidth = Math.max(0, width - markerWidth - separatorWidth);
+    // Reserve fixed columns for the diff rails and center separator slot.
+    const usableWidth = Math.max(0, contentWidth - markerWidth - separatorWidth);
     const leftWidth = Math.max(0, markerWidth + Math.floor(usableWidth / 2));
     const rightWidth = Math.max(0, separatorWidth + usableWidth - Math.floor(usableWidth / 2));
     const leftPrefix = {
@@ -751,89 +649,69 @@ function renderRow(
     };
 
     if (!wrapLines) {
-      baseRow = (
-        <box id={anchorId} style={{ width: "100%", height: 1 }}>
+      const content = (
+        <box style={{ width: contentWidth, height: 1 }}>
           <text>
-            {renderSplitCell(
-              row.left,
-              leftWidth,
-              lineNumberDigits,
-              showLineNumbers,
-              theme,
-              `${row.key}:left`,
-              leftPrefix,
-            )}
-            {renderSplitCell(
-              row.right,
-              rightWidth,
-              lineNumberDigits,
-              showLineNumbers,
-              theme,
-              `${row.key}:right`,
-              rightPrefix,
-            )}
+            {renderSplitCell(row.left, leftWidth, lineNumberDigits, showLineNumbers, theme, `${row.key}:left`, leftPrefix)}
+            {renderSplitCell(row.right, rightWidth, lineNumberDigits, showLineNumbers, theme, `${row.key}:right`, rightPrefix)}
           </text>
         </box>
       );
+      const guide = noteGuideSide ? (
+        <box style={{ width: 1, height: 1 }}>
+          <text fg={theme.noteBorder}>│</text>
+        </box>
+      ) : null;
+
+      baseRow = (
+        <box id={anchorId} style={{ width: "100%", height: 1, flexDirection: "row" }}>
+          {noteGuideSide === "old" ? guide : null}
+          {content}
+          {noteGuideSide === "new" ? guide : null}
+        </box>
+      );
     } else {
-      const leftLayout = buildWrappedSplitCell(
-        row.left,
-        leftWidth,
-        lineNumberDigits,
-        showLineNumbers,
-        leftPrefix.text.length,
-        theme,
-      );
-      const rightLayout = buildWrappedSplitCell(
-        row.right,
-        rightWidth,
-        lineNumberDigits,
-        showLineNumbers,
-        rightPrefix.text.length,
-        theme,
-      );
-      const leftContentWidth = Math.max(
-        0,
-        leftWidth - leftPrefix.text.length - leftLayout.gutterWidth,
-      );
-      const rightContentWidth = Math.max(
-        0,
-        rightWidth - rightPrefix.text.length - rightLayout.gutterWidth,
-      );
+      const leftLayout = buildWrappedSplitCell(row.left, leftWidth, lineNumberDigits, showLineNumbers, leftPrefix.text.length, theme);
+      const rightLayout = buildWrappedSplitCell(row.right, rightWidth, lineNumberDigits, showLineNumbers, rightPrefix.text.length, theme);
+      const leftContentWidth = Math.max(0, leftWidth - leftPrefix.text.length - leftLayout.gutterWidth);
+      const rightContentWidth = Math.max(0, rightWidth - rightPrefix.text.length - rightLayout.gutterWidth);
       const visualLineCount = Math.max(leftLayout.lines.length, rightLayout.lines.length);
 
       baseRow = (
         <box id={anchorId} style={{ width: "100%", flexDirection: "column" }}>
           {Array.from({ length: visualLineCount }, (_, index) => {
-            const leftLine = leftLayout.lines[index] ?? {
-              gutterText: " ".repeat(leftLayout.gutterWidth),
-              spans: [],
-            };
-            const rightLine = rightLayout.lines[index] ?? {
-              gutterText: " ".repeat(rightLayout.gutterWidth),
-              spans: [],
-            };
+            const leftLine = leftLayout.lines[index] ?? { gutterText: " ".repeat(leftLayout.gutterWidth), spans: [] };
+            const rightLine = rightLayout.lines[index] ?? { gutterText: " ".repeat(rightLayout.gutterWidth), spans: [] };
+            const guide = noteGuideSide ? (
+              <box style={{ width: 1, height: 1 }}>
+                <text fg={theme.noteBorder}>│</text>
+              </box>
+            ) : null;
 
             return (
-              <box key={`${row.key}:wrap:${index}`} style={{ width: "100%", height: 1 }}>
-                <text>
-                  {renderWrappedSplitCellLine(
-                    leftLine,
-                    leftLayout.palette,
-                    leftContentWidth,
-                    theme,
-                    `${row.key}:left:${index}`,
-                    leftPrefix,
-                  )}
-                  {renderWrappedSplitCellLine(
-                    rightLine,
-                    rightLayout.palette,
-                    rightContentWidth,
-                    theme,
-                    `${row.key}:right:${index}`,
-                    rightPrefix,
-                  )}
-                </text>
+              <box key={`${row.key}:wrap:${index}`} style={{ width: "100%", height: 1, flexDirection: "row" }}>
+                {noteGuideSide === "old" ? guide : null}
+                <box style={{ width: contentWidth, height: 1 }}>
+                  <text>
+                    {renderWrappedSplitCellLine(
+                      leftLine,
+                      leftLayout.palette,
+                      leftContentWidth,
+                      theme,
+                      `${row.key}:left:${index}`,
+                      leftPrefix,
+                    )}
+                    {renderWrappedSplitCellLine(
+                      rightLine,
+                      rightLayout.palette,
+                      rightContentWidth,
+                      theme,
+                      `${row.key}:right:${index}`,
+                      rightPrefix,
+                    )}
+                  </text>
+                </box>
+                {noteGuideSide === "new" ? guide : null}
               </box>
             );
           })}
@@ -841,6 +719,8 @@ function renderRow(
       );
     }
   } else if (row.type === "stack-line") {
+    const outerGuideWidth = noteGuideSide ? 1 : 0;
+    const contentWidth = Math.max(0, width - outerGuideWidth);
     const prefix = {
       text: marker(),
       fg: stackRailColor(row.cell.kind, theme, selected),
@@ -848,48 +728,47 @@ function renderRow(
     };
 
     if (!wrapLines) {
+      const content = (
+        <box style={{ width: contentWidth, height: 1 }}>
+          <text>{renderStackCell(row.cell, contentWidth, lineNumberDigits, showLineNumbers, theme, `${row.key}:stack`, prefix)}</text>
+        </box>
+      );
+      const guide = noteGuideSide ? (
+        <box style={{ width: 1, height: 1 }}>
+          <text fg={theme.noteBorder}>│</text>
+        </box>
+      ) : null;
+
       baseRow = (
-        <box id={anchorId} style={{ width: "100%", height: 1 }}>
-          <text>
-            {renderStackCell(
-              row.cell,
-              width,
-              lineNumberDigits,
-              showLineNumbers,
-              theme,
-              `${row.key}:stack`,
-              prefix,
-            )}
-          </text>
+        <box id={anchorId} style={{ width: "100%", height: 1, flexDirection: "row" }}>
+          {noteGuideSide === "old" ? guide : null}
+          {content}
+          {noteGuideSide === "new" ? guide : null}
         </box>
       );
     } else {
-      const layout = buildWrappedStackCell(
-        row.cell,
-        width,
-        lineNumberDigits,
-        showLineNumbers,
-        prefix.text.length,
-        theme,
-      );
-      const contentWidth = Math.max(0, width - prefix.text.length - layout.gutterWidth);
+      const layout = buildWrappedStackCell(row.cell, contentWidth, lineNumberDigits, showLineNumbers, prefix.text.length, theme);
+      const wrappedContentWidth = Math.max(0, contentWidth - prefix.text.length - layout.gutterWidth);
 
       baseRow = (
         <box id={anchorId} style={{ width: "100%", flexDirection: "column" }}>
-          {layout.lines.map((line, index) => (
-            <box key={`${row.key}:wrap:${index}`} style={{ width: "100%", height: 1 }}>
-              <text>
-                {renderWrappedStackCellLine(
-                  line,
-                  layout.palette,
-                  contentWidth,
-                  theme,
-                  `${row.key}:stack:${index}`,
-                  prefix,
-                )}
-              </text>
-            </box>
-          ))}
+          {layout.lines.map((line, index) => {
+            const guide = noteGuideSide ? (
+              <box style={{ width: 1, height: 1 }}>
+                <text fg={theme.noteBorder}>│</text>
+              </box>
+            ) : null;
+
+            return (
+              <box key={`${row.key}:wrap:${index}`} style={{ width: "100%", height: 1, flexDirection: "row" }}>
+                {noteGuideSide === "old" ? guide : null}
+                <box style={{ width: contentWidth, height: 1 }}>
+                  <text>{renderWrappedStackCellLine(line, layout.palette, wrappedContentWidth, theme, `${row.key}:stack:${index}`, prefix)}</text>
+                </box>
+                {noteGuideSide === "new" ? guide : null}
+              </box>
+            );
+          })}
         </box>
       );
     }
@@ -915,6 +794,7 @@ interface DiffRowViewProps {
   selected: boolean;
   annotated: boolean;
   anchorId?: string;
+  noteGuideSide?: "old" | "new";
   onOpenAgentNotesAtHunk?: (hunkIndex: number) => void;
 }
 
@@ -931,6 +811,7 @@ export const DiffRowView = memo(
     selected,
     annotated,
     anchorId,
+    noteGuideSide,
     onOpenAgentNotesAtHunk,
   }: DiffRowViewProps) {
     return renderRow(
@@ -944,6 +825,7 @@ export const DiffRowView = memo(
       selected,
       annotated,
       anchorId,
+      noteGuideSide,
       onOpenAgentNotesAtHunk,
     );
   },
@@ -958,7 +840,8 @@ export const DiffRowView = memo(
       previous.theme === next.theme &&
       previous.selected === next.selected &&
       previous.annotated === next.annotated &&
-      previous.anchorId === next.anchorId
+      previous.anchorId === next.anchorId &&
+      previous.noteGuideSide === next.noteGuideSide
     );
   },
 );
