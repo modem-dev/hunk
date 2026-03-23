@@ -63,6 +63,12 @@ hunk diff before.ts after.ts        # compare two files directly
 git diff --no-color | hunk patch -  # review a patch from stdin
 ```
 
+### Working with agents
+
+Load the [`skills/hunk-review/SKILL.md`](skills/hunk-review/SKILL.md) skill in your coding agent (e.g. Claude, Codex, Opencode, Pi).
+
+Open Hunk in another window, then ask your agent to leave comments.
+
 ## Feature comparison
 
 | Capability                         | hunk | difftastic | delta | diff-so-fancy | diff |
