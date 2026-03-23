@@ -436,6 +436,57 @@ describe("App interactions", () => {
     }
   });
 
+  test("watch mode reloads the current file diff from disk", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "hunk-watch-"));
+    const left = join(dir, "before.ts");
+    const right = join(dir, "after.ts");
+
+    writeFileSync(left, "export const answer = 41;\n");
+    writeFileSync(right, "export const answer = 42;\n");
+
+    const bootstrap = await loadAppBootstrap({
+      kind: "diff",
+      left,
+      right,
+      options: {
+        mode: "split",
+        watch: true,
+      },
+    });
+
+    const setup = await testRender(<App bootstrap={bootstrap} />, {
+      width: 220,
+      height: 20,
+    });
+
+    try {
+      await flush(setup);
+
+      let frame = setup.captureCharFrame();
+      expect(frame).not.toContain("export const added = true;");
+
+      writeFileSync(right, "export const answer = 42;\nexport const added = true;\n");
+
+      let refreshed = false;
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        await flush(setup);
+        frame = setup.captureCharFrame();
+        if (frame.includes("export const added = true;")) {
+          refreshed = true;
+          break;
+        }
+        await Bun.sleep(25);
+      }
+
+      expect(refreshed).toBe(true);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
   test("a shows notes that are visible in the current review viewport", async () => {
     const bootstrap = createBootstrap();
     bootstrap.changeset.files[1]!.agent = {

@@ -10,6 +10,54 @@ export interface RunGitTextOptions {
   gitExecutable?: string;
 }
 
+/** Append Git pathspec arguments only when the caller requested them. */
+export function appendGitPathspecs(args: string[], pathspecs?: string[]) {
+  if (!pathspecs || pathspecs.length === 0) {
+    return;
+  }
+
+  args.push("--", ...pathspecs);
+}
+
+/** Build the exact `git diff` arguments used for the shared working-tree and range review path. */
+export function buildGitDiffArgs(input: GitCommandInput) {
+  const args = ["diff", "--no-ext-diff", "--find-renames", "--no-color"];
+
+  if (input.staged) {
+    args.push("--staged");
+  }
+
+  if (input.range) {
+    args.push(input.range);
+  }
+
+  appendGitPathspecs(args, input.pathspecs);
+  return args;
+}
+
+/** Build the exact `git show` arguments used for commit review. */
+export function buildGitShowArgs(input: ShowCommandInput) {
+  const args = ["show", "--format=", "--no-ext-diff", "--find-renames", "--no-color"];
+
+  if (input.ref) {
+    args.push(input.ref);
+  }
+
+  appendGitPathspecs(args, input.pathspecs);
+  return args;
+}
+
+/** Build the exact `git stash show -p` arguments used for stash review. */
+export function buildGitStashShowArgs(input: StashShowCommandInput) {
+  const args = ["stash", "show", "-p", "--find-renames", "--no-color"];
+
+  if (input.ref) {
+    args.push(input.ref);
+  }
+
+  return args;
+}
+
 export function formatGitCommandLabel(input: GitBackedInput) {
   switch (input.kind) {
     case "git":

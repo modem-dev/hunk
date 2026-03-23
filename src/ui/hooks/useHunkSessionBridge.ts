@@ -31,7 +31,10 @@ export function useHunkSessionBridge({
   hostClient?: HunkHostClient;
   jumpToFile: (fileId: string, nextHunkIndex?: number) => void;
   openAgentNotes: () => void;
-  reloadSession: (nextInput: CliInput) => Promise<ReloadedSessionResult>;
+  reloadSession: (
+    nextInput: CliInput,
+    options?: { resetShell?: boolean },
+  ) => Promise<ReloadedSessionResult>;
   selectedFile: DiffFile | undefined;
   selectedHunkIndex: number;
   showAgentNotes: boolean;

@@ -1,4 +1,5 @@
 import { resolveConfiguredCliInput } from "./config";
+import { HunkUserError } from "./errors";
 import { loadAppBootstrap } from "./loaders";
 import { looksLikePatchInput } from "./pager";
 import {
@@ -8,6 +9,7 @@ import {
   type ControllingTerminal,
 } from "./terminal";
 import type { AppBootstrap, CliInput, ParsedCliInput, SessionCommandInput } from "./types";
+import { canReloadInput } from "./watch";
 import { parseCli } from "./cli";
 
 export type StartupPlan =
@@ -105,6 +107,16 @@ export async function prepareStartupPlan(
   const runtimeCliInput = resolveRuntimeCliInputImpl(parsedCliInput);
   const configured = resolveConfiguredCliInputImpl(runtimeCliInput);
   const cliInput = configured.input;
+
+  if (cliInput.options.watch && !canReloadInput(cliInput)) {
+    throw new HunkUserError(
+      "`--watch` requires a file- or Git-backed input that Hunk can reopen.",
+      [
+        "Use a patch file path instead of stdin, and avoid `--agent-context -` for watched sessions.",
+      ],
+    );
+  }
+
   const bootstrap = await loadAppBootstrapImpl(cliInput);
   const controllingTerminal = usesPipedPatchInputImpl(cliInput)
     ? openControllingTerminalImpl()

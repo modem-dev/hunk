@@ -9,6 +9,7 @@ Hunk is a review-first terminal diff viewer for agent-authored changesets, built
 - multi-file review stream with sidebar navigation
 - inline AI and agent annotations beside the code
 - split, stack, and responsive auto layouts
+- watch mode for auto-reloading file and Git-backed reviews
 - keyboard, mouse, pager, and Git difftool support
 
 <table>
@@ -52,6 +53,7 @@ Hunk mirrors Git's diff-style commands, but opens the changeset in a review UI i
 ```bash
 hunk diff         # review current repo changes
 hunk diff --staged
+hunk diff --watch # auto-reload as the working tree changes
 hunk show         # review the latest commit
 hunk show HEAD~1  # review an earlier commit
 ```
@@ -59,8 +61,9 @@ hunk show HEAD~1  # review an earlier commit
 ### Working with raw files and patches
 
 ```bash
-hunk diff before.ts after.ts        # compare two files directly
-git diff --no-color | hunk patch -  # review a patch from stdin
+hunk diff before.ts after.ts                # compare two files directly
+hunk diff before.ts after.ts --watch        # auto-reload when either file changes
+git diff --no-color | hunk patch -          # review a patch from stdin
 ```
 
 ### Working with agents

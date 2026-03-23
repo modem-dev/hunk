@@ -20,6 +20,7 @@ import { resolveConfiguredCliInput } from "../core/config";
 import { loadAppBootstrap } from "../core/loaders";
 import { resolveRuntimeCliInput } from "../core/terminal";
 import type { AppBootstrap, CliInput, LayoutMode } from "../core/types";
+import { canReloadInput, computeWatchSignature } from "../core/watch";
 import { HunkHostClient } from "../mcp/client";
 import {
   createInitialSessionSnapshot,
@@ -53,11 +54,6 @@ const LazyMenuDropdown = lazy(async () => ({
 /** Clamp a value into an inclusive range. */
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
-}
-
-/** Return whether the current input can be reloaded from disk or Git state. */
-function canRefreshInput(input: CliInput) {
-  return input.kind !== "patch" || Boolean(input.file && input.file !== "-");
 }
 
 /** Preserve the active shell view settings when rebuilding the current input. */
@@ -96,7 +92,10 @@ function AppShell({
   bootstrap: AppBootstrap;
   hostClient?: HunkHostClient;
   onQuit?: () => void;
-  onReloadSession: (nextInput: CliInput) => Promise<ReloadedSessionResult>;
+  onReloadSession: (
+    nextInput: CliInput,
+    options?: { resetShell?: boolean },
+  ) => Promise<ReloadedSessionResult>;
 }) {
   const FILES_MIN_WIDTH = 22;
   const DIFF_MIN_WIDTH = 48;
@@ -352,10 +351,11 @@ function AppShell({
     jumpToFile(fileId, hunkIndex);
   };
 
-  const canRefreshCurrentInput = canRefreshInput(bootstrap.input);
+  const canRefreshCurrentInput = canReloadInput(bootstrap.input);
+  const watchEnabled = Boolean(bootstrap.input.options.watch && canRefreshCurrentInput);
 
   /** Rebuild the current diff source while preserving the active shell view options. */
-  const refreshCurrentInput = useCallback(() => {
+  const refreshCurrentInput = useCallback(async () => {
     if (!canRefreshCurrentInput) {
       return;
     }
@@ -369,9 +369,7 @@ function AppShell({
       wrapLines,
     });
 
-    void onReloadSession(nextInput).catch((error) => {
-      console.error("Failed to reload the current diff.", error);
-    });
+    await onReloadSession(nextInput, { resetShell: false });
   }, [
     bootstrap.input,
     canRefreshCurrentInput,
@@ -383,6 +381,63 @@ function AppShell({
     themeId,
     wrapLines,
   ]);
+
+  const triggerRefreshCurrentInput = useCallback(() => {
+    void refreshCurrentInput().catch((error) => {
+      console.error("Failed to reload the current diff.", error);
+    });
+  }, [refreshCurrentInput]);
+
+  useEffect(() => {
+    if (!watchEnabled) {
+      return;
+    }
+
+    let cancelled = false;
+    let polling = false;
+    let refreshing = false;
+    let lastSignature: string;
+
+    try {
+      lastSignature = computeWatchSignature(bootstrap.input);
+    } catch (error) {
+      console.error("Failed to initialize watch mode.", error);
+      return;
+    }
+
+    const pollForChanges = () => {
+      if (cancelled || polling || refreshing) {
+        return;
+      }
+
+      polling = true;
+
+      try {
+        const nextSignature = computeWatchSignature(bootstrap.input);
+        if (nextSignature !== lastSignature) {
+          lastSignature = nextSignature;
+          refreshing = true;
+          void refreshCurrentInput()
+            .catch((error) => {
+              console.error("Failed to auto-reload the current diff.", error);
+            })
+            .finally(() => {
+              refreshing = false;
+            });
+        }
+      } catch (error) {
+        console.error("Failed to poll watch mode input.", error);
+      } finally {
+        polling = false;
+      }
+    };
+
+    const interval = setInterval(pollForChanges, 250);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [bootstrap.input, refreshCurrentInput, watchEnabled]);
 
   /** Leave the app through the shell-owned shutdown path. */
   const requestQuit = useCallback(() => {
@@ -399,7 +454,7 @@ function AppShell({
         layoutMode,
         moveAnnotatedFile,
         moveHunk,
-        refreshCurrentInput,
+        refreshCurrentInput: triggerRefreshCurrentInput,
         requestQuit,
         selectLayoutMode: setLayoutMode,
         selectThemeId: setThemeId,
@@ -422,8 +477,8 @@ function AppShell({
       layoutMode,
       moveAnnotatedFile,
       moveHunk,
-      refreshCurrentInput,
       requestQuit,
+      triggerRefreshCurrentInput,
       showAgentNotes,
       showHelp,
       showHunkHeaders,
@@ -711,7 +766,7 @@ function AppShell({
     }
 
     if ((key.name === "r" || key.sequence === "r") && canRefreshCurrentInput) {
-      refreshCurrentInput();
+      triggerRefreshCurrentInput();
       closeMenu();
       return;
     }
@@ -913,7 +968,7 @@ export function App({
   const [shellVersion, setShellVersion] = useState(0);
 
   const reloadSession = useCallback(
-    async (nextInput: CliInput) => {
+    async (nextInput: CliInput, options?: { resetShell?: boolean }) => {
       const runtimeInput = resolveRuntimeCliInput(nextInput);
       const configuredInput = resolveConfiguredCliInput(runtimeInput).input;
       const nextBootstrap = await loadAppBootstrap(configuredInput);
@@ -930,7 +985,9 @@ export function App({
       }
 
       setActiveBootstrap(nextBootstrap);
-      setShellVersion((current) => current + 1);
+      if (options?.resetShell !== false) {
+        setShellVersion((current) => current + 1);
+      }
 
       return {
         sessionId,

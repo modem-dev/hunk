@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { HunkUserError } from "../src/core/errors";
 import { prepareStartupPlan } from "../src/core/startup";
 import type { AppBootstrap, CliInput, ParsedCliInput } from "../src/core/types";
 
@@ -118,6 +119,24 @@ describe("startup planning", () => {
       },
     });
     expect(seenInputs).toHaveLength(3);
+  });
+
+  test("rejects watch mode for stdin-backed patch inputs", async () => {
+    const cliInput: CliInput = {
+      kind: "patch",
+      file: "-",
+      options: {
+        watch: true,
+      },
+    };
+
+    await expect(
+      prepareStartupPlan(["bun", "hunk", "patch", "-", "--watch"], {
+        parseCliImpl: async () => cliInput as ParsedCliInput,
+        resolveRuntimeCliInputImpl: (input) => input,
+        resolveConfiguredCliInputImpl: (input) => ({ input }) as never,
+      }),
+    ).rejects.toBeInstanceOf(HunkUserError);
   });
 
   test("opens the controlling terminal for piped patch startup", async () => {

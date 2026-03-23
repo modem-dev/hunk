@@ -68,6 +68,7 @@ describe("parseCli", () => {
       "--wrap",
       "--no-hunk-headers",
       "--agent-notes",
+      "--watch",
     ]);
 
     expect(parsed).toMatchObject({
@@ -78,6 +79,7 @@ describe("parseCli", () => {
         mode: "split",
         theme: "paper",
         agentContext: "notes.json",
+        watch: true,
         lineNumbers: false,
         wrapLines: true,
         hunkHeaders: false,

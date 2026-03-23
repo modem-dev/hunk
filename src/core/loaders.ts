@@ -7,7 +7,13 @@ import {
 } from "@pierre/diffs";
 import { createTwoFilesPatch } from "diff";
 import { findAgentFileContext, loadAgentContext } from "./agent";
-import { resolveGitRepoRoot, runGitText } from "./git";
+import {
+  buildGitDiffArgs,
+  buildGitShowArgs,
+  buildGitStashShowArgs,
+  resolveGitRepoRoot,
+  runGitText,
+} from "./git";
 import type {
   AppBootstrap,
   AgentContext,
@@ -266,32 +272,11 @@ async function loadFileDiffChangeset(
   } satisfies Changeset;
 }
 
-/** Append Git pathspec arguments only when the caller requested them. */
-function appendPathspecs(args: string[], pathspecs?: string[]) {
-  if (!pathspecs || pathspecs.length === 0) {
-    return;
-  }
-
-  args.push("--", ...pathspecs);
-}
-
 /** Build a changeset from the current repository working tree or a git range. */
 async function loadGitChangeset(input: GitCommandInput, agentContext: AgentContext | null) {
   const repoRoot = resolveGitRepoRoot(input);
   const repoName = basename(repoRoot);
-  const args = ["git", "diff", "--no-ext-diff", "--find-renames", "--no-color"];
-
-  if (input.staged) {
-    args.push("--staged");
-  }
-
-  if (input.range) {
-    args.push(input.range);
-  }
-
-  appendPathspecs(args, input.pathspecs);
-
-  const patchText = runGitText({ input, args: args.slice(1) });
+  const patchText = runGitText({ input, args: buildGitDiffArgs(input) });
   const title = input.staged
     ? `${repoName} staged changes`
     : input.range
@@ -305,16 +290,9 @@ async function loadGitChangeset(input: GitCommandInput, agentContext: AgentConte
 async function loadShowChangeset(input: ShowCommandInput, agentContext: AgentContext | null) {
   const repoRoot = resolveGitRepoRoot(input);
   const repoName = basename(repoRoot);
-  const args = ["git", "show", "--format=", "--no-ext-diff", "--find-renames", "--no-color"];
-
-  if (input.ref) {
-    args.push(input.ref);
-  }
-
-  appendPathspecs(args, input.pathspecs);
 
   return normalizePatchChangeset(
-    runGitText({ input, args: args.slice(1) }),
+    runGitText({ input, args: buildGitShowArgs(input) }),
     input.ref ? `${repoName} show ${input.ref}` : `${repoName} show HEAD`,
     repoRoot,
     agentContext,
@@ -328,14 +306,9 @@ async function loadStashShowChangeset(
 ) {
   const repoRoot = resolveGitRepoRoot(input);
   const repoName = basename(repoRoot);
-  const args = ["git", "stash", "show", "-p", "--find-renames", "--no-color"];
-
-  if (input.ref) {
-    args.push(input.ref);
-  }
 
   return normalizePatchChangeset(
-    runGitText({ input, args: args.slice(1) }),
+    runGitText({ input, args: buildGitStashShowArgs(input) }),
     input.ref ? `${repoName} stash ${input.ref}` : `${repoName} stash`,
     repoRoot,
     agentContext,

@@ -54,6 +54,7 @@ function buildCommonOptions(
     theme?: string;
     agentContext?: string;
     pager?: boolean;
+    watch?: boolean;
   },
   argv: string[],
 ): CommonOptions {
@@ -62,6 +63,7 @@ function buildCommonOptions(
     theme: options.theme,
     agentContext: options.agentContext,
     pager: options.pager ? true : undefined,
+    watch: options.watch ? true : undefined,
     lineNumbers: resolveBooleanFlag(argv, "--line-numbers", "--no-line-numbers"),
     wrapLines: resolveBooleanFlag(argv, "--wrap", "--no-wrap"),
     hunkHeaders: resolveBooleanFlag(argv, "--hunk-headers", "--no-hunk-headers"),
@@ -69,7 +71,7 @@ function buildCommonOptions(
   };
 }
 
-/** Attach the shared mode/theme/agent-context flags to a subcommand parser. */
+/** Attach the shared view flags to a subcommand parser. */
 function applyCommonOptions(command: Command) {
   return command
     .option("--mode <mode>", "layout mode: auto, split, stack", parseLayoutMode)
@@ -84,6 +86,11 @@ function applyCommonOptions(command: Command) {
     .option("--no-hunk-headers", "hide hunk metadata rows")
     .option("--agent-notes", "show agent notes by default")
     .option("--no-agent-notes", "hide agent notes by default");
+}
+
+/** Attach auto-refresh support to review commands that can reopen their source input. */
+function applyWatchOption(command: Command) {
+  return command.option("--watch", "auto-reload when the current diff input changes");
 }
 
 /** Resolve the CLI version from the nearest shipped package manifest. */
@@ -223,7 +230,9 @@ function resolveExplicitSessionSelector(
 /** Parse the overloaded `hunk diff` command. */
 async function parseDiffCommand(tokens: string[], argv: string[]): Promise<ParsedCliInput> {
   const { commandTokens, pathspecs } = splitPathspecArgs(tokens);
-  const command = createCommand("diff", "review Git diffs or compare two concrete files")
+  const command = applyWatchOption(
+    createCommand("diff", "review Git diffs or compare two concrete files"),
+  )
     .option("--staged", "show staged changes instead of the working tree")
     .option("--cached", "alias for --staged")
     .argument("[targets...]");
@@ -287,7 +296,9 @@ async function parseDiffCommand(tokens: string[], argv: string[]): Promise<Parse
 /** Parse the Git-style `hunk show` command. */
 async function parseShowCommand(tokens: string[], argv: string[]): Promise<ParsedCliInput> {
   const { commandTokens, pathspecs } = splitPathspecArgs(tokens);
-  const command = createCommand("show", "review the last commit or a given ref").argument("[ref]");
+  const command = applyWatchOption(
+    createCommand("show", "review the last commit or a given ref"),
+  ).argument("[ref]");
 
   let parsedRef: string | undefined;
   let parsedOptions: Record<string, unknown> = {};
@@ -313,9 +324,8 @@ async function parseShowCommand(tokens: string[], argv: string[]): Promise<Parse
 
 /** Parse the patch-file / stdin patch entrypoint. */
 async function parsePatchCommand(tokens: string[], argv: string[]): Promise<ParsedCliInput> {
-  const command = createCommand(
-    "patch",
-    "review a patch file, or read a patch from stdin",
+  const command = applyWatchOption(
+    createCommand("patch", "review a patch file, or read a patch from stdin"),
   ).argument("[file]");
 
   let parsedFile: string | undefined;
@@ -365,7 +375,7 @@ async function parsePagerCommand(
 
 /** Parse Git difftool-style two-file review commands. */
 async function parseDifftoolCommand(tokens: string[], argv: string[]): Promise<ParsedCliInput> {
-  const command = createCommand("difftool", "review Git difftool file pairs")
+  const command = applyWatchOption(createCommand("difftool", "review Git difftool file pairs"))
     .argument("<left>")
     .argument("<right>")
     .argument("[path]");
@@ -912,9 +922,8 @@ async function parseStashCommand(tokens: string[], argv: string[]): Promise<Pars
     throw new Error("Only `hunk stash show` is supported.");
   }
 
-  const command = createCommand(
-    "stash show",
-    "review a stash entry as a full Hunk changeset",
+  const command = applyWatchOption(
+    createCommand("stash show", "review a stash entry as a full Hunk changeset"),
   ).argument("[ref]");
 
   let parsedRef: string | undefined;
