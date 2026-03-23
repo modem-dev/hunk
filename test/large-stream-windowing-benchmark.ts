@@ -21,8 +21,26 @@ const SCROLL_TARGET = {
   x: 170,
   y: 12,
 } as const;
+const SELECTED_HIGHLIGHT_MARKER = "stream1_40";
 
 type BenchmarkRenderer = Awaited<ReturnType<typeof testRender>>;
+
+function frameHasHighlightedMarker(
+  frame: { lines: Array<{ spans: Array<{ text: string }> }> },
+  marker: string,
+) {
+  return frame.lines.some((line) => {
+    const text = line.spans.map((span) => span.text).join("");
+
+    if (!text.includes(marker)) {
+      return false;
+    }
+
+    return line.spans.some(
+      (span) => span.text.includes(marker) && span.text.trim().length < text.trim().length,
+    );
+  });
+}
 
 async function renderPass(setup: BenchmarkRenderer, passes = 1) {
   for (let index = 0; index < passes; index += 1) {
@@ -30,6 +48,16 @@ async function renderPass(setup: BenchmarkRenderer, passes = 1) {
       await setup.renderOnce();
       await Bun.sleep(0);
     });
+  }
+}
+
+async function flushSelectedHighlight(setup: BenchmarkRenderer) {
+  for (let iteration = 0; iteration < 200; iteration += 1) {
+    await renderPass(setup);
+
+    if (frameHasHighlightedMarker(setup.captureSpans(), SELECTED_HIGHLIGHT_MARKER)) {
+      return;
+    }
   }
 }
 
@@ -52,6 +80,7 @@ async function measureFirstFrameMs(notesPerFile: number) {
     await renderPass(setup);
     return performance.now() - start;
   } finally {
+    await flushSelectedHighlight(setup);
     await destroyRenderer(setup);
   }
 }
@@ -78,6 +107,7 @@ async function measureScrollTicksMs(notesPerFile: number) {
 
     return performance.now() - start;
   } finally {
+    await flushSelectedHighlight(setup);
     await destroyRenderer(setup);
   }
 }
