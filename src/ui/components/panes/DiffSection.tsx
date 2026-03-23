@@ -35,7 +35,7 @@ function DiffSectionComponent({
   headerLabelWidth,
   headerStatsWidth,
   layout,
-  selected,
+  selected: _selected,
   selectedHunkIndex,
   shouldLoadHighlight,
   onHighlightReady,

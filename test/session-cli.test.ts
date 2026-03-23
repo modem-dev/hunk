@@ -43,18 +43,20 @@ function waitUntil<T>(
 ) {
   const deadline = Date.now() + timeoutMs;
 
-  return new Promise<T>(async (resolve, reject) => {
-    while (Date.now() < deadline) {
-      const value = await poll();
-      if (value !== null) {
-        resolve(value);
-        return;
+  return new Promise<T>((resolve, reject) => {
+    void (async () => {
+      while (Date.now() < deadline) {
+        const value = await poll();
+        if (value !== null) {
+          resolve(value);
+          return;
+        }
+
+        await Bun.sleep(intervalMs);
       }
 
-      await Bun.sleep(intervalMs);
-    }
-
-    reject(new Error(`Timed out waiting for ${label}.`));
+      reject(new Error(`Timed out waiting for ${label}.`));
+    })().catch(reject);
   });
 }
 

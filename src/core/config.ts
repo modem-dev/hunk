@@ -2,15 +2,6 @@ import fs from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import type { CliInput, CommonOptions, LayoutMode, PersistedViewPreferences } from "./types";
 
-const CONFIG_SECTION_NAMES = [
-  "pager",
-  "git",
-  "diff",
-  "show",
-  "stash-show",
-  "patch",
-  "difftool",
-] as const;
 const DEFAULT_VIEW_PREFERENCES: PersistedViewPreferences = {
   mode: "auto",
   showLineNumbers: true,
