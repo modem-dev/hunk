@@ -109,7 +109,7 @@ Each example includes the exact command to run from the repository root.
 
 ## Config
 
-Hunk reads config from:
+You can persist preferences to a config file:
 
 - `~/.config/hunk/config.toml`
 - `.hunk/config.toml`
@@ -124,15 +124,35 @@ wrap_lines = false
 agent_notes = false
 ```
 
-## Live sessions and agent workflows
+## Working with Agents
 
-Hunk can load inline rationale from a sidecar and lets you steer a live review window from another terminal or agent process.
+Hunk supports two agent workflows:
 
-- `hunk diff --agent-context <file>` or `hunk patch --agent-context <file>` shows inline agent rationale beside the diff
-- `hunk session ...` inspects, navigates, reloads, and annotates a running Hunk session
-- `skills/hunk-review/SKILL.md` helps coding agents steer a live Hunk review and write inline Hunk annotations
+- steer a live Hunk window from another terminal with `hunk session ...` (recommended)
+- load agent comments from a file with `--agent-context`
 
-Normal Hunk sessions start and register with the local loopback session daemon automatically. In most cases, use `hunk session ...` and ignore `hunk mcp serve`.
+### Steer a live Hunk window
+
+Use the Hunk review skill: [`skills/hunk-review/SKILL.md`](skills/hunk-review/SKILL.md).
+
+A good generic prompt is:
+
+- "Load the Hunk skill and use it for this review."
+
+That skill teaches the agent how to inspect a live Hunk session, navigate it, reload it, and leave inline comments.
+
+### How remote control works
+
+When a Hunk TUI starts, it registers with a local loopback daemon. `hunk session ...` talks to that daemon to find the right live window and control it.
+
+Use it to:
+
+- inspect the current review context
+- jump to a file, hunk, or line
+- reload the current window with a different `diff` or `show` command
+- add, list, and remove inline comments
+
+Most users only need `hunk session ...`. Use `hunk mcp serve` only for manual startup or debugging of the local daemon.
 
 ```bash
 hunk session list
@@ -148,7 +168,14 @@ hunk session comment clear --repo . --file README.md --yes
 
 `hunk session reload ... -- <hunk command>` swaps what a live session is showing without opening a new TUI window.
 
-Use `hunk mcp serve` only for manual startup or debugging of the local session daemon.
+### Load agent comments from a file
+
+Use `--agent-context` to attach agent-written comments or rationale from a JSON sidecar file. For a compact real example, see [`examples/3-agent-review-demo/agent-context.json`](examples/3-agent-review-demo/agent-context.json).
+
+```bash
+hunk diff --agent-context notes.json
+hunk patch change.patch --agent-context notes.json
+```
 
 ## Contributing
 
