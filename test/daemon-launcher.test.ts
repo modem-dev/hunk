@@ -31,11 +31,7 @@ describe("MCP daemon launcher", () => {
     // and execPath is the real binary on disk.
     expect(
       resolveDaemonLaunchCommand(
-        [
-          "bun",
-          "/$bunfs/root/hunk",
-          "show",
-        ],
+        ["bun", "/$bunfs/root/hunk", "show"],
         "/usr/local/lib/node_modules/hunkdiff/node_modules/hunkdiff-darwin-arm64/bin/hunk",
       ),
     ).toEqual({
