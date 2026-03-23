@@ -627,7 +627,7 @@ function renderHeaderRow(
         style={{ width: badgeWidth, height: 1 }}
         onMouseUp={() => onOpenAgentNotesAtHunk?.(row.hunkIndex)}
       >
-        <text fg={theme.accent}>{badgeText}</text>
+        <text fg={theme.noteTitleText} bg={theme.noteTitleBackground}>{` ${badgeText}`}</text>
       </box>
     </box>
   );
