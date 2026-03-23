@@ -1,6 +1,6 @@
 {
   "name": "hunkdiff",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Desktop-inspired terminal diff viewer for understanding agent-authored changesets.",
   "keywords": [
     "ai",
