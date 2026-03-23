@@ -1,0 +1,35 @@
+name: Fix npm dist-tags
+
+on:
+  workflow_dispatch:
+
+jobs:
+  fix-dist-tags:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Verify npm auth
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm whoami
+
+      - name: Fix beta and latest dist-tags
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          npm dist-tag add hunkdiff@0.6.0-beta.2 beta
+          npm dist-tag add hunkdiff@0.5.1 latest
+
+          npm dist-tag add hunkdiff-linux-x64@0.6.0-beta.2 beta
+          npm dist-tag add hunkdiff-linux-x64@0.5.1 latest
+
+          npm dist-tag add hunkdiff-darwin-x64@0.6.0-beta.2 beta
+          npm dist-tag add hunkdiff-darwin-x64@0.5.1 latest
+
+          npm dist-tag add hunkdiff-darwin-arm64@0.6.0-beta.2 beta
+          npm dist-tag add hunkdiff-darwin-arm64@0.5.1 latest
