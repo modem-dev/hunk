@@ -111,6 +111,6 @@ for (const directory of directories) {
 
 console.log(
   options.dryRun
-    ? `Completed npm publish dry-run for staged prebuilt packages with dist-tag \"${options.npmTag}\".`
-    : `Published staged prebuilt packages to npm with dist-tag \"${options.npmTag}\".`,
+    ? `Completed npm publish dry-run for staged prebuilt packages with dist-tag "${options.npmTag}".`
+    : `Published staged prebuilt packages to npm with dist-tag "${options.npmTag}".`,
 );

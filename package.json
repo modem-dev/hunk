@@ -45,6 +45,9 @@
     "typecheck": "tsc --noEmit",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
+    "lint": "oxlint . --deny-warnings",
+    "lint:fix": "oxlint . --fix",
+    "prepare": "simple-git-hooks",
     "test": "bun test",
     "test:tty-smoke": "HUNK_RUN_TTY_SMOKE=1 bun test test/tty-render-smoke.test.ts",
     "check:pack": "bun run ./scripts/check-pack.ts",
@@ -69,8 +72,14 @@
   "devDependencies": {
     "@types/bun": "latest",
     "@types/react": "^19.2.14",
+    "lint-staged": "^16.4.0",
     "oxfmt": "^0.41.0",
+    "oxlint": "^1.56.0",
+    "simple-git-hooks": "^2.13.1",
     "typescript": "^5.9.3"
+  },
+  "simple-git-hooks": {
+    "pre-commit": "bunx lint-staged"
   },
   "engines": {
     "node": ">=18"

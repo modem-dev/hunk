@@ -41,6 +41,15 @@ bun run format
 bun run format:check
 ```
 
+Lint the JS/TS codebase:
+
+```bash
+bun run lint
+bun run lint:fix
+```
+
+`bun install` also installs a local `pre-commit` hook that runs `lint-staged`, so staged JS/TS files are auto-formatted and linted before commit.
+
 Build and verify the npm package:
 
 ```bash
