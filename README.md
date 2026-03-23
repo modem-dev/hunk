@@ -14,6 +14,24 @@ Hunk is a desktop-inspired terminal diff viewer for reviewing agent-authored cha
 - split, stacked, and responsive auto layouts
 - Git pager and difftool integration
 
+<table>
+ <tr>
+   <td width="60%" align="center">
+     <img width="794" alt="image" src="https://github.com/user-attachments/assets/f6ffd9c4-67f5-483c-88f1-cbe88c19f52f" />
+     <br />
+     <sub>Split view with sidebar and inline AI notes</sub>
+   </td>
+   <td width="40%" align="center">
+     <img width="508" height="920" alt="image" src="https://github.com/user-attachments/assets/44c542a2-0a09-41cd-b264-fbd942e92f06" />
+     <br />
+     <sub>Stacked view and mouse-selectable menus
+   </td>
+ </tr>
+</table>
+
+
+
+
 ## Install
 
 ```bash

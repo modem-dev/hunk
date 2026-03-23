@@ -78,6 +78,95 @@ function createDiffFile(
   };
 }
 
+function lines(...values: string[]) {
+  return `${values.join("\n")}\n`;
+}
+
+function createWindowingFiles(count: number) {
+  return Array.from({ length: count }, (_, index) =>
+    createDiffFile(
+      `window-${index + 1}`,
+      `window-${index + 1}.ts`,
+      lines(`export const file${index + 1} = ${index + 1};`),
+      lines(
+        `export const file${index + 1} = ${index + 10};`,
+        `export const file${index + 1}Extra = true;`,
+      ),
+    ),
+  );
+}
+
+function createMultiHunkDiffFile(id: string, path: string) {
+  const before = lines(
+    "export const line1 = 1;",
+    "export const line2 = 2;",
+    "export const line3 = 3;",
+    "export const line4 = 4;",
+    "export const line5 = 5;",
+    "export const line6 = 6;",
+    "export const line7 = 7;",
+    "export const line8 = 8;",
+    "export const line9 = 9;",
+    "export const line10 = 10;",
+    "export const line11 = 11;",
+    "export const line12 = 12;",
+  );
+  const after = lines(
+    "export const line1 = 1;",
+    "export const line2 = 200;",
+    "export const line3 = 3;",
+    "export const line4 = 4;",
+    "export const line5 = 5;",
+    "export const line6 = 6;",
+    "export const line7 = 7;",
+    "export const line8 = 8;",
+    "export const line9 = 9;",
+    "export const line10 = 10;",
+    "export const line11 = 1100;",
+    "export const line12 = 12;",
+  );
+
+  return createDiffFile(id, path, before, after);
+}
+
+function createDiffPaneProps(
+  files: DiffFile[],
+  theme = resolveTheme("midnight", null),
+  overrides: Partial<Parameters<typeof DiffPane>[0]> = {},
+) {
+  return {
+    activeAnnotations: [],
+    diffContentWidth: 72,
+    dismissedAgentNoteIds: [],
+    files,
+    headerLabelWidth: 40,
+    headerStatsWidth: 16,
+    layout: "split" as const,
+    scrollRef: createRef(),
+    selectedFileId: files[0]?.id,
+    selectedHunkIndex: 0,
+    separatorWidth: 68,
+    showAgentNotes: false,
+    showLineNumbers: true,
+    showHunkHeaders: true,
+    wrapLines: false,
+    theme,
+    width: 76,
+    onDismissAgentNote: () => {},
+    onOpenAgentNotesAtHunk: () => {},
+    onSelectFile: () => {},
+    ...overrides,
+  };
+}
+
+function settleDiffPane(setup: Awaited<ReturnType<typeof testRender>>) {
+  return act(async () => {
+    await setup.renderOnce();
+    await Bun.sleep(100);
+    await setup.renderOnce();
+  });
+}
+
 function createBootstrap(): AppBootstrap {
   return {
     input: {
@@ -254,6 +343,76 @@ describe("UI components", () => {
     expect(frame).toContain("@@ -1,1 +1,1 @@");
     expect(frame).toContain("[AI]");
     expect(frame.indexOf("alpha.ts")).toBeLessThan(frame.indexOf("beta.ts"));
+  });
+
+  test("DiffPane scrolls a later selected file into view in the windowed path", async () => {
+    const files = createWindowingFiles(6);
+    const theme = resolveTheme("midnight", null);
+    const props = createDiffPaneProps(files, theme, {
+      diffContentWidth: 88,
+      selectedFileId: files[5]?.id,
+      separatorWidth: 84,
+      width: 92,
+    });
+    const setup = await testRender(<DiffPane {...props} />, {
+      width: 96,
+      height: 12,
+    });
+
+    try {
+      await settleDiffPane(setup);
+      const frame = setup.captureCharFrame();
+
+      expect(frame).toContain("window-6.ts");
+      expect(frame).toContain("export const file6Extra = true;");
+      expect(frame).not.toContain("window-1.ts");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("DiffPane scrolls to the selected later hunk when hunk headers are hidden", async () => {
+    const theme = resolveTheme("midnight", null);
+    const files = [
+      createDiffFile(
+        "intro",
+        "intro.ts",
+        lines("export const intro = 1;"),
+        lines("export const intro = 2;", "export const introExtra = true;"),
+      ),
+      createMultiHunkDiffFile("target", "target.ts"),
+    ];
+    const props = createDiffPaneProps(files, theme, {
+      diffContentWidth: 96,
+      headerLabelWidth: 48,
+      selectedFileId: "target",
+      selectedHunkIndex: 1,
+      separatorWidth: 92,
+      showHunkHeaders: false,
+      width: 100,
+    });
+    const setup = await testRender(<DiffPane {...props} />, {
+      width: 104,
+      height: 12,
+    });
+
+    try {
+      await settleDiffPane(setup);
+      const frame = setup.captureCharFrame();
+
+      expect(frame).toContain("11 - export const line11 = 11;");
+      expect(frame).toContain("11 + export const line11 = 1100;");
+      expect(frame).not.toContain("2 - export const line2 = 2;");
+      expect(frame).not.toContain("2 + export const line2 = 200;");
+      expect(frame).not.toContain("intro.ts");
+      expect(frame).not.toContain("@@ -1,3 +1,3 @@");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
   });
 
   test("AgentCard removes top and bottom padding while keeping the footer inside the frame", async () => {
