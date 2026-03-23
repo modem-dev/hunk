@@ -1,0 +1,120 @@
+<svg width="1280" height="640" viewBox="0 0 1280 640" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="640" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#122117"/>
+      <stop offset="0.55" stop-color="#0D1410"/>
+      <stop offset="1" stop-color="#090C0A"/>
+    </linearGradient>
+    <radialGradient id="glowLeft" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(315 235) rotate(90) scale(290 420)">
+      <stop stop-color="#91E35E" stop-opacity="0.36"/>
+      <stop offset="1" stop-color="#91E35E" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowPanel" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(980 300) rotate(90) scale(240 320)">
+      <stop stop-color="#75D985" stop-opacity="0.15"/>
+      <stop offset="1" stop-color="#75D985" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <path d="M24 0H0V24" stroke="#B6FFC8" stroke-opacity="0.07"/>
+    </pattern>
+    <filter id="softShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#000000" flood-opacity="0.45"/>
+    </filter>
+    <filter id="panelShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="24" flood-color="#000000" flood-opacity="0.45"/>
+    </filter>
+    <style>
+      .mono { font-family: 'DejaVu Sans Mono', 'SFMono-Regular', Menlo, Consolas, monospace; }
+      .sans { font-family: 'DejaVu Sans', Inter, system-ui, sans-serif; }
+      .title { font: 800 84px 'DejaVu Sans Mono', 'SFMono-Regular', Menlo, Consolas, monospace; letter-spacing: -1px; }
+      .subtitle { font: 700 30px 'DejaVu Sans', Inter, system-ui, sans-serif; }
+      .meta { font: 400 22px 'DejaVu Sans Mono', 'SFMono-Regular', Menlo, Consolas, monospace; }
+      .small { font: 400 20px 'DejaVu Sans Mono', 'SFMono-Regular', Menlo, Consolas, monospace; }
+      .ui { font: 400 16px 'DejaVu Sans Mono', 'SFMono-Regular', Menlo, Consolas, monospace; }
+      .uiBold { font: 700 16px 'DejaVu Sans Mono', 'SFMono-Regular', Menlo, Consolas, monospace; }
+      .note { font: 500 18px 'DejaVu Sans', Inter, system-ui, sans-serif; }
+    </style>
+  </defs>
+
+  <rect width="1280" height="640" fill="url(#bg)"/>
+  <rect width="1280" height="640" fill="url(#glowLeft)"/>
+  <rect width="1280" height="640" fill="url(#glowPanel)"/>
+  <rect width="1280" height="640" fill="url(#grid)"/>
+
+  <text x="350" y="162" class="title" fill="#F5F8F4">Hunk</text>
+  <text x="350" y="220" class="subtitle" fill="#9BE36B">Review-first terminal diffs</text>
+  <text x="350" y="266" class="subtitle" fill="#F5F8F4">for code review in the terminal</text>
+
+  <text x="350" y="324" class="meta" fill="#C2CEC3">multi-file stream  •  inline notes</text>
+  <text x="350" y="360" class="meta" fill="#C2CEC3">split + stack  •  mouse + keyboard</text>
+  <text x="350" y="398" class="small" fill="#8FA290">OpenTUI + Pierre diffs. Built for review.</text>
+
+  <g>
+    <rect x="350" y="432" width="190" height="40" rx="20" fill="#16241A" stroke="#6FC977"/>
+    <text x="368" y="458" class="small" fill="#F5F8F4">terminal-native</text>
+
+    <rect x="554" y="432" width="212" height="40" rx="20" fill="#111917" stroke="#C2CEC3" stroke-opacity="0.55"/>
+    <text x="572" y="458" class="small" fill="#F5F8F4">keyboard + mouse</text>
+
+    <rect x="350" y="490" width="198" height="40" rx="20" fill="#1C1627" stroke="#B899F8" stroke-opacity="0.75"/>
+    <text x="368" y="516" class="small" fill="#F5F8F4">agent-aware diffs</text>
+  </g>
+
+  <text x="350" y="582" class="meta" fill="#8FA290">github.com/modem-dev/hunk</text>
+
+  <g filter="url(#panelShadow)">
+    <rect x="820" y="70" width="410" height="500" rx="28" fill="#0A0E0C" fill-opacity="0.96" stroke="#607A68" stroke-width="2"/>
+    <rect x="834" y="84" width="382" height="38" rx="14" fill="#151D18"/>
+    <circle cx="827" cy="103" r="6" fill="#FF5F56"/>
+    <circle cx="849" cy="103" r="6" fill="#FFBD2E"/>
+    <circle cx="871" cy="103" r="6" fill="#27C93F"/>
+    <text x="915" y="109" class="ui" fill="#D8E4DA">View  Navigate  Theme  Agent  Help</text>
+
+    <rect x="838" y="140" width="132" height="412" rx="18" fill="#121713" stroke="#28342D"/>
+    <rect x="984" y="140" width="218" height="412" rx="18" fill="#0F1411" stroke="#28342D"/>
+
+    <text x="854" y="163" class="uiBold" fill="#86A08D">FILES</text>
+
+    <rect x="846" y="177" width="116" height="26" rx="10" fill="#244029"/>
+    <text x="854" y="194" class="ui" fill="#F5F8F4">M src/ui/App.tsx</text>
+    <text x="854" y="228" class="ui" fill="#9FADA3">M src/mcp/server.ts</text>
+    <text x="854" y="262" class="ui" fill="#9FADA3">M src/mcp/daemonS…</text>
+    <text x="854" y="296" class="ui" fill="#9FADA3">A assets/social-pr…</text>
+
+    <text x="1002" y="163" class="uiBold" fill="#E4EBE5">src/ui/App.tsx   +8  -2</text>
+
+    <rect x="998" y="179" width="190" height="24" rx="8" fill="#1A2026"/>
+    <text x="1010" y="195" class="ui" fill="#B7C3D7">@@ -211,6 +214,14 @@</text>
+    <rect x="1130" y="181" width="50" height="20" rx="10" fill="#44315B"/>
+    <text x="1140" y="196" class="uiBold" fill="#F1E8FF">[AI]</text>
+
+    <rect x="998" y="215" width="190" height="26" rx="8" fill="#44282A"/>
+    <rect x="998" y="215" width="6" height="26" rx="3" fill="#F0A0A0"/>
+    <text x="1012" y="232" class="ui" fill="#FFF0F0">-  if (statusMessageTime…</text>
+
+    <rect x="998" y="247" width="190" height="26" rx="8" fill="#44282A"/>
+    <rect x="998" y="247" width="6" height="26" rx="3" fill="#F0A0A0"/>
+    <text x="1012" y="264" class="ui" fill="#FFF0F0">-    clearTimeout(statu…</text>
+
+    <rect x="998" y="279" width="190" height="26" rx="8" fill="#223628"/>
+    <rect x="998" y="279" width="6" height="26" rx="3" fill="#88D39B"/>
+    <text x="1012" y="296" class="ui" fill="#F1F8F2">+  useEffect(() =&gt; {</text>
+
+    <rect x="998" y="311" width="190" height="26" rx="8" fill="#223628"/>
+    <rect x="998" y="311" width="6" height="26" rx="3" fill="#88D39B"/>
+    <text x="1012" y="328" class="ui" fill="#F1F8F2">+    return () =&gt; {</text>
+
+    <rect x="998" y="343" width="190" height="26" rx="8" fill="#223628"/>
+    <rect x="998" y="343" width="6" height="26" rx="3" fill="#88D39B"/>
+    <text x="1012" y="360" class="ui" fill="#F1F8F2">+      if (statusMessag…</text>
+
+    <rect x="998" y="375" width="190" height="26" rx="8" fill="#223628"/>
+    <rect x="998" y="375" width="6" height="26" rx="3" fill="#88D39B"/>
+    <text x="1012" y="392" class="ui" fill="#F1F8F2">+        clearTimeout(…</text>
+
+    <rect x="1020" y="438" width="168" height="86" rx="16" fill="#211A2E" stroke="#8F74BE" stroke-width="2"/>
+    <text x="1036" y="462" class="uiBold" fill="#ECDEFF">AI note</text>
+    <text x="1036" y="487" class="note" fill="#F5F8F4">Cleanup unmount timeout</text>
+    <text x="1036" y="510" class="note" fill="#F5F8F4">to avoid stale status-</text>
+    <text x="1036" y="533" class="note" fill="#F5F8F4">message updates.</text>
+  </g>
+</svg>
