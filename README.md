@@ -2,7 +2,7 @@
 
 # hunk
 
-Hunk is a review-first terminal diff viewer for agent-authored changesets.
+Hunk is a review-first terminal diff viewer for agent-authored changesets, built on [OpenTUI](https://github.com/anomalyco/opentui) and [Pierre diffs](https://www.npmjs.com/package/@pierre/diffs).
 
 [![CI status](https://img.shields.io/github/actions/workflow/status/modem-dev/hunk/ci.yml?branch=main&style=for-the-badge&label=CI)](https://github.com/modem-dev/hunk/actions/workflows/ci.yml?branch=main)
 [![Latest release](https://img.shields.io/github/v/release/modem-dev/hunk?style=for-the-badge)](https://github.com/modem-dev/hunk/releases)
@@ -23,13 +23,10 @@ Hunk is a review-first terminal diff viewer for agent-authored changesets.
    <td width="40%" align="center">
      <img width="508" height="920" alt="image" src="https://github.com/user-attachments/assets/44c542a2-0a09-41cd-b264-fbd942e92f06" />
      <br />
-     <sub>Stacked view and mouse-selectable menus
+     <sub>Stacked view and mouse-selectable menus</sub>
    </td>
  </tr>
 </table>
-
-
-
 
 ## Install
 
