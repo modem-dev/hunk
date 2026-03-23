@@ -127,7 +127,7 @@ function renderCliHelp() {
     "  hunk pager                              general Git pager wrapper with diff detection",
     "  hunk difftool <left> <right> [path]     review Git difftool file pairs",
     "  hunk session <subcommand>               inspect or control a live Hunk session",
-    "  hunk mcp serve                          run the local Hunk MCP daemon",
+    "  hunk mcp serve                          run the local Hunk session daemon",
     "",
     "Options:",
     "  -h, --help                              show help",
@@ -691,7 +691,7 @@ async function parseMcpCommand(tokens: string[]): Promise<ParsedCliInput> {
       text: [
         "Usage: hunk mcp serve",
         "",
-        "Run the local Hunk MCP daemon and websocket session broker.",
+        "Run the local Hunk session daemon and websocket session broker.",
         "",
         "Environment:",
         "  HUNK_MCP_HOST                  bind host (default 127.0.0.1; loopback only unless explicitly overridden)",
@@ -711,7 +711,7 @@ async function parseMcpCommand(tokens: string[]): Promise<ParsedCliInput> {
       text: [
         "Usage: hunk mcp serve",
         "",
-        "Run the local Hunk MCP daemon and websocket session broker.",
+        "Run the local Hunk session daemon and websocket session broker.",
       ].join("\n") + "\n",
     };
   }

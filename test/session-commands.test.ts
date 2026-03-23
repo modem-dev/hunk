@@ -38,9 +38,10 @@ function createListedSession(sessionId: string) {
 
 function createClient(overrides: Partial<HunkDaemonCliClient>): HunkDaemonCliClient {
   return {
-    connect: async () => undefined,
-    close: async () => undefined,
-    listToolNames: async () => new Set<string>(),
+    getCapabilities: async () => ({
+      version: 1,
+      actions: ["list", "get", "context", "navigate", "comment-add", "comment-list", "comment-rm", "comment-clear"],
+    }),
     listSessions: async () => [],
     getSession: async () => createListedSession("session-1"),
     getSelectedContext: async () => ({
@@ -96,16 +97,16 @@ afterEach(() => {
 });
 
 describe("session command compatibility checks", () => {
-  test("refreshes an older Hunk daemon before running a newer context command", async () => {
+  test("refreshes an older daemon without the session API before running context", async () => {
     const selector: SessionSelectorInput = { sessionId: "session-1" };
-    const restartCalls: Array<{ missingTools: string[]; selector?: SessionSelectorInput }> = [];
+    const restartCalls: Array<{ action: string; selector?: SessionSelectorInput }> = [];
     const createdClients: string[] = [];
 
     const clients = [
       createClient({
-        listToolNames: async () => {
-          createdClients.push("stale-tools");
-          return new Set(["list_sessions", "get_session", "comment"]);
+        getCapabilities: async () => {
+          createdClients.push("stale-capabilities");
+          return null;
         },
       }),
       createClient({
@@ -147,8 +148,8 @@ describe("session command compatibility checks", () => {
         return client;
       },
       resolveDaemonAvailability: async () => true,
-      restartDaemonForMissingTools: async (missingTools, receivedSelector) => {
-        restartCalls.push({ missingTools, selector: receivedSelector });
+      restartDaemonForMissingAction: async (action, receivedSelector) => {
+        restartCalls.push({ action, selector: receivedSelector });
       },
     });
 
@@ -172,32 +173,38 @@ describe("session command compatibility checks", () => {
     });
     expect(restartCalls).toEqual([
       {
-        missingTools: ["get_selected_context"],
+        action: "context",
         selector,
       },
     ]);
-    expect(createdClients).toEqual(["stale-tools", "fresh-context"]);
+    expect(createdClients).toEqual(["stale-capabilities", "fresh-context"]);
   });
 
-  test("throws a clear error when the daemon is missing tools but does not look like Hunk", async () => {
+  test("does not restart when the daemon already exposes the needed session action", async () => {
+    const restartCalls: string[] = [];
+
     setSessionCommandTestHooks({
       createClient: () =>
         createClient({
-          listToolNames: async () => new Set(["list_sessions", "strange_tool"]),
+          getCapabilities: async () => ({
+            version: 1,
+            actions: ["list", "get", "context", "navigate", "comment-add", "comment-list", "comment-rm", "comment-clear"],
+          }),
         }),
       resolveDaemonAvailability: async () => true,
-      restartDaemonForMissingTools: async () => {
-        throw new Error("should not restart");
+      restartDaemonForMissingAction: async (action) => {
+        restartCalls.push(action);
       },
     });
 
-    await expect(
-      runSessionCommand({
-        kind: "session",
-        action: "comment-list",
-        selector: { sessionId: "session-1" },
-        output: "json",
-      } satisfies SessionCommandInput),
-    ).rejects.toThrow("missing required tools (list_comments)");
+    const output = await runSessionCommand({
+      kind: "session",
+      action: "comment-list",
+      selector: { sessionId: "session-1" },
+      output: "json",
+    } satisfies SessionCommandInput);
+
+    expect(JSON.parse(output)).toEqual({ comments: [] });
+    expect(restartCalls).toEqual([]);
   });
 });

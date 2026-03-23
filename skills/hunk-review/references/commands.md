@@ -2,7 +2,7 @@
 
 ## Source repo vs installed CLI
 
-Launching Hunk normally should auto-start/register the MCP daemon when MCP is enabled, so Pi usually does not need to run `hunk mcp serve` first.
+Launching Hunk normally should auto-start/register the local session daemon when MCP is enabled, so Pi usually does not need to run `hunk mcp serve` first.
 
 If Pi is operating inside the Hunk source repo, prefer the source entrypoint so review and validation target the current checkout:
 

@@ -3,8 +3,6 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 const repoRoot = process.cwd();
 const sourceEntrypoint = join(repoRoot, "src/main.tsx");
@@ -21,30 +19,13 @@ interface HealthResponse {
   sessions: number;
 }
 
-interface ListedSessionSummary {
-  sessionId: string;
-  title: string;
-  files: Array<{
-    path: string;
+interface SessionListJson {
+  sessions: Array<{
+    sessionId: string;
+    files: Array<{
+      path: string;
+    }>;
   }>;
-}
-
-interface ListedSessionFileSummary {
-  path: string;
-  hunkCount: number;
-  selected: boolean;
-}
-
-interface SelectedContextSummary {
-  selectedFile: {
-    path: string;
-    hunkCount: number;
-  } | null;
-  selectedHunk: {
-    index: number;
-    oldRange?: [number, number];
-    newRange?: [number, number];
-  } | null;
 }
 
 interface FixtureFiles {
@@ -79,7 +60,7 @@ function stripTerminalControl(text: string) {
 }
 
 function createFixtureFiles(name: string, beforeLines: string[], afterLines: string[]): FixtureFiles {
-  const dir = mkdtempSync(join(tmpdir(), `hunk-mcp-e2e-${name}-`));
+  const dir = mkdtempSync(join(tmpdir(), `hunk-session-e2e-${name}-`));
   tempDirs.push(dir);
 
   const beforeName = `${name}-before.ts`;
@@ -128,7 +109,24 @@ function spawnHunkSession(
   });
 }
 
-async function waitUntil<T>(label: string, fn: () => Promise<T | null>, timeoutMs = 10_000, intervalMs = 150) {
+function runSessionCli(args: string[], port: number) {
+  const proc = Bun.spawnSync(["bun", "run", "src/main.tsx", "session", ...args], {
+    cwd: repoRoot,
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+    env: {
+      ...process.env,
+      HUNK_MCP_PORT: `${port}`,
+    },
+  });
+
+  const stdout = Buffer.from(proc.stdout).toString("utf8");
+  const stderr = Buffer.from(proc.stderr).toString("utf8");
+  return { proc, stdout, stderr };
+}
+
+async function waitUntil<T>(label: string, fn: () => Promise<T | null> | T | null, timeoutMs = 10_000, intervalMs = 150) {
   const deadline = Date.now() + timeoutMs;
 
   for (;;) {
@@ -146,7 +144,7 @@ async function waitUntil<T>(label: string, fn: () => Promise<T | null>, timeoutM
 }
 
 async function waitForHealth(port: number) {
-  return waitUntil("MCP daemon health endpoint", async () => {
+  return waitUntil("session daemon health endpoint", async () => {
     try {
       const response = await fetch(`http://127.0.0.1:${port}/health`);
       if (!response.ok) {
@@ -160,39 +158,12 @@ async function waitForHealth(port: number) {
   });
 }
 
-async function listSessions(client: Client) {
-  const result = await client.callTool({
-    name: "list_sessions",
-    arguments: {},
-  });
-
-  return ((result.structuredContent as { sessions?: ListedSessionSummary[] } | undefined)?.sessions ?? []);
-}
-
-async function listFiles(client: Client, sessionId: string) {
-  const result = await client.callTool({
-    name: "list_files",
-    arguments: { sessionId },
-  });
-
-  return ((result.structuredContent as { files?: ListedSessionFileSummary[] } | undefined)?.files ?? []);
-}
-
-async function getSelectedContext(client: Client, sessionId: string) {
-  const result = await client.callTool({
-    name: "get_selected_context",
-    arguments: { sessionId },
-  });
-
-  return (result.structuredContent as { context?: SelectedContextSummary } | undefined)?.context ?? null;
-}
-
 afterEach(() => {
   cleanupTempDirs();
 });
 
-describe("MCP end-to-end", () => {
-  test("a live Hunk session auto-starts the daemon and renders MCP comments inline", async () => {
+describe("live session end-to-end", () => {
+  test("a live Hunk session auto-starts the daemon and renders CLI comments inline", async () => {
     if (!ttyToolsAvailable) {
       return;
     }
@@ -206,52 +177,58 @@ describe("MCP end-to-end", () => {
     const hunkProc = spawnHunkSession(fixture, { port });
 
     let daemonPid: number | null = null;
-    let transport: StreamableHTTPClientTransport | null = null;
 
     try {
       const health = await waitForHealth(port);
       daemonPid = health.pid;
       expect(health.ok).toBe(true);
 
-      const client = new Client({ name: "mcp-e2e-test", version: "1.0.0" });
-      transport = new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`));
-      await client.connect(transport);
-
       const listed = await waitUntil("registered Hunk session", async () => {
-        const sessions = await listSessions(client);
-        return sessions.length > 0 ? sessions : null;
+        const { proc, stdout } = runSessionCli(["list", "--json"], port);
+        if (proc.exitCode !== 0) {
+          return null;
+        }
+
+        const parsed = JSON.parse(stdout) as SessionListJson;
+        return parsed.sessions.length > 0 ? parsed.sessions : null;
       });
 
       const targetSession = listed.find((session) => session.files.some((file) => file.path === fixture.afterName)) ?? listed[0]!;
-      const commentResult = await client.callTool({
-        name: "comment",
-        arguments: {
-          sessionId: targetSession.sessionId,
+      const comment = runSessionCli(
+        [
+          "comment",
+          "add",
+          targetSession.sessionId,
+          "--file",
+          fixture.afterName,
+          "--new-line",
+          "2",
+          "--summary",
+          "CLI autostart note",
+          "--rationale",
+          "Injected after the Hunk session auto-started the local daemon.",
+          "--author",
+          "Pi",
+          "--json",
+        ],
+        port,
+      );
+      expect(comment.proc.exitCode).toBe(0);
+      expect(comment.stderr).toBe("");
+      expect(JSON.parse(comment.stdout)).toMatchObject({
+        result: {
           filePath: fixture.afterName,
-          side: "new",
           line: 2,
-          summary: "MCP autostart note",
-          rationale: "Injected after the Hunk session auto-started the local daemon.",
-          author: "Pi",
-          reveal: true,
         },
       });
-
-      const structured = commentResult.structuredContent as { result?: { filePath?: string; line?: number } } | undefined;
-      expect(structured?.result?.filePath).toBe(fixture.afterName);
-      expect(structured?.result?.line).toBe(2);
 
       const hunkExitCode = await hunkProc.exited;
       expect([0, 124]).toContain(hunkExitCode);
 
       const transcript = stripTerminalControl(await Bun.file(fixture.transcript).text());
-      expect(transcript).toContain("MCP autostart note");
+      expect(transcript).toContain("CLI autostart note");
       expect(transcript).toContain("Injected after the Hunk");
     } finally {
-      if (transport) {
-        await transport.close().catch(() => undefined);
-      }
-
       hunkProc.kill();
       await hunkProc.exited.catch(() => undefined);
 
@@ -265,7 +242,7 @@ describe("MCP end-to-end", () => {
     }
   }, 20_000);
 
-  test("expanded MCP tools can inspect the selected context and navigate hunks in a live session", async () => {
+  test("session CLI can inspect current focus and navigate hunks in a live session", async () => {
     if (!ttyToolsAvailable) {
       return;
     }
@@ -298,70 +275,64 @@ describe("MCP end-to-end", () => {
       ],
     );
     const port = 48500 + Math.floor(Math.random() * 1000);
-    const hunkProc = spawnHunkSession(fixture, { port });
+    const hunkProc = spawnHunkSession(fixture, { port, quitAfterSeconds: 14, timeoutSeconds: 16 });
 
     let daemonPid: number | null = null;
-    let transport: StreamableHTTPClientTransport | null = null;
 
     try {
       const health = await waitForHealth(port);
       daemonPid = health.pid;
       expect(health.ok).toBe(true);
 
-      const client = new Client({ name: "mcp-navigation-test", version: "1.0.0" });
-      transport = new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`));
-      await client.connect(transport);
-
       const listed = await waitUntil("registered Hunk session", async () => {
-        const sessions = await listSessions(client);
-        return sessions.length > 0 ? sessions : null;
+        const { proc, stdout } = runSessionCli(["list", "--json"], port);
+        if (proc.exitCode !== 0) {
+          return null;
+        }
+
+        const parsed = JSON.parse(stdout) as SessionListJson;
+        return parsed.sessions.length > 0 ? parsed.sessions : null;
       });
       const targetSession = listed.find((session) => session.files.some((file) => file.path === fixture.afterName)) ?? listed[0]!;
 
-      const initialContext = await getSelectedContext(client, targetSession.sessionId);
-      expect(initialContext?.selectedFile?.path).toBe(fixture.afterName);
-      expect(initialContext?.selectedHunk?.index).toBe(0);
+      const initialContext = runSessionCli(["context", targetSession.sessionId, "--json"], port);
+      expect(initialContext.proc.exitCode).toBe(0);
+      expect(JSON.parse(initialContext.stdout)).toMatchObject({
+        context: {
+          selectedFile: {
+            path: fixture.afterName,
+          },
+          selectedHunk: {
+            index: 0,
+          },
+        },
+      });
 
-      const navigateResult = await client.callTool({
-        name: "navigate_to_hunk",
-        arguments: {
-          sessionId: targetSession.sessionId,
+      const navigate = runSessionCli(
+        ["navigate", targetSession.sessionId, "--file", fixture.afterName, "--hunk", "2", "--json"],
+        port,
+      );
+      expect(navigate.proc.exitCode).toBe(0);
+      expect(JSON.parse(navigate.stdout)).toMatchObject({
+        result: {
           filePath: fixture.afterName,
           hunkIndex: 1,
         },
       });
-      const navigated = (navigateResult.structuredContent as { result?: { hunkIndex?: number } } | undefined)?.result;
-      expect(navigated?.hunkIndex).toBe(1);
 
-      const updatedContext = await waitUntil("selected hunk update", async () => {
-        const context = await getSelectedContext(client, targetSession.sessionId);
-        return context?.selectedHunk?.index === 1 ? context : null;
-      });
-      expect(updatedContext.selectedHunk?.newRange).toBeDefined();
-      expect(updatedContext.selectedHunk?.oldRange).toBeDefined();
+      await waitUntil("selected hunk update", () => {
+        const context = runSessionCli(["context", targetSession.sessionId, "--json"], port);
+        if (context.proc.exitCode !== 0) {
+          return null;
+        }
 
-      await client.callTool({
-        name: "navigate_to_hunk",
-        arguments: {
-          sessionId: targetSession.sessionId,
-          filePath: fixture.afterName,
-          hunkIndex: 0,
-        },
+        const parsed = JSON.parse(context.stdout) as { context?: { selectedHunk?: { index: number } } };
+        return parsed.context?.selectedHunk?.index === 1 ? parsed : null;
       });
-
-      const resetContext = await waitUntil("selected hunk reset", async () => {
-        const context = await getSelectedContext(client, targetSession.sessionId);
-        return context?.selectedHunk?.index === 0 ? context : null;
-      });
-      expect(resetContext.selectedFile?.path).toBe(fixture.afterName);
 
       const hunkExitCode = await hunkProc.exited;
       expect([0, 124]).toContain(hunkExitCode);
     } finally {
-      if (transport) {
-        await transport.close().catch(() => undefined);
-      }
-
       hunkProc.kill();
       await hunkProc.exited.catch(() => undefined);
 
@@ -375,7 +346,7 @@ describe("MCP end-to-end", () => {
     }
   }, 20_000);
 
-  test("one daemon routes comments to the correct Hunk session when multiple local sessions are open", async () => {
+  test("one daemon routes CLI comments to the correct Hunk session when multiple local sessions are open", async () => {
     if (!ttyToolsAvailable) {
       return;
     }
@@ -391,24 +362,24 @@ describe("MCP end-to-end", () => {
       ["export const beta = 2;", "export const shared = true;", "export const onlyBeta = true;"],
     );
     const port = 49000 + Math.floor(Math.random() * 1000);
-    const hunkProcA = spawnHunkSession(fixtureA, { port });
-    const hunkProcB = spawnHunkSession(fixtureB, { port });
+    const hunkProcA = spawnHunkSession(fixtureA, { port, quitAfterSeconds: 10, timeoutSeconds: 12 });
+    const hunkProcB = spawnHunkSession(fixtureB, { port, quitAfterSeconds: 10, timeoutSeconds: 12 });
 
     let daemonPid: number | null = null;
-    let transport: StreamableHTTPClientTransport | null = null;
 
     try {
       const health = await waitForHealth(port);
       daemonPid = health.pid;
       expect(health.ok).toBe(true);
 
-      const client = new Client({ name: "mcp-multisession-test", version: "1.0.0" });
-      transport = new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`));
-      await client.connect(transport);
-
       const sessions = await waitUntil("two registered Hunk sessions", async () => {
-        const listed = await listSessions(client);
-        return listed.length === 2 ? listed : null;
+        const listed = runSessionCli(["list", "--json"], port);
+        if (listed.proc.exitCode !== 0) {
+          return null;
+        }
+
+        const parsed = JSON.parse(listed.stdout) as SessionListJson;
+        return parsed.sessions.length === 2 ? parsed.sessions : null;
       });
 
       const sessionA = sessions.find((session) => session.files.some((file) => file.path === fixtureA.afterName));
@@ -416,33 +387,41 @@ describe("MCP end-to-end", () => {
       expect(sessionA).toBeDefined();
       expect(sessionB).toBeDefined();
 
-      await client.callTool({
-        name: "comment",
-        arguments: {
-          sessionId: sessionA!.sessionId,
-          filePath: fixtureA.afterName,
-          side: "new",
-          line: 2,
-          summary: "Alpha note",
-          rationale: "Delivered only to the alpha Hunk session.",
-          author: "Pi",
-          reveal: true,
-        },
-      });
+      const commentA = runSessionCli(
+        [
+          "comment",
+          "add",
+          sessionA!.sessionId,
+          "--file",
+          fixtureA.afterName,
+          "--new-line",
+          "2",
+          "--summary",
+          "Alpha note",
+          "--rationale",
+          "Delivered only to the alpha Hunk session.",
+        ],
+        port,
+      );
+      expect(commentA.proc.exitCode).toBe(0);
 
-      await client.callTool({
-        name: "comment",
-        arguments: {
-          sessionId: sessionB!.sessionId,
-          filePath: fixtureB.afterName,
-          side: "new",
-          line: 2,
-          summary: "Beta note",
-          rationale: "Delivered only to the beta Hunk session.",
-          author: "Pi",
-          reveal: true,
-        },
-      });
+      const commentB = runSessionCli(
+        [
+          "comment",
+          "add",
+          sessionB!.sessionId,
+          "--file",
+          fixtureB.afterName,
+          "--new-line",
+          "2",
+          "--summary",
+          "Beta note",
+          "--rationale",
+          "Delivered only to the beta Hunk session.",
+        ],
+        port,
+      );
+      expect(commentB.proc.exitCode).toBe(0);
 
       const [exitCodeA, exitCodeB] = await Promise.all([hunkProcA.exited, hunkProcB.exited]);
       expect([0, 124]).toContain(exitCodeA);
@@ -459,10 +438,6 @@ describe("MCP end-to-end", () => {
       expect(transcriptB).toContain("Delivered only to the beta");
       expect(transcriptB).not.toContain("Alpha note");
     } finally {
-      if (transport) {
-        await transport.close().catch(() => undefined);
-      }
-
       hunkProcA.kill();
       hunkProcB.kill();
       await Promise.allSettled([hunkProcA.exited, hunkProcB.exited]);

@@ -63,7 +63,6 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.27.1",
     "@opentui/core": "^0.1.88",
     "@opentui/react": "^0.1.88",
     "@pierre/diffs": "^1.1.0",

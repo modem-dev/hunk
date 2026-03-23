@@ -1,6 +1,6 @@
-# Hunk MCP review flow
+# Hunk live review flow
 
-Hunk MCP is a local-only loopback daemon that brokers commands to one or more live Hunk review sessions.
+Hunk uses one local-only loopback daemon to broker commands to one or more live Hunk review sessions.
 
 ## Daemon model
 
@@ -11,34 +11,37 @@ Hunk MCP is a local-only loopback daemon that brokers commands to one or more li
 hunk mcp serve
 ```
 
-- Disable MCP registration for one Hunk session with:
+- Disable daemon registration for one Hunk session with:
 
 ```bash
 HUNK_MCP_DISABLE=1 hunk diff
 ```
 
-## Current tool surface
+## User and agent interface
 
-The review-oriented MCP tools are:
-- `list_sessions`
-- `get_session`
-- `get_selected_context`
-- `navigate_to_hunk`
-- `comment`
+The review-oriented interface is `hunk session ...`:
+- `hunk session list`
+- `hunk session get`
+- `hunk session context`
+- `hunk session navigate`
+- `hunk session comment add`
+- `hunk session comment list`
+- `hunk session comment rm`
+- `hunk session comment clear --yes`
 
-## Recommended agent flow
+## Recommended review flow
 
 ### 1. Discover the target session
 
-Call `list_sessions` first.
+Run `hunk session list` first.
 
-If no session exists but the user wants interactive review, launch Hunk (`hunk diff`, `hunk show`, or the source entrypoint in this repo), then come back and call `list_sessions` again.
+If no session exists but the user wants interactive review, launch Hunk (`hunk diff`, `hunk show`, or the source entrypoint in this repo), then come back and run `hunk session list` again.
 
-Use `sessionId` explicitly whenever more than one live session exists.
+Use explicit `sessionId` or `--repo <path>` whenever more than one live session exists.
 
 ### 2. Inspect current focus
 
-Call `get_selected_context` to see:
+Run `hunk session context` to see:
 - current file
 - current hunk index
 - selected hunk old/new ranges
@@ -49,30 +52,28 @@ This is the best way to respect what the human reviewer is already looking at.
 
 ### 3. Move only when needed
 
-If the current focus is wrong, call `navigate_to_hunk` with either:
-- `hunkIndex`, or
-- `side` + `line`
+If the current focus is wrong, run `hunk session navigate` with either:
+- `--hunk <n>`, or
+- `--old-line <n>` / `--new-line <n>`
 
 Prefer hunk-level movement over adding broader remote-control actions.
 
 ### 4. Leave inline review notes
 
-Call `comment` with:
-- `sessionId`
-- `filePath`
-- `side`
-- `line`
-- `summary`
-- optional `rationale`
-- optional `author`
-- usually `reveal: true`
+Run `hunk session comment add` with:
+- `<session-id>` or `--repo <path>`
+- `--file`
+- `--old-line` or `--new-line`
+- `--summary`
+- optional `--rationale`
+- optional `--author`
 
 Use concise review comments tied to actual diff lines.
 
 ## Practical guidance for Pi
 
-- Prefer MCP tools over scraping terminal text when a live Hunk session already exists.
-- Use `get_session` when you need broad session metadata; use `get_selected_context` for fast focus-aware checks.
+- Prefer `hunk session ...` over scraping terminal text when a live Hunk session already exists.
+- Use `hunk session get` when you need broad session metadata; use `hunk session context` for fast focus-aware checks.
 - In multi-session setups, never assume the sole-session fallback is still safe after new windows open.
 - Keep comments review-oriented rather than conversational.
 - If the user wants silent inspection rather than visible interaction, avoid unnecessary navigation and only comment when asked.

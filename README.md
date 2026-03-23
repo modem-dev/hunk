@@ -122,7 +122,7 @@ Then load it in Pi with:
 /skill:hunk-review
 ```
 
-The skill explains what Hunk is and how to use Hunk's MCP tools for live code review.
+The skill explains what Hunk is and how to use `hunk session ...` for live code review.
 
 ## Config
 
@@ -144,13 +144,14 @@ agent_notes = false
 ## Advanced workflows
 
 - `hunk diff --agent-context <file>` loads inline agent rationale from a JSON sidecar
-- `hunk mcp serve` runs the local MCP daemon for agent-to-diff communication
+- `hunk mcp serve` runs the local Hunk session daemon and websocket broker
+  - normal Hunk sessions auto-start/register with it when MCP is enabled
   - Hunk keeps the daemon loopback-only by default
   - if you intentionally need remote access, set `HUNK_MCP_UNSAFE_ALLOW_REMOTE=1` and choose a non-loopback `HUNK_MCP_HOST`
 
 ### Live session control CLI
 
-`hunk session ...` is the human/script interface to the same local daemon that MCP uses for live review sessions.
+`hunk session ...` is the user-facing and agent-facing interface to Hunk's local live review session daemon.
 
 Use explicit session targeting with either a live `<session-id>` or `--repo <path>` when exactly one live session matches that repo root.
 

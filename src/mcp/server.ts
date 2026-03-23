@@ -1,62 +1,29 @@
-import { randomUUID } from "node:crypto";
-import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import * as z from "zod/v4";
-import { HUNK_MCP_PATH, HUNK_SESSION_SOCKET_PATH, resolveHunkMcpConfig } from "./config";
+import { HUNK_SESSION_SOCKET_PATH, resolveHunkMcpConfig } from "./config";
 import { HunkDaemonState } from "./daemonState";
 import type { SessionClientMessage } from "./types";
+import {
+  HUNK_SESSION_API_PATH,
+  HUNK_SESSION_API_VERSION,
+  HUNK_SESSION_CAPABILITIES_PATH,
+  type SessionDaemonAction,
+  type SessionDaemonCapabilities,
+  type SessionDaemonRequest,
+  type SessionDaemonResponse,
+} from "../session/protocol";
 
 const STALE_SESSION_TTL_MS = 45_000;
 const STALE_SESSION_SWEEP_INTERVAL_MS = 15_000;
 
-interface McpTransportEntry {
-  server: McpServer;
-  transport: WebStandardStreamableHTTPServerTransport;
-}
-
-const sessionSelectorSchema = z.object({
-  sessionId: z.string().optional().describe("Explicit Hunk session id."),
-  repoRoot: z.string().optional().describe("Repo root fallback when exactly one session matches."),
-});
-
-const navigateToHunkSchema = sessionSelectorSchema.extend({
-  filePath: z.string().describe("Diff file path as shown by Hunk."),
-  hunkIndex: z.number().int().nonnegative().optional().describe("0-based hunk index within the file."),
-  side: z.enum(["old", "new"]).optional().describe("Optional diff side when resolving by line number."),
-  line: z.number().int().positive().optional().describe("Optional 1-based diff line number when resolving by line number."),
-}).refine(
-  (input) => input.hunkIndex !== undefined || (input.side !== undefined && input.line !== undefined),
-  {
-    error: "Provide either hunkIndex or both side and line.",
-    path: ["hunkIndex"],
-  },
-);
-
-const listCommentsSchema = sessionSelectorSchema.extend({
-  filePath: z.string().optional().describe("Optional diff file path to filter live comments."),
-});
-
-const removeCommentSchema = sessionSelectorSchema.extend({
-  commentId: z.string().describe("Stable live comment id to remove."),
-});
-
-const clearCommentsSchema = sessionSelectorSchema.extend({
-  filePath: z.string().optional().describe("Optional diff file path to clear only one file's live comments."),
-});
-
-function formatToolJson(value: unknown) {
-  return JSON.stringify(value, null, 2);
-}
-
-function textContent(text: string) {
-  return [
-    {
-      type: "text" as const,
-      text,
-    },
-  ];
-}
+const SUPPORTED_SESSION_ACTIONS: SessionDaemonAction[] = [
+  "list",
+  "get",
+  "context",
+  "navigate",
+  "comment-add",
+  "comment-list",
+  "comment-rm",
+  "comment-clear",
+];
 
 function formatDaemonServeError(error: unknown, host: string, port: number) {
   const message = error instanceof Error ? error.message : String(error);
@@ -75,199 +42,109 @@ function formatDaemonServeError(error: unknown, host: string, port: number) {
   return new Error(`Failed to start the Hunk MCP daemon on ${host}:${port}: ${message}`);
 }
 
-function createHunkMcpServer(state: HunkDaemonState) {
-  const server = new McpServer({
-    name: "hunk",
-    version: "0.1.0",
-  });
-
-  server.registerTool(
-    "list_sessions",
-    {
-      title: "List live Hunk sessions",
-      description: "List the live Hunk diff-review sessions currently registered with the local daemon.",
-    } as any,
-    (async () => {
-      const sessions = state.listSessions();
-
-      return {
-        content: textContent(formatToolJson({ sessions })),
-        structuredContent: {
-          sessions,
-        },
-      };
-    }) as any,
-  );
-
-  server.registerTool(
-    "get_session",
-    {
-      title: "Get one live Hunk session",
-      description: "Fetch details for one live Hunk session by session id or repo root.",
-      inputSchema: sessionSelectorSchema as any,
-    } as any,
-    (async (input: { sessionId?: string; repoRoot?: string }) => {
-      const session = state.getSession({ sessionId: input.sessionId, repoRoot: input.repoRoot });
-
-      return {
-        content: textContent(formatToolJson(session)),
-        structuredContent: {
-          session,
-        },
-      };
-    }) as any,
-  );
-
-  server.registerTool(
-    "get_selected_context",
-    {
-      title: "Get the selected file and hunk",
-      description: "Inspect which file and hunk the live Hunk session is currently focused on.",
-      inputSchema: sessionSelectorSchema as any,
-    } as any,
-    (async (input: { sessionId?: string; repoRoot?: string }) => {
-      const context = state.getSelectedContext({ sessionId: input.sessionId, repoRoot: input.repoRoot });
-
-      return {
-        content: textContent(formatToolJson(context)),
-        structuredContent: {
-          context,
-        },
-      };
-    }) as any,
-  );
-
-  server.registerTool(
-    "navigate_to_hunk",
-    {
-      title: "Focus one diff hunk",
-      description: "Move the live Hunk session to one diff hunk by index or by a specific diff line.",
-      inputSchema: navigateToHunkSchema as any,
-    } as any,
-    (async (input: {
-      sessionId?: string;
-      repoRoot?: string;
-      filePath: string;
-      hunkIndex?: number;
-      side?: "old" | "new";
-      line?: number;
-    }) => {
-      const result = await state.sendNavigateToHunk(input);
-
-      return {
-        content: textContent(formatToolJson(result)),
-        structuredContent: {
-          result,
-        },
-      };
-    }) as any,
-  );
-
-  server.registerTool(
-    "comment",
-    {
-      title: "Comment on a live Hunk diff",
-      description: "Attach an inline review note to a specific diff line in a live Hunk session.",
-      inputSchema: sessionSelectorSchema.extend({
-        filePath: z.string().describe("Diff file path as shown by Hunk."),
-        side: z.enum(["old", "new"]).describe("Which side of the diff the line belongs to."),
-        line: z.number().int().positive().describe("1-based diff line number on the chosen side."),
-        summary: z.string().min(1).describe("Short inline review note."),
-        rationale: z.string().optional().describe("Optional longer explanation shown in the note card."),
-        reveal: z.boolean().optional().describe("Whether Hunk should jump to and reveal the note. Defaults to true."),
-        author: z.string().optional().describe("Optional author label for the live comment."),
-      }) as any,
-    } as any,
-    (async (input: {
-      sessionId?: string;
-      repoRoot?: string;
-      filePath: string;
-      side: "old" | "new";
-      line: number;
-      summary: string;
-      rationale?: string;
-      reveal?: boolean;
-      author?: string;
-    }) => {
-      const result = await state.sendComment({
-        ...input,
-        reveal: input.reveal ?? true,
-      });
-
-      return {
-        content: textContent(formatToolJson(result)),
-        structuredContent: {
-          result,
-        },
-      };
-    }) as any,
-  );
-
-  server.registerTool(
-    "list_comments",
-    {
-      title: "List live Hunk comments",
-      description: "List live inline review comments currently attached to a Hunk session.",
-      inputSchema: listCommentsSchema as any,
-    } as any,
-    (async (input: { sessionId?: string; repoRoot?: string; filePath?: string }) => {
-      const comments = state.listComments({ sessionId: input.sessionId, repoRoot: input.repoRoot }, { filePath: input.filePath });
-
-      return {
-        content: textContent(formatToolJson({ comments })),
-        structuredContent: {
-          comments,
-        },
-      };
-    }) as any,
-  );
-
-  server.registerTool(
-    "remove_comment",
-    {
-      title: "Remove one live Hunk comment",
-      description: "Remove one live inline review comment from a Hunk session by comment id.",
-      inputSchema: removeCommentSchema as any,
-    } as any,
-    (async (input: { sessionId?: string; repoRoot?: string; commentId: string }) => {
-      const result = await state.sendRemoveComment(input);
-
-      return {
-        content: textContent(formatToolJson(result)),
-        structuredContent: {
-          result,
-        },
-      };
-    }) as any,
-  );
-
-  server.registerTool(
-    "clear_comments",
-    {
-      title: "Clear live Hunk comments",
-      description: "Clear live inline review comments from a Hunk session, optionally limited to one file.",
-      inputSchema: clearCommentsSchema as any,
-    } as any,
-    (async (input: { sessionId?: string; repoRoot?: string; filePath?: string }) => {
-      const result = await state.sendClearComments(input);
-
-      return {
-        content: textContent(formatToolJson(result)),
-        structuredContent: {
-          result,
-        },
-      };
-    }) as any,
-  );
-
-  return server;
+function sessionCapabilities(): SessionDaemonCapabilities {
+  return {
+    version: HUNK_SESSION_API_VERSION,
+    actions: SUPPORTED_SESSION_ACTIONS,
+  };
 }
 
-/** Serve the local Hunk MCP daemon and websocket session broker. */
+function jsonError(message: string, status = 400) {
+  return Response.json({ error: message }, { status });
+}
+
+async function parseJsonRequest(request: Request) {
+  try {
+    return (await request.json()) as SessionDaemonRequest;
+  } catch {
+    throw new Error("Expected one JSON request body.");
+  }
+}
+
+async function handleSessionApiRequest(state: HunkDaemonState, request: Request) {
+  if (request.method !== "POST") {
+    return jsonError("Session API requests must use POST.", 405);
+  }
+
+  try {
+    const input = await parseJsonRequest(request);
+    let response: SessionDaemonResponse;
+
+    switch (input.action) {
+      case "list":
+        response = { sessions: state.listSessions() };
+        break;
+      case "get":
+        response = { session: state.getSession(input.selector) };
+        break;
+      case "context":
+        response = { context: state.getSelectedContext(input.selector) };
+        break;
+      case "navigate": {
+        if (input.hunkNumber === undefined && (input.side === undefined || input.line === undefined)) {
+          throw new Error("navigate requires either hunkNumber or both side and line.");
+        }
+
+        response = {
+          result: await state.sendNavigateToHunk({
+            ...input.selector,
+            filePath: input.filePath,
+            hunkIndex: input.hunkNumber !== undefined ? input.hunkNumber - 1 : undefined,
+            side: input.side,
+            line: input.line,
+          }),
+        };
+        break;
+      }
+      case "comment-add":
+        response = {
+          result: await state.sendComment({
+            ...input.selector,
+            filePath: input.filePath,
+            side: input.side,
+            line: input.line,
+            summary: input.summary,
+            rationale: input.rationale,
+            author: input.author,
+            reveal: input.reveal,
+          }),
+        };
+        break;
+      case "comment-list":
+        response = {
+          comments: state.listComments(input.selector, { filePath: input.filePath }),
+        };
+        break;
+      case "comment-rm":
+        response = {
+          result: await state.sendRemoveComment({
+            ...input.selector,
+            commentId: input.commentId,
+          }),
+        };
+        break;
+      case "comment-clear":
+        response = {
+          result: await state.sendClearComments({
+            ...input.selector,
+            filePath: input.filePath,
+          }),
+        };
+        break;
+      default:
+        throw new Error("Unknown session API action.");
+    }
+
+    return Response.json(response);
+  } catch (error) {
+    return jsonError(error instanceof Error ? error.message : "Unknown session API error.");
+  }
+}
+
+/** Serve the local Hunk session daemon and websocket session broker. */
 export function serveHunkMcpServer() {
   const config = resolveHunkMcpConfig();
   const state = new HunkDaemonState();
-  const transports = new Map<string, McpTransportEntry>();
   const startedAt = Date.now();
   let shuttingDown = false;
 
@@ -276,9 +153,9 @@ export function serveHunkMcpServer() {
   }, STALE_SESSION_SWEEP_INTERVAL_MS);
   sweepTimer.unref?.();
 
-  let server: ReturnType<typeof Bun.serve<{ sessionId?: string }>>;
+  let server: ReturnType<typeof Bun.serve<{}>>;
   try {
-    server = Bun.serve<{ sessionId?: string }>({
+    server = Bun.serve<{}>({
       hostname: config.host,
       port: config.port,
       fetch: async (request, bunServer) => {
@@ -291,12 +168,25 @@ export function serveHunkMcpServer() {
             pid: process.pid,
             startedAt: new Date(startedAt).toISOString(),
             uptimeMs: Date.now() - startedAt,
-            transport: `${config.httpOrigin}${HUNK_MCP_PATH}`,
+            sessionApi: `${config.httpOrigin}${HUNK_SESSION_API_PATH}`,
+            sessionCapabilities: `${config.httpOrigin}${HUNK_SESSION_CAPABILITIES_PATH}`,
             sessionSocket: `${config.wsOrigin}${HUNK_SESSION_SOCKET_PATH}`,
             sessions: state.listSessions().length,
             pendingCommands: state.getPendingCommandCount(),
             staleSessionTtlMs: STALE_SESSION_TTL_MS,
           });
+        }
+
+        if (url.pathname === HUNK_SESSION_CAPABILITIES_PATH) {
+          return Response.json(sessionCapabilities());
+        }
+
+        if (url.pathname === HUNK_SESSION_API_PATH) {
+          return handleSessionApiRequest(state, request);
+        }
+
+        if (url.pathname === "/mcp") {
+          return jsonError("Hunk no longer exposes agent-facing MCP tools. Use `hunk session ...` instead.", 410);
         }
 
         if (url.pathname === HUNK_SESSION_SOCKET_PATH) {
@@ -307,60 +197,7 @@ export function serveHunkMcpServer() {
           return new Response("Expected websocket upgrade.", { status: 426 });
         }
 
-        if (url.pathname !== HUNK_MCP_PATH) {
-          return new Response("Not found.", { status: 404 });
-        }
-
-        const headerSessionId = request.headers.get("mcp-session-id") ?? undefined;
-        const parsedBody = request.method === "POST" ? await request.json() : undefined;
-
-        if (headerSessionId && transports.has(headerSessionId)) {
-          const entry = transports.get(headerSessionId)!;
-          return entry.transport.handleRequest(request, { parsedBody });
-        }
-
-        if (!headerSessionId && request.method === "POST" && isInitializeRequest(parsedBody)) {
-          let transport: WebStandardStreamableHTTPServerTransport;
-          let transportEntry: McpTransportEntry;
-
-          transport = new WebStandardStreamableHTTPServerTransport({
-            sessionIdGenerator: () => randomUUID(),
-            enableJsonResponse: true,
-            onsessioninitialized: (sessionId) => {
-              transports.set(sessionId, transportEntry);
-            },
-            onsessionclosed: (sessionId) => {
-              const entry = transports.get(sessionId);
-              if (entry) {
-                void entry.server.close();
-                transports.delete(sessionId);
-              }
-            },
-          });
-
-          const mcpServer = createHunkMcpServer(state);
-          transportEntry = {
-            server: mcpServer,
-            transport,
-          };
-
-          await mcpServer.connect(transport);
-          return transport.handleRequest(request, { parsedBody });
-        }
-
-        return Response.json(
-          {
-            jsonrpc: "2.0",
-            error: {
-              code: -32000,
-              message: "Bad Request: No valid MCP session id provided.",
-            },
-            id: null,
-          },
-          {
-            status: 400,
-          },
-        );
+        return new Response("Not found.", { status: 404 });
       },
       websocket: {
         message: (socket, message) => {
@@ -411,18 +248,13 @@ export function serveHunkMcpServer() {
     process.off("SIGTERM", shutdown);
 
     state.shutdown();
-    for (const [sessionId, entry] of transports.entries()) {
-      void entry.server.close();
-      transports.delete(sessionId);
-    }
-
     server.stop(true);
   };
 
   process.once("SIGINT", shutdown);
   process.once("SIGTERM", shutdown);
 
-  console.log(`Hunk MCP daemon listening on ${config.httpOrigin}${HUNK_MCP_PATH}`);
+  console.log(`Hunk session daemon listening on ${config.httpOrigin}${HUNK_SESSION_API_PATH}`);
   console.log(`Hunk session websocket listening on ${config.wsOrigin}${HUNK_SESSION_SOCKET_PATH}`);
 
   return server;
