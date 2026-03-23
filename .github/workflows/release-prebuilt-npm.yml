@@ -103,7 +103,7 @@ jobs:
         run: bun run smoke:prebuilt-install
 
       - name: Dry-run npm publish order
-        run: bun run publish:prebuilt:npm -- --dry-run --tag "${{ github.event_name == 'workflow_dispatch' && inputs.npm_tag || (contains(github.ref_name, '-') && 'beta' || 'latest') }}"
+        run: bun run publish:prebuilt:npm -- --dry-run --tag "${{ github.event_name == 'workflow_dispatch' && inputs.npm_tag || ((contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc')) && 'beta' || 'latest') }}"
 
       - name: Upload staged npm release
         uses: actions/upload-artifact@v4
@@ -154,7 +154,7 @@ jobs:
       - name: Publish packages
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: bun run publish:prebuilt:npm -- --tag "${{ github.event_name == 'workflow_dispatch' && inputs.npm_tag || (contains(github.ref_name, '-') && 'beta' || 'latest') }}"
+        run: bun run publish:prebuilt:npm -- --tag "${{ github.event_name == 'workflow_dispatch' && inputs.npm_tag || ((contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc')) && 'beta' || 'latest') }}"
 
   create-github-release:
     name: Create GitHub release
