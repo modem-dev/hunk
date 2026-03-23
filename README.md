@@ -85,7 +85,26 @@ Open Hunk in another window, then ask your agent to leave comments.
 
 Hunk is optimized for reviewing a full changeset interactively.
 
-## Git integration
+## Advanced
+
+### Config
+
+You can persist preferences to a config file:
+
+- `~/.config/hunk/config.toml`
+- `.hunk/config.toml`
+
+Example:
+
+```toml
+theme = "graphite" # graphite, midnight, paper, ember
+mode = "auto"      # auto, split, stack
+line_numbers = true
+wrap_lines = false
+agent_notes = false
+```
+
+### Git integration
 
 Set Hunk as your Git pager so `git diff` and `git show` open in Hunk automatically:
 
@@ -107,47 +126,26 @@ git config --global alias.hdiff "-c core.pager=\"hunk pager\" diff"
 git config --global alias.hshow "-c core.pager=\"hunk pager\" show"
 ```
 
-## Examples
-
-Ready-to-run demo diffs live in [`examples/`](examples/README.md).
-
-Each example includes the exact command to run from the repository root.
-
-## Config
-
-You can persist preferences to a config file:
-
-- `~/.config/hunk/config.toml`
-- `.hunk/config.toml`
-
-Example:
-
-```toml
-theme = "graphite" # graphite, midnight, paper, ember
-mode = "auto"      # auto, split, stack
-line_numbers = true
-wrap_lines = false
-agent_notes = false
-```
-
-## Working with Agents
+### Agent workflows
 
 Hunk supports two agent workflows:
 
 - steer a live Hunk window from another terminal with `hunk session ...` (recommended)
 - load agent comments from a file with `--agent-context`
 
-### Steer a live Hunk window
+#### Steer a live Hunk window
 
 Use the Hunk review skill: [`skills/hunk-review/SKILL.md`](skills/hunk-review/SKILL.md).
 
 A good generic prompt is:
 
-- "Load the Hunk skill and use it for this review."
+```text
+> Load the Hunk skill and use it for this review
+```
 
 That skill teaches the agent how to inspect a live Hunk session, navigate it, reload it, and leave inline comments.
 
-### How remote control works
+#### How remote control works
 
 When a Hunk TUI starts, it registers with a local loopback daemon. `hunk session ...` talks to that daemon to find the right live window and control it.
 
@@ -174,7 +172,7 @@ hunk session comment clear --repo . --file README.md --yes
 
 `hunk session reload ... -- <hunk command>` swaps what a live session is showing without opening a new TUI window.
 
-### Load agent comments from a file
+#### Load agent comments from a file
 
 Use `--agent-context` to attach agent-written comments or rationale from a JSON sidecar file. For a compact real example, see [`examples/3-agent-review-demo/agent-context.json`](examples/3-agent-review-demo/agent-context.json).
 
@@ -182,6 +180,12 @@ Use `--agent-context` to attach agent-written comments or rationale from a JSON 
 hunk diff --agent-context notes.json
 hunk patch change.patch --agent-context notes.json
 ```
+
+## Examples
+
+Ready-to-run demo diffs live in [`examples/`](examples/README.md).
+
+Each example includes the exact command to run from the repository root.
 
 ## Contributing
 
