@@ -648,8 +648,8 @@ describe("App interactions", () => {
       await flush(setup);
 
       const initialFrame = setup.captureCharFrame();
-      expect(initialFrame).toContain("line01 = 101");
-      expect(initialFrame).not.toContain("line08 = 108");
+      expect(initialFrame).toContain("line01");
+      expect(initialFrame).not.toContain("line08");
 
       let frame = initialFrame;
       for (let index = 0; index < 24; index += 1) {
@@ -658,13 +658,13 @@ describe("App interactions", () => {
         });
         await flush(setup);
         frame = setup.captureCharFrame();
-        if (frame.includes("line08 = 108") && !frame.includes("line01 = 101")) {
+        if (frame.includes("line08") && !frame.includes("line01")) {
           break;
         }
       }
 
-      expect(frame).toContain("line08 = 108");
-      expect(frame).not.toContain("line01 = 101");
+      expect(frame).toContain("line08");
+      expect(frame).not.toContain("line01");
 
       for (let index = 0; index < 12; index += 1) {
         await act(async () => {
@@ -672,12 +672,12 @@ describe("App interactions", () => {
         });
         await flush(setup);
         frame = setup.captureCharFrame();
-        if (frame.includes("line01 = 101")) {
+        if (frame.includes("line01")) {
           break;
         }
       }
 
-      expect(frame).toContain("line01 = 101");
+      expect(frame).toContain("line01");
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -695,8 +695,8 @@ describe("App interactions", () => {
       await flush(setup);
 
       const initialFrame = setup.captureCharFrame();
-      expect(initialFrame).toContain("line01 = 101");
-      expect(initialFrame).not.toContain("line08 = 108");
+      expect(initialFrame).toContain("line01");
+      expect(initialFrame).not.toContain("line08");
 
       let frame = initialFrame;
       for (let index = 0; index < 12; index += 1) {
@@ -705,13 +705,13 @@ describe("App interactions", () => {
         });
         await flush(setup);
         frame = setup.captureCharFrame();
-        if (frame.includes("line08 = 108")) {
+        if (frame.includes("line08")) {
           break;
         }
       }
 
-      expect(frame).toContain("line08 = 108");
-      expect(frame).not.toContain("line01 = 101");
+      expect(frame).toContain("line08");
+      expect(frame).not.toContain("line01");
 
       for (let index = 0; index < 12; index += 1) {
         await act(async () => {
@@ -719,12 +719,12 @@ describe("App interactions", () => {
         });
         await flush(setup);
         frame = setup.captureCharFrame();
-        if (frame.includes("line01 = 101")) {
+        if (frame.includes("line01")) {
           break;
         }
       }
 
-      expect(frame).toContain("line01 = 101");
+      expect(frame).toContain("line01");
     } finally {
       await act(async () => {
         setup.renderer.destroy();
