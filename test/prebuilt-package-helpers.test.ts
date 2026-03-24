@@ -68,8 +68,8 @@ describe("prebuilt package helpers", () => {
     expect(() => getPlatformPackageSpecForHost("linux", "ia32" as NodeJS.Architecture)).toThrow(
       "Unsupported host architecture for prebuilt packaging: ia32",
     );
-    expect(() => getPlatformPackageSpecForHost("linux", "arm64")).toThrow(
-      "No published prebuilt package spec matches linux/arm64",
+    expect(getPlatformPackageSpecForHost("linux", "arm64").packageName).toBe(
+      "hunkdiff-linux-arm64",
     );
   });
 
@@ -84,6 +84,7 @@ describe("prebuilt package helpers", () => {
     expect(sortPlatformPackageSpecs(reversed).map((spec) => spec.packageName)).toEqual([
       "hunkdiff-darwin-arm64",
       "hunkdiff-darwin-x64",
+      "hunkdiff-linux-arm64",
       "hunkdiff-linux-x64",
     ]);
   });

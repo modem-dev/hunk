@@ -42,6 +42,13 @@ export const PLATFORM_PACKAGE_MATRIX: PlatformPackageSpec[] = [
     binaryRelativePath: "bin/hunk",
   },
   {
+    packageName: "hunkdiff-linux-arm64",
+    os: "linux",
+    cpu: "arm64",
+    binaryName: "hunk",
+    binaryRelativePath: "bin/hunk",
+  },
+  {
     packageName: "hunkdiff-linux-x64",
     os: "linux",
     cpu: "x64",

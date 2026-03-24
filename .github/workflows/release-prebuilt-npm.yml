@@ -29,6 +29,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - package_name: hunkdiff-linux-arm64
+            runner: ubuntu-24.04-arm
           - package_name: hunkdiff-linux-x64
             runner: ubuntu-latest
           - package_name: hunkdiff-darwin-x64
