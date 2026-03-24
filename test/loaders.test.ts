@@ -119,6 +119,46 @@ describe("loadAppBootstrap", () => {
     expect(bootstrap.changeset.files[0]?.stats.additions).toBeGreaterThan(0);
   });
 
+  test("loads git working tree changes when diff.noprefix is enabled", async () => {
+    const dir = createTempRepo("hunk-git-noprefix-");
+
+    writeFileSync(join(dir, "example.ts"), "export const value = 1;\n");
+    git(dir, "add", "example.ts");
+    git(dir, "commit", "-m", "initial");
+
+    git(dir, "config", "--local", "diff.noprefix", "true");
+    writeFileSync(join(dir, "example.ts"), "export const value = 2;\nexport const extra = true;\n");
+
+    const bootstrap = await loadFromRepo(dir, {
+      kind: "git",
+      staged: false,
+      options: { mode: "auto" },
+    });
+
+    expect(bootstrap.changeset.files).toHaveLength(1);
+    expect(bootstrap.changeset.files[0]?.path).toBe("example.ts");
+  });
+
+  test("loads git working tree changes when diff.mnemonicPrefix is enabled", async () => {
+    const dir = createTempRepo("hunk-git-mnemonic-");
+
+    writeFileSync(join(dir, "example.ts"), "export const value = 1;\n");
+    git(dir, "add", "example.ts");
+    git(dir, "commit", "-m", "initial");
+
+    git(dir, "config", "--local", "diff.mnemonicPrefix", "true");
+    writeFileSync(join(dir, "example.ts"), "export const value = 2;\nexport const extra = true;\n");
+
+    const bootstrap = await loadFromRepo(dir, {
+      kind: "git",
+      staged: false,
+      options: { mode: "auto" },
+    });
+
+    expect(bootstrap.changeset.files).toHaveLength(1);
+    expect(bootstrap.changeset.files[0]?.path).toBe("example.ts");
+  });
+
   test("reports a friendly error when git review runs outside a repository", async () => {
     const dir = mkdtempSync(join(tmpdir(), "hunk-nonrepo-"));
     tempDirs.push(dir);
@@ -201,6 +241,28 @@ describe("loadAppBootstrap", () => {
     git(dir, "add", "alpha.ts", "beta.ts");
     git(dir, "commit", "-m", "initial");
 
+    writeFileSync(join(dir, "alpha.ts"), "export const alpha = 2;\n");
+    git(dir, "add", "alpha.ts");
+    writeFileSync(join(dir, "beta.ts"), "export const beta = 2;\n");
+
+    const bootstrap = await loadFromRepo(dir, {
+      kind: "git",
+      staged: true,
+      options: { mode: "auto" },
+    });
+
+    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["alpha.ts"]);
+  });
+
+  test("loads staged-only git diffs when diff.noprefix is enabled", async () => {
+    const dir = createTempRepo("hunk-git-staged-noprefix-");
+
+    writeFileSync(join(dir, "alpha.ts"), "export const alpha = 1;\n");
+    writeFileSync(join(dir, "beta.ts"), "export const beta = 1;\n");
+    git(dir, "add", "alpha.ts", "beta.ts");
+    git(dir, "commit", "-m", "initial");
+
+    git(dir, "config", "--local", "diff.noprefix", "true");
     writeFileSync(join(dir, "alpha.ts"), "export const alpha = 2;\n");
     git(dir, "add", "alpha.ts");
     writeFileSync(join(dir, "beta.ts"), "export const beta = 2;\n");
@@ -321,6 +383,25 @@ describe("loadAppBootstrap", () => {
 
     expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["alpha.ts"]);
     expect(bootstrap.changeset.title).toContain("stash");
+  });
+
+  test("loads stash show output when diff.noprefix is enabled", async () => {
+    const dir = createTempRepo("hunk-stash-noprefix-");
+
+    writeFileSync(join(dir, "alpha.ts"), "export const alpha = 1;\n");
+    git(dir, "add", "alpha.ts");
+    git(dir, "commit", "-m", "initial");
+
+    git(dir, "config", "--local", "diff.noprefix", "true");
+    writeFileSync(join(dir, "alpha.ts"), "export const alpha = 2;\n");
+    git(dir, "stash", "push", "-m", "update alpha");
+
+    const bootstrap = await loadFromRepo(dir, {
+      kind: "stash-show",
+      options: { mode: "auto" },
+    });
+
+    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["alpha.ts"]);
   });
 
   test("reports a friendly error when no stash entries exist", async () => {

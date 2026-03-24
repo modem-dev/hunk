@@ -19,6 +19,24 @@ export function appendGitPathspecs(args: string[], pathspecs?: string[]) {
   args.push("--", ...pathspecs);
 }
 
+// @pierre/diffs currently assumes git-style a/ and b/ prefixes when parsing patch headers.
+// Force canonical prefixes for git-backed review commands so user/repo git diff config
+// (noprefix, mnemonicPrefix, custom src/dst prefixes) cannot break parsing.
+const DIFF_PREFIX_NORMALIZATION_ARGS = [
+  "-c",
+  "diff.noprefix=false",
+  "-c",
+  "diff.mnemonicPrefix=false",
+  "-c",
+  "diff.srcPrefix=a/",
+  "-c",
+  "diff.dstPrefix=b/",
+];
+
+function withNormalizedDiffPrefixes(args: string[]) {
+  return [...DIFF_PREFIX_NORMALIZATION_ARGS, ...args];
+}
+
 /** Build the exact `git diff` arguments used for the shared working-tree and range review path. */
 export function buildGitDiffArgs(input: GitCommandInput) {
   const args = ["diff", "--no-ext-diff", "--find-renames", "--no-color"];
@@ -32,7 +50,7 @@ export function buildGitDiffArgs(input: GitCommandInput) {
   }
 
   appendGitPathspecs(args, input.pathspecs);
-  return args;
+  return withNormalizedDiffPrefixes(args);
 }
 
 /** Build the exact `git show` arguments used for commit review. */
@@ -44,7 +62,7 @@ export function buildGitShowArgs(input: ShowCommandInput) {
   }
 
   appendGitPathspecs(args, input.pathspecs);
-  return args;
+  return withNormalizedDiffPrefixes(args);
 }
 
 /** Build the exact `git stash show -p` arguments used for stash review. */
@@ -55,7 +73,7 @@ export function buildGitStashShowArgs(input: StashShowCommandInput) {
     args.push(input.ref);
   }
 
-  return args;
+  return withNormalizedDiffPrefixes(args);
 }
 
 export function formatGitCommandLabel(input: GitBackedInput) {
