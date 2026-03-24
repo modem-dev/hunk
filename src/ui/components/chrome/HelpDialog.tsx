@@ -21,7 +21,10 @@ export function HelpDialog({
       title: "Navigation",
       items: [
         ["↑ / ↓", "move line-by-line"],
-        ["Space / b", "page down / page up"],
+        ["Space / f", "page down (alt: f)"],
+        ["b", "page up"],
+        ["Shift+Space", "page up (alt)"],
+        ["d / u", "half page down / up"],
         ["[ / ]", "previous / next hunk"],
         ["Home / End", "jump to top / bottom"],
       ],

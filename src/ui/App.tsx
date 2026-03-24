@@ -285,7 +285,23 @@ function AppShell({
   };
 
   /** Scroll the main review pane by line steps, viewport fractions, or whole-content jumps. */
-  const scrollDiff = (delta: number, unit: "step" | "viewport" | "content" = "viewport") => {
+  const scrollDiff = (
+    delta: number,
+    unit: "step" | "viewport" | "content" | "half" = "viewport",
+  ) => {
+    if (unit === "half") {
+      const scrollBox = diffScrollRef.current;
+      if (!scrollBox) return;
+
+      // Calculate half the viewport height
+      const viewportHeight = scrollBox.viewport?.height ?? 20;
+      const scrollAmount = Math.floor(viewportHeight / 2);
+
+      // Use scrollTo with current position + delta * amount
+      const currentScroll = scrollBox.scrollTop;
+      scrollBox.scrollTo(currentScroll + delta * scrollAmount);
+      return;
+    }
     diffScrollRef.current?.scrollBy(delta, unit);
   };
 
@@ -571,10 +587,21 @@ function AppShell({
 
   useKeyboard((key: KeyEvent) => {
     const pageDownKey =
-      key.name === "pagedown" || key.name === "space" || key.name === " " || key.sequence === " ";
+      key.name === "pagedown" ||
+      key.name === "space" ||
+      key.name === " " ||
+      key.sequence === " " ||
+      key.name === "f" ||
+      key.sequence === "f";
     const pageUpKey = key.name === "pageup" || key.name === "b" || key.sequence === "b";
     const stepDownKey = key.name === "down" || key.name === "j" || key.sequence === "j";
     const stepUpKey = key.name === "up" || key.name === "k" || key.sequence === "k";
+
+    // New shortcuts from issue #101 - using less/git diff conventions
+    const halfPageDownKey = key.name === "d" || key.sequence === "d";
+    const halfPageUpKey = key.name === "u" || key.sequence === "u";
+    const shiftSpacePageUpKey =
+      key.shift && (key.name === "space" || key.name === " " || key.sequence === " ");
 
     if (key.name === "f10") {
       if (pagerMode) {
@@ -600,8 +627,18 @@ function AppShell({
         return;
       }
 
-      if (pageUpKey) {
+      if (pageUpKey || shiftSpacePageUpKey) {
         scrollDiff(-1, "viewport");
+        return;
+      }
+
+      if (halfPageDownKey) {
+        scrollDiff(1, "half");
+        return;
+      }
+
+      if (halfPageUpKey) {
+        scrollDiff(-1, "half");
         return;
       }
 
@@ -716,8 +753,18 @@ function AppShell({
       return;
     }
 
-    if (pageUpKey) {
+    if (pageUpKey || shiftSpacePageUpKey) {
       scrollDiff(-1, "viewport");
+      return;
+    }
+
+    if (halfPageDownKey) {
+      scrollDiff(1, "half");
+      return;
+    }
+
+    if (halfPageUpKey) {
+      scrollDiff(-1, "half");
       return;
     }
 
