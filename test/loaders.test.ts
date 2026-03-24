@@ -366,6 +366,26 @@ describe("loadAppBootstrap", () => {
     expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["alpha.ts"]);
   });
 
+  test("loads show output when diff.noprefix is enabled", async () => {
+    const dir = createTempRepo("hunk-show-noprefix-");
+
+    writeFileSync(join(dir, "alpha.ts"), "export const alpha = 1;\n");
+    git(dir, "add", "alpha.ts");
+    git(dir, "commit", "-m", "initial");
+
+    git(dir, "config", "--local", "diff.noprefix", "true");
+    writeFileSync(join(dir, "alpha.ts"), "export const alpha = 2;\n");
+    git(dir, "add", "alpha.ts");
+    git(dir, "commit", "-m", "update alpha");
+
+    const bootstrap = await loadFromRepo(dir, {
+      kind: "show",
+      options: { mode: "auto" },
+    });
+
+    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["alpha.ts"]);
+  });
+
   test("loads stash show output as a full review changeset", async () => {
     const dir = createTempRepo("hunk-stash-");
 
