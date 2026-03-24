@@ -305,8 +305,20 @@ export function DiffPane({
     return top;
   }, [estimatedBodyHeights, sectionMetrics, selectedFile, selectedFileIndex, selectedHunkIndex]);
 
+  // Track the previous selected anchor to detect actual selection changes
+  const prevSelectedAnchorIdRef = useRef<string | null>(null);
+
   useLayoutEffect(() => {
     if (!selectedAnchorId) {
+      prevSelectedAnchorIdRef.current = null;
+      return;
+    }
+
+    // Only auto-scroll when the selection actually changes, not when metrics update during scrolling
+    const isSelectionChange = prevSelectedAnchorIdRef.current !== selectedAnchorId;
+    prevSelectedAnchorIdRef.current = selectedAnchorId;
+
+    if (!isSelectionChange) {
       return;
     }
 

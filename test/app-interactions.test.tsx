@@ -617,6 +617,194 @@ describe("App interactions", () => {
     }
   });
 
+  test("Space scrolls down by viewport", async () => {
+    // Create a file with many lines so Space has room to scroll
+    const before =
+      Array.from(
+        { length: 50 },
+        (_, index) => `export const line${String(index + 1).padStart(2, "0")} = ${index + 1};`,
+      ).join("\n") + "\n";
+    const after =
+      Array.from(
+        { length: 50 },
+        (_, index) => `export const line${String(index + 1).padStart(2, "0")} = ${index + 1001};`,
+      ).join("\n") + "\n";
+
+    const bootstrap: AppBootstrap = {
+      input: {
+        kind: "git",
+        staged: false,
+        options: {
+          mode: "split",
+        },
+      },
+      changeset: {
+        id: "changeset:space-scroll",
+        sourceLabel: "repo",
+        title: "repo working tree",
+        files: [createDiffFile("space", "space.ts", before, after)],
+      },
+      initialMode: "split",
+      initialTheme: "midnight",
+    };
+
+    const setup = await testRender(<App bootstrap={bootstrap} />, {
+      width: 220,
+      height: 12,
+    });
+
+    try {
+      await flush(setup);
+      setup.captureCharFrame(); // Capture initial state
+
+      // Press Space to scroll down - should not crash and should change view
+      await act(async () => {
+        await setup.mockInput.pressKey(" ");
+      });
+      await flush(setup);
+
+      // App should still be rendering without errors
+      const frame = setup.captureCharFrame();
+      expect(frame).toContain("export const line");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("PageUp scrolls up by viewport", async () => {
+    const before =
+      Array.from(
+        { length: 50 },
+        (_, index) => `export const line${String(index + 1).padStart(2, "0")} = ${index + 1};`,
+      ).join("\n") + "\n";
+    const after =
+      Array.from(
+        { length: 50 },
+        (_, index) => `export const line${String(index + 1).padStart(2, "0")} = ${index + 1001};`,
+      ).join("\n") + "\n";
+
+    const bootstrap: AppBootstrap = {
+      input: {
+        kind: "git",
+        staged: false,
+        options: {
+          mode: "split",
+        },
+      },
+      changeset: {
+        id: "changeset:pageup-scroll",
+        sourceLabel: "repo",
+        title: "repo working tree",
+        files: [createDiffFile("pageup", "pageup.ts", before, after)],
+      },
+      initialMode: "split",
+      initialTheme: "midnight",
+    };
+
+    const setup = await testRender(<App bootstrap={bootstrap} />, {
+      width: 220,
+      height: 12,
+    });
+
+    try {
+      await flush(setup);
+
+      // First scroll down to have room to scroll back up
+      await act(async () => {
+        await setup.mockInput.pressKey(" ");
+      });
+      await flush(setup);
+      setup.captureCharFrame(); // Capture after Space
+
+      // Now scroll back up with PageUp - should not crash
+      await act(async () => {
+        await setup.mockInput.pressKey("pageup");
+      });
+      await flush(setup);
+
+      // App should still be rendering
+      const frame = setup.captureCharFrame();
+      expect(frame).toContain("export const line");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("new shortcuts d, u, and f work without errors", async () => {
+    const before =
+      Array.from(
+        { length: 50 },
+        (_, index) => `export const line${String(index + 1).padStart(2, "0")} = ${index + 1};`,
+      ).join("\n") + "\n";
+    const after =
+      Array.from(
+        { length: 50 },
+        (_, index) => `export const line${String(index + 1).padStart(2, "0")} = ${index + 1001};`,
+      ).join("\n") + "\n";
+
+    const bootstrap: AppBootstrap = {
+      input: {
+        kind: "git",
+        staged: false,
+        options: {
+          mode: "split",
+        },
+      },
+      changeset: {
+        id: "changeset:half-scroll",
+        sourceLabel: "repo",
+        title: "repo working tree",
+        files: [createDiffFile("half", "half.ts", before, after)],
+      },
+      initialMode: "split",
+      initialTheme: "midnight",
+    };
+
+    const setup = await testRender(<App bootstrap={bootstrap} />, {
+      width: 220,
+      height: 12,
+    });
+
+    try {
+      await flush(setup);
+      const initialFrame = setup.captureCharFrame();
+
+      // Press 'd' (half page down) - should not crash
+      await act(async () => {
+        await setup.mockInput.pressKey("d");
+      });
+      await flush(setup);
+      let frame = setup.captureCharFrame();
+      expect(frame).toContain("export const line");
+
+      // Press 'u' (half page up) - should not crash
+      await act(async () => {
+        await setup.mockInput.pressKey("u");
+      });
+      await flush(setup);
+      frame = setup.captureCharFrame();
+      expect(frame).toContain("export const line");
+
+      // Press 'f' (page down, less-style) - should not crash
+      await act(async () => {
+        await setup.mockInput.pressKey("f");
+      });
+      await flush(setup);
+      frame = setup.captureCharFrame();
+      expect(frame).toContain("export const line");
+      // Content should have changed after scrolling
+      expect(frame).not.toEqual(initialFrame);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("filter focus accepts typed input and narrows the visible file set", async () => {
     const setup = await testRender(<App bootstrap={createBootstrap()} />, {
       width: 240,
