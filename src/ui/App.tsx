@@ -35,7 +35,7 @@ import { PaneDivider } from "./components/panes/PaneDivider";
 import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
 import { useMenuController } from "./hooks/useMenuController";
 import { buildAppMenus } from "./lib/appMenus";
-import { buildFileListEntry } from "./lib/files";
+import { buildSidebarEntries } from "./lib/files";
 import { buildHunkCursors, findNextHunkCursor } from "./lib/hunks";
 import { fileRowId } from "./lib/ids";
 import { resolveResponsiveLayout } from "./lib/responsive";
@@ -553,7 +553,7 @@ function AppShell({
     event?.stopPropagation();
   };
 
-  const fileEntries = filteredFiles.map(buildFileListEntry);
+  const fileEntries = buildSidebarEntries(filteredFiles);
   const totalAdditions = bootstrap.changeset.files.reduce(
     (sum, file) => sum + file.stats.additions,
     0,
@@ -563,7 +563,7 @@ function AppShell({
     0,
   );
   const topTitle = `${bootstrap.changeset.title}  +${totalAdditions}  -${totalDeletions}`;
-  const filesTextWidth = Math.max(8, clampedFilesPaneWidth - 4);
+  const filesTextWidth = Math.max(8, clampedFilesPaneWidth - 2);
   const diffContentWidth = Math.max(12, diffPaneWidth - 2);
   const diffHeaderStatsWidth = Math.min(24, Math.max(16, Math.floor(diffContentWidth / 3)));
   const diffHeaderLabelWidth = Math.max(8, diffContentWidth - diffHeaderStatsWidth - 1);

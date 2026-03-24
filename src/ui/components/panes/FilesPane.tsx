@@ -1,8 +1,8 @@
 import type { ScrollBoxRenderable } from "@opentui/core";
 import type { RefObject } from "react";
-import type { FileListEntry } from "../../lib/files";
+import type { SidebarEntry } from "../../lib/files";
 import type { AppTheme } from "../../themes";
-import { FileListItem } from "./FileListItem";
+import { FileGroupHeader, FileListItem } from "./FileListItem";
 
 /** Render the file navigation sidebar. */
 export function FilesPane({
@@ -14,7 +14,7 @@ export function FilesPane({
   width,
   onSelectFile,
 }: {
-  entries: FileListEntry[];
+  entries: SidebarEntry[];
   scrollRef: RefObject<ScrollBoxRenderable | null>;
   selectedFileId?: string;
   textWidth: number;
@@ -49,16 +49,20 @@ export function FilesPane({
         horizontalScrollbarOptions={{ visible: false }}
       >
         <box style={{ width: "100%", flexDirection: "column" }}>
-          {entries.map((entry) => (
-            <FileListItem
-              key={entry.id}
-              entry={entry}
-              selected={entry.id === selectedFileId}
-              textWidth={textWidth}
-              theme={theme}
-              onSelect={() => onSelectFile(entry.id)}
-            />
-          ))}
+          {entries.map((entry) =>
+            entry.kind === "group" ? (
+              <FileGroupHeader key={entry.id} entry={entry} textWidth={textWidth} theme={theme} />
+            ) : (
+              <FileListItem
+                key={entry.id}
+                entry={entry}
+                selected={entry.id === selectedFileId}
+                textWidth={textWidth}
+                theme={theme}
+                onSelect={() => onSelectFile(entry.id)}
+              />
+            ),
+          )}
         </box>
       </scrollbox>
     </box>

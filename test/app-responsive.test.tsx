@@ -152,10 +152,10 @@ describe("responsive shell", () => {
   test("App adjusts the visible panes and diff layout on live resize", async () => {
     const { ultraWide, full, medium, tight } = await captureResponsiveFrames();
 
-    expect(ultraWide).toContain("M alpha.ts");
+    expect((ultraWide.match(/alpha\.ts/g) ?? []).length).toBe(2);
     expect(ultraWide).not.toContain("Changeset summary");
 
-    expect(full).toContain("M alpha.ts");
+    expect((full.match(/alpha\.ts/g) ?? []).length).toBe(2);
     expect(full).not.toContain("Changeset summary");
     expect(full).toMatch(/▌.*▌/);
 
@@ -176,7 +176,7 @@ describe("responsive shell", () => {
     expect(forcedSplit).not.toContain("Changeset summary");
     expect(forcedSplit).toMatch(/▌.*▌/);
 
-    expect(forcedStack).toContain("M alpha.ts");
+    expect((forcedStack.match(/alpha\.ts/g) ?? []).length).toBe(2);
     expect(forcedStack).not.toContain("Changeset summary");
     expect(forcedStack).not.toMatch(/▌.*▌/);
   });
@@ -187,12 +187,12 @@ describe("responsive shell", () => {
 
     expect(wide).not.toContain("File  View  Navigate  Theme  Agent  Help");
     expect(wide).not.toContain("F10 menu");
-    expect(wide).not.toContain("M alpha.ts");
+    expect((wide.match(/alpha\.ts/g) ?? []).length).toBe(1);
     expect(wide).toMatch(/▌.*▌/);
 
     expect(narrow).not.toContain("File  View  Navigate  Theme  Agent  Help");
     expect(narrow).not.toContain("F10 menu");
-    expect(narrow).not.toContain("M alpha.ts");
+    expect((narrow.match(/alpha\.ts/g) ?? []).length).toBe(1);
     expect(narrow).not.toMatch(/▌.*▌/);
   });
 

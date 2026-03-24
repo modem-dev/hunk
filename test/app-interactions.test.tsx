@@ -667,9 +667,7 @@ describe("App interactions", () => {
       let frame = setup.captureCharFrame();
       expect(frame).toContain("filter:");
       expect(frame).toContain("beta");
-      expect(frame).toContain("M beta.ts");
-      expect(frame).not.toContain("M alpha.ts");
-      expect(frame).toContain("beta.ts");
+      expect((frame.match(/beta\.ts/g) ?? []).length).toBeGreaterThanOrEqual(1);
       expect(frame).not.toContain("Annotation for alpha.ts");
 
       await act(async () => {
@@ -739,7 +737,7 @@ describe("App interactions", () => {
       await flush(setup);
 
       let frame = setup.captureCharFrame();
-      expect(frame).toContain("M alpha.ts");
+      expect((frame.match(/alpha\.ts/g) ?? []).length).toBe(2);
 
       await act(async () => {
         await setup.mockInput.typeText("s");
@@ -747,8 +745,7 @@ describe("App interactions", () => {
       await flush(setup);
 
       frame = setup.captureCharFrame();
-      expect(frame).not.toContain("M alpha.ts");
-      expect(frame).toContain("alpha.ts");
+      expect((frame.match(/alpha\.ts/g) ?? []).length).toBe(1);
 
       await act(async () => {
         await setup.mockInput.typeText("s");
@@ -756,7 +753,7 @@ describe("App interactions", () => {
       await flush(setup);
 
       frame = setup.captureCharFrame();
-      expect(frame).toContain("M alpha.ts");
+      expect((frame.match(/alpha\.ts/g) ?? []).length).toBe(2);
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -774,7 +771,7 @@ describe("App interactions", () => {
       await flush(setup);
 
       let frame = setup.captureCharFrame();
-      expect(frame).not.toContain("M alpha.ts");
+      expect((frame.match(/alpha\.ts/g) ?? []).length).toBe(1);
 
       await act(async () => {
         await setup.mockInput.typeText("s");
@@ -782,7 +779,7 @@ describe("App interactions", () => {
       await flush(setup);
 
       frame = setup.captureCharFrame();
-      expect(frame).toContain("M alpha.ts");
+      expect((frame.match(/alpha\.ts/g) ?? []).length).toBe(2);
 
       await act(async () => {
         await setup.mockInput.typeText("s");
@@ -790,7 +787,7 @@ describe("App interactions", () => {
       await flush(setup);
 
       frame = setup.captureCharFrame();
-      expect(frame).not.toContain("M alpha.ts");
+      expect((frame.match(/alpha\.ts/g) ?? []).length).toBe(1);
     } finally {
       await act(async () => {
         setup.renderer.destroy();

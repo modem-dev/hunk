@@ -6,6 +6,7 @@ import type { AppBootstrap, DiffFile } from "../src/core/types";
 import { resolveTheme } from "../src/ui/themes";
 
 const { App } = await import("../src/ui/App");
+const { buildSidebarEntries } = await import("../src/ui/lib/files");
 const { HelpDialog } = await import("../src/ui/components/chrome/HelpDialog");
 const { FilesPane } = await import("../src/ui/components/panes/FilesPane");
 const { AgentCard } = await import("../src/ui/components/panes/AgentCard");
@@ -283,31 +284,51 @@ function frameHasHighlightedMarker(
 }
 
 describe("UI components", () => {
-  test("FilesPane renders file rows and diff stats", async () => {
-    const bootstrap = createBootstrap();
+  test("FilesPane renders grouped file rows with indented filenames and right-aligned stats", async () => {
     const theme = resolveTheme("midnight", null);
+    const files = [
+      createDiffFile(
+        "app",
+        "src/ui/App.tsx",
+        "export const app = 1;\n",
+        "export const app = 2;\nexport const view = true;\n",
+        true,
+      ),
+      createDiffFile(
+        "menu",
+        "src/ui/MenuDropdown.tsx",
+        "export const menu = 1;\n",
+        "export const menu = 2;\n",
+      ),
+      createDiffFile(
+        "watch",
+        "src/core/watch.ts",
+        "export const watch = 1;\n",
+        "export const watch = 2;\nexport const enabled = true;\n",
+      ),
+    ];
     const frame = await captureFrame(
       <FilesPane
-        entries={bootstrap.changeset.files.map((file) => ({
-          id: file.id,
-          label: `M ${file.path}`,
-          description: `+${file.stats.additions}  -${file.stats.deletions}${file.agent ? "  agent" : ""}`,
-        }))}
+        entries={buildSidebarEntries(files)}
         scrollRef={createRef()}
-        selectedFileId="alpha"
-        textWidth={24}
+        selectedFileId="app"
+        textWidth={28}
         theme={theme}
-        width={28}
+        width={32}
         onSelectFile={() => {}}
       />,
-      32,
-      12,
+      36,
+      10,
     );
 
-    expect(frame).toContain("M alpha.ts");
-    expect(frame).toContain("+2  -1  agent");
-    expect(frame).toContain("M beta.ts");
-    expect(frame).toContain("+1  -1");
+    expect(frame).toContain("src/ui/");
+    expect(frame).toContain("src/core/");
+    expect(frame).toContain(" App.tsx");
+    expect(frame).toContain(" MenuDropdown.tsx");
+    expect(frame).toContain(" watch.ts");
+    expect(frame).toContain("+2 -1");
+    expect(frame).toContain("+1 -1");
+    expect(frame).not.toContain("M +2 -1 AI");
   });
 
   test("DiffPane renders all diff sections in file order", async () => {
