@@ -382,31 +382,33 @@ describe("App interactions", () => {
       await flush(setup);
 
       let frame = setup.captureCharFrame();
-      expect(frame).not.toContain("interaction coverage");
+      expect(frame).not.toContain("coverage';");
 
       await act(async () => {
         await setup.mockInput.typeText("w");
       });
       await settleWrapToggle(setup);
 
-      frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("interaction coverage"));
-      expect(frame).toContain("interaction coverage");
+      frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("coverage';"));
+      expect(frame).toContain("wrapped line");
+      expect(frame).toContain("coverage';");
 
       await act(async () => {
         await setup.mockInput.typeText("w");
       });
       await settleWrapToggle(setup);
 
-      frame = await waitForFrame(setup, (nextFrame) => !nextFrame.includes("interaction coverage"));
-      expect(frame).not.toContain("interaction coverage");
+      frame = await waitForFrame(setup, (nextFrame) => !nextFrame.includes("coverage';"));
+      expect(frame).not.toContain("coverage';");
 
       await act(async () => {
         await setup.mockInput.typeText("w");
       });
       await settleWrapToggle(setup);
 
-      frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("interaction coverage"));
-      expect(frame).toContain("interaction coverage");
+      frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("coverage';"));
+      expect(frame).toContain("wrapped line");
+      expect(frame).toContain("coverage';");
     } finally {
       await act(async () => {
         setup.renderer.destroy();
