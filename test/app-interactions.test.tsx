@@ -239,6 +239,28 @@ async function settleWrapToggle(setup: Awaited<ReturnType<typeof testRender>>) {
   });
 }
 
+async function waitForFrame(
+  setup: Awaited<ReturnType<typeof testRender>>,
+  predicate: (frame: string) => boolean,
+  attempts = 8,
+) {
+  let frame = setup.captureCharFrame();
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (predicate(frame)) {
+      return frame;
+    }
+
+    await act(async () => {
+      await Bun.sleep(30);
+      await setup.renderOnce();
+    });
+    frame = setup.captureCharFrame();
+  }
+
+  return frame;
+}
+
 function firstVisibleAddedLine(frame: string) {
   return frame.match(/line\d{2} = 1\d{2}/)?.[0] ?? null;
 }
@@ -367,7 +389,7 @@ describe("App interactions", () => {
       });
       await settleWrapToggle(setup);
 
-      frame = setup.captureCharFrame();
+      frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("interaction coverage"));
       expect(frame).toContain("interaction coverage");
 
       await act(async () => {
@@ -375,7 +397,7 @@ describe("App interactions", () => {
       });
       await settleWrapToggle(setup);
 
-      frame = setup.captureCharFrame();
+      frame = await waitForFrame(setup, (nextFrame) => !nextFrame.includes("interaction coverage"));
       expect(frame).not.toContain("interaction coverage");
 
       await act(async () => {
@@ -383,7 +405,7 @@ describe("App interactions", () => {
       });
       await settleWrapToggle(setup);
 
-      frame = setup.captureCharFrame();
+      frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("interaction coverage"));
       expect(frame).toContain("interaction coverage");
     } finally {
       await act(async () => {
