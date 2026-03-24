@@ -231,6 +231,14 @@ async function flush(setup: Awaited<ReturnType<typeof testRender>>) {
   });
 }
 
+async function settleWrapToggle(setup: Awaited<ReturnType<typeof testRender>>) {
+  await flush(setup);
+  await act(async () => {
+    await Bun.sleep(80);
+    await setup.renderOnce();
+  });
+}
+
 function firstVisibleAddedLine(frame: string) {
   return frame.match(/line\d{2} = 1\d{2}/)?.[0] ?? null;
 }
@@ -357,7 +365,7 @@ describe("App interactions", () => {
       await act(async () => {
         await setup.mockInput.typeText("w");
       });
-      await flush(setup);
+      await settleWrapToggle(setup);
 
       frame = setup.captureCharFrame();
       expect(frame).toContain("interaction coverage");
@@ -365,7 +373,7 @@ describe("App interactions", () => {
       await act(async () => {
         await setup.mockInput.typeText("w");
       });
-      await flush(setup);
+      await settleWrapToggle(setup);
 
       frame = setup.captureCharFrame();
       expect(frame).not.toContain("interaction coverage");
@@ -373,7 +381,7 @@ describe("App interactions", () => {
       await act(async () => {
         await setup.mockInput.typeText("w");
       });
-      await flush(setup);
+      await settleWrapToggle(setup);
 
       frame = setup.captureCharFrame();
       expect(frame).toContain("interaction coverage");
