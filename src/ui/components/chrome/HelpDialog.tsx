@@ -42,7 +42,7 @@ export function HelpDialog({
       title: "Review",
       items: [
         ["/", "focus file filter"],
-        ["Tab", "swap files / filter focus"],
+        ["Tab", "toggle files/filter focus"],
         ["F10", "open menus"],
         [canRefresh ? "r / q" : "q", canRefresh ? "reload / quit" : "quit"],
       ],

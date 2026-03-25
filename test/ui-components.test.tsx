@@ -868,7 +868,7 @@ describe("UI components", () => {
       "l / w / m       lines / wrap / metadata",
       "Review",
       "/               focus file filter",
-      "Tab             swap files / filter focus",
+      "Tab             toggle files/filter focus",
       "F10             open menus",
       "r / q           reload / quit",
     ] as const;
