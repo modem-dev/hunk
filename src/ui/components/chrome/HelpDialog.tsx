@@ -53,14 +53,40 @@ export function HelpDialog({
   const bodyWidth = Math.max(1, width - 4);
   const keyWidth = Math.min(16, Math.max(12, Math.floor(bodyWidth * 0.28)));
   const descriptionWidth = Math.max(1, bodyWidth - keyWidth);
-  const height = Math.min(
-    sections.reduce((total, section) => total + 1 + section.items.length, 0) + 3,
-    Math.max(8, terminalHeight - 2),
+  const sectionSpacerRowCount = Math.max(0, sections.length - 1);
+  const contentRowCount =
+    sections.reduce((rowCount, section) => rowCount + 1 + section.items.length, 0) +
+    sectionSpacerRowCount;
+  // ModalFrame contributes the border rows, title row, padding, and one blank spacer row.
+  const modalFrameChromeRowCount = 6;
+  const requiredModalHeight = contentRowCount + modalFrameChromeRowCount;
+  const modalHeight = Math.min(requiredModalHeight, Math.max(8, terminalHeight - 2));
+  const shouldScroll = modalHeight < requiredModalHeight;
+  const content = (
+    <box style={{ width: "100%", flexDirection: "column" }}>
+      {sections.map((section, sectionIndex) => (
+        <box key={section.title} style={{ width: "100%", flexDirection: "column" }}>
+          <box style={{ width: "100%", height: 1 }}>
+            <text fg={theme.badgeNeutral}>{section.title}</text>
+          </box>
+          {section.items.map(([keys, description]) => (
+            <box
+              key={`${section.title}:${keys}`}
+              style={{ width: "100%", height: 1, flexDirection: "row" }}
+            >
+              <text fg={theme.accent}>{padText(fitText(keys, keyWidth), keyWidth)}</text>
+              <text fg={theme.muted}>{fitText(description, descriptionWidth)}</text>
+            </box>
+          ))}
+          {sectionIndex < sections.length - 1 ? <box style={{ width: "100%", height: 1 }} /> : null}
+        </box>
+      ))}
+    </box>
   );
 
   return (
     <ModalFrame
-      height={height}
+      height={modalHeight}
       terminalHeight={terminalHeight}
       terminalWidth={terminalWidth}
       theme={theme}
@@ -68,17 +94,13 @@ export function HelpDialog({
       width={width}
       onClose={onClose}
     >
-      {sections.map((section) => (
-        <box key={section.title} style={{ flexDirection: "column" }}>
-          <text fg={theme.badgeNeutral}>{section.title}</text>
-          {section.items.map(([keys, description]) => (
-            <box key={`${section.title}:${keys}`} style={{ flexDirection: "row" }}>
-              <text fg={theme.accent}>{padText(fitText(keys, keyWidth), keyWidth)}</text>
-              <text fg={theme.muted}>{fitText(description, descriptionWidth)}</text>
-            </box>
-          ))}
-        </box>
-      ))}
+      {shouldScroll ? (
+        <scrollbox focused={false} height="100%" scrollY={true} width="100%">
+          {content}
+        </scrollbox>
+      ) : (
+        content
+      )}
     </ModalFrame>
   );
 }

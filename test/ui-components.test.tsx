@@ -836,27 +836,56 @@ describe("UI components", () => {
     expect(frame).toContain("beta");
   });
 
-  test("HelpDialog renders the grouped keyboard help modal", async () => {
+  test("HelpDialog renders every keyboard shortcut row without overlap", async () => {
     const theme = resolveTheme("midnight", null);
     const frame = await captureFrame(
       <HelpDialog
         canRefresh={true}
-        terminalHeight={20}
+        terminalHeight={28}
         terminalWidth={76}
         theme={theme}
         onClose={() => {}}
       />,
       76,
-      20,
+      28,
     );
 
-    expect(frame).toContain("Keyboard help");
-    expect(frame).toContain("[Esc]");
-    expect(frame).toContain("Navigation");
-    expect(frame).toContain("View");
-    expect(frame).toContain("Review");
-    expect(frame).toContain("F10");
-    expect(frame).toContain("reload / quit");
+    const expectedRows = [
+      "Keyboard help",
+      "[Esc]",
+      "Navigation",
+      "↑ / ↓           move line-by-line",
+      "Space / f       page down (alt: f)",
+      "b               page up",
+      "Shift+Space     page up (alt)",
+      "d / u           half page down / up",
+      "[ / ]           previous / next hunk",
+      "Home / End      jump to top / bottom",
+      "View",
+      "1 / 2 / 0       split / stack / auto",
+      "s / t           sidebar / theme",
+      "a               toggle AI notes",
+      "l / w / m       lines / wrap / metadata",
+      "Review",
+      "/               focus file filter",
+      "Tab             swap files / filter focus",
+      "F10             open menus",
+      "r / q           reload / quit",
+    ] as const;
+
+    for (const expectedRow of expectedRows) {
+      expect(frame).toContain(expectedRow);
+    }
+
+    const lines = frame.split("\n");
+    const blankModalRow = /│\s+│/;
+    const viewHeaderIndex = lines.findIndex((line) => line.includes("│ View"));
+    const reviewHeaderIndex = lines.findIndex((line) => line.includes("│ Review"));
+
+    expect(lines[viewHeaderIndex - 1]).toMatch(blankModalRow);
+    expect(lines[reviewHeaderIndex - 1]).toMatch(blankModalRow);
+    expect(frame).not.toContain("linese/Awrapt/smetadata");
+    expect(frame).not.toContain("reloade/uquit");
   });
 
   test("DiffSectionPlaceholder preserves offscreen section chrome without mounting rows", async () => {
