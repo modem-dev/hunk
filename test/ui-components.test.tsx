@@ -130,6 +130,37 @@ function createMultiHunkDiffFile(id: string, path: string) {
   return createDiffFile(id, path, before, after);
 }
 
+function createViewportSizedBottomHunkDiffFile(id: string, path: string) {
+  const beforeLines = Array.from(
+    { length: 20 },
+    (_, index) => `export const line${index + 1} = ${index + 1};`,
+  );
+  const afterLines = [...beforeLines];
+
+  afterLines[1] = "export const line2 = 200;";
+  afterLines[13] = "export const line14 = 1400;";
+  afterLines[14] = "export const line15 = 1500;";
+  afterLines[15] = "export const line16 = 1600;";
+
+  return createDiffFile(id, path, lines(...beforeLines), lines(...afterLines));
+}
+
+function createWrappedViewportSizedBottomHunkDiffFile(id: string, path: string) {
+  const beforeLines = Array.from(
+    { length: 20 },
+    (_, index) => `export const line${index + 1} = ${index + 1};`,
+  );
+  const afterLines = [...beforeLines];
+
+  afterLines[1] = "export const line2 = 200;";
+  afterLines[13] =
+    "export const line14 = 'this is a long wrapped replacement for line 14 in the selected hunk';";
+  afterLines[14] =
+    "export const line15 = 'this is a long wrapped replacement for line 15 in the selected hunk';";
+
+  return createDiffFile(id, path, lines(...beforeLines), lines(...afterLines));
+}
+
 function createDiffPaneProps(
   files: DiffFile[],
   theme = resolveTheme("midnight", null),
@@ -429,6 +460,128 @@ describe("UI components", () => {
       expect(frame).not.toContain("2 + export const line2 = 200;");
       expect(frame).not.toContain("intro.ts");
       expect(frame).not.toContain("@@ -1,3 +1,3 @@");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("DiffPane keeps a viewport-sized selected hunk fully visible when it fits", async () => {
+    const theme = resolveTheme("midnight", null);
+    const props = createDiffPaneProps(
+      [createViewportSizedBottomHunkDiffFile("target", "target.ts")],
+      theme,
+      {
+        diffContentWidth: 96,
+        headerLabelWidth: 48,
+        selectedFileId: "target",
+        selectedHunkIndex: 1,
+        separatorWidth: 92,
+        showHunkHeaders: false,
+        width: 100,
+      },
+    );
+    const setup = await testRender(<DiffPane {...props} />, {
+      width: 104,
+      height: 12,
+    });
+
+    try {
+      await settleDiffPane(setup);
+      const frame = setup.captureCharFrame();
+
+      expect(frame).toContain("export const line11 = 11;");
+      expect(frame).toContain("14 - export const line14 = 14;");
+      expect(frame).toContain("14 + export const line14 = 1400;");
+      expect(frame).toContain("16 - export const line16 = 16;");
+      expect(frame).toContain("16 + export const line16 = 1600;");
+      expect(frame).toContain("export const line19 = 19;");
+      expect(frame).not.toContain("2 - export const line2 = 2;");
+      expect(frame).not.toContain("2 + export const line2 = 200;");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("DiffPane keeps a selected wrapped hunk fully visible when it fits", async () => {
+    const theme = resolveTheme("midnight", null);
+    const props = createDiffPaneProps(
+      [createWrappedViewportSizedBottomHunkDiffFile("target", "target.ts")],
+      theme,
+      {
+        diffContentWidth: 76,
+        headerLabelWidth: 40,
+        selectedFileId: "target",
+        selectedHunkIndex: 1,
+        separatorWidth: 72,
+        showHunkHeaders: false,
+        width: 80,
+        wrapLines: true,
+      },
+    );
+    const setup = await testRender(<DiffPane {...props} />, {
+      width: 84,
+      height: 16,
+    });
+
+    try {
+      await settleDiffPane(setup);
+      const frame = setup.captureCharFrame();
+
+      expect(frame).toContain("11   export const line11 = 11;");
+      expect(frame).toContain("14 + export const line14 = 'this is a");
+      expect(frame).toContain("15 + export const line15 = 'this is a");
+      expect(frame).toContain("18   export const line18 = 18;");
+      expect(frame).not.toContain("2 - export const line2 = 2;");
+      expect(frame).not.toContain("2 + export const line2 = 200;");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("DiffPane keeps a selected hunk with inline notes fully visible when it fits", async () => {
+    const theme = resolveTheme("midnight", null);
+    const file = createViewportSizedBottomHunkDiffFile("target", "target.ts");
+    file.agent = {
+      path: file.path,
+      summary: "target note",
+      annotations: [
+        {
+          newRange: [14, 16],
+          summary: "Keep the selected hunk visible with its note.",
+        },
+      ],
+    };
+    const props = createDiffPaneProps([file], theme, {
+      diffContentWidth: 96,
+      headerLabelWidth: 48,
+      selectedFileId: "target",
+      selectedHunkIndex: 1,
+      separatorWidth: 92,
+      showAgentNotes: true,
+      showHunkHeaders: false,
+      width: 100,
+    });
+    const setup = await testRender(<DiffPane {...props} />, {
+      width: 104,
+      height: 20,
+    });
+
+    try {
+      await settleDiffPane(setup);
+      const frame = setup.captureCharFrame();
+
+      expect(frame).toContain("Keep the selected hunk visible with its note.");
+      expect(frame).toContain("11   export const line11 = 11;");
+      expect(frame).toContain("16 + export const line16 = 1600;");
+      expect(frame).toContain("export const line19 = 19;");
+      expect(frame).not.toContain("2 - export const line2 = 2;");
+      expect(frame).not.toContain("2 + export const line2 = 200;");
     } finally {
       await act(async () => {
         setup.renderer.destroy();

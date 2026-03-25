@@ -1,13 +1,15 @@
 import type { DiffFile, LayoutMode } from "../../core/types";
-import { measureAgentInlineNoteHeight } from "../components/panes/AgentInlineNote";
 import { buildSplitRows, buildStackRows } from "../diff/pierre";
-import { buildReviewRenderPlan, type PlannedReviewRow } from "../diff/reviewRenderPlan";
+import { measurePlannedHunkBounds, type PlannedHunkBounds } from "../diff/plannedReviewRows";
+import { buildReviewRenderPlan } from "../diff/reviewRenderPlan";
 import type { VisibleAgentNote } from "./agentAnnotations";
 import type { AppTheme } from "../themes";
 
+/** Cached placeholder sizing and hunk navigation metrics for one file section. */
 export interface DiffSectionMetrics {
   bodyHeight: number;
   hunkAnchorRows: Map<number, number>;
+  hunkBounds: Map<number, PlannedHunkBounds>;
 }
 
 const NOTE_AWARE_SECTION_METRICS_CACHE = new WeakMap<
@@ -15,6 +17,7 @@ const NOTE_AWARE_SECTION_METRICS_CACHE = new WeakMap<
   Map<string, DiffSectionMetrics>
 >();
 
+/** Build the same planned rows the renderer will consume, but without requiring mounted UI. */
 function buildBasePlannedRows(
   file: DiffFile,
   layout: Exclude<LayoutMode, "auto">,
@@ -34,35 +37,9 @@ function buildBasePlannedRows(
   });
 }
 
-function plannedRowHeight(
-  row: PlannedReviewRow,
-  showHunkHeaders: boolean,
-  layout: Exclude<LayoutMode, "auto">,
-  width: number,
-) {
-  if (row.kind === "inline-note") {
-    return measureAgentInlineNoteHeight({
-      annotation: row.annotation,
-      anchorSide: row.anchorSide,
-      layout,
-      width,
-    });
-  }
-
-  if (row.kind === "note-guide-cap") {
-    return 1;
-  }
-
-  if (row.row.type === "hunk-header") {
-    return showHunkHeaders ? 1 : 0;
-  }
-
-  return 1;
-}
-
 /**
  * Measure one file section from the same render plan used by PierreDiffView.
- * This drives the no-wrap/no-note windowing path, where every visible planned row is one terminal row.
+ * This drives the windowed review stream and keeps scrolling and rendering aligned.
  */
 export function measureDiffSectionMetrics(
   file: DiffFile,
@@ -76,6 +53,7 @@ export function measureDiffSectionMetrics(
     return {
       bodyHeight: 1,
       hunkAnchorRows: new Map(),
+      hunkBounds: new Map(),
     };
   }
 
@@ -89,21 +67,13 @@ export function measureDiffSectionMetrics(
   }
 
   const plannedRows = buildBasePlannedRows(file, layout, showHunkHeaders, theme, visibleAgentNotes);
-  const hunkAnchorRows = new Map<number, number>();
-  let bodyHeight = 0;
-
-  for (const row of plannedRows) {
-    if (row.kind === "diff-row" && row.anchorId && !hunkAnchorRows.has(row.hunkIndex)) {
-      hunkAnchorRows.set(row.hunkIndex, bodyHeight);
-    }
-
-    bodyHeight += plannedRowHeight(row, showHunkHeaders, layout, width);
-  }
-
-  const metrics = {
-    bodyHeight,
-    hunkAnchorRows,
-  };
+  // Reuse the same bounds pass as the live renderer so placeholder sizing and navigation math stay
+  // in lock-step with what the user actually sees.
+  const metrics = measurePlannedHunkBounds(plannedRows, {
+    showHunkHeaders,
+    layout,
+    width,
+  });
 
   if (visibleAgentNotes.length > 0) {
     const cachedByNotes = NOTE_AWARE_SECTION_METRICS_CACHE.get(visibleAgentNotes) ?? new Map();

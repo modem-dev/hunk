@@ -10,6 +10,7 @@ import {
 } from "react";
 import type { DiffFile, LayoutMode } from "../../../core/types";
 import type { VisibleAgentNote } from "../../lib/agentAnnotations";
+import { computeHunkRevealScrollTop } from "../../lib/hunkScroll";
 import { measureDiffSectionMetrics } from "../../lib/sectionHeights";
 import { diffHunkId, diffSectionId } from "../../lib/ids";
 import type { AppTheme } from "../../themes";
@@ -193,7 +194,14 @@ export function DiffPane({
       return next;
     }
 
-    for (const fileId of visibleViewportFileIds) {
+    const fileIdsToMeasure = new Set(visibleViewportFileIds);
+    // Always measure the selected file with its real note rows so hunk navigation can compute
+    // accurate bounds even before the file scrolls into the visible viewport.
+    if (selectedFileId) {
+      fileIdsToMeasure.add(selectedFileId);
+    }
+
+    for (const fileId of fileIdsToMeasure) {
       const visibleNotes = allAgentNotesByFile.get(fileId);
       if (visibleNotes && visibleNotes.length > 0) {
         next.set(fileId, visibleNotes);
@@ -201,7 +209,7 @@ export function DiffPane({
     }
 
     return next;
-  }, [allAgentNotesByFile, showAgentNotes, visibleViewportFileIds]);
+  }, [allAgentNotesByFile, selectedFileId, showAgentNotes, visibleViewportFileIds]);
 
   const sectionMetrics = useMemo(
     () =>
@@ -278,43 +286,52 @@ export function DiffPane({
       ? diffHunkId(selectedFile.id, selectedHunkIndex)
       : diffSectionId(selectedFile.id)
     : null;
-  const selectedEstimatedScrollTop = useMemo(() => {
-    if (!selectedFile || selectedFileIndex < 0) {
+  const selectedEstimatedHunkBounds = useMemo(() => {
+    if (!selectedFile || selectedFileIndex < 0 || selectedFile.metadata.hunks.length === 0) {
       return null;
     }
 
-    let top = 0;
+    // Convert the selected hunk's file-local bounds into absolute scrollbox coordinates by adding
+    // the accumulated section chrome and earlier file heights.
+    let sectionTop = 0;
     for (let index = 0; index < selectedFileIndex; index += 1) {
-      top += (index > 0 ? 1 : 0) + 1 + (estimatedBodyHeights[index] ?? 0);
+      sectionTop += (index > 0 ? 1 : 0) + 1 + (estimatedBodyHeights[index] ?? 0);
     }
 
     if (selectedFileIndex > 0) {
-      top += 1;
+      sectionTop += 1;
     }
 
-    top += 1;
+    sectionTop += 1;
 
-    if (selectedFile.metadata.hunks.length > 0) {
-      const clampedHunkIndex = Math.max(
-        0,
-        Math.min(selectedHunkIndex, selectedFile.metadata.hunks.length - 1),
-      );
-      top += sectionMetrics[selectedFileIndex]?.hunkAnchorRows.get(clampedHunkIndex) ?? 0;
+    const clampedHunkIndex = Math.max(
+      0,
+      Math.min(selectedHunkIndex, selectedFile.metadata.hunks.length - 1),
+    );
+    const hunkBounds = sectionMetrics[selectedFileIndex]?.hunkBounds.get(clampedHunkIndex);
+    if (!hunkBounds) {
+      return null;
     }
 
-    return top;
+    return {
+      top: sectionTop + hunkBounds.top,
+      height: hunkBounds.height,
+      startRowId: hunkBounds.startRowId,
+      endRowId: hunkBounds.endRowId,
+    };
   }, [estimatedBodyHeights, sectionMetrics, selectedFile, selectedFileIndex, selectedHunkIndex]);
 
-  // Track the previous selected anchor to detect actual selection changes
+  // Track the previous selected anchor to detect actual selection changes.
   const prevSelectedAnchorIdRef = useRef<string | null>(null);
 
   useLayoutEffect(() => {
-    if (!selectedAnchorId) {
+    if (!selectedAnchorId && !selectedEstimatedHunkBounds) {
       prevSelectedAnchorIdRef.current = null;
       return;
     }
 
-    // Only auto-scroll when the selection actually changes, not when metrics update during scrolling
+    // Only auto-scroll when the selection actually changes, not when metrics update during
+    // scrolling or when the selected section refines its measured bounds.
     const isSelectionChange = prevSelectedAnchorIdRef.current !== selectedAnchorId;
     prevSelectedAnchorIdRef.current = selectedAnchorId;
 
@@ -328,15 +345,43 @@ export function DiffPane({
         return;
       }
 
-      // In the common no-wrap/no-note path we can estimate the selected hunk row and keep it
-      // comfortably below the top edge instead of merely making it barely visible.
-      if (!wrapLines && visibleAgentNotesByFile.size === 0 && selectedEstimatedScrollTop !== null) {
-        const topPaddingRows = Math.max(2, Math.floor(scrollViewport.height * 0.25));
-        scrollBox.scrollTo(Math.max(0, selectedEstimatedScrollTop - topPaddingRows));
+      const viewportHeight = Math.max(scrollViewport.height, scrollBox.viewport.height ?? 0);
+      const preferredTopPadding = Math.max(2, Math.floor(viewportHeight * 0.25));
+
+      if (selectedEstimatedHunkBounds) {
+        const viewportTop = scrollBox.viewport.y;
+        const currentScrollTop = scrollBox.scrollTop;
+        const startRow = scrollBox.content.findDescendantById(
+          selectedEstimatedHunkBounds.startRowId,
+        );
+        const endRow = scrollBox.content.findDescendantById(selectedEstimatedHunkBounds.endRowId);
+
+        // Prefer exact mounted bounds when both edges are available. If only one edge has mounted
+        // so far, fall back to the planned bounds as one atomic estimate instead of mixing sources.
+        const renderedTop = startRow ? currentScrollTop + (startRow.y - viewportTop) : null;
+        const renderedBottom = endRow
+          ? currentScrollTop + (endRow.y + endRow.height - viewportTop)
+          : null;
+        const renderedBoundsReady = renderedTop !== null && renderedBottom !== null;
+        const hunkTop = renderedBoundsReady ? renderedTop : selectedEstimatedHunkBounds.top;
+        const hunkHeight = renderedBoundsReady
+          ? Math.max(0, renderedBottom - renderedTop)
+          : selectedEstimatedHunkBounds.height;
+
+        scrollBox.scrollTo(
+          computeHunkRevealScrollTop({
+            hunkTop,
+            hunkHeight,
+            preferredTopPadding,
+            viewportHeight,
+          }),
+        );
         return;
       }
 
-      scrollBox.scrollChildIntoView(selectedAnchorId);
+      if (selectedAnchorId) {
+        scrollBox.scrollChildIntoView(selectedAnchorId);
+      }
     };
 
     // Run after this pane renders the selected section/hunk, then retry briefly while layout settles.
@@ -346,14 +391,7 @@ export function DiffPane({
     return () => {
       timeouts.forEach((timeout) => clearTimeout(timeout));
     };
-  }, [
-    scrollRef,
-    scrollViewport.height,
-    selectedAnchorId,
-    selectedEstimatedScrollTop,
-    visibleAgentNotesByFile.size,
-    wrapLines,
-  ]);
+  }, [scrollRef, scrollViewport.height, selectedAnchorId, selectedEstimatedHunkBounds]);
 
   // Configure scroll step size to scroll exactly 1 line per step
   useEffect(() => {

@@ -15,6 +15,7 @@ import {
 } from "../src/ui/lib/agentPopover";
 import { buildAppMenus } from "../src/ui/lib/appMenus";
 import { fitText, padText } from "../src/ui/lib/text";
+import { computeHunkRevealScrollTop } from "../src/ui/lib/hunkScroll";
 import { estimateDiffBodyRows, measureDiffSectionMetrics } from "../src/ui/lib/sectionHeights";
 import { resizeSidebarWidth } from "../src/ui/lib/sidebar";
 import { resolveTheme } from "../src/ui/themes";
@@ -254,6 +255,10 @@ describe("ui helpers", () => {
     expect(metrics.hunkAnchorRows.get(0)).toBe(1);
     expect(metrics.hunkAnchorRows.get(1)).toBe(3);
     expect(metrics.hunkAnchorRows.get(1)).toBeGreaterThan(metrics.hunkAnchorRows.get(0) ?? -1);
+    expect(metrics.hunkBounds.get(0)?.top).toBe(1);
+    expect(metrics.hunkBounds.get(0)?.height).toBe(1);
+    expect(metrics.hunkBounds.get(1)?.top).toBe(3);
+    expect(metrics.hunkBounds.get(1)?.height).toBe(1);
   });
 
   test("measureDiffSectionMetrics includes visible inline note rows in split mode", () => {
@@ -280,6 +285,25 @@ describe("ui helpers", () => {
 
     expect(noteMetrics.bodyHeight).toBeGreaterThan(baseMetrics.bodyHeight);
     expect(noteMetrics.hunkAnchorRows.get(0)).toBe(baseMetrics.hunkAnchorRows.get(0));
+  });
+
+  test("computeHunkRevealScrollTop keeps a hunk fully visible when it fits", () => {
+    expect(
+      computeHunkRevealScrollTop({
+        hunkTop: 20,
+        hunkHeight: 10,
+        preferredTopPadding: 4,
+        viewportHeight: 12,
+      }),
+    ).toBe(18);
+    expect(
+      computeHunkRevealScrollTop({
+        hunkTop: 20,
+        hunkHeight: 10,
+        preferredTopPadding: 4,
+        viewportHeight: 16,
+      }),
+    ).toBe(16);
   });
 
   test("resolveTheme falls back by requested id and renderer mode while lazily exposing syntax styles", () => {
