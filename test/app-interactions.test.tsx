@@ -492,7 +492,7 @@ describe("App interactions", () => {
       await flush(setup);
 
       let frame = setup.captureCharFrame();
-      if (!frame.includes("Focus files")) {
+      if (!frame.includes("Toggle files/filter focus")) {
         await act(async () => {
           await setup.mockInput.pressKey("F10");
         });
@@ -500,7 +500,7 @@ describe("App interactions", () => {
         frame = setup.captureCharFrame();
       }
 
-      expect(frame).toContain("Focus files");
+      expect(frame).toContain("Toggle files/filter focus");
       expect(frame).toContain("Reload");
       expect(frame).toContain("Quit");
 
@@ -1085,7 +1085,7 @@ describe("App interactions", () => {
       await flush(setup);
 
       let frame = setup.captureCharFrame();
-      expect(frame).toContain("Focus files");
+      expect(frame).toContain("Toggle files/filter focus");
       expect(frame).not.toContain("Keyboard help");
 
       await act(async () => {
@@ -1095,7 +1095,7 @@ describe("App interactions", () => {
 
       frame = setup.captureCharFrame();
       expect(frame).toContain("Keyboard help");
-      expect(frame).not.toContain("Focus files");
+      expect(frame).not.toContain("Toggle files/filter focus");
 
       await act(async () => {
         await setup.mockInput.pressArrow("right");
@@ -1103,7 +1103,7 @@ describe("App interactions", () => {
       await flush(setup);
 
       frame = setup.captureCharFrame();
-      expect(frame).toContain("Focus files");
+      expect(frame).toContain("Toggle files/filter focus");
       expect(frame).not.toContain("Keyboard help");
     } finally {
       await act(async () => {
