@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createServer } from "node:net";
+import { HunkDaemonState } from "../src/mcp/daemonState";
 import { serveHunkMcpServer } from "../src/mcp/server";
 
 const originalHost = process.env.HUNK_MCP_HOST;
@@ -297,6 +298,67 @@ describe("Hunk session daemon server", () => {
       await waitForShutdown(port, 1_000);
     } finally {
       socket.close();
+      server.stop(true);
+    }
+  });
+
+  test("forwards reload sourcePath through the session API", async () => {
+    const port = await reserveLoopbackPort();
+    process.env.HUNK_MCP_HOST = "127.0.0.1";
+    process.env.HUNK_MCP_PORT = String(port);
+
+    const original = HunkDaemonState.prototype.sendReloadSession;
+    HunkDaemonState.prototype.sendReloadSession = function (input) {
+      expect(input).toMatchObject({
+        sessionPath: "/tmp/live-session",
+        sourcePath: "/tmp/source-repo",
+        nextInput: {
+          kind: "git",
+          staged: false,
+          options: {},
+        },
+      });
+
+      return Promise.resolve({
+        sessionId: "session-1",
+        inputKind: "git",
+        title: "source-repo working tree",
+        sourceLabel: "/tmp/source-repo",
+        fileCount: 0,
+        selectedHunkIndex: 0,
+      });
+    };
+
+    const server = serveHunkMcpServer();
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/session-api`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "reload",
+          selector: { sessionPath: "/tmp/live-session" },
+          sourcePath: "/tmp/source-repo",
+          nextInput: {
+            kind: "git",
+            staged: false,
+            options: {},
+          },
+        }),
+      });
+
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({
+        result: {
+          sessionId: "session-1",
+          inputKind: "git",
+          sourceLabel: "/tmp/source-repo",
+        },
+      });
+    } finally {
+      HunkDaemonState.prototype.sendReloadSession = original;
       server.stop(true);
     }
   });

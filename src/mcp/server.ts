@@ -116,6 +116,7 @@ async function handleSessionApiRequest(state: HunkDaemonState, request: Request)
           result: await state.sendReloadSession({
             ...input.selector,
             nextInput: input.nextInput,
+            sourcePath: input.sourcePath,
           }),
         };
         break;

@@ -227,6 +227,53 @@ function resolveExplicitSessionSelector(
   return sessionId ? { sessionId } : { repoRoot: resolve(repoRoot!) };
 }
 
+function resolveReloadSelector(
+  sessionId: string | undefined,
+  sessionPath: string | undefined,
+  repoRoot: string | undefined,
+  sourcePath: string | undefined,
+) {
+  if (sessionPath && repoRoot) {
+    throw new Error(
+      "Specify either --session-path <path> or --repo <path> as the target, not both.",
+    );
+  }
+
+  if (sessionId && sessionPath) {
+    throw new Error("Specify either <session-id> or --session-path <path>, not both.");
+  }
+
+  if (sessionId && repoRoot) {
+    throw new Error("Specify either <session-id> or --repo <path>, not both.");
+  }
+
+  const resolvedSource = sourcePath ? resolve(sourcePath) : undefined;
+  if (sessionId) {
+    return {
+      selector: { sessionId },
+      sourcePath: resolvedSource,
+    };
+  }
+
+  if (sessionPath) {
+    return {
+      selector: { sessionPath: resolve(sessionPath) },
+      sourcePath: resolvedSource,
+    };
+  }
+
+  if (repoRoot) {
+    return {
+      selector: { repoRoot: resolve(repoRoot) },
+      sourcePath: resolvedSource,
+    };
+  }
+
+  throw new Error(
+    "Specify one live Hunk session with <session-id> or --repo <path> (or --session-path <path>).",
+  );
+}
+
 /** Parse the overloaded `hunk diff` command. */
 async function parseDiffCommand(tokens: string[], argv: string[]): Promise<ParsedCliInput> {
   const { commandTokens, pathspecs } = splitPathspecArgs(tokens);
@@ -445,13 +492,13 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
           "  hunk session get --repo <path>",
           "  hunk session context <session-id>",
           "  hunk session context --repo <path>",
-          "  hunk session navigate <session-id> --file <path> (--hunk <n> | --old-line <n> | --new-line <n>)",
-          "  hunk session reload <session-id> -- diff [ref] [-- <pathspec...>]",
-          "  hunk session reload <session-id> -- show [ref] [-- <pathspec...>]",
-          "  hunk session comment add <session-id> --file <path> (--old-line <n> | --new-line <n>) --summary <text>",
-          "  hunk session comment list <session-id>",
-          "  hunk session comment rm <session-id> <comment-id>",
-          "  hunk session comment clear <session-id> --yes",
+          "  hunk session navigate (<session-id> | --repo <path>) --file <path> (--hunk <n> | --old-line <n> | --new-line <n>)",
+          "  hunk session reload (<session-id> | --repo <path> | --session-path <path>) [--source <path>] -- diff [ref] [-- <pathspec...>]",
+          "  hunk session reload (<session-id> | --repo <path> | --session-path <path>) [--source <path>] -- show [ref] [-- <pathspec...>]",
+          "  hunk session comment add (<session-id> | --repo <path>) --file <path> (--old-line <n> | --new-line <n>) --summary <text>",
+          "  hunk session comment list (<session-id> | --repo <path>)",
+          "  hunk session comment rm (<session-id> | --repo <path>) <comment-id>",
+          "  hunk session comment clear (<session-id> | --repo <path>) --yes",
         ].join("\n") + "\n",
     };
   }
@@ -590,15 +637,23 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
       .description("replace the contents of one live Hunk session")
       .argument("[sessionId]")
       .option("--repo <path>", "target the live session whose repo root matches this path")
+      .option("--session-path <path>", "target a live session rooted at a different path")
+      .option("--source <path>", "load the diff from this directory instead of the session's own")
       .option("--json", "emit structured JSON");
 
     let parsedSessionId: string | undefined;
-    let parsedOptions: { repo?: string; json?: boolean } = {};
+    let parsedOptions: { sessionPath?: string; repo?: string; source?: string; json?: boolean } =
+      {};
 
-    command.action((sessionId: string | undefined, options: { repo?: string; json?: boolean }) => {
-      parsedSessionId = sessionId;
-      parsedOptions = options;
-    });
+    command.action(
+      (
+        sessionId: string | undefined,
+        options: { sessionPath?: string; repo?: string; source?: string; json?: boolean },
+      ) => {
+        parsedSessionId = sessionId;
+        parsedOptions = options;
+      },
+    );
 
     if (outerTokens.includes("--help") || outerTokens.includes("-h")) {
       return {
@@ -610,6 +665,7 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
             "  hunk session reload --repo . -- diff",
             "  hunk session reload --repo . -- diff main...feature -- src/ui",
             "  hunk session reload --repo . -- show HEAD~1 -- README.md",
+            "  hunk session reload --session-path /path/to/session --source /path/to/repo -- diff",
           ].join("\n") +
           "\n",
       };
@@ -630,12 +686,19 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
 
     await parseStandaloneCommand(command, outerTokens);
     const nextInput = requireReloadableCliInput(await parseCli(["bun", "hunk", ...nestedTokens]));
+    const resolvedReload = resolveReloadSelector(
+      parsedSessionId,
+      parsedOptions.sessionPath,
+      parsedOptions.repo,
+      parsedOptions.source,
+    );
 
     return {
       kind: "session",
       action: "reload",
       output: resolveJsonOutput(parsedOptions),
-      selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
+      selector: resolvedReload.selector,
+      sourcePath: resolvedReload.sourcePath,
       nextInput,
     };
   }
@@ -821,12 +884,22 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
         .option("--json", "emit structured JSON");
 
       let parsedSessionId: string | undefined;
-      let parsedOptions: { repo?: string; file?: string; yes?: boolean; json?: boolean } = {};
+      let parsedOptions: {
+        repo?: string;
+        file?: string;
+        yes?: boolean;
+        json?: boolean;
+      } = {};
 
       command.action(
         (
           sessionId: string | undefined,
-          options: { repo?: string; file?: string; yes?: boolean; json?: boolean },
+          options: {
+            repo?: string;
+            file?: string;
+            yes?: boolean;
+            json?: boolean;
+          },
         ) => {
           parsedSessionId = sessionId;
           parsedOptions = options;

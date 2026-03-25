@@ -33,7 +33,7 @@ export function useHunkSessionBridge({
   openAgentNotes: () => void;
   reloadSession: (
     nextInput: CliInput,
-    options?: { resetShell?: boolean },
+    options?: { resetShell?: boolean; sourcePath?: string },
   ) => Promise<ReloadedSessionResult>;
   selectedFile: DiffFile | undefined;
   selectedHunkIndex: number;
@@ -137,7 +137,7 @@ export function useHunkSessionBridge({
 
   const reloadIncomingSession = useCallback(
     async (message: Extract<SessionServerMessage, { command: "reload_session" }>) =>
-      reloadSession(message.input.nextInput),
+      reloadSession(message.input.nextInput, { sourcePath: message.input.sourcePath }),
     [reloadSession],
   );
 

@@ -172,7 +172,7 @@ describe("parseCli", () => {
     });
   });
 
-  test("parses session get by repo", async () => {
+  test("parses session get by repo alias", async () => {
     const parsed = await parseCli(["bun", "hunk", "session", "get", "--repo", "."]);
 
     expect(parsed).toMatchObject({
@@ -232,6 +232,35 @@ describe("parseCli", () => {
         kind: "show",
         ref: "HEAD~1",
         pathspecs: ["README.md"],
+      },
+      output: "json",
+    });
+  });
+
+  test("parses split session reload with a separate session path and source directory", async () => {
+    const parsed = await parseCli([
+      "bun",
+      "hunk",
+      "session",
+      "reload",
+      "--session-path",
+      "/tmp/live-window",
+      "--source",
+      "/tmp/source-repo",
+      "--json",
+      "--",
+      "diff",
+    ]);
+
+    expect(parsed).toEqual({
+      kind: "session",
+      action: "reload",
+      selector: { sessionPath: "/tmp/live-window" },
+      sourcePath: "/tmp/source-repo",
+      nextInput: {
+        kind: "git",
+        staged: false,
+        options: {},
       },
       output: "json",
     });

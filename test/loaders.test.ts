@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadAppBootstrap } from "../src/core/loaders";
@@ -96,6 +96,39 @@ describe("loadAppBootstrap", () => {
     expect(bootstrap.changeset.files).toHaveLength(1);
     expect(bootstrap.changeset.agentSummary).toBe("Agent added the bonus export.");
     expect(bootstrap.changeset.files[0]?.stats.additions).toBeGreaterThan(0);
+    expect(bootstrap.changeset.files[0]?.agent?.annotations).toHaveLength(1);
+  });
+
+  test("loads git changes and relative agent context from an explicit cwd override", async () => {
+    const dir = createTempRepo("hunk-git-cwd-");
+    const nested = join(dir, "nested");
+    writeFileSync(join(dir, "example.ts"), "export const value = 1;\n");
+    git(dir, "add", "example.ts");
+    git(dir, "commit", "-m", "initial");
+
+    writeFileSync(join(dir, "example.ts"), "export const value = 2;\n");
+    mkdirSync(nested, { recursive: true });
+    writeFileSync(
+      join(nested, "agent.json"),
+      JSON.stringify({
+        files: [{ path: "example.ts", annotations: [{ newRange: [1, 1], summary: "updated" }] }],
+      }),
+    );
+
+    const bootstrap = await loadAppBootstrap(
+      {
+        kind: "git",
+        staged: false,
+        options: {
+          mode: "auto",
+          agentContext: "agent.json",
+        },
+      },
+      { cwd: nested },
+    );
+
+    expect(bootstrap.changeset.sourceLabel).toBe(dir);
+    expect(bootstrap.changeset.files[0]?.path).toBe("example.ts");
     expect(bootstrap.changeset.files[0]?.agent?.annotations).toHaveLength(1);
   });
 

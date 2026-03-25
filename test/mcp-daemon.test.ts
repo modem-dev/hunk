@@ -99,23 +99,48 @@ function createLiveComment(
 }
 
 describe("Hunk MCP daemon state", () => {
-  test("resolves one target session by session id, repo root, or sole-session fallback", () => {
+  test("resolves one target session by session id, session path, repo root, or sole-session fallback", () => {
     const one = [createListedSession()];
     const two = [
       createListedSession(),
       createListedSession({
         sessionId: "session-2",
+        cwd: "/other-session",
+        repoRoot: "/repo",
         snapshot: { ...createSnapshot(), updatedAt: "2026-03-22T00:00:01.000Z" },
       }),
     ];
 
     expect(resolveSessionTarget(one, {}).sessionId).toBe("session-1");
+    expect(resolveSessionTarget(one, { sessionPath: "/repo" }).sessionId).toBe("session-1");
     expect(resolveSessionTarget(one, { repoRoot: "/repo" }).sessionId).toBe("session-1");
     expect(resolveSessionTarget(two, { sessionId: "session-2" }).sessionId).toBe("session-2");
-    expect(() => resolveSessionTarget(two, {})).toThrow("specify sessionId or repoRoot");
+    expect(() => resolveSessionTarget(two, {})).toThrow(
+      "specify sessionId, sessionPath, or repoRoot",
+    );
     expect(() => resolveSessionTarget(two, { repoRoot: "/repo" })).toThrow(
       "specify sessionId instead",
     );
+  });
+
+  test("keeps session-path matching tied to the live session cwd", () => {
+    const sessions = [
+      createListedSession({
+        sessionId: "session-f",
+        cwd: "/live-session",
+        repoRoot: "/source-f",
+      }),
+      createListedSession({
+        sessionId: "session-a",
+        cwd: "/other-session",
+        repoRoot: "/source-a",
+      }),
+    ];
+
+    expect(resolveSessionTarget(sessions, { sessionPath: "/live-session" }).sessionId).toBe(
+      "session-f",
+    );
+    expect(resolveSessionTarget(sessions, { repoRoot: "/source-a" }).sessionId).toBe("session-a");
   });
 
   test("exposes the selected session context from snapshot state", () => {

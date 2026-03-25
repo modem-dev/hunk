@@ -40,6 +40,7 @@ interface SessionEntry {
 
 export interface SessionTargetSelector {
   sessionId?: string;
+  sessionPath?: string;
   repoRoot?: string;
 }
 
@@ -69,6 +70,23 @@ export function resolveSessionTarget(sessions: ListedSession[], selector: Sessio
     return matched;
   }
 
+  const sessionPath = selector.sessionPath;
+  if (sessionPath) {
+    const matches = sessions.filter((session) => session.cwd === sessionPath);
+    if (matches.length === 0) {
+      throw new Error(`No active Hunk session matches session path ${sessionPath}.`);
+    }
+
+    if (matches.length > 1) {
+      throw new Error(
+        `Multiple active Hunk sessions match session path ${sessionPath}; specify sessionId instead. ` +
+          `Matches: ${describeSessionChoices(matches)}.`,
+      );
+    }
+
+    return matches[0]!;
+  }
+
   if (selector.repoRoot) {
     const matches = sessions.filter((session) => session.repoRoot === selector.repoRoot);
     if (matches.length === 0) {
@@ -96,7 +114,7 @@ export function resolveSessionTarget(sessions: ListedSession[], selector: Sessio
   }
 
   throw new Error(
-    `Multiple active Hunk sessions are registered; specify sessionId or repoRoot. ` +
+    `Multiple active Hunk sessions are registered; specify sessionId, sessionPath, or repoRoot. ` +
       `Sessions: ${describeSessionChoices(sessions)}.`,
   );
 }
@@ -137,6 +155,7 @@ export class HunkDaemonState {
       sessionId: session.sessionId,
       title: session.title,
       sourceLabel: session.sourceLabel,
+      cwd: session.cwd,
       repoRoot: session.repoRoot,
       inputKind: session.inputKind,
       selectedFile,
@@ -257,7 +276,7 @@ export class HunkDaemonState {
 
   sendComment(input: CommentToolInput) {
     return this.sendCommand<AppliedCommentResult, "comment">(
-      { sessionId: input.sessionId, repoRoot: input.repoRoot },
+      { sessionId: input.sessionId, sessionPath: input.sessionPath, repoRoot: input.repoRoot },
       "comment",
       input,
       "Timed out waiting for the Hunk session to apply the comment.",
@@ -266,7 +285,7 @@ export class HunkDaemonState {
 
   sendNavigateToHunk(input: NavigateToHunkToolInput) {
     return this.sendCommand<NavigatedSelectionResult, "navigate_to_hunk">(
-      { sessionId: input.sessionId, repoRoot: input.repoRoot },
+      { sessionId: input.sessionId, sessionPath: input.sessionPath, repoRoot: input.repoRoot },
       "navigate_to_hunk",
       input,
       "Timed out waiting for the Hunk session to navigate to the requested hunk.",
@@ -275,7 +294,7 @@ export class HunkDaemonState {
 
   sendReloadSession(input: ReloadSessionToolInput) {
     return this.sendCommand<ReloadedSessionResult, "reload_session">(
-      { sessionId: input.sessionId, repoRoot: input.repoRoot },
+      { sessionId: input.sessionId, sessionPath: input.sessionPath, repoRoot: input.repoRoot },
       "reload_session",
       input,
       "Timed out waiting for the Hunk session to reload the requested contents.",
@@ -285,7 +304,7 @@ export class HunkDaemonState {
 
   sendRemoveComment(input: RemoveCommentToolInput) {
     return this.sendCommand<RemovedCommentResult, "remove_comment">(
-      { sessionId: input.sessionId, repoRoot: input.repoRoot },
+      { sessionId: input.sessionId, sessionPath: input.sessionPath, repoRoot: input.repoRoot },
       "remove_comment",
       input,
       "Timed out waiting for the Hunk session to remove the requested comment.",
@@ -294,7 +313,7 @@ export class HunkDaemonState {
 
   sendClearComments(input: ClearCommentsToolInput) {
     return this.sendCommand<ClearedCommentsResult, "clear_comments">(
-      { sessionId: input.sessionId, repoRoot: input.repoRoot },
+      { sessionId: input.sessionId, sessionPath: input.sessionPath, repoRoot: input.repoRoot },
       "clear_comments",
       input,
       "Timed out waiting for the Hunk session to clear the requested comments.",

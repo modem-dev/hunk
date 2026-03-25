@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { resolve } from "node:path";
 import type { SessionCommandInput, SessionSelectorInput } from "../src/core/types";
 import {
   runSessionCommand,
@@ -254,6 +255,59 @@ describe("session command compatibility checks", () => {
     });
   });
 
+  test("passes a separate source path through reload commands", async () => {
+    setSessionCommandTestHooks({
+      createClient: () =>
+        createClient({
+          reloadSession: async (input) => {
+            expect(input.selector).toEqual({ sessionPath: "/live-session" });
+            expect(input.sourcePath).toBe("/source-repo");
+            expect(input.nextInput).toEqual({
+              kind: "git",
+              staged: false,
+              options: {},
+            });
+
+            return {
+              sessionId: "session-1",
+              inputKind: "git",
+              title: "source-repo working tree",
+              sourceLabel: "/source-repo",
+              fileCount: 1,
+              selectedFilePath: "README.md",
+              selectedHunkIndex: 0,
+            };
+          },
+        }),
+      resolveDaemonAvailability: async () => true,
+    });
+
+    const output = await runSessionCommand({
+      kind: "session",
+      action: "reload",
+      selector: { sessionPath: "/live-session" },
+      sourcePath: "/source-repo",
+      nextInput: {
+        kind: "git",
+        staged: false,
+        options: {},
+      },
+      output: "json",
+    } satisfies SessionCommandInput);
+
+    expect(JSON.parse(output)).toEqual({
+      result: {
+        sessionId: "session-1",
+        inputKind: "git",
+        title: "source-repo working tree",
+        sourceLabel: "/source-repo",
+        fileCount: 1,
+        selectedFilePath: "README.md",
+        selectedHunkIndex: 0,
+      },
+    });
+  });
+
   test("does not restart when the daemon already exposes the needed session action", async () => {
     const restartCalls: string[] = [];
 
@@ -290,5 +344,49 @@ describe("session command compatibility checks", () => {
 
     expect(JSON.parse(output)).toEqual({ comments: [] });
     expect(restartCalls).toEqual([]);
+  });
+
+  test("normalizes session-path selectors for reload commands before calling the daemon client", async () => {
+    const expectedPath = resolve(".");
+
+    setSessionCommandTestHooks({
+      createClient: () =>
+        createClient({
+          reloadSession: async (input) => {
+            const selector = input.selector;
+            expect(selector).toEqual({
+              sessionPath: expectedPath,
+            });
+            return {
+              sessionId: "session-1",
+              inputKind: "git",
+              title: "repo working tree",
+              sourceLabel: "/repo",
+              fileCount: 1,
+              selectedFilePath: "README.md",
+              selectedHunkIndex: 0,
+            };
+          },
+        }),
+      resolveDaemonAvailability: async () => true,
+    });
+
+    const output = await runSessionCommand({
+      kind: "session",
+      action: "reload",
+      selector: { sessionPath: "." },
+      nextInput: {
+        kind: "git",
+        staged: false,
+        options: {},
+      },
+      output: "json",
+    } satisfies SessionCommandInput);
+
+    expect(JSON.parse(output)).toMatchObject({
+      result: {
+        sessionId: "session-1",
+      },
+    });
   });
 });

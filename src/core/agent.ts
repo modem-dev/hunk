@@ -1,4 +1,9 @@
+import { resolve as resolvePath } from "node:path";
 import type { AgentContext, AgentFileContext } from "./types";
+
+interface AgentContextLoadOptions {
+  cwd?: string;
+}
 
 /** Normalize one file entry from the optional agent-context sidecar JSON. */
 function normalizeAnnotationFile(file: unknown): AgentFileContext {
@@ -78,7 +83,10 @@ function normalizeAnnotationFile(file: unknown): AgentFileContext {
 }
 
 /** Load the optional agent-context sidecar from a file path or stdin. */
-export async function loadAgentContext(pathOrDash?: string): Promise<AgentContext | null> {
+export async function loadAgentContext(
+  pathOrDash?: string,
+  { cwd = process.cwd() }: AgentContextLoadOptions = {},
+): Promise<AgentContext | null> {
   if (!pathOrDash) {
     return null;
   }
@@ -86,7 +94,7 @@ export async function loadAgentContext(pathOrDash?: string): Promise<AgentContex
   const raw =
     pathOrDash === "-"
       ? await new Response(Bun.stdin.stream()).text()
-      : await Bun.file(pathOrDash).text();
+      : await Bun.file(resolvePath(cwd, pathOrDash)).text();
 
   const parsed = JSON.parse(raw) as Record<string, unknown>;
 

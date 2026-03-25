@@ -94,7 +94,7 @@ function AppShell({
   onQuit?: () => void;
   onReloadSession: (
     nextInput: CliInput,
-    options?: { resetShell?: boolean },
+    options?: { resetShell?: boolean; sourcePath?: string },
   ) => Promise<ReloadedSessionResult>;
 }) {
   const FILES_MIN_WIDTH = 22;
@@ -1016,10 +1016,14 @@ export function App({
   const [shellVersion, setShellVersion] = useState(0);
 
   const reloadSession = useCallback(
-    async (nextInput: CliInput, options?: { resetShell?: boolean }) => {
+    async (nextInput: CliInput, options?: { resetShell?: boolean; sourcePath?: string }) => {
       const runtimeInput = resolveRuntimeCliInput(nextInput);
-      const configuredInput = resolveConfiguredCliInput(runtimeInput).input;
-      const nextBootstrap = await loadAppBootstrap(configuredInput);
+      const configuredInput = resolveConfiguredCliInput(runtimeInput, {
+        cwd: options?.sourcePath,
+      }).input;
+      const nextBootstrap = await loadAppBootstrap(configuredInput, {
+        cwd: options?.sourcePath,
+      });
       const nextSnapshot = createInitialSessionSnapshot(nextBootstrap);
 
       let sessionId = "local-session";

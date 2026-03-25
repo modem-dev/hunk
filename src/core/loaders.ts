@@ -6,6 +6,7 @@ import {
   type FileDiffMetadata,
 } from "@pierre/diffs";
 import { createTwoFilesPatch } from "diff";
+import { resolve as resolvePath } from "node:path";
 import { findAgentFileContext, loadAgentContext } from "./agent";
 import {
   buildGitDiffArgs,
@@ -27,6 +28,10 @@ import type {
   ShowCommandInput,
   StashShowCommandInput,
 } from "./types";
+
+interface LoadAppBootstrapOptions {
+  cwd?: string;
+}
 
 /** Return the final path segment for display-oriented labels. */
 function basename(path: string) {
@@ -235,9 +240,12 @@ function normalizePatchChangeset(
 async function loadFileDiffChangeset(
   input: FileCommandInput | DiffToolCommandInput,
   agentContext: AgentContext | null,
+  cwd = process.cwd(),
 ) {
-  const leftText = await Bun.file(input.left).text();
-  const rightText = await Bun.file(input.right).text();
+  const leftPath = resolvePath(cwd, input.left);
+  const rightPath = resolvePath(cwd, input.right);
+  const leftText = await Bun.file(leftPath).text();
+  const rightText = await Bun.file(rightPath).text();
   const displayPath =
     input.kind === "difftool" ? (input.path ?? basename(input.right)) : basename(input.right);
   const title =
@@ -250,12 +258,12 @@ async function loadFileDiffChangeset(
   const oldFile: FileContents = {
     name: displayPath,
     contents: leftText,
-    cacheKey: `${input.left}:left`,
+    cacheKey: `${leftPath}:left`,
   };
   const newFile: FileContents = {
     name: displayPath,
     contents: rightText,
-    cacheKey: `${input.right}:right`,
+    cacheKey: `${rightPath}:right`,
   };
 
   const metadata = parseDiffFromFile(oldFile, newFile, { context: 3 }, true);
@@ -273,10 +281,14 @@ async function loadFileDiffChangeset(
 }
 
 /** Build a changeset from the current repository working tree or a git range. */
-async function loadGitChangeset(input: GitCommandInput, agentContext: AgentContext | null) {
-  const repoRoot = resolveGitRepoRoot(input);
+async function loadGitChangeset(
+  input: GitCommandInput,
+  agentContext: AgentContext | null,
+  cwd = process.cwd(),
+) {
+  const repoRoot = resolveGitRepoRoot(input, { cwd });
   const repoName = basename(repoRoot);
-  const patchText = runGitText({ input, args: buildGitDiffArgs(input) });
+  const patchText = runGitText({ input, args: buildGitDiffArgs(input), cwd });
   const title = input.staged
     ? `${repoName} staged changes`
     : input.range
@@ -287,12 +299,16 @@ async function loadGitChangeset(input: GitCommandInput, agentContext: AgentConte
 }
 
 /** Build a changeset from `git show`, suppressing commit-message chrome so only the patch feeds the UI. */
-async function loadShowChangeset(input: ShowCommandInput, agentContext: AgentContext | null) {
-  const repoRoot = resolveGitRepoRoot(input);
+async function loadShowChangeset(
+  input: ShowCommandInput,
+  agentContext: AgentContext | null,
+  cwd = process.cwd(),
+) {
+  const repoRoot = resolveGitRepoRoot(input, { cwd });
   const repoName = basename(repoRoot);
 
   return normalizePatchChangeset(
-    runGitText({ input, args: buildGitShowArgs(input) }),
+    runGitText({ input, args: buildGitShowArgs(input), cwd }),
     input.ref ? `${repoName} show ${input.ref}` : `${repoName} show HEAD`,
     repoRoot,
     agentContext,
@@ -303,12 +319,13 @@ async function loadShowChangeset(input: ShowCommandInput, agentContext: AgentCon
 async function loadStashShowChangeset(
   input: StashShowCommandInput,
   agentContext: AgentContext | null,
+  cwd = process.cwd(),
 ) {
-  const repoRoot = resolveGitRepoRoot(input);
+  const repoRoot = resolveGitRepoRoot(input, { cwd });
   const repoName = basename(repoRoot);
 
   return normalizePatchChangeset(
-    runGitText({ input, args: buildGitStashShowArgs(input) }),
+    runGitText({ input, args: buildGitStashShowArgs(input), cwd }),
     input.ref ? `${repoName} stash ${input.ref}` : `${repoName} stash`,
     repoRoot,
     agentContext,
@@ -316,12 +333,16 @@ async function loadStashShowChangeset(
 }
 
 /** Build a changeset from patch text supplied by file or stdin. */
-async function loadPatchChangeset(input: PatchCommandInput, agentContext: AgentContext | null) {
+async function loadPatchChangeset(
+  input: PatchCommandInput,
+  agentContext: AgentContext | null,
+  cwd = process.cwd(),
+) {
   const patchText =
     input.text ??
     (!input.file || input.file === "-"
       ? await new Response(Bun.stdin.stream()).text()
-      : await Bun.file(input.file).text());
+      : await Bun.file(resolvePath(cwd, input.file)).text());
 
   const label = input.file && input.file !== "-" ? input.file : "stdin patch";
   return normalizePatchChangeset(
@@ -333,29 +354,32 @@ async function loadPatchChangeset(input: PatchCommandInput, agentContext: AgentC
 }
 
 /** Resolve CLI input into the fully loaded app bootstrap state. */
-export async function loadAppBootstrap(input: CliInput): Promise<AppBootstrap> {
-  const agentContext = await loadAgentContext(input.options.agentContext);
+export async function loadAppBootstrap(
+  input: CliInput,
+  { cwd = process.cwd() }: LoadAppBootstrapOptions = {},
+): Promise<AppBootstrap> {
+  const agentContext = await loadAgentContext(input.options.agentContext, { cwd });
 
   let changeset: Changeset;
 
   switch (input.kind) {
     case "git":
-      changeset = await loadGitChangeset(input, agentContext);
+      changeset = await loadGitChangeset(input, agentContext, cwd);
       break;
     case "show":
-      changeset = await loadShowChangeset(input, agentContext);
+      changeset = await loadShowChangeset(input, agentContext, cwd);
       break;
     case "stash-show":
-      changeset = await loadStashShowChangeset(input, agentContext);
+      changeset = await loadStashShowChangeset(input, agentContext, cwd);
       break;
     case "diff":
-      changeset = await loadFileDiffChangeset(input, agentContext);
+      changeset = await loadFileDiffChangeset(input, agentContext, cwd);
       break;
     case "patch":
-      changeset = await loadPatchChangeset(input, agentContext);
+      changeset = await loadPatchChangeset(input, agentContext, cwd);
       break;
     case "difftool":
-      changeset = await loadFileDiffChangeset(input, agentContext);
+      changeset = await loadFileDiffChangeset(input, agentContext, cwd);
       break;
   }
 

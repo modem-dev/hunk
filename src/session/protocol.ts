@@ -62,6 +62,7 @@ export type SessionDaemonRequest =
       action: "reload";
       selector: SessionReloadCommandInput["selector"];
       nextInput: SessionReloadCommandInput["nextInput"];
+      sourcePath?: string;
     }
   | {
       action: "comment-add";
