@@ -8,11 +8,13 @@ import {
 import { createTwoFilesPatch } from "diff";
 import { findAgentFileContext, loadAgentContext } from "./agent";
 import {
+  buildGitDiffArgs,
   buildGitShowArgs,
   buildGitStashShowArgs,
+  listGitUntrackedFiles,
   resolveGitRepoRoot,
-  runGitDiffText,
   runGitText,
+  runGitUntrackedFileDiffText,
 } from "./git";
 import type {
   AppBootstrap,
@@ -146,6 +148,91 @@ function buildDiffFile(
   };
 }
 
+/** Escape only the filename characters that break unified-diff header parsing. */
+function escapeUntrackedPatchPath(path: string) {
+  return path
+    .replaceAll("\\", "\\\\")
+    .replaceAll("\t", "\\t")
+    .replaceAll("\n", "\\n")
+    .replaceAll("\r", "\\r");
+}
+
+/** Rewrite Git's quoted untracked-file headers into parser-friendly paths. */
+function normalizeUntrackedPatchHeaders(patchText: string, filePath: string) {
+  const safePath = escapeUntrackedPatchPath(filePath);
+
+  return patchText
+    .replaceAll("\r\n", "\n")
+    .split("\n")
+    .map((line) => {
+      if (line.startsWith("diff --git ")) {
+        return `diff --git a/${safePath} b/${safePath}`;
+      }
+
+      if (line.startsWith("+++ ")) {
+        return `+++ b/${safePath}`;
+      }
+
+      if (line.startsWith("Binary files /dev/null and ")) {
+        return `Binary files /dev/null and b/${safePath} differ`;
+      }
+
+      return line;
+    })
+    .join("\n");
+}
+
+/** Parse one synthetic untracked-file patch and reattach the real path after header normalization. */
+function parseUntrackedPatchFile(patchText: string, filePath: string) {
+  let parsedPatches: ReturnType<typeof parsePatchFiles>;
+
+  try {
+    parsedPatches = parsePatchFiles(patchText, "patch", true);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `Failed to parse untracked file patch for ${JSON.stringify(filePath)}: ${message}`,
+    );
+  }
+
+  const metadataFiles = parsedPatches.flatMap((entry) => entry.files);
+  if (metadataFiles.length !== 1) {
+    throw new Error(
+      `Expected one parsed file for untracked patch ${JSON.stringify(filePath)}, got ${metadataFiles.length}.`,
+    );
+  }
+
+  const metadata = metadataFiles[0]!;
+  return {
+    ...metadata,
+    name: filePath,
+    prevName: undefined,
+  } satisfies FileDiffMetadata;
+}
+
+/** Build one reviewable diff file for an untracked working-tree file. */
+function buildUntrackedDiffFile(
+  input: GitCommandInput,
+  filePath: string,
+  index: number,
+  repoRoot: string,
+  sourcePrefix: string,
+  agentContext: AgentContext | null,
+) {
+  const patch = normalizeUntrackedPatchHeaders(
+    runGitUntrackedFileDiffText(input, filePath, { repoRoot }),
+    filePath,
+  );
+
+  return buildDiffFile(
+    parseUntrackedPatchFile(patch, filePath),
+    patch,
+    index,
+    sourcePrefix,
+    agentContext,
+  );
+}
+
 /** Reorder files to follow agent-context narrative order when a sidecar provides one. */
 function orderDiffFiles(files: DiffFile[], agentContext: AgentContext | null) {
   if (!agentContext || agentContext.files.length === 0) {
@@ -276,14 +363,40 @@ async function loadFileDiffChangeset(
 async function loadGitChangeset(input: GitCommandInput, agentContext: AgentContext | null) {
   const repoRoot = resolveGitRepoRoot(input);
   const repoName = basename(repoRoot);
-  const patchText = runGitDiffText(input, { repoRoot });
   const title = input.staged
     ? `${repoName} staged changes`
     : input.range
       ? `${repoName} ${input.range}`
       : `${repoName} working tree`;
+  const trackedChangeset = normalizePatchChangeset(
+    runGitText({ input, args: buildGitDiffArgs(input) }),
+    title,
+    repoRoot,
+    agentContext,
+  );
+  const trackedFiles = trackedChangeset.files;
+  const untrackedFiles = listGitUntrackedFiles(input);
 
-  return normalizePatchChangeset(patchText, title, repoRoot, agentContext);
+  if (untrackedFiles.length === 0) {
+    return trackedChangeset;
+  }
+
+  return {
+    ...trackedChangeset,
+    files: [
+      ...trackedFiles,
+      ...untrackedFiles.map((filePath, index) =>
+        buildUntrackedDiffFile(
+          input,
+          filePath,
+          trackedFiles.length + index,
+          repoRoot,
+          repoRoot,
+          agentContext,
+        ),
+      ),
+    ],
+  } satisfies Changeset;
 }
 
 /** Build a changeset from `git show`, suppressing commit-message chrome so only the patch feeds the UI. */

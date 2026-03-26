@@ -165,6 +165,33 @@ describe("loadAppBootstrap", () => {
     expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["example.ts"]);
   });
 
+  test("loads untracked files whose names need parser-safe diff headers", async () => {
+    const dir = createTempRepo("hunk-git-quoted-untracked-");
+
+    writeFileSync(join(dir, "tracked.ts"), "export const tracked = 1;\n");
+    git(dir, "add", "tracked.ts");
+    git(dir, "commit", "-m", "initial");
+
+    const quoteFile = 'quote"name.txt';
+    const tabFile = "tab\tname.txt";
+    const backslashFile = "back\\slash.txt";
+    writeFileSync(join(dir, quoteFile), "quote\n");
+    writeFileSync(join(dir, tabFile), "tab\n");
+    writeFileSync(join(dir, backslashFile), "backslash\n");
+
+    const bootstrap = await loadFromRepo(dir, {
+      kind: "git",
+      staged: false,
+      options: { mode: "auto" },
+    });
+    const paths = bootstrap.changeset.files.map((file) => file.path);
+
+    expect(paths).toContain(quoteFile);
+    expect(paths).toContain(tabFile);
+    expect(paths).toContain(backslashFile);
+    expect(paths).toHaveLength(3);
+  });
+
   test("still shows an untracked agent sidecar when it lives inside the repo", async () => {
     const dir = createTempRepo("hunk-git-agent-sidecar-");
 

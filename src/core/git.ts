@@ -306,59 +306,44 @@ function parseUntrackedFilePaths(statusText: string) {
     .flatMap((entry) => (entry.startsWith("?? ") ? [entry.slice(3)] : []));
 }
 
-/** Ensure patch sections join cleanly when tracked and synthetic new-file diffs are concatenated. */
-function ensureTrailingNewline(text: string) {
-  return text.endsWith("\n") ? text : `${text}\n`;
-}
-
-/** Build the full patch text for `hunk diff`, including untracked files when configured. */
-export function runGitDiffText(
+/** Return the repo-root-relative untracked files for a working-tree review input. */
+export function listGitUntrackedFiles(
   input: GitCommandInput,
-  {
-    cwd = process.cwd(),
-    repoRoot,
-    gitExecutable = "git",
-  }: Omit<RunGitTextOptions, "input" | "args"> & { repoRoot?: string } = {},
+  { cwd = process.cwd(), gitExecutable = "git" }: Omit<RunGitTextOptions, "input" | "args"> = {},
 ) {
-  const trackedPatch = runGitText({
-    input,
-    args: buildGitDiffArgs(input),
-    cwd,
-    gitExecutable,
-  });
-
   if (!shouldIncludeUntrackedFiles(input)) {
-    return trackedPatch;
+    return [];
   }
 
-  const normalizedRepoRoot = repoRoot ?? resolveGitRepoRoot(input, { cwd, gitExecutable });
   const statusText = runGitText({
     input,
     args: buildGitStatusArgs(input),
     cwd,
     gitExecutable,
   });
-  const untrackedFiles = parseUntrackedFilePaths(statusText);
 
-  if (untrackedFiles.length === 0) {
-    return trackedPatch;
-  }
+  return parseUntrackedFilePaths(statusText);
+}
 
-  const untrackedPatches = untrackedFiles.map(
-    (filePath) =>
-      runGitCommand({
-        input,
-        args: buildGitNewFileDiffArgs(filePath),
-        cwd: normalizedRepoRoot,
-        gitExecutable,
-        acceptedExitCodes: [0, 1],
-      }).stdout,
-  );
+/** Return the raw Git patch text for one untracked file using `git diff --no-index`. */
+export function runGitUntrackedFileDiffText(
+  input: GitCommandInput,
+  filePath: string,
+  {
+    cwd = process.cwd(),
+    repoRoot,
+    gitExecutable = "git",
+  }: Omit<RunGitTextOptions, "input" | "args"> & { repoRoot?: string } = {},
+) {
+  const normalizedRepoRoot = repoRoot ?? resolveGitRepoRoot(input, { cwd, gitExecutable });
 
-  return [trackedPatch, ...untrackedPatches]
-    .filter((text) => text.trim().length > 0)
-    .map(ensureTrailingNewline)
-    .join("");
+  return runGitCommand({
+    input,
+    args: buildGitNewFileDiffArgs(filePath),
+    cwd: normalizedRepoRoot,
+    gitExecutable,
+    acceptedExitCodes: [0, 1],
+  }).stdout;
 }
 
 export function resolveGitRepoRoot(
