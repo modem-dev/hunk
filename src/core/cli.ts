@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import type {
   CliInput,
   CommonOptions,
@@ -64,6 +64,7 @@ function buildCommonOptions(
     agentContext: options.agentContext,
     pager: options.pager ? true : undefined,
     watch: options.watch ? true : undefined,
+    excludeUntracked: resolveBooleanFlag(argv, "--exclude-untracked", "--no-exclude-untracked"),
     lineNumbers: resolveBooleanFlag(argv, "--line-numbers", "--no-line-numbers"),
     wrapLines: resolveBooleanFlag(argv, "--wrap", "--no-wrap"),
     hunkHeaders: resolveBooleanFlag(argv, "--hunk-headers", "--no-hunk-headers"),
@@ -235,6 +236,13 @@ async function parseDiffCommand(tokens: string[], argv: string[]): Promise<Parse
   )
     .option("--staged", "show staged changes instead of the working tree")
     .option("--cached", "alias for --staged")
+    .option("--exclude-untracked", "exclude untracked files from working tree reviews")
+    .addOption(
+      new Option(
+        "--no-exclude-untracked",
+        "include untracked files in working tree reviews",
+      ).hideHelp(),
+    )
     .argument("[targets...]");
 
   let parsedTargets: string[] = [];

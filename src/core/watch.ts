@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { buildGitDiffArgs, buildGitShowArgs, buildGitStashShowArgs, runGitText } from "./git";
+import { buildGitShowArgs, buildGitStashShowArgs, runGitDiffText, runGitText } from "./git";
 import type { CliInput } from "./types";
 
 /** Return whether the current input can be rebuilt from files or Git state without rereading stdin. */
@@ -25,7 +25,7 @@ function statSignature(path: string) {
 function gitPatchSignature(input: Extract<CliInput, { kind: "git" | "show" | "stash-show" }>) {
   switch (input.kind) {
     case "git":
-      return runGitText({ input, args: buildGitDiffArgs(input) });
+      return runGitDiffText(input);
     case "show":
       return runGitText({ input, args: buildGitShowArgs(input) });
     case "stash-show":

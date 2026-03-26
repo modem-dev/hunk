@@ -96,6 +96,26 @@ describe("parseCli", () => {
     expect(cached).toMatchObject({ kind: "git", staged: true });
   });
 
+  test("parses untracked file toggles for git diff", async () => {
+    const excluded = await parseCli(["bun", "hunk", "diff", "--exclude-untracked"]);
+    const included = await parseCli(["bun", "hunk", "diff", "--no-exclude-untracked"]);
+
+    expect(excluded).toMatchObject({
+      kind: "git",
+      staged: false,
+      options: {
+        excludeUntracked: true,
+      },
+    });
+    expect(included).toMatchObject({
+      kind: "git",
+      staged: false,
+      options: {
+        excludeUntracked: false,
+      },
+    });
+  });
+
   test("keeps two concrete file paths as file-pair diff mode", async () => {
     const dir = createTempDir("hunk-cli-files-");
     const left = join(dir, "before.ts");

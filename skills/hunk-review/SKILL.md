@@ -74,11 +74,10 @@ hunk session comment clear --repo . --yes [--file README.md]
 
 ## New files in working-tree reviews
 
-Newly created files won't appear in `hunk diff` until Git knows about them:
+`hunk diff` includes untracked files by default. If the user wants tracked changes only, reload with `--exclude-untracked`:
 
 ```bash
-git add -N src/new-file.ts
-hunk session reload --repo . -- diff
+hunk session reload --repo . -- diff --exclude-untracked
 ```
 
 ## Guiding a review

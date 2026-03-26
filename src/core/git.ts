@@ -10,6 +10,15 @@ export interface RunGitTextOptions {
   gitExecutable?: string;
 }
 
+interface RunGitCommandResult {
+  stdout: string;
+  exitCode: number;
+}
+
+interface RunGitCommandOptions extends RunGitTextOptions {
+  acceptedExitCodes?: number[];
+}
+
 /** Append Git pathspec arguments only when the caller requested them. */
 export function appendGitPathspecs(args: string[], pathspecs?: string[]) {
   if (!pathspecs || pathspecs.length === 0) {
@@ -51,6 +60,26 @@ export function buildGitDiffArgs(input: GitCommandInput) {
 
   appendGitPathspecs(args, input.pathspecs);
   return withNormalizedDiffPrefixes(args);
+}
+
+/** Build the porcelain status query used to discover untracked files for working-tree review. */
+function buildGitStatusArgs(input: GitCommandInput) {
+  const args = ["status", "--porcelain=v1", "-z", "--untracked-files=all"];
+
+  appendGitPathspecs(args, input.pathspecs);
+  return args;
+}
+
+/** Build the synthetic patch used to render one untracked file as a new-file diff. */
+function buildGitNewFileDiffArgs(filePath: string) {
+  return withNormalizedDiffPrefixes([
+    "diff",
+    "--no-index",
+    "--no-color",
+    "--",
+    "/dev/null",
+    filePath,
+  ]);
 }
 
 /** Build the exact `git show` arguments used for commit review. */
@@ -222,13 +251,14 @@ function translateGitExitFailure(input: GitBackedInput, stderr: string) {
   return createGenericGitError(input, stderr);
 }
 
-/** Run a git command and translate common failures into user-facing Hunk errors. */
-export function runGitText({
+/** Spawn one Git command and accept only the exit codes the caller declared as non-errors. */
+function runGitCommand({
   input,
   args,
   cwd = process.cwd(),
   gitExecutable = "git",
-}: RunGitTextOptions) {
+  acceptedExitCodes = [0],
+}: RunGitCommandOptions): RunGitCommandResult {
   let proc: ReturnType<typeof Bun.spawnSync>;
 
   try {
@@ -245,14 +275,90 @@ export function runGitText({
   const stdout = Buffer.from(proc.stdout ?? []).toString("utf8");
   const stderr = Buffer.from(proc.stderr ?? []).toString("utf8");
 
-  if (proc.exitCode !== 0) {
+  if (!acceptedExitCodes.includes(proc.exitCode)) {
     throw translateGitExitFailure(
       input,
       stderr.trim() || `Command failed: ${gitExecutable} ${args.join(" ")}`,
     );
   }
 
-  return stdout;
+  return {
+    stdout,
+    exitCode: proc.exitCode,
+  };
+}
+
+/** Run a git command and translate common failures into user-facing Hunk errors. */
+export function runGitText(options: RunGitTextOptions) {
+  return runGitCommand(options).stdout;
+}
+
+/** Return whether working-tree review should synthesize untracked files into the patch stream. */
+function shouldIncludeUntrackedFiles(input: GitCommandInput) {
+  return !input.staged && !input.range && input.options.excludeUntracked !== true;
+}
+
+/** Parse porcelain status output down to repo-root-relative untracked file paths. */
+function parseUntrackedFilePaths(statusText: string) {
+  return statusText
+    .split("\0")
+    .filter(Boolean)
+    .flatMap((entry) => (entry.startsWith("?? ") ? [entry.slice(3)] : []));
+}
+
+/** Ensure patch sections join cleanly when tracked and synthetic new-file diffs are concatenated. */
+function ensureTrailingNewline(text: string) {
+  return text.endsWith("\n") ? text : `${text}\n`;
+}
+
+/** Build the full patch text for `hunk diff`, including untracked files when configured. */
+export function runGitDiffText(
+  input: GitCommandInput,
+  {
+    cwd = process.cwd(),
+    repoRoot,
+    gitExecutable = "git",
+  }: Omit<RunGitTextOptions, "input" | "args"> & { repoRoot?: string } = {},
+) {
+  const trackedPatch = runGitText({
+    input,
+    args: buildGitDiffArgs(input),
+    cwd,
+    gitExecutable,
+  });
+
+  if (!shouldIncludeUntrackedFiles(input)) {
+    return trackedPatch;
+  }
+
+  const normalizedRepoRoot = repoRoot ?? resolveGitRepoRoot(input, { cwd, gitExecutable });
+  const statusText = runGitText({
+    input,
+    args: buildGitStatusArgs(input),
+    cwd,
+    gitExecutable,
+  });
+  const untrackedFiles = parseUntrackedFilePaths(statusText);
+
+  if (untrackedFiles.length === 0) {
+    return trackedPatch;
+  }
+
+  const untrackedPatches = untrackedFiles.map(
+    (filePath) =>
+      runGitCommand({
+        input,
+        args: buildGitNewFileDiffArgs(filePath),
+        cwd: normalizedRepoRoot,
+        gitExecutable,
+        acceptedExitCodes: [0, 1],
+      }).stdout,
+  );
+
+  return [trackedPatch, ...untrackedPatches]
+    .filter((text) => text.trim().length > 0)
+    .map(ensureTrailingNewline)
+    .join("");
 }
 
 export function resolveGitRepoRoot(

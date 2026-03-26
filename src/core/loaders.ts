@@ -8,10 +8,10 @@ import {
 import { createTwoFilesPatch } from "diff";
 import { findAgentFileContext, loadAgentContext } from "./agent";
 import {
-  buildGitDiffArgs,
   buildGitShowArgs,
   buildGitStashShowArgs,
   resolveGitRepoRoot,
+  runGitDiffText,
   runGitText,
 } from "./git";
 import type {
@@ -276,7 +276,7 @@ async function loadFileDiffChangeset(
 async function loadGitChangeset(input: GitCommandInput, agentContext: AgentContext | null) {
   const repoRoot = resolveGitRepoRoot(input);
   const repoName = basename(repoRoot);
-  const patchText = runGitText({ input, args: buildGitDiffArgs(input) });
+  const patchText = runGitDiffText(input, { repoRoot });
   const title = input.staged
     ? `${repoName} staged changes`
     : input.range
