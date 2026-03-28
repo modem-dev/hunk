@@ -6,6 +6,7 @@ import { formatCliError } from "./core/errors";
 import { pagePlainText } from "./core/pager";
 import { shutdownSession } from "./core/shutdown";
 import { prepareStartupPlan } from "./core/startup";
+import { resolveStartupUpdateNotice } from "./core/updateNotice";
 import { App } from "./ui/App";
 import { HunkHostClient } from "./mcp/client";
 import { serveHunkMcpServer } from "./mcp/server";
@@ -72,7 +73,14 @@ async function main() {
   }
 
   // The app owns the full alternate screen session from this point on.
-  root.render(<App bootstrap={bootstrap} hostClient={hostClient} onQuit={shutdown} />);
+  root.render(
+    <App
+      bootstrap={bootstrap}
+      hostClient={hostClient}
+      onQuit={shutdown}
+      startupNoticeResolver={resolveStartupUpdateNotice}
+    />,
+  );
 }
 
 await main().catch((error) => {

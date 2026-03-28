@@ -836,6 +836,69 @@ describe("UI components", () => {
     expect(frame).toContain("beta");
   });
 
+  test("StatusBar renders a notice when no filter is active", async () => {
+    const theme = resolveTheme("midnight", null);
+    const frame = await captureFrame(
+      <StatusBar
+        filter=""
+        filterFocused={false}
+        noticeText="Update available: 9.9.9 • npm i -g hunkdiff"
+        terminalWidth={60}
+        theme={theme}
+        onCloseMenu={() => {}}
+        onFilterInput={() => {}}
+        onFilterSubmit={() => {}}
+      />,
+      60,
+      3,
+    );
+
+    expect(frame).toContain("Update available: 9.9.9");
+  });
+
+  test("StatusBar keeps filter input precedence over a notice", async () => {
+    const theme = resolveTheme("midnight", null);
+    const frame = await captureFrame(
+      <StatusBar
+        filter="beta"
+        filterFocused={true}
+        noticeText="Update available: 9.9.9 • npm i -g hunkdiff"
+        terminalWidth={60}
+        theme={theme}
+        onCloseMenu={() => {}}
+        onFilterInput={() => {}}
+        onFilterSubmit={() => {}}
+      />,
+      60,
+      3,
+    );
+
+    expect(frame).toContain("filter:");
+    expect(frame).toContain("beta");
+    expect(frame).not.toContain("Update available:");
+  });
+
+  test("StatusBar keeps filter summary precedence over a notice", async () => {
+    const theme = resolveTheme("midnight", null);
+    const frame = await captureFrame(
+      <StatusBar
+        filter="beta"
+        filterFocused={false}
+        noticeText="Update available: 9.9.9 • npm i -g hunkdiff"
+        terminalWidth={60}
+        theme={theme}
+        onCloseMenu={() => {}}
+        onFilterInput={() => {}}
+        onFilterSubmit={() => {}}
+      />,
+      60,
+      3,
+    );
+
+    expect(frame).toContain("filter=beta");
+    expect(frame).not.toContain("Update available:");
+  });
+
   test("HelpDialog renders every keyboard shortcut row without overlap", async () => {
     const theme = resolveTheme("midnight", null);
     const frame = await captureFrame(

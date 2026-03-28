@@ -4,6 +4,7 @@ import type { AppTheme } from "../../themes";
 export function StatusBar({
   filter,
   filterFocused,
+  noticeText,
   terminalWidth,
   theme,
   onCloseMenu,
@@ -12,6 +13,7 @@ export function StatusBar({
 }: {
   filter: string;
   filterFocused: boolean;
+  noticeText?: string;
   terminalWidth: number;
   theme: AppTheme;
   onCloseMenu: () => void;
@@ -45,8 +47,10 @@ export function StatusBar({
             onSubmit={onFilterSubmit}
           />
         </>
-      ) : (
+      ) : filter.length > 0 ? (
         <text fg={theme.muted}>{`filter=${filter}`}</text>
+      ) : (
+        <text fg={theme.muted}>{noticeText ?? ""}</text>
       )}
     </box>
   );

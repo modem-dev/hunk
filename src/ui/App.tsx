@@ -21,6 +21,7 @@ import { loadAppBootstrap } from "../core/loaders";
 import { resolveRuntimeCliInput } from "../core/terminal";
 import type { AppBootstrap, CliInput, LayoutMode } from "../core/types";
 import { canReloadInput, computeWatchSignature } from "../core/watch";
+import type { UpdateNotice } from "../core/updateNotice";
 import { HunkHostClient } from "../mcp/client";
 import {
   createInitialSessionSnapshot,
@@ -34,6 +35,7 @@ import { FilesPane } from "./components/panes/FilesPane";
 import { PaneDivider } from "./components/panes/PaneDivider";
 import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
 import { useMenuController } from "./hooks/useMenuController";
+import { useStartupUpdateNotice } from "./hooks/useStartupUpdateNotice";
 import { buildAppMenus } from "./lib/appMenus";
 import { buildSidebarEntries } from "./lib/files";
 import { buildHunkCursors, findNextHunkCursor } from "./lib/hunks";
@@ -86,11 +88,13 @@ function withCurrentViewOptions(
 function AppShell({
   bootstrap,
   hostClient,
+  noticeText,
   onQuit = () => process.exit(0),
   onReloadSession,
 }: {
   bootstrap: AppBootstrap;
   hostClient?: HunkHostClient;
+  noticeText?: string | null;
   onQuit?: () => void;
   onReloadSession: (
     nextInput: CliInput,
@@ -967,10 +971,11 @@ function AppShell({
         />
       </box>
 
-      {!pagerMode && (focusArea === "filter" || Boolean(filter)) ? (
+      {!pagerMode && (focusArea === "filter" || Boolean(filter) || Boolean(noticeText)) ? (
         <StatusBar
           filter={filter}
           filterFocused={focusArea === "filter"}
+          noticeText={noticeText ?? undefined}
           terminalWidth={terminal.width}
           theme={activeTheme}
           onCloseMenu={closeMenu}
@@ -1018,13 +1023,19 @@ export function App({
   bootstrap,
   hostClient,
   onQuit = () => process.exit(0),
+  startupNoticeResolver,
 }: {
   bootstrap: AppBootstrap;
   hostClient?: HunkHostClient;
   onQuit?: () => void;
+  startupNoticeResolver?: () => Promise<UpdateNotice | null>;
 }) {
   const [activeBootstrap, setActiveBootstrap] = useState(bootstrap);
   const [shellVersion, setShellVersion] = useState(0);
+  const startupNoticeText = useStartupUpdateNotice({
+    enabled: !bootstrap.input.options.pager,
+    resolver: startupNoticeResolver,
+  });
 
   const reloadSession = useCallback(
     async (nextInput: CliInput, options?: { resetShell?: boolean }) => {
@@ -1066,6 +1077,7 @@ export function App({
       key={shellVersion}
       bootstrap={activeBootstrap}
       hostClient={hostClient}
+      noticeText={startupNoticeText}
       onQuit={onQuit}
       onReloadSession={reloadSession}
     />

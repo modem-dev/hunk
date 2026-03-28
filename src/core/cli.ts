@@ -95,7 +95,7 @@ function applyWatchOption(command: Command) {
 }
 
 /** Resolve the CLI version from the nearest shipped package manifest. */
-function resolveCliVersion() {
+export function resolveCliVersion() {
   const candidatePaths = [
     resolve(import.meta.dir, "..", "..", "package.json"),
     resolve(dirname(process.execPath), "..", "package.json"),
