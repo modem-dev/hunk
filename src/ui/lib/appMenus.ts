@@ -5,7 +5,6 @@ import { THEMES } from "../themes";
 export interface BuildAppMenusOptions {
   activeThemeId: string;
   canRefreshCurrentInput: boolean;
-  focusFiles: () => void;
   focusFilter: () => void;
   layoutMode: LayoutMode;
   moveAnnotatedFile: (delta: number) => void;
@@ -20,6 +19,7 @@ export interface BuildAppMenusOptions {
   showLineNumbers: boolean;
   sidebarVisible: boolean;
   toggleAgentNotes: () => void;
+  toggleFocusArea: () => void;
   toggleHelp: () => void;
   toggleHunkHeaders: () => void;
   toggleLineNumbers: () => void;
@@ -32,7 +32,6 @@ export interface BuildAppMenusOptions {
 export function buildAppMenus({
   activeThemeId,
   canRefreshCurrentInput,
-  focusFiles,
   focusFilter,
   layoutMode,
   moveAnnotatedFile,
@@ -47,6 +46,7 @@ export function buildAppMenus({
   showLineNumbers,
   sidebarVisible,
   toggleAgentNotes,
+  toggleFocusArea,
   toggleHelp,
   toggleHunkHeaders,
   toggleLineNumbers,
@@ -64,9 +64,9 @@ export function buildAppMenus({
   const fileMenuEntries: MenuEntry[] = [
     {
       kind: "item",
-      label: "Focus files",
+      label: "Toggle files/filter focus",
       hint: "Tab",
-      action: focusFiles,
+      action: toggleFocusArea,
     },
     {
       kind: "item",

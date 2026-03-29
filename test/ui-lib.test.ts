@@ -99,7 +99,6 @@ describe("ui helpers", () => {
     const menus = buildAppMenus({
       activeThemeId: "graphite",
       canRefreshCurrentInput: true,
-      focusFiles: () => {},
       focusFilter: () => {},
       layoutMode: "stack",
       moveAnnotatedFile: () => {},
@@ -114,6 +113,7 @@ describe("ui helpers", () => {
       showLineNumbers: true,
       sidebarVisible: false,
       toggleAgentNotes: () => {},
+      toggleFocusArea: () => {},
       toggleHelp: () => {},
       toggleHunkHeaders: () => {},
       toggleLineNumbers: () => {},
@@ -126,7 +126,12 @@ describe("ui helpers", () => {
       menus.file
         .filter((entry): entry is Extract<MenuEntry, { kind: "item" }> => entry.kind === "item")
         .map((entry) => entry.label),
-    ).toEqual(["Focus files", "Focus filter", "Reload", "Quit"]);
+    ).toEqual(["Toggle files/filter focus", "Focus filter", "Reload", "Quit"]);
+    expect(menus.file[0]).toMatchObject({
+      kind: "item",
+      label: "Toggle files/filter focus",
+      hint: "Tab",
+    });
     expect(
       menus.view
         .filter(

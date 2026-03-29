@@ -465,12 +465,16 @@ function AppShell({
     onQuit();
   }, [onQuit]);
 
+  /** Toggle keyboard focus between the file list and the file filter. */
+  const toggleFocusArea = useCallback(() => {
+    setFocusArea((current) => (current === "files" ? "filter" : "files"));
+  }, []);
+
   const menus = useMemo(
     () =>
       buildAppMenus({
         activeThemeId: activeTheme.id,
         canRefreshCurrentInput,
-        focusFiles: () => setFocusArea("files"),
         focusFilter: () => setFocusArea("filter"),
         layoutMode,
         moveAnnotatedFile,
@@ -485,6 +489,7 @@ function AppShell({
         showLineNumbers,
         sidebarVisible,
         toggleAgentNotes,
+        toggleFocusArea,
         toggleHelp: () => setShowHelp((current) => !current),
         toggleHunkHeaders,
         toggleLineNumbers,
@@ -506,6 +511,7 @@ function AppShell({
       showLineNumbers,
       sidebarVisible,
       toggleAgentNotes,
+      toggleFocusArea,
       toggleHunkHeaders,
       toggleLineNumbers,
       toggleLineWrap,
@@ -724,7 +730,7 @@ function AppShell({
       }
 
       if (key.name === "tab") {
-        setFocusArea("files");
+        toggleFocusArea();
         return;
       }
 
@@ -749,7 +755,7 @@ function AppShell({
     }
 
     if (key.name === "tab") {
-      setFocusArea((current) => (current === "files" ? "filter" : "files"));
+      toggleFocusArea();
       return;
     }
 
