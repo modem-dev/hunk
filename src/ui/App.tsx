@@ -806,12 +806,12 @@ function AppShell({
       return;
     }
 
-    if (key.name === "up") {
+    if (stepUpKey) {
       scrollDiff(-1, "step");
       return;
     }
 
-    if (key.name === "down") {
+    if (stepDownKey) {
       scrollDiff(1, "step");
       return;
     }
