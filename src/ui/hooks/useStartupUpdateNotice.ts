@@ -6,27 +6,32 @@ const DEFAULT_STARTUP_NOTICE_DURATION_MS = 7000;
 const DEFAULT_STARTUP_NOTICE_REPEAT_MS = 21_600_000;
 
 interface StartupUpdateNoticeOptions {
+  delayMs?: number;
+  durationMs?: number;
   enabled: boolean;
+  repeatMs?: number;
   resolver?: () => Promise<UpdateNotice | null>;
 }
 
 /** Manage the session-lifetime background update notice without coupling it to chrome rendering. */
 export function useStartupUpdateNotice({
+  delayMs = DEFAULT_STARTUP_NOTICE_DELAY_MS,
+  durationMs = DEFAULT_STARTUP_NOTICE_DURATION_MS,
   enabled,
+  repeatMs = DEFAULT_STARTUP_NOTICE_REPEAT_MS,
   resolver,
 }: StartupUpdateNoticeOptions) {
   const [noticeText, setNoticeText] = useState<string | null>(null);
-  const startedRef = useRef(false);
+  const lastShownKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (startedRef.current || !enabled || !resolver) {
+    if (!enabled || !resolver) {
+      setNoticeText(null);
       return;
     }
 
-    startedRef.current = true;
     let cancelled = false;
     let inFlight = false;
-    let lastShownKey: string | null = null;
     let dismissTimer: ReturnType<typeof setTimeout> | null = null;
 
     const clearDismissTimer = () => {
@@ -50,11 +55,11 @@ export function useStartupUpdateNotice({
             return;
           }
 
-          if (notice.key === lastShownKey) {
+          if (notice.key === lastShownKeyRef.current) {
             return;
           }
 
-          lastShownKey = notice.key;
+          lastShownKeyRef.current = notice.key;
           setNoticeText(notice.message);
           clearDismissTimer();
           dismissTimer = setTimeout(() => {
@@ -64,7 +69,7 @@ export function useStartupUpdateNotice({
 
             setNoticeText(null);
             dismissTimer = null;
-          }, DEFAULT_STARTUP_NOTICE_DURATION_MS);
+          }, durationMs);
           dismissTimer.unref?.();
         })
         .catch(() => {
@@ -77,10 +82,10 @@ export function useStartupUpdateNotice({
 
     const delayTimer = setTimeout(() => {
       runUpdateCheck();
-    }, DEFAULT_STARTUP_NOTICE_DELAY_MS);
+    }, delayMs);
     delayTimer.unref?.();
 
-    const repeatTimer = setInterval(runUpdateCheck, DEFAULT_STARTUP_NOTICE_REPEAT_MS);
+    const repeatTimer = setInterval(runUpdateCheck, repeatMs);
     repeatTimer.unref?.();
 
     return () => {
@@ -88,10 +93,9 @@ export function useStartupUpdateNotice({
       inFlight = false;
       clearTimeout(delayTimer);
       clearInterval(repeatTimer);
-
       clearDismissTimer();
     };
-  }, [enabled, resolver]);
+  }, [delayMs, durationMs, enabled, repeatMs, resolver]);
 
   return noticeText;
 }
