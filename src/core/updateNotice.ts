@@ -1,4 +1,4 @@
-import { resolveCliVersion } from "./cli";
+import { resolveCliVersion } from "./version";
 
 const DIST_TAGS_URL = "https://registry.npmjs.org/-/package/hunkdiff/dist-tags";
 const STABLE_SEMVER_PATTERN = /^\d+\.\d+\.\d+$/;

@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { existsSync, statSync } from "node:fs";
+import { resolve } from "node:path";
 import { Command, Option } from "commander";
 import type {
   CliInput,
@@ -9,6 +9,7 @@ import type {
   PagerCommandInput,
   ParsedCliInput,
 } from "./types";
+import { resolveCliVersion } from "./version";
 
 /** Validate one requested layout mode from CLI input. */
 function parseLayoutMode(value: string): LayoutMode {
@@ -92,32 +93,6 @@ function applyCommonOptions(command: Command) {
 /** Attach auto-refresh support to review commands that can reopen their source input. */
 function applyWatchOption(command: Command) {
   return command.option("--watch", "auto-reload when the current diff input changes");
-}
-
-/** Resolve the CLI version from the nearest shipped package manifest. */
-export function resolveCliVersion() {
-  const candidatePaths = [
-    resolve(import.meta.dir, "..", "..", "package.json"),
-    resolve(dirname(process.execPath), "..", "package.json"),
-    resolve(dirname(process.execPath), "..", "..", "package.json"),
-  ];
-
-  for (const candidatePath of candidatePaths) {
-    if (!existsSync(candidatePath)) {
-      continue;
-    }
-
-    try {
-      const parsed = JSON.parse(readFileSync(candidatePath, "utf8")) as { version?: unknown };
-      if (typeof parsed.version === "string" && parsed.version.length > 0) {
-        return parsed.version;
-      }
-    } catch {
-      continue;
-    }
-  }
-
-  return "0.0.0-unknown";
 }
 
 /** Render plain-text version output for `hunk --version`. */
