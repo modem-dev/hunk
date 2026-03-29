@@ -33,7 +33,16 @@ describe("parseCli", () => {
     expect(parsed.text).toContain("Usage:");
     expect(parsed.text).toContain("hunk diff");
     expect(parsed.text).toContain("hunk show");
-    expect(parsed.text).toContain("hunk patch -");
+    expect(parsed.text).toContain("Global options:");
+    expect(parsed.text).toContain("Common review options:");
+    expect(parsed.text).toContain("auto-reload when the current diff input changes");
+    expect(parsed.text).toContain("Git diff options:");
+    expect(parsed.text).toContain("Notes:");
+    expect(parsed.text).toContain(
+      "Run `hunk <command> --help` for command-specific syntax and options.",
+    );
+    expect(parsed.text).not.toContain("Config:");
+    expect(parsed.text).not.toContain("Examples:");
   });
 
   test("prints the same top-level help for --help", async () => {

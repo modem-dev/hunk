@@ -35,6 +35,16 @@ describe("CLI help output", () => {
     expect(stdout).toContain("Usage:");
     expect(stdout).toContain("hunk diff");
     expect(stdout).toContain("hunk show");
+    expect(stdout).toContain("Global options:");
+    expect(stdout).toContain("Common review options:");
+    expect(stdout).toContain("auto-reload when the current diff input changes");
+    expect(stdout).toContain("Git diff options:");
+    expect(stdout).toContain("Notes:");
+    expect(stdout).toContain(
+      "Run `hunk <command> --help` for command-specific syntax and options.",
+    );
+    expect(stdout).not.toContain("Config:");
+    expect(stdout).not.toContain("Examples:");
     expect(stdout).toContain("hunk pager");
     expect(stdout).toContain("hunk session <subcommand>");
     expect(stdout).toContain("hunk mcp serve");
