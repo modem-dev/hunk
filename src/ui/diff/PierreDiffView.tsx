@@ -2,8 +2,10 @@ import { useMemo } from "react";
 import type { DiffFile, LayoutMode } from "../../core/types";
 import { AgentInlineNote, AgentInlineNoteGuideCap } from "../components/panes/AgentInlineNote";
 import type { VisibleAgentNote } from "../lib/agentAnnotations";
+import { reviewRowId } from "../lib/ids";
 import type { AppTheme } from "../themes";
 import { buildSplitRows, buildStackRows } from "./pierre";
+import { plannedReviewRowVisible } from "./plannedReviewRows";
 import { buildReviewRenderPlan } from "./reviewRenderPlan";
 import { diffMessage, DiffRowView, findMaxLineNumber, fitText } from "./renderRows";
 import { useHighlightedDiff } from "./useHighlightedDiff";
@@ -92,51 +94,63 @@ export function PierreDiffView({
   const content = (
     <box style={{ width: "100%", flexDirection: "column" }}>
       {plannedRows.map((plannedRow) => {
+        // Mirror the same visibility/id decisions used by the scroll-bound helpers so the mounted
+        // tree can be measured by hunk later.
+        const rowId = reviewRowId(plannedRow.key);
+        const visible = plannedReviewRowVisible(plannedRow, {
+          showHunkHeaders,
+          layout,
+          width,
+        });
+
+        if (!visible) {
+          return null;
+        }
+
         if (plannedRow.kind === "inline-note") {
           return (
-            <AgentInlineNote
-              key={plannedRow.key}
-              annotation={plannedRow.annotation}
-              anchorSide={plannedRow.anchorSide}
-              layout={layout}
-              noteCount={plannedRow.noteCount}
-              noteIndex={plannedRow.noteIndex}
-              theme={theme}
-              width={width}
-            />
+            <box key={plannedRow.key} id={rowId} style={{ width: "100%", flexDirection: "column" }}>
+              <AgentInlineNote
+                annotation={plannedRow.annotation}
+                anchorSide={plannedRow.anchorSide}
+                layout={layout}
+                noteCount={plannedRow.noteCount}
+                noteIndex={plannedRow.noteIndex}
+                theme={theme}
+                width={width}
+              />
+            </box>
           );
         }
 
         if (plannedRow.kind === "note-guide-cap") {
           return (
-            <AgentInlineNoteGuideCap
-              key={plannedRow.key}
-              side={plannedRow.side}
-              theme={theme}
-              width={width}
-            />
+            <box key={plannedRow.key} id={rowId} style={{ width: "100%", flexDirection: "column" }}>
+              <AgentInlineNoteGuideCap side={plannedRow.side} theme={theme} width={width} />
+            </box>
           );
         }
 
         return (
-          <DiffRowView
-            key={plannedRow.key}
-            row={plannedRow.row}
-            width={width}
-            lineNumberDigits={lineNumberDigits}
-            showLineNumbers={showLineNumbers}
-            showHunkHeaders={showHunkHeaders}
-            wrapLines={wrapLines}
-            theme={theme}
-            selected={plannedRow.row.hunkIndex === selectedHunkIndex}
-            annotated={
-              plannedRow.row.type === "hunk-header" &&
-              annotatedHunkIndices.has(plannedRow.row.hunkIndex)
-            }
-            anchorId={plannedRow.anchorId}
-            noteGuideSide={plannedRow.noteGuideSide}
-            onOpenAgentNotesAtHunk={onOpenAgentNotesAtHunk}
-          />
+          <box key={plannedRow.key} id={rowId} style={{ width: "100%", flexDirection: "column" }}>
+            <DiffRowView
+              row={plannedRow.row}
+              width={width}
+              lineNumberDigits={lineNumberDigits}
+              showLineNumbers={showLineNumbers}
+              showHunkHeaders={showHunkHeaders}
+              wrapLines={wrapLines}
+              theme={theme}
+              selected={plannedRow.row.hunkIndex === selectedHunkIndex}
+              annotated={
+                plannedRow.row.type === "hunk-header" &&
+                annotatedHunkIndices.has(plannedRow.row.hunkIndex)
+              }
+              anchorId={plannedRow.anchorId}
+              noteGuideSide={plannedRow.noteGuideSide}
+              onOpenAgentNotesAtHunk={onOpenAgentNotesAtHunk}
+            />
+          </box>
         );
       })}
     </box>

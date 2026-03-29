@@ -120,12 +120,30 @@ function createFixtureFiles(lines = 1) {
   return { dir, before, after, agent, patch, coloredPatch };
 }
 
+function createLongWrapFixtureFiles() {
+  const dir = mkdtempSync(join(tmpdir(), "hunk-tty-smoke-"));
+  tempDirs.push(dir);
+
+  const before = join(dir, "before.ts");
+  const after = join(dir, "after.ts");
+
+  writeFileSync(before, "export const message = 'short';\n");
+  writeFileSync(
+    after,
+    "export const message = 'this is a very long wrapped line for tty smoke coverage';\n",
+  );
+
+  return { dir, before, after };
+}
+
 async function runTtySmoke(options: {
   mode?: "split" | "stack";
   pager?: boolean;
   agentContext?: boolean;
+  inputCommand?: string;
+  longWrapFixture?: boolean;
 }) {
-  const fixture = createFixtureFiles();
+  const fixture = options.longWrapFixture ? createLongWrapFixtureFiles() : createFixtureFiles();
   const transcript = join(fixture.dir, "transcript.txt");
   const args = ["diff", fixture.before, fixture.after];
 
@@ -137,13 +155,13 @@ async function runTtySmoke(options: {
     args.push("--pager");
   }
 
-  if (options.agentContext) {
-    args.push("--agent-context", fixture.agent);
+  if (options.agentContext && !options.longWrapFixture) {
+    args.push("--agent-context", (fixture as ReturnType<typeof createFixtureFiles>).agent);
   }
 
   const hunkCommand = `bun run ${shellQuote(sourceEntrypoint)} ${args.map(shellQuote).join(" ")}`;
   const scriptCommand = `timeout 7 script -q -f -e -c ${shellQuote(hunkCommand)} ${shellQuote(transcript)}`;
-  const inputCommand = `(sleep 2; printf q)`;
+  const inputCommand = options.inputCommand ?? `(sleep 2; printf q)`;
   const proc = Bun.spawnSync(["bash", "-lc", `${inputCommand} | ${scriptCommand}`], {
     cwd: fixture.dir,
     stdin: "ignore",
@@ -219,6 +237,36 @@ describe("TTY render smoke", () => {
     expect(output).toContain("▌1 + export const answer = 42;");
   });
 
+  ttyTest("regular mode can toggle wrapped lines from terminal input", async () => {
+    if (!ttyToolsAvailable) {
+      return;
+    }
+
+    const output = await runTtySmoke({
+      mode: "split",
+      longWrapFixture: true,
+      inputCommand: `(sleep 2; printf w; sleep 1; printf q)`,
+    });
+
+    expect(output).toContain("very long wrapped line for tty s");
+    expect(output).toContain("moke coverage';");
+  });
+
+  ttyTest("regular mode can toggle wrapped lines on, off, and on again", async () => {
+    if (!ttyToolsAvailable) {
+      return;
+    }
+
+    const output = await runTtySmoke({
+      mode: "split",
+      longWrapFixture: true,
+      inputCommand: `(sleep 2; printf www; sleep 1; printf q)`,
+    });
+
+    expect(output).toContain("very long wrapped line for tty s");
+    expect(output).toContain("moke coverage';");
+  });
+
   ttyTest(
     "stack mode keeps the terminal-native stacked rows without split separators",
     async () => {
@@ -246,6 +294,22 @@ describe("TTY render smoke", () => {
     expect(output).not.toContain("F10 menu");
     expect(output).toContain("before.ts -> after.ts");
     expect(output).toContain("export const answer = 42;");
+  });
+
+  ttyTest("pager mode can toggle wrapped lines from terminal input", async () => {
+    if (!ttyToolsAvailable) {
+      return;
+    }
+
+    const output = await runTtySmoke({
+      mode: "split",
+      pager: true,
+      longWrapFixture: true,
+      inputCommand: `(sleep 2; printf w; sleep 1; printf q)`,
+    });
+
+    expect(output).toContain("very long wrapped line for tty smo");
+    expect(output).toContain("ke coverage';");
   });
 
   ttyTest("stdin patch mode auto-enters pager mode and can quit from terminal input", async () => {

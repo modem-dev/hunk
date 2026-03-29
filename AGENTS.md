@@ -46,6 +46,12 @@ CLI input
 - Prefer one implementation path per feature instead of separate "old" and "new" codepaths that duplicate behavior.
 - When refactoring logic that spans helpers and UI components, add tests at the level where the user-visible behavior actually lives, not only at the lowest helper layer.
 
+## code comments
+
+- Add short JSDoc-style comments to functions and helpers.
+- Add inline comments for intent, invariants, or tricky behavior that would not be obvious to a fresh reader.
+- Skip comments that only narrate what the code already says.
+
 ## review behavior
 
 - Default behavior is a multi-file review stream in sidebar order.

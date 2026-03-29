@@ -12,3 +12,8 @@ export function diffSectionId(fileId: string) {
 export function diffHunkId(fileId: string, hunkIndex: number) {
   return `diff-hunk:${fileId}:${hunkIndex}`;
 }
+
+/** Build the stable id for one presentational review row in the main diff stream. */
+export function reviewRowId(rowKey: string) {
+  return `review-row:${rowKey}`;
+}
