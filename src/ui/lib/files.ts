@@ -1,5 +1,5 @@
 import { basename, dirname } from "node:path/posix";
-import type { DiffFile } from "../../core/types";
+import type { AgentAnnotation, DiffFile } from "../../core/types";
 
 export interface FileListEntry {
   kind: "file";
@@ -28,7 +28,45 @@ function sidebarFileName(file: DiffFile) {
   return previousName === nextName ? nextName : `${previousName} -> ${nextName}`;
 }
 
-/** Group sidebar rows by their current parent folder while preserving file order. */
+/** Merge one file-id keyed annotation map into the review stream file list. */
+export function mergeFileAnnotationsByFileId<T extends AgentAnnotation>(
+  files: DiffFile[],
+  annotationsByFileId: Record<string, T[]>,
+): DiffFile[] {
+  return files.map((file) => {
+    const annotations = annotationsByFileId[file.id];
+    if (!annotations || annotations.length === 0) {
+      return file;
+    }
+
+    return {
+      ...file,
+      agent: {
+        path: file.path,
+        summary: file.agent?.summary,
+        annotations: [...(file.agent?.annotations ?? []), ...annotations],
+      },
+    };
+  });
+}
+
+/** Apply the shell's file filter query to the visible review stream. */
+export function filterReviewFiles(files: DiffFile[], query: string): DiffFile[] {
+  const trimmedQuery = query.trim().toLowerCase();
+  if (!trimmedQuery) {
+    return files;
+  }
+
+  return files.filter((file) => {
+    const haystack = [file.path, file.previousPath, file.agent?.summary]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return haystack.includes(trimmedQuery);
+  });
+}
+
+/** Build the grouped sidebar entries while preserving the review stream order. */
 export function buildSidebarEntries(files: DiffFile[]): SidebarEntry[] {
   const entries: SidebarEntry[] = [];
   let activeGroup: string | null = null;

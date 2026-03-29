@@ -35,7 +35,7 @@ import { PaneDivider } from "./components/panes/PaneDivider";
 import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
 import { useMenuController } from "./hooks/useMenuController";
 import { buildAppMenus } from "./lib/appMenus";
-import { buildSidebarEntries } from "./lib/files";
+import { buildSidebarEntries, filterReviewFiles, mergeFileAnnotationsByFileId } from "./lib/files";
 import { buildAnnotatedHunkCursors, buildHunkCursors, findNextHunkCursor } from "./lib/hunks";
 import { fileRowId } from "./lib/ids";
 import { resolveResponsiveLayout } from "./lib/responsive";
@@ -139,6 +139,13 @@ function AppShell({
     setScrollToNote(false);
   }, []);
 
+  const jumpToAnnotatedHunk = useCallback((fileId: string, nextHunkIndex = 0) => {
+    filesScrollRef.current?.scrollChildIntoView(fileRowId(fileId));
+    setSelectedFileId(fileId);
+    setSelectedHunkIndex(nextHunkIndex);
+    setScrollToNote(true);
+  }, []);
+
   const openAgentNotes = useCallback(() => {
     setShowAgentNotes(true);
   }, []);
@@ -149,7 +156,9 @@ function AppShell({
   const { liveCommentsByFileId } = useHunkSessionBridge({
     currentHunk: baseSelectedFile?.metadata.hunks[selectedHunkIndex],
     files: bootstrap.changeset.files,
+    filterQuery: deferredFilter,
     hostClient,
+    jumpToAnnotatedHunk,
     jumpToFile,
     openAgentNotes,
     reloadSession: onReloadSession,
@@ -159,36 +168,14 @@ function AppShell({
   });
 
   const allFiles = useMemo(
-    () =>
-      bootstrap.changeset.files.map((file) => {
-        const liveComments = liveCommentsByFileId[file.id];
-        if (!liveComments || liveComments.length === 0) {
-          return file;
-        }
-
-        return {
-          ...file,
-          agent: {
-            path: file.path,
-            summary: file.agent?.summary,
-            annotations: [...(file.agent?.annotations ?? []), ...liveComments],
-          },
-        };
-      }),
+    () => mergeFileAnnotationsByFileId(bootstrap.changeset.files, liveCommentsByFileId),
     [bootstrap.changeset.files, liveCommentsByFileId],
   );
 
-  const filteredFiles = allFiles.filter((file) => {
-    if (!deferredFilter.trim()) {
-      return true;
-    }
-
-    const haystack = [file.path, file.previousPath, file.agent?.summary]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
-    return haystack.includes(deferredFilter.trim().toLowerCase());
-  });
+  const filteredFiles = useMemo(
+    () => filterReviewFiles(allFiles, deferredFilter),
+    [allFiles, deferredFilter],
+  );
 
   const selectedFile =
     filteredFiles.find((file) => file.id === selectedFileId) ??
@@ -302,10 +289,7 @@ function AppShell({
       return;
     }
 
-    filesScrollRef.current?.scrollChildIntoView(fileRowId(nextCursor.fileId));
-    setSelectedFileId(nextCursor.fileId);
-    setSelectedHunkIndex(nextCursor.hunkIndex);
-    setScrollToNote(true);
+    jumpToAnnotatedHunk(nextCursor.fileId, nextCursor.hunkIndex);
   };
 
   /** Scroll the main review pane by line steps, viewport fractions, or whole-content jumps. */

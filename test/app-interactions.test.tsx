@@ -5,6 +5,8 @@ import { describe, expect, mock, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { parseDiffFromFile } from "@pierre/diffs";
 import { act } from "react";
+import type { HunkHostClient } from "../src/mcp/client";
+import type { HunkSessionRegistration, SessionServerMessage } from "../src/mcp/types";
 import type { AppBootstrap, DiffFile, LayoutMode } from "../src/core/types";
 
 const { loadAppBootstrap } = await import("../src/core/loaders");
@@ -63,6 +65,48 @@ function createDiffFile(
           ],
         }
       : null,
+  };
+}
+
+function createMockHostClient() {
+  type Bridge = Parameters<HunkHostClient["setBridge"]>[0];
+
+  let bridge: Bridge = null;
+  const registration: HunkSessionRegistration = {
+    sessionId: "session-1",
+    pid: process.pid,
+    cwd: process.cwd(),
+    repoRoot: process.cwd(),
+    inputKind: "git",
+    title: "repo working tree",
+    sourceLabel: "repo",
+    launchedAt: "2026-03-24T00:00:00.000Z",
+    files: [],
+  };
+  return {
+    hostClient: {
+      getRegistration: () => registration,
+      replaceSession: () => {},
+      setBridge: (nextBridge: Bridge) => {
+        bridge = nextBridge;
+      },
+      updateSnapshot: () => {},
+    } as unknown as HunkHostClient,
+    getBridge: () => bridge,
+    navigateToHunk: async (
+      input: Extract<SessionServerMessage, { command: "navigate_to_hunk" }>["input"],
+    ) => {
+      if (!bridge) {
+        throw new Error("Expected App to register a bridge before running the test command.");
+      }
+
+      return bridge.navigateToHunk({
+        type: "command",
+        requestId: "test-request",
+        command: "navigate_to_hunk",
+        input,
+      });
+    },
   };
 }
 
@@ -189,6 +233,60 @@ function createLineScrollBootstrap(pager = false): AppBootstrap {
     },
     initialMode: "split",
     initialTheme: "midnight",
+  };
+}
+
+/** Build a two-hunk fixture with a deep inline note for CLI comment-navigation scroll tests. */
+function createDeepNoteBootstrap(): AppBootstrap {
+  const beforeLines = Array.from(
+    { length: 80 },
+    (_, index) => `export const line${index + 1} = ${index + 1};`,
+  );
+  const afterLines = [...beforeLines];
+
+  afterLines[0] = "export const line1 = 100;";
+  afterLines[59] = "export const line60 = 6000;";
+  afterLines[60] = "export const line61 = 6100;";
+  afterLines[61] = "export const line62 = 6200;";
+  afterLines[62] = "export const line63 = 6300;";
+  afterLines[63] = "export const line64 = 6400;";
+  afterLines[64] = "export const line65 = 6500;";
+
+  const file = createDiffFile(
+    "deep-note",
+    "deep-note.ts",
+    `${beforeLines.join("\n")}\n`,
+    `${afterLines.join("\n")}\n`,
+  );
+  file.agent = {
+    path: file.path,
+    summary: "file note",
+    annotations: [
+      {
+        newRange: [62, 62],
+        summary: "Note anchored on second hunk.",
+      },
+    ],
+  };
+
+  return {
+    input: {
+      kind: "git",
+      staged: false,
+      options: {
+        mode: "split",
+        agentNotes: true,
+      },
+    },
+    changeset: {
+      id: "changeset:app-deep-note",
+      sourceLabel: "repo",
+      title: "repo working tree",
+      files: [file],
+    },
+    initialMode: "split",
+    initialTheme: "midnight",
+    initialShowAgentNotes: true,
   };
 }
 
@@ -1063,6 +1161,93 @@ describe("App interactions", () => {
       frame = setup.captureCharFrame();
       expect(frame).toContain("filter=beta");
       expect(frame).toContain("beta.ts");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("CLI comment navigation respects the active file filter", async () => {
+    const { hostClient, navigateToHunk } = createMockHostClient();
+    const setup = await testRender(<App bootstrap={createBootstrap()} hostClient={hostClient} />, {
+      width: 240,
+      height: 24,
+    });
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.pressTab();
+      });
+      await flush(setup);
+      await act(async () => {
+        await setup.mockInput.typeText("beta");
+      });
+      await flush(setup);
+
+      let frame = setup.captureCharFrame();
+      expect(frame).toContain("filter:");
+      expect(frame).toContain("beta");
+      expect(frame).toContain("betaValue");
+      expect(frame).not.toContain("add = true");
+
+      let navigationError: unknown;
+      await act(async () => {
+        try {
+          await navigateToHunk({ commentDirection: "next" });
+        } catch (error) {
+          navigationError = error;
+        }
+      });
+
+      expect(navigationError).toBeInstanceOf(Error);
+      expect((navigationError as Error).message).toContain(
+        "No annotated hunks found in the current review.",
+      );
+
+      await flush(setup);
+      frame = setup.captureCharFrame();
+      expect(frame).toContain("betaValue");
+      expect(frame).not.toContain("add = true");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("CLI comment navigation scrolls the inline note into view", async () => {
+    const { hostClient, navigateToHunk } = createMockHostClient();
+    const setup = await testRender(
+      <App bootstrap={createDeepNoteBootstrap()} hostClient={hostClient} />,
+      {
+        width: 104,
+        height: 18,
+      },
+    );
+
+    try {
+      await flush(setup);
+
+      let frame = setup.captureCharFrame();
+      expect(frame).not.toContain("Note anchored on second hunk.");
+
+      let result: Awaited<ReturnType<typeof navigateToHunk>> | undefined;
+      await act(async () => {
+        result = await navigateToHunk({ commentDirection: "next" });
+      });
+
+      expect(result).toMatchObject({
+        filePath: "deep-note.ts",
+        hunkIndex: 1,
+      });
+
+      frame = await waitForFrame(setup, (currentFrame) =>
+        currentFrame.includes("Note anchored on second hunk."),
+      );
+      expect(frame).toContain("Note anchored on second hunk.");
     } finally {
       await act(async () => {
         setup.renderer.destroy();

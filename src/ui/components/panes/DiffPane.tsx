@@ -456,10 +456,14 @@ export function DiffPane({
       return null;
     }
 
+    const sectionRelativeHunkTop =
+      selectedEstimatedHunkBounds.top - selectedEstimatedHunkBounds.sectionTop;
+    const sectionRelativeHunkBottom = sectionRelativeHunkTop + selectedEstimatedHunkBounds.height;
     const noteRow = metrics.rowMetrics.find(
       (row) =>
         row.key.startsWith("inline-note:") &&
-        row.offset >= selectedEstimatedHunkBounds.top - selectedEstimatedHunkBounds.sectionTop,
+        row.offset >= sectionRelativeHunkTop &&
+        row.offset < sectionRelativeHunkBottom,
     );
 
     if (!noteRow) {
