@@ -39,6 +39,7 @@ export interface DiffFile {
   };
   metadata: FileDiffMetadata;
   agent: AgentFileContext | null;
+  isUntracked?: boolean;
 }
 
 export interface Changeset {

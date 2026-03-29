@@ -3,7 +3,7 @@ import type { DiffFile, LayoutMode } from "../../../core/types";
 import { PierreDiffView } from "../../diff/PierreDiffView";
 import { getAnnotatedHunkIndices, type VisibleAgentNote } from "../../lib/agentAnnotations";
 import { diffSectionId } from "../../lib/ids";
-import { fileLabel } from "../../lib/files";
+import { fileLabelParts } from "../../lib/files";
 import { fitText } from "../../lib/text";
 import type { AppTheme } from "../../themes";
 
@@ -52,6 +52,7 @@ function DiffSectionComponent({
   const additionsText = `+${file.stats.additions}`;
   const deletionsText = `-${file.stats.deletions}`;
   const annotatedHunkIndices = getAnnotatedHunkIndices(file);
+  const { filename, stateLabel } = fileLabelParts(file);
 
   return (
     <box
@@ -90,7 +91,12 @@ function DiffSectionComponent({
         onMouseUp={onSelect}
       >
         {/* Clicking the file header jumps the main stream selection without collapsing to a single-file view. */}
-        <text fg={theme.text}>{fitText(fileLabel(file), headerLabelWidth)}</text>
+        <box style={{ flexDirection: "row" }}>
+          <text fg={theme.text}>
+            {fitText(filename, Math.max(1, headerLabelWidth - (stateLabel?.length ?? 0)))}
+          </text>
+          {stateLabel && <text fg={theme.muted}>{stateLabel}</text>}
+        </box>
         <box
           style={{
             width: headerStatsWidth,

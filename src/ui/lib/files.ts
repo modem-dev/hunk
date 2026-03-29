@@ -1,4 +1,5 @@
 import { basename, dirname } from "node:path/posix";
+import type { FileDiffMetadata } from "@pierre/diffs";
 import type { AgentAnnotation, DiffFile } from "../../core/types";
 
 export interface FileListEntry {
@@ -7,6 +8,8 @@ export interface FileListEntry {
   name: string;
   additionsText: string;
   deletionsText: string;
+  changeType: FileDiffMetadata["type"];
+  isUntracked: boolean;
 }
 
 export interface FileGroupEntry {
@@ -92,6 +95,8 @@ export function buildSidebarEntries(files: DiffFile[]): SidebarEntry[] {
       name: sidebarFileName(file),
       additionsText: `+${file.stats.additions}`,
       deletionsText: `-${file.stats.deletions}`,
+      changeType: file.metadata.type,
+      isUntracked: file.isUntracked ?? false,
     });
   });
 
@@ -100,11 +105,33 @@ export function buildSidebarEntries(files: DiffFile[]): SidebarEntry[] {
 
 /** Build the canonical file label used across headers and note cards. */
 export function fileLabel(file: DiffFile | undefined) {
+  const { filename, stateLabel } = fileLabelParts(file);
+  return stateLabel ? `${filename}${stateLabel}` : filename;
+}
+
+/** Split file label into filename and state label for styled rendering. */
+export function fileLabelParts(file: DiffFile | undefined): {
+  filename: string;
+  stateLabel: string | null;
+} {
   if (!file) {
-    return "No file selected";
+    return { filename: "No file selected", stateLabel: null };
   }
 
-  return file.previousPath && file.previousPath !== file.path
-    ? `${file.previousPath} -> ${file.path}`
-    : file.path;
+  const baseLabel =
+    file.previousPath && file.previousPath !== file.path
+      ? `${file.previousPath} -> ${file.path}`
+      : file.path;
+
+  // Determine state label for special cases
+  let stateLabel: string | null = null;
+  if (file.isUntracked) {
+    stateLabel = " (untracked)";
+  } else if (file.metadata.type === "new") {
+    stateLabel = " (new)";
+  } else if (file.metadata.type === "deleted") {
+    stateLabel = " (deleted)";
+  }
+
+  return { filename: baseLabel, stateLabel };
 }
