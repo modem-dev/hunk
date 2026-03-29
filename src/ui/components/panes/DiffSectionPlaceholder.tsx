@@ -1,6 +1,6 @@
 import type { DiffFile } from "../../../core/types";
 import { diffSectionId } from "../../lib/ids";
-import { fileLabel } from "../../lib/files";
+import { fileLabelParts } from "../../lib/files";
 import { fitText } from "../../lib/text";
 import type { AppTheme } from "../../themes";
 
@@ -28,6 +28,7 @@ export function DiffSectionPlaceholder({
 }: DiffSectionPlaceholderProps) {
   const additionsText = `+${file.stats.additions}`;
   const deletionsText = `-${file.stats.deletions}`;
+  const { filename, stateLabel } = fileLabelParts(file);
 
   return (
     <box
@@ -64,7 +65,12 @@ export function DiffSectionPlaceholder({
         }}
         onMouseUp={onSelect}
       >
-        <text fg={theme.text}>{fitText(fileLabel(file), headerLabelWidth)}</text>
+        <box style={{ flexDirection: "row" }}>
+          <text fg={theme.text}>
+            {fitText(filename, Math.max(1, headerLabelWidth - (stateLabel?.length ?? 0)))}
+          </text>
+          {stateLabel && <text fg={theme.muted}>{stateLabel}</text>}
+        </box>
         <box
           style={{
             width: headerStatsWidth,

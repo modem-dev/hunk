@@ -26,6 +26,11 @@ export interface AppTheme {
   badgeAdded: string;
   badgeRemoved: string;
   badgeNeutral: string;
+  fileNew: string;
+  fileDeleted: string;
+  fileRenamed: string;
+  fileModified: string;
+  fileUntracked: string;
   noteBorder: string;
   noteBackground: string;
   noteTitleBackground: string;
@@ -110,6 +115,11 @@ export const THEMES: AppTheme[] = [
       badgeAdded: "#88d39b",
       badgeRemoved: "#f0a0a0",
       badgeNeutral: "#a9b4bf",
+      fileNew: "#88d39b",
+      fileDeleted: "#f0a0a0",
+      fileRenamed: "#e6cf98",
+      fileModified: "#c49bff",
+      fileUntracked: "#7fd1ff",
       noteBorder: "#c6a0ff",
       noteBackground: "#241c31",
       noteTitleBackground: "#322446",
@@ -154,6 +164,11 @@ export const THEMES: AppTheme[] = [
       badgeAdded: "#5ad188",
       badgeRemoved: "#ff8b8b",
       badgeNeutral: "#89a5d3",
+      fileNew: "#5ad188",
+      fileDeleted: "#ff8b8b",
+      fileRenamed: "#ffd883",
+      fileModified: "#b794f6",
+      fileUntracked: "#7fd1ff",
       noteBorder: "#c49bff",
       noteBackground: "#211a36",
       noteTitleBackground: "#30234f",
@@ -198,6 +213,11 @@ export const THEMES: AppTheme[] = [
       badgeAdded: "#3f8d58",
       badgeRemoved: "#b4545b",
       badgeNeutral: "#8e7355",
+      fileNew: "#3f8d58",
+      fileDeleted: "#b4545b",
+      fileRenamed: "#9f6c1f",
+      fileModified: "#7d5bc4",
+      fileUntracked: "#4a6890",
       noteBorder: "#7d5bc4",
       noteBackground: "#efe6ff",
       noteTitleBackground: "#e3d7ff",
@@ -242,6 +262,11 @@ export const THEMES: AppTheme[] = [
       badgeAdded: "#83d99d",
       badgeRemoved: "#ff9d8f",
       badgeNeutral: "#f1be9d",
+      fileNew: "#83d99d",
+      fileDeleted: "#ff9d8f",
+      fileRenamed: "#ffd08f",
+      fileModified: "#d8b4fe",
+      fileUntracked: "#ffb07a",
       noteBorder: "#e1a3ff",
       noteBackground: "#311d36",
       noteTitleBackground: "#452650",

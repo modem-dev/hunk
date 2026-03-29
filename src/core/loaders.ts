@@ -139,6 +139,7 @@ function buildDiffFile(
   index: number,
   sourcePrefix: string,
   agentContext: AgentContext | null,
+  isUntracked?: boolean,
   previousPath?: string,
 ): DiffFile {
   return {
@@ -150,6 +151,7 @@ function buildDiffFile(
     stats: countDiffStats(metadata),
     metadata,
     agent: findAgentFileContext(agentContext, metadata.name, metadata.prevName),
+    isUntracked,
   };
 }
 
@@ -235,6 +237,7 @@ function buildUntrackedDiffFile(
     index,
     sourcePrefix,
     agentContext,
+    true, // isUntracked
   );
 }
 
@@ -363,7 +366,9 @@ async function loadFileDiffChangeset(
     sourceLabel: input.kind === "difftool" ? "git difftool" : "file compare",
     title,
     agentSummary: agentContext?.summary,
-    files: [buildDiffFile(metadata, patch, 0, displayPath, agentContext, basename(input.left))],
+    files: [
+      buildDiffFile(metadata, patch, 0, displayPath, agentContext, undefined, basename(input.left)),
+    ],
   } satisfies Changeset;
 }
 

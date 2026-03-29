@@ -3,6 +3,27 @@ import { fitText, padText } from "../../lib/text";
 import type { AppTheme } from "../../themes";
 import { fileRowId } from "../../lib/ids";
 
+/** Get icon and color for file state using standard git status codes. */
+function getFileStateIcon(entry: FileListEntry, theme: AppTheme): { icon: string; color: string } {
+  if (entry.isUntracked) {
+    return { icon: "?", color: theme.fileUntracked };
+  }
+
+  switch (entry.changeType) {
+    case "new":
+      return { icon: "A", color: theme.fileNew };
+    case "deleted":
+      return { icon: "D", color: theme.fileDeleted };
+    case "rename-pure":
+    case "rename-changed":
+      return { icon: "R", color: theme.fileRenamed };
+    case "change":
+      return { icon: "M", color: theme.fileModified };
+    default:
+      return { icon: "", color: theme.text };
+  }
+}
+
 /** Render one folder header in the navigation sidebar. */
 export function FileGroupHeader({
   entry,
@@ -47,7 +68,9 @@ export function FileListItem({
 }) {
   const rowBackground = selected ? theme.panelAlt : theme.panel;
   const statsWidth = additionsWidth + 1 + deletionsWidth;
-  const nameWidth = Math.max(1, textWidth - 1 - statsWidth - 1);
+  const { icon, color } = getFileStateIcon(entry, theme);
+  const iconWidth = icon ? 2 : 0; // icon + space
+  const nameWidth = Math.max(1, textWidth - 1 - iconWidth - statsWidth - 1);
 
   return (
     <box
@@ -76,6 +99,7 @@ export function FileListItem({
           backgroundColor: rowBackground,
         }}
       >
+        {icon && <text fg={color}>{icon} </text>}
         <text fg={theme.text}>{padText(fitText(entry.name, nameWidth), nameWidth)}</text>
         <text fg={theme.badgeAdded}>{entry.additionsText.padStart(additionsWidth, " ")}</text>
         <text fg={selected ? theme.text : theme.muted}> </text>
