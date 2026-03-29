@@ -51,11 +51,12 @@ hunk --version # print the installed version
 Hunk mirrors Git's diff-style commands, but opens the changeset in a review UI instead of plain text.
 
 ```bash
-hunk diff         # review current repo changes
+hunk diff                      # review current repo changes, including untracked files
+hunk diff --exclude-untracked  # limit working tree review to tracked files only
 hunk diff --staged
-hunk diff --watch # auto-reload as the working tree changes
-hunk show         # review the latest commit
-hunk show HEAD~1  # review an earlier commit
+hunk diff --watch              # auto-reload as the working tree changes
+hunk show                      # review the latest commit
+hunk show HEAD~1               # review an earlier commit
 ```
 
 ### Working with raw files and patches
@@ -100,16 +101,22 @@ You can persist preferences to a config file:
 Example:
 
 ```toml
-theme = "graphite" # graphite, midnight, paper, ember
-mode = "auto"      # auto, split, stack
+theme = "graphite"   # graphite, midnight, paper, ember
+mode = "auto"        # auto, split, stack
+exclude_untracked = false
 line_numbers = true
 wrap_lines = false
 agent_notes = false
 ```
 
+`exclude_untracked` affects working-tree `hunk diff` sessions only.
+
 ### Git integration
 
 Set Hunk as your Git pager so `git diff` and `git show` open in Hunk automatically:
+
+> [!NOTE]
+> Untracked files are auto-included only for Hunk's own `hunk diff` working-tree loader. If you open `git diff` through `hunk pager`, Git still decides the patch contents, so untracked files will not appear there.
 
 ```bash
 git config --global core.pager "hunk pager"

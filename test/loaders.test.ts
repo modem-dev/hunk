@@ -43,15 +43,19 @@ function createTempRepo(prefix: string) {
   return dir;
 }
 
-async function loadFromRepo(dir: string, input: CliInput) {
+async function loadFromCwd(cwd: string, input: CliInput) {
   const previousCwd = process.cwd();
-  process.chdir(dir);
+  process.chdir(cwd);
 
   try {
     return await loadAppBootstrap(input);
   } finally {
     process.chdir(previousCwd);
   }
+}
+
+async function loadFromRepo(dir: string, input: CliInput) {
+  return loadFromCwd(dir, input);
 }
 
 afterEach(() => {
@@ -152,6 +156,118 @@ describe("loadAppBootstrap", () => {
     expect(bootstrap.changeset.files[0]?.stats.additions).toBeGreaterThan(0);
   });
 
+  test("includes untracked files in working tree reviews by default", async () => {
+    const dir = createTempRepo("hunk-git-untracked-");
+
+    writeFileSync(join(dir, "example.ts"), "export const value = 1;\n");
+    git(dir, "add", "example.ts");
+    git(dir, "commit", "-m", "initial");
+
+    writeFileSync(join(dir, "example.ts"), "export const value = 2;\n");
+    writeFileSync(join(dir, "new-file.ts"), "export const added = true;\n");
+
+    const bootstrap = await loadFromRepo(dir, {
+      kind: "git",
+      staged: false,
+      options: { mode: "auto" },
+    });
+
+    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual([
+      "example.ts",
+      "new-file.ts",
+    ]);
+    expect(bootstrap.changeset.files[1]?.patch).toContain("new file mode");
+  });
+
+  test("can exclude untracked files from working tree reviews", async () => {
+    const dir = createTempRepo("hunk-git-no-untracked-");
+
+    writeFileSync(join(dir, "example.ts"), "export const value = 1;\n");
+    git(dir, "add", "example.ts");
+    git(dir, "commit", "-m", "initial");
+
+    writeFileSync(join(dir, "example.ts"), "export const value = 2;\n");
+    writeFileSync(join(dir, "new-file.ts"), "export const added = true;\n");
+
+    const bootstrap = await loadFromRepo(dir, {
+      kind: "git",
+      staged: false,
+      options: { mode: "auto", excludeUntracked: true },
+    });
+
+    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["example.ts"]);
+  });
+
+  test("loads untracked files whose names need parser-safe diff headers", async () => {
+    const dir = createTempRepo("hunk-git-quoted-untracked-");
+
+    writeFileSync(join(dir, "tracked.ts"), "export const tracked = 1;\n");
+    git(dir, "add", "tracked.ts");
+    git(dir, "commit", "-m", "initial");
+
+    const quoteFile = 'quote"name.txt';
+    const tabFile = "tab\tname.txt";
+    const backslashFile = "back\\slash.txt";
+    writeFileSync(join(dir, quoteFile), "quote\n");
+    writeFileSync(join(dir, tabFile), "tab\n");
+    writeFileSync(join(dir, backslashFile), "backslash\n");
+
+    const bootstrap = await loadFromRepo(dir, {
+      kind: "git",
+      staged: false,
+      options: { mode: "auto" },
+    });
+    const paths = bootstrap.changeset.files.map((file) => file.path);
+
+    expect(paths).toContain(quoteFile);
+    expect(paths).toContain(tabFile);
+    expect(paths).toContain(backslashFile);
+    expect(paths).toHaveLength(3);
+  });
+
+  test("still shows an untracked agent sidecar when it lives inside the repo", async () => {
+    const dir = createTempRepo("hunk-git-agent-sidecar-");
+
+    writeFileSync(join(dir, "example.ts"), "export const value = 1;\n");
+    git(dir, "add", "example.ts");
+    git(dir, "commit", "-m", "initial");
+
+    writeFileSync(join(dir, "example.ts"), "export const value = 2;\n");
+    const agent = join(dir, "agent.json");
+    writeFileSync(agent, JSON.stringify({ version: 1, files: [] }));
+
+    const bootstrap = await loadFromRepo(dir, {
+      kind: "git",
+      staged: false,
+      options: { mode: "auto", agentContext: agent },
+    });
+
+    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual([
+      "example.ts",
+      "agent.json",
+    ]);
+  });
+
+  test("includes repo-wide untracked files even when launched from a subdirectory", async () => {
+    const dir = createTempRepo("hunk-git-subdir-untracked-");
+
+    writeFileSync(join(dir, "tracked.ts"), "export const tracked = 1;\n");
+    git(dir, "add", "tracked.ts");
+    git(dir, "commit", "-m", "initial");
+
+    writeFileSync(join(dir, "new-root.ts"), "export const root = true;\n");
+    const subdir = join(dir, "nested");
+    mkdirSync(subdir, { recursive: true });
+
+    const bootstrap = await loadFromCwd(subdir, {
+      kind: "git",
+      staged: false,
+      options: { mode: "auto" },
+    });
+
+    expect(bootstrap.changeset.files.map((file) => file.path)).toContain("new-root.ts");
+  });
+
   test("loads git working tree changes when diff.noprefix is enabled", async () => {
     const dir = createTempRepo("hunk-git-noprefix-");
 
@@ -161,6 +277,7 @@ describe("loadAppBootstrap", () => {
 
     git(dir, "config", "--local", "diff.noprefix", "true");
     writeFileSync(join(dir, "example.ts"), "export const value = 2;\nexport const extra = true;\n");
+    writeFileSync(join(dir, "new-file.ts"), "export const added = true;\n");
 
     const bootstrap = await loadFromRepo(dir, {
       kind: "git",
@@ -168,8 +285,10 @@ describe("loadAppBootstrap", () => {
       options: { mode: "auto" },
     });
 
-    expect(bootstrap.changeset.files).toHaveLength(1);
-    expect(bootstrap.changeset.files[0]?.path).toBe("example.ts");
+    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual([
+      "example.ts",
+      "new-file.ts",
+    ]);
   });
 
   test("loads git working tree changes when diff.mnemonicPrefix is enabled", async () => {
@@ -181,6 +300,7 @@ describe("loadAppBootstrap", () => {
 
     git(dir, "config", "--local", "diff.mnemonicPrefix", "true");
     writeFileSync(join(dir, "example.ts"), "export const value = 2;\nexport const extra = true;\n");
+    writeFileSync(join(dir, "new-file.ts"), "export const added = true;\n");
 
     const bootstrap = await loadFromRepo(dir, {
       kind: "git",
@@ -188,8 +308,10 @@ describe("loadAppBootstrap", () => {
       options: { mode: "auto" },
     });
 
-    expect(bootstrap.changeset.files).toHaveLength(1);
-    expect(bootstrap.changeset.files[0]?.path).toBe("example.ts");
+    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual([
+      "example.ts",
+      "new-file.ts",
+    ]);
   });
 
   test("reports a friendly error when git review runs outside a repository", async () => {
@@ -233,7 +355,9 @@ describe("loadAppBootstrap", () => {
     writeFileSync(join(dir, "alpha.ts"), "export const alpha = 2;\n");
     writeFileSync(join(dir, "beta.ts"), "export const beta = 2;\n");
 
-    const agent = join(dir, "agent.json");
+    const agentDir = mkdtempSync(join(tmpdir(), "hunk-agent-"));
+    tempDirs.push(agentDir);
+    const agent = join(agentDir, "agent.json");
     writeFileSync(
       agent,
       JSON.stringify({
@@ -319,6 +443,26 @@ describe("loadAppBootstrap", () => {
 
     writeFileSync(join(dir, "alpha.ts"), "export const alpha = 2;\n");
     writeFileSync(join(dir, "beta.ts"), "export const beta = 2;\n");
+
+    const bootstrap = await loadFromRepo(dir, {
+      kind: "git",
+      staged: false,
+      pathspecs: ["beta.ts"],
+      options: { mode: "auto" },
+    });
+
+    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["beta.ts"]);
+  });
+
+  test("applies pathspec filtering to untracked files in working tree reviews", async () => {
+    const dir = createTempRepo("hunk-git-untracked-pathspec-");
+
+    writeFileSync(join(dir, "tracked.ts"), "export const tracked = 1;\n");
+    git(dir, "add", "tracked.ts");
+    git(dir, "commit", "-m", "initial");
+
+    writeFileSync(join(dir, "alpha.ts"), "export const alpha = true;\n");
+    writeFileSync(join(dir, "beta.ts"), "export const beta = true;\n");
 
     const bootstrap = await loadFromRepo(dir, {
       kind: "git",

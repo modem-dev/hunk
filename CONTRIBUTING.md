@@ -116,7 +116,7 @@ Key rules:
 - Keep scope tight and explain user-visible behavior changes clearly.
 - Update docs and examples when behavior or workflows change.
 - If you want temporary local review notes, you can use `.hunk/latest.json`, but do not commit it.
-- If newly created files should appear in `hunk diff` before commit, use `git add -N <paths>`.
+- `hunk diff` includes untracked working-tree files by default. Use `--exclude-untracked` if you want to review tracked changes only.
 
 ## Release notes
 

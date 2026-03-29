@@ -1,7 +1,24 @@
 import { randomUUID } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import type { AppBootstrap } from "../core/types";
 import { hunkLineRange } from "../core/liveComments";
+import { resolveSessionTerminalMetadata } from "./sessionTerminalMetadata";
 import type { HunkSessionRegistration, HunkSessionSnapshot, SessionFileSummary } from "./types";
+
+/** Resolve the TTY device path for the current process, if available. */
+function ttyname(): string | undefined {
+  if (!process.stdin.isTTY) {
+    return undefined;
+  }
+
+  try {
+    const result = spawnSync("tty", [], { stdio: ["inherit", "pipe", "pipe"] });
+    const name = result.stdout?.toString().trim();
+    return name && !name.startsWith("not a tty") ? name : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 function inferRepoRoot(bootstrap: AppBootstrap) {
   return bootstrap.input.kind === "git" ||
@@ -24,6 +41,8 @@ function buildSessionFiles(bootstrap: AppBootstrap): SessionFileSummary[] {
 
 /** Build the daemon-facing metadata for one live Hunk TUI session. */
 export function createSessionRegistration(bootstrap: AppBootstrap): HunkSessionRegistration {
+  const terminal = resolveSessionTerminalMetadata({ tty: ttyname() });
+
   return {
     sessionId: randomUUID(),
     pid: process.pid,
@@ -33,6 +52,7 @@ export function createSessionRegistration(bootstrap: AppBootstrap): HunkSessionR
     title: bootstrap.changeset.title,
     sourceLabel: bootstrap.changeset.sourceLabel,
     launchedAt: new Date().toISOString(),
+    terminal,
     files: buildSessionFiles(bootstrap),
   };
 }

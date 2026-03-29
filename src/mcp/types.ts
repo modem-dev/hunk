@@ -23,6 +23,21 @@ export interface SelectedHunkSummary {
   newRange?: [number, number];
 }
 
+export interface SessionTerminalLocation {
+  source: string;
+  tty?: string;
+  windowId?: string;
+  tabId?: string;
+  paneId?: string;
+  terminalId?: string;
+  sessionId?: string;
+}
+
+export interface SessionTerminalMetadata {
+  program?: string;
+  locations: SessionTerminalLocation[];
+}
+
 export interface HunkSessionRegistration {
   sessionId: string;
   pid: number;
@@ -32,6 +47,7 @@ export interface HunkSessionRegistration {
   title: string;
   sourceLabel: string;
   launchedAt: string;
+  terminal?: SessionTerminalMetadata;
   files: SessionFileSummary[];
 }
 
@@ -240,6 +256,7 @@ export interface ListedSession {
   title: string;
   sourceLabel: string;
   launchedAt: string;
+  terminal?: SessionTerminalMetadata;
   fileCount: number;
   files: SessionFileSummary[];
   snapshot: HunkSessionSnapshot;

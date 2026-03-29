@@ -119,6 +119,43 @@ describe("config resolution", () => {
     expect(resolved.input.options.lineNumbers).toBe(false);
   });
 
+  test("defaults git diff to include untracked files and honors config plus CLI overrides", () => {
+    const home = createTempDir("hunk-config-home-");
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(join(home, ".config", "hunk", "config.toml"), "exclude_untracked = true\n");
+
+    const cwd = createTempDir("hunk-config-cwd-");
+    const defaultResolved = resolveConfiguredCliInput(
+      {
+        kind: "git",
+        staged: false,
+        options: {},
+      },
+      { cwd, env: { HOME: home } },
+    );
+    const overriddenResolved = resolveConfiguredCliInput(
+      {
+        kind: "git",
+        staged: false,
+        options: { excludeUntracked: false },
+      },
+      { cwd, env: { HOME: home } },
+    );
+    const noConfigHome = createTempDir("hunk-config-home-");
+    const fallbackResolved = resolveConfiguredCliInput(
+      {
+        kind: "git",
+        staged: false,
+        options: {},
+      },
+      { cwd, env: { HOME: noConfigHome } },
+    );
+
+    expect(defaultResolved.input.options.excludeUntracked).toBe(true);
+    expect(overriddenResolved.input.options.excludeUntracked).toBe(false);
+    expect(fallbackResolved.input.options.excludeUntracked).toBe(false);
+  });
+
   test("loadAppBootstrap exposes resolved initial preferences to the UI", async () => {
     const home = createTempDir("hunk-config-home-");
     const repo = createTempDir("hunk-config-repo-");
