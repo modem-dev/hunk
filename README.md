@@ -52,8 +52,6 @@ Hunk mirrors Git's diff-style commands, but opens the changeset in a review UI i
 
 ```bash
 hunk diff                      # review current repo changes, including untracked files
-hunk diff --exclude-untracked  # limit working tree review to tracked files only
-hunk diff --staged
 hunk diff --watch              # auto-reload as the working tree changes
 hunk show                      # review the latest commit
 hunk show HEAD~1               # review an earlier commit
