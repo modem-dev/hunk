@@ -242,7 +242,7 @@ function buildUntrackedDiffFile(
 }
 
 /** Reorder files to follow agent-context narrative order when a sidecar provides one. */
-function orderDiffFiles(files: DiffFile[], agentContext: AgentContext | null) {
+export function orderDiffFiles(files: DiffFile[], agentContext: AgentContext | null) {
   if (!agentContext || agentContext.files.length === 0) {
     return files;
   }
