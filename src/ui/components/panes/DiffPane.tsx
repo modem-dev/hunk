@@ -119,6 +119,40 @@ function resolveViewportRowAnchorTop(
   return 0;
 }
 
+/** Retry a layout-sensitive scroll restore across a couple of paint cycles. */
+function schedulePaintRetries(callback: () => void, frames = 2) {
+  const cancels: Array<() => void> = [];
+  const requestFrame =
+    typeof globalThis.requestAnimationFrame === "function"
+      ? (next: () => void) => {
+          const frameId = globalThis.requestAnimationFrame(() => next());
+          return () => {
+            if (typeof globalThis.cancelAnimationFrame === "function") {
+              globalThis.cancelAnimationFrame(frameId);
+            }
+          };
+        }
+      : (next: () => void) => {
+          const timeout = setTimeout(next, 16);
+          return () => clearTimeout(timeout);
+        };
+
+  const scheduleNext = (remaining: number) => {
+    const cancel = requestFrame(() => {
+      callback();
+      if (remaining > 1) {
+        scheduleNext(remaining - 1);
+      }
+    });
+    cancels.push(cancel);
+  };
+
+  scheduleNext(frames);
+  return () => {
+    cancels.splice(0).forEach((cancel) => cancel());
+  };
+}
+
 /** Render the main multi-file review stream. */
 export function DiffPane({
   diffContentWidth,
@@ -505,18 +539,13 @@ export function DiffPane({
         restoreViewportAnchor();
         // The wrap-toggle anchor restore should win over the usual selection-following behavior.
         suppressNextSelectionAutoScrollRef.current = true;
-        // Retry across a couple of repaint cycles so the restored top-row anchor sticks
-        // after wrapped row heights and viewport culling settle.
-        const retryDelays = [0, 16, 48];
-        const timeouts = retryDelays.map((delay) => setTimeout(restoreViewportAnchor, delay));
+        const cancelPaintRetries = schedulePaintRetries(restoreViewportAnchor, 2);
 
         previousWrapLinesRef.current = wrapLines;
         previousSectionMetricsRef.current = sectionMetrics;
         previousFilesRef.current = files;
 
-        return () => {
-          timeouts.forEach((timeout) => clearTimeout(timeout));
-        };
+        return cancelPaintRetries;
       }
     }
 
