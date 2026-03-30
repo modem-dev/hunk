@@ -11,7 +11,7 @@ export interface ResponsiveLayout {
   showFilesPane: boolean;
 }
 
-/** Bucket terminal widths into the viewport classes the shell layout cares about. */
+/** Bucket terminal widths into the viewport classes the app layout cares about. */
 function resolveResponsiveViewport(viewportWidth: number): ResponsiveViewport {
   if (viewportWidth >= FULL_VIEWPORT_MIN_WIDTH) {
     return "full";

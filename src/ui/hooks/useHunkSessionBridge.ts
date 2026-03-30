@@ -39,7 +39,7 @@ export function useHunkSessionBridge({
   openAgentNotes: () => void;
   reloadSession: (
     nextInput: CliInput,
-    options?: { resetShell?: boolean; sourcePath?: string },
+    options?: { resetApp?: boolean; sourcePath?: string },
   ) => Promise<ReloadedSessionResult>;
   selectedFile: DiffFile | undefined;
   selectedHunkIndex: number;

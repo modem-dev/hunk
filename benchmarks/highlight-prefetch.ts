@@ -5,7 +5,7 @@ import React from "react";
 import { testRender } from "@opentui/react/test-utils";
 import { parseDiffFromFile } from "@pierre/diffs";
 import { act } from "react";
-import { App } from "../src/ui/App";
+import { AppHost } from "../src/ui/App";
 import type { AppBootstrap, DiffFile } from "../src/core/types";
 
 function createDiffFile(index: number, marker: string): DiffFile {
@@ -94,7 +94,7 @@ function frameHasHighlightedMarker(
   });
 }
 
-const setup = await testRender(React.createElement(App, { bootstrap: createBootstrap() }), {
+const setup = await testRender(React.createElement(AppHost, { bootstrap: createBootstrap() }), {
   width: 240,
   height: 24,
 });

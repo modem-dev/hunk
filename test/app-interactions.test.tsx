@@ -10,7 +10,7 @@ import type { HunkSessionRegistration, SessionServerMessage } from "../src/mcp/t
 import type { AppBootstrap, DiffFile, LayoutMode } from "../src/core/types";
 
 const { loadAppBootstrap } = await import("../src/core/loaders");
-const { App } = await import("../src/ui/App");
+const { AppHost } = await import("../src/ui/App");
 
 function createDiffFile(
   id: string,
@@ -369,7 +369,7 @@ function firstVisibleAddedLine(frame: string) {
 
 describe("App interactions", () => {
   test("keyboard shortcuts toggle notes, line numbers, and hunk metadata", async () => {
-    const setup = await testRender(<App bootstrap={createSingleFileBootstrap()} />, {
+    const setup = await testRender(<AppHost bootstrap={createSingleFileBootstrap()} />, {
       width: 240,
       height: 24,
     });
@@ -418,8 +418,8 @@ describe("App interactions", () => {
     }
   });
 
-  test("keyboard shortcut can wrap long lines in the app shell", async () => {
-    const setup = await testRender(<App bootstrap={createWrapBootstrap()} />, {
+  test("keyboard shortcut can wrap long lines in the app", async () => {
+    const setup = await testRender(<AppHost bootstrap={createWrapBootstrap()} />, {
       width: 140,
       height: 20,
     });
@@ -447,7 +447,7 @@ describe("App interactions", () => {
   });
 
   test("pager mode keyboard shortcut can wrap long lines", async () => {
-    const setup = await testRender(<App bootstrap={createWrapBootstrap(true)} />, {
+    const setup = await testRender(<AppHost bootstrap={createWrapBootstrap(true)} />, {
       width: 140,
       height: 20,
     });
@@ -475,7 +475,7 @@ describe("App interactions", () => {
   });
 
   test("keyboard shortcut can toggle line wrapping on, off, and on again", async () => {
-    const setup = await testRender(<App bootstrap={createWrapBootstrap()} />, {
+    const setup = await testRender(<AppHost bootstrap={createWrapBootstrap()} />, {
       width: 102,
       height: 24,
     });
@@ -522,7 +522,7 @@ describe("App interactions", () => {
 
   test("bootstrap preferences initialize the visible view state", async () => {
     const setup = await testRender(
-      <App
+      <AppHost
         bootstrap={{
           input: {
             kind: "git",
@@ -576,7 +576,7 @@ describe("App interactions", () => {
   });
 
   test("menu navigation can switch layouts and activate view actions", async () => {
-    const setup = await testRender(<App bootstrap={createBootstrap()} />, {
+    const setup = await testRender(<AppHost bootstrap={createBootstrap()} />, {
       width: 220,
       height: 24,
     });
@@ -642,7 +642,7 @@ describe("App interactions", () => {
       },
     });
 
-    const setup = await testRender(<App bootstrap={bootstrap} />, {
+    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
       width: 220,
       height: 20,
     });
@@ -697,7 +697,7 @@ describe("App interactions", () => {
       },
     });
 
-    const setup = await testRender(<App bootstrap={bootstrap} />, {
+    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
       width: 220,
       height: 20,
     });
@@ -744,7 +744,7 @@ describe("App interactions", () => {
       ],
     };
 
-    const setup = await testRender(<App bootstrap={bootstrap} />, { width: 240, height: 32 });
+    const setup = await testRender(<AppHost bootstrap={bootstrap} />, { width: 240, height: 32 });
 
     try {
       await flush(setup);
@@ -767,7 +767,7 @@ describe("App interactions", () => {
   });
 
   test("arrow keys scroll the review pane line by line", async () => {
-    const setup = await testRender(<App bootstrap={createLineScrollBootstrap()} />, {
+    const setup = await testRender(<AppHost bootstrap={createLineScrollBootstrap()} />, {
       width: 220,
       height: 12,
     });
@@ -814,7 +814,7 @@ describe("App interactions", () => {
   });
 
   test("pager mode arrow keys also scroll line by line", async () => {
-    const setup = await testRender(<App bootstrap={createLineScrollBootstrap(true)} />, {
+    const setup = await testRender(<AppHost bootstrap={createLineScrollBootstrap(true)} />, {
       width: 220,
       height: 8,
     });
@@ -861,7 +861,7 @@ describe("App interactions", () => {
   });
 
   test("toggling wrap preserves the current viewport anchor instead of snapping to the top", async () => {
-    const setup = await testRender(<App bootstrap={createWrapScrollBootstrap()} />, {
+    const setup = await testRender(<AppHost bootstrap={createWrapScrollBootstrap()} />, {
       width: 102,
       height: 12,
     });
@@ -952,7 +952,7 @@ describe("App interactions", () => {
       initialTheme: "midnight",
     };
 
-    const setup = await testRender(<App bootstrap={bootstrap} />, {
+    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
       width: 220,
       height: 12,
     });
@@ -1005,7 +1005,7 @@ describe("App interactions", () => {
       initialTheme: "midnight",
     };
 
-    const setup = await testRender(<App bootstrap={bootstrap} />, {
+    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
       width: 220,
       height: 12,
     });
@@ -1063,7 +1063,7 @@ describe("App interactions", () => {
       initialTheme: "midnight",
     };
 
-    const setup = await testRender(<App bootstrap={bootstrap} />, {
+    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
       width: 220,
       height: 12,
     });
@@ -1101,7 +1101,7 @@ describe("App interactions", () => {
   });
 
   test("filter focus accepts typed input and narrows the visible file set", async () => {
-    const setup = await testRender(<App bootstrap={createBootstrap()} />, {
+    const setup = await testRender(<AppHost bootstrap={createBootstrap()} />, {
       width: 240,
       height: 24,
     });
@@ -1130,7 +1130,7 @@ describe("App interactions", () => {
   });
 
   test("filtering away the selected file reselects the first visible match", async () => {
-    const setup = await testRender(<App bootstrap={createBootstrap()} />, {
+    const setup = await testRender(<AppHost bootstrap={createBootstrap()} />, {
       width: 240,
       height: 24,
     });
@@ -1170,10 +1170,13 @@ describe("App interactions", () => {
 
   test("CLI comment navigation respects the active file filter", async () => {
     const { hostClient, navigateToHunk } = createMockHostClient();
-    const setup = await testRender(<App bootstrap={createBootstrap()} hostClient={hostClient} />, {
-      width: 240,
-      height: 24,
-    });
+    const setup = await testRender(
+      <AppHost bootstrap={createBootstrap()} hostClient={hostClient} />,
+      {
+        width: 240,
+        height: 24,
+      },
+    );
 
     try {
       await flush(setup);
@@ -1221,7 +1224,7 @@ describe("App interactions", () => {
   test("CLI comment navigation scrolls the inline note into view", async () => {
     const { hostClient, navigateToHunk } = createMockHostClient();
     const setup = await testRender(
-      <App bootstrap={createDeepNoteBootstrap()} hostClient={hostClient} />,
+      <AppHost bootstrap={createDeepNoteBootstrap()} hostClient={hostClient} />,
       {
         width: 104,
         height: 18,
@@ -1256,7 +1259,7 @@ describe("App interactions", () => {
   });
 
   test("menu navigation wraps across the first and last top-level menus", async () => {
-    const setup = await testRender(<App bootstrap={createBootstrap()} />, {
+    const setup = await testRender(<AppHost bootstrap={createBootstrap()} />, {
       width: 220,
       height: 24,
     });
@@ -1298,7 +1301,7 @@ describe("App interactions", () => {
   });
 
   test("sidebar visibility can toggle off and back on", async () => {
-    const setup = await testRender(<App bootstrap={createBootstrap()} />, {
+    const setup = await testRender(<AppHost bootstrap={createBootstrap()} />, {
       width: 240,
       height: 24,
     });
@@ -1332,7 +1335,7 @@ describe("App interactions", () => {
   });
 
   test("sidebar shortcut can force the files pane open when responsive layout hides it", async () => {
-    const setup = await testRender(<App bootstrap={createBootstrap("auto")} />, {
+    const setup = await testRender(<AppHost bootstrap={createBootstrap("auto")} />, {
       width: 160,
       height: 24,
     });
@@ -1368,7 +1371,7 @@ describe("App interactions", () => {
   test("quit shortcuts route through the provided onQuit handler in regular and pager modes", async () => {
     const regularQuit = mock(() => undefined);
     const regularSetup = await testRender(
-      <App bootstrap={createBootstrap()} onQuit={regularQuit} />,
+      <AppHost bootstrap={createBootstrap()} onQuit={regularQuit} />,
       { width: 220, height: 24 },
     );
 
@@ -1388,7 +1391,7 @@ describe("App interactions", () => {
 
     const pagerQuit = mock(() => undefined);
     const pagerSetup = await testRender(
-      <App bootstrap={createBootstrap("auto", true)} onQuit={pagerQuit} />,
+      <AppHost bootstrap={createBootstrap("auto", true)} onQuit={pagerQuit} />,
       { width: 180, height: 20 },
     );
 

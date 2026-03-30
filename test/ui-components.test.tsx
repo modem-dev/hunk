@@ -5,7 +5,7 @@ import { act, createRef, type ReactNode } from "react";
 import type { AppBootstrap, DiffFile } from "../src/core/types";
 import { resolveTheme } from "../src/ui/themes";
 
-const { App } = await import("../src/ui/App");
+const { AppHost } = await import("../src/ui/App");
 const { buildSidebarEntries } = await import("../src/ui/lib/files");
 const { HelpDialog } = await import("../src/ui/components/chrome/HelpDialog");
 const { FilesPane } = await import("../src/ui/components/panes/FilesPane");
@@ -1446,7 +1446,7 @@ describe("UI components", () => {
 
   test("App renders the menu bar, multi-file stream, and AI badges", async () => {
     const bootstrap = createBootstrap();
-    const frame = await captureFrame(<App bootstrap={bootstrap} />, 280, 24);
+    const frame = await captureFrame(<AppHost bootstrap={bootstrap} />, 280, 24);
 
     expect(frame).toContain("File  View  Navigate  Theme  Agent  Help");
     expect(frame).toContain("alpha.ts");

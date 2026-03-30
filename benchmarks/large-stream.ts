@@ -4,7 +4,7 @@ import { performance } from "perf_hooks";
 import React from "react";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
-import { App } from "../src/ui/App";
+import { AppHost } from "../src/ui/App";
 import {
   createLargeSplitStreamBootstrap,
   DEFAULT_FILE_COUNT,
@@ -69,7 +69,7 @@ async function destroyRenderer(setup: BenchmarkRenderer) {
 
 async function measureFirstFrameMs(notesPerFile: number) {
   const setup = await testRender(
-    React.createElement(App, {
+    React.createElement(AppHost, {
       bootstrap: createLargeSplitStreamBootstrap({ notesPerFile }),
     }),
     VIEWPORT,
@@ -87,7 +87,7 @@ async function measureFirstFrameMs(notesPerFile: number) {
 
 async function measureScrollTicksMs(notesPerFile: number) {
   const setup = await testRender(
-    React.createElement(App, {
+    React.createElement(AppHost, {
       bootstrap: createLargeSplitStreamBootstrap({ notesPerFile }),
     }),
     VIEWPORT,

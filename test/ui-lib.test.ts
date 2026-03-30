@@ -95,7 +95,7 @@ describe("ui helpers", () => {
     expect(menuBoxHeight(entries)).toBe(5);
   });
 
-  test("buildAppMenus creates checked entries from the current shell state", () => {
+  test("buildAppMenus creates checked entries from the current app state", () => {
     const menus = buildAppMenus({
       activeThemeId: "graphite",
       canRefreshCurrentInput: true,

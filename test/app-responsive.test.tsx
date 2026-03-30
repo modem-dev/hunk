@@ -4,7 +4,7 @@ import { parseDiffFromFile } from "@pierre/diffs";
 import { act } from "react";
 import type { AppBootstrap, DiffFile, LayoutMode } from "../src/core/types";
 
-const { App } = await import("../src/ui/App");
+const { AppHost } = await import("../src/ui/App");
 
 function createDiffFile(
   id: string,
@@ -98,7 +98,7 @@ function createBootstrap(initialMode: LayoutMode = "auto", pager = false): AppBo
 }
 
 async function captureFrameForBootstrap(bootstrap: AppBootstrap, width: number, height = 24) {
-  const setup = await testRender(<App bootstrap={bootstrap} />, { width, height });
+  const setup = await testRender(<AppHost bootstrap={bootstrap} />, { width, height });
 
   try {
     await act(async () => {
@@ -114,7 +114,10 @@ async function captureFrameForBootstrap(bootstrap: AppBootstrap, width: number, 
 }
 
 async function captureResponsiveFrames() {
-  const setup = await testRender(<App bootstrap={createBootstrap()} />, { width: 280, height: 24 });
+  const setup = await testRender(<AppHost bootstrap={createBootstrap()} />, {
+    width: 280,
+    height: 24,
+  });
 
   try {
     await act(async () => {
@@ -148,7 +151,7 @@ async function captureResponsiveFrames() {
   }
 }
 
-describe("responsive shell", () => {
+describe("responsive app", () => {
   test("App adjusts the visible panes and diff layout on live resize", async () => {
     const { ultraWide, full, medium, tight } = await captureResponsiveFrames();
 
@@ -201,7 +204,7 @@ describe("responsive shell", () => {
     const exitMock = mock(() => undefined as never);
     (process as typeof process & { exit: typeof exitMock }).exit = exitMock;
 
-    const setup = await testRender(<App bootstrap={createBootstrap()} />, {
+    const setup = await testRender(<AppHost bootstrap={createBootstrap()} />, {
       width: 240,
       height: 24,
     });

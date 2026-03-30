@@ -6,7 +6,7 @@ import type { AppBootstrap } from "../src/core/types";
 
 mock.restore();
 
-const { App } = await import("../src/ui/App");
+const { AppHost } = await import("../src/ui/App");
 
 function createScrollBootstrap(): AppBootstrap {
   const before = Array.from(
@@ -68,7 +68,7 @@ function createScrollBootstrap(): AppBootstrap {
 
 describe("UI scroll regression", () => {
   test("keeps split diff lines intact after a wheel scroll repaint", async () => {
-    const setup = await testRender(<App bootstrap={createScrollBootstrap()} />, {
+    const setup = await testRender(<AppHost bootstrap={createScrollBootstrap()} />, {
       width: 160,
       height: 20,
     });

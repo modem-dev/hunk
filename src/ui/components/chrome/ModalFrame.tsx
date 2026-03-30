@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { fitText, padText } from "../../lib/text";
 import type { AppTheme } from "../../themes";
 
-/** Render a centered framed modal shell that other dialogs can reuse. */
+/** Render a centered framed modal container that other dialogs can reuse. */
 export function ModalFrame({
   children,
   height,

@@ -4,7 +4,7 @@ import { parseDiffFromFile } from "@pierre/diffs";
 import { act } from "react";
 import type { AppBootstrap, DiffFile } from "../src/core/types";
 
-const { App } = await import("../src/ui/App");
+const { AppHost } = await import("../src/ui/App");
 
 function createDiffFile(id: string, path: string, before: string, after: string): DiffFile {
   const metadata = parseDiffFromFile(
@@ -85,7 +85,7 @@ async function flush(setup: Awaited<ReturnType<typeof testRender>>) {
 describe("Vertical scrollbar", () => {
   test("shows scrollbar when content exceeds viewport height", async () => {
     const bootstrap = createScrollBootstrapWithManyFiles(5);
-    const setup = await testRender(<App bootstrap={bootstrap} />, {
+    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
       width: 160,
       height: 20,
     });
@@ -120,7 +120,7 @@ describe("Vertical scrollbar", () => {
 
   test("hides scrollbar after scroll activity stops", async () => {
     const bootstrap = createScrollBootstrapWithManyFiles(5);
-    const setup = await testRender(<App bootstrap={bootstrap} />, {
+    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
       width: 160,
       height: 20,
     });
@@ -157,7 +157,7 @@ describe("Vertical scrollbar", () => {
 
   test("scrollbar shows on mouse scroll wheel activity", async () => {
     const bootstrap = createScrollBootstrapWithManyFiles(5);
-    const setup = await testRender(<App bootstrap={bootstrap} />, {
+    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
       width: 160,
       height: 20,
     });
@@ -212,7 +212,7 @@ describe("Vertical scrollbar", () => {
       initialTheme: "midnight",
     };
 
-    const setup = await testRender(<App bootstrap={bootstrap} />, {
+    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
       width: 160,
       height: 15, // Small viewport to force scrolling
     });
@@ -278,7 +278,7 @@ describe("Vertical scrollbar", () => {
       initialTheme: "midnight",
     };
 
-    const setup = await testRender(<App bootstrap={bootstrap} />, {
+    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
       width: 160,
       height: 60, // Large viewport
     });
@@ -321,7 +321,7 @@ describe("Vertical scrollbar", () => {
       initialTheme: "midnight",
     };
 
-    const setup = await testRender(<App bootstrap={bootstrap} />, {
+    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
       width: 160,
       height: 20, // Small viewport to force scrolling
     });
@@ -387,7 +387,7 @@ describe("Vertical scrollbar", () => {
       initialTheme: "midnight",
     };
 
-    const setup = await testRender(<App bootstrap={bootstrap} />, {
+    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
       width: 160,
       height: 15, // Viewport of 15 lines
     });
@@ -466,7 +466,7 @@ describe("Vertical scrollbar", () => {
       initialTheme: "midnight",
     };
 
-    const setup = await testRender(<App bootstrap={bootstrap} />, {
+    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
       width: 160,
       height: 15, // Small viewport to force scrolling (25 lines of content in 15-line viewport)
     });

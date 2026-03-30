@@ -53,7 +53,7 @@ export function mergeFileAnnotationsByFileId<T extends AgentAnnotation>(
   });
 }
 
-/** Apply the shell's file filter query to the visible review stream. */
+/** Apply the app's file filter query to the visible review stream. */
 export function filterReviewFiles(files: DiffFile[], query: string): DiffFile[] {
   const trimmedQuery = query.trim().toLowerCase();
   if (!trimmedQuery) {

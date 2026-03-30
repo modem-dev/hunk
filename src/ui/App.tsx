@@ -58,7 +58,7 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
-/** Preserve the active shell view settings when rebuilding the current input. */
+/** Preserve the active app view settings when rebuilding the current input. */
 function withCurrentViewOptions(
   input: CliInput,
   view: {
@@ -85,7 +85,7 @@ function withCurrentViewOptions(
 }
 
 /** Orchestrate global app state, layout, navigation, and pane coordination. */
-function AppShell({
+function App({
   bootstrap,
   hostClient,
   noticeText,
@@ -98,7 +98,7 @@ function AppShell({
   onQuit?: () => void;
   onReloadSession: (
     nextInput: CliInput,
-    options?: { resetShell?: boolean; sourcePath?: string },
+    options?: { resetApp?: boolean; sourcePath?: string },
   ) => Promise<ReloadedSessionResult>;
 }) {
   const FILES_MIN_WIDTH = 22;
@@ -227,7 +227,7 @@ function AppShell({
   }, [maxFilesPaneWidth, showFilesPane]);
 
   useEffect(() => {
-    // Force an intermediate redraw when shell geometry or row-wrapping changes so pane relayout
+    // Force an intermediate redraw when app geometry or row-wrapping changes so pane relayout
     // feels immediate after toggling split/stack or line wrapping.
     renderer.intermediateRender();
   }, [renderer, resolvedLayout, showFilesPane, terminal.height, terminal.width, wrapLines]);
@@ -353,7 +353,7 @@ function AppShell({
     setWrapLines((current) => !current);
   };
 
-  /** Toggle the sidebar, forcing it open on narrower layouts when the shell can still fit both panes. */
+  /** Toggle the sidebar, forcing it open on narrower layouts when the app can still fit both panes. */
   const toggleSidebar = () => {
     if (sidebarVisible && (responsiveLayout.showFilesPane || forceSidebarOpen)) {
       setSidebarVisible(false);
@@ -385,7 +385,7 @@ function AppShell({
   const canRefreshCurrentInput = canReloadInput(bootstrap.input);
   const watchEnabled = Boolean(bootstrap.input.options.watch && canRefreshCurrentInput);
 
-  /** Rebuild the current diff source while preserving the active shell view options. */
+  /** Rebuild the current diff source while preserving the active app view options. */
   const refreshCurrentInput = useCallback(async () => {
     if (!canRefreshCurrentInput) {
       return;
@@ -400,7 +400,7 @@ function AppShell({
       wrapLines,
     });
 
-    await onReloadSession(nextInput, { resetShell: false });
+    await onReloadSession(nextInput, { resetApp: false });
   }, [
     bootstrap.input,
     canRefreshCurrentInput,
@@ -470,7 +470,7 @@ function AppShell({
     };
   }, [bootstrap.input, refreshCurrentInput, watchEnabled]);
 
-  /** Leave the app through the shell-owned shutdown path. */
+  /** Leave the app through the shared shutdown path. */
   const requestQuit = useCallback(() => {
     onQuit();
   }, [onQuit]);
@@ -1045,8 +1045,8 @@ function AppShell({
   );
 }
 
-/** Keep one live Hunk window mounted while allowing daemon-driven session reloads. */
-export function App({
+/** Keep one live Hunk app mounted while allowing daemon-driven session reloads. */
+export function AppHost({
   bootstrap,
   hostClient,
   onQuit = () => process.exit(0),
@@ -1058,14 +1058,14 @@ export function App({
   startupNoticeResolver?: () => Promise<UpdateNotice | null>;
 }) {
   const [activeBootstrap, setActiveBootstrap] = useState(bootstrap);
-  const [shellVersion, setShellVersion] = useState(0);
+  const [appVersion, setAppVersion] = useState(0);
   const startupNoticeText = useStartupUpdateNotice({
     enabled: !bootstrap.input.options.pager,
     resolver: startupNoticeResolver,
   });
 
   const reloadSession = useCallback(
-    async (nextInput: CliInput, options?: { resetShell?: boolean; sourcePath?: string }) => {
+    async (nextInput: CliInput, options?: { resetApp?: boolean; sourcePath?: string }) => {
       const runtimeInput = resolveRuntimeCliInput(nextInput);
       const configuredInput = resolveConfiguredCliInput(runtimeInput, {
         cwd: options?.sourcePath,
@@ -1086,8 +1086,8 @@ export function App({
       }
 
       setActiveBootstrap(nextBootstrap);
-      if (options?.resetShell !== false) {
-        setShellVersion((current) => current + 1);
+      if (options?.resetApp !== false) {
+        setAppVersion((current) => current + 1);
       }
 
       return {
@@ -1104,8 +1104,8 @@ export function App({
   );
 
   return (
-    <AppShell
-      key={shellVersion}
+    <App
+      key={appVersion}
       bootstrap={activeBootstrap}
       hostClient={hostClient}
       noticeText={startupNoticeText}

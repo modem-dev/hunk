@@ -29,7 +29,7 @@ export interface BuildAppMenusOptions {
   wrapLines: boolean;
 }
 
-/** Build the top-level app menus from the current shell state and actions. */
+/** Build the top-level app menus from the current app state and actions. */
 export function buildAppMenus({
   activeThemeId,
   canRefreshCurrentInput,

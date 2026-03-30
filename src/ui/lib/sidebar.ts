@@ -1,4 +1,4 @@
-/** Clamp a dragged sidebar width into the shell's allowed range. */
+/** Clamp a dragged sidebar width into the app layout's allowed range. */
 export function resizeSidebarWidth(
   startWidth: number,
   dragOriginX: number,
