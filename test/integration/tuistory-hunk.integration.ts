@@ -153,6 +153,43 @@ describe("Hunk integration via tuistory", () => {
     }
   });
 
+  test("sidebar selection jumps the main pane without collapsing the review stream", async () => {
+    const fixture = harness.createSidebarJumpRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split"],
+      cwd: fixture.dir,
+      cols: 220,
+      rows: 12,
+    });
+
+    try {
+      const initial = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      expect(initial).toContain("alphaOnly = true");
+      expect(initial).toContain("betaValue = 2");
+      expect(initial).not.toContain("deltaOnly = true");
+
+      await session.click(/M delta\.ts\s+\+2 -1/);
+      const jumped = await harness.waitForSnapshot(
+        session,
+        (text) =>
+          text.includes("deltaOnly = true") &&
+          !text.includes("alphaOnly = true") &&
+          harness.countMatches(text, /epsilon\.ts/g) >= 2,
+        5_000,
+      );
+
+      expect(jumped).toContain("deltaValue = 2");
+      expect(jumped).toContain("deltaOnly = true");
+      expect(jumped).not.toContain("alphaOnly = true");
+      expect(harness.countMatches(jumped, /epsilon\.ts/g)).toBeGreaterThanOrEqual(2);
+    } finally {
+      session.close();
+    }
+  });
+
   test("filter focus narrows the visible review stream in the live app", async () => {
     const fixture = harness.createTwoFileRepoFixture();
     const session = await harness.launchHunk({

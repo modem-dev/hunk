@@ -224,6 +224,36 @@ export function createTuistoryHarness() {
     ]);
   }
 
+  function createSidebarJumpRepoFixture() {
+    return createGitRepoFixture([
+      {
+        path: "alpha.ts",
+        before: "export const alpha = 1;\n",
+        after: "export const alphaValue = 2;\nexport const alphaOnly = true;\n",
+      },
+      {
+        path: "beta.ts",
+        before: "export const beta = 1;\n",
+        after: "export const betaValue = 2;\nexport const betaOnly = true;\n",
+      },
+      {
+        path: "gamma.ts",
+        before: "export const gamma = 1;\n",
+        after: "export const gammaValue = 2;\nexport const gammaOnly = true;\n",
+      },
+      {
+        path: "delta.ts",
+        before: "export const delta = 1;\n",
+        after: "export const deltaValue = 2;\nexport const deltaOnly = true;\n",
+      },
+      {
+        path: "epsilon.ts",
+        before: "export const epsilon = 1;\n",
+        after: "export const epsilonValue = 2;\nexport const epsilonOnly = true;\n",
+      },
+    ]);
+  }
+
   function createPagerPatchFixture(lines = 40) {
     const dir = makeTempDir("hunk-tuistory-pager-");
     const beforeDir = join(dir, "before");
@@ -313,6 +343,7 @@ export function createTuistoryHarness() {
     createMultiHunkFilePair,
     createPagerPatchFixture,
     createScrollableFilePair,
+    createSidebarJumpRepoFixture,
     createTwoFileRepoFixture,
     launchHunk,
     waitForSnapshot,
