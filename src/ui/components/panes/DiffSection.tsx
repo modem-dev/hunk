@@ -3,9 +3,9 @@ import type { DiffFile, LayoutMode } from "../../../core/types";
 import { PierreDiffView } from "../../diff/PierreDiffView";
 import { getAnnotatedHunkIndices, type VisibleAgentNote } from "../../lib/agentAnnotations";
 import { diffSectionId } from "../../lib/ids";
-import { fileLabelParts } from "../../lib/files";
 import { fitText } from "../../lib/text";
 import type { AppTheme } from "../../themes";
+import { DiffFileHeaderRow } from "./DiffFileHeaderRow";
 
 interface DiffSectionProps {
   file: DiffFile;
@@ -49,10 +49,7 @@ function DiffSectionComponent({
   onOpenAgentNotesAtHunk,
   onSelect,
 }: DiffSectionProps) {
-  const additionsText = `+${file.stats.additions}`;
-  const deletionsText = `-${file.stats.deletions}`;
   const annotatedHunkIndices = getAnnotatedHunkIndices(file);
-  const { filename, stateLabel } = fileLabelParts(file);
 
   return (
     <box
@@ -78,38 +75,13 @@ function DiffSectionComponent({
         </box>
       ) : null}
 
-      <box
-        style={{
-          width: "100%",
-          height: 1,
-          flexDirection: "row",
-          justifyContent: "space-between",
-          paddingLeft: 1,
-          paddingRight: 1,
-          backgroundColor: theme.panel,
-        }}
-        onMouseUp={onSelect}
-      >
-        {/* Clicking the file header jumps the main stream selection without collapsing to a single-file view. */}
-        <box style={{ flexDirection: "row" }}>
-          <text fg={theme.text}>
-            {fitText(filename, Math.max(1, headerLabelWidth - (stateLabel?.length ?? 0)))}
-          </text>
-          {stateLabel && <text fg={theme.muted}>{stateLabel}</text>}
-        </box>
-        <box
-          style={{
-            width: headerStatsWidth,
-            height: 1,
-            flexDirection: "row",
-            justifyContent: "flex-end",
-          }}
-        >
-          <text fg={theme.badgeAdded}>{additionsText}</text>
-          <text fg={theme.muted}> </text>
-          <text fg={theme.badgeRemoved}>{deletionsText}</text>
-        </box>
-      </box>
+      <DiffFileHeaderRow
+        file={file}
+        headerLabelWidth={headerLabelWidth}
+        headerStatsWidth={headerStatsWidth}
+        theme={theme}
+        onSelect={onSelect}
+      />
 
       <PierreDiffView
         file={file}

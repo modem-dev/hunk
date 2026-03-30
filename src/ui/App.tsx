@@ -121,18 +121,26 @@ export function App({
   const [resizeStartWidth, setResizeStartWidth] = useState<number | null>(null);
   const [selectedFileId, setSelectedFileId] = useState(bootstrap.changeset.files[0]?.id ?? "");
   const [selectedHunkIndex, setSelectedHunkIndex] = useState(0);
+  const [selectedFileTopAlignRequestId, setSelectedFileTopAlignRequestId] = useState(0);
   const [scrollToNote, setScrollToNote] = useState(false);
   const deferredFilter = useDeferredValue(filter);
 
   const pagerMode = Boolean(bootstrap.input.options.pager);
   const activeTheme = resolveTheme(themeId, renderer.themeMode);
 
-  const jumpToFile = useCallback((fileId: string, nextHunkIndex = 0) => {
-    filesScrollRef.current?.scrollChildIntoView(fileRowId(fileId));
-    setSelectedFileId(fileId);
-    setSelectedHunkIndex(nextHunkIndex);
-    setScrollToNote(false);
-  }, []);
+  const jumpToFile = useCallback(
+    (fileId: string, nextHunkIndex = 0, options?: { alignFileHeaderTop?: boolean }) => {
+      filesScrollRef.current?.scrollChildIntoView(fileRowId(fileId));
+      setSelectedFileId(fileId);
+      setSelectedHunkIndex(nextHunkIndex);
+      setScrollToNote(false);
+
+      if (options?.alignFileHeaderTop) {
+        setSelectedFileTopAlignRequestId((current) => current + 1);
+      }
+    },
+    [],
+  );
 
   const jumpToAnnotatedHunk = useCallback((fileId: string, nextHunkIndex = 0) => {
     filesScrollRef.current?.scrollChildIntoView(fileRowId(fileId));
@@ -948,7 +956,7 @@ export function App({
               width={clampedFilesPaneWidth}
               onSelectFile={(fileId) => {
                 setFocusArea("files");
-                jumpToFile(fileId);
+                jumpToFile(fileId, 0, { alignFileHeaderTop: true });
               }}
             />
 
@@ -982,6 +990,7 @@ export function App({
           showHunkHeaders={showHunkHeaders}
           wrapLines={wrapLines}
           wrapToggleScrollTop={wrapToggleScrollTopRef.current}
+          selectedFileTopAlignRequestId={selectedFileTopAlignRequestId}
           theme={activeTheme}
           width={diffPaneWidth}
           onOpenAgentNotesAtHunk={openAgentNotesAtHunk}

@@ -161,6 +161,7 @@ export const VerticalScrollbar = forwardRef<VerticalScrollbarHandle, VerticalScr
           width: SCROLLBAR_WIDTH,
           height: trackHeight,
           backgroundColor: theme.panel,
+          zIndex: 2,
         }}
       >
         {/* Track background */}

@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
+import type { ScrollBoxRenderable } from "@opentui/core";
 import { testRender } from "@opentui/react/test-utils";
 import { parseDiffFromFile } from "@pierre/diffs";
 import { act, createRef, type ReactNode } from "react";
 import type { AppBootstrap, DiffFile } from "../src/core/types";
 import { resolveTheme } from "../src/ui/themes";
+import { measureDiffSectionMetrics } from "../src/ui/lib/sectionHeights";
 
 const { AppHost } = await import("../src/ui/AppHost");
 const { buildSidebarEntries } = await import("../src/ui/lib/files");
@@ -161,6 +163,20 @@ function createWrappedViewportSizedBottomHunkDiffFile(id: string, path: string) 
   return createDiffFile(id, path, lines(...beforeLines), lines(...afterLines));
 }
 
+function createTallDiffFile(id: string, path: string, count: number) {
+  const before = lines(
+    ...Array.from({ length: count }, (_, index) => `export const line${index + 1} = ${index + 1};`),
+  );
+  const after = lines(
+    ...Array.from(
+      { length: count },
+      (_, index) => `export const line${index + 1} = ${index + 1001};`,
+    ),
+  );
+
+  return createDiffFile(id, path, before, after);
+}
+
 function createDiffPaneProps(
   files: DiffFile[],
   theme = resolveTheme("midnight", null),
@@ -198,6 +214,28 @@ function settleDiffPane(setup: Awaited<ReturnType<typeof testRender>>) {
     await Bun.sleep(100);
     await setup.renderOnce();
   });
+}
+
+async function waitForFrame(
+  setup: Awaited<ReturnType<typeof testRender>>,
+  predicate: (frame: string) => boolean,
+  attempts = 8,
+) {
+  let frame = setup.captureCharFrame();
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (predicate(frame)) {
+      return frame;
+    }
+
+    await act(async () => {
+      await Bun.sleep(50);
+      await setup.renderOnce();
+    });
+    frame = setup.captureCharFrame();
+  }
+
+  return frame;
 }
 
 function createBootstrap(): AppBootstrap {
@@ -461,6 +499,85 @@ describe("UI components", () => {
       expect(frame).not.toContain("2 + export const line2 = 200;");
       expect(frame).not.toContain("intro.ts");
       expect(frame).not.toContain("@@ -1,3 +1,3 @@");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("DiffPane keeps the previous file header pinned until the next header reaches the top", async () => {
+    const theme = resolveTheme("midnight", null);
+    const firstFile = createTallDiffFile("first", "first.ts", 18);
+    const secondFile = createTallDiffFile("second", "second.ts", 18);
+    const scrollRef = createRef<ScrollBoxRenderable>();
+    const props = createDiffPaneProps([firstFile, secondFile], theme, {
+      diffContentWidth: 88,
+      headerLabelWidth: 48,
+      headerStatsWidth: 16,
+      scrollRef,
+      separatorWidth: 84,
+      width: 92,
+    });
+    const setup = await testRender(<DiffPane {...props} />, {
+      width: 96,
+      height: 10,
+    });
+
+    const firstBodyHeight = measureDiffSectionMetrics(
+      firstFile,
+      "split",
+      true,
+      theme,
+      [],
+      88,
+      true,
+      false,
+    ).bodyHeight;
+    const secondHeaderTop = firstBodyHeight + 2;
+    const separatorTop = secondHeaderTop - 1;
+    const settleStickyScroll = async () => {
+      await act(async () => {
+        for (let iteration = 0; iteration < 6; iteration += 1) {
+          await Bun.sleep(60);
+          await setup.renderOnce();
+        }
+      });
+    };
+
+    try {
+      await settleDiffPane(setup);
+
+      let frame = setup.captureCharFrame();
+      expect((frame.match(/first\.ts/g) ?? []).length).toBe(1);
+
+      await act(async () => {
+        scrollRef.current?.scrollTo(3);
+      });
+      await settleStickyScroll();
+
+      frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("first.ts"));
+      expect(frame).toContain("first.ts");
+
+      await act(async () => {
+        scrollRef.current?.scrollTo(separatorTop);
+      });
+      await settleStickyScroll();
+
+      frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("first.ts"));
+      expect(frame).toContain("first.ts");
+
+      await act(async () => {
+        scrollRef.current?.scrollTo(secondHeaderTop);
+      });
+      await settleStickyScroll();
+
+      frame = await waitForFrame(
+        setup,
+        (nextFrame) => nextFrame.includes("second.ts") && !nextFrame.includes("first.ts"),
+      );
+      expect(frame).not.toContain("first.ts");
+      expect(frame).toContain("second.ts");
     } finally {
       await act(async () => {
         setup.renderer.destroy();

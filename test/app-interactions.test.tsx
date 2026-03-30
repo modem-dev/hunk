@@ -68,6 +68,17 @@ function createDiffFile(
   };
 }
 
+function lines(...values: string[]) {
+  return `${values.join("\n")}\n`;
+}
+
+function createNumberedAssignmentLines(start: number, count: number, valueOffset = 0) {
+  return Array.from({ length: count }, (_, index) => {
+    const lineNumber = start + index;
+    return `export const line${String(lineNumber).padStart(2, "0")} = ${lineNumber + valueOffset};`;
+  });
+}
+
 function createMockHostClient() {
   type Bridge = Parameters<HunkHostClient["setBridge"]>[0];
 
@@ -205,16 +216,8 @@ function createWrapBootstrap(pager = false): AppBootstrap {
 }
 
 function createLineScrollBootstrap(pager = false): AppBootstrap {
-  const before =
-    Array.from(
-      { length: 18 },
-      (_, index) => `export const line${String(index + 1).padStart(2, "0")} = ${index + 1};`,
-    ).join("\n") + "\n";
-  const after =
-    Array.from(
-      { length: 18 },
-      (_, index) => `export const line${String(index + 1).padStart(2, "0")} = ${index + 101};`,
-    ).join("\n") + "\n";
+  const before = lines(...createNumberedAssignmentLines(1, 18));
+  const after = lines(...createNumberedAssignmentLines(1, 18, 100));
 
   return {
     input: {
@@ -292,17 +295,12 @@ function createDeepNoteBootstrap(): AppBootstrap {
 
 /** Build a long-line fixture that is tall enough to verify viewport-anchor restoration. */
 function createWrapScrollBootstrap(): AppBootstrap {
-  const before =
-    Array.from(
-      { length: 18 },
-      (_, index) => `export const line${String(index + 1).padStart(2, "0")} = ${index + 1};`,
-    ).join("\n") + "\n";
-  const after =
-    Array.from(
-      { length: 18 },
-      (_, index) =>
-        `export const line${String(index + 1).padStart(2, "0")} = ${index + 101}; // this is intentionally long wrap coverage for viewport anchoring`,
-    ).join("\n") + "\n";
+  const before = lines(...createNumberedAssignmentLines(1, 18));
+  const after = lines(
+    ...createNumberedAssignmentLines(1, 18, 100).map(
+      (line) => `${line} // this is intentionally long wrap coverage for viewport anchoring`,
+    ),
+  );
 
   return {
     input: {
@@ -317,6 +315,44 @@ function createWrapScrollBootstrap(): AppBootstrap {
       sourceLabel: "repo",
       title: "repo working tree",
       files: [createDiffFile("wrap-scroll", "wrap-scroll.ts", before, after, true)],
+    },
+    initialMode: "split",
+    initialTheme: "midnight",
+  };
+}
+
+function createTwoFileHunkBootstrap(): AppBootstrap {
+  const firstBeforeLines = createNumberedAssignmentLines(1, 16);
+  const secondBeforeLines = createNumberedAssignmentLines(17, 16);
+
+  return {
+    input: {
+      kind: "git",
+      staged: false,
+      options: {
+        mode: "split",
+      },
+    },
+    changeset: {
+      id: "changeset:two-file-hunks",
+      sourceLabel: "repo",
+      title: "repo working tree",
+      files: [
+        createDiffFile(
+          "first",
+          "first.ts",
+          lines(...firstBeforeLines),
+          lines(...createNumberedAssignmentLines(1, 16, 100)),
+          true,
+        ),
+        createDiffFile(
+          "second",
+          "second.ts",
+          lines(...secondBeforeLines),
+          lines(...createNumberedAssignmentLines(17, 16, 100)),
+          true,
+        ),
+      ],
     },
     initialMode: "split",
     initialTheme: "midnight",
@@ -1371,6 +1407,77 @@ describe("App interactions", () => {
 
       frame = setup.captureCharFrame();
       expect((frame.match(/alpha\.ts/g) ?? []).length).toBe(1);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("hunk navigation updates the pinned file header when jumping across files", async () => {
+    const setup = await testRender(<AppHost bootstrap={createTwoFileHunkBootstrap()} />, {
+      width: 220,
+      height: 10,
+    });
+
+    try {
+      await flush(setup);
+
+      for (let index = 0; index < 10; index += 1) {
+        await act(async () => {
+          await setup.mockInput.pressArrow("down");
+        });
+        await flush(setup);
+      }
+
+      let frame = setup.captureCharFrame();
+      expect(frame).toContain("first.ts");
+
+      await act(async () => {
+        await setup.mockInput.typeText("]");
+      });
+      await flush(setup);
+
+      frame = setup.captureCharFrame();
+      expect(frame).toContain("second.ts");
+      expect(frame).toContain("line17 = 117");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("clicking a sidebar file makes that file own the top of the review pane", async () => {
+    const setup = await testRender(<AppHost bootstrap={createTwoFileHunkBootstrap()} />, {
+      width: 220,
+      height: 10,
+    });
+
+    try {
+      await flush(setup);
+
+      // Move partway into the first file so ownership can visibly change on sidebar selection.
+      for (let index = 0; index < 8; index += 1) {
+        await act(async () => {
+          await setup.mockInput.pressArrow("down");
+        });
+        await flush(setup);
+      }
+
+      await act(async () => {
+        // Click inside the second file row in the left sidebar.
+        await setup.mockMouse.click(6, 4);
+      });
+      await flush(setup);
+
+      const frame = await waitForFrame(
+        setup,
+        (nextFrame) =>
+          nextFrame.includes("second.ts") && (nextFrame.match(/first\.ts/g) ?? []).length === 1,
+      );
+      expect(frame).toContain("second.ts");
+      expect((frame.match(/first\.ts/g) ?? []).length).toBe(1);
     } finally {
       await act(async () => {
         setup.renderer.destroy();

@@ -16,9 +16,15 @@ import {
   type DiffSectionMetrics,
   type DiffSectionRowMetric,
 } from "../../lib/sectionHeights";
+import {
+  buildSectionLayoutMetrics,
+  findHeaderOwningSection,
+  resolveFileHeaderTop,
+} from "../../lib/sectionLayout";
 import { diffHunkId, diffSectionId } from "../../lib/ids";
 import type { AppTheme } from "../../themes";
 import { DiffSection } from "./DiffSection";
+import { DiffFileHeaderRow } from "./DiffFileHeaderRow";
 import { DiffSectionPlaceholder } from "./DiffSectionPlaceholder";
 import { VerticalScrollbar, type VerticalScrollbarHandle } from "../scrollbar/VerticalScrollbar";
 
@@ -58,15 +64,14 @@ function findViewportRowAnchor(
   sectionMetrics: DiffSectionMetrics[],
   scrollTop: number,
 ) {
-  let offsetY = 0;
+  const sectionLayoutMetrics = buildSectionLayoutMetrics(
+    files,
+    sectionMetrics.map((metrics) => metrics?.bodyHeight ?? 0),
+  );
 
   for (let index = 0; index < files.length; index += 1) {
-    if (index > 0) {
-      offsetY += 1;
-    }
-
-    offsetY += 1;
-    const bodyTop = offsetY;
+    const layoutMetric = sectionLayoutMetrics[index];
+    const bodyTop = layoutMetric?.bodyTop ?? 0;
     const metrics = sectionMetrics[index];
     const bodyHeight = metrics?.bodyHeight ?? 0;
     const relativeTop = scrollTop - bodyTop;
@@ -81,8 +86,6 @@ function findViewportRowAnchor(
         } satisfies ViewportRowAnchor;
       }
     }
-
-    offsetY = bodyTop + bodyHeight;
   }
 
   return null;
@@ -94,15 +97,14 @@ function resolveViewportRowAnchorTop(
   sectionMetrics: DiffSectionMetrics[],
   anchor: ViewportRowAnchor,
 ) {
-  let offsetY = 0;
+  const sectionLayoutMetrics = buildSectionLayoutMetrics(
+    files,
+    sectionMetrics.map((metrics) => metrics?.bodyHeight ?? 0),
+  );
 
   for (let index = 0; index < files.length; index += 1) {
-    if (index > 0) {
-      offsetY += 1;
-    }
-
-    offsetY += 1;
-    const bodyTop = offsetY;
+    const layoutMetric = sectionLayoutMetrics[index];
+    const bodyTop = layoutMetric?.bodyTop ?? 0;
     const file = files[index];
     const metrics = sectionMetrics[index];
     if (file?.id === anchor.fileId && metrics) {
@@ -112,8 +114,6 @@ function resolveViewportRowAnchorTop(
       }
       return bodyTop;
     }
-
-    offsetY = bodyTop + (metrics?.bodyHeight ?? 0);
   }
 
   return 0;
@@ -137,6 +137,7 @@ export function DiffPane({
   showHunkHeaders,
   wrapLines,
   wrapToggleScrollTop,
+  selectedFileTopAlignRequestId = 0,
   theme,
   width,
   onOpenAgentNotesAtHunk,
@@ -158,6 +159,7 @@ export function DiffPane({
   showHunkHeaders: boolean;
   wrapLines: boolean;
   wrapToggleScrollTop: number | null;
+  selectedFileTopAlignRequestId?: number;
   theme: AppTheme;
   width: number;
   onOpenAgentNotesAtHunk: (fileId: string, hunkIndex: number) => void;
@@ -238,7 +240,9 @@ export function DiffPane({
   const previousSectionMetricsRef = useRef<DiffSectionMetrics[] | null>(null);
   const previousFilesRef = useRef<DiffFile[]>(files);
   const previousWrapLinesRef = useRef(wrapLines);
+  const previousSelectedFileTopAlignRequestIdRef = useRef(selectedFileTopAlignRequestId);
   const suppressNextSelectionAutoScrollRef = useRef(false);
+  const pendingFileTopAlignFileIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     const updateViewport = () => {
@@ -283,28 +287,21 @@ export function DiffPane({
     () => baseSectionMetrics.map((metrics) => metrics.bodyHeight),
     [baseSectionMetrics],
   );
+  const baseSectionLayoutMetrics = useMemo(
+    () => buildSectionLayoutMetrics(files, baseEstimatedBodyHeights),
+    [baseEstimatedBodyHeights, files],
+  );
 
   const visibleViewportFileIds = useMemo(() => {
     const overscanRows = 8;
     const minVisibleY = Math.max(0, scrollViewport.top - overscanRows);
     const maxVisibleY = scrollViewport.top + scrollViewport.height + overscanRows;
-    let offsetY = 0;
-    const next = new Set<string>();
-
-    files.forEach((file, index) => {
-      const sectionHeight = (index > 0 ? 1 : 0) + 1 + (baseEstimatedBodyHeights[index] ?? 0);
-      const sectionStart = offsetY;
-      const sectionEnd = sectionStart + sectionHeight;
-
-      if (sectionEnd >= minVisibleY && sectionStart <= maxVisibleY) {
-        next.add(file.id);
-      }
-
-      offsetY = sectionEnd;
-    });
-
-    return next;
-  }, [baseEstimatedBodyHeights, files, scrollViewport.height, scrollViewport.top]);
+    return new Set(
+      baseSectionLayoutMetrics
+        .filter((metric) => metric.sectionBottom >= minVisibleY && metric.sectionTop <= maxVisibleY)
+        .map((metric) => metric.fileId),
+    );
+  }, [baseSectionLayoutMetrics, scrollViewport.height, scrollViewport.top]);
 
   const visibleAgentNotesByFile = useMemo(() => {
     const next = new Map<string, VisibleAgentNote[]>();
@@ -365,22 +362,27 @@ export function DiffPane({
     () => sectionMetrics.map((metrics) => metrics.bodyHeight),
     [sectionMetrics],
   );
+  const sectionLayoutMetrics = useMemo(
+    () => buildSectionLayoutMetrics(files, estimatedBodyHeights),
+    [estimatedBodyHeights, files],
+  );
+  const effectiveScrollTop = scrollRef.current?.scrollTop ?? scrollViewport.top;
 
-  // Calculate total content height including separators and headers
-  const totalContentHeight = useMemo(() => {
-    let total = 0;
-    for (let index = 0; index < files.length; index += 1) {
-      // Separator between files (except first)
-      if (index > 0) {
-        total += 1;
-      }
-      // File header
-      total += 1;
-      // File body
-      total += estimatedBodyHeights[index] ?? 0;
+  const totalContentHeight =
+    sectionLayoutMetrics[sectionLayoutMetrics.length - 1]?.sectionBottom ?? 0;
+
+  const stickyHeaderFile = useMemo(() => {
+    if (files.length < 2) {
+      return null;
     }
-    return total;
-  }, [files.length, estimatedBodyHeights]);
+
+    const owner = findHeaderOwningSection(sectionLayoutMetrics, effectiveScrollTop);
+    if (!owner || effectiveScrollTop <= owner.headerTop) {
+      return null;
+    }
+
+    return files[owner.sectionIndex] ?? null;
+  }, [effectiveScrollTop, files, sectionLayoutMetrics]);
 
   const visibleWindowedFileIds = useMemo(() => {
     if (!windowingEnabled) {
@@ -414,18 +416,10 @@ export function DiffPane({
       return null;
     }
 
-    // Convert the selected hunk's file-local bounds into absolute scrollbox coordinates by adding
-    // the accumulated section chrome and earlier file heights.
-    let sectionTop = 0;
-    for (let index = 0; index < selectedFileIndex; index += 1) {
-      sectionTop += (index > 0 ? 1 : 0) + 1 + (estimatedBodyHeights[index] ?? 0);
+    const selectedSectionLayout = sectionLayoutMetrics[selectedFileIndex];
+    if (!selectedSectionLayout) {
+      return null;
     }
-
-    if (selectedFileIndex > 0) {
-      sectionTop += 1;
-    }
-
-    sectionTop += 1;
 
     const clampedHunkIndex = Math.max(
       0,
@@ -437,13 +431,13 @@ export function DiffPane({
     }
 
     return {
-      top: sectionTop + hunkBounds.top,
+      top: selectedSectionLayout.bodyTop + hunkBounds.top,
       height: hunkBounds.height,
       startRowId: hunkBounds.startRowId,
       endRowId: hunkBounds.endRowId,
-      sectionTop,
+      sectionTop: selectedSectionLayout.sectionTop,
     };
-  }, [estimatedBodyHeights, sectionMetrics, selectedFile, selectedFileIndex, selectedHunkIndex]);
+  }, [sectionLayoutMetrics, sectionMetrics, selectedFile, selectedFileIndex, selectedHunkIndex]);
 
   /** Absolute scroll offset and height of the first inline note in the selected hunk, if any. */
   const selectedNoteBounds = useMemo(() => {
@@ -478,6 +472,27 @@ export function DiffPane({
 
   // Track the previous selected anchor to detect actual selection changes.
   const prevSelectedAnchorIdRef = useRef<string | null>(null);
+
+  /** Clear any pending "selected file to top" follow-up. */
+  const clearPendingFileTopAlign = useCallback(() => {
+    pendingFileTopAlignFileIdRef.current = null;
+  }, []);
+
+  /** Scroll one file header to the top using the latest planned section geometry. */
+  const scrollFileHeaderToTop = useCallback((fileId: string) => {
+    const headerTop = resolveFileHeaderTop(sectionLayoutMetrics, fileId);
+    if (headerTop == null) {
+      return false;
+    }
+
+    const scrollBox = scrollRef.current;
+    if (!scrollBox) {
+      return false;
+    }
+
+    scrollBox.scrollTo(headerTop);
+    return true;
+  }, [scrollRef, sectionLayoutMetrics]);
 
   useLayoutEffect(() => {
     const wrapChanged = previousWrapLinesRef.current !== wrapLines;
@@ -526,8 +541,47 @@ export function DiffPane({
   }, [files, scrollRef, scrollViewport.top, sectionMetrics, wrapLines, wrapToggleScrollTop]);
 
   useLayoutEffect(() => {
+    if (
+      previousSelectedFileTopAlignRequestIdRef.current === selectedFileTopAlignRequestId
+    ) {
+      return;
+    }
+
+    previousSelectedFileTopAlignRequestIdRef.current = selectedFileTopAlignRequestId;
+    clearPendingFileTopAlign();
+
+    if (!selectedFileId || selectedFileIndex < 0) {
+      return;
+    }
+
+    // Sidebar navigation should make the selected file immediately own the viewport top.
+    suppressNextSelectionAutoScrollRef.current = true;
+    pendingFileTopAlignFileIdRef.current = selectedFileId;
+    scrollFileHeaderToTop(selectedFileId);
+  }, [
+    clearPendingFileTopAlign,
+    scrollFileHeaderToTop,
+    selectedFileTopAlignRequestId,
+    selectedFileId,
+    selectedFileIndex,
+  ]);
+
+  useLayoutEffect(() => {
+    const pendingFileId = pendingFileTopAlignFileIdRef.current;
+    if (!pendingFileId) {
+      return;
+    }
+
+    if (scrollFileHeaderToTop(pendingFileId)) {
+      clearPendingFileTopAlign();
+    }
+  }, [clearPendingFileTopAlign, scrollFileHeaderToTop, sectionLayoutMetrics]);
+
+  useLayoutEffect(() => {
     if (suppressNextSelectionAutoScrollRef.current) {
       suppressNextSelectionAutoScrollRef.current = false;
+      // Consume this selection transition so the next render does not re-center the selected hunk.
+      prevSelectedAnchorIdRef.current = selectedAnchorId;
       return;
     }
 
@@ -642,89 +696,109 @@ export function DiffPane({
       }}
     >
       {files.length > 0 ? (
-        <box style={{ position: "relative", width: "100%", height: "100%", flexGrow: 1 }}>
-          <scrollbox
-            ref={scrollRef}
-            width="100%"
-            height="100%"
-            scrollY={true}
-            viewportCulling={true}
-            focused={pagerMode}
-            rootOptions={{ backgroundColor: theme.panel }}
-            wrapperOptions={{ backgroundColor: theme.panel }}
-            viewportOptions={{ backgroundColor: theme.panel }}
-            contentOptions={{ backgroundColor: theme.panel }}
-            verticalScrollbarOptions={{ visible: false }}
-            horizontalScrollbarOptions={{ visible: false }}
-          >
-            <box
-              // Remount the diff content when width/layout/wrap mode changes so viewport culling
-              // recomputes against the new row geometry, while the outer scrollbox keeps its state.
-              key={`diff-content:${layout}:${wrapLines ? "wrap" : "nowrap"}:${width}`}
-              style={{ width: "100%", flexDirection: "column", overflow: "visible" }}
-            >
-              {files.map((file, index) => {
-                const shouldRenderSection = visibleWindowedFileIds?.has(file.id) ?? true;
-                const shouldPrefetchVisibleHighlight =
-                  Boolean(selectedHighlightKey) &&
-                  prefetchAnchorKey === selectedHighlightKey &&
-                  visibleViewportFileIds.has(file.id);
-
-                return shouldRenderSection ? (
-                  <DiffSection
-                    key={file.id}
-                    file={file}
-                    headerLabelWidth={headerLabelWidth}
-                    headerStatsWidth={headerStatsWidth}
-                    layout={layout}
-                    selected={file.id === selectedFileId}
-                    selectedHunkIndex={file.id === selectedFileId ? selectedHunkIndex : -1}
-                    shouldLoadHighlight={
-                      file.id === selectedFileId ||
-                      adjacentPrefetchFileIds.has(file.id) ||
-                      shouldPrefetchVisibleHighlight
-                    }
-                    onHighlightReady={
-                      file.id === selectedFileId ? handleSelectedHighlightReady : undefined
-                    }
-                    separatorWidth={separatorWidth}
-                    showSeparator={index > 0}
-                    showLineNumbers={showLineNumbers}
-                    showHunkHeaders={showHunkHeaders}
-                    wrapLines={wrapLines}
-                    theme={theme}
-                    viewWidth={diffContentWidth}
-                    visibleAgentNotes={
-                      visibleAgentNotesByFile.get(file.id) ?? EMPTY_VISIBLE_AGENT_NOTES
-                    }
-                    onOpenAgentNotesAtHunk={(hunkIndex) =>
-                      onOpenAgentNotesAtHunk(file.id, hunkIndex)
-                    }
-                    onSelect={() => onSelectFile(file.id)}
-                  />
-                ) : (
-                  <DiffSectionPlaceholder
-                    key={file.id}
-                    bodyHeight={estimatedBodyHeights[index] ?? 0}
-                    file={file}
-                    headerLabelWidth={headerLabelWidth}
-                    headerStatsWidth={headerStatsWidth}
-                    separatorWidth={separatorWidth}
-                    showSeparator={index > 0}
-                    theme={theme}
-                    onSelect={() => onSelectFile(file.id)}
-                  />
-                );
-              })}
+        <box style={{ width: "100%", height: "100%", flexGrow: 1, flexDirection: "column" }}>
+          {/* Keep the current file header visible once its real header has scrolled offscreen. */}
+          {stickyHeaderFile ? (
+            <box style={{ width: "100%", height: 1, minHeight: 1, flexShrink: 0 }}>
+              <DiffFileHeaderRow
+                file={stickyHeaderFile}
+                headerLabelWidth={headerLabelWidth}
+                headerStatsWidth={headerStatsWidth}
+                theme={theme}
+                onSelect={() => onSelectFile(stickyHeaderFile.id)}
+              />
             </box>
-          </scrollbox>
-          <VerticalScrollbar
-            ref={scrollbarRef}
-            scrollRef={scrollRef}
-            contentHeight={totalContentHeight}
-            height={scrollViewport.height}
-            theme={theme}
-          />
+          ) : null}
+          <box style={{ position: "relative", width: "100%", flexGrow: 1 }}>
+            <scrollbox
+              ref={scrollRef}
+              width="100%"
+              height="100%"
+              scrollY={true}
+              viewportCulling={true}
+              focused={pagerMode}
+              rootOptions={{ backgroundColor: theme.panel }}
+              wrapperOptions={{ backgroundColor: theme.panel }}
+              viewportOptions={{ backgroundColor: theme.panel }}
+              contentOptions={{ backgroundColor: theme.panel }}
+              verticalScrollbarOptions={{ visible: false }}
+              horizontalScrollbarOptions={{ visible: false }}
+            >
+              <box
+                // Remount the diff content when width/layout/wrap mode changes so viewport culling
+                // recomputes against the new row geometry, while the outer scrollbox keeps its state.
+                key={`diff-content:${layout}:${wrapLines ? "wrap" : "nowrap"}:${width}`}
+                style={{ width: "100%", flexDirection: "column", overflow: "visible" }}
+              >
+                {files.map((file, index) => {
+                  const shouldRenderSection = visibleWindowedFileIds?.has(file.id) ?? true;
+                  const shouldPrefetchVisibleHighlight =
+                    Boolean(selectedHighlightKey) &&
+                    prefetchAnchorKey === selectedHighlightKey &&
+                    visibleViewportFileIds.has(file.id);
+
+                  // Windowing keeps offscreen files cheap: render placeholders with identical
+                  // section geometry so scroll math and sticky-header ownership stay stable.
+                  if (!shouldRenderSection) {
+                    return (
+                      <DiffSectionPlaceholder
+                        key={file.id}
+                        bodyHeight={estimatedBodyHeights[index] ?? 0}
+                        file={file}
+                        headerLabelWidth={headerLabelWidth}
+                        headerStatsWidth={headerStatsWidth}
+                        separatorWidth={separatorWidth}
+                        showSeparator={index > 0}
+                        theme={theme}
+                        onSelect={() => onSelectFile(file.id)}
+                      />
+                    );
+                  }
+
+                  return (
+                    <DiffSection
+                      key={file.id}
+                      file={file}
+                      headerLabelWidth={headerLabelWidth}
+                      headerStatsWidth={headerStatsWidth}
+                      layout={layout}
+                      selected={file.id === selectedFileId}
+                      selectedHunkIndex={file.id === selectedFileId ? selectedHunkIndex : -1}
+                      shouldLoadHighlight={
+                        file.id === selectedFileId ||
+                        adjacentPrefetchFileIds.has(file.id) ||
+                        shouldPrefetchVisibleHighlight
+                      }
+                      onHighlightReady={
+                        file.id === selectedFileId ? handleSelectedHighlightReady : undefined
+                      }
+                      separatorWidth={separatorWidth}
+                      showSeparator={index > 0}
+                      showLineNumbers={showLineNumbers}
+                      showHunkHeaders={showHunkHeaders}
+                      wrapLines={wrapLines}
+                      theme={theme}
+                      viewWidth={diffContentWidth}
+                      visibleAgentNotes={
+                        visibleAgentNotesByFile.get(file.id) ?? EMPTY_VISIBLE_AGENT_NOTES
+                      }
+                      onOpenAgentNotesAtHunk={(hunkIndex) =>
+                        onOpenAgentNotesAtHunk(file.id, hunkIndex)
+                      }
+                      onSelect={() => onSelectFile(file.id)}
+                    />
+                  );
+                })}
+              </box>
+            </scrollbox>
+            <VerticalScrollbar
+              ref={scrollbarRef}
+              scrollRef={scrollRef}
+              contentHeight={totalContentHeight}
+              height={scrollViewport.height}
+              theme={theme}
+            />
+          </box>
         </box>
       ) : (
         <box style={{ flexGrow: 1, alignItems: "center", justifyContent: "center" }}>

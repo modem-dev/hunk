@@ -1,8 +1,8 @@
 import type { DiffFile } from "../../../core/types";
 import { diffSectionId } from "../../lib/ids";
-import { fileLabelParts } from "../../lib/files";
 import { fitText } from "../../lib/text";
 import type { AppTheme } from "../../themes";
+import { DiffFileHeaderRow } from "./DiffFileHeaderRow";
 
 interface DiffSectionPlaceholderProps {
   bodyHeight: number;
@@ -26,10 +26,6 @@ export function DiffSectionPlaceholder({
   theme,
   onSelect,
 }: DiffSectionPlaceholderProps) {
-  const additionsText = `+${file.stats.additions}`;
-  const deletionsText = `-${file.stats.deletions}`;
-  const { filename, stateLabel } = fileLabelParts(file);
-
   return (
     <box
       id={diffSectionId(file.id)}
@@ -53,37 +49,13 @@ export function DiffSectionPlaceholder({
         </box>
       ) : null}
 
-      <box
-        style={{
-          width: "100%",
-          height: 1,
-          flexDirection: "row",
-          justifyContent: "space-between",
-          paddingLeft: 1,
-          paddingRight: 1,
-          backgroundColor: theme.panel,
-        }}
-        onMouseUp={onSelect}
-      >
-        <box style={{ flexDirection: "row" }}>
-          <text fg={theme.text}>
-            {fitText(filename, Math.max(1, headerLabelWidth - (stateLabel?.length ?? 0)))}
-          </text>
-          {stateLabel && <text fg={theme.muted}>{stateLabel}</text>}
-        </box>
-        <box
-          style={{
-            width: headerStatsWidth,
-            height: 1,
-            flexDirection: "row",
-            justifyContent: "flex-end",
-          }}
-        >
-          <text fg={theme.badgeAdded}>{additionsText}</text>
-          <text fg={theme.muted}> </text>
-          <text fg={theme.badgeRemoved}>{deletionsText}</text>
-        </box>
-      </box>
+      <DiffFileHeaderRow
+        file={file}
+        headerLabelWidth={headerLabelWidth}
+        headerStatsWidth={headerStatsWidth}
+        theme={theme}
+        onSelect={onSelect}
+      />
 
       <box style={{ width: "100%", height: bodyHeight, backgroundColor: theme.panel }} />
     </box>
