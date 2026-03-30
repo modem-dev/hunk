@@ -6,7 +6,7 @@ import type { AppBootstrap } from "../src/core/types";
 
 mock.restore();
 
-const { AppHost } = await import("../src/ui/App");
+const { AppHost } = await import("../src/ui/AppHost");
 
 function createScrollBootstrap(): AppBootstrap {
   const before = Array.from(

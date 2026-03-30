@@ -4,7 +4,7 @@ import { parseDiffFromFile } from "@pierre/diffs";
 import { act } from "react";
 import type { AppBootstrap, DiffFile, LayoutMode } from "../src/core/types";
 
-const { AppHost } = await import("../src/ui/App");
+const { AppHost } = await import("../src/ui/AppHost");
 
 function createDiffFile(
   id: string,

@@ -10,7 +10,7 @@ import type { HunkSessionRegistration, SessionServerMessage } from "../src/mcp/t
 import type { AppBootstrap, DiffFile, LayoutMode } from "../src/core/types";
 
 const { loadAppBootstrap } = await import("../src/core/loaders");
-const { AppHost } = await import("../src/ui/App");
+const { AppHost } = await import("../src/ui/AppHost");
 
 function createDiffFile(
   id: string,

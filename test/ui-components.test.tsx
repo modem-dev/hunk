@@ -5,7 +5,7 @@ import { act, createRef, type ReactNode } from "react";
 import type { AppBootstrap, DiffFile } from "../src/core/types";
 import { resolveTheme } from "../src/ui/themes";
 
-const { AppHost } = await import("../src/ui/App");
+const { AppHost } = await import("../src/ui/AppHost");
 const { buildSidebarEntries } = await import("../src/ui/lib/files");
 const { HelpDialog } = await import("../src/ui/components/chrome/HelpDialog");
 const { FilesPane } = await import("../src/ui/components/panes/FilesPane");

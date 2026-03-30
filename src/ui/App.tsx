@@ -1035,5 +1035,3 @@ export function App({
     </box>
   );
 }
-
-export { AppHost } from "./AppHost";
