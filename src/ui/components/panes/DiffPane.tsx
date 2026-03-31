@@ -366,6 +366,8 @@ export function DiffPane({
     () => buildSectionLayoutMetrics(files, estimatedBodyHeights),
     [estimatedBodyHeights, files],
   );
+  // Read the live scroll box position during render so sticky-header ownership flips
+  // immediately after imperative scrolls instead of waiting for the polled viewport snapshot.
   const effectiveScrollTop = scrollRef.current?.scrollTop ?? scrollViewport.top;
 
   const totalContentHeight =
@@ -479,20 +481,23 @@ export function DiffPane({
   }, []);
 
   /** Scroll one file header to the top using the latest planned section geometry. */
-  const scrollFileHeaderToTop = useCallback((fileId: string) => {
-    const headerTop = resolveFileHeaderTop(sectionLayoutMetrics, fileId);
-    if (headerTop == null) {
-      return false;
-    }
+  const scrollFileHeaderToTop = useCallback(
+    (fileId: string) => {
+      const headerTop = resolveFileHeaderTop(sectionLayoutMetrics, fileId);
+      if (headerTop == null) {
+        return false;
+      }
 
-    const scrollBox = scrollRef.current;
-    if (!scrollBox) {
-      return false;
-    }
+      const scrollBox = scrollRef.current;
+      if (!scrollBox) {
+        return false;
+      }
 
-    scrollBox.scrollTo(headerTop);
-    return true;
-  }, [scrollRef, sectionLayoutMetrics]);
+      scrollBox.scrollTo(headerTop);
+      return true;
+    },
+    [scrollRef, sectionLayoutMetrics],
+  );
 
   useLayoutEffect(() => {
     const wrapChanged = previousWrapLinesRef.current !== wrapLines;
@@ -541,9 +546,7 @@ export function DiffPane({
   }, [files, scrollRef, scrollViewport.top, sectionMetrics, wrapLines, wrapToggleScrollTop]);
 
   useLayoutEffect(() => {
-    if (
-      previousSelectedFileTopAlignRequestIdRef.current === selectedFileTopAlignRequestId
-    ) {
+    if (previousSelectedFileTopAlignRequestIdRef.current === selectedFileTopAlignRequestId) {
       return;
     }
 
@@ -572,10 +575,17 @@ export function DiffPane({
       return;
     }
 
+    // Stop retrying if the sidebar selection points at a file that disappeared mid-settle.
+    const fileStillPresent = files.some((file) => file.id === pendingFileId);
+    if (!fileStillPresent) {
+      clearPendingFileTopAlign();
+      return;
+    }
+
     if (scrollFileHeaderToTop(pendingFileId)) {
       clearPendingFileTopAlign();
     }
-  }, [clearPendingFileTopAlign, scrollFileHeaderToTop, sectionLayoutMetrics]);
+  }, [clearPendingFileTopAlign, files, scrollFileHeaderToTop, sectionLayoutMetrics]);
 
   useLayoutEffect(() => {
     if (suppressNextSelectionAutoScrollRef.current) {
