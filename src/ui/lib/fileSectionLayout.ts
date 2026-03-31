@@ -1,7 +1,7 @@
 import type { DiffFile } from "../../core/types";
 
 /** Stream geometry for one file section in the main review pane. */
-export interface SectionLayoutMetric {
+export interface FileSectionLayoutMetric {
   fileId: string;
   sectionIndex: number;
   sectionTop: number;
@@ -12,8 +12,8 @@ export interface SectionLayoutMetric {
 }
 
 /** Build absolute section offsets from file order and measured body heights. */
-export function buildSectionLayoutMetrics(files: DiffFile[], bodyHeights: number[]) {
-  const metrics: SectionLayoutMetric[] = [];
+export function buildFileSectionLayoutMetrics(files: DiffFile[], bodyHeights: number[]) {
+  const metrics: FileSectionLayoutMetric[] = [];
   let cursor = 0;
 
   files.forEach((file, index) => {
@@ -41,7 +41,10 @@ export function buildSectionLayoutMetrics(files: DiffFile[], bodyHeights: number
 }
 
 /** Return the file section that owns the viewport top, switching at each next header row. */
-export function findHeaderOwningSection(sectionMetrics: SectionLayoutMetric[], scrollTop: number) {
+export function findHeaderOwningFileSection(
+  sectionMetrics: FileSectionLayoutMetric[],
+  scrollTop: number,
+) {
   if (sectionMetrics.length === 0) {
     return null;
   }
@@ -68,7 +71,10 @@ export function findHeaderOwningSection(sectionMetrics: SectionLayoutMetric[], s
 }
 
 /** Resolve the scroll target needed to make one file header own the viewport top. */
-export function resolveFileHeaderTop(sectionMetrics: SectionLayoutMetric[], fileId: string) {
+export function resolveFileSectionHeaderTop(
+  sectionMetrics: FileSectionLayoutMetric[],
+  fileId: string,
+) {
   const targetSection = sectionMetrics.find((metric) => metric.fileId === fileId);
   if (!targetSection) {
     return null;
