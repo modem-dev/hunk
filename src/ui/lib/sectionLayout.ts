@@ -41,10 +41,7 @@ export function buildSectionLayoutMetrics(files: DiffFile[], bodyHeights: number
 }
 
 /** Return the file section that owns the viewport top, switching at each next header row. */
-export function findHeaderOwningSection(
-  sectionMetrics: SectionLayoutMetric[],
-  scrollTop: number,
-) {
+export function findHeaderOwningSection(sectionMetrics: SectionLayoutMetric[], scrollTop: number) {
   if (sectionMetrics.length === 0) {
     return null;
   }
