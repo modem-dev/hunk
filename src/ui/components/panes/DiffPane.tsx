@@ -17,10 +17,10 @@ import {
   type DiffSectionRowMetric,
 } from "../../lib/sectionHeights";
 import {
-  buildSectionLayoutMetrics,
-  findHeaderOwningSection,
-  resolveFileHeaderTop,
-} from "../../lib/sectionLayout";
+  buildFileSectionLayoutMetrics,
+  findHeaderOwningFileSection,
+  resolveFileSectionHeaderTop,
+} from "../../lib/fileSectionLayout";
 import { diffHunkId, diffSectionId } from "../../lib/ids";
 import type { AppTheme } from "../../themes";
 import { DiffSection } from "./DiffSection";
@@ -64,13 +64,13 @@ function findViewportRowAnchor(
   sectionMetrics: DiffSectionMetrics[],
   scrollTop: number,
 ) {
-  const sectionLayoutMetrics = buildSectionLayoutMetrics(
+  const fileSectionLayoutMetrics = buildFileSectionLayoutMetrics(
     files,
     sectionMetrics.map((metrics) => metrics?.bodyHeight ?? 0),
   );
 
   for (let index = 0; index < files.length; index += 1) {
-    const layoutMetric = sectionLayoutMetrics[index];
+    const layoutMetric = fileSectionLayoutMetrics[index];
     const bodyTop = layoutMetric?.bodyTop ?? 0;
     const metrics = sectionMetrics[index];
     const bodyHeight = metrics?.bodyHeight ?? 0;
@@ -97,13 +97,13 @@ function resolveViewportRowAnchorTop(
   sectionMetrics: DiffSectionMetrics[],
   anchor: ViewportRowAnchor,
 ) {
-  const sectionLayoutMetrics = buildSectionLayoutMetrics(
+  const fileSectionLayoutMetrics = buildFileSectionLayoutMetrics(
     files,
     sectionMetrics.map((metrics) => metrics?.bodyHeight ?? 0),
   );
 
   for (let index = 0; index < files.length; index += 1) {
-    const layoutMetric = sectionLayoutMetrics[index];
+    const layoutMetric = fileSectionLayoutMetrics[index];
     const bodyTop = layoutMetric?.bodyTop ?? 0;
     const file = files[index];
     const metrics = sectionMetrics[index];
@@ -287,8 +287,8 @@ export function DiffPane({
     () => baseSectionMetrics.map((metrics) => metrics.bodyHeight),
     [baseSectionMetrics],
   );
-  const baseSectionLayoutMetrics = useMemo(
-    () => buildSectionLayoutMetrics(files, baseEstimatedBodyHeights),
+  const baseFileSectionLayoutMetrics = useMemo(
+    () => buildFileSectionLayoutMetrics(files, baseEstimatedBodyHeights),
     [baseEstimatedBodyHeights, files],
   );
 
@@ -297,11 +297,11 @@ export function DiffPane({
     const minVisibleY = Math.max(0, scrollViewport.top - overscanRows);
     const maxVisibleY = scrollViewport.top + scrollViewport.height + overscanRows;
     return new Set(
-      baseSectionLayoutMetrics
+      baseFileSectionLayoutMetrics
         .filter((metric) => metric.sectionBottom >= minVisibleY && metric.sectionTop <= maxVisibleY)
         .map((metric) => metric.fileId),
     );
-  }, [baseSectionLayoutMetrics, scrollViewport.height, scrollViewport.top]);
+  }, [baseFileSectionLayoutMetrics, scrollViewport.height, scrollViewport.top]);
 
   const visibleAgentNotesByFile = useMemo(() => {
     const next = new Map<string, VisibleAgentNote[]>();
@@ -362,8 +362,8 @@ export function DiffPane({
     () => sectionMetrics.map((metrics) => metrics.bodyHeight),
     [sectionMetrics],
   );
-  const sectionLayoutMetrics = useMemo(
-    () => buildSectionLayoutMetrics(files, estimatedBodyHeights),
+  const fileSectionLayoutMetrics = useMemo(
+    () => buildFileSectionLayoutMetrics(files, estimatedBodyHeights),
     [estimatedBodyHeights, files],
   );
   // Read the live scroll box position during render so sticky-header ownership flips
@@ -371,20 +371,20 @@ export function DiffPane({
   const effectiveScrollTop = scrollRef.current?.scrollTop ?? scrollViewport.top;
 
   const totalContentHeight =
-    sectionLayoutMetrics[sectionLayoutMetrics.length - 1]?.sectionBottom ?? 0;
+    fileSectionLayoutMetrics[fileSectionLayoutMetrics.length - 1]?.sectionBottom ?? 0;
 
   const stickyHeaderFile = useMemo(() => {
     if (files.length < 2) {
       return null;
     }
 
-    const owner = findHeaderOwningSection(sectionLayoutMetrics, effectiveScrollTop);
+    const owner = findHeaderOwningFileSection(fileSectionLayoutMetrics, effectiveScrollTop);
     if (!owner || effectiveScrollTop <= owner.headerTop) {
       return null;
     }
 
     return files[owner.sectionIndex] ?? null;
-  }, [effectiveScrollTop, files, sectionLayoutMetrics]);
+  }, [effectiveScrollTop, fileSectionLayoutMetrics, files]);
 
   const visibleWindowedFileIds = useMemo(() => {
     if (!windowingEnabled) {
@@ -418,8 +418,8 @@ export function DiffPane({
       return null;
     }
 
-    const selectedSectionLayout = sectionLayoutMetrics[selectedFileIndex];
-    if (!selectedSectionLayout) {
+    const selectedFileSectionLayout = fileSectionLayoutMetrics[selectedFileIndex];
+    if (!selectedFileSectionLayout) {
       return null;
     }
 
@@ -433,13 +433,19 @@ export function DiffPane({
     }
 
     return {
-      top: selectedSectionLayout.bodyTop + hunkBounds.top,
+      top: selectedFileSectionLayout.bodyTop + hunkBounds.top,
       height: hunkBounds.height,
       startRowId: hunkBounds.startRowId,
       endRowId: hunkBounds.endRowId,
-      sectionTop: selectedSectionLayout.sectionTop,
+      sectionTop: selectedFileSectionLayout.sectionTop,
     };
-  }, [sectionLayoutMetrics, sectionMetrics, selectedFile, selectedFileIndex, selectedHunkIndex]);
+  }, [
+    fileSectionLayoutMetrics,
+    sectionMetrics,
+    selectedFile,
+    selectedFileIndex,
+    selectedHunkIndex,
+  ]);
 
   /** Absolute scroll offset and height of the first inline note in the selected hunk, if any. */
   const selectedNoteBounds = useMemo(() => {
@@ -483,7 +489,7 @@ export function DiffPane({
   /** Scroll one file header to the top using the latest planned section geometry. */
   const scrollFileHeaderToTop = useCallback(
     (fileId: string) => {
-      const headerTop = resolveFileHeaderTop(sectionLayoutMetrics, fileId);
+      const headerTop = resolveFileSectionHeaderTop(fileSectionLayoutMetrics, fileId);
       if (headerTop == null) {
         return false;
       }
@@ -496,7 +502,7 @@ export function DiffPane({
       scrollBox.scrollTo(headerTop);
       return true;
     },
-    [scrollRef, sectionLayoutMetrics],
+    [fileSectionLayoutMetrics, scrollRef],
   );
 
   useLayoutEffect(() => {
@@ -585,7 +591,7 @@ export function DiffPane({
     if (scrollFileHeaderToTop(pendingFileId)) {
       clearPendingFileTopAlign();
     }
-  }, [clearPendingFileTopAlign, files, scrollFileHeaderToTop, sectionLayoutMetrics]);
+  }, [clearPendingFileTopAlign, fileSectionLayoutMetrics, files, scrollFileHeaderToTop]);
 
   useLayoutEffect(() => {
     if (suppressNextSelectionAutoScrollRef.current) {
