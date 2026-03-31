@@ -3,8 +3,13 @@
 ## purpose
 
 - Terminal-first diff viewer for understanding coding-agent changesets.
-- Bun + TypeScript + OpenTUI React.
 - Product target is "modern desktop diff tool in a terminal", not a pager-style TUI.
+
+## major dependencies
+
+- [Bun](https://bun.sh) runtime and package manager
+- [OpenTUI](https://github.com/anomalyco/opentui) React terminal UI framework
+- [Pierre](https://www.npmjs.com/package/@pierre/diffs) diff engine and terminal renderer
 
 ## architecture
 
@@ -65,6 +70,7 @@ CLI input
 - If you choose to use a local sidecar for temporary review context, keep it concise and review-oriented: one changeset summary, file summaries in narrative order, and a few hunk-level annotations with real rationale.
 - If a local sidecar is present, its file order is intentional, but the visible note UI should stay hunk-note driven rather than showing generic file or changeset explainer cards.
 - `hunk diff` working-tree reviews include untracked files by default. Use `--exclude-untracked` if you explicitly want tracked changes only.
+- Agents review via `skills/hunk-review/SKILL.md` using `hunk session *` commands; do not run interactive TUI commands directly.
 
 ## commands
 
@@ -76,6 +82,8 @@ CLI input
 - tests: `bun test`
 - PTY integration tests: `bun run test:integration`
 - TTY smoke test: `bun run test:tty-smoke`
+- format: `bun run format`
+- lint: `bun run lint`
 - build binary: `bun run build:bin`
 - install binary: `bun run install:bin`
 
