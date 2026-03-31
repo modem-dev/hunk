@@ -1380,7 +1380,7 @@ describe("App interactions", () => {
     }
   });
 
-  test("sidebar shortcut can force the files pane open when responsive layout hides it", async () => {
+  test("sidebar shortcut can force the sidebar open when responsive layout hides it", async () => {
     const setup = await testRender(<AppHost bootstrap={createBootstrap("auto")} />, {
       width: 160,
       height: 24,

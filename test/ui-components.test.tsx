@@ -10,7 +10,7 @@ import { measureDiffSectionMetrics } from "../src/ui/lib/sectionHeights";
 const { AppHost } = await import("../src/ui/AppHost");
 const { buildSidebarEntries } = await import("../src/ui/lib/files");
 const { HelpDialog } = await import("../src/ui/components/chrome/HelpDialog");
-const { FilesPane } = await import("../src/ui/components/panes/FilesPane");
+const { SidebarPane } = await import("../src/ui/components/panes/SidebarPane");
 const { AgentCard } = await import("../src/ui/components/panes/AgentCard");
 const { AgentInlineNote } = await import("../src/ui/components/panes/AgentInlineNote");
 const { DiffPane } = await import("../src/ui/components/panes/DiffPane");
@@ -354,7 +354,7 @@ function frameHasHighlightedMarker(
 }
 
 describe("UI components", () => {
-  test("FilesPane renders grouped file rows with indented filenames and right-aligned stats", async () => {
+  test("SidebarPane renders grouped file rows with indented filenames and right-aligned stats", async () => {
     const theme = resolveTheme("midnight", null);
     const files = [
       createDiffFile(
@@ -378,7 +378,7 @@ describe("UI components", () => {
       ),
     ];
     const frame = await captureFrame(
-      <FilesPane
+      <SidebarPane
         entries={buildSidebarEntries(files)}
         scrollRef={createRef()}
         selectedFileId="app"

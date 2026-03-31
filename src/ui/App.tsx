@@ -23,7 +23,7 @@ import type { ReloadedSessionResult } from "../mcp/types";
 import { MenuBar } from "./components/chrome/MenuBar";
 import { StatusBar } from "./components/chrome/StatusBar";
 import { DiffPane } from "./components/panes/DiffPane";
-import { FilesPane } from "./components/panes/FilesPane";
+import { SidebarPane } from "./components/panes/SidebarPane";
 import { PaneDivider } from "./components/panes/PaneDivider";
 import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
 import { useMenuController } from "./hooks/useMenuController";
@@ -92,7 +92,7 @@ export function App({
     options?: { resetApp?: boolean; sourcePath?: string },
   ) => Promise<ReloadedSessionResult>;
 }) {
-  const FILES_MIN_WIDTH = 22;
+  const SIDEBAR_MIN_WIDTH = 22;
   const DIFF_MIN_WIDTH = 48;
   const BODY_PADDING = 2;
   const DIVIDER_WIDTH = 1;
@@ -100,7 +100,7 @@ export function App({
 
   const renderer = useRenderer();
   const terminal = useTerminalDimensions();
-  const filesScrollRef = useRef<ScrollBoxRenderable | null>(null);
+  const sidebarScrollRef = useRef<ScrollBoxRenderable | null>(null);
   const diffScrollRef = useRef<ScrollBoxRenderable | null>(null);
   const wrapToggleScrollTopRef = useRef<number | null>(null);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(bootstrap.initialMode);
@@ -116,7 +116,7 @@ export function App({
   const [showHelp, setShowHelp] = useState(false);
   const [focusArea, setFocusArea] = useState<FocusArea>("files");
   const [filter, setFilter] = useState("");
-  const [filesPaneWidth, setFilesPaneWidth] = useState(34);
+  const [sidebarWidth, setSidebarWidth] = useState(34);
   const [resizeDragOriginX, setResizeDragOriginX] = useState<number | null>(null);
   const [resizeStartWidth, setResizeStartWidth] = useState<number | null>(null);
   const [selectedFileId, setSelectedFileId] = useState(bootstrap.changeset.files[0]?.id ?? "");
@@ -130,7 +130,7 @@ export function App({
 
   const jumpToFile = useCallback(
     (fileId: string, nextHunkIndex = 0, options?: { alignFileHeaderTop?: boolean }) => {
-      filesScrollRef.current?.scrollChildIntoView(fileRowId(fileId));
+      sidebarScrollRef.current?.scrollChildIntoView(fileRowId(fileId));
       setSelectedFileId(fileId);
       setSelectedHunkIndex(nextHunkIndex);
       setScrollToNote(false);
@@ -143,7 +143,7 @@ export function App({
   );
 
   const jumpToAnnotatedHunk = useCallback((fileId: string, nextHunkIndex = 0) => {
-    filesScrollRef.current?.scrollChildIntoView(fileRowId(fileId));
+    sidebarScrollRef.current?.scrollChildIntoView(fileRowId(fileId));
     setSelectedFileId(fileId);
     setSelectedHunkIndex(nextHunkIndex);
     setScrollToNote(true);
@@ -190,46 +190,45 @@ export function App({
   const bodyPadding = pagerMode ? 0 : BODY_PADDING;
   const bodyWidth = Math.max(0, terminal.width - bodyPadding);
   const responsiveLayout = resolveResponsiveLayout(layoutMode, terminal.width);
-  const canForceShowFilesPane = bodyWidth >= FILES_MIN_WIDTH + DIVIDER_WIDTH + DIFF_MIN_WIDTH;
-  const showFilesPane = pagerMode
+  const canForceShowSidebar = bodyWidth >= SIDEBAR_MIN_WIDTH + DIVIDER_WIDTH + DIFF_MIN_WIDTH;
+  const renderSidebar = pagerMode
     ? false
-    : sidebarVisible &&
-      (responsiveLayout.showFilesPane || (forceSidebarOpen && canForceShowFilesPane));
+    : sidebarVisible && (responsiveLayout.showSidebar || (forceSidebarOpen && canForceShowSidebar));
   const centerWidth = bodyWidth;
   const resolvedLayout = responsiveLayout.layout;
-  const availableCenterWidth = showFilesPane
+  const availableCenterWidth = renderSidebar
     ? Math.max(0, centerWidth - DIVIDER_WIDTH)
     : Math.max(0, centerWidth);
-  const maxFilesPaneWidth = showFilesPane
-    ? Math.max(FILES_MIN_WIDTH, availableCenterWidth - DIFF_MIN_WIDTH)
-    : FILES_MIN_WIDTH;
-  const clampedFilesPaneWidth = showFilesPane
-    ? clamp(filesPaneWidth, FILES_MIN_WIDTH, maxFilesPaneWidth)
+  const maxSidebarWidth = renderSidebar
+    ? Math.max(SIDEBAR_MIN_WIDTH, availableCenterWidth - DIFF_MIN_WIDTH)
+    : SIDEBAR_MIN_WIDTH;
+  const clampedSidebarWidth = renderSidebar
+    ? clamp(sidebarWidth, SIDEBAR_MIN_WIDTH, maxSidebarWidth)
     : 0;
-  const diffPaneWidth = showFilesPane
-    ? Math.max(DIFF_MIN_WIDTH, availableCenterWidth - clampedFilesPaneWidth)
+  const diffPaneWidth = renderSidebar
+    ? Math.max(DIFF_MIN_WIDTH, availableCenterWidth - clampedSidebarWidth)
     : Math.max(0, availableCenterWidth);
-  const isResizingFilesPane = resizeDragOriginX !== null && resizeStartWidth !== null;
+  const isResizingSidebar = resizeDragOriginX !== null && resizeStartWidth !== null;
   const dividerHitLeft = Math.max(
     1,
-    1 + clampedFilesPaneWidth - Math.floor((DIVIDER_HIT_WIDTH - DIVIDER_WIDTH) / 2),
+    1 + clampedSidebarWidth - Math.floor((DIVIDER_HIT_WIDTH - DIVIDER_WIDTH) / 2),
   );
 
   useEffect(() => {
-    if (!showFilesPane) {
+    if (!renderSidebar) {
       setResizeDragOriginX(null);
       setResizeStartWidth(null);
       return;
     }
 
-    setFilesPaneWidth((current) => clamp(current, FILES_MIN_WIDTH, maxFilesPaneWidth));
-  }, [maxFilesPaneWidth, showFilesPane]);
+    setSidebarWidth((current) => clamp(current, SIDEBAR_MIN_WIDTH, maxSidebarWidth));
+  }, [maxSidebarWidth, renderSidebar]);
 
   useEffect(() => {
     // Force an intermediate redraw when app geometry or row-wrapping changes so pane relayout
     // feels immediate after toggling split/stack or line wrapping.
     renderer.intermediateRender();
-  }, [renderer, resolvedLayout, showFilesPane, terminal.height, terminal.width, wrapLines]);
+  }, [renderer, renderSidebar, resolvedLayout, terminal.height, terminal.width, wrapLines]);
 
   useEffect(() => {
     if (!selectedFile && filteredFiles[0]) {
@@ -264,7 +263,7 @@ export function App({
       return;
     }
 
-    filesScrollRef.current?.scrollChildIntoView(fileRowId(selectedFile.id));
+    sidebarScrollRef.current?.scrollChildIntoView(fileRowId(selectedFile.id));
   }, [selectedFile]);
 
   /** Move the review focus across hunks in stream order. */
@@ -274,7 +273,7 @@ export function App({
       return;
     }
 
-    filesScrollRef.current?.scrollChildIntoView(fileRowId(nextCursor.fileId));
+    sidebarScrollRef.current?.scrollChildIntoView(fileRowId(nextCursor.fileId));
     setSelectedFileId(nextCursor.fileId);
     setSelectedHunkIndex(nextCursor.hunkIndex);
     setScrollToNote(false);
@@ -354,21 +353,21 @@ export function App({
 
   /** Toggle the sidebar, forcing it open on narrower layouts when the app can still fit both panes. */
   const toggleSidebar = () => {
-    if (sidebarVisible && (responsiveLayout.showFilesPane || forceSidebarOpen)) {
+    if (sidebarVisible && (responsiveLayout.showSidebar || forceSidebarOpen)) {
       setSidebarVisible(false);
       setForceSidebarOpen(false);
       return;
     }
 
-    if (sidebarVisible && !responsiveLayout.showFilesPane) {
-      if (canForceShowFilesPane) {
+    if (sidebarVisible && !responsiveLayout.showSidebar) {
+      if (canForceShowSidebar) {
         setForceSidebarOpen(true);
       }
       return;
     }
 
     setSidebarVisible(true);
-    setForceSidebarOpen(!responsiveLayout.showFilesPane && canForceShowFilesPane);
+    setForceSidebarOpen(!responsiveLayout.showSidebar && canForceShowSidebar);
   };
 
   /** Toggle visibility of hunk metadata rows without changing the actual diff lines. */
@@ -547,41 +546,41 @@ export function App({
     toggleMenu,
   } = useMenuController(menus);
 
-  /** Start a mouse drag resize for the optional files pane. */
-  const beginFilesPaneResize = (event: TuiMouseEvent) => {
+  /** Start a mouse drag resize for the optional sidebar. */
+  const beginSidebarResize = (event: TuiMouseEvent) => {
     if (event.button !== MouseButton.LEFT) {
       return;
     }
 
     closeMenu();
     setResizeDragOriginX(event.x);
-    setResizeStartWidth(clampedFilesPaneWidth);
+    setResizeStartWidth(clampedSidebarWidth);
     event.preventDefault();
     event.stopPropagation();
   };
 
-  /** Update the files pane width while a drag resize is active. */
-  const updateFilesPaneResize = (event: TuiMouseEvent) => {
-    if (!isResizingFilesPane || resizeDragOriginX === null || resizeStartWidth === null) {
+  /** Update the sidebar width while a drag resize is active. */
+  const updateSidebarResize = (event: TuiMouseEvent) => {
+    if (!isResizingSidebar || resizeDragOriginX === null || resizeStartWidth === null) {
       return;
     }
 
-    setFilesPaneWidth(
+    setSidebarWidth(
       resizeSidebarWidth(
         resizeStartWidth,
         resizeDragOriginX,
         event.x,
-        FILES_MIN_WIDTH,
-        maxFilesPaneWidth,
+        SIDEBAR_MIN_WIDTH,
+        maxSidebarWidth,
       ),
     );
     event.preventDefault();
     event.stopPropagation();
   };
 
-  /** End the current files pane resize interaction. */
-  const endFilesPaneResize = (event?: TuiMouseEvent) => {
-    if (!isResizingFilesPane) {
+  /** End the current sidebar resize interaction. */
+  const endSidebarResize = (event?: TuiMouseEvent) => {
+    if (!isResizingSidebar) {
       return;
     }
 
@@ -591,7 +590,7 @@ export function App({
     event?.stopPropagation();
   };
 
-  const fileEntries = buildSidebarEntries(filteredFiles);
+  const sidebarEntries = buildSidebarEntries(filteredFiles);
   const totalAdditions = bootstrap.changeset.files.reduce(
     (sum, file) => sum + file.stats.additions,
     0,
@@ -601,7 +600,7 @@ export function App({
     0,
   );
   const topTitle = `${bootstrap.changeset.title}  +${totalAdditions}  -${totalDeletions}`;
-  const filesTextWidth = Math.max(8, clampedFilesPaneWidth - 2);
+  const sidebarTextWidth = Math.max(8, clampedSidebarWidth - 2);
   const diffContentWidth = Math.max(12, diffPaneWidth - 2);
   const diffHeaderStatsWidth = Math.min(24, Math.max(16, Math.floor(diffContentWidth / 3)));
   const diffHeaderLabelWidth = Math.max(8, diffContentWidth - diffHeaderStatsWidth - 1);
@@ -938,22 +937,22 @@ export function App({
           paddingBottom: 0,
           position: "relative",
         }}
-        onMouseDrag={updateFilesPaneResize}
-        onMouseDragEnd={endFilesPaneResize}
+        onMouseDrag={updateSidebarResize}
+        onMouseDragEnd={endSidebarResize}
         onMouseUp={(event) => {
-          endFilesPaneResize(event);
+          endSidebarResize(event);
           closeMenu();
         }}
       >
-        {showFilesPane ? (
+        {renderSidebar ? (
           <>
-            <FilesPane
-              entries={fileEntries}
-              scrollRef={filesScrollRef}
+            <SidebarPane
+              entries={sidebarEntries}
+              scrollRef={sidebarScrollRef}
               selectedFileId={selectedFile?.id}
-              textWidth={filesTextWidth}
+              textWidth={sidebarTextWidth}
               theme={activeTheme}
-              width={clampedFilesPaneWidth}
+              width={clampedSidebarWidth}
               onSelectFile={(fileId) => {
                 setFocusArea("files");
                 jumpToFile(fileId, 0, { alignFileHeaderTop: true });
@@ -963,12 +962,12 @@ export function App({
             <PaneDivider
               dividerHitLeft={dividerHitLeft}
               dividerHitWidth={DIVIDER_HIT_WIDTH}
-              isResizing={isResizingFilesPane}
+              isResizing={isResizingSidebar}
               theme={activeTheme}
-              onMouseDown={beginFilesPaneResize}
-              onMouseDrag={updateFilesPaneResize}
-              onMouseDragEnd={endFilesPaneResize}
-              onMouseUp={endFilesPaneResize}
+              onMouseDown={beginSidebarResize}
+              onMouseDrag={updateSidebarResize}
+              onMouseDragEnd={endSidebarResize}
+              onMouseUp={endSidebarResize}
             />
           </>
         ) : null}
