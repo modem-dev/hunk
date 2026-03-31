@@ -1071,6 +1071,8 @@ describe("App interactions", () => {
     try {
       await flush(setup);
       const initialFrame = setup.captureCharFrame();
+      const initialTopLine = firstVisibleAddedLine(initialFrame);
+      expect(initialTopLine).not.toBeNull();
 
       await act(async () => {
         await setup.mockInput.pressKey("d");
@@ -1090,9 +1092,17 @@ describe("App interactions", () => {
         await setup.mockInput.pressKey("f");
       });
       await flush(setup);
-      frame = await waitForFrame(setup, (nextFrame) => nextFrame !== initialFrame);
+      frame = await waitForFrame(
+        setup,
+        (nextFrame) => {
+          const nextTopLine = firstVisibleAddedLine(nextFrame);
+          return nextTopLine !== null && nextTopLine !== initialTopLine;
+        },
+        20,
+      );
       expect(frame).toContain("export const line");
-      expect(frame).not.toEqual(initialFrame);
+      expect(firstVisibleAddedLine(frame)).not.toBeNull();
+      expect(firstVisibleAddedLine(frame)).not.toBe(initialTopLine);
     } finally {
       await act(async () => {
         setup.renderer.destroy();

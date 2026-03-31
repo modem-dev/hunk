@@ -187,6 +187,66 @@ describe("Hunk integration via tuistory", () => {
     }
   });
 
+  test("explicit split mode stays split after a live resize", async () => {
+    const fixture = harness.createTwoFileRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split"],
+      cwd: fixture.dir,
+      cols: 220,
+      rows: 24,
+    });
+
+    try {
+      const wide = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      expect(harness.countMatches(wide, /alpha\.ts/g)).toBeGreaterThanOrEqual(2);
+      expect(wide).toMatch(/▌.*▌/);
+
+      session.resize({ cols: 140, rows: 24 });
+      const tight = await harness.waitForSnapshot(
+        session,
+        (text) => /▌.*▌/.test(text) && harness.countMatches(text, /alpha\.ts/g) === 1,
+        5_000,
+      );
+
+      expect(tight).toContain("betaValue = 1");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("explicit stack mode stays stacked after a live resize", async () => {
+    const fixture = harness.createTwoFileRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "stack"],
+      cwd: fixture.dir,
+      cols: 140,
+      rows: 24,
+    });
+
+    try {
+      const narrow = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      expect(harness.countMatches(narrow, /alpha\.ts/g)).toBe(1);
+      expect(narrow).not.toMatch(/▌.*▌/);
+
+      session.resize({ cols: 220, rows: 24 });
+      const wide = await harness.waitForSnapshot(
+        session,
+        (text) => !/▌.*▌/.test(text) && harness.countMatches(text, /alpha\.ts/g) >= 2,
+        5_000,
+      );
+
+      expect(wide).toContain("1   -  export const alpha = 1;");
+    } finally {
+      session.close();
+    }
+  });
+
   test("filter focus narrows the visible review stream in the live app", async () => {
     const fixture = harness.createTwoFileRepoFixture();
     const session = await harness.launchHunk({
