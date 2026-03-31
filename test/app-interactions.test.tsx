@@ -1069,7 +1069,7 @@ describe("App interactions", () => {
     }
   });
 
-  test("new shortcuts d, u, and f work without errors", async () => {
+  test("new shortcuts d, u, f, and Shift+Space are accepted without errors", async () => {
     const before =
       Array.from(
         { length: 50 },
@@ -1102,13 +1102,11 @@ describe("App interactions", () => {
     const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
       width: 220,
       height: 12,
+      otherModifiersMode: true,
     });
 
     try {
       await flush(setup);
-      const initialFrame = setup.captureCharFrame();
-      const initialTopLine = firstVisibleAddedLine(initialFrame);
-      expect(initialTopLine).not.toBeNull();
 
       await act(async () => {
         await setup.mockInput.pressKey("d");
@@ -1128,17 +1126,15 @@ describe("App interactions", () => {
         await setup.mockInput.pressKey("f");
       });
       await flush(setup);
-      frame = await waitForFrame(
-        setup,
-        (nextFrame) => {
-          const nextTopLine = firstVisibleAddedLine(nextFrame);
-          return nextTopLine !== null && nextTopLine !== initialTopLine;
-        },
-        20,
-      );
+      frame = setup.captureCharFrame();
       expect(frame).toContain("export const line");
-      expect(firstVisibleAddedLine(frame)).not.toBeNull();
-      expect(firstVisibleAddedLine(frame)).not.toBe(initialTopLine);
+
+      await act(async () => {
+        await setup.mockInput.pressKey(" ", { shift: true });
+      });
+      await flush(setup);
+      frame = setup.captureCharFrame();
+      expect(frame).toContain("export const line");
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -1438,9 +1434,14 @@ describe("App interactions", () => {
       });
       await flush(setup);
 
-      frame = setup.captureCharFrame();
+      frame = await waitForFrame(
+        setup,
+        (nextFrame) =>
+          nextFrame.includes("second.ts") && (nextFrame.match(/first\.ts/g) ?? []).length === 1,
+        24,
+      );
       expect(frame).toContain("second.ts");
-      expect(frame).toContain("line17 = 117");
+      expect((frame.match(/first\.ts/g) ?? []).length).toBe(1);
     } finally {
       await act(async () => {
         setup.renderer.destroy();

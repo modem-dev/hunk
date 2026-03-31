@@ -1,10 +1,9 @@
 import {
   MouseButton,
-  type KeyEvent,
   type MouseEvent as TuiMouseEvent,
   type ScrollBoxRenderable,
 } from "@opentui/core";
-import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
+import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import {
   Suspense,
   lazy,
@@ -25,6 +24,7 @@ import { StatusBar } from "./components/chrome/StatusBar";
 import { DiffPane } from "./components/panes/DiffPane";
 import { SidebarPane } from "./components/panes/SidebarPane";
 import { PaneDivider } from "./components/panes/PaneDivider";
+import { useAppKeyboardShortcuts } from "./hooks/useAppKeyboardShortcuts";
 import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
 import { useMenuController } from "./hooks/useMenuController";
 import { buildAppMenus } from "./lib/appMenus";
@@ -273,10 +273,9 @@ export function App({
       return;
     }
 
-    sidebarScrollRef.current?.scrollChildIntoView(fileRowId(nextCursor.fileId));
-    setSelectedFileId(nextCursor.fileId);
-    setSelectedHunkIndex(nextCursor.hunkIndex);
-    setScrollToNote(false);
+    jumpToFile(nextCursor.fileId, nextCursor.hunkIndex, {
+      alignFileHeaderTop: nextCursor.fileId !== selectedFile?.id,
+    });
   };
 
   /** Move the review focus to the next or previous annotated hunk. */
@@ -473,17 +472,49 @@ export function App({
     onQuit();
   }, [onQuit]);
 
+  /** Close the modal keyboard help overlay. */
+  const closeHelp = useCallback(() => {
+    setShowHelp(false);
+  }, []);
+
+  /** Toggle the modal keyboard help overlay. */
+  const toggleHelp = useCallback(() => {
+    setShowHelp((current) => !current);
+  }, []);
+
+  /** Focus the file list/sidebar navigation area. */
+  const focusFiles = useCallback(() => {
+    setFocusArea("files");
+  }, []);
+
+  /** Focus the file filter input in the status bar. */
+  const focusFilter = useCallback(() => {
+    setFocusArea("filter");
+  }, []);
+
+  /** Clear the active file filter while leaving focus in the filter field. */
+  const clearFilter = useCallback(() => {
+    setFilter("");
+  }, []);
+
   /** Toggle keyboard focus between the file list and the file filter. */
   const toggleFocusArea = useCallback(() => {
     setFocusArea((current) => (current === "files" ? "filter" : "files"));
   }, []);
+
+  /** Cycle through the available built-in themes. */
+  const cycleTheme = useCallback(() => {
+    const currentIndex = THEMES.findIndex((theme) => theme.id === activeTheme.id);
+    const nextIndex = (currentIndex + 1) % THEMES.length;
+    setThemeId(THEMES[nextIndex]!.id);
+  }, [activeTheme.id]);
 
   const menus = useMemo(
     () =>
       buildAppMenus({
         activeThemeId: activeTheme.id,
         canRefreshCurrentInput,
-        focusFilter: () => setFocusArea("filter"),
+        focusFilter,
         layoutMode,
         moveAnnotatedFile,
         moveAnnotatedHunk,
@@ -499,7 +530,7 @@ export function App({
         sidebarVisible,
         toggleAgentNotes,
         toggleFocusArea,
-        toggleHelp: () => setShowHelp((current) => !current),
+        toggleHelp,
         toggleHunkHeaders,
         toggleLineNumbers,
         toggleLineWrap,
@@ -509,6 +540,7 @@ export function App({
     [
       activeTheme.id,
       canRefreshCurrentInput,
+      focusFilter,
       layoutMode,
       moveAnnotatedFile,
       moveAnnotatedHunk,
@@ -522,6 +554,7 @@ export function App({
       sidebarVisible,
       toggleAgentNotes,
       toggleFocusArea,
+      toggleHelp,
       toggleHunkHeaders,
       toggleLineNumbers,
       toggleLineWrap,
@@ -545,6 +578,38 @@ export function App({
     switchMenu,
     toggleMenu,
   } = useMenuController(menus);
+
+  useAppKeyboardShortcuts({
+    activeMenuId,
+    activateCurrentMenuItem,
+    canRefreshCurrentInput,
+    clearFilter,
+    closeHelp,
+    closeMenu,
+    cycleTheme,
+    filter,
+    focusArea,
+    focusFiles,
+    focusFilter,
+    moveAnnotatedHunk,
+    moveHunk,
+    moveMenuItem,
+    openMenu,
+    pagerMode,
+    requestQuit,
+    scrollDiff,
+    selectLayoutMode: setLayoutMode,
+    showHelp,
+    switchMenu,
+    toggleAgentNotes,
+    toggleFocusArea,
+    toggleHelp,
+    toggleHunkHeaders,
+    toggleLineNumbers,
+    toggleLineWrap,
+    toggleSidebar,
+    triggerRefreshCurrentInput,
+  });
 
   /** Start a mouse drag resize for the optional sidebar. */
   const beginSidebarResize = (event: TuiMouseEvent) => {
@@ -606,301 +671,6 @@ export function App({
   const diffHeaderLabelWidth = Math.max(8, diffContentWidth - diffHeaderStatsWidth - 1);
   const diffSeparatorWidth = Math.max(4, diffContentWidth - 2);
 
-  useKeyboard((key: KeyEvent) => {
-    const pageDownKey =
-      key.name === "pagedown" ||
-      key.name === "space" ||
-      key.name === " " ||
-      key.sequence === " " ||
-      key.name === "f" ||
-      key.sequence === "f";
-    const pageUpKey = key.name === "pageup" || key.name === "b" || key.sequence === "b";
-    const stepDownKey = key.name === "down" || key.name === "j" || key.sequence === "j";
-    const stepUpKey = key.name === "up" || key.name === "k" || key.sequence === "k";
-
-    // New shortcuts from issue #101 - using less/git diff conventions
-    const halfPageDownKey = key.name === "d" || key.sequence === "d";
-    const halfPageUpKey = key.name === "u" || key.sequence === "u";
-    const shiftSpacePageUpKey =
-      key.shift && (key.name === "space" || key.name === " " || key.sequence === " ");
-
-    if (key.name === "f10") {
-      if (pagerMode) {
-        return;
-      }
-
-      if (activeMenuId) {
-        closeMenu();
-      } else {
-        openMenu("file");
-      }
-      return;
-    }
-
-    if (pagerMode) {
-      if (key.name === "q" || key.name === "escape") {
-        requestQuit();
-        return;
-      }
-
-      if (pageDownKey) {
-        scrollDiff(1, "viewport");
-        return;
-      }
-
-      if (pageUpKey || shiftSpacePageUpKey) {
-        scrollDiff(-1, "viewport");
-        return;
-      }
-
-      if (halfPageDownKey) {
-        scrollDiff(1, "half");
-        return;
-      }
-
-      if (halfPageUpKey) {
-        scrollDiff(-1, "half");
-        return;
-      }
-
-      if (stepDownKey) {
-        scrollDiff(1, "step");
-        return;
-      }
-
-      if (stepUpKey) {
-        scrollDiff(-1, "step");
-        return;
-      }
-
-      if (key.name === "home") {
-        scrollDiff(-1, "content");
-        return;
-      }
-
-      if (key.name === "end") {
-        scrollDiff(1, "content");
-        return;
-      }
-
-      if (key.name === "w" || key.sequence === "w") {
-        toggleLineWrap();
-        return;
-      }
-
-      return;
-    }
-
-    if (showHelp && key.name === "escape") {
-      setShowHelp(false);
-      return;
-    }
-
-    if (activeMenuId) {
-      if (key.name === "escape") {
-        closeMenu();
-        return;
-      }
-
-      if (key.name === "left") {
-        switchMenu(-1);
-        return;
-      }
-
-      if (key.name === "right" || key.name === "tab") {
-        switchMenu(1);
-        return;
-      }
-
-      if (key.name === "up") {
-        moveMenuItem(-1);
-        return;
-      }
-
-      if (key.name === "down") {
-        moveMenuItem(1);
-        return;
-      }
-
-      if (key.name === "return" || key.name === "enter") {
-        activateCurrentMenuItem();
-        return;
-      }
-    }
-
-    if (focusArea === "filter") {
-      if (key.name === "escape") {
-        if (filter.length > 0) {
-          setFilter("");
-          return;
-        }
-
-        setFocusArea("files");
-        return;
-      }
-
-      if (key.name === "tab") {
-        toggleFocusArea();
-        return;
-      }
-
-      // Let the input widget own typing while the filter is focused.
-      return;
-    }
-
-    if (key.name === "q") {
-      requestQuit();
-      return;
-    }
-
-    if (key.name === "?") {
-      setShowHelp((current) => !current);
-      closeMenu();
-      return;
-    }
-
-    if (key.name === "escape") {
-      requestQuit();
-      return;
-    }
-
-    if (key.name === "tab") {
-      toggleFocusArea();
-      return;
-    }
-
-    if (key.name === "/") {
-      setFocusArea("filter");
-      return;
-    }
-
-    if (pageDownKey) {
-      scrollDiff(1, "viewport");
-      return;
-    }
-
-    if (pageUpKey || shiftSpacePageUpKey) {
-      scrollDiff(-1, "viewport");
-      return;
-    }
-
-    if (halfPageDownKey) {
-      scrollDiff(1, "half");
-      return;
-    }
-
-    if (halfPageUpKey) {
-      scrollDiff(-1, "half");
-      return;
-    }
-
-    if (key.name === "home") {
-      scrollDiff(-1, "content");
-      return;
-    }
-
-    if (key.name === "end") {
-      scrollDiff(1, "content");
-      return;
-    }
-
-    if (stepUpKey) {
-      scrollDiff(-1, "step");
-      return;
-    }
-
-    if (stepDownKey) {
-      scrollDiff(1, "step");
-      return;
-    }
-
-    if (key.name === "1") {
-      setLayoutMode("split");
-      closeMenu();
-      return;
-    }
-
-    if (key.name === "2") {
-      setLayoutMode("stack");
-      closeMenu();
-      return;
-    }
-
-    if (key.name === "0") {
-      setLayoutMode("auto");
-      closeMenu();
-      return;
-    }
-
-    if (key.name === "s") {
-      toggleSidebar();
-      closeMenu();
-      return;
-    }
-
-    if ((key.name === "r" || key.sequence === "r") && canRefreshCurrentInput) {
-      triggerRefreshCurrentInput();
-      closeMenu();
-      return;
-    }
-
-    if (key.name === "t") {
-      const currentIndex = THEMES.findIndex((theme) => theme.id === activeTheme.id);
-      const nextIndex = (currentIndex + 1) % THEMES.length;
-      setThemeId(THEMES[nextIndex]!.id);
-      closeMenu();
-      return;
-    }
-
-    if (key.name === "a") {
-      toggleAgentNotes();
-      closeMenu();
-      return;
-    }
-
-    if (key.name === "l" || key.sequence === "l") {
-      toggleLineNumbers();
-      closeMenu();
-      return;
-    }
-
-    if (key.name === "w" || key.sequence === "w") {
-      toggleLineWrap();
-      closeMenu();
-      return;
-    }
-
-    if (key.name === "m" || key.sequence === "m") {
-      toggleHunkHeaders();
-      closeMenu();
-      return;
-    }
-
-    if (key.name === "[") {
-      moveHunk(-1);
-      closeMenu();
-      return;
-    }
-
-    if (key.name === "]") {
-      moveHunk(1);
-      closeMenu();
-      return;
-    }
-
-    if (key.sequence === "{") {
-      moveAnnotatedHunk(-1);
-      closeMenu();
-      return;
-    }
-
-    if (key.sequence === "}") {
-      moveAnnotatedHunk(1);
-      closeMenu();
-      return;
-    }
-  });
-
   return (
     <box
       style={{
@@ -954,7 +724,7 @@ export function App({
               theme={activeTheme}
               width={clampedSidebarWidth}
               onSelectFile={(fileId) => {
-                setFocusArea("files");
+                focusFiles();
                 jumpToFile(fileId, 0, { alignFileHeaderTop: true });
               }}
             />
@@ -1006,7 +776,7 @@ export function App({
           theme={activeTheme}
           onCloseMenu={closeMenu}
           onFilterInput={setFilter}
-          onFilterSubmit={() => setFocusArea("files")}
+          onFilterSubmit={focusFiles}
         />
       ) : null}
 
@@ -1036,7 +806,7 @@ export function App({
             terminalHeight={terminal.height}
             terminalWidth={terminal.width}
             theme={activeTheme}
-            onClose={() => setShowHelp(false)}
+            onClose={closeHelp}
           />
         </Suspense>
       ) : null}

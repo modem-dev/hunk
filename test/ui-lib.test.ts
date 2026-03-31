@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { parseDiffFromFile } from "@pierre/diffs";
+import type { KeyEvent } from "@opentui/core";
 import type { DiffFile } from "../src/core/types";
 import {
   buildMenuSpecs,
@@ -14,6 +15,15 @@ import {
   wrapText,
 } from "../src/ui/lib/agentPopover";
 import { buildAppMenus } from "../src/ui/lib/appMenus";
+import {
+  isHalfPageDownKey,
+  isHalfPageUpKey,
+  isPageDownKey,
+  isPageUpKey,
+  isShiftSpacePageUpKey,
+  isStepDownKey,
+  isStepUpKey,
+} from "../src/ui/lib/keyboard";
 import { fitText, padText } from "../src/ui/lib/text";
 import { computeHunkRevealScrollTop } from "../src/ui/lib/hunkScroll";
 import { estimateDiffBodyRows, measureDiffSectionMetrics } from "../src/ui/lib/sectionHeights";
@@ -22,6 +32,17 @@ import { resolveTheme } from "../src/ui/themes";
 
 function lines(...values: string[]) {
   return `${values.join("\n")}\n`;
+}
+
+function createKeyEvent(overrides: Partial<KeyEvent>): KeyEvent {
+  return {
+    ctrl: false,
+    meta: false,
+    name: "",
+    sequence: "",
+    shift: false,
+    ...overrides,
+  } as KeyEvent;
 }
 
 function createDiffFile(
@@ -151,6 +172,26 @@ describe("ui helpers", () => {
         (entry) => entry.kind === "item" && entry.label === "Graphite" && entry.checked,
       ),
     ).toBe(true);
+  });
+
+  test("keyboard alias helpers normalize the shared scroll shortcut keys", () => {
+    expect(isPageDownKey(createKeyEvent({ name: "pagedown" }))).toBe(true);
+    expect(isPageDownKey(createKeyEvent({ name: "space" }))).toBe(true);
+    expect(isPageDownKey(createKeyEvent({ name: "f" }))).toBe(true);
+    expect(isPageDownKey(createKeyEvent({ sequence: "f" }))).toBe(true);
+    expect(isPageUpKey(createKeyEvent({ name: "pageup" }))).toBe(true);
+    expect(isPageUpKey(createKeyEvent({ name: "b" }))).toBe(true);
+    expect(isPageUpKey(createKeyEvent({ sequence: "b" }))).toBe(true);
+    expect(isShiftSpacePageUpKey(createKeyEvent({ name: "space", shift: true }))).toBe(true);
+    expect(isHalfPageDownKey(createKeyEvent({ name: "d" }))).toBe(true);
+    expect(isHalfPageUpKey(createKeyEvent({ sequence: "u" }))).toBe(true);
+    expect(isStepDownKey(createKeyEvent({ name: "down" }))).toBe(true);
+    expect(isStepDownKey(createKeyEvent({ sequence: "j" }))).toBe(true);
+    expect(isStepUpKey(createKeyEvent({ name: "up" }))).toBe(true);
+    expect(isStepUpKey(createKeyEvent({ sequence: "k" }))).toBe(true);
+    expect(isPageDownKey(createKeyEvent({ name: "space", shift: true }))).toBe(false);
+    expect(isPageDownKey(createKeyEvent({ name: "q" }))).toBe(false);
+    expect(isShiftSpacePageUpKey(createKeyEvent({ name: "space", shift: false }))).toBe(false);
   });
 
   test("fitText and padText clamp using the terminal fallback marker", () => {
