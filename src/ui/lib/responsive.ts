@@ -8,7 +8,7 @@ const FULL_VIEWPORT_MIN_WIDTH = 220;
 export interface ResponsiveLayout {
   viewport: ResponsiveViewport;
   layout: Exclude<LayoutMode, "auto">;
-  showFilesPane: boolean;
+  showSidebar: boolean;
 }
 
 /** Bucket terminal widths into the viewport classes the app layout cares about. */
@@ -35,7 +35,7 @@ export function resolveResponsiveLayout(
     return {
       viewport,
       layout: "split",
-      showFilesPane: viewport === "full",
+      showSidebar: viewport === "full",
     };
   }
 
@@ -43,7 +43,7 @@ export function resolveResponsiveLayout(
     return {
       viewport,
       layout: "stack",
-      showFilesPane: viewport === "full",
+      showSidebar: viewport === "full",
     };
   }
 
@@ -51,13 +51,13 @@ export function resolveResponsiveLayout(
     return {
       viewport,
       layout: "stack",
-      showFilesPane: false,
+      showSidebar: false,
     };
   }
 
   return {
     viewport,
     layout: "split",
-    showFilesPane: viewport === "full",
+    showSidebar: viewport === "full",
   };
 }

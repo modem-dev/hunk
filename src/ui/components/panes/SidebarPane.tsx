@@ -5,7 +5,7 @@ import type { AppTheme } from "../../themes";
 import { FileGroupHeader, FileListItem } from "./FileListItem";
 
 /** Render the file navigation sidebar. */
-export function FilesPane({
+export function SidebarPane({
   entries,
   scrollRef,
   selectedFileId,
