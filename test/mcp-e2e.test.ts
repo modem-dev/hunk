@@ -491,15 +491,17 @@ describe("live session end-to-end", () => {
       ["export const alpha = 2;", "export const keep = true;", "export const gamma = true;"],
     );
 
-    const port = 50000 + Math.floor(Math.random() * 1000);
     const conflictingListener = createServer((_request, response) => {
       response.writeHead(404, { "content-type": "text/plain" });
       response.end("not hunk");
     });
     await new Promise<void>((resolve, reject) => {
       conflictingListener.once("error", reject);
-      conflictingListener.listen(port, "127.0.0.1", () => resolve());
+      conflictingListener.listen(0, "127.0.0.1", () => resolve());
     });
+
+    const address = conflictingListener.address();
+    const port = typeof address === "object" && address ? address.port : 0;
 
     const hunkProc = spawnHunkSession(fixture, {
       port,
