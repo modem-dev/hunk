@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseCli } from "../src/core/cli";
+import { resolveCliVersion } from "../src/core/version";
 
 const tempDirs: string[] = [];
 
@@ -50,6 +51,10 @@ describe("parseCli", () => {
     const explicit = await parseCli(["bun", "hunk", "--help"]);
 
     expect(explicit).toEqual(bare);
+  });
+
+  test("resolves the package version metadata", () => {
+    expect(resolveCliVersion()).toBe(require("../package.json").version);
   });
 
   test("prints the package version for --version and version", async () => {

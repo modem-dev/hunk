@@ -1,9 +1,8 @@
-import { resolveCliVersion } from "./version";
+import { resolveCliVersion, UNKNOWN_CLI_VERSION } from "./version";
 
 const DIST_TAGS_URL = "https://registry.npmjs.org/-/package/hunkdiff/dist-tags";
 const STABLE_SEMVER_PATTERN = /^\d+\.\d+\.\d+$/;
 const PRERELEASE_SEMVER_PATTERN = /^\d+\.\d+\.\d+-[0-9A-Za-z.-]+$/;
-const UNKNOWN_CLI_VERSION = "0.0.0-unknown";
 const DEFAULT_UPDATE_NOTICE_FETCH_TIMEOUT_MS = 5_000;
 const DISABLE_STARTUP_UPDATE_NOTICE_ENV = "HUNK_DISABLE_UPDATE_NOTICE";
 
