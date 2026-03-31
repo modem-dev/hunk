@@ -187,6 +187,53 @@ describe("Hunk integration via tuistory", () => {
     }
   });
 
+  test("clicking a sidebar file pins that file header to the top in a real PTY", async () => {
+    const fixture = harness.createPinnedHeaderRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split"],
+      cwd: fixture.dir,
+      cols: 220,
+      rows: 10,
+    });
+
+    try {
+      const initial = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      expect(initial).toContain("first.ts");
+      expect(initial).toContain("second.ts");
+
+      for (let index = 0; index < 8; index += 1) {
+        await session.press("down");
+      }
+
+      const scrolled = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("line08 = 108") && text.includes("first.ts"),
+        5_000,
+      );
+
+      expect(scrolled).toContain("first.ts");
+
+      await session.click(/M second\.ts\s+\+16 -16/);
+      const pinned = await harness.waitForSnapshot(
+        session,
+        (text) =>
+          text.includes("second.ts") &&
+          text.includes("line17 = 117") &&
+          harness.countMatches(text, /first\.ts/g) === 1,
+        5_000,
+      );
+
+      expect(pinned).toContain("second.ts");
+      expect(pinned).toContain("line17 = 117");
+      expect(harness.countMatches(pinned, /first\.ts/g)).toBe(1);
+    } finally {
+      session.close();
+    }
+  });
+
   test("explicit split mode stays split after a live resize", async () => {
     const fixture = harness.createTwoFileRepoFixture();
     const session = await harness.launchHunk({

@@ -64,6 +64,14 @@ function writeText(path: string, content: string) {
   writeFileSync(path, content);
 }
 
+/** Build numbered export lines so PTY fixtures can assert on stable visible content. */
+function createNumberedExportLines(start: number, count: number, valueOffset = 0) {
+  return Array.from({ length: count }, (_, index) => {
+    const lineNumber = start + index;
+    return `export const line${String(lineNumber).padStart(2, "0")} = ${lineNumber + valueOffset};`;
+  }).join("\n");
+}
+
 function runGit(args: string[], cwd: string, allowExitCodeOne = false) {
   const proc = spawnSync("git", args, {
     cwd,
@@ -224,6 +232,21 @@ export function createTuistoryHarness() {
     ]);
   }
 
+  function createPinnedHeaderRepoFixture() {
+    return createGitRepoFixture([
+      {
+        path: "first.ts",
+        before: `${createNumberedExportLines(1, 16)}\n`,
+        after: `${createNumberedExportLines(1, 16, 100)}\n`,
+      },
+      {
+        path: "second.ts",
+        before: `${createNumberedExportLines(17, 16)}\n`,
+        after: `${createNumberedExportLines(17, 16, 100)}\n`,
+      },
+    ]);
+  }
+
   function createSidebarJumpRepoFixture() {
     return createGitRepoFixture([
       {
@@ -342,6 +365,7 @@ export function createTuistoryHarness() {
     createLongWrapFilePair,
     createMultiHunkFilePair,
     createPagerPatchFixture,
+    createPinnedHeaderRepoFixture,
     createScrollableFilePair,
     createSidebarJumpRepoFixture,
     createTwoFileRepoFixture,
