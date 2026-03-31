@@ -22,7 +22,9 @@ function enforceCacheLimit() {
 /** Content fingerprint from the diff patch. Changes whenever the underlying diff
  *  changes, allowing per-file cache invalidation without a global flush. */
 function patchFingerprint(file: DiffFile) {
-  return `${file.patch.length}:${file.patch.slice(0, 128)}`;
+  const { patch } = file;
+  const mid = Math.floor(patch.length / 2);
+  return `${patch.length}:${patch.slice(0, 64)}:${patch.slice(mid, mid + 64)}:${patch.slice(-64)}`;
 }
 
 /** Cache key that includes a content fingerprint so stale entries are never served
@@ -120,10 +122,7 @@ export function useHighlightedDiff({
           return;
         }
 
-        if (
-          effectPromise &&
-          commitHighlightResult(effectCacheKey, effectPromise, nextHighlighted)
-        ) {
+        if (commitHighlightResult(effectCacheKey, effectPromise, nextHighlighted)) {
           setHighlighted(nextHighlighted);
           setHighlightedCacheKey(effectCacheKey);
         }
@@ -137,7 +136,7 @@ export function useHighlightedDiff({
           deletionLines: [],
           additionLines: [],
         } satisfies HighlightedDiffCode;
-        if (effectPromise && commitHighlightResult(effectCacheKey, effectPromise, fallback)) {
+        if (commitHighlightResult(effectCacheKey, effectPromise, fallback)) {
           setHighlighted(fallback);
           setHighlightedCacheKey(effectCacheKey);
         }

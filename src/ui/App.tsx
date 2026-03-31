@@ -393,7 +393,12 @@ export function App({
 
     await onReloadSession(nextInput, {
       resetApp: false,
-      sourcePath: bootstrap.changeset.sourceLabel,
+      sourcePath:
+        bootstrap.input.kind === "git" ||
+        bootstrap.input.kind === "show" ||
+        bootstrap.input.kind === "stash-show"
+          ? bootstrap.changeset.sourceLabel
+          : undefined,
     });
   }, [
     bootstrap.changeset.sourceLabel,
