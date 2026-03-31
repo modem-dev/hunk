@@ -1069,7 +1069,7 @@ describe("App interactions", () => {
     }
   });
 
-  test("new shortcuts d, u, f, and Shift+Space work without errors", async () => {
+  test("new shortcuts d, u, f, and Shift+Space are accepted without errors", async () => {
     const before =
       Array.from(
         { length: 50 },
