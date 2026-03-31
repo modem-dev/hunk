@@ -16,7 +16,7 @@ import {
 import { buildAppMenus } from "../src/ui/lib/appMenus";
 import { fitText, padText } from "../src/ui/lib/text";
 import { computeHunkRevealScrollTop } from "../src/ui/lib/hunkScroll";
-import { estimateDiffBodyRows, measureDiffSectionMetrics } from "../src/ui/lib/sectionHeights";
+import { estimateDiffBodyRows, measureDiffSectionMetrics } from "../src/ui/lib/diffSectionMetrics";
 import { resizeSidebarWidth } from "../src/ui/lib/sidebar";
 import { resolveTheme } from "../src/ui/themes";
 

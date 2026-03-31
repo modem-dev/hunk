@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { VisibleAgentNote } from "../src/ui/lib/agentAnnotations";
-import { measureDiffSectionMetrics } from "../src/ui/lib/sectionHeights";
+import { measureDiffSectionMetrics } from "../src/ui/lib/diffSectionMetrics";
 import { resolveTheme } from "../src/ui/themes";
 import { createDiffFile, createHeaderOnlyDiffFile, lines } from "./fixtures/diff-helpers";
 

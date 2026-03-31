@@ -5,7 +5,7 @@ import { parseDiffFromFile } from "@pierre/diffs";
 import { act, createRef, type ReactNode } from "react";
 import type { AppBootstrap, DiffFile } from "../src/core/types";
 import { resolveTheme } from "../src/ui/themes";
-import { measureDiffSectionMetrics } from "../src/ui/lib/sectionHeights";
+import { measureDiffSectionMetrics } from "../src/ui/lib/diffSectionMetrics";
 
 const { AppHost } = await import("../src/ui/AppHost");
 const { buildSidebarEntries } = await import("../src/ui/lib/files");

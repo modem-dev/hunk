@@ -15,7 +15,7 @@ import {
   measureDiffSectionMetrics,
   type DiffSectionMetrics,
   type DiffSectionRowMetric,
-} from "../../lib/sectionHeights";
+} from "../../lib/diffSectionMetrics";
 import {
   buildSectionLayoutMetrics,
   findHeaderOwningSection,

@@ -3,7 +3,7 @@
 import { performance } from "perf_hooks";
 import { buildSplitRows } from "../src/ui/diff/pierre";
 import { buildReviewRenderPlan } from "../src/ui/diff/reviewRenderPlan";
-import { measureDiffSectionMetrics } from "../src/ui/lib/sectionHeights";
+import { measureDiffSectionMetrics } from "../src/ui/lib/diffSectionMetrics";
 import { resolveTheme } from "../src/ui/themes";
 import {
   createLargeSplitStreamFiles,
