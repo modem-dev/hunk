@@ -96,3 +96,7 @@ CLI input
 - Local review artifacts are ignored on purpose. Leave them alone unless the user explicitly wants them updated, and do not commit them.
 - Do not auto-commit after making changes. Leave edits uncommitted so the user can review them in `hunk`, and only commit when the user explicitly asks.
 - Keep this doc short and architectural. Fresh-context agents can discover file paths themselves.
+
+## commits
+
+Commit titles should follow Conventional Commits. Format: `<type>[scope]: <description>`. Common types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `ci`, `build`. Use `!` or `BREAKING CHANGE:` footer for breaking changes. Description should explain the "why", not just the "what".
