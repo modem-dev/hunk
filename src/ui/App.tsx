@@ -273,10 +273,9 @@ export function App({
       return;
     }
 
-    sidebarScrollRef.current?.scrollChildIntoView(fileRowId(nextCursor.fileId));
-    setSelectedFileId(nextCursor.fileId);
-    setSelectedHunkIndex(nextCursor.hunkIndex);
-    setScrollToNote(false);
+    jumpToFile(nextCursor.fileId, nextCursor.hunkIndex, {
+      alignFileHeaderTop: nextCursor.fileId !== selectedFile?.id,
+    });
   };
 
   /** Move the review focus to the next or previous annotated hunk. */

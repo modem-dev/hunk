@@ -1434,9 +1434,14 @@ describe("App interactions", () => {
       });
       await flush(setup);
 
-      frame = setup.captureCharFrame();
+      frame = await waitForFrame(
+        setup,
+        (nextFrame) =>
+          nextFrame.includes("second.ts") && (nextFrame.match(/first\.ts/g) ?? []).length === 1,
+        24,
+      );
       expect(frame).toContain("second.ts");
-      expect(frame).toContain("line17 = 117");
+      expect((frame.match(/first\.ts/g) ?? []).length).toBe(1);
     } finally {
       await act(async () => {
         setup.renderer.destroy();

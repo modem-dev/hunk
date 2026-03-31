@@ -588,10 +588,26 @@ export function DiffPane({
       return;
     }
 
-    if (scrollFileHeaderToTop(pendingFileId)) {
-      clearPendingFileTopAlign();
+    const desiredTop = resolveFileSectionHeaderTop(fileSectionLayoutMetrics, pendingFileId);
+    if (desiredTop == null) {
+      return;
     }
-  }, [clearPendingFileTopAlign, fileSectionLayoutMetrics, files, scrollFileHeaderToTop]);
+
+    const currentTop = scrollRef.current?.scrollTop ?? scrollViewport.top;
+    if (Math.abs(currentTop - desiredTop) <= 0.5) {
+      clearPendingFileTopAlign();
+      return;
+    }
+
+    scrollFileHeaderToTop(pendingFileId);
+  }, [
+    clearPendingFileTopAlign,
+    fileSectionLayoutMetrics,
+    files,
+    scrollFileHeaderToTop,
+    scrollRef,
+    scrollViewport.top,
+  ]);
 
   useLayoutEffect(() => {
     if (suppressNextSelectionAutoScrollRef.current) {
