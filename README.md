@@ -42,7 +42,8 @@ Requirements:
 ## Quick start
 
 ```bash
-hunk           # show help
+hunk           # launch the default review UI (same as `hunk diff`)
+hunk --help    # show top-level help
 hunk --version # print the installed version
 ```
 

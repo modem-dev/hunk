@@ -8,9 +8,15 @@ import {
   usesPipedPatchInput,
   type ControllingTerminal,
 } from "./terminal";
-import type { AppBootstrap, CliInput, ParsedCliInput, SessionCommandInput } from "./types";
+import type {
+  AppBootstrap,
+  CliInput,
+  PagerCommandInput,
+  ParsedCliInput,
+  SessionCommandInput,
+} from "./types";
 import { canReloadInput } from "./watch";
-import { parseCli } from "./cli";
+import { parseCli, renderCliHelp } from "./cli";
 
 export type StartupPlan =
   | {
@@ -44,6 +50,7 @@ export interface StartupDeps {
   loadAppBootstrapImpl?: typeof loadAppBootstrap;
   usesPipedPatchInputImpl?: typeof usesPipedPatchInput;
   openControllingTerminalImpl?: typeof openControllingTerminal;
+  stdinIsTTY?: boolean;
 }
 
 /** Normalize startup work so help, pager, and app-bootstrap paths can be tested directly. */
@@ -60,8 +67,9 @@ export async function prepareStartupPlan(
   const loadAppBootstrapImpl = deps.loadAppBootstrapImpl ?? loadAppBootstrap;
   const usesPipedPatchInputImpl = deps.usesPipedPatchInputImpl ?? usesPipedPatchInput;
   const openControllingTerminalImpl = deps.openControllingTerminalImpl ?? openControllingTerminal;
+  const stdinIsTTY = deps.stdinIsTTY ?? Boolean(process.stdin.isTTY);
 
-  let parsedCliInput = await parseCliImpl(argv);
+  const parsedCliInput = await parseCliImpl(argv);
 
   if (parsedCliInput.kind === "help") {
     return {
@@ -83,8 +91,31 @@ export async function prepareStartupPlan(
     };
   }
 
-  if (parsedCliInput.kind === "pager") {
+  const bareInvocation = parsedCliInput.kind === "bare";
+  let appCliInput: CliInput | PagerCommandInput;
+
+  if (bareInvocation) {
+    // Keep bare `hunk` ergonomic in interactive shells while preserving pager-style stdin flows.
+    if (stdinIsTTY) {
+      appCliInput = { kind: "git", staged: false, options: {} };
+    } else {
+      appCliInput = { kind: "pager", options: {} };
+    }
+  } else if (parsedCliInput.kind === "pager") {
+    appCliInput = parsedCliInput;
+  } else {
+    appCliInput = parsedCliInput;
+  }
+
+  if (appCliInput.kind === "pager") {
     const stdinText = await readStdinText();
+
+    if (stdinText.length === 0 && bareInvocation) {
+      return {
+        kind: "help",
+        text: renderCliHelp(),
+      };
+    }
 
     if (!looksLikePatchInputImpl(stdinText)) {
       return {
@@ -93,18 +124,18 @@ export async function prepareStartupPlan(
       };
     }
 
-    parsedCliInput = {
+    appCliInput = {
       kind: "patch",
       file: "-",
       text: stdinText,
       options: {
-        ...parsedCliInput.options,
+        ...appCliInput.options,
         pager: true,
       },
     };
   }
 
-  const runtimeCliInput = resolveRuntimeCliInputImpl(parsedCliInput);
+  const runtimeCliInput = resolveRuntimeCliInputImpl(appCliInput);
   const configured = resolveConfiguredCliInputImpl(runtimeCliInput);
   const cliInput = configured.input;
 

@@ -22,34 +22,33 @@ afterEach(() => {
 });
 
 describe("parseCli", () => {
-  test("prints help when no subcommand is passed", async () => {
+  test("returns a bare invocation marker when no subcommand is passed", async () => {
     const parsed = await parseCli(["bun", "hunk"]);
 
-    expect(parsed.kind).toBe("help");
-    if (parsed.kind !== "help") {
-      throw new Error("Expected top-level help output.");
-    }
-
-    expect(parsed.text).toContain("Usage:");
-    expect(parsed.text).toContain("hunk diff");
-    expect(parsed.text).toContain("hunk show");
-    expect(parsed.text).toContain("Global options:");
-    expect(parsed.text).toContain("Common review options:");
-    expect(parsed.text).toContain("auto-reload when the current diff input changes");
-    expect(parsed.text).toContain("Git diff options:");
-    expect(parsed.text).toContain("Notes:");
-    expect(parsed.text).toContain(
-      "Run `hunk <command> --help` for command-specific syntax and options.",
-    );
-    expect(parsed.text).not.toContain("Config:");
-    expect(parsed.text).not.toContain("Examples:");
+    expect(parsed).toEqual({ kind: "bare" });
   });
 
-  test("prints the same top-level help for --help", async () => {
-    const bare = await parseCli(["bun", "hunk"]);
+  test("prints top-level help for explicit --help", async () => {
     const explicit = await parseCli(["bun", "hunk", "--help"]);
 
-    expect(explicit).toEqual(bare);
+    expect(explicit.kind).toBe("help");
+    if (explicit.kind !== "help") {
+      throw new Error("Expected explicit help output.");
+    }
+
+    expect(explicit.text).toContain("Usage:");
+    expect(explicit.text).toContain("hunk diff");
+    expect(explicit.text).toContain("hunk show");
+    expect(explicit.text).toContain("Global options:");
+    expect(explicit.text).toContain("Common review options:");
+    expect(explicit.text).toContain("auto-reload when the current diff input changes");
+    expect(explicit.text).toContain("Git diff options:");
+    expect(explicit.text).toContain("Notes:");
+    expect(explicit.text).toContain(
+      "Run `hunk <command> --help` for command-specific syntax and options.",
+    );
+    expect(explicit.text).not.toContain("Config:");
+    expect(explicit.text).not.toContain("Examples:");
   });
 
   test("prints the package version for --version and version", async () => {

@@ -17,10 +17,44 @@ function createBootstrap(input: CliInput): AppBootstrap {
 }
 
 describe("startup planning", () => {
-  test("returns help output without entering app startup", async () => {
-    let loaded = false;
+  test("defaults bare interactive invocations to working-tree diff startup", async () => {
+    const seenInputs: CliInput[] = [];
 
     const plan = await prepareStartupPlan(["bun", "hunk"], {
+      parseCliImpl: async () => ({ kind: "bare" }),
+      stdinIsTTY: true,
+      resolveRuntimeCliInputImpl(input) {
+        seenInputs.push(input);
+        return input;
+      },
+      resolveConfiguredCliInputImpl(input) {
+        seenInputs.push(input);
+        return { input } as never;
+      },
+      loadAppBootstrapImpl: async (input) => {
+        seenInputs.push(input);
+        return createBootstrap(input);
+      },
+      usesPipedPatchInputImpl: () => false,
+    });
+
+    expect(plan.kind).toBe("app");
+    if (plan.kind !== "app") {
+      throw new Error("Expected app startup plan.");
+    }
+
+    expect(plan.cliInput).toEqual({
+      kind: "git",
+      staged: false,
+      options: {},
+    });
+    expect(seenInputs).toHaveLength(3);
+  });
+
+  test("returns help output for explicit --help without entering app startup", async () => {
+    let loaded = false;
+
+    const plan = await prepareStartupPlan(["bun", "hunk", "--help"], {
       parseCliImpl: async () => ({ kind: "help", text: "Usage: hunk\n" }),
       loadAppBootstrapImpl: async () => {
         loaded = true;
@@ -29,6 +63,28 @@ describe("startup planning", () => {
     });
 
     expect(plan).toEqual({ kind: "help", text: "Usage: hunk\n" });
+    expect(loaded).toBe(false);
+  });
+
+  test("keeps bare non-interactive invocation on help when stdin is empty", async () => {
+    let loaded = false;
+
+    const plan = await prepareStartupPlan(["bun", "hunk"], {
+      parseCliImpl: async () => ({ kind: "bare" }),
+      stdinIsTTY: false,
+      readStdinText: async () => "",
+      looksLikePatchInputImpl: () => false,
+      loadAppBootstrapImpl: async () => {
+        loaded = true;
+        throw new Error("unreachable");
+      },
+    });
+
+    expect(plan.kind).toBe("help");
+    if (plan.kind !== "help") {
+      throw new Error("Expected help output.");
+    }
+    expect(plan.text).toContain("Usage:");
     expect(loaded).toBe(false);
   });
 
@@ -115,6 +171,45 @@ describe("startup planning", () => {
       text: "diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n",
       options: {
         theme: "paper",
+        pager: true,
+      },
+    });
+    expect(seenInputs).toHaveLength(3);
+  });
+
+  test("normalizes bare non-interactive diff stdin into patch app startup", async () => {
+    const seenInputs: CliInput[] = [];
+
+    const plan = await prepareStartupPlan(["bun", "hunk"], {
+      parseCliImpl: async () => ({ kind: "bare" }),
+      stdinIsTTY: false,
+      readStdinText: async () => "diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n",
+      looksLikePatchInputImpl: () => true,
+      resolveRuntimeCliInputImpl(input) {
+        seenInputs.push(input);
+        return input;
+      },
+      resolveConfiguredCliInputImpl(input) {
+        seenInputs.push(input);
+        return { input } as never;
+      },
+      loadAppBootstrapImpl: async (input) => {
+        seenInputs.push(input);
+        return createBootstrap(input);
+      },
+      usesPipedPatchInputImpl: () => false,
+    });
+
+    expect(plan.kind).toBe("app");
+    if (plan.kind !== "app") {
+      throw new Error("Expected app startup plan.");
+    }
+
+    expect(plan.cliInput).toMatchObject({
+      kind: "patch",
+      file: "-",
+      text: "diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n",
+      options: {
         pager: true,
       },
     });
