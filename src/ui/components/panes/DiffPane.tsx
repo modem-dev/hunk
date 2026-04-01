@@ -366,23 +366,25 @@ export function DiffPane({
     () => buildFileSectionLayouts(files, estimatedBodyHeights),
     [estimatedBodyHeights, files],
   );
+  const totalContentHeight = fileSectionLayouts[fileSectionLayouts.length - 1]?.sectionBottom ?? 0;
   // Read the live scroll box position during render so sticky-header ownership flips
   // immediately after imperative scrolls instead of waiting for the polled viewport snapshot.
   const effectiveScrollTop = scrollRef.current?.scrollTop ?? scrollViewport.top;
 
-  const totalContentHeight = fileSectionLayouts[fileSectionLayouts.length - 1]?.sectionBottom ?? 0;
-
   const stickyHeaderFile = useMemo(() => {
-    if (files.length < 2) {
+    if (files.length < 2 || effectiveScrollTop <= 0) {
       return null;
     }
 
-    const owner = findHeaderOwningFileSection(fileSectionLayouts, effectiveScrollTop);
-    if (!owner || effectiveScrollTop <= owner.headerTop) {
-      return null;
-    }
+    // Keep the sticky-header lane active while scrolling so the viewport height stays stable.
+    // Use the previous visible row to decide ownership so the next file's real header can still
+    // scroll through the stream before the sticky header hands off to it on the following row.
+    const owner = findHeaderOwningFileSection(
+      fileSectionLayouts,
+      Math.max(0, effectiveScrollTop - 1),
+    );
 
-    return files[owner.sectionIndex] ?? null;
+    return owner ? (files[owner.sectionIndex] ?? null) : null;
   }, [effectiveScrollTop, fileSectionLayouts, files]);
 
   const visibleWindowedFileIds = useMemo(() => {

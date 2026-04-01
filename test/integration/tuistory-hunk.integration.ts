@@ -234,6 +234,73 @@ describe("Hunk integration via tuistory", () => {
     }
   });
 
+  test("mouse wheel scrolling preserves the divider and header handoff in a real PTY", async () => {
+    const fixture = harness.createPinnedHeaderRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split"],
+      cwd: fixture.dir,
+      cols: 220,
+      rows: 10,
+    });
+
+    try {
+      const initial = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      expect(initial).toContain("first.ts");
+      expect(initial).toContain("second.ts");
+
+      await session.scrollDown(18);
+      const boundary = await harness.waitForSnapshot(
+        session,
+        (text) =>
+          harness.countMatches(text, /first\.ts/g) === 2 &&
+          harness.countMatches(text, /second\.ts/g) === 2 &&
+          text.includes("@@ -1,16 +1,16 @@") &&
+          text.includes("line17 = 117"),
+        5_000,
+      );
+
+      expect(boundary).toContain("first.ts");
+      expect(boundary).toContain("second.ts");
+      expect(boundary).toContain("@@ -1,16 +1,16 @@");
+      expect(boundary).toContain("line17 = 117");
+
+      await session.scrollDown(1);
+      const nextHeader = await harness.waitForSnapshot(
+        session,
+        (text) =>
+          harness.countMatches(text, /first\.ts/g) === 2 &&
+          harness.countMatches(text, /second\.ts/g) === 2 &&
+          text.includes("line18 = 118"),
+        5_000,
+      );
+
+      expect(nextHeader).toContain("first.ts");
+      expect(nextHeader).toContain("second.ts");
+      expect(nextHeader).toContain("line18 = 118");
+
+      await session.scrollDown(1);
+      const handedOff = await harness.waitForSnapshot(
+        session,
+        (text) =>
+          harness.countMatches(text, /first\.ts/g) === 1 &&
+          harness.countMatches(text, /second\.ts/g) === 2 &&
+          text.includes("line17 = 117") &&
+          !text.includes("@@ -1,16 +1,16 @@"),
+        5_000,
+      );
+
+      expect(harness.countMatches(handedOff, /first\.ts/g)).toBe(1);
+      expect(harness.countMatches(handedOff, /second\.ts/g)).toBe(2);
+      expect(handedOff).toContain("line17 = 117");
+      expect(handedOff).not.toContain("@@ -1,16 +1,16 @@");
+    } finally {
+      session.close();
+    }
+  });
+
   test("explicit split mode stays split after a live resize", async () => {
     const fixture = harness.createTwoFileRepoFixture();
     const session = await harness.launchHunk({

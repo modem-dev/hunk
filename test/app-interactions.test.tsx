@@ -1410,7 +1410,7 @@ describe("App interactions", () => {
     }
   });
 
-  test("hunk navigation updates the pinned file header when jumping across files", async () => {
+  test("hunk navigation keeps the sticky header lane stable when jumping across files", async () => {
     const setup = await testRender(<AppHost bootstrap={createTwoFileHunkBootstrap()} />, {
       width: 220,
       height: 10,
@@ -1437,11 +1437,11 @@ describe("App interactions", () => {
       frame = await waitForFrame(
         setup,
         (nextFrame) =>
-          nextFrame.includes("second.ts") && (nextFrame.match(/first\.ts/g) ?? []).length === 1,
+          nextFrame.includes("second.ts") && (nextFrame.match(/first\.ts/g) ?? []).length === 2,
         24,
       );
       expect(frame).toContain("second.ts");
-      expect((frame.match(/first\.ts/g) ?? []).length).toBe(1);
+      expect((frame.match(/first\.ts/g) ?? []).length).toBe(2);
     } finally {
       await act(async () => {
         setup.renderer.destroy();

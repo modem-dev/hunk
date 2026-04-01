@@ -506,7 +506,7 @@ describe("UI components", () => {
     }
   });
 
-  test("DiffPane keeps the previous file header pinned until the next header reaches the top", async () => {
+  test("DiffPane keeps the sticky-header lane stable through the divider and next-header handoff", async () => {
     const theme = resolveTheme("midnight", null);
     const firstFile = createTallDiffFile("first", "first.ts", 18);
     const secondFile = createTallDiffFile("second", "second.ts", 18);
@@ -558,17 +558,50 @@ describe("UI components", () => {
 
       frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("first.ts"));
       expect(frame).toContain("first.ts");
+      const stickyViewportHeight = scrollRef.current?.viewport.height ?? 0;
+      expect(stickyViewportHeight).toBeGreaterThan(0);
 
       await act(async () => {
         scrollRef.current?.scrollTo(separatorTop);
       });
       await settleStickyScroll();
 
-      frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("first.ts"));
+      frame = await waitForFrame(
+        setup,
+        (nextFrame) => nextFrame.includes("first.ts") && nextFrame.includes("────"),
+      );
       expect(frame).toContain("first.ts");
+      expect(frame).toContain("────");
+      expect(scrollRef.current?.viewport.height ?? 0).toBe(stickyViewportHeight);
 
       await act(async () => {
         scrollRef.current?.scrollTo(secondHeaderTop);
+      });
+      await settleStickyScroll();
+
+      frame = await waitForFrame(
+        setup,
+        (nextFrame) => nextFrame.includes("first.ts") && nextFrame.includes("second.ts"),
+      );
+      expect(frame).toContain("first.ts");
+      expect(frame).toContain("second.ts");
+      expect(scrollRef.current?.viewport.height ?? 0).toBe(stickyViewportHeight);
+
+      await act(async () => {
+        scrollRef.current?.scrollTo(secondHeaderTop + 1);
+      });
+      await settleStickyScroll();
+
+      frame = await waitForFrame(
+        setup,
+        (nextFrame) => nextFrame.includes("first.ts") && nextFrame.includes("@@ -1,18 +1,18 @@"),
+      );
+      expect(frame).toContain("first.ts");
+      expect(frame).toContain("@@ -1,18 +1,18 @@");
+      expect(scrollRef.current?.viewport.height ?? 0).toBe(stickyViewportHeight);
+
+      await act(async () => {
+        scrollRef.current?.scrollTo(secondHeaderTop + 2);
       });
       await settleStickyScroll();
 
@@ -578,6 +611,7 @@ describe("UI components", () => {
       );
       expect(frame).not.toContain("first.ts");
       expect(frame).toContain("second.ts");
+      expect(scrollRef.current?.viewport.height ?? 0).toBe(stickyViewportHeight);
     } finally {
       await act(async () => {
         setup.renderer.destroy();
