@@ -168,9 +168,12 @@ Most users only need `hunk session ...`. Use `hunk mcp serve` only for manual st
 
 ```bash
 hunk session list
+hunk session get --repo .
 hunk session context --repo .
 hunk session navigate --repo . --file README.md --hunk 2
 hunk session reload --repo . -- diff
+hunk session reload --repo /path/to/worktree -- diff
+hunk session reload --session-path /path/to/live-window --source /path/to/other-checkout -- diff
 hunk session reload --repo . -- show HEAD~1 -- README.md
 hunk session comment add --repo . --file README.md --new-line 103 --summary "Tighten this wording"
 hunk session comment list --repo .
@@ -179,6 +182,11 @@ hunk session comment clear --repo . --file README.md --yes
 ```
 
 `hunk session reload ... -- <hunk command>` swaps what a live session is showing without opening a new TUI window.
+
+- `--repo <path>` selects the live session by its current loaded repo root.
+- `--source <path>` is reload-only: it changes where the nested `diff` / `show` command runs, but does not select the session.
+- For normal worktree use, prefer targeting the worktree session directly with `hunk session reload --repo /path/to/worktree -- diff`.
+- Use `--session-path` + `--source` only for advanced cases where you want to repoint an already-open live window to another checkout or path.
 
 #### Load agent comments from a file
 
