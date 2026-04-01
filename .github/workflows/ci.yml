@@ -107,7 +107,9 @@ jobs:
             echo "bun unexpectedly available on the sanitized PATH" >&2
             exit 1
           fi
-          hunk --help | grep 'Usage: hunk'
+          hunk --help | grep '^Usage:$'
+          hunk --help | grep '^  hunk$'
+          hunk --help | grep '^  hunk <command> \[options\]$'
 
   prebuilt-npm:
     name: Verify prebuilt npm package (${{ matrix.os }})
