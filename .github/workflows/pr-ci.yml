@@ -75,9 +75,10 @@ jobs:
             echo "bun unexpectedly available on the sanitized PATH" >&2
             exit 1
           fi
-          hunk --help | grep '^Usage:$'
-          hunk --help | grep '^  hunk$'
-          hunk --help | grep '^  hunk <command> \[options\]$'
+          help_output="$(hunk --help)"
+          printf '%s\n' "$help_output" | grep '^Usage:$'
+          printf '%s\n' "$help_output" | grep '^  hunk$'
+          printf '%s\n' "$help_output" | grep '^  hunk <command> \[options\]$'
 
       - name: Stage prebuilt npm packages
         run: bun run build:prebuilt:npm
