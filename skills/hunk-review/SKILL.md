@@ -5,27 +5,35 @@ description: Interacts with live Hunk diff review sessions via CLI. Inspects rev
 
 # Hunk Review
 
-Hunk is an interactive terminal diff viewer. The TUI is for the user -- do NOT run `hunk diff`, `hunk show`, or other interactive commands directly. Use `hunk session *` CLI commands to inspect and control live sessions.
+Hunk is an interactive terminal diff viewer. The TUI is for the user -- do NOT run `hunk diff`, `hunk show`, or other interactive commands directly. Use `hunk session *` CLI commands to inspect and control live sessions through the local daemon.
 
 If no session exists, ask the user to launch Hunk in their terminal first.
 
 ## Workflow
 
-```
+```text
 1. hunk session list                    # find live sessions
-2. hunk session context --repo .        # check current focus
-3. hunk session navigate ...            # move to the right place
-4. hunk session reload -- <command>     # swap contents if needed
-5. hunk session comment add ...         # leave review notes
+2. hunk session get --repo .            # inspect path / repo / source
+3. hunk session context --repo .        # check current focus
+4. hunk session navigate ...            # move to the right place
+5. hunk session reload -- <command>     # swap contents if needed
+6. hunk session comment add ...         # leave review notes
 ```
 
 ## Session selection
 
-Every command (except `list`) needs a session target:
+Most session commands accept:
 
-- `--repo <path>` -- match by repo root (most common)
+- `--repo <path>` -- match by the loaded review's repo root (most common)
 - `<session-id>` -- match by exact ID (use when multiple sessions share a repo)
 - If only one session exists, it auto-resolves
+
+`reload` also supports:
+
+- `--session-path <path>` -- match the live Hunk window by its current working directory
+- `--source <path>` -- load the replacement `diff` / `show` command from a different directory
+
+Use `--session-path` + `--source` when the live Hunk window and the repo you want to diff are different paths, e.g. worktree or split-session setups.
 
 ## Commands
 
@@ -37,9 +45,11 @@ hunk session get (--repo . | <id>) [--json]
 hunk session context (--repo . | <id>) [--json]
 ```
 
+- `get` shows the session `Path`, `Repo`, and `Source`, which helps when choosing between `--repo` and `--session-path`
+
 ### Navigate
 
-Requires `--file` and exactly one of `--hunk`, `--new-line`, or `--old-line`:
+Absolute navigation requires `--file` and exactly one of `--hunk`, `--new-line`, or `--old-line`:
 
 ```bash
 hunk session navigate --repo . --file src/App.tsx --hunk 2
@@ -47,8 +57,16 @@ hunk session navigate --repo . --file src/App.tsx --new-line 372
 hunk session navigate --repo . --file src/App.tsx --old-line 355
 ```
 
+Relative comment navigation jumps between annotated hunks and does not require `--file`:
+
+```bash
+hunk session navigate --repo . --next-comment
+hunk session navigate --repo . --prev-comment
+```
+
 - `--hunk <n>` is 1-based
-- `--new-line`/`--old-line` are 1-based line numbers on that diff side
+- `--new-line` / `--old-line` are 1-based line numbers on that diff side
+- Use either `--next-comment` or `--prev-comment`, not both
 
 ### Reload
 
@@ -56,20 +74,27 @@ Swaps the live session's contents. Pass a Hunk review command after `--`:
 
 ```bash
 hunk session reload --repo . -- diff
+hunk session reload --repo . -- diff main...feature -- src/ui
 hunk session reload --repo . -- show HEAD~1
 hunk session reload --repo . -- show HEAD~1 -- README.md
+hunk session reload --session-path /path/to/worktree --source /path/to/repo -- diff
 ```
+
+- Always include `--` before the nested Hunk command
+- `--session-path` targets the live window; `--source` controls where the replacement review command runs
 
 ### Comments
 
 ```bash
-hunk session comment add --repo . --file README.md --new-line 103 --summary "Tighten this wording" [--rationale "..."] [--author "agent"]
+hunk session comment add --repo . --file README.md --new-line 103 --summary "Tighten this wording" [--rationale "..."] [--author "agent"] [--no-reveal]
 hunk session comment list --repo . [--file README.md]
 hunk session comment rm --repo . <comment-id>
 hunk session comment clear --repo . --yes [--file README.md]
 ```
 
 - `comment add` requires `--file`, `--summary`, and exactly one of `--old-line` or `--new-line`
+- `comment add` reveals the note by default; pass `--no-reveal` to keep the current focus
+- `comment list` and `comment clear` accept optional `--file`
 - Quote `--summary` and `--rationale` defensively in the shell
 
 ## New files in working-tree reviews
@@ -87,7 +112,7 @@ The user may ask you to walk them through a changeset or review code using Hunk.
 Typical flow:
 
 1. Load the right content (`reload` if needed)
-2. Navigate to the first interesting file/hunk
+2. Navigate to the first interesting file / hunk
 3. Add a comment explaining what's happening and why
 4. Move to the next point of interest -- repeat
 5. Summarize when done
@@ -101,7 +126,10 @@ Guidelines:
 
 ## Common errors
 
-- **"No visible diff file matches ..."** -- file isn't in the loaded review. Check `context`, then `reload` if needed.
+- **"No visible diff file matches ..."** -- the file is not in the loaded review. Check `context`, then `reload` if needed.
 - **"No active Hunk sessions"** -- ask the user to open Hunk in their terminal.
 - **"Multiple active sessions match"** -- pass `<session-id>` explicitly.
-- **"Specify exactly one navigation target"** -- pick one of `--hunk`, `--old-line`, `--new-line`.
+- **"No active Hunk session matches session path ..."** -- for worktree / split-session reloads, verify the live window `Path` via `hunk session get` or `list`, then use `--session-path`.
+- **"Pass the replacement Hunk command after `--`"** -- include `--` before the nested `diff` / `show` command.
+- **"Specify exactly one navigation target"** -- pick one of `--hunk`, `--old-line`, or `--new-line`.
+- **"Specify either --next-comment or --prev-comment, not both."** -- choose one comment-navigation direction.
