@@ -4,21 +4,17 @@ import { buildSplitRows, buildStackRows } from "../diff/pierre";
 import { measureRenderedRowHeight, findMaxLineNumber } from "../diff/renderRows";
 import type { PlannedHunkBounds } from "../diff/plannedReviewRows";
 import { buildReviewRenderPlan, type PlannedReviewRow } from "../diff/reviewRenderPlan";
+import type { SectionGeometry, VerticalBounds } from "./diffSpatial";
 import { reviewRowId } from "./ids";
 import type { VisibleAgentNote } from "./agentAnnotations";
 import type { AppTheme } from "../themes";
 
-export interface DiffSectionRowBounds {
+export interface DiffSectionRowBounds extends VerticalBounds {
   key: string;
-  top: number;
-  height: number;
 }
 
 /** Cached placeholder sizing and hunk navigation geometry for one file section. */
-export interface DiffSectionGeometry {
-  bodyHeight: number;
-  hunkAnchorRows: Map<number, number>;
-  hunkBounds: Map<number, PlannedHunkBounds>;
+export interface DiffSectionGeometry extends SectionGeometry<PlannedHunkBounds> {
   rowBounds: DiffSectionRowBounds[];
   rowBoundsByKey: Map<string, DiffSectionRowBounds>;
 }
