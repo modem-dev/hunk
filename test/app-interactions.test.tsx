@@ -889,7 +889,7 @@ describe("App interactions", () => {
     }
   });
 
-  test("the first down-arrow step still advances content when sticky header activation meets a collapsed gap", async () => {
+  test("the first down-arrow step still advances content under the always-pinned file header above a collapsed gap", async () => {
     const setup = await testRender(<AppHost bootstrap={createCollapsedTopBootstrap()} />, {
       width: 220,
       height: 10,
@@ -927,7 +927,7 @@ describe("App interactions", () => {
     }
   });
 
-  test("one-line down then up at the top header restores a single in-stream file header", async () => {
+  test("one-line down then up at the top restores the collapsed-gap view beneath the pinned file header", async () => {
     const setup = await testRender(<AppHost bootstrap={createCollapsedTopBootstrap()} />, {
       width: 220,
       height: 10,

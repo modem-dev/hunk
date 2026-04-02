@@ -11,17 +11,22 @@ export interface FileSectionLayout {
   sectionBottom: number;
 }
 
-/** Build absolute section offsets from file order and measured body heights. */
-export function buildFileSectionLayouts(files: DiffFile[], bodyHeights: number[]) {
+/** Build absolute section offsets from file order, header heights, and measured body heights. */
+export function buildFileSectionLayouts(
+  files: DiffFile[],
+  bodyHeights: number[],
+  headerHeights?: number[],
+) {
   const layouts: FileSectionLayout[] = [];
   let cursor = 0;
 
   files.forEach((file, index) => {
     const separatorHeight = index > 0 ? 1 : 0;
+    const headerHeight = Math.max(0, headerHeights?.[index] ?? 1);
     const bodyHeight = Math.max(0, bodyHeights[index] ?? 0);
     const sectionTop = cursor;
     const headerTop = sectionTop + separatorHeight;
-    const bodyTop = headerTop + 1;
+    const bodyTop = headerTop + headerHeight;
     const sectionBottom = bodyTop + bodyHeight;
 
     layouts.push({

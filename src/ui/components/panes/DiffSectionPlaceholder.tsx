@@ -10,6 +10,7 @@ interface DiffSectionPlaceholderProps {
   headerLabelWidth: number;
   headerStatsWidth: number;
   separatorWidth: number;
+  showHeader: boolean;
   showSeparator: boolean;
   theme: AppTheme;
   onSelect: () => void;
@@ -22,6 +23,7 @@ export function DiffSectionPlaceholder({
   headerLabelWidth,
   headerStatsWidth,
   separatorWidth,
+  showHeader,
   showSeparator,
   theme,
   onSelect,
@@ -49,13 +51,15 @@ export function DiffSectionPlaceholder({
         </box>
       ) : null}
 
-      <DiffFileHeaderRow
-        file={file}
-        headerLabelWidth={headerLabelWidth}
-        headerStatsWidth={headerStatsWidth}
-        theme={theme}
-        onSelect={onSelect}
-      />
+      {showHeader ? (
+        <DiffFileHeaderRow
+          file={file}
+          headerLabelWidth={headerLabelWidth}
+          headerStatsWidth={headerStatsWidth}
+          theme={theme}
+          onSelect={onSelect}
+        />
+      ) : null}
 
       <box style={{ width: "100%", height: bodyHeight, backgroundColor: theme.panel }} />
     </box>

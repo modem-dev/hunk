@@ -251,7 +251,7 @@ describe("Hunk integration via tuistory", () => {
       expect(initial).toContain("first.ts");
       expect(initial).toContain("second.ts");
 
-      await session.scrollDown(18);
+      await session.scrollDown(17);
       const boundary = await harness.waitForSnapshot(
         session,
         (text) =>
@@ -504,7 +504,7 @@ describe("Hunk integration via tuistory", () => {
     }
   });
 
-  test("the first mouse-wheel step still advances content when the sticky header activates above a collapsed gap", async () => {
+  test("the first mouse-wheel step still advances content under the always-pinned file header above a collapsed gap", async () => {
     const fixture = harness.createCollapsedTopRepoFixture();
     const session = await harness.launchHunk({
       args: ["diff", "--mode", "split"],
@@ -535,7 +535,7 @@ describe("Hunk integration via tuistory", () => {
     }
   });
 
-  test("one mouse-wheel step down then up restores the single in-stream header at the top", async () => {
+  test("one mouse-wheel step down then up restores the collapsed-gap view beneath the pinned file header", async () => {
     const fixture = harness.createCollapsedTopRepoFixture();
     const session = await harness.launchHunk({
       args: ["diff", "--mode", "split"],

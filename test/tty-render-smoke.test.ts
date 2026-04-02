@@ -337,7 +337,7 @@ describe("TTY render smoke", () => {
     });
 
     expect(output).toContain("before_23");
-    expect(output).toContain("after_06");
+    expect(output).toContain("after_05");
   });
 
   ttyTest("general pager mode opens Hunk pager UI for diff-like stdin", async () => {

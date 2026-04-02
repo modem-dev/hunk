@@ -554,8 +554,8 @@ describe("UI components", () => {
       true,
       false,
     ).bodyHeight;
-    const secondHeaderTop = firstBodyHeight + 2;
-    const separatorTop = secondHeaderTop - 1;
+    const secondHeaderTop = firstBodyHeight + 1;
+    const separatorTop = firstBodyHeight;
     const settleStickyScroll = async () => {
       await act(async () => {
         for (let iteration = 0; iteration < 6; iteration += 1) {
@@ -640,7 +640,7 @@ describe("UI components", () => {
     }
   });
 
-  test("DiffPane advances the review stream when the sticky header first activates above a collapsed gap", async () => {
+  test("DiffPane advances the review stream under the always-pinned file header above a collapsed gap", async () => {
     const theme = resolveTheme("midnight", null);
     const firstFile = createCollapsedTopDiffFile("late", "late.ts", 400, 366);
     const secondFile = createTallDiffFile("second", "second.ts", 4);
@@ -682,7 +682,7 @@ describe("UI components", () => {
     }
   });
 
-  test("DiffPane returns cleanly to the in-stream header after scrolling back up from the top sticky header", async () => {
+  test("DiffPane returns cleanly to the collapsed-gap view after scrolling back up under the pinned file header", async () => {
     const theme = resolveTheme("midnight", null);
     const firstFile = createCollapsedTopDiffFile("late", "late.ts", 400, 366);
     const secondFile = createTallDiffFile("second", "second.ts", 4);
@@ -763,7 +763,6 @@ describe("UI components", () => {
       expect(frame).toContain("14 + export const line14 = 1400;");
       expect(frame).toContain("16 - export const line16 = 16;");
       expect(frame).toContain("16 + export const line16 = 1600;");
-      expect(frame).toContain("export const line19 = 19;");
       expect(frame).not.toContain("2 - export const line2 = 2;");
       expect(frame).not.toContain("2 + export const line2 = 200;");
     } finally {
@@ -1365,6 +1364,7 @@ describe("UI components", () => {
         headerLabelWidth={40}
         headerStatsWidth={16}
         separatorWidth={68}
+        showHeader={true}
         showSeparator={true}
         theme={theme}
         onSelect={() => {}}

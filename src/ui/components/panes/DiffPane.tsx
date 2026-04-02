@@ -60,10 +60,12 @@ function findViewportRowAnchor(
   files: DiffFile[],
   sectionGeometry: DiffSectionGeometry[],
   scrollTop: number,
+  headerHeights: number[],
 ) {
   const fileSectionLayouts = buildFileSectionLayouts(
     files,
     sectionGeometry.map((metrics) => metrics?.bodyHeight ?? 0),
+    headerHeights,
   );
 
   for (let index = 0; index < files.length; index += 1) {
@@ -93,10 +95,12 @@ function resolveViewportRowAnchorTop(
   files: DiffFile[],
   sectionGeometry: DiffSectionGeometry[],
   anchor: ViewportRowAnchor,
+  headerHeights: number[],
 ) {
   const fileSectionLayouts = buildFileSectionLayouts(
     files,
     sectionGeometry.map((metrics) => metrics?.bodyHeight ?? 0),
+    headerHeights,
   );
 
   for (let index = 0; index < files.length; index += 1) {
@@ -249,13 +253,7 @@ export function DiffPane({
     }
 
     const updateViewport = () => {
-      let nextTop = scrollBox.scrollTop ?? 0;
-
-      if (files.length >= 2 && prevScrollTopRef.current === 0 && nextTop > 0 && nextTop < 2) {
-        scrollBox.scrollTo(nextTop + 1);
-        nextTop = scrollBox.scrollTop ?? nextTop + 1;
-      }
-
+      const nextTop = scrollBox.scrollTop ?? 0;
       const nextHeight = scrollBox.viewport.height ?? 0;
 
       // Detect scroll activity and show scrollbar.
@@ -287,6 +285,11 @@ export function DiffPane({
     };
   }, [files.length, scrollRef]);
 
+  const sectionHeaderHeights = useMemo(
+    () => files.map((_, index) => (index === 0 ? 0 : 1)),
+    [files],
+  );
+
   const baseSectionGeometry = useMemo(
     () =>
       files.map((file) =>
@@ -308,8 +311,8 @@ export function DiffPane({
     [baseSectionGeometry],
   );
   const baseFileSectionLayouts = useMemo(
-    () => buildFileSectionLayouts(files, baseEstimatedBodyHeights),
-    [baseEstimatedBodyHeights, files],
+    () => buildFileSectionLayouts(files, baseEstimatedBodyHeights, sectionHeaderHeights),
+    [baseEstimatedBodyHeights, files, sectionHeaderHeights],
   );
 
   const visibleViewportFileIds = useMemo(() => {
@@ -383,8 +386,8 @@ export function DiffPane({
     [sectionGeometry],
   );
   const fileSectionLayouts = useMemo(
-    () => buildFileSectionLayouts(files, estimatedBodyHeights),
-    [estimatedBodyHeights, files],
+    () => buildFileSectionLayouts(files, estimatedBodyHeights, sectionHeaderHeights),
+    [estimatedBodyHeights, files, sectionHeaderHeights],
   );
   const totalContentHeight = fileSectionLayouts[fileSectionLayouts.length - 1]?.sectionBottom ?? 0;
   // Read the live scroll box position during render so sticky-header ownership flips
@@ -392,19 +395,19 @@ export function DiffPane({
   const effectiveScrollTop = scrollRef.current?.scrollTop ?? scrollViewport.top;
 
   const stickyHeaderFile = useMemo(() => {
-    if (files.length < 2 || effectiveScrollTop <= 0) {
+    if (files.length === 0) {
       return null;
     }
 
-    // Keep the sticky-header lane active while scrolling so the viewport height stays stable.
+    // The current file header always owns the pinned top row.
     // Use the previous visible row to decide ownership so the next file's real header can still
-    // scroll through the stream before the sticky header hands off to it on the following row.
+    // scroll through the stream before the pinned header hands off to it on the following row.
     const owner = findHeaderOwningFileSection(
       fileSectionLayouts,
       Math.max(0, effectiveScrollTop - 1),
     );
 
-    return owner ? (files[owner.sectionIndex] ?? null) : null;
+    return owner ? (files[owner.sectionIndex] ?? null) : (files[0] ?? null);
   }, [effectiveScrollTop, fileSectionLayouts, files]);
   const stickyHeaderFileId = stickyHeaderFile?.id ?? null;
 
@@ -521,11 +524,8 @@ export function DiffPane({
         return false;
       }
 
-      // For later files, scroll one row past the in-stream header so the newly selected file's own
-      // sticky header takes over immediately instead of leaving the previous file pinned above it.
-      const targetTop =
-        targetSection.sectionIndex > 0 ? targetSection.headerTop + 1 : targetSection.headerTop;
-      scrollBox.scrollTo(targetTop);
+      // The pinned header owns the top row, so align the review stream to the file body.
+      scrollBox.scrollTo(targetSection.bodyTop);
       return true;
     },
     [fileSectionLayouts, scrollRef],
@@ -535,6 +535,7 @@ export function DiffPane({
     const wrapChanged = previousWrapLinesRef.current !== wrapLines;
     const previousSectionMetrics = previousSectionGeometryRef.current;
     const previousFiles = previousFilesRef.current;
+    const previousSectionHeaderHeights = previousFiles.map((_, index) => (index === 0 ? 0 : 1));
 
     if (wrapChanged && previousSectionMetrics && previousFiles.length > 0) {
       const previousScrollTop =
@@ -547,9 +548,15 @@ export function DiffPane({
         previousFiles,
         previousSectionMetrics,
         previousScrollTop,
+        previousSectionHeaderHeights,
       );
       if (anchor) {
-        const nextTop = resolveViewportRowAnchorTop(files, sectionGeometry, anchor);
+        const nextTop = resolveViewportRowAnchorTop(
+          files,
+          sectionGeometry,
+          anchor,
+          sectionHeaderHeights,
+        );
         const restoreViewportAnchor = () => {
           scrollRef.current?.scrollTo(nextTop);
         };
@@ -575,7 +582,15 @@ export function DiffPane({
     previousWrapLinesRef.current = wrapLines;
     previousSectionGeometryRef.current = sectionGeometry;
     previousFilesRef.current = files;
-  }, [files, scrollRef, scrollViewport.top, sectionGeometry, wrapLines, wrapToggleScrollTop]);
+  }, [
+    files,
+    scrollRef,
+    scrollViewport.top,
+    sectionGeometry,
+    sectionHeaderHeights,
+    wrapLines,
+    wrapToggleScrollTop,
+  ]);
 
   useLayoutEffect(() => {
     if (previousSelectedFileTopAlignRequestIdRef.current === selectedFileTopAlignRequestId) {
@@ -619,8 +634,7 @@ export function DiffPane({
       return;
     }
 
-    const desiredTop =
-      targetSection.sectionIndex > 0 ? targetSection.headerTop + 1 : targetSection.headerTop;
+    const desiredTop = targetSection.bodyTop;
 
     const currentTop = scrollRef.current?.scrollTop ?? scrollViewport.top;
     if (Math.abs(currentTop - desiredTop) <= 0.5) {
@@ -662,8 +676,8 @@ export function DiffPane({
 
     // Only auto-scroll when the selection actually changes, not when geometry updates during
     // scrolling or when the selected section refines its measured bounds. One exception: after a
-    // programmatic jump to a later file/hunk, rerun the settle scroll once if a sticky header
-    // appears and steals one viewport row from the selected content.
+    // programmatic jump to a later file/hunk, rerun the settle scroll once if the pinned header
+    // hands off to a different file while the selected content is still settling.
     const isSelectionChange = prevSelectedAnchorIdRef.current !== selectedAnchorId;
     const stickyHeaderChangedWhileSettling =
       shouldTrackStickyResettle &&
@@ -786,7 +800,7 @@ export function DiffPane({
     >
       {files.length > 0 ? (
         <box style={{ width: "100%", height: "100%", flexGrow: 1, flexDirection: "column" }}>
-          {/* Keep the current file header visible once its real header has scrolled offscreen. */}
+          {/* Always pin the current file header in a dedicated top row. */}
           {stickyHeaderFile ? (
             <box style={{ width: "100%", height: 1, minHeight: 1, flexShrink: 0 }}>
               <DiffFileHeaderRow
@@ -837,6 +851,7 @@ export function DiffPane({
                         headerLabelWidth={headerLabelWidth}
                         headerStatsWidth={headerStatsWidth}
                         separatorWidth={separatorWidth}
+                        showHeader={index > 0}
                         showSeparator={index > 0}
                         theme={theme}
                         onSelect={() => onSelectFile(file.id)}
@@ -862,6 +877,7 @@ export function DiffPane({
                         file.id === selectedFileId ? handleSelectedHighlightReady : undefined
                       }
                       separatorWidth={separatorWidth}
+                      showHeader={index > 0}
                       showSeparator={index > 0}
                       showLineNumbers={showLineNumbers}
                       showHunkHeaders={showHunkHeaders}
