@@ -359,6 +359,46 @@ function createTwoFileHunkBootstrap(): AppBootstrap {
   };
 }
 
+function createCollapsedTopBootstrap(): AppBootstrap {
+  const beforeLines = Array.from(
+    { length: 400 },
+    (_, index) => `export const line${String(index + 1).padStart(3, "0")} = ${index + 1};`,
+  );
+  const afterLines = [...beforeLines];
+  afterLines[365] = "export const line366 = 9999;";
+
+  return {
+    input: {
+      kind: "git",
+      staged: false,
+      options: {
+        mode: "split",
+      },
+    },
+    changeset: {
+      id: "changeset:collapsed-top",
+      sourceLabel: "repo",
+      title: "repo working tree",
+      files: [
+        createDiffFile(
+          "late",
+          "src/ui/components/panes/DiffPane.tsx",
+          lines(...beforeLines),
+          lines(...afterLines),
+        ),
+        createDiffFile(
+          "second",
+          "other.ts",
+          lines("export const other = 1;"),
+          lines("export const other = 2;"),
+        ),
+      ],
+    },
+    initialMode: "split",
+    initialTheme: "midnight",
+  };
+}
+
 async function flush(setup: Awaited<ReturnType<typeof testRender>>) {
   await act(async () => {
     await setup.renderOnce();
@@ -842,6 +882,98 @@ describe("App interactions", () => {
       }
 
       expect(frame).toContain("line01");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("the first down-arrow step still advances content when sticky header activation meets a collapsed gap", async () => {
+    const setup = await testRender(<AppHost bootstrap={createCollapsedTopBootstrap()} />, {
+      width: 220,
+      height: 10,
+    });
+
+    try {
+      await flush(setup);
+      await act(async () => {
+        await Bun.sleep(80);
+        await setup.renderOnce();
+      });
+
+      let frame = setup.captureCharFrame();
+      expect(frame).toContain("DiffPane.tsx");
+      expect(frame).toContain("··· 362 unchanged lines ···");
+      expect(frame).not.toContain("366 - export const line366 = 366;");
+
+      await act(async () => {
+        await setup.mockInput.pressArrow("down");
+      });
+      await flush(setup);
+      await act(async () => {
+        await Bun.sleep(80);
+        await setup.renderOnce();
+      });
+
+      frame = await waitForFrame(setup, (nextFrame) =>
+        nextFrame.includes("366 - export const line366 = 366;"),
+      );
+      expect(frame).toContain("366 - export const line366 = 366;");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("one-line down then up at the top header restores a single in-stream file header", async () => {
+    const setup = await testRender(<AppHost bootstrap={createCollapsedTopBootstrap()} />, {
+      width: 220,
+      height: 10,
+    });
+
+    try {
+      await flush(setup);
+      await act(async () => {
+        await Bun.sleep(80);
+        await setup.renderOnce();
+      });
+
+      const initialFrame = setup.captureCharFrame();
+      const initialHeaderCount = (initialFrame.match(/DiffPane\.tsx/g) ?? []).length;
+
+      await act(async () => {
+        await setup.mockInput.pressArrow("down");
+      });
+      await flush(setup);
+      await act(async () => {
+        await Bun.sleep(80);
+        await setup.renderOnce();
+      });
+
+      let frame = await waitForFrame(setup, (nextFrame) =>
+        nextFrame.includes("366 - export const line366 = 366;"),
+      );
+
+      await act(async () => {
+        await setup.mockInput.pressArrow("up");
+      });
+      await flush(setup);
+      await act(async () => {
+        await Bun.sleep(80);
+        await setup.renderOnce();
+      });
+
+      frame = await waitForFrame(
+        setup,
+        (nextFrame) =>
+          nextFrame.includes("··· 362 unchanged lines ···") &&
+          (nextFrame.match(/DiffPane\.tsx/g) ?? []).length === initialHeaderCount,
+      );
+      expect(frame).toContain("··· 362 unchanged lines ···");
+      expect(frame).not.toContain("366 - export const line366 = 366;");
+      expect((frame.match(/DiffPane\.tsx/g) ?? []).length).toBe(initialHeaderCount);
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -1410,7 +1542,7 @@ describe("App interactions", () => {
     }
   });
 
-  test("hunk navigation keeps the sticky header lane stable when jumping across files", async () => {
+  test("hunk navigation makes the destination file own the top of the review pane", async () => {
     const setup = await testRender(<AppHost bootstrap={createTwoFileHunkBootstrap()} />, {
       width: 220,
       height: 10,
@@ -1437,11 +1569,11 @@ describe("App interactions", () => {
       frame = await waitForFrame(
         setup,
         (nextFrame) =>
-          nextFrame.includes("second.ts") && (nextFrame.match(/first\.ts/g) ?? []).length === 2,
+          nextFrame.includes("second.ts") && (nextFrame.match(/first\.ts/g) ?? []).length === 1,
         24,
       );
       expect(frame).toContain("second.ts");
-      expect((frame.match(/first\.ts/g) ?? []).length).toBe(2);
+      expect((frame.match(/first\.ts/g) ?? []).length).toBe(1);
     } finally {
       await act(async () => {
         setup.renderer.destroy();

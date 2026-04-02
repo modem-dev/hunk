@@ -503,4 +503,74 @@ describe("Hunk integration via tuistory", () => {
       session.close();
     }
   });
+
+  test("the first mouse-wheel step still advances content when the sticky header activates above a collapsed gap", async () => {
+    const fixture = harness.createCollapsedTopRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split"],
+      cwd: fixture.dir,
+      cols: 220,
+      rows: 10,
+    });
+
+    try {
+      const initial = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      expect(initial).toContain("aaa-collapsed.ts");
+      expect(initial).toContain("··· 362 unchanged lines ···");
+      expect(initial).not.toContain("366 - export const line366 = 366;");
+
+      await session.scrollDown(1);
+      const advanced = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("366 - export const line366 = 366;"),
+        5_000,
+      );
+
+      expect(advanced).toContain("366 - export const line366 = 366;");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("one mouse-wheel step down then up restores the single in-stream header at the top", async () => {
+    const fixture = harness.createCollapsedTopRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split"],
+      cwd: fixture.dir,
+      cols: 220,
+      rows: 10,
+    });
+
+    try {
+      const initial = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+      const initialHeaderCount = harness.countMatches(initial, /aaa-collapsed\.ts/g);
+
+      await session.scrollDown(1);
+      await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("366 - export const line366 = 366;"),
+        5_000,
+      );
+
+      await session.scrollUp(1);
+      const restored = await harness.waitForSnapshot(
+        session,
+        (text) =>
+          text.includes("··· 362 unchanged lines ···") &&
+          harness.countMatches(text, /aaa-collapsed\.ts/g) === initialHeaderCount,
+        5_000,
+      );
+
+      expect(restored).toContain("··· 362 unchanged lines ···");
+      expect(restored).not.toContain("366 - export const line366 = 366;");
+      expect(harness.countMatches(restored, /aaa-collapsed\.ts/g)).toBe(initialHeaderCount);
+    } finally {
+      session.close();
+    }
+  });
 });

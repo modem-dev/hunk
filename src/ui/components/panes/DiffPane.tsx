@@ -1,4 +1,5 @@
 import type { ScrollBoxRenderable } from "@opentui/core";
+import { useRenderer } from "@opentui/react";
 import {
   useCallback,
   useEffect,
@@ -16,11 +17,7 @@ import {
   type DiffSectionGeometry,
   type DiffSectionRowBounds,
 } from "../../lib/diffSectionGeometry";
-import {
-  buildFileSectionLayouts,
-  findHeaderOwningFileSection,
-  getFileSectionHeaderTop,
-} from "../../lib/fileSectionLayout";
+import { buildFileSectionLayouts, findHeaderOwningFileSection } from "../../lib/fileSectionLayout";
 import { diffHunkId, diffSectionId } from "../../lib/ids";
 import type { AppTheme } from "../../themes";
 import { DiffSection } from "./DiffSection";
@@ -165,6 +162,7 @@ export function DiffPane({
   onOpenAgentNotesAtHunk: (fileId: string, hunkIndex: number) => void;
   onSelectFile: (fileId: string) => void;
 }) {
+  const renderer = useRenderer();
   const [prefetchAnchorKey, setPrefetchAnchorKey] = useState<string | null>(null);
   const selectedHighlightKey = selectedFileId ? `${theme.appearance}:${selectedFileId}` : null;
 
@@ -245,11 +243,22 @@ export function DiffPane({
   const pendingFileTopAlignFileIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    const updateViewport = () => {
-      const nextTop = scrollRef.current?.scrollTop ?? 0;
-      const nextHeight = scrollRef.current?.viewport.height ?? 0;
+    const scrollBox = scrollRef.current;
+    if (!scrollBox) {
+      return;
+    }
 
-      // Detect scroll activity and show scrollbar
+    const updateViewport = () => {
+      let nextTop = scrollBox.scrollTop ?? 0;
+
+      if (files.length >= 2 && prevScrollTopRef.current === 0 && nextTop > 0 && nextTop < 2) {
+        scrollBox.scrollTo(nextTop + 1);
+        nextTop = scrollBox.scrollTop ?? nextTop + 1;
+      }
+
+      const nextHeight = scrollBox.viewport.height ?? 0;
+
+      // Detect scroll activity and show scrollbar.
       if (nextTop !== prevScrollTopRef.current) {
         scrollbarRef.current?.show();
         prevScrollTopRef.current = nextTop;
@@ -262,10 +271,21 @@ export function DiffPane({
       );
     };
 
+    const handleViewportChange = () => {
+      updateViewport();
+    };
+
     updateViewport();
-    const interval = setInterval(updateViewport, 50);
-    return () => clearInterval(interval);
-  }, [scrollRef]);
+    scrollBox.verticalScrollBar.on("change", handleViewportChange);
+    scrollBox.viewport.on("layout-changed", handleViewportChange);
+    scrollBox.viewport.on("resized", handleViewportChange);
+
+    return () => {
+      scrollBox.verticalScrollBar.off("change", handleViewportChange);
+      scrollBox.viewport.off("layout-changed", handleViewportChange);
+      scrollBox.viewport.off("resized", handleViewportChange);
+    };
+  }, [files.length, scrollRef]);
 
   const baseSectionGeometry = useMemo(
     () =>
@@ -386,6 +406,11 @@ export function DiffPane({
 
     return owner ? (files[owner.sectionIndex] ?? null) : null;
   }, [effectiveScrollTop, fileSectionLayouts, files]);
+  const stickyHeaderFileId = stickyHeaderFile?.id ?? null;
+
+  useLayoutEffect(() => {
+    renderer.intermediateRender();
+  }, [renderer, stickyHeaderFileId]);
 
   const visibleWindowedFileIds = useMemo(() => {
     if (!windowingEnabled) {
@@ -475,17 +500,19 @@ export function DiffPane({
 
   // Track the previous selected anchor to detect actual selection changes.
   const prevSelectedAnchorIdRef = useRef<string | null>(null);
+  const prevStickyHeaderFileIdRef = useRef<string | null>(null);
+  const pendingSelectionSettleRef = useRef(false);
 
   /** Clear any pending "selected file to top" follow-up. */
   const clearPendingFileTopAlign = useCallback(() => {
     pendingFileTopAlignFileIdRef.current = null;
   }, []);
 
-  /** Scroll one file header to the top using the latest planned section geometry. */
+  /** Scroll one file so it immediately owns the viewport top using the latest planned geometry. */
   const scrollFileHeaderToTop = useCallback(
     (fileId: string) => {
-      const headerTop = getFileSectionHeaderTop(fileSectionLayouts, fileId);
-      if (headerTop == null) {
+      const targetSection = fileSectionLayouts.find((layout) => layout.fileId === fileId);
+      if (!targetSection) {
         return false;
       }
 
@@ -494,7 +521,11 @@ export function DiffPane({
         return false;
       }
 
-      scrollBox.scrollTo(headerTop);
+      // For later files, scroll one row past the in-stream header so the newly selected file's own
+      // sticky header takes over immediately instead of leaving the previous file pinned above it.
+      const targetTop =
+        targetSection.sectionIndex > 0 ? targetSection.headerTop + 1 : targetSection.headerTop;
+      scrollBox.scrollTo(targetTop);
       return true;
     },
     [fileSectionLayouts, scrollRef],
@@ -583,10 +614,13 @@ export function DiffPane({
       return;
     }
 
-    const desiredTop = getFileSectionHeaderTop(fileSectionLayouts, pendingFileId);
-    if (desiredTop == null) {
+    const targetSection = fileSectionLayouts.find((layout) => layout.fileId === pendingFileId);
+    if (!targetSection) {
       return;
     }
+
+    const desiredTop =
+      targetSection.sectionIndex > 0 ? targetSection.headerTop + 1 : targetSection.headerTop;
 
     const currentTop = scrollRef.current?.scrollTop ?? scrollViewport.top;
     if (Math.abs(currentTop - desiredTop) <= 0.5) {
@@ -605,24 +639,40 @@ export function DiffPane({
   ]);
 
   useLayoutEffect(() => {
+    const stickyHeaderFileId = stickyHeaderFile?.id ?? null;
+
     if (suppressNextSelectionAutoScrollRef.current) {
       suppressNextSelectionAutoScrollRef.current = false;
       // Consume this selection transition so the next render does not re-center the selected hunk.
       prevSelectedAnchorIdRef.current = selectedAnchorId;
+      prevStickyHeaderFileIdRef.current = stickyHeaderFileId;
+      pendingSelectionSettleRef.current = false;
       return;
     }
 
     if (!selectedAnchorId && !selectedEstimatedHunkBounds) {
       prevSelectedAnchorIdRef.current = null;
+      prevStickyHeaderFileIdRef.current = stickyHeaderFileId;
+      pendingSelectionSettleRef.current = false;
       return;
     }
 
-    // Only auto-scroll when the selection actually changes, not when geometry updates during
-    // scrolling or when the selected section refines its measured bounds.
-    const isSelectionChange = prevSelectedAnchorIdRef.current !== selectedAnchorId;
-    prevSelectedAnchorIdRef.current = selectedAnchorId;
+    const shouldTrackStickyResettle =
+      selectedFileIndex > 0 || selectedHunkIndex > 0 || selectedNoteBounds !== null;
 
-    if (!isSelectionChange) {
+    // Only auto-scroll when the selection actually changes, not when geometry updates during
+    // scrolling or when the selected section refines its measured bounds. One exception: after a
+    // programmatic jump to a later file/hunk, rerun the settle scroll once if a sticky header
+    // appears and steals one viewport row from the selected content.
+    const isSelectionChange = prevSelectedAnchorIdRef.current !== selectedAnchorId;
+    const stickyHeaderChangedWhileSettling =
+      shouldTrackStickyResettle &&
+      pendingSelectionSettleRef.current &&
+      prevStickyHeaderFileIdRef.current !== stickyHeaderFileId;
+    prevSelectedAnchorIdRef.current = selectedAnchorId;
+    prevStickyHeaderFileIdRef.current = stickyHeaderFileId;
+
+    if (!isSelectionChange && !stickyHeaderChangedWhileSettling) {
       return;
     }
 
@@ -689,17 +739,29 @@ export function DiffPane({
     // Run after this pane renders the selected section/hunk, then retry briefly while layout
     // settles across a couple of repaint cycles.
     scrollSelectionIntoView();
+    pendingSelectionSettleRef.current = shouldTrackStickyResettle;
     const retryDelays = [0, 16, 48];
     const timeouts = retryDelays.map((delay) => setTimeout(scrollSelectionIntoView, delay));
+    const settleReset = shouldTrackStickyResettle
+      ? setTimeout(() => {
+          pendingSelectionSettleRef.current = false;
+        }, 120)
+      : null;
     return () => {
       timeouts.forEach((timeout) => clearTimeout(timeout));
+      if (settleReset) {
+        clearTimeout(settleReset);
+      }
     };
   }, [
     scrollRef,
     scrollViewport.height,
     selectedAnchorId,
     selectedEstimatedHunkBounds,
+    selectedFileIndex,
+    selectedHunkIndex,
     selectedNoteBounds,
+    stickyHeaderFile?.id,
   ]);
 
   // Configure scroll step size to scroll exactly 1 line per step

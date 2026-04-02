@@ -247,6 +247,30 @@ export function createTuistoryHarness() {
     ]);
   }
 
+  function createCollapsedTopRepoFixture() {
+    const longBefore =
+      Array.from(
+        { length: 400 },
+        (_, index) => `export const line${String(index + 1).padStart(3, "0")} = ${index + 1};`,
+      ).join("\n") + "\n";
+    const longAfterLines = longBefore.trimEnd().split("\n");
+    longAfterLines[365] = "export const line366 = 9999;";
+    const longAfter = `${longAfterLines.join("\n")}\n`;
+
+    return createGitRepoFixture([
+      {
+        path: "aaa-collapsed.ts",
+        before: longBefore,
+        after: longAfter,
+      },
+      {
+        path: "zzz-other.ts",
+        before: "export const other = 1;\n",
+        after: "export const other = 2;\n",
+      },
+    ]);
+  }
+
   function createSidebarJumpRepoFixture() {
     return createGitRepoFixture([
       {
@@ -362,6 +386,7 @@ export function createTuistoryHarness() {
     cleanup,
     countMatches,
     createAgentFilePair,
+    createCollapsedTopRepoFixture,
     createLongWrapFilePair,
     createMultiHunkFilePair,
     createPagerPatchFixture,

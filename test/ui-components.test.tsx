@@ -177,6 +177,22 @@ function createTallDiffFile(id: string, path: string, count: number) {
   return createDiffFile(id, path, before, after);
 }
 
+function createCollapsedTopDiffFile(
+  id: string,
+  path: string,
+  totalLines: number,
+  changedLine: number,
+) {
+  const beforeLines = Array.from(
+    { length: totalLines },
+    (_, index) => `export const line${String(index + 1).padStart(3, "0")} = ${index + 1};`,
+  );
+  const afterLines = [...beforeLines];
+  afterLines[changedLine - 1] = `export const line${changedLine} = 9999;`;
+
+  return createDiffFile(id, path, lines(...beforeLines), lines(...afterLines));
+}
+
 function createDiffPaneProps(
   files: DiffFile[],
   theme = resolveTheme("midnight", null),
@@ -452,7 +468,11 @@ describe("UI components", () => {
 
     try {
       await settleDiffPane(setup);
-      const frame = setup.captureCharFrame();
+      const frame = await waitForFrame(
+        setup,
+        (nextFrame) => nextFrame.includes("window-6.ts") && nextFrame.includes("file6Extra = true"),
+        20,
+      );
 
       expect(frame).toContain("window-6.ts");
       expect(frame).toContain("export const file6Extra = true;");
@@ -594,9 +614,10 @@ describe("UI components", () => {
 
       frame = await waitForFrame(
         setup,
-        (nextFrame) => nextFrame.includes("first.ts") && nextFrame.includes("@@ -1,18 +1,18 @@"),
+        (nextFrame) => nextFrame.includes("second.ts") && !nextFrame.includes("first.ts"),
       );
-      expect(frame).toContain("first.ts");
+      expect(frame).not.toContain("first.ts");
+      expect(frame).toContain("second.ts");
       expect(frame).toContain("@@ -1,18 +1,18 @@");
       expect(scrollRef.current?.viewport.height ?? 0).toBe(stickyViewportHeight);
 
@@ -607,11 +628,105 @@ describe("UI components", () => {
 
       frame = await waitForFrame(
         setup,
-        (nextFrame) => nextFrame.includes("second.ts") && !nextFrame.includes("first.ts"),
+        (nextFrame) => nextFrame.includes("second.ts") && !nextFrame.includes("@@ -1,18 +1,18 @@"),
       );
-      expect(frame).not.toContain("first.ts");
       expect(frame).toContain("second.ts");
+      expect(frame).not.toContain("@@ -1,18 +1,18 @@");
       expect(scrollRef.current?.viewport.height ?? 0).toBe(stickyViewportHeight);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("DiffPane advances the review stream when the sticky header first activates above a collapsed gap", async () => {
+    const theme = resolveTheme("midnight", null);
+    const firstFile = createCollapsedTopDiffFile("late", "late.ts", 400, 366);
+    const secondFile = createTallDiffFile("second", "second.ts", 4);
+    const scrollRef = createRef<ScrollBoxRenderable>();
+    const props = createDiffPaneProps([firstFile, secondFile], theme, {
+      diffContentWidth: 88,
+      headerLabelWidth: 48,
+      headerStatsWidth: 16,
+      scrollRef,
+      separatorWidth: 84,
+      width: 92,
+    });
+    const setup = await testRender(<DiffPane {...props} />, {
+      width: 96,
+      height: 9,
+    });
+
+    try {
+      await settleDiffPane(setup);
+
+      let frame = setup.captureCharFrame();
+      expect(frame).toContain("late.ts");
+      expect(frame).toContain("··· 362 unchanged lines ···");
+      expect(frame).not.toContain("366 - export const line366 = 366;");
+
+      await act(async () => {
+        scrollRef.current?.scrollTo(1);
+      });
+      await settleDiffPane(setup);
+
+      frame = await waitForFrame(setup, (nextFrame) =>
+        nextFrame.includes("366 - export const line366 = 366;"),
+      );
+      expect(frame).toContain("366 - export const line366 = 366;");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("DiffPane returns cleanly to the in-stream header after scrolling back up from the top sticky header", async () => {
+    const theme = resolveTheme("midnight", null);
+    const firstFile = createCollapsedTopDiffFile("late", "late.ts", 400, 366);
+    const secondFile = createTallDiffFile("second", "second.ts", 4);
+    const scrollRef = createRef<ScrollBoxRenderable>();
+    const props = createDiffPaneProps([firstFile, secondFile], theme, {
+      diffContentWidth: 88,
+      headerLabelWidth: 48,
+      headerStatsWidth: 16,
+      scrollRef,
+      separatorWidth: 84,
+      width: 92,
+    });
+    const setup = await testRender(<DiffPane {...props} />, {
+      width: 96,
+      height: 9,
+    });
+
+    try {
+      await settleDiffPane(setup);
+
+      await act(async () => {
+        scrollRef.current?.scrollTo(1);
+      });
+      await settleDiffPane(setup);
+
+      let frame = await waitForFrame(setup, (nextFrame) =>
+        nextFrame.includes("366 - export const line366 = 366;"),
+      );
+      expect((frame.match(/late\.ts/g) ?? []).length).toBe(1);
+
+      await act(async () => {
+        scrollRef.current?.scrollTo(0);
+      });
+      await settleDiffPane(setup);
+
+      frame = await waitForFrame(
+        setup,
+        (nextFrame) =>
+          nextFrame.includes("··· 362 unchanged lines ···") &&
+          (nextFrame.match(/late\.ts/g) ?? []).length === 1,
+      );
+      expect(frame).toContain("··· 362 unchanged lines ···");
+      expect(frame).not.toContain("366 - export const line366 = 366;");
+      expect((frame.match(/late\.ts/g) ?? []).length).toBe(1);
     } finally {
       await act(async () => {
         setup.renderer.destroy();
