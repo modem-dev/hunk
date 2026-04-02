@@ -12,7 +12,6 @@ interface DiffSectionProps {
   headerLabelWidth: number;
   headerStatsWidth: number;
   layout: Exclude<LayoutMode, "auto">;
-  selected: boolean;
   selectedHunkIndex: number;
   shouldLoadHighlight: boolean;
   onHighlightReady?: () => void;
@@ -35,7 +34,6 @@ function DiffSectionComponent({
   headerLabelWidth,
   headerStatsWidth,
   layout,
-  selected: _selected,
   selectedHunkIndex,
   shouldLoadHighlight,
   onHighlightReady,
@@ -116,7 +114,6 @@ export const DiffSection = memo(DiffSectionComponent, (previous, next) => {
     previous.headerLabelWidth === next.headerLabelWidth &&
     previous.headerStatsWidth === next.headerStatsWidth &&
     previous.layout === next.layout &&
-    previous.selected === next.selected &&
     previous.selectedHunkIndex === next.selectedHunkIndex &&
     previous.shouldLoadHighlight === next.shouldLoadHighlight &&
     previous.separatorWidth === next.separatorWidth &&

@@ -868,7 +868,6 @@ export function DiffPane({
                       headerLabelWidth={headerLabelWidth}
                       headerStatsWidth={headerStatsWidth}
                       layout={layout}
-                      selected={file.id === selectedFileId}
                       selectedHunkIndex={file.id === selectedFileId ? selectedHunkIndex : -1}
                       shouldLoadHighlight={
                         file.id === selectedFileId ||
