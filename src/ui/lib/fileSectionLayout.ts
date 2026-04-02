@@ -74,13 +74,3 @@ export function findHeaderOwningFileSection(
 
   return fileSectionLayouts[winner]!;
 }
-
-/** Return the scroll top needed to make one file header own the viewport top. */
-export function getFileSectionHeaderTop(fileSectionLayouts: FileSectionLayout[], fileId: string) {
-  const targetSection = fileSectionLayouts.find((layout) => layout.fileId === fileId);
-  if (!targetSection) {
-    return null;
-  }
-
-  return targetSection.headerTop;
-}
