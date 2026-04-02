@@ -390,11 +390,11 @@ export function DiffPane({
     [estimatedBodyHeights, files, sectionHeaderHeights],
   );
   const totalContentHeight = fileSectionLayouts[fileSectionLayouts.length - 1]?.sectionBottom ?? 0;
-  // Read the live scroll box position during render so sticky-header ownership flips
+  // Read the live scroll box position during render so pinned-header ownership flips
   // immediately after imperative scrolls instead of waiting for the polled viewport snapshot.
   const effectiveScrollTop = scrollRef.current?.scrollTop ?? scrollViewport.top;
 
-  const stickyHeaderFile = useMemo(() => {
+  const pinnedHeaderFile = useMemo(() => {
     if (files.length === 0) {
       return null;
     }
@@ -409,11 +409,11 @@ export function DiffPane({
 
     return owner ? (files[owner.sectionIndex] ?? null) : (files[0] ?? null);
   }, [effectiveScrollTop, fileSectionLayouts, files]);
-  const stickyHeaderFileId = stickyHeaderFile?.id ?? null;
+  const pinnedHeaderFileId = pinnedHeaderFile?.id ?? null;
 
   useLayoutEffect(() => {
     renderer.intermediateRender();
-  }, [renderer, stickyHeaderFileId]);
+  }, [renderer, pinnedHeaderFileId]);
 
   const visibleWindowedFileIds = useMemo(() => {
     if (!windowingEnabled) {
@@ -503,7 +503,7 @@ export function DiffPane({
 
   // Track the previous selected anchor to detect actual selection changes.
   const prevSelectedAnchorIdRef = useRef<string | null>(null);
-  const prevStickyHeaderFileIdRef = useRef<string | null>(null);
+  const prevPinnedHeaderFileIdRef = useRef<string | null>(null);
   const pendingSelectionSettleRef = useRef(false);
 
   /** Clear any pending "selected file to top" follow-up. */
@@ -653,25 +653,25 @@ export function DiffPane({
   ]);
 
   useLayoutEffect(() => {
-    const stickyHeaderFileId = stickyHeaderFile?.id ?? null;
+    const pinnedHeaderFileId = pinnedHeaderFile?.id ?? null;
 
     if (suppressNextSelectionAutoScrollRef.current) {
       suppressNextSelectionAutoScrollRef.current = false;
       // Consume this selection transition so the next render does not re-center the selected hunk.
       prevSelectedAnchorIdRef.current = selectedAnchorId;
-      prevStickyHeaderFileIdRef.current = stickyHeaderFileId;
+      prevPinnedHeaderFileIdRef.current = pinnedHeaderFileId;
       pendingSelectionSettleRef.current = false;
       return;
     }
 
     if (!selectedAnchorId && !selectedEstimatedHunkBounds) {
       prevSelectedAnchorIdRef.current = null;
-      prevStickyHeaderFileIdRef.current = stickyHeaderFileId;
+      prevPinnedHeaderFileIdRef.current = pinnedHeaderFileId;
       pendingSelectionSettleRef.current = false;
       return;
     }
 
-    const shouldTrackStickyResettle =
+    const shouldTrackPinnedHeaderResettle =
       selectedFileIndex > 0 || selectedHunkIndex > 0 || selectedNoteBounds !== null;
 
     // Only auto-scroll when the selection actually changes, not when geometry updates during
@@ -679,14 +679,14 @@ export function DiffPane({
     // programmatic jump to a later file/hunk, rerun the settle scroll once if the pinned header
     // hands off to a different file while the selected content is still settling.
     const isSelectionChange = prevSelectedAnchorIdRef.current !== selectedAnchorId;
-    const stickyHeaderChangedWhileSettling =
-      shouldTrackStickyResettle &&
+    const pinnedHeaderChangedWhileSettling =
+      shouldTrackPinnedHeaderResettle &&
       pendingSelectionSettleRef.current &&
-      prevStickyHeaderFileIdRef.current !== stickyHeaderFileId;
+      prevPinnedHeaderFileIdRef.current !== pinnedHeaderFileId;
     prevSelectedAnchorIdRef.current = selectedAnchorId;
-    prevStickyHeaderFileIdRef.current = stickyHeaderFileId;
+    prevPinnedHeaderFileIdRef.current = pinnedHeaderFileId;
 
-    if (!isSelectionChange && !stickyHeaderChangedWhileSettling) {
+    if (!isSelectionChange && !pinnedHeaderChangedWhileSettling) {
       return;
     }
 
@@ -753,10 +753,10 @@ export function DiffPane({
     // Run after this pane renders the selected section/hunk, then retry briefly while layout
     // settles across a couple of repaint cycles.
     scrollSelectionIntoView();
-    pendingSelectionSettleRef.current = shouldTrackStickyResettle;
+    pendingSelectionSettleRef.current = shouldTrackPinnedHeaderResettle;
     const retryDelays = [0, 16, 48];
     const timeouts = retryDelays.map((delay) => setTimeout(scrollSelectionIntoView, delay));
-    const settleReset = shouldTrackStickyResettle
+    const settleReset = shouldTrackPinnedHeaderResettle
       ? setTimeout(() => {
           pendingSelectionSettleRef.current = false;
         }, 120)
@@ -775,7 +775,7 @@ export function DiffPane({
     selectedFileIndex,
     selectedHunkIndex,
     selectedNoteBounds,
-    stickyHeaderFile?.id,
+    pinnedHeaderFile?.id,
   ]);
 
   // Configure scroll step size to scroll exactly 1 line per step
@@ -801,14 +801,14 @@ export function DiffPane({
       {files.length > 0 ? (
         <box style={{ width: "100%", height: "100%", flexGrow: 1, flexDirection: "column" }}>
           {/* Always pin the current file header in a dedicated top row. */}
-          {stickyHeaderFile ? (
+          {pinnedHeaderFile ? (
             <box style={{ width: "100%", height: 1, minHeight: 1, flexShrink: 0 }}>
               <DiffFileHeaderRow
-                file={stickyHeaderFile}
+                file={pinnedHeaderFile}
                 headerLabelWidth={headerLabelWidth}
                 headerStatsWidth={headerStatsWidth}
                 theme={theme}
-                onSelect={() => onSelectFile(stickyHeaderFile.id)}
+                onSelect={() => onSelectFile(pinnedHeaderFile.id)}
               />
             </box>
           ) : null}
@@ -841,7 +841,7 @@ export function DiffPane({
                     visibleViewportFileIds.has(file.id);
 
                   // Windowing keeps offscreen files cheap: render placeholders with identical
-                  // section geometry so scroll math and sticky-header ownership stay stable.
+                  // section geometry so scroll math and pinned-header ownership stay stable.
                   if (!shouldRenderSection) {
                     return (
                       <DiffSectionPlaceholder
