@@ -285,6 +285,99 @@ describe("Hunk session daemon server", () => {
     }
   });
 
+  test("forwards review includePatch through the session API", async () => {
+    const port = await reserveLoopbackPort();
+    process.env.HUNK_MCP_HOST = "127.0.0.1";
+    process.env.HUNK_MCP_PORT = String(port);
+
+    const original = HunkDaemonState.prototype.getSessionReview;
+    HunkDaemonState.prototype.getSessionReview = function (selector, options) {
+      expect(selector).toEqual({ sessionId: "session-1" });
+      expect(options).toEqual({ includePatch: true });
+
+      return {
+        sessionId: "session-1",
+        title: "repo diff",
+        sourceLabel: "/repo",
+        repoRoot: "/repo",
+        inputKind: "git",
+        selectedFile: {
+          id: "file-1",
+          path: "src/example.ts",
+          additions: 1,
+          deletions: 1,
+          hunkCount: 1,
+          patch: "@@ -1,1 +1,1 @@",
+          hunks: [
+            {
+              index: 0,
+              header: "@@ -1,1 +1,1 @@",
+              oldRange: [1, 1],
+              newRange: [1, 1],
+            },
+          ],
+        },
+        selectedHunk: {
+          index: 0,
+          header: "@@ -1,1 +1,1 @@",
+          oldRange: [1, 1],
+          newRange: [1, 1],
+        },
+        showAgentNotes: false,
+        liveCommentCount: 0,
+        files: [
+          {
+            id: "file-1",
+            path: "src/example.ts",
+            additions: 1,
+            deletions: 1,
+            hunkCount: 1,
+            patch: "@@ -1,1 +1,1 @@",
+            hunks: [
+              {
+                index: 0,
+                header: "@@ -1,1 +1,1 @@",
+                oldRange: [1, 1],
+                newRange: [1, 1],
+              },
+            ],
+          },
+        ],
+      };
+    };
+
+    const server = serveHunkMcpServer();
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/session-api`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "review",
+          selector: { sessionId: "session-1" },
+          includePatch: true,
+        }),
+      });
+
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({
+        review: {
+          files: [
+            {
+              path: "src/example.ts",
+              patch: "@@ -1,1 +1,1 @@",
+            },
+          ],
+        },
+      });
+    } finally {
+      HunkDaemonState.prototype.getSessionReview = original;
+      server.stop(true);
+    }
+  });
+
   test("forwards reload sourcePath through the session API", async () => {
     const port = await reserveLoopbackPort();
     process.env.HUNK_MCP_HOST = "127.0.0.1";

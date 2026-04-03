@@ -5,6 +5,7 @@ import type {
   SessionCommentRemoveCommandInput,
   SessionNavigateCommandInput,
   SessionReloadCommandInput,
+  SessionReviewCommandInput,
   SessionSelectorInput,
 } from "../core/types";
 import type {
@@ -55,6 +56,7 @@ export type SessionDaemonRequest =
   | {
       action: "review";
       selector: SessionSelectorInput;
+      includePatch: SessionReviewCommandInput["includePatch"];
     }
   | {
       action: "navigate";

@@ -8,6 +8,7 @@ import type {
   SessionCommentRemoveCommandInput,
   SessionNavigateCommandInput,
   SessionReloadCommandInput,
+  SessionReviewCommandInput,
   SessionSelectorInput,
 } from "../core/types";
 import {
@@ -43,7 +44,7 @@ export interface HunkDaemonCliClient {
   listSessions(): Promise<ListedSession[]>;
   getSession(selector: SessionSelectorInput): Promise<ListedSession>;
   getSelectedContext(selector: SessionSelectorInput): Promise<SelectedSessionContext>;
-  getSessionReview(selector: SessionSelectorInput): Promise<SessionReview>;
+  getSessionReview(input: SessionReviewCommandInput): Promise<SessionReview>;
   navigateToHunk(input: SessionNavigateCommandInput): Promise<NavigatedSelectionResult>;
   reloadSession(input: SessionReloadCommandInput): Promise<ReloadedSessionResult>;
   addComment(input: SessionCommentAddCommandInput): Promise<AppliedCommentResult>;
@@ -148,8 +149,14 @@ class HttpHunkDaemonCliClient implements HunkDaemonCliClient {
     ).context;
   }
 
-  async getSessionReview(selector: SessionSelectorInput) {
-    return (await this.request<{ review: SessionReview }>({ action: "review", selector })).review;
+  async getSessionReview(input: SessionReviewCommandInput) {
+    return (
+      await this.request<{ review: SessionReview }>({
+        action: "review",
+        selector: input.selector,
+        includePatch: input.includePatch,
+      })
+    ).review;
   }
 
   async navigateToHunk(input: SessionNavigateCommandInput) {
@@ -645,7 +652,10 @@ export async function runSessionCommand(input: SessionCommandInput) {
       return renderOutput(input.output, { context }, () => formatContextOutput(context));
     }
     case "review": {
-      const review = await client.getSessionReview(normalizedSelector!);
+      const review = await client.getSessionReview({
+        ...input,
+        selector: normalizedSelector!,
+      });
       return renderOutput(input.output, { review }, () => formatReviewOutput(review));
     }
     case "navigate": {

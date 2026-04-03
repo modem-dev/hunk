@@ -25,7 +25,7 @@ export interface SessionReviewHunk {
 }
 
 export interface SessionReviewFile extends SessionFileSummary {
-  patch: string;
+  patch?: string;
   hunks: SessionReviewHunk[];
 }
 

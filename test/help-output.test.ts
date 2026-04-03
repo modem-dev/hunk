@@ -65,8 +65,8 @@ describe("CLI help output", () => {
 
     expect(proc.exitCode).toBe(0);
     expect(stderr).toBe("");
-    expect(stdout).toContain("hunk session review <session-id>");
-    expect(stdout).toContain("hunk session review --repo <path>");
+    expect(stdout).toContain("hunk session review <session-id> [--include-patch]");
+    expect(stdout).toContain("hunk session review --repo <path> [--include-patch]");
     expect(stdout).not.toContain("\u001b[?1049h");
   });
 

@@ -84,6 +84,18 @@ function summarizeReviewFile(reviewFile: SessionReviewFile): SessionFileSummary 
   };
 }
 
+function serializeReviewFile(
+  reviewFile: SessionReviewFile,
+  includePatch: boolean,
+): SessionReviewFile {
+  return includePatch
+    ? reviewFile
+    : {
+        ...summarizeReviewFile(reviewFile),
+        hunks: reviewFile.hunks,
+      };
+}
+
 /** Resolve which live Hunk session one external command should target. */
 export function resolveSessionTarget(sessions: ListedSession[], selector: SessionTargetSelector) {
   if (selector.sessionId) {
@@ -173,10 +185,14 @@ export class HunkDaemonState {
     return resolveSessionTarget(this.listSessions(), selector);
   }
 
-  getSessionReview(selector: SessionTargetSelector): SessionReview {
+  getSessionReview(
+    selector: SessionTargetSelector,
+    options: { includePatch?: boolean } = {},
+  ): SessionReview {
     const entry = this.getSessionEntry(selector);
     const { registration, snapshot } = entry;
     const selectedFile = findSelectedReviewFile(registration.reviewFiles, snapshot);
+    const includePatch = options.includePatch ?? false;
 
     return {
       sessionId: registration.sessionId,
@@ -185,11 +201,11 @@ export class HunkDaemonState {
       cwd: registration.cwd,
       repoRoot: registration.repoRoot,
       inputKind: registration.inputKind,
-      selectedFile,
+      selectedFile: selectedFile ? serializeReviewFile(selectedFile, includePatch) : null,
       selectedHunk: selectedFile ? (selectedFile.hunks[snapshot.selectedHunkIndex] ?? null) : null,
       showAgentNotes: snapshot.showAgentNotes,
       liveCommentCount: snapshot.liveCommentCount,
-      files: registration.reviewFiles,
+      files: registration.reviewFiles.map((file) => serializeReviewFile(file, includePatch)),
     };
   }
 

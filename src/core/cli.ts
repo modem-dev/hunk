@@ -480,8 +480,8 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
           "  hunk session get --repo <path>",
           "  hunk session context <session-id>",
           "  hunk session context --repo <path>",
-          "  hunk session review <session-id>",
-          "  hunk session review --repo <path>",
+          "  hunk session review <session-id> [--include-patch]",
+          "  hunk session review --repo <path> [--include-patch]",
           "  hunk session navigate (<session-id> | --repo <path>) --file <path> (--hunk <n> | --old-line <n> | --new-line <n>)",
           "  hunk session navigate (<session-id> | --repo <path>) (--next-comment | --prev-comment)",
           "  hunk session reload (<session-id> | --repo <path> | --session-path <path>) [--source <path>] -- diff [ref] [-- <pathspec...>]",
@@ -523,25 +523,47 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
           ? "show one live Hunk session"
           : subcommand === "context"
             ? "show the selected file and hunk for one live Hunk session"
-            : "export the full live review model for one Hunk session",
+            : "export the live review model for one Hunk session",
       )
       .argument("[sessionId]")
       .option("--repo <path>", "target the live session whose repo root matches this path")
       .option("--json", "emit structured JSON");
 
-    let parsedSessionId: string | undefined;
-    let parsedOptions: { repo?: string; json?: boolean } = {};
+    if (subcommand === "review") {
+      command.option(
+        "--include-patch",
+        "include raw unified diff text for each file in review output",
+      );
+    }
 
-    command.action((sessionId: string | undefined, options: { repo?: string; json?: boolean }) => {
-      parsedSessionId = sessionId;
-      parsedOptions = options;
-    });
+    let parsedSessionId: string | undefined;
+    let parsedOptions: { repo?: string; includePatch?: boolean; json?: boolean } = {};
+
+    command.action(
+      (
+        sessionId: string | undefined,
+        options: { repo?: string; includePatch?: boolean; json?: boolean },
+      ) => {
+        parsedSessionId = sessionId;
+        parsedOptions = options;
+      },
+    );
 
     if (rest.includes("--help") || rest.includes("-h")) {
       return { kind: "help", text: `${command.helpInformation().trimEnd()}\n` };
     }
 
     await parseStandaloneCommand(command, rest);
+    if (subcommand === "review") {
+      return {
+        kind: "session",
+        action: "review",
+        output: resolveJsonOutput(parsedOptions),
+        selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
+        includePatch: parsedOptions.includePatch ?? false,
+      };
+    }
+
     return {
       kind: "session",
       action: subcommand,

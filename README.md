@@ -160,7 +160,8 @@ When a Hunk TUI starts, it registers with a local loopback daemon. `hunk session
 Use it to:
 
 - inspect the current review context
-- export the full loaded review model for agent workflows
+- export the loaded review structure for agent workflows
+- optionally include raw patch text when an agent truly needs it
 - jump to a file, hunk, or line
 - reload the current window with a different `diff` or `show` command
 - add, list, and remove inline comments
@@ -172,6 +173,7 @@ hunk session list
 hunk session get --repo .
 hunk session context --repo .
 hunk session review --repo . --json
+hunk session review --repo . --include-patch --json
 hunk session navigate --repo . --file README.md --hunk 2
 hunk session reload --repo . -- diff
 hunk session reload --repo /path/to/worktree -- diff
@@ -183,6 +185,8 @@ hunk session comment list --repo .
 hunk session comment rm --repo . <comment-id>
 hunk session comment clear --repo . --file README.md --yes
 ```
+
+`hunk session review --json` returns file and hunk structure by default. Add `--include-patch` only when a caller truly needs raw unified diff text in the response.
 
 `hunk session reload ... -- <hunk command>` swaps what a live session is showing without opening a new TUI window.
 Pass `--focus` to jump the live session to the new note.

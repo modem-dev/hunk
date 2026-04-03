@@ -100,7 +100,7 @@ describe("Hunk MCP daemon state", () => {
     );
   });
 
-  test("exports the full session review model from registration state", () => {
+  test("exports review structure without raw patch text by default", () => {
     const state = new HunkDaemonState();
     const socket = {
       send() {},
@@ -124,6 +124,34 @@ describe("Hunk MCP daemon state", () => {
           index: 0,
           header: "@@ -1,1 +1,1 @@",
         }),
+        files: [
+          expect.objectContaining({
+            path: "src/example.ts",
+          }),
+        ],
+      }),
+    );
+    expect(state.getSessionReview({ sessionId: "session-1" }).files[0]).not.toHaveProperty("patch");
+  });
+
+  test("exports raw patch text when review requests includePatch", () => {
+    const state = new HunkDaemonState();
+    const socket = {
+      send() {},
+    };
+
+    state.registerSession(
+      socket,
+      createRegistration(),
+      createSnapshot({
+        selectedHunkIndex: 0,
+        selectedHunkOldRange: [1, 1],
+        selectedHunkNewRange: [1, 1],
+      }),
+    );
+
+    expect(state.getSessionReview({ sessionId: "session-1" }, { includePatch: true })).toEqual(
+      expect.objectContaining({
         files: [
           expect.objectContaining({
             path: "src/example.ts",

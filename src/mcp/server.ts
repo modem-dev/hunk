@@ -94,7 +94,9 @@ async function handleSessionApiRequest(state: HunkDaemonState, request: Request)
         response = { context: state.getSelectedContext(input.selector) };
         break;
       case "review":
-        response = { review: state.getSessionReview(input.selector) };
+        response = {
+          review: state.getSessionReview(input.selector, { includePatch: input.includePatch }),
+        };
         break;
       case "navigate": {
         if (
