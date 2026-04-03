@@ -362,4 +362,66 @@ describe("Hunk session daemon server", () => {
       server.stop(true);
     }
   });
+
+  test("forwards hunk-targeted comment requests through the session API", async () => {
+    const port = await reserveLoopbackPort();
+    process.env.HUNK_MCP_HOST = "127.0.0.1";
+    process.env.HUNK_MCP_PORT = String(port);
+
+    const original = HunkDaemonState.prototype.sendComment;
+    HunkDaemonState.prototype.sendComment = function (input) {
+      expect(input).toMatchObject({
+        sessionId: "session-1",
+        filePath: "src/example.ts",
+        hunkIndex: 1,
+        summary: "Whole-hunk note",
+        author: "Pi",
+        reveal: false,
+      });
+      expect(input.side).toBeUndefined();
+      expect(input.line).toBeUndefined();
+
+      return Promise.resolve({
+        commentId: "comment-1",
+        fileId: "file-1",
+        filePath: "src/example.ts",
+        hunkIndex: 1,
+        side: "new",
+        line: 13,
+      });
+    };
+
+    const server = serveHunkMcpServer();
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/session-api`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "comment-add",
+          selector: { sessionId: "session-1" },
+          filePath: "src/example.ts",
+          hunkNumber: 2,
+          summary: "Whole-hunk note",
+          author: "Pi",
+          reveal: false,
+        }),
+      });
+
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({
+        result: {
+          commentId: "comment-1",
+          hunkIndex: 1,
+          side: "new",
+          line: 13,
+        },
+      });
+    } finally {
+      HunkDaemonState.prototype.sendComment = original;
+      server.stop(true);
+    }
+  });
 });

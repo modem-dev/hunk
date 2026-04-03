@@ -342,6 +342,39 @@ describe("parseCli", () => {
     });
   });
 
+  test("parses session comment add by hunk number", async () => {
+    const parsed = await parseCli([
+      "bun",
+      "hunk",
+      "session",
+      "comment",
+      "add",
+      "session-1",
+      "--file",
+      "README.md",
+      "--hunk",
+      "2",
+      "--summary",
+      "Anchor this note to the whole hunk",
+      "--json",
+    ]);
+
+    expect(parsed).toEqual({
+      kind: "session",
+      action: "comment-add",
+      selector: { sessionId: "session-1" },
+      filePath: "README.md",
+      hunkNumber: 2,
+      side: undefined,
+      line: undefined,
+      summary: "Anchor this note to the whole hunk",
+      rationale: undefined,
+      author: undefined,
+      reveal: true,
+      output: "json",
+    });
+  });
+
   test("parses session comment list with file filter", async () => {
     const parsed = await parseCli([
       "bun",
@@ -489,6 +522,27 @@ describe("parseCli", () => {
         "103",
       ]),
     ).rejects.toThrow("Specify exactly one navigation target");
+  });
+
+  test("rejects session comment add with multiple target selectors", async () => {
+    await expect(
+      parseCli([
+        "bun",
+        "hunk",
+        "session",
+        "comment",
+        "add",
+        "session-1",
+        "--file",
+        "README.md",
+        "--hunk",
+        "2",
+        "--new-line",
+        "103",
+        "--summary",
+        "Too many targets",
+      ]),
+    ).rejects.toThrow("Specify exactly one comment target");
   });
 
   test("rejects session comment clear without confirmation", async () => {

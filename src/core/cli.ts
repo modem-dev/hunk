@@ -484,7 +484,7 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
           "  hunk session navigate (<session-id> | --repo <path>) (--next-comment | --prev-comment)",
           "  hunk session reload (<session-id> | --repo <path> | --session-path <path>) [--source <path>] -- diff [ref] [-- <pathspec...>]",
           "  hunk session reload (<session-id> | --repo <path> | --session-path <path>) [--source <path>] -- show [ref] [-- <pathspec...>]",
-          "  hunk session comment add (<session-id> | --repo <path>) --file <path> (--old-line <n> | --new-line <n>) --summary <text>",
+          "  hunk session comment add (<session-id> | --repo <path>) --file <path> (--hunk <n> | --old-line <n> | --new-line <n>) --summary <text>",
           "  hunk session comment list (<session-id> | --repo <path>)",
           "  hunk session comment rm (<session-id> | --repo <path>) <comment-id>",
           "  hunk session comment clear (<session-id> | --repo <path>) --yes",
@@ -728,7 +728,7 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
         text:
           [
             "Usage:",
-            "  hunk session comment add (<session-id> | --repo <path>) --file <path> (--old-line <n> | --new-line <n>) --summary <text>",
+            "  hunk session comment add (<session-id> | --repo <path>) --file <path> (--hunk <n> | --old-line <n> | --new-line <n>) --summary <text>",
             "  hunk session comment list (<session-id> | --repo <path>) [--file <path>]",
             "  hunk session comment rm (<session-id> | --repo <path>) <comment-id>",
             "  hunk session comment clear (<session-id> | --repo <path>) [--file <path>] --yes",
@@ -743,6 +743,7 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
         .requiredOption("--file <path>", "diff file path as shown by Hunk")
         .requiredOption("--summary <text>", "short review note")
         .option("--repo <path>", "target the live session whose repo root matches this path")
+        .option("--hunk <n>", "1-based hunk number within the file", parsePositiveInt)
         .option("--old-line <n>", "1-based line number on the old side", parsePositiveInt)
         .option("--new-line <n>", "1-based line number on the new side", parsePositiveInt)
         .option("--rationale <text>", "optional longer explanation")
@@ -756,6 +757,7 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
         repo?: string;
         file: string;
         summary: string;
+        hunk?: number;
         oldLine?: number;
         newLine?: number;
         rationale?: string;
@@ -774,6 +776,7 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
             repo?: string;
             file: string;
             summary: string;
+            hunk?: number;
             oldLine?: number;
             newLine?: number;
             rationale?: string;
@@ -794,11 +797,14 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
       await parseStandaloneCommand(command, commentRest);
 
       const selectors = [
+        parsedOptions.hunk !== undefined,
         parsedOptions.oldLine !== undefined,
         parsedOptions.newLine !== undefined,
       ].filter(Boolean);
       if (selectors.length !== 1) {
-        throw new Error("Specify exactly one comment target: --old-line <n> or --new-line <n>.");
+        throw new Error(
+          "Specify exactly one comment target: --hunk <n>, --old-line <n>, or --new-line <n>.",
+        );
       }
 
       return {
@@ -807,8 +813,14 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
         output: resolveJsonOutput(parsedOptions),
         selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
         filePath: parsedOptions.file,
-        side: parsedOptions.oldLine !== undefined ? "old" : "new",
-        line: parsedOptions.oldLine ?? parsedOptions.newLine ?? 0,
+        hunkNumber: parsedOptions.hunk,
+        side:
+          parsedOptions.oldLine !== undefined
+            ? "old"
+            : parsedOptions.newLine !== undefined
+              ? "new"
+              : undefined,
+        line: parsedOptions.oldLine ?? parsedOptions.newLine,
         summary: parsedOptions.summary,
         rationale: parsedOptions.rationale,
         author: parsedOptions.author,

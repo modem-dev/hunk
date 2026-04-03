@@ -4,7 +4,9 @@ import {
   buildLiveComment,
   findDiffFileByPath,
   findHunkIndexForLine,
+  firstCommentTargetForHunk,
   hunkLineRange,
+  resolveCommentTarget,
 } from "../src/core/liveComments";
 import type { DiffFile } from "../src/core/types";
 
@@ -58,6 +60,40 @@ function createDiffFile(): DiffFile {
   };
 }
 
+function createLateChangeDiffFile(): DiffFile {
+  const beforeLines = Array.from(
+    { length: 10 },
+    (_, index) => `export const line${index + 1} = ${index + 1};`,
+  );
+  const afterLines = [...beforeLines];
+  afterLines[9] = "export const line10 = 100;";
+
+  const metadata = parseDiffFromFile(
+    {
+      name: "src/late.ts",
+      contents: `${beforeLines.join("\n")}\n`,
+      cacheKey: "late-before",
+    },
+    {
+      name: "src/late.ts",
+      contents: `${afterLines.join("\n")}\n`,
+      cacheKey: "late-after",
+    },
+    { context: 3 },
+    true,
+  );
+
+  return {
+    id: "file:late",
+    path: "src/late.ts",
+    patch: "",
+    language: "typescript",
+    stats: { additions: 1, deletions: 1 },
+    metadata,
+    agent: null,
+  };
+}
+
 describe("live comment helpers", () => {
   test("finds a diff file by current or previous path", () => {
     const file = createDiffFile();
@@ -73,6 +109,40 @@ describe("live comment helpers", () => {
     expect(findHunkIndexForLine(file, "old", 1)).toBe(0);
     expect(findHunkIndexForLine(file, "new", 2)).toBe(0);
     expect(findHunkIndexForLine(file, "new", 40)).toBe(-1);
+  });
+
+  test("resolves hunk-targeted comments to the first changed line on the preferred side", () => {
+    const file = createLateChangeDiffFile();
+    const target = resolveCommentTarget(file, {
+      filePath: "src/late.ts",
+      hunkIndex: 0,
+      summary: "Late change",
+    });
+
+    expect(target).toEqual({
+      hunkIndex: 0,
+      side: "new",
+      line: 10,
+    });
+  });
+
+  test("prefers a later addition over an earlier deletion-only chunk", () => {
+    const target = firstCommentTargetForHunk({
+      additionStart: 20,
+      additionLines: 1,
+      deletionStart: 20,
+      deletionLines: 1,
+      hunkContent: [
+        { type: "change", deletions: 1, additions: 0 },
+        { type: "context", lines: 2 },
+        { type: "change", deletions: 0, additions: 1 },
+      ],
+    } as Parameters<typeof firstCommentTargetForHunk>[0]);
+
+    expect(target).toEqual({
+      side: "new",
+      line: 22,
+    });
   });
 
   test("builds a live MCP comment annotation", () => {
