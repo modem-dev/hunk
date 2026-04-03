@@ -107,10 +107,10 @@ function spawnHunkSession(
   });
 }
 
-function runSessionCli(args: string[], port: number) {
+function runSessionCli(args: string[], port: number, stdinText?: string) {
   const proc = Bun.spawnSync(["bun", "run", "src/main.tsx", "session", ...args], {
     cwd: repoRoot,
-    stdin: "ignore",
+    stdin: stdinText === undefined ? "ignore" : Buffer.from(stdinText),
     stdout: "pipe",
     stderr: "pipe",
     env: {
@@ -380,6 +380,133 @@ describe("session CLI", () => {
       });
 
       expect(typeof addedComment.result?.commentId).toBe("string");
+    } finally {
+      session.kill();
+      await session.exited;
+    }
+  }, 20_000);
+
+  test("comment apply adds a batch from stdin without moving focus by default", async () => {
+    if (!ttyToolsAvailable) {
+      return;
+    }
+
+    const port = 48964;
+    const fixture = createFixtureFiles(
+      "apply-batch",
+      [
+        "export const one = 1;",
+        "export const two = 2;",
+        "export const three = 3;",
+        "export const four = 4;",
+        "export const five = 5;",
+        "export const six = 6;",
+        "export const seven = 7;",
+        "export const eight = 8;",
+        "export const nine = 9;",
+        "export const ten = 10;",
+        "export const eleven = 11;",
+        "export const twelve = 12;",
+        "export const thirteen = 13;",
+      ],
+      [
+        "export const one = 1;",
+        "export const two = 20;",
+        "export const three = 3;",
+        "export const four = 4;",
+        "export const five = 5;",
+        "export const six = 6;",
+        "export const seven = 7;",
+        "export const eight = 8;",
+        "export const nine = 9;",
+        "export const ten = 10;",
+        "export const eleven = 11;",
+        "export const twelve = 12;",
+        "export const thirteen = 130;",
+      ],
+    );
+    const session = spawnHunkSession(fixture, { port, quitAfterSeconds: 18, timeoutSeconds: 20 });
+
+    try {
+      const listed = await waitUntil("registered live session", () => {
+        const { proc, stdout } = runSessionCli(["list", "--json"], port);
+        if (proc.exitCode !== 0) {
+          return null;
+        }
+
+        const parsed = JSON.parse(stdout) as SessionListJson;
+        return parsed.sessions.length > 0 ? parsed.sessions : null;
+      });
+
+      const sessionId = listed[0]!.sessionId;
+      const apply = runSessionCli(
+        ["comment", "apply", sessionId, "--stdin", "--json"],
+        port,
+        JSON.stringify({
+          comments: [
+            {
+              filePath: fixture.afterName,
+              hunk: 1,
+              summary: "First hunk note",
+              author: "Pi",
+            },
+            {
+              filePath: fixture.afterName,
+              hunk: 2,
+              summary: "Second hunk note",
+              rationale: "Applied in one batch.",
+              author: "Pi",
+            },
+          ],
+        }),
+      );
+
+      expect(apply.proc.exitCode).toBe(0);
+      expect(apply.stderr).toBe("");
+      const applied = JSON.parse(apply.stdout) as {
+        result?: {
+          applied?: Array<{
+            filePath?: string;
+            hunkIndex?: number;
+            side?: string;
+            line?: number;
+          }>;
+        };
+      };
+      expect(applied).toMatchObject({
+        result: {
+          applied: [
+            {
+              filePath: fixture.afterName,
+              hunkIndex: 0,
+              side: "new",
+              line: 2,
+            },
+            {
+              filePath: fixture.afterName,
+              hunkIndex: 1,
+              side: "new",
+              line: 13,
+            },
+          ],
+        },
+      });
+
+      const context = runSessionCli(["context", sessionId, "--json"], port);
+      expect(context.proc.exitCode).toBe(0);
+      expect(JSON.parse(context.stdout)).toMatchObject({
+        context: {
+          selectedHunk: {
+            index: 0,
+          },
+        },
+      });
+
+      const comments = runSessionCli(["comment", "list", sessionId, "--json"], port);
+      expect(comments.proc.exitCode).toBe(0);
+      expect(JSON.parse(comments.stdout)).toMatchObject({
+        comments: [{ summary: "First hunk note" }, { summary: "Second hunk note" }],
+      });
     } finally {
       session.kill();
       await session.exited;

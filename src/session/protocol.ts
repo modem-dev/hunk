@@ -1,5 +1,6 @@
 import type {
   SessionCommentAddCommandInput,
+  SessionCommentApplyCommandInput,
   SessionCommentClearCommandInput,
   SessionCommentListCommandInput,
   SessionCommentRemoveCommandInput,
@@ -8,6 +9,7 @@ import type {
   SessionSelectorInput,
 } from "../core/types";
 import type {
+  AppliedCommentBatchResult,
   AppliedCommentResult,
   ClearedCommentsResult,
   ListedSession,
@@ -29,6 +31,7 @@ export type SessionDaemonAction =
   | "navigate"
   | "reload"
   | "comment-add"
+  | "comment-apply"
   | "comment-list"
   | "comment-rm"
   | "comment-clear";
@@ -78,6 +81,12 @@ export type SessionDaemonRequest =
       reveal: boolean;
     }
   | {
+      action: "comment-apply";
+      selector: SessionCommentApplyCommandInput["selector"];
+      comments: SessionCommentApplyCommandInput["comments"];
+      revealMode: SessionCommentApplyCommandInput["revealMode"];
+    }
+  | {
       action: "comment-list";
       selector: SessionCommentListCommandInput["selector"];
       filePath?: string;
@@ -100,6 +109,7 @@ export type SessionDaemonResponse =
   | { result: NavigatedSelectionResult }
   | { result: ReloadedSessionResult }
   | { result: AppliedCommentResult }
+  | { result: AppliedCommentBatchResult }
   | { comments: SessionLiveCommentSummary[] }
   | { result: RemovedCommentResult }
   | { result: ClearedCommentsResult };

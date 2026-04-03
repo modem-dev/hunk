@@ -11,6 +11,7 @@ import { HunkHostClient } from "../../mcp/client";
 import { filterReviewFiles, mergeFileAnnotationsByFileId } from "../lib/files";
 import { buildAnnotatedHunkCursors, findNextHunkCursor } from "../lib/hunks";
 import type {
+  AppliedCommentBatchResult,
   LiveComment,
   ReloadedSessionResult,
   SessionLiveCommentSummary,
@@ -194,6 +195,62 @@ export function useHunkSessionBridge({
     [files, jumpToFile, openAgentNotes],
   );
 
+  const applyIncomingCommentBatch = useCallback(
+    async (
+      message: Extract<SessionServerMessage, { command: "comment_batch" }>,
+    ): Promise<AppliedCommentBatchResult> => {
+      const createdAt = new Date().toISOString();
+      const prepared = message.input.comments.map((input, index) => {
+        const file = findDiffFileByPath(files, input.filePath);
+        if (!file) {
+          throw new Error(`No visible diff file matches ${input.filePath}.`);
+        }
+
+        const target = resolveCommentTarget(file, input);
+        return {
+          file,
+          target,
+          liveComment: buildLiveComment(
+            {
+              ...input,
+              side: target.side,
+              line: target.line,
+            },
+            `mcp:${message.requestId}:${index}`,
+            createdAt,
+            target.hunkIndex,
+          ),
+        };
+      });
+
+      setLiveCommentsByFileId((current) => {
+        const next = { ...current };
+        for (const entry of prepared) {
+          next[entry.file.id] = [...(next[entry.file.id] ?? []), entry.liveComment];
+        }
+        return next;
+      });
+
+      if (message.input.revealMode === "last" && prepared.length > 0) {
+        const last = prepared.at(-1)!;
+        jumpToFile(last.file.id, last.target.hunkIndex);
+        openAgentNotes();
+      }
+
+      return {
+        applied: prepared.map(({ file, target, liveComment }) => ({
+          commentId: liveComment.id,
+          fileId: file.id,
+          filePath: file.path,
+          hunkIndex: target.hunkIndex,
+          side: target.side,
+          line: target.line,
+        })),
+      };
+    },
+    [files, jumpToFile, openAgentNotes],
+  );
+
   useEffect(() => {
     liveCommentsByFileIdRef.current = liveCommentsByFileId;
   }, [liveCommentsByFileId]);
@@ -286,6 +343,7 @@ export function useHunkSessionBridge({
 
     hostClient.setBridge({
       applyComment: applyIncomingComment,
+      applyCommentBatch: applyIncomingCommentBatch,
       navigateToHunk: navigateToHunkSelection,
       reloadSession: reloadIncomingSession,
       removeComment: removeIncomingComment,
@@ -297,6 +355,7 @@ export function useHunkSessionBridge({
     };
   }, [
     applyIncomingComment,
+    applyIncomingCommentBatch,
     clearIncomingComments,
     hostClient,
     navigateToHunkSelection,

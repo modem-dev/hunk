@@ -74,6 +74,11 @@ export interface CommentToolInput extends SessionTargetInput {
   author?: string;
 }
 
+export interface CommentBatchToolInput extends SessionTargetInput {
+  comments: CommentToolInput[];
+  revealMode?: "none" | "last";
+}
+
 export interface NavigateToFileToolInput extends SessionTargetInput {
   filePath: string;
   hunkIndex?: number;
@@ -124,6 +129,10 @@ export interface AppliedCommentResult {
   line: number;
 }
 
+export interface AppliedCommentBatchResult {
+  applied: AppliedCommentResult[];
+}
+
 export interface NavigatedSelectionResult {
   fileId: string;
   filePath: string;
@@ -172,6 +181,7 @@ export interface SelectedSessionContext {
 
 export type SessionCommandResult =
   | AppliedCommentResult
+  | AppliedCommentBatchResult
   | NavigatedSelectionResult
   | RemovedCommentResult
   | ClearedCommentsResult
@@ -223,6 +233,12 @@ export type SessionServerMessage =
       requestId: string;
       command: "comment";
       input: CommentToolInput;
+    }
+  | {
+      type: "command";
+      requestId: string;
+      command: "comment_batch";
+      input: CommentBatchToolInput;
     }
   | {
       type: "command";
