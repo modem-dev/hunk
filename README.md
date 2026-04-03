@@ -183,7 +183,7 @@ hunk session comment clear --repo . --file README.md --yes
 ```
 
 `hunk session reload ... -- <hunk command>` swaps what a live session is showing without opening a new TUI window.
-`hunk session comment add` leaves the current viewport alone by default; pass `--focus` when you want the live session to jump to the new note.
+Pass `--focus` to jump the live session to the new note.
 
 - `--repo <path>` selects the live session by its current loaded repo root.
 - `--source <path>` is reload-only: it changes where the nested `diff` / `show` command runs, but does not select the session.
