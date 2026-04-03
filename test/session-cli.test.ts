@@ -401,6 +401,20 @@ describe("session CLI", () => {
       });
       expect(typeof addedComment.result?.commentId).toBe("string");
 
+      await waitUntil("comment registered without focus", () => {
+        const listedComments = runSessionCli(["comment", "list", sessionId, "--json"], port);
+        if (listedComments.proc.exitCode !== 0) {
+          return null;
+        }
+
+        const parsed = JSON.parse(listedComments.stdout) as {
+          comments?: Array<{ summary?: string }>;
+        };
+        return parsed.comments?.some((comment) => comment.summary === "Second hunk note")
+          ? parsed
+          : null;
+      });
+
       const unchangedContext = runSessionCli(["context", sessionId, "--json"], port);
       expect(unchangedContext.proc.exitCode).toBe(0);
       expect(JSON.parse(unchangedContext.stdout)).toMatchObject({
