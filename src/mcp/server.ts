@@ -122,11 +122,19 @@ async function handleSessionApiRequest(state: HunkDaemonState, request: Request)
           }),
         };
         break;
-      case "comment-add":
+      case "comment-add": {
+        if (
+          input.hunkNumber === undefined &&
+          (input.side === undefined || input.line === undefined)
+        ) {
+          throw new Error("comment-add requires either hunkNumber or both side and line.");
+        }
+
         response = {
           result: await state.sendComment({
             ...input.selector,
             filePath: input.filePath,
+            hunkIndex: input.hunkNumber !== undefined ? input.hunkNumber - 1 : undefined,
             side: input.side,
             line: input.line,
             summary: input.summary,
@@ -136,6 +144,7 @@ async function handleSessionApiRequest(state: HunkDaemonState, request: Request)
           }),
         };
         break;
+      }
       case "comment-list":
         response = {
           comments: state.listComments(input.selector, { filePath: input.filePath }),

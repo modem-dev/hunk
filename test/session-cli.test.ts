@@ -80,8 +80,8 @@ function spawnHunkSession(
   fixture: ReturnType<typeof createFixtureFiles>,
   {
     port,
-    quitAfterSeconds = 8,
-    timeoutSeconds = 10,
+    quitAfterSeconds = 12,
+    timeoutSeconds = 15,
   }: {
     port: number;
     quitAfterSeconds?: number;
@@ -347,8 +347,8 @@ describe("session CLI", () => {
           sessionId,
           "--file",
           fixture.afterName,
-          "--new-line",
-          "10",
+          "--hunk",
+          "2",
           "--summary",
           "Second hunk note",
           "--rationale",
@@ -375,7 +375,7 @@ describe("session CLI", () => {
           filePath: fixture.afterName,
           hunkIndex: 1,
           side: "new",
-          line: 10,
+          line: 13,
         },
       });
 

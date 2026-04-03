@@ -135,8 +135,9 @@ export interface SessionCommentAddCommandInput {
   output: SessionCommandOutput;
   selector: SessionSelectorInput;
   filePath: string;
-  side: "old" | "new";
-  line: number;
+  hunkNumber?: number;
+  side?: "old" | "new";
+  line?: number;
   summary: string;
   rationale?: string;
   author?: string;

@@ -2,6 +2,12 @@ import type { Hunk } from "@pierre/diffs";
 import type { DiffFile } from "./types";
 import type { CommentToolInput, DiffSide, LiveComment } from "../mcp/types";
 
+export interface ResolvedCommentTarget {
+  hunkIndex: number;
+  side: DiffSide;
+  line: number;
+}
+
 /** Compute the inclusive old/new line spans touched by one hunk. */
 export function hunkLineRange(hunk: Hunk) {
   const newEnd = Math.max(
@@ -33,9 +39,75 @@ export function findHunkIndexForLine(file: DiffFile, side: DiffSide, line: numbe
   });
 }
 
+/** Pick one stable anchor line inside a hunk, preferring new-side changes when present. */
+export function firstCommentTargetForHunk(hunk: Hunk): Omit<ResolvedCommentTarget, "hunkIndex"> {
+  let deletionLineNumber = hunk.deletionStart;
+  let additionLineNumber = hunk.additionStart;
+
+  for (const content of hunk.hunkContent) {
+    if (content.type === "context") {
+      deletionLineNumber += content.lines;
+      additionLineNumber += content.lines;
+      continue;
+    }
+
+    if (content.additions > 0) {
+      return {
+        side: "new",
+        line: additionLineNumber,
+      };
+    }
+
+    if (content.deletions > 0) {
+      return {
+        side: "old",
+        line: deletionLineNumber,
+      };
+    }
+  }
+
+  const fallbackRange = hunkLineRange(hunk);
+  return hunk.additionLines > 0
+    ? { side: "new", line: fallbackRange.newRange[0] }
+    : { side: "old", line: fallbackRange.oldRange[0] };
+}
+
+/** Resolve a line-based or hunk-based live-comment target against one visible diff file. */
+export function resolveCommentTarget(
+  file: DiffFile,
+  input: CommentToolInput,
+): ResolvedCommentTarget {
+  if (input.hunkIndex !== undefined) {
+    const hunk = file.metadata.hunks[input.hunkIndex];
+    if (!hunk) {
+      throw new Error(`No diff hunk ${input.hunkIndex + 1} exists in ${input.filePath}.`);
+    }
+
+    return {
+      hunkIndex: input.hunkIndex,
+      ...firstCommentTargetForHunk(hunk),
+    };
+  }
+
+  if (!input.side || input.line === undefined) {
+    throw new Error("comment requires either hunkIndex or both side and line.");
+  }
+
+  const hunkIndex = findHunkIndexForLine(file, input.side, input.line);
+  if (hunkIndex < 0) {
+    throw new Error(`No ${input.side} diff hunk in ${input.filePath} covers line ${input.line}.`);
+  }
+
+  return {
+    hunkIndex,
+    side: input.side,
+    line: input.line,
+  };
+}
+
 /** Convert one incoming MCP comment command into a live annotation. */
 export function buildLiveComment(
-  input: CommentToolInput,
+  input: CommentToolInput & { side: DiffSide; line: number },
   commentId: string,
   createdAt: string,
   hunkIndex: number,

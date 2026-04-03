@@ -91,13 +91,15 @@ hunk session reload --session-path /path/to/live-window --source /path/to/other-
 ### Comments
 
 ```bash
+hunk session comment add --repo . --file README.md --hunk 2 --summary "Explain the hunk" [--rationale "..."] [--author "agent"] [--no-reveal]
 hunk session comment add --repo . --file README.md --new-line 103 --summary "Tighten this wording" [--rationale "..."] [--author "agent"] [--no-reveal]
 hunk session comment list --repo . [--file README.md]
 hunk session comment rm --repo . <comment-id>
 hunk session comment clear --repo . --yes [--file README.md]
 ```
 
-- `comment add` requires `--file`, `--summary`, and exactly one of `--old-line` or `--new-line`
+- `comment add` requires `--file`, `--summary`, and exactly one of `--hunk`, `--old-line`, or `--new-line`
+- Prefer `--hunk <n>` when you want to annotate the whole diff hunk instead of picking a single line manually
 - `comment add` reveals the note by default; pass `--no-reveal` to keep the current focus
 - `comment list` and `comment clear` accept optional `--file`
 - Quote `--summary` and `--rationale` defensively in the shell

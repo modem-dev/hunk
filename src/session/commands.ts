@@ -176,6 +176,7 @@ class HttpHunkDaemonCliClient implements HunkDaemonCliClient {
         action: "comment-add",
         selector: input.selector,
         filePath: input.filePath,
+        hunkNumber: input.hunkNumber,
         side: input.side,
         line: input.line,
         summary: input.summary,

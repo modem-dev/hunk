@@ -5,6 +5,7 @@ import {
   findDiffFileByPath,
   findHunkIndexForLine,
   hunkLineRange,
+  resolveCommentTarget,
 } from "../../core/liveComments";
 import { HunkHostClient } from "../../mcp/client";
 import { filterReviewFiles, mergeFileAnnotationsByFileId } from "../lib/files";
@@ -157,19 +158,18 @@ export function useHunkSessionBridge({
         throw new Error(`No visible diff file matches ${message.input.filePath}.`);
       }
 
-      const hunkIndex = findHunkIndexForLine(file, message.input.side, message.input.line);
-      if (hunkIndex < 0) {
-        throw new Error(
-          `No ${message.input.side} diff hunk in ${message.input.filePath} covers line ${message.input.line}.`,
-        );
-      }
+      const target = resolveCommentTarget(file, message.input);
 
       const commentId = `mcp:${message.requestId}`;
       const liveComment = buildLiveComment(
-        message.input,
+        {
+          ...message.input,
+          side: target.side,
+          line: target.line,
+        },
         commentId,
         new Date().toISOString(),
-        hunkIndex,
+        target.hunkIndex,
       );
 
       setLiveCommentsByFileId((current) => ({
@@ -178,7 +178,7 @@ export function useHunkSessionBridge({
       }));
 
       if (message.input.reveal ?? true) {
-        jumpToFile(file.id, hunkIndex);
+        jumpToFile(file.id, target.hunkIndex);
         openAgentNotes();
       }
 
@@ -186,9 +186,9 @@ export function useHunkSessionBridge({
         commentId,
         fileId: file.id,
         filePath: file.path,
-        hunkIndex,
-        side: message.input.side,
-        line: message.input.line,
+        hunkIndex: target.hunkIndex,
+        side: target.side,
+        line: target.line,
       };
     },
     [files, jumpToFile, openAgentNotes],

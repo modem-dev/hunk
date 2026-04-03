@@ -162,7 +162,7 @@ Use it to:
 - inspect the current review context
 - jump to a file, hunk, or line
 - reload the current window with a different `diff` or `show` command
-- add, list, and remove inline comments
+- add, list, and remove inline comments (by hunk or by line)
 
 Most users only need `hunk session ...`. Use `hunk mcp serve` only for manual startup or debugging of the local daemon.
 
@@ -175,6 +175,7 @@ hunk session reload --repo . -- diff
 hunk session reload --repo /path/to/worktree -- diff
 hunk session reload --session-path /path/to/live-window --source /path/to/other-checkout -- diff
 hunk session reload --repo . -- show HEAD~1 -- README.md
+hunk session comment add --repo . --file README.md --hunk 2 --summary "Explain this hunk"
 hunk session comment add --repo . --file README.md --new-line 103 --summary "Tighten this wording"
 hunk session comment list --repo .
 hunk session comment rm --repo . <comment-id>
