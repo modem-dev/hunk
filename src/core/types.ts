@@ -103,7 +103,7 @@ export interface SessionListCommandInput {
 
 export interface SessionGetCommandInput {
   kind: "session";
-  action: "get" | "context";
+  action: "get" | "context" | "review";
   output: SessionCommandOutput;
   selector: SessionSelectorInput;
 }

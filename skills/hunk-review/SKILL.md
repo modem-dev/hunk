@@ -12,12 +12,14 @@ If no session exists, ask the user to launch Hunk in their terminal first.
 ## Workflow
 
 ```text
-1. hunk session list                    # find live sessions
-2. hunk session get --repo .            # inspect path / repo / source
-3. hunk session context --repo .        # check current focus
-4. hunk session navigate ...            # move to the right place
-5. hunk session reload -- <command>     # swap contents if needed
-6. hunk session comment add ...         # leave review notes
+1. hunk session list                                    # find live sessions
+2. hunk session get --repo .                            # inspect path / repo / source
+3. hunk session review --repo . --json                  # inspect file/hunk structure first
+4. hunk session review --repo . --include-patch --json  # opt into raw diff text only when needed
+5. hunk session context --repo .                        # check current focus when needed
+6. hunk session navigate ...                            # move to the right place
+7. hunk session reload -- <command>                     # swap contents if needed
+8. hunk session comment add ...                         # leave review notes
 ```
 
 ## Session selection
@@ -43,10 +45,12 @@ Use `--source` only for advanced reloads where the live session you want to cont
 hunk session list [--json]
 hunk session get (--repo . | <id>) [--json]
 hunk session context (--repo . | <id>) [--json]
+hunk session review (--repo . | <id>) [--json] [--include-patch]
 ```
 
 - `get` shows the session `Path`, `Repo`, and `Source`, which helps when choosing between `--repo` and `--session-path`
 - `Repo` is what `--repo` matches; `Path` is what `--session-path` matches
+- `review --json` returns file and hunk structure by default; add `--include-patch` only when a caller truly needs raw unified diff text
 
 ### Navigate
 
@@ -112,7 +116,9 @@ hunk session reload --repo . -- diff --exclude-untracked
 
 ## Guiding a review
 
-The user may ask you to walk them through a changeset or review code using Hunk. Your role is to narrate: steer the user's view to what matters and leave comments that explain what they're looking at.
+The user may ask you to walk them through a changeset or review code using Hunk. Start with `hunk session review --json` to understand the file/hunk structure without inflating agent context, then use `--include-patch` only for the files you truly need to read in raw diff form. Use `context` and `navigate` to line up the user's current view before adding comments.
+
+Your role is to narrate: steer the user's view to what matters and leave comments that explain what they're looking at.
 
 Typical flow:
 

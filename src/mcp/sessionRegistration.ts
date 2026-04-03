@@ -3,7 +3,12 @@ import { spawnSync } from "node:child_process";
 import type { AppBootstrap } from "../core/types";
 import { hunkLineRange } from "../core/liveComments";
 import { resolveSessionTerminalMetadata } from "./sessionTerminalMetadata";
-import type { HunkSessionRegistration, HunkSessionSnapshot, SessionFileSummary } from "./types";
+import type {
+  HunkSessionRegistration,
+  HunkSessionSnapshot,
+  SessionFileSummary,
+  SessionReviewFile,
+} from "./types";
 
 /** Resolve the TTY device path for the current process, if available. */
 function ttyname(): string | undefined {
@@ -39,6 +44,31 @@ function buildSessionFiles(bootstrap: AppBootstrap): SessionFileSummary[] {
   }));
 }
 
+function formatHunkHeader(file: AppBootstrap["changeset"]["files"][number], hunkIndex: number) {
+  const hunk = file.metadata.hunks[hunkIndex]!;
+  const specs =
+    hunk.hunkSpecs ??
+    `@@ -${hunk.deletionStart},${hunk.deletionLines} +${hunk.additionStart},${hunk.additionLines} @@`;
+  return hunk.hunkContext ? `${specs} ${hunk.hunkContext}` : specs;
+}
+
+function buildSessionReviewFiles(bootstrap: AppBootstrap): SessionReviewFile[] {
+  return bootstrap.changeset.files.map((file) => ({
+    id: file.id,
+    path: file.path,
+    previousPath: file.previousPath,
+    additions: file.stats.additions,
+    deletions: file.stats.deletions,
+    hunkCount: file.metadata.hunks.length,
+    patch: file.patch,
+    hunks: file.metadata.hunks.map((_, index) => ({
+      index,
+      header: formatHunkHeader(file, index),
+      ...hunkLineRange(file.metadata.hunks[index]!),
+    })),
+  }));
+}
+
 /** Build the daemon-facing metadata for one live Hunk TUI session. */
 export function createSessionRegistration(bootstrap: AppBootstrap): HunkSessionRegistration {
   const terminal = resolveSessionTerminalMetadata({ tty: ttyname() });
@@ -54,6 +84,7 @@ export function createSessionRegistration(bootstrap: AppBootstrap): HunkSessionR
     launchedAt: new Date().toISOString(),
     terminal,
     files: buildSessionFiles(bootstrap),
+    reviewFiles: buildSessionReviewFiles(bootstrap),
   };
 }
 
@@ -69,6 +100,7 @@ export function updateSessionRegistration(
     title: bootstrap.changeset.title,
     sourceLabel: bootstrap.changeset.sourceLabel,
     files: buildSessionFiles(bootstrap),
+    reviewFiles: buildSessionReviewFiles(bootstrap),
   };
 }
 

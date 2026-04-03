@@ -5,6 +5,9 @@ import type {
   SelectedSessionContext,
   SessionFileSummary,
   SessionLiveCommentSummary,
+  SessionReview,
+  SessionReviewFile,
+  SessionReviewHunk,
 } from "../../src/mcp/types";
 
 export function createTestSessionFileSummary(
@@ -18,6 +21,34 @@ export function createTestSessionFileSummary(
     hunkCount: 1,
     ...overrides,
   };
+}
+
+export function createTestSessionReviewHunk(
+  overrides: Partial<SessionReviewHunk> = {},
+): SessionReviewHunk {
+  return {
+    index: 0,
+    header: "@@ -1,1 +1,1 @@",
+    oldRange: [1, 1],
+    newRange: [1, 1],
+    ...overrides,
+  };
+}
+
+export function createTestSessionReviewFile(
+  overrides: Partial<SessionReviewFile> = {},
+): SessionReviewFile {
+  return {
+    ...createTestSessionFileSummary(overrides),
+    patch: "@@ -1,1 +1,1 @@",
+    hunks: [createTestSessionReviewHunk()],
+    ...overrides,
+  };
+}
+
+function summarizeReviewFile(reviewFile: SessionReviewFile): SessionFileSummary {
+  const { patch: _patch, hunks: _hunks, ...summary } = reviewFile;
+  return summary;
 }
 
 export function createTestSessionSnapshot(
@@ -38,6 +69,20 @@ export function createTestSessionSnapshot(
 export function createTestSessionRegistration(
   overrides: Partial<HunkSessionRegistration> = {},
 ): HunkSessionRegistration {
+  const reviewFiles =
+    overrides.reviewFiles ??
+    (overrides.files ?? [createTestSessionFileSummary()]).map((file) =>
+      createTestSessionReviewFile({
+        id: file.id,
+        path: file.path,
+        previousPath: file.previousPath,
+        additions: file.additions,
+        deletions: file.deletions,
+        hunkCount: file.hunkCount,
+      }),
+    );
+  const files = overrides.files ?? reviewFiles.map(summarizeReviewFile);
+
   return {
     sessionId: "session-1",
     pid: 123,
@@ -47,12 +92,17 @@ export function createTestSessionRegistration(
     title: "repo working tree",
     sourceLabel: "/repo",
     launchedAt: "2026-03-22T00:00:00.000Z",
-    files: [createTestSessionFileSummary()],
+    files,
+    reviewFiles,
     ...overrides,
+    files,
+    reviewFiles,
   };
 }
 
 export function createTestListedSession(overrides: Partial<ListedSession> = {}): ListedSession {
+  const files = overrides.files ?? [createTestSessionFileSummary()];
+
   return {
     sessionId: "session-1",
     pid: 123,
@@ -62,10 +112,13 @@ export function createTestListedSession(overrides: Partial<ListedSession> = {}):
     title: "repo working tree",
     sourceLabel: "/repo",
     launchedAt: "2026-03-22T00:00:00.000Z",
-    fileCount: 1,
-    files: [createTestSessionFileSummary()],
-    snapshot: createTestSessionSnapshot(),
+    fileCount: overrides.fileCount ?? files.length,
+    files,
+    snapshot: overrides.snapshot ?? createTestSessionSnapshot(),
     ...overrides,
+    fileCount: overrides.fileCount ?? files.length,
+    files,
+    snapshot: overrides.snapshot ?? createTestSessionSnapshot(),
   };
 }
 
@@ -106,5 +159,31 @@ export function createTestSelectedSessionContext(
     showAgentNotes: false,
     liveCommentCount: 0,
     ...overrides,
+  };
+}
+
+export function createTestSessionReview(
+  overrides: Partial<SessionReview> = {},
+): SessionReview {
+  const files = overrides.files ?? [createTestSessionReviewFile()];
+  const selectedFile = overrides.selectedFile === undefined ? (files[0] ?? null) : overrides.selectedFile;
+  const selectedHunk =
+    overrides.selectedHunk === undefined ? (selectedFile?.hunks[0] ?? null) : overrides.selectedHunk;
+
+  return {
+    sessionId: "session-1",
+    title: "repo working tree",
+    sourceLabel: "/repo",
+    repoRoot: "/repo",
+    inputKind: "git",
+    selectedFile,
+    selectedHunk,
+    showAgentNotes: false,
+    liveCommentCount: 0,
+    files,
+    ...overrides,
+    selectedFile,
+    selectedHunk,
+    files,
   };
 }

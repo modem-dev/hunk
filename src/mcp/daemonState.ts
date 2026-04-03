@@ -15,6 +15,8 @@ import type {
   RemovedCommentResult,
   SelectedSessionContext,
   SessionCommandResult,
+  SessionReview,
+  SessionReviewFile,
   SessionServerMessage,
   SessionTargetInput,
 } from "./types";
@@ -55,6 +57,17 @@ function findSelectedFile(session: ListedSession) {
         file.id === session.snapshot.selectedFileId ||
         file.path === session.snapshot.selectedFilePath ||
         file.previousPath === session.snapshot.selectedFilePath,
+    ) ?? null
+  );
+}
+
+function findSelectedReviewFile(reviewFiles: SessionReviewFile[], snapshot: HunkSessionSnapshot) {
+  return (
+    reviewFiles.find(
+      (file) =>
+        file.id === snapshot.selectedFileId ||
+        file.path === snapshot.selectedFilePath ||
+        file.previousPath === snapshot.selectedFilePath,
     ) ?? null
   );
 }
@@ -146,6 +159,26 @@ export class HunkDaemonState {
 
   getSession(selector: SessionTargetSelector) {
     return resolveSessionTarget(this.listSessions(), selector);
+  }
+
+  getSessionReview(selector: SessionTargetSelector): SessionReview {
+    const entry = this.getSessionEntry(selector);
+    const { registration, snapshot } = entry;
+    const selectedFile = findSelectedReviewFile(registration.reviewFiles, snapshot);
+
+    return {
+      sessionId: registration.sessionId,
+      title: registration.title,
+      sourceLabel: registration.sourceLabel,
+      cwd: registration.cwd,
+      repoRoot: registration.repoRoot,
+      inputKind: registration.inputKind,
+      selectedFile,
+      selectedHunk: selectedFile ? (selectedFile.hunks[snapshot.selectedHunkIndex] ?? null) : null,
+      showAgentNotes: snapshot.showAgentNotes,
+      liveCommentCount: snapshot.liveCommentCount,
+      files: registration.reviewFiles,
+    };
   }
 
   getSelectedContext(selector: SessionTargetSelector): SelectedSessionContext {
@@ -352,6 +385,16 @@ export class HunkDaemonState {
 
     this.sessionIdsBySocket.clear();
     this.sessions.clear();
+  }
+
+  private getSessionEntry(selector: SessionTargetSelector) {
+    const session = resolveSessionTarget(this.listSessions(), selector);
+    const entry = this.sessions.get(session.sessionId);
+    if (!entry) {
+      throw new Error("The targeted Hunk session is no longer connected.");
+    }
+
+    return entry;
   }
 
   private sendCommand<

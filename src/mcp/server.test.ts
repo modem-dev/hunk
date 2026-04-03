@@ -193,6 +193,7 @@ describe("Hunk session daemon server", () => {
           "list",
           "get",
           "context",
+          "review",
           "navigate",
           "reload",
           "comment-add",

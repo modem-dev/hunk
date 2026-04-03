@@ -52,6 +52,24 @@ describe("CLI help output", () => {
     expect(stdout).not.toContain("\u001b[?1049h");
   });
 
+  test("prints session help with the review command without terminal takeover sequences", () => {
+    const proc = Bun.spawnSync(["bun", "run", "src/main.tsx", "session", "--help"], {
+      cwd: process.cwd(),
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    const stdout = Buffer.from(proc.stdout).toString("utf8");
+    const stderr = Buffer.from(proc.stderr).toString("utf8");
+
+    expect(proc.exitCode).toBe(0);
+    expect(stderr).toBe("");
+    expect(stdout).toContain("hunk session review <session-id>");
+    expect(stdout).toContain("hunk session review --repo <path>");
+    expect(stdout).not.toContain("\u001b[?1049h");
+  });
+
   test("prints session reload help without terminal takeover sequences", () => {
     const proc = Bun.spawnSync(["bun", "run", "src/main.tsx", "session", "reload", "--help"], {
       cwd: process.cwd(),

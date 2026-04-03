@@ -100,6 +100,40 @@ describe("Hunk MCP daemon state", () => {
     );
   });
 
+  test("exports the full session review model from registration state", () => {
+    const state = new HunkDaemonState();
+    const socket = {
+      send() {},
+    };
+
+    state.registerSession(
+      socket,
+      createRegistration(),
+      createSnapshot({
+        selectedHunkIndex: 0,
+        selectedHunkOldRange: [1, 1],
+        selectedHunkNewRange: [1, 1],
+      }),
+    );
+
+    expect(state.getSessionReview({ sessionId: "session-1" })).toEqual(
+      expect.objectContaining({
+        sessionId: "session-1",
+        selectedFile: expect.objectContaining({ path: "src/example.ts" }),
+        selectedHunk: expect.objectContaining({
+          index: 0,
+          header: "@@ -1,1 +1,1 @@",
+        }),
+        files: [
+          expect.objectContaining({
+            path: "src/example.ts",
+            patch: "@@ -1,1 +1,1 @@",
+          }),
+        ],
+      }),
+    );
+  });
+
   test("lists live comments from snapshot state and can filter by file", () => {
     const state = new HunkDaemonState();
     const socket = {

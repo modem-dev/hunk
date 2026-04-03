@@ -480,6 +480,8 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
           "  hunk session get --repo <path>",
           "  hunk session context <session-id>",
           "  hunk session context --repo <path>",
+          "  hunk session review <session-id>",
+          "  hunk session review --repo <path>",
           "  hunk session navigate (<session-id> | --repo <path>) --file <path> (--hunk <n> | --old-line <n> | --new-line <n>)",
           "  hunk session navigate (<session-id> | --repo <path>) (--next-comment | --prev-comment)",
           "  hunk session reload (<session-id> | --repo <path> | --session-path <path>) [--source <path>] -- diff [ref] [-- <pathspec...>]",
@@ -514,12 +516,14 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
     };
   }
 
-  if (subcommand === "get" || subcommand === "context") {
+  if (subcommand === "get" || subcommand === "context" || subcommand === "review") {
     const command = new Command(`session ${subcommand}`)
       .description(
         subcommand === "get"
           ? "show one live Hunk session"
-          : "show the selected file and hunk for one live Hunk session",
+          : subcommand === "context"
+            ? "show the selected file and hunk for one live Hunk session"
+            : "export the full live review model for one Hunk session",
       )
       .argument("[sessionId]")
       .option("--repo <path>", "target the live session whose repo root matches this path")

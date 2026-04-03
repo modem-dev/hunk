@@ -160,6 +160,7 @@ When a Hunk TUI starts, it registers with a local loopback daemon. `hunk session
 Use it to:
 
 - inspect the current review context
+- export the full loaded review model for agent workflows
 - jump to a file, hunk, or line
 - reload the current window with a different `diff` or `show` command
 - add, list, and remove inline comments
@@ -170,6 +171,7 @@ Most users only need `hunk session ...`. Use `hunk mcp serve` only for manual st
 hunk session list
 hunk session get --repo .
 hunk session context --repo .
+hunk session review --repo . --json
 hunk session navigate --repo . --file README.md --hunk 2
 hunk session reload --repo . -- diff
 hunk session reload --repo /path/to/worktree -- diff

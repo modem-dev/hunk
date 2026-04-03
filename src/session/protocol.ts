@@ -16,6 +16,7 @@ import type {
   RemovedCommentResult,
   SelectedSessionContext,
   SessionLiveCommentSummary,
+  SessionReview,
 } from "../mcp/types";
 
 export const HUNK_SESSION_API_PATH = "/session-api";
@@ -26,6 +27,7 @@ export type SessionDaemonAction =
   | "list"
   | "get"
   | "context"
+  | "review"
   | "navigate"
   | "reload"
   | "comment-add"
@@ -48,6 +50,10 @@ export type SessionDaemonRequest =
     }
   | {
       action: "context";
+      selector: SessionSelectorInput;
+    }
+  | {
+      action: "review";
       selector: SessionSelectorInput;
     }
   | {
@@ -96,6 +102,7 @@ export type SessionDaemonResponse =
   | { sessions: ListedSession[] }
   | { session: ListedSession }
   | { context: SelectedSessionContext }
+  | { review: SessionReview }
   | { result: NavigatedSelectionResult }
   | { result: ReloadedSessionResult }
   | { result: AppliedCommentResult }
