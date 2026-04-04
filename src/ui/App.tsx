@@ -4,17 +4,7 @@ import {
   type ScrollBoxRenderable,
 } from "@opentui/core";
 import { useRenderer, useTerminalDimensions } from "@opentui/react";
-import {
-  Suspense,
-  lazy,
-  startTransition,
-  useCallback,
-  useDeferredValue,
-  useEffect,
-  useMemo,
-  useState,
-  useRef,
-} from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState, useRef } from "react";
 import type { AppBootstrap, CliInput, LayoutMode } from "../core/types";
 import { canReloadInput, computeWatchSignature } from "../core/watch";
 import { HunkHostClient } from "../mcp/client";
@@ -27,9 +17,8 @@ import { PaneDivider } from "./components/panes/PaneDivider";
 import { useAppKeyboardShortcuts } from "./hooks/useAppKeyboardShortcuts";
 import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
 import { useMenuController } from "./hooks/useMenuController";
+import { useReviewController } from "./hooks/useReviewController";
 import { buildAppMenus } from "./lib/appMenus";
-import { buildSidebarEntries, filterReviewFiles, mergeFileAnnotationsByFileId } from "./lib/files";
-import { buildAnnotatedHunkCursors, buildHunkCursors, findNextHunkCursor } from "./lib/hunks";
 import { fileRowId } from "./lib/ids";
 import { resolveResponsiveLayout } from "./lib/responsive";
 import { resizeSidebarWidth } from "./lib/sidebar";
@@ -115,77 +104,48 @@ export function App({
   const [forceSidebarOpen, setForceSidebarOpen] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [focusArea, setFocusArea] = useState<FocusArea>("files");
-  const [filter, setFilter] = useState("");
   const [sidebarWidth, setSidebarWidth] = useState(34);
   const [resizeDragOriginX, setResizeDragOriginX] = useState<number | null>(null);
   const [resizeStartWidth, setResizeStartWidth] = useState<number | null>(null);
-  const [selectedFileId, setSelectedFileId] = useState(bootstrap.changeset.files[0]?.id ?? "");
-  const [selectedHunkIndex, setSelectedHunkIndex] = useState(0);
-  const [selectedFileTopAlignRequestId, setSelectedFileTopAlignRequestId] = useState(0);
-  const [scrollToNote, setScrollToNote] = useState(false);
-  const deferredFilter = useDeferredValue(filter);
 
   const pagerMode = Boolean(bootstrap.input.options.pager);
   const activeTheme = resolveTheme(themeId, renderer.themeMode);
+  const review = useReviewController({ files: bootstrap.changeset.files });
+  const filteredFiles = review.visibleFiles;
+  const selectedFile = review.selectedFile;
+  const selectedHunkIndex = review.selectedHunkIndex;
+  const clearFilter = review.clearFilter;
+  const moveToAnnotatedFile = review.moveToAnnotatedFile;
+  const moveToAnnotatedHunk = review.moveToAnnotatedHunk;
 
   const jumpToFile = useCallback(
     (fileId: string, nextHunkIndex = 0, options?: { alignFileHeaderTop?: boolean }) => {
-      sidebarScrollRef.current?.scrollChildIntoView(fileRowId(fileId));
-      setSelectedFileId(fileId);
-      setSelectedHunkIndex(nextHunkIndex);
-      setScrollToNote(false);
-
-      if (options?.alignFileHeaderTop) {
-        setSelectedFileTopAlignRequestId((current) => current + 1);
-      }
+      review.selectFile(fileId, nextHunkIndex, {
+        alignFileHeaderTop: options?.alignFileHeaderTop,
+      });
     },
-    [],
+    [review.selectFile],
   );
-
-  const jumpToAnnotatedHunk = useCallback((fileId: string, nextHunkIndex = 0) => {
-    sidebarScrollRef.current?.scrollChildIntoView(fileRowId(fileId));
-    setSelectedFileId(fileId);
-    setSelectedHunkIndex(nextHunkIndex);
-    setScrollToNote(true);
-  }, []);
 
   const openAgentNotes = useCallback(() => {
     setShowAgentNotes(true);
   }, []);
 
-  const baseSelectedFile =
-    bootstrap.changeset.files.find((file) => file.id === selectedFileId) ??
-    bootstrap.changeset.files[0];
-  const { liveCommentsByFileId } = useHunkSessionBridge({
-    currentHunk: baseSelectedFile?.metadata.hunks[selectedHunkIndex],
-    files: bootstrap.changeset.files,
-    filterQuery: deferredFilter,
+  useHunkSessionBridge({
+    addLiveComment: review.addLiveComment,
+    clearLiveComments: review.clearLiveComments,
     hostClient,
-    jumpToAnnotatedHunk,
-    jumpToFile,
+    liveCommentCount: review.liveCommentCount,
+    liveCommentSummaries: review.liveCommentSummaries,
+    navigateToLocation: review.navigateToLocation,
     openAgentNotes,
     reloadSession: onReloadSession,
-    selectedFile: baseSelectedFile,
+    removeLiveComment: review.removeLiveComment,
+    selectedFile,
+    selectedHunk: review.selectedHunk,
     selectedHunkIndex,
     showAgentNotes,
   });
-
-  const allFiles = useMemo(
-    () => mergeFileAnnotationsByFileId(bootstrap.changeset.files, liveCommentsByFileId),
-    [bootstrap.changeset.files, liveCommentsByFileId],
-  );
-
-  const filteredFiles = useMemo(
-    () => filterReviewFiles(allFiles, deferredFilter),
-    [allFiles, deferredFilter],
-  );
-
-  const selectedFile =
-    filteredFiles.find((file) => file.id === selectedFileId) ??
-    allFiles.find((file) => file.id === selectedFileId) ??
-    filteredFiles[0];
-  const hunkCursors = buildHunkCursors(filteredFiles);
-  const annotatedHunkCursors = buildAnnotatedHunkCursors(filteredFiles);
 
   const bodyPadding = pagerMode ? 0 : BODY_PADDING;
   const bodyWidth = Math.max(0, terminal.width - bodyPadding);
@@ -231,67 +191,12 @@ export function App({
   }, [renderer, renderSidebar, resolvedLayout, terminal.height, terminal.width, wrapLines]);
 
   useEffect(() => {
-    if (!selectedFile && filteredFiles[0]) {
-      setSelectedFileId(filteredFiles[0].id);
-      setSelectedHunkIndex(0);
-      return;
-    }
-
-    if (
-      selectedFile &&
-      !filteredFiles.some((file) => file.id === selectedFile.id) &&
-      filteredFiles[0]
-    ) {
-      startTransition(() => {
-        setSelectedFileId(filteredFiles[0]!.id);
-        setSelectedHunkIndex(0);
-      });
-    }
-  }, [filteredFiles, selectedFile]);
-
-  useEffect(() => {
-    if (!selectedFile) {
-      return;
-    }
-
-    const maxIndex = Math.max(0, selectedFile.metadata.hunks.length - 1);
-    setSelectedHunkIndex((current) => clamp(current, 0, maxIndex));
-  }, [selectedFile]);
-
-  useEffect(() => {
     if (!selectedFile) {
       return;
     }
 
     sidebarScrollRef.current?.scrollChildIntoView(fileRowId(selectedFile.id));
   }, [selectedFile]);
-
-  /** Move the review focus across hunks in stream order. */
-  const moveHunk = (delta: number) => {
-    const nextCursor = findNextHunkCursor(hunkCursors, selectedFile?.id, selectedHunkIndex, delta);
-    if (!nextCursor) {
-      return;
-    }
-
-    jumpToFile(nextCursor.fileId, nextCursor.hunkIndex, {
-      alignFileHeaderTop: nextCursor.fileId !== selectedFile?.id,
-    });
-  };
-
-  /** Move the review focus to the next or previous annotated hunk. */
-  const moveAnnotatedHunk = (delta: number) => {
-    const nextCursor = findNextHunkCursor(
-      annotatedHunkCursors,
-      selectedFile?.id,
-      selectedHunkIndex,
-      delta,
-    );
-    if (!nextCursor) {
-      return;
-    }
-
-    jumpToAnnotatedHunk(nextCursor.fileId, nextCursor.hunkIndex);
-  };
 
   /** Scroll the main review pane by line steps, viewport fractions, or whole-content jumps. */
   const scrollDiff = (
@@ -312,24 +217,6 @@ export function App({
       return;
     }
     diffScrollRef.current?.scrollBy(delta, unit);
-  };
-
-  /** Cycle only through files that have agent context attached. */
-  const moveAnnotatedFile = (delta: number) => {
-    const annotated = filteredFiles.filter((file) => file.agent);
-    if (annotated.length === 0) {
-      return;
-    }
-
-    const currentIndex = annotated.findIndex((file) => file.id === selectedFile?.id);
-    const normalizedIndex = currentIndex >= 0 ? currentIndex : 0;
-    const nextIndex = (normalizedIndex + delta + annotated.length) % annotated.length;
-    const nextFile = annotated[nextIndex];
-    if (!nextFile) {
-      return;
-    }
-
-    jumpToFile(nextFile.id);
   };
 
   /** Toggle the global agent note layer on or off. */
@@ -375,9 +262,12 @@ export function App({
   };
 
   /** Jump to an annotated hunk without changing the global note visibility toggle. */
-  const openAgentNotesAtHunk = (fileId: string, hunkIndex: number) => {
-    jumpToFile(fileId, hunkIndex);
-  };
+  const openAgentNotesAtHunk = useCallback(
+    (fileId: string, hunkIndex: number) => {
+      review.selectHunk(fileId, hunkIndex);
+    },
+    [review.selectHunk],
+  );
 
   const canRefreshCurrentInput = canReloadInput(bootstrap.input);
   const watchEnabled = Boolean(bootstrap.input.options.watch && canRefreshCurrentInput);
@@ -501,11 +391,6 @@ export function App({
     setFocusArea("filter");
   }, []);
 
-  /** Clear the active file filter while leaving focus in the filter field. */
-  const clearFilter = useCallback(() => {
-    setFilter("");
-  }, []);
-
   /** Toggle keyboard focus between the file list and the file filter. */
   const toggleFocusArea = useCallback(() => {
     setFocusArea((current) => (current === "files" ? "filter" : "files"));
@@ -525,9 +410,9 @@ export function App({
         canRefreshCurrentInput,
         focusFilter,
         layoutMode,
-        moveAnnotatedFile,
-        moveAnnotatedHunk,
-        moveHunk,
+        moveToAnnotatedFile,
+        moveToAnnotatedHunk,
+        moveToHunk: review.moveToHunk,
         refreshCurrentInput: triggerRefreshCurrentInput,
         requestQuit,
         selectLayoutMode: setLayoutMode,
@@ -551,10 +436,10 @@ export function App({
       canRefreshCurrentInput,
       focusFilter,
       layoutMode,
-      moveAnnotatedFile,
-      moveAnnotatedHunk,
-      moveHunk,
+      moveToAnnotatedFile,
+      moveToAnnotatedHunk,
       requestQuit,
+      review.moveToHunk,
       triggerRefreshCurrentInput,
       showAgentNotes,
       showHelp,
@@ -596,12 +481,12 @@ export function App({
     closeHelp,
     closeMenu,
     cycleTheme,
-    filter,
+    filter: review.filter,
     focusArea,
     focusFiles,
     focusFilter,
-    moveAnnotatedHunk,
-    moveHunk,
+    moveToAnnotatedHunk,
+    moveToHunk: review.moveToHunk,
     moveMenuItem,
     openMenu,
     pagerMode,
@@ -664,7 +549,6 @@ export function App({
     event?.stopPropagation();
   };
 
-  const sidebarEntries = buildSidebarEntries(filteredFiles);
   const totalAdditions = bootstrap.changeset.files.reduce(
     (sum, file) => sum + file.stats.additions,
     0,
@@ -726,7 +610,7 @@ export function App({
         {renderSidebar ? (
           <>
             <SidebarPane
-              entries={sidebarEntries}
+              entries={review.sidebarEntries}
               scrollRef={sidebarScrollRef}
               selectedFileId={selectedFile?.id}
               textWidth={sidebarTextWidth}
@@ -761,14 +645,14 @@ export function App({
           scrollRef={diffScrollRef}
           selectedFileId={selectedFile?.id}
           selectedHunkIndex={selectedHunkIndex}
-          scrollToNote={scrollToNote}
+          scrollToNote={review.scrollToNote}
           separatorWidth={diffSeparatorWidth}
           showAgentNotes={showAgentNotes}
           showLineNumbers={showLineNumbers}
           showHunkHeaders={showHunkHeaders}
           wrapLines={wrapLines}
           wrapToggleScrollTop={wrapToggleScrollTopRef.current}
-          selectedFileTopAlignRequestId={selectedFileTopAlignRequestId}
+          selectedFileTopAlignRequestId={review.selectedFileTopAlignRequestId}
           theme={activeTheme}
           width={diffPaneWidth}
           onOpenAgentNotesAtHunk={openAgentNotesAtHunk}
@@ -776,15 +660,15 @@ export function App({
         />
       </box>
 
-      {!pagerMode && (focusArea === "filter" || Boolean(filter) || Boolean(noticeText)) ? (
+      {!pagerMode && (focusArea === "filter" || Boolean(review.filter) || Boolean(noticeText)) ? (
         <StatusBar
-          filter={filter}
+          filter={review.filter}
           filterFocused={focusArea === "filter"}
           noticeText={noticeText ?? undefined}
           terminalWidth={terminal.width}
           theme={activeTheme}
           onCloseMenu={closeMenu}
-          onFilterInput={setFilter}
+          onFilterInput={review.setFilter}
           onFilterSubmit={focusFiles}
         />
       ) : null}
