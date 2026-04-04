@@ -177,7 +177,7 @@ export function useHunkSessionBridge({
         [file.id]: [...(current[file.id] ?? []), liveComment],
       }));
 
-      if (message.input.reveal ?? true) {
+      if (message.input.reveal ?? false) {
         jumpToFile(file.id, hunkIndex);
         openAgentNotes();
       }

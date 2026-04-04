@@ -91,14 +91,14 @@ hunk session reload --session-path /path/to/live-window --source /path/to/other-
 ### Comments
 
 ```bash
-hunk session comment add --repo . --file README.md --new-line 103 --summary "Tighten this wording" [--rationale "..."] [--author "agent"] [--no-reveal]
+hunk session comment add --repo . --file README.md --new-line 103 --summary "Tighten this wording" [--rationale "..."] [--author "agent"] [--focus]
 hunk session comment list --repo . [--file README.md]
 hunk session comment rm --repo . <comment-id>
 hunk session comment clear --repo . --yes [--file README.md]
 ```
 
 - `comment add` requires `--file`, `--summary`, and exactly one of `--old-line` or `--new-line`
-- `comment add` reveals the note by default; pass `--no-reveal` to keep the current focus
+- Pass `--focus` when you want to jump to the new note
 - `comment list` and `comment clear` accept optional `--file`
 - Quote `--summary` and `--rationale` defensively in the shell
 
@@ -126,6 +126,7 @@ Guidelines:
 
 - Work in the order that tells the clearest story, not necessarily file order
 - Navigate before commenting so the user sees the code you're discussing
+- Use `--focus` sparingly when the note itself should actively steer the review
 - Keep comments focused: intent, structure, risks, or follow-ups
 - Don't comment on every hunk -- highlight what the user wouldn't spot themselves
 

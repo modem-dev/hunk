@@ -261,7 +261,7 @@ describe("session CLI", () => {
     }
   }, 20_000);
 
-  test("navigate and comment add control a live Hunk session", async () => {
+  test("navigate works, and comment add only focuses the session when --focus is passed", async () => {
     if (!ttyToolsAvailable) {
       return;
     }
@@ -340,6 +340,27 @@ describe("session CLI", () => {
         return parsed.context?.selectedHunk?.index === 1 ? parsed : null;
       });
 
+      const resetSelection = runSessionCli(
+        ["navigate", sessionId, "--file", fixture.afterName, "--hunk", "1", "--json"],
+        port,
+      );
+      expect(resetSelection.proc.exitCode).toBe(0);
+      expect(resetSelection.stderr).toBe("");
+
+      await waitUntil("reset session context", () => {
+        const context = runSessionCli(["context", sessionId, "--json"], port);
+        if (context.proc.exitCode !== 0) {
+          return null;
+        }
+
+        const parsed = JSON.parse(context.stdout) as {
+          context?: { selectedHunk?: { index: number }; showAgentNotes?: boolean };
+        };
+        return parsed.context?.selectedHunk?.index === 0 && parsed.context?.showAgentNotes === false
+          ? parsed
+          : null;
+      });
+
       const comment = runSessionCli(
         [
           "comment",
@@ -378,8 +399,73 @@ describe("session CLI", () => {
           line: 10,
         },
       });
-
       expect(typeof addedComment.result?.commentId).toBe("string");
+
+      await waitUntil("comment registered without focus", () => {
+        const listedComments = runSessionCli(["comment", "list", sessionId, "--json"], port);
+        if (listedComments.proc.exitCode !== 0) {
+          return null;
+        }
+
+        const parsed = JSON.parse(listedComments.stdout) as {
+          comments?: Array<{ summary?: string }>;
+        };
+        return parsed.comments?.some((comment) => comment.summary === "Second hunk note")
+          ? parsed
+          : null;
+      });
+
+      const unchangedContext = runSessionCli(["context", sessionId, "--json"], port);
+      expect(unchangedContext.proc.exitCode).toBe(0);
+      expect(JSON.parse(unchangedContext.stdout)).toMatchObject({
+        context: {
+          selectedHunk: {
+            index: 0,
+          },
+          showAgentNotes: false,
+        },
+      });
+
+      const focusedComment = runSessionCli(
+        [
+          "comment",
+          "add",
+          sessionId,
+          "--file",
+          fixture.afterName,
+          "--new-line",
+          "10",
+          "--summary",
+          "Second hunk focused note",
+          "--focus",
+          "--json",
+        ],
+        port,
+      );
+      expect(focusedComment.proc.exitCode).toBe(0);
+      expect(focusedComment.stderr).toBe("");
+      expect(JSON.parse(focusedComment.stdout)).toMatchObject({
+        result: {
+          filePath: fixture.afterName,
+          hunkIndex: 1,
+          side: "new",
+          line: 10,
+        },
+      });
+
+      await waitUntil("focused session context", () => {
+        const context = runSessionCli(["context", sessionId, "--json"], port);
+        if (context.proc.exitCode !== 0) {
+          return null;
+        }
+
+        const parsed = JSON.parse(context.stdout) as {
+          context?: { selectedHunk?: { index: number }; showAgentNotes?: boolean };
+        };
+        return parsed.context?.selectedHunk?.index === 1 && parsed.context?.showAgentNotes === true
+          ? parsed
+          : null;
+      });
     } finally {
       session.kill();
       await session.exited;

@@ -176,12 +176,14 @@ hunk session reload --repo /path/to/worktree -- diff
 hunk session reload --session-path /path/to/live-window --source /path/to/other-checkout -- diff
 hunk session reload --repo . -- show HEAD~1 -- README.md
 hunk session comment add --repo . --file README.md --new-line 103 --summary "Tighten this wording"
+hunk session comment add --repo . --file README.md --new-line 103 --summary "Tighten this wording" --focus
 hunk session comment list --repo .
 hunk session comment rm --repo . <comment-id>
 hunk session comment clear --repo . --file README.md --yes
 ```
 
 `hunk session reload ... -- <hunk command>` swaps what a live session is showing without opening a new TUI window.
+Pass `--focus` to jump the live session to the new note.
 
 - `--repo <path>` selects the live session by its current loaded repo root.
 - `--source <path>` is reload-only: it changes where the nested `diff` / `show` command runs, but does not select the session.

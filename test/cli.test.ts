@@ -306,7 +306,7 @@ describe("parseCli", () => {
     ).rejects.toThrow("Pass the replacement Hunk command after `--`");
   });
 
-  test("parses session comment add", async () => {
+  test("parses session comment add without focusing by default", async () => {
     const parsed = await parseCli([
       "bun",
       "hunk",
@@ -324,7 +324,6 @@ describe("parseCli", () => {
       "Live review is the main value.",
       "--author",
       "Pi",
-      "--no-reveal",
     ]);
 
     expect(parsed).toEqual({
@@ -338,6 +337,36 @@ describe("parseCli", () => {
       rationale: "Live review is the main value.",
       author: "Pi",
       reveal: false,
+      output: "text",
+    });
+  });
+
+  test("parses session comment add with --focus", async () => {
+    const parsed = await parseCli([
+      "bun",
+      "hunk",
+      "session",
+      "comment",
+      "add",
+      "session-1",
+      "--file",
+      "README.md",
+      "--new-line",
+      "103",
+      "--summary",
+      "Frame this as MCP-first",
+      "--focus",
+    ]);
+
+    expect(parsed).toEqual({
+      kind: "session",
+      action: "comment-add",
+      selector: { sessionId: "session-1" },
+      filePath: "README.md",
+      side: "new",
+      line: 103,
+      summary: "Frame this as MCP-first",
+      reveal: true,
       output: "text",
     });
   });
