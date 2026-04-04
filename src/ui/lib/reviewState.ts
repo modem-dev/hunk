@@ -1,3 +1,11 @@
+/**
+ * Pure review-stream derivation helpers used by `useReviewController`.
+ *
+ * This module turns raw diff files plus live comments into the current visible
+ * review state, sidebar entries, hunk cursors, and MCP navigation targets. It
+ * stays side-effect free so selection and navigation rules can be shared and
+ * tested without React state in the loop.
+ */
 import { findDiffFileByPath, findHunkIndexForLine, hunkLineRange } from "../../core/liveComments";
 import type { DiffFile } from "../../core/types";
 import type { LiveComment, NavigateToHunkToolInput, SelectedHunkSummary } from "../../mcp/types";
@@ -14,7 +22,7 @@ import {
   type HunkCursor,
 } from "./hunks";
 
-export interface BuildReviewModelOptions {
+export interface BuildReviewStateOptions {
   files: DiffFile[];
   liveCommentsByFileId: Record<string, LiveComment[]>;
   filterQuery: string;
@@ -22,7 +30,7 @@ export interface BuildReviewModelOptions {
   selectedHunkIndex: number;
 }
 
-export interface ReviewModel {
+export interface ReviewState {
   allFiles: DiffFile[];
   visibleFiles: DiffFile[];
   sidebarEntries: SidebarEntry[];
@@ -39,13 +47,13 @@ export interface ReviewNavigationTarget {
 }
 
 /** Build the derived review stream state from files, filter text, and selection. */
-export function buildReviewModel({
+export function buildReviewState({
   files,
   liveCommentsByFileId,
   filterQuery,
   selectedFileId,
   selectedHunkIndex,
-}: BuildReviewModelOptions): ReviewModel {
+}: BuildReviewStateOptions): ReviewState {
   const allFiles = mergeFileAnnotationsByFileId(files, liveCommentsByFileId);
   const visibleFiles = filterReviewFiles(allFiles, filterQuery);
   const selectedFile = resolveSelectedFile(allFiles, visibleFiles, selectedFileId);

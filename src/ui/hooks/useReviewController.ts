@@ -1,3 +1,11 @@
+/**
+ * Shared review-stream state for both the app shell and the MCP session bridge.
+ *
+ * This hook owns the live review state that both callers need to agree on:
+ * filtering, merged live comments, selected file and hunk, and relative review
+ * navigation. `App` uses it for rendering and keyboard or menu actions, while
+ * the session bridge uses the same state and actions for MCP-driven navigation.
+ */
 import {
   startTransition,
   useCallback,
@@ -24,12 +32,12 @@ import type {
 } from "../../mcp/types";
 import { findNextHunkCursor } from "../lib/hunks";
 import {
-  buildReviewModel,
+  buildReviewState,
   buildSelectedHunkSummary,
   findNextAnnotatedFile,
-  type ReviewModel,
+  type ReviewState,
   resolveReviewNavigationTarget,
-} from "../lib/reviewModel";
+} from "../lib/reviewState";
 
 /** Clamp one numeric index into an inclusive range. */
 function clamp(value: number, min: number, max: number) {
@@ -56,7 +64,7 @@ export interface ReviewController {
   selectedFileTopAlignRequestId: number;
   selectedHunk: DiffFile["metadata"]["hunks"][number] | undefined;
   selectedHunkIndex: number;
-  sidebarEntries: ReviewModel["sidebarEntries"];
+  sidebarEntries: ReviewState["sidebarEntries"];
   visibleFiles: DiffFile[];
   addLiveComment: (
     input: CommentToolInput,
@@ -94,7 +102,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     annotatedHunkCursors,
   } = useMemo(
     () =>
-      buildReviewModel({
+      buildReviewState({
         files,
         liveCommentsByFileId,
         filterQuery: deferredFilter,
@@ -126,28 +134,32 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     [selectHunk],
   );
 
-  useEffect(() => {
+  /** Reset selection to the first visible file when the current target disappears from the review stream. */
+  const reselectFirstVisibleFile = useCallback(() => {
+    startTransition(() => {
+      setSelectedFileId(visibleFiles[0]!.id);
+      setSelectedHunkIndex(0);
+    });
+  }, [visibleFiles]);
+
+  /** Keep the selected file anchored to the current visible review stream as filters and reloads change it. */
+  const reconcileSelectedFile = useCallback(() => {
     if (visibleFiles.length === 0) {
       return;
     }
 
     if (!selectedFileId || !allFiles.some((file) => file.id === selectedFileId)) {
-      startTransition(() => {
-        setSelectedFileId(visibleFiles[0]!.id);
-        setSelectedHunkIndex(0);
-      });
+      reselectFirstVisibleFile();
       return;
     }
 
     if (selectedFile && !visibleFiles.some((file) => file.id === selectedFile.id)) {
-      startTransition(() => {
-        setSelectedFileId(visibleFiles[0]!.id);
-        setSelectedHunkIndex(0);
-      });
+      reselectFirstVisibleFile();
     }
-  }, [allFiles, selectedFile, selectedFileId, visibleFiles]);
+  }, [allFiles, reselectFirstVisibleFile, selectedFile, selectedFileId, visibleFiles]);
 
-  useEffect(() => {
+  /** Clamp the selected hunk index after reloads or filter changes shrink the selected file's hunk list. */
+  const reconcileSelectedHunkIndex = useCallback(() => {
     if (!selectedFile) {
       return;
     }
@@ -155,6 +167,14 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     const maxIndex = Math.max(0, selectedFile.metadata.hunks.length - 1);
     setSelectedHunkIndex((current) => clamp(current, 0, maxIndex));
   }, [selectedFile]);
+
+  useEffect(() => {
+    reconcileSelectedFile();
+  }, [reconcileSelectedFile]);
+
+  useEffect(() => {
+    reconcileSelectedHunkIndex();
+  }, [reconcileSelectedHunkIndex]);
 
   /** Move through the full visible review stream one hunk at a time. */
   const moveToHunk = useCallback(
