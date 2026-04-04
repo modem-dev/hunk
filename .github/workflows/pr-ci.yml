@@ -46,7 +46,7 @@ jobs:
         run: bun test
 
       - name: PTY integration tests
-        run: bun run test:integration
+        run: bun test ./test/integration/tuistory-hunk.integration.ts
 
       - name: Verify terminal tools
         run: |
@@ -54,7 +54,7 @@ jobs:
           command -v timeout
 
       - name: TTY smoke tests
-        run: bun run test:tty-smoke
+        run: HUNK_RUN_TTY_SMOKE=1 bun test test/tty-render-smoke.test.ts
 
       - name: Build npm runtime bundle
         run: bun run build:npm
