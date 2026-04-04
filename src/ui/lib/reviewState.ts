@@ -153,7 +153,7 @@ export function resolveReviewNavigationTarget({
 
   const file = findDiffFileByPath(allFiles, input.filePath);
   if (!file) {
-    throw new Error(`No visible diff file matches ${input.filePath}.`);
+    throw new Error(`No diff file matches ${input.filePath}.`);
   }
 
   let hunkIndex = input.hunkIndex;

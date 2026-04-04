@@ -263,7 +263,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     ): AppliedCommentResult => {
       const file = findDiffFileByPath(allFiles, input.filePath);
       if (!file) {
-        throw new Error(`No visible diff file matches ${input.filePath}.`);
+        throw new Error(`No diff file matches ${input.filePath}.`);
       }
 
       const hunkIndex = findHunkIndexForLine(file, input.side, input.line);
@@ -337,7 +337,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
       if (filePath) {
         const file = findDiffFileByPath(allFiles, filePath);
         if (!file) {
-          throw new Error(`No visible diff file matches ${filePath}.`);
+          throw new Error(`No diff file matches ${filePath}.`);
         }
 
         const next: Record<string, LiveComment[]> = {};
