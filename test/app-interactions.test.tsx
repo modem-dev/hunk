@@ -663,16 +663,15 @@ describe("App interactions", () => {
       await act(async () => {
         await setup.mockInput.pressKey("F10");
       });
-      let frame = await waitForFrame(setup, (currentFrame) =>
-        currentFrame.includes("Toggle files/filter focus"),
-      );
+      await flush(setup);
+
+      let frame = setup.captureCharFrame();
       if (!frame.includes("Toggle files/filter focus")) {
         await act(async () => {
           await setup.mockInput.pressKey("F10");
         });
-        frame = await waitForFrame(setup, (currentFrame) =>
-          currentFrame.includes("Toggle files/filter focus"),
-        );
+        await flush(setup);
+        frame = setup.captureCharFrame();
       }
 
       expect(frame).toContain("Toggle files/filter focus");

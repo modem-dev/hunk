@@ -7,9 +7,9 @@ export interface BuildAppMenusOptions {
   canRefreshCurrentInput: boolean;
   focusFilter: () => void;
   layoutMode: LayoutMode;
-  moveToAnnotatedFile: (delta: number) => void;
-  moveToAnnotatedHunk: (delta: number) => void;
-  moveToHunk: (delta: number) => void;
+  moveAnnotatedFile: (delta: number) => void;
+  moveAnnotatedHunk: (delta: number) => void;
+  moveHunk: (delta: number) => void;
   refreshCurrentInput: () => void;
   requestQuit: () => void;
   selectLayoutMode: (mode: LayoutMode) => void;
@@ -35,9 +35,9 @@ export function buildAppMenus({
   canRefreshCurrentInput,
   focusFilter,
   layoutMode,
-  moveToAnnotatedFile,
-  moveToAnnotatedHunk,
-  moveToHunk,
+  moveAnnotatedFile,
+  moveAnnotatedHunk,
+  moveHunk,
   refreshCurrentInput,
   requestQuit,
   selectLayoutMode,
@@ -164,26 +164,26 @@ export function buildAppMenus({
         kind: "item",
         label: "Previous hunk",
         hint: "[",
-        action: () => moveToHunk(-1),
+        action: () => moveHunk(-1),
       },
       {
         kind: "item",
         label: "Next hunk",
         hint: "]",
-        action: () => moveToHunk(1),
+        action: () => moveHunk(1),
       },
       { kind: "separator" },
       {
         kind: "item",
         label: "Previous comment",
         hint: "{",
-        action: () => moveToAnnotatedHunk(-1),
+        action: () => moveAnnotatedHunk(-1),
       },
       {
         kind: "item",
         label: "Next comment",
         hint: "}",
-        action: () => moveToAnnotatedHunk(1),
+        action: () => moveAnnotatedHunk(1),
       },
       { kind: "separator" },
       {
@@ -205,12 +205,12 @@ export function buildAppMenus({
       {
         kind: "item",
         label: "Next annotated file",
-        action: () => moveToAnnotatedFile(1),
+        action: () => moveAnnotatedFile(1),
       },
       {
         kind: "item",
         label: "Previous annotated file",
-        action: () => moveToAnnotatedFile(-1),
+        action: () => moveAnnotatedFile(-1),
       },
     ],
     help: [

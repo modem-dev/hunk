@@ -27,8 +27,8 @@ export interface UseAppKeyboardShortcutsOptions {
   focusArea: FocusArea;
   focusFiles: () => void;
   focusFilter: () => void;
-  moveToAnnotatedHunk: (delta: number) => void;
-  moveToHunk: (delta: number) => void;
+  moveAnnotatedHunk: (delta: number) => void;
+  moveHunk: (delta: number) => void;
   moveMenuItem: (delta: number) => void;
   openMenu: (menuId: MenuId) => void;
   pagerMode: boolean;
@@ -60,8 +60,8 @@ export function useAppKeyboardShortcuts({
   focusArea,
   focusFiles,
   focusFilter,
-  moveToAnnotatedHunk,
-  moveToHunk,
+  moveAnnotatedHunk,
+  moveHunk,
   moveMenuItem,
   openMenu,
   pagerMode,
@@ -342,22 +342,22 @@ export function useAppKeyboardShortcuts({
     }
 
     if (key.name === "[") {
-      runAndCloseMenu(() => moveToHunk(-1));
+      runAndCloseMenu(() => moveHunk(-1));
       return;
     }
 
     if (key.name === "]") {
-      runAndCloseMenu(() => moveToHunk(1));
+      runAndCloseMenu(() => moveHunk(1));
       return;
     }
 
     if (key.sequence === "{") {
-      runAndCloseMenu(() => moveToAnnotatedHunk(-1));
+      runAndCloseMenu(() => moveAnnotatedHunk(-1));
       return;
     }
 
     if (key.sequence === "}") {
-      runAndCloseMenu(() => moveToAnnotatedHunk(1));
+      runAndCloseMenu(() => moveAnnotatedHunk(1));
     }
   };
 
