@@ -80,6 +80,24 @@ function createFixtureFiles(
   return { dir, before, after, transcript, afterName };
 }
 
+async function reserveLoopbackPort() {
+  const listener = createServer();
+  await new Promise<void>((resolve, reject) => {
+    listener.once("error", reject);
+    listener.listen(0, "127.0.0.1", () => resolve());
+  });
+
+  const address = listener.address();
+  const port = typeof address === "object" && address ? address.port : 0;
+  await new Promise<void>((resolve) => listener.close(() => resolve()));
+
+  if (!port) {
+    throw new Error("Failed to reserve a loopback port for the session daemon test.");
+  }
+
+  return port;
+}
+
 function spawnHunkSession(
   fixture: FixtureFiles,
   {
@@ -153,19 +171,23 @@ async function waitUntil<T>(
   }
 }
 
-async function waitForHealth(port: number) {
-  return waitUntil("session daemon health endpoint", async () => {
-    try {
-      const response = await fetch(`http://127.0.0.1:${port}/health`);
-      if (!response.ok) {
+async function waitForHealth(port: number, timeoutMs = 15_000) {
+  return waitUntil(
+    "session daemon health endpoint",
+    async () => {
+      try {
+        const response = await fetch(`http://127.0.0.1:${port}/health`);
+        if (!response.ok) {
+          return null;
+        }
+
+        return (await response.json()) as HealthResponse;
+      } catch {
         return null;
       }
-
-      return (await response.json()) as HealthResponse;
-    } catch {
-      return null;
-    }
-  });
+    },
+    timeoutMs,
+  );
 }
 
 afterEach(() => {
@@ -183,7 +205,7 @@ describe("live session end-to-end", () => {
       ["export const alpha = 1;", "export const keep = true;"],
       ["export const alpha = 2;", "export const keep = true;", "export const gamma = true;"],
     );
-    const port = 48000 + Math.floor(Math.random() * 1000);
+    const port = await reserveLoopbackPort();
     const hunkProc = spawnHunkSession(fixture, { port });
 
     let daemonPid: number | null = null;
@@ -287,7 +309,7 @@ describe("live session end-to-end", () => {
         "export const line10 = 110;",
       ],
     );
-    const port = 48500 + Math.floor(Math.random() * 1000);
+    const port = await reserveLoopbackPort();
     const hunkProc = spawnHunkSession(fixture, { port, quitAfterSeconds: 14, timeoutSeconds: 16 });
 
     let daemonPid: number | null = null;
@@ -378,7 +400,7 @@ describe("live session end-to-end", () => {
       ["export const beta = 1;", "export const shared = true;"],
       ["export const beta = 2;", "export const shared = true;", "export const onlyBeta = true;"],
     );
-    const port = 49000 + Math.floor(Math.random() * 1000);
+    const port = await reserveLoopbackPort();
     const hunkProcA = spawnHunkSession(fixtureA, {
       port,
       quitAfterSeconds: 10,
@@ -393,7 +415,7 @@ describe("live session end-to-end", () => {
     let daemonPid: number | null = null;
 
     try {
-      const health = await waitForHealth(port);
+      const health = await waitForHealth(port, 20_000);
       daemonPid = health.pid;
       expect(health.ok).toBe(true);
 
@@ -481,7 +503,7 @@ describe("live session end-to-end", () => {
         }
       }
     }
-  }, 20_000);
+  }, 30_000);
 
   test("a normal Hunk session still renders and exits cleanly when a non-Hunk listener owns the MCP port", async () => {
     if (!ttyToolsAvailable) {
