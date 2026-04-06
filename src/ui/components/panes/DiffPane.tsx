@@ -20,6 +20,7 @@ import {
 import {
   buildFileSectionLayouts,
   buildInStreamFileHeaderHeights,
+  collectIntersectingFileSectionIds,
   findHeaderOwningFileSection,
   shouldRenderInStreamFileHeader,
   type FileSectionLayout,
@@ -186,10 +187,12 @@ function buildHighlightPrefetchFileIds({
   const minPrefetchY = Math.max(0, scrollTop - prefetchRows);
   const maxPrefetchY = scrollTop + viewportHeight + prefetchRows;
 
-  for (const layout of fileSectionLayouts) {
-    if (layout.sectionBottom >= minPrefetchY && layout.sectionTop <= maxPrefetchY) {
-      next.add(layout.fileId);
-    }
+  for (const fileId of collectIntersectingFileSectionIds(
+    fileSectionLayouts,
+    minPrefetchY,
+    maxPrefetchY,
+  )) {
+    next.add(fileId);
   }
 
   return next;
@@ -381,11 +384,7 @@ export function DiffPane({
     const overscanRows = 8;
     const minVisibleY = Math.max(0, scrollViewport.top - overscanRows);
     const maxVisibleY = scrollViewport.top + scrollViewport.height + overscanRows;
-    return new Set(
-      baseFileSectionLayouts
-        .filter((metric) => metric.sectionBottom >= minVisibleY && metric.sectionTop <= maxVisibleY)
-        .map((metric) => metric.fileId),
-    );
+    return collectIntersectingFileSectionIds(baseFileSectionLayouts, minVisibleY, maxVisibleY);
   }, [baseFileSectionLayouts, scrollViewport.height, scrollViewport.top]);
 
   const visibleAgentNotesByFile = useMemo(() => {
