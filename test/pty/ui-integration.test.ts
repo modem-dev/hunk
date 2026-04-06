@@ -393,6 +393,79 @@ describe("live UI integration", () => {
     }
   });
 
+  test("slash focuses the filter, Escape clears it, and a second Escape leaves filter mode", async () => {
+    const fixture = harness.createSidebarJumpRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split"],
+      cwd: fixture.dir,
+      cols: 220,
+      rows: 12,
+    });
+
+    try {
+      const initial = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      expect(initial).toContain("alphaOnly = true");
+      expect(initial).toContain("betaValue = 2");
+
+      await session.type("/delta");
+      const filtered = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("deltaOnly = true") && !text.includes("alphaOnly = true"),
+        5_000,
+      );
+
+      expect(filtered.toLowerCase()).toContain("filter");
+      expect(filtered).toContain("delta");
+      expect(filtered).toContain("deltaOnly = true");
+      expect(filtered).not.toContain("alphaOnly = true");
+
+      await session.press("escape");
+      const cleared = await harness.waitForSnapshot(
+        session,
+        (text) =>
+          text.includes("alphaOnly = true") &&
+          text.includes("filter: type to filter files") &&
+          !text.includes("filter: delta"),
+        5_000,
+      );
+
+      expect(cleared).toContain("alphaOnly = true");
+      expect(cleared).toContain("filter: type to filter files");
+      expect(cleared).not.toContain("filter: delta");
+
+      await session.press("escape");
+      const leftFilter = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("alphaOnly = true") && !text.includes("filter:"),
+        5_000,
+      );
+
+      expect(leftFilter).toContain("alphaOnly = true");
+      expect(leftFilter).not.toContain("filter:");
+
+      await session.type("zzz");
+      const ignoredTyping = await harness.waitForSnapshot(
+        session,
+        (text) =>
+          text.includes("alphaOnly = true") &&
+          !text.includes("filter:") &&
+          !text.includes("zzz") &&
+          !text.includes("No files match the current filter."),
+        5_000,
+      );
+
+      expect(ignoredTyping).toContain("alphaOnly = true");
+      expect(ignoredTyping).not.toContain("filter:");
+      expect(ignoredTyping).not.toContain("zzz");
+      expect(ignoredTyping).not.toContain("No files match the current filter.");
+    } finally {
+      session.close();
+    }
+  });
+
   test("pager mode hides chrome and pages forward on space", async () => {
     const fixture = harness.createPagerPatchFixture();
     const session = await harness.launchHunk({
@@ -417,6 +490,120 @@ describe("live UI integration", () => {
 
       expect(paged).not.toContain("View  Navigate  Theme  Agent  Help");
       expect(paged).toContain("before_23");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("pager mode handles half-page, page-up, and content-jump keyboard navigation", async () => {
+    const fixture = harness.createPagerPatchFixture(60);
+    const session = await harness.launchHunk({
+      args: ["patch", fixture.patchFile, "--pager"],
+      cols: 120,
+      rows: 12,
+    });
+
+    try {
+      const initial = await session.waitForText(/scroll\.ts/, { timeout: 15_000 });
+
+      expect(initial).toContain("before_01");
+      expect(initial).not.toContain("before_12");
+
+      await session.press("d");
+      const halfPaged = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("before_12"),
+        5_000,
+      );
+
+      expect(halfPaged).toContain("before_12");
+
+      await session.press("u");
+      const halfPageRestored = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("before_01") && !text.includes("before_12"),
+        5_000,
+      );
+
+      expect(halfPageRestored).toContain("before_01");
+      expect(halfPageRestored).not.toContain("before_12");
+
+      await session.press("space");
+      const paged = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("before_18") || text.includes("after_02"),
+        5_000,
+      );
+
+      expect(paged.includes("before_18") || paged.includes("after_02")).toBe(true);
+
+      await session.press("b");
+      const pageRestored = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("before_01") && !text.includes("after_02"),
+        5_000,
+      );
+
+      expect(pageRestored).toContain("before_01");
+      expect(pageRestored).not.toContain("after_02");
+
+      await session.press("end");
+      const bottom = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("after_60"),
+        5_000,
+      );
+
+      expect(bottom).toContain("after_60");
+
+      await session.press("home");
+      const top = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("before_01") && !text.includes("after_60"),
+        5_000,
+      );
+
+      expect(top).toContain("before_01");
+      expect(top).not.toContain("after_60");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("keyboard help can open with ? and close with Escape in a real PTY", async () => {
+    const fixture = harness.createTwoFileRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split"],
+      cwd: fixture.dir,
+      cols: 220,
+      rows: 24,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      await session.press("?");
+      const help = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("Keyboard help") && text.includes("move line-by-line"),
+        5_000,
+      );
+
+      expect(help).toContain("Keyboard help");
+      expect(help).toContain("move line-by-line");
+      expect(help).toContain("toggle AI notes");
+
+      await session.press("escape");
+      const closed = await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("Keyboard help") && text.includes("alpha.ts"),
+        5_000,
+      );
+
+      expect(closed).not.toContain("Keyboard help");
+      expect(closed).toContain("alpha.ts");
     } finally {
       session.close();
     }
@@ -458,6 +645,121 @@ describe("live UI integration", () => {
       expect(stacked).not.toMatch(/▌.*▌/);
       expect(stacked).toContain("1   -  export const alpha = 1;");
       expect(stacked).toContain("1   -  export const beta = 1;");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("keyboard menu navigation can switch layouts and close with Escape", async () => {
+    const fixture = harness.createTwoFileRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split"],
+      cwd: fixture.dir,
+      cols: 220,
+      rows: 24,
+    });
+
+    try {
+      const initial = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      expect(initial).toMatch(/▌.*▌/);
+
+      await session.press("f10");
+      const fileMenu = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("Toggle files/filter focus") && text.includes("Quit"),
+        5_000,
+      );
+
+      expect(fileMenu).toContain("Reload");
+
+      await session.press("escape");
+      const closed = await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("Toggle files/filter focus") && text.includes("alpha.ts"),
+        5_000,
+      );
+
+      expect(closed).not.toContain("Toggle files/filter focus");
+      expect(closed).toContain("alpha.ts");
+
+      await session.press("f10");
+      await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("Toggle files/filter focus") && text.includes("Quit"),
+        5_000,
+      );
+
+      await session.press("right");
+      const viewMenu = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("Split view") && text.includes("Stacked view"),
+        5_000,
+      );
+
+      expect(viewMenu).toContain("Auto layout");
+
+      await session.press("down");
+      await session.press("enter");
+      const stacked = await harness.waitForSnapshot(
+        session,
+        (text) => !/▌.*▌/.test(text) && text.includes("1   -  export const alpha = 1;"),
+        5_000,
+      );
+
+      expect(stacked).not.toMatch(/▌.*▌/);
+      expect(stacked).toContain("1   -  export const alpha = 1;");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("direct layout hotkeys can switch between split, stack, and auto in a real PTY", async () => {
+    const fixture = harness.createTwoFileRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "stack"],
+      cwd: fixture.dir,
+      cols: 220,
+      rows: 24,
+    });
+
+    try {
+      const initial = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      expect(initial).not.toMatch(/▌.*▌/);
+      expect(initial).toContain("1   -  export const alpha = 1;");
+
+      await session.press("1");
+      const split = await harness.waitForSnapshot(
+        session,
+        (text) => /▌.*▌/.test(text) && harness.countMatches(text, /alpha\.ts/g) >= 2,
+        5_000,
+      );
+
+      expect(split).toMatch(/▌.*▌/);
+
+      await session.press("2");
+      const stack = await harness.waitForSnapshot(
+        session,
+        (text) => !/▌.*▌/.test(text) && text.includes("1   -  export const alpha = 1;"),
+        5_000,
+      );
+
+      expect(stack).not.toMatch(/▌.*▌/);
+      expect(stack).toContain("1   -  export const alpha = 1;");
+
+      await session.press("0");
+      const auto = await harness.waitForSnapshot(
+        session,
+        (text) => /▌.*▌/.test(text) && harness.countMatches(text, /alpha\.ts/g) >= 2,
+        5_000,
+      );
+
+      expect(auto).toMatch(/▌.*▌/);
     } finally {
       session.close();
     }

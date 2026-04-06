@@ -45,6 +45,21 @@ export function StatusBar({
             focused={true}
             onInput={onFilterInput}
             onSubmit={onFilterSubmit}
+            onKeyDown={(key) => {
+              if (key.name !== "escape" && key.name !== "esc") {
+                return;
+              }
+
+              key.preventDefault();
+              key.stopPropagation();
+
+              if (filter.length > 0) {
+                onFilterInput("");
+                return;
+              }
+
+              onFilterSubmit();
+            }}
           />
         </>
       ) : filter.length > 0 ? (

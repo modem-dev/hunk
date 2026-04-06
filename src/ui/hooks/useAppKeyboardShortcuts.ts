@@ -17,6 +17,10 @@ type ScrollUnit = "step" | "viewport" | "content" | "half";
 
 const FAST_CODE_HORIZONTAL_SCROLL_COLUMNS = 8;
 
+function isEscapeKey(key: KeyEvent) {
+  return key.name === "escape" || key.name === "esc";
+}
+
 export interface UseAppKeyboardShortcutsOptions {
   activeMenuId: MenuId | null;
   activateCurrentMenuItem: () => void;
@@ -107,7 +111,7 @@ export function useAppKeyboardShortcuts({
   };
 
   const handlePagerShortcut = (key: KeyEvent) => {
-    if (key.name === "q" || key.name === "escape") {
+    if (key.name === "q" || isEscapeKey(key)) {
       requestQuit();
       return;
     }
@@ -168,7 +172,7 @@ export function useAppKeyboardShortcuts({
   };
 
   const handleHelpShortcut = (key: KeyEvent) => {
-    if (!showHelp || key.name !== "escape") {
+    if (!showHelp || !isEscapeKey(key)) {
       return false;
     }
 
@@ -181,7 +185,7 @@ export function useAppKeyboardShortcuts({
       return false;
     }
 
-    if (key.name === "escape") {
+    if (isEscapeKey(key)) {
       closeMenu();
       return true;
     }
@@ -219,7 +223,7 @@ export function useAppKeyboardShortcuts({
       return false;
     }
 
-    if (key.name === "escape") {
+    if (isEscapeKey(key)) {
       if (filter.length > 0) {
         clearFilter();
         return true;
@@ -250,7 +254,7 @@ export function useAppKeyboardShortcuts({
       return;
     }
 
-    if (key.name === "escape") {
+    if (isEscapeKey(key)) {
       requestQuit();
       return;
     }
