@@ -21,5 +21,12 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "test/**/*.ts", "benchmarks/**/*.ts"]
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "scripts/**/*.ts",
+    "test/**/*.ts",
+    "test/**/*.tsx",
+    "benchmarks/**/*.ts"
+  ]
 }
