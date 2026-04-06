@@ -1,109 +1,37 @@
 import { describe, expect, test } from "bun:test";
+import {
+  createTestListedSession,
+  createTestSessionLiveComment,
+  createTestSessionRegistration,
+  createTestSessionSnapshot,
+} from "../../test/helpers/mcp-fixtures";
 import { HunkDaemonState, resolveSessionTarget } from "./daemonState";
 import type {
   AppliedCommentResult,
   ClearedCommentsResult,
-  HunkSessionRegistration,
-  HunkSessionSnapshot,
-  ListedSession,
   NavigatedSelectionResult,
   ReloadedSessionResult,
   RemovedCommentResult,
-  SessionLiveCommentSummary,
 } from "./types";
 
-function createListedSession(overrides: Partial<ListedSession> = {}): ListedSession {
-  return {
-    sessionId: "session-1",
-    pid: 123,
-    cwd: "/repo",
-    repoRoot: "/repo",
-    inputKind: "git",
-    title: "repo working tree",
-    sourceLabel: "/repo",
-    launchedAt: "2026-03-22T00:00:00.000Z",
-    fileCount: 1,
-    files: [
-      {
-        id: "file-1",
-        path: "src/example.ts",
-        additions: 1,
-        deletions: 1,
-        hunkCount: 1,
-      },
-    ],
-    snapshot: {
-      selectedFileId: "file-1",
-      selectedFilePath: "src/example.ts",
-      selectedHunkIndex: 0,
-      showAgentNotes: false,
-      liveCommentCount: 0,
-      liveComments: [],
-      updatedAt: "2026-03-22T00:00:00.000Z",
-    },
-    ...overrides,
-  };
+function createRegistration(overrides = {}) {
+  return createTestSessionRegistration(overrides);
 }
 
-function createRegistration(
-  overrides: Partial<HunkSessionRegistration> = {},
-): HunkSessionRegistration {
-  return {
-    sessionId: "session-1",
-    pid: 123,
-    cwd: "/repo",
-    repoRoot: "/repo",
-    inputKind: "git",
-    title: "repo working tree",
-    sourceLabel: "/repo",
-    launchedAt: "2026-03-22T00:00:00.000Z",
-    files: [
-      {
-        id: "file-1",
-        path: "src/example.ts",
-        additions: 1,
-        deletions: 1,
-        hunkCount: 1,
-      },
-    ],
-    ...overrides,
-  };
+function createSnapshot(overrides = {}) {
+  return createTestSessionSnapshot(overrides);
 }
 
-function createSnapshot(overrides: Partial<HunkSessionSnapshot> = {}): HunkSessionSnapshot {
-  return {
-    selectedFileId: "file-1",
-    selectedFilePath: "src/example.ts",
-    selectedHunkIndex: 0,
-    showAgentNotes: false,
-    liveCommentCount: 0,
-    liveComments: [],
-    updatedAt: "2026-03-22T00:00:00.000Z",
-    ...overrides,
-  };
-}
-
-function createLiveComment(
-  overrides: Partial<SessionLiveCommentSummary> = {},
-): SessionLiveCommentSummary {
-  return {
-    commentId: "comment-1",
-    filePath: "src/example.ts",
-    hunkIndex: 0,
-    side: "new",
-    line: 4,
-    summary: "Review note",
-    createdAt: "2026-03-22T00:00:00.000Z",
-    ...overrides,
-  };
+function createLiveComment(overrides = {}) {
+  return createTestSessionLiveComment(overrides);
 }
 
 describe("Hunk MCP daemon state", () => {
   test("resolves one target session by session id, session path, repo root, or sole-session fallback", () => {
-    const one = [createListedSession()];
+    const one = [createTestListedSession()];
     const two = [
-      createListedSession(),
-      createListedSession({
+      createTestListedSession(),
+      createTestListedSession({
         sessionId: "session-2",
         cwd: "/other-session",
         repoRoot: "/repo",
@@ -125,12 +53,12 @@ describe("Hunk MCP daemon state", () => {
 
   test("keeps session-path matching tied to the live session cwd", () => {
     const sessions = [
-      createListedSession({
+      createTestListedSession({
         sessionId: "session-f",
         cwd: "/live-session",
         repoRoot: "/source-f",
       }),
-      createListedSession({
+      createTestListedSession({
         sessionId: "session-a",
         cwd: "/other-session",
         repoRoot: "/source-a",

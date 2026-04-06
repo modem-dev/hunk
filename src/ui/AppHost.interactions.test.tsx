@@ -3,73 +3,31 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, mock, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
-import { parseDiffFromFile } from "@pierre/diffs";
 import { act } from "react";
 import type { HunkHostClient } from "../mcp/client";
 import type { HunkSessionRegistration, SessionServerMessage } from "../mcp/types";
-import type { AppBootstrap, DiffFile, LayoutMode } from "../core/types";
+import type { AppBootstrap, LayoutMode } from "../core/types";
+import { createTestGitAppBootstrap } from "../../test/helpers/app-bootstrap";
+import { createTestDiffFile as buildTestDiffFile, lines } from "../../test/helpers/diff-helpers";
 
 const { loadAppBootstrap } = await import("../core/loaders");
 const { AppHost } = await import("./AppHost");
 
-function createDiffFile(
+function createTestDiffFile(
   id: string,
   path: string,
   before: string,
   after: string,
   withAgent = false,
-): DiffFile {
-  const metadata = parseDiffFromFile(
-    {
-      name: path,
-      contents: before,
-      cacheKey: `${id}:before`,
-    },
-    {
-      name: path,
-      contents: after,
-      cacheKey: `${id}:after`,
-    },
-    { context: 3 },
-    true,
-  );
-
-  let additions = 0;
-  let deletions = 0;
-  for (const hunk of metadata.hunks) {
-    for (const content of hunk.hunkContent) {
-      if (content.type === "change") {
-        additions += content.additions;
-        deletions += content.deletions;
-      }
-    }
-  }
-
-  return {
+) {
+  return buildTestDiffFile({
+    after,
+    agent: withAgent,
+    before,
+    context: 3,
     id,
     path,
-    patch: "",
-    language: "typescript",
-    stats: { additions, deletions },
-    metadata,
-    agent: withAgent
-      ? {
-          path,
-          summary: `${path} note`,
-          annotations: [
-            {
-              newRange: [2, 2],
-              summary: `Annotation for ${path}`,
-              rationale: `Why ${path} changed`,
-            },
-          ],
-        }
-      : null,
-  };
-}
-
-function lines(...values: string[]) {
-  return `${values.join("\n")}\n`;
+  });
 }
 
 function createNumberedAssignmentLines(start: number, count: number, valueOffset = 0) {
@@ -122,121 +80,69 @@ function createMockHostClient() {
 }
 
 function createBootstrap(initialMode: LayoutMode = "split", pager = false): AppBootstrap {
-  return {
-    input: {
-      kind: "git",
-      staged: false,
-      options: {
-        mode: initialMode,
-        pager,
-      },
-    },
-    changeset: {
-      id: "changeset:app-interactions",
-      sourceLabel: "repo",
-      title: "repo working tree",
-      files: [
-        createDiffFile(
-          "alpha",
-          "alpha.ts",
-          "export const alpha = 1;\n",
-          "export const alpha = 2;\nexport const add = true;\n",
-          true,
-        ),
-        createDiffFile(
-          "beta",
-          "beta.ts",
-          "export const beta = 1;\n",
-          "export const betaValue = 1;\n",
-          false,
-        ),
-      ],
-    },
+  return createTestGitAppBootstrap({
+    changesetId: "changeset:app-interactions",
+    files: [
+      createTestDiffFile(
+        "alpha",
+        "alpha.ts",
+        "export const alpha = 1;\n",
+        "export const alpha = 2;\nexport const add = true;\n",
+        true,
+      ),
+      createTestDiffFile(
+        "beta",
+        "beta.ts",
+        "export const beta = 1;\n",
+        "export const betaValue = 1;\n",
+      ),
+    ],
     initialMode,
-    initialTheme: "midnight",
-  };
+    pager,
+  });
 }
 
 function createSingleFileBootstrap(): AppBootstrap {
-  return {
-    input: {
-      kind: "git",
-      staged: false,
-      options: {
-        mode: "split",
-      },
-    },
-    changeset: {
-      id: "changeset:app-single-file",
-      sourceLabel: "repo",
-      title: "repo working tree",
-      files: [
-        createDiffFile(
-          "alpha",
-          "alpha.ts",
-          "export const alpha = 1;\n",
-          "export const alpha = 2;\nexport const add = true;\n",
-          true,
-        ),
-      ],
-    },
-    initialMode: "split",
-    initialTheme: "midnight",
-  };
+  return createTestGitAppBootstrap({
+    changesetId: "changeset:app-single-file",
+    files: [
+      createTestDiffFile(
+        "alpha",
+        "alpha.ts",
+        "export const alpha = 1;\n",
+        "export const alpha = 2;\nexport const add = true;\n",
+        true,
+      ),
+    ],
+  });
 }
 
 /** Build a single-file fixture with one long changed line for wrap toggle interaction tests. */
 function createWrapBootstrap(pager = false): AppBootstrap {
-  return {
-    input: {
-      kind: "git",
-      staged: false,
-      options: {
-        mode: "split",
-        pager,
-      },
-    },
-    changeset: {
-      id: "changeset:app-wrap-interactions",
-      sourceLabel: "repo",
-      title: "repo working tree",
-      files: [
-        createDiffFile(
-          "wrap",
-          "wrap.ts",
-          "export const message = 'short';\n",
-          "export const message = 'this is a very long wrapped line for app interaction coverage';\n",
-          true,
-        ),
-      ],
-    },
-    initialMode: "split",
-    initialTheme: "midnight",
-  };
+  return createTestGitAppBootstrap({
+    changesetId: "changeset:app-wrap-interactions",
+    files: [
+      createTestDiffFile(
+        "wrap",
+        "wrap.ts",
+        "export const message = 'short';\n",
+        "export const message = 'this is a very long wrapped line for app interaction coverage';\n",
+        true,
+      ),
+    ],
+    pager,
+  });
 }
 
 function createLineScrollBootstrap(pager = false): AppBootstrap {
   const before = lines(...createNumberedAssignmentLines(1, 18));
   const after = lines(...createNumberedAssignmentLines(1, 18, 100));
 
-  return {
-    input: {
-      kind: "git",
-      staged: false,
-      options: {
-        mode: "split",
-        pager,
-      },
-    },
-    changeset: {
-      id: "changeset:app-line-scroll",
-      sourceLabel: "repo",
-      title: "repo working tree",
-      files: [createDiffFile("scroll", "scroll.ts", before, after, true)],
-    },
-    initialMode: "split",
-    initialTheme: "midnight",
-  };
+  return createTestGitAppBootstrap({
+    changesetId: "changeset:app-line-scroll",
+    files: [createTestDiffFile("scroll", "scroll.ts", before, after, true)],
+    pager,
+  });
 }
 
 /** Build a two-hunk fixture with a deep inline note for CLI comment-navigation scroll tests. */
@@ -255,7 +161,7 @@ function createDeepNoteBootstrap(): AppBootstrap {
   afterLines[63] = "export const line64 = 6400;";
   afterLines[64] = "export const line65 = 6500;";
 
-  const file = createDiffFile(
+  const file = createTestDiffFile(
     "deep-note",
     "deep-note.ts",
     `${beforeLines.join("\n")}\n`,
@@ -272,25 +178,12 @@ function createDeepNoteBootstrap(): AppBootstrap {
     ],
   };
 
-  return {
-    input: {
-      kind: "git",
-      staged: false,
-      options: {
-        mode: "split",
-        agentNotes: true,
-      },
-    },
-    changeset: {
-      id: "changeset:app-deep-note",
-      sourceLabel: "repo",
-      title: "repo working tree",
-      files: [file],
-    },
-    initialMode: "split",
-    initialTheme: "midnight",
+  return createTestGitAppBootstrap({
+    changesetId: "changeset:app-deep-note",
+    files: [file],
+    gitOptions: { agentNotes: true },
     initialShowAgentNotes: true,
-  };
+  });
 }
 
 /** Build a long-line fixture that is tall enough to verify viewport-anchor restoration. */
@@ -302,61 +195,35 @@ function createWrapScrollBootstrap(): AppBootstrap {
     ),
   );
 
-  return {
-    input: {
-      kind: "git",
-      staged: false,
-      options: {
-        mode: "split",
-      },
-    },
-    changeset: {
-      id: "changeset:app-wrap-scroll",
-      sourceLabel: "repo",
-      title: "repo working tree",
-      files: [createDiffFile("wrap-scroll", "wrap-scroll.ts", before, after, true)],
-    },
-    initialMode: "split",
-    initialTheme: "midnight",
-  };
+  return createTestGitAppBootstrap({
+    changesetId: "changeset:app-wrap-scroll",
+    files: [createTestDiffFile("wrap-scroll", "wrap-scroll.ts", before, after, true)],
+  });
 }
 
 function createTwoFileHunkBootstrap(): AppBootstrap {
   const firstBeforeLines = createNumberedAssignmentLines(1, 16);
   const secondBeforeLines = createNumberedAssignmentLines(17, 16);
 
-  return {
-    input: {
-      kind: "git",
-      staged: false,
-      options: {
-        mode: "split",
-      },
-    },
-    changeset: {
-      id: "changeset:two-file-hunks",
-      sourceLabel: "repo",
-      title: "repo working tree",
-      files: [
-        createDiffFile(
-          "first",
-          "first.ts",
-          lines(...firstBeforeLines),
-          lines(...createNumberedAssignmentLines(1, 16, 100)),
-          true,
-        ),
-        createDiffFile(
-          "second",
-          "second.ts",
-          lines(...secondBeforeLines),
-          lines(...createNumberedAssignmentLines(17, 16, 100)),
-          true,
-        ),
-      ],
-    },
-    initialMode: "split",
-    initialTheme: "midnight",
-  };
+  return createTestGitAppBootstrap({
+    changesetId: "changeset:two-file-hunks",
+    files: [
+      createTestDiffFile(
+        "first",
+        "first.ts",
+        lines(...firstBeforeLines),
+        lines(...createNumberedAssignmentLines(1, 16, 100)),
+        true,
+      ),
+      createTestDiffFile(
+        "second",
+        "second.ts",
+        lines(...secondBeforeLines),
+        lines(...createNumberedAssignmentLines(17, 16, 100)),
+        true,
+      ),
+    ],
+  });
 }
 
 function createCollapsedTopBootstrap(): AppBootstrap {
@@ -367,36 +234,23 @@ function createCollapsedTopBootstrap(): AppBootstrap {
   const afterLines = [...beforeLines];
   afterLines[365] = "export const line366 = 9999;";
 
-  return {
-    input: {
-      kind: "git",
-      staged: false,
-      options: {
-        mode: "split",
-      },
-    },
-    changeset: {
-      id: "changeset:collapsed-top",
-      sourceLabel: "repo",
-      title: "repo working tree",
-      files: [
-        createDiffFile(
-          "late",
-          "src/ui/components/panes/DiffPane.tsx",
-          lines(...beforeLines),
-          lines(...afterLines),
-        ),
-        createDiffFile(
-          "second",
-          "other.ts",
-          lines("export const other = 1;"),
-          lines("export const other = 2;"),
-        ),
-      ],
-    },
-    initialMode: "split",
-    initialTheme: "midnight",
-  };
+  return createTestGitAppBootstrap({
+    changesetId: "changeset:collapsed-top",
+    files: [
+      createTestDiffFile(
+        "late",
+        "src/ui/components/panes/DiffPane.tsx",
+        lines(...beforeLines),
+        lines(...afterLines),
+      ),
+      createTestDiffFile(
+        "second",
+        "other.ts",
+        lines("export const other = 1;"),
+        lines("export const other = 2;"),
+      ),
+    ],
+  });
 }
 
 async function flush(setup: Awaited<ReturnType<typeof testRender>>) {
@@ -612,7 +466,7 @@ describe("App interactions", () => {
             sourceLabel: "repo",
             title: "repo working tree",
             files: [
-              createDiffFile(
+              createTestDiffFile(
                 "prefs",
                 "prefs.ts",
                 "export const message = 'short';\n",
@@ -1115,7 +969,7 @@ describe("App interactions", () => {
         id: "changeset:space-scroll",
         sourceLabel: "repo",
         title: "repo working tree",
-        files: [createDiffFile("space", "space.ts", before, after)],
+        files: [createTestDiffFile("space", "space.ts", before, after)],
       },
       initialMode: "split",
       initialTheme: "midnight",
@@ -1168,7 +1022,7 @@ describe("App interactions", () => {
         id: "changeset:pageup-scroll",
         sourceLabel: "repo",
         title: "repo working tree",
-        files: [createDiffFile("pageup", "pageup.ts", before, after)],
+        files: [createTestDiffFile("pageup", "pageup.ts", before, after)],
       },
       initialMode: "split",
       initialTheme: "midnight",
@@ -1226,7 +1080,7 @@ describe("App interactions", () => {
         id: "changeset:half-scroll",
         sourceLabel: "repo",
         title: "repo working tree",
-        files: [createDiffFile("half", "half.ts", before, after)],
+        files: [createTestDiffFile("half", "half.ts", before, after)],
       },
       initialMode: "split",
       initialTheme: "midnight",

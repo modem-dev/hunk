@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { testRender } from "@opentui/react/test-utils";
-import { parseDiffFromFile } from "@pierre/diffs";
 import { act, createRef, type ReactNode } from "react";
 import type { AppBootstrap, DiffFile } from "../../core/types";
+import { createTestGitAppBootstrap } from "../../../test/helpers/app-bootstrap";
+import { createTestDiffFile as buildTestDiffFile, lines } from "../../../test/helpers/diff-helpers";
 import { resolveTheme } from "../themes";
 import { measureDiffSectionGeometry } from "../lib/diffSectionGeometry";
 
@@ -19,74 +20,40 @@ const { StatusBar } = await import("./chrome/StatusBar");
 const { DiffSectionPlaceholder } = await import("./panes/DiffSectionPlaceholder");
 const { PierreDiffView } = await import("../diff/PierreDiffView");
 
-function createDiffFile(
+function createTestDiffFile(
   id: string,
   path: string,
   before: string,
   after: string,
   withAgent = false,
 ): DiffFile {
-  const metadata = parseDiffFromFile(
-    {
-      name: path,
-      contents: before,
-      cacheKey: `${id}:before`,
-    },
-    {
-      name: path,
-      contents: after,
-      cacheKey: `${id}:after`,
-    },
-    { context: 3 },
-    true,
-  );
-
-  let additions = 0;
-  let deletions = 0;
-  for (const hunk of metadata.hunks) {
-    for (const content of hunk.hunkContent) {
-      if (content.type === "change") {
-        additions += content.additions;
-        deletions += content.deletions;
-      }
-    }
-  }
-
-  return {
-    id,
-    path,
-    patch: "",
-    language: "typescript",
-    stats: {
-      additions,
-      deletions,
-    },
-    metadata,
+  return buildTestDiffFile({
+    after,
     agent: withAgent
       ? {
-          path,
-          summary: `${path} note`,
           annotations: [
             {
-              newRange: [2, 2],
-              summary: `Annotation for ${path}`,
-              rationale: `Why ${path} changed`,
-              tags: ["review"],
               confidence: "high",
+              newRange: [2, 2],
+              rationale: `Why ${path} changed`,
+              summary: `Annotation for ${path}`,
+              tags: ["review"],
             },
           ],
+          path,
+          summary: `${path} note`,
         }
       : null,
-  };
-}
-
-function lines(...values: string[]) {
-  return `${values.join("\n")}\n`;
+    before,
+    context: 3,
+    id,
+    path,
+  });
 }
 
 function createWindowingFiles(count: number) {
   return Array.from({ length: count }, (_, index) =>
-    createDiffFile(
+    createTestDiffFile(
       `window-${index + 1}`,
       `window-${index + 1}.ts`,
       lines(`export const file${index + 1} = ${index + 1};`),
@@ -128,7 +95,7 @@ function createMultiHunkDiffFile(id: string, path: string) {
     "export const line12 = 12;",
   );
 
-  return createDiffFile(id, path, before, after);
+  return createTestDiffFile(id, path, before, after);
 }
 
 function createViewportSizedBottomHunkDiffFile(id: string, path: string) {
@@ -143,7 +110,7 @@ function createViewportSizedBottomHunkDiffFile(id: string, path: string) {
   afterLines[14] = "export const line15 = 1500;";
   afterLines[15] = "export const line16 = 1600;";
 
-  return createDiffFile(id, path, lines(...beforeLines), lines(...afterLines));
+  return createTestDiffFile(id, path, lines(...beforeLines), lines(...afterLines));
 }
 
 function createWrappedViewportSizedBottomHunkDiffFile(id: string, path: string) {
@@ -159,7 +126,7 @@ function createWrappedViewportSizedBottomHunkDiffFile(id: string, path: string) 
   afterLines[14] =
     "export const line15 = 'this is a long wrapped replacement for line 15 in the selected hunk';";
 
-  return createDiffFile(id, path, lines(...beforeLines), lines(...afterLines));
+  return createTestDiffFile(id, path, lines(...beforeLines), lines(...afterLines));
 }
 
 function createTallDiffFile(id: string, path: string, count: number) {
@@ -173,7 +140,7 @@ function createTallDiffFile(id: string, path: string, count: number) {
     ),
   );
 
-  return createDiffFile(id, path, before, after);
+  return createTestDiffFile(id, path, before, after);
 }
 
 function createCollapsedTopDiffFile(
@@ -189,7 +156,7 @@ function createCollapsedTopDiffFile(
   const afterLines = [...beforeLines];
   afterLines[changedLine - 1] = `export const line${changedLine} = 9999;`;
 
-  return createDiffFile(id, path, lines(...beforeLines), lines(...afterLines));
+  return createTestDiffFile(id, path, lines(...beforeLines), lines(...afterLines));
 }
 
 function createDiffPaneProps(
@@ -251,67 +218,42 @@ async function waitForFrame(
 }
 
 function createBootstrap(): AppBootstrap {
-  return {
-    input: {
-      kind: "git",
-      staged: false,
-      options: {
-        mode: "auto",
-      },
-    },
-    changeset: {
-      id: "changeset:ui",
-      sourceLabel: "repo",
-      title: "repo working tree",
-      summary: "Patch summary",
-      agentSummary: "Changeset summary",
-      files: [
-        createDiffFile(
-          "alpha",
-          "alpha.ts",
-          "export const alpha = 1;\n",
-          "export const alpha = 2;\nexport const add = true;\n",
-          true,
-        ),
-        createDiffFile(
-          "beta",
-          "beta.ts",
-          "export const beta = 1;\n",
-          "export const betaValue = 1;\n",
-          false,
-        ),
-      ],
-    },
+  return createTestGitAppBootstrap({
+    agentSummary: "Changeset summary",
+    changesetId: "changeset:ui",
+    files: [
+      createTestDiffFile(
+        "alpha",
+        "alpha.ts",
+        "export const alpha = 1;\n",
+        "export const alpha = 2;\nexport const add = true;\n",
+        true,
+      ),
+      createTestDiffFile(
+        "beta",
+        "beta.ts",
+        "export const beta = 1;\n",
+        "export const betaValue = 1;\n",
+      ),
+    ],
     initialMode: "split",
-    initialTheme: "midnight",
-  };
+    inputMode: "auto",
+    summary: "Patch summary",
+  });
 }
 
 function createWrapBootstrap(): AppBootstrap {
-  return {
-    input: {
-      kind: "git",
-      staged: false,
-      options: {
-        mode: "split",
-      },
-    },
-    changeset: {
-      id: "changeset:wrap",
-      sourceLabel: "repo",
-      title: "repo working tree",
-      files: [
-        createDiffFile(
-          "wrap",
-          "wrap.ts",
-          "export const message = 'short';\n",
-          "export const message = 'this is a very long wrapped line for diff rendering coverage';\n",
-        ),
-      ],
-    },
-    initialMode: "split",
-    initialTheme: "midnight",
-  };
+  return createTestGitAppBootstrap({
+    changesetId: "changeset:wrap",
+    files: [
+      createTestDiffFile(
+        "wrap",
+        "wrap.ts",
+        "export const message = 'short';\n",
+        "export const message = 'this is a very long wrapped line for diff rendering coverage';\n",
+      ),
+    ],
+  });
 }
 
 function createEmptyDiffFile(type: "rename-pure" | "new" | "deleted"): DiffFile {
@@ -369,20 +311,20 @@ describe("UI components", () => {
   test("SidebarPane renders grouped file rows with indented filenames and right-aligned stats", async () => {
     const theme = resolveTheme("midnight", null);
     const files = [
-      createDiffFile(
+      createTestDiffFile(
         "app",
         "src/ui/App.tsx",
         "export const app = 1;\n",
         "export const app = 2;\nexport const view = true;\n",
         true,
       ),
-      createDiffFile(
+      createTestDiffFile(
         "menu",
         "src/ui/MenuDropdown.tsx",
         "export const menu = 1;\n",
         "export const menu = 2;\n",
       ),
-      createDiffFile(
+      createTestDiffFile(
         "watch",
         "src/core/watch.ts",
         "export const watch = 1;\n",
@@ -484,7 +426,7 @@ describe("UI components", () => {
   test("DiffPane scrolls to the selected later hunk when hunk headers are hidden", async () => {
     const theme = resolveTheme("midnight", null);
     const files = [
-      createDiffFile(
+      createTestDiffFile(
         "intro",
         "intro.ts",
         lines("export const intro = 1;"),
@@ -872,7 +814,7 @@ describe("UI components", () => {
     afterLines[63] = "export const line64 = 6400;";
     afterLines[64] = "export const line65 = 6500;";
 
-    const file = createDiffFile(
+    const file = createTestDiffFile(
       "deep-note",
       "deep-note.ts",
       lines(...beforeLines),
@@ -1583,7 +1525,7 @@ describe("UI components", () => {
   });
 
   test("PierreDiffView anchors range-less notes to the first visible row when hunk headers are hidden", async () => {
-    const file = createDiffFile(
+    const file = createTestDiffFile(
       "note-fallback",
       "note-fallback.ts",
       "export const value = 1;\n",
@@ -1684,7 +1626,7 @@ describe("UI components", () => {
   });
 
   test("PierreDiffView reuses highlighted rows after unmounting and remounting a file section", async () => {
-    const file = createDiffFile(
+    const file = createTestDiffFile(
       "cache",
       "cache.ts",
       "export const cacheMarker = 1;\nexport function cacheKeep(value: number) { return value + 1; }\n",

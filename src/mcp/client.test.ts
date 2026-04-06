@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createServer } from "node:http";
+import {
+  createTestSessionFileSummary,
+  createTestSessionRegistration,
+  createTestSessionSnapshot,
+} from "../../test/helpers/mcp-fixtures";
 import { HunkHostClient } from "./client";
-import type { HunkSessionRegistration, HunkSessionSnapshot } from "./types";
 
 const originalHost = process.env.HUNK_MCP_HOST;
 const originalPort = process.env.HUNK_MCP_PORT;
@@ -9,38 +13,23 @@ const originalDisable = process.env.HUNK_MCP_DISABLE;
 const originalUnsafeRemote = process.env.HUNK_MCP_UNSAFE_ALLOW_REMOTE;
 const originalConsoleError = console.error;
 
-function createRegistration(): HunkSessionRegistration {
-  return {
-    sessionId: "session-1",
-    pid: process.pid,
+function createRegistration() {
+  return createTestSessionRegistration({
     cwd: process.cwd(),
-    repoRoot: process.cwd(),
+    files: [createTestSessionFileSummary({ path: "after.ts" })],
     inputKind: "diff",
-    title: "before.ts ↔ after.ts",
+    pid: process.pid,
+    repoRoot: process.cwd(),
     sourceLabel: "before.ts -> after.ts",
-    launchedAt: "2026-03-22T00:00:00.000Z",
-    files: [
-      {
-        id: "file-1",
-        path: "after.ts",
-        additions: 1,
-        deletions: 1,
-        hunkCount: 1,
-      },
-    ],
-  };
+    title: "before.ts ↔ after.ts",
+  });
 }
 
-function createSnapshot(): HunkSessionSnapshot {
-  return {
-    selectedFileId: "file-1",
+function createSnapshot() {
+  return createTestSessionSnapshot({
     selectedFilePath: "after.ts",
-    selectedHunkIndex: 0,
     showAgentNotes: true,
-    liveCommentCount: 0,
-    liveComments: [],
-    updatedAt: "2026-03-22T00:00:00.000Z",
-  };
+  });
 }
 
 async function waitUntil(label: string, fn: () => boolean, timeoutMs = 5_000, intervalMs = 50) {

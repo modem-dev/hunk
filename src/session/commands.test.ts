@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
+import {
+  createTestListedSession as buildTestListedSession,
+  createTestSelectedSessionContext,
+  createTestSessionFileSummary,
+  createTestSessionSnapshot,
+} from "../../test/helpers/mcp-fixtures";
 import type { SessionCommandInput, SessionSelectorInput } from "../core/types";
 import {
   runSessionCommand,
@@ -7,38 +13,18 @@ import {
   type HunkDaemonCliClient,
 } from "./commands";
 
-function createListedSession(sessionId: string) {
-  return {
+function createTestListedSession(sessionId: string) {
+  return buildTestListedSession({
+    files: [createTestSessionFileSummary({ additions: 1, deletions: 0, path: "README.md" })],
+    inputKind: "diff",
     sessionId,
-    pid: 123,
-    cwd: "/repo",
-    repoRoot: "/repo",
-    inputKind: "diff" as const,
-    title: "repo diff",
-    sourceLabel: "/repo",
-    launchedAt: "2026-03-22T00:00:00.000Z",
-    fileCount: 1,
-    files: [
-      {
-        id: "file-1",
-        path: "README.md",
-        additions: 1,
-        deletions: 0,
-        hunkCount: 1,
-      },
-    ],
-    snapshot: {
-      selectedFileId: "file-1",
+    snapshot: createTestSessionSnapshot({
       selectedFilePath: "README.md",
-      selectedHunkIndex: 0,
-      selectedHunkOldRange: [1, 1] as [number, number],
-      selectedHunkNewRange: [1, 2] as [number, number],
-      showAgentNotes: false,
-      liveCommentCount: 0,
-      liveComments: [],
-      updatedAt: "2026-03-22T00:00:00.000Z",
-    },
-  };
+      selectedHunkOldRange: [1, 1],
+      selectedHunkNewRange: [1, 2],
+    }),
+    title: "repo diff",
+  });
 }
 
 function createClient(overrides: Partial<HunkDaemonCliClient>): HunkDaemonCliClient {
@@ -58,28 +44,8 @@ function createClient(overrides: Partial<HunkDaemonCliClient>): HunkDaemonCliCli
       ],
     }),
     listSessions: async () => [],
-    getSession: async () => createListedSession("session-1"),
-    getSelectedContext: async () => ({
-      sessionId: "session-1",
-      title: "repo diff",
-      sourceLabel: "/repo",
-      repoRoot: "/repo",
-      inputKind: "diff",
-      selectedFile: {
-        id: "file-1",
-        path: "README.md",
-        additions: 1,
-        deletions: 0,
-        hunkCount: 1,
-      },
-      selectedHunk: {
-        index: 0,
-        oldRange: [1, 1],
-        newRange: [1, 2],
-      },
-      showAgentNotes: false,
-      liveCommentCount: 0,
-    }),
+    getSession: async () => createTestListedSession("session-1"),
+    getSelectedContext: async () => createTestSelectedSessionContext(),
     navigateToHunk: async () => ({
       fileId: "file-1",
       filePath: "README.md",
@@ -137,27 +103,7 @@ describe("session command compatibility checks", () => {
         getSelectedContext: async (receivedSelector) => {
           createdClients.push("fresh-context");
           expect(receivedSelector).toEqual(selector);
-          return {
-            sessionId: "session-1",
-            title: "repo diff",
-            sourceLabel: "/repo",
-            repoRoot: "/repo",
-            inputKind: "diff",
-            selectedFile: {
-              id: "file-1",
-              path: "README.md",
-              additions: 1,
-              deletions: 0,
-              hunkCount: 1,
-            },
-            selectedHunk: {
-              index: 0,
-              oldRange: [1, 1],
-              newRange: [1, 2],
-            },
-            showAgentNotes: false,
-            liveCommentCount: 0,
-          };
+          return createTestSelectedSessionContext();
         },
       }),
     ];
@@ -394,7 +340,7 @@ describe("session command compatibility checks", () => {
 describe("session list includes terminal metadata", () => {
   test("list output includes generic terminal and location lines when present", async () => {
     const session = {
-      ...createListedSession("session-1"),
+      ...createTestListedSession("session-1"),
       terminal: {
         program: "iTerm.app",
         locations: [
@@ -429,7 +375,7 @@ describe("session list includes terminal metadata", () => {
     setSessionCommandTestHooks({
       createClient: () =>
         createClient({
-          listSessions: async () => [createListedSession("session-1")],
+          listSessions: async () => [createTestListedSession("session-1")],
         }),
       resolveDaemonAvailability: async () => true,
     });
@@ -446,7 +392,7 @@ describe("session list includes terminal metadata", () => {
 
   test("get output includes generic terminal location lines when present", async () => {
     const session = {
-      ...createListedSession("session-1"),
+      ...createTestListedSession("session-1"),
       terminal: {
         program: "ghostty",
         locations: [
@@ -478,7 +424,7 @@ describe("session list includes terminal metadata", () => {
 
   test("json output includes terminal metadata fields", async () => {
     const session = {
-      ...createListedSession("session-1"),
+      ...createTestListedSession("session-1"),
       terminal: {
         program: "iTerm.app",
         locations: [

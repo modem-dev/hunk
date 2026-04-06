@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { AgentContext } from "./types";
 import { orderDiffFiles } from "./loaders";
-import { createDiffFile } from "../../test/helpers/diff-helpers";
+import { createTestDiffFile } from "../../test/helpers/diff-helpers";
 
 function agentContext(...paths: string[]): AgentContext {
   return {
@@ -13,9 +13,9 @@ function agentContext(...paths: string[]): AgentContext {
 describe("orderDiffFiles", () => {
   test("orders files by agent narrative order", () => {
     const files = [
-      createDiffFile({ id: "beta", path: "beta.ts" }),
-      createDiffFile({ id: "gamma", path: "gamma.ts" }),
-      createDiffFile({ id: "alpha", path: "alpha.ts" }),
+      createTestDiffFile({ id: "beta", path: "beta.ts" }),
+      createTestDiffFile({ id: "gamma", path: "gamma.ts" }),
+      createTestDiffFile({ id: "alpha", path: "alpha.ts" }),
     ];
 
     const ordered = orderDiffFiles(files, agentContext("alpha.ts", "gamma.ts"));
@@ -25,10 +25,10 @@ describe("orderDiffFiles", () => {
 
   test("keeps files not mentioned in context in their original relative order at the end", () => {
     const files = [
-      createDiffFile({ id: "beta", path: "beta.ts" }),
-      createDiffFile({ id: "delta", path: "delta.ts" }),
-      createDiffFile({ id: "alpha", path: "alpha.ts" }),
-      createDiffFile({ id: "gamma", path: "gamma.ts" }),
+      createTestDiffFile({ id: "beta", path: "beta.ts" }),
+      createTestDiffFile({ id: "delta", path: "delta.ts" }),
+      createTestDiffFile({ id: "alpha", path: "alpha.ts" }),
+      createTestDiffFile({ id: "gamma", path: "gamma.ts" }),
     ];
 
     const ordered = orderDiffFiles(files, agentContext("gamma.ts"));
@@ -43,8 +43,8 @@ describe("orderDiffFiles", () => {
 
   test("returns files unchanged when the agent context is empty or missing", () => {
     const files = [
-      createDiffFile({ id: "alpha", path: "alpha.ts" }),
-      createDiffFile({ id: "beta", path: "beta.ts" }),
+      createTestDiffFile({ id: "alpha", path: "alpha.ts" }),
+      createTestDiffFile({ id: "beta", path: "beta.ts" }),
     ];
 
     expect(orderDiffFiles(files, null).map((file) => file.path)).toEqual(["alpha.ts", "beta.ts"]);
@@ -56,9 +56,9 @@ describe("orderDiffFiles", () => {
 
   test("matches context entries by previousPath when a file was renamed", () => {
     const files = [
-      createDiffFile({ id: "renamed", path: "new-name.ts", previousPath: "old-name.ts" }),
-      createDiffFile({ id: "beta", path: "beta.ts" }),
-      createDiffFile({ id: "alpha", path: "alpha.ts" }),
+      createTestDiffFile({ id: "renamed", path: "new-name.ts", previousPath: "old-name.ts" }),
+      createTestDiffFile({ id: "beta", path: "beta.ts" }),
+      createTestDiffFile({ id: "alpha", path: "alpha.ts" }),
     ];
 
     const ordered = orderDiffFiles(files, agentContext("alpha.ts", "old-name.ts"));

@@ -1,34 +1,28 @@
 import { describe, expect, test } from "bun:test";
+import {
+  createTestSessionRegistration,
+  createTestSessionSnapshot,
+} from "../../test/helpers/mcp-fixtures";
 import { HunkDaemonState } from "./daemonState";
-import type { HunkSessionRegistration, HunkSessionSnapshot } from "./types";
 
-function createRegistration(
-  overrides: Partial<HunkSessionRegistration> = {},
-): HunkSessionRegistration {
-  return {
-    sessionId: "test-session",
-    pid: 1234,
-    cwd: "/repo",
-    repoRoot: "/repo",
-    inputKind: "diff",
-    title: "repo diff",
-    sourceLabel: "/repo",
-    launchedAt: "2026-03-23T00:00:00.000Z",
+function createRegistration(overrides = {}) {
+  return createTestSessionRegistration({
     files: [],
+    inputKind: "diff",
+    launchedAt: "2026-03-23T00:00:00.000Z",
+    pid: 1234,
+    sessionId: "test-session",
+    title: "repo diff",
     ...overrides,
-  };
+  });
 }
 
-function createSnapshot(): HunkSessionSnapshot {
-  return {
+function createSnapshot() {
+  return createTestSessionSnapshot({
     selectedFileId: undefined,
     selectedFilePath: undefined,
-    selectedHunkIndex: 0,
-    showAgentNotes: false,
-    liveCommentCount: 0,
-    liveComments: [],
     updatedAt: "2026-03-23T00:00:00.000Z",
-  };
+  });
 }
 
 function createMockSocket() {

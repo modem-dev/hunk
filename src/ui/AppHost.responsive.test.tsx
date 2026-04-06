@@ -1,100 +1,37 @@
 import { describe, expect, mock, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
-import { parseDiffFromFile } from "@pierre/diffs";
 import { act } from "react";
-import type { AppBootstrap, DiffFile, LayoutMode } from "../core/types";
+import type { AppBootstrap, LayoutMode } from "../core/types";
+import { createTestGitAppBootstrap } from "../../test/helpers/app-bootstrap";
+import { createTestDiffFile } from "../../test/helpers/diff-helpers";
 
 const { AppHost } = await import("./AppHost");
 
-function createDiffFile(
-  id: string,
-  path: string,
-  before: string,
-  after: string,
-  withAgent = false,
-): DiffFile {
-  const metadata = parseDiffFromFile(
-    {
-      name: path,
-      contents: before,
-      cacheKey: `${id}:before`,
-    },
-    {
-      name: path,
-      contents: after,
-      cacheKey: `${id}:after`,
-    },
-    { context: 3 },
-    true,
-  );
-
-  let additions = 0;
-  let deletions = 0;
-  for (const hunk of metadata.hunks) {
-    for (const content of hunk.hunkContent) {
-      if (content.type === "change") {
-        additions += content.additions;
-        deletions += content.deletions;
-      }
-    }
-  }
-
-  return {
-    id,
-    path,
-    patch: "",
-    language: "typescript",
-    stats: {
-      additions,
-      deletions,
-    },
-    metadata,
-    agent: withAgent
-      ? {
-          path,
-          summary: `${path} note`,
-          annotations: [{ newRange: [2, 2], summary: `Annotation for ${path}` }],
-        }
-      : null,
-  };
-}
-
 function createBootstrap(initialMode: LayoutMode = "auto", pager = false): AppBootstrap {
-  return {
-    input: {
-      kind: "git",
-      staged: false,
-      options: {
-        mode: initialMode,
-        pager,
-      },
-    },
-    changeset: {
-      id: "changeset:responsive",
-      sourceLabel: "repo",
-      title: "repo working tree",
-      summary: "Patch summary",
-      agentSummary: "Changeset summary",
-      files: [
-        createDiffFile(
-          "alpha",
-          "alpha.ts",
-          "export const alpha = 1;\n",
-          "export const alpha = 2;\nexport const add = true;\n",
-          true,
-        ),
-        createDiffFile(
-          "beta",
-          "beta.ts",
-          "export const beta = 1;\n",
-          "export const betaValue = 1;\n",
-          false,
-        ),
-      ],
-    },
+  return createTestGitAppBootstrap({
+    agentSummary: "Changeset summary",
+    changesetId: "changeset:responsive",
+    files: [
+      createTestDiffFile({
+        after: "export const alpha = 2;\nexport const add = true;\n",
+        agent: true,
+        before: "export const alpha = 1;\n",
+        context: 3,
+        id: "alpha",
+        path: "alpha.ts",
+      }),
+      createTestDiffFile({
+        after: "export const betaValue = 1;\n",
+        before: "export const beta = 1;\n",
+        context: 3,
+        id: "beta",
+        path: "beta.ts",
+      }),
+    ],
     initialMode,
-    initialTheme: "midnight",
-  };
+    pager,
+    summary: "Patch summary",
+  });
 }
 
 async function captureFrameForBootstrap(bootstrap: AppBootstrap, width: number, height = 24) {

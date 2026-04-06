@@ -1,8 +1,9 @@
 import { describe, expect, mock, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
-import { parseDiffFromFile } from "@pierre/diffs";
 import { act } from "react";
 import type { AppBootstrap } from "../core/types";
+import { createTestGitAppBootstrap } from "../../test/helpers/app-bootstrap";
+import { createTestDiffFile } from "../../test/helpers/diff-helpers";
 
 mock.restore();
 
@@ -19,51 +20,18 @@ function createScrollBootstrap(): AppBootstrap {
       : `line ${String(index + 1).padStart(2, "0")} old value\n`,
   ).join("");
 
-  const metadata = parseDiffFromFile(
-    {
-      name: "big.ts",
-      contents: before,
-      cacheKey: "scroll:before",
-    },
-    {
-      name: "big.ts",
-      contents: after,
-      cacheKey: "scroll:after",
-    },
-    { context: 3 },
-    true,
-  );
-
-  return {
-    input: {
-      kind: "git",
-      staged: false,
-      options: {
-        mode: "split",
-      },
-    },
-    changeset: {
-      id: "scroll-regression",
-      sourceLabel: "repo",
-      title: "repo working tree",
-      files: [
-        {
-          id: "big",
-          path: "big.ts",
-          patch: "",
-          language: "typescript",
-          stats: {
-            additions: 1,
-            deletions: 1,
-          },
-          metadata,
-          agent: null,
-        },
-      ],
-    },
-    initialMode: "split",
-    initialTheme: "midnight",
-  };
+  return createTestGitAppBootstrap({
+    changesetId: "scroll-regression",
+    files: [
+      createTestDiffFile({
+        after,
+        before,
+        context: 3,
+        id: "big",
+        path: "big.ts",
+      }),
+    ],
+  });
 }
 
 describe("UI scroll regression", () => {

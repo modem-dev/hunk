@@ -1,66 +1,31 @@
 import { describe, expect, test } from "bun:test";
-import { parseDiffFromFile } from "@pierre/diffs";
+import { createTestDiffFile, lines } from "../../test/helpers/diff-helpers";
 import {
   buildLiveComment,
   findDiffFileByPath,
   findHunkIndexForLine,
   hunkLineRange,
 } from "./liveComments";
-import type { DiffFile } from "./types";
 
-function createDiffFile(): DiffFile {
-  const metadata = parseDiffFromFile(
-    {
-      name: "src/example.ts",
-      contents: [
-        "export const alpha = 1;",
-        "export const keep = true;",
-        "export const beta = 1;",
-        "",
-      ].join("\n"),
-      cacheKey: "before",
-    },
-    {
-      name: "src/example.ts",
-      contents: [
-        "export const alpha = 2;",
-        "export const keep = true;",
-        "export const beta = 2;",
-        "export const gamma = true;",
-        "",
-      ].join("\n"),
-      cacheKey: "after",
-    },
-    { context: 3 },
-    true,
-  );
-
-  let additions = 0;
-  let deletions = 0;
-  for (const hunk of metadata.hunks) {
-    for (const content of hunk.hunkContent) {
-      if (content.type === "change") {
-        additions += content.additions;
-        deletions += content.deletions;
-      }
-    }
-  }
-
-  return {
+function createExampleDiffFile() {
+  return createTestDiffFile({
+    after: lines(
+      "export const alpha = 2;",
+      "export const keep = true;",
+      "export const beta = 2;",
+      "export const gamma = true;",
+    ),
+    before: lines("export const alpha = 1;", "export const keep = true;", "export const beta = 1;"),
+    context: 3,
     id: "file:example",
     path: "src/example.ts",
     previousPath: "src/example-old.ts",
-    patch: "",
-    language: "typescript",
-    stats: { additions, deletions },
-    metadata,
-    agent: null,
-  };
+  });
 }
 
 describe("live comment helpers", () => {
   test("finds a diff file by current or previous path", () => {
-    const file = createDiffFile();
+    const file = createExampleDiffFile();
 
     expect(findDiffFileByPath([file], "src/example.ts")?.id).toBe(file.id);
     expect(findDiffFileByPath([file], "src/example-old.ts")?.id).toBe(file.id);
@@ -68,7 +33,7 @@ describe("live comment helpers", () => {
   });
 
   test("maps old/new line numbers onto the covering hunk", () => {
-    const file = createDiffFile();
+    const file = createExampleDiffFile();
 
     expect(findHunkIndexForLine(file, "old", 1)).toBe(0);
     expect(findHunkIndexForLine(file, "new", 2)).toBe(0);
@@ -106,7 +71,7 @@ describe("live comment helpers", () => {
   });
 
   test("computes inclusive single-line hunk ranges", () => {
-    const file = createDiffFile();
+    const file = createExampleDiffFile();
     const range = hunkLineRange(file.metadata.hunks[0]!);
 
     expect(range.oldRange[0]).toBeLessThanOrEqual(1);

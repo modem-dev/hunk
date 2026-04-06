@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createServer } from "node:net";
+import {
+  createTestSessionRegistration,
+  createTestSessionSnapshot,
+} from "../../test/helpers/mcp-fixtures";
 import { HunkDaemonState } from "./daemonState";
 import { serveHunkMcpServer } from "./server";
 
@@ -112,34 +116,12 @@ async function openRegisteredSession(port: number, sessionId = "session-1") {
   socket.send(
     JSON.stringify({
       type: "register",
-      registration: {
-        sessionId,
-        pid: process.pid,
-        cwd: "/repo",
-        repoRoot: "/repo",
-        inputKind: "git",
-        title: "repo working tree",
-        sourceLabel: "/repo",
+      registration: createTestSessionRegistration({
         launchedAt: "2026-03-24T00:00:00.000Z",
-        files: [
-          {
-            id: "file-1",
-            path: "src/example.ts",
-            additions: 1,
-            deletions: 1,
-            hunkCount: 1,
-          },
-        ],
-      },
-      snapshot: {
-        selectedFileId: "file-1",
-        selectedFilePath: "src/example.ts",
-        selectedHunkIndex: 0,
-        showAgentNotes: false,
-        liveCommentCount: 0,
-        liveComments: [],
-        updatedAt: "2026-03-24T00:00:00.000Z",
-      },
+        pid: process.pid,
+        sessionId,
+      }),
+      snapshot: createTestSessionSnapshot({ updatedAt: "2026-03-24T00:00:00.000Z" }),
     }),
   );
 

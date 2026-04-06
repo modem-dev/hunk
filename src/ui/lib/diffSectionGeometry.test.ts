@@ -3,8 +3,8 @@ import type { VisibleAgentNote } from "./agentAnnotations";
 import { measureDiffSectionGeometry } from "./diffSectionGeometry";
 import { resolveTheme } from "../themes";
 import {
-  createDiffFile,
-  createHeaderOnlyDiffFile,
+  createTestDiffFile,
+  createTestHeaderOnlyDiffFile,
   lines,
 } from "../../../test/helpers/diff-helpers";
 
@@ -12,7 +12,7 @@ describe("measureDiffSectionGeometry", () => {
   const theme = resolveTheme("midnight", null);
 
   test("measures split and stack layouts from the render plan", () => {
-    const file = createDiffFile();
+    const file = createTestDiffFile();
 
     const split = measureDiffSectionGeometry(file, "split", true, theme);
     const stack = measureDiffSectionGeometry(file, "stack", true, theme);
@@ -24,7 +24,7 @@ describe("measureDiffSectionGeometry", () => {
   });
 
   test("accounts for visible inline notes without moving the hunk anchor", () => {
-    const file = createDiffFile();
+    const file = createTestDiffFile();
     const visibleAgentNotes: VisibleAgentNote[] = [
       {
         id: "annotation:example:0",
@@ -52,7 +52,7 @@ describe("measureDiffSectionGeometry", () => {
   });
 
   test("wraps long rows into taller section geometry when wrapping is enabled", () => {
-    const file = createDiffFile({
+    const file = createTestDiffFile({
       before: lines("const alpha = 1;", "const beta = 2;"),
       after: lines(
         "const alpha = 1;",
@@ -90,7 +90,7 @@ describe("measureDiffSectionGeometry", () => {
   });
 
   test("returns a one-row placeholder for files with no visible hunks", () => {
-    const file = createDiffFile({
+    const file = createTestDiffFile({
       after: "const stable = true;\n",
       before: "const stable = true;\n",
       id: "empty",
@@ -106,7 +106,7 @@ describe("measureDiffSectionGeometry", () => {
   });
 
   test("can measure a header-only hunk stream without line rows", () => {
-    const file = createHeaderOnlyDiffFile();
+    const file = createTestHeaderOnlyDiffFile();
 
     const metrics = measureDiffSectionGeometry(file, "split", true, theme);
 
