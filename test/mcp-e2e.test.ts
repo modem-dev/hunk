@@ -131,6 +131,19 @@ function runSessionCli(args: string[], port: number) {
   return { proc, stdout, stderr };
 }
 
+async function reserveLoopbackPort() {
+  const listener = createServer(() => undefined);
+  await new Promise<void>((resolve, reject) => {
+    listener.once("error", reject);
+    listener.listen(0, "127.0.0.1", () => resolve());
+  });
+
+  const address = listener.address();
+  const port = typeof address === "object" && address ? address.port : 0;
+  await new Promise<void>((resolve) => listener.close(() => resolve()));
+  return port;
+}
+
 async function waitUntil<T>(
   label: string,
   fn: () => Promise<T | null> | T | null,
@@ -183,7 +196,7 @@ describe("live session end-to-end", () => {
       ["export const alpha = 1;", "export const keep = true;"],
       ["export const alpha = 2;", "export const keep = true;", "export const gamma = true;"],
     );
-    const port = 48000 + Math.floor(Math.random() * 1000);
+    const port = await reserveLoopbackPort();
     const hunkProc = spawnHunkSession(fixture, { port });
 
     let daemonPid: number | null = null;
@@ -221,6 +234,7 @@ describe("live session end-to-end", () => {
           "Injected after the Hunk session auto-started the local daemon.",
           "--author",
           "Pi",
+          "--focus",
           "--json",
         ],
         port,
@@ -286,7 +300,7 @@ describe("live session end-to-end", () => {
         "export const line10 = 110;",
       ],
     );
-    const port = 48500 + Math.floor(Math.random() * 1000);
+    const port = await reserveLoopbackPort();
     const hunkProc = spawnHunkSession(fixture, { port, quitAfterSeconds: 14, timeoutSeconds: 16 });
 
     let daemonPid: number | null = null;
@@ -377,7 +391,7 @@ describe("live session end-to-end", () => {
       ["export const beta = 1;", "export const shared = true;"],
       ["export const beta = 2;", "export const shared = true;", "export const onlyBeta = true;"],
     );
-    const port = 49000 + Math.floor(Math.random() * 1000);
+    const port = await reserveLoopbackPort();
     const hunkProcA = spawnHunkSession(fixtureA, {
       port,
       quitAfterSeconds: 10,
@@ -428,6 +442,7 @@ describe("live session end-to-end", () => {
           "Alpha note",
           "--rationale",
           "Delivered only to the alpha Hunk session.",
+          "--focus",
         ],
         port,
       );
@@ -446,6 +461,7 @@ describe("live session end-to-end", () => {
           "Beta note",
           "--rationale",
           "Delivered only to the beta Hunk session.",
+          "--focus",
         ],
         port,
       );

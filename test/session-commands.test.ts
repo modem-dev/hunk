@@ -52,6 +52,7 @@ function createClient(overrides: Partial<HunkDaemonCliClient>): HunkDaemonCliCli
         "navigate",
         "reload",
         "comment-add",
+        "comment-apply",
         "comment-list",
         "comment-rm",
         "comment-clear",
@@ -101,6 +102,18 @@ function createClient(overrides: Partial<HunkDaemonCliClient>): HunkDaemonCliCli
       hunkIndex: 0,
       side: "new",
       line: 1,
+    }),
+    applyComments: async () => ({
+      applied: [
+        {
+          commentId: "comment-1",
+          fileId: "file-1",
+          filePath: "README.md",
+          hunkIndex: 0,
+          side: "new",
+          line: 1,
+        },
+      ],
     }),
     listComments: async () => [],
     removeComment: async () => ({
@@ -255,6 +268,99 @@ describe("session command compatibility checks", () => {
     });
   });
 
+  test("runs comment-apply through the daemon and returns the applied batch", async () => {
+    setSessionCommandTestHooks({
+      createClient: () =>
+        createClient({
+          applyComments: async (input) => {
+            expect(input.selector).toEqual({ sessionId: "session-1" });
+            expect(input.revealMode).toBe("none");
+            expect(input.comments).toEqual([
+              {
+                filePath: "README.md",
+                hunkNumber: 2,
+                summary: "Explain this hunk",
+                author: "Pi",
+              },
+              {
+                filePath: "README.md",
+                side: "new",
+                line: 103,
+                summary: "Tighten this wording",
+              },
+            ]);
+
+            return {
+              applied: [
+                {
+                  commentId: "comment-1",
+                  fileId: "file-1",
+                  filePath: "README.md",
+                  hunkIndex: 1,
+                  side: "new",
+                  line: 12,
+                },
+                {
+                  commentId: "comment-2",
+                  fileId: "file-1",
+                  filePath: "README.md",
+                  hunkIndex: 1,
+                  side: "new",
+                  line: 103,
+                },
+              ],
+            };
+          },
+        }),
+      resolveDaemonAvailability: async () => true,
+    });
+
+    const output = await runSessionCommand({
+      kind: "session",
+      action: "comment-apply",
+      selector: { sessionId: "session-1" },
+      comments: [
+        {
+          filePath: "README.md",
+          hunkNumber: 2,
+          summary: "Explain this hunk",
+          author: "Pi",
+        },
+        {
+          filePath: "README.md",
+          side: "new",
+          line: 103,
+          summary: "Tighten this wording",
+        },
+      ],
+      revealMode: "none",
+      output: "json",
+    } satisfies SessionCommandInput);
+
+    expect(JSON.parse(output)).toEqual({
+      result: {
+        applied: [
+          {
+            commentId: "comment-1",
+            fileId: "file-1",
+            filePath: "README.md",
+            hunkIndex: 1,
+            side: "new",
+            line: 12,
+          },
+          {
+            commentId: "comment-2",
+            fileId: "file-1",
+            filePath: "README.md",
+            hunkIndex: 1,
+            side: "new",
+            line: 103,
+          },
+        ],
+      },
+    });
+  });
+
   test("passes a separate source path through reload commands", async () => {
     setSessionCommandTestHooks({
       createClient: () =>
@@ -323,6 +429,7 @@ describe("session command compatibility checks", () => {
               "navigate",
               "reload",
               "comment-add",
+              "comment-apply",
               "comment-list",
               "comment-rm",
               "comment-clear",

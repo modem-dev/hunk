@@ -214,6 +214,7 @@ describe("Hunk session daemon server", () => {
           "navigate",
           "reload",
           "comment-add",
+          "comment-apply",
           "comment-list",
           "comment-rm",
           "comment-clear",
@@ -421,6 +422,100 @@ describe("Hunk session daemon server", () => {
       });
     } finally {
       HunkDaemonState.prototype.sendComment = original;
+      server.stop(true);
+    }
+  });
+
+  test("forwards comment batches through the session API", async () => {
+    const port = await reserveLoopbackPort();
+    process.env.HUNK_MCP_HOST = "127.0.0.1";
+    process.env.HUNK_MCP_PORT = String(port);
+
+    const original = HunkDaemonState.prototype.sendCommentBatch;
+    HunkDaemonState.prototype.sendCommentBatch = function (input) {
+      expect(input).toMatchObject({
+        sessionId: "session-1",
+        revealMode: "none",
+        comments: [
+          {
+            filePath: "src/example.ts",
+            hunkIndex: 0,
+            summary: "First",
+            author: "Pi",
+          },
+          {
+            filePath: "src/example.ts",
+            hunkIndex: 1,
+            summary: "Second",
+            rationale: "Applied together.",
+            author: "Pi",
+          },
+        ],
+      });
+
+      return Promise.resolve({
+        applied: [
+          {
+            commentId: "comment-1",
+            fileId: "file-1",
+            filePath: "src/example.ts",
+            hunkIndex: 0,
+            side: "new",
+            line: 2,
+          },
+          {
+            commentId: "comment-2",
+            fileId: "file-1",
+            filePath: "src/example.ts",
+            hunkIndex: 1,
+            side: "new",
+            line: 13,
+          },
+        ],
+      });
+    };
+
+    const server = serveHunkMcpServer();
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/session-api`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "comment-apply",
+          selector: { sessionId: "session-1" },
+          revealMode: "none",
+          comments: [
+            {
+              filePath: "src/example.ts",
+              hunkNumber: 1,
+              summary: "First",
+              author: "Pi",
+            },
+            {
+              filePath: "src/example.ts",
+              hunkNumber: 2,
+              summary: "Second",
+              rationale: "Applied together.",
+              author: "Pi",
+            },
+          ],
+        }),
+      });
+
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({
+        result: {
+          applied: [
+            { commentId: "comment-1", hunkIndex: 0, side: "new", line: 2 },
+            { commentId: "comment-2", hunkIndex: 1, side: "new", line: 13 },
+          ],
+        },
+      });
+    } finally {
+      HunkDaemonState.prototype.sendCommentBatch = original;
       server.stop(true);
     }
   });

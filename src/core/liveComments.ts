@@ -1,6 +1,6 @@
 import type { Hunk } from "@pierre/diffs";
+import type { CommentTargetInput, DiffSide, LiveComment } from "../mcp/types";
 import type { DiffFile } from "./types";
-import type { CommentToolInput, DiffSide, LiveComment } from "../mcp/types";
 
 export interface ResolvedCommentTarget {
   hunkIndex: number;
@@ -83,7 +83,7 @@ export function firstCommentTargetForHunk(hunk: Hunk): Omit<ResolvedCommentTarge
 /** Resolve a line-based or hunk-based live-comment target against one visible diff file. */
 export function resolveCommentTarget(
   file: DiffFile,
-  input: CommentToolInput,
+  input: CommentTargetInput,
 ): ResolvedCommentTarget {
   if (input.hunkIndex !== undefined) {
     const hunk = file.metadata.hunks[input.hunkIndex];
@@ -115,7 +115,7 @@ export function resolveCommentTarget(
 
 /** Convert one incoming MCP comment command into a live annotation. */
 export function buildLiveComment(
-  input: CommentToolInput & { side: DiffSide; line: number },
+  input: CommentTargetInput & { side: DiffSide; line: number },
   commentId: string,
   createdAt: string,
   hunkIndex: number,

@@ -306,7 +306,7 @@ describe("parseCli", () => {
     ).rejects.toThrow("Pass the replacement Hunk command after `--`");
   });
 
-  test("parses session comment add", async () => {
+  test("parses session comment add without focusing by default", async () => {
     const parsed = await parseCli([
       "bun",
       "hunk",
@@ -324,7 +324,6 @@ describe("parseCli", () => {
       "Live review is the main value.",
       "--author",
       "Pi",
-      "--no-reveal",
     ]);
 
     expect(parsed).toEqual({
@@ -370,9 +369,85 @@ describe("parseCli", () => {
       summary: "Anchor this note to the whole hunk",
       rationale: undefined,
       author: undefined,
-      reveal: true,
+      reveal: false,
       output: "json",
     });
+  });
+
+  test("parses session comment add with --focus", async () => {
+    const parsed = await parseCli([
+      "bun",
+      "hunk",
+      "session",
+      "comment",
+      "add",
+      "session-1",
+      "--file",
+      "README.md",
+      "--new-line",
+      "103",
+      "--summary",
+      "Frame this as MCP-first",
+      "--focus",
+    ]);
+
+    expect(parsed).toEqual({
+      kind: "session",
+      action: "comment-add",
+      selector: { sessionId: "session-1" },
+      filePath: "README.md",
+      side: "new",
+      line: 103,
+      summary: "Frame this as MCP-first",
+      reveal: true,
+      output: "text",
+    });
+  });
+
+  test("parses session comment apply with --focus", async () => {
+    const originalStdin = Bun.stdin.stream;
+    Bun.stdin.stream = () =>
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(
+            new TextEncoder().encode(
+              '{"comments":[{"filePath":"README.md","hunk":2,"summary":"Explain this hunk"}]}',
+            ),
+          );
+          controller.close();
+        },
+      });
+
+    try {
+      const parsed = await parseCli([
+        "bun",
+        "hunk",
+        "session",
+        "comment",
+        "apply",
+        "session-1",
+        "--stdin",
+        "--focus",
+        "--json",
+      ]);
+
+      expect(parsed).toEqual({
+        kind: "session",
+        action: "comment-apply",
+        selector: { sessionId: "session-1" },
+        comments: [
+          {
+            filePath: "README.md",
+            hunkNumber: 2,
+            summary: "Explain this hunk",
+          },
+        ],
+        revealMode: "first",
+        output: "json",
+      });
+    } finally {
+      Bun.stdin.stream = originalStdin;
+    }
   });
 
   test("parses session comment list with file filter", async () => {

@@ -22,6 +22,7 @@ const SUPPORTED_SESSION_ACTIONS: SessionDaemonAction[] = [
   "navigate",
   "reload",
   "comment-add",
+  "comment-apply",
   "comment-list",
   "comment-rm",
   "comment-clear",
@@ -145,6 +146,23 @@ async function handleSessionApiRequest(state: HunkDaemonState, request: Request)
         };
         break;
       }
+      case "comment-apply":
+        response = {
+          result: await state.sendCommentBatch({
+            ...input.selector,
+            comments: input.comments.map((comment) => ({
+              filePath: comment.filePath,
+              hunkIndex: comment.hunkNumber !== undefined ? comment.hunkNumber - 1 : undefined,
+              side: comment.side,
+              line: comment.line,
+              summary: comment.summary,
+              rationale: comment.rationale,
+              author: comment.author,
+            })),
+            revealMode: input.revealMode,
+          }),
+        };
+        break;
       case "comment-list":
         response = {
           comments: state.listComments(input.selector, { filePath: input.filePath }),
