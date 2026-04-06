@@ -23,13 +23,6 @@ test/
 - `test/pty/` — PTY-backed live UI integration tests for resize, navigation, mouse input, layout changes, and note visibility.
 - `test/smoke/` — opt-in terminal transcript smoke coverage for real TTY rendering (`bun run test:tty-smoke`).
 
-## Naming guidance
-
-Prefer names that describe the product surface under test, not the harness used to run it.
-
-- good: `entrypoint.test.ts`, `daemon.test.ts`, `broker-e2e.test.ts`, `ui-integration.test.ts`, `tty.test.ts`
-- avoid when possible: names that repeat the folder or leak the runner, like `session-cli.test.ts`, `live-session.e2e.test.ts`, or `tuistory-hunk.integration.ts`
-
 ## Why these are not colocated
 
 These tests do not belong to a single source file. They usually verify product-level behavior such as:
