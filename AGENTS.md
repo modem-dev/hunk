@@ -51,6 +51,12 @@ CLI input
 - Prefer one implementation path per feature instead of separate "old" and "new" codepaths that duplicate behavior.
 - When refactoring logic that spans helpers and UI components, add tests at the level where the user-visible behavior actually lives, not only at the lowest helper layer.
 
+## testing
+
+- Colocate unit tests with the code they cover (`src/core/foo.ts` + `src/core/foo.test.ts`, `src/ui/AppHost.*.test.tsx`, `src/ui/lib/*.test.ts`).
+- Put shared unit-test helpers in `test/helpers/`.
+- Keep other repo-level `test/` files for cross-cutting integration, PTY/session, CLI transcript, and smoke coverage.
+
 ## code comments
 
 - Add short JSDoc-style comments to functions and helpers.
