@@ -14,7 +14,6 @@ interface DiffSectionProps {
   layout: Exclude<LayoutMode, "auto">;
   selectedHunkIndex: number;
   shouldLoadHighlight: boolean;
-  onHighlightReady?: () => void;
   separatorWidth: number;
   showLineNumbers: boolean;
   showHunkHeaders: boolean;
@@ -36,7 +35,6 @@ function DiffSectionComponent({
   layout,
   selectedHunkIndex,
   shouldLoadHighlight,
-  onHighlightReady,
   separatorWidth,
   showLineNumbers,
   showHunkHeaders,
@@ -96,7 +94,6 @@ function DiffSectionComponent({
         annotatedHunkIndices={annotatedHunkIndices}
         visibleAgentNotes={visibleAgentNotes}
         onOpenAgentNotesAtHunk={onOpenAgentNotesAtHunk}
-        onHighlightReady={onHighlightReady}
         selectedHunkIndex={selectedHunkIndex}
         shouldLoadHighlight={shouldLoadHighlight}
         // The parent review stream owns scrolling across files.

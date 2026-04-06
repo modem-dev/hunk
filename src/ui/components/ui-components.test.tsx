@@ -65,6 +65,30 @@ function createWindowingFiles(count: number) {
   );
 }
 
+function createHighlightPrefetchWindowFiles() {
+  return Array.from({ length: 4 }, (_, index) => {
+    const marker = `prefetchMarker${index + 1}`;
+    const before = lines(
+      `export const ${marker} = ${index + 1};`,
+      ...Array.from(
+        { length: 8 },
+        (_, lineIndex) =>
+          `export function keep${index + 1}_${lineIndex}(value: number) { return value + ${lineIndex}; }`,
+      ),
+    );
+    const after = lines(
+      `export const ${marker} = ${index + 100};`,
+      ...Array.from(
+        { length: 8 },
+        (_, lineIndex) =>
+          `export function keep${index + 1}_${lineIndex}(value: number) { return value * ${lineIndex + 2}; }`,
+      ),
+    );
+
+    return createTestDiffFile(`prefetch-${index + 1}`, `prefetch-${index + 1}.ts`, before, after);
+  });
+}
+
 function createMultiHunkDiffFile(id: string, path: string) {
   const before = lines(
     "export const line1 = 1;",
@@ -1691,6 +1715,64 @@ describe("UI components", () => {
     } finally {
       await act(async () => {
         secondSetup.renderer.destroy();
+      });
+    }
+  });
+
+  test("DiffPane prefetches highlight data for files approaching the viewport before they mount", async () => {
+    const files = createHighlightPrefetchWindowFiles();
+    const theme = resolveTheme("midnight", null);
+    const setup = await testRender(
+      <DiffPane
+        {...createDiffPaneProps(files, theme, {
+          diffContentWidth: 92,
+          separatorWidth: 88,
+          width: 96,
+        })}
+      />,
+      { width: 100, height: 10 },
+    );
+    const thirdFileCheck = await testRender(
+      <PierreDiffView
+        file={files[2]}
+        layout="split"
+        theme={theme}
+        width={180}
+        selectedHunkIndex={0}
+        shouldLoadHighlight={false}
+        scrollable={false}
+      />,
+      { width: 184, height: 10 },
+    );
+
+    try {
+      await settleDiffPane(setup);
+
+      const initialFrame = setup.captureCharFrame();
+      expect(initialFrame).not.toContain("prefetch-3.ts");
+
+      let prefetched = false;
+      for (let iteration = 0; iteration < 400; iteration += 1) {
+        await act(async () => {
+          await setup.renderOnce();
+          await thirdFileCheck.renderOnce();
+          await Bun.sleep(0);
+          await setup.renderOnce();
+          await thirdFileCheck.renderOnce();
+          await Bun.sleep(0);
+        });
+
+        if (frameHasHighlightedMarker(thirdFileCheck.captureSpans(), "prefetchMarker3")) {
+          prefetched = true;
+          break;
+        }
+      }
+
+      expect(prefetched).toBe(true);
+    } finally {
+      await act(async () => {
+        thirdFileCheck.renderer.destroy();
+        setup.renderer.destroy();
       });
     }
   });

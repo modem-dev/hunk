@@ -30,6 +30,7 @@ import { DiffSection } from "./DiffSection";
 import { DiffFileHeaderRow } from "./DiffFileHeaderRow";
 import { DiffSectionPlaceholder } from "./DiffSectionPlaceholder";
 import { VerticalScrollbar, type VerticalScrollbarHandle } from "../scrollbar/VerticalScrollbar";
+import { prefetchHighlightedDiff } from "../../diff/useHighlightedDiff";
 
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
 
@@ -175,16 +176,9 @@ export function DiffPane({
   onViewportCenteredHunkChange?: (fileId: string, hunkIndex: number) => void;
 }) {
   const renderer = useRenderer();
-  const [prefetchAnchorKey, setPrefetchAnchorKey] = useState<string | null>(null);
-  const selectedHighlightKey = selectedFileId ? `${theme.appearance}:${selectedFileId}` : null;
 
-  useEffect(() => {
-    setPrefetchAnchorKey(null);
-  }, [selectedHighlightKey]);
-
-  // Hold background prefetches until the currently selected file has painted once.
   const adjacentPrefetchFileIds = useMemo(() => {
-    if (!selectedHighlightKey || prefetchAnchorKey !== selectedHighlightKey || !selectedFileId) {
+    if (!selectedFileId) {
       return new Set<string>();
     }
 
@@ -206,15 +200,7 @@ export function DiffPane({
     }
 
     return next;
-  }, [files, prefetchAnchorKey, selectedFileId, selectedHighlightKey]);
-
-  const handleSelectedHighlightReady = useCallback(() => {
-    if (!selectedHighlightKey) {
-      return;
-    }
-
-    setPrefetchAnchorKey((current) => current ?? selectedHighlightKey);
-  }, [selectedHighlightKey]);
+  }, [files, selectedFileId]);
 
   const allAgentNotesByFile = useMemo(() => {
     const next = new Map<string, VisibleAgentNote[]>();
@@ -416,6 +402,51 @@ export function DiffPane({
     [estimatedBodyHeights, files, sectionHeaderHeights],
   );
   const totalContentHeight = fileSectionLayouts[fileSectionLayouts.length - 1]?.sectionBottom ?? 0;
+
+  const highlightPrefetchFileIds = useMemo(() => {
+    const next = new Set(adjacentPrefetchFileIds);
+
+    if (selectedFileId) {
+      next.add(selectedFileId);
+    }
+
+    const viewportHeight = Math.max(1, scrollViewport.height);
+    const prefetchRows = Math.max(24, viewportHeight * 3);
+    const minPrefetchY = Math.max(0, scrollViewport.top - prefetchRows);
+    const maxPrefetchY = scrollViewport.top + scrollViewport.height + prefetchRows;
+
+    for (const layout of fileSectionLayouts) {
+      if (layout.sectionBottom >= minPrefetchY && layout.sectionTop <= maxPrefetchY) {
+        next.add(layout.fileId);
+      }
+    }
+
+    return next;
+  }, [
+    adjacentPrefetchFileIds,
+    fileSectionLayouts,
+    scrollViewport.height,
+    scrollViewport.top,
+    selectedFileId,
+  ]);
+
+  useEffect(() => {
+    if (files.length === 0) {
+      return;
+    }
+
+    for (const file of files) {
+      if (!highlightPrefetchFileIds.has(file.id)) {
+        continue;
+      }
+
+      void prefetchHighlightedDiff({
+        file,
+        appearance: theme.appearance,
+      });
+    }
+  }, [files, highlightPrefetchFileIds, theme.appearance]);
+
   // Read the live scroll box position during render so pinned-header ownership flips
   // immediately after imperative scrolls instead of waiting for the polled viewport snapshot.
   const effectiveScrollTop = scrollRef.current?.scrollTop ?? scrollViewport.top;
@@ -722,9 +753,10 @@ export function DiffPane({
   useLayoutEffect(() => {
     const pinnedHeaderFileId = pinnedHeaderFile?.id ?? null;
 
-    if (suppressNextSelectionAutoScrollRef.current) {
+    if (mouseScrollSelectionSyncActiveRef.current || suppressNextSelectionAutoScrollRef.current) {
       suppressNextSelectionAutoScrollRef.current = false;
-      // Consume this selection transition so the next render does not re-center the selected hunk.
+      // While the mouse wheel owns the viewport, selection should follow passively instead of
+      // snapping the review stream back toward the newly selected hunk.
       prevSelectedAnchorIdRef.current = selectedAnchorId;
       prevPinnedHeaderFileIdRef.current = pinnedHeaderFileId;
       pendingSelectionSettleRef.current = false;
@@ -903,10 +935,6 @@ export function DiffPane({
               >
                 {files.map((file, index) => {
                   const shouldRenderSection = visibleWindowedFileIds?.has(file.id) ?? true;
-                  const shouldPrefetchVisibleHighlight =
-                    Boolean(selectedHighlightKey) &&
-                    prefetchAnchorKey === selectedHighlightKey &&
-                    visibleViewportFileIds.has(file.id);
 
                   // Windowing keeps offscreen files cheap: render placeholders with identical
                   // section geometry so scroll math and pinned-header ownership stay stable.
@@ -935,14 +963,7 @@ export function DiffPane({
                       headerStatsWidth={headerStatsWidth}
                       layout={layout}
                       selectedHunkIndex={file.id === selectedFileId ? selectedHunkIndex : -1}
-                      shouldLoadHighlight={
-                        file.id === selectedFileId ||
-                        adjacentPrefetchFileIds.has(file.id) ||
-                        shouldPrefetchVisibleHighlight
-                      }
-                      onHighlightReady={
-                        file.id === selectedFileId ? handleSelectedHighlightReady : undefined
-                      }
+                      shouldLoadHighlight={highlightPrefetchFileIds.has(file.id)}
                       separatorWidth={separatorWidth}
                       showHeader={shouldRenderInStreamFileHeader(index)}
                       showSeparator={index > 0}

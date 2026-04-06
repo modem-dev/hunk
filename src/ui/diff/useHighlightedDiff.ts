@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useState } from "react";
 import type { DiffFile } from "../../core/types";
 import { loadHighlightedDiff, type HighlightedDiffCode } from "./pierre";
 
@@ -43,48 +43,72 @@ function commitHighlightResult(
   if (SHARED_HIGHLIGHT_PROMISES.get(cacheKey) !== promise) {
     return false;
   }
+
   SHARED_HIGHLIGHT_PROMISES.delete(cacheKey);
   SHARED_HIGHLIGHTED_DIFF_CACHE.set(cacheKey, result);
   enforceCacheLimit();
   return true;
 }
 
+/** Start one shared highlight request unless the cache or an in-flight promise already has it. */
+function ensureHighlightedDiffLoaded(
+  file: DiffFile,
+  appearance: "light" | "dark",
+  cacheKey = buildCacheKey(appearance, file),
+) {
+  const cached = SHARED_HIGHLIGHTED_DIFF_CACHE.get(cacheKey);
+  if (cached) {
+    return Promise.resolve(cached);
+  }
+
+  const existing = SHARED_HIGHLIGHT_PROMISES.get(cacheKey);
+  if (existing) {
+    return existing;
+  }
+
+  let pending: Promise<HighlightedDiffCode>;
+  pending = loadHighlightedDiff(file, appearance)
+    .then((nextHighlighted) => {
+      commitHighlightResult(cacheKey, pending, nextHighlighted);
+      return nextHighlighted;
+    })
+    .catch(() => {
+      const fallback = {
+        deletionLines: [],
+        additionLines: [],
+      } satisfies HighlightedDiffCode;
+      commitHighlightResult(cacheKey, pending, fallback);
+      return fallback;
+    });
+
+  SHARED_HIGHLIGHT_PROMISES.set(cacheKey, pending);
+  return pending;
+}
+
+/** Queue syntax highlighting for one file without mounting its diff rows first. */
+export function prefetchHighlightedDiff({
+  file,
+  appearance,
+}: {
+  file: DiffFile;
+  appearance: "light" | "dark";
+}) {
+  return ensureHighlightedDiffLoaded(file, appearance);
+}
+
 /** Resolve highlighted diff content with shared caching and background prefetch support. */
 export function useHighlightedDiff({
   file,
   appearance,
-  onHighlightReady,
   shouldLoadHighlight,
 }: {
   file: DiffFile | undefined;
   appearance: "light" | "dark";
-  onHighlightReady?: () => void;
   shouldLoadHighlight?: boolean;
 }) {
   const [highlighted, setHighlighted] = useState<HighlightedDiffCode | null>(null);
   const [highlightedCacheKey, setHighlightedCacheKey] = useState<string | null>(null);
   const appearanceCacheKey = file ? buildCacheKey(appearance, file) : null;
-
-  // Selected files load immediately; background prefetch can opt neighboring files in later.
-  const pendingHighlight = useMemo(() => {
-    if (
-      !shouldLoadHighlight ||
-      !file ||
-      !appearanceCacheKey ||
-      SHARED_HIGHLIGHTED_DIFF_CACHE.has(appearanceCacheKey)
-    ) {
-      return null;
-    }
-
-    const existing = SHARED_HIGHLIGHT_PROMISES.get(appearanceCacheKey);
-    if (existing) {
-      return existing;
-    }
-
-    const pending = loadHighlightedDiff(file, appearance);
-    SHARED_HIGHLIGHT_PROMISES.set(appearanceCacheKey, pending);
-    return pending;
-  }, [appearance, appearanceCacheKey, file, shouldLoadHighlight]);
 
   useLayoutEffect(() => {
     if (!file || !appearanceCacheKey) {
@@ -111,63 +135,24 @@ export function useHighlightedDiff({
     let cancelled = false;
     setHighlighted(null);
 
-    // Capture the key and promise reference this effect was started for so the
-    // resolution callback only writes if it is still the active request.
-    const effectCacheKey = appearanceCacheKey;
-    const effectPromise = pendingHighlight;
+    ensureHighlightedDiffLoaded(file, appearance, appearanceCacheKey).then((nextHighlighted) => {
+      if (cancelled) {
+        return;
+      }
 
-    effectPromise
-      ?.then((nextHighlighted) => {
-        if (cancelled) {
-          return;
-        }
-
-        if (commitHighlightResult(effectCacheKey, effectPromise, nextHighlighted)) {
-          setHighlighted(nextHighlighted);
-          setHighlightedCacheKey(effectCacheKey);
-        }
-      })
-      .catch(() => {
-        if (cancelled) {
-          return;
-        }
-
-        const fallback = {
-          deletionLines: [],
-          additionLines: [],
-        } satisfies HighlightedDiffCode;
-        if (commitHighlightResult(effectCacheKey, effectPromise, fallback)) {
-          setHighlighted(fallback);
-          setHighlightedCacheKey(effectCacheKey);
-        }
-      });
+      setHighlighted(nextHighlighted);
+      setHighlightedCacheKey(appearanceCacheKey);
+    });
 
     return () => {
       cancelled = true;
     };
-  }, [appearanceCacheKey, file, highlightedCacheKey, pendingHighlight, shouldLoadHighlight]);
+  }, [appearance, appearanceCacheKey, file, highlightedCacheKey, shouldLoadHighlight]);
 
   // Prefer cached highlights during render so revisiting a file can paint immediately.
-  const resolvedHighlighted =
-    appearanceCacheKey && highlightedCacheKey === appearanceCacheKey
-      ? highlighted
-      : appearanceCacheKey
-        ? (SHARED_HIGHLIGHTED_DIFF_CACHE.get(appearanceCacheKey) ?? null)
-        : null;
-  const notifiedHighlightKeyRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (!onHighlightReady || !appearanceCacheKey || !resolvedHighlighted) {
-      return;
-    }
-
-    if (notifiedHighlightKeyRef.current === appearanceCacheKey) {
-      return;
-    }
-
-    notifiedHighlightKeyRef.current = appearanceCacheKey;
-    onHighlightReady();
-  }, [appearanceCacheKey, onHighlightReady, resolvedHighlighted]);
-
-  return resolvedHighlighted;
+  return appearanceCacheKey && highlightedCacheKey === appearanceCacheKey
+    ? highlighted
+    : appearanceCacheKey
+      ? (SHARED_HIGHLIGHTED_DIFF_CACHE.get(appearanceCacheKey) ?? null)
+      : null;
 }

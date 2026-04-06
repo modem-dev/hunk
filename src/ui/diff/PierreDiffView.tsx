@@ -19,7 +19,6 @@ export function PierreDiffView({
   file,
   layout,
   onOpenAgentNotesAtHunk,
-  onHighlightReady,
   showLineNumbers = true,
   showHunkHeaders = true,
   wrapLines = false,
@@ -34,7 +33,6 @@ export function PierreDiffView({
   file: DiffFile | undefined;
   layout: Exclude<LayoutMode, "auto">;
   onOpenAgentNotesAtHunk?: (hunkIndex: number) => void;
-  onHighlightReady?: () => void;
   showLineNumbers?: boolean;
   showHunkHeaders?: boolean;
   wrapLines?: boolean;
@@ -48,7 +46,6 @@ export function PierreDiffView({
   const resolvedHighlighted = useHighlightedDiff({
     file,
     appearance: theme.appearance,
-    onHighlightReady,
     shouldLoadHighlight,
   });
 
