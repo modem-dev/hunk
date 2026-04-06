@@ -450,6 +450,52 @@ describe("App interactions", () => {
     }
   });
 
+  test("left and right arrows can reveal offscreen code columns in nowrap mode", async () => {
+    const setup = await testRender(<AppHost bootstrap={createWrapBootstrap()} />, {
+      width: 92,
+      height: 20,
+    });
+
+    try {
+      await flush(setup);
+
+      let frame = setup.captureCharFrame();
+      expect(frame).toContain("this is a very");
+      expect(frame).not.toContain("interaction coverage");
+
+      for (let index = 0; index < 64; index += 1) {
+        await act(async () => {
+          await setup.mockInput.pressArrow("right");
+        });
+        await flush(setup);
+        frame = setup.captureCharFrame();
+        if (frame.includes("interaction coverage")) {
+          break;
+        }
+      }
+
+      expect(frame).toContain("interaction coverage");
+      expect(frame).not.toContain("this is a very");
+
+      for (let index = 0; index < 64; index += 1) {
+        await act(async () => {
+          await setup.mockInput.pressArrow("left");
+        });
+        await flush(setup);
+        frame = setup.captureCharFrame();
+        if (frame.includes("this is a very")) {
+          break;
+        }
+      }
+
+      expect(frame).toContain("this is a very");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("bootstrap preferences initialize the visible view state", async () => {
     const setup = await testRender(
       <AppHost

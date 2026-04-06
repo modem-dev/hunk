@@ -5,7 +5,7 @@ import {
 } from "@opentui/core";
 import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState, useRef } from "react";
-import type { AppBootstrap, CliInput, LayoutMode } from "../core/types";
+import type { AppBootstrap, CliInput, DiffFile, LayoutMode } from "../core/types";
 import { canReloadInput, computeWatchSignature } from "../core/watch";
 import { HunkHostClient } from "../mcp/client";
 import type { ReloadedSessionResult } from "../mcp/types";
@@ -36,6 +36,23 @@ const LazyMenuDropdown = lazy(async () => ({
 /** Clamp a value into an inclusive range. */
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
+}
+
+/** Measure one diff line after the same tab expansion used by the renderer. */
+function renderedCodeLineWidth(line: string | undefined) {
+  return (line ?? "").replace(/\n$/, "").replaceAll("\t", "  ").length;
+}
+
+/** Track the widest code line that could benefit from horizontal reveal. */
+function maxFileCodeLineWidth(file: DiffFile) {
+  const deletionLines = file.metadata.deletionLines ?? [];
+  const additionLines = file.metadata.additionLines ?? [];
+
+  return Math.max(
+    0,
+    ...deletionLines.map(renderedCodeLineWidth),
+    ...additionLines.map(renderedCodeLineWidth),
+  );
 }
 
 /** Preserve the active app view settings when rebuilding the current input. */
@@ -99,6 +116,7 @@ export function App({
   const [showAgentNotes, setShowAgentNotes] = useState(bootstrap.initialShowAgentNotes ?? false);
   const [showLineNumbers, setShowLineNumbers] = useState(bootstrap.initialShowLineNumbers ?? true);
   const [wrapLines, setWrapLines] = useState(bootstrap.initialWrapLines ?? false);
+  const [codeHorizontalOffset, setCodeHorizontalOffset] = useState(0);
   const [showHunkHeaders, setShowHunkHeaders] = useState(bootstrap.initialShowHunkHeaders ?? true);
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [forceSidebarOpen, setForceSidebarOpen] = useState(false);
@@ -218,6 +236,34 @@ export function App({
     }
     diffScrollRef.current?.scrollBy(delta, unit);
   };
+
+  const maxCodeHorizontalOffset = useMemo(
+    () =>
+      Math.max(
+        0,
+        filteredFiles.reduce(
+          (maxWidth, file) => Math.max(maxWidth, maxFileCodeLineWidth(file)),
+          0,
+        ) - 1,
+      ),
+    [filteredFiles],
+  );
+
+  useEffect(() => {
+    setCodeHorizontalOffset((current) => clamp(current, 0, maxCodeHorizontalOffset));
+  }, [maxCodeHorizontalOffset]);
+
+  /** Shift the visible code columns horizontally without moving gutters or headers. */
+  const scrollCodeHorizontally = useCallback(
+    (delta: number) => {
+      if (wrapLines || delta === 0 || maxCodeHorizontalOffset <= 0) {
+        return;
+      }
+
+      setCodeHorizontalOffset((current) => clamp(current + delta, 0, maxCodeHorizontalOffset));
+    },
+    [maxCodeHorizontalOffset, wrapLines],
+  );
 
   /** Toggle the global agent note layer on or off. */
   const toggleAgentNotes = () => {
@@ -491,6 +537,7 @@ export function App({
     openMenu,
     pagerMode,
     requestQuit,
+    scrollCodeHorizontally,
     scrollDiff,
     selectLayoutMode: setLayoutMode,
     showHelp,
@@ -636,6 +683,7 @@ export function App({
         ) : null}
 
         <DiffPane
+          codeHorizontalOffset={codeHorizontalOffset}
           diffContentWidth={diffContentWidth}
           files={filteredFiles}
           pagerMode={pagerMode}

@@ -127,6 +127,7 @@ function resolveViewportRowAnchorTop(
 
 /** Render the main multi-file review stream. */
 export function DiffPane({
+  codeHorizontalOffset = 0,
   diffContentWidth,
   files,
   headerLabelWidth,
@@ -149,6 +150,7 @@ export function DiffPane({
   onOpenAgentNotesAtHunk,
   onSelectFile,
 }: {
+  codeHorizontalOffset?: number;
   diffContentWidth: number;
   files: DiffFile[];
   headerLabelWidth: number;
@@ -864,6 +866,7 @@ export function DiffPane({
                   return (
                     <DiffSection
                       key={file.id}
+                      codeHorizontalOffset={codeHorizontalOffset}
                       file={file}
                       headerLabelWidth={headerLabelWidth}
                       headerStatsWidth={headerStatsWidth}

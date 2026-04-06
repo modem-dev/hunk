@@ -33,6 +33,7 @@ export interface UseAppKeyboardShortcutsOptions {
   openMenu: (menuId: MenuId) => void;
   pagerMode: boolean;
   requestQuit: () => void;
+  scrollCodeHorizontally: (delta: number) => void;
   scrollDiff: (delta: number, unit: ScrollUnit) => void;
   selectLayoutMode: (mode: LayoutMode) => void;
   showHelp: boolean;
@@ -66,6 +67,7 @@ export function useAppKeyboardShortcuts({
   openMenu,
   pagerMode,
   requestQuit,
+  scrollCodeHorizontally,
   scrollDiff,
   selectLayoutMode,
   showHelp,
@@ -135,6 +137,16 @@ export function useAppKeyboardShortcuts({
 
     if (isStepUpKey(key)) {
       scrollDiff(-1, "step");
+      return;
+    }
+
+    if (key.name === "left") {
+      scrollCodeHorizontally(-1);
+      return;
+    }
+
+    if (key.name === "right") {
+      scrollCodeHorizontally(1);
       return;
     }
 
@@ -288,6 +300,16 @@ export function useAppKeyboardShortcuts({
 
     if (isStepDownKey(key)) {
       scrollDiff(1, "step");
+      return;
+    }
+
+    if (key.name === "left") {
+      scrollCodeHorizontally(-1);
+      return;
+    }
+
+    if (key.name === "right") {
+      scrollCodeHorizontally(1);
       return;
     }
 

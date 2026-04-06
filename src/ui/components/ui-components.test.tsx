@@ -1248,13 +1248,13 @@ describe("UI components", () => {
     const frame = await captureFrame(
       <HelpDialog
         canRefresh={true}
-        terminalHeight={29}
+        terminalHeight={31}
         terminalWidth={76}
         theme={theme}
         onClose={() => {}}
       />,
       76,
-      29,
+      31,
     );
 
     const expectedRows = [
@@ -1268,6 +1268,7 @@ describe("UI components", () => {
       "d / u           half page down / up",
       "[ / ]           previous / next hunk",
       "{ / }           previous / next comment",
+      "← / →           scroll code left / right",
       "Home / End      jump to top / bottom",
       "View",
       "1 / 2 / 0       split / stack / auto",
@@ -1482,6 +1483,44 @@ describe("UI components", () => {
     expect(addedLines.length).toBeGreaterThanOrEqual(3);
     expect(addedLines.slice(1).some((line) => line.includes("ong wrapped line"))).toBe(true);
     expect(addedLines.slice(1).some((line) => line.includes("age';"))).toBe(true);
+  });
+
+  test("PierreDiffView can reveal offscreen code columns in nowrap mode", async () => {
+    const file = createWrapBootstrap().changeset.files[0]!;
+    const theme = resolveTheme("midnight", null);
+
+    const baseFrame = await captureFrame(
+      <PierreDiffView
+        file={file}
+        layout="stack"
+        theme={theme}
+        width={48}
+        selectedHunkIndex={0}
+        wrapLines={false}
+        scrollable={false}
+      />,
+      52,
+      12,
+    );
+    const shiftedFrame = await captureFrame(
+      <PierreDiffView
+        file={file}
+        layout="stack"
+        theme={theme}
+        width={48}
+        selectedHunkIndex={0}
+        wrapLines={false}
+        codeHorizontalOffset={48}
+        scrollable={false}
+      />,
+      52,
+      12,
+    );
+
+    expect(baseFrame).toContain("this is a very");
+    expect(baseFrame).not.toContain("diff rendering coverage';");
+    expect(shiftedFrame).toContain("coverage';");
+    expect(shiftedFrame).not.toContain("this is a very");
   });
 
   test("split view wraps the same long diff line across more rows than stack view at the same width", async () => {

@@ -20,8 +20,8 @@ export function fitText(text: string, width: number) {
   return `${text.slice(0, width - 1)}…`;
 }
 
-/** Trim styled spans to a fixed width while preserving color runs. */
-function trimSpans(spans: RenderSpan[], width: number) {
+/** Slice styled spans to one visible window while preserving color runs. */
+function sliceSpansWindow(spans: RenderSpan[], offset: number, width: number) {
   if (width <= 0) {
     return {
       spans: [] as RenderSpan[],
@@ -29,7 +29,8 @@ function trimSpans(spans: RenderSpan[], width: number) {
     };
   }
 
-  const trimmed: RenderSpan[] = [];
+  const sliced: RenderSpan[] = [];
+  let remainingOffset = Math.max(0, offset);
   let remaining = width;
   let usedWidth = 0;
 
@@ -38,7 +39,15 @@ function trimSpans(spans: RenderSpan[], width: number) {
       break;
     }
 
-    const text = span.text.slice(0, remaining);
+    if (remainingOffset >= span.text.length) {
+      remainingOffset -= span.text.length;
+      continue;
+    }
+
+    const start = remainingOffset;
+    const text = span.text.slice(start, start + remaining);
+    remainingOffset = 0;
+
     if (text.length === 0) {
       continue;
     }
@@ -48,11 +57,11 @@ function trimSpans(spans: RenderSpan[], width: number) {
       text,
     };
 
-    const previous = trimmed.at(-1);
+    const previous = sliced.at(-1);
     if (previous && previous.fg === nextSpan.fg && previous.bg === nextSpan.bg) {
       previous.text += nextSpan.text;
     } else {
-      trimmed.push(nextSpan);
+      sliced.push(nextSpan);
     }
 
     remaining -= text.length;
@@ -60,7 +69,7 @@ function trimSpans(spans: RenderSpan[], width: number) {
   }
 
   return {
-    spans: trimmed,
+    spans: sliced,
     usedWidth,
   };
 }
@@ -198,8 +207,9 @@ function renderInlineSpans(
   fallbackColor: string,
   fallbackBg: string,
   keyPrefix: string,
+  horizontalOffset = 0,
 ) {
-  const { spans: trimmed, usedWidth } = trimSpans(spans, width);
+  const { spans: trimmed, usedWidth } = sliceSpansWindow(spans, horizontalOffset, width);
   let padding = Math.max(0, width - usedWidth);
 
   if (padding > 0) {
@@ -366,6 +376,7 @@ function renderSplitCell(
   showLineNumbers: boolean,
   theme: AppTheme,
   keyPrefix: string,
+  contentOffset = 0,
   prefix?: {
     text: string;
     fg: string;
@@ -399,6 +410,7 @@ function renderSplitCell(
         theme.text,
         palette.contentBg,
         `${keyPrefix}:content`,
+        contentOffset,
       )}
     </>
   );
@@ -412,6 +424,7 @@ function renderStackCell(
   showLineNumbers: boolean,
   theme: AppTheme,
   keyPrefix: string,
+  contentOffset = 0,
   prefix?: {
     text: string;
     fg: string;
@@ -449,6 +462,7 @@ function renderStackCell(
         theme.text,
         palette.contentBg,
         `${keyPrefix}:content`,
+        contentOffset,
       )}
     </>
   );
@@ -708,6 +722,7 @@ function renderRow(
   showLineNumbers: boolean,
   showHunkHeaders: boolean,
   wrapLines: boolean,
+  codeHorizontalOffset: number,
   theme: AppTheme,
   selected: boolean,
   annotated: boolean,
@@ -764,6 +779,7 @@ function renderRow(
               showLineNumbers,
               theme,
               `${row.key}:left`,
+              codeHorizontalOffset,
               leftPrefix,
             )}
             {renderSplitCell(
@@ -773,6 +789,7 @@ function renderRow(
               showLineNumbers,
               theme,
               `${row.key}:right`,
+              codeHorizontalOffset,
               rightPrefix,
             )}
             {guideOnNewSide ? (
@@ -874,6 +891,7 @@ function renderRow(
               showLineNumbers,
               theme,
               `${row.key}:stack`,
+              codeHorizontalOffset,
               prefix,
             )}
             {guideOnNewSide ? (
@@ -940,6 +958,7 @@ interface DiffRowViewProps {
   showLineNumbers: boolean;
   showHunkHeaders: boolean;
   wrapLines: boolean;
+  codeHorizontalOffset: number;
   theme: AppTheme;
   selected: boolean;
   annotated: boolean;
@@ -957,6 +976,7 @@ export const DiffRowView = memo(
     showLineNumbers,
     showHunkHeaders,
     wrapLines,
+    codeHorizontalOffset,
     theme,
     selected,
     annotated,
@@ -971,6 +991,7 @@ export const DiffRowView = memo(
       showLineNumbers,
       showHunkHeaders,
       wrapLines,
+      codeHorizontalOffset,
       theme,
       selected,
       annotated,
@@ -987,6 +1008,7 @@ export const DiffRowView = memo(
       previous.showLineNumbers === next.showLineNumbers &&
       previous.showHunkHeaders === next.showHunkHeaders &&
       previous.wrapLines === next.wrapLines &&
+      previous.codeHorizontalOffset === next.codeHorizontalOffset &&
       previous.theme === next.theme &&
       previous.selected === next.selected &&
       previous.annotated === next.annotated &&
