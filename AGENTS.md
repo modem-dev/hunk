@@ -54,8 +54,8 @@ CLI input
 ## testing
 
 - Colocate unit tests with the code they cover (`src/core/foo.ts` + `src/core/foo.test.ts`, `src/ui/AppHost.*.test.tsx`, `src/ui/lib/*.test.ts`).
-- Put shared unit-test helpers in `src/test-support/`.
-- Keep repo-level `test/` for cross-cutting integration, PTY/session, CLI transcript, and smoke coverage.
+- Put shared unit-test helpers in `test/helpers/`.
+- Keep other repo-level `test/` files for cross-cutting integration, PTY/session, CLI transcript, and smoke coverage.
 
 ## code comments
 

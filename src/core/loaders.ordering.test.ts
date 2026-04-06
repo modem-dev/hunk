@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { AgentContext } from "./types";
 import { orderDiffFiles } from "./loaders";
-import { createDiffFile } from "../test-support/diff-helpers";
+import { createDiffFile } from "../../test/helpers/diff-helpers";
 
 function agentContext(...paths: string[]): AgentContext {
   return {

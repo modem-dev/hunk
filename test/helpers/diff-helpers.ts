@@ -1,5 +1,5 @@
 import { parseDiffFromFile } from "@pierre/diffs";
-import type { DiffFile } from "../core/types";
+import type { DiffFile } from "../../src/core/types";
 
 export function lines(...values: string[]) {
   return `${values.join("\n")}\n`;
