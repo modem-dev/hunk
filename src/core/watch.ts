@@ -33,7 +33,7 @@ function statSignature(path: string) {
 function gitWorkingTreeWatchSignature(input: Extract<CliInput, { kind: "git" }>) {
   const trackedPatch = runGitText({ input, args: buildGitDiffArgs(input) });
   const repoRoot = resolveGitRepoRoot(input);
-  const untrackedSignatures = listGitUntrackedFiles(input).map(
+  const untrackedSignatures = listGitUntrackedFiles(input, { repoRoot }).map(
     (filePath) => `untracked:${statSignature(join(repoRoot, filePath))}`,
   );
 

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadAppBootstrap } from "./loaders";
@@ -190,6 +190,30 @@ describe("loadAppBootstrap", () => {
       "new-file.ts",
     ]);
     expect(bootstrap.changeset.files[1]?.patch).toContain("new file mode");
+  });
+
+  test("skips untracked symlinks to directories while loading the rest of the review", async () => {
+    const dir = createTempRepo("hunk-git-untracked-dir-symlink-");
+
+    writeFileSync(join(dir, "tracked.ts"), "export const tracked = 1;\n");
+    git(dir, "add", "tracked.ts");
+    git(dir, "commit", "-m", "initial");
+
+    writeFileSync(join(dir, "tracked.ts"), "export const tracked = 2;\n");
+    writeFileSync(join(dir, "new-file.ts"), "export const added = true;\n");
+    mkdirSync(join(dir, "targetdir"), { recursive: true });
+    symlinkSync("targetdir", join(dir, "linkdir"));
+
+    const bootstrap = await loadFromRepo(dir, {
+      kind: "git",
+      staged: false,
+      options: { mode: "auto" },
+    });
+
+    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual([
+      "tracked.ts",
+      "new-file.ts",
+    ]);
   });
 
   test("can exclude untracked files from working tree reviews", async () => {

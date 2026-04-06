@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import { join } from "node:path";
 import { HunkUserError } from "./errors";
 import type { GitCommandInput, ShowCommandInput, StashShowCommandInput } from "./types";
 
@@ -306,10 +308,45 @@ function parseUntrackedFilePaths(statusText: string) {
     .flatMap((entry) => (entry.startsWith("?? ") ? [entry.slice(3)] : []));
 }
 
+/** Return whether one untracked path can be synthesized into a file diff. */
+function isReviewableUntrackedPath(repoRoot: string, filePath: string) {
+  const absolutePath = join(repoRoot, filePath);
+
+  let pathInfo: fs.Stats;
+  try {
+    pathInfo = fs.lstatSync(absolutePath);
+  } catch {
+    // If the path disappeared after `git status`, let the downstream Git diff
+    // surface the same error path users would have seen before this filter.
+    return true;
+  }
+
+  if (pathInfo.isDirectory()) {
+    return false;
+  }
+
+  if (!pathInfo.isSymbolicLink()) {
+    return true;
+  }
+
+  try {
+    // Git reports directory symlinks as untracked paths, but `git diff --no-index`
+    // cannot synthesize a parseable file patch for them.
+    return !fs.statSync(absolutePath).isDirectory();
+  } catch {
+    // Broken symlinks still diff as reviewable path entries, so keep them.
+    return true;
+  }
+}
+
 /** Return the repo-root-relative untracked files for a working-tree review input. */
 export function listGitUntrackedFiles(
   input: GitCommandInput,
-  { cwd = process.cwd(), gitExecutable = "git" }: Omit<RunGitTextOptions, "input" | "args"> = {},
+  {
+    cwd = process.cwd(),
+    repoRoot,
+    gitExecutable = "git",
+  }: Omit<RunGitTextOptions, "input" | "args"> & { repoRoot?: string } = {},
 ) {
   if (!shouldIncludeUntrackedFiles(input)) {
     return [];
@@ -322,7 +359,15 @@ export function listGitUntrackedFiles(
     gitExecutable,
   });
 
-  return parseUntrackedFilePaths(statusText);
+  const untrackedFiles = parseUntrackedFilePaths(statusText);
+  if (untrackedFiles.length === 0) {
+    return [];
+  }
+
+  const normalizedRepoRoot = repoRoot ?? resolveGitRepoRoot(input, { cwd, gitExecutable });
+  return untrackedFiles.filter((filePath) =>
+    isReviewableUntrackedPath(normalizedRepoRoot, filePath),
+  );
 }
 
 /** Return the raw Git patch text for one untracked file using `git diff --no-index`. */
