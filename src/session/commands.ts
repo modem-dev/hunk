@@ -516,6 +516,7 @@ function formatContextOutput(context: SelectedSessionContext) {
   ].join("\n");
 }
 
+/** Render one human-readable summary of the exported live session review model. */
 function formatReviewOutput(review: SessionReview) {
   const selectedFile = review.selectedFile?.path ?? "(none)";
   const hunkNumber = review.selectedHunk ? review.selectedHunk.index + 1 : "-";

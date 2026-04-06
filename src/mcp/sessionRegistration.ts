@@ -21,6 +21,7 @@ function ttyname(): string | undefined {
   }
 }
 
+/** Infer the repo-root selector that remote session commands should match for this review input. */
 function inferRepoRoot(bootstrap: AppBootstrap) {
   return bootstrap.input.kind === "git" ||
     bootstrap.input.kind === "show" ||
@@ -29,6 +30,7 @@ function inferRepoRoot(bootstrap: AppBootstrap) {
     : undefined;
 }
 
+/** Convert the loaded changeset into the daemon's file-and-hunk review export model. */
 function buildSessionReviewFiles(bootstrap: AppBootstrap): SessionReviewFile[] {
   return bootstrap.changeset.files.map((file) => ({
     id: file.id,

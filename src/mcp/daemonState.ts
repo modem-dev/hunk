@@ -62,6 +62,7 @@ function findSelectedFile(session: ListedSession) {
   );
 }
 
+/** Match one review-export file against the live snapshot's current file selection. */
 function findSelectedReviewFile(reviewFiles: SessionReviewFile[], snapshot: HunkSessionSnapshot) {
   return (
     reviewFiles.find(
@@ -73,6 +74,7 @@ function findSelectedReviewFile(reviewFiles: SessionReviewFile[], snapshot: Hunk
   );
 }
 
+/** Reduce one review-export file back to the summary fields used by session listings. */
 function summarizeReviewFile(reviewFile: SessionReviewFile): SessionFileSummary {
   return {
     id: reviewFile.id,
@@ -84,6 +86,7 @@ function summarizeReviewFile(reviewFile: SessionReviewFile): SessionFileSummary 
   };
 }
 
+/** Serialize one review-export file while keeping raw patch text opt-in for callers. */
 function serializeReviewFile(
   reviewFile: SessionReviewFile,
   includePatch: boolean,
@@ -185,6 +188,7 @@ export class HunkDaemonState {
     return resolveSessionTarget(this.listSessions(), selector);
   }
 
+  /** Return the live session's loaded review model, with raw patch text included only on demand. */
   getSessionReview(
     selector: SessionTargetSelector,
     options: { includePatch?: boolean } = {},
@@ -415,6 +419,7 @@ export class HunkDaemonState {
     this.sessions.clear();
   }
 
+  /** Resolve one live session selector into the full in-memory registration entry. */
   private getSessionEntry(selector: SessionTargetSelector) {
     const session = resolveSessionTarget(this.listSessions(), selector);
     const entry = this.sessions.get(session.sessionId);
