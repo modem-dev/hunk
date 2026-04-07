@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import type { AppBootstrap } from "../core/types";
+import { formatHunkHeader } from "../core/hunkHeader";
 import { hunkLineRange } from "../core/liveComments";
+import type { AppBootstrap } from "../core/types";
 import { resolveSessionTerminalMetadata } from "./sessionTerminalMetadata";
-import type { HunkSessionRegistration, HunkSessionSnapshot, SessionFileSummary } from "./types";
+import type { HunkSessionRegistration, HunkSessionSnapshot, SessionReviewFile } from "./types";
 
 /** Resolve the TTY device path for the current process, if available. */
 function ttyname(): string | undefined {
@@ -20,6 +21,7 @@ function ttyname(): string | undefined {
   }
 }
 
+/** Infer the repo-root selector that remote session commands should match for this review input. */
 function inferRepoRoot(bootstrap: AppBootstrap) {
   return bootstrap.input.kind === "git" ||
     bootstrap.input.kind === "show" ||
@@ -28,7 +30,8 @@ function inferRepoRoot(bootstrap: AppBootstrap) {
     : undefined;
 }
 
-function buildSessionFiles(bootstrap: AppBootstrap): SessionFileSummary[] {
+/** Convert the loaded changeset into the daemon's file-and-hunk review export model. */
+function buildSessionReviewFiles(bootstrap: AppBootstrap): SessionReviewFile[] {
   return bootstrap.changeset.files.map((file) => ({
     id: file.id,
     path: file.path,
@@ -36,6 +39,12 @@ function buildSessionFiles(bootstrap: AppBootstrap): SessionFileSummary[] {
     additions: file.stats.additions,
     deletions: file.stats.deletions,
     hunkCount: file.metadata.hunks.length,
+    patch: file.patch,
+    hunks: file.metadata.hunks.map((hunk, index) => ({
+      index,
+      header: formatHunkHeader(hunk),
+      ...hunkLineRange(hunk),
+    })),
   }));
 }
 
@@ -53,7 +62,7 @@ export function createSessionRegistration(bootstrap: AppBootstrap): HunkSessionR
     sourceLabel: bootstrap.changeset.sourceLabel,
     launchedAt: new Date().toISOString(),
     terminal,
-    files: buildSessionFiles(bootstrap),
+    reviewFiles: buildSessionReviewFiles(bootstrap),
   };
 }
 
@@ -68,7 +77,7 @@ export function updateSessionRegistration(
     inputKind: bootstrap.input.kind,
     title: bootstrap.changeset.title,
     sourceLabel: bootstrap.changeset.sourceLabel,
-    files: buildSessionFiles(bootstrap),
+    reviewFiles: buildSessionReviewFiles(bootstrap),
   };
 }
 

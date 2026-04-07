@@ -161,6 +161,8 @@ When a Hunk TUI starts, it registers with a local loopback daemon. `hunk session
 Use it to:
 
 - inspect the current review context
+- export the loaded review structure for agent workflows
+- optionally include raw patch text when an agent truly needs it
 - jump to a file, hunk, or line
 - reload the current window with a different `diff` or `show` command
 - add, list, and remove inline comments
@@ -169,17 +171,31 @@ Most users only need `hunk session ...`. Use `hunk mcp serve` only for manual st
 
 ```bash
 hunk session list
+hunk session get --repo .
 hunk session context --repo .
+hunk session review --repo . --json
+hunk session review --repo . --include-patch --json
 hunk session navigate --repo . --file README.md --hunk 2
 hunk session reload --repo . -- diff
+hunk session reload --repo /path/to/worktree -- diff
+hunk session reload --session-path /path/to/live-window --source /path/to/other-checkout -- diff
 hunk session reload --repo . -- show HEAD~1 -- README.md
 hunk session comment add --repo . --file README.md --new-line 103 --summary "Tighten this wording"
+hunk session comment add --repo . --file README.md --new-line 103 --summary "Tighten this wording" --focus
 hunk session comment list --repo .
 hunk session comment rm --repo . <comment-id>
 hunk session comment clear --repo . --file README.md --yes
 ```
 
+`hunk session review --json` returns file and hunk structure by default. Add `--include-patch` only when a caller truly needs raw unified diff text in the response.
+
 `hunk session reload ... -- <hunk command>` swaps what a live session is showing without opening a new TUI window.
+Pass `--focus` to jump the live session to the new note.
+
+- `--repo <path>` selects the live session by its current loaded repo root.
+- `--source <path>` is reload-only: it changes where the nested `diff` / `show` command runs, but does not select the session.
+- For normal worktree use, prefer targeting the worktree session directly with `hunk session reload --repo /path/to/worktree -- diff`.
+- Use `--session-path` + `--source` only for advanced cases where you want to repoint an already-open live window to another checkout or path.
 
 #### Load agent comments from a file
 

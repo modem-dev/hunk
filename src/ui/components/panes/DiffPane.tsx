@@ -1,4 +1,5 @@
-import type { ScrollBoxRenderable } from "@opentui/core";
+import { type MouseEvent as TuiMouseEvent, type ScrollBoxRenderable } from "@opentui/core";
+import { useRenderer } from "@opentui/react";
 import {
   useCallback,
   useEffect,
@@ -18,15 +19,20 @@ import {
 } from "../../lib/diffSectionGeometry";
 import {
   buildFileSectionLayouts,
+  buildInStreamFileHeaderHeights,
+  collectIntersectingFileSectionIds,
   findHeaderOwningFileSection,
-  getFileSectionHeaderTop,
+  shouldRenderInStreamFileHeader,
+  type FileSectionLayout,
 } from "../../lib/fileSectionLayout";
 import { diffHunkId, diffSectionId } from "../../lib/ids";
+import { findViewportCenteredHunkTarget } from "../../lib/viewportSelection";
 import type { AppTheme } from "../../themes";
 import { DiffSection } from "./DiffSection";
 import { DiffFileHeaderRow } from "./DiffFileHeaderRow";
 import { DiffSectionPlaceholder } from "./DiffSectionPlaceholder";
 import { VerticalScrollbar, type VerticalScrollbarHandle } from "../scrollbar/VerticalScrollbar";
+import { prefetchHighlightedDiff } from "../../diff/useHighlightedDiff";
 
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
 
@@ -63,10 +69,12 @@ function findViewportRowAnchor(
   files: DiffFile[],
   sectionGeometry: DiffSectionGeometry[],
   scrollTop: number,
+  headerHeights: number[],
 ) {
   const fileSectionLayouts = buildFileSectionLayouts(
     files,
     sectionGeometry.map((metrics) => metrics?.bodyHeight ?? 0),
+    headerHeights,
   );
 
   for (let index = 0; index < files.length; index += 1) {
@@ -96,10 +104,12 @@ function resolveViewportRowAnchorTop(
   files: DiffFile[],
   sectionGeometry: DiffSectionGeometry[],
   anchor: ViewportRowAnchor,
+  headerHeights: number[],
 ) {
   const fileSectionLayouts = buildFileSectionLayouts(
     files,
     sectionGeometry.map((metrics) => metrics?.bodyHeight ?? 0),
+    headerHeights,
   );
 
   for (let index = 0; index < files.length; index += 1) {
@@ -119,8 +129,78 @@ function resolveViewportRowAnchorTop(
   return 0;
 }
 
+/** Keep syntax-highlight warm for the files immediately adjacent to the current selection. */
+function buildAdjacentPrefetchFileIds(files: DiffFile[], selectedFileId?: string) {
+  if (!selectedFileId) {
+    return new Set<string>();
+  }
+
+  const selectedIndex = files.findIndex((file) => file.id === selectedFileId);
+  if (selectedIndex < 0) {
+    return new Set<string>();
+  }
+
+  const next = new Set<string>();
+  const previousFile = files[selectedIndex - 1];
+  const nextFile = files[selectedIndex + 1];
+
+  if (previousFile) {
+    next.add(previousFile.id);
+  }
+
+  if (nextFile) {
+    next.add(nextFile.id);
+  }
+
+  return next;
+}
+
+/**
+ * Start highlight work before files visibly enter the review stream.
+ *
+ * We intentionally include three groups:
+ * - the selected file, so direct navigation always warms the active target
+ * - adjacent files, so hunk/file navigation does not wait on a cold highlight
+ * - files within a larger viewport halo, so wheel/track scrolling sees colorized rows already ready
+ */
+function buildHighlightPrefetchFileIds({
+  adjacentPrefetchFileIds,
+  fileSectionLayouts,
+  scrollTop,
+  viewportHeight,
+  selectedFileId,
+}: {
+  adjacentPrefetchFileIds: Set<string>;
+  fileSectionLayouts: FileSectionLayout[];
+  scrollTop: number;
+  viewportHeight: number;
+  selectedFileId?: string;
+}) {
+  const next = new Set(adjacentPrefetchFileIds);
+
+  if (selectedFileId) {
+    next.add(selectedFileId);
+  }
+
+  const clampedViewportHeight = Math.max(1, viewportHeight);
+  const prefetchRows = Math.max(24, clampedViewportHeight * 3);
+  const minPrefetchY = Math.max(0, scrollTop - prefetchRows);
+  const maxPrefetchY = scrollTop + viewportHeight + prefetchRows;
+
+  for (const fileId of collectIntersectingFileSectionIds(
+    fileSectionLayouts,
+    minPrefetchY,
+    maxPrefetchY,
+  )) {
+    next.add(fileId);
+  }
+
+  return next;
+}
+
 /** Render the main multi-file review stream. */
 export function DiffPane({
+  codeHorizontalOffset = 0,
   diffContentWidth,
   files,
   headerLabelWidth,
@@ -141,8 +221,11 @@ export function DiffPane({
   theme,
   width,
   onOpenAgentNotesAtHunk,
+  onScrollCodeHorizontally = () => {},
   onSelectFile,
+  onViewportCenteredHunkChange,
 }: {
+  codeHorizontalOffset?: number;
   diffContentWidth: number;
   files: DiffFile[];
   headerLabelWidth: number;
@@ -163,48 +246,57 @@ export function DiffPane({
   theme: AppTheme;
   width: number;
   onOpenAgentNotesAtHunk: (fileId: string, hunkIndex: number) => void;
+  onScrollCodeHorizontally?: (delta: number) => void;
   onSelectFile: (fileId: string) => void;
+  onViewportCenteredHunkChange?: (fileId: string, hunkIndex: number) => void;
 }) {
-  const [prefetchAnchorKey, setPrefetchAnchorKey] = useState<string | null>(null);
-  const selectedHighlightKey = selectedFileId ? `${theme.appearance}:${selectedFileId}` : null;
+  const renderer = useRenderer();
 
-  useEffect(() => {
-    setPrefetchAnchorKey(null);
-  }, [selectedHighlightKey]);
+  const adjacentPrefetchFileIds = useMemo(
+    () => buildAdjacentPrefetchFileIds(files, selectedFileId),
+    [files, selectedFileId],
+  );
 
-  // Hold background prefetches until the currently selected file has painted once.
-  const adjacentPrefetchFileIds = useMemo(() => {
-    if (!selectedHighlightKey || prefetchAnchorKey !== selectedHighlightKey || !selectedFileId) {
-      return new Set<string>();
-    }
+  /** Route shifted wheel input into horizontal code-column scrolling without disturbing vertical review scroll. */
+  const handleMouseScroll = useCallback(
+    (event: TuiMouseEvent) => {
+      const scrollBox = scrollRef.current;
+      const direction = event.scroll?.direction;
+      if (!direction || !scrollBox || wrapLines) {
+        return;
+      }
 
-    const selectedIndex = files.findIndex((file) => file.id === selectedFileId);
-    if (selectedIndex < 0) {
-      return new Set<string>();
-    }
+      const preservedScrollTop = scrollBox.scrollTop;
+      const preservedScrollLeft = scrollBox.scrollLeft;
 
-    const next = new Set<string>();
-    const previousFile = files[selectedIndex - 1];
-    const nextFile = files[selectedIndex + 1];
+      if (direction === "left") {
+        onScrollCodeHorizontally(-1);
+      } else if (direction === "right") {
+        onScrollCodeHorizontally(1);
+      } else if (event.modifiers.shift && direction === "up") {
+        onScrollCodeHorizontally(-1);
+      } else if (event.modifiers.shift && direction === "down") {
+        onScrollCodeHorizontally(1);
+      } else {
+        return;
+      }
 
-    if (previousFile) {
-      next.add(previousFile.id);
-    }
+      // OpenTUI runs ScrollBox's own wheel handler after this listener and it does not honor
+      // preventDefault(), so restore the pre-event viewport position on the next microtask.
+      queueMicrotask(() => {
+        const currentScrollBox = scrollRef.current;
+        if (!currentScrollBox) {
+          return;
+        }
 
-    if (nextFile) {
-      next.add(nextFile.id);
-    }
+        currentScrollBox.scrollTo({ x: preservedScrollLeft, y: preservedScrollTop });
+      });
 
-    return next;
-  }, [files, prefetchAnchorKey, selectedFileId, selectedHighlightKey]);
-
-  const handleSelectedHighlightReady = useCallback(() => {
-    if (!selectedHighlightKey) {
-      return;
-    }
-
-    setPrefetchAnchorKey((current) => current ?? selectedHighlightKey);
-  }, [selectedHighlightKey]);
+      event.preventDefault();
+      event.stopPropagation();
+    },
+    [onScrollCodeHorizontally, scrollRef, wrapLines],
+  );
 
   const allAgentNotesByFile = useMemo(() => {
     const next = new Map<string, VisibleAgentNote[]>();
@@ -243,13 +335,62 @@ export function DiffPane({
   const previousSelectedFileTopAlignRequestIdRef = useRef(selectedFileTopAlignRequestId);
   const suppressNextSelectionAutoScrollRef = useRef(false);
   const pendingFileTopAlignFileIdRef = useRef<string | null>(null);
+  const mouseScrollSelectionSyncActiveRef = useRef(false);
+  const mouseScrollSelectionSyncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const armMouseScrollSelectionSync = useCallback(() => {
+    mouseScrollSelectionSyncActiveRef.current = true;
+    if (mouseScrollSelectionSyncTimeoutRef.current) {
+      clearTimeout(mouseScrollSelectionSyncTimeoutRef.current);
+    }
+    mouseScrollSelectionSyncTimeoutRef.current = setTimeout(() => {
+      mouseScrollSelectionSyncActiveRef.current = false;
+      mouseScrollSelectionSyncTimeoutRef.current = null;
+    }, 120);
+  }, []);
+
+  /**
+   * Combine the existing horizontal-wheel handler with viewport-centered selection sync.
+   * Horizontal gestures should keep their current behavior without changing the active hunk.
+   */
+  const handleDiffPaneMouseScroll = useCallback(
+    (event: TuiMouseEvent) => {
+      const direction = event.scroll?.direction;
+      const isHorizontalGesture =
+        direction === "left" ||
+        direction === "right" ||
+        (event.modifiers.shift && (direction === "up" || direction === "down"));
+
+      if (!isHorizontalGesture) {
+        armMouseScrollSelectionSync();
+      }
+
+      handleMouseScroll(event);
+    },
+    [armMouseScrollSelectionSync, handleMouseScroll],
+  );
 
   useEffect(() => {
-    const updateViewport = () => {
-      const nextTop = scrollRef.current?.scrollTop ?? 0;
-      const nextHeight = scrollRef.current?.viewport.height ?? 0;
+    return () => {
+      if (mouseScrollSelectionSyncTimeoutRef.current) {
+        clearTimeout(mouseScrollSelectionSyncTimeoutRef.current);
+      }
+    };
+  }, []);
 
-      // Detect scroll activity and show scrollbar
+  // Mirror the imperative OpenTUI scrollbox state into React state so geometry planning,
+  // windowing, pinned-header ownership, and prefetching can all read the same viewport snapshot.
+  useEffect(() => {
+    const scrollBox = scrollRef.current;
+    if (!scrollBox) {
+      return;
+    }
+
+    const updateViewport = () => {
+      const nextTop = scrollBox.scrollTop ?? 0;
+      const nextHeight = scrollBox.viewport.height ?? 0;
+
+      // Detect scroll activity and show scrollbar.
       if (nextTop !== prevScrollTopRef.current) {
         scrollbarRef.current?.show();
         prevScrollTopRef.current = nextTop;
@@ -262,10 +403,23 @@ export function DiffPane({
       );
     };
 
+    const handleViewportChange = () => {
+      updateViewport();
+    };
+
     updateViewport();
-    const interval = setInterval(updateViewport, 50);
-    return () => clearInterval(interval);
-  }, [scrollRef]);
+    scrollBox.verticalScrollBar.on("change", handleViewportChange);
+    scrollBox.viewport.on("layout-changed", handleViewportChange);
+    scrollBox.viewport.on("resized", handleViewportChange);
+
+    return () => {
+      scrollBox.verticalScrollBar.off("change", handleViewportChange);
+      scrollBox.viewport.off("layout-changed", handleViewportChange);
+      scrollBox.viewport.off("resized", handleViewportChange);
+    };
+  }, [files.length, scrollRef]);
+
+  const sectionHeaderHeights = useMemo(() => buildInStreamFileHeaderHeights(files), [files]);
 
   const baseSectionGeometry = useMemo(
     () =>
@@ -288,19 +442,15 @@ export function DiffPane({
     [baseSectionGeometry],
   );
   const baseFileSectionLayouts = useMemo(
-    () => buildFileSectionLayouts(files, baseEstimatedBodyHeights),
-    [baseEstimatedBodyHeights, files],
+    () => buildFileSectionLayouts(files, baseEstimatedBodyHeights, sectionHeaderHeights),
+    [baseEstimatedBodyHeights, files, sectionHeaderHeights],
   );
 
   const visibleViewportFileIds = useMemo(() => {
     const overscanRows = 8;
     const minVisibleY = Math.max(0, scrollViewport.top - overscanRows);
     const maxVisibleY = scrollViewport.top + scrollViewport.height + overscanRows;
-    return new Set(
-      baseFileSectionLayouts
-        .filter((metric) => metric.sectionBottom >= minVisibleY && metric.sectionTop <= maxVisibleY)
-        .map((metric) => metric.fileId),
-    );
+    return collectIntersectingFileSectionIds(baseFileSectionLayouts, minVisibleY, maxVisibleY);
   }, [baseFileSectionLayouts, scrollViewport.height, scrollViewport.top]);
 
   const visibleAgentNotesByFile = useMemo(() => {
@@ -363,27 +513,115 @@ export function DiffPane({
     [sectionGeometry],
   );
   const fileSectionLayouts = useMemo(
-    () => buildFileSectionLayouts(files, estimatedBodyHeights),
-    [estimatedBodyHeights, files],
+    () => buildFileSectionLayouts(files, estimatedBodyHeights, sectionHeaderHeights),
+    [estimatedBodyHeights, files, sectionHeaderHeights],
   );
-  // Read the live scroll box position during render so sticky-header ownership flips
+  const totalContentHeight = fileSectionLayouts[fileSectionLayouts.length - 1]?.sectionBottom ?? 0;
+
+  const highlightPrefetchFileIds = useMemo(
+    () =>
+      buildHighlightPrefetchFileIds({
+        adjacentPrefetchFileIds,
+        fileSectionLayouts,
+        scrollTop: scrollViewport.top,
+        viewportHeight: scrollViewport.height,
+        selectedFileId,
+      }),
+    [
+      adjacentPrefetchFileIds,
+      fileSectionLayouts,
+      scrollViewport.height,
+      scrollViewport.top,
+      selectedFileId,
+    ],
+  );
+
+  // Kick off highlight work from viewport planning rather than waiting for the section to mount.
+  // That avoids the "plain rows first, color later" stutter when a file is about to scroll onscreen.
+  useEffect(() => {
+    if (files.length === 0) {
+      return;
+    }
+
+    for (const file of files) {
+      if (!highlightPrefetchFileIds.has(file.id)) {
+        continue;
+      }
+
+      void prefetchHighlightedDiff({
+        file,
+        appearance: theme.appearance,
+      });
+    }
+  }, [files, highlightPrefetchFileIds, theme.appearance]);
+
+  // Read the live scroll box position during render so pinned-header ownership flips
   // immediately after imperative scrolls instead of waiting for the polled viewport snapshot.
   const effectiveScrollTop = scrollRef.current?.scrollTop ?? scrollViewport.top;
 
-  const totalContentHeight = fileSectionLayouts[fileSectionLayouts.length - 1]?.sectionBottom ?? 0;
+  // While the wheel is actively scrolling, selection follows the viewport center instead of
+  // driving the viewport. That keeps sidebar state in sync without introducing scroll snap-back.
+  useLayoutEffect(() => {
+    if (
+      !onViewportCenteredHunkChange ||
+      !mouseScrollSelectionSyncActiveRef.current ||
+      files.length === 0 ||
+      scrollViewport.height <= 0
+    ) {
+      return;
+    }
 
-  const stickyHeaderFile = useMemo(() => {
-    if (files.length < 2) {
+    const centeredTarget = findViewportCenteredHunkTarget({
+      files,
+      fileSectionLayouts,
+      sectionGeometry,
+      scrollTop: scrollViewport.top,
+      viewportHeight: scrollViewport.height,
+    });
+    if (!centeredTarget) {
+      return;
+    }
+
+    if (
+      centeredTarget.fileId === selectedFileId &&
+      centeredTarget.hunkIndex === selectedHunkIndex
+    ) {
+      return;
+    }
+
+    suppressNextSelectionAutoScrollRef.current = true;
+    onViewportCenteredHunkChange(centeredTarget.fileId, centeredTarget.hunkIndex);
+  }, [
+    fileSectionLayouts,
+    files,
+    onViewportCenteredHunkChange,
+    scrollViewport.height,
+    scrollViewport.top,
+    sectionGeometry,
+    selectedFileId,
+    selectedHunkIndex,
+  ]);
+
+  const pinnedHeaderFile = useMemo(() => {
+    if (files.length === 0) {
       return null;
     }
 
-    const owner = findHeaderOwningFileSection(fileSectionLayouts, effectiveScrollTop);
-    if (!owner || effectiveScrollTop <= owner.headerTop) {
-      return null;
-    }
+    // The current file header always owns the pinned top row.
+    // Use the previous visible row to decide ownership so the next file's real header can still
+    // scroll through the stream before the pinned header hands off to it on the following row.
+    const owner = findHeaderOwningFileSection(
+      fileSectionLayouts,
+      Math.max(0, effectiveScrollTop - 1),
+    );
 
-    return files[owner.sectionIndex] ?? null;
+    return owner ? (files[owner.sectionIndex] ?? null) : (files[0] ?? null);
   }, [effectiveScrollTop, fileSectionLayouts, files]);
+  const pinnedHeaderFileId = pinnedHeaderFile?.id ?? null;
+
+  useLayoutEffect(() => {
+    renderer.intermediateRender();
+  }, [renderer, pinnedHeaderFileId]);
 
   const visibleWindowedFileIds = useMemo(() => {
     if (!windowingEnabled) {
@@ -473,17 +711,19 @@ export function DiffPane({
 
   // Track the previous selected anchor to detect actual selection changes.
   const prevSelectedAnchorIdRef = useRef<string | null>(null);
+  const prevPinnedHeaderFileIdRef = useRef<string | null>(null);
+  const pendingSelectionSettleRef = useRef(false);
 
   /** Clear any pending "selected file to top" follow-up. */
   const clearPendingFileTopAlign = useCallback(() => {
     pendingFileTopAlignFileIdRef.current = null;
   }, []);
 
-  /** Scroll one file header to the top using the latest planned section geometry. */
+  /** Scroll one file so it immediately owns the viewport top using the latest planned geometry. */
   const scrollFileHeaderToTop = useCallback(
     (fileId: string) => {
-      const headerTop = getFileSectionHeaderTop(fileSectionLayouts, fileId);
-      if (headerTop == null) {
+      const targetSection = fileSectionLayouts.find((layout) => layout.fileId === fileId);
+      if (!targetSection) {
         return false;
       }
 
@@ -492,7 +732,8 @@ export function DiffPane({
         return false;
       }
 
-      scrollBox.scrollTo(headerTop);
+      // The pinned header owns the top row, so align the review stream to the file body.
+      scrollBox.scrollTo(targetSection.bodyTop);
       return true;
     },
     [fileSectionLayouts, scrollRef],
@@ -502,6 +743,7 @@ export function DiffPane({
     const wrapChanged = previousWrapLinesRef.current !== wrapLines;
     const previousSectionMetrics = previousSectionGeometryRef.current;
     const previousFiles = previousFilesRef.current;
+    const previousSectionHeaderHeights = buildInStreamFileHeaderHeights(previousFiles);
 
     if (wrapChanged && previousSectionMetrics && previousFiles.length > 0) {
       const previousScrollTop =
@@ -514,9 +756,15 @@ export function DiffPane({
         previousFiles,
         previousSectionMetrics,
         previousScrollTop,
+        previousSectionHeaderHeights,
       );
       if (anchor) {
-        const nextTop = resolveViewportRowAnchorTop(files, sectionGeometry, anchor);
+        const nextTop = resolveViewportRowAnchorTop(
+          files,
+          sectionGeometry,
+          anchor,
+          sectionHeaderHeights,
+        );
         const restoreViewportAnchor = () => {
           scrollRef.current?.scrollTo(nextTop);
         };
@@ -542,7 +790,15 @@ export function DiffPane({
     previousWrapLinesRef.current = wrapLines;
     previousSectionGeometryRef.current = sectionGeometry;
     previousFilesRef.current = files;
-  }, [files, scrollRef, scrollViewport.top, sectionGeometry, wrapLines, wrapToggleScrollTop]);
+  }, [
+    files,
+    scrollRef,
+    scrollViewport.top,
+    sectionGeometry,
+    sectionHeaderHeights,
+    wrapLines,
+    wrapToggleScrollTop,
+  ]);
 
   useLayoutEffect(() => {
     if (previousSelectedFileTopAlignRequestIdRef.current === selectedFileTopAlignRequestId) {
@@ -581,10 +837,12 @@ export function DiffPane({
       return;
     }
 
-    const desiredTop = getFileSectionHeaderTop(fileSectionLayouts, pendingFileId);
-    if (desiredTop == null) {
+    const targetSection = fileSectionLayouts.find((layout) => layout.fileId === pendingFileId);
+    if (!targetSection) {
       return;
     }
+
+    const desiredTop = targetSection.bodyTop;
 
     const currentTop = scrollRef.current?.scrollTop ?? scrollViewport.top;
     if (Math.abs(currentTop - desiredTop) <= 0.5) {
@@ -603,24 +861,41 @@ export function DiffPane({
   ]);
 
   useLayoutEffect(() => {
-    if (suppressNextSelectionAutoScrollRef.current) {
+    const pinnedHeaderFileId = pinnedHeaderFile?.id ?? null;
+
+    if (mouseScrollSelectionSyncActiveRef.current || suppressNextSelectionAutoScrollRef.current) {
       suppressNextSelectionAutoScrollRef.current = false;
-      // Consume this selection transition so the next render does not re-center the selected hunk.
+      // While the mouse wheel owns the viewport, selection should follow passively instead of
+      // snapping the review stream back toward the newly selected hunk.
       prevSelectedAnchorIdRef.current = selectedAnchorId;
+      prevPinnedHeaderFileIdRef.current = pinnedHeaderFileId;
+      pendingSelectionSettleRef.current = false;
       return;
     }
 
     if (!selectedAnchorId && !selectedEstimatedHunkBounds) {
       prevSelectedAnchorIdRef.current = null;
+      prevPinnedHeaderFileIdRef.current = pinnedHeaderFileId;
+      pendingSelectionSettleRef.current = false;
       return;
     }
 
-    // Only auto-scroll when the selection actually changes, not when geometry updates during
-    // scrolling or when the selected section refines its measured bounds.
-    const isSelectionChange = prevSelectedAnchorIdRef.current !== selectedAnchorId;
-    prevSelectedAnchorIdRef.current = selectedAnchorId;
+    const shouldTrackPinnedHeaderResettle =
+      selectedFileIndex > 0 || selectedHunkIndex > 0 || selectedNoteBounds !== null;
 
-    if (!isSelectionChange) {
+    // Only auto-scroll when the selection actually changes, not when geometry updates during
+    // scrolling or when the selected section refines its measured bounds. One exception: after a
+    // programmatic jump to a later file/hunk, rerun the settle scroll once if the pinned header
+    // hands off to a different file while the selected content is still settling.
+    const isSelectionChange = prevSelectedAnchorIdRef.current !== selectedAnchorId;
+    const pinnedHeaderChangedWhileSettling =
+      shouldTrackPinnedHeaderResettle &&
+      pendingSelectionSettleRef.current &&
+      prevPinnedHeaderFileIdRef.current !== pinnedHeaderFileId;
+    prevSelectedAnchorIdRef.current = selectedAnchorId;
+    prevPinnedHeaderFileIdRef.current = pinnedHeaderFileId;
+
+    if (!isSelectionChange && !pinnedHeaderChangedWhileSettling) {
       return;
     }
 
@@ -687,17 +962,29 @@ export function DiffPane({
     // Run after this pane renders the selected section/hunk, then retry briefly while layout
     // settles across a couple of repaint cycles.
     scrollSelectionIntoView();
+    pendingSelectionSettleRef.current = shouldTrackPinnedHeaderResettle;
     const retryDelays = [0, 16, 48];
     const timeouts = retryDelays.map((delay) => setTimeout(scrollSelectionIntoView, delay));
+    const settleReset = shouldTrackPinnedHeaderResettle
+      ? setTimeout(() => {
+          pendingSelectionSettleRef.current = false;
+        }, 120)
+      : null;
     return () => {
       timeouts.forEach((timeout) => clearTimeout(timeout));
+      if (settleReset) {
+        clearTimeout(settleReset);
+      }
     };
   }, [
     scrollRef,
     scrollViewport.height,
     selectedAnchorId,
     selectedEstimatedHunkBounds,
+    selectedFileIndex,
+    selectedHunkIndex,
     selectedNoteBounds,
+    pinnedHeaderFile?.id,
   ]);
 
   // Configure scroll step size to scroll exactly 1 line per step
@@ -722,15 +1009,15 @@ export function DiffPane({
     >
       {files.length > 0 ? (
         <box style={{ width: "100%", height: "100%", flexGrow: 1, flexDirection: "column" }}>
-          {/* Keep the current file header visible once its real header has scrolled offscreen. */}
-          {stickyHeaderFile ? (
+          {/* Always pin the current file header in a dedicated top row. */}
+          {pinnedHeaderFile ? (
             <box style={{ width: "100%", height: 1, minHeight: 1, flexShrink: 0 }}>
               <DiffFileHeaderRow
-                file={stickyHeaderFile}
+                file={pinnedHeaderFile}
                 headerLabelWidth={headerLabelWidth}
                 headerStatsWidth={headerStatsWidth}
                 theme={theme}
-                onSelect={() => onSelectFile(stickyHeaderFile.id)}
+                onSelect={() => onSelectFile(pinnedHeaderFile.id)}
               />
             </box>
           ) : null}
@@ -742,6 +1029,7 @@ export function DiffPane({
               scrollY={true}
               viewportCulling={true}
               focused={pagerMode}
+              onMouseScroll={handleDiffPaneMouseScroll}
               rootOptions={{ backgroundColor: theme.panel }}
               wrapperOptions={{ backgroundColor: theme.panel }}
               viewportOptions={{ backgroundColor: theme.panel }}
@@ -757,13 +1045,9 @@ export function DiffPane({
               >
                 {files.map((file, index) => {
                   const shouldRenderSection = visibleWindowedFileIds?.has(file.id) ?? true;
-                  const shouldPrefetchVisibleHighlight =
-                    Boolean(selectedHighlightKey) &&
-                    prefetchAnchorKey === selectedHighlightKey &&
-                    visibleViewportFileIds.has(file.id);
 
                   // Windowing keeps offscreen files cheap: render placeholders with identical
-                  // section geometry so scroll math and sticky-header ownership stay stable.
+                  // section geometry so scroll math and pinned-header ownership stay stable.
                   if (!shouldRenderSection) {
                     return (
                       <DiffSectionPlaceholder
@@ -773,6 +1057,7 @@ export function DiffPane({
                         headerLabelWidth={headerLabelWidth}
                         headerStatsWidth={headerStatsWidth}
                         separatorWidth={separatorWidth}
+                        showHeader={shouldRenderInStreamFileHeader(index)}
                         showSeparator={index > 0}
                         theme={theme}
                         onSelect={() => onSelectFile(file.id)}
@@ -783,21 +1068,15 @@ export function DiffPane({
                   return (
                     <DiffSection
                       key={file.id}
+                      codeHorizontalOffset={codeHorizontalOffset}
                       file={file}
                       headerLabelWidth={headerLabelWidth}
                       headerStatsWidth={headerStatsWidth}
                       layout={layout}
-                      selected={file.id === selectedFileId}
                       selectedHunkIndex={file.id === selectedFileId ? selectedHunkIndex : -1}
-                      shouldLoadHighlight={
-                        file.id === selectedFileId ||
-                        adjacentPrefetchFileIds.has(file.id) ||
-                        shouldPrefetchVisibleHighlight
-                      }
-                      onHighlightReady={
-                        file.id === selectedFileId ? handleSelectedHighlightReady : undefined
-                      }
+                      shouldLoadHighlight={highlightPrefetchFileIds.has(file.id)}
                       separatorWidth={separatorWidth}
+                      showHeader={shouldRenderInStreamFileHeader(index)}
                       showSeparator={index > 0}
                       showLineNumbers={showLineNumbers}
                       showHunkHeaders={showHunkHeaders}

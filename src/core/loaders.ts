@@ -392,7 +392,7 @@ async function loadGitChangeset(
     agentContext,
   );
   const trackedFiles = trackedChangeset.files;
-  const untrackedFiles = listGitUntrackedFiles(input);
+  const untrackedFiles = listGitUntrackedFiles(input, { cwd, repoRoot });
 
   if (untrackedFiles.length === 0) {
     return trackedChangeset;

@@ -51,6 +51,17 @@ CLI input
 - Prefer one implementation path per feature instead of separate "old" and "new" codepaths that duplicate behavior.
 - When refactoring logic that spans helpers and UI components, add tests at the level where the user-visible behavior actually lives, not only at the lowest helper layer.
 
+## testing
+
+- Colocate unit tests with the code they cover (`src/core/foo.ts` + `src/core/foo.test.ts`, `src/ui/AppHost.*.test.tsx`, `src/ui/lib/*.test.ts`).
+- Put shared unit-test helpers in `test/helpers/`.
+- Name test helpers so they explicitly include `Test` and are clearly test-only (`createTestDiffFile`).
+- Use repo-level `test/` directories by intent:
+  - `test/cli/` for black-box CLI contract coverage.
+  - `test/session/` for daemon/session integration and end-to-end flows.
+  - `test/pty/` for PTY-backed live UI integration tests.
+  - `test/smoke/` for opt-in terminal transcript smoke coverage.
+
 ## code comments
 
 - Add short JSDoc-style comments to functions and helpers.
@@ -103,14 +114,13 @@ CLI input
 ## verification
 
 - For rendering changes: run `bun run typecheck`, `bun test`, `bun run test:integration`, `bun run test:tty-smoke`, and do one real TTY smoke run on an actual diff.
-- For interaction, layout, scrolling, navigation, windowing, or other terminal-native behavior: add or update PTY integration coverage in `test/integration/*.integration.ts` and run it with `bun run test:integration`.
+- For interaction, layout, scrolling, navigation, windowing, or other terminal-native behavior: add or update PTY integration coverage in `test/pty/*-integration.test.ts` and run it with `bun run test:integration`.
 - For CLI, config, or pager work: make sure the relevant source invocation still works (`diff`, `show`, `patch`, or `pager`).
 - Preserve current interaction model unless the user asks to change it explicitly.
 
 ## repo notes
 
 - Local review artifacts are ignored on purpose. Leave them alone unless the user explicitly wants them updated, and do not commit them.
-- Do not auto-commit after making changes. Leave edits uncommitted so the user can review them in `hunk`, and only commit when the user explicitly asks.
 - Keep this doc short and architectural. Fresh-context agents can discover file paths themselves.
 
 ## commits

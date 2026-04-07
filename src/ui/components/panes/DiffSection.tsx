@@ -8,18 +8,18 @@ import type { AppTheme } from "../../themes";
 import { DiffFileHeaderRow } from "./DiffFileHeaderRow";
 
 interface DiffSectionProps {
+  codeHorizontalOffset: number;
   file: DiffFile;
   headerLabelWidth: number;
   headerStatsWidth: number;
   layout: Exclude<LayoutMode, "auto">;
-  selected: boolean;
   selectedHunkIndex: number;
   shouldLoadHighlight: boolean;
-  onHighlightReady?: () => void;
   separatorWidth: number;
   showLineNumbers: boolean;
   showHunkHeaders: boolean;
   wrapLines: boolean;
+  showHeader: boolean;
   showSeparator: boolean;
   theme: AppTheme;
   visibleAgentNotes: VisibleAgentNote[];
@@ -30,18 +30,18 @@ interface DiffSectionProps {
 
 /** Render one file section in the main review stream. */
 function DiffSectionComponent({
+  codeHorizontalOffset,
   file,
   headerLabelWidth,
   headerStatsWidth,
   layout,
-  selected: _selected,
   selectedHunkIndex,
   shouldLoadHighlight,
-  onHighlightReady,
   separatorWidth,
   showLineNumbers,
   showHunkHeaders,
   wrapLines,
+  showHeader,
   showSeparator,
   theme,
   visibleAgentNotes,
@@ -75,13 +75,15 @@ function DiffSectionComponent({
         </box>
       ) : null}
 
-      <DiffFileHeaderRow
-        file={file}
-        headerLabelWidth={headerLabelWidth}
-        headerStatsWidth={headerStatsWidth}
-        theme={theme}
-        onSelect={onSelect}
-      />
+      {showHeader ? (
+        <DiffFileHeaderRow
+          file={file}
+          headerLabelWidth={headerLabelWidth}
+          headerStatsWidth={headerStatsWidth}
+          theme={theme}
+          onSelect={onSelect}
+        />
+      ) : null}
 
       <PierreDiffView
         file={file}
@@ -89,12 +91,12 @@ function DiffSectionComponent({
         showLineNumbers={showLineNumbers}
         showHunkHeaders={showHunkHeaders}
         wrapLines={wrapLines}
+        codeHorizontalOffset={codeHorizontalOffset}
         theme={theme}
         width={viewWidth}
         annotatedHunkIndices={annotatedHunkIndices}
         visibleAgentNotes={visibleAgentNotes}
         onOpenAgentNotesAtHunk={onOpenAgentNotesAtHunk}
-        onHighlightReady={onHighlightReady}
         selectedHunkIndex={selectedHunkIndex}
         shouldLoadHighlight={shouldLoadHighlight}
         // The parent review stream owns scrolling across files.
@@ -108,17 +110,18 @@ function DiffSectionComponent({
 export const DiffSection = memo(DiffSectionComponent, (previous, next) => {
   // This comparator relies on stable upstream object identity for files and visible-note arrays.
   return (
+    previous.codeHorizontalOffset === next.codeHorizontalOffset &&
     previous.file === next.file &&
     previous.headerLabelWidth === next.headerLabelWidth &&
     previous.headerStatsWidth === next.headerStatsWidth &&
     previous.layout === next.layout &&
-    previous.selected === next.selected &&
     previous.selectedHunkIndex === next.selectedHunkIndex &&
     previous.shouldLoadHighlight === next.shouldLoadHighlight &&
     previous.separatorWidth === next.separatorWidth &&
     previous.showLineNumbers === next.showLineNumbers &&
     previous.showHunkHeaders === next.showHunkHeaders &&
     previous.wrapLines === next.wrapLines &&
+    previous.showHeader === next.showHeader &&
     previous.showSeparator === next.showSeparator &&
     previous.theme === next.theme &&
     previous.visibleAgentNotes === next.visibleAgentNotes &&

@@ -91,6 +91,17 @@ bun run publish:prebuilt:npm -- --dry-run
 - CLI, config, or pager changes: verify the relevant source invocation still works, such as `diff`, `show`, `patch`, or `pager`.
 - Packaging or release changes: run the pack and prebuilt checks locally before opening a PR.
 
+## Test layout
+
+- Most unit tests are colocated in `src/` beside the code they cover.
+- `test/helpers/` contains shared test-only fixtures used by those unit tests.
+- `test/cli/` covers black-box CLI behavior.
+- `test/session/` covers daemon, broker, and session-CLI integration flows.
+- `test/pty/` covers PTY-backed live UI integration.
+- `test/smoke/` contains opt-in transcript-based TTY smoke tests.
+
+See [`test/README.md`](test/README.md) for the intent behind each top-level test category.
+
 ## Architecture
 
 ```text

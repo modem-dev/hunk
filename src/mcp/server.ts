@@ -19,6 +19,7 @@ const SUPPORTED_SESSION_ACTIONS: SessionDaemonAction[] = [
   "list",
   "get",
   "context",
+  "review",
   "navigate",
   "reload",
   "comment-add",
@@ -91,6 +92,11 @@ async function handleSessionApiRequest(state: HunkDaemonState, request: Request)
         break;
       case "context":
         response = { context: state.getSelectedContext(input.selector) };
+        break;
+      case "review":
+        response = {
+          review: state.getSessionReview(input.selector, { includePatch: input.includePatch }),
+        };
         break;
       case "navigate": {
         if (

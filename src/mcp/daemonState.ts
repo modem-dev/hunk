@@ -15,6 +15,9 @@ import type {
   RemovedCommentResult,
   SelectedSessionContext,
   SessionCommandResult,
+  SessionFileSummary,
+  SessionReview,
+  SessionReviewFile,
   SessionServerMessage,
   SessionTargetInput,
 } from "./types";
@@ -57,6 +60,43 @@ function findSelectedFile(session: ListedSession) {
         file.previousPath === session.snapshot.selectedFilePath,
     ) ?? null
   );
+}
+
+/** Match one review-export file against the live snapshot's current file selection. */
+function findSelectedReviewFile(reviewFiles: SessionReviewFile[], snapshot: HunkSessionSnapshot) {
+  return (
+    reviewFiles.find(
+      (file) =>
+        file.id === snapshot.selectedFileId ||
+        file.path === snapshot.selectedFilePath ||
+        file.previousPath === snapshot.selectedFilePath,
+    ) ?? null
+  );
+}
+
+/** Reduce one review-export file back to the summary fields used by session listings. */
+function summarizeReviewFile(reviewFile: SessionReviewFile): SessionFileSummary {
+  return {
+    id: reviewFile.id,
+    path: reviewFile.path,
+    previousPath: reviewFile.previousPath,
+    additions: reviewFile.additions,
+    deletions: reviewFile.deletions,
+    hunkCount: reviewFile.hunkCount,
+  };
+}
+
+/** Serialize one review-export file while keeping raw patch text opt-in for callers. */
+function serializeReviewFile(
+  reviewFile: SessionReviewFile,
+  includePatch: boolean,
+): SessionReviewFile {
+  return includePatch
+    ? reviewFile
+    : {
+        ...summarizeReviewFile(reviewFile),
+        hunks: reviewFile.hunks,
+      };
 }
 
 /** Resolve which live Hunk session one external command should target. */
@@ -137,8 +177,8 @@ export class HunkDaemonState {
         sourceLabel: entry.registration.sourceLabel,
         launchedAt: entry.registration.launchedAt,
         terminal: entry.registration.terminal,
-        fileCount: entry.registration.files.length,
-        files: entry.registration.files,
+        fileCount: entry.registration.reviewFiles.length,
+        files: entry.registration.reviewFiles.map(summarizeReviewFile),
         snapshot: entry.snapshot,
       }))
       .sort((left, right) => right.snapshot.updatedAt.localeCompare(left.snapshot.updatedAt));
@@ -146,6 +186,31 @@ export class HunkDaemonState {
 
   getSession(selector: SessionTargetSelector) {
     return resolveSessionTarget(this.listSessions(), selector);
+  }
+
+  /** Return the live session's loaded review model, with raw patch text included only on demand. */
+  getSessionReview(
+    selector: SessionTargetSelector,
+    options: { includePatch?: boolean } = {},
+  ): SessionReview {
+    const entry = this.getSessionEntry(selector);
+    const { registration, snapshot } = entry;
+    const selectedFile = findSelectedReviewFile(registration.reviewFiles, snapshot);
+    const includePatch = options.includePatch ?? false;
+
+    return {
+      sessionId: registration.sessionId,
+      title: registration.title,
+      sourceLabel: registration.sourceLabel,
+      cwd: registration.cwd,
+      repoRoot: registration.repoRoot,
+      inputKind: registration.inputKind,
+      selectedFile: selectedFile ? serializeReviewFile(selectedFile, includePatch) : null,
+      selectedHunk: selectedFile ? (selectedFile.hunks[snapshot.selectedHunkIndex] ?? null) : null,
+      showAgentNotes: snapshot.showAgentNotes,
+      liveCommentCount: snapshot.liveCommentCount,
+      files: registration.reviewFiles.map((file) => serializeReviewFile(file, includePatch)),
+    };
   }
 
   getSelectedContext(selector: SessionTargetSelector): SelectedSessionContext {
@@ -352,6 +417,17 @@ export class HunkDaemonState {
 
     this.sessionIdsBySocket.clear();
     this.sessions.clear();
+  }
+
+  /** Resolve one live session selector into the full in-memory registration entry. */
+  private getSessionEntry(selector: SessionTargetSelector) {
+    const session = resolveSessionTarget(this.listSessions(), selector);
+    const entry = this.sessions.get(session.sessionId);
+    if (!entry) {
+      throw new Error("The targeted Hunk session is no longer connected.");
+    }
+
+    return entry;
   }
 
   private sendCommand<

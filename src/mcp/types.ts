@@ -17,6 +17,18 @@ export interface SessionFileSummary {
   hunkCount: number;
 }
 
+export interface SessionReviewHunk {
+  index: number;
+  header: string;
+  oldRange?: [number, number];
+  newRange?: [number, number];
+}
+
+export interface SessionReviewFile extends SessionFileSummary {
+  patch?: string;
+  hunks: SessionReviewHunk[];
+}
+
 export interface SelectedHunkSummary {
   index: number;
   oldRange?: [number, number];
@@ -48,7 +60,7 @@ export interface HunkSessionRegistration {
   sourceLabel: string;
   launchedAt: string;
   terminal?: SessionTerminalMetadata;
-  files: SessionFileSummary[];
+  reviewFiles: SessionReviewFile[];
 }
 
 export interface HunkSessionSnapshot {
@@ -167,6 +179,20 @@ export interface SelectedSessionContext {
   selectedHunk: SelectedHunkSummary | null;
   showAgentNotes: boolean;
   liveCommentCount: number;
+}
+
+export interface SessionReview {
+  sessionId: string;
+  title: string;
+  sourceLabel: string;
+  cwd?: string;
+  repoRoot?: string;
+  inputKind: CliInput["kind"];
+  selectedFile: SessionReviewFile | null;
+  selectedHunk: SessionReviewHunk | null;
+  showAgentNotes: boolean;
+  liveCommentCount: number;
+  files: SessionReviewFile[];
 }
 
 export type SessionCommandResult =

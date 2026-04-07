@@ -34,7 +34,9 @@ export const MENU_ORDER = Object.keys(MENU_LABELS) as MenuId[];
 export function buildMenuSpecs() {
   return MENU_ORDER.reduce<MenuSpec[]>((items, id) => {
     const previous = items.at(-1);
-    const left = previous ? previous.left + previous.width + 1 : 1;
+    // Each menu label already includes its own leading/trailing padding inside the fixed-width box,
+    // so adjacent menu boxes are packed directly next to each other without an extra inter-box gap.
+    const left = previous ? previous.left + previous.width : 1;
     items.push({
       id,
       left,

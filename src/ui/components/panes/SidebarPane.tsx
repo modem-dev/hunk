@@ -1,6 +1,6 @@
 import type { ScrollBoxRenderable } from "@opentui/core";
 import type { RefObject } from "react";
-import type { SidebarEntry } from "../../lib/files";
+import { sidebarEntryStatsWidth, type SidebarEntry } from "../../lib/files";
 import type { AppTheme } from "../../themes";
 import { FileGroupHeader, FileListItem } from "./FileListItem";
 
@@ -23,8 +23,7 @@ export function SidebarPane({
   onSelectFile: (fileId: string) => void;
 }) {
   const fileEntries = entries.filter((entry) => entry.kind === "file");
-  const additionsWidth = Math.max(2, ...fileEntries.map((entry) => entry.additionsText.length));
-  const deletionsWidth = Math.max(2, ...fileEntries.map((entry) => entry.deletionsText.length));
+  const statsWidth = Math.max(0, ...fileEntries.map((entry) => sidebarEntryStatsWidth(entry)));
 
   return (
     <box
@@ -59,10 +58,9 @@ export function SidebarPane({
             ) : (
               <FileListItem
                 key={entry.id}
-                additionsWidth={additionsWidth}
-                deletionsWidth={deletionsWidth}
                 entry={entry}
                 selected={entry.id === selectedFileId}
+                statsWidth={statsWidth}
                 textWidth={textWidth}
                 theme={theme}
                 onSelect={() => onSelectFile(entry.id)}

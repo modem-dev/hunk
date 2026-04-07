@@ -112,6 +112,14 @@ export interface SessionGetCommandInput {
   selector: SessionSelectorInput;
 }
 
+export interface SessionReviewCommandInput {
+  kind: "session";
+  action: "review";
+  output: SessionCommandOutput;
+  selector: SessionSelectorInput;
+  includePatch: boolean;
+}
+
 export interface SessionNavigateCommandInput {
   kind: "session";
   action: "navigate";
@@ -175,6 +183,7 @@ export interface SessionCommentClearCommandInput {
 export type SessionCommandInput =
   | SessionListCommandInput
   | SessionGetCommandInput
+  | SessionReviewCommandInput
   | SessionNavigateCommandInput
   | SessionReloadCommandInput
   | SessionCommentAddCommandInput

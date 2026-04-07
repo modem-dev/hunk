@@ -5,6 +5,7 @@ import type {
   SessionCommentRemoveCommandInput,
   SessionNavigateCommandInput,
   SessionReloadCommandInput,
+  SessionReviewCommandInput,
   SessionSelectorInput,
 } from "../core/types";
 import type {
@@ -16,6 +17,7 @@ import type {
   RemovedCommentResult,
   SelectedSessionContext,
   SessionLiveCommentSummary,
+  SessionReview,
 } from "../mcp/types";
 
 export const HUNK_SESSION_API_PATH = "/session-api";
@@ -26,6 +28,7 @@ export type SessionDaemonAction =
   | "list"
   | "get"
   | "context"
+  | "review"
   | "navigate"
   | "reload"
   | "comment-add"
@@ -49,6 +52,11 @@ export type SessionDaemonRequest =
   | {
       action: "context";
       selector: SessionSelectorInput;
+    }
+  | {
+      action: "review";
+      selector: SessionSelectorInput;
+      includePatch: SessionReviewCommandInput["includePatch"];
     }
   | {
       action: "navigate";
@@ -96,6 +104,7 @@ export type SessionDaemonResponse =
   | { sessions: ListedSession[] }
   | { session: ListedSession }
   | { context: SelectedSessionContext }
+  | { review: SessionReview }
   | { result: NavigatedSelectionResult }
   | { result: ReloadedSessionResult }
   | { result: AppliedCommentResult }

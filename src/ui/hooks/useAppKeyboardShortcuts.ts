@@ -1,8 +1,10 @@
 import type { KeyEvent } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
+import { useRef } from "react";
 import type { LayoutMode } from "../../core/types";
 import type { MenuId } from "../components/chrome/menu";
 import {
+  isEscapeKey,
   isHalfPageDownKey,
   isHalfPageUpKey,
   isPageDownKey,
@@ -15,24 +17,24 @@ import {
 type FocusArea = "files" | "filter";
 type ScrollUnit = "step" | "viewport" | "content" | "half";
 
+const FAST_CODE_HORIZONTAL_SCROLL_COLUMNS = 8;
+
 export interface UseAppKeyboardShortcutsOptions {
   activeMenuId: MenuId | null;
   activateCurrentMenuItem: () => void;
   canRefreshCurrentInput: boolean;
-  clearFilter: () => void;
   closeHelp: () => void;
   closeMenu: () => void;
   cycleTheme: () => void;
-  filter: string;
   focusArea: FocusArea;
-  focusFiles: () => void;
   focusFilter: () => void;
-  moveAnnotatedHunk: (delta: number) => void;
-  moveHunk: (delta: number) => void;
+  moveToAnnotatedHunk: (delta: number) => void;
+  moveToHunk: (delta: number) => void;
   moveMenuItem: (delta: number) => void;
   openMenu: (menuId: MenuId) => void;
   pagerMode: boolean;
   requestQuit: () => void;
+  scrollCodeHorizontally: (delta: number) => void;
   scrollDiff: (delta: number, unit: ScrollUnit) => void;
   selectLayoutMode: (mode: LayoutMode) => void;
   showHelp: boolean;
@@ -52,20 +54,18 @@ export function useAppKeyboardShortcuts({
   activeMenuId,
   activateCurrentMenuItem,
   canRefreshCurrentInput,
-  clearFilter,
   closeHelp,
   closeMenu,
   cycleTheme,
-  filter,
   focusArea,
-  focusFiles,
   focusFilter,
-  moveAnnotatedHunk,
-  moveHunk,
+  moveToAnnotatedHunk,
+  moveToHunk,
   moveMenuItem,
   openMenu,
   pagerMode,
   requestQuit,
+  scrollCodeHorizontally,
   scrollDiff,
   selectLayoutMode,
   showHelp,
@@ -79,6 +79,16 @@ export function useAppKeyboardShortcuts({
   toggleSidebar,
   triggerRefreshCurrentInput,
 }: UseAppKeyboardShortcutsOptions) {
+  const activeMenuIdRef = useRef(activeMenuId);
+  const focusAreaRef = useRef(focusArea);
+  const pagerModeRef = useRef(pagerMode);
+  const showHelpRef = useRef(showHelp);
+
+  activeMenuIdRef.current = activeMenuId;
+  focusAreaRef.current = focusArea;
+  pagerModeRef.current = pagerMode;
+  showHelpRef.current = showHelp;
+
   const runAndCloseMenu = (action: () => void) => {
     action();
     closeMenu();
@@ -89,11 +99,11 @@ export function useAppKeyboardShortcuts({
       return false;
     }
 
-    if (pagerMode) {
+    if (pagerModeRef.current) {
       return true;
     }
 
-    if (activeMenuId) {
+    if (activeMenuIdRef.current) {
       closeMenu();
     } else {
       openMenu("file");
@@ -103,7 +113,7 @@ export function useAppKeyboardShortcuts({
   };
 
   const handlePagerShortcut = (key: KeyEvent) => {
-    if (key.name === "q" || key.name === "escape") {
+    if (key.name === "q" || isEscapeKey(key)) {
       requestQuit();
       return;
     }
@@ -138,6 +148,16 @@ export function useAppKeyboardShortcuts({
       return;
     }
 
+    if (key.name === "left") {
+      scrollCodeHorizontally(key.shift ? -FAST_CODE_HORIZONTAL_SCROLL_COLUMNS : -1);
+      return;
+    }
+
+    if (key.name === "right") {
+      scrollCodeHorizontally(key.shift ? FAST_CODE_HORIZONTAL_SCROLL_COLUMNS : 1);
+      return;
+    }
+
     if (key.name === "home") {
       scrollDiff(-1, "content");
       return;
@@ -154,7 +174,7 @@ export function useAppKeyboardShortcuts({
   };
 
   const handleHelpShortcut = (key: KeyEvent) => {
-    if (!showHelp || key.name !== "escape") {
+    if (!showHelpRef.current || !isEscapeKey(key)) {
       return false;
     }
 
@@ -163,11 +183,11 @@ export function useAppKeyboardShortcuts({
   };
 
   const handleMenuShortcut = (key: KeyEvent) => {
-    if (!activeMenuId) {
+    if (!activeMenuIdRef.current) {
       return false;
     }
 
-    if (key.name === "escape") {
+    if (isEscapeKey(key)) {
       closeMenu();
       return true;
     }
@@ -201,18 +221,8 @@ export function useAppKeyboardShortcuts({
   };
 
   const handleFilterShortcut = (key: KeyEvent) => {
-    if (focusArea !== "filter") {
+    if (focusAreaRef.current !== "filter") {
       return false;
-    }
-
-    if (key.name === "escape") {
-      if (filter.length > 0) {
-        clearFilter();
-        return true;
-      }
-
-      focusFiles();
-      return true;
     }
 
     if (key.name === "tab") {
@@ -220,7 +230,7 @@ export function useAppKeyboardShortcuts({
       return true;
     }
 
-    // Let the input widget own typing while the filter is focused.
+    // Let the focused input own filter editing and escape handling.
     return true;
   };
 
@@ -230,13 +240,13 @@ export function useAppKeyboardShortcuts({
       return;
     }
 
-    if (key.name === "?") {
+    if (key.name === "?" || key.sequence === "?") {
       toggleHelp();
       closeMenu();
       return;
     }
 
-    if (key.name === "escape") {
+    if (isEscapeKey(key)) {
       requestQuit();
       return;
     }
@@ -291,6 +301,16 @@ export function useAppKeyboardShortcuts({
       return;
     }
 
+    if (key.name === "left") {
+      scrollCodeHorizontally(key.shift ? -FAST_CODE_HORIZONTAL_SCROLL_COLUMNS : -1);
+      return;
+    }
+
+    if (key.name === "right") {
+      scrollCodeHorizontally(key.shift ? FAST_CODE_HORIZONTAL_SCROLL_COLUMNS : 1);
+      return;
+    }
+
     if (key.name === "1") {
       runAndCloseMenu(() => selectLayoutMode("split"));
       return;
@@ -342,22 +362,22 @@ export function useAppKeyboardShortcuts({
     }
 
     if (key.name === "[") {
-      runAndCloseMenu(() => moveHunk(-1));
+      runAndCloseMenu(() => moveToHunk(-1));
       return;
     }
 
     if (key.name === "]") {
-      runAndCloseMenu(() => moveHunk(1));
+      runAndCloseMenu(() => moveToHunk(1));
       return;
     }
 
     if (key.sequence === "{") {
-      runAndCloseMenu(() => moveAnnotatedHunk(-1));
+      runAndCloseMenu(() => moveToAnnotatedHunk(-1));
       return;
     }
 
     if (key.sequence === "}") {
-      runAndCloseMenu(() => moveAnnotatedHunk(1));
+      runAndCloseMenu(() => moveToAnnotatedHunk(1));
     }
   };
 
@@ -366,7 +386,7 @@ export function useAppKeyboardShortcuts({
       return;
     }
 
-    if (pagerMode) {
+    if (pagerModeRef.current) {
       handlePagerShortcut(key);
       return;
     }

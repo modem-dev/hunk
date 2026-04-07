@@ -4,10 +4,11 @@ import {
   getSharedHighlighter,
   renderDiffWithHighlighter,
   type FileDiffMetadata,
-  type Hunk,
 } from "@pierre/diffs";
+import { formatHunkHeader } from "../../core/hunkHeader";
 import type { DiffFile } from "../../core/types";
 import type { AppTheme } from "../themes";
+import { expandDiffTabs } from "./codeColumns";
 
 const PIERRE_THEME = {
   light: "pierre-light",
@@ -108,16 +109,27 @@ export type DiffRow =
 
 /** Replace tabs with fixed spaces so terminal cell widths stay predictable. */
 function tabify(text: string) {
-  return text.replaceAll("\t", "  ");
+  return expandDiffTabs(text);
 }
+
+const EMPTY_STYLE_VALUES = new Map<string, string>();
+// Pierre reuses the same tiny set of inline style strings across many token spans.
+// Caching the parsed key/value pairs avoids reparsing identical `color:#...` snippets
+// every time split/stack row builders revisit the same highlighted lines.
+const parsedStyleValueCache = new Map<string, Map<string, string>>();
 
 /** Parse an inline CSS style string from Pierre's highlighted HAST output. */
 function parseStyleValue(styleValue: unknown) {
-  const styles = new Map<string, string>();
   if (typeof styleValue !== "string") {
-    return styles;
+    return EMPTY_STYLE_VALUES;
   }
 
+  const cached = parsedStyleValueCache.get(styleValue);
+  if (cached) {
+    return cached;
+  }
+
+  const styles = new Map<string, string>();
   for (const segment of styleValue.split(";")) {
     const separator = segment.indexOf(":");
     if (separator <= 0) {
@@ -131,6 +143,7 @@ function parseStyleValue(styleValue: unknown) {
     }
   }
 
+  parsedStyleValueCache.set(styleValue, styles);
   return styles;
 }
 
@@ -144,6 +157,14 @@ const RESERVED_PIERRE_TOKEN_COLORS = {
     "#199f43": "string",
   },
 } as const;
+// After style parsing, token colors still need one normalization step so syntax hues never
+// collide with diff-semantic add/remove colors. Cache that remap per theme because themes that
+// share an appearance can still use different syntax palettes.
+const normalizedColorCache = new Map<string, Map<string, string>>();
+// The expensive part after highlighting is walking Pierre's HAST line tree and flattening it
+// into terminal spans. The same highlighted line objects are reused when files remount or when
+// we build both split and stack rows, so memoize flattened spans by line node + theme/background.
+const flattenedHighlightedLineCache = new WeakMap<HastNode, Map<string, RenderSpan[]>>();
 
 /** Remap Pierre token hues that collide with diff add/remove semantics into theme-safe syntax colors. */
 function normalizeHighlightedColor(color: string | undefined, theme: AppTheme) {
@@ -151,16 +172,25 @@ function normalizeHighlightedColor(color: string | undefined, theme: AppTheme) {
     return color;
   }
 
+  let cacheForTheme = normalizedColorCache.get(theme.id);
+  if (!cacheForTheme) {
+    cacheForTheme = new Map<string, string>();
+    normalizedColorCache.set(theme.id, cacheForTheme);
+  }
+
+  const cached = cacheForTheme.get(color);
+  if (cached) {
+    return cached;
+  }
+
   const normalized = color.trim().toLowerCase();
   const reserved =
     RESERVED_PIERRE_TOKEN_COLORS[theme.appearance][
       normalized as keyof (typeof RESERVED_PIERRE_TOKEN_COLORS)[typeof theme.appearance]
     ];
-  if (!reserved) {
-    return color;
-  }
-
-  return theme.syntaxColors[reserved];
+  const resolvedColor = reserved ? theme.syntaxColors[reserved] : color;
+  cacheForTheme.set(color, resolvedColor);
+  return resolvedColor;
 }
 
 /** Append a span while coalescing adjacent runs with identical colors. */
@@ -169,7 +199,7 @@ function mergeSpan(target: RenderSpan[], next: RenderSpan) {
     return;
   }
 
-  const previous = target.at(-1);
+  const previous = target[target.length - 1];
   if (previous && previous.fg === next.fg && previous.bg === next.bg) {
     previous.text += next.text;
     return;
@@ -179,12 +209,21 @@ function mergeSpan(target: RenderSpan[], next: RenderSpan) {
 }
 
 /** Flatten one highlighted HAST line into terminal-friendly styled text spans. */
-function flattenHighlightedLine(
-  node: HastNode | undefined,
-  theme: AppTheme,
-  emphasisBg: string,
-  fallbackText: string,
-) {
+function flattenHighlightedLine(node: HastNode | undefined, theme: AppTheme, emphasisBg: string) {
+  if (!node) {
+    return [];
+  }
+
+  const cacheKey = `${theme.id}:${emphasisBg}`;
+  const cachedByTheme = flattenedHighlightedLineCache.get(node);
+  const cached = cachedByTheme?.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  // Cache hits here are what make revisiting/remounting already-highlighted files cheap:
+  // we skip the full recursive walk and return the already-flattened terminal spans.
+
   const spans: RenderSpan[] = [];
   const colorVariable = theme.appearance === "light" ? "--diffs-token-light" : "--diffs-token-dark";
 
@@ -221,11 +260,13 @@ function flattenHighlightedLine(
 
   visit(node, {});
 
-  if (spans.length > 0) {
-    return spans;
+  const nextCachedByTheme = cachedByTheme ?? new Map<string, RenderSpan[]>();
+  nextCachedByTheme.set(cacheKey, spans);
+  if (!cachedByTheme) {
+    flattenedHighlightedLineCache.set(node, nextCachedByTheme);
   }
 
-  return fallbackText.length > 0 ? [{ text: fallbackText }] : [];
+  return spans;
 }
 
 /** Normalize one raw diff line before rendering. */
@@ -249,24 +290,29 @@ function makeSplitCell(
     } satisfies SplitLineCell;
   }
 
-  const fallbackText = cleanDiffLine(rawLine);
-
   // Startup renders often build rows before highlighted HAST exists, so keep that plain-text path cheap.
-  const spans =
-    highlightedLine === undefined
-      ? fallbackText.length > 0
-        ? [{ text: fallbackText }]
-        : []
-      : flattenHighlightedLine(
-          highlightedLine,
-          theme,
-          kind === "addition"
-            ? theme.addedContentBg
-            : kind === "deletion"
-              ? theme.removedContentBg
-              : theme.contextContentBg,
-          fallbackText,
-        );
+  // Once highlighted spans are available, avoid touching the raw source line unless flattening
+  // produced nothing. That keeps newline stripping + tab expansion off the hot path.
+  let spans: RenderSpan[];
+  if (highlightedLine === undefined) {
+    const fallbackText = cleanDiffLine(rawLine);
+    spans = fallbackText.length > 0 ? [{ text: fallbackText }] : [];
+  } else {
+    spans = flattenHighlightedLine(
+      highlightedLine,
+      theme,
+      kind === "addition"
+        ? theme.addedContentBg
+        : kind === "deletion"
+          ? theme.removedContentBg
+          : theme.contextContentBg,
+    );
+
+    if (spans.length === 0) {
+      const fallbackText = cleanDiffLine(rawLine);
+      spans = fallbackText.length > 0 ? [{ text: fallbackText }] : [];
+    }
+  }
 
   return {
     kind,
@@ -285,24 +331,28 @@ function makeStackCell(
   highlightedLine: HastNode | undefined,
   theme: AppTheme,
 ) {
-  const fallbackText = cleanDiffLine(rawLine);
+  // Same lazy-fallback strategy as split cells: only normalize the raw source line when we really
+  // need the plain-text fallback, not when highlighted spans are already ready to reuse.
+  let spans: RenderSpan[];
+  if (highlightedLine === undefined) {
+    const fallbackText = cleanDiffLine(rawLine);
+    spans = fallbackText.length > 0 ? [{ text: fallbackText }] : [];
+  } else {
+    spans = flattenHighlightedLine(
+      highlightedLine,
+      theme,
+      kind === "addition"
+        ? theme.addedContentBg
+        : kind === "deletion"
+          ? theme.removedContentBg
+          : theme.contextContentBg,
+    );
 
-  // Startup renders often build rows before highlighted HAST exists, so keep that plain-text path cheap.
-  const spans =
-    highlightedLine === undefined
-      ? fallbackText.length > 0
-        ? [{ text: fallbackText }]
-        : []
-      : flattenHighlightedLine(
-          highlightedLine,
-          theme,
-          kind === "addition"
-            ? theme.addedContentBg
-            : kind === "deletion"
-              ? theme.removedContentBg
-              : theme.contextContentBg,
-          fallbackText,
-        );
+    if (spans.length === 0) {
+      const fallbackText = cleanDiffLine(rawLine);
+      spans = fallbackText.length > 0 ? [{ text: fallbackText }] : [];
+    }
+  }
 
   return {
     kind,
@@ -311,14 +361,6 @@ function makeStackCell(
     newLineNumber,
     spans,
   } satisfies StackLineCell;
-}
-
-/** Format a hunk header exactly as the review stream should display it. */
-function hunkHeader(hunk: Hunk) {
-  const specs =
-    hunk.hunkSpecs ??
-    `@@ -${hunk.deletionStart},${hunk.deletionLines} +${hunk.additionStart},${hunk.additionLines} @@`;
-  return hunk.hunkContext ? `${specs} ${hunk.hunkContext}` : specs;
 }
 
 /** Describe a collapsed unchanged region between visible hunks. */
@@ -391,6 +433,44 @@ function queueHighlightedDiff(run: () => HighlightedDiffCode) {
   return queued;
 }
 
+/**
+ * Pierre highlights unchanged context on both diff sides even though split/stack rendering later
+ * cares only about the styled code spans. Reuse one side's line node for both arrays so identical
+ * context flattens once and the existing WeakMap span cache can fan that result back out.
+ */
+function aliasHighlightedContextLines(file: DiffFile, highlighted: HighlightedDiffCode) {
+  for (const hunk of file.metadata.hunks) {
+    let deletionLineIndex = hunk.deletionLineIndex;
+    let additionLineIndex = hunk.additionLineIndex;
+
+    for (const content of hunk.hunkContent) {
+      if (content.type === "context") {
+        for (let offset = 0; offset < content.lines; offset += 1) {
+          const sharedLine =
+            highlighted.additionLines[additionLineIndex + offset] ??
+            highlighted.deletionLines[deletionLineIndex + offset];
+
+          if (!sharedLine) {
+            continue;
+          }
+
+          highlighted.deletionLines[deletionLineIndex + offset] = sharedLine;
+          highlighted.additionLines[additionLineIndex + offset] = sharedLine;
+        }
+
+        deletionLineIndex += content.lines;
+        additionLineIndex += content.lines;
+        continue;
+      }
+
+      deletionLineIndex += content.deletions;
+      additionLineIndex += content.additions;
+    }
+  }
+
+  return highlighted;
+}
+
 /** Highlight a diff file and return just the rendered line trees the UI needs. */
 export async function loadHighlightedDiff(
   file: DiffFile,
@@ -404,10 +484,10 @@ export async function loadHighlightedDiff(
         highlighter,
         pierreRenderOptions(appearance),
       );
-      return {
+      return aliasHighlightedContextLines(file, {
         deletionLines: highlighted.code.deletionLines as Array<HastNode | undefined>,
         additionLines: highlighted.code.additionLines as Array<HastNode | undefined>,
-      };
+      });
     });
   } catch {
     const highlighter = await prepareHighlighter("text", appearance);
@@ -417,10 +497,10 @@ export async function loadHighlightedDiff(
         highlighter,
         pierreRenderOptions(appearance),
       );
-      return {
+      return aliasHighlightedContextLines(file, {
         deletionLines: highlighted.code.deletionLines as Array<HastNode | undefined>,
         additionLines: highlighted.code.additionLines as Array<HastNode | undefined>,
-      };
+      });
     });
   }
 }
@@ -451,7 +531,7 @@ export function buildSplitRows(
       key: `${file.id}:header:${hunkIndex}`,
       fileId: file.id,
       hunkIndex,
-      text: hunkHeader(hunk),
+      text: formatHunkHeader(hunk),
     });
 
     let deletionLineIndex = hunk.deletionLineIndex;
@@ -570,7 +650,7 @@ export function buildStackRows(
       key: `${file.id}:stack:header:${hunkIndex}`,
       fileId: file.id,
       hunkIndex,
-      text: hunkHeader(hunk),
+      text: formatHunkHeader(hunk),
     });
 
     let deletionLineIndex = hunk.deletionLineIndex;

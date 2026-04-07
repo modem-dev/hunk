@@ -62,15 +62,25 @@ try {
 
   const sanitizedPath = `${path.join(installDir, "bin")}:${nodeDir}`;
   const installedHunk = path.join(installDir, "bin", "hunk");
+  const commandEnv = {
+    ...process.env,
+    PATH: sanitizedPath,
+  };
   const help = run([installedHunk, "--help"], {
-    env: {
-      ...process.env,
-      PATH: sanitizedPath,
-    },
+    env: commandEnv,
   });
 
   if (help.stdout.includes("Usage: hunk") === false) {
     throw new Error(`Expected help output to include 'Usage: hunk'.\n${help.stdout}`);
+  }
+
+  const version = run([installedHunk, "--version"], {
+    env: commandEnv,
+  });
+  if (version.stdout !== `${packageVersion}\n`) {
+    throw new Error(
+      `Expected installed hunk --version to print ${packageVersion}.\n${version.stdout}`,
+    );
   }
 
   const bunCheck = Bun.spawnSync(
@@ -80,10 +90,7 @@ try {
       "const {spawnSync}=require('node:child_process'); process.exit(spawnSync('bun',['--version'],{stdio:'ignore'}).status===0?1:0);",
     ],
     {
-      env: {
-        ...process.env,
-        PATH: sanitizedPath,
-      },
+      env: commandEnv,
     },
   );
 

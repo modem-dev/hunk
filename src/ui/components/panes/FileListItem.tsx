@@ -1,7 +1,7 @@
-import type { FileGroupEntry, FileListEntry } from "../../lib/files";
+import { fileRowId } from "../../lib/ids";
+import { sidebarEntryStats, type FileGroupEntry, type FileListEntry } from "../../lib/files";
 import { fitText, padText } from "../../lib/text";
 import type { AppTheme } from "../../themes";
-import { fileRowId } from "../../lib/ids";
 
 /** Get icon and color for file state using standard git status codes. */
 function getFileStateIcon(entry: FileListEntry, theme: AppTheme): { icon: string; color: string } {
@@ -50,27 +50,26 @@ export function FileGroupHeader({
 
 /** Render one file row in the navigation sidebar. */
 export function FileListItem({
-  additionsWidth,
-  deletionsWidth,
   entry,
   selected,
+  statsWidth,
   textWidth,
   theme,
   onSelect,
 }: {
-  additionsWidth: number;
-  deletionsWidth: number;
   entry: FileListEntry;
   selected: boolean;
+  statsWidth: number;
   textWidth: number;
   theme: AppTheme;
   onSelect: () => void;
 }) {
   const rowBackground = selected ? theme.panelAlt : theme.panel;
-  const statsWidth = additionsWidth + 1 + deletionsWidth;
+  const stats = sidebarEntryStats(entry);
   const { icon, color } = getFileStateIcon(entry, theme);
   const iconWidth = icon ? 2 : 0; // icon + space
-  const nameWidth = Math.max(1, textWidth - 1 - iconWidth - statsWidth - 1);
+  const statsSectionWidth = statsWidth > 0 ? statsWidth + 1 : 0;
+  const nameWidth = Math.max(1, textWidth - 1 - iconWidth - statsSectionWidth);
 
   return (
     <box
@@ -101,9 +100,29 @@ export function FileListItem({
       >
         {icon && <text fg={color}>{icon} </text>}
         <text fg={theme.text}>{padText(fitText(entry.name, nameWidth), nameWidth)}</text>
-        <text fg={theme.badgeAdded}>{entry.additionsText.padStart(additionsWidth, " ")}</text>
-        <text fg={selected ? theme.text : theme.muted}> </text>
-        <text fg={theme.badgeRemoved}>{entry.deletionsText.padStart(deletionsWidth, " ")}</text>
+        {statsSectionWidth > 0 && (
+          <box
+            style={{
+              width: statsSectionWidth,
+              height: 1,
+              flexDirection: "row",
+              justifyContent: "flex-end",
+              backgroundColor: rowBackground,
+            }}
+          >
+            {stats.map((stat, index) => (
+              <box
+                key={`${entry.id}:${stat.kind}`}
+                style={{ height: 1, flexDirection: "row", backgroundColor: rowBackground }}
+              >
+                {index > 0 && <text fg={selected ? theme.text : theme.muted}> </text>}
+                <text fg={stat.kind === "addition" ? theme.badgeAdded : theme.badgeRemoved}>
+                  {stat.text}
+                </text>
+              </box>
+            ))}
+          </box>
+        )}
       </box>
     </box>
   );

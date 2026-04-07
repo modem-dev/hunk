@@ -8,6 +8,7 @@ import type {
   SessionCommentRemoveCommandInput,
   SessionNavigateCommandInput,
   SessionReloadCommandInput,
+  SessionReviewCommandInput,
   SessionSelectorInput,
 } from "../core/types";
 import {
@@ -25,6 +26,7 @@ import type {
   RemovedCommentResult,
   SelectedSessionContext,
   SessionLiveCommentSummary,
+  SessionReview,
   SessionTerminalLocation,
   SessionTerminalMetadata,
 } from "../mcp/types";
@@ -42,6 +44,7 @@ export interface HunkDaemonCliClient {
   listSessions(): Promise<ListedSession[]>;
   getSession(selector: SessionSelectorInput): Promise<ListedSession>;
   getSelectedContext(selector: SessionSelectorInput): Promise<SelectedSessionContext>;
+  getSessionReview(input: SessionReviewCommandInput): Promise<SessionReview>;
   navigateToHunk(input: SessionNavigateCommandInput): Promise<NavigatedSelectionResult>;
   reloadSession(input: SessionReloadCommandInput): Promise<ReloadedSessionResult>;
   addComment(input: SessionCommentAddCommandInput): Promise<AppliedCommentResult>;
@@ -54,6 +57,7 @@ const REQUIRED_ACTION_BY_COMMAND: Record<SessionCommandInput["action"], SessionD
   list: "list",
   get: "get",
   context: "context",
+  review: "review",
   navigate: "navigate",
   reload: "reload",
   "comment-add": "comment-add",
@@ -143,6 +147,16 @@ class HttpHunkDaemonCliClient implements HunkDaemonCliClient {
     return (
       await this.request<{ context: SelectedSessionContext }>({ action: "context", selector })
     ).context;
+  }
+
+  async getSessionReview(input: SessionReviewCommandInput) {
+    return (
+      await this.request<{ review: SessionReview }>({
+        action: "review",
+        selector: input.selector,
+        includePatch: input.includePatch,
+      })
+    ).review;
   }
 
   async navigateToHunk(input: SessionNavigateCommandInput) {
@@ -502,6 +516,31 @@ function formatContextOutput(context: SelectedSessionContext) {
   ].join("\n");
 }
 
+/** Render one human-readable summary of the exported live session review model. */
+function formatReviewOutput(review: SessionReview) {
+  const selectedFile = review.selectedFile?.path ?? "(none)";
+  const hunkNumber = review.selectedHunk ? review.selectedHunk.index + 1 : "-";
+
+  return [
+    `Session: ${review.sessionId}`,
+    `Title: ${review.title}`,
+    `Source: ${review.sourceLabel}`,
+    `Path: ${review.cwd ?? "-"}`,
+    `Repo: ${review.repoRoot ?? "-"}`,
+    `Input: ${review.inputKind}`,
+    `Selected file: ${selectedFile}`,
+    `Selected hunk: ${hunkNumber}`,
+    `Agent notes visible: ${review.showAgentNotes ? "yes" : "no"}`,
+    `Live comments: ${review.liveCommentCount}`,
+    "Files:",
+    ...review.files.flatMap((file) => [
+      `  - ${file.path} (+${file.additions} -${file.deletions}, hunks: ${file.hunkCount})`,
+      ...file.hunks.map((hunk) => `      hunk ${hunk.index + 1}: ${hunk.header}`),
+    ]),
+    "",
+  ].join("\n");
+}
+
 function formatNavigationOutput(selector: SessionSelectorInput, result: NavigatedSelectionResult) {
   return `Focused ${result.filePath} hunk ${result.hunkIndex + 1} in ${formatSelector(selector)}.\n`;
 }
@@ -612,6 +651,13 @@ export async function runSessionCommand(input: SessionCommandInput) {
     case "context": {
       const context = await client.getSelectedContext(normalizedSelector!);
       return renderOutput(input.output, { context }, () => formatContextOutput(context));
+    }
+    case "review": {
+      const review = await client.getSessionReview({
+        ...input,
+        selector: normalizedSelector!,
+      });
+      return renderOutput(input.output, { review }, () => formatReviewOutput(review));
     }
     case "navigate": {
       const result = await client.navigateToHunk({

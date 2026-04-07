@@ -1,5 +1,6 @@
 import type { LayoutMode } from "../../core/types";
 import { measureAgentInlineNoteHeight } from "../components/panes/AgentInlineNote";
+import type { SectionGeometry, VerticalBounds } from "../lib/diffSpatial";
 import { reviewRowId } from "../lib/ids";
 import type { PlannedReviewRow } from "./reviewRenderPlan";
 
@@ -15,19 +16,13 @@ export interface PlannedReviewRowLayoutOptions {
  *
  * The row ids let DiffPane upgrade from planned measurements to exact mounted measurements later.
  */
-export interface PlannedHunkBounds {
-  top: number;
-  height: number;
+export interface PlannedHunkBounds extends VerticalBounds {
   startRowId: string;
   endRowId: string;
 }
 
 /** Aggregate geometry for one file section measured from planned review rows. */
-export interface PlannedSectionGeometry {
-  bodyHeight: number;
-  hunkAnchorRows: Map<number, number>;
-  hunkBounds: Map<number, PlannedHunkBounds>;
-}
+export type PlannedSectionGeometry = SectionGeometry<PlannedHunkBounds>;
 
 /** Return whether this planned row should count toward a hunk's own visible extent. */
 function rowContributesToHunkBounds(row: PlannedReviewRow) {

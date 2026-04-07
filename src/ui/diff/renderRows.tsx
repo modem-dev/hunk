@@ -1,6 +1,11 @@
 import { memo, type ReactNode } from "react";
 import type { DiffFile } from "../../core/types";
 import type { AppTheme } from "../themes";
+import {
+  resolveSplitCellGeometry,
+  resolveSplitPaneWidths,
+  resolveStackCellGeometry,
+} from "./codeColumns";
 import type { DiffRow, RenderSpan, SplitLineCell, StackLineCell } from "./pierre";
 
 /** Clamp a label to one terminal row with an ellipsis. */
@@ -20,8 +25,8 @@ export function fitText(text: string, width: number) {
   return `${text.slice(0, width - 1)}…`;
 }
 
-/** Trim styled spans to a fixed width while preserving color runs. */
-function trimSpans(spans: RenderSpan[], width: number) {
+/** Slice styled spans to one visible window while preserving color runs. */
+function sliceSpansWindow(spans: RenderSpan[], offset: number, width: number) {
   if (width <= 0) {
     return {
       spans: [] as RenderSpan[],
@@ -29,7 +34,8 @@ function trimSpans(spans: RenderSpan[], width: number) {
     };
   }
 
-  const trimmed: RenderSpan[] = [];
+  const sliced: RenderSpan[] = [];
+  let remainingOffset = Math.max(0, offset);
   let remaining = width;
   let usedWidth = 0;
 
@@ -38,7 +44,15 @@ function trimSpans(spans: RenderSpan[], width: number) {
       break;
     }
 
-    const text = span.text.slice(0, remaining);
+    if (remainingOffset >= span.text.length) {
+      remainingOffset -= span.text.length;
+      continue;
+    }
+
+    const start = remainingOffset;
+    const text = span.text.slice(start, start + remaining);
+    remainingOffset = 0;
+
     if (text.length === 0) {
       continue;
     }
@@ -48,11 +62,11 @@ function trimSpans(spans: RenderSpan[], width: number) {
       text,
     };
 
-    const previous = trimmed.at(-1);
+    const previous = sliced.at(-1);
     if (previous && previous.fg === nextSpan.fg && previous.bg === nextSpan.bg) {
       previous.text += nextSpan.text;
     } else {
-      trimmed.push(nextSpan);
+      sliced.push(nextSpan);
     }
 
     remaining -= text.length;
@@ -60,7 +74,7 @@ function trimSpans(spans: RenderSpan[], width: number) {
   }
 
   return {
-    spans: trimmed,
+    spans: sliced,
     usedWidth,
   };
 }
@@ -198,8 +212,9 @@ function renderInlineSpans(
   fallbackColor: string,
   fallbackBg: string,
   keyPrefix: string,
+  horizontalOffset = 0,
 ) {
-  const { spans: trimmed, usedWidth } = trimSpans(spans, width);
+  const { spans: trimmed, usedWidth } = sliceSpansWindow(spans, horizontalOffset, width);
   let padding = Math.max(0, width - usedWidth);
 
   if (padding > 0) {
@@ -304,9 +319,12 @@ function buildWrappedSplitCell(
   theme: AppTheme,
 ) {
   const palette = splitCellPalette(cell.kind, theme);
-  const availableWidth = Math.max(0, width - prefixWidth);
-  const gutterWidth = Math.min(availableWidth, showLineNumbers ? lineNumberDigits + 3 : 2);
-  const contentWidth = Math.max(0, availableWidth - gutterWidth);
+  const { gutterWidth, contentWidth } = resolveSplitCellGeometry(
+    width,
+    lineNumberDigits,
+    showLineNumbers,
+    prefixWidth,
+  );
   const firstGutterText = showLineNumbers
     ? `${cell.lineNumber ? String(cell.lineNumber).padStart(lineNumberDigits, " ") : " ".repeat(lineNumberDigits)} ${cell.sign}`.padEnd(
         gutterWidth,
@@ -334,9 +352,12 @@ function buildWrappedStackCell(
   theme: AppTheme,
 ) {
   const palette = stackCellPalette(cell.kind, theme);
-  const availableWidth = Math.max(0, width - prefixWidth);
-  const gutterWidth = Math.min(availableWidth, showLineNumbers ? lineNumberDigits * 2 + 5 : 2);
-  const contentWidth = Math.max(0, availableWidth - gutterWidth);
+  const { gutterWidth, contentWidth } = resolveStackCellGeometry(
+    width,
+    lineNumberDigits,
+    showLineNumbers,
+    prefixWidth,
+  );
   const oldNumber = cell.oldLineNumber
     ? String(cell.oldLineNumber).padStart(lineNumberDigits, " ")
     : " ".repeat(lineNumberDigits);
@@ -366,6 +387,7 @@ function renderSplitCell(
   showLineNumbers: boolean,
   theme: AppTheme,
   keyPrefix: string,
+  contentOffset = 0,
   prefix?: {
     text: string;
     fg: string;
@@ -374,9 +396,12 @@ function renderSplitCell(
 ) {
   const palette = splitCellPalette(cell.kind, theme);
   const prefixWidth = prefix?.text.length ?? 0;
-  const availableWidth = Math.max(0, width - prefixWidth);
-  const gutterWidth = Math.min(availableWidth, showLineNumbers ? lineNumberDigits + 3 : 2);
-  const contentWidth = Math.max(0, availableWidth - gutterWidth);
+  const { gutterWidth, contentWidth } = resolveSplitCellGeometry(
+    width,
+    lineNumberDigits,
+    showLineNumbers,
+    prefixWidth,
+  );
   const gutterText = showLineNumbers
     ? `${cell.lineNumber ? String(cell.lineNumber).padStart(lineNumberDigits, " ") : " ".repeat(lineNumberDigits)} ${cell.sign}`.padEnd(
         gutterWidth,
@@ -399,6 +424,7 @@ function renderSplitCell(
         theme.text,
         palette.contentBg,
         `${keyPrefix}:content`,
+        contentOffset,
       )}
     </>
   );
@@ -412,6 +438,7 @@ function renderStackCell(
   showLineNumbers: boolean,
   theme: AppTheme,
   keyPrefix: string,
+  contentOffset = 0,
   prefix?: {
     text: string;
     fg: string;
@@ -420,9 +447,12 @@ function renderStackCell(
 ) {
   const palette = stackCellPalette(cell.kind, theme);
   const prefixWidth = prefix?.text.length ?? 0;
-  const availableWidth = Math.max(0, width - prefixWidth);
-  const gutterWidth = Math.min(availableWidth, showLineNumbers ? lineNumberDigits * 2 + 5 : 2);
-  const contentWidth = Math.max(0, availableWidth - gutterWidth);
+  const { gutterWidth, contentWidth } = resolveStackCellGeometry(
+    width,
+    lineNumberDigits,
+    showLineNumbers,
+    prefixWidth,
+  );
 
   const oldNumber = cell.oldLineNumber
     ? String(cell.oldLineNumber).padStart(lineNumberDigits, " ")
@@ -449,6 +479,7 @@ function renderStackCell(
         theme.text,
         palette.contentBg,
         `${keyPrefix}:content`,
+        contentOffset,
       )}
     </>
   );
@@ -533,21 +564,6 @@ export function diffMessage(file: DiffFile) {
   }
 
   return "No textual hunks to render for this file.";
-}
-
-/** Find the widest line-number column needed for this file. */
-export function findMaxLineNumber(file: DiffFile) {
-  let highest = 0;
-
-  for (const hunk of file.metadata.hunks) {
-    highest = Math.max(
-      highest,
-      hunk.deletionStart + hunk.deletionCount,
-      hunk.additionStart + hunk.additionCount,
-    );
-  }
-
-  return Math.max(highest, 1);
 }
 
 /** Render collapsed and hunk-header rows, including the optional AI badge target. */
@@ -657,10 +673,7 @@ export function measureRenderedRowHeight(
     }
 
     const markerWidth = 1;
-    const separatorWidth = 1;
-    const usableWidth = Math.max(0, width - markerWidth - separatorWidth);
-    const leftWidth = Math.max(0, markerWidth + Math.floor(usableWidth / 2));
-    const rightWidth = Math.max(0, separatorWidth + usableWidth - Math.floor(usableWidth / 2));
+    const { leftWidth, rightWidth } = resolveSplitPaneWidths(width);
     const leftLayout = buildWrappedSplitCell(
       row.left,
       leftWidth,
@@ -708,6 +721,7 @@ function renderRow(
   showLineNumbers: boolean,
   showHunkHeaders: boolean,
   wrapLines: boolean,
+  codeHorizontalOffset: number,
   theme: AppTheme,
   selected: boolean,
   annotated: boolean,
@@ -734,13 +748,9 @@ function renderRow(
   } else if (row.type === "split-line") {
     const guideOnOldSide = noteGuideSide === "old";
     const guideOnNewSide = noteGuideSide === "new";
-    const markerWidth = 1;
-    const separatorWidth = 1;
 
     // Reserve fixed columns for the diff rails and center separator slot.
-    const usableWidth = Math.max(0, width - markerWidth - separatorWidth);
-    const leftWidth = Math.max(0, markerWidth + Math.floor(usableWidth / 2));
-    const rightWidth = Math.max(0, separatorWidth + usableWidth - Math.floor(usableWidth / 2));
+    const { leftWidth, rightWidth } = resolveSplitPaneWidths(width);
     const rightRenderWidth = Math.max(0, rightWidth - (guideOnNewSide ? 1 : 0));
     const leftPrefix = {
       text: guideOnOldSide ? "│" : marker(),
@@ -764,6 +774,7 @@ function renderRow(
               showLineNumbers,
               theme,
               `${row.key}:left`,
+              codeHorizontalOffset,
               leftPrefix,
             )}
             {renderSplitCell(
@@ -773,6 +784,7 @@ function renderRow(
               showLineNumbers,
               theme,
               `${row.key}:right`,
+              codeHorizontalOffset,
               rightPrefix,
             )}
             {guideOnNewSide ? (
@@ -874,6 +886,7 @@ function renderRow(
               showLineNumbers,
               theme,
               `${row.key}:stack`,
+              codeHorizontalOffset,
               prefix,
             )}
             {guideOnNewSide ? (
@@ -940,6 +953,7 @@ interface DiffRowViewProps {
   showLineNumbers: boolean;
   showHunkHeaders: boolean;
   wrapLines: boolean;
+  codeHorizontalOffset: number;
   theme: AppTheme;
   selected: boolean;
   annotated: boolean;
@@ -957,6 +971,7 @@ export const DiffRowView = memo(
     showLineNumbers,
     showHunkHeaders,
     wrapLines,
+    codeHorizontalOffset,
     theme,
     selected,
     annotated,
@@ -971,6 +986,7 @@ export const DiffRowView = memo(
       showLineNumbers,
       showHunkHeaders,
       wrapLines,
+      codeHorizontalOffset,
       theme,
       selected,
       annotated,
@@ -987,6 +1003,7 @@ export const DiffRowView = memo(
       previous.showLineNumbers === next.showLineNumbers &&
       previous.showHunkHeaders === next.showHunkHeaders &&
       previous.wrapLines === next.wrapLines &&
+      previous.codeHorizontalOffset === next.codeHorizontalOffset &&
       previous.theme === next.theme &&
       previous.selected === next.selected &&
       previous.annotated === next.annotated &&
