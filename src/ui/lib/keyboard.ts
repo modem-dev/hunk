@@ -4,6 +4,11 @@ function isSpaceKey(key: KeyEvent) {
   return key.name === "space" || key.name === " " || key.sequence === " ";
 }
 
+/** Normalize the escape key aliases emitted by different terminal input paths. */
+export function isEscapeKey(key: KeyEvent) {
+  return key.name === "escape" || key.name === "esc";
+}
+
 /** Match any key alias that should scroll forward by a full viewport. */
 export function isPageDownKey(key: KeyEvent) {
   return (
