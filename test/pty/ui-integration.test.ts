@@ -590,6 +590,129 @@ describe("live UI integration", () => {
     }
   });
 
+  test("stdin patch mode enables mouse wheel scrolling in pager UI", async () => {
+    const fixture = harness.createPagerPatchFixture(60);
+    const session = await harness.launchShellCommand({
+      command: `cat ${harness.shellQuote(fixture.patchFile)} | ${harness.buildHunkCommand(["patch", "-"])}`,
+      cols: 120,
+      rows: 12,
+    });
+
+    try {
+      const initial = await session.waitForText(/scroll\.ts/, { timeout: 15_000 });
+
+      expect(initial).not.toContain("View  Navigate  Theme  Agent  Help");
+      expect(initial).toContain("before_01");
+      expect(initial).not.toContain("before_12");
+
+      await session.waitIdle({ timeout: 200 });
+      await session.scrollDown(10);
+      const scrolled = await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("before_01") && text.includes("before_12"),
+        5_000,
+      );
+
+      expect(scrolled).not.toContain("View  Navigate  Theme  Agent  Help");
+      expect(scrolled).not.toContain("before_01");
+      expect(scrolled).toContain("before_12");
+
+      await session.scrollUp(10);
+      const restored = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("before_01") && !text.includes("before_12"),
+        5_000,
+      );
+
+      expect(restored).toContain("before_01");
+      expect(restored).not.toContain("before_12");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("general pager mode enables mouse wheel scrolling for diff-like stdin", async () => {
+    const fixture = harness.createPagerPatchFixture(60);
+    const session = await harness.launchShellCommand({
+      command: `cat ${harness.shellQuote(fixture.patchFile)} | ${harness.buildHunkCommand(["pager"])}`,
+      cols: 120,
+      rows: 12,
+    });
+
+    try {
+      const initial = await session.waitForText(/scroll\.ts/, { timeout: 15_000 });
+
+      expect(initial).not.toContain("View  Navigate  Theme  Agent  Help");
+      expect(initial).toContain("before_01");
+      expect(initial).not.toContain("before_12");
+
+      await session.waitIdle({ timeout: 200 });
+      await session.scrollDown(10);
+      const scrolled = await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("before_01") && text.includes("before_12"),
+        5_000,
+      );
+
+      expect(scrolled).not.toContain("View  Navigate  Theme  Agent  Help");
+      expect(scrolled).not.toContain("before_01");
+      expect(scrolled).toContain("before_12");
+
+      await session.scrollUp(10);
+      const restored = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("before_01") && !text.includes("before_12"),
+        5_000,
+      );
+
+      expect(restored).toContain("before_01");
+      expect(restored).not.toContain("before_12");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("explicit pager mode still supports mouse wheel scrolling on a TTY", async () => {
+    const fixture = harness.createPagerPatchFixture(60);
+    const session = await harness.launchHunk({
+      args: ["patch", fixture.patchFile, "--pager"],
+      cols: 120,
+      rows: 12,
+    });
+
+    try {
+      const initial = await session.waitForText(/scroll\.ts/, { timeout: 15_000 });
+
+      expect(initial).not.toContain("View  Navigate  Theme  Agent  Help");
+      expect(initial).toContain("before_01");
+      expect(initial).not.toContain("before_12");
+
+      await session.waitIdle({ timeout: 200 });
+      await session.scrollDown(10);
+      const scrolled = await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("before_01") && text.includes("before_12"),
+        5_000,
+      );
+
+      expect(scrolled).not.toContain("View  Navigate  Theme  Agent  Help");
+      expect(scrolled).not.toContain("before_01");
+      expect(scrolled).toContain("before_12");
+
+      await session.scrollUp(10);
+      const restored = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("before_01") && !text.includes("before_12"),
+        5_000,
+      );
+
+      expect(restored).toContain("before_01");
+      expect(restored).not.toContain("before_12");
+    } finally {
+      session.close();
+    }
+  });
+
   test("keyboard help can open with ? in a real PTY", async () => {
     const fixture = harness.createTwoFileRepoFixture();
     const session = await harness.launchHunk({
