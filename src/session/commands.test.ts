@@ -13,6 +13,8 @@ import {
   setSessionCommandTestHooks,
   type HunkDaemonCliClient,
 } from "./commands";
+import { HUNK_DAEMON_UPGRADE_RESTART_NOTICE } from "./capabilities";
+import { HUNK_SESSION_API_VERSION } from "./protocol";
 
 function createTestListedSession(sessionId: string) {
   return buildTestListedSession({
@@ -55,7 +57,7 @@ function createTestSessionReview(includePatch = false) {
 function createClient(overrides: Partial<HunkDaemonCliClient>): HunkDaemonCliClient {
   return {
     getCapabilities: async () => ({
-      version: 1,
+      version: HUNK_SESSION_API_VERSION,
       actions: [
         "list",
         "get",
@@ -118,6 +120,11 @@ describe("session command compatibility checks", () => {
     const selector: SessionSelectorInput = { sessionId: "session-1" };
     const restartCalls: Array<{ action: string; selector?: SessionSelectorInput }> = [];
     const createdClients: string[] = [];
+    const notices: string[] = [];
+    const originalConsoleError = console.error;
+    console.error = (...args: unknown[]) => {
+      notices.push(args.map((value) => String(value)).join(" "));
+    };
 
     const clients = [
       createClient({
@@ -135,46 +142,117 @@ describe("session command compatibility checks", () => {
       }),
     ];
 
-    setSessionCommandTestHooks({
-      createClient: () => {
-        const client = clients.shift();
-        if (!client) {
-          throw new Error("No fake session client remaining.");
-        }
+    try {
+      setSessionCommandTestHooks({
+        createClient: () => {
+          const client = clients.shift();
+          if (!client) {
+            throw new Error("No fake session client remaining.");
+          }
 
-        return client;
-      },
-      resolveDaemonAvailability: async () => true,
-      restartDaemonForMissingAction: async (action, receivedSelector) => {
-        restartCalls.push({ action, selector: receivedSelector });
-      },
-    });
-
-    const output = await runSessionCommand({
-      kind: "session",
-      action: "context",
-      selector,
-      output: "json",
-    } satisfies SessionCommandInput);
-
-    expect(JSON.parse(output)).toMatchObject({
-      context: {
-        sessionId: "session-1",
-        selectedFile: {
-          path: "README.md",
+          return client;
         },
-        selectedHunk: {
-          index: 0,
+        resolveDaemonAvailability: async () => true,
+        restartDaemonForMissingAction: async (action, receivedSelector) => {
+          restartCalls.push({ action, selector: receivedSelector });
         },
-      },
-    });
-    expect(restartCalls).toEqual([
-      {
+      });
+
+      const output = await runSessionCommand({
+        kind: "session",
         action: "context",
         selector,
-      },
-    ]);
-    expect(createdClients).toEqual(["stale-capabilities", "fresh-context"]);
+        output: "json",
+      } satisfies SessionCommandInput);
+
+      expect(JSON.parse(output)).toMatchObject({
+        context: {
+          sessionId: "session-1",
+          selectedFile: {
+            path: "README.md",
+          },
+          selectedHunk: {
+            index: 0,
+          },
+        },
+      });
+      expect(restartCalls).toEqual([
+        {
+          action: "context",
+          selector,
+        },
+      ]);
+      expect(createdClients).toEqual(["stale-capabilities", "fresh-context"]);
+      expect(notices).toContain(HUNK_DAEMON_UPGRADE_RESTART_NOTICE);
+    } finally {
+      console.error = originalConsoleError;
+    }
+  });
+
+  test("refreshes an incompatible daemon version before running list", async () => {
+    const restartCalls: Array<{ action: string; selector?: SessionSelectorInput }> = [];
+    const createdClients: string[] = [];
+    const notices: string[] = [];
+    const originalConsoleError = console.error;
+    console.error = (...args: unknown[]) => {
+      notices.push(args.map((value) => String(value)).join(" "));
+    };
+
+    const clients = [
+      createClient({
+        getCapabilities: async () => {
+          createdClients.push("stale-capabilities");
+          return { version: HUNK_SESSION_API_VERSION - 1, actions: ["list"] };
+        },
+      }),
+      createClient({
+        listSessions: async () => {
+          createdClients.push("fresh-list");
+          return [createTestListedSession("session-1")];
+        },
+      }),
+    ];
+
+    try {
+      setSessionCommandTestHooks({
+        createClient: () => {
+          const client = clients.shift();
+          if (!client) {
+            throw new Error("No fake session client remaining.");
+          }
+
+          return client;
+        },
+        resolveDaemonAvailability: async () => true,
+        restartDaemonForMissingAction: async (action, receivedSelector) => {
+          restartCalls.push({ action, selector: receivedSelector });
+        },
+      });
+
+      const output = await runSessionCommand({
+        kind: "session",
+        action: "list",
+        output: "json",
+      } satisfies SessionCommandInput);
+
+      expect(JSON.parse(output)).toMatchObject({
+        sessions: [
+          {
+            sessionId: "session-1",
+          },
+        ],
+      });
+      expect(restartCalls).toEqual([
+        {
+          action: "list",
+          selector: undefined,
+        },
+      ]);
+      expect(createdClients).toEqual(["stale-capabilities", "fresh-list"]);
+      expect(notices).toContain(HUNK_DAEMON_UPGRADE_RESTART_NOTICE);
+    } finally {
+      console.error = originalConsoleError;
+    }
   });
 
   test("runs review commands through the daemon without raw patch text by default", async () => {
@@ -530,7 +608,7 @@ describe("session command compatibility checks", () => {
       createClient: () =>
         createClient({
           getCapabilities: async () => ({
-            version: 1,
+            version: HUNK_SESSION_API_VERSION,
             actions: [
               "list",
               "get",

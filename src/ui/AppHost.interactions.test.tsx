@@ -55,7 +55,7 @@ function createMockHostClient() {
     title: "repo working tree",
     sourceLabel: "repo",
     launchedAt: "2026-03-24T00:00:00.000Z",
-    reviewFiles: [],
+    files: [],
   };
   return {
     hostClient: {

@@ -31,7 +31,7 @@ function inferRepoRoot(bootstrap: AppBootstrap) {
 }
 
 /** Convert the loaded changeset into the daemon's file-and-hunk review export model. */
-function buildSessionReviewFiles(bootstrap: AppBootstrap): SessionReviewFile[] {
+function buildSessionFiles(bootstrap: AppBootstrap): SessionReviewFile[] {
   return bootstrap.changeset.files.map((file) => ({
     id: file.id,
     path: file.path,
@@ -62,7 +62,7 @@ export function createSessionRegistration(bootstrap: AppBootstrap): HunkSessionR
     sourceLabel: bootstrap.changeset.sourceLabel,
     launchedAt: new Date().toISOString(),
     terminal,
-    reviewFiles: buildSessionReviewFiles(bootstrap),
+    files: buildSessionFiles(bootstrap),
   };
 }
 
@@ -77,7 +77,7 @@ export function updateSessionRegistration(
     inputKind: bootstrap.input.kind,
     title: bootstrap.changeset.title,
     sourceLabel: bootstrap.changeset.sourceLabel,
-    reviewFiles: buildSessionReviewFiles(bootstrap),
+    files: buildSessionFiles(bootstrap),
   };
 }
 

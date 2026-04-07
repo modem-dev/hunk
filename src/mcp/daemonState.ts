@@ -63,9 +63,9 @@ function findSelectedFile(session: ListedSession) {
 }
 
 /** Match one review-export file against the live snapshot's current file selection. */
-function findSelectedReviewFile(reviewFiles: SessionReviewFile[], snapshot: HunkSessionSnapshot) {
+function findSelectedReviewFile(files: SessionReviewFile[], snapshot: HunkSessionSnapshot) {
   return (
-    reviewFiles.find(
+    files.find(
       (file) =>
         file.id === snapshot.selectedFileId ||
         file.path === snapshot.selectedFilePath ||
@@ -177,8 +177,8 @@ export class HunkDaemonState {
         sourceLabel: entry.registration.sourceLabel,
         launchedAt: entry.registration.launchedAt,
         terminal: entry.registration.terminal,
-        fileCount: entry.registration.reviewFiles.length,
-        files: entry.registration.reviewFiles.map(summarizeReviewFile),
+        fileCount: entry.registration.files.length,
+        files: entry.registration.files.map(summarizeReviewFile),
         snapshot: entry.snapshot,
       }))
       .sort((left, right) => right.snapshot.updatedAt.localeCompare(left.snapshot.updatedAt));
@@ -195,7 +195,7 @@ export class HunkDaemonState {
   ): SessionReview {
     const entry = this.getSessionEntry(selector);
     const { registration, snapshot } = entry;
-    const selectedFile = findSelectedReviewFile(registration.reviewFiles, snapshot);
+    const selectedFile = findSelectedReviewFile(registration.files, snapshot);
     const includePatch = options.includePatch ?? false;
 
     return {
@@ -209,7 +209,7 @@ export class HunkDaemonState {
       selectedHunk: selectedFile ? (selectedFile.hunks[snapshot.selectedHunkIndex] ?? null) : null,
       showAgentNotes: snapshot.showAgentNotes,
       liveCommentCount: snapshot.liveCommentCount,
-      files: registration.reviewFiles.map((file) => serializeReviewFile(file, includePatch)),
+      files: registration.files.map((file) => serializeReviewFile(file, includePatch)),
     };
   }
 

@@ -21,7 +21,7 @@ function createRegistration() {
     repoRoot: process.cwd(),
     sourceLabel: "before.ts -> after.ts",
     title: "before.ts ↔ after.ts",
-    reviewFiles: [createTestSessionReviewFile({ path: "after.ts" })],
+    files: [createTestSessionReviewFile({ path: "after.ts" })],
   });
 }
 
@@ -100,6 +100,35 @@ describe("Hunk MCP client", () => {
       client.stop();
     }
   }, 10_000);
+
+  test("restartIncompatibleDaemon lets startup recover when the stale daemon already exited", async () => {
+    const server = createServer((_request, response) => {
+      response.writeHead(404, { "content-type": "text/plain" });
+      response.end("gone");
+    });
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", () => resolve());
+    });
+
+    const address = server.address();
+    const port = typeof address === "object" && address ? address.port : 0;
+    const config = {
+      host: "127.0.0.1",
+      port,
+      httpOrigin: `http://127.0.0.1:${port}`,
+      wsOrigin: `ws://127.0.0.1:${port}`,
+    };
+
+    const client = new HunkHostClient(createRegistration(), createSnapshot());
+
+    try {
+      await expect((client as any).restartIncompatibleDaemon(config)).resolves.toBeUndefined();
+    } finally {
+      client.stop();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
 
   test("logs one actionable warning when a non-Hunk listener owns the MCP port", async () => {
     const conflictingListener = createServer((_request, response) => {

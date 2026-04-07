@@ -10,7 +10,7 @@ function createRegistration(overrides = {}) {
     inputKind: "diff",
     launchedAt: "2026-03-23T00:00:00.000Z",
     pid: 1234,
-    reviewFiles: [],
+    files: [],
     sessionId: "test-session",
     title: "repo diff",
     ...overrides,

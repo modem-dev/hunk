@@ -69,7 +69,7 @@ export function createTestSessionSnapshot(
 export function createTestSessionRegistration(
   overrides: Partial<HunkSessionRegistration> = {},
 ): HunkSessionRegistration {
-  const reviewFiles = overrides.reviewFiles ?? [createTestSessionReviewFile()];
+  const files = overrides.files ?? [createTestSessionReviewFile()];
 
   return {
     sessionId: "session-1",
@@ -81,7 +81,7 @@ export function createTestSessionRegistration(
     sourceLabel: "/repo",
     launchedAt: "2026-03-22T00:00:00.000Z",
     ...overrides,
-    reviewFiles,
+    files,
   };
 }
 
@@ -170,12 +170,12 @@ export function createTestSessionReview(overrides: Partial<SessionReview> = {}):
 }
 
 export function createTestListedSessionFromReviewFiles(
-  reviewFiles: SessionReviewFile[],
+  files: SessionReviewFile[],
   overrides: Partial<ListedSession> = {},
 ): ListedSession {
   return createTestListedSession({
-    fileCount: reviewFiles.length,
-    files: reviewFiles.map(summarizeReviewFile),
+    fileCount: files.length,
+    files: files.map(summarizeReviewFile),
     ...overrides,
   });
 }
