@@ -1,4 +1,5 @@
 import type { AppTheme } from "../../themes";
+import { isEscapeKey } from "../../lib/keyboard";
 
 /** Render the active file filter input or current filter summary. */
 export function StatusBar({
@@ -46,7 +47,7 @@ export function StatusBar({
             onInput={onFilterInput}
             onSubmit={onFilterSubmit}
             onKeyDown={(key) => {
-              if (key.name !== "escape" && key.name !== "esc") {
+              if (!isEscapeKey(key)) {
                 return;
               }
 

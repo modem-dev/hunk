@@ -3,6 +3,7 @@ import { useKeyboard } from "@opentui/react";
 import type { LayoutMode } from "../../core/types";
 import type { MenuId } from "../components/chrome/menu";
 import {
+  isEscapeKey,
   isHalfPageDownKey,
   isHalfPageUpKey,
   isPageDownKey,
@@ -17,21 +18,14 @@ type ScrollUnit = "step" | "viewport" | "content" | "half";
 
 const FAST_CODE_HORIZONTAL_SCROLL_COLUMNS = 8;
 
-function isEscapeKey(key: KeyEvent) {
-  return key.name === "escape" || key.name === "esc";
-}
-
 export interface UseAppKeyboardShortcutsOptions {
   activeMenuId: MenuId | null;
   activateCurrentMenuItem: () => void;
   canRefreshCurrentInput: boolean;
-  clearFilter: () => void;
   closeHelp: () => void;
   closeMenu: () => void;
   cycleTheme: () => void;
-  filter: string;
   focusArea: FocusArea;
-  focusFiles: () => void;
   focusFilter: () => void;
   moveToAnnotatedHunk: (delta: number) => void;
   moveToHunk: (delta: number) => void;
@@ -59,13 +53,10 @@ export function useAppKeyboardShortcuts({
   activeMenuId,
   activateCurrentMenuItem,
   canRefreshCurrentInput,
-  clearFilter,
   closeHelp,
   closeMenu,
   cycleTheme,
-  filter,
   focusArea,
-  focusFiles,
   focusFilter,
   moveToAnnotatedHunk,
   moveToHunk,
@@ -223,22 +214,12 @@ export function useAppKeyboardShortcuts({
       return false;
     }
 
-    if (isEscapeKey(key)) {
-      if (filter.length > 0) {
-        clearFilter();
-        return true;
-      }
-
-      focusFiles();
-      return true;
-    }
-
     if (key.name === "tab") {
       toggleFocusArea();
       return true;
     }
 
-    // Let the input widget own typing while the filter is focused.
+    // Let the focused input own filter editing and escape handling.
     return true;
   };
 
