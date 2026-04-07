@@ -286,8 +286,21 @@ export function resolveHunkDaemonRuntimePaths(
   };
 }
 
-/** Check whether the loopback Hunk daemon already answers health probes. */
-export async function isHunkDaemonHealthy(
+export interface HunkDaemonHealth {
+  ok: boolean;
+  pid?: number;
+  sessions?: number;
+  pendingCommands?: number;
+  startedAt?: string;
+  uptimeMs?: number;
+  sessionApi?: string;
+  sessionCapabilities?: string;
+  sessionSocket?: string;
+  staleSessionTtlMs?: number;
+}
+
+/** Read the daemon's health payload when one is reachable on the configured loopback port. */
+export async function readHunkDaemonHealth(
   config: ResolvedHunkMcpConfig = resolveHunkMcpConfig(),
   timeoutMs = 500,
 ) {
@@ -299,13 +312,24 @@ export async function isHunkDaemonHealthy(
     const response = await fetch(`${config.httpOrigin}/health`, {
       signal: controller.signal,
     });
+    if (!response.ok) {
+      return null;
+    }
 
-    return response.ok;
+    return (await response.json()) as HunkDaemonHealth;
   } catch {
-    return false;
+    return null;
   } finally {
     clearTimeout(timeout);
   }
+}
+
+/** Check whether the loopback Hunk daemon already answers health probes. */
+export async function isHunkDaemonHealthy(
+  config: ResolvedHunkMcpConfig = resolveHunkMcpConfig(),
+  timeoutMs = 500,
+) {
+  return (await readHunkDaemonHealth(config, timeoutMs))?.ok === true;
 }
 
 /** Check whether some local process is already accepting TCP connections on the daemon port. */
@@ -336,6 +360,29 @@ export function isLoopbackPortReachable(
     socket.once("timeout", () => finish(false));
     socket.once("error", () => finish(false));
   });
+}
+
+/** Wait for the running daemon to stop responding on its health endpoint. */
+export async function waitForHunkDaemonShutdown({
+  config = resolveHunkMcpConfig(),
+  timeoutMs = 3_000,
+  intervalMs = 100,
+}: {
+  config?: ResolvedHunkMcpConfig;
+  timeoutMs?: number;
+  intervalMs?: number;
+} = {}) {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    if (!(await isHunkDaemonHealthy(config))) {
+      return true;
+    }
+
+    await Bun.sleep(intervalMs);
+  }
+
+  return false;
 }
 
 /** Wait briefly for a just-launched daemon to become reachable on its health endpoint. */

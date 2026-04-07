@@ -47,6 +47,32 @@ export interface SessionTargetSelector {
   repoRoot?: string;
 }
 
+interface LegacySessionRegistrationShape extends Omit<
+  HunkSessionRegistration,
+  "protocolVersion" | "reviewFiles"
+> {
+  protocolVersion?: number;
+  reviewFiles?: SessionReviewFile[];
+  files?: SessionReviewFile[];
+}
+
+function normalizeSessionRegistration(
+  registration: HunkSessionRegistration | LegacySessionRegistrationShape,
+): HunkSessionRegistration {
+  const legacyFiles = "files" in registration ? registration.files : undefined;
+  const reviewFiles = Array.isArray(registration.reviewFiles)
+    ? registration.reviewFiles
+    : Array.isArray(legacyFiles)
+      ? legacyFiles
+      : [];
+
+  return {
+    ...registration,
+    protocolVersion: registration.protocolVersion ?? 1,
+    reviewFiles,
+  };
+}
+
 function describeSessionChoices(sessions: ListedSession[]) {
   return sessions.map((session) => `${session.sessionId} (${session.title})`).join(", ");
 }
@@ -258,32 +284,33 @@ export class HunkDaemonState {
 
   registerSession(
     socket: DaemonSessionSocket,
-    registration: HunkSessionRegistration,
+    registration: HunkSessionRegistration | LegacySessionRegistrationShape,
     snapshot: HunkSessionSnapshot,
   ) {
+    const normalizedRegistration = normalizeSessionRegistration(registration);
     const previousSessionId = this.sessionIdsBySocket.get(socket);
-    if (previousSessionId && previousSessionId !== registration.sessionId) {
+    if (previousSessionId && previousSessionId !== normalizedRegistration.sessionId) {
       this.unregisterSocket(socket);
     }
 
-    const existing = this.sessions.get(registration.sessionId);
+    const existing = this.sessions.get(normalizedRegistration.sessionId);
     if (existing && existing.socket !== socket) {
       this.sessionIdsBySocket.delete(existing.socket);
       this.rejectPendingCommandsForSession(
-        registration.sessionId,
+        normalizedRegistration.sessionId,
         new Error("Hunk session reconnected before the command completed."),
       );
     }
 
     const now = new Date().toISOString();
-    this.sessions.set(registration.sessionId, {
-      registration,
+    this.sessions.set(normalizedRegistration.sessionId, {
+      registration: normalizedRegistration,
       snapshot,
       socket,
       connectedAt: now,
       lastSeenAt: now,
     });
-    this.sessionIdsBySocket.set(socket, registration.sessionId);
+    this.sessionIdsBySocket.set(socket, normalizedRegistration.sessionId);
   }
 
   updateSnapshot(sessionId: string, snapshot: HunkSessionSnapshot) {

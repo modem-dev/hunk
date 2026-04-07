@@ -15,7 +15,15 @@ import {
   resolveHunkMcpConfig,
   type ResolvedHunkMcpConfig,
 } from "./config";
-import { ensureHunkDaemonAvailable } from "./daemonLauncher";
+import {
+  ensureHunkDaemonAvailable,
+  readHunkDaemonHealth,
+  waitForHunkDaemonShutdown,
+} from "./daemonLauncher";
+import {
+  readHunkSessionDaemonCapabilities,
+  reportHunkDaemonUpgradeRestart,
+} from "../session/capabilities";
 
 const DAEMON_STARTUP_TIMEOUT_MS = 3_000;
 const RECONNECT_DELAY_MS = 3_000;
@@ -119,7 +127,54 @@ export class HunkHostClient {
       config,
       timeoutMs: DAEMON_STARTUP_TIMEOUT_MS,
     });
+
+    const capabilities = await readHunkSessionDaemonCapabilities(config);
+    if (!capabilities) {
+      await this.restartIncompatibleDaemon(config);
+      await ensureHunkDaemonAvailable({
+        config,
+        timeoutMs: DAEMON_STARTUP_TIMEOUT_MS,
+      });
+
+      if (!(await readHunkSessionDaemonCapabilities(config))) {
+        throw new Error(
+          "The running Hunk session daemon is incompatible with this Hunk build. " +
+            "Restart Hunk so it can launch a fresh daemon from the current source tree.",
+        );
+      }
+    }
+
     this.lastConnectionWarning = null;
+  }
+
+  private async restartIncompatibleDaemon(config: ResolvedHunkMcpConfig) {
+    reportHunkDaemonUpgradeRestart();
+    const health = await readHunkDaemonHealth(config);
+    const pid = health?.pid;
+    if (!pid || pid === process.pid) {
+      throw new Error(
+        "The running Hunk session daemon is incompatible with this Hunk build. " +
+          "Restart Hunk so it can launch a fresh daemon from the current source tree.",
+      );
+    }
+
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch (error) {
+      if (!(error instanceof Error) || !("code" in error) || error.code !== "ESRCH") {
+        throw error;
+      }
+    }
+
+    const shutDown = await waitForHunkDaemonShutdown({
+      config,
+      timeoutMs: DAEMON_STARTUP_TIMEOUT_MS,
+    });
+    if (!shutDown) {
+      throw new Error(
+        "Stopped waiting for the old Hunk session daemon to exit after it was found incompatible.",
+      );
+    }
   }
 
   setBridge(bridge: HunkAppBridge | null) {

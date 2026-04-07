@@ -30,6 +30,41 @@ function createMockSocket() {
 }
 
 describe("session registration terminal metadata", () => {
+  test("daemon state accepts legacy file registrations after a daemon restart", () => {
+    const state = new HunkDaemonState();
+    const reviewFile = {
+      id: "file-1",
+      path: "README.md",
+      additions: 1,
+      deletions: 0,
+      hunkCount: 1,
+      hunks: [],
+    };
+
+    state.registerSession(
+      createMockSocket(),
+      {
+        ...createRegistration(),
+        // Simulate an older TUI reconnecting to a freshly restarted daemon.
+        protocolVersion: undefined,
+        reviewFiles: undefined,
+        files: [reviewFile],
+      } as never,
+      createSnapshot(),
+    );
+
+    const sessions = state.listSessions();
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]).toMatchObject({
+      fileCount: 1,
+      files: [
+        {
+          path: "README.md",
+        },
+      ],
+    });
+  });
+
   test("daemon state passes generic terminal metadata through to listed sessions", () => {
     const state = new HunkDaemonState();
     const registration = createRegistration({

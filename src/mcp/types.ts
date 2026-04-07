@@ -51,6 +51,7 @@ export interface SessionTerminalMetadata {
 }
 
 export interface HunkSessionRegistration {
+  protocolVersion: number;
   sessionId: string;
   pid: number;
   cwd: string;

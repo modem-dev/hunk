@@ -15,6 +15,8 @@ import {
   ensureHunkDaemonAvailable,
   isHunkDaemonHealthy,
   isLoopbackPortReachable,
+  readHunkDaemonHealth,
+  waitForHunkDaemonShutdown,
 } from "../mcp/daemonLauncher";
 import { resolveHunkMcpConfig } from "../mcp/config";
 import type {
@@ -30,10 +32,10 @@ import type {
   SessionTerminalLocation,
   SessionTerminalMetadata,
 } from "../mcp/types";
+import { readHunkSessionDaemonCapabilities, reportHunkDaemonUpgradeRestart } from "./capabilities";
 import {
   HUNK_SESSION_API_PATH,
   HUNK_SESSION_API_VERSION,
-  HUNK_SESSION_CAPABILITIES_PATH,
   type SessionDaemonAction,
   type SessionDaemonCapabilities,
   type SessionDaemonRequest,
@@ -118,21 +120,7 @@ class HttpHunkDaemonCliClient implements HunkDaemonCliClient {
   }
 
   async getCapabilities() {
-    const response = await fetch(`${this.config.httpOrigin}${HUNK_SESSION_CAPABILITIES_PATH}`);
-    if (response.status === 404 || response.status === 410) {
-      return null;
-    }
-
-    if (!response.ok) {
-      throw new Error(await extractResponseError(response));
-    }
-
-    const capabilities = (await response.json()) as SessionDaemonCapabilities;
-    if (capabilities.version !== HUNK_SESSION_API_VERSION || !Array.isArray(capabilities.actions)) {
-      throw new Error("The Hunk session daemon returned an invalid capabilities payload.");
-    }
-
-    return capabilities;
+    return readHunkSessionDaemonCapabilities(this.config);
   }
 
   async listSessions() {
@@ -231,40 +219,6 @@ class HttpHunkDaemonCliClient implements HunkDaemonCliClient {
   }
 }
 
-async function readDaemonHealth() {
-  const config = resolveHunkMcpConfig();
-
-  try {
-    const response = await fetch(`${config.httpOrigin}/health`);
-    if (!response.ok) {
-      return null;
-    }
-
-    return (await response.json()) as {
-      ok: boolean;
-      pid?: number;
-      sessions?: number;
-    };
-  } catch {
-    return null;
-  }
-}
-
-async function waitForDaemonShutdown(timeoutMs = 3_000) {
-  const config = resolveHunkMcpConfig();
-  const deadline = Date.now() + timeoutMs;
-
-  while (Date.now() < deadline) {
-    if (!(await isHunkDaemonHealthy(config))) {
-      return true;
-    }
-
-    await Bun.sleep(100);
-  }
-
-  return false;
-}
-
 function sessionMatchesSelector(session: ListedSession, selector?: SessionSelectorInput) {
   if (!selector) {
     return true;
@@ -311,7 +265,7 @@ async function restartDaemonForMissingAction(
   action: SessionDaemonAction,
   selector?: SessionSelectorInput,
 ) {
-  const health = await readDaemonHealth();
+  const health = await readHunkDaemonHealth();
   const pid = health?.pid;
   const hadSessions = (health?.sessions ?? 0) > 0;
   if (!pid || pid === process.pid) {
@@ -323,7 +277,7 @@ async function restartDaemonForMissingAction(
 
   process.kill(pid, "SIGTERM");
 
-  const shutDown = await waitForDaemonShutdown();
+  const shutDown = await waitForHunkDaemonShutdown();
   if (!shutDown) {
     throw new Error(
       `Stopped waiting for the old Hunk session daemon to exit after it was found missing ${action}.`,
@@ -350,10 +304,11 @@ async function restartDaemonForMissingAction(
 async function ensureRequiredAction(action: SessionDaemonAction, selector?: SessionSelectorInput) {
   const client = createDaemonCliClient();
   const capabilities = await client.getCapabilities();
-  if (capabilities?.actions.includes(action)) {
+  if (capabilities?.version === HUNK_SESSION_API_VERSION && capabilities.actions.includes(action)) {
     return;
   }
 
+  reportHunkDaemonUpgradeRestart();
   await (sessionCommandTestHooks?.restartDaemonForMissingAction?.(action, selector) ??
     restartDaemonForMissingAction(action, selector));
 }

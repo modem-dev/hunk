@@ -9,6 +9,7 @@ import type {
   SessionReviewFile,
   SessionReviewHunk,
 } from "../../src/mcp/types";
+import { HUNK_SESSION_API_VERSION } from "../../src/session/protocol";
 
 export function createTestSessionFileSummary(
   overrides: Partial<SessionFileSummary> = {},
@@ -72,6 +73,7 @@ export function createTestSessionRegistration(
   const reviewFiles = overrides.reviewFiles ?? [createTestSessionReviewFile()];
 
   return {
+    protocolVersion: HUNK_SESSION_API_VERSION,
     sessionId: "session-1",
     pid: 123,
     cwd: "/repo",

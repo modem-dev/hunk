@@ -188,7 +188,7 @@ describe("Hunk session daemon server", () => {
       const capabilities = await fetch(`http://127.0.0.1:${port}/session-api/capabilities`);
       expect(capabilities.status).toBe(200);
       await expect(capabilities.json()).resolves.toMatchObject({
-        version: 1,
+        version: 2,
         actions: [
           "list",
           "get",
