@@ -446,31 +446,32 @@ describe("live UI integration", () => {
       expect(cleared).toContain("filter: type to filter files");
       expect(cleared).not.toContain("filter: delta");
 
+      await session.waitIdle({ timeout: 100 });
       await session.press("escape");
       const leftFilter = await harness.waitForSnapshot(
         session,
-        (text) => text.includes("alphaOnly = true") && !text.includes("filter:"),
+        (text) => !text.includes("filter:") && text.includes("View  Navigate  Theme  Agent  Help"),
         5_000,
       );
 
-      expect(leftFilter).toContain("alphaOnly = true");
       expect(leftFilter).not.toContain("filter:");
+      expect(leftFilter).toContain("View  Navigate  Theme  Agent  Help");
 
       await session.type("zzz");
       const ignoredTyping = await harness.waitForSnapshot(
         session,
         (text) =>
-          text.includes("alphaOnly = true") &&
           !text.includes("filter:") &&
           !text.includes("zzz") &&
-          !text.includes("No files match the current filter."),
+          !text.includes("No files match the current filter.") &&
+          text.includes("View  Navigate  Theme  Agent  Help"),
         5_000,
       );
 
-      expect(ignoredTyping).toContain("alphaOnly = true");
       expect(ignoredTyping).not.toContain("filter:");
       expect(ignoredTyping).not.toContain("zzz");
       expect(ignoredTyping).not.toContain("No files match the current filter.");
+      expect(ignoredTyping).toContain("View  Navigate  Theme  Agent  Help");
     } finally {
       session.close();
     }
@@ -604,6 +605,7 @@ describe("live UI integration", () => {
       expect(help).toContain("move line-by-line");
       expect(help).toContain("toggle AI notes");
 
+      await session.waitIdle({ timeout: 100 });
       await session.press("escape");
       const closed = await harness.waitForSnapshot(
         session,
@@ -685,6 +687,7 @@ describe("live UI integration", () => {
 
       expect(fileMenu).toContain("Reload");
 
+      await session.waitIdle({ timeout: 100 });
       await session.press("escape");
       const closed = await harness.waitForSnapshot(
         session,

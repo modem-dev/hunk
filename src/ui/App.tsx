@@ -122,6 +122,7 @@ export function App({
   const filteredFiles = review.visibleFiles;
   const selectedFile = review.selectedFile;
   const selectedHunkIndex = review.selectedHunkIndex;
+  const clearFilter = review.clearFilter;
   const moveToAnnotatedFile = review.moveToAnnotatedFile;
   const moveToAnnotatedHunk = review.moveToAnnotatedHunk;
 
@@ -533,10 +534,13 @@ export function App({
     activeMenuId,
     activateCurrentMenuItem,
     canRefreshCurrentInput,
+    clearFilter,
     closeHelp,
     closeMenu,
     cycleTheme,
+    filter: review.filter,
     focusArea,
+    focusFiles,
     focusFilter,
     moveToAnnotatedHunk,
     moveToHunk: review.moveToHunk,

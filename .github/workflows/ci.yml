@@ -40,7 +40,7 @@ jobs:
         run: bun run typecheck
 
       - name: Test suite
-        run: bun test
+        run: bun run test
 
       - name: PTY integration tests
         run: bun run test:integration
