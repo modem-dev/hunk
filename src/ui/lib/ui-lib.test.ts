@@ -83,8 +83,14 @@ describe("ui helpers", () => {
       "agent",
       "help",
     ]);
-    expect(specs[0]).toMatchObject({ id: "file", left: 1, width: 6, label: "File" });
-    expect(specs[1]?.left).toBe(specs[0]!.left + specs[0]!.width + 1);
+    expect(specs).toMatchObject([
+      { id: "file", left: 1, width: 6, label: "File" },
+      { id: "view", left: 7, width: 6, label: "View" },
+      { id: "navigate", left: 13, width: 10, label: "Navigate" },
+      { id: "theme", left: 23, width: 7, label: "Theme" },
+      { id: "agent", left: 30, width: 7, label: "Agent" },
+      { id: "help", left: 37, width: 6, label: "Help" },
+    ]);
   });
 
   test("nextMenuItemIndex skips separators in both directions", () => {
