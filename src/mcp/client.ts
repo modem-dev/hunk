@@ -151,11 +151,17 @@ export class HunkHostClient {
     reportHunkDaemonUpgradeRestart();
     const health = await readHunkDaemonHealth(config);
     const pid = health?.pid;
-    if (!pid || pid === process.pid) {
+    if (pid === process.pid) {
       throw new Error(
         "The running Hunk session daemon is incompatible with this Hunk build. " +
           "Restart Hunk so it can launch a fresh daemon from the current source tree.",
       );
+    }
+
+    // If the stale daemon already disappeared on its own, let the normal startup path launch a
+    // fresh one instead of turning that race into a manual restart error.
+    if (!pid) {
+      return;
     }
 
     try {

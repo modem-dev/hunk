@@ -23,7 +23,7 @@ export async function readHunkSessionDaemonCapabilities(
   }
 
   if (!response.ok) {
-    throw new Error(response.statusText || "Unknown Hunk session daemon error.");
+    return null;
   }
 
   let capabilities: unknown;
