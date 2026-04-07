@@ -75,14 +75,25 @@ export interface HunkSessionSnapshot {
   updatedAt: string;
 }
 
-export interface CommentToolInput extends SessionTargetInput {
+export interface CommentTargetInput {
   filePath: string;
-  side: DiffSide;
-  line: number;
+  hunkIndex?: number;
+  side?: DiffSide;
+  line?: number;
   summary: string;
   rationale?: string;
-  reveal?: boolean;
   author?: string;
+}
+
+export interface CommentToolInput extends SessionTargetInput, CommentTargetInput {
+  reveal?: boolean;
+}
+
+export interface CommentBatchItemInput extends CommentTargetInput {}
+
+export interface CommentBatchToolInput extends SessionTargetInput {
+  comments: CommentBatchItemInput[];
+  revealMode?: "none" | "first";
 }
 
 export interface NavigateToFileToolInput extends SessionTargetInput {
@@ -133,6 +144,10 @@ export interface AppliedCommentResult {
   hunkIndex: number;
   side: DiffSide;
   line: number;
+}
+
+export interface AppliedCommentBatchResult {
+  applied: AppliedCommentResult[];
 }
 
 export interface NavigatedSelectionResult {
@@ -197,6 +212,7 @@ export interface SessionReview {
 
 export type SessionCommandResult =
   | AppliedCommentResult
+  | AppliedCommentBatchResult
   | NavigatedSelectionResult
   | RemovedCommentResult
   | ClearedCommentsResult
@@ -248,6 +264,12 @@ export type SessionServerMessage =
       requestId: string;
       command: "comment";
       input: CommentToolInput;
+    }
+  | {
+      type: "command";
+      requestId: string;
+      command: "comment_batch";
+      input: CommentBatchToolInput;
     }
   | {
       type: "command";

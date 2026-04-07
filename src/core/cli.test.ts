@@ -408,6 +408,94 @@ describe("parseCli", () => {
     });
   });
 
+  test("parses session comment apply with --focus", async () => {
+    const originalStdin = Bun.stdin.stream;
+    Bun.stdin.stream = () =>
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(
+            new TextEncoder().encode(
+              '{"comments":[{"filePath":"README.md","hunk":2,"summary":"Explain this hunk"}]}',
+            ),
+          );
+          controller.close();
+        },
+      });
+
+    try {
+      const parsed = await parseCli([
+        "bun",
+        "hunk",
+        "session",
+        "comment",
+        "apply",
+        "session-1",
+        "--stdin",
+        "--focus",
+        "--json",
+      ]);
+
+      expect(parsed).toEqual({
+        kind: "session",
+        action: "comment-apply",
+        selector: { sessionId: "session-1" },
+        comments: [
+          {
+            filePath: "README.md",
+            hunkNumber: 2,
+            summary: "Explain this hunk",
+          },
+        ],
+        revealMode: "first",
+        output: "json",
+      });
+    } finally {
+      Bun.stdin.stream = originalStdin;
+    }
+  });
+
+  test("rejects session comment apply with an empty comments array", async () => {
+    const originalStdin = Bun.stdin.stream;
+    Bun.stdin.stream = () =>
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"comments":[]}'));
+          controller.close();
+        },
+      });
+
+    try {
+      await expect(
+        parseCli(["bun", "hunk", "session", "comment", "apply", "session-1", "--stdin"]),
+      ).rejects.toThrow("Session comment apply expected at least one comment.");
+    } finally {
+      Bun.stdin.stream = originalStdin;
+    }
+  });
+
+  test("rejects session comment apply when both hunk aliases are present", async () => {
+    const originalStdin = Bun.stdin.stream;
+    Bun.stdin.stream = () =>
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(
+            new TextEncoder().encode(
+              '{"comments":[{"filePath":"README.md","hunk":2,"hunkNumber":2,"summary":"Explain this hunk"}]}',
+            ),
+          );
+          controller.close();
+        },
+      });
+
+    try {
+      await expect(
+        parseCli(["bun", "hunk", "session", "comment", "apply", "session-1", "--stdin"]),
+      ).rejects.toThrow("Comment 1 must not specify both `hunk` and `hunkNumber`.");
+    } finally {
+      Bun.stdin.stream = originalStdin;
+    }
+  });
+
   test("parses session comment list with file filter", async () => {
     const parsed = await parseCli([
       "bun",

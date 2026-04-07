@@ -3,6 +3,7 @@ import type {
   SessionCommandInput,
   SessionCommandOutput,
   SessionCommentAddCommandInput,
+  SessionCommentApplyCommandInput,
   SessionCommentClearCommandInput,
   SessionCommentListCommandInput,
   SessionCommentRemoveCommandInput,
@@ -20,6 +21,7 @@ import {
 } from "../mcp/daemonLauncher";
 import { resolveHunkMcpConfig } from "../mcp/config";
 import type {
+  AppliedCommentBatchResult,
   AppliedCommentResult,
   ClearedCommentsResult,
   ListedSession,
@@ -50,6 +52,7 @@ export interface HunkDaemonCliClient {
   navigateToHunk(input: SessionNavigateCommandInput): Promise<NavigatedSelectionResult>;
   reloadSession(input: SessionReloadCommandInput): Promise<ReloadedSessionResult>;
   addComment(input: SessionCommentAddCommandInput): Promise<AppliedCommentResult>;
+  applyComments(input: SessionCommentApplyCommandInput): Promise<AppliedCommentBatchResult>;
   listComments(input: SessionCommentListCommandInput): Promise<SessionLiveCommentSummary[]>;
   removeComment(input: SessionCommentRemoveCommandInput): Promise<RemovedCommentResult>;
   clearComments(input: SessionCommentClearCommandInput): Promise<ClearedCommentsResult>;
@@ -63,6 +66,7 @@ const REQUIRED_ACTION_BY_COMMAND: Record<SessionCommandInput["action"], SessionD
   navigate: "navigate",
   reload: "reload",
   "comment-add": "comment-add",
+  "comment-apply": "comment-apply",
   "comment-list": "comment-list",
   "comment-rm": "comment-rm",
   "comment-clear": "comment-clear",
@@ -184,6 +188,17 @@ class HttpHunkDaemonCliClient implements HunkDaemonCliClient {
         rationale: input.rationale,
         author: input.author,
         reveal: input.reveal,
+      })
+    ).result;
+  }
+
+  async applyComments(input: SessionCommentApplyCommandInput) {
+    return (
+      await this.request<{ result: AppliedCommentBatchResult }>({
+        action: "comment-apply",
+        selector: input.selector,
+        comments: input.comments,
+        revealMode: input.revealMode,
       })
     ).result;
   }
@@ -513,6 +528,24 @@ function formatCommentOutput(selector: SessionSelectorInput, result: AppliedComm
   return `Added live comment ${result.commentId} on ${result.filePath}:${result.line} (${result.side}) in hunk ${result.hunkIndex + 1} for ${formatSelector(selector)}.\n`;
 }
 
+function formatCommentApplyOutput(
+  selector: SessionSelectorInput,
+  result: AppliedCommentBatchResult,
+) {
+  if (result.applied.length === 0) {
+    return `Applied 0 live comments to ${formatSelector(selector)}.\n`;
+  }
+
+  return `${[
+    `Applied ${result.applied.length} live comments to ${formatSelector(selector)}:`,
+    ...result.applied.map(
+      (comment) =>
+        `  - ${comment.commentId} on ${comment.filePath}:${comment.line} (${comment.side}) hunk ${comment.hunkIndex + 1}`,
+    ),
+    "",
+  ].join("\n")}`;
+}
+
 function formatCommentListOutput(
   selector: SessionSelectorInput,
   comments: SessionLiveCommentSummary[],
@@ -641,6 +674,15 @@ export async function runSessionCommand(input: SessionCommandInput) {
       });
       return renderOutput(input.output, { result }, () =>
         formatCommentOutput(input.selector, result),
+      );
+    }
+    case "comment-apply": {
+      const result = await client.applyComments({
+        ...input,
+        selector: normalizedSelector!,
+      });
+      return renderOutput(input.output, { result }, () =>
+        formatCommentApplyOutput(input.selector, result),
       );
     }
     case "comment-list": {

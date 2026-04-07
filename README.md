@@ -164,7 +164,7 @@ Use it to:
 - optionally include raw patch text when an agent truly needs it
 - jump to a file, hunk, or line
 - reload the current window with a different `diff` or `show` command
-- add, list, and remove inline comments
+- add, batch-apply, list, and remove inline comments
 
 Most users only need `hunk session ...`. Use `hunk mcp serve` only for manual startup or debugging of the local daemon.
 
@@ -181,6 +181,8 @@ hunk session reload --session-path /path/to/live-window --source /path/to/other-
 hunk session reload --repo . -- show HEAD~1 -- README.md
 hunk session comment add --repo . --file README.md --new-line 103 --summary "Tighten this wording"
 hunk session comment add --repo . --file README.md --new-line 103 --summary "Tighten this wording" --focus
+printf '%s\n' '{"comments":[{"filePath":"README.md","newLine":103,"summary":"Tighten this wording"}]}' | hunk session comment apply --repo . --stdin
+printf '%s\n' '{"comments":[{"filePath":"README.md","hunk":2,"summary":"Explain this hunk"}]}' | hunk session comment apply --repo . --stdin --focus
 hunk session comment list --repo .
 hunk session comment rm --repo . <comment-id>
 hunk session comment clear --repo . --file README.md --yes
@@ -189,7 +191,9 @@ hunk session comment clear --repo . --file README.md --yes
 `hunk session review --json` returns file and hunk structure by default. Add `--include-patch` only when a caller truly needs raw unified diff text in the response.
 
 `hunk session reload ... -- <hunk command>` swaps what a live session is showing without opening a new TUI window.
-Pass `--focus` to jump the live session to the new note.
+Pass `--focus` to jump the live session to the new note, or to the first note in a batch apply.
+
+`hunk session comment apply` reads one stdin JSON object with a top-level `comments` array. Each item needs `filePath`, `summary`, and exactly one target such as `hunk`, `hunkNumber`, `oldLine`, or `newLine`.
 
 - `--repo <path>` selects the live session by its current loaded repo root.
 - `--source <path>` is reload-only: it changes where the nested `diff` / `show` command runs, but does not select the session.

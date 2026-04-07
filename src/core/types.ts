@@ -151,6 +151,25 @@ export interface SessionCommentAddCommandInput {
   reveal: boolean;
 }
 
+export interface SessionCommentApplyItemInput {
+  filePath: string;
+  hunkNumber?: number;
+  side?: "old" | "new";
+  line?: number;
+  summary: string;
+  rationale?: string;
+  author?: string;
+}
+
+export interface SessionCommentApplyCommandInput {
+  kind: "session";
+  action: "comment-apply";
+  output: SessionCommandOutput;
+  selector: SessionSelectorInput;
+  comments: SessionCommentApplyItemInput[];
+  revealMode: "none" | "first";
+}
+
 export interface SessionCommentListCommandInput {
   kind: "session";
   action: "comment-list";
@@ -183,6 +202,7 @@ export type SessionCommandInput =
   | SessionNavigateCommandInput
   | SessionReloadCommandInput
   | SessionCommentAddCommandInput
+  | SessionCommentApplyCommandInput
   | SessionCommentListCommandInput
   | SessionCommentRemoveCommandInput
   | SessionCommentClearCommandInput;

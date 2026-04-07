@@ -3,6 +3,7 @@ import type { CliInput, DiffFile } from "../../core/types";
 import { hunkLineRange } from "../../core/liveComments";
 import { HunkHostClient } from "../../mcp/client";
 import type {
+  AppliedCommentBatchResult,
   AppliedCommentResult,
   ClearedCommentsResult,
   ReloadedSessionResult,
@@ -15,6 +16,7 @@ import type { ReviewController } from "./useReviewController";
 /** Bridge one live Hunk review session to the local MCP daemon. */
 export function useHunkSessionBridge({
   addLiveComment,
+  addLiveCommentBatch,
   clearLiveComments,
   hostClient,
   liveCommentCount,
@@ -29,6 +31,7 @@ export function useHunkSessionBridge({
   showAgentNotes,
 }: {
   addLiveComment: ReviewController["addLiveComment"];
+  addLiveCommentBatch: ReviewController["addLiveCommentBatch"];
   clearLiveComments: ReviewController["clearLiveComments"];
   hostClient?: HunkHostClient;
   liveCommentCount: number;
@@ -68,6 +71,23 @@ export function useHunkSessionBridge({
     [addLiveComment, openAgentNotes],
   );
 
+  const applyIncomingCommentBatch = useCallback(
+    async (
+      message: Extract<SessionServerMessage, { command: "comment_batch" }>,
+    ): Promise<AppliedCommentBatchResult> => {
+      const result = addLiveCommentBatch(message.input.comments, message.requestId, {
+        revealMode: message.input.revealMode,
+      });
+
+      if (message.input.revealMode === "first" && result.applied.length > 0) {
+        openAgentNotes();
+      }
+
+      return result;
+    },
+    [addLiveCommentBatch, openAgentNotes],
+  );
+
   const reloadIncomingSession = useCallback(
     async (message: Extract<SessionServerMessage, { command: "reload_session" }>) =>
       reloadSession(message.input.nextInput, { sourcePath: message.input.sourcePath }),
@@ -95,6 +115,7 @@ export function useHunkSessionBridge({
 
     hostClient.setBridge({
       applyComment: applyIncomingComment,
+      applyCommentBatch: applyIncomingCommentBatch,
       navigateToHunk: navigateToHunkSelection,
       reloadSession: reloadIncomingSession,
       removeComment: removeIncomingComment,
@@ -106,6 +127,7 @@ export function useHunkSessionBridge({
     };
   }, [
     applyIncomingComment,
+    applyIncomingCommentBatch,
     clearIncomingComments,
     hostClient,
     navigateToHunkSelection,
