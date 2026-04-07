@@ -72,48 +72,33 @@ describe("app mouse support", () => {
 });
 
 describe("controlling terminal attachment", () => {
-  test("opens /dev/tty for read and write and closes both streams", () => {
+  test("opens /dev/tty for read and closes the input stream", () => {
     const calls: Array<[string, string]> = [];
     let stdinDestroyed = false;
-    let stdoutDestroyed = false;
 
     const stdin = {
       destroy() {
         stdinDestroyed = true;
       },
     } as never;
-    const stdout = {
-      destroy() {
-        stdoutDestroyed = true;
-      },
-    } as never;
 
     const controllingTerminal = openControllingTerminal({
       openSync(path, flags) {
         calls.push([String(path), String(flags)]);
-        return flags === "r" ? 11 : 12;
+        return 11;
       },
       createReadStream(fd) {
         expect(fd).toBe(11);
         return stdin;
       },
-      createWriteStream(fd) {
-        expect(fd).toBe(12);
-        return stdout;
-      },
     });
 
     expect(controllingTerminal).not.toBeNull();
-    expect(calls).toEqual([
-      ["/dev/tty", "r"],
-      ["/dev/tty", "w"],
-    ]);
+    expect(calls).toEqual([["/dev/tty", "r"]]);
     expect(controllingTerminal?.stdin).toBe(stdin);
-    expect(controllingTerminal?.stdout).toBe(stdout);
 
     controllingTerminal?.close();
     expect(stdinDestroyed).toBe(true);
-    expect(stdoutDestroyed).toBe(true);
   });
 
   test("returns null when the controlling terminal cannot be opened", () => {
@@ -122,9 +107,6 @@ describe("controlling terminal attachment", () => {
         throw new Error("no tty");
       },
       createReadStream() {
-        throw new Error("unreachable");
-      },
-      createWriteStream() {
         throw new Error("unreachable");
       },
     });

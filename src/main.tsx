@@ -54,7 +54,7 @@ async function main() {
 
   const renderer = await createCliRenderer({
     stdin: controllingTerminal?.stdin,
-    stdout: controllingTerminal?.stdout,
+    stdout: process.stdout,
     useMouse: shouldUseMouseForApp({
       hasControllingTerminal: Boolean(controllingTerminal),
     }),
