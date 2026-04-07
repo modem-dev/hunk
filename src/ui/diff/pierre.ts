@@ -430,6 +430,44 @@ function queueHighlightedDiff(run: () => HighlightedDiffCode) {
   return queued;
 }
 
+/**
+ * Pierre highlights unchanged context on both diff sides even though split/stack rendering later
+ * cares only about the styled code spans. Reuse one side's line node for both arrays so identical
+ * context flattens once and the existing WeakMap span cache can fan that result back out.
+ */
+function aliasHighlightedContextLines(file: DiffFile, highlighted: HighlightedDiffCode) {
+  for (const hunk of file.metadata.hunks) {
+    let deletionLineIndex = hunk.deletionLineIndex;
+    let additionLineIndex = hunk.additionLineIndex;
+
+    for (const content of hunk.hunkContent) {
+      if (content.type === "context") {
+        for (let offset = 0; offset < content.lines; offset += 1) {
+          const sharedLine =
+            highlighted.additionLines[additionLineIndex + offset] ??
+            highlighted.deletionLines[deletionLineIndex + offset];
+
+          if (!sharedLine) {
+            continue;
+          }
+
+          highlighted.deletionLines[deletionLineIndex + offset] = sharedLine;
+          highlighted.additionLines[additionLineIndex + offset] = sharedLine;
+        }
+
+        deletionLineIndex += content.lines;
+        additionLineIndex += content.lines;
+        continue;
+      }
+
+      deletionLineIndex += content.deletions;
+      additionLineIndex += content.additions;
+    }
+  }
+
+  return highlighted;
+}
+
 /** Highlight a diff file and return just the rendered line trees the UI needs. */
 export async function loadHighlightedDiff(
   file: DiffFile,
@@ -443,10 +481,10 @@ export async function loadHighlightedDiff(
         highlighter,
         pierreRenderOptions(appearance),
       );
-      return {
+      return aliasHighlightedContextLines(file, {
         deletionLines: highlighted.code.deletionLines as Array<HastNode | undefined>,
         additionLines: highlighted.code.additionLines as Array<HastNode | undefined>,
-      };
+      });
     });
   } catch {
     const highlighter = await prepareHighlighter("text", appearance);
@@ -456,10 +494,10 @@ export async function loadHighlightedDiff(
         highlighter,
         pierreRenderOptions(appearance),
       );
-      return {
+      return aliasHighlightedContextLines(file, {
         deletionLines: highlighted.code.deletionLines as Array<HastNode | undefined>,
         additionLines: highlighted.code.additionLines as Array<HastNode | undefined>,
-      };
+      });
     });
   }
 }
