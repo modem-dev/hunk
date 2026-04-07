@@ -240,7 +240,7 @@ export function useAppKeyboardShortcuts({
       return;
     }
 
-    if (key.name === "?") {
+    if (key.name === "?" || key.sequence === "?") {
       toggleHelp();
       closeMenu();
       return;

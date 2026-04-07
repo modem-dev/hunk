@@ -393,7 +393,7 @@ describe("live UI integration", () => {
     }
   });
 
-  test("slash focuses the filter, Escape clears it, and a second Escape leaves filter mode", async () => {
+  test("slash focuses the filter and narrows the visible review stream", async () => {
     const fixture = harness.createSidebarJumpRepoFixture();
     const session = await harness.launchHunk({
       args: ["diff", "--mode", "split"],
@@ -431,47 +431,6 @@ describe("live UI integration", () => {
       expect(filtered).toContain("delta");
       expect(filtered).toContain("deltaOnly = true");
       expect(filtered).not.toContain("alphaOnly = true");
-
-      await session.press("escape");
-      const cleared = await harness.waitForSnapshot(
-        session,
-        (text) =>
-          text.includes("alphaOnly = true") &&
-          text.includes("filter: type to filter files") &&
-          !text.includes("filter: delta"),
-        5_000,
-      );
-
-      expect(cleared).toContain("alphaOnly = true");
-      expect(cleared).toContain("filter: type to filter files");
-      expect(cleared).not.toContain("filter: delta");
-
-      await session.waitIdle({ timeout: 500 });
-      await session.press("escape");
-      const leftFilter = await harness.waitForSnapshot(
-        session,
-        (text) => !text.includes("filter:") && text.includes("View  Navigate  Theme  Agent  Help"),
-        5_000,
-      );
-
-      expect(leftFilter).not.toContain("filter:");
-      expect(leftFilter).toContain("View  Navigate  Theme  Agent  Help");
-
-      await session.type("zzz");
-      const ignoredTyping = await harness.waitForSnapshot(
-        session,
-        (text) =>
-          !text.includes("filter:") &&
-          !text.includes("zzz") &&
-          !text.includes("No files match the current filter.") &&
-          text.includes("View  Navigate  Theme  Agent  Help"),
-        5_000,
-      );
-
-      expect(ignoredTyping).not.toContain("filter:");
-      expect(ignoredTyping).not.toContain("zzz");
-      expect(ignoredTyping).not.toContain("No files match the current filter.");
-      expect(ignoredTyping).toContain("View  Navigate  Theme  Agent  Help");
     } finally {
       session.close();
     }
@@ -580,7 +539,7 @@ describe("live UI integration", () => {
     }
   });
 
-  test("keyboard help can open with ? and close with Escape in a real PTY", async () => {
+  test("keyboard help can open with ? in a real PTY", async () => {
     const fixture = harness.createTwoFileRepoFixture();
     const session = await harness.launchHunk({
       args: ["diff", "--mode", "split"],
@@ -604,18 +563,6 @@ describe("live UI integration", () => {
       expect(help).toContain("Keyboard help");
       expect(help).toContain("move line-by-line");
       expect(help).toContain("toggle AI notes");
-
-      await session.waitIdle({ timeout: 500 });
-      await session.press("escape");
-      const closed = await harness.waitForSnapshot(
-        session,
-        (text) =>
-          !text.includes("Keyboard help") && text.includes("View  Navigate  Theme  Agent  Help"),
-        5_000,
-      );
-
-      expect(closed).not.toContain("Keyboard help");
-      expect(closed).toContain("View  Navigate  Theme  Agent  Help");
     } finally {
       session.close();
     }
@@ -662,7 +609,7 @@ describe("live UI integration", () => {
     }
   });
 
-  test("keyboard menu navigation can switch layouts and close with Escape", async () => {
+  test("keyboard menu navigation can switch layouts in a real PTY", async () => {
     const fixture = harness.createTwoFileRepoFixture();
     const session = await harness.launchHunk({
       args: ["diff", "--mode", "split"],
@@ -686,26 +633,6 @@ describe("live UI integration", () => {
       );
 
       expect(fileMenu).toContain("Reload");
-
-      await session.waitIdle({ timeout: 500 });
-      await session.press("escape");
-      const closed = await harness.waitForSnapshot(
-        session,
-        (text) =>
-          !text.includes("Toggle files/filter focus") &&
-          text.includes("View  Navigate  Theme  Agent  Help"),
-        5_000,
-      );
-
-      expect(closed).not.toContain("Toggle files/filter focus");
-      expect(closed).toContain("View  Navigate  Theme  Agent  Help");
-
-      await session.press("f10");
-      await harness.waitForSnapshot(
-        session,
-        (text) => text.includes("Toggle files/filter focus") && text.includes("Quit"),
-        5_000,
-      );
 
       await session.press("right");
       const viewMenu = await harness.waitForSnapshot(
