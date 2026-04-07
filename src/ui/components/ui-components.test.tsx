@@ -345,15 +345,37 @@ describe("UI components", () => {
       createTestDiffFile(
         "menu",
         "src/ui/MenuDropdown.tsx",
+        lines(
+          "export const menu = 1;",
+          "export const remove1 = true;",
+          "export const remove2 = true;",
+          "export const remove3 = true;",
+        ),
         "export const menu = 1;\n",
-        "export const menu = 2;\n",
       ),
       createTestDiffFile(
         "watch",
         "src/core/watch.ts",
         "export const watch = 1;\n",
-        "export const watch = 2;\nexport const enabled = true;\n",
+        lines(
+          "export const watch = 1;",
+          "export const add1 = true;",
+          "export const add2 = true;",
+          "export const add3 = true;",
+          "export const add4 = true;",
+          "export const add5 = true;",
+        ),
       ),
+      {
+        ...createTestDiffFile(
+          "rename",
+          "src/ui/Renamed.tsx",
+          "export const renamed = true;\n",
+          "export const renamed = true;\n",
+        ),
+        previousPath: "src/ui/Legacy.tsx",
+        stats: { additions: 0, deletions: 0 },
+      },
     ];
     const frame = await captureFrame(
       <SidebarPane
@@ -375,7 +397,10 @@ describe("UI components", () => {
     expect(frame).toContain(" MenuDropdown.tsx");
     expect(frame).toContain(" watch.ts");
     expect(frame).toContain("+2 -1");
-    expect(frame).toContain("+1 -1");
+    expect(frame).toContain("+5");
+    expect(frame).toContain("-3");
+    expect(frame).not.toContain("+0");
+    expect(frame).not.toContain("-0");
     expect(frame).not.toContain("M +2 -1 AI");
   });
 

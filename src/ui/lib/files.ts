@@ -6,8 +6,8 @@ export interface FileListEntry {
   kind: "file";
   id: string;
   name: string;
-  additionsText: string;
-  deletionsText: string;
+  additionsText: string | null;
+  deletionsText: string | null;
   changeType: FileDiffMetadata["type"];
   isUntracked: boolean;
 }
@@ -29,6 +29,36 @@ function sidebarFileName(file: DiffFile) {
   const previousName = basename(file.previousPath);
   const nextName = basename(file.path);
   return previousName === nextName ? nextName : `${previousName} -> ${nextName}`;
+}
+
+/** Hide zero-value file stats so the sidebar only shows real line deltas. */
+function formatSidebarStat(prefix: "+" | "-", value: number) {
+  return value > 0 ? `${prefix}${value}` : null;
+}
+
+/** Build the visible stats badges for one sidebar row. */
+export function sidebarEntryStats(entry: Pick<FileListEntry, "additionsText" | "deletionsText">) {
+  const stats: Array<{ kind: "addition" | "deletion"; text: string }> = [];
+
+  if (entry.additionsText) {
+    stats.push({ kind: "addition", text: entry.additionsText });
+  }
+
+  if (entry.deletionsText) {
+    stats.push({ kind: "deletion", text: entry.deletionsText });
+  }
+
+  return stats;
+}
+
+/** Measure the rendered sidebar stats width, including the space between badges. */
+export function sidebarEntryStatsWidth(
+  entry: Pick<FileListEntry, "additionsText" | "deletionsText">,
+) {
+  return sidebarEntryStats(entry).reduce(
+    (width, stat, index) => width + stat.text.length + (index > 0 ? 1 : 0),
+    0,
+  );
 }
 
 /** Merge one file-id keyed annotation map into the review stream file list. */
@@ -93,8 +123,8 @@ export function buildSidebarEntries(files: DiffFile[]): SidebarEntry[] {
       kind: "file",
       id: file.id,
       name: sidebarFileName(file),
-      additionsText: `+${file.stats.additions}`,
-      deletionsText: `-${file.stats.deletions}`,
+      additionsText: formatSidebarStat("+", file.stats.additions),
+      deletionsText: formatSidebarStat("-", file.stats.deletions),
       changeType: file.metadata.type,
       isUntracked: file.isUntracked ?? false,
     });
