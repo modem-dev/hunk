@@ -11,7 +11,6 @@ import type {
   SessionServerMessage,
 } from "../mcp/types";
 import type { AppBootstrap, LayoutMode } from "../core/types";
-import { HUNK_SESSION_API_VERSION } from "../session/protocol";
 import { createTestGitAppBootstrap } from "../../test/helpers/app-bootstrap";
 import { createTestDiffFile as buildTestDiffFile, lines } from "../../test/helpers/diff-helpers";
 
@@ -48,7 +47,6 @@ function createMockHostClient() {
   let bridge: Bridge = null;
   let latestSnapshot: HunkSessionSnapshot | null = null;
   const registration: HunkSessionRegistration = {
-    protocolVersion: HUNK_SESSION_API_VERSION,
     sessionId: "session-1",
     pid: process.pid,
     cwd: process.cwd(),
@@ -57,7 +55,7 @@ function createMockHostClient() {
     title: "repo working tree",
     sourceLabel: "repo",
     launchedAt: "2026-03-24T00:00:00.000Z",
-    reviewFiles: [],
+    files: [],
   };
   return {
     hostClient: {

@@ -51,7 +51,6 @@ export interface SessionTerminalMetadata {
 }
 
 export interface HunkSessionRegistration {
-  protocolVersion: number;
   sessionId: string;
   pid: number;
   cwd: string;
@@ -61,7 +60,7 @@ export interface HunkSessionRegistration {
   sourceLabel: string;
   launchedAt: string;
   terminal?: SessionTerminalMetadata;
-  reviewFiles: SessionReviewFile[];
+  files: SessionReviewFile[];
 }
 
 export interface HunkSessionSnapshot {

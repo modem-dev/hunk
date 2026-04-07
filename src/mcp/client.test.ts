@@ -21,7 +21,7 @@ function createRegistration() {
     repoRoot: process.cwd(),
     sourceLabel: "before.ts -> after.ts",
     title: "before.ts ↔ after.ts",
-    reviewFiles: [createTestSessionReviewFile({ path: "after.ts" })],
+    files: [createTestSessionReviewFile({ path: "after.ts" })],
   });
 }
 

@@ -5,7 +5,6 @@ import { hunkLineRange } from "../core/liveComments";
 import type { AppBootstrap } from "../core/types";
 import { resolveSessionTerminalMetadata } from "./sessionTerminalMetadata";
 import type { HunkSessionRegistration, HunkSessionSnapshot, SessionReviewFile } from "./types";
-import { HUNK_SESSION_API_VERSION } from "../session/protocol";
 
 /** Resolve the TTY device path for the current process, if available. */
 function ttyname(): string | undefined {
@@ -32,7 +31,7 @@ function inferRepoRoot(bootstrap: AppBootstrap) {
 }
 
 /** Convert the loaded changeset into the daemon's file-and-hunk review export model. */
-function buildSessionReviewFiles(bootstrap: AppBootstrap): SessionReviewFile[] {
+function buildSessionFiles(bootstrap: AppBootstrap): SessionReviewFile[] {
   return bootstrap.changeset.files.map((file) => ({
     id: file.id,
     path: file.path,
@@ -54,7 +53,6 @@ export function createSessionRegistration(bootstrap: AppBootstrap): HunkSessionR
   const terminal = resolveSessionTerminalMetadata({ tty: ttyname() });
 
   return {
-    protocolVersion: HUNK_SESSION_API_VERSION,
     sessionId: randomUUID(),
     pid: process.pid,
     cwd: process.cwd(),
@@ -64,7 +62,7 @@ export function createSessionRegistration(bootstrap: AppBootstrap): HunkSessionR
     sourceLabel: bootstrap.changeset.sourceLabel,
     launchedAt: new Date().toISOString(),
     terminal,
-    reviewFiles: buildSessionReviewFiles(bootstrap),
+    files: buildSessionFiles(bootstrap),
   };
 }
 
@@ -75,12 +73,11 @@ export function updateSessionRegistration(
 ): HunkSessionRegistration {
   return {
     ...current,
-    protocolVersion: HUNK_SESSION_API_VERSION,
     repoRoot: inferRepoRoot(bootstrap),
     inputKind: bootstrap.input.kind,
     title: bootstrap.changeset.title,
     sourceLabel: bootstrap.changeset.sourceLabel,
-    reviewFiles: buildSessionReviewFiles(bootstrap),
+    files: buildSessionFiles(bootstrap),
   };
 }
 

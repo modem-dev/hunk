@@ -47,32 +47,6 @@ export interface SessionTargetSelector {
   repoRoot?: string;
 }
 
-interface LegacySessionRegistrationShape extends Omit<
-  HunkSessionRegistration,
-  "protocolVersion" | "reviewFiles"
-> {
-  protocolVersion?: number;
-  reviewFiles?: SessionReviewFile[];
-  files?: SessionReviewFile[];
-}
-
-function normalizeSessionRegistration(
-  registration: HunkSessionRegistration | LegacySessionRegistrationShape,
-): HunkSessionRegistration {
-  const legacyFiles = "files" in registration ? registration.files : undefined;
-  const reviewFiles = Array.isArray(registration.reviewFiles)
-    ? registration.reviewFiles
-    : Array.isArray(legacyFiles)
-      ? legacyFiles
-      : [];
-
-  return {
-    ...registration,
-    protocolVersion: registration.protocolVersion ?? 1,
-    reviewFiles,
-  };
-}
-
 function describeSessionChoices(sessions: ListedSession[]) {
   return sessions.map((session) => `${session.sessionId} (${session.title})`).join(", ");
 }
@@ -89,9 +63,9 @@ function findSelectedFile(session: ListedSession) {
 }
 
 /** Match one review-export file against the live snapshot's current file selection. */
-function findSelectedReviewFile(reviewFiles: SessionReviewFile[], snapshot: HunkSessionSnapshot) {
+function findSelectedReviewFile(files: SessionReviewFile[], snapshot: HunkSessionSnapshot) {
   return (
-    reviewFiles.find(
+    files.find(
       (file) =>
         file.id === snapshot.selectedFileId ||
         file.path === snapshot.selectedFilePath ||
@@ -203,8 +177,8 @@ export class HunkDaemonState {
         sourceLabel: entry.registration.sourceLabel,
         launchedAt: entry.registration.launchedAt,
         terminal: entry.registration.terminal,
-        fileCount: entry.registration.reviewFiles.length,
-        files: entry.registration.reviewFiles.map(summarizeReviewFile),
+        fileCount: entry.registration.files.length,
+        files: entry.registration.files.map(summarizeReviewFile),
         snapshot: entry.snapshot,
       }))
       .sort((left, right) => right.snapshot.updatedAt.localeCompare(left.snapshot.updatedAt));
@@ -221,7 +195,7 @@ export class HunkDaemonState {
   ): SessionReview {
     const entry = this.getSessionEntry(selector);
     const { registration, snapshot } = entry;
-    const selectedFile = findSelectedReviewFile(registration.reviewFiles, snapshot);
+    const selectedFile = findSelectedReviewFile(registration.files, snapshot);
     const includePatch = options.includePatch ?? false;
 
     return {
@@ -235,7 +209,7 @@ export class HunkDaemonState {
       selectedHunk: selectedFile ? (selectedFile.hunks[snapshot.selectedHunkIndex] ?? null) : null,
       showAgentNotes: snapshot.showAgentNotes,
       liveCommentCount: snapshot.liveCommentCount,
-      files: registration.reviewFiles.map((file) => serializeReviewFile(file, includePatch)),
+      files: registration.files.map((file) => serializeReviewFile(file, includePatch)),
     };
   }
 
@@ -284,33 +258,32 @@ export class HunkDaemonState {
 
   registerSession(
     socket: DaemonSessionSocket,
-    registration: HunkSessionRegistration | LegacySessionRegistrationShape,
+    registration: HunkSessionRegistration,
     snapshot: HunkSessionSnapshot,
   ) {
-    const normalizedRegistration = normalizeSessionRegistration(registration);
     const previousSessionId = this.sessionIdsBySocket.get(socket);
-    if (previousSessionId && previousSessionId !== normalizedRegistration.sessionId) {
+    if (previousSessionId && previousSessionId !== registration.sessionId) {
       this.unregisterSocket(socket);
     }
 
-    const existing = this.sessions.get(normalizedRegistration.sessionId);
+    const existing = this.sessions.get(registration.sessionId);
     if (existing && existing.socket !== socket) {
       this.sessionIdsBySocket.delete(existing.socket);
       this.rejectPendingCommandsForSession(
-        normalizedRegistration.sessionId,
+        registration.sessionId,
         new Error("Hunk session reconnected before the command completed."),
       );
     }
 
     const now = new Date().toISOString();
-    this.sessions.set(normalizedRegistration.sessionId, {
-      registration: normalizedRegistration,
+    this.sessions.set(registration.sessionId, {
+      registration,
       snapshot,
       socket,
       connectedAt: now,
       lastSeenAt: now,
     });
-    this.sessionIdsBySocket.set(socket, normalizedRegistration.sessionId);
+    this.sessionIdsBySocket.set(socket, registration.sessionId);
   }
 
   updateSnapshot(sessionId: string, snapshot: HunkSessionSnapshot) {

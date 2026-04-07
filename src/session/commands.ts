@@ -291,7 +291,9 @@ async function restartDaemonForMissingAction(
     timeoutMessage: "Timed out waiting for the refreshed Hunk session daemon to start.",
   });
 
-  if (selector || hadSessions) {
+  // `hunk session list` can recover from a stale daemon even when the old process belonged to a
+  // sibling worktree that reports sessions which will never reconnect to this fresh daemon.
+  if (selector || (hadSessions && action !== "list")) {
     const registered = await waitForSessionRegistration(selector);
     if (!registered) {
       throw new Error(

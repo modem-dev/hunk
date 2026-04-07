@@ -9,7 +9,6 @@ import type {
   SessionReviewFile,
   SessionReviewHunk,
 } from "../../src/mcp/types";
-import { HUNK_SESSION_API_VERSION } from "../../src/session/protocol";
 
 export function createTestSessionFileSummary(
   overrides: Partial<SessionFileSummary> = {},
@@ -70,10 +69,9 @@ export function createTestSessionSnapshot(
 export function createTestSessionRegistration(
   overrides: Partial<HunkSessionRegistration> = {},
 ): HunkSessionRegistration {
-  const reviewFiles = overrides.reviewFiles ?? [createTestSessionReviewFile()];
+  const files = overrides.files ?? [createTestSessionReviewFile()];
 
   return {
-    protocolVersion: HUNK_SESSION_API_VERSION,
     sessionId: "session-1",
     pid: 123,
     cwd: "/repo",
@@ -83,7 +81,7 @@ export function createTestSessionRegistration(
     sourceLabel: "/repo",
     launchedAt: "2026-03-22T00:00:00.000Z",
     ...overrides,
-    reviewFiles,
+    files,
   };
 }
 
@@ -172,12 +170,12 @@ export function createTestSessionReview(overrides: Partial<SessionReview> = {}):
 }
 
 export function createTestListedSessionFromReviewFiles(
-  reviewFiles: SessionReviewFile[],
+  files: SessionReviewFile[],
   overrides: Partial<ListedSession> = {},
 ): ListedSession {
   return createTestListedSession({
-    fileCount: reviewFiles.length,
-    files: reviewFiles.map(summarizeReviewFile),
+    fileCount: files.length,
+    files: files.map(summarizeReviewFile),
     ...overrides,
   });
 }
