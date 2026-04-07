@@ -1601,7 +1601,7 @@ describe("App interactions", () => {
 
       let frame = setup.captureCharFrame();
       expect(frame).toContain("Toggle files/filter focus");
-      expect(frame).not.toContain("Keyboard help");
+      expect(frame).not.toContain("Controls help");
 
       await act(async () => {
         await setup.mockInput.pressArrow("left");
@@ -1609,7 +1609,7 @@ describe("App interactions", () => {
       await flush(setup);
 
       frame = setup.captureCharFrame();
-      expect(frame).toContain("Keyboard help");
+      expect(frame).toContain("Controls help");
       expect(frame).not.toContain("Toggle files/filter focus");
 
       await act(async () => {
@@ -1619,7 +1619,7 @@ describe("App interactions", () => {
 
       frame = setup.captureCharFrame();
       expect(frame).toContain("Toggle files/filter focus");
-      expect(frame).not.toContain("Keyboard help");
+      expect(frame).not.toContain("Controls help");
     } finally {
       await act(async () => {
         setup.renderer.destroy();

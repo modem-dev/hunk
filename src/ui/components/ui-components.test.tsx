@@ -1292,22 +1292,22 @@ describe("UI components", () => {
     expect(frame).not.toContain("Update available:");
   });
 
-  test("HelpDialog renders every keyboard shortcut row without overlap", async () => {
+  test("HelpDialog renders every documented control row without overlap", async () => {
     const theme = resolveTheme("midnight", null);
     const frame = await captureFrame(
       <HelpDialog
         canRefresh={true}
-        terminalHeight={31}
+        terminalHeight={36}
         terminalWidth={76}
         theme={theme}
         onClose={() => {}}
       />,
       76,
-      31,
+      36,
     );
 
     const expectedRows = [
-      "Keyboard help",
+      "Controls help",
       "[Esc]",
       "Navigation",
       "↑ / ↓           move line-by-line",
@@ -1317,8 +1317,11 @@ describe("UI components", () => {
       "d / u           half page down / up",
       "[ / ]           previous / next hunk",
       "{ / }           previous / next comment",
-      "← / →           scroll code (Shift = faster)",
+      "← / →           scroll code left / right (Shift = faster)",
       "Home / End      jump to top / bottom",
+      "Mouse",
+      "Wheel           scroll vertically",
+      "Shift+Wheel     scroll code horizontally",
       "View",
       "1 / 2 / 0       split / stack / auto",
       "s / t           sidebar / theme",
@@ -1337,9 +1340,11 @@ describe("UI components", () => {
 
     const lines = frame.split("\n");
     const blankModalRow = /│\s+│/;
+    const mouseHeaderIndex = lines.findIndex((line) => line.includes("│ Mouse"));
     const viewHeaderIndex = lines.findIndex((line) => line.includes("│ View"));
     const reviewHeaderIndex = lines.findIndex((line) => line.includes("│ Review"));
 
+    expect(lines[mouseHeaderIndex - 1]).toMatch(blankModalRow);
     expect(lines[viewHeaderIndex - 1]).toMatch(blankModalRow);
     expect(lines[reviewHeaderIndex - 1]).toMatch(blankModalRow);
     expect(frame).not.toContain("linese/Awrapt/smetadata");

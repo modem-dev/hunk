@@ -216,7 +216,7 @@ export function buildAppMenus({
     help: [
       {
         kind: "item",
-        label: "Keyboard help",
+        label: "Controls help",
         hint: "?",
         checked: showHelp,
         action: toggleHelp,

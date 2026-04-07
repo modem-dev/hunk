@@ -2,7 +2,7 @@ import { fitText, padText } from "../../lib/text";
 import type { AppTheme } from "../../themes";
 import { ModalFrame } from "./ModalFrame";
 
-/** Render the keyboard help modal. */
+/** Render the in-app controls help modal. */
 export function HelpDialog({
   canRefresh = false,
   terminalHeight,
@@ -27,8 +27,15 @@ export function HelpDialog({
         ["d / u", "half page down / up"],
         ["[ / ]", "previous / next hunk"],
         ["{ / }", "previous / next comment"],
-        ["← / →", "scroll code (Shift = faster)"],
+        ["← / →", "scroll code left / right (Shift = faster)"],
         ["Home / End", "jump to top / bottom"],
+      ],
+    },
+    {
+      title: "Mouse",
+      items: [
+        ["Wheel", "scroll vertically"],
+        ["Shift+Wheel", "scroll code horizontally"],
       ],
     },
     {
@@ -92,7 +99,7 @@ export function HelpDialog({
       terminalHeight={terminalHeight}
       terminalWidth={terminalWidth}
       theme={theme}
-      title="Keyboard help"
+      title="Controls help"
       width={width}
       onClose={onClose}
     >
