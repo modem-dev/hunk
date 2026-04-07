@@ -3,6 +3,7 @@ import type { CliInput } from "./types";
 import {
   openControllingTerminal,
   resolveRuntimeCliInput,
+  shouldUseMouseForApp,
   shouldUsePagerMode,
   usesPipedPatchInput,
 } from "./terminal";
@@ -38,6 +39,35 @@ describe("terminal runtime defaults", () => {
 
     expect(shouldUsePagerMode(input, true)).toBe(true);
     expect(resolveRuntimeCliInput(input, true).options.pager).toBe(true);
+  });
+});
+
+describe("app mouse support", () => {
+  test("enables mouse for interactive stdin", () => {
+    expect(
+      shouldUseMouseForApp({
+        stdinIsTTY: true,
+        hasControllingTerminal: false,
+      }),
+    ).toBe(true);
+  });
+
+  test("enables mouse when a controlling terminal is attached", () => {
+    expect(
+      shouldUseMouseForApp({
+        stdinIsTTY: false,
+        hasControllingTerminal: true,
+      }),
+    ).toBe(true);
+  });
+
+  test("disables mouse when no interactive terminal is available", () => {
+    expect(
+      shouldUseMouseForApp({
+        stdinIsTTY: false,
+        hasControllingTerminal: false,
+      }),
+    ).toBe(false);
   });
 });
 

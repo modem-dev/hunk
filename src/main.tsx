@@ -6,6 +6,7 @@ import { formatCliError } from "./core/errors";
 import { pagePlainText } from "./core/pager";
 import { shutdownSession } from "./core/shutdown";
 import { prepareStartupPlan } from "./core/startup";
+import { shouldUseMouseForApp } from "./core/terminal";
 import { resolveStartupUpdateNotice } from "./core/updateNotice";
 import { AppHost } from "./ui/AppHost";
 import { SessionBrokerClient } from "./session-broker/brokerClient";
@@ -50,7 +51,7 @@ async function main() {
     throw new Error("Unreachable startup plan.");
   }
 
-  const { bootstrap, cliInput, controllingTerminal } = startupPlan;
+  const { bootstrap, controllingTerminal } = startupPlan;
   const hostClient = new SessionBrokerClient<
     HunkSessionInfo,
     HunkSessionState,
@@ -62,7 +63,9 @@ async function main() {
   const renderer = await createCliRenderer({
     stdin: controllingTerminal?.stdin,
     stdout: controllingTerminal?.stdout,
-    useMouse: !cliInput.options.pager,
+    useMouse: shouldUseMouseForApp({
+      hasControllingTerminal: Boolean(controllingTerminal),
+    }),
     useAlternateScreen: true,
     exitOnCtrlC: true,
     openConsoleOnError: true,
