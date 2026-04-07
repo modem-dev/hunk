@@ -422,6 +422,28 @@ export function createPtyHarness() {
     });
   }
 
+  /**
+   * Launch Hunk with a file-backed stdin while keeping stdout/stderr attached to the PTY.
+   * Uses `exec cmd < file` so bash replaces itself with Hunk, preserving the PTY on stdout/stderr
+   * and the controlling terminal while giving the child a non-TTY stdin.
+   */
+  async function launchHunkWithFileBackedStdin(options: {
+    stdinFile: string;
+    args: string[];
+    cwd?: string;
+    cols?: number;
+    rows?: number;
+    env?: Record<string, string | undefined>;
+  }) {
+    return launchShellCommand({
+      command: `exec ${buildHunkCommand(options.args)} < ${shellQuote(options.stdinFile)}`,
+      cwd: options.cwd,
+      cols: options.cols,
+      rows: options.rows,
+      env: options.env,
+    });
+  }
+
   async function waitForSnapshot(
     session: Session,
     predicate: (text: string) => boolean,
@@ -463,6 +485,7 @@ export function createPtyHarness() {
     createSidebarJumpRepoFixture,
     createTwoFileRepoFixture,
     launchHunk,
+    launchHunkWithFileBackedStdin,
     launchShellCommand,
     buildHunkCommand,
     shellQuote,

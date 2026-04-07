@@ -592,8 +592,9 @@ describe("live UI integration", () => {
 
   test("stdin patch mode enables mouse wheel scrolling in pager UI", async () => {
     const fixture = harness.createPagerPatchFixture(60);
-    const session = await harness.launchShellCommand({
-      command: `cat ${harness.shellQuote(fixture.patchFile)} | ${harness.buildHunkCommand(["patch", "-"])}`,
+    const session = await harness.launchHunkWithFileBackedStdin({
+      stdinFile: fixture.patchFile,
+      args: ["patch", "-"],
       cols: 120,
       rows: 12,
     });
@@ -633,8 +634,9 @@ describe("live UI integration", () => {
 
   test("general pager mode enables mouse wheel scrolling for diff-like stdin", async () => {
     const fixture = harness.createPagerPatchFixture(60);
-    const session = await harness.launchShellCommand({
-      command: `cat ${harness.shellQuote(fixture.patchFile)} | ${harness.buildHunkCommand(["pager"])}`,
+    const session = await harness.launchHunkWithFileBackedStdin({
+      stdinFile: fixture.patchFile,
+      args: ["pager"],
       cols: 120,
       rows: 12,
     });
