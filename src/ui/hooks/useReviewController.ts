@@ -17,12 +17,14 @@ import {
 import {
   buildLiveComment,
   findDiffFileByPath,
-  findHunkIndexForLine,
+  resolveCommentTarget,
 } from "../../core/liveComments";
 import type { DiffFile } from "../../core/types";
 import type {
+  AppliedCommentBatchResult,
   AppliedCommentResult,
   ClearedCommentsResult,
+  CommentBatchItemInput,
   CommentToolInput,
   LiveComment,
   NavigateToHunkToolInput,
@@ -71,6 +73,11 @@ export interface ReviewController {
     commentId: string,
     options?: { reveal?: boolean },
   ) => AppliedCommentResult;
+  addLiveCommentBatch: (
+    inputs: CommentBatchItemInput[],
+    requestId: string,
+    options?: { revealMode?: "none" | "first" },
+  ) => AppliedCommentBatchResult;
   clearFilter: () => void;
   clearLiveComments: (filePath?: string) => ClearedCommentsResult;
   navigateToLocation: (input: NavigateToHunkToolInput) => NavigatedSelectionResult;
@@ -266,30 +273,95 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
         throw new Error(`No diff file matches ${input.filePath}.`);
       }
 
-      const hunkIndex = findHunkIndexForLine(file, input.side, input.line);
-      if (hunkIndex < 0) {
-        throw new Error(
-          `No ${input.side} diff hunk in ${input.filePath} covers line ${input.line}.`,
-        );
-      }
+      const target = resolveCommentTarget(file, input);
 
-      const liveComment = buildLiveComment(input, commentId, new Date().toISOString(), hunkIndex);
+      const liveComment = buildLiveComment(
+        {
+          ...input,
+          side: target.side,
+          line: target.line,
+        },
+        commentId,
+        new Date().toISOString(),
+        target.hunkIndex,
+      );
       setLiveCommentsByFileId((current) => ({
         ...current,
         [file.id]: [...(current[file.id] ?? []), liveComment],
       }));
 
       if (options?.reveal ?? false) {
-        selectHunk(file.id, hunkIndex);
+        selectHunk(file.id, target.hunkIndex);
       }
 
       return {
         commentId,
         fileId: file.id,
         filePath: file.path,
-        hunkIndex,
-        side: input.side,
-        line: input.line,
+        hunkIndex: target.hunkIndex,
+        side: target.side,
+        line: target.line,
+      };
+    },
+    [allFiles, selectHunk],
+  );
+
+  /** Apply several live comments together after validating every target first. */
+  const addLiveCommentBatch = useCallback(
+    (
+      inputs: CommentBatchItemInput[],
+      requestId: string,
+      options?: { revealMode?: "none" | "first" },
+    ): AppliedCommentBatchResult => {
+      const createdAt = new Date().toISOString();
+      const prepared = inputs.map((input, index) => {
+        const file = findDiffFileByPath(allFiles, input.filePath);
+        if (!file) {
+          throw new Error(`No diff file matches ${input.filePath}.`);
+        }
+
+        const target = resolveCommentTarget(file, input);
+        return {
+          file,
+          target,
+          liveComment: buildLiveComment(
+            {
+              ...input,
+              side: target.side,
+              line: target.line,
+            },
+            `mcp:${requestId}:${index}`,
+            createdAt,
+            target.hunkIndex,
+          ),
+        };
+      });
+
+      if (prepared.length > 0) {
+        setLiveCommentsByFileId((current) => {
+          const next = { ...current };
+          for (const entry of prepared) {
+            next[entry.file.id] = [...(next[entry.file.id] ?? []), entry.liveComment];
+          }
+
+          return next;
+        });
+      }
+
+      if (options?.revealMode === "first" && prepared.length > 0) {
+        const first = prepared[0]!;
+        selectHunk(first.file.id, first.target.hunkIndex);
+      }
+
+      return {
+        applied: prepared.map(({ file, target, liveComment }) => ({
+          commentId: liveComment.id,
+          fileId: file.id,
+          filePath: file.path,
+          hunkIndex: target.hunkIndex,
+          side: target.side,
+          line: target.line,
+        })),
       };
     },
     [allFiles, selectHunk],
@@ -413,6 +485,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     sidebarEntries,
     visibleFiles,
     addLiveComment,
+    addLiveCommentBatch,
     clearFilter,
     clearLiveComments,
     moveToAnnotatedFile,

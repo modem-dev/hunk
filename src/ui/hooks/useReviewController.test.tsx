@@ -269,4 +269,98 @@ describe("useReviewController", () => {
       });
     }
   });
+
+  test("batch live comments validate together and reveal the first applied hunk", async () => {
+    const controllerRef: { current: ReviewController | null } = { current: null };
+    const setup = await testRender(
+      <ReviewControllerHarness
+        initialFiles={[createTwoHunkFile()]}
+        onController={(nextController) => {
+          controllerRef.current = nextController;
+        }}
+      />,
+      { width: 80, height: 4 },
+    );
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        const result = expectValue(controllerRef.current).addLiveCommentBatch(
+          [
+            {
+              filePath: "alpha.ts",
+              hunkIndex: 1,
+              summary: "Later hunk note",
+            },
+            {
+              filePath: "alpha.ts",
+              hunkIndex: 0,
+              summary: "Earlier hunk note",
+            },
+          ],
+          "request-1",
+          { revealMode: "first" },
+        );
+
+        expect(result.applied.map((comment) => comment.hunkIndex)).toEqual([1, 0]);
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).liveCommentCount).toBe(2);
+      expect(expectValue(controllerRef.current).selectedHunkIndex).toBe(1);
+      expect(
+        expectValue(controllerRef.current).liveCommentSummaries.map((comment) => comment.summary),
+      ).toEqual(["Later hunk note", "Earlier hunk note"]);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("batch live comments do not mutate state when any target is invalid", async () => {
+    const controllerRef: { current: ReviewController | null } = { current: null };
+    const setup = await testRender(
+      <ReviewControllerHarness
+        initialFiles={[createTwoHunkFile()]}
+        onController={(nextController) => {
+          controllerRef.current = nextController;
+        }}
+      />,
+      { width: 80, height: 4 },
+    );
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        expect(() =>
+          expectValue(controllerRef.current).addLiveCommentBatch(
+            [
+              {
+                filePath: "alpha.ts",
+                hunkIndex: 0,
+                summary: "Valid note",
+              },
+              {
+                filePath: "missing.ts",
+                hunkIndex: 0,
+                summary: "Invalid note",
+              },
+            ],
+            "request-2",
+          ),
+        ).toThrow("No diff file matches missing.ts.");
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).liveCommentCount).toBe(0);
+      expect(expectValue(controllerRef.current).liveCommentSummaries).toEqual([]);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
 });

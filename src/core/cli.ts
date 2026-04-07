@@ -8,6 +8,7 @@ import type {
   LayoutMode,
   PagerCommandInput,
   ParsedCliInput,
+  SessionCommentApplyItemInput,
 } from "./types";
 import { resolveCliVersion } from "./version";
 
@@ -190,6 +191,95 @@ function createCommand(name: string, description: string) {
 /** Resolve whether one nested CLI command requested JSON output. */
 function resolveJsonOutput(options: { json?: boolean }) {
   return options.json ? "json" : "text";
+}
+
+function parsePositiveJsonInt(
+  value: unknown,
+  { field, itemNumber }: { field: string; itemNumber: number },
+) {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+    throw new Error(`Comment ${itemNumber} field \`${field}\` must be a positive integer.`);
+  }
+
+  return value;
+}
+
+/** Parse one stdin JSON payload for `session comment apply`. */
+function parseSessionCommentApplyPayload(raw: string): SessionCommentApplyItemInput[] {
+  if (raw.trim().length === 0) {
+    throw new Error("Session comment apply expected one JSON object on stdin.");
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("Session comment apply expected valid JSON on stdin.");
+  }
+
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error("Session comment apply expected one JSON object with a comments array.");
+  }
+
+  const value = parsed as Record<string, unknown>;
+  if (!Array.isArray(value.comments)) {
+    throw new Error("Session comment apply expected a top-level `comments` array.");
+  }
+
+  return value.comments.map((comment, index) => {
+    const itemNumber = index + 1;
+    if (!comment || typeof comment !== "object") {
+      throw new Error(`Comment ${itemNumber} must be a JSON object.`);
+    }
+
+    const item = comment as Record<string, unknown>;
+    const filePath = item.filePath;
+    if (typeof filePath !== "string" || filePath.length === 0) {
+      throw new Error(`Comment ${itemNumber} requires a non-empty \`filePath\`.`);
+    }
+
+    const summary = item.summary;
+    if (typeof summary !== "string" || summary.length === 0) {
+      throw new Error(`Comment ${itemNumber} requires a non-empty \`summary\`.`);
+    }
+
+    const hunk = parsePositiveJsonInt(item.hunk, { field: "hunk", itemNumber });
+    const hunkNumber = parsePositiveJsonInt(item.hunkNumber, { field: "hunkNumber", itemNumber });
+    if (hunk !== undefined && hunkNumber !== undefined && hunk !== hunkNumber) {
+      throw new Error(
+        `Comment ${itemNumber} must not disagree between \`hunk\` and \`hunkNumber\`.`,
+      );
+    }
+
+    const oldLine = parsePositiveJsonInt(item.oldLine, { field: "oldLine", itemNumber });
+    const newLine = parsePositiveJsonInt(item.newLine, { field: "newLine", itemNumber });
+    const resolvedHunkNumber = hunk ?? hunkNumber;
+
+    const selectors = [
+      resolvedHunkNumber !== undefined,
+      oldLine !== undefined,
+      newLine !== undefined,
+    ].filter(Boolean);
+    if (selectors.length !== 1) {
+      throw new Error(
+        `Comment ${itemNumber} must specify exactly one of \`hunk\`, \`hunkNumber\`, \`oldLine\`, or \`newLine\`.`,
+      );
+    }
+
+    return {
+      filePath,
+      hunkNumber: resolvedHunkNumber,
+      side: oldLine !== undefined ? "old" : newLine !== undefined ? "new" : undefined,
+      line: oldLine ?? newLine,
+      summary,
+      rationale: typeof item.rationale === "string" ? item.rationale : undefined,
+      author: typeof item.author === "string" ? item.author : undefined,
+    };
+  });
 }
 
 /** Normalize one explicit session selector from either session id or repo root. */
@@ -487,6 +577,7 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
           "  hunk session reload (<session-id> | --repo <path> | --session-path <path>) [--source <path>] -- diff [ref] [-- <pathspec...>]",
           "  hunk session reload (<session-id> | --repo <path> | --session-path <path>) [--source <path>] -- show [ref] [-- <pathspec...>]",
           "  hunk session comment add (<session-id> | --repo <path>) --file <path> (--old-line <n> | --new-line <n>) --summary <text> [--focus]",
+          "  hunk session comment apply (<session-id> | --repo <path>) --stdin [--focus]",
           "  hunk session comment list (<session-id> | --repo <path>)",
           "  hunk session comment rm (<session-id> | --repo <path>) <comment-id>",
           "  hunk session comment clear (<session-id> | --repo <path>) --yes",
@@ -755,6 +846,7 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
           [
             "Usage:",
             "  hunk session comment add (<session-id> | --repo <path>) --file <path> (--old-line <n> | --new-line <n>) --summary <text> [--focus]",
+            "  hunk session comment apply (<session-id> | --repo <path>) --stdin [--focus]",
             "  hunk session comment list (<session-id> | --repo <path>) [--file <path>]",
             "  hunk session comment rm (<session-id> | --repo <path>) <comment-id>",
             "  hunk session comment clear (<session-id> | --repo <path>) [--file <path>] --yes",
@@ -838,6 +930,80 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
         rationale: parsedOptions.rationale,
         author: parsedOptions.author,
         reveal: parsedOptions.focus ?? false,
+      };
+    }
+
+    if (commentSubcommand === "apply") {
+      const command = new Command("session comment apply")
+        .description("apply many live inline review notes from stdin JSON")
+        .argument("[sessionId]")
+        .option("--repo <path>", "target the live session whose repo root matches this path")
+        .option("--stdin", "read the comment batch from stdin as JSON")
+        .option("--focus", "apply the batch and focus the first note")
+        .option("--json", "emit structured JSON");
+
+      let parsedSessionId: string | undefined;
+      let parsedOptions: {
+        repo?: string;
+        stdin?: boolean;
+        focus?: boolean;
+        json?: boolean;
+      } = {};
+
+      command.action(
+        (
+          sessionId: string | undefined,
+          options: {
+            repo?: string;
+            stdin?: boolean;
+            focus?: boolean;
+            json?: boolean;
+          },
+        ) => {
+          parsedSessionId = sessionId;
+          parsedOptions = options;
+        },
+      );
+
+      if (commentRest.includes("--help") || commentRest.includes("-h")) {
+        return {
+          kind: "help",
+          text:
+            `${command.helpInformation().trimEnd()}\n\n` +
+            [
+              "Stdin JSON shape:",
+              "  {",
+              '    "comments": [',
+              "      {",
+              '        "filePath": "README.md",',
+              '        "hunk": 2,',
+              '        "summary": "Explain this hunk",',
+              '        "rationale": "Optional detail",',
+              '        "author": "Pi"',
+              "      }",
+              "    ]",
+              "  }",
+            ].join("\n") +
+            "\n",
+        };
+      }
+
+      await parseStandaloneCommand(command, commentRest);
+      if (!parsedOptions.stdin) {
+        throw new Error("Pass --stdin to read batch comments from stdin JSON.");
+      }
+
+      const comments = parseSessionCommentApplyPayload(
+        await new Response(Bun.stdin.stream()).text(),
+      );
+
+      return {
+        kind: "session",
+        action: "comment-apply",
+        output: resolveJsonOutput(parsedOptions),
+        selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
+        comments,
+        revealMode: parsedOptions.focus ? "first" : "none",
       };
     }
 
@@ -967,7 +1133,7 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
       };
     }
 
-    throw new Error("Supported comment subcommands are add, list, rm, and clear.");
+    throw new Error("Supported comment subcommands are add, apply, list, rm, and clear.");
   }
 
   throw new Error(`Unknown session command: ${subcommand}`);

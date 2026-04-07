@@ -140,6 +140,7 @@ export function App({
 
   useHunkSessionBridge({
     addLiveComment: review.addLiveComment,
+    addLiveCommentBatch: review.addLiveCommentBatch,
     clearLiveComments: review.clearLiveComments,
     hostClient,
     liveCommentCount: review.liveCommentCount,

@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type {
+  AppliedCommentBatchResult,
   AppliedCommentResult,
   ClearedCommentsResult,
   ClearCommentsToolInput,
+  CommentBatchToolInput,
   CommentToolInput,
   HunkSessionRegistration,
   HunkSessionSnapshot,
@@ -346,6 +348,16 @@ export class HunkDaemonState {
       "comment",
       input,
       "Timed out waiting for the Hunk session to apply the comment.",
+    );
+  }
+
+  sendCommentBatch(input: CommentBatchToolInput) {
+    return this.sendCommand<AppliedCommentBatchResult, "comment_batch">(
+      { sessionId: input.sessionId, sessionPath: input.sessionPath, repoRoot: input.repoRoot },
+      "comment_batch",
+      input,
+      "Timed out waiting for the Hunk session to apply the comment batch.",
+      30_000,
     );
   }
 

@@ -1,4 +1,5 @@
 import type {
+  AppliedCommentBatchResult,
   AppliedCommentResult,
   ClearedCommentsResult,
   HunkSessionRegistration,
@@ -25,6 +26,9 @@ interface HunkAppBridge {
   applyComment: (
     message: Extract<SessionServerMessage, { command: "comment" }>,
   ) => Promise<AppliedCommentResult>;
+  applyCommentBatch: (
+    message: Extract<SessionServerMessage, { command: "comment_batch" }>,
+  ) => Promise<AppliedCommentBatchResult>;
   navigateToHunk: (
     message: Extract<SessionServerMessage, { command: "navigate_to_hunk" }>,
   ) => Promise<NavigatedSelectionResult>;
@@ -261,6 +265,8 @@ export class HunkHostClient {
     switch (message.command) {
       case "comment":
         return this.bridge.applyComment(message);
+      case "comment_batch":
+        return this.bridge.applyCommentBatch(message);
       case "navigate_to_hunk":
         return this.bridge.navigateToHunk(message);
       case "reload_session":

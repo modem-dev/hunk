@@ -19,7 +19,8 @@ If no session exists, ask the user to launch Hunk in their terminal first.
 5. hunk session context --repo .                        # check current focus when needed
 6. hunk session navigate ...                            # move to the right place
 7. hunk session reload -- <command>                     # swap contents if needed
-8. hunk session comment add ...                         # leave review notes
+8. hunk session comment add ...                         # leave one review note
+9. hunk session comment apply ...                       # apply many agent notes in one stdin batch
 ```
 
 ## Session selection
@@ -96,13 +97,17 @@ hunk session reload --session-path /path/to/live-window --source /path/to/other-
 
 ```bash
 hunk session comment add --repo . --file README.md --new-line 103 --summary "Tighten this wording" [--rationale "..."] [--author "agent"] [--focus]
+printf '%s\n' '{"comments":[{"filePath":"README.md","newLine":103,"summary":"Tighten this wording"}]}' | hunk session comment apply --repo . --stdin [--focus]
 hunk session comment list --repo . [--file README.md]
 hunk session comment rm --repo . <comment-id>
 hunk session comment clear --repo . --yes [--file README.md]
 ```
 
+- `comment add` is best for one note; `comment apply` is best when an agent already has several notes ready
 - `comment add` requires `--file`, `--summary`, and exactly one of `--old-line` or `--new-line`
-- Pass `--focus` when you want to jump to the new note
+- `comment apply` payload items require `filePath`, `summary`, and exactly one target such as `hunk`, `hunkNumber`, `oldLine`, or `newLine`
+- `comment apply` reads a JSON batch from stdin and validates the full batch before mutating the live session
+- Pass `--focus` when you want to jump to the new note or the first note in a batch
 - `comment list` and `comment clear` accept optional `--file`
 - Quote `--summary` and `--rationale` defensively in the shell
 
@@ -125,13 +130,14 @@ Typical flow:
 1. Load the right content (`reload` if needed)
 2. Navigate to the first interesting file / hunk
 3. Add a comment explaining what's happening and why
-4. Move to the next point of interest -- repeat
+4. If you already have several notes ready, prefer one `comment apply` batch over many separate shell invocations
 5. Summarize when done
 
 Guidelines:
 
 - Work in the order that tells the clearest story, not necessarily file order
 - Navigate before commenting so the user sees the code you're discussing
+- Use `comment apply` for agent-generated batches and `comment add` for one-off notes
 - Use `--focus` sparingly when the note itself should actively steer the review
 - Keep comments focused: intent, structure, risks, or follow-ups
 - Don't comment on every hunk -- highlight what the user wouldn't spot themselves
@@ -143,5 +149,6 @@ Guidelines:
 - **"Multiple active sessions match"** -- pass `<session-id>` explicitly.
 - **"No active Hunk session matches session path ..."** -- for advanced split-path reloads, verify the live window `Path` via `hunk session get` or `list`, then use `--session-path`.
 - **"Pass the replacement Hunk command after `--`"** -- include `--` before the nested `diff` / `show` command.
+- **"Pass --stdin to read batch comments from stdin JSON."** -- `comment apply` only reads its batch payload from stdin.
 - **"Specify exactly one navigation target"** -- pick one of `--hunk`, `--old-line`, or `--new-line`.
 - **"Specify either --next-comment or --prev-comment, not both."** -- choose one comment-navigation direction.

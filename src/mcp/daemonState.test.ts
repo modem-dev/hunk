@@ -7,6 +7,7 @@ import {
 } from "../../test/helpers/mcp-fixtures";
 import { HunkDaemonState, resolveSessionTarget } from "./daemonState";
 import type {
+  AppliedCommentBatchResult,
   AppliedCommentResult,
   ClearedCommentsResult,
   NavigatedSelectionResult,
@@ -223,6 +224,71 @@ describe("Hunk MCP daemon state", () => {
       hunkIndex: 0,
       side: "new",
       line: 4,
+    };
+
+    state.handleCommandResult({
+      requestId: outgoing.requestId,
+      ok: true,
+      result,
+    });
+
+    await expect(pending).resolves.toEqual(result);
+  });
+
+  test("routes comment-batch commands to the live session and resolves the async result", async () => {
+    const state = new HunkDaemonState();
+    const sent: string[] = [];
+    const socket = {
+      send(data: string) {
+        sent.push(data);
+      },
+    };
+
+    state.registerSession(socket, createRegistration(), createSnapshot());
+
+    const pending = state.sendCommentBatch({
+      sessionId: "session-1",
+      comments: [
+        {
+          filePath: "src/example.ts",
+          hunkIndex: 0,
+          summary: "Review note 1",
+        },
+        {
+          filePath: "src/example.ts",
+          hunkIndex: 0,
+          summary: "Review note 2",
+        },
+      ],
+      revealMode: "none",
+    });
+
+    expect(sent).toHaveLength(1);
+    const outgoing = JSON.parse(sent[0]!) as {
+      requestId: string;
+      command: string;
+    };
+    expect(outgoing.command).toBe("comment_batch");
+
+    const result: AppliedCommentBatchResult = {
+      applied: [
+        {
+          commentId: "comment-1",
+          fileId: "file-1",
+          filePath: "src/example.ts",
+          hunkIndex: 0,
+          side: "new",
+          line: 4,
+        },
+        {
+          commentId: "comment-2",
+          fileId: "file-1",
+          filePath: "src/example.ts",
+          hunkIndex: 0,
+          side: "new",
+          line: 9,
+        },
+      ],
     };
 
     state.handleCommandResult({

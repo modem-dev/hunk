@@ -64,6 +64,7 @@ function createClient(overrides: Partial<HunkDaemonCliClient>): HunkDaemonCliCli
         "navigate",
         "reload",
         "comment-add",
+        "comment-apply",
         "comment-list",
         "comment-rm",
         "comment-clear",
@@ -94,6 +95,18 @@ function createClient(overrides: Partial<HunkDaemonCliClient>): HunkDaemonCliCli
       hunkIndex: 0,
       side: "new",
       line: 1,
+    }),
+    applyComments: async () => ({
+      applied: [
+        {
+          commentId: "comment-1",
+          fileId: "file-1",
+          filePath: "README.md",
+          hunkIndex: 0,
+          side: "new",
+          line: 1,
+        },
+      ],
     }),
     listComments: async () => [],
     removeComment: async () => ({
@@ -523,6 +536,58 @@ describe("session command compatibility checks", () => {
     });
   });
 
+  test("runs comment-apply commands through the daemon and formats the applied batch", async () => {
+    setSessionCommandTestHooks({
+      createClient: () =>
+        createClient({
+          applyComments: async (input) => {
+            expect(input.selector).toEqual({ sessionId: "session-1" });
+            expect(input.comments).toEqual([
+              {
+                filePath: "README.md",
+                hunkNumber: 2,
+                summary: "Explain the hunk",
+              },
+            ]);
+            expect(input.revealMode).toBe("first");
+
+            return {
+              applied: [
+                {
+                  commentId: "comment-1",
+                  fileId: "file-1",
+                  filePath: "README.md",
+                  hunkIndex: 1,
+                  side: "new",
+                  line: 20,
+                },
+              ],
+            };
+          },
+        }),
+      resolveDaemonAvailability: async () => true,
+    });
+
+    const output = await runSessionCommand({
+      kind: "session",
+      action: "comment-apply",
+      selector: { sessionId: "session-1" },
+      comments: [
+        {
+          filePath: "README.md",
+          hunkNumber: 2,
+          summary: "Explain the hunk",
+        },
+      ],
+      revealMode: "first",
+      output: "text",
+    } satisfies SessionCommandInput);
+
+    expect(output).toBe(
+      "Applied 1 live comments to session session-1:\n  - comment-1 on README.md:20 (new) hunk 2\n",
+    );
+  });
+
   test("does not restart when the daemon already exposes the needed session action", async () => {
     const restartCalls: string[] = [];
 
@@ -539,6 +604,7 @@ describe("session command compatibility checks", () => {
               "navigate",
               "reload",
               "comment-add",
+              "comment-apply",
               "comment-list",
               "comment-rm",
               "comment-clear",

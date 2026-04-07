@@ -4,7 +4,9 @@ import {
   buildLiveComment,
   findDiffFileByPath,
   findHunkIndexForLine,
+  firstCommentTargetForHunk,
   hunkLineRange,
+  resolveCommentTarget,
 } from "./liveComments";
 
 function createExampleDiffFile() {
@@ -38,6 +40,40 @@ describe("live comment helpers", () => {
     expect(findHunkIndexForLine(file, "old", 1)).toBe(0);
     expect(findHunkIndexForLine(file, "new", 2)).toBe(0);
     expect(findHunkIndexForLine(file, "new", 40)).toBe(-1);
+  });
+
+  test("prefers a later addition over an earlier deletion-only chunk for hunk targets", () => {
+    const target = firstCommentTargetForHunk({
+      additionStart: 20,
+      additionLines: 1,
+      deletionStart: 20,
+      deletionLines: 1,
+      hunkContent: [
+        { type: "change", deletions: 1, additions: 0 },
+        { type: "context", lines: 2 },
+        { type: "change", deletions: 0, additions: 1 },
+      ],
+    } as Parameters<typeof firstCommentTargetForHunk>[0]);
+
+    expect(target).toEqual({
+      side: "new",
+      line: 22,
+    });
+  });
+
+  test("resolves hunk-wide comment targets to one stable line", () => {
+    const file = createExampleDiffFile();
+
+    expect(
+      resolveCommentTarget(file, {
+        filePath: "src/example.ts",
+        hunkIndex: 0,
+        summary: "Explain the whole hunk",
+      }),
+    ).toMatchObject({
+      hunkIndex: 0,
+      side: "new",
+    });
   });
 
   test("builds a live MCP comment annotation", () => {
