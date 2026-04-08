@@ -364,6 +364,10 @@ function firstVisibleAddedLine(frame: string) {
   return frame.match(/line\d{2} = 1\d{2}/)?.[0] ?? null;
 }
 
+function firstVisibleSourceLineNumber(frame: string) {
+  return frame.match(/line(\d{2}) =/)?.[1] ?? null;
+}
+
 function firstVisibleAddedLineNumber(frame: string) {
   return frame.match(/▌\s*(\d+)\s+\+/)?.[1] ?? null;
 }
@@ -1237,6 +1241,67 @@ describe("App interactions", () => {
       frame = setup.captureCharFrame();
       expect(frame).toContain(anchoredLine!);
       expect(firstVisibleAddedLine(frame)).toBe(anchoredLine);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("layout toggles preserve the current viewport anchor across split and stack", async () => {
+    const setup = await testRender(<AppHost bootstrap={createLineScrollBootstrap()} />, {
+      width: 220,
+      height: 12,
+    });
+
+    try {
+      await flush(setup);
+
+      let frame = setup.captureCharFrame();
+      expect(frame).toContain("line01 = 101");
+      expect(frame).not.toContain("line08 = 108");
+
+      for (let index = 0; index < 24; index += 1) {
+        await act(async () => {
+          await setup.mockInput.pressArrow("down");
+        });
+        await flush(setup);
+        frame = setup.captureCharFrame();
+        if (frame.includes("line08 = 108") && !frame.includes("line01 = 101")) {
+          break;
+        }
+      }
+
+      expect(frame).toContain("line08 = 108");
+      expect(frame).not.toContain("line01 = 101");
+      const anchoredLineNumber = firstVisibleSourceLineNumber(frame);
+      expect(anchoredLineNumber).not.toBeNull();
+
+      await act(async () => {
+        await setup.mockInput.typeText("2");
+      });
+      await flush(setup);
+      await act(async () => {
+        await Bun.sleep(80);
+        await setup.renderOnce();
+      });
+
+      frame = setup.captureCharFrame();
+      expect(frame).toContain(`line${anchoredLineNumber} =`);
+      expect(firstVisibleSourceLineNumber(frame)).toBe(anchoredLineNumber);
+
+      await act(async () => {
+        await setup.mockInput.typeText("1");
+      });
+      await flush(setup);
+      await act(async () => {
+        await Bun.sleep(80);
+        await setup.renderOnce();
+      });
+
+      frame = setup.captureCharFrame();
+      expect(frame).toContain(`line${anchoredLineNumber} =`);
+      expect(firstVisibleSourceLineNumber(frame)).toBe(anchoredLineNumber);
     } finally {
       await act(async () => {
         setup.renderer.destroy();

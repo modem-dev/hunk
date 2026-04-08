@@ -99,6 +99,8 @@ export function App({
   const sidebarScrollRef = useRef<ScrollBoxRenderable | null>(null);
   const diffScrollRef = useRef<ScrollBoxRenderable | null>(null);
   const wrapToggleScrollTopRef = useRef<number | null>(null);
+  const layoutToggleScrollTopRef = useRef<number | null>(null);
+  const [layoutToggleRequestId, setLayoutToggleRequestId] = useState(0);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(bootstrap.initialMode);
   const [themeId, setThemeId] = useState(
     () => resolveTheme(bootstrap.initialTheme, renderer.themeMode).id,
@@ -274,6 +276,13 @@ export function App({
     },
     [maxCodeHorizontalOffset, wrapLines],
   );
+
+  /** Preserve the current review position before changing the active diff layout. */
+  const selectLayoutMode = useCallback((mode: LayoutMode) => {
+    layoutToggleScrollTopRef.current = diffScrollRef.current?.scrollTop ?? 0;
+    setLayoutToggleRequestId((current) => current + 1);
+    setLayoutMode(mode);
+  }, []);
 
   /** Toggle the global agent note layer on or off. */
   const toggleAgentNotes = () => {
@@ -472,7 +481,7 @@ export function App({
         moveToHunk: review.moveToHunk,
         refreshCurrentInput: triggerRefreshCurrentInput,
         requestQuit,
-        selectLayoutMode: setLayoutMode,
+        selectLayoutMode,
         selectThemeId: setThemeId,
         showAgentNotes,
         showHelp,
@@ -497,6 +506,7 @@ export function App({
       moveToAnnotatedHunk,
       requestQuit,
       review.moveToHunk,
+      selectLayoutMode,
       triggerRefreshCurrentInput,
       showAgentNotes,
       showHelp,
@@ -547,7 +557,7 @@ export function App({
     requestQuit,
     scrollCodeHorizontally,
     scrollDiff,
-    selectLayoutMode: setLayoutMode,
+    selectLayoutMode,
     showHelp,
     switchMenu,
     toggleAgentNotes,
@@ -707,6 +717,8 @@ export function App({
           showHunkHeaders={showHunkHeaders}
           wrapLines={wrapLines}
           wrapToggleScrollTop={wrapToggleScrollTopRef.current}
+          layoutToggleScrollTop={layoutToggleScrollTopRef.current}
+          layoutToggleRequestId={layoutToggleRequestId}
           selectedFileTopAlignRequestId={review.selectedFileTopAlignRequestId}
           selectedHunkRevealRequestId={review.selectedHunkRevealRequestId}
           theme={activeTheme}

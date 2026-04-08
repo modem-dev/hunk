@@ -12,12 +12,15 @@ import type { AppTheme } from "../themes";
 
 export interface DiffSectionRowBounds extends VerticalBounds {
   key: string;
+  stableKey: string;
+  stableKeys: string[];
 }
 
 /** Cached placeholder sizing and hunk navigation geometry for one file section. */
 export interface DiffSectionGeometry extends SectionGeometry<PlannedHunkBounds> {
   rowBounds: DiffSectionRowBounds[];
   rowBoundsByKey: Map<string, DiffSectionRowBounds>;
+  rowBoundsByStableKey: Map<string, DiffSectionRowBounds>;
 }
 
 const NOTE_AWARE_SECTION_GEOMETRY_CACHE = new WeakMap<
@@ -105,6 +108,7 @@ export function measureDiffSectionGeometry(
       hunkBounds: new Map(),
       rowBounds: [],
       rowBoundsByKey: new Map(),
+      rowBoundsByStableKey: new Map(),
     };
   }
 
@@ -124,6 +128,7 @@ export function measureDiffSectionGeometry(
   const hunkBounds = new Map<number, PlannedHunkBounds>();
   const rowBounds: DiffSectionRowBounds[] = [];
   const rowBoundsByKey = new Map<string, DiffSectionRowBounds>();
+  const rowBoundsByStableKey = new Map<string, DiffSectionRowBounds>();
   const lineNumberDigits = String(findMaxLineNumber(file)).length;
   let bodyHeight = 0;
 
@@ -142,8 +147,14 @@ export function measureDiffSectionGeometry(
       wrapLines,
       theme,
     );
+    const stableKeys = [
+      row.stableKey,
+      ...(row.kind === "diff-row" ? (row.stableAliasKeys ?? []) : []),
+    ];
     const rowBoundsEntry = {
       key: row.key,
+      stableKey: row.stableKey,
+      stableKeys,
       // Record both the starting top and the measured height so callers can translate between
       // scroll positions and stable review-row identities across wrap/layout changes.
       top: bodyHeight,
@@ -151,6 +162,11 @@ export function measureDiffSectionGeometry(
     };
     rowBounds.push(rowBoundsEntry);
     rowBoundsByKey.set(row.key, rowBoundsEntry);
+    for (const stableKey of stableKeys) {
+      if (!rowBoundsByStableKey.has(stableKey)) {
+        rowBoundsByStableKey.set(stableKey, rowBoundsEntry);
+      }
+    }
 
     if (height > 0 && rowContributesToHunkBounds(row)) {
       const rowId = reviewRowId(row.key);
@@ -178,6 +194,7 @@ export function measureDiffSectionGeometry(
     hunkBounds,
     rowBounds,
     rowBoundsByKey,
+    rowBoundsByStableKey,
   };
 
   if (visibleAgentNotes.length > 0) {

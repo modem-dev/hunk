@@ -23,6 +23,8 @@ export type PlannedReviewRow =
   | {
       kind: "diff-row";
       key: string;
+      stableKey: string;
+      stableAliasKeys?: string[];
       fileId: string;
       hunkIndex: number;
       row: DiffRow;
@@ -32,6 +34,7 @@ export type PlannedReviewRow =
   | {
       kind: "inline-note";
       key: string;
+      stableKey: string;
       fileId: string;
       hunkIndex: number;
       annotationId: string;
@@ -43,6 +46,7 @@ export type PlannedReviewRow =
   | {
       kind: "note-guide-cap";
       key: string;
+      stableKey: string;
       fileId: string;
       hunkIndex: number;
       side: "old" | "new";
@@ -52,6 +56,118 @@ function lineRows(rows: DiffRow[]) {
   return rows.filter(
     (row): row is DiffLineRow => row.type === "split-line" || row.type === "stack-line",
   );
+}
+
+/** Deduplicate stable row anchors while preserving the preferred resolution order. */
+function uniqueStableKeys(keys: Array<string | undefined>) {
+  const next: string[] = [];
+  const seen = new Set<string>();
+
+  for (const key of keys) {
+    if (!key || seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    next.push(key);
+  }
+
+  return next;
+}
+
+/** Build the file-scoped stable anchor for one old-side source line. */
+function oldLineStableKey(hunkIndex: number, lineNumber?: number) {
+  return lineNumber === undefined ? undefined : `line:${hunkIndex}:old:${lineNumber}`;
+}
+
+/** Build the file-scoped stable anchor for one new-side source line. */
+function newLineStableKey(hunkIndex: number, lineNumber?: number) {
+  return lineNumber === undefined ? undefined : `line:${hunkIndex}:new:${lineNumber}`;
+}
+
+/** Build the file-scoped stable anchor for one context row shared by both sides. */
+function contextLineStableKey(hunkIndex: number, oldLineNumber?: number, newLineNumber?: number) {
+  return oldLineNumber === undefined || newLineNumber === undefined
+    ? undefined
+    : `line:${hunkIndex}:context:${oldLineNumber}:${newLineNumber}`;
+}
+
+/** Resolve the stable anchor keys for one rendered diff row across split and stack layouts. */
+function diffRowStableKeys(row: DiffRow) {
+  if (row.type === "collapsed") {
+    return [
+      row.key.endsWith(":trailing")
+        ? `meta:collapsed:trailing:${row.hunkIndex}`
+        : `meta:collapsed:before:${row.hunkIndex}`,
+    ];
+  }
+
+  if (row.type === "hunk-header") {
+    return [`meta:hunk-header:${row.hunkIndex}`];
+  }
+
+  if (row.type === "split-line") {
+    const contextKey = contextLineStableKey(
+      row.hunkIndex,
+      row.left.lineNumber,
+      row.right.lineNumber,
+    );
+
+    if (row.left.kind === "context" && row.right.kind === "context") {
+      return uniqueStableKeys([
+        contextKey,
+        newLineStableKey(row.hunkIndex, row.right.lineNumber),
+        oldLineStableKey(row.hunkIndex, row.left.lineNumber),
+      ]);
+    }
+
+    // Prefer the old-side line so split→stack toggles stay near the same vertical position even
+    // when one large change block expands into many deletions followed by many additions.
+    return uniqueStableKeys([
+      oldLineStableKey(row.hunkIndex, row.left.lineNumber),
+      newLineStableKey(row.hunkIndex, row.right.lineNumber),
+    ]);
+  }
+
+  if (row.type !== "stack-line") {
+    return [`row:${row.key}`];
+  }
+
+  const contextKey = contextLineStableKey(
+    row.hunkIndex,
+    row.cell.oldLineNumber,
+    row.cell.newLineNumber,
+  );
+
+  if (row.cell.kind === "context") {
+    return uniqueStableKeys([
+      contextKey,
+      newLineStableKey(row.hunkIndex, row.cell.newLineNumber),
+      oldLineStableKey(row.hunkIndex, row.cell.oldLineNumber),
+    ]);
+  }
+
+  return uniqueStableKeys([
+    newLineStableKey(row.hunkIndex, row.cell.newLineNumber),
+    oldLineStableKey(row.hunkIndex, row.cell.oldLineNumber),
+  ]);
+}
+
+/** Pick the stable anchor that best matches one old/new-side guide row. */
+function diffRowStableKeyForSide(row: DiffRow, side: "old" | "new") {
+  if (row.type === "split-line") {
+    return side === "new"
+      ? newLineStableKey(row.hunkIndex, row.right.lineNumber)
+      : oldLineStableKey(row.hunkIndex, row.left.lineNumber);
+  }
+
+  if (row.type === "stack-line") {
+    return side === "new"
+      ? newLineStableKey(row.hunkIndex, row.cell.newLineNumber)
+      : oldLineStableKey(row.hunkIndex, row.cell.oldLineNumber);
+  }
+
+  return diffRowStableKeys(row)[0];
 }
 
 /** Check whether a rendered diff row visually covers the note anchor line. */
@@ -229,6 +345,9 @@ export function buildReviewRenderPlan({
     const shouldAnchorHunk =
       rowCanAnchorHunk(row, showHunkHeaders) && !anchoredHunks.has(row.hunkIndex);
     const anchorId = shouldAnchorHunk ? diffHunkId(fileId, row.hunkIndex) : undefined;
+    const diffStableKeys = diffRowStableKeys(row);
+    const diffStableKey = diffStableKeys[0] ?? `row:${row.key}`;
+    const diffStableAliasKeys = diffStableKeys.slice(1);
 
     if (shouldAnchorHunk) {
       anchoredHunks.add(row.hunkIndex);
@@ -239,6 +358,7 @@ export function buildReviewRenderPlan({
       plannedRows.push({
         kind: "inline-note",
         key: `inline-note:${placement.note.id}:${row.key}:${placement.noteIndex}`,
+        stableKey: `inline-note:${placement.note.id}`,
         fileId,
         hunkIndex: placement.hunkIndex,
         annotationId: placement.note.id,
@@ -252,6 +372,8 @@ export function buildReviewRenderPlan({
     plannedRows.push({
       kind: "diff-row",
       key: `diff-row:${row.key}`,
+      stableKey: diffStableKey,
+      stableAliasKeys: diffStableAliasKeys,
       fileId: row.fileId,
       hunkIndex: row.hunkIndex,
       row,
@@ -265,6 +387,7 @@ export function buildReviewRenderPlan({
         plannedRows.push({
           kind: "note-guide-cap",
           key: `note-guide-cap:${row.key}:${side}`,
+          stableKey: `note-guide-cap:${side}:${diffRowStableKeyForSide(row, side) ?? diffStableKey}`,
           fileId,
           hunkIndex: row.hunkIndex,
           side,

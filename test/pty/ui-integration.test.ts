@@ -719,6 +719,60 @@ describe("live UI integration", () => {
     }
   });
 
+  test("layout hotkeys preserve the current review position in a real PTY", async () => {
+    const fixture = harness.createScrollableFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      cols: 220,
+      rows: 12,
+    });
+
+    try {
+      const initial = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      expect(initial).toContain("line01 = 101");
+      expect(initial).not.toContain("line08 = 108");
+
+      let anchored = initial;
+      for (let index = 0; index < 24; index += 1) {
+        await session.press("down");
+        await session.waitIdle({ timeout: 200 });
+        anchored = await session.text({ immediate: true });
+        if (anchored.includes("line08 = 108") && !anchored.includes("line01 = 101")) {
+          break;
+        }
+      }
+
+      const anchoredLineNumber = anchored.match(/line(\d{2}) =/)?.[1];
+
+      expect(anchored).toContain("line08 = 108");
+      expect(anchored).not.toContain("line01 = 101");
+      expect(anchoredLineNumber).toBeDefined();
+
+      await session.press("2");
+      const stacked = await harness.waitForSnapshot(
+        session,
+        (text) => !/▌.*▌/.test(text) && text.includes(`line${anchoredLineNumber} =`),
+        5_000,
+      );
+
+      expect(stacked).toContain(`line${anchoredLineNumber} =`);
+
+      await session.press("1");
+      const split = await harness.waitForSnapshot(
+        session,
+        (text) => /▌.*▌/.test(text) && text.includes(`line${anchoredLineNumber} =`),
+        5_000,
+      );
+
+      expect(split).toContain(`line${anchoredLineNumber} =`);
+    } finally {
+      session.close();
+    }
+  });
+
   test("mouse wheel scrolling moves the review pane", async () => {
     const fixture = harness.createScrollableFilePair();
     const session = await harness.launchHunk({
