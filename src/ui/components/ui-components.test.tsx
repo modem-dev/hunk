@@ -1,12 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { testRender } from "@opentui/react/test-utils";
-import { act, createRef, type ReactNode } from "react";
+import { act, createRef, useState, type ReactNode } from "react";
 import type { AppBootstrap, DiffFile } from "../../core/types";
 import { createTestGitAppBootstrap } from "../../../test/helpers/app-bootstrap";
 import { createTestDiffFile as buildTestDiffFile, lines } from "../../../test/helpers/diff-helpers";
 import { resolveTheme } from "../themes";
 import { measureDiffSectionGeometry } from "../lib/diffSectionGeometry";
+import { buildFileSectionLayouts, buildInStreamFileHeaderHeights } from "../lib/fileSectionLayout";
 
 const { AppHost } = await import("../AppHost");
 const { buildSidebarEntries } = await import("../lib/files");
@@ -120,6 +121,25 @@ function createMultiHunkDiffFile(id: string, path: string) {
   );
 
   return createTestDiffFile(id, path, before, after);
+}
+
+/** Build one tall file with two distant changed lines so the diff parser produces two hunks. */
+function createWideTwoHunkDiffFile(id: string, path: string, start = 1) {
+  const beforeLines = Array.from(
+    { length: 80 },
+    (_, index) => `export const line${start + index} = ${start + index};`,
+  );
+  const afterLines = [...beforeLines];
+
+  afterLines[0] = `export const line${start} = ${start + 1000};`;
+  afterLines[59] = `export const line${start + 59} = ${start + 5900};`;
+
+  return createTestDiffFile(id, path, lines(...beforeLines), lines(...afterLines));
+}
+
+/** Convert one desired viewport-center offset into the scrollTop that centers it on screen. */
+function scrollTopForCenter(centerOffset: number, viewportHeight: number) {
+  return Math.max(0, centerOffset - Math.max(0, Math.floor((viewportHeight - 1) / 2)));
 }
 
 function createViewportSizedBottomHunkDiffFile(id: string, path: string) {
@@ -507,6 +527,81 @@ describe("UI components", () => {
       expect(frame).not.toContain("2 + export const line2 = 200;");
       expect(frame).not.toContain("intro.ts");
       expect(frame).not.toContain("@@ -1,3 +1,3 @@");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("DiffPane viewport-follow selection does not move the scroll position", async () => {
+    const theme = resolveTheme("midnight", null);
+    const files = [
+      createTestDiffFile(
+        "first",
+        "first.ts",
+        lines("export const alpha = 1;"),
+        lines("export const alpha = 2;"),
+      ),
+      createWideTwoHunkDiffFile("second", "second.ts", 100),
+    ];
+    const scrollRef = createRef<ScrollBoxRenderable>();
+    let latestSelection = { fileId: files[0]!.id, hunkIndex: 0 };
+
+    function ViewportSelectionHarness() {
+      const [selection, setSelection] = useState(latestSelection);
+
+      return (
+        <DiffPane
+          {...createDiffPaneProps(files, theme, {
+            diffContentWidth: 96,
+            headerLabelWidth: 48,
+            scrollRef,
+            selectedFileId: selection.fileId,
+            selectedHunkIndex: selection.hunkIndex,
+            selectedHunkRevealRequestId: 0,
+            separatorWidth: 92,
+            width: 100,
+          })}
+          onViewportCenteredHunkChange={(fileId, hunkIndex) => {
+            latestSelection = { fileId, hunkIndex };
+            setSelection(latestSelection);
+          }}
+        />
+      );
+    }
+
+    const setup = await testRender(<ViewportSelectionHarness />, {
+      width: 104,
+      height: 12,
+    });
+
+    const sectionGeometry = files.map((file) =>
+      measureDiffSectionGeometry(file, "split", true, theme, [], 96, true, false),
+    );
+    const fileSectionLayouts = buildFileSectionLayouts(
+      files,
+      sectionGeometry.map((geometry) => geometry.bodyHeight),
+      buildInStreamFileHeaderHeights(files),
+    );
+
+    try {
+      await settleDiffPane(setup);
+
+      const viewportHeight = scrollRef.current?.viewport.height ?? 0;
+      expect(viewportHeight).toBeGreaterThan(0);
+
+      const secondFileSecondHunkTop =
+        fileSectionLayouts[1]!.bodyTop + sectionGeometry[1]!.hunkBounds.get(1)!.top;
+      const targetScrollTop = scrollTopForCenter(secondFileSecondHunkTop, viewportHeight);
+
+      await act(async () => {
+        scrollRef.current?.scrollTo(targetScrollTop);
+      });
+      await settleDiffPane(setup);
+
+      expect(latestSelection).toEqual({ fileId: "second", hunkIndex: 1 });
+      expect(scrollRef.current?.scrollTop ?? 0).toBe(targetScrollTop);
     } finally {
       await act(async () => {
         setup.renderer.destroy();

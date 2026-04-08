@@ -48,6 +48,7 @@ function clamp(value: number, min: number, max: number) {
 
 export interface ReviewSelectionOptions {
   alignFileHeaderTop?: boolean;
+  preserveViewport?: boolean;
   scrollToNote?: boolean;
 }
 
@@ -64,6 +65,7 @@ export interface ReviewController {
   selectedFile: DiffFile | undefined;
   selectedFileId: string;
   selectedFileTopAlignRequestId: number;
+  selectedHunkRevealRequestId: number;
   selectedHunk: DiffFile["metadata"]["hunks"][number] | undefined;
   selectedHunkIndex: number;
   sidebarEntries: ReviewState["sidebarEntries"];
@@ -93,6 +95,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
   const [selectedFileId, setSelectedFileId] = useState(files[0]?.id ?? "");
   const [selectedHunkIndex, setSelectedHunkIndex] = useState(0);
   const [selectedFileTopAlignRequestId, setSelectedFileTopAlignRequestId] = useState(0);
+  const [selectedHunkRevealRequestId, setSelectedHunkRevealRequestId] = useState(0);
   const [scrollToNote, setScrollToNote] = useState(false);
   const [liveCommentsByFileId, setLiveCommentsByFileId] = useState<Record<string, LiveComment[]>>(
     {},
@@ -128,6 +131,11 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
 
       if (options?.alignFileHeaderTop) {
         setSelectedFileTopAlignRequestId((current) => current + 1);
+        return;
+      }
+
+      if (!options?.preserveViewport) {
+        setSelectedHunkRevealRequestId((current) => current + 1);
       }
     },
     [],
@@ -480,6 +488,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     selectedFile,
     selectedFileId,
     selectedFileTopAlignRequestId,
+    selectedHunkRevealRequestId,
     selectedHunk,
     selectedHunkIndex,
     sidebarEntries,
