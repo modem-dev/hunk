@@ -711,6 +711,7 @@ export function App({
           wrapLines={wrapLines}
           wrapToggleScrollTop={wrapToggleScrollTopRef.current}
           selectedFileTopAlignRequestId={review.selectedFileTopAlignRequestId}
+          selectedHunkRevealRequestId={review.selectedHunkRevealRequestId}
           theme={activeTheme}
           width={diffPaneWidth}
           onOpenAgentNotesAtHunk={openAgentNotesAtHunk}
@@ -718,7 +719,9 @@ export function App({
             scrollCodeHorizontally(delta * FAST_CODE_HORIZONTAL_SCROLL_COLUMNS);
           }}
           onSelectFile={jumpToFile}
-          onViewportCenteredHunkChange={review.selectHunk}
+          onViewportCenteredHunkChange={(fileId, hunkIndex) =>
+            review.selectHunk(fileId, hunkIndex, { preserveViewport: true })
+          }
         />
       </box>
 

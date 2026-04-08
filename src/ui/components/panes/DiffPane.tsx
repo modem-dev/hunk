@@ -218,6 +218,7 @@ export function DiffPane({
   wrapLines,
   wrapToggleScrollTop,
   selectedFileTopAlignRequestId = 0,
+  selectedHunkRevealRequestId,
   theme,
   width,
   onOpenAgentNotesAtHunk,
@@ -243,6 +244,7 @@ export function DiffPane({
   wrapLines: boolean;
   wrapToggleScrollTop: number | null;
   selectedFileTopAlignRequestId?: number;
+  selectedHunkRevealRequestId?: number;
   theme: AppTheme;
   width: number;
   onOpenAgentNotesAtHunk: (fileId: string, hunkIndex: number) => void;
@@ -333,47 +335,33 @@ export function DiffPane({
   const previousFilesRef = useRef<DiffFile[]>(files);
   const previousWrapLinesRef = useRef(wrapLines);
   const previousSelectedFileTopAlignRequestIdRef = useRef(selectedFileTopAlignRequestId);
-  const suppressNextSelectionAutoScrollRef = useRef(false);
+  const previousSelectedHunkRevealRequestIdRef = useRef(selectedHunkRevealRequestId);
   const pendingFileTopAlignFileIdRef = useRef<string | null>(null);
-  const mouseScrollSelectionSyncActiveRef = useRef(false);
-  const mouseScrollSelectionSyncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const armMouseScrollSelectionSync = useCallback(() => {
-    mouseScrollSelectionSyncActiveRef.current = true;
-    if (mouseScrollSelectionSyncTimeoutRef.current) {
-      clearTimeout(mouseScrollSelectionSyncTimeoutRef.current);
-    }
-    mouseScrollSelectionSyncTimeoutRef.current = setTimeout(() => {
-      mouseScrollSelectionSyncActiveRef.current = false;
-      mouseScrollSelectionSyncTimeoutRef.current = null;
-    }, 120);
-  }, []);
+  const suppressViewportSelectionSyncRef = useRef(false);
+  const suppressViewportSelectionSyncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const lastViewportSelectionTopRef = useRef<number | null>(null);
 
   /**
-   * Combine the existing horizontal-wheel handler with viewport-centered selection sync.
-   * Horizontal gestures should keep their current behavior without changing the active hunk.
+   * Ignore viewport-follow selection updates while the pane is scrolling to an explicit selection.
+   * That lets direct hunk/file navigation own the viewport until the jump settles.
    */
-  const handleDiffPaneMouseScroll = useCallback(
-    (event: TuiMouseEvent) => {
-      const direction = event.scroll?.direction;
-      const isHorizontalGesture =
-        direction === "left" ||
-        direction === "right" ||
-        (event.modifiers.shift && (direction === "up" || direction === "down"));
-
-      if (!isHorizontalGesture) {
-        armMouseScrollSelectionSync();
-      }
-
-      handleMouseScroll(event);
-    },
-    [armMouseScrollSelectionSync, handleMouseScroll],
-  );
+  const suppressViewportSelectionSync = useCallback((durationMs = 160) => {
+    suppressViewportSelectionSyncRef.current = true;
+    if (suppressViewportSelectionSyncTimeoutRef.current) {
+      clearTimeout(suppressViewportSelectionSyncTimeoutRef.current);
+    }
+    suppressViewportSelectionSyncTimeoutRef.current = setTimeout(() => {
+      suppressViewportSelectionSyncRef.current = false;
+      suppressViewportSelectionSyncTimeoutRef.current = null;
+    }, durationMs);
+  }, []);
 
   useEffect(() => {
     return () => {
-      if (mouseScrollSelectionSyncTimeoutRef.current) {
-        clearTimeout(mouseScrollSelectionSyncTimeoutRef.current);
+      if (suppressViewportSelectionSyncTimeoutRef.current) {
+        clearTimeout(suppressViewportSelectionSyncTimeoutRef.current);
       }
     };
   }, []);
@@ -559,12 +547,17 @@ export function DiffPane({
   // immediately after imperative scrolls instead of waiting for the polled viewport snapshot.
   const effectiveScrollTop = scrollRef.current?.scrollTop ?? scrollViewport.top;
 
-  // While the wheel is actively scrolling, selection follows the viewport center instead of
-  // driving the viewport. That keeps sidebar state in sync without introducing scroll snap-back.
+  // Keep the selected file/hunk derived from the visible viewport for actual scroll-driven
+  // movement, while leaving the initial mount and non-scroll relayouts alone.
   useLayoutEffect(() => {
+    const previousViewportTop = lastViewportSelectionTopRef.current;
+    lastViewportSelectionTopRef.current = scrollViewport.top;
+
     if (
+      previousViewportTop === null ||
+      previousViewportTop === scrollViewport.top ||
       !onViewportCenteredHunkChange ||
-      !mouseScrollSelectionSyncActiveRef.current ||
+      suppressViewportSelectionSyncRef.current ||
       files.length === 0 ||
       scrollViewport.height <= 0
     ) {
@@ -589,7 +582,6 @@ export function DiffPane({
       return;
     }
 
-    suppressNextSelectionAutoScrollRef.current = true;
     onViewportCenteredHunkChange(centeredTarget.fileId, centeredTarget.hunkIndex);
   }, [
     fileSectionLayouts,
@@ -769,9 +761,8 @@ export function DiffPane({
           scrollRef.current?.scrollTo(nextTop);
         };
 
+        suppressViewportSelectionSync();
         restoreViewportAnchor();
-        // The wrap-toggle anchor restore should win over the usual selection-following behavior.
-        suppressNextSelectionAutoScrollRef.current = true;
         // Retry across a couple of repaint cycles so the restored top-row anchor sticks
         // after wrapped row heights and viewport culling settle.
         const retryDelays = [0, 16, 48];
@@ -796,6 +787,7 @@ export function DiffPane({
     scrollViewport.top,
     sectionGeometry,
     sectionHeaderHeights,
+    suppressViewportSelectionSync,
     wrapLines,
     wrapToggleScrollTop,
   ]);
@@ -813,7 +805,7 @@ export function DiffPane({
     }
 
     // Sidebar navigation should make the selected file immediately own the viewport top.
-    suppressNextSelectionAutoScrollRef.current = true;
+    suppressViewportSelectionSync();
     pendingFileTopAlignFileIdRef.current = selectedFileId;
     scrollFileHeaderToTop(selectedFileId);
   }, [
@@ -822,6 +814,7 @@ export function DiffPane({
     selectedFileTopAlignRequestId,
     selectedFileId,
     selectedFileIndex,
+    suppressViewportSelectionSync,
   ]);
 
   useLayoutEffect(() => {
@@ -850,6 +843,7 @@ export function DiffPane({
       return;
     }
 
+    suppressViewportSelectionSync();
     scrollFileHeaderToTop(pendingFileId);
   }, [
     clearPendingFileTopAlign,
@@ -858,20 +852,16 @@ export function DiffPane({
     scrollFileHeaderToTop,
     scrollRef,
     scrollViewport.top,
+    suppressViewportSelectionSync,
   ]);
 
   useLayoutEffect(() => {
     const pinnedHeaderFileId = pinnedHeaderFile?.id ?? null;
-
-    if (mouseScrollSelectionSyncActiveRef.current || suppressNextSelectionAutoScrollRef.current) {
-      suppressNextSelectionAutoScrollRef.current = false;
-      // While the mouse wheel owns the viewport, selection should follow passively instead of
-      // snapping the review stream back toward the newly selected hunk.
-      prevSelectedAnchorIdRef.current = selectedAnchorId;
-      prevPinnedHeaderFileIdRef.current = pinnedHeaderFileId;
-      pendingSelectionSettleRef.current = false;
-      return;
-    }
+    const revealFollowsSelectionChange = selectedHunkRevealRequestId === undefined;
+    const revealRequested = revealFollowsSelectionChange
+      ? prevSelectedAnchorIdRef.current !== selectedAnchorId
+      : previousSelectedHunkRevealRequestIdRef.current !== selectedHunkRevealRequestId;
+    previousSelectedHunkRevealRequestIdRef.current = selectedHunkRevealRequestId;
 
     if (!selectedAnchorId && !selectedEstimatedHunkBounds) {
       prevSelectedAnchorIdRef.current = null;
@@ -882,12 +872,6 @@ export function DiffPane({
 
     const shouldTrackPinnedHeaderResettle =
       selectedFileIndex > 0 || selectedHunkIndex > 0 || selectedNoteBounds !== null;
-
-    // Only auto-scroll when the selection actually changes, not when geometry updates during
-    // scrolling or when the selected section refines its measured bounds. One exception: after a
-    // programmatic jump to a later file/hunk, rerun the settle scroll once if the pinned header
-    // hands off to a different file while the selected content is still settling.
-    const isSelectionChange = prevSelectedAnchorIdRef.current !== selectedAnchorId;
     const pinnedHeaderChangedWhileSettling =
       shouldTrackPinnedHeaderResettle &&
       pendingSelectionSettleRef.current &&
@@ -895,7 +879,7 @@ export function DiffPane({
     prevSelectedAnchorIdRef.current = selectedAnchorId;
     prevPinnedHeaderFileIdRef.current = pinnedHeaderFileId;
 
-    if (!isSelectionChange && !pinnedHeaderChangedWhileSettling) {
+    if (!revealRequested && !pinnedHeaderChangedWhileSettling) {
       return;
     }
 
@@ -961,6 +945,7 @@ export function DiffPane({
 
     // Run after this pane renders the selected section/hunk, then retry briefly while layout
     // settles across a couple of repaint cycles.
+    suppressViewportSelectionSync();
     scrollSelectionIntoView();
     pendingSelectionSettleRef.current = shouldTrackPinnedHeaderResettle;
     const retryDelays = [0, 16, 48];
@@ -977,14 +962,16 @@ export function DiffPane({
       }
     };
   }, [
+    pinnedHeaderFile?.id,
     scrollRef,
     scrollViewport.height,
     selectedAnchorId,
     selectedEstimatedHunkBounds,
     selectedFileIndex,
     selectedHunkIndex,
+    selectedHunkRevealRequestId,
     selectedNoteBounds,
-    pinnedHeaderFile?.id,
+    suppressViewportSelectionSync,
   ]);
 
   // Configure scroll step size to scroll exactly 1 line per step
@@ -1029,7 +1016,7 @@ export function DiffPane({
               scrollY={true}
               viewportCulling={true}
               focused={pagerMode}
-              onMouseScroll={handleDiffPaneMouseScroll}
+              onMouseScroll={handleMouseScroll}
               rootOptions={{ backgroundColor: theme.panel }}
               wrapperOptions={{ backgroundColor: theme.panel }}
               viewportOptions={{ backgroundColor: theme.panel }}

@@ -1783,6 +1783,124 @@ describe("App interactions", () => {
     }
   });
 
+  test("PageDown and PageUp scrolling update the active file to match the viewport", async () => {
+    const { getLatestSnapshot, hostClient } = createMockHostClient();
+    const setup = await testRender(
+      <AppHost bootstrap={createMouseScrollSelectionBootstrap()} hostClient={hostClient} />,
+      {
+        width: 220,
+        height: 12,
+      },
+    );
+
+    try {
+      await flush(setup);
+
+      expect(getLatestSnapshot()).toMatchObject({
+        selectedFilePath: "first.ts",
+        selectedHunkIndex: 0,
+      });
+
+      let snapshot = getLatestSnapshot();
+      for (let index = 0; index < 8; index += 1) {
+        await act(async () => {
+          await setup.mockInput.pressKey("pagedown");
+        });
+        await flush(setup);
+
+        snapshot = await waitForSnapshot(
+          setup,
+          getLatestSnapshot,
+          (currentSnapshot) => currentSnapshot.selectedFilePath === "second.ts",
+          4,
+        );
+        if (snapshot?.selectedFilePath === "second.ts") {
+          break;
+        }
+      }
+
+      expect(snapshot).toMatchObject({
+        selectedFilePath: "second.ts",
+        selectedHunkIndex: 0,
+      });
+
+      for (let index = 0; index < 8; index += 1) {
+        await act(async () => {
+          await setup.mockInput.pressKey("pageup");
+        });
+        await flush(setup);
+
+        snapshot = await waitForSnapshot(
+          setup,
+          getLatestSnapshot,
+          (currentSnapshot) => currentSnapshot.selectedFilePath === "first.ts",
+          4,
+        );
+        if (snapshot?.selectedFilePath === "first.ts") {
+          break;
+        }
+      }
+
+      expect(snapshot).toMatchObject({
+        selectedFilePath: "first.ts",
+        selectedHunkIndex: 0,
+      });
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("down-arrow scrolling updates the active file and hunk to the viewport center", async () => {
+    const { getLatestSnapshot, hostClient } = createMockHostClient();
+    const setup = await testRender(
+      <AppHost bootstrap={createMouseScrollSelectionBootstrap()} hostClient={hostClient} />,
+      {
+        width: 220,
+        height: 12,
+      },
+    );
+
+    try {
+      await flush(setup);
+
+      expect(getLatestSnapshot()).toMatchObject({
+        selectedFilePath: "first.ts",
+        selectedHunkIndex: 0,
+      });
+
+      let snapshot = getLatestSnapshot();
+      for (let index = 0; index < 80; index += 1) {
+        await act(async () => {
+          await setup.mockInput.pressArrow("down");
+        });
+        await flush(setup);
+
+        snapshot = await waitForSnapshot(
+          setup,
+          getLatestSnapshot,
+          (currentSnapshot) =>
+            currentSnapshot.selectedFilePath === "second.ts" &&
+            currentSnapshot.selectedHunkIndex === 1,
+          4,
+        );
+        if (snapshot?.selectedFilePath === "second.ts" && snapshot.selectedHunkIndex === 1) {
+          break;
+        }
+      }
+
+      expect(snapshot).toMatchObject({
+        selectedFilePath: "second.ts",
+        selectedHunkIndex: 1,
+      });
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("clicking a sidebar file makes that file own the top of the review pane", async () => {
     const setup = await testRender(<AppHost bootstrap={createTwoFileHunkBootstrap()} />, {
       width: 220,
