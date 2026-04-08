@@ -341,6 +341,8 @@ export function DiffPane({
   const suppressViewportSelectionSyncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  // Initialized to null so the first render never fires a selection change; a real scroll
+  // is required before passive viewport-follow selection can trigger.
   const lastViewportSelectionTopRef = useRef<number | null>(null);
 
   /**
