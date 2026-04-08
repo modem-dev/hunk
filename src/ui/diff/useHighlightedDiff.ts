@@ -19,10 +19,26 @@ function enforceCacheLimit() {
   }
 }
 
+/** Build a fallback fingerprint from parsed metadata when raw patch text is unavailable. */
+function metadataFingerprint(file: DiffFile) {
+  return JSON.stringify({
+    additionLines: file.metadata.additionLines,
+    deletionLines: file.metadata.deletionLines,
+    hunks: file.metadata.hunks,
+    name: file.metadata.name,
+    prevName: file.metadata.prevName,
+    type: file.metadata.type,
+  });
+}
+
 /** Content fingerprint from the diff patch. Changes whenever the underlying diff
  *  changes, allowing per-file cache invalidation without a global flush. */
 function patchFingerprint(file: DiffFile) {
   const { patch } = file;
+  if (patch.length === 0) {
+    return metadataFingerprint(file);
+  }
+
   const mid = Math.floor(patch.length / 2);
   return `${patch.length}:${patch.slice(0, 64)}:${patch.slice(mid, mid + 64)}:${patch.slice(-64)}`;
 }

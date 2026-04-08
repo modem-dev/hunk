@@ -30,6 +30,17 @@
     "LICENSE"
   ],
   "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/npm/opentui/index.d.ts",
+      "import": "./dist/npm/opentui/index.js"
+    },
+    "./opentui": {
+      "types": "./dist/npm/opentui/index.d.ts",
+      "import": "./dist/npm/opentui/index.js"
+    },
+    "./package.json": "./package.json"
+  },
   "publishConfig": {
     "access": "public"
   },
@@ -80,6 +91,11 @@
     "simple-git-hooks": "^2.13.1",
     "tuistory": "^0.0.16",
     "typescript": "^5.9.3"
+  },
+  "peerDependencies": {
+    "@opentui/core": "^0.1.88",
+    "@opentui/react": "^0.1.88",
+    "react": "^19.2.4"
   },
   "simple-git-hooks": {
     "pre-commit": "bunx lint-staged"
