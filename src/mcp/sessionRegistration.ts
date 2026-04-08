@@ -4,6 +4,7 @@ import { formatHunkHeader } from "../core/hunkHeader";
 import { hunkLineRange } from "../core/liveComments";
 import type { AppBootstrap } from "../core/types";
 import { resolveSessionTerminalMetadata } from "./sessionTerminalMetadata";
+import { HUNK_SESSION_REGISTRATION_VERSION } from "./sessionWire";
 import type { HunkSessionRegistration, HunkSessionSnapshot, SessionReviewFile } from "./types";
 
 /** Resolve the TTY device path for the current process, if available. */
@@ -53,6 +54,7 @@ export function createSessionRegistration(bootstrap: AppBootstrap): HunkSessionR
   const terminal = resolveSessionTerminalMetadata({ tty: ttyname() });
 
   return {
+    registrationVersion: HUNK_SESSION_REGISTRATION_VERSION,
     sessionId: randomUUID(),
     pid: process.pid,
     cwd: process.cwd(),
@@ -73,6 +75,7 @@ export function updateSessionRegistration(
 ): HunkSessionRegistration {
   return {
     ...current,
+    registrationVersion: HUNK_SESSION_REGISTRATION_VERSION,
     repoRoot: inferRepoRoot(bootstrap),
     inputKind: bootstrap.input.kind,
     title: bootstrap.changeset.title,

@@ -130,6 +130,99 @@ describe("Hunk MCP client", () => {
     }
   });
 
+  test("logs one actionable warning when a refreshed daemon rejects an older Hunk window", async () => {
+    const listener = createServer((_request, response) => {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ ok: true, pid: process.pid, sessions: 0, pendingCommands: 0 }));
+    });
+    await new Promise<void>((resolve, reject) => {
+      listener.once("error", reject);
+      listener.listen(0, "127.0.0.1", () => resolve());
+    });
+
+    const address = listener.address();
+    const port = typeof address === "object" && address ? address.port : 0;
+    await new Promise<void>((resolve) => listener.close(() => resolve()));
+
+    let websocketOpens = 0;
+    const server = Bun.serve<undefined>({
+      hostname: "127.0.0.1",
+      port,
+      fetch(request, bunServer) {
+        const url = new URL(request.url);
+        if (url.pathname === "/health") {
+          return Response.json({ ok: true, pid: process.pid, sessions: 0, pendingCommands: 0 });
+        }
+
+        if (url.pathname === "/session-api/capabilities") {
+          return Response.json({ version: 1, actions: ["list"] });
+        }
+
+        if (url.pathname === "/session") {
+          if (bunServer.upgrade(request)) {
+            return undefined;
+          }
+
+          return new Response("Expected websocket upgrade.", { status: 426 });
+        }
+
+        return new Response("Not found.", { status: 404 });
+      },
+      websocket: {
+        open(socket) {
+          websocketOpens += 1;
+          socket.close(1008, "Incompatible Hunk session registration.");
+        },
+        message() {},
+      },
+    });
+
+    const messages: string[] = [];
+    const client = new HunkHostClient(createRegistration(), createSnapshot());
+    let reconnectScheduled = false;
+    (client as any).scheduleReconnect = () => {
+      reconnectScheduled = true;
+    };
+    (client as any).warnUnavailable = (error: unknown) => {
+      messages.push(error instanceof Error ? error.message : String(error));
+    };
+
+    try {
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        try {
+          const health = await fetch(`http://127.0.0.1:${port}/health`);
+          if (health.ok) {
+            break;
+          }
+        } catch {
+          // Give the local websocket server one brief moment to finish binding.
+        }
+
+        await Bun.sleep(25);
+      }
+
+      await (client as any).connect({
+        host: "127.0.0.1",
+        port,
+        httpOrigin: `http://127.0.0.1:${port}`,
+        wsOrigin: `ws://127.0.0.1:${port}`,
+      });
+      await waitUntil("incompatible session warning", () =>
+        messages.some((message) => message.includes("too old for the refreshed session daemon")),
+      );
+
+      expect(messages[0]).toContain(
+        "This Hunk window is too old for the refreshed session daemon.",
+      );
+      expect(messages[0]).toContain("Restart the window to reconnect.");
+      expect(reconnectScheduled).toBe(false);
+      expect(websocketOpens).toBe(1);
+    } finally {
+      client.stop();
+      server.stop(true);
+    }
+  }, 10_000);
+
   test("logs one actionable warning when a non-Hunk listener owns the MCP port", async () => {
     const conflictingListener = createServer((_request, response) => {
       response.writeHead(404, { "content-type": "text/plain" });

@@ -5,6 +5,7 @@ import { describe, expect, mock, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
 import type { HunkHostClient } from "../mcp/client";
+import { HUNK_SESSION_REGISTRATION_VERSION } from "../mcp/sessionWire";
 import type {
   HunkSessionRegistration,
   HunkSessionSnapshot,
@@ -47,6 +48,7 @@ function createMockHostClient() {
   let bridge: Bridge = null;
   let latestSnapshot: HunkSessionSnapshot | null = null;
   const registration: HunkSessionRegistration = {
+    registrationVersion: HUNK_SESSION_REGISTRATION_VERSION,
     sessionId: "session-1",
     pid: process.pid,
     cwd: process.cwd(),

@@ -1,3 +1,4 @@
+import { HUNK_SESSION_REGISTRATION_VERSION } from "../../src/mcp/sessionWire";
 import type {
   HunkSessionRegistration,
   HunkSessionSnapshot,
@@ -72,6 +73,7 @@ export function createTestSessionRegistration(
   const files = overrides.files ?? [createTestSessionReviewFile()];
 
   return {
+    registrationVersion: HUNK_SESSION_REGISTRATION_VERSION,
     sessionId: "session-1",
     pid: 123,
     cwd: "/repo",

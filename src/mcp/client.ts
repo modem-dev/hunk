@@ -29,6 +29,10 @@ import {
 const DAEMON_STARTUP_TIMEOUT_MS = 3_000;
 const RECONNECT_DELAY_MS = 3_000;
 const HEARTBEAT_INTERVAL_MS = 10_000;
+const INCOMPATIBLE_SESSION_CLOSE_CODE = 1008;
+const INCOMPATIBLE_SESSION_CLOSE_REASON_PREFIX = "Incompatible Hunk session ";
+const INCOMPATIBLE_SESSION_CLOSE_MESSAGE =
+  "This Hunk window is too old for the refreshed session daemon. Restart the window to reconnect.";
 
 interface HunkAppBridge {
   applyComment: (
@@ -235,15 +239,22 @@ export class HunkHostClient {
       void this.handleServerMessage(parsed);
     };
 
-    websocket.onclose = () => {
+    websocket.onclose = (event) => {
       if (this.websocket === websocket) {
         this.websocket = null;
       }
 
       this.stopHeartbeat();
-      if (!this.stopped) {
-        this.scheduleReconnect();
+      if (this.stopped) {
+        return;
       }
+
+      if (this.isIncompatibleSessionClose(event)) {
+        this.warnUnavailable(INCOMPATIBLE_SESSION_CLOSE_MESSAGE);
+        return;
+      }
+
+      this.scheduleReconnect();
     };
 
     websocket.onerror = () => {
@@ -350,6 +361,14 @@ export class HunkHostClient {
     for (const message of queued) {
       await this.handleServerMessage(message);
     }
+  }
+
+  /** Return whether the daemon explicitly rejected this session as incompatible after an upgrade. */
+  private isIncompatibleSessionClose(event: CloseEvent) {
+    return (
+      event.code === INCOMPATIBLE_SESSION_CLOSE_CODE &&
+      event.reason.startsWith(INCOMPATIBLE_SESSION_CLOSE_REASON_PREFIX)
+    );
   }
 
   private warnUnavailable(error: unknown) {

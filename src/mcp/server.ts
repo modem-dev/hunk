@@ -1,6 +1,6 @@
 import { HUNK_SESSION_SOCKET_PATH, resolveHunkMcpConfig } from "./config";
 import { HunkDaemonState } from "./daemonState";
-import type { SessionClientMessage } from "./types";
+import type { SessionCommandResult } from "./types";
 import {
   HUNK_SESSION_API_PATH,
   HUNK_SESSION_API_VERSION,
@@ -65,6 +65,25 @@ function sessionCapabilities(): SessionDaemonCapabilities {
 
 function jsonError(message: string, status = 400) {
   return Response.json({ error: message }, { status });
+}
+
+/** Return one object-shaped websocket message envelope when the client sent JSON. */
+function parseSocketEnvelope(message: string) {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(message);
+  } catch {
+    return null;
+  }
+
+  if (!parsed || typeof parsed !== "object") {
+    return null;
+  }
+
+  const type = (parsed as { type?: unknown }).type;
+  return typeof type === "string"
+    ? (parsed as object as { type: string } & Record<string, unknown>)
+    : null;
 }
 
 async function parseJsonRequest(request: Request) {
@@ -342,28 +361,60 @@ export function serveHunkMcpServer(options: ServeHunkMcpServerOptions = {}): Run
             return;
           }
 
-          let parsed: SessionClientMessage;
-          try {
-            parsed = JSON.parse(message) as SessionClientMessage;
-          } catch {
+          const parsed = parseSocketEnvelope(message);
+          if (!parsed) {
             return;
           }
 
           switch (parsed.type) {
             case "register":
-              state.registerSession(socket, parsed.registration, parsed.snapshot);
+              if (!state.registerSession(socket, parsed.registration, parsed.snapshot)) {
+                // Close incompatible clients so old sessions cannot poison the fresh daemon after
+                // an upgrade. The session CLI will then surface a reconnect timeout instead of a
+                // broken listing or command crash.
+                socket.close(1008, "Incompatible Hunk session registration.");
+                return;
+              }
+
               noteActivity();
               break;
             case "snapshot":
-              state.updateSnapshot(parsed.sessionId, parsed.snapshot);
+              if (typeof parsed.sessionId !== "string") {
+                return;
+              }
+
+              const updateResult = state.updateSnapshot(parsed.sessionId, parsed.snapshot);
+              if (updateResult === "not-found") {
+                socket.close(1008, "Hunk session not registered with daemon.");
+                return;
+              }
+
+              if (updateResult === "invalid") {
+                socket.close(1008, "Incompatible Hunk session snapshot.");
+                return;
+              }
+
               noteActivity();
               break;
             case "heartbeat":
+              if (typeof parsed.sessionId !== "string") {
+                return;
+              }
+
               state.markSessionSeen(parsed.sessionId);
               noteActivity();
               break;
             case "command-result":
-              state.handleCommandResult(parsed);
+              if (typeof parsed.requestId !== "string" || typeof parsed.ok !== "boolean") {
+                return;
+              }
+
+              state.handleCommandResult({
+                requestId: parsed.requestId,
+                ok: parsed.ok,
+                result: parsed.result as SessionCommandResult | undefined,
+                error: typeof parsed.error === "string" ? parsed.error : undefined,
+              });
               noteActivity();
               break;
           }

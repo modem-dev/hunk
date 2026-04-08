@@ -312,7 +312,8 @@ async function restartDaemonForMissingAction(
     const registered = await waitForSessionRegistration(selector);
     if (!registered) {
       throw new Error(
-        "Timed out waiting for the live Hunk session to reconnect after refreshing the session daemon.",
+        "Timed out waiting for the live Hunk session to reconnect after refreshing the session daemon. " +
+          "Restart that Hunk window if it was launched from an older build.",
       );
     }
   }

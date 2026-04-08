@@ -85,7 +85,7 @@ async function waitForSessionCount(port: number, count: number) {
   });
 }
 
-async function openRegisteredSession(port: number, sessionId = "session-1") {
+async function openSessionSocket(port: number) {
   const socket = new WebSocket(`ws://127.0.0.1:${port}/session`);
 
   await new Promise<void>((resolve, reject) => {
@@ -113,6 +113,12 @@ async function openRegisteredSession(port: number, sessionId = "session-1") {
     );
   });
 
+  return socket;
+}
+
+async function openRegisteredSession(port: number, sessionId = "session-1") {
+  const socket = await openSessionSocket(port);
+
   socket.send(
     JSON.stringify({
       type: "register",
@@ -127,6 +133,25 @@ async function openRegisteredSession(port: number, sessionId = "session-1") {
 
   await waitForSessionCount(port, 1);
   return socket;
+}
+
+async function waitForSocketClose(socket: WebSocket) {
+  return new Promise<{ code: number; reason: string }>((resolve, reject) => {
+    const timeout = setTimeout(
+      () => reject(new Error("Timed out waiting for websocket close.")),
+      1_000,
+    );
+    timeout.unref?.();
+
+    socket.addEventListener(
+      "close",
+      (event) => {
+        clearTimeout(timeout);
+        resolve({ code: event.code, reason: event.reason });
+      },
+      { once: true },
+    );
+  });
 }
 
 afterEach(() => {
@@ -216,6 +241,106 @@ describe("Hunk session daemon server", () => {
         error: expect.stringContaining("Use `hunk session ...` instead"),
       });
     } finally {
+      server.stop(true);
+    }
+  });
+
+  test("closes snapshots for missing sessions with a specific not-registered reason", async () => {
+    const port = await reserveLoopbackPort();
+    process.env.HUNK_MCP_HOST = "127.0.0.1";
+    process.env.HUNK_MCP_PORT = String(port);
+
+    const server = serveHunkMcpServer({
+      idleTimeoutMs: 250,
+      staleSessionTtlMs: 500,
+      staleSessionSweepIntervalMs: 25,
+    });
+    const socket = await openSessionSocket(port);
+
+    try {
+      const closed = waitForSocketClose(socket);
+      socket.send(
+        JSON.stringify({
+          type: "snapshot",
+          sessionId: "missing-session",
+          snapshot: createTestSessionSnapshot({ updatedAt: "2026-03-24T00:00:00.000Z" }),
+        }),
+      );
+
+      await expect(closed).resolves.toEqual({
+        code: 1008,
+        reason: "Hunk session not registered with daemon.",
+      });
+    } finally {
+      socket.close();
+      server.stop(true);
+    }
+  });
+
+  test("ignores incompatible registration payloads instead of poisoning session list", async () => {
+    const port = await reserveLoopbackPort();
+    process.env.HUNK_MCP_HOST = "127.0.0.1";
+    process.env.HUNK_MCP_PORT = String(port);
+
+    const server = serveHunkMcpServer({
+      idleTimeoutMs: 250,
+      staleSessionTtlMs: 500,
+      staleSessionSweepIntervalMs: 25,
+    });
+    const badSocket = await openSessionSocket(port);
+
+    try {
+      badSocket.send(
+        JSON.stringify({
+          type: "register",
+          registration: {
+            ...createTestSessionRegistration({
+              launchedAt: "2026-03-24T00:00:00.000Z",
+              pid: process.pid,
+              sessionId: "stale-session",
+            }),
+            registrationVersion: 0,
+            files: undefined,
+          },
+          snapshot: createTestSessionSnapshot({ updatedAt: "2026-03-24T00:00:00.000Z" }),
+        }),
+      );
+
+      await waitUntil(
+        "incompatible socket close",
+        () => (badSocket.readyState === WebSocket.CLOSED ? true : null),
+        1_000,
+      );
+
+      const emptyList = await fetch(`http://127.0.0.1:${port}/session-api`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ action: "list" }),
+      });
+      expect(emptyList.status).toBe(200);
+      await expect(emptyList.json()).resolves.toMatchObject({ sessions: [] });
+
+      const goodSocket = await openRegisteredSession(port, "session-good");
+      try {
+        const response = await fetch(`http://127.0.0.1:${port}/session-api`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ action: "list" }),
+        });
+
+        expect(response.status).toBe(200);
+        await expect(response.json()).resolves.toMatchObject({
+          sessions: [{ sessionId: "session-good" }],
+        });
+      } finally {
+        goodSocket.close();
+      }
+    } finally {
+      badSocket.close();
       server.stop(true);
     }
   });
