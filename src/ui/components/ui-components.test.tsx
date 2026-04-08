@@ -123,6 +123,7 @@ function createMultiHunkDiffFile(id: string, path: string) {
   return createTestDiffFile(id, path, before, after);
 }
 
+/** Build one tall file with two distant changed lines so the diff parser produces two hunks. */
 function createWideTwoHunkDiffFile(id: string, path: string, start = 1) {
   const beforeLines = Array.from(
     { length: 80 },
@@ -136,6 +137,7 @@ function createWideTwoHunkDiffFile(id: string, path: string, start = 1) {
   return createTestDiffFile(id, path, lines(...beforeLines), lines(...afterLines));
 }
 
+/** Convert one desired viewport-center offset into the scrollTop that centers it on screen. */
 function scrollTopForCenter(centerOffset: number, viewportHeight: number) {
   return Math.max(0, centerOffset - Math.max(0, Math.floor((viewportHeight - 1) / 2)));
 }

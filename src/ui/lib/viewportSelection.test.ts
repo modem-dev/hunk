@@ -5,6 +5,7 @@ import { buildFileSectionLayouts, buildInStreamFileHeaderHeights } from "./fileS
 import { findViewportCenteredHunkTarget } from "./viewportSelection";
 import { resolveTheme } from "../themes";
 
+/** Build one tall file with two distant changed lines so the diff parser produces two hunks. */
 function createWideTwoHunkFile(id: string, path: string, start = 1) {
   const beforeLines = Array.from(
     { length: 80 },
@@ -24,6 +25,7 @@ function createWideTwoHunkFile(id: string, path: string, start = 1) {
   });
 }
 
+/** Convert one desired viewport-center offset into the scrollTop that centers it on screen. */
 function scrollTopForCenter(centerOffset: number, viewportHeight: number) {
   return Math.max(0, centerOffset - Math.max(0, Math.floor((viewportHeight - 1) / 2)));
 }
