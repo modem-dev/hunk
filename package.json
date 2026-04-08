@@ -30,6 +30,13 @@
     "LICENSE"
   ],
   "type": "module",
+  "exports": {
+    "./opentui": {
+      "types": "./dist/npm/opentui/index.d.ts",
+      "import": "./dist/npm/opentui/index.js"
+    },
+    "./package.json": "./package.json"
+  },
   "publishConfig": {
     "access": "public"
   },
@@ -62,24 +69,29 @@
     "bench:large-stream-profile": "bun run benchmarks/large-stream-profile.ts"
   },
   "dependencies": {
-    "@opentui/core": "^0.1.88",
-    "@opentui/react": "^0.1.88",
     "@pierre/diffs": "^1.1.0",
     "bun": "^1.3.10",
     "commander": "^14.0.3",
     "diff": "^8.0.3",
-    "react": "^19.2.4",
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@opentui/core": "^0.1.88",
+    "@opentui/react": "^0.1.88",
     "@types/bun": "latest",
     "@types/react": "^19.2.14",
     "lint-staged": "^16.4.0",
     "oxfmt": "^0.41.0",
     "oxlint": "^1.56.0",
+    "react": "^19.2.4",
     "simple-git-hooks": "^2.13.1",
     "tuistory": "^0.0.16",
     "typescript": "^5.9.3"
+  },
+  "peerDependencies": {
+    "@opentui/core": "^0.1.88",
+    "@opentui/react": "^0.1.88",
+    "react": "^19.2.4"
   },
   "simple-git-hooks": {
     "pre-commit": "bunx lint-staged"

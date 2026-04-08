@@ -19,10 +19,53 @@ function enforceCacheLimit() {
   }
 }
 
+/** Summarize rendered diff lines without serializing whole arrays into the cache key. */
+function lineSetFingerprint(lines: string[] | undefined) {
+  let totalChars = 0;
+  let hash = 2166136261;
+
+  for (const line of lines ?? []) {
+    totalChars += line.length;
+
+    for (let index = 0; index < line.length; index += 1) {
+      hash ^= line.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+
+    hash ^= 10;
+    hash = Math.imul(hash, 16777619);
+  }
+
+  return `${lines?.length ?? 0}:${totalChars}:${(hash >>> 0).toString(36)}`;
+}
+
+/** Build a fallback fingerprint from parsed metadata when raw patch text is unavailable. */
+function metadataFingerprint(file: DiffFile) {
+  const hunkSummary = file.metadata.hunks
+    .map(
+      (hunk) =>
+        `${hunk.hunkSpecs ?? ""}:${hunk.deletionStart}:${hunk.deletionCount}:${hunk.additionStart}:${hunk.additionCount}:${hunk.hunkContent.length}`,
+    )
+    .join("|");
+
+  return [
+    file.metadata.name,
+    file.metadata.prevName ?? "",
+    file.metadata.type,
+    lineSetFingerprint(file.metadata.deletionLines),
+    lineSetFingerprint(file.metadata.additionLines),
+    hunkSummary,
+  ].join(":");
+}
+
 /** Content fingerprint from the diff patch. Changes whenever the underlying diff
  *  changes, allowing per-file cache invalidation without a global flush. */
 function patchFingerprint(file: DiffFile) {
   const { patch } = file;
+  if (patch.length === 0) {
+    return metadataFingerprint(file);
+  }
+
   const mid = Math.floor(patch.length / 2);
   return `${patch.length}:${patch.slice(0, 64)}:${patch.slice(mid, mid + 64)}:${patch.slice(-64)}`;
 }

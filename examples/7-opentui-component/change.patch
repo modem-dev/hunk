@@ -1,0 +1,17 @@
+diff --git a/src/reviewSummary.ts b/src/reviewSummary.ts
+index 1111111..2222222 100644
+--- a/src/reviewSummary.ts
++++ b/src/reviewSummary.ts
+@@ -1,8 +1,10 @@
+ export interface ReviewSummary {
+   title: string;
+   confidence: number;
++  tags: string[];
+ }
+ 
+-export function summarizeReview(summary: ReviewSummary) {
+-  return `${summary.title} (${summary.confidence})`;
++export function formatReviewSummary(summary: ReviewSummary) {
++  const tagSuffix = summary.tags.length > 0 ? ` [${summary.tags.join(", ")}]` : "";
++  return `${summary.title} (${summary.confidence})${tagSuffix}`;
+ }

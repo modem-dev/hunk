@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [],
+  "files": [
+    "examples/7-opentui-component/support.tsx",
+    "examples/7-opentui-component/from-files.tsx",
+    "examples/7-opentui-component/from-patch.tsx"
+  ]
+}

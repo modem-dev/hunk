@@ -43,7 +43,15 @@ if (!pack) {
 }
 
 const publishedPaths = new Set(pack.files.map((file) => file.path));
-const requiredPaths = ["bin/hunk.cjs", "dist/npm/main.js", "README.md", "LICENSE", "package.json"];
+const requiredPaths = [
+  "bin/hunk.cjs",
+  "dist/npm/main.js",
+  "dist/npm/opentui/index.d.ts",
+  "dist/npm/opentui/index.js",
+  "README.md",
+  "LICENSE",
+  "package.json",
+];
 
 for (const path of requiredPaths) {
   if (!publishedPaths.has(path)) {
@@ -51,7 +59,15 @@ for (const path of requiredPaths) {
   }
 }
 
-const forbiddenPrefixes = [".github/", "src/", "test/", "scripts/", "tmp/"];
+const forbiddenPrefixes = [
+  ".github/",
+  "src/",
+  "test/",
+  "scripts/",
+  "tmp/",
+  "dist/npm/core/",
+  "dist/npm/ui/",
+];
 const forbiddenPaths = ["AGENTS.md", "bun.lock"];
 
 for (const file of pack.files) {
