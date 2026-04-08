@@ -106,7 +106,11 @@ export function resolveViewportRowAnchorTop(
       geometry.rowBoundsByStableKey.get(anchor.stableKey) ??
       geometry.rowBoundsByKey.get(anchor.rowKey);
     if (rowBounds) {
-      return bodyTop + rowBounds.top + Math.min(anchor.rowOffsetWithin, rowBounds.height - 1);
+      return (
+        bodyTop +
+        rowBounds.top +
+        Math.min(anchor.rowOffsetWithin, Math.max(0, rowBounds.height - 1))
+      );
     }
 
     return bodyTop;

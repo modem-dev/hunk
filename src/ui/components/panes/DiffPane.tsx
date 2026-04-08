@@ -657,9 +657,9 @@ export function DiffPane({
     const wrapChanged = previousWrapLinesRef.current !== wrapLines;
     const previousSectionMetrics = previousSectionGeometryRef.current;
     const previousFiles = previousFilesRef.current;
-    const previousSectionHeaderHeights = buildInStreamFileHeaderHeights(previousFiles);
 
     if ((layoutChanged || wrapChanged) && previousSectionMetrics && previousFiles.length > 0) {
+      const previousSectionHeaderHeights = buildInStreamFileHeaderHeights(previousFiles);
       const previousScrollTop =
         // Prefer the synchronously captured pre-toggle position so anchor restoration does not
         // race the polling-based viewport snapshot.
