@@ -99,6 +99,8 @@ Hunk is optimized for reviewing a full changeset interactively.
 
 Hunk also publishes a reusable OpenTUI React diff component powered by the same terminal renderer that the app uses.
 
+Runnable source examples live in [`examples/7-opentui-component`](examples/7-opentui-component/README.md).
+
 Import it from `hunkdiff` or `hunkdiff/opentui`:
 
 ```tsx
