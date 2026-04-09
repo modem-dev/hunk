@@ -2,6 +2,8 @@
 
 Two minimal OpenTUI apps that embed `HunkDiffView` directly.
 
+For package install and API details, see [OpenTUI component docs](../../docs/opentui-component.md).
+
 ## Run
 
 ```bash

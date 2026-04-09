@@ -33,12 +33,6 @@ Hunk is a review-first terminal diff viewer for agent-authored changesets, built
 npm i -g hunkdiff
 ```
 
-To use the reusable OpenTUI component in your own app:
-
-```bash
-npm i hunkdiff
-```
-
 Requirements:
 
 - Node.js 18+
@@ -94,61 +88,6 @@ Open Hunk in another window, then ask your agent to leave comments.
 Hunk is optimized for reviewing a full changeset interactively.
 
 ## Advanced
-
-### OpenTUI component
-
-Hunk also publishes a reusable OpenTUI React diff component powered by the same terminal renderer that the app uses.
-
-Runnable source examples live in [`examples/7-opentui-component`](examples/7-opentui-component/README.md).
-
-Import it from `hunkdiff/opentui`:
-
-```tsx
-import { HunkDiffView, parseDiffFromFile } from "hunkdiff/opentui";
-
-const metadata = parseDiffFromFile(
-  {
-    cacheKey: "before",
-    contents: "export const value = 1;\n",
-    name: "example.ts",
-  },
-  {
-    cacheKey: "after",
-    contents: "export const value = 2;\nexport const added = true;\n",
-    name: "example.ts",
-  },
-  { context: 3 },
-  true,
-);
-
-<HunkDiffView
-  diff={{
-    id: "example",
-    metadata,
-    language: "typescript",
-    path: "example.ts",
-  }}
-  layout="split"
-  width={88}
-  theme="midnight"
-/>;
-```
-
-Public API:
-
-- `diff?: { id, metadata, language?, path?, patch? }`
-- `layout?: "split" | "stack"`
-- `width: number`
-- `theme?: "graphite" | "midnight" | "paper" | "ember"`
-- `showLineNumbers?: boolean`
-- `showHunkHeaders?: boolean`
-- `wrapLines?: boolean`
-- `horizontalOffset?: number`
-- `highlight?: boolean`
-- `scrollable?: boolean`
-- `selectedHunkIndex?: number`
-
-The component re-exports `parseDiffFromFile`, `parsePatchFiles`, and `FileDiffMetadata` from `@pierre/diffs` so callers can build the `metadata` input without adding a second diff dependency.
 
 ### Config
 
@@ -269,6 +208,12 @@ Use `--agent-context` to attach agent-written comments or rationale from a JSON 
 hunk diff --agent-context notes.json
 hunk patch change.patch --agent-context notes.json
 ```
+
+### OpenTUI component
+
+Hunk also publishes `HunkDiffView` from `hunkdiff/opentui` for embedding the same diff renderer in your own OpenTUI app.
+
+See [docs/opentui-component.md](docs/opentui-component.md) for install, API, and runnable examples.
 
 ## Examples
 
