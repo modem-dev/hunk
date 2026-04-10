@@ -40,6 +40,7 @@ export interface DiffFile {
   metadata: FileDiffMetadata;
   agent: AgentFileContext | null;
   isUntracked?: boolean;
+  isBinary?: boolean;
 }
 
 export interface Changeset {

@@ -555,6 +555,10 @@ export function diffMessage(file: DiffFile) {
     return "No textual hunks. This change only renames the file.";
   }
 
+  if (file.isBinary) {
+    return "Binary file skipped";
+  }
+
   if (file.metadata.type === "new") {
     return "No textual hunks. The file is marked as new.";
   }
