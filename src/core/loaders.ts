@@ -8,6 +8,7 @@ import {
 import { createTwoFilesPatch } from "diff";
 import { resolve as resolvePath } from "node:path";
 import { findAgentFileContext, loadAgentContext } from "./agent";
+import { createSkippedBinaryMetadata, isProbablyBinaryFile, patchLooksBinary } from "./binary";
 import {
   buildGitDiffArgs,
   buildGitShowArgs,
@@ -132,6 +133,12 @@ function findPatchChunk(metadata: FileDiffMetadata, chunks: string[], index: num
   );
 }
 
+interface BuildDiffFileOptions {
+  isUntracked?: boolean;
+  previousPath?: string;
+  isBinary?: boolean;
+}
+
 /** Build the normalized per-file model used by the UI regardless of input mode. */
 function buildDiffFile(
   metadata: FileDiffMetadata,
@@ -139,8 +146,7 @@ function buildDiffFile(
   index: number,
   sourcePrefix: string,
   agentContext: AgentContext | null,
-  isUntracked?: boolean,
-  previousPath?: string,
+  { isUntracked, previousPath, isBinary }: BuildDiffFileOptions = {},
 ): DiffFile {
   return {
     id: `${sourcePrefix}:${index}:${metadata.name}`,
@@ -152,6 +158,7 @@ function buildDiffFile(
     metadata,
     agent: findAgentFileContext(agentContext, metadata.name, metadata.prevName),
     isUntracked,
+    isBinary: isBinary ?? patchLooksBinary(patch),
   };
 }
 
@@ -237,7 +244,9 @@ function buildUntrackedDiffFile(
     index,
     sourcePrefix,
     agentContext,
-    true, // isUntracked
+    {
+      isUntracked: true,
+    },
   );
 }
 
@@ -326,6 +335,52 @@ function normalizePatchChangeset(
   };
 }
 
+/** Return the change type to show when direct file comparison skips binary contents. */
+function resolveBinaryComparisonType(
+  leftPath: string,
+  rightPath: string,
+): FileDiffMetadata["type"] {
+  if (leftPath === "/dev/null") {
+    return "new";
+  }
+
+  if (rightPath === "/dev/null") {
+    return "deleted";
+  }
+
+  return "change";
+}
+
+/** Build a placeholder changeset for direct file comparisons that include binary content. */
+function buildBinaryFileDiffChangeset(
+  input: FileCommandInput | DiffToolCommandInput,
+  displayPath: string,
+  title: string,
+  leftPath: string,
+  rightPath: string,
+  agentContext: AgentContext | null,
+) {
+  return {
+    id: `pair:${displayPath}`,
+    sourceLabel: input.kind === "difftool" ? "git difftool" : "file compare",
+    title,
+    agentSummary: agentContext?.summary,
+    files: [
+      buildDiffFile(
+        createSkippedBinaryMetadata(displayPath, resolveBinaryComparisonType(leftPath, rightPath)),
+        `Binary file skipped: ${basename(input.left)} ↔ ${basename(input.right)}\n`,
+        0,
+        displayPath,
+        agentContext,
+        {
+          previousPath: basename(input.left),
+          isBinary: true,
+        },
+      ),
+    ],
+  } satisfies Changeset;
+}
+
 /** Build a changeset by diffing two concrete files on disk. */
 async function loadFileDiffChangeset(
   input: FileCommandInput | DiffToolCommandInput,
@@ -334,8 +389,6 @@ async function loadFileDiffChangeset(
 ) {
   const leftPath = resolvePath(cwd, input.left);
   const rightPath = resolvePath(cwd, input.right);
-  const leftText = await Bun.file(leftPath).text();
-  const rightText = await Bun.file(rightPath).text();
   const displayPath =
     input.kind === "difftool" ? (input.path ?? basename(input.right)) : basename(input.right);
   const title =
@@ -345,6 +398,19 @@ async function loadFileDiffChangeset(
         ? displayPath
         : `${basename(input.left)} ↔ ${basename(input.right)}`;
 
+  if (isProbablyBinaryFile(leftPath) || isProbablyBinaryFile(rightPath)) {
+    return buildBinaryFileDiffChangeset(
+      input,
+      displayPath,
+      title,
+      leftPath,
+      rightPath,
+      agentContext,
+    );
+  }
+
+  const leftText = await Bun.file(leftPath).text();
+  const rightText = await Bun.file(rightPath).text();
   const oldFile: FileContents = {
     name: displayPath,
     contents: leftText,
@@ -367,7 +433,9 @@ async function loadFileDiffChangeset(
     title,
     agentSummary: agentContext?.summary,
     files: [
-      buildDiffFile(metadata, patch, 0, displayPath, agentContext, undefined, basename(input.left)),
+      buildDiffFile(metadata, patch, 0, displayPath, agentContext, {
+        previousPath: basename(input.left),
+      }),
     ],
   } satisfies Changeset;
 }

@@ -149,6 +149,54 @@ describe("loadAppBootstrap", () => {
     expect(bootstrap.changeset.files[0]?.agent?.annotations).toHaveLength(1);
   });
 
+  test("skips binary file-pair diffs instead of reading their contents", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "hunk-binary-diff-"));
+    tempDirs.push(dir);
+
+    const left = join(dir, "before.png");
+    const right = join(dir, "after.png");
+
+    writeFileSync(left, Buffer.from([0, 1, 2, 3, 4, 5]));
+    writeFileSync(right, Buffer.from([0, 1, 2, 9, 8, 7]));
+
+    const bootstrap = await loadAppBootstrap({
+      kind: "diff",
+      left,
+      right,
+      options: {
+        mode: "auto",
+      },
+    });
+
+    expect(bootstrap.changeset.files).toHaveLength(1);
+    expect(bootstrap.changeset.files[0]?.path).toBe("after.png");
+    expect(bootstrap.changeset.files[0]?.previousPath).toBe("before.png");
+    expect(bootstrap.changeset.files[0]?.isBinary).toBe(true);
+    expect(bootstrap.changeset.files[0]?.metadata.hunks).toHaveLength(0);
+  });
+
+  test("marks git binary diffs as skipped binary content", async () => {
+    const dir = createTempRepo("hunk-git-binary-");
+    const file = join(dir, "image.png");
+
+    writeFileSync(file, Buffer.from([0, 1, 2, 3, 4]));
+    git(dir, "add", "image.png");
+    git(dir, "commit", "-m", "initial");
+
+    writeFileSync(file, Buffer.from([0, 1, 9, 3, 4, 5]));
+
+    const bootstrap = await loadFromRepo(dir, {
+      kind: "git",
+      staged: false,
+      options: { mode: "auto" },
+    });
+
+    expect(bootstrap.changeset.files).toHaveLength(1);
+    expect(bootstrap.changeset.files[0]?.path).toBe("image.png");
+    expect(bootstrap.changeset.files[0]?.isBinary).toBe(true);
+    expect(bootstrap.changeset.files[0]?.metadata.hunks).toHaveLength(0);
+  });
+
   test("loads git working tree changes from a temporary repo", async () => {
     const dir = createTempRepo("hunk-git-");
 

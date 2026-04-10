@@ -300,7 +300,7 @@ function createWrapBootstrap(): AppBootstrap {
   });
 }
 
-function createEmptyDiffFile(type: "rename-pure" | "new" | "deleted"): DiffFile {
+function createEmptyDiffFile(type: "change" | "rename-pure" | "new" | "deleted"): DiffFile {
   return {
     id: `empty:${type}`,
     path: `${type}.ts`,
@@ -1811,6 +1811,25 @@ describe("UI components", () => {
       6,
     );
     expect(deletedFileFrame).toContain("The file is marked as deleted.");
+
+    const binaryFileFrame = await captureFrame(
+      <PierreDiffView
+        file={{
+          ...createEmptyDiffFile("change"),
+          id: "empty:binary",
+          isBinary: true,
+          path: "image.png",
+        }}
+        layout="split"
+        theme={theme}
+        width={72}
+        selectedHunkIndex={0}
+        scrollable={false}
+      />,
+      76,
+      6,
+    );
+    expect(binaryFileFrame).toContain("Binary file skipped");
   });
 
   test("PierreDiffView reuses highlighted rows after unmounting and remounting a file section", async () => {
