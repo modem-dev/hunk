@@ -9,8 +9,10 @@ Use Hunk with agents in two ways:
 
 1. Open Hunk in one terminal with a normal review command such as `hunk diff` or `hunk show`.
 2. Load the Hunk review skill: [`skills/hunk-review/SKILL.md`](../skills/hunk-review/SKILL.md).
-3. If your agent needs an absolute path to the skill file, run `hunk skill path` from your local install.
-4. Ask the agent to use the skill and review the current session.
+3. Ask the agent to use the skill and review the current session.
+
+> [!NOTE]
+> `hunk skill path` is coming in Hunk 0.10.0. That release is not out yet. Once it ships, it will print the absolute path to the installed skill file so you can load or symlink it from your agent setup.
 
 A good generic prompt is:
 
