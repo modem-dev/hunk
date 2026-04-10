@@ -78,7 +78,7 @@ Load the Hunk skill and use it for this review.
 ```
 
 > [!NOTE]
-> `hunk skill path` is coming in Hunk 0.10.0. That release is not out yet. Once it ships, it will print the absolute path to the installed skill file so you can load or symlink it from your agent setup.
+> `hunk skill path` lands in Hunk 0.10.0. Until that release is out, load the skill from the repo path above.
 
 For the full live-session and `--agent-context` workflow guide, see [docs/agent-workflows.md](docs/agent-workflows.md).
 
