@@ -67,11 +67,20 @@ git diff --no-color | hunk patch -          # review a patch from stdin
 
 ### Working with agents
 
-Load the [`skills/hunk-review/SKILL.md`](skills/hunk-review/SKILL.md) skill in your coding agent (e.g. Claude, Codex, Opencode, Pi).
+1. Load the Hunk review skill: [`skills/hunk-review/SKILL.md`](skills/hunk-review/SKILL.md).
+2. Open Hunk in another terminal with `hunk diff` or `hunk show`.
+3. Ask your agent to use the skill against the live Hunk session.
 
-You can get the absolute path to the skill file from your local install by running `hunk skill path`. Prefer loading or symlinking that file in your agent instead of copying it so Hunk upgrades stay in sync automatically.
+A good generic prompt is:
 
-Open Hunk in another window, then ask your agent to leave comments. For the full live-session and `--agent-context` workflow guide, see [docs/agent-workflows.md](docs/agent-workflows.md).
+```text
+Load the Hunk skill and use it for this review.
+```
+
+> [!NOTE]
+> `hunk skill path` is coming in Hunk 0.10.0. That release is not out yet. Once it ships, it will print the absolute path to the installed skill file so you can load or symlink it from your agent setup.
+
+For the full live-session and `--agent-context` workflow guide, see [docs/agent-workflows.md](docs/agent-workflows.md).
 
 ## Feature comparison
 
@@ -135,27 +144,6 @@ If you want to keep Git's default pager and add opt-in aliases instead:
 git config --global alias.hdiff "-c core.pager=\"hunk pager\" diff"
 git config --global alias.hshow "-c core.pager=\"hunk pager\" show"
 ```
-
-### Agent workflows
-
-Hunk supports two agent workflows:
-
-- steer a live Hunk window from another terminal with `hunk session ...` (recommended)
-- load agent comments from a file with `--agent-context`
-
-Start by loading the Hunk review skill: [`skills/hunk-review/SKILL.md`](skills/hunk-review/SKILL.md).
-
-You can get the absolute path to the skill file from your local install by running `hunk skill path`.
-
-A good generic prompt is:
-
-```text
-Load the Hunk skill and use it for this review.
-```
-
-That skill teaches the agent how to inspect a live Hunk session, navigate it, reload it, and leave inline comments.
-
-For more, see [docs/agent-workflows.md](docs/agent-workflows.md).
 
 ### OpenTUI component
 
