@@ -67,8 +67,8 @@ git diff --no-color | hunk patch -          # review a patch from stdin
 
 ### Working with agents
 
-1. Load the Hunk review skill: [`skills/hunk-review/SKILL.md`](skills/hunk-review/SKILL.md).
-2. Open Hunk in another terminal with `hunk diff` or `hunk show`.
+1. Open Hunk in another terminal with `hunk diff` or `hunk show`.
+2. Load the Hunk review skill: [`skills/hunk-review/SKILL.md`](skills/hunk-review/SKILL.md).
 3. Ask your agent to use the skill against the live Hunk session.
 
 A good generic prompt is:
