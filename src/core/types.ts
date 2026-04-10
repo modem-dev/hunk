@@ -79,6 +79,10 @@ export interface HelpCommandInput {
   text: string;
 }
 
+export interface BareCommandInput {
+  kind: "bare";
+}
+
 export interface PagerCommandInput {
   kind: "pager";
   options: CommonOptions;
@@ -262,6 +266,7 @@ export type CliInput =
 export type ParsedCliInput =
   | CliInput
   | HelpCommandInput
+  | BareCommandInput
   | PagerCommandInput
   | McpServeCommandInput
   | SessionCommandInput;

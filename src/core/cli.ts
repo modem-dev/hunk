@@ -102,9 +102,11 @@ function renderCliVersion() {
 }
 
 /** Build the top-level help text shown by bare `hunk` and `hunk --help`. */
-function renderCliHelp() {
+export function renderCliHelp() {
   return [
-    "Usage: hunk <command> [options]",
+    "Usage:",
+    "  hunk",
+    "  hunk <command> [options]",
     "",
     "Desktop-inspired terminal diff viewer for agent-authored changesets.",
     "",
@@ -140,6 +142,7 @@ function renderCliHelp() {
     "  --exclude-untracked                     hide untracked files in working tree reviews",
     "",
     "Notes:",
+    "  Bare `hunk` starts the default review UI (`hunk diff`) in an interactive terminal.",
     "  Run `hunk <command> --help` for command-specific syntax and options.",
     "",
   ].join("\n");
@@ -537,7 +540,12 @@ async function parseDifftoolCommand(tokens: string[], argv: string[]): Promise<P
 }
 
 function requireReloadableCliInput(input: ParsedCliInput): CliInput {
-  if (input.kind === "help" || input.kind === "pager" || input.kind === "mcp-serve") {
+  if (
+    input.kind === "bare" ||
+    input.kind === "help" ||
+    input.kind === "pager" ||
+    input.kind === "mcp-serve"
+  ) {
     throw new Error(
       "Session reload requires a Hunk review command after --, such as `diff` or `show`.",
     );
@@ -1235,7 +1243,11 @@ export async function parseCli(argv: string[]): Promise<ParsedCliInput> {
   const args = argv.slice(2);
   const [commandName, ...rest] = args;
 
-  if (!commandName || commandName === "help" || commandName === "--help" || commandName === "-h") {
+  if (!commandName) {
+    return { kind: "bare" };
+  }
+
+  if (commandName === "help" || commandName === "--help" || commandName === "-h") {
     return { kind: "help", text: renderCliHelp() };
   }
 
