@@ -14,6 +14,8 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Fixed
 
+- Fixed a bottom-edge scroll trap that could snap the review pane back when the last short file or hunk was selected near the end of the stream.
+
 ## [0.9.1] - 2026-04-10
 
 ### Fixed

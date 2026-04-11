@@ -122,6 +122,46 @@ describe("live UI integration", () => {
     }
   });
 
+  test("a short last file does not trap upward scrolling at the bottom edge", async () => {
+    const fixture = harness.createBottomClampedRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split"],
+      cwd: fixture.dir,
+      cols: 220,
+      rows: 10,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      await session.press("]");
+      const bottomAligned = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("shortLine1 = 10;"),
+        5_000,
+      );
+
+      expect(bottomAligned).not.toContain("line30 = 130");
+
+      for (let iteration = 0; iteration < 4; iteration += 1) {
+        await session.press("up");
+        await session.waitIdle({ timeout: 200 });
+      }
+
+      const movedUp = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("line30 = 130"),
+        5_000,
+      );
+
+      expect(movedUp).toContain("line30 = 130");
+    } finally {
+      session.close();
+    }
+  });
+
   test("auto layout responds to live terminal resize in a real PTY", async () => {
     const fixture = harness.createTwoFileRepoFixture();
     const session = await harness.launchHunk({
