@@ -50,7 +50,7 @@ const EMPTY_VISIBLE_AGENT_NOTES_BY_FILE = new Map<string, VisibleAgentNote[]>();
  * keep re-applying a bottom-edge scroll and trap manual upward scrolling.
  */
 function clampVerticalScrollTop(scrollTop: number, contentHeight: number, viewportHeight: number) {
-  const maxScrollTop = Math.max(0, Math.max(0, contentHeight) - Math.max(0, viewportHeight));
+  const maxScrollTop = Math.max(0, contentHeight - viewportHeight);
   return Math.min(Math.max(0, scrollTop), maxScrollTop);
 }
 
