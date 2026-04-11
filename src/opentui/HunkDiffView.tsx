@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { patchLooksBinary } from "../core/binary";
+import { normalizeDiffMetadataPaths, normalizeDiffPath } from "../core/diffPaths";
 import type { DiffFile } from "../core/types";
 import { findMaxLineNumber } from "../ui/diff/codeColumns";
 import { buildSplitRows, buildStackRows } from "../ui/diff/pierre";
@@ -28,17 +29,19 @@ function countDiffStats(metadata: HunkDiffFile["metadata"]) {
 /** Adapt the public diff shape into Hunk's internal file model without exposing app-only fields. */
 function toInternalDiffFile(diff: HunkDiffFile): DiffFile {
   const patch = diff.patch ?? "";
+  const metadata = normalizeDiffMetadataPaths(diff.metadata);
+  const path = normalizeDiffPath(diff.path) ?? metadata.name;
 
   return {
     agent: null,
     id: diff.id,
     isBinary: patchLooksBinary(patch),
     language: diff.language,
-    metadata: diff.metadata,
+    metadata,
     patch,
-    path: diff.path ?? diff.metadata.name,
-    previousPath: diff.metadata.prevName,
-    stats: countDiffStats(diff.metadata),
+    path,
+    previousPath: metadata.prevName,
+    stats: countDiffStats(metadata),
   };
 }
 

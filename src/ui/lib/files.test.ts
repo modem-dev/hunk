@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createTestDiffFile, lines } from "../../../test/helpers/diff-helpers";
-import { buildSidebarEntries } from "./files";
+import { buildSidebarEntries, fileLabelParts } from "./files";
 
 describe("files helpers", () => {
   test("buildSidebarEntries hides zero-value sidebar stats", () => {
@@ -58,6 +58,24 @@ describe("files helpers", () => {
       name: "Legacy.tsx -> Renamed.tsx",
       additionsText: null,
       deletionsText: null,
+    });
+  });
+
+  test("fileLabelParts strips parser-added line endings from rename labels", () => {
+    const renamedAcrossDirectories = {
+      ...createTestDiffFile({
+        id: "rename-across-dirs",
+        path: "agents/pi/extensions/notify.ts",
+        previousPath: "pi/extensions/loop.ts\n",
+        before: lines("export const stable = true;"),
+        after: lines("export const stable = true;"),
+      }),
+      stats: { additions: 0, deletions: 0 },
+    };
+
+    expect(fileLabelParts(renamedAcrossDirectories)).toEqual({
+      filename: "pi/extensions/loop.ts -> agents/pi/extensions/notify.ts",
+      stateLabel: null,
     });
   });
 });

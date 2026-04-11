@@ -1,5 +1,6 @@
 import { basename, dirname } from "node:path/posix";
 import type { FileDiffMetadata } from "@pierre/diffs";
+import { normalizeDiffPath } from "../../core/diffPaths";
 import type { AgentAnnotation, DiffFile } from "../../core/types";
 
 export interface FileListEntry {
@@ -22,12 +23,15 @@ export type SidebarEntry = FileListEntry | FileGroupEntry;
 
 /** Build the filename-first label shown inside one sidebar row. */
 function sidebarFileName(file: DiffFile) {
-  if (!file.previousPath || file.previousPath === file.path) {
-    return basename(file.path);
+  const path = normalizeDiffPath(file.path) ?? file.path;
+  const previousPath = normalizeDiffPath(file.previousPath);
+
+  if (!previousPath || previousPath === path) {
+    return basename(path);
   }
 
-  const previousName = basename(file.previousPath);
-  const nextName = basename(file.path);
+  const previousName = basename(previousPath);
+  const nextName = basename(path);
   return previousName === nextName ? nextName : `${previousName} -> ${nextName}`;
 }
 
@@ -91,7 +95,11 @@ export function filterReviewFiles(files: DiffFile[], query: string): DiffFile[] 
   }
 
   return files.filter((file) => {
-    const haystack = [file.path, file.previousPath, file.agent?.summary]
+    const haystack = [
+      normalizeDiffPath(file.path),
+      normalizeDiffPath(file.previousPath),
+      file.agent?.summary,
+    ]
       .filter(Boolean)
       .join(" ")
       .toLowerCase();
@@ -105,7 +113,8 @@ export function buildSidebarEntries(files: DiffFile[]): SidebarEntry[] {
   let activeGroup: string | null = null;
 
   files.forEach((file, index) => {
-    const group = dirname(file.path);
+    const path = normalizeDiffPath(file.path) ?? file.path;
+    const group = dirname(path);
     const nextGroup = group === "." ? null : group;
 
     if (nextGroup !== activeGroup) {
@@ -148,10 +157,9 @@ export function fileLabelParts(file: DiffFile | undefined): {
     return { filename: "No file selected", stateLabel: null };
   }
 
-  const baseLabel =
-    file.previousPath && file.previousPath !== file.path
-      ? `${file.previousPath} -> ${file.path}`
-      : file.path;
+  const path = normalizeDiffPath(file.path) ?? file.path;
+  const previousPath = normalizeDiffPath(file.previousPath);
+  const baseLabel = previousPath && previousPath !== path ? `${previousPath} -> ${path}` : path;
 
   // Determine state label for special cases
   let stateLabel: string | null = null;

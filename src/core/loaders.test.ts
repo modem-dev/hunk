@@ -720,6 +720,30 @@ describe("loadAppBootstrap", () => {
     ).rejects.toThrow("`hunk stash show stash@{99}` could not resolve stash entry `stash@{99}`.");
   });
 
+  test("strips parser-added line endings from rename-only paths", async () => {
+    const bootstrap = await loadAppBootstrap({
+      kind: "patch",
+      text: [
+        "diff --git a/pi/extensions/loop.ts b/agents/pi/extensions/notify.ts",
+        "similarity index 100%",
+        "rename from pi/extensions/loop.ts",
+        "rename to agents/pi/extensions/notify.ts",
+      ].join("\n"),
+      options: { mode: "auto" },
+    });
+
+    expect(bootstrap.changeset.files).toHaveLength(1);
+    expect(bootstrap.changeset.files[0]).toMatchObject({
+      path: "agents/pi/extensions/notify.ts",
+      previousPath: "pi/extensions/loop.ts",
+      metadata: {
+        name: "agents/pi/extensions/notify.ts",
+        prevName: "pi/extensions/loop.ts",
+        type: "rename-pure",
+      },
+    });
+  });
+
   test("treats malformed inline patch text as an empty review instead of throwing", async () => {
     const bootstrap = await loadAppBootstrap({
       kind: "patch",

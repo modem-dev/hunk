@@ -9,6 +9,7 @@ import { createTwoFilesPatch } from "diff";
 import { resolve as resolvePath } from "node:path";
 import { findAgentFileContext, loadAgentContext } from "./agent";
 import { createSkippedBinaryMetadata, isProbablyBinaryFile, patchLooksBinary } from "./binary";
+import { normalizeDiffMetadataPaths, normalizeDiffPath } from "./diffPaths";
 import {
   buildGitDiffArgs,
   buildGitShowArgs,
@@ -123,6 +124,7 @@ function findPatchChunk(metadata: FileDiffMetadata, chunks: string[], index: num
   return (
     chunks.find((chunk) =>
       [metadata.name, metadata.prevName]
+        .map(normalizeDiffPath)
         .filter((value): value is string => Boolean(value))
         .map(stripPrefixes)
         .some(
@@ -148,15 +150,19 @@ function buildDiffFile(
   agentContext: AgentContext | null,
   { isUntracked, previousPath, isBinary }: BuildDiffFileOptions = {},
 ): DiffFile {
+  const normalizedMetadata = normalizeDiffMetadataPaths(metadata);
+  const path = normalizedMetadata.name;
+  const resolvedPreviousPath = normalizeDiffPath(previousPath) ?? normalizedMetadata.prevName;
+
   return {
-    id: `${sourcePrefix}:${index}:${metadata.name}`,
-    path: metadata.name,
-    previousPath: previousPath ?? metadata.prevName,
+    id: `${sourcePrefix}:${index}:${path}`,
+    path,
+    previousPath: resolvedPreviousPath,
     patch,
-    language: getFiletypeFromFileName(metadata.name) ?? undefined,
-    stats: countDiffStats(metadata),
-    metadata,
-    agent: findAgentFileContext(agentContext, metadata.name, metadata.prevName),
+    language: getFiletypeFromFileName(path) ?? undefined,
+    stats: countDiffStats(normalizedMetadata),
+    metadata: normalizedMetadata,
+    agent: findAgentFileContext(agentContext, path, resolvedPreviousPath),
     isUntracked,
     isBinary: isBinary ?? patchLooksBinary(patch),
   };
