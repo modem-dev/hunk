@@ -5,7 +5,7 @@ import {
   createTestSessionRegistration,
   createTestSessionSnapshot,
 } from "../../test/helpers/session-daemon-fixtures";
-import { HunkDaemonState, resolveSessionTarget } from "./daemonState";
+import { SessionBrokerState, resolveSessionTarget } from "./brokerState";
 import type {
   AppliedCommentBatchResult,
   AppliedCommentResult,
@@ -73,7 +73,7 @@ describe("Hunk session daemon state", () => {
   });
 
   test("exposes the selected session context from snapshot state", () => {
-    const state = new HunkDaemonState();
+    const state = new SessionBrokerState();
     const socket = {
       send() {},
     };
@@ -102,7 +102,7 @@ describe("Hunk session daemon state", () => {
   });
 
   test("exports review structure without raw patch text by default", () => {
-    const state = new HunkDaemonState();
+    const state = new SessionBrokerState();
     const socket = {
       send() {},
     };
@@ -136,7 +136,7 @@ describe("Hunk session daemon state", () => {
   });
 
   test("exports raw patch text when review requests includePatch", () => {
-    const state = new HunkDaemonState();
+    const state = new SessionBrokerState();
     const socket = {
       send() {},
     };
@@ -164,7 +164,7 @@ describe("Hunk session daemon state", () => {
   });
 
   test("lists live comments from snapshot state and can filter by file", () => {
-    const state = new HunkDaemonState();
+    const state = new SessionBrokerState();
     const socket = {
       send() {},
     };
@@ -193,7 +193,7 @@ describe("Hunk session daemon state", () => {
   });
 
   test("ignores incompatible session registrations so listings stay usable after upgrades", () => {
-    const state = new HunkDaemonState();
+    const state = new SessionBrokerState();
     const socket = {
       send() {},
     };
@@ -212,7 +212,7 @@ describe("Hunk session daemon state", () => {
   });
 
   test("reports invalid snapshot updates without replacing the last valid selection", () => {
-    const state = new HunkDaemonState();
+    const state = new SessionBrokerState();
     const socket = {
       send() {},
     };
@@ -232,7 +232,7 @@ describe("Hunk session daemon state", () => {
   });
 
   test("reports missing sessions separately from invalid snapshot payloads", () => {
-    const state = new HunkDaemonState();
+    const state = new SessionBrokerState();
 
     expect(
       state.updateSnapshot("missing-session", {
@@ -242,7 +242,7 @@ describe("Hunk session daemon state", () => {
   });
 
   test("routes a comment command to the live session and resolves the async result", async () => {
-    const state = new HunkDaemonState();
+    const state = new SessionBrokerState();
     const sent: string[] = [];
     const socket = {
       send(data: string) {
@@ -285,7 +285,7 @@ describe("Hunk session daemon state", () => {
   });
 
   test("routes comment-batch commands to the live session and resolves the async result", async () => {
-    const state = new HunkDaemonState();
+    const state = new SessionBrokerState();
     const sent: string[] = [];
     const socket = {
       send(data: string) {
@@ -350,7 +350,7 @@ describe("Hunk session daemon state", () => {
   });
 
   test("routes navigation commands to the live session and resolves the async result", async () => {
-    const state = new HunkDaemonState();
+    const state = new SessionBrokerState();
     const sent: string[] = [];
     const socket = {
       send(data: string) {
@@ -394,7 +394,7 @@ describe("Hunk session daemon state", () => {
   });
 
   test("routes reload commands to the live session and resolves the async result", async () => {
-    const state = new HunkDaemonState();
+    const state = new SessionBrokerState();
     const sent: string[] = [];
     const socket = {
       send(data: string) {
@@ -446,7 +446,7 @@ describe("Hunk session daemon state", () => {
   });
 
   test("routes remove-comment commands to the live session and resolves the async result", async () => {
-    const state = new HunkDaemonState();
+    const state = new SessionBrokerState();
     const sent: string[] = [];
     const socket = {
       send(data: string) {
@@ -484,7 +484,7 @@ describe("Hunk session daemon state", () => {
   });
 
   test("routes clear-comments commands to the live session and resolves the async result", async () => {
-    const state = new HunkDaemonState();
+    const state = new SessionBrokerState();
     const sent: string[] = [];
     const socket = {
       send(data: string) {
@@ -522,7 +522,7 @@ describe("Hunk session daemon state", () => {
   });
 
   test("rejects in-flight commands when the session disconnects", async () => {
-    const state = new HunkDaemonState();
+    const state = new SessionBrokerState();
     const socket = {
       send() {},
     };
@@ -542,7 +542,7 @@ describe("Hunk session daemon state", () => {
   });
 
   test("rejects in-flight commands when a session reconnects on a new socket", async () => {
-    const state = new HunkDaemonState();
+    const state = new SessionBrokerState();
     const originalSocket = {
       send() {},
     };
@@ -570,7 +570,7 @@ describe("Hunk session daemon state", () => {
   });
 
   test("rejects commands immediately when the live session socket cannot accept them", async () => {
-    const state = new HunkDaemonState();
+    const state = new SessionBrokerState();
     const socket = {
       send() {
         throw new Error("socket closed");
@@ -592,7 +592,7 @@ describe("Hunk session daemon state", () => {
   });
 
   test("prunes stale sessions and rejects their in-flight commands", async () => {
-    const state = new HunkDaemonState();
+    const state = new SessionBrokerState();
     const sent: string[] = [];
     const socket = {
       send(data: string) {
@@ -621,7 +621,7 @@ describe("Hunk session daemon state", () => {
   });
 
   test("heartbeats keep an otherwise idle session from being pruned", () => {
-    const state = new HunkDaemonState();
+    const state = new SessionBrokerState();
     const socket = {
       send() {},
     };

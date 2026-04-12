@@ -4,10 +4,10 @@ import { formatHunkHeader } from "../core/hunkHeader";
 import { hunkLineRange } from "../core/liveComments";
 import type { AppBootstrap } from "../core/types";
 import { resolveSessionTerminalMetadata } from "../session-broker/sessionTerminalMetadata";
-import { HUNK_SESSION_REGISTRATION_VERSION } from "../session-broker/sessionWire";
+import { SESSION_BROKER_REGISTRATION_VERSION } from "../session-broker/brokerWire";
 import type {
-  HunkSessionRegistration,
-  HunkSessionSnapshot,
+  SessionRegistration,
+  SessionSnapshot,
   SessionReviewFile,
 } from "../session-broker/types";
 
@@ -54,11 +54,11 @@ function buildSessionFiles(bootstrap: AppBootstrap): SessionReviewFile[] {
 }
 
 /** Build the daemon-facing metadata for one live Hunk TUI session. */
-export function createSessionRegistration(bootstrap: AppBootstrap): HunkSessionRegistration {
+export function createSessionRegistration(bootstrap: AppBootstrap): SessionRegistration {
   const terminal = resolveSessionTerminalMetadata({ tty: ttyname() });
 
   return {
-    registrationVersion: HUNK_SESSION_REGISTRATION_VERSION,
+    registrationVersion: SESSION_BROKER_REGISTRATION_VERSION,
     sessionId: randomUUID(),
     pid: process.pid,
     cwd: process.cwd(),
@@ -74,12 +74,12 @@ export function createSessionRegistration(bootstrap: AppBootstrap): HunkSessionR
 
 /** Rebuild registration metadata after a live session reload while preserving session identity. */
 export function updateSessionRegistration(
-  current: HunkSessionRegistration,
+  current: SessionRegistration,
   bootstrap: AppBootstrap,
-): HunkSessionRegistration {
+): SessionRegistration {
   return {
     ...current,
-    registrationVersion: HUNK_SESSION_REGISTRATION_VERSION,
+    registrationVersion: SESSION_BROKER_REGISTRATION_VERSION,
     repoRoot: inferRepoRoot(bootstrap),
     inputKind: bootstrap.input.kind,
     title: bootstrap.changeset.title,
@@ -89,7 +89,7 @@ export function updateSessionRegistration(
 }
 
 /** Start with an empty-but-valid snapshot until the UI reports its first selection. */
-export function createInitialSessionSnapshot(bootstrap: AppBootstrap): HunkSessionSnapshot {
+export function createInitialSessionSnapshot(bootstrap: AppBootstrap): SessionSnapshot {
   const firstFile = bootstrap.changeset.files[0];
   const firstHunk = firstFile?.metadata.hunks[0];
   const firstRange = firstHunk ? hunkLineRange(firstHunk) : null;

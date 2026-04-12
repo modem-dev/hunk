@@ -13,13 +13,13 @@ import type {
   SessionSelectorInput,
 } from "../core/types";
 import {
-  ensureHunkDaemonAvailable,
-  isHunkDaemonHealthy,
+  ensureSessionBrokerAvailable,
+  isSessionBrokerHealthy,
   isLoopbackPortReachable,
-  readHunkDaemonHealth,
-  waitForHunkDaemonShutdown,
-} from "../session-broker/daemonLauncher";
-import { resolveHunkSessionDaemonConfig } from "../session-broker/config";
+  readSessionBrokerHealth,
+  waitForSessionBrokerShutdown,
+} from "../session-broker/brokerLauncher";
+import { resolveSessionBrokerConfig } from "../session-broker/brokerConfig";
 import type {
   AppliedCommentBatchResult,
   AppliedCommentResult,
@@ -105,7 +105,7 @@ async function extractResponseError(response: Response) {
 }
 
 class HttpHunkDaemonCliClient implements HunkDaemonCliClient {
-  private readonly config = resolveHunkSessionDaemonConfig();
+  private readonly config = resolveSessionBrokerConfig();
 
   private async request<ResultType>(input: SessionDaemonRequest) {
     const response = await fetch(`${this.config.httpOrigin}${HUNK_SESSION_API_PATH}`, {
@@ -280,7 +280,7 @@ async function restartDaemonForMissingAction(
   action: SessionDaemonAction,
   selector?: SessionSelectorInput,
 ) {
-  const health = await readHunkDaemonHealth();
+  const health = await readSessionBrokerHealth();
   const pid = health?.pid;
   const hadSessions = (health?.sessions ?? 0) > 0;
   if (!pid || pid === process.pid) {
@@ -292,15 +292,15 @@ async function restartDaemonForMissingAction(
 
   process.kill(pid, "SIGTERM");
 
-  const shutDown = await waitForHunkDaemonShutdown();
+  const shutDown = await waitForSessionBrokerShutdown();
   if (!shutDown) {
     throw new Error(
       `Stopped waiting for the old Hunk session daemon to exit after it was found missing ${action}.`,
     );
   }
 
-  const config = resolveHunkSessionDaemonConfig();
-  await ensureHunkDaemonAvailable({
+  const config = resolveSessionBrokerConfig();
+  await ensureSessionBrokerAvailable({
     config,
     timeoutMs: 3_000,
     timeoutMessage: "Timed out waiting for the refreshed Hunk session daemon to start.",
@@ -587,8 +587,8 @@ function normalizeSessionSelector(selector: SessionSelectorInput) {
 }
 
 async function resolveDaemonAvailability(action: SessionCommandInput["action"]) {
-  const config = resolveHunkSessionDaemonConfig();
-  const healthy = await isHunkDaemonHealthy(config);
+  const config = resolveSessionBrokerConfig();
+  const healthy = await isSessionBrokerHealthy(config);
   if (healthy) {
     return true;
   }

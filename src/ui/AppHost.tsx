@@ -4,7 +4,7 @@ import { loadAppBootstrap } from "../core/loaders";
 import { resolveRuntimeCliInput } from "../core/terminal";
 import type { AppBootstrap, CliInput } from "../core/types";
 import type { UpdateNotice } from "../core/updateNotice";
-import { HunkHostClient } from "../session-broker/client";
+import { SessionBrokerClient } from "../session-broker/brokerClient";
 import {
   createInitialSessionSnapshot,
   updateSessionRegistration,
@@ -20,7 +20,7 @@ export function AppHost({
   startupNoticeResolver,
 }: {
   bootstrap: AppBootstrap;
-  hostClient?: HunkHostClient;
+  hostClient?: SessionBrokerClient;
   onQuit?: () => void;
   startupNoticeResolver?: () => Promise<UpdateNotice | null>;
 }) {

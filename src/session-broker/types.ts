@@ -50,7 +50,7 @@ export interface SessionTerminalMetadata {
   locations: SessionTerminalLocation[];
 }
 
-export interface HunkSessionRegistration {
+export interface SessionRegistration {
   registrationVersion: number;
   sessionId: string;
   pid: number;
@@ -64,7 +64,7 @@ export interface HunkSessionRegistration {
   files: SessionReviewFile[];
 }
 
-export interface HunkSessionSnapshot {
+export interface SessionSnapshot {
   selectedFileId?: string;
   selectedFilePath?: string;
   selectedHunkIndex: number;
@@ -222,13 +222,13 @@ export type SessionCommandResult =
 export type SessionClientMessage =
   | {
       type: "register";
-      registration: HunkSessionRegistration;
-      snapshot: HunkSessionSnapshot;
+      registration: SessionRegistration;
+      snapshot: SessionSnapshot;
     }
   | {
       type: "snapshot";
       sessionId: string;
-      snapshot: HunkSessionSnapshot;
+      snapshot: SessionSnapshot;
     }
   | {
       type: "heartbeat";
@@ -309,5 +309,5 @@ export interface ListedSession {
   terminal?: SessionTerminalMetadata;
   fileCount: number;
   files: SessionFileSummary[];
-  snapshot: HunkSessionSnapshot;
+  snapshot: SessionSnapshot;
 }

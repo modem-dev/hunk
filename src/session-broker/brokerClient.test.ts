@@ -6,7 +6,7 @@ import {
   createTestSessionSnapshot,
 } from "../../test/helpers/session-daemon-fixtures";
 import { HUNK_SESSION_API_VERSION, HUNK_SESSION_DAEMON_VERSION } from "../session/protocol";
-import { HunkHostClient } from "./client";
+import { SessionBrokerClient } from "./brokerClient";
 
 const originalHost = process.env.HUNK_MCP_HOST;
 const originalPort = process.env.HUNK_MCP_PORT;
@@ -87,14 +87,14 @@ describe("Hunk session daemon client", () => {
       messages.push(args.map((value) => String(value)).join(" "));
     };
 
-    const client = new HunkHostClient(createRegistration(), createSnapshot());
+    const client = new SessionBrokerClient(createRegistration(), createSnapshot());
 
     try {
       client.start();
       await waitUntil("non-loopback session-daemon warning", () => messages.length === 1);
 
       expect(messages[0]).toContain(
-        "[hunk:session] Hunk session daemon refuses to bind 0.0.0.0:47657 because the daemon is local-only by default.",
+        "[session:broker] Session broker refuses to bind 0.0.0.0:47657 because it is local-only by default.",
       );
       expect(messages[0]).toContain("HUNK_MCP_UNSAFE_ALLOW_REMOTE=1");
     } finally {
@@ -121,7 +121,7 @@ describe("Hunk session daemon client", () => {
       wsOrigin: `ws://127.0.0.1:${port}`,
     };
 
-    const client = new HunkHostClient(createRegistration(), createSnapshot());
+    const client = new SessionBrokerClient(createRegistration(), createSnapshot());
 
     try {
       await expect((client as any).restartIncompatibleDaemon(config)).resolves.toBeUndefined();
@@ -176,14 +176,14 @@ describe("Hunk session daemon client", () => {
       websocket: {
         open(socket) {
           websocketOpens += 1;
-          socket.close(1008, "Incompatible Hunk session registration.");
+          socket.close(1008, "Incompatible session registration.");
         },
         message() {},
       },
     });
 
     const messages: string[] = [];
-    const client = new HunkHostClient(createRegistration(), createSnapshot());
+    const client = new SessionBrokerClient(createRegistration(), createSnapshot());
     let reconnectScheduled = false;
     (client as any).scheduleReconnect = () => {
       reconnectScheduled = true;
@@ -213,11 +213,13 @@ describe("Hunk session daemon client", () => {
         wsOrigin: `ws://127.0.0.1:${port}`,
       });
       await waitUntil("incompatible session warning", () =>
-        messages.some((message) => message.includes("too old for the refreshed session daemon")),
+        messages.some((message) =>
+          message.includes("too old for the refreshed session broker daemon"),
+        ),
       );
 
       expect(messages[0]).toContain(
-        "This Hunk window is too old for the refreshed session daemon.",
+        "This window is too old for the refreshed session broker daemon.",
       );
       expect(messages[0]).toContain("Restart the window to reconnect.");
       expect(reconnectScheduled).toBe(false);
@@ -249,7 +251,7 @@ describe("Hunk session daemon client", () => {
       messages.push(args.map((value) => String(value)).join(" "));
     };
 
-    const client = new HunkHostClient(createRegistration(), createSnapshot());
+    const client = new SessionBrokerClient(createRegistration(), createSnapshot());
 
     try {
       client.start();
@@ -260,7 +262,7 @@ describe("Hunk session daemon client", () => {
 
       expect(messages).toHaveLength(1);
       expect(messages[0]).toContain(
-        `[hunk:session] Hunk session daemon port 127.0.0.1:${port} is already in use by another process.`,
+        `[session:broker] Session broker port 127.0.0.1:${port} is already in use by another process.`,
       );
       expect(messages[0]).toContain(
         "Stop the conflicting process or set HUNK_MCP_PORT to a different loopback port.",

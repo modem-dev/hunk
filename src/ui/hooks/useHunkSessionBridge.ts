@@ -1,7 +1,7 @@
 import { useCallback, useEffect } from "react";
 import type { CliInput, DiffFile } from "../../core/types";
 import { hunkLineRange } from "../../core/liveComments";
-import { HunkHostClient } from "../../session-broker/client";
+import { SessionBrokerClient } from "../../session-broker/brokerClient";
 import type {
   AppliedCommentBatchResult,
   AppliedCommentResult,
@@ -33,7 +33,7 @@ export function useHunkSessionBridge({
   addLiveComment: ReviewController["addLiveComment"];
   addLiveCommentBatch: ReviewController["addLiveCommentBatch"];
   clearLiveComments: ReviewController["clearLiveComments"];
-  hostClient?: HunkHostClient;
+  hostClient?: SessionBrokerClient;
   liveCommentCount: number;
   liveCommentSummaries: SessionLiveCommentSummary[];
   navigateToLocation: ReviewController["navigateToLocation"];

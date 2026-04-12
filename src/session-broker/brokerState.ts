@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { parseSessionRegistration, parseSessionSnapshot } from "./sessionWire";
+import { parseSessionRegistration, parseSessionSnapshot } from "./brokerWire";
 import type {
   AppliedCommentBatchResult,
   AppliedCommentResult,
@@ -7,8 +7,8 @@ import type {
   ClearCommentsToolInput,
   CommentBatchToolInput,
   CommentToolInput,
-  HunkSessionRegistration,
-  HunkSessionSnapshot,
+  SessionRegistration,
+  SessionSnapshot,
   ListedSession,
   NavigateToHunkToolInput,
   NavigatedSelectionResult,
@@ -37,8 +37,8 @@ interface DaemonSessionSocket {
 }
 
 interface SessionEntry {
-  registration: HunkSessionRegistration;
-  snapshot: HunkSessionSnapshot;
+  registration: SessionRegistration;
+  snapshot: SessionSnapshot;
   socket: DaemonSessionSocket;
   connectedAt: string;
   lastSeenAt: string;
@@ -68,7 +68,7 @@ function findSelectedFile(session: ListedSession) {
 }
 
 /** Match one review-export file against the live snapshot's current file selection. */
-function findSelectedReviewFile(files: SessionReviewFile[], snapshot: HunkSessionSnapshot) {
+function findSelectedReviewFile(files: SessionReviewFile[], snapshot: SessionSnapshot) {
   return (
     files.find(
       (file) =>
@@ -104,12 +104,12 @@ function serializeReviewFile(
       };
 }
 
-/** Resolve which live Hunk session one external command should target. */
+/** Resolve which live session one external command should target. */
 export function resolveSessionTarget(sessions: ListedSession[], selector: SessionTargetSelector) {
   if (selector.sessionId) {
     const matched = sessions.find((session) => session.sessionId === selector.sessionId);
     if (!matched) {
-      throw new Error(`No active Hunk session matches sessionId ${selector.sessionId}.`);
+      throw new Error(`No active session matches sessionId ${selector.sessionId}.`);
     }
 
     return matched;
@@ -119,12 +119,12 @@ export function resolveSessionTarget(sessions: ListedSession[], selector: Sessio
   if (sessionPath) {
     const matches = sessions.filter((session) => session.cwd === sessionPath);
     if (matches.length === 0) {
-      throw new Error(`No active Hunk session matches session path ${sessionPath}.`);
+      throw new Error(`No active session matches session path ${sessionPath}.`);
     }
 
     if (matches.length > 1) {
       throw new Error(
-        `Multiple active Hunk sessions match session path ${sessionPath}; specify sessionId instead. ` +
+        `Multiple active sessions match session path ${sessionPath}; specify sessionId instead. ` +
           `Matches: ${describeSessionChoices(matches)}.`,
       );
     }
@@ -135,12 +135,12 @@ export function resolveSessionTarget(sessions: ListedSession[], selector: Sessio
   if (selector.repoRoot) {
     const matches = sessions.filter((session) => session.repoRoot === selector.repoRoot);
     if (matches.length === 0) {
-      throw new Error(`No active Hunk session matches repoRoot ${selector.repoRoot}.`);
+      throw new Error(`No active session matches repoRoot ${selector.repoRoot}.`);
     }
 
     if (matches.length > 1) {
       throw new Error(
-        `Multiple active Hunk sessions match repoRoot ${selector.repoRoot}; specify sessionId instead. ` +
+        `Multiple active sessions match repoRoot ${selector.repoRoot}; specify sessionId instead. ` +
           `Matches: ${describeSessionChoices(matches)}.`,
       );
     }
@@ -154,18 +154,18 @@ export function resolveSessionTarget(sessions: ListedSession[], selector: Sessio
 
   if (sessions.length === 0) {
     throw new Error(
-      "No active Hunk sessions are registered with the daemon. Open Hunk and wait for it to connect.",
+      "No active sessions are registered with the broker. Open the app and wait for it to connect.",
     );
   }
 
   throw new Error(
-    `Multiple active Hunk sessions are registered; specify sessionId, sessionPath, or repoRoot. ` +
+    `Multiple active sessions are registered; specify sessionId, sessionPath, or repoRoot. ` +
       `Sessions: ${describeSessionChoices(sessions)}.`,
   );
 }
 
-/** Track registered Hunk sessions and route session-daemon commands onto the correct live TUI instance. */
-export class HunkDaemonState {
+/** Track registered sessions and route broker commands onto the correct live app instance. */
+export class SessionBrokerState {
   private sessions = new Map<string, SessionEntry>();
   private sessionIdsBySocket = new Map<DaemonSessionSocket, string>();
   private pendingCommands = new Map<string, PendingCommand>();
@@ -271,7 +271,7 @@ export class HunkDaemonState {
         // payload cannot leave old review data behind after an upgrade or reload.
         this.removeSession(
           previousSessionId,
-          new Error("The Hunk session sent an incompatible registration payload."),
+          new Error("The session sent an incompatible registration payload."),
         );
       }
 
@@ -288,7 +288,7 @@ export class HunkDaemonState {
       this.sessionIdsBySocket.delete(existing.socket);
       this.rejectPendingCommandsForSession(
         registration.sessionId,
-        new Error("Hunk session reconnected before the command completed."),
+        new Error("Session reconnected before the command completed."),
       );
     }
 
@@ -341,7 +341,7 @@ export class HunkDaemonState {
       return;
     }
 
-    this.removeSession(sessionId, new Error("The targeted Hunk session disconnected."));
+    this.removeSession(sessionId, new Error("The targeted session disconnected."));
   }
 
   pruneStaleSessions({ ttlMs, now = Date.now() }: { ttlMs: number; now?: number }) {
@@ -356,9 +356,7 @@ export class HunkDaemonState {
 
       this.removeSession(
         sessionId,
-        new Error(
-          "The targeted Hunk session became stale and was removed from the session daemon.",
-        ),
+        new Error("The targeted session became stale and was removed from the session broker."),
       );
       removed += 1;
     }
@@ -371,7 +369,7 @@ export class HunkDaemonState {
       { sessionId: input.sessionId, sessionPath: input.sessionPath, repoRoot: input.repoRoot },
       "comment",
       input,
-      "Timed out waiting for the Hunk session to apply the comment.",
+      "Timed out waiting for the session to apply the comment.",
     );
   }
 
@@ -380,7 +378,7 @@ export class HunkDaemonState {
       { sessionId: input.sessionId, sessionPath: input.sessionPath, repoRoot: input.repoRoot },
       "comment_batch",
       input,
-      "Timed out waiting for the Hunk session to apply the comment batch.",
+      "Timed out waiting for the session to apply the comment batch.",
       30_000,
     );
   }
@@ -390,7 +388,7 @@ export class HunkDaemonState {
       { sessionId: input.sessionId, sessionPath: input.sessionPath, repoRoot: input.repoRoot },
       "navigate_to_hunk",
       input,
-      "Timed out waiting for the Hunk session to navigate to the requested hunk.",
+      "Timed out waiting for the session to navigate to the requested hunk.",
     );
   }
 
@@ -399,7 +397,7 @@ export class HunkDaemonState {
       { sessionId: input.sessionId, sessionPath: input.sessionPath, repoRoot: input.repoRoot },
       "reload_session",
       input,
-      "Timed out waiting for the Hunk session to reload the requested contents.",
+      "Timed out waiting for the session to reload the requested contents.",
       30_000,
     );
   }
@@ -409,7 +407,7 @@ export class HunkDaemonState {
       { sessionId: input.sessionId, sessionPath: input.sessionPath, repoRoot: input.repoRoot },
       "remove_comment",
       input,
-      "Timed out waiting for the Hunk session to remove the requested comment.",
+      "Timed out waiting for the session to remove the requested comment.",
     );
   }
 
@@ -418,7 +416,7 @@ export class HunkDaemonState {
       { sessionId: input.sessionId, sessionPath: input.sessionPath, repoRoot: input.repoRoot },
       "clear_comments",
       input,
-      "Timed out waiting for the Hunk session to clear the requested comments.",
+      "Timed out waiting for the session to clear the requested comments.",
     );
   }
 
@@ -441,10 +439,10 @@ export class HunkDaemonState {
       return;
     }
 
-    pending.reject(new Error(message.error ?? "The Hunk session failed to handle the command."));
+    pending.reject(new Error(message.error ?? "The session failed to handle the command."));
   }
 
-  shutdown(error = new Error("The Hunk session daemon shut down.")) {
+  shutdown(error = new Error("The session broker daemon shut down.")) {
     for (const [requestId, pending] of this.pendingCommands.entries()) {
       clearTimeout(pending.timeout);
       this.pendingCommands.delete(requestId);
@@ -460,7 +458,7 @@ export class HunkDaemonState {
     const session = resolveSessionTarget(this.listSessions(), selector);
     const entry = this.sessions.get(session.sessionId);
     if (!entry) {
-      throw new Error("The targeted Hunk session is no longer connected.");
+      throw new Error("The targeted session is no longer connected.");
     }
 
     return entry;
@@ -496,7 +494,7 @@ export class HunkDaemonState {
       if (!entry) {
         clearTimeout(timeout);
         this.pendingCommands.delete(requestId);
-        reject(new Error("The targeted Hunk session is no longer connected."));
+        reject(new Error("The targeted session is no longer connected."));
         return;
       }
 
@@ -515,7 +513,7 @@ export class HunkDaemonState {
         reject(
           error instanceof Error
             ? error
-            : new Error("The targeted Hunk session could not receive the command."),
+            : new Error("The targeted session could not receive the command."),
         );
       }
     });

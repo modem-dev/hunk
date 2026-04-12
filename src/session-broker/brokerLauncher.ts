@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } 
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { resolveHunkSessionDaemonConfig, type ResolvedHunkSessionDaemonConfig } from "./config";
+import { resolveSessionBrokerConfig, type ResolvedSessionBrokerConfig } from "./brokerConfig";
 
 const SCRIPT_ENTRYPOINT_PATTERN = /[\\/]|\.(?:[cm]?js|tsx?)$/;
 const DEFAULT_DAEMON_LOCK_STALE_MS = 15_000;
@@ -16,20 +16,20 @@ export interface DaemonLaunchCommand {
   args: string[];
 }
 
-export interface HunkDaemonRuntimePaths {
+export interface SessionBrokerRuntimePaths {
   runtimeDir: string;
   lockPath: string;
   metadataPath: string;
 }
 
-interface HunkDaemonLaunchLockFile {
+interface SessionBrokerLaunchLockFile {
   ownerPid: number;
   host: string;
   port: number;
   acquiredAt: string;
 }
 
-interface HunkDaemonLaunchMetadata {
+interface SessionBrokerLaunchMetadata {
   pid: number;
   host: string;
   port: number;
@@ -40,12 +40,12 @@ interface HunkDaemonLaunchMetadata {
   launchCwd: string;
 }
 
-interface HunkDaemonLaunchLock {
+interface SessionBrokerLaunchLock {
   release: () => void;
 }
 
-export interface EnsureHunkDaemonAvailableOptions {
-  config?: ResolvedHunkSessionDaemonConfig;
+export interface EnsureSessionBrokerAvailableOptions {
+  config?: ResolvedSessionBrokerConfig;
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   argv?: string[];
@@ -54,9 +54,9 @@ export interface EnsureHunkDaemonAvailableOptions {
   intervalMs?: number;
   lockStaleMs?: number;
   timeoutMessage?: string;
-  isHealthy?: (config: ResolvedHunkSessionDaemonConfig) => Promise<boolean>;
+  isHealthy?: (config: ResolvedSessionBrokerConfig) => Promise<boolean>;
   isPortReachable?: (
-    config: Pick<ResolvedHunkSessionDaemonConfig, "host" | "port">,
+    config: Pick<ResolvedSessionBrokerConfig, "host" | "port">,
     timeoutMs?: number,
   ) => Promise<boolean>;
   launchDaemon?: (options?: {
@@ -107,8 +107,8 @@ function removeFileIfPresent(path: string) {
   }
 }
 
-function cleanStaleDaemonMetadata(paths: HunkDaemonRuntimePaths) {
-  const metadata = readJsonFile<HunkDaemonLaunchMetadata>(paths.metadataPath);
+function cleanStaleDaemonMetadata(paths: SessionBrokerRuntimePaths) {
+  const metadata = readJsonFile<SessionBrokerLaunchMetadata>(paths.metadataPath);
   if (!metadata) {
     return;
   }
@@ -123,14 +123,14 @@ function tryAcquireDaemonLaunchLock({
   env,
   staleAfterMs,
 }: {
-  config: ResolvedHunkSessionDaemonConfig;
+  config: ResolvedSessionBrokerConfig;
   env: NodeJS.ProcessEnv;
   staleAfterMs: number;
-}): HunkDaemonLaunchLock | null {
-  const paths = resolveHunkDaemonRuntimePaths(config, env);
+}): SessionBrokerLaunchLock | null {
+  const paths = resolveSessionBrokerRuntimePaths(config, env);
   mkdirSync(paths.runtimeDir, { recursive: true });
 
-  const payload: HunkDaemonLaunchLockFile = {
+  const payload: SessionBrokerLaunchLockFile = {
     ownerPid: process.pid,
     host: config.host,
     port: config.port,
@@ -146,7 +146,7 @@ function tryAcquireDaemonLaunchLock({
 
     return {
       release: () => {
-        const current = readJsonFile<HunkDaemonLaunchLockFile>(paths.lockPath);
+        const current = readJsonFile<SessionBrokerLaunchLockFile>(paths.lockPath);
         if (current?.ownerPid === payload.ownerPid) {
           removeFileIfPresent(paths.lockPath);
         }
@@ -159,7 +159,7 @@ function tryAcquireDaemonLaunchLock({
     }
   }
 
-  const existing = readJsonFile<HunkDaemonLaunchLockFile>(paths.lockPath);
+  const existing = readJsonFile<SessionBrokerLaunchLockFile>(paths.lockPath);
   if (!existing) {
     if (existsSync(paths.lockPath)) {
       try {
@@ -187,8 +187,8 @@ function tryAcquireDaemonLaunchLock({
 }
 
 function writeDaemonLaunchMetadata(
-  paths: HunkDaemonRuntimePaths,
-  metadata: HunkDaemonLaunchMetadata,
+  paths: SessionBrokerRuntimePaths,
+  metadata: SessionBrokerLaunchMetadata,
 ) {
   writeFileSync(paths.metadataPath, JSON.stringify(metadata, null, 2), {
     encoding: "utf8",
@@ -196,21 +196,21 @@ function writeDaemonLaunchMetadata(
   });
 }
 
-function daemonPortConflictError(config: Pick<ResolvedHunkSessionDaemonConfig, "host" | "port">) {
+function daemonPortConflictError(config: Pick<ResolvedSessionBrokerConfig, "host" | "port">) {
   return new Error(
-    `Hunk session daemon port ${config.host}:${config.port} is already in use by another process. ` +
+    `Session broker port ${config.host}:${config.port} is already in use by another process. ` +
       `Stop the conflicting process or set HUNK_MCP_PORT to a different loopback port.`,
   );
 }
 
 function daemonStartupTimeoutError(
-  config: Pick<ResolvedHunkSessionDaemonConfig, "host" | "port">,
+  config: Pick<ResolvedSessionBrokerConfig, "host" | "port">,
   timeoutMessage?: string,
 ) {
   return new Error(
     timeoutMessage ??
-      `Timed out waiting for the Hunk session daemon on ${config.host}:${config.port}. ` +
-        `Hunk will retry in the background.`,
+      `Timed out waiting for the session broker daemon on ${config.host}:${config.port}. ` +
+        `The app will retry in the background.`,
   );
 }
 
@@ -220,10 +220,10 @@ async function waitForDaemonHealthWithCheck({
   intervalMs,
   isHealthy,
 }: {
-  config: ResolvedHunkSessionDaemonConfig;
+  config: ResolvedSessionBrokerConfig;
   timeoutMs: number;
   intervalMs: number;
-  isHealthy: (config: ResolvedHunkSessionDaemonConfig) => Promise<boolean>;
+  isHealthy: (config: ResolvedSessionBrokerConfig) => Promise<boolean>;
 }) {
   const deadline = Date.now() + timeoutMs;
 
@@ -238,7 +238,7 @@ async function waitForDaemonHealthWithCheck({
   return false;
 }
 
-/** Resolve how the current Hunk process should launch a sibling `hunk daemon serve` process. */
+/** Resolve how the current process should launch a sibling `daemon serve` process. */
 export function resolveDaemonLaunchCommand(
   argv = process.argv,
   execPath = process.execPath,
@@ -271,12 +271,12 @@ export function resolveDaemonLaunchCommand(
   };
 }
 
-/** Resolve the runtime paths Hunk uses to coordinate one daemon per loopback host/port. */
-export function resolveHunkDaemonRuntimePaths(
-  config: Pick<ResolvedHunkSessionDaemonConfig, "host" | "port"> = resolveHunkSessionDaemonConfig(),
+/** Resolve the runtime paths used to coordinate one broker daemon per loopback host/port. */
+export function resolveSessionBrokerRuntimePaths(
+  config: Pick<ResolvedSessionBrokerConfig, "host" | "port"> = resolveSessionBrokerConfig(),
   env: NodeJS.ProcessEnv = process.env,
-): HunkDaemonRuntimePaths {
-  // Keep the runtime directory stable across the daemon rename so in-flight upgrades still find
+): SessionBrokerRuntimePaths {
+  // Keep the runtime directory stable across the internal rename so in-flight upgrades still find
   // the same lock and metadata files instead of briefly racing as two different daemons.
   const runtimeDir = join(resolveRuntimeBaseDir(env), "hunk-mcp");
   const fileStem = `${safeRuntimeToken(config.host)}-${config.port}`;
@@ -288,7 +288,7 @@ export function resolveHunkDaemonRuntimePaths(
   };
 }
 
-export interface HunkDaemonHealth {
+export interface SessionBrokerHealth {
   ok: boolean;
   pid?: number;
   sessions?: number;
@@ -302,8 +302,8 @@ export interface HunkDaemonHealth {
 }
 
 /** Read the daemon's health payload when one is reachable on the configured loopback port. */
-export async function readHunkDaemonHealth(
-  config: ResolvedHunkSessionDaemonConfig = resolveHunkSessionDaemonConfig(),
+export async function readSessionBrokerHealth(
+  config: ResolvedSessionBrokerConfig = resolveSessionBrokerConfig(),
   timeoutMs = 500,
 ) {
   const controller = new AbortController();
@@ -318,7 +318,7 @@ export async function readHunkDaemonHealth(
       return null;
     }
 
-    return (await response.json()) as HunkDaemonHealth;
+    return (await response.json()) as SessionBrokerHealth;
   } catch {
     return null;
   } finally {
@@ -326,17 +326,17 @@ export async function readHunkDaemonHealth(
   }
 }
 
-/** Check whether the loopback Hunk daemon already answers health probes. */
-export async function isHunkDaemonHealthy(
-  config: ResolvedHunkSessionDaemonConfig = resolveHunkSessionDaemonConfig(),
+/** Check whether the loopback session broker already answers health probes. */
+export async function isSessionBrokerHealthy(
+  config: ResolvedSessionBrokerConfig = resolveSessionBrokerConfig(),
   timeoutMs = 500,
 ) {
-  return (await readHunkDaemonHealth(config, timeoutMs))?.ok === true;
+  return (await readSessionBrokerHealth(config, timeoutMs))?.ok === true;
 }
 
 /** Check whether some local process is already accepting TCP connections on the daemon port. */
 export function isLoopbackPortReachable(
-  config: Pick<ResolvedHunkSessionDaemonConfig, "host" | "port"> = resolveHunkSessionDaemonConfig(),
+  config: Pick<ResolvedSessionBrokerConfig, "host" | "port"> = resolveSessionBrokerConfig(),
   timeoutMs = 500,
 ) {
   return new Promise<boolean>((resolve) => {
@@ -365,19 +365,19 @@ export function isLoopbackPortReachable(
 }
 
 /** Wait for the running daemon to stop responding on its health endpoint. */
-export async function waitForHunkDaemonShutdown({
-  config = resolveHunkSessionDaemonConfig(),
+export async function waitForSessionBrokerShutdown({
+  config = resolveSessionBrokerConfig(),
   timeoutMs = 3_000,
   intervalMs = 100,
 }: {
-  config?: ResolvedHunkSessionDaemonConfig;
+  config?: ResolvedSessionBrokerConfig;
   timeoutMs?: number;
   intervalMs?: number;
 } = {}) {
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
-    if (!(await isHunkDaemonHealthy(config))) {
+    if (!(await isSessionBrokerHealthy(config))) {
       return true;
     }
 
@@ -388,12 +388,12 @@ export async function waitForHunkDaemonShutdown({
 }
 
 /** Wait briefly for a just-launched daemon to become reachable on its health endpoint. */
-export async function waitForHunkDaemonHealth({
-  config = resolveHunkSessionDaemonConfig(),
+export async function waitForSessionBrokerHealth({
+  config = resolveSessionBrokerConfig(),
   timeoutMs = DEFAULT_DAEMON_STARTUP_TIMEOUT_MS,
   intervalMs = DEFAULT_DAEMON_HEALTH_POLL_INTERVAL_MS,
 }: {
-  config?: ResolvedHunkSessionDaemonConfig;
+  config?: ResolvedSessionBrokerConfig;
   timeoutMs?: number;
   intervalMs?: number;
 }) {
@@ -401,12 +401,12 @@ export async function waitForHunkDaemonHealth({
     config,
     timeoutMs,
     intervalMs,
-    isHealthy: (resolvedConfig) => isHunkDaemonHealthy(resolvedConfig),
+    isHealthy: (resolvedConfig) => isSessionBrokerHealthy(resolvedConfig),
   });
 }
 
-/** Launch the Hunk daemon in the background without tying it to the current TTY session. */
-export function launchHunkDaemon({
+/** Launch the broker daemon in the background without tying it to the current TTY session. */
+export function launchSessionBrokerDaemon({
   cwd = process.cwd(),
   env = process.env,
   argv = process.argv,
@@ -429,9 +429,9 @@ export function launchHunkDaemon({
   return child;
 }
 
-/** Ensure one healthy local Hunk daemon exists, coordinating launch attempts across processes. */
-export async function ensureHunkDaemonAvailable({
-  config = resolveHunkSessionDaemonConfig(),
+/** Ensure one healthy local session broker daemon exists, coordinating launch attempts across processes. */
+export async function ensureSessionBrokerAvailable({
+  config = resolveSessionBrokerConfig(),
   cwd = process.cwd(),
   env = process.env,
   argv = process.argv,
@@ -440,11 +440,11 @@ export async function ensureHunkDaemonAvailable({
   intervalMs = DEFAULT_DAEMON_HEALTH_POLL_INTERVAL_MS,
   lockStaleMs = DEFAULT_DAEMON_LOCK_STALE_MS,
   timeoutMessage,
-  isHealthy = (resolvedConfig) => isHunkDaemonHealthy(resolvedConfig),
+  isHealthy = (resolvedConfig) => isSessionBrokerHealthy(resolvedConfig),
   isPortReachable = isLoopbackPortReachable,
-  launchDaemon = launchHunkDaemon,
-}: EnsureHunkDaemonAvailableOptions = {}) {
-  const paths = resolveHunkDaemonRuntimePaths(config, env);
+  launchDaemon = launchSessionBrokerDaemon,
+}: EnsureSessionBrokerAvailableOptions = {}) {
+  const paths = resolveSessionBrokerRuntimePaths(config, env);
   cleanStaleDaemonMetadata(paths);
 
   if (await isHealthy(config)) {

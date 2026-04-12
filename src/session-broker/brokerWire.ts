@@ -1,7 +1,7 @@
 import type { CliInput } from "../core/types";
 import type {
-  HunkSessionRegistration,
-  HunkSessionSnapshot,
+  SessionRegistration,
+  SessionSnapshot,
   SessionLiveCommentSummary,
   SessionReviewFile,
   SessionReviewHunk,
@@ -10,7 +10,7 @@ import type {
 } from "./types";
 
 /** Version the live session websocket registration payload separately from the HTTP session API. */
-export const HUNK_SESSION_REGISTRATION_VERSION = 1;
+export const SESSION_BROKER_REGISTRATION_VERSION = 1;
 
 const REVIEW_INPUT_KINDS = new Set<CliInput["kind"]>([
   "git",
@@ -157,7 +157,7 @@ function parseSessionTerminalMetadata(value: unknown): SessionTerminalMetadata |
   };
 }
 
-/** Parse one review input kind supported by live Hunk sessions. */
+/** Parse one review input kind supported by live review sessions. */
 function parseReviewInputKind(value: unknown): CliInput["kind"] | null {
   if (typeof value !== "string" || !REVIEW_INPUT_KINDS.has(value as CliInput["kind"])) {
     return null;
@@ -206,7 +206,7 @@ function parseSessionLiveCommentSummary(value: unknown): SessionLiveCommentSumma
 }
 
 /** Parse one live session registration payload from the websocket wire format. */
-export function parseSessionRegistration(value: unknown): HunkSessionRegistration | null {
+export function parseSessionRegistration(value: unknown): SessionRegistration | null {
   const record = asRecord(value);
   if (!record) {
     return null;
@@ -221,7 +221,7 @@ export function parseSessionRegistration(value: unknown): HunkSessionRegistratio
   const sourceLabel = parseRequiredString(record.sourceLabel);
   const launchedAt = parseRequiredString(record.launchedAt);
   if (
-    registrationVersion !== HUNK_SESSION_REGISTRATION_VERSION ||
+    registrationVersion !== SESSION_BROKER_REGISTRATION_VERSION ||
     sessionId === null ||
     pid === null ||
     cwd === null ||
@@ -255,7 +255,7 @@ export function parseSessionRegistration(value: unknown): HunkSessionRegistratio
 }
 
 /** Parse one live session snapshot payload from the websocket wire format. */
-export function parseSessionSnapshot(value: unknown): HunkSessionSnapshot | null {
+export function parseSessionSnapshot(value: unknown): SessionSnapshot | null {
   const record = asRecord(value);
   if (!record) {
     return null;

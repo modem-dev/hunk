@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
-  HUNK_SESSION_REGISTRATION_VERSION,
+  SESSION_BROKER_REGISTRATION_VERSION,
   parseSessionRegistration,
   parseSessionSnapshot,
-} from "./sessionWire";
+} from "./brokerWire";
 
 function createValidComment(overrides: Record<string, unknown> = {}) {
   return {
@@ -44,7 +44,7 @@ describe("session websocket wire parsing", () => {
   test("registration requires the current websocket registration version", () => {
     expect(
       parseSessionRegistration({
-        registrationVersion: HUNK_SESSION_REGISTRATION_VERSION - 1,
+        registrationVersion: SESSION_BROKER_REGISTRATION_VERSION - 1,
         sessionId: "session-1",
         pid: 123,
         cwd: "/repo",

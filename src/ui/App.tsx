@@ -7,7 +7,7 @@ import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState, useRef } from "react";
 import type { AppBootstrap, CliInput, LayoutMode } from "../core/types";
 import { canReloadInput, computeWatchSignature } from "../core/watch";
-import { HunkHostClient } from "../session-broker/client";
+import { SessionBrokerClient } from "../session-broker/brokerClient";
 import type { ReloadedSessionResult } from "../session-broker/types";
 import { MenuBar } from "./components/chrome/MenuBar";
 import { StatusBar } from "./components/chrome/StatusBar";
@@ -80,7 +80,7 @@ export function App({
   onReloadSession,
 }: {
   bootstrap: AppBootstrap;
-  hostClient?: HunkHostClient;
+  hostClient?: SessionBrokerClient;
   noticeText?: string | null;
   onQuit?: () => void;
   onReloadSession: (

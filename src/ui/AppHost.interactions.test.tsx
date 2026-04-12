@@ -4,11 +4,11 @@ import { join } from "node:path";
 import { describe, expect, mock, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
-import type { HunkHostClient } from "../session-broker/client";
-import { HUNK_SESSION_REGISTRATION_VERSION } from "../session-broker/sessionWire";
+import type { SessionBrokerClient } from "../session-broker/brokerClient";
+import { SESSION_BROKER_REGISTRATION_VERSION } from "../session-broker/brokerWire";
 import type {
-  HunkSessionRegistration,
-  HunkSessionSnapshot,
+  SessionRegistration,
+  SessionSnapshot,
   SessionServerMessage,
 } from "../session-broker/types";
 import type { AppBootstrap, LayoutMode } from "../core/types";
@@ -43,12 +43,12 @@ function createNumberedAssignmentLines(start: number, count: number, valueOffset
 }
 
 function createMockHostClient() {
-  type Bridge = Parameters<HunkHostClient["setBridge"]>[0];
+  type Bridge = Parameters<SessionBrokerClient["setBridge"]>[0];
 
   let bridge: Bridge = null;
-  let latestSnapshot: HunkSessionSnapshot | null = null;
-  const registration: HunkSessionRegistration = {
-    registrationVersion: HUNK_SESSION_REGISTRATION_VERSION,
+  let latestSnapshot: SessionSnapshot | null = null;
+  const registration: SessionRegistration = {
+    registrationVersion: SESSION_BROKER_REGISTRATION_VERSION,
     sessionId: "session-1",
     pid: process.pid,
     cwd: process.cwd(),
@@ -66,10 +66,10 @@ function createMockHostClient() {
       setBridge: (nextBridge: Bridge) => {
         bridge = nextBridge;
       },
-      updateSnapshot: (snapshot: HunkSessionSnapshot) => {
+      updateSnapshot: (snapshot: SessionSnapshot) => {
         latestSnapshot = snapshot;
       },
-    } as unknown as HunkHostClient,
+    } as unknown as SessionBrokerClient,
     getBridge: () => bridge,
     getLatestSnapshot: () => latestSnapshot,
     navigateToHunk: async (
@@ -339,8 +339,8 @@ async function waitForFrame(
 
 async function waitForSnapshot(
   setup: Awaited<ReturnType<typeof testRender>>,
-  getSnapshot: () => HunkSessionSnapshot | null,
-  predicate: (snapshot: HunkSessionSnapshot) => boolean,
+  getSnapshot: () => SessionSnapshot | null,
+  predicate: (snapshot: SessionSnapshot) => boolean,
   attempts = 8,
 ) {
   let snapshot = getSnapshot();

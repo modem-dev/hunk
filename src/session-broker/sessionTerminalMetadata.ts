@@ -63,7 +63,7 @@ function parseHierarchicalIds(sessionId: string) {
 }
 
 /**
- * Capture terminal- and multiplexer-facing location metadata for one Hunk TUI session.
+ * Capture terminal- and multiplexer-facing location metadata for one live app session.
  *
  * The structure is intentionally generic so we can layer tmux, iTerm2, Ghostty,
  * and future terminal integrations without adding a new top-level field for each one.

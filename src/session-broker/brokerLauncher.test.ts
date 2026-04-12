@@ -5,11 +5,11 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  ensureHunkDaemonAvailable,
+  ensureSessionBrokerAvailable,
   isLoopbackPortReachable,
   resolveDaemonLaunchCommand,
-  resolveHunkDaemonRuntimePaths,
-} from "./daemonLauncher";
+  resolveSessionBrokerRuntimePaths,
+} from "./brokerLauncher";
 
 const tempDirs: string[] = [];
 const testConfig = {
@@ -98,7 +98,7 @@ describe("session daemon launcher", () => {
     let launchCount = 0;
 
     const ensureCalls = Array.from({ length: 6 }, () =>
-      ensureHunkDaemonAvailable({
+      ensureSessionBrokerAvailable({
         config: testConfig,
         env,
         cwd: "/repo",
@@ -122,7 +122,7 @@ describe("session daemon launcher", () => {
     await expect(Promise.all(ensureCalls)).resolves.toHaveLength(6);
     expect(launchCount).toBe(1);
 
-    const paths = resolveHunkDaemonRuntimePaths(testConfig, env);
+    const paths = resolveSessionBrokerRuntimePaths(testConfig, env);
     expect(existsSync(paths.lockPath)).toBe(false);
     expect(JSON.parse(readFileSync(paths.metadataPath, "utf8"))).toMatchObject({
       pid: process.pid,
@@ -136,7 +136,7 @@ describe("session daemon launcher", () => {
   test("recovers a stale launch lock from a dead launcher and overwrites stale metadata", async () => {
     const runtimeDir = createRuntimeDir();
     const env = { ...process.env, XDG_RUNTIME_DIR: runtimeDir };
-    const paths = resolveHunkDaemonRuntimePaths(testConfig, env);
+    const paths = resolveSessionBrokerRuntimePaths(testConfig, env);
     mkdirSync(paths.runtimeDir, { recursive: true });
 
     writeFileSync(
@@ -173,7 +173,7 @@ describe("session daemon launcher", () => {
     let healthy = false;
     let launchCount = 0;
 
-    await ensureHunkDaemonAvailable({
+    await ensureSessionBrokerAvailable({
       config: testConfig,
       env,
       cwd: "/repo",

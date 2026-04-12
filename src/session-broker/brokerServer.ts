@@ -1,9 +1,9 @@
 import {
-  HUNK_LEGACY_MCP_PATH,
-  HUNK_SESSION_SOCKET_PATH,
-  resolveHunkSessionDaemonConfig,
-} from "./config";
-import { HunkDaemonState } from "./daemonState";
+  LEGACY_MCP_PATH,
+  SESSION_BROKER_SOCKET_PATH,
+  resolveSessionBrokerConfig,
+} from "./brokerConfig";
+import { SessionBrokerState } from "./brokerState";
 import type { SessionCommandResult } from "./types";
 import {
   HUNK_SESSION_API_PATH,
@@ -34,13 +34,13 @@ const SUPPORTED_SESSION_ACTIONS: SessionDaemonAction[] = [
   "comment-clear",
 ];
 
-export interface ServeHunkSessionDaemonOptions {
+export interface ServeSessionBrokerDaemonOptions {
   idleTimeoutMs?: number;
   staleSessionTtlMs?: number;
   staleSessionSweepIntervalMs?: number;
 }
 
-export type RunningHunkSessionDaemon = ReturnType<typeof Bun.serve<{}>> & {
+export type RunningSessionBrokerDaemon = ReturnType<typeof Bun.serve<{}>> & {
   stopped: Promise<void>;
 };
 
@@ -53,12 +53,12 @@ function formatDaemonServeError(error: unknown, host: string, port: number) {
     normalized.includes(`is port ${port} in use?`)
   ) {
     return new Error(
-      `Hunk session daemon could not bind ${host}:${port} because the port is already in use. ` +
+      `Session broker daemon could not bind ${host}:${port} because the port is already in use. ` +
         `Stop the conflicting process or set HUNK_MCP_PORT to a different loopback port.`,
     );
   }
 
-  return new Error(`Failed to start the Hunk session daemon on ${host}:${port}: ${message}`);
+  return new Error(`Failed to start the session broker daemon on ${host}:${port}: ${message}`);
 }
 
 function sessionCapabilities(): SessionDaemonCapabilities {
@@ -100,7 +100,7 @@ async function parseJsonRequest(request: Request) {
   }
 }
 
-async function handleSessionApiRequest(state: HunkDaemonState, request: Request) {
+async function handleSessionApiRequest(state: SessionBrokerState, request: Request) {
   if (request.method !== "POST") {
     return jsonError("Session API requests must use POST.", 405);
   }
@@ -216,16 +216,16 @@ async function handleSessionApiRequest(state: HunkDaemonState, request: Request)
   }
 }
 
-/** Serve the local Hunk session daemon and websocket session broker. */
-export function serveHunkSessionDaemon(
-  options: ServeHunkSessionDaemonOptions = {},
-): RunningHunkSessionDaemon {
-  const config = resolveHunkSessionDaemonConfig();
+/** Serve the local session broker daemon and websocket broker transport. */
+export function serveSessionBrokerDaemon(
+  options: ServeSessionBrokerDaemonOptions = {},
+): RunningSessionBrokerDaemon {
+  const config = resolveSessionBrokerConfig();
   const idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
   const staleSessionTtlMs = options.staleSessionTtlMs ?? DEFAULT_STALE_SESSION_TTL_MS;
   const staleSessionSweepIntervalMs =
     options.staleSessionSweepIntervalMs ?? DEFAULT_STALE_SESSION_SWEEP_INTERVAL_MS;
-  const state = new HunkDaemonState();
+  const state = new SessionBrokerState();
   const startedAt = Date.now();
   let resolveStopped: (() => void) | null = null;
   const stopped = new Promise<void>((resolve) => {
@@ -329,7 +329,7 @@ export function serveHunkSessionDaemon(
             uptimeMs: Date.now() - startedAt,
             sessionApi: `${config.httpOrigin}${HUNK_SESSION_API_PATH}`,
             sessionCapabilities: `${config.httpOrigin}${HUNK_SESSION_CAPABILITIES_PATH}`,
-            sessionSocket: `${config.wsOrigin}${HUNK_SESSION_SOCKET_PATH}`,
+            sessionSocket: `${config.wsOrigin}${SESSION_BROKER_SOCKET_PATH}`,
             sessions: state.getSessionCount(),
             pendingCommands: state.getPendingCommandCount(),
             staleSessionTtlMs,
@@ -346,14 +346,14 @@ export function serveHunkSessionDaemon(
           return handleSessionApiRequest(state, request);
         }
 
-        if (url.pathname === HUNK_LEGACY_MCP_PATH) {
+        if (url.pathname === LEGACY_MCP_PATH) {
           return jsonError(
-            "Hunk no longer exposes agent-facing MCP tools. Use `hunk session ...` instead.",
+            "This app no longer exposes agent-facing MCP tools. Use the session CLI instead.",
             410,
           );
         }
 
-        if (url.pathname === HUNK_SESSION_SOCKET_PATH) {
+        if (url.pathname === SESSION_BROKER_SOCKET_PATH) {
           if (bunServer.upgrade(request, { data: {} })) {
             return undefined;
           }
@@ -380,7 +380,7 @@ export function serveHunkSessionDaemon(
                 // Close incompatible clients so old sessions cannot poison the fresh daemon after
                 // an upgrade. The session CLI will then surface a reconnect timeout instead of a
                 // broken listing or command crash.
-                socket.close(1008, "Incompatible Hunk session registration.");
+                socket.close(1008, "Incompatible session registration.");
                 return;
               }
 
@@ -393,12 +393,12 @@ export function serveHunkSessionDaemon(
 
               const updateResult = state.updateSnapshot(parsed.sessionId, parsed.snapshot);
               if (updateResult === "not-found") {
-                socket.close(1008, "Hunk session not registered with daemon.");
+                socket.close(1008, "Session not registered with broker.");
                 return;
               }
 
               if (updateResult === "invalid") {
-                socket.close(1008, "Incompatible Hunk session snapshot.");
+                socket.close(1008, "Incompatible session snapshot.");
                 return;
               }
 
@@ -447,8 +447,10 @@ export function serveHunkSessionDaemon(
   process.once("SIGTERM", shutdown);
   refreshIdleShutdownTimer();
 
-  console.log(`Hunk session daemon listening on ${config.httpOrigin}${HUNK_SESSION_API_PATH}`);
-  console.log(`Hunk session websocket listening on ${config.wsOrigin}${HUNK_SESSION_SOCKET_PATH}`);
+  console.log(`Session broker API listening on ${config.httpOrigin}${HUNK_SESSION_API_PATH}`);
+  console.log(
+    `Session broker websocket listening on ${config.wsOrigin}${SESSION_BROKER_SOCKET_PATH}`,
+  );
 
-  return Object.assign(server, { stopped }) as RunningHunkSessionDaemon;
+  return Object.assign(server, { stopped }) as RunningSessionBrokerDaemon;
 }

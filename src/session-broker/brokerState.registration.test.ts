@@ -3,7 +3,7 @@ import {
   createTestSessionRegistration,
   createTestSessionSnapshot,
 } from "../../test/helpers/session-daemon-fixtures";
-import { HunkDaemonState } from "./daemonState";
+import { SessionBrokerState } from "./brokerState";
 
 function createRegistration(overrides = {}) {
   return createTestSessionRegistration({
@@ -31,7 +31,7 @@ function createMockSocket() {
 
 describe("session registration terminal metadata", () => {
   test("daemon state passes generic terminal metadata through to listed sessions", () => {
-    const state = new HunkDaemonState();
+    const state = new SessionBrokerState();
     const registration = createRegistration({
       terminal: {
         program: "iTerm.app",
@@ -57,7 +57,7 @@ describe("session registration terminal metadata", () => {
   });
 
   test("daemon state omits terminal metadata when nothing is known", () => {
-    const state = new HunkDaemonState();
+    const state = new SessionBrokerState();
     const registration = createRegistration();
 
     state.registerSession(createMockSocket(), registration, createSnapshot());

@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
-  HUNK_MCP_UNSAFE_ALLOW_REMOTE_ENV,
-  allowsUnsafeRemoteSessionDaemon,
+  UNSAFE_ALLOW_REMOTE_SESSION_BROKER_ENV,
+  allowsUnsafeRemoteSessionBroker,
   isLoopbackHost,
-  resolveHunkSessionDaemonConfig,
-} from "./config";
+  resolveSessionBrokerConfig,
+} from "./brokerConfig";
 
 describe("Hunk session daemon config", () => {
   test("accepts loopback hosts without an unsafe override", () => {
@@ -21,17 +21,17 @@ describe("Hunk session daemon config", () => {
 
   test("refuses non-loopback binds unless the unsafe override is enabled", () => {
     expect(() =>
-      resolveHunkSessionDaemonConfig({
+      resolveSessionBrokerConfig({
         HUNK_MCP_HOST: "0.0.0.0",
         HUNK_MCP_PORT: "49000",
       }),
     ).toThrow("local-only by default");
 
     expect(
-      resolveHunkSessionDaemonConfig({
+      resolveSessionBrokerConfig({
         HUNK_MCP_HOST: "0.0.0.0",
         HUNK_MCP_PORT: "49000",
-        [HUNK_MCP_UNSAFE_ALLOW_REMOTE_ENV]: "1",
+        [UNSAFE_ALLOW_REMOTE_SESSION_BROKER_ENV]: "1",
       }),
     ).toMatchObject({
       host: "0.0.0.0",
@@ -40,10 +40,12 @@ describe("Hunk session daemon config", () => {
   });
 
   test("reports whether unsafe remote session-daemon access was explicitly enabled", () => {
-    expect(allowsUnsafeRemoteSessionDaemon({})).toBe(false);
-    expect(allowsUnsafeRemoteSessionDaemon({ [HUNK_MCP_UNSAFE_ALLOW_REMOTE_ENV]: "0" })).toBe(
+    expect(allowsUnsafeRemoteSessionBroker({})).toBe(false);
+    expect(allowsUnsafeRemoteSessionBroker({ [UNSAFE_ALLOW_REMOTE_SESSION_BROKER_ENV]: "0" })).toBe(
       false,
     );
-    expect(allowsUnsafeRemoteSessionDaemon({ [HUNK_MCP_UNSAFE_ALLOW_REMOTE_ENV]: "1" })).toBe(true);
+    expect(allowsUnsafeRemoteSessionBroker({ [UNSAFE_ALLOW_REMOTE_SESSION_BROKER_ENV]: "1" })).toBe(
+      true,
+    );
   });
 });

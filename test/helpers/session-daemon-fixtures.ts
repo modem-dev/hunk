@@ -1,7 +1,7 @@
-import { HUNK_SESSION_REGISTRATION_VERSION } from "../../src/session-broker/sessionWire";
+import { SESSION_BROKER_REGISTRATION_VERSION } from "../../src/session-broker/brokerWire";
 import type {
-  HunkSessionRegistration,
-  HunkSessionSnapshot,
+  SessionRegistration,
+  SessionSnapshot,
   ListedSession,
   SelectedSessionContext,
   SessionFileSummary,
@@ -53,8 +53,8 @@ function summarizeReviewFile(reviewFile: SessionReviewFile): SessionFileSummary 
 }
 
 export function createTestSessionSnapshot(
-  overrides: Partial<HunkSessionSnapshot> = {},
-): HunkSessionSnapshot {
+  overrides: Partial<SessionSnapshot> = {},
+): SessionSnapshot {
   return {
     selectedFileId: "file-1",
     selectedFilePath: "src/example.ts",
@@ -68,12 +68,12 @@ export function createTestSessionSnapshot(
 }
 
 export function createTestSessionRegistration(
-  overrides: Partial<HunkSessionRegistration> = {},
-): HunkSessionRegistration {
+  overrides: Partial<SessionRegistration> = {},
+): SessionRegistration {
   const files = overrides.files ?? [createTestSessionReviewFile()];
 
   return {
-    registrationVersion: HUNK_SESSION_REGISTRATION_VERSION,
+    registrationVersion: SESSION_BROKER_REGISTRATION_VERSION,
     sessionId: "session-1",
     pid: 123,
     cwd: "/repo",

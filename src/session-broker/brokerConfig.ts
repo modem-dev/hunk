@@ -2,11 +2,11 @@ import { isIP } from "node:net";
 
 const DEFAULT_HUNK_MCP_HOST = "127.0.0.1";
 const DEFAULT_HUNK_MCP_PORT = 47657;
-export const HUNK_LEGACY_MCP_PATH = "/mcp";
-export const HUNK_SESSION_SOCKET_PATH = "/session";
-export const HUNK_MCP_UNSAFE_ALLOW_REMOTE_ENV = "HUNK_MCP_UNSAFE_ALLOW_REMOTE";
+export const LEGACY_MCP_PATH = "/mcp";
+export const SESSION_BROKER_SOCKET_PATH = "/session";
+export const UNSAFE_ALLOW_REMOTE_SESSION_BROKER_ENV = "HUNK_MCP_UNSAFE_ALLOW_REMOTE";
 
-export interface ResolvedHunkSessionDaemonConfig {
+export interface ResolvedSessionBrokerConfig {
   host: string;
   port: number;
   httpOrigin: string;
@@ -40,23 +40,23 @@ export function isLoopbackHost(host: string) {
   return false;
 }
 
-/** Return whether the user explicitly opted into exposing the daemon beyond loopback. */
-export function allowsUnsafeRemoteSessionDaemon(env: NodeJS.ProcessEnv = process.env) {
-  return env[HUNK_MCP_UNSAFE_ALLOW_REMOTE_ENV] === "1";
+/** Return whether the user explicitly opted into exposing the broker beyond loopback. */
+export function allowsUnsafeRemoteSessionBroker(env: NodeJS.ProcessEnv = process.env) {
+  return env[UNSAFE_ALLOW_REMOTE_SESSION_BROKER_ENV] === "1";
 }
 
-/** Resolve the loopback host/port Hunk should use for the local session daemon. */
-export function resolveHunkSessionDaemonConfig(
+/** Resolve the loopback host/port the local session broker should use. */
+export function resolveSessionBrokerConfig(
   env: NodeJS.ProcessEnv = process.env,
-): ResolvedHunkSessionDaemonConfig {
+): ResolvedSessionBrokerConfig {
   const host = env.HUNK_MCP_HOST?.trim() || DEFAULT_HUNK_MCP_HOST;
   const parsedPort = Number.parseInt(env.HUNK_MCP_PORT ?? "", 10);
   const port = Number.isInteger(parsedPort) && parsedPort > 0 ? parsedPort : DEFAULT_HUNK_MCP_PORT;
 
-  if (!isLoopbackHost(host) && !allowsUnsafeRemoteSessionDaemon(env)) {
+  if (!isLoopbackHost(host) && !allowsUnsafeRemoteSessionBroker(env)) {
     throw new Error(
-      `Hunk session daemon refuses to bind ${host}:${port} because the daemon is local-only by default. ` +
-        `Use a loopback host such as 127.0.0.1, localhost, or ::1, or set ${HUNK_MCP_UNSAFE_ALLOW_REMOTE_ENV}=1 if you intentionally want remote access.`,
+      `Session broker refuses to bind ${host}:${port} because it is local-only by default. ` +
+        `Use a loopback host such as 127.0.0.1, localhost, or ::1, or set ${UNSAFE_ALLOW_REMOTE_SESSION_BROKER_ENV}=1 if you intentionally want remote access.`,
     );
   }
 

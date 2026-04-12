@@ -8,8 +8,8 @@ import { shutdownSession } from "./core/shutdown";
 import { prepareStartupPlan } from "./core/startup";
 import { resolveStartupUpdateNotice } from "./core/updateNotice";
 import { AppHost } from "./ui/AppHost";
-import { HunkHostClient } from "./session-broker/client";
-import { serveHunkSessionDaemon } from "./session-broker/server";
+import { SessionBrokerClient } from "./session-broker/brokerClient";
+import { serveSessionBrokerDaemon } from "./session-broker/brokerServer";
 import {
   createInitialSessionSnapshot,
   createSessionRegistration,
@@ -25,7 +25,7 @@ async function main() {
   }
 
   if (startupPlan.kind === "daemon-serve") {
-    const server = serveHunkSessionDaemon();
+    const server = serveSessionBrokerDaemon();
     await server.stopped;
     return;
   }
@@ -45,7 +45,7 @@ async function main() {
   }
 
   const { bootstrap, cliInput, controllingTerminal } = startupPlan;
-  const hostClient = new HunkHostClient(
+  const hostClient = new SessionBrokerClient(
     createSessionRegistration(bootstrap),
     createInitialSessionSnapshot(bootstrap),
   );

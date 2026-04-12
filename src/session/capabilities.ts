@@ -1,7 +1,7 @@
 import {
-  resolveHunkSessionDaemonConfig,
-  type ResolvedHunkSessionDaemonConfig,
-} from "../session-broker/config";
+  resolveSessionBrokerConfig,
+  type ResolvedSessionBrokerConfig,
+} from "../session-broker/brokerConfig";
 import {
   HUNK_SESSION_API_VERSION,
   HUNK_SESSION_CAPABILITIES_PATH,
@@ -22,7 +22,7 @@ export function reportHunkDaemonUpgradeRestart(log: (message: string) => void = 
  * this Hunk build even if it still answers the same HTTP action list.
  */
 export async function readHunkSessionDaemonCapabilities(
-  config: ResolvedHunkSessionDaemonConfig = resolveHunkSessionDaemonConfig(),
+  config: ResolvedSessionBrokerConfig = resolveSessionBrokerConfig(),
 ): Promise<SessionDaemonCapabilities | null> {
   const response = await fetch(`${config.httpOrigin}${HUNK_SESSION_CAPABILITIES_PATH}`);
   if (response.status === 404 || response.status === 410) {
