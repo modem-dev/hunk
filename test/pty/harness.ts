@@ -409,7 +409,7 @@ export function createPtyHarness() {
 
     return launchTerminal({
       command: "/bin/bash",
-      args: ["-lc", options.command],
+      args: ["-c", options.command],
       cwd: options.cwd ?? repoRoot,
       cols: options.cols ?? 140,
       rows: options.rows ?? 24,
