@@ -301,6 +301,32 @@ export function createPtyHarness() {
     ]);
   }
 
+  /** Build a repo whose final short file can only align to the reachable bottom edge. */
+  function createBottomClampedRepoFixture() {
+    return createGitRepoFixture([
+      {
+        path: "first.ts",
+        before: `${createNumberedExportLines(1, 30)}\n`,
+        after: `${createNumberedExportLines(1, 30, 100)}\n`,
+      },
+      {
+        path: "second.ts",
+        before:
+          [
+            "export const shortLine1 = 1;",
+            "export const shortLine2 = 2;",
+            "export const shortLine3 = 3;",
+          ].join("\n") + "\n",
+        after:
+          [
+            "export const shortLine1 = 10;",
+            "export const shortLine2 = 20;",
+            "export const shortLine3 = 30;",
+          ].join("\n") + "\n",
+      },
+    ]);
+  }
+
   function createPagerPatchFixture(lines = 40) {
     const dir = makeTempDir("hunk-tuistory-pager-");
     const beforeDir = join(dir, "before");
@@ -386,6 +412,7 @@ export function createPtyHarness() {
     cleanup,
     countMatches,
     createAgentFilePair,
+    createBottomClampedRepoFixture,
     createCollapsedTopRepoFixture,
     createLongWrapFilePair,
     createMultiHunkFilePair,

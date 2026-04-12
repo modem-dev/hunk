@@ -39,6 +39,20 @@ import { VerticalScrollbar, type VerticalScrollbarHandle } from "../scrollbar/Ve
 import { prefetchHighlightedDiff } from "../../diff/useHighlightedDiff";
 
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
+const EMPTY_VISIBLE_AGENT_NOTES_BY_FILE = new Map<string, VisibleAgentNote[]>();
+
+/**
+ * Clamp one vertical scroll target into the currently reachable review-stream extent.
+ *
+ * Selection-driven scroll requests can legitimately aim past the last reachable row — for example
+ * when the user selects a short trailing file but asks for that file body to own the viewport top.
+ * Every settle check must compare against this clamped value, not the raw request, or the pane can
+ * keep re-applying a bottom-edge scroll and trap manual upward scrolling.
+ */
+function clampVerticalScrollTop(scrollTop: number, contentHeight: number, viewportHeight: number) {
+  const maxScrollTop = Math.max(0, contentHeight - viewportHeight);
+  return Math.min(Math.max(0, scrollTop), maxScrollTop);
+}
 
 /** Keep syntax-highlight warm for the files immediately adjacent to the current selection. */
 function buildAdjacentPrefetchFileIds(files: DiffFile[], selectedFileId?: string) {
@@ -365,7 +379,7 @@ export function DiffPane({
     const next = new Map<string, VisibleAgentNote[]>();
 
     if (!showAgentNotes) {
-      return next;
+      return EMPTY_VISIBLE_AGENT_NOTES_BY_FILE;
     }
 
     const fileIdsToMeasure = new Set(visibleViewportFileIds);
@@ -425,6 +439,13 @@ export function DiffPane({
     [estimatedBodyHeights, files, sectionHeaderHeights],
   );
   const totalContentHeight = fileSectionLayouts[fileSectionLayouts.length - 1]?.sectionBottom ?? 0;
+
+  /** Clamp one requested review scroll target against the latest planned content height. */
+  const clampReviewScrollTop = useCallback(
+    (requestedTop: number, viewportHeight: number) =>
+      clampVerticalScrollTop(requestedTop, totalContentHeight, viewportHeight),
+    [totalContentHeight],
+  );
 
   const highlightPrefetchFileIds = useMemo(
     () =>
@@ -620,6 +641,12 @@ export function DiffPane({
       height: noteRow.height,
     };
   }, [scrollToNote, sectionGeometry, selectedEstimatedHunkBounds, selectedFileIndex]);
+  const selectedEstimatedHunkTop = selectedEstimatedHunkBounds?.top ?? null;
+  const selectedEstimatedHunkHeight = selectedEstimatedHunkBounds?.height ?? null;
+  const selectedEstimatedHunkStartRowId = selectedEstimatedHunkBounds?.startRowId ?? null;
+  const selectedEstimatedHunkEndRowId = selectedEstimatedHunkBounds?.endRowId ?? null;
+  const selectedNoteTop = selectedNoteBounds?.top ?? null;
+  const selectedNoteHeight = selectedNoteBounds?.height ?? null;
 
   // Track the previous selected anchor to detect actual selection changes.
   const prevSelectedAnchorIdRef = useRef<string | null>(null);
@@ -644,11 +671,14 @@ export function DiffPane({
         return false;
       }
 
-      // The pinned header owns the top row, so align the review stream to the file body.
-      scrollBox.scrollTo(targetSection.bodyTop);
+      const viewportHeight = Math.max(scrollViewport.height, scrollBox.viewport.height ?? 0);
+
+      // The pinned header owns the top row, so align the review stream to the file body. Clamp the
+      // request so short trailing files can still settle cleanly at the reachable bottom edge.
+      scrollBox.scrollTo(clampReviewScrollTop(targetSection.bodyTop, viewportHeight));
       return true;
     },
-    [fileSectionLayouts, scrollRef],
+    [clampReviewScrollTop, fileSectionLayouts, scrollRef, scrollViewport.height],
   );
 
   useLayoutEffect(() => {
@@ -789,7 +819,11 @@ export function DiffPane({
       return;
     }
 
-    const desiredTop = targetSection.bodyTop;
+    const viewportHeight = Math.max(scrollViewport.height, scrollRef.current?.viewport.height ?? 0);
+    // Compare against the reachable target, not the raw file body top. The last short file often
+    // cannot actually own the viewport top near EOF, and treating that unreachable top as pending
+    // would keep snapping manual upward scrolling back down to the bottom edge.
+    const desiredTop = clampReviewScrollTop(targetSection.bodyTop, viewportHeight);
 
     const currentTop = scrollRef.current?.scrollTop ?? scrollViewport.top;
     if (Math.abs(currentTop - desiredTop) <= 0.5) {
@@ -800,17 +834,18 @@ export function DiffPane({
     suppressViewportSelectionSync();
     scrollFileHeaderToTop(pendingFileId);
   }, [
+    clampReviewScrollTop,
     clearPendingFileTopAlign,
     fileSectionLayouts,
     files,
     scrollFileHeaderToTop,
     scrollRef,
+    scrollViewport.height,
     scrollViewport.top,
     suppressViewportSelectionSync,
   ]);
 
   useLayoutEffect(() => {
-    const pinnedHeaderFileId = pinnedHeaderFile?.id ?? null;
     const revealFollowsSelectionChange = selectedHunkRevealRequestId === undefined;
     const revealRequested = revealFollowsSelectionChange
       ? prevSelectedAnchorIdRef.current !== selectedAnchorId
@@ -847,16 +882,20 @@ export function DiffPane({
       const preferredTopPadding = Math.max(2, Math.floor(viewportHeight * 0.25));
 
       // When navigating comment-to-comment, scroll the inline note card near the viewport top
-      // instead of positioning the entire hunk. Uses the same reveal function so the padding
-      // behavior matches regular hunk navigation.
+      // instead of positioning the entire hunk. Clamp the reveal target too: notes in the final
+      // hunk can request a top offset that is no longer reachable once the viewport hits EOF.
+      // Using the reachable value keeps the reveal logic from fighting later manual scrolling.
       if (selectedNoteBounds) {
         scrollBox.scrollTo(
-          computeHunkRevealScrollTop({
-            hunkTop: selectedNoteBounds.top,
-            hunkHeight: selectedNoteBounds.height,
-            preferredTopPadding,
+          clampReviewScrollTop(
+            computeHunkRevealScrollTop({
+              hunkTop: selectedNoteBounds.top,
+              hunkHeight: selectedNoteBounds.height,
+              preferredTopPadding,
+              viewportHeight,
+            }),
             viewportHeight,
-          }),
+          ),
         );
         return;
       }
@@ -871,6 +910,8 @@ export function DiffPane({
 
         // Prefer exact mounted bounds when both edges are available. If only one edge has mounted
         // so far, fall back to the planned bounds as one atomic estimate instead of mixing sources.
+        // The final reveal target still gets clamped below so a bottom-edge hunk does not keep
+        // re-requesting an impossible scrollTop after the selection settles.
         const renderedTop = startRow ? currentScrollTop + (startRow.y - viewportTop) : null;
         const renderedBottom = endRow
           ? currentScrollTop + (endRow.y + endRow.height - viewportTop)
@@ -882,12 +923,15 @@ export function DiffPane({
           : selectedEstimatedHunkBounds.height;
 
         scrollBox.scrollTo(
-          computeHunkRevealScrollTop({
-            hunkTop,
-            hunkHeight,
-            preferredTopPadding,
+          clampReviewScrollTop(
+            computeHunkRevealScrollTop({
+              hunkTop,
+              hunkHeight,
+              preferredTopPadding,
+              viewportHeight,
+            }),
             viewportHeight,
-          }),
+          ),
         );
         return;
       }
@@ -916,15 +960,20 @@ export function DiffPane({
       }
     };
   }, [
-    pinnedHeaderFile?.id,
+    clampReviewScrollTop,
+    pinnedHeaderFileId,
     scrollRef,
     scrollViewport.height,
     selectedAnchorId,
-    selectedEstimatedHunkBounds,
+    selectedEstimatedHunkEndRowId,
+    selectedEstimatedHunkHeight,
+    selectedEstimatedHunkStartRowId,
+    selectedEstimatedHunkTop,
     selectedFileIndex,
     selectedHunkIndex,
     selectedHunkRevealRequestId,
-    selectedNoteBounds,
+    selectedNoteHeight,
+    selectedNoteTop,
     suppressViewportSelectionSync,
   ]);
 

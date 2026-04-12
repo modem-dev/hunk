@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { testRender } from "@opentui/react/test-utils";
-import { act, createRef, useState, type ReactNode } from "react";
+import { act, createRef, useEffect, useState, type ReactNode } from "react";
 import type { AppBootstrap, DiffFile } from "../../core/types";
 import { createTestGitAppBootstrap } from "../../../test/helpers/app-bootstrap";
 import { createTestDiffFile as buildTestDiffFile, lines } from "../../../test/helpers/diff-helpers";
@@ -810,6 +810,75 @@ describe("UI components", () => {
       expect(frame).toContain("··· 362 unchanged lines ···");
       expect(frame).not.toContain("366 - export const line366 = 366;");
       expect((frame.match(/late\.ts/g) ?? []).length).toBe(1);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("DiffPane lets manual scrolling move away from a bottom-clamped file-top alignment", async () => {
+    const theme = resolveTheme("midnight", null);
+    const files = [
+      createTallDiffFile("first", "first.ts", 30),
+      createTestDiffFile(
+        "second",
+        "second.ts",
+        lines(
+          "export const shortLine1 = 1;",
+          "export const shortLine2 = 2;",
+          "export const shortLine3 = 3;",
+        ),
+        lines(
+          "export const shortLine1 = 10;",
+          "export const shortLine2 = 20;",
+          "export const shortLine3 = 30;",
+        ),
+      ),
+    ];
+    const scrollRef = createRef<ScrollBoxRenderable>();
+
+    function BottomAlignedFileHarness() {
+      const [selectedFileTopAlignRequestId, setSelectedFileTopAlignRequestId] = useState(0);
+
+      useEffect(() => {
+        setSelectedFileTopAlignRequestId(1);
+      }, []);
+
+      return (
+        <DiffPane
+          {...createDiffPaneProps(files, theme, {
+            diffContentWidth: 88,
+            headerLabelWidth: 48,
+            headerStatsWidth: 16,
+            scrollRef,
+            selectedFileId: "second",
+            selectedHunkIndex: 0,
+            selectedFileTopAlignRequestId,
+            separatorWidth: 84,
+            width: 92,
+          })}
+        />
+      );
+    }
+
+    const setup = await testRender(<BottomAlignedFileHarness />, {
+      width: 96,
+      height: 10,
+    });
+
+    try {
+      await settleDiffPane(setup);
+
+      const bottomScrollTop = scrollRef.current?.scrollTop ?? 0;
+      expect(bottomScrollTop).toBeGreaterThan(0);
+
+      await act(async () => {
+        scrollRef.current?.scrollTo(bottomScrollTop - 1);
+      });
+      await settleDiffPane(setup);
+
+      expect(scrollRef.current?.scrollTop ?? 0).toBe(bottomScrollTop - 1);
     } finally {
       await act(async () => {
         setup.renderer.destroy();
