@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
   createTestListedSession,
-  createTestSessionLiveComment,
   createTestSessionRegistration,
   createTestSessionSnapshot,
 } from "../../test/helpers/session-daemon-fixtures";
@@ -21,10 +20,6 @@ function createRegistration(overrides = {}) {
 
 function createSnapshot(overrides = {}) {
   return createTestSessionSnapshot(overrides);
-}
-
-function createLiveComment(overrides = {}) {
-  return createTestSessionLiveComment(overrides);
 }
 
 describe("Hunk session daemon state", () => {
@@ -72,126 +67,6 @@ describe("Hunk session daemon state", () => {
     expect(resolveSessionTarget(sessions, { repoRoot: "/source-a" }).sessionId).toBe("session-a");
   });
 
-  test("exposes the selected session context from snapshot state", () => {
-    const state = new SessionBrokerState();
-    const socket = {
-      send() {},
-    };
-
-    state.registerSession(
-      socket,
-      createRegistration(),
-      createSnapshot({
-        selectedHunkIndex: 1,
-        selectedHunkOldRange: [8, 8],
-        selectedHunkNewRange: [8, 8],
-      }),
-    );
-
-    expect(state.getSelectedContext({ sessionId: "session-1" })).toEqual(
-      expect.objectContaining({
-        sessionId: "session-1",
-        selectedFile: expect.objectContaining({ path: "src/example.ts" }),
-        selectedHunk: expect.objectContaining({
-          index: 1,
-          oldRange: [8, 8],
-          newRange: [8, 8],
-        }),
-      }),
-    );
-  });
-
-  test("exports review structure without raw patch text by default", () => {
-    const state = new SessionBrokerState();
-    const socket = {
-      send() {},
-    };
-
-    state.registerSession(
-      socket,
-      createRegistration(),
-      createSnapshot({
-        selectedHunkIndex: 0,
-        selectedHunkOldRange: [1, 1],
-        selectedHunkNewRange: [1, 1],
-      }),
-    );
-
-    expect(state.getSessionReview({ sessionId: "session-1" })).toEqual(
-      expect.objectContaining({
-        sessionId: "session-1",
-        selectedFile: expect.objectContaining({ path: "src/example.ts" }),
-        selectedHunk: expect.objectContaining({
-          index: 0,
-          header: "@@ -1,1 +1,1 @@",
-        }),
-        files: [
-          expect.objectContaining({
-            path: "src/example.ts",
-          }),
-        ],
-      }),
-    );
-    expect(state.getSessionReview({ sessionId: "session-1" }).files[0]).not.toHaveProperty("patch");
-  });
-
-  test("exports raw patch text when review requests includePatch", () => {
-    const state = new SessionBrokerState();
-    const socket = {
-      send() {},
-    };
-
-    state.registerSession(
-      socket,
-      createRegistration(),
-      createSnapshot({
-        selectedHunkIndex: 0,
-        selectedHunkOldRange: [1, 1],
-        selectedHunkNewRange: [1, 1],
-      }),
-    );
-
-    expect(state.getSessionReview({ sessionId: "session-1" }, { includePatch: true })).toEqual(
-      expect.objectContaining({
-        files: [
-          expect.objectContaining({
-            path: "src/example.ts",
-            patch: "@@ -1,1 +1,1 @@",
-          }),
-        ],
-      }),
-    );
-  });
-
-  test("lists live comments from snapshot state and can filter by file", () => {
-    const state = new SessionBrokerState();
-    const socket = {
-      send() {},
-    };
-
-    state.registerSession(
-      socket,
-      createRegistration(),
-      createSnapshot({
-        liveCommentCount: 2,
-        liveComments: [
-          createLiveComment(),
-          createLiveComment({
-            commentId: "comment-2",
-            filePath: "src/other.ts",
-            line: 9,
-            summary: "Other",
-          }),
-        ],
-      }),
-    );
-
-    expect(state.listComments({ sessionId: "session-1" })).toHaveLength(2);
-    expect(state.listComments({ sessionId: "session-1" }, { filePath: "src/example.ts" })).toEqual([
-      expect.objectContaining({ commentId: "comment-1" }),
-    ]);
-  });
-
   test("ignores incompatible session registrations so listings stay usable after upgrades", () => {
     const state = new SessionBrokerState();
     const socket = {
@@ -224,11 +99,7 @@ describe("Hunk session daemon state", () => {
     });
 
     expect(result).toBe("invalid");
-    expect(state.getSelectedContext({ sessionId: "session-1" })).toEqual(
-      expect.objectContaining({
-        selectedHunk: expect.objectContaining({ index: 0 }),
-      }),
-    );
+    expect(state.getSession({ sessionId: "session-1" }).snapshot.state.selectedHunkIndex).toBe(0);
   });
 
   test("reports missing sessions separately from invalid snapshot payloads", () => {
