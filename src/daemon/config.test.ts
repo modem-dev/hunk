@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import {
   HUNK_MCP_UNSAFE_ALLOW_REMOTE_ENV,
-  allowsUnsafeRemoteMcp,
+  allowsUnsafeRemoteSessionDaemon,
   isLoopbackHost,
-  resolveHunkMcpConfig,
+  resolveHunkSessionDaemonConfig,
 } from "./config";
 
-describe("Hunk MCP config", () => {
+describe("Hunk session daemon config", () => {
   test("accepts loopback hosts without an unsafe override", () => {
     expect(isLoopbackHost("127.0.0.1")).toBe(true);
     expect(isLoopbackHost("127.1.2.3")).toBe(true);
@@ -21,14 +21,14 @@ describe("Hunk MCP config", () => {
 
   test("refuses non-loopback binds unless the unsafe override is enabled", () => {
     expect(() =>
-      resolveHunkMcpConfig({
+      resolveHunkSessionDaemonConfig({
         HUNK_MCP_HOST: "0.0.0.0",
         HUNK_MCP_PORT: "49000",
       }),
     ).toThrow("local-only by default");
 
     expect(
-      resolveHunkMcpConfig({
+      resolveHunkSessionDaemonConfig({
         HUNK_MCP_HOST: "0.0.0.0",
         HUNK_MCP_PORT: "49000",
         [HUNK_MCP_UNSAFE_ALLOW_REMOTE_ENV]: "1",
@@ -39,9 +39,11 @@ describe("Hunk MCP config", () => {
     });
   });
 
-  test("reports whether unsafe remote MCP access was explicitly enabled", () => {
-    expect(allowsUnsafeRemoteMcp({})).toBe(false);
-    expect(allowsUnsafeRemoteMcp({ [HUNK_MCP_UNSAFE_ALLOW_REMOTE_ENV]: "0" })).toBe(false);
-    expect(allowsUnsafeRemoteMcp({ [HUNK_MCP_UNSAFE_ALLOW_REMOTE_ENV]: "1" })).toBe(true);
+  test("reports whether unsafe remote session-daemon access was explicitly enabled", () => {
+    expect(allowsUnsafeRemoteSessionDaemon({})).toBe(false);
+    expect(allowsUnsafeRemoteSessionDaemon({ [HUNK_MCP_UNSAFE_ALLOW_REMOTE_ENV]: "0" })).toBe(
+      false,
+    );
+    expect(allowsUnsafeRemoteSessionDaemon({ [HUNK_MCP_UNSAFE_ALLOW_REMOTE_ENV]: "1" })).toBe(true);
   });
 });

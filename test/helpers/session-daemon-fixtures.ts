@@ -1,4 +1,4 @@
-import { HUNK_SESSION_REGISTRATION_VERSION } from "../../src/mcp/sessionWire";
+import { HUNK_SESSION_REGISTRATION_VERSION } from "../../src/daemon/sessionWire";
 import type {
   HunkSessionRegistration,
   HunkSessionSnapshot,
@@ -9,7 +9,7 @@ import type {
   SessionReview,
   SessionReviewFile,
   SessionReviewHunk,
-} from "../../src/mcp/types";
+} from "../../src/daemon/types";
 
 export function createTestSessionFileSummary(
   overrides: Partial<SessionFileSummary> = {},

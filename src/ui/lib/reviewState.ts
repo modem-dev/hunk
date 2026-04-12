@@ -2,13 +2,13 @@
  * Pure review-stream derivation helpers used by `useReviewController`.
  *
  * This module turns raw diff files plus live comments into the current visible
- * review state, sidebar entries, hunk cursors, and MCP navigation targets. It
+ * review state, sidebar entries, hunk cursors, and session-daemon navigation targets. It
  * stays side-effect free so selection and navigation rules can be shared and
  * tested without React state in the loop.
  */
 import { findDiffFileByPath, findHunkIndexForLine, hunkLineRange } from "../../core/liveComments";
 import type { DiffFile } from "../../core/types";
-import type { LiveComment, NavigateToHunkToolInput, SelectedHunkSummary } from "../../mcp/types";
+import type { LiveComment, NavigateToHunkToolInput, SelectedHunkSummary } from "../../daemon/types";
 import {
   buildSidebarEntries,
   filterReviewFiles,
@@ -112,7 +112,7 @@ export function findNextAnnotatedFile(
   return annotatedFiles[nextIndex] ?? null;
 }
 
-/** Resolve one MCP navigation request against the review stream's current state. */
+/** Resolve one session-daemon navigation request against the review stream's current state. */
 export function resolveReviewNavigationTarget({
   allFiles,
   currentFileId,

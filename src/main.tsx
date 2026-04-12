@@ -8,9 +8,12 @@ import { shutdownSession } from "./core/shutdown";
 import { prepareStartupPlan } from "./core/startup";
 import { resolveStartupUpdateNotice } from "./core/updateNotice";
 import { AppHost } from "./ui/AppHost";
-import { HunkHostClient } from "./mcp/client";
-import { serveHunkMcpServer } from "./mcp/server";
-import { createInitialSessionSnapshot, createSessionRegistration } from "./mcp/sessionRegistration";
+import { HunkHostClient } from "./daemon/client";
+import { serveHunkSessionDaemon } from "./daemon/server";
+import {
+  createInitialSessionSnapshot,
+  createSessionRegistration,
+} from "./daemon/sessionRegistration";
 import { runSessionCommand } from "./session/commands";
 
 async function main() {
@@ -21,8 +24,8 @@ async function main() {
     process.exit(0);
   }
 
-  if (startupPlan.kind === "mcp-serve") {
-    const server = serveHunkMcpServer();
+  if (startupPlan.kind === "daemon-serve") {
+    const server = serveHunkSessionDaemon();
     await server.stopped;
     return;
   }

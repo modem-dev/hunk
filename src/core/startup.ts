@@ -18,7 +18,7 @@ export type StartupPlan =
       text: string;
     }
   | {
-      kind: "mcp-serve";
+      kind: "daemon-serve";
     }
   | {
       kind: "session-command";
@@ -70,9 +70,9 @@ export async function prepareStartupPlan(
     };
   }
 
-  if (parsedCliInput.kind === "mcp-serve") {
+  if (parsedCliInput.kind === "daemon-serve") {
     return {
-      kind: "mcp-serve",
+      kind: "daemon-serve",
     };
   }
 

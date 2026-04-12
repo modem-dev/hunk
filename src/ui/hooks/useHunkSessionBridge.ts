@@ -1,7 +1,7 @@
 import { useCallback, useEffect } from "react";
 import type { CliInput, DiffFile } from "../../core/types";
 import { hunkLineRange } from "../../core/liveComments";
-import { HunkHostClient } from "../../mcp/client";
+import { HunkHostClient } from "../../daemon/client";
 import type {
   AppliedCommentBatchResult,
   AppliedCommentResult,
@@ -10,10 +10,10 @@ import type {
   RemovedCommentResult,
   SessionLiveCommentSummary,
   SessionServerMessage,
-} from "../../mcp/types";
+} from "../../daemon/types";
 import type { ReviewController } from "./useReviewController";
 
-/** Bridge one live Hunk review session to the local MCP daemon. */
+/** Bridge one live Hunk review session to the local session daemon. */
 export function useHunkSessionBridge({
   addLiveComment,
   addLiveCommentBatch,

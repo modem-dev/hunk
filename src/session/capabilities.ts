@@ -1,4 +1,7 @@
-import { resolveHunkMcpConfig, type ResolvedHunkMcpConfig } from "../mcp/config";
+import {
+  resolveHunkSessionDaemonConfig,
+  type ResolvedHunkSessionDaemonConfig,
+} from "../daemon/config";
 import {
   HUNK_SESSION_API_VERSION,
   HUNK_SESSION_CAPABILITIES_PATH,
@@ -7,7 +10,7 @@ import {
 } from "./protocol";
 
 export const HUNK_DAEMON_UPGRADE_RESTART_NOTICE =
-  "[hunk:mcp] Restarting stale session daemon after upgrade.";
+  "[hunk:session] Restarting stale session daemon after upgrade.";
 
 /** Tell the user that Hunk is refreshing an old daemon left running across an upgrade. */
 export function reportHunkDaemonUpgradeRestart(log: (message: string) => void = console.error) {
@@ -19,7 +22,7 @@ export function reportHunkDaemonUpgradeRestart(log: (message: string) => void = 
  * this Hunk build even if it still answers the same HTTP action list.
  */
 export async function readHunkSessionDaemonCapabilities(
-  config: ResolvedHunkMcpConfig = resolveHunkMcpConfig(),
+  config: ResolvedHunkSessionDaemonConfig = resolveHunkSessionDaemonConfig(),
 ): Promise<SessionDaemonCapabilities | null> {
   const response = await fetch(`${config.httpOrigin}${HUNK_SESSION_CAPABILITIES_PATH}`);
   if (response.status === 404 || response.status === 410) {

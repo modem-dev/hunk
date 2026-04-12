@@ -20,7 +20,7 @@ const testConfig = {
 };
 
 function createRuntimeDir() {
-  const dir = mkdtempSync(join(tmpdir(), "hunk-mcp-launcher-test-"));
+  const dir = mkdtempSync(join(tmpdir(), "hunk-session-daemon-launcher-test-"));
   tempDirs.push(dir);
   return dir;
 }
@@ -34,18 +34,18 @@ afterEach(() => {
   }
 });
 
-describe("MCP daemon launcher", () => {
+describe("session daemon launcher", () => {
   test("reuses the current script entrypoint when Hunk is running from source or a JS wrapper", () => {
     expect(resolveDaemonLaunchCommand(["bun", "src/main.tsx", "diff"], "/usr/bin/bun")).toEqual({
       command: "/usr/bin/bun",
-      args: ["src/main.tsx", "mcp", "serve"],
+      args: ["src/main.tsx", "daemon", "serve"],
     });
 
     expect(
       resolveDaemonLaunchCommand(["node", "/app/bin/hunk.cjs", "diff"], "/usr/bin/node"),
     ).toEqual({
       command: "/usr/bin/node",
-      args: ["/app/bin/hunk.cjs", "mcp", "serve"],
+      args: ["/app/bin/hunk.cjs", "daemon", "serve"],
     });
   });
 
@@ -54,7 +54,7 @@ describe("MCP daemon launcher", () => {
       resolveDaemonLaunchCommand(["/usr/local/bin/hunk", "diff"], "/usr/local/bin/hunk"),
     ).toEqual({
       command: "/usr/local/bin/hunk",
-      args: ["mcp", "serve"],
+      args: ["daemon", "serve"],
     });
   });
 
@@ -68,7 +68,7 @@ describe("MCP daemon launcher", () => {
       ),
     ).toEqual({
       command: "/usr/local/lib/node_modules/hunkdiff/node_modules/hunkdiff-darwin-arm64/bin/hunk",
-      args: ["mcp", "serve"],
+      args: ["daemon", "serve"],
     });
   });
 
@@ -129,7 +129,7 @@ describe("MCP daemon launcher", () => {
       host: "127.0.0.1",
       port: 47657,
       command: "/usr/bin/bun",
-      args: ["src/main.tsx", "mcp", "serve"],
+      args: ["src/main.tsx", "daemon", "serve"],
     });
   });
 
@@ -160,7 +160,7 @@ describe("MCP daemon launcher", () => {
           host: testConfig.host,
           port: testConfig.port,
           command: "/usr/bin/bun",
-          args: ["src/main.tsx", "mcp", "serve"],
+          args: ["src/main.tsx", "daemon", "serve"],
           launchedAt: new Date(0).toISOString(),
           launchedByPid: 999999,
           launchCwd: "/stale",

@@ -164,7 +164,7 @@ export function resolveSessionTarget(sessions: ListedSession[], selector: Sessio
   );
 }
 
-/** Track registered Hunk sessions and route MCP commands onto the correct live TUI instance. */
+/** Track registered Hunk sessions and route session-daemon commands onto the correct live TUI instance. */
 export class HunkDaemonState {
   private sessions = new Map<string, SessionEntry>();
   private sessionIdsBySocket = new Map<DaemonSessionSocket, string>();
@@ -356,7 +356,9 @@ export class HunkDaemonState {
 
       this.removeSession(
         sessionId,
-        new Error("The targeted Hunk session became stale and was removed from the MCP daemon."),
+        new Error(
+          "The targeted Hunk session became stale and was removed from the session daemon.",
+        ),
       );
       removed += 1;
     }
@@ -442,7 +444,7 @@ export class HunkDaemonState {
     pending.reject(new Error(message.error ?? "The Hunk session failed to handle the command."));
   }
 
-  shutdown(error = new Error("The Hunk MCP daemon shut down.")) {
+  shutdown(error = new Error("The Hunk session daemon shut down.")) {
     for (const [requestId, pending] of this.pendingCommands.entries()) {
       clearTimeout(pending.timeout);
       this.pendingCommands.delete(requestId);
