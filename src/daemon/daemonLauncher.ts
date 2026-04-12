@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } 
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { resolveHunkMcpConfig, type ResolvedHunkMcpConfig } from "./config";
+import { resolveHunkSessionDaemonConfig, type ResolvedHunkSessionDaemonConfig } from "./config";
 
 const SCRIPT_ENTRYPOINT_PATTERN = /[\\/]|\.(?:[cm]?js|tsx?)$/;
 const DEFAULT_DAEMON_LOCK_STALE_MS = 15_000;
@@ -45,7 +45,7 @@ interface HunkDaemonLaunchLock {
 }
 
 export interface EnsureHunkDaemonAvailableOptions {
-  config?: ResolvedHunkMcpConfig;
+  config?: ResolvedHunkSessionDaemonConfig;
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   argv?: string[];
@@ -54,9 +54,9 @@ export interface EnsureHunkDaemonAvailableOptions {
   intervalMs?: number;
   lockStaleMs?: number;
   timeoutMessage?: string;
-  isHealthy?: (config: ResolvedHunkMcpConfig) => Promise<boolean>;
+  isHealthy?: (config: ResolvedHunkSessionDaemonConfig) => Promise<boolean>;
   isPortReachable?: (
-    config: Pick<ResolvedHunkMcpConfig, "host" | "port">,
+    config: Pick<ResolvedHunkSessionDaemonConfig, "host" | "port">,
     timeoutMs?: number,
   ) => Promise<boolean>;
   launchDaemon?: (options?: {
@@ -123,7 +123,7 @@ function tryAcquireDaemonLaunchLock({
   env,
   staleAfterMs,
 }: {
-  config: ResolvedHunkMcpConfig;
+  config: ResolvedHunkSessionDaemonConfig;
   env: NodeJS.ProcessEnv;
   staleAfterMs: number;
 }): HunkDaemonLaunchLock | null {
@@ -196,20 +196,20 @@ function writeDaemonLaunchMetadata(
   });
 }
 
-function daemonPortConflictError(config: Pick<ResolvedHunkMcpConfig, "host" | "port">) {
+function daemonPortConflictError(config: Pick<ResolvedHunkSessionDaemonConfig, "host" | "port">) {
   return new Error(
-    `Hunk MCP port ${config.host}:${config.port} is already in use by another process. ` +
+    `Hunk session daemon port ${config.host}:${config.port} is already in use by another process. ` +
       `Stop the conflicting process or set HUNK_MCP_PORT to a different loopback port.`,
   );
 }
 
 function daemonStartupTimeoutError(
-  config: Pick<ResolvedHunkMcpConfig, "host" | "port">,
+  config: Pick<ResolvedHunkSessionDaemonConfig, "host" | "port">,
   timeoutMessage?: string,
 ) {
   return new Error(
     timeoutMessage ??
-      `Timed out waiting for the Hunk MCP daemon on ${config.host}:${config.port}. ` +
+      `Timed out waiting for the Hunk session daemon on ${config.host}:${config.port}. ` +
         `Hunk will retry in the background.`,
   );
 }
@@ -220,10 +220,10 @@ async function waitForDaemonHealthWithCheck({
   intervalMs,
   isHealthy,
 }: {
-  config: ResolvedHunkMcpConfig;
+  config: ResolvedHunkSessionDaemonConfig;
   timeoutMs: number;
   intervalMs: number;
-  isHealthy: (config: ResolvedHunkMcpConfig) => Promise<boolean>;
+  isHealthy: (config: ResolvedHunkSessionDaemonConfig) => Promise<boolean>;
 }) {
   const deadline = Date.now() + timeoutMs;
 
@@ -238,7 +238,7 @@ async function waitForDaemonHealthWithCheck({
   return false;
 }
 
-/** Resolve how the current Hunk process should launch a sibling `hunk mcp serve` daemon. */
+/** Resolve how the current Hunk process should launch a sibling `hunk daemon serve` process. */
 export function resolveDaemonLaunchCommand(
   argv = process.argv,
   execPath = process.execPath,
@@ -252,7 +252,7 @@ export function resolveDaemonLaunchCommand(
   if (entrypoint && entrypoint.startsWith(BUNFS_PREFIX)) {
     return {
       command: execPath,
-      args: ["mcp", "serve"],
+      args: ["daemon", "serve"],
     };
   }
 
@@ -261,19 +261,19 @@ export function resolveDaemonLaunchCommand(
   if (entrypoint && !entrypoint.startsWith("-") && SCRIPT_ENTRYPOINT_PATTERN.test(entrypoint)) {
     return {
       command: execPath,
-      args: [entrypoint, "mcp", "serve"],
+      args: [entrypoint, "daemon", "serve"],
     };
   }
 
   return {
     command: execPath,
-    args: ["mcp", "serve"],
+    args: ["daemon", "serve"],
   };
 }
 
 /** Resolve the runtime paths Hunk uses to coordinate one daemon per loopback host/port. */
 export function resolveHunkDaemonRuntimePaths(
-  config: Pick<ResolvedHunkMcpConfig, "host" | "port"> = resolveHunkMcpConfig(),
+  config: Pick<ResolvedHunkSessionDaemonConfig, "host" | "port"> = resolveHunkSessionDaemonConfig(),
   env: NodeJS.ProcessEnv = process.env,
 ): HunkDaemonRuntimePaths {
   const runtimeDir = join(resolveRuntimeBaseDir(env), "hunk-mcp");
@@ -301,7 +301,7 @@ export interface HunkDaemonHealth {
 
 /** Read the daemon's health payload when one is reachable on the configured loopback port. */
 export async function readHunkDaemonHealth(
-  config: ResolvedHunkMcpConfig = resolveHunkMcpConfig(),
+  config: ResolvedHunkSessionDaemonConfig = resolveHunkSessionDaemonConfig(),
   timeoutMs = 500,
 ) {
   const controller = new AbortController();
@@ -326,7 +326,7 @@ export async function readHunkDaemonHealth(
 
 /** Check whether the loopback Hunk daemon already answers health probes. */
 export async function isHunkDaemonHealthy(
-  config: ResolvedHunkMcpConfig = resolveHunkMcpConfig(),
+  config: ResolvedHunkSessionDaemonConfig = resolveHunkSessionDaemonConfig(),
   timeoutMs = 500,
 ) {
   return (await readHunkDaemonHealth(config, timeoutMs))?.ok === true;
@@ -334,7 +334,7 @@ export async function isHunkDaemonHealthy(
 
 /** Check whether some local process is already accepting TCP connections on the daemon port. */
 export function isLoopbackPortReachable(
-  config: Pick<ResolvedHunkMcpConfig, "host" | "port"> = resolveHunkMcpConfig(),
+  config: Pick<ResolvedHunkSessionDaemonConfig, "host" | "port"> = resolveHunkSessionDaemonConfig(),
   timeoutMs = 500,
 ) {
   return new Promise<boolean>((resolve) => {
@@ -364,11 +364,11 @@ export function isLoopbackPortReachable(
 
 /** Wait for the running daemon to stop responding on its health endpoint. */
 export async function waitForHunkDaemonShutdown({
-  config = resolveHunkMcpConfig(),
+  config = resolveHunkSessionDaemonConfig(),
   timeoutMs = 3_000,
   intervalMs = 100,
 }: {
-  config?: ResolvedHunkMcpConfig;
+  config?: ResolvedHunkSessionDaemonConfig;
   timeoutMs?: number;
   intervalMs?: number;
 } = {}) {
@@ -387,11 +387,11 @@ export async function waitForHunkDaemonShutdown({
 
 /** Wait briefly for a just-launched daemon to become reachable on its health endpoint. */
 export async function waitForHunkDaemonHealth({
-  config = resolveHunkMcpConfig(),
+  config = resolveHunkSessionDaemonConfig(),
   timeoutMs = DEFAULT_DAEMON_STARTUP_TIMEOUT_MS,
   intervalMs = DEFAULT_DAEMON_HEALTH_POLL_INTERVAL_MS,
 }: {
-  config?: ResolvedHunkMcpConfig;
+  config?: ResolvedHunkSessionDaemonConfig;
   timeoutMs?: number;
   intervalMs?: number;
 }) {
@@ -429,7 +429,7 @@ export function launchHunkDaemon({
 
 /** Ensure one healthy local Hunk daemon exists, coordinating launch attempts across processes. */
 export async function ensureHunkDaemonAvailable({
-  config = resolveHunkMcpConfig(),
+  config = resolveHunkSessionDaemonConfig(),
   cwd = process.cwd(),
   env = process.env,
   argv = process.argv,

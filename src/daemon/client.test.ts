@@ -4,7 +4,7 @@ import {
   createTestSessionRegistration,
   createTestSessionReviewFile,
   createTestSessionSnapshot,
-} from "../../test/helpers/mcp-fixtures";
+} from "../../test/helpers/session-daemon-fixtures";
 import { HUNK_SESSION_API_VERSION, HUNK_SESSION_DAEMON_VERSION } from "../session/protocol";
 import { HunkHostClient } from "./client";
 
@@ -75,8 +75,8 @@ afterEach(() => {
   console.error = originalConsoleError;
 });
 
-describe("Hunk MCP client", () => {
-  test("logs one actionable warning when MCP is configured for a non-loopback host without opt-in", async () => {
+describe("Hunk session daemon client", () => {
+  test("logs one actionable warning when the session daemon is configured for a non-loopback host without opt-in", async () => {
     process.env.HUNK_MCP_HOST = "0.0.0.0";
     process.env.HUNK_MCP_PORT = "47657";
     delete process.env.HUNK_MCP_UNSAFE_ALLOW_REMOTE;
@@ -91,10 +91,10 @@ describe("Hunk MCP client", () => {
 
     try {
       client.start();
-      await waitUntil("non-loopback MCP warning", () => messages.length === 1);
+      await waitUntil("non-loopback session-daemon warning", () => messages.length === 1);
 
       expect(messages[0]).toContain(
-        "[hunk:mcp] Hunk MCP refuses to bind 0.0.0.0:47657 because the daemon is local-only by default.",
+        "[hunk:session] Hunk session daemon refuses to bind 0.0.0.0:47657 because the daemon is local-only by default.",
       );
       expect(messages[0]).toContain("HUNK_MCP_UNSAFE_ALLOW_REMOTE=1");
     } finally {
@@ -228,7 +228,7 @@ describe("Hunk MCP client", () => {
     }
   }, 10_000);
 
-  test("logs one actionable warning when a non-Hunk listener owns the MCP port", async () => {
+  test("logs one actionable warning when a non-Hunk listener owns the session daemon port", async () => {
     const conflictingListener = createServer((_request, response) => {
       response.writeHead(404, { "content-type": "text/plain" });
       response.end("not hunk");
@@ -253,14 +253,14 @@ describe("Hunk MCP client", () => {
 
     try {
       client.start();
-      await waitUntil("initial MCP conflict warning", () => messages.length === 1);
+      await waitUntil("initial session-daemon conflict warning", () => messages.length === 1);
 
       client.start();
       await Bun.sleep(2_000);
 
       expect(messages).toHaveLength(1);
       expect(messages[0]).toContain(
-        `[hunk:mcp] Hunk MCP port 127.0.0.1:${port} is already in use by another process.`,
+        `[hunk:session] Hunk session daemon port 127.0.0.1:${port} is already in use by another process.`,
       );
       expect(messages[0]).toContain(
         "Stop the conflicting process or set HUNK_MCP_PORT to a different loopback port.",

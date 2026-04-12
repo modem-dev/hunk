@@ -6,7 +6,7 @@ import {
   createTestSessionFileSummary,
   createTestSessionReview as buildTestSessionReview,
   createTestSessionSnapshot,
-} from "../../test/helpers/mcp-fixtures";
+} from "../../test/helpers/session-daemon-fixtures";
 import type { SessionCommandInput, SessionSelectorInput } from "../core/types";
 import {
   runSessionCommand,

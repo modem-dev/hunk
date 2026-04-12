@@ -32,18 +32,18 @@ describe("startup planning", () => {
     expect(loaded).toBe(false);
   });
 
-  test("passes the MCP serve command through without app bootstrap work", async () => {
+  test("passes the daemon serve command through without app bootstrap work", async () => {
     let loaded = false;
 
-    const plan = await prepareStartupPlan(["bun", "hunk", "mcp", "serve"], {
-      parseCliImpl: async () => ({ kind: "mcp-serve" }),
+    const plan = await prepareStartupPlan(["bun", "hunk", "daemon", "serve"], {
+      parseCliImpl: async () => ({ kind: "daemon-serve" }),
       loadAppBootstrapImpl: async () => {
         loaded = true;
         throw new Error("unreachable");
       },
     });
 
-    expect(plan).toEqual({ kind: "mcp-serve" });
+    expect(plan).toEqual({ kind: "daemon-serve" });
     expect(loaded).toBe(false);
   });
 

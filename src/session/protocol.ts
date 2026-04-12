@@ -20,7 +20,7 @@ import type {
   SelectedSessionContext,
   SessionLiveCommentSummary,
   SessionReview,
-} from "../mcp/types";
+} from "../daemon/types";
 
 export const HUNK_SESSION_API_PATH = "/session-api";
 export const HUNK_SESSION_CAPABILITIES_PATH = `${HUNK_SESSION_API_PATH}/capabilities`;

@@ -1,10 +1,10 @@
 /**
- * Shared review-stream state for both the app shell and the MCP session bridge.
+ * Shared review-stream state for both the app shell and the session bridge.
  *
  * This hook owns the live review state that both callers need to agree on:
  * filtering, merged live comments, selected file and hunk, and relative review
  * navigation. `App` uses it for rendering and keyboard or menu actions, while
- * the session bridge uses the same state and actions for MCP-driven navigation.
+ * the session bridge uses the same state and actions for daemon-driven navigation.
  */
 import {
   startTransition,
@@ -31,7 +31,7 @@ import type {
   NavigatedSelectionResult,
   RemovedCommentResult,
   SessionLiveCommentSummary,
-} from "../../mcp/types";
+} from "../../daemon/types";
 import { findNextHunkCursor } from "../lib/hunks";
 import {
   buildReviewState,
@@ -89,7 +89,7 @@ export interface ReviewController {
   setFilter: (value: string) => void;
 }
 
-/** Own the shared review stream state used by both the UI and MCP bridge. */
+/** Own the shared review stream state used by both the UI and session bridge. */
 export function useReviewController({ files }: { files: DiffFile[] }): ReviewController {
   const [filter, setFilter] = useState("");
   const [selectedFileId, setSelectedFileId] = useState(files[0]?.id ?? "");
@@ -247,7 +247,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     setFilter("");
   }, []);
 
-  /** Resolve one MCP navigation request against the current review state and select it. */
+  /** Resolve one session-daemon navigation request against the current review state and select it. */
   const navigateToLocation = useCallback(
     (input: NavigateToHunkToolInput): NavigatedSelectionResult => {
       const target = resolveReviewNavigationTarget({

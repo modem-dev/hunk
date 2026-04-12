@@ -84,8 +84,8 @@ export interface PagerCommandInput {
   options: CommonOptions;
 }
 
-export interface McpServeCommandInput {
-  kind: "mcp-serve";
+export interface DaemonServeCommandInput {
+  kind: "daemon-serve";
 }
 
 export type SessionCommandOutput = "text" | "json";
@@ -263,7 +263,7 @@ export type ParsedCliInput =
   | CliInput
   | HelpCommandInput
   | PagerCommandInput
-  | McpServeCommandInput
+  | DaemonServeCommandInput
   | SessionCommandInput;
 
 export interface AppBootstrap {

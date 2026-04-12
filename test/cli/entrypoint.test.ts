@@ -48,8 +48,27 @@ describe("CLI entrypoint contracts", () => {
     expect(stdout).toContain("hunk pager");
     expect(stdout).toContain("hunk session <subcommand>");
     expect(stdout).toContain("hunk skill path");
-    expect(stdout).toContain("hunk mcp serve");
+    expect(stdout).toContain("hunk daemon serve");
+    expect(stdout).not.toContain("hunk mcp serve");
     expect(stdout).not.toContain("hunk git");
+    expect(stdout).not.toContain("\u001b[?1049h");
+  });
+
+  test("prints daemon help without terminal takeover sequences", () => {
+    const proc = Bun.spawnSync(["bun", "run", "src/main.tsx", "daemon", "--help"], {
+      cwd: process.cwd(),
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    const stdout = Buffer.from(proc.stdout).toString("utf8");
+    const stderr = Buffer.from(proc.stderr).toString("utf8");
+
+    expect(proc.exitCode).toBe(0);
+    expect(stderr).toBe("");
+    expect(stdout).toContain("Usage: hunk daemon serve");
+    expect(stdout).toContain("HUNK_MCP_PORT");
     expect(stdout).not.toContain("\u001b[?1049h");
   });
 

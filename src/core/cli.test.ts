@@ -215,11 +215,19 @@ describe("parseCli", () => {
     });
   });
 
-  test("parses the MCP daemon command", async () => {
+  test("parses the daemon serve command", async () => {
+    const parsed = await parseCli(["bun", "hunk", "daemon", "serve"]);
+
+    expect(parsed).toEqual({
+      kind: "daemon-serve",
+    });
+  });
+
+  test("parses the legacy MCP daemon alias", async () => {
     const parsed = await parseCli(["bun", "hunk", "mcp", "serve"]);
 
     expect(parsed).toEqual({
-      kind: "mcp-serve",
+      kind: "daemon-serve",
     });
   });
 

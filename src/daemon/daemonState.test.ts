@@ -4,7 +4,7 @@ import {
   createTestSessionLiveComment,
   createTestSessionRegistration,
   createTestSessionSnapshot,
-} from "../../test/helpers/mcp-fixtures";
+} from "../../test/helpers/session-daemon-fixtures";
 import { HunkDaemonState, resolveSessionTarget } from "./daemonState";
 import type {
   AppliedCommentBatchResult,
@@ -27,7 +27,7 @@ function createLiveComment(overrides = {}) {
   return createTestSessionLiveComment(overrides);
 }
 
-describe("Hunk MCP daemon state", () => {
+describe("Hunk session daemon state", () => {
   test("resolves one target session by session id, session path, repo root, or sole-session fallback", () => {
     const one = [createTestListedSession()];
     const two = [

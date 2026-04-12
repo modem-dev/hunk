@@ -18,8 +18,8 @@ import {
   isLoopbackPortReachable,
   readHunkDaemonHealth,
   waitForHunkDaemonShutdown,
-} from "../mcp/daemonLauncher";
-import { resolveHunkMcpConfig } from "../mcp/config";
+} from "../daemon/daemonLauncher";
+import { resolveHunkSessionDaemonConfig } from "../daemon/config";
 import type {
   AppliedCommentBatchResult,
   AppliedCommentResult,
@@ -33,7 +33,7 @@ import type {
   SessionReview,
   SessionTerminalLocation,
   SessionTerminalMetadata,
-} from "../mcp/types";
+} from "../daemon/types";
 import { readHunkSessionDaemonCapabilities, reportHunkDaemonUpgradeRestart } from "./capabilities";
 import {
   HUNK_SESSION_API_PATH,
@@ -105,7 +105,7 @@ async function extractResponseError(response: Response) {
 }
 
 class HttpHunkDaemonCliClient implements HunkDaemonCliClient {
-  private readonly config = resolveHunkMcpConfig();
+  private readonly config = resolveHunkSessionDaemonConfig();
 
   private async request<ResultType>(input: SessionDaemonRequest) {
     const response = await fetch(`${this.config.httpOrigin}${HUNK_SESSION_API_PATH}`, {
@@ -299,7 +299,7 @@ async function restartDaemonForMissingAction(
     );
   }
 
-  const config = resolveHunkMcpConfig();
+  const config = resolveHunkSessionDaemonConfig();
   await ensureHunkDaemonAvailable({
     config,
     timeoutMs: 3_000,
@@ -587,7 +587,7 @@ function normalizeSessionSelector(selector: SessionSelectorInput) {
 }
 
 async function resolveDaemonAvailability(action: SessionCommandInput["action"]) {
-  const config = resolveHunkMcpConfig();
+  const config = resolveHunkSessionDaemonConfig();
   const healthy = await isHunkDaemonHealthy(config);
   if (healthy) {
     return true;
@@ -596,7 +596,7 @@ async function resolveDaemonAvailability(action: SessionCommandInput["action"]) 
   const portReachable = await isLoopbackPortReachable(config);
   if (portReachable) {
     throw new Error(
-      `Hunk MCP port ${config.host}:${config.port} is already in use by another process. ` +
+      `Hunk session daemon port ${config.host}:${config.port} is already in use by another process. ` +
         `Stop the conflicting process or set HUNK_MCP_PORT to a different loopback port.`,
     );
   }

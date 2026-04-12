@@ -13,8 +13,8 @@ import type {
 } from "./types";
 import {
   HUNK_SESSION_SOCKET_PATH,
-  resolveHunkMcpConfig,
-  type ResolvedHunkMcpConfig,
+  resolveHunkSessionDaemonConfig,
+  type ResolvedHunkSessionDaemonConfig,
 } from "./config";
 import {
   ensureHunkDaemonAvailable,
@@ -55,7 +55,7 @@ interface HunkAppBridge {
   ) => Promise<ClearedCommentsResult>;
 }
 
-/** Keep one running Hunk TUI session registered with the local MCP daemon. */
+/** Keep one running Hunk TUI session registered with the local session daemon. */
 export class HunkHostClient {
   private websocket: WebSocket | null = null;
   private bridge: HunkAppBridge | null = null;
@@ -121,7 +121,7 @@ export class HunkHostClient {
   }
 
   private resolveConfig() {
-    return resolveHunkMcpConfig();
+    return resolveHunkSessionDaemonConfig();
   }
 
   private async ensureDaemonAndConnect() {
@@ -130,7 +130,7 @@ export class HunkHostClient {
     this.connect(config);
   }
 
-  private async ensureDaemonAvailable(config: ResolvedHunkMcpConfig) {
+  private async ensureDaemonAvailable(config: ResolvedHunkSessionDaemonConfig) {
     await ensureHunkDaemonAvailable({
       config,
       timeoutMs: DAEMON_STARTUP_TIMEOUT_MS,
@@ -155,7 +155,7 @@ export class HunkHostClient {
     this.lastConnectionWarning = null;
   }
 
-  private async restartIncompatibleDaemon(config: ResolvedHunkMcpConfig) {
+  private async restartIncompatibleDaemon(config: ResolvedHunkSessionDaemonConfig) {
     reportHunkDaemonUpgradeRestart();
     const health = await readHunkDaemonHealth(config);
     const pid = health?.pid;
@@ -205,7 +205,7 @@ export class HunkHostClient {
     });
   }
 
-  private connect(config: ResolvedHunkMcpConfig) {
+  private connect(config: ResolvedHunkSessionDaemonConfig) {
     if (this.stopped || this.websocket) {
       return;
     }
@@ -331,7 +331,7 @@ export class HunkHostClient {
 
   private dispatchCommand(message: SessionServerMessage): Promise<SessionCommandResult> {
     if (!this.bridge) {
-      throw new Error("Hunk MCP bridge is not connected.");
+      throw new Error("Hunk session bridge is not connected.");
     }
 
     switch (message.command) {
@@ -372,12 +372,13 @@ export class HunkHostClient {
   }
 
   private warnUnavailable(error: unknown) {
-    const message = error instanceof Error ? error.message : "Unknown Hunk MCP connection error.";
+    const message =
+      error instanceof Error ? error.message : "Unknown Hunk session daemon connection error.";
     if (message === this.lastConnectionWarning) {
       return;
     }
 
     this.lastConnectionWarning = message;
-    console.error(`[hunk:mcp] ${message}`);
+    console.error(`[hunk:session] ${message}`);
   }
 }

@@ -70,7 +70,7 @@ afterEach(async () => {
 describe("session daemon lifecycle", () => {
   test("exits cleanly after SIGTERM instead of hot-looping after server shutdown", async () => {
     const port = await reserveLoopbackPort();
-    const proc = Bun.spawn(["bun", "run", "src/main.tsx", "mcp", "serve"], {
+    const proc = Bun.spawn(["bun", "run", "src/main.tsx", "daemon", "serve"], {
       cwd: repoRoot,
       stdin: "ignore",
       stdout: "pipe",
@@ -92,7 +92,7 @@ describe("session daemon lifecycle", () => {
 
     process.kill(proc.pid, "SIGTERM");
 
-    await waitUntil("mcp serve process exit", () => (exited ? true : null), 1_500, 25);
+    await waitUntil("daemon serve process exit", () => (exited ? true : null), 1_500, 25);
     await waitUntil("daemon port close", async () =>
       (await readHealth(port)) === null ? true : null,
     );

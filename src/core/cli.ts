@@ -136,7 +136,7 @@ function renderCliHelp() {
     "  hunk difftool <left> <right> [path]     review Git difftool file pairs",
     "  hunk session <subcommand>               inspect or control a live Hunk session",
     "  hunk skill path                         print the bundled Hunk review skill path",
-    "  hunk mcp serve                          run the local Hunk session daemon",
+    "  hunk daemon serve                       run the local Hunk session daemon",
     "",
     "Global options:",
     "  -h, --help                              show help",
@@ -555,7 +555,7 @@ async function parseDifftoolCommand(tokens: string[], argv: string[]): Promise<P
 }
 
 function requireReloadableCliInput(input: ParsedCliInput): CliInput {
-  if (input.kind === "help" || input.kind === "pager" || input.kind === "mcp-serve") {
+  if (input.kind === "help" || input.kind === "pager" || input.kind === "daemon-serve") {
     throw new Error(
       "Session reload requires a Hunk review command after --, such as `diff` or `show`.",
     );
@@ -1190,15 +1190,15 @@ async function parseSkillCommand(tokens: string[]): Promise<HelpCommandInput> {
   };
 }
 
-/** Parse `hunk mcp serve` as the local daemon entrypoint. */
-async function parseMcpCommand(tokens: string[]): Promise<ParsedCliInput> {
+/** Parse `hunk daemon serve` as the canonical local daemon entrypoint. */
+async function parseDaemonCommand(tokens: string[]): Promise<ParsedCliInput> {
   const [subcommand, ...rest] = tokens;
   if (!subcommand || subcommand === "--help" || subcommand === "-h") {
     return {
       kind: "help",
       text:
         [
-          "Usage: hunk mcp serve",
+          "Usage: hunk daemon serve",
           "",
           "Run the local Hunk session daemon and websocket session broker.",
           "",
@@ -1211,7 +1211,7 @@ async function parseMcpCommand(tokens: string[]): Promise<ParsedCliInput> {
   }
 
   if (subcommand !== "serve") {
-    throw new Error("Only `hunk mcp serve` is supported.");
+    throw new Error("Only `hunk daemon serve` is supported.");
   }
 
   if (rest.includes("--help") || rest.includes("-h")) {
@@ -1219,7 +1219,7 @@ async function parseMcpCommand(tokens: string[]): Promise<ParsedCliInput> {
       kind: "help",
       text:
         [
-          "Usage: hunk mcp serve",
+          "Usage: hunk daemon serve",
           "",
           "Run the local Hunk session daemon and websocket session broker.",
         ].join("\n") + "\n",
@@ -1227,7 +1227,7 @@ async function parseMcpCommand(tokens: string[]): Promise<ParsedCliInput> {
   }
 
   return {
-    kind: "mcp-serve",
+    kind: "daemon-serve",
   };
 }
 
@@ -1309,8 +1309,9 @@ export async function parseCli(argv: string[]): Promise<ParsedCliInput> {
       return parseSessionCommand(rest);
     case "skill":
       return parseSkillCommand(rest);
+    case "daemon":
     case "mcp":
-      return parseMcpCommand(rest);
+      return parseDaemonCommand(rest);
     default:
       throw new Error(`Unknown command: ${commandName}`);
   }

@@ -1,6 +1,6 @@
 import type { Hunk } from "@pierre/diffs";
 import type { DiffFile } from "./types";
-import type { CommentTargetInput, DiffSide, LiveComment } from "../mcp/types";
+import type { CommentTargetInput, DiffSide, LiveComment } from "../daemon/types";
 
 export interface ResolvedCommentTarget {
   hunkIndex: number;
@@ -114,7 +114,7 @@ export function resolveCommentTarget(
   };
 }
 
-/** Convert one incoming MCP comment command into a live annotation. */
+/** Convert one incoming session-daemon comment command into a live annotation. */
 export function buildLiveComment(
   input: CommentTargetInput & { side: DiffSide; line: number },
   commentId: string,

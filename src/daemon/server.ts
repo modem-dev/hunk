@@ -1,4 +1,8 @@
-import { HUNK_SESSION_SOCKET_PATH, resolveHunkMcpConfig } from "./config";
+import {
+  HUNK_LEGACY_MCP_PATH,
+  HUNK_SESSION_SOCKET_PATH,
+  resolveHunkSessionDaemonConfig,
+} from "./config";
 import { HunkDaemonState } from "./daemonState";
 import type { SessionCommandResult } from "./types";
 import {
@@ -30,13 +34,13 @@ const SUPPORTED_SESSION_ACTIONS: SessionDaemonAction[] = [
   "comment-clear",
 ];
 
-export interface ServeHunkMcpServerOptions {
+export interface ServeHunkSessionDaemonOptions {
   idleTimeoutMs?: number;
   staleSessionTtlMs?: number;
   staleSessionSweepIntervalMs?: number;
 }
 
-export type RunningHunkMcpServer = ReturnType<typeof Bun.serve<{}>> & {
+export type RunningHunkSessionDaemon = ReturnType<typeof Bun.serve<{}>> & {
   stopped: Promise<void>;
 };
 
@@ -49,12 +53,12 @@ function formatDaemonServeError(error: unknown, host: string, port: number) {
     normalized.includes(`is port ${port} in use?`)
   ) {
     return new Error(
-      `Hunk MCP daemon could not bind ${host}:${port} because the port is already in use. ` +
+      `Hunk session daemon could not bind ${host}:${port} because the port is already in use. ` +
         `Stop the conflicting process or set HUNK_MCP_PORT to a different loopback port.`,
     );
   }
 
-  return new Error(`Failed to start the Hunk MCP daemon on ${host}:${port}: ${message}`);
+  return new Error(`Failed to start the Hunk session daemon on ${host}:${port}: ${message}`);
 }
 
 function sessionCapabilities(): SessionDaemonCapabilities {
@@ -213,8 +217,10 @@ async function handleSessionApiRequest(state: HunkDaemonState, request: Request)
 }
 
 /** Serve the local Hunk session daemon and websocket session broker. */
-export function serveHunkMcpServer(options: ServeHunkMcpServerOptions = {}): RunningHunkMcpServer {
-  const config = resolveHunkMcpConfig();
+export function serveHunkSessionDaemon(
+  options: ServeHunkSessionDaemonOptions = {},
+): RunningHunkSessionDaemon {
+  const config = resolveHunkSessionDaemonConfig();
   const idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
   const staleSessionTtlMs = options.staleSessionTtlMs ?? DEFAULT_STALE_SESSION_TTL_MS;
   const staleSessionSweepIntervalMs =
@@ -340,7 +346,7 @@ export function serveHunkMcpServer(options: ServeHunkMcpServerOptions = {}): Run
           return handleSessionApiRequest(state, request);
         }
 
-        if (url.pathname === "/mcp") {
+        if (url.pathname === HUNK_LEGACY_MCP_PATH) {
           return jsonError(
             "Hunk no longer exposes agent-facing MCP tools. Use `hunk session ...` instead.",
             410,
@@ -444,5 +450,5 @@ export function serveHunkMcpServer(options: ServeHunkMcpServerOptions = {}): Run
   console.log(`Hunk session daemon listening on ${config.httpOrigin}${HUNK_SESSION_API_PATH}`);
   console.log(`Hunk session websocket listening on ${config.wsOrigin}${HUNK_SESSION_SOCKET_PATH}`);
 
-  return Object.assign(server, { stopped }) as RunningHunkMcpServer;
+  return Object.assign(server, { stopped }) as RunningHunkSessionDaemon;
 }

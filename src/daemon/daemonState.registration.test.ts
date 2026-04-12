@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   createTestSessionRegistration,
   createTestSessionSnapshot,
-} from "../../test/helpers/mcp-fixtures";
+} from "../../test/helpers/session-daemon-fixtures";
 import { HunkDaemonState } from "./daemonState";
 
 function createRegistration(overrides = {}) {

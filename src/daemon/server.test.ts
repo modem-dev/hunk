@@ -3,9 +3,9 @@ import { createServer } from "node:net";
 import {
   createTestSessionRegistration,
   createTestSessionSnapshot,
-} from "../../test/helpers/mcp-fixtures";
+} from "../../test/helpers/session-daemon-fixtures";
 import { HunkDaemonState } from "./daemonState";
-import { serveHunkMcpServer } from "./server";
+import { serveHunkSessionDaemon } from "./server";
 
 const originalHost = process.env.HUNK_MCP_HOST;
 const originalPort = process.env.HUNK_MCP_PORT;
@@ -180,7 +180,7 @@ describe("Hunk session daemon server", () => {
     process.env.HUNK_MCP_PORT = "47657";
     delete process.env.HUNK_MCP_UNSAFE_ALLOW_REMOTE;
 
-    expect(() => serveHunkMcpServer()).toThrow("local-only by default");
+    expect(() => serveHunkSessionDaemon()).toThrow("local-only by default");
   });
 
   test("reports a clear error when the daemon port is already in use", async () => {
@@ -196,7 +196,7 @@ describe("Hunk session daemon server", () => {
     process.env.HUNK_MCP_PORT = String(port);
 
     try {
-      expect(() => serveHunkMcpServer()).toThrow("port is already in use");
+      expect(() => serveHunkSessionDaemon()).toThrow("port is already in use");
     } finally {
       await new Promise<void>((resolve) => listener.close(() => resolve()));
     }
@@ -207,7 +207,7 @@ describe("Hunk session daemon server", () => {
     process.env.HUNK_MCP_HOST = "127.0.0.1";
     process.env.HUNK_MCP_PORT = String(port);
 
-    const server = serveHunkMcpServer();
+    const server = serveHunkSessionDaemon();
 
     try {
       const capabilities = await fetch(`http://127.0.0.1:${port}/session-api/capabilities`);
@@ -251,7 +251,7 @@ describe("Hunk session daemon server", () => {
     process.env.HUNK_MCP_HOST = "127.0.0.1";
     process.env.HUNK_MCP_PORT = String(port);
 
-    const server = serveHunkMcpServer({
+    const server = serveHunkSessionDaemon({
       idleTimeoutMs: 250,
       staleSessionTtlMs: 500,
       staleSessionSweepIntervalMs: 25,
@@ -283,7 +283,7 @@ describe("Hunk session daemon server", () => {
     process.env.HUNK_MCP_HOST = "127.0.0.1";
     process.env.HUNK_MCP_PORT = String(port);
 
-    const server = serveHunkMcpServer({
+    const server = serveHunkSessionDaemon({
       idleTimeoutMs: 250,
       staleSessionTtlMs: 500,
       staleSessionSweepIntervalMs: 25,
@@ -351,7 +351,7 @@ describe("Hunk session daemon server", () => {
     process.env.HUNK_MCP_HOST = "127.0.0.1";
     process.env.HUNK_MCP_PORT = String(port);
 
-    const server = serveHunkMcpServer({
+    const server = serveHunkSessionDaemon({
       idleTimeoutMs: 60,
       staleSessionTtlMs: 500,
       staleSessionSweepIntervalMs: 25,
@@ -375,7 +375,7 @@ describe("Hunk session daemon server", () => {
     process.env.HUNK_MCP_HOST = "127.0.0.1";
     process.env.HUNK_MCP_PORT = String(port);
 
-    const server = serveHunkMcpServer({
+    const server = serveHunkSessionDaemon({
       idleTimeoutMs: 75,
       staleSessionTtlMs: 500,
       staleSessionSweepIntervalMs: 25,
@@ -397,7 +397,7 @@ describe("Hunk session daemon server", () => {
     process.env.HUNK_MCP_HOST = "127.0.0.1";
     process.env.HUNK_MCP_PORT = String(port);
 
-    const server = serveHunkMcpServer({
+    const server = serveHunkSessionDaemon({
       idleTimeoutMs: 75,
       staleSessionTtlMs: 80,
       staleSessionSweepIntervalMs: 20,
@@ -473,7 +473,7 @@ describe("Hunk session daemon server", () => {
       };
     };
 
-    const server = serveHunkMcpServer();
+    const server = serveHunkSessionDaemon();
 
     try {
       const response = await fetch(`http://127.0.0.1:${port}/session-api`, {
@@ -532,7 +532,7 @@ describe("Hunk session daemon server", () => {
       });
     };
 
-    const server = serveHunkMcpServer();
+    const server = serveHunkSessionDaemon();
 
     try {
       const response = await fetch(`http://127.0.0.1:${port}/session-api`, {
@@ -615,7 +615,7 @@ describe("Hunk session daemon server", () => {
       });
     };
 
-    const server = serveHunkMcpServer();
+    const server = serveHunkSessionDaemon();
 
     try {
       const response = await fetch(`http://127.0.0.1:${port}/session-api`, {
