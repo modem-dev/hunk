@@ -276,6 +276,8 @@ export function resolveHunkDaemonRuntimePaths(
   config: Pick<ResolvedHunkSessionDaemonConfig, "host" | "port"> = resolveHunkSessionDaemonConfig(),
   env: NodeJS.ProcessEnv = process.env,
 ): HunkDaemonRuntimePaths {
+  // Keep the runtime directory stable across the daemon rename so in-flight upgrades still find
+  // the same lock and metadata files instead of briefly racing as two different daemons.
   const runtimeDir = join(resolveRuntimeBaseDir(env), "hunk-mcp");
   const fileStem = `${safeRuntimeToken(config.host)}-${config.port}`;
 
