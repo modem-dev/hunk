@@ -286,15 +286,11 @@ export const THEMES: AppTheme[] = [
   ),
 ];
 
-/** Resolve a named theme or fall back to a theme that matches the renderer mode. */
-export function resolveTheme(requested: string | undefined, themeMode: ThemeMode | null) {
+/** Resolve a named theme or fall back to Hunk's explicit built-in default. */
+export function resolveTheme(requested: string | undefined, _themeMode: ThemeMode | null) {
   const exact = THEMES.find((theme) => theme.id === requested);
   if (exact) {
     return exact;
-  }
-
-  if (themeMode === "light") {
-    return THEMES.find((theme) => theme.id === "paper") ?? THEMES[0]!;
   }
 
   return THEMES.find((theme) => theme.id === "graphite") ?? THEMES[0]!;

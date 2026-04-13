@@ -131,7 +131,9 @@ export function resolveConfiguredCliInput(
 
   let resolvedOptions: CommonOptions = {
     mode: DEFAULT_VIEW_PREFERENCES.mode,
-    theme: undefined,
+    // Keep the built-in theme default explicit so stdin-backed startup paths do not depend on
+    // renderer theme-mode detection for their initial palette.
+    theme: "graphite",
     agentContext: input.options.agentContext,
     pager: input.options.pager ?? false,
     watch: input.options.watch ?? false,

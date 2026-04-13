@@ -359,13 +359,13 @@ describe("ui helpers", () => {
     ).toBe(16);
   });
 
-  test("resolveTheme falls back by requested id and renderer mode while lazily exposing syntax styles", () => {
+  test("resolveTheme falls back by requested id to graphite while lazily exposing syntax styles", () => {
     const midnight = resolveTheme("midnight", null);
     const missingLight = resolveTheme("missing", "light");
     const missingDark = resolveTheme("missing", "dark");
 
     expect(midnight.id).toBe("midnight");
-    expect(missingLight.id).toBe("paper");
+    expect(missingLight.id).toBe("graphite");
     expect(missingDark.id).toBe("graphite");
     expect(resolveTheme("ember", null).syntaxStyle).toBeDefined();
   });

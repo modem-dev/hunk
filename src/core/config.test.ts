@@ -86,7 +86,7 @@ describe("config resolution", () => {
     });
   });
 
-  test("falls back to the global config path outside a repo", () => {
+  test("defaults unspecified themes to graphite, including piped pager-style patch input", () => {
     const home = createTempDir("hunk-config-home-");
     const cwd = createTempDir("hunk-config-cwd-");
 
@@ -96,6 +96,7 @@ describe("config resolution", () => {
     });
 
     expect(resolved.repoConfigPath).toBeUndefined();
+    expect(resolved.input.options.theme).toBe("graphite");
   });
 
   test("command-specific config sections also apply to show mode", () => {
@@ -195,5 +196,29 @@ describe("config resolution", () => {
     expect(bootstrap.initialWrapLines).toBe(true);
     expect(bootstrap.initialShowHunkHeaders).toBe(false);
     expect(bootstrap.initialShowAgentNotes).toBe(true);
+  });
+
+  test("loadAppBootstrap exposes graphite when no theme is configured", async () => {
+    const home = createTempDir("hunk-config-home-");
+    const repo = createTempDir("hunk-config-repo-");
+    createRepo(repo);
+
+    const before = join(repo, "before.ts");
+    const after = join(repo, "after.ts");
+    writeFileSync(before, "export const alpha = 1;\n");
+    writeFileSync(after, "export const alpha = 2;\n");
+
+    const resolved = resolveConfiguredCliInput(
+      {
+        kind: "diff",
+        left: before,
+        right: after,
+        options: {},
+      },
+      { cwd: repo, env: { HOME: home } },
+    );
+    const bootstrap = await loadAppBootstrap(resolved.input);
+
+    expect(bootstrap.initialTheme).toBe("graphite");
   });
 });
