@@ -35,6 +35,36 @@ function createDiffFile(): DiffFile {
   };
 }
 
+function createEmptyLineDiffFile(): DiffFile {
+  const metadata = parseDiffFromFile(
+    {
+      name: "empty.ts",
+      contents: "function foo() {\n  return 1;\n}\n",
+      cacheKey: "before-empty",
+    },
+    {
+      name: "empty.ts",
+      contents: "function foo() {\n\n  return 2;\n}\n",
+      cacheKey: "after-empty",
+    },
+    { context: 3 },
+    true,
+  );
+
+  return {
+    id: "empty",
+    path: "empty.ts",
+    patch: "",
+    language: "typescript",
+    stats: {
+      additions: 2,
+      deletions: 1,
+    },
+    metadata,
+    agent: null,
+  };
+}
+
 function createMarkdownDiffFile(): DiffFile {
   const metadata = parseDiffFromFile(
     {
@@ -123,6 +153,23 @@ describe("Pierre diff rows", () => {
     expect(deletionRow.cell.newLineNumber).toBeUndefined();
     expect(additionRow.cell.oldLineNumber).toBeUndefined();
     expect(additionRow.cell.newLineNumber).toBe(1);
+  });
+
+  test("does not produce newline characters in spans for highlighted empty lines", async () => {
+    const file = createEmptyLineDiffFile();
+    const theme = resolveTheme("midnight", null);
+    const highlighted = await loadHighlightedDiff(file);
+
+    for (const buildRows of [buildSplitRows, buildStackRows]) {
+      const rows = buildRows(file, highlighted, theme);
+      const allSpans = rows.flatMap((row) => {
+        if (row.type === "split-line") return [...row.left.spans, ...row.right.spans];
+        if (row.type === "stack-line") return row.cell.spans;
+        return [];
+      });
+
+      expect(allSpans.every((span) => !span.text.includes("\n"))).toBe(true);
+    }
   });
 
   test("remaps Pierre markdown reds and greens away from diff-semantic hues", async () => {

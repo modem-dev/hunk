@@ -233,8 +233,11 @@ function flattenHighlightedLine(node: HastNode | undefined, theme: AppTheme, emp
     }
 
     if (current.type === "text") {
+      // Pierre injects a "\n" placeholder into empty line nodes so they aren't childless.
+      // Strip it the same way cleanDiffLine does for the unhighlighted path, or the literal
+      // newline ends up in the span text and breaks terminal row rendering.
       mergeSpan(spans, {
-        text: tabify(current.value),
+        text: tabify(cleanLastNewline(current.value)),
         fg: inherited.fg,
         bg: inherited.bg,
       });
