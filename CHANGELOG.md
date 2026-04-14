@@ -14,6 +14,8 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Fixed
 
+- Restored execute permissions for packaged prebuilt binaries so `npm install -g hunkdiff` works on root-owned installs without `spawnSync … EACCES` failures.
+
 ## [0.9.3] - 2026-04-13
 
 ### Fixed
