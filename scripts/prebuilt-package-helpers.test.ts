@@ -90,6 +90,8 @@ describe("prebuilt package helpers", () => {
       getPlatformPackageSpecForHost("linux", "x64"),
     );
 
+    expect(manifest.name).toBe("hunkdiff-linux-x64");
+    expect(manifest.version).toBe("1.2.3");
     expect(manifest.bin).toEqual({
       hunk: "./bin/hunk",
     });

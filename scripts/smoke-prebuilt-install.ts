@@ -45,33 +45,38 @@ const releaseRoot = releaseNpmDir(repoRoot);
 const hostSpec = getHostPlatformPackageSpec();
 const tempRoot = path.join(repoRoot, "tmp");
 mkdirSync(tempRoot, { recursive: true });
-const packageDir = mkdtempSync(path.join(tempRoot, "hunk-prebuilt-pack-"));
-const installDir = mkdtempSync(path.join(tempRoot, "hunk-prebuilt-install-"));
-const smokeMetaDir = mkdtempSync(path.join(tempRoot, "hunk-prebuilt-meta-"));
-const nodeBinary = Bun.spawnSync(["bash", "-lc", "command -v node"], {
-  stdin: "ignore",
-  stdout: "pipe",
-  stderr: "pipe",
-  env: process.env,
-});
-const resolvedNode = Buffer.from(nodeBinary.stdout).toString("utf8").trim();
-if (nodeBinary.exitCode !== 0 || resolvedNode.length === 0) {
-  throw new Error("Could not resolve node on PATH for the prebuilt install smoke test.");
-}
-const bashBinary = Bun.spawnSync(["bash", "-lc", "command -v bash"], {
-  stdin: "ignore",
-  stdout: "pipe",
-  stderr: "pipe",
-  env: process.env,
-});
-const resolvedBash = Buffer.from(bashBinary.stdout).toString("utf8").trim();
-if (bashBinary.exitCode !== 0 || resolvedBash.length === 0) {
-  throw new Error("Could not resolve bash on PATH for the prebuilt install smoke test.");
-}
-const nodeDir = path.dirname(resolvedNode);
-const bashDir = path.dirname(resolvedBash);
+let packageDir: string | undefined;
+let installDir: string | undefined;
+let smokeMetaDir: string | undefined;
 
 try {
+  packageDir = mkdtempSync(path.join(tempRoot, "hunk-prebuilt-pack-"));
+  installDir = mkdtempSync(path.join(tempRoot, "hunk-prebuilt-install-"));
+  smokeMetaDir = mkdtempSync(path.join(tempRoot, "hunk-prebuilt-meta-"));
+
+  const nodeBinary = Bun.spawnSync(["bash", "-lc", "command -v node"], {
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+    env: process.env,
+  });
+  const resolvedNode = Buffer.from(nodeBinary.stdout).toString("utf8").trim();
+  if (nodeBinary.exitCode !== 0 || resolvedNode.length === 0) {
+    throw new Error("Could not resolve node on PATH for the prebuilt install smoke test.");
+  }
+  const bashBinary = Bun.spawnSync(["bash", "-lc", "command -v bash"], {
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+    env: process.env,
+  });
+  const resolvedBash = Buffer.from(bashBinary.stdout).toString("utf8").trim();
+  if (bashBinary.exitCode !== 0 || resolvedBash.length === 0) {
+    throw new Error("Could not resolve bash on PATH for the prebuilt install smoke test.");
+  }
+  const nodeDir = path.dirname(resolvedNode);
+  const bashDir = path.dirname(resolvedBash);
+
   run(["npm", "pack", "--pack-destination", packageDir], {
     cwd: path.join(releaseRoot, hostSpec.packageName),
   });
@@ -171,7 +176,13 @@ try {
 
   console.log(`Verified prebuilt npm install smoke test with ${hostSpec.packageName}`);
 } finally {
-  rmSync(packageDir, { recursive: true, force: true });
-  rmSync(installDir, { recursive: true, force: true });
-  rmSync(smokeMetaDir, { recursive: true, force: true });
+  if (packageDir) {
+    rmSync(packageDir, { recursive: true, force: true });
+  }
+  if (installDir) {
+    rmSync(installDir, { recursive: true, force: true });
+  }
+  if (smokeMetaDir) {
+    rmSync(smokeMetaDir, { recursive: true, force: true });
+  }
 }
