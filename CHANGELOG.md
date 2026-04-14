@@ -6,6 +6,14 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.9.4-beta.1] - 2026-04-14
+
+### Added
+
 - Added `hunk skill path` to print the bundled Hunk review skill path for direct loading or symlinking in coding agents.
 
 ### Changed
