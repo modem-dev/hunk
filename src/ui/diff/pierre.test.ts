@@ -115,10 +115,19 @@ describe("Pierre diff rows", () => {
       throw new Error("Expected a split-line change row");
     }
 
-    expect(changedRow.left.spans.some((span) => span.text.includes("41"))).toBe(true);
-    expect(changedRow.right.spans.some((span) => span.text.includes("42"))).toBe(true);
-    expect(changedRow.left.spans.some((span) => span.bg === theme.removedContentBg)).toBe(true);
-    expect(changedRow.right.spans.some((span) => span.bg === theme.addedContentBg)).toBe(true);
+    const removedWordSpan = changedRow.left.spans.find((span) => span.text.includes("41"));
+    const addedWordSpan = changedRow.right.spans.find((span) => span.text.includes("42"));
+
+    expect(removedWordSpan).toBeDefined();
+    expect(addedWordSpan).toBeDefined();
+    expect(removedWordSpan?.bg).toBeDefined();
+    expect(addedWordSpan?.bg).toBeDefined();
+    expect(changedRow.left.spans.some((span) => span.text.includes("export") && span.bg)).toBe(
+      false,
+    );
+    expect(changedRow.right.spans.some((span) => span.text.includes("export") && span.bg)).toBe(
+      false,
+    );
     expect(
       changedRow.right.spans.some(
         (span) => span.text.includes("export") && typeof span.fg === "string",

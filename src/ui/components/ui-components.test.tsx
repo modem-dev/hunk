@@ -5,6 +5,7 @@ import { act, createRef, useEffect, useState, type ReactNode } from "react";
 import type { AppBootstrap, DiffFile } from "../../core/types";
 import { createTestGitAppBootstrap } from "../../../test/helpers/app-bootstrap";
 import { createTestDiffFile as buildTestDiffFile, lines } from "../../../test/helpers/diff-helpers";
+import { hexColorDistance } from "../lib/color";
 import { resolveTheme } from "../themes";
 import { measureDiffSectionGeometry } from "../lib/diffSectionGeometry";
 import { buildFileSectionLayouts, buildInStreamFileHeaderHeights } from "../lib/fileSectionLayout";
@@ -349,6 +350,44 @@ function frameHasHighlightedMarker(
       (span) => span.text.includes(marker) && span.text.trim().length < text.trim().length,
     );
   });
+}
+
+/** Convert captured RGBA output back into a #rrggbb color string for contrast assertions. */
+function capturedColorToHex(color: { buffer?: ArrayLike<number> } | undefined) {
+  const buffer = color?.buffer;
+  if (!buffer || buffer[0] == null || buffer[1] == null || buffer[2] == null) {
+    return null;
+  }
+
+  const componentToHex = (value: number) =>
+    Math.max(0, Math.min(255, Math.round(value * 255)))
+      .toString(16)
+      .padStart(2, "0");
+
+  return `#${componentToHex(buffer[0])}${componentToHex(buffer[1])}${componentToHex(buffer[2])}`;
+}
+
+/** Measure the rendered background contrast between one word-diff span and its surrounding line. */
+function renderedWordDiffBackgroundDistance(
+  frame: { lines: Array<{ spans: Array<{ text: string; bg?: { buffer?: ArrayLike<number> } }> }> },
+  marker: string,
+) {
+  for (const line of frame.lines) {
+    const spanIndex = line.spans.findIndex((span) => span.text.includes(marker));
+    if (spanIndex <= 0) {
+      continue;
+    }
+
+    const wordBg = capturedColorToHex(line.spans[spanIndex]?.bg);
+    const surroundingBg = capturedColorToHex(line.spans[spanIndex - 1]?.bg);
+    if (!wordBg || !surroundingBg) {
+      continue;
+    }
+
+    return hexColorDistance(wordBg, surroundingBg);
+  }
+
+  return null;
 }
 
 describe("UI components", () => {
@@ -1899,6 +1938,61 @@ describe("UI components", () => {
       6,
     );
     expect(binaryFileFrame).toContain("Binary file skipped");
+  });
+
+  test("PierreDiffView renders word-diff spans with a visibly different background in split view", async () => {
+    const file = createTestDiffFile(
+      "word-diff",
+      "word-diff.ts",
+      "export const answer = 41;\nexport const stable = true;\n",
+      "export const answer = 42;\nexport const stable = true;\n",
+    );
+    const theme = resolveTheme("graphite", null);
+    const setup = await testRender(
+      <PierreDiffView
+        file={file}
+        layout="split"
+        theme={theme}
+        width={120}
+        selectedHunkIndex={0}
+        scrollable={false}
+      />,
+      { width: 124, height: 10 },
+    );
+
+    try {
+      let removedBackgroundDistance: number | null = null;
+      let addedBackgroundDistance: number | null = null;
+
+      for (let iteration = 0; iteration < 200; iteration += 1) {
+        await act(async () => {
+          await setup.renderOnce();
+          await Bun.sleep(0);
+          await setup.renderOnce();
+          await Bun.sleep(0);
+        });
+
+        const frame = setup.captureSpans();
+        removedBackgroundDistance = renderedWordDiffBackgroundDistance(frame, "41");
+        addedBackgroundDistance = renderedWordDiffBackgroundDistance(frame, "42");
+
+        if (
+          removedBackgroundDistance !== null &&
+          addedBackgroundDistance !== null &&
+          removedBackgroundDistance > 0 &&
+          addedBackgroundDistance > 0
+        ) {
+          break;
+        }
+      }
+
+      expect(removedBackgroundDistance).toBeGreaterThanOrEqual(28);
+      expect(addedBackgroundDistance).toBeGreaterThanOrEqual(28);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
   });
 
   test("PierreDiffView reuses highlighted rows after unmounting and remounting a file section", async () => {

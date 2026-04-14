@@ -7,6 +7,7 @@ import {
   resolveStackCellGeometry,
 } from "./codeColumns";
 import type { DiffRow, RenderSpan, SplitLineCell, StackLineCell } from "./pierre";
+import { blendHex } from "../lib/color";
 
 /** Clamp a label to one terminal row with an ellipsis. */
 export function fitText(text: string, width: number) {
@@ -77,23 +78,6 @@ function sliceSpansWindow(spans: RenderSpan[], offset: number, width: number) {
     spans: sliced,
     usedWidth,
   };
-}
-
-/** Parse a hex color string into RGB components. */
-function hexToRgb(hex: string) {
-  const n = parseInt(hex.slice(1), 16);
-  return { r: (n >> 16) & 0xff, g: (n >> 8) & 0xff, b: n & 0xff };
-}
-
-/** Blend a color toward a background at a given ratio (0 = bg, 1 = fg). */
-function blendHex(fg: string, bg: string, ratio: number) {
-  const f = hexToRgb(fg);
-  const b = hexToRgb(bg);
-  const mix = (a: number, z: number) => Math.round(z + (a - z) * ratio);
-  const r = mix(f.r, b.r);
-  const g = mix(f.g, b.g);
-  const bl = mix(f.b, b.b);
-  return `#${((r << 16) | (g << 8) | bl).toString(16).padStart(6, "0")}`;
 }
 
 const INACTIVE_RAIL_BLEND = 0.35;

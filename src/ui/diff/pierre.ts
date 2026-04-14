@@ -7,6 +7,7 @@ import {
 } from "@pierre/diffs";
 import { formatHunkHeader } from "../../core/hunkHeader";
 import type { DiffFile } from "../../core/types";
+import { blendHex, hexColorDistance } from "../lib/color";
 import type { AppTheme } from "../themes";
 import { expandDiffTabs } from "./codeColumns";
 
@@ -165,6 +166,53 @@ const normalizedColorCache = new Map<string, Map<string, string>>();
 // into terminal spans. The same highlighted line objects are reused when files remount or when
 // we build both split and stack rows, so memoize flattened spans by line node + theme/background.
 const flattenedHighlightedLineCache = new WeakMap<HastNode, Map<string, RenderSpan[]>>();
+const MIN_WORD_DIFF_BG_DISTANCE = 28;
+const WORD_DIFF_BLEND_STEP = 0.005;
+const WORD_DIFF_MAX_BLEND = 0.2;
+const wordDiffBackgroundCache = new Map<string, Record<SplitLineCell["kind"], string>>();
+
+/** Blend toward the semantic sign color just enough to hit the minimum visible contrast. */
+function strengthenWordDiffBg(lineBg: string, signColor: string) {
+  let strongestCandidate = lineBg;
+  const maxSteps = Math.floor(WORD_DIFF_MAX_BLEND / WORD_DIFF_BLEND_STEP);
+
+  for (let step = 1; step <= maxSteps; step += 1) {
+    const blendRatio = step * WORD_DIFF_BLEND_STEP;
+    const candidate = blendHex(signColor, lineBg, blendRatio);
+    strongestCandidate = candidate;
+
+    if (hexColorDistance(candidate, lineBg) >= MIN_WORD_DIFF_BG_DISTANCE) {
+      return candidate;
+    }
+  }
+
+  return strongestCandidate;
+}
+
+/** Resolve the inline word-diff background, strengthening theme colors that are too subtle to see. */
+function wordDiffHighlightBg(kind: SplitLineCell["kind"], theme: AppTheme) {
+  let cached = wordDiffBackgroundCache.get(theme.id);
+  if (!cached) {
+    const addition =
+      hexColorDistance(theme.addedContentBg, theme.addedBg) >= MIN_WORD_DIFF_BG_DISTANCE
+        ? theme.addedContentBg
+        : strengthenWordDiffBg(theme.addedBg, theme.addedSignColor);
+    const deletion =
+      hexColorDistance(theme.removedContentBg, theme.removedBg) >= MIN_WORD_DIFF_BG_DISTANCE
+        ? theme.removedContentBg
+        : strengthenWordDiffBg(theme.removedBg, theme.removedSignColor);
+
+    cached = {
+      addition,
+      context: theme.contextContentBg,
+      deletion,
+      empty: theme.panelAlt,
+    };
+    wordDiffBackgroundCache.set(theme.id, cached);
+  }
+
+  return cached[kind];
+}
 
 /** Remap Pierre token hues that collide with diff add/remove semantics into theme-safe syntax colors. */
 function normalizeHighlightedColor(color: string | undefined, theme: AppTheme) {
@@ -301,15 +349,7 @@ function makeSplitCell(
     const fallbackText = cleanDiffLine(rawLine);
     spans = fallbackText.length > 0 ? [{ text: fallbackText }] : [];
   } else {
-    spans = flattenHighlightedLine(
-      highlightedLine,
-      theme,
-      kind === "addition"
-        ? theme.addedContentBg
-        : kind === "deletion"
-          ? theme.removedContentBg
-          : theme.contextContentBg,
-    );
+    spans = flattenHighlightedLine(highlightedLine, theme, wordDiffHighlightBg(kind, theme));
 
     if (spans.length === 0) {
       const fallbackText = cleanDiffLine(rawLine);
@@ -341,15 +381,7 @@ function makeStackCell(
     const fallbackText = cleanDiffLine(rawLine);
     spans = fallbackText.length > 0 ? [{ text: fallbackText }] : [];
   } else {
-    spans = flattenHighlightedLine(
-      highlightedLine,
-      theme,
-      kind === "addition"
-        ? theme.addedContentBg
-        : kind === "deletion"
-          ? theme.removedContentBg
-          : theme.contextContentBg,
-    );
+    spans = flattenHighlightedLine(highlightedLine, theme, wordDiffHighlightBg(kind, theme));
 
     if (spans.length === 0) {
       const fallbackText = cleanDiffLine(rawLine);
