@@ -14,6 +14,7 @@ import path from "node:path";
 import {
   binaryFilenameForSpec,
   buildOptionalDependencyMap,
+  buildPlatformPackageManifest,
   getHostPlatformPackageSpec,
   getPlatformPackageSpecByName,
   releaseNpmDir,
@@ -122,18 +123,7 @@ function stagePlatformPackage(
   chmodSync(stagedBinary, 0o755);
   cpSync(path.join(repoRoot, "LICENSE"), path.join(packageDir, "LICENSE"));
 
-  writeJson(path.join(packageDir, "package.json"), {
-    name: spec.packageName,
-    version: rootPackage.version,
-    description: `${rootPackage.description} (${spec.os} ${spec.cpu} binary)`,
-    os: [spec.os === "windows" ? "win32" : spec.os],
-    cpu: [spec.cpu],
-    files: ["bin", "LICENSE"],
-    license: rootPackage.license,
-    publishConfig: {
-      access: "public",
-    },
-  });
+  writeJson(path.join(packageDir, "package.json"), buildPlatformPackageManifest(rootPackage, spec));
 }
 
 function collectArtifactSpecs(artifactRoot: string) {

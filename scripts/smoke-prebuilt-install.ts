@@ -1,8 +1,21 @@
 #!/usr/bin/env bun
 
-import { existsSync, mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
-import { getHostPlatformPackageSpec, releaseNpmDir } from "./prebuilt-package-helpers";
+import {
+  binaryFilenameForSpec,
+  getHostPlatformPackageSpec,
+  releaseNpmDir,
+} from "./prebuilt-package-helpers";
 
 function run(command: string[], options?: { cwd?: string; env?: NodeJS.ProcessEnv }) {
   const proc = Bun.spawnSync(command, {
@@ -32,40 +45,91 @@ const releaseRoot = releaseNpmDir(repoRoot);
 const hostSpec = getHostPlatformPackageSpec();
 const tempRoot = path.join(repoRoot, "tmp");
 mkdirSync(tempRoot, { recursive: true });
-const packageDir = mkdtempSync(path.join(tempRoot, "hunk-prebuilt-pack-"));
-const installDir = mkdtempSync(path.join(tempRoot, "hunk-prebuilt-install-"));
-const nodeBinary = Bun.spawnSync(["bash", "-lc", "command -v node"], {
-  stdin: "ignore",
-  stdout: "pipe",
-  stderr: "pipe",
-  env: process.env,
-});
-const resolvedNode = Buffer.from(nodeBinary.stdout).toString("utf8").trim();
-if (nodeBinary.exitCode !== 0 || resolvedNode.length === 0) {
-  throw new Error("Could not resolve node on PATH for the prebuilt install smoke test.");
-}
-const nodeDir = path.dirname(resolvedNode);
+let packageDir: string | undefined;
+let installDir: string | undefined;
+let smokeMetaDir: string | undefined;
 
 try {
+  packageDir = mkdtempSync(path.join(tempRoot, "hunk-prebuilt-pack-"));
+  installDir = mkdtempSync(path.join(tempRoot, "hunk-prebuilt-install-"));
+  smokeMetaDir = mkdtempSync(path.join(tempRoot, "hunk-prebuilt-meta-"));
+
+  const nodeBinary = Bun.spawnSync(["bash", "-lc", "command -v node"], {
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+    env: process.env,
+  });
+  const resolvedNode = Buffer.from(nodeBinary.stdout).toString("utf8").trim();
+  if (nodeBinary.exitCode !== 0 || resolvedNode.length === 0) {
+    throw new Error("Could not resolve node on PATH for the prebuilt install smoke test.");
+  }
+  const bashBinary = Bun.spawnSync(["bash", "-lc", "command -v bash"], {
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+    env: process.env,
+  });
+  const resolvedBash = Buffer.from(bashBinary.stdout).toString("utf8").trim();
+  if (bashBinary.exitCode !== 0 || resolvedBash.length === 0) {
+    throw new Error("Could not resolve bash on PATH for the prebuilt install smoke test.");
+  }
+  const nodeDir = path.dirname(resolvedNode);
+  const bashDir = path.dirname(resolvedBash);
+
   run(["npm", "pack", "--pack-destination", packageDir], {
     cwd: path.join(releaseRoot, hostSpec.packageName),
   });
-  run(["npm", "pack", "--pack-destination", packageDir], {
-    cwd: path.join(releaseRoot, "hunkdiff"),
-  });
 
   const platformTarball = path.join(packageDir, `${hostSpec.packageName}-${packageVersion}.tgz`);
+
+  // Point a temp copy of the staged meta package at the local platform tarball.
+  // The real manifest uses semver ranges, but this smoke test runs before publish.
+  const smokePackageDir = path.join(smokeMetaDir, "hunkdiff");
+  cpSync(path.join(releaseRoot, "hunkdiff"), smokePackageDir, { recursive: true });
+  const smokeManifestPath = path.join(smokePackageDir, "package.json");
+  const smokeManifest = JSON.parse(readFileSync(smokeManifestPath, "utf8")) as {
+    optionalDependencies?: Record<string, string>;
+  };
+  smokeManifest.optionalDependencies = {
+    ...smokeManifest.optionalDependencies,
+    [hostSpec.packageName]: `file:${platformTarball}`,
+  };
+  writeFileSync(smokeManifestPath, `${JSON.stringify(smokeManifest, null, 2)}\n`);
+
+  run(["npm", "pack", "--pack-destination", packageDir], {
+    cwd: smokePackageDir,
+  });
   const metaTarball = path.join(packageDir, `hunkdiff-${packageVersion}.tgz`);
 
-  run(["npm", "install", "-g", "--prefix", installDir, platformTarball]);
   run(["npm", "install", "-g", "--prefix", installDir, metaTarball]);
 
-  const sanitizedPath = `${path.join(installDir, "bin")}:${nodeDir}`;
+  const sanitizedPath = [path.join(installDir, "bin"), nodeDir, bashDir].join(":");
   const installedHunk = path.join(installDir, "bin", "hunk");
+  const installedPlatformBinary = path.join(
+    installDir,
+    "lib",
+    "node_modules",
+    "hunkdiff",
+    "node_modules",
+    hostSpec.packageName,
+    "bin",
+    binaryFilenameForSpec(hostSpec),
+  );
   const commandEnv = {
     ...process.env,
     PATH: sanitizedPath,
   };
+
+  if (process.platform !== "win32") {
+    const installedBinaryMode = statSync(installedPlatformBinary).mode & 0o777;
+    if ((installedBinaryMode & 0o111) === 0) {
+      throw new Error(
+        `Expected installed platform binary to keep execute bits, got mode ${installedBinaryMode.toString(8)} at ${installedPlatformBinary}`,
+      );
+    }
+  }
+
   const help = run([installedHunk, "--help"], {
     env: commandEnv,
   });
@@ -112,6 +176,13 @@ try {
 
   console.log(`Verified prebuilt npm install smoke test with ${hostSpec.packageName}`);
 } finally {
-  rmSync(packageDir, { recursive: true, force: true });
-  rmSync(installDir, { recursive: true, force: true });
+  if (packageDir) {
+    rmSync(packageDir, { recursive: true, force: true });
+  }
+  if (installDir) {
+    rmSync(installDir, { recursive: true, force: true });
+  }
+  if (smokeMetaDir) {
+    rmSync(smokeMetaDir, { recursive: true, force: true });
+  }
 }
