@@ -8,6 +8,12 @@
 
 ### Fixed
 
+## [0.9.5] - 2026-04-14
+
+### Fixed
+
+- Restore execute permissions for packaged prebuilt binaries so `npm install -g hunkdiff` no longer fails with `spawnSync … EACCES` on root-owned installs.
+
 ## [0.9.4-beta.0] - 2026-04-14
 
 ### Fixed
