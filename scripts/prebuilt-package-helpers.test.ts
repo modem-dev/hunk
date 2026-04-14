@@ -3,6 +3,7 @@ import {
   PLATFORM_PACKAGE_MATRIX,
   binaryFilenameForSpec,
   buildOptionalDependencyMap,
+  buildPlatformPackageManifest,
   getHostPlatformPackageSpec,
   getPlatformPackageSpecByName,
   getPlatformPackageSpecForHost,
@@ -77,6 +78,23 @@ describe("prebuilt package helpers", () => {
     expect(getHostPlatformPackageSpec()).toEqual(
       getPlatformPackageSpecForHost(process.platform, process.arch),
     );
+  });
+
+  test("buildPlatformPackageManifest declares the native binary as a bin entry", () => {
+    const manifest = buildPlatformPackageManifest(
+      {
+        version: "1.2.3",
+        description: "Desktop diff viewer",
+        license: "MIT",
+      },
+      getPlatformPackageSpecForHost("linux", "x64"),
+    );
+
+    expect(manifest.bin).toEqual({
+      hunk: "./bin/hunk",
+    });
+    expect(manifest.os).toEqual(["linux"]);
+    expect(manifest.cpu).toEqual(["x64"]);
   });
 
   test("sortPlatformPackageSpecs keeps package publish order stable", () => {

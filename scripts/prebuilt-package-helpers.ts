@@ -117,6 +117,39 @@ export function binaryFilenameForSpec(spec: PlatformPackageSpec) {
   return spec.os === "windows" ? `${spec.binaryName}.exe` : spec.binaryName;
 }
 
+/**
+ * Build the published manifest for one prebuilt platform package.
+ *
+ * Declaring the native binary in `bin` makes npm restore execute bits on install,
+ * including root-owned global installs where the JS wrapper cannot chmod later.
+ */
+export function buildPlatformPackageManifest(
+  rootPackage: {
+    version: string;
+    description?: string;
+    license?: string;
+  },
+  spec: PlatformPackageSpec,
+) {
+  const binaryName = binaryFilenameForSpec(spec);
+
+  return {
+    name: spec.packageName,
+    version: rootPackage.version,
+    description: `${rootPackage.description} (${spec.os} ${spec.cpu} binary)`,
+    os: [spec.os === "windows" ? "win32" : spec.os],
+    cpu: [spec.cpu],
+    bin: {
+      hunk: `./bin/${binaryName}`,
+    },
+    files: ["bin", "LICENSE"],
+    license: rootPackage.license,
+    publishConfig: {
+      access: "public",
+    },
+  };
+}
+
 /** Resolve a path under the generated prebuilt npm release directory. */
 export function releaseNpmDir(repoRoot: string) {
   return path.join(repoRoot, "dist", "release", "npm");
