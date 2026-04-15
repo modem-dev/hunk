@@ -1,5 +1,4 @@
 import type { SessionTargetInput } from "@hunk/session-broker-core";
-import type { SessionBrokerRecord } from "./broker";
 
 export const DEFAULT_SESSION_BROKER_HEALTH_PATH = "/health";
 export const DEFAULT_SESSION_BROKER_API_PATH = "/broker";
@@ -41,12 +40,12 @@ export type SessionBrokerDaemonRequest<
       timeoutMessage?: string;
     };
 
-export type SessionBrokerDaemonResponse<Info = unknown, State = unknown, CommandResult = unknown> =
+export type SessionBrokerDaemonResponse<SessionView = unknown, CommandResult = unknown> =
   | {
-      sessions: SessionBrokerRecord<Info, State>[];
+      sessions: SessionView[];
     }
   | {
-      session: SessionBrokerRecord<Info, State>;
+      session: SessionView;
     }
   | {
       result: CommandResult;

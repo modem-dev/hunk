@@ -1,5 +1,5 @@
-import type { SessionServerMessage } from "@hunk/session-broker-core";
-import type { SessionBroker, SessionBrokerPeer, SessionBrokerRecord } from "./broker";
+import type { SessionServerMessage, SessionTargetSelector } from "@hunk/session-broker-core";
+import type { SessionBrokerController, SessionBrokerPeer } from "./broker";
 import {
   DEFAULT_SESSION_BROKER_API_PATH,
   DEFAULT_SESSION_BROKER_CAPABILITIES_PATH,
@@ -18,12 +18,11 @@ const DEFAULT_IDLE_TIMEOUT_MS = 60_000;
 const INCOMPATIBLE_PAYLOAD_CLOSE_CODE = 1008;
 
 export interface SessionBrokerDaemonOptions<
-  Info = unknown,
-  State = unknown,
+  SessionView = unknown,
   ServerMessage extends SessionServerMessage = SessionServerMessage,
   CommandResult = unknown,
 > {
-  broker: SessionBroker<Info, State, ServerMessage, CommandResult>;
+  broker: SessionBrokerController<SessionView, ServerMessage, CommandResult>;
   capabilities?: SessionBrokerCapabilities;
   paths?: Partial<SessionBrokerHttpPaths>;
   idleTimeoutMs?: number;
@@ -72,8 +71,7 @@ function defaultTimeoutMessage(command: string) {
  * plus websocket message handling without choosing Bun, Node, or any other server implementation.
  */
 export class SessionBrokerDaemon<
-  Info = unknown,
-  State = unknown,
+  SessionView = unknown,
   ServerMessage extends SessionServerMessage = SessionServerMessage,
   CommandResult = unknown,
 > {
@@ -92,9 +90,9 @@ export class SessionBrokerDaemon<
   private resolveStopped: (() => void) | null = null;
 
   constructor(
-    private readonly broker: SessionBroker<Info, State, ServerMessage, CommandResult>,
+    private readonly broker: SessionBrokerController<SessionView, ServerMessage, CommandResult>,
     options: Omit<
-      SessionBrokerDaemonOptions<Info, State, ServerMessage, CommandResult>,
+      SessionBrokerDaemonOptions<SessionView, ServerMessage, CommandResult>,
       "broker"
     > = {},
   ) {
@@ -120,9 +118,7 @@ export class SessionBrokerDaemon<
     return this.broker.listSessions();
   }
 
-  getSession(
-    selector: Parameters<SessionBroker<Info, State, ServerMessage, CommandResult>["getSession"]>[0],
-  ) {
+  getSession(selector: SessionTargetSelector) {
     return this.broker.getSession(selector);
   }
 
@@ -317,7 +313,7 @@ export class SessionBrokerDaemon<
 
     try {
       const input = await parseJsonRequest<ServerMessage["command"]>(request);
-      let response: SessionBrokerDaemonResponse<Info, State, CommandResult>;
+      let response: SessionBrokerDaemonResponse<SessionView, CommandResult>;
 
       switch (input.action) {
         case "list":
@@ -328,7 +324,7 @@ export class SessionBrokerDaemon<
           break;
         case "dispatch":
           response = {
-            result: await this.broker.dispatchCommand<CommandResult, ServerMessage["command"]>({
+            result: await this.broker.dispatchCommand({
               selector: input.selector,
               command: input.command,
               input: input.input as Extract<
@@ -353,15 +349,11 @@ export class SessionBrokerDaemon<
 
 /** Create one runtime-neutral broker daemon engine around an existing session broker. */
 export function createSessionBrokerDaemon<
-  Info = unknown,
-  State = unknown,
+  SessionView = unknown,
   ServerMessage extends SessionServerMessage = SessionServerMessage,
   CommandResult = unknown,
->(options: SessionBrokerDaemonOptions<Info, State, ServerMessage, CommandResult>) {
+>(options: SessionBrokerDaemonOptions<SessionView, ServerMessage, CommandResult>) {
   return new SessionBrokerDaemon(options.broker, options);
 }
 
-export type SessionBrokerSession<Info = unknown, State = unknown> = SessionBrokerRecord<
-  Info,
-  State
->;
+export type SessionBrokerSession<SessionView = unknown> = SessionView;

@@ -13,6 +13,7 @@
       },
       "devDependencies": {
         "@hunk/session-broker": "workspace:*",
+        "@hunk/session-broker-bun": "workspace:*",
         "@hunk/session-broker-core": "workspace:*",
         "@opentui/core": "^0.1.88",
         "@opentui/react": "^0.1.88",
@@ -39,6 +40,13 @@
         "@hunk/session-broker-core": "workspace:*",
       },
     },
+    "packages/session-broker-bun": {
+      "name": "@hunk/session-broker-bun",
+      "version": "0.0.0",
+      "dependencies": {
+        "@hunk/session-broker": "workspace:*",
+      },
+    },
     "packages/session-broker-core": {
       "name": "@hunk/session-broker-core",
       "version": "0.0.0",
@@ -50,6 +58,8 @@
     "@hono/node-server": ["@hono/node-server@1.19.11", "", { "peerDependencies": { "hono": "^4" } }, "sha512-dr8/3zEaB+p0D2n/IUrlPF1HZm586qgJNXK1a9fhg/PzdtkK7Ksd5l312tJX2yBuALqDYBlG20QEbayqPyxn+g=="],
 
     "@hunk/session-broker": ["@hunk/session-broker@workspace:packages/session-broker"],
+
+    "@hunk/session-broker-bun": ["@hunk/session-broker-bun@workspace:packages/session-broker-bun"],
 
     "@hunk/session-broker-core": ["@hunk/session-broker-core@workspace:packages/session-broker-core"],
 

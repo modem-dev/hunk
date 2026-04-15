@@ -36,6 +36,41 @@ export interface SessionBrokerOptions<Info, State> {
   ) => string;
 }
 
+/** Shared controller surface consumed by runtime-neutral daemon adapters. */
+export interface SessionBrokerController<
+  SessionView = unknown,
+  ServerMessage extends SessionServerMessage = SessionServerMessage,
+  CommandResult = unknown,
+> {
+  listSessions(): SessionView[];
+  getSession(selector: SessionTargetSelector): SessionView;
+  getSessionCount(): number;
+  getPendingCommandCount(): number;
+  registerSession(
+    connection: SessionBrokerPeer,
+    registrationInput: unknown,
+    snapshotInput: unknown,
+  ): boolean;
+  updateSnapshot(sessionId: string, snapshotInput: unknown): UpdateSnapshotResult;
+  markSessionSeen(sessionId: string): void;
+  unregisterConnection(connection: SessionBrokerPeer): void;
+  pruneStaleSessions(options: { ttlMs: number; now?: number }): number;
+  dispatchCommand(options: {
+    selector: SessionTargetInput;
+    command: ServerMessage["command"];
+    input: unknown;
+    timeoutMessage: string;
+    timeoutMs?: number;
+  }): Promise<CommandResult>;
+  handleCommandResult(message: {
+    requestId: string;
+    ok: boolean;
+    result?: CommandResult;
+    error?: string;
+  }): void;
+  shutdown(error?: Error): void;
+}
+
 function defaultSessionTitle<Info>(registration: SessionRegistration<Info>) {
   const info = registration.info;
   if (info && typeof info === "object") {
@@ -57,6 +92,10 @@ export class SessionBroker<
   State = unknown,
   ServerMessage extends SessionServerMessage = SessionServerMessage,
   CommandResult = unknown,
+> implements SessionBrokerController<
+  SessionBrokerRecord<Info, State>,
+  ServerMessage,
+  CommandResult
 > {
   private readonly state: SessionBrokerState<
     Info,
@@ -139,11 +178,24 @@ export class SessionBroker<
     input: Extract<ServerMessage, { command: CommandName }>["input"];
     timeoutMessage: string;
     timeoutMs?: number;
+  }): Promise<ResultType>;
+  dispatchCommand({
+    selector,
+    command,
+    input,
+    timeoutMessage,
+    timeoutMs,
+  }: {
+    selector: SessionTargetInput;
+    command: ServerMessage["command"];
+    input: unknown;
+    timeoutMessage: string;
+    timeoutMs?: number;
   }) {
-    return this.state.dispatchCommand<ResultType, CommandName>({
+    return this.state.dispatchCommand<CommandResult, ServerMessage["command"]>({
       selector,
       command,
-      input,
+      input: input as Extract<ServerMessage, { command: ServerMessage["command"] }>["input"],
       timeoutMessage,
       timeoutMs,
     });

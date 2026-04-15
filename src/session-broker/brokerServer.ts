@@ -1,3 +1,8 @@
+import { createSessionBrokerDaemon, type SessionBrokerController } from "@hunk/session-broker";
+import {
+  serveSessionBrokerDaemon as serveSessionBrokerDaemonWithBun,
+  type RunningSessionBrokerDaemon as RunningBunSessionBrokerDaemon,
+} from "@hunk/session-broker-bun";
 import {
   LEGACY_MCP_PATH,
   SESSION_BROKER_SOCKET_PATH,
@@ -12,6 +17,7 @@ import type {
   AppliedCommentResult,
   ClearedCommentsResult,
   HunkSessionCommandResult,
+  HunkSessionServerMessage,
   NavigatedSelectionResult,
   ReloadedSessionResult,
   RemovedCommentResult,
@@ -51,9 +57,7 @@ export interface ServeSessionBrokerDaemonOptions {
   staleSessionSweepIntervalMs?: number;
 }
 
-export type RunningSessionBrokerDaemon = ReturnType<typeof Bun.serve<{}>> & {
-  stopped: Promise<void>;
-};
+export type RunningSessionBrokerDaemon = RunningBunSessionBrokerDaemon;
 
 function formatDaemonServeError(error: unknown, host: string, port: number) {
   const message = error instanceof Error ? error.message : String(error);
@@ -82,25 +86,6 @@ function sessionCapabilities(): SessionDaemonCapabilities {
 
 function jsonError(message: string, status = 400) {
   return Response.json({ error: message }, { status });
-}
-
-/** Return one object-shaped websocket message envelope when the client sent JSON. */
-function parseSocketEnvelope(message: string) {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(message);
-  } catch {
-    return null;
-  }
-
-  if (!parsed || typeof parsed !== "object") {
-    return null;
-  }
-
-  const type = (parsed as { type?: unknown }).type;
-  return typeof type === "string"
-    ? (parsed as object as { type: string } & Record<string, unknown>)
-    : null;
 }
 
 async function parseJsonRequest(request: Request) {
@@ -259,6 +244,31 @@ async function handleSessionApiRequest(state: HunkSessionBrokerState, request: R
   }
 }
 
+type ListedHunkSession = ReturnType<HunkSessionBrokerState["listSessions"]>[number];
+
+function createHunkBrokerController(
+  state: HunkSessionBrokerState,
+): SessionBrokerController<ListedHunkSession, HunkSessionServerMessage, HunkSessionCommandResult> {
+  return {
+    listSessions: () => state.listSessions(),
+    getSession: (selector) => state.getSession(selector),
+    getSessionCount: () => state.getSessionCount(),
+    getPendingCommandCount: () => state.getPendingCommandCount(),
+    registerSession: (connection, registrationInput, snapshotInput) =>
+      state.registerSession(connection, registrationInput, snapshotInput),
+    updateSnapshot: (sessionId, snapshotInput) => state.updateSnapshot(sessionId, snapshotInput),
+    markSessionSeen: (sessionId) => state.markSessionSeen(sessionId),
+    unregisterConnection: (connection) => state.unregisterSocket(connection),
+    pruneStaleSessions: (options) => state.pruneStaleSessions(options),
+    dispatchCommand: (options) =>
+      state.dispatchCommand<HunkSessionCommandResult, HunkSessionServerMessage["command"]>(
+        options as Parameters<HunkSessionBrokerState["dispatchCommand"]>[0],
+      ),
+    handleCommandResult: (message) => state.handleCommandResult(message),
+    shutdown: (error) => state.shutdown(error),
+  };
+}
+
 /** Serve the local session broker daemon and websocket broker transport. */
 export function serveSessionBrokerDaemon(
   options: ServeSessionBrokerDaemonOptions = {},
@@ -269,231 +279,74 @@ export function serveSessionBrokerDaemon(
   const staleSessionSweepIntervalMs =
     options.staleSessionSweepIntervalMs ?? DEFAULT_STALE_SESSION_SWEEP_INTERVAL_MS;
   const state = createHunkSessionBrokerState();
-  const startedAt = Date.now();
-  let resolveStopped: (() => void) | null = null;
-  const stopped = new Promise<void>((resolve) => {
-    resolveStopped = resolve;
+  const daemon = createSessionBrokerDaemon({
+    broker: createHunkBrokerController(state),
+    capabilities: {
+      version: HUNK_SESSION_DAEMON_VERSION,
+      name: "hunk-session-broker",
+      actions: SUPPORTED_SESSION_ACTIONS,
+    },
+    idleTimeoutMs,
+    staleSessionTtlMs,
+    staleSessionSweepIntervalMs,
+    paths: {
+      socket: SESSION_BROKER_SOCKET_PATH,
+    },
   });
-  let lastActivityAt = startedAt;
-  let shuttingDown = false;
-  let sweepTimer: Timer | null = null;
-  let idleTimer: Timer | null = null;
-  let server: ReturnType<typeof Bun.serve<{}>> | null = null;
 
-  const hasActiveWork = () => state.getSessionCount() > 0 || state.getPendingCommandCount() > 0;
+  const server = serveSessionBrokerDaemonWithBun({
+    daemon,
+    hostname: config.host,
+    port: config.port,
+    formatServeError: (error, _address) => formatDaemonServeError(error, config.host, config.port),
+    handleRequest: async (request) => {
+      const url = new URL(request.url);
 
-  const clearIdleShutdownTimer = () => {
-    if (!idleTimer) {
-      return;
-    }
+      if (url.pathname === "/health") {
+        return Response.json({
+          ...daemon.getHealth(),
+          sessionApi: `${config.httpOrigin}${HUNK_SESSION_API_PATH}`,
+          sessionCapabilities: `${config.httpOrigin}${HUNK_SESSION_CAPABILITIES_PATH}`,
+          sessionSocket: `${config.wsOrigin}${SESSION_BROKER_SOCKET_PATH}`,
+        });
+      }
 
-    clearTimeout(idleTimer);
-    idleTimer = null;
-  };
+      if (url.pathname === HUNK_SESSION_CAPABILITIES_PATH) {
+        return Response.json(sessionCapabilities());
+      }
+
+      if (url.pathname === HUNK_SESSION_API_PATH) {
+        return handleSessionApiRequest(state, request);
+      }
+
+      if (url.pathname === LEGACY_MCP_PATH) {
+        return jsonError(
+          "This app no longer exposes agent-facing MCP tools. Use the session CLI instead.",
+          410,
+        );
+      }
+
+      return undefined;
+    },
+  });
 
   const shutdown = () => {
-    if (shuttingDown) {
-      return;
-    }
-
-    shuttingDown = true;
-    if (sweepTimer) {
-      clearInterval(sweepTimer);
-      sweepTimer = null;
-    }
-
-    clearIdleShutdownTimer();
     process.off("SIGINT", shutdown);
     process.off("SIGTERM", shutdown);
-
-    state.shutdown();
-    server?.stop(true);
-    resolveStopped?.();
-    resolveStopped = null;
+    server.stop(true);
   };
-
-  const refreshIdleShutdownTimer = () => {
-    clearIdleShutdownTimer();
-
-    if (shuttingDown || idleTimeoutMs <= 0 || hasActiveWork()) {
-      return;
-    }
-
-    const idleForMs = Date.now() - lastActivityAt;
-    const remainingMs = Math.max(0, idleTimeoutMs - idleForMs);
-
-    idleTimer = setTimeout(() => {
-      idleTimer = null;
-
-      if (shuttingDown || hasActiveWork()) {
-        return;
-      }
-
-      if (Date.now() - lastActivityAt < idleTimeoutMs) {
-        refreshIdleShutdownTimer();
-        return;
-      }
-
-      shutdown();
-    }, remainingMs);
-    idleTimer.unref?.();
-  };
-
-  const noteActivity = () => {
-    lastActivityAt = Date.now();
-    refreshIdleShutdownTimer();
-  };
-
-  sweepTimer = setInterval(() => {
-    const removed = state.pruneStaleSessions({ ttlMs: staleSessionTtlMs });
-    if (removed > 0) {
-      noteActivity();
-    }
-  }, staleSessionSweepIntervalMs);
-  sweepTimer.unref?.();
-
-  try {
-    server = Bun.serve<{}>({
-      hostname: config.host,
-      port: config.port,
-      fetch: async (request, bunServer) => {
-        const url = new URL(request.url);
-
-        if (url.pathname === "/health") {
-          const removed = state.pruneStaleSessions({ ttlMs: staleSessionTtlMs });
-          if (removed > 0) {
-            noteActivity();
-          }
-
-          return Response.json({
-            ok: true,
-            pid: process.pid,
-            startedAt: new Date(startedAt).toISOString(),
-            uptimeMs: Date.now() - startedAt,
-            sessionApi: `${config.httpOrigin}${HUNK_SESSION_API_PATH}`,
-            sessionCapabilities: `${config.httpOrigin}${HUNK_SESSION_CAPABILITIES_PATH}`,
-            sessionSocket: `${config.wsOrigin}${SESSION_BROKER_SOCKET_PATH}`,
-            sessions: state.getSessionCount(),
-            pendingCommands: state.getPendingCommandCount(),
-            staleSessionTtlMs,
-          });
-        }
-
-        if (url.pathname === HUNK_SESSION_CAPABILITIES_PATH) {
-          noteActivity();
-          return Response.json(sessionCapabilities());
-        }
-
-        if (url.pathname === HUNK_SESSION_API_PATH) {
-          noteActivity();
-          return handleSessionApiRequest(state, request);
-        }
-
-        if (url.pathname === LEGACY_MCP_PATH) {
-          return jsonError(
-            "This app no longer exposes agent-facing MCP tools. Use the session CLI instead.",
-            410,
-          );
-        }
-
-        if (url.pathname === SESSION_BROKER_SOCKET_PATH) {
-          if (bunServer.upgrade(request, { data: {} })) {
-            return undefined;
-          }
-
-          return new Response("Expected websocket upgrade.", { status: 426 });
-        }
-
-        return new Response("Not found.", { status: 404 });
-      },
-      websocket: {
-        message: (socket, message) => {
-          if (typeof message !== "string") {
-            return;
-          }
-
-          const parsed = parseSocketEnvelope(message);
-          if (!parsed) {
-            return;
-          }
-
-          switch (parsed.type) {
-            case "register":
-              if (!state.registerSession(socket, parsed.registration, parsed.snapshot)) {
-                // Close incompatible clients so old sessions cannot poison the fresh daemon after
-                // an upgrade. The session CLI will then surface a reconnect timeout instead of a
-                // broken listing or command crash.
-                socket.close(1008, "Incompatible session registration.");
-                return;
-              }
-
-              noteActivity();
-              break;
-            case "snapshot":
-              if (typeof parsed.sessionId !== "string") {
-                return;
-              }
-
-              const updateResult = state.updateSnapshot(parsed.sessionId, parsed.snapshot);
-              if (updateResult === "not-found") {
-                socket.close(1008, "Session not registered with broker.");
-                return;
-              }
-
-              if (updateResult === "invalid") {
-                socket.close(1008, "Incompatible session snapshot.");
-                return;
-              }
-
-              noteActivity();
-              break;
-            case "heartbeat":
-              if (typeof parsed.sessionId !== "string") {
-                return;
-              }
-
-              state.markSessionSeen(parsed.sessionId);
-              noteActivity();
-              break;
-            case "command-result":
-              if (typeof parsed.requestId !== "string" || typeof parsed.ok !== "boolean") {
-                return;
-              }
-
-              state.handleCommandResult({
-                requestId: parsed.requestId,
-                ok: parsed.ok,
-                result: parsed.result as HunkSessionCommandResult | undefined,
-                error: typeof parsed.error === "string" ? parsed.error : undefined,
-              });
-              noteActivity();
-              break;
-          }
-        },
-        close: (socket) => {
-          state.unregisterSocket(socket);
-          noteActivity();
-        },
-      },
-    });
-  } catch (error) {
-    if (sweepTimer) {
-      clearInterval(sweepTimer);
-      sweepTimer = null;
-    }
-
-    clearIdleShutdownTimer();
-    throw formatDaemonServeError(error, config.host, config.port);
-  }
 
   process.once("SIGINT", shutdown);
   process.once("SIGTERM", shutdown);
-  refreshIdleShutdownTimer();
+  void server.stopped.finally(() => {
+    process.off("SIGINT", shutdown);
+    process.off("SIGTERM", shutdown);
+  });
 
   console.log(`Session broker API listening on ${config.httpOrigin}${HUNK_SESSION_API_PATH}`);
   console.log(
     `Session broker websocket listening on ${config.wsOrigin}${SESSION_BROKER_SOCKET_PATH}`,
   );
 
-  return Object.assign(server, { stopped }) as RunningSessionBrokerDaemon;
+  return server;
 }

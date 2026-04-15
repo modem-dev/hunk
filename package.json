@@ -80,6 +80,7 @@
   },
   "devDependencies": {
     "@hunk/session-broker": "workspace:*",
+    "@hunk/session-broker-bun": "workspace:*",
     "@hunk/session-broker-core": "workspace:*",
     "@opentui/core": "^0.1.88",
     "@opentui/react": "^0.1.88",

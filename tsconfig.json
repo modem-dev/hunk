@@ -15,6 +15,7 @@
     "baseUrl": ".",
     "paths": {
       "@hunk/session-broker": ["packages/session-broker/src/index.ts"],
+      "@hunk/session-broker-bun": ["packages/session-broker-bun/src/index.ts"],
       "@hunk/session-broker-core": ["packages/session-broker-core/src/index.ts"]
     },
     "strict": true,
