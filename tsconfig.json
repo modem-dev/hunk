@@ -16,7 +16,8 @@
     "paths": {
       "@hunk/session-broker": ["packages/session-broker/src/index.ts"],
       "@hunk/session-broker-bun": ["packages/session-broker-bun/src/index.ts"],
-      "@hunk/session-broker-core": ["packages/session-broker-core/src/index.ts"]
+      "@hunk/session-broker-core": ["packages/session-broker-core/src/index.ts"],
+      "@hunk/session-broker-node": ["packages/session-broker-node/src/index.ts"]
     },
     "strict": true,
     "skipLibCheck": true,
