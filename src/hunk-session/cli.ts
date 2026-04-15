@@ -1,5 +1,5 @@
 import { resolveSessionBrokerConfig } from "../session-broker/brokerConfig";
-import type { SessionTerminalLocation, SessionTerminalMetadata } from "../session-broker/types";
+import type { SessionTerminalLocation, SessionTerminalMetadata } from "@hunk/session-broker-core";
 import { readHunkSessionDaemonCapabilities } from "../session/capabilities";
 import {
   HUNK_SESSION_API_PATH,
@@ -29,7 +29,7 @@ import type {
   SessionReviewCommandInput,
   SessionSelectorInput,
 } from "../core/types";
-import { describeSessionSelector } from "../session-broker/selectors";
+import { describeSessionSelector } from "@hunk/session-broker-core";
 
 export interface HunkSessionCliClient {
   getCapabilities(): Promise<SessionDaemonCapabilities | null>;

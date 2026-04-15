@@ -11,7 +11,7 @@ interface PendingCommand<Result> {
   sessionId: string;
   resolve: (result: Result) => void;
   reject: (error: Error) => void;
-  timeout: Timer;
+  timeout: ReturnType<typeof setTimeout>;
 }
 
 interface DaemonSessionSocket {

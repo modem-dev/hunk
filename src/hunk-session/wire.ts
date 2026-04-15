@@ -3,7 +3,7 @@ import {
   brokerWireParsers,
   parseSessionRegistrationEnvelope,
   parseSessionSnapshotEnvelope,
-} from "../session-broker/brokerWire";
+} from "@hunk/session-broker-core";
 import type { HunkSessionRegistration, HunkSessionSnapshot } from "./types";
 import type {
   HunkSessionInfo,

@@ -13,6 +13,9 @@
     "noEmit": true,
     "types": ["bun", "react"],
     "baseUrl": ".",
+    "paths": {
+      "@hunk/session-broker-core": ["packages/session-broker-core/src/index.ts"]
+    },
     "strict": true,
     "skipLibCheck": true,
     "noFallthroughCasesInSwitch": true,
@@ -25,6 +28,7 @@
     "src/**/*.ts",
     "src/**/*.tsx",
     "scripts/**/*.ts",
+    "packages/**/*.ts",
     "test/**/*.ts",
     "test/**/*.tsx",
     "benchmarks/**/*.ts"

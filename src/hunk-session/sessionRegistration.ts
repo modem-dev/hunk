@@ -3,8 +3,10 @@ import { spawnSync } from "node:child_process";
 import { formatHunkHeader } from "../core/hunkHeader";
 import { hunkLineRange } from "../core/liveComments";
 import type { AppBootstrap } from "../core/types";
-import { SESSION_BROKER_REGISTRATION_VERSION } from "../session-broker/brokerWire";
-import { resolveSessionTerminalMetadata } from "../session-broker/sessionTerminalMetadata";
+import {
+  SESSION_BROKER_REGISTRATION_VERSION,
+  resolveSessionTerminalMetadata,
+} from "@hunk/session-broker-core";
 import type { HunkSessionRegistration, HunkSessionSnapshot, SessionReviewFile } from "./types";
 
 /** Resolve the TTY device path for the current process, if available. */

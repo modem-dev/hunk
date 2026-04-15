@@ -3,7 +3,7 @@ import type {
   SessionRegistration,
   SessionServerMessage,
   SessionSnapshot,
-} from "./types";
+} from "@hunk/session-broker-core";
 import {
   SESSION_BROKER_SOCKET_PATH,
   resolveSessionBrokerConfig,

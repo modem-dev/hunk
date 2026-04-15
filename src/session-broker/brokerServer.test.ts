@@ -4,7 +4,7 @@ import {
   createTestSessionRegistration,
   createTestSessionSnapshot,
 } from "../../test/helpers/session-daemon-fixtures";
-import { SessionBrokerState } from "./brokerState";
+import { SessionBrokerState } from "@hunk/session-broker-core";
 import { serveSessionBrokerDaemon } from "./brokerServer";
 
 const originalHost = process.env.HUNK_MCP_HOST;
