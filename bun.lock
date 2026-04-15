@@ -12,6 +12,7 @@
         "zod": "^4.3.6",
       },
       "devDependencies": {
+        "@hunk/session-broker": "workspace:*",
         "@hunk/session-broker-core": "workspace:*",
         "@opentui/core": "^0.1.88",
         "@opentui/react": "^0.1.88",
@@ -31,6 +32,13 @@
         "react": "^19.2.4",
       },
     },
+    "packages/session-broker": {
+      "name": "@hunk/session-broker",
+      "version": "0.0.0",
+      "dependencies": {
+        "@hunk/session-broker-core": "workspace:*",
+      },
+    },
     "packages/session-broker-core": {
       "name": "@hunk/session-broker-core",
       "version": "0.0.0",
@@ -40,6 +48,8 @@
     "@dimforge/rapier2d-simd-compat": ["@dimforge/rapier2d-simd-compat@0.17.3", "", {}, "sha512-bijvwWz6NHsNj5e5i1vtd3dU2pDhthSaTUZSh14DUGGKJfw8eMnlWZsxwHBxB/a3AXVNDjL9abuHw1k9FGR+jg=="],
 
     "@hono/node-server": ["@hono/node-server@1.19.11", "", { "peerDependencies": { "hono": "^4" } }, "sha512-dr8/3zEaB+p0D2n/IUrlPF1HZm586qgJNXK1a9fhg/PzdtkK7Ksd5l312tJX2yBuALqDYBlG20QEbayqPyxn+g=="],
+
+    "@hunk/session-broker": ["@hunk/session-broker@workspace:packages/session-broker"],
 
     "@hunk/session-broker-core": ["@hunk/session-broker-core@workspace:packages/session-broker-core"],
 

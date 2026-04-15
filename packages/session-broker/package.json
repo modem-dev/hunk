@@ -1,0 +1,25 @@
+{
+  "name": "@hunk/session-broker",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Runtime-neutral session broker daemon and connection helpers built on top of @hunk/session-broker-core.",
+  "license": "MIT",
+  "files": [
+    "src"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    }
+  },
+  "dependencies": {
+    "@hunk/session-broker-core": "workspace:*"
+  },
+  "engines": {
+    "bun": ">=1.0.0",
+    "node": ">=18"
+  }
+}
