@@ -106,6 +106,8 @@ export class SessionBrokerConnection<
   replaceSession(registration: SessionRegistration<Info>, snapshot: SessionSnapshot<State>) {
     this.registration = registration;
     this.snapshot = snapshot;
+    // Re-register instead of sending only a snapshot because selectors like cwd, repoRoot, and the
+    // session id itself live in the registration envelope.
     this.send({
       type: "register",
       registration,
@@ -132,6 +134,8 @@ export class SessionBrokerConnection<
 
     socket.onopen = () => {
       this.startHeartbeat();
+      // Always register again on a fresh socket so the broker can replace any stale connection for
+      // the same session id before later snapshots or commands arrive.
       this.send({
         type: "register",
         registration: this.registration,
@@ -176,6 +180,8 @@ export class SessionBrokerConnection<
     };
 
     socket.onerror = () => {
+      // Normalize raw socket errors through onclose so reconnect and warning policy stays in one
+      // place instead of splitting behavior across runtime-specific error events.
       socket.close();
     };
   }
@@ -230,6 +236,8 @@ export class SessionBrokerConnection<
 
   private async handleServerMessage(message: ServerMessage) {
     if (!this.bridge) {
+      // Sessions may connect before the host app has finished wiring its command bridge. Queue
+      // broker commands so startup races do not drop user-triggered actions.
       this.queuedMessages.push(message);
       return;
     }
@@ -257,6 +265,8 @@ export class SessionBrokerConnection<
       return;
     }
 
+    // Snapshot the queue up front so commands dispatched while we replay are handled in a later
+    // pass and the original broker ordering stays intact.
     const queued = [...this.queuedMessages];
     this.queuedMessages = [];
 

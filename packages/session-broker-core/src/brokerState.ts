@@ -220,6 +220,8 @@ export class SessionBrokerState<
     const existing = this.sessions.get(registration.sessionId);
     if (existing && existing.socket !== socket) {
       this.sessionIdsBySocket.delete(existing.socket);
+      // A reconnect on a new socket supersedes the old transport immediately. Reject in-flight
+      // commands so callers do not wait on a connection that can never answer.
       this.rejectPendingCommandsForSession(
         registration.sessionId,
         new Error("Session reconnected before the command completed."),
@@ -321,6 +323,9 @@ export class SessionBrokerState<
         reject(new Error(timeoutMessage));
       }, timeoutMs);
 
+      // Record the pending request before sending so synchronous transport failures and later close
+      // events can both resolve the same command bookkeeping path.
+
       this.pendingCommands.set(requestId, {
         sessionId: session.sessionId,
         resolve: (result) => resolve(result as ResultType),
@@ -403,6 +408,8 @@ export class SessionBrokerState<
 
   private removeSession(sessionId: string, error: Error) {
     const entry = this.sessions.get(sessionId);
+    // Centralize all session removal here so socket maps, session maps, and pending command
+    // rejection stay in sync across disconnects, stale pruning, and incompatible reconnects.
     if (!entry) {
       return;
     }

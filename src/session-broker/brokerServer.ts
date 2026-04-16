@@ -246,6 +246,10 @@ async function handleSessionApiRequest(state: HunkSessionBrokerState, request: R
 
 type ListedHunkSession = ReturnType<HunkSessionBrokerState["listSessions"]>[number];
 
+/**
+ * Adapt Hunk's richer broker state into the minimal shared controller surface expected by the
+ * generic daemon package. Hunk-only review/context helpers stay above this boundary.
+ */
 function createHunkBrokerController(
   state: HunkSessionBrokerState,
 ): SessionBrokerController<ListedHunkSession, HunkSessionServerMessage, HunkSessionCommandResult> {
@@ -303,6 +307,8 @@ export function serveSessionBrokerDaemon(
       const url = new URL(request.url);
 
       if (url.pathname === "/health") {
+        // Extend the generic health payload with the Hunk-specific companion endpoints that older
+        // CLI clients and debugging workflows still expect to discover from one place.
         return Response.json({
           ...daemon.getHealth(),
           sessionApi: `${config.httpOrigin}${HUNK_SESSION_API_PATH}`,
@@ -315,11 +321,15 @@ export function serveSessionBrokerDaemon(
         return Response.json(sessionCapabilities());
       }
 
+      // Keep the richer Hunk session API here rather than in the shared package so commands like
+      // review, reload, and comment flows stay app-specific.
       if (url.pathname === HUNK_SESSION_API_PATH) {
         return handleSessionApiRequest(state, request);
       }
 
       if (url.pathname === LEGACY_MCP_PATH) {
+        // Preserve an explicit tombstone for the removed MCP route so stale automation gets a clear
+        // upgrade message instead of a generic 404.
         return jsonError(
           "This app no longer exposes agent-facing MCP tools. Use the session CLI instead.",
           410,

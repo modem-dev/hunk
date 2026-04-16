@@ -34,6 +34,7 @@ function jsonError(message: string, status = 400) {
   return Response.json({ error: message }, { status });
 }
 
+/** Parse one websocket envelope without committing the daemon to any runtime socket type. */
 function parseSocketEnvelope(message: string) {
   let parsed: unknown;
   try {
@@ -52,6 +53,7 @@ function parseSocketEnvelope(message: string) {
     : null;
 }
 
+/** Decode one raw broker API request body and surface a friendly transport-level error. */
 async function parseJsonRequest<CommandName extends string = string, CommandInput = unknown>(
   request: Request,
 ) {
@@ -62,6 +64,7 @@ async function parseJsonRequest<CommandName extends string = string, CommandInpu
   }
 }
 
+/** Build the default dispatch timeout text so adapters can override only when they need to. */
 function defaultTimeoutMessage(command: string) {
   return `Timed out waiting for the session to handle ${command}.`;
 }
@@ -143,6 +146,8 @@ export class SessionBrokerDaemon<
     const url = new URL(request.url);
 
     if (url.pathname === this.paths.health) {
+      // Treat health checks as a cheap maintenance pulse so stale sessions disappear even when the
+      // daemon is mostly idle and no websocket traffic is flowing.
       const removed = this.broker.pruneStaleSessions({ ttlMs: this.staleSessionTtlMs });
       if (removed > 0) {
         this.noteActivity();
@@ -173,6 +178,8 @@ export class SessionBrokerDaemon<
     switch (parsed.type) {
       case "register": {
         if (!this.broker.registerSession(connection, parsed.registration, parsed.snapshot)) {
+          // Close immediately when the registration payload is incompatible so the session does not
+          // stay connected under stale assumptions after an upgrade.
           connection.close?.(INCOMPATIBLE_PAYLOAD_CLOSE_CODE, "Incompatible session registration.");
           return;
         }
@@ -185,6 +192,8 @@ export class SessionBrokerDaemon<
           return;
         }
 
+        // Snapshot updates are only valid after registration. Closing missing or invalid sessions
+        // keeps the broker state single-sourced instead of guessing how to recover.
         const updateResult = this.broker.updateSnapshot(parsed.sessionId, parsed.snapshot);
         if (updateResult === "not-found") {
           connection.close?.(
@@ -281,6 +290,8 @@ export class SessionBrokerDaemon<
       this.idleTimer = null;
     }
 
+    // Only arm idle shutdown when the daemon is truly quiescent. Any live session or in-flight
+    // command keeps the process alive, even if no new HTTP requests arrive.
     if (this.shuttingDown || this.idleTimeoutMs <= 0 || this.hasActiveWork()) {
       return;
     }
@@ -295,6 +306,8 @@ export class SessionBrokerDaemon<
         return;
       }
 
+      // Re-check the wall clock when the timer fires because work may have happened after the
+      // timer was scheduled but before it got a chance to run.
       if (Date.now() - this.lastActivityAt < this.idleTimeoutMs) {
         this.refreshIdleTimer();
         return;
@@ -324,6 +337,8 @@ export class SessionBrokerDaemon<
           break;
         case "dispatch":
           response = {
+            // The HTTP API stays generic JSON, while the broker keeps ownership of target
+            // resolution, timeout handling, and websocket command delivery.
             result: await this.broker.dispatchCommand({
               selector: input.selector,
               command: input.command,

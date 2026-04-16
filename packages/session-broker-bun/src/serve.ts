@@ -62,6 +62,8 @@ export function serveSessionBrokerDaemon<
       port: options.port,
       fetch: async (request, bunServer) => {
         const customResponse = await options.handleRequest?.(request, bunServer);
+        // Let host apps extend or override routes first; the generic daemon only handles the
+        // broker's shared HTTP surface plus the websocket upgrade path.
         if (customResponse !== undefined) {
           return customResponse;
         }
@@ -76,6 +78,9 @@ export function serveSessionBrokerDaemon<
           if (bunServer.upgrade(request, { data: {} })) {
             return undefined;
           }
+
+          // Bun signals failed upgrades by returning false from upgrade rather than by throwing,
+          // so surface that as one explicit HTTP response here.
 
           return new Response("Expected websocket upgrade.", { status: 426 });
         }
@@ -104,6 +109,8 @@ export function serveSessionBrokerDaemon<
 
   const originalStop = server.stop.bind(server);
   const stop: typeof server.stop = (closeActiveConnections) => {
+    // Wrap Bun's stop so callers do not need to remember that the daemon and transport have to be
+    // torn down together.
     options.daemon.shutdown();
     const result = originalStop(closeActiveConnections);
     finish();
@@ -118,6 +125,8 @@ export function serveSessionBrokerDaemon<
   });
 
   void options.daemon.stopped.then(() => {
+    // Idle shutdown and manual stop share one completion promise, but the Bun server only needs
+    // the original transport stop here because the daemon has already transitioned to stopped.
     originalStop(true);
     finish();
   });

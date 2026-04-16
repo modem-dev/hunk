@@ -50,6 +50,7 @@ function toNodeConnection(socket: WebSocket): SessionBrokerPeer {
   };
 }
 
+/** Adapt one Node request into the WHATWG Request shape consumed by the runtime-neutral daemon. */
 async function toRequest(request: IncomingMessage, hostname: string, port: number) {
   const protocol = "encrypted" in request.socket && request.socket.encrypted ? "https" : "http";
   const url = `${protocol}://${hostname}:${port}${request.url ?? "/"}`;
@@ -108,6 +109,8 @@ export async function serveSessionBrokerDaemon<
     await writeResponse(outgoing, (await options.notFound?.(request)) ?? defaultNotFound());
   });
   const webSocketServer = new WebSocketServer({ noServer: true });
+  // Reuse one stable peer wrapper per websocket so close events unregister the same logical
+  // connection object that registration and message handling used earlier.
   const peerBySocket = new WeakMap<WebSocket, SessionBrokerPeer>();
   let resolved = false;
   let resolveStopped: (() => void) | null = null;
@@ -140,6 +143,8 @@ export async function serveSessionBrokerDaemon<
     });
     socket.on("close", (code: number, reason: Buffer) => {
       options.daemon.handleConnectionClose(peerBySocket.get(socket) ?? peer);
+      // The runtime-neutral daemon only cares that the transport closed; Node-specific close data
+      // stays ignored here instead of leaking into the shared broker API.
       void code;
       void reason;
     });
@@ -179,6 +184,7 @@ export async function serveSessionBrokerDaemon<
   });
 
   const stop = async () => {
+    // Shut down the daemon first so pending broker commands reject before the transport disappears.
     options.daemon.shutdown();
     await new Promise<void>((resolve) => webSocketServer.close(() => resolve()));
     await new Promise<void>((resolve, reject) => {
@@ -196,6 +202,8 @@ export async function serveSessionBrokerDaemon<
 
   void options.daemon.stopped.then(async () => {
     try {
+      // Reuse the same stop path when the daemon requests shutdown for idleness so manual and
+      // automatic teardown keep identical ordering.
       await stop();
     } catch {
       finish();
