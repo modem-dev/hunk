@@ -429,7 +429,8 @@ describe("live UI integration", () => {
       await session.type("beta");
       const filtered = await harness.waitForSnapshot(
         session,
-        (text) => text.includes("betaValue") && !text.includes("add = true"),
+        (text) =>
+          text.includes("betaValue") && !text.includes("alpha.ts") && !text.includes("add = true"),
         5_000,
       );
 
