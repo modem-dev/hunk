@@ -90,7 +90,7 @@ describe("files helpers", () => {
     });
   });
 
-  test("buildSidebarEntries counts all comments attached to a file", () => {
+  test("buildSidebarEntries counts all comments attached to a file, even off-range ones", () => {
     const withComments = createTestDiffFile({
       id: "all-comments",
       path: "src/ui/all-comments.ts",
@@ -101,6 +101,7 @@ describe("files helpers", () => {
         annotations: [
           { summary: "First note", newRange: [1, 1] },
           { summary: "Second note", newRange: [1, 1] },
+          // The sidebar count is per-file, so even comments outside a visible hunk still count.
           { summary: "Third note", newRange: [20, 20] },
         ],
       },

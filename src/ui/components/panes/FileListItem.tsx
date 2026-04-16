@@ -119,7 +119,7 @@ export function FileListItem({
                 <text
                   fg={
                     stat.kind === "agent-comment"
-                      ? theme.fileModified
+                      ? theme.noteBorder
                       : stat.kind === "addition"
                         ? theme.badgeAdded
                         : theme.badgeRemoved

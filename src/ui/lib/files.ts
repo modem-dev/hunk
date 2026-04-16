@@ -137,15 +137,13 @@ export function buildSidebarEntries(files: DiffFile[]): SidebarEntry[] {
       }
     }
 
-    // Count comment annotations, not distinct hunks, so the sidebar matches what the user
-    // can actually see listed in the review session for that file.
-    const hunkCommentCount = file.agent?.annotations.length ?? 0;
+    const agentCommentCount = file.agent?.annotations.length ?? 0;
 
     entries.push({
       kind: "file",
       id: file.id,
       name: sidebarFileName(file),
-      agentCommentsText: hunkCommentCount > 0 ? `*${hunkCommentCount}` : null,
+      agentCommentsText: agentCommentCount > 0 ? `*${agentCommentCount}` : null,
       additionsText: formatSidebarStat("+", file.stats.additions),
       deletionsText: formatSidebarStat("-", file.stats.deletions),
       changeType: file.metadata.type,
