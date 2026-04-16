@@ -1,4 +1,4 @@
-import { SESSION_BROKER_REGISTRATION_VERSION } from "../../src/session-broker/brokerWire";
+import { SESSION_BROKER_REGISTRATION_VERSION } from "@hunk/session-broker-core";
 import type {
   HunkSessionRegistration,
   HunkSessionSnapshot,

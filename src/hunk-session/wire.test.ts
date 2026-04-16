@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { SESSION_BROKER_REGISTRATION_VERSION } from "../session-broker/brokerWire";
+import { SESSION_BROKER_REGISTRATION_VERSION } from "@hunk/session-broker-core";
 import { parseSessionRegistration, parseSessionSnapshot } from "./wire";
 
 function createValidComment(overrides: Record<string, unknown> = {}) {

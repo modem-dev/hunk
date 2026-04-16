@@ -5,24 +5,60 @@
     "": {
       "name": "hunk",
       "dependencies": {
-        "@opentui/core": "^0.1.88",
-        "@opentui/react": "^0.1.88",
         "@pierre/diffs": "^1.1.0",
         "bun": "^1.3.10",
         "commander": "^14.0.3",
         "diff": "^8.0.3",
-        "react": "^19.2.4",
         "zod": "^4.3.6",
       },
       "devDependencies": {
+        "@hunk/session-broker": "workspace:*",
+        "@hunk/session-broker-bun": "workspace:*",
+        "@hunk/session-broker-core": "workspace:*",
+        "@hunk/session-broker-node": "workspace:*",
+        "@opentui/core": "^0.1.88",
+        "@opentui/react": "^0.1.88",
         "@types/bun": "latest",
         "@types/react": "^19.2.14",
+        "@types/ws": "^8.18.1",
         "lint-staged": "^16.4.0",
         "oxfmt": "^0.41.0",
         "oxlint": "^1.56.0",
+        "react": "^19.2.4",
         "simple-git-hooks": "^2.13.1",
         "tuistory": "^0.0.16",
         "typescript": "^5.9.3",
+      },
+      "peerDependencies": {
+        "@opentui/core": "^0.1.88",
+        "@opentui/react": "^0.1.88",
+        "react": "^19.2.4",
+      },
+    },
+    "packages/session-broker": {
+      "name": "@hunk/session-broker",
+      "version": "0.0.0",
+      "dependencies": {
+        "@hunk/session-broker-core": "workspace:*",
+      },
+    },
+    "packages/session-broker-bun": {
+      "name": "@hunk/session-broker-bun",
+      "version": "0.0.0",
+      "dependencies": {
+        "@hunk/session-broker": "workspace:*",
+      },
+    },
+    "packages/session-broker-core": {
+      "name": "@hunk/session-broker-core",
+      "version": "0.0.0",
+    },
+    "packages/session-broker-node": {
+      "name": "@hunk/session-broker-node",
+      "version": "0.0.0",
+      "dependencies": {
+        "@hunk/session-broker": "workspace:*",
+        "ws": "^8.18.3",
       },
     },
   },
@@ -30,6 +66,14 @@
     "@dimforge/rapier2d-simd-compat": ["@dimforge/rapier2d-simd-compat@0.17.3", "", {}, "sha512-bijvwWz6NHsNj5e5i1vtd3dU2pDhthSaTUZSh14DUGGKJfw8eMnlWZsxwHBxB/a3AXVNDjL9abuHw1k9FGR+jg=="],
 
     "@hono/node-server": ["@hono/node-server@1.19.11", "", { "peerDependencies": { "hono": "^4" } }, "sha512-dr8/3zEaB+p0D2n/IUrlPF1HZm586qgJNXK1a9fhg/PzdtkK7Ksd5l312tJX2yBuALqDYBlG20QEbayqPyxn+g=="],
+
+    "@hunk/session-broker": ["@hunk/session-broker@workspace:packages/session-broker"],
+
+    "@hunk/session-broker-bun": ["@hunk/session-broker-bun@workspace:packages/session-broker-bun"],
+
+    "@hunk/session-broker-core": ["@hunk/session-broker-core@workspace:packages/session-broker-core"],
+
+    "@hunk/session-broker-node": ["@hunk/session-broker-node@workspace:packages/session-broker-node"],
 
     "@jimp/core": ["@jimp/core@1.6.0", "", { "dependencies": { "@jimp/file-ops": "1.6.0", "@jimp/types": "1.6.0", "@jimp/utils": "1.6.0", "await-to-js": "^3.0.0", "exif-parser": "^0.1.12", "file-type": "^16.0.0", "mime": "3" } }, "sha512-EQQlKU3s9QfdJqiSrZWNTxBs3rKXgO2W+GxNXDtwchF3a4IqxDheFX1ti+Env9hdJXDiYLp2jTRjlxhPthsk8w=="],
 
@@ -256,6 +300,8 @@
     "@types/react": ["@types/react@19.2.14", "", { "dependencies": { "csstype": "^3.2.2" } }, "sha512-ilcTH/UniCkMdtexkoCN0bI7pMcJDvmQFPvuPvmEaYA/NSfFTAgdUSLAoVjaRJm7+6PvcM+q1zYOwS4wTYMF9w=="],
 
     "@types/unist": ["@types/unist@3.0.3", "", {}, "sha512-ko/gIFJRv177XgZsZcBwnqJN5x/Gien8qNOn0D5bQU/zAzVf9Zt3BlcUiLqhV9y4ARk0GbT3tnUiPNgnTXzc/Q=="],
+
+    "@types/ws": ["@types/ws@8.18.1", "", { "dependencies": { "@types/node": "*" } }, "sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg=="],
 
     "@ungap/structured-clone": ["@ungap/structured-clone@1.3.0", "", {}, "sha512-WmoN8qaIAo7WTYWbAZuG8PYEhn5fkz7dZrqTBZ7dtt//lL2Gwms1IcnQ5yHqjDfX8Ft5j4YzDM23f87zBfDe9g=="],
 

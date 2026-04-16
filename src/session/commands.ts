@@ -11,7 +11,7 @@ import {
   waitForSessionBrokerShutdown,
 } from "../session-broker/brokerLauncher";
 import { resolveSessionBrokerConfig } from "../session-broker/brokerConfig";
-import { matchesSessionSelector, normalizeSessionSelector } from "../session-broker/selectors";
+import { matchesSessionSelector, normalizeSessionSelector } from "@hunk/session-broker-core";
 import {
   createHttpHunkSessionCliClient,
   formatClearCommentsOutput,

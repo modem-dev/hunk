@@ -1,9 +1,14 @@
+import {
+  createSessionBrokerConnection,
+  type SessionBrokerConnection as GenericSessionBrokerConnection,
+  type SessionBrokerConnectionBridge,
+  type SessionBrokerSocketLike,
+} from "@hunk/session-broker";
 import type {
-  SessionClientMessage,
   SessionRegistration,
   SessionServerMessage,
   SessionSnapshot,
-} from "./types";
+} from "@hunk/session-broker-core";
 import {
   SESSION_BROKER_SOCKET_PATH,
   resolveSessionBrokerConfig,
@@ -27,12 +32,10 @@ const INCOMPATIBLE_SESSION_CLOSE_REASON_PREFIX = "Incompatible session ";
 const INCOMPATIBLE_SESSION_CLOSE_MESSAGE =
   "This window is too old for the refreshed session broker daemon. Restart the window to reconnect.";
 
-interface SessionAppBridge<
+type SessionAppBridge<
   ServerMessage extends SessionServerMessage = SessionServerMessage,
   Result = unknown,
-> {
-  dispatchCommand: (message: ServerMessage) => Promise<Result>;
-}
+> = SessionBrokerConnectionBridge<ServerMessage, Result>;
 
 /** Keep one running app session registered with the local session broker daemon. */
 export class SessionBrokerClient<
@@ -41,11 +44,15 @@ export class SessionBrokerClient<
   ServerMessage extends SessionServerMessage = SessionServerMessage,
   Result = unknown,
 > {
-  private websocket: WebSocket | null = null;
+  private connection: GenericSessionBrokerConnection<
+    Info,
+    State,
+    SessionBrokerSocketLike,
+    ServerMessage,
+    Result
+  > | null = null;
   private bridge: SessionAppBridge<ServerMessage, Result> | null = null;
-  private queuedMessages: ServerMessage[] = [];
-  private reconnectTimer: Timer | null = null;
-  private heartbeatTimer: Timer | null = null;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private stopped = false;
   private startupPromise: Promise<void> | null = null;
   private lastConnectionWarning: string | null = null;
@@ -85,9 +92,8 @@ export class SessionBrokerClient<
       this.reconnectTimer = null;
     }
 
-    this.stopHeartbeat();
-    this.websocket?.close();
-    this.websocket = null;
+    this.connection?.stop();
+    this.connection = null;
   }
 
   getRegistration() {
@@ -97,11 +103,7 @@ export class SessionBrokerClient<
   replaceSession(registration: SessionRegistration<Info>, snapshot: SessionSnapshot<State>) {
     this.registration = registration;
     this.snapshot = snapshot;
-    this.send({
-      type: "register",
-      registration,
-      snapshot,
-    });
+    this.connection?.replaceSession(registration, snapshot);
   }
 
   private resolveConfig() {
@@ -177,73 +179,41 @@ export class SessionBrokerClient<
 
   setBridge(bridge: SessionAppBridge<ServerMessage, Result> | null) {
     this.bridge = bridge;
-    void this.flushQueuedMessages();
+    this.connection?.setBridge(bridge);
   }
 
   updateSnapshot(snapshot: SessionSnapshot<State>) {
     this.snapshot = snapshot;
-    this.send({
-      type: "snapshot",
-      sessionId: this.registration.sessionId,
-      snapshot,
-    });
+    this.connection?.updateSnapshot(snapshot);
   }
 
   private connect(config: ResolvedSessionBrokerConfig) {
-    if (this.stopped || this.websocket) {
+    if (this.stopped || this.connection) {
       return;
     }
 
-    const websocket = new WebSocket(`${config.wsOrigin}${SESSION_BROKER_SOCKET_PATH}`);
-    this.websocket = websocket;
+    this.connection = createSessionBrokerConnection<
+      Info,
+      State,
+      SessionBrokerSocketLike,
+      ServerMessage,
+      Result
+    >({
+      url: `${config.wsOrigin}${SESSION_BROKER_SOCKET_PATH}`,
+      createSocket: (url) => new WebSocket(url) as unknown as SessionBrokerSocketLike,
+      registration: this.registration,
+      snapshot: this.snapshot,
+      bridge: this.bridge,
+      heartbeatIntervalMs: HEARTBEAT_INTERVAL_MS,
+      reconnectDelayMs: RECONNECT_DELAY_MS,
+      resolveClose: (event) =>
+        this.isIncompatibleSessionClose(event)
+          ? { reconnect: false, warning: INCOMPATIBLE_SESSION_CLOSE_MESSAGE }
+          : { reconnect: true },
+      onWarning: (message) => this.warnUnavailable(message),
+    });
 
-    websocket.onopen = () => {
-      this.lastConnectionWarning = null;
-      this.startHeartbeat();
-      this.send({
-        type: "register",
-        registration: this.registration,
-        snapshot: this.snapshot,
-      });
-      void this.flushQueuedMessages();
-    };
-
-    websocket.onmessage = (event) => {
-      if (typeof event.data !== "string") {
-        return;
-      }
-
-      let parsed: ServerMessage;
-      try {
-        parsed = JSON.parse(event.data) as ServerMessage;
-      } catch {
-        return;
-      }
-
-      void this.handleServerMessage(parsed);
-    };
-
-    websocket.onclose = (event) => {
-      if (this.websocket === websocket) {
-        this.websocket = null;
-      }
-
-      this.stopHeartbeat();
-      if (this.stopped) {
-        return;
-      }
-
-      if (this.isIncompatibleSessionClose(event)) {
-        this.warnUnavailable(INCOMPATIBLE_SESSION_CLOSE_MESSAGE);
-        return;
-      }
-
-      this.scheduleReconnect();
-    };
-
-    websocket.onerror = () => {
-      websocket.close();
-    };
+    this.connection.start();
   }
 
   private scheduleReconnect(delayMs = RECONNECT_DELAY_MS) {
@@ -258,76 +228,8 @@ export class SessionBrokerClient<
     this.reconnectTimer.unref?.();
   }
 
-  private startHeartbeat() {
-    if (this.heartbeatTimer) {
-      return;
-    }
-
-    this.heartbeatTimer = setInterval(() => {
-      this.send({
-        type: "heartbeat",
-        sessionId: this.registration.sessionId,
-      });
-    }, HEARTBEAT_INTERVAL_MS);
-    this.heartbeatTimer.unref?.();
-  }
-
-  private stopHeartbeat() {
-    if (!this.heartbeatTimer) {
-      return;
-    }
-
-    clearInterval(this.heartbeatTimer);
-    this.heartbeatTimer = null;
-  }
-
-  private send(message: SessionClientMessage<Info, State, Result>) {
-    if (!this.websocket || this.websocket.readyState !== WebSocket.OPEN) {
-      return;
-    }
-
-    this.websocket.send(JSON.stringify(message));
-  }
-
-  private async handleServerMessage(message: ServerMessage) {
-    if (!this.bridge) {
-      this.queuedMessages.push(message);
-      return;
-    }
-
-    try {
-      const result = await this.bridge.dispatchCommand(message);
-      this.send({
-        type: "command-result",
-        requestId: message.requestId,
-        ok: true,
-        result,
-      });
-    } catch (error) {
-      this.send({
-        type: "command-result",
-        requestId: message.requestId,
-        ok: false,
-        error: error instanceof Error ? error.message : "Unknown session error.",
-      });
-    }
-  }
-
-  private async flushQueuedMessages() {
-    if (!this.bridge || this.queuedMessages.length === 0) {
-      return;
-    }
-
-    const queued = [...this.queuedMessages];
-    this.queuedMessages = [];
-
-    for (const message of queued) {
-      await this.handleServerMessage(message);
-    }
-  }
-
   /** Return whether the daemon explicitly rejected this session as incompatible after an upgrade. */
-  private isIncompatibleSessionClose(event: CloseEvent) {
+  private isIncompatibleSessionClose(event: { code: number; reason: string }) {
     return (
       event.code === INCOMPATIBLE_SESSION_CLOSE_CODE &&
       event.reason.startsWith(INCOMPATIBLE_SESSION_CLOSE_REASON_PREFIX)

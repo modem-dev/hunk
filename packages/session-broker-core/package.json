@@ -1,0 +1,22 @@
+{
+  "name": "@hunk/session-broker-core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Runtime-agnostic session broker core primitives for Node and Bun apps.",
+  "license": "MIT",
+  "files": [
+    "src"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    }
+  },
+  "engines": {
+    "bun": ">=1.0.0",
+    "node": ">=18"
+  }
+}

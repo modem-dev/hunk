@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, mock, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
-import { SESSION_BROKER_REGISTRATION_VERSION } from "../session-broker/brokerWire";
+import { SESSION_BROKER_REGISTRATION_VERSION } from "@hunk/session-broker-core";
 import type {
   HunkSessionBrokerClient,
   HunkSessionRegistration,

@@ -22,6 +22,9 @@
   "bin": {
     "hunk": "./bin/hunk.cjs"
   },
+  "workspaces": [
+    "packages/*"
+  ],
   "files": [
     "bin",
     "dist/npm",
@@ -55,7 +58,7 @@
     "lint": "oxlint . --deny-warnings",
     "lint:fix": "oxlint . --fix",
     "prepare": "simple-git-hooks",
-    "test": "\"${npm_execpath:-bun}\" test ./src ./scripts ./test/cli ./test/session",
+    "test": "\"${npm_execpath:-bun}\" test ./src ./packages ./scripts ./test/cli ./test/session",
     "test:integration": "\"${npm_execpath:-bun}\" test ./test/pty",
     "test:tty-smoke": "HUNK_RUN_TTY_SMOKE=1 \"${npm_execpath:-bun}\" test ./test/smoke",
     "check:pack": "bun run ./scripts/check-pack.ts",
@@ -76,10 +79,15 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@hunk/session-broker": "workspace:*",
+    "@hunk/session-broker-bun": "workspace:*",
+    "@hunk/session-broker-core": "workspace:*",
+    "@hunk/session-broker-node": "workspace:*",
     "@opentui/core": "^0.1.88",
     "@opentui/react": "^0.1.88",
     "@types/bun": "latest",
     "@types/react": "^19.2.14",
+    "@types/ws": "^8.18.1",
     "lint-staged": "^16.4.0",
     "oxfmt": "^0.41.0",
     "oxlint": "^1.56.0",

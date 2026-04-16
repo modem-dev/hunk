@@ -7,7 +7,7 @@ import type {
   SessionSnapshot,
   SessionTargetInput,
   SessionTerminalMetadata,
-} from "../session-broker/types";
+} from "@hunk/session-broker-core";
 
 export type DiffSide = "old" | "new";
 

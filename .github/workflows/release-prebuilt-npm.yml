@@ -17,6 +17,9 @@ on:
     tags:
       - "v*"
 
+env:
+  SKIP_INSTALL_SIMPLE_GIT_HOOKS: "1"
+
 concurrency:
   group: release-prebuilt-${{ github.ref }}
   cancel-in-progress: false
