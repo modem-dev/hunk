@@ -11,6 +11,9 @@ on:
       - "LICENSE"
   workflow_dispatch:
 
+env:
+  SKIP_INSTALL_SIMPLE_GIT_HOOKS: "1"
+
 concurrency:
   group: benchmarks-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true

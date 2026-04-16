@@ -8,6 +8,9 @@ on:
       - "assets/**"
       - "LICENSE"
 
+env:
+  SKIP_INSTALL_SIMPLE_GIT_HOOKS: "1"
+
 concurrency:
   group: pr-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
