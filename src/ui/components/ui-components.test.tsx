@@ -416,7 +416,7 @@ describe("UI components", () => {
     expect(frame).toContain(" App.tsx");
     expect(frame).toContain(" MenuDropdown.tsx");
     expect(frame).toContain(" watch.ts");
-    expect(frame).toContain("+2 -1");
+    expect(frame).toContain("*1 +2 -1");
     expect(frame).toContain("+5");
     expect(frame).toContain("-3");
     expect(frame).not.toContain("+0");

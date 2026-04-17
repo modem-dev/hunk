@@ -116,7 +116,15 @@ export function FileListItem({
                 style={{ height: 1, flexDirection: "row", backgroundColor: rowBackground }}
               >
                 {index > 0 && <text fg={selected ? theme.text : theme.muted}> </text>}
-                <text fg={stat.kind === "addition" ? theme.badgeAdded : theme.badgeRemoved}>
+                <text
+                  fg={
+                    stat.kind === "agent-comment"
+                      ? theme.noteBorder
+                      : stat.kind === "addition"
+                        ? theme.badgeAdded
+                        : theme.badgeRemoved
+                  }
+                >
                   {stat.text}
                 </text>
               </box>

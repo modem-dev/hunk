@@ -46,18 +46,74 @@ describe("files helpers", () => {
     expect(entries).toHaveLength(3);
     expect(entries[0]).toMatchObject({
       name: "only-add.ts",
+      agentCommentsText: null,
       additionsText: "+5",
       deletionsText: null,
     });
     expect(entries[1]).toMatchObject({
       name: "only-remove.ts",
+      agentCommentsText: null,
       additionsText: null,
       deletionsText: "-3",
     });
     expect(entries[2]).toMatchObject({
       name: "Legacy.tsx -> Renamed.tsx",
+      agentCommentsText: null,
       additionsText: null,
       deletionsText: null,
+    });
+  });
+
+  test("buildSidebarEntries includes compact per-file comment counts before diff stats", () => {
+    const withComments = createTestDiffFile({
+      id: "with-comments",
+      path: "src/ui/commented.ts",
+      before: lines("const alpha = 1;", "const beta = 2;", "const gamma = 3;"),
+      after: lines("const alpha = 10;", "const beta = 2;", "const gamma = 30;"),
+      agent: {
+        path: "src/ui/commented.ts",
+        annotations: [
+          { summary: "Note on first hunk", newRange: [1, 1] },
+          { summary: "Another note on first hunk", newRange: [1, 1] },
+          { summary: "Note on second hunk", newRange: [3, 3] },
+        ],
+      },
+    });
+
+    const [entry] = buildSidebarEntries([withComments]).filter((item) => item.kind === "file");
+
+    expect(entry).toMatchObject({
+      name: "commented.ts",
+      agentCommentsText: "*3",
+      additionsText: "+2",
+      deletionsText: "-2",
+    });
+  });
+
+  test("buildSidebarEntries counts all comments attached to a file, even off-range ones", () => {
+    const withComments = createTestDiffFile({
+      id: "all-comments",
+      path: "src/ui/all-comments.ts",
+      before: lines("const alpha = 1;", "const beta = 2;", "const gamma = 3;"),
+      after: lines("const alpha = 10;", "const beta = 2;", "const gamma = 30;"),
+      agent: {
+        path: "src/ui/all-comments.ts",
+        annotations: [
+          { summary: "First note", newRange: [1, 1] },
+          { summary: "Second note", newRange: [1, 1] },
+          // The sidebar count is per-file, so even comments outside a visible hunk still count.
+          { summary: "Third note", newRange: [20, 20] },
+        ],
+      },
+    });
+
+    const [entry] = buildSidebarEntries([withComments]).filter((item) => item.kind === "file");
+
+    expect(entry).toMatchObject({
+      name: "all-comments.ts",
+      agentCommentsText: "*3",
+      additionsText: "+2",
+      deletionsText: "-2",
     });
   });
 

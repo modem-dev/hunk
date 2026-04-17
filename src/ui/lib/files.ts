@@ -7,6 +7,7 @@ export interface FileListEntry {
   kind: "file";
   id: string;
   name: string;
+  agentCommentsText: string | null;
   additionsText: string | null;
   deletionsText: string | null;
   changeType: FileDiffMetadata["type"];
@@ -40,9 +41,17 @@ function formatSidebarStat(prefix: "+" | "-", value: number) {
   return value > 0 ? `${prefix}${value}` : null;
 }
 
-/** Build the visible stats badges for one sidebar row. */
-export function sidebarEntryStats(entry: Pick<FileListEntry, "additionsText" | "deletionsText">) {
-  const stats: Array<{ kind: "addition" | "deletion"; text: string }> = [];
+/** Build the visible stats badges for one sidebar row.
+ * Keep the agent-note badge first so it reads as review context before line churn.
+ */
+export function sidebarEntryStats(
+  entry: Pick<FileListEntry, "agentCommentsText" | "additionsText" | "deletionsText">,
+) {
+  const stats: Array<{ kind: "agent-comment" | "addition" | "deletion"; text: string }> = [];
+
+  if (entry.agentCommentsText) {
+    stats.push({ kind: "agent-comment", text: entry.agentCommentsText });
+  }
 
   if (entry.additionsText) {
     stats.push({ kind: "addition", text: entry.additionsText });
@@ -57,7 +66,7 @@ export function sidebarEntryStats(entry: Pick<FileListEntry, "additionsText" | "
 
 /** Measure the rendered sidebar stats width, including the space between badges. */
 export function sidebarEntryStatsWidth(
-  entry: Pick<FileListEntry, "additionsText" | "deletionsText">,
+  entry: Pick<FileListEntry, "agentCommentsText" | "additionsText" | "deletionsText">,
 ) {
   return sidebarEntryStats(entry).reduce(
     (width, stat, index) => width + stat.text.length + (index > 0 ? 1 : 0),
@@ -128,10 +137,13 @@ export function buildSidebarEntries(files: DiffFile[]): SidebarEntry[] {
       }
     }
 
+    const agentCommentCount = file.agent?.annotations.length ?? 0;
+
     entries.push({
       kind: "file",
       id: file.id,
       name: sidebarFileName(file),
+      agentCommentsText: agentCommentCount > 0 ? `*${agentCommentCount}` : null,
       additionsText: formatSidebarStat("+", file.stats.additions),
       deletionsText: formatSidebarStat("-", file.stats.deletions),
       changeType: file.metadata.type,
