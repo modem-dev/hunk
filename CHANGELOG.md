@@ -10,6 +10,7 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Fixed
 
+- Balanced Pierre word-level highlights so split-view inline changes stay visible without overpowering the surrounding diff row.
 - Smoothed mouse-wheel review scrolling so small diffs stay precise while sustained wheel gestures still speed up.
 - Fixed Shift+mouse-wheel horizontal scrolling so it no longer leaks a one-line vertical scroll in some terminals.
 
