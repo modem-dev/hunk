@@ -204,6 +204,7 @@ export function DiffPane({
 
       const preservedScrollTop = scrollBox.scrollTop;
       const preservedScrollLeft = scrollBox.scrollLeft;
+      const scrollInfo = event.scroll;
 
       if (direction === "left") {
         onScrollCodeHorizontally(-1);
@@ -217,8 +218,14 @@ export function DiffPane({
         return;
       }
 
-      // OpenTUI runs ScrollBox's own wheel handler after this listener and it does not honor
-      // preventDefault(), so restore the pre-event viewport position on the next microtask.
+      // OpenTUI runs ScrollBox's own wheel handler after this listener and it ignores
+      // preventDefault(). Zero the wheel delta first so native Shift+Wheel left/right events
+      // cannot be remapped back into vertical scroll, then restore the viewport and clear any
+      // residual fractional state on the next microtask as a final guard.
+      if (scrollInfo) {
+        scrollInfo.delta = 0;
+      }
+
       queueMicrotask(() => {
         const currentScrollBox = scrollRef.current;
         if (!currentScrollBox) {
@@ -226,6 +233,10 @@ export function DiffPane({
         }
 
         currentScrollBox.scrollTo({ x: preservedScrollLeft, y: preservedScrollTop });
+        currentScrollBox.scrollAcceleration.reset();
+        (
+          currentScrollBox as unknown as { resetScrollAccumulators?: () => void }
+        ).resetScrollAccumulators?.();
       });
 
       event.preventDefault();
