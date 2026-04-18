@@ -2,6 +2,11 @@ import fs from "node:fs";
 import tty from "node:tty";
 import type { CliInput } from "./types";
 
+export interface AppMouseOptions {
+  stdinIsTTY?: boolean;
+  hasControllingTerminal?: boolean;
+}
+
 /** Detect the stdin-pipe patch workflow used by `git diff` pagers. */
 export function usesPipedPatchInput(input: CliInput, stdinIsTTY = Boolean(process.stdin.isTTY)) {
   return input.kind === "patch" && (!input.file || input.file === "-") && !stdinIsTTY;
@@ -26,9 +31,16 @@ export function resolveRuntimeCliInput(
   } as CliInput;
 }
 
+/** Keep mouse support tied to terminal interactivity instead of pager chrome mode. */
+export function shouldUseMouseForApp({
+  stdinIsTTY = Boolean(process.stdin.isTTY),
+  hasControllingTerminal = false,
+}: AppMouseOptions = {}) {
+  return stdinIsTTY || hasControllingTerminal;
+}
+
 export interface ControllingTerminal {
   stdin: tty.ReadStream;
-  stdout: tty.WriteStream;
   close: () => void;
 }
 
@@ -36,29 +48,26 @@ export interface ControllingTerminal {
 export interface ControllingTerminalDeps {
   openSync: typeof fs.openSync;
   createReadStream: (fd: number) => tty.ReadStream;
-  createWriteStream: (fd: number) => tty.WriteStream;
 }
 
-/** Open the controlling terminal so the UI can stay interactive while stdin carries patch data. */
+/**
+ * Open the controlling terminal for input so the UI can stay interactive while stdin carries patch
+ * data. Rendering can continue through the existing stdout stream.
+ */
 export function openControllingTerminal(
   deps: ControllingTerminalDeps = {
     openSync: fs.openSync,
     createReadStream: (fd) => new tty.ReadStream(fd),
-    createWriteStream: (fd) => new tty.WriteStream(fd),
   },
 ): ControllingTerminal | null {
   try {
     const stdinFd = deps.openSync("/dev/tty", "r");
-    const stdoutFd = deps.openSync("/dev/tty", "w");
     const stdin = deps.createReadStream(stdinFd);
-    const stdout = deps.createWriteStream(stdoutFd);
 
     return {
       stdin,
-      stdout,
       close: () => {
         stdin.destroy();
-        stdout.destroy();
       },
     };
   } catch {

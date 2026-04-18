@@ -64,6 +64,11 @@ function writeText(path: string, content: string) {
   writeFileSync(path, content);
 }
 
+/** Quote shell arguments so PTY helpers can safely launch piped commands through Bash. */
+function shellQuote(value: string) {
+  return `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
 /** Build numbered export lines so PTY fixtures can assert on stable visible content. */
 function createNumberedExportLines(start: number, count: number, valueOffset = 0) {
   return Array.from({ length: count }, (_, index) => {
@@ -357,6 +362,17 @@ export function createPtyHarness() {
     return { dir, patchFile };
   }
 
+  /** Build the source-run Hunk command so PTY tests can reuse it inside shell pipelines. */
+  function buildHunkCommand(args: string[]) {
+    return [
+      shellQuote(bunExecutable),
+      "run",
+      shellQuote(sourceEntrypoint),
+      "--",
+      ...args.map(shellQuote),
+    ].join(" ");
+  }
+
   async function launchHunk(options: {
     args: string[];
     cwd?: string;
@@ -378,6 +394,53 @@ export function createPtyHarness() {
         HUNK_DISABLE_UPDATE_NOTICE: "1",
         ...options.env,
       },
+    });
+  }
+
+  /** Launch an arbitrary shell command inside the PTY for pipeline-style integration tests. */
+  async function launchShellCommand(options: {
+    command: string;
+    cwd?: string;
+    cols?: number;
+    rows?: number;
+    env?: Record<string, string | undefined>;
+  }) {
+    const { launchTerminal } = await loadTuistory();
+
+    return launchTerminal({
+      command: "/bin/bash",
+      args: ["-c", options.command],
+      cwd: options.cwd ?? repoRoot,
+      cols: options.cols ?? 140,
+      rows: options.rows ?? 24,
+      env: {
+        ...process.env,
+        HUNK_MCP_DISABLE: "1",
+        HUNK_DISABLE_UPDATE_NOTICE: "1",
+        ...options.env,
+      },
+    });
+  }
+
+  /**
+   * Launch Hunk with a file-backed stdin while keeping stdout/stderr attached to the PTY.
+   * Uses `exec cmd < file` so bash replaces itself with Hunk, preserving the PTY on stdout/stderr
+   * and the controlling terminal while giving the child a non-TTY stdin.
+   */
+  async function launchHunkWithFileBackedStdin(options: {
+    stdinFile: string;
+    args: string[];
+    cwd?: string;
+    cols?: number;
+    rows?: number;
+    env?: Record<string, string | undefined>;
+  }) {
+    return launchShellCommand({
+      command: `exec ${buildHunkCommand(options.args)} < ${shellQuote(options.stdinFile)}`,
+      cwd: options.cwd,
+      cols: options.cols,
+      rows: options.rows,
+      env: options.env,
     });
   }
 
@@ -422,6 +485,10 @@ export function createPtyHarness() {
     createSidebarJumpRepoFixture,
     createTwoFileRepoFixture,
     launchHunk,
+    launchHunkWithFileBackedStdin,
+    launchShellCommand,
+    buildHunkCommand,
+    shellQuote,
     waitForSnapshot,
   };
 }

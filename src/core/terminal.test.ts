@@ -3,6 +3,7 @@ import type { CliInput } from "./types";
 import {
   openControllingTerminal,
   resolveRuntimeCliInput,
+  shouldUseMouseForApp,
   shouldUsePagerMode,
   usesPipedPatchInput,
 } from "./terminal";
@@ -41,49 +42,63 @@ describe("terminal runtime defaults", () => {
   });
 });
 
+describe("app mouse support", () => {
+  test("enables mouse for interactive stdin", () => {
+    expect(
+      shouldUseMouseForApp({
+        stdinIsTTY: true,
+        hasControllingTerminal: false,
+      }),
+    ).toBe(true);
+  });
+
+  test("enables mouse when a controlling terminal is attached", () => {
+    expect(
+      shouldUseMouseForApp({
+        stdinIsTTY: false,
+        hasControllingTerminal: true,
+      }),
+    ).toBe(true);
+  });
+
+  test("disables mouse when no interactive terminal is available", () => {
+    expect(
+      shouldUseMouseForApp({
+        stdinIsTTY: false,
+        hasControllingTerminal: false,
+      }),
+    ).toBe(false);
+  });
+});
+
 describe("controlling terminal attachment", () => {
-  test("opens /dev/tty for read and write and closes both streams", () => {
+  test("opens /dev/tty for read and closes the input stream", () => {
     const calls: Array<[string, string]> = [];
     let stdinDestroyed = false;
-    let stdoutDestroyed = false;
 
     const stdin = {
       destroy() {
         stdinDestroyed = true;
       },
     } as never;
-    const stdout = {
-      destroy() {
-        stdoutDestroyed = true;
-      },
-    } as never;
 
     const controllingTerminal = openControllingTerminal({
       openSync(path, flags) {
         calls.push([String(path), String(flags)]);
-        return flags === "r" ? 11 : 12;
+        return 11;
       },
       createReadStream(fd) {
         expect(fd).toBe(11);
         return stdin;
       },
-      createWriteStream(fd) {
-        expect(fd).toBe(12);
-        return stdout;
-      },
     });
 
     expect(controllingTerminal).not.toBeNull();
-    expect(calls).toEqual([
-      ["/dev/tty", "r"],
-      ["/dev/tty", "w"],
-    ]);
+    expect(calls).toEqual([["/dev/tty", "r"]]);
     expect(controllingTerminal?.stdin).toBe(stdin);
-    expect(controllingTerminal?.stdout).toBe(stdout);
 
     controllingTerminal?.close();
     expect(stdinDestroyed).toBe(true);
-    expect(stdoutDestroyed).toBe(true);
   });
 
   test("returns null when the controlling terminal cannot be opened", () => {
@@ -92,9 +107,6 @@ describe("controlling terminal attachment", () => {
         throw new Error("no tty");
       },
       createReadStream() {
-        throw new Error("unreachable");
-      },
-      createWriteStream() {
         throw new Error("unreachable");
       },
     });
