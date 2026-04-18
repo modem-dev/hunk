@@ -16,6 +16,7 @@ import {
   measureDiffSectionGeometry,
   type DiffSectionGeometry,
 } from "../../lib/diffSectionGeometry";
+import { createReviewMouseWheelScrollAcceleration } from "../../lib/scrollAcceleration";
 import {
   buildFileSectionLayouts,
   buildInStreamFileHeaderHeights,
@@ -182,6 +183,10 @@ export function DiffPane({
   onViewportCenteredHunkChange?: (fileId: string, hunkIndex: number) => void;
 }) {
   const renderer = useRenderer();
+  const mouseWheelScrollAcceleration = useMemo(
+    () => createReviewMouseWheelScrollAcceleration(),
+    [],
+  );
 
   const adjacentPrefetchFileIds = useMemo(
     () => buildAdjacentPrefetchFileIds(files, selectedFileId),
@@ -977,7 +982,7 @@ export function DiffPane({
     suppressViewportSelectionSync,
   ]);
 
-  // Configure scroll step size to scroll exactly 1 line per step
+  // Keep keyboard step scrolling at exactly one row while wheel scrolling uses its own multiplier.
   useEffect(() => {
     const scrollBox = scrollRef.current;
     if (scrollBox) {
@@ -1020,6 +1025,7 @@ export function DiffPane({
               viewportCulling={true}
               focused={pagerMode}
               onMouseScroll={handleMouseScroll}
+              scrollAcceleration={mouseWheelScrollAcceleration}
               rootOptions={{ backgroundColor: theme.panel }}
               wrapperOptions={{ backgroundColor: theme.panel }}
               viewportOptions={{ backgroundColor: theme.panel }}
