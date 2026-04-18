@@ -1,0 +1,155 @@
+name: Slop CI
+
+on:
+  pull_request:
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "assets/**"
+      - "LICENSE"
+  workflow_dispatch:
+    inputs:
+      base_ref:
+        description: Base branch, tag, or local ref to compare against
+        required: false
+        default: main
+
+concurrency:
+  group: slop-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  slop:
+    name: Slop analyzer delta
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      SLOP_ANALYZER_VERSION: 0.1.2
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.10
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Resolve base commit
+        id: base
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          INPUT_BASE_REF: ${{ inputs.base_ref }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            base_sha="$PR_BASE_SHA"
+          else
+            base_ref="${INPUT_BASE_REF:-main}"
+            if git rev-parse --verify "$base_ref^{commit}" >/dev/null 2>&1; then
+              base_sha="$(git rev-parse "$base_ref")"
+            else
+              git fetch --no-tags origin "$base_ref"
+              base_sha="$(git rev-parse FETCH_HEAD)"
+            fi
+          fi
+
+          echo "base_sha=$base_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Create archived base/head snapshots
+        id: snapshots
+        env:
+          BASE_SHA: ${{ steps.base.outputs.base_sha }}
+        run: |
+          base_dir="$(mktemp -d "${RUNNER_TEMP}/slop-base-XXXXXX")"
+          head_dir="$(mktemp -d "${RUNNER_TEMP}/slop-head-XXXXXX")"
+
+          git archive "$BASE_SHA" | tar -xf - -C "$base_dir"
+          git archive HEAD | tar -xf - -C "$head_dir"
+
+          echo "base_dir=$base_dir" >> "$GITHUB_OUTPUT"
+          echo "head_dir=$head_dir" >> "$GITHUB_OUTPUT"
+
+      - name: Scan archived snapshots with slop-analyzer
+        env:
+          BASE_DIR: ${{ steps.snapshots.outputs.base_dir }}
+          HEAD_DIR: ${{ steps.snapshots.outputs.head_dir }}
+        run: |
+          mkdir -p slop-artifacts
+
+          bunx "slop-analyzer@${SLOP_ANALYZER_VERSION}" scan "$BASE_DIR" --json > slop-artifacts/base-slop.json
+          bunx "slop-analyzer@${SLOP_ANALYZER_VERSION}" scan "$HEAD_DIR" --json > slop-artifacts/head-slop.json
+
+      - name: Build Hunk review artifacts
+        env:
+          BASE_SHA: ${{ steps.base.outputs.base_sha }}
+        run: |
+          bun run scripts/slop-review.ts \
+            --base slop-artifacts/base-slop.json \
+            --head slop-artifacts/head-slop.json \
+            > slop-artifacts/slop-summary.txt
+
+          bun run scripts/slop-review.ts \
+            --base slop-artifacts/base-slop.json \
+            --head slop-artifacts/head-slop.json \
+            --json \
+            > slop-artifacts/slop-delta.json
+
+          bun run scripts/slop-review.ts \
+            --base slop-artifacts/base-slop.json \
+            --head slop-artifacts/head-slop.json \
+            --agent-context \
+            > slop-artifacts/slop-agent-context.json
+
+          git diff --no-color "$BASE_SHA"...HEAD > slop-artifacts/pr.patch
+
+          {
+            echo "Review locally with Hunk:"
+            echo "hunk patch pr.patch --agent-context slop-agent-context.json"
+          } > slop-artifacts/README.txt
+
+      - name: Publish slop summary
+        env:
+          BASE_SHA: ${{ steps.base.outputs.base_sha }}
+        run: |
+          {
+            echo "## Slop analyzer"
+            echo
+            echo "- analyzer: slop-analyzer@${SLOP_ANALYZER_VERSION}"
+            echo "- base: $BASE_SHA"
+            echo
+            echo '```text'
+            cat slop-artifacts/slop-summary.txt
+            echo '```'
+            echo
+            echo "Review locally with:"
+            echo '```bash'
+            echo 'hunk patch pr.patch --agent-context slop-agent-context.json'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload slop review artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: slop-review
+          path: |
+            slop-artifacts/README.txt
+            slop-artifacts/base-slop.json
+            slop-artifacts/head-slop.json
+            slop-artifacts/slop-summary.txt
+            slop-artifacts/slop-delta.json
+            slop-artifacts/slop-agent-context.json
+            slop-artifacts/pr.patch
+          if-no-files-found: error
+
+      - name: Fail on newly introduced slop
+        run: |
+          bun run scripts/slop-review.ts \
+            --base slop-artifacts/base-slop.json \
+            --head slop-artifacts/head-slop.json \
+            --fail-on-new

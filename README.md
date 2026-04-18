@@ -151,6 +151,37 @@ Hunk also publishes `HunkDiffView` from `hunkdiff/opentui` for embedding the sam
 
 See [docs/opentui-component.md](docs/opentui-component.md) for install, API, and runnable examples.
 
+#### Review `slop-analyzer` findings in Hunk
+
+Hunk can turn [`slop-analyzer`](https://github.com/benvinegar/slop-analyzer) JSON into inline review notes.
+
+For one local report:
+
+```bash
+bunx slop-analyzer@0.1.2 scan . --json > head-slop.json
+bun run scripts/slop-review.ts --head head-slop.json --agent-context > slop-agent-context.json
+hunk diff --agent-context slop-agent-context.json
+```
+
+For CI, compare a base report to the current branch so only new findings fail the check and show up in review artifacts:
+
+```bash
+git worktree add ../base "$BASE_SHA"
+bunx slop-analyzer@0.1.2 scan ../base --json > base-slop.json
+bunx slop-analyzer@0.1.2 scan . --json > head-slop.json
+bun run scripts/slop-review.ts --base base-slop.json --head head-slop.json --fail-on-new
+bun run scripts/slop-review.ts --base base-slop.json --head head-slop.json --agent-context > slop-agent-context.json
+git diff --no-color "$BASE_SHA"...HEAD > pr.patch
+```
+
+The repo's PR workflow at [`.github/workflows/slop-ci.yml`](.github/workflows/slop-ci.yml) automates that flow with archived base/head snapshots and uploads the review artifacts for local Hunk inspection.
+
+Upload `pr.patch` plus `slop-agent-context.json` as CI artifacts, then open them locally with:
+
+```bash
+hunk patch pr.patch --agent-context slop-agent-context.json
+```
+
 ## Examples
 
 Ready-to-run demo diffs live in [`examples/`](examples/README.md).
