@@ -10,6 +10,8 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Fixed
 
+- Smoothed mouse-wheel review scrolling so small diffs stay precise while sustained wheel gestures still speed up.
+
 ## [0.9.4] - 2026-04-14
 
 ### Added
