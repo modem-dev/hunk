@@ -302,12 +302,15 @@ export function runGitText(options: RunGitTextOptions) {
  * appear. Explicit revision-set expressions like `a..b`, `a...b`, or `rev^!` expand into positive
  * and negative revisions and should stay commit-to-commit only.
  */
+const workingTreeGitDiffInputCache = new Map<string, boolean>();
+
 function isWorkingTreeGitDiffInput(
   input: GitCommandInput,
   {
     cwd = process.cwd(),
     gitExecutable = "git",
-  }: Pick<RunGitTextOptions, "cwd" | "gitExecutable"> = {},
+    repoRoot,
+  }: Pick<RunGitTextOptions, "cwd" | "gitExecutable"> & { repoRoot?: string } = {},
 ) {
   if (input.staged) {
     return false;
@@ -315,6 +318,12 @@ function isWorkingTreeGitDiffInput(
 
   if (!input.range) {
     return true;
+  }
+
+  const cacheKey = `${gitExecutable}\0${repoRoot ?? cwd}\0${input.range}`;
+  const cached = workingTreeGitDiffInputCache.get(cacheKey);
+  if (cached !== undefined) {
+    return cached;
   }
 
   const revs = runGitText({
@@ -329,14 +338,16 @@ function isWorkingTreeGitDiffInput(
 
   const positiveRevs = revs.filter((line) => !line.startsWith("^"));
   const negativeRevs = revs.filter((line) => line.startsWith("^"));
+  const includesWorkingTree = positiveRevs.length === 1 && negativeRevs.length === 0;
 
-  return positiveRevs.length === 1 && negativeRevs.length === 0;
+  workingTreeGitDiffInputCache.set(cacheKey, includesWorkingTree);
+  return includesWorkingTree;
 }
 
 /** Return whether working-tree review should synthesize untracked files into the patch stream. */
 function shouldIncludeUntrackedFiles(
   input: GitCommandInput,
-  options: Pick<RunGitTextOptions, "cwd" | "gitExecutable"> = {},
+  options: Pick<RunGitTextOptions, "cwd" | "gitExecutable"> & { repoRoot?: string } = {},
 ) {
   return input.options.excludeUntracked !== true && isWorkingTreeGitDiffInput(input, options);
 }
