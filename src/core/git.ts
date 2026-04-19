@@ -295,9 +295,50 @@ export function runGitText(options: RunGitTextOptions) {
   return runGitCommand(options).stdout;
 }
 
+/**
+ * Return whether one `hunk diff` input still compares against the live working tree.
+ *
+ * Plain `hunk diff <ref>` keeps the working tree on one side, so untracked files should still
+ * appear. Explicit revision-set expressions like `a..b`, `a...b`, or `rev^!` expand into positive
+ * and negative revisions and should stay commit-to-commit only.
+ */
+function isWorkingTreeGitDiffInput(
+  input: GitCommandInput,
+  {
+    cwd = process.cwd(),
+    gitExecutable = "git",
+  }: Pick<RunGitTextOptions, "cwd" | "gitExecutable"> = {},
+) {
+  if (input.staged) {
+    return false;
+  }
+
+  if (!input.range) {
+    return true;
+  }
+
+  const revs = runGitText({
+    input,
+    args: ["rev-parse", "--revs-only", input.range],
+    cwd,
+    gitExecutable,
+  })
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const positiveRevs = revs.filter((line) => !line.startsWith("^"));
+  const negativeRevs = revs.filter((line) => line.startsWith("^"));
+
+  return positiveRevs.length === 1 && negativeRevs.length === 0;
+}
+
 /** Return whether working-tree review should synthesize untracked files into the patch stream. */
-function shouldIncludeUntrackedFiles(input: GitCommandInput) {
-  return !input.staged && !input.range && input.options.excludeUntracked !== true;
+function shouldIncludeUntrackedFiles(
+  input: GitCommandInput,
+  options: Pick<RunGitTextOptions, "cwd" | "gitExecutable"> = {},
+) {
+  return input.options.excludeUntracked !== true && isWorkingTreeGitDiffInput(input, options);
 }
 
 /** Parse porcelain status output down to repo-root-relative untracked file paths. */
@@ -348,7 +389,7 @@ export function listGitUntrackedFiles(
     gitExecutable = "git",
   }: Omit<RunGitTextOptions, "input" | "args"> & { repoRoot?: string } = {},
 ) {
-  if (!shouldIncludeUntrackedFiles(input)) {
+  if (!shouldIncludeUntrackedFiles(input, { cwd, gitExecutable })) {
     return [];
   }
 
