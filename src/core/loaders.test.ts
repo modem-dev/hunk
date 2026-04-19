@@ -283,6 +283,83 @@ describe("loadAppBootstrap", () => {
     expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["example.ts"]);
   });
 
+  test("includes untracked files when diff compares the working tree against one ref", async () => {
+    const dir = createTempRepo("hunk-git-ref-untracked-");
+
+    writeFileSync(join(dir, "tracked.ts"), "export const tracked = 1;\n");
+    git(dir, "add", "tracked.ts");
+    git(dir, "commit", "-m", "initial");
+    git(dir, "branch", "main");
+
+    writeFileSync(join(dir, "tracked.ts"), "export const tracked = 2;\n");
+    git(dir, "add", "tracked.ts");
+    git(dir, "commit", "-m", "second");
+
+    writeFileSync(join(dir, "tracked.ts"), "export const tracked = 3;\n");
+    writeFileSync(join(dir, "new-file.ts"), "export const added = true;\n");
+
+    const bootstrap = await loadFromRepo(dir, {
+      kind: "git",
+      range: "main",
+      staged: false,
+      options: { mode: "auto" },
+    });
+
+    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual([
+      "tracked.ts",
+      "new-file.ts",
+    ]);
+  });
+
+  test("excludes untracked files for explicit git ranges that do not include the working tree", async () => {
+    const dir = createTempRepo("hunk-git-range-no-untracked-");
+
+    writeFileSync(join(dir, "tracked.ts"), "export const tracked = 1;\n");
+    git(dir, "add", "tracked.ts");
+    git(dir, "commit", "-m", "initial");
+    git(dir, "branch", "main");
+
+    writeFileSync(join(dir, "tracked.ts"), "export const tracked = 2;\n");
+    git(dir, "add", "tracked.ts");
+    git(dir, "commit", "-m", "second");
+
+    writeFileSync(join(dir, "tracked.ts"), "export const tracked = 3;\n");
+    writeFileSync(join(dir, "new-file.ts"), "export const added = true;\n");
+
+    const bootstrap = await loadFromRepo(dir, {
+      kind: "git",
+      range: "main..HEAD",
+      staged: false,
+      options: { mode: "auto" },
+    });
+
+    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["tracked.ts"]);
+  });
+
+  test("excludes untracked files for revset diffs like HEAD^! that do not include the working tree", async () => {
+    const dir = createTempRepo("hunk-git-revset-no-untracked-");
+
+    writeFileSync(join(dir, "tracked.ts"), "export const tracked = 1;\n");
+    git(dir, "add", "tracked.ts");
+    git(dir, "commit", "-m", "initial");
+
+    writeFileSync(join(dir, "tracked.ts"), "export const tracked = 2;\n");
+    git(dir, "add", "tracked.ts");
+    git(dir, "commit", "-m", "second");
+
+    writeFileSync(join(dir, "tracked.ts"), "export const tracked = 3;\n");
+    writeFileSync(join(dir, "new-file.ts"), "export const added = true;\n");
+
+    const bootstrap = await loadFromRepo(dir, {
+      kind: "git",
+      range: "HEAD^!",
+      staged: false,
+      options: { mode: "auto" },
+    });
+
+    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["tracked.ts"]);
+  });
+
   test("loads untracked files whose names need parser-safe diff headers", async () => {
     const dir = createTempRepo("hunk-git-quoted-untracked-");
 
