@@ -10,10 +10,33 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Fixed
 
+## [0.10.0] - 2026-04-21
+
+### Added
+
+- Added agent comment counts in the sidebar so review-heavy files stand out at a glance.
+- Added `hunk daemon serve` as the standard daemon entrypoint and published reusable session-broker packages plus an OpenTUI diff component for integrators.
+
+### Changed
+
 - Included untracked files when `hunk diff <ref>` still compares against the live working tree, while keeping explicit revset diffs commit-to-commit only.
+
+### Fixed
+
+- Enabled mouse scrolling in pager mode.
 - Balanced Pierre word-level highlights so split-view inline changes stay visible without overpowering the surrounding diff row.
 - Smoothed mouse-wheel review scrolling so small diffs stay precise while sustained wheel gestures still speed up.
 - Fixed Shift+mouse-wheel horizontal scrolling so it no longer leaks a one-line vertical scroll in some terminals.
+
+## [0.9.5] - 2026-04-21
+
+### Added
+
+- Added a Modem sponsor block to the README.
+
+### Changed
+
+### Fixed
 
 ## [0.9.4] - 2026-04-14
 
@@ -231,7 +254,12 @@ All notable user-visible changes to Hunk are documented in this file.
 
 - Stabilized diff repainting, active-hunk scrolling, syntax highlighting, pager stdin patch handling, and terminal cleanup on exit.
 
-[Unreleased]: https://github.com/modem-dev/hunk/compare/v0.9.1...HEAD
+[Unreleased]: https://github.com/modem-dev/hunk/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/modem-dev/hunk/compare/v0.9.5...v0.10.0
+[0.9.5]: https://github.com/modem-dev/hunk/compare/v0.9.4...v0.9.5
+[0.9.4]: https://github.com/modem-dev/hunk/compare/v0.9.3...v0.9.4
+[0.9.3]: https://github.com/modem-dev/hunk/compare/v0.9.2...v0.9.3
+[0.9.2]: https://github.com/modem-dev/hunk/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/modem-dev/hunk/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/modem-dev/hunk/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/modem-dev/hunk/compare/v0.8.0...v0.8.1
