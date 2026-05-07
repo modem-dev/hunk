@@ -59,7 +59,7 @@ Press `?` in Hunk to open the full in-app controls help.
 - `Home` / `End` — jump to top / bottom
 - `[` / `]` — previous / next hunk
 - `{` / `}` — previous / next comment
-- `←` / `→` — scroll code horizontally
+- `←` / `→` — scroll code horizontally (`Shift+←` / `Shift+→` for faster scrolling)
 
 ### View
 
