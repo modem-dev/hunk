@@ -415,11 +415,18 @@ export function DiffPane({
     return next;
   }, [allAgentNotesByFile, selectedFileId, showAgentNotes, visibleViewportFileIds]);
 
+  // Measure with the *full* set of agent notes per file, not just the visible-viewport set.
+  // The visible set is correct for rendering (skip painting cards on off-screen files), but
+  // using it here makes total content height fluctuate with scroll position: as a file with
+  // notes leaves the viewport, its measurement shrinks back to the no-notes baseline, which
+  // shrinks `totalContentHeight`, which tightens `clampReviewScrollTop`'s ceiling, which
+  // snaps the viewport upward by the height of the off-top note rows. Always include notes
+  // in geometry for stable bottom-edge clamping.
   const sectionGeometry = useMemo(
     () =>
       files.map((file, index) => {
-        const visibleNotes = visibleAgentNotesByFile.get(file.id) ?? EMPTY_VISIBLE_AGENT_NOTES;
-        if (visibleNotes.length === 0) {
+        const notes = allAgentNotesByFile.get(file.id) ?? EMPTY_VISIBLE_AGENT_NOTES;
+        if (notes.length === 0) {
           return baseSectionGeometry[index]!;
         }
 
@@ -428,13 +435,14 @@ export function DiffPane({
           layout,
           showHunkHeaders,
           theme,
-          visibleNotes,
+          notes,
           diffContentWidth,
           showLineNumbers,
           wrapLines,
         );
       }),
     [
+      allAgentNotesByFile,
       baseSectionGeometry,
       diffContentWidth,
       files,
@@ -442,7 +450,6 @@ export function DiffPane({
       showHunkHeaders,
       showLineNumbers,
       theme,
-      visibleAgentNotesByFile,
       wrapLines,
     ],
   );
