@@ -121,6 +121,35 @@ describe("startup planning", () => {
     expect(seenInputs).toHaveLength(3);
   });
 
+  test("passes configured custom theme data into app bootstrap", async () => {
+    const cliInput: CliInput = {
+      kind: "patch",
+      file: "-",
+      options: {
+        theme: "custom",
+      },
+    };
+    const customTheme = {
+      base: "midnight",
+      accent: "#123456",
+    };
+
+    await prepareStartupPlan(["bun", "hunk", "patch", "-"], {
+      parseCliImpl: async () => cliInput as ParsedCliInput,
+      resolveRuntimeCliInputImpl: (input) => input,
+      resolveConfiguredCliInputImpl: (input) => ({ input, customTheme }) as never,
+      loadAppBootstrapImpl: async (input, options) => {
+        expect(input).toBe(cliInput);
+        expect(options).toEqual({ customTheme });
+        return {
+          ...createBootstrap(input),
+          customTheme,
+        };
+      },
+      usesPipedPatchInputImpl: () => false,
+    });
+  });
+
   test("rejects watch mode for stdin-backed patch inputs", async () => {
     const cliInput: CliInput = {
       kind: "patch",

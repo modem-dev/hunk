@@ -110,7 +110,7 @@ You can persist preferences to a config file:
 Example:
 
 ```toml
-theme = "graphite"   # graphite, midnight, paper, ember
+theme = "graphite"   # graphite, midnight, paper, ember, custom
 mode = "auto"        # auto, split, stack
 exclude_untracked = false
 line_numbers = true
@@ -119,6 +119,26 @@ agent_notes = false
 ```
 
 `exclude_untracked` affects working-tree `hunk diff` sessions only.
+
+Custom themes can inherit from any built-in base theme and override only the colors you care about:
+
+```toml
+theme = "custom"
+
+[custom_theme]
+base = "graphite"    # graphite, midnight, paper, ember
+label = "My Theme"
+accent = "#7fd1ff"
+panel = "#10161d"
+noteBorder = "#c49bff"
+
+[custom_theme.syntax]
+keyword = "#8ed4ff"
+string = "#c7b4ff"
+comment = "#6e85a7"
+```
+
+All custom theme colors must use `#rrggbb` hex values.
 
 ### Git integration
 

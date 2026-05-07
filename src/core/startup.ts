@@ -117,7 +117,7 @@ export async function prepareStartupPlan(
     );
   }
 
-  const bootstrap = await loadAppBootstrapImpl(cliInput);
+  const bootstrap = await loadAppBootstrapImpl(cliInput, { customTheme: configured.customTheme });
   const controllingTerminal = usesPipedPatchInputImpl(cliInput)
     ? openControllingTerminalImpl()
     : null;

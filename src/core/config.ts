@@ -1,7 +1,61 @@
 import fs from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { resolveGlobalConfigPath } from "./paths";
-import type { CliInput, CommonOptions, LayoutMode, PersistedViewPreferences } from "./types";
+import type {
+  CliInput,
+  CommonOptions,
+  CustomSyntaxColorsConfig,
+  CustomThemeConfig,
+  LayoutMode,
+  PersistedViewPreferences,
+} from "./types";
+
+const BUILT_IN_THEME_IDS = ["graphite", "midnight", "paper", "ember"] as const;
+const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
+const CUSTOM_THEME_COLOR_KEYS = [
+  "background",
+  "panel",
+  "panelAlt",
+  "border",
+  "accent",
+  "accentMuted",
+  "text",
+  "muted",
+  "addedBg",
+  "removedBg",
+  "contextBg",
+  "addedContentBg",
+  "removedContentBg",
+  "contextContentBg",
+  "addedSignColor",
+  "removedSignColor",
+  "lineNumberBg",
+  "lineNumberFg",
+  "selectedHunk",
+  "badgeAdded",
+  "badgeRemoved",
+  "badgeNeutral",
+  "fileNew",
+  "fileDeleted",
+  "fileRenamed",
+  "fileModified",
+  "fileUntracked",
+  "noteBorder",
+  "noteBackground",
+  "noteTitleBackground",
+  "noteTitleText",
+] as const;
+const CUSTOM_SYNTAX_COLOR_KEYS = [
+  "default",
+  "keyword",
+  "string",
+  "comment",
+  "number",
+  "function",
+  "property",
+  "type",
+  "punctuation",
+] as const;
 
 const DEFAULT_VIEW_PREFERENCES: PersistedViewPreferences = {
   mode: "auto",
@@ -18,6 +72,7 @@ interface ConfigResolutionOptions {
 
 interface HunkConfigResolution {
   input: CliInput;
+  customTheme?: CustomThemeConfig;
   globalConfigPath?: string;
   repoConfigPath?: string;
 }
@@ -39,6 +94,115 @@ function normalizeBoolean(value: unknown) {
 /** Accept only plain strings from config files. */
 function normalizeString(value: unknown) {
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+/** Accept only #rrggbb theme colors and report the failing TOML key path. */
+function normalizeThemeColor(value: unknown, keyPath: string) {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value !== "string" || !HEX_COLOR_PATTERN.test(value)) {
+    throw new Error(`Expected ${keyPath} to be a hex color like #112233.`);
+  }
+
+  return value.toLowerCase();
+}
+
+/** Accept only built-in base theme ids for config-defined custom themes. */
+function normalizeCustomThemeBase(value: unknown) {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (
+    typeof value !== "string" ||
+    !BUILT_IN_THEME_IDS.includes(value as (typeof BUILT_IN_THEME_IDS)[number])
+  ) {
+    throw new Error(`Expected custom_theme.base to be one of: ${BUILT_IN_THEME_IDS.join(", ")}.`);
+  }
+
+  return value;
+}
+
+/** Read the nested syntax color overrides from a [custom_theme.syntax] TOML table. */
+function readCustomSyntaxColors(
+  source: Record<string, unknown>,
+): CustomSyntaxColorsConfig | undefined {
+  const syntax: CustomSyntaxColorsConfig = {};
+
+  for (const key of CUSTOM_SYNTAX_COLOR_KEYS) {
+    const value = normalizeThemeColor(source[key], `custom_theme.syntax.${key}`);
+    if (value !== undefined) {
+      syntax[key] = value;
+    }
+  }
+
+  return Object.keys(syntax).length > 0 ? syntax : undefined;
+}
+
+/** Read the optional config-defined custom theme palette from one TOML object level. */
+function readCustomTheme(source: Record<string, unknown>): CustomThemeConfig | undefined {
+  const customThemeSource = source.custom_theme;
+  if (!isRecord(customThemeSource)) {
+    return undefined;
+  }
+
+  const syntaxSource = customThemeSource.syntax;
+  if (syntaxSource !== undefined && !isRecord(syntaxSource)) {
+    throw new Error("Expected custom_theme.syntax to contain a TOML table.");
+  }
+
+  const customTheme: CustomThemeConfig = {
+    base: normalizeCustomThemeBase(customThemeSource.base),
+  };
+  const label = normalizeString(customThemeSource.label);
+  if (label !== undefined) {
+    customTheme.label = label;
+  }
+
+  for (const key of CUSTOM_THEME_COLOR_KEYS) {
+    const value = normalizeThemeColor(customThemeSource[key], `custom_theme.${key}`);
+    if (value !== undefined) {
+      customTheme[key] = value;
+    }
+  }
+
+  if (isRecord(syntaxSource)) {
+    const syntax = readCustomSyntaxColors(syntaxSource);
+    if (syntax) {
+      customTheme.syntax = syntax;
+    }
+  }
+
+  return customTheme;
+}
+
+/** Merge partial custom theme layers while keeping nested syntax overrides field-based. */
+function mergeCustomTheme(
+  base: CustomThemeConfig | undefined,
+  overrides: CustomThemeConfig | undefined,
+): CustomThemeConfig | undefined {
+  if (!base) {
+    return overrides;
+  }
+  if (!overrides) {
+    return base;
+  }
+
+  return {
+    ...base,
+    ...overrides,
+    base: overrides.base ?? base.base ?? "graphite",
+    label: overrides.label ?? base.label,
+    syntax:
+      base.syntax || overrides.syntax
+        ? {
+            ...base.syntax,
+            ...overrides.syntax,
+          }
+        : undefined,
+  };
 }
 
 /** Read the view preferences stored at one TOML object level. */
@@ -128,6 +292,7 @@ export function resolveConfiguredCliInput(
   const repoRoot = findRepoRoot(cwd);
   const repoConfigPath = repoRoot ? join(repoRoot, ".hunk", "config.toml") : undefined;
   const userConfigPath = resolveGlobalConfigPath(env);
+  let resolvedCustomTheme: CustomThemeConfig | undefined;
 
   let resolvedOptions: CommonOptions = {
     mode: DEFAULT_VIEW_PREFERENCES.mode,
@@ -145,17 +310,15 @@ export function resolveConfiguredCliInput(
   };
 
   if (userConfigPath) {
-    resolvedOptions = mergeOptions(
-      resolvedOptions,
-      resolveConfigLayer(readTomlRecord(userConfigPath), input),
-    );
+    const userConfig = readTomlRecord(userConfigPath);
+    resolvedOptions = mergeOptions(resolvedOptions, resolveConfigLayer(userConfig, input));
+    resolvedCustomTheme = mergeCustomTheme(resolvedCustomTheme, readCustomTheme(userConfig));
   }
 
   if (repoConfigPath) {
-    resolvedOptions = mergeOptions(
-      resolvedOptions,
-      resolveConfigLayer(readTomlRecord(repoConfigPath), input),
-    );
+    const repoConfig = readTomlRecord(repoConfigPath);
+    resolvedOptions = mergeOptions(resolvedOptions, resolveConfigLayer(repoConfig, input));
+    resolvedCustomTheme = mergeCustomTheme(resolvedCustomTheme, readCustomTheme(repoConfig));
   }
 
   resolvedOptions = mergeOptions(resolvedOptions, input.options);
@@ -177,6 +340,7 @@ export function resolveConfiguredCliInput(
       ...input,
       options: resolvedOptions,
     },
+    customTheme: resolvedCustomTheme,
     globalConfigPath: userConfigPath,
     repoConfigPath,
   };

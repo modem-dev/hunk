@@ -26,7 +26,7 @@ import { buildAppMenus } from "./lib/appMenus";
 import { fileRowId } from "./lib/ids";
 import { resolveResponsiveLayout } from "./lib/responsive";
 import { resizeSidebarWidth } from "./lib/sidebar";
-import { resolveTheme, THEMES } from "./themes";
+import { availableThemes, resolveTheme } from "./themes";
 
 type FocusArea = "files" | "filter";
 
@@ -102,7 +102,7 @@ export function App({
   const [layoutToggleRequestId, setLayoutToggleRequestId] = useState(0);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(bootstrap.initialMode);
   const [themeId, setThemeId] = useState(
-    () => resolveTheme(bootstrap.initialTheme, renderer.themeMode).id,
+    () => resolveTheme(bootstrap.initialTheme, renderer.themeMode, bootstrap.customTheme).id,
   );
   const [showAgentNotes, setShowAgentNotes] = useState(bootstrap.initialShowAgentNotes ?? false);
   const [showLineNumbers, setShowLineNumbers] = useState(bootstrap.initialShowLineNumbers ?? true);
@@ -118,7 +118,11 @@ export function App({
   const [resizeStartWidth, setResizeStartWidth] = useState<number | null>(null);
 
   const pagerMode = Boolean(bootstrap.input.options.pager);
-  const activeTheme = resolveTheme(themeId, renderer.themeMode);
+  const themeOptions = useMemo(
+    () => availableThemes(bootstrap.customTheme),
+    [bootstrap.customTheme],
+  );
+  const activeTheme = resolveTheme(themeId, renderer.themeMode, bootstrap.customTheme);
   const review = useReviewController({ files: bootstrap.changeset.files });
   const filteredFiles = review.visibleFiles;
   const selectedFile = review.selectedFile;
@@ -463,15 +467,16 @@ export function App({
 
   /** Cycle through the available built-in themes. */
   const cycleTheme = useCallback(() => {
-    const currentIndex = THEMES.findIndex((theme) => theme.id === activeTheme.id);
-    const nextIndex = (currentIndex + 1) % THEMES.length;
-    setThemeId(THEMES[nextIndex]!.id);
-  }, [activeTheme.id]);
+    const currentIndex = themeOptions.findIndex((theme) => theme.id === activeTheme.id);
+    const nextIndex = (currentIndex + 1) % themeOptions.length;
+    setThemeId(themeOptions[nextIndex]!.id);
+  }, [activeTheme.id, themeOptions]);
 
   const menus = useMemo(
     () =>
       buildAppMenus({
         activeThemeId: activeTheme.id,
+        availableThemes: themeOptions,
         canRefreshCurrentInput,
         focusFilter,
         layoutMode,
@@ -498,6 +503,7 @@ export function App({
       }),
     [
       activeTheme.id,
+      themeOptions,
       canRefreshCurrentInput,
       focusFilter,
       layoutMode,

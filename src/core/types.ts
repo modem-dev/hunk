@@ -65,6 +65,55 @@ export interface CommonOptions {
   agentNotes?: boolean;
 }
 
+export interface CustomSyntaxColorsConfig {
+  default?: string;
+  keyword?: string;
+  string?: string;
+  comment?: string;
+  number?: string;
+  function?: string;
+  property?: string;
+  type?: string;
+  punctuation?: string;
+}
+
+export interface CustomThemeConfig {
+  base?: string;
+  label?: string;
+  background?: string;
+  panel?: string;
+  panelAlt?: string;
+  border?: string;
+  accent?: string;
+  accentMuted?: string;
+  text?: string;
+  muted?: string;
+  addedBg?: string;
+  removedBg?: string;
+  contextBg?: string;
+  addedContentBg?: string;
+  removedContentBg?: string;
+  contextContentBg?: string;
+  addedSignColor?: string;
+  removedSignColor?: string;
+  lineNumberBg?: string;
+  lineNumberFg?: string;
+  selectedHunk?: string;
+  badgeAdded?: string;
+  badgeRemoved?: string;
+  badgeNeutral?: string;
+  fileNew?: string;
+  fileDeleted?: string;
+  fileRenamed?: string;
+  fileModified?: string;
+  fileUntracked?: string;
+  noteBorder?: string;
+  noteBackground?: string;
+  noteTitleBackground?: string;
+  noteTitleText?: string;
+  syntax?: CustomSyntaxColorsConfig;
+}
+
 export interface PersistedViewPreferences {
   mode: LayoutMode;
   theme?: string;
@@ -271,6 +320,7 @@ export interface AppBootstrap {
   changeset: Changeset;
   initialMode: LayoutMode;
   initialTheme?: string;
+  customTheme?: CustomThemeConfig;
   initialShowLineNumbers?: boolean;
   initialWrapLines?: boolean;
   initialShowHunkHeaders?: boolean;

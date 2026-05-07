@@ -38,11 +38,12 @@ export function AppHost({
       // `sourcePath` matters for daemon-driven reloads that ask Hunk to reopen content from a
       // different working directory than the process originally started in.
       const runtimeInput = resolveRuntimeCliInput(nextInput);
-      const configuredInput = resolveConfiguredCliInput(runtimeInput, {
+      const configured = resolveConfiguredCliInput(runtimeInput, {
         cwd: options?.sourcePath,
-      }).input;
-      const nextBootstrap = await loadAppBootstrap(configuredInput, {
+      });
+      const nextBootstrap = await loadAppBootstrap(configured.input, {
         cwd: options?.sourcePath,
+        customTheme: configured.customTheme,
       });
       const nextSnapshot = createInitialSessionSnapshot(nextBootstrap);
 
