@@ -75,6 +75,7 @@ function isInvalidRevsetMessage(stderr: string) {
     "Failed to parse revset",
     "Revision not found",
     "No such revision",
+    "doesn't exist",
     "Revset expression resolved to no revisions",
   ].some((fragment) => stderr.includes(fragment));
 }
