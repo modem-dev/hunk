@@ -8,9 +8,10 @@ import {
   resolveGitRepoRoot,
   runGitText,
 } from "./git";
+import { buildJjDiffArgs, buildJjShowArgs, runJjText } from "./jj";
 import type { CliInput } from "./types";
 
-/** Return whether the current input can be rebuilt from files or Git state without rereading stdin. */
+/** Return whether the current input can be rebuilt from files or VCS state without rereading stdin. */
 export function canReloadInput(input: CliInput) {
   if (input.options.agentContext === "-") {
     return false;
@@ -52,13 +53,27 @@ function gitPatchSignature(input: Extract<CliInput, { kind: "git" | "show" | "st
   }
 }
 
+/** Build one exact patch signature for Jujutsu-backed review inputs. */
+function jjPatchSignature(input: Extract<CliInput, { kind: "git" | "show" }>) {
+  switch (input.kind) {
+    case "git":
+      return runJjText({ input, args: buildJjDiffArgs(input) });
+    case "show":
+      return runJjText({ input, args: buildJjShowArgs(input) });
+  }
+}
+
 /** Compute a change-detection signature for one watchable input. */
 export function computeWatchSignature(input: CliInput) {
   const parts: string[] = [input.kind];
 
   switch (input.kind) {
     case "git":
+      parts.push(input.options.vcs === "jj" ? jjPatchSignature(input) : gitPatchSignature(input));
+      break;
     case "show":
+      parts.push(input.options.vcs === "jj" ? jjPatchSignature(input) : gitPatchSignature(input));
+      break;
     case "stash-show":
       parts.push(gitPatchSignature(input));
       break;

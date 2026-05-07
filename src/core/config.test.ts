@@ -157,6 +157,33 @@ describe("config resolution", () => {
     expect(fallbackResolved.input.options.excludeUntracked).toBe(false);
   });
 
+  test("defaults to git VCS mode and accepts jj from config", () => {
+    const home = createTempDir("hunk-config-home-");
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(join(home, ".config", "hunk", "config.toml"), 'vcs = "jj"\n');
+
+    const cwd = createTempDir("hunk-config-cwd-");
+    const defaultResolved = resolveConfiguredCliInput(
+      {
+        kind: "git",
+        staged: false,
+        options: {},
+      },
+      { cwd, env: { HOME: createTempDir("hunk-config-empty-home-") } },
+    );
+    const configuredResolved = resolveConfiguredCliInput(
+      {
+        kind: "git",
+        staged: false,
+        options: {},
+      },
+      { cwd, env: { HOME: home } },
+    );
+
+    expect(defaultResolved.input.options.vcs).toBe("git");
+    expect(configuredResolved.input.options.vcs).toBe("jj");
+  });
+
   test("loadAppBootstrap exposes resolved initial preferences to the UI", async () => {
     const home = createTempDir("hunk-config-home-");
     const repo = createTempDir("hunk-config-repo-");

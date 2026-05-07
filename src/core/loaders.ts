@@ -19,6 +19,13 @@ import {
   runGitText,
   runGitUntrackedFileDiffText,
 } from "./git";
+import {
+  buildJjDiffArgs,
+  buildJjShowArgs,
+  createJjStagedError,
+  resolveJjRepoRoot,
+  runJjText,
+} from "./jj";
 import type {
   AppBootstrap,
   AgentContext,
@@ -490,6 +497,28 @@ async function loadGitChangeset(
   } satisfies Changeset;
 }
 
+/** Build a changeset from the current Jujutsu working-copy commit or a revset. */
+async function loadJjDiffChangeset(
+  input: GitCommandInput,
+  agentContext: AgentContext | null,
+  cwd = process.cwd(),
+) {
+  if (input.staged) {
+    throw createJjStagedError(input);
+  }
+
+  const repoRoot = resolveJjRepoRoot(input, { cwd });
+  const repoName = basename(repoRoot);
+  const title = input.range ? `${repoName} ${input.range}` : `${repoName} working copy`;
+
+  return normalizePatchChangeset(
+    runJjText({ input, args: buildJjDiffArgs(input), cwd }),
+    title,
+    repoRoot,
+    agentContext,
+  );
+}
+
 /** Build a changeset from `git show`, suppressing commit-message chrome so only the patch feeds the UI. */
 async function loadShowChangeset(
   input: ShowCommandInput,
@@ -502,6 +531,24 @@ async function loadShowChangeset(
   return normalizePatchChangeset(
     runGitText({ input, args: buildGitShowArgs(input), cwd }),
     input.ref ? `${repoName} show ${input.ref}` : `${repoName} show HEAD`,
+    repoRoot,
+    agentContext,
+  );
+}
+
+/** Build a changeset from one Jujutsu revset using Git-format patch output. */
+async function loadJjShowChangeset(
+  input: ShowCommandInput,
+  agentContext: AgentContext | null,
+  cwd = process.cwd(),
+) {
+  const repoRoot = resolveJjRepoRoot(input, { cwd });
+  const repoName = basename(repoRoot);
+  const revset = input.ref ?? "@";
+
+  return normalizePatchChangeset(
+    runJjText({ input, args: buildJjShowArgs(input), cwd }),
+    `${repoName} show ${revset}`,
     repoRoot,
     agentContext,
   );
@@ -556,10 +603,16 @@ export async function loadAppBootstrap(
 
   switch (input.kind) {
     case "git":
-      changeset = await loadGitChangeset(input, agentContext, cwd);
+      changeset =
+        input.options.vcs === "jj"
+          ? await loadJjDiffChangeset(input, agentContext, cwd)
+          : await loadGitChangeset(input, agentContext, cwd);
       break;
     case "show":
-      changeset = await loadShowChangeset(input, agentContext, cwd);
+      changeset =
+        input.options.vcs === "jj"
+          ? await loadJjShowChangeset(input, agentContext, cwd)
+          : await loadShowChangeset(input, agentContext, cwd);
       break;
     case "stash-show":
       changeset = await loadStashShowChangeset(input, agentContext, cwd);

@@ -1,6 +1,7 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
 
 export type LayoutMode = "auto" | "split" | "stack";
+export type VcsMode = "git" | "jj";
 
 export interface AgentAnnotation {
   id?: string;
@@ -54,6 +55,7 @@ export interface Changeset {
 
 export interface CommonOptions {
   mode?: LayoutMode;
+  vcs?: VcsMode;
   theme?: string;
   agentContext?: string;
   pager?: boolean;

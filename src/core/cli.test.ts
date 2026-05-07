@@ -168,6 +168,16 @@ describe("parseCli", () => {
     });
   });
 
+  test("parses target followed by pathspecs without a separator", async () => {
+    const parsed = await parseCli(["bun", "hunk", "diff", "trunk()..@", ".github"]);
+
+    expect(parsed).toMatchObject({
+      kind: "git",
+      range: "trunk()..@",
+      pathspecs: [".github"],
+    });
+  });
+
   test("parses show mode with optional ref and pathspecs", async () => {
     const parsed = await parseCli(["bun", "hunk", "show", "HEAD~1", "--", "src/app.ts"]);
 
