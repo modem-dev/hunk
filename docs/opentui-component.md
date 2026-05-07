@@ -99,19 +99,19 @@ if (!metadata) {
 
 ## Props
 
-| Prop                | Type                                             | Default      | Notes                                                                     |
-| ------------------- | ------------------------------------------------ | ------------ | ------------------------------------------------------------------------- |
-| `diff`              | `HunkDiffFile`                                   | `undefined`  | File to render. When omitted, the component shows an empty-state message. |
-| `layout`            | `"split" \| "stack"`                             | `"split"`    | Chooses side-by-side or stacked rendering.                                |
-| `width`             | `number`                                         | —            | Required content width in terminal columns.                               |
-| `theme`             | `"graphite" \| "midnight" \| "paper" \| "ember"` | `"graphite"` | Matches Hunk's built-in themes.                                           |
-| `showLineNumbers`   | `boolean`                                        | `true`       | Toggles line-number columns.                                              |
-| `showHunkHeaders`   | `boolean`                                        | `true`       | Toggles `@@ ... @@` hunk header rows.                                     |
-| `wrapLines`         | `boolean`                                        | `false`      | Wraps long lines instead of clipping horizontally.                        |
-| `horizontalOffset`  | `number`                                         | `0`          | Scroll offset for non-wrapped code rows.                                  |
-| `highlight`         | `boolean`                                        | `true`       | Enables syntax highlighting.                                              |
-| `scrollable`        | `boolean`                                        | `true`       | Set to `false` if your parent view owns scrolling.                        |
-| `selectedHunkIndex` | `number`                                         | `0`          | Highlights one hunk as the active target.                                 |
+| Prop                | Type                                                       | Default      | Notes                                                                     |
+| ------------------- | ---------------------------------------------------------- | ------------ | ------------------------------------------------------------------------- |
+| `diff`              | `HunkDiffFile`                                             | `undefined`  | File to render. When omitted, the component shows an empty-state message. |
+| `layout`            | `"split" \| "stack"`                                       | `"split"`    | Chooses side-by-side or stacked rendering.                                |
+| `width`             | `number`                                                   | —            | Required content width in terminal columns.                               |
+| `theme`             | `"auto" \| "graphite" \| "midnight" \| "paper" \| "ember"` | `"graphite"` | Matches Hunk's built-in themes.                                           |
+| `showLineNumbers`   | `boolean`                                                  | `true`       | Toggles line-number columns.                                              |
+| `showHunkHeaders`   | `boolean`                                                  | `true`       | Toggles `@@ ... @@` hunk header rows.                                     |
+| `wrapLines`         | `boolean`                                                  | `false`      | Wraps long lines instead of clipping horizontally.                        |
+| `horizontalOffset`  | `number`                                                   | `0`          | Scroll offset for non-wrapped code rows.                                  |
+| `highlight`         | `boolean`                                                  | `true`       | Enables syntax highlighting.                                              |
+| `scrollable`        | `boolean`                                                  | `true`       | Set to `false` if your parent view owns scrolling.                        |
+| `selectedHunkIndex` | `number`                                                   | `0`          | Highlights one hunk as the active target.                                 |
 
 ## Other exports
 

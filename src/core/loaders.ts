@@ -32,6 +32,7 @@ import type {
   ShowCommandInput,
   StashShowCommandInput,
 } from "./types";
+import { detectSystemThemeMode, usesPipedPatchInput } from "./terminal";
 
 interface LoadAppBootstrapOptions {
   cwd?: string;
@@ -585,6 +586,9 @@ export async function loadAppBootstrap(
     changeset,
     initialMode: input.options.mode ?? "auto",
     initialTheme: input.options.theme,
+    initialThemeLight: input.options.themeLight,
+    initialThemeDark: input.options.themeDark,
+    initialThemeMode: usesPipedPatchInput(input) ? detectSystemThemeMode() : undefined,
     initialShowLineNumbers: input.options.lineNumbers ?? true,
     initialWrapLines: input.options.wrapLines ?? false,
     initialShowHunkHeaders: input.options.hunkHeaders ?? true,

@@ -110,7 +110,9 @@ You can persist preferences to a config file:
 Example:
 
 ```toml
-theme = "graphite"   # graphite, midnight, paper, ember
+theme = "graphite"   # graphite, midnight, paper, ember, auto (based on system pref.)
+theme_light = "paper" # default light theme for auto theme
+theme_dark = "graphite" # default dark theme for auto theme
 mode = "auto"        # auto, split, stack
 exclude_untracked = false
 line_numbers = true

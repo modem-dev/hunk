@@ -5,6 +5,8 @@ import type { CliInput, CommonOptions, LayoutMode, PersistedViewPreferences } fr
 
 const DEFAULT_VIEW_PREFERENCES: PersistedViewPreferences = {
   mode: "auto",
+  themeLight: "paper",
+  themeDark: "graphite",
   showLineNumbers: true,
   wrapLines: false,
   showHunkHeaders: true,
@@ -46,6 +48,8 @@ function readConfigPreferences(source: Record<string, unknown>): CommonOptions {
   return {
     mode: normalizeLayoutMode(source.mode),
     theme: normalizeString(source.theme),
+    themeLight: normalizeString(source.theme_light),
+    themeDark: normalizeString(source.theme_dark),
     excludeUntracked: normalizeBoolean(source.exclude_untracked),
     lineNumbers: normalizeBoolean(source.line_numbers),
     wrapLines: normalizeBoolean(source.wrap_lines),
@@ -60,6 +64,8 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
     ...base,
     mode: overrides.mode ?? base.mode,
     theme: overrides.theme ?? base.theme,
+    themeLight: overrides.themeLight ?? base.themeLight,
+    themeDark: overrides.themeDark ?? base.themeDark,
     agentContext: overrides.agentContext ?? base.agentContext,
     pager: overrides.pager ?? base.pager,
     watch: overrides.watch ?? base.watch,
@@ -134,6 +140,8 @@ export function resolveConfiguredCliInput(
     // Keep the built-in theme default explicit so stdin-backed startup paths do not depend on
     // renderer theme-mode detection for their initial palette.
     theme: "graphite",
+    themeLight: DEFAULT_VIEW_PREFERENCES.themeLight,
+    themeDark: DEFAULT_VIEW_PREFERENCES.themeDark,
     agentContext: input.options.agentContext,
     pager: input.options.pager ?? false,
     watch: input.options.watch ?? false,
@@ -166,6 +174,8 @@ export function resolveConfiguredCliInput(
     watch: input.options.watch ?? false,
     excludeUntracked: resolvedOptions.excludeUntracked ?? false,
     mode: resolvedOptions.mode ?? DEFAULT_VIEW_PREFERENCES.mode,
+    themeLight: resolvedOptions.themeLight ?? DEFAULT_VIEW_PREFERENCES.themeLight,
+    themeDark: resolvedOptions.themeDark ?? DEFAULT_VIEW_PREFERENCES.themeDark,
     lineNumbers: resolvedOptions.lineNumbers ?? DEFAULT_VIEW_PREFERENCES.showLineNumbers,
     wrapLines: resolvedOptions.wrapLines ?? DEFAULT_VIEW_PREFERENCES.wrapLines,
     hunkHeaders: resolvedOptions.hunkHeaders ?? DEFAULT_VIEW_PREFERENCES.showHunkHeaders,

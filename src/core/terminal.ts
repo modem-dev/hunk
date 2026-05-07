@@ -39,6 +39,26 @@ export function shouldUseMouseForApp({
   return stdinIsTTY || hasControllingTerminal;
 }
 
+/** Detect the system theme mode as a fallback when terminal-based detection is unavailable. */
+export function detectSystemThemeMode(
+  deps: { spawnSync: typeof Bun.spawnSync } = { spawnSync: Bun.spawnSync },
+): "light" | "dark" | undefined {
+  if (process.platform !== "darwin") {
+    return undefined;
+  }
+
+  try {
+    // defaults read -g AppleInterfaceStyle returns "Dark" in dark mode.
+    // It exits with code 1 if the key doesn't exist (which means light mode).
+    const proc = deps.spawnSync(["defaults", "read", "-g", "AppleInterfaceStyle"]);
+    const output = proc.stdout.toString().trim();
+    return output === "Dark" ? "dark" : "light";
+  } catch {
+    // On macOS, if the key is missing, it's light mode.
+    return "light";
+  }
+}
+
 export interface ControllingTerminal {
   stdin: tty.ReadStream;
   close: () => void;

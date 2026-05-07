@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { CliInput } from "./types";
 import {
+  detectSystemThemeMode,
   openControllingTerminal,
   resolveRuntimeCliInput,
   shouldUseMouseForApp,
@@ -112,5 +113,47 @@ describe("controlling terminal attachment", () => {
     });
 
     expect(controllingTerminal).toBeNull();
+  });
+});
+
+describe("system theme detection", () => {
+  const isDarwin = process.platform === "darwin";
+
+  test("detects dark mode on macOS", () => {
+    if (!isDarwin) return;
+
+    const spawnSync = ((args: string[]) => {
+      expect(args).toEqual(["defaults", "read", "-g", "AppleInterfaceStyle"]);
+      return { stdout: Buffer.from("Dark\n") };
+    }) as typeof Bun.spawnSync;
+
+    expect(detectSystemThemeMode({ spawnSync })).toBe("dark");
+  });
+
+  test("detects light mode on macOS", () => {
+    if (!isDarwin) return;
+
+    const spawnSync = ((args: string[]) => {
+      expect(args).toEqual(["defaults", "read", "-g", "AppleInterfaceStyle"]);
+      return { stdout: Buffer.from("\n") };
+    }) as typeof Bun.spawnSync;
+
+    expect(detectSystemThemeMode({ spawnSync })).toBe("light");
+  });
+
+  test("falls back to light mode on macOS when the command fails", () => {
+    if (!isDarwin) return;
+
+    const spawnSync = (() => {
+      throw new Error("Command failed");
+    }) as typeof Bun.spawnSync;
+
+    expect(detectSystemThemeMode({ spawnSync })).toBe("light");
+  });
+
+  test("returns undefined on non-macOS platforms", () => {
+    if (isDarwin) return;
+
+    expect(detectSystemThemeMode()).toBeUndefined();
   });
 });

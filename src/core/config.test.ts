@@ -99,6 +99,23 @@ describe("config resolution", () => {
     expect(resolved.input.options.theme).toBe("graphite");
   });
 
+  test("resolves custom light and dark theme preferences", () => {
+    const home = createTempDir("hunk-config-home-");
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(
+      join(home, ".config", "hunk", "config.toml"),
+      ['theme_light = "ember"', 'theme_dark = "midnight"'].join("\n"),
+    );
+
+    const resolved = resolveConfiguredCliInput(createPatchPagerInput(), {
+      cwd: createTempDir("hunk-config-cwd-"),
+      env: { HOME: home },
+    });
+
+    expect(resolved.input.options.themeLight).toBe("ember");
+    expect(resolved.input.options.themeDark).toBe("midnight");
+  });
+
   test("command-specific config sections also apply to show mode", () => {
     const home = createTempDir("hunk-config-home-");
     mkdirSync(join(home, ".config", "hunk"), { recursive: true });
