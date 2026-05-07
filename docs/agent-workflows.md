@@ -34,6 +34,8 @@ curl -s -X POST http://127.0.0.1:47657/session-api \
   --data '{"action":"list"}'
 ```
 
+> **Note:** the default port is `47657`. If you have set `HUNK_MCP_PORT`, substitute that value in the URL above.
+
 If that direct API call shows sessions, rerun the same `hunk session ...` command with the
 agent's local-network or sandbox-escalation mechanism instead of restarting Hunk.
 
