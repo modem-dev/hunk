@@ -69,7 +69,8 @@
     "bench:bootstrap-load": "bun run benchmarks/bootstrap-load.ts",
     "bench:highlight-prefetch": "bun run benchmarks/highlight-prefetch.ts",
     "bench:large-stream": "bun run benchmarks/large-stream.ts",
-    "bench:large-stream-profile": "bun run benchmarks/large-stream-profile.ts"
+    "bench:large-stream-profile": "bun run benchmarks/large-stream-profile.ts",
+    "nix:update-hash": "bash ./scripts/update-nix-hash.sh"
   },
   "dependencies": {
     "@pierre/diffs": "^1.1.19",
