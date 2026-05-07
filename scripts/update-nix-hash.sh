@@ -6,7 +6,7 @@ echo "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" >.nix/nix-deps-hash.t
 
 echo "Running Nix build to calculate new hash (this will intentionally fail)..."
 OUTPUT=$(nix build 2>&1 || true)
-NEW_HASH=$(echo "$OUTPUT" | grep -oP 'got:\s+\Ksha256-[a-zA-Z0-9+/=]+')
+NEW_HASH=$(echo "$OUTPUT" | grep -oE 'got:[[:space:]]+sha256-[a-zA-Z0-9+/=]+' | sed 's/got:[[:space:]]*//')
 
 if [ -n "$NEW_HASH" ]; then
   echo "$NEW_HASH" >.nix/nix-deps-hash.txt
