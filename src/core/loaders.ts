@@ -243,6 +243,11 @@ function buildDiffFile(
  * git-backed paths force `diff.noprefix=false` when they invoke git internally; this helper
  * covers the patch path (`hunk patch`, `hunk pager`) where the input was produced by an
  * outer `git` process we do not control.
+ *
+ * The rewrite is scoped to header lines only: once the `+++ ` line has been emitted for a
+ * block we clear the flag so a deleted line whose content starts with `-- ` (e.g. a removed
+ * SQL/Lua/Haskell comment, which becomes `--- foo` on disk) is not mistaken for a file
+ * header inside the hunk body.
  */
 function normalizeGitPatchPrefixes(patchText: string) {
   if (!patchText.includes("diff --git ")) {
@@ -265,6 +270,7 @@ function normalizeGitPatchPrefixes(patchText: string) {
       }
 
       if (blockNeedsPrefix && line.startsWith("+++ ")) {
+        blockNeedsPrefix = false;
         return rewriteUnifiedFileLine(line, "+++ ", "b/");
       }
 

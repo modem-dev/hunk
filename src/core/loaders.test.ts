@@ -1037,6 +1037,38 @@ describe("loadAppBootstrap", () => {
     });
   });
 
+  test("does not mangle a deleted SQL `-- comment` line in a noprefix patch", async () => {
+    // The original source line `-- drop table users;` (a SQL comment) is encoded in a unified
+    // diff deletion as `--- drop table users;` — three dashes (one for the deletion marker,
+    // two from the comment) and a space. That looks identical to a `--- a/path` file header
+    // on its own, so the noprefix prefix-restorer must stop rewriting `--- ` lines once the
+    // `+++ ` line of the current block has been emitted.
+    const bootstrap = await loadAppBootstrap({
+      kind: "patch",
+      text: [
+        "diff --git db/schema.sql db/schema.sql",
+        "index 0000000..1111111 100644",
+        "--- db/schema.sql",
+        "+++ db/schema.sql",
+        "@@ -1,3 +1,2 @@",
+        " CREATE TABLE users (id INT);",
+        "--- drop table users;",
+        " CREATE TABLE posts (id INT);",
+      ].join("\n"),
+      options: { mode: "auto" },
+    });
+
+    expect(bootstrap.changeset.files).toHaveLength(1);
+    const file = bootstrap.changeset.files[0]!;
+    expect(file.path).toBe("db/schema.sql");
+    expect(file.stats.deletions).toBe(1);
+    // The deleted content must round-trip as `-- drop table users;` (the original SQL line),
+    // not as `-- a/drop table users;` (the corruption produced when the rewriter is still
+    // active inside the hunk body).
+    expect(file.metadata.deletionLines).toContain("-- drop table users;\n");
+    expect(file.metadata.deletionLines.some((line) => line.includes("a/"))).toBe(false);
+  });
+
   test("leaves correctly prefixed patches untouched even when paths sit inside an `a/` directory", async () => {
     const bootstrap = await loadAppBootstrap({
       kind: "patch",
