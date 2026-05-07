@@ -55,6 +55,8 @@ export interface Changeset {
 export interface CommonOptions {
   mode?: LayoutMode;
   theme?: string;
+  themeLight?: string;
+  themeDark?: string;
   agentContext?: string;
   pager?: boolean;
   watch?: boolean;
@@ -68,6 +70,8 @@ export interface CommonOptions {
 export interface PersistedViewPreferences {
   mode: LayoutMode;
   theme?: string;
+  themeLight?: string;
+  themeDark?: string;
   showLineNumbers: boolean;
   wrapLines: boolean;
   showHunkHeaders: boolean;
@@ -271,6 +275,9 @@ export interface AppBootstrap {
   changeset: Changeset;
   initialMode: LayoutMode;
   initialTheme?: string;
+  initialThemeLight?: string;
+  initialThemeDark?: string;
+  initialThemeMode?: "light" | "dark";
   initialShowLineNumbers?: boolean;
   initialWrapLines?: boolean;
   initialShowHunkHeaders?: boolean;

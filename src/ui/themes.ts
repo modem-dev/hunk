@@ -287,7 +287,17 @@ export const THEMES: AppTheme[] = [
 ];
 
 /** Resolve a named theme or fall back to Hunk's explicit built-in default. */
-export function resolveTheme(requested: string | undefined, _themeMode: ThemeMode | null) {
+export function resolveTheme(
+  requested: string | undefined,
+  themeMode: ThemeMode | null,
+  themeLight = "paper",
+  themeDark = "graphite",
+) {
+  if (requested === "auto" || !requested) {
+    const preferred = themeMode === "light" ? themeLight : themeDark;
+    return THEMES.find((theme) => theme.id === preferred) ?? THEMES[0]!;
+  }
+
   const exact = THEMES.find((theme) => theme.id === requested);
   if (exact) {
     return exact;

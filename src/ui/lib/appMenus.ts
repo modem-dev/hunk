@@ -3,6 +3,7 @@ import type { MenuEntry, MenuId } from "../components/chrome/menu";
 import { THEMES } from "../themes";
 
 export interface BuildAppMenusOptions {
+  themeId: string;
   activeThemeId: string;
   canRefreshCurrentInput: boolean;
   focusFilter: () => void;
@@ -31,6 +32,7 @@ export interface BuildAppMenusOptions {
 
 /** Build the top-level app menus from the current app state and actions. */
 export function buildAppMenus({
+  themeId,
   activeThemeId,
   canRefreshCurrentInput,
   focusFilter,
@@ -56,12 +58,21 @@ export function buildAppMenus({
   toggleSidebar,
   wrapLines,
 }: BuildAppMenusOptions): Record<MenuId, MenuEntry[]> {
-  const themeMenuEntries: MenuEntry[] = THEMES.map((theme) => ({
-    kind: "item",
-    label: theme.label,
-    checked: theme.id === activeThemeId,
-    action: () => selectThemeId(theme.id),
-  }));
+  const themeMenuEntries: MenuEntry[] = [
+    {
+      kind: "item",
+      label: "Follow system",
+      checked: themeId === "auto",
+      action: () => selectThemeId(themeId === "auto" ? activeThemeId : "auto"),
+    },
+    { kind: "separator" },
+    ...THEMES.map((theme) => ({
+      kind: "item" as const,
+      label: theme.label,
+      checked: theme.id === themeId || (themeId === "auto" && theme.id === activeThemeId),
+      action: () => selectThemeId(theme.id),
+    })),
+  ];
 
   const fileMenuEntries: MenuEntry[] = [
     {

@@ -2,6 +2,7 @@ import {
   MouseButton,
   type MouseEvent as TuiMouseEvent,
   type ScrollBoxRenderable,
+  type ThemeMode,
 } from "@opentui/core";
 import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState, useRef } from "react";
@@ -50,6 +51,8 @@ function withCurrentViewOptions(
   view: {
     layoutMode: LayoutMode;
     themeId: string;
+    themeLight: string;
+    themeDark: string;
     showAgentNotes: boolean;
     showHunkHeaders: boolean;
     showLineNumbers: boolean;
@@ -62,6 +65,8 @@ function withCurrentViewOptions(
       ...input.options,
       mode: view.layoutMode,
       theme: view.themeId,
+      themeLight: view.themeLight,
+      themeDark: view.themeDark,
       agentNotes: view.showAgentNotes,
       hunkHeaders: view.showHunkHeaders,
       lineNumbers: view.showLineNumbers,
@@ -101,8 +106,11 @@ export function App({
   const layoutToggleScrollTopRef = useRef<number | null>(null);
   const [layoutToggleRequestId, setLayoutToggleRequestId] = useState(0);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(bootstrap.initialMode);
-  const [themeId, setThemeId] = useState(
-    () => resolveTheme(bootstrap.initialTheme, renderer.themeMode).id,
+  const [themeId, setThemeId] = useState(bootstrap.initialTheme ?? "auto");
+  const [themeLight, _setThemeLight] = useState(bootstrap.initialThemeLight ?? "paper");
+  const [themeDark, _setThemeDark] = useState(bootstrap.initialThemeDark ?? "graphite");
+  const [systemThemeMode, setSystemThemeMode] = useState(
+    bootstrap.initialThemeMode ?? renderer.themeMode,
   );
   const [showAgentNotes, setShowAgentNotes] = useState(bootstrap.initialShowAgentNotes ?? false);
   const [showLineNumbers, setShowLineNumbers] = useState(bootstrap.initialShowLineNumbers ?? true);
@@ -118,7 +126,17 @@ export function App({
   const [resizeStartWidth, setResizeStartWidth] = useState<number | null>(null);
 
   const pagerMode = Boolean(bootstrap.input.options.pager);
-  const activeTheme = resolveTheme(themeId, renderer.themeMode);
+  const activeTheme = resolveTheme(themeId, systemThemeMode, themeLight, themeDark);
+
+  useEffect(() => {
+    const handleThemeMode = (mode: ThemeMode) => {
+      setSystemThemeMode(mode);
+    };
+    renderer.on("theme_mode", handleThemeMode);
+    return () => {
+      renderer.off("theme_mode", handleThemeMode);
+    };
+  }, [renderer]);
   const review = useReviewController({ files: bootstrap.changeset.files });
   const filteredFiles = review.visibleFiles;
   const selectedFile = review.selectedFile;
@@ -346,6 +364,8 @@ export function App({
     const nextInput = withCurrentViewOptions(bootstrap.input, {
       layoutMode,
       themeId,
+      themeLight,
+      themeDark,
       showAgentNotes,
       showHunkHeaders,
       showLineNumbers,
@@ -471,6 +491,7 @@ export function App({
   const menus = useMemo(
     () =>
       buildAppMenus({
+        themeId,
         activeThemeId: activeTheme.id,
         canRefreshCurrentInput,
         focusFilter,
@@ -497,6 +518,7 @@ export function App({
         wrapLines,
       }),
     [
+      themeId,
       activeTheme.id,
       canRefreshCurrentInput,
       focusFilter,

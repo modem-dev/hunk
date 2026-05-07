@@ -6,9 +6,14 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Added
 
+- Added automatic switching between dark and light mode themes based on system preferences.
+- Added a "Follow system" option to the theme menu.
+
 ### Changed
 
 ### Fixed
+
+- Improved theme-mode detection for pager and patch flows by falling back to system preferences when stdin is redirected.
 
 ## [0.10.0] - 2026-04-21
 

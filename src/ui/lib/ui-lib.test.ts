@@ -121,6 +121,7 @@ describe("ui helpers", () => {
 
   test("buildAppMenus creates checked entries from the current app state", () => {
     const menus = buildAppMenus({
+      themeId: "graphite",
       activeThemeId: "graphite",
       canRefreshCurrentInput: true,
       focusFilter: () => {},
@@ -169,12 +170,95 @@ describe("ui helpers", () => {
       menus.theme
         .filter((entry): entry is Extract<MenuEntry, { kind: "item" }> => entry.kind === "item")
         .map((entry) => entry.label),
-    ).toEqual(["Graphite", "Midnight", "Paper", "Ember"]);
+    ).toEqual(["Follow system", "Graphite", "Midnight", "Paper", "Ember"]);
     expect(
       menus.theme.some(
         (entry) => entry.kind === "item" && entry.label === "Graphite" && entry.checked,
       ),
     ).toBe(true);
+
+    const autoMenus = buildAppMenus({
+      themeId: "auto",
+      activeThemeId: "paper",
+      canRefreshCurrentInput: true,
+      focusFilter: () => {},
+      layoutMode: "stack",
+      moveToAnnotatedFile: () => {},
+      moveToAnnotatedHunk: () => {},
+      moveToHunk: () => {},
+      refreshCurrentInput: () => {},
+      requestQuit: () => {},
+      selectLayoutMode: () => {},
+      selectThemeId: () => {},
+      showAgentNotes: true,
+      showHelp: false,
+      showHunkHeaders: false,
+      showLineNumbers: true,
+      sidebarVisible: false,
+      toggleAgentNotes: () => {},
+      toggleFocusArea: () => {},
+      toggleHelp: () => {},
+      toggleHunkHeaders: () => {},
+      toggleLineNumbers: () => {},
+      toggleLineWrap: () => {},
+      toggleSidebar: () => {},
+      wrapLines: true,
+    });
+
+    expect(
+      autoMenus.theme.some(
+        (entry) => entry.kind === "item" && entry.label === "Follow system" && entry.checked,
+      ),
+    ).toBe(true);
+    expect(
+      autoMenus.theme.some(
+        (entry) => entry.kind === "item" && entry.label === "Paper" && entry.checked,
+      ),
+    ).toBe(true);
+    expect(
+      autoMenus.theme.some(
+        (entry) => entry.kind === "item" && entry.label === "Graphite" && entry.checked,
+      ),
+    ).toBe(false);
+
+    // Verify toggle action
+    let selectedId: string | undefined;
+    const toggleMenus = buildAppMenus({
+      themeId: "auto",
+      activeThemeId: "paper",
+      canRefreshCurrentInput: true,
+      focusFilter: () => {},
+      layoutMode: "stack",
+      moveToAnnotatedFile: () => {},
+      moveToAnnotatedHunk: () => {},
+      moveToHunk: () => {},
+      refreshCurrentInput: () => {},
+      requestQuit: () => {},
+      selectLayoutMode: () => {},
+      selectThemeId: (id) => {
+        selectedId = id;
+      },
+      showAgentNotes: true,
+      showHelp: false,
+      showHunkHeaders: false,
+      showLineNumbers: true,
+      sidebarVisible: false,
+      toggleAgentNotes: () => {},
+      toggleFocusArea: () => {},
+      toggleHelp: () => {},
+      toggleHunkHeaders: () => {},
+      toggleLineNumbers: () => {},
+      toggleLineWrap: () => {},
+      toggleSidebar: () => {},
+      wrapLines: true,
+    });
+
+    const followSystemItem = toggleMenus.theme.find(
+      (entry): entry is Extract<MenuEntry, { kind: "item" }> =>
+        entry.kind === "item" && entry.label === "Follow system",
+    );
+    followSystemItem?.action();
+    expect(selectedId).toBe("paper");
   });
 
   test("keyboard alias helpers normalize the shared scroll shortcut keys", () => {
@@ -363,10 +447,14 @@ describe("ui helpers", () => {
     const midnight = resolveTheme("midnight", null);
     const missingLight = resolveTheme("missing", "light");
     const missingDark = resolveTheme("missing", "dark");
+    const customLight = resolveTheme("auto", "light", "ember");
+    const customDark = resolveTheme("auto", "dark", "paper", "midnight");
 
     expect(midnight.id).toBe("midnight");
     expect(missingLight.id).toBe("graphite");
     expect(missingDark.id).toBe("graphite");
+    expect(customLight.id).toBe("ember");
+    expect(customDark.id).toBe("midnight");
     expect(resolveTheme("ember", null).syntaxStyle).toBeDefined();
   });
 });
