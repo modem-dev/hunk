@@ -18,7 +18,7 @@ export interface BuildAppMenusOptions {
   showHelp: boolean;
   showHunkHeaders: boolean;
   showLineNumbers: boolean;
-  sidebarVisible: boolean;
+  renderSidebar: boolean;
   toggleAgentNotes: () => void;
   toggleFocusArea: () => void;
   toggleHelp: () => void;
@@ -46,7 +46,7 @@ export function buildAppMenus({
   showHelp,
   showHunkHeaders,
   showLineNumbers,
-  sidebarVisible,
+  renderSidebar,
   toggleAgentNotes,
   toggleFocusArea,
   toggleHelp,
@@ -126,7 +126,7 @@ export function buildAppMenus({
         kind: "item",
         label: "Sidebar",
         hint: "s",
-        checked: sidebarVisible,
+        checked: renderSidebar,
         action: toggleSidebar,
       },
       { kind: "separator" },
