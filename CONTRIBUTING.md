@@ -12,6 +12,8 @@ Requirements:
 - Node.js 18+
 - Git
 
+> Nix users can use `nix develop` or [direnv](https://direnv.net/) to enter a development shell.
+
 Install dependencies:
 
 ```bash

@@ -45,6 +45,8 @@ Requirements:
 - macOS or Linux
 - Git recommended for most workflows
 
+> Nix users can use the `default` package exported in `flake.nix` instead. See [nix/README.md](./nix/README.md) for details.
+
 ## Quick start
 
 ```bash
