@@ -57,7 +57,17 @@ hunk show                      # review the latest commit
 hunk show HEAD~1               # review an earlier commit
 ```
 
+### Working with Jujutsu
+
 Set `vcs = "jj"` in config to use the same `hunk diff [revset]` and `hunk show [revset]` commands with Jujutsu revsets instead. When `vcs` is unset, Hunk uses Git.
+
+To use hunk as jj's pager, run `jj config edit --user` and update:
+
+```toml
+[ui]
+pager = ["hunk", "pager"]
+diff-formatter = ":git"
+```
 
 ### Working with raw files and patches
 
