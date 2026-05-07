@@ -25,6 +25,18 @@ When a Hunk TUI starts, it registers with a local loopback daemon. `hunk session
 
 Most users only need `hunk session ...`. Use `hunk mcp serve` only for manual startup or debugging of the local daemon.
 
+Some agent sandboxes restrict localhost access. If an agent reports no active sessions while a
+Hunk TUI is visibly running, first check whether the agent can reach the loopback daemon:
+
+```bash
+curl -s -X POST http://127.0.0.1:47657/session-api \
+  -H 'content-type: application/json' \
+  --data '{"action":"list"}'
+```
+
+If that direct API call shows sessions, rerun the same `hunk session ...` command with the
+agent's local-network or sandbox-escalation mechanism instead of restarting Hunk.
+
 ## The commands you will use most
 
 ### Inspect the current review

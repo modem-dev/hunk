@@ -40,6 +40,24 @@ Use `--source` only for advanced reloads where the live session you want to cont
 
 ## Commands
 
+### Sandboxed agents
+
+`hunk session *` talks to the local Hunk daemon over loopback. Some agent sandboxes may block
+those localhost requests, which can make `hunk session list` report no sessions even while a Hunk
+TUI is open. If the user can see Hunk running, check whether the sandbox can reach the daemon
+before assuming the session failed to register.
+
+A useful probe is:
+
+```bash
+curl -s -X POST http://127.0.0.1:47657/session-api \
+  -H 'content-type: application/json' \
+  --data '{"action":"list"}'
+```
+
+If the direct API shows sessions, rerun the same `hunk session ...` command with the agent's
+local-network or sandbox-escalation mechanism.
+
 ### Inspect
 
 ```bash
