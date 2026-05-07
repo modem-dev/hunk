@@ -229,7 +229,7 @@ describe("Pierre diff rows", () => {
     const file = createMarkdownDiffFile();
     const highlighted = await loadHighlightedDiff(file, "dark");
 
-    for (const themeId of ["graphite", "midnight", "ember"] as const) {
+    for (const themeId of ["graphite", "vesper", "midnight", "ember"] as const) {
       const theme = resolveTheme(themeId, null);
       const rows = buildStackRows(file, highlighted, theme).filter(
         (row): row is Extract<DiffRow, { type: "stack-line" }> =>

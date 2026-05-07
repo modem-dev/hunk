@@ -6,6 +6,8 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Added
 
+- Added the Vesper theme as a built-in diff viewer theme.
+
 ### Changed
 
 ### Fixed
