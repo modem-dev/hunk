@@ -363,10 +363,13 @@ describe("ui helpers", () => {
     const midnight = resolveTheme("midnight", null);
     const missingLight = resolveTheme("missing", "light");
     const missingDark = resolveTheme("missing", "dark");
+    const vesper = resolveTheme("vesper", null);
 
     expect(midnight.id).toBe("midnight");
     expect(missingLight.id).toBe("graphite");
     expect(missingDark.id).toBe("graphite");
-    expect(resolveTheme("vesper", null).syntaxStyle).toBeDefined();
+    expect(vesper.addedBg).not.toBe(vesper.removedBg);
+    expect(vesper.addedContentBg).not.toBe(vesper.removedContentBg);
+    expect(vesper.syntaxStyle).toBeDefined();
   });
 });
