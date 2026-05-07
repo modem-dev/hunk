@@ -869,6 +869,17 @@ describe("loadAppBootstrap", () => {
     expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["alpha.ts"]);
   });
 
+  test("rejects stash show when configured for jj", async () => {
+    const dir = createTempDir("hunk-stash-jj-");
+
+    await expect(
+      loadFromRepo(dir, {
+        kind: "stash-show",
+        options: { mode: "auto", vcs: "jj" },
+      }),
+    ).rejects.toThrow("`hunk stash show` requires Git VCS mode.");
+  });
+
   test("reports a friendly error when no stash entries exist", async () => {
     const dir = createTempRepo("hunk-stash-empty-");
 

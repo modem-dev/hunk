@@ -10,6 +10,7 @@ import { resolve as resolvePath } from "node:path";
 import { findAgentFileContext, loadAgentContext } from "./agent";
 import { createSkippedBinaryMetadata, isProbablyBinaryFile, patchLooksBinary } from "./binary";
 import { normalizeDiffMetadataPaths, normalizeDiffPath } from "./diffPaths";
+import { HunkUserError } from "./errors";
 import {
   buildGitDiffArgs,
   buildGitShowArgs,
@@ -560,6 +561,12 @@ async function loadStashShowChangeset(
   agentContext: AgentContext | null,
   cwd = process.cwd(),
 ) {
+  if (input.options.vcs === "jj") {
+    throw new HunkUserError("`hunk stash show` requires Git VCS mode.", [
+      'Set `vcs = "git"` in Hunk config, then try again.',
+    ]);
+  }
+
   const repoRoot = resolveGitRepoRoot(input, { cwd });
   const repoName = basename(repoRoot);
 
