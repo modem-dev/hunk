@@ -993,4 +993,66 @@ describe("loadAppBootstrap", () => {
     expect(bootstrap.changeset.files[0]?.path.endsWith("after.ts")).toBe(true);
     expect(bootstrap.changeset.files[0]?.stats.additions).toBeGreaterThan(0);
   });
+
+  test("loads patch text emitted with diff.noprefix=true (e.g. from `hunk pager` stdin)", async () => {
+    const bootstrap = await loadAppBootstrap({
+      kind: "patch",
+      text: [
+        "diff --git src/example.ts src/example.ts",
+        "index 0000000..1111111 100644",
+        "--- src/example.ts",
+        "+++ src/example.ts",
+        "@@ -1,1 +1,2 @@",
+        " const value = 1;",
+        "+const added = 2;",
+      ].join("\n"),
+      options: { mode: "auto" },
+    });
+
+    expect(bootstrap.changeset.files).toHaveLength(1);
+    expect(bootstrap.changeset.files[0]).toMatchObject({
+      path: "src/example.ts",
+      metadata: { name: "src/example.ts", type: "change" },
+    });
+    expect(bootstrap.changeset.files[0]?.stats.additions).toBe(1);
+  });
+
+  test("loads noprefix rename patches by recovering the rename pair from the headers", async () => {
+    const bootstrap = await loadAppBootstrap({
+      kind: "patch",
+      text: [
+        "diff --git old/path.ts new/path.ts",
+        "similarity index 100%",
+        "rename from old/path.ts",
+        "rename to new/path.ts",
+      ].join("\n"),
+      options: { mode: "auto" },
+    });
+
+    expect(bootstrap.changeset.files).toHaveLength(1);
+    expect(bootstrap.changeset.files[0]).toMatchObject({
+      path: "new/path.ts",
+      previousPath: "old/path.ts",
+      metadata: { type: "rename-pure" },
+    });
+  });
+
+  test("leaves correctly prefixed patches untouched even when paths sit inside an `a/` directory", async () => {
+    const bootstrap = await loadAppBootstrap({
+      kind: "patch",
+      text: [
+        "diff --git a/a/inner.ts b/a/inner.ts",
+        "index 0000000..1111111 100644",
+        "--- a/a/inner.ts",
+        "+++ b/a/inner.ts",
+        "@@ -1,1 +1,2 @@",
+        " const x = 1;",
+        "+const y = 2;",
+      ].join("\n"),
+      options: { mode: "auto" },
+    });
+
+    expect(bootstrap.changeset.files).toHaveLength(1);
+    expect(bootstrap.changeset.files[0]?.path).toBe("a/inner.ts");
+  });
 });

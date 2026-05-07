@@ -234,6 +234,99 @@ function buildDiffFile(
   };
 }
 
+/**
+ * Re-add Git's `a/` and `b/` path prefixes to patch headers when stdin came from a
+ * `git diff` that was emitted with `diff.noprefix=true` (or otherwise stripped prefixes).
+ *
+ * `@pierre/diffs` requires `a/` and `b/` on `diff --git`, `---`, and `+++` lines and throws
+ * a `TypeError` on the first noprefix header, which leaves the review with zero files. The
+ * git-backed paths force `diff.noprefix=false` when they invoke git internally; this helper
+ * covers the patch path (`hunk patch`, `hunk pager`) where the input was produced by an
+ * outer `git` process we do not control.
+ */
+function normalizeGitPatchPrefixes(patchText: string) {
+  if (!patchText.includes("diff --git ")) {
+    return patchText;
+  }
+
+  let blockNeedsPrefix = false;
+
+  return patchText
+    .split("\n")
+    .map((line) => {
+      if (line.startsWith("diff --git ")) {
+        const result = rewriteGitDiffHeader(line);
+        blockNeedsPrefix = result.changed;
+        return result.line;
+      }
+
+      if (blockNeedsPrefix && line.startsWith("--- ")) {
+        return rewriteUnifiedFileLine(line, "--- ", "a/");
+      }
+
+      if (blockNeedsPrefix && line.startsWith("+++ ")) {
+        return rewriteUnifiedFileLine(line, "+++ ", "b/");
+      }
+
+      return line;
+    })
+    .join("\n");
+}
+
+/** Detect prefixed/noprefix `diff --git` lines and rewrite the noprefix form into `a/X b/Y`. */
+function rewriteGitDiffHeader(line: string): { line: string; changed: boolean } {
+  const rest = line.slice("diff --git ".length).trimEnd();
+
+  const quotedMatch = rest.match(/^"([^"]*)" "([^"]*)"$/);
+  if (quotedMatch) {
+    const [, oldPath, newPath] = quotedMatch;
+    if (oldPath?.startsWith("a/") && newPath?.startsWith("b/")) {
+      return { line, changed: false };
+    }
+    return { line: `diff --git "a/${oldPath}" "b/${newPath}"`, changed: true };
+  }
+
+  const tokens = rest.split(" ");
+
+  // Already prefixed: `a/X b/Y` (covers single-token and equally split multi-token paths).
+  if (tokens.length === 2 && tokens[0]?.startsWith("a/") && tokens[1]?.startsWith("b/")) {
+    return { line, changed: false };
+  }
+  if (tokens.length >= 2 && tokens.length % 2 === 0) {
+    const half = tokens.length / 2;
+    const firstHalf = tokens.slice(0, half).join(" ");
+    const secondHalf = tokens.slice(half).join(" ");
+    if (firstHalf.startsWith("a/") && secondHalf.startsWith("b/")) {
+      return { line, changed: false };
+    }
+    // Non-rename noprefix: identical halves regardless of whether the path contains spaces.
+    if (firstHalf === secondHalf && firstHalf.length > 0) {
+      return { line: `diff --git a/${firstHalf} b/${secondHalf}`, changed: true };
+    }
+  }
+
+  // Two-token rename without prefix and without spaces in either path.
+  if (tokens.length === 2 && tokens[0] && tokens[1]) {
+    return { line: `diff --git a/${tokens[0]} b/${tokens[1]}`, changed: true };
+  }
+
+  // Genuinely ambiguous (rename with spaces and no quoting). Leave untouched and let the
+  // parser surface the existing failure rather than guess at the path split.
+  return { line, changed: false };
+}
+
+/** Insert the canonical `a/` or `b/` prefix on a unified-diff header that is missing it. */
+function rewriteUnifiedFileLine(line: string, marker: "--- " | "+++ ", prefix: "a/" | "b/") {
+  const path = line.slice(marker.length);
+  if (path === "/dev/null" || path.startsWith("/dev/null\t")) {
+    return line;
+  }
+  if (path.startsWith('"')) {
+    return `${marker}"${prefix}${path.slice(1)}`;
+  }
+  return `${marker}${prefix}${path}`;
+}
+
 /** Escape only the filename characters that break unified-diff header parsing. */
 function escapeUntrackedPatchPath(path: string) {
   return path
@@ -366,8 +459,8 @@ function normalizePatchChangeset(
   sourceLabel: string,
   agentContext: AgentContext | null,
 ): Changeset {
-  const normalizedPatchText = stripGitLogMetadata(
-    stripTerminalControl(patchText.replaceAll("\r\n", "\n")),
+  const normalizedPatchText = normalizeGitPatchPrefixes(
+    stripGitLogMetadata(stripTerminalControl(patchText.replaceAll("\r\n", "\n"))),
   );
 
   let parsedPatches: ReturnType<typeof parsePatchFiles>;
