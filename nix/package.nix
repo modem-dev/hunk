@@ -17,16 +17,20 @@ in
 
     buildPhase = ''
       runHook preBuild
-      bun build --compile "./src/main.tsx" --outfile "hunk"
+      mkdir -p .bun-tmp .bun-install
+      BUN_TMPDIR=$PWD/.bun-tmp \
+      BUN_INSTALL=$PWD/.bun-install \
+      bun build --compile "./src/main.tsx" --outfile "hunk-bin"
       runHook postBuild
     '';
 
     installPhase = ''
       runHook preInstall
       mkdir -p $out/bin
-      cp ./hunk $out/bin/hunk
+      cp -p ./hunk-bin $out/bin/hunk
       runHook postInstall
     '';
 
     dontFixup = true;
+    dontStrip = true;
   }
