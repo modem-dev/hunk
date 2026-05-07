@@ -76,6 +76,7 @@ function isInvalidRevsetMessage(stderr: string) {
     "Revision not found",
     "No such revision",
     "doesn't exist",
+    "is ambiguous",
     "Revset expression resolved to no revisions",
   ].some((fragment) => stderr.includes(fragment));
 }
