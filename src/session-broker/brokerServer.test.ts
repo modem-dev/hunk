@@ -427,7 +427,7 @@ describe("Hunk session daemon server", () => {
         title: "repo diff",
         sourceLabel: "/repo",
         repoRoot: "/repo",
-        inputKind: "git",
+        inputKind: "vcs",
         selectedFile: {
           id: "file-1",
           path: "src/example.ts",
@@ -517,7 +517,7 @@ describe("Hunk session daemon server", () => {
         sessionPath: "/tmp/live-session",
         sourcePath: "/tmp/source-repo",
         nextInput: {
-          kind: "git",
+          kind: "vcs",
           staged: false,
           options: {},
         },
@@ -525,7 +525,7 @@ describe("Hunk session daemon server", () => {
 
       return Promise.resolve({
         sessionId: "session-1",
-        inputKind: "git",
+        inputKind: "vcs",
         title: "source-repo working tree",
         sourceLabel: "/tmp/source-repo",
         fileCount: 0,
@@ -546,7 +546,7 @@ describe("Hunk session daemon server", () => {
           selector: { sessionPath: "/tmp/live-session" },
           sourcePath: "/tmp/source-repo",
           nextInput: {
-            kind: "git",
+            kind: "vcs",
             staged: false,
             options: {},
           },
@@ -557,7 +557,7 @@ describe("Hunk session daemon server", () => {
       await expect(response.json()).resolves.toMatchObject({
         result: {
           sessionId: "session-1",
-          inputKind: "git",
+          inputKind: "vcs",
           sourceLabel: "/tmp/source-repo",
         },
       });

@@ -1,7 +1,7 @@
 import { HunkUserError } from "./errors";
-import type { GitCommandInput, ShowCommandInput } from "./types";
+import type { VcsCommandInput, ShowCommandInput } from "./types";
 
-export type JjBackedInput = GitCommandInput | ShowCommandInput;
+export type JjBackedInput = VcsCommandInput | ShowCommandInput;
 
 export interface RunJjTextOptions {
   input: JjBackedInput;
@@ -20,7 +20,7 @@ function appendJjFilesets(args: string[], pathspecs?: string[]) {
 }
 
 /** Build the `jj diff --git` arguments for working-copy and revset reviews. */
-export function buildJjDiffArgs(input: GitCommandInput) {
+export function buildJjDiffArgs(input: VcsCommandInput) {
   const args = ["diff", "--git"];
 
   if (input.range) {
@@ -40,7 +40,7 @@ export function buildJjShowArgs(input: ShowCommandInput) {
 }
 
 export function formatJjCommandLabel(input: JjBackedInput) {
-  if (input.kind === "git") {
+  if (input.kind === "vcs") {
     if (input.staged) {
       return "hunk diff --staged";
     }
@@ -93,7 +93,7 @@ function createMissingJjRepoError(input: JjBackedInput) {
   );
 }
 
-export function createJjStagedError(input: GitCommandInput) {
+export function createJjStagedError(input: VcsCommandInput) {
   return new HunkUserError(
     `\`${formatJjCommandLabel(input)}\` requires Git VCS mode because Jujutsu has no staging area.`,
     ['Remove `--staged`, or set `vcs = "git"` in Hunk config.'],
@@ -101,7 +101,7 @@ export function createJjStagedError(input: GitCommandInput) {
 }
 
 function createInvalidRevsetError(input: JjBackedInput) {
-  const revset = input.kind === "git" ? input.range : (input.ref ?? "@");
+  const revset = input.kind === "vcs" ? input.range : (input.ref ?? "@");
   return new HunkUserError(
     `\`${formatJjCommandLabel(input)}\` could not resolve Jujutsu revset \`${revset}\`.`,
     ["Check the revset and try again."],

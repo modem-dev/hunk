@@ -34,7 +34,7 @@ import type {
   DiffFile,
   DiffToolCommandInput,
   FileCommandInput,
-  GitCommandInput,
+  VcsCommandInput,
   PatchCommandInput,
   ShowCommandInput,
   StashShowCommandInput,
@@ -239,7 +239,7 @@ function parseUntrackedPatchFile(patchText: string, filePath: string) {
 
 /** Build one reviewable diff file for an untracked working-tree file. */
 function buildUntrackedDiffFile(
-  input: GitCommandInput,
+  input: VcsCommandInput,
   filePath: string,
   index: number,
   repoRoot: string,
@@ -455,7 +455,7 @@ async function loadFileDiffChangeset(
 
 /** Build a changeset from the current repository working tree or a git range. */
 async function loadGitChangeset(
-  input: GitCommandInput,
+  input: VcsCommandInput,
   agentContext: AgentContext | null,
   cwd = process.cwd(),
 ) {
@@ -499,7 +499,7 @@ async function loadGitChangeset(
 
 /** Build a changeset from the current Jujutsu working-copy commit or a revset. */
 async function loadJjDiffChangeset(
-  input: GitCommandInput,
+  input: VcsCommandInput,
   agentContext: AgentContext | null,
   cwd = process.cwd(),
 ) {
@@ -602,7 +602,7 @@ export async function loadAppBootstrap(
   let changeset: Changeset;
 
   switch (input.kind) {
-    case "git":
+    case "vcs":
       changeset =
         input.options.vcs === "jj"
           ? await loadJjDiffChangeset(input, agentContext, cwd)

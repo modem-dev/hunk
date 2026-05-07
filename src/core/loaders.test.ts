@@ -190,7 +190,7 @@ describe("loadAppBootstrap", () => {
     const bootstrap = await runFromProcessCwd(dir, () =>
       loadAppBootstrap(
         {
-          kind: "git",
+          kind: "vcs",
           staged: false,
           options: {
             mode: "auto",
@@ -243,7 +243,7 @@ describe("loadAppBootstrap", () => {
     writeFileSync(file, Buffer.from([0, 1, 9, 3, 4, 5]));
 
     const bootstrap = await loadFromRepo(dir, {
-      kind: "git",
+      kind: "vcs",
       staged: false,
       options: { mode: "auto" },
     });
@@ -264,7 +264,7 @@ describe("loadAppBootstrap", () => {
     writeFileSync(join(dir, "example.ts"), "export const value = 2;\nexport const extra = true;\n");
 
     const bootstrap = await loadFromRepo(dir, {
-      kind: "git",
+      kind: "vcs",
       staged: false,
       options: { mode: "auto" },
     });
@@ -285,7 +285,7 @@ describe("loadAppBootstrap", () => {
     writeFileSync(join(dir, "new-file.ts"), "export const added = true;\n");
 
     const bootstrap = await loadFromRepo(dir, {
-      kind: "git",
+      kind: "vcs",
       staged: false,
       options: { mode: "auto" },
     });
@@ -310,7 +310,7 @@ describe("loadAppBootstrap", () => {
     symlinkSync("targetdir", join(dir, "linkdir"));
 
     const bootstrap = await loadFromRepo(dir, {
-      kind: "git",
+      kind: "vcs",
       staged: false,
       options: { mode: "auto" },
     });
@@ -332,7 +332,7 @@ describe("loadAppBootstrap", () => {
     writeFileSync(join(dir, "new-file.ts"), "export const added = true;\n");
 
     const bootstrap = await loadFromRepo(dir, {
-      kind: "git",
+      kind: "vcs",
       staged: false,
       options: { mode: "auto", excludeUntracked: true },
     });
@@ -356,7 +356,7 @@ describe("loadAppBootstrap", () => {
     writeFileSync(join(dir, "new-file.ts"), "export const added = true;\n");
 
     const bootstrap = await loadFromRepo(dir, {
-      kind: "git",
+      kind: "vcs",
       range: "main",
       staged: false,
       options: { mode: "auto" },
@@ -384,7 +384,7 @@ describe("loadAppBootstrap", () => {
     writeFileSync(join(dir, "new-file.ts"), "export const added = true;\n");
 
     const bootstrap = await loadFromRepo(dir, {
-      kind: "git",
+      kind: "vcs",
       range: "main..HEAD",
       staged: false,
       options: { mode: "auto" },
@@ -408,7 +408,7 @@ describe("loadAppBootstrap", () => {
     writeFileSync(join(dir, "new-file.ts"), "export const added = true;\n");
 
     const bootstrap = await loadFromRepo(dir, {
-      kind: "git",
+      kind: "vcs",
       range: "HEAD^!",
       staged: false,
       options: { mode: "auto" },
@@ -432,7 +432,7 @@ describe("loadAppBootstrap", () => {
     writeFileSync(join(dir, backslashFile), "backslash\n");
 
     const bootstrap = await loadFromRepo(dir, {
-      kind: "git",
+      kind: "vcs",
       staged: false,
       options: { mode: "auto" },
     });
@@ -456,7 +456,7 @@ describe("loadAppBootstrap", () => {
     writeFileSync(agent, JSON.stringify({ version: 1, files: [] }));
 
     const bootstrap = await loadFromRepo(dir, {
-      kind: "git",
+      kind: "vcs",
       staged: false,
       options: { mode: "auto", agentContext: agent },
     });
@@ -479,7 +479,7 @@ describe("loadAppBootstrap", () => {
     mkdirSync(subdir, { recursive: true });
 
     const bootstrap = await loadFromCwd(subdir, {
-      kind: "git",
+      kind: "vcs",
       staged: false,
       options: { mode: "auto" },
     });
@@ -499,7 +499,7 @@ describe("loadAppBootstrap", () => {
     writeFileSync(join(dir, "new-file.ts"), "export const added = true;\n");
 
     const bootstrap = await loadFromRepo(dir, {
-      kind: "git",
+      kind: "vcs",
       staged: false,
       options: { mode: "auto" },
     });
@@ -522,7 +522,7 @@ describe("loadAppBootstrap", () => {
     writeFileSync(join(dir, "new-file.ts"), "export const added = true;\n");
 
     const bootstrap = await loadFromRepo(dir, {
-      kind: "git",
+      kind: "vcs",
       staged: false,
       options: { mode: "auto" },
     });
@@ -539,7 +539,7 @@ describe("loadAppBootstrap", () => {
 
     await expect(
       loadFromRepo(dir, {
-        kind: "git",
+        kind: "vcs",
         staged: false,
         options: { mode: "auto" },
       }),
@@ -555,7 +555,7 @@ describe("loadAppBootstrap", () => {
 
     await expect(
       loadFromRepo(dir, {
-        kind: "git",
+        kind: "vcs",
         range: "HEAD~999",
         staged: false,
         options: { mode: "auto" },
@@ -598,7 +598,7 @@ describe("loadAppBootstrap", () => {
     );
 
     const bootstrap = await loadFromRepo(dir, {
-      kind: "git",
+      kind: "vcs",
       staged: false,
       options: {
         mode: "auto",
@@ -622,7 +622,7 @@ describe("loadAppBootstrap", () => {
     writeFileSync(join(dir, "beta.ts"), "export const beta = 2;\n");
 
     const bootstrap = await loadFromRepo(dir, {
-      kind: "git",
+      kind: "vcs",
       staged: true,
       options: { mode: "auto" },
     });
@@ -644,7 +644,7 @@ describe("loadAppBootstrap", () => {
     writeFileSync(join(dir, "beta.ts"), "export const beta = 2;\n");
 
     const bootstrap = await loadFromRepo(dir, {
-      kind: "git",
+      kind: "vcs",
       staged: true,
       options: { mode: "auto" },
     });
@@ -664,7 +664,7 @@ describe("loadAppBootstrap", () => {
     writeFileSync(join(dir, "beta.ts"), "export const beta = 2;\n");
 
     const bootstrap = await loadFromRepo(dir, {
-      kind: "git",
+      kind: "vcs",
       staged: false,
       pathspecs: ["beta.ts"],
       options: { mode: "auto" },
@@ -686,7 +686,7 @@ describe("loadAppBootstrap", () => {
       writeFileSync(join(dir, "beta.ts"), "export const beta = true;\n");
 
       const bootstrap = await loadFromRepo(dir, {
-        kind: "git",
+        kind: "vcs",
         range: "@",
         staged: false,
         options: { mode: "auto", vcs: "jj" },
@@ -733,7 +733,7 @@ describe("loadAppBootstrap", () => {
     writeFileSync(join(dir, "beta.ts"), "export const beta = true;\n");
 
     const bootstrap = await loadFromRepo(dir, {
-      kind: "git",
+      kind: "vcs",
       staged: false,
       pathspecs: ["beta.ts"],
       options: { mode: "auto" },

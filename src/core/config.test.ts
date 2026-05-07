@@ -128,7 +128,7 @@ describe("config resolution", () => {
     const cwd = createTempDir("hunk-config-cwd-");
     const defaultResolved = resolveConfiguredCliInput(
       {
-        kind: "git",
+        kind: "vcs",
         staged: false,
         options: {},
       },
@@ -136,7 +136,7 @@ describe("config resolution", () => {
     );
     const overriddenResolved = resolveConfiguredCliInput(
       {
-        kind: "git",
+        kind: "vcs",
         staged: false,
         options: { excludeUntracked: false },
       },
@@ -145,7 +145,7 @@ describe("config resolution", () => {
     const noConfigHome = createTempDir("hunk-config-home-");
     const fallbackResolved = resolveConfiguredCliInput(
       {
-        kind: "git",
+        kind: "vcs",
         staged: false,
         options: {},
       },
@@ -165,7 +165,7 @@ describe("config resolution", () => {
     const cwd = createTempDir("hunk-config-cwd-");
     const defaultResolved = resolveConfiguredCliInput(
       {
-        kind: "git",
+        kind: "vcs",
         staged: false,
         options: {},
       },
@@ -173,7 +173,7 @@ describe("config resolution", () => {
     );
     const configuredResolved = resolveConfiguredCliInput(
       {
-        kind: "git",
+        kind: "vcs",
         staged: false,
         options: {},
       },

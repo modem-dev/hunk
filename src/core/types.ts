@@ -210,8 +210,8 @@ export type SessionCommandInput =
   | SessionCommentRemoveCommandInput
   | SessionCommentClearCommandInput;
 
-export interface GitCommandInput {
-  kind: "git";
+export interface VcsCommandInput {
+  kind: "vcs";
   range?: string;
   staged: boolean;
   pathspecs?: string[];
@@ -254,7 +254,7 @@ export interface DiffToolCommandInput {
 }
 
 export type CliInput =
-  | GitCommandInput
+  | VcsCommandInput
   | ShowCommandInput
   | StashShowCommandInput
   | FileCommandInput

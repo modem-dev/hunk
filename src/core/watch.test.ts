@@ -59,17 +59,17 @@ function createGitInput({
   options,
   ...overrides
 }: {
-  options?: Partial<Extract<CliInput, { kind: "git" }>["options"]>;
-} & Partial<Omit<Extract<CliInput, { kind: "git" }>, "kind" | "options">> = {}) {
+  options?: Partial<Extract<CliInput, { kind: "vcs" }>["options"]>;
+} & Partial<Omit<Extract<CliInput, { kind: "vcs" }>, "kind" | "options">> = {}) {
   return {
-    kind: "git",
+    kind: "vcs",
     staged: false,
     ...overrides,
     options: {
       mode: "auto",
       ...options,
     },
-  } satisfies Extract<CliInput, { kind: "git" }>;
+  } satisfies Extract<CliInput, { kind: "vcs" }>;
 }
 
 afterEach(() => {

@@ -403,7 +403,7 @@ async function parseDiffCommand(tokens: string[], argv: string[]): Promise<Parse
 
   if (parsedTargets.length === 0) {
     return {
-      kind: "git",
+      kind: "vcs",
       staged,
       pathspecs: normalizedPathspecs,
       options,
@@ -412,7 +412,7 @@ async function parseDiffCommand(tokens: string[], argv: string[]): Promise<Parse
 
   if (parsedTargets.length === 1) {
     return {
-      kind: "git",
+      kind: "vcs",
       range: parsedTargets[0],
       staged,
       pathspecs: normalizedPathspecs,
