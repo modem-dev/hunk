@@ -64,9 +64,23 @@ function stripTerminalControl(text: string) {
  */
 function normalizeGitNoIndexPrefixes(text: string) {
   return text
-    .replace(/^diff --git 1\/(.+) 2\/(.+)$/gm, "diff --git a/$1 b/$2")
-    .replace(/^--- 1\/(.+)$/gm, "--- a/$1")
-    .replace(/^\+\+\+ 2\/(.+)$/gm, "+++ b/$1");
+    .split("\n")
+    .map((line) => {
+      if (line.startsWith("diff --git 1/")) {
+        return line.replace("diff --git 1/", "diff --git a/").replace(" 2/", " b/");
+      }
+
+      if (line.startsWith("--- 1/")) {
+        return line.replace("--- 1/", "--- a/");
+      }
+
+      if (line.startsWith("+++ 2/")) {
+        return line.replace("+++ 2/", "+++ b/");
+      }
+
+      return line;
+    })
+    .join("\n");
 }
 
 /** Split a multi-file patch into per-file chunks so each diff file keeps its original patch text. */

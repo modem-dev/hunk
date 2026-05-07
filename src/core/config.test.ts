@@ -172,6 +172,19 @@ describe("config resolution", () => {
     ).toThrow("Expected custom_theme.accent to be a hex color like #112233.");
   });
 
+  test("rejects theme = custom when no [custom_theme] table is configured", () => {
+    const home = createTempDir("hunk-config-home-");
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(join(home, ".config", "hunk", "config.toml"), 'theme = "custom"\n');
+
+    expect(() =>
+      resolveConfiguredCliInput(createPatchPagerInput(), {
+        cwd: createTempDir("hunk-config-cwd-"),
+        env: { HOME: home },
+      }),
+    ).toThrow('Expected a [custom_theme] table when config selects theme = "custom".');
+  });
+
   test("defaults unspecified themes to graphite, including piped pager-style patch input", () => {
     const home = createTempDir("hunk-config-home-");
     const cwd = createTempDir("hunk-config-cwd-");

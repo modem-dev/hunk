@@ -335,6 +335,10 @@ export function resolveConfiguredCliInput(
     agentNotes: resolvedOptions.agentNotes ?? DEFAULT_VIEW_PREFERENCES.showAgentNotes,
   };
 
+  if (resolvedOptions.theme === "custom" && !resolvedCustomTheme) {
+    throw new Error('Expected a [custom_theme] table when config selects theme = "custom".');
+  }
+
   return {
     input: {
       ...input,
