@@ -325,7 +325,10 @@ export function DiffPane({
       return;
     }
 
-    const updateViewport = () => {
+    let cancelled = false;
+    let scheduled = false;
+
+    const readViewport = () => {
       const nextTop = scrollBox.scrollTop ?? 0;
       const nextHeight = scrollBox.viewport.height ?? 0;
 
@@ -342,16 +345,34 @@ export function DiffPane({
       );
     };
 
+    // OpenTUI emits `change` synchronously from inside its own slider sync, and other
+    // useLayoutEffects in this pane scroll the box from inside React's commit phase.
+    // Calling setScrollViewport directly from the listener can run setState while React
+    // is already committing — which downstream layout effects can amplify into a render
+    // loop and trip React's max-update-depth guard. Coalesce listener events into a
+    // single microtask-deferred read so the setState is dispatched outside the emit
+    // call stack and repeated events between paints collapse into one update.
     const handleViewportChange = () => {
-      updateViewport();
+      if (scheduled) {
+        return;
+      }
+      scheduled = true;
+      queueMicrotask(() => {
+        scheduled = false;
+        if (cancelled) {
+          return;
+        }
+        readViewport();
+      });
     };
 
-    updateViewport();
+    readViewport();
     scrollBox.verticalScrollBar.on("change", handleViewportChange);
     scrollBox.viewport.on("layout-changed", handleViewportChange);
     scrollBox.viewport.on("resized", handleViewportChange);
 
     return () => {
+      cancelled = true;
       scrollBox.verticalScrollBar.off("change", handleViewportChange);
       scrollBox.viewport.off("layout-changed", handleViewportChange);
       scrollBox.viewport.off("resized", handleViewportChange);
