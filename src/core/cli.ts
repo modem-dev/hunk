@@ -130,7 +130,7 @@ function renderCliHelp() {
     "  hunk diff --staged [-- <pathspec...>]   review staged changes",
     "  hunk diff <left> <right>                compare two concrete files",
     "  hunk show [target] [-- <pathspec...>]   review the last commit or a given target",
-    "  hunk stash show [ref]                   review a stash entry",
+    "  hunk stash show [ref]                   review a stash entry (git only)",
     "  hunk patch [file]                       review a patch file or stdin",
     "  hunk pager                              general Git pager wrapper with diff detection",
     "  hunk difftool <left> <right> [path]     review Git difftool file pairs",
@@ -159,7 +159,7 @@ function renderCliHelp() {
     "",
     "Notes:",
     "  Run `hunk <command> --help` for command-specific syntax and options.",
-    "  \"target\" refers to a generic set of changes; it can be be a ref (git) or revset (jj)"
+    "  \"target\" refers to a generic set of changes; it can be a ref (git) or revset (jj)"
     "",
   ].join("\n");
 }
