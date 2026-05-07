@@ -1,6 +1,8 @@
 import { memo } from "react";
 import type { DiffFile, LayoutMode } from "../../../core/types";
 import { PierreDiffView } from "../../diff/PierreDiffView";
+import type { VisibleBodyBounds } from "../../diff/rowWindowing";
+import type { DiffSectionGeometry } from "../../lib/diffSectionGeometry";
 import { getAnnotatedHunkIndices, type VisibleAgentNote } from "../../lib/agentAnnotations";
 import { diffSectionId } from "../../lib/ids";
 import { fitText } from "../../lib/text";
@@ -15,6 +17,7 @@ interface DiffSectionProps {
   layout: Exclude<LayoutMode, "auto">;
   selectedHunkIndex: number;
   shouldLoadHighlight: boolean;
+  sectionGeometry?: DiffSectionGeometry;
   separatorWidth: number;
   showLineNumbers: boolean;
   showHunkHeaders: boolean;
@@ -23,6 +26,7 @@ interface DiffSectionProps {
   showSeparator: boolean;
   theme: AppTheme;
   visibleAgentNotes: VisibleAgentNote[];
+  visibleBodyBounds?: VisibleBodyBounds;
   viewWidth: number;
   onOpenAgentNotesAtHunk: (hunkIndex: number) => void;
   onSelect: () => void;
@@ -37,6 +41,7 @@ function DiffSectionComponent({
   layout,
   selectedHunkIndex,
   shouldLoadHighlight,
+  sectionGeometry,
   separatorWidth,
   showLineNumbers,
   showHunkHeaders,
@@ -45,6 +50,7 @@ function DiffSectionComponent({
   showSeparator,
   theme,
   visibleAgentNotes,
+  visibleBodyBounds,
   viewWidth,
   onOpenAgentNotesAtHunk,
   onSelect,
@@ -98,9 +104,11 @@ function DiffSectionComponent({
         visibleAgentNotes={visibleAgentNotes}
         onOpenAgentNotesAtHunk={onOpenAgentNotesAtHunk}
         selectedHunkIndex={selectedHunkIndex}
+        sectionGeometry={sectionGeometry}
         shouldLoadHighlight={shouldLoadHighlight}
         // The parent review stream owns scrolling across files.
         scrollable={false}
+        visibleBodyBounds={visibleBodyBounds}
       />
     </box>
   );
@@ -117,6 +125,7 @@ export const DiffSection = memo(DiffSectionComponent, (previous, next) => {
     previous.layout === next.layout &&
     previous.selectedHunkIndex === next.selectedHunkIndex &&
     previous.shouldLoadHighlight === next.shouldLoadHighlight &&
+    previous.sectionGeometry === next.sectionGeometry &&
     previous.separatorWidth === next.separatorWidth &&
     previous.showLineNumbers === next.showLineNumbers &&
     previous.showHunkHeaders === next.showHunkHeaders &&
@@ -125,6 +134,7 @@ export const DiffSection = memo(DiffSectionComponent, (previous, next) => {
     previous.showSeparator === next.showSeparator &&
     previous.theme === next.theme &&
     previous.visibleAgentNotes === next.visibleAgentNotes &&
+    previous.visibleBodyBounds === next.visibleBodyBounds &&
     previous.viewWidth === next.viewWidth
   );
 });

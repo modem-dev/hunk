@@ -37,6 +37,7 @@ import { DiffSection } from "./DiffSection";
 import { DiffFileHeaderRow } from "./DiffFileHeaderRow";
 import { DiffSectionPlaceholder } from "./DiffSectionPlaceholder";
 import { VerticalScrollbar, type VerticalScrollbarHandle } from "../scrollbar/VerticalScrollbar";
+import { rowWindowingPocEnabled, type VisibleBodyBounds } from "../../diff/rowWindowing";
 import { prefetchHighlightedDiff } from "../../diff/useHighlightedDiff";
 
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
@@ -589,6 +590,62 @@ export function DiffPane({
 
     return next;
   }, [adjacentPrefetchFileIds, selectedFileId, visibleViewportFileIds, windowingEnabled]);
+  const visibleBodyBoundsByFile = useMemo(() => {
+    const next = new Map<string, VisibleBodyBounds>();
+    if (!rowWindowingPocEnabled() || scrollViewport.height <= 0) {
+      return next;
+    }
+
+    const overscanRows = Math.max(24, scrollViewport.height * 2);
+
+    files.forEach((file, index) => {
+      const sectionLayout = fileSectionLayouts[index];
+      const geometry = sectionGeometry[index];
+      if (!sectionLayout || !geometry) {
+        return;
+      }
+
+      const shouldRenderSection = visibleWindowedFileIds?.has(file.id) ?? true;
+      if (!shouldRenderSection) {
+        return;
+      }
+
+      let minTop = scrollViewport.top - sectionLayout.bodyTop - overscanRows;
+      let maxBottom =
+        scrollViewport.top + scrollViewport.height - sectionLayout.bodyTop + overscanRows;
+
+      if (file.id === selectedFileId) {
+        const selectedHunkBounds = geometry.hunkBounds.get(
+          Math.max(0, Math.min(selectedHunkIndex, file.metadata.hunks.length - 1)),
+        );
+        if (selectedHunkBounds) {
+          minTop = Math.min(minTop, selectedHunkBounds.top - overscanRows);
+          maxBottom = Math.max(
+            maxBottom,
+            selectedHunkBounds.top + selectedHunkBounds.height + overscanRows,
+          );
+        }
+      }
+
+      const clampedTop = Math.max(0, minTop);
+      const clampedBottom = Math.min(geometry.bodyHeight, Math.max(clampedTop, maxBottom));
+      next.set(file.id, {
+        top: clampedTop,
+        height: clampedBottom - clampedTop,
+      });
+    });
+
+    return next;
+  }, [
+    fileSectionLayouts,
+    files,
+    scrollViewport.height,
+    scrollViewport.top,
+    sectionGeometry,
+    selectedFileId,
+    selectedHunkIndex,
+    visibleWindowedFileIds,
+  ]);
 
   const selectedFileIndex = selectedFileId
     ? files.findIndex((file) => file.id === selectedFileId)
@@ -1085,6 +1142,7 @@ export function DiffPane({
                       layout={layout}
                       selectedHunkIndex={file.id === selectedFileId ? selectedHunkIndex : -1}
                       shouldLoadHighlight={highlightPrefetchFileIds.has(file.id)}
+                      sectionGeometry={sectionGeometry[index]}
                       separatorWidth={separatorWidth}
                       showHeader={shouldRenderInStreamFileHeader(index)}
                       showSeparator={index > 0}
@@ -1096,6 +1154,7 @@ export function DiffPane({
                       visibleAgentNotes={
                         visibleAgentNotesByFile.get(file.id) ?? EMPTY_VISIBLE_AGENT_NOTES
                       }
+                      visibleBodyBounds={visibleBodyBoundsByFile.get(file.id)}
                       onOpenAgentNotesAtHunk={(hunkIndex) =>
                         onOpenAgentNotesAtHunk(file.id, hunkIndex)
                       }

@@ -2,12 +2,18 @@ import { useMemo } from "react";
 import type { DiffFile, LayoutMode } from "../../core/types";
 import { AgentInlineNote, AgentInlineNoteGuideCap } from "../components/panes/AgentInlineNote";
 import type { VisibleAgentNote } from "../lib/agentAnnotations";
+import type { DiffSectionGeometry } from "../lib/diffSectionGeometry";
 import { reviewRowId } from "../lib/ids";
 import type { AppTheme } from "../themes";
 import { findMaxLineNumber } from "./codeColumns";
 import { buildSplitRows, buildStackRows } from "./pierre";
 import { plannedReviewRowVisible } from "./plannedReviewRows";
 import { buildReviewRenderPlan } from "./reviewRenderPlan";
+import {
+  resolveVisiblePlannedRowWindow,
+  rowWindowingPocEnabled,
+  type VisibleBodyBounds,
+} from "./rowWindowing";
 import { diffMessage, DiffRowView, fitText } from "./renderRows";
 import { useHighlightedDiff } from "./useHighlightedDiff";
 
@@ -28,8 +34,10 @@ export function PierreDiffView({
   visibleAgentNotes = EMPTY_VISIBLE_AGENT_NOTES,
   width,
   selectedHunkIndex,
+  sectionGeometry,
   shouldLoadHighlight = true,
   scrollable = true,
+  visibleBodyBounds,
 }: {
   annotatedHunkIndices?: Set<number>;
   codeHorizontalOffset?: number;
@@ -43,8 +51,10 @@ export function PierreDiffView({
   visibleAgentNotes?: VisibleAgentNote[];
   width: number;
   selectedHunkIndex: number;
+  sectionGeometry?: DiffSectionGeometry;
   shouldLoadHighlight?: boolean;
   scrollable?: boolean;
+  visibleBodyBounds?: VisibleBodyBounds;
 }) {
   const resolvedHighlighted = useHighlightedDiff({
     file,
@@ -74,6 +84,21 @@ export function PierreDiffView({
     [file, rows, showHunkHeaders, visibleAgentNotes],
   );
   const lineNumberDigits = useMemo(() => String(file ? findMaxLineNumber(file) : 1).length, [file]);
+  const visiblePlannedRowWindow = useMemo(() => {
+    if (!sectionGeometry || !visibleBodyBounds || !rowWindowingPocEnabled()) {
+      return {
+        bottomSpacerHeight: 0,
+        plannedRows,
+        topSpacerHeight: 0,
+      };
+    }
+
+    return resolveVisiblePlannedRowWindow({
+      plannedRows,
+      sectionGeometry,
+      visibleBodyBounds,
+    });
+  }, [plannedRows, sectionGeometry, visibleBodyBounds]);
 
   if (!file) {
     return (
@@ -93,7 +118,16 @@ export function PierreDiffView({
 
   const content = (
     <box style={{ width: "100%", flexDirection: "column" }}>
-      {plannedRows.map((plannedRow) => {
+      {visiblePlannedRowWindow.topSpacerHeight > 0 ? (
+        <box
+          style={{
+            width: "100%",
+            height: visiblePlannedRowWindow.topSpacerHeight,
+            backgroundColor: theme.panel,
+          }}
+        />
+      ) : null}
+      {visiblePlannedRowWindow.plannedRows.map((plannedRow) => {
         // Mirror the same visibility/id decisions used by the scroll-bound helpers so the mounted
         // tree can be measured by hunk later.
         const rowId = reviewRowId(plannedRow.key);
@@ -154,6 +188,15 @@ export function PierreDiffView({
           </box>
         );
       })}
+      {visiblePlannedRowWindow.bottomSpacerHeight > 0 ? (
+        <box
+          style={{
+            width: "100%",
+            height: visiblePlannedRowWindow.bottomSpacerHeight,
+            backgroundColor: theme.panel,
+          }}
+        />
+      ) : null}
     </box>
   );
 
