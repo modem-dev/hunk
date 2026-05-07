@@ -238,6 +238,51 @@ function createTwoFileHunkBootstrap(): AppBootstrap {
   });
 }
 
+/** Build the cross-file hunk-navigation shape that used to flash the previous pinned header. */
+function createCrossFileHunkNavigationBootstrap(): AppBootstrap {
+  const longBeforeLines = Array.from(
+    { length: 342 },
+    (_, index) => `line ${String(index + 1).padStart(3, "0")}`,
+  );
+  const longAfterLines = [...longBeforeLines];
+  for (const lineNumber of [
+    2, 21, 41, 61, 81, 101, 121, 141, 161, 181, 201, 221, 241, 261, 281, 301, 321, 341,
+  ]) {
+    longAfterLines[lineNumber - 1] = `line ${String(lineNumber).padStart(3, "0")} changed`;
+  }
+
+  const shortBeforeLines = [
+    "// hunk 0 - at the very top of the file",
+    "export const top = 1;",
+    "",
+    "",
+    ...Array.from({ length: 25 }, (_, index) => `// filler ${index + 1}`),
+    "// hunk 1 - mid-file",
+    "export const mid = 3;",
+  ];
+  const shortAfterLines = [...shortBeforeLines];
+  shortAfterLines[1] = "export const top = 2;";
+  shortAfterLines[30] = "export const mid = 4;";
+
+  return createTestGitAppBootstrap({
+    changesetId: "changeset:cross-file-hunk-navigation",
+    files: [
+      createTestDiffFile(
+        "long-file",
+        "long-file.txt",
+        lines(...longBeforeLines),
+        lines(...longAfterLines),
+      ),
+      createTestDiffFile(
+        "short-file",
+        "short-file.ts",
+        lines(...shortBeforeLines),
+        lines(...shortAfterLines),
+      ),
+    ],
+  });
+}
+
 function createMouseScrollSelectionBootstrap(): AppBootstrap {
   const firstBeforeLines = createNumberedAssignmentLines(1, 12);
   const secondBeforeLines = Array.from(
@@ -337,6 +382,28 @@ async function waitForFrame(
   }
 
   return frame;
+}
+
+async function pressHunkNavigationKey(
+  setup: Awaited<ReturnType<typeof testRender>>,
+  key: "]" | "[",
+  count: number,
+) {
+  for (let index = 0; index < count; index += 1) {
+    await act(async () => {
+      await setup.mockInput.typeText(key);
+    });
+    await flush(setup);
+  }
+}
+
+function firstCrossFileHunkNavigationHeader(frame: string) {
+  return (
+    frame
+      .split("\n")
+      .map((line) => line.trim())
+      .find((line) => line.startsWith("long-file.txt") || line.startsWith("short-file.ts")) ?? ""
+  );
 }
 
 async function waitForSnapshot(
@@ -1830,6 +1897,74 @@ describe("App interactions", () => {
       );
       expect(frame).toContain("second.ts");
       expect((frame.match(/first\.ts/g) ?? []).length).toBe(1);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("forward cross-file hunk navigation keeps the destination file owning the review pane", async () => {
+    const setup = await testRender(
+      <AppHost bootstrap={createCrossFileHunkNavigationBootstrap()} />,
+      {
+        width: 120,
+        height: 16,
+      },
+    );
+
+    try {
+      await flush(setup);
+      await pressHunkNavigationKey(setup, "]", 18);
+
+      let frame = await waitForFrame(
+        setup,
+        (nextFrame) =>
+          nextFrame.includes("short-file.ts") && nextFrame.includes("export const top = 2;"),
+        24,
+      );
+      expect(firstCrossFileHunkNavigationHeader(frame)).toContain("short-file.ts");
+
+      await pressHunkNavigationKey(setup, "]", 1);
+      frame = await waitForFrame(
+        setup,
+        (nextFrame) => nextFrame.includes("export const mid = 4;"),
+        24,
+      );
+
+      expect(firstCrossFileHunkNavigationHeader(frame)).toContain("short-file.ts");
+      expect(frame).not.toContain("line 341 changed");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("backward cross-file hunk navigation reveals the target hunk instead of the file top", async () => {
+    const setup = await testRender(
+      <AppHost bootstrap={createCrossFileHunkNavigationBootstrap()} />,
+      {
+        width: 120,
+        height: 16,
+      },
+    );
+
+    try {
+      await flush(setup);
+      await pressHunkNavigationKey(setup, "]", 19);
+      await waitForFrame(setup, (nextFrame) => nextFrame.includes("export const mid = 4;"), 24);
+
+      await pressHunkNavigationKey(setup, "[", 2);
+      const frame = await waitForFrame(
+        setup,
+        (nextFrame) =>
+          nextFrame.includes("line 341 changed") || nextFrame.includes("line 002 changed"),
+        24,
+      );
+
+      expect(frame).toContain("line 341 changed");
+      expect(frame).not.toContain("line 002 changed");
     } finally {
       await act(async () => {
         setup.renderer.destroy();
