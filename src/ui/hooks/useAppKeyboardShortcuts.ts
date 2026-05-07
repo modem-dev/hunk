@@ -170,6 +170,11 @@ export function useAppKeyboardShortcuts({
 
     if (key.name === "w" || key.sequence === "w") {
       toggleLineWrap();
+      return;
+    }
+
+    if (key.name === "s" || key.sequence === "s") {
+      toggleSidebar();
     }
   };
 

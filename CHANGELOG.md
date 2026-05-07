@@ -7,6 +7,7 @@ All notable user-visible changes to Hunk are documented in this file.
 ### Added
 
 - Added `vcs = "jj"` support, enabling `hunk diff [revset]` and `hunk show [revset]`.
+- Added a pager-mode sidebar file tree that can be revealed with the existing `s` shortcut while keeping pager chrome hidden by default.
 
 ### Changed
 

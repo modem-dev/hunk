@@ -1831,6 +1831,42 @@ describe("App interactions", () => {
     }
   });
 
+  test("pager mode can toggle the sidebar file tree", async () => {
+    const setup = await testRender(<AppHost bootstrap={createBootstrap("auto", true)} />, {
+      width: 220,
+      height: 24,
+    });
+
+    try {
+      await flush(setup);
+
+      let frame = setup.captureCharFrame();
+      expect(frame).not.toContain("File  View  Navigate  Theme  Agent  Help");
+      expect((frame.match(/alpha\.ts/g) ?? []).length).toBe(1);
+
+      await act(async () => {
+        await setup.mockInput.typeText("s");
+      });
+      await flush(setup);
+
+      frame = setup.captureCharFrame();
+      expect(frame).not.toContain("File  View  Navigate  Theme  Agent  Help");
+      expect((frame.match(/alpha\.ts/g) ?? []).length).toBe(2);
+
+      await act(async () => {
+        await setup.mockInput.typeText("s");
+      });
+      await flush(setup);
+
+      frame = setup.captureCharFrame();
+      expect((frame.match(/alpha\.ts/g) ?? []).length).toBe(1);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("sidebar shortcut can force the sidebar open when responsive layout hides it", async () => {
     const setup = await testRender(<AppHost bootstrap={createBootstrap("auto")} />, {
       width: 160,

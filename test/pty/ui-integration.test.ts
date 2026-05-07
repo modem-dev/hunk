@@ -716,6 +716,36 @@ describe("live UI integration", () => {
     }
   });
 
+  test("general pager mode can display the sidebar file tree", async () => {
+    const fixture = harness.createPagerPatchFixture();
+    const session = await harness.launchHunkWithFileBackedStdin({
+      stdinFile: fixture.patchFile,
+      args: ["pager"],
+      cols: 120,
+      rows: 14,
+    });
+
+    try {
+      const initial = await session.waitForText(/scroll\.ts/, { timeout: 15_000 });
+
+      expect(initial).not.toContain("View  Navigate  Theme  Agent  Help");
+      expect(harness.countMatches(initial, /scroll\.ts/g)).toBe(1);
+
+      await session.press("s");
+      const sidebarRow = /\bM scroll\.ts\s+\+40 -40/;
+      const withSidebar = await harness.waitForSnapshot(
+        session,
+        (text) => sidebarRow.test(text),
+        5_000,
+      );
+
+      expect(withSidebar).not.toContain("View  Navigate  Theme  Agent  Help");
+      expect(withSidebar).toMatch(sidebarRow);
+    } finally {
+      session.close();
+    }
+  });
+
   test("explicit pager mode still supports mouse wheel scrolling on a TTY", async () => {
     const fixture = harness.createPagerPatchFixture(60);
     const session = await harness.launchHunk({
