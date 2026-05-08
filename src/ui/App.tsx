@@ -750,7 +750,7 @@ export function App({
           }}
         >
           <text fg={activeTheme.muted}>
-            {`${bootstrap.currentCommit.shortSha || "—"}  ${bootstrap.currentCommit.subject || "(no subject)"}  ·  ${bootstrap.commitCursor.current + 1} of ${bootstrap.commitCursor.total}${bootstrap.commitCursor.streaming ? "+" : ""}  ·  Ctrl-N next  ·  Ctrl-P prev`}
+            {`${bootstrap.currentCommit.shortSha || "—"}  ·  ${bootstrap.commitCursor.current + 1} of ${bootstrap.commitCursor.total}${bootstrap.commitCursor.streaming ? "+" : ""}`}
           </text>
         </box>
       ) : null}

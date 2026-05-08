@@ -33,6 +33,7 @@ import {
   type ViewportRowAnchor,
 } from "../../lib/viewportAnchor";
 import type { AppTheme } from "../../themes";
+import { collapsedCommitHeader } from "../../../core/streaming/commitMetadata";
 import { CommitHeaderBlock } from "./CommitHeaderBlock";
 import { DiffSection } from "./DiffSection";
 import { DiffFileHeaderRow } from "./DiffFileHeaderRow";
@@ -378,12 +379,16 @@ export function DiffPane({
 
   // Commit-review pane has a single commit-level metadata block. Render it as a fixed
   // chrome row above the pinned-header (which itself lives above the scroll content),
-  // so it sits structurally above the entire file list. Inline per-file blocks are
-  // suppressed in this mode to avoid double-rendering. The flat-streaming
-  // (--no-review) path leaves `commitHeader` undefined so DiffSection's inline blocks
-  // remain the right shape there.
-  const showTopCommitHeader = Boolean(commitHeader) && showCommitDetails;
+  // so it sits structurally above the entire file list. The block is always visible
+  // in commit-review — the user-facing toggle controls whether the extended body is
+  // included or just the headers + subject. Inline per-file blocks are suppressed in
+  // this mode to avoid double-rendering. The flat-streaming (--no-review) path leaves
+  // `commitHeader` undefined so DiffSection's inline blocks remain the right shape.
   const inlineCommitDetails = !commitHeader && showCommitDetails;
+  const renderedCommitHeader = useMemo(() => {
+    if (!commitHeader) return undefined;
+    return showCommitDetails ? commitHeader : collapsedCommitHeader(commitHeader);
+  }, [commitHeader, showCommitDetails]);
 
   const baseSectionGeometry = useMemo(
     () =>
@@ -1109,10 +1114,12 @@ export function DiffPane({
           {/* Commit metadata sits above everything else in commit-by-commit review:
            *  it describes the whole commit, not any single file. Rendered as fixed
            *  chrome (above the pinned header and the scroll content) so the user
-           *  always sees the commit context while reading any file's diff. */}
-          {showTopCommitHeader && commitHeader ? (
+           *  always sees the commit context while reading any file's diff. The
+           *  rendered text is full or collapsed depending on showCommitDetails — but
+           *  the headers and subject are always shown. */}
+          {renderedCommitHeader ? (
             <box style={{ width: "100%", flexShrink: 0 }}>
-              <CommitHeaderBlock text={commitHeader} theme={theme} />
+              <CommitHeaderBlock text={renderedCommitHeader} theme={theme} />
             </box>
           ) : null}
           {/* Always pin the current file header in a dedicated top row. */}

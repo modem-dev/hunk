@@ -188,13 +188,13 @@ export function buildAppMenus({
             {
               kind: "item" as const,
               label: "Previous commit",
-              hint: "Ctrl-P",
+              hint: "<",
               action: () => moveToCommit(-1),
             },
             {
               kind: "item" as const,
               label: "Next commit",
-              hint: "Ctrl-N",
+              hint: ">",
               action: () => moveToCommit(1),
             },
             { kind: "separator" as const },

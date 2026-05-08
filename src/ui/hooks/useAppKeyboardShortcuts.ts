@@ -439,11 +439,11 @@ export function useAppKeyboardShortcuts({
     // streaming, pager commit-review, and (in principle) any future review mode that
     // exposes commit cursors. Bound at the top so it's not buried inside either of
     // the per-mode handlers below.
-    if (requestMoveCommit && key.ctrl && (key.name === "n" || key.sequence === "\x0e")) {
+    if (requestMoveCommit && (key.name === ">" || key.sequence === ">")) {
       requestMoveCommit(1);
       return;
     }
-    if (requestMoveCommit && key.ctrl && (key.name === "p" || key.sequence === "\x10")) {
+    if (requestMoveCommit && (key.name === "<" || key.sequence === "<")) {
       requestMoveCommit(-1);
       return;
     }

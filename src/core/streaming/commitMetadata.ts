@@ -46,3 +46,31 @@ export function parseCommitMetadata(rawHeader: string): CommitMetadata {
 
   return { sha, shortSha, subject, author, date, body, rawHeader };
 }
+
+/**
+ * Truncate a verbatim commit header block to keep only the structured headers
+ * (commit/Author/Date/Merge), the blank separator, and the subject (first message
+ * line) — dropping the extended body. Used by the renderer's "collapse" view so the
+ * commit context (sha, who/when, headline) stays visible while reclaiming the
+ * vertical space taken by long commit messages.
+ */
+export function collapsedCommitHeader(rawHeader: string): string {
+  const lines = rawHeader.replace(/\n+$/, "").split("\n");
+  const out: string[] = [];
+  let pastHeaders = false;
+
+  for (const line of lines) {
+    if (!pastHeaders) {
+      if (/^commit |^Author:|^Date:|^Merge:/.test(line)) {
+        out.push(line);
+        continue;
+      }
+      pastHeaders = true;
+    }
+    out.push(line);
+    // First non-blank line after the header rows is the subject. Stop after it.
+    if (line.trim().length > 0) break;
+  }
+
+  return out.join("\n");
+}
