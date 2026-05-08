@@ -8,7 +8,6 @@ import {
 } from "./codeColumns";
 import type { DiffRow, RenderSpan, SplitLineCell, StackLineCell } from "./pierre";
 import { blendHex } from "../lib/color";
-import type { StructuralChange } from "../../core/types";
 
 /** Clamp a label to one terminal row with an ellipsis. */
 export function fitText(text: string, width: number) {
@@ -716,7 +715,7 @@ function renderRow(
   annotated: boolean,
   anchorId?: string,
   noteGuideSide?: "old" | "new",
-  structuralChange?: StructuralChange,
+  structuralChange?: boolean,
   onOpenAgentNotesAtHunk?: (hunkIndex: number) => void,
 ) {
   let baseRow: ReactNode;
@@ -957,7 +956,7 @@ interface DiffRowViewProps {
   annotated: boolean;
   anchorId?: string;
   noteGuideSide?: "old" | "new";
-  structuralChange?: StructuralChange;
+  structuralChange?: boolean;
   onOpenAgentNotesAtHunk?: (hunkIndex: number) => void;
 }
 

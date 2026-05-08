@@ -464,11 +464,18 @@ async function parseShowCommand(tokens: string[], argv: string[]): Promise<Parse
 
   await parseStandaloneCommand(command, commandTokens);
 
+  const options = buildCommonOptions(parsedOptions, argv);
+  if (options.structural) {
+    console.warn(
+      "Warning: --structural is ignored for `show` because AST diffing requires full file trees.",
+    );
+  }
+
   return {
     kind: "show",
     ref: parsedRef,
     pathspecs: pathspecs.length > 0 ? pathspecs : undefined,
-    options: buildCommonOptions(parsedOptions, argv),
+    options,
   };
 }
 
@@ -492,10 +499,17 @@ async function parsePatchCommand(tokens: string[], argv: string[]): Promise<Pars
 
   await parseStandaloneCommand(command, tokens);
 
+  const options = buildCommonOptions(parsedOptions, argv);
+  if (options.structural) {
+    console.warn(
+      "Warning: --structural is ignored for `patch` because AST diffing requires full file trees.",
+    );
+  }
+
   return {
     kind: "patch",
     file: parsedFile,
-    options: buildCommonOptions(parsedOptions, argv),
+    options,
   };
 }
 
@@ -1277,10 +1291,17 @@ async function parseStashCommand(tokens: string[], argv: string[]): Promise<Pars
 
   await parseStandaloneCommand(command, rest);
 
+  const options = buildCommonOptions(parsedOptions, argv);
+  if (options.structural) {
+    console.warn(
+      "Warning: --structural is ignored for `stash show` because AST diffing requires full file trees.",
+    );
+  }
+
   return {
     kind: "stash-show",
     ref: parsedRef,
-    options: buildCommonOptions(parsedOptions, argv),
+    options,
   };
 }
 
