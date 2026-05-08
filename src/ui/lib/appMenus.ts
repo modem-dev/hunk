@@ -69,7 +69,7 @@ export function buildAppMenus({
   wrapLines,
 }: BuildAppMenusOptions): Record<MenuId, MenuEntry[]> {
   const labelForCommitDetailsMode = (mode: CommitDetailsMode): string =>
-    mode === "full" ? "full" : mode === "oneLine" ? "one-line" : "hidden";
+    mode === "full" ? "full" : mode === "compact" ? "compact" : "hidden";
 
   const themeMenuEntries: MenuEntry[] = THEMES.map((theme) => ({
     kind: "item",

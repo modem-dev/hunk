@@ -96,12 +96,12 @@ export interface CommonOptions {
 /**
  * Three-state commit metadata visibility for the commit-review pager:
  * - `full`: render the verbatim header block (commit/Author/Date/blank/subject + body).
- * - `oneLine`: condensed single-line summary (sha · author · date · subject).
+ * - `compact`: two-row summary — `commit <sha>  Author: …  Date: …` then the subject.
  * - `hidden`: omit the metadata block entirely.
  *
  * Only meaningful in commit-review pager sessions. Other modes ignore the setting.
  */
-export type CommitDetailsMode = "full" | "oneLine" | "hidden";
+export type CommitDetailsMode = "full" | "compact" | "hidden";
 
 export interface PersistedViewPreferences {
   mode: LayoutMode;

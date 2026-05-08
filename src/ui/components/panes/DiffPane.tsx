@@ -33,7 +33,7 @@ import {
   type ViewportRowAnchor,
 } from "../../lib/viewportAnchor";
 import type { AppTheme } from "../../themes";
-import { collapsedCommitHeader, oneLineCommitHeader } from "../../../core/streaming/commitMetadata";
+import { collapsedCommitHeader, compactCommitHeader } from "../../../core/streaming/commitMetadata";
 import type { CommitDetailsMode, CommitMetadata } from "../../../core/types";
 import { CommitHeaderBlock } from "./CommitHeaderBlock";
 import { DiffSection } from "./DiffSection";
@@ -387,7 +387,7 @@ export function DiffPane({
   // chrome row above the pinned-header (which itself lives above the scroll content),
   // so it sits structurally above the entire file list. Three states:
   //   full     → verbatim header + body (current `git log -p` look in `less`)
-  //   oneLine  → single-line summary (sha · author · date · subject)
+  //   compact  → two rows: `commit <sha>  Author: …  Date: …` then the subject
   //   hidden   → block omitted entirely
   // Inline per-file blocks are suppressed in this mode to avoid double-rendering. The
   // flat-streaming (--no-review) path leaves `commitHeader` undefined so DiffSection's
@@ -396,9 +396,9 @@ export function DiffPane({
   const inlineCommitDetails = !commitHeader && commitDetailsMode !== "hidden";
   const renderedCommitHeader = useMemo(() => {
     if (!commitHeader || commitDetailsMode === "hidden") return undefined;
-    if (commitDetailsMode === "oneLine") {
+    if (commitDetailsMode === "compact") {
       return commitMetadata
-        ? oneLineCommitHeader(commitMetadata)
+        ? compactCommitHeader(commitMetadata)
         : collapsedCommitHeader(commitHeader);
     }
     return commitHeader; // "full"

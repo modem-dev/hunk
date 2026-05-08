@@ -380,12 +380,12 @@ export function App({
   };
 
   /**
-   * Cycle the commit metadata block between full → one-line → hidden. No-op outside
+   * Cycle the commit metadata block between full → compact → hidden. No-op outside
    * commit-review sessions. The cycle wraps to "full" after "hidden".
    */
   const cycleCommitDetailsMode = () => {
     setCommitDetailsMode((current) =>
-      current === "full" ? "oneLine" : current === "oneLine" ? "hidden" : "full",
+      current === "full" ? "compact" : current === "compact" ? "hidden" : "full",
     );
   };
 

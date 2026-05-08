@@ -54,8 +54,8 @@ function normalizeString(value: unknown) {
 }
 
 /** Accept only the three valid commit-details modes. */
-function normalizeCommitDetailsMode(value: unknown): "full" | "oneLine" | "hidden" | undefined {
-  return value === "full" || value === "oneLine" || value === "hidden" ? value : undefined;
+function normalizeCommitDetailsMode(value: unknown): "full" | "compact" | "hidden" | undefined {
+  return value === "full" || value === "compact" || value === "hidden" ? value : undefined;
 }
 
 /** Read the view preferences stored at one TOML object level. */
