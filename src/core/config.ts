@@ -131,18 +131,28 @@ function detectRepoVcsMode(repoRoot?: string): VcsMode {
   return "git";
 }
 
-/** Parse one TOML config file into a plain object. */
+/**
+ * Parse one TOML config file into a plain object. Missing files yield `{}`;
+ * malformed TOML and non-object roots are reported to stderr and treated as
+ * absent so a bad config never aborts startup.
+ */
 function readTomlRecord(path: string) {
   if (!fs.existsSync(path)) {
     return {};
   }
 
-  const parsed = Bun.TOML.parse(fs.readFileSync(path, "utf8"));
-  if (!isRecord(parsed)) {
-    throw new Error(`Expected ${path} to contain a TOML object.`);
+  try {
+    const parsed = Bun.TOML.parse(fs.readFileSync(path, "utf8"));
+    if (!isRecord(parsed)) {
+      process.stderr.write(`[hunk] config: ${path} is not a TOML object — ignored.\n`);
+      return {};
+    }
+    return parsed;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`[hunk] config: parse error in ${path}: ${message} — ignored.\n`);
+    return {};
   }
-
-  return parsed;
 }
 
 /** Resolve CLI input against global and repo-local config files. */

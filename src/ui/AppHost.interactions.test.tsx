@@ -2307,6 +2307,80 @@ describe("App interactions", () => {
     }
   });
 
+  test("pressing q while help is open still routes through onQuit (regression for help-fall-through)", async () => {
+    // Pre-keymap behavior on main: only Esc closed help, but `q` still quit the
+    // app even while help was open. The keymap rewrite regressed this by making
+    // `q` (matching `global.quit`) close help instead of falling through to the
+    // app handler. This test pins the fall-through: with help open, `q` must
+    // still reach the quit handler. The companion test below confirms that Esc
+    // (and the help toggle key) continue to close the dialog.
+    const onQuit = mock(() => undefined);
+    const setup = await testRender(
+      <AppHost bootstrap={createBootstrap()} onQuit={onQuit} />,
+      { width: 220, height: 32 },
+    );
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.typeText("?");
+      });
+      await flush(setup);
+
+      const frame = setup.captureCharFrame();
+      expect(frame).toContain("Controls help");
+
+      await act(async () => {
+        await setup.mockInput.typeText("q");
+      });
+      await flush(setup);
+
+      expect(onQuit).toHaveBeenCalledTimes(1);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("Esc closes the help dialog without quitting the app", async () => {
+    const onQuit = mock(() => undefined);
+    const setup = await testRender(
+      <AppHost bootstrap={createBootstrap()} onQuit={onQuit} />,
+      { width: 220, height: 32 },
+    );
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.typeText("?");
+      });
+      await flush(setup);
+
+      let frame = setup.captureCharFrame();
+      expect(frame).toContain("Controls help");
+
+      await act(async () => {
+        await setup.mockInput.pressEscape();
+      });
+      await flush(setup);
+      await act(async () => {
+        await Bun.sleep(40);
+        await setup.renderOnce();
+      });
+
+      frame = await waitForFrame(setup, (currentFrame) => !currentFrame.includes("Controls help"));
+      expect(frame).not.toContain("Controls help");
+      expect(onQuit).not.toHaveBeenCalled();
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("quit shortcuts route through the provided onQuit handler in regular and pager modes", async () => {
     const regularQuit = mock(() => undefined);
     const regularSetup = await testRender(

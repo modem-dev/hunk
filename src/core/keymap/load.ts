@@ -76,6 +76,16 @@ export function applyKeymapOverrides(
 
   const next = cloneKeymap(base);
 
+  // Walk the user's scopes once first so we can warn on typos like
+  // `[keybindings.gloabl]` instead of silently dropping the whole block.
+  for (const scope of Object.keys(keybindings)) {
+    if (!(ACTION_SCOPES as readonly string[]).includes(scope)) {
+      process.stderr.write(
+        `[hunk] keybindings: unknown scope "${scope}" — ignored. (valid: ${ACTION_SCOPES.join(", ")})\n`,
+      );
+    }
+  }
+
   for (const scope of ACTION_SCOPES) {
     const scopeOverrides = keybindings[scope];
     if (!isRecord(scopeOverrides)) continue;
@@ -89,6 +99,15 @@ export function applyKeymapOverrides(
         );
         continue;
       }
+      // Detect `quit = []` before the array passes the type check below — an
+      // empty array would otherwise silently disable the action without the
+      // explicit `<disabled>` sentinel.
+      if (Array.isArray(value) && value.length === 0) {
+        process.stderr.write(
+          `[hunk] keybindings: empty binding for "${scope}.${actionId}" — use "<disabled>" to unbind. ignored.\n`,
+        );
+        continue;
+      }
       if (!isStringOrStringArray(value)) {
         process.stderr.write(
           `[hunk] keybindings: invalid binding for "${scope}.${actionId}" (expected string or string[]) — ignored.\n`,
@@ -99,6 +118,11 @@ export function applyKeymapOverrides(
       for (const rejected of parsed.rejectedTokens) {
         process.stderr.write(
           `[hunk] keybindings: unrecognized token "${rejected}" for "${scope}.${actionId}" — skipped.\n`,
+        );
+      }
+      if (parsed.mixedWithDisabled) {
+        process.stderr.write(
+          `[hunk] keybindings: "${scope}.${actionId}" mixes "<disabled>" with other tokens — entire binding disabled.\n`,
         );
       }
       const specs: KeySpec[] = parsed.disabled ? [] : parsed.specs;

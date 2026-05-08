@@ -77,6 +77,32 @@ describe("matchesKey", () => {
     expect(matchesKey(spec, makeKey({ name: "c", ctrl: true }))).toBe(true);
     expect(matchesKey(spec, makeKey({ name: "c" }))).toBe(false);
   });
+
+  test("bare-character spec accepts events that only set name", () => {
+    // Some OpenTUI input paths emit `name` without `sequence` for printables.
+    // The matcher must accept either signal, otherwise those paths regress.
+    const spec = parseKeyToken("r");
+    if (!spec || spec === "disabled") throw new Error("bad fixture");
+    expect(matchesKey(spec, makeKey({ name: "r" }))).toBe(true);
+    expect(matchesKey(spec, makeKey({ sequence: "r" }))).toBe(true);
+    expect(matchesKey(spec, makeKey({ name: "x" }))).toBe(false);
+  });
+
+  test("modifier-required specs do not match plain events", () => {
+    // The reverse direction of the modifier rule: spec asks for shift/ctrl/alt,
+    // event is missing it, so the match must fail. These are cheap pins on the
+    // most common regression vector.
+    const shiftUp = parseKeyToken("<s-up>");
+    const ctrlC = parseKeyToken("<c-c>");
+    const metaX = parseKeyToken("<m-x>");
+    if (!shiftUp || shiftUp === "disabled") throw new Error("bad fixture");
+    if (!ctrlC || ctrlC === "disabled") throw new Error("bad fixture");
+    if (!metaX || metaX === "disabled") throw new Error("bad fixture");
+
+    expect(matchesKey(shiftUp, makeKey({ name: "up" }))).toBe(false);
+    expect(matchesKey(ctrlC, makeKey({ name: "c" }))).toBe(false);
+    expect(matchesKey(metaX, makeKey({ name: "x" }))).toBe(false);
+  });
 });
 
 describe("matchesAction", () => {

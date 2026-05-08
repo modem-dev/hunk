@@ -4,6 +4,26 @@ import { ACTIONS } from "./actions";
 import { applyKeymapOverrides, loadKeymapDefaults } from "./load";
 import { matchesAction } from "./match";
 
+/**
+ * Replace `process.stderr.write` with an in-memory collector for the duration
+ * of `fn`. Returns the captured chunks so tests can assert on warning content
+ * without leaking warnings into the test runner's output.
+ */
+async function captureStderr(fn: () => void | Promise<void>): Promise<string[]> {
+  const chunks: string[] = [];
+  const original = process.stderr.write.bind(process.stderr);
+  process.stderr.write = ((chunk: unknown) => {
+    chunks.push(typeof chunk === "string" ? chunk : String(chunk));
+    return true;
+  }) as typeof process.stderr.write;
+  try {
+    await fn();
+  } finally {
+    process.stderr.write = original;
+  }
+  return chunks;
+}
+
 function makeKey(overrides: Partial<KeyEvent>): KeyEvent {
   return {
     name: "",
@@ -99,5 +119,91 @@ describe("applyKeymapOverrides", () => {
       keybindings: { global: { quit: "x" } },
     });
     expect(base.global.quit).toBe(beforeQuit);
+  });
+
+  test("warns and skips empty array bindings", async () => {
+    const base = loadKeymapDefaults();
+    let next!: ReturnType<typeof applyKeymapOverrides>;
+    const stderr = await captureStderr(() => {
+      next = applyKeymapOverrides(base, {
+        keybindings: { global: { quit: [] } },
+      });
+    });
+
+    // Empty array should be ignored, defaults preserved.
+    expect(next.global.quit).toEqual(base.global.quit);
+    expect(stderr.some((line) => line.includes("empty binding") && line.includes("global.quit"))).toBe(true);
+  });
+
+  test("warns on unknown scope but keeps walking known scopes", async () => {
+    const base = loadKeymapDefaults();
+    let next!: ReturnType<typeof applyKeymapOverrides>;
+    const stderr = await captureStderr(() => {
+      next = applyKeymapOverrides(base, {
+        keybindings: {
+          gloabl: { quit: "x" },
+          global: { quit: "z" },
+        },
+      });
+    });
+
+    expect(stderr.some((line) => line.includes('unknown scope "gloabl"'))).toBe(true);
+    // Known scope still applied.
+    const zKey = makeKey({ name: "z", sequence: "z" });
+    expect(matchesAction(next, "global", "quit", zKey)).toBe(true);
+  });
+
+  test("pager scope bindings are independent of global overrides", () => {
+    const base = loadKeymapDefaults();
+    const next = applyKeymapOverrides(base, {
+      keybindings: { global: { quit: "x" } },
+    });
+
+    // Overriding global quit must not touch the pager scope's quit binding.
+    expect(next.pager.quit).toEqual(base.pager.quit);
+    const qKey = makeKey({ name: "q", sequence: "q" });
+    expect(matchesAction(next, "pager", "quit", qKey)).toBe(true);
+  });
+
+  test("rejected tokens warn but still bind the parseable ones", async () => {
+    const base = loadKeymapDefaults();
+    let next!: ReturnType<typeof applyKeymapOverrides>;
+    const stderr = await captureStderr(() => {
+      next = applyKeymapOverrides(base, {
+        keybindings: { global: { quit: ["q", "<bogus>"] } },
+      });
+    });
+
+    expect(
+      stderr.some(
+        (line) =>
+          line.includes("<bogus>") && line.includes("global.quit") && line.includes("unrecognized"),
+      ),
+    ).toBe(true);
+
+    // `q` still binds even though `<bogus>` was dropped.
+    const qKey = makeKey({ name: "q", sequence: "q" });
+    expect(matchesAction(next, "global", "quit", qKey)).toBe(true);
+  });
+
+  test("warns when <disabled> mixes with other tokens", async () => {
+    const base = loadKeymapDefaults();
+    let next!: ReturnType<typeof applyKeymapOverrides>;
+    const stderr = await captureStderr(() => {
+      next = applyKeymapOverrides(base, {
+        keybindings: { global: { quit: ["q", "<disabled>"] } },
+      });
+    });
+
+    expect(
+      stderr.some(
+        (line) =>
+          line.includes("global.quit") &&
+          line.includes("<disabled>") &&
+          line.includes("mixes"),
+      ),
+    ).toBe(true);
+    // Disabled still wins — caller is warned, but the binding ends up empty.
+    expect(next.global.quit).toEqual([]);
   });
 });

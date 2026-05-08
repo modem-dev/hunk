@@ -24,7 +24,13 @@ export type Keymap = Record<ActionScope, Partial<Record<ActionId, KeySpec[]>>>;
 /** Match a single KeySpec against a live KeyEvent. */
 export function matchesKey(spec: KeySpec, key: KeyEvent): boolean {
   if (spec.sequence !== undefined) {
-    return key.sequence === spec.sequence;
+    if (key.sequence === spec.sequence) return true;
+    // Defensive parity with the pre-keymap hook, which accepted both
+    // `key.name === "X"` and `key.sequence === "X"` for single-character keys.
+    // Some OpenTUI input paths populate `name` without `sequence` for bare
+    // printables; matching either keeps those events binding correctly.
+    if (spec.sequence.length === 1 && key.name === spec.sequence) return true;
+    return false;
   }
 
   if (spec.name === undefined) return false;

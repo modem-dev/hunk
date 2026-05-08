@@ -146,6 +146,13 @@ export interface ParsedBinding {
   specs: KeySpec[];
   /** True when any token was `<disabled>` — caller should treat as unbound. */
   disabled: boolean;
+  /**
+   * True when `<disabled>` appeared alongside any other token (parsed or
+   * rejected). Pure `"<disabled>"` is *not* mixed; only loud combinations
+   * like `["q", "<disabled>"]` set this flag so callers can warn that the
+   * other tokens were silently dropped.
+   */
+  mixedWithDisabled: boolean;
   /** Tokens that failed to parse, surfaced so callers can warn with context. */
   rejectedTokens: string[];
 }
@@ -156,10 +163,14 @@ export function parseBinding(value: string | string[]): ParsedBinding {
   const specs: KeySpec[] = [];
   const rejectedTokens: string[] = [];
   let disabled = false;
+  // Track non-disabled tokens separately so the "disabled wins" zeroing
+  // doesn't erase the evidence we need for mixedWithDisabled.
+  let hadOtherTokens = false;
 
   for (const token of tokens) {
     if (typeof token !== "string") {
       rejectedTokens.push(String(token));
+      hadOtherTokens = true;
       continue;
     }
     const parsed = parseKeyToken(token);
@@ -170,14 +181,18 @@ export function parseBinding(value: string | string[]): ParsedBinding {
     }
     if (parsed === null) {
       rejectedTokens.push(token);
+      hadOtherTokens = true;
       continue;
     }
     specs.push(parsed);
+    hadOtherTokens = true;
   }
+
+  const mixedWithDisabled = disabled && hadOtherTokens;
 
   if (disabled) {
-    return { specs: [], disabled: true, rejectedTokens };
+    return { specs: [], disabled: true, mixedWithDisabled, rejectedTokens };
   }
 
-  return { specs, disabled: false, rejectedTokens };
+  return { specs, disabled: false, mixedWithDisabled, rejectedTokens };
 }

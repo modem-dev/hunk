@@ -13,7 +13,7 @@ import { buildFileSectionLayouts, buildInStreamFileHeaderHeights } from "../lib/
 const { AppHost } = await import("../AppHost");
 const { buildSidebarEntries } = await import("../lib/files");
 const { HelpDialog } = await import("./chrome/HelpDialog");
-const { loadKeymapDefaults } = await import("../../core/keymap/load");
+const { applyKeymapOverrides, loadKeymapDefaults } = await import("../../core/keymap/load");
 const { SidebarPane } = await import("./panes/SidebarPane");
 const { AgentCard } = await import("./panes/AgentCard");
 const { AgentInlineNote } = await import("./panes/AgentInlineNote");
@@ -1634,6 +1634,36 @@ describe("UI components", () => {
     expect(lines[mouseHeaderIndex - 1]).toMatch(blankModalRow);
     expect(lines[viewHeaderIndex - 1]).toMatch(blankModalRow);
     expect(lines[reviewHeaderIndex - 1]).toMatch(blankModalRow);
+  });
+
+  test("HelpDialog reflects an overridden quit binding instead of the default `q`", async () => {
+    const theme = resolveTheme("midnight", null);
+    const keymap = applyKeymapOverrides(loadKeymapDefaults(), {
+      keybindings: { global: { quit: "<c-c>" } },
+    });
+
+    const frame = await captureFrame(
+      <HelpDialog
+        canRefresh={true}
+        keymap={keymap}
+        terminalHeight={56}
+        terminalWidth={76}
+        theme={theme}
+        onClose={() => {}}
+      />,
+      76,
+      56,
+    );
+
+    // Find the row that holds the "quit" action description and check its
+    // key column shows the override label, not the original `q`.
+    const quitLine = frame.split("\n").find((line) => line.includes("quit"));
+    expect(quitLine).toBeDefined();
+    expect(quitLine!).toContain("Ctrl+C");
+    // The default `q` binding must not appear as the quit label anymore. Allow
+    // `q` elsewhere (e.g. in unrelated descriptions); the assertion targets
+    // the quit row specifically.
+    expect(quitLine!).not.toMatch(/^[^a-zA-Z0-9]*q\s/);
   });
 
   test("DiffSectionPlaceholder preserves offscreen section chrome without mounting rows", async () => {

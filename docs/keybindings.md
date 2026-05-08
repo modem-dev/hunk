@@ -45,6 +45,8 @@ Tokens use angle brackets for special keys and modifiers, mirroring lazygit:
 | `<f1>`–`<f12>`   | Function keys.                                       |
 | `<c-c>`          | Ctrl+C.                                              |
 | `<s-up>`         | Shift+Up.                                            |
+| `<s-space>`      | Shift+Space — modifiers stack on any named key, not just arrows. |
+| `<c-pgdown>`     | Ctrl+PageDown — same idea with a different modifier. |
 | `<a-x>`, `<m-x>` | Alt+X / Meta+X.                                      |
 | `<c-s-a>`        | Modifiers stack in any order.                        |
 | `<disabled>`     | Sentinel that unbinds the action.                    |
@@ -59,8 +61,8 @@ To unbind a default:
 "sidebar.toggle" = "<disabled>"
 ```
 
-Unknown action ids and malformed tokens are logged once to stderr and
-otherwise ignored. They never abort startup.
+Unknown action ids and malformed tokens are logged to stderr and otherwise
+ignored. They never abort startup.
 
 ## Action reference
 
@@ -103,8 +105,25 @@ otherwise ignored. They never abort startup.
 ### `[keybindings.pager]`
 
 The pager scope mirrors the global scroll/wrap actions for `hunk pager`.
-`quit` defaults to `q` and `<esc>`. Defaults are the same as the matching
-global actions; rebind them under this section to override pager-only.
+Defaults match the corresponding global actions; rebind them under this
+section to override pager-only.
+
+| Action                 | Default keys                | What it does                  |
+| ---------------------- | --------------------------- | ----------------------------- |
+| `quit`                 | `q`, `<esc>`                | Quit.                         |
+| `scroll.lineDown`      | `j`, `<down>`               | Scroll one line down.         |
+| `scroll.lineUp`        | `k`, `<up>`                 | Scroll one line up.           |
+| `scroll.pageDown`      | `<space>`, `f`, `<pgdown>`  | Page down.                    |
+| `scroll.pageUp`        | `b`, `<pgup>`, `<s-space>`  | Page up.                      |
+| `scroll.halfPageDown`  | `d`                         | Half page down.               |
+| `scroll.halfPageUp`    | `u`                         | Half page up.                 |
+| `scroll.toTop`         | `<home>`                    | Jump to top.                  |
+| `scroll.toBottom`      | `<end>`                     | Jump to bottom.               |
+| `scroll.codeLeft`      | `<left>`                    | Scroll code left one column.  |
+| `scroll.codeRight`     | `<right>`                   | Scroll code right one column. |
+| `scroll.codeLeftFast`  | `<s-left>`                  | Scroll code left (fast).      |
+| `scroll.codeRightFast` | `<s-right>`                 | Scroll code right (fast).     |
+| `wrap.toggle`          | `w`                         | Toggle line wrap.             |
 
 ### `[keybindings.menu]`
 

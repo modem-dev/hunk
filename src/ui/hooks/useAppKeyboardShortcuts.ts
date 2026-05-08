@@ -4,6 +4,7 @@ import { useRef } from "react";
 import type { ActionId, ActionScope } from "../../core/keymap/actions";
 import type { Keymap } from "../../core/keymap/match";
 import { matchesAction } from "../../core/keymap/match";
+import { isEscapeKey } from "../../core/keyboard";
 import type { LayoutMode } from "../../core/types";
 import type { MenuId } from "../components/chrome/menu";
 
@@ -191,13 +192,10 @@ export function useAppKeyboardShortcuts({
   };
 
   const handleHelpShortcut = (key: KeyEvent) => {
-    if (!showHelpRef.current) {
-      return false;
-    }
-    if (!isAction("global", "quit", key) && !isAction("global", "help.toggle", key)) {
-      return false;
-    }
-
+    if (!showHelpRef.current) return false;
+    // Only Esc and the help-toggle binding close help here. Other keys (notably
+    // `quit`) fall through so they continue to fire their app-level handlers.
+    if (!isEscapeKey(key) && !isAction("global", "help.toggle", key)) return false;
     closeHelp();
     return true;
   };

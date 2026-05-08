@@ -80,6 +80,24 @@ describe("parseBinding", () => {
     const result = parseBinding(["q", "<disabled>"]);
     expect(result.disabled).toBe(true);
     expect(result.specs).toEqual([]);
+    expect(result.mixedWithDisabled).toBe(true);
+  });
+
+  test("plain <disabled> is not flagged as mixed", () => {
+    const single = parseBinding("<disabled>");
+    expect(single.disabled).toBe(true);
+    expect(single.mixedWithDisabled).toBe(false);
+
+    const arr = parseBinding(["<disabled>"]);
+    expect(arr.disabled).toBe(true);
+    expect(arr.mixedWithDisabled).toBe(false);
+  });
+
+  test("disabled mixed with a rejected token is also flagged", () => {
+    const result = parseBinding(["<disabled>", "<bogus>"]);
+    expect(result.disabled).toBe(true);
+    expect(result.mixedWithDisabled).toBe(true);
+    expect(result.rejectedTokens).toEqual(["<bogus>"]);
   });
 
   test("reports unparseable tokens via rejectedTokens", () => {
@@ -87,5 +105,6 @@ describe("parseBinding", () => {
     expect(result.specs).toHaveLength(1);
     expect(result.specs[0]?.sequence).toBe("q");
     expect(result.rejectedTokens).toEqual(["<bogus>"]);
+    expect(result.mixedWithDisabled).toBe(false);
   });
 });
