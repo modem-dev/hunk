@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { platform, tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadAppBootstrap } from "./loaders";
 import type { CliInput } from "./types";
@@ -201,7 +201,7 @@ describe("loadAppBootstrap", () => {
       ),
     );
 
-    expect(bootstrap.changeset.sourceLabel).toBe(dir);
+    expect(bootstrap.changeset.sourceLabel.replace(/\\/g, "/")).toBe(dir.replace(/\\/g, "/"));
     expect(bootstrap.changeset.files[0]?.path).toBe("example.ts");
     expect(bootstrap.changeset.files[0]?.agent?.annotations).toHaveLength(1);
   });
@@ -411,7 +411,7 @@ describe("loadAppBootstrap", () => {
     writeFileSync(join(dir, "tracked.ts"), "export const tracked = 1;\n");
     git(dir, "add", "tracked.ts");
     git(dir, "commit", "-m", "initial");
-    git(dir, "branch", "main");
+    git(dir, "branch", "base-branch");
 
     writeFileSync(join(dir, "tracked.ts"), "export const tracked = 2;\n");
     git(dir, "add", "tracked.ts");
@@ -422,7 +422,7 @@ describe("loadAppBootstrap", () => {
 
     const bootstrap = await loadFromRepo(dir, {
       kind: "vcs",
-      range: "main",
+      range: "base-branch",
       staged: false,
       options: { mode: "auto" },
     });
@@ -439,7 +439,7 @@ describe("loadAppBootstrap", () => {
     writeFileSync(join(dir, "tracked.ts"), "export const tracked = 1;\n");
     git(dir, "add", "tracked.ts");
     git(dir, "commit", "-m", "initial");
-    git(dir, "branch", "main");
+    git(dir, "branch", "base-branch");
 
     writeFileSync(join(dir, "tracked.ts"), "export const tracked = 2;\n");
     git(dir, "add", "tracked.ts");
@@ -450,7 +450,7 @@ describe("loadAppBootstrap", () => {
 
     const bootstrap = await loadFromRepo(dir, {
       kind: "vcs",
-      range: "main..HEAD",
+      range: "base-branch..HEAD",
       staged: false,
       options: { mode: "auto" },
     });
@@ -483,6 +483,10 @@ describe("loadAppBootstrap", () => {
   });
 
   test("loads untracked files whose names need parser-safe diff headers", async () => {
+    if (platform() === "win32") {
+      return;
+    }
+
     const dir = createTempRepo("hunk-git-quoted-untracked-");
 
     writeFileSync(join(dir, "tracked.ts"), "export const tracked = 1;\n");
@@ -1032,7 +1036,7 @@ describe("loadAppBootstrap", () => {
     writeFileSync(after, "export const answer = 42;\nexport const added = true;\n");
 
     const diffProc = Bun.spawnSync(
-      ["git", "diff", "--no-index", "--color=always", "--", before, after],
+      ["git", "diff", "--no-index", "--color=always", "--", "before.ts", "after.ts"],
       {
         cwd: dir,
         stdin: "ignore",

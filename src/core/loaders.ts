@@ -53,7 +53,7 @@ const LARGE_DIFF_FILE_SNIFF_BYTES = 256 * 1024;
 
 /** Return the final path segment for display-oriented labels. */
 function basename(path: string) {
-  return path.split("/").filter(Boolean).pop() ?? path;
+  return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
 }
 
 /** Remove git-style a/ and b/ prefixes before matching diff paths. */
