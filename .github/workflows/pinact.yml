@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   pinact:
-    name: Verify action pins
+    name: Verify Action Pins
     runs-on: ubuntu-latest
     permissions:
       contents: read
