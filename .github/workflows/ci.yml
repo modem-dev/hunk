@@ -31,7 +31,7 @@ jobs:
           bun-version: 1.3.10
 
       - name: Install Jujutsu
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@3fa6878dc4ae603f73960271565a082bf196ab96 # v2.77.2
         with:
           tool: jj-cli
 
