@@ -52,13 +52,20 @@ async function main() {
   }
 
   const { bootstrap, controllingTerminal } = startupPlan;
-  const hostClient = new SessionBrokerClient<
-    HunkSessionInfo,
-    HunkSessionState,
-    HunkSessionServerMessage,
-    HunkSessionCommandResult
-  >(createSessionRegistration(bootstrap), createInitialSessionSnapshot(bootstrap));
-  hostClient.start();
+  // No-review mode (auto-detected log-style pager input or explicit --no-review):
+  // skip daemon registration entirely. The session never appears in `hunk session list`,
+  // no agent commands target it, and the streaming append path never has to worry about
+  // keeping a stale broker view in sync.
+  const noReview = Boolean(bootstrap.input.options.noReview);
+  const hostClient = noReview
+    ? undefined
+    : new SessionBrokerClient<
+        HunkSessionInfo,
+        HunkSessionState,
+        HunkSessionServerMessage,
+        HunkSessionCommandResult
+      >(createSessionRegistration(bootstrap), createInitialSessionSnapshot(bootstrap));
+  hostClient?.start();
 
   const renderer = await createCliRenderer({
     stdin: controllingTerminal?.stdin,
@@ -82,7 +89,7 @@ async function main() {
     }
 
     shuttingDown = true;
-    hostClient.stop();
+    hostClient?.stop();
     shutdownSession({ root, renderer });
   }
 

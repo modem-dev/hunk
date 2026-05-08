@@ -2,7 +2,7 @@ import { resolveConfiguredCliInput } from "./config";
 import { HunkUserError } from "./errors";
 import { loadAppBootstrap } from "./loaders";
 import { createChangesetStream } from "./streaming/changesetStream";
-import { chainLines, drainLines, sniffPatch } from "./streaming/patchSniffer";
+import { chainLines, drainLines, looksLikeCommitLog, sniffPatch } from "./streaming/patchSniffer";
 import { stdinLines, type LineSource } from "./streaming/stdinLines";
 import {
   openControllingTerminal,
@@ -94,10 +94,18 @@ export async function prepareStartupPlan(
       };
     }
 
-    // Kill switch: HUNK_PAGER_STREAM=0 falls back to the pre-streaming path, which
-    // concatenates the full input before parsing. Default is on. Keep this escape hatch
-    // around until the streaming path has been in use for a release.
-    const streamingEnabled = process.env.HUNK_PAGER_STREAM !== "0";
+    // Resolve the review-vs-no-review decision. Explicit flags win; otherwise auto-detect
+    // log-style input (presence of `commit <sha>` headers in the sniff prefix). Streaming
+    // is only used in no-review mode — review mode keeps the legacy buffered path so the
+    // daemon registration and agent surface stay consistent with what they always were.
+    const explicitNoReview = parsedCliInput.options.noReview === true;
+    const explicitReview = parsedCliInput.options.noReview === false;
+    const autoDetected = !explicitReview && looksLikeCommitLog(sniff.prefixLines);
+    const noReview = explicitNoReview || autoDetected;
+
+    // Kill switch: HUNK_PAGER_STREAM=0 forces the legacy buffered path even in no-review
+    // mode. Useful as an escape hatch if the streaming path turns out wrong for someone.
+    const streamingEnabled = noReview && process.env.HUNK_PAGER_STREAM !== "0";
 
     if (!streamingEnabled) {
       const stdinText = await drainLines(sniff.prefixLines, sniff.rest);
@@ -108,12 +116,14 @@ export async function prepareStartupPlan(
         options: {
           ...parsedCliInput.options,
           pager: true,
+          noReview: noReview ? true : undefined,
         },
       };
     } else {
-      // Streaming patch path: build a CliInput for option resolution, then attach a live
-      // ChangesetStream to the bootstrap. The initial changeset starts empty; AppHost
-      // appends files as the chunker emits them.
+      // Streaming + no-review path: build a CliInput for option resolution, then attach a
+      // live ChangesetStream to the bootstrap. The initial changeset starts empty; AppHost
+      // appends files as the chunker emits them. Daemon registration is skipped in
+      // main.tsx based on cliInput.options.noReview.
       const synthInput: CliInput = {
         kind: "patch",
         file: "-",
@@ -122,6 +132,7 @@ export async function prepareStartupPlan(
         options: {
           ...parsedCliInput.options,
           pager: true,
+          noReview: true,
         },
       };
 

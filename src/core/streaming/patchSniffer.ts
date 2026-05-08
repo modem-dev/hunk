@@ -29,6 +29,21 @@ const HEADER_REGEX = /^diff --git /;
 const MINUS_HEADER_REGEX = /^--- /;
 const PLUS_HEADER_REGEX = /^\+\+\+ /;
 const HUNK_HEADER_REGEX = /^@@ /;
+// Anchored, bare-hex form. Context lines inside a hunk start with space/+/- and cannot
+// match a line beginning with "commit ", so this won't false-positive on diff bodies.
+const COMMIT_HEADER_REGEX = /^commit [0-9a-f]{7,40}\b/;
+
+/**
+ * Heuristic: does this prefix look like multi-commit `git log -p` output? True if any
+ * line in the prefix starts with `commit <sha>`. Used to auto-route log-style input to
+ * scroll-only / no-review streaming mode.
+ */
+export function looksLikeCommitLog(prefixLines: string[]): boolean {
+  for (const line of prefixLines) {
+    if (COMMIT_HEADER_REGEX.test(stripTerminalControl(line))) return true;
+  }
+  return false;
+}
 
 /** Decide whether a streaming source looks like a patch by inspecting only its prefix. */
 export async function sniffPatch(

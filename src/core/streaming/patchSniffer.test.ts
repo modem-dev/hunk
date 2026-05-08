@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { drainLines, sniffPatch } from "./patchSniffer";
+import { drainLines, looksLikeCommitLog, sniffPatch } from "./patchSniffer";
 
 async function* fromArray(lines: string[]): AsyncGenerator<string> {
   for (const line of lines) yield line;
@@ -77,5 +77,53 @@ describe("sniffPatch", () => {
     const result = await sniffPatch(fromArray([]));
     expect(result.kind).toBe("plain");
     expect(result.prefixLines).toEqual([]);
+  });
+});
+
+describe("looksLikeCommitLog", () => {
+  test("returns true when prefix contains a `commit <sha>` line", () => {
+    expect(looksLikeCommitLog(["commit abc1234567", "Author: A <a@a>", "diff --git a/x b/x"])).toBe(
+      true,
+    );
+  });
+
+  test("tolerates the (HEAD -> branch) decoration", () => {
+    expect(looksLikeCommitLog(["commit abc1234567 (HEAD -> main, origin/main)", "Author: A"])).toBe(
+      true,
+    );
+  });
+
+  test("returns false for plain `diff --git` input with no commit header", () => {
+    expect(
+      looksLikeCommitLog([
+        "diff --git a/x b/x",
+        "--- a/x",
+        "+++ b/x",
+        "@@ -1 +1 @@",
+        "-old",
+        "+new",
+      ]),
+    ).toBe(false);
+  });
+
+  test("does not match a context line containing the literal 'commit <hex>'", () => {
+    expect(
+      looksLikeCommitLog([
+        "diff --git a/x b/x",
+        "--- a/x",
+        "+++ b/x",
+        "@@ -1 +1 @@",
+        "-old",
+        "+commit abc1234",
+      ]),
+    ).toBe(false);
+  });
+
+  test("strips ANSI before matching", () => {
+    expect(looksLikeCommitLog(["\x1b[33mcommit abc1234567\x1b[0m"])).toBe(true);
+  });
+
+  test("returns false on empty prefix", () => {
+    expect(looksLikeCommitLog([])).toBe(false);
   });
 });

@@ -82,6 +82,13 @@ export interface CommonOptions {
   wrapLines?: boolean;
   hunkHeaders?: boolean;
   agentNotes?: boolean;
+  /**
+   * When true, the session does not register with the daemon and the agent review
+   * surface (live comments, hunk session commands, daemon-driven reload) is disabled.
+   * Pager mode auto-enables this for log-style multi-commit input. Other modes leave
+   * it undefined, which means "register with the daemon as usual."
+   */
+  noReview?: boolean;
 }
 
 export interface PersistedViewPreferences {
