@@ -83,7 +83,8 @@ function stripTerminalControl(text: string) {
  * keeping the regular patch path zero-cost.
  */
 export function stripGitLogMetadata(text: string) {
-  const COMMIT_BOUNDARY = /^commit [0-9a-f]{4,40}(?: |$)/m;
+  // Hex range up to 64 covers both SHA-1 (40) and SHA-256 (64) repos.
+  const COMMIT_BOUNDARY = /^commit [0-9a-f]{4,64}(?: |$)/m;
   if (!COMMIT_BOUNDARY.test(text)) {
     return text;
   }
@@ -93,7 +94,7 @@ export function stripGitLogMetadata(text: string) {
   let inHeader = false;
 
   for (const line of lines) {
-    if (/^commit [0-9a-f]{4,40}(?: |$)/.test(line)) {
+    if (COMMIT_BOUNDARY.test(line)) {
       inHeader = true;
       continue;
     }

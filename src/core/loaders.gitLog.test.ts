@@ -162,6 +162,29 @@ describe("stripGitLogMetadata", () => {
     expect(result.startsWith("diff --git a/foo b/foo")).toBe(true);
   });
 
+  test("strips boundaries with SHA-256 (64-char) hashes", () => {
+    // git init --object-format=sha256 emits 64-char hex SHAs.
+    const sha256 = "a".repeat(64);
+    const input = [
+      `commit ${sha256}`,
+      "Author: A <a@x>",
+      "Date:   Tue Mar 3 12:00:00 2026 +0100",
+      "",
+      "    msg",
+      "",
+      "diff --git a/foo b/foo",
+      "@@ -1,1 +1,1 @@",
+      "-old",
+      "+new",
+      "",
+    ].join("\n");
+
+    const result = stripGitLogMetadata(input);
+    expect(result).not.toContain(`commit ${sha256}`);
+    expect(result).not.toContain("Author:");
+    expect(result.startsWith("diff --git a/foo b/foo")).toBe(true);
+  });
+
   test("preserves context lines that mention the word 'commit'", () => {
     // A real hunk line that begins with a space-then-'commit' must NOT be
     // treated as a commit boundary — its leading space is the diff
