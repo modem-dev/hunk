@@ -58,6 +58,14 @@ export function createChangesetStream(opts: CreateChangesetStreamOptions): Chang
   let flushTimer: ReturnType<typeof setTimeout> | null = null;
   let totalFiles = 0;
   let nextIndex = 0;
+  // Replay buffer: files delivered before any subscriber existed are kept here so a
+  // late subscriber sees the full history. The PTY scenario depends on this — the
+  // renderer's async setup runs concurrently with the streaming task, so we cannot
+  // assume AppHost subscribes before the chunker emits its first event.
+  const replayFiles: DiffFile[] = [];
+  let completed = false;
+  let completionTotal = 0;
+  let lastError: Error | null = null;
 
   const flush = () => {
     if (flushTimer !== null) {
@@ -67,6 +75,8 @@ export function createChangesetStream(opts: CreateChangesetStreamOptions): Chang
     if (pendingFiles.length === 0) return;
     const batch = pendingFiles;
     pendingFiles = [];
+    replayFiles.push(...batch);
+    if (listeners.size === 0) return;
     for (const listener of listeners) {
       try {
         listener.onAppend(batch);
@@ -128,10 +138,13 @@ export function createChangesetStream(opts: CreateChangesetStreamOptions): Chang
         scheduleFlush();
       }
       flush();
+      completed = true;
+      completionTotal = totalFiles;
       for (const listener of listeners) listener.onComplete(totalFiles);
     } catch (err) {
       flush();
       const error = err instanceof Error ? err : new Error(String(err));
+      lastError = error;
       for (const listener of listeners) listener.onError(error);
     }
   };
@@ -145,6 +158,17 @@ export function createChangesetStream(opts: CreateChangesetStreamOptions): Chang
     initialChangeset,
     subscribe(listener) {
       listeners.add(listener);
+      // Replay everything the listener missed so a late subscriber sees the full
+      // history instead of only future events.
+      if (replayFiles.length > 0) {
+        try {
+          listener.onAppend(replayFiles.slice());
+        } catch (err) {
+          listener.onError(err instanceof Error ? err : new Error(String(err)));
+        }
+      }
+      if (completed) listener.onComplete(completionTotal);
+      else if (lastError) listener.onError(lastError);
       return () => listeners.delete(listener);
     },
     abort() {
