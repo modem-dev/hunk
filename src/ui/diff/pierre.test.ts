@@ -225,11 +225,44 @@ describe("Pierre diff rows", () => {
     }
   });
 
+  test("uses the Vesper syntax palette for highlighted code tokens", async () => {
+    const file = createDiffFile();
+    const theme = resolveTheme("vesper", null);
+    const highlighted = await loadHighlightedDiff(file, theme);
+    const rows = buildStackRows(file, highlighted, theme).filter(
+      (row): row is Extract<DiffRow, { type: "stack-line" }> =>
+        row.type === "stack-line" && row.cell.kind === "addition",
+    );
+
+    const changedRow = rows.find((row) => row.cell.spans.some((span) => span.text.includes("42")));
+    expect(changedRow).toBeDefined();
+
+    if (!changedRow) {
+      throw new Error("Expected highlighted Vesper addition row");
+    }
+
+    expect(
+      changedRow.cell.spans.some(
+        (span) => span.text.includes("export const") && span.fg === theme.syntaxColors.keyword,
+      ),
+    ).toBe(true);
+    expect(
+      changedRow.cell.spans.some(
+        (span) => span.text.includes("answer") && span.fg === theme.syntaxColors.default,
+      ),
+    ).toBe(true);
+    expect(
+      changedRow.cell.spans.some(
+        (span) => span.text.includes("42") && span.fg === theme.syntaxColors.number,
+      ),
+    ).toBe(true);
+  });
+
   test("keeps reserved-color remaps isolated across dark themes", async () => {
     const file = createMarkdownDiffFile();
     const highlighted = await loadHighlightedDiff(file, "dark");
 
-    for (const themeId of ["graphite", "midnight", "ember"] as const) {
+    for (const themeId of ["graphite", "vesper", "midnight", "ember"] as const) {
       const theme = resolveTheme(themeId, null);
       const rows = buildStackRows(file, highlighted, theme).filter(
         (row): row is Extract<DiffRow, { type: "stack-line" }> =>

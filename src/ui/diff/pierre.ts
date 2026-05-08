@@ -2,6 +2,7 @@ import {
   cleanLastNewline,
   getHighlighterOptions,
   getSharedHighlighter,
+  registerCustomTheme,
   renderDiffWithHighlighter,
   type FileDiffMetadata,
 } from "@pierre/diffs";
@@ -15,10 +16,93 @@ const PIERRE_THEME = {
   light: "pierre-light",
   dark: "pierre-dark",
 } as const;
+const HUNK_VESPER_PIERRE_THEME = "hunk-vesper";
+
+registerCustomTheme(HUNK_VESPER_PIERRE_THEME, async () => ({
+  name: HUNK_VESPER_PIERRE_THEME,
+  type: "dark",
+  bg: "#101010",
+  fg: "#FFFFFF",
+  colors: {
+    "editor.background": "#101010",
+    "editor.foreground": "#FFFFFF",
+    "editor.lineHighlightBackground": "#101010",
+    "editor.selectionBackground": "#282828",
+    "editorCursor.foreground": "#FFC799",
+    "editorLineNumber.foreground": "#505050",
+    "gitDecoration.addedResourceForeground": "#99FFE4",
+    "gitDecoration.deletedResourceForeground": "#FF8080",
+    "gitDecoration.modifiedResourceForeground": "#FFC799",
+    "terminal.ansiGreen": "#99FFE4",
+    "terminal.ansiRed": "#FF8080",
+    "terminal.ansiYellow": "#FFC799",
+  },
+  settings: [
+    { settings: { background: "#101010", foreground: "#FFFFFF" } },
+    {
+      scope: ["comment", "punctuation.definition.comment"],
+      settings: { foreground: "#5C5C5C", fontStyle: "italic" },
+    },
+    {
+      scope: ["string", "constant.other.symbol", "constant.other.key"],
+      settings: { foreground: "#99FFE4" },
+    },
+    {
+      scope: [
+        "constant",
+        "constant.numeric",
+        "constant.language",
+        "entity.name.function",
+        "support.function",
+        "entity.name.type",
+        "entity.name.class",
+        "support.type",
+        "meta.type.annotation",
+      ],
+      settings: { foreground: "#FFC799" },
+    },
+    {
+      scope: [
+        "keyword",
+        "keyword.operator",
+        "storage",
+        "storage.type",
+        "storage.modifier",
+        "punctuation",
+        "meta.brace",
+        "meta.delimiter",
+      ],
+      settings: { foreground: "#A0A0A0" },
+    },
+    {
+      scope: [
+        "variable",
+        "variable.parameter",
+        "variable.other.property",
+        "support.variable.property",
+        "entity.other.attribute-name",
+      ],
+      settings: { foreground: "#FFFFFF" },
+    },
+    {
+      scope: ["invalid", "invalid.illegal"],
+      settings: { foreground: "#FF8080" },
+    },
+  ],
+}));
 
 /** Resolve the single Pierre theme name needed for the current appearance. */
 function pierreThemeName(appearance: AppTheme["appearance"]) {
   return PIERRE_THEME[appearance];
+}
+
+/** Resolve the concrete syntax-highlighting theme for one Hunk theme. */
+function pierreSyntaxThemeName(theme: AppTheme | AppTheme["appearance"]) {
+  if (typeof theme === "string") {
+    return pierreThemeName(theme);
+  }
+
+  return theme.id === "vesper" ? HUNK_VESPER_PIERRE_THEME : pierreThemeName(theme.appearance);
 }
 
 const PIERRE_RENDER_OPTIONS_BY_APPEARANCE = {
@@ -38,9 +122,12 @@ const PIERRE_RENDER_OPTIONS_BY_APPEARANCE = {
   },
 } as const;
 
-/** Reuse the render options for one appearance so startup work avoids extra object churn. */
-function pierreRenderOptions(appearance: AppTheme["appearance"]) {
-  return PIERRE_RENDER_OPTIONS_BY_APPEARANCE[appearance];
+/** Resolve render options for one theme while preserving shared objects for built-in Pierre themes. */
+function pierreRenderOptions(theme: AppTheme | AppTheme["appearance"]) {
+  const themeName = pierreSyntaxThemeName(theme);
+  const appearance = typeof theme === "string" ? theme : theme.appearance;
+  const options = PIERRE_RENDER_OPTIONS_BY_APPEARANCE[appearance];
+  return options.theme === themeName ? options : { ...options, theme: themeName };
 }
 
 type HighlightOptions = ReturnType<typeof getHighlighterOptions>;
@@ -427,16 +514,13 @@ function trailingCollapsedLines(metadata: FileDiffMetadata) {
 }
 
 /** Prepare syntax highlighting for one language/appearance pair using Pierre's shared highlighter. */
-async function prepareHighlighter(
-  language: string | undefined,
-  appearance: AppTheme["appearance"],
-) {
+async function prepareHighlighter(language: string | undefined, syntaxThemeName: string) {
   const resolvedLanguage = language ?? "text";
-  const cacheKey = `${appearance}:${resolvedLanguage}`;
+  const cacheKey = `${syntaxThemeName}:${resolvedLanguage}`;
   const options =
     highlighterOptionsByKey.get(cacheKey) ??
     getHighlighterOptions(resolvedLanguage, {
-      theme: pierreThemeName(appearance),
+      theme: syntaxThemeName,
     });
 
   if (!highlighterOptionsByKey.has(cacheKey)) {
@@ -513,28 +597,27 @@ function aliasHighlightedContextLines(file: DiffFile, highlighted: HighlightedDi
 /** Highlight a diff file and return just the rendered line trees the UI needs. */
 export async function loadHighlightedDiff(
   file: DiffFile,
-  appearance: AppTheme["appearance"] = "dark",
+  theme: AppTheme | AppTheme["appearance"] = "dark",
 ): Promise<HighlightedDiffCode> {
+  const syntaxThemeName = pierreSyntaxThemeName(theme);
+  const renderOptions = pierreRenderOptions(theme);
+
   try {
-    const highlighter = await prepareHighlighter(file.language, appearance);
+    const highlighter = await prepareHighlighter(file.language, syntaxThemeName);
     return queueHighlightedDiff(() => {
-      const highlighted = renderDiffWithHighlighter(
-        file.metadata,
-        highlighter,
-        pierreRenderOptions(appearance),
-      );
+      const highlighted = renderDiffWithHighlighter(file.metadata, highlighter, renderOptions);
       return aliasHighlightedContextLines(file, {
         deletionLines: highlighted.code.deletionLines as Array<HastNode | undefined>,
         additionLines: highlighted.code.additionLines as Array<HastNode | undefined>,
       });
     });
   } catch {
-    const highlighter = await prepareHighlighter("text", appearance);
+    const highlighter = await prepareHighlighter("text", syntaxThemeName);
     return queueHighlightedDiff(() => {
       const highlighted = renderDiffWithHighlighter(
         { ...file.metadata, lang: "text" },
         highlighter,
-        pierreRenderOptions(appearance),
+        renderOptions,
       );
       return aliasHighlightedContextLines(file, {
         deletionLines: highlighted.code.deletionLines as Array<HastNode | undefined>,

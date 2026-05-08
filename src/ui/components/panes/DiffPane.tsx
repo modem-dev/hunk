@@ -495,10 +495,10 @@ export function DiffPane({
 
       void prefetchHighlightedDiff({
         file,
-        appearance: theme.appearance,
+        theme,
       });
     }
-  }, [files, highlightPrefetchFileIds, theme.appearance]);
+  }, [files, highlightPrefetchFileIds, theme]);
 
   // Read the live scroll box position during render so pinned-header ownership flips
   // immediately after imperative scrolls instead of waiting for the polled viewport snapshot.

@@ -63,7 +63,7 @@ export function HunkDiffView({
   const internalDiff = useMemo(() => (diff ? toInternalDiffFile(diff) : undefined), [diff]);
   const resolvedHighlighted = useHighlightedDiff({
     file: internalDiff,
-    appearance: resolvedTheme.appearance,
+    theme: resolvedTheme,
     shouldLoadHighlight: highlight,
   });
   const rows = useMemo(

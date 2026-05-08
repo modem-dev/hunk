@@ -6,6 +6,7 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Added
 
+- Added the Vesper theme as a built-in diff viewer theme.
 - Added `vcs = "jj"` support, enabling `hunk diff [revset]` and `hunk show [revset]`.
 
 ### Changed
