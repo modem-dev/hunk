@@ -10,6 +10,7 @@ import { resolve as resolvePath } from "node:path";
 import { findAgentFileContext, loadAgentContext } from "./agent";
 import { createSkippedBinaryMetadata, isProbablyBinaryFile, patchLooksBinary } from "./binary";
 import { normalizeDiffMetadataPaths, normalizeDiffPath } from "./diffPaths";
+import { HunkUserError } from "./errors";
 import {
   buildGitDiffArgs,
   buildGitShowArgs,
@@ -19,6 +20,13 @@ import {
   runGitText,
   runGitUntrackedFileDiffText,
 } from "./git";
+import {
+  buildJjDiffArgs,
+  buildJjShowArgs,
+  createJjStagedError,
+  resolveJjRepoRoot,
+  runJjText,
+} from "./jj";
 import type {
   AppBootstrap,
   AgentContext,
@@ -27,7 +35,7 @@ import type {
   DiffFile,
   DiffToolCommandInput,
   FileCommandInput,
-  GitCommandInput,
+  VcsCommandInput,
   PatchCommandInput,
   ShowCommandInput,
   StashShowCommandInput,
@@ -290,7 +298,7 @@ function parseUntrackedPatchFile(patchText: string, filePath: string) {
 
 /** Build one reviewable diff file for an untracked working-tree file. */
 function buildUntrackedDiffFile(
-  input: GitCommandInput,
+  input: VcsCommandInput,
   filePath: string,
   index: number,
   repoRoot: string,
@@ -508,7 +516,7 @@ async function loadFileDiffChangeset(
 
 /** Build a changeset from the current repository working tree or a git range. */
 async function loadGitChangeset(
-  input: GitCommandInput,
+  input: VcsCommandInput,
   agentContext: AgentContext | null,
   cwd = process.cwd(),
 ) {
@@ -550,6 +558,28 @@ async function loadGitChangeset(
   } satisfies Changeset;
 }
 
+/** Build a changeset from the current Jujutsu working-copy commit or a revset. */
+async function loadJjDiffChangeset(
+  input: VcsCommandInput,
+  agentContext: AgentContext | null,
+  cwd = process.cwd(),
+) {
+  if (input.staged) {
+    throw createJjStagedError(input);
+  }
+
+  const repoRoot = resolveJjRepoRoot(input, { cwd });
+  const repoName = basename(repoRoot);
+  const title = input.range ? `${repoName} ${input.range}` : `${repoName} working copy`;
+
+  return normalizePatchChangeset(
+    runJjText({ input, args: buildJjDiffArgs(input), cwd }),
+    title,
+    repoRoot,
+    agentContext,
+  );
+}
+
 /** Build a changeset from `git show`, suppressing commit-message chrome so only the patch feeds the UI. */
 async function loadShowChangeset(
   input: ShowCommandInput,
@@ -567,12 +597,36 @@ async function loadShowChangeset(
   );
 }
 
+/** Build a changeset from one Jujutsu revset using Git-format patch output. */
+async function loadJjShowChangeset(
+  input: ShowCommandInput,
+  agentContext: AgentContext | null,
+  cwd = process.cwd(),
+) {
+  const repoRoot = resolveJjRepoRoot(input, { cwd });
+  const repoName = basename(repoRoot);
+  const revset = input.ref ?? "@";
+
+  return normalizePatchChangeset(
+    runJjText({ input, args: buildJjShowArgs(input), cwd }),
+    `${repoName} show ${revset}`,
+    repoRoot,
+    agentContext,
+  );
+}
+
 /** Build a changeset from `git stash show -p`, which naturally maps to one reviewable patch. */
 async function loadStashShowChangeset(
   input: StashShowCommandInput,
   agentContext: AgentContext | null,
   cwd = process.cwd(),
 ) {
+  if (input.options.vcs === "jj") {
+    throw new HunkUserError("`hunk stash show` requires Git VCS mode.", [
+      'Set `vcs = "git"` in Hunk config, then try again.',
+    ]);
+  }
+
   const repoRoot = resolveGitRepoRoot(input, { cwd });
   const repoName = basename(repoRoot);
 
@@ -615,11 +669,17 @@ export async function loadAppBootstrap(
   let changeset: Changeset;
 
   switch (input.kind) {
-    case "git":
-      changeset = await loadGitChangeset(input, agentContext, cwd);
+    case "vcs":
+      changeset =
+        input.options.vcs === "jj"
+          ? await loadJjDiffChangeset(input, agentContext, cwd)
+          : await loadGitChangeset(input, agentContext, cwd);
       break;
     case "show":
-      changeset = await loadShowChangeset(input, agentContext, cwd);
+      changeset =
+        input.options.vcs === "jj"
+          ? await loadJjShowChangeset(input, agentContext, cwd)
+          : await loadShowChangeset(input, agentContext, cwd);
       break;
     case "stash-show":
       changeset = await loadStashShowChangeset(input, agentContext, cwd);

@@ -1,6 +1,7 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
 
 export type LayoutMode = "auto" | "split" | "stack";
+export type VcsMode = "git" | "jj";
 
 export interface AgentAnnotation {
   id?: string;
@@ -54,6 +55,7 @@ export interface Changeset {
 
 export interface CommonOptions {
   mode?: LayoutMode;
+  vcs?: VcsMode;
   theme?: string;
   agentContext?: string;
   pager?: boolean;
@@ -208,8 +210,8 @@ export type SessionCommandInput =
   | SessionCommentRemoveCommandInput
   | SessionCommentClearCommandInput;
 
-export interface GitCommandInput {
-  kind: "git";
+export interface VcsCommandInput {
+  kind: "vcs";
   range?: string;
   staged: boolean;
   pathspecs?: string[];
@@ -252,7 +254,7 @@ export interface DiffToolCommandInput {
 }
 
 export type CliInput =
-  | GitCommandInput
+  | VcsCommandInput
   | ShowCommandInput
   | StashShowCommandInput
   | FileCommandInput

@@ -6,7 +6,7 @@ describe("git command helpers", () => {
     expect(() =>
       runGitText({
         input: {
-          kind: "git",
+          kind: "vcs",
           staged: false,
           options: { mode: "auto" },
         },

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadAppBootstrap } from "./loaders";
@@ -14,6 +14,12 @@ function cleanupTempDirs() {
       rmSync(dir, { recursive: true, force: true });
     }
   }
+}
+
+function createTempDir(prefix: string) {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), prefix)));
+  tempDirs.push(dir);
+  return dir;
 }
 
 function git(cwd: string, ...cmd: string[]) {
@@ -32,15 +38,66 @@ function git(cwd: string, ...cmd: string[]) {
   return Buffer.from(proc.stdout).toString("utf8");
 }
 
-function createTempRepo(prefix: string) {
-  const dir = mkdtempSync(join(tmpdir(), prefix));
-  tempDirs.push(dir);
+function jj(cwd: string, ...cmd: string[]) {
+  const proc = Bun.spawnSync(
+    [
+      "jj",
+      "--config",
+      "signing.behavior=drop",
+      "--config",
+      'user.name="Test User"',
+      "--config",
+      "user.email=test@example.com",
+      ...cmd,
+    ],
+    {
+      cwd,
+      stdout: "pipe",
+      stderr: "pipe",
+      stdin: "ignore",
+    },
+  );
 
-  git(dir, "init");
+  if (proc.exitCode !== 0) {
+    const stderr = Buffer.from(proc.stderr).toString("utf8");
+    throw new Error(stderr.trim() || `jj ${cmd.join(" ")} failed`);
+  }
+
+  return Buffer.from(proc.stdout).toString("utf8");
+}
+
+function createTempRepo(prefix: string) {
+  const dir = createTempDir(prefix);
+
+  git(dir, "init", "--initial-branch", "master");
   git(dir, "config", "user.name", "Test User");
   git(dir, "config", "user.email", "test@example.com");
+  git(dir, "config", "commit.gpgsign", "false");
 
   return dir;
+}
+
+function createTempJjRepo(prefix: string) {
+  const dir = createTempDir(prefix);
+
+  jj(tmpdir(), "git", "init", "--colocate", dir);
+
+  return dir;
+}
+
+async function runWithHome<T>(home: string, task: () => Promise<T>) {
+  const previousHome = process.env.HOME;
+  process.env.HOME = home;
+
+  try {
+    return await task();
+  } finally {
+    if (previousHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = previousHome;
+    }
+  }
 }
 
 async function loadFromCwd(cwd: string, input: CliInput) {
@@ -133,7 +190,7 @@ describe("loadAppBootstrap", () => {
     const bootstrap = await runFromProcessCwd(dir, () =>
       loadAppBootstrap(
         {
-          kind: "git",
+          kind: "vcs",
           staged: false,
           options: {
             mode: "auto",
@@ -186,7 +243,7 @@ describe("loadAppBootstrap", () => {
     writeFileSync(file, Buffer.from([0, 1, 9, 3, 4, 5]));
 
     const bootstrap = await loadFromRepo(dir, {
-      kind: "git",
+      kind: "vcs",
       staged: false,
       options: { mode: "auto" },
     });
@@ -207,7 +264,7 @@ describe("loadAppBootstrap", () => {
     writeFileSync(join(dir, "example.ts"), "export const value = 2;\nexport const extra = true;\n");
 
     const bootstrap = await loadFromRepo(dir, {
-      kind: "git",
+      kind: "vcs",
       staged: false,
       options: { mode: "auto" },
     });
@@ -228,7 +285,7 @@ describe("loadAppBootstrap", () => {
     writeFileSync(join(dir, "new-file.ts"), "export const added = true;\n");
 
     const bootstrap = await loadFromRepo(dir, {
-      kind: "git",
+      kind: "vcs",
       staged: false,
       options: { mode: "auto" },
     });
@@ -253,7 +310,7 @@ describe("loadAppBootstrap", () => {
     symlinkSync("targetdir", join(dir, "linkdir"));
 
     const bootstrap = await loadFromRepo(dir, {
-      kind: "git",
+      kind: "vcs",
       staged: false,
       options: { mode: "auto" },
     });
@@ -275,7 +332,7 @@ describe("loadAppBootstrap", () => {
     writeFileSync(join(dir, "new-file.ts"), "export const added = true;\n");
 
     const bootstrap = await loadFromRepo(dir, {
-      kind: "git",
+      kind: "vcs",
       staged: false,
       options: { mode: "auto", excludeUntracked: true },
     });
@@ -299,7 +356,7 @@ describe("loadAppBootstrap", () => {
     writeFileSync(join(dir, "new-file.ts"), "export const added = true;\n");
 
     const bootstrap = await loadFromRepo(dir, {
-      kind: "git",
+      kind: "vcs",
       range: "main",
       staged: false,
       options: { mode: "auto" },
@@ -327,7 +384,7 @@ describe("loadAppBootstrap", () => {
     writeFileSync(join(dir, "new-file.ts"), "export const added = true;\n");
 
     const bootstrap = await loadFromRepo(dir, {
-      kind: "git",
+      kind: "vcs",
       range: "main..HEAD",
       staged: false,
       options: { mode: "auto" },
@@ -351,7 +408,7 @@ describe("loadAppBootstrap", () => {
     writeFileSync(join(dir, "new-file.ts"), "export const added = true;\n");
 
     const bootstrap = await loadFromRepo(dir, {
-      kind: "git",
+      kind: "vcs",
       range: "HEAD^!",
       staged: false,
       options: { mode: "auto" },
@@ -375,7 +432,7 @@ describe("loadAppBootstrap", () => {
     writeFileSync(join(dir, backslashFile), "backslash\n");
 
     const bootstrap = await loadFromRepo(dir, {
-      kind: "git",
+      kind: "vcs",
       staged: false,
       options: { mode: "auto" },
     });
@@ -399,7 +456,7 @@ describe("loadAppBootstrap", () => {
     writeFileSync(agent, JSON.stringify({ version: 1, files: [] }));
 
     const bootstrap = await loadFromRepo(dir, {
-      kind: "git",
+      kind: "vcs",
       staged: false,
       options: { mode: "auto", agentContext: agent },
     });
@@ -422,7 +479,7 @@ describe("loadAppBootstrap", () => {
     mkdirSync(subdir, { recursive: true });
 
     const bootstrap = await loadFromCwd(subdir, {
-      kind: "git",
+      kind: "vcs",
       staged: false,
       options: { mode: "auto" },
     });
@@ -442,7 +499,7 @@ describe("loadAppBootstrap", () => {
     writeFileSync(join(dir, "new-file.ts"), "export const added = true;\n");
 
     const bootstrap = await loadFromRepo(dir, {
-      kind: "git",
+      kind: "vcs",
       staged: false,
       options: { mode: "auto" },
     });
@@ -465,7 +522,7 @@ describe("loadAppBootstrap", () => {
     writeFileSync(join(dir, "new-file.ts"), "export const added = true;\n");
 
     const bootstrap = await loadFromRepo(dir, {
-      kind: "git",
+      kind: "vcs",
       staged: false,
       options: { mode: "auto" },
     });
@@ -482,7 +539,7 @@ describe("loadAppBootstrap", () => {
 
     await expect(
       loadFromRepo(dir, {
-        kind: "git",
+        kind: "vcs",
         staged: false,
         options: { mode: "auto" },
       }),
@@ -498,7 +555,7 @@ describe("loadAppBootstrap", () => {
 
     await expect(
       loadFromRepo(dir, {
-        kind: "git",
+        kind: "vcs",
         range: "HEAD~999",
         staged: false,
         options: { mode: "auto" },
@@ -541,7 +598,7 @@ describe("loadAppBootstrap", () => {
     );
 
     const bootstrap = await loadFromRepo(dir, {
-      kind: "git",
+      kind: "vcs",
       staged: false,
       options: {
         mode: "auto",
@@ -565,7 +622,7 @@ describe("loadAppBootstrap", () => {
     writeFileSync(join(dir, "beta.ts"), "export const beta = 2;\n");
 
     const bootstrap = await loadFromRepo(dir, {
-      kind: "git",
+      kind: "vcs",
       staged: true,
       options: { mode: "auto" },
     });
@@ -587,7 +644,7 @@ describe("loadAppBootstrap", () => {
     writeFileSync(join(dir, "beta.ts"), "export const beta = 2;\n");
 
     const bootstrap = await loadFromRepo(dir, {
-      kind: "git",
+      kind: "vcs",
       staged: true,
       options: { mode: "auto" },
     });
@@ -607,13 +664,62 @@ describe("loadAppBootstrap", () => {
     writeFileSync(join(dir, "beta.ts"), "export const beta = 2;\n");
 
     const bootstrap = await loadFromRepo(dir, {
-      kind: "git",
+      kind: "vcs",
       staged: false,
       pathspecs: ["beta.ts"],
       options: { mode: "auto" },
     });
 
     expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["beta.ts"]);
+  });
+
+  test("loads jj diff output for a configured revset", async () => {
+    const home = createTempDir("hunk-jj-home-");
+
+    await runWithHome(home, async () => {
+      const dir = createTempJjRepo("hunk-jj-revset-");
+
+      writeFileSync(join(dir, "alpha.ts"), "export const alpha = 1;\n");
+      jj(dir, "commit", "-m", "initial");
+
+      writeFileSync(join(dir, "alpha.ts"), "export const alpha = 2;\n");
+      writeFileSync(join(dir, "beta.ts"), "export const beta = true;\n");
+
+      const bootstrap = await loadFromRepo(dir, {
+        kind: "vcs",
+        range: "@",
+        staged: false,
+        options: { mode: "auto", vcs: "jj" },
+      });
+
+      expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["alpha.ts", "beta.ts"]);
+      expect(bootstrap.changeset.title).toStartWith("hunk-jj-revset-");
+      expect(bootstrap.changeset.title).toEndWith(" @");
+    });
+  });
+
+  test("loads jj show output for a configured revset", async () => {
+    const home = createTempDir("hunk-jj-home-");
+
+    await runWithHome(home, async () => {
+      const dir = createTempJjRepo("hunk-jj-show-");
+
+      writeFileSync(join(dir, "alpha.ts"), "export const alpha = 1;\n");
+      jj(dir, "commit", "-m", "initial");
+
+      writeFileSync(join(dir, "alpha.ts"), "export const alpha = 2;\n");
+      jj(dir, "commit", "-m", "update alpha");
+
+      const bootstrap = await loadFromRepo(dir, {
+        kind: "show",
+        ref: "@-",
+        options: { mode: "auto", vcs: "jj" },
+      });
+
+      expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["alpha.ts"]);
+      expect(bootstrap.changeset.title).toStartWith("hunk-jj-show-");
+      expect(bootstrap.changeset.title).toEndWith(" show @-");
+    });
   });
 
   test("applies pathspec filtering to untracked files in working tree reviews", async () => {
@@ -627,7 +733,7 @@ describe("loadAppBootstrap", () => {
     writeFileSync(join(dir, "beta.ts"), "export const beta = true;\n");
 
     const bootstrap = await loadFromRepo(dir, {
-      kind: "git",
+      kind: "vcs",
       staged: false,
       pathspecs: ["beta.ts"],
       options: { mode: "auto" },
@@ -761,6 +867,17 @@ describe("loadAppBootstrap", () => {
     });
 
     expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["alpha.ts"]);
+  });
+
+  test("rejects stash show when configured for jj", async () => {
+    const dir = createTempDir("hunk-stash-jj-");
+
+    await expect(
+      loadFromRepo(dir, {
+        kind: "stash-show",
+        options: { mode: "auto", vcs: "jj" },
+      }),
+    ).rejects.toThrow("`hunk stash show` requires Git VCS mode.");
   });
 
   test("reports a friendly error when no stash entries exist", async () => {

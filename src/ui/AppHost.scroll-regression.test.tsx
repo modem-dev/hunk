@@ -2,7 +2,7 @@ import { describe, expect, mock, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
 import type { AppBootstrap } from "../core/types";
-import { createTestGitAppBootstrap } from "../../test/helpers/app-bootstrap";
+import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
 import { createTestDiffFile } from "../../test/helpers/diff-helpers";
 
 mock.restore();
@@ -20,7 +20,7 @@ function createScrollBootstrap(): AppBootstrap {
       : `line ${String(index + 1).padStart(2, "0")} old value\n`,
   ).join("");
 
-  return createTestGitAppBootstrap({
+  return createTestVcsAppBootstrap({
     changesetId: "scroll-regression",
     files: [
       createTestDiffFile({

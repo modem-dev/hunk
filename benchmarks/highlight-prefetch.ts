@@ -53,7 +53,7 @@ function createDiffFile(index: number, marker: string): DiffFile {
 function createBootstrap(): AppBootstrap {
   return {
     input: {
-      kind: "git",
+      kind: "vcs",
       staged: false,
       options: {
         mode: "auto",

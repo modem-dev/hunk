@@ -14,7 +14,7 @@ import type {
 } from "./types";
 
 const REVIEW_INPUT_KINDS = new Set<CliInput["kind"]>([
-  "git",
+  "vcs",
   "show",
   "stash-show",
   "diff",

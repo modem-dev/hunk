@@ -94,7 +94,7 @@ describe("reload stale highlight cache", () => {
     writeFileSync(file, "original line\nfirst change\n");
 
     const bootstrap = await loadAppBootstrap(
-      { kind: "git", staged: false, options: { mode: "stack", excludeUntracked: true } },
+      { kind: "vcs", staged: false, options: { mode: "stack", excludeUntracked: true } },
       { cwd: dir },
     );
 
