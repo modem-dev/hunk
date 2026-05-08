@@ -213,6 +213,20 @@ describe("config resolution", () => {
     expect(bootstrap.initialWrapLines).toBe(true);
     expect(bootstrap.initialShowHunkHeaders).toBe(false);
     expect(bootstrap.initialShowAgentNotes).toBe(true);
+    expect(bootstrap.initialTransparentBg).toBe(false);
+  });
+
+  test("resolves custom transparent_bg preference", () => {
+    const home = createTempDir("hunk-config-home-");
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(join(home, ".config", "hunk", "config.toml"), "transparent_bg = false\n");
+
+    const resolved = resolveConfiguredCliInput(createPatchPagerInput(), {
+      cwd: createTempDir("hunk-config-cwd-"),
+      env: { HOME: home },
+    });
+
+    expect(resolved.input.options.transparentBg).toBe(false);
   });
 
   test("loadAppBootstrap exposes graphite when no theme is configured", async () => {

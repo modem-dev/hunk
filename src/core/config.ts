@@ -11,6 +11,7 @@ const DEFAULT_VIEW_PREFERENCES: PersistedViewPreferences = {
   wrapLines: false,
   showHunkHeaders: true,
   showAgentNotes: false,
+  transparentBg: false,
 };
 
 interface ConfigResolutionOptions {
@@ -55,6 +56,7 @@ function readConfigPreferences(source: Record<string, unknown>): CommonOptions {
     wrapLines: normalizeBoolean(source.wrap_lines),
     hunkHeaders: normalizeBoolean(source.hunk_headers),
     agentNotes: normalizeBoolean(source.agent_notes),
+    transparentBg: normalizeBoolean(source.transparent_bg),
   };
 }
 
@@ -74,6 +76,7 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
     wrapLines: overrides.wrapLines ?? base.wrapLines,
     hunkHeaders: overrides.hunkHeaders ?? base.hunkHeaders,
     agentNotes: overrides.agentNotes ?? base.agentNotes,
+    transparentBg: overrides.transparentBg ?? base.transparentBg,
   };
 }
 
@@ -150,6 +153,7 @@ export function resolveConfiguredCliInput(
     wrapLines: DEFAULT_VIEW_PREFERENCES.wrapLines,
     hunkHeaders: DEFAULT_VIEW_PREFERENCES.showHunkHeaders,
     agentNotes: DEFAULT_VIEW_PREFERENCES.showAgentNotes,
+    transparentBg: DEFAULT_VIEW_PREFERENCES.transparentBg,
   };
 
   if (userConfigPath) {
@@ -180,6 +184,7 @@ export function resolveConfiguredCliInput(
     wrapLines: resolvedOptions.wrapLines ?? DEFAULT_VIEW_PREFERENCES.wrapLines,
     hunkHeaders: resolvedOptions.hunkHeaders ?? DEFAULT_VIEW_PREFERENCES.showHunkHeaders,
     agentNotes: resolvedOptions.agentNotes ?? DEFAULT_VIEW_PREFERENCES.showAgentNotes,
+    transparentBg: resolvedOptions.transparentBg ?? DEFAULT_VIEW_PREFERENCES.transparentBg,
   };
 
   return {

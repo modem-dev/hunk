@@ -65,6 +65,7 @@ export interface CommonOptions {
   wrapLines?: boolean;
   hunkHeaders?: boolean;
   agentNotes?: boolean;
+  transparentBg?: boolean;
 }
 
 export interface PersistedViewPreferences {
@@ -76,6 +77,7 @@ export interface PersistedViewPreferences {
   wrapLines: boolean;
   showHunkHeaders: boolean;
   showAgentNotes: boolean;
+  transparentBg: boolean;
 }
 
 export interface HelpCommandInput {
@@ -282,4 +284,5 @@ export interface AppBootstrap {
   initialWrapLines?: boolean;
   initialShowHunkHeaders?: boolean;
   initialShowAgentNotes?: boolean;
+  initialTransparentBg?: boolean;
 }

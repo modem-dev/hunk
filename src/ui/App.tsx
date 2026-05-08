@@ -117,6 +117,7 @@ export function App({
   const [wrapLines, setWrapLines] = useState(bootstrap.initialWrapLines ?? false);
   const [codeHorizontalOffset, setCodeHorizontalOffset] = useState(0);
   const [showHunkHeaders, setShowHunkHeaders] = useState(bootstrap.initialShowHunkHeaders ?? true);
+  const [transparentBg, _setTransparentBg] = useState(bootstrap.initialTransparentBg ?? false);
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [forceSidebarOpen, setForceSidebarOpen] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -126,7 +127,26 @@ export function App({
   const [resizeStartWidth, setResizeStartWidth] = useState<number | null>(null);
 
   const pagerMode = Boolean(bootstrap.input.options.pager);
-  const activeTheme = resolveTheme(themeId, systemThemeMode, themeLight, themeDark);
+  const solidTheme = useMemo(
+    () => resolveTheme(themeId, systemThemeMode, themeLight, themeDark),
+    [themeId, systemThemeMode, themeLight, themeDark],
+  );
+
+  const activeTheme = useMemo(() => {
+    if (!transparentBg) {
+      return solidTheme;
+    }
+
+    return {
+      ...solidTheme,
+      background: undefined,
+      panel: undefined,
+      panelAlt: undefined,
+      contextBg: undefined,
+      contextContentBg: undefined,
+      lineNumberBg: undefined,
+    };
+  }, [solidTheme, transparentBg]);
 
   useEffect(() => {
     const handleThemeMode = (mode: ThemeMode) => {
@@ -777,7 +797,7 @@ export function App({
             activeMenuSpec={activeMenuSpec}
             activeMenuWidth={activeMenuWidth}
             terminalWidth={terminal.width}
-            theme={activeTheme}
+            theme={solidTheme}
             onHoverItem={setActiveMenuItemIndex}
             onSelectItem={(entry) => {
               entry.action();
@@ -793,7 +813,7 @@ export function App({
             canRefresh={canRefreshCurrentInput}
             terminalHeight={terminal.height}
             terminalWidth={terminal.width}
-            theme={activeTheme}
+            theme={solidTheme}
             onClose={closeHelp}
           />
         </Suspense>

@@ -17,7 +17,11 @@ function hexToRgb(hex: string): RgbColor {
 }
 
 /** Blend one foreground color toward a background color at a fixed ratio. */
-export function blendHex(fg: string, bg: string, ratio: number) {
+export function blendHex(fg: string, bg: string | undefined, ratio: number) {
+  if (bg === undefined) {
+    return fg;
+  }
+
   const foreground = hexToRgb(fg);
   const background = hexToRgb(bg);
   const mix = (front: number, back: number) =>
