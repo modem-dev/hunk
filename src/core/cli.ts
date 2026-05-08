@@ -420,16 +420,21 @@ async function parseDiffCommand(tokens: string[], argv: string[]): Promise<Parse
     };
   }
 
-  if (
-    parsedTargets.length === 2 &&
-    !staged &&
-    !normalizedPathspecs &&
-    areExistingFiles(parsedTargets[0]!, parsedTargets[1]!)
-  ) {
+  if (!staged && !normalizedPathspecs) {
+    if (parsedTargets.length === 2 && areExistingFiles(parsedTargets[0]!, parsedTargets[1]!)) {
+      return {
+        kind: "diff",
+        left: parsedTargets[0]!,
+        right: parsedTargets[1]!,
+        options,
+      };
+    }
+
     return {
-      kind: "diff",
-      left: parsedTargets[0]!,
-      right: parsedTargets[1]!,
+      kind: "vcs",
+      range: parsedTargets[0]!,
+      staged,
+      pathspecs: parsedTargets.slice(1),
       options,
     };
   }
