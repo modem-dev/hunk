@@ -385,7 +385,7 @@ export function useAppKeyboardShortcuts({
       return;
     }
 
-    if (cycleCommitDetailsMode && (key.name === "c" || key.sequence === "c")) {
+    if (cycleCommitDetailsMode && key.sequence === "C") {
       runAndCloseMenu(cycleCommitDetailsMode);
       return;
     }

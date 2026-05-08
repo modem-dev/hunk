@@ -178,7 +178,7 @@ export function buildAppMenus({
             {
               kind: "item" as const,
               label: `Commit details: ${labelForCommitDetailsMode(commitDetailsMode ?? "full")}`,
-              hint: "c",
+              hint: "C",
               action: cycleCommitDetailsMode,
             },
           ]
