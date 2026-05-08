@@ -2,7 +2,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { resolveConfiguredCliInput } from "../core/config";
 import { loadAppBootstrap } from "../core/loaders";
 import { resolveRuntimeCliInput } from "../core/terminal";
-import type { AppBootstrap, CliInput, CommitChangeset, DiffFile } from "../core/types";
+import type {
+  AppBootstrap,
+  CliInput,
+  CommitChangeset,
+  CommitDetailsMode,
+  DiffFile,
+} from "../core/types";
 import type { UpdateNotice } from "../core/updateNotice";
 import {
   createInitialSessionSnapshot,
@@ -40,6 +46,18 @@ export function AppHost({
   const [commitBuffer, setCommitBuffer] = useState<CommitChangeset[]>([]);
   const [cursorIndex, setCursorIndex] = useState(0);
   const [commitStreamComplete, setCommitStreamComplete] = useState(false);
+  // The commit-details view mode lives at the AppHost level so it survives the App
+  // remount that fires on every commit-cursor move. App's view-state-reset on commit
+  // nav is intentional for selection / scroll / filter (they don't translate across
+  // commits), but the user's metadata-visibility preference should sticky.
+  const [commitDetailsMode, setCommitDetailsMode] = useState<CommitDetailsMode>(
+    bootstrap.initialCommitDetailsMode ?? "full",
+  );
+  const cycleCommitDetailsMode = useCallback(() => {
+    setCommitDetailsMode((current) =>
+      current === "full" ? "compact" : current === "compact" ? "hidden" : "full",
+    );
+  }, []);
   // Keep a ref to the latest buffer length so synchronous handlers (move-by-key) can
   // read it without re-binding on every state update.
   const commitBufferRef = useRef<CommitChangeset[]>([]);
@@ -232,6 +250,8 @@ export function AppHost({
       onQuit={onQuit}
       onReloadSession={reloadSession}
       onMoveCommit={bootstrap.commitReviewStream ? onMoveCommit : undefined}
+      commitDetailsMode={commitDetailsMode}
+      onCycleCommitDetailsMode={bootstrap.commitReviewStream ? cycleCommitDetailsMode : undefined}
     />
   );
 }

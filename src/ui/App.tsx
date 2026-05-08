@@ -79,6 +79,8 @@ export function App({
   onQuit = () => process.exit(0),
   onReloadSession,
   onMoveCommit,
+  commitDetailsMode = "full",
+  onCycleCommitDetailsMode,
 }: {
   bootstrap: AppBootstrap;
   hostClient?: HunkSessionBrokerClient;
@@ -88,8 +90,15 @@ export function App({
     nextInput: CliInput,
     options?: { resetApp?: boolean; sourcePath?: string },
   ) => Promise<ReloadedSessionResult>;
-  /** Provided when the source is commit-by-commit; called by Ctrl-N / Ctrl-P. */
+  /** Provided when the source is commit-by-commit; called by > / <. */
   onMoveCommit?: (delta: number) => MoveCommitResult;
+  /**
+   * Commit-details view mode, lifted to AppHost so it persists across the remount
+   * that fires on commit-cursor moves. Defaults to "full" when commit-review isn't
+   * active. The matching cycle action is `onCycleCommitDetailsMode`.
+   */
+  commitDetailsMode?: CommitDetailsMode;
+  onCycleCommitDetailsMode?: () => void;
 }) {
   const SIDEBAR_MIN_WIDTH = 22;
   const DIFF_MIN_WIDTH = 48;
@@ -119,9 +128,6 @@ export function App({
   const [wrapLines, setWrapLines] = useState(bootstrap.initialWrapLines ?? false);
   const [codeHorizontalOffset, setCodeHorizontalOffset] = useState(0);
   const [showHunkHeaders, setShowHunkHeaders] = useState(bootstrap.initialShowHunkHeaders ?? true);
-  const [commitDetailsMode, setCommitDetailsMode] = useState<CommitDetailsMode>(
-    bootstrap.initialCommitDetailsMode ?? "full",
-  );
   const [sidebarVisible, setSidebarVisible] = useState(() => !pagerMode);
   const [forceSidebarOpen, setForceSidebarOpen] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -379,16 +385,6 @@ export function App({
     setShowHunkHeaders((current) => !current);
   };
 
-  /**
-   * Cycle the commit metadata block between full → compact → hidden. No-op outside
-   * commit-review sessions. The cycle wraps to "full" after "hidden".
-   */
-  const cycleCommitDetailsMode = () => {
-    setCommitDetailsMode((current) =>
-      current === "full" ? "compact" : current === "compact" ? "hidden" : "full",
-    );
-  };
-
   /** Jump to an annotated hunk without changing the global note visibility toggle. */
   const openAgentNotesAtHunk = useCallback(
     (fileId: string, hunkIndex: number) => {
@@ -552,7 +548,7 @@ export function App({
         commitDetailsMode: isCommitReview ? commitDetailsMode : undefined,
         renderSidebar,
         toggleAgentNotes,
-        cycleCommitDetailsMode: isCommitReview ? cycleCommitDetailsMode : undefined,
+        cycleCommitDetailsMode: isCommitReview ? onCycleCommitDetailsMode : undefined,
         moveToCommit: isCommitReview && onMoveCommit ? onMoveCommit : undefined,
         toggleFocusArea,
         toggleHelp,
@@ -581,8 +577,14 @@ export function App({
       renderSidebar,
       isCommitReview,
       onMoveCommit,
+<<<<<<< HEAD
+||||||| parent of fcdf0f4 (fix(pager): persist commitDetailsMode across commit-cursor moves)
+      sidebarVisible,
+=======
+      onCycleCommitDetailsMode,
+      sidebarVisible,
+>>>>>>> fcdf0f4 (fix(pager): persist commitDetailsMode across commit-cursor moves)
       toggleAgentNotes,
-      cycleCommitDetailsMode,
       toggleFocusArea,
       toggleHelp,
       toggleHunkHeaders,
@@ -634,7 +636,7 @@ export function App({
     showHelp,
     switchMenu,
     toggleAgentNotes,
-    cycleCommitDetailsMode: isCommitReview ? cycleCommitDetailsMode : undefined,
+    cycleCommitDetailsMode: isCommitReview ? onCycleCommitDetailsMode : undefined,
     toggleFocusArea,
     toggleHelp,
     toggleHunkHeaders,
