@@ -34,10 +34,12 @@ export function buildInStreamFileHeaderHeights(files: DiffFile[]) {
 
 /**
  * Count the rows a commit-metadata preamble occupies above one file. Returns 0 when no
- * preamble is set on the file. Includes one trailing blank row above the file header so
- * the block reads visually separated from the diff that follows it.
+ * preamble is set on the file or when the user has hidden commit details. Includes one
+ * trailing blank row above the file header so the block reads visually separated from
+ * the diff that follows it.
  */
-export function getCommitPreambleHeight(file: DiffFile) {
+export function getCommitPreambleHeight(file: DiffFile, showCommitDetails: boolean = true) {
+  if (!showCommitDetails) return 0;
   const text = file.commitHeaderText;
   if (!text) return 0;
   const lineCount = text.replace(/\n+$/, "").split("\n").length;
@@ -49,13 +51,14 @@ export function buildFileSectionLayouts(
   files: DiffFile[],
   bodyHeights: number[],
   headerHeights?: number[],
+  showCommitDetails: boolean = true,
 ) {
   const layouts: FileSectionLayout[] = [];
   let cursor = 0;
 
   files.forEach((file, index) => {
     const separatorHeight = index > 0 ? 1 : 0;
-    const preambleHeight = getCommitPreambleHeight(file);
+    const preambleHeight = getCommitPreambleHeight(file, showCommitDetails);
     const headerHeight = Math.max(0, headerHeights?.[index] ?? getInStreamFileHeaderHeight(index));
     const bodyHeight = Math.max(0, bodyHeights[index] ?? 0);
     const sectionTop = cursor;

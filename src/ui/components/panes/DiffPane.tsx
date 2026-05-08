@@ -142,6 +142,7 @@ export function DiffPane({
   showAgentNotes,
   showLineNumbers,
   showHunkHeaders,
+  showCommitDetails = true,
   wrapLines,
   wrapToggleScrollTop,
   layoutToggleScrollTop = null,
@@ -170,6 +171,11 @@ export function DiffPane({
   showAgentNotes: boolean;
   showLineNumbers: boolean;
   showHunkHeaders: boolean;
+  /**
+   * When false, the verbatim commit metadata block above each commit's first file is
+   * hidden. The cursor strip in the chrome continues to show the commit subject.
+   */
+  showCommitDetails?: boolean;
   wrapLines: boolean;
   wrapToggleScrollTop: number | null;
   layoutToggleScrollTop?: number | null;
@@ -381,8 +387,14 @@ export function DiffPane({
     [baseSectionGeometry],
   );
   const baseFileSectionLayouts = useMemo(
-    () => buildFileSectionLayouts(files, baseEstimatedBodyHeights, sectionHeaderHeights),
-    [baseEstimatedBodyHeights, files, sectionHeaderHeights],
+    () =>
+      buildFileSectionLayouts(
+        files,
+        baseEstimatedBodyHeights,
+        sectionHeaderHeights,
+        showCommitDetails,
+      ),
+    [baseEstimatedBodyHeights, files, sectionHeaderHeights, showCommitDetails],
   );
 
   const visibleViewportFileIds = useMemo(() => {
@@ -452,8 +464,9 @@ export function DiffPane({
     [sectionGeometry],
   );
   const fileSectionLayouts = useMemo(
-    () => buildFileSectionLayouts(files, estimatedBodyHeights, sectionHeaderHeights),
-    [estimatedBodyHeights, files, sectionHeaderHeights],
+    () =>
+      buildFileSectionLayouts(files, estimatedBodyHeights, sectionHeaderHeights, showCommitDetails),
+    [estimatedBodyHeights, files, sectionHeaderHeights, showCommitDetails],
   );
   const totalContentHeight = fileSectionLayouts[fileSectionLayouts.length - 1]?.sectionBottom ?? 0;
 
@@ -1120,6 +1133,7 @@ export function DiffPane({
                         separatorWidth={separatorWidth}
                         showHeader={shouldRenderInStreamFileHeader(index)}
                         showSeparator={index > 0}
+                        showCommitDetails={showCommitDetails}
                         theme={theme}
                         onSelect={() => onSelectFile(file.id)}
                       />
@@ -1142,6 +1156,7 @@ export function DiffPane({
                       showSeparator={index > 0}
                       showLineNumbers={showLineNumbers}
                       showHunkHeaders={showHunkHeaders}
+                      showCommitDetails={showCommitDetails}
                       wrapLines={wrapLines}
                       theme={theme}
                       viewWidth={diffContentWidth}

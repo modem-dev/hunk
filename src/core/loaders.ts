@@ -1024,5 +1024,6 @@ export async function loadAppBootstrap(
     initialWrapLines: input.options.wrapLines ?? false,
     initialShowHunkHeaders: input.options.hunkHeaders ?? true,
     initialShowAgentNotes: input.options.agentNotes ?? false,
+    initialShowCommitDetails: input.options.commitDetails ?? true,
   };
 }

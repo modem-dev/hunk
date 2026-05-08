@@ -169,6 +169,7 @@ export async function prepareStartupPlan(
           initialWrapLines: cliInput.options.wrapLines ?? false,
           initialShowHunkHeaders: cliInput.options.hunkHeaders ?? true,
           initialShowAgentNotes: cliInput.options.agentNotes ?? false,
+          initialShowCommitDetails: cliInput.options.commitDetails ?? true,
           commitReviewStream,
         };
       } else {
@@ -186,6 +187,7 @@ export async function prepareStartupPlan(
           initialWrapLines: cliInput.options.wrapLines ?? false,
           initialShowHunkHeaders: cliInput.options.hunkHeaders ?? true,
           initialShowAgentNotes: cliInput.options.agentNotes ?? false,
+          initialShowCommitDetails: cliInput.options.commitDetails ?? true,
           stream,
         };
       }

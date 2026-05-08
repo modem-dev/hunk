@@ -18,8 +18,12 @@ export interface BuildAppMenusOptions {
   showHelp: boolean;
   showHunkHeaders: boolean;
   showLineNumbers: boolean;
+  /** Optional commit-review-only setting. Undefined hides the related menu item. */
+  showCommitDetails?: boolean;
   renderSidebar: boolean;
   toggleAgentNotes: () => void;
+  /** Optional commit-review-only action. Undefined hides the related menu item. */
+  toggleCommitDetails?: () => void;
   toggleFocusArea: () => void;
   toggleHelp: () => void;
   toggleHunkHeaders: () => void;
@@ -46,8 +50,10 @@ export function buildAppMenus({
   showHelp,
   showHunkHeaders,
   showLineNumbers,
+  showCommitDetails,
   renderSidebar,
   toggleAgentNotes,
+  toggleCommitDetails,
   toggleFocusArea,
   toggleHelp,
   toggleHunkHeaders,
@@ -158,6 +164,17 @@ export function buildAppMenus({
         checked: showHunkHeaders,
         action: toggleHunkHeaders,
       },
+      ...(toggleCommitDetails !== undefined
+        ? [
+            {
+              kind: "item" as const,
+              label: "Commit details",
+              hint: "c",
+              checked: showCommitDetails ?? true,
+              action: toggleCommitDetails,
+            },
+          ]
+        : []),
     ],
     navigate: [
       {

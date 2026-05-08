@@ -119,6 +119,9 @@ export function App({
   const [wrapLines, setWrapLines] = useState(bootstrap.initialWrapLines ?? false);
   const [codeHorizontalOffset, setCodeHorizontalOffset] = useState(0);
   const [showHunkHeaders, setShowHunkHeaders] = useState(bootstrap.initialShowHunkHeaders ?? true);
+  const [showCommitDetails, setShowCommitDetails] = useState(
+    bootstrap.initialShowCommitDetails ?? true,
+  );
   const [sidebarVisible, setSidebarVisible] = useState(() => !pagerMode);
   const [forceSidebarOpen, setForceSidebarOpen] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -376,6 +379,15 @@ export function App({
     setShowHunkHeaders((current) => !current);
   };
 
+  /**
+   * Toggle the verbatim commit metadata block (Author, Date, full body) above each
+   * commit's first file. The subject stays visible via the cursor strip regardless.
+   * No-op outside commit-review sessions because there's no metadata to hide.
+   */
+  const toggleCommitDetails = () => {
+    setShowCommitDetails((current) => !current);
+  };
+
   /** Jump to an annotated hunk without changing the global note visibility toggle. */
   const openAgentNotesAtHunk = useCallback(
     (fileId: string, hunkIndex: number) => {
@@ -536,8 +548,16 @@ export function App({
         showHelp,
         showHunkHeaders,
         showLineNumbers,
+<<<<<<< HEAD
         renderSidebar,
+||||||| parent of 36d55cf (feat(pager): toggle for detailed commit message in commit-review mode)
+        sidebarVisible,
+=======
+        showCommitDetails: isCommitReview ? showCommitDetails : undefined,
+        sidebarVisible,
+>>>>>>> 36d55cf (feat(pager): toggle for detailed commit message in commit-review mode)
         toggleAgentNotes,
+        toggleCommitDetails: isCommitReview ? toggleCommitDetails : undefined,
         toggleFocusArea,
         toggleHelp,
         toggleHunkHeaders,
@@ -561,7 +581,15 @@ export function App({
       showHelp,
       showHunkHeaders,
       showLineNumbers,
+<<<<<<< HEAD
       renderSidebar,
+||||||| parent of 36d55cf (feat(pager): toggle for detailed commit message in commit-review mode)
+      sidebarVisible,
+=======
+      showCommitDetails,
+      isCommitReview,
+      sidebarVisible,
+>>>>>>> 36d55cf (feat(pager): toggle for detailed commit message in commit-review mode)
       toggleAgentNotes,
       toggleFocusArea,
       toggleHelp,
@@ -614,6 +642,7 @@ export function App({
     showHelp,
     switchMenu,
     toggleAgentNotes,
+    toggleCommitDetails: isCommitReview ? toggleCommitDetails : undefined,
     toggleFocusArea,
     toggleHelp,
     toggleHunkHeaders,
@@ -802,6 +831,7 @@ export function App({
           showAgentNotes={showAgentNotes}
           showLineNumbers={showLineNumbers}
           showHunkHeaders={showHunkHeaders}
+          showCommitDetails={showCommitDetails}
           wrapLines={wrapLines}
           wrapToggleScrollTop={wrapToggleScrollTopRef.current}
           layoutToggleScrollTop={layoutToggleScrollTopRef.current}

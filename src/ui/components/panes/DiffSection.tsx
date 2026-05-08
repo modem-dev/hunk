@@ -21,6 +21,8 @@ interface DiffSectionProps {
   separatorWidth: number;
   showLineNumbers: boolean;
   showHunkHeaders: boolean;
+  /** When false, the verbatim commit metadata block above this section is hidden. */
+  showCommitDetails?: boolean;
   wrapLines: boolean;
   showHeader: boolean;
   showSeparator: boolean;
@@ -45,6 +47,7 @@ function DiffSectionComponent({
   separatorWidth,
   showLineNumbers,
   showHunkHeaders,
+  showCommitDetails = true,
   wrapLines,
   showHeader,
   showSeparator,
@@ -81,7 +84,7 @@ function DiffSectionComponent({
         </box>
       ) : null}
 
-      {file.commitHeaderText ? (
+      {file.commitHeaderText && showCommitDetails ? (
         <CommitHeaderBlock text={file.commitHeaderText} theme={theme} />
       ) : null}
 
@@ -154,6 +157,7 @@ export const DiffSection = memo(DiffSectionComponent, (previous, next) => {
     previous.separatorWidth === next.separatorWidth &&
     previous.showLineNumbers === next.showLineNumbers &&
     previous.showHunkHeaders === next.showHunkHeaders &&
+    (previous.showCommitDetails ?? true) === (next.showCommitDetails ?? true) &&
     previous.wrapLines === next.wrapLines &&
     previous.showHeader === next.showHeader &&
     previous.showSeparator === next.showSeparator &&

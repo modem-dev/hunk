@@ -82,6 +82,8 @@ export interface CommonOptions {
   wrapLines?: boolean;
   hunkHeaders?: boolean;
   agentNotes?: boolean;
+  /** Show the verbatim commit metadata block above each commit's first file. */
+  commitDetails?: boolean;
   /**
    * When true, the session does not register with the daemon and the agent review
    * surface (live comments, hunk session commands, daemon-driven reload) is disabled.
@@ -98,6 +100,13 @@ export interface PersistedViewPreferences {
   wrapLines: boolean;
   showHunkHeaders: boolean;
   showAgentNotes: boolean;
+  /**
+   * Whether to render the verbatim commit metadata block (Author, Date, full body)
+   * inline above each commit's first file. Off hides the block — the commit subject
+   * stays visible via the cursor strip in the chrome. Only meaningful in commit-review
+   * pager sessions; other modes ignore the setting.
+   */
+  showCommitDetails: boolean;
 }
 
 export interface HelpCommandInput {
@@ -369,6 +378,7 @@ export interface AppBootstrap {
   initialWrapLines?: boolean;
   initialShowHunkHeaders?: boolean;
   initialShowAgentNotes?: boolean;
+  initialShowCommitDetails?: boolean;
   /** Present for flat streaming pager input (--no-review path). */
   stream?: ChangesetStreamHandle;
   /** Present for commit-by-commit pager input (`git log -p | hunk pager` default). */
