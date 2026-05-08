@@ -94,6 +94,16 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
   const [filter, setFilter] = useState("");
   const [selectedFileId, setSelectedFileId] = useState(files[0]?.id ?? "");
   const [selectedHunkIndex, setSelectedHunkIndex] = useState(0);
+
+  // Streaming pager mode starts with an empty changeset and grows. Pick the first file
+  // automatically once it arrives so the user lands on a real selection, not an empty
+  // sentinel. After the first file is selected, never auto-redirect — the user owns
+  // selection from that point.
+  useEffect(() => {
+    if (selectedFileId === "" && files.length > 0) {
+      setSelectedFileId(files[0]!.id);
+    }
+  }, [files, selectedFileId]);
   const [selectedFileTopAlignRequestId, setSelectedFileTopAlignRequestId] = useState(0);
   const [selectedHunkRevealRequestId, setSelectedHunkRevealRequestId] = useState(0);
   const [scrollToNote, setScrollToNote] = useState(false);

@@ -1,8 +1,8 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { resolveConfiguredCliInput } from "../core/config";
 import { loadAppBootstrap } from "../core/loaders";
 import { resolveRuntimeCliInput } from "../core/terminal";
-import type { AppBootstrap, CliInput } from "../core/types";
+import type { AppBootstrap, CliInput, CommitRef, DiffFile } from "../core/types";
 import type { UpdateNotice } from "../core/updateNotice";
 import {
   createInitialSessionSnapshot,
@@ -30,6 +30,50 @@ export function AppHost({
     enabled: !bootstrap.input.options.pager,
     resolver: startupNoticeResolver,
   });
+
+  // Subscribe to a streaming changeset producer when one is provided. Appends grow
+  // `changeset.files` in place; we explicitly do NOT bump `appVersion`, so the App stays
+  // mounted across the whole stream and selection/scroll/filter state persist.
+  useEffect(() => {
+    const stream = bootstrap.stream;
+    if (!stream) return;
+    const unsubscribe = stream.subscribe({
+      onAppend: (files: DiffFile[]) =>
+        setActiveBootstrap((prev) => ({
+          ...prev,
+          changeset: {
+            ...prev.changeset,
+            files: [...prev.changeset.files, ...files],
+            isStreaming: true,
+          },
+        })),
+      onCommit: (commit: CommitRef) =>
+        setActiveBootstrap((prev) => ({
+          ...prev,
+          changeset: {
+            ...prev.changeset,
+            commits: [...(prev.changeset.commits ?? []), commit],
+          },
+        })),
+      onComplete: () =>
+        setActiveBootstrap((prev) => ({
+          ...prev,
+          changeset: { ...prev.changeset, isStreaming: false },
+        })),
+      onError: (err) => {
+        // Surface to stderr; preserve whatever files we did manage to append.
+        console.warn(`[hunk:pager-stream] ${err.message}`);
+        setActiveBootstrap((prev) => ({
+          ...prev,
+          changeset: { ...prev.changeset, isStreaming: false },
+        }));
+      },
+    });
+    return unsubscribe;
+    // bootstrap.stream identity is stable for the lifetime of this AppHost instance —
+    // a daemon reload replaces the whole bootstrap and remounts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const reloadSession = useCallback(
     async (nextInput: CliInput, options?: { resetApp?: boolean; sourcePath?: string }) => {
