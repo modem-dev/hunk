@@ -347,8 +347,9 @@ export interface CommitMetadata {
 
 /**
  * One commit's review unit in a multi-commit pager session. The renderer treats each
- * `CommitChangeset` as a fresh review canvas — selection, scroll, and live comments
- * reset when the cursor moves between commits.
+ * `CommitChangeset` as a fresh review canvas — selection, scroll, and filter reset
+ * when the cursor moves between commits. Live comments persist per-sha at the
+ * AppHost level, so navigating away and back restores the notes left on a commit.
  */
 export interface CommitChangeset {
   metadata: CommitMetadata;

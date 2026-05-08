@@ -35,14 +35,10 @@ export interface UseAppKeyboardShortcutsOptions {
   pagerMode: boolean;
   /**
    * Optional commit-cursor handler for `git log -p` style sessions. Triggered by
-   * Ctrl-N (next) and Ctrl-P (previous). Returns false to indicate the move was
-   * blocked (e.g., pending confirmation) so the handler can stay reserved.
+   * `>` (next) and `<` (previous). Live comments survive the move via the AppHost
+   * sha-keyed store, so no confirmation gating is needed here.
    */
   requestMoveCommit?: (delta: number) => void;
-  /** When true, the next key press is interpreted as a confirmation answer. */
-  pendingCommitConfirmation?: boolean;
-  onConfirmCommitMove?: () => void;
-  onCancelCommitMove?: () => void;
   requestQuit: () => void;
   scrollCodeHorizontally: (delta: number) => void;
   scrollDiff: (delta: number, unit: ScrollUnit) => void;
@@ -77,9 +73,6 @@ export function useAppKeyboardShortcuts({
   openMenu,
   pagerMode,
   requestMoveCommit,
-  pendingCommitConfirmation,
-  onConfirmCommitMove,
-  onCancelCommitMove,
   requestQuit,
   scrollCodeHorizontally,
   scrollDiff,
@@ -100,13 +93,11 @@ export function useAppKeyboardShortcuts({
   const focusAreaRef = useRef(focusArea);
   const pagerModeRef = useRef(pagerMode);
   const showHelpRef = useRef(showHelp);
-  const pendingCommitConfirmationRef = useRef(Boolean(pendingCommitConfirmation));
 
   activeMenuIdRef.current = activeMenuId;
   focusAreaRef.current = focusArea;
   pagerModeRef.current = pagerMode;
   showHelpRef.current = showHelp;
-  pendingCommitConfirmationRef.current = Boolean(pendingCommitConfirmation);
 
   const runAndCloseMenu = (action: () => void) => {
     action();
@@ -412,26 +403,6 @@ export function useAppKeyboardShortcuts({
 
   useKeyboard((key: KeyEvent) => {
     if (handleMenuToggleShortcut(key)) {
-      return;
-    }
-
-    // Commit-move confirmation has the highest precedence: while a confirmation is
-    // pending, swallow every other key so user input can't accidentally fire scroll /
-    // selection / filter actions. Only y/Y, n/N, and Esc do anything.
-    if (pendingCommitConfirmationRef.current) {
-      const sequence = key.sequence?.toLowerCase();
-      if (key.name === "y" || sequence === "y") {
-        onConfirmCommitMove?.();
-      } else if (
-        isEscapeKey(key) ||
-        key.name === "n" ||
-        sequence === "n" ||
-        key.name === "return" ||
-        key.name === "enter"
-      ) {
-        // Treat Enter as "no" so a fat-finger can't bypass the prompt by reflex.
-        onCancelCommitMove?.();
-      }
       return;
     }
 

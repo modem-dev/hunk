@@ -5,9 +5,14 @@ import {
 } from "@opentui/core";
 import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState, useRef } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import type { AppBootstrap, CliInput, CommitDetailsMode, LayoutMode } from "../core/types";
 import { canReloadInput, computeWatchSignature } from "../core/watch";
-import type { HunkSessionBrokerClient, ReloadedSessionResult } from "../hunk-session/types";
+import type {
+  HunkSessionBrokerClient,
+  LiveComment,
+  ReloadedSessionResult,
+} from "../hunk-session/types";
 import { MenuBar } from "./components/chrome/MenuBar";
 import { StatusBar } from "./components/chrome/StatusBar";
 import { DiffPane } from "./components/panes/DiffPane";
@@ -81,6 +86,8 @@ export function App({
   onMoveCommit,
   commitDetailsMode = "full",
   onCycleCommitDetailsMode,
+  liveCommentsByFileId,
+  setLiveCommentsByFileId,
 }: {
   bootstrap: AppBootstrap;
   hostClient?: HunkSessionBrokerClient;
@@ -99,6 +106,13 @@ export function App({
    */
   commitDetailsMode?: CommitDetailsMode;
   onCycleCommitDetailsMode?: () => void;
+  /**
+   * Live-comment storage lifted to AppHost so notes survive the remount fired by
+   * commit-cursor moves. AppHost buckets comments by sha and hands the active slice
+   * down here. When omitted, useReviewController falls back to its own bucket.
+   */
+  liveCommentsByFileId?: Record<string, LiveComment[]>;
+  setLiveCommentsByFileId?: Dispatch<SetStateAction<Record<string, LiveComment[]>>>;
 }) {
   const SIDEBAR_MIN_WIDTH = 22;
   const DIFF_MIN_WIDTH = 48;
@@ -137,36 +151,24 @@ export function App({
   const [resizeStartWidth, setResizeStartWidth] = useState<number | null>(null);
 
   const activeTheme = resolveTheme(themeId, renderer.themeMode);
-  const review = useReviewController({ files: bootstrap.changeset.files });
+  const review = useReviewController({
+    files: bootstrap.changeset.files,
+    liveCommentsByFileId,
+    setLiveCommentsByFileId,
+  });
   const filteredFiles = review.visibleFiles;
   const selectedFile = review.selectedFile;
 
-  // Commit-move confirmation: when the user is reading a `git log -p` style session
-  // and presses Ctrl-N / Ctrl-P, we check whether moving would discard interactive
-  // state (live comments). If so, we hold the move in `pendingCommitMove` until they
-  // explicitly confirm with Y. The confirmation prompt is rendered below.
-  const [pendingCommitMove, setPendingCommitMove] = useState<number | null>(null);
+  // Commit-move is unconditional. Live comments survive the move because AppHost
+  // buckets them by sha and rehydrates the active slice on remount, so there's no
+  // longer any data-loss concern to gate behind a confirmation. Filter and scroll
+  // still reset across commits, but those regenerate cheaply.
   const requestMoveCommit = useCallback(
     (delta: number) => {
-      if (!onMoveCommit) return;
-      // Trigger conditions for the prompt: live comments are the headline data-loss
-      // concern. Filter and scroll position regenerate cheaply on the next commit, so
-      // moving past those is fine.
-      if (review.liveCommentCount > 0) {
-        setPendingCommitMove(delta);
-        return;
-      }
-      onMoveCommit(delta);
+      onMoveCommit?.(delta);
     },
-    [onMoveCommit, review.liveCommentCount],
+    [onMoveCommit],
   );
-  const confirmCommitMove = useCallback(() => {
-    if (pendingCommitMove === null || !onMoveCommit) return;
-    review.clearLiveComments();
-    onMoveCommit(pendingCommitMove);
-    setPendingCommitMove(null);
-  }, [pendingCommitMove, onMoveCommit, review]);
-  const cancelCommitMove = useCallback(() => setPendingCommitMove(null), []);
 
   // Drive back-pressure on the streaming pager: report the user's current commit and
   // file position so the producer can pause once it's buffered enough ahead. Files held
@@ -626,9 +628,6 @@ export function App({
     openMenu,
     pagerMode,
     requestMoveCommit: onMoveCommit ? requestMoveCommit : undefined,
-    pendingCommitConfirmation: pendingCommitMove !== null,
-    onConfirmCommitMove: confirmCommitMove,
-    onCancelCommitMove: cancelCommitMove,
     requestQuit,
     scrollCodeHorizontally,
     scrollDiff,
@@ -748,23 +747,6 @@ export function App({
         >
           <text fg={activeTheme.muted}>
             {`${bootstrap.currentCommit.shortSha || "—"}  ·  ${bootstrap.commitCursor.current + 1} of ${bootstrap.commitCursor.total}${bootstrap.commitCursor.streaming ? "+" : ""}`}
-          </text>
-        </box>
-      ) : null}
-
-      {pendingCommitMove !== null ? (
-        <box
-          style={{
-            width: "100%",
-            height: 1,
-            paddingLeft: 1,
-            paddingRight: 1,
-            backgroundColor: activeTheme.panel,
-            flexDirection: "row",
-          }}
-        >
-          <text fg={activeTheme.text}>
-            {`${review.liveCommentCount} comment${review.liveCommentCount === 1 ? "" : "s"} will be discarded if you move ${pendingCommitMove > 0 ? "to next" : "to previous"} commit. Press Y to confirm, Esc to cancel.`}
           </text>
         </box>
       ) : null}

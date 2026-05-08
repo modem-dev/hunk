@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import { resolveConfiguredCliInput } from "../core/config";
 import { loadAppBootstrap } from "../core/loaders";
 import { resolveRuntimeCliInput } from "../core/terminal";
@@ -15,9 +16,12 @@ import {
   createSessionRegistration,
   updateSessionRegistration,
 } from "../hunk-session/sessionRegistration";
-import type { HunkSessionBrokerClient } from "../hunk-session/types";
+import type { HunkSessionBrokerClient, LiveComment } from "../hunk-session/types";
 import { App } from "./App";
 import { useStartupUpdateNotice } from "./hooks/useStartupUpdateNotice";
+
+/** Sentinel review key used when no commit cursor is present. */
+const DEFAULT_REVIEW_KEY = "";
 
 /** Result returned by `onMoveCommit` so the caller can detect blocked moves. */
 export type MoveCommitResult =
@@ -46,10 +50,13 @@ export function AppHost({
   const [commitBuffer, setCommitBuffer] = useState<CommitChangeset[]>([]);
   const [cursorIndex, setCursorIndex] = useState(0);
   const [commitStreamComplete, setCommitStreamComplete] = useState(false);
-  // The commit-details view mode lives at the AppHost level so it survives the App
-  // remount that fires on every commit-cursor move. App's view-state-reset on commit
-  // nav is intentional for selection / scroll / filter (they don't translate across
-  // commits), but the user's metadata-visibility preference should sticky.
+  // The commit-details view mode and live-comment store both live at AppHost so they
+  // survive the App remount that fires on every commit-cursor move. App's view-state
+  // reset on commit nav is intentional for selection / scroll / filter (they don't
+  // translate across commits), but the user's metadata-visibility preference and the
+  // notes they've left should follow them. Live comments are bucketed by commit sha so
+  // each commit keeps its own annotation set; switching back to a previously visited
+  // commit restores its notes.
   const [commitDetailsMode, setCommitDetailsMode] = useState<CommitDetailsMode>(
     bootstrap.initialCommitDetailsMode ?? "full",
   );
@@ -58,6 +65,35 @@ export function AppHost({
       current === "full" ? "compact" : current === "compact" ? "hidden" : "full",
     );
   }, []);
+  const [liveCommentsBySha, setLiveCommentsBySha] = useState<
+    Record<string, Record<string, LiveComment[]>>
+  >({});
+  const currentReviewKey = activeBootstrap.currentCommit?.sha ?? DEFAULT_REVIEW_KEY;
+  const liveCommentsByFileId = useMemo<Record<string, LiveComment[]>>(
+    () => liveCommentsBySha[currentReviewKey] ?? {},
+    [liveCommentsBySha, currentReviewKey],
+  );
+  // Updater scoped to the current review's slice. Forwarding an updater here keeps the
+  // controlled-hook pattern in useReviewController (functional and value setters both
+  // work) while AppHost decides which sha bucket the writes land in.
+  const setLiveCommentsByFileId = useCallback<
+    Dispatch<SetStateAction<Record<string, LiveComment[]>>>
+  >(
+    (action) => {
+      setLiveCommentsBySha((bySha) => {
+        const currentSlice = bySha[currentReviewKey] ?? {};
+        const nextSlice =
+          typeof action === "function"
+            ? (action as (prev: Record<string, LiveComment[]>) => Record<string, LiveComment[]>)(
+                currentSlice,
+              )
+            : action;
+        if (nextSlice === currentSlice) return bySha;
+        return { ...bySha, [currentReviewKey]: nextSlice };
+      });
+    },
+    [currentReviewKey],
+  );
   // Keep a ref to the latest buffer length so synchronous handlers (move-by-key) can
   // read it without re-binding on every state update.
   const commitBufferRef = useRef<CommitChangeset[]>([]);
@@ -225,6 +261,9 @@ export function AppHost({
 
       setActiveBootstrap(nextBootstrap);
       if (options?.resetApp !== false) {
+        // A full reload is a fresh review canvas — drop any cached per-sha comments
+        // since the file IDs and content no longer correspond to the new bootstrap.
+        setLiveCommentsBySha({});
         setAppVersion((current) => current + 1);
       }
 
@@ -252,6 +291,8 @@ export function AppHost({
       onMoveCommit={bootstrap.commitReviewStream ? onMoveCommit : undefined}
       commitDetailsMode={commitDetailsMode}
       onCycleCommitDetailsMode={bootstrap.commitReviewStream ? cycleCommitDetailsMode : undefined}
+      liveCommentsByFileId={liveCommentsByFileId}
+      setLiveCommentsByFileId={setLiveCommentsByFileId}
     />
   );
 }

@@ -13,6 +13,8 @@ import {
   useEffect,
   useMemo,
   useState,
+  type Dispatch,
+  type SetStateAction,
 } from "react";
 import {
   buildLiveComment,
@@ -90,7 +92,18 @@ export interface ReviewController {
 }
 
 /** Own the shared review stream state used by both the UI and session bridge. */
-export function useReviewController({ files }: { files: DiffFile[] }): ReviewController {
+export function useReviewController({
+  files,
+  liveCommentsByFileId: liveCommentsByFileIdProp,
+  setLiveCommentsByFileId: setLiveCommentsByFileIdProp,
+}: {
+  files: DiffFile[];
+  // Lifted live-comment storage. When omitted, the hook owns its own bucket — this is
+  // the path tests use. AppHost passes a sha-keyed slice + writer so comments survive
+  // the App remount that fires on commit-cursor moves.
+  liveCommentsByFileId?: Record<string, LiveComment[]>;
+  setLiveCommentsByFileId?: Dispatch<SetStateAction<Record<string, LiveComment[]>>>;
+}): ReviewController {
   const [filter, setFilter] = useState("");
   const [selectedFileId, setSelectedFileId] = useState(files[0]?.id ?? "");
   const [selectedHunkIndex, setSelectedHunkIndex] = useState(0);
@@ -107,9 +120,11 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
   const [selectedFileTopAlignRequestId, setSelectedFileTopAlignRequestId] = useState(0);
   const [selectedHunkRevealRequestId, setSelectedHunkRevealRequestId] = useState(0);
   const [scrollToNote, setScrollToNote] = useState(false);
-  const [liveCommentsByFileId, setLiveCommentsByFileId] = useState<Record<string, LiveComment[]>>(
-    {},
-  );
+  const [liveCommentsByFileIdLocal, setLiveCommentsByFileIdLocal] = useState<
+    Record<string, LiveComment[]>
+  >({});
+  const liveCommentsByFileId = liveCommentsByFileIdProp ?? liveCommentsByFileIdLocal;
+  const setLiveCommentsByFileId = setLiveCommentsByFileIdProp ?? setLiveCommentsByFileIdLocal;
   const deferredFilter = useDeferredValue(filter);
 
   const {
