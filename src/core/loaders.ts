@@ -101,11 +101,7 @@ export function stripGitLogMetadata(text: string) {
       // The header section ends at the first patch line. `diff --git `
       // is the canonical Git start; `--- `/`+++ ` cover unified-diff
       // input where someone synthesised log output without it.
-      if (
-        line.startsWith("diff --git ") ||
-        line.startsWith("--- ") ||
-        line.startsWith("+++ ")
-      ) {
+      if (line.startsWith("diff --git ") || line.startsWith("--- ") || line.startsWith("+++ ")) {
         inHeader = false;
         out.push(line);
       }

@@ -33,13 +33,7 @@ describe("stripGitLogMetadata", () => {
       "",
     ].join("\n");
 
-    const expected = [
-      "diff --git a/foo b/foo",
-      "@@ -1,1 +1,1 @@",
-      "-old",
-      "+new",
-      "",
-    ].join("\n");
+    const expected = ["diff --git a/foo b/foo", "@@ -1,1 +1,1 @@", "-old", "+new", ""].join("\n");
 
     expect(stripGitLogMetadata(input)).toBe(expected);
   });
@@ -188,9 +182,7 @@ describe("stripGitLogMetadata", () => {
     ].join("\n");
 
     const result = stripGitLogMetadata(input);
-    expect(result).toContain(
-      " commit deadbeefcafebabe1234567890abcdef12345678 looks like a sha",
-    );
+    expect(result).toContain(" commit deadbeefcafebabe1234567890abcdef12345678 looks like a sha");
   });
 
   // Integration-style: real `git log -p`-shaped input should round-trip
