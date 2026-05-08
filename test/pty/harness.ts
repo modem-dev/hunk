@@ -155,6 +155,73 @@ export function createPtyHarness() {
     return { dir, before, after, agentContext };
   }
 
+  function createAgentNavigationRepoFixture() {
+    const alphaBeforeLines = createNumberedExportLines(1, 80).split("\n");
+    const alphaAfterLines = [...alphaBeforeLines];
+    alphaAfterLines[0] = "export const line01 = 1001;";
+    alphaAfterLines[59] = "export const line60 = 6000;";
+
+    const betaBeforeLines = createNumberedExportLines(81, 20).split("\n");
+    const betaAfterLines = [...betaBeforeLines];
+    betaAfterLines[0] = "export const line81 = 8100;";
+
+    const gammaBeforeLines = createNumberedExportLines(101, 80).split("\n");
+    const gammaAfterLines = [...gammaBeforeLines];
+    gammaAfterLines[0] = "export const line101 = 10100;";
+    gammaAfterLines[59] = "export const line160 = 16000;";
+
+    const fixture = createGitRepoFixture([
+      {
+        path: "alpha.ts",
+        before: `${alphaBeforeLines.join("\n")}\n`,
+        after: `${alphaAfterLines.join("\n")}\n`,
+      },
+      {
+        path: "beta.ts",
+        before: `${betaBeforeLines.join("\n")}\n`,
+        after: `${betaAfterLines.join("\n")}\n`,
+      },
+      {
+        path: "gamma.ts",
+        before: `${gammaBeforeLines.join("\n")}\n`,
+        after: `${gammaAfterLines.join("\n")}\n`,
+      },
+    ]);
+    const agentContext = join(fixture.dir, "agent-context.json");
+
+    writeText(
+      agentContext,
+      JSON.stringify({
+        version: 1,
+        summary: "Agent navigation notes",
+        files: [
+          {
+            path: "alpha.ts",
+            annotations: [
+              {
+                newRange: [60, 60],
+                summary: "Alpha note for navigation.",
+                rationale: "A taller note keeps note rows in the scroll geometry.",
+              },
+            ],
+          },
+          {
+            path: "gamma.ts",
+            annotations: [
+              {
+                newRange: [60, 60],
+                summary: "Gamma note for navigation.",
+                rationale: "Navigation should reach this note without crashing.",
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    return { ...fixture, agentContext };
+  }
+
   function createMultiHunkFilePair() {
     const dir = makeTempDir("hunk-tuistory-hunks-");
     const before = join(dir, "before.ts");
@@ -515,6 +582,7 @@ export function createPtyHarness() {
     cleanup,
     countMatches,
     createAgentFilePair,
+    createAgentNavigationRepoFixture,
     createBottomClampedRepoFixture,
     createCollapsedTopRepoFixture,
     createCrossFileHunkNavigationRepoFixture,

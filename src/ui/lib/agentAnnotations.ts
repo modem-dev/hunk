@@ -1,4 +1,5 @@
 import type { Hunk } from "@pierre/diffs";
+import { hunkLineRange } from "../../core/liveComments";
 import type { AgentAnnotation, DiffFile } from "../../core/types";
 import { fileLabel } from "./files";
 
@@ -15,23 +16,6 @@ export interface AnnotationAnchor {
 /** Check whether two inclusive line ranges overlap. */
 function overlap(rangeA: [number, number], rangeB: [number, number]) {
   return rangeA[0] <= rangeB[1] && rangeB[0] <= rangeA[1];
-}
-
-/** Compute the old/new line ranges covered by a hunk, including single-line edge cases. */
-function hunkLineRange(hunk: Hunk) {
-  const newEnd = Math.max(
-    hunk.additionStart,
-    hunk.additionStart + Math.max(hunk.additionLines, 1) - 1,
-  );
-  const oldEnd = Math.max(
-    hunk.deletionStart,
-    hunk.deletionStart + Math.max(hunk.deletionLines, 1) - 1,
-  );
-
-  return {
-    oldRange: [hunk.deletionStart, oldEnd] as [number, number],
-    newRange: [hunk.additionStart, newEnd] as [number, number],
-  };
 }
 
 /** Check whether an annotation belongs to the visible span of a hunk. */

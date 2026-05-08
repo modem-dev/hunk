@@ -199,6 +199,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
         selectedFile?.id,
         selectedHunkIndex,
         delta,
+        hunkCursors,
       );
       if (!nextCursor) {
         return;
@@ -224,6 +225,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
         selectedFile?.id,
         selectedHunkIndex,
         delta,
+        hunkCursors,
       );
       if (!nextCursor) {
         return;
@@ -231,7 +233,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
 
       selectHunk(nextCursor.fileId, nextCursor.hunkIndex, { scrollToNote: true });
     },
-    [annotatedHunkCursors, selectHunk, selectedFile?.id, selectedHunkIndex],
+    [annotatedHunkCursors, hunkCursors, selectHunk, selectedFile?.id, selectedHunkIndex],
   );
 
   /** Cycle through only the currently visible files that carry annotations. */

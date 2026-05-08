@@ -858,8 +858,20 @@ describe("UI components", () => {
 
   test("DiffPane lets manual scrolling move away from a bottom-clamped file-top alignment", async () => {
     const theme = resolveTheme("midnight", null);
+    const firstFile = createTallDiffFile("first", "first.ts", 30);
+    firstFile.agent = {
+      path: firstFile.path,
+      summary: "first file note",
+      annotations: [
+        {
+          newRange: [12, 12],
+          summary: "Offscreen note rows must stay in geometry.",
+          rationale: "This note is on the file above the bottom-clamped selected file.",
+        },
+      ],
+    };
     const files = [
-      createTallDiffFile("first", "first.ts", 30),
+      firstFile,
       createTestDiffFile(
         "second",
         "second.ts",
@@ -895,6 +907,7 @@ describe("UI components", () => {
             selectedHunkIndex: 0,
             selectedFileTopAlignRequestId,
             separatorWidth: 84,
+            showAgentNotes: true,
             width: 92,
           })}
         />

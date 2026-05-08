@@ -81,11 +81,16 @@ export function useAppKeyboardShortcuts({
 }: UseAppKeyboardShortcutsOptions) {
   const activeMenuIdRef = useRef(activeMenuId);
   const focusAreaRef = useRef(focusArea);
+  // Keep navigation shortcuts resilient if the keyboard hook changes how it stores callbacks.
+  const moveToAnnotatedHunkRef = useRef(moveToAnnotatedHunk);
+  const moveToHunkRef = useRef(moveToHunk);
   const pagerModeRef = useRef(pagerMode);
   const showHelpRef = useRef(showHelp);
 
   activeMenuIdRef.current = activeMenuId;
   focusAreaRef.current = focusArea;
+  moveToAnnotatedHunkRef.current = moveToAnnotatedHunk;
+  moveToHunkRef.current = moveToHunk;
   pagerModeRef.current = pagerMode;
   showHelpRef.current = showHelp;
 
@@ -362,22 +367,22 @@ export function useAppKeyboardShortcuts({
     }
 
     if (key.name === "[") {
-      runAndCloseMenu(() => moveToHunk(-1));
+      runAndCloseMenu(() => moveToHunkRef.current(-1));
       return;
     }
 
     if (key.name === "]") {
-      runAndCloseMenu(() => moveToHunk(1));
+      runAndCloseMenu(() => moveToHunkRef.current(1));
       return;
     }
 
     if (key.sequence === "{") {
-      runAndCloseMenu(() => moveToAnnotatedHunk(-1));
+      runAndCloseMenu(() => moveToAnnotatedHunkRef.current(-1));
       return;
     }
 
     if (key.sequence === "}") {
-      runAndCloseMenu(() => moveToAnnotatedHunk(1));
+      runAndCloseMenu(() => moveToAnnotatedHunkRef.current(1));
     }
   };
 

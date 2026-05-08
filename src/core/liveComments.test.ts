@@ -38,7 +38,9 @@ describe("live comment helpers", () => {
     const file = createExampleDiffFile();
 
     expect(findHunkIndexForLine(file, "old", 1)).toBe(0);
+    expect(findHunkIndexForLine(file, "old", 3)).toBe(0);
     expect(findHunkIndexForLine(file, "new", 2)).toBe(0);
+    expect(findHunkIndexForLine(file, "new", 4)).toBe(0);
     expect(findHunkIndexForLine(file, "new", 40)).toBe(-1);
   });
 
@@ -111,8 +113,8 @@ describe("live comment helpers", () => {
     const range = hunkLineRange(file.metadata.hunks[0]!);
 
     expect(range.oldRange[0]).toBeLessThanOrEqual(1);
-    expect(range.oldRange[1]).toBeGreaterThanOrEqual(2);
+    expect(range.oldRange[1]).toBeGreaterThanOrEqual(3);
     expect(range.newRange[0]).toBeLessThanOrEqual(1);
-    expect(range.newRange[1]).toBeGreaterThanOrEqual(2);
+    expect(range.newRange[1]).toBeGreaterThanOrEqual(4);
   });
 });

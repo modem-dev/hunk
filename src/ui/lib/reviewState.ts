@@ -132,8 +132,15 @@ export function resolveReviewNavigationTarget({
 }): ReviewNavigationTarget {
   if (input.commentDirection) {
     const delta = input.commentDirection === "next" ? 1 : -1;
+    const hunkCursors = buildHunkCursors(visibleFiles);
     const annotatedCursors = buildAnnotatedHunkCursors(visibleFiles);
-    const nextCursor = findNextHunkCursor(annotatedCursors, currentFileId, currentHunkIndex, delta);
+    const nextCursor = findNextHunkCursor(
+      annotatedCursors,
+      currentFileId,
+      currentHunkIndex,
+      delta,
+      hunkCursors,
+    );
 
     if (!nextCursor) {
       throw new Error("No annotated hunks found in the current review.");

@@ -8,16 +8,12 @@ export interface ResolvedCommentTarget {
   line: number;
 }
 
-/** Compute the inclusive old/new line spans touched by one hunk. */
+/** Compute the inclusive old/new line spans covered by one hunk. */
 export function hunkLineRange(hunk: Hunk) {
-  const newEnd = Math.max(
-    hunk.additionStart,
-    hunk.additionStart + Math.max(hunk.additionLines, 1) - 1,
-  );
-  const oldEnd = Math.max(
-    hunk.deletionStart,
-    hunk.deletionStart + Math.max(hunk.deletionLines, 1) - 1,
-  );
+  const additionSpan = hunk.additionCount ?? hunk.additionLines;
+  const deletionSpan = hunk.deletionCount ?? hunk.deletionLines;
+  const newEnd = Math.max(hunk.additionStart, hunk.additionStart + Math.max(additionSpan, 1) - 1);
+  const oldEnd = Math.max(hunk.deletionStart, hunk.deletionStart + Math.max(deletionSpan, 1) - 1);
 
   return {
     oldRange: [hunk.deletionStart, oldEnd] as [number, number],
