@@ -55,6 +55,13 @@ export const PLATFORM_PACKAGE_MATRIX: PlatformPackageSpec[] = [
     binaryName: "hunk",
     binaryRelativePath: "bin/hunk",
   },
+  {
+    packageName: "hunkdiff-windows-x64",
+    os: "windows",
+    cpu: "x64",
+    binaryName: "hunk",
+    binaryRelativePath: "bin/hunk",
+  },
 ] as const;
 
 /** Normalize a Node platform string into Hunk's package naming vocabulary. */

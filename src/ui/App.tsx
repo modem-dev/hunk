@@ -109,6 +109,7 @@ export function App({
   const [wrapLines, setWrapLines] = useState(bootstrap.initialWrapLines ?? false);
   const [codeHorizontalOffset, setCodeHorizontalOffset] = useState(0);
   const [showHunkHeaders, setShowHunkHeaders] = useState(bootstrap.initialShowHunkHeaders ?? true);
+  const [showStructural, setShowStructural] = useState(bootstrap.input.options.structural ?? false);
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [forceSidebarOpen, setForceSidebarOpen] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -116,6 +117,7 @@ export function App({
   const [sidebarWidth, setSidebarWidth] = useState(34);
   const [resizeDragOriginX, setResizeDragOriginX] = useState<number | null>(null);
   const [resizeStartWidth, setResizeStartWidth] = useState<number | null>(null);
+  const [scrollViewport, setScrollViewport] = useState({ top: 0, height: 0 });
 
   const pagerMode = Boolean(bootstrap.input.options.pager);
   const activeTheme = resolveTheme(themeId, renderer.themeMode);
@@ -137,6 +139,10 @@ export function App({
 
   const openAgentNotes = useCallback(() => {
     setShowAgentNotes(true);
+  }, []);
+
+  const onScrollViewportChange = useCallback((viewport: { top: number; height: number }) => {
+    setScrollViewport(viewport);
   }, []);
 
   useHunkSessionBridge({
@@ -220,6 +226,13 @@ export function App({
   }, [renderer, renderSidebar, resolvedLayout, terminal.height, terminal.width, wrapLines]);
 
   useEffect(() => {
+    setScrollViewport((current) => ({
+      ...current,
+      height: terminal.height,
+    }));
+  }, [terminal.height]);
+
+  useEffect(() => {
     if (!selectedFile) {
       return;
     }
@@ -291,6 +304,10 @@ export function App({
   /** Toggle line-number gutters without changing the diff content itself. */
   const toggleLineNumbers = () => {
     setShowLineNumbers((current) => !current);
+  };
+
+  const toggleStructural = () => {
+    setShowStructural((current) => !current);
   };
 
   /** Toggle whether diff code rows wrap instead of truncating to one terminal row. */
@@ -431,6 +448,39 @@ export function App({
     };
   }, [bootstrap.input, refreshCurrentInput, watchEnabled]);
 
+  useEffect(() => {
+    const scrollBox = diffScrollRef.current;
+    if (!scrollBox) {
+      return;
+    }
+
+    const updateViewport = () => {
+      const nextTop = scrollBox.scrollTop ?? 0;
+      const nextHeight = scrollBox.viewport.height ?? 0;
+
+      setScrollViewport((current) =>
+        current.top === nextTop && current.height === nextHeight
+          ? current
+          : { top: nextTop, height: nextHeight },
+      );
+    };
+
+    const handleViewportChange = () => {
+      updateViewport();
+    };
+
+    updateViewport();
+    scrollBox.verticalScrollBar.on("change", handleViewportChange);
+    scrollBox.viewport.on("layout-changed", handleViewportChange);
+    scrollBox.viewport.on("resized", handleViewportChange);
+
+    return () => {
+      scrollBox.verticalScrollBar.off("change", handleViewportChange);
+      scrollBox.viewport.off("layout-changed", handleViewportChange);
+      scrollBox.viewport.off("resized", handleViewportChange);
+    };
+  }, [bootstrap.changeset.files.length, diffScrollRef]);
+
   /** Leave the app through the shared shutdown path. */
   const requestQuit = useCallback(() => {
     onQuit();
@@ -494,7 +544,9 @@ export function App({
         toggleLineNumbers,
         toggleLineWrap,
         toggleSidebar,
+        toggleStructural,
         wrapLines,
+        showStructural,
       }),
     [
       activeTheme.id,
@@ -519,7 +571,9 @@ export function App({
       toggleLineNumbers,
       toggleLineWrap,
       toggleSidebar,
+      toggleStructural,
       wrapLines,
+      showStructural,
     ],
   );
 
@@ -566,6 +620,7 @@ export function App({
     toggleLineNumbers,
     toggleLineWrap,
     toggleSidebar,
+    toggleStructural,
     triggerRefreshCurrentInput,
   });
 
@@ -722,7 +777,10 @@ export function App({
           selectedHunkRevealRequestId={review.selectedHunkRevealRequestId}
           theme={activeTheme}
           width={diffPaneWidth}
+          scrollViewport={scrollViewport}
+          showStructural={showStructural}
           onOpenAgentNotesAtHunk={openAgentNotesAtHunk}
+          onScrollViewportChange={onScrollViewportChange}
           onScrollCodeHorizontally={(delta) => {
             scrollCodeHorizontally(delta * FAST_CODE_HORIZONTAL_SCROLL_COLUMNS);
           }}

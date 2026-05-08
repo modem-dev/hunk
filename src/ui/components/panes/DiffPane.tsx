@@ -1,14 +1,6 @@
 import { type MouseEvent as TuiMouseEvent, type ScrollBoxRenderable } from "@opentui/core";
 import { useRenderer } from "@opentui/react";
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type RefObject,
-} from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, type RefObject } from "react";
 import type { DiffFile, LayoutMode } from "../../../core/types";
 import type { VisibleAgentNote } from "../../lib/agentAnnotations";
 import { computeHunkRevealScrollTop } from "../../lib/hunkScroll";
@@ -153,6 +145,9 @@ export function DiffPane({
   onScrollCodeHorizontally = () => {},
   onSelectFile,
   onViewportCenteredHunkChange,
+  scrollViewport,
+  showStructural,
+  onScrollViewportChange,
 }: {
   codeHorizontalOffset?: number;
   diffContentWidth: number;
@@ -177,7 +172,10 @@ export function DiffPane({
   selectedHunkRevealRequestId?: number;
   theme: AppTheme;
   width: number;
+  scrollViewport: { top: number; height: number };
+  showStructural: boolean;
   onOpenAgentNotesAtHunk: (fileId: string, hunkIndex: number) => void;
+  onScrollViewportChange?: (viewport: { top: number; height: number }) => void;
   onScrollCodeHorizontally?: (delta: number) => void;
   onSelectFile: (fileId: string) => void;
   onViewportCenteredHunkChange?: (fileId: string, hunkIndex: number) => void;
@@ -273,7 +271,6 @@ export function DiffPane({
   // Keep exact row rendering for wrapped lines and the selected file's visible notes;
   // other files can still use placeholders and viewport windowing.
   const windowingEnabled = !wrapLines;
-  const [scrollViewport, setScrollViewport] = useState({ top: 0, height: 0 });
   const scrollbarRef = useRef<VerticalScrollbarHandle>(null);
   const prevScrollTopRef = useRef(0);
   const previousSectionGeometryRef = useRef<DiffSectionGeometry[] | null>(null);
@@ -315,47 +312,6 @@ export function DiffPane({
       }
     };
   }, []);
-
-  // Mirror the imperative OpenTUI scrollbox state into React state so geometry planning,
-  // windowing, pinned-header ownership, and prefetching can all read the same viewport snapshot.
-  useEffect(() => {
-    const scrollBox = scrollRef.current;
-    if (!scrollBox) {
-      return;
-    }
-
-    const updateViewport = () => {
-      const nextTop = scrollBox.scrollTop ?? 0;
-      const nextHeight = scrollBox.viewport.height ?? 0;
-
-      // Detect scroll activity and show scrollbar.
-      if (nextTop !== prevScrollTopRef.current) {
-        scrollbarRef.current?.show();
-        prevScrollTopRef.current = nextTop;
-      }
-
-      setScrollViewport((current) =>
-        current.top === nextTop && current.height === nextHeight
-          ? current
-          : { top: nextTop, height: nextHeight },
-      );
-    };
-
-    const handleViewportChange = () => {
-      updateViewport();
-    };
-
-    updateViewport();
-    scrollBox.verticalScrollBar.on("change", handleViewportChange);
-    scrollBox.viewport.on("layout-changed", handleViewportChange);
-    scrollBox.viewport.on("resized", handleViewportChange);
-
-    return () => {
-      scrollBox.verticalScrollBar.off("change", handleViewportChange);
-      scrollBox.viewport.off("layout-changed", handleViewportChange);
-      scrollBox.viewport.off("resized", handleViewportChange);
-    };
-  }, [files.length, scrollRef]);
 
   const sectionHeaderHeights = useMemo(() => buildInStreamFileHeaderHeights(files), [files]);
 
@@ -1036,6 +992,13 @@ export function DiffPane({
               viewportCulling={true}
               focused={pagerMode}
               onMouseScroll={handleMouseScroll}
+              // @ts-expect-error onScroll is not in the types but we need it for virtualization
+              onScroll={(event: any) => {
+                onScrollViewportChange?.({
+                  top: event.scrollTop,
+                  height: event.viewport.height,
+                });
+              }}
               scrollAcceleration={mouseWheelScrollAcceleration}
               rootOptions={{ backgroundColor: theme.panel }}
               wrapperOptions={{ backgroundColor: theme.panel }}
@@ -1077,6 +1040,7 @@ export function DiffPane({
                       key={file.id}
                       codeHorizontalOffset={codeHorizontalOffset}
                       file={file}
+                      geometry={sectionGeometry[index]!}
                       headerLabelWidth={headerLabelWidth}
                       headerStatsWidth={headerStatsWidth}
                       layout={layout}
@@ -1087,12 +1051,15 @@ export function DiffPane({
                       showSeparator={index > 0}
                       showLineNumbers={showLineNumbers}
                       showHunkHeaders={showHunkHeaders}
+                      showStructural={showStructural}
                       wrapLines={wrapLines}
                       theme={theme}
                       viewWidth={diffContentWidth}
                       visibleAgentNotes={
                         visibleAgentNotesByFile.get(file.id) ?? EMPTY_VISIBLE_AGENT_NOTES
                       }
+                      viewportTop={scrollViewport.top - (fileSectionLayouts[index]?.bodyTop ?? 0)}
+                      viewportHeight={scrollViewport.height}
                       onOpenAgentNotesAtHunk={(hunkIndex) =>
                         onOpenAgentNotesAtHunk(file.id, hunkIndex)
                       }

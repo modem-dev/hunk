@@ -26,7 +26,9 @@ export interface BuildAppMenusOptions {
   toggleLineNumbers: () => void;
   toggleLineWrap: () => void;
   toggleSidebar: () => void;
+  toggleStructural: () => void;
   wrapLines: boolean;
+  showStructural: boolean;
 }
 
 /** Build the top-level app menus from the current app state and actions. */
@@ -54,7 +56,9 @@ export function buildAppMenus({
   toggleLineNumbers,
   toggleLineWrap,
   toggleSidebar,
+  toggleStructural,
   wrapLines,
+  showStructural,
 }: BuildAppMenusOptions): Record<MenuId, MenuEntry[]> {
   const themeMenuEntries: MenuEntry[] = THEMES.map((theme) => ({
     kind: "item",
@@ -157,6 +161,13 @@ export function buildAppMenus({
         hint: "m",
         checked: showHunkHeaders,
         action: toggleHunkHeaders,
+      },
+      {
+        kind: "item",
+        label: "Structural diff",
+        hint: "x",
+        checked: showStructural,
+        action: toggleStructural,
       },
     ],
     navigate: [

@@ -6,6 +6,7 @@ import { diffSectionId } from "../../lib/ids";
 import { fitText } from "../../lib/text";
 import type { AppTheme } from "../../themes";
 import { DiffFileHeaderRow } from "./DiffFileHeaderRow";
+import type { DiffSectionGeometry } from "../../lib/diffSectionGeometry";
 
 interface DiffSectionProps {
   codeHorizontalOffset: number;
@@ -18,6 +19,7 @@ interface DiffSectionProps {
   separatorWidth: number;
   showLineNumbers: boolean;
   showHunkHeaders: boolean;
+  showStructural: boolean;
   wrapLines: boolean;
   showHeader: boolean;
   showSeparator: boolean;
@@ -26,6 +28,9 @@ interface DiffSectionProps {
   viewWidth: number;
   onOpenAgentNotesAtHunk: (hunkIndex: number) => void;
   onSelect: () => void;
+  geometry: DiffSectionGeometry;
+  viewportTop: number;
+  viewportHeight: number;
 }
 
 /** Render one file section in the main review stream. */
@@ -35,19 +40,23 @@ function DiffSectionComponent({
   headerLabelWidth,
   headerStatsWidth,
   layout,
+  onOpenAgentNotesAtHunk,
+  onSelect,
   selectedHunkIndex,
-  shouldLoadHighlight,
   separatorWidth,
-  showLineNumbers,
+  shouldLoadHighlight,
   showHunkHeaders,
-  wrapLines,
+  showStructural,
+  showLineNumbers,
   showHeader,
   showSeparator,
   theme,
   visibleAgentNotes,
   viewWidth,
-  onOpenAgentNotesAtHunk,
-  onSelect,
+  wrapLines,
+  geometry,
+  viewportTop,
+  viewportHeight,
 }: DiffSectionProps) {
   const annotatedHunkIndices = getAnnotatedHunkIndices(file);
 
@@ -90,6 +99,7 @@ function DiffSectionComponent({
         layout={layout}
         showLineNumbers={showLineNumbers}
         showHunkHeaders={showHunkHeaders}
+        showStructural={showStructural}
         wrapLines={wrapLines}
         codeHorizontalOffset={codeHorizontalOffset}
         theme={theme}
@@ -99,6 +109,9 @@ function DiffSectionComponent({
         onOpenAgentNotesAtHunk={onOpenAgentNotesAtHunk}
         selectedHunkIndex={selectedHunkIndex}
         shouldLoadHighlight={shouldLoadHighlight}
+        geometry={geometry}
+        viewportTop={viewportTop}
+        viewportHeight={viewportHeight}
         // The parent review stream owns scrolling across files.
         scrollable={false}
       />
@@ -120,11 +133,15 @@ export const DiffSection = memo(DiffSectionComponent, (previous, next) => {
     previous.separatorWidth === next.separatorWidth &&
     previous.showLineNumbers === next.showLineNumbers &&
     previous.showHunkHeaders === next.showHunkHeaders &&
+    previous.showStructural === next.showStructural &&
     previous.wrapLines === next.wrapLines &&
     previous.showHeader === next.showHeader &&
     previous.showSeparator === next.showSeparator &&
     previous.theme === next.theme &&
     previous.visibleAgentNotes === next.visibleAgentNotes &&
-    previous.viewWidth === next.viewWidth
+    previous.viewWidth === next.viewWidth &&
+    previous.geometry === next.geometry &&
+    previous.viewportTop === next.viewportTop &&
+    previous.viewportHeight === next.viewportHeight
   );
 });

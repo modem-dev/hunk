@@ -19,6 +19,7 @@ import {
   runGitText,
   runGitUntrackedFileDiffText,
 } from "./git";
+import { compareStructural } from "./structural-diff";
 import type {
   AppBootstrap,
   AgentContext,
@@ -39,7 +40,7 @@ interface LoadAppBootstrapOptions {
 
 /** Return the final path segment for display-oriented labels. */
 function basename(path: string) {
-  return path.split("/").filter(Boolean).pop() ?? path;
+  return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
 }
 
 /** Remove git-style a/ and b/ prefixes before matching diff paths. */
@@ -139,6 +140,7 @@ interface BuildDiffFileOptions {
   isUntracked?: boolean;
   previousPath?: string;
   isBinary?: boolean;
+  structuralChanges?: DiffFile["structuralChanges"];
 }
 
 /** Build the normalized per-file model used by the UI regardless of input mode. */
@@ -148,7 +150,7 @@ function buildDiffFile(
   index: number,
   sourcePrefix: string,
   agentContext: AgentContext | null,
-  { isUntracked, previousPath, isBinary }: BuildDiffFileOptions = {},
+  { isUntracked, previousPath, isBinary, structuralChanges }: BuildDiffFileOptions = {},
 ): DiffFile {
   const normalizedMetadata = normalizeDiffMetadataPaths(metadata);
   const path = normalizedMetadata.name;
@@ -165,6 +167,7 @@ function buildDiffFile(
     agent: findAgentFileContext(agentContext, path, resolvedPreviousPath),
     isUntracked,
     isBinary: isBinary ?? patchLooksBinary(patch),
+    structuralChanges,
   };
 }
 
@@ -432,6 +435,9 @@ async function loadFileDiffChangeset(
   const patch = createTwoFilesPatch(displayPath, displayPath, leftText, rightText, "", "", {
     context: 3,
   });
+  const structuralChanges = input.options.structural
+    ? compareStructural(leftText, rightText, displayPath)
+    : undefined;
 
   return {
     id: `pair:${displayPath}`,
@@ -441,6 +447,7 @@ async function loadFileDiffChangeset(
     files: [
       buildDiffFile(metadata, patch, 0, displayPath, agentContext, {
         previousPath: basename(input.left),
+        structuralChanges,
       }),
     ],
   } satisfies Changeset;

@@ -715,6 +715,7 @@ function renderRow(
   annotated: boolean,
   anchorId?: string,
   noteGuideSide?: "old" | "new",
+  structuralChange?: boolean,
   onOpenAgentNotesAtHunk?: (hunkIndex: number) => void,
 ) {
   let baseRow: ReactNode;
@@ -741,9 +742,13 @@ function renderRow(
     const { leftWidth, rightWidth } = resolveSplitPaneWidths(width);
     const rightRenderWidth = Math.max(0, rightWidth - (guideOnNewSide ? 1 : 0));
     const leftPrefix = {
-      text: guideOnOldSide ? "│" : marker(),
-      fg: guideOnOldSide ? theme.noteBorder : splitLeftRailColor(row.left.kind, theme, selected),
-      bg: theme.panel,
+      text: structuralChange ? "S" : guideOnOldSide ? "│" : marker(),
+      fg: structuralChange
+        ? theme.noteTitleText
+        : guideOnOldSide
+          ? theme.noteBorder
+          : splitLeftRailColor(row.left.kind, theme, selected),
+      bg: structuralChange ? theme.noteTitleBackground : theme.panel,
     };
     const rightPrefix = {
       text: "▌",
@@ -858,9 +863,13 @@ function renderRow(
     const guideOnNewSide = noteGuideSide === "new";
     const contentWidth = Math.max(0, width - (guideOnNewSide ? 1 : 0));
     const prefix = {
-      text: guideOnOldSide ? "│" : marker(),
-      fg: guideOnOldSide ? theme.noteBorder : stackRailColor(row.cell.kind, theme, selected),
-      bg: theme.panel,
+      text: structuralChange ? "S" : guideOnOldSide ? "│" : marker(),
+      fg: structuralChange
+        ? theme.noteTitleText
+        : guideOnOldSide
+          ? theme.noteBorder
+          : stackRailColor(row.cell.kind, theme, selected),
+      bg: structuralChange ? theme.noteTitleBackground : theme.panel,
     };
 
     if (!wrapLines) {
@@ -947,6 +956,7 @@ interface DiffRowViewProps {
   annotated: boolean;
   anchorId?: string;
   noteGuideSide?: "old" | "new";
+  structuralChange?: boolean;
   onOpenAgentNotesAtHunk?: (hunkIndex: number) => void;
 }
 
@@ -965,6 +975,7 @@ export const DiffRowView = memo(
     annotated,
     anchorId,
     noteGuideSide,
+    structuralChange,
     onOpenAgentNotesAtHunk,
   }: DiffRowViewProps) {
     return renderRow(
@@ -980,6 +991,7 @@ export const DiffRowView = memo(
       annotated,
       anchorId,
       noteGuideSide,
+      structuralChange,
       onOpenAgentNotesAtHunk,
     );
   },
@@ -996,7 +1008,8 @@ export const DiffRowView = memo(
       previous.selected === next.selected &&
       previous.annotated === next.annotated &&
       previous.anchorId === next.anchorId &&
-      previous.noteGuideSide === next.noteGuideSide
+      previous.noteGuideSide === next.noteGuideSide &&
+      previous.structuralChange === next.structuralChange
     );
   },
 );

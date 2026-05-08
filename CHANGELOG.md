@@ -6,9 +6,16 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Added
 
+- Added optional tree-sitter based **Structural Diffing** mode, enabling AST-aware 'S' markers in the diff gutter.
+- Optimized rendering performance for large changesets using **Viewport-based Row Virtualization**, ensuring smooth interactions even with 10,000+ line diffs.
+- Added `hunkdiff-windows-x64` to the prebuilt package matrix for official Windows support.
+
 ### Changed
 
 ### Fixed
+
+- Fixed cross-platform path resolution issues in the core loaders and path utilities to ensure Windows stability.
+- Hardened Git loader tests against platform-specific branch naming conflicts and filesystem reserved character restrictions.
 
 ## [0.10.0] - 2026-04-21
 
