@@ -5,6 +5,12 @@ export interface FileSectionLayout {
   fileId: string;
   sectionIndex: number;
   sectionTop: number;
+  /**
+   * Top row of this section's commit-header preamble, if any. Equals `sectionTop` when no
+   * preamble is present. The preamble occupies rows `[preambleTop, headerTop)`.
+   */
+  preambleTop: number;
+  preambleHeight: number;
   headerTop: number;
   bodyTop: number;
   bodyHeight: number;
@@ -26,6 +32,18 @@ export function buildInStreamFileHeaderHeights(files: DiffFile[]) {
   return files.map((_, index) => getInStreamFileHeaderHeight(index));
 }
 
+/**
+ * Count the rows a commit-metadata preamble occupies above one file. Returns 0 when no
+ * preamble is set on the file. Includes one trailing blank row above the file header so
+ * the block reads visually separated from the diff that follows it.
+ */
+export function getCommitPreambleHeight(file: DiffFile) {
+  const text = file.commitHeaderText;
+  if (!text) return 0;
+  const lineCount = text.replace(/\n+$/, "").split("\n").length;
+  return lineCount + 1;
+}
+
 /** Build absolute section offsets from file order, header heights, and measured body heights. */
 export function buildFileSectionLayouts(
   files: DiffFile[],
@@ -37,10 +55,12 @@ export function buildFileSectionLayouts(
 
   files.forEach((file, index) => {
     const separatorHeight = index > 0 ? 1 : 0;
+    const preambleHeight = getCommitPreambleHeight(file);
     const headerHeight = Math.max(0, headerHeights?.[index] ?? getInStreamFileHeaderHeight(index));
     const bodyHeight = Math.max(0, bodyHeights[index] ?? 0);
     const sectionTop = cursor;
-    const headerTop = sectionTop + separatorHeight;
+    const preambleTop = sectionTop + separatorHeight;
+    const headerTop = preambleTop + preambleHeight;
     const bodyTop = headerTop + headerHeight;
     const sectionBottom = bodyTop + bodyHeight;
 
@@ -48,6 +68,8 @@ export function buildFileSectionLayouts(
       fileId: file.id,
       sectionIndex: index,
       sectionTop,
+      preambleTop,
+      preambleHeight,
       headerTop,
       bodyTop,
       bodyHeight,
