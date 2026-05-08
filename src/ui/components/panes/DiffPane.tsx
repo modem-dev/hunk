@@ -664,6 +664,10 @@ export function DiffPane({
   const selectedNoteTop = selectedNoteBounds?.top ?? null;
   const selectedNoteHeight = selectedNoteBounds?.height ?? null;
 
+  /** The bodyTop of the currently selected file's section layout, used to floor hunk reveal scroll targets so they never cross above the owning file boundary. */
+  const selectedFileBodyTop =
+    selectedFileIndex >= 0 ? (fileSectionLayouts[selectedFileIndex]?.bodyTop ?? 0) : 0;
+
   // Track the previous selected anchor to detect actual selection changes.
   const prevSelectedAnchorIdRef = useRef<string | null>(null);
   const prevPinnedHeaderFileIdRef = useRef<string | null>(null);
@@ -902,17 +906,16 @@ export function DiffPane({
       // hunk can request a top offset that is no longer reachable once the viewport hits EOF.
       // Using the reachable value keeps the reveal logic from fighting later manual scrolling.
       if (selectedNoteBounds) {
-        scrollBox.scrollTo(
-          clampReviewScrollTop(
-            computeHunkRevealScrollTop({
-              hunkTop: selectedNoteBounds.top,
-              hunkHeight: selectedNoteBounds.height,
-              preferredTopPadding,
-              viewportHeight,
-            }),
-            viewportHeight,
-          ),
-        );
+        const revealScrollTop = computeHunkRevealScrollTop({
+          hunkTop: selectedNoteBounds.top,
+          hunkHeight: selectedNoteBounds.height,
+          preferredTopPadding,
+          viewportHeight,
+        });
+        // Floor against the owning file's body boundary so the viewport never crosses above it
+        // and triggers a pinned-header flash.
+        const flooredScrollTop = Math.max(revealScrollTop, selectedFileBodyTop);
+        scrollBox.scrollTo(clampReviewScrollTop(flooredScrollTop, viewportHeight));
         return;
       }
 
@@ -938,17 +941,16 @@ export function DiffPane({
           ? Math.max(0, renderedBottom - renderedTop)
           : selectedEstimatedHunkBounds.height;
 
-        scrollBox.scrollTo(
-          clampReviewScrollTop(
-            computeHunkRevealScrollTop({
-              hunkTop,
-              hunkHeight,
-              preferredTopPadding,
-              viewportHeight,
-            }),
-            viewportHeight,
-          ),
-        );
+        const revealScrollTop = computeHunkRevealScrollTop({
+          hunkTop,
+          hunkHeight,
+          preferredTopPadding,
+          viewportHeight,
+        });
+        // Floor against the owning file's body boundary so the viewport never crosses above it
+        // and triggers a pinned-header flash.
+        const flooredScrollTop = Math.max(revealScrollTop, selectedFileBodyTop);
+        scrollBox.scrollTo(clampReviewScrollTop(flooredScrollTop, viewportHeight));
         return;
       }
 
@@ -988,6 +990,7 @@ export function DiffPane({
     selectedFileIndex,
     selectedHunkIndex,
     selectedHunkRevealRequestId,
+    selectedFileBodyTop,
     selectedNoteHeight,
     selectedNoteTop,
     suppressViewportSelectionSync,

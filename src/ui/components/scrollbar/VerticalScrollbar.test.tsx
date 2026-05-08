@@ -57,7 +57,7 @@ function createScrollBootstrapWithManyFiles(fileCount: number): AppBootstrap {
 
   return {
     input: {
-      kind: "git",
+      kind: "vcs",
       staged: false,
       options: {
         mode: "split",
@@ -198,7 +198,7 @@ describe("Vertical scrollbar", () => {
 
     const bootstrap: AppBootstrap = {
       input: {
-        kind: "git",
+        kind: "vcs",
         staged: false,
         options: { mode: "split" },
       },
@@ -262,7 +262,7 @@ describe("Vertical scrollbar", () => {
     const after = "export const a = 2;\n";
     const bootstrap: AppBootstrap = {
       input: {
-        kind: "git",
+        kind: "vcs",
         staged: false,
         options: {
           mode: "split",
@@ -307,7 +307,7 @@ describe("Vertical scrollbar", () => {
 
     const bootstrap: AppBootstrap = {
       input: {
-        kind: "git",
+        kind: "vcs",
         staged: false,
         options: { mode: "split" },
       },
@@ -373,7 +373,7 @@ describe("Vertical scrollbar", () => {
 
     const bootstrap: AppBootstrap = {
       input: {
-        kind: "git",
+        kind: "vcs",
         staged: false,
         options: { mode: "split" },
       },
@@ -452,7 +452,7 @@ describe("Vertical scrollbar", () => {
 
     const bootstrap: AppBootstrap = {
       input: {
-        kind: "git",
+        kind: "vcs",
         staged: false,
         options: { mode: "split" },
       },

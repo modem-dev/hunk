@@ -204,8 +204,13 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
         return;
       }
 
+      const crossingFileBoundary = nextCursor.fileId !== selectedFile?.id;
       selectHunk(nextCursor.fileId, nextCursor.hunkIndex, {
-        alignFileHeaderTop: nextCursor.fileId !== selectedFile?.id,
+        // Align the file header to top only for forward cross-file jumps so the new file
+        // starts at its header. Backward jumps should reveal the target hunk directly,
+        // since the target is often near the bottom of the previous file and the file-top
+        // align would require an extra navigation press to reach it.
+        alignFileHeaderTop: crossingFileBoundary && delta > 0,
       });
     },
     [hunkCursors, selectHunk, selectedFile?.id, selectedHunkIndex],

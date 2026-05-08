@@ -103,7 +103,7 @@ export function createLargeSplitStreamBootstrap({
 }: LargeSplitStreamFixtureOptions = {}): AppBootstrap {
   return {
     input: {
-      kind: "git",
+      kind: "vcs",
       staged: false,
       options: {
         mode: "auto",

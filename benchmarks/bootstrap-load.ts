@@ -108,7 +108,7 @@ async function measureGitBootstrap(repoDir: string) {
   try {
     const endToEndStart = performance.now();
     const bootstrap = await loadAppBootstrap({
-      kind: "git",
+      kind: "vcs",
       staged: false,
       options: { mode: "auto" },
     });

@@ -12,7 +12,7 @@ import type {
   HunkSessionSnapshot,
 } from "../hunk-session/types";
 import type { AppBootstrap, LayoutMode } from "../core/types";
-import { createTestGitAppBootstrap } from "../../test/helpers/app-bootstrap";
+import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
 import { createTestDiffFile as buildTestDiffFile, lines } from "../../test/helpers/diff-helpers";
 
 const { loadAppBootstrap } = await import("../core/loaders");
@@ -55,7 +55,7 @@ function createMockHostClient() {
     repoRoot: process.cwd(),
     launchedAt: "2026-03-24T00:00:00.000Z",
     info: {
-      inputKind: "git",
+      inputKind: "vcs",
       title: "repo working tree",
       sourceLabel: "repo",
       files: [],
@@ -92,7 +92,7 @@ function createMockHostClient() {
 }
 
 function createBootstrap(initialMode: LayoutMode = "split", pager = false): AppBootstrap {
-  return createTestGitAppBootstrap({
+  return createTestVcsAppBootstrap({
     changesetId: "changeset:app-interactions",
     files: [
       createTestDiffFile(
@@ -115,7 +115,7 @@ function createBootstrap(initialMode: LayoutMode = "split", pager = false): AppB
 }
 
 function createSingleFileBootstrap(): AppBootstrap {
-  return createTestGitAppBootstrap({
+  return createTestVcsAppBootstrap({
     changesetId: "changeset:app-single-file",
     files: [
       createTestDiffFile(
@@ -131,7 +131,7 @@ function createSingleFileBootstrap(): AppBootstrap {
 
 /** Build a single-file fixture with one long changed line for wrap toggle interaction tests. */
 function createWrapBootstrap(pager = false): AppBootstrap {
-  return createTestGitAppBootstrap({
+  return createTestVcsAppBootstrap({
     changesetId: "changeset:app-wrap-interactions",
     files: [
       createTestDiffFile(
@@ -150,7 +150,7 @@ function createLineScrollBootstrap(pager = false): AppBootstrap {
   const before = lines(...createNumberedAssignmentLines(1, 18));
   const after = lines(...createNumberedAssignmentLines(1, 18, 100));
 
-  return createTestGitAppBootstrap({
+  return createTestVcsAppBootstrap({
     changesetId: "changeset:app-line-scroll",
     files: [createTestDiffFile("scroll", "scroll.ts", before, after, true)],
     pager,
@@ -190,10 +190,10 @@ function createDeepNoteBootstrap(): AppBootstrap {
     ],
   };
 
-  return createTestGitAppBootstrap({
+  return createTestVcsAppBootstrap({
     changesetId: "changeset:app-deep-note",
     files: [file],
-    gitOptions: { agentNotes: true },
+    vcsOptions: { agentNotes: true },
     initialShowAgentNotes: true,
   });
 }
@@ -207,7 +207,7 @@ function createWrapScrollBootstrap(): AppBootstrap {
     ),
   );
 
-  return createTestGitAppBootstrap({
+  return createTestVcsAppBootstrap({
     changesetId: "changeset:app-wrap-scroll",
     files: [createTestDiffFile("wrap-scroll", "wrap-scroll.ts", before, after, true)],
   });
@@ -217,7 +217,7 @@ function createTwoFileHunkBootstrap(): AppBootstrap {
   const firstBeforeLines = createNumberedAssignmentLines(1, 16);
   const secondBeforeLines = createNumberedAssignmentLines(17, 16);
 
-  return createTestGitAppBootstrap({
+  return createTestVcsAppBootstrap({
     changesetId: "changeset:two-file-hunks",
     files: [
       createTestDiffFile(
@@ -238,6 +238,51 @@ function createTwoFileHunkBootstrap(): AppBootstrap {
   });
 }
 
+/** Build the cross-file hunk-navigation shape that used to flash the previous pinned header. */
+function createCrossFileHunkNavigationBootstrap(): AppBootstrap {
+  const longBeforeLines = Array.from(
+    { length: 342 },
+    (_, index) => `line ${String(index + 1).padStart(3, "0")}`,
+  );
+  const longAfterLines = [...longBeforeLines];
+  for (const lineNumber of [
+    2, 21, 41, 61, 81, 101, 121, 141, 161, 181, 201, 221, 241, 261, 281, 301, 321, 341,
+  ]) {
+    longAfterLines[lineNumber - 1] = `line ${String(lineNumber).padStart(3, "0")} changed`;
+  }
+
+  const shortBeforeLines = [
+    "// hunk 0 - at the very top of the file",
+    "export const top = 1;",
+    "",
+    "",
+    ...Array.from({ length: 25 }, (_, index) => `// filler ${index + 1}`),
+    "// hunk 1 - mid-file",
+    "export const mid = 3;",
+  ];
+  const shortAfterLines = [...shortBeforeLines];
+  shortAfterLines[1] = "export const top = 2;";
+  shortAfterLines[30] = "export const mid = 4;";
+
+  return createTestVcsAppBootstrap({
+    changesetId: "changeset:cross-file-hunk-navigation",
+    files: [
+      createTestDiffFile(
+        "long-file",
+        "long-file.txt",
+        lines(...longBeforeLines),
+        lines(...longAfterLines),
+      ),
+      createTestDiffFile(
+        "short-file",
+        "short-file.ts",
+        lines(...shortBeforeLines),
+        lines(...shortAfterLines),
+      ),
+    ],
+  });
+}
+
 function createMouseScrollSelectionBootstrap(): AppBootstrap {
   const firstBeforeLines = createNumberedAssignmentLines(1, 12);
   const secondBeforeLines = Array.from(
@@ -251,7 +296,7 @@ function createMouseScrollSelectionBootstrap(): AppBootstrap {
   secondAfterLines[60] = "export const line73 = 7300;";
   secondAfterLines[61] = "export const line74 = 7400;";
 
-  return createTestGitAppBootstrap({
+  return createTestVcsAppBootstrap({
     changesetId: "changeset:mouse-scroll-selection",
     files: [
       createTestDiffFile(
@@ -280,7 +325,7 @@ function createCollapsedTopBootstrap(): AppBootstrap {
   const afterLines = [...beforeLines];
   afterLines[365] = "export const line366 = 9999;";
 
-  return createTestGitAppBootstrap({
+  return createTestVcsAppBootstrap({
     changesetId: "changeset:collapsed-top",
     files: [
       createTestDiffFile(
@@ -337,6 +382,28 @@ async function waitForFrame(
   }
 
   return frame;
+}
+
+async function pressHunkNavigationKey(
+  setup: Awaited<ReturnType<typeof testRender>>,
+  key: "]" | "[",
+  count: number,
+) {
+  for (let index = 0; index < count; index += 1) {
+    await act(async () => {
+      await setup.mockInput.typeText(key);
+    });
+    await flush(setup);
+  }
+}
+
+function firstCrossFileHunkNavigationHeader(frame: string) {
+  return (
+    frame
+      .split("\n")
+      .map((line) => line.trim())
+      .find((line) => line.startsWith("long-file.txt") || line.startsWith("short-file.ts")) ?? ""
+  );
 }
 
 async function waitForSnapshot(
@@ -795,7 +862,7 @@ describe("App interactions", () => {
       <AppHost
         bootstrap={{
           input: {
-            kind: "git",
+            kind: "vcs",
             staged: false,
             options: {
               mode: "split",
@@ -1360,7 +1427,7 @@ describe("App interactions", () => {
 
     const bootstrap: AppBootstrap = {
       input: {
-        kind: "git",
+        kind: "vcs",
         staged: false,
         options: {
           mode: "split",
@@ -1413,7 +1480,7 @@ describe("App interactions", () => {
 
     const bootstrap: AppBootstrap = {
       input: {
-        kind: "git",
+        kind: "vcs",
         staged: false,
         options: {
           mode: "split",
@@ -1471,7 +1538,7 @@ describe("App interactions", () => {
 
     const bootstrap: AppBootstrap = {
       input: {
-        kind: "git",
+        kind: "vcs",
         staged: false,
         options: {
           mode: "split",
@@ -1830,6 +1897,74 @@ describe("App interactions", () => {
       );
       expect(frame).toContain("second.ts");
       expect((frame.match(/first\.ts/g) ?? []).length).toBe(1);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("forward cross-file hunk navigation keeps the destination file owning the review pane", async () => {
+    const setup = await testRender(
+      <AppHost bootstrap={createCrossFileHunkNavigationBootstrap()} />,
+      {
+        width: 120,
+        height: 16,
+      },
+    );
+
+    try {
+      await flush(setup);
+      await pressHunkNavigationKey(setup, "]", 18);
+
+      let frame = await waitForFrame(
+        setup,
+        (nextFrame) =>
+          nextFrame.includes("short-file.ts") && nextFrame.includes("export const top = 2;"),
+        24,
+      );
+      expect(firstCrossFileHunkNavigationHeader(frame)).toContain("short-file.ts");
+
+      await pressHunkNavigationKey(setup, "]", 1);
+      frame = await waitForFrame(
+        setup,
+        (nextFrame) => nextFrame.includes("export const mid = 4;"),
+        24,
+      );
+
+      expect(firstCrossFileHunkNavigationHeader(frame)).toContain("short-file.ts");
+      expect(frame).not.toContain("line 341 changed");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("backward cross-file hunk navigation reveals the target hunk instead of the file top", async () => {
+    const setup = await testRender(
+      <AppHost bootstrap={createCrossFileHunkNavigationBootstrap()} />,
+      {
+        width: 120,
+        height: 16,
+      },
+    );
+
+    try {
+      await flush(setup);
+      await pressHunkNavigationKey(setup, "]", 19);
+      await waitForFrame(setup, (nextFrame) => nextFrame.includes("export const mid = 4;"), 24);
+
+      await pressHunkNavigationKey(setup, "[", 2);
+      const frame = await waitForFrame(
+        setup,
+        (nextFrame) =>
+          nextFrame.includes("line 341 changed") || nextFrame.includes("line 002 changed"),
+        24,
+      );
+
+      expect(frame).toContain("line 341 changed");
+      expect(frame).not.toContain("line 002 changed");
     } finally {
       await act(async () => {
         setup.renderer.destroy();

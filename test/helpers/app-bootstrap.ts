@@ -1,10 +1,10 @@
-import type { AppBootstrap, DiffFile, GitCommandInput, LayoutMode } from "../../src/core/types";
+import type { AppBootstrap, DiffFile, VcsCommandInput, LayoutMode } from "../../src/core/types";
 
-export function createTestGitAppBootstrap({
+export function createTestVcsAppBootstrap({
   agentSummary,
   changesetId = "changeset:test",
   files,
-  gitOptions = {},
+  vcsOptions = {},
   initialMode = "split",
   initialShowAgentNotes,
   initialShowHunkHeaders,
@@ -20,7 +20,7 @@ export function createTestGitAppBootstrap({
   agentSummary?: string;
   changesetId?: string;
   files: DiffFile[];
-  gitOptions?: Partial<GitCommandInput["options"]>;
+  vcsOptions?: Partial<VcsCommandInput["options"]>;
   initialMode?: LayoutMode;
   initialShowAgentNotes?: boolean;
   initialShowHunkHeaders?: boolean;
@@ -35,12 +35,12 @@ export function createTestGitAppBootstrap({
 }): AppBootstrap {
   return {
     input: {
-      kind: "git",
+      kind: "vcs",
       staged: false,
       options: {
         mode: inputMode,
         pager,
-        ...gitOptions,
+        ...vcsOptions,
       },
     },
     changeset: {

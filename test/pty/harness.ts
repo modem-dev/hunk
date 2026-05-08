@@ -332,6 +332,46 @@ export function createPtyHarness() {
     ]);
   }
 
+  /** Build the cross-file hunk-navigation shape that used to jump backward to the file top. */
+  function createCrossFileHunkNavigationRepoFixture() {
+    const longBeforeLines = Array.from(
+      { length: 342 },
+      (_, index) => `line ${String(index + 1).padStart(3, "0")}`,
+    );
+    const longAfterLines = [...longBeforeLines];
+    for (const lineNumber of [
+      2, 21, 41, 61, 81, 101, 121, 141, 161, 181, 201, 221, 241, 261, 281, 301, 321, 341,
+    ]) {
+      longAfterLines[lineNumber - 1] = `line ${String(lineNumber).padStart(3, "0")} changed`;
+    }
+
+    const shortBeforeLines = [
+      "// hunk 0 - at the very top of the file",
+      "export const top = 1;",
+      "",
+      "",
+      ...Array.from({ length: 25 }, (_, index) => `// filler ${index + 1}`),
+      "// hunk 1 - mid-file",
+      "export const mid = 3;",
+    ];
+    const shortAfterLines = [...shortBeforeLines];
+    shortAfterLines[1] = "export const top = 2;";
+    shortAfterLines[30] = "export const mid = 4;";
+
+    return createGitRepoFixture([
+      {
+        path: "long-file.txt",
+        before: `${longBeforeLines.join("\n")}\n`,
+        after: `${longAfterLines.join("\n")}\n`,
+      },
+      {
+        path: "short-file.ts",
+        before: `${shortBeforeLines.join("\n")}\n`,
+        after: `${shortAfterLines.join("\n")}\n`,
+      },
+    ]);
+  }
+
   function createPagerPatchFixture(lines = 40) {
     const dir = makeTempDir("hunk-tuistory-pager-");
     const beforeDir = join(dir, "before");
@@ -477,6 +517,7 @@ export function createPtyHarness() {
     createAgentFilePair,
     createBottomClampedRepoFixture,
     createCollapsedTopRepoFixture,
+    createCrossFileHunkNavigationRepoFixture,
     createLongWrapFilePair,
     createMultiHunkFilePair,
     createPagerPatchFixture,

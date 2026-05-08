@@ -122,6 +122,47 @@ describe("live UI integration", () => {
     }
   });
 
+  test("backward cross-file hunk navigation reveals the target hunk in a real PTY", async () => {
+    const fixture = harness.createCrossFileHunkNavigationRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split"],
+      cwd: fixture.dir,
+      cols: 120,
+      rows: 16,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      for (let index = 0; index < 19; index += 1) {
+        await session.press("]");
+        await session.waitIdle({ timeout: 40 });
+      }
+
+      await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("export const mid = 4;"),
+        5_000,
+      );
+
+      await session.press("[");
+      await session.waitIdle({ timeout: 80 });
+      await session.press("[");
+      const backward = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("line 341 changed") || text.includes("line 002 changed"),
+        5_000,
+      );
+
+      expect(backward).toContain("line 341 changed");
+      expect(backward).not.toContain("line 002 changed");
+    } finally {
+      session.close();
+    }
+  });
+
   test("a short last file does not trap upward scrolling at the bottom edge", async () => {
     const fixture = harness.createBottomClampedRepoFixture();
     const session = await harness.launchHunk({

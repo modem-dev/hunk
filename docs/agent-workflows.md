@@ -11,13 +11,10 @@ Use Hunk with agents in two ways:
 2. Load the Hunk review skill: [`skills/hunk-review/SKILL.md`](../skills/hunk-review/SKILL.md).
 3. Ask the agent to use the skill and review the current session.
 
-> [!NOTE]
-> `hunk skill path` lands in Hunk 0.10.0. Until that release is out, load the skill from the repo path above.
-
 A good generic prompt is:
 
 ```text
-Load the Hunk skill and use it for this review.
+Load the Hunk skill and use it for this review. Run `hunk skill path` to get the skill path.
 ```
 
 That skill teaches the agent how to inspect a live Hunk session, navigate it, reload it, and leave inline comments.

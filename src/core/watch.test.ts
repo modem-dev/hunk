@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { computeWatchSignature } from "./watch";
@@ -33,12 +33,13 @@ function git(cwd: string, ...cmd: string[]) {
 }
 
 function createTempRepo(prefix: string) {
-  const dir = mkdtempSync(join(tmpdir(), prefix));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), prefix)));
   tempDirs.push(dir);
 
-  git(dir, "init");
+  git(dir, "init", "--initial-branch", "master");
   git(dir, "config", "user.name", "Test User");
   git(dir, "config", "user.email", "test@example.com");
+  git(dir, "config", "commit.gpgsign", "false");
 
   return dir;
 }
@@ -58,17 +59,17 @@ function createGitInput({
   options,
   ...overrides
 }: {
-  options?: Partial<Extract<CliInput, { kind: "git" }>["options"]>;
-} & Partial<Omit<Extract<CliInput, { kind: "git" }>, "kind" | "options">> = {}) {
+  options?: Partial<Extract<CliInput, { kind: "vcs" }>["options"]>;
+} & Partial<Omit<Extract<CliInput, { kind: "vcs" }>, "kind" | "options">> = {}) {
   return {
-    kind: "git",
+    kind: "vcs",
     staged: false,
     ...overrides,
     options: {
       mode: "auto",
       ...options,
     },
-  } satisfies Extract<CliInput, { kind: "git" }>;
+  } satisfies Extract<CliInput, { kind: "vcs" }>;
 }
 
 afterEach(() => {

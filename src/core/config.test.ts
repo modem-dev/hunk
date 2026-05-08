@@ -128,7 +128,7 @@ describe("config resolution", () => {
     const cwd = createTempDir("hunk-config-cwd-");
     const defaultResolved = resolveConfiguredCliInput(
       {
-        kind: "git",
+        kind: "vcs",
         staged: false,
         options: {},
       },
@@ -136,7 +136,7 @@ describe("config resolution", () => {
     );
     const overriddenResolved = resolveConfiguredCliInput(
       {
-        kind: "git",
+        kind: "vcs",
         staged: false,
         options: { excludeUntracked: false },
       },
@@ -145,7 +145,7 @@ describe("config resolution", () => {
     const noConfigHome = createTempDir("hunk-config-home-");
     const fallbackResolved = resolveConfiguredCliInput(
       {
-        kind: "git",
+        kind: "vcs",
         staged: false,
         options: {},
       },
@@ -155,6 +155,33 @@ describe("config resolution", () => {
     expect(defaultResolved.input.options.excludeUntracked).toBe(true);
     expect(overriddenResolved.input.options.excludeUntracked).toBe(false);
     expect(fallbackResolved.input.options.excludeUntracked).toBe(false);
+  });
+
+  test("defaults to git VCS mode and accepts jj from config", () => {
+    const home = createTempDir("hunk-config-home-");
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(join(home, ".config", "hunk", "config.toml"), 'vcs = "jj"\n');
+
+    const cwd = createTempDir("hunk-config-cwd-");
+    const defaultResolved = resolveConfiguredCliInput(
+      {
+        kind: "vcs",
+        staged: false,
+        options: {},
+      },
+      { cwd, env: { HOME: createTempDir("hunk-config-empty-home-") } },
+    );
+    const configuredResolved = resolveConfiguredCliInput(
+      {
+        kind: "vcs",
+        staged: false,
+        options: {},
+      },
+      { cwd, env: { HOME: home } },
+    );
+
+    expect(defaultResolved.input.options.vcs).toBe("git");
+    expect(configuredResolved.input.options.vcs).toBe("jj");
   });
 
   test("loadAppBootstrap exposes resolved initial preferences to the UI", async () => {

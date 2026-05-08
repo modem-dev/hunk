@@ -87,7 +87,7 @@ describe("parseCli", () => {
     ]);
 
     expect(parsed).toMatchObject({
-      kind: "git",
+      kind: "vcs",
       range: "main...feature",
       staged: false,
       options: {
@@ -107,8 +107,8 @@ describe("parseCli", () => {
     const staged = await parseCli(["bun", "hunk", "diff", "--staged"]);
     const cached = await parseCli(["bun", "hunk", "diff", "--cached"]);
 
-    expect(staged).toMatchObject({ kind: "git", staged: true });
-    expect(cached).toMatchObject({ kind: "git", staged: true });
+    expect(staged).toMatchObject({ kind: "vcs", staged: true });
+    expect(cached).toMatchObject({ kind: "vcs", staged: true });
   });
 
   test("parses untracked file toggles for git diff", async () => {
@@ -116,14 +116,14 @@ describe("parseCli", () => {
     const included = await parseCli(["bun", "hunk", "diff", "--no-exclude-untracked"]);
 
     expect(excluded).toMatchObject({
-      kind: "git",
+      kind: "vcs",
       staged: false,
       options: {
         excludeUntracked: true,
       },
     });
     expect(included).toMatchObject({
-      kind: "git",
+      kind: "vcs",
       staged: false,
       options: {
         excludeUntracked: false,
@@ -162,9 +162,19 @@ describe("parseCli", () => {
     ]);
 
     expect(parsed).toMatchObject({
-      kind: "git",
+      kind: "vcs",
       range: "main",
       pathspecs: ["src/app.ts", "test/app.test.ts"],
+    });
+  });
+
+  test("parses target followed by pathspecs without a separator", async () => {
+    const parsed = await parseCli(["bun", "hunk", "diff", "trunk()..@", ".github"]);
+
+    expect(parsed).toMatchObject({
+      kind: "vcs",
+      range: "trunk()..@",
+      pathspecs: [".github"],
     });
   });
 
@@ -364,7 +374,7 @@ describe("parseCli", () => {
       selector: { sessionPath: "/tmp/live-window" },
       sourcePath: "/tmp/source-repo",
       nextInput: {
-        kind: "git",
+        kind: "vcs",
         staged: false,
         options: {},
       },

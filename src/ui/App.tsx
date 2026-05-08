@@ -355,7 +355,7 @@ export function App({
     await onReloadSession(nextInput, {
       resetApp: false,
       sourcePath:
-        bootstrap.input.kind === "git" ||
+        bootstrap.input.kind === "vcs" ||
         bootstrap.input.kind === "show" ||
         bootstrap.input.kind === "stash-show"
           ? bootstrap.changeset.sourceLabel
