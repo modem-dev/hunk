@@ -150,9 +150,12 @@ export function AppHost({
     const unsubscribe = stream.subscribe({
       onCommit: (commit) =>
         setCommitBuffer((prev) => {
-          // De-dup against late replays — a commit at index N is the same object that
-          // was previously emitted, identified by its sha.
-          if (prev.some((c) => c.metadata.sha === commit.metadata.sha)) return prev;
+          // De-dup against late replays. Key off changeset.id rather than metadata.sha:
+          // anonymous commits (no parsed sha) all share `metadata.sha = ""`, which would
+          // collapse the entire anonymous tail of a malformed log into a single entry.
+          // changeset.id is `commit:<sha>` for normal commits and `commit:anonymous:N`
+          // for anonymous ones, so distinct entries stay distinct.
+          if (prev.some((c) => c.changeset.id === commit.changeset.id)) return prev;
           return [...prev, commit];
         }),
       onComplete: () => setCommitStreamComplete(true),
@@ -172,12 +175,15 @@ export function AppHost({
   // to that commit's changeset. Bumps appVersion so the App remounts with a fresh
   // selection / scroll baseline — moving between commits should feel like opening a new
   // review canvas, not like scrolling within a single one.
-  const lastSwappedShaRef = useRef<string | null>(null);
+  // Key off changeset.id rather than metadata.sha so anonymous commits (which all
+  // share an empty sha) each register as a fresh swap rather than collapsing into
+  // a single "no-sha" identity.
+  const lastSwappedReviewKeyRef = useRef<string | null>(null);
   useEffect(() => {
     if (!bootstrap.commitReviewStream) return;
     const commit = commitBuffer[cursorIndex];
     if (!commit) return;
-    if (lastSwappedShaRef.current === commit.metadata.sha) {
+    if (lastSwappedReviewKeyRef.current === commit.changeset.id) {
       // Same commit; just keep the cursor info on the bootstrap up to date so the
       // streaming/total counts can reflect newly arrived commits behind the scenes.
       setActiveBootstrap((prev) => ({
@@ -190,7 +196,7 @@ export function AppHost({
       }));
       return;
     }
-    lastSwappedShaRef.current = commit.metadata.sha;
+    lastSwappedReviewKeyRef.current = commit.changeset.id;
 
     const nextBootstrap: AppBootstrap = {
       ...bootstrap,
