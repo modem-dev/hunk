@@ -81,6 +81,14 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Verify Nix lockfile is up to date
+        run: |
+          bun run nix:update-lock
+          if ! git diff --exit-code nix/bun.lock.nix; then
+            echo "::error::Nix lockfile is out of date. Please run 'bun run nix:update-lock' and commit the changes to nix/bun.lock.nix."
+            exit 1
+          fi
+
       - name: Format check
         run: bun run format:check
 
