@@ -48,6 +48,26 @@ export function parseCommitMetadata(rawHeader: string): CommitMetadata {
 }
 
 /**
+ * Build a single-line summary of a commit for the compact metadata view.
+ * Format: `commit <shortSha>  Author: <author>  Date: <YYYY-MM-DD>  <subject>`.
+ * Fields that are absent in the parsed metadata are skipped quietly so the line
+ * stays well-formed for partial inputs.
+ */
+export function oneLineCommitHeader(metadata: CommitMetadata): string {
+  const parts: string[] = [];
+  parts.push(`commit ${metadata.shortSha || metadata.sha || "—"}`);
+  if (metadata.author) parts.push(`Author: ${metadata.author}`);
+  if (metadata.date) {
+    // Truncate to the leading YYYY-MM-DD portion so the line stays short and the
+    // date format is uniform regardless of whether the source had a time/zone.
+    const datePart = metadata.date.split(/\s/)[0] ?? metadata.date;
+    parts.push(`Date: ${datePart}`);
+  }
+  if (metadata.subject) parts.push(metadata.subject);
+  return parts.join("  ");
+}
+
+/**
  * Truncate a verbatim commit header block to keep only the structured headers
  * (commit/Author/Date/Merge), the blank separator, and the subject (first message
  * line) — dropping the extended body. Used by the renderer's "collapse" view so the

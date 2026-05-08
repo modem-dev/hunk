@@ -169,7 +169,7 @@ export async function prepareStartupPlan(
           initialWrapLines: cliInput.options.wrapLines ?? false,
           initialShowHunkHeaders: cliInput.options.hunkHeaders ?? true,
           initialShowAgentNotes: cliInput.options.agentNotes ?? false,
-          initialShowCommitDetails: cliInput.options.commitDetails ?? true,
+          initialCommitDetailsMode: cliInput.options.commitDetailsMode ?? "full",
           commitReviewStream,
         };
       } else {
@@ -187,7 +187,7 @@ export async function prepareStartupPlan(
           initialWrapLines: cliInput.options.wrapLines ?? false,
           initialShowHunkHeaders: cliInput.options.hunkHeaders ?? true,
           initialShowAgentNotes: cliInput.options.agentNotes ?? false,
-          initialShowCommitDetails: cliInput.options.commitDetails ?? true,
+          initialCommitDetailsMode: cliInput.options.commitDetailsMode ?? "full",
           stream,
         };
       }

@@ -1,4 +1,4 @@
-import type { LayoutMode } from "../../core/types";
+import type { CommitDetailsMode, LayoutMode } from "../../core/types";
 import type { MenuEntry, MenuId } from "../components/chrome/menu";
 import { THEMES } from "../themes";
 
@@ -19,11 +19,11 @@ export interface BuildAppMenusOptions {
   showHunkHeaders: boolean;
   showLineNumbers: boolean;
   /** Optional commit-review-only setting. Undefined hides the related menu item. */
-  showCommitDetails?: boolean;
+  commitDetailsMode?: CommitDetailsMode;
   renderSidebar: boolean;
   toggleAgentNotes: () => void;
   /** Optional commit-review-only action. Undefined hides the related menu item. */
-  toggleCommitDetails?: () => void;
+  cycleCommitDetailsMode?: () => void;
   /**
    * Optional commit-cursor handler for `git log -p` review. Undefined hides the
    * Previous commit / Next commit items from the Navigate menu.
@@ -55,10 +55,10 @@ export function buildAppMenus({
   showHelp,
   showHunkHeaders,
   showLineNumbers,
-  showCommitDetails,
+  commitDetailsMode,
   renderSidebar,
   toggleAgentNotes,
-  toggleCommitDetails,
+  cycleCommitDetailsMode,
   moveToCommit,
   toggleFocusArea,
   toggleHelp,
@@ -68,6 +68,9 @@ export function buildAppMenus({
   toggleSidebar,
   wrapLines,
 }: BuildAppMenusOptions): Record<MenuId, MenuEntry[]> {
+  const labelForCommitDetailsMode = (mode: CommitDetailsMode): string =>
+    mode === "full" ? "full" : mode === "oneLine" ? "one-line" : "hidden";
+
   const themeMenuEntries: MenuEntry[] = THEMES.map((theme) => ({
     kind: "item",
     label: theme.label,
@@ -170,14 +173,13 @@ export function buildAppMenus({
         checked: showHunkHeaders,
         action: toggleHunkHeaders,
       },
-      ...(toggleCommitDetails !== undefined
+      ...(cycleCommitDetailsMode !== undefined
         ? [
             {
               kind: "item" as const,
-              label: "Commit details",
+              label: `Commit details: ${labelForCommitDetailsMode(commitDetailsMode ?? "full")}`,
               hint: "c",
-              checked: showCommitDetails ?? true,
-              action: toggleCommitDetails,
+              action: cycleCommitDetailsMode,
             },
           ]
         : []),

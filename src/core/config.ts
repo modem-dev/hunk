@@ -15,7 +15,7 @@ const DEFAULT_VIEW_PREFERENCES: PersistedViewPreferences = {
   wrapLines: false,
   showHunkHeaders: true,
   showAgentNotes: false,
-  showCommitDetails: true,
+  commitDetailsMode: "full",
 };
 
 interface ConfigResolutionOptions {
@@ -53,6 +53,11 @@ function normalizeString(value: unknown) {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
+/** Accept only the three valid commit-details modes. */
+function normalizeCommitDetailsMode(value: unknown): "full" | "oneLine" | "hidden" | undefined {
+  return value === "full" || value === "oneLine" || value === "hidden" ? value : undefined;
+}
+
 /** Read the view preferences stored at one TOML object level. */
 function readConfigPreferences(source: Record<string, unknown>): CommonOptions {
   return {
@@ -64,7 +69,7 @@ function readConfigPreferences(source: Record<string, unknown>): CommonOptions {
     wrapLines: normalizeBoolean(source.wrap_lines),
     hunkHeaders: normalizeBoolean(source.hunk_headers),
     agentNotes: normalizeBoolean(source.agent_notes),
-    commitDetails: normalizeBoolean(source.commit_details),
+    commitDetailsMode: normalizeCommitDetailsMode(source.commit_details_mode),
   };
 }
 
@@ -83,7 +88,7 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
     wrapLines: overrides.wrapLines ?? base.wrapLines,
     hunkHeaders: overrides.hunkHeaders ?? base.hunkHeaders,
     agentNotes: overrides.agentNotes ?? base.agentNotes,
-    commitDetails: overrides.commitDetails ?? base.commitDetails,
+    commitDetailsMode: overrides.commitDetailsMode ?? base.commitDetailsMode,
   };
 }
 
@@ -159,7 +164,7 @@ export function resolveConfiguredCliInput(
     wrapLines: DEFAULT_VIEW_PREFERENCES.wrapLines,
     hunkHeaders: DEFAULT_VIEW_PREFERENCES.showHunkHeaders,
     agentNotes: DEFAULT_VIEW_PREFERENCES.showAgentNotes,
-    commitDetails: DEFAULT_VIEW_PREFERENCES.showCommitDetails,
+    commitDetailsMode: DEFAULT_VIEW_PREFERENCES.commitDetailsMode,
   };
 
   if (userConfigPath) {
@@ -189,7 +194,8 @@ export function resolveConfiguredCliInput(
     wrapLines: resolvedOptions.wrapLines ?? DEFAULT_VIEW_PREFERENCES.wrapLines,
     hunkHeaders: resolvedOptions.hunkHeaders ?? DEFAULT_VIEW_PREFERENCES.showHunkHeaders,
     agentNotes: resolvedOptions.agentNotes ?? DEFAULT_VIEW_PREFERENCES.showAgentNotes,
-    commitDetails: resolvedOptions.commitDetails ?? DEFAULT_VIEW_PREFERENCES.showCommitDetails,
+    commitDetailsMode:
+      resolvedOptions.commitDetailsMode ?? DEFAULT_VIEW_PREFERENCES.commitDetailsMode,
   };
 
   return {

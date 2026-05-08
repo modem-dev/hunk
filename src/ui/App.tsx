@@ -5,7 +5,7 @@ import {
 } from "@opentui/core";
 import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState, useRef } from "react";
-import type { AppBootstrap, CliInput, LayoutMode } from "../core/types";
+import type { AppBootstrap, CliInput, CommitDetailsMode, LayoutMode } from "../core/types";
 import { canReloadInput, computeWatchSignature } from "../core/watch";
 import type { HunkSessionBrokerClient, ReloadedSessionResult } from "../hunk-session/types";
 import { MenuBar } from "./components/chrome/MenuBar";
@@ -119,8 +119,8 @@ export function App({
   const [wrapLines, setWrapLines] = useState(bootstrap.initialWrapLines ?? false);
   const [codeHorizontalOffset, setCodeHorizontalOffset] = useState(0);
   const [showHunkHeaders, setShowHunkHeaders] = useState(bootstrap.initialShowHunkHeaders ?? true);
-  const [showCommitDetails, setShowCommitDetails] = useState(
-    bootstrap.initialShowCommitDetails ?? true,
+  const [commitDetailsMode, setCommitDetailsMode] = useState<CommitDetailsMode>(
+    bootstrap.initialCommitDetailsMode ?? "full",
   );
   const [sidebarVisible, setSidebarVisible] = useState(() => !pagerMode);
   const [forceSidebarOpen, setForceSidebarOpen] = useState(false);
@@ -380,12 +380,13 @@ export function App({
   };
 
   /**
-   * Toggle the verbatim commit metadata block (Author, Date, full body) above each
-   * commit's first file. The subject stays visible via the cursor strip regardless.
-   * No-op outside commit-review sessions because there's no metadata to hide.
+   * Cycle the commit metadata block between full → one-line → hidden. No-op outside
+   * commit-review sessions. The cycle wraps to "full" after "hidden".
    */
-  const toggleCommitDetails = () => {
-    setShowCommitDetails((current) => !current);
+  const cycleCommitDetailsMode = () => {
+    setCommitDetailsMode((current) =>
+      current === "full" ? "oneLine" : current === "oneLine" ? "hidden" : "full",
+    );
   };
 
   /** Jump to an annotated hunk without changing the global note visibility toggle. */
@@ -548,16 +549,10 @@ export function App({
         showHelp,
         showHunkHeaders,
         showLineNumbers,
-<<<<<<< HEAD
+        commitDetailsMode: isCommitReview ? commitDetailsMode : undefined,
         renderSidebar,
-||||||| parent of 36d55cf (feat(pager): toggle for detailed commit message in commit-review mode)
-        sidebarVisible,
-=======
-        showCommitDetails: isCommitReview ? showCommitDetails : undefined,
-        sidebarVisible,
->>>>>>> 36d55cf (feat(pager): toggle for detailed commit message in commit-review mode)
         toggleAgentNotes,
-        toggleCommitDetails: isCommitReview ? toggleCommitDetails : undefined,
+        cycleCommitDetailsMode: isCommitReview ? cycleCommitDetailsMode : undefined,
         moveToCommit: isCommitReview && onMoveCommit ? onMoveCommit : undefined,
         toggleFocusArea,
         toggleHelp,
@@ -582,18 +577,12 @@ export function App({
       showHelp,
       showHunkHeaders,
       showLineNumbers,
-<<<<<<< HEAD
+      commitDetailsMode,
       renderSidebar,
-||||||| parent of 36d55cf (feat(pager): toggle for detailed commit message in commit-review mode)
-      sidebarVisible,
-=======
-      showCommitDetails,
       isCommitReview,
       onMoveCommit,
-      sidebarVisible,
->>>>>>> 36d55cf (feat(pager): toggle for detailed commit message in commit-review mode)
       toggleAgentNotes,
-      toggleCommitDetails,
+      cycleCommitDetailsMode,
       toggleFocusArea,
       toggleHelp,
       toggleHunkHeaders,
@@ -645,7 +634,7 @@ export function App({
     showHelp,
     switchMenu,
     toggleAgentNotes,
-    toggleCommitDetails: isCommitReview ? toggleCommitDetails : undefined,
+    cycleCommitDetailsMode: isCommitReview ? cycleCommitDetailsMode : undefined,
     toggleFocusArea,
     toggleHelp,
     toggleHunkHeaders,
@@ -707,7 +696,13 @@ export function App({
     (sum, file) => sum + file.stats.deletions,
     0,
   );
-  const topTitle = `${bootstrap.changeset.title}  +${totalAdditions}  -${totalDeletions}`;
+  // In commit-review the title used to be the commit subject, but the commit
+  // metadata block above the diffs already shows the subject, sha, author, and date.
+  // Drop the subject from the menu-bar title to avoid the redundancy; just show the
+  // active commit's stats.
+  const topTitle = isCommitReview
+    ? `Commit log  +${totalAdditions}  -${totalDeletions}`
+    : `${bootstrap.changeset.title}  +${totalAdditions}  -${totalDeletions}`;
   const sidebarTextWidth = Math.max(8, clampedSidebarWidth - 2);
   const diffHeaderStatsWidth = Math.min(24, Math.max(16, Math.floor(diffContentWidth / 3)));
   const diffHeaderLabelWidth = Math.max(8, diffContentWidth - diffHeaderStatsWidth - 1);
@@ -834,8 +829,9 @@ export function App({
           showAgentNotes={showAgentNotes}
           showLineNumbers={showLineNumbers}
           showHunkHeaders={showHunkHeaders}
-          showCommitDetails={showCommitDetails}
+          commitDetailsMode={commitDetailsMode}
           commitHeader={isCommitReview ? bootstrap.currentCommit?.rawHeader : undefined}
+          commitMetadata={isCommitReview ? bootstrap.currentCommit : undefined}
           wrapLines={wrapLines}
           wrapToggleScrollTop={wrapToggleScrollTopRef.current}
           layoutToggleScrollTop={layoutToggleScrollTopRef.current}

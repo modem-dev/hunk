@@ -33,7 +33,8 @@ import {
   type ViewportRowAnchor,
 } from "../../lib/viewportAnchor";
 import type { AppTheme } from "../../themes";
-import { collapsedCommitHeader } from "../../../core/streaming/commitMetadata";
+import { collapsedCommitHeader, oneLineCommitHeader } from "../../../core/streaming/commitMetadata";
+import type { CommitDetailsMode, CommitMetadata } from "../../../core/types";
 import { CommitHeaderBlock } from "./CommitHeaderBlock";
 import { DiffSection } from "./DiffSection";
 import { DiffFileHeaderRow } from "./DiffFileHeaderRow";
@@ -144,8 +145,9 @@ export function DiffPane({
   showAgentNotes,
   showLineNumbers,
   showHunkHeaders,
-  showCommitDetails = true,
+  commitDetailsMode = "full",
   commitHeader,
+  commitMetadata,
   wrapLines,
   wrapToggleScrollTop,
   layoutToggleScrollTop = null,
@@ -175,18 +177,22 @@ export function DiffPane({
   showLineNumbers: boolean;
   showHunkHeaders: boolean;
   /**
-   * When false, the verbatim commit metadata block above each commit's first file is
-   * hidden. The cursor strip in the chrome continues to show the commit subject.
+   * Three-state visibility for the commit metadata block in commit-review pager mode:
+   * full / oneLine / hidden. Default `full`. Ignored outside commit-review.
    */
-  showCommitDetails?: boolean;
+  commitDetailsMode?: CommitDetailsMode;
   /**
-   * When provided, the verbatim commit metadata text renders as a single block at the
-   * top of the scroll content (above all file blocks) — the right shape for
-   * commit-by-commit review where there's exactly one commit visible. When unset, the
-   * pane falls back to per-file inline blocks (the right shape for `--no-review`
-   * flat-streaming where many commits scroll past).
+   * Verbatim commit header text. When provided, the pane is in commit-by-commit mode
+   * and renders the metadata block at the top of the chrome (above the pinned-header
+   * row). When unset, the pane falls back to per-file inline blocks (the right shape
+   * for `--no-review` flat-streaming where many commits scroll past).
    */
   commitHeader?: string;
+  /**
+   * Parsed commit metadata for the active commit. Required for the oneLine view; if
+   * omitted, oneLine falls back to rendering the verbatim collapsed header.
+   */
+  commitMetadata?: CommitMetadata;
   wrapLines: boolean;
   wrapToggleScrollTop: number | null;
   layoutToggleScrollTop?: number | null;
@@ -379,16 +385,24 @@ export function DiffPane({
 
   // Commit-review pane has a single commit-level metadata block. Render it as a fixed
   // chrome row above the pinned-header (which itself lives above the scroll content),
-  // so it sits structurally above the entire file list. The block is always visible
-  // in commit-review — the user-facing toggle controls whether the extended body is
-  // included or just the headers + subject. Inline per-file blocks are suppressed in
-  // this mode to avoid double-rendering. The flat-streaming (--no-review) path leaves
-  // `commitHeader` undefined so DiffSection's inline blocks remain the right shape.
-  const inlineCommitDetails = !commitHeader && showCommitDetails;
+  // so it sits structurally above the entire file list. Three states:
+  //   full     → verbatim header + body (current `git log -p` look in `less`)
+  //   oneLine  → single-line summary (sha · author · date · subject)
+  //   hidden   → block omitted entirely
+  // Inline per-file blocks are suppressed in this mode to avoid double-rendering. The
+  // flat-streaming (--no-review) path leaves `commitHeader` undefined so DiffSection's
+  // inline blocks remain the right shape there; for that path we honor the toggle as
+  // a binary on/off (only "hidden" disables the inline rendering).
+  const inlineCommitDetails = !commitHeader && commitDetailsMode !== "hidden";
   const renderedCommitHeader = useMemo(() => {
-    if (!commitHeader) return undefined;
-    return showCommitDetails ? commitHeader : collapsedCommitHeader(commitHeader);
-  }, [commitHeader, showCommitDetails]);
+    if (!commitHeader || commitDetailsMode === "hidden") return undefined;
+    if (commitDetailsMode === "oneLine") {
+      return commitMetadata
+        ? oneLineCommitHeader(commitMetadata)
+        : collapsedCommitHeader(commitHeader);
+    }
+    return commitHeader; // "full"
+  }, [commitHeader, commitMetadata, commitDetailsMode]);
 
   const baseSectionGeometry = useMemo(
     () =>

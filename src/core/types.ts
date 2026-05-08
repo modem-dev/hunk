@@ -82,8 +82,8 @@ export interface CommonOptions {
   wrapLines?: boolean;
   hunkHeaders?: boolean;
   agentNotes?: boolean;
-  /** Show the verbatim commit metadata block above each commit's first file. */
-  commitDetails?: boolean;
+  /** Visibility of the commit metadata block in commit-review pager mode. */
+  commitDetailsMode?: CommitDetailsMode;
   /**
    * When true, the session does not register with the daemon and the agent review
    * surface (live comments, hunk session commands, daemon-driven reload) is disabled.
@@ -93,6 +93,16 @@ export interface CommonOptions {
   noReview?: boolean;
 }
 
+/**
+ * Three-state commit metadata visibility for the commit-review pager:
+ * - `full`: render the verbatim header block (commit/Author/Date/blank/subject + body).
+ * - `oneLine`: condensed single-line summary (sha · author · date · subject).
+ * - `hidden`: omit the metadata block entirely.
+ *
+ * Only meaningful in commit-review pager sessions. Other modes ignore the setting.
+ */
+export type CommitDetailsMode = "full" | "oneLine" | "hidden";
+
 export interface PersistedViewPreferences {
   mode: LayoutMode;
   theme?: string;
@@ -100,13 +110,7 @@ export interface PersistedViewPreferences {
   wrapLines: boolean;
   showHunkHeaders: boolean;
   showAgentNotes: boolean;
-  /**
-   * Whether to render the verbatim commit metadata block (Author, Date, full body)
-   * inline above each commit's first file. Off hides the block — the commit subject
-   * stays visible via the cursor strip in the chrome. Only meaningful in commit-review
-   * pager sessions; other modes ignore the setting.
-   */
-  showCommitDetails: boolean;
+  commitDetailsMode: CommitDetailsMode;
 }
 
 export interface HelpCommandInput {
@@ -378,7 +382,7 @@ export interface AppBootstrap {
   initialWrapLines?: boolean;
   initialShowHunkHeaders?: boolean;
   initialShowAgentNotes?: boolean;
-  initialShowCommitDetails?: boolean;
+  initialCommitDetailsMode?: CommitDetailsMode;
   /** Present for flat streaming pager input (--no-review path). */
   stream?: ChangesetStreamHandle;
   /** Present for commit-by-commit pager input (`git log -p | hunk pager` default). */

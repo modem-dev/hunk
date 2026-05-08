@@ -50,8 +50,8 @@ export interface UseAppKeyboardShortcutsOptions {
   showHelp: boolean;
   switchMenu: (delta: number) => void;
   toggleAgentNotes: () => void;
-  /** Optional: only present in commit-review sessions where commit metadata exists to toggle. */
-  toggleCommitDetails?: () => void;
+  /** Optional: only present in commit-review sessions where commit metadata exists to cycle. */
+  cycleCommitDetailsMode?: () => void;
   toggleFocusArea: () => void;
   toggleHelp: () => void;
   toggleHunkHeaders: () => void;
@@ -87,7 +87,7 @@ export function useAppKeyboardShortcuts({
   showHelp,
   switchMenu,
   toggleAgentNotes,
-  toggleCommitDetails,
+  cycleCommitDetailsMode,
   toggleFocusArea,
   toggleHelp,
   toggleHunkHeaders,
@@ -385,8 +385,8 @@ export function useAppKeyboardShortcuts({
       return;
     }
 
-    if (toggleCommitDetails && (key.name === "c" || key.sequence === "c")) {
-      runAndCloseMenu(toggleCommitDetails);
+    if (cycleCommitDetailsMode && (key.name === "c" || key.sequence === "c")) {
+      runAndCloseMenu(cycleCommitDetailsMode);
       return;
     }
 
