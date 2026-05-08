@@ -1,5 +1,7 @@
 import fs from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { applyKeymapOverrides, loadKeymapDefaults } from "./keymap/load";
+import type { Keymap } from "./keymap/match";
 import { resolveGlobalConfigPath } from "./paths";
 import type {
   CliInput,
@@ -28,7 +30,7 @@ interface HunkConfigResolution {
   repoConfigPath?: string;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
@@ -81,6 +83,7 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
     wrapLines: overrides.wrapLines ?? base.wrapLines,
     hunkHeaders: overrides.hunkHeaders ?? base.hunkHeaders,
     agentNotes: overrides.agentNotes ?? base.agentNotes,
+    keymap: overrides.keymap ?? base.keymap,
   };
 }
 
@@ -167,18 +170,27 @@ export function resolveConfiguredCliInput(
     agentNotes: DEFAULT_VIEW_PREFERENCES.showAgentNotes,
   };
 
-  if (userConfigPath) {
+  // Keymap is layered separately from view options. It only honors the
+  // top-level `[keybindings.<scope>]` blocks — not command-section overrides —
+  // because a per-command keymap would be confusing and is unnecessary for v1.
+  let keymap: Keymap = loadKeymapDefaults();
+  const userTomlRoot = userConfigPath ? readTomlRecord(userConfigPath) : undefined;
+  const repoTomlRoot = repoConfigPath ? readTomlRecord(repoConfigPath) : undefined;
+
+  if (userConfigPath && userTomlRoot) {
     resolvedOptions = mergeOptions(
       resolvedOptions,
-      resolveConfigLayer(readTomlRecord(userConfigPath), input),
+      resolveConfigLayer(userTomlRoot, input),
     );
+    keymap = applyKeymapOverrides(keymap, userTomlRoot);
   }
 
-  if (repoConfigPath) {
+  if (repoConfigPath && repoTomlRoot) {
     resolvedOptions = mergeOptions(
       resolvedOptions,
-      resolveConfigLayer(readTomlRecord(repoConfigPath), input),
+      resolveConfigLayer(repoTomlRoot, input),
     );
+    keymap = applyKeymapOverrides(keymap, repoTomlRoot);
   }
 
   resolvedOptions = mergeOptions(resolvedOptions, input.options);
@@ -194,6 +206,7 @@ export function resolveConfiguredCliInput(
     wrapLines: resolvedOptions.wrapLines ?? DEFAULT_VIEW_PREFERENCES.wrapLines,
     hunkHeaders: resolvedOptions.hunkHeaders ?? DEFAULT_VIEW_PREFERENCES.showHunkHeaders,
     agentNotes: resolvedOptions.agentNotes ?? DEFAULT_VIEW_PREFERENCES.showAgentNotes,
+    keymap,
   };
 
   return {

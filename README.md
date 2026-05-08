@@ -122,6 +122,10 @@ agent_notes = false
 
 `exclude_untracked` affects Git working-tree `hunk diff` sessions only.
 
+Keybindings are configurable through the same files; see
+[`docs/keybindings.md`](docs/keybindings.md) for the action reference and
+token syntax.
+
 ### Git integration
 
 Set Hunk as your Git pager so `git diff` and `git show` open in Hunk automatically:

@@ -305,4 +305,40 @@ describe("config resolution", () => {
 
     expect(bootstrap.initialTheme).toBe("graphite");
   });
+
+  test("repo keybindings.global override surfaces on the resolved keymap", () => {
+    const home = createTempDir("hunk-config-home-");
+    const repo = createTempDir("hunk-config-repo-");
+    createRepo(repo);
+
+    mkdirSync(join(repo, ".hunk"), { recursive: true });
+    writeFileSync(
+      join(repo, ".hunk", "config.toml"),
+      [
+        "[keybindings.global]",
+        'quit = ["<c-c>", "x"]',
+        '"sidebar.toggle" = "<disabled>"',
+        "",
+      ].join("\n"),
+    );
+
+    const resolved = resolveConfiguredCliInput(
+      {
+        kind: "patch",
+        file: "-",
+        options: { pager: false },
+      },
+      { cwd: repo, env: { HOME: home } },
+    );
+    const keymap = resolved.input.options.keymap;
+    expect(keymap).toBeDefined();
+    if (!keymap) return;
+
+    const quit = keymap.global.quit ?? [];
+    expect(quit).toHaveLength(2);
+    // disabled action should be present but empty.
+    expect(keymap.global["sidebar.toggle"]).toEqual([]);
+    // unrelated defaults still present.
+    expect(keymap.global["help.toggle"]?.length ?? 0).toBeGreaterThan(0);
+  });
 });

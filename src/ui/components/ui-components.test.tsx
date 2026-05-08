@@ -13,6 +13,7 @@ import { buildFileSectionLayouts, buildInStreamFileHeaderHeights } from "../lib/
 const { AppHost } = await import("../AppHost");
 const { buildSidebarEntries } = await import("../lib/files");
 const { HelpDialog } = await import("./chrome/HelpDialog");
+const { loadKeymapDefaults } = await import("../../core/keymap/load");
 const { SidebarPane } = await import("./panes/SidebarPane");
 const { AgentCard } = await import("./panes/AgentCard");
 const { AgentInlineNote } = await import("./panes/AgentInlineNote");
@@ -1583,48 +1584,45 @@ describe("UI components", () => {
 
   test("HelpDialog renders every documented control row without overlap", async () => {
     const theme = resolveTheme("midnight", null);
+    const keymap = loadKeymapDefaults();
     const frame = await captureFrame(
       <HelpDialog
         canRefresh={true}
-        terminalHeight={36}
+        keymap={keymap}
+        terminalHeight={56}
         terminalWidth={76}
         theme={theme}
         onClose={() => {}}
       />,
       76,
-      36,
+      56,
     );
 
-    const expectedRows = [
+    // The exact row layout is now driven by the action registry; assert that
+    // every section header and each action description renders in the modal,
+    // leaving the precise key-column formatting to the format-helper tests.
+    const expectedFragments = [
       "Controls help",
-      "[Esc]",
       "Navigation",
-      "↑ / ↓           move line-by-line",
-      "Space / f       page down (alt: f)",
-      "b               page up",
-      "Shift+Space     page up (alt)",
-      "d / u           half page down / up",
-      "[ / ]           previous / next hunk",
-      "{ / }           previous / next comment",
-      "← / →           scroll code left / right (Shift = faster)",
-      "Home / End      jump to top / bottom",
       "Mouse",
-      "Wheel           scroll vertically",
-      "Shift+Wheel     scroll code horizontally",
       "View",
-      "1 / 2 / 0       split / stack / auto",
-      "s / t           sidebar / theme",
-      "a               toggle AI notes",
-      "l / w / m       lines / wrap / metadata",
+      "App",
       "Review",
-      "/               focus file filter",
-      "Tab             toggle files/filter focus",
-      "F10             open menus",
-      "r / q           reload / quit",
-    ] as const;
+      "move line-by-line (down)",
+      "page down",
+      "previous hunk",
+      "next comment",
+      "split layout",
+      "toggle agent notes",
+      "toggle line numbers",
+      "focus file filter",
+      "reload current input",
+      "open menus",
+      "scroll vertically",
+    ];
 
-    for (const expectedRow of expectedRows) {
-      expect(frame).toContain(expectedRow);
+    for (const fragment of expectedFragments) {
+      expect(frame).toContain(fragment);
     }
 
     const lines = frame.split("\n");
@@ -1636,8 +1634,6 @@ describe("UI components", () => {
     expect(lines[mouseHeaderIndex - 1]).toMatch(blankModalRow);
     expect(lines[viewHeaderIndex - 1]).toMatch(blankModalRow);
     expect(lines[reviewHeaderIndex - 1]).toMatch(blankModalRow);
-    expect(frame).not.toContain("linese/Awrapt/smetadata");
-    expect(frame).not.toContain("reloade/uquit");
   });
 
   test("DiffSectionPlaceholder preserves offscreen section chrome without mounting rows", async () => {

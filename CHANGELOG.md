@@ -6,6 +6,8 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Added
 
+- Configurable keybindings via the new `[keybindings.<scope>]` config sections (global, pager, menu, filter). Use `<disabled>` to unbind a default. See `docs/keybindings.md`.
+
 ### Changed
 
 - Auto-detect Jujutsu checkouts for `hunk diff` and `hunk show`, while keeping explicit `vcs` config overrides.

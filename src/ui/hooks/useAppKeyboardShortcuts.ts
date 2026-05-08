@@ -1,18 +1,11 @@
 import type { KeyEvent } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
 import { useRef } from "react";
+import type { ActionId, ActionScope } from "../../core/keymap/actions";
+import type { Keymap } from "../../core/keymap/match";
+import { matchesAction } from "../../core/keymap/match";
 import type { LayoutMode } from "../../core/types";
 import type { MenuId } from "../components/chrome/menu";
-import {
-  isEscapeKey,
-  isHalfPageDownKey,
-  isHalfPageUpKey,
-  isPageDownKey,
-  isPageUpKey,
-  isShiftSpacePageUpKey,
-  isStepDownKey,
-  isStepUpKey,
-} from "../lib/keyboard";
 
 type FocusArea = "files" | "filter";
 type ScrollUnit = "step" | "viewport" | "content" | "half";
@@ -28,6 +21,7 @@ export interface UseAppKeyboardShortcutsOptions {
   cycleTheme: () => void;
   focusArea: FocusArea;
   focusFilter: () => void;
+  keymap: Keymap;
   moveToAnnotatedHunk: (delta: number) => void;
   moveToHunk: (delta: number) => void;
   moveMenuItem: (delta: number) => void;
@@ -59,6 +53,7 @@ export function useAppKeyboardShortcuts({
   cycleTheme,
   focusArea,
   focusFilter,
+  keymap,
   moveToAnnotatedHunk,
   moveToHunk,
   moveMenuItem,
@@ -83,19 +78,24 @@ export function useAppKeyboardShortcuts({
   const focusAreaRef = useRef(focusArea);
   const pagerModeRef = useRef(pagerMode);
   const showHelpRef = useRef(showHelp);
+  const keymapRef = useRef(keymap);
 
   activeMenuIdRef.current = activeMenuId;
   focusAreaRef.current = focusArea;
   pagerModeRef.current = pagerMode;
   showHelpRef.current = showHelp;
+  keymapRef.current = keymap;
 
   const runAndCloseMenu = (action: () => void) => {
     action();
     closeMenu();
   };
 
+  const isAction = (scope: ActionScope, id: ActionId, key: KeyEvent) =>
+    matchesAction(keymapRef.current, scope, id, key);
+
   const handleMenuToggleShortcut = (key: KeyEvent) => {
-    if (key.name !== "f10") {
+    if (!isAction("global", "menu.open", key)) {
       return false;
     }
 
@@ -113,62 +113,74 @@ export function useAppKeyboardShortcuts({
   };
 
   const handlePagerShortcut = (key: KeyEvent) => {
-    if (key.name === "q" || isEscapeKey(key)) {
+    if (isAction("pager", "quit", key)) {
       requestQuit();
       return;
     }
 
-    if (isPageDownKey(key)) {
-      scrollDiff(1, "viewport");
-      return;
-    }
-
-    if (isPageUpKey(key) || isShiftSpacePageUpKey(key)) {
+    // pageUp must be queried before pageDown — see match.test.ts "Shift+Space
+    // page-up precedence". Same pattern repeats for codeLeftFast/codeRightFast.
+    if (isAction("pager", "scroll.pageUp", key)) {
       scrollDiff(-1, "viewport");
       return;
     }
 
-    if (isHalfPageDownKey(key)) {
+    if (isAction("pager", "scroll.pageDown", key)) {
+      scrollDiff(1, "viewport");
+      return;
+    }
+
+    if (isAction("pager", "scroll.halfPageDown", key)) {
       scrollDiff(1, "half");
       return;
     }
 
-    if (isHalfPageUpKey(key)) {
+    if (isAction("pager", "scroll.halfPageUp", key)) {
       scrollDiff(-1, "half");
       return;
     }
 
-    if (isStepDownKey(key)) {
+    if (isAction("pager", "scroll.lineDown", key)) {
       scrollDiff(1, "step");
       return;
     }
 
-    if (isStepUpKey(key)) {
+    if (isAction("pager", "scroll.lineUp", key)) {
       scrollDiff(-1, "step");
       return;
     }
 
-    if (key.name === "left") {
-      scrollCodeHorizontally(key.shift ? -FAST_CODE_HORIZONTAL_SCROLL_COLUMNS : -1);
+    if (isAction("pager", "scroll.codeLeftFast", key)) {
+      scrollCodeHorizontally(-FAST_CODE_HORIZONTAL_SCROLL_COLUMNS);
       return;
     }
 
-    if (key.name === "right") {
-      scrollCodeHorizontally(key.shift ? FAST_CODE_HORIZONTAL_SCROLL_COLUMNS : 1);
+    if (isAction("pager", "scroll.codeRightFast", key)) {
+      scrollCodeHorizontally(FAST_CODE_HORIZONTAL_SCROLL_COLUMNS);
       return;
     }
 
-    if (key.name === "home") {
+    if (isAction("pager", "scroll.codeLeft", key)) {
+      scrollCodeHorizontally(-1);
+      return;
+    }
+
+    if (isAction("pager", "scroll.codeRight", key)) {
+      scrollCodeHorizontally(1);
+      return;
+    }
+
+    if (isAction("pager", "scroll.toTop", key)) {
       scrollDiff(-1, "content");
       return;
     }
 
-    if (key.name === "end") {
+    if (isAction("pager", "scroll.toBottom", key)) {
       scrollDiff(1, "content");
       return;
     }
 
-    if (key.name === "w" || key.sequence === "w") {
+    if (isAction("pager", "wrap.toggle", key)) {
       toggleLineWrap();
       return;
     }
@@ -179,7 +191,10 @@ export function useAppKeyboardShortcuts({
   };
 
   const handleHelpShortcut = (key: KeyEvent) => {
-    if (!showHelpRef.current || !isEscapeKey(key)) {
+    if (!showHelpRef.current) {
+      return false;
+    }
+    if (!isAction("global", "quit", key) && !isAction("global", "help.toggle", key)) {
       return false;
     }
 
@@ -192,32 +207,32 @@ export function useAppKeyboardShortcuts({
       return false;
     }
 
-    if (isEscapeKey(key)) {
+    if (isAction("menu", "menu.close", key)) {
       closeMenu();
       return true;
     }
 
-    if (key.name === "left") {
+    if (isAction("menu", "menu.prev", key)) {
       switchMenu(-1);
       return true;
     }
 
-    if (key.name === "right" || key.name === "tab") {
+    if (isAction("menu", "menu.next", key)) {
       switchMenu(1);
       return true;
     }
 
-    if (key.name === "up") {
+    if (isAction("menu", "menu.itemUp", key)) {
       moveMenuItem(-1);
       return true;
     }
 
-    if (key.name === "down") {
+    if (isAction("menu", "menu.itemDown", key)) {
       moveMenuItem(1);
       return true;
     }
 
-    if (key.name === "return" || key.name === "enter") {
+    if (isAction("menu", "menu.activate", key)) {
       activateCurrentMenuItem();
       return true;
     }
@@ -230,7 +245,7 @@ export function useAppKeyboardShortcuts({
       return false;
     }
 
-    if (key.name === "tab") {
+    if (isAction("filter", "focus.toggle", key)) {
       toggleFocusArea();
       return true;
     }
@@ -240,148 +255,153 @@ export function useAppKeyboardShortcuts({
   };
 
   const handleAppShortcut = (key: KeyEvent) => {
-    if (key.name === "q") {
+    if (isAction("global", "quit", key)) {
       requestQuit();
       return;
     }
 
-    if (key.name === "?" || key.sequence === "?") {
+    if (isAction("global", "help.toggle", key)) {
       toggleHelp();
       closeMenu();
       return;
     }
 
-    if (isEscapeKey(key)) {
-      requestQuit();
-      return;
-    }
-
-    if (key.name === "tab") {
+    if (isAction("global", "focus.toggle", key)) {
       toggleFocusArea();
       return;
     }
 
-    if (key.name === "/") {
+    if (isAction("global", "filter.focus", key)) {
       focusFilter();
       return;
     }
 
-    if (isPageDownKey(key)) {
-      scrollDiff(1, "viewport");
-      return;
-    }
-
-    if (isPageUpKey(key) || isShiftSpacePageUpKey(key)) {
+    if (isAction("global", "scroll.pageUp", key)) {
       scrollDiff(-1, "viewport");
       return;
     }
 
-    if (isHalfPageDownKey(key)) {
+    if (isAction("global", "scroll.pageDown", key)) {
+      scrollDiff(1, "viewport");
+      return;
+    }
+
+    if (isAction("global", "scroll.halfPageDown", key)) {
       scrollDiff(1, "half");
       return;
     }
 
-    if (isHalfPageUpKey(key)) {
+    if (isAction("global", "scroll.halfPageUp", key)) {
       scrollDiff(-1, "half");
       return;
     }
 
-    if (key.name === "home") {
+    if (isAction("global", "scroll.toTop", key)) {
       scrollDiff(-1, "content");
       return;
     }
 
-    if (key.name === "end") {
+    if (isAction("global", "scroll.toBottom", key)) {
       scrollDiff(1, "content");
       return;
     }
 
-    if (isStepUpKey(key)) {
+    if (isAction("global", "scroll.lineUp", key)) {
       scrollDiff(-1, "step");
       return;
     }
 
-    if (isStepDownKey(key)) {
+    if (isAction("global", "scroll.lineDown", key)) {
       scrollDiff(1, "step");
       return;
     }
 
-    if (key.name === "left") {
-      scrollCodeHorizontally(key.shift ? -FAST_CODE_HORIZONTAL_SCROLL_COLUMNS : -1);
+    if (isAction("global", "scroll.codeLeftFast", key)) {
+      scrollCodeHorizontally(-FAST_CODE_HORIZONTAL_SCROLL_COLUMNS);
       return;
     }
 
-    if (key.name === "right") {
-      scrollCodeHorizontally(key.shift ? FAST_CODE_HORIZONTAL_SCROLL_COLUMNS : 1);
+    if (isAction("global", "scroll.codeRightFast", key)) {
+      scrollCodeHorizontally(FAST_CODE_HORIZONTAL_SCROLL_COLUMNS);
       return;
     }
 
-    if (key.name === "1") {
+    if (isAction("global", "scroll.codeLeft", key)) {
+      scrollCodeHorizontally(-1);
+      return;
+    }
+
+    if (isAction("global", "scroll.codeRight", key)) {
+      scrollCodeHorizontally(1);
+      return;
+    }
+
+    if (isAction("global", "layout.split", key)) {
       runAndCloseMenu(() => selectLayoutMode("split"));
       return;
     }
 
-    if (key.name === "2") {
+    if (isAction("global", "layout.stack", key)) {
       runAndCloseMenu(() => selectLayoutMode("stack"));
       return;
     }
 
-    if (key.name === "0") {
+    if (isAction("global", "layout.auto", key)) {
       runAndCloseMenu(() => selectLayoutMode("auto"));
       return;
     }
 
-    if (key.name === "s") {
+    if (isAction("global", "sidebar.toggle", key)) {
       runAndCloseMenu(toggleSidebar);
       return;
     }
 
-    if ((key.name === "r" || key.sequence === "r") && canRefreshCurrentInput) {
+    if (isAction("global", "reload", key) && canRefreshCurrentInput) {
       runAndCloseMenu(triggerRefreshCurrentInput);
       return;
     }
 
-    if (key.name === "t") {
+    if (isAction("global", "theme.cycle", key)) {
       runAndCloseMenu(cycleTheme);
       return;
     }
 
-    if (key.name === "a") {
+    if (isAction("global", "agentNotes.toggle", key)) {
       runAndCloseMenu(toggleAgentNotes);
       return;
     }
 
-    if (key.name === "l" || key.sequence === "l") {
+    if (isAction("global", "lineNumbers.toggle", key)) {
       runAndCloseMenu(toggleLineNumbers);
       return;
     }
 
-    if (key.name === "w" || key.sequence === "w") {
+    if (isAction("global", "wrap.toggle", key)) {
       runAndCloseMenu(toggleLineWrap);
       return;
     }
 
-    if (key.name === "m" || key.sequence === "m") {
+    if (isAction("global", "hunkHeaders.toggle", key)) {
       runAndCloseMenu(toggleHunkHeaders);
       return;
     }
 
-    if (key.name === "[") {
+    if (isAction("global", "hunk.prev", key)) {
       runAndCloseMenu(() => moveToHunk(-1));
       return;
     }
 
-    if (key.name === "]") {
+    if (isAction("global", "hunk.next", key)) {
       runAndCloseMenu(() => moveToHunk(1));
       return;
     }
 
-    if (key.sequence === "{") {
+    if (isAction("global", "annotatedHunk.prev", key)) {
       runAndCloseMenu(() => moveToAnnotatedHunk(-1));
       return;
     }
 
-    if (key.sequence === "}") {
+    if (isAction("global", "annotatedHunk.next", key)) {
       runAndCloseMenu(() => moveToAnnotatedHunk(1));
     }
   };

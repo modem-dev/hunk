@@ -1,4 +1,4 @@
-import { isEscapeKey } from "../../lib/keyboard";
+import { isEscapeKey } from "../../../core/keyboard";
 import type { AppTheme } from "../../themes";
 
 /** Render the active file filter input or current filter summary. */

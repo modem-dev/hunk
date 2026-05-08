@@ -11,16 +11,9 @@ import {
 } from "../components/chrome/menu";
 import { buildAgentPopoverContent, resolveAgentPopoverPlacement, wrapText } from "./agentPopover";
 import { buildAppMenus } from "./appMenus";
-import {
-  isEscapeKey,
-  isHalfPageDownKey,
-  isHalfPageUpKey,
-  isPageDownKey,
-  isPageUpKey,
-  isShiftSpacePageUpKey,
-  isStepDownKey,
-  isStepUpKey,
-} from "./keyboard";
+import { isEscapeKey } from "../../core/keyboard";
+import { loadKeymapDefaults } from "../../core/keymap/load";
+import { matchesAction } from "../../core/keymap/match";
 import { fitText, padText } from "./text";
 import { computeHunkRevealScrollTop } from "./hunkScroll";
 import { estimateDiffSectionBodyRows, measureDiffSectionGeometry } from "./diffSectionGeometry";
@@ -177,27 +170,24 @@ describe("ui helpers", () => {
     ).toBe(true);
   });
 
-  test("keyboard alias helpers normalize the shared scroll shortcut keys", () => {
+  test("default keymap covers the shared scroll shortcut keys", () => {
+    const keymap = loadKeymapDefaults();
     expect(isEscapeKey(createKeyEvent({ name: "escape" }))).toBe(true);
     expect(isEscapeKey(createKeyEvent({ name: "esc" }))).toBe(true);
-    expect(isPageDownKey(createKeyEvent({ name: "pagedown" }))).toBe(true);
-    expect(isPageDownKey(createKeyEvent({ name: "space" }))).toBe(true);
-    expect(isPageDownKey(createKeyEvent({ name: "f" }))).toBe(true);
-    expect(isPageDownKey(createKeyEvent({ sequence: "f" }))).toBe(true);
-    expect(isPageUpKey(createKeyEvent({ name: "pageup" }))).toBe(true);
-    expect(isPageUpKey(createKeyEvent({ name: "b" }))).toBe(true);
-    expect(isPageUpKey(createKeyEvent({ sequence: "b" }))).toBe(true);
-    expect(isShiftSpacePageUpKey(createKeyEvent({ name: "space", shift: true }))).toBe(true);
-    expect(isHalfPageDownKey(createKeyEvent({ name: "d" }))).toBe(true);
-    expect(isHalfPageUpKey(createKeyEvent({ sequence: "u" }))).toBe(true);
-    expect(isStepDownKey(createKeyEvent({ name: "down" }))).toBe(true);
-    expect(isStepDownKey(createKeyEvent({ sequence: "j" }))).toBe(true);
-    expect(isStepUpKey(createKeyEvent({ name: "up" }))).toBe(true);
-    expect(isStepUpKey(createKeyEvent({ sequence: "k" }))).toBe(true);
+    expect(matchesAction(keymap, "global", "scroll.pageDown", createKeyEvent({ name: "pagedown" }))).toBe(true);
+    expect(matchesAction(keymap, "global", "scroll.pageDown", createKeyEvent({ name: "space" }))).toBe(true);
+    expect(matchesAction(keymap, "global", "scroll.pageDown", createKeyEvent({ sequence: "f" }))).toBe(true);
+    expect(matchesAction(keymap, "global", "scroll.pageUp", createKeyEvent({ name: "pageup" }))).toBe(true);
+    expect(matchesAction(keymap, "global", "scroll.pageUp", createKeyEvent({ sequence: "b" }))).toBe(true);
+    expect(matchesAction(keymap, "global", "scroll.pageUp", createKeyEvent({ name: "space", shift: true }))).toBe(true);
+    expect(matchesAction(keymap, "global", "scroll.halfPageDown", createKeyEvent({ sequence: "d" }))).toBe(true);
+    expect(matchesAction(keymap, "global", "scroll.halfPageUp", createKeyEvent({ sequence: "u" }))).toBe(true);
+    expect(matchesAction(keymap, "global", "scroll.lineDown", createKeyEvent({ name: "down" }))).toBe(true);
+    expect(matchesAction(keymap, "global", "scroll.lineDown", createKeyEvent({ sequence: "j" }))).toBe(true);
+    expect(matchesAction(keymap, "global", "scroll.lineUp", createKeyEvent({ name: "up" }))).toBe(true);
+    expect(matchesAction(keymap, "global", "scroll.lineUp", createKeyEvent({ sequence: "k" }))).toBe(true);
     expect(isEscapeKey(createKeyEvent({ name: "q" }))).toBe(false);
-    expect(isPageDownKey(createKeyEvent({ name: "space", shift: true }))).toBe(false);
-    expect(isPageDownKey(createKeyEvent({ name: "q" }))).toBe(false);
-    expect(isShiftSpacePageUpKey(createKeyEvent({ name: "space", shift: false }))).toBe(false);
+    expect(matchesAction(keymap, "global", "scroll.pageDown", createKeyEvent({ sequence: "q" }))).toBe(false);
   });
 
   test("fitText and padText clamp using the terminal fallback marker", () => {

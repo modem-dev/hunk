@@ -1,66 +1,104 @@
+import { useMemo } from "react";
+import { ACTIONS, type ActionDef } from "../../../core/keymap/actions";
+import { formatBinding } from "../../../core/keymap/format";
+import type { Keymap } from "../../../core/keymap/match";
+import type { KeySpec } from "../../../core/keymap/parse";
 import { fitText, padText } from "../../lib/text";
 import type { AppTheme } from "../../themes";
 import { ModalFrame } from "./ModalFrame";
 
+interface HelpRow {
+  keys: string;
+  description: string;
+}
+
+interface HelpSection {
+  title: string;
+  items: HelpRow[];
+}
+
+/** Hardcoded mouse hints — the keymap doesn't model mouse input. */
+const MOUSE_SECTION: HelpSection = {
+  title: "Mouse",
+  items: [
+    { keys: "Wheel", description: "scroll vertically" },
+    { keys: "Shift+Wheel", description: "scroll code horizontally" },
+  ],
+};
+
+/**
+ * Group registered actions for the help dialog. Sections appear in the order
+ * each `group` first appears in the registry, and rows within a group keep
+ * registry order so related actions stay adjacent.
+ */
+function buildHelpSections(keymap: Keymap, canRefresh: boolean): HelpSection[] {
+  const order: string[] = [];
+  const buckets = new Map<string, HelpRow[]>();
+
+  const trackedActions = ACTIONS.filter((action) => {
+    // Pager-scope entries duplicate global navigation. Only show them if the
+    // user has actually rebound them — otherwise they're noise.
+    if (action.scope !== "global") return false;
+    if (action.id === "reload" && !canRefresh) return false;
+    return true;
+  });
+
+  for (const action of trackedActions) {
+    const specs = keymap[action.scope][action.id] ?? [];
+    const row = buildRow(action, specs);
+
+    let bucket = buckets.get(action.group);
+    if (!bucket) {
+      bucket = [];
+      buckets.set(action.group, bucket);
+      order.push(action.group);
+    }
+    bucket.push(row);
+  }
+
+  const sections: HelpSection[] = order.map((title) => ({
+    title,
+    items: buckets.get(title) ?? [],
+  }));
+
+  // Preserve "Mouse" placement between Navigation and View — it sits with the
+  // primary movement controls. Insert just before the "View" group.
+  const viewIndex = sections.findIndex((section) => section.title === "View");
+  const insertAt = viewIndex >= 0 ? viewIndex : sections.length;
+  sections.splice(insertAt, 0, MOUSE_SECTION);
+
+  return sections;
+}
+
+function buildRow(action: ActionDef, specs: KeySpec[]): HelpRow {
+  const keys = specs.length === 0 ? "disabled" : formatBinding(specs);
+  return {
+    keys,
+    description: action.description,
+  };
+}
+
 /** Render the in-app controls help modal. */
 export function HelpDialog({
   canRefresh = false,
+  keymap,
   terminalHeight,
   terminalWidth,
   theme,
   onClose,
 }: {
   canRefresh?: boolean;
+  keymap: Keymap;
   terminalHeight: number;
   terminalWidth: number;
   theme: AppTheme;
   onClose: () => void;
 }) {
-  const sections = [
-    {
-      title: "Navigation",
-      items: [
-        ["↑ / ↓", "move line-by-line"],
-        ["Space / f", "page down (alt: f)"],
-        ["b", "page up"],
-        ["Shift+Space", "page up (alt)"],
-        ["d / u", "half page down / up"],
-        ["[ / ]", "previous / next hunk"],
-        ["{ / }", "previous / next comment"],
-        ["← / →", "scroll code left / right (Shift = faster)"],
-        ["Home / End", "jump to top / bottom"],
-      ],
-    },
-    {
-      title: "Mouse",
-      items: [
-        ["Wheel", "scroll vertically"],
-        ["Shift+Wheel", "scroll code horizontally"],
-      ],
-    },
-    {
-      title: "View",
-      items: [
-        ["1 / 2 / 0", "split / stack / auto"],
-        ["s / t", "sidebar / theme"],
-        ["a", "toggle AI notes"],
-        ["l / w / m", "lines / wrap / metadata"],
-      ],
-    },
-    {
-      title: "Review",
-      items: [
-        ["/", "focus file filter"],
-        ["Tab", "toggle files/filter focus"],
-        ["F10", "open menus"],
-        [canRefresh ? "r / q" : "q", canRefresh ? "reload / quit" : "quit"],
-      ],
-    },
-  ] as const;
+  const sections = useMemo(() => buildHelpSections(keymap, canRefresh), [keymap, canRefresh]);
 
   const width = Math.min(74, Math.max(56, terminalWidth - 8));
   const bodyWidth = Math.max(1, width - 4);
-  const keyWidth = Math.min(16, Math.max(12, Math.floor(bodyWidth * 0.28)));
+  const keyWidth = Math.min(20, Math.max(12, Math.floor(bodyWidth * 0.32)));
   const descriptionWidth = Math.max(1, bodyWidth - keyWidth);
   const sectionSpacerRowCount = Math.max(0, sections.length - 1);
   const contentRowCount =
@@ -78,13 +116,13 @@ export function HelpDialog({
           <box style={{ width: "100%", height: 1 }}>
             <text fg={theme.badgeNeutral}>{section.title}</text>
           </box>
-          {section.items.map(([keys, description]) => (
+          {section.items.map((row) => (
             <box
-              key={`${section.title}:${keys}`}
+              key={`${section.title}:${row.keys}:${row.description}`}
               style={{ width: "100%", height: 1, flexDirection: "row" }}
             >
-              <text fg={theme.accent}>{padText(fitText(keys, keyWidth), keyWidth)}</text>
-              <text fg={theme.muted}>{fitText(description, descriptionWidth)}</text>
+              <text fg={theme.accent}>{padText(fitText(row.keys, keyWidth), keyWidth)}</text>
+              <text fg={theme.muted}>{fitText(row.description, descriptionWidth)}</text>
             </box>
           ))}
           {sectionIndex < sections.length - 1 ? <box style={{ width: "100%", height: 1 }} /> : null}
