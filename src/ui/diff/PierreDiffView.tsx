@@ -85,6 +85,12 @@ export function PierreDiffView({
   );
   const lineNumberDigits = useMemo(() => String(file ? findMaxLineNumber(file) : 1).length, [file]);
   const visiblePlannedRowWindow = useMemo(() => {
+    // Fall back to the full row list unless all three row-windowing inputs are ready:
+    // - the complete planned row stream for this file
+    // - measured per-row geometry for that same stream
+    // - one file-local visible body slice from DiffPane
+    // The helper relies on those structures staying in lockstep, so any missing input means
+    // "render everything" instead of risking a mismatched partial slice.
     if (!sectionGeometry || !visibleBodyBounds || !rowWindowingPocEnabled()) {
       return {
         bottomSpacerHeight: 0,
@@ -93,6 +99,14 @@ export function PierreDiffView({
       };
     }
 
+    // `visibleBodyBounds` is already relative to this file body, not the whole review stream.
+    // Example: if DiffPane says "mount rows 120..260 within package-lock.json", this helper keeps
+    // only the planned rows whose measured bounds overlap that interval.
+    //
+    // The return value is not just the sliced rows. It also includes spacer heights for the skipped
+    // region above and below so the file still occupies its original total body height inside the
+    // scroll stream. That lets navigation, sticky headers, and reveal math keep using the same
+    // absolute geometry even though most rows are temporarily unmounted.
     return resolveVisiblePlannedRowWindow({
       plannedRows,
       sectionGeometry,
@@ -119,6 +133,8 @@ export function PierreDiffView({
   const content = (
     <box style={{ width: "100%", flexDirection: "column" }}>
       {visiblePlannedRowWindow.topSpacerHeight > 0 ? (
+        // Reserve the skipped height above the mounted slice so the file body keeps its original
+        // absolute row positions inside the larger review stream.
         <box
           style={{
             width: "100%",
@@ -189,6 +205,7 @@ export function PierreDiffView({
         );
       })}
       {visiblePlannedRowWindow.bottomSpacerHeight > 0 ? (
+        // Mirror that reservation below the mounted slice so total file-body height stays stable.
         <box
           style={{
             width: "100%",

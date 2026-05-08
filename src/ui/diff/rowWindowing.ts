@@ -3,6 +3,7 @@ import type { PlannedReviewRow } from "./reviewRenderPlan";
 
 const ROW_WINDOWING_POC_ENV = "HUNK_ROW_WINDOWING_POC";
 
+/** One visible slice within a file body, measured in file-local row units. */
 export interface VisibleBodyBounds {
   top: number;
   height: number;
@@ -42,6 +43,8 @@ export function resolveVisiblePlannedRowWindow({
     };
   }
 
+  // Convert the requested visible window into one closed-open interval within this file body:
+  // [minVisibleTop, maxVisibleBottom). Rows above/below that interval become spacer height.
   const minVisibleTop = Math.max(0, visibleBodyBounds.top);
   const maxVisibleBottom = Math.min(
     sectionGeometry.bodyHeight,
@@ -58,6 +61,8 @@ export function resolveVisiblePlannedRowWindow({
     }
 
     const rowBottom = rowBounds.top + rowBounds.height;
+    // Treat each row as the half-open interval [row.top, row.bottom). If that interval does not
+    // overlap the visible file-body interval, the row can stay unmounted.
     if (rowBottom <= minVisibleTop || rowBounds.top >= maxVisibleBottom) {
       continue;
     }
@@ -77,11 +82,15 @@ export function resolveVisiblePlannedRowWindow({
   }
 
   let startIndex = firstVisibleIndex;
+  // Zero-height rows still matter structurally: for example, hidden hunk headers keep anchor ids
+  // and stable row ordering. If one sits immediately before the visible slice, keep it attached.
   while (startIndex > 0 && sectionGeometry.rowBounds[startIndex - 1]?.height === 0) {
     startIndex -= 1;
   }
 
   let endIndex = lastVisibleIndex + 1;
+  // Do the same on the trailing edge so hidden structural rows continue to travel with the last
+  // visible rendered row instead of being stranded in the spacer region.
   while (endIndex < plannedRows.length && sectionGeometry.rowBounds[endIndex]?.height === 0) {
     endIndex += 1;
   }
@@ -90,11 +99,13 @@ export function resolveVisiblePlannedRowWindow({
   const endRowBounds = sectionGeometry.rowBounds[endIndex - 1]!;
 
   return {
+    // The top spacer is exactly the skipped body height before the first mounted row.
+    topSpacerHeight: startRowBounds.top,
+    plannedRows: plannedRows.slice(startIndex, endIndex),
+    // The bottom spacer is the remaining body height after the last mounted row's bottom edge.
     bottomSpacerHeight: Math.max(
       0,
       sectionGeometry.bodyHeight - (endRowBounds.top + endRowBounds.height),
     ),
-    plannedRows: plannedRows.slice(startIndex, endIndex),
-    topSpacerHeight: startRowBounds.top,
   };
 }

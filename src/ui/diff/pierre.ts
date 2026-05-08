@@ -10,7 +10,6 @@ import type { DiffFile } from "../../core/types";
 import { blendHex, hexColorDistance } from "../lib/color";
 import type { AppTheme } from "../themes";
 import { expandDiffTabs } from "./codeColumns";
-import { resolveDiffHighlightMode } from "./highlightPolicy";
 
 const PIERRE_THEME = {
   light: "pierre-light",
@@ -516,23 +515,11 @@ export async function loadHighlightedDiff(
   file: DiffFile,
   appearance: AppTheme["appearance"] = "dark",
 ): Promise<HighlightedDiffCode> {
-  const highlightMode = resolveDiffHighlightMode(file);
-  if (highlightMode === "none") {
-    return {
-      deletionLines: [],
-      additionLines: [],
-    } satisfies HighlightedDiffCode;
-  }
-
-  const highlightLanguage = highlightMode === "text" ? "text" : file.language;
-  const highlightMetadata =
-    highlightMode === "text" ? { ...file.metadata, lang: "text" } : file.metadata;
-
   try {
-    const highlighter = await prepareHighlighter(highlightLanguage, appearance);
+    const highlighter = await prepareHighlighter(file.language, appearance);
     return queueHighlightedDiff(() => {
       const highlighted = renderDiffWithHighlighter(
-        highlightMetadata,
+        file.metadata,
         highlighter,
         pierreRenderOptions(appearance),
       );

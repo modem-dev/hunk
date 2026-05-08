@@ -610,6 +610,9 @@ export function DiffPane({
         return;
       }
 
+      // Convert the absolute review-stream viewport into file-body-local coordinates.
+      // Example: if the viewport starts at row 2_000 globally and this file body starts at row
+      // 1_940, then the file-local visible top is 60 rows into this file.
       let minTop = scrollViewport.top - sectionLayout.bodyTop - overscanRows;
       let maxBottom =
         scrollViewport.top + scrollViewport.height - sectionLayout.bodyTop + overscanRows;
@@ -619,6 +622,8 @@ export function DiffPane({
           Math.max(0, Math.min(selectedHunkIndex, file.metadata.hunks.length - 1)),
         );
         if (selectedHunkBounds) {
+          // Always keep the selected hunk inside the mounted slice even if the viewport is a little
+          // ahead or behind it. That avoids unmounting the active target during navigation settles.
           minTop = Math.min(minTop, selectedHunkBounds.top - overscanRows);
           maxBottom = Math.max(
             maxBottom,
@@ -627,6 +632,8 @@ export function DiffPane({
         }
       }
 
+      // Clamp the requested file-local interval back into the real body extent, then store it as
+      // { top, height } so the row slicer can rebuild the matching [top, bottom) window later.
       const clampedTop = Math.max(0, minTop);
       const clampedBottom = Math.min(geometry.bodyHeight, Math.max(clampedTop, maxBottom));
       next.set(file.id, {

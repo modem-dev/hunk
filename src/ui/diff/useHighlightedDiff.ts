@@ -1,6 +1,5 @@
 import { useLayoutEffect, useState } from "react";
 import type { DiffFile } from "../../core/types";
-import { resolveDiffHighlightMode } from "./highlightPolicy";
 import { loadHighlightedDiff, type HighlightedDiffCode } from "./pierre";
 
 /** Maximum cached highlight results. Prevents unbounded growth during long watch sessions. */
@@ -137,13 +136,6 @@ export function prefetchHighlightedDiff({
   file: DiffFile;
   appearance: "light" | "dark";
 }) {
-  if (resolveDiffHighlightMode(file) === "none") {
-    return Promise.resolve({
-      deletionLines: [],
-      additionLines: [],
-    } satisfies HighlightedDiffCode);
-  }
-
   return ensureHighlightedDiffLoaded(file, appearance);
 }
 
@@ -180,14 +172,12 @@ export function useHighlightedDiff({
 }) {
   const [highlighted, setHighlighted] = useState<HighlightedDiffCode | null>(null);
   const [highlightedCacheKey, setHighlightedCacheKey] = useState<string | null>(null);
-  const highlightMode = file ? resolveDiffHighlightMode(file) : null;
-  const appearanceCacheKey =
-    file && highlightMode !== "none" ? buildCacheKey(appearance, file) : null;
+  const appearanceCacheKey = file ? buildCacheKey(appearance, file) : null;
 
   // Use a layout effect so a newly available cached result can replace the plain-text fallback
   // before the next diff paint whenever possible. That reduces flash/stutter as files enter view.
   useLayoutEffect(() => {
-    if (!file || !appearanceCacheKey || highlightMode === "none") {
+    if (!file || !appearanceCacheKey) {
       setHighlighted(null);
       setHighlightedCacheKey(null);
       return;
@@ -223,14 +213,7 @@ export function useHighlightedDiff({
     return () => {
       cancelled = true;
     };
-  }, [
-    appearance,
-    appearanceCacheKey,
-    file,
-    highlightMode,
-    highlightedCacheKey,
-    shouldLoadHighlight,
-  ]);
+  }, [appearance, appearanceCacheKey, file, highlightedCacheKey, shouldLoadHighlight]);
 
   // Prefer cached highlights during render so revisiting a file can paint immediately.
   return resolveHighlightedSnapshot({
