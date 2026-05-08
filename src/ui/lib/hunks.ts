@@ -78,6 +78,8 @@ function findNearestCursorIndex(
     return delta >= 0 ? 0 : cursors.length - 1;
   }
 
+  // Comment navigation is non-cyclic like normal hunk navigation, so positions outside
+  // the annotated span clamp to the nearest annotated edge instead of wrapping.
   if (delta >= 0) {
     const nextCursor = indexedCursors.find(({ streamIndex }) => streamIndex > currentStreamIndex);
     return nextCursor?.index ?? indexedCursors[indexedCursors.length - 1]!.index;

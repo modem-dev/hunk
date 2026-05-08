@@ -176,6 +176,7 @@ describe("annotated hunk navigation", () => {
       { fileId: "beta", hunkIndex: 0 },
       { fileId: "gamma", hunkIndex: 0 },
       { fileId: "gamma", hunkIndex: 1 },
+      { fileId: "omega", hunkIndex: 0 },
     ];
     const annotatedCursors: HunkCursor[] = [
       { fileId: "alpha", hunkIndex: 1 },
@@ -196,6 +197,10 @@ describe("annotated hunk navigation", () => {
       hunkIndex: 1,
     });
     expect(findNextHunkCursor(annotatedCursors, "gamma", 1, 1, streamCursors)).toEqual({
+      fileId: "gamma",
+      hunkIndex: 1,
+    });
+    expect(findNextHunkCursor(annotatedCursors, "omega", 0, 1, streamCursors)).toEqual({
       fileId: "gamma",
       hunkIndex: 1,
     });
