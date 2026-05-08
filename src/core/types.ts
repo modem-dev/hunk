@@ -44,6 +44,17 @@ export interface DiffFile {
   isBinary?: boolean;
   isTooLarge?: boolean;
   statsTruncated?: boolean;
+  /** Commit sha (or short sha) when this file came from a streamed multi-commit pager input. */
+  commitId?: string;
+}
+
+/** A commit boundary observed in a streamed pager input. Phase 3 populates this. */
+export interface CommitRef {
+  id: string;
+  subject: string;
+  author?: string;
+  date?: string;
+  fileRange: { start: number; end: number };
 }
 
 export interface Changeset {
@@ -53,6 +64,10 @@ export interface Changeset {
   summary?: string;
   agentSummary?: string;
   files: DiffFile[];
+  /** Set when files are still arriving from a streaming source. */
+  isStreaming?: boolean;
+  /** Populated when the source is a multi-commit stream (e.g. `git log -p`). */
+  commits?: CommitRef[];
 }
 
 export interface CommonOptions {
@@ -270,6 +285,22 @@ export type ParsedCliInput =
   | DaemonServeCommandInput
   | SessionCommandInput;
 
+/**
+ * Handle exposed by a streaming changeset producer. Lets the UI subscribe to file appends
+ * and commit boundaries without coupling types.ts to the streaming module's internals.
+ */
+export interface ChangesetStreamHandle {
+  subscribe(listener: ChangesetStreamListener): () => void;
+  abort(): void;
+}
+
+export interface ChangesetStreamListener {
+  onAppend: (files: DiffFile[]) => void;
+  onCommit?: (commit: CommitRef) => void;
+  onComplete: (totalFiles: number) => void;
+  onError: (err: Error) => void;
+}
+
 export interface AppBootstrap {
   input: CliInput;
   changeset: Changeset;
@@ -279,4 +310,6 @@ export interface AppBootstrap {
   initialWrapLines?: boolean;
   initialShowHunkHeaders?: boolean;
   initialShowAgentNotes?: boolean;
+  /** Present when the changeset will grow asynchronously (streaming pager input). */
+  stream?: ChangesetStreamHandle;
 }

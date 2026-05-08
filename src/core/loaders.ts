@@ -210,7 +210,7 @@ interface BuildDiffFileOptions {
 }
 
 /** Build the normalized per-file model used by the UI regardless of input mode. */
-function buildDiffFile(
+export function buildDiffFile(
   metadata: FileDiffMetadata,
   patch: string,
   index: number,
