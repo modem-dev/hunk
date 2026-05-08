@@ -7,6 +7,7 @@ import { getAnnotatedHunkIndices, type VisibleAgentNote } from "../../lib/agentA
 import { diffSectionId } from "../../lib/ids";
 import { fitText } from "../../lib/text";
 import type { AppTheme } from "../../themes";
+import { CommitHeaderBlock } from "./CommitHeaderBlock";
 import { DiffFileHeaderRow } from "./DiffFileHeaderRow";
 
 interface DiffSectionProps {
@@ -117,27 +118,6 @@ function DiffSectionComponent({
         scrollable={false}
         visibleBodyBounds={visibleBodyBounds}
       />
-    </box>
-  );
-}
-
-/**
- * Render the verbatim commit metadata block above a diff section that opens a new
- * commit. Mirrors the `git log -p` look in `less`: dimmed text, no border or chrome,
- * one trailing blank row to visually separate the message from the diff.
- */
-function CommitHeaderBlock({ text, theme }: { text: string; theme: AppTheme }) {
-  // Trim trailing newlines and split so we render exactly the captured lines, then
-  // add one blank row below to mirror `git log`'s spacing in `less`.
-  const lines = text.replace(/\n+$/, "").split("\n");
-  return (
-    <box style={{ width: "100%", flexDirection: "column", backgroundColor: theme.panel }}>
-      {lines.map((line, index) => (
-        <box key={index} style={{ width: "100%", height: 1, paddingLeft: 1, paddingRight: 1 }}>
-          <text fg={theme.muted}>{line}</text>
-        </box>
-      ))}
-      <box style={{ width: "100%", height: 1 }} />
     </box>
   );
 }

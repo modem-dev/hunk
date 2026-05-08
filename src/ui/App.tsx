@@ -558,6 +558,7 @@ export function App({
 >>>>>>> 36d55cf (feat(pager): toggle for detailed commit message in commit-review mode)
         toggleAgentNotes,
         toggleCommitDetails: isCommitReview ? toggleCommitDetails : undefined,
+        moveToCommit: isCommitReview && onMoveCommit ? onMoveCommit : undefined,
         toggleFocusArea,
         toggleHelp,
         toggleHunkHeaders,
@@ -588,9 +589,11 @@ export function App({
 =======
       showCommitDetails,
       isCommitReview,
+      onMoveCommit,
       sidebarVisible,
 >>>>>>> 36d55cf (feat(pager): toggle for detailed commit message in commit-review mode)
       toggleAgentNotes,
+      toggleCommitDetails,
       toggleFocusArea,
       toggleHelp,
       toggleHunkHeaders,
@@ -832,6 +835,7 @@ export function App({
           showLineNumbers={showLineNumbers}
           showHunkHeaders={showHunkHeaders}
           showCommitDetails={showCommitDetails}
+          commitHeader={isCommitReview ? bootstrap.currentCommit?.rawHeader : undefined}
           wrapLines={wrapLines}
           wrapToggleScrollTop={wrapToggleScrollTopRef.current}
           layoutToggleScrollTop={layoutToggleScrollTopRef.current}

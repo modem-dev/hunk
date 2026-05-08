@@ -24,6 +24,11 @@ export interface BuildAppMenusOptions {
   toggleAgentNotes: () => void;
   /** Optional commit-review-only action. Undefined hides the related menu item. */
   toggleCommitDetails?: () => void;
+  /**
+   * Optional commit-cursor handler for `git log -p` review. Undefined hides the
+   * Previous commit / Next commit items from the Navigate menu.
+   */
+  moveToCommit?: (delta: number) => void;
   toggleFocusArea: () => void;
   toggleHelp: () => void;
   toggleHunkHeaders: () => void;
@@ -54,6 +59,7 @@ export function buildAppMenus({
   renderSidebar,
   toggleAgentNotes,
   toggleCommitDetails,
+  moveToCommit,
   toggleFocusArea,
   toggleHelp,
   toggleHunkHeaders,
@@ -177,6 +183,23 @@ export function buildAppMenus({
         : []),
     ],
     navigate: [
+      ...(moveToCommit !== undefined
+        ? [
+            {
+              kind: "item" as const,
+              label: "Previous commit",
+              hint: "Ctrl-P",
+              action: () => moveToCommit(-1),
+            },
+            {
+              kind: "item" as const,
+              label: "Next commit",
+              hint: "Ctrl-N",
+              action: () => moveToCommit(1),
+            },
+            { kind: "separator" as const },
+          ]
+        : []),
       {
         kind: "item",
         label: "Previous hunk",
