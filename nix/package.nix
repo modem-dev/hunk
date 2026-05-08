@@ -31,6 +31,8 @@ in
       runHook postInstall
     '';
 
+    # See https://nix-community.github.io/bun2nix/building-packages/hook.html#arguments for options
     dontFixup = true;
     dontStrip = true;
+    dontRunLifecycleScripts = true;
   }
