@@ -315,6 +315,51 @@ export interface ChangesetStreamListener {
   onError: (err: Error) => void;
 }
 
+/**
+ * Parsed commit metadata extracted from a `git log -p`-style verbatim header block.
+ * The renderer uses these structured fields for the persistent header strip; the
+ * verbatim `rawHeader` is preserved so the metadata overlay can show the original.
+ */
+export interface CommitMetadata {
+  sha: string;
+  shortSha: string;
+  subject: string;
+  author?: string;
+  date?: string;
+  /** Commit message without the sha/Author/Date headers, with leading/trailing blanks trimmed. */
+  body: string;
+  /** Verbatim header block as the chunker captured it. */
+  rawHeader: string;
+}
+
+/**
+ * One commit's review unit in a multi-commit pager session. The renderer treats each
+ * `CommitChangeset` as a fresh review canvas — selection, scroll, and live comments
+ * reset when the cursor moves between commits.
+ */
+export interface CommitChangeset {
+  metadata: CommitMetadata;
+  changeset: Changeset;
+}
+
+/**
+ * Producer handle for a stream of `CommitChangeset` events. Used by the commit-by-commit
+ * review path in pager mode (`git log -p | hunk pager`). The consumer reports the
+ * cursor position via `setConsumedCommitIndex` so the producer can apply back-pressure
+ * on commits-ahead.
+ */
+export interface CommitReviewStreamHandle {
+  subscribe(listener: CommitReviewStreamListener): () => void;
+  setConsumedCommitIndex(index: number): void;
+  abort(): void;
+}
+
+export interface CommitReviewStreamListener {
+  onCommit: (commit: CommitChangeset, index: number) => void;
+  onComplete: (totalCommits: number) => void;
+  onError: (err: Error) => void;
+}
+
 export interface AppBootstrap {
   input: CliInput;
   changeset: Changeset;
@@ -324,6 +369,16 @@ export interface AppBootstrap {
   initialWrapLines?: boolean;
   initialShowHunkHeaders?: boolean;
   initialShowAgentNotes?: boolean;
-  /** Present when the changeset will grow asynchronously (streaming pager input). */
+  /** Present for flat streaming pager input (--no-review path). */
   stream?: ChangesetStreamHandle;
+  /** Present for commit-by-commit pager input (`git log -p | hunk pager` default). */
+  commitReviewStream?: CommitReviewStreamHandle;
+  /** Metadata for the commit currently displayed when the source is commit-by-commit. */
+  currentCommit?: CommitMetadata;
+  /**
+   * Position of the active commit in the streamed log. Present whenever the source is
+   * commit-by-commit so the UI can show a "5 of 23" indicator and the agent surface can
+   * detect commit transitions.
+   */
+  commitCursor?: { current: number; total: number; streaming: boolean };
 }

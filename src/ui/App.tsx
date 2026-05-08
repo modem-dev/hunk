@@ -18,6 +18,7 @@ import {
   maxFileCodeLineWidth,
   resolveCodeViewportWidth,
 } from "./diff/codeColumns";
+import type { MoveCommitResult } from "./AppHost";
 import { useAppKeyboardShortcuts } from "./hooks/useAppKeyboardShortcuts";
 import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
 import { useMenuController } from "./hooks/useMenuController";
@@ -77,6 +78,7 @@ export function App({
   noticeText,
   onQuit = () => process.exit(0),
   onReloadSession,
+  onMoveCommit,
 }: {
   bootstrap: AppBootstrap;
   hostClient?: HunkSessionBrokerClient;
@@ -86,6 +88,8 @@ export function App({
     nextInput: CliInput,
     options?: { resetApp?: boolean; sourcePath?: string },
   ) => Promise<ReloadedSessionResult>;
+  /** Provided when the source is commit-by-commit; called by Ctrl-N / Ctrl-P. */
+  onMoveCommit?: (delta: number) => MoveCommitResult;
 }) {
   const SIDEBAR_MIN_WIDTH = 22;
   const DIFF_MIN_WIDTH = 48;
@@ -122,6 +126,33 @@ export function App({
   const review = useReviewController({ files: bootstrap.changeset.files });
   const filteredFiles = review.visibleFiles;
   const selectedFile = review.selectedFile;
+
+  // Commit-move confirmation: when the user is reading a `git log -p` style session
+  // and presses Ctrl-N / Ctrl-P, we check whether moving would discard interactive
+  // state (live comments). If so, we hold the move in `pendingCommitMove` until they
+  // explicitly confirm with Y. The confirmation prompt is rendered below.
+  const [pendingCommitMove, setPendingCommitMove] = useState<number | null>(null);
+  const requestMoveCommit = useCallback(
+    (delta: number) => {
+      if (!onMoveCommit) return;
+      // Trigger conditions for the prompt: live comments are the headline data-loss
+      // concern. Filter and scroll position regenerate cheaply on the next commit, so
+      // moving past those is fine.
+      if (review.liveCommentCount > 0) {
+        setPendingCommitMove(delta);
+        return;
+      }
+      onMoveCommit(delta);
+    },
+    [onMoveCommit, review.liveCommentCount],
+  );
+  const confirmCommitMove = useCallback(() => {
+    if (pendingCommitMove === null || !onMoveCommit) return;
+    review.clearLiveComments();
+    onMoveCommit(pendingCommitMove);
+    setPendingCommitMove(null);
+  }, [pendingCommitMove, onMoveCommit, review]);
+  const cancelCommitMove = useCallback(() => setPendingCommitMove(null), []);
 
   // Drive back-pressure on the streaming pager: report the user's current commit and
   // file position so the producer can pause once it's buffered enough ahead. Files held
@@ -567,6 +598,10 @@ export function App({
     moveMenuItem,
     openMenu,
     pagerMode,
+    requestMoveCommit: onMoveCommit ? requestMoveCommit : undefined,
+    pendingCommitConfirmation: pendingCommitMove !== null,
+    onConfirmCommitMove: confirmCommitMove,
+    onCancelCommitMove: cancelCommitMove,
     requestQuit,
     scrollCodeHorizontally,
     scrollDiff,
@@ -664,6 +699,40 @@ export function App({
           }}
           onToggleMenu={toggleMenu}
         />
+      ) : null}
+
+      {bootstrap.commitCursor && bootstrap.currentCommit ? (
+        <box
+          style={{
+            width: "100%",
+            height: 1,
+            paddingLeft: 1,
+            paddingRight: 1,
+            backgroundColor: activeTheme.panel,
+            flexDirection: "row",
+          }}
+        >
+          <text fg={activeTheme.muted}>
+            {`${bootstrap.currentCommit.shortSha || "—"}  ${bootstrap.currentCommit.subject || "(no subject)"}  ·  ${bootstrap.commitCursor.current + 1} of ${bootstrap.commitCursor.total}${bootstrap.commitCursor.streaming ? "+" : ""}  ·  Ctrl-N next  ·  Ctrl-P prev`}
+          </text>
+        </box>
+      ) : null}
+
+      {pendingCommitMove !== null ? (
+        <box
+          style={{
+            width: "100%",
+            height: 1,
+            paddingLeft: 1,
+            paddingRight: 1,
+            backgroundColor: activeTheme.panel,
+            flexDirection: "row",
+          }}
+        >
+          <text fg={activeTheme.text}>
+            {`${review.liveCommentCount} comment${review.liveCommentCount === 1 ? "" : "s"} will be discarded if you move ${pendingCommitMove > 0 ? "to next" : "to previous"} commit. Press Y to confirm, Esc to cancel.`}
+          </text>
+        </box>
       ) : null}
 
       <box

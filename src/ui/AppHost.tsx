@@ -1,16 +1,24 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { resolveConfiguredCliInput } from "../core/config";
 import { loadAppBootstrap } from "../core/loaders";
 import { resolveRuntimeCliInput } from "../core/terminal";
-import type { AppBootstrap, CliInput, DiffFile } from "../core/types";
+import type { AppBootstrap, CliInput, CommitChangeset, DiffFile } from "../core/types";
 import type { UpdateNotice } from "../core/updateNotice";
 import {
   createInitialSessionSnapshot,
+  createSessionRegistration,
   updateSessionRegistration,
 } from "../hunk-session/sessionRegistration";
 import type { HunkSessionBrokerClient } from "../hunk-session/types";
 import { App } from "./App";
 import { useStartupUpdateNotice } from "./hooks/useStartupUpdateNotice";
+
+/** Result returned by `onMoveCommit` so the caller can detect blocked moves. */
+export type MoveCommitResult =
+  | { kind: "moved"; index: number }
+  | { kind: "at-edge" }
+  | { kind: "waiting-on-stream" }
+  | { kind: "no-buffer" };
 
 /** Keep one live Hunk app mounted while allowing daemon-driven session reloads. */
 export function AppHost({
@@ -26,14 +34,26 @@ export function AppHost({
 }) {
   const [activeBootstrap, setActiveBootstrap] = useState(bootstrap);
   const [appVersion, setAppVersion] = useState(0);
+  // Commit-review state. `commitBuffer` retains every parsed commit (100% backward
+  // retention by design); `cursorIndex` points to the active one. Both are unused when
+  // the source isn't a commit-by-commit stream.
+  const [commitBuffer, setCommitBuffer] = useState<CommitChangeset[]>([]);
+  const [cursorIndex, setCursorIndex] = useState(0);
+  const [commitStreamComplete, setCommitStreamComplete] = useState(false);
+  // Keep a ref to the latest buffer length so synchronous handlers (move-by-key) can
+  // read it without re-binding on every state update.
+  const commitBufferRef = useRef<CommitChangeset[]>([]);
+  commitBufferRef.current = commitBuffer;
+  const cursorIndexRef = useRef(0);
+  cursorIndexRef.current = cursorIndex;
+
   const startupNoticeText = useStartupUpdateNotice({
     enabled: !bootstrap.input.options.pager,
     resolver: startupNoticeResolver,
   });
 
-  // Subscribe to a streaming changeset producer when one is provided. Appends grow
-  // `changeset.files` in place; we explicitly do NOT bump `appVersion`, so the App stays
-  // mounted across the whole stream and selection/scroll/filter state persist.
+  // Subscribe to the flat-streaming changeset producer when one is provided. Used by
+  // the explicit --no-review path.
   useEffect(() => {
     const stream = bootstrap.stream;
     if (!stream) return;
@@ -53,7 +73,6 @@ export function AppHost({
           changeset: { ...prev.changeset, isStreaming: false },
         })),
       onError: (err) => {
-        // Surface to stderr; preserve whatever files we did manage to append.
         console.warn(`[hunk:pager-stream] ${err.message}`);
         setActiveBootstrap((prev) => ({
           ...prev,
@@ -61,23 +80,112 @@ export function AppHost({
         }));
       },
     });
-    // On unmount (process exit, or AppHost replacement during a daemon reload), cancel
-    // the stream so the upstream producer doesn't keep running detached.
     return () => {
       unsubscribe();
       stream.abort();
     };
-    // bootstrap.stream identity is stable for the lifetime of this AppHost instance —
-    // a daemon reload replaces the whole bootstrap and remounts.
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Subscribe to the commit-review producer for `git log -p` style input. Each emitted
+  // CommitChangeset gets appended to the buffer; the cursor stays put unless the user
+  // moves it.
+  useEffect(() => {
+    const stream = bootstrap.commitReviewStream;
+    if (!stream) return;
+    const unsubscribe = stream.subscribe({
+      onCommit: (commit) =>
+        setCommitBuffer((prev) => {
+          // De-dup against late replays — a commit at index N is the same object that
+          // was previously emitted, identified by its sha.
+          if (prev.some((c) => c.metadata.sha === commit.metadata.sha)) return prev;
+          return [...prev, commit];
+        }),
+      onComplete: () => setCommitStreamComplete(true),
+      onError: (err) => {
+        console.warn(`[hunk:pager-stream] ${err.message}`);
+        setCommitStreamComplete(true);
+      },
+    });
+    return () => {
+      unsubscribe();
+      stream.abort();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Whenever the cursor or the commit at the cursor changes, swap the active bootstrap
+  // to that commit's changeset. Bumps appVersion so the App remounts with a fresh
+  // selection / scroll baseline — moving between commits should feel like opening a new
+  // review canvas, not like scrolling within a single one.
+  const lastSwappedShaRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!bootstrap.commitReviewStream) return;
+    const commit = commitBuffer[cursorIndex];
+    if (!commit) return;
+    if (lastSwappedShaRef.current === commit.metadata.sha) {
+      // Same commit; just keep the cursor info on the bootstrap up to date so the
+      // streaming/total counts can reflect newly arrived commits behind the scenes.
+      setActiveBootstrap((prev) => ({
+        ...prev,
+        commitCursor: {
+          current: cursorIndex,
+          total: commitBuffer.length,
+          streaming: !commitStreamComplete,
+        },
+      }));
+      return;
+    }
+    lastSwappedShaRef.current = commit.metadata.sha;
+
+    const nextBootstrap: AppBootstrap = {
+      ...bootstrap,
+      changeset: commit.changeset,
+      currentCommit: commit.metadata,
+      commitCursor: {
+        current: cursorIndex,
+        total: commitBuffer.length,
+        streaming: !commitStreamComplete,
+      },
+    };
+
+    if (hostClient) {
+      // Refresh the daemon's view: same session id, new info.files. Skill clients
+      // detect the commit transition by polling commitCursor.currentCommitId or by
+      // seeing the file list change wholesale.
+      const nextRegistration = updateSessionRegistration(
+        hostClient.getRegistration(),
+        nextBootstrap,
+      );
+      const nextSnapshot = createInitialSessionSnapshot(nextBootstrap);
+      hostClient.replaceSession(nextRegistration, nextSnapshot);
+    }
+
+    setActiveBootstrap(nextBootstrap);
+    setAppVersion((prev) => prev + 1);
+
+    // Tell the producer where the cursor is so it can apply back-pressure.
+    bootstrap.commitReviewStream.setConsumedCommitIndex(cursorIndex);
+  }, [bootstrap, commitBuffer, cursorIndex, commitStreamComplete, hostClient]);
+
+  /**
+   * Move the commit cursor by `delta` positions. Returns a discriminated result so the
+   * caller can decide whether to show "no more commits" or "waiting for next commit"
+   * UX. Called by the App's keyboard handler after any confirmation prompt has cleared.
+   */
+  const onMoveCommit = useCallback((delta: number): MoveCommitResult => {
+    const buffer = commitBufferRef.current;
+    if (buffer.length === 0) return { kind: "no-buffer" };
+    const current = cursorIndexRef.current;
+    const target = current + delta;
+    if (target < 0) return { kind: "at-edge" };
+    if (target >= buffer.length) return { kind: "waiting-on-stream" };
+    setCursorIndex(target);
+    return { kind: "moved", index: target };
   }, []);
 
   const reloadSession = useCallback(
     async (nextInput: CliInput, options?: { resetApp?: boolean; sourcePath?: string }) => {
-      // Re-run the same startup normalization pipeline used on first launch so reloads honor
-      // runtime defaults and config layering instead of assuming `nextInput` is already final.
-      // `sourcePath` matters for daemon-driven reloads that ask Hunk to reopen content from a
-      // different working directory than the process originally started in.
       const runtimeInput = resolveRuntimeCliInput(nextInput);
       const configuredInput = resolveConfiguredCliInput(runtimeInput, {
         cwd: options?.sourcePath,
@@ -89,9 +197,6 @@ export function AppHost({
 
       let sessionId = "local-session";
       if (hostClient) {
-        // Keep the daemon-facing session registration in sync with whatever the UI is about to
-        // show. Replacing both registration and snapshot here means external session commands see
-        // the new source, title, and selection baseline immediately after reload.
         const nextRegistration = updateSessionRegistration(
           hostClient.getRegistration(),
           nextBootstrap,
@@ -102,8 +207,6 @@ export function AppHost({
 
       setActiveBootstrap(nextBootstrap);
       if (options?.resetApp !== false) {
-        // Bumping the key forces a full App remount. Callers that pass `resetApp: false` get a
-        // soft reload that preserves in-memory UI state like selection, filter text, and pane size.
         setAppVersion((current) => current + 1);
       }
 
@@ -128,6 +231,12 @@ export function AppHost({
       noticeText={startupNoticeText}
       onQuit={onQuit}
       onReloadSession={reloadSession}
+      onMoveCommit={bootstrap.commitReviewStream ? onMoveCommit : undefined}
     />
   );
 }
+
+// Suppress unused-import lint until App.tsx accepts onMoveCommit. The wiring below
+// fails the typecheck if the prop isn't expected on App, which catches accidental
+// reverts.
+void createSessionRegistration;

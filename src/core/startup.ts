@@ -2,6 +2,7 @@ import { resolveConfiguredCliInput } from "./config";
 import { HunkUserError } from "./errors";
 import { loadAppBootstrap } from "./loaders";
 import { createChangesetStream } from "./streaming/changesetStream";
+import { createCommitReviewStream } from "./streaming/commitReviewStream";
 import { chainLines, drainLines, looksLikeCommitLog, sniffPatch } from "./streaming/patchSniffer";
 import { stdinLines, type LineSource } from "./streaming/stdinLines";
 import {
@@ -10,7 +11,13 @@ import {
   usesPipedPatchInput,
   type ControllingTerminal,
 } from "./terminal";
-import type { AppBootstrap, CliInput, ParsedCliInput, SessionCommandInput } from "./types";
+import type {
+  AppBootstrap,
+  Changeset,
+  CliInput,
+  ParsedCliInput,
+  SessionCommandInput,
+} from "./types";
 import { canReloadInput } from "./watch";
 import { parseCli } from "./cli";
 
@@ -45,6 +52,17 @@ export interface StartupDeps {
   loadAppBootstrapImpl?: typeof loadAppBootstrap;
   usesPipedPatchInputImpl?: typeof usesPipedPatchInput;
   openControllingTerminalImpl?: typeof openControllingTerminal;
+}
+
+/** Build the empty changeset shown while a streaming pager input is still loading. */
+function emptyStreamingChangeset(): Changeset {
+  return {
+    id: `changeset:streaming:${Date.now()}`,
+    sourceLabel: "git pager",
+    title: "Awaiting first commit…",
+    files: [],
+    isStreaming: true,
+  };
 }
 
 /** Normalize startup work so help, pager, and app-bootstrap paths can be tested directly. */
@@ -94,45 +112,32 @@ export async function prepareStartupPlan(
       };
     }
 
-    // Resolve the review-vs-no-review decision. Explicit flags win; otherwise auto-detect
-    // log-style input (presence of `commit <sha>` headers in the sniff prefix). Streaming
-    // is only used in no-review mode — review mode keeps the legacy buffered path so the
-    // daemon registration and agent surface stay consistent with what they always were.
+    // Three pager paths:
+    //   1. log-style input + no explicit override → commit-review streaming (review mode,
+    //      daemon connected, navigates one commit at a time).
+    //   2. --no-review flag → flat-streaming, no daemon, no agent surface.
+    //   3. --review flag or non-log input → legacy buffered path with full review surface.
     const explicitNoReview = parsedCliInput.options.noReview === true;
     const explicitReview = parsedCliInput.options.noReview === false;
-    const autoDetected = !explicitReview && looksLikeCommitLog(sniff.prefixLines);
-    const noReview = explicitNoReview || autoDetected;
+    const isLogStyle = looksLikeCommitLog(sniff.prefixLines);
+    const useCommitReview = !explicitNoReview && !explicitReview && isLogStyle;
+    const useFlatStreaming = explicitNoReview;
+    const noReview = useFlatStreaming;
 
-    // Kill switch: HUNK_PAGER_STREAM=0 forces the legacy buffered path even in no-review
-    // mode. Useful as an escape hatch if the streaming path turns out wrong for someone.
-    const streamingEnabled = noReview && process.env.HUNK_PAGER_STREAM !== "0";
+    // Kill switch: HUNK_PAGER_STREAM=0 forces the legacy buffered path even when streaming
+    // would otherwise be selected. Useful escape hatch.
+    const streamingDisabled = process.env.HUNK_PAGER_STREAM === "0";
 
-    if (!streamingEnabled) {
-      const stdinText = await drainLines(sniff.prefixLines, sniff.rest);
-      parsedCliInput = {
-        kind: "patch",
-        file: "-",
-        text: stdinText,
-        options: {
-          ...parsedCliInput.options,
-          pager: true,
-          noReview: noReview ? true : undefined,
-        },
-      };
-    } else {
-      // Streaming + no-review path: build a CliInput for option resolution, then attach a
-      // live ChangesetStream to the bootstrap. The initial changeset starts empty; AppHost
-      // appends files as the chunker emits them. Daemon registration is skipped in
-      // main.tsx based on cliInput.options.noReview.
+    if ((useCommitReview || useFlatStreaming) && !streamingDisabled) {
       const synthInput: CliInput = {
         kind: "patch",
         file: "-",
-        // text is unused when bootstrap.stream is set — the stream is the source of truth.
+        // text is unused when a stream is attached — the stream is the source of truth.
         text: "",
         options: {
           ...parsedCliInput.options,
           pager: true,
-          noReview: true,
+          noReview: useFlatStreaming ? true : undefined,
         },
       };
 
@@ -147,23 +152,43 @@ export async function prepareStartupPlan(
       }
 
       const source = chainLines(sniff.prefixLines, sniff.rest);
-      const stream = createChangesetStream({
-        source,
-        sourceLabel: "git pager",
-        title: "Pager input",
-      });
 
-      const bootstrap: AppBootstrap = {
-        input: cliInput,
-        changeset: stream.initialChangeset,
-        initialMode: cliInput.options.mode ?? "auto",
-        initialTheme: cliInput.options.theme,
-        initialShowLineNumbers: cliInput.options.lineNumbers ?? true,
-        initialWrapLines: cliInput.options.wrapLines ?? false,
-        initialShowHunkHeaders: cliInput.options.hunkHeaders ?? true,
-        initialShowAgentNotes: cliInput.options.agentNotes ?? false,
-        stream,
-      };
+      let bootstrap: AppBootstrap;
+      if (useCommitReview) {
+        const commitReviewStream = createCommitReviewStream({
+          source,
+          sourceLabel: "git log",
+          title: "Awaiting first commit…",
+        });
+        bootstrap = {
+          input: cliInput,
+          changeset: emptyStreamingChangeset(),
+          initialMode: cliInput.options.mode ?? "auto",
+          initialTheme: cliInput.options.theme,
+          initialShowLineNumbers: cliInput.options.lineNumbers ?? true,
+          initialWrapLines: cliInput.options.wrapLines ?? false,
+          initialShowHunkHeaders: cliInput.options.hunkHeaders ?? true,
+          initialShowAgentNotes: cliInput.options.agentNotes ?? false,
+          commitReviewStream,
+        };
+      } else {
+        const stream = createChangesetStream({
+          source,
+          sourceLabel: "git pager",
+          title: "Pager input",
+        });
+        bootstrap = {
+          input: cliInput,
+          changeset: stream.initialChangeset,
+          initialMode: cliInput.options.mode ?? "auto",
+          initialTheme: cliInput.options.theme,
+          initialShowLineNumbers: cliInput.options.lineNumbers ?? true,
+          initialWrapLines: cliInput.options.wrapLines ?? false,
+          initialShowHunkHeaders: cliInput.options.hunkHeaders ?? true,
+          initialShowAgentNotes: cliInput.options.agentNotes ?? false,
+          stream,
+        };
+      }
 
       const controllingTerminal = usesPipedPatchInputImpl(cliInput)
         ? openControllingTerminalImpl()
@@ -171,6 +196,19 @@ export async function prepareStartupPlan(
 
       return { kind: "app", bootstrap, cliInput, controllingTerminal };
     }
+
+    // Legacy buffered path: review mode, daemon-registered, single-shot parsing.
+    const stdinText = await drainLines(sniff.prefixLines, sniff.rest);
+    parsedCliInput = {
+      kind: "patch",
+      file: "-",
+      text: stdinText,
+      options: {
+        ...parsedCliInput.options,
+        pager: true,
+        noReview: noReview ? true : undefined,
+      },
+    };
   }
 
   const runtimeCliInput = resolveRuntimeCliInputImpl(parsedCliInput);

@@ -126,9 +126,10 @@ describe("startup planning", () => {
     expect(seenInputs).toHaveLength(1);
   });
 
-  test("auto-routes log-style pager input to streaming no-review mode", async () => {
-    // Presence of a `commit <sha>` header in the prefix flips auto-detect: streaming
-    // pipeline, no daemon registration, inline commit metadata.
+  test("auto-routes log-style pager input to commit-by-commit review mode", async () => {
+    // Presence of a `commit <sha>` header in the prefix flips auto-detect to commit-
+    // review: streaming pipeline, daemon-registered, one commit at a time. The agent
+    // surface stays alive on the active commit.
     const stdin = [
       "commit abc1234567",
       "Author: Alice <alice@example.com>",
@@ -148,7 +149,7 @@ describe("startup planning", () => {
       readStdinLines: () => lineSourceFromString(stdin),
       resolveRuntimeCliInputImpl: (input) => input,
       resolveConfiguredCliInputImpl: (input) => ({ input }) as never,
-      // Streaming + no-review skips loadAppBootstrap entirely.
+      // Streaming pager bypasses loadAppBootstrap.
       loadAppBootstrapImpl: async () => {
         throw new Error("loadAppBootstrap should not be called for log-style pager input");
       },
@@ -158,13 +159,15 @@ describe("startup planning", () => {
     expect(plan.kind).toBe("app");
     if (plan.kind !== "app") throw new Error("Expected app startup plan.");
 
-    expect(plan.cliInput.options.noReview).toBe(true);
+    // Commit-review default: NOT noReview; review surface stays alive.
+    expect(plan.cliInput.options.noReview).toBeUndefined();
     expect(plan.cliInput.options.pager).toBe(true);
-    expect(plan.bootstrap.stream).toBeDefined();
+    expect(plan.bootstrap.commitReviewStream).toBeDefined();
+    expect(plan.bootstrap.stream).toBeUndefined();
     expect(plan.bootstrap.changeset.files).toEqual([]);
     expect(plan.bootstrap.changeset.isStreaming).toBe(true);
 
-    plan.bootstrap.stream?.abort();
+    plan.bootstrap.commitReviewStream?.abort();
   });
 
   test("--no-review flag forces streaming even on non-log-style input", async () => {
