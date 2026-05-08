@@ -61,7 +61,12 @@ export function AppHost({
         }));
       },
     });
-    return unsubscribe;
+    // On unmount (process exit, or AppHost replacement during a daemon reload), cancel
+    // the stream so the upstream producer doesn't keep running detached.
+    return () => {
+      unsubscribe();
+      stream.abort();
+    };
     // bootstrap.stream identity is stable for the lifetime of this AppHost instance —
     // a daemon reload replaces the whole bootstrap and remounts.
     // eslint-disable-next-line react-hooks/exhaustive-deps
