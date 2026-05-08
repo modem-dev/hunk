@@ -10,7 +10,7 @@ export function parseSource(code: string, fileName: string) {
  * This can be expanded to include specific AST node types.
  */
 export interface StructuralChange {
-  type: "addition" | "deletion" | "modification" | "move";
+  type: "addition" | "deletion" | "modification";
   nodeName?: string;
   startLine: number;
   endLine: number;
@@ -22,6 +22,10 @@ export function compareStructural(
   after: string,
   fileName: string,
 ): StructuralChange[] {
+  if (!/\.(tsx?|jsx?)$/i.test(fileName)) {
+    return [];
+  }
+
   const beforeSource = parseSource(before, fileName);
   const afterSource = parseSource(after, fileName);
 
