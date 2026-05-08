@@ -94,7 +94,7 @@ describe("startup planning", () => {
     expect(loaded).toBe(false);
   });
 
-  test("normalizes diff-like pager stdin into patch app startup", async () => {
+  test("normalizes diff-like pager stdin into a streaming patch app startup", async () => {
     const seenInputs: CliInput[] = [];
 
     const plan = await prepareStartupPlan(["bun", "hunk", "pager"], {
@@ -109,9 +109,10 @@ describe("startup planning", () => {
         seenInputs.push(input);
         return { input } as never;
       },
-      loadAppBootstrapImpl: async (input) => {
-        seenInputs.push(input);
-        return createBootstrap(input);
+      // The streaming pager path constructs the bootstrap inline rather than calling
+      // loadAppBootstrap, so this should NOT be invoked.
+      loadAppBootstrapImpl: async () => {
+        throw new Error("loadAppBootstrap should not be called for streaming pager input");
       },
       usesPipedPatchInputImpl: () => false,
     });
@@ -124,13 +125,20 @@ describe("startup planning", () => {
     expect(plan.cliInput).toMatchObject({
       kind: "patch",
       file: "-",
-      text: "diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n",
+      // Stream is the source of truth; the legacy `text` field is left empty.
+      text: "",
       options: {
         theme: "paper",
         pager: true,
       },
     });
-    expect(seenInputs).toHaveLength(3);
+    expect(plan.bootstrap.stream).toBeDefined();
+    expect(plan.bootstrap.changeset.files).toEqual([]);
+    expect(plan.bootstrap.changeset.isStreaming).toBe(true);
+    expect(seenInputs).toHaveLength(2);
+
+    // Drain the stream so the test doesn't leak a running async task.
+    plan.bootstrap.stream?.abort();
   });
 
   test("rejects watch mode for stdin-backed patch inputs", async () => {
