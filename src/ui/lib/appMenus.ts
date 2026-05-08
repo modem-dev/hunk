@@ -5,6 +5,7 @@ import { THEMES } from "../themes";
 export interface BuildAppMenusOptions {
   activeThemeId: string;
   canRefreshCurrentInput: boolean;
+  clearMarkedFiles: () => void;
   focusFilter: () => void;
   layoutMode: LayoutMode;
   moveToAnnotatedFile: (delta: number) => void;
@@ -25,6 +26,7 @@ export interface BuildAppMenusOptions {
   toggleHunkHeaders: () => void;
   toggleLineNumbers: () => void;
   toggleLineWrap: () => void;
+  toggleMarkedFile: () => void;
   toggleSidebar: () => void;
   wrapLines: boolean;
 }
@@ -33,6 +35,7 @@ export interface BuildAppMenusOptions {
 export function buildAppMenus({
   activeThemeId,
   canRefreshCurrentInput,
+  clearMarkedFiles,
   focusFilter,
   layoutMode,
   moveToAnnotatedFile,
@@ -53,6 +56,7 @@ export function buildAppMenus({
   toggleHunkHeaders,
   toggleLineNumbers,
   toggleLineWrap,
+  toggleMarkedFile,
   toggleSidebar,
   wrapLines,
 }: BuildAppMenusOptions): Record<MenuId, MenuEntry[]> {
@@ -75,6 +79,19 @@ export function buildAppMenus({
       label: "Focus filter",
       hint: "/",
       action: focusFilter,
+    },
+    { kind: "separator" },
+    {
+      kind: "item",
+      label: "Mark file",
+      hint: "m",
+      action: toggleMarkedFile,
+    },
+    {
+      kind: "item",
+      label: "Unmark all",
+      hint: "M",
+      action: clearMarkedFiles,
     },
   ];
 
@@ -154,7 +171,7 @@ export function buildAppMenus({
       {
         kind: "item",
         label: "Hunk metadata",
-        hint: "m",
+        hint: "H",
         checked: showHunkHeaders,
         action: toggleHunkHeaders,
       },

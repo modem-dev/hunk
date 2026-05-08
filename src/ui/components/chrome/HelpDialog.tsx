@@ -44,13 +44,14 @@ export function HelpDialog({
         ["1 / 2 / 0", "split / stack / auto"],
         ["s / t", "sidebar / theme"],
         ["a", "toggle AI notes"],
-        ["l / w / m", "lines / wrap / metadata"],
+        ["l / w / H", "lines / wrap / metadata"],
       ],
     },
     {
       title: "Review",
       items: [
         ["/", "focus file filter"],
+        ["m / M", "mark file / unmark all"],
         ["Tab", "toggle files/filter focus"],
         ["F10", "open menus"],
         [canRefresh ? "r / q" : "q", canRefresh ? "reload / quit" : "quit"],

@@ -319,6 +319,107 @@ describe("useReviewController", () => {
     }
   });
 
+  test("toggleMarkedFile hides the file and clearMarkedFiles restores everything", async () => {
+    const controllerRef: { current: ReviewController | null } = { current: null };
+    const setup = await testRender(
+      <ReviewControllerHarness
+        initialFiles={[
+          createDiffFile(
+            "alpha",
+            "alpha.ts",
+            "export const alpha = 1;\n",
+            "export const alpha = 2;\n",
+          ),
+          createDiffFile("beta", "beta.ts", "export const beta = 1;\n", "export const beta = 2;\n"),
+        ]}
+        onController={(nextController) => {
+          controllerRef.current = nextController;
+        }}
+      />,
+      { width: 80, height: 4 },
+    );
+
+    try {
+      await flush(setup);
+      expect(expectValue(controllerRef.current).visibleFiles.map((file) => file.path)).toEqual([
+        "alpha.ts",
+        "beta.ts",
+      ]);
+      expect(expectValue(controllerRef.current).hiddenByMarkCount).toBe(0);
+
+      await act(async () => {
+        expectValue(controllerRef.current).toggleMarkedFile("alpha");
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).visibleFiles.map((file) => file.path)).toEqual([
+        "beta.ts",
+      ]);
+      expect(expectValue(controllerRef.current).hiddenByMarkCount).toBe(1);
+      expect(expectValue(controllerRef.current).markedFileIds.has("alpha")).toBe(true);
+      // The sidebar still shows the marked file so the user can unmark it.
+      expect(
+        expectValue(controllerRef.current)
+          .sidebarEntries.filter((entry) => entry.kind === "file")
+          .map((entry) => entry.id),
+      ).toEqual(["alpha", "beta"]);
+
+      await act(async () => {
+        expectValue(controllerRef.current).clearMarkedFiles();
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).visibleFiles.map((file) => file.path)).toEqual([
+        "alpha.ts",
+        "beta.ts",
+      ]);
+      expect(expectValue(controllerRef.current).hiddenByMarkCount).toBe(0);
+      expect(expectValue(controllerRef.current).markedFileIds.size).toBe(0);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("marking the selected file moves selection to the next visible file", async () => {
+    const controllerRef: { current: ReviewController | null } = { current: null };
+    const setup = await testRender(
+      <ReviewControllerHarness
+        initialFiles={[
+          createDiffFile(
+            "alpha",
+            "alpha.ts",
+            "export const alpha = 1;\n",
+            "export const alpha = 2;\n",
+          ),
+          createDiffFile("beta", "beta.ts", "export const beta = 1;\n", "export const beta = 2;\n"),
+        ]}
+        onController={(nextController) => {
+          controllerRef.current = nextController;
+        }}
+      />,
+      { width: 80, height: 4 },
+    );
+
+    try {
+      await flush(setup);
+      expect(expectValue(controllerRef.current).selectedFile?.path).toBe("alpha.ts");
+
+      await act(async () => {
+        expectValue(controllerRef.current).toggleMarkedFile("alpha");
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).selectedFile?.path).toBe("beta.ts");
+      expect(expectValue(controllerRef.current).selectedFileId).toBe("beta");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("batch live comments do not mutate state when any target is invalid", async () => {
     const controllerRef: { current: ReviewController | null } = { current: null };
     const setup = await testRender(

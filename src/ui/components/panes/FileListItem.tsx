@@ -1,3 +1,4 @@
+import { TextAttributes } from "@opentui/core";
 import { fileRowId } from "../../lib/ids";
 import { sidebarEntryStats, type FileGroupEntry, type FileListEntry } from "../../lib/files";
 import { fitText, padText } from "../../lib/text";
@@ -70,6 +71,11 @@ export function FileListItem({
   const iconWidth = icon ? 2 : 0; // icon + space
   const statsSectionWidth = statsWidth > 0 ? statsWidth + 1 : 0;
   const nameWidth = Math.max(1, textWidth - 1 - iconWidth - statsSectionWidth);
+  // Marked rows render dimmed and crossed out so the user can scan past them but still
+  // pick one to unmark.
+  const nameAttributes = entry.marked ? TextAttributes.STRIKETHROUGH : TextAttributes.NONE;
+  const nameColor = entry.marked ? theme.muted : theme.text;
+  const iconColor = entry.marked ? theme.muted : color;
 
   return (
     <box
@@ -98,8 +104,14 @@ export function FileListItem({
           backgroundColor: rowBackground,
         }}
       >
-        {icon && <text fg={color}>{icon} </text>}
-        <text fg={theme.text}>{padText(fitText(entry.name, nameWidth), nameWidth)}</text>
+        {icon && (
+          <text fg={iconColor} attributes={nameAttributes}>
+            {icon}{" "}
+          </text>
+        )}
+        <text fg={nameColor} attributes={nameAttributes}>
+          {padText(fitText(entry.name, nameWidth), nameWidth)}
+        </text>
         {statsSectionWidth > 0 && (
           <box
             style={{
