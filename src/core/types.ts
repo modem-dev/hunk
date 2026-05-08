@@ -1,5 +1,12 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
 
+export interface StructuralChange {
+  type: "addition" | "deletion" | "modification" | "move";
+  nodeName?: string;
+  startLine: number;
+  endLine: number;
+}
+
 export type LayoutMode = "auto" | "split" | "stack";
 
 export interface AgentAnnotation {
@@ -41,6 +48,7 @@ export interface DiffFile {
   agent: AgentFileContext | null;
   isUntracked?: boolean;
   isBinary?: boolean;
+  structuralChanges?: StructuralChange[];
 }
 
 export interface Changeset {
@@ -63,6 +71,7 @@ export interface CommonOptions {
   wrapLines?: boolean;
   hunkHeaders?: boolean;
   agentNotes?: boolean;
+  structural?: boolean;
 }
 
 export interface PersistedViewPreferences {

@@ -46,6 +46,7 @@ export interface UseAppKeyboardShortcutsOptions {
   toggleLineNumbers: () => void;
   toggleLineWrap: () => void;
   toggleSidebar: () => void;
+  toggleStructural: () => void;
   triggerRefreshCurrentInput: () => void;
 }
 
@@ -77,6 +78,7 @@ export function useAppKeyboardShortcuts({
   toggleLineNumbers,
   toggleLineWrap,
   toggleSidebar,
+  toggleStructural,
   triggerRefreshCurrentInput,
 }: UseAppKeyboardShortcutsOptions) {
   const activeMenuIdRef = useRef(activeMenuId);
@@ -338,6 +340,11 @@ export function useAppKeyboardShortcuts({
 
     if (key.name === "t") {
       runAndCloseMenu(cycleTheme);
+      return;
+    }
+
+    if (key.name === "x" || key.sequence === "x") {
+      runAndCloseMenu(toggleStructural);
       return;
     }
 

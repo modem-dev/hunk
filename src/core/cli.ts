@@ -58,6 +58,7 @@ function buildCommonOptions(
     agentContext?: string;
     pager?: boolean;
     watch?: boolean;
+    structural?: boolean;
   },
   argv: string[],
 ): CommonOptions {
@@ -72,6 +73,7 @@ function buildCommonOptions(
     wrapLines: resolveBooleanFlag(argv, "--wrap", "--no-wrap"),
     hunkHeaders: resolveBooleanFlag(argv, "--hunk-headers", "--no-hunk-headers"),
     agentNotes: resolveBooleanFlag(argv, "--agent-notes", "--no-agent-notes"),
+    structural: options.structural || resolveBooleanFlag(argv, "--structural", "--no-structural"),
   };
 }
 
@@ -89,7 +91,9 @@ function applyCommonOptions(command: Command) {
     .option("--hunk-headers", "show hunk metadata rows")
     .option("--no-hunk-headers", "hide hunk metadata rows")
     .option("--agent-notes", "show agent notes by default")
-    .option("--no-agent-notes", "hide agent notes by default");
+    .option("--no-agent-notes", "hide agent notes by default")
+    .option("--structural", "enable AST-aware structural diffing")
+    .option("--no-structural", "disable AST-aware structural diffing");
 }
 
 /** Attach auto-refresh support to review commands that can reopen their source input. */
@@ -151,6 +155,7 @@ function renderCliHelp() {
     "  --wrap / --no-wrap                      wrap or truncate long diff lines",
     "  --hunk-headers / --no-hunk-headers      show or hide hunk metadata rows",
     "  --agent-notes / --no-agent-notes        show or hide agent notes by default",
+    "  --structural / --no-structural          enable or disable AST-aware structural diffing",
     "  --theme <theme>                         named theme override",
     "",
     "Git diff options:",

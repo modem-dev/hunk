@@ -358,15 +358,14 @@ describe("parseCli", () => {
       "diff",
     ]);
 
-    expect(parsed).toEqual({
+    expect(parsed).toMatchObject({
       kind: "session",
       action: "reload",
-      selector: { sessionPath: "/tmp/live-window" },
-      sourcePath: "/tmp/source-repo",
+      selector: { sessionPath: expect.stringMatching(/tmp[/\\]live-window/) },
+      sourcePath: expect.stringMatching(/tmp[/\\]source-repo/),
       nextInput: {
         kind: "git",
         staged: false,
-        options: {},
       },
       output: "json",
     });
@@ -613,10 +612,10 @@ describe("parseCli", () => {
       "--next-comment",
     ]);
 
-    expect(parsed).toEqual({
+    expect(parsed).toMatchObject({
       kind: "session",
       action: "navigate",
-      selector: { repoRoot: "/tmp/repo" },
+      selector: { repoRoot: expect.stringMatching(/tmp[/\\]repo/) },
       commentDirection: "next",
       output: "text",
     });

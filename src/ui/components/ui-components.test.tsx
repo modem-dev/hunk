@@ -224,9 +224,12 @@ function createDiffPaneProps(
     showHunkHeaders: true,
     wrapLines: false,
     wrapToggleScrollTop: null,
+    showStructural: false,
+    scrollViewport: { top: 0, height: 24 },
     theme,
     width: 76,
     onOpenAgentNotesAtHunk: () => {},
+    onScrollViewportChange: () => {},
     onSelectFile: () => {},
     ...overrides,
   };
@@ -482,6 +485,9 @@ describe("UI components", () => {
         showHunkHeaders={true}
         wrapLines={false}
         wrapToggleScrollTop={null}
+        showStructural={false}
+        scrollViewport={{ top: 0, height: 24 }}
+        onScrollViewportChange={() => {}}
         theme={theme}
         width={76}
         onOpenAgentNotesAtHunk={() => {}}
@@ -1232,6 +1238,9 @@ describe("UI components", () => {
         showHunkHeaders={true}
         wrapLines={false}
         wrapToggleScrollTop={null}
+        showStructural={false}
+        scrollViewport={{ top: 0, height: 24 }}
+        onScrollViewportChange={() => {}}
         theme={theme}
         width={92}
         onOpenAgentNotesAtHunk={() => {}}
@@ -1274,6 +1283,9 @@ describe("UI components", () => {
         showHunkHeaders={true}
         wrapLines={false}
         wrapToggleScrollTop={null}
+        showStructural={false}
+        scrollViewport={{ top: 0, height: 24 }}
+        onScrollViewportChange={() => {}}
         theme={theme}
         width={92}
         onOpenAgentNotesAtHunk={() => {}}
@@ -1332,6 +1344,9 @@ describe("UI components", () => {
         showHunkHeaders={true}
         wrapLines={false}
         wrapToggleScrollTop={null}
+        showStructural={false}
+        scrollViewport={{ top: 0, height: 24 }}
+        onScrollViewportChange={() => {}}
         theme={theme}
         width={92}
         onOpenAgentNotesAtHunk={() => {}}
@@ -1597,6 +1612,9 @@ describe("UI components", () => {
         showHunkHeaders={true}
         wrapLines={false}
         wrapToggleScrollTop={null}
+        showStructural={false}
+        scrollViewport={{ top: 0, height: 24 }}
+        onScrollViewportChange={() => {}}
         theme={theme}
         width={76}
         onOpenAgentNotesAtHunk={() => {}}
@@ -1628,6 +1646,9 @@ describe("UI components", () => {
         showHunkHeaders={true}
         wrapLines={false}
         wrapToggleScrollTop={null}
+        showStructural={false}
+        scrollViewport={{ top: 0, height: 24 }}
+        onScrollViewportChange={() => {}}
         theme={theme}
         width={76}
         onOpenAgentNotesAtHunk={() => {}}
@@ -1662,6 +1683,9 @@ describe("UI components", () => {
         showHunkHeaders={true}
         wrapLines={true}
         wrapToggleScrollTop={null}
+        showStructural={false}
+        scrollViewport={{ top: 0, height: 24 }}
+        onScrollViewportChange={() => {}}
         theme={theme}
         width={52}
         onOpenAgentNotesAtHunk={() => {}}
@@ -1696,6 +1720,9 @@ describe("UI components", () => {
         showHunkHeaders={false}
         wrapLines={false}
         wrapToggleScrollTop={null}
+        showStructural={false}
+        scrollViewport={{ top: 0, height: 24 }}
+        onScrollViewportChange={() => {}}
         theme={theme}
         width={76}
         onOpenAgentNotesAtHunk={() => {}}
