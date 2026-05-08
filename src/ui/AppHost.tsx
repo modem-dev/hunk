@@ -19,9 +19,6 @@ import type { HunkSessionBrokerClient, LiveComment } from "../hunk-session/types
 import { App } from "./App";
 import { useStartupUpdateNotice } from "./hooks/useStartupUpdateNotice";
 
-/** Sentinel review key used when no commit cursor is present. */
-const DEFAULT_REVIEW_KEY = "";
-
 /** Result returned by `onMoveCommit` so the caller can detect blocked moves. */
 export type MoveCommitResult =
   | { kind: "moved"; index: number }
@@ -53,9 +50,9 @@ export function AppHost({
   // survive the App remount that fires on every commit-cursor move. App's view-state
   // reset on commit nav is intentional for selection / scroll / filter (they don't
   // translate across commits), but the user's metadata-visibility preference and the
-  // notes they've left should follow them. Live comments are bucketed by commit sha so
-  // each commit keeps its own annotation set; switching back to a previously visited
-  // commit restores its notes.
+  // notes they've left should follow them. Live comments are bucketed by the active
+  // changeset's id so each commit (or each non-commit-review canvas) keeps its own
+  // annotation set; switching back to a previously visited commit restores its notes.
   const [commitDetailsMode, setCommitDetailsMode] = useState<CommitDetailsMode>(
     bootstrap.initialCommitDetailsMode ?? "full",
   );
@@ -64,31 +61,35 @@ export function AppHost({
       current === "full" ? "compact" : current === "compact" ? "hidden" : "full",
     );
   }, []);
-  const [liveCommentsBySha, setLiveCommentsBySha] = useState<
+  const [liveCommentsByReviewKey, setLiveCommentsByReviewKey] = useState<
     Record<string, Record<string, LiveComment[]>>
   >({});
-  const currentReviewKey = activeBootstrap.currentCommit?.sha ?? DEFAULT_REVIEW_KEY;
+  // Bucket key is the active changeset's id rather than the commit sha. The producer
+  // already builds it as `commit:<sha>` for normal commits and `commit:anonymous:N`
+  // for commits with no parsed sha, so anonymous commits each get their own bucket
+  // instead of colliding on an empty-string key.
+  const currentReviewKey = activeBootstrap.changeset.id;
   const liveCommentsByFileId = useMemo<Record<string, LiveComment[]>>(
-    () => liveCommentsBySha[currentReviewKey] ?? {},
-    [liveCommentsBySha, currentReviewKey],
+    () => liveCommentsByReviewKey[currentReviewKey] ?? {},
+    [liveCommentsByReviewKey, currentReviewKey],
   );
   // Updater scoped to the current review's slice. Forwarding an updater here keeps the
   // controlled-hook pattern in useReviewController (functional and value setters both
-  // work) while AppHost decides which sha bucket the writes land in.
+  // work) while AppHost decides which review-key bucket the writes land in.
   const setLiveCommentsByFileId = useCallback<
     Dispatch<SetStateAction<Record<string, LiveComment[]>>>
   >(
     (action) => {
-      setLiveCommentsBySha((bySha) => {
-        const currentSlice = bySha[currentReviewKey] ?? {};
+      setLiveCommentsByReviewKey((byKey) => {
+        const currentSlice = byKey[currentReviewKey] ?? {};
         const nextSlice =
           typeof action === "function"
             ? (action as (prev: Record<string, LiveComment[]>) => Record<string, LiveComment[]>)(
                 currentSlice,
               )
             : action;
-        if (nextSlice === currentSlice) return bySha;
-        return { ...bySha, [currentReviewKey]: nextSlice };
+        if (nextSlice === currentSlice) return byKey;
+        return { ...byKey, [currentReviewKey]: nextSlice };
       });
     },
     [currentReviewKey],
@@ -266,9 +267,9 @@ export function AppHost({
 
       setActiveBootstrap(nextBootstrap);
       if (options?.resetApp !== false) {
-        // A full reload is a fresh review canvas — drop any cached per-sha comments
+        // A full reload is a fresh review canvas — drop any cached per-review comments
         // since the file IDs and content no longer correspond to the new bootstrap.
-        setLiveCommentsBySha({});
+        setLiveCommentsByReviewKey({});
         setAppVersion((current) => current + 1);
       }
 
