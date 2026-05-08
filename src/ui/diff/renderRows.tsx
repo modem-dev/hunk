@@ -864,9 +864,13 @@ function renderRow(
     const guideOnNewSide = noteGuideSide === "new";
     const contentWidth = Math.max(0, width - (guideOnNewSide ? 1 : 0));
     const prefix = {
-      text: guideOnOldSide ? "│" : marker(),
-      fg: guideOnOldSide ? theme.noteBorder : stackRailColor(row.cell.kind, theme, selected),
-      bg: theme.panel,
+      text: structuralChange ? "S" : guideOnOldSide ? "│" : marker(),
+      fg: structuralChange
+        ? theme.noteTitleText
+        : guideOnOldSide
+          ? theme.noteBorder
+          : stackRailColor(row.cell.kind, theme, selected),
+      bg: structuralChange ? theme.noteTitleBackground : theme.panel,
     };
 
     if (!wrapLines) {
