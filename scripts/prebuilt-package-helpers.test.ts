@@ -26,6 +26,9 @@ describe("prebuilt package helpers", () => {
 
   test("binaryFilenameForSpec keeps unix package binaries extensionless", () => {
     for (const spec of PLATFORM_PACKAGE_MATRIX) {
+      if (spec.os === "windows") {
+        continue;
+      }
       expect(binaryFilenameForSpec(spec)).toBe("hunk");
     }
   });
@@ -106,6 +109,7 @@ describe("prebuilt package helpers", () => {
       "hunkdiff-darwin-x64",
       "hunkdiff-linux-arm64",
       "hunkdiff-linux-x64",
+      "hunkdiff-windows-x64",
     ]);
   });
 });
