@@ -199,7 +199,11 @@ export async function prepareStartupPlan(
       return { kind: "app", bootstrap, cliInput, controllingTerminal };
     }
 
-    // Legacy buffered path: review mode, daemon-registered, single-shot parsing.
+    // Legacy buffered path: single-shot parsing into the standard review surface.
+    // Reached in two cases:
+    //   - non-log input without explicit overrides (review mode, daemon-registered)
+    //   - HUNK_PAGER_STREAM=0 forces this path even when --no-review is set, in which
+    //     case `noReview` is still true and is forwarded so the daemon stays out of it
     const stdinText = await drainLines(sniff.prefixLines, sniff.rest);
     parsedCliInput = {
       kind: "patch",

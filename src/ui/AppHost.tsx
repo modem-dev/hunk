@@ -13,7 +13,6 @@ import type {
 import type { UpdateNotice } from "../core/updateNotice";
 import {
   createInitialSessionSnapshot,
-  createSessionRegistration,
   updateSessionRegistration,
 } from "../hunk-session/sessionRegistration";
 import type { HunkSessionBrokerClient, LiveComment } from "../hunk-session/types";
@@ -302,8 +301,3 @@ export function AppHost({
     />
   );
 }
-
-// Suppress unused-import lint until App.tsx accepts onMoveCommit. The wiring below
-// fails the typecheck if the prop isn't expected on App, which catches accidental
-// reverts.
-void createSessionRegistration;
