@@ -19,6 +19,9 @@ function createMockStream() {
         listeners.add(listener);
         return () => listeners.delete(listener);
       },
+      setConsumedPosition() {
+        // no-op for tests
+      },
       abort() {
         // no-op for tests
       },

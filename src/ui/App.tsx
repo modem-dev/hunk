@@ -122,6 +122,21 @@ export function App({
   const review = useReviewController({ files: bootstrap.changeset.files });
   const filteredFiles = review.visibleFiles;
   const selectedFile = review.selectedFile;
+
+  // Drive back-pressure on the streaming pager: report the user's current commit and
+  // file position so the producer can pause once it's buffered enough ahead. Files held
+  // behind the user remain in memory for scroll-back; only the lookahead window is
+  // bounded by this signal. No-op when no stream is attached.
+  useEffect(() => {
+    const stream = bootstrap.stream;
+    if (!stream) return;
+    if (!selectedFile) return;
+    const fileIndex = bootstrap.changeset.files.findIndex((file) => file.id === selectedFile.id);
+    if (fileIndex < 0) return;
+    const commitIndex = selectedFile.commitIndex ?? 0;
+    stream.setConsumedPosition(commitIndex, fileIndex);
+  }, [bootstrap.stream, bootstrap.changeset.files, selectedFile]);
+
   const selectedHunkIndex = review.selectedHunkIndex;
   const moveToAnnotatedFile = review.moveToAnnotatedFile;
   const moveToAnnotatedHunk = review.moveToAnnotatedHunk;

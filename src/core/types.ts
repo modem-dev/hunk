@@ -51,6 +51,12 @@ export interface DiffFile {
    * `git log -p`. Otherwise undefined.
    */
   commitHeaderText?: string;
+  /**
+   * Zero-based index of the commit this file belongs to within the streamed input.
+   * Set by the streaming pager pipeline once any commit boundary has been seen so the
+   * App can map the user's selection to a commit position in O(1) for back-pressure.
+   */
+  commitIndex?: number;
 }
 
 export interface Changeset {
@@ -285,6 +291,14 @@ export type ParsedCliInput =
  */
 export interface ChangesetStreamHandle {
   subscribe(listener: ChangesetStreamListener): () => void;
+  /**
+   * Report the user's current position so the producer can apply back-pressure: pause
+   * parsing when the lookahead buffer ahead of the user grows past the high watermark
+   * and resume when it drops below the low watermark. Both indexes are zero-based and
+   * refer to positions in the appended file list. Calling with the same values
+   * repeatedly is cheap and idempotent.
+   */
+  setConsumedPosition(commitIndex: number, fileIndex: number): void;
   abort(): void;
 }
 
