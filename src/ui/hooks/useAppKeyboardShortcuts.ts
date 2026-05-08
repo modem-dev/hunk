@@ -184,18 +184,6 @@ export function useAppKeyboardShortcuts({
       return;
     }
 
-    // Commit cursor: Ctrl-N / Ctrl-P navigate forward and backward through a streamed
-    // log. Only active when a `requestMoveCommit` handler was wired in — for single-
-    // changeset pager input these keys are a no-op.
-    if (key.ctrl && (key.name === "n" || key.sequence === "\x0e")) {
-      if (requestMoveCommit) requestMoveCommit(1);
-      return;
-    }
-    if (key.ctrl && (key.name === "p" || key.sequence === "\x10")) {
-      if (requestMoveCommit) requestMoveCommit(-1);
-      return;
-    }
-
     if (key.name === "w" || key.sequence === "w") {
       toggleLineWrap();
       return;
@@ -436,6 +424,19 @@ export function useAppKeyboardShortcuts({
         // Treat Enter as "no" so a fat-finger can't bypass the prompt by reflex.
         onCancelCommitMove?.();
       }
+      return;
+    }
+
+    // Commit cursor navigation works in every mode that has a cursor: pager-bare
+    // streaming, pager commit-review, and (in principle) any future review mode that
+    // exposes commit cursors. Bound at the top so it's not buried inside either of
+    // the per-mode handlers below.
+    if (requestMoveCommit && key.ctrl && (key.name === "n" || key.sequence === "\x0e")) {
+      requestMoveCommit(1);
+      return;
+    }
+    if (requestMoveCommit && key.ctrl && (key.name === "p" || key.sequence === "\x10")) {
+      requestMoveCommit(-1);
       return;
     }
 

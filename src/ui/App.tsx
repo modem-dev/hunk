@@ -97,7 +97,12 @@ export function App({
   const DIVIDER_WIDTH = 1;
   const DIVIDER_HIT_WIDTH = 5;
 
-  const pagerMode = Boolean(bootstrap.input.options.pager);
+  // Commit-by-commit review (`git log -p | hunk pager`) launches as pager input but
+  // wants the full review chrome — sidebar, menu bar, filter, full keymap. Treat it
+  // like a regular review session by suppressing pagerMode whenever a commit cursor is
+  // attached. The pager-bare scroll-only experience stays for explicit --no-review.
+  const isCommitReview = Boolean(bootstrap.commitCursor);
+  const pagerMode = Boolean(bootstrap.input.options.pager) && !isCommitReview;
   const renderer = useRenderer();
   const terminal = useTerminalDimensions();
   const sidebarScrollRef = useRef<ScrollBoxRenderable | null>(null);
