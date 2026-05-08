@@ -94,54 +94,72 @@ export async function prepareStartupPlan(
       };
     }
 
-    // Streaming patch path: build a CliInput for option resolution, then attach a live
-    // ChangesetStream to the bootstrap. The initial changeset starts empty; AppHost
-    // appends files as the chunker emits them.
-    const synthInput: CliInput = {
-      kind: "patch",
-      file: "-",
-      // text is unused when bootstrap.stream is set — the stream is the source of truth.
-      text: "",
-      options: {
-        ...parsedCliInput.options,
-        pager: true,
-      },
-    };
+    // Kill switch: HUNK_PAGER_STREAM=0 falls back to the pre-streaming path, which
+    // concatenates the full input before parsing. Default is on. Keep this escape hatch
+    // around until the streaming path has been in use for a release.
+    const streamingEnabled = process.env.HUNK_PAGER_STREAM !== "0";
 
-    const runtimeCliInput = resolveRuntimeCliInputImpl(synthInput);
-    const configured = resolveConfiguredCliInputImpl(runtimeCliInput);
-    const cliInput = configured.input;
+    if (!streamingEnabled) {
+      const stdinText = await drainLines(sniff.prefixLines, sniff.rest);
+      parsedCliInput = {
+        kind: "patch",
+        file: "-",
+        text: stdinText,
+        options: {
+          ...parsedCliInput.options,
+          pager: true,
+        },
+      };
+    } else {
+      // Streaming patch path: build a CliInput for option resolution, then attach a live
+      // ChangesetStream to the bootstrap. The initial changeset starts empty; AppHost
+      // appends files as the chunker emits them.
+      const synthInput: CliInput = {
+        kind: "patch",
+        file: "-",
+        // text is unused when bootstrap.stream is set — the stream is the source of truth.
+        text: "",
+        options: {
+          ...parsedCliInput.options,
+          pager: true,
+        },
+      };
 
-    if (cliInput.options.watch) {
-      throw new HunkUserError("`--watch` is not supported for pager input.", [
-        "Pager input is one-shot stdin and cannot be reopened. Drop `--watch` or use a file-backed source.",
-      ]);
+      const runtimeCliInput = resolveRuntimeCliInputImpl(synthInput);
+      const configured = resolveConfiguredCliInputImpl(runtimeCliInput);
+      const cliInput = configured.input;
+
+      if (cliInput.options.watch) {
+        throw new HunkUserError("`--watch` is not supported for pager input.", [
+          "Pager input is one-shot stdin and cannot be reopened. Drop `--watch` or use a file-backed source.",
+        ]);
+      }
+
+      const source = chainLines(sniff.prefixLines, sniff.rest);
+      const stream = createChangesetStream({
+        source,
+        sourceLabel: "git pager",
+        title: "Pager input",
+      });
+
+      const bootstrap: AppBootstrap = {
+        input: cliInput,
+        changeset: stream.initialChangeset,
+        initialMode: cliInput.options.mode ?? "auto",
+        initialTheme: cliInput.options.theme,
+        initialShowLineNumbers: cliInput.options.lineNumbers ?? true,
+        initialWrapLines: cliInput.options.wrapLines ?? false,
+        initialShowHunkHeaders: cliInput.options.hunkHeaders ?? true,
+        initialShowAgentNotes: cliInput.options.agentNotes ?? false,
+        stream,
+      };
+
+      const controllingTerminal = usesPipedPatchInputImpl(cliInput)
+        ? openControllingTerminalImpl()
+        : null;
+
+      return { kind: "app", bootstrap, cliInput, controllingTerminal };
     }
-
-    const source = chainLines(sniff.prefixLines, sniff.rest);
-    const stream = createChangesetStream({
-      source,
-      sourceLabel: "git pager",
-      title: "Pager input",
-    });
-
-    const bootstrap: AppBootstrap = {
-      input: cliInput,
-      changeset: stream.initialChangeset,
-      initialMode: cliInput.options.mode ?? "auto",
-      initialTheme: cliInput.options.theme,
-      initialShowLineNumbers: cliInput.options.lineNumbers ?? true,
-      initialWrapLines: cliInput.options.wrapLines ?? false,
-      initialShowHunkHeaders: cliInput.options.hunkHeaders ?? true,
-      initialShowAgentNotes: cliInput.options.agentNotes ?? false,
-      stream,
-    };
-
-    const controllingTerminal = usesPipedPatchInputImpl(cliInput)
-      ? openControllingTerminalImpl()
-      : null;
-
-    return { kind: "app", bootstrap, cliInput, controllingTerminal };
   }
 
   const runtimeCliInput = resolveRuntimeCliInputImpl(parsedCliInput);
