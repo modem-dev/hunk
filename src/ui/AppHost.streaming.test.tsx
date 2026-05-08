@@ -45,7 +45,6 @@ function createStreamingBootstrap(stream: ChangesetStreamHandle): AppBootstrap {
       title: "streaming",
       files: [],
       isStreaming: true,
-      commits: [],
     },
     initialMode: "stack",
     initialTheme: "midnight",

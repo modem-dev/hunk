@@ -12,15 +12,13 @@ async function collect(events: AsyncIterable<ChunkEvent>): Promise<ChunkEvent[]>
 }
 
 function fileChunks(events: ChunkEvent[]): string[] {
-  return events
-    .filter((event): event is Extract<ChunkEvent, { type: "file" }> => event.type === "file")
-    .map((event) => event.chunkText);
+  return events.map((event) => event.chunkText);
 }
 
 /**
  * Reference port of the legacy splitPatchIntoFileChunks helper used by loaders.ts.
  * The streaming chunker must emit the same chunk text for the same input — this is the
- * regression net for Phase 2's "no behavior change in parsing" claim.
+ * regression net for the "no behavior change in parsing" claim.
  */
 function legacySplit(rawPatch: string): string[] {
   const patch = rawPatch.replaceAll("\r\n", "\n");
@@ -76,8 +74,8 @@ describe("chunkPatchStream", () => {
       "+new",
     ];
     const events = await collect(chunkPatchStream(fromArray(patch)));
-    const chunks = fileChunks(events);
-    expect(chunks).toEqual(legacySplit(`${patch.join("\n")}\n`));
+    expect(fileChunks(events)).toEqual(legacySplit(`${patch.join("\n")}\n`));
+    expect(events.every((e) => e.commitHeaderText === null)).toBe(true);
   });
 
   test("emits one event per file in a unified-diff multi-file patch", async () => {
@@ -94,8 +92,7 @@ describe("chunkPatchStream", () => {
       "+new",
     ];
     const events = await collect(chunkPatchStream(fromArray(patch)));
-    const chunks = fileChunks(events);
-    expect(chunks).toEqual(legacySplit(`${patch.join("\n")}\n`));
+    expect(fileChunks(events)).toEqual(legacySplit(`${patch.join("\n")}\n`));
   });
 
   test("does not split inside a git-style file on its `--- ` and `+++ ` lines", async () => {
@@ -109,7 +106,7 @@ describe("chunkPatchStream", () => {
       "+new",
     ];
     const events = await collect(chunkPatchStream(fromArray(patch)));
-    expect(fileChunks(events)).toHaveLength(1);
+    expect(events).toHaveLength(1);
   });
 
   test("ignores leading garbage before the first file header", async () => {
@@ -124,8 +121,7 @@ describe("chunkPatchStream", () => {
       "+y",
     ];
     const events = await collect(chunkPatchStream(fromArray(patch)));
-    const chunks = fileChunks(events);
-    expect(chunks).toEqual(legacySplit(`${patch.join("\n")}\n`));
+    expect(fileChunks(events)).toEqual(legacySplit(`${patch.join("\n")}\n`));
   });
 
   test("flushes the trailing file when stream ends mid-content", async () => {
@@ -139,7 +135,6 @@ describe("chunkPatchStream", () => {
     ];
     const events = await collect(chunkPatchStream(fromArray(patch)));
     expect(events).toHaveLength(1);
-    expect(events[0]?.type).toBe("file");
   });
 
   test("handles ANSI-colored headers", async () => {
@@ -153,7 +148,6 @@ describe("chunkPatchStream", () => {
     ];
     const events = await collect(chunkPatchStream(fromArray(patch)));
     expect(events).toHaveLength(1);
-    expect(events[0]?.type).toBe("file");
   });
 
   test("emits no events for an empty stream", async () => {
@@ -166,5 +160,99 @@ describe("chunkPatchStream", () => {
       chunkPatchStream(fromArray(["just", "some", "non-patch", "text", "here"])),
     );
     expect(events).toEqual([]);
+  });
+
+  test("captures verbatim commit metadata and rides it on the next file event", async () => {
+    const log = [
+      "commit f3919b9b41b9b065853fe81519ec0fa50b2b340e",
+      "Author: Alice <alice@example.com>",
+      "Date:   2026-01-01 10:00:00 -0700",
+      "",
+      "    second commit",
+      "",
+      "diff --git a/foo.ts b/foo.ts",
+      "--- a/foo.ts",
+      "+++ b/foo.ts",
+      "@@ -1 +1 @@",
+      "-old",
+      "+new",
+      "commit e0c39a066a4978bae2c842dcffd11a3590d54048",
+      "Author: Alice <alice@example.com>",
+      "Date:   2026-01-01 09:00:00 -0700",
+      "",
+      "    first commit",
+      "",
+      "diff --git a/bar.ts b/bar.ts",
+      "--- a/bar.ts",
+      "+++ b/bar.ts",
+      "@@ -1 +1 @@",
+      "-x",
+      "+y",
+    ];
+    const events = await collect(chunkPatchStream(fromArray(log)));
+    expect(events).toHaveLength(2);
+
+    const [first, second] = events as [ChunkEvent, ChunkEvent];
+
+    // First file's commitHeaderText carries the verbatim "second commit" block.
+    expect(first.commitHeaderText).toContain("commit f3919b9b41b9b065853fe81519ec0fa50b2b340e");
+    expect(first.commitHeaderText).toContain("Author: Alice <alice@example.com>");
+    expect(first.commitHeaderText).toContain("    second commit");
+    // The file chunk itself does not contain commit metadata.
+    expect(first.chunkText).not.toContain("commit ");
+    expect(first.chunkText).not.toContain("Author:");
+    expect(first.chunkText).toContain("foo.ts");
+
+    // Second file carries the second commit's metadata. The "second commit" header from
+    // the first iteration must NOT bleed in.
+    expect(second.commitHeaderText).toContain("commit e0c39a066a4978bae2c842dcffd11a3590d54048");
+    expect(second.commitHeaderText).toContain("    first commit");
+    expect(second.commitHeaderText).not.toContain("second commit");
+    expect(second.chunkText).toContain("bar.ts");
+  });
+
+  test("multiple files under one commit only carry headerText on the first file", async () => {
+    const log = [
+      "commit abc1234",
+      "Author: Bob <bob@example.com>",
+      "Date:   2026-02-02",
+      "",
+      "    one commit, two files",
+      "",
+      "diff --git a/x.ts b/x.ts",
+      "--- a/x.ts",
+      "+++ b/x.ts",
+      "@@ -1 +1 @@",
+      "-a",
+      "+b",
+      "diff --git a/y.ts b/y.ts",
+      "--- a/y.ts",
+      "+++ b/y.ts",
+      "@@ -1 +1 @@",
+      "-c",
+      "+d",
+    ];
+    const events = await collect(chunkPatchStream(fromArray(log)));
+    expect(events).toHaveLength(2);
+    expect(events[0]!.commitHeaderText).toContain("one commit, two files");
+    expect(events[1]!.commitHeaderText).toBeNull();
+  });
+
+  test("does not match a context line that looks like 'commit <hex>'", async () => {
+    // Lines inside a hunk start with ' ', '+', or '-'. Our COMMIT_HEADER regex is
+    // anchored at line start, so a context line containing the literal "commit abc1234"
+    // cannot match — but verify explicitly so a future regex tweak that loosened the
+    // anchoring would fail this test.
+    const patch = [
+      "diff --git a/notes.md b/notes.md",
+      "--- a/notes.md",
+      "+++ b/notes.md",
+      "@@ -1 +1 @@",
+      "-old",
+      "+commit abc1234567",
+    ];
+    const events = await collect(chunkPatchStream(fromArray(patch)));
+    expect(events).toHaveLength(1);
+    expect(events[0]!.commitHeaderText).toBeNull();
   });
 });

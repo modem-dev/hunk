@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { resolveConfiguredCliInput } from "../core/config";
 import { loadAppBootstrap } from "../core/loaders";
 import { resolveRuntimeCliInput } from "../core/terminal";
-import type { AppBootstrap, CliInput, CommitRef, DiffFile } from "../core/types";
+import type { AppBootstrap, CliInput, DiffFile } from "../core/types";
 import type { UpdateNotice } from "../core/updateNotice";
 import {
   createInitialSessionSnapshot,
@@ -45,14 +45,6 @@ export function AppHost({
             ...prev.changeset,
             files: [...prev.changeset.files, ...files],
             isStreaming: true,
-          },
-        })),
-      onCommit: (commit: CommitRef) =>
-        setActiveBootstrap((prev) => ({
-          ...prev,
-          changeset: {
-            ...prev.changeset,
-            commits: [...(prev.changeset.commits ?? []), commit],
           },
         })),
       onComplete: () =>

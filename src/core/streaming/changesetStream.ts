@@ -5,10 +5,9 @@ import type {
   Changeset,
   ChangesetStreamHandle,
   ChangesetStreamListener,
-  CommitRef,
   DiffFile,
 } from "../types";
-import { chunkPatchStream, type ChunkEvent } from "./patchChunker";
+import { chunkPatchStream } from "./patchChunker";
 
 /**
  * Streaming changeset producer.
@@ -50,7 +49,6 @@ export function createChangesetStream(opts: CreateChangesetStreamOptions): Chang
     agentSummary: agentContext?.summary,
     files: [],
     isStreaming: true,
-    commits: [],
   };
 
   const listeners = new Set<ChangesetStreamListener>();
@@ -88,55 +86,46 @@ export function createChangesetStream(opts: CreateChangesetStreamOptions): Chang
     }
   };
 
-  const handleFileEvent = (event: Extract<ChunkEvent, { type: "file" }>) => {
-    let parsed: ReturnType<typeof parsePatchFiles>;
-    try {
-      parsed = parsePatchFiles(event.chunkText, "patch", false);
-    } catch (err) {
-      // Single chunk can't bring down the stream. Log and skip.
-      console.warn(
-        `[hunk:pager-stream] failed to parse file chunk: ${err instanceof Error ? err.message : String(err)}`,
-      );
-      return;
-    }
-
-    for (const entry of parsed) {
-      for (const metadata of entry.files) {
-        const diffFile = buildDiffFile(
-          metadata,
-          event.chunkText,
-          nextIndex,
-          sourceLabel,
-          agentContext,
-        );
-        if (event.commitId) diffFile.commitId = event.commitId;
-        pendingFiles.push(diffFile);
-        nextIndex += 1;
-        totalFiles += 1;
-      }
-    }
-
-    scheduleFlush();
-  };
-
-  const handleCommitEvent = (event: Extract<ChunkEvent, { type: "commit" }>) => {
-    const commit: CommitRef = {
-      id: event.id,
-      subject: event.subject,
-      author: event.author,
-      date: event.date,
-      // Phase 3 closes ranges as files arrive; for Phase 2 we keep the placeholder open.
-      fileRange: { start: nextIndex, end: nextIndex },
-    };
-    for (const listener of listeners) listener.onCommit?.(commit);
-  };
-
   const run = async () => {
     try {
       for await (const event of chunkPatchStream(opts.source)) {
         if (abort.signal.aborted) break;
-        if (event.type === "file") handleFileEvent(event);
-        else if (event.type === "commit") handleCommitEvent(event);
+
+        let parsed: ReturnType<typeof parsePatchFiles>;
+        try {
+          parsed = parsePatchFiles(event.chunkText, "patch", false);
+        } catch (err) {
+          // A single malformed chunk shouldn't kill the whole stream. Log and skip.
+          console.warn(
+            `[hunk:pager-stream] failed to parse file chunk: ${err instanceof Error ? err.message : String(err)}`,
+          );
+          continue;
+        }
+
+        // Attach commit metadata (when present) to the first parsed file under this chunk.
+        // Subsequent files in the same chunk — rare, parsePatchFiles can return multiple
+        // entries for one input — get nothing, mirroring the chunker's invariant.
+        let headerAttached = false;
+        for (const entry of parsed) {
+          for (const metadata of entry.files) {
+            const diffFile = buildDiffFile(
+              metadata,
+              event.chunkText,
+              nextIndex,
+              sourceLabel,
+              agentContext,
+            );
+            if (!headerAttached && event.commitHeaderText) {
+              diffFile.commitHeaderText = event.commitHeaderText;
+              headerAttached = true;
+            }
+            pendingFiles.push(diffFile);
+            nextIndex += 1;
+            totalFiles += 1;
+          }
+        }
+
+        scheduleFlush();
       }
       flush();
       for (const listener of listeners) listener.onComplete(totalFiles);
