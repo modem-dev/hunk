@@ -1,7 +1,8 @@
 import { resolveConfiguredCliInput } from "./config";
 import { HunkUserError } from "./errors";
 import { loadAppBootstrap } from "./loaders";
-import { looksLikePatchInput } from "./pager";
+import { drainLines, sniffPatch } from "./streaming/patchSniffer";
+import { stdinLines, type LineSource } from "./streaming/stdinLines";
 import {
   openControllingTerminal,
   resolveRuntimeCliInput,
@@ -37,8 +38,7 @@ export type StartupPlan =
 
 export interface StartupDeps {
   parseCliImpl?: (argv: string[]) => Promise<ParsedCliInput>;
-  readStdinText?: () => Promise<string>;
-  looksLikePatchInputImpl?: (text: string) => boolean;
+  readStdinLines?: () => LineSource;
   resolveRuntimeCliInputImpl?: typeof resolveRuntimeCliInput;
   resolveConfiguredCliInputImpl?: typeof resolveConfiguredCliInput;
   loadAppBootstrapImpl?: typeof loadAppBootstrap;
@@ -52,8 +52,7 @@ export async function prepareStartupPlan(
   deps: StartupDeps = {},
 ): Promise<StartupPlan> {
   const parseCliImpl = deps.parseCliImpl ?? parseCli;
-  const readStdinText = deps.readStdinText ?? (() => new Response(Bun.stdin.stream()).text());
-  const looksLikePatchInputImpl = deps.looksLikePatchInputImpl ?? looksLikePatchInput;
+  const readStdinLines = deps.readStdinLines ?? (() => stdinLines());
   const resolveRuntimeCliInputImpl = deps.resolveRuntimeCliInputImpl ?? resolveRuntimeCliInput;
   const resolveConfiguredCliInputImpl =
     deps.resolveConfiguredCliInputImpl ?? resolveConfiguredCliInput;
@@ -84,15 +83,20 @@ export async function prepareStartupPlan(
   }
 
   if (parsedCliInput.kind === "pager") {
-    const stdinText = await readStdinText();
+    // Phase 1: stream stdin into the sniffer, then concat the rest for behavior parity with
+    // the pre-streaming pipeline. Phase 2 will hand `rest` straight to the chunker without
+    // ever building the full text in memory.
+    const lines = readStdinLines();
+    const sniff = await sniffPatch(lines);
 
-    if (!looksLikePatchInputImpl(stdinText)) {
+    if (sniff.kind === "plain") {
       return {
         kind: "plain-text-pager",
-        text: stdinText,
+        text: await drainLines(sniff.prefixLines, sniff.rest),
       };
     }
 
+    const stdinText = await drainLines(sniff.prefixLines, sniff.rest);
     parsedCliInput = {
       kind: "patch",
       file: "-",

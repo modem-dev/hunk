@@ -1,7 +1,20 @@
 import { describe, expect, test } from "bun:test";
 import { HunkUserError } from "./errors";
 import { prepareStartupPlan } from "./startup";
+import type { LineSource } from "./streaming/stdinLines";
 import type { AppBootstrap, CliInput, ParsedCliInput } from "./types";
+
+function lineSourceFromString(text: string): LineSource {
+  // Mirror real stdinLines: split on \n and drop a trailing empty line so a final newline
+  // does not produce a phantom empty line.
+  const lines = text.split("\n");
+  if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+  return {
+    async *[Symbol.asyncIterator]() {
+      for (const line of lines) yield line;
+    },
+  };
+}
 
 function createBootstrap(input: CliInput): AppBootstrap {
   return {
@@ -70,8 +83,7 @@ describe("startup planning", () => {
 
     const plan = await prepareStartupPlan(["bun", "hunk", "pager"], {
       parseCliImpl: async () => ({ kind: "pager", options: { theme: "paper" } }),
-      readStdinText: async () => "* main\n  feature/demo\n",
-      looksLikePatchInputImpl: () => false,
+      readStdinLines: () => lineSourceFromString("* main\n  feature/demo\n"),
       loadAppBootstrapImpl: async () => {
         loaded = true;
         throw new Error("unreachable");
@@ -87,8 +99,8 @@ describe("startup planning", () => {
 
     const plan = await prepareStartupPlan(["bun", "hunk", "pager"], {
       parseCliImpl: async () => ({ kind: "pager", options: { theme: "paper" } }),
-      readStdinText: async () => "diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n",
-      looksLikePatchInputImpl: () => true,
+      readStdinLines: () =>
+        lineSourceFromString("diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n"),
       resolveRuntimeCliInputImpl(input) {
         seenInputs.push(input);
         return input;
