@@ -61,6 +61,29 @@ export function PierreDiffView({
     shouldLoadHighlight,
   });
 
+  const structuralMaps = useMemo(() => {
+    if (!showStructural || !file?.structuralChanges) {
+      return { oldLines: new Set<number>(), newLines: new Set<number>() };
+    }
+
+    const oldLines = new Set<number>();
+    const newLines = new Set<number>();
+
+    for (const change of file.structuralChanges) {
+      if (change.type === "deletion") {
+        for (let line = change.startLine; line <= change.endLine; line++) {
+          oldLines.add(line);
+        }
+      } else if (change.type === "addition" || change.type === "modification") {
+        for (let line = change.startLine; line <= change.endLine; line++) {
+          newLines.add(line);
+        }
+      }
+    }
+
+    return { oldLines, newLines };
+  }, [showStructural, file?.structuralChanges]);
+
   const rows = useMemo(
     () =>
       file
@@ -163,37 +186,21 @@ export function PierreDiffView({
           );
         }
 
-        const structuralChange = showStructural
-          ? file.structuralChanges?.find((change) => {
-              if (plannedRow.kind !== "diff-row") return false;
-              const row = plannedRow.row;
-              if (row.type === "split-line") {
-                return (
-                  (row.left.lineNumber &&
-                    change.type === "deletion" &&
-                    row.left.lineNumber >= change.startLine &&
-                    row.left.lineNumber <= change.endLine) ||
-                  (row.right.lineNumber &&
-                    (change.type === "addition" || change.type === "modification") &&
-                    row.right.lineNumber >= change.startLine &&
-                    row.right.lineNumber <= change.endLine)
-                );
-              }
-              if (row.type === "stack-line") {
-                return (
-                  (row.cell.oldLineNumber &&
-                    change.type === "deletion" &&
-                    row.cell.oldLineNumber >= change.startLine &&
-                    row.cell.oldLineNumber <= change.endLine) ||
-                  (row.cell.newLineNumber &&
-                    (change.type === "addition" || change.type === "modification") &&
-                    row.cell.newLineNumber >= change.startLine &&
-                    row.cell.newLineNumber <= change.endLine)
-                );
-              }
-              return false;
-            })
-          : undefined;
+        let structuralChange = false;
+        if (showStructural && plannedRow.kind === "diff-row") {
+          const row = plannedRow.row;
+          if (row.type === "split-line") {
+            if (row.left.lineNumber)
+              structuralChange = structuralMaps.oldLines.has(row.left.lineNumber);
+            if (!structuralChange && row.right.lineNumber)
+              structuralChange = structuralMaps.newLines.has(row.right.lineNumber);
+          } else if (row.type === "stack-line") {
+            if (row.cell.oldLineNumber)
+              structuralChange = structuralMaps.oldLines.has(row.cell.oldLineNumber);
+            if (!structuralChange && row.cell.newLineNumber)
+              structuralChange = structuralMaps.newLines.has(row.cell.newLineNumber);
+          }
+        }
 
         return (
           <box key={plannedRow.key} id={rowId} style={{ width: "100%", flexDirection: "column" }}>

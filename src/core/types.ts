@@ -1,7 +1,7 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
 
 export interface StructuralChange {
-  type: "addition" | "deletion" | "modification" | "move";
+  type: "addition" | "deletion" | "modification";
   nodeName?: string;
   startLine: number;
   endLine: number;
