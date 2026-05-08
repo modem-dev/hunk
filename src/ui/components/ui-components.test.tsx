@@ -3,7 +3,7 @@ import type { ScrollBoxRenderable } from "@opentui/core";
 import { testRender } from "@opentui/react/test-utils";
 import { act, createRef, useEffect, useState, type ReactNode } from "react";
 import type { AppBootstrap, DiffFile } from "../../core/types";
-import { createTestGitAppBootstrap } from "../../../test/helpers/app-bootstrap";
+import { createTestVcsAppBootstrap } from "../../../test/helpers/app-bootstrap";
 import { createTestDiffFile as buildTestDiffFile, lines } from "../../../test/helpers/diff-helpers";
 import { hexColorDistance } from "../lib/color";
 import { resolveTheme } from "../themes";
@@ -263,7 +263,7 @@ async function waitForFrame(
 }
 
 function createBootstrap(): AppBootstrap {
-  return createTestGitAppBootstrap({
+  return createTestVcsAppBootstrap({
     agentSummary: "Changeset summary",
     changesetId: "changeset:ui",
     files: [
@@ -288,7 +288,7 @@ function createBootstrap(): AppBootstrap {
 }
 
 function createWrapBootstrap(): AppBootstrap {
-  return createTestGitAppBootstrap({
+  return createTestVcsAppBootstrap({
     changesetId: "changeset:wrap",
     files: [
       createTestDiffFile(

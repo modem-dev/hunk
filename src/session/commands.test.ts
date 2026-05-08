@@ -660,14 +660,14 @@ describe("session command compatibility checks", () => {
             expect(input.selector).toEqual({ sessionPath: "/live-session" });
             expect(input.sourcePath).toBe("/source-repo");
             expect(input.nextInput).toEqual({
-              kind: "git",
+              kind: "vcs",
               staged: false,
               options: {},
             });
 
             return {
               sessionId: "session-1",
-              inputKind: "git",
+              inputKind: "vcs",
               title: "source-repo working tree",
               sourceLabel: "/source-repo",
               fileCount: 1,
@@ -685,7 +685,7 @@ describe("session command compatibility checks", () => {
       selector: { sessionPath: "/live-session" },
       sourcePath: "/source-repo",
       nextInput: {
-        kind: "git",
+        kind: "vcs",
         staged: false,
         options: {},
       },
@@ -695,7 +695,7 @@ describe("session command compatibility checks", () => {
     expect(JSON.parse(output)).toEqual({
       result: {
         sessionId: "session-1",
-        inputKind: "git",
+        inputKind: "vcs",
         title: "source-repo working tree",
         sourceLabel: "/source-repo",
         fileCount: 1,
@@ -811,7 +811,7 @@ describe("session command compatibility checks", () => {
             });
             return {
               sessionId: "session-1",
-              inputKind: "git",
+              inputKind: "vcs",
               title: "repo working tree",
               sourceLabel: "/repo",
               fileCount: 1,
@@ -828,7 +828,7 @@ describe("session command compatibility checks", () => {
       action: "reload",
       selector: { sessionPath: "." },
       nextInput: {
-        kind: "git",
+        kind: "vcs",
         staged: false,
         options: {},
       },

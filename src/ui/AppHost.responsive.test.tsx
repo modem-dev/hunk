@@ -2,13 +2,13 @@ import { describe, expect, mock, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
 import type { AppBootstrap, LayoutMode } from "../core/types";
-import { createTestGitAppBootstrap } from "../../test/helpers/app-bootstrap";
+import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
 import { createTestDiffFile } from "../../test/helpers/diff-helpers";
 
 const { AppHost } = await import("./AppHost");
 
 function createBootstrap(initialMode: LayoutMode = "auto", pager = false): AppBootstrap {
-  return createTestGitAppBootstrap({
+  return createTestVcsAppBootstrap({
     agentSummary: "Changeset summary",
     changesetId: "changeset:responsive",
     files: [

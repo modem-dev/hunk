@@ -1,9 +1,9 @@
 import fs from "node:fs";
 import { join } from "node:path";
 import { HunkUserError } from "./errors";
-import type { GitCommandInput, ShowCommandInput, StashShowCommandInput } from "./types";
+import type { VcsCommandInput, ShowCommandInput, StashShowCommandInput } from "./types";
 
-export type GitBackedInput = GitCommandInput | ShowCommandInput | StashShowCommandInput;
+export type GitBackedInput = VcsCommandInput | ShowCommandInput | StashShowCommandInput;
 
 export interface RunGitTextOptions {
   input: GitBackedInput;
@@ -49,7 +49,7 @@ function withNormalizedDiffPrefixes(args: string[]) {
 }
 
 /** Build the exact `git diff` arguments used for the shared working-tree and range review path. */
-export function buildGitDiffArgs(input: GitCommandInput) {
+export function buildGitDiffArgs(input: VcsCommandInput) {
   const args = ["diff", "--no-ext-diff", "--find-renames", "--no-color"];
 
   if (input.staged) {
@@ -65,7 +65,7 @@ export function buildGitDiffArgs(input: GitCommandInput) {
 }
 
 /** Build the porcelain status query used to discover untracked files for working-tree review. */
-function buildGitStatusArgs(input: GitCommandInput) {
+function buildGitStatusArgs(input: VcsCommandInput) {
   const args = ["status", "--porcelain=v1", "-z", "--untracked-files=all"];
 
   appendGitPathspecs(args, input.pathspecs);
@@ -109,7 +109,7 @@ export function buildGitStashShowArgs(input: StashShowCommandInput) {
 
 export function formatGitCommandLabel(input: GitBackedInput) {
   switch (input.kind) {
-    case "git":
+    case "vcs":
       if (input.staged) {
         return "hunk diff --staged";
       }
@@ -123,7 +123,7 @@ export function formatGitCommandLabel(input: GitBackedInput) {
 }
 
 function getMissingRepoHelp(input: GitBackedInput) {
-  if (input.kind === "git") {
+  if (input.kind === "vcs") {
     return [
       "Run the command from a Git checkout, or compare files directly instead:",
       "  hunk diff <before-file> <after-file>",
@@ -179,8 +179,8 @@ function createMissingRepoError(input: GitBackedInput) {
   );
 }
 
-function createInvalidRevisionError(input: GitCommandInput | ShowCommandInput) {
-  if (input.kind === "git") {
+function createInvalidRevisionError(input: VcsCommandInput | ShowCommandInput) {
+  if (input.kind === "vcs") {
     return new HunkUserError(
       `\`${formatGitCommandLabel(input)}\` could not resolve Git revision or range \`${input.range}\`.`,
       ["Check the revision or range and try again."],
@@ -238,7 +238,7 @@ function translateGitExitFailure(input: GitBackedInput, stderr: string) {
     return createMissingStashError(input);
   }
 
-  if (input.kind === "git" && input.range && isUnknownRevisionMessage(stderr)) {
+  if (input.kind === "vcs" && input.range && isUnknownRevisionMessage(stderr)) {
     return createInvalidRevisionError(input);
   }
 
@@ -305,7 +305,7 @@ export function runGitText(options: RunGitTextOptions) {
 const workingTreeGitDiffInputCache = new Map<string, boolean>();
 
 function isWorkingTreeGitDiffInput(
-  input: GitCommandInput,
+  input: VcsCommandInput,
   {
     cwd = process.cwd(),
     gitExecutable = "git",
@@ -346,7 +346,7 @@ function isWorkingTreeGitDiffInput(
 
 /** Return whether working-tree review should synthesize untracked files into the patch stream. */
 function shouldIncludeUntrackedFiles(
-  input: GitCommandInput,
+  input: VcsCommandInput,
   options: Pick<RunGitTextOptions, "cwd" | "gitExecutable"> & { repoRoot?: string } = {},
 ) {
   return input.options.excludeUntracked !== true && isWorkingTreeGitDiffInput(input, options);
@@ -393,7 +393,7 @@ function isReviewableUntrackedPath(repoRoot: string, filePath: string) {
 
 /** Return the repo-root-relative untracked files for a working-tree review input. */
 export function listGitUntrackedFiles(
-  input: GitCommandInput,
+  input: VcsCommandInput,
   {
     cwd = process.cwd(),
     repoRoot,
@@ -424,7 +424,7 @@ export function listGitUntrackedFiles(
 
 /** Return the raw Git patch text for one untracked file using `git diff --no-index`. */
 export function runGitUntrackedFileDiffText(
-  input: GitCommandInput,
+  input: VcsCommandInput,
   filePath: string,
   {
     cwd = process.cwd(),

@@ -126,11 +126,11 @@ function renderCliHelp() {
     "Desktop-inspired terminal diff viewer for agent-authored changesets.",
     "",
     "Commands:",
-    "  hunk diff [ref] [-- <pathspec...>]      review working tree changes or compare against a ref",
+    "  hunk diff [target] [-- <pathspec...>]   review working tree changes or compare against a target",
     "  hunk diff --staged [-- <pathspec...>]   review staged changes",
     "  hunk diff <left> <right>                compare two concrete files",
-    "  hunk show [ref] [-- <pathspec...>]      review the last commit or a given ref",
-    "  hunk stash show [ref]                   review a stash entry",
+    "  hunk show [target] [-- <pathspec...>]   review the last commit or a given target",
+    "  hunk stash show [ref]                   review a stash entry (git only)",
     "  hunk patch [file]                       review a patch file or stdin",
     "  hunk pager                              general Git pager wrapper with diff detection",
     "  hunk difftool <left> <right> [path]     review Git difftool file pairs",
@@ -159,6 +159,7 @@ function renderCliHelp() {
     "",
     "Notes:",
     "  Run `hunk <command> --help` for command-specific syntax and options.",
+    '  "target" refers to a generic set of changes; it can be a ref (git) or revset (jj)',
     "",
   ].join("\n");
 }
@@ -369,7 +370,7 @@ function resolveReloadSelector(
 async function parseDiffCommand(tokens: string[], argv: string[]): Promise<ParsedCliInput> {
   const { commandTokens, pathspecs } = splitPathspecArgs(tokens);
   const command = applyWatchOption(
-    createCommand("diff", "review Git diffs or compare two concrete files"),
+    createCommand("diff", "review diffs or compare two concrete files"),
   )
     .option("--staged", "show staged changes instead of the working tree")
     .option("--cached", "alias for --staged")
@@ -402,7 +403,7 @@ async function parseDiffCommand(tokens: string[], argv: string[]): Promise<Parse
 
   if (parsedTargets.length === 0) {
     return {
-      kind: "git",
+      kind: "vcs",
       staged,
       pathspecs: normalizedPathspecs,
       options,
@@ -411,7 +412,7 @@ async function parseDiffCommand(tokens: string[], argv: string[]): Promise<Parse
 
   if (parsedTargets.length === 1) {
     return {
-      kind: "git",
+      kind: "vcs",
       range: parsedTargets[0],
       staged,
       pathspecs: normalizedPathspecs,
@@ -419,22 +420,27 @@ async function parseDiffCommand(tokens: string[], argv: string[]): Promise<Parse
     };
   }
 
-  if (
-    parsedTargets.length === 2 &&
-    !staged &&
-    !normalizedPathspecs &&
-    areExistingFiles(parsedTargets[0]!, parsedTargets[1]!)
-  ) {
+  if (!staged && !normalizedPathspecs) {
+    if (parsedTargets.length === 2 && areExistingFiles(parsedTargets[0]!, parsedTargets[1]!)) {
+      return {
+        kind: "diff",
+        left: parsedTargets[0]!,
+        right: parsedTargets[1]!,
+        options,
+      };
+    }
+
     return {
-      kind: "diff",
-      left: parsedTargets[0]!,
-      right: parsedTargets[1]!,
+      kind: "vcs",
+      range: parsedTargets[0]!,
+      staged,
+      pathspecs: parsedTargets.slice(1),
       options,
     };
   }
 
   throw new Error(
-    "Use `hunk diff <ref>`, `hunk diff <ref1>..<ref2>`, or `hunk diff <left> <right>` for file comparison.",
+    "Use `hunk diff [target] [-- pathspec...]`, `hunk diff <left> <right>` for file comparison.",
   );
 }
 

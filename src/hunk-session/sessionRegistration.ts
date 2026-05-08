@@ -26,7 +26,7 @@ function ttyname(): string | undefined {
 
 /** Infer the repo-root selector that remote session commands should match for this review input. */
 function inferRepoRoot(bootstrap: AppBootstrap) {
-  return bootstrap.input.kind === "git" ||
+  return bootstrap.input.kind === "vcs" ||
     bootstrap.input.kind === "show" ||
     bootstrap.input.kind === "stash-show"
     ? bootstrap.changeset.sourceLabel

@@ -48,7 +48,7 @@ describe("hunk session wire parsing", () => {
       cwd: "/repo",
       launchedAt: "2026-03-22T00:00:00.000Z",
       info: {
-        inputKind: "git",
+        inputKind: "vcs",
         title: "repo working tree",
         sourceLabel: "/repo",
         files: [],
@@ -56,7 +56,7 @@ describe("hunk session wire parsing", () => {
     });
 
     expect(registration?.info).toEqual({
-      inputKind: "git",
+      inputKind: "vcs",
       title: "repo working tree",
       sourceLabel: "/repo",
       files: [],

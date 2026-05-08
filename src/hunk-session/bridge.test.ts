@@ -116,7 +116,7 @@ describe("createHunkSessionBridge", () => {
       type: "command",
       requestId: "reload-1",
       command: "reload_session",
-      input: { sessionId: "session-1", nextInput: { kind: "git", staged: false, options: {} } },
+      input: { sessionId: "session-1", nextInput: { kind: "vcs", staged: false, options: {} } },
     });
     await bridge.dispatchCommand({
       type: "command",
