@@ -283,13 +283,15 @@ function normalizeGitPatchPrefixes(patchText: string) {
 function rewriteGitDiffHeader(line: string): { line: string; changed: boolean } {
   const rest = line.slice("diff --git ".length).trimEnd();
 
-  const quotedMatch = rest.match(/^"([^"]*)" "([^"]*)"$/);
+  const quotedMatch = rest.match(/^"((?:\\.|[^"\\])*)" "((?:\\.|[^"\\])*)"$/);
   if (quotedMatch) {
-    const [, oldPath, newPath] = quotedMatch;
-    if (oldPath?.startsWith("a/") && newPath?.startsWith("b/")) {
-      return { line, changed: false };
-    }
-    return { line: `diff --git "a/${oldPath}" "b/${newPath}"`, changed: true };
+    const [, oldPath = "", newPath = ""] = quotedMatch;
+    // Pierre's git header parser does not currently handle the quoted `"a/..." "b/..."`
+    // form, so canonicalize quoted paths to the unquoted form even when prefixes exist.
+    return {
+      line: `diff --git ${withGitPrefix(oldPath, "a/")} ${withGitPrefix(newPath, "b/")}`,
+      changed: true,
+    };
   }
 
   const tokens = rest.split(" ");
@@ -321,16 +323,23 @@ function rewriteGitDiffHeader(line: string): { line: string; changed: boolean } 
   return { line, changed: false };
 }
 
+/** Return a path with the expected Git side prefix while avoiding double-prefixing. */
+function withGitPrefix(path: string, prefix: "a/" | "b/") {
+  return path.startsWith(prefix) ? path : `${prefix}${path}`;
+}
+
 /** Insert the canonical `a/` or `b/` prefix on a unified-diff header that is missing it. */
 function rewriteUnifiedFileLine(line: string, marker: "--- " | "+++ ", prefix: "a/" | "b/") {
   const path = line.slice(marker.length);
-  if (path === "/dev/null" || path.startsWith("/dev/null\t")) {
+  const quotedPath = path.match(/^"((?:\\.|[^"\\])*)"(.*)$/);
+  const pathName = quotedPath?.[1] ?? path;
+  const suffix = quotedPath?.[2] ?? "";
+
+  if (pathName === "/dev/null" || pathName.startsWith("/dev/null\t")) {
     return line;
   }
-  if (path.startsWith('"')) {
-    return `${marker}"${prefix}${path.slice(1)}`;
-  }
-  return `${marker}${prefix}${path}`;
+
+  return `${marker}${withGitPrefix(pathName, prefix)}${suffix}`;
 }
 
 /** Escape only the filename characters that break unified-diff header parsing. */

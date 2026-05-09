@@ -1037,6 +1037,33 @@ describe("loadAppBootstrap", () => {
     });
   });
 
+  test("loads quoted noprefix patch text emitted for escaped git paths", async () => {
+    const dir = createTempRepo("hunk-patch-quoted-noprefix-");
+    const fileName = "src\tfile.txt";
+
+    writeFileSync(join(dir, fileName), "one\n");
+    git(dir, "add", ".");
+    git(dir, "commit", "-m", "initial");
+
+    writeFileSync(join(dir, fileName), "two\n");
+    const patchText = git(dir, "-c", "diff.noprefix=true", "diff", "--", fileName);
+
+    expect(patchText).toContain('diff --git "src\\tfile.txt" "src\\tfile.txt"');
+
+    const bootstrap = await loadAppBootstrap({
+      kind: "patch",
+      text: patchText,
+      options: { mode: "auto" },
+    });
+
+    expect(bootstrap.changeset.files).toHaveLength(1);
+    expect(bootstrap.changeset.files[0]).toMatchObject({
+      path: "src\\tfile.txt",
+      metadata: { name: "src\\tfile.txt", type: "change" },
+    });
+    expect(bootstrap.changeset.files[0]?.stats).toEqual({ additions: 1, deletions: 1 });
+  });
+
   test("does not mangle a deleted SQL `-- comment` line in a noprefix patch", async () => {
     // The original source line `-- drop table users;` (a SQL comment) is encoded in a unified
     // diff deletion as `--- drop table users;` — three dashes (one for the deletion marker,
