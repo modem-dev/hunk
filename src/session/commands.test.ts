@@ -657,8 +657,11 @@ describe("session command compatibility checks", () => {
       createClient: () =>
         createClient({
           reloadSession: async (input) => {
-            expect(input.selector).toEqual({ sessionPath: "/live-session" });
-            expect(input.sourcePath).toBe("/source-repo");
+            expect(input.selector).toEqual({
+              repoRoot: undefined,
+              sessionPath: resolve("/live-session"),
+            });
+            expect(input.sourcePath).toBe(resolve("/source-repo"));
             expect(input.nextInput).toEqual({
               kind: "vcs",
               staged: false,

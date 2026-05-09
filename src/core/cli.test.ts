@@ -371,8 +371,8 @@ describe("parseCli", () => {
     expect(parsed).toEqual({
       kind: "session",
       action: "reload",
-      selector: { sessionPath: "/tmp/live-window" },
-      sourcePath: "/tmp/source-repo",
+      selector: { sessionPath: resolve("/tmp/live-window") },
+      sourcePath: resolve("/tmp/source-repo"),
       nextInput: {
         kind: "vcs",
         staged: false,
