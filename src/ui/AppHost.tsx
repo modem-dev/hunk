@@ -66,7 +66,8 @@ export function AppHost({
     // Pager-bare mode (`hunk pager` without commit-review) starts with the sidebar
     // hidden because the chrome is intentionally minimal there. Commit-review and
     // every other input start with the sidebar visible.
-    sidebarVisible: !(bootstrap.input.options.pager && !bootstrap.commitCursor),
+    sidebarVisible: !(bootstrap.input.options.pager && !bootstrap.commitReviewStream),
+    forceSidebarOpen: false,
     commitDetailsMode: bootstrap.initialCommitDetailsMode ?? "full",
   }));
   const updateView = useCallback((patch: Partial<ViewPreferences>) => {

@@ -116,10 +116,10 @@ export function App({
     wrapLines,
     showHunkHeaders,
     sidebarVisible,
+    forceSidebarOpen,
     commitDetailsMode,
   } = view;
   const [codeHorizontalOffset, setCodeHorizontalOffset] = useState(0);
-  const [forceSidebarOpen, setForceSidebarOpen] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [focusArea, setFocusArea] = useState<FocusArea>("files");
   const [sidebarWidth, setSidebarWidth] = useState(34);
@@ -345,20 +345,21 @@ export function App({
   /** Toggle the sidebar, forcing it open on narrower layouts when the app can still fit both panes. */
   const toggleSidebar = () => {
     if (sidebarVisible && (responsiveLayout.showSidebar || forceSidebarOpen)) {
-      updateView({ sidebarVisible: false });
-      setForceSidebarOpen(false);
+      updateView({ sidebarVisible: false, forceSidebarOpen: false });
       return;
     }
 
     if (sidebarVisible && !responsiveLayout.showSidebar) {
       if (canForceShowSidebar) {
-        setForceSidebarOpen(true);
+        updateView({ forceSidebarOpen: true });
       }
       return;
     }
 
-    updateView({ sidebarVisible: true });
-    setForceSidebarOpen(!responsiveLayout.showSidebar && canForceShowSidebar);
+    updateView({
+      sidebarVisible: true,
+      forceSidebarOpen: !responsiveLayout.showSidebar && canForceShowSidebar,
+    });
   };
 
   /** Toggle visibility of hunk metadata rows without changing the actual diff lines. */

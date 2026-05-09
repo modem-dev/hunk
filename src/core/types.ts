@@ -118,6 +118,13 @@ export interface ViewPreferences {
   wrapLines: boolean;
   showHunkHeaders: boolean;
   sidebarVisible: boolean;
+  /**
+   * User opted to keep the sidebar open in a viewport that wouldn't auto-show it
+   * (medium/tight widths in split/stack layouts). Lives in the persisted view bundle
+   * because otherwise it'd reset on every App remount and the sidebar would disappear
+   * after each commit-cursor move on narrower terminals.
+   */
+  forceSidebarOpen: boolean;
   commitDetailsMode: CommitDetailsMode;
 }
 
