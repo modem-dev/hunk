@@ -92,8 +92,8 @@ function applyCommonOptions(command: Command) {
     .option("--no-hunk-headers", "hide hunk metadata rows")
     .option("--agent-notes", "show agent notes by default")
     .option("--no-agent-notes", "hide agent notes by default")
-    .option("--structural", "enable AST-aware structural diffing")
-    .option("--no-structural", "disable AST-aware structural diffing");
+    .option("--structural", "enable structural diffing via difftastic")
+    .option("--no-structural", "disable structural diffing via difftastic");
 }
 
 /** Attach auto-refresh support to review commands that can reopen their source input. */
@@ -155,7 +155,7 @@ function renderCliHelp() {
     "  --wrap / --no-wrap                      wrap or truncate long diff lines",
     "  --hunk-headers / --no-hunk-headers      show or hide hunk metadata rows",
     "  --agent-notes / --no-agent-notes        show or hide agent notes by default",
-    "  --structural / --no-structural          enable or disable AST-aware structural diffing",
+    "  --structural / --no-structural          enable or disable structural diffing via difftastic",
     "  --theme <theme>                         named theme override",
     "",
     "Git diff options:",
@@ -467,7 +467,7 @@ async function parseShowCommand(tokens: string[], argv: string[]): Promise<Parse
   const options = buildCommonOptions(parsedOptions, argv);
   if (options.structural) {
     console.warn(
-      "Warning: --structural is ignored for `show` because AST diffing requires full file trees.",
+      "Warning: --structural is ignored for `show` because structural diffing requires concrete file pairs, not just patch text.",
     );
   }
 
@@ -502,7 +502,7 @@ async function parsePatchCommand(tokens: string[], argv: string[]): Promise<Pars
   const options = buildCommonOptions(parsedOptions, argv);
   if (options.structural) {
     console.warn(
-      "Warning: --structural is ignored for `patch` because AST diffing requires full file trees.",
+      "Warning: --structural is ignored for `patch` because structural diffing requires concrete file pairs, not just patch text.",
     );
   }
 

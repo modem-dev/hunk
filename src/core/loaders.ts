@@ -19,7 +19,7 @@ import {
   runGitText,
   runGitUntrackedFileDiffText,
 } from "./git";
-import { compareStructural } from "./structural-diff";
+import { runDifftasticStructural } from "./structural-diff";
 import type {
   AppBootstrap,
   AgentContext,
@@ -436,7 +436,7 @@ async function loadFileDiffChangeset(
     context: 3,
   });
   const structuralChanges = input.options.structural
-    ? compareStructural(leftText, rightText, displayPath)
+    ? runDifftasticStructural(leftText, rightText, displayPath)
     : undefined;
 
   return {
