@@ -358,11 +358,16 @@ export function DiffPane({
       }
       scheduled = true;
       queueMicrotask(() => {
-        scheduled = false;
         if (cancelled) {
+          scheduled = false;
           return;
         }
-        readViewport();
+
+        try {
+          readViewport();
+        } finally {
+          scheduled = false;
+        }
       });
     };
 
