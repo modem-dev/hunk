@@ -60,7 +60,7 @@ export const PLATFORM_PACKAGE_MATRIX: PlatformPackageSpec[] = [
     os: "windows",
     cpu: "x64",
     binaryName: "hunk",
-    binaryRelativePath: "bin/hunk",
+    binaryRelativePath: "bin/hunk.exe",
   },
 ] as const;
 
