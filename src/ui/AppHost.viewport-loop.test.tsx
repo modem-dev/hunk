@@ -1,3 +1,20 @@
+/**
+ * Regression stress test for PR #242 / issue #233.
+ *
+ * This file is intentionally separate from the broad AppHost interaction suite because it is a
+ * one-off reproduction for a React/OpenTUI feedback loop rather than normal product behavior:
+ * rapid hunk navigation and wheel scrolling can cause OpenTUI's scrollbar to emit synchronous
+ * viewport `change` events while DiffPane layout effects are still committing scroll updates.
+ * Dispatching React state updates directly from that listener used to recurse through
+ * `updateSliderFromScrollState -> onChange -> handleViewportChange -> setScrollViewport` until
+ * React threw "Maximum update depth exceeded".
+ *
+ * The fixture below keeps several ingredients that made the crash reproducible on `main`: many
+ * files, separated hunks, stack mode, visible agent notes, repeated `]` navigation, and bursty
+ * wheel scrolling. If this test fails or times out, treat it as a signal that viewport event
+ * coalescing has regressed; avoid merging it into a generic smoke test unless it can still
+ * reproduce the original loop reliably.
+ */
 import { expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
