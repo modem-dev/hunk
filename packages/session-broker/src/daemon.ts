@@ -315,8 +315,6 @@ export class SessionBrokerDaemon<
 
       this.shutdown();
     }, remainingMs);
-
-    this.idleTimer.unref?.();
   }
 
   private async handleApiRequest(request: Request) {
