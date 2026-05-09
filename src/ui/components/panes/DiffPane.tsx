@@ -41,7 +41,6 @@ import type { VisibleBodyBounds } from "../../diff/rowWindowing";
 import { prefetchHighlightedDiff } from "../../diff/useHighlightedDiff";
 
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
-const EMPTY_VISIBLE_AGENT_NOTES_BY_FILE = new Map<string, VisibleAgentNote[]>();
 
 /**
  * Clamp one vertical scroll target into the currently reachable review-stream extent.
@@ -271,8 +270,9 @@ export function DiffPane({
     return next;
   }, [files, showAgentNotes]);
 
-  // Keep exact row rendering for wrapped lines and the selected file's visible notes;
-  // other files can still use placeholders and viewport windowing.
+  // Keep exact row rendering for wrapped lines; other files can still use placeholders and viewport
+  // windowing. Rendered sections always include their note rows so their concrete height matches the
+  // geometry used for scroll planning.
   const windowingEnabled = !wrapLines;
   const [scrollViewport, setScrollViewport] = useState({ top: 0, height: 0 });
   const scrollbarRef = useRef<VerticalScrollbarHandle>(null);
@@ -392,35 +392,11 @@ export function DiffPane({
     return collectIntersectingFileSectionIds(baseFileSectionLayouts, minVisibleY, maxVisibleY);
   }, [baseFileSectionLayouts, scrollViewport.height, scrollViewport.top]);
 
-  const visibleAgentNotesByFile = useMemo(() => {
-    const next = new Map<string, VisibleAgentNote[]>();
-
-    if (!showAgentNotes) {
-      return EMPTY_VISIBLE_AGENT_NOTES_BY_FILE;
-    }
-
-    const fileIdsToMeasure = new Set(visibleViewportFileIds);
-    // Always measure the selected file with its real note rows so hunk navigation can compute
-    // accurate bounds even before the file scrolls into the visible viewport.
-    if (selectedFileId) {
-      fileIdsToMeasure.add(selectedFileId);
-    }
-
-    for (const fileId of fileIdsToMeasure) {
-      const visibleNotes = allAgentNotesByFile.get(fileId);
-      if (visibleNotes && visibleNotes.length > 0) {
-        next.set(fileId, visibleNotes);
-      }
-    }
-
-    return next;
-  }, [allAgentNotesByFile, selectedFileId, showAgentNotes, visibleViewportFileIds]);
-
   const sectionGeometry = useMemo(
     () =>
       files.map((file, index) => {
-        const visibleNotes = visibleAgentNotesByFile.get(file.id) ?? EMPTY_VISIBLE_AGENT_NOTES;
-        if (visibleNotes.length === 0) {
+        const agentNotes = allAgentNotesByFile.get(file.id) ?? EMPTY_VISIBLE_AGENT_NOTES;
+        if (agentNotes.length === 0) {
           return baseSectionGeometry[index]!;
         }
 
@@ -429,7 +405,7 @@ export function DiffPane({
           layout,
           showHunkHeaders,
           theme,
-          visibleNotes,
+          agentNotes,
           diffContentWidth,
           showLineNumbers,
           wrapLines,
@@ -437,13 +413,13 @@ export function DiffPane({
       }),
     [
       baseSectionGeometry,
+      allAgentNotesByFile,
       diffContentWidth,
       files,
       layout,
       showHunkHeaders,
       showLineNumbers,
       theme,
-      visibleAgentNotesByFile,
       wrapLines,
     ],
   );
@@ -1146,7 +1122,7 @@ export function DiffPane({
                       theme={theme}
                       viewWidth={diffContentWidth}
                       visibleAgentNotes={
-                        visibleAgentNotesByFile.get(file.id) ?? EMPTY_VISIBLE_AGENT_NOTES
+                        allAgentNotesByFile.get(file.id) ?? EMPTY_VISIBLE_AGENT_NOTES
                       }
                       visibleBodyBounds={visibleBodyBoundsByFile.get(file.id)}
                       onOpenAgentNotesAtHunk={(hunkIndex) =>

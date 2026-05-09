@@ -73,11 +73,10 @@ describe("annotated hunk navigation", () => {
   const afterB = "new\n";
 
   test("only includes hunks that have overlapping annotations", () => {
-    // Hunk 0 new range is [1,1], hunk 1 new range is [17,17].
-    // Annotate only hunk 1 in file alpha, and hunk 0 in file beta.
+    // Annotate the changed line in alpha hunk 1 and the only hunk in beta.
     const fileA = createTestFile("alpha", "alpha.ts", beforeA, afterA, {
       path: "alpha.ts",
-      annotations: [{ newRange: [17, 17], summary: "Note on hunk 1" }],
+      annotations: [{ newRange: [20, 20], summary: "Note on hunk 1" }],
     });
     const fileB = createTestFile("beta", "beta.ts", beforeB, afterB, {
       path: "beta.ts",
@@ -166,6 +165,43 @@ describe("annotated hunk navigation", () => {
     // Backward from an unknown position should land on the last annotated cursor.
     expect(findNextHunkCursor(annotatedCursors, "alpha", 0, -1)).toEqual({
       fileId: "alpha",
+      hunkIndex: 1,
+    });
+  });
+
+  test("uses full stream position when annotated navigation starts on an unannotated hunk", () => {
+    const streamCursors: HunkCursor[] = [
+      { fileId: "alpha", hunkIndex: 0 },
+      { fileId: "alpha", hunkIndex: 1 },
+      { fileId: "beta", hunkIndex: 0 },
+      { fileId: "gamma", hunkIndex: 0 },
+      { fileId: "gamma", hunkIndex: 1 },
+      { fileId: "omega", hunkIndex: 0 },
+    ];
+    const annotatedCursors: HunkCursor[] = [
+      { fileId: "alpha", hunkIndex: 1 },
+      { fileId: "gamma", hunkIndex: 0 },
+      { fileId: "gamma", hunkIndex: 1 },
+    ];
+
+    expect(findNextHunkCursor(annotatedCursors, "beta", 0, 1, streamCursors)).toEqual({
+      fileId: "gamma",
+      hunkIndex: 0,
+    });
+    expect(findNextHunkCursor(annotatedCursors, "beta", 0, -1, streamCursors)).toEqual({
+      fileId: "alpha",
+      hunkIndex: 1,
+    });
+    expect(findNextHunkCursor(annotatedCursors, "alpha", 0, 1, streamCursors)).toEqual({
+      fileId: "alpha",
+      hunkIndex: 1,
+    });
+    expect(findNextHunkCursor(annotatedCursors, "gamma", 1, 1, streamCursors)).toEqual({
+      fileId: "gamma",
+      hunkIndex: 1,
+    });
+    expect(findNextHunkCursor(annotatedCursors, "omega", 0, 1, streamCursors)).toEqual({
+      fileId: "gamma",
       hunkIndex: 1,
     });
   });

@@ -92,6 +92,43 @@ describe("live UI integration", () => {
     }
   });
 
+  test("comment navigation between agent-context notes does not crash the live UI", async () => {
+    const fixture = harness.createAgentNavigationRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split", "--agent-context", fixture.agentContext, "--agent-notes"],
+      cwd: fixture.dir,
+      cols: 160,
+      rows: 14,
+    });
+
+    try {
+      const initial = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+      expect(initial).not.toContain("Maximum update depth exceeded");
+
+      await session.press("}");
+      const alphaNote = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("Alpha note for navigation."),
+        5_000,
+      );
+      expect(alphaNote).not.toContain("Maximum update depth exceeded");
+
+      await session.press("}");
+      const gammaNote = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("Gamma note for navigation."),
+        5_000,
+      );
+
+      expect(gammaNote).toContain("Gamma note for navigation.");
+      expect(gammaNote).not.toContain("Maximum update depth exceeded");
+    } finally {
+      session.close();
+    }
+  });
+
   test("real hunk navigation jumps to later hunks in the review stream", async () => {
     const fixture = harness.createMultiHunkFilePair();
     const session = await harness.launchHunk({
