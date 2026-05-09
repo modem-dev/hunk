@@ -518,6 +518,29 @@ describe("loadAppBootstrap", () => {
     expect(paths).toHaveLength(fixtureFiles.length);
   });
 
+  test("loads untracked files even when diff.external is configured in the repo", async () => {
+    // Regression: a user-configured `diff.external` (e.g. difftastic) silently replaces
+    // git's unified-diff output, which left the untracked-file synthesizer with patch
+    // text Pierre couldn't parse and threw "Expected one parsed file ..., got 0".
+    const dir = createTempRepo("hunk-git-untracked-ext-diff-");
+
+    writeFileSync(join(dir, "tracked.ts"), "export const tracked = 1;\n");
+    git(dir, "add", "tracked.ts");
+    git(dir, "commit", "-m", "initial");
+
+    git(dir, "config", "diff.external", "/usr/bin/true");
+    writeFileSync(join(dir, "untracked.ts"), "export const added = true;\n");
+
+    const bootstrap = await loadFromRepo(dir, {
+      kind: "vcs",
+      staged: false,
+      options: { mode: "auto" },
+    });
+
+    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["untracked.ts"]);
+    expect(bootstrap.changeset.files[0]?.patch).toContain("new file mode");
+  });
+
   test("still shows an untracked agent sidecar when it lives inside the repo", async () => {
     const dir = createTempRepo("hunk-git-agent-sidecar-");
 

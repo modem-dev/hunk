@@ -99,8 +99,11 @@ function buildGitStatusArgs(input: VcsCommandInput) {
 
 /** Build the synthetic patch used to render one untracked file as a new-file diff. */
 function buildGitNewFileDiffArgs(filePath: string) {
+  // `--no-ext-diff` keeps user-configured `diff.external` tools (difftastic, delta, etc.)
+  // from replacing the unified-diff output Pierre needs to parse this synthetic patch.
   return withNormalizedDiffPrefixes([
     "diff",
+    "--no-ext-diff",
     "--no-index",
     "--no-color",
     "--",
