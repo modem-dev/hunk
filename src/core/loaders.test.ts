@@ -491,22 +491,19 @@ describe("loadAppBootstrap", () => {
   });
 
   test("loads untracked files whose names need parser-safe diff headers", async () => {
-    if (platform() === "win32") {
-      return;
-    }
-
     const dir = createTempRepo("hunk-git-quoted-untracked-");
 
     writeFileSync(join(dir, "tracked.ts"), "export const tracked = 1;\n");
     git(dir, "add", "tracked.ts");
     git(dir, "commit", "-m", "initial");
 
-    const quoteFile = 'quote"name.txt';
-    const tabFile = "tab\tname.txt";
-    const backslashFile = "back\\slash.txt";
-    writeFileSync(join(dir, quoteFile), "quote\n");
-    writeFileSync(join(dir, tabFile), "tab\n");
-    writeFileSync(join(dir, backslashFile), "backslash\n");
+    const portableFiles = ["space name.txt"];
+    const unixOnlyFiles = ['quote"name.txt', "tab\tname.txt", "back\\slash.txt"];
+    const fixtureFiles =
+      platform() === "win32" ? portableFiles : [...portableFiles, ...unixOnlyFiles];
+    for (const file of fixtureFiles) {
+      writeFileSync(join(dir, file), `${file}\n`);
+    }
 
     const bootstrap = await loadFromRepo(dir, {
       kind: "vcs",
@@ -515,10 +512,10 @@ describe("loadAppBootstrap", () => {
     });
     const paths = bootstrap.changeset.files.map((file) => file.path);
 
-    expect(paths).toContain(quoteFile);
-    expect(paths).toContain(tabFile);
-    expect(paths).toContain(backslashFile);
-    expect(paths).toHaveLength(3);
+    for (const file of fixtureFiles) {
+      expect(paths).toContain(file);
+    }
+    expect(paths).toHaveLength(fixtureFiles.length);
   });
 
   test("still shows an untracked agent sidecar when it lives inside the repo", async () => {
@@ -1115,21 +1112,16 @@ describe("loadAppBootstrap", () => {
   });
 
   test("loads quoted noprefix patch text emitted for escaped git paths", async () => {
-    if (platform() === "win32") {
-      return;
-    }
-
-    const dir = createTempRepo("hunk-patch-quoted-noprefix-");
-    const fileName = "src\tfile.txt";
-
-    writeFileSync(join(dir, fileName), "one\n");
-    git(dir, "add", ".");
-    git(dir, "commit", "-m", "initial");
-
-    writeFileSync(join(dir, fileName), "two\n");
-    const patchText = git(dir, "-c", "diff.noprefix=true", "diff", "--", fileName);
-
-    expect(patchText).toContain('diff --git "src\\tfile.txt" "src\\tfile.txt"');
+    const patchText = [
+      'diff --git "src\\tfile.txt" "src\\tfile.txt"',
+      "index 5626abf..f719efd 100644",
+      '--- "src\\tfile.txt"',
+      '+++ "src\\tfile.txt"',
+      "@@ -1 +1 @@",
+      "-one",
+      "+two",
+      "",
+    ].join("\n");
 
     const bootstrap = await loadAppBootstrap({
       kind: "patch",

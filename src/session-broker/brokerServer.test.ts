@@ -94,7 +94,6 @@ async function openSessionSocket(port: number) {
       () => reject(new Error("Timed out waiting for websocket open.")),
       500,
     );
-    timeout.unref?.();
 
     socket.addEventListener(
       "open",
@@ -142,7 +141,6 @@ async function waitForSocketClose(socket: WebSocket) {
       () => reject(new Error("Timed out waiting for websocket close.")),
       1_000,
     );
-    timeout.unref?.();
 
     socket.addEventListener(
       "close",
@@ -248,6 +246,8 @@ describe("Hunk session daemon server", () => {
   });
 
   test("closes snapshots for missing sessions with a specific not-registered reason", async () => {
+    // Bun's Windows WebSocket client does not reliably surface this immediate server close.
+    // The daemon-core test covers the close code/reason without the flaky transport layer.
     if (platform() === "win32") {
       return;
     }
