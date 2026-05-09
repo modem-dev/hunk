@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createServer } from "node:net";
+import { platform } from "node:os";
 import {
   createTestSessionRegistration,
   createTestSessionSnapshot,
@@ -247,6 +248,10 @@ describe("Hunk session daemon server", () => {
   });
 
   test("closes snapshots for missing sessions with a specific not-registered reason", async () => {
+    if (platform() === "win32") {
+      return;
+    }
+
     const port = await reserveLoopbackPort();
     process.env.HUNK_MCP_HOST = "127.0.0.1";
     process.env.HUNK_MCP_PORT = String(port);

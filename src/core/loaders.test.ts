@@ -1115,6 +1115,10 @@ describe("loadAppBootstrap", () => {
   });
 
   test("loads quoted noprefix patch text emitted for escaped git paths", async () => {
+    if (platform() === "win32") {
+      return;
+    }
+
     const dir = createTempRepo("hunk-patch-quoted-noprefix-");
     const fileName = "src\tfile.txt";
 

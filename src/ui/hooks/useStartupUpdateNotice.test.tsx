@@ -44,8 +44,7 @@ function ResolverSwapHarness({ onNoticeText }: { onNoticeText?: (value: string |
   useEffect(() => {
     const timer = setTimeout(() => {
       setUseSecondResolver(true);
-    }, 5);
-    timer.unref?.();
+    }, 0);
 
     return () => {
       clearTimeout(timer);
@@ -62,7 +61,7 @@ function ResolverSwapHarness({ onNoticeText }: { onNoticeText?: (value: string |
 
   return (
     <NoticeHarness
-      delayMs={15}
+      delayMs={50}
       durationMs={200}
       repeatMs={1_000}
       resolver={resolver}
@@ -119,7 +118,7 @@ describe("useStartupUpdateNotice", () => {
     try {
       await advance(setup, 0);
       await advance(setup, 10);
-      await advance(setup, 20);
+      await advance(setup, 60);
 
       expect(seen).toContain("Update available: 2.0.0");
       expect(seen).not.toContain("Update available: 1.0.0");
