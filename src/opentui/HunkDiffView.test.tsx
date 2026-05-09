@@ -61,6 +61,13 @@ describe("HunkDiffView", () => {
   });
 
   test("exports the documented built-in theme names", () => {
-    expect(HUNK_DIFF_THEME_NAMES).toEqual(["graphite", "midnight", "paper", "ember"]);
+    expect(HUNK_DIFF_THEME_NAMES).toEqual([
+      "graphite",
+      "midnight",
+      "paper",
+      "ember",
+      "catppuccin-latte",
+      "catppuccin-mocha",
+    ]);
   });
 });

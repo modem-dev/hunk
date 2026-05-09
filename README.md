@@ -122,7 +122,7 @@ You can persist preferences to a config file:
 Example:
 
 ```toml
-theme = "graphite"   # graphite, midnight, paper, ember
+theme = "graphite"   # graphite, midnight, paper, ember, catppuccin-latte, catppuccin-mocha
 mode = "auto"        # auto, split, stack
 vcs = "git"          # git, jj
 exclude_untracked = false
