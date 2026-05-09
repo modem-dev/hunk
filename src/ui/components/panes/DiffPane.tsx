@@ -42,7 +42,6 @@ import { prefetchHighlightedDiff } from "../../diff/useHighlightedDiff";
 
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
 const EMPTY_VISIBLE_AGENT_NOTES_BY_FILE = new Map<string, VisibleAgentNote[]>();
-const ROW_WINDOWING_ADJACENT_HUNK_RADIUS = 1;
 
 /**
  * Clamp one vertical scroll target into the currently reachable review-stream extent.
@@ -619,30 +618,17 @@ export function DiffPane({
         scrollViewport.top + scrollViewport.height - sectionLayout.bodyTop + overscanRows;
 
       if (file.id === selectedFileId) {
-        const clampedSelectedHunkIndex = Math.max(
-          0,
-          Math.min(selectedHunkIndex, file.metadata.hunks.length - 1),
+        const selectedHunkBounds = geometry.hunkBounds.get(
+          Math.max(0, Math.min(selectedHunkIndex, file.metadata.hunks.length - 1)),
         );
-        const firstKeptHunkIndex = Math.max(
-          0,
-          clampedSelectedHunkIndex - ROW_WINDOWING_ADJACENT_HUNK_RADIUS,
-        );
-        const lastKeptHunkIndex = Math.min(
-          file.metadata.hunks.length - 1,
-          clampedSelectedHunkIndex + ROW_WINDOWING_ADJACENT_HUNK_RADIUS,
-        );
-
-        // Keep a small neighborhood of hunks mounted around the active selection, not just the
-        // selected hunk itself. That trades a little more mounted work for less churn when the user
-        // wheels across a hunk boundary or hits `[` / `]` repeatedly through nearby hunks.
-        for (let hunkIndex = firstKeptHunkIndex; hunkIndex <= lastKeptHunkIndex; hunkIndex += 1) {
-          const hunkBounds = geometry.hunkBounds.get(hunkIndex);
-          if (!hunkBounds) {
-            continue;
-          }
-
-          minTop = Math.min(minTop, hunkBounds.top - overscanRows);
-          maxBottom = Math.max(maxBottom, hunkBounds.top + hunkBounds.height + overscanRows);
+        if (selectedHunkBounds) {
+          // Always keep the selected hunk inside the mounted slice even if the viewport is a little
+          // ahead or behind it. That avoids unmounting the active target during navigation settles.
+          minTop = Math.min(minTop, selectedHunkBounds.top - overscanRows);
+          maxBottom = Math.max(
+            maxBottom,
+            selectedHunkBounds.top + selectedHunkBounds.height + overscanRows,
+          );
         }
       }
 
