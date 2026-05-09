@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
+import { useRenderer } from "@opentui/react";
 import { resolveConfiguredCliInput } from "../core/config";
 import { loadAppBootstrap } from "../core/loaders";
 import { resolveRuntimeCliInput } from "../core/terminal";
@@ -7,8 +8,8 @@ import type {
   AppBootstrap,
   CliInput,
   CommitChangeset,
-  CommitDetailsMode,
   DiffFile,
+  ViewPreferences,
 } from "../core/types";
 import type { UpdateNotice } from "../core/updateNotice";
 import {
@@ -18,6 +19,7 @@ import {
 import type { HunkSessionBrokerClient, LiveComment } from "../hunk-session/types";
 import { App } from "./App";
 import { useStartupUpdateNotice } from "./hooks/useStartupUpdateNotice";
+import { resolveTheme } from "./themes";
 
 /** Result returned by `onMoveCommit` so the caller can detect blocked moves. */
 export type MoveCommitResult =
@@ -46,20 +48,29 @@ export function AppHost({
   const [commitBuffer, setCommitBuffer] = useState<CommitChangeset[]>([]);
   const [cursorIndex, setCursorIndex] = useState(0);
   const [commitStreamComplete, setCommitStreamComplete] = useState(false);
-  // The commit-details view mode and live-comment store both live at AppHost so they
-  // survive the App remount that fires on every commit-cursor move. App's view-state
-  // reset on commit nav is intentional for selection / scroll / filter (they don't
-  // translate across commits), but the user's metadata-visibility preference and the
-  // notes they've left should follow them. Live comments are bucketed by the active
-  // changeset's id so each commit (or each non-commit-review canvas) keeps its own
-  // annotation set; switching back to a previously visited commit restores its notes.
-  const [commitDetailsMode, setCommitDetailsMode] = useState<CommitDetailsMode>(
-    bootstrap.initialCommitDetailsMode ?? "full",
-  );
-  const cycleCommitDetailsMode = useCallback(() => {
-    setCommitDetailsMode((current) =>
-      current === "full" ? "compact" : current === "compact" ? "hidden" : "full",
-    );
+  // View preferences and the live-comment store both live at AppHost so they survive
+  // the App remount that fires on every commit-cursor move. App's view-state reset on
+  // commit nav is intentional for selection / scroll / filter (they don't translate
+  // across commits), but the toggles a user has set and the notes they've left should
+  // follow them. Live comments are bucketed by the active changeset's id so each commit
+  // (or each non-commit-review canvas) keeps its own annotation set; switching back to
+  // a previously visited commit restores its notes.
+  const renderer = useRenderer();
+  const [view, setView] = useState<ViewPreferences>(() => ({
+    layoutMode: bootstrap.initialMode,
+    themeId: resolveTheme(bootstrap.initialTheme, renderer.themeMode).id,
+    showAgentNotes: bootstrap.initialShowAgentNotes ?? false,
+    showLineNumbers: bootstrap.initialShowLineNumbers ?? true,
+    wrapLines: bootstrap.initialWrapLines ?? false,
+    showHunkHeaders: bootstrap.initialShowHunkHeaders ?? true,
+    // Pager-bare mode (`hunk pager` without commit-review) starts with the sidebar
+    // hidden because the chrome is intentionally minimal there. Commit-review and
+    // every other input start with the sidebar visible.
+    sidebarVisible: !(bootstrap.input.options.pager && !bootstrap.commitCursor),
+    commitDetailsMode: bootstrap.initialCommitDetailsMode ?? "full",
+  }));
+  const updateView = useCallback((patch: Partial<ViewPreferences>) => {
+    setView((current) => ({ ...current, ...patch }));
   }, []);
   const [liveCommentsByReviewKey, setLiveCommentsByReviewKey] = useState<
     Record<string, Record<string, LiveComment[]>>
@@ -295,8 +306,8 @@ export function AppHost({
       onQuit={onQuit}
       onReloadSession={reloadSession}
       onMoveCommit={bootstrap.commitReviewStream ? onMoveCommit : undefined}
-      commitDetailsMode={commitDetailsMode}
-      onCycleCommitDetailsMode={bootstrap.commitReviewStream ? cycleCommitDetailsMode : undefined}
+      view={view}
+      updateView={updateView}
       liveCommentsByFileId={liveCommentsByFileId}
       setLiveCommentsByFileId={setLiveCommentsByFileId}
     />

@@ -6,7 +6,7 @@ import {
 import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState, useRef } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import type { AppBootstrap, CliInput, CommitDetailsMode, LayoutMode } from "../core/types";
+import type { AppBootstrap, CliInput, LayoutMode, ViewPreferences } from "../core/types";
 import { canReloadInput, computeWatchSignature } from "../core/watch";
 import type {
   HunkSessionBrokerClient,
@@ -50,32 +50,6 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
-/** Preserve the active app view settings when rebuilding the current input. */
-function withCurrentViewOptions(
-  input: CliInput,
-  view: {
-    layoutMode: LayoutMode;
-    themeId: string;
-    showAgentNotes: boolean;
-    showHunkHeaders: boolean;
-    showLineNumbers: boolean;
-    wrapLines: boolean;
-  },
-): CliInput {
-  return {
-    ...input,
-    options: {
-      ...input.options,
-      mode: view.layoutMode,
-      theme: view.themeId,
-      agentNotes: view.showAgentNotes,
-      hunkHeaders: view.showHunkHeaders,
-      lineNumbers: view.showLineNumbers,
-      wrapLines: view.wrapLines,
-    },
-  };
-}
-
 /** Orchestrate global app state, layout, navigation, and pane coordination. */
 export function App({
   bootstrap,
@@ -84,8 +58,8 @@ export function App({
   onQuit = () => process.exit(0),
   onReloadSession,
   onMoveCommit,
-  commitDetailsMode = "full",
-  onCycleCommitDetailsMode,
+  view,
+  updateView,
   liveCommentsByFileId,
   setLiveCommentsByFileId,
 }: {
@@ -100,12 +74,13 @@ export function App({
   /** Provided when the source is commit-by-commit; called by > / <. */
   onMoveCommit?: (delta: number) => MoveCommitResult;
   /**
-   * Commit-details view mode, lifted to AppHost so it persists across the remount
-   * that fires on commit-cursor moves. Defaults to "full" when commit-review isn't
-   * active. The matching cycle action is `onCycleCommitDetailsMode`.
+   * View preferences lifted to AppHost so user-toggled options (layout, theme,
+   * sidebar, line numbers, wrap, hunk metadata, agent notes, commit-details mode)
+   * persist across the App remount that fires on every commit-cursor move.
+   * `updateView` accepts a partial patch that's merged into the bundle.
    */
-  commitDetailsMode?: CommitDetailsMode;
-  onCycleCommitDetailsMode?: () => void;
+  view: ViewPreferences;
+  updateView: (patch: Partial<ViewPreferences>) => void;
   /**
    * Live-comment storage lifted to AppHost so notes survive the remount fired by
    * commit-cursor moves. AppHost buckets comments by sha and hands the active slice
@@ -133,16 +108,17 @@ export function App({
   const wrapToggleScrollTopRef = useRef<number | null>(null);
   const layoutToggleScrollTopRef = useRef<number | null>(null);
   const [layoutToggleRequestId, setLayoutToggleRequestId] = useState(0);
-  const [layoutMode, setLayoutMode] = useState<LayoutMode>(bootstrap.initialMode);
-  const [themeId, setThemeId] = useState(
-    () => resolveTheme(bootstrap.initialTheme, renderer.themeMode).id,
-  );
-  const [showAgentNotes, setShowAgentNotes] = useState(bootstrap.initialShowAgentNotes ?? false);
-  const [showLineNumbers, setShowLineNumbers] = useState(bootstrap.initialShowLineNumbers ?? true);
-  const [wrapLines, setWrapLines] = useState(bootstrap.initialWrapLines ?? false);
+  const {
+    layoutMode,
+    themeId,
+    showAgentNotes,
+    showLineNumbers,
+    wrapLines,
+    showHunkHeaders,
+    sidebarVisible,
+    commitDetailsMode,
+  } = view;
   const [codeHorizontalOffset, setCodeHorizontalOffset] = useState(0);
-  const [showHunkHeaders, setShowHunkHeaders] = useState(bootstrap.initialShowHunkHeaders ?? true);
-  const [sidebarVisible, setSidebarVisible] = useState(() => !pagerMode);
   const [forceSidebarOpen, setForceSidebarOpen] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [focusArea, setFocusArea] = useState<FocusArea>("files");
@@ -198,8 +174,8 @@ export function App({
   );
 
   const openAgentNotes = useCallback(() => {
-    setShowAgentNotes(true);
-  }, []);
+    updateView({ showAgentNotes: true });
+  }, [updateView]);
 
   useHunkSessionBridge({
     addLiveComment: review.addLiveComment,
@@ -338,20 +314,23 @@ export function App({
   );
 
   /** Preserve the current review position before changing the active diff layout. */
-  const selectLayoutMode = useCallback((mode: LayoutMode) => {
-    layoutToggleScrollTopRef.current = diffScrollRef.current?.scrollTop ?? 0;
-    setLayoutToggleRequestId((current) => current + 1);
-    setLayoutMode(mode);
-  }, []);
+  const selectLayoutMode = useCallback(
+    (mode: LayoutMode) => {
+      layoutToggleScrollTopRef.current = diffScrollRef.current?.scrollTop ?? 0;
+      setLayoutToggleRequestId((current) => current + 1);
+      updateView({ layoutMode: mode });
+    },
+    [updateView],
+  );
 
   /** Toggle the global agent note layer on or off. */
   const toggleAgentNotes = () => {
-    setShowAgentNotes((current) => !current);
+    updateView({ showAgentNotes: !showAgentNotes });
   };
 
   /** Toggle line-number gutters without changing the diff content itself. */
   const toggleLineNumbers = () => {
-    setShowLineNumbers((current) => !current);
+    updateView({ showLineNumbers: !showLineNumbers });
   };
 
   /** Toggle whether diff code rows wrap instead of truncating to one terminal row. */
@@ -360,13 +339,13 @@ export function App({
     // top-most source row after wrapped row heights change.
     wrapToggleScrollTopRef.current = diffScrollRef.current?.scrollTop ?? 0;
     setCodeHorizontalOffset(0);
-    setWrapLines((current) => !current);
+    updateView({ wrapLines: !wrapLines });
   };
 
   /** Toggle the sidebar, forcing it open on narrower layouts when the app can still fit both panes. */
   const toggleSidebar = () => {
     if (sidebarVisible && (responsiveLayout.showSidebar || forceSidebarOpen)) {
-      setSidebarVisible(false);
+      updateView({ sidebarVisible: false });
       setForceSidebarOpen(false);
       return;
     }
@@ -378,13 +357,13 @@ export function App({
       return;
     }
 
-    setSidebarVisible(true);
+    updateView({ sidebarVisible: true });
     setForceSidebarOpen(!responsiveLayout.showSidebar && canForceShowSidebar);
   };
 
   /** Toggle visibility of hunk metadata rows without changing the actual diff lines. */
   const toggleHunkHeaders = () => {
-    setShowHunkHeaders((current) => !current);
+    updateView({ showHunkHeaders: !showHunkHeaders });
   };
 
   /** Jump to an annotated hunk without changing the global note visibility toggle. */
@@ -398,22 +377,17 @@ export function App({
   const canRefreshCurrentInput = canReloadInput(bootstrap.input);
   const watchEnabled = Boolean(bootstrap.input.options.watch && canRefreshCurrentInput);
 
-  /** Rebuild the current diff source while preserving the active app view options. */
+  /**
+   * Rebuild the current diff source. View options live on AppHost above this
+   * component's lifecycle so they survive the reload without needing to be
+   * round-tripped through the bootstrap.
+   */
   const refreshCurrentInput = useCallback(async () => {
     if (!canRefreshCurrentInput) {
       return;
     }
 
-    const nextInput = withCurrentViewOptions(bootstrap.input, {
-      layoutMode,
-      themeId,
-      showAgentNotes,
-      showHunkHeaders,
-      showLineNumbers,
-      wrapLines,
-    });
-
-    await onReloadSession(nextInput, {
+    await onReloadSession(bootstrap.input, {
       resetApp: false,
       sourcePath:
         bootstrap.input.kind === "vcs" ||
@@ -422,18 +396,7 @@ export function App({
           ? bootstrap.changeset.sourceLabel
           : undefined,
     });
-  }, [
-    bootstrap.changeset.sourceLabel,
-    bootstrap.input,
-    canRefreshCurrentInput,
-    layoutMode,
-    onReloadSession,
-    showAgentNotes,
-    showHunkHeaders,
-    showLineNumbers,
-    themeId,
-    wrapLines,
-  ]);
+  }, [bootstrap.changeset.sourceLabel, bootstrap.input, canRefreshCurrentInput, onReloadSession]);
 
   const triggerRefreshCurrentInput = useCallback(() => {
     void refreshCurrentInput().catch((error) => {
@@ -526,8 +489,28 @@ export function App({
   const cycleTheme = useCallback(() => {
     const currentIndex = THEMES.findIndex((theme) => theme.id === activeTheme.id);
     const nextIndex = (currentIndex + 1) % THEMES.length;
-    setThemeId(THEMES[nextIndex]!.id);
-  }, [activeTheme.id]);
+    updateView({ themeId: THEMES[nextIndex]!.id });
+  }, [activeTheme.id, updateView]);
+
+  /** Set the theme directly from the theme menu. */
+  const selectThemeId = useCallback(
+    (id: string) => {
+      updateView({ themeId: id });
+    },
+    [updateView],
+  );
+
+  /** Advance the commit-details mode through full → compact → hidden → full. */
+  const cycleCommitDetailsMode = useCallback(() => {
+    updateView({
+      commitDetailsMode:
+        commitDetailsMode === "full"
+          ? "compact"
+          : commitDetailsMode === "compact"
+            ? "hidden"
+            : "full",
+    });
+  }, [commitDetailsMode, updateView]);
 
   const menus = useMemo(
     () =>
@@ -542,7 +525,7 @@ export function App({
         refreshCurrentInput: triggerRefreshCurrentInput,
         requestQuit,
         selectLayoutMode,
-        selectThemeId: setThemeId,
+        selectThemeId,
         showAgentNotes,
         showHelp,
         showHunkHeaders,
@@ -550,7 +533,7 @@ export function App({
         commitDetailsMode: isCommitReview ? commitDetailsMode : undefined,
         renderSidebar,
         toggleAgentNotes,
-        cycleCommitDetailsMode: isCommitReview ? onCycleCommitDetailsMode : undefined,
+        cycleCommitDetailsMode: isCommitReview ? cycleCommitDetailsMode : undefined,
         moveToCommit: isCommitReview && onMoveCommit ? onMoveCommit : undefined,
         toggleFocusArea,
         toggleHelp,
@@ -570,22 +553,17 @@ export function App({
       requestQuit,
       review.moveToHunk,
       selectLayoutMode,
+      selectThemeId,
       triggerRefreshCurrentInput,
       showAgentNotes,
       showHelp,
       showHunkHeaders,
       showLineNumbers,
       commitDetailsMode,
+      cycleCommitDetailsMode,
       renderSidebar,
       isCommitReview,
       onMoveCommit,
-<<<<<<< HEAD
-||||||| parent of fcdf0f4 (fix(pager): persist commitDetailsMode across commit-cursor moves)
-      sidebarVisible,
-=======
-      onCycleCommitDetailsMode,
-      sidebarVisible,
->>>>>>> fcdf0f4 (fix(pager): persist commitDetailsMode across commit-cursor moves)
       toggleAgentNotes,
       toggleFocusArea,
       toggleHelp,
@@ -635,7 +613,7 @@ export function App({
     showHelp,
     switchMenu,
     toggleAgentNotes,
-    cycleCommitDetailsMode: isCommitReview ? onCycleCommitDetailsMode : undefined,
+    cycleCommitDetailsMode: isCommitReview ? cycleCommitDetailsMode : undefined,
     toggleFocusArea,
     toggleHelp,
     toggleHunkHeaders,

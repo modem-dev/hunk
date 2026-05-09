@@ -103,6 +103,24 @@ export interface CommonOptions {
  */
 export type CommitDetailsMode = "full" | "compact" | "hidden";
 
+/**
+ * Live view-preference bundle owned by AppHost so the toggles a user has set
+ * survive App remounts (which fire whenever the commit cursor moves between
+ * commits). Updates are applied as partials through `updateView`. This is the
+ * runtime shape; the persisted-on-disk variant is `PersistedViewPreferences`
+ * below and uses CLI/config field names rather than the internal ones.
+ */
+export interface ViewPreferences {
+  layoutMode: LayoutMode;
+  themeId: string;
+  showAgentNotes: boolean;
+  showLineNumbers: boolean;
+  wrapLines: boolean;
+  showHunkHeaders: boolean;
+  sidebarVisible: boolean;
+  commitDetailsMode: CommitDetailsMode;
+}
+
 export interface PersistedViewPreferences {
   mode: LayoutMode;
   theme?: string;
