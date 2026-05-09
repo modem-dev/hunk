@@ -90,7 +90,7 @@ Load the Hunk skill and use it for this review.
 ```
 
 > [!NOTE]
-> `hunk skill path` lands in Hunk 0.10.0. Until that release is out, load the skill from the repo path above.
+> `hunk skill path` is available in Hunk 0.10.0 and newer. On older installs, load the skill from the repo path above.
 
 For the full live-session and `--agent-context` workflow guide, see [docs/agent-workflows.md](docs/agent-workflows.md).
 

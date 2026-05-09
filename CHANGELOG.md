@@ -6,6 +6,14 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.11.0] - 2026-05-09
+
+### Added
+
 - Added `vcs = "jj"` support, enabling `hunk diff [revset]` and `hunk show [revset]`.
 - Added a pager-mode sidebar file tree that can be revealed with the existing `s` shortcut while keeping pager chrome hidden by default.
 
@@ -13,7 +21,9 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Fixed
 
+- Fixed `git log -p` and multi-commit `git show -p` inputs so patch parsing ignores commit metadata instead of emitting Pierre parser warnings.
 - Fixed cross-file hunk navigation so near-boundary jumps keep the selected file pinned and backward jumps reveal the target hunk instead of the file top.
+- Fixed the View menu sidebar checkmark so it follows whether the responsive layout is actually rendering the sidebar.
 
 ## [0.10.0] - 2026-04-21
 
@@ -259,7 +269,8 @@ All notable user-visible changes to Hunk are documented in this file.
 
 - Stabilized diff repainting, active-hunk scrolling, syntax highlighting, pager stdin patch handling, and terminal cleanup on exit.
 
-[Unreleased]: https://github.com/modem-dev/hunk/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/modem-dev/hunk/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/modem-dev/hunk/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/modem-dev/hunk/compare/v0.9.5...v0.10.0
 [0.9.5]: https://github.com/modem-dev/hunk/compare/v0.9.4...v0.9.5
 [0.9.4]: https://github.com/modem-dev/hunk/compare/v0.9.3...v0.9.4
