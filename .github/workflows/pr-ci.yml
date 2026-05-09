@@ -54,7 +54,7 @@ jobs:
         run: bun run typecheck
 
       - name: Test suite
-        run: bun run test
+        run: bun test ./src ./packages ./scripts ./test/cli ./test/session
 
   pr-validate:
     name: Typecheck + Test + Smoke
