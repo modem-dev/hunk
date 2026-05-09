@@ -72,6 +72,10 @@ function buildCommonOptions(
     wrapLines: resolveBooleanFlag(argv, "--wrap", "--no-wrap"),
     hunkHeaders: resolveBooleanFlag(argv, "--hunk-headers", "--no-hunk-headers"),
     agentNotes: resolveBooleanFlag(argv, "--agent-notes", "--no-agent-notes"),
+    // --no-review forces the timeline-scrolling streaming pager (no daemon, no agent
+    // surface). --review forces the legacy buffered path with full review. Default is
+    // undefined, which lets the pager startup auto-detect log-style input.
+    noReview: resolveBooleanFlag(argv, "--no-review", "--review"),
   };
 }
 
@@ -156,6 +160,10 @@ function renderCliHelp() {
     "Git diff options:",
     "  --staged, --cached                      review staged changes",
     "  --exclude-untracked                     hide untracked files in working tree reviews",
+    "",
+    "Pager options:",
+    "  --no-review                             scroll-only timeline mode for `git log -p` style input",
+    "  --review                                force the buffered review path with daemon registration",
     "",
     "Notes:",
     "  Run `hunk <command> --help` for command-specific syntax and options.",
@@ -505,7 +513,12 @@ async function parsePagerCommand(
   tokens: string[],
   argv: string[],
 ): Promise<PagerCommandInput | HelpCommandInput> {
-  const command = createCommand("pager", "general Git pager wrapper with diff detection");
+  const command = createCommand("pager", "general Git pager wrapper with diff detection")
+    .option(
+      "--no-review",
+      "scroll-only timeline mode: streaming, no daemon registration, no agent surface",
+    )
+    .option("--review", "force the legacy buffered path with full review surface");
   let parsedOptions: Record<string, unknown> = {};
 
   command.action((options: Record<string, unknown>) => {

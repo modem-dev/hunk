@@ -12,6 +12,7 @@ import { findAgentFileContext, loadAgentContext } from "./agent";
 import { createSkippedBinaryMetadata, isProbablyBinaryFile, patchLooksBinary } from "./binary";
 import { normalizeDiffMetadataPaths, normalizeDiffPath } from "./diffPaths";
 import { HunkUserError } from "./errors";
+import { stripTerminalControl } from "./streaming/ansi";
 import {
   buildGitDiffArgs,
   buildGitDiffNumstatArgs,
@@ -59,15 +60,6 @@ function basename(path: string) {
 /** Remove git-style a/ and b/ prefixes before matching diff paths. */
 function stripPrefixes(path: string) {
   return path.replace(/^[ab]\//, "");
-}
-
-/** Remove terminal escape sequences so Git-colored pager input still parses as plain patch text. */
-function stripTerminalControl(text: string) {
-  return text
-    .replace(/\x1bP[\s\S]*?\x1b\\/g, "")
-    .replace(/\x1b\][\s\S]*?(?:\x07|\x1b\\)/g, "")
-    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
-    .replace(/\x1b[@-_]/g, "");
 }
 
 /**
@@ -127,6 +119,7 @@ export function stripGitLogMetadata(text: string) {
 
   return out.join("\n");
 }
+
 
 /** Split a multi-file patch into per-file chunks so each diff file keeps its original patch text. */
 function splitPatchIntoFileChunks(rawPatch: string) {
@@ -217,7 +210,7 @@ interface BuildDiffFileOptions {
 }
 
 /** Build the normalized per-file model used by the UI regardless of input mode. */
-function buildDiffFile(
+export function buildDiffFile(
   metadata: FileDiffMetadata,
   patch: string,
   index: number,
@@ -1031,5 +1024,6 @@ export async function loadAppBootstrap(
     initialWrapLines: input.options.wrapLines ?? false,
     initialShowHunkHeaders: input.options.hunkHeaders ?? true,
     initialShowAgentNotes: input.options.agentNotes ?? false,
+    initialCommitDetailsMode: input.options.commitDetailsMode ?? "full",
   };
 }

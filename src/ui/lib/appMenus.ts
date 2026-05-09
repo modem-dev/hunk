@@ -1,4 +1,4 @@
-import type { LayoutMode } from "../../core/types";
+import type { CommitDetailsMode, LayoutMode } from "../../core/types";
 import type { MenuEntry, MenuId } from "../components/chrome/menu";
 import { THEMES } from "../themes";
 
@@ -18,8 +18,17 @@ export interface BuildAppMenusOptions {
   showHelp: boolean;
   showHunkHeaders: boolean;
   showLineNumbers: boolean;
+  /** Optional commit-review-only setting. Undefined hides the related menu item. */
+  commitDetailsMode?: CommitDetailsMode;
   renderSidebar: boolean;
   toggleAgentNotes: () => void;
+  /** Optional commit-review-only action. Undefined hides the related menu item. */
+  cycleCommitDetailsMode?: () => void;
+  /**
+   * Optional commit-cursor handler for `git log -p` review. Undefined hides the
+   * Previous commit / Next commit items from the Navigate menu.
+   */
+  moveToCommit?: (delta: number) => void;
   toggleFocusArea: () => void;
   toggleHelp: () => void;
   toggleHunkHeaders: () => void;
@@ -46,8 +55,11 @@ export function buildAppMenus({
   showHelp,
   showHunkHeaders,
   showLineNumbers,
+  commitDetailsMode,
   renderSidebar,
   toggleAgentNotes,
+  cycleCommitDetailsMode,
+  moveToCommit,
   toggleFocusArea,
   toggleHelp,
   toggleHunkHeaders,
@@ -56,6 +68,9 @@ export function buildAppMenus({
   toggleSidebar,
   wrapLines,
 }: BuildAppMenusOptions): Record<MenuId, MenuEntry[]> {
+  const labelForCommitDetailsMode = (mode: CommitDetailsMode): string =>
+    mode === "full" ? "full" : mode === "compact" ? "compact" : "hidden";
+
   const themeMenuEntries: MenuEntry[] = THEMES.map((theme) => ({
     kind: "item",
     label: theme.label,
@@ -158,8 +173,35 @@ export function buildAppMenus({
         checked: showHunkHeaders,
         action: toggleHunkHeaders,
       },
+      ...(cycleCommitDetailsMode !== undefined
+        ? [
+            {
+              kind: "item" as const,
+              label: `Commit details: ${labelForCommitDetailsMode(commitDetailsMode ?? "full")}`,
+              hint: "C",
+              action: cycleCommitDetailsMode,
+            },
+          ]
+        : []),
     ],
     navigate: [
+      ...(moveToCommit !== undefined
+        ? [
+            {
+              kind: "item" as const,
+              label: "Previous commit",
+              hint: "<",
+              action: () => moveToCommit(-1),
+            },
+            {
+              kind: "item" as const,
+              label: "Next commit",
+              hint: ">",
+              action: () => moveToCommit(1),
+            },
+            { kind: "separator" as const },
+          ]
+        : []),
       {
         kind: "item",
         label: "Previous hunk",

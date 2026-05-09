@@ -1,7 +1,20 @@
 import { describe, expect, test } from "bun:test";
 import { HunkUserError } from "./errors";
 import { prepareStartupPlan } from "./startup";
+import type { LineSource } from "./streaming/stdinLines";
 import type { AppBootstrap, CliInput, ParsedCliInput } from "./types";
+
+function lineSourceFromString(text: string): LineSource {
+  // Mirror real stdinLines: split on \n and drop a trailing empty line so a final newline
+  // does not produce a phantom empty line.
+  const lines = text.split("\n");
+  if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+  return {
+    async *[Symbol.asyncIterator]() {
+      for (const line of lines) yield line;
+    },
+  };
+}
 
 function createBootstrap(input: CliInput): AppBootstrap {
   return {
@@ -70,8 +83,7 @@ describe("startup planning", () => {
 
     const plan = await prepareStartupPlan(["bun", "hunk", "pager"], {
       parseCliImpl: async () => ({ kind: "pager", options: { theme: "paper" } }),
-      readStdinText: async () => "* main\n  feature/demo\n",
-      looksLikePatchInputImpl: () => false,
+      readStdinLines: () => lineSourceFromString("* main\n  feature/demo\n"),
       loadAppBootstrapImpl: async () => {
         loaded = true;
         throw new Error("unreachable");
@@ -82,21 +94,18 @@ describe("startup planning", () => {
     expect(loaded).toBe(false);
   });
 
-  test("normalizes diff-like pager stdin into patch app startup", async () => {
+  test("routes single-changeset pager input through the buffered review path", async () => {
+    // Plain `diff --git` input with no commit headers: auto-detect should NOT trigger,
+    // so the pager runs the legacy buffered path and registers with the daemon as
+    // before. This preserves the agent review surface for `git diff | hunk pager`.
     const seenInputs: CliInput[] = [];
 
     const plan = await prepareStartupPlan(["bun", "hunk", "pager"], {
       parseCliImpl: async () => ({ kind: "pager", options: { theme: "paper" } }),
-      readStdinText: async () => "diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n",
-      looksLikePatchInputImpl: () => true,
-      resolveRuntimeCliInputImpl(input) {
-        seenInputs.push(input);
-        return input;
-      },
-      resolveConfiguredCliInputImpl(input) {
-        seenInputs.push(input);
-        return { input } as never;
-      },
+      readStdinLines: () =>
+        lineSourceFromString("diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n"),
+      resolveRuntimeCliInputImpl: (input) => input,
+      resolveConfiguredCliInputImpl: (input) => ({ input }) as never,
       loadAppBootstrapImpl: async (input) => {
         seenInputs.push(input);
         return createBootstrap(input);
@@ -105,20 +114,115 @@ describe("startup planning", () => {
     });
 
     expect(plan.kind).toBe("app");
-    if (plan.kind !== "app") {
-      throw new Error("Expected app startup plan.");
-    }
+    if (plan.kind !== "app") throw new Error("Expected app startup plan.");
 
     expect(plan.cliInput).toMatchObject({
       kind: "patch",
       file: "-",
       text: "diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n",
-      options: {
-        theme: "paper",
-        pager: true,
-      },
+      options: { theme: "paper", pager: true, noReview: undefined },
     });
-    expect(seenInputs).toHaveLength(3);
+    expect(plan.bootstrap.stream).toBeUndefined();
+    expect(seenInputs).toHaveLength(1);
+  });
+
+  test("auto-routes log-style pager input to commit-by-commit review mode", async () => {
+    // Presence of a `commit <sha>` header in the prefix flips auto-detect to commit-
+    // review: streaming pipeline, daemon-registered, one commit at a time. The agent
+    // surface stays alive on the active commit.
+    const stdin = [
+      "commit abc1234567",
+      "Author: Alice <alice@example.com>",
+      "Date:   2026-01-01",
+      "",
+      "    first commit",
+      "",
+      "diff --git a/a.ts b/a.ts",
+      "@@ -1 +1 @@",
+      "-old",
+      "+new",
+      "",
+    ].join("\n");
+
+    const plan = await prepareStartupPlan(["bun", "hunk", "pager"], {
+      parseCliImpl: async () => ({ kind: "pager", options: {} }),
+      readStdinLines: () => lineSourceFromString(stdin),
+      resolveRuntimeCliInputImpl: (input) => input,
+      resolveConfiguredCliInputImpl: (input) => ({ input }) as never,
+      // Streaming pager bypasses loadAppBootstrap.
+      loadAppBootstrapImpl: async () => {
+        throw new Error("loadAppBootstrap should not be called for log-style pager input");
+      },
+      usesPipedPatchInputImpl: () => false,
+    });
+
+    expect(plan.kind).toBe("app");
+    if (plan.kind !== "app") throw new Error("Expected app startup plan.");
+
+    // Commit-review default: NOT noReview; review surface stays alive.
+    expect(plan.cliInput.options.noReview).toBeUndefined();
+    expect(plan.cliInput.options.pager).toBe(true);
+    expect(plan.bootstrap.commitReviewStream).toBeDefined();
+    expect(plan.bootstrap.stream).toBeUndefined();
+    expect(plan.bootstrap.changeset.files).toEqual([]);
+    expect(plan.bootstrap.changeset.isStreaming).toBe(true);
+
+    plan.bootstrap.commitReviewStream?.abort();
+  });
+
+  test("--no-review flag forces streaming even on non-log-style input", async () => {
+    const plan = await prepareStartupPlan(["bun", "hunk", "pager"], {
+      parseCliImpl: async () => ({ kind: "pager", options: { noReview: true } }),
+      readStdinLines: () =>
+        lineSourceFromString("diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n"),
+      resolveRuntimeCliInputImpl: (input) => input,
+      resolveConfiguredCliInputImpl: (input) => ({ input }) as never,
+      loadAppBootstrapImpl: async () => {
+        throw new Error("loadAppBootstrap should not be called when --no-review is set");
+      },
+      usesPipedPatchInputImpl: () => false,
+    });
+
+    expect(plan.kind).toBe("app");
+    if (plan.kind !== "app") throw new Error("Expected app startup plan.");
+    expect(plan.cliInput.options.noReview).toBe(true);
+    expect(plan.bootstrap.stream).toBeDefined();
+
+    plan.bootstrap.stream?.abort();
+  });
+
+  test("--review flag forces buffered review path on log-style input", async () => {
+    const stdin = [
+      "commit abc1234567",
+      "Author: A <a@a>",
+      "",
+      "    msg",
+      "",
+      "diff --git a/a.ts b/a.ts",
+      "@@ -1 +1 @@",
+      "-old",
+      "+new",
+      "",
+    ].join("\n");
+
+    const seenInputs: CliInput[] = [];
+    const plan = await prepareStartupPlan(["bun", "hunk", "pager"], {
+      parseCliImpl: async () => ({ kind: "pager", options: { noReview: false } }),
+      readStdinLines: () => lineSourceFromString(stdin),
+      resolveRuntimeCliInputImpl: (input) => input,
+      resolveConfiguredCliInputImpl: (input) => ({ input }) as never,
+      loadAppBootstrapImpl: async (input) => {
+        seenInputs.push(input);
+        return createBootstrap(input);
+      },
+      usesPipedPatchInputImpl: () => false,
+    });
+
+    expect(plan.kind).toBe("app");
+    if (plan.kind !== "app") throw new Error("Expected app startup plan.");
+    expect(plan.cliInput.options.noReview).toBeUndefined();
+    expect(plan.bootstrap.stream).toBeUndefined();
+    expect(seenInputs).toHaveLength(1);
   });
 
   test("rejects watch mode for stdin-backed patch inputs", async () => {

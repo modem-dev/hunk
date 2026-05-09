@@ -33,6 +33,12 @@ export interface UseAppKeyboardShortcutsOptions {
   moveMenuItem: (delta: number) => void;
   openMenu: (menuId: MenuId) => void;
   pagerMode: boolean;
+  /**
+   * Optional commit-cursor handler for `git log -p` style sessions. Triggered by
+   * `>` (next) and `<` (previous). Live comments survive the move via the AppHost
+   * sha-keyed store, so no confirmation gating is needed here.
+   */
+  requestMoveCommit?: (delta: number) => void;
   requestQuit: () => void;
   scrollCodeHorizontally: (delta: number) => void;
   scrollDiff: (delta: number, unit: ScrollUnit) => void;
@@ -40,6 +46,8 @@ export interface UseAppKeyboardShortcutsOptions {
   showHelp: boolean;
   switchMenu: (delta: number) => void;
   toggleAgentNotes: () => void;
+  /** Optional: only present in commit-review sessions where commit metadata exists to cycle. */
+  cycleCommitDetailsMode?: () => void;
   toggleFocusArea: () => void;
   toggleHelp: () => void;
   toggleHunkHeaders: () => void;
@@ -64,6 +72,7 @@ export function useAppKeyboardShortcuts({
   moveMenuItem,
   openMenu,
   pagerMode,
+  requestMoveCommit,
   requestQuit,
   scrollCodeHorizontally,
   scrollDiff,
@@ -71,6 +80,7 @@ export function useAppKeyboardShortcuts({
   showHelp,
   switchMenu,
   toggleAgentNotes,
+  cycleCommitDetailsMode,
   toggleFocusArea,
   toggleHelp,
   toggleHunkHeaders,
@@ -366,6 +376,11 @@ export function useAppKeyboardShortcuts({
       return;
     }
 
+    if (cycleCommitDetailsMode && key.sequence === "C") {
+      runAndCloseMenu(cycleCommitDetailsMode);
+      return;
+    }
+
     if (key.name === "[") {
       runAndCloseMenu(() => moveToHunk(-1));
       return;
@@ -388,6 +403,19 @@ export function useAppKeyboardShortcuts({
 
   useKeyboard((key: KeyEvent) => {
     if (handleMenuToggleShortcut(key)) {
+      return;
+    }
+
+    // Commit cursor navigation works in every mode that has a cursor: pager-bare
+    // streaming, pager commit-review, and (in principle) any future review mode that
+    // exposes commit cursors. Bound at the top so it's not buried inside either of
+    // the per-mode handlers below.
+    if (requestMoveCommit && (key.name === ">" || key.sequence === ">")) {
+      requestMoveCommit(1);
+      return;
+    }
+    if (requestMoveCommit && (key.name === "<" || key.sequence === "<")) {
+      requestMoveCommit(-1);
       return;
     }
 

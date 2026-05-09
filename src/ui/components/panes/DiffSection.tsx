@@ -7,6 +7,7 @@ import { getAnnotatedHunkIndices, type VisibleAgentNote } from "../../lib/agentA
 import { diffSectionId } from "../../lib/ids";
 import { fitText } from "../../lib/text";
 import type { AppTheme } from "../../themes";
+import { CommitHeaderBlock } from "./CommitHeaderBlock";
 import { DiffFileHeaderRow } from "./DiffFileHeaderRow";
 
 interface DiffSectionProps {
@@ -21,6 +22,8 @@ interface DiffSectionProps {
   separatorWidth: number;
   showLineNumbers: boolean;
   showHunkHeaders: boolean;
+  /** When false, the verbatim commit metadata block above this section is hidden. */
+  showCommitDetails?: boolean;
   wrapLines: boolean;
   showHeader: boolean;
   showSeparator: boolean;
@@ -45,6 +48,7 @@ function DiffSectionComponent({
   separatorWidth,
   showLineNumbers,
   showHunkHeaders,
+  showCommitDetails = true,
   wrapLines,
   showHeader,
   showSeparator,
@@ -79,6 +83,10 @@ function DiffSectionComponent({
         >
           <text fg={theme.border}>{fitText("─".repeat(separatorWidth), separatorWidth)}</text>
         </box>
+      ) : null}
+
+      {file.commitHeaderText && showCommitDetails ? (
+        <CommitHeaderBlock text={file.commitHeaderText} theme={theme} />
       ) : null}
 
       {showHeader ? (
@@ -129,6 +137,7 @@ export const DiffSection = memo(DiffSectionComponent, (previous, next) => {
     previous.separatorWidth === next.separatorWidth &&
     previous.showLineNumbers === next.showLineNumbers &&
     previous.showHunkHeaders === next.showHunkHeaders &&
+    (previous.showCommitDetails ?? true) === (next.showCommitDetails ?? true) &&
     previous.wrapLines === next.wrapLines &&
     previous.showHeader === next.showHeader &&
     previous.showSeparator === next.showSeparator &&

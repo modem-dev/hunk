@@ -5,9 +5,14 @@ import {
 } from "@opentui/core";
 import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState, useRef } from "react";
-import type { AppBootstrap, CliInput, LayoutMode } from "../core/types";
+import type { Dispatch, SetStateAction } from "react";
+import type { AppBootstrap, CliInput, LayoutMode, ViewPreferences } from "../core/types";
 import { canReloadInput, computeWatchSignature } from "../core/watch";
-import type { HunkSessionBrokerClient, ReloadedSessionResult } from "../hunk-session/types";
+import type {
+  HunkSessionBrokerClient,
+  LiveComment,
+  ReloadedSessionResult,
+} from "../hunk-session/types";
 import { MenuBar } from "./components/chrome/MenuBar";
 import { StatusBar } from "./components/chrome/StatusBar";
 import { DiffPane } from "./components/panes/DiffPane";
@@ -18,6 +23,7 @@ import {
   maxFileCodeLineWidth,
   resolveCodeViewportWidth,
 } from "./diff/codeColumns";
+import type { MoveCommitResult } from "./AppHost";
 import { useAppKeyboardShortcuts } from "./hooks/useAppKeyboardShortcuts";
 import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
 import { useMenuController } from "./hooks/useMenuController";
@@ -44,32 +50,6 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
-/** Preserve the active app view settings when rebuilding the current input. */
-function withCurrentViewOptions(
-  input: CliInput,
-  view: {
-    layoutMode: LayoutMode;
-    themeId: string;
-    showAgentNotes: boolean;
-    showHunkHeaders: boolean;
-    showLineNumbers: boolean;
-    wrapLines: boolean;
-  },
-): CliInput {
-  return {
-    ...input,
-    options: {
-      ...input.options,
-      mode: view.layoutMode,
-      theme: view.themeId,
-      agentNotes: view.showAgentNotes,
-      hunkHeaders: view.showHunkHeaders,
-      lineNumbers: view.showLineNumbers,
-      wrapLines: view.wrapLines,
-    },
-  };
-}
-
 /** Orchestrate global app state, layout, navigation, and pane coordination. */
 export function App({
   bootstrap,
@@ -77,6 +57,11 @@ export function App({
   noticeText,
   onQuit = () => process.exit(0),
   onReloadSession,
+  onMoveCommit,
+  view,
+  updateView,
+  liveCommentsByFileId,
+  setLiveCommentsByFileId,
 }: {
   bootstrap: AppBootstrap;
   hostClient?: HunkSessionBrokerClient;
@@ -86,6 +71,23 @@ export function App({
     nextInput: CliInput,
     options?: { resetApp?: boolean; sourcePath?: string },
   ) => Promise<ReloadedSessionResult>;
+  /** Provided when the source is commit-by-commit; called by > / <. */
+  onMoveCommit?: (delta: number) => MoveCommitResult;
+  /**
+   * View preferences lifted to AppHost so user-toggled options (layout, theme,
+   * sidebar, line numbers, wrap, hunk metadata, agent notes, commit-details mode)
+   * persist across the App remount that fires on every commit-cursor move.
+   * `updateView` accepts a partial patch that's merged into the bundle.
+   */
+  view: ViewPreferences;
+  updateView: (patch: Partial<ViewPreferences>) => void;
+  /**
+   * Live-comment storage lifted to AppHost so notes survive the remount fired by
+   * commit-cursor moves. AppHost buckets comments by sha and hands the active slice
+   * down here. When omitted, useReviewController falls back to its own bucket.
+   */
+  liveCommentsByFileId?: Record<string, LiveComment[]>;
+  setLiveCommentsByFileId?: Dispatch<SetStateAction<Record<string, LiveComment[]>>>;
 }) {
   const SIDEBAR_MIN_WIDTH = 22;
   const DIFF_MIN_WIDTH = 48;
@@ -93,7 +95,12 @@ export function App({
   const DIVIDER_WIDTH = 1;
   const DIVIDER_HIT_WIDTH = 5;
 
-  const pagerMode = Boolean(bootstrap.input.options.pager);
+  // Commit-by-commit review (`git log -p | hunk pager`) launches as pager input but
+  // wants the full review chrome — sidebar, menu bar, filter, full keymap. Treat it
+  // like a regular review session by suppressing pagerMode whenever a commit cursor is
+  // attached. The pager-bare scroll-only experience stays for explicit --no-review.
+  const isCommitReview = Boolean(bootstrap.commitCursor);
+  const pagerMode = Boolean(bootstrap.input.options.pager) && !isCommitReview;
   const renderer = useRenderer();
   const terminal = useTerminalDimensions();
   const sidebarScrollRef = useRef<ScrollBoxRenderable | null>(null);
@@ -101,17 +108,18 @@ export function App({
   const wrapToggleScrollTopRef = useRef<number | null>(null);
   const layoutToggleScrollTopRef = useRef<number | null>(null);
   const [layoutToggleRequestId, setLayoutToggleRequestId] = useState(0);
-  const [layoutMode, setLayoutMode] = useState<LayoutMode>(bootstrap.initialMode);
-  const [themeId, setThemeId] = useState(
-    () => resolveTheme(bootstrap.initialTheme, renderer.themeMode).id,
-  );
-  const [showAgentNotes, setShowAgentNotes] = useState(bootstrap.initialShowAgentNotes ?? false);
-  const [showLineNumbers, setShowLineNumbers] = useState(bootstrap.initialShowLineNumbers ?? true);
-  const [wrapLines, setWrapLines] = useState(bootstrap.initialWrapLines ?? false);
+  const {
+    layoutMode,
+    themeId,
+    showAgentNotes,
+    showLineNumbers,
+    wrapLines,
+    showHunkHeaders,
+    sidebarVisible,
+    forceSidebarOpen,
+    commitDetailsMode,
+  } = view;
   const [codeHorizontalOffset, setCodeHorizontalOffset] = useState(0);
-  const [showHunkHeaders, setShowHunkHeaders] = useState(bootstrap.initialShowHunkHeaders ?? true);
-  const [sidebarVisible, setSidebarVisible] = useState(() => !pagerMode);
-  const [forceSidebarOpen, setForceSidebarOpen] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [focusArea, setFocusArea] = useState<FocusArea>("files");
   const [sidebarWidth, setSidebarWidth] = useState(34);
@@ -119,9 +127,39 @@ export function App({
   const [resizeStartWidth, setResizeStartWidth] = useState<number | null>(null);
 
   const activeTheme = resolveTheme(themeId, renderer.themeMode);
-  const review = useReviewController({ files: bootstrap.changeset.files });
+  const review = useReviewController({
+    files: bootstrap.changeset.files,
+    liveCommentsByFileId,
+    setLiveCommentsByFileId,
+  });
   const filteredFiles = review.visibleFiles;
   const selectedFile = review.selectedFile;
+
+  // Commit-move is unconditional. Live comments survive the move because AppHost
+  // buckets them by sha and rehydrates the active slice on remount, so there's no
+  // longer any data-loss concern to gate behind a confirmation. Filter and scroll
+  // still reset across commits, but those regenerate cheaply.
+  const requestMoveCommit = useCallback(
+    (delta: number) => {
+      onMoveCommit?.(delta);
+    },
+    [onMoveCommit],
+  );
+
+  // Drive back-pressure on the streaming pager: report the user's current commit and
+  // file position so the producer can pause once it's buffered enough ahead. Files held
+  // behind the user remain in memory for scroll-back; only the lookahead window is
+  // bounded by this signal. No-op when no stream is attached.
+  useEffect(() => {
+    const stream = bootstrap.stream;
+    if (!stream) return;
+    if (!selectedFile) return;
+    const fileIndex = bootstrap.changeset.files.findIndex((file) => file.id === selectedFile.id);
+    if (fileIndex < 0) return;
+    const commitIndex = selectedFile.commitIndex ?? 0;
+    stream.setConsumedPosition(commitIndex, fileIndex);
+  }, [bootstrap.stream, bootstrap.changeset.files, selectedFile]);
+
   const selectedHunkIndex = review.selectedHunkIndex;
   const moveToAnnotatedFile = review.moveToAnnotatedFile;
   const moveToAnnotatedHunk = review.moveToAnnotatedHunk;
@@ -136,8 +174,8 @@ export function App({
   );
 
   const openAgentNotes = useCallback(() => {
-    setShowAgentNotes(true);
-  }, []);
+    updateView({ showAgentNotes: true });
+  }, [updateView]);
 
   useHunkSessionBridge({
     addLiveComment: review.addLiveComment,
@@ -276,20 +314,23 @@ export function App({
   );
 
   /** Preserve the current review position before changing the active diff layout. */
-  const selectLayoutMode = useCallback((mode: LayoutMode) => {
-    layoutToggleScrollTopRef.current = diffScrollRef.current?.scrollTop ?? 0;
-    setLayoutToggleRequestId((current) => current + 1);
-    setLayoutMode(mode);
-  }, []);
+  const selectLayoutMode = useCallback(
+    (mode: LayoutMode) => {
+      layoutToggleScrollTopRef.current = diffScrollRef.current?.scrollTop ?? 0;
+      setLayoutToggleRequestId((current) => current + 1);
+      updateView({ layoutMode: mode });
+    },
+    [updateView],
+  );
 
   /** Toggle the global agent note layer on or off. */
   const toggleAgentNotes = () => {
-    setShowAgentNotes((current) => !current);
+    updateView({ showAgentNotes: !showAgentNotes });
   };
 
   /** Toggle line-number gutters without changing the diff content itself. */
   const toggleLineNumbers = () => {
-    setShowLineNumbers((current) => !current);
+    updateView({ showLineNumbers: !showLineNumbers });
   };
 
   /** Toggle whether diff code rows wrap instead of truncating to one terminal row. */
@@ -298,31 +339,32 @@ export function App({
     // top-most source row after wrapped row heights change.
     wrapToggleScrollTopRef.current = diffScrollRef.current?.scrollTop ?? 0;
     setCodeHorizontalOffset(0);
-    setWrapLines((current) => !current);
+    updateView({ wrapLines: !wrapLines });
   };
 
   /** Toggle the sidebar, forcing it open on narrower layouts when the app can still fit both panes. */
   const toggleSidebar = () => {
     if (sidebarVisible && (responsiveLayout.showSidebar || forceSidebarOpen)) {
-      setSidebarVisible(false);
-      setForceSidebarOpen(false);
+      updateView({ sidebarVisible: false, forceSidebarOpen: false });
       return;
     }
 
     if (sidebarVisible && !responsiveLayout.showSidebar) {
       if (canForceShowSidebar) {
-        setForceSidebarOpen(true);
+        updateView({ forceSidebarOpen: true });
       }
       return;
     }
 
-    setSidebarVisible(true);
-    setForceSidebarOpen(!responsiveLayout.showSidebar && canForceShowSidebar);
+    updateView({
+      sidebarVisible: true,
+      forceSidebarOpen: !responsiveLayout.showSidebar && canForceShowSidebar,
+    });
   };
 
   /** Toggle visibility of hunk metadata rows without changing the actual diff lines. */
   const toggleHunkHeaders = () => {
-    setShowHunkHeaders((current) => !current);
+    updateView({ showHunkHeaders: !showHunkHeaders });
   };
 
   /** Jump to an annotated hunk without changing the global note visibility toggle. */
@@ -336,22 +378,17 @@ export function App({
   const canRefreshCurrentInput = canReloadInput(bootstrap.input);
   const watchEnabled = Boolean(bootstrap.input.options.watch && canRefreshCurrentInput);
 
-  /** Rebuild the current diff source while preserving the active app view options. */
+  /**
+   * Rebuild the current diff source. View options live on AppHost above this
+   * component's lifecycle so they survive the reload without needing to be
+   * round-tripped through the bootstrap.
+   */
   const refreshCurrentInput = useCallback(async () => {
     if (!canRefreshCurrentInput) {
       return;
     }
 
-    const nextInput = withCurrentViewOptions(bootstrap.input, {
-      layoutMode,
-      themeId,
-      showAgentNotes,
-      showHunkHeaders,
-      showLineNumbers,
-      wrapLines,
-    });
-
-    await onReloadSession(nextInput, {
+    await onReloadSession(bootstrap.input, {
       resetApp: false,
       sourcePath:
         bootstrap.input.kind === "vcs" ||
@@ -360,18 +397,7 @@ export function App({
           ? bootstrap.changeset.sourceLabel
           : undefined,
     });
-  }, [
-    bootstrap.changeset.sourceLabel,
-    bootstrap.input,
-    canRefreshCurrentInput,
-    layoutMode,
-    onReloadSession,
-    showAgentNotes,
-    showHunkHeaders,
-    showLineNumbers,
-    themeId,
-    wrapLines,
-  ]);
+  }, [bootstrap.changeset.sourceLabel, bootstrap.input, canRefreshCurrentInput, onReloadSession]);
 
   const triggerRefreshCurrentInput = useCallback(() => {
     void refreshCurrentInput().catch((error) => {
@@ -464,8 +490,28 @@ export function App({
   const cycleTheme = useCallback(() => {
     const currentIndex = THEMES.findIndex((theme) => theme.id === activeTheme.id);
     const nextIndex = (currentIndex + 1) % THEMES.length;
-    setThemeId(THEMES[nextIndex]!.id);
-  }, [activeTheme.id]);
+    updateView({ themeId: THEMES[nextIndex]!.id });
+  }, [activeTheme.id, updateView]);
+
+  /** Set the theme directly from the theme menu. */
+  const selectThemeId = useCallback(
+    (id: string) => {
+      updateView({ themeId: id });
+    },
+    [updateView],
+  );
+
+  /** Advance the commit-details mode through full → compact → hidden → full. */
+  const cycleCommitDetailsMode = useCallback(() => {
+    updateView({
+      commitDetailsMode:
+        commitDetailsMode === "full"
+          ? "compact"
+          : commitDetailsMode === "compact"
+            ? "hidden"
+            : "full",
+    });
+  }, [commitDetailsMode, updateView]);
 
   const menus = useMemo(
     () =>
@@ -480,13 +526,16 @@ export function App({
         refreshCurrentInput: triggerRefreshCurrentInput,
         requestQuit,
         selectLayoutMode,
-        selectThemeId: setThemeId,
+        selectThemeId,
         showAgentNotes,
         showHelp,
         showHunkHeaders,
         showLineNumbers,
+        commitDetailsMode: isCommitReview ? commitDetailsMode : undefined,
         renderSidebar,
         toggleAgentNotes,
+        cycleCommitDetailsMode: isCommitReview ? cycleCommitDetailsMode : undefined,
+        moveToCommit: isCommitReview && onMoveCommit ? onMoveCommit : undefined,
         toggleFocusArea,
         toggleHelp,
         toggleHunkHeaders,
@@ -505,12 +554,17 @@ export function App({
       requestQuit,
       review.moveToHunk,
       selectLayoutMode,
+      selectThemeId,
       triggerRefreshCurrentInput,
       showAgentNotes,
       showHelp,
       showHunkHeaders,
       showLineNumbers,
+      commitDetailsMode,
+      cycleCommitDetailsMode,
       renderSidebar,
+      isCommitReview,
+      onMoveCommit,
       toggleAgentNotes,
       toggleFocusArea,
       toggleHelp,
@@ -552,6 +606,7 @@ export function App({
     moveMenuItem,
     openMenu,
     pagerMode,
+    requestMoveCommit: onMoveCommit ? requestMoveCommit : undefined,
     requestQuit,
     scrollCodeHorizontally,
     scrollDiff,
@@ -559,6 +614,7 @@ export function App({
     showHelp,
     switchMenu,
     toggleAgentNotes,
+    cycleCommitDetailsMode: isCommitReview ? cycleCommitDetailsMode : undefined,
     toggleFocusArea,
     toggleHelp,
     toggleHunkHeaders,
@@ -620,7 +676,13 @@ export function App({
     (sum, file) => sum + file.stats.deletions,
     0,
   );
-  const topTitle = `${bootstrap.changeset.title}  +${totalAdditions}  -${totalDeletions}`;
+  // In commit-review the title used to be the commit subject, but the commit
+  // metadata block above the diffs already shows the subject, sha, author, and date.
+  // Drop the subject from the menu-bar title to avoid the redundancy; just show the
+  // active commit's stats.
+  const topTitle = isCommitReview
+    ? `Commit log  +${totalAdditions}  -${totalDeletions}`
+    : `${bootstrap.changeset.title}  +${totalAdditions}  -${totalDeletions}`;
   const sidebarTextWidth = Math.max(8, clampedSidebarWidth - 2);
   const diffHeaderStatsWidth = Math.min(24, Math.max(16, Math.floor(diffContentWidth / 3)));
   const diffHeaderLabelWidth = Math.max(8, diffContentWidth - diffHeaderStatsWidth - 1);
@@ -649,6 +711,23 @@ export function App({
           }}
           onToggleMenu={toggleMenu}
         />
+      ) : null}
+
+      {bootstrap.commitCursor && bootstrap.currentCommit ? (
+        <box
+          style={{
+            width: "100%",
+            height: 1,
+            paddingLeft: 1,
+            paddingRight: 1,
+            backgroundColor: activeTheme.panel,
+            flexDirection: "row",
+          }}
+        >
+          <text fg={activeTheme.muted}>
+            {`${bootstrap.currentCommit.shortSha || "—"}  ·  ${bootstrap.commitCursor.current + 1} of ${bootstrap.commitCursor.total}${bootstrap.commitCursor.streaming ? "+" : ""}`}
+          </text>
+        </box>
       ) : null}
 
       <box
@@ -713,6 +792,9 @@ export function App({
           showAgentNotes={showAgentNotes}
           showLineNumbers={showLineNumbers}
           showHunkHeaders={showHunkHeaders}
+          commitDetailsMode={commitDetailsMode}
+          commitHeader={isCommitReview ? bootstrap.currentCommit?.rawHeader : undefined}
+          commitMetadata={isCommitReview ? bootstrap.currentCommit : undefined}
           wrapLines={wrapLines}
           wrapToggleScrollTop={wrapToggleScrollTopRef.current}
           layoutToggleScrollTop={layoutToggleScrollTopRef.current}

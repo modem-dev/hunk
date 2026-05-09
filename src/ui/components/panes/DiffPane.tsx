@@ -33,6 +33,9 @@ import {
   type ViewportRowAnchor,
 } from "../../lib/viewportAnchor";
 import type { AppTheme } from "../../themes";
+import { collapsedCommitHeader, compactCommitHeader } from "../../../core/streaming/commitMetadata";
+import type { CommitDetailsMode, CommitMetadata } from "../../../core/types";
+import { CommitHeaderBlock } from "./CommitHeaderBlock";
 import { DiffSection } from "./DiffSection";
 import { DiffFileHeaderRow } from "./DiffFileHeaderRow";
 import { DiffSectionPlaceholder } from "./DiffSectionPlaceholder";
@@ -142,6 +145,9 @@ export function DiffPane({
   showAgentNotes,
   showLineNumbers,
   showHunkHeaders,
+  commitDetailsMode = "full",
+  commitHeader,
+  commitMetadata,
   wrapLines,
   wrapToggleScrollTop,
   layoutToggleScrollTop = null,
@@ -170,6 +176,23 @@ export function DiffPane({
   showAgentNotes: boolean;
   showLineNumbers: boolean;
   showHunkHeaders: boolean;
+  /**
+   * Three-state visibility for the commit metadata block in commit-review pager mode:
+   * full / oneLine / hidden. Default `full`. Ignored outside commit-review.
+   */
+  commitDetailsMode?: CommitDetailsMode;
+  /**
+   * Verbatim commit header text. When provided, the pane is in commit-by-commit mode
+   * and renders the metadata block at the top of the chrome (above the pinned-header
+   * row). When unset, the pane falls back to per-file inline blocks (the right shape
+   * for `--no-review` flat-streaming where many commits scroll past).
+   */
+  commitHeader?: string;
+  /**
+   * Parsed commit metadata for the active commit. Required for the oneLine view; if
+   * omitted, oneLine falls back to rendering the verbatim collapsed header.
+   */
+  commitMetadata?: CommitMetadata;
   wrapLines: boolean;
   wrapToggleScrollTop: number | null;
   layoutToggleScrollTop?: number | null;
@@ -360,6 +383,27 @@ export function DiffPane({
 
   const sectionHeaderHeights = useMemo(() => buildInStreamFileHeaderHeights(files), [files]);
 
+  // Commit-review pane has a single commit-level metadata block. Render it as a fixed
+  // chrome row above the pinned-header (which itself lives above the scroll content),
+  // so it sits structurally above the entire file list. Three states:
+  //   full     → verbatim header + body (current `git log -p` look in `less`)
+  //   compact  → two rows: `commit <sha>  Author: …  Date: …` then the subject
+  //   hidden   → block omitted entirely
+  // Inline per-file blocks are suppressed in this mode to avoid double-rendering. The
+  // flat-streaming (--no-review) path leaves `commitHeader` undefined so DiffSection's
+  // inline blocks remain the right shape there; for that path we honor the toggle as
+  // a binary on/off (only "hidden" disables the inline rendering).
+  const inlineCommitDetails = !commitHeader && commitDetailsMode !== "hidden";
+  const renderedCommitHeader = useMemo(() => {
+    if (!commitHeader || commitDetailsMode === "hidden") return undefined;
+    if (commitDetailsMode === "compact") {
+      return commitMetadata
+        ? compactCommitHeader(commitMetadata)
+        : collapsedCommitHeader(commitHeader);
+    }
+    return commitHeader; // "full"
+  }, [commitHeader, commitMetadata, commitDetailsMode]);
+
   const baseSectionGeometry = useMemo(
     () =>
       files.map((file) =>
@@ -381,8 +425,14 @@ export function DiffPane({
     [baseSectionGeometry],
   );
   const baseFileSectionLayouts = useMemo(
-    () => buildFileSectionLayouts(files, baseEstimatedBodyHeights, sectionHeaderHeights),
-    [baseEstimatedBodyHeights, files, sectionHeaderHeights],
+    () =>
+      buildFileSectionLayouts(
+        files,
+        baseEstimatedBodyHeights,
+        sectionHeaderHeights,
+        inlineCommitDetails,
+      ),
+    [baseEstimatedBodyHeights, files, inlineCommitDetails, sectionHeaderHeights],
   );
 
   const visibleViewportFileIds = useMemo(() => {
@@ -452,8 +502,14 @@ export function DiffPane({
     [sectionGeometry],
   );
   const fileSectionLayouts = useMemo(
-    () => buildFileSectionLayouts(files, estimatedBodyHeights, sectionHeaderHeights),
-    [estimatedBodyHeights, files, sectionHeaderHeights],
+    () =>
+      buildFileSectionLayouts(
+        files,
+        estimatedBodyHeights,
+        sectionHeaderHeights,
+        inlineCommitDetails,
+      ),
+    [estimatedBodyHeights, files, inlineCommitDetails, sectionHeaderHeights],
   );
   const totalContentHeight = fileSectionLayouts[fileSectionLayouts.length - 1]?.sectionBottom ?? 0;
 
@@ -1069,6 +1125,17 @@ export function DiffPane({
     >
       {files.length > 0 ? (
         <box style={{ width: "100%", height: "100%", flexGrow: 1, flexDirection: "column" }}>
+          {/* Commit metadata sits above everything else in commit-by-commit review:
+           *  it describes the whole commit, not any single file. Rendered as fixed
+           *  chrome (above the pinned header and the scroll content) so the user
+           *  always sees the commit context while reading any file's diff. The
+           *  rendered text is full or collapsed depending on showCommitDetails — but
+           *  the headers and subject are always shown. */}
+          {renderedCommitHeader ? (
+            <box style={{ width: "100%", flexShrink: 0 }}>
+              <CommitHeaderBlock text={renderedCommitHeader} theme={theme} />
+            </box>
+          ) : null}
           {/* Always pin the current file header in a dedicated top row. */}
           {pinnedHeaderFile ? (
             <box style={{ width: "100%", height: 1, minHeight: 1, flexShrink: 0 }}>
@@ -1120,6 +1187,7 @@ export function DiffPane({
                         separatorWidth={separatorWidth}
                         showHeader={shouldRenderInStreamFileHeader(index)}
                         showSeparator={index > 0}
+                        showCommitDetails={inlineCommitDetails}
                         theme={theme}
                         onSelect={() => onSelectFile(file.id)}
                       />
@@ -1142,6 +1210,7 @@ export function DiffPane({
                       showSeparator={index > 0}
                       showLineNumbers={showLineNumbers}
                       showHunkHeaders={showHunkHeaders}
+                      showCommitDetails={inlineCommitDetails}
                       wrapLines={wrapLines}
                       theme={theme}
                       viewWidth={diffContentWidth}

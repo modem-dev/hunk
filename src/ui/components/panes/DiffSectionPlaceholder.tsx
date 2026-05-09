@@ -1,5 +1,6 @@
 import type { DiffFile } from "../../../core/types";
 import { diffSectionId } from "../../lib/ids";
+import { getCommitPreambleHeight } from "../../lib/fileSectionLayout";
 import { fitText } from "../../lib/text";
 import type { AppTheme } from "../../themes";
 import { DiffFileHeaderRow } from "./DiffFileHeaderRow";
@@ -12,6 +13,8 @@ interface DiffSectionPlaceholderProps {
   separatorWidth: number;
   showHeader: boolean;
   showSeparator: boolean;
+  /** When false, the placeholder skips the commit-header preamble row reservation. */
+  showCommitDetails?: boolean;
   theme: AppTheme;
   onSelect: () => void;
 }
@@ -25,6 +28,7 @@ export function DiffSectionPlaceholder({
   separatorWidth,
   showHeader,
   showSeparator,
+  showCommitDetails = true,
   theme,
   onSelect,
 }: DiffSectionPlaceholderProps) {
@@ -49,6 +53,18 @@ export function DiffSectionPlaceholder({
         >
           <text fg={theme.border}>{fitText("─".repeat(separatorWidth), separatorWidth)}</text>
         </box>
+      ) : null}
+
+      {/* Reserve the same vertical space as the rendered commit-header block so scroll
+       *  geometry stays consistent when this section is offscreen. */}
+      {file.commitHeaderText && showCommitDetails ? (
+        <box
+          style={{
+            width: "100%",
+            height: getCommitPreambleHeight(file, showCommitDetails),
+            backgroundColor: theme.panel,
+          }}
+        />
       ) : null}
 
       {showHeader ? (
