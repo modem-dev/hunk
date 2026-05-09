@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import type { ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
-import { tmpdir } from "node:os";
+import { platform, tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   ensureSessionBrokerAvailable,
@@ -72,24 +72,32 @@ describe("session daemon launcher", () => {
     });
   });
 
-  test("detects whether some process is already listening on the daemon port", async () => {
-    const listener = createServer(() => undefined);
-    await new Promise<void>((resolve, reject) => {
-      listener.once("error", reject);
-      listener.listen(0, "127.0.0.1", () => resolve());
-    });
+  // Bun 1.3.10 can segfault on Windows when this test opens/closes a raw node:net server.
+  // The production path is still covered by Linux CI; keep the Windows pass focused on code that
+  // can run reliably under Bun's Windows test runner.
+  const testUnlessWindows = platform() === "win32" ? test.skip : test;
 
-    const address = listener.address();
-    const port = typeof address === "object" && address ? address.port : 0;
+  testUnlessWindows(
+    "detects whether some process is already listening on the daemon port",
+    async () => {
+      const listener = createServer(() => undefined);
+      await new Promise<void>((resolve, reject) => {
+        listener.once("error", reject);
+        listener.listen(0, "127.0.0.1", () => resolve());
+      });
 
-    try {
-      await expect(isLoopbackPortReachable({ host: "127.0.0.1", port })).resolves.toBe(true);
-    } finally {
-      await new Promise<void>((resolve) => listener.close(() => resolve()));
-    }
+      const address = listener.address();
+      const port = typeof address === "object" && address ? address.port : 0;
 
-    await expect(isLoopbackPortReachable({ host: "127.0.0.1", port })).resolves.toBe(false);
-  });
+      try {
+        await expect(isLoopbackPortReachable({ host: "127.0.0.1", port })).resolves.toBe(true);
+      } finally {
+        await new Promise<void>((resolve) => listener.close(() => resolve()));
+      }
+
+      await expect(isLoopbackPortReachable({ host: "127.0.0.1", port })).resolves.toBe(false);
+    },
+  );
 
   test("coordinates concurrent ensure calls so only one launcher runs", async () => {
     const runtimeDir = createRuntimeDir();
