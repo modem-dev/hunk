@@ -119,7 +119,7 @@ You can persist preferences to a config file:
 Example:
 
 ```toml
-theme = "graphite"   # graphite, midnight, paper, ember, custom
+theme = "graphite"   # graphite, midnight, paper, ember, catppuccin-latte, catppuccin-mocha, custom
 mode = "auto"        # auto, split, stack
 vcs = "git"          # git, jj
 watch = false
@@ -137,7 +137,7 @@ Custom themes can inherit from any built-in base theme and override only the col
 theme = "custom"
 
 [custom_theme]
-base = "graphite"    # graphite, midnight, paper, ember
+base = "graphite"    # graphite, midnight, paper, ember, catppuccin-latte, catppuccin-mocha
 label = "My Theme"
 accent = "#7fd1ff"
 panel = "#10161d"

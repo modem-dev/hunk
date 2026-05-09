@@ -6,6 +6,7 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Added
 
+- Added Catppuccin Latte and Mocha as built-in themes.
 - Added mouse-drag text selection in diff views that copies selected rows to the system clipboard via OSC 52. A `View > Copy decorations` toggle (or `copy_decorations` config) controls whether the clipboard includes diff rails, gutters, and file headers or only the changed code.
 - Added inline expansion for collapsed unchanged file content. Click an unchanged-context row (`▾ N unchanged lines` when expandable, otherwise the static `··· N unchanged lines ···` form) or press `e` while a hunk is selected to reveal surrounding and trailing file lines without leaving the review. The affordance is shown only for input modes that have reachable source content (`hunk diff`, `show`, `stash show`, file-pair `diff` and `difftool`, untracked files); raw `hunk patch` input still renders as before. Failed and in-flight loads surface a one-line status ("Loading…", "Could not load N unchanged lines") on the gap row. Expanded context rows use the same syntax highlighting as the surrounding diff.
 

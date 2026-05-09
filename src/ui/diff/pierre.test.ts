@@ -327,7 +327,7 @@ describe("Pierre diff rows", () => {
   test("remaps Pierre markdown reds and greens away from diff-semantic hues", async () => {
     const file = createMarkdownDiffFile();
 
-    for (const themeId of ["midnight", "paper"] as const) {
+    for (const themeId of ["midnight", "paper", "catppuccin-latte", "catppuccin-mocha"] as const) {
       const theme = resolveTheme(themeId, null);
       const highlighted = await loadHighlightedDiff(file, theme.appearance);
       const rows = buildStackRows(file, highlighted, theme).filter(
@@ -453,7 +453,7 @@ describe("Pierre diff rows", () => {
     const file = createMarkdownDiffFile();
     const highlighted = await loadHighlightedDiff(file, "dark");
 
-    for (const themeId of ["graphite", "midnight", "ember"] as const) {
+    for (const themeId of ["graphite", "midnight", "ember", "catppuccin-mocha"] as const) {
       const theme = resolveTheme(themeId, null);
       const rows = buildStackRows(file, highlighted, theme).filter(
         (row): row is Extract<DiffRow, { type: "stack-line" }> =>
