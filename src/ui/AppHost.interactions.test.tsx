@@ -283,6 +283,46 @@ function createCrossFileHunkNavigationBootstrap(): AppBootstrap {
   });
 }
 
+/** Build the issue #233 stress fixture: many files, separated hunks, and visible notes. */
+function createRapidViewportLoopBootstrap(): AppBootstrap {
+  const files = Array.from({ length: 10 }, (_, index) => {
+    const fileIndex = index + 1;
+    const start = fileIndex * 100 + 1;
+    const beforeLines = createNumberedAssignmentLines(start, 90);
+    const afterLines = [...beforeLines];
+
+    afterLines[0] = `export const line${String(start).padStart(2, "0")} = ${start + 1000};`;
+    afterLines[30] = `export const line${String(start + 30).padStart(2, "0")} = ${start + 3000};`;
+    afterLines[60] = `export const line${String(start + 60).padStart(2, "0")} = ${start + 6000};`;
+
+    const file = buildTestDiffFile({
+      id: `rapid-${fileIndex}`,
+      path: `rapid-${fileIndex}.ts`,
+      before: lines(...beforeLines),
+      after: lines(...afterLines),
+      context: 3,
+    });
+    file.agent = {
+      path: file.path,
+      summary: `rapid ${fileIndex}`,
+      annotations: [
+        { newRange: [start, start], summary: `note start ${fileIndex}` },
+        { newRange: [start + 30, start + 30], summary: `note middle ${fileIndex}` },
+        { newRange: [start + 60, start + 60], summary: `note late ${fileIndex}` },
+      ],
+    };
+    return file;
+  });
+
+  return createTestVcsAppBootstrap({
+    changesetId: "changeset:rapid-viewport",
+    files,
+    vcsOptions: { mode: "stack", agentNotes: true },
+    initialMode: "stack",
+    initialShowAgentNotes: true,
+  });
+}
+
 function createMouseScrollSelectionBootstrap(): AppBootstrap {
   const firstBeforeLines = createNumberedAssignmentLines(1, 12);
   const secondBeforeLines = Array.from(
@@ -442,6 +482,59 @@ function firstVisibleAddedLineNumber(frame: string) {
 }
 
 describe("App interactions", () => {
+  test("rapid hunk navigation and wheel scrolling do not recurse through viewport updates", async () => {
+    const updateDepthErrors: string[] = [];
+    const originalError = console.error;
+    console.error = (...args: unknown[]) => {
+      if (args.some((arg) => String(arg).includes("Maximum update depth exceeded"))) {
+        updateDepthErrors.push(args.map(String).join(" "));
+      }
+      originalError(...args);
+    };
+
+    const setup = await testRender(<AppHost bootstrap={createRapidViewportLoopBootstrap()} />, {
+      width: 220,
+      height: 12,
+    });
+
+    try {
+      await flush(setup);
+      await flush(setup);
+      await flush(setup);
+      await flush(setup);
+
+      // Regression coverage for issue #233 / PR #242. This intentionally combines the inputs
+      // that made the old React/OpenTUI feedback loop reproducible: stack layout, many hunks,
+      // visible agent notes, repeated next-hunk jumps, and bursty wheel scrolling.
+      for (let batch = 0; batch < 2; batch += 1) {
+        await act(async () => {
+          for (let index = 0; index < 6; index += 1) {
+            await setup.mockInput.typeText("]");
+          }
+        });
+        await flush(setup);
+        await flush(setup);
+      }
+
+      for (let batch = 0; batch < 2; batch += 1) {
+        await act(async () => {
+          for (let index = 0; index < 4; index += 1) {
+            await setup.mockMouse.scroll(120, 7, "down");
+          }
+        });
+        await flush(setup);
+        await flush(setup);
+      }
+
+      expect(updateDepthErrors).toEqual([]);
+    } finally {
+      console.error = originalError;
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  }, 20_000);
+
   test("keyboard shortcuts toggle notes, line numbers, and hunk metadata", async () => {
     const setup = await testRender(<AppHost bootstrap={createSingleFileBootstrap()} />, {
       width: 240,
