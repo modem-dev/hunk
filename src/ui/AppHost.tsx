@@ -11,6 +11,7 @@ import {
 import type { HunkSessionBrokerClient } from "../hunk-session/types";
 import { App } from "./App";
 import { useStartupUpdateNotice } from "./hooks/useStartupUpdateNotice";
+import { useTransientNotice } from "./hooks/useTransientNotice";
 
 /** Keep one live Hunk app mounted while allowing daemon-driven session reloads. */
 export function AppHost({
@@ -26,9 +27,11 @@ export function AppHost({
 }) {
   const [activeBootstrap, setActiveBootstrap] = useState(bootstrap);
   const [appVersion, setAppVersion] = useState(0);
-  const startupNoticeText = useStartupUpdateNotice({
+  const { noticeText, showNotice } = useTransientNotice();
+  useStartupUpdateNotice({
     enabled: !bootstrap.input.options.pager,
     resolver: startupNoticeResolver,
+    showNotice,
   });
 
   const reloadSession = useCallback(
@@ -84,9 +87,10 @@ export function AppHost({
       key={appVersion}
       bootstrap={activeBootstrap}
       hostClient={hostClient}
-      noticeText={startupNoticeText}
+      noticeText={noticeText}
       onQuit={onQuit}
       onReloadSession={reloadSession}
+      showNotice={showNotice}
     />
   );
 }

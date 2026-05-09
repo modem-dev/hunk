@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import type { UpdateNotice } from "../../core/updateNotice";
 
 const DEFAULT_STARTUP_NOTICE_DELAY_MS = 1200;
@@ -11,37 +11,27 @@ interface StartupUpdateNoticeOptions {
   enabled: boolean;
   repeatMs?: number;
   resolver?: () => Promise<UpdateNotice | null>;
+  showNotice: (message: string, durationMs: number) => void;
 }
 
-/** Manage the session-lifetime background update notice without coupling it to chrome rendering. */
+/** Drive a session-lifetime background update check that publishes through the shared notice channel. */
 export function useStartupUpdateNotice({
   delayMs = DEFAULT_STARTUP_NOTICE_DELAY_MS,
   durationMs = DEFAULT_STARTUP_NOTICE_DURATION_MS,
   enabled,
   repeatMs = DEFAULT_STARTUP_NOTICE_REPEAT_MS,
   resolver,
+  showNotice,
 }: StartupUpdateNoticeOptions) {
-  const [noticeText, setNoticeText] = useState<string | null>(null);
   const lastShownKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!enabled || !resolver) {
-      setNoticeText(null);
       return;
     }
 
     let cancelled = false;
     let inFlight = false;
-    let dismissTimer: ReturnType<typeof setTimeout> | null = null;
-
-    const clearDismissTimer = () => {
-      if (!dismissTimer) {
-        return;
-      }
-
-      clearTimeout(dismissTimer);
-      dismissTimer = null;
-    };
 
     const runUpdateCheck = () => {
       if (cancelled || inFlight) {
@@ -60,17 +50,7 @@ export function useStartupUpdateNotice({
           }
 
           lastShownKeyRef.current = notice.key;
-          setNoticeText(notice.message);
-          clearDismissTimer();
-          dismissTimer = setTimeout(() => {
-            if (cancelled) {
-              return;
-            }
-
-            setNoticeText(null);
-            dismissTimer = null;
-          }, durationMs);
-          dismissTimer.unref?.();
+          showNotice(notice.message, durationMs);
         })
         .catch(() => {
           // Ignore non-blocking update-check failures.
@@ -80,9 +60,7 @@ export function useStartupUpdateNotice({
         });
     };
 
-    const delayTimer = setTimeout(() => {
-      runUpdateCheck();
-    }, delayMs);
+    const delayTimer = setTimeout(runUpdateCheck, delayMs);
     delayTimer.unref?.();
 
     const repeatTimer = setInterval(runUpdateCheck, repeatMs);
@@ -93,9 +71,6 @@ export function useStartupUpdateNotice({
       inFlight = false;
       clearTimeout(delayTimer);
       clearInterval(repeatTimer);
-      clearDismissTimer();
     };
-  }, [delayMs, durationMs, enabled, repeatMs, resolver]);
-
-  return noticeText;
+  }, [delayMs, durationMs, enabled, repeatMs, resolver, showNotice]);
 }

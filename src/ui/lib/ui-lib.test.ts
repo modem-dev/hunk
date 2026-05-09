@@ -145,6 +145,7 @@ describe("ui helpers", () => {
       toggleLineWrap: () => {},
       toggleSidebar: () => {},
       wrapLines: true,
+      yankSelection: () => {},
     });
 
     expect(
@@ -165,6 +166,18 @@ describe("ui helpers", () => {
         )
         .map((entry) => entry.label),
     ).toEqual(["Stacked view", "Agent notes", "Line numbers", "Line wrapping"]);
+    expect(
+      menus.navigate
+        .filter((entry): entry is Extract<MenuEntry, { kind: "item" }> => entry.kind === "item")
+        .map((entry) => entry.label),
+    ).toEqual([
+      "Previous hunk",
+      "Next hunk",
+      "Yank selection",
+      "Previous comment",
+      "Next comment",
+      "Focus filter",
+    ]);
     expect(
       menus.theme
         .filter((entry): entry is Extract<MenuEntry, { kind: "item" }> => entry.kind === "item")

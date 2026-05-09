@@ -6,6 +6,8 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Added
 
+- Added a `y` yank shortcut for copying the current text selection to the clipboard.
+
 ### Changed
 
 ### Fixed

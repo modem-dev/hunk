@@ -47,6 +47,7 @@ export interface UseAppKeyboardShortcutsOptions {
   toggleLineWrap: () => void;
   toggleSidebar: () => void;
   triggerRefreshCurrentInput: () => void;
+  yankSelection: () => void;
 }
 
 /** Register the app's scoped keyboard handling while keeping mode precedence explicit. */
@@ -78,6 +79,7 @@ export function useAppKeyboardShortcuts({
   toggleLineWrap,
   toggleSidebar,
   triggerRefreshCurrentInput,
+  yankSelection,
 }: UseAppKeyboardShortcutsOptions) {
   const activeMenuIdRef = useRef(activeMenuId);
   const focusAreaRef = useRef(focusArea);
@@ -175,6 +177,11 @@ export function useAppKeyboardShortcuts({
 
     if (key.name === "s" || key.sequence === "s") {
       toggleSidebar();
+      return;
+    }
+
+    if (key.name === "y" || key.sequence === "y") {
+      yankSelection();
     }
   };
 
@@ -333,6 +340,11 @@ export function useAppKeyboardShortcuts({
 
     if (key.name === "s") {
       runAndCloseMenu(toggleSidebar);
+      return;
+    }
+
+    if (key.name === "y" || key.sequence === "y") {
+      runAndCloseMenu(yankSelection);
       return;
     }
 
