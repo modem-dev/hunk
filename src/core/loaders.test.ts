@@ -22,6 +22,12 @@ function createTempDir(prefix: string) {
   return dir;
 }
 
+/** Normalize Windows short/long temp path spellings before path equality assertions. */
+function normalizeComparablePath(path: string) {
+  const resolvedPath = platform() === "win32" ? realpathSync.native(path) : path;
+  return resolvedPath.replace(/\\/g, "/");
+}
+
 function git(cwd: string, ...cmd: string[]) {
   const proc = Bun.spawnSync(["git", ...cmd], {
     cwd,
@@ -201,7 +207,9 @@ describe("loadAppBootstrap", () => {
       ),
     );
 
-    expect(bootstrap.changeset.sourceLabel.replace(/\\/g, "/")).toBe(dir.replace(/\\/g, "/"));
+    expect(normalizeComparablePath(bootstrap.changeset.sourceLabel)).toBe(
+      normalizeComparablePath(dir),
+    );
     expect(bootstrap.changeset.files[0]?.path).toBe("example.ts");
     expect(bootstrap.changeset.files[0]?.agent?.annotations).toHaveLength(1);
   });
