@@ -1082,6 +1082,88 @@ describe("loadAppBootstrap", () => {
     expect(bootstrap.changeset.files[0]?.stats.additions).toBe(1);
   });
 
+  test("loads patch text emitted with diff.mnemonicPrefix=true (e.g. from `hunk pager` stdin)", async () => {
+    const dir = createTempRepo("hunk-patch-mnemonic-prefix-");
+
+    writeFileSync(join(dir, "example.ts"), "export const value = 1;\n");
+    git(dir, "add", ".");
+    git(dir, "commit", "-m", "initial");
+
+    writeFileSync(join(dir, "example.ts"), "export const value = 2;\n");
+    const patchText = git(dir, "-c", "diff.mnemonicPrefix=true", "diff", "--", "example.ts");
+
+    expect(patchText).toContain("diff --git i/example.ts w/example.ts");
+
+    const bootstrap = await loadAppBootstrap({
+      kind: "patch",
+      text: patchText,
+      options: { mode: "auto" },
+    });
+
+    expect(bootstrap.changeset.files).toHaveLength(1);
+    expect(bootstrap.changeset.files[0]).toMatchObject({
+      path: "example.ts",
+      metadata: { name: "example.ts", type: "change" },
+    });
+    expect(bootstrap.changeset.files[0]?.stats).toEqual({ additions: 1, deletions: 1 });
+  });
+
+  test("loads renamed patch text emitted with diff.mnemonicPrefix=true", async () => {
+    const dir = createTempRepo("hunk-patch-mnemonic-rename-");
+
+    writeFileSync(join(dir, "old.ts"), "export const value = 1;\n");
+    git(dir, "add", ".");
+    git(dir, "commit", "-m", "initial");
+
+    git(dir, "mv", "old.ts", "new.ts");
+    const patchText = git(dir, "-c", "diff.mnemonicPrefix=true", "diff", "--cached");
+
+    expect(patchText).toContain("diff --git c/old.ts i/new.ts");
+
+    const bootstrap = await loadAppBootstrap({
+      kind: "patch",
+      text: patchText,
+      options: { mode: "auto" },
+    });
+
+    expect(bootstrap.changeset.files).toHaveLength(1);
+    expect(bootstrap.changeset.files[0]).toMatchObject({
+      path: "new.ts",
+      previousPath: "old.ts",
+      metadata: { type: "rename-pure" },
+    });
+    expect(bootstrap.changeset.files[0]?.patch).toContain("diff --git a/old.ts b/new.ts");
+  });
+
+  test("does not strip real directories that look like mnemonic prefixes in noprefix renames", async () => {
+    const dir = createTempRepo("hunk-patch-noprefix-mnemonic-dir-");
+
+    mkdirSync(join(dir, "c"));
+    writeFileSync(join(dir, "c/foo.ts"), "export const value = 1;\n");
+    git(dir, "add", ".");
+    git(dir, "commit", "-m", "initial");
+
+    mkdirSync(join(dir, "w"));
+    git(dir, "mv", "c/foo.ts", "w/bar.ts");
+    const patchText = git(dir, "-c", "diff.noprefix=true", "diff", "--cached");
+
+    expect(patchText).toContain("diff --git c/foo.ts w/bar.ts");
+
+    const bootstrap = await loadAppBootstrap({
+      kind: "patch",
+      text: patchText,
+      options: { mode: "auto" },
+    });
+
+    expect(bootstrap.changeset.files).toHaveLength(1);
+    expect(bootstrap.changeset.files[0]).toMatchObject({
+      path: "w/bar.ts",
+      previousPath: "c/foo.ts",
+      metadata: { type: "rename-pure" },
+    });
+    expect(bootstrap.changeset.files[0]?.patch).toContain("diff --git a/c/foo.ts b/w/bar.ts");
+  });
+
   test("loads noprefix rename patches by recovering the rename pair from the headers", async () => {
     const bootstrap = await loadAppBootstrap({
       kind: "patch",

@@ -10,6 +10,7 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Fixed
 
+- Fixed `hunk pager` parsing for Git diffs emitted with `diff.mnemonicPrefix=true` so file paths do not keep `i/`, `w/`, `c/`, `1/`, or `2/` side prefixes.
 - Fixed large tracked and untracked file handling so very large diffs render as skipped placeholders instead of slowing startup or overflowing the JavaScript call stack.
 
 ## [0.11.0] - 2026-05-09
