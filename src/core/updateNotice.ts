@@ -148,7 +148,6 @@ function createFetchTimeoutSignal(timeoutMs: number) {
   const timeout = setTimeout(() => {
     controller.abort();
   }, timeoutMs);
-  timeout.unref?.();
 
   return {
     signal: controller.signal,
