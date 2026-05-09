@@ -169,7 +169,7 @@ describe("ui helpers", () => {
       menus.theme
         .filter((entry): entry is Extract<MenuEntry, { kind: "item" }> => entry.kind === "item")
         .map((entry) => entry.label),
-    ).toEqual(["Graphite", "Midnight", "Paper", "Ember"]);
+    ).toEqual(["Graphite", "Midnight", "Paper", "Ember", "Catppuccin Latte", "Catppuccin Mocha"]);
     expect(
       menus.theme.some(
         (entry) => entry.kind === "item" && entry.label === "Graphite" && entry.checked,
@@ -372,5 +372,7 @@ describe("ui helpers", () => {
     expect(autoLight.id).toBe("paper");
     expect(autoDark.id).toBe("graphite");
     expect(resolveTheme("ember", null).syntaxStyle).toBeDefined();
+    expect(resolveTheme("catppuccin-latte", null).syntaxStyle).toBeDefined();
+    expect(resolveTheme("catppuccin-mocha", null).syntaxStyle).toBeDefined();
   });
 });
