@@ -10,7 +10,7 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Fixed
 
-## [0.11.0] - 2026-05-09
+## [0.11.0-beta.0] - 2026-05-09
 
 ### Added
 
@@ -269,8 +269,8 @@ All notable user-visible changes to Hunk are documented in this file.
 
 - Stabilized diff repainting, active-hunk scrolling, syntax highlighting, pager stdin patch handling, and terminal cleanup on exit.
 
-[Unreleased]: https://github.com/modem-dev/hunk/compare/v0.11.0...HEAD
-[0.11.0]: https://github.com/modem-dev/hunk/compare/v0.10.0...v0.11.0
+[Unreleased]: https://github.com/modem-dev/hunk/compare/v0.11.0-beta.0...HEAD
+[0.11.0-beta.0]: https://github.com/modem-dev/hunk/compare/v0.10.0...v0.11.0-beta.0
 [0.10.0]: https://github.com/modem-dev/hunk/compare/v0.9.5...v0.10.0
 [0.9.5]: https://github.com/modem-dev/hunk/compare/v0.9.4...v0.9.5
 [0.9.4]: https://github.com/modem-dev/hunk/compare/v0.9.3...v0.9.4
