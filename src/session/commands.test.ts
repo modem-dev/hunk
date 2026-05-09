@@ -661,7 +661,7 @@ describe("session command compatibility checks", () => {
               repoRoot: undefined,
               sessionPath: resolve("/live-session"),
             });
-            expect(input.sourcePath).toBe(resolve("/source-repo"));
+            expect(input.sourcePath).toBe("/source-repo");
             expect(input.nextInput).toEqual({
               kind: "vcs",
               staged: false,
