@@ -41,11 +41,17 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Format check
+        run: bun run format:check
+
+      - name: Lint
+        run: bun run lint
+
       - name: Typecheck
         run: bun run typecheck
 
-      - name: Windows-focused tests
-        run: bun test src/core/loaders.test.ts src/core/paths.test.ts scripts/prebuilt-package-helpers.test.ts
+      - name: Test suite
+        run: bun run test
 
   pr-validate:
     name: Typecheck + Test + Smoke
