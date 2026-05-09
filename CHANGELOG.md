@@ -8,6 +8,8 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Changed
 
+- Auto-detect Jujutsu checkouts for `hunk diff` and `hunk show`, while keeping explicit `vcs` config overrides.
+
 ### Fixed
 
 ## [0.11.0] - 2026-05-09

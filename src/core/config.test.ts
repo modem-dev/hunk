@@ -27,6 +27,10 @@ function createRepo(dir: string) {
   mkdirSync(join(dir, ".git"), { recursive: true });
 }
 
+function createJjRepo(dir: string) {
+  mkdirSync(join(dir, ".jj"), { recursive: true });
+}
+
 function createPatchPagerInput(overrides: Partial<CliInput["options"]> = {}): CliInput {
   return {
     kind: "patch",
@@ -182,6 +186,55 @@ describe("config resolution", () => {
 
     expect(defaultResolved.input.options.vcs).toBe("git");
     expect(configuredResolved.input.options.vcs).toBe("jj");
+  });
+
+  test("auto-detects jj checkouts before falling back to git mode", () => {
+    const home = createTempDir("hunk-config-home-");
+    const jjRepo = createTempDir("hunk-config-jj-repo-");
+    const colocatedRepo = createTempDir("hunk-config-colocated-repo-");
+    const gitRepo = createTempDir("hunk-config-git-repo-");
+
+    createJjRepo(jjRepo);
+    createRepo(colocatedRepo);
+    createJjRepo(colocatedRepo);
+    createRepo(gitRepo);
+
+    const input = {
+      kind: "vcs",
+      staged: false,
+      options: {},
+    } satisfies CliInput;
+
+    expect(
+      resolveConfiguredCliInput(input, { cwd: jjRepo, env: { HOME: home } }).input.options.vcs,
+    ).toBe("jj");
+    expect(
+      resolveConfiguredCliInput(input, { cwd: colocatedRepo, env: { HOME: home } }).input.options
+        .vcs,
+    ).toBe("jj");
+    expect(
+      resolveConfiguredCliInput(input, { cwd: gitRepo, env: { HOME: home } }).input.options.vcs,
+    ).toBe("git");
+  });
+
+  test("explicit config overrides auto-detected jj mode", () => {
+    const home = createTempDir("hunk-config-home-");
+    const repo = createTempDir("hunk-config-jj-repo-");
+    createJjRepo(repo);
+
+    mkdirSync(join(repo, ".hunk"), { recursive: true });
+    writeFileSync(join(repo, ".hunk", "config.toml"), 'vcs = "git"\n');
+
+    const resolved = resolveConfiguredCliInput(
+      {
+        kind: "vcs",
+        staged: false,
+        options: {},
+      },
+      { cwd: repo, env: { HOME: home } },
+    );
+
+    expect(resolved.input.options.vcs).toBe("git");
   });
 
   test("loadAppBootstrap exposes resolved initial preferences to the UI", async () => {

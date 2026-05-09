@@ -119,6 +119,15 @@ function findRepoRoot(cwd = process.cwd()) {
   }
 }
 
+/** Choose the VCS backend that best matches the discovered checkout. */
+function detectRepoVcsMode(repoRoot?: string): VcsMode {
+  if (repoRoot && fs.existsSync(join(repoRoot, ".jj"))) {
+    return "jj";
+  }
+
+  return "git";
+}
+
 /** Parse one TOML config file into a plain object. */
 function readTomlRecord(path: string) {
   if (!fs.existsSync(path)) {
@@ -144,7 +153,7 @@ export function resolveConfiguredCliInput(
 
   let resolvedOptions: CommonOptions = {
     mode: DEFAULT_VIEW_PREFERENCES.mode,
-    vcs: "git",
+    vcs: detectRepoVcsMode(repoRoot),
     // Keep the built-in theme default explicit so stdin-backed startup paths do not depend on
     // renderer theme-mode detection for their initial palette.
     theme: "graphite",
