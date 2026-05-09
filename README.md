@@ -59,15 +59,7 @@ hunk show HEAD~1               # review an earlier commit
 
 ### Working with Jujutsu
 
-Set `vcs = "jj"` in config to use the same `hunk diff [revset]` and `hunk show [revset]` commands with Jujutsu revsets instead. When `vcs` is unset, Hunk uses Git.
-
-To use hunk as jj's pager, run `jj config edit --user` and update:
-
-```toml
-[ui]
-pager = ["hunk", "pager"]
-diff-formatter = ":git"
-```
+Hunk auto-detects Jujutsu checkouts, so `hunk diff [revset]` and `hunk show [revset]` use jj revsets inside a jj workspace. To override VCS detection, set `vcs = "git"` or `vcs = "jj"` in [config](#config).
 
 ### Working with raw files and patches
 
@@ -156,6 +148,16 @@ If you want to keep Git's default pager and add opt-in aliases instead:
 ```bash
 git config --global alias.hdiff "-c core.pager=\"hunk pager\" diff"
 git config --global alias.hshow "-c core.pager=\"hunk pager\" show"
+```
+
+### Jujutsu pager integration
+
+To use Hunk as jj's pager, run `jj config edit --user` and update:
+
+```toml
+[ui]
+pager = ["hunk", "pager"]
+diff-formatter = ":git"
 ```
 
 ### OpenTUI component
