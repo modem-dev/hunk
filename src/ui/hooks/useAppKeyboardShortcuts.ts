@@ -45,6 +45,7 @@ export interface UseAppKeyboardShortcutsOptions {
   toggleHunkHeaders: () => void;
   toggleLineNumbers: () => void;
   toggleLineWrap: () => void;
+  toggleMenuBar: () => void;
   toggleSidebar: () => void;
   triggerRefreshCurrentInput: () => void;
 }
@@ -76,6 +77,7 @@ export function useAppKeyboardShortcuts({
   toggleHunkHeaders,
   toggleLineNumbers,
   toggleLineWrap,
+  toggleMenuBar,
   toggleSidebar,
   triggerRefreshCurrentInput,
 }: UseAppKeyboardShortcutsOptions) {
@@ -358,6 +360,11 @@ export function useAppKeyboardShortcuts({
 
     if (key.name === "m" || key.sequence === "m") {
       runAndCloseMenu(toggleHunkHeaders);
+      return;
+    }
+
+    if (key.name === "f9") {
+      runAndCloseMenu(toggleMenuBar);
       return;
     }
 

@@ -18,6 +18,7 @@ export interface BuildAppMenusOptions {
   showHelp: boolean;
   showHunkHeaders: boolean;
   showLineNumbers: boolean;
+  showMenuBar: boolean;
   sidebarVisible: boolean;
   toggleAgentNotes: () => void;
   toggleFocusArea: () => void;
@@ -25,6 +26,7 @@ export interface BuildAppMenusOptions {
   toggleHunkHeaders: () => void;
   toggleLineNumbers: () => void;
   toggleLineWrap: () => void;
+  toggleMenuBar: () => void;
   toggleSidebar: () => void;
   wrapLines: boolean;
 }
@@ -46,6 +48,7 @@ export function buildAppMenus({
   showHelp,
   showHunkHeaders,
   showLineNumbers,
+  showMenuBar,
   sidebarVisible,
   toggleAgentNotes,
   toggleFocusArea,
@@ -53,6 +56,7 @@ export function buildAppMenus({
   toggleHunkHeaders,
   toggleLineNumbers,
   toggleLineWrap,
+  toggleMenuBar,
   toggleSidebar,
   wrapLines,
 }: BuildAppMenusOptions): Record<MenuId, MenuEntry[]> {
@@ -122,6 +126,13 @@ export function buildAppMenus({
         action: () => selectLayoutMode("auto"),
       },
       { kind: "separator" },
+      {
+        kind: "item",
+        label: "Menu bar",
+        hint: "F9",
+        checked: showMenuBar,
+        action: toggleMenuBar,
+      },
       {
         kind: "item",
         label: "Sidebar",

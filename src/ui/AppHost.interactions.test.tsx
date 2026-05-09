@@ -1730,6 +1730,41 @@ describe("App interactions", () => {
     }
   });
 
+  test("F9 toggles the top menu bar off and back on", async () => {
+    const setup = await testRender(<AppHost bootstrap={createBootstrap()} />, {
+      width: 220,
+      height: 24,
+    });
+
+    try {
+      await flush(setup);
+
+      let frame = setup.captureCharFrame();
+      expect(frame).toMatch(/File\s+View\s+Navigate\s+Theme\s+Agent\s+Help/);
+
+      await act(async () => {
+        await setup.mockInput.pressKey("F9");
+      });
+      frame = await waitForFrame(
+        setup,
+        (nextFrame) => !/File\s+View\s+Navigate\s+Theme\s+Agent\s+Help/.test(nextFrame),
+      );
+      expect(frame).not.toMatch(/File\s+View\s+Navigate\s+Theme\s+Agent\s+Help/);
+
+      await act(async () => {
+        await setup.mockInput.pressKey("F9");
+      });
+      frame = await waitForFrame(setup, (nextFrame) =>
+        /File\s+View\s+Navigate\s+Theme\s+Agent\s+Help/.test(nextFrame),
+      );
+      expect(frame).toMatch(/File\s+View\s+Navigate\s+Theme\s+Agent\s+Help/);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("sidebar visibility can toggle off and back on", async () => {
     const setup = await testRender(<AppHost bootstrap={createBootstrap()} />, {
       width: 240,

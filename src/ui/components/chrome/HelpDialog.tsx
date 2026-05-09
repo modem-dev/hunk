@@ -42,6 +42,7 @@ export function HelpDialog({
       title: "View",
       items: [
         ["1 / 2 / 0", "split / stack / auto"],
+        ["F9", "toggle menu bar"],
         ["s / t", "sidebar / theme"],
         ["a", "toggle AI notes"],
         ["l / w / m", "lines / wrap / metadata"],

@@ -1527,6 +1527,7 @@ describe("UI components", () => {
       "Shift+Wheel     scroll code horizontally",
       "View",
       "1 / 2 / 0       split / stack / auto",
+      "F9              toggle menu bar",
       "s / t           sidebar / theme",
       "a               toggle AI notes",
       "l / w / m       lines / wrap / metadata",

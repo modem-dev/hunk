@@ -109,6 +109,7 @@ export function App({
   const [wrapLines, setWrapLines] = useState(bootstrap.initialWrapLines ?? false);
   const [codeHorizontalOffset, setCodeHorizontalOffset] = useState(0);
   const [showHunkHeaders, setShowHunkHeaders] = useState(bootstrap.initialShowHunkHeaders ?? true);
+  const [showMenuBar, setShowMenuBar] = useState(true);
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [forceSidebarOpen, setForceSidebarOpen] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -326,6 +327,11 @@ export function App({
     setShowHunkHeaders((current) => !current);
   };
 
+  /** Toggle the top menu bar on or off. */
+  const toggleMenuBar = () => {
+    setShowMenuBar((current) => !current);
+  };
+
   /** Jump to an annotated hunk without changing the global note visibility toggle. */
   const openAgentNotesAtHunk = useCallback(
     (fileId: string, hunkIndex: number) => {
@@ -486,6 +492,7 @@ export function App({
         showHelp,
         showHunkHeaders,
         showLineNumbers,
+        showMenuBar,
         sidebarVisible,
         toggleAgentNotes,
         toggleFocusArea,
@@ -493,6 +500,7 @@ export function App({
         toggleHunkHeaders,
         toggleLineNumbers,
         toggleLineWrap,
+        toggleMenuBar,
         toggleSidebar,
         wrapLines,
       }),
@@ -511,6 +519,7 @@ export function App({
       showHelp,
       showHunkHeaders,
       showLineNumbers,
+      showMenuBar,
       sidebarVisible,
       toggleAgentNotes,
       toggleFocusArea,
@@ -518,6 +527,7 @@ export function App({
       toggleHunkHeaders,
       toggleLineNumbers,
       toggleLineWrap,
+      toggleMenuBar,
       toggleSidebar,
       wrapLines,
     ],
@@ -565,6 +575,7 @@ export function App({
     toggleHunkHeaders,
     toggleLineNumbers,
     toggleLineWrap,
+    toggleMenuBar,
     toggleSidebar,
     triggerRefreshCurrentInput,
   });
@@ -636,7 +647,7 @@ export function App({
         backgroundColor: activeTheme.background,
       }}
     >
-      {!pagerMode ? (
+      {!pagerMode && showMenuBar ? (
         <MenuBar
           activeMenuId={activeMenuId}
           menuSpecs={menuSpecs}

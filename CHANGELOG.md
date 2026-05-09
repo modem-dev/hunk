@@ -6,6 +6,8 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Added
 
+- Menu bar can now be hidden via `F9` or View → Menu bar, giving the diff full vertical space.
+
 ### Changed
 
 ### Fixed

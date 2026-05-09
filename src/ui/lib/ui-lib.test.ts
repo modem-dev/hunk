@@ -136,6 +136,7 @@ describe("ui helpers", () => {
       showHelp: false,
       showHunkHeaders: false,
       showLineNumbers: true,
+      showMenuBar: true,
       sidebarVisible: false,
       toggleAgentNotes: () => {},
       toggleFocusArea: () => {},
@@ -143,6 +144,7 @@ describe("ui helpers", () => {
       toggleHunkHeaders: () => {},
       toggleLineNumbers: () => {},
       toggleLineWrap: () => {},
+      toggleMenuBar: () => {},
       toggleSidebar: () => {},
       wrapLines: true,
     });
@@ -164,7 +166,13 @@ describe("ui helpers", () => {
             entry.kind === "item" && Boolean(entry.checked),
         )
         .map((entry) => entry.label),
-    ).toEqual(["Stacked view", "Agent notes", "Line numbers", "Line wrapping"]);
+    ).toEqual(["Stacked view", "Menu bar", "Agent notes", "Line numbers", "Line wrapping"]);
+    expect(
+      menus.view.find(
+        (entry): entry is Extract<MenuEntry, { kind: "item" }> =>
+          entry.kind === "item" && entry.label === "Menu bar",
+      ),
+    ).toMatchObject({ hint: "F9" });
     expect(
       menus.theme
         .filter((entry): entry is Extract<MenuEntry, { kind: "item" }> => entry.kind === "item")
