@@ -33,6 +33,12 @@ Hunk is a review-first terminal diff viewer for agent-authored changesets, built
 npm i -g hunkdiff
 ```
 
+Or with Homebrew:
+
+```bash
+brew install modem-dev/tap/hunk
+```
+
 Requirements:
 
 - Node.js 18+
@@ -159,7 +165,7 @@ diff-formatter = ":git"
 
 ### OpenTUI component
 
-Hunk also publishes `HunkDiffView` from `hunkdiff/opentui` for embedding the same diff renderer in your own OpenTUI app.
+Hunk also publishes `HunkDiffView` and lower-level primitives from `hunkdiff/opentui` for embedding the same diff renderer in your own OpenTUI app.
 
 See [docs/opentui-component.md](docs/opentui-component.md) for install, API, and runnable examples.
 
@@ -170,6 +176,8 @@ Ready-to-run demo diffs live in [`examples/`](examples/README.md).
 Each example includes the exact command to run from the repository root.
 
 ## Contributing
+
+💬 _Chat with users/contributors on the [Modem Discord server](https://discord.gg/WZFjaP6Gt8)_
 
 For source setup, tests, packaging checks, and repo architecture, see [CONTRIBUTING.md](CONTRIBUTING.md).
 

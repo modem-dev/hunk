@@ -89,6 +89,9 @@ describe("startup planning", () => {
       parseCliImpl: async () => ({ kind: "pager", options: { theme: "paper" } }),
       readStdinText: async () => "diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n",
       looksLikePatchInputImpl: () => true,
+      stdoutIsTTY: true,
+      env: { TERM: "xterm-256color" },
+      openControllingTerminalImpl: () => ({ stdin: {} as never, close: () => {} }),
       resolveRuntimeCliInputImpl(input) {
         seenInputs.push(input);
         return input;
@@ -119,6 +122,101 @@ describe("startup planning", () => {
       },
     });
     expect(seenInputs).toHaveLength(3);
+  });
+
+  test("passes diff-like pager stdin through when stdout is not interactive", async () => {
+    let loaded = false;
+    const patchText = "diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n";
+
+    const plan = await prepareStartupPlan(["bun", "hunk", "pager"], {
+      parseCliImpl: async () => ({ kind: "pager", options: {} }),
+      readStdinText: async () => patchText,
+      looksLikePatchInputImpl: () => true,
+      stdoutIsTTY: false,
+      loadAppBootstrapImpl: async () => {
+        loaded = true;
+        throw new Error("unreachable");
+      },
+    });
+
+    expect(plan).toEqual({ kind: "passthrough", text: patchText });
+    expect(loaded).toBe(false);
+  });
+
+  test("passes diff-like pager stdin through for a plain dumb terminal", async () => {
+    let loaded = false;
+    const patchText = "diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n";
+
+    const plan = await prepareStartupPlan(["bun", "hunk", "pager"], {
+      parseCliImpl: async () => ({ kind: "pager", options: {} }),
+      readStdinText: async () => patchText,
+      looksLikePatchInputImpl: () => true,
+      stdoutIsTTY: true,
+      env: { TERM: "dumb" },
+      loadAppBootstrapImpl: async () => {
+        loaded = true;
+        throw new Error("unreachable");
+      },
+    });
+
+    expect(plan).toEqual({ kind: "passthrough", text: patchText });
+    expect(loaded).toBe(false);
+  });
+
+  test("routes diff-like pager stdin to static output when the host advertises a captured pager", async () => {
+    let loaded = false;
+    const patchText = "diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n";
+
+    const plan = await prepareStartupPlan(["bun", "hunk", "pager"], {
+      parseCliImpl: async () => ({ kind: "pager", options: { theme: "paper" } }),
+      readStdinText: async () => patchText,
+      looksLikePatchInputImpl: () => true,
+      stdoutIsTTY: true,
+      env: { TERM: "dumb", LV: "-c" },
+      resolveRuntimeCliInputImpl: (input) => input,
+      resolveConfiguredCliInputImpl: (input) =>
+        ({
+          input: { ...input, options: { ...input.options, lineNumbers: false, theme: "paper" } },
+        }) as never,
+      loadAppBootstrapImpl: async () => {
+        loaded = true;
+        throw new Error("unreachable");
+      },
+    });
+
+    expect(plan).toEqual({
+      kind: "static-diff-pager",
+      text: patchText,
+      options: { theme: "paper", pager: true, lineNumbers: false },
+    });
+    expect(loaded).toBe(false);
+  });
+
+  test("routes diff-like pager stdin to static output when no controlling terminal is available", async () => {
+    let loaded = false;
+    const patchText = "diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n";
+
+    const plan = await prepareStartupPlan(["bun", "hunk", "pager"], {
+      parseCliImpl: async () => ({ kind: "pager", options: {} }),
+      readStdinText: async () => patchText,
+      looksLikePatchInputImpl: () => true,
+      stdoutIsTTY: true,
+      env: { TERM: "xterm-256color" },
+      resolveRuntimeCliInputImpl: (input) => input,
+      resolveConfiguredCliInputImpl: (input) => ({ input }) as never,
+      openControllingTerminalImpl: () => null,
+      loadAppBootstrapImpl: async () => {
+        loaded = true;
+        throw new Error("unreachable");
+      },
+    });
+
+    expect(plan).toEqual({
+      kind: "static-diff-pager",
+      text: patchText,
+      options: { pager: true },
+    });
+    expect(loaded).toBe(false);
   });
 
   test("rejects watch mode for stdin-backed patch inputs", async () => {

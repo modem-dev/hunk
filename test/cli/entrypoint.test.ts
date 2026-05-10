@@ -216,6 +216,25 @@ describe("CLI entrypoint contracts", () => {
     expect(stdout).not.toContain("\u001b[?1049h");
   });
 
+  test("general pager mode passes diff stdin through when stdout is not a terminal", () => {
+    const patchText = "diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n";
+    const proc = Bun.spawnSync(["bun", "run", "src/main.tsx", "pager"], {
+      cwd: process.cwd(),
+      stdin: Buffer.from(patchText),
+      stdout: "pipe",
+      stderr: "pipe",
+      env: process.env,
+    });
+
+    const stdout = Buffer.from(proc.stdout).toString("utf8");
+    const stderr = Buffer.from(proc.stderr).toString("utf8");
+
+    expect(proc.exitCode).toBe(0);
+    expect(stderr).toBe("");
+    expect(stdout).toBe(patchText);
+    expect(stdout).not.toContain("\u001b[?1049h");
+  });
+
   test("prints a friendly git-repo error without a Bun stack trace", () => {
     const nonRepoDir = mkdtempSync(join(tmpdir(), "hunk-nonrepo-"));
     const sourceEntrypoint = join(process.cwd(), "src/main.tsx");

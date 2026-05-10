@@ -1,8 +1,8 @@
 # OpenTUI component
 
-`hunkdiff/opentui` exports `HunkDiffView`, a reusable terminal diff component built from the same renderer as the Hunk CLI.
+`hunkdiff/opentui` exports reusable terminal diff components built from the same renderer as the Hunk CLI.
 
-Use it when you want Hunk's split or stack diff view inside your own OpenTUI app.
+Use `HunkDiffView` when you want a batteries-included single-file diff, or compose the lower-level primitives when you want to build your own Hunk-like review UI without Hunk's sidebar, menus, global keyboard shortcuts, or session behavior.
 
 ## Install
 
@@ -17,7 +17,7 @@ npm i hunkdiff @opentui/core @opentui/react react
 ```tsx
 import { createCliRenderer } from "@opentui/core";
 import { createRoot } from "@opentui/react";
-import { HunkDiffView, parseDiffFromFile } from "hunkdiff/opentui";
+import { HunkDiffView, createHunkDiffFile, parseDiffFromFile } from "hunkdiff/opentui";
 
 const metadata = parseDiffFromFile(
   {
@@ -43,12 +43,12 @@ const root = createRoot(renderer);
 
 root.render(
   <HunkDiffView
-    diff={{
+    diff={createHunkDiffFile({
       id: "example",
       metadata,
       language: "typescript",
       path: "example.ts",
-    }}
+    })}
     layout="split"
     width={88}
     theme="midnight"
@@ -58,18 +58,109 @@ root.render(
 
 In a real app, derive `width` from your layout or `useTerminalDimensions()`.
 
-## Building the `diff` input
+## Convenience vs primitives
 
-`HunkDiffView` renders one file at a time. Pass a `diff` object shaped like this:
+### `HunkDiffView`
+
+`HunkDiffView` renders one file and can own an OpenTUI `scrollbox`:
+
+```tsx
+<HunkDiffView diff={file} width={88} layout="split" scrollable />
+```
+
+Use it when you just want a drop-in diff viewer.
+
+### `HunkDiffBody`
+
+`HunkDiffBody` renders only the diff body for one file. It does not create a scrollbox, file nav, keyboard shortcuts, menus, or session bridge behavior:
+
+```tsx
+<scrollbox width="100%" height="100%" scrollY>
+  <HunkDiffBody file={file} width={88} layout="stack" selectedHunkIndex={2} />
+</scrollbox>
+```
+
+Use it when your app owns scrolling or surrounding layout.
+
+### `HunkDiffFileHeader`
+
+`HunkDiffFileHeader` renders Hunk's compact file label/stats header:
+
+```tsx
+<HunkDiffFileHeader file={file} width={88} onSelect={() => selectFile(file.id)} />
+```
+
+### `HunkReviewStream`
+
+`HunkReviewStream` renders a top-to-bottom multi-file review stream without Hunk's app shell, chrome, keybindings, or scroll owner:
+
+```tsx
+<scrollbox width="100%" height="100%" scrollY>
+  <HunkReviewStream
+    files={files}
+    width={terminal.width}
+    layout="split"
+    selection={{ fileId, hunkIndex }}
+    onSelectionChange={({ fileId, hunkIndex }) => {
+      setFileId(fileId);
+      setHunkIndex(hunkIndex);
+    }}
+  />
+</scrollbox>
+```
+
+Use it when you want Hunk's main review stream but your own navigation, chrome, scrolling, and keybindings.
+
+### `HunkFileNav`
+
+`HunkFileNav` renders Hunk's file navigation list as an optional primitive. It does not render borders, outer padding, or a scrollbox; host apps own surrounding chrome and scrolling.
+
+```tsx
+<scrollbox width={32} height="100%" scrollY>
+  <HunkFileNav
+    files={files}
+    selectedFileId={fileId}
+    width={32}
+    onSelectFile={(nextFileId) => setFileId(nextFileId)}
+  />
+</scrollbox>
+```
+
+## Building file inputs
+
+The public file model is intentionally higher-level than Hunk's internal renderer rows. Row models are not exported.
 
 ```ts
-type HunkDiffFile = {
+type HunkDiffFileInput = {
   id: string;
   metadata: FileDiffMetadata;
   language?: string;
   path?: string;
+  previousPath?: string;
   patch?: string;
+  stats?: { additions: number; deletions: number };
+  isBinary?: boolean;
+  isTooLarge?: boolean;
+  isUntracked?: boolean;
+  statsTruncated?: boolean;
 };
+
+type HunkDiffFile = Omit<HunkDiffFileInput, "stats"> & {
+  stats: { additions: number; deletions: number };
+};
+```
+
+Components accept `HunkDiffFileInput` directly. Use `createHunkDiffFile(...)` when you want a normalized `HunkDiffFile` with paths and stats filled in once:
+
+```tsx
+import { createHunkDiffFile, parseDiffFromFile } from "hunkdiff/opentui";
+
+const file = createHunkDiffFile({
+  id: "example",
+  metadata: parseDiffFromFile(beforeFile, afterFile, { context: 3 }, true),
+  path: "example.ts",
+  language: "typescript",
+});
 ```
 
 ### From before/after contents
@@ -77,54 +168,60 @@ type HunkDiffFile = {
 Use `parseDiffFromFile(...)` when you already have the old and new file contents.
 
 ```tsx
-import { parseDiffFromFile } from "hunkdiff/opentui";
+import { createHunkDiffFile, parseDiffFromFile } from "hunkdiff/opentui";
 
-const metadata = parseDiffFromFile(beforeFile, afterFile, { context: 3 }, true);
+const file = createHunkDiffFile({
+  id: "example",
+  metadata: parseDiffFromFile(beforeFile, afterFile, { context: 3 }, true),
+});
 ```
 
 ### From unified diff text
 
-Use `parsePatchFiles(...)` when you already have a patch string.
+Use `createHunkDiffFilesFromPatch(...)` for a quick multi-file patch path:
 
 ```tsx
-import { parsePatchFiles } from "hunkdiff/opentui";
+import { createHunkDiffFilesFromPatch } from "hunkdiff/opentui";
 
-const parsed = parsePatchFiles(patchText, "example:patch", true);
-const metadata = parsed.flatMap((entry) => entry.files)[0];
-
-if (!metadata) {
-  throw new Error("Expected at least one diff file.");
-}
+const files = createHunkDiffFilesFromPatch(patchText, "example:patch");
 ```
 
-## Props
+If you need direct access to Pierre's parser, `parsePatchFiles(...)` is still re-exported.
 
-| Prop                | Type                                             | Default      | Notes                                                                     |
-| ------------------- | ------------------------------------------------ | ------------ | ------------------------------------------------------------------------- |
-| `diff`              | `HunkDiffFile`                                   | `undefined`  | File to render. When omitted, the component shows an empty-state message. |
-| `layout`            | `"split" \| "stack"`                             | `"split"`    | Chooses side-by-side or stacked rendering.                                |
-| `width`             | `number`                                         | —            | Required content width in terminal columns.                               |
-| `theme`             | `"graphite" \| "midnight" \| "paper" \| "ember"` | `"graphite"` | Matches Hunk's built-in themes.                                           |
-| `showLineNumbers`   | `boolean`                                        | `true`       | Toggles line-number columns.                                              |
-| `showHunkHeaders`   | `boolean`                                        | `true`       | Toggles `@@ ... @@` hunk header rows.                                     |
-| `wrapLines`         | `boolean`                                        | `false`      | Wraps long lines instead of clipping horizontally.                        |
-| `horizontalOffset`  | `number`                                         | `0`          | Scroll offset for non-wrapped code rows.                                  |
-| `highlight`         | `boolean`                                        | `true`       | Enables syntax highlighting.                                              |
-| `scrollable`        | `boolean`                                        | `true`       | Set to `false` if your parent view owns scrolling.                        |
-| `selectedHunkIndex` | `number`                                         | `0`          | Highlights one hunk as the active target.                                 |
+## Common props
+
+| Prop                 | Type                                             | Default      | Notes                                                                               |
+| -------------------- | ------------------------------------------------ | ------------ | ----------------------------------------------------------------------------------- |
+| `layout`             | `"split" \| "stack"`                             | `"split"`    | Chooses side-by-side or stacked rendering.                                          |
+| `width`              | `number`                                         | —            | Required content width in terminal columns.                                         |
+| `theme`              | `"graphite" \| "midnight" \| "paper" \| "ember"` | `"graphite"` | Matches Hunk's built-in themes.                                                     |
+| `showLineNumbers`    | `boolean`                                        | `true`       | Toggles line-number columns.                                                        |
+| `showHunkHeaders`    | `boolean`                                        | `true`       | Toggles `@@ ... @@` hunk header rows.                                               |
+| `showFileSeparators` | `boolean`                                        | `true`       | Toggles separator rows between files in `HunkReviewStream`.                         |
+| `wrapLines`          | `boolean`                                        | `false`      | Wraps long lines instead of clipping horizontally.                                  |
+| `horizontalOffset`   | `number`                                         | `0`          | Scroll offset for non-wrapped code rows.                                            |
+| `highlight`          | `boolean`                                        | `true`       | Enables syntax highlighting.                                                        |
+| `selectedHunkIndex`  | `number`                                         | `0`          | Highlights one hunk as the active target for single-file components.                |
+| `scrollable`         | `boolean`                                        | `true`       | `HunkDiffView` only; primitives should be wrapped in OpenTUI scrollbox when needed. |
 
 ## Other exports
 
 - `parseDiffFromFile`
 - `parsePatchFiles`
 - `FileDiffMetadata`
+- `createHunkDiffFile`
+- `createHunkDiffFilesFromPatch`
+- `countHunkDiffStats`
 - `HUNK_DIFF_THEME_NAMES`
 - `HunkDiffThemeName`
 - `HunkDiffLayout`
 - `HunkDiffFile`
-- `HunkDiffViewProps`
+- `HunkDiffFileInput`
+- `HunkDiffStats`
+- `HunkDiffSelection`
+- component prop types
 
-`parseDiffFromFile`, `parsePatchFiles`, and `FileDiffMetadata` are re-exported from `@pierre/diffs` so you can build `metadata` without adding a second diff dependency.
+`parseDiffFromFile`, `parsePatchFiles`, and `FileDiffMetadata` are re-exported from `@pierre/diffs` so you can build metadata without adding a second diff dependency.
 
 ## Examples
 
