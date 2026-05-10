@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { KeyEvent } from "@opentui/core";
 import { findActionForKey, matchesAction, matchesKey } from "./match";
-import { loadKeymapDefaults } from "./load";
+import { applyKeymapOverrides, loadKeymapDefaults } from "./load";
 import { parseKeyToken } from "./parse";
 
 function makeKey(overrides: Partial<KeyEvent>): KeyEvent {
@@ -121,6 +121,30 @@ describe("findActionForKey", () => {
     expect(findActionForKey(keymap, "global", f10)).toBe("menu.open");
     const noMatch = makeKey({ name: "x", sequence: "x" });
     expect(findActionForKey(keymap, "global", noMatch)).toBeNull();
+  });
+
+  test("first registered action wins when two actions bind the same key", () => {
+    // Contract: when a key collision exists, `findActionForKey` returns
+    // whichever action appears first when iterating `Object.entries(scopeMap)`.
+    // That iteration order matches the insertion order in `loadKeymapDefaults`,
+    // which walks ACTIONS in registry order. `quit` is registered before
+    // `help.toggle` in `actions.ts`, so a colliding `x` resolves to `quit`.
+    //
+    // If a future reorder of `ACTIONS` changes the relative position of two
+    // colliding actions, this test will flip — that's the intended forcing
+    // function so the precedence change is a deliberate decision rather than
+    // a silent regression.
+    const base = loadKeymapDefaults();
+    const next = applyKeymapOverrides(base, {
+      keybindings: {
+        global: {
+          quit: "x",
+          "help.toggle": "x",
+        },
+      },
+    });
+    const xKey = makeKey({ name: "x", sequence: "x" });
+    expect(findActionForKey(next, "global", xKey)).toBe("quit");
   });
 });
 

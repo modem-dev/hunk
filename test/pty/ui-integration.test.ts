@@ -1286,6 +1286,21 @@ describe("live UI integration", () => {
         5_000,
       );
       expect(after).not.toContain("View  Navigate  Theme  Agent  Help");
+      expect(after).not.toMatch(/Controls help|Keyboard help/);
+
+      // Probe: if hunk were still alive, `?` would reopen the help dialog.
+      // After a real quit the PTY child is gone, so the probe write either
+      // does nothing or fires after process exit; either way, no help
+      // dialog should be drawn.
+      try {
+        await session.press("?");
+        await session.waitIdle({ timeout: 300 });
+      } catch {
+        // PTY can be torn down by the time the probe lands; that's the
+        // exact "process is dead" signal we want, so swallow and continue.
+      }
+      const probe = await session.text({ immediate: true });
+      expect(probe).not.toMatch(/Controls help|Keyboard help/);
     } finally {
       session.close();
     }

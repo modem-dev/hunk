@@ -376,6 +376,47 @@ describe("config resolution", () => {
     expect(quit[0]?.sequence).toBe("y");
   });
 
+  test("warns when a config file's root is not a TOML object", () => {
+    const home = createTempDir("hunk-config-home-");
+    const cwd = createTempDir("hunk-config-cwd-");
+
+    // The defensive branch at config.ts:147 catches a non-record root from
+    // Bun.TOML.parse. Real TOML files always parse to a table, so this is
+    // exercised by stubbing the parser to return an array — which is the
+    // shape `isRecord` rejects via its `Array.isArray` guard.
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(join(home, ".config", "hunk", "config.toml"), "foo = 1\n");
+
+    const originalParse = Bun.TOML.parse;
+    Bun.TOML.parse = ((_input: string) => [1, 2, 3]) as typeof Bun.TOML.parse;
+
+    const originalWrite = process.stderr.write.bind(process.stderr);
+    const captured: string[] = [];
+    process.stderr.write = ((chunk: unknown) => {
+      captured.push(typeof chunk === "string" ? chunk : String(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+
+    try {
+      const resolved = resolveConfiguredCliInput(
+        {
+          kind: "patch",
+          file: "-",
+          options: { pager: false },
+        },
+        { cwd, env: { HOME: home } },
+      );
+
+      expect(captured.some((line) => line.includes("not a TOML object"))).toBe(true);
+      // Defaults still apply despite the bad root shape.
+      expect(resolved.input.options.theme).toBe("graphite");
+      expect(resolved.input.options.keymap?.global.quit?.[0]?.sequence).toBe("q");
+    } finally {
+      process.stderr.write = originalWrite;
+      Bun.TOML.parse = originalParse;
+    }
+  });
+
   test("malformed TOML config does not abort startup", async () => {
     const home = createTempDir("hunk-config-home-");
     const cwd = createTempDir("hunk-config-cwd-");

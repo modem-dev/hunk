@@ -19,6 +19,11 @@ Each scope is configured under its own TOML section, e.g.
 `[keybindings.global]`. Missing keys keep their defaults; v1 has no "clear all"
 switch.
 
+Overrides REPLACE the default key list for an action — they do not merge.
+For example, if you set `[keybindings.global] quit = "<c-q>"`, then `q`
+no longer quits hunk; only Ctrl+Q does. To keep the default key alongside
+your custom one, list both explicitly: `quit = ["q", "<c-q>"]`.
+
 ## Token syntax
 
 Bindings accept either a single string or an array of strings:

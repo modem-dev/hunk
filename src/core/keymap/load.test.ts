@@ -112,6 +112,45 @@ describe("applyKeymapOverrides", () => {
     expect(next.global.quit).toEqual(base.global.quit);
   });
 
+  test("warns when an unknown action id is overridden", async () => {
+    // Companion to the "ignores unknown action ids" test above. That one
+    // pins the silent fallback behavior; this one pins that the warning
+    // actually emits with the fully-qualified `<scope>.<id>` so users can
+    // grep their stderr to find a typo.
+    const base = loadKeymapDefaults();
+    const stderr = await captureStderr(() => {
+      applyKeymapOverrides(base, {
+        keybindings: {
+          global: {
+            "this.does.not.exist": "x",
+          },
+        },
+      });
+    });
+    expect(
+      stderr.some((line) =>
+        line.includes('unknown action "global.this.does.not.exist"'),
+      ),
+    ).toBe(true);
+  });
+
+  test("warns when a binding is neither string nor array", async () => {
+    const base = loadKeymapDefaults();
+    let next!: ReturnType<typeof applyKeymapOverrides>;
+    const stderr = await captureStderr(() => {
+      next = applyKeymapOverrides(base, {
+        keybindings: { global: { quit: 5 as unknown as string } },
+      });
+    });
+    expect(
+      stderr.some(
+        (line) =>
+          line.includes("invalid binding") && line.includes('"global.quit"'),
+      ),
+    ).toBe(true);
+    expect(next.global.quit).toEqual(base.global.quit);
+  });
+
   test("does not mutate the input keymap", () => {
     const base = loadKeymapDefaults();
     const beforeQuit = base.global.quit;

@@ -12,6 +12,7 @@ import type {
   HunkSessionSnapshot,
 } from "../hunk-session/types";
 import type { AppBootstrap, LayoutMode } from "../core/types";
+import { applyKeymapOverrides, loadKeymapDefaults } from "../core/keymap/load";
 import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
 import { createTestDiffFile as buildTestDiffFile, lines } from "../../test/helpers/diff-helpers";
 
@@ -2419,6 +2420,283 @@ describe("App interactions", () => {
     } finally {
       await act(async () => {
         pagerSetup.renderer.destroy();
+      });
+    }
+  });
+
+  test("t cycles to the next theme", async () => {
+    // createBootstrap() goes through createTestVcsAppBootstrap, whose default
+    // initialTheme is "midnight". Cycling once should advance to the next
+    // theme in the THEMES registry, which is "paper". We observe this by
+    // walking through the menu bar to the Theme dropdown — the entry whose
+    // label starts with "[x] " is the active theme.
+    const setup = await testRender(<AppHost bootstrap={createBootstrap()} />, {
+      width: 220,
+      height: 24,
+    });
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.typeText("t");
+      });
+      await flush(setup);
+
+      // Open menu bar, then arrow-right three times: File -> View -> Navigate -> Theme.
+      await act(async () => {
+        await setup.mockInput.pressKey("F10");
+      });
+      await waitForFrame(setup, (currentFrame) =>
+        currentFrame.includes("Toggle files/filter focus"),
+      );
+      for (let index = 0; index < 3; index += 1) {
+        await act(async () => {
+          await setup.mockInput.pressArrow("right");
+        });
+        await flush(setup);
+      }
+
+      const frame = await waitForFrame(setup, (currentFrame) =>
+        currentFrame.includes("[x] Paper"),
+      );
+      expect(frame).toContain("[x] Paper");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("Home jumps the review stream to the top", async () => {
+    const setup = await testRender(<AppHost bootstrap={createLineScrollBootstrap()} />, {
+      width: 220,
+      height: 12,
+    });
+
+    try {
+      await flush(setup);
+
+      // Walk down a few lines so the top-of-stream marker scrolls off frame.
+      let scrolled = setup.captureCharFrame();
+      for (let index = 0; index < 18; index += 1) {
+        await act(async () => {
+          await setup.mockInput.pressArrow("down");
+        });
+        await flush(setup);
+        scrolled = setup.captureCharFrame();
+        if (!scrolled.includes("line01 = 101")) break;
+      }
+      expect(scrolled).not.toContain("line01 = 101");
+
+      await act(async () => {
+        await setup.mockInput.pressKey("HOME");
+      });
+      await flush(setup);
+
+      const frame = await waitForFrame(setup, (currentFrame) =>
+        currentFrame.includes("line01 = 101"),
+      );
+      expect(frame).toContain("line01 = 101");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("End jumps the review stream to the bottom", async () => {
+    const setup = await testRender(<AppHost bootstrap={createLineScrollBootstrap()} />, {
+      width: 220,
+      height: 12,
+    });
+
+    try {
+      await flush(setup);
+
+      const initial = setup.captureCharFrame();
+      expect(initial).toContain("line01 = 101");
+      // The fixture is short enough that the last numbered line might also be
+      // visible at startup if no scrolling were applied — guard against that
+      // by asserting it isn't yet, before pressing End.
+      expect(initial).not.toContain("line18 = 118");
+
+      await act(async () => {
+        await setup.mockInput.pressKey("END");
+      });
+      await flush(setup);
+
+      // The createLineScrollBootstrap fixture renders 18 numbered lines; the
+      // final line of the diff must be visible after End fires.
+      const frame = await waitForFrame(setup, (currentFrame) =>
+        currentFrame.includes("line18 = 118"),
+      );
+      expect(frame).toContain("line18 = 118");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("} jumps to the next annotated hunk in the review stream", async () => {
+    const { hostClient, getLatestSnapshot } = createMockHostClient();
+    const setup = await testRender(
+      <AppHost bootstrap={createDeepNoteBootstrap()} hostClient={hostClient} />,
+      { width: 104, height: 18 },
+    );
+
+    try {
+      await flush(setup);
+
+      // Initial render parks the selection on hunk 0 of the only file. The
+      // sidecar's only annotation lives on hunk 1, so a single `}` press
+      // should move selection there and reveal the inline note.
+      const initialSnapshot = getLatestSnapshot();
+      expect(initialSnapshot?.selectedHunkIndex).toBe(0);
+
+      await act(async () => {
+        await setup.mockInput.typeText("}");
+      });
+      await flush(setup);
+
+      const advanced = await waitForSnapshot(
+        setup,
+        getLatestSnapshot,
+        (snapshot) => snapshot.selectedHunkIndex === 1,
+      );
+      expect(advanced?.selectedHunkIndex).toBe(1);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("a TOML-overridden quit binding flows through to the keyboard hook", async () => {
+    // Pin the end-to-end path: a keymap built from defaults + override is
+    // delivered through bootstrap.input.options.keymap, picked up inside
+    // App.tsx's useMemo, and ends up inside useAppKeyboardShortcuts's
+    // matchesAction lookup. With `quit` rebound to `x`, pressing `x` must
+    // fire onQuit and pressing `q` must NOT.
+    const keymap = applyKeymapOverrides(loadKeymapDefaults(), {
+      keybindings: { global: { quit: "x" } },
+    });
+    const onQuit = mock(() => undefined);
+    const bootstrap = createTestVcsAppBootstrap({
+      changesetId: "changeset:keymap-override",
+      files: [
+        createTestDiffFile(
+          "alpha",
+          "alpha.ts",
+          "export const alpha = 1;\n",
+          "export const alpha = 2;\n",
+        ),
+      ],
+      vcsOptions: { keymap },
+    });
+
+    const setup = await testRender(
+      <AppHost bootstrap={bootstrap} onQuit={onQuit} />,
+      { width: 220, height: 24 },
+    );
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.typeText("q");
+      });
+      await flush(setup);
+      expect(onQuit).not.toHaveBeenCalled();
+
+      await act(async () => {
+        await setup.mockInput.typeText("x");
+      });
+      await flush(setup);
+      expect(onQuit).toHaveBeenCalledTimes(1);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("a <disabled> action does not fire from a live press", async () => {
+    // Pin the unbind path: `<disabled>` clears the spec list for an action,
+    // and the hook treats an empty spec list as "no match". `s` should be
+    // inert with this keymap, but unrelated actions like `t` (theme.cycle)
+    // must still fire — proving only the disabled action is dead.
+    const keymap = applyKeymapOverrides(loadKeymapDefaults(), {
+      keybindings: { global: { "sidebar.toggle": "<disabled>" } },
+    });
+    const bootstrap = createTestVcsAppBootstrap({
+      changesetId: "changeset:keymap-disabled",
+      files: [
+        createTestDiffFile(
+          "alpha",
+          "alpha.ts",
+          "export const alpha = 1;\n",
+          "export const alpha = 2;\n",
+        ),
+        createTestDiffFile(
+          "beta",
+          "beta.ts",
+          "export const beta = 1;\n",
+          "export const betaValue = 1;\n",
+        ),
+      ],
+      vcsOptions: { keymap },
+    });
+
+    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
+      width: 240,
+      height: 24,
+    });
+
+    try {
+      await flush(setup);
+
+      // Sidebar starts visible — both files appear twice (sidebar + main pane).
+      let frame = setup.captureCharFrame();
+      expect((frame.match(/alpha\.ts/g) ?? []).length).toBe(2);
+
+      await act(async () => {
+        await setup.mockInput.typeText("s");
+      });
+      await flush(setup);
+
+      // With sidebar.toggle unbound, `s` must NOT collapse the sidebar.
+      frame = setup.captureCharFrame();
+      expect((frame.match(/alpha\.ts/g) ?? []).length).toBe(2);
+
+      // Sibling check: an unrelated key (t) must still cycle theme. We
+      // confirm that by walking to the Theme menu and seeing that the
+      // checked entry has advanced past the default "midnight".
+      await act(async () => {
+        await setup.mockInput.typeText("t");
+      });
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.pressKey("F10");
+      });
+      await waitForFrame(setup, (currentFrame) =>
+        currentFrame.includes("Toggle files/filter focus"),
+      );
+      for (let index = 0; index < 3; index += 1) {
+        await act(async () => {
+          await setup.mockInput.pressArrow("right");
+        });
+        await flush(setup);
+      }
+      const themeFrame = await waitForFrame(setup, (currentFrame) =>
+        currentFrame.includes("[x] Paper"),
+      );
+      expect(themeFrame).toContain("[x] Paper");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
       });
     }
   });
