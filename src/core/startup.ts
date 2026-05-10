@@ -44,6 +44,15 @@ export type StartupPlan =
       controllingTerminal: ControllingTerminal | null;
     };
 
+function isCapturedPagerHost(env: NodeJS.ProcessEnv) {
+  return (
+    env.TERM === "dumb" &&
+    (env.LV === "-c" ||
+      Boolean(env.GIT_PAGER) ||
+      Object.keys(env).some((key) => key.startsWith("LAZYGIT")))
+  );
+}
+
 export interface StartupDeps {
   parseCliImpl?: (argv: string[]) => Promise<ParsedCliInput>;
   readStdinText?: () => Promise<string>;
@@ -114,9 +123,16 @@ export async function prepareStartupPlan(
       };
     }
 
+    if (env.TERM === "dumb" && !isCapturedPagerHost(env)) {
+      return {
+        kind: "passthrough",
+        text: stdinText,
+      };
+    }
+
     // Captured pager hosts like LazyGit can provide a PTY while advertising TERM=dumb.
     // In that mode, emit static colored diff output instead of launching the TUI.
-    if (env.TERM === "dumb") {
+    if (isCapturedPagerHost(env)) {
       return {
         kind: "static-diff-pager",
         text: stdinText,

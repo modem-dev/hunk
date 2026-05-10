@@ -174,8 +174,28 @@ async function renderStaticFile(file: DiffFile, theme: AppTheme) {
   return [header, ...rows.map((row) => renderStaticRow(row, theme, lineNumberWidth))].join("\n");
 }
 
+function fallbackMessage(error: unknown) {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  return String(error || "unknown error");
+}
+
+export interface StaticDiffPagerDeps {
+  stderr?: Pick<NodeJS.WriteStream, "write">;
+}
+
+function warnFallback(deps: StaticDiffPagerDeps, reason: string) {
+  deps.stderr?.write(`hunk: static pager render failed; falling back to raw diff (${reason}).\n`);
+}
+
 /** Render diff-like pager stdin as colored static output, falling back to the original patch on failure. */
-export async function renderStaticDiffPager(text: string, options: CommonOptions = {}) {
+export async function renderStaticDiffPager(
+  text: string,
+  options: CommonOptions = {},
+  deps: StaticDiffPagerDeps = { stderr: process.stderr },
+) {
   try {
     const bootstrap = await loadAppBootstrap({
       kind: "patch",
@@ -191,8 +211,14 @@ export async function renderStaticDiffPager(text: string, options: CommonOptions
       bootstrap.changeset.files.map((file) => renderStaticFile(file, theme)),
     );
 
-    return rendered.length > 0 ? `${rendered.join("\n\n")}\n` : text;
-  } catch {
+    if (rendered.length === 0) {
+      warnFallback(deps, "no files rendered");
+      return text;
+    }
+
+    return `${rendered.join("\n\n")}\n`;
+  } catch (error) {
+    warnFallback(deps, fallbackMessage(error));
     return text;
   }
 }

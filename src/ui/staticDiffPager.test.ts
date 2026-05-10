@@ -39,9 +39,25 @@ describe("static diff pager", () => {
     expect(plain).not.toContain("index 0000000");
   });
 
-  test("falls back to original text when the patch cannot be parsed", async () => {
+  test("falls back to original text with a diagnostic when the patch cannot be parsed", async () => {
     const text = "diff --git incomplete\n";
+    let warning = "";
 
-    await expect(renderStaticDiffPager(text)).resolves.toBe(text);
+    await expect(
+      renderStaticDiffPager(
+        text,
+        {},
+        {
+          stderr: {
+            write: (chunk) => {
+              warning += String(chunk);
+              return true;
+            },
+          },
+        },
+      ),
+    ).resolves.toBe(text);
+    expect(warning).toContain("hunk: static pager render failed");
+    expect(warning).toContain("falling back to raw diff");
   });
 });

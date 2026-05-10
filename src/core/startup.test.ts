@@ -143,7 +143,27 @@ describe("startup planning", () => {
     expect(loaded).toBe(false);
   });
 
-  test("routes diff-like pager stdin to static output when the host advertises a dumb terminal", async () => {
+  test("passes diff-like pager stdin through for a plain dumb terminal", async () => {
+    let loaded = false;
+    const patchText = "diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n";
+
+    const plan = await prepareStartupPlan(["bun", "hunk", "pager"], {
+      parseCliImpl: async () => ({ kind: "pager", options: {} }),
+      readStdinText: async () => patchText,
+      looksLikePatchInputImpl: () => true,
+      stdoutIsTTY: true,
+      env: { TERM: "dumb" },
+      loadAppBootstrapImpl: async () => {
+        loaded = true;
+        throw new Error("unreachable");
+      },
+    });
+
+    expect(plan).toEqual({ kind: "passthrough", text: patchText });
+    expect(loaded).toBe(false);
+  });
+
+  test("routes diff-like pager stdin to static output when the host advertises a captured pager", async () => {
     let loaded = false;
     const patchText = "diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n";
 
@@ -152,7 +172,7 @@ describe("startup planning", () => {
       readStdinText: async () => patchText,
       looksLikePatchInputImpl: () => true,
       stdoutIsTTY: true,
-      env: { TERM: "dumb" },
+      env: { TERM: "dumb", LV: "-c" },
       loadAppBootstrapImpl: async () => {
         loaded = true;
         throw new Error("unreachable");
