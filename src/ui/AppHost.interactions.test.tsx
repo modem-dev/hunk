@@ -72,6 +72,13 @@ function createMockHostClient() {
         latestSnapshot = snapshot.state;
       },
     } as unknown as HunkSessionBrokerClient,
+    dispatchCommand: async (message: HunkSessionServerMessage) => {
+      if (!bridge) {
+        throw new Error("Expected App to register a bridge before running the test command.");
+      }
+
+      return bridge.dispatchCommand(message);
+    },
     getBridge: () => bridge,
     getLatestSnapshot: () => latestSnapshot,
     navigateToHunk: async (
@@ -1102,6 +1109,90 @@ describe("App interactions", () => {
       }
 
       expect(refreshed).toBe(true);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
+  test("session reload preserves live comments while refreshing the file diff", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "hunk-session-reload-"));
+    const left = join(dir, "before.ts");
+    const right = join(dir, "after.ts");
+    const reviewNote = "Keep this daemon review note";
+
+    writeFileSync(left, "export const answer = 41;\n");
+    writeFileSync(right, "export const answer = 42;\n");
+
+    const bootstrap = await loadAppBootstrap({
+      kind: "diff",
+      left,
+      right,
+      options: {
+        mode: "split",
+      },
+    });
+    const { dispatchCommand, hostClient } = createMockHostClient();
+
+    const setup = await testRender(<AppHost bootstrap={bootstrap} hostClient={hostClient} />, {
+      width: 220,
+      height: 20,
+    });
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        await dispatchCommand({
+          type: "command",
+          requestId: "comment-1",
+          command: "comment",
+          input: {
+            sessionId: "session-1",
+            filePath: "after.ts",
+            side: "new",
+            line: 1,
+            summary: reviewNote,
+            reveal: true,
+          },
+        });
+      });
+
+      let frame = await waitForFrame(setup, (currentFrame) => currentFrame.includes(reviewNote));
+      expect(frame).toContain(reviewNote);
+
+      writeFileSync(right, "export const answer = 42;\nexport const added = true;\n");
+
+      await act(async () => {
+        await dispatchCommand({
+          type: "command",
+          requestId: "reload-1",
+          command: "reload_session",
+          input: {
+            sessionId: "session-1",
+            nextInput: {
+              kind: "diff",
+              left,
+              right,
+              options: {
+                mode: "split",
+              },
+            },
+            sourcePath: dir,
+          },
+        });
+      });
+
+      frame = await waitForFrame(
+        setup,
+        (currentFrame) => currentFrame.includes("export const added = true;"),
+        20,
+      );
+
+      expect(frame).toContain("export const added = true;");
+      expect(frame).toContain(reviewNote);
     } finally {
       await act(async () => {
         setup.renderer.destroy();
