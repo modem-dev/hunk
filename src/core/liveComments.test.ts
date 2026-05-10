@@ -115,4 +115,37 @@ describe("live comment helpers", () => {
     expect(range.newRange[0]).toBeLessThanOrEqual(1);
     expect(range.newRange[1]).toBeGreaterThanOrEqual(2);
   });
+
+  // Regression: a hunk with one addition surrounded by lots of context used to report
+  // newRange = [start, start] (additions-only), so a comment anchored past the leading
+  // context fell outside the hunk's range, annotationOverlapsHunk returned false, and
+  // the hunk silently disappeared from getAnnotatedHunkIndices / annotated-cursor lists.
+  // Fix: hunkLineRange uses additionCount/deletionCount (header total, includes context)
+  // instead of additionLines/deletionLines (just '+' / '-' counts).
+  test("includes context lines when one hunk has many context rows around few changes", () => {
+    // 12 leading + 1 added + many trailing context lines on the new side.
+    const beforeLines = Array.from({ length: 25 }, (_, i) => `line${i + 1}`);
+    const afterLines = [...beforeLines.slice(0, 12), "INSERTED", ...beforeLines.slice(12)];
+
+    const file = createTestDiffFile({
+      before: lines(...beforeLines),
+      after: lines(...afterLines),
+      context: 100,
+      id: "file:context-heavy",
+      path: "src/sparse.ts",
+      previousPath: "src/sparse.ts",
+    });
+
+    expect(file.metadata.hunks.length).toBe(1);
+    const hunk = file.metadata.hunks[0]!;
+    expect(hunk.additionLines).toBe(1);
+
+    const range = hunkLineRange(hunk);
+
+    // The range must cover the inserted line at position 13 — additions-only bounds
+    // would put newEnd at additionStart and miss it.
+    expect(range.newRange[1]).toBeGreaterThanOrEqual(13);
+    expect(findHunkIndexForLine(file, "new", 13)).toBe(0);
+    expect(findHunkIndexForLine(file, "new", 20)).toBe(0);
+  });
 });
