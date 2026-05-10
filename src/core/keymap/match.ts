@@ -25,11 +25,16 @@ export type Keymap = Record<ActionScope, Partial<Record<ActionId, KeySpec[]>>>;
 export function matchesKey(spec: KeySpec, key: KeyEvent): boolean {
   if (spec.sequence !== undefined) {
     if (key.sequence === spec.sequence) return true;
-    // Defensive parity with the pre-keymap hook, which accepted both
-    // `key.name === "X"` and `key.sequence === "X"` for single-character keys.
-    // Some OpenTUI input paths populate `name` without `sequence` for bare
-    // printables; matching either keeps those events binding correctly.
-    if (spec.sequence.length === 1 && key.name === spec.sequence) return true;
+    // Defensive parity for single-character specs — some OpenTUI paths
+    // populate `key.name` without `key.sequence`. Gate on `!key.shift` so a
+    // lowercase-letter spec doesn't shadow an uppercase-letter spec on
+    // Shift+letter events: OpenTUI lowercases `key.name` and sets
+    // `key.shift = true` for `A-Z`, which would otherwise let `g` match
+    // Shift+G (the literal `key.sequence === "G"`) ahead of an explicit `G`
+    // binding.
+    if (spec.sequence.length === 1 && !key.shift && key.name === spec.sequence) {
+      return true;
+    }
     return false;
   }
 

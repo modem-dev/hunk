@@ -88,6 +88,28 @@ describe("matchesKey", () => {
     expect(matchesKey(spec, makeKey({ name: "x" }))).toBe(false);
   });
 
+  test("lowercase-letter spec does not shadow uppercase spec on Shift+letter", () => {
+    // OpenTUI lowercases `key.name` and sets `key.shift = true` for shifted
+    // letters; the literal `key.sequence` stays uppercase. The name-parity
+    // fallback must NOT fire for shifted-letter events, otherwise an
+    // uppercase binding (e.g. `G` for scroll.toBottom) is shadowed by the
+    // lowercase one (`g` for scroll.toTop) since both `g` and `G` would
+    // otherwise match the same Shift+G keypress.
+    const lowerG = parseKeyToken("g");
+    const upperG = parseKeyToken("G");
+    if (!lowerG || lowerG === "disabled") throw new Error("bad fixture");
+    if (!upperG || upperG === "disabled") throw new Error("bad fixture");
+
+    const shiftG = makeKey({ name: "g", sequence: "G", shift: true });
+    expect(matchesKey(upperG, shiftG)).toBe(true);
+    expect(matchesKey(lowerG, shiftG)).toBe(false);
+
+    // Plain g still matches lowercase spec (sequence-direct path).
+    const plainG = makeKey({ name: "g", sequence: "g" });
+    expect(matchesKey(lowerG, plainG)).toBe(true);
+    expect(matchesKey(upperG, plainG)).toBe(false);
+  });
+
   test("modifier-required specs do not match plain events", () => {
     // The reverse direction of the modifier rule: spec asks for shift/ctrl/alt,
     // event is missing it, so the match must fail. These are cheap pins on the
