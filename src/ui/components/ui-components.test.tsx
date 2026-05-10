@@ -856,6 +856,64 @@ describe("UI components", () => {
     }
   });
 
+  test("DiffPane keeps bottom scroll stable when offscreen agent notes are windowed out", async () => {
+    const theme = resolveTheme("midnight", null);
+    const firstFile = createTallDiffFile("first", "first.ts", 18);
+    firstFile.agent = {
+      path: firstFile.path,
+      summary: "first.ts note",
+      annotations: [
+        {
+          newRange: [2, 2],
+          summary: "Offscreen note should still reserve geometry at EOF.",
+          rationale:
+            "If measurement drops this note after first.ts leaves the viewport, max scroll shrinks.",
+        },
+      ],
+    };
+    const files = [firstFile, createTallDiffFile("last", "last.ts", 24)];
+    const scrollRef = createRef<ScrollBoxRenderable>();
+    const props = createDiffPaneProps(files, theme, {
+      diffContentWidth: 88,
+      headerLabelWidth: 48,
+      headerStatsWidth: 16,
+      scrollRef,
+      selectedFileId: undefined,
+      separatorWidth: 84,
+      showAgentNotes: true,
+      width: 92,
+    });
+    const setup = await testRender(<DiffPane {...props} />, {
+      width: 96,
+      height: 10,
+    });
+
+    try {
+      await settleDiffPane(setup);
+
+      let bottomScrollTop = 0;
+      await act(async () => {
+        scrollRef.current?.scrollTo(1_000_000);
+        bottomScrollTop = scrollRef.current?.scrollTop ?? 0;
+      });
+      expect(bottomScrollTop).toBeGreaterThan(0);
+
+      await settleDiffPane(setup);
+      expect(scrollRef.current?.scrollTop ?? 0).toBe(bottomScrollTop);
+
+      await act(async () => {
+        scrollRef.current?.scrollTo(bottomScrollTop + 1);
+      });
+      await settleDiffPane(setup);
+
+      expect(scrollRef.current?.scrollTop ?? 0).toBe(bottomScrollTop);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("DiffPane lets manual scrolling move away from a bottom-clamped file-top alignment", async () => {
     const theme = resolveTheme("midnight", null);
     const files = [
