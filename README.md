@@ -165,7 +165,7 @@ diff-formatter = ":git"
 
 ### OpenTUI component
 
-Hunk also publishes `HunkDiffView` from `hunkdiff/opentui` for embedding the same diff renderer in your own OpenTUI app.
+Hunk also publishes `HunkDiffView` and lower-level primitives from `hunkdiff/opentui` for embedding the same diff renderer in your own OpenTUI app.
 
 See [docs/opentui-component.md](docs/opentui-component.md) for install, API, and runnable examples.
 

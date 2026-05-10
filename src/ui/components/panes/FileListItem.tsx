@@ -27,10 +27,12 @@ function getFileStateIcon(entry: FileListEntry, theme: AppTheme): { icon: string
 /** Render one folder header in the navigation sidebar. */
 export function FileGroupHeader({
   entry,
+  paddingLeft = 1,
   textWidth,
   theme,
 }: {
   entry: FileGroupEntry;
+  paddingLeft?: number;
   textWidth: number;
   theme: AppTheme;
 }) {
@@ -39,7 +41,7 @@ export function FileGroupHeader({
       style={{
         width: "100%",
         height: 1,
-        paddingLeft: 1,
+        paddingLeft,
         backgroundColor: theme.panel,
       }}
     >
@@ -51,6 +53,7 @@ export function FileGroupHeader({
 /** Render one file row in the navigation sidebar. */
 export function FileListItem({
   entry,
+  paddingLeft = 1,
   selected,
   statsWidth,
   textWidth,
@@ -58,6 +61,7 @@ export function FileListItem({
   onSelect,
 }: {
   entry: FileListEntry;
+  paddingLeft?: number;
   selected: boolean;
   statsWidth: number;
   textWidth: number;
@@ -93,7 +97,7 @@ export function FileListItem({
         style={{
           flexGrow: 1,
           height: 1,
-          paddingLeft: 1,
+          paddingLeft,
           flexDirection: "row",
           backgroundColor: rowBackground,
         }}
