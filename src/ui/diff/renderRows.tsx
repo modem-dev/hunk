@@ -7,7 +7,17 @@ import {
   resolveStackCellGeometry,
 } from "./codeColumns";
 import type { DiffRow, RenderSpan, SplitLineCell, StackLineCell } from "./pierre";
-import { blendHex } from "../lib/color";
+import {
+  diffRailMarker,
+  dimRailColor,
+  neutralRailColor,
+  splitCellPalette,
+  splitLeftRailColor,
+  splitRightRailColor,
+  stackCellPalette,
+  stackGutterText,
+  stackRailColor,
+} from "./rowStyle";
 
 /** Clamp a label to one terminal row with an ellipsis. */
 export function fitText(text: string, width: number) {
@@ -80,114 +90,7 @@ function sliceSpansWindow(spans: RenderSpan[], offset: number, width: number) {
   };
 }
 
-const INACTIVE_RAIL_BLEND = 0.35;
-
-/** Dim a rail color for inactive hunks by blending toward the panel background. */
-function dimRailColor(color: string, theme: AppTheme) {
-  return blendHex(color, theme.panel, INACTIVE_RAIL_BLEND);
-}
-
-/** The rail marker is always visible. */
-function marker() {
-  return "▌";
-}
-
-/** Return the neutral active-hunk rail color for the current theme. */
-function neutralRailColor(theme: AppTheme) {
-  return theme.lineNumberFg;
-}
-
-/** Pick the stack-view rail color for one rendered row. */
-function stackRailColor(kind: StackLineCell["kind"], theme: AppTheme, selected: boolean) {
-  let color: string;
-
-  if (kind === "addition") {
-    color = theme.addedSignColor;
-  } else if (kind === "deletion") {
-    color = theme.removedSignColor;
-  } else {
-    color = neutralRailColor(theme);
-  }
-
-  return selected ? color : dimRailColor(color, theme);
-}
-
-/** Pick the left split-view rail color from the old-side cell state. */
-function splitLeftRailColor(kind: SplitLineCell["kind"], theme: AppTheme, selected: boolean) {
-  const color = kind === "deletion" ? theme.removedSignColor : neutralRailColor(theme);
-  return selected ? color : dimRailColor(color, theme);
-}
-
-/** Pick the right split-view rail color from the new-side cell state. */
-function splitRightRailColor(kind: SplitLineCell["kind"], theme: AppTheme, selected: boolean) {
-  const color = kind === "addition" ? theme.addedSignColor : neutralRailColor(theme);
-  return selected ? color : dimRailColor(color, theme);
-}
-
-/** Pick split-view colors from the semantic diff cell kind. */
-function splitCellPalette(kind: SplitLineCell["kind"], theme: AppTheme) {
-  if (kind === "addition") {
-    return {
-      gutterBg: theme.addedBg,
-      contentBg: theme.addedBg,
-      signColor: theme.addedSignColor,
-      numberColor: theme.addedSignColor,
-    };
-  }
-
-  if (kind === "deletion") {
-    return {
-      gutterBg: theme.removedBg,
-      contentBg: theme.removedBg,
-      signColor: theme.removedSignColor,
-      numberColor: theme.removedSignColor,
-    };
-  }
-
-  if (kind === "empty") {
-    return {
-      gutterBg: theme.lineNumberBg,
-      contentBg: theme.panelAlt,
-      signColor: theme.muted,
-      numberColor: theme.lineNumberFg,
-    };
-  }
-
-  return {
-    gutterBg: theme.lineNumberBg,
-    contentBg: theme.contextBg,
-    signColor: theme.muted,
-    numberColor: theme.lineNumberFg,
-  };
-}
-
-/** Pick stack-view colors from the semantic diff cell kind. */
-function stackCellPalette(kind: StackLineCell["kind"], theme: AppTheme) {
-  if (kind === "addition") {
-    return {
-      gutterBg: theme.addedBg,
-      contentBg: theme.addedBg,
-      signColor: theme.addedSignColor,
-      numberColor: theme.addedSignColor,
-    };
-  }
-
-  if (kind === "deletion") {
-    return {
-      gutterBg: theme.removedBg,
-      contentBg: theme.removedBg,
-      signColor: theme.removedSignColor,
-      numberColor: theme.removedSignColor,
-    };
-  }
-
-  return {
-    gutterBg: theme.lineNumberBg,
-    contentBg: theme.contextBg,
-    signColor: theme.muted,
-    numberColor: theme.lineNumberFg,
-  };
-}
+const marker = diffRailMarker;
 
 /** Render a fixed-width inline span sequence for one diff cell. */
 function renderInlineSpans(
@@ -342,15 +245,9 @@ function buildWrappedStackCell(
     showLineNumbers,
     prefixWidth,
   );
-  const oldNumber = cell.oldLineNumber
-    ? String(cell.oldLineNumber).padStart(lineNumberDigits, " ")
-    : " ".repeat(lineNumberDigits);
-  const newNumber = cell.newLineNumber
-    ? String(cell.newLineNumber).padStart(lineNumberDigits, " ")
-    : " ".repeat(lineNumberDigits);
-  const firstGutterText = (
-    showLineNumbers ? `${oldNumber} ${newNumber} ${cell.sign}` : `${cell.sign} `
-  ).padEnd(gutterWidth);
+  const firstGutterText = stackGutterText(cell, lineNumberDigits, showLineNumbers).padEnd(
+    gutterWidth,
+  );
   const wrappedSpans = wrapSpans(cell.spans, contentWidth);
 
   return {
@@ -438,13 +335,6 @@ function renderStackCell(
     prefixWidth,
   );
 
-  const oldNumber = cell.oldLineNumber
-    ? String(cell.oldLineNumber).padStart(lineNumberDigits, " ")
-    : " ".repeat(lineNumberDigits);
-  const newNumber = cell.newLineNumber
-    ? String(cell.newLineNumber).padStart(lineNumberDigits, " ")
-    : " ".repeat(lineNumberDigits);
-
   return (
     <>
       {prefix ? (
@@ -453,9 +343,7 @@ function renderStackCell(
         </span>
       ) : null}
       <span key={`${keyPrefix}:gutter`} fg={palette.numberColor} bg={palette.gutterBg}>
-        {(showLineNumbers ? `${oldNumber} ${newNumber} ${cell.sign}` : `${cell.sign} `).padEnd(
-          gutterWidth,
-        )}
+        {stackGutterText(cell, lineNumberDigits, showLineNumbers).padEnd(gutterWidth)}
       </span>
       {renderInlineSpans(
         cell.spans,
