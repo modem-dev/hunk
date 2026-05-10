@@ -108,6 +108,27 @@ export async function prepareStartupPlan(
 
   if (parsedCliInput.kind === "pager") {
     const stdinText = await readStdinText();
+    const pagerOptions = parsedCliInput.options;
+    const staticPagerPlan = () => {
+      const staticPatchInput: CliInput = {
+        kind: "patch",
+        file: "-",
+        text: stdinText,
+        options: {
+          ...pagerOptions,
+          pager: true,
+        },
+      };
+      const configuredStaticInput = resolveConfiguredCliInputImpl(
+        resolveRuntimeCliInputImpl(staticPatchInput),
+      ).input;
+
+      return {
+        kind: "static-diff-pager" as const,
+        text: stdinText,
+        options: configuredStaticInput.options,
+      };
+    };
 
     if (!looksLikePatchInputImpl(stdinText)) {
       return {
@@ -133,20 +154,12 @@ export async function prepareStartupPlan(
     // Captured pager hosts like LazyGit can provide a PTY while advertising TERM=dumb.
     // In that mode, emit static colored diff output instead of launching the TUI.
     if (isCapturedPagerHost(env)) {
-      return {
-        kind: "static-diff-pager",
-        text: stdinText,
-        options: parsedCliInput.options,
-      };
+      return staticPagerPlan();
     }
 
     controllingTerminal = openControllingTerminalImpl();
     if (!controllingTerminal) {
-      return {
-        kind: "static-diff-pager",
-        text: stdinText,
-        options: parsedCliInput.options,
-      };
+      return staticPagerPlan();
     }
 
     parsedCliInput = {

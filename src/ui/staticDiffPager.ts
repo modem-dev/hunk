@@ -62,14 +62,31 @@ function renderHeaderLikeRow(text: string, fg: string, bg: string, theme: AppThe
   return `${colorText(marker(), neutralRailColor(theme), bg)}${colorText(text.trimEnd(), fg, bg)}`;
 }
 
+function staticStackGutterText(
+  cell: Extract<DiffRow, { type: "stack-line" }>["cell"],
+  lineNumberWidth: number,
+  showLineNumbers: boolean,
+) {
+  return stackGutterText(cell, lineNumberWidth, showLineNumbers).padEnd(
+    showLineNumbers ? lineNumberWidth * 2 + 5 : 2,
+  );
+}
+
 /** Render one non-interactive stacked diff row as ANSI text. */
-function renderStaticRow(row: DiffRow, theme: AppTheme, lineNumberWidth: number) {
+function renderStaticRow(
+  row: DiffRow,
+  theme: AppTheme,
+  lineNumberWidth: number,
+  options: CommonOptions,
+) {
   if (row.type === "collapsed") {
     return renderHeaderLikeRow(`··· ${row.text} ···`, theme.muted, theme.panelAlt, theme);
   }
 
   if (row.type === "hunk-header") {
-    return renderHeaderLikeRow(row.text, theme.badgeNeutral, theme.panelAlt, theme);
+    return options.hunkHeaders === false
+      ? ""
+      : renderHeaderLikeRow(row.text, theme.badgeNeutral, theme.panelAlt, theme);
   }
 
   if (row.type !== "stack-line") {
@@ -79,7 +96,7 @@ function renderStaticRow(row: DiffRow, theme: AppTheme, lineNumberWidth: number)
   const { cell } = row;
   const palette = stackCellPalette(cell.kind, theme);
   return `${colorText(marker(), stackRailColor(cell.kind, theme, true), theme.panel)}${colorText(
-    stackGutterText(cell, lineNumberWidth, true).padEnd(lineNumberWidth * 2 + 5),
+    staticStackGutterText(cell, lineNumberWidth, options.lineNumbers !== false),
     palette.numberColor,
     palette.gutterBg,
   )}${serializeSpans(cell.spans, palette.contentBg)}`;
@@ -152,7 +169,7 @@ function fileModeText(file: DiffFile) {
 }
 
 /** Format one parsed diff file for static pager hosts like LazyGit's diff panel. */
-async function renderStaticFile(file: DiffFile, theme: AppTheme) {
+async function renderStaticFile(file: DiffFile, theme: AppTheme, options: CommonOptions) {
   const highlighted =
     file.isBinary || file.isTooLarge ? null : await loadHighlightedDiff(file, theme.appearance);
   const rows = buildStackRows(file, highlighted, theme);
@@ -170,7 +187,10 @@ async function renderStaticFile(file: DiffFile, theme: AppTheme) {
     return [header, colorText(message, theme.muted)].join("\n");
   }
 
-  return [header, ...rows.map((row) => renderStaticRow(row, theme, lineNumberWidth))].join("\n");
+  return [
+    header,
+    ...rows.map((row) => renderStaticRow(row, theme, lineNumberWidth, options)).filter(Boolean),
+  ].join("\n");
 }
 
 function fallbackMessage(error: unknown) {
@@ -207,7 +227,7 @@ export async function renderStaticDiffPager(
     });
     const theme = resolveTheme(options.theme, null);
     const rendered = await Promise.all(
-      bootstrap.changeset.files.map((file) => renderStaticFile(file, theme)),
+      bootstrap.changeset.files.map((file) => renderStaticFile(file, theme, options)),
     );
 
     if (rendered.length === 0) {

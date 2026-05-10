@@ -22,6 +22,19 @@ describe("static diff pager", () => {
     expect(output).not.toContain("\x1b[?1049h");
   });
 
+  test("honors configured hidden line numbers and hunk headers", async () => {
+    const patchText =
+      "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-const value = 1;\n+const value = 2;\n";
+
+    const plain = stripAnsi(
+      await renderStaticDiffPager(patchText, { lineNumbers: false, hunkHeaders: false }),
+    );
+
+    expect(plain).not.toContain("@@ -1 +1 @@");
+    expect(plain).toContain("▌- const value = 1;");
+    expect(plain).toContain("▌+ const value = 2;");
+  });
+
   test("shows semantic file metadata without raw patch headers", async () => {
     const patchText = [
       "diff --git a/new.txt b/new.txt",

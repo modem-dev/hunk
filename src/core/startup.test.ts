@@ -173,6 +173,11 @@ describe("startup planning", () => {
       looksLikePatchInputImpl: () => true,
       stdoutIsTTY: true,
       env: { TERM: "dumb", LV: "-c" },
+      resolveRuntimeCliInputImpl: (input) => input,
+      resolveConfiguredCliInputImpl: (input) =>
+        ({
+          input: { ...input, options: { ...input.options, lineNumbers: false, theme: "paper" } },
+        }) as never,
       loadAppBootstrapImpl: async () => {
         loaded = true;
         throw new Error("unreachable");
@@ -182,7 +187,7 @@ describe("startup planning", () => {
     expect(plan).toEqual({
       kind: "static-diff-pager",
       text: patchText,
-      options: { theme: "paper" },
+      options: { theme: "paper", pager: true, lineNumbers: false },
     });
     expect(loaded).toBe(false);
   });
@@ -197,6 +202,8 @@ describe("startup planning", () => {
       looksLikePatchInputImpl: () => true,
       stdoutIsTTY: true,
       env: { TERM: "xterm-256color" },
+      resolveRuntimeCliInputImpl: (input) => input,
+      resolveConfiguredCliInputImpl: (input) => ({ input }) as never,
       openControllingTerminalImpl: () => null,
       loadAppBootstrapImpl: async () => {
         loaded = true;
@@ -204,7 +211,11 @@ describe("startup planning", () => {
       },
     });
 
-    expect(plan).toEqual({ kind: "static-diff-pager", text: patchText, options: {} });
+    expect(plan).toEqual({
+      kind: "static-diff-pager",
+      text: patchText,
+      options: { pager: true },
+    });
     expect(loaded).toBe(false);
   });
 
