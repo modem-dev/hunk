@@ -216,7 +216,7 @@ describe("responsive app", () => {
     try {
       await act(async () => {
         await setup.renderOnce();
-        await setup.mockInput.pressTab();
+        await setup.mockInput.typeText("/");
         await setup.renderOnce();
       });
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createTestDiffFile, lines } from "../../../test/helpers/diff-helpers";
-import { buildSidebarEntries, fileLabelParts } from "./files";
+import { buildSidebarEntries, fileLabelParts, stepFileInList } from "./files";
 
 describe("files helpers", () => {
   test("buildSidebarEntries hides zero-value sidebar stats", () => {
@@ -114,6 +114,59 @@ describe("files helpers", () => {
       agentCommentsText: "*3",
       additionsText: "+2",
       deletionsText: "-2",
+    });
+  });
+
+  describe("stepFileInList", () => {
+    const stub = (id: string) =>
+      ({ id }) as unknown as Parameters<typeof stepFileInList>[0][number];
+
+    test("returns null for an empty list", () => {
+      expect(stepFileInList([], "anything", 1, "clamp")).toBeNull();
+      expect(stepFileInList([], "anything", -1, "wrap")).toBeNull();
+    });
+
+    test("returns null when delta is zero", () => {
+      const files = [stub("a"), stub("b")];
+      expect(stepFileInList(files, "a", 0, "clamp")).toBeNull();
+    });
+
+    test("clamp mode steps forward and backward", () => {
+      const files = [stub("a"), stub("b"), stub("c")];
+      expect(stepFileInList(files, "a", 1, "clamp")?.id).toBe("b");
+      expect(stepFileInList(files, "b", 1, "clamp")?.id).toBe("c");
+      expect(stepFileInList(files, "b", -1, "clamp")?.id).toBe("a");
+    });
+
+    test("clamp mode returns null at the boundary instead of moving", () => {
+      const files = [stub("a"), stub("b"), stub("c")];
+      expect(stepFileInList(files, "c", 1, "clamp")).toBeNull();
+      expect(stepFileInList(files, "a", -1, "clamp")).toBeNull();
+    });
+
+    test("clamp mode lands on the first file when nothing is selected", () => {
+      // Edge case the inline implementation got wrong: a forward step with no
+      // current selection used to skip index 0 because baseIndex defaulted to 0.
+      const files = [stub("a"), stub("b"), stub("c")];
+      expect(stepFileInList(files, undefined, 1, "clamp")?.id).toBe("a");
+      expect(stepFileInList(files, "missing", 1, "clamp")?.id).toBe("a");
+    });
+
+    test("clamp mode lands on the last file when stepping back with nothing selected", () => {
+      const files = [stub("a"), stub("b"), stub("c")];
+      expect(stepFileInList(files, undefined, -1, "clamp")?.id).toBe("c");
+    });
+
+    test("wrap mode cycles past either end", () => {
+      const files = [stub("a"), stub("b"), stub("c")];
+      expect(stepFileInList(files, "c", 1, "wrap")?.id).toBe("a");
+      expect(stepFileInList(files, "a", -1, "wrap")?.id).toBe("c");
+    });
+
+    test("wrap mode returns null when only one file exists", () => {
+      const files = [stub("solo")];
+      expect(stepFileInList(files, "solo", 1, "wrap")).toBeNull();
+      expect(stepFileInList(files, "solo", -1, "wrap")).toBeNull();
     });
   });
 

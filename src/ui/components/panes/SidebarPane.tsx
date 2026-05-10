@@ -7,6 +7,7 @@ import { FileGroupHeader, FileListItem } from "./FileListItem";
 /** Render the file navigation sidebar. */
 export function SidebarPane({
   entries,
+  focused,
   scrollRef,
   selectedFileId,
   textWidth,
@@ -15,6 +16,7 @@ export function SidebarPane({
   onSelectFile,
 }: {
   entries: SidebarEntry[];
+  focused: boolean;
   scrollRef: RefObject<ScrollBoxRenderable | null>;
   selectedFileId?: string;
   textWidth: number;
@@ -30,7 +32,7 @@ export function SidebarPane({
       style={{
         width,
         border: ["top"],
-        borderColor: theme.border,
+        borderColor: focused ? theme.accent : theme.border,
         backgroundColor: theme.panel,
         paddingY: 1,
         paddingX: 0,

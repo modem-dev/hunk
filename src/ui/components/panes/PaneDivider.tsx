@@ -5,6 +5,7 @@ import type { AppTheme } from "../../themes";
 export function PaneDivider({
   dividerHitLeft,
   dividerHitWidth,
+  highlighted = false,
   isResizing,
   theme,
   onMouseDown,
@@ -14,6 +15,7 @@ export function PaneDivider({
 }: {
   dividerHitLeft: number;
   dividerHitWidth: number;
+  highlighted?: boolean;
   isResizing: boolean;
   theme: AppTheme;
   onMouseDown: (event: TuiMouseEvent) => void;
@@ -21,13 +23,14 @@ export function PaneDivider({
   onMouseDragEnd: (event: TuiMouseEvent) => void;
   onMouseUp: (event: TuiMouseEvent) => void;
 }) {
+  const accent = isResizing || highlighted;
   return (
     <>
       <box
         style={{
           width: 1,
           border: ["top", "left"],
-          borderColor: isResizing ? theme.accent : theme.border,
+          borderColor: accent ? theme.accent : theme.border,
           backgroundColor: isResizing ? theme.accentMuted : theme.panel,
         }}
         customBorderChars={{

@@ -335,6 +335,37 @@ async function captureFrame(node: ReactNode, width = 120, height = 24) {
   }
 }
 
+async function captureSpansFrame(node: ReactNode, width = 120, height = 24) {
+  const setup = await testRender(node, { width, height });
+
+  try {
+    await act(async () => {
+      await setup.renderOnce();
+    });
+
+    return setup.captureSpans();
+  } finally {
+    await act(async () => {
+      setup.renderer.destroy();
+    });
+  }
+}
+
+/** Pull the foreground colour of the first horizontal-border character on the
+ * top row of the rendered output. */
+function topBorderColor(frame: {
+  lines: Array<{ spans: Array<{ text: string; fg?: { buffer?: ArrayLike<number> } }> }>;
+}) {
+  const topLine = frame.lines[0];
+  if (!topLine) return null;
+  for (const span of topLine.spans) {
+    if (/[─━]/.test(span.text)) {
+      return capturedColorToHex(span.fg);
+    }
+  }
+  return null;
+}
+
 function frameHasHighlightedMarker(
   frame: { lines: Array<{ spans: Array<{ text: string; fg?: unknown; bg?: unknown }> }> },
   marker: string,
@@ -439,6 +470,7 @@ describe("UI components", () => {
     const frame = await captureFrame(
       <SidebarPane
         entries={buildSidebarEntries(files)}
+        focused={false}
         scrollRef={createRef()}
         selectedFileId="app"
         textWidth={28}
@@ -461,6 +493,53 @@ describe("UI components", () => {
     expect(frame).not.toContain("+0");
     expect(frame).not.toContain("-0");
     expect(frame).not.toContain("M +2 -1 AI");
+  });
+
+  test("SidebarPane top-border colour shifts to theme.accent when focused", async () => {
+    const theme = resolveTheme("midnight", null);
+    const files = [
+      createTestDiffFile(
+        "app",
+        "src/ui/App.tsx",
+        "export const app = 1;\n",
+        "export const app = 2;\n",
+      ),
+    ];
+
+    const blurred = await captureSpansFrame(
+      <SidebarPane
+        entries={buildSidebarEntries(files)}
+        focused={false}
+        scrollRef={createRef()}
+        selectedFileId="app"
+        textWidth={28}
+        theme={theme}
+        width={32}
+        onSelectFile={() => {}}
+      />,
+      36,
+      6,
+    );
+    const focused = await captureSpansFrame(
+      <SidebarPane
+        entries={buildSidebarEntries(files)}
+        focused={true}
+        scrollRef={createRef()}
+        selectedFileId="app"
+        textWidth={28}
+        theme={theme}
+        width={32}
+        onSelectFile={() => {}}
+      />,
+      36,
+      6,
+    );
+
+    const blurredColor = topBorderColor(blurred);
+    const focusedColor = topBorderColor(focused);
+    expect(blurredColor).not.toBeNull();
+    expect(focusedColor).not.toBeNull();
+    expect(focusedColor).not.toBe(blurredColor);
   });
 
   test("DiffPane renders all diff sections in file order", async () => {
@@ -1618,7 +1697,7 @@ describe("UI components", () => {
       "l / w / m       lines / wrap / metadata",
       "Review",
       "/               focus file filter",
-      "Tab             toggle files/filter focus",
+      "Tab             toggle files/diff focus",
       "F10             open menus",
       "r / q           reload / quit",
     ] as const;

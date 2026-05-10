@@ -151,10 +151,10 @@ describe("ui helpers", () => {
       menus.file
         .filter((entry): entry is Extract<MenuEntry, { kind: "item" }> => entry.kind === "item")
         .map((entry) => entry.label),
-    ).toEqual(["Toggle files/filter focus", "Focus filter", "Reload", "Quit"]);
+    ).toEqual(["Toggle files/diff focus", "Focus filter", "Reload", "Quit"]);
     expect(menus.file[0]).toMatchObject({
       kind: "item",
-      label: "Toggle files/filter focus",
+      label: "Toggle files/diff focus",
       hint: "Tab",
     });
     expect(
