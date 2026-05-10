@@ -186,7 +186,7 @@ export function useAppKeyboardShortcuts({
       return;
     }
 
-    if (key.name === "s" || key.sequence === "s") {
+    if (isAction("pager", "sidebar.toggle", key)) {
       toggleSidebar();
     }
   };

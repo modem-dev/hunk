@@ -124,6 +124,7 @@ section to override pager-only.
 | `scroll.codeLeftFast`  | `<s-left>`                  | Scroll code left (fast).      |
 | `scroll.codeRightFast` | `<s-right>`                 | Scroll code right (fast).     |
 | `wrap.toggle`          | `w`                         | Toggle line wrap.             |
+| `sidebar.toggle`       | `s`                         | Toggle sidebar.               |
 
 ### `[keybindings.menu]`
 

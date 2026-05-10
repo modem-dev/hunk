@@ -374,6 +374,13 @@ export const ACTIONS: readonly ActionDef[] = [
     description: "toggle line wrap",
     group: "Pager",
   },
+  {
+    id: "sidebar.toggle",
+    scope: "pager",
+    defaultKeys: ["s"],
+    description: "toggle sidebar",
+    group: "Pager",
+  },
 
   // ---------- menu scope ----------
   {
