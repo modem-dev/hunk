@@ -125,11 +125,7 @@ describe("live comment helpers", () => {
   test("includes context lines when one hunk has many context rows around few changes", () => {
     // 12 leading + 1 added + many trailing context lines on the new side.
     const beforeLines = Array.from({ length: 25 }, (_, i) => `line${i + 1}`);
-    const afterLines = [
-      ...beforeLines.slice(0, 12),
-      "INSERTED",
-      ...beforeLines.slice(12),
-    ];
+    const afterLines = [...beforeLines.slice(0, 12), "INSERTED", ...beforeLines.slice(12)];
 
     const file = createTestDiffFile({
       before: lines(...beforeLines),
