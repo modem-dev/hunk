@@ -6,6 +6,8 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Added
 
+- Added Windows x64 prebuilt artifact publishing to the release workflow.
+
 ### Changed
 
 ### Fixed

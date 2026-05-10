@@ -38,6 +38,30 @@ function run(command: string[], options?: { cwd?: string; env?: NodeJS.ProcessEn
   return { stdout, stderr };
 }
 
+/** Resolve a command path for a sanitized PATH that still works cross-platform. */
+function commandPath(command: string) {
+  const proc = Bun.spawnSync(
+    process.platform === "win32" ? ["where", command] : ["bash", "-lc", `command -v ${command}`],
+    {
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+      env: process.env,
+    },
+  );
+  const resolved = Buffer.from(proc.stdout).toString("utf8").split(/\r?\n/, 1)[0]?.trim();
+  if (proc.exitCode !== 0 || !resolved) {
+    throw new Error(`Could not resolve ${command} on PATH for the prebuilt install smoke test.`);
+  }
+
+  return resolved;
+}
+
+/** Resolve a command directory for a sanitized PATH that still works cross-platform. */
+function commandDirectory(command: string) {
+  return path.dirname(commandPath(command));
+}
+
 const repoRoot = path.resolve(import.meta.dir, "..");
 const packageVersion = JSON.parse(await Bun.file(path.join(repoRoot, "package.json")).text())
   .version as string;
@@ -54,28 +78,9 @@ try {
   installDir = mkdtempSync(path.join(tempRoot, "hunk-prebuilt-install-"));
   smokeMetaDir = mkdtempSync(path.join(tempRoot, "hunk-prebuilt-meta-"));
 
-  const nodeBinary = Bun.spawnSync(["bash", "-lc", "command -v node"], {
-    stdin: "ignore",
-    stdout: "pipe",
-    stderr: "pipe",
-    env: process.env,
-  });
-  const resolvedNode = Buffer.from(nodeBinary.stdout).toString("utf8").trim();
-  if (nodeBinary.exitCode !== 0 || resolvedNode.length === 0) {
-    throw new Error("Could not resolve node on PATH for the prebuilt install smoke test.");
-  }
-  const bashBinary = Bun.spawnSync(["bash", "-lc", "command -v bash"], {
-    stdin: "ignore",
-    stdout: "pipe",
-    stderr: "pipe",
-    env: process.env,
-  });
-  const resolvedBash = Buffer.from(bashBinary.stdout).toString("utf8").trim();
-  if (bashBinary.exitCode !== 0 || resolvedBash.length === 0) {
-    throw new Error("Could not resolve bash on PATH for the prebuilt install smoke test.");
-  }
-  const nodeDir = path.dirname(resolvedNode);
-  const bashDir = path.dirname(resolvedBash);
+  const nodePath = commandPath("node");
+  const nodeDir = path.dirname(nodePath);
+  const bashDir = commandDirectory("bash");
 
   run(["npm", "pack", "--pack-destination", packageDir], {
     cwd: path.join(releaseRoot, hostSpec.packageName),
@@ -104,13 +109,18 @@ try {
 
   run(["npm", "install", "-g", "--prefix", installDir, metaTarball]);
 
-  const sanitizedPath = [path.join(installDir, "bin"), nodeDir, bashDir].join(":");
-  const installedHunk = path.join(installDir, "bin", "hunk");
+  const installedBinDir = process.platform === "win32" ? installDir : path.join(installDir, "bin");
+  const installedPackageRoot =
+    process.platform === "win32"
+      ? path.join(installDir, "node_modules", "hunkdiff")
+      : path.join(installDir, "lib", "node_modules", "hunkdiff");
+  const sanitizedPath = [installedBinDir, nodeDir, bashDir].join(path.delimiter);
+  const installedHunk = path.join(
+    installedBinDir,
+    process.platform === "win32" ? "hunk.cmd" : "hunk",
+  );
   const installedPlatformBinary = path.join(
-    installDir,
-    "lib",
-    "node_modules",
-    "hunkdiff",
+    installedPackageRoot,
     "node_modules",
     hostSpec.packageName,
     "bin",
@@ -161,7 +171,7 @@ try {
 
   const bunCheck = Bun.spawnSync(
     [
-      resolvedNode,
+      nodePath,
       "-e",
       "const {spawnSync}=require('node:child_process'); process.exit(spawnSync('bun',['--version'],{stdio:'ignore'}).status===0?1:0);",
     ],

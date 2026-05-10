@@ -25,7 +25,7 @@ const ARCH_NAME_MAP: Partial<Record<NodeJS.Architecture, SupportedArch>> = {
   arm64: "arm64",
 };
 
-/** Platforms we actually plan to publish in the first prebuilt-binary rollout. */
+/** Platforms published as optional prebuilt binary packages. */
 export const PLATFORM_PACKAGE_MATRIX: PlatformPackageSpec[] = [
   {
     packageName: "hunkdiff-darwin-arm64",
