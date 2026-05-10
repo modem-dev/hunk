@@ -528,7 +528,7 @@ describe("loadAppBootstrap", () => {
     git(dir, "add", "tracked.ts");
     git(dir, "commit", "-m", "initial");
 
-    git(dir, "config", "diff.external", "/usr/bin/true");
+    git(dir, "config", "diff.external", "git --version");
     writeFileSync(join(dir, "untracked.ts"), "export const added = true;\n");
 
     const bootstrap = await loadFromRepo(dir, {
