@@ -1258,4 +1258,130 @@ describe("live UI integration", () => {
       session.close();
     }
   });
+
+  test("q quits the app while the help dialog is open", async () => {
+    const fixture = harness.createTwoFileRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split"],
+      cwd: fixture.dir,
+      cols: 220,
+      rows: 24,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      await session.press("?");
+      await session.waitForText(/Controls help|Keyboard help/, { timeout: 5_000 });
+
+      await session.press("q");
+      // Old hook only matched Esc to dismiss help, so q fell through to
+      // requestQuit. The keymap rewrite briefly broke this — q closed help
+      // and stayed in the app. Quit should clear the chrome row entirely.
+      const after = await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("View  Navigate  Theme  Agent  Help"),
+        5_000,
+      );
+      expect(after).not.toContain("View  Navigate  Theme  Agent  Help");
+      expect(after).not.toMatch(/Controls help|Keyboard help/);
+
+      // Probe: if hunk were still alive, `?` would reopen the help dialog.
+      // After a real quit the PTY child is gone, so the probe write either
+      // does nothing or fires after process exit; either way, no help
+      // dialog should be drawn.
+      try {
+        await session.press("?");
+        await session.waitIdle({ timeout: 300 });
+      } catch {
+        // PTY can be torn down by the time the probe lands; that's the
+        // exact "process is dead" signal we want, so swallow and continue.
+      }
+      const probe = await session.text({ immediate: true });
+      expect(probe).not.toMatch(/Controls help|Keyboard help/);
+    } finally {
+      session.close();
+    }
+  });
+
+  test("Esc closes the help dialog without quitting the app", async () => {
+    const fixture = harness.createTwoFileRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split"],
+      cwd: fixture.dir,
+      cols: 220,
+      rows: 24,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      await session.press("?");
+      await session.waitForText(/Controls help|Keyboard help/, { timeout: 5_000 });
+
+      // OpenTUI's input parser can buffer a bare `\x1b` to disambiguate it
+      // from a multi-byte escape sequence; on slower CI runners that buffer
+      // can take several hundred ms to settle. Give it 10s before declaring
+      // the Esc didn't reach the app.
+      await session.press("escape");
+      const after = await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("Controls help") && !text.includes("Keyboard help"),
+        10_000,
+      );
+      // App must still be alive — chrome row should be redrawn.
+      expect(after).toMatch(/View\s+Navigate\s+Theme\s+Agent\s+Help/);
+      expect(after).not.toContain("Controls help");
+      expect(after).not.toContain("Keyboard help");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("b pages back up after space pages down", async () => {
+    const fixture = harness.createScrollableFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      cols: 220,
+      rows: 12,
+    });
+
+    try {
+      const initial = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      expect(initial).toContain("line01 = 101");
+      expect(initial).not.toContain("line08 = 108");
+
+      // Live coverage of the matcher's bare-character dispatch through OpenTUI
+      // for the pageDown / pageUp pair. The `<s-space>` precedence over
+      // `<space>` is pinned in match.test.ts; tuistory's PTY encoder drops the
+      // shift modifier on space, so it can't be exercised end-to-end here.
+      await session.waitIdle({ timeout: 200 });
+      await session.press("space");
+      const paged = await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("line01 = 101"),
+        5_000,
+      );
+
+      expect(paged).not.toContain("line01 = 101");
+
+      await session.press("b");
+      const restored = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("line01 = 101"),
+        5_000,
+      );
+
+      expect(restored).toContain("line01 = 101");
+    } finally {
+      session.close();
+    }
+  });
 });

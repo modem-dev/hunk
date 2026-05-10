@@ -1,5 +1,7 @@
 import fs from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { applyKeymapOverrides, loadKeymapDefaults } from "./keymap/load";
+import type { Keymap } from "./keymap/match";
 import { resolveGlobalConfigPath } from "./paths";
 import type {
   CliInput,
@@ -28,7 +30,7 @@ interface HunkConfigResolution {
   repoConfigPath?: string;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
@@ -81,6 +83,7 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
     wrapLines: overrides.wrapLines ?? base.wrapLines,
     hunkHeaders: overrides.hunkHeaders ?? base.hunkHeaders,
     agentNotes: overrides.agentNotes ?? base.agentNotes,
+    keymap: overrides.keymap ?? base.keymap,
   };
 }
 
@@ -128,18 +131,28 @@ function detectRepoVcsMode(repoRoot?: string): VcsMode {
   return "git";
 }
 
-/** Parse one TOML config file into a plain object. */
+/**
+ * Parse one TOML config file into a plain object. Missing files yield `{}`;
+ * malformed TOML and non-object roots are reported to stderr and treated as
+ * absent so a bad config never aborts startup.
+ */
 function readTomlRecord(path: string) {
   if (!fs.existsSync(path)) {
     return {};
   }
 
-  const parsed = Bun.TOML.parse(fs.readFileSync(path, "utf8"));
-  if (!isRecord(parsed)) {
-    throw new Error(`Expected ${path} to contain a TOML object.`);
+  try {
+    const parsed = Bun.TOML.parse(fs.readFileSync(path, "utf8"));
+    if (!isRecord(parsed)) {
+      process.stderr.write(`[hunk] config: ${path} is not a TOML object — ignored.\n`);
+      return {};
+    }
+    return parsed;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`[hunk] config: parse error in ${path}: ${message} — ignored.\n`);
+    return {};
   }
-
-  return parsed;
 }
 
 /** Resolve CLI input against global and repo-local config files. */
@@ -167,18 +180,21 @@ export function resolveConfiguredCliInput(
     agentNotes: DEFAULT_VIEW_PREFERENCES.showAgentNotes,
   };
 
-  if (userConfigPath) {
-    resolvedOptions = mergeOptions(
-      resolvedOptions,
-      resolveConfigLayer(readTomlRecord(userConfigPath), input),
-    );
+  // Keymap is layered separately from view options. It only honors the
+  // top-level `[keybindings.<scope>]` blocks — not command-section overrides —
+  // because a per-command keymap would be confusing and is unnecessary for v1.
+  let keymap: Keymap = loadKeymapDefaults();
+  const userTomlRoot = userConfigPath ? readTomlRecord(userConfigPath) : undefined;
+  const repoTomlRoot = repoConfigPath ? readTomlRecord(repoConfigPath) : undefined;
+
+  if (userConfigPath && userTomlRoot) {
+    resolvedOptions = mergeOptions(resolvedOptions, resolveConfigLayer(userTomlRoot, input));
+    keymap = applyKeymapOverrides(keymap, userTomlRoot);
   }
 
-  if (repoConfigPath) {
-    resolvedOptions = mergeOptions(
-      resolvedOptions,
-      resolveConfigLayer(readTomlRecord(repoConfigPath), input),
-    );
+  if (repoConfigPath && repoTomlRoot) {
+    resolvedOptions = mergeOptions(resolvedOptions, resolveConfigLayer(repoTomlRoot, input));
+    keymap = applyKeymapOverrides(keymap, repoTomlRoot);
   }
 
   resolvedOptions = mergeOptions(resolvedOptions, input.options);
@@ -194,6 +210,7 @@ export function resolveConfiguredCliInput(
     wrapLines: resolvedOptions.wrapLines ?? DEFAULT_VIEW_PREFERENCES.wrapLines,
     hunkHeaders: resolvedOptions.hunkHeaders ?? DEFAULT_VIEW_PREFERENCES.showHunkHeaders,
     agentNotes: resolvedOptions.agentNotes ?? DEFAULT_VIEW_PREFERENCES.showAgentNotes,
+    keymap,
   };
 
   return {

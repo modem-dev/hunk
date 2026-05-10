@@ -6,6 +6,7 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Added
 
+- Configurable keybindings via the new `[keybindings.<scope>]` config sections (global, pager, menu, filter). Use `<disabled>` to unbind a default. See `docs/keybindings.md`.
 - Added Homebrew tap release automation and Homebrew-aware startup update notices.
 - Added lower-level `hunkdiff/opentui` primitives for embedding Hunk diff bodies, file headers, file navigation, and multi-file review streams in custom OpenTUI apps.
 

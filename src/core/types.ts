@@ -1,4 +1,5 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
+import type { Keymap } from "./keymap/match";
 
 export type LayoutMode = "auto" | "split" | "stack";
 export type VcsMode = "git" | "jj";
@@ -67,6 +68,8 @@ export interface CommonOptions {
   wrapLines?: boolean;
   hunkHeaders?: boolean;
   agentNotes?: boolean;
+  /** Resolved keymap for this invocation; populated by config layering. */
+  keymap?: Keymap;
 }
 
 export interface PersistedViewPreferences {
