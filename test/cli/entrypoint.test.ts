@@ -197,20 +197,13 @@ describe("CLI entrypoint contracts", () => {
   });
 
   test("general pager mode falls back to plain text for non-diff stdin", () => {
-    const proc = Bun.spawnSync(
-      [
-        "bash",
-        "-lc",
-        "printf '* main\\n  feature/demo\\n' | HUNK_TEXT_PAGER=cat bun run src/main.tsx pager",
-      ],
-      {
-        cwd: process.cwd(),
-        stdin: "ignore",
-        stdout: "pipe",
-        stderr: "pipe",
-        env: process.env,
-      },
-    );
+    const proc = Bun.spawnSync(["bun", "run", "src/main.tsx", "pager"], {
+      cwd: process.cwd(),
+      stdin: Buffer.from("* main\n  feature/demo\n"),
+      stdout: "pipe",
+      stderr: "pipe",
+      env: process.env,
+    });
 
     const stdout = Buffer.from(proc.stdout).toString("utf8");
     const stderr = Buffer.from(proc.stderr).toString("utf8");
