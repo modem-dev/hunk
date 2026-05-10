@@ -2327,10 +2327,12 @@ describe("App interactions", () => {
       await act(async () => {
         await setup.mockInput.typeText("?");
       });
-      await flush(setup);
-
-      const frame = setup.captureCharFrame();
-      expect(frame).toContain("Controls help");
+      // HelpDialog is lazy-loaded — poll instead of asserting on the first
+      // frame so slow CI mounts don't trip the assertion.
+      const helpFrame = await waitForFrame(setup, (currentFrame) =>
+        currentFrame.includes("Controls help"),
+      );
+      expect(helpFrame).toContain("Controls help");
 
       await act(async () => {
         await setup.mockInput.typeText("q");
@@ -2358,9 +2360,10 @@ describe("App interactions", () => {
       await act(async () => {
         await setup.mockInput.typeText("?");
       });
-      await flush(setup);
-
-      let frame = setup.captureCharFrame();
+      // Same lazy-mount handling as the regression test above.
+      let frame = await waitForFrame(setup, (currentFrame) =>
+        currentFrame.includes("Controls help"),
+      );
       expect(frame).toContain("Controls help");
 
       await act(async () => {
