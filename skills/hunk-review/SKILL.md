@@ -40,24 +40,6 @@ Use `--source` only for advanced reloads where the live session you want to cont
 
 ## Commands
 
-### Sandboxed agents
-
-`hunk session *` talks to the local Hunk daemon over loopback. Some agent sandboxes may block
-those localhost requests, which can make `hunk session list` report no sessions even while a Hunk
-TUI is open. If the user can see Hunk running, check whether the sandbox can reach the daemon
-before assuming the session failed to register.
-
-A useful probe is (port defaults to `47657`; use `$HUNK_MCP_PORT` if you have overridden it):
-
-```bash
-curl -s -X POST http://127.0.0.1:47657/session-api \
-  -H 'content-type: application/json' \
-  --data '{"action":"list"}'
-```
-
-If the direct API shows sessions, rerun the same `hunk session ...` command with the agent's
-local-network or sandbox-escalation mechanism.
-
 ### Inspect
 
 ```bash
@@ -163,7 +145,7 @@ Guidelines:
 ## Common errors
 
 - **"No visible diff file matches ..."** -- the file is not in the loaded review. Check `context`, then `reload` if needed.
-- **"No active Hunk sessions"** -- if the user can see Hunk running, first check sandbox loopback access (see [Sandboxed agents](#sandboxed-agents) above); otherwise ask the user to open Hunk in their terminal.
+- **"No active Hunk sessions"** -- if Hunk is visibly running, localhost may be blocked by the agent sandbox; retry with network/sandbox escalation. Otherwise ask the user to open Hunk.
 - **"Multiple active sessions match"** -- pass `<session-id>` explicitly.
 - **"No active Hunk session matches session path ..."** -- for advanced split-path reloads, verify the live window `Path` via `hunk session get` or `list`, then use `--session-path`.
 - **"Pass the replacement Hunk command after `--`"** -- include `--` before the nested `diff` / `show` command.
