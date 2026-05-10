@@ -1,7 +1,16 @@
 import { describe, expect, test } from "bun:test";
-import { runGitText } from "./git";
+import { buildGitStashShowArgs, runGitText } from "./git";
 
 describe("git command helpers", () => {
+  test("disables external diff tools for stash patches", () => {
+    const args = buildGitStashShowArgs({
+      kind: "stash-show",
+      options: { mode: "auto" },
+    });
+
+    expect(args).toContain("--no-ext-diff");
+  });
+
   test("reports a friendly error when git is not installed or not on PATH", () => {
     expect(() =>
       runGitText({

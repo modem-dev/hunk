@@ -126,7 +126,7 @@ export function buildGitShowArgs(input: ShowCommandInput) {
 
 /** Build the exact `git stash show -p` arguments used for stash review. */
 export function buildGitStashShowArgs(input: StashShowCommandInput) {
-  const args = ["stash", "show", "-p", "--find-renames", "--no-color"];
+  const args = ["stash", "show", "-p", "--no-ext-diff", "--find-renames", "--no-color"];
 
   if (input.ref) {
     args.push(input.ref);
