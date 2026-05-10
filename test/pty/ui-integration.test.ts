@@ -1258,4 +1258,111 @@ describe("live UI integration", () => {
       session.close();
     }
   });
+
+  test("q quits the app while the help dialog is open", async () => {
+    const fixture = harness.createTwoFileRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split"],
+      cwd: fixture.dir,
+      cols: 220,
+      rows: 24,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      await session.press("?");
+      await session.waitForText(/Controls help|Keyboard help/, { timeout: 5_000 });
+
+      await session.press("q");
+      // Old hook only matched Esc to dismiss help, so q fell through to
+      // requestQuit. The keymap rewrite briefly broke this — q closed help
+      // and stayed in the app. Quit should clear the chrome row entirely.
+      const after = await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("View  Navigate  Theme  Agent  Help"),
+        5_000,
+      );
+      expect(after).not.toContain("View  Navigate  Theme  Agent  Help");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("Esc closes the help dialog without quitting the app", async () => {
+    const fixture = harness.createTwoFileRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split"],
+      cwd: fixture.dir,
+      cols: 220,
+      rows: 24,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      await session.press("?");
+      await session.waitForText(/Controls help|Keyboard help/, { timeout: 5_000 });
+
+      await session.press("escape");
+      const after = await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("Controls help") && !text.includes("Keyboard help"),
+        5_000,
+      );
+      // App must still be alive — chrome row should be redrawn.
+      expect(after).toMatch(/View\s+Navigate\s+Theme\s+Agent\s+Help/);
+      expect(after).not.toContain("Controls help");
+      expect(after).not.toContain("Keyboard help");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("b pages back up after space pages down", async () => {
+    const fixture = harness.createScrollableFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      cols: 220,
+      rows: 12,
+    });
+
+    try {
+      const initial = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      expect(initial).toContain("line01 = 101");
+      expect(initial).not.toContain("line08 = 108");
+
+      // Live coverage of the matcher's bare-character dispatch through OpenTUI
+      // for the pageDown / pageUp pair. The `<s-space>` precedence over
+      // `<space>` is pinned in match.test.ts; tuistory's PTY encoder drops the
+      // shift modifier on space, so it can't be exercised end-to-end here.
+      await session.waitIdle({ timeout: 200 });
+      await session.press("space");
+      const paged = await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("line01 = 101"),
+        5_000,
+      );
+
+      expect(paged).not.toContain("line01 = 101");
+
+      await session.press("b");
+      const restored = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("line01 = 101"),
+        5_000,
+      );
+
+      expect(restored).toContain("line01 = 101");
+    } finally {
+      session.close();
+    }
+  });
 });
