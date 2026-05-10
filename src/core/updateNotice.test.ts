@@ -39,7 +39,7 @@ describe("startup update notice", () => {
     });
   });
 
-  test("falls back to beta for stable installs when latest is not newer", async () => {
+  test("falls back to beta for npm stable installs when latest is not newer", async () => {
     await withTempStatePath(async (statePath) => {
       await expect(
         resolveStartupUpdateNotice({
@@ -54,7 +54,7 @@ describe("startup update notice", () => {
     });
   });
 
-  test("beta installs choose the higher newer version between latest and beta", async () => {
+  test("npm beta installs choose the higher newer version between latest and beta", async () => {
     await withTempStatePath(async (statePath) => {
       await expect(
         resolveStartupUpdateNotice({
@@ -65,6 +65,51 @@ describe("startup update notice", () => {
       ).resolves.toEqual({
         key: "beta:0.8.1-beta.1",
         message: "Update available: 0.8.1-beta.1 (beta) • npm i -g hunkdiff@beta",
+      });
+    });
+  });
+
+  test("uses the Homebrew upgrade command for Homebrew installs", async () => {
+    await withTempStatePath(async (statePath) => {
+      await expect(
+        resolveStartupUpdateNotice({
+          fetchImpl: async () => createDistTagsResponse({ latest: "0.7.1", beta: "0.8.0-beta.1" }),
+          resolveInstalledVersion: () => "0.7.0",
+          resolveInstallSource: () => "homebrew",
+          statePath,
+        }),
+      ).resolves.toEqual({
+        key: "latest:0.7.1",
+        message: "Update available: 0.7.1 (latest) • brew update && brew upgrade hunk",
+      });
+    });
+  });
+
+  test("ignores beta updates for Homebrew installs", async () => {
+    await withTempStatePath(async (statePath) => {
+      await expect(
+        resolveStartupUpdateNotice({
+          fetchImpl: async () => createDistTagsResponse({ latest: "0.7.0", beta: "0.8.0-beta.1" }),
+          resolveInstalledVersion: () => "0.7.0",
+          resolveInstallSource: () => "homebrew",
+          statePath,
+        }),
+      ).resolves.toBeNull();
+    });
+  });
+
+  test("detects Homebrew installs from the HUNK_INSTALL_SOURCE environment variable", async () => {
+    await withTempStatePath(async (statePath) => {
+      await expect(
+        resolveStartupUpdateNotice({
+          env: { HUNK_INSTALL_SOURCE: "homebrew" },
+          fetchImpl: async () => createDistTagsResponse({ latest: "0.7.1" }),
+          resolveInstalledVersion: () => "0.7.0",
+          statePath,
+        }),
+      ).resolves.toEqual({
+        key: "latest:0.7.1",
+        message: "Update available: 0.7.1 (latest) • brew update && brew upgrade hunk",
       });
     });
   });

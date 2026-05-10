@@ -8,6 +8,7 @@ const STABLE_SEMVER_PATTERN = /^\d+\.\d+\.\d+$/;
 const PRERELEASE_SEMVER_PATTERN = /^\d+\.\d+\.\d+-[0-9A-Za-z.-]+$/;
 const DEFAULT_UPDATE_NOTICE_FETCH_TIMEOUT_MS = 5_000;
 const DISABLE_STARTUP_UPDATE_NOTICE_ENV = "HUNK_DISABLE_UPDATE_NOTICE";
+const INSTALL_SOURCE_ENV = "HUNK_INSTALL_SOURCE";
 const STARTUP_STATE_VERSION = 1;
 
 interface PersistedStartupState {
@@ -16,6 +17,7 @@ interface PersistedStartupState {
 }
 
 export type UpdateChannel = "latest" | "beta";
+export type InstallSource = "npm" | "homebrew";
 
 export interface UpdateNotice {
   key: string;
@@ -34,6 +36,7 @@ export interface UpdateNoticeDeps {
   fetchImpl?: FetchImpl;
   fetchTimeoutMs?: number;
   resolveInstalledVersion?: () => string;
+  resolveInstallSource?: () => InstallSource;
   statePath?: string;
 }
 
@@ -69,14 +72,27 @@ function isNewerVersion(current: string, candidate: string) {
   }
 }
 
+/** Resolve which package manager installed this binary, defaulting to the npm package path. */
+function resolveInstallSourceFromEnv(env: NodeJS.ProcessEnv = process.env): InstallSource {
+  return env[INSTALL_SOURCE_ENV] === "homebrew" ? "homebrew" : "npm";
+}
+
 /** Build the install command shown in the transient notice for one channel. */
-function commandForChannel(channel: UpdateChannel) {
+function commandForChannel(channel: UpdateChannel, installSource: InstallSource) {
+  if (installSource === "homebrew") {
+    return "brew update && brew upgrade hunk";
+  }
+
   return channel === "latest" ? "npm i -g hunkdiff" : "npm i -g hunkdiff@beta";
 }
 
 /** Build the session-local notice payload for the chosen version and channel. */
-function createUpdateNotice(version: string, channel: UpdateChannel): UpdateNotice {
-  const command = commandForChannel(channel);
+function createUpdateNotice(
+  version: string,
+  channel: UpdateChannel,
+  installSource: InstallSource,
+): UpdateNotice {
+  const command = commandForChannel(channel, installSource);
   return {
     key: `${channel}:${version}`,
     message: `Update available: ${version} (${channel}) • ${command}`,
@@ -96,6 +112,7 @@ function isComparableInstalledVersion(version: string) {
 function selectUpdateNotice(
   installedVersion: string,
   distTags: ParsedDistTags,
+  installSource: InstallSource,
 ): UpdateNotice | null {
   if (!isComparableInstalledVersion(installedVersion)) {
     return null;
@@ -103,16 +120,19 @@ function selectUpdateNotice(
 
   const validLatest =
     distTags.latest && isStableVersion(distTags.latest) ? distTags.latest : undefined;
-  const validBeta = distTags.beta && isPrereleaseVersion(distTags.beta) ? distTags.beta : undefined;
+  const validBeta =
+    installSource === "npm" && distTags.beta && isPrereleaseVersion(distTags.beta)
+      ? distTags.beta
+      : undefined;
   const installedIsStable = isStableVersion(installedVersion);
 
   if (installedIsStable) {
     if (validLatest && isNewerVersion(installedVersion, validLatest)) {
-      return createUpdateNotice(validLatest, "latest");
+      return createUpdateNotice(validLatest, "latest", installSource);
     }
 
     if (validBeta && isNewerVersion(installedVersion, validBeta)) {
-      return createUpdateNotice(validBeta, "beta");
+      return createUpdateNotice(validBeta, "beta", installSource);
     }
 
     return null;
@@ -135,7 +155,7 @@ function selectUpdateNotice(
     isNewerVersion(best.version, candidate.version) ? candidate : best,
   );
 
-  return createUpdateNotice(selected.version, selected.channel);
+  return createUpdateNotice(selected.version, selected.channel, installSource);
 }
 
 /** Build one fetch timeout signal for the dist-tag lookup, if supported by the runtime. */
@@ -248,6 +268,8 @@ export async function resolveStartupUpdateNotice(
   const fetchImpl = deps.fetchImpl ?? fetch;
   const fetchTimeoutMs = deps.fetchTimeoutMs ?? DEFAULT_UPDATE_NOTICE_FETCH_TIMEOUT_MS;
   const resolveInstalledVersion = deps.resolveInstalledVersion ?? resolveCliVersion;
+  const resolveInstallSource =
+    deps.resolveInstallSource ?? (() => resolveInstallSourceFromEnv(env));
   const { signal, dispose } = createFetchTimeoutSignal(fetchTimeoutMs);
 
   try {
@@ -257,7 +279,7 @@ export async function resolveStartupUpdateNotice(
     }
 
     const parsedPayload = parseDistTags(await response.json());
-    return selectUpdateNotice(resolveInstalledVersion(), parsedPayload);
+    return selectUpdateNotice(resolveInstalledVersion(), parsedPayload, resolveInstallSource());
   } catch {
     return null;
   } finally {

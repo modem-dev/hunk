@@ -33,6 +33,12 @@ Hunk is a review-first terminal diff viewer for agent-authored changesets, built
 npm i -g hunkdiff
 ```
 
+Or with Homebrew:
+
+```bash
+brew install modem-dev/tap/hunk
+```
+
 Requirements:
 
 - Node.js 18+
