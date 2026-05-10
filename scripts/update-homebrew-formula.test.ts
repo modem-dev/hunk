@@ -18,6 +18,38 @@ function createTestAssets(assetRoot: string) {
 }
 
 describe("update-homebrew-formula", () => {
+  test("rejects unsafe repository slugs before writing Ruby formula URLs", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "hunk-homebrew-formula-"));
+    const assetRoot = path.join(root, "assets");
+    const outputRoot = path.join(root, "tap");
+
+    try {
+      mkdirSync(assetRoot, { recursive: true });
+      createTestAssets(assetRoot);
+      const proc = Bun.spawnSync(
+        [
+          "bun",
+          "run",
+          path.resolve(import.meta.dir, "update-homebrew-formula.ts"),
+          "--tag",
+          "v1.2.3",
+          "--asset-root",
+          assetRoot,
+          "--output-root",
+          outputRoot,
+          "--repo",
+          'modem-dev/hunk"; system("echo owned") #',
+        ],
+        { stdout: "pipe", stderr: "pipe" },
+      );
+
+      expect(proc.exitCode).not.toBe(0);
+      expect(proc.stderr.toString()).toContain("Invalid GitHub repository slug");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test("writes a formula that installs the binary through the Homebrew update-notice wrapper", () => {
     const root = mkdtempSync(path.join(tmpdir(), "hunk-homebrew-formula-"));
     const assetRoot = path.join(root, "assets");

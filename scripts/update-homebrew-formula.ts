@@ -87,6 +87,12 @@ function versionFromTag(tag: string) {
   return version;
 }
 
+function assertSafeRepoSlug(repo: string) {
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)) {
+    throw new Error(`Invalid GitHub repository slug: ${repo}`);
+  }
+}
+
 function sha256(file: string) {
   return createHash("sha256").update(readFileSync(file)).digest("hex");
 }
@@ -97,6 +103,7 @@ function assetUrl(repo: string, tag: string, assetName: string) {
 
 function formulaContent(options: Options) {
   const version = versionFromTag(options.tag);
+  assertSafeRepoSlug(options.repo);
   const checksums = Object.fromEntries(
     Object.entries(RELEASE_ASSET_NAMES).map(([key, assetName]) => {
       const assetPath = path.join(options.assetRoot, assetName);
