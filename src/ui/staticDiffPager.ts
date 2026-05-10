@@ -49,29 +49,64 @@ function serializeSpans(spans: RenderSpan[], rowBg: string) {
   return spans.map((span) => colorText(span.text, span.fg, span.bg ?? rowBg)).join("");
 }
 
-function lineColor(kind: "context" | "addition" | "deletion", theme: AppTheme) {
-  switch (kind) {
-    case "addition":
-      return { fg: theme.addedSignColor, bg: theme.addedBg };
-    case "deletion":
-      return { fg: theme.removedSignColor, bg: theme.removedBg };
-    case "context":
-      return { fg: theme.muted, bg: theme.contextBg };
+function neutralRailColor(theme: AppTheme) {
+  return theme.lineNumberFg;
+}
+
+function marker() {
+  return "▌";
+}
+
+/** Keep the static stack gutter visually aligned with DiffRowView's stack renderer. */
+function stackPalette(kind: "context" | "addition" | "deletion", theme: AppTheme) {
+  if (kind === "addition") {
+    return {
+      railColor: theme.addedSignColor,
+      gutterBg: theme.addedBg,
+      contentBg: theme.addedBg,
+      numberColor: theme.addedSignColor,
+    };
   }
+
+  if (kind === "deletion") {
+    return {
+      railColor: theme.removedSignColor,
+      gutterBg: theme.removedBg,
+      contentBg: theme.removedBg,
+      numberColor: theme.removedSignColor,
+    };
+  }
+
+  return {
+    railColor: neutralRailColor(theme),
+    gutterBg: theme.lineNumberBg,
+    contentBg: theme.contextBg,
+    numberColor: theme.lineNumberFg,
+  };
 }
 
 function lineNumberText(value: number | undefined, width: number) {
   return value === undefined ? " ".repeat(width) : String(value).padStart(width, " ");
 }
 
+function stackGutterText(cell: Extract<DiffRow, { type: "stack-line" }>["cell"], width: number) {
+  const oldLine = lineNumberText(cell.oldLineNumber, width);
+  const newLine = lineNumberText(cell.newLineNumber, width);
+  return `${oldLine} ${newLine} ${cell.sign}`.padEnd(width * 2 + 5);
+}
+
+function renderHeaderLikeRow(text: string, fg: string, bg: string, theme: AppTheme) {
+  return `${colorText(marker(), neutralRailColor(theme), bg)}${colorText(text.trimEnd(), fg, bg)}`;
+}
+
 /** Render one non-interactive stacked diff row as ANSI text. */
 function renderStaticRow(row: DiffRow, theme: AppTheme, lineNumberWidth: number) {
   if (row.type === "collapsed") {
-    return colorText(`  ${row.text}`, theme.muted);
+    return renderHeaderLikeRow(`··· ${row.text} ···`, theme.muted, theme.panelAlt, theme);
   }
 
   if (row.type === "hunk-header") {
-    return colorText(`  ${row.text}`, theme.accent);
+    return renderHeaderLikeRow(row.text, theme.badgeNeutral, theme.panelAlt, theme);
   }
 
   if (row.type !== "stack-line") {
@@ -79,11 +114,12 @@ function renderStaticRow(row: DiffRow, theme: AppTheme, lineNumberWidth: number)
   }
 
   const { cell } = row;
-  const colors = lineColor(cell.kind, theme);
-  const oldLine = lineNumberText(cell.oldLineNumber, lineNumberWidth);
-  const newLine = lineNumberText(cell.newLineNumber, lineNumberWidth);
-  const prefix = `${cell.sign} ${oldLine} ${newLine} │ `;
-  return `${colorText(prefix, colors.fg, colors.bg)}${serializeSpans(cell.spans, colors.bg)}`;
+  const palette = stackPalette(cell.kind, theme);
+  return `${colorText(marker(), palette.railColor, theme.panel)}${colorText(
+    stackGutterText(cell, lineNumberWidth),
+    palette.numberColor,
+    palette.gutterBg,
+  )}${serializeSpans(cell.spans, palette.contentBg)}`;
 }
 
 function maxLineNumberWidth(file: DiffFile, rows: DiffRow[]) {

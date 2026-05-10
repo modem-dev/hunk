@@ -15,7 +15,9 @@ describe("static diff pager", () => {
     const plain = stripAnsi(output);
 
     expect(plain).toContain("a.ts modified +1 -1");
-    expect(plain).toContain("const value = 2;");
+    expect(plain).toContain("▌@@ -1 +1 @@\n");
+    expect(plain).toContain("▌1   -  const value = 1;");
+    expect(plain).toContain("▌  1 +  const value = 2;");
     expect(output).toContain("\x1b[38;2;");
     expect(output).not.toContain("\x1b[?1049h");
   });
