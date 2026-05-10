@@ -4,21 +4,10 @@ import {
   type ScrollBoxRenderable,
 } from "@opentui/core";
 import { useRenderer, useTerminalDimensions } from "@opentui/react";
-import {
-  Suspense,
-  lazy,
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-  useRef,
-} from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState, useRef } from "react";
 import type { AppBootstrap, CliInput, LayoutMode } from "../core/types";
 import { canReloadInput, computeWatchSignature } from "../core/watch";
-import type {
-  HunkSessionBrokerClient,
-  ReloadedSessionResult,
-} from "../hunk-session/types";
+import type { HunkSessionBrokerClient, ReloadedSessionResult } from "../hunk-session/types";
 import { MenuBar } from "./components/chrome/MenuBar";
 import { StatusBar } from "./components/chrome/StatusBar";
 import { DiffPane } from "./components/panes/DiffPane";
@@ -112,41 +101,23 @@ export function App({
   const wrapToggleScrollTopRef = useRef<number | null>(null);
   const layoutToggleScrollTopRef = useRef<number | null>(null);
   const [layoutToggleRequestId, setLayoutToggleRequestId] = useState(0);
-  const [layoutMode, setLayoutMode] = useState<LayoutMode>(
-    bootstrap.initialMode,
-  );
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>(bootstrap.initialMode);
   const [themeId, setThemeId] = useState(
-    () =>
-      resolveTheme(
-        bootstrap.initialTheme,
-        renderer.themeMode,
-        bootstrap.customTheme,
-      ).id,
+    () => resolveTheme(bootstrap.initialTheme, renderer.themeMode, bootstrap.customTheme).id,
   );
-  const [showAgentNotes, setShowAgentNotes] = useState(
-    bootstrap.initialShowAgentNotes ?? false,
-  );
-  const [showLineNumbers, setShowLineNumbers] = useState(
-    bootstrap.initialShowLineNumbers ?? true,
-  );
-  const [wrapLines, setWrapLines] = useState(
-    bootstrap.initialWrapLines ?? false,
-  );
+  const [showAgentNotes, setShowAgentNotes] = useState(bootstrap.initialShowAgentNotes ?? false);
+  const [showLineNumbers, setShowLineNumbers] = useState(bootstrap.initialShowLineNumbers ?? true);
+  const [wrapLines, setWrapLines] = useState(bootstrap.initialWrapLines ?? false);
   const [codeHorizontalOffset, setCodeHorizontalOffset] = useState(0);
-  const [showHunkHeaders, setShowHunkHeaders] = useState(
-    bootstrap.initialShowHunkHeaders ?? true,
-  );
+  const [showHunkHeaders, setShowHunkHeaders] = useState(bootstrap.initialShowHunkHeaders ?? true);
   const [sidebarVisible, setSidebarVisible] = useState(() => !pagerMode);
   const [forceSidebarOpen, setForceSidebarOpen] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [focusArea, setFocusArea] = useState<FocusArea>("files");
   const [sidebarWidth, setSidebarWidth] = useState(34);
-  const [resizeDragOriginX, setResizeDragOriginX] = useState<number | null>(
-    null,
-  );
+  const [resizeDragOriginX, setResizeDragOriginX] = useState<number | null>(null);
   const [resizeStartWidth, setResizeStartWidth] = useState<number | null>(null);
 
-  const pagerMode = Boolean(bootstrap.input.options.pager);
   const themeOptions = useMemo(
     () => availableThemes(bootstrap.customTheme),
     [bootstrap.customTheme],
@@ -160,11 +131,7 @@ export function App({
   const moveToAnnotatedHunk = review.moveToAnnotatedHunk;
 
   const jumpToFile = useCallback(
-    (
-      fileId: string,
-      nextHunkIndex = 0,
-      options?: { alignFileHeaderTop?: boolean },
-    ) => {
+    (fileId: string, nextHunkIndex = 0, options?: { alignFileHeaderTop?: boolean }) => {
       review.selectFile(fileId, nextHunkIndex, {
         alignFileHeaderTop: options?.alignFileHeaderTop,
       });
@@ -196,11 +163,9 @@ export function App({
   const bodyPadding = pagerMode ? 0 : BODY_PADDING;
   const bodyWidth = Math.max(0, terminal.width - bodyPadding);
   const responsiveLayout = resolveResponsiveLayout(layoutMode, terminal.width);
-  const canForceShowSidebar =
-    bodyWidth >= SIDEBAR_MIN_WIDTH + DIVIDER_WIDTH + DIFF_MIN_WIDTH;
+  const canForceShowSidebar = bodyWidth >= SIDEBAR_MIN_WIDTH + DIVIDER_WIDTH + DIFF_MIN_WIDTH;
   const renderSidebar =
-    sidebarVisible &&
-    (responsiveLayout.showSidebar || (forceSidebarOpen && canForceShowSidebar));
+    sidebarVisible && (responsiveLayout.showSidebar || (forceSidebarOpen && canForceShowSidebar));
   const centerWidth = bodyWidth;
   const resolvedLayout = responsiveLayout.layout;
   const availableCenterWidth = renderSidebar
@@ -219,8 +184,7 @@ export function App({
   const maxVisibleLineNumber = useMemo(
     () =>
       filteredFiles.reduce(
-        (maxLineNumber, file) =>
-          Math.max(maxLineNumber, findMaxLineNumber(file)),
+        (maxLineNumber, file) => Math.max(maxLineNumber, findMaxLineNumber(file)),
         1,
       ),
     [filteredFiles],
@@ -236,13 +200,10 @@ export function App({
       ),
     [diffContentWidth, maxLineNumberDigits, resolvedLayout, showLineNumbers],
   );
-  const isResizingSidebar =
-    resizeDragOriginX !== null && resizeStartWidth !== null;
+  const isResizingSidebar = resizeDragOriginX !== null && resizeStartWidth !== null;
   const dividerHitLeft = Math.max(
     1,
-    1 +
-      clampedSidebarWidth -
-      Math.floor((DIVIDER_HIT_WIDTH - DIVIDER_WIDTH) / 2),
+    1 + clampedSidebarWidth - Math.floor((DIVIDER_HIT_WIDTH - DIVIDER_WIDTH) / 2),
   );
 
   useEffect(() => {
@@ -252,23 +213,14 @@ export function App({
       return;
     }
 
-    setSidebarWidth((current) =>
-      clamp(current, SIDEBAR_MIN_WIDTH, maxSidebarWidth),
-    );
+    setSidebarWidth((current) => clamp(current, SIDEBAR_MIN_WIDTH, maxSidebarWidth));
   }, [maxSidebarWidth, renderSidebar]);
 
   useEffect(() => {
     // Force an intermediate redraw when app geometry or row-wrapping changes so pane relayout
     // feels immediate after toggling split/stack or line wrapping.
     renderer.intermediateRender();
-  }, [
-    renderer,
-    renderSidebar,
-    resolvedLayout,
-    terminal.height,
-    terminal.width,
-    wrapLines,
-  ]);
+  }, [renderer, renderSidebar, resolvedLayout, terminal.height, terminal.width, wrapLines]);
 
   useEffect(() => {
     if (!selectedFile) {
@@ -312,9 +264,7 @@ export function App({
   );
 
   useEffect(() => {
-    setCodeHorizontalOffset((current) =>
-      clamp(current, 0, maxCodeHorizontalOffset),
-    );
+    setCodeHorizontalOffset((current) => clamp(current, 0, maxCodeHorizontalOffset));
   }, [maxCodeHorizontalOffset]);
 
   /** Shift the visible code columns horizontally without moving gutters or headers. */
@@ -324,9 +274,7 @@ export function App({
         return;
       }
 
-      setCodeHorizontalOffset((current) =>
-        clamp(current + delta, 0, maxCodeHorizontalOffset),
-      );
+      setCodeHorizontalOffset((current) => clamp(current + delta, 0, maxCodeHorizontalOffset));
     },
     [maxCodeHorizontalOffset, wrapLines],
   );
@@ -390,9 +338,7 @@ export function App({
   );
 
   const canRefreshCurrentInput = canReloadInput(bootstrap.input);
-  const watchEnabled = Boolean(
-    bootstrap.input.options.watch && canRefreshCurrentInput,
-  );
+  const watchEnabled = Boolean(bootstrap.input.options.watch && canRefreshCurrentInput);
 
   /** Rebuild the current diff source while preserving the active app view options. */
   const refreshCurrentInput = useCallback(async () => {
@@ -520,9 +466,7 @@ export function App({
 
   /** Cycle through the available built-in themes. */
   const cycleTheme = useCallback(() => {
-    const currentIndex = themeOptions.findIndex(
-      (theme) => theme.id === activeTheme.id,
-    );
+    const currentIndex = themeOptions.findIndex((theme) => theme.id === activeTheme.id);
     const nextIndex = (currentIndex + 1) % themeOptions.length;
     setThemeId(themeOptions[nextIndex]!.id);
   }, [activeTheme.id, themeOptions]);
@@ -645,11 +589,7 @@ export function App({
 
   /** Update the sidebar width while a drag resize is active. */
   const updateSidebarResize = (event: TuiMouseEvent) => {
-    if (
-      !isResizingSidebar ||
-      resizeDragOriginX === null ||
-      resizeStartWidth === null
-    ) {
+    if (!isResizingSidebar || resizeDragOriginX === null || resizeStartWidth === null) {
       return;
     }
 
@@ -688,14 +628,8 @@ export function App({
   );
   const topTitle = `${bootstrap.changeset.title}  +${totalAdditions}  -${totalDeletions}`;
   const sidebarTextWidth = Math.max(8, clampedSidebarWidth - 2);
-  const diffHeaderStatsWidth = Math.min(
-    24,
-    Math.max(16, Math.floor(diffContentWidth / 3)),
-  );
-  const diffHeaderLabelWidth = Math.max(
-    8,
-    diffContentWidth - diffHeaderStatsWidth - 1,
-  );
+  const diffHeaderStatsWidth = Math.min(24, Math.max(16, Math.floor(diffContentWidth / 3)));
+  const diffHeaderLabelWidth = Math.max(8, diffContentWidth - diffHeaderStatsWidth - 1);
   const diffSeparatorWidth = Math.max(4, diffContentWidth - 2);
 
   return (
@@ -804,10 +738,7 @@ export function App({
         />
       </box>
 
-      {!pagerMode &&
-      (focusArea === "filter" ||
-        Boolean(review.filter) ||
-        Boolean(noticeText)) ? (
+      {!pagerMode && (focusArea === "filter" || Boolean(review.filter) || Boolean(noticeText)) ? (
         <StatusBar
           filter={review.filter}
           filterFocused={focusArea === "filter"}
