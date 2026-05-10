@@ -122,6 +122,7 @@ Example:
 theme = "graphite"   # graphite, midnight, paper, ember
 mode = "auto"        # auto, split, stack
 vcs = "git"          # git, jj
+watch = false
 exclude_untracked = false
 line_numbers = true
 wrap_lines = false

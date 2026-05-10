@@ -161,6 +161,59 @@ describe("config resolution", () => {
     expect(fallbackResolved.input.options.excludeUntracked).toBe(false);
   });
 
+  test.each([
+    {
+      name: "enables watch from config",
+      config: "watch = true\n",
+      cliOptions: {},
+      expected: true,
+    },
+    {
+      name: "disables watch from config",
+      config: "watch = false\n",
+      cliOptions: {},
+      expected: false,
+    },
+    {
+      name: "defaults watch to false",
+      config: "",
+      cliOptions: {},
+      expected: false,
+    },
+    {
+      name: "lets CLI enable watch over config",
+      config: "watch = false\n",
+      cliOptions: { watch: true },
+      expected: true,
+    },
+    {
+      name: "lets CLI disable watch over config",
+      config: "watch = true\n",
+      cliOptions: { watch: false },
+      expected: false,
+    },
+  ] satisfies Array<{
+    name: string;
+    config: string;
+    cliOptions: Partial<CliInput["options"]>;
+    expected: boolean;
+  }>)("resolves watch: $name", ({ config, cliOptions, expected }) => {
+    const home = createTempDir("hunk-config-home-");
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(join(home, ".config", "hunk", "config.toml"), config);
+
+    const resolved = resolveConfiguredCliInput(
+      {
+        kind: "vcs",
+        staged: false,
+        options: cliOptions,
+      },
+      { cwd: createTempDir("hunk-config-cwd-"), env: { HOME: home } },
+    );
+
+    expect(resolved.input.options.watch).toBe(expected);
+  });
+
   test("defaults to git VCS mode and accepts registered VCS modes from config", () => {
     const home = createTempDir("hunk-config-home-");
     mkdirSync(join(home, ".config", "hunk"), { recursive: true });
