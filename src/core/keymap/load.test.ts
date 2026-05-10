@@ -94,9 +94,7 @@ describe("applyKeymapOverrides", () => {
     });
     expect(next.global.quit).toHaveLength(2);
     expect(matchesAction(next, "global", "quit", makeKey({ name: "x", sequence: "x" }))).toBe(true);
-    expect(
-      matchesAction(next, "global", "quit", makeKey({ name: "c", ctrl: true })),
-    ).toBe(true);
+    expect(matchesAction(next, "global", "quit", makeKey({ name: "c", ctrl: true }))).toBe(true);
   });
 
   test("ignores unknown action ids without throwing", () => {
@@ -128,9 +126,7 @@ describe("applyKeymapOverrides", () => {
       });
     });
     expect(
-      stderr.some((line) =>
-        line.includes('unknown action "global.this.does.not.exist"'),
-      ),
+      stderr.some((line) => line.includes('unknown action "global.this.does.not.exist"')),
     ).toBe(true);
   });
 
@@ -143,10 +139,7 @@ describe("applyKeymapOverrides", () => {
       });
     });
     expect(
-      stderr.some(
-        (line) =>
-          line.includes("invalid binding") && line.includes('"global.quit"'),
-      ),
+      stderr.some((line) => line.includes("invalid binding") && line.includes('"global.quit"')),
     ).toBe(true);
     expect(next.global.quit).toEqual(base.global.quit);
   });
@@ -171,7 +164,9 @@ describe("applyKeymapOverrides", () => {
 
     // Empty array should be ignored, defaults preserved.
     expect(next.global.quit).toEqual(base.global.quit);
-    expect(stderr.some((line) => line.includes("empty binding") && line.includes("global.quit"))).toBe(true);
+    expect(
+      stderr.some((line) => line.includes("empty binding") && line.includes("global.quit")),
+    ).toBe(true);
   });
 
   test("warns on unknown scope but keeps walking known scopes", async () => {
@@ -237,9 +232,7 @@ describe("applyKeymapOverrides", () => {
     expect(
       stderr.some(
         (line) =>
-          line.includes("global.quit") &&
-          line.includes("<disabled>") &&
-          line.includes("mixes"),
+          line.includes("global.quit") && line.includes("<disabled>") && line.includes("mixes"),
       ),
     ).toBe(true);
     // Disabled still wins — caller is warned, but the binding ends up empty.

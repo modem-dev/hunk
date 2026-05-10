@@ -314,12 +314,9 @@ describe("config resolution", () => {
     mkdirSync(join(repo, ".hunk"), { recursive: true });
     writeFileSync(
       join(repo, ".hunk", "config.toml"),
-      [
-        "[keybindings.global]",
-        'quit = ["<c-c>", "x"]',
-        '"sidebar.toggle" = "<disabled>"',
-        "",
-      ].join("\n"),
+      ["[keybindings.global]", 'quit = ["<c-c>", "x"]', '"sidebar.toggle" = "<disabled>"', ""].join(
+        "\n",
+      ),
     );
 
     const resolved = resolveConfiguredCliInput(

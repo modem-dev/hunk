@@ -2316,10 +2316,10 @@ describe("App interactions", () => {
     // still reach the quit handler. The companion test below confirms that Esc
     // (and the help toggle key) continue to close the dialog.
     const onQuit = mock(() => undefined);
-    const setup = await testRender(
-      <AppHost bootstrap={createBootstrap()} onQuit={onQuit} />,
-      { width: 220, height: 32 },
-    );
+    const setup = await testRender(<AppHost bootstrap={createBootstrap()} onQuit={onQuit} />, {
+      width: 220,
+      height: 32,
+    });
 
     try {
       await flush(setup);
@@ -2347,10 +2347,10 @@ describe("App interactions", () => {
 
   test("Esc closes the help dialog without quitting the app", async () => {
     const onQuit = mock(() => undefined);
-    const setup = await testRender(
-      <AppHost bootstrap={createBootstrap()} onQuit={onQuit} />,
-      { width: 220, height: 32 },
-    );
+    const setup = await testRender(<AppHost bootstrap={createBootstrap()} onQuit={onQuit} />, {
+      width: 220,
+      height: 32,
+    });
 
     try {
       await flush(setup);
@@ -2457,9 +2457,7 @@ describe("App interactions", () => {
         await flush(setup);
       }
 
-      const frame = await waitForFrame(setup, (currentFrame) =>
-        currentFrame.includes("[x] Paper"),
-      );
+      const frame = await waitForFrame(setup, (currentFrame) => currentFrame.includes("[x] Paper"));
       expect(frame).toContain("[x] Paper");
     } finally {
       await act(async () => {
@@ -2596,10 +2594,10 @@ describe("App interactions", () => {
       vcsOptions: { keymap },
     });
 
-    const setup = await testRender(
-      <AppHost bootstrap={bootstrap} onQuit={onQuit} />,
-      { width: 220, height: 24 },
-    );
+    const setup = await testRender(<AppHost bootstrap={bootstrap} onQuit={onQuit} />, {
+      width: 220,
+      height: 24,
+    });
 
     try {
       await flush(setup);

@@ -174,20 +174,51 @@ describe("ui helpers", () => {
     const keymap = loadKeymapDefaults();
     expect(isEscapeKey(createKeyEvent({ name: "escape" }))).toBe(true);
     expect(isEscapeKey(createKeyEvent({ name: "esc" }))).toBe(true);
-    expect(matchesAction(keymap, "global", "scroll.pageDown", createKeyEvent({ name: "pagedown" }))).toBe(true);
-    expect(matchesAction(keymap, "global", "scroll.pageDown", createKeyEvent({ name: "space" }))).toBe(true);
-    expect(matchesAction(keymap, "global", "scroll.pageDown", createKeyEvent({ sequence: "f" }))).toBe(true);
-    expect(matchesAction(keymap, "global", "scroll.pageUp", createKeyEvent({ name: "pageup" }))).toBe(true);
-    expect(matchesAction(keymap, "global", "scroll.pageUp", createKeyEvent({ sequence: "b" }))).toBe(true);
-    expect(matchesAction(keymap, "global", "scroll.pageUp", createKeyEvent({ name: "space", shift: true }))).toBe(true);
-    expect(matchesAction(keymap, "global", "scroll.halfPageDown", createKeyEvent({ sequence: "d" }))).toBe(true);
-    expect(matchesAction(keymap, "global", "scroll.halfPageUp", createKeyEvent({ sequence: "u" }))).toBe(true);
-    expect(matchesAction(keymap, "global", "scroll.lineDown", createKeyEvent({ name: "down" }))).toBe(true);
-    expect(matchesAction(keymap, "global", "scroll.lineDown", createKeyEvent({ sequence: "j" }))).toBe(true);
-    expect(matchesAction(keymap, "global", "scroll.lineUp", createKeyEvent({ name: "up" }))).toBe(true);
-    expect(matchesAction(keymap, "global", "scroll.lineUp", createKeyEvent({ sequence: "k" }))).toBe(true);
+    expect(
+      matchesAction(keymap, "global", "scroll.pageDown", createKeyEvent({ name: "pagedown" })),
+    ).toBe(true);
+    expect(
+      matchesAction(keymap, "global", "scroll.pageDown", createKeyEvent({ name: "space" })),
+    ).toBe(true);
+    expect(
+      matchesAction(keymap, "global", "scroll.pageDown", createKeyEvent({ sequence: "f" })),
+    ).toBe(true);
+    expect(
+      matchesAction(keymap, "global", "scroll.pageUp", createKeyEvent({ name: "pageup" })),
+    ).toBe(true);
+    expect(
+      matchesAction(keymap, "global", "scroll.pageUp", createKeyEvent({ sequence: "b" })),
+    ).toBe(true);
+    expect(
+      matchesAction(
+        keymap,
+        "global",
+        "scroll.pageUp",
+        createKeyEvent({ name: "space", shift: true }),
+      ),
+    ).toBe(true);
+    expect(
+      matchesAction(keymap, "global", "scroll.halfPageDown", createKeyEvent({ sequence: "d" })),
+    ).toBe(true);
+    expect(
+      matchesAction(keymap, "global", "scroll.halfPageUp", createKeyEvent({ sequence: "u" })),
+    ).toBe(true);
+    expect(
+      matchesAction(keymap, "global", "scroll.lineDown", createKeyEvent({ name: "down" })),
+    ).toBe(true);
+    expect(
+      matchesAction(keymap, "global", "scroll.lineDown", createKeyEvent({ sequence: "j" })),
+    ).toBe(true);
+    expect(matchesAction(keymap, "global", "scroll.lineUp", createKeyEvent({ name: "up" }))).toBe(
+      true,
+    );
+    expect(
+      matchesAction(keymap, "global", "scroll.lineUp", createKeyEvent({ sequence: "k" })),
+    ).toBe(true);
     expect(isEscapeKey(createKeyEvent({ name: "q" }))).toBe(false);
-    expect(matchesAction(keymap, "global", "scroll.pageDown", createKeyEvent({ sequence: "q" }))).toBe(false);
+    expect(
+      matchesAction(keymap, "global", "scroll.pageDown", createKeyEvent({ sequence: "q" })),
+    ).toBe(false);
   });
 
   test("fitText and padText clamp using the terminal fallback marker", () => {

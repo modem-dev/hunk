@@ -10,12 +10,7 @@
  */
 
 import { isRecord } from "../config";
-import {
-  ACTIONS,
-  ACTIONS_BY_SCOPE,
-  type ActionId,
-  type ActionScope,
-} from "./actions";
+import { ACTIONS, ACTIONS_BY_SCOPE, type ActionId, type ActionScope } from "./actions";
 import type { Keymap } from "./match";
 import { parseBinding, type KeySpec } from "./parse";
 
@@ -67,10 +62,7 @@ function cloneKeymap(base: Keymap): Keymap {
  * stderr warning and are otherwise ignored — config errors should never
  * abort startup.
  */
-export function applyKeymapOverrides(
-  base: Keymap,
-  source: Record<string, unknown>,
-): Keymap {
+export function applyKeymapOverrides(base: Keymap, source: Record<string, unknown>): Keymap {
   const keybindings = source.keybindings;
   if (!isRecord(keybindings)) return base;
 

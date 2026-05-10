@@ -188,18 +188,12 @@ export function resolveConfiguredCliInput(
   const repoTomlRoot = repoConfigPath ? readTomlRecord(repoConfigPath) : undefined;
 
   if (userConfigPath && userTomlRoot) {
-    resolvedOptions = mergeOptions(
-      resolvedOptions,
-      resolveConfigLayer(userTomlRoot, input),
-    );
+    resolvedOptions = mergeOptions(resolvedOptions, resolveConfigLayer(userTomlRoot, input));
     keymap = applyKeymapOverrides(keymap, userTomlRoot);
   }
 
   if (repoConfigPath && repoTomlRoot) {
-    resolvedOptions = mergeOptions(
-      resolvedOptions,
-      resolveConfigLayer(repoTomlRoot, input),
-    );
+    resolvedOptions = mergeOptions(resolvedOptions, resolveConfigLayer(repoTomlRoot, input));
     keymap = applyKeymapOverrides(keymap, repoTomlRoot);
   }
 
