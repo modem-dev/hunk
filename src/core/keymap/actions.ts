@@ -1,7 +1,12 @@
 export type ActionScope = "global" | "pager" | "menu" | "filter";
 
-export type ActionId =
-  // global
+/**
+ * Per-scope action id unions. Splitting `ActionId` by scope lets the
+ * `Keymap` type and `matchesAction`/`findActionForKey` reject mismatched
+ * (scope, id) pairs at compile time — `keymap.global["menu.close"]` is now a
+ * type error instead of a silent `undefined`.
+ */
+export type GlobalActionId =
   | "quit"
   | "help.toggle"
   | "filter.focus"
@@ -32,14 +37,48 @@ export type ActionId =
   | "hunk.next"
   | "annotatedHunk.prev"
   | "annotatedHunk.next"
-  | "menu.open"
-  // menu
+  | "menu.open";
+
+export type PagerActionId =
+  | "quit"
+  | "scroll.pageDown"
+  | "scroll.pageUp"
+  | "scroll.halfPageDown"
+  | "scroll.halfPageUp"
+  | "scroll.lineDown"
+  | "scroll.lineUp"
+  | "scroll.toTop"
+  | "scroll.toBottom"
+  | "scroll.codeLeft"
+  | "scroll.codeRight"
+  | "scroll.codeLeftFast"
+  | "scroll.codeRightFast"
+  | "wrap.toggle"
+  | "sidebar.toggle";
+
+export type MenuActionId =
   | "menu.close"
   | "menu.prev"
   | "menu.next"
   | "menu.itemUp"
   | "menu.itemDown"
   | "menu.activate";
+
+export type FilterActionId = "focus.toggle";
+
+/** Map a scope to its specific action id union. */
+export type ActionIdForScope<S extends ActionScope> = S extends "global"
+  ? GlobalActionId
+  : S extends "pager"
+    ? PagerActionId
+    : S extends "menu"
+      ? MenuActionId
+      : S extends "filter"
+        ? FilterActionId
+        : never;
+
+/** Union of every legal action id across all scopes. */
+export type ActionId = GlobalActionId | PagerActionId | MenuActionId | FilterActionId;
 
 export interface ActionDef {
   id: ActionId;
@@ -445,7 +484,10 @@ export const ACTIONS_BY_SCOPE: Record<ActionScope, readonly ActionDef[]> = {
 };
 
 /** Look up a single (scope, id) action definition. */
-export function getAction(scope: ActionScope, id: ActionId): ActionDef | undefined {
+export function getAction<S extends ActionScope>(
+  scope: S,
+  id: ActionIdForScope<S>,
+): ActionDef | undefined {
   return ACTIONS.find((action) => action.scope === scope && action.id === id);
 }
 

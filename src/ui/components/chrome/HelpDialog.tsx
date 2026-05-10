@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { ACTIONS, type ActionDef } from "../../../core/keymap/actions";
 import { formatBinding } from "../../../core/keymap/format";
-import type { Keymap } from "../../../core/keymap/match";
+import { getActionSpecs, type Keymap } from "../../../core/keymap/match";
 import type { KeySpec } from "../../../core/keymap/parse";
 import { fitText, padText } from "../../lib/text";
 import type { AppTheme } from "../../themes";
@@ -36,15 +36,15 @@ function buildHelpSections(keymap: Keymap, canRefresh: boolean): HelpSection[] {
   const buckets = new Map<string, HelpRow[]>();
 
   const trackedActions = ACTIONS.filter((action) => {
-    // Pager-scope entries duplicate global navigation. Only show them if the
-    // user has actually rebound them — otherwise they're noise.
+    // Pager/menu/filter-scope entries duplicate global navigation; hide them
+    // to avoid noise in the help dialog (they share the same action ids).
     if (action.scope !== "global") return false;
     if (action.id === "reload" && !canRefresh) return false;
     return true;
   });
 
   for (const action of trackedActions) {
-    const specs = keymap[action.scope][action.id] ?? [];
+    const specs = getActionSpecs(keymap, action);
     const row = buildRow(action, specs);
 
     let bucket = buckets.get(action.group);

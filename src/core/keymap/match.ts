@@ -16,10 +16,16 @@
 
 import type { KeyEvent } from "@opentui/core";
 import { isEscapeKey } from "../keyboard";
-import type { ActionId, ActionScope } from "./actions";
+import type { ActionDef, ActionIdForScope, ActionScope } from "./actions";
 import type { KeySpec } from "./parse";
 
-export type Keymap = Record<ActionScope, Partial<Record<ActionId, KeySpec[]>>>;
+/**
+ * Per-scope keymap. Each scope only stores the action ids that legally belong
+ * to it, so `keymap.global["menu.close"]` is rejected at compile time.
+ */
+export type Keymap = {
+  [S in ActionScope]: Partial<Record<ActionIdForScope<S>, KeySpec[]>>;
+};
 
 /** Match a single KeySpec against a live KeyEvent. */
 export function matchesKey(spec: KeySpec, key: KeyEvent): boolean {
@@ -69,14 +75,26 @@ function nameMatches(specName: string, key: KeyEvent): boolean {
   return key.name === specName;
 }
 
+/**
+ * Look up the specs for an action by its registry definition. Use this when
+ * iterating `ACTIONS` (e.g. building the help dialog or asserting every
+ * default is populated) — it sidesteps the per-scope `Keymap` index narrowing
+ * that callers can't satisfy when `action` is a generic `ActionDef`.
+ */
+export function getActionSpecs(keymap: Keymap, action: ActionDef): KeySpec[] {
+  const scopeMap = keymap[action.scope] as Partial<Record<string, KeySpec[]>>;
+  return scopeMap[action.id] ?? [];
+}
+
 /** True when any spec bound to `(scope, action)` matches the event. */
-export function matchesAction(
+export function matchesAction<S extends ActionScope>(
   keymap: Keymap,
-  scope: ActionScope,
-  action: ActionId,
+  scope: S,
+  action: ActionIdForScope<S>,
   key: KeyEvent,
 ): boolean {
-  const specs = keymap[scope]?.[action];
+  const scopeMap = keymap[scope] as Partial<Record<string, KeySpec[]>>;
+  const specs = scopeMap[action];
   if (!specs || specs.length === 0) return false;
   return specs.some((spec) => matchesKey(spec, key));
 }
@@ -84,19 +102,28 @@ export function matchesAction(
 /**
  * Resolve which action (if any) is bound to the live event in this scope.
  * Used when the caller wants to dispatch by id rather than poll-by-action.
+ *
+ * **Collision contract:** when two actions share a key (e.g. `<space>` matches
+ * both `scroll.pageDown` and `scroll.pageUp` under modifier-permissive
+ * matching), this function returns whichever action was inserted first into
+ * the scope map — i.e. whichever appears first in the `ACTIONS` registry for
+ * that scope. The hook does NOT use this for primary dispatch; it polls
+ * actions in explicit priority order (e.g. `scroll.pageUp` before
+ * `scroll.pageDown` for Shift+Space). Callers that need a specific precedence
+ * must replicate that ordering or use `matchesAction` per-action.
  */
-export function findActionForKey(
+export function findActionForKey<S extends ActionScope>(
   keymap: Keymap,
-  scope: ActionScope,
+  scope: S,
   key: KeyEvent,
-): ActionId | null {
-  const scopeMap = keymap[scope];
+): ActionIdForScope<S> | null {
+  const scopeMap = keymap[scope] as Partial<Record<string, KeySpec[]>> | undefined;
   if (!scopeMap) return null;
 
   for (const [action, specs] of Object.entries(scopeMap)) {
     if (!specs || specs.length === 0) continue;
     if (specs.some((spec) => matchesKey(spec, key))) {
-      return action as ActionId;
+      return action as ActionIdForScope<S>;
     }
   }
   return null;

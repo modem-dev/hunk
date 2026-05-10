@@ -10,23 +10,31 @@
  */
 
 import { isRecord } from "../config";
-import { ACTIONS, ACTIONS_BY_SCOPE, type ActionId, type ActionScope } from "./actions";
+import { ACTIONS, ACTIONS_BY_SCOPE, type ActionScope } from "./actions";
 import type { Keymap } from "./match";
 import { parseBinding, type KeySpec } from "./parse";
 
 const ACTION_SCOPES = Object.keys(ACTIONS_BY_SCOPE) as ActionScope[];
 
-const KNOWN_IDS_BY_SCOPE: Record<ActionScope, Set<ActionId>> = ACTION_SCOPES.reduce(
+const KNOWN_IDS_BY_SCOPE: Record<ActionScope, Set<string>> = ACTION_SCOPES.reduce(
   (acc, scope) => {
-    acc[scope] = new Set(ACTIONS_BY_SCOPE[scope].map((action) => action.id));
+    acc[scope] = new Set<string>(ACTIONS_BY_SCOPE[scope].map((action) => action.id));
     return acc;
   },
-  {} as Record<ActionScope, Set<ActionId>>,
+  {} as Record<ActionScope, Set<string>>,
 );
+
+/**
+ * Helper type used inside this module to bypass the per-scope `Keymap` index
+ * checks when iterating the registry. The registry guarantees every
+ * `(scope, id)` pair is valid at runtime; we just need to satisfy the
+ * compiler that string-keyed assignment is allowed during construction.
+ */
+type LooseKeymap = Record<ActionScope, Record<string, KeySpec[]>>;
 
 /** Build a fresh keymap populated from the action registry's defaults. */
 export function loadKeymapDefaults(): Keymap {
-  const keymap: Keymap = {
+  const keymap: LooseKeymap = {
     global: {},
     pager: {},
     menu: {},
@@ -38,7 +46,7 @@ export function loadKeymapDefaults(): Keymap {
     keymap[action.scope][action.id] = parsed.disabled ? [] : parsed.specs;
   }
 
-  return keymap;
+  return keymap as Keymap;
 }
 
 function isStringOrStringArray(value: unknown): value is string | string[] {
@@ -85,7 +93,7 @@ export function applyKeymapOverrides(base: Keymap, source: Record<string, unknow
     const knownIds = KNOWN_IDS_BY_SCOPE[scope];
 
     for (const [actionId, value] of Object.entries(scopeOverrides)) {
-      if (!knownIds.has(actionId as ActionId)) {
+      if (!knownIds.has(actionId)) {
         process.stderr.write(
           `[hunk] keybindings: unknown action "${scope}.${actionId}" — ignored.\n`,
         );
@@ -118,7 +126,7 @@ export function applyKeymapOverrides(base: Keymap, source: Record<string, unknow
         );
       }
       const specs: KeySpec[] = parsed.disabled ? [] : parsed.specs;
-      next[scope][actionId as ActionId] = specs;
+      (next as LooseKeymap)[scope][actionId] = specs;
     }
   }
 

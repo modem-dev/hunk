@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { KeyEvent } from "@opentui/core";
 import { ACTIONS } from "./actions";
 import { applyKeymapOverrides, loadKeymapDefaults } from "./load";
-import { matchesAction } from "./match";
+import { getActionSpecs, matchesAction } from "./match";
 
 /**
  * Replace `process.stderr.write` with an in-memory collector for the duration
@@ -46,9 +46,9 @@ describe("loadKeymapDefaults", () => {
   test("includes every action defined in the registry", () => {
     const keymap = loadKeymapDefaults();
     for (const action of ACTIONS) {
-      const specs = keymap[action.scope][action.id];
+      const specs = getActionSpecs(keymap, action);
       expect(specs, `missing ${action.scope}.${action.id}`).toBeDefined();
-      expect(specs!.length).toBeGreaterThan(0);
+      expect(specs.length).toBeGreaterThan(0);
     }
   });
 });
