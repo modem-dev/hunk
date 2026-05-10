@@ -1323,11 +1323,15 @@ describe("live UI integration", () => {
       await session.press("?");
       await session.waitForText(/Controls help|Keyboard help/, { timeout: 5_000 });
 
+      // OpenTUI's input parser can buffer a bare `\x1b` to disambiguate it
+      // from a multi-byte escape sequence; on slower CI runners that buffer
+      // can take several hundred ms to settle. Give it 10s before declaring
+      // the Esc didn't reach the app.
       await session.press("escape");
       const after = await harness.waitForSnapshot(
         session,
         (text) => !text.includes("Controls help") && !text.includes("Keyboard help"),
-        5_000,
+        10_000,
       );
       // App must still be alive — chrome row should be redrawn.
       expect(after).toMatch(/View\s+Navigate\s+Theme\s+Agent\s+Help/);
