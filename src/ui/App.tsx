@@ -125,6 +125,7 @@ export function App({
   const selectedHunkIndex = review.selectedHunkIndex;
   const moveToAnnotatedFile = review.moveToAnnotatedFile;
   const moveToAnnotatedHunk = review.moveToAnnotatedHunk;
+  const moveToFile = review.moveToFile;
 
   const jumpToFile = useCallback(
     (fileId: string, nextHunkIndex = 0, options?: { alignFileHeaderTop?: boolean }) => {
@@ -548,6 +549,7 @@ export function App({
     focusArea,
     focusFilter,
     moveToAnnotatedHunk,
+    moveToFile,
     moveToHunk: review.moveToHunk,
     moveMenuItem,
     openMenu,

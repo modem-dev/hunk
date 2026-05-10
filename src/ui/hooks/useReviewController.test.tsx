@@ -198,6 +198,97 @@ describe("useReviewController", () => {
     }
   });
 
+  test("moves through visible files with clamped file-header alignment", async () => {
+    const controllerRef: { current: ReviewController | null } = { current: null };
+    const setup = await testRender(
+      <ReviewControllerHarness
+        initialFiles={[
+          createTwoHunkFile(),
+          createDiffFile("beta", "beta.ts", "export const beta = 1;\n", "export const beta = 2;\n"),
+          createDiffFile(
+            "gamma",
+            "gamma.ts",
+            "export const gamma = 1;\n",
+            "export const gamma = 2;\n",
+          ),
+        ]}
+        onController={(nextController) => {
+          controllerRef.current = nextController;
+        }}
+      />,
+      { width: 80, height: 4 },
+    );
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        expectValue(controllerRef.current).selectHunk("alpha", 1);
+      });
+      await flush(setup);
+      expect(expectValue(controllerRef.current).selectedHunkIndex).toBe(1);
+
+      await act(async () => {
+        expectValue(controllerRef.current).moveToFile(1);
+      });
+      await flush(setup);
+
+      let controller = expectValue(controllerRef.current);
+      expect(controller.selectedFile?.path).toBe("beta.ts");
+      expect(controller.selectedHunkIndex).toBe(0);
+      expect(controller.selectedFileTopAlignRequestId).toBe(1);
+
+      await act(async () => {
+        expectValue(controllerRef.current).moveToFile(1);
+      });
+      await flush(setup);
+
+      controller = expectValue(controllerRef.current);
+      expect(controller.selectedFile?.path).toBe("gamma.ts");
+      expect(controller.selectedFileTopAlignRequestId).toBe(2);
+
+      await act(async () => {
+        expectValue(controllerRef.current).moveToFile(1);
+      });
+      await flush(setup);
+
+      controller = expectValue(controllerRef.current);
+      expect(controller.selectedFile?.path).toBe("gamma.ts");
+      expect(controller.selectedFileTopAlignRequestId).toBe(2);
+
+      await act(async () => {
+        expectValue(controllerRef.current).moveToFile(-1);
+      });
+      await flush(setup);
+
+      controller = expectValue(controllerRef.current);
+      expect(controller.selectedFile?.path).toBe("beta.ts");
+      expect(controller.selectedFileTopAlignRequestId).toBe(3);
+
+      await act(async () => {
+        expectValue(controllerRef.current).moveToFile(-1);
+      });
+      await flush(setup);
+
+      controller = expectValue(controllerRef.current);
+      expect(controller.selectedFile?.path).toBe("alpha.ts");
+      expect(controller.selectedFileTopAlignRequestId).toBe(4);
+
+      await act(async () => {
+        expectValue(controllerRef.current).moveToFile(-1);
+      });
+      await flush(setup);
+
+      controller = expectValue(controllerRef.current);
+      expect(controller.selectedFile?.path).toBe("alpha.ts");
+      expect(controller.selectedFileTopAlignRequestId).toBe(4);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("live comment mutations update annotated navigation without remounting the app", async () => {
     const controllerRef: { current: ReviewController | null } = { current: null };
     const setup = await testRender(

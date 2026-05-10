@@ -2033,6 +2033,80 @@ describe("App interactions", () => {
     }
   });
 
+  test("file navigation shortcuts jump between visible files outside filter focus", async () => {
+    const { getLatestSnapshot, hostClient } = createMockHostClient();
+    const setup = await testRender(
+      <AppHost bootstrap={createTwoFileHunkBootstrap()} hostClient={hostClient} />,
+      {
+        width: 220,
+        height: 10,
+      },
+    );
+
+    try {
+      await flush(setup);
+
+      for (let index = 0; index < 10; index += 1) {
+        await act(async () => {
+          await setup.mockInput.pressArrow("down");
+        });
+        await flush(setup);
+      }
+
+      await act(async () => {
+        await setup.mockInput.typeText(".");
+      });
+      await flush(setup);
+
+      let snapshot = await waitForSnapshot(
+        setup,
+        getLatestSnapshot,
+        (nextSnapshot) => nextSnapshot.selectedFileId === "second",
+        24,
+      );
+      expect(snapshot?.selectedFileId).toBe("second");
+      expect(snapshot?.selectedHunkIndex).toBe(0);
+
+      let frame = await waitForFrame(
+        setup,
+        (nextFrame) =>
+          nextFrame.includes("second.ts") && (nextFrame.match(/first\.ts/g) ?? []).length === 1,
+        24,
+      );
+      expect(frame).toContain("second.ts");
+
+      await act(async () => {
+        await setup.mockInput.typeText(",");
+      });
+      await flush(setup);
+
+      snapshot = await waitForSnapshot(
+        setup,
+        getLatestSnapshot,
+        (nextSnapshot) => nextSnapshot.selectedFileId === "first",
+        24,
+      );
+      expect(snapshot?.selectedFileId).toBe("first");
+
+      await act(async () => {
+        await setup.mockInput.pressTab();
+      });
+      await flush(setup);
+      await act(async () => {
+        await setup.mockInput.typeText(".");
+      });
+      await flush(setup);
+
+      frame = setup.captureCharFrame();
+      expect(frame).toContain("filter:");
+      expect(getLatestSnapshot()?.selectedFileId).toBe("first");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("forward cross-file hunk navigation keeps the destination file owning the review pane", async () => {
     const setup = await testRender(
       <AppHost bootstrap={createCrossFileHunkNavigationBootstrap()} />,
