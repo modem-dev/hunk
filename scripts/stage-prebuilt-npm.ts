@@ -173,12 +173,15 @@ ensureDirectory(releaseRoot);
 
 const artifacts = artifactRoot
   ? collectArtifactSpecs(artifactRoot)
-  : [
-      {
-        spec: getHostPlatformPackageSpec(),
-        compiledBinary: path.join(repoRoot, "dist", "hunk"),
-      },
-    ];
+  : (() => {
+      const hostSpec = getHostPlatformPackageSpec();
+      return [
+        {
+          spec: hostSpec,
+          compiledBinary: path.join(repoRoot, "dist", binaryFilenameForSpec(hostSpec)),
+        },
+      ];
+    })();
 
 const stagedSpecs = sortPlatformPackageSpecs(artifacts.map((artifact) => artifact.spec));
 stageMetaPackage(repoRoot, rootPackage, releaseRoot, stagedSpecs);
@@ -195,5 +198,7 @@ for (const spec of stagedSpecs) {
 if (artifactRoot) {
   console.log(`Artifacts source: ${artifactRoot}`);
 } else {
-  console.log(`Artifacts source: ${path.join(repoRoot, "dist", "hunk")}`);
+  console.log(
+    `Artifacts source: ${path.join(repoRoot, "dist", binaryFilenameForSpec(getHostPlatformPackageSpec()))}`,
+  );
 }

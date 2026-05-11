@@ -3,6 +3,7 @@
 import { existsSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { releaseNpmDir } from "./prebuilt-package-helpers";
+import { npmCommand } from "./script-helpers";
 
 interface PackedFile {
   path: string;
@@ -15,7 +16,7 @@ interface PackResult {
 }
 
 function runPackDryRun(cwd: string) {
-  const proc = Bun.spawnSync(["npm", "pack", "--dry-run", "--json"], {
+  const proc = Bun.spawnSync([npmCommand, "pack", "--dry-run", "--json"], {
     cwd,
     stdin: "ignore",
     stdout: "pipe",

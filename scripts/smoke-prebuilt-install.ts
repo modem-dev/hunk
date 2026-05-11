@@ -16,6 +16,7 @@ import {
   getHostPlatformPackageSpec,
   releaseNpmDir,
 } from "./prebuilt-package-helpers";
+import { envWithPath, npmCommand } from "./script-helpers";
 
 function run(command: string[], options?: { cwd?: string; env?: NodeJS.ProcessEnv }) {
   const proc = Bun.spawnSync(command, {
@@ -80,9 +81,11 @@ try {
 
   const nodePath = commandPath("node");
   const nodeDir = path.dirname(nodePath);
-  const bashDir = commandDirectory("bash");
+  // bash is required on Unix where the npm-installed wrapper shells out via `#!/usr/bin/env bash`,
+  // but the Windows `hunk.cmd` shim does not need bash on PATH.
+  const bashDir = process.platform === "win32" ? undefined : commandDirectory("bash");
 
-  run(["npm", "pack", "--pack-destination", packageDir], {
+  run([npmCommand, "pack", "--pack-destination", packageDir], {
     cwd: path.join(releaseRoot, hostSpec.packageName),
   });
 
@@ -102,19 +105,19 @@ try {
   };
   writeFileSync(smokeManifestPath, `${JSON.stringify(smokeManifest, null, 2)}\n`);
 
-  run(["npm", "pack", "--pack-destination", packageDir], {
+  run([npmCommand, "pack", "--pack-destination", packageDir], {
     cwd: smokePackageDir,
   });
   const metaTarball = path.join(packageDir, `hunkdiff-${packageVersion}.tgz`);
 
-  run(["npm", "install", "-g", "--prefix", installDir, metaTarball]);
+  run([npmCommand, "install", "-g", "--prefix", installDir, metaTarball]);
 
   const installedBinDir = process.platform === "win32" ? installDir : path.join(installDir, "bin");
   const installedPackageRoot =
     process.platform === "win32"
       ? path.join(installDir, "node_modules", "hunkdiff")
       : path.join(installDir, "lib", "node_modules", "hunkdiff");
-  const sanitizedPath = [installedBinDir, nodeDir, bashDir].join(path.delimiter);
+  const sanitizedPath = [installedBinDir, nodeDir, bashDir].filter(Boolean).join(path.delimiter);
   const installedHunk = path.join(
     installedBinDir,
     process.platform === "win32" ? "hunk.cmd" : "hunk",
@@ -126,10 +129,7 @@ try {
     "bin",
     binaryFilenameForSpec(hostSpec),
   );
-  const commandEnv = {
-    ...process.env,
-    PATH: sanitizedPath,
-  };
+  const commandEnv = envWithPath(sanitizedPath);
 
   if (process.platform !== "win32") {
     const installedBinaryMode = statSync(installedPlatformBinary).mode & 0o777;
