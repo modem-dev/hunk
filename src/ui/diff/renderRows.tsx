@@ -1,5 +1,6 @@
 import { memo, type ReactNode } from "react";
 import type { DiffFile } from "../../core/types";
+import { sliceTextByTerminalCells, terminalCellWidth } from "../lib/text";
 import type { AppTheme } from "../themes";
 import {
   resolveSplitCellGeometry,
@@ -25,7 +26,7 @@ export function fitText(text: string, width: number) {
     return "";
   }
 
-  if (text.length <= width) {
+  if (terminalCellWidth(text) <= width) {
     return text;
   }
 
@@ -33,7 +34,7 @@ export function fitText(text: string, width: number) {
     return "…";
   }
 
-  return `${text.slice(0, width - 1)}…`;
+  return `${sliceTextByTerminalCells(text, 0, width - 1).text}…`;
 }
 
 /** Slice styled spans to one visible window while preserving color runs. */
@@ -55,16 +56,24 @@ function sliceSpansWindow(spans: RenderSpan[], offset: number, width: number) {
       break;
     }
 
-    if (remainingOffset >= span.text.length) {
-      remainingOffset -= span.text.length;
+    const spanWidth = terminalCellWidth(span.text);
+    if (remainingOffset >= spanWidth) {
+      remainingOffset -= spanWidth;
       continue;
     }
 
-    const start = remainingOffset;
-    const text = span.text.slice(start, start + remaining);
+    const offsetBeforeSlice = remainingOffset;
+    const {
+      clipped,
+      text,
+      width: textWidth,
+    } = sliceTextByTerminalCells(span.text, remainingOffset, remaining);
     remainingOffset = 0;
 
     if (text.length === 0) {
+      if (clipped && offsetBeforeSlice === 0) {
+        break;
+      }
       continue;
     }
 
@@ -80,8 +89,11 @@ function sliceSpansWindow(spans: RenderSpan[], offset: number, width: number) {
       sliced.push(nextSpan);
     }
 
-    remaining -= text.length;
-    usedWidth += text.length;
+    remaining -= textWidth;
+    usedWidth += textWidth;
+    if (clipped) {
+      break;
+    }
   }
 
   return {
@@ -160,36 +172,62 @@ function wrapSpans(spans: RenderSpan[], width: number) {
 
   const lines: RenderSpan[][] = [[]];
   let current = lines[0]!;
-  let remaining = width;
+  let currentWidth = 0;
+
+  const startNextLine = () => {
+    current = [];
+    lines.push(current);
+    currentWidth = 0;
+  };
+
+  const appendToCurrentLine = (span: RenderSpan, text: string, textWidth: number) => {
+    if (text.length === 0) {
+      return;
+    }
+
+    const nextSpan = {
+      ...span,
+      text,
+    };
+    const previous = current.at(-1);
+    if (previous && previous.fg === nextSpan.fg && previous.bg === nextSpan.bg) {
+      previous.text += nextSpan.text;
+    } else {
+      current.push(nextSpan);
+    }
+
+    currentWidth += textWidth;
+  };
 
   for (const span of spans) {
-    let offset = 0;
-
-    while (offset < span.text.length) {
-      if (remaining <= 0) {
-        current = [];
-        lines.push(current);
-        remaining = width;
-      }
-
-      const text = span.text.slice(offset, offset + remaining);
-      if (text.length === 0) {
+    for (let index = 0; index < span.text.length; ) {
+      const codePoint = span.text.codePointAt(index);
+      if (codePoint === undefined) {
         break;
       }
 
-      const nextSpan = {
-        ...span,
-        text,
-      };
-      const previous = current.at(-1);
-      if (previous && previous.fg === nextSpan.fg && previous.bg === nextSpan.bg) {
-        previous.text += nextSpan.text;
-      } else {
-        current.push(nextSpan);
+      const text = String.fromCodePoint(codePoint);
+      const textWidth = terminalCellWidth(text);
+      index += codePoint > 0xffff ? 2 : 1;
+
+      if (textWidth === 0) {
+        appendToCurrentLine(span, text, 0);
+        continue;
       }
 
-      offset += text.length;
-      remaining -= text.length;
+      if (textWidth > width) {
+        if (currentWidth > 0) {
+          startNextLine();
+        }
+        appendToCurrentLine(span, "…", 1);
+        continue;
+      }
+
+      if (currentWidth + textWidth > width) {
+        startNextLine();
+      }
+
+      appendToCurrentLine(span, text, textWidth);
     }
   }
 

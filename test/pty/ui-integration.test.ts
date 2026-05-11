@@ -1093,6 +1093,35 @@ describe("live UI integration", () => {
     }
   });
 
+  test("mouse wheel scrolling keeps untracked CJK additions inside split panes", async () => {
+    const fixture = harness.createUntrackedCjkRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split", "--no-wrap"],
+      cwd: fixture.dir,
+      cols: 80,
+      rows: 14,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      await session.waitIdle({ timeout: 200 });
+      await session.scrollDown(1);
+      const scrolled = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("notes.md (untracked)") && text.includes("第04行"),
+        5_000,
+      );
+
+      expect(scrolled).toContain("▌ 4 + 第04行這是一段很長的中文");
+      expect(scrolled).not.toMatch(/\n[^\S\r\n]*滑鼠捲動\s*\n/);
+    } finally {
+      session.close();
+    }
+  });
+
   test("arrow-key horizontal scrolling reveals hidden code columns in a real PTY", async () => {
     const fixture = harness.createLongWrapFilePair();
     const session = await harness.launchHunk({
