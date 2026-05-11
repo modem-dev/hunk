@@ -1,12 +1,8 @@
 import type { AgentAnnotation, LayoutMode } from "../../../core/types";
-import { wrapText } from "../../lib/agentPopover";
+import { formatAgentNoteTitle, wrapText } from "../../lib/agentPopover";
 import { annotationRangeLabel } from "../../lib/agentAnnotations";
 import { fitText, padText } from "../../lib/text";
 import type { AppTheme } from "../../themes";
-
-function inlineNoteTitle(noteIndex: number, noteCount: number) {
-  return noteCount > 1 ? `AI note ${noteIndex + 1}/${noteCount}` : "AI note";
-}
 
 interface AgentInlineNoteLine {
   kind: "summary" | "rationale";
@@ -83,7 +79,7 @@ export function AgentInlineNote({
   width: number;
 }) {
   const closeText = onClose ? "[x]" : "";
-  const titleText = `${inlineNoteTitle(noteIndex, noteCount)} · ${annotationRangeLabel(annotation)}`;
+  const titleText = `${formatAgentNoteTitle(noteIndex, noteCount, annotation.author)} · ${annotationRangeLabel(annotation)}`;
   const splitWidths = splitColumnWidths(width);
   const canDockRight = layout === "split" && anchorSide === "new" && width >= 84;
   const canDockLeft = layout === "split" && anchorSide === "old" && width >= 84;
