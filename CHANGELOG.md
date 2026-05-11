@@ -6,6 +6,8 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Added
 
+- Added `gg` and `G` keyboard aliases for jump-to-top and jump-to-bottom review navigation.
+
 ### Changed
 
 ### Fixed

@@ -29,6 +29,7 @@ export function HelpDialog({
         ["{ / }", "previous / next comment"],
         ["← / →", "scroll code left / right (Shift = faster)"],
         ["Home / End", "jump to top / bottom"],
+        ["gg / G", "jump to top / bottom (Vim aliases)"],
       ],
     },
     {

@@ -19,6 +19,24 @@ type ScrollUnit = "step" | "viewport" | "content" | "half";
 
 const FAST_CODE_HORIZONTAL_SCROLL_COLUMNS = 8;
 
+type JumpShortcut = "top" | "bottom" | "pending";
+
+function isLowercaseGKey(key: KeyEvent) {
+  return (
+    (key.name === "g" || key.sequence === "g") &&
+    !key.shift &&
+    !key.option &&
+    !key.ctrl &&
+    !key.meta
+  );
+}
+
+function isUppercaseGKey(key: KeyEvent) {
+  return (
+    key.sequence === "G" || (key.name === "g" && key.shift && !key.option && !key.ctrl && !key.meta)
+  );
+}
+
 export interface UseAppKeyboardShortcutsOptions {
   activeMenuId: MenuId | null;
   activateCurrentMenuItem: () => void;
@@ -82,12 +100,33 @@ export function useAppKeyboardShortcuts({
   const activeMenuIdRef = useRef(activeMenuId);
   const focusAreaRef = useRef(focusArea);
   const pagerModeRef = useRef(pagerMode);
+  const pendingTopJumpRef = useRef(false);
   const showHelpRef = useRef(showHelp);
 
   activeMenuIdRef.current = activeMenuId;
   focusAreaRef.current = focusArea;
   pagerModeRef.current = pagerMode;
   showHelpRef.current = showHelp;
+
+  const resolveJumpShortcut = (key: KeyEvent): JumpShortcut | null => {
+    if (isUppercaseGKey(key)) {
+      pendingTopJumpRef.current = false;
+      return "bottom";
+    }
+
+    if (isLowercaseGKey(key)) {
+      if (pendingTopJumpRef.current) {
+        pendingTopJumpRef.current = false;
+        return "top";
+      }
+
+      pendingTopJumpRef.current = true;
+      return "pending";
+    }
+
+    pendingTopJumpRef.current = false;
+    return null;
+  };
 
   const runAndCloseMenu = (action: () => void) => {
     action();
@@ -113,6 +152,21 @@ export function useAppKeyboardShortcuts({
   };
 
   const handlePagerShortcut = (key: KeyEvent) => {
+    const jumpShortcut = resolveJumpShortcut(key);
+    if (jumpShortcut === "top") {
+      scrollDiff(-1, "content");
+      return;
+    }
+
+    if (jumpShortcut === "bottom") {
+      scrollDiff(1, "content");
+      return;
+    }
+
+    if (jumpShortcut === "pending") {
+      return;
+    }
+
     if (key.name === "q" || isEscapeKey(key)) {
       requestQuit();
       return;
@@ -240,6 +294,21 @@ export function useAppKeyboardShortcuts({
   };
 
   const handleAppShortcut = (key: KeyEvent) => {
+    const jumpShortcut = resolveJumpShortcut(key);
+    if (jumpShortcut === "top") {
+      scrollDiff(-1, "content");
+      return;
+    }
+
+    if (jumpShortcut === "bottom") {
+      scrollDiff(1, "content");
+      return;
+    }
+
+    if (jumpShortcut === "pending") {
+      return;
+    }
+
     if (key.name === "q") {
       requestQuit();
       return;
@@ -388,6 +457,7 @@ export function useAppKeyboardShortcuts({
 
   useKeyboard((key: KeyEvent) => {
     if (handleMenuToggleShortcut(key)) {
+      pendingTopJumpRef.current = false;
       return;
     }
 
@@ -397,14 +467,17 @@ export function useAppKeyboardShortcuts({
     }
 
     if (handleHelpShortcut(key)) {
+      pendingTopJumpRef.current = false;
       return;
     }
 
     if (handleMenuShortcut(key)) {
+      pendingTopJumpRef.current = false;
       return;
     }
 
     if (handleFilterShortcut(key)) {
+      pendingTopJumpRef.current = false;
       return;
     }
 
