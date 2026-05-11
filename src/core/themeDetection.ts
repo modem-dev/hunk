@@ -1,4 +1,6 @@
-export type TerminalThemeMode = "light" | "dark";
+import type { TerminalThemeMode } from "./types";
+
+export type { TerminalThemeMode } from "./types";
 
 export interface RgbColor {
   red: number;
@@ -8,8 +10,7 @@ export interface RgbColor {
 
 interface ThemeProbeInput {
   on(event: "data", listener: (chunk: Buffer | string) => void): unknown;
-  off?(event: "data", listener: (chunk: Buffer | string) => void): unknown;
-  removeListener?(event: "data", listener: (chunk: Buffer | string) => void): unknown;
+  removeListener(event: "data", listener: (chunk: Buffer | string) => void): unknown;
   resume?(): unknown;
   pause?(): unknown;
   setRawMode?(mode: boolean): unknown;
@@ -92,8 +93,8 @@ export async function detectTerminalThemeModeFromBackground({
         return;
       }
       settled = true;
-      input.off?.("data", onData);
-      input.removeListener?.("data", onData);
+      clearTimeout(timer);
+      input.removeListener("data", onData);
       if (wasRaw !== undefined) {
         input.setRawMode?.(wasRaw);
       }
@@ -109,7 +110,6 @@ export async function detectTerminalThemeModeFromBackground({
       buffer += Buffer.isBuffer(chunk) ? chunk.toString("utf8") : chunk;
       const color = parseOsc11BackgroundColor(buffer);
       if (color) {
-        clearTimeout(timer);
         finish(themeModeForBackgroundColor(color));
       }
     };
