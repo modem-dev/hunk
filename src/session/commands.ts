@@ -1,3 +1,4 @@
+import { buildAgentPrompt } from "../core/agentPrompt";
 import type {
   SessionCommandInput,
   SessionCommandOutput,
@@ -36,6 +37,7 @@ const REQUIRED_ACTION_BY_COMMAND: Record<SessionCommandInput["action"], SessionD
   get: "get",
   context: "context",
   review: "review",
+  prompt: "review",
   navigate: "navigate",
   reload: "reload",
   "comment-add": "comment-add",
@@ -205,6 +207,29 @@ export async function runSessionCommand(input: SessionCommandInput) {
         selector: normalizedSelector!,
       });
       return renderOutput(input.output, { review }, () => formatReviewOutput(review));
+    }
+    case "prompt": {
+      const review = await client.getSessionReview({
+        kind: "session",
+        action: "review",
+        output: "json",
+        selector: normalizedSelector!,
+        includePatch: true,
+      });
+      if (!review.selectedFile || !review.selectedHunk) {
+        throw new Error("The selected Hunk session does not have a focused hunk to export.");
+      }
+
+      const prompt = buildAgentPrompt({
+        title: review.title,
+        sourceLabel: review.sourceLabel,
+        repoRoot: review.repoRoot,
+        file: review.selectedFile,
+        hunkIndex: review.selectedHunk.index,
+        comment: input.comment,
+        selectedText: input.selectedText,
+      });
+      return renderOutput(input.output, { prompt }, () => `${prompt}\n`);
     }
     case "navigate": {
       const result = await client.navigateToHunk({

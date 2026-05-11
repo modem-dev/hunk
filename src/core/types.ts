@@ -121,6 +121,15 @@ export interface SessionReviewCommandInput {
   includePatch: boolean;
 }
 
+export interface SessionPromptCommandInput {
+  kind: "session";
+  action: "prompt";
+  output: SessionCommandOutput;
+  selector: SessionSelectorInput;
+  comment?: string;
+  selectedText?: string;
+}
+
 export interface SessionNavigateCommandInput {
   kind: "session";
   action: "navigate";
@@ -204,6 +213,7 @@ export type SessionCommandInput =
   | SessionListCommandInput
   | SessionGetCommandInput
   | SessionReviewCommandInput
+  | SessionPromptCommandInput
   | SessionNavigateCommandInput
   | SessionReloadCommandInput
   | SessionCommentAddCommandInput

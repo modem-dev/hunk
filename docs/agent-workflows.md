@@ -79,6 +79,19 @@ Notes:
 - `--hunk` is 1-based
 - `--next-comment` and `--prev-comment` are handy when an agent is walking the user through existing notes
 
+### Publish a prompt from the focused hunk
+
+Inside the TUI, press `p` to copy a paste-ready prompt for the focused hunk. If you have selected text with the mouse, Hunk includes that selected text alongside the hunk diff. Press `c` to add a short human comment, attach it as a live inline note, and copy the same prompt with your comment included.
+
+From another terminal, agents or scripts can export the same focused-hunk prompt:
+
+```bash
+hunk session prompt --repo .
+hunk session prompt --repo . --comment "Please simplify this path"
+```
+
+Use `--json` when another tool should consume the prompt programmatically.
+
 ### Add comments
 
 For one note, use `comment add`:
@@ -139,6 +152,7 @@ For a compact real example, see [`examples/3-agent-review-demo/agent-context.jso
 ## Practical defaults
 
 - start with `hunk session review --repo . --json`
+- use `hunk session prompt --repo .` when the user wants paste-ready agent context
 - only add `--include-patch` when the raw patch is actually needed
 - use `comment add` for one-off notes and `comment apply` for batches
 - prefer `--repo` over `--session-path` unless you have a specific advanced reload case

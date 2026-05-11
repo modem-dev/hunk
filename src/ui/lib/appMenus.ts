@@ -5,11 +5,13 @@ import { THEMES } from "../themes";
 export interface BuildAppMenusOptions {
   activeThemeId: string;
   canRefreshCurrentInput: boolean;
+  copyAgentPrompt: () => void;
   focusFilter: () => void;
   layoutMode: LayoutMode;
   moveToAnnotatedFile: (delta: number) => void;
   moveToAnnotatedHunk: (delta: number) => void;
   moveToHunk: (delta: number) => void;
+  openAgentCommentDialog: () => void;
   refreshCurrentInput: () => void;
   requestQuit: () => void;
   selectLayoutMode: (mode: LayoutMode) => void;
@@ -33,11 +35,13 @@ export interface BuildAppMenusOptions {
 export function buildAppMenus({
   activeThemeId,
   canRefreshCurrentInput,
+  copyAgentPrompt,
   focusFilter,
   layoutMode,
   moveToAnnotatedFile,
   moveToAnnotatedHunk,
   moveToHunk,
+  openAgentCommentDialog,
   refreshCurrentInput,
   requestQuit,
   selectLayoutMode,
@@ -195,6 +199,19 @@ export function buildAppMenus({
     ],
     theme: themeMenuEntries,
     agent: [
+      {
+        kind: "item",
+        label: "Copy focused hunk prompt",
+        hint: "p",
+        action: copyAgentPrompt,
+      },
+      {
+        kind: "item",
+        label: "Comment and copy prompt",
+        hint: "c",
+        action: openAgentCommentDialog,
+      },
+      { kind: "separator" },
       {
         kind: "item",
         label: "Agent notes",

@@ -123,11 +123,13 @@ describe("ui helpers", () => {
     const menus = buildAppMenus({
       activeThemeId: "graphite",
       canRefreshCurrentInput: true,
+      copyAgentPrompt: () => {},
       focusFilter: () => {},
       layoutMode: "stack",
       moveToAnnotatedFile: () => {},
       moveToAnnotatedHunk: () => {},
       moveToHunk: () => {},
+      openAgentCommentDialog: () => {},
       refreshCurrentInput: () => {},
       requestQuit: () => {},
       selectLayoutMode: () => {},
@@ -175,6 +177,17 @@ describe("ui helpers", () => {
         (entry) => entry.kind === "item" && entry.label === "Graphite" && entry.checked,
       ),
     ).toBe(true);
+    expect(
+      menus.agent
+        .filter((entry): entry is Extract<MenuEntry, { kind: "item" }> => entry.kind === "item")
+        .map((entry) => entry.label),
+    ).toEqual([
+      "Copy focused hunk prompt",
+      "Comment and copy prompt",
+      "Agent notes",
+      "Next annotated file",
+      "Previous annotated file",
+    ]);
   });
 
   test("keyboard alias helpers normalize the shared scroll shortcut keys", () => {
