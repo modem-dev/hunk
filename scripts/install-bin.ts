@@ -47,7 +47,6 @@ console.log(`Installed ${installPath}`);
 
 const pathEntries = (process.env.PATH ?? "").split(path.delimiter).filter(Boolean);
 const installDirOnPath = pathEntries.some((entry) => {
-  if (!entry) return false;
   // Windows paths are case-insensitive; normalize both sides for the comparison.
   const normalizedEntry = isWindows ? path.normalize(entry).toLowerCase() : path.normalize(entry);
   const normalizedInstallDir = isWindows
