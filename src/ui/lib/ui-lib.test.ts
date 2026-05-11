@@ -224,6 +224,16 @@ describe("ui helpers", () => {
       text: "한글 ",
       width: 5,
     });
+    expect(sliceTextByTerminalCells("中", 1, 3)).toEqual({
+      clipped: false,
+      text: " ",
+      width: 1,
+    });
+    expect(sliceTextByTerminalCells("中文", 1, 3)).toEqual({
+      clipped: false,
+      text: " 文",
+      width: 3,
+    });
     expect(fitText("中文 mixed", 6)).toBe("中文 .");
     expect(padText("中文", 5)).toBe("中文 ");
   });
