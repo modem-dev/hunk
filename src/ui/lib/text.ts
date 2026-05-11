@@ -114,6 +114,12 @@ export function sliceTextByTerminalCells(text: string, offset: number, width: nu
 
     // If the requested window starts in the middle of a fullwidth glyph, omit that glyph entirely.
     if (cellCursor < windowStart) {
+      const hiddenCellWidth = Math.min(nextCellCursor, windowEnd) - windowStart;
+      if (hiddenCellWidth > 0) {
+        output += " ".repeat(hiddenCellWidth);
+        usedWidth += hiddenCellWidth;
+      }
+
       cellCursor = nextCellCursor;
       includedPreviousVisibleCodePoint = false;
       continue;
