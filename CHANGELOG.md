@@ -6,6 +6,7 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Added
 
+- Added focused-hunk agent prompt export from the TUI (`p` / `c`) and `hunk session prompt`.
 - Added Windows x64 prebuilt artifact publishing to the release workflow.
 
 ### Changed

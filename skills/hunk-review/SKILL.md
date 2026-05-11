@@ -17,10 +17,11 @@ If no session exists, ask the user to launch Hunk in their terminal first.
 3. hunk session review --repo . --json                  # inspect file/hunk structure first
 4. hunk session review --repo . --include-patch --json  # opt into raw diff text only when needed
 5. hunk session context --repo .                        # check current focus when needed
-6. hunk session navigate ...                            # move to the right place
-7. hunk session reload -- <command>                     # swap contents if needed
-8. hunk session comment add ...                         # leave one review note
-9. hunk session comment apply ...                       # apply many agent notes in one stdin batch
+6. hunk session prompt --repo .                         # export focused hunk as paste-ready prompt
+7. hunk session navigate ...                            # move to the right place
+8. hunk session reload -- <command>                     # swap contents if needed
+9. hunk session comment add ...                         # leave one review note
+10. hunk session comment apply ...                      # apply many agent notes in one stdin batch
 ```
 
 ## Session selection
@@ -47,11 +48,13 @@ hunk session list [--json]
 hunk session get (--repo . | <id>) [--json]
 hunk session context (--repo . | <id>) [--json]
 hunk session review (--repo . | <id>) [--json] [--include-patch]
+hunk session prompt (--repo . | <id>) [--comment "..."] [--selected-text "..."] [--json]
 ```
 
 - `get` shows the session `Path`, `Repo`, and `Source`, which helps when choosing between `--repo` and `--session-path`
 - `Repo` is what `--repo` matches; `Path` is what `--session-path` matches
 - `review --json` returns file and hunk structure by default; add `--include-patch` only when a caller truly needs raw unified diff text
+- `prompt` returns a paste-ready coding-agent prompt for the currently focused hunk; add `--comment` or `--selected-text` when relaying user feedback
 
 ### Navigate
 
@@ -130,8 +133,9 @@ Typical flow:
 1. Load the right content (`reload` if needed)
 2. Navigate to the first interesting file / hunk
 3. Add a comment explaining what's happening and why
-4. If you already have several notes ready, prefer one `comment apply` batch over many separate shell invocations
-5. Summarize when done
+4. If the user asks for context they can paste back to an agent, use `hunk session prompt --repo .`
+5. If you already have several notes ready, prefer one `comment apply` batch over many separate shell invocations
+6. Summarize when done
 
 Guidelines:
 

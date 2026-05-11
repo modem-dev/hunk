@@ -301,6 +301,33 @@ describe("parseCli", () => {
     });
   });
 
+  test("parses session prompt with comment and selected text", async () => {
+    const parsed = await parseCli([
+      "bun",
+      "hunk",
+      "session",
+      "prompt",
+      "--repo",
+      ".",
+      "--comment",
+      "Please simplify this.",
+      "--selected-text",
+      "const value = 1;",
+      "--json",
+    ]);
+
+    expect(parsed).toEqual({
+      kind: "session",
+      action: "prompt",
+      selector: {
+        repoRoot: process.cwd(),
+      },
+      output: "json",
+      comment: "Please simplify this.",
+      selectedText: "const value = 1;",
+    });
+  });
+
   test("parses session navigate by hunk number", async () => {
     const parsed = await parseCli([
       "bun",

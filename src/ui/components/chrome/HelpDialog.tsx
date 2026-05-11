@@ -51,6 +51,8 @@ export function HelpDialog({
       title: "Review",
       items: [
         ["/", "focus file filter"],
+        ["p", "copy focused hunk prompt"],
+        ["c", "comment and copy prompt"],
         ["Tab", "toggle files/filter focus"],
         ["F10", "open menus"],
         [canRefresh ? "r / q" : "q", canRefresh ? "reload / quit" : "quit"],

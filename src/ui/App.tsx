@@ -1,3 +1,5 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   MouseButton,
   type MouseEvent as TuiMouseEvent,
@@ -5,9 +7,15 @@ import {
 } from "@opentui/core";
 import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState, useRef } from "react";
+import { buildAgentPrompt, createAgentPromptFile } from "../core/agentPrompt";
+import { resolveUserConfigDir } from "../core/paths";
 import type { AppBootstrap, CliInput, LayoutMode } from "../core/types";
 import { canReloadInput, computeWatchSignature } from "../core/watch";
 import type { HunkSessionBrokerClient, ReloadedSessionResult } from "../hunk-session/types";
+import {
+  AgentCommentDialog,
+  AgentPromptPreviewDialog,
+} from "./components/chrome/AgentPromptDialog";
 import { MenuBar } from "./components/chrome/MenuBar";
 import { StatusBar } from "./components/chrome/StatusBar";
 import { DiffPane } from "./components/panes/DiffPane";
@@ -70,6 +78,20 @@ function withCurrentViewOptions(
   };
 }
 
+/** Persist the latest generated prompt outside the repo as a clipboard fallback. */
+function writeAgentPromptFallback(prompt: string) {
+  const configDir = resolveUserConfigDir();
+  if (!configDir) {
+    return undefined;
+  }
+
+  const hunkDir = join(configDir, "hunk");
+  mkdirSync(hunkDir, { recursive: true });
+  const promptPath = join(hunkDir, "agent-prompt.md");
+  writeFileSync(promptPath, `${prompt.replace(/\n*$/, "")}\n`);
+  return promptPath;
+}
+
 /** Orchestrate global app state, layout, navigation, and pane coordination. */
 export function App({
   bootstrap,
@@ -113,6 +135,13 @@ export function App({
   const [sidebarVisible, setSidebarVisible] = useState(() => !pagerMode);
   const [forceSidebarOpen, setForceSidebarOpen] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [commentDialogOpen, setCommentDialogOpen] = useState(false);
+  const [commentDraft, setCommentDraft] = useState("");
+  const [commentDialogSelectedText, setCommentDialogSelectedText] = useState<string | undefined>();
+  const [promptPreview, setPromptPreview] = useState<{ prompt: string; savedPath?: string } | null>(
+    null,
+  );
+  const [statusNotice, setStatusNotice] = useState<string | null>(null);
   const [focusArea, setFocusArea] = useState<FocusArea>("files");
   const [sidebarWidth, setSidebarWidth] = useState(34);
   const [resizeDragOriginX, setResizeDragOriginX] = useState<number | null>(null);
@@ -138,6 +167,144 @@ export function App({
   const openAgentNotes = useCallback(() => {
     setShowAgentNotes(true);
   }, []);
+
+  const readSelectedText = useCallback(() => {
+    const text = renderer.getSelection()?.getSelectedText().trim();
+    return text && text.length > 0 ? text : undefined;
+  }, [renderer]);
+
+  const publishStatus = useCallback((message: string) => {
+    setStatusNotice(message);
+  }, []);
+
+  const closeAgentModal = useCallback(() => {
+    setCommentDialogOpen(false);
+    setPromptPreview(null);
+  }, []);
+
+  const publishAgentPrompt = useCallback(
+    ({ comment, selectedText }: { comment?: string; selectedText?: string } = {}) => {
+      if (!selectedFile) {
+        publishStatus("No selected hunk to publish.");
+        return;
+      }
+
+      let prompt: string;
+      try {
+        prompt = buildAgentPrompt({
+          title: bootstrap.changeset.title,
+          sourceLabel: bootstrap.changeset.sourceLabel,
+          repoRoot: bootstrap.changeset.sourceLabel,
+          file: createAgentPromptFile(selectedFile),
+          hunkIndex: selectedHunkIndex,
+          selectedText,
+          comment,
+        });
+      } catch (error) {
+        publishStatus(error instanceof Error ? error.message : "No selected hunk to publish.");
+        return;
+      }
+
+      let copied = false;
+      try {
+        copied = renderer.copyToClipboardOSC52(prompt);
+      } catch {
+        copied = false;
+      }
+
+      let savedPath: string | undefined;
+      try {
+        savedPath = writeAgentPromptFallback(prompt);
+      } catch {
+        savedPath = undefined;
+      }
+
+      if (copied) {
+        setPromptPreview(null);
+        publishStatus(
+          savedPath
+            ? `Copied agent prompt to clipboard. Saved fallback: ${savedPath}`
+            : "Copied agent prompt to clipboard.",
+        );
+        return;
+      }
+
+      setPromptPreview({ prompt, savedPath });
+      publishStatus(
+        savedPath
+          ? `Clipboard unavailable. Saved agent prompt to ${savedPath}.`
+          : "Clipboard unavailable. Select/copy the prompt from the dialog.",
+      );
+    },
+    [
+      bootstrap.changeset.sourceLabel,
+      bootstrap.changeset.title,
+      publishStatus,
+      renderer,
+      selectedFile,
+      selectedHunkIndex,
+    ],
+  );
+
+  const copyAgentPrompt = useCallback(() => {
+    publishAgentPrompt({ selectedText: readSelectedText() });
+  }, [publishAgentPrompt, readSelectedText]);
+
+  const openAgentCommentDialog = useCallback(() => {
+    if (!selectedFile) {
+      publishStatus("No selected hunk to comment on.");
+      return;
+    }
+
+    setCommentDraft("");
+    setCommentDialogSelectedText(readSelectedText());
+    setCommentDialogOpen(true);
+  }, [publishStatus, readSelectedText, selectedFile]);
+
+  const submitAgentComment = useCallback(() => {
+    const summary = commentDraft.trim();
+    if (!summary || !selectedFile) {
+      setCommentDialogOpen(false);
+      return;
+    }
+
+    try {
+      review.addLiveComment(
+        {
+          filePath: selectedFile.path,
+          hunkIndex: selectedHunkIndex,
+          summary,
+          author: "user",
+        },
+        `ui:${Date.now()}:${Math.random().toString(36).slice(2)}`,
+      );
+      setShowAgentNotes(true);
+    } catch (error) {
+      publishStatus(error instanceof Error ? error.message : "Failed to add live comment.");
+      setCommentDialogOpen(false);
+      return;
+    }
+
+    publishAgentPrompt({ comment: summary, selectedText: commentDialogSelectedText });
+    setCommentDialogOpen(false);
+  }, [
+    commentDialogSelectedText,
+    commentDraft,
+    publishAgentPrompt,
+    publishStatus,
+    review,
+    selectedFile,
+    selectedHunkIndex,
+  ]);
+
+  useEffect(() => {
+    if (!statusNotice) {
+      return;
+    }
+
+    const timeout = setTimeout(() => setStatusNotice(null), 6_000);
+    return () => clearTimeout(timeout);
+  }, [statusNotice]);
 
   useHunkSessionBridge({
     addLiveComment: review.addLiveComment,
@@ -472,11 +639,13 @@ export function App({
       buildAppMenus({
         activeThemeId: activeTheme.id,
         canRefreshCurrentInput,
+        copyAgentPrompt,
         focusFilter,
         layoutMode,
         moveToAnnotatedFile,
         moveToAnnotatedHunk,
         moveToHunk: review.moveToHunk,
+        openAgentCommentDialog,
         refreshCurrentInput: triggerRefreshCurrentInput,
         requestQuit,
         selectLayoutMode,
@@ -498,11 +667,13 @@ export function App({
     [
       activeTheme.id,
       canRefreshCurrentInput,
+      copyAgentPrompt,
       focusFilter,
       layoutMode,
       moveToAnnotatedFile,
       moveToAnnotatedHunk,
       requestQuit,
+      openAgentCommentDialog,
       review.moveToHunk,
       selectLayoutMode,
       triggerRefreshCurrentInput,
@@ -544,12 +715,16 @@ export function App({
     canRefreshCurrentInput,
     closeHelp,
     closeMenu,
+    closeModal: closeAgentModal,
+    copyAgentPrompt,
     cycleTheme,
     focusArea,
     focusFilter,
+    modalOpen: commentDialogOpen || promptPreview !== null,
     moveToAnnotatedHunk,
     moveToHunk: review.moveToHunk,
     moveMenuItem,
+    openAgentCommentDialog,
     openMenu,
     pagerMode,
     requestQuit,
@@ -625,6 +800,7 @@ export function App({
   const diffHeaderStatsWidth = Math.min(24, Math.max(16, Math.floor(diffContentWidth / 3)));
   const diffHeaderLabelWidth = Math.max(8, diffContentWidth - diffHeaderStatsWidth - 1);
   const diffSeparatorWidth = Math.max(4, diffContentWidth - 2);
+  const effectiveNoticeText = statusNotice ?? noticeText ?? undefined;
 
   return (
     <box
@@ -732,11 +908,12 @@ export function App({
         />
       </box>
 
-      {!pagerMode && (focusArea === "filter" || Boolean(review.filter) || Boolean(noticeText)) ? (
+      {!pagerMode &&
+      (focusArea === "filter" || Boolean(review.filter) || Boolean(effectiveNoticeText)) ? (
         <StatusBar
           filter={review.filter}
           filterFocused={focusArea === "filter"}
-          noticeText={noticeText ?? undefined}
+          noticeText={effectiveNoticeText}
           terminalWidth={terminal.width}
           theme={activeTheme}
           onCloseMenu={closeMenu}
@@ -774,6 +951,31 @@ export function App({
             onClose={closeHelp}
           />
         </Suspense>
+      ) : null}
+
+      {!pagerMode && commentDialogOpen && selectedFile ? (
+        <AgentCommentDialog
+          comment={commentDraft}
+          selectedTextAvailable={Boolean(commentDialogSelectedText)}
+          targetLabel={`${selectedFile.path} hunk ${selectedHunkIndex + 1}`}
+          terminalHeight={terminal.height}
+          terminalWidth={terminal.width}
+          theme={activeTheme}
+          onCancel={() => setCommentDialogOpen(false)}
+          onChange={setCommentDraft}
+          onSubmit={submitAgentComment}
+        />
+      ) : null}
+
+      {!pagerMode && promptPreview ? (
+        <AgentPromptPreviewDialog
+          prompt={promptPreview.prompt}
+          savedPath={promptPreview.savedPath}
+          terminalHeight={terminal.height}
+          terminalWidth={terminal.width}
+          theme={activeTheme}
+          onClose={() => setPromptPreview(null)}
+        />
       ) : null}
     </box>
   );

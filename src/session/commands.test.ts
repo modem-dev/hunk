@@ -708,6 +708,54 @@ describe("session command compatibility checks", () => {
     });
   });
 
+  test("exports a paste-ready prompt for the selected session hunk", async () => {
+    setSessionCommandTestHooks({
+      createClient: () =>
+        createClient({
+          getSessionReview: async (input) => {
+            expect(input.selector).toEqual({ sessionId: "session-1" });
+            expect(input.includePatch).toBe(true);
+            return createTestSessionReview(true);
+          },
+        }),
+      resolveDaemonAvailability: async () => true,
+    });
+
+    const output = await runSessionCommand({
+      kind: "session",
+      action: "prompt",
+      selector: { sessionId: "session-1" },
+      output: "text",
+      comment: "Please make this clearer.",
+      selectedText: "selected code",
+    } satisfies SessionCommandInput);
+
+    expect(output).toContain("Please use this Hunk review context");
+    expect(output).toContain("- Repo: /repo");
+    expect(output).toContain("- File: README.md");
+    expect(output).toContain("My comment:\nPlease make this clearer.");
+    expect(output).toContain("Selected text from Hunk:\n```text\nselected code\n```");
+    expect(output).toContain("```diff\n@@ -1,1 +1,2 @@\n```");
+  });
+
+  test("exports selected session hunk prompt as JSON", async () => {
+    setSessionCommandTestHooks({
+      createClient: () => createClient({}),
+      resolveDaemonAvailability: async () => true,
+    });
+
+    const output = await runSessionCommand({
+      kind: "session",
+      action: "prompt",
+      selector: { sessionId: "session-1" },
+      output: "json",
+    } satisfies SessionCommandInput);
+
+    const parsed = JSON.parse(output);
+    expect(parsed.prompt).toContain("- File: README.md");
+    expect(parsed.prompt).toContain("Diff hunk:");
+  });
+
   test("runs comment-apply commands through the daemon and formats the applied batch", async () => {
     setSessionCommandTestHooks({
       createClient: () =>

@@ -89,6 +89,8 @@ A good generic prompt is:
 Load the Hunk skill and use it for this review.
 ```
 
+While reviewing in the TUI, press `p` to copy the focused hunk as a paste-ready agent prompt, or `c` to add a short human comment and copy that commented prompt. Agents and scripts can use the same export through `hunk session prompt --repo .`.
+
 For the full live-session and `--agent-context` workflow guide, see [docs/agent-workflows.md](docs/agent-workflows.md).
 
 ## Feature comparison

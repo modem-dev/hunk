@@ -25,12 +25,16 @@ export interface UseAppKeyboardShortcutsOptions {
   canRefreshCurrentInput: boolean;
   closeHelp: () => void;
   closeMenu: () => void;
+  closeModal: () => void;
+  copyAgentPrompt: () => void;
   cycleTheme: () => void;
   focusArea: FocusArea;
   focusFilter: () => void;
+  modalOpen: boolean;
   moveToAnnotatedHunk: (delta: number) => void;
   moveToHunk: (delta: number) => void;
   moveMenuItem: (delta: number) => void;
+  openAgentCommentDialog: () => void;
   openMenu: (menuId: MenuId) => void;
   pagerMode: boolean;
   requestQuit: () => void;
@@ -56,12 +60,16 @@ export function useAppKeyboardShortcuts({
   canRefreshCurrentInput,
   closeHelp,
   closeMenu,
+  closeModal,
+  copyAgentPrompt,
   cycleTheme,
   focusArea,
   focusFilter,
+  modalOpen,
   moveToAnnotatedHunk,
   moveToHunk,
   moveMenuItem,
+  openAgentCommentDialog,
   openMenu,
   pagerMode,
   requestQuit,
@@ -81,11 +89,13 @@ export function useAppKeyboardShortcuts({
 }: UseAppKeyboardShortcutsOptions) {
   const activeMenuIdRef = useRef(activeMenuId);
   const focusAreaRef = useRef(focusArea);
+  const modalOpenRef = useRef(modalOpen);
   const pagerModeRef = useRef(pagerMode);
   const showHelpRef = useRef(showHelp);
 
   activeMenuIdRef.current = activeMenuId;
   focusAreaRef.current = focusArea;
+  modalOpenRef.current = modalOpen;
   pagerModeRef.current = pagerMode;
   showHelpRef.current = showHelp;
 
@@ -176,6 +186,18 @@ export function useAppKeyboardShortcuts({
     if (key.name === "s" || key.sequence === "s") {
       toggleSidebar();
     }
+  };
+
+  const handleModalShortcut = (key: KeyEvent) => {
+    if (!modalOpenRef.current) {
+      return false;
+    }
+
+    if (isEscapeKey(key)) {
+      closeModal();
+    }
+
+    return true;
   };
 
   const handleHelpShortcut = (key: KeyEvent) => {
@@ -351,6 +373,16 @@ export function useAppKeyboardShortcuts({
       return;
     }
 
+    if (key.name === "p" || key.sequence === "p") {
+      runAndCloseMenu(copyAgentPrompt);
+      return;
+    }
+
+    if (key.name === "c" || key.sequence === "c") {
+      runAndCloseMenu(openAgentCommentDialog);
+      return;
+    }
+
     if (key.name === "l" || key.sequence === "l") {
       runAndCloseMenu(toggleLineNumbers);
       return;
@@ -387,6 +419,10 @@ export function useAppKeyboardShortcuts({
   };
 
   useKeyboard((key: KeyEvent) => {
+    if (handleModalShortcut(key)) {
+      return;
+    }
+
     if (handleMenuToggleShortcut(key)) {
       return;
     }

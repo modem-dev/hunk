@@ -598,6 +598,7 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
           "  hunk session context --repo <path>",
           "  hunk session review <session-id> [--include-patch]",
           "  hunk session review --repo <path> [--include-patch]",
+          "  hunk session prompt (<session-id> | --repo <path>) [--comment <text>]",
           "  hunk session navigate (<session-id> | --repo <path>) --file <path> (--hunk <n> | --old-line <n> | --new-line <n>)",
           "  hunk session navigate (<session-id> | --repo <path>) (--next-comment | --prev-comment)",
           "  hunk session reload (<session-id> | --repo <path> | --session-path <path>) [--source <path>] -- diff [ref] [-- <pathspec...>]",
@@ -686,6 +687,48 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
       action: subcommand,
       output: resolveJsonOutput(parsedOptions),
       selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
+    };
+  }
+
+  if (subcommand === "prompt") {
+    const command = new Command("session prompt")
+      .description("export a paste-ready prompt for the focused hunk")
+      .argument("[sessionId]")
+      .option("--repo <path>", "target the live session whose repo root matches this path")
+      .option("--comment <text>", "include a user comment in the prompt")
+      .option("--selected-text <text>", "include explicit selected text in the prompt")
+      .option("--json", "emit structured JSON");
+
+    let parsedSessionId: string | undefined;
+    let parsedOptions: {
+      repo?: string;
+      comment?: string;
+      selectedText?: string;
+      json?: boolean;
+    } = {};
+
+    command.action(
+      (
+        sessionId: string | undefined,
+        options: { repo?: string; comment?: string; selectedText?: string; json?: boolean },
+      ) => {
+        parsedSessionId = sessionId;
+        parsedOptions = options;
+      },
+    );
+
+    if (rest.includes("--help") || rest.includes("-h")) {
+      return { kind: "help", text: `${command.helpInformation().trimEnd()}\n` };
+    }
+
+    await parseStandaloneCommand(command, rest);
+    return {
+      kind: "session",
+      action: "prompt",
+      output: resolveJsonOutput(parsedOptions),
+      selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
+      comment: parsedOptions.comment,
+      selectedText: parsedOptions.selectedText,
     };
   }
 
