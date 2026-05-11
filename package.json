@@ -87,7 +87,7 @@
     "@hunk/session-broker-node": "workspace:*",
     "@opentui/core": "^0.1.88",
     "@opentui/react": "^0.1.88",
-    "@types/bun": "latest",
+    "@types/bun": "1.3.13",
     "@types/react": "^19.2.14",
     "@types/ws": "^8.18.1",
     "lint-staged": "^16.4.0",
