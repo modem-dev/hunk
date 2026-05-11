@@ -402,6 +402,27 @@ export function createPtyHarness() {
     return { dir, before, after };
   }
 
+  function createUntrackedCjkRepoFixture() {
+    const dir = makeTempDir("hunk-tuistory-cjk-");
+
+    runGit(["init"], dir);
+    runGit(["config", "user.name", "Pi"], dir);
+    runGit(["config", "user.email", "pi@example.com"], dir);
+    writeText(join(dir, "README.md"), "# fixture\n");
+    runGit(["add", "."], dir);
+    runGit(["commit", "-m", "initial"], dir);
+
+    const cjkPhrase = "這是一段很長的中文內容用來驗證分割視圖滑鼠捲動";
+    const after =
+      Array.from(
+        { length: 40 },
+        (_, index) => `第${String(index + 1).padStart(2, "0")}行${cjkPhrase.repeat(5)}`,
+      ).join("\n") + "\n";
+    writeText(join(dir, "notes.md"), after);
+
+    return { dir };
+  }
+
   function createGitRepoFixture(files: ChangedFileSpec[]) {
     const dir = makeTempDir("hunk-tuistory-repo-");
 
@@ -727,6 +748,7 @@ export function createPtyHarness() {
     createPagerPatchFixture,
     createPinnedHeaderRepoFixture,
     createScrollableFilePair,
+    createUntrackedCjkRepoFixture,
     createSidebarJumpRepoFixture,
     createTwoFileRepoFixture,
     createWideCharacterFilePair,

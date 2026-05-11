@@ -1,5 +1,5 @@
 import type { DiffFile, LayoutMode } from "../../core/types";
-import { measureTextWidth } from "../lib/text";
+import { terminalCellWidth } from "../lib/text";
 import type { DiffRow } from "./pierre";
 
 export const DIFF_CODE_TAB_WIDTH = 2;
@@ -15,7 +15,7 @@ export function expandDiffTabs(text: string) {
 
 /** Measure one rendered code line after tab expansion and newline trimming. */
 export function measureRenderedCodeLineWidth(line: string | undefined) {
-  return measureTextWidth(expandDiffTabs((line ?? "").replace(/\n$/, "")));
+  return terminalCellWidth(expandDiffTabs((line ?? "").replace(/\n$/, "")));
 }
 
 /** Track the widest rendered code line for one file. */
