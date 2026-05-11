@@ -2,6 +2,11 @@ import type { AgentAnnotation, LayoutMode } from "../../../core/types";
 import { formatAgentNoteTitle, wrapText } from "../../lib/agentPopover";
 import { annotationRangeLabel } from "../../lib/agentAnnotations";
 import { fitText, padText } from "../../lib/text";
+import {
+  deriveAuthorBackground,
+  deriveAuthorTitleBackground,
+  resolveAuthorAccent,
+} from "../../lib/agentColor";
 import type { AppTheme } from "../../themes";
 
 interface AgentInlineNoteLine {
@@ -80,6 +85,14 @@ export function AgentInlineNote({
 }) {
   const closeText = onClose ? "[x]" : "";
   const titleText = `${formatAgentNoteTitle(noteIndex, noteCount, annotation.author)} · ${annotationRangeLabel(annotation)}`;
+  const resolvedAccent = resolveAuthorAccent(annotation.author, theme.noteAccentPalette);
+  const accent = resolvedAccent ?? theme.noteBorder;
+  const noteBackground = resolvedAccent
+    ? (deriveAuthorBackground(resolvedAccent, theme.appearance) ?? theme.noteBackground)
+    : theme.noteBackground;
+  const noteTitleBackground = resolvedAccent
+    ? (deriveAuthorTitleBackground(resolvedAccent, theme.appearance) ?? theme.noteTitleBackground)
+    : theme.noteTitleBackground;
   const splitWidths = splitColumnWidths(width);
   const canDockRight = layout === "split" && anchorSide === "new" && width >= 84;
   const canDockLeft = layout === "split" && anchorSide === "old" && width >= 84;
@@ -121,7 +134,7 @@ export function AgentInlineNote({
           <text>{" ".repeat(boxLeft)}</text>
         </box>
         <box style={{ width: boxWidth, height: 1, backgroundColor: theme.panel }}>
-          <text fg={theme.noteBorder} bg={theme.noteBackground}>
+          <text fg={accent} bg={noteBackground}>
             {topBorder}
           </text>
         </box>
@@ -132,12 +145,12 @@ export function AgentInlineNote({
           <text>{" ".repeat(boxLeft)}</text>
         </box>
         <box style={{ width: 1, height: 1, backgroundColor: theme.panel }}>
-          <text fg={theme.noteBorder} bg={theme.noteBackground}>
+          <text fg={accent} bg={noteBackground}>
             │
           </text>
         </box>
         <box style={{ width: titleWidth, height: 1, backgroundColor: theme.panel }}>
-          <text fg={theme.noteTitleText} bg={theme.noteTitleBackground}>
+          <text fg={theme.noteTitleText} bg={noteTitleBackground}>
             {padText(fitText(titleText, titleWidth), titleWidth)}
           </text>
         </box>
@@ -146,11 +159,11 @@ export function AgentInlineNote({
             onMouseUp={onClose}
             style={{ width: closeText.length + 1, height: 1, backgroundColor: theme.panel }}
           >
-            <text fg={theme.noteTitleText} bg={theme.noteTitleBackground}>{` ${closeText}`}</text>
+            <text fg={theme.noteTitleText} bg={noteTitleBackground}>{` ${closeText}`}</text>
           </box>
         ) : null}
         <box style={{ width: 1, height: 1, backgroundColor: theme.panel }}>
-          <text fg={theme.noteBorder} bg={theme.noteBackground}>
+          <text fg={accent} bg={noteBackground}>
             │
           </text>
         </box>
@@ -165,17 +178,17 @@ export function AgentInlineNote({
             <text>{" ".repeat(boxLeft)}</text>
           </box>
           <box style={{ width: 1, height: 1, backgroundColor: theme.panel }}>
-            <text fg={theme.noteBorder} bg={theme.noteBackground}>
+            <text fg={accent} bg={noteBackground}>
               │
             </text>
           </box>
           <box style={{ width: bodyWidth, height: 1, backgroundColor: theme.panel }}>
-            <text fg={line.kind === "summary" ? theme.text : theme.muted} bg={theme.noteBackground}>
+            <text fg={line.kind === "summary" ? theme.text : theme.muted} bg={noteBackground}>
               {padText(line.text, bodyWidth)}
             </text>
           </box>
           <box style={{ width: 1, height: 1, backgroundColor: theme.panel }}>
-            <text fg={theme.noteBorder} bg={theme.noteBackground}>
+            <text fg={accent} bg={noteBackground}>
               │
             </text>
           </box>
@@ -187,7 +200,7 @@ export function AgentInlineNote({
           <text>{" ".repeat(boxLeft)}</text>
         </box>
         <box style={{ width: boxWidth, height: 1, backgroundColor: theme.panel }}>
-          <text fg={theme.noteBorder} bg={theme.noteBackground}>
+          <text fg={accent} bg={noteBackground}>
             {bottomBorder}
           </text>
         </box>
@@ -201,17 +214,20 @@ export function AgentInlineNoteGuideCap({
   side,
   theme,
   width,
+  accent,
 }: {
   side: "old" | "new";
   theme: AppTheme;
   width: number;
+  accent?: string;
 }) {
+  const borderColor = accent ?? theme.noteBorder;
   return (
     <box style={{ width: "100%", height: 1, flexDirection: "row", backgroundColor: theme.panel }}>
       {side === "old" ? (
         <>
           <box style={{ width: 1, height: 1, backgroundColor: theme.panel }}>
-            <text fg={theme.noteBorder}>╵</text>
+            <text fg={borderColor}>╵</text>
           </box>
           <box style={{ width: Math.max(0, width - 1), height: 1, backgroundColor: theme.panel }}>
             <text>{" ".repeat(Math.max(0, width - 1))}</text>
@@ -223,7 +239,7 @@ export function AgentInlineNoteGuideCap({
             <text>{" ".repeat(Math.max(0, width - 1))}</text>
           </box>
           <box style={{ width: 1, height: 1, backgroundColor: theme.panel }}>
-            <text fg={theme.noteBorder}>╵</text>
+            <text fg={borderColor}>╵</text>
           </box>
         </>
       )}

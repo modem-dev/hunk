@@ -118,6 +118,40 @@ describe("review render plan", () => {
     expect(cap?.kind).toBe("note-guide-cap");
     if (cap?.kind === "note-guide-cap") {
       expect(cap.side).toBe("new");
+      expect(cap.author).toBeUndefined();
+    }
+  });
+
+  test("propagates annotation author onto the matching guide cap row", () => {
+    const theme = resolveTheme("midnight", null);
+    const file = createDiffFile(
+      "alpha",
+      "alpha.ts",
+      "export const alpha = 1;\n",
+      "export const alpha = 2;\nexport const beta = 3;\nexport const gamma = 4;\n",
+    );
+    const rows = buildSplitRows(file, null, theme);
+    const plannedRows = buildReviewRenderPlan({
+      fileId: file.id,
+      rows,
+      selectedHunkIndex: 0,
+      showHunkHeaders: true,
+      visibleAgentNotes: [
+        {
+          id: "annotation:alpha:0:0",
+          annotation: {
+            newRange: [2, 3],
+            summary: "Authored note",
+            author: "sonnet",
+          },
+        },
+      ],
+    });
+
+    const cap = plannedRows.find((row) => row.kind === "note-guide-cap");
+    expect(cap?.kind).toBe("note-guide-cap");
+    if (cap?.kind === "note-guide-cap") {
+      expect(cap.author).toBe("sonnet");
     }
   });
 

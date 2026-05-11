@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import type { DiffFile, LayoutMode } from "../../core/types";
 import { AgentInlineNote, AgentInlineNoteGuideCap } from "../components/panes/AgentInlineNote";
 import type { VisibleAgentNote } from "../lib/agentAnnotations";
+import { resolveAuthorAccent } from "../lib/agentColor";
 import type { DiffSectionGeometry } from "../lib/diffSectionGeometry";
 import { reviewRowId } from "../lib/ids";
 import type { AppTheme } from "../themes";
@@ -170,9 +171,16 @@ export function PierreDiffView({
         }
 
         if (plannedRow.kind === "note-guide-cap") {
+          const capAccent =
+            resolveAuthorAccent(plannedRow.author, theme.noteAccentPalette) ?? undefined;
           return (
             <box key={plannedRow.key} id={rowId} style={{ width: "100%", flexDirection: "column" }}>
-              <AgentInlineNoteGuideCap side={plannedRow.side} theme={theme} width={width} />
+              <AgentInlineNoteGuideCap
+                side={plannedRow.side}
+                theme={theme}
+                width={width}
+                accent={capAccent}
+              />
             </box>
           );
         }

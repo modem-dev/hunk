@@ -50,6 +50,7 @@ export type PlannedReviewRow =
       fileId: string;
       hunkIndex: number;
       side: "old" | "new";
+      author?: string;
     };
 
 function lineRows(rows: DiffRow[]) {
@@ -292,7 +293,10 @@ function buildNoteGuideSideByRowKey(placementsByAnchor: Map<string, InlineVisibl
 }
 
 function buildGuideCapsByRowKey(placementsByAnchor: Map<string, InlineVisibleNotePlacement[]>) {
-  const guideCapsByRowKey = new Map<string, Set<"old" | "new">>();
+  // Track the first author seen per (row, side) so the cap glyph can adopt the
+  // matching per-author accent. Two notes ending on the same row+side is rare;
+  // if it happens, first-author-wins keeps the colour stable.
+  const guideCapsByRowKey = new Map<string, Map<"old" | "new", string | undefined>>();
 
   for (const placements of placementsByAnchor.values()) {
     for (const placement of placements) {
@@ -300,8 +304,12 @@ function buildGuideCapsByRowKey(placementsByAnchor: Map<string, InlineVisibleNot
         continue;
       }
 
-      const rowCaps = guideCapsByRowKey.get(placement.endGuideAfterKey) ?? new Set<"old" | "new">();
-      rowCaps.add(placement.anchorSide);
+      const rowCaps =
+        guideCapsByRowKey.get(placement.endGuideAfterKey) ??
+        new Map<"old" | "new", string | undefined>();
+      if (!rowCaps.has(placement.anchorSide)) {
+        rowCaps.set(placement.anchorSide, placement.note.annotation.author);
+      }
       guideCapsByRowKey.set(placement.endGuideAfterKey, rowCaps);
     }
   }
@@ -383,7 +391,7 @@ export function buildReviewRenderPlan({
 
     const guideCaps = guideCapsByRowKey.get(row.key);
     if (guideCaps) {
-      Array.from(guideCaps).forEach((side) => {
+      Array.from(guideCaps.entries()).forEach(([side, author]) => {
         plannedRows.push({
           kind: "note-guide-cap",
           key: `note-guide-cap:${row.key}:${side}`,
@@ -391,6 +399,7 @@ export function buildReviewRenderPlan({
           fileId,
           hunkIndex: row.hunkIndex,
           side,
+          author,
         });
       });
     }
