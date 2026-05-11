@@ -2,9 +2,9 @@ import type { TextareaRenderable } from "@opentui/core";
 import { flushSync } from "@opentui/react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { AgentAnnotation, DiffFile, LayoutMode } from "../../../core/types";
-import { isEscapeKey, isSaveDraftNoteKey } from "../../lib/keyboard";
-import { wrapText } from "../../lib/agentPopover";
 import { annotationRangeLabel, reviewNoteSource } from "../../lib/agentAnnotations";
+import { wrapText } from "../../lib/agentPopover";
+import { isEscapeKey, isSaveDraftNoteKey } from "../../lib/keyboard";
 import { fitText, padText } from "../../lib/text";
 import type { AppTheme } from "../../themes";
 
