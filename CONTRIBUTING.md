@@ -11,6 +11,7 @@ Requirements:
 - Bun 1.3+
 - Node.js 18+
 - Git
+- macOS, Linux, or Windows. The Windows path uses native Node/Bun on Windows 10/11 (x64); no WSL or Git Bash required.
 
 > Nix users can use `nix develop` or [direnv](https://direnv.net/) to enter a development shell.
 

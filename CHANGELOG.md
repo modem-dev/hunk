@@ -8,8 +8,11 @@ All notable user-visible changes to Hunk are documented in this file.
 
 - Added Windows x64 prebuilt artifact publishing to the release workflow.
 - Added Nix flake app outputs for `nix run` and a named `hunk` package output.
+- Documented native Windows support in the README and contributor guide.
 
 ### Changed
+
+- Ported `build:npm`, `build:bin`, and `install:bin` from bash scripts to cross-platform Bun-runnable TypeScript so native Windows contributors no longer need Git Bash to build or install Hunk locally.
 
 ### Fixed
 
