@@ -1,5 +1,7 @@
 #!/usr/bin/env bun
 
+import { npmCommand } from "./script-helpers";
+
 interface PackedFile {
   path: string;
   size: number;
@@ -13,7 +15,7 @@ interface PackResult {
   files: PackedFile[];
 }
 
-const proc = Bun.spawnSync(["npm", "pack", "--dry-run", "--json"], {
+const proc = Bun.spawnSync([npmCommand, "pack", "--dry-run", "--json"], {
   cwd: process.cwd(),
   stdin: "ignore",
   stdout: "pipe",

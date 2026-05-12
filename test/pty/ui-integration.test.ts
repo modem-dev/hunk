@@ -672,6 +672,28 @@ describe("live UI integration", () => {
     }
   });
 
+  test("piped stdin still allows concrete-theme app startup to read terminal input", async () => {
+    const fixture = harness.createTwoFileRepoFixture();
+    const session = await harness.launchShellCommand({
+      command: `printf ignored | ${harness.buildHunkCommand(["diff", "--theme", "graphite"])}`,
+      cwd: fixture.dir,
+      cols: 120,
+      rows: 14,
+    });
+
+    try {
+      const initial = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+      expect(initial).toContain("alpha.ts");
+
+      await session.press("q");
+      await session.waitIdle({ timeout: 500 });
+    } finally {
+      session.close();
+    }
+  });
+
   test("stdin patch mode enables mouse wheel scrolling in pager UI", async () => {
     const fixture = harness.createPagerPatchFixture(60);
     const session = await harness.launchHunkWithFileBackedStdin({
@@ -709,6 +731,35 @@ describe("live UI integration", () => {
 
       expect(restored).toContain("before_01");
       expect(restored).not.toContain("before_12");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("stdin patch auto theme still enables mouse wheel scrolling", async () => {
+    const fixture = harness.createPagerPatchFixture(60);
+    const session = await harness.launchHunkWithFileBackedStdin({
+      stdinFile: fixture.patchFile,
+      args: ["patch", "-", "--theme", "auto"],
+      cols: 120,
+      rows: 12,
+    });
+
+    try {
+      const initial = await session.waitForText(/scroll\.ts/, { timeout: 15_000 });
+
+      expect(initial).toContain("before_01");
+      expect(initial).not.toContain("before_12");
+
+      await session.waitIdle({ timeout: 200 });
+      await session.scrollDown(10);
+      const scrolled = await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("before_01") && text.includes("before_12"),
+        5_000,
+      );
+
+      expect(scrolled).toContain("before_12");
     } finally {
       session.close();
     }

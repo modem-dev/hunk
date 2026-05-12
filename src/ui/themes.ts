@@ -356,13 +356,16 @@ export const THEMES: AppTheme[] = [
   ),
 ];
 
-/** Resolve a named theme or fall back to Hunk's explicit built-in default. */
+/** Resolve a named theme, including explicit terminal-background auto mode and custom themes, or fall back to Hunk's explicit built-in default. */
 export function resolveTheme(
   requested: string | undefined,
-  _themeMode: ThemeMode | null,
+  themeMode: ThemeMode | null,
   customTheme?: CustomThemeConfig,
 ) {
-  if (requested === "custom" && customTheme) {
+  if (requested === "auto") {
+    const preferred = themeMode === "light" ? "paper" : "graphite";
+    return THEMES.find((theme) => theme.id === preferred) ?? THEMES[0]!;
+  } else if (requested === "custom" && customTheme) {
     return buildCustomTheme(customTheme);
   }
 

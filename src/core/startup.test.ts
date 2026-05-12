@@ -51,7 +51,11 @@ describe("startup planning", () => {
     let loaded = false;
 
     const plan = await prepareStartupPlan(["bun", "hunk", "session", "list"], {
-      parseCliImpl: async () => ({ kind: "session", action: "list", output: "text" }),
+      parseCliImpl: async () => ({
+        kind: "session",
+        action: "list",
+        output: "text",
+      }),
       loadAppBootstrapImpl: async () => {
         loaded = true;
         throw new Error("unreachable");
@@ -69,7 +73,10 @@ describe("startup planning", () => {
     let loaded = false;
 
     const plan = await prepareStartupPlan(["bun", "hunk", "pager"], {
-      parseCliImpl: async () => ({ kind: "pager", options: { theme: "paper" } }),
+      parseCliImpl: async () => ({
+        kind: "pager",
+        options: { theme: "paper" },
+      }),
       readStdinText: async () => "* main\n  feature/demo\n",
       looksLikePatchInputImpl: () => false,
       loadAppBootstrapImpl: async () => {
@@ -78,7 +85,10 @@ describe("startup planning", () => {
       },
     });
 
-    expect(plan).toEqual({ kind: "plain-text-pager", text: "* main\n  feature/demo\n" });
+    expect(plan).toEqual({
+      kind: "plain-text-pager",
+      text: "* main\n  feature/demo\n",
+    });
     expect(loaded).toBe(false);
   });
 
@@ -86,12 +96,18 @@ describe("startup planning", () => {
     const seenInputs: CliInput[] = [];
 
     const plan = await prepareStartupPlan(["bun", "hunk", "pager"], {
-      parseCliImpl: async () => ({ kind: "pager", options: { theme: "paper" } }),
+      parseCliImpl: async () => ({
+        kind: "pager",
+        options: { theme: "paper" },
+      }),
       readStdinText: async () => "diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n",
       looksLikePatchInputImpl: () => true,
       stdoutIsTTY: true,
       env: { TERM: "xterm-256color" },
-      openControllingTerminalImpl: () => ({ stdin: {} as never, close: () => {} }),
+      openControllingTerminalImpl: () => ({
+        stdin: {} as never,
+        close: () => {},
+      }),
       resolveRuntimeCliInputImpl(input) {
         seenInputs.push(input);
         return input;
@@ -151,99 +167,6 @@ describe("startup planning", () => {
       },
       usesPipedPatchInputImpl: () => false,
     });
-  test("passes diff-like pager stdin through when stdout is not interactive", async () => {
-    let loaded = false;
-    const patchText = "diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n";
-
-    const plan = await prepareStartupPlan(["bun", "hunk", "pager"], {
-      parseCliImpl: async () => ({ kind: "pager", options: {} }),
-      readStdinText: async () => patchText,
-      looksLikePatchInputImpl: () => true,
-      stdoutIsTTY: false,
-      loadAppBootstrapImpl: async () => {
-        loaded = true;
-        throw new Error("unreachable");
-      },
-    });
-
-    expect(plan).toEqual({ kind: "passthrough", text: patchText });
-    expect(loaded).toBe(false);
-  });
-
-  test("passes diff-like pager stdin through for a plain dumb terminal", async () => {
-    let loaded = false;
-    const patchText = "diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n";
-
-    const plan = await prepareStartupPlan(["bun", "hunk", "pager"], {
-      parseCliImpl: async () => ({ kind: "pager", options: {} }),
-      readStdinText: async () => patchText,
-      looksLikePatchInputImpl: () => true,
-      stdoutIsTTY: true,
-      env: { TERM: "dumb" },
-      loadAppBootstrapImpl: async () => {
-        loaded = true;
-        throw new Error("unreachable");
-      },
-    });
-
-    expect(plan).toEqual({ kind: "passthrough", text: patchText });
-    expect(loaded).toBe(false);
-  });
-
-  test("routes diff-like pager stdin to static output when the host advertises a captured pager", async () => {
-    let loaded = false;
-    const patchText = "diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n";
-
-    const plan = await prepareStartupPlan(["bun", "hunk", "pager"], {
-      parseCliImpl: async () => ({ kind: "pager", options: { theme: "paper" } }),
-      readStdinText: async () => patchText,
-      looksLikePatchInputImpl: () => true,
-      stdoutIsTTY: true,
-      env: { TERM: "dumb", LV: "-c" },
-      resolveRuntimeCliInputImpl: (input) => input,
-      resolveConfiguredCliInputImpl: (input) =>
-        ({
-          input: { ...input, options: { ...input.options, lineNumbers: false, theme: "paper" } },
-        }) as never,
-      loadAppBootstrapImpl: async () => {
-        loaded = true;
-        throw new Error("unreachable");
-      },
-    });
-
-    expect(plan).toEqual({
-      kind: "static-diff-pager",
-      text: patchText,
-      options: { theme: "paper", pager: true, lineNumbers: false },
-    });
-    expect(loaded).toBe(false);
-  });
-
-  test("routes diff-like pager stdin to static output when no controlling terminal is available", async () => {
-    let loaded = false;
-    const patchText = "diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n";
-
-    const plan = await prepareStartupPlan(["bun", "hunk", "pager"], {
-      parseCliImpl: async () => ({ kind: "pager", options: {} }),
-      readStdinText: async () => patchText,
-      looksLikePatchInputImpl: () => true,
-      stdoutIsTTY: true,
-      env: { TERM: "xterm-256color" },
-      resolveRuntimeCliInputImpl: (input) => input,
-      resolveConfiguredCliInputImpl: (input) => ({ input }) as never,
-      openControllingTerminalImpl: () => null,
-      loadAppBootstrapImpl: async () => {
-        loaded = true;
-        throw new Error("unreachable");
-      },
-    });
-
-    expect(plan).toEqual({
-      kind: "static-diff-pager",
-      text: patchText,
-      options: { pager: true },
-    });
-    expect(loaded).toBe(false);
   });
 
   test("rejects watch mode for stdin-backed patch inputs", async () => {
@@ -264,6 +187,76 @@ describe("startup planning", () => {
     ).rejects.toBeInstanceOf(HunkUserError);
   });
 
+  test("opens the controlling terminal for any app startup with piped stdin", async () => {
+    const cliInput: CliInput = {
+      kind: "vcs",
+      staged: false,
+      options: {
+        theme: "graphite",
+      },
+    };
+    const controllingTerminal = { stdin: {} as never, close: () => {} };
+    let opened = 0;
+
+    const plan = await prepareStartupPlan(["bun", "hunk", "diff", "--theme", "graphite"], {
+      parseCliImpl: async () => cliInput as ParsedCliInput,
+      resolveRuntimeCliInputImpl: (input) => input,
+      resolveConfiguredCliInputImpl: (input) => ({ input }) as never,
+      loadAppBootstrapImpl: async (input) => createBootstrap(input),
+      openControllingTerminalImpl: () => {
+        opened += 1;
+        return controllingTerminal;
+      },
+      stdinIsTTY: false,
+      stdoutIsTTY: true,
+    });
+
+    expect(plan).toMatchObject({
+      kind: "app",
+      cliInput,
+      controllingTerminal,
+    });
+    expect(opened).toBe(1);
+  });
+
+  test("detects auto theme through the controlling terminal before app startup", async () => {
+    const cliInput: CliInput = {
+      kind: "patch",
+      file: "-",
+      options: {
+        theme: "auto",
+        pager: true,
+      },
+    };
+    const controllingTerminal = { stdin: {} as never, close: () => {} };
+    let opened = 0;
+
+    const plan = await prepareStartupPlan(["bun", "hunk", "patch", "-", "--theme", "auto"], {
+      parseCliImpl: async () => cliInput as ParsedCliInput,
+      resolveRuntimeCliInputImpl: (input) => input,
+      resolveConfiguredCliInputImpl: (input) => ({ input }) as never,
+      loadAppBootstrapImpl: async (input) => createBootstrap(input),
+      openControllingTerminalImpl: () => {
+        opened += 1;
+        return controllingTerminal;
+      },
+      detectTerminalThemeModeFromBackgroundImpl: async ({ input }) => {
+        expect(input).toBe(controllingTerminal.stdin);
+        return "dark";
+      },
+      stdinIsTTY: false,
+      stdoutIsTTY: true,
+      stdout: { write: () => true } as never,
+    });
+
+    expect(plan).toMatchObject({
+      kind: "app",
+      controllingTerminal,
+      bootstrap: { initialThemeMode: "dark" },
+    });
+    expect(opened).toBe(1);
+  });
+
   test("opens the controlling terminal for piped patch startup", async () => {
     const cliInput: CliInput = {
       kind: "patch",
@@ -273,7 +266,11 @@ describe("startup planning", () => {
         pager: true,
       },
     };
-    const controllingTerminal = { stdin: {} as never, stdout: {} as never, close: () => {} };
+    const controllingTerminal = {
+      stdin: {} as never,
+      stdout: {} as never,
+      close: () => {},
+    };
     let opened = 0;
 
     const plan = await prepareStartupPlan(["bun", "hunk", "patch", "-"], {

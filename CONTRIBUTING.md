@@ -11,6 +11,9 @@ Requirements:
 - Bun 1.3+
 - Node.js 18+
 - Git
+- macOS, Linux, or Windows. The Windows path uses native Node/Bun on Windows 10/11 (x64); no WSL or Git Bash required.
+
+> Nix users can use `nix develop` or [direnv](https://direnv.net/) to enter a development shell.
 
 Install dependencies:
 
@@ -84,6 +87,24 @@ bun run stage:prebuilt:release
 bun run check:prebuilt-pack
 bun run publish:prebuilt:npm -- --dry-run
 ```
+
+## Updating dependencies
+
+After changing JavaScript or Bun dependencies, regenerate the Nix dependency lockfile so CI stays green:
+
+```bash
+bun install
+bun run nix:update-lock
+git add bun.lock nix/bun.lock.nix package.json
+```
+
+The `nix:update-lock` script requires a one-time [Nix install](https://nixos.org/download/):
+
+```bash
+curl -L https://nixos.org/nix/install | sh
+```
+
+If you don't have Nix installed, CI will catch the drift and a maintainer can push the regenerated lockfile as a follow-up commit.
 
 ## Validation expectations
 

@@ -3,6 +3,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { releaseNpmDir } from "./prebuilt-package-helpers";
+import { npmCommand } from "./script-helpers";
 
 type PackageJson = {
   name: string;
@@ -41,7 +42,7 @@ function parseArgs(argv: string[]) {
 }
 
 function npmViewExists(name: string, version: string) {
-  const proc = Bun.spawnSync(["npm", "view", `${name}@${version}`, "version"], {
+  const proc = Bun.spawnSync([npmCommand, "view", `${name}@${version}`, "version"], {
     stdin: "ignore",
     stdout: "pipe",
     stderr: "ignore",
@@ -70,7 +71,7 @@ function publishDirectory(directory: string, dryRun: boolean, npmTag: string) {
     args.push("--dry-run");
   }
 
-  const proc = Bun.spawnSync(["npm", ...args], {
+  const proc = Bun.spawnSync([npmCommand, ...args], {
     cwd: directory,
     stdin: "ignore",
     stdout: "inherit",

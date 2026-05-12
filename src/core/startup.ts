@@ -2,6 +2,7 @@ import { resolveConfiguredCliInput } from "./config";
 import { HunkUserError } from "./errors";
 import { loadAppBootstrap } from "./loaders";
 import { looksLikePatchInput } from "./pager";
+import { detectTerminalThemeModeFromBackground } from "./themeDetection";
 import {
   openControllingTerminal,
   resolveRuntimeCliInput,
@@ -62,7 +63,10 @@ export interface StartupDeps {
   loadAppBootstrapImpl?: typeof loadAppBootstrap;
   usesPipedPatchInputImpl?: typeof usesPipedPatchInput;
   openControllingTerminalImpl?: typeof openControllingTerminal;
+  detectTerminalThemeModeFromBackgroundImpl?: typeof detectTerminalThemeModeFromBackground;
+  stdinIsTTY?: boolean;
   stdoutIsTTY?: boolean;
+  stdout?: NodeJS.WriteStream;
   env?: NodeJS.ProcessEnv;
 }
 
@@ -80,7 +84,11 @@ export async function prepareStartupPlan(
   const loadAppBootstrapImpl = deps.loadAppBootstrapImpl ?? loadAppBootstrap;
   const usesPipedPatchInputImpl = deps.usesPipedPatchInputImpl ?? usesPipedPatchInput;
   const openControllingTerminalImpl = deps.openControllingTerminalImpl ?? openControllingTerminal;
+  const detectTerminalThemeModeFromBackgroundImpl =
+    deps.detectTerminalThemeModeFromBackgroundImpl ?? detectTerminalThemeModeFromBackground;
+  const stdinIsTTY = deps.stdinIsTTY ?? Boolean(process.stdin.isTTY);
   const stdoutIsTTY = deps.stdoutIsTTY ?? Boolean(process.stdout.isTTY);
+  const stdout = deps.stdout ?? process.stdout;
   const env = deps.env ?? process.env;
 
   let parsedCliInput = await parseCliImpl(argv);
@@ -177,6 +185,23 @@ export async function prepareStartupPlan(
   const configured = resolveConfiguredCliInputImpl(runtimeCliInput);
   const cliInput = configured.input;
 
+  // Any app session launched with piped stdin still needs a real terminal input stream for
+  // keyboard, mouse, and terminal query responses. Auto-theme happened to open this path during
+  // probing; make it unconditional so concrete themes behave the same way.
+  if (!controllingTerminal && !stdinIsTTY && stdoutIsTTY) {
+    controllingTerminal = openControllingTerminalImpl();
+  }
+
+  let initialThemeMode: AppBootstrap["initialThemeMode"];
+  if (cliInput.options.theme === "auto" && stdoutIsTTY) {
+    const themeInput = controllingTerminal?.stdin ?? (stdinIsTTY ? process.stdin : null);
+    if (themeInput) {
+      initialThemeMode =
+        (await detectTerminalThemeModeFromBackgroundImpl({ input: themeInput, output: stdout })) ??
+        undefined;
+    }
+  }
+
   if (cliInput.options.watch && !canReloadInput(cliInput)) {
     throw new HunkUserError(
       "`--watch` requires a file- or Git-backed input that Hunk can reopen.",
@@ -193,6 +218,8 @@ export async function prepareStartupPlan(
     controllingTerminal?.close();
     throw error;
   }
+
+  bootstrap.initialThemeMode = initialThemeMode ?? bootstrap.initialThemeMode;
 
   controllingTerminal ??= usesPipedPatchInputImpl(cliInput) ? openControllingTerminalImpl() : null;
 

@@ -75,6 +75,7 @@ describe("prebuilt package helpers", () => {
     expect(getPlatformPackageSpecForHost("linux", "arm64").packageName).toBe(
       "hunkdiff-linux-arm64",
     );
+    expect(getPlatformPackageSpecForHost("win32", "x64").packageName).toBe("hunkdiff-windows-x64");
   });
 
   test("getHostPlatformPackageSpec resolves the current machine", () => {
@@ -99,6 +100,24 @@ describe("prebuilt package helpers", () => {
       hunk: "./bin/hunk",
     });
     expect(manifest.os).toEqual(["linux"]);
+    expect(manifest.cpu).toEqual(["x64"]);
+  });
+
+  test("buildPlatformPackageManifest maps Windows packages to npm win32", () => {
+    const manifest = buildPlatformPackageManifest(
+      {
+        version: "1.2.3",
+        description: "Desktop diff viewer",
+        license: "MIT",
+      },
+      getPlatformPackageSpecForHost("win32", "x64"),
+    );
+
+    expect(manifest.name).toBe("hunkdiff-windows-x64");
+    expect(manifest.bin).toEqual({
+      hunk: "./bin/hunk.exe",
+    });
+    expect(manifest.os).toEqual(["win32"]);
     expect(manifest.cpu).toEqual(["x64"]);
   });
 

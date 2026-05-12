@@ -122,7 +122,7 @@ export function App({
     () => availableThemes(bootstrap.customTheme),
     [bootstrap.customTheme],
   );
-  const activeTheme = resolveTheme(themeId, renderer.themeMode);
+  const activeTheme = resolveTheme(themeId, bootstrap.initialThemeMode ?? null);
   const review = useReviewController({ files: bootstrap.changeset.files });
   const filteredFiles = review.visibleFiles;
   const selectedFile = review.selectedFile;

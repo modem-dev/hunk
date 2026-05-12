@@ -1,6 +1,6 @@
 {
   "name": "hunkdiff",
-  "version": "0.11.0",
+  "version": "0.12.0-beta.2",
   "description": "Desktop-inspired terminal diff viewer for understanding agent-authored changesets.",
   "keywords": [
     "ai",
@@ -46,12 +46,12 @@
   "scripts": {
     "start": "bun run src/main.tsx",
     "dev": "bun --watch src/main.tsx",
-    "build:npm": "bash ./scripts/build-npm.sh",
-    "build:bin": "bash ./scripts/build-bin.sh",
-    "build:prebuilt:npm": "bun run build:bin && bun run ./scripts/stage-prebuilt-npm.ts",
+    "build:npm": "bun run ./scripts/build-npm.ts",
+    "build:bin": "bun run ./scripts/build-bin.ts",
+    "build:prebuilt:npm": "bun run build:npm && bun run build:bin && bun run ./scripts/stage-prebuilt-npm.ts",
     "build:prebuilt:artifact": "bun run build:bin && bun run ./scripts/build-prebuilt-artifact.ts",
-    "stage:prebuilt:release": "bun run ./scripts/stage-prebuilt-npm.ts --artifact-root ./dist/release/artifacts",
-    "install:bin": "bash ./scripts/install-bin.sh",
+    "stage:prebuilt:release": "bun run build:npm && bun run ./scripts/stage-prebuilt-npm.ts --artifact-root ./dist/release/artifacts",
+    "install:bin": "bun run ./scripts/install-bin.ts",
     "typecheck": "tsc --noEmit",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
@@ -70,7 +70,8 @@
     "bench:bootstrap-load": "bun run benchmarks/bootstrap-load.ts",
     "bench:highlight-prefetch": "bun run benchmarks/highlight-prefetch.ts",
     "bench:large-stream": "bun run benchmarks/large-stream.ts",
-    "bench:large-stream-profile": "bun run benchmarks/large-stream-profile.ts"
+    "bench:large-stream-profile": "bun run benchmarks/large-stream-profile.ts",
+    "nix:update-lock": "nix run .#update-bun-lock"
   },
   "dependencies": {
     "@pierre/diffs": "^1.1.19",
@@ -86,7 +87,7 @@
     "@hunk/session-broker-node": "workspace:*",
     "@opentui/core": "^0.1.88",
     "@opentui/react": "^0.1.88",
-    "@types/bun": "latest",
+    "@types/bun": "1.3.13",
     "@types/react": "^19.2.14",
     "@types/ws": "^8.18.1",
     "lint-staged": "^16.4.0",

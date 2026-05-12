@@ -36,7 +36,11 @@ const repoRoot = path.resolve(import.meta.dir, "..");
 const options = parseArgs(process.argv.slice(2));
 const spec = getHostPlatformPackageSpec();
 const binaryName = binaryFilenameForSpec(spec);
-const compiledBinary = path.join(repoRoot, "dist", "hunk");
+const compiledBinaryCandidates = [
+  path.join(repoRoot, "dist", binaryName),
+  path.join(repoRoot, "dist", "hunk"),
+];
+const compiledBinary = compiledBinaryCandidates.find((candidate) => existsSync(candidate));
 const outputRoot = path.resolve(options.outputRoot ?? releaseArtifactsDir(repoRoot));
 const outputDir = path.join(outputRoot, spec.packageName);
 
@@ -46,8 +50,10 @@ if (options.expectedPackage && options.expectedPackage !== spec.packageName) {
   );
 }
 
-if (!existsSync(compiledBinary)) {
-  throw new Error(`Missing compiled binary at ${compiledBinary}. Run \`bun run build:bin\` first.`);
+if (!compiledBinary) {
+  throw new Error(
+    `Missing compiled binary at ${compiledBinaryCandidates.join(" or ")}. Run \`bun run build:bin\` first.`,
+  );
 }
 
 rmSync(outputDir, { recursive: true, force: true });

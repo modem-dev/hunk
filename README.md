@@ -42,8 +42,10 @@ brew install modem-dev/tap/hunk
 Requirements:
 
 - Node.js 18+
-- macOS or Linux
+- macOS, Linux, or Windows
 - Git recommended for most workflows
+
+> Nix users can use the `default` package exported in `flake.nix` instead. See [nix/README.md](./nix/README.md) for details.
 
 ## Quick start
 

@@ -6,8 +6,47 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.12.0-beta.2] - 2026-05-11
+
+### Added
+
+- Added Windows x64 prebuilt artifact publishing to the release workflow.
+- Added native Windows support in the README, contributor guide, and local build/install scripts.
+- Added Nix flake app outputs for `nix run` and a named `hunk` package output.
+- Added automatic light/dark theme detection from the terminal background when `theme = "auto"` is enabled.
+
+### Changed
+
+- Ported `build:npm`, `build:bin`, and `install:bin` from bash scripts to cross-platform Bun-runnable TypeScript so native Windows contributors no longer need Git Bash to build or install Hunk locally.
+
+### Fixed
+
+- Fixed Ctrl-C in the live TUI so it exits through Hunk's full shutdown path instead of only destroying the renderer.
+
+## [0.12.0-beta.1] - 2026-05-10
+
+### Added
+
 - Added Homebrew tap release automation and Homebrew-aware startup update notices.
 - Added lower-level `hunkdiff/opentui` primitives for embedding Hunk diff bodies, file headers, file navigation, and multi-file review streams in custom OpenTUI apps.
+- Added row windowing for large single-file reviews to keep huge diffs responsive.
+
+### Changed
+
+### Fixed
+
+- Fixed the prebuilt beta npm package so the `hunkdiff/opentui` export and bundled type declarations are included.
+- Made `hunk pager` emit static highlighted diff output for captured pager contexts like LazyGit, and pass diff input through unchanged when stdout is non-interactive.
+- Fixed Ctrl-Z job-control suspend support so Hunk can suspend and resume cleanly from a terminal.
+- Fixed Windows compatibility issues across paths, packaging, and tests.
+
+## [0.11.1] - 2026-05-10
+
+### Added
 
 ### Changed
 
@@ -15,9 +54,13 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Fixed
 
-- Made `hunk pager` emit static highlighted diff output for captured pager contexts like LazyGit, and pass diff input through unchanged when stdout is non-interactive.
-- Fixed `hunk pager` parsing for Git diffs emitted with `diff.mnemonicPrefix=true` so file paths do not keep `i/`, `w/`, `c/`, `1/`, or `2/` side prefixes.
 - Fixed large tracked and untracked file handling so very large diffs render as skipped placeholders instead of slowing startup or overflowing the JavaScript call stack.
+- Fixed Git patch parsing for `diff.noprefix=true` input so Hunk restores parser-safe `a/` and `b/` prefixes without mangling real paths.
+- Fixed `hunk pager` parsing for Git diffs emitted with `diff.mnemonicPrefix=true` so file paths do not keep `i/`, `w/`, `c/`, `1/`, or `2/` side prefixes.
+- Fixed review scrolling so viewport updates are coalesced and no longer risk a render loop.
+- Fixed agent comment hunk ranges so context lines from hunk headers remain part of the target range.
+- Fixed untracked-file reviews in repositories with external diff tools configured by passing `--no-ext-diff`.
+- Fixed diff geometry for hunks with multiple agent notes so offscreen notes no longer skew scrolling measurements.
 
 ## [0.11.0] - 2026-05-09
 
@@ -278,7 +321,10 @@ All notable user-visible changes to Hunk are documented in this file.
 
 - Stabilized diff repainting, active-hunk scrolling, syntax highlighting, pager stdin patch handling, and terminal cleanup on exit.
 
-[Unreleased]: https://github.com/modem-dev/hunk/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/modem-dev/hunk/compare/v0.12.0-beta.2...HEAD
+[0.12.0-beta.2]: https://github.com/modem-dev/hunk/compare/v0.12.0-beta.1...v0.12.0-beta.2
+[0.12.0-beta.1]: https://github.com/modem-dev/hunk/compare/v0.11.1...v0.12.0-beta.1
+[0.11.1]: https://github.com/modem-dev/hunk/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/modem-dev/hunk/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/modem-dev/hunk/compare/v0.9.5...v0.10.0
 [0.9.5]: https://github.com/modem-dev/hunk/compare/v0.9.4...v0.9.5

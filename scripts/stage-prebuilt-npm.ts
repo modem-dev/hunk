@@ -32,6 +32,10 @@ type RootPackageJson = {
   bugs?: unknown;
   license?: string;
   engines?: Record<string, string>;
+  type?: string;
+  exports?: unknown;
+  dependencies?: Record<string, string>;
+  peerDependencies?: Record<string, string>;
 };
 
 interface BinaryArtifactMetadata {
@@ -78,6 +82,9 @@ function stageMetaPackage(
   const metaDir = path.join(releaseRoot, rootPackage.name);
   ensureDirectory(path.join(metaDir, "bin"));
   cpSync(path.join(repoRoot, "bin", "hunk.cjs"), path.join(metaDir, "bin", "hunk.cjs"));
+  cpSync(path.join(repoRoot, "dist", "npm"), path.join(metaDir, "dist", "npm"), {
+    recursive: true,
+  });
   cpSync(path.join(repoRoot, "skills"), path.join(metaDir, "skills"), { recursive: true });
   cpSync(path.join(repoRoot, "README.md"), path.join(metaDir, "README.md"));
   cpSync(path.join(repoRoot, "LICENSE"), path.join(metaDir, "LICENSE"));
@@ -89,12 +96,16 @@ function stageMetaPackage(
     bin: {
       hunk: "./bin/hunk.cjs",
     },
-    files: ["bin", "skills", "README.md", "LICENSE"],
+    files: ["bin", "dist/npm", "skills", "README.md", "LICENSE"],
+    type: rootPackage.type,
+    exports: rootPackage.exports,
     keywords: rootPackage.keywords,
     repository: rootPackage.repository,
     homepage: rootPackage.homepage,
     bugs: rootPackage.bugs,
     engines: rootPackage.engines,
+    dependencies: rootPackage.dependencies,
+    peerDependencies: rootPackage.peerDependencies,
     optionalDependencies: buildOptionalDependencyMap(rootPackage.version, specs),
     license: rootPackage.license,
     publishConfig: {
@@ -160,12 +171,13 @@ const artifactRoot = options.artifactRoot ? path.resolve(options.artifactRoot) :
 rmSync(releaseRoot, { recursive: true, force: true });
 ensureDirectory(releaseRoot);
 
+const hostSpec = artifactRoot ? undefined : getHostPlatformPackageSpec();
 const artifacts = artifactRoot
   ? collectArtifactSpecs(artifactRoot)
   : [
       {
-        spec: getHostPlatformPackageSpec(),
-        compiledBinary: path.join(repoRoot, "dist", "hunk"),
+        spec: hostSpec!,
+        compiledBinary: path.join(repoRoot, "dist", binaryFilenameForSpec(hostSpec!)),
       },
     ];
 
@@ -184,5 +196,5 @@ for (const spec of stagedSpecs) {
 if (artifactRoot) {
   console.log(`Artifacts source: ${artifactRoot}`);
 } else {
-  console.log(`Artifacts source: ${path.join(repoRoot, "dist", "hunk")}`);
+  console.log(`Artifacts source: ${path.join(repoRoot, "dist", binaryFilenameForSpec(hostSpec!))}`);
 }

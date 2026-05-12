@@ -110,9 +110,21 @@ describe("ui helpers", () => {
 
   test("menuWidth and menuBoxHeight account for checks and hints", () => {
     const entries: MenuEntry[] = [
-      { kind: "item", label: "Split view", hint: "1", checked: true, action: () => {} },
+      {
+        kind: "item",
+        label: "Split view",
+        hint: "1",
+        checked: true,
+        action: () => {},
+      },
       { kind: "separator" },
-      { kind: "item", label: "Line numbers", hint: "l", checked: false, action: () => {} },
+      {
+        kind: "item",
+        label: "Line numbers",
+        hint: "l",
+        checked: false,
+        action: () => {},
+      },
     ];
 
     expect(menuWidth(entries)).toBeGreaterThanOrEqual(18);
@@ -408,6 +420,8 @@ describe("ui helpers", () => {
     const midnight = resolveTheme("midnight", null);
     const missingLight = resolveTheme("missing", "light");
     const missingDark = resolveTheme("missing", "dark");
+    const autoLight = resolveTheme("auto", "light");
+    const autoDark = resolveTheme("auto", "dark");
     const custom = resolveTheme("custom", null, {
       base: "paper",
       label: "My Theme",
@@ -421,6 +435,8 @@ describe("ui helpers", () => {
     expect(midnight.id).toBe("midnight");
     expect(missingLight.id).toBe("graphite");
     expect(missingDark.id).toBe("graphite");
+    expect(autoLight.id).toBe("paper");
+    expect(autoDark.id).toBe("graphite");
     expect(custom.id).toBe("custom");
     expect(custom.label).toBe("My Theme");
     expect(custom.appearance).toBe("light");

@@ -3,7 +3,12 @@
 import { createCliRenderer } from "@opentui/core";
 import { createRoot } from "@opentui/react";
 import { formatCliError } from "./core/errors";
-import { installJobControlSuspendSupport } from "./core/jobControl";
+import {
+  installJobControlInterruptSupport,
+  installJobControlSuspendSupport,
+  type JobControlInterruptSupport,
+  type JobControlSuspendSupport,
+} from "./core/jobControl";
 import { pagePlainText } from "./core/pager";
 import { shutdownSession } from "./core/shutdown";
 import { renderStaticDiffPager } from "./ui/staticDiffPager";
@@ -79,15 +84,17 @@ async function main() {
       hasControllingTerminal: Boolean(controllingTerminal),
     }),
     useAlternateScreen: true,
-    exitOnCtrlC: true,
+    exitOnCtrlC: false,
     openConsoleOnError: true,
     onDestroy: () => controllingTerminal?.close(),
   });
 
   const appRenderer = renderer;
-  const jobControlSuspendSupport = installJobControlSuspendSupport(appRenderer);
   const root = createRoot(appRenderer);
+  const shutdownSignals: NodeJS.Signals[] = ["SIGINT", "SIGTERM"];
   let shuttingDown = false;
+  let jobControlSuspendSupport: JobControlSuspendSupport = { dispose: () => undefined };
+  let jobControlInterruptSupport: JobControlInterruptSupport = { dispose: () => undefined };
 
   /** Tear down the renderer before exit so the primary terminal screen comes back cleanly. */
   function shutdown() {
@@ -96,10 +103,20 @@ async function main() {
     }
 
     shuttingDown = true;
+    for (const signal of shutdownSignals) {
+      process.off(signal, shutdown);
+    }
+    jobControlInterruptSupport.dispose();
     jobControlSuspendSupport.dispose();
     hostClient.stop();
     shutdownSession({ root, renderer: appRenderer });
   }
+
+  for (const signal of shutdownSignals) {
+    process.once(signal, shutdown);
+  }
+  jobControlInterruptSupport = installJobControlInterruptSupport(appRenderer, shutdown);
+  jobControlSuspendSupport = installJobControlSuspendSupport(appRenderer);
 
   // The app owns the full alternate screen session from this point on.
   root.render(

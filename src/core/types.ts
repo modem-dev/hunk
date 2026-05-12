@@ -2,6 +2,7 @@ import type { FileDiffMetadata } from "@pierre/diffs";
 
 export type LayoutMode = "auto" | "split" | "stack";
 export type VcsMode = "git" | "jj";
+export type TerminalThemeMode = "light" | "dark";
 
 export interface AgentAnnotation {
   id?: string;
@@ -324,6 +325,7 @@ export interface AppBootstrap {
   changeset: Changeset;
   initialMode: LayoutMode;
   initialTheme?: string;
+  initialThemeMode?: TerminalThemeMode;
   customTheme?: CustomThemeConfig;
   initialShowLineNumbers?: boolean;
   initialWrapLines?: boolean;
