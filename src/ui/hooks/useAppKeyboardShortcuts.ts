@@ -33,7 +33,8 @@ function isLowercaseGKey(key: KeyEvent) {
 
 function isUppercaseGKey(key: KeyEvent) {
   return (
-    key.sequence === "G" || (key.name === "g" && key.shift && !key.option && !key.ctrl && !key.meta)
+    (key.sequence === "G" && !key.option && !key.ctrl && !key.meta) ||
+    (key.name === "g" && key.shift && !key.option && !key.ctrl && !key.meta)
   );
 }
 
