@@ -95,11 +95,7 @@ function contextLineStableKey(hunkIndex: number, oldLineNumber?: number, newLine
 /** Resolve the stable anchor keys for one rendered diff row across split and stack layouts. */
 function diffRowStableKeys(row: DiffRow) {
   if (row.type === "collapsed") {
-    return [
-      row.key.endsWith(":trailing")
-        ? `meta:collapsed:trailing:${row.hunkIndex}`
-        : `meta:collapsed:before:${row.hunkIndex}`,
-    ];
+    return [`meta:collapsed:${row.position}:${row.hunkIndex}`];
   }
 
   if (row.type === "hunk-header") {
@@ -127,10 +123,6 @@ function diffRowStableKeys(row: DiffRow) {
       oldLineStableKey(row.hunkIndex, row.left.lineNumber),
       newLineStableKey(row.hunkIndex, row.right.lineNumber),
     ]);
-  }
-
-  if (row.type !== "stack-line") {
-    return [`row:${row.key}`];
   }
 
   const contextKey = contextLineStableKey(
@@ -314,7 +306,14 @@ function rowCanAnchorHunk(row: DiffRow, showHunkHeaders: boolean) {
     return row.type === "hunk-header";
   }
 
-  return row.type !== "collapsed" && row.type !== "hunk-header";
+  if (row.type === "collapsed" || row.type === "hunk-header") {
+    return false;
+  }
+
+  // Synthesized collapsed-gap rows carry the neighbor hunk's index for placement,
+  // but anchoring on them would scroll navigation to the top of the expanded gap
+  // instead of the actual changed code.
+  return row.isExpansionRow !== true;
 }
 
 /**
