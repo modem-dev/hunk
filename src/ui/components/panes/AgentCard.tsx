@@ -1,5 +1,6 @@
 import { buildAgentPopoverContent } from "../../lib/agentPopover";
 import { fitText, padText } from "../../lib/text";
+import { resolveAuthorAccent } from "../../lib/agentColor";
 import type { AppTheme } from "../../themes";
 
 /** Render one framed floating agent note popover. */
@@ -12,6 +13,7 @@ export function AgentCard({
   summary,
   theme,
   width,
+  author,
 }: {
   locationLabel: string;
   noteCount?: number;
@@ -21,6 +23,7 @@ export function AgentCard({
   summary: string;
   theme: AppTheme;
   width: number;
+  author?: string;
 }) {
   const popover = buildAgentPopoverContent({
     summary,
@@ -29,7 +32,9 @@ export function AgentCard({
     noteIndex,
     noteCount,
     width,
+    author,
   });
+  const accent = resolveAuthorAccent(author, theme.noteAccentPalette) ?? theme.accent;
   const titleWidth = Math.max(1, popover.innerWidth - (onClose ? 4 : 0));
 
   return (
@@ -38,7 +43,7 @@ export function AgentCard({
         width,
         height: popover.height,
         border: true,
-        borderColor: theme.accent,
+        borderColor: accent,
         backgroundColor: theme.panel,
         paddingLeft: 1,
         paddingRight: 1,

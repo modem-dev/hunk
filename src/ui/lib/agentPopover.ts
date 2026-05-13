@@ -49,8 +49,11 @@ export function wrapText(text: string, width: number) {
   return lines.length > 0 ? lines : [""];
 }
 
-/** Build the framed agent-popover title shown in the card header. */
-function agentPopoverTitle(noteIndex: number, noteCount: number) {
+/** Title shown above an agent note — author name if present, otherwise "AI note", with optional "i/n" suffix. */
+export function formatAgentNoteTitle(noteIndex: number, noteCount: number, author?: string) {
+  if (author) {
+    return noteCount > 1 ? `${author} ${noteIndex + 1}/${noteCount}` : author;
+  }
   return noteCount > 1 ? `AI note ${noteIndex + 1}/${noteCount}` : "AI note";
 }
 
@@ -62,6 +65,7 @@ export function buildAgentPopoverContent({
   rationale,
   summary,
   width,
+  author,
 }: {
   locationLabel: string;
   noteCount: number;
@@ -69,6 +73,7 @@ export function buildAgentPopoverContent({
   rationale?: string;
   summary: string;
   width: number;
+  author?: string;
 }) {
   const innerWidth = Math.max(1, width - 4);
   const summaryLines = wrapText(summary, innerWidth);
@@ -78,7 +83,7 @@ export function buildAgentPopoverContent({
     1 + summaryLines.length + (rationaleLines.length > 0 ? 1 + rationaleLines.length : 0) + 1 + 1;
 
   return {
-    title: agentPopoverTitle(noteIndex, noteCount),
+    title: formatAgentNoteTitle(noteIndex, noteCount, author),
     summaryLines,
     rationaleLines,
     footer,

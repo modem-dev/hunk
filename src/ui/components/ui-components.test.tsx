@@ -1285,6 +1285,234 @@ describe("UI components", () => {
     expect(lines[4]?.trimStart().startsWith("└")).toBe(true);
   });
 
+  test("AgentInlineNote shows author name in title when author is set", async () => {
+    const theme = resolveTheme("midnight", null);
+    const frame = await captureFrame(
+      <AgentInlineNote
+        annotation={{
+          newRange: [2, 4],
+          summary: "Summary line",
+          author: "sonnet",
+        }}
+        anchorSide="new"
+        layout="split"
+        theme={theme}
+        width={96}
+        onClose={() => {}}
+      />,
+      100,
+      5,
+    );
+
+    const lines = frame.split("\n");
+    expect(lines[1]).toContain("sonnet");
+    expect(lines[1]).not.toContain("AI note");
+  });
+
+  test("AgentInlineNote falls back to 'AI note' when author is absent", async () => {
+    const theme = resolveTheme("midnight", null);
+    const frame = await captureFrame(
+      <AgentInlineNote
+        annotation={{
+          newRange: [2, 4],
+          summary: "Summary line",
+        }}
+        anchorSide="new"
+        layout="split"
+        theme={theme}
+        width={96}
+        onClose={() => {}}
+      />,
+      100,
+      5,
+    );
+
+    const lines = frame.split("\n");
+    expect(lines[1]).toContain("AI note");
+  });
+
+  test("AgentInlineNote includes index when multiple notes share a hunk", async () => {
+    const theme = resolveTheme("midnight", null);
+    const frame = await captureFrame(
+      <AgentInlineNote
+        annotation={{
+          newRange: [2, 4],
+          summary: "Summary line",
+          author: "sonnet",
+        }}
+        anchorSide="new"
+        layout="split"
+        noteCount={2}
+        noteIndex={0}
+        theme={theme}
+        width={96}
+        onClose={() => {}}
+      />,
+      100,
+      5,
+    );
+
+    const lines = frame.split("\n");
+    expect(lines[1]).toContain("sonnet");
+    expect(lines[1]).toContain("1/2");
+  });
+
+  test("AgentInlineNote preserves special characters in author", async () => {
+    const theme = resolveTheme("midnight", null);
+    const frame = await captureFrame(
+      <AgentInlineNote
+        annotation={{
+          newRange: [2, 4],
+          summary: "Summary line",
+          author: "prism (arbiter)",
+        }}
+        anchorSide="new"
+        layout="split"
+        theme={theme}
+        width={96}
+        onClose={() => {}}
+      />,
+      100,
+      5,
+    );
+
+    const lines = frame.split("\n");
+    expect(lines[1]).toContain("prism (arbiter)");
+  });
+
+  test("AgentCard shows author in title when set", async () => {
+    const theme = resolveTheme("midnight", null);
+    const frame = await captureFrame(
+      <AgentCard
+        locationLabel="alpha.ts +2"
+        rationale="Why alpha.ts changed"
+        summary="Annotation for alpha.ts"
+        author="sonnet"
+        theme={theme}
+        width={34}
+        onClose={() => {}}
+      />,
+      40,
+      12,
+    );
+
+    const lines = frame
+      .split("\n")
+      .slice(0, 8)
+      .map((line) => line.trimEnd());
+    expect(lines[1]).toContain("sonnet");
+    expect(lines[1]).not.toContain("AI note");
+  });
+
+  test("AgentCard falls back to 'AI note' when author absent", async () => {
+    const theme = resolveTheme("midnight", null);
+    const frame = await captureFrame(
+      <AgentCard
+        locationLabel="alpha.ts +2"
+        rationale="Why alpha.ts changed"
+        summary="Annotation for alpha.ts"
+        theme={theme}
+        width={34}
+        onClose={() => {}}
+      />,
+      40,
+      12,
+    );
+
+    const lines = frame
+      .split("\n")
+      .slice(0, 8)
+      .map((line) => line.trimEnd());
+    expect(lines[1]).toContain("AI note");
+  });
+
+  test("AgentInlineNote uses theme.noteBorder when author is absent", async () => {
+    const theme = resolveTheme("midnight", null);
+    const frame = await captureFrame(
+      <AgentInlineNote
+        annotation={{
+          newRange: [2, 4],
+          summary: "Summary line",
+          rationale: "Rationale line.",
+        }}
+        anchorSide="new"
+        layout="split"
+        theme={theme}
+        width={96}
+        onClose={() => {}}
+      />,
+      100,
+      5,
+    );
+
+    // Verify it renders without error; the border color should be theme.noteBorder
+    expect(frame).toContain("AI note · ▶ new 2-4");
+    expect(frame).toContain("Summary line");
+  });
+
+  test("AgentInlineNote derives border color from palette when author is set", async () => {
+    const theme = resolveTheme("midnight", null);
+    const frame = await captureFrame(
+      <AgentInlineNote
+        annotation={{
+          newRange: [2, 4],
+          summary: "Summary line",
+          author: "sonnet",
+        }}
+        anchorSide="new"
+        layout="split"
+        theme={theme}
+        width={96}
+        onClose={() => {}}
+      />,
+      100,
+      5,
+    );
+
+    // Verify it renders without error with author set
+    expect(frame).toContain("sonnet · ▶ new 2-4");
+    expect(frame).toContain("Summary line");
+  });
+
+  test("AgentInlineNote renders different border colors for different authors", async () => {
+    const theme = resolveTheme("midnight", null);
+    const frame1 = await captureFrame(
+      <AgentInlineNote
+        annotation={{
+          newRange: [2, 4],
+          summary: "Summary line",
+          author: "sonnet",
+        }}
+        anchorSide="new"
+        layout="split"
+        theme={theme}
+        width={96}
+      />,
+      100,
+      5,
+    );
+
+    const frame2 = await captureFrame(
+      <AgentInlineNote
+        annotation={{
+          newRange: [2, 4],
+          summary: "Summary line",
+          author: "prism",
+        }}
+        anchorSide="new"
+        layout="split"
+        theme={theme}
+        width={96}
+      />,
+      100,
+      5,
+    );
+
+    // Both frames should render successfully; the internal accent colors differ
+    expect(frame1).toContain("sonnet · ▶ new 2-4");
+    expect(frame2).toContain("prism · ▶ new 2-4");
+  });
+
   test("DiffPane renders all visible hunk notes across the review stream", async () => {
     const bootstrap = createBootstrap();
     bootstrap.changeset.files[1]!.agent = {

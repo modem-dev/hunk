@@ -35,6 +35,7 @@ export interface AppTheme {
   noteBackground: string;
   noteTitleBackground: string;
   noteTitleText: string;
+  noteAccentPalette: readonly string[];
   syntaxColors: SyntaxColors;
   syntaxStyle: SyntaxStyle;
 }
@@ -124,6 +125,7 @@ export const THEMES: AppTheme[] = [
       noteBackground: "#241c31",
       noteTitleBackground: "#322446",
       noteTitleText: "#f5edff",
+      noteAccentPalette: ["#c6a0ff", "#7fd1ff", "#88d39b", "#e6cf98", "#f0a0a0"],
     },
     {
       default: "#f2f4f6",
@@ -173,6 +175,7 @@ export const THEMES: AppTheme[] = [
       noteBackground: "#211a36",
       noteTitleBackground: "#30234f",
       noteTitleText: "#f5eeff",
+      noteAccentPalette: ["#c49bff", "#7fd1ff", "#5ad188", "#ffd883", "#ff8b8b"],
     },
     {
       default: "#e8f1ff",
@@ -222,6 +225,7 @@ export const THEMES: AppTheme[] = [
       noteBackground: "#efe6ff",
       noteTitleBackground: "#e3d7ff",
       noteTitleText: "#462b74",
+      noteAccentPalette: ["#7d5bc4", "#4a6890", "#3f8d58", "#9f6c1f", "#b4545b"],
     },
     {
       default: "#2f2417",
@@ -271,6 +275,7 @@ export const THEMES: AppTheme[] = [
       noteBackground: "#311d36",
       noteTitleBackground: "#452650",
       noteTitleText: "#fff0ff",
+      noteAccentPalette: ["#e1a3ff", "#ffb07a", "#83d99d", "#ffd08f", "#ff9d8f"],
     },
     {
       default: "#fff0e6",
