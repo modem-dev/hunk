@@ -179,6 +179,25 @@ export function createPtyHarness() {
     return { dir, before, after };
   }
 
+  function createExpandableContextFilePair() {
+    const dir = makeTempDir("hunk-tuistory-expand-");
+    const before = join(dir, "before.ts");
+    const after = join(dir, "after.ts");
+
+    const beforeLines = Array.from({ length: 30 }, (_, index) =>
+      index === 0
+        ? "export const hiddenLine01 = 1;"
+        : `export const line${String(index + 1).padStart(2, "0")} = ${index + 1};`,
+    );
+    const afterLines = [...beforeLines];
+    afterLines[4] = "export const line05 = 500;";
+
+    writeText(before, `${beforeLines.join("\n")}\n`);
+    writeText(after, `${afterLines.join("\n")}\n`);
+
+    return { dir, before, after };
+  }
+
   function createScrollableFilePair() {
     const dir = makeTempDir("hunk-tuistory-scroll-");
     const before = join(dir, "before.ts");
@@ -517,6 +536,7 @@ export function createPtyHarness() {
     createAgentFilePair,
     createBottomClampedRepoFixture,
     createCollapsedTopRepoFixture,
+    createExpandableContextFilePair,
     createCrossFileHunkNavigationRepoFixture,
     createLongWrapFilePair,
     createMultiHunkFilePair,

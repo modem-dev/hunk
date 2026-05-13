@@ -10,6 +10,7 @@ import {
   type RefObject,
 } from "react";
 import type { DiffFile, LayoutMode } from "../../../core/types";
+import type { FileSourceStatus } from "../../diff/expandCollapsedRows";
 import type { VisibleAgentNote } from "../../lib/agentAnnotations";
 import { computeHunkRevealScrollTop } from "../../lib/hunkScroll";
 import {
@@ -125,10 +126,16 @@ function buildHighlightPrefetchFileIds({
   return next;
 }
 
+const EMPTY_EXPANDED_GAP_KEYS: ReadonlySet<string> = new Set();
+const EMPTY_EXPANDED_GAPS_BY_FILE_ID: Record<string, ReadonlySet<string>> = {};
+const EMPTY_SOURCE_STATUS_BY_FILE_ID: Record<string, FileSourceStatus> = {};
+const NOOP_TOGGLE_GAP = () => {};
+
 /** Render the main multi-file review stream. */
 export function DiffPane({
   codeHorizontalOffset = 0,
   diffContentWidth,
+  expandedGapsByFileId = EMPTY_EXPANDED_GAPS_BY_FILE_ID,
   files,
   headerLabelWidth,
   headerStatsWidth,
@@ -142,6 +149,7 @@ export function DiffPane({
   showAgentNotes,
   showLineNumbers,
   showHunkHeaders,
+  sourceStatusByFileId = EMPTY_SOURCE_STATUS_BY_FILE_ID,
   wrapLines,
   wrapToggleScrollTop,
   layoutToggleScrollTop = null,
@@ -153,10 +161,12 @@ export function DiffPane({
   onOpenAgentNotesAtHunk,
   onScrollCodeHorizontally = () => {},
   onSelectFile,
+  onToggleGap = NOOP_TOGGLE_GAP,
   onViewportCenteredHunkChange,
 }: {
   codeHorizontalOffset?: number;
   diffContentWidth: number;
+  expandedGapsByFileId?: Record<string, ReadonlySet<string>>;
   files: DiffFile[];
   headerLabelWidth: number;
   headerStatsWidth: number;
@@ -170,6 +180,7 @@ export function DiffPane({
   showAgentNotes: boolean;
   showLineNumbers: boolean;
   showHunkHeaders: boolean;
+  sourceStatusByFileId?: Record<string, FileSourceStatus>;
   wrapLines: boolean;
   wrapToggleScrollTop: number | null;
   layoutToggleScrollTop?: number | null;
@@ -181,6 +192,7 @@ export function DiffPane({
   onOpenAgentNotesAtHunk: (fileId: string, hunkIndex: number) => void;
   onScrollCodeHorizontally?: (delta: number) => void;
   onSelectFile: (fileId: string) => void;
+  onToggleGap?: (fileId: string, gapKey: string) => void;
   onViewportCenteredHunkChange?: (fileId: string, hunkIndex: number) => void;
 }) {
   const renderer = useRenderer();
@@ -398,9 +410,21 @@ export function DiffPane({
           diffContentWidth,
           showLineNumbers,
           wrapLines,
+          expandedGapsByFileId[file.id] ?? EMPTY_EXPANDED_GAP_KEYS,
+          sourceStatusByFileId[file.id],
         ),
       ),
-    [diffContentWidth, files, layout, showHunkHeaders, showLineNumbers, theme, wrapLines],
+    [
+      diffContentWidth,
+      expandedGapsByFileId,
+      files,
+      layout,
+      showHunkHeaders,
+      showLineNumbers,
+      sourceStatusByFileId,
+      theme,
+      wrapLines,
+    ],
   );
   const baseEstimatedBodyHeights = useMemo(
     () => baseSectionGeometry.map((metrics) => metrics.bodyHeight),
@@ -466,16 +490,20 @@ export function DiffPane({
           diffContentWidth,
           showLineNumbers,
           wrapLines,
+          expandedGapsByFileId[file.id] ?? EMPTY_EXPANDED_GAP_KEYS,
+          sourceStatusByFileId[file.id],
         );
       }),
     [
       allAgentNotesByFile,
       baseSectionGeometry,
       diffContentWidth,
+      expandedGapsByFileId,
       files,
       layout,
       showHunkHeaders,
       showLineNumbers,
+      sourceStatusByFileId,
       theme,
       wrapLines,
     ],
@@ -1163,6 +1191,7 @@ export function DiffPane({
                     <DiffSection
                       key={file.id}
                       codeHorizontalOffset={codeHorizontalOffset}
+                      expandedGapKeys={expandedGapsByFileId[file.id] ?? EMPTY_EXPANDED_GAP_KEYS}
                       file={file}
                       headerLabelWidth={headerLabelWidth}
                       headerStatsWidth={headerStatsWidth}
@@ -1175,6 +1204,7 @@ export function DiffPane({
                       showSeparator={index > 0}
                       showLineNumbers={showLineNumbers}
                       showHunkHeaders={showHunkHeaders}
+                      sourceStatus={sourceStatusByFileId[file.id]}
                       wrapLines={wrapLines}
                       theme={theme}
                       viewWidth={diffContentWidth}
@@ -1186,6 +1216,7 @@ export function DiffPane({
                         onOpenAgentNotesAtHunk(file.id, hunkIndex)
                       }
                       onSelect={() => onSelectFile(file.id)}
+                      onToggleGap={(gapKey) => onToggleGap(file.id, gapKey)}
                     />
                   );
                 })}

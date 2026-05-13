@@ -122,6 +122,44 @@ describe("live UI integration", () => {
     }
   });
 
+  test("real PTY sessions can expand and collapse unchanged context", async () => {
+    const fixture = harness.createExpandableContextFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      cols: 140,
+      rows: 16,
+    });
+
+    try {
+      const initial = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      expect(initial).toContain("▾ 1 unchanged line");
+      expect(initial).not.toContain("hiddenLine01");
+
+      await session.press("e");
+      const expanded = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("Hide 1 unchanged line") && text.includes("hiddenLine01"),
+        5_000,
+      );
+
+      expect(expanded).toContain("hiddenLine01");
+
+      await session.press("e");
+      const collapsed = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("▾ 1 unchanged line") && !text.includes("hiddenLine01"),
+        5_000,
+      );
+
+      expect(collapsed).not.toContain("hiddenLine01");
+    } finally {
+      session.close();
+    }
+  });
+
   test("backward cross-file hunk navigation reveals the target hunk in a real PTY", async () => {
     const fixture = harness.createCrossFileHunkNavigationRepoFixture();
     const session = await harness.launchHunk({
