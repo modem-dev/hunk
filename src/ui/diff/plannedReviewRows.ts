@@ -25,10 +25,25 @@ export interface PlannedHunkBounds extends VerticalBounds {
 export type PlannedSectionGeometry = SectionGeometry<PlannedHunkBounds>;
 
 /** Return whether this planned row should count toward a hunk's own visible extent. */
-function rowContributesToHunkBounds(row: PlannedReviewRow) {
-  // Collapsed gap rows belong between hunks, so they affect total section height but not a hunk's
-  // own visible extent.
-  return !(row.kind === "diff-row" && row.row.type === "collapsed");
+export function plannedReviewRowContributesToHunkBounds(row: PlannedReviewRow) {
+  if (row.kind !== "diff-row") {
+    return true;
+  }
+
+  // Collapsed gap rows sit outside hunk bodies, so they affect total section height but not a
+  // hunk's own visible extent. Expanded rows share that property: they fill a gap, not a hunk.
+  if (row.row.type === "collapsed") {
+    return false;
+  }
+
+  if (
+    (row.row.type === "split-line" || row.row.type === "stack-line") &&
+    row.row.isExpansionRow === true
+  ) {
+    return false;
+  }
+
+  return true;
 }
 
 /** Measure how many terminal rows one planned review row will occupy once rendered. */
@@ -82,7 +97,7 @@ export function measurePlannedSectionGeometry(
 
     const rowHeight = plannedReviewRowHeight(row, options);
 
-    if (rowHeight > 0 && rowContributesToHunkBounds(row)) {
+    if (rowHeight > 0 && plannedReviewRowContributesToHunkBounds(row)) {
       const rowId = reviewRowId(row.key);
       const existingBounds = hunkBounds.get(row.hunkIndex);
 

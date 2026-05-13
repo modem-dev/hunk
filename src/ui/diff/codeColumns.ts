@@ -1,4 +1,5 @@
 import type { DiffFile, LayoutMode } from "../../core/types";
+import type { DiffRow } from "./pierre";
 
 export const DIFF_CODE_TAB_WIDTH = 2;
 export const DIFF_RAIL_PREFIX_WIDTH = 1;
@@ -42,6 +43,29 @@ export function findMaxLineNumber(file: DiffFile) {
       hunk.deletionStart + hunk.deletionCount,
       hunk.additionStart + hunk.additionCount,
     );
+  }
+
+  return Math.max(highest, 1);
+}
+
+/** Find the widest line-number gutter needed for an already-expanded row stream. */
+export function findMaxLineNumberInRows(rows: Iterable<DiffRow>, fallback = 1) {
+  let highest = fallback;
+
+  for (const row of rows) {
+    if (row.type === "collapsed") {
+      highest = Math.max(highest, row.oldRange[1], row.newRange[1]);
+      continue;
+    }
+
+    if (row.type === "split-line") {
+      highest = Math.max(highest, row.left.lineNumber ?? 0, row.right.lineNumber ?? 0);
+      continue;
+    }
+
+    if (row.type === "stack-line") {
+      highest = Math.max(highest, row.cell.oldLineNumber ?? 0, row.cell.newLineNumber ?? 0);
+    }
   }
 
   return Math.max(highest, 1);
