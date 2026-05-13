@@ -191,6 +191,19 @@ jobs:
           mkdir -p dist/release/github
           while IFS= read -r -d '' directory; do
             package_name="$(basename "$directory")"
+            binary="$directory/hunk"
+            if [ ! -f "$binary" ] && [ -f "$directory/hunk.exe" ]; then
+              binary="$directory/hunk.exe"
+            fi
+            if [ ! -f "$binary" ]; then
+              echo "Missing release binary in $directory" >&2
+              exit 1
+            fi
+            if [ ! -f "$directory/skills/hunk-review/SKILL.md" ]; then
+              echo "Missing bundled Hunk review skill in $directory" >&2
+              exit 1
+            fi
+            chmod 0755 "$binary"
             tar -C "$(dirname "$directory")" -czf "dist/release/github/${package_name}.tar.gz" "$package_name"
           done < <(find dist/release/artifacts -mindepth 1 -maxdepth 1 -type d -print0 | sort -z)
           find dist/release/github -maxdepth 1 -type f | sort

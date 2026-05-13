@@ -10,6 +10,8 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Fixed
 
+- Included the bundled Hunk review skill in standalone prebuilt release archives so `hunk skill path` works after extracting a tarball or installing via Homebrew.
+
 ## [0.12.0] - 2026-05-12
 
 ### Added
