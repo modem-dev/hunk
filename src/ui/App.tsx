@@ -127,6 +127,17 @@ export function App({
   const selectedHunkIndex = review.selectedHunkIndex;
   const moveToAnnotatedFile = review.moveToAnnotatedFile;
   const moveToAnnotatedHunk = review.moveToAnnotatedHunk;
+  const toggleMarkedFile = review.toggleMarkedFile;
+  const clearMarkedFiles = review.clearMarkedFiles;
+  const hiddenByMarkCount = review.hiddenByMarkCount;
+
+  /** Toggle the focused file's mark via the global `m` shortcut. */
+  const toggleSelectedFileMark = useCallback(() => {
+    if (!selectedFile) {
+      return;
+    }
+    toggleMarkedFile(selectedFile.id);
+  }, [selectedFile, toggleMarkedFile]);
 
   const jumpToFile = useCallback(
     (fileId: string, nextHunkIndex = 0, options?: { alignFileHeaderTop?: boolean }) => {
@@ -474,6 +485,7 @@ export function App({
       buildAppMenus({
         activeThemeId: activeTheme.id,
         canRefreshCurrentInput,
+        clearMarkedFiles,
         focusFilter,
         layoutMode,
         moveToAnnotatedFile,
@@ -494,12 +506,14 @@ export function App({
         toggleHunkHeaders,
         toggleLineNumbers,
         toggleLineWrap,
+        toggleMarkedFile: toggleSelectedFileMark,
         toggleSidebar,
         wrapLines,
       }),
     [
       activeTheme.id,
       canRefreshCurrentInput,
+      clearMarkedFiles,
       focusFilter,
       layoutMode,
       moveToAnnotatedFile,
@@ -519,6 +533,7 @@ export function App({
       toggleHunkHeaders,
       toggleLineNumbers,
       toggleLineWrap,
+      toggleSelectedFileMark,
       toggleSidebar,
       wrapLines,
     ],
@@ -544,6 +559,7 @@ export function App({
     activeMenuId,
     activateCurrentMenuItem,
     canRefreshCurrentInput,
+    clearMarkedFiles,
     closeHelp,
     closeMenu,
     cycleTheme,
@@ -566,6 +582,7 @@ export function App({
     toggleHunkHeaders,
     toggleLineNumbers,
     toggleLineWrap,
+    toggleMarkedFile: toggleSelectedFileMark,
     toggleSidebar,
     triggerRefreshCurrentInput,
   });
@@ -675,6 +692,7 @@ export function App({
           <>
             <SidebarPane
               entries={review.sidebarEntries}
+              hiddenByMarkCount={hiddenByMarkCount}
               scrollRef={sidebarScrollRef}
               selectedFileId={selectedFile?.id}
               textWidth={sidebarTextWidth}
@@ -683,6 +701,10 @@ export function App({
               onSelectFile={(fileId) => {
                 focusFiles();
                 jumpToFile(fileId, 0, { alignFileHeaderTop: true });
+              }}
+              onUnmarkFile={(fileId) => {
+                focusFiles();
+                toggleMarkedFile(fileId);
               }}
             />
 

@@ -23,6 +23,7 @@ export interface UseAppKeyboardShortcutsOptions {
   activeMenuId: MenuId | null;
   activateCurrentMenuItem: () => void;
   canRefreshCurrentInput: boolean;
+  clearMarkedFiles: () => void;
   closeHelp: () => void;
   closeMenu: () => void;
   cycleTheme: () => void;
@@ -45,6 +46,7 @@ export interface UseAppKeyboardShortcutsOptions {
   toggleHunkHeaders: () => void;
   toggleLineNumbers: () => void;
   toggleLineWrap: () => void;
+  toggleMarkedFile: () => void;
   toggleSidebar: () => void;
   triggerRefreshCurrentInput: () => void;
 }
@@ -54,6 +56,7 @@ export function useAppKeyboardShortcuts({
   activeMenuId,
   activateCurrentMenuItem,
   canRefreshCurrentInput,
+  clearMarkedFiles,
   closeHelp,
   closeMenu,
   cycleTheme,
@@ -76,6 +79,7 @@ export function useAppKeyboardShortcuts({
   toggleHunkHeaders,
   toggleLineNumbers,
   toggleLineWrap,
+  toggleMarkedFile,
   toggleSidebar,
   triggerRefreshCurrentInput,
 }: UseAppKeyboardShortcutsOptions) {
@@ -361,7 +365,19 @@ export function useAppKeyboardShortcuts({
       return;
     }
 
-    if (key.name === "m" || key.sequence === "m") {
+    // `m` marks the focused file; shift+m clears every active mark. The legacy hunk-metadata
+    // toggle moved to `H` so the mark binding can stay in the most reachable spot.
+    if (key.sequence === "M" || (key.name === "m" && key.shift)) {
+      runAndCloseMenu(clearMarkedFiles);
+      return;
+    }
+
+    if (key.name === "m" && !key.shift) {
+      runAndCloseMenu(toggleMarkedFile);
+      return;
+    }
+
+    if (key.sequence === "H" || (key.name === "h" && key.shift)) {
       runAndCloseMenu(toggleHunkHeaders);
       return;
     }

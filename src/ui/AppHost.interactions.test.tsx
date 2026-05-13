@@ -571,7 +571,7 @@ describe("App interactions", () => {
       expect(frame).toContain("- export const alpha = 1;");
 
       await act(async () => {
-        await setup.mockInput.typeText("m");
+        await setup.mockInput.typeText("H");
       });
       await flush(setup);
 

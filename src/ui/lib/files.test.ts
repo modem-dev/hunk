@@ -117,6 +117,47 @@ describe("files helpers", () => {
     });
   });
 
+  test("buildSidebarEntries defaults marked to false when no mark set is given", () => {
+    const file = createTestDiffFile({
+      id: "alpha",
+      path: "alpha.ts",
+      before: lines("const alpha = 1;"),
+      after: lines("const alpha = 2;"),
+    });
+
+    const entries = buildSidebarEntries([file]).filter((entry) => entry.kind === "file");
+
+    expect(entries[0]?.marked).toBe(false);
+  });
+
+  test("buildSidebarEntries flags only the matching file ids as marked and preserves order", () => {
+    const alpha = createTestDiffFile({
+      id: "alpha",
+      path: "alpha.ts",
+      before: lines("const alpha = 1;"),
+      after: lines("const alpha = 2;"),
+    });
+    const beta = createTestDiffFile({
+      id: "beta",
+      path: "beta.ts",
+      before: lines("const beta = 1;"),
+      after: lines("const beta = 2;"),
+    });
+    const gamma = createTestDiffFile({
+      id: "gamma",
+      path: "gamma.ts",
+      before: lines("const gamma = 1;"),
+      after: lines("const gamma = 2;"),
+    });
+
+    const entries = buildSidebarEntries([alpha, beta, gamma], {
+      markedFileIds: new Set(["beta"]),
+    }).filter((entry) => entry.kind === "file");
+
+    expect(entries.map((entry) => entry.id)).toEqual(["alpha", "beta", "gamma"]);
+    expect(entries.map((entry) => entry.marked)).toEqual([false, true, false]);
+  });
+
   test("fileLabelParts strips parser-added line endings from rename labels", () => {
     const renamedAcrossDirectories = {
       ...createTestDiffFile({

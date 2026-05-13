@@ -12,6 +12,8 @@ export interface FileListEntry {
   deletionsText: string | null;
   changeType: FileDiffMetadata["type"];
   isUntracked: boolean;
+  /** True when the user has marked this file to hide it from the review stream. */
+  marked: boolean;
 }
 
 export interface FileGroupEntry {
@@ -116,10 +118,19 @@ export function filterReviewFiles(files: DiffFile[], query: string): DiffFile[] 
   });
 }
 
-/** Build the grouped sidebar entries while preserving the review stream order. */
-export function buildSidebarEntries(files: DiffFile[]): SidebarEntry[] {
+/**
+ * Build the grouped sidebar entries while preserving the review stream order.
+ *
+ * Marked files stay in the sidebar so the user can unmark them, and each entry
+ * carries a `marked` flag so the row can render dimmed and crossed out.
+ */
+export function buildSidebarEntries(
+  files: DiffFile[],
+  options?: { markedFileIds?: ReadonlySet<string> },
+): SidebarEntry[] {
   const entries: SidebarEntry[] = [];
   let activeGroup: string | null = null;
+  const markedFileIds = options?.markedFileIds;
 
   files.forEach((file, index) => {
     const path = normalizeDiffPath(file.path) ?? file.path;
@@ -148,6 +159,7 @@ export function buildSidebarEntries(files: DiffFile[]): SidebarEntry[] {
       deletionsText: formatSidebarStat("-", file.stats.deletions),
       changeType: file.metadata.type,
       isUntracked: file.isUntracked ?? false,
+      marked: markedFileIds?.has(file.id) ?? false,
     });
   });
 

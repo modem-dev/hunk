@@ -30,13 +30,19 @@ export interface BuildReviewStateOptions {
   files: DiffFile[];
   liveCommentsByFileId: Record<string, LiveComment[]>;
   filterQuery: string;
+  /** File ids the user has marked to hide from the review stream. */
+  markedFileIds: ReadonlySet<string>;
   selectedFileId: string;
   selectedHunkIndex: number;
 }
 
 export interface ReviewState {
   allFiles: DiffFile[];
+  /** All files minus the user-marked ones, before any filter is applied. */
+  unmarkedFiles: DiffFile[];
   visibleFiles: DiffFile[];
+  /** How many files the active mark set is hiding from the review stream. */
+  hiddenByMarkCount: number;
   sidebarEntries: SidebarEntry[];
   selectedFile: DiffFile | undefined;
   selectedHunk: DiffFile["metadata"]["hunks"][number] | undefined;
@@ -50,22 +56,37 @@ export interface ReviewNavigationTarget {
   scrollToNote: boolean;
 }
 
-/** Build the derived review stream state from files, filter text, and selection. */
+/**
+ * Build the derived review stream state from files, marks, filter text, and selection.
+ *
+ * Visibility is layered explicitly so future features (filter, search) compose on the
+ * same model: marked files are dropped first, then the filter narrows what remains.
+ * The sidebar still receives the full file list with `marked` flags so the user can
+ * unmark a hidden file from the navigation pane.
+ */
 export function buildReviewState({
   files,
   liveCommentsByFileId,
   filterQuery,
+  markedFileIds,
   selectedFileId,
   selectedHunkIndex,
 }: BuildReviewStateOptions): ReviewState {
   const allFiles = mergeFileAnnotationsByFileId(files, liveCommentsByFileId);
-  const visibleFiles = filterReviewFiles(allFiles, filterQuery);
+  const unmarkedFiles = allFiles.filter((file) => !markedFileIds.has(file.id));
+  const visibleFiles = filterReviewFiles(unmarkedFiles, filterQuery);
+  const hiddenByMarkCount = allFiles.length - unmarkedFiles.length;
+  // The sidebar shows marked files alongside unmarked ones (so they can be unmarked),
+  // but it still respects the active filter so users see a consistent narrow view.
+  const sidebarFiles = filterReviewFiles(allFiles, filterQuery);
   const selectedFile = resolveSelectedFile(allFiles, visibleFiles, selectedFileId);
 
   return {
     allFiles,
+    unmarkedFiles,
     visibleFiles,
-    sidebarEntries: buildSidebarEntries(visibleFiles),
+    hiddenByMarkCount,
+    sidebarEntries: buildSidebarEntries(sidebarFiles, { markedFileIds }),
     selectedFile,
     selectedHunk: selectedFile?.metadata.hunks[selectedHunkIndex],
     hunkCursors: buildHunkCursors(visibleFiles),

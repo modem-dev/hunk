@@ -55,9 +55,13 @@ export interface ReviewSelectionOptions {
 export interface ReviewController {
   allFiles: DiffFile[];
   filter: string;
+  /** How many files the active mark set is hiding from the review stream. */
+  hiddenByMarkCount: number;
   liveCommentCount: number;
   liveCommentSummaries: SessionLiveCommentSummary[];
   liveCommentsByFileId: Record<string, LiveComment[]>;
+  /** File ids the user has marked to hide from the review stream. */
+  markedFileIds: ReadonlySet<string>;
   moveToAnnotatedFile: (delta: number) => void;
   moveToAnnotatedHunk: (delta: number) => void;
   moveToHunk: (delta: number) => void;
@@ -69,6 +73,8 @@ export interface ReviewController {
   selectedHunk: DiffFile["metadata"]["hunks"][number] | undefined;
   selectedHunkIndex: number;
   sidebarEntries: ReviewState["sidebarEntries"];
+  /** All non-marked files in review order, before any filter narrowing. */
+  unmarkedFiles: DiffFile[];
   visibleFiles: DiffFile[];
   addLiveComment: (
     input: CommentToolInput,
@@ -81,17 +87,24 @@ export interface ReviewController {
     options?: { revealMode?: "none" | "first" },
   ) => AppliedCommentBatchResult;
   clearFilter: () => void;
+  /** Drop every file mark, restoring all files to the review stream. */
+  clearMarkedFiles: () => void;
   clearLiveComments: (filePath?: string) => ClearedCommentsResult;
   navigateToLocation: (input: NavigateToHunkToolInput) => NavigatedSelectionResult;
   removeLiveComment: (commentId: string) => RemovedCommentResult;
   selectFile: (fileId: string, nextHunkIndex?: number, options?: ReviewSelectionOptions) => void;
   selectHunk: (fileId: string, hunkIndex: number, options?: ReviewSelectionOptions) => void;
   setFilter: (value: string) => void;
+  /** Toggle whether one file is marked as hidden from the review stream. */
+  toggleMarkedFile: (fileId: string) => void;
 }
 
 /** Own the shared review stream state used by both the UI and session bridge. */
 export function useReviewController({ files }: { files: DiffFile[] }): ReviewController {
   const [filter, setFilter] = useState("");
+  // Marked files are kept in the sidebar but hidden from the review stream so the user can
+  // narrow what they read without losing the ability to bring a file back.
+  const [markedFileIds, setMarkedFileIds] = useState<ReadonlySet<string>>(() => new Set());
   const [selectedFileId, setSelectedFileId] = useState(files[0]?.id ?? "");
   const [selectedHunkIndex, setSelectedHunkIndex] = useState(0);
   const [selectedFileTopAlignRequestId, setSelectedFileTopAlignRequestId] = useState(0);
@@ -104,7 +117,9 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
 
   const {
     allFiles,
+    unmarkedFiles,
     visibleFiles,
+    hiddenByMarkCount,
     sidebarEntries,
     selectedFile,
     selectedHunk,
@@ -116,10 +131,11 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
         files,
         liveCommentsByFileId,
         filterQuery: deferredFilter,
+        markedFileIds,
         selectedFileId,
         selectedHunkIndex,
       }),
-    [deferredFilter, files, liveCommentsByFileId, selectedFileId, selectedHunkIndex],
+    [deferredFilter, files, liveCommentsByFileId, markedFileIds, selectedFileId, selectedHunkIndex],
   );
 
   /** Update the selection and reveal intent together so diff scrolling stays explicit. */
@@ -250,6 +266,24 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
   /** Clear the active file filter without touching the current selection. */
   const clearFilter = useCallback(() => {
     setFilter("");
+  }, []);
+
+  /** Toggle whether one file is marked as hidden from the review stream. */
+  const toggleMarkedFile = useCallback((fileId: string) => {
+    setMarkedFileIds((current) => {
+      const next = new Set(current);
+      if (next.has(fileId)) {
+        next.delete(fileId);
+      } else {
+        next.add(fileId);
+      }
+      return next;
+    });
+  }, []);
+
+  /** Drop every file mark, restoring all files to the review stream. */
+  const clearMarkedFiles = useCallback(() => {
+    setMarkedFileIds((current) => (current.size === 0 ? current : new Set()));
   }, []);
 
   /** Resolve one session-daemon navigation request against the current review state and select it. */
@@ -486,9 +520,11 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
   return {
     allFiles,
     filter,
+    hiddenByMarkCount,
     liveCommentCount,
     liveCommentSummaries,
     liveCommentsByFileId,
+    markedFileIds,
     scrollToNote,
     selectedFile,
     selectedFileId,
@@ -497,10 +533,12 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     selectedHunk,
     selectedHunkIndex,
     sidebarEntries,
+    unmarkedFiles,
     visibleFiles,
     addLiveComment,
     addLiveCommentBatch,
     clearFilter,
+    clearMarkedFiles,
     clearLiveComments,
     moveToAnnotatedFile,
     moveToAnnotatedHunk,
@@ -510,5 +548,6 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     selectFile,
     selectHunk,
     setFilter,
+    toggleMarkedFile,
   };
 }
