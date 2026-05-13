@@ -585,6 +585,47 @@ describe("App interactions", () => {
     }
   });
 
+  test("yank shortcut copies the current text selection to the clipboard", async () => {
+    const setup = await testRender(<AppHost bootstrap={createSingleFileBootstrap()} />, {
+      width: 240,
+      height: 24,
+    });
+    const copiedTexts: string[] = [];
+    const copyToClipboard = mock((text: string) => {
+      copiedTexts.push(text);
+      return true;
+    });
+
+    setup.renderer.copyToClipboardOSC52 = copyToClipboard;
+    setup.renderer.getSelection = () =>
+      ({
+        bounds: { height: 1, width: 23, x: 1, y: 1 },
+        getSelectedText: () => "export const alpha = 2;",
+      }) as ReturnType<typeof setup.renderer.getSelection>;
+    const platformDescriptor = Object.getOwnPropertyDescriptor(process, "platform");
+
+    try {
+      Object.defineProperty(process, "platform", { configurable: true, value: "linux" });
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.typeText("y");
+      });
+      await flush(setup);
+
+      expect(copyToClipboard).toHaveBeenCalledTimes(1);
+      expect(copiedTexts[0]).toBe("export const alpha = 2;");
+      expect(setup.captureCharFrame()).toContain("Yanked selection to clipboard.");
+    } finally {
+      if (platformDescriptor) {
+        Object.defineProperty(process, "platform", platformDescriptor);
+      }
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("keyboard shortcut can wrap long lines in the app", async () => {
     const setup = await testRender(<AppHost bootstrap={createWrapBootstrap()} />, {
       width: 140,

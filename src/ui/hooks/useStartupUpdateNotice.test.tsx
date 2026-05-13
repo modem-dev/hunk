@@ -3,6 +3,7 @@ import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useStartupUpdateNotice } from "./useStartupUpdateNotice";
+import { useTransientNotice } from "./useTransientNotice";
 
 function NoticeHarness({
   delayMs = 1,
@@ -19,12 +20,14 @@ function NoticeHarness({
   resolver?: () => Promise<{ key: string; message: string } | null>;
   onNoticeText?: (value: string | null) => void;
 }) {
-  const noticeText = useStartupUpdateNotice({
+  const { noticeText, showNotice } = useTransientNotice();
+  useStartupUpdateNotice({
     delayMs,
     durationMs,
     enabled,
     repeatMs,
     resolver,
+    showNotice,
   });
 
   useEffect(() => {

@@ -1605,6 +1605,7 @@ describe("UI components", () => {
       "Shift+Space     page up (alt)",
       "d / u           half page down / up",
       "[ / ]           previous / next hunk",
+      "y               yank selection to clipboard",
       "{ / }           previous / next comment",
       "← / →           scroll code left / right (Shift = faster)",
       "Home / End      jump to top / bottom",

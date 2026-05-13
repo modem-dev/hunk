@@ -23,6 +23,7 @@ import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
 import { useMenuController } from "./hooks/useMenuController";
 import { useReviewController } from "./hooks/useReviewController";
 import { buildAppMenus } from "./lib/appMenus";
+import { yankActiveSelection } from "./lib/clipboard";
 import { fileRowId } from "./lib/ids";
 import { resolveResponsiveLayout } from "./lib/responsive";
 import { resizeSidebarWidth } from "./lib/sidebar";
@@ -31,6 +32,12 @@ import { resolveTheme, THEMES } from "./themes";
 type FocusArea = "files" | "filter";
 
 const FAST_CODE_HORIZONTAL_SCROLL_COLUMNS = 8;
+const CLIPBOARD_NOTICE_DURATION_MS = 2_500;
+const CLIPBOARD_NOTICE_MESSAGES = {
+  copied: "Yanked selection to clipboard.",
+  "no-selection": "No selection to yank.",
+  unavailable: "Clipboard unavailable.",
+} as const;
 
 const LazyHelpDialog = lazy(async () => ({
   default: (await import("./components/chrome/HelpDialog")).HelpDialog,
@@ -77,6 +84,7 @@ export function App({
   noticeText,
   onQuit = () => process.exit(0),
   onReloadSession,
+  showNotice,
 }: {
   bootstrap: AppBootstrap;
   hostClient?: HunkSessionBrokerClient;
@@ -86,6 +94,7 @@ export function App({
     nextInput: CliInput,
     options?: { resetApp?: boolean; sourcePath?: string },
   ) => Promise<ReloadedSessionResult>;
+  showNotice: (message: string, durationMs: number) => void;
 }) {
   const SIDEBAR_MIN_WIDTH = 22;
   const DIFF_MIN_WIDTH = 48;
@@ -227,6 +236,12 @@ export function App({
 
     sidebarScrollRef.current?.scrollChildIntoView(fileRowId(selectedFile.id));
   }, [selectedFile]);
+
+  /** Copy the active terminal text selection to the user's clipboard. */
+  const yankSelection = useCallback(() => {
+    const result = yankActiveSelection(renderer);
+    showNotice(CLIPBOARD_NOTICE_MESSAGES[result], CLIPBOARD_NOTICE_DURATION_MS);
+  }, [renderer, showNotice]);
 
   /** Scroll the main review pane by line steps, viewport fractions, or whole-content jumps. */
   const scrollDiff = (
@@ -496,6 +511,7 @@ export function App({
         toggleLineWrap,
         toggleSidebar,
         wrapLines,
+        yankSelection,
       }),
     [
       activeTheme.id,
@@ -521,6 +537,7 @@ export function App({
       toggleLineWrap,
       toggleSidebar,
       wrapLines,
+      yankSelection,
     ],
   );
 
@@ -568,6 +585,7 @@ export function App({
     toggleLineWrap,
     toggleSidebar,
     triggerRefreshCurrentInput,
+    yankSelection,
   });
 
   /** Start a mouse drag resize for the optional sidebar. */

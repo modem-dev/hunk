@@ -27,6 +27,7 @@ export interface BuildAppMenusOptions {
   toggleLineWrap: () => void;
   toggleSidebar: () => void;
   wrapLines: boolean;
+  yankSelection: () => void;
 }
 
 /** Build the top-level app menus from the current app state and actions. */
@@ -55,6 +56,7 @@ export function buildAppMenus({
   toggleLineWrap,
   toggleSidebar,
   wrapLines,
+  yankSelection,
 }: BuildAppMenusOptions): Record<MenuId, MenuEntry[]> {
   const themeMenuEntries: MenuEntry[] = THEMES.map((theme) => ({
     kind: "item",
@@ -171,6 +173,12 @@ export function buildAppMenus({
         label: "Next hunk",
         hint: "]",
         action: () => moveToHunk(1),
+      },
+      {
+        kind: "item",
+        label: "Yank selection",
+        hint: "y",
+        action: yankSelection,
       },
       { kind: "separator" },
       {
