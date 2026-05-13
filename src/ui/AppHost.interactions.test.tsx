@@ -1018,18 +1018,18 @@ describe("App interactions", () => {
         await setup.mockInput.pressKey("F10");
       });
       let frame = await waitForFrame(setup, (currentFrame) =>
-        currentFrame.includes("Toggle files/filter focus"),
+        currentFrame.includes("Toggle files/diff focus"),
       );
-      if (!frame.includes("Toggle files/filter focus")) {
+      if (!frame.includes("Toggle files/diff focus")) {
         await act(async () => {
           await setup.mockInput.pressKey("F10");
         });
         frame = await waitForFrame(setup, (currentFrame) =>
-          currentFrame.includes("Toggle files/filter focus"),
+          currentFrame.includes("Toggle files/diff focus"),
         );
       }
 
-      expect(frame).toContain("Toggle files/filter focus");
+      expect(frame).toContain("Toggle files/diff focus");
       expect(frame).toContain("Reload");
       expect(frame).toContain("Quit");
 
@@ -1690,6 +1690,57 @@ describe("App interactions", () => {
     }
   });
 
+  test("Tab cycles focus between sidebar and diff, and ↓ steps the file selection while sidebar holds focus", async () => {
+    const { getLatestSnapshot, hostClient } = createMockHostClient();
+    const setup = await testRender(
+      <AppHost bootstrap={createBootstrap()} hostClient={hostClient} />,
+      { width: 240, height: 24 },
+    );
+
+    try {
+      await flush(setup);
+
+      // Default focus is "diff": pressing ↓ scrolls the diff and leaves the
+      // file selection on alpha.ts.
+      expect(getLatestSnapshot()).toMatchObject({ selectedFilePath: "alpha.ts" });
+      await act(async () => {
+        await setup.mockInput.pressArrow("down");
+      });
+      await flush(setup);
+      expect(getLatestSnapshot()).toMatchObject({ selectedFilePath: "alpha.ts" });
+
+      // Tab once → sidebar holds focus, ↓ steps to the next visible file.
+      await act(async () => {
+        await setup.mockInput.pressTab();
+      });
+      await flush(setup);
+      await act(async () => {
+        await setup.mockInput.pressArrow("down");
+      });
+      const snapshotOnFiles = await waitForSnapshot(
+        setup,
+        getLatestSnapshot,
+        (snapshot) => snapshot.selectedFilePath === "beta.ts",
+      );
+      expect(snapshotOnFiles).toMatchObject({ selectedFilePath: "beta.ts" });
+
+      // Tab again → focus returns to the diff; ↓ no longer moves files.
+      await act(async () => {
+        await setup.mockInput.pressTab();
+      });
+      await flush(setup);
+      await act(async () => {
+        await setup.mockInput.pressArrow("down");
+      });
+      await flush(setup);
+      expect(getLatestSnapshot()).toMatchObject({ selectedFilePath: "beta.ts" });
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("filter focus accepts typed input and narrows the visible file set", async () => {
     const setup = await testRender(<AppHost bootstrap={createBootstrap()} />, {
       width: 240,
@@ -1700,7 +1751,7 @@ describe("App interactions", () => {
       await flush(setup);
 
       await act(async () => {
-        await setup.mockInput.pressTab();
+        await setup.mockInput.typeText("/");
       });
       await flush(setup);
       await act(async () => {
@@ -1729,7 +1780,7 @@ describe("App interactions", () => {
       await flush(setup);
 
       await act(async () => {
-        await setup.mockInput.pressTab();
+        await setup.mockInput.typeText("/");
       });
       await flush(setup);
       await act(async () => {
@@ -1744,7 +1795,7 @@ describe("App interactions", () => {
       expect(frame).not.toContain("Annotation for alpha.ts");
 
       await act(async () => {
-        await setup.mockInput.pressTab();
+        await setup.mockInput.pressEnter();
       });
       await flush(setup);
 
@@ -1772,7 +1823,7 @@ describe("App interactions", () => {
       await flush(setup);
 
       await act(async () => {
-        await setup.mockInput.pressTab();
+        await setup.mockInput.typeText("/");
       });
       await flush(setup);
       await act(async () => {
@@ -1863,7 +1914,7 @@ describe("App interactions", () => {
       await flush(setup);
 
       let frame = setup.captureCharFrame();
-      expect(frame).toContain("Toggle files/filter focus");
+      expect(frame).toContain("Toggle files/diff focus");
       expect(frame).not.toContain("Controls help");
 
       await act(async () => {
@@ -1873,7 +1924,7 @@ describe("App interactions", () => {
 
       frame = setup.captureCharFrame();
       expect(frame).toContain("Controls help");
-      expect(frame).not.toContain("Toggle files/filter focus");
+      expect(frame).not.toContain("Toggle files/diff focus");
 
       await act(async () => {
         await setup.mockInput.pressArrow("right");
@@ -1881,7 +1932,7 @@ describe("App interactions", () => {
       await flush(setup);
 
       frame = setup.captureCharFrame();
-      expect(frame).toContain("Toggle files/filter focus");
+      expect(frame).toContain("Toggle files/diff focus");
       expect(frame).not.toContain("Controls help");
     } finally {
       await act(async () => {

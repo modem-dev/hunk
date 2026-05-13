@@ -3,6 +3,7 @@ import { useKeyboard } from "@opentui/react";
 import { useRef } from "react";
 import type { LayoutMode } from "../../core/types";
 import type { MenuId } from "../components/chrome/menu";
+import type { FocusArea } from "../lib/focus";
 import {
   isEscapeKey,
   isHalfPageDownKey,
@@ -14,7 +15,6 @@ import {
   isStepUpKey,
 } from "../lib/keyboard";
 
-type FocusArea = "files" | "filter";
 type ScrollUnit = "step" | "viewport" | "content" | "half";
 
 const FAST_CODE_HORIZONTAL_SCROLL_COLUMNS = 8;
@@ -29,6 +29,7 @@ export interface UseAppKeyboardShortcutsOptions {
   focusArea: FocusArea;
   focusFilter: () => void;
   moveToAnnotatedHunk: (delta: number) => void;
+  moveToFile: (delta: number) => void;
   moveToHunk: (delta: number) => void;
   moveMenuItem: (delta: number) => void;
   openMenu: (menuId: MenuId) => void;
@@ -60,6 +61,7 @@ export function useAppKeyboardShortcuts({
   focusArea,
   focusFilter,
   moveToAnnotatedHunk,
+  moveToFile,
   moveToHunk,
   moveMenuItem,
   openMenu,
@@ -230,12 +232,10 @@ export function useAppKeyboardShortcuts({
       return false;
     }
 
-    if (key.name === "tab") {
-      toggleFocusArea();
-      return true;
-    }
-
-    // Let the focused input own filter editing and escape handling.
+    // The focused input owns every keystroke (including Tab) so users can type
+    // literal characters. Esc handling lives in StatusBar so it can
+    // preventDefault before the input swallows it as text.
+    void key;
     return true;
   };
 
@@ -296,13 +296,24 @@ export function useAppKeyboardShortcuts({
       return;
     }
 
+    // While the sidebar owns focus, treat step-up/down as file navigation rather than
+    // diff scrolling — the diff still follows because selectFile aligns the new file
+    // header to the top.
     if (isStepUpKey(key)) {
-      scrollDiff(-1, "step");
+      if (focusAreaRef.current === "files") {
+        moveToFile(-1);
+      } else {
+        scrollDiff(-1, "step");
+      }
       return;
     }
 
     if (isStepDownKey(key)) {
-      scrollDiff(1, "step");
+      if (focusAreaRef.current === "files") {
+        moveToFile(1);
+      } else {
+        scrollDiff(1, "step");
+      }
       return;
     }
 

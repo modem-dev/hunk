@@ -66,7 +66,7 @@ export function buildAppMenus({
   const fileMenuEntries: MenuEntry[] = [
     {
       kind: "item",
-      label: "Toggle files/filter focus",
+      label: "Toggle files/diff focus",
       hint: "Tab",
       action: toggleFocusArea,
     },

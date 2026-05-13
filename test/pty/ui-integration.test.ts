@@ -506,7 +506,7 @@ describe("live UI integration", () => {
       expect(initial).toContain("add = true");
       expect(initial).toContain("betaValue");
 
-      await session.press("tab");
+      await session.type("/");
       await session.type("beta");
       const filtered = await harness.waitForSnapshot(
         session,
@@ -968,7 +968,7 @@ describe("live UI integration", () => {
       await session.press("f10");
       const fileMenu = await harness.waitForSnapshot(
         session,
-        (text) => text.includes("Toggle files/filter focus") && text.includes("Quit"),
+        (text) => text.includes("Toggle files/diff focus") && text.includes("Quit"),
         5_000,
       );
 

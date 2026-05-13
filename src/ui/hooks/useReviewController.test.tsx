@@ -363,4 +363,55 @@ describe("useReviewController", () => {
       });
     }
   });
+
+  test("moveToFile steps the selection forward and back across visible files", async () => {
+    const controllerRef: { current: ReviewController | null } = { current: null };
+    const setup = await testRender(
+      <ReviewControllerHarness
+        initialFiles={[
+          createDiffFile("alpha", "alpha.ts", "export const a = 1;\n", "export const a = 2;\n"),
+          createDiffFile("beta", "beta.ts", "export const b = 1;\n", "export const b = 2;\n"),
+          createDiffFile("gamma", "gamma.ts", "export const g = 1;\n", "export const g = 2;\n"),
+        ]}
+        onController={(nextController) => {
+          controllerRef.current = nextController;
+        }}
+      />,
+      { width: 80, height: 4 },
+    );
+
+    try {
+      await flush(setup);
+      expect(expectValue(controllerRef.current).selectedFileId).toBe("alpha");
+
+      await act(async () => {
+        expectValue(controllerRef.current).moveToFile(1);
+      });
+      await flush(setup);
+      expect(expectValue(controllerRef.current).selectedFileId).toBe("beta");
+
+      await act(async () => {
+        expectValue(controllerRef.current).moveToFile(1);
+      });
+      await flush(setup);
+      expect(expectValue(controllerRef.current).selectedFileId).toBe("gamma");
+
+      // Past the last file the selection clamps; we don't wrap around.
+      await act(async () => {
+        expectValue(controllerRef.current).moveToFile(1);
+      });
+      await flush(setup);
+      expect(expectValue(controllerRef.current).selectedFileId).toBe("gamma");
+
+      await act(async () => {
+        expectValue(controllerRef.current).moveToFile(-2);
+      });
+      await flush(setup);
+      expect(expectValue(controllerRef.current).selectedFileId).toBe("alpha");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
 });

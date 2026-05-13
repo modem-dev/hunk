@@ -17,6 +17,7 @@ import {
   buildSidebarEntries,
   filterReviewFiles,
   mergeFileAnnotationsByFileId,
+  stepFileInList,
   type SidebarEntry,
 } from "./files";
 import {
@@ -106,14 +107,7 @@ export function findNextAnnotatedFile(
   delta: number,
 ) {
   const annotatedFiles = visibleFiles.filter((file) => file.agent);
-  if (annotatedFiles.length === 0) {
-    return null;
-  }
-
-  const currentIndex = annotatedFiles.findIndex((file) => file.id === currentFileId);
-  const normalizedIndex = currentIndex >= 0 ? currentIndex : 0;
-  const nextIndex = (normalizedIndex + delta + annotatedFiles.length) % annotatedFiles.length;
-  return annotatedFiles[nextIndex] ?? null;
+  return stepFileInList(annotatedFiles, currentFileId, delta, "wrap");
 }
 
 /** Resolve one session-daemon navigation request against the review stream's current state. */

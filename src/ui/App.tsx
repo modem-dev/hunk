@@ -23,12 +23,11 @@ import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
 import { useMenuController } from "./hooks/useMenuController";
 import { useReviewController } from "./hooks/useReviewController";
 import { buildAppMenus } from "./lib/appMenus";
+import type { FocusArea } from "./lib/focus";
 import { fileRowId } from "./lib/ids";
 import { resolveResponsiveLayout } from "./lib/responsive";
 import { resizeSidebarWidth } from "./lib/sidebar";
 import { resolveTheme, THEMES } from "./themes";
-
-type FocusArea = "files" | "filter";
 
 const FAST_CODE_HORIZONTAL_SCROLL_COLUMNS = 8;
 
@@ -115,7 +114,7 @@ export function App({
   const [sidebarVisible, setSidebarVisible] = useState(() => !pagerMode);
   const [forceSidebarOpen, setForceSidebarOpen] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
-  const [focusArea, setFocusArea] = useState<FocusArea>("files");
+  const [focusArea, setFocusArea] = useState<FocusArea>("diff");
   const [sidebarWidth, setSidebarWidth] = useState(34);
   const [resizeDragOriginX, setResizeDragOriginX] = useState<number | null>(null);
   const [resizeStartWidth, setResizeStartWidth] = useState<number | null>(null);
@@ -457,9 +456,11 @@ export function App({
     setFocusArea("filter");
   }, []);
 
-  /** Toggle keyboard focus between the file list and the file filter. */
+  // Tab cycles keyboard focus between the sidebar and the diff stream. The filter
+  // input is reached with `/`; Tab inside that input stays in the input so users
+  // can type the literal character without being kicked out.
   const toggleFocusArea = useCallback(() => {
-    setFocusArea((current) => (current === "files" ? "filter" : "files"));
+    setFocusArea((current) => (current === "diff" ? "files" : "diff"));
   }, []);
 
   /** Cycle through the available built-in themes. */
@@ -550,6 +551,7 @@ export function App({
     focusArea,
     focusFilter,
     moveToAnnotatedHunk,
+    moveToFile: review.moveToFile,
     moveToHunk: review.moveToHunk,
     moveMenuItem,
     openMenu,
@@ -675,6 +677,7 @@ export function App({
           <>
             <SidebarPane
               entries={review.sidebarEntries}
+              focused={focusArea === "files"}
               scrollRef={sidebarScrollRef}
               selectedFileId={selectedFile?.id}
               textWidth={sidebarTextWidth}
@@ -689,6 +692,7 @@ export function App({
             <PaneDivider
               dividerHitLeft={dividerHitLeft}
               dividerHitWidth={DIVIDER_HIT_WIDTH}
+              highlighted={focusArea === "files"}
               isResizing={isResizingSidebar}
               theme={activeTheme}
               onMouseDown={beginSidebarResize}

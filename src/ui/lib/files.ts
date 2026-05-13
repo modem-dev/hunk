@@ -154,6 +154,46 @@ export function buildSidebarEntries(files: DiffFile[]): SidebarEntry[] {
   return entries;
 }
 
+/**
+ * Step through `files` by `delta` based on `currentFileId`.
+ *
+ * Returns the file the new selection should land on, or `null` if no movement
+ * is possible (empty list, "clamp" already at the boundary, or a single-item
+ * list cycled in "wrap" mode).
+ *
+ * When `currentFileId` is not in the list, the cursor is treated as sitting
+ * just outside the list in the direction opposite `delta`, so the first
+ * forward step lands on index 0 (not 1) and the first backward step lands on
+ * the last entry — what the user expects when nothing is currently selected.
+ */
+export function stepFileInList(
+  files: DiffFile[],
+  currentFileId: string | undefined,
+  delta: number,
+  mode: "clamp" | "wrap",
+): DiffFile | null {
+  if (files.length === 0 || delta === 0) {
+    return null;
+  }
+
+  const currentIndex = files.findIndex((file) => file.id === currentFileId);
+  const baseIndex = currentIndex < 0 ? (delta > 0 ? -1 : files.length) : currentIndex;
+
+  let nextIndex: number;
+  if (mode === "wrap") {
+    const length = files.length;
+    nextIndex = (((baseIndex + delta) % length) + length) % length;
+  } else {
+    nextIndex = Math.min(Math.max(0, baseIndex + delta), files.length - 1);
+  }
+
+  if (nextIndex === currentIndex) {
+    return null;
+  }
+
+  return files[nextIndex] ?? null;
+}
+
 /** Build the canonical file label used across headers and note cards. */
 export function fileLabel(file: DiffFile | undefined) {
   const { filename, stateLabel } = fileLabelParts(file);
