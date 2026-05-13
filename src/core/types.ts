@@ -1,4 +1,5 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
+import type { FileSourceFetcher } from "./fileSource";
 
 export type LayoutMode = "auto" | "split" | "stack";
 export type VcsMode = "git" | "jj";
@@ -56,6 +57,9 @@ export interface DiffFile {
   isBinary?: boolean;
   isTooLarge?: boolean;
   statsTruncated?: boolean;
+  // Optional capability for fetching the file's full text on either side.
+  // Loaders attach this when source content is reachable; absent when not.
+  sourceFetcher?: FileSourceFetcher;
 }
 
 export interface Changeset {

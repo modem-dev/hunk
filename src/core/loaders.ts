@@ -9,11 +9,25 @@ import fs from "node:fs";
 import { join, resolve as resolvePath } from "node:path";
 import { findAgentFileContext, loadAgentContext } from "./agent";
 import { createSkippedBinaryMetadata, isProbablyBinaryFile } from "./binary";
-import { normalizeUntrackedPatchHeaders, runGitUntrackedFileDiffText } from "./git";
+import {
+  buildDiffFile,
+  createSkippedLargeMetadata,
+  type BuildDiffFileOptions,
+  type DiffFileSourceContext,
+} from "./diffFile";
+import { createFileSourceFetcher, type FileSourceSpec } from "./fileSource";
+import {
+  normalizeUntrackedPatchHeaders,
+  resolveGitCommitRef,
+  resolveGitDiffEndpoints,
+  runGitUntrackedFileDiffText,
+  type GitDiffEndpoint,
+  type GitDiffEndpoints,
+} from "./git";
 import { splitPatchIntoFileChunks, findPatchChunk } from "./patch/chunks";
-import { buildDiffFile, createSkippedLargeMetadata } from "./diffFile";
 import { normalizePatchText } from "./patch/normalize";
 import { createUnsupportedVcsOperationError, getVcsAdapter, operationFromInput } from "./vcs";
+import type { VcsReviewOperation } from "./vcs/types";
 import type {
   AppBootstrap,
   AgentContext,
@@ -39,6 +53,99 @@ const LARGE_DIFF_FILE_SNIFF_BYTES = 256 * 1024;
 /** Return the final path segment for display-oriented labels. */
 function basename(path: string) {
   return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+}
+
+interface ResolvedFileSourceSpecs {
+  old: FileSourceSpec;
+  new: FileSourceSpec;
+}
+
+/** Build a binary-aware source-fetcher factory from per-file source specs. */
+function createSourceFetcherBuilder(
+  resolveSpecs: (file: DiffFileSourceContext) => ResolvedFileSourceSpecs | undefined,
+): NonNullable<BuildDiffFileOptions["sourceFetcherBuilder"]> {
+  return (file) => {
+    if (file.isBinary) {
+      return undefined;
+    }
+
+    const specs = resolveSpecs(file);
+    return specs ? createFileSourceFetcher(specs) : undefined;
+  };
+}
+
+/** Convert one Git diff endpoint into the corresponding file source lookup. */
+function gitEndpointSourceSpec(
+  endpoint: GitDiffEndpoint,
+  repoRoot: string,
+  filePath: string,
+): FileSourceSpec {
+  switch (endpoint.kind) {
+    case "none":
+      return { kind: "none" };
+    case "git-ref":
+      return { kind: "git-blob", repoRoot, ref: endpoint.ref, path: filePath };
+    case "index":
+      return { kind: "git-index", repoRoot, path: filePath };
+    case "worktree":
+      return { kind: "fs", absolutePath: join(repoRoot, filePath) };
+  }
+}
+
+/** Build source fetchers for Git-backed diffs from explicit old/new endpoints. */
+function buildGitEndpointSourceFetcherBuilder(
+  repoRoot: string,
+  endpoints: GitDiffEndpoints,
+): NonNullable<BuildDiffFileOptions["sourceFetcherBuilder"]> {
+  return createSourceFetcherBuilder(({ path, previousPath, type }) => {
+    const oldPath = previousPath ?? path;
+
+    return {
+      old:
+        type === "new" ? { kind: "none" } : gitEndpointSourceSpec(endpoints.old, repoRoot, oldPath),
+      new:
+        type === "deleted"
+          ? { kind: "none" }
+          : gitEndpointSourceSpec(endpoints.new, repoRoot, path),
+    };
+  });
+}
+
+function buildRefRangeSourceFetcherBuilder(
+  repoRoot: string,
+  oldRef: string,
+  newRef: string,
+): NonNullable<BuildDiffFileOptions["sourceFetcherBuilder"]> {
+  return buildGitEndpointSourceFetcherBuilder(repoRoot, {
+    old: { kind: "git-ref", ref: oldRef },
+    new: { kind: "git-ref", ref: newRef },
+  });
+}
+
+/** Build source fetchers for Git review operations when the source sides are exact. */
+function buildGitReviewSourceFetcherBuilder(
+  operation: VcsReviewOperation,
+  repoRoot: string,
+  cwd: string,
+): NonNullable<BuildDiffFileOptions["sourceFetcherBuilder"]> | undefined {
+  switch (operation.kind) {
+    case "working-tree-diff": {
+      const endpoints = resolveGitDiffEndpoints(operation.input, { cwd, repoRoot });
+      return endpoints ? buildGitEndpointSourceFetcherBuilder(repoRoot, endpoints) : undefined;
+    }
+    case "revision-show": {
+      const newRef = resolveGitCommitRef(operation.input, operation.input.ref ?? "HEAD", {
+        cwd: repoRoot,
+      });
+      return buildRefRangeSourceFetcherBuilder(repoRoot, `${newRef}^`, newRef);
+    }
+    case "stash-show": {
+      const newRef = resolveGitCommitRef(operation.input, operation.input.ref ?? "stash@{0}", {
+        cwd: repoRoot,
+      });
+      return buildRefRangeSourceFetcherBuilder(repoRoot, `${newRef}^`, newRef);
+    }
+  }
 }
 
 interface CountedLines {
@@ -183,6 +290,10 @@ function buildUntrackedDiffFile(
     agentContext,
     {
       isUntracked: true,
+      sourceFetcherBuilder: createSourceFetcherBuilder(() => ({
+        old: { kind: "none" },
+        new: { kind: "fs", absolutePath: join(repoRoot, filePath) },
+      })),
     },
   );
 }
@@ -230,6 +341,7 @@ function normalizePatchChangeset(
   title: string,
   sourceLabel: string,
   agentContext: AgentContext | null,
+  perFileOptions?: Pick<BuildDiffFileOptions, "sourceFetcherBuilder">,
 ): Changeset {
   const normalizedPatchText = normalizePatchText(patchText);
 
@@ -267,6 +379,7 @@ function normalizePatchChangeset(
         index,
         sourceLabel,
         agentContext,
+        perFileOptions,
       ),
     ),
   };
@@ -372,6 +485,10 @@ async function loadFileDiffChangeset(
     files: [
       buildDiffFile(metadata, patch, 0, displayPath, agentContext, {
         previousPath: basename(input.left),
+        sourceFetcherBuilder: createSourceFetcherBuilder(() => ({
+          old: { kind: "fs", absolutePath: leftPath },
+          new: { kind: "fs", absolutePath: rightPath },
+        })),
       }),
     ],
   } satisfies Changeset;
@@ -390,11 +507,14 @@ async function loadVcsChangeset(
   }
 
   const result = await adapter.loadReview(operation, { cwd });
+  const sourceFetcherBuilder =
+    adapter.id === "git" ? buildGitReviewSourceFetcherBuilder(operation, result.repoRoot, cwd) : undefined;
   const parsedChangeset = normalizePatchChangeset(
     result.patchText,
     result.title,
     result.sourceLabel,
     agentContext,
+    sourceFetcherBuilder ? { sourceFetcherBuilder } : undefined,
   );
   const adapterFiles = (result.extraFiles ?? []).map((file, index) => ({
     ...file,
