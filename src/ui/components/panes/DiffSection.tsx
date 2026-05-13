@@ -4,6 +4,7 @@ import { PierreDiffView, type ActiveAddNoteAffordance } from "../../diff/PierreD
 import type { VisibleBodyBounds } from "../../diff/rowWindowing";
 import type { DiffSectionGeometry } from "../../lib/diffSectionGeometry";
 import type { VisibleAgentNote } from "../../lib/agentAnnotations";
+import type { CopySelectedRowRange } from "./copySelection";
 import { diffSectionId } from "../../lib/ids";
 import { fitText } from "../../lib/text";
 import type { AppTheme } from "../../themes";
@@ -16,6 +17,8 @@ interface DiffSectionProps {
   headerStatsWidth: number;
   layout: Exclude<LayoutMode, "auto">;
   selectedHunkIndex: number;
+  copySelectedRowRanges?: Map<string, CopySelectedRowRange>;
+  copySelectedSide?: "left" | "right";
   shouldLoadHighlight: boolean;
   sectionGeometry?: DiffSectionGeometry;
   separatorWidth: number;
@@ -43,6 +46,8 @@ function DiffSectionComponent({
   headerStatsWidth,
   layout,
   selectedHunkIndex,
+  copySelectedRowRanges,
+  copySelectedSide,
   shouldLoadHighlight,
   sectionGeometry,
   separatorWidth,
@@ -103,6 +108,8 @@ function DiffSectionComponent({
         showHunkHeaders={showHunkHeaders}
         wrapLines={wrapLines}
         codeHorizontalOffset={codeHorizontalOffset}
+        copySelectedRowRanges={copySelectedRowRanges}
+        copySelectedSide={copySelectedSide}
         theme={theme}
         width={viewWidth}
         visibleAgentNotes={visibleAgentNotes}
@@ -131,6 +138,8 @@ export const DiffSection = memo(DiffSectionComponent, (previous, next) => {
     previous.headerStatsWidth === next.headerStatsWidth &&
     previous.layout === next.layout &&
     previous.selectedHunkIndex === next.selectedHunkIndex &&
+    previous.copySelectedRowRanges === next.copySelectedRowRanges &&
+    previous.copySelectedSide === next.copySelectedSide &&
     previous.shouldLoadHighlight === next.shouldLoadHighlight &&
     previous.sectionGeometry === next.sectionGeometry &&
     previous.separatorWidth === next.separatorWidth &&

@@ -36,6 +36,8 @@ function createTestSectionGeometry(
     bodyHeight,
     hunkAnchorRows: new Map(),
     hunkBounds: new Map(),
+    lineNumberDigits: 1,
+    plannedRows: rowBounds.map((row) => createTestPlannedRow(row.key)),
     rowBounds: normalizedRowBounds,
     rowBoundsByKey: new Map(normalizedRowBounds.map((row) => [row.key, row])),
     rowBoundsByStableKey: new Map(normalizedRowBounds.map((row) => [row.stableKey, row])),

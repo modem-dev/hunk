@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DiffFile, LayoutMode, UserNoteLineTarget } from "../../core/types";
 import { AgentInlineNote } from "../components/panes/AgentInlineNote";
 import type { VisibleAgentNote } from "../lib/agentAnnotations";
+import type { CopySelectedRowRange } from "../components/panes/copySelection";
 import type { DiffSectionGeometry } from "../lib/diffSectionGeometry";
 import { reviewRowId } from "../lib/ids";
 import type { AppTheme } from "../themes";
@@ -54,6 +55,8 @@ function addNoteAffordanceForRow(row: DiffRow): ActiveAddNoteAffordance {
 /** Render a file diff in split or stack mode, with inline agent notes inserted between diff rows. */
 export function PierreDiffView({
   codeHorizontalOffset = 0,
+  copySelectedRowRanges,
+  copySelectedSide,
   file,
   layout,
   onHover,
@@ -73,6 +76,8 @@ export function PierreDiffView({
   visibleBodyBounds,
 }: {
   codeHorizontalOffset?: number;
+  copySelectedRowRanges?: Map<string, CopySelectedRowRange>;
+  copySelectedSide?: "left" | "right";
   file: DiffFile | undefined;
   layout: Exclude<LayoutMode, "auto">;
   onHover?: () => void;
@@ -283,6 +288,8 @@ export function PierreDiffView({
               codeHorizontalOffset={codeHorizontalOffset}
               theme={theme}
               selected={plannedRow.row.hunkIndex === selectedHunkIndex}
+              copySelectedRowRange={copySelectedRowRanges?.get(plannedRow.key)}
+              copySelectedSide={copySelectedSide}
               anchorId={plannedRow.anchorId}
               noteGuideSide={plannedRow.noteGuideSide}
               showAddNoteBadge={hoveredRowKey === plannedRow.key && Boolean(onStartUserNoteAtHunk)}

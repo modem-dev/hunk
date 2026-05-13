@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { parseDiffFromFile } from "@pierre/diffs";
 import type { DiffFile } from "../../core/types";
 import { buildSplitRows, buildStackRows, loadHighlightedDiff, type DiffRow } from "./pierre";
+import { renderCodeOnlyPlannedRowText, renderDecoratedPlannedRowText } from "./renderRows";
+import { buildReviewRenderPlan } from "./reviewRenderPlan";
 import { resolveTheme } from "../themes";
 
 function createDiffFile(): DiffFile {
@@ -162,6 +164,119 @@ describe("Pierre diff rows", () => {
     expect(deletionRow.cell.newLineNumber).toBeUndefined();
     expect(additionRow.cell.oldLineNumber).toBeUndefined();
     expect(additionRow.cell.newLineNumber).toBe(1);
+  });
+
+  test("renders planned split rows to copyable visible text", () => {
+    const file = createDiffFile();
+    const theme = resolveTheme("midnight", null);
+    const rows = buildSplitRows(file, null, theme);
+    const plannedRows = buildReviewRenderPlan({
+      fileId: file.id,
+      rows,
+      showHunkHeaders: true,
+    });
+    const changedRow = plannedRows.find(
+      (row) => row.kind === "diff-row" && row.row.type === "split-line",
+    );
+
+    expect(changedRow).toBeDefined();
+    if (!changedRow || changedRow.kind !== "diff-row") {
+      throw new Error("Expected a planned split diff row");
+    }
+
+    const [line] = renderDecoratedPlannedRowText(changedRow, {
+      codeHorizontalOffset: 0,
+      lineNumberDigits: 1,
+      showHunkHeaders: true,
+      showLineNumbers: true,
+      theme,
+      width: 80,
+      wrapLines: false,
+    });
+
+    expect(line).toContain("- export const answer = 41;");
+    expect(line).toContain("+ export const answer = 42;");
+  });
+
+  test("renders planned stack rows with horizontal copy offset", () => {
+    const file = createDiffFile();
+    const theme = resolveTheme("midnight", null);
+    const rows = buildStackRows(file, null, theme);
+    const plannedRows = buildReviewRenderPlan({
+      fileId: file.id,
+      rows,
+      showHunkHeaders: true,
+    });
+    const additionRow = plannedRows.find(
+      (row) =>
+        row.kind === "diff-row" &&
+        row.row.type === "stack-line" &&
+        row.row.cell.kind === "addition",
+    );
+
+    expect(additionRow).toBeDefined();
+    if (!additionRow || additionRow.kind !== "diff-row") {
+      throw new Error("Expected a planned stack addition row");
+    }
+
+    const [line] = renderDecoratedPlannedRowText(additionRow, {
+      codeHorizontalOffset: 7,
+      lineNumberDigits: 1,
+      showHunkHeaders: true,
+      showLineNumbers: true,
+      theme,
+      width: 40,
+      wrapLines: false,
+    });
+
+    expect(line).toContain("nst answer = 42;");
+    expect(line).not.toContain("export const");
+  });
+
+  test("renders planned rows as code-only copy text when decorations are disabled", () => {
+    const file = createDiffFile();
+    const theme = resolveTheme("midnight", null);
+    const rows = buildSplitRows(file, null, theme);
+    const plannedRows = buildReviewRenderPlan({
+      fileId: file.id,
+      rows,
+      showHunkHeaders: true,
+    });
+    const headerRow = plannedRows.find(
+      (row) => row.kind === "diff-row" && row.row.type === "hunk-header",
+    );
+    const changedRow = plannedRows.find(
+      (row) => row.kind === "diff-row" && row.row.type === "split-line",
+    );
+
+    expect(headerRow).toBeDefined();
+    expect(changedRow).toBeDefined();
+    if (!headerRow || !changedRow) {
+      throw new Error("Expected planned header and split rows");
+    }
+
+    expect(
+      renderCodeOnlyPlannedRowText(headerRow, {
+        codeHorizontalOffset: 0,
+        lineNumberDigits: 1,
+        showHunkHeaders: true,
+        showLineNumbers: true,
+        theme,
+        width: 80,
+        wrapLines: false,
+      }),
+    ).toEqual([]);
+    expect(
+      renderCodeOnlyPlannedRowText(changedRow, {
+        codeHorizontalOffset: 0,
+        lineNumberDigits: 1,
+        showHunkHeaders: true,
+        showLineNumbers: true,
+        theme,
+        width: 80,
+        wrapLines: false,
+      }),
+    ).toEqual(["export const answer = 41;", "export const answer = 42;"]);
   });
 
   test("does not produce newline characters in spans for highlighted empty lines", async () => {

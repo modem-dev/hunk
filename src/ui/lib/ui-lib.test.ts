@@ -132,11 +132,13 @@ describe("ui helpers", () => {
       requestQuit: () => {},
       selectLayoutMode: () => {},
       selectThemeId: () => {},
+      copyDecorations: true,
       showAgentNotes: true,
       showHelp: false,
       showHunkHeaders: false,
       showLineNumbers: true,
       renderSidebar: false,
+      toggleCopyDecorations: () => {},
       toggleAgentNotes: () => {},
       toggleFocusArea: () => {},
       toggleHelp: () => {},
@@ -171,7 +173,7 @@ describe("ui helpers", () => {
             entry.kind === "item" && Boolean(entry.checked),
         )
         .map((entry) => entry.label),
-    ).toEqual(["Stacked view", "Agent notes", "Line numbers", "Line wrapping"]);
+    ).toEqual(["Stacked view", "Agent notes", "Line numbers", "Line wrapping", "Copy decorations"]);
     expect(
       menus.theme
         .filter((entry): entry is Extract<MenuEntry, { kind: "item" }> => entry.kind === "item")

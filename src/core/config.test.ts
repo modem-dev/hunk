@@ -308,6 +308,7 @@ describe("config resolution", () => {
         "wrap_lines = true",
         "hunk_headers = false",
         "agent_notes = true",
+        "copy_decorations = false",
       ].join("\n"),
     );
 
@@ -333,6 +334,7 @@ describe("config resolution", () => {
     expect(bootstrap.initialWrapLines).toBe(true);
     expect(bootstrap.initialShowHunkHeaders).toBe(false);
     expect(bootstrap.initialShowAgentNotes).toBe(true);
+    expect(bootstrap.initialCopyDecorations).toBe(false);
   });
 
   test("loadAppBootstrap exposes graphite when no theme is configured", async () => {
