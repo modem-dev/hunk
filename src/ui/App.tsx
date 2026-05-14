@@ -24,6 +24,7 @@ import { useMenuController } from "./hooks/useMenuController";
 import { useReviewController } from "./hooks/useReviewController";
 import { buildAppMenus } from "./lib/appMenus";
 import { fileRowId } from "./lib/ids";
+import { openSelectedFileInEditor } from "./lib/openInEditor";
 import { resolveResponsiveLayout } from "./lib/responsive";
 import { resizeSidebarWidth } from "./lib/sidebar";
 import { resolveTheme, THEMES } from "./themes";
@@ -119,6 +120,8 @@ export function App({
   const [sidebarWidth, setSidebarWidth] = useState(34);
   const [resizeDragOriginX, setResizeDragOriginX] = useState<number | null>(null);
   const [resizeStartWidth, setResizeStartWidth] = useState<number | null>(null);
+  const [sessionNoticeText, setSessionNoticeText] = useState<string | null>(null);
+  const sessionNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const activeTheme = resolveTheme(themeId, bootstrap.initialThemeMode ?? null);
   const review = useReviewController({ files: bootstrap.changeset.files });
@@ -140,6 +143,26 @@ export function App({
 
   const openAgentNotes = useCallback(() => {
     setShowAgentNotes(true);
+  }, []);
+
+  const showSessionNotice = useCallback((message: string) => {
+    setSessionNoticeText(message);
+    if (sessionNoticeTimeoutRef.current) {
+      clearTimeout(sessionNoticeTimeoutRef.current);
+    }
+
+    sessionNoticeTimeoutRef.current = setTimeout(() => {
+      setSessionNoticeText((current) => (current === message ? null : current));
+      sessionNoticeTimeoutRef.current = null;
+    }, 4000);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (sessionNoticeTimeoutRef.current) {
+        clearTimeout(sessionNoticeTimeoutRef.current);
+      }
+    };
   }, []);
 
   useHunkSessionBridge({
@@ -382,6 +405,30 @@ export function App({
     });
   }, [refreshCurrentInput]);
 
+  const triggerEditSelectedFile = useCallback(() => {
+    const message = openSelectedFileInEditor({
+      file: selectedFile,
+      renderer,
+      selectedHunk: review.selectedHunk,
+    });
+
+    if (message) {
+      showSessionNotice(message);
+      return;
+    }
+
+    if (canRefreshCurrentInput) {
+      triggerRefreshCurrentInput();
+    }
+  }, [
+    canRefreshCurrentInput,
+    renderer,
+    review.selectedHunk,
+    selectedFile,
+    showSessionNotice,
+    triggerRefreshCurrentInput,
+  ]);
+
   useEffect(() => {
     if (!watchEnabled) {
       return;
@@ -496,6 +543,7 @@ export function App({
         toggleLineNumbers,
         toggleLineWrap,
         toggleSidebar,
+        triggerEditSelectedFile,
         wrapLines,
       }),
     [
@@ -521,6 +569,7 @@ export function App({
       toggleLineNumbers,
       toggleLineWrap,
       toggleSidebar,
+      triggerEditSelectedFile,
       wrapLines,
     ],
   );
@@ -569,6 +618,7 @@ export function App({
     toggleLineNumbers,
     toggleLineWrap,
     toggleSidebar,
+    triggerEditSelectedFile,
     triggerRefreshCurrentInput,
   });
 
@@ -736,11 +786,15 @@ export function App({
         />
       </box>
 
-      {!pagerMode && (focusArea === "filter" || Boolean(review.filter) || Boolean(noticeText)) ? (
+      {!pagerMode &&
+      (focusArea === "filter" ||
+        Boolean(review.filter) ||
+        Boolean(sessionNoticeText) ||
+        Boolean(noticeText)) ? (
         <StatusBar
           filter={review.filter}
           filterFocused={focusArea === "filter"}
-          noticeText={noticeText ?? undefined}
+          noticeText={sessionNoticeText ?? noticeText ?? undefined}
           terminalWidth={terminal.width}
           theme={activeTheme}
           onCloseMenu={closeMenu}

@@ -6,6 +6,7 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Added
 
+- Added an `e` shortcut to open the selected diff file in `$EDITOR`.
 - Added `g` and `G` keyboard aliases for jump-to-top and jump-to-bottom review navigation.
 
 ### Changed

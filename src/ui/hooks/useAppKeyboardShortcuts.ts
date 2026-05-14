@@ -68,6 +68,7 @@ export interface UseAppKeyboardShortcutsOptions {
   toggleLineNumbers: () => void;
   toggleLineWrap: () => void;
   toggleSidebar: () => void;
+  triggerEditSelectedFile: () => void;
   triggerRefreshCurrentInput: () => void;
 }
 
@@ -100,6 +101,7 @@ export function useAppKeyboardShortcuts({
   toggleLineNumbers,
   toggleLineWrap,
   toggleSidebar,
+  triggerEditSelectedFile,
   triggerRefreshCurrentInput,
 }: UseAppKeyboardShortcutsOptions) {
   const activeMenuIdRef = useRef(activeMenuId);
@@ -420,6 +422,11 @@ export function useAppKeyboardShortcuts({
 
     if (key.name === "m" || key.sequence === "m") {
       runAndCloseMenu(toggleHunkHeaders);
+      return;
+    }
+
+    if (key.name === "e" || key.sequence === "e") {
+      runAndCloseMenu(triggerEditSelectedFile);
       return;
     }
 

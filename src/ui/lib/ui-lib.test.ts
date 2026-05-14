@@ -144,6 +144,7 @@ describe("ui helpers", () => {
       toggleLineNumbers: () => {},
       toggleLineWrap: () => {},
       toggleSidebar: () => {},
+      triggerEditSelectedFile: () => {},
       wrapLines: true,
     });
 
@@ -151,7 +152,13 @@ describe("ui helpers", () => {
       menus.file
         .filter((entry): entry is Extract<MenuEntry, { kind: "item" }> => entry.kind === "item")
         .map((entry) => entry.label),
-    ).toEqual(["Toggle files/filter focus", "Focus filter", "Reload", "Quit"]);
+    ).toEqual([
+      "Toggle files/filter focus",
+      "Focus filter",
+      "Open file in editor",
+      "Reload",
+      "Quit",
+    ]);
     expect(menus.file[0]).toMatchObject({
       kind: "item",
       label: "Toggle files/filter focus",
