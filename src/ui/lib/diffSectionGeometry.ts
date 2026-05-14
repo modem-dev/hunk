@@ -1,5 +1,6 @@
 import type { DiffFile, LayoutMode } from "../../core/types";
 import { measureAgentInlineNoteHeight } from "../components/panes/AgentInlineNote";
+import { COMMENT_COMPOSER_HEIGHT } from "../components/panes/CommentComposer";
 import { findMaxLineNumber } from "../diff/codeColumns";
 import { buildSplitRows, buildStackRows } from "../diff/pierre";
 import { measureRenderedRowHeight } from "../diff/renderRows";
@@ -35,6 +36,12 @@ function buildBasePlannedRows(
   showHunkHeaders: boolean,
   theme: AppTheme,
   visibleAgentNotes: VisibleAgentNote[],
+  composer: {
+    fileId: string;
+    hunkIndex: number;
+    side: "old" | "new";
+    line: number;
+  } | null,
 ) {
   const rows =
     layout === "split" ? buildSplitRows(file, null, theme) : buildStackRows(file, null, theme);
@@ -45,6 +52,7 @@ function buildBasePlannedRows(
     selectedHunkIndex: -1,
     showHunkHeaders,
     visibleAgentNotes,
+    composer,
   });
 }
 
@@ -73,8 +81,7 @@ function plannedRowHeight(
   }
 
   if (row.kind === "comment-composer") {
-    // Placeholder height until the composer component is wired up in Task 7/8.
-    return 1;
+    return COMMENT_COMPOSER_HEIGHT;
   }
 
   return measureRenderedRowHeight(
@@ -105,6 +112,12 @@ export function measureDiffSectionGeometry(
   width = 0,
   showLineNumbers = true,
   wrapLines = false,
+  composer: {
+    fileId: string;
+    hunkIndex: number;
+    side: "old" | "new";
+    line: number;
+  } | null = null,
 ): DiffSectionGeometry {
   if (file.metadata.hunks.length === 0) {
     return {
@@ -119,7 +132,11 @@ export function measureDiffSectionGeometry(
 
   // Width, wrapping, and line-number visibility all affect rendered row heights, so they must
   // participate in the cache key alongside the structural file/layout inputs.
-  const cacheKey = `${file.id}:${layout}:${showHunkHeaders ? 1 : 0}:${theme.id}:${width}:${showLineNumbers ? 1 : 0}:${wrapLines ? 1 : 0}`;
+  // Composer state is included so the cache invalidates when the composer mounts or moves.
+  const composerKey = composer && composer.fileId === file.id
+    ? `${composer.hunkIndex}:${composer.side}:${composer.line}`
+    : "none";
+  const cacheKey = `${file.id}:${layout}:${showHunkHeaders ? 1 : 0}:${theme.id}:${width}:${showLineNumbers ? 1 : 0}:${wrapLines ? 1 : 0}:${composerKey}`;
   if (visibleAgentNotes.length > 0) {
     const cachedByNotes = NOTE_AWARE_SECTION_GEOMETRY_CACHE.get(visibleAgentNotes);
     const cached = cachedByNotes?.get(cacheKey);
@@ -128,7 +145,14 @@ export function measureDiffSectionGeometry(
     }
   }
 
-  const plannedRows = buildBasePlannedRows(file, layout, showHunkHeaders, theme, visibleAgentNotes);
+  const plannedRows = buildBasePlannedRows(
+    file,
+    layout,
+    showHunkHeaders,
+    theme,
+    visibleAgentNotes,
+    composer,
+  );
   const hunkAnchorRows = new Map<number, number>();
   const hunkBounds = new Map<number, PlannedHunkBounds>();
   const rowBounds: DiffSectionRowBounds[] = [];
