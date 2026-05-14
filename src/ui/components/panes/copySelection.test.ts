@@ -20,6 +20,7 @@ import {
 import {
   DIFF_RAIL_PREFIX_WIDTH,
   resolveSplitCellGeometry,
+  resolveStackCellGeometry,
   resolveSplitPaneWidths,
 } from "../../diff/codeColumns";
 
@@ -428,6 +429,41 @@ describe("expandSelectionPoint", () => {
       // The anchor/focus side must remain "right"
       const side = resolveCopySelectionSide(result.startCol, "split", context.width);
       expect(side).toBe("right");
+    }
+  });
+
+  test("double-click on whitespace selects the whitespace character itself", () => {
+    const { context, fileSectionLayouts, sectionGeometry } = buildContext("stack");
+    const section = fileSectionLayouts[0]!;
+    const geometry = sectionGeometry[0]!;
+
+    // Compute the global column for the space character between "export" and "const".
+    // The addition row "export const answer = 42;" starts at bodyTop + 2
+    // (after a hunk header row and a deletion row).
+    const { gutterWidth } = resolveStackCellGeometry(
+      context.width,
+      geometry.lineNumberDigits,
+      context.showLineNumbers,
+      DIFF_RAIL_PREFIX_WIDTH,
+    );
+    const globalContentStart = DIFF_RAIL_PREFIX_WIDTH + gutterWidth;
+    // "export" is 6 chars, so the space after it is at code-local column 6.
+    const spaceCol = globalContentStart + 6;
+
+    const point: CopySelectionPoint = {
+      kind: "review-row",
+      column: spaceCol,
+      visualRow: section.bodyTop + 2, // addition row: "export const answer = 42;"
+    };
+
+    const result = expandSelectionPoint(point, 2, context);
+    expect(result).not.toBeNull();
+    if (result) {
+      // startCol and endCol should be equal (single whitespace character),
+      // never inverted (endCol < startCol).
+      expect(result.startCol).toBeLessThanOrEqual(result.endCol);
+      expect(result.startCol).toBe(spaceCol);
+      expect(result.endCol).toBe(spaceCol);
     }
   });
 });

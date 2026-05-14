@@ -382,6 +382,9 @@ export function DiffPane({
   const [scrollViewport, setScrollViewport] = useState({ top: 0, height: 0 });
   const [hoveredFileId, setHoveredFileId] = useState<string | null>(null);
   const [copySelectionDrag, setCopySelectionDrag] = useState<CopySelectionDrag | null>(null);
+  // Mirror the drag state in a ref so updateCopySelection can suppress native selection
+  // on the very first drag event, before React has re-rendered with the new state.
+  const copySelectionDragRef = useRef<CopySelectionDrag | null>(null);
   const lastClickTimeRef = useRef(0);
   const clickCountRef = useRef(0);
   const scrollbarRef = useRef<VerticalScrollbarHandle>(null);
@@ -768,6 +771,7 @@ export function DiffPane({
 
       const point = resolveCopySelectionPoint(event);
       if (!point) {
+        copySelectionDragRef.current = null;
         setCopySelectionDrag(null);
         return;
       }
@@ -792,11 +796,13 @@ export function DiffPane({
           copySelectionContext,
         );
         if (expanded) {
-          setCopySelectionDrag({
+          const drag: CopySelectionDrag = {
             anchor: { ...point, column: expanded.startCol },
             focus: { ...point, column: expanded.endCol },
             moved: true,
-          });
+          };
+          copySelectionDragRef.current = drag;
+          setCopySelectionDrag(drag);
           suppressNativeSelection();
           event.preventDefault();
           event.stopPropagation();
@@ -804,7 +810,9 @@ export function DiffPane({
         }
       }
 
-      setCopySelectionDrag({ anchor: point, focus: point, moved: false });
+      const initial: CopySelectionDrag = { anchor: point, focus: point, moved: false };
+      copySelectionDragRef.current = initial;
+      setCopySelectionDrag(initial);
       suppressNativeSelection();
       event.preventDefault();
       event.stopPropagation();
@@ -815,6 +823,8 @@ export function DiffPane({
   /** Extend the active diff text selection while the pointer moves. */
   const updateCopySelection = useCallback(
     (event: TuiMouseEvent) => {
+      // Use the ref (not state) so that native-selection suppression fires on the very
+      // first drag event, before React has re-rendered with the new copySelectionDrag.
       setCopySelectionDrag((current) => {
         if (!current) {
           return current;
@@ -832,23 +842,39 @@ export function DiffPane({
         };
       });
 
-      if (copySelectionDrag) {
+      // The state updater above sets the ref during the render phase. Update the ref
+      // synchronously as well so that endCopySelection can read the correct moved flag
+      // even if the mouse-up event fires before React processes the pending state update.
+      const refDrag = copySelectionDragRef.current;
+      if (refDrag) {
+        const point = resolveCopySelectionPoint(event);
+        if (point) {
+          copySelectionDragRef.current = {
+            anchor: refDrag.anchor,
+            focus: point,
+            moved: refDrag.moved || !copySelectionPointsEqual(point, refDrag.anchor),
+          };
+        }
+      }
+
+      if (copySelectionDragRef.current) {
         suppressNativeSelection();
         event.preventDefault();
         event.stopPropagation();
       }
     },
-    [copySelectionDrag, resolveCopySelectionPoint, suppressNativeSelection],
+    [resolveCopySelectionPoint, suppressNativeSelection],
   );
 
   /** Finish a drag selection and copy its rendered text. */
   const endCopySelection = useCallback(
     (event?: TuiMouseEvent) => {
-      const current = copySelectionDrag;
+      const current = copySelectionDragRef.current;
       if (!current) {
         return;
       }
 
+      copySelectionDragRef.current = null;
       setCopySelectionDrag(null);
       event?.preventDefault();
       event?.stopPropagation();
@@ -866,7 +892,7 @@ export function DiffPane({
       });
       copySelectionText(text);
     },
-    [copySelectionDrag, copySelectionContext, copySelectionSide, copySelectionText],
+    [copySelectionContext, copySelectionSide, copySelectionText],
   );
 
   // Expose the cancel hook so an ancestor (App's outer container) can release a stuck drag when

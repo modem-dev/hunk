@@ -467,6 +467,17 @@ export function expandSelectionPoint(
 
     // Convert the global click column to a code-local column.
     const localCol = Math.max(0, Math.min(lineText.length - 1, point.column - globalContentStart));
+
+    // When double-clicking on whitespace, the word loops below don't advance,
+    // producing an inverted range (endCol < startCol). Select just the
+    // whitespace character itself instead.
+    if (lineText[localCol] === " " || lineText[localCol] === "\t") {
+      return {
+        startCol: localCol + globalContentStart,
+        endCol: localCol + globalContentStart,
+      };
+    }
+
     let wordStart = localCol;
     let wordEnd = localCol;
 

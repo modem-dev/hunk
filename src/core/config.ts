@@ -16,7 +16,7 @@ const DEFAULT_VIEW_PREFERENCES: PersistedViewPreferences = {
   wrapLines: false,
   showHunkHeaders: true,
   showAgentNotes: false,
-  copyDecorations: true,
+  copyDecorations: false,
 };
 
 interface ConfigResolutionOptions {

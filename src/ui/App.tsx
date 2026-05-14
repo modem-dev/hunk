@@ -335,11 +335,26 @@ export function App({
 
   // Show a short-lived status-bar message. Used to surface clipboard-copy outcomes that would
   // otherwise be invisible to the user (OSC52 unsupported, etc.).
+  // Track the timer so we can clear it on unmount and avoid React state updates after unmount.
+  const transientTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showTransientNotice = useCallback((text: string, durationMs = 3000) => {
+    if (transientTimerRef.current !== null) {
+      clearTimeout(transientTimerRef.current);
+    }
     setTransientNoticeText(text);
-    setTimeout(() => {
+    transientTimerRef.current = setTimeout(() => {
+      transientTimerRef.current = null;
       setTransientNoticeText((current) => (current === text ? null : current));
     }, durationMs);
+  }, []);
+
+  // Clear any pending transient-notice timer on unmount to avoid state updates after unmount.
+  useEffect(() => {
+    return () => {
+      if (transientTimerRef.current !== null) {
+        clearTimeout(transientTimerRef.current);
+      }
+    };
   }, []);
 
   /** Toggle whether diff code rows wrap instead of truncating to one terminal row. */
