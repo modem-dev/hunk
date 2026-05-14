@@ -1,5 +1,6 @@
 import type { LayoutMode } from "../../core/types";
 import { measureAgentInlineNoteHeight } from "../components/panes/AgentInlineNote";
+import { COMMENT_COMPOSER_HEIGHT } from "../components/panes/CommentComposer";
 import type { SectionGeometry, VerticalBounds } from "../lib/diffSpatial";
 import { reviewRowId } from "../lib/ids";
 import type { PlannedReviewRow } from "./reviewRenderPlan";
@@ -50,8 +51,7 @@ export function plannedReviewRowHeight(
   }
 
   if (row.kind === "comment-composer") {
-    // Placeholder height until the composer component is wired up in Task 7/8.
-    return 1;
+    return COMMENT_COMPOSER_HEIGHT;
   }
 
   if (row.row.type === "hunk-header") {
