@@ -109,7 +109,7 @@ export interface ClearCommentsToolInput extends SessionTargetInput {
 
 export interface LiveComment extends AgentAnnotation {
   id: string;
-  source: "mcp";
+  source: "mcp" | "user";
   author?: string;
   createdAt: string;
   filePath: string;
