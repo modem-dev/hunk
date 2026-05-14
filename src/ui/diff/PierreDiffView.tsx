@@ -177,6 +177,13 @@ export function PierreDiffView({
           );
         }
 
+        if (plannedRow.kind === "comment-composer") {
+          // Composer rendering is wired in Task 8; reserve the row for now.
+          return (
+            <box key={plannedRow.key} id={rowId} style={{ width: "100%", height: 1 }} />
+          );
+        }
+
         return (
           <box key={plannedRow.key} id={rowId} style={{ width: "100%", flexDirection: "column" }}>
             <DiffRowView

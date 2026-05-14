@@ -50,6 +50,15 @@ export type PlannedReviewRow =
       fileId: string;
       hunkIndex: number;
       side: "old" | "new";
+    }
+  | {
+      kind: "comment-composer";
+      key: string;
+      stableKey: string;
+      fileId: string;
+      hunkIndex: number;
+      side: "old" | "new";
+      line: number;
     };
 
 function lineRows(rows: DiffRow[]) {
@@ -319,8 +328,9 @@ function rowCanAnchorHunk(row: DiffRow, showHunkHeaders: boolean) {
 
 /**
  * Build the explicit presentational row plan for one file diff body.
- * The plan always preserves diff-row order and may insert inline notes plus
- * trailing guide caps for every visible note anchored in this file.
+ * The plan always preserves diff-row order and may insert inline notes, trailing guide caps
+ * for every visible note anchored in this file, and one composer row when the user is
+ * currently composing a comment in this file.
  */
 export function buildReviewRenderPlan({
   fileId,
@@ -328,18 +338,30 @@ export function buildReviewRenderPlan({
   showHunkHeaders,
   visibleAgentNotes = EMPTY_VISIBLE_AGENT_NOTES,
   selectedHunkIndex: _selectedHunkIndex,
+  composer = null,
 }: {
   fileId: string;
   rows: DiffRow[];
   showHunkHeaders: boolean;
   visibleAgentNotes?: VisibleAgentNote[];
   selectedHunkIndex?: number;
+  composer?: {
+    fileId: string;
+    hunkIndex: number;
+    side: "old" | "new";
+    line: number;
+  } | null;
 }) {
   const placementsByAnchor = buildInlineVisibleNotePlacements(rows, visibleAgentNotes);
   const noteGuideSideByRowKey = buildNoteGuideSideByRowKey(placementsByAnchor);
   const guideCapsByRowKey = buildGuideCapsByRowKey(placementsByAnchor);
   const plannedRows: PlannedReviewRow[] = [];
   const anchoredHunks = new Set<number>();
+  const composerAnchorStableKey =
+    composer && composer.fileId === fileId
+      ? `line:${composer.hunkIndex}:${composer.side}:${composer.line}`
+      : null;
+  let composerInserted = false;
 
   for (const row of rows) {
     const shouldAnchorHunk =
@@ -380,6 +402,24 @@ export function buildReviewRenderPlan({
       anchorId,
       noteGuideSide: noteGuideSideByRowKey.get(row.key),
     });
+
+    if (
+      composer &&
+      composerAnchorStableKey &&
+      !composerInserted &&
+      diffStableKeys.includes(composerAnchorStableKey)
+    ) {
+      plannedRows.push({
+        kind: "comment-composer",
+        key: `comment-composer:${composer.hunkIndex}:${composer.side}:${composer.line}`,
+        stableKey: `comment-composer:${composer.hunkIndex}:${composer.side}:${composer.line}`,
+        fileId,
+        hunkIndex: composer.hunkIndex,
+        side: composer.side,
+        line: composer.line,
+      });
+      composerInserted = true;
+    }
 
     const guideCaps = guideCapsByRowKey.get(row.key);
     if (guideCaps) {

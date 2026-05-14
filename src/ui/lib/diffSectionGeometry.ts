@@ -72,6 +72,11 @@ function plannedRowHeight(
     return 1;
   }
 
+  if (row.kind === "comment-composer") {
+    // Placeholder height until the composer component is wired up in Task 7/8.
+    return 1;
+  }
+
   return measureRenderedRowHeight(
     row.row,
     width,
