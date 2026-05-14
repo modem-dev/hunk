@@ -128,6 +128,67 @@ export function App({
   const moveToAnnotatedFile = review.moveToAnnotatedFile;
   const moveToAnnotatedHunk = review.moveToAnnotatedHunk;
 
+  const commentCursor = review.commentCursor;
+  const commentCursorRowStableKey = review.commentCursorRowStableKey;
+  const addUserLiveComment = review.addUserLiveComment;
+  const setCommentCursorMode = review.setCommentCursorMode;
+  const moveCommentCursor = review.moveCommentCursor;
+  const jumpCommentCursorToHunk = review.jumpCommentCursorToHunk;
+
+  const composerDescriptor =
+    commentCursor.mode === "composing"
+      ? {
+          fileId: commentCursor.fileId,
+          hunkIndex: commentCursor.hunkIndex,
+          side: commentCursor.side,
+          line: commentCursor.line,
+        }
+      : null;
+
+  const enterCommentCursor = useCallback(() => {
+    setCommentCursorMode(commentCursor.mode === "off" ? "navigating" : "off");
+  }, [commentCursor.mode, setCommentCursorMode]);
+
+  const exitCommentCursor = useCallback(() => {
+    setCommentCursorMode("off");
+  }, [setCommentCursorMode]);
+
+  const openCommentComposer = useCallback(() => {
+    setCommentCursorMode("composing");
+  }, [setCommentCursorMode]);
+
+  const cancelCommentComposer = useCallback(() => {
+    setCommentCursorMode("navigating");
+  }, [setCommentCursorMode]);
+
+  const submitCommentComposer = useCallback(
+    (summary: string) => {
+      try {
+        addUserLiveComment(
+          {
+            fileId: commentCursor.fileId,
+            hunkIndex: commentCursor.hunkIndex,
+            side: commentCursor.side,
+            line: commentCursor.line,
+          },
+          summary,
+        );
+      } catch (error) {
+        console.error("Failed to add user comment.", error);
+      } finally {
+        setCommentCursorMode("navigating");
+      }
+    },
+    [
+      addUserLiveComment,
+      commentCursor.fileId,
+      commentCursor.hunkIndex,
+      commentCursor.line,
+      commentCursor.side,
+      setCommentCursorMode,
+    ],
+  );
+
   const jumpToFile = useCallback(
     (fileId: string, nextHunkIndex = 0, options?: { alignFileHeaderTop?: boolean }) => {
       review.selectFile(fileId, nextHunkIndex, {
@@ -496,10 +557,14 @@ export function App({
         toggleLineWrap,
         toggleSidebar,
         wrapLines,
+        commentCursorMode: commentCursor.mode,
+        toggleCommentCursor: enterCommentCursor,
       }),
     [
       activeTheme.id,
       canRefreshCurrentInput,
+      commentCursor.mode,
+      enterCommentCursor,
       focusFilter,
       layoutMode,
       moveToAnnotatedFile,
@@ -546,12 +611,18 @@ export function App({
     canRefreshCurrentInput,
     closeHelp,
     closeMenu,
+    commentCursorMode: commentCursor.mode,
     cycleTheme,
+    enterCommentCursor,
+    exitCommentCursor,
     focusArea,
     focusFilter,
+    jumpCommentCursorToHunk,
+    moveCommentCursor,
     moveToAnnotatedHunk,
     moveToHunk: review.moveToHunk,
     moveMenuItem,
+    openCommentComposer,
     openMenu,
     pagerMode,
     requestQuit,
@@ -723,6 +794,10 @@ export function App({
           selectedHunkRevealRequestId={review.selectedHunkRevealRequestId}
           theme={activeTheme}
           width={diffPaneWidth}
+          commentCursorRowStableKey={commentCursorRowStableKey}
+          composer={composerDescriptor}
+          onCommentComposerCancel={cancelCommentComposer}
+          onCommentComposerSubmit={submitCommentComposer}
           onOpenAgentNotesAtHunk={openAgentNotesAtHunk}
           onScrollCodeHorizontally={(delta) => {
             scrollCodeHorizontally(delta * FAST_CODE_HORIZONTAL_SCROLL_COLUMNS);

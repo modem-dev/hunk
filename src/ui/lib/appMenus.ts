@@ -27,6 +27,8 @@ export interface BuildAppMenusOptions {
   toggleLineWrap: () => void;
   toggleSidebar: () => void;
   wrapLines: boolean;
+  commentCursorMode: "off" | "navigating" | "composing";
+  toggleCommentCursor: () => void;
 }
 
 /** Build the top-level app menus from the current app state and actions. */
@@ -55,6 +57,8 @@ export function buildAppMenus({
   toggleLineWrap,
   toggleSidebar,
   wrapLines,
+  commentCursorMode,
+  toggleCommentCursor,
 }: BuildAppMenusOptions): Record<MenuId, MenuEntry[]> {
   const themeMenuEntries: MenuEntry[] = THEMES.map((theme) => ({
     kind: "item",
@@ -157,6 +161,13 @@ export function buildAppMenus({
         hint: "m",
         checked: showHunkHeaders,
         action: toggleHunkHeaders,
+      },
+      {
+        kind: "item",
+        label: "Comment cursor",
+        hint: "c",
+        checked: commentCursorMode !== "off",
+        action: toggleCommentCursor,
       },
     ],
     navigate: [

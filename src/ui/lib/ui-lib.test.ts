@@ -145,6 +145,8 @@ describe("ui helpers", () => {
       toggleLineWrap: () => {},
       toggleSidebar: () => {},
       wrapLines: true,
+      commentCursorMode: "off",
+      toggleCommentCursor: () => {},
     });
 
     expect(
