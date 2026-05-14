@@ -24,6 +24,10 @@ export interface FileSourceFetcher {
   getFullText(side: FileSourceSide): Promise<string | null>;
 }
 
+export interface FileSourceFetcherOptions {
+  gitExecutable?: string;
+}
+
 interface ResolvedSpecs {
   old: FileSourceSpec;
   new: FileSourceSpec;
@@ -77,27 +81,27 @@ async function readFsSpec(spec: Extract<FileSourceSpec, { kind: "fs" }>): Promis
 function readGitBlobSpec(
   spec: Extract<FileSourceSpec, { kind: "git-blob" }>,
   gitExecutable = "git",
-): string | null {
+): Promise<string | null> {
   return readGitObjectSpec(spec.repoRoot, `${spec.ref}:${spec.path}`, gitExecutable);
 }
 
 function readGitIndexSpec(
   spec: Extract<FileSourceSpec, { kind: "git-index" }>,
   gitExecutable = "git",
-): string | null {
+): Promise<string | null> {
   return readGitObjectSpec(spec.repoRoot, `:${spec.path}`, gitExecutable);
 }
 
 /** Read a blob-like Git object spec such as `HEAD:path` or `:path`. */
-function readGitObjectSpec(
+async function readGitObjectSpec(
   repoRoot: string,
   objectName: string,
   gitExecutable = "git",
-): string | null {
-  let proc: ReturnType<typeof Bun.spawnSync>;
+): Promise<string | null> {
+  let proc: Bun.ReadableSubprocess;
 
   try {
-    proc = Bun.spawnSync([gitExecutable, "show", objectName], {
+    proc = Bun.spawn([gitExecutable, "show", objectName], {
       cwd: repoRoot,
       stdin: "ignore",
       stdout: "pipe",
@@ -108,18 +112,34 @@ function readGitObjectSpec(
     return null;
   }
 
-  if (proc.exitCode !== 0) {
-    const stderr = Buffer.from(proc.stderr ?? []).toString("utf8");
+  let output: [number, string, string];
+  try {
+    output = await Promise.all([
+      proc.exited,
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
+  } catch (error) {
+    logSourceDiagnostic(`failed to collect Git source ${objectName}`, error);
+    return null;
+  }
+
+  const [exitCode, stdout, stderr] = output;
+
+  if (exitCode !== 0) {
     if (!isExpectedMissingGitSource(stderr)) {
       logSourceDiagnostic(`failed to read Git source ${objectName} in ${repoRoot}`, stderr);
     }
     return null;
   }
 
-  return Buffer.from(proc.stdout ?? []).toString("utf8");
+  return stdout;
 }
 
-async function readSpec(spec: FileSourceSpec): Promise<string | null> {
+async function readSpec(
+  spec: FileSourceSpec,
+  { gitExecutable = "git" }: FileSourceFetcherOptions = {},
+): Promise<string | null> {
   if (spec.kind === "none") {
     return null;
   }
@@ -129,14 +149,17 @@ async function readSpec(spec: FileSourceSpec): Promise<string | null> {
   }
 
   if (spec.kind === "git-index") {
-    return readGitIndexSpec(spec);
+    return readGitIndexSpec(spec, gitExecutable);
   }
 
-  return readGitBlobSpec(spec);
+  return readGitBlobSpec(spec, gitExecutable);
 }
 
 /** Build a per-file source fetcher that caches each side's resolved text. */
-export function createFileSourceFetcher(specs: ResolvedSpecs): FileSourceFetcher {
+export function createFileSourceFetcher(
+  specs: ResolvedSpecs,
+  { gitExecutable = "git" }: Readonly<FileSourceFetcherOptions> = {},
+): FileSourceFetcher {
   const cache = new Map<FileSourceSide, string | null>();
 
   return {
@@ -145,7 +168,7 @@ export function createFileSourceFetcher(specs: ResolvedSpecs): FileSourceFetcher
         return cache.get(side) ?? null;
       }
 
-      const text = await readSpec(specs[side]);
+      const text = await readSpec(specs[side], { gitExecutable });
       cache.set(side, text);
       return text;
     },

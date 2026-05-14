@@ -374,17 +374,16 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
       };
 
       const setSettledStatus = (nextStatus: FileSourceStatus) => {
-        setSourceStatusByFileId((prev) => {
-          if (!isCurrentRequest()) {
-            return prev;
-          }
-          sourceLoadRequestsRef.current.delete(fileId);
-          sourceStatusRef.current = { ...sourceStatusRef.current, [fileId]: nextStatus };
-          return {
-            ...prev,
-            [fileId]: nextStatus,
-          };
-        });
+        if (!isCurrentRequest()) {
+          return;
+        }
+
+        sourceLoadRequestsRef.current.delete(fileId);
+        sourceStatusRef.current = { ...sourceStatusRef.current, [fileId]: nextStatus };
+        setSourceStatusByFileId((prev) => ({
+          ...prev,
+          [fileId]: nextStatus,
+        }));
       };
 
       void file.sourceFetcher
@@ -394,6 +393,10 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
         })
         .catch((error: unknown) => {
           if (!isCurrentRequest()) {
+            console.error(
+              `hunk: ignored stale ${side} source load failure for ${file.path} (${file.id}).`,
+              error,
+            );
             return;
           }
 

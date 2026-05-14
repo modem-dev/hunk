@@ -190,6 +190,18 @@ export function expandCollapsedRows(
       continue;
     }
 
+    const sourceStartIndex = range[0] - 1;
+    const sourceEndIndex = range[1] - 1;
+    if (
+      lineCount > 0 &&
+      (sourceStartIndex < 0 ||
+        sourceEndIndex < sourceStartIndex ||
+        sourceEndIndex >= sourceLines.length)
+    ) {
+      result.push({ ...row, text: errorRowText(lineCount) });
+      continue;
+    }
+
     result.push({
       ...row,
       text: expandedRowText(lineCount),
@@ -199,6 +211,10 @@ export function expandCollapsedRows(
       const oldLineNumber = row.oldRange[0] + offset;
       const newLineNumber = row.newRange[0] + offset;
       const sourceLineNumber = (side === "old" ? oldLineNumber : newLineNumber) - 1;
+      if (sourceLineNumber < 0 || sourceLineNumber >= sourceLines.length) {
+        break;
+      }
+
       const text = sourceLines[sourceLineNumber];
       const spans = sourceLineSpans?.(text, sourceLineNumber) ?? spansFor(text);
 

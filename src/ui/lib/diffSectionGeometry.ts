@@ -66,6 +66,18 @@ function buildBasePlannedRows(
   };
 }
 
+/** Fingerprint loaded source text so same-length edits invalidate geometry. */
+function sourceTextFingerprint(text: string) {
+  let hash = 2166136261;
+
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+
+  return `${text.length}:${(hash >>> 0).toString(36)}`;
+}
+
 /** Stable suffix that captures expansion state for the geometry cache key. */
 function expansionCacheKey(
   expandedKeys: ReadonlySet<string>,
@@ -80,7 +92,7 @@ function expansionCacheKey(
     sourceStatus === undefined
       ? "pending"
       : sourceStatus.kind === "loaded"
-        ? `loaded:${sourceStatus.text.length}`
+        ? `loaded:${sourceTextFingerprint(sourceStatus.text)}`
         : sourceStatus.kind;
   return `:${sortedKeys}:${statusKey}`;
 }

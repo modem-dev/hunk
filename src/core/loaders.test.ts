@@ -1396,6 +1396,62 @@ describe("loadAppBootstrap source fetcher attachment", () => {
     expect(await file?.sourceFetcher?.getFullText("old")).toBe("first\n");
   });
 
+  test("git source fetchers use the custom git executable from bootstrap loading", async () => {
+    const dir = createTempRepo("hunk-source-custom-git-");
+    writeFileSync(join(dir, "value.txt"), "first\n");
+    git(dir, "add", "value.txt");
+    git(dir, "commit", "-m", "initial");
+    writeFileSync(join(dir, "value.txt"), "second\n");
+
+    const gitExecutable = "hunk-custom-git";
+    const syncCalls: string[][] = [];
+    const asyncCalls: string[][] = [];
+    const originalSpawnSync = Bun.spawnSync;
+    const originalSpawn = Bun.spawn;
+    const mutableBun = Bun as unknown as {
+      spawnSync: typeof Bun.spawnSync;
+      spawn: typeof Bun.spawn;
+    };
+
+    mutableBun.spawnSync = ((cmds: string[], options?: Parameters<typeof Bun.spawnSync>[1]) => {
+      if (cmds[0] === gitExecutable) {
+        syncCalls.push(cmds);
+        return originalSpawnSync(["git", ...cmds.slice(1)], options);
+      }
+
+      return originalSpawnSync(cmds, options);
+    }) as typeof Bun.spawnSync;
+    mutableBun.spawn = ((cmds: string[], options?: Parameters<typeof Bun.spawn>[1]) => {
+      if (cmds[0] === gitExecutable) {
+        asyncCalls.push(cmds);
+        return originalSpawn(["git", ...cmds.slice(1)], options);
+      }
+
+      return originalSpawn(cmds, options);
+    }) as typeof Bun.spawn;
+
+    try {
+      const bootstrap = await loadAppBootstrap(
+        {
+          kind: "vcs",
+          staged: false,
+          options: { mode: "auto" },
+        },
+        { cwd: dir, gitExecutable },
+      );
+
+      const file = bootstrap.changeset.files[0];
+      expect(await file?.sourceFetcher?.getFullText("old")).toBe("first\n");
+    } finally {
+      mutableBun.spawnSync = originalSpawnSync;
+      mutableBun.spawn = originalSpawn;
+    }
+
+    expect(syncCalls.some((call) => call.includes("rev-parse"))).toBe(true);
+    expect(syncCalls.some((call) => call.includes("diff"))).toBe(true);
+    expect(asyncCalls).toContainEqual([gitExecutable, "show", ":value.txt"]);
+  });
+
   test("unstaged working-tree diffs read old source from the index when it differs from HEAD", async () => {
     const dir = createTempRepo("hunk-source-git-wt-index-");
     writeFileSync(join(dir, "value.txt"), "committed\n");

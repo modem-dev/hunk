@@ -140,6 +140,48 @@ describe("createFileSourceFetcher", () => {
     expect(await fetcher.getFullText("new")).toBe("working tree\n");
   });
 
+  test("passes custom git executable through async git source reads", async () => {
+    const originalSpawn = Bun.spawn;
+    const mutableBun = Bun as unknown as { spawn: typeof Bun.spawn };
+    const spawnCalls: string[][] = [];
+
+    mutableBun.spawn = ((cmds: string[]) => {
+      spawnCalls.push(cmds);
+      return originalSpawn(
+        [
+          process.execPath,
+          "--eval",
+          `process.stdout.write(${JSON.stringify(`read:${cmds[2]}\n`)})`,
+        ],
+        {
+          stdin: "ignore",
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      );
+    }) as typeof Bun.spawn;
+
+    try {
+      const fetcher = createFileSourceFetcher(
+        {
+          old: { kind: "git-blob", repoRoot: process.cwd(), ref: "HEAD", path: "note.txt" },
+          new: { kind: "git-index", repoRoot: process.cwd(), path: "note.txt" },
+        },
+        { gitExecutable: "custom-git" },
+      );
+
+      expect(await fetcher.getFullText("old")).toBe("read:HEAD:note.txt\n");
+      expect(await fetcher.getFullText("new")).toBe("read::note.txt\n");
+    } finally {
+      mutableBun.spawn = originalSpawn;
+    }
+
+    expect(spawnCalls).toEqual([
+      ["custom-git", "show", "HEAD:note.txt"],
+      ["custom-git", "show", ":note.txt"],
+    ]);
+  });
+
   test("returns null when a git blob cannot be resolved", async () => {
     const repoRoot = createTempRepo("hunk-source-git-missing-");
     writeFileSync(join(repoRoot, "tracked.txt"), "x\n");
