@@ -11,6 +11,13 @@ import { DiffFileHeaderRow } from "./DiffFileHeaderRow";
 
 interface DiffSectionProps {
   codeHorizontalOffset: number;
+  commentCursorRowStableKey?: string | null;
+  composer?: {
+    fileId: string;
+    hunkIndex: number;
+    side: "old" | "new";
+    line: number;
+  } | null;
   file: DiffFile;
   headerLabelWidth: number;
   headerStatsWidth: number;
@@ -28,6 +35,8 @@ interface DiffSectionProps {
   visibleAgentNotes: VisibleAgentNote[];
   visibleBodyBounds?: VisibleBodyBounds;
   viewWidth: number;
+  onCommentComposerCancel?: () => void;
+  onCommentComposerSubmit?: (summary: string) => void;
   onOpenAgentNotesAtHunk: (hunkIndex: number) => void;
   onSelect: () => void;
 }
@@ -35,6 +44,8 @@ interface DiffSectionProps {
 /** Render one file section in the main review stream. */
 function DiffSectionComponent({
   codeHorizontalOffset,
+  commentCursorRowStableKey,
+  composer,
   file,
   headerLabelWidth,
   headerStatsWidth,
@@ -52,6 +63,8 @@ function DiffSectionComponent({
   visibleAgentNotes,
   visibleBodyBounds,
   viewWidth,
+  onCommentComposerCancel,
+  onCommentComposerSubmit,
   onOpenAgentNotesAtHunk,
   onSelect,
 }: DiffSectionProps) {
@@ -92,6 +105,8 @@ function DiffSectionComponent({
       ) : null}
 
       <PierreDiffView
+        commentCursorRowStableKey={commentCursorRowStableKey ?? null}
+        composer={composer ?? null}
         file={file}
         layout={layout}
         showLineNumbers={showLineNumbers}
@@ -102,6 +117,8 @@ function DiffSectionComponent({
         width={viewWidth}
         annotatedHunkIndices={annotatedHunkIndices}
         visibleAgentNotes={visibleAgentNotes}
+        onCommentComposerCancel={onCommentComposerCancel}
+        onCommentComposerSubmit={onCommentComposerSubmit}
         onOpenAgentNotesAtHunk={onOpenAgentNotesAtHunk}
         selectedHunkIndex={selectedHunkIndex}
         sectionGeometry={sectionGeometry}
@@ -119,6 +136,8 @@ export const DiffSection = memo(DiffSectionComponent, (previous, next) => {
   // This comparator relies on stable upstream object identity for files and visible-note arrays.
   return (
     previous.codeHorizontalOffset === next.codeHorizontalOffset &&
+    previous.commentCursorRowStableKey === next.commentCursorRowStableKey &&
+    previous.composer === next.composer &&
     previous.file === next.file &&
     previous.headerLabelWidth === next.headerLabelWidth &&
     previous.headerStatsWidth === next.headerStatsWidth &&

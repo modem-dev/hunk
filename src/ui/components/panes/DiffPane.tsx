@@ -128,6 +128,8 @@ function buildHighlightPrefetchFileIds({
 /** Render the main multi-file review stream. */
 export function DiffPane({
   codeHorizontalOffset = 0,
+  commentCursorRowStableKey,
+  composer,
   diffContentWidth,
   files,
   headerLabelWidth,
@@ -150,12 +152,21 @@ export function DiffPane({
   selectedHunkRevealRequestId,
   theme,
   width,
+  onCommentComposerCancel,
+  onCommentComposerSubmit,
   onOpenAgentNotesAtHunk,
   onScrollCodeHorizontally = () => {},
   onSelectFile,
   onViewportCenteredHunkChange,
 }: {
   codeHorizontalOffset?: number;
+  commentCursorRowStableKey?: string | null;
+  composer?: {
+    fileId: string;
+    hunkIndex: number;
+    side: "old" | "new";
+    line: number;
+  } | null;
   diffContentWidth: number;
   files: DiffFile[];
   headerLabelWidth: number;
@@ -178,6 +189,8 @@ export function DiffPane({
   selectedHunkRevealRequestId?: number;
   theme: AppTheme;
   width: number;
+  onCommentComposerCancel?: () => void;
+  onCommentComposerSubmit?: (summary: string) => void;
   onOpenAgentNotesAtHunk: (fileId: string, hunkIndex: number) => void;
   onScrollCodeHorizontally?: (delta: number) => void;
   onSelectFile: (fileId: string) => void;
@@ -453,7 +466,8 @@ export function DiffPane({
     () =>
       files.map((file, index) => {
         const notes = allAgentNotesByFile.get(file.id) ?? EMPTY_VISIBLE_AGENT_NOTES;
-        if (notes.length === 0) {
+        const fileComposer = composer && composer.fileId === file.id ? composer : null;
+        if (notes.length === 0 && !fileComposer) {
           return baseSectionGeometry[index]!;
         }
 
@@ -466,11 +480,13 @@ export function DiffPane({
           diffContentWidth,
           showLineNumbers,
           wrapLines,
+          fileComposer,
         );
       }),
     [
       allAgentNotesByFile,
       baseSectionGeometry,
+      composer,
       diffContentWidth,
       files,
       layout,
@@ -1163,6 +1179,8 @@ export function DiffPane({
                     <DiffSection
                       key={file.id}
                       codeHorizontalOffset={codeHorizontalOffset}
+                      commentCursorRowStableKey={commentCursorRowStableKey ?? null}
+                      composer={composer && composer.fileId === file.id ? composer : null}
                       file={file}
                       headerLabelWidth={headerLabelWidth}
                       headerStatsWidth={headerStatsWidth}
@@ -1182,6 +1200,8 @@ export function DiffPane({
                         visibleAgentNotesByFile.get(file.id) ?? EMPTY_VISIBLE_AGENT_NOTES
                       }
                       visibleBodyBounds={visibleBodyBoundsByFile.get(file.id)}
+                      onCommentComposerCancel={onCommentComposerCancel}
+                      onCommentComposerSubmit={onCommentComposerSubmit}
                       onOpenAgentNotesAtHunk={(hunkIndex) =>
                         onOpenAgentNotesAtHunk(file.id, hunkIndex)
                       }
