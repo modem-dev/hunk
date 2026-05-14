@@ -2348,4 +2348,99 @@ describe("App interactions", () => {
       });
     }
   });
+
+  test("comment cursor toggles, navigates, and saves a user comment", async () => {
+    const setup = await testRender(<AppHost bootstrap={createSingleFileBootstrap()} />, {
+      width: 200,
+      height: 28,
+    });
+
+    try {
+      await flush(setup);
+
+      // Enter cursor mode.
+      await act(async () => {
+        await setup.mockInput.typeText("c");
+      });
+      await flush(setup);
+
+      let frame = setup.captureCharFrame();
+      expect(frame).toContain("▶");
+
+      // Open the composer.
+      await act(async () => {
+        await setup.mockInput.typeText("i");
+      });
+      await flush(setup);
+
+      frame = setup.captureCharFrame();
+      expect(frame).toContain("Comment ·");
+      expect(frame).toContain("Enter save · Esc cancel");
+
+      // Type and submit a comment.
+      await act(async () => {
+        await setup.mockInput.typeText("Look at this");
+      });
+      await act(async () => {
+        setup.mockInput.pressEnter();
+      });
+      await flush(setup);
+
+      frame = await waitForFrame(setup, (next) => next.includes("Look at this"));
+      expect(frame).toContain("Look at this");
+
+      // Esc leaves cursor mode.
+      await act(async () => {
+        setup.mockInput.pressEscape();
+      });
+      // Wait for cursor mode to be cleared; use a predicate that avoids matching
+      // the ▶ glyph that appears inside note-card range labels (e.g. "▶ new 1").
+      frame = await waitForFrame(setup, (next) => !next.includes("▶1 -") && !next.includes("▶1 +"));
+      expect(frame).not.toContain("▶1 -");
+      expect(frame).not.toContain("▶1 +");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("comment composer Esc discards the draft without saving", async () => {
+    const setup = await testRender(<AppHost bootstrap={createSingleFileBootstrap()} />, {
+      width: 200,
+      height: 28,
+    });
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.typeText("c");
+      });
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.typeText("i");
+      });
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.typeText("draft");
+      });
+      await flush(setup);
+
+      await act(async () => {
+        setup.mockInput.pressEscape();
+      });
+      // Wait for the composer to close; after cancel the mode reverts to navigating.
+      const frame = await waitForFrame(setup, (next) => !next.includes("Comment ·"));
+      expect(frame).not.toContain("Comment ·");
+      // Comment was not saved — no note card with the draft text appears.
+      expect(frame).not.toContain("draft");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
 });

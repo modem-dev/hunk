@@ -23,6 +23,7 @@ export interface UseAppKeyboardShortcutsOptions {
   activeMenuId: MenuId | null;
   activateCurrentMenuItem: () => void;
   canRefreshCurrentInput: boolean;
+  cancelCommentComposer: () => void;
   closeHelp: () => void;
   closeMenu: () => void;
   commentCursorMode: "off" | "navigating" | "composing";
@@ -60,6 +61,7 @@ export function useAppKeyboardShortcuts({
   activeMenuId,
   activateCurrentMenuItem,
   canRefreshCurrentInput,
+  cancelCommentComposer,
   closeHelp,
   closeMenu,
   commentCursorMode,
@@ -248,7 +250,12 @@ export function useAppKeyboardShortcuts({
     }
 
     if (mode === "composing") {
-      // The focused composer input owns its own keys; the router stays out of its way.
+      // Escape cancels the open composer and returns to navigating mode.
+      if (isEscapeKey(key)) {
+        cancelCommentComposer();
+        return true;
+      }
+      // All other keys belong to the focused input element.
       return true;
     }
 

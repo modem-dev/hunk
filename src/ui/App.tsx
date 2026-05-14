@@ -609,6 +609,7 @@ export function App({
     activeMenuId,
     activateCurrentMenuItem,
     canRefreshCurrentInput,
+    cancelCommentComposer,
     closeHelp,
     closeMenu,
     commentCursorMode: commentCursor.mode,

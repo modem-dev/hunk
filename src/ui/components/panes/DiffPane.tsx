@@ -262,12 +262,11 @@ export function DiffPane({
   const allAgentNotesByFile = useMemo(() => {
     const next = new Map<string, VisibleAgentNote[]>();
 
-    if (!showAgentNotes) {
-      return next;
-    }
-
     files.forEach((file) => {
-      const annotations = file.agent?.annotations ?? [];
+      // Always include user-authored comments; respect the agent-notes toggle for AI annotations.
+      const annotations = (file.agent?.annotations ?? []).filter(
+        (annotation) => showAgentNotes || annotation.source === "user",
+      );
       if (annotations.length === 0) {
         return;
       }
@@ -434,7 +433,9 @@ export function DiffPane({
   const visibleAgentNotesByFile = useMemo(() => {
     const next = new Map<string, VisibleAgentNote[]>();
 
-    if (!showAgentNotes) {
+    // allAgentNotesByFile already filters by showAgentNotes and user-comment visibility;
+    // bail out early only when there is nothing to distribute.
+    if (allAgentNotesByFile.size === 0) {
       return EMPTY_VISIBLE_AGENT_NOTES_BY_FILE;
     }
 
@@ -453,7 +454,7 @@ export function DiffPane({
     }
 
     return next;
-  }, [allAgentNotesByFile, selectedFileId, showAgentNotes, visibleViewportFileIds]);
+  }, [allAgentNotesByFile, selectedFileId, visibleViewportFileIds]);
 
   // Measure with the *full* set of agent notes per file, not just the visible-viewport set.
   // The visible set is correct for rendering (skip painting cards on off-screen files), but
