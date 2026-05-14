@@ -12,14 +12,23 @@ import {
   useDeferredValue,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
   buildLiveComment,
+  buildUserLiveComment,
   findDiffFileByPath,
   resolveCommentTarget,
 } from "../../core/liveComments";
 import type { DiffFile } from "../../core/types";
+import {
+  cursorRowStableKey,
+  firstCursorTargetForHunk,
+  moveCursor,
+  type CommentCursorPosition,
+} from "../lib/commentCursor";
+import type { DiffSide } from "../../hunk-session/types";
 import type {
   AppliedCommentBatchResult,
   AppliedCommentResult,
@@ -46,6 +55,20 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
+export type CommentCursorMode = "off" | "navigating" | "composing";
+
+export interface CommentCursorState extends CommentCursorPosition {
+  mode: CommentCursorMode;
+}
+
+export interface AddUserLiveCommentTarget {
+  fileId: string;
+  hunkIndex: number;
+  side: DiffSide;
+  line: number;
+  author?: string;
+}
+
 export interface ReviewSelectionOptions {
   alignFileHeaderTop?: boolean;
   preserveViewport?: boolean;
@@ -54,6 +77,8 @@ export interface ReviewSelectionOptions {
 
 export interface ReviewController {
   allFiles: DiffFile[];
+  commentCursor: CommentCursorState;
+  commentCursorRowStableKey: string | null;
   filter: string;
   liveCommentCount: number;
   liveCommentSummaries: SessionLiveCommentSummary[];
@@ -80,12 +105,16 @@ export interface ReviewController {
     requestId: string,
     options?: { revealMode?: "none" | "first" },
   ) => AppliedCommentBatchResult;
+  addUserLiveComment: (target: AddUserLiveCommentTarget, summary: string) => AppliedCommentResult;
   clearFilter: () => void;
   clearLiveComments: (filePath?: string) => ClearedCommentsResult;
+  jumpCommentCursorToHunk: (delta: number) => void;
+  moveCommentCursor: (delta: number) => void;
   navigateToLocation: (input: NavigateToHunkToolInput) => NavigatedSelectionResult;
   removeLiveComment: (commentId: string) => RemovedCommentResult;
   selectFile: (fileId: string, nextHunkIndex?: number, options?: ReviewSelectionOptions) => void;
   selectHunk: (fileId: string, hunkIndex: number, options?: ReviewSelectionOptions) => void;
+  setCommentCursorMode: (mode: CommentCursorMode) => void;
   setFilter: (value: string) => void;
 }
 
@@ -100,6 +129,16 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
   const [liveCommentsByFileId, setLiveCommentsByFileId] = useState<Record<string, LiveComment[]>>(
     {},
   );
+  const [commentCursor, setCommentCursor] = useState<CommentCursorState>(() => ({
+    mode: "off",
+    fileId: files[0]?.id ?? "",
+    hunkIndex: 0,
+    side: "new",
+    line: files[0]?.metadata.hunks[0]
+      ? firstCursorTargetForHunk(files[0], 0).line
+      : 1,
+  }));
+  const userCommentCounterRef = useRef(0);
   const deferredFilter = useDeferredValue(filter);
 
   const {
@@ -190,6 +229,34 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
   useEffect(() => {
     reconcileSelectedHunkIndex();
   }, [reconcileSelectedHunkIndex]);
+
+  /** Fall back the cursor to the first visible hunk when its target file or hunk disappears. */
+  useEffect(() => {
+    setCommentCursor((current) => {
+      if (current.mode === "off") {
+        return current;
+      }
+
+      const file = visibleFiles.find((entry) => entry.id === current.fileId);
+      if (file && current.hunkIndex < file.metadata.hunks.length) {
+        return current;
+      }
+
+      const fallbackFile = visibleFiles[0];
+      if (!fallbackFile || fallbackFile.metadata.hunks.length === 0) {
+        return { ...current, mode: "off" };
+      }
+
+      const anchor = firstCursorTargetForHunk(fallbackFile, 0);
+      return {
+        mode: current.mode,
+        fileId: fallbackFile.id,
+        hunkIndex: 0,
+        side: anchor.side,
+        line: anchor.line,
+      };
+    });
+  }, [visibleFiles]);
 
   /** Move through the full visible review stream one hunk at a time. */
   const moveToHunk = useCallback(
@@ -458,6 +525,157 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     [allFiles, liveCommentsByFileId],
   );
 
+  /** Enter, switch, or leave the cursor mode. Seeds position from the selected hunk on enter. */
+  const setCommentCursorMode = useCallback(
+    (mode: CommentCursorMode) => {
+      setCommentCursor((current) => {
+        if (mode === "off") {
+          return { ...current, mode };
+        }
+
+        if (current.mode !== "off") {
+          return { ...current, mode };
+        }
+
+        const file = visibleFiles.find((entry) => entry.id === selectedFileId) ?? visibleFiles[0];
+        if (!file || file.metadata.hunks.length === 0) {
+          return { ...current, mode };
+        }
+
+        const hunkIndex = Math.max(
+          0,
+          Math.min(selectedHunkIndex, file.metadata.hunks.length - 1),
+        );
+        const anchor = firstCursorTargetForHunk(file, hunkIndex);
+        return {
+          mode,
+          fileId: file.id,
+          hunkIndex,
+          side: anchor.side,
+          line: anchor.line,
+        };
+      });
+    },
+    [selectedFileId, selectedHunkIndex, visibleFiles],
+  );
+
+  /** Walk the cursor row-by-row through the review stream. */
+  const moveCommentCursor = useCallback(
+    (delta: number) => {
+      setCommentCursor((current) => {
+        if (current.mode === "off") {
+          return current;
+        }
+
+        const next = moveCursor(visibleFiles, current, delta);
+        if (!next) {
+          return current;
+        }
+
+        return { ...current, ...next };
+      });
+    },
+    [visibleFiles],
+  );
+
+  /** Jump the cursor to the first content row of the previous or next hunk. */
+  const jumpCommentCursorToHunk = useCallback(
+    (delta: number) => {
+      setCommentCursor((current) => {
+        if (current.mode === "off") {
+          return current;
+        }
+
+        const fileIndex = visibleFiles.findIndex((file) => file.id === current.fileId);
+        if (fileIndex < 0) {
+          return current;
+        }
+
+        let nextFileIndex = fileIndex;
+        let nextHunkIndex = current.hunkIndex + delta;
+
+        while (true) {
+          const file = visibleFiles[nextFileIndex];
+          if (!file) {
+            return current;
+          }
+
+          if (nextHunkIndex >= 0 && nextHunkIndex < file.metadata.hunks.length) {
+            const anchor = firstCursorTargetForHunk(file, nextHunkIndex);
+            return {
+              ...current,
+              fileId: file.id,
+              hunkIndex: nextHunkIndex,
+              side: anchor.side,
+              line: anchor.line,
+            };
+          }
+
+          if (delta > 0) {
+            nextFileIndex += 1;
+            nextHunkIndex = 0;
+          } else {
+            nextFileIndex -= 1;
+            const previous = visibleFiles[nextFileIndex];
+            if (!previous) {
+              return current;
+            }
+            nextHunkIndex = previous.metadata.hunks.length - 1;
+          }
+        }
+      });
+    },
+    [visibleFiles],
+  );
+
+  /** Persist one user-authored comment using the same store as MCP comments. */
+  const addUserLiveComment = useCallback(
+    (target: AddUserLiveCommentTarget, summary: string): AppliedCommentResult => {
+      const file = allFiles.find((entry) => entry.id === target.fileId);
+      if (!file) {
+        throw new Error(`No diff file matches ${target.fileId}.`);
+      }
+
+      const trimmed = summary.trim();
+      if (!trimmed) {
+        throw new Error("User comments must have a non-empty summary.");
+      }
+
+      userCommentCounterRef.current += 1;
+      const commentId = `user:${Date.now()}-${userCommentCounterRef.current}`;
+      const liveComment = buildUserLiveComment(
+        {
+          filePath: file.path,
+          side: target.side,
+          line: target.line,
+          summary: trimmed,
+          author: target.author,
+        },
+        commentId,
+        new Date().toISOString(),
+        target.hunkIndex,
+      );
+
+      setLiveCommentsByFileId((current) => ({
+        ...current,
+        [file.id]: [...(current[file.id] ?? []), liveComment],
+      }));
+
+      return {
+        commentId,
+        fileId: file.id,
+        filePath: file.path,
+        hunkIndex: target.hunkIndex,
+        side: target.side,
+        line: target.line,
+      };
+    },
+    [allFiles],
+  );
+
+  const commentCursorRowStableKey =
+    commentCursor.mode === "off" ? null : cursorRowStableKey(commentCursor);
+
   /** Count all currently tracked live comments, including ones hidden by the active filter. */
   const liveCommentCount = useMemo(
     () => Object.values(liveCommentsByFileId).reduce((sum, comments) => sum + comments.length, 0),
@@ -485,6 +703,8 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
 
   return {
     allFiles,
+    commentCursor,
+    commentCursorRowStableKey,
     filter,
     liveCommentCount,
     liveCommentSummaries,
@@ -500,8 +720,11 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     visibleFiles,
     addLiveComment,
     addLiveCommentBatch,
+    addUserLiveComment,
     clearFilter,
     clearLiveComments,
+    jumpCommentCursorToHunk,
+    moveCommentCursor,
     moveToAnnotatedFile,
     moveToAnnotatedHunk,
     moveToHunk,
@@ -509,6 +732,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     removeLiveComment,
     selectFile,
     selectHunk,
+    setCommentCursorMode,
     setFilter,
   };
 }

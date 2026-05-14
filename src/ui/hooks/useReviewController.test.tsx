@@ -364,3 +364,75 @@ describe("useReviewController", () => {
     }
   });
 });
+
+describe("useReviewController cursor state", () => {
+  test("turning cursor on seeds it from the currently selected hunk", async () => {
+    let controllerRef: ReviewController | null = null;
+    const file = createTwoHunkFile();
+    const setup = await testRender(
+      <ReviewControllerHarness
+        initialFiles={[file]}
+        onController={(controller) => {
+          controllerRef = controller;
+        }}
+      />,
+      { width: 80, height: 24 },
+    );
+
+    try {
+      await flush(setup);
+      const controller = expectValue<ReviewController | null>(controllerRef);
+      expect(controller.commentCursor.mode).toBe("off");
+
+      await act(async () => {
+        controller.setCommentCursorMode("navigating");
+      });
+      await flush(setup);
+
+      const next = expectValue<ReviewController | null>(controllerRef);
+      expect(next.commentCursor.mode).toBe("navigating");
+      expect(next.commentCursor.fileId).toBe(file.id);
+      expect(next.commentCursor.hunkIndex).toBe(0);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("addUserLiveComment stores a user comment that surfaces in liveCommentSummaries", async () => {
+    let controllerRef: ReviewController | null = null;
+    const file = createTwoHunkFile();
+    const setup = await testRender(
+      <ReviewControllerHarness
+        initialFiles={[file]}
+        onController={(controller) => {
+          controllerRef = controller;
+        }}
+      />,
+      { width: 80, height: 24 },
+    );
+
+    try {
+      await flush(setup);
+      const controller = expectValue<ReviewController | null>(controllerRef);
+
+      await act(async () => {
+        controller.addUserLiveComment(
+          { fileId: file.id, hunkIndex: 0, side: "new", line: 1 },
+          "Needs a follow-up",
+        );
+      });
+      await flush(setup);
+
+      const after = expectValue<ReviewController | null>(controllerRef);
+      expect(after.liveCommentCount).toBe(1);
+      expect(after.liveCommentSummaries[0]?.summary).toBe("Needs a follow-up");
+      expect(after.liveCommentSummaries[0]?.filePath).toBe(file.path);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+});
