@@ -25,12 +25,18 @@ export interface UseAppKeyboardShortcutsOptions {
   canRefreshCurrentInput: boolean;
   closeHelp: () => void;
   closeMenu: () => void;
+  commentCursorMode: "off" | "navigating" | "composing";
   cycleTheme: () => void;
+  enterCommentCursor: () => void;
+  exitCommentCursor: () => void;
   focusArea: FocusArea;
   focusFilter: () => void;
+  jumpCommentCursorToHunk: (delta: number) => void;
+  moveCommentCursor: (delta: number) => void;
   moveToAnnotatedHunk: (delta: number) => void;
   moveToHunk: (delta: number) => void;
   moveMenuItem: (delta: number) => void;
+  openCommentComposer: () => void;
   openMenu: (menuId: MenuId) => void;
   pagerMode: boolean;
   requestQuit: () => void;
@@ -56,12 +62,18 @@ export function useAppKeyboardShortcuts({
   canRefreshCurrentInput,
   closeHelp,
   closeMenu,
+  commentCursorMode,
   cycleTheme,
+  enterCommentCursor,
+  exitCommentCursor,
   focusArea,
   focusFilter,
+  jumpCommentCursorToHunk,
+  moveCommentCursor,
   moveToAnnotatedHunk,
   moveToHunk,
   moveMenuItem,
+  openCommentComposer,
   openMenu,
   pagerMode,
   requestQuit,
@@ -225,6 +237,54 @@ export function useAppKeyboardShortcuts({
     return false;
   };
 
+  const commentCursorModeRef = useRef(commentCursorMode);
+  commentCursorModeRef.current = commentCursorMode;
+
+  const handleCursorShortcut = (key: KeyEvent) => {
+    const mode = commentCursorModeRef.current;
+
+    if (mode === "off") {
+      return false;
+    }
+
+    if (mode === "composing") {
+      // The focused composer input owns its own keys; the router stays out of its way.
+      return true;
+    }
+
+    if (isEscapeKey(key) || key.name === "c" || key.sequence === "c") {
+      exitCommentCursor();
+      return true;
+    }
+
+    if (key.name === "return" || key.name === "enter" || key.name === "i" || key.sequence === "i") {
+      openCommentComposer();
+      return true;
+    }
+
+    if (isStepUpKey(key)) {
+      moveCommentCursor(-1);
+      return true;
+    }
+
+    if (isStepDownKey(key)) {
+      moveCommentCursor(1);
+      return true;
+    }
+
+    if (key.name === "[") {
+      jumpCommentCursorToHunk(-1);
+      return true;
+    }
+
+    if (key.name === "]") {
+      jumpCommentCursorToHunk(1);
+      return true;
+    }
+
+    return false;
+  };
+
   const handleFilterShortcut = (key: KeyEvent) => {
     if (focusAreaRef.current !== "filter") {
       return false;
@@ -346,6 +406,11 @@ export function useAppKeyboardShortcuts({
       return;
     }
 
+    if (key.name === "c" || key.sequence === "c") {
+      runAndCloseMenu(enterCommentCursor);
+      return;
+    }
+
     if (key.name === "a") {
       runAndCloseMenu(toggleAgentNotes);
       return;
@@ -401,6 +466,10 @@ export function useAppKeyboardShortcuts({
     }
 
     if (handleMenuShortcut(key)) {
+      return;
+    }
+
+    if (handleCursorShortcut(key)) {
       return;
     }
 
