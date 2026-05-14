@@ -6,6 +6,8 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Added
 
+- Added a keyboard-driven comment cursor (`c`) so reviewers can mark a diff row, type a single-line note with `i` / Enter, and persist it as a user-authored review comment that agents pick up through the existing `hunk session comment *` commands.
+
 ### Changed
 
 ### Fixed
