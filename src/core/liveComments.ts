@@ -124,6 +124,30 @@ export function resolveCommentTarget(
   };
 }
 
+/** Convert one cursor-driven user comment into a live annotation. */
+export function buildUserLiveComment(
+  input: CommentTargetInput & { side: DiffSide; line: number },
+  commentId: string,
+  createdAt: string,
+  hunkIndex: number,
+): LiveComment {
+  return {
+    id: commentId,
+    source: "user",
+    author: input.author,
+    createdAt,
+    filePath: input.filePath,
+    hunkIndex,
+    side: input.side,
+    line: input.line,
+    summary: input.summary,
+    rationale: input.rationale,
+    oldRange: input.side === "old" ? [input.line, input.line] : undefined,
+    newRange: input.side === "new" ? [input.line, input.line] : undefined,
+    tags: ["user"],
+  };
+}
+
 /** Convert one incoming session-daemon comment command into a live annotation. */
 export function buildLiveComment(
   input: CommentTargetInput & { side: DiffSide; line: number },

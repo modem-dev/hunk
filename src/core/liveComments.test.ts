@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { createTestDiffFile, lines } from "../../test/helpers/diff-helpers";
 import {
   buildLiveComment,
+  buildUserLiveComment,
   findDiffFileByPath,
   findHunkIndexForLine,
   firstCommentTargetForHunk,
@@ -122,6 +123,58 @@ describe("live comment helpers", () => {
   // the hunk silently disappeared from getAnnotatedHunkIndices / annotated-cursor lists.
   // Fix: hunkLineRange uses additionCount/deletionCount (header total, includes context)
   // instead of additionLines/deletionLines (just '+' / '-' counts).
+  test("builds a live user comment annotation", () => {
+    const comment = buildUserLiveComment(
+      {
+        filePath: "src/example.ts",
+        side: "new",
+        line: 4,
+        summary: "Look at this addition",
+        author: "andrew",
+      },
+      "user:test-1",
+      "2026-05-14T00:00:00.000Z",
+      0,
+    );
+
+    expect(comment).toMatchObject({
+      id: "user:test-1",
+      source: "user",
+      author: "andrew",
+      filePath: "src/example.ts",
+      hunkIndex: 0,
+      side: "new",
+      line: 4,
+      summary: "Look at this addition",
+      newRange: [4, 4],
+      tags: ["user"],
+    });
+    expect(comment.confidence).toBeUndefined();
+  });
+
+  test("builds an old-side user comment with an oldRange instead of newRange", () => {
+    const comment = buildUserLiveComment(
+      {
+        filePath: "src/example.ts",
+        side: "old",
+        line: 2,
+        summary: "Why was this removed?",
+      },
+      "user:test-2",
+      "2026-05-14T00:00:00.000Z",
+      0,
+    );
+
+    expect(comment).toMatchObject({
+      source: "user",
+      side: "old",
+      line: 2,
+      oldRange: [2, 2],
+      tags: ["user"],
+    });
+    expect(comment.newRange).toBeUndefined();
+  });
+
   test("includes context lines when one hunk has many context rows around few changes", () => {
     // 12 leading + 1 added + many trailing context lines on the new side.
     const beforeLines = Array.from({ length: 25 }, (_, i) => `line${i + 1}`);
