@@ -19,8 +19,9 @@ type ScrollUnit = "step" | "viewport" | "content" | "half";
 
 const FAST_CODE_HORIZONTAL_SCROLL_COLUMNS = 8;
 
-type JumpShortcut = "top" | "bottom" | "pending";
+type JumpShortcut = "top" | "bottom";
 
+/** Detect an unmodified lowercase g keypress. */
 function isLowercaseGKey(key: KeyEvent) {
   return (
     (key.name === "g" || key.sequence === "g") &&
@@ -31,6 +32,7 @@ function isLowercaseGKey(key: KeyEvent) {
   );
 }
 
+/** Detect an unmodified uppercase G keypress. */
 function isUppercaseGKey(key: KeyEvent) {
   return (
     (key.sequence === "G" && !key.option && !key.ctrl && !key.meta) ||
@@ -101,7 +103,6 @@ export function useAppKeyboardShortcuts({
   const activeMenuIdRef = useRef(activeMenuId);
   const focusAreaRef = useRef(focusArea);
   const pagerModeRef = useRef(pagerMode);
-  const pendingTopJumpRef = useRef(false);
   const showHelpRef = useRef(showHelp);
 
   activeMenuIdRef.current = activeMenuId;
@@ -111,21 +112,13 @@ export function useAppKeyboardShortcuts({
 
   const resolveJumpShortcut = (key: KeyEvent): JumpShortcut | null => {
     if (isUppercaseGKey(key)) {
-      pendingTopJumpRef.current = false;
       return "bottom";
     }
 
     if (isLowercaseGKey(key)) {
-      if (pendingTopJumpRef.current) {
-        pendingTopJumpRef.current = false;
-        return "top";
-      }
-
-      pendingTopJumpRef.current = true;
-      return "pending";
+      return "top";
     }
 
-    pendingTopJumpRef.current = false;
     return null;
   };
 
@@ -161,10 +154,6 @@ export function useAppKeyboardShortcuts({
 
     if (jumpShortcut === "bottom") {
       scrollDiff(1, "content");
-      return;
-    }
-
-    if (jumpShortcut === "pending") {
       return;
     }
 
@@ -303,10 +292,6 @@ export function useAppKeyboardShortcuts({
 
     if (jumpShortcut === "bottom") {
       scrollDiff(1, "content");
-      return;
-    }
-
-    if (jumpShortcut === "pending") {
       return;
     }
 
@@ -458,7 +443,6 @@ export function useAppKeyboardShortcuts({
 
   useKeyboard((key: KeyEvent) => {
     if (handleMenuToggleShortcut(key)) {
-      pendingTopJumpRef.current = false;
       return;
     }
 
@@ -468,17 +452,14 @@ export function useAppKeyboardShortcuts({
     }
 
     if (handleHelpShortcut(key)) {
-      pendingTopJumpRef.current = false;
       return;
     }
 
     if (handleMenuShortcut(key)) {
-      pendingTopJumpRef.current = false;
       return;
     }
 
     if (handleFilterShortcut(key)) {
-      pendingTopJumpRef.current = false;
       return;
     }
 
