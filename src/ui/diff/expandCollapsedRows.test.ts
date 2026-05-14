@@ -279,6 +279,43 @@ describe("expandCollapsedRows", () => {
     }
     expect(inserted.cell.spans).toEqual([{ text: "highlighted:beta", fg: "#abcdef" }]);
   });
+
+  test("shows an error row when loaded source is shorter than the collapsed range", () => {
+    const rows: DiffRow[] = [makeCollapsedRow("before", 0, [1, 3], [1, 3]), makeHunkHeader(0)];
+
+    const result = expandCollapsedRows(rows, {
+      layout: "stack",
+      expandedKeys: new Set([gapKey("before", 0)]),
+      sourceStatus: { kind: "loaded", text: "alpha\n" },
+      side: "new",
+    });
+
+    expect(result.map((row) => row.type)).toEqual(["collapsed", "hunk-header"]);
+    const collapsed = result[0];
+    if (!collapsed || collapsed.type !== "collapsed") {
+      throw new Error("expected first row to be collapsed");
+    }
+    expect(collapsed.text.toLowerCase()).toContain("could not load");
+    expect(collapsed.text.toLowerCase()).not.toContain("hide");
+  });
+
+  test("shows an error row when old-side split expansion is out of bounds", () => {
+    const rows: DiffRow[] = [makeCollapsedRow("before", 0, [2, 3], [10, 11]), makeHunkHeader(0)];
+
+    const result = expandCollapsedRows(rows, {
+      layout: "split",
+      expandedKeys: new Set([gapKey("before", 0)]),
+      sourceStatus: { kind: "loaded", text: "alpha\n" },
+      side: "old",
+    });
+
+    expect(result.map((row) => row.type)).toEqual(["collapsed", "hunk-header"]);
+    const collapsed = result[0];
+    if (!collapsed || collapsed.type !== "collapsed") {
+      throw new Error("expected first row to be collapsed");
+    }
+    expect(collapsed.text.toLowerCase()).toContain("could not load");
+  });
 });
 
 describe("selectGapForKeyboardToggle", () => {

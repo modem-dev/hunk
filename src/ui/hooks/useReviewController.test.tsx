@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
-import { act, useEffect, useState } from "react";
+import { act, StrictMode, useEffect, useState } from "react";
 import type { DiffFile } from "../../core/types";
 import {
   createTestDeferred,
@@ -107,10 +107,13 @@ function ReviewControllerHarness({
 }
 
 /** Render the controller hook and expose its latest state to tests. */
-async function renderReviewController(initialFiles: DiffFile[]) {
+async function renderReviewController(
+  initialFiles: DiffFile[],
+  { strictMode = false }: { strictMode?: boolean } = {},
+) {
   const controllerRef: { current: ReviewController | null } = { current: null };
   const setFilesRef: { current: ((nextFiles: DiffFile[]) => void) | null } = { current: null };
-  const setup = await testRender(
+  const harness = (
     <ReviewControllerHarness
       initialFiles={initialFiles}
       onController={(nextController) => {
@@ -119,9 +122,12 @@ async function renderReviewController(initialFiles: DiffFile[]) {
       onSetFiles={(nextSetFiles) => {
         setFilesRef.current = nextSetFiles;
       }}
-    />,
-    { width: 80, height: 4 },
+    />
   );
+  const setup = await testRender(strictMode ? <StrictMode>{harness}</StrictMode> : harness, {
+    width: 80,
+    height: 4,
+  });
 
   return { controllerRef, setFilesRef, setup };
 }
@@ -568,6 +574,41 @@ describe("useReviewController", () => {
     }
   });
 
+  test("toggleGap settles source status under React StrictMode", async () => {
+    const deferred = createTestDeferred<string | null>();
+    const fakeFetcher = createTestSourceFetcher(() => deferred.promise);
+
+    const { controllerRef, setup } = await renderReviewController([createAlphaFile(fakeFetcher)], {
+      strictMode: true,
+    });
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        expectValue(controllerRef.current).toggleGap("alpha", "before:0");
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).sourceStatusByFileId["alpha"]?.kind).toBe(
+        "loading",
+      );
+
+      deferred.resolve("strict mode source\n");
+      await flush(setup);
+
+      const status = expectValue(controllerRef.current).sourceStatusByFileId["alpha"];
+      expect(status?.kind).toBe("loaded");
+      if (status?.kind === "loaded") {
+        expect(status.text).toBe("strict mode source\n");
+      }
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("toggleGap is a no-op for files without a source fetcher", async () => {
     const { controllerRef, setup } = await renderReviewController([createAlphaFile()]);
 
@@ -862,6 +903,53 @@ describe("useReviewController", () => {
       expect(firstFetcher.calls).toEqual(["new"]);
       expect(secondFetcher.calls).toEqual(["new"]);
     } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("a stale rejected source load is logged without repopulating state", async () => {
+    const originalConsoleError = console.error;
+    const loggedErrors: unknown[][] = [];
+    console.error = (...args: unknown[]) => {
+      loggedErrors.push(args);
+    };
+
+    const firstLoad = createTestDeferred<string | null>();
+    const firstFetcher = createTestSourceFetcher(() => firstLoad.promise);
+    const secondFetcher = createTestSourceFetcher((side) => (side === "new" ? "second\n" : null));
+    const baseFile = createAlphaFile();
+
+    const { controllerRef, setFilesRef, setup } = await renderReviewController([
+      { ...baseFile, sourceFetcher: firstFetcher },
+    ]);
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        expectValue(controllerRef.current).toggleGap("alpha", "before:0");
+      });
+      await flush(setup);
+
+      await act(async () => {
+        expectValue(setFilesRef.current)([{ ...baseFile, sourceFetcher: secondFetcher }]);
+      });
+      await flush(setup);
+
+      await act(async () => {
+        firstLoad.reject(new Error("stale failure"));
+        await firstLoad.promise.catch(() => undefined);
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).sourceStatusByFileId["alpha"]).toBeUndefined();
+      expect(String(loggedErrors[0]?.[0])).toContain("ignored stale new source load failure");
+      expect(String(loggedErrors[0]?.[0])).toContain("alpha.ts");
+      expect(String(loggedErrors[0]?.[0])).toContain("alpha");
+    } finally {
+      console.error = originalConsoleError;
       await act(async () => {
         setup.renderer.destroy();
       });

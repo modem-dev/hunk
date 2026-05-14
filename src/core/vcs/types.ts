@@ -15,6 +15,7 @@ export interface VcsDetection {
 
 export interface VcsLoadContext {
   cwd: string;
+  gitExecutable?: string;
 }
 
 export type VcsReviewInput = VcsCommandInput | ShowCommandInput | StashShowCommandInput;

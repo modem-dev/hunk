@@ -257,4 +257,65 @@ describe("measureDiffSectionGeometry", () => {
 
     expect(wrappedGeometry.bodyHeight).toBe(nowrapGeometry.bodyHeight + 1);
   });
+
+  test("same-length source edits invalidate note-aware expanded geometry", () => {
+    const beforeLines = Array.from({ length: 30 }, (_, index) => `line ${index + 1}`);
+    const afterLines = [...beforeLines];
+    afterLines[4] = "line 5 modified";
+    const file = createTestDiffFile({
+      after: lines(...afterLines),
+      before: lines(...beforeLines),
+      id: "same-length-source",
+      path: "same-length-source.txt",
+    });
+    const visibleAgentNotes: VisibleAgentNote[] = [
+      {
+        id: "annotation:same-length-source:0",
+        annotation: {
+          newRange: [5, 5],
+          rationale: "Forces note-aware geometry caching.",
+          summary: "Changed line",
+        },
+      },
+    ];
+    const expandedKeys = new Set(["trailing:0"]);
+    const shortSourceLines = [...afterLines];
+    const longSourceLines = [...afterLines];
+    const shortLine = "short";
+    const longLine = "this is a deliberately long expanded source line";
+    shortSourceLines[0] += "x".repeat(longLine.length - shortLine.length);
+    shortSourceLines[8] = shortLine;
+    longSourceLines[8] = longLine;
+    const shortSource = lines(...shortSourceLines);
+    const longSource = lines(...longSourceLines);
+
+    expect(shortSource).toHaveLength(longSource.length);
+
+    const shortGeometry = measureDiffSectionGeometry(
+      file,
+      "stack",
+      true,
+      theme,
+      visibleAgentNotes,
+      24,
+      true,
+      true,
+      expandedKeys,
+      { kind: "loaded", text: shortSource },
+    );
+    const longGeometry = measureDiffSectionGeometry(
+      file,
+      "stack",
+      true,
+      theme,
+      visibleAgentNotes,
+      24,
+      true,
+      true,
+      expandedKeys,
+      { kind: "loaded", text: longSource },
+    );
+
+    expect(longGeometry.bodyHeight).toBeGreaterThan(shortGeometry.bodyHeight);
+  });
 });

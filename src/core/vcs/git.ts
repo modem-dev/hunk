@@ -105,11 +105,11 @@ export const gitAdapter: VcsAdapter = {
 
   detect: detectGitRepo,
 
-  async loadReview(operation, { cwd }) {
+  async loadReview(operation, { cwd, gitExecutable = "git" }) {
     switch (operation.kind) {
       case "working-tree-diff": {
         const input = operation.input;
-        const repoRoot = resolveGitRepoRoot(input, { cwd });
+        const repoRoot = resolveGitRepoRoot(input, { cwd, gitExecutable });
         const repoName = basename(repoRoot);
         const title = input.staged
           ? `${repoName} staged changes`
@@ -117,7 +117,7 @@ export const gitAdapter: VcsAdapter = {
             ? `${repoName} ${input.range}`
             : `${repoName} working tree`;
         const largeTrackedFiles = parseGitNumstat(
-          runGitText({ input, args: buildGitDiffNumstatArgs(input), cwd }),
+          runGitText({ input, args: buildGitDiffNumstatArgs(input), cwd, gitExecutable }),
         ).filter((file) => shouldSkipLargeTrackedDiff(file, repoRoot));
         return {
           repoRoot,
@@ -130,8 +130,9 @@ export const gitAdapter: VcsAdapter = {
               largeTrackedFiles.map((file) => file.path),
             ),
             cwd,
+            gitExecutable,
           }),
-          untrackedFiles: listGitUntrackedFiles(input, { cwd, repoRoot }),
+          untrackedFiles: listGitUntrackedFiles(input, { cwd, repoRoot, gitExecutable }),
           extraFiles: largeTrackedFiles.map((file, index) =>
             buildSkippedLargeTrackedDiffFile(file, index, repoRoot),
           ),
@@ -139,24 +140,24 @@ export const gitAdapter: VcsAdapter = {
       }
       case "revision-show": {
         const input = operation.input;
-        const repoRoot = resolveGitRepoRoot(input, { cwd });
+        const repoRoot = resolveGitRepoRoot(input, { cwd, gitExecutable });
         const repoName = basename(repoRoot);
         return {
           repoRoot,
           sourceLabel: repoRoot,
           title: input.ref ? `${repoName} show ${input.ref}` : `${repoName} show HEAD`,
-          patchText: runGitText({ input, args: buildGitShowArgs(input), cwd }),
+          patchText: runGitText({ input, args: buildGitShowArgs(input), cwd, gitExecutable }),
         };
       }
       case "stash-show": {
         const input = operation.input;
-        const repoRoot = resolveGitRepoRoot(input, { cwd });
+        const repoRoot = resolveGitRepoRoot(input, { cwd, gitExecutable });
         const repoName = basename(repoRoot);
         return {
           repoRoot,
           sourceLabel: repoRoot,
           title: input.ref ? `${repoName} stash ${input.ref}` : `${repoName} stash`,
-          patchText: runGitText({ input, args: buildGitStashShowArgs(input), cwd }),
+          patchText: runGitText({ input, args: buildGitStashShowArgs(input), cwd, gitExecutable }),
         };
       }
     }
