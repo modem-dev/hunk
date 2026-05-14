@@ -608,6 +608,7 @@ function renderRow(
   anchorId?: string,
   noteGuideSide?: "old" | "new",
   onOpenAgentNotesAtHunk?: (hunkIndex: number) => void,
+  isCursor: boolean = false,
 ) {
   let baseRow: ReactNode;
 
@@ -633,9 +634,13 @@ function renderRow(
     const { leftWidth, rightWidth } = resolveSplitPaneWidths(width);
     const rightRenderWidth = Math.max(0, rightWidth - (guideOnNewSide ? 1 : 0));
     const leftPrefix = {
-      text: guideOnOldSide ? "│" : marker(),
-      fg: guideOnOldSide ? theme.noteBorder : splitLeftRailColor(row.left.kind, theme, selected),
-      bg: theme.panel,
+      text: guideOnOldSide ? "│" : isCursor ? "▶" : marker(),
+      fg: guideOnOldSide
+        ? theme.noteBorder
+        : isCursor
+          ? theme.noteTitleText
+          : splitLeftRailColor(row.left.kind, theme, selected),
+      bg: isCursor ? theme.noteTitleBackground : theme.panel,
     };
     const rightPrefix = {
       text: "▌",
@@ -750,9 +755,13 @@ function renderRow(
     const guideOnNewSide = noteGuideSide === "new";
     const contentWidth = Math.max(0, width - (guideOnNewSide ? 1 : 0));
     const prefix = {
-      text: guideOnOldSide ? "│" : marker(),
-      fg: guideOnOldSide ? theme.noteBorder : stackRailColor(row.cell.kind, theme, selected),
-      bg: theme.panel,
+      text: guideOnOldSide ? "│" : isCursor ? "▶" : marker(),
+      fg: guideOnOldSide
+        ? theme.noteBorder
+        : isCursor
+          ? theme.noteTitleText
+          : stackRailColor(row.cell.kind, theme, selected),
+      bg: isCursor ? theme.noteTitleBackground : theme.panel,
     };
 
     if (!wrapLines) {
@@ -840,6 +849,7 @@ interface DiffRowViewProps {
   anchorId?: string;
   noteGuideSide?: "old" | "new";
   onOpenAgentNotesAtHunk?: (hunkIndex: number) => void;
+  isCursor?: boolean;
 }
 
 /** Render one diff row, memoized to avoid unnecessary rerenders. */
@@ -858,6 +868,7 @@ export const DiffRowView = memo(
     anchorId,
     noteGuideSide,
     onOpenAgentNotesAtHunk,
+    isCursor = false,
   }: DiffRowViewProps) {
     return renderRow(
       row,
@@ -873,6 +884,7 @@ export const DiffRowView = memo(
       anchorId,
       noteGuideSide,
       onOpenAgentNotesAtHunk,
+      isCursor,
     );
   },
   (previous, next) => {
@@ -888,7 +900,8 @@ export const DiffRowView = memo(
       previous.selected === next.selected &&
       previous.annotated === next.annotated &&
       previous.anchorId === next.anchorId &&
-      previous.noteGuideSide === next.noteGuideSide
+      previous.noteGuideSide === next.noteGuideSide &&
+      previous.isCursor === next.isCursor
     );
   },
 );

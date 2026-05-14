@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import type { DiffFile, LayoutMode } from "../../core/types";
 import { AgentInlineNote, AgentInlineNoteGuideCap } from "../components/panes/AgentInlineNote";
+import { CommentComposer } from "../components/panes/CommentComposer";
 import type { VisibleAgentNote } from "../lib/agentAnnotations";
 import type { DiffSectionGeometry } from "../lib/diffSectionGeometry";
 import { reviewRowId } from "../lib/ids";
@@ -20,8 +21,12 @@ const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
 export function PierreDiffView({
   annotatedHunkIndices = EMPTY_ANNOTATED_HUNK_INDICES,
   codeHorizontalOffset = 0,
+  commentCursorRowStableKey,
+  composer,
   file,
   layout,
+  onCommentComposerCancel,
+  onCommentComposerSubmit,
   onOpenAgentNotesAtHunk,
   showLineNumbers = true,
   showHunkHeaders = true,
@@ -37,8 +42,17 @@ export function PierreDiffView({
 }: {
   annotatedHunkIndices?: Set<number>;
   codeHorizontalOffset?: number;
+  commentCursorRowStableKey?: string | null;
+  composer?: {
+    fileId: string;
+    hunkIndex: number;
+    side: "old" | "new";
+    line: number;
+  } | null;
   file: DiffFile | undefined;
   layout: Exclude<LayoutMode, "auto">;
+  onCommentComposerCancel?: () => void;
+  onCommentComposerSubmit?: (summary: string) => void;
   onOpenAgentNotesAtHunk?: (hunkIndex: number) => void;
   showLineNumbers?: boolean;
   showHunkHeaders?: boolean;
@@ -75,9 +89,10 @@ export function PierreDiffView({
             rows,
             showHunkHeaders,
             visibleAgentNotes,
+            composer: composer ?? null,
           })
         : [],
-    [file, rows, showHunkHeaders, visibleAgentNotes],
+    [composer, file, rows, showHunkHeaders, visibleAgentNotes],
   );
   const lineNumberDigits = useMemo(() => String(file ? findMaxLineNumber(file) : 1).length, [file]);
   const visiblePlannedRowWindow = useMemo(() => {
@@ -178,11 +193,27 @@ export function PierreDiffView({
         }
 
         if (plannedRow.kind === "comment-composer") {
-          // Composer rendering is wired in Task 8; reserve the row for now.
           return (
-            <box key={plannedRow.key} id={rowId} style={{ width: "100%", height: 1 }} />
+            <box key={plannedRow.key} id={rowId} style={{ width: "100%", flexDirection: "column" }}>
+              <CommentComposer
+                filePath={file.path}
+                hunkIndex={plannedRow.hunkIndex}
+                line={plannedRow.line}
+                side={plannedRow.side}
+                theme={theme}
+                width={width}
+                onCancel={() => onCommentComposerCancel?.()}
+                onSubmit={(summary) => onCommentComposerSubmit?.(summary)}
+              />
+            </box>
           );
         }
+
+        const isCursorRow = Boolean(
+          commentCursorRowStableKey &&
+            (plannedRow.stableKey === commentCursorRowStableKey ||
+              plannedRow.stableAliasKeys?.includes(commentCursorRowStableKey)),
+        );
 
         return (
           <box key={plannedRow.key} id={rowId} style={{ width: "100%", flexDirection: "column" }}>
@@ -203,6 +234,7 @@ export function PierreDiffView({
               anchorId={plannedRow.anchorId}
               noteGuideSide={plannedRow.noteGuideSide}
               onOpenAgentNotesAtHunk={onOpenAgentNotesAtHunk}
+              isCursor={isCursorRow}
             />
           </box>
         );
