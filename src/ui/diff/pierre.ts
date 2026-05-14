@@ -3,6 +3,8 @@ import {
   getHighlighterOptions,
   getSharedHighlighter,
   renderDiffWithHighlighter,
+  renderFileWithHighlighter,
+  type FileContents,
   type FileDiffMetadata,
 } from "@pierre/diffs";
 import { formatHunkHeader } from "../../core/hunkHeader";
@@ -67,6 +69,10 @@ export interface HighlightedDiffCode {
   additionLines: Array<HastNode | undefined>;
 }
 
+export interface HighlightedSourceCode {
+  lines: Array<HastNode | undefined>;
+}
+
 export interface RenderSpan {
   text: string;
   fg?: string;
@@ -88,9 +94,25 @@ export interface StackLineCell {
   spans: RenderSpan[];
 }
 
+export type CollapsedGapPosition = "before" | "trailing";
+
 export type DiffRow =
   | {
-      type: "collapsed" | "hunk-header";
+      type: "collapsed";
+      key: string;
+      fileId: string;
+      hunkIndex: number;
+      text: string;
+      // Where this gap sits relative to the surrounding hunks; "before" attaches to
+      // the gap leading into hunkIndex, "trailing" sits after the final hunk.
+      position: CollapsedGapPosition;
+      // 1-based inclusive file-line ranges this gap covers on each side. Expansion
+      // uses these to slice the file contents that fill the gap.
+      oldRange: [number, number];
+      newRange: [number, number];
+    }
+  | {
+      type: "hunk-header";
       key: string;
       fileId: string;
       hunkIndex: number;
@@ -103,6 +125,10 @@ export type DiffRow =
       hunkIndex: number;
       left: SplitLineCell;
       right: SplitLineCell;
+      // True when this row was synthesized to fill an expanded collapsed gap.
+      // Expanded rows carry the neighbor hunk's index for ordering but must not
+      // count toward that hunk's bounds or anchor position.
+      isExpansionRow?: true;
     }
   | {
       type: "stack-line";
@@ -110,6 +136,7 @@ export type DiffRow =
       fileId: string;
       hunkIndex: number;
       cell: StackLineCell;
+      isExpansionRow?: true;
     };
 
 /** Replace tabs with fixed spaces so terminal cell widths stay predictable. */
@@ -402,13 +429,40 @@ function makeStackCell(
   } satisfies StackLineCell;
 }
 
-/** Describe a collapsed unchanged region between visible hunks. */
+/** Describe one collapsed unchanged region in the diff stream. */
 function collapsedRowText(lines: number) {
   return `${lines} unchanged ${lines === 1 ? "line" : "lines"}`;
 }
 
+/** Compute the file-line ranges covered by the gap leading into one hunk. */
+function leadingCollapsedRanges(hunk: FileDiffMetadata["hunks"][number]) {
+  return {
+    oldRange: [hunk.deletionStart - hunk.collapsedBefore, hunk.deletionStart - 1] as [
+      number,
+      number,
+    ],
+    newRange: [hunk.additionStart - hunk.collapsedBefore, hunk.additionStart - 1] as [
+      number,
+      number,
+    ],
+  };
+}
+
+/** Compute the file-line ranges covered by the trailing gap after the final hunk. */
+function trailingCollapsedRanges(
+  lastHunk: FileDiffMetadata["hunks"][number],
+  trailingLines: number,
+) {
+  const oldStart = lastHunk.deletionStart + lastHunk.deletionCount;
+  const newStart = lastHunk.additionStart + lastHunk.additionCount;
+  return {
+    oldRange: [oldStart, oldStart + trailingLines - 1] as [number, number],
+    newRange: [newStart, newStart + trailingLines - 1] as [number, number],
+  };
+}
+
 /** Count hidden unchanged lines after the final visible hunk when Pierre omits them. */
-function trailingCollapsedLines(metadata: FileDiffMetadata) {
+export function trailingCollapsedLines(metadata: FileDiffMetadata) {
   const lastHunk = metadata.hunks.at(-1);
   if (!lastHunk || metadata.isPartial) {
     return 0;
@@ -450,10 +504,10 @@ async function prepareHighlighter(
 }
 
 /** Queue highlight rendering so startup work stays serialized in request order. */
-function queueHighlightedDiff(run: () => HighlightedDiffCode) {
+function queueHighlightedWork<T>(run: () => T) {
   const queued = queuedHighlightWork.then(
     () =>
-      new Promise<HighlightedDiffCode>((resolve, reject) => {
+      new Promise<T>((resolve, reject) => {
         queueMicrotask(() => {
           try {
             resolve(run());
@@ -470,6 +524,26 @@ function queueHighlightedDiff(run: () => HighlightedDiffCode) {
   );
 
   return queued;
+}
+
+/** Normalize source text the same way expanded-row slicing does before highlighting. */
+function normalizeSourceText(text: string) {
+  return text.replaceAll("\r\n", "\n");
+}
+
+/** Build Pierre file contents for a full-source highlight request. */
+function sourceFileContents(file: DiffFile, text: string, language: string | undefined) {
+  const contents: FileContents = {
+    name: file.path,
+    contents: normalizeSourceText(text),
+    cacheKey: `${file.id}:${file.path}:${language ?? ""}:${text.length}`,
+  };
+
+  if (language) {
+    contents.lang = language as FileContents["lang"];
+  }
+
+  return contents;
 }
 
 /**
@@ -517,7 +591,7 @@ export async function loadHighlightedDiff(
 ): Promise<HighlightedDiffCode> {
   try {
     const highlighter = await prepareHighlighter(file.language, appearance);
-    return queueHighlightedDiff(() => {
+    return queueHighlightedWork(() => {
       const highlighted = renderDiffWithHighlighter(
         file.metadata,
         highlighter,
@@ -530,7 +604,7 @@ export async function loadHighlightedDiff(
     });
   } catch {
     const highlighter = await prepareHighlighter("text", appearance);
-    return queueHighlightedDiff(() => {
+    return queueHighlightedWork(() => {
       const highlighted = renderDiffWithHighlighter(
         { ...file.metadata, lang: "text" },
         highlighter,
@@ -542,6 +616,63 @@ export async function loadHighlightedDiff(
       });
     });
   }
+}
+
+/** Highlight a full source file for unchanged lines synthesized during gap expansion. */
+export async function loadHighlightedSourceLines({
+  file,
+  text,
+  appearance = "dark",
+}: {
+  file: DiffFile;
+  text: string;
+  appearance?: AppTheme["appearance"];
+}): Promise<HighlightedSourceCode> {
+  try {
+    const highlighter = await prepareHighlighter(file.language, appearance);
+    return queueHighlightedWork(() => {
+      const highlighted = renderFileWithHighlighter(
+        sourceFileContents(file, text, file.language),
+        highlighter,
+        pierreRenderOptions(appearance),
+      );
+      return {
+        lines: highlighted.code as Array<HastNode | undefined>,
+      };
+    });
+  } catch {
+    const highlighter = await prepareHighlighter("text", appearance);
+    return queueHighlightedWork(() => {
+      const highlighted = renderFileWithHighlighter(
+        sourceFileContents(file, text, "text"),
+        highlighter,
+        pierreRenderOptions(appearance),
+      );
+      return {
+        lines: highlighted.code as Array<HastNode | undefined>,
+      };
+    });
+  }
+}
+
+/** Convert one highlighted full-source line into the spans used by expanded context rows. */
+export function spansForHighlightedSourceLine(
+  rawLine: string | undefined,
+  highlightedLine: HastNode | undefined,
+  theme: AppTheme,
+): RenderSpan[] {
+  if (highlightedLine === undefined) {
+    const fallbackText = cleanDiffLine(rawLine);
+    return fallbackText.length > 0 ? [{ text: fallbackText }] : [];
+  }
+
+  const spans = flattenHighlightedLine(highlightedLine, theme, theme.contextContentBg);
+  if (spans.length > 0) {
+    return spans;
+  }
+
+  const fallbackText = cleanDiffLine(rawLine);
+  return fallbackText.length > 0 ? [{ text: fallbackText }] : [];
 }
 
 /** Expand Pierre metadata into the flat split-view row stream consumed by the renderer. */
@@ -562,6 +693,8 @@ export function buildSplitRows(
         fileId: file.id,
         hunkIndex,
         text: collapsedRowText(hunk.collapsedBefore),
+        position: "before",
+        ...leadingCollapsedRanges(hunk),
       });
     }
 
@@ -650,13 +783,16 @@ export function buildSplitRows(
   }
 
   const trailingLines = trailingCollapsedLines(file.metadata);
-  if (trailingLines > 0) {
+  const lastHunk = file.metadata.hunks.at(-1);
+  if (trailingLines > 0 && lastHunk) {
     rows.push({
       type: "collapsed",
       key: `${file.id}:collapsed:trailing`,
       fileId: file.id,
-      hunkIndex: Math.max(file.metadata.hunks.length - 1, 0),
+      hunkIndex: file.metadata.hunks.length - 1,
       text: collapsedRowText(trailingLines),
+      position: "trailing",
+      ...trailingCollapsedRanges(lastHunk, trailingLines),
     });
   }
 
@@ -681,6 +817,8 @@ export function buildStackRows(
         fileId: file.id,
         hunkIndex,
         text: collapsedRowText(hunk.collapsedBefore),
+        position: "before",
+        ...leadingCollapsedRanges(hunk),
       });
     }
 
@@ -765,13 +903,16 @@ export function buildStackRows(
   }
 
   const trailingLines = trailingCollapsedLines(file.metadata);
-  if (trailingLines > 0) {
+  const lastHunk = file.metadata.hunks.at(-1);
+  if (trailingLines > 0 && lastHunk) {
     rows.push({
       type: "collapsed",
       key: `${file.id}:stack:collapsed:trailing`,
       fileId: file.id,
-      hunkIndex: Math.max(file.metadata.hunks.length - 1, 0),
+      hunkIndex: file.metadata.hunks.length - 1,
       text: collapsedRowText(trailingLines),
+      position: "trailing",
+      ...trailingCollapsedRanges(lastHunk, trailingLines),
     });
   }
 

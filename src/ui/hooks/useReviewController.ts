@@ -12,6 +12,7 @@ import {
   useDeferredValue,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -32,6 +33,9 @@ import type {
   RemovedCommentResult,
   SessionLiveCommentSummary,
 } from "../../hunk-session/types";
+import type { FileSourceStatus } from "../diff/expandCollapsedRows";
+import { selectGapForKeyboardToggle } from "../diff/expandCollapsedRows";
+import { trailingCollapsedLines } from "../diff/pierre";
 import { findNextHunkCursor } from "../lib/hunks";
 import {
   buildReviewState,
@@ -46,6 +50,26 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
+/** Return a new record with the given keys omitted, or the original when nothing changed. */
+function removeKeys<T>(record: Record<string, T>, keys: ReadonlySet<string>): Record<string, T> {
+  let changed = false;
+  const next: Record<string, T> = {};
+  for (const [key, value] of Object.entries(record)) {
+    if (keys.has(key)) {
+      changed = true;
+    } else {
+      next[key] = value;
+    }
+  }
+  return changed ? next : record;
+}
+
+interface SourceLoadRequest {
+  fetcher: NonNullable<DiffFile["sourceFetcher"]>;
+  requestId: number;
+  side: "old" | "new";
+}
+
 export interface ReviewSelectionOptions {
   alignFileHeaderTop?: boolean;
   preserveViewport?: boolean;
@@ -54,6 +78,7 @@ export interface ReviewSelectionOptions {
 
 export interface ReviewController {
   allFiles: DiffFile[];
+  expandedGapsByFileId: Record<string, ReadonlySet<string>>;
   filter: string;
   liveCommentCount: number;
   liveCommentSummaries: SessionLiveCommentSummary[];
@@ -70,6 +95,9 @@ export interface ReviewController {
   selectedHunk: DiffFile["metadata"]["hunks"][number] | undefined;
   selectedHunkIndex: number;
   sidebarEntries: ReviewState["sidebarEntries"];
+  sourceStatusByFileId: Record<string, FileSourceStatus>;
+  toggleGap: (fileId: string, gapKey: string) => void;
+  toggleSelectedHunkGap: () => void;
   visibleFiles: DiffFile[];
   addLiveComment: (
     input: CommentToolInput,
@@ -101,6 +129,49 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
   const [liveCommentsByFileId, setLiveCommentsByFileId] = useState<Record<string, LiveComment[]>>(
     {},
   );
+  const [expandedGapsByFileId, setExpandedGapsByFileId] = useState<
+    Record<string, ReadonlySet<string>>
+  >({});
+  const [sourceStatusByFileId, setSourceStatusByFileId] = useState<
+    Record<string, FileSourceStatus>
+  >({});
+  // Mirror sourceStatusByFileId so toggleGap can dedup synchronously without
+  // waiting for React's state updater to commit.
+  const sourceStatusRef = useRef(sourceStatusByFileId);
+  sourceStatusRef.current = sourceStatusByFileId;
+  const sourceLoadRequestsRef = useRef(new Map<string, SourceLoadRequest>());
+  const nextSourceLoadRequestIdRef = useRef(1);
+
+  // Track the files array we last reconciled against so we can invalidate
+  // expansion state when a soft reload replaces a file's sourceFetcher.
+  // Without this, the same file id could outlive a reload while its
+  // cached `loaded` source text refers to the previous patch, and toggleGap
+  // would short-circuit on stale state instead of re-fetching.
+  const [filesSnapshot, setFilesSnapshot] = useState(files);
+  if (filesSnapshot !== files) {
+    setFilesSnapshot(files);
+    const currentFetcherByFileId = new Map<string, DiffFile["sourceFetcher"]>();
+    for (const file of files) {
+      currentFetcherByFileId.set(file.id, file.sourceFetcher);
+    }
+    const staleFileIds = new Set<string>();
+    for (const previousFile of filesSnapshot) {
+      const currentFetcher = currentFetcherByFileId.get(previousFile.id);
+      // Either the file was removed, or its fetcher (and thus its patch)
+      // was replaced. Both invalidate any state keyed by file id.
+      if (currentFetcher !== previousFile.sourceFetcher) {
+        staleFileIds.add(previousFile.id);
+      }
+    }
+    if (staleFileIds.size > 0) {
+      for (const fileId of staleFileIds) {
+        sourceLoadRequestsRef.current.delete(fileId);
+      }
+      setSourceStatusByFileId((prev) => removeKeys(prev, staleFileIds));
+      setExpandedGapsByFileId((prev) => removeKeys(prev, staleFileIds));
+    }
+  }
+
   const deferredFilter = useDeferredValue(filter);
 
   const {
@@ -275,6 +346,110 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
   const clearFilter = useCallback(() => {
     setFilter("");
   }, []);
+
+  /** Toggle expansion of one collapsed gap and lazily load source when needed. */
+  const toggleGap = useCallback(
+    (fileId: string, gapKey: string) => {
+      const file = allFiles.find((entry) => entry.id === fileId);
+      if (!file?.sourceFetcher) {
+        return;
+      }
+
+      setExpandedGapsByFileId((prev) => {
+        const current = prev[fileId];
+        const next = new Set(current ?? []);
+        if (next.has(gapKey)) {
+          next.delete(gapKey);
+        } else {
+          next.add(gapKey);
+        }
+        return { ...prev, [fileId]: next };
+      });
+
+      // The fetcher caches its own resolved text; we mirror it into React state
+      // as a tagged status so the UI can distinguish loading, loaded, and error
+      // states. Skip the fetch when one is already in flight or has resolved
+      // to avoid redundant work and stale "loading" flicker.
+      const currentStatus = sourceStatusRef.current[fileId]?.kind;
+      if (currentStatus === "loaded" || currentStatus === "loading") {
+        return;
+      }
+
+      const side = file.metadata.type === "deleted" ? "old" : "new";
+      const request = {
+        fetcher: file.sourceFetcher,
+        requestId: nextSourceLoadRequestIdRef.current,
+        side,
+      } satisfies SourceLoadRequest;
+      nextSourceLoadRequestIdRef.current += 1;
+      sourceLoadRequestsRef.current.set(fileId, request);
+
+      const loadingStatus = { kind: "loading" } satisfies FileSourceStatus;
+      sourceStatusRef.current = { ...sourceStatusRef.current, [fileId]: loadingStatus };
+      setSourceStatusByFileId((prev) => ({ ...prev, [fileId]: loadingStatus }));
+
+      const isCurrentRequest = () => {
+        const current = sourceLoadRequestsRef.current.get(fileId);
+        return (
+          current?.requestId === request.requestId &&
+          current.fetcher === request.fetcher &&
+          current.side === request.side
+        );
+      };
+
+      const setSettledStatus = (nextStatus: FileSourceStatus) => {
+        if (!isCurrentRequest()) {
+          return;
+        }
+
+        sourceLoadRequestsRef.current.delete(fileId);
+        sourceStatusRef.current = { ...sourceStatusRef.current, [fileId]: nextStatus };
+        setSourceStatusByFileId((prev) => ({
+          ...prev,
+          [fileId]: nextStatus,
+        }));
+      };
+
+      void file.sourceFetcher
+        .getFullText(side)
+        .then((text) => {
+          setSettledStatus(text === null ? { kind: "error" } : { kind: "loaded", text });
+        })
+        .catch((error: unknown) => {
+          if (!isCurrentRequest()) {
+            console.error(
+              `hunk: ignored stale ${side} source load failure for ${file.path} (${file.id}).`,
+              error,
+            );
+            return;
+          }
+
+          console.error(
+            `hunk: failed to load ${side} source for ${file.path} (${file.id}).`,
+            error,
+          );
+          setSettledStatus({ kind: "error" });
+        });
+    },
+    [allFiles],
+  );
+
+  /** Toggle the collapsed gap nearest to the current hunk selection. */
+  const toggleSelectedHunkGap = useCallback(() => {
+    const file = selectedFile;
+    if (!file?.sourceFetcher) {
+      return;
+    }
+
+    const target = selectGapForKeyboardToggle(
+      file.metadata.hunks,
+      selectedHunkIndex,
+      trailingCollapsedLines(file.metadata) > 0,
+    );
+    if (target) {
+      toggleGap(file.id, target);
+    }
+  }, [selectedFile, selectedHunkIndex, toggleGap]);
 
   /** Resolve one session-daemon navigation request against the current review state and select it. */
   const navigateToLocation = useCallback(
@@ -509,6 +684,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
 
   return {
     allFiles,
+    expandedGapsByFileId,
     filter,
     liveCommentCount,
     liveCommentSummaries,
@@ -521,6 +697,9 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     selectedHunk,
     selectedHunkIndex,
     sidebarEntries,
+    sourceStatusByFileId,
+    toggleGap,
+    toggleSelectedHunkGap,
     visibleFiles,
     addLiveComment,
     addLiveCommentBatch,

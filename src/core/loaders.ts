@@ -13,14 +13,24 @@ import { createSkippedBinaryMetadata, isProbablyBinaryFile, patchLooksBinary } f
 import { normalizeDiffMetadataPaths, normalizeDiffPath } from "./diffPaths";
 import { HunkUserError } from "./errors";
 import {
+  createFileSourceFetcher,
+  type FileSourceFetcher,
+  type FileSourceFetcherOptions,
+  type FileSourceSpec,
+} from "./fileSource";
+import {
   buildGitDiffArgs,
   buildGitDiffNumstatArgs,
   buildGitShowArgs,
   buildGitStashShowArgs,
   listGitUntrackedFiles,
+  resolveGitDiffEndpoints,
+  resolveGitCommitRef,
   resolveGitRepoRoot,
   runGitText,
   runGitUntrackedFileDiffText,
+  type GitDiffEndpoint,
+  type GitDiffEndpoints,
 } from "./git";
 import {
   buildJjDiffArgs,
@@ -45,6 +55,7 @@ import type {
 
 interface LoadAppBootstrapOptions {
   cwd?: string;
+  gitExecutable?: string;
 }
 
 const LARGE_DIFF_FILE_MAX_BYTES = 1_000_000;
@@ -207,13 +218,81 @@ function findPatchChunk(metadata: FileDiffMetadata, chunks: string[], index: num
   );
 }
 
+/** Per-file context exposed to source-fetcher builders after path normalization. */
+export interface DiffFileSourceContext {
+  path: string;
+  previousPath?: string;
+  type: FileDiffMetadata["type"];
+  isUntracked: boolean;
+  isBinary: boolean;
+}
+
 interface BuildDiffFileOptions {
   isUntracked?: boolean;
   previousPath?: string;
   isBinary?: boolean;
+  sourceFetcherBuilder?: (file: DiffFileSourceContext) => FileSourceFetcher | undefined;
   isTooLarge?: boolean;
   stats?: DiffFile["stats"];
   statsTruncated?: boolean;
+}
+
+interface ResolvedFileSourceSpecs {
+  old: FileSourceSpec;
+  new: FileSourceSpec;
+}
+
+/** Build a binary-aware source-fetcher factory from per-file source specs. */
+function createSourceFetcherBuilder(
+  resolveSpecs: (file: DiffFileSourceContext) => ResolvedFileSourceSpecs | undefined,
+  options: FileSourceFetcherOptions = {},
+): NonNullable<BuildDiffFileOptions["sourceFetcherBuilder"]> {
+  return (file) => {
+    if (file.isBinary) {
+      return undefined;
+    }
+
+    const specs = resolveSpecs(file);
+    return specs ? createFileSourceFetcher(specs, options) : undefined;
+  };
+}
+
+/** Convert one Git diff endpoint into the corresponding file source lookup. */
+function gitEndpointSourceSpec(
+  endpoint: GitDiffEndpoint,
+  repoRoot: string,
+  filePath: string,
+): FileSourceSpec {
+  switch (endpoint.kind) {
+    case "none":
+      return { kind: "none" };
+    case "git-ref":
+      return { kind: "git-blob", repoRoot, ref: endpoint.ref, path: filePath };
+    case "index":
+      return { kind: "git-index", repoRoot, path: filePath };
+    case "worktree":
+      return { kind: "fs", absolutePath: join(repoRoot, filePath) };
+  }
+}
+
+/** Build source fetchers for Git-backed diffs from explicit old/new endpoints. */
+function buildGitEndpointSourceFetcherBuilder(
+  repoRoot: string,
+  endpoints: GitDiffEndpoints,
+  options: FileSourceFetcherOptions = {},
+): NonNullable<BuildDiffFileOptions["sourceFetcherBuilder"]> {
+  return createSourceFetcherBuilder(({ path, previousPath, type }) => {
+    const oldPath = previousPath ?? path;
+
+    return {
+      old:
+        type === "new" ? { kind: "none" } : gitEndpointSourceSpec(endpoints.old, repoRoot, oldPath),
+      new:
+        type === "deleted"
+          ? { kind: "none" }
+          : gitEndpointSourceSpec(endpoints.new, repoRoot, path),
+    };
+  }, options);
 }
 
 /** Build the normalized per-file model used by the UI regardless of input mode. */
@@ -227,6 +306,7 @@ function buildDiffFile(
     isUntracked,
     previousPath,
     isBinary,
+    sourceFetcherBuilder,
     isTooLarge,
     stats,
     statsTruncated,
@@ -235,6 +315,15 @@ function buildDiffFile(
   const normalizedMetadata = normalizeDiffMetadataPaths(metadata);
   const path = normalizedMetadata.name;
   const resolvedPreviousPath = normalizeDiffPath(previousPath) ?? normalizedMetadata.prevName;
+  const resolvedIsBinary = isBinary ?? patchLooksBinary(patch);
+
+  const sourceFetcher = sourceFetcherBuilder?.({
+    path,
+    previousPath: resolvedPreviousPath,
+    type: normalizedMetadata.type,
+    isUntracked: Boolean(isUntracked),
+    isBinary: resolvedIsBinary,
+  });
 
   return {
     id: `${sourcePrefix}:${index}:${path}`,
@@ -246,9 +335,10 @@ function buildDiffFile(
     metadata: normalizedMetadata,
     agent: findAgentFileContext(agentContext, path, resolvedPreviousPath),
     isUntracked,
-    isBinary: isBinary ?? patchLooksBinary(patch),
+    isBinary: resolvedIsBinary,
     isTooLarge,
     statsTruncated,
+    sourceFetcher,
   };
 }
 
@@ -739,6 +829,7 @@ function buildUntrackedDiffFile(
   repoRoot: string,
   sourcePrefix: string,
   agentContext: AgentContext | null,
+  gitExecutable = "git",
 ) {
   const largeFileCheck = inspectLargeUntrackedFile(repoRoot, filePath);
   if (largeFileCheck.shouldSkip) {
@@ -758,7 +849,7 @@ function buildUntrackedDiffFile(
   }
 
   const patch = normalizeUntrackedPatchHeaders(
-    runGitUntrackedFileDiffText(input, filePath, { repoRoot }),
+    runGitUntrackedFileDiffText(input, filePath, { repoRoot, gitExecutable }),
     filePath,
   );
 
@@ -770,6 +861,10 @@ function buildUntrackedDiffFile(
     agentContext,
     {
       isUntracked: true,
+      sourceFetcherBuilder: createSourceFetcherBuilder(() => ({
+        old: { kind: "none" },
+        new: { kind: "fs", absolutePath: join(repoRoot, filePath) },
+      })),
     },
   );
 }
@@ -817,6 +912,7 @@ function normalizePatchChangeset(
   title: string,
   sourceLabel: string,
   agentContext: AgentContext | null,
+  perFileOptions?: Pick<BuildDiffFileOptions, "sourceFetcherBuilder">,
 ): Changeset {
   const normalizedPatchText = normalizeGitPatchPrefixes(
     stripGitLogMetadata(stripTerminalControl(patchText.replaceAll("\r\n", "\n"))),
@@ -856,6 +952,7 @@ function normalizePatchChangeset(
         index,
         sourceLabel,
         agentContext,
+        perFileOptions,
       ),
     ),
   };
@@ -961,6 +1058,10 @@ async function loadFileDiffChangeset(
     files: [
       buildDiffFile(metadata, patch, 0, displayPath, agentContext, {
         previousPath: basename(input.left),
+        sourceFetcherBuilder: createSourceFetcherBuilder(() => ({
+          old: { kind: "fs", absolutePath: leftPath },
+          new: { kind: "fs", absolutePath: rightPath },
+        })),
       }),
     ],
   } satisfies Changeset;
@@ -971,8 +1072,9 @@ async function loadGitChangeset(
   input: VcsCommandInput,
   agentContext: AgentContext | null,
   cwd = process.cwd(),
+  gitExecutable = "git",
 ) {
-  const repoRoot = resolveGitRepoRoot(input, { cwd });
+  const repoRoot = resolveGitRepoRoot(input, { cwd, gitExecutable });
   const repoName = basename(repoRoot);
   const title = input.staged
     ? `${repoName} staged changes`
@@ -980,8 +1082,15 @@ async function loadGitChangeset(
       ? `${repoName} ${input.range}`
       : `${repoName} working tree`;
   const largeTrackedFiles = parseGitNumstat(
-    runGitText({ input, args: buildGitDiffNumstatArgs(input), cwd }),
+    runGitText({ input, args: buildGitDiffNumstatArgs(input), cwd, gitExecutable }),
   ).filter((file) => shouldSkipLargeTrackedDiff(file, repoRoot));
+  const endpoints = resolveGitDiffEndpoints(input, { cwd, repoRoot, gitExecutable });
+  // When the range maps to a shape we can't represent as a single old/new pair
+  // (e.g. octopus, multi-positive sets), omit the source fetcher entirely so
+  // expansion is disabled rather than reading from the wrong revision.
+  const sourceFetcherBuilder = endpoints
+    ? buildGitEndpointSourceFetcherBuilder(repoRoot, endpoints, { gitExecutable })
+    : undefined;
   const trackedChangeset = normalizePatchChangeset(
     runGitText({
       input,
@@ -990,10 +1099,12 @@ async function loadGitChangeset(
         largeTrackedFiles.map((file) => file.path),
       ),
       cwd,
+      gitExecutable,
     }),
     title,
     repoRoot,
     agentContext,
+    sourceFetcherBuilder ? { sourceFetcherBuilder } : undefined,
   );
   const trackedFiles = [
     ...trackedChangeset.files,
@@ -1006,7 +1117,7 @@ async function loadGitChangeset(
       ),
     ),
   ];
-  const untrackedFiles = listGitUntrackedFiles(input, { cwd, repoRoot });
+  const untrackedFiles = listGitUntrackedFiles(input, { cwd, repoRoot, gitExecutable });
 
   if (untrackedFiles.length === 0) {
     return {
@@ -1027,10 +1138,27 @@ async function loadGitChangeset(
           repoRoot,
           repoRoot,
           agentContext,
+          gitExecutable,
         ),
       ),
     ],
   } satisfies Changeset;
+}
+
+function buildRefRangeSourceFetcherBuilder(
+  repoRoot: string,
+  oldRef: string,
+  newRef: string,
+  options: FileSourceFetcherOptions = {},
+): NonNullable<BuildDiffFileOptions["sourceFetcherBuilder"]> {
+  return buildGitEndpointSourceFetcherBuilder(
+    repoRoot,
+    {
+      old: { kind: "git-ref", ref: oldRef },
+      new: { kind: "git-ref", ref: newRef },
+    },
+    options,
+  );
 }
 
 /** Build a changeset from the current Jujutsu working-copy commit or a revset. */
@@ -1060,15 +1188,24 @@ async function loadShowChangeset(
   input: ShowCommandInput,
   agentContext: AgentContext | null,
   cwd = process.cwd(),
+  gitExecutable = "git",
 ) {
-  const repoRoot = resolveGitRepoRoot(input, { cwd });
+  const repoRoot = resolveGitRepoRoot(input, { cwd, gitExecutable });
   const repoName = basename(repoRoot);
+  const requestedRef = input.ref ?? "HEAD";
+  const newRef = resolveGitCommitRef(input, requestedRef, { cwd: repoRoot, gitExecutable });
+  const showInput = { ...input, ref: newRef };
 
   return normalizePatchChangeset(
-    runGitText({ input, args: buildGitShowArgs(input), cwd }),
+    runGitText({ input, args: buildGitShowArgs(showInput), cwd, gitExecutable }),
     input.ref ? `${repoName} show ${input.ref}` : `${repoName} show HEAD`,
     repoRoot,
     agentContext,
+    {
+      sourceFetcherBuilder: buildRefRangeSourceFetcherBuilder(repoRoot, `${newRef}^`, newRef, {
+        gitExecutable,
+      }),
+    },
   );
 }
 
@@ -1095,6 +1232,7 @@ async function loadStashShowChangeset(
   input: StashShowCommandInput,
   agentContext: AgentContext | null,
   cwd = process.cwd(),
+  gitExecutable = "git",
 ) {
   if (input.options.vcs === "jj") {
     throw new HunkUserError("`hunk stash show` requires Git VCS mode.", [
@@ -1102,14 +1240,22 @@ async function loadStashShowChangeset(
     ]);
   }
 
-  const repoRoot = resolveGitRepoRoot(input, { cwd });
+  const repoRoot = resolveGitRepoRoot(input, { cwd, gitExecutable });
   const repoName = basename(repoRoot);
+  const requestedRef = input.ref ?? "stash@{0}";
+  const newRef = resolveGitCommitRef(input, requestedRef, { cwd: repoRoot, gitExecutable });
+  const stashInput = { ...input, ref: newRef };
 
   return normalizePatchChangeset(
-    runGitText({ input, args: buildGitStashShowArgs(input), cwd }),
+    runGitText({ input, args: buildGitStashShowArgs(stashInput), cwd, gitExecutable }),
     input.ref ? `${repoName} stash ${input.ref}` : `${repoName} stash`,
     repoRoot,
     agentContext,
+    {
+      sourceFetcherBuilder: buildRefRangeSourceFetcherBuilder(repoRoot, `${newRef}^`, newRef, {
+        gitExecutable,
+      }),
+    },
   );
 }
 
@@ -1137,7 +1283,7 @@ async function loadPatchChangeset(
 /** Resolve CLI input into the fully loaded app bootstrap state. */
 export async function loadAppBootstrap(
   input: CliInput,
-  { cwd = process.cwd() }: LoadAppBootstrapOptions = {},
+  { cwd = process.cwd(), gitExecutable = "git" }: LoadAppBootstrapOptions = {},
 ): Promise<AppBootstrap> {
   const agentContext = await loadAgentContext(input.options.agentContext, { cwd });
 
@@ -1148,16 +1294,16 @@ export async function loadAppBootstrap(
       changeset =
         input.options.vcs === "jj"
           ? await loadJjDiffChangeset(input, agentContext, cwd)
-          : await loadGitChangeset(input, agentContext, cwd);
+          : await loadGitChangeset(input, agentContext, cwd, gitExecutable);
       break;
     case "show":
       changeset =
         input.options.vcs === "jj"
           ? await loadJjShowChangeset(input, agentContext, cwd)
-          : await loadShowChangeset(input, agentContext, cwd);
+          : await loadShowChangeset(input, agentContext, cwd, gitExecutable);
       break;
     case "stash-show":
-      changeset = await loadStashShowChangeset(input, agentContext, cwd);
+      changeset = await loadStashShowChangeset(input, agentContext, cwd, gitExecutable);
       break;
     case "diff":
       changeset = await loadFileDiffChangeset(input, agentContext, cwd);

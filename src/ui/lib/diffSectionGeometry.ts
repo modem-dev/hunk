@@ -1,14 +1,20 @@
 import type { DiffFile, LayoutMode } from "../../core/types";
 import { measureAgentInlineNoteHeight } from "../components/panes/AgentInlineNote";
-import { findMaxLineNumber } from "../diff/codeColumns";
+import { findMaxLineNumber, findMaxLineNumberInRows } from "../diff/codeColumns";
+import { expandCollapsedRows, type FileSourceStatus } from "../diff/expandCollapsedRows";
 import { buildSplitRows, buildStackRows } from "../diff/pierre";
 import { measureRenderedRowHeight } from "../diff/renderRows";
-import type { PlannedHunkBounds } from "../diff/plannedReviewRows";
+import {
+  plannedReviewRowContributesToHunkBounds,
+  type PlannedHunkBounds,
+} from "../diff/plannedReviewRows";
 import { buildReviewRenderPlan, type PlannedReviewRow } from "../diff/reviewRenderPlan";
 import type { SectionGeometry, VerticalBounds } from "./diffSpatial";
 import { reviewRowId } from "./ids";
 import type { VisibleAgentNote } from "./agentAnnotations";
 import type { AppTheme } from "../themes";
+
+const EMPTY_EXPANDED_GAP_KEYS: ReadonlySet<string> = new Set();
 
 export interface DiffSectionRowBounds extends VerticalBounds {
   key: string;
@@ -35,17 +41,60 @@ function buildBasePlannedRows(
   showHunkHeaders: boolean,
   theme: AppTheme,
   visibleAgentNotes: VisibleAgentNote[],
+  expandedKeys: ReadonlySet<string>,
+  sourceStatus: FileSourceStatus | undefined,
 ) {
-  const rows =
+  const baseRows =
     layout === "split" ? buildSplitRows(file, null, theme) : buildStackRows(file, null, theme);
-
-  return buildReviewRenderPlan({
-    fileId: file.id,
-    rows,
-    selectedHunkIndex: -1,
-    showHunkHeaders,
-    visibleAgentNotes,
+  const side = file.metadata.type === "deleted" ? "old" : "new";
+  const rows = expandCollapsedRows(baseRows, {
+    layout,
+    expandedKeys,
+    sourceStatus,
+    side,
   });
+
+  return {
+    plannedRows: buildReviewRenderPlan({
+      fileId: file.id,
+      rows,
+      selectedHunkIndex: -1,
+      showHunkHeaders,
+      visibleAgentNotes,
+    }),
+    rows,
+  };
+}
+
+/** Fingerprint loaded source text so same-length edits invalidate geometry. */
+function sourceTextFingerprint(text: string) {
+  let hash = 2166136261;
+
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+
+  return `${text.length}:${(hash >>> 0).toString(36)}`;
+}
+
+/** Stable suffix that captures expansion state for the geometry cache key. */
+function expansionCacheKey(
+  expandedKeys: ReadonlySet<string>,
+  sourceStatus: FileSourceStatus | undefined,
+) {
+  if (expandedKeys.size === 0) {
+    return "";
+  }
+
+  const sortedKeys = [...expandedKeys].sort().join(",");
+  const statusKey =
+    sourceStatus === undefined
+      ? "pending"
+      : sourceStatus.kind === "loaded"
+        ? `loaded:${sourceTextFingerprint(sourceStatus.text)}`
+        : sourceStatus.kind;
+  return `:${sortedKeys}:${statusKey}`;
 }
 
 /** Measure how many terminal rows one planned review row occupies for the current view settings. */
@@ -83,13 +132,6 @@ function plannedRowHeight(
   );
 }
 
-/** Return whether a measured review row should count toward the visible extent of its hunk. */
-function rowContributesToHunkBounds(row: PlannedReviewRow) {
-  // Collapsed gap rows sit between hunks, so they affect total section height but should not make a
-  // selected hunk look taller than the rows that actually belong to it.
-  return !(row.kind === "diff-row" && row.row.type === "collapsed");
-}
-
 /** Measure one file section from the same render plan used by PierreDiffView. */
 export function measureDiffSectionGeometry(
   file: DiffFile,
@@ -100,6 +142,8 @@ export function measureDiffSectionGeometry(
   width = 0,
   showLineNumbers = true,
   wrapLines = false,
+  expandedKeys: ReadonlySet<string> = EMPTY_EXPANDED_GAP_KEYS,
+  sourceStatus: FileSourceStatus | undefined = undefined,
 ): DiffSectionGeometry {
   if (file.metadata.hunks.length === 0) {
     return {
@@ -113,8 +157,9 @@ export function measureDiffSectionGeometry(
   }
 
   // Width, wrapping, and line-number visibility all affect rendered row heights, so they must
-  // participate in the cache key alongside the structural file/layout inputs.
-  const cacheKey = `${file.id}:${layout}:${showHunkHeaders ? 1 : 0}:${theme.id}:${width}:${showLineNumbers ? 1 : 0}:${wrapLines ? 1 : 0}`;
+  // participate in the cache key alongside the structural file/layout inputs. Expansion state
+  // changes the row stream, so it has to participate too.
+  const cacheKey = `${file.id}:${layout}:${showHunkHeaders ? 1 : 0}:${theme.id}:${width}:${showLineNumbers ? 1 : 0}:${wrapLines ? 1 : 0}${expansionCacheKey(expandedKeys, sourceStatus)}`;
   if (visibleAgentNotes.length > 0) {
     const cachedByNotes = NOTE_AWARE_SECTION_GEOMETRY_CACHE.get(visibleAgentNotes);
     const cached = cachedByNotes?.get(cacheKey);
@@ -123,13 +168,21 @@ export function measureDiffSectionGeometry(
     }
   }
 
-  const plannedRows = buildBasePlannedRows(file, layout, showHunkHeaders, theme, visibleAgentNotes);
+  const { plannedRows, rows } = buildBasePlannedRows(
+    file,
+    layout,
+    showHunkHeaders,
+    theme,
+    visibleAgentNotes,
+    expandedKeys,
+    sourceStatus,
+  );
   const hunkAnchorRows = new Map<number, number>();
   const hunkBounds = new Map<number, PlannedHunkBounds>();
   const rowBounds: DiffSectionRowBounds[] = [];
   const rowBoundsByKey = new Map<string, DiffSectionRowBounds>();
   const rowBoundsByStableKey = new Map<string, DiffSectionRowBounds>();
-  const lineNumberDigits = String(findMaxLineNumber(file)).length;
+  const lineNumberDigits = String(findMaxLineNumberInRows(rows, findMaxLineNumber(file))).length;
   let bodyHeight = 0;
 
   for (const row of plannedRows) {
@@ -168,7 +221,7 @@ export function measureDiffSectionGeometry(
       }
     }
 
-    if (height > 0 && rowContributesToHunkBounds(row)) {
+    if (height > 0 && plannedReviewRowContributesToHunkBounds(row)) {
       const rowId = reviewRowId(row.key);
       const existingBounds = hunkBounds.get(row.hunkIndex);
 

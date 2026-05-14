@@ -6,6 +6,7 @@ import {
   resolveSplitPaneWidths,
   resolveStackCellGeometry,
 } from "./codeColumns";
+import { gapKey } from "./expandCollapsedRows";
 import type { DiffRow, RenderSpan, SplitLineCell, StackLineCell } from "./pierre";
 import {
   diffRailMarker,
@@ -446,6 +447,17 @@ export function diffMessage(file: DiffFile) {
   return "No textual hunks to render for this file.";
 }
 
+/** Build the rendered label text for one collapsed gap row. */
+function collapsedRowLabel(text: string, expandable: boolean) {
+  if (!expandable) {
+    return `··· ${text} ···`;
+  }
+
+  // The leading chevron hints that the row is interactive on terminals that
+  // render Unicode glyphs. The label still reads naturally on plain VT100.
+  return `▾ ${text}`;
+}
+
 /** Render collapsed and hunk-header rows, including the optional AI badge target. */
 function renderHeaderRow(
   row: Extract<DiffRow, { type: "collapsed" | "hunk-header" }>,
@@ -455,13 +467,18 @@ function renderHeaderRow(
   annotated: boolean,
   anchorId?: string,
   onOpenAgentNotesAtHunk?: (hunkIndex: number) => void,
+  onToggleGap?: (gapKey: string) => void,
 ) {
   const badgeText = annotated ? "[AI]" : "";
   const badgeWidth = annotated ? badgeText.length + 1 : 0;
-  const label =
-    row.type === "collapsed"
-      ? fitText(`··· ${row.text} ···`, Math.max(0, width - 1 - badgeWidth))
-      : fitText(row.text, Math.max(0, width - 1 - badgeWidth));
+  const collapsedExpandable = row.type === "collapsed" && Boolean(onToggleGap);
+  const labelText =
+    row.type === "collapsed" ? collapsedRowLabel(row.text, collapsedExpandable) : row.text;
+  const label = fitText(labelText, Math.max(0, width - 1 - badgeWidth));
+  const handleCollapsedClick =
+    row.type === "collapsed" && onToggleGap
+      ? () => onToggleGap(gapKey(row.position, row.hunkIndex))
+      : undefined;
 
   if (!annotated) {
     return (
@@ -473,6 +490,7 @@ function renderHeaderRow(
           height: 1,
           backgroundColor: theme.panelAlt,
         }}
+        onMouseUp={handleCollapsedClick}
       >
         <text>
           <span
@@ -608,6 +626,7 @@ function renderRow(
   anchorId?: string,
   noteGuideSide?: "old" | "new",
   onOpenAgentNotesAtHunk?: (hunkIndex: number) => void,
+  onToggleGap?: (gapKey: string) => void,
 ) {
   let baseRow: ReactNode;
 
@@ -620,6 +639,7 @@ function renderRow(
       annotated,
       anchorId,
       onOpenAgentNotesAtHunk,
+      onToggleGap,
     );
   } else if (row.type === "hunk-header") {
     baseRow = showHunkHeaders
@@ -840,6 +860,7 @@ interface DiffRowViewProps {
   anchorId?: string;
   noteGuideSide?: "old" | "new";
   onOpenAgentNotesAtHunk?: (hunkIndex: number) => void;
+  onToggleGap?: (gapKey: string) => void;
 }
 
 /** Render one diff row, memoized to avoid unnecessary rerenders. */
@@ -858,6 +879,7 @@ export const DiffRowView = memo(
     anchorId,
     noteGuideSide,
     onOpenAgentNotesAtHunk,
+    onToggleGap,
   }: DiffRowViewProps) {
     return renderRow(
       row,
@@ -873,6 +895,7 @@ export const DiffRowView = memo(
       anchorId,
       noteGuideSide,
       onOpenAgentNotesAtHunk,
+      onToggleGap,
     );
   },
   (previous, next) => {
@@ -888,7 +911,8 @@ export const DiffRowView = memo(
       previous.selected === next.selected &&
       previous.annotated === next.annotated &&
       previous.anchorId === next.anchorId &&
-      previous.noteGuideSide === next.noteGuideSide
+      previous.noteGuideSide === next.noteGuideSide &&
+      previous.onToggleGap === next.onToggleGap
     );
   },
 );
