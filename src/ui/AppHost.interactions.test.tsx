@@ -18,6 +18,9 @@ import { createTestDiffFile as buildTestDiffFile, lines } from "../../test/helpe
 const { loadAppBootstrap } = await import("../core/loaders");
 const { AppHost } = await import("./AppHost");
 
+const TEST_KEY_PAGE_UP = "\x1B[5~";
+const TEST_KEY_PAGE_DOWN = "\x1B[6~";
+
 function createTestDiffFile(
   id: string,
   path: string,
@@ -1604,7 +1607,7 @@ describe("App interactions", () => {
       setup.captureCharFrame();
 
       await act(async () => {
-        await setup.mockInput.pressKey("pageup");
+        await setup.mockInput.pressKey(TEST_KEY_PAGE_UP);
       });
       await flush(setup);
 
@@ -2294,7 +2297,7 @@ describe("App interactions", () => {
       let snapshot = getLatestSnapshot();
       for (let index = 0; index < 8; index += 1) {
         await act(async () => {
-          await setup.mockInput.pressKey("pagedown");
+          await setup.mockInput.pressKey(TEST_KEY_PAGE_DOWN);
         });
         await flush(setup);
 
@@ -2318,7 +2321,7 @@ describe("App interactions", () => {
 
       for (let index = 0; index < 8; index += 1) {
         await act(async () => {
-          await setup.mockInput.pressKey("pageup");
+          await setup.mockInput.pressKey(TEST_KEY_PAGE_UP);
         });
         await flush(setup);
 
