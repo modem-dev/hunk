@@ -45,10 +45,6 @@ export function plannedReviewRowHeight(
     });
   }
 
-  if (row.kind === "note-guide-cap") {
-    return 1;
-  }
-
   if (row.row.type === "hunk-header") {
     return showHunkHeaders ? 1 : 0;
   }

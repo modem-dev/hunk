@@ -68,10 +68,6 @@ function plannedRowHeight(
     });
   }
 
-  if (row.kind === "note-guide-cap") {
-    return 1;
-  }
-
   return measureRenderedRowHeight(
     row.row,
     width,

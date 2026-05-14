@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import type { DiffFile, LayoutMode } from "../../core/types";
-import { AgentInlineNote, AgentInlineNoteGuideCap } from "../components/panes/AgentInlineNote";
+import { AgentInlineNote } from "../components/panes/AgentInlineNote";
 import type { VisibleAgentNote } from "../lib/agentAnnotations";
 import type { DiffSectionGeometry } from "../lib/diffSectionGeometry";
 import { reviewRowId } from "../lib/ids";
@@ -165,14 +165,6 @@ export function PierreDiffView({
                 theme={theme}
                 width={width}
               />
-            </box>
-          );
-        }
-
-        if (plannedRow.kind === "note-guide-cap") {
-          return (
-            <box key={plannedRow.key} id={rowId} style={{ width: "100%", flexDirection: "column" }}>
-              <AgentInlineNoteGuideCap side={plannedRow.side} theme={theme} width={width} />
             </box>
           );
         }

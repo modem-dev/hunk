@@ -199,38 +199,3 @@ export function AgentInlineNote({
     </box>
   );
 }
-
-/** Render the small cap shown after the last diff row in a note's range. */
-export function AgentInlineNoteGuideCap({
-  side,
-  theme,
-  width,
-}: {
-  side: "old" | "new";
-  theme: AppTheme;
-  width: number;
-}) {
-  return (
-    <box style={{ width: "100%", height: 1, flexDirection: "row", backgroundColor: theme.panel }}>
-      {side === "old" ? (
-        <>
-          <box style={{ width: 1, height: 1, backgroundColor: theme.panel }}>
-            <text fg={theme.noteBorder}>╵</text>
-          </box>
-          <box style={{ width: Math.max(0, width - 1), height: 1, backgroundColor: theme.panel }}>
-            <text>{" ".repeat(Math.max(0, width - 1))}</text>
-          </box>
-        </>
-      ) : (
-        <>
-          <box style={{ width: Math.max(0, width - 1), height: 1, backgroundColor: theme.panel }}>
-            <text>{" ".repeat(Math.max(0, width - 1))}</text>
-          </box>
-          <box style={{ width: 1, height: 1, backgroundColor: theme.panel }}>
-            <text fg={theme.noteBorder}>╵</text>
-          </box>
-        </>
-      )}
-    </box>
-  );
-}
