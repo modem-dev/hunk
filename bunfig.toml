@@ -1,0 +1,3 @@
+[install]
+# Only install packages published at least 7 days ago.
+minimumReleaseAge = 604800

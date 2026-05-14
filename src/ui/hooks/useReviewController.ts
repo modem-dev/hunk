@@ -60,6 +60,7 @@ export interface ReviewController {
   liveCommentsByFileId: Record<string, LiveComment[]>;
   moveToAnnotatedFile: (delta: number) => void;
   moveToAnnotatedHunk: (delta: number) => void;
+  moveToFile: (delta: number) => void;
   moveToHunk: (delta: number) => void;
   scrollToNote: boolean;
   selectedFile: DiffFile | undefined;
@@ -243,6 +244,29 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
       }
 
       selectFile(nextFile.id);
+    },
+    [selectFile, selectedFile?.id, visibleFiles],
+  );
+
+  /** Move through all currently visible files without wrapping past either end. */
+  const moveToFile = useCallback(
+    (delta: number) => {
+      const currentIndex = visibleFiles.findIndex((file) => file.id === selectedFile?.id);
+      if (currentIndex < 0) {
+        return;
+      }
+
+      const nextIndex = clamp(currentIndex + delta, 0, visibleFiles.length - 1);
+      if (nextIndex === currentIndex) {
+        return;
+      }
+
+      const nextFile = visibleFiles[nextIndex];
+      if (!nextFile) {
+        return;
+      }
+
+      selectFile(nextFile.id, 0, { alignFileHeaderTop: true });
     },
     [selectFile, selectedFile?.id, visibleFiles],
   );
@@ -504,6 +528,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     clearLiveComments,
     moveToAnnotatedFile,
     moveToAnnotatedHunk,
+    moveToFile,
     moveToHunk,
     navigateToLocation,
     removeLiveComment,

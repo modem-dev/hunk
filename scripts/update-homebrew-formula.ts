@@ -147,6 +147,7 @@ function formulaContent(options: Options) {
   def install
     chmod 0755, "hunk"
     libexec.install "hunk"
+    libexec.install "skills"
     (bin/"hunk").write_env_script libexec/"hunk", HUNK_INSTALL_SOURCE: "homebrew"
   end
 

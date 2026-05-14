@@ -18,6 +18,9 @@ import { createTestDiffFile as buildTestDiffFile, lines } from "../../test/helpe
 const { loadAppBootstrap } = await import("../core/loaders");
 const { AppHost } = await import("./AppHost");
 
+const TEST_KEY_PAGE_UP = "\x1B[5~";
+const TEST_KEY_PAGE_DOWN = "\x1B[6~";
+
 function createTestDiffFile(
   id: string,
   path: string,
@@ -1604,7 +1607,7 @@ describe("App interactions", () => {
       setup.captureCharFrame();
 
       await act(async () => {
-        await setup.mockInput.pressKey("pageup");
+        await setup.mockInput.pressKey(TEST_KEY_PAGE_UP);
       });
       await flush(setup);
 
@@ -1683,6 +1686,129 @@ describe("App interactions", () => {
       await flush(setup);
       frame = setup.captureCharFrame();
       expect(frame).toContain("export const line");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("G jumps to the bottom and g jumps back to the top", async () => {
+    const before =
+      Array.from(
+        { length: 120 },
+        (_, index) => `export const line${String(index + 1).padStart(2, "0")} = ${index + 1};`,
+      ).join("\n") + "\n";
+    const after =
+      Array.from(
+        { length: 120 },
+        (_, index) => `export const line${String(index + 1).padStart(2, "0")} = ${index + 1001};`,
+      ).join("\n") + "\n";
+
+    const bootstrap: AppBootstrap = {
+      input: {
+        kind: "vcs",
+        staged: false,
+        options: {
+          mode: "split",
+        },
+      },
+      changeset: {
+        id: "changeset:g-capital-g",
+        sourceLabel: "repo",
+        title: "repo working tree",
+        files: [createTestDiffFile("g", "g.ts", before, after)],
+      },
+      initialMode: "split",
+      initialTheme: "midnight",
+    };
+
+    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
+      width: 220,
+      height: 12,
+      otherModifiersMode: true,
+    });
+
+    try {
+      await flush(setup);
+      let frame = setup.captureCharFrame();
+      expect(frame).toContain("line01 = 1001");
+
+      await act(async () => {
+        await setup.mockInput.pressKey("g", { shift: true });
+      });
+      await flush(setup);
+      frame = setup.captureCharFrame();
+      expect(frame).toContain("line120 = 1120");
+
+      await act(async () => {
+        await setup.mockInput.pressKey("g");
+      });
+      await flush(setup);
+      frame = setup.captureCharFrame();
+      expect(frame).toContain("line01 = 1001");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("pager mode also supports G and g top/bottom jumps", async () => {
+    const before =
+      Array.from(
+        { length: 120 },
+        (_, index) => `export const line${String(index + 1).padStart(2, "0")} = ${index + 1};`,
+      ).join("\n") + "\n";
+    const after =
+      Array.from(
+        { length: 120 },
+        (_, index) => `export const line${String(index + 1).padStart(2, "0")} = ${index + 1001};`,
+      ).join("\n") + "\n";
+
+    const bootstrap: AppBootstrap = {
+      input: {
+        kind: "vcs",
+        staged: false,
+        options: {
+          mode: "split",
+          pager: true,
+        },
+      },
+      changeset: {
+        id: "changeset:pager-g-capital-g",
+        sourceLabel: "repo",
+        title: "repo working tree",
+        files: [createTestDiffFile("pager-g", "pager-g.ts", before, after)],
+      },
+      initialMode: "split",
+      initialTheme: "midnight",
+    };
+
+    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
+      width: 220,
+      height: 12,
+      otherModifiersMode: true,
+    });
+
+    try {
+      await flush(setup);
+      let frame = setup.captureCharFrame();
+      expect(frame).toContain("line01 = 1001");
+
+      await act(async () => {
+        await setup.mockInput.pressKey("g", { shift: true });
+      });
+      await flush(setup);
+      frame = setup.captureCharFrame();
+      expect(frame).toContain("line120 = 1120");
+
+      await act(async () => {
+        await setup.mockInput.pressKey("g");
+      });
+      await flush(setup);
+      frame = setup.captureCharFrame();
+      expect(frame).toContain("line01 = 1001");
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -2033,6 +2159,80 @@ describe("App interactions", () => {
     }
   });
 
+  test("file navigation shortcuts jump between visible files outside filter focus", async () => {
+    const { getLatestSnapshot, hostClient } = createMockHostClient();
+    const setup = await testRender(
+      <AppHost bootstrap={createTwoFileHunkBootstrap()} hostClient={hostClient} />,
+      {
+        width: 220,
+        height: 10,
+      },
+    );
+
+    try {
+      await flush(setup);
+
+      for (let index = 0; index < 10; index += 1) {
+        await act(async () => {
+          await setup.mockInput.pressArrow("down");
+        });
+        await flush(setup);
+      }
+
+      await act(async () => {
+        await setup.mockInput.typeText(".");
+      });
+      await flush(setup);
+
+      let snapshot = await waitForSnapshot(
+        setup,
+        getLatestSnapshot,
+        (nextSnapshot) => nextSnapshot.selectedFileId === "second",
+        24,
+      );
+      expect(snapshot?.selectedFileId).toBe("second");
+      expect(snapshot?.selectedHunkIndex).toBe(0);
+
+      let frame = await waitForFrame(
+        setup,
+        (nextFrame) =>
+          nextFrame.includes("second.ts") && (nextFrame.match(/first\.ts/g) ?? []).length === 1,
+        24,
+      );
+      expect(frame).toContain("second.ts");
+
+      await act(async () => {
+        await setup.mockInput.typeText(",");
+      });
+      await flush(setup);
+
+      snapshot = await waitForSnapshot(
+        setup,
+        getLatestSnapshot,
+        (nextSnapshot) => nextSnapshot.selectedFileId === "first",
+        24,
+      );
+      expect(snapshot?.selectedFileId).toBe("first");
+
+      await act(async () => {
+        await setup.mockInput.pressTab();
+      });
+      await flush(setup);
+      await act(async () => {
+        await setup.mockInput.typeText(".");
+      });
+      await flush(setup);
+
+      frame = setup.captureCharFrame();
+      expect(frame).toContain("filter:");
+      expect(getLatestSnapshot()?.selectedFileId).toBe("first");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("forward cross-file hunk navigation keeps the destination file owning the review pane", async () => {
     const setup = await testRender(
       <AppHost bootstrap={createCrossFileHunkNavigationBootstrap()} />,
@@ -2171,7 +2371,7 @@ describe("App interactions", () => {
       let snapshot = getLatestSnapshot();
       for (let index = 0; index < 8; index += 1) {
         await act(async () => {
-          await setup.mockInput.pressKey("pagedown");
+          await setup.mockInput.pressKey(TEST_KEY_PAGE_DOWN);
         });
         await flush(setup);
 
@@ -2195,7 +2395,7 @@ describe("App interactions", () => {
 
       for (let index = 0; index < 8; index += 1) {
         await act(async () => {
-          await setup.mockInput.pressKey("pageup");
+          await setup.mockInput.pressKey(TEST_KEY_PAGE_UP);
         });
         await flush(setup);
 

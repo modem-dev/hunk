@@ -7,6 +7,9 @@ import type { CliInput } from "./types";
 
 const tempDirs: string[] = [];
 
+// Jujutsu subprocess setup can exceed Bun's default 5s test timeout on Windows CI.
+const JjLoaderIntegrationTestTimeoutMs = 20_000;
+
 function cleanupTempDirs() {
   while (tempDirs.length > 0) {
     const dir = tempDirs.pop();
@@ -770,54 +773,62 @@ describe("loadAppBootstrap", () => {
     expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["beta.ts"]);
   });
 
-  test("loads jj diff output for a configured revset", async () => {
-    const home = createTempDir("hunk-jj-home-");
+  test(
+    "loads jj diff output for a configured revset",
+    async () => {
+      const home = createTempDir("hunk-jj-home-");
 
-    await runWithHome(home, async () => {
-      const dir = createTempJjRepo("hunk-jj-revset-");
+      await runWithHome(home, async () => {
+        const dir = createTempJjRepo("hunk-jj-revset-");
 
-      writeFileSync(join(dir, "alpha.ts"), "export const alpha = 1;\n");
-      jj(dir, "commit", "-m", "initial");
+        writeFileSync(join(dir, "alpha.ts"), "export const alpha = 1;\n");
+        jj(dir, "commit", "-m", "initial");
 
-      writeFileSync(join(dir, "alpha.ts"), "export const alpha = 2;\n");
-      writeFileSync(join(dir, "beta.ts"), "export const beta = true;\n");
+        writeFileSync(join(dir, "alpha.ts"), "export const alpha = 2;\n");
+        writeFileSync(join(dir, "beta.ts"), "export const beta = true;\n");
 
-      const bootstrap = await loadFromRepo(dir, {
-        kind: "vcs",
-        range: "@",
-        staged: false,
-        options: { mode: "auto", vcs: "jj" },
+        const bootstrap = await loadFromRepo(dir, {
+          kind: "vcs",
+          range: "@",
+          staged: false,
+          options: { mode: "auto", vcs: "jj" },
+        });
+
+        expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["alpha.ts", "beta.ts"]);
+        expect(bootstrap.changeset.title).toStartWith("hunk-jj-revset-");
+        expect(bootstrap.changeset.title).toEndWith(" @");
       });
+    },
+    JjLoaderIntegrationTestTimeoutMs,
+  );
 
-      expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["alpha.ts", "beta.ts"]);
-      expect(bootstrap.changeset.title).toStartWith("hunk-jj-revset-");
-      expect(bootstrap.changeset.title).toEndWith(" @");
-    });
-  });
+  test(
+    "loads jj show output for a configured revset",
+    async () => {
+      const home = createTempDir("hunk-jj-home-");
 
-  test("loads jj show output for a configured revset", async () => {
-    const home = createTempDir("hunk-jj-home-");
+      await runWithHome(home, async () => {
+        const dir = createTempJjRepo("hunk-jj-show-");
 
-    await runWithHome(home, async () => {
-      const dir = createTempJjRepo("hunk-jj-show-");
+        writeFileSync(join(dir, "alpha.ts"), "export const alpha = 1;\n");
+        jj(dir, "commit", "-m", "initial");
 
-      writeFileSync(join(dir, "alpha.ts"), "export const alpha = 1;\n");
-      jj(dir, "commit", "-m", "initial");
+        writeFileSync(join(dir, "alpha.ts"), "export const alpha = 2;\n");
+        jj(dir, "commit", "-m", "update alpha");
 
-      writeFileSync(join(dir, "alpha.ts"), "export const alpha = 2;\n");
-      jj(dir, "commit", "-m", "update alpha");
+        const bootstrap = await loadFromRepo(dir, {
+          kind: "show",
+          ref: "@-",
+          options: { mode: "auto", vcs: "jj" },
+        });
 
-      const bootstrap = await loadFromRepo(dir, {
-        kind: "show",
-        ref: "@-",
-        options: { mode: "auto", vcs: "jj" },
+        expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["alpha.ts"]);
+        expect(bootstrap.changeset.title).toStartWith("hunk-jj-show-");
+        expect(bootstrap.changeset.title).toEndWith(" show @-");
       });
-
-      expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["alpha.ts"]);
-      expect(bootstrap.changeset.title).toStartWith("hunk-jj-show-");
-      expect(bootstrap.changeset.title).toEndWith(" show @-");
-    });
-  });
+    },
+    JjLoaderIntegrationTestTimeoutMs,
+  );
 
   test("applies pathspec filtering to untracked files in working tree reviews", async () => {
     const dir = createTempRepo("hunk-git-untracked-pathspec-");

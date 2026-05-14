@@ -7,18 +7,24 @@ All notable user-visible changes to Hunk are documented in this file.
 ### Added
 
 - Surfaced the agent author name in inline notes and the matching agent popover so multi-agent reviews are readable at a glance, with a fallback title when an annotation has no author.
+- Added `g` and `G` keyboard aliases for jump-to-top and jump-to-bottom review navigation.
 
 ### Changed
 
 ### Fixed
 
-## [0.12.0-beta.2] - 2026-05-11
+- Included the bundled Hunk review skill in standalone prebuilt release archives so `hunk skill path` works after extracting a tarball or installing via Homebrew.
+
+## [0.12.0] - 2026-05-12
 
 ### Added
 
+- Added Homebrew tap release automation and Homebrew-aware startup update notices.
+- Added lower-level `hunkdiff/opentui` primitives for embedding Hunk diff bodies, file headers, file navigation, and multi-file review streams in custom OpenTUI apps.
+- Added row windowing for large single-file reviews to keep huge diffs responsive.
 - Added Windows x64 prebuilt artifact publishing to the release workflow.
 - Added native Windows support in the README, contributor guide, and local build/install scripts.
-- Added Nix flake app outputs for `nix run` and a named `hunk` package output.
+- Added Nix flake app outputs for `nix run`, a named `hunk` package output, and package validation.
 - Added automatic light/dark theme detection from the terminal background when `theme = "auto"` is enabled.
 
 ### Changed
@@ -27,24 +33,12 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Fixed
 
-- Fixed Ctrl-C in the live TUI so it exits through Hunk's full shutdown path instead of only destroying the renderer.
-
-## [0.12.0-beta.1] - 2026-05-10
-
-### Added
-
-- Added Homebrew tap release automation and Homebrew-aware startup update notices.
-- Added lower-level `hunkdiff/opentui` primitives for embedding Hunk diff bodies, file headers, file navigation, and multi-file review streams in custom OpenTUI apps.
-- Added row windowing for large single-file reviews to keep huge diffs responsive.
-
-### Changed
-
-### Fixed
-
-- Fixed the prebuilt beta npm package so the `hunkdiff/opentui` export and bundled type declarations are included.
+- Fixed the prebuilt npm package so the `hunkdiff/opentui` export and bundled type declarations are included.
+- Fixed the npm package so `npx hunkdiff` and other package-name executable lookups resolve to the Hunk CLI.
 - Made `hunk pager` emit static highlighted diff output for captured pager contexts like LazyGit, and pass diff input through unchanged when stdout is non-interactive.
 - Fixed Ctrl-Z job-control suspend support so Hunk can suspend and resume cleanly from a terminal.
 - Fixed Windows compatibility issues across paths, packaging, and tests.
+- Fixed Ctrl-C in the live TUI so it exits through Hunk's full shutdown path instead of only destroying the renderer.
 
 ## [0.11.1] - 2026-05-10
 
@@ -323,9 +317,8 @@ All notable user-visible changes to Hunk are documented in this file.
 
 - Stabilized diff repainting, active-hunk scrolling, syntax highlighting, pager stdin patch handling, and terminal cleanup on exit.
 
-[Unreleased]: https://github.com/modem-dev/hunk/compare/v0.12.0-beta.2...HEAD
-[0.12.0-beta.2]: https://github.com/modem-dev/hunk/compare/v0.12.0-beta.1...v0.12.0-beta.2
-[0.12.0-beta.1]: https://github.com/modem-dev/hunk/compare/v0.11.1...v0.12.0-beta.1
+[Unreleased]: https://github.com/modem-dev/hunk/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/modem-dev/hunk/compare/v0.11.1...v0.12.0
 [0.11.1]: https://github.com/modem-dev/hunk/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/modem-dev/hunk/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/modem-dev/hunk/compare/v0.9.5...v0.10.0
