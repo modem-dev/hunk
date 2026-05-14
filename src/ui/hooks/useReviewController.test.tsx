@@ -198,6 +198,72 @@ describe("useReviewController", () => {
     }
   });
 
+  test("moves through files using the current visible review order", async () => {
+    const controllerRef: { current: ReviewController | null } = { current: null };
+    const setup = await testRender(
+      <ReviewControllerHarness
+        initialFiles={[
+          createDiffFile(
+            "alpha",
+            "alpha.ts",
+            "export const alpha = 1;\n",
+            "export const alpha = 2;\n",
+          ),
+          createDiffFile("beta", "beta.ts", "export const beta = 1;\n", "export const beta = 2;\n"),
+          createDiffFile(
+            "gamma",
+            "gamma.ts",
+            "export const gamma = 1;\n",
+            "export const gamma = 2;\n",
+          ),
+        ]}
+        onController={(nextController) => {
+          controllerRef.current = nextController;
+        }}
+      />,
+      { width: 80, height: 4 },
+    );
+
+    try {
+      await flush(setup);
+      expect(expectValue(controllerRef.current).selectedFile?.path).toBe("alpha.ts");
+
+      await act(async () => {
+        expectValue(controllerRef.current).moveToFile(1);
+      });
+      await flush(setup);
+      expect(expectValue(controllerRef.current).selectedFile?.path).toBe("beta.ts");
+
+      await act(async () => {
+        expectValue(controllerRef.current).moveToFile(1);
+      });
+      await flush(setup);
+      expect(expectValue(controllerRef.current).selectedFile?.path).toBe("gamma.ts");
+
+      await act(async () => {
+        expectValue(controllerRef.current).moveToFile(-1);
+      });
+      await flush(setup);
+      expect(expectValue(controllerRef.current).selectedFile?.path).toBe("beta.ts");
+
+      await act(async () => {
+        expectValue(controllerRef.current).setFilter("gamma");
+      });
+      await flush(setup);
+      expect(expectValue(controllerRef.current).selectedFile?.path).toBe("gamma.ts");
+
+      await act(async () => {
+        expectValue(controllerRef.current).moveToFile(-1);
+      });
+      await flush(setup);
+      expect(expectValue(controllerRef.current).selectedFile?.path).toBe("gamma.ts");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("live comment mutations update annotated navigation without remounting the app", async () => {
     const controllerRef: { current: ReviewController | null } = { current: null };
     const setup = await testRender(

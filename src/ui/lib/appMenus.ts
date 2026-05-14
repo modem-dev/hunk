@@ -9,6 +9,7 @@ export interface BuildAppMenusOptions {
   layoutMode: LayoutMode;
   moveToAnnotatedFile: (delta: number) => void;
   moveToAnnotatedHunk: (delta: number) => void;
+  moveToFile: (delta: number) => void;
   moveToHunk: (delta: number) => void;
   refreshCurrentInput: () => void;
   requestQuit: () => void;
@@ -37,6 +38,7 @@ export function buildAppMenus({
   layoutMode,
   moveToAnnotatedFile,
   moveToAnnotatedHunk,
+  moveToFile,
   moveToHunk,
   refreshCurrentInput,
   requestQuit,
@@ -171,6 +173,19 @@ export function buildAppMenus({
         label: "Next hunk",
         hint: "]",
         action: () => moveToHunk(1),
+      },
+      { kind: "separator" },
+      {
+        kind: "item",
+        label: "Previous file",
+        hint: ",",
+        action: () => moveToFile(-1),
+      },
+      {
+        kind: "item",
+        label: "Next file",
+        hint: ".",
+        action: () => moveToFile(1),
       },
       { kind: "separator" },
       {

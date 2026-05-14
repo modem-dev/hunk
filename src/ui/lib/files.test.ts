@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createTestDiffFile, lines } from "../../../test/helpers/diff-helpers";
-import { buildSidebarEntries, fileLabelParts } from "./files";
+import { buildSidebarEntries, fileLabelParts, findNextFile } from "./files";
 
 describe("files helpers", () => {
   test("buildSidebarEntries hides zero-value sidebar stats", () => {
@@ -133,5 +133,36 @@ describe("files helpers", () => {
       filename: "pi/extensions/loop.ts -> agents/pi/extensions/notify.ts",
       stateLabel: null,
     });
+  });
+
+  test("findNextFile follows visible file order and clamps at stream edges", () => {
+    const files = [
+      createTestDiffFile({
+        id: "alpha",
+        path: "alpha.ts",
+        before: lines("export const alpha = 1;"),
+        after: lines("export const alpha = 2;"),
+      }),
+      createTestDiffFile({
+        id: "beta",
+        path: "beta.ts",
+        before: lines("export const beta = 1;"),
+        after: lines("export const beta = 2;"),
+      }),
+      createTestDiffFile({
+        id: "gamma",
+        path: "gamma.ts",
+        before: lines("export const gamma = 1;"),
+        after: lines("export const gamma = 2;"),
+      }),
+    ];
+
+    expect(findNextFile(files, "alpha", 1)?.id).toBe("beta");
+    expect(findNextFile(files, "beta", -1)?.id).toBe("alpha");
+    expect(findNextFile(files, "alpha", -1)?.id).toBe("alpha");
+    expect(findNextFile(files, "gamma", 1)?.id).toBe("gamma");
+    expect(findNextFile(files, undefined, 1)?.id).toBe("alpha");
+    expect(findNextFile(files, undefined, -1)?.id).toBe("gamma");
+    expect(findNextFile([], "alpha", 1)).toBeNull();
   });
 });

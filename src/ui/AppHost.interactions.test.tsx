@@ -2033,6 +2033,49 @@ describe("App interactions", () => {
     }
   });
 
+  test("file navigation shortcuts jump between file headers", async () => {
+    const setup = await testRender(<AppHost bootstrap={createTwoFileHunkBootstrap()} />, {
+      width: 220,
+      height: 10,
+    });
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.typeText(".");
+      });
+      await flush(setup);
+
+      let frame = await waitForFrame(
+        setup,
+        (nextFrame) =>
+          nextFrame.includes("second.ts") && (nextFrame.match(/first\.ts/g) ?? []).length === 1,
+        24,
+      );
+      expect(frame).toContain("second.ts");
+      expect((frame.match(/first\.ts/g) ?? []).length).toBe(1);
+
+      await act(async () => {
+        await setup.mockInput.typeText(",");
+      });
+      await flush(setup);
+
+      frame = await waitForFrame(
+        setup,
+        (nextFrame) =>
+          nextFrame.includes("first.ts") && (nextFrame.match(/second\.ts/g) ?? []).length === 1,
+        24,
+      );
+      expect(frame).toContain("first.ts");
+      expect((frame.match(/second\.ts/g) ?? []).length).toBe(1);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("forward cross-file hunk navigation keeps the destination file owning the review pane", async () => {
     const setup = await testRender(
       <AppHost bootstrap={createCrossFileHunkNavigationBootstrap()} />,

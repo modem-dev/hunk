@@ -116,6 +116,23 @@ export function filterReviewFiles(files: DiffFile[], query: string): DiffFile[] 
   });
 }
 
+/** Move forward or backward through the visible file order, clamping at stream edges. */
+export function findNextFile(files: DiffFile[], currentFileId: string | undefined, delta: number) {
+  if (files.length === 0) {
+    return null;
+  }
+
+  const currentIndex = files.findIndex((file) => file.id === currentFileId);
+  const nextIndex =
+    currentIndex >= 0
+      ? Math.min(Math.max(currentIndex + delta, 0), files.length - 1)
+      : delta >= 0
+        ? 0
+        : files.length - 1;
+
+  return files[nextIndex] ?? null;
+}
+
 /** Build the grouped sidebar entries while preserving the review stream order. */
 export function buildSidebarEntries(files: DiffFile[]): SidebarEntry[] {
   const entries: SidebarEntry[] = [];

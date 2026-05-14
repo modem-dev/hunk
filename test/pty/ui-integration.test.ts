@@ -353,6 +353,52 @@ describe("live UI integration", () => {
     }
   });
 
+  test("file navigation shortcuts jump between file headers in a real PTY", async () => {
+    const fixture = harness.createPinnedHeaderRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split"],
+      cwd: fixture.dir,
+      cols: 220,
+      rows: 10,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      await session.press(".");
+      const nextFile = await harness.waitForSnapshot(
+        session,
+        (text) =>
+          text.includes("second.ts") &&
+          text.includes("line17 = 117") &&
+          harness.countMatches(text, /first\.ts/g) === 1,
+        5_000,
+      );
+
+      expect(nextFile).toContain("second.ts");
+      expect(nextFile).toContain("line17 = 117");
+      expect(harness.countMatches(nextFile, /first\.ts/g)).toBe(1);
+
+      await session.press(",");
+      const previousFile = await harness.waitForSnapshot(
+        session,
+        (text) =>
+          text.includes("first.ts") &&
+          text.includes("line01 = 101") &&
+          harness.countMatches(text, /second\.ts/g) === 1,
+        5_000,
+      );
+
+      expect(previousFile).toContain("first.ts");
+      expect(previousFile).toContain("line01 = 101");
+      expect(harness.countMatches(previousFile, /second\.ts/g)).toBe(1);
+    } finally {
+      session.close();
+    }
+  });
+
   test("mouse wheel scrolling preserves the divider and header handoff in a real PTY", async () => {
     const fixture = harness.createPinnedHeaderRepoFixture();
     const session = await harness.launchHunk({

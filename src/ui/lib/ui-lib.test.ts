@@ -127,6 +127,7 @@ describe("ui helpers", () => {
       layoutMode: "stack",
       moveToAnnotatedFile: () => {},
       moveToAnnotatedHunk: () => {},
+      moveToFile: () => {},
       moveToHunk: () => {},
       refreshCurrentInput: () => {},
       requestQuit: () => {},
@@ -170,6 +171,19 @@ describe("ui helpers", () => {
         .filter((entry): entry is Extract<MenuEntry, { kind: "item" }> => entry.kind === "item")
         .map((entry) => entry.label),
     ).toEqual(["Graphite", "Midnight", "Paper", "Ember"]);
+    expect(
+      menus.navigate
+        .filter((entry): entry is Extract<MenuEntry, { kind: "item" }> => entry.kind === "item")
+        .map((entry) => [entry.label, entry.hint]),
+    ).toEqual([
+      ["Previous hunk", "["],
+      ["Next hunk", "]"],
+      ["Previous file", ","],
+      ["Next file", "."],
+      ["Previous comment", "{"],
+      ["Next comment", "}"],
+      ["Focus filter", "/"],
+    ]);
     expect(
       menus.theme.some(
         (entry) => entry.kind === "item" && entry.label === "Graphite" && entry.checked,

@@ -6,6 +6,8 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Added
 
+- Added `,` and `.` shortcuts for previous and next file navigation in the review stream.
+
 ### Changed
 
 ### Fixed

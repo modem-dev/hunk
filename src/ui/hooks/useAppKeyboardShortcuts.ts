@@ -29,6 +29,7 @@ export interface UseAppKeyboardShortcutsOptions {
   focusArea: FocusArea;
   focusFilter: () => void;
   moveToAnnotatedHunk: (delta: number) => void;
+  moveToFile: (delta: number) => void;
   moveToHunk: (delta: number) => void;
   moveMenuItem: (delta: number) => void;
   openMenu: (menuId: MenuId) => void;
@@ -60,6 +61,7 @@ export function useAppKeyboardShortcuts({
   focusArea,
   focusFilter,
   moveToAnnotatedHunk,
+  moveToFile,
   moveToHunk,
   moveMenuItem,
   openMenu,
@@ -373,6 +375,16 @@ export function useAppKeyboardShortcuts({
 
     if (key.name === "]") {
       runAndCloseMenu(() => moveToHunk(1));
+      return;
+    }
+
+    if (key.name === "," || key.sequence === ",") {
+      runAndCloseMenu(() => moveToFile(-1));
+      return;
+    }
+
+    if (key.name === "." || key.sequence === ".") {
+      runAndCloseMenu(() => moveToFile(1));
       return;
     }
 

@@ -32,6 +32,7 @@ import type {
   RemovedCommentResult,
   SessionLiveCommentSummary,
 } from "../../hunk-session/types";
+import { findNextFile } from "../lib/files";
 import { findNextHunkCursor } from "../lib/hunks";
 import {
   buildReviewState,
@@ -60,6 +61,7 @@ export interface ReviewController {
   liveCommentsByFileId: Record<string, LiveComment[]>;
   moveToAnnotatedFile: (delta: number) => void;
   moveToAnnotatedHunk: (delta: number) => void;
+  moveToFile: (delta: number) => void;
   moveToHunk: (delta: number) => void;
   scrollToNote: boolean;
   selectedFile: DiffFile | undefined;
@@ -243,6 +245,19 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
       }
 
       selectFile(nextFile.id);
+    },
+    [selectFile, selectedFile?.id, visibleFiles],
+  );
+
+  /** Move through the currently visible files in review stream order. */
+  const moveToFile = useCallback(
+    (delta: number) => {
+      const nextFile = findNextFile(visibleFiles, selectedFile?.id, delta);
+      if (!nextFile) {
+        return;
+      }
+
+      selectFile(nextFile.id, 0, { alignFileHeaderTop: true });
     },
     [selectFile, selectedFile?.id, visibleFiles],
   );
@@ -504,6 +519,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     clearLiveComments,
     moveToAnnotatedFile,
     moveToAnnotatedHunk,
+    moveToFile,
     moveToHunk,
     navigateToLocation,
     removeLiveComment,
