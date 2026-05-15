@@ -35,6 +35,18 @@ jobs:
         with:
           tool: jj-cli
 
+      - name: Install Sapling
+        run: |
+          sudo apt-get install -y xz-utils
+          sudo mkdir -p /opt/sapling
+          SAPLING_URL="https://github.com/facebook/sapling/releases/download/0.2.20260317-201835%2B0234c21f/sapling-0.2.20260317-201835%2B0234c21f-linux-x64.tar.xz"
+          SAPLING_SHA256="2dca0b964a2f3e2e3ad3f4f01794dc7e829de4aedddb2798a7bae883ce6cd71f"
+          curl -fsSL "$SAPLING_URL" -o /tmp/sapling.tar.xz
+          echo "$SAPLING_SHA256  /tmp/sapling.tar.xz" | sha256sum --check
+          sudo tar -xJf /tmp/sapling.tar.xz -C /opt/sapling
+          sudo ln -s /opt/sapling/sl /usr/local/bin/sl
+          sl version
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
 

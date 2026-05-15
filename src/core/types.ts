@@ -1,7 +1,7 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
 
 export type LayoutMode = "auto" | "split" | "stack";
-export type VcsMode = "git" | "jj";
+export type VcsMode = "git" | "jj" | "sl";
 export type TerminalThemeMode = "light" | "dark";
 
 export interface AgentAnnotation {
