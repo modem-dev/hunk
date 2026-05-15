@@ -21,7 +21,7 @@ import {
   isStepDownKey,
   isStepUpKey,
 } from "./keyboard";
-import { fitText, padText } from "./text";
+import { fitText, padText, sliceTextByTerminalCells, terminalCellWidth } from "./text";
 import { computeHunkRevealScrollTop } from "./hunkScroll";
 import { estimateDiffSectionBodyRows, measureDiffSectionGeometry } from "./diffSectionGeometry";
 import { resizeSidebarWidth } from "./sidebar";
@@ -206,6 +206,36 @@ describe("ui helpers", () => {
     expect(fitText("hello", 4)).toBe("hel.");
     expect(padText("hello", 4)).toBe("hel.");
     expect(padText("ok", 4)).toBe("ok  ");
+    expect(terminalCellWidth("中文 mixed")).toBe(10);
+    expect(terminalCellWidth("かなカナ漢字 mixed")).toBe(18);
+    expect(terminalCellWidth("한글 테스트 mixed")).toBe(17);
+    expect(sliceTextByTerminalCells("中文 mixed", 0, 5)).toEqual({
+      clipped: true,
+      text: "中文 ",
+      width: 5,
+    });
+    expect(sliceTextByTerminalCells("かなmixed", 0, 5)).toEqual({
+      clipped: true,
+      text: "かなm",
+      width: 5,
+    });
+    expect(sliceTextByTerminalCells("한글 mixed", 0, 5)).toEqual({
+      clipped: true,
+      text: "한글 ",
+      width: 5,
+    });
+    expect(sliceTextByTerminalCells("中", 1, 3)).toEqual({
+      clipped: false,
+      text: " ",
+      width: 1,
+    });
+    expect(sliceTextByTerminalCells("中文", 1, 3)).toEqual({
+      clipped: false,
+      text: " 文",
+      width: 3,
+    });
+    expect(fitText("中文 mixed", 6)).toBe("中文 .");
+    expect(padText("中文", 5)).toBe("中文 ");
   });
 
   test("agent popover helpers wrap text and right-align the card within the viewport", () => {
