@@ -1,14 +1,6 @@
 import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
 import { once } from "node:events";
-
-/** Remove terminal escape sequences before deciding whether stdin looks like a patch. */
-function stripTerminalControl(text: string) {
-  return text
-    .replace(/\x1bP[\s\S]*?\x1b\\/g, "")
-    .replace(/\x1b\][\s\S]*?(?:\x07|\x1b\\)/g, "")
-    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
-    .replace(/\x1b[@-_]/g, "");
-}
+import { stripTerminalControl } from "./patch/normalize";
 
 /** Detect whether generic pager stdin looks like a diff/patch that Hunk should review. */
 export function looksLikePatchInput(text: string) {

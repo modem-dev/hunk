@@ -140,6 +140,20 @@ describe("OpenTUI public components", () => {
     expect(files[0]?.patch).toContain("diff --git a/example.ts b/example.ts");
   });
 
+  test("normalizes noprefix patch text for public file models", () => {
+    const files = createHunkDiffFilesFromPatch(`diff --git example.ts example.ts
+--- example.ts
++++ example.ts
+@@ -1 +1 @@
+-before
++after
+`);
+
+    expect(files).toHaveLength(1);
+    expect(files[0]?.path).toBe("example.ts");
+    expect(files[0]?.patch).toContain("diff --git a/example.ts b/example.ts");
+  });
+
   test("exports the documented built-in theme names", () => {
     expect(HUNK_DIFF_THEME_NAMES).toEqual(["graphite", "midnight", "paper", "ember"]);
   });

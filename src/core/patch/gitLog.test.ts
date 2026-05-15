@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { parsePatchFiles } from "@pierre/diffs";
-import { stripGitLogMetadata } from "./loaders";
+import { stripGitLogMetadata } from "./gitLog";
 
 describe("stripGitLogMetadata", () => {
   test("returns input unchanged when no commit boundary is present", () => {

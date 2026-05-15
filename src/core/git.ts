@@ -450,6 +450,40 @@ export function listGitUntrackedFiles(
   );
 }
 
+/** Escape only the filename characters that break unified-diff header parsing. */
+function escapeUntrackedPatchPath(path: string) {
+  return path
+    .replaceAll("\\", "\\\\")
+    .replaceAll("\t", "\\t")
+    .replaceAll("\n", "\\n")
+    .replaceAll("\r", "\\r");
+}
+
+/** Rewrite Git's quoted untracked-file headers into parser-friendly paths. */
+export function normalizeUntrackedPatchHeaders(patchText: string, filePath: string) {
+  const safePath = escapeUntrackedPatchPath(filePath);
+
+  return patchText
+    .replaceAll("\r\n", "\n")
+    .split("\n")
+    .map((line) => {
+      if (line.startsWith("diff --git ")) {
+        return `diff --git a/${safePath} b/${safePath}`;
+      }
+
+      if (line.startsWith("+++ ")) {
+        return `+++ b/${safePath}`;
+      }
+
+      if (line.startsWith("Binary files /dev/null and ")) {
+        return `Binary files /dev/null and b/${safePath} differ`;
+      }
+
+      return line;
+    })
+    .join("\n");
+}
+
 /** Return the raw Git patch text for one untracked file using `git diff --no-index`. */
 export function runGitUntrackedFileDiffText(
   input: VcsCommandInput,

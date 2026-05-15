@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import type { FileDiffMetadata } from "@pierre/diffs";
 import {
   buildGitDiffArgs,
   buildGitDiffNumstatArgs,
@@ -10,6 +9,7 @@ import {
   resolveGitRepoRoot,
   runGitText,
 } from "../git";
+import { createSkippedLargeMetadata } from "../diffFile";
 import type { DiffFile } from "../types";
 import type { VcsAdapter } from "./types";
 
@@ -76,21 +76,6 @@ function shouldSkipLargeTrackedDiff(file: GitNumstatFile, repoRoot: string) {
   }
 }
 
-/** Build placeholder metadata for a file whose full diff would be too expensive. */
-function createSkippedLargeMetadata(filePath: string): FileDiffMetadata {
-  return {
-    name: filePath,
-    type: "change",
-    hunks: [],
-    splitLineCount: 0,
-    unifiedLineCount: 0,
-    isPartial: true,
-    additionLines: [],
-    deletionLines: [],
-    cacheKey: `${filePath}:large-diff-skipped`,
-  };
-}
-
 /** Build a tracked placeholder for a file whose diff would be too expensive to render. */
 function buildSkippedLargeTrackedDiffFile(
   file: GitNumstatFile,
@@ -102,7 +87,7 @@ function buildSkippedLargeTrackedDiffFile(
     path: file.path,
     patch: "",
     stats: { additions: file.additions, deletions: file.deletions },
-    metadata: createSkippedLargeMetadata(file.path),
+    metadata: createSkippedLargeMetadata(file.path, "change"),
     agent: null,
     isTooLarge: true,
   };
