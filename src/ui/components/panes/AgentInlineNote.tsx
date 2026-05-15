@@ -1,5 +1,6 @@
 import type { TextareaRenderable } from "@opentui/core";
-import { useEffect, useRef, useState } from "react";
+import { flushSync } from "@opentui/react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { AgentAnnotation, DiffFile, LayoutMode } from "../../../core/types";
 import { isEscapeKey } from "../../lib/keyboard";
 import { wrapText } from "../../lib/agentPopover";
@@ -140,6 +141,35 @@ export function AgentInlineNote({
     setDraftLineCountHint(draftLineCount(draft?.body ?? ""));
   }, [draft?.body]);
 
+  const draftVisibleRows = draft ? Math.max(draftLineCountHint, draftLineCount(draft.body)) : 0;
+
+  useLayoutEffect(() => {
+    if (!draft || draftVisibleRows <= 0) {
+      return;
+    }
+
+    const textarea = textareaRef.current;
+    if (!textarea) {
+      return;
+    }
+
+    const viewport = textarea.editorView.getViewport();
+    if (viewport.offsetY === 0 && viewport.height === draftVisibleRows) {
+      return;
+    }
+
+    // The textarea follows the cursor after Enter while its old one-line viewport is still active.
+    // Once the composer grows to fit the new line, reset the viewport so previous lines stay visible.
+    textarea.editorView.setViewport(viewport.offsetX, 0, viewport.width, draftVisibleRows, false);
+    textarea.requestRender();
+  }, [draft, draftVisibleRows]);
+
+  const updateDraftLineCountHint = (nextLineCount: number) => {
+    flushSync(() => {
+      setDraftLineCountHint(nextLineCount);
+    });
+  };
+
   const closeText = onClose ? "[x]" : "";
   const titleText = `${inlineNoteTitle(annotation, noteIndex, noteCount)} - ${annotationRangeLabel(annotation, file)}`;
   const splitWidths = splitColumnWidths(width);
@@ -185,7 +215,7 @@ export function AgentInlineNote({
   const bottomBorder = `╰${"─".repeat(Math.max(0, boxWidth - 2))}╯`;
 
   if (draft) {
-    const draftVisibleLineCount = Math.max(draftLineCountHint, draftLineCount(draft.body));
+    const draftVisibleLineCount = draftVisibleRows;
     const draftTitleText = fitText(` ${titleText} `, Math.max(0, boxWidth - 4));
     const draftInnerWidth = Math.max(1, boxWidth - 2);
     const draftContentWidth = Math.max(1, draftInnerWidth - 2);
@@ -297,13 +327,15 @@ export function AgentInlineNote({
             focusedTextColor={theme.text}
             keyBindings={[{ name: "j", ctrl: true, action: "newline" }]}
             onContentChange={() => {
-              const nextBody = textareaRef.current?.getTextRange(0, 100000) ?? "";
-              setDraftLineCountHint(draftLineCount(nextBody));
+              const nextBody = textareaRef.current?.plainText ?? "";
+              updateDraftLineCountHint(draftLineCount(nextBody));
               draft.onInput(nextBody);
             }}
             onKeyDown={(key) => {
               if (isNewlineKey(key)) {
-                setDraftLineCountHint((current) => current + 1);
+                updateDraftLineCountHint(
+                  draftLineCount(textareaRef.current?.plainText ?? draft.body) + 1,
+                );
               }
 
               if (isEscapeKey(key)) {

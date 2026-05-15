@@ -150,7 +150,31 @@ describe("live UI integration", () => {
       await session.press("c");
       await session.waitForText(/Draft note/, { timeout: 5_000 });
       await session.type("Please cover this edge case.");
-      await session.type("\x0aSecond line.");
+
+      const draftBeforeNewline = await session.waitForText(/Please cover this edge case\./, {
+        timeout: 5_000,
+      });
+      const saveRowBeforeNewline = draftBeforeNewline
+        .split("\n")
+        .findIndex((line) => line.includes("Save") && line.includes("Cancel"));
+      expect(saveRowBeforeNewline).toBeGreaterThanOrEqual(0);
+
+      await session.type("\x0a");
+      await harness.waitForSnapshot(
+        session,
+        (text) => {
+          const saveRowAfterNewline = text
+            .split("\n")
+            .findIndex((line) => line.includes("Save") && line.includes("Cancel"));
+          return (
+            text.includes("Please cover this edge case.") &&
+            saveRowAfterNewline > saveRowBeforeNewline
+          );
+        },
+        5_000,
+      );
+
+      await session.type("Second line.");
       await session.type("\x13");
 
       const savedNote = await session.waitForText(/Your note/, { timeout: 5_000 });
