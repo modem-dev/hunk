@@ -654,7 +654,7 @@ describe("session command compatibility checks", () => {
     });
   });
 
-  test("runs note commands through the daemon", async () => {
+  test("routes typed comment listing through review notes", async () => {
     setSessionCommandTestHooks({
       createClient: () =>
         createClient({
@@ -675,60 +675,21 @@ describe("session command compatibility checks", () => {
               },
             ];
           },
-          getNote: async (input) => {
-            expect(input.selector).toEqual({ sessionId: "session-1" });
-            expect(input.noteId).toBe("user:1");
-            return {
-              noteId: "user:1",
-              source: "user",
-              filePath: "README.md",
-              body: "Human note",
-              author: "user",
-              createdAt: "2026-05-10T00:00:00.000Z",
-              editable: true,
-            };
-          },
-          removeNote: async (input) => {
-            expect(input.selector).toEqual({ sessionId: "session-1" });
-            expect(input.noteId).toBe("user:1");
-            return { noteId: "user:1", removed: true, remainingNoteCount: 0 };
-          },
         }),
       resolveDaemonAvailability: async () => true,
     });
 
-    const listOutput = await runSessionCommand({
+    const output = await runSessionCommand({
       kind: "session",
-      action: "note-list",
+      action: "comment-list",
       selector: { sessionId: "session-1" },
       filePath: "README.md",
-      source: "user",
-      output: "json",
-    } satisfies SessionCommandInput);
-    expect(JSON.parse(listOutput)).toMatchObject({
-      notes: [{ noteId: "user:1", body: "Human note" }],
-    });
-
-    const getOutput = await runSessionCommand({
-      kind: "session",
-      action: "note-get",
-      selector: { sessionId: "session-1" },
-      noteId: "user:1",
+      type: "user",
       output: "text",
     } satisfies SessionCommandInput);
-    expect(getOutput).toContain("user:1  README.md [user]");
-    expect(getOutput).toContain("body: Human note");
 
-    const removeOutput = await runSessionCommand({
-      kind: "session",
-      action: "note-rm",
-      selector: { sessionId: "session-1" },
-      noteId: "user:1",
-      output: "text",
-    } satisfies SessionCommandInput);
-    expect(removeOutput).toBe(
-      "Removed user note user:1 from session session-1. Remaining notes: 0.\n",
-    );
+    expect(output).toContain("user:1  README.md [user]");
+    expect(output).toContain("body: Human note");
   });
 
   test("runs reload commands through the daemon and returns the replacement session summary", async () => {

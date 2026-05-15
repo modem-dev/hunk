@@ -8,7 +8,7 @@ import type {
   LayoutMode,
   PagerCommandInput,
   ParsedCliInput,
-  ReviewNoteSource,
+  SessionCommentListType,
   SessionCommentApplyItemInput,
 } from "./types";
 import { resolveBundledHunkReviewSkillPath } from "./paths";
@@ -605,12 +605,9 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
           "  hunk session reload (<session-id> | --repo <path> | --session-path <path>) [--source <path>] -- show [ref] [-- <pathspec...>]",
           "  hunk session comment add (<session-id> | --repo <path>) --file <path> (--old-line <n> | --new-line <n>) --summary <text> [--focus]",
           "  hunk session comment apply (<session-id> | --repo <path>) --stdin [--focus]",
-          "  hunk session comment list (<session-id> | --repo <path>)",
+          "  hunk session comment list (<session-id> | --repo <path>) [--type <live|all|ai|agent|user>]",
           "  hunk session comment rm (<session-id> | --repo <path>) <comment-id>",
           "  hunk session comment clear (<session-id> | --repo <path>) --yes",
-          "  hunk session note list (<session-id> | --repo <path>) [--source <ai|agent|user>]",
-          "  hunk session note get (<session-id> | --repo <path>) <note-id>",
-          "  hunk session note rm (<session-id> | --repo <path>) <note-id>",
         ].join("\n") + "\n",
     };
   }
@@ -882,7 +879,7 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
             "Usage:",
             "  hunk session comment add (<session-id> | --repo <path>) --file <path> (--old-line <n> | --new-line <n>) --summary <text> [--focus]",
             "  hunk session comment apply (<session-id> | --repo <path>) --stdin [--focus]",
-            "  hunk session comment list (<session-id> | --repo <path>) [--file <path>]",
+            "  hunk session comment list (<session-id> | --repo <path>) [--file <path>] [--type <live|all|ai|agent|user>]",
             "  hunk session comment rm (<session-id> | --repo <path>) <comment-id>",
             "  hunk session comment clear (<session-id> | --repo <path>) [--file <path>] --yes",
           ].join("\n") + "\n",
@@ -1048,15 +1045,16 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
         .argument("[sessionId]")
         .option("--repo <path>", "target the live session whose repo root matches this path")
         .option("--file <path>", "filter comments to one diff file")
+        .option("--type <type>", "filter to live, all, ai, agent, or user comments")
         .option("--json", "emit structured JSON");
 
       let parsedSessionId: string | undefined;
-      let parsedOptions: { repo?: string; file?: string; json?: boolean } = {};
+      let parsedOptions: { repo?: string; file?: string; type?: string; json?: boolean } = {};
 
       command.action(
         (
           sessionId: string | undefined,
-          options: { repo?: string; file?: string; json?: boolean },
+          options: { repo?: string; file?: string; type?: string; json?: boolean },
         ) => {
           parsedSessionId = sessionId;
           parsedOptions = options;
@@ -1068,6 +1066,16 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
       }
 
       await parseStandaloneCommand(command, commentRest);
+      if (
+        parsedOptions.type !== undefined &&
+        parsedOptions.type !== "live" &&
+        parsedOptions.type !== "all" &&
+        parsedOptions.type !== "ai" &&
+        parsedOptions.type !== "agent" &&
+        parsedOptions.type !== "user"
+      ) {
+        throw new Error("Comment type must be one of live, all, ai, agent, or user.");
+      }
 
       return {
         kind: "session",
@@ -1075,6 +1083,7 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
         output: resolveJsonOutput(parsedOptions),
         selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
         filePath: parsedOptions.file,
+        ...(parsedOptions.type ? { type: parsedOptions.type as SessionCommentListType } : {}),
       };
     }
 
@@ -1169,109 +1178,6 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
     }
 
     throw new Error("Supported comment subcommands are add, apply, list, rm, and clear.");
-  }
-
-  if (subcommand === "note") {
-    const [noteSubcommand, ...noteRest] = rest;
-    if (!noteSubcommand || noteSubcommand === "--help" || noteSubcommand === "-h") {
-      return {
-        kind: "help",
-        text:
-          [
-            "Usage:",
-            "  hunk session note list (<session-id> | --repo <path>) [--file <path>] [--source <ai|agent|user>]",
-            "  hunk session note get (<session-id> | --repo <path>) <note-id>",
-            "  hunk session note rm (<session-id> | --repo <path>) <note-id>",
-          ].join("\n") + "\n",
-      };
-    }
-
-    if (noteSubcommand === "list") {
-      const command = new Command("session note list")
-        .description("list inline review notes")
-        .argument("[sessionId]")
-        .option("--repo <path>", "target the live session whose repo root matches this path")
-        .option("--file <path>", "filter notes to one diff file")
-        .option("--source <source>", "filter to ai, agent, or user notes")
-        .option("--json", "emit structured JSON");
-
-      let parsedSessionId: string | undefined;
-      let parsedOptions: { repo?: string; file?: string; source?: string; json?: boolean } = {};
-      command.action((sessionId: string | undefined, options) => {
-        parsedSessionId = sessionId;
-        parsedOptions = options;
-      });
-
-      if (noteRest.includes("--help") || noteRest.includes("-h")) {
-        return { kind: "help", text: `${command.helpInformation().trimEnd()}\n` };
-      }
-
-      await parseStandaloneCommand(command, noteRest);
-      if (
-        parsedOptions.source !== undefined &&
-        parsedOptions.source !== "ai" &&
-        parsedOptions.source !== "agent" &&
-        parsedOptions.source !== "user"
-      ) {
-        throw new Error("Note source must be one of ai, agent, or user.");
-      }
-
-      return {
-        kind: "session",
-        action: "note-list",
-        output: resolveJsonOutput(parsedOptions),
-        selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
-        filePath: parsedOptions.file,
-        source: parsedOptions.source as ReviewNoteSource | undefined,
-      };
-    }
-
-    if (noteSubcommand === "get" || noteSubcommand === "rm") {
-      const command = new Command(`session note ${noteSubcommand}`)
-        .description(
-          noteSubcommand === "get"
-            ? "show one inline review note"
-            : "remove one user-authored inline review note",
-        )
-        .argument("[sessionIdOrNoteId]")
-        .argument("[noteId]")
-        .option("--repo <path>", "target the live session whose repo root matches this path")
-        .option("--json", "emit structured JSON");
-
-      let parsedSessionIdOrNoteId: string | undefined;
-      let parsedNoteId: string | undefined;
-      let parsedOptions: { repo?: string; json?: boolean } = {};
-      command.action(
-        (sessionIdOrNoteId: string | undefined, noteId: string | undefined, options) => {
-          parsedSessionIdOrNoteId = sessionIdOrNoteId;
-          parsedNoteId = noteId;
-          parsedOptions = options;
-        },
-      );
-
-      if (noteRest.includes("--help") || noteRest.includes("-h")) {
-        return { kind: "help", text: `${command.helpInformation().trimEnd()}\n` };
-      }
-
-      await parseStandaloneCommand(command, noteRest);
-      const resolvedNoteId = parsedOptions.repo
-        ? (parsedNoteId ?? parsedSessionIdOrNoteId)
-        : parsedNoteId;
-      const resolvedSessionId = parsedOptions.repo ? undefined : parsedSessionIdOrNoteId;
-      if (!resolvedNoteId) {
-        throw new Error(`Pass a note id to session note ${noteSubcommand}.`);
-      }
-
-      return {
-        kind: "session",
-        action: noteSubcommand === "get" ? "note-get" : "note-rm",
-        output: resolveJsonOutput(parsedOptions),
-        selector: resolveExplicitSessionSelector(resolvedSessionId, parsedOptions.repo),
-        noteId: resolvedNoteId,
-      };
-    }
-
-    throw new Error("Supported note subcommands are list, get, and rm.");
   }
 
   throw new Error(`Unknown session command: ${subcommand}`);

@@ -5,6 +5,7 @@ export type VcsMode = "git" | "jj";
 export type TerminalThemeMode = "light" | "dark";
 
 export type ReviewNoteSource = "ai" | "agent" | "user";
+export type SessionCommentListType = "live" | "all" | ReviewNoteSource;
 
 export interface ReviewNote {
   id: string;
@@ -203,6 +204,7 @@ export interface SessionCommentListCommandInput {
   output: SessionCommandOutput;
   selector: SessionSelectorInput;
   filePath?: string;
+  type?: SessionCommentListType;
 }
 
 export interface SessionCommentRemoveCommandInput {
@@ -257,10 +259,7 @@ export type SessionCommandInput =
   | SessionCommentApplyCommandInput
   | SessionCommentListCommandInput
   | SessionCommentRemoveCommandInput
-  | SessionCommentClearCommandInput
-  | SessionNoteListCommandInput
-  | SessionNoteGetCommandInput
-  | SessionNoteRemoveCommandInput;
+  | SessionCommentClearCommandInput;
 
 export interface VcsCommandInput {
   kind: "vcs";

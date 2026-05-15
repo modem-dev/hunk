@@ -322,58 +322,6 @@ describe("parseCli", () => {
     });
   });
 
-  test("parses session note commands", async () => {
-    await expect(
-      parseCli([
-        "bun",
-        "hunk",
-        "session",
-        "note",
-        "list",
-        "--repo",
-        ".",
-        "--file",
-        "README.md",
-        "--source",
-        "user",
-        "--json",
-      ]),
-    ).resolves.toEqual({
-      kind: "session",
-      action: "note-list",
-      selector: { repoRoot: process.cwd() },
-      filePath: "README.md",
-      source: "user",
-      output: "json",
-    });
-
-    await expect(
-      parseCli(["bun", "hunk", "session", "note", "get", "session-1", "user:1"]),
-    ).resolves.toEqual({
-      kind: "session",
-      action: "note-get",
-      selector: { sessionId: "session-1" },
-      noteId: "user:1",
-      output: "text",
-    });
-
-    await expect(
-      parseCli(["bun", "hunk", "session", "note", "rm", "--repo", ".", "user:1"]),
-    ).resolves.toEqual({
-      kind: "session",
-      action: "note-rm",
-      selector: { repoRoot: process.cwd() },
-      noteId: "user:1",
-      output: "text",
-    });
-  });
-
-  test("rejects session note list with an unsupported source", async () => {
-    await expect(
-      parseCli(["bun", "hunk", "session", "note", "list", "session-1", "--source", "robot"]),
-    ).rejects.toThrow("Note source must be one of ai, agent, or user.");
-  });
-
   test("parses session navigate by hunk number", async () => {
     const parsed = await parseCli([
       "bun",
@@ -634,6 +582,39 @@ describe("parseCli", () => {
       filePath: "README.md",
       output: "json",
     });
+  });
+
+  test("rejects the removed session note namespace", async () => {
+    await expect(parseCli(["bun", "hunk", "session", "note", "list", "session-1"])).rejects.toThrow(
+      "Unknown session command: note",
+    );
+  });
+
+  test("parses session comment list with review-note type filter", async () => {
+    const parsed = await parseCli([
+      "bun",
+      "hunk",
+      "session",
+      "comment",
+      "list",
+      "session-1",
+      "--type",
+      "user",
+    ]);
+
+    expect(parsed).toEqual({
+      kind: "session",
+      action: "comment-list",
+      selector: { sessionId: "session-1" },
+      type: "user",
+      output: "text",
+    });
+  });
+
+  test("rejects session comment list with an unsupported type", async () => {
+    await expect(
+      parseCli(["bun", "hunk", "session", "comment", "list", "session-1", "--type", "robot"]),
+    ).rejects.toThrow("Comment type must be one of live, all, ai, agent, or user.");
   });
 
   test("parses session comment rm", async () => {
