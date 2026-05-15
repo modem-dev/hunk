@@ -107,6 +107,8 @@ export function App({
       ? "auto"
       : resolveTheme(bootstrap.initialTheme, bootstrap.initialThemeMode ?? null).id,
   );
+  // Soft reloads replace bootstrap without re-running startup terminal theme detection.
+  const detectedThemeMode = useRef(bootstrap.initialThemeMode).current;
   const [showAgentNotes, setShowAgentNotes] = useState(bootstrap.initialShowAgentNotes ?? false);
   const [showLineNumbers, setShowLineNumbers] = useState(bootstrap.initialShowLineNumbers ?? true);
   const [wrapLines, setWrapLines] = useState(bootstrap.initialWrapLines ?? false);
@@ -120,7 +122,7 @@ export function App({
   const [resizeDragOriginX, setResizeDragOriginX] = useState<number | null>(null);
   const [resizeStartWidth, setResizeStartWidth] = useState<number | null>(null);
 
-  const activeTheme = resolveTheme(themeId, bootstrap.initialThemeMode ?? null);
+  const activeTheme = resolveTheme(themeId, detectedThemeMode ?? null);
   const review = useReviewController({ files: bootstrap.changeset.files });
   const filteredFiles = review.visibleFiles;
   const selectedFile = review.selectedFile;

@@ -434,6 +434,36 @@ async function waitForFrame(
   return frame;
 }
 
+/** Open the top-level Theme menu and wait for the expected active light theme marker. */
+async function openThemeMenu(setup: Awaited<ReturnType<typeof testRender>>) {
+  let opened = false;
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await act(async () => {
+      await setup.mockInput.pressKey("F10");
+    });
+
+    const menuFrame = await waitForFrame(setup, (frame) =>
+      frame.includes("Toggle files/filter focus"),
+    );
+    if (menuFrame.includes("Toggle files/filter focus")) {
+      opened = true;
+      break;
+    }
+  }
+
+  expect(opened).toBe(true);
+
+  for (let index = 0; index < 3; index += 1) {
+    await act(async () => {
+      await setup.mockInput.pressArrow("right");
+    });
+    await flush(setup);
+  }
+
+  return waitForFrame(setup, (frame) => frame.includes("[x] Paper"), 12);
+}
+
 async function pressHunkNavigationKey(
   setup: Awaited<ReturnType<typeof testRender>>,
   key: "]" | "[",
@@ -1247,6 +1277,55 @@ describe("App interactions", () => {
       }
 
       expect(refreshed).toBe(true);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
+  test("watch mode preserves the resolved auto theme after refreshing the file diff", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "hunk-watch-theme-"));
+    const left = join(dir, "before.ts");
+    const right = join(dir, "after.ts");
+
+    writeFileSync(left, "export const answer = 41;\n");
+    writeFileSync(right, "export const answer = 42;\n");
+
+    const bootstrap = await loadAppBootstrap({
+      kind: "diff",
+      left,
+      right,
+      options: {
+        mode: "split",
+        theme: "auto",
+        watch: true,
+      },
+    });
+    // loadAppBootstrap does not do startup-time terminal theme detection in tests.
+    bootstrap.initialThemeMode = "light";
+
+    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
+      width: 220,
+      height: 20,
+    });
+
+    try {
+      await flush(setup);
+
+      writeFileSync(right, "export const answer = 42;\nexport const added = true;\n");
+
+      const refreshedFrame = await waitForFrame(
+        setup,
+        (currentFrame) => currentFrame.includes("export const added = true;"),
+        40,
+      );
+      expect(refreshedFrame).toContain("export const added = true;");
+
+      const menuFrame = await openThemeMenu(setup);
+      expect(menuFrame).toContain("[x] Paper");
+      expect(menuFrame).toContain("[ ] Graphite");
     } finally {
       await act(async () => {
         setup.renderer.destroy();
