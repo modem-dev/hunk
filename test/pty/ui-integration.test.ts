@@ -113,6 +113,7 @@ describe("live UI integration", () => {
         (text) => text.includes("Alpha note for navigation."),
         5_000,
       );
+      expect(alphaNote).toContain("Alpha note for navigation.");
       expect(alphaNote).not.toContain("Maximum update depth exceeded");
 
       await session.press(".");
