@@ -6,6 +6,7 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Added
 
+- Surfaced the agent author name in inline notes and the matching agent popover so multi-agent reviews are readable at a glance, with a fallback title when an annotation has no author.
 - Added `g` and `G` keyboard aliases for jump-to-top and jump-to-bottom review navigation.
 
 ### Changed

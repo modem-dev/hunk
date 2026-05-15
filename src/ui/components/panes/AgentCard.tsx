@@ -12,6 +12,7 @@ export function AgentCard({
   summary,
   theme,
   width,
+  author,
 }: {
   locationLabel: string;
   noteCount?: number;
@@ -21,6 +22,7 @@ export function AgentCard({
   summary: string;
   theme: AppTheme;
   width: number;
+  author?: string;
 }) {
   const popover = buildAgentPopoverContent({
     summary,
@@ -29,6 +31,7 @@ export function AgentCard({
     noteIndex,
     noteCount,
     width,
+    author,
   });
   const titleWidth = Math.max(1, popover.innerWidth - (onClose ? 4 : 0));
 
