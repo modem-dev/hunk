@@ -436,23 +436,16 @@ async function waitForFrame(
 
 /** Open the top-level Theme menu and wait for the expected active light theme marker. */
 async function openThemeMenu(setup: Awaited<ReturnType<typeof testRender>>) {
-  let opened = false;
+  await act(async () => {
+    await setup.mockInput.pressKey("F10");
+  });
 
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    await act(async () => {
-      await setup.mockInput.pressKey("F10");
-    });
-
-    const menuFrame = await waitForFrame(setup, (frame) =>
-      frame.includes("Toggle files/filter focus"),
-    );
-    if (menuFrame.includes("Toggle files/filter focus")) {
-      opened = true;
-      break;
-    }
-  }
-
-  expect(opened).toBe(true);
+  const openedFrame = await waitForFrame(
+    setup,
+    (frame) => frame.includes("Toggle files/filter focus"),
+    12,
+  );
+  expect(openedFrame).toContain("Toggle files/filter focus");
 
   for (let index = 0; index < 3; index += 1) {
     await act(async () => {
