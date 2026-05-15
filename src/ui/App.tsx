@@ -108,7 +108,7 @@ export function App({
       : resolveTheme(bootstrap.initialTheme, bootstrap.initialThemeMode ?? null).id,
   );
   // Soft reloads replace bootstrap without re-running startup terminal theme detection.
-  const detectedThemeMode = useRef(bootstrap.initialThemeMode).current;
+  const [detectedThemeMode] = useState(() => bootstrap.initialThemeMode);
   const [showAgentNotes, setShowAgentNotes] = useState(bootstrap.initialShowAgentNotes ?? false);
   const [showLineNumbers, setShowLineNumbers] = useState(bootstrap.initialShowLineNumbers ?? true);
   const [wrapLines, setWrapLines] = useState(bootstrap.initialWrapLines ?? false);
