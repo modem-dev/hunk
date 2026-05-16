@@ -22,6 +22,11 @@ interface RunGitCommandOptions extends RunGitTextOptions {
   acceptedExitCodes?: number[];
 }
 
+export interface GitColorMovedOptions {
+  mode: string;
+  whitespaceMode?: string;
+}
+
 /** Append Git pathspec arguments only when the caller requested them. */
 export function appendGitPathspecs(args: string[], pathspecs?: string[]) {
   if (!pathspecs || pathspecs.length === 0) {
@@ -45,13 +50,58 @@ const DIFF_PREFIX_NORMALIZATION_ARGS = [
   "diff.dstPrefix=b/",
 ];
 
+const GIT_MOVED_LINE_COLOR_CONFIG = [
+  "-c",
+  "color.diff.oldMoved=magenta bold",
+  "-c",
+  "color.diff.oldMovedAlternative=magenta bold",
+  "-c",
+  "color.diff.oldMovedDimmed=magenta dim",
+  "-c",
+  "color.diff.oldMovedAlternativeDimmed=magenta dim",
+  "-c",
+  "color.diff.newMoved=cyan bold",
+  "-c",
+  "color.diff.newMovedAlternative=cyan bold",
+  "-c",
+  "color.diff.newMovedDimmed=cyan dim",
+  "-c",
+  "color.diff.newMovedAlternativeDimmed=cyan dim",
+];
+
 function withNormalizedDiffPrefixes(args: string[]) {
   return [...DIFF_PREFIX_NORMALIZATION_ARGS, ...args];
 }
 
+/** Return Git color flags for patch commands, enabling ANSI only when Hunk needs move classes. */
+function gitPatchColorArgs(colorMoved: GitColorMovedOptions | null) {
+  if (!colorMoved) {
+    return ["--no-color"];
+  }
+
+  return [
+    "--color=always",
+    `--color-moved=${colorMoved.mode}`,
+    ...(colorMoved.whitespaceMode ? [`--color-moved-ws=${colorMoved.whitespaceMode}`] : []),
+  ];
+}
+
+/** Add deterministic moved-line colors so the parser can classify Git's ANSI output reliably. */
+function withGitMovedLineColorConfig(args: string[], colorMoved: GitColorMovedOptions | null) {
+  if (!colorMoved) {
+    return args;
+  }
+
+  return [...GIT_MOVED_LINE_COLOR_CONFIG, ...args];
+}
+
 /** Build the exact `git diff` arguments used for the shared working-tree and range review path. */
-export function buildGitDiffArgs(input: VcsCommandInput, excludedPathspecs: string[] = []) {
-  const args = ["diff", "--no-ext-diff", "--find-renames", "--no-color"];
+export function buildGitDiffArgs(
+  input: VcsCommandInput,
+  excludedPathspecs: string[] = [],
+  colorMoved: GitColorMovedOptions | null = null,
+) {
+  const args = ["diff", "--no-ext-diff", "--find-renames", ...gitPatchColorArgs(colorMoved)];
 
   if (input.staged) {
     args.push("--staged");
@@ -71,7 +121,7 @@ export function buildGitDiffArgs(input: VcsCommandInput, excludedPathspecs: stri
     appendGitPathspecs(args, input.pathspecs);
   }
 
-  return withNormalizedDiffPrefixes(args);
+  return withNormalizedDiffPrefixes(withGitMovedLineColorConfig(args, colorMoved));
 }
 
 /** Build the cheap tracked-file stats query used to skip huge file diffs before patch output. */
@@ -114,26 +164,45 @@ function buildGitNewFileDiffArgs(filePath: string) {
 }
 
 /** Build the exact `git show` arguments used for commit review. */
-export function buildGitShowArgs(input: ShowCommandInput) {
-  const args = ["show", "--format=", "--no-ext-diff", "--find-renames", "--no-color"];
+export function buildGitShowArgs(
+  input: ShowCommandInput,
+  colorMoved: GitColorMovedOptions | null = null,
+) {
+  const args = [
+    "show",
+    "--format=",
+    "--no-ext-diff",
+    "--find-renames",
+    ...gitPatchColorArgs(colorMoved),
+  ];
 
   if (input.ref) {
     args.push(input.ref);
   }
 
   appendGitPathspecs(args, input.pathspecs);
-  return withNormalizedDiffPrefixes(args);
+  return withNormalizedDiffPrefixes(withGitMovedLineColorConfig(args, colorMoved));
 }
 
 /** Build the exact `git stash show -p` arguments used for stash review. */
-export function buildGitStashShowArgs(input: StashShowCommandInput) {
-  const args = ["stash", "show", "-p", "--no-ext-diff", "--find-renames", "--no-color"];
+export function buildGitStashShowArgs(
+  input: StashShowCommandInput,
+  colorMoved: GitColorMovedOptions | null = null,
+) {
+  const args = [
+    "stash",
+    "show",
+    "-p",
+    "--no-ext-diff",
+    "--find-renames",
+    ...gitPatchColorArgs(colorMoved),
+  ];
 
   if (input.ref) {
     args.push(input.ref);
   }
 
-  return withNormalizedDiffPrefixes(args);
+  return withNormalizedDiffPrefixes(withGitMovedLineColorConfig(args, colorMoved));
 }
 
 export function formatGitCommandLabel(input: GitBackedInput) {
@@ -327,6 +396,72 @@ function runGitCommand({
 /** Run a git command and translate common failures into user-facing Hunk errors. */
 export function runGitText(options: RunGitTextOptions) {
   return runGitCommand(options).stdout;
+}
+
+const GIT_BOOLEAN_TRUE_VALUES = new Set(["true", "yes", "on", "1", "always"]);
+const GIT_BOOLEAN_FALSE_VALUES = new Set(["false", "no", "off", "0", "never"]);
+
+/** Read an optional Git config value without treating an unset key as an error. */
+function readOptionalGitConfig(
+  input: GitBackedInput,
+  key: string,
+  options: Omit<RunGitTextOptions, "input" | "args"> = {},
+) {
+  const result = runGitCommand({
+    input,
+    args: ["config", "--get", key],
+    ...options,
+    acceptedExitCodes: [0, 1],
+  });
+
+  if (result.exitCode !== 0) {
+    return undefined;
+  }
+
+  return result.stdout.trim() || undefined;
+}
+
+/** Normalize Git's diff.colorMoved config into the mode Hunk should request from Git. */
+function normalizeGitColorMovedMode(value: string | undefined) {
+  if (!value) {
+    return undefined;
+  }
+
+  const normalized = value.toLowerCase();
+  if (GIT_BOOLEAN_FALSE_VALUES.has(normalized) || normalized === "no") {
+    return null;
+  }
+
+  if (GIT_BOOLEAN_TRUE_VALUES.has(normalized)) {
+    return "zebra";
+  }
+
+  return value;
+}
+
+/** Resolve whether Hunk should ask Git to color moved lines for this patch command. */
+export function resolveGitColorMovedOptions(
+  input: GitBackedInput,
+  options: Omit<RunGitTextOptions, "input" | "args"> = {},
+): GitColorMovedOptions | null {
+  const gitMode = normalizeGitColorMovedMode(
+    readOptionalGitConfig(input, "diff.colorMoved", options),
+  );
+
+  if (gitMode === null) {
+    return null;
+  }
+
+  const mode = gitMode ?? (input.options.colorMoved ? "zebra" : undefined);
+  if (!mode) {
+    return null;
+  }
+
+  const whitespaceMode = readOptionalGitConfig(input, "diff.colorMovedWS", options);
+  return {
+    mode,
+    whitespaceMode,
+  };
 }
 
 /**

@@ -17,6 +17,8 @@ export const PAPER_THEME: AppTheme = withLazySyntaxStyle(
     muted: "#786753",
     addedBg: "#dff0e1",
     removedBg: "#f6ddde",
+    movedAddedBg: "#dcebf4",
+    movedRemovedBg: "#eadff1",
     contextBg: "#faf6ee",
     addedContentBg: "#eaf8ec",
     removedContentBg: "#fbebeb",

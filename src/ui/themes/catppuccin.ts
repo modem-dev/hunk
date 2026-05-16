@@ -119,6 +119,8 @@ export function createCatppuccinTheme(flavor: CatppuccinFlavor) {
       muted: palette.subtext0,
       addedBg: blendHex(palette.green, contextBg, 0.15),
       removedBg: blendHex(palette.red, contextBg, 0.15),
+      movedAddedBg: blendHex(palette.sky, contextBg, 0.18),
+      movedRemovedBg: blendHex(palette.mauve, contextBg, 0.18),
       contextBg,
       addedContentBg: blendHex(palette.green, contextBg, 0.25),
       removedContentBg: blendHex(palette.red, contextBg, 0.25),

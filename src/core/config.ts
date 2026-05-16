@@ -233,6 +233,7 @@ function readConfigPreferences(source: Record<string, unknown>): CommonOptions {
     hunkHeaders: normalizeBoolean(source.hunk_headers),
     agentNotes: normalizeBoolean(source.agent_notes),
     copyDecorations: normalizeBoolean(source.copy_decorations),
+    colorMoved: normalizeBoolean(source.color_moved),
   };
 }
 
@@ -252,6 +253,7 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
     hunkHeaders: overrides.hunkHeaders ?? base.hunkHeaders,
     agentNotes: overrides.agentNotes ?? base.agentNotes,
     copyDecorations: overrides.copyDecorations ?? base.copyDecorations,
+    colorMoved: overrides.colorMoved ?? base.colorMoved,
   };
 }
 
@@ -344,6 +346,7 @@ export function resolveConfiguredCliInput(
     hunkHeaders: resolvedOptions.hunkHeaders ?? DEFAULT_VIEW_PREFERENCES.showHunkHeaders,
     agentNotes: resolvedOptions.agentNotes ?? DEFAULT_VIEW_PREFERENCES.showAgentNotes,
     copyDecorations: resolvedOptions.copyDecorations ?? DEFAULT_VIEW_PREFERENCES.copyDecorations,
+    colorMoved: resolvedOptions.colorMoved,
   };
 
   if (resolvedOptions.theme === "custom" && !resolvedCustomTheme) {

@@ -18,7 +18,7 @@ import {
 import { createFileSourceFetcher, type FileSourceSpec } from "./fileSource";
 import { normalizeUntrackedPatchHeaders, runGitUntrackedFileDiffText } from "./git";
 import { splitPatchIntoFileChunks, findPatchChunk } from "./patch/chunks";
-import { normalizePatchText } from "./patch/normalize";
+import { normalizePatchText, stripTerminalControl } from "./patch/normalize";
 import { createUnsupportedVcsOperationError, getVcsAdapter, operationFromInput } from "./vcs";
 import type {
   AppBootstrap,
@@ -27,6 +27,8 @@ import type {
   CliInput,
   CustomThemeConfig,
   DiffFile,
+  DiffLineMoveKind,
+  DiffLineMoveKinds,
   DiffToolCommandInput,
   FileCommandInput,
   VcsCommandInput,
@@ -67,6 +69,113 @@ function createSourceFetcherBuilder(
     const specs = resolveSpecs(file);
     return specs ? createFileSourceFetcher(specs) : undefined;
   };
+}
+
+/** Return SGR parameter strings that Git emitted before one diff line marker. */
+function leadingSgrParameters(rawLine: string, expectedSign: "+" | "-") {
+  const parameters: string[] = [];
+  let index = 0;
+
+  while (index < rawLine.length) {
+    if (rawLine[index] === "\x1b") {
+      const csi = rawLine.slice(index).match(/^\x1b\[([0-?]*)([ -/]*)([@-~])/);
+      if (csi) {
+        if (csi[3] === "m") {
+          parameters.push(csi[1] ?? "");
+        }
+        index += csi[0].length;
+        continue;
+      }
+    }
+
+    return rawLine[index] === expectedSign ? parameters : [];
+  }
+
+  return [];
+}
+
+/** Return whether one SGR parameter list contains the Git color Hunk reserves for moved lines. */
+function sgrContainsColor(parameters: string[], colorCode: "35" | "36") {
+  return parameters.some((parameter) => parameter.split(";").includes(colorCode));
+}
+
+/** Classify one ANSI-colored Git diff line as moved when it carries Hunk's reserved color. */
+function movedLineKindFromAnsi(
+  rawLine: string,
+  side: "addition" | "deletion",
+): DiffLineMoveKind | undefined {
+  const colorCode = side === "addition" ? "36" : "35";
+  const sign = side === "addition" ? "+" : "-";
+  return sgrContainsColor(leadingSgrParameters(rawLine, sign), colorCode) ? "moved" : undefined;
+}
+
+/** Capture Git's color-moved ANSI classes before the normal patch parser strips colors. */
+function collectLineMoveKinds(patchText: string): DiffLineMoveKinds[] {
+  const files: DiffLineMoveKinds[] = [];
+  let current: DiffLineMoveKinds | null = null;
+  let inHunk = false;
+  let additionLineIndex = 0;
+  let deletionLineIndex = 0;
+
+  const createFileMoveKinds = () => {
+    const moveKinds: DiffLineMoveKinds = { additionLines: [], deletionLines: [] };
+    files.push(moveKinds);
+    inHunk = false;
+    additionLineIndex = 0;
+    deletionLineIndex = 0;
+    return moveKinds;
+  };
+
+  for (const rawLine of patchText.replaceAll("\r\n", "\n").split("\n")) {
+    const plainLine = stripTerminalControl(rawLine);
+
+    if (plainLine.startsWith("diff --git ")) {
+      current = createFileMoveKinds();
+      continue;
+    }
+
+    if (!current && (plainLine.startsWith("--- ") || plainLine.startsWith("@@ "))) {
+      current = createFileMoveKinds();
+    }
+
+    const activeMoveKinds = current;
+    if (!activeMoveKinds) {
+      continue;
+    }
+
+    if (plainLine.startsWith("@@ ")) {
+      inHunk = true;
+      continue;
+    }
+
+    if (!inHunk) {
+      continue;
+    }
+
+    if (plainLine.startsWith("+") && !plainLine.startsWith("+++")) {
+      activeMoveKinds.additionLines[additionLineIndex] = movedLineKindFromAnsi(rawLine, "addition");
+      additionLineIndex += 1;
+      continue;
+    }
+
+    if (plainLine.startsWith("-") && !plainLine.startsWith("---")) {
+      activeMoveKinds.deletionLines[deletionLineIndex] = movedLineKindFromAnsi(rawLine, "deletion");
+      deletionLineIndex += 1;
+      continue;
+    }
+
+    if (plainLine.startsWith(" ")) {
+      additionLineIndex += 1;
+      deletionLineIndex += 1;
+    }
+  }
+
+  return files;
+}
+
+/** Return whether one file has any captured moved-line classifications. */
+function hasLineMoveKinds(moveKinds: DiffLineMoveKinds | undefined) {
+  return Boolean(moveKinds?.additionLines.some(Boolean) || moveKinds?.deletionLines.some(Boolean));
 }
 
 interface CountedLines {
@@ -265,6 +374,7 @@ function normalizePatchChangeset(
   agentContext: AgentContext | null,
   perFileOptions?: Pick<BuildDiffFileOptions, "sourceFetcherBuilder">,
 ): Changeset {
+  const lineMoveKinds = collectLineMoveKinds(patchText);
   const normalizedPatchText = normalizePatchText(patchText);
 
   let parsedPatches: ReturnType<typeof parsePatchFiles>;
@@ -301,7 +411,10 @@ function normalizePatchChangeset(
         index,
         sourceLabel,
         agentContext,
-        perFileOptions,
+        {
+          ...perFileOptions,
+          lineMoveKinds: hasLineMoveKinds(lineMoveKinds[index]) ? lineMoveKinds[index] : undefined,
+        },
       ),
     ),
   };

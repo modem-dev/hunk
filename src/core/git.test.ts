@@ -2,7 +2,12 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildGitStashShowArgs, resolveGitDiffEndpoints, runGitText } from "./git";
+import {
+  buildGitDiffArgs,
+  buildGitStashShowArgs,
+  resolveGitDiffEndpoints,
+  runGitText,
+} from "./git";
 import type { VcsCommandInput } from "./types";
 
 const tempDirs: string[] = [];
@@ -51,6 +56,25 @@ afterEach(() => {
   }
 });
 describe("git command helpers", () => {
+  test("enables deterministic color-moved output for patch parsing", () => {
+    const args = buildGitDiffArgs(
+      {
+        kind: "vcs",
+        staged: false,
+        options: { mode: "auto" },
+      },
+      [],
+      { mode: "zebra", whitespaceMode: "allow-indentation-change" },
+    );
+
+    expect(args).toContain("--color=always");
+    expect(args).toContain("--color-moved=zebra");
+    expect(args).toContain("--color-moved-ws=allow-indentation-change");
+    expect(args).not.toContain("--no-color");
+    expect(args).toContain("color.diff.oldMoved=magenta bold");
+    expect(args).toContain("color.diff.newMoved=cyan bold");
+  });
+
   test("disables external diff tools for stash patches", () => {
     const args = buildGitStashShowArgs({
       kind: "stash-show",
