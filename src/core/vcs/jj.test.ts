@@ -63,8 +63,11 @@ afterEach(() => {
   }
 });
 
+// Keep jj-backed adapter coverage opt-in on machines that have the external CLI installed.
+const jjTest = Bun.which("jj") ? test : test.skip;
+
 describe("jjAdapter", () => {
-  test(
+  jjTest(
     "detects Jujutsu repositories from nested directories",
     () => {
       const repo = createTempJjRepo("hunk-jj-adapter-detect-");
@@ -76,7 +79,7 @@ describe("jjAdapter", () => {
     JjAdapterIntegrationTestTimeoutMs,
   );
 
-  test(
+  jjTest(
     "loads working-copy and revision patches through neutral operations",
     async () => {
       const repo = createTempJjRepo("hunk-jj-adapter-review-");
@@ -115,7 +118,7 @@ describe("jjAdapter", () => {
     JjAdapterIntegrationTestTimeoutMs,
   );
 
-  test(
+  jjTest(
     "rejects staged and stash operations",
     async () => {
       const repo = createTempJjRepo("hunk-jj-adapter-unsupported-");

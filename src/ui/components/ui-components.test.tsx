@@ -1729,6 +1729,7 @@ describe("UI components", () => {
       "e               open file in $EDITOR",
       "Review",
       "/               focus file filter",
+      "c               create review note",
       "Tab             toggle files/filter focus",
       "F10             open menus",
       "r / q           reload / quit",
