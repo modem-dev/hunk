@@ -366,6 +366,7 @@ describe("session command compatibility checks", () => {
           getSessionReview: async (input) => {
             expect(input.selector).toEqual({ sessionId: "session-1" });
             expect(input.includePatch).toBe(false);
+            expect(input.includeNotes).toBe(false);
 
             return {
               sessionId: "session-1",
@@ -425,6 +426,7 @@ describe("session command compatibility checks", () => {
       selector: { sessionId: "session-1" },
       output: "json",
       includePatch: false,
+      includeNotes: false,
     } satisfies SessionCommandInput);
 
     expect(JSON.parse(output)).toEqual({
@@ -485,6 +487,7 @@ describe("session command compatibility checks", () => {
           getSessionReview: async (input) => {
             expect(input.selector).toEqual({ sessionId: "session-1" });
             expect(input.includePatch).toBe(true);
+            expect(input.includeNotes).toBe(false);
 
             return {
               sessionId: "session-1",
@@ -546,6 +549,7 @@ describe("session command compatibility checks", () => {
       selector: { sessionId: "session-1" },
       output: "json",
       includePatch: true,
+      includeNotes: false,
     } satisfies SessionCommandInput);
 
     expect(JSON.parse(output)).toEqual({
@@ -599,6 +603,90 @@ describe("session command compatibility checks", () => {
         ],
       },
     });
+  });
+
+  test("runs review commands through the daemon with notes when requested", async () => {
+    setSessionCommandTestHooks({
+      createClient: () =>
+        createClient({
+          getSessionReview: async (input) => {
+            expect(input.selector).toEqual({ sessionId: "session-1" });
+            expect(input.includePatch).toBe(false);
+            expect(input.includeNotes).toBe(true);
+
+            return {
+              ...createTestSessionReview(false),
+              reviewNoteCount: 1,
+              reviewNotes: [
+                {
+                  noteId: "user:1",
+                  source: "user",
+                  filePath: "README.md",
+                  body: "Please simplify this.",
+                  author: "user",
+                  createdAt: "2026-05-10T00:00:00.000Z",
+                  editable: true,
+                },
+              ],
+            };
+          },
+        }),
+      resolveDaemonAvailability: async () => true,
+    });
+
+    const output = await runSessionCommand({
+      kind: "session",
+      action: "review",
+      selector: { sessionId: "session-1" },
+      output: "json",
+      includePatch: false,
+      includeNotes: true,
+    } satisfies SessionCommandInput);
+
+    expect(JSON.parse(output)).toMatchObject({
+      review: {
+        reviewNoteCount: 1,
+        reviewNotes: [{ noteId: "user:1", body: "Please simplify this." }],
+      },
+    });
+  });
+
+  test("routes typed comment listing through the comment list API", async () => {
+    setSessionCommandTestHooks({
+      createClient: () =>
+        createClient({
+          listComments: async (input) => {
+            expect(input.selector).toEqual({ sessionId: "session-1" });
+            expect(input.filePath).toBe("README.md");
+            expect(input.type).toBe("user");
+            return [
+              {
+                noteId: "user:1",
+                source: "user",
+                filePath: "README.md",
+                hunkIndex: 0,
+                body: "Human note",
+                author: "user",
+                createdAt: "2026-05-10T00:00:00.000Z",
+                editable: true,
+              },
+            ];
+          },
+        }),
+      resolveDaemonAvailability: async () => true,
+    });
+
+    const output = await runSessionCommand({
+      kind: "session",
+      action: "comment-list",
+      selector: { sessionId: "session-1" },
+      filePath: "README.md",
+      type: "user",
+      output: "text",
+    } satisfies SessionCommandInput);
+
+    expect(output).toContain("user:1  README.md [user]");
+    expect(output).toContain("body: Human note");
   });
 
   test("runs reload commands through the daemon and returns the replacement session summary", async () => {

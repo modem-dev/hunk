@@ -98,11 +98,12 @@ hunk session reload --session-path /path/to/live-window --source /path/to/other-
 ```bash
 hunk session comment add --repo . --file README.md --new-line 103 --summary "Tighten this wording" [--rationale "..."] [--author "agent"] [--focus]
 printf '%s\n' '{"comments":[{"filePath":"README.md","newLine":103,"summary":"Tighten this wording"}]}' | hunk session comment apply --repo . --stdin [--focus]
-hunk session comment list --repo . [--file README.md]
+hunk session comment list --repo . [--file README.md] [--type live|all|ai|agent|user]
 hunk session comment rm --repo . <comment-id>
 hunk session comment clear --repo . --yes [--file README.md]
 ```
 
+- `comment list --type user` shows human-authored inline notes; without `--type`, `comment list` preserves the legacy live-agent-comment view
 - `comment add` is best for one note; `comment apply` is best when an agent already has several notes ready
 - `comment add` requires `--file`, `--summary`, and exactly one of `--old-line` or `--new-line`
 - `comment apply` payload items require `filePath`, `summary`, and exactly one target such as `hunk`, `hunkNumber`, `oldLine`, or `newLine`

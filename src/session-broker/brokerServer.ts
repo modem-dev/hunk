@@ -22,6 +22,7 @@ import type {
   ReloadedSessionResult,
   RemovedCommentResult,
 } from "../hunk-session/types";
+import { listHunkSessionNotes } from "../hunk-session/projections";
 import {
   HUNK_SESSION_API_PATH,
   HUNK_SESSION_API_VERSION,
@@ -115,11 +116,15 @@ async function handleSessionApiRequest(state: HunkSessionBrokerState, request: R
       case "context":
         response = { context: state.getSelectedContext(input.selector) };
         break;
-      case "review":
+      case "review": {
         response = {
-          review: state.getSessionReview(input.selector, { includePatch: input.includePatch }),
+          review: state.getSessionReview(input.selector, {
+            includePatch: input.includePatch,
+            includeNotes: input.includeNotes,
+          }),
         };
         break;
+      }
       case "navigate": {
         if (
           !input.commentDirection &&
@@ -204,9 +209,17 @@ async function handleSessionApiRequest(state: HunkSessionBrokerState, request: R
         };
         break;
       case "comment-list":
-        response = {
-          comments: state.listComments(input.selector, { filePath: input.filePath }),
-        };
+        response =
+          input.type && input.type !== "live"
+            ? {
+                comments: listHunkSessionNotes(state.getSession(input.selector), {
+                  filePath: input.filePath,
+                  source: input.type === "all" ? undefined : input.type,
+                }),
+              }
+            : {
+                comments: state.listComments(input.selector, { filePath: input.filePath }),
+              };
         break;
       case "comment-rm":
         response = {

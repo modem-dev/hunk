@@ -6,12 +6,18 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Added
 
+- Added an `e` shortcut to open the selected diff file in `$EDITOR`.
 - Added `g` and `G` keyboard aliases for jump-to-top and jump-to-bottom review navigation.
+- Added session-persistent user-authored inline notes with `c` to draft/save notes.
+- Added `hunk session comment list --type <live|all|ai|agent|user>` so agents can read human-authored notes through the comment workflow.
 
 ### Changed
 
+- Clarified inline note draft actions by labeling buttons as `Save (^S)` and `Cancel (Esc)`.
+
 ### Fixed
 
+- Fixed draft note focus handling so app shortcuts resume after the note textarea blurs without discarding the draft.
 - Preserved the resolved auto theme across `--watch` refreshes instead of falling back to the default dark theme.
 - Included the bundled Hunk review skill in standalone prebuilt release archives so `hunk skill path` works after extracting a tarball or installing via Homebrew.
 

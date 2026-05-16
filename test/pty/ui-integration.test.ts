@@ -134,6 +134,57 @@ describe("live UI integration", () => {
     }
   });
 
+  test("user notes can be drafted and saved inline in a real PTY", async () => {
+    const fixture = harness.createLongWrapFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      cols: 120,
+      rows: 20,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      await session.press("c");
+      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await session.type("Please cover this edge case.");
+
+      const draftBeforeNewline = await session.waitForText(/Please cover this edge case\./, {
+        timeout: 5_000,
+      });
+      const saveRowBeforeNewline = draftBeforeNewline
+        .split("\n")
+        .findIndex((line) => line.includes("Save") && line.includes("Cancel"));
+      expect(saveRowBeforeNewline).toBeGreaterThanOrEqual(0);
+
+      await session.type("\x0a");
+      await harness.waitForSnapshot(
+        session,
+        (text) => {
+          const saveRowAfterNewline = text
+            .split("\n")
+            .findIndex((line) => line.includes("Save") && line.includes("Cancel"));
+          return (
+            text.includes("Please cover this edge case.") &&
+            saveRowAfterNewline > saveRowBeforeNewline
+          );
+        },
+        5_000,
+      );
+
+      await session.type("Second line.");
+      await session.type("\x13");
+
+      const savedNote = await session.waitForText(/Your note/, { timeout: 5_000 });
+      expect(savedNote).toContain("Please cover this edge case.");
+      expect(savedNote).toContain("Second line.");
+    } finally {
+      session.close();
+    }
+  });
+
   test("real hunk navigation jumps to later hunks in the review stream", async () => {
     const fixture = harness.createMultiHunkFilePair();
     const session = await harness.launchHunk({

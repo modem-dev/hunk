@@ -26,6 +26,7 @@ export interface BuildAppMenusOptions {
   toggleLineNumbers: () => void;
   toggleLineWrap: () => void;
   toggleSidebar: () => void;
+  triggerEditSelectedFile: () => void;
   wrapLines: boolean;
 }
 
@@ -54,6 +55,7 @@ export function buildAppMenus({
   toggleLineNumbers,
   toggleLineWrap,
   toggleSidebar,
+  triggerEditSelectedFile,
   wrapLines,
 }: BuildAppMenusOptions): Record<MenuId, MenuEntry[]> {
   const themeMenuEntries: MenuEntry[] = THEMES.map((theme) => ({
@@ -75,6 +77,12 @@ export function buildAppMenus({
       label: "Focus filter",
       hint: "/",
       action: focusFilter,
+    },
+    {
+      kind: "item",
+      label: "Open file in editor",
+      hint: "e",
+      action: triggerEditSelectedFile,
     },
   ];
 

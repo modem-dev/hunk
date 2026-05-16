@@ -7,12 +7,8 @@
  * tested without React state in the loop.
  */
 import { findDiffFileByPath, findHunkIndexForLine, hunkLineRange } from "../../core/liveComments";
-import type { DiffFile } from "../../core/types";
-import type {
-  LiveComment,
-  NavigateToHunkToolInput,
-  SelectedHunkSummary,
-} from "../../hunk-session/types";
+import type { AgentAnnotation, DiffFile } from "../../core/types";
+import type { NavigateToHunkToolInput, SelectedHunkSummary } from "../../hunk-session/types";
 import {
   buildSidebarEntries,
   filterReviewFiles,
@@ -28,7 +24,7 @@ import {
 
 export interface BuildReviewStateOptions {
   files: DiffFile[];
-  liveCommentsByFileId: Record<string, LiveComment[]>;
+  liveCommentsByFileId: Record<string, AgentAnnotation[]>;
   filterQuery: string;
   selectedFileId: string;
   selectedHunkIndex: number;

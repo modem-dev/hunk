@@ -47,12 +47,14 @@ export function HelpDialog({
         ["s / t", "sidebar / theme"],
         ["a", "toggle AI notes"],
         ["l / w / m", "lines / wrap / metadata"],
+        ["e", "open file in $EDITOR"],
       ],
     },
     {
       title: "Review",
       items: [
         ["/", "focus file filter"],
+        ["c", "create review note"],
         ["Tab", "toggle files/filter focus"],
         ["F10", "open menus"],
         [canRefresh ? "r / q" : "q", canRefresh ? "reload / quit" : "quit"],

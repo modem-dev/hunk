@@ -9,8 +9,19 @@ import {
   useState,
   type RefObject,
 } from "react";
-import type { DiffFile, LayoutMode } from "../../../core/types";
-import type { VisibleAgentNote } from "../../lib/agentAnnotations";
+import type {
+  AgentAnnotation,
+  DiffFile,
+  LayoutMode,
+  UserNoteLineTarget,
+} from "../../../core/types";
+import type { ActiveAddNoteAffordance } from "../../diff/PierreDiffView";
+import type { DraftReviewNote } from "../../hooks/useReviewController";
+import {
+  alwaysShowReviewNote,
+  reviewNoteSource,
+  type VisibleAgentNote,
+} from "../../lib/agentAnnotations";
 import { computeHunkRevealScrollTop } from "../../lib/hunkScroll";
 import {
   measureDiffSectionGeometry,
@@ -41,7 +52,6 @@ import type { VisibleBodyBounds } from "../../diff/rowWindowing";
 import { prefetchHighlightedDiff } from "../../diff/useHighlightedDiff";
 
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
-const EMPTY_VISIBLE_AGENT_NOTES_BY_FILE = new Map<string, VisibleAgentNote[]>();
 
 /**
  * Clamp one vertical scroll target into the currently reachable review-stream extent.
@@ -137,6 +147,8 @@ export function DiffPane({
   selectedFileId,
   selectedHunkIndex,
   scrollToNote = false,
+  draftNote = null,
+  draftNoteFocused = false,
   separatorWidth,
   pagerMode = false,
   showAgentNotes,
@@ -150,7 +162,14 @@ export function DiffPane({
   selectedHunkRevealRequestId,
   theme,
   width,
-  onOpenAgentNotesAtHunk,
+  onActiveAddNoteAffordanceChange,
+  onRemoveUserNote,
+  onSaveDraftNote,
+  onStartUserNoteAtHunk,
+  onUpdateDraftNote,
+  onBlurDraftNote,
+  onCancelDraftNote,
+  onFocusDraftNote,
   onScrollCodeHorizontally = () => {},
   onSelectFile,
   onViewportCenteredHunkChange,
@@ -165,6 +184,8 @@ export function DiffPane({
   selectedFileId?: string;
   selectedHunkIndex: number;
   scrollToNote?: boolean;
+  draftNote?: DraftReviewNote | null;
+  draftNoteFocused?: boolean;
   separatorWidth: number;
   pagerMode?: boolean;
   showAgentNotes: boolean;
@@ -178,7 +199,16 @@ export function DiffPane({
   selectedHunkRevealRequestId?: number;
   theme: AppTheme;
   width: number;
-  onOpenAgentNotesAtHunk: (fileId: string, hunkIndex: number) => void;
+  onActiveAddNoteAffordanceChange?: (
+    affordance: (ActiveAddNoteAffordance & { fileId: string }) | null,
+  ) => void;
+  onRemoveUserNote?: (noteId: string) => void;
+  onSaveDraftNote?: () => void;
+  onStartUserNoteAtHunk?: (fileId: string, hunkIndex: number, target?: UserNoteLineTarget) => void;
+  onUpdateDraftNote?: (body: string) => void;
+  onBlurDraftNote?: () => void;
+  onCancelDraftNote?: () => void;
+  onFocusDraftNote?: () => void;
   onScrollCodeHorizontally?: (delta: number) => void;
   onSelectFile: (fileId: string) => void;
   onViewportCenteredHunkChange?: (fileId: string, hunkIndex: number) => void;
@@ -249,38 +279,85 @@ export function DiffPane({
   const allAgentNotesByFile = useMemo(() => {
     const next = new Map<string, VisibleAgentNote[]>();
 
-    if (!showAgentNotes) {
-      return next;
-    }
-
     files.forEach((file) => {
-      const annotations = file.agent?.annotations ?? [];
-      if (annotations.length === 0) {
-        return;
-      }
+      const annotations = (file.agent?.annotations ?? []).filter(
+        (annotation) => showAgentNotes || alwaysShowReviewNote(annotation),
+      );
+      const notes: VisibleAgentNote[] = annotations.map((annotation, index) => {
+        const source = reviewNoteSource(annotation);
+        if (source !== "user") {
+          return {
+            id: `annotation:${file.id}:${annotation.id ?? index}`,
+            annotation,
+          };
+        }
 
-      next.set(
-        file.id,
-        annotations.map((annotation, index) => ({
+        return {
           id: `annotation:${file.id}:${annotation.id ?? index}`,
           annotation,
-        })),
-      );
+          source,
+          editable: true,
+          onRemove: annotation.id ? () => onRemoveUserNote?.(annotation.id!) : undefined,
+        };
+      });
+
+      if (draftNote?.fileId === file.id) {
+        const draftAnnotation: AgentAnnotation = {
+          id: draftNote.id,
+          source: "user-draft",
+          summary: draftNote.body || " ",
+          oldRange: draftNote.oldRange,
+          newRange: draftNote.newRange,
+          editable: true,
+        };
+        notes.push({
+          id: draftNote.id,
+          annotation: draftAnnotation,
+          source: "draft",
+          editable: true,
+          draft: {
+            body: draftNote.body,
+            focused: draftNoteFocused,
+            onBlur: onBlurDraftNote,
+            onCancel: onCancelDraftNote ?? (() => {}),
+            onFocus: onFocusDraftNote,
+            onInput: onUpdateDraftNote ?? (() => {}),
+            onSave: onSaveDraftNote ?? (() => {}),
+          },
+        });
+      }
+
+      if (notes.length > 0) {
+        next.set(file.id, notes);
+      }
     });
 
     return next;
-  }, [files, showAgentNotes]);
+  }, [
+    draftNote,
+    draftNoteFocused,
+    files,
+    onBlurDraftNote,
+    onCancelDraftNote,
+    onFocusDraftNote,
+    onRemoveUserNote,
+    onSaveDraftNote,
+    onUpdateDraftNote,
+    showAgentNotes,
+  ]);
 
   // Keep exact row rendering for wrapped lines and the selected file's visible notes;
   // other files can still use placeholders and viewport windowing.
   const windowingEnabled = !wrapLines;
   const [scrollViewport, setScrollViewport] = useState({ top: 0, height: 0 });
+  const [hoveredFileId, setHoveredFileId] = useState<string | null>(null);
   const scrollbarRef = useRef<VerticalScrollbarHandle>(null);
   const prevScrollTopRef = useRef(0);
   const previousSectionGeometryRef = useRef<DiffSectionGeometry[] | null>(null);
   const previousFilesRef = useRef<DiffFile[]>(files);
   const previousLayoutRef = useRef(layout);
   const previousWrapLinesRef = useRef(wrapLines);
+  const previousDraftNoteIdRef = useRef(draftNote?.id ?? null);
   const previousSelectedFileTopAlignRequestIdRef = useRef(selectedFileTopAlignRequestId);
   const previousLayoutToggleRequestIdRef = useRef(layoutToggleRequestId);
   const previousSelectedHunkRevealRequestIdRef = useRef(selectedHunkRevealRequestId);
@@ -420,10 +497,6 @@ export function DiffPane({
 
   const visibleAgentNotesByFile = useMemo(() => {
     const next = new Map<string, VisibleAgentNote[]>();
-
-    if (!showAgentNotes) {
-      return EMPTY_VISIBLE_AGENT_NOTES_BY_FILE;
-    }
 
     const fileIdsToMeasure = new Set(visibleViewportFileIds);
     // Always measure the selected file with its real note rows so hunk navigation can compute
@@ -791,6 +864,48 @@ export function DiffPane({
     const wrapChanged = previousWrapLinesRef.current !== wrapLines;
     const previousSectionMetrics = previousSectionGeometryRef.current;
     const previousFiles = previousFilesRef.current;
+    const currentDraftNoteId = draftNote?.id ?? null;
+    const draftChanged = previousDraftNoteIdRef.current !== currentDraftNoteId;
+
+    if (draftChanged && previousSectionMetrics && previousFiles.length > 0) {
+      const previousScrollTop = scrollRef.current?.scrollTop ?? scrollViewport.top;
+      const anchor =
+        lastViewportRowAnchorRef.current ??
+        findViewportRowAnchor(
+          previousFiles,
+          previousSectionMetrics,
+          previousScrollTop,
+          buildInStreamFileHeaderHeights(previousFiles),
+        );
+      if (anchor) {
+        const nextTop = resolveViewportRowAnchorTop(
+          files,
+          sectionGeometry,
+          anchor,
+          sectionHeaderHeights,
+        );
+        const restoreViewportAnchor = () => {
+          scrollRef.current?.scrollTo(nextTop);
+        };
+
+        lastViewportRowAnchorRef.current = anchor;
+        suppressViewportSelectionSync();
+        restoreViewportAnchor();
+        const retryDelays = [0, 16, 48];
+        const timeouts = retryDelays.map((delay) => setTimeout(restoreViewportAnchor, delay));
+
+        previousDraftNoteIdRef.current = currentDraftNoteId;
+        previousLayoutRef.current = layout;
+        previousLayoutToggleRequestIdRef.current = layoutToggleRequestId;
+        previousWrapLinesRef.current = wrapLines;
+        previousSectionGeometryRef.current = sectionGeometry;
+        previousFilesRef.current = files;
+
+        return () => {
+          timeouts.forEach((timeout) => clearTimeout(timeout));
+        };
+      }
+    }
 
     if ((layoutChanged || wrapChanged) && previousSectionMetrics && previousFiles.length > 0) {
       const previousSectionHeaderHeights = buildInStreamFileHeaderHeights(previousFiles);
@@ -841,12 +956,14 @@ export function DiffPane({
       }
     }
 
+    previousDraftNoteIdRef.current = currentDraftNoteId;
     previousLayoutRef.current = layout;
     previousLayoutToggleRequestIdRef.current = layoutToggleRequestId;
     previousWrapLinesRef.current = wrapLines;
     previousSectionGeometryRef.current = sectionGeometry;
     previousFilesRef.current = files;
   }, [
+    draftNote?.id,
     files,
     layout,
     layoutToggleRequestId,
@@ -1177,13 +1294,20 @@ export function DiffPane({
                       showHunkHeaders={showHunkHeaders}
                       wrapLines={wrapLines}
                       theme={theme}
+                      hoverActive={hoveredFileId === null || hoveredFileId === file.id}
                       viewWidth={diffContentWidth}
                       visibleAgentNotes={
                         visibleAgentNotesByFile.get(file.id) ?? EMPTY_VISIBLE_AGENT_NOTES
                       }
                       visibleBodyBounds={visibleBodyBoundsByFile.get(file.id)}
-                      onOpenAgentNotesAtHunk={(hunkIndex) =>
-                        onOpenAgentNotesAtHunk(file.id, hunkIndex)
+                      onHover={() => setHoveredFileId(file.id)}
+                      onActiveAddNoteAffordanceChange={(affordance) =>
+                        onActiveAddNoteAffordanceChange?.(
+                          affordance ? { ...affordance, fileId: file.id } : null,
+                        )
+                      }
+                      onStartUserNoteAtHunk={(hunkIndex, target) =>
+                        onStartUserNoteAtHunk?.(file.id, hunkIndex, target)
                       }
                       onSelect={() => onSelectFile(file.id)}
                     />

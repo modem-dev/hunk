@@ -116,7 +116,11 @@ async function openSessionSocket(port: number) {
   return socket;
 }
 
-async function openRegisteredSession(port: number, sessionId = "session-1") {
+async function openRegisteredSession(
+  port: number,
+  sessionId = "session-1",
+  snapshotOverrides: Parameters<typeof createTestSessionSnapshot>[0] = {},
+) {
   const socket = await openSessionSocket(port);
 
   socket.send(
@@ -127,7 +131,10 @@ async function openRegisteredSession(port: number, sessionId = "session-1") {
         pid: process.pid,
         sessionId,
       }),
-      snapshot: createTestSessionSnapshot({ updatedAt: "2026-03-24T00:00:00.000Z" }),
+      snapshot: createTestSessionSnapshot({
+        updatedAt: "2026-03-24T00:00:00.000Z",
+        ...snapshotOverrides,
+      }),
     }),
   );
 
@@ -213,7 +220,7 @@ describe("Hunk session daemon server", () => {
       expect(capabilities.status).toBe(200);
       await expect(capabilities.json()).resolves.toMatchObject({
         version: 1,
-        daemonVersion: 2,
+        daemonVersion: 3,
         actions: [
           "list",
           "get",
@@ -417,7 +424,7 @@ describe("Hunk session daemon server", () => {
     }
   });
 
-  test("forwards review includePatch through the session API", async () => {
+  test("forwards review options through the session API", async () => {
     const port = await reserveLoopbackPort();
     process.env.HUNK_MCP_HOST = "127.0.0.1";
     process.env.HUNK_MCP_PORT = String(port);
@@ -425,7 +432,7 @@ describe("Hunk session daemon server", () => {
     const original = SessionBrokerState.prototype.getSessionReview;
     SessionBrokerState.prototype.getSessionReview = function (selector, options) {
       expect(selector).toEqual({ sessionId: "session-1" });
-      expect(options).toEqual({ includePatch: true });
+      expect(options).toEqual({ includePatch: true, includeNotes: true });
 
       return {
         sessionId: "session-1",
@@ -490,6 +497,7 @@ describe("Hunk session daemon server", () => {
           action: "review",
           selector: { sessionId: "session-1" },
           includePatch: true,
+          includeNotes: true,
         }),
       });
 
@@ -568,6 +576,56 @@ describe("Hunk session daemon server", () => {
       });
     } finally {
       SessionBrokerState.prototype.dispatchCommand = original;
+      server.stop(true);
+    }
+  });
+
+  test("serves review notes through the session API", async () => {
+    const port = await reserveLoopbackPort();
+    process.env.HUNK_MCP_HOST = "127.0.0.1";
+    process.env.HUNK_MCP_PORT = String(port);
+
+    const server = serveSessionBrokerDaemon();
+    const socket = await openRegisteredSession(port, "session-1", {
+      reviewNoteCount: 2,
+      reviewNotes: [
+        {
+          noteId: "user:1",
+          source: "user",
+          filePath: "src/example.ts",
+          hunkIndex: 0,
+          body: "Human note",
+          createdAt: "2026-05-10T00:00:00.000Z",
+          editable: true,
+        },
+        {
+          noteId: "agent:1",
+          source: "agent",
+          filePath: "src/other.ts",
+          body: "Agent note",
+          createdAt: "2026-05-10T00:00:00.000Z",
+          editable: false,
+        },
+      ],
+    });
+
+    try {
+      const listResponse = await fetch(`http://127.0.0.1:${port}/session-api`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "comment-list",
+          selector: { sessionId: "session-1" },
+          type: "user",
+        }),
+      });
+
+      expect(listResponse.status).toBe(200);
+      await expect(listResponse.json()).resolves.toMatchObject({
+        comments: [{ noteId: "user:1", body: "Human note" }],
+      });
+    } finally {
+      socket.close();
       server.stop(true);
     }
   });

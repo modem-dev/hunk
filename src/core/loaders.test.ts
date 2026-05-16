@@ -94,6 +94,9 @@ function createTempJjRepo(prefix: string) {
   return dir;
 }
 
+// Keep jj-backed loader coverage opt-in on machines that have the external CLI installed.
+const jjTest = Bun.which("jj") ? test : test.skip;
+
 async function runWithHome<T>(home: string, task: () => Promise<T>) {
   const previousHome = process.env.HOME;
   process.env.HOME = home;
@@ -773,7 +776,7 @@ describe("loadAppBootstrap", () => {
     expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["beta.ts"]);
   });
 
-  test(
+  jjTest(
     "loads jj diff output for a configured revset",
     async () => {
       const home = createTempDir("hunk-jj-home-");
@@ -802,7 +805,7 @@ describe("loadAppBootstrap", () => {
     JjLoaderIntegrationTestTimeoutMs,
   );
 
-  test(
+  jjTest(
     "loads jj show output for a configured revset",
     async () => {
       const home = createTempDir("hunk-jj-home-");

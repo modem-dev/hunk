@@ -301,6 +301,27 @@ describe("parseCli", () => {
     });
   });
 
+  test("parses session review with live notes included", async () => {
+    const parsed = await parseCli([
+      "bun",
+      "hunk",
+      "session",
+      "review",
+      "session-1",
+      "--include-notes",
+      "--json",
+    ]);
+
+    expect(parsed).toMatchObject({
+      kind: "session",
+      action: "review",
+      selector: { sessionId: "session-1" },
+      output: "json",
+      includePatch: false,
+      includeNotes: true,
+    });
+  });
+
   test("parses session navigate by hunk number", async () => {
     const parsed = await parseCli([
       "bun",
@@ -561,6 +582,39 @@ describe("parseCli", () => {
       filePath: "README.md",
       output: "json",
     });
+  });
+
+  test("rejects the removed session note namespace", async () => {
+    await expect(parseCli(["bun", "hunk", "session", "note", "list", "session-1"])).rejects.toThrow(
+      "Unknown session command: note",
+    );
+  });
+
+  test("parses session comment list with review-note type filter", async () => {
+    const parsed = await parseCli([
+      "bun",
+      "hunk",
+      "session",
+      "comment",
+      "list",
+      "session-1",
+      "--type",
+      "user",
+    ]);
+
+    expect(parsed).toEqual({
+      kind: "session",
+      action: "comment-list",
+      selector: { sessionId: "session-1" },
+      type: "user",
+      output: "text",
+    });
+  });
+
+  test("rejects session comment list with an unsupported type", async () => {
+    await expect(
+      parseCli(["bun", "hunk", "session", "comment", "list", "session-1", "--type", "robot"]),
+    ).rejects.toThrow("Comment type must be one of live, all, ai, agent, or user.");
   });
 
   test("parses session comment rm", async () => {

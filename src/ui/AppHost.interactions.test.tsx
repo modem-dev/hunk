@@ -1023,12 +1023,12 @@ describe("App interactions", () => {
       await flush(setup);
 
       const frame = setup.captureCharFrame();
-      expect(frame).toContain("AI note · ▶ new 2");
+      expect(frame).toContain("Agent note - prefs.ts R2");
       expect(frame).toContain("Annotation for prefs.ts");
       expect(frame).toContain("Why prefs.ts changed");
       expect(frame).not.toContain("@@ -1,1 +1,2 @@");
       expect(frame).not.toContain("1 - export const message");
-      expect(frame.indexOf("AI note · ▶ new 2")).toBeLessThan(
+      expect(frame.indexOf("Agent note - prefs.ts R2")).toBeLessThan(
         frame.indexOf("export const added = true;"),
       );
     } finally {
@@ -2172,6 +2172,83 @@ describe("App interactions", () => {
       frame = setup.captureCharFrame();
       expect(frame).toContain("Toggle files/filter focus");
       expect(frame).not.toContain("Controls help");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("draft note focus suppresses app shortcuts while accepting typed shortcut keys", async () => {
+    const setup = await testRender(<AppHost bootstrap={createBootstrap()} />, {
+      width: 240,
+      height: 24,
+    });
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.typeText("c");
+      });
+      await flush(setup);
+
+      let frame = setup.captureCharFrame();
+      expect(frame).toContain("Draft note");
+      const betaCountWithSidebar = (frame.match(/beta\.ts/g) ?? []).length;
+      expect(betaCountWithSidebar).toBeGreaterThan(1);
+
+      await act(async () => {
+        await setup.mockInput.typeText("s");
+      });
+      await flush(setup);
+
+      frame = setup.captureCharFrame();
+      expect(frame).toContain("Draft note");
+      expect(frame).toContain("s");
+      expect((frame.match(/beta\.ts/g) ?? []).length).toBe(betaCountWithSidebar);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("draft note blur restores app shortcuts without discarding the draft", async () => {
+    const setup = await testRender(<AppHost bootstrap={createBootstrap()} />, {
+      width: 240,
+      height: 24,
+    });
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.typeText("c");
+      });
+      await flush(setup);
+
+      let frame = setup.captureCharFrame();
+      expect(frame).toContain("Draft note");
+      const betaCountWithSidebar = (frame.match(/beta\.ts/g) ?? []).length;
+      expect(betaCountWithSidebar).toBeGreaterThan(1);
+
+      await act(async () => {
+        await setup.mockMouse.click(6, 4);
+      });
+      await flush(setup);
+
+      frame = setup.captureCharFrame();
+      expect(frame).toContain("Draft note");
+
+      await act(async () => {
+        await setup.mockInput.typeText("s");
+      });
+      await flush(setup);
+
+      frame = setup.captureCharFrame();
+      expect(frame).toContain("Draft note");
+      expect((frame.match(/beta\.ts/g) ?? []).length).toBeLessThan(betaCountWithSidebar);
     } finally {
       await act(async () => {
         setup.renderer.destroy();

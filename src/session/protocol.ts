@@ -20,6 +20,7 @@ import type {
   SelectedSessionContext,
   SessionLiveCommentSummary,
   SessionReview,
+  SessionReviewNoteSummary,
 } from "../hunk-session/types";
 
 export const HUNK_SESSION_API_PATH = "/session-api";
@@ -30,7 +31,7 @@ export const HUNK_SESSION_API_VERSION = 1;
  * Version daemon/session compatibility separately from the HTTP action surface so newer Hunk
  * builds can refresh an older daemon even when it still exposes the same API endpoints.
  */
-export const HUNK_SESSION_DAEMON_VERSION = 2;
+export const HUNK_SESSION_DAEMON_VERSION = 3;
 
 export type SessionDaemonAction =
   | "list"
@@ -67,6 +68,7 @@ export type SessionDaemonRequest =
       action: "review";
       selector: SessionSelectorInput;
       includePatch: SessionReviewCommandInput["includePatch"];
+      includeNotes: SessionReviewCommandInput["includeNotes"];
     }
   | {
       action: "navigate";
@@ -104,6 +106,7 @@ export type SessionDaemonRequest =
       action: "comment-list";
       selector: SessionCommentListCommandInput["selector"];
       filePath?: string;
+      type?: SessionCommentListCommandInput["type"];
     }
   | {
       action: "comment-rm";
@@ -125,6 +128,6 @@ export type SessionDaemonResponse =
   | { result: ReloadedSessionResult }
   | { result: AppliedCommentResult }
   | { result: AppliedCommentBatchResult }
-  | { comments: SessionLiveCommentSummary[] }
+  | { comments: Array<SessionLiveCommentSummary | SessionReviewNoteSummary> }
   | { result: RemovedCommentResult }
   | { result: ClearedCommentsResult };

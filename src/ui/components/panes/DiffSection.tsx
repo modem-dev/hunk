@@ -1,9 +1,9 @@
 import { memo } from "react";
-import type { DiffFile, LayoutMode } from "../../../core/types";
-import { PierreDiffView } from "../../diff/PierreDiffView";
+import type { DiffFile, LayoutMode, UserNoteLineTarget } from "../../../core/types";
+import { PierreDiffView, type ActiveAddNoteAffordance } from "../../diff/PierreDiffView";
 import type { VisibleBodyBounds } from "../../diff/rowWindowing";
 import type { DiffSectionGeometry } from "../../lib/diffSectionGeometry";
-import { getAnnotatedHunkIndices, type VisibleAgentNote } from "../../lib/agentAnnotations";
+import type { VisibleAgentNote } from "../../lib/agentAnnotations";
 import { diffSectionId } from "../../lib/ids";
 import { fitText } from "../../lib/text";
 import type { AppTheme } from "../../themes";
@@ -28,7 +28,10 @@ interface DiffSectionProps {
   visibleAgentNotes: VisibleAgentNote[];
   visibleBodyBounds?: VisibleBodyBounds;
   viewWidth: number;
-  onOpenAgentNotesAtHunk: (hunkIndex: number) => void;
+  hoverActive?: boolean;
+  onHover: () => void;
+  onActiveAddNoteAffordanceChange?: (affordance: ActiveAddNoteAffordance | null) => void;
+  onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void;
   onSelect: () => void;
 }
 
@@ -52,14 +55,16 @@ function DiffSectionComponent({
   visibleAgentNotes,
   visibleBodyBounds,
   viewWidth,
-  onOpenAgentNotesAtHunk,
+  hoverActive = true,
+  onHover,
+  onActiveAddNoteAffordanceChange,
+  onStartUserNoteAtHunk,
   onSelect,
 }: DiffSectionProps) {
-  const annotatedHunkIndices = getAnnotatedHunkIndices(file);
-
   return (
     <box
       id={diffSectionId(file.id)}
+      onMouseOver={onHover}
       style={{
         width: "100%",
         flexDirection: "column",
@@ -100,9 +105,11 @@ function DiffSectionComponent({
         codeHorizontalOffset={codeHorizontalOffset}
         theme={theme}
         width={viewWidth}
-        annotatedHunkIndices={annotatedHunkIndices}
         visibleAgentNotes={visibleAgentNotes}
-        onOpenAgentNotesAtHunk={onOpenAgentNotesAtHunk}
+        hoverActive={hoverActive}
+        onHover={onHover}
+        onActiveAddNoteAffordanceChange={onActiveAddNoteAffordanceChange}
+        onStartUserNoteAtHunk={onStartUserNoteAtHunk}
         selectedHunkIndex={selectedHunkIndex}
         sectionGeometry={sectionGeometry}
         shouldLoadHighlight={shouldLoadHighlight}
@@ -132,6 +139,7 @@ export const DiffSection = memo(DiffSectionComponent, (previous, next) => {
     previous.wrapLines === next.wrapLines &&
     previous.showHeader === next.showHeader &&
     previous.showSeparator === next.showSeparator &&
+    previous.hoverActive === next.hoverActive &&
     previous.theme === next.theme &&
     previous.visibleAgentNotes === next.visibleAgentNotes &&
     previous.visibleBodyBounds === next.visibleBodyBounds &&

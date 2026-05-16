@@ -53,7 +53,7 @@ export interface SessionBrokerViewAdapter<
   buildSelectedContext: (session: ListedSession) => SelectedContext;
   buildSessionReview: (
     entry: SessionBrokerEntry<Info, State>,
-    options: { includePatch?: boolean },
+    options: { includePatch?: boolean; includeNotes?: boolean },
   ) => SessionReview;
   listComments: (session: ListedSession, filter: { filePath?: string }) => SessionCommentSummary[];
 }
@@ -174,7 +174,7 @@ export class SessionBrokerState<
   /** Return the live session's loaded review model, with raw patch text included only on demand. */
   getSessionReview(
     selector: SessionTargetSelector,
-    options: { includePatch?: boolean } = {},
+    options: { includePatch?: boolean; includeNotes?: boolean } = {},
   ): SessionReview {
     return this.view.buildSessionReview(this.getSessionEntry(selector), options);
   }

@@ -82,6 +82,9 @@ afterEach(() => {
   cleanupTempDirs();
 });
 
+// Keep jj-backed integration checks opt-in on machines that have the external CLI installed.
+const jjTest = Bun.which("jj") ? test : test.skip;
+
 describe("jj command helpers", () => {
   test("reports a friendly error when jj is not installed or not on PATH", () => {
     expect(() =>
@@ -99,7 +102,7 @@ describe("jj command helpers", () => {
     );
   });
 
-  test("reports a friendly error outside a jj repository", () => {
+  jjTest("reports a friendly error outside a jj repository", () => {
     const dir = createTempDir("hunk-jj-nonrepo-");
 
     expect(() =>
@@ -115,7 +118,7 @@ describe("jj command helpers", () => {
     ).toThrow('`hunk diff` must be run inside a Jujutsu repository when `vcs = "jj"`.');
   });
 
-  test("reports a friendly error for invalid revsets", () => {
+  jjTest("reports a friendly error for invalid revsets", () => {
     const dir = createTempJjRepo("hunk-jj-invalid-revset-");
     const input = {
       kind: "vcs" as const,
@@ -133,7 +136,7 @@ describe("jj command helpers", () => {
     ).toThrow("`hunk diff missing_revision` could not resolve Jujutsu revset `missing_revision`.");
   });
 
-  test(
+  jjTest(
     "reports a friendly error for ambiguous change id prefixes",
     () => {
       const dir = createTempJjRepo("hunk-jj-ambiguous-prefix-");

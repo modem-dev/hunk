@@ -107,6 +107,8 @@ export function createInitialSessionSnapshot(bootstrap: AppBootstrap): HunkSessi
       showAgentNotes: bootstrap.initialShowAgentNotes ?? false,
       liveCommentCount: 0,
       liveComments: [],
+      reviewNoteCount: 0,
+      reviewNotes: [],
     },
   };
 }

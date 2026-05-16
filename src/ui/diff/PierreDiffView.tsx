@@ -1,33 +1,70 @@
-import { useMemo } from "react";
-import type { DiffFile, LayoutMode } from "../../core/types";
+import { useRenderer } from "@opentui/react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { DiffFile, LayoutMode, UserNoteLineTarget } from "../../core/types";
 import { AgentInlineNote } from "../components/panes/AgentInlineNote";
 import type { VisibleAgentNote } from "../lib/agentAnnotations";
 import type { DiffSectionGeometry } from "../lib/diffSectionGeometry";
 import { reviewRowId } from "../lib/ids";
 import type { AppTheme } from "../themes";
 import { findMaxLineNumber } from "./codeColumns";
-import { buildSplitRows, buildStackRows } from "./pierre";
+import { buildSplitRows, buildStackRows, type DiffRow } from "./pierre";
 import { plannedReviewRowVisible } from "./plannedReviewRows";
 import { buildReviewRenderPlan } from "./reviewRenderPlan";
 import { resolveVisiblePlannedRowWindow, type VisibleBodyBounds } from "./rowWindowing";
 import { diffMessage, DiffRowView, fitText } from "./renderRows";
 import { useHighlightedDiff } from "./useHighlightedDiff";
 
-const EMPTY_ANNOTATED_HUNK_INDICES = new Set<number>();
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
+const ADD_NOTE_IDLE_HIDE_DELAY_MS = 2000;
+
+export interface ActiveAddNoteAffordance {
+  hunkIndex: number;
+  target?: UserNoteLineTarget;
+}
+
+/** Resolve the note insertion target represented by a visible add-note affordance. */
+function addNoteAffordanceForRow(row: DiffRow): ActiveAddNoteAffordance {
+  if (row.type === "split-line") {
+    return {
+      hunkIndex: row.hunkIndex,
+      target:
+        row.right.lineNumber !== undefined
+          ? { side: "new", line: row.right.lineNumber }
+          : row.left.lineNumber !== undefined
+            ? { side: "old", line: row.left.lineNumber }
+            : undefined,
+    };
+  }
+
+  if (row.type === "stack-line") {
+    return {
+      hunkIndex: row.hunkIndex,
+      target:
+        row.cell.newLineNumber !== undefined
+          ? { side: "new", line: row.cell.newLineNumber }
+          : row.cell.oldLineNumber !== undefined
+            ? { side: "old", line: row.cell.oldLineNumber }
+            : undefined,
+    };
+  }
+
+  return { hunkIndex: row.hunkIndex };
+}
 
 /** Render a file diff in split or stack mode, with inline agent notes inserted between diff rows. */
 export function PierreDiffView({
-  annotatedHunkIndices = EMPTY_ANNOTATED_HUNK_INDICES,
   codeHorizontalOffset = 0,
   file,
   layout,
-  onOpenAgentNotesAtHunk,
+  onHover,
+  onActiveAddNoteAffordanceChange,
+  onStartUserNoteAtHunk,
   showLineNumbers = true,
   showHunkHeaders = true,
   wrapLines = false,
   theme,
   visibleAgentNotes = EMPTY_VISIBLE_AGENT_NOTES,
+  hoverActive = true,
   width,
   selectedHunkIndex,
   sectionGeometry,
@@ -35,16 +72,18 @@ export function PierreDiffView({
   scrollable = true,
   visibleBodyBounds,
 }: {
-  annotatedHunkIndices?: Set<number>;
   codeHorizontalOffset?: number;
   file: DiffFile | undefined;
   layout: Exclude<LayoutMode, "auto">;
-  onOpenAgentNotesAtHunk?: (hunkIndex: number) => void;
+  onHover?: () => void;
+  onActiveAddNoteAffordanceChange?: (affordance: ActiveAddNoteAffordance | null) => void;
+  onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void;
   showLineNumbers?: boolean;
   showHunkHeaders?: boolean;
   wrapLines?: boolean;
   theme: AppTheme;
   visibleAgentNotes?: VisibleAgentNote[];
+  hoverActive?: boolean;
   width: number;
   selectedHunkIndex: number;
   sectionGeometry?: DiffSectionGeometry;
@@ -52,6 +91,53 @@ export function PierreDiffView({
   scrollable?: boolean;
   visibleBodyBounds?: VisibleBodyBounds;
 }) {
+  const renderer = useRenderer();
+  const [hoveredRowKey, setHoveredRowKey] = useState<string | null>(null);
+  const hoverIdleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearHoverIdleTimeout = useCallback(() => {
+    if (hoverIdleTimeoutRef.current) {
+      clearTimeout(hoverIdleTimeoutRef.current);
+      hoverIdleTimeoutRef.current = null;
+    }
+  }, []);
+
+  const clearHoveredRow = useCallback(() => {
+    clearHoverIdleTimeout();
+    setHoveredRowKey(null);
+    onActiveAddNoteAffordanceChange?.(null);
+  }, [clearHoverIdleTimeout, onActiveAddNoteAffordanceChange]);
+
+  const activateHoveredRow = useCallback(
+    (rowKey: string, affordance: ActiveAddNoteAffordance) => {
+      setHoveredRowKey(rowKey);
+      onActiveAddNoteAffordanceChange?.(affordance);
+      clearHoverIdleTimeout();
+      hoverIdleTimeoutRef.current = setTimeout(() => {
+        setHoveredRowKey((current) => (current === rowKey ? null : current));
+        onActiveAddNoteAffordanceChange?.(null);
+        hoverIdleTimeoutRef.current = null;
+      }, ADD_NOTE_IDLE_HIDE_DELAY_MS);
+    },
+    [clearHoverIdleTimeout, onActiveAddNoteAffordanceChange],
+  );
+
+  useEffect(() => {
+    if (!hoverActive) {
+      clearHoveredRow();
+    }
+  }, [clearHoveredRow, hoverActive]);
+
+  useEffect(() => {
+    /** Hide hover-only affordances when terminal focus leaves Hunk. */
+    renderer.on("blur", clearHoveredRow);
+    return () => {
+      renderer.off("blur", clearHoveredRow);
+    };
+  }, [clearHoveredRow, renderer]);
+
+  useEffect(() => clearHoverIdleTimeout, [clearHoverIdleTimeout]);
+
   const resolvedHighlighted = useHighlightedDiff({
     file,
     appearance: theme.appearance,
@@ -155,13 +241,21 @@ export function PierreDiffView({
 
         if (plannedRow.kind === "inline-note") {
           return (
-            <box key={plannedRow.key} id={rowId} style={{ width: "100%", flexDirection: "column" }}>
+            <box
+              key={plannedRow.key}
+              id={rowId}
+              style={{ width: "100%", flexDirection: "column" }}
+              onMouseOver={clearHoveredRow}
+            >
               <AgentInlineNote
                 annotation={plannedRow.annotation}
                 anchorSide={plannedRow.anchorSide}
+                draft={plannedRow.note.draft}
+                file={file}
                 layout={layout}
                 noteCount={plannedRow.noteCount}
                 noteIndex={plannedRow.noteIndex}
+                onClose={plannedRow.note.onRemove}
                 theme={theme}
                 width={width}
               />
@@ -170,7 +264,15 @@ export function PierreDiffView({
         }
 
         return (
-          <box key={plannedRow.key} id={rowId} style={{ width: "100%", flexDirection: "column" }}>
+          <box
+            key={plannedRow.key}
+            id={rowId}
+            style={{ width: "100%", flexDirection: "column" }}
+            onMouseOver={() => {
+              onHover?.();
+              activateHoveredRow(plannedRow.key, addNoteAffordanceForRow(plannedRow.row));
+            }}
+          >
             <DiffRowView
               row={plannedRow.row}
               width={width}
@@ -181,13 +283,14 @@ export function PierreDiffView({
               codeHorizontalOffset={codeHorizontalOffset}
               theme={theme}
               selected={plannedRow.row.hunkIndex === selectedHunkIndex}
-              annotated={
-                plannedRow.row.type === "hunk-header" &&
-                annotatedHunkIndices.has(plannedRow.row.hunkIndex)
-              }
               anchorId={plannedRow.anchorId}
               noteGuideSide={plannedRow.noteGuideSide}
-              onOpenAgentNotesAtHunk={onOpenAgentNotesAtHunk}
+              showAddNoteBadge={hoveredRowKey === plannedRow.key && Boolean(onStartUserNoteAtHunk)}
+              onHoverRow={() => {
+                onHover?.();
+                activateHoveredRow(plannedRow.key, addNoteAffordanceForRow(plannedRow.row));
+              }}
+              onStartUserNoteAtHunk={onStartUserNoteAtHunk}
             />
           </box>
         );

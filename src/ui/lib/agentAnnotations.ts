@@ -1,16 +1,46 @@
 import type { Hunk } from "@pierre/diffs";
-import type { AgentAnnotation, DiffFile } from "../../core/types";
+import type { AgentAnnotation, DiffFile, ReviewNoteSource } from "../../core/types";
 import { hunkLineRange } from "../../core/liveComments";
 import { fileLabel } from "./files";
 
 export interface VisibleAgentNote {
   id: string;
   annotation: AgentAnnotation;
+  source?: ReviewNoteSource | "draft";
+  editable?: boolean;
+  draft?: {
+    body: string;
+    focused: boolean;
+    onBlur?: () => void;
+    onCancel: () => void;
+    onFocus?: () => void;
+    onInput: (value: string) => void;
+    onSave: () => void;
+  };
+  onRemove?: () => void;
 }
 
 export interface AnnotationAnchor {
   side: "old" | "new";
   lineNumber: number;
+}
+
+/** Resolve the user-facing source for one inline note annotation. */
+export function reviewNoteSource(annotation: AgentAnnotation): ReviewNoteSource {
+  if (annotation.source === "user") {
+    return "user";
+  }
+
+  if (annotation.source === "mcp" || annotation.source === "agent") {
+    return "agent";
+  }
+
+  return "ai";
+}
+
+/** Return whether a note should remain visible when the AI note layer is hidden. */
+export function alwaysShowReviewNote(annotation: AgentAnnotation) {
+  return reviewNoteSource(annotation) === "user";
 }
 
 /** Check whether two inclusive line ranges overlap. */
@@ -82,19 +112,26 @@ export function annotationAnchor(annotation: AgentAnnotation): AnnotationAnchor 
   return null;
 }
 
-/** Build a concise side-aware range label for inline note rows. */
-export function annotationRangeLabel(annotation: AgentAnnotation) {
+function formatGithubStyleRange(prefix: "L" | "R", range: [number, number]) {
+  return range[0] === range[1]
+    ? `${prefix}${range[0]}`
+    : `${prefix}${range[0]}–${prefix}${range[1]}`;
+}
+
+/** Build a concise GitHub-style file-and-line label for inline note rows. */
+export function annotationRangeLabel(annotation: AgentAnnotation, file?: DiffFile) {
   const locationParts: string[] = [];
 
   if (annotation.oldRange) {
-    locationParts.push(`◀ old ${formatRange(annotation.oldRange)}`);
+    locationParts.push(formatGithubStyleRange("L", annotation.oldRange));
   }
 
   if (annotation.newRange) {
-    locationParts.push(`▶ new ${formatRange(annotation.newRange)}`);
+    locationParts.push(formatGithubStyleRange("R", annotation.newRange));
   }
 
-  return locationParts.join(" · ") || "hunk";
+  const location = locationParts.join(" → ") || "hunk";
+  return file ? `${fileLabel(file)} ${location}` : location;
 }
 
 /** Build the compact file-and-lines label shown on a framed agent note card. */

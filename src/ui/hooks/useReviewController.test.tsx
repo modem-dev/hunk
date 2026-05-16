@@ -454,4 +454,85 @@ describe("useReviewController", () => {
       });
     }
   });
+
+  test("user note drafts can be saved, edited, removed, and exposed as review notes", async () => {
+    const controllerRef: { current: ReviewController | null } = { current: null };
+    const setup = await testRender(
+      <ReviewControllerHarness
+        initialFiles={[
+          createDiffFile(
+            "alpha",
+            "alpha.ts",
+            "export const alpha = 1;\n",
+            "export const alpha = 2;\n",
+          ),
+        ]}
+        onController={(nextController) => {
+          controllerRef.current = nextController;
+        }}
+      />,
+      { width: 80, height: 4 },
+    );
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        expectValue(controllerRef.current).startUserNote();
+        expectValue(controllerRef.current).updateDraftNote("Please add a regression test.");
+      });
+      await flush(setup);
+
+      let savedNoteId = "";
+      await act(async () => {
+        const saved = expectValue(controllerRef.current).saveDraftNote();
+        savedNoteId = saved?.id ?? "";
+      });
+      await flush(setup);
+
+      expect(savedNoteId).toStartWith("user:");
+      expect(expectValue(controllerRef.current).userNotesByFileId.alpha).toHaveLength(1);
+      expect(expectValue(controllerRef.current).reviewNoteSummaries).toMatchObject([
+        {
+          noteId: savedNoteId,
+          source: "user",
+          filePath: "alpha.ts",
+          hunkIndex: 0,
+          newRange: [1, 1],
+          body: "Please add a regression test.",
+          editable: true,
+        },
+      ]);
+
+      await act(async () => {
+        expectValue(controllerRef.current).editUserNote(savedNoteId);
+      });
+      await flush(setup);
+      await act(async () => {
+        expectValue(controllerRef.current).updateDraftNote("Please add two regression tests.");
+      });
+      await flush(setup);
+      await act(async () => {
+        expectValue(controllerRef.current).saveDraftNote();
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).reviewNoteSummaries[0]).toMatchObject({
+        noteId: savedNoteId,
+        body: "Please add two regression tests.",
+      });
+
+      await act(async () => {
+        expectValue(controllerRef.current).removeUserNote(savedNoteId);
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).userNotesByFileId.alpha).toBeUndefined();
+      expect(expectValue(controllerRef.current).reviewNoteSummaries).toEqual([]);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
 });

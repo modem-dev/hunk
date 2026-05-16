@@ -8,6 +8,7 @@ import type {
   LayoutMode,
   PagerCommandInput,
   ParsedCliInput,
+  SessionCommentListType,
   SessionCommentApplyItemInput,
 } from "./types";
 import { resolveBundledHunkReviewSkillPath } from "./paths";
@@ -596,15 +597,15 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
           "  hunk session get --repo <path>",
           "  hunk session context <session-id>",
           "  hunk session context --repo <path>",
-          "  hunk session review <session-id> [--include-patch]",
-          "  hunk session review --repo <path> [--include-patch]",
+          "  hunk session review <session-id> [--include-patch] [--include-notes]",
+          "  hunk session review --repo <path> [--include-patch] [--include-notes]",
           "  hunk session navigate (<session-id> | --repo <path>) --file <path> (--hunk <n> | --old-line <n> | --new-line <n>)",
           "  hunk session navigate (<session-id> | --repo <path>) (--next-comment | --prev-comment)",
           "  hunk session reload (<session-id> | --repo <path> | --session-path <path>) [--source <path>] -- diff [ref] [-- <pathspec...>]",
           "  hunk session reload (<session-id> | --repo <path> | --session-path <path>) [--source <path>] -- show [ref] [-- <pathspec...>]",
           "  hunk session comment add (<session-id> | --repo <path>) --file <path> (--old-line <n> | --new-line <n>) --summary <text> [--focus]",
           "  hunk session comment apply (<session-id> | --repo <path>) --stdin [--focus]",
-          "  hunk session comment list (<session-id> | --repo <path>)",
+          "  hunk session comment list (<session-id> | --repo <path>) [--type <live|all|ai|agent|user>]",
           "  hunk session comment rm (<session-id> | --repo <path>) <comment-id>",
           "  hunk session comment clear (<session-id> | --repo <path>) --yes",
         ].join("\n") + "\n",
@@ -647,19 +648,23 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
       .option("--json", "emit structured JSON");
 
     if (subcommand === "review") {
-      command.option(
-        "--include-patch",
-        "include raw unified diff text for each file in review output",
-      );
+      command
+        .option("--include-patch", "include raw unified diff text for each file in review output")
+        .option("--include-notes", "include live review notes in review output");
     }
 
     let parsedSessionId: string | undefined;
-    let parsedOptions: { repo?: string; includePatch?: boolean; json?: boolean } = {};
+    let parsedOptions: {
+      repo?: string;
+      includePatch?: boolean;
+      includeNotes?: boolean;
+      json?: boolean;
+    } = {};
 
     command.action(
       (
         sessionId: string | undefined,
-        options: { repo?: string; includePatch?: boolean; json?: boolean },
+        options: { repo?: string; includePatch?: boolean; includeNotes?: boolean; json?: boolean },
       ) => {
         parsedSessionId = sessionId;
         parsedOptions = options;
@@ -678,6 +683,7 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
         output: resolveJsonOutput(parsedOptions),
         selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
         includePatch: parsedOptions.includePatch ?? false,
+        includeNotes: parsedOptions.includeNotes ?? false,
       };
     }
 
@@ -873,7 +879,7 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
             "Usage:",
             "  hunk session comment add (<session-id> | --repo <path>) --file <path> (--old-line <n> | --new-line <n>) --summary <text> [--focus]",
             "  hunk session comment apply (<session-id> | --repo <path>) --stdin [--focus]",
-            "  hunk session comment list (<session-id> | --repo <path>) [--file <path>]",
+            "  hunk session comment list (<session-id> | --repo <path>) [--file <path>] [--type <live|all|ai|agent|user>]",
             "  hunk session comment rm (<session-id> | --repo <path>) <comment-id>",
             "  hunk session comment clear (<session-id> | --repo <path>) [--file <path>] --yes",
           ].join("\n") + "\n",
@@ -1039,15 +1045,16 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
         .argument("[sessionId]")
         .option("--repo <path>", "target the live session whose repo root matches this path")
         .option("--file <path>", "filter comments to one diff file")
+        .option("--type <type>", "filter to live, all, ai, agent, or user comments")
         .option("--json", "emit structured JSON");
 
       let parsedSessionId: string | undefined;
-      let parsedOptions: { repo?: string; file?: string; json?: boolean } = {};
+      let parsedOptions: { repo?: string; file?: string; type?: string; json?: boolean } = {};
 
       command.action(
         (
           sessionId: string | undefined,
-          options: { repo?: string; file?: string; json?: boolean },
+          options: { repo?: string; file?: string; type?: string; json?: boolean },
         ) => {
           parsedSessionId = sessionId;
           parsedOptions = options;
@@ -1059,6 +1066,16 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
       }
 
       await parseStandaloneCommand(command, commentRest);
+      if (
+        parsedOptions.type !== undefined &&
+        parsedOptions.type !== "live" &&
+        parsedOptions.type !== "all" &&
+        parsedOptions.type !== "ai" &&
+        parsedOptions.type !== "agent" &&
+        parsedOptions.type !== "user"
+      ) {
+        throw new Error("Comment type must be one of live, all, ai, agent, or user.");
+      }
 
       return {
         kind: "session",
@@ -1066,6 +1083,7 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
         output: resolveJsonOutput(parsedOptions),
         selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
         filePath: parsedOptions.file,
+        ...(parsedOptions.type ? { type: parsedOptions.type as SessionCommentListType } : {}),
       };
     }
 
