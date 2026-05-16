@@ -6,7 +6,7 @@ import {
   type FileDiffMetadata,
 } from "@pierre/diffs";
 import { formatHunkHeader } from "../../core/hunkHeader";
-import type { DiffFile } from "../../core/types";
+import type { DiffFile, DiffLineMoveKind } from "../../core/types";
 import { blendHex, hexColorDistance } from "../lib/color";
 import type { AppTheme } from "../themes";
 import { expandDiffTabs } from "./codeColumns";
@@ -77,6 +77,7 @@ export interface SplitLineCell {
   kind: "context" | "addition" | "deletion" | "empty";
   sign: string;
   lineNumber?: number;
+  moveKind?: DiffLineMoveKind;
   spans: RenderSpan[];
 }
 
@@ -85,6 +86,7 @@ export interface StackLineCell {
   sign: string;
   oldLineNumber?: number;
   newLineNumber?: number;
+  moveKind?: DiffLineMoveKind;
   spans: RenderSpan[];
 }
 
@@ -336,6 +338,7 @@ function makeSplitCell(
   rawLine: string | undefined,
   highlightedLine: HastNode | undefined,
   theme: AppTheme,
+  moveKind?: DiffLineMoveKind,
 ) {
   if (kind === "empty") {
     return {
@@ -365,6 +368,7 @@ function makeSplitCell(
     kind,
     sign: kind === "addition" ? "+" : kind === "deletion" ? "-" : " ",
     lineNumber,
+    moveKind,
     spans,
   } satisfies SplitLineCell;
 }
@@ -377,6 +381,7 @@ function makeStackCell(
   rawLine: string | undefined,
   highlightedLine: HastNode | undefined,
   theme: AppTheme,
+  moveKind?: DiffLineMoveKind,
 ) {
   // Same lazy-fallback strategy as split cells: only normalize the raw source line when we really
   // need the plain-text fallback, not when highlighted spans are already ready to reuse.
@@ -398,6 +403,7 @@ function makeStackCell(
     sign: kind === "addition" ? "+" : kind === "deletion" ? "-" : " ",
     oldLineNumber,
     newLineNumber,
+    moveKind,
     spans,
   } satisfies StackLineCell;
 }
@@ -628,6 +634,7 @@ export function buildSplitRows(
                 file.metadata.deletionLines[deletionLineIndex + offset],
                 deletionLines[deletionLineIndex + offset],
                 theme,
+                file.lineMoveKinds?.deletionLines[deletionLineIndex + offset],
               )
             : makeSplitCell("empty", undefined, undefined, undefined, theme),
           right: hasAddition
@@ -637,6 +644,7 @@ export function buildSplitRows(
                 file.metadata.additionLines[additionLineIndex + offset],
                 additionLines[additionLineIndex + offset],
                 theme,
+                file.lineMoveKinds?.additionLines[additionLineIndex + offset],
               )
             : makeSplitCell("empty", undefined, undefined, undefined, theme),
         });
@@ -736,6 +744,7 @@ export function buildStackRows(
             file.metadata.deletionLines[deletionLineIndex + offset],
             deletionLines[deletionLineIndex + offset],
             theme,
+            file.lineMoveKinds?.deletionLines[deletionLineIndex + offset],
           ),
         });
       }
@@ -753,6 +762,7 @@ export function buildStackRows(
             file.metadata.additionLines[additionLineIndex + offset],
             additionLines[additionLineIndex + offset],
             theme,
+            file.lineMoveKinds?.additionLines[additionLineIndex + offset],
           ),
         });
       }

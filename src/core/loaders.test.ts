@@ -630,6 +630,62 @@ describe("loadAppBootstrap", () => {
     ]);
   });
 
+  test("tags moved lines from git diff.colorMoved output", async () => {
+    const dir = createTempRepo("hunk-git-color-moved-");
+
+    writeFileSync(
+      join(dir, "example.txt"),
+      [
+        "start anchor",
+        "relocated block first line has many chars",
+        "relocated block second line has many chars",
+        "relocated block third line has many chars",
+        "middle unchanged one has many chars",
+        "middle unchanged two has many chars",
+        "end anchor",
+        "",
+      ].join("\n"),
+    );
+    git(dir, "add", "example.txt");
+    git(dir, "commit", "-m", "initial");
+    git(dir, "config", "--local", "diff.colorMoved", "zebra");
+
+    writeFileSync(
+      join(dir, "example.txt"),
+      [
+        "start anchor",
+        "middle unchanged one has many chars",
+        "middle unchanged two has many chars",
+        "relocated block first line has many chars",
+        "relocated block second line has many chars",
+        "relocated block third line has many chars",
+        "end anchor",
+        "",
+      ].join("\n"),
+    );
+
+    const bootstrap = await loadFromRepo(dir, {
+      kind: "vcs",
+      staged: false,
+      options: { mode: "auto" },
+    });
+    const file = bootstrap.changeset.files[0];
+
+    expect(file?.path).toBe("example.txt");
+    expect(file?.lineMoveKinds?.additionLines.some(Boolean)).toBe(true);
+    expect(file?.lineMoveKinds?.deletionLines.some(Boolean)).toBe(true);
+
+    const movedAdditions = file?.metadata.additionLines.filter(
+      (_line, index) => file.lineMoveKinds?.additionLines[index] === "moved",
+    );
+    const movedDeletions = file?.metadata.deletionLines.filter(
+      (_line, index) => file.lineMoveKinds?.deletionLines[index] === "moved",
+    );
+
+    expect(movedAdditions).toContain("middle unchanged one has many chars\n");
+    expect(movedDeletions).toContain("middle unchanged one has many chars\n");
+  });
+
   test("reports a friendly error when git review runs outside a repository", async () => {
     const dir = mkdtempSync(join(tmpdir(), "hunk-nonrepo-"));
     tempDirs.push(dir);

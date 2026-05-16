@@ -58,6 +58,7 @@ describe("config resolution", () => {
       [
         'theme = "graphite"',
         "line_numbers = false",
+        "color_moved = true",
         "",
         "[patch]",
         'mode = "split"',
@@ -87,6 +88,7 @@ describe("config resolution", () => {
       wrapLines: true,
       hunkHeaders: false,
       agentNotes: true,
+      colorMoved: true,
     });
   });
 

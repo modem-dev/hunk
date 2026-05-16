@@ -205,7 +205,7 @@ function buildWrappedSplitCell(
   prefixWidth: number,
   theme: AppTheme,
 ) {
-  const palette = splitCellPalette(cell.kind, theme);
+  const palette = splitCellPalette(cell.kind, theme, cell.moveKind);
   const { gutterWidth, contentWidth } = resolveSplitCellGeometry(
     width,
     lineNumberDigits,
@@ -238,7 +238,7 @@ function buildWrappedStackCell(
   prefixWidth: number,
   theme: AppTheme,
 ) {
-  const palette = stackCellPalette(cell.kind, theme);
+  const palette = stackCellPalette(cell.kind, theme, cell.moveKind);
   const { gutterWidth, contentWidth } = resolveStackCellGeometry(
     width,
     lineNumberDigits,
@@ -275,7 +275,7 @@ function renderSplitCell(
     bg: string;
   },
 ) {
-  const palette = splitCellPalette(cell.kind, theme);
+  const palette = splitCellPalette(cell.kind, theme, cell.moveKind);
   const prefixWidth = prefix?.text.length ?? 0;
   const { gutterWidth, contentWidth } = resolveSplitCellGeometry(
     width,
@@ -326,7 +326,7 @@ function renderStackCell(
     bg: string;
   },
 ) {
-  const palette = stackCellPalette(cell.kind, theme);
+  const palette = stackCellPalette(cell.kind, theme, cell.moveKind);
   const prefixWidth = prefix?.text.length ?? 0;
   const { gutterWidth, contentWidth } = resolveStackCellGeometry(
     width,

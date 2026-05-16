@@ -39,11 +39,19 @@ export interface DiffFile {
     deletions: number;
   };
   metadata: FileDiffMetadata;
+  lineMoveKinds?: DiffLineMoveKinds;
   agent: AgentFileContext | null;
   isUntracked?: boolean;
   isBinary?: boolean;
   isTooLarge?: boolean;
   statsTruncated?: boolean;
+}
+
+export type DiffLineMoveKind = "moved";
+
+export interface DiffLineMoveKinds {
+  additionLines: Array<DiffLineMoveKind | undefined>;
+  deletionLines: Array<DiffLineMoveKind | undefined>;
 }
 
 export interface Changeset {
@@ -67,6 +75,7 @@ export interface CommonOptions {
   wrapLines?: boolean;
   hunkHeaders?: boolean;
   agentNotes?: boolean;
+  colorMoved?: boolean;
 }
 
 export interface PersistedViewPreferences {

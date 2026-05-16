@@ -18,6 +18,7 @@ import {
   buildGitShowArgs,
   buildGitStashShowArgs,
   listGitUntrackedFiles,
+  resolveGitColorMovedOptions,
   resolveGitRepoRoot,
   runGitText,
   runGitUntrackedFileDiffText,
@@ -35,6 +36,8 @@ import type {
   Changeset,
   CliInput,
   DiffFile,
+  DiffLineMoveKind,
+  DiffLineMoveKinds,
   DiffToolCommandInput,
   FileCommandInput,
   VcsCommandInput,
@@ -68,6 +71,115 @@ function stripTerminalControl(text: string) {
     .replace(/\x1b\][\s\S]*?(?:\x07|\x1b\\)/g, "")
     .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
     .replace(/\x1b[@-_]/g, "");
+}
+
+/** Return SGR parameter strings that Git emitted before one diff line marker. */
+function leadingSgrParameters(rawLine: string, expectedSign: "+" | "-") {
+  const parameters: string[] = [];
+  let index = 0;
+
+  while (index < rawLine.length) {
+    if (rawLine[index] === "\x1b") {
+      const csi = rawLine.slice(index).match(/^\x1b\[([0-?]*)([ -/]*)([@-~])/);
+      if (csi) {
+        if (csi[3] === "m") {
+          parameters.push(csi[1] ?? "");
+        }
+        index += csi[0].length;
+        continue;
+      }
+    }
+
+    return rawLine[index] === expectedSign ? parameters : [];
+  }
+
+  return [];
+}
+
+/** Return whether one SGR parameter list contains the Git color Hunk reserves for moved lines. */
+function sgrContainsColor(parameters: string[], colorCode: "35" | "36") {
+  return parameters.some((parameter) => parameter.split(";").includes(colorCode));
+}
+
+/** Classify one ANSI-colored Git diff line as moved when it carries Hunk's reserved color. */
+function movedLineKindFromAnsi(
+  rawLine: string,
+  side: "addition" | "deletion",
+): DiffLineMoveKind | undefined {
+  const colorCode = side === "addition" ? "36" : "35";
+  const sign = side === "addition" ? "+" : "-";
+  return sgrContainsColor(leadingSgrParameters(rawLine, sign), colorCode) ? "moved" : undefined;
+}
+
+/** Capture Git's color-moved ANSI classes before the normal patch parser strips colors. */
+function collectLineMoveKinds(patchText: string): DiffLineMoveKinds[] {
+  const files: DiffLineMoveKinds[] = [];
+  let current: DiffLineMoveKinds | null = null;
+  let inHunk = false;
+  let additionLineIndex = 0;
+  let deletionLineIndex = 0;
+
+  const createFileMoveKinds = () => {
+    const moveKinds: DiffLineMoveKinds = { additionLines: [], deletionLines: [] };
+    files.push(moveKinds);
+    inHunk = false;
+    additionLineIndex = 0;
+    deletionLineIndex = 0;
+    return moveKinds;
+  };
+
+  for (const rawLine of patchText.replaceAll("\r\n", "\n").split("\n")) {
+    const plainLine = stripTerminalControl(rawLine);
+
+    if (plainLine.startsWith("diff --git ")) {
+      current = createFileMoveKinds();
+      continue;
+    }
+
+    if (!current && (plainLine.startsWith("--- ") || plainLine.startsWith("@@ "))) {
+      current = createFileMoveKinds();
+    }
+
+    const activeMoveKinds = current;
+    if (!activeMoveKinds) {
+      continue;
+    }
+
+    if (plainLine.startsWith("@@ ")) {
+      inHunk = true;
+      continue;
+    }
+
+    if (!inHunk) {
+      continue;
+    }
+
+    if (plainLine.startsWith("+") && !plainLine.startsWith("+++")) {
+      activeMoveKinds.additionLines[additionLineIndex] = movedLineKindFromAnsi(rawLine, "addition");
+      additionLineIndex += 1;
+      continue;
+    }
+
+    if (plainLine.startsWith("-") && !plainLine.startsWith("---")) {
+      activeMoveKinds.deletionLines[deletionLineIndex] = movedLineKindFromAnsi(rawLine, "deletion");
+      deletionLineIndex += 1;
+      continue;
+    }
+
+    if (plainLine.startsWith(" ")) {
+      additionLineIndex += 1;
+      deletionLineIndex += 1;
+    }
+  }
+
+  return files;
+}
+
+/** Return whether a parsed moved-line map has at least one classified line. */
+function hasLineMoveKinds(moveKinds: DiffLineMoveKinds | undefined) {
+  return Boolean(
+    moveKinds && (moveKinds.additionLines.some(Boolean) || moveKinds.deletionLines.some(Boolean)),
+  );
 }
 
 /**
@@ -214,6 +326,7 @@ interface BuildDiffFileOptions {
   isTooLarge?: boolean;
   stats?: DiffFile["stats"];
   statsTruncated?: boolean;
+  lineMoveKinds?: DiffLineMoveKinds;
 }
 
 /** Build the normalized per-file model used by the UI regardless of input mode. */
@@ -230,6 +343,7 @@ function buildDiffFile(
     isTooLarge,
     stats,
     statsTruncated,
+    lineMoveKinds,
   }: BuildDiffFileOptions = {},
 ): DiffFile {
   const normalizedMetadata = normalizeDiffMetadataPaths(metadata);
@@ -244,6 +358,7 @@ function buildDiffFile(
     language: getFiletypeFromFileName(path) ?? undefined,
     stats: stats ?? countDiffStats(normalizedMetadata),
     metadata: normalizedMetadata,
+    lineMoveKinds,
     agent: findAgentFileContext(agentContext, path, resolvedPreviousPath),
     isUntracked,
     isBinary: isBinary ?? patchLooksBinary(patch),
@@ -818,8 +933,10 @@ function normalizePatchChangeset(
   sourceLabel: string,
   agentContext: AgentContext | null,
 ): Changeset {
+  const rawPatchText = patchText.replaceAll("\r\n", "\n");
+  const lineMoveKinds = collectLineMoveKinds(rawPatchText);
   const normalizedPatchText = normalizeGitPatchPrefixes(
-    stripGitLogMetadata(stripTerminalControl(patchText.replaceAll("\r\n", "\n"))),
+    stripGitLogMetadata(stripTerminalControl(rawPatchText)),
   );
 
   let parsedPatches: ReturnType<typeof parsePatchFiles>;
@@ -856,6 +973,9 @@ function normalizePatchChangeset(
         index,
         sourceLabel,
         agentContext,
+        {
+          lineMoveKinds: hasLineMoveKinds(lineMoveKinds[index]) ? lineMoveKinds[index] : undefined,
+        },
       ),
     ),
   };
@@ -982,12 +1102,14 @@ async function loadGitChangeset(
   const largeTrackedFiles = parseGitNumstat(
     runGitText({ input, args: buildGitDiffNumstatArgs(input), cwd }),
   ).filter((file) => shouldSkipLargeTrackedDiff(file, repoRoot));
+  const colorMoved = resolveGitColorMovedOptions(input, { cwd });
   const trackedChangeset = normalizePatchChangeset(
     runGitText({
       input,
       args: buildGitDiffArgs(
         input,
         largeTrackedFiles.map((file) => file.path),
+        colorMoved,
       ),
       cwd,
     }),
@@ -1063,9 +1185,10 @@ async function loadShowChangeset(
 ) {
   const repoRoot = resolveGitRepoRoot(input, { cwd });
   const repoName = basename(repoRoot);
+  const colorMoved = resolveGitColorMovedOptions(input, { cwd });
 
   return normalizePatchChangeset(
-    runGitText({ input, args: buildGitShowArgs(input), cwd }),
+    runGitText({ input, args: buildGitShowArgs(input, colorMoved), cwd }),
     input.ref ? `${repoName} show ${input.ref}` : `${repoName} show HEAD`,
     repoRoot,
     agentContext,
@@ -1104,9 +1227,10 @@ async function loadStashShowChangeset(
 
   const repoRoot = resolveGitRepoRoot(input, { cwd });
   const repoName = basename(repoRoot);
+  const colorMoved = resolveGitColorMovedOptions(input, { cwd });
 
   return normalizePatchChangeset(
-    runGitText({ input, args: buildGitStashShowArgs(input), cwd }),
+    runGitText({ input, args: buildGitStashShowArgs(input, colorMoved), cwd }),
     input.ref ? `${repoName} stash ${input.ref}` : `${repoName} stash`,
     repoRoot,
     agentContext,

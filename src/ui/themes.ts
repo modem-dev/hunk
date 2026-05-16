@@ -14,6 +14,8 @@ export interface AppTheme {
   muted: string;
   addedBg: string;
   removedBg: string;
+  movedAddedBg: string;
+  movedRemovedBg: string;
   contextBg: string;
   addedContentBg: string;
   removedContentBg: string;
@@ -103,6 +105,8 @@ export const THEMES: AppTheme[] = [
       muted: "#9aa4af",
       addedBg: "#1f3025",
       removedBg: "#372526",
+      movedAddedBg: "#1d3140",
+      movedRemovedBg: "#34283d",
       contextBg: "#181c20",
       addedContentBg: "#24362a",
       removedContentBg: "#432b2d",
@@ -152,6 +156,8 @@ export const THEMES: AppTheme[] = [
       muted: "#8da5c7",
       addedBg: "#153526",
       removedBg: "#47262a",
+      movedAddedBg: "#123247",
+      movedRemovedBg: "#3a2748",
       contextBg: "#0f1b2d",
       addedContentBg: "#102a1f",
       removedContentBg: "#371b1e",
@@ -201,6 +207,8 @@ export const THEMES: AppTheme[] = [
       muted: "#786753",
       addedBg: "#dff0e1",
       removedBg: "#f6ddde",
+      movedAddedBg: "#dcebf4",
+      movedRemovedBg: "#eadff1",
       contextBg: "#faf6ee",
       addedContentBg: "#eaf8ec",
       removedContentBg: "#fbebeb",
@@ -250,6 +258,8 @@ export const THEMES: AppTheme[] = [
       muted: "#c7a18d",
       addedBg: "#183424",
       removedBg: "#4a1f1f",
+      movedAddedBg: "#17303a",
+      movedRemovedBg: "#3c273b",
       contextBg: "#24140e",
       addedContentBg: "#21432c",
       removedContentBg: "#5a2727",

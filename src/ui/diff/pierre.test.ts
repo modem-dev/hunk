@@ -3,6 +3,7 @@ import { parseDiffFromFile } from "@pierre/diffs";
 import type { DiffFile } from "../../core/types";
 import { buildSplitRows, buildStackRows, loadHighlightedDiff, type DiffRow } from "./pierre";
 import { resolveTheme } from "../themes";
+import { stackCellPalette } from "./rowStyle";
 
 function createDiffFile(): DiffFile {
   const metadata = parseDiffFromFile(
@@ -162,6 +163,42 @@ describe("Pierre diff rows", () => {
     expect(deletionRow.cell.newLineNumber).toBeUndefined();
     expect(additionRow.cell.oldLineNumber).toBeUndefined();
     expect(additionRow.cell.newLineNumber).toBe(1);
+  });
+
+  test("carries moved-line tags into row palettes", () => {
+    const file = createDiffFile();
+    file.lineMoveKinds = {
+      deletionLines: ["moved"],
+      additionLines: ["moved"],
+    };
+    const theme = resolveTheme("graphite", null);
+    const rows = buildStackRows(file, null, theme);
+    const movedDeletion = rows.find(
+      (row) => row.type === "stack-line" && row.cell.kind === "deletion",
+    );
+    const movedAddition = rows.find(
+      (row) => row.type === "stack-line" && row.cell.kind === "addition",
+    );
+
+    expect(movedDeletion).toBeDefined();
+    expect(movedAddition).toBeDefined();
+
+    if (!movedDeletion || movedDeletion.type !== "stack-line") {
+      throw new Error("Expected a moved deletion row");
+    }
+
+    if (!movedAddition || movedAddition.type !== "stack-line") {
+      throw new Error("Expected a moved addition row");
+    }
+
+    expect(movedDeletion.cell.moveKind).toBe("moved");
+    expect(movedAddition.cell.moveKind).toBe("moved");
+    expect(
+      stackCellPalette(movedDeletion.cell.kind, theme, movedDeletion.cell.moveKind).contentBg,
+    ).toBe(theme.movedRemovedBg);
+    expect(
+      stackCellPalette(movedAddition.cell.kind, theme, movedAddition.cell.moveKind).contentBg,
+    ).toBe(theme.movedAddedBg);
   });
 
   test("does not produce newline characters in spans for highlighted empty lines", async () => {
