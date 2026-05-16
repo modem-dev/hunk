@@ -46,7 +46,9 @@ export interface HunkSessionCliClient {
   reloadSession(input: SessionReloadCommandInput): Promise<ReloadedSessionResult>;
   addComment(input: SessionCommentAddCommandInput): Promise<AppliedCommentResult>;
   applyComments(input: SessionCommentApplyCommandInput): Promise<AppliedCommentBatchResult>;
-  listComments(input: SessionCommentListCommandInput): Promise<SessionLiveCommentSummary[]>;
+  listComments(
+    input: SessionCommentListCommandInput,
+  ): Promise<Array<SessionLiveCommentSummary | SessionReviewNoteSummary>>;
   removeComment(input: SessionCommentRemoveCommandInput): Promise<RemovedCommentResult>;
   clearComments(input: SessionCommentClearCommandInput): Promise<ClearedCommentsResult>;
   listNotes?: (input: SessionNoteListCommandInput) => Promise<SessionReviewNoteSummary[]>;
@@ -169,11 +171,14 @@ class HttpHunkSessionCliClient implements HunkSessionCliClient {
 
   async listComments(input: SessionCommentListCommandInput) {
     return (
-      await this.request<{ comments: SessionLiveCommentSummary[] }>({
-        action: "comment-list",
-        selector: input.selector,
-        filePath: input.filePath,
-      })
+      await this.request<{ comments: Array<SessionLiveCommentSummary | SessionReviewNoteSummary> }>(
+        {
+          action: "comment-list",
+          selector: input.selector,
+          filePath: input.filePath,
+          type: input.type,
+        },
+      )
     ).comments;
   }
 

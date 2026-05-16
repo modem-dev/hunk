@@ -121,13 +121,12 @@ async function handleSessionApiRequest(state: HunkSessionBrokerState, request: R
         response = { context: state.getSelectedContext(input.selector) };
         break;
       case "review": {
-        const review = state.getSessionReview(input.selector, { includePatch: input.includePatch });
-        if (input.includeNotes) {
-          const session = state.getSession(input.selector);
-          review.reviewNotes = session.snapshot.state.reviewNotes ?? [];
-          review.reviewNoteCount = review.reviewNotes.length;
-        }
-        response = { review };
+        response = {
+          review: state.getSessionReview(input.selector, {
+            includePatch: input.includePatch,
+            includeNotes: input.includeNotes,
+          }),
+        };
         break;
       }
       case "navigate": {
@@ -214,9 +213,17 @@ async function handleSessionApiRequest(state: HunkSessionBrokerState, request: R
         };
         break;
       case "comment-list":
-        response = {
-          comments: state.listComments(input.selector, { filePath: input.filePath }),
-        };
+        response =
+          input.type && input.type !== "live"
+            ? {
+                comments: listHunkSessionNotes(state.getSession(input.selector), {
+                  filePath: input.filePath,
+                  source: input.type === "all" ? undefined : input.type,
+                }),
+              }
+            : {
+                comments: state.listComments(input.selector, { filePath: input.filePath }),
+              };
         break;
       case "comment-rm":
         response = {

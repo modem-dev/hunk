@@ -113,6 +113,7 @@ export type SessionDaemonRequest =
       action: "comment-list";
       selector: SessionCommentListCommandInput["selector"];
       filePath?: string;
+      type?: SessionCommentListCommandInput["type"];
     }
   | {
       action: "comment-rm";
@@ -150,7 +151,7 @@ export type SessionDaemonResponse =
   | { result: ReloadedSessionResult }
   | { result: AppliedCommentResult }
   | { result: AppliedCommentBatchResult }
-  | { comments: SessionLiveCommentSummary[] }
+  | { comments: Array<SessionLiveCommentSummary | SessionReviewNoteSummary> }
   | { notes: SessionReviewNoteSummary[] }
   | { note: SessionReviewNoteSummary }
   | { result: RemovedCommentResult }

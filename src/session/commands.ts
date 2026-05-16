@@ -3,6 +3,7 @@ import type {
   SessionCommandOutput,
   SessionSelectorInput,
 } from "../core/types";
+import type { SessionLiveCommentSummary, SessionReviewNoteSummary } from "../hunk-session/types";
 import {
   ensureSessionBrokerAvailable,
   isSessionBrokerHealthy,
@@ -180,10 +181,7 @@ export async function runSessionCommand(input: SessionCommandInput) {
   }
 
   const normalizedSelector = "selector" in input ? normalizeSessionSelector(input.selector) : null;
-  const requiredAction =
-    input.action === "comment-list" && input.type && input.type !== "live"
-      ? "note-list"
-      : REQUIRED_ACTION_BY_COMMAND[input.action];
+  const requiredAction = REQUIRED_ACTION_BY_COMMAND[input.action];
   await ensureRequiredAction(requiredAction, normalizedSelector ?? undefined);
 
   const client = createDaemonCliClient();
@@ -245,29 +243,20 @@ export async function runSessionCommand(input: SessionCommandInput) {
       );
     }
     case "comment-list": {
-      if (input.type && input.type !== "live") {
-        if (!client.listNotes) {
-          throw new Error("The active Hunk session client does not support note-list.");
-        }
-        const notes = await client.listNotes({
-          kind: "session",
-          action: "note-list",
-          output: input.output,
-          selector: normalizedSelector!,
-          filePath: input.filePath,
-          source: input.type === "all" ? undefined : input.type,
-        });
-        return renderOutput(input.output, { notes }, () =>
-          formatNoteListOutput(input.selector, notes),
-        );
-      }
-
       const comments = await client.listComments({
         ...input,
         selector: normalizedSelector!,
       });
+
+      if (input.type && input.type !== "live") {
+        const notes = comments as SessionReviewNoteSummary[];
+        return renderOutput(input.output, { comments: notes }, () =>
+          formatNoteListOutput(input.selector, notes),
+        );
+      }
+
       return renderOutput(input.output, { comments }, () =>
-        formatCommentListOutput(input.selector, comments),
+        formatCommentListOutput(input.selector, comments as SessionLiveCommentSummary[]),
       );
     }
     case "comment-rm": {

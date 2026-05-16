@@ -427,7 +427,7 @@ describe("Hunk session daemon server", () => {
     }
   });
 
-  test("forwards review includePatch through the session API", async () => {
+  test("forwards review options through the session API", async () => {
     const port = await reserveLoopbackPort();
     process.env.HUNK_MCP_HOST = "127.0.0.1";
     process.env.HUNK_MCP_PORT = String(port);
@@ -435,7 +435,7 @@ describe("Hunk session daemon server", () => {
     const original = SessionBrokerState.prototype.getSessionReview;
     SessionBrokerState.prototype.getSessionReview = function (selector, options) {
       expect(selector).toEqual({ sessionId: "session-1" });
-      expect(options).toEqual({ includePatch: true });
+      expect(options).toEqual({ includePatch: true, includeNotes: true });
 
       return {
         sessionId: "session-1",
@@ -500,6 +500,7 @@ describe("Hunk session daemon server", () => {
           action: "review",
           selector: { sessionId: "session-1" },
           includePatch: true,
+          includeNotes: true,
         }),
       });
 
@@ -616,15 +617,15 @@ describe("Hunk session daemon server", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          action: "note-list",
+          action: "comment-list",
           selector: { sessionId: "session-1" },
-          source: "user",
+          type: "user",
         }),
       });
 
       expect(listResponse.status).toBe(200);
       await expect(listResponse.json()).resolves.toMatchObject({
-        notes: [{ noteId: "user:1", body: "Human note" }],
+        comments: [{ noteId: "user:1", body: "Human note" }],
       });
 
       const getResponse = await fetch(`http://127.0.0.1:${port}/session-api`, {

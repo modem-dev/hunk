@@ -654,14 +654,14 @@ describe("session command compatibility checks", () => {
     });
   });
 
-  test("routes typed comment listing through review notes", async () => {
+  test("routes typed comment listing through the comment list API", async () => {
     setSessionCommandTestHooks({
       createClient: () =>
         createClient({
-          listNotes: async (input) => {
+          listComments: async (input) => {
             expect(input.selector).toEqual({ sessionId: "session-1" });
             expect(input.filePath).toBe("README.md");
-            expect(input.source).toBe("user");
+            expect(input.type).toBe("user");
             return [
               {
                 noteId: "user:1",
