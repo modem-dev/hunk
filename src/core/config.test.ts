@@ -58,6 +58,7 @@ describe("config resolution", () => {
       [
         'theme = "graphite"',
         "line_numbers = false",
+        "transparentBackground = true",
         "",
         "[patch]",
         'mode = "split"',
@@ -87,6 +88,7 @@ describe("config resolution", () => {
       wrapLines: true,
       hunkHeaders: false,
       agentNotes: true,
+      transparentBackground: true,
     });
   });
 
@@ -213,6 +215,33 @@ describe("config resolution", () => {
         env: { HOME: home },
       }),
     ).toThrow('Expected a [custom_theme] table when config selects theme = "custom".');
+  });
+
+  test("accepts transparent background config and CLI overrides", () => {
+    const home = createTempDir("hunk-config-home-");
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(join(home, ".config", "hunk", "config.toml"), "transparent_background = true\n");
+
+    const cwd = createTempDir("hunk-config-cwd-");
+    const configured = resolveConfiguredCliInput(
+      {
+        kind: "vcs",
+        staged: false,
+        options: {},
+      },
+      { cwd, env: { HOME: home } },
+    );
+    const overridden = resolveConfiguredCliInput(
+      {
+        kind: "vcs",
+        staged: false,
+        options: { transparentBackground: false },
+      },
+      { cwd, env: { HOME: home } },
+    );
+
+    expect(configured.input.options.transparentBackground).toBe(true);
+    expect(overridden.input.options.transparentBackground).toBe(false);
   });
 
   test("defaults unspecified themes to graphite, including piped pager-style patch input", () => {

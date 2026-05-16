@@ -12,6 +12,8 @@ import { ZENBURN_THEME } from "./themes/zenburn";
 export { CATPPUCCIN_PALETTES } from "./themes/catppuccin";
 export type { AppTheme, SyntaxColors, ThemeBase } from "./themes/types";
 
+export const TRANSPARENT_BACKGROUND = "transparent";
+
 export const THEMES: AppTheme[] = [
   GRAPHITE_THEME,
   MIDNIGHT_THEME,
@@ -111,4 +113,24 @@ export function resolveTheme(
   }
 
   return fallbackTheme();
+}
+
+/** Return a copy of a theme whose painted surfaces allow the terminal background through. */
+export function withTransparentBackground(theme: AppTheme): AppTheme {
+  return {
+    ...theme,
+    background: TRANSPARENT_BACKGROUND,
+    panel: TRANSPARENT_BACKGROUND,
+    panelAlt: TRANSPARENT_BACKGROUND,
+    addedBg: TRANSPARENT_BACKGROUND,
+    removedBg: TRANSPARENT_BACKGROUND,
+    contextBg: TRANSPARENT_BACKGROUND,
+    addedContentBg: TRANSPARENT_BACKGROUND,
+    removedContentBg: TRANSPARENT_BACKGROUND,
+    contextContentBg: TRANSPARENT_BACKGROUND,
+    lineNumberBg: TRANSPARENT_BACKGROUND,
+    selectedHunk: TRANSPARENT_BACKGROUND,
+    noteBackground: TRANSPARENT_BACKGROUND,
+    noteTitleBackground: TRANSPARENT_BACKGROUND,
+  };
 }

@@ -84,6 +84,7 @@ export interface CommonOptions {
   hunkHeaders?: boolean;
   agentNotes?: boolean;
   copyDecorations?: boolean;
+  transparentBackground?: boolean;
 }
 
 export interface CustomSyntaxColorsConfig {

@@ -28,7 +28,7 @@ import { fileRowId } from "./lib/ids";
 import { openSelectedFileInEditor } from "./lib/openInEditor";
 import { resolveResponsiveLayout } from "./lib/responsive";
 import { resizeSidebarWidth } from "./lib/sidebar";
-import { availableThemes, resolveTheme } from "./themes";
+import { availableThemes, resolveTheme, withTransparentBackground } from "./themes";
 
 type FocusArea = "files" | "filter" | "note";
 type ActiveAddNoteTarget = ActiveAddNoteAffordance & { fileId: string };
@@ -138,7 +138,14 @@ export function App({
     () => availableThemes(bootstrap.customTheme),
     [bootstrap.customTheme],
   );
-  const activeTheme = resolveTheme(themeId, detectedThemeMode ?? null, bootstrap.customTheme);
+  const baseTheme = resolveTheme(themeId, detectedThemeMode ?? null, bootstrap.customTheme);
+  const activeTheme = useMemo(
+    () =>
+      bootstrap.input.options.transparentBackground
+        ? withTransparentBackground(baseTheme)
+        : baseTheme,
+    [baseTheme, bootstrap.input.options.transparentBackground],
+  );
   const review = useReviewController({ files: bootstrap.changeset.files });
   const filteredFiles = review.visibleFiles;
   const selectedFile = review.selectedFile;

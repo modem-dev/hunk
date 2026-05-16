@@ -59,6 +59,7 @@ function buildCommonOptions(
     agentContext?: string;
     pager?: boolean;
     watch?: boolean;
+    transparentBackground?: boolean;
   },
   argv: string[],
 ): CommonOptions {
@@ -73,6 +74,7 @@ function buildCommonOptions(
     wrapLines: resolveBooleanFlag(argv, "--wrap", "--no-wrap"),
     hunkHeaders: resolveBooleanFlag(argv, "--hunk-headers", "--no-hunk-headers"),
     agentNotes: resolveBooleanFlag(argv, "--agent-notes", "--no-agent-notes"),
+    transparentBackground: resolveBooleanFlag(argv, "--transparent-bg", "--no-transparent-bg"),
   };
 }
 
@@ -90,7 +92,9 @@ function applyCommonOptions(command: Command) {
     .option("--hunk-headers", "show hunk metadata rows")
     .option("--no-hunk-headers", "hide hunk metadata rows")
     .option("--agent-notes", "show agent notes by default")
-    .option("--no-agent-notes", "hide agent notes by default");
+    .option("--no-agent-notes", "hide agent notes by default")
+    .option("--transparent-bg", "let terminal background show through Hunk surfaces")
+    .option("--no-transparent-bg", "paint Hunk surfaces with the active theme");
 }
 
 /** Attach auto-refresh support to review commands that can reopen their source input. */
@@ -152,6 +156,7 @@ function renderCliHelp() {
     "  --wrap / --no-wrap                      wrap or truncate long diff lines",
     "  --hunk-headers / --no-hunk-headers      show or hide hunk metadata rows",
     "  --agent-notes / --no-agent-notes        show or hide agent notes by default",
+    "  --transparent-bg / --no-transparent-bg  let terminal background show through Hunk surfaces",
     "  --theme <theme>                         named theme override",
     "",
     "Git diff options:",
