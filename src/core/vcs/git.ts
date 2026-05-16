@@ -6,6 +6,7 @@ import {
   buildGitShowArgs,
   buildGitStashShowArgs,
   listGitUntrackedFiles,
+  resolveGitColorMovedOptions,
   resolveGitCommitRef,
   resolveGitDiffEndpoints,
   resolveGitRepoRoot,
@@ -238,6 +239,7 @@ export const gitAdapter: VcsAdapter = {
         const largeTrackedFiles = parseGitNumstat(
           runGitText({ input, args: buildGitDiffNumstatArgs(input), cwd, gitExecutable }),
         ).filter((file) => shouldSkipLargeTrackedDiff(file, repoRoot));
+        const colorMoved = resolveGitColorMovedOptions(input, { cwd, gitExecutable });
         return {
           repoRoot,
           sourceLabel: repoRoot,
@@ -247,6 +249,7 @@ export const gitAdapter: VcsAdapter = {
             args: buildGitDiffArgs(
               input,
               largeTrackedFiles.map((file) => file.path),
+              colorMoved,
             ),
             cwd,
             gitExecutable,
@@ -271,7 +274,15 @@ export const gitAdapter: VcsAdapter = {
           repoRoot,
           sourceLabel: repoRoot,
           title: input.ref ? `${repoName} show ${input.ref}` : `${repoName} show HEAD`,
-          patchText: runGitText({ input, args: buildGitShowArgs(input), cwd, gitExecutable }),
+          patchText: runGitText({
+            input,
+            args: buildGitShowArgs(
+              input,
+              resolveGitColorMovedOptions(input, { cwd, gitExecutable }),
+            ),
+            cwd,
+            gitExecutable,
+          }),
           sourceFetcherBuilder: buildGitReviewSourceFetcherBuilder(
             operation,
             repoRoot,
@@ -288,7 +299,15 @@ export const gitAdapter: VcsAdapter = {
           repoRoot,
           sourceLabel: repoRoot,
           title: input.ref ? `${repoName} stash ${input.ref}` : `${repoName} stash`,
-          patchText: runGitText({ input, args: buildGitStashShowArgs(input), cwd, gitExecutable }),
+          patchText: runGitText({
+            input,
+            args: buildGitStashShowArgs(
+              input,
+              resolveGitColorMovedOptions(input, { cwd, gitExecutable }),
+            ),
+            cwd,
+            gitExecutable,
+          }),
           sourceFetcherBuilder: buildGitReviewSourceFetcherBuilder(
             operation,
             repoRoot,

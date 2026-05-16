@@ -17,6 +17,8 @@ export const GRAPHITE_THEME: AppTheme = withLazySyntaxStyle(
     muted: "#9aa4af",
     addedBg: "#1f3025",
     removedBg: "#372526",
+    movedAddedBg: "#1d3140",
+    movedRemovedBg: "#34283d",
     contextBg: "#181c20",
     addedContentBg: "#24362a",
     removedContentBg: "#432b2d",

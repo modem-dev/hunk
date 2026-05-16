@@ -21,6 +21,8 @@ export const ZENBURN_THEME: AppTheme = withLazySyntaxStyle(
     muted: "#709080",
     addedBg: "#2e3d30",
     removedBg: "#43302f",
+    movedAddedBg: "#2f4548",
+    movedRemovedBg: "#46364b",
     contextBg: "#393939",
     addedContentBg: "#3a4d3c",
     removedContentBg: "#553a39",

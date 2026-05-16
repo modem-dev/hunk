@@ -17,6 +17,8 @@ export const MIDNIGHT_THEME: AppTheme = withLazySyntaxStyle(
     muted: "#8da5c7",
     addedBg: "#153526",
     removedBg: "#47262a",
+    movedAddedBg: "#123247",
+    movedRemovedBg: "#3a2748",
     contextBg: "#0f1b2d",
     addedContentBg: "#102a1f",
     removedContentBg: "#371b1e",

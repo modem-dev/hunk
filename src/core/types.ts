@@ -52,6 +52,7 @@ export interface DiffFile {
     deletions: number;
   };
   metadata: FileDiffMetadata;
+  lineMoveKinds?: DiffLineMoveKinds;
   agent: AgentFileContext | null;
   isUntracked?: boolean;
   isBinary?: boolean;
@@ -60,6 +61,13 @@ export interface DiffFile {
   // Optional capability for fetching the file's full text on either side.
   // Loaders attach this when source content is reachable; absent when not.
   sourceFetcher?: FileSourceFetcher;
+}
+
+export type DiffLineMoveKind = "moved";
+
+export interface DiffLineMoveKinds {
+  additionLines: Array<DiffLineMoveKind | undefined>;
+  deletionLines: Array<DiffLineMoveKind | undefined>;
 }
 
 export interface Changeset {
@@ -85,6 +93,7 @@ export interface CommonOptions {
   agentNotes?: boolean;
   copyDecorations?: boolean;
   transparentBackground?: boolean;
+  colorMoved?: boolean;
 }
 
 export interface CustomSyntaxColorsConfig {
@@ -112,6 +121,8 @@ export interface CustomThemeConfig {
   muted?: string;
   addedBg?: string;
   removedBg?: string;
+  movedAddedBg?: string;
+  movedRemovedBg?: string;
   contextBg?: string;
   addedContentBg?: string;
   removedContentBg?: string;

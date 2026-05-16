@@ -96,7 +96,7 @@ function renderStaticRow(
   }
 
   const { cell } = row;
-  const palette = stackCellPalette(cell.kind, theme);
+  const palette = stackCellPalette(cell.kind, theme, cell.moveKind);
   return `${colorText(marker(), stackRailColor(cell.kind, theme, true), theme.panel)}${colorText(
     staticStackGutterText(cell, lineNumberWidth, options.lineNumbers !== false),
     palette.numberColor,

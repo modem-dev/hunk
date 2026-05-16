@@ -867,7 +867,7 @@ function renderSplitCell(
   selectionColRange?: CopySelectedRowRange,
   paneOffset = 0,
 ) {
-  const basePalette = splitCellPalette(cell.kind, theme);
+  const basePalette = splitCellPalette(cell.kind, theme, cell.moveKind);
   const palette = selected ? applySelectionPalette(basePalette, theme) : basePalette;
   const resolvedPrefix = selected && prefix ? applySelectionPrefix(prefix, theme) : prefix;
   const prefixWidth = resolvedPrefix?.text.length ?? 0;
@@ -933,7 +933,7 @@ function renderStackCell(
   selected = false,
   selectionColRange?: CopySelectedRowRange,
 ) {
-  const basePalette = stackCellPalette(cell.kind, theme);
+  const basePalette = stackCellPalette(cell.kind, theme, cell.moveKind);
   const palette = selected ? applySelectionPalette(basePalette, theme) : basePalette;
   const resolvedPrefix = selected && prefix ? applySelectionPrefix(prefix, theme) : prefix;
   const prefixWidth = resolvedPrefix?.text.length ?? 0;

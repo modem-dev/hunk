@@ -35,6 +35,8 @@ const CUSTOM_THEME_COLOR_KEYS = [
   "muted",
   "addedBg",
   "removedBg",
+  "movedAddedBg",
+  "movedRemovedBg",
   "contextBg",
   "addedContentBg",
   "removedContentBg",
@@ -239,6 +241,7 @@ function readConfigPreferences(source: Record<string, unknown>): CommonOptions {
     transparentBackground:
       normalizeBoolean(source.transparentBackground) ??
       normalizeBoolean(source.transparent_background),
+    colorMoved: normalizeBoolean(source.color_moved),
   };
 }
 
@@ -259,6 +262,7 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
     agentNotes: overrides.agentNotes ?? base.agentNotes,
     copyDecorations: overrides.copyDecorations ?? base.copyDecorations,
     transparentBackground: overrides.transparentBackground ?? base.transparentBackground,
+    colorMoved: overrides.colorMoved ?? base.colorMoved,
   };
 }
 
@@ -353,6 +357,7 @@ export function resolveConfiguredCliInput(
     agentNotes: resolvedOptions.agentNotes ?? DEFAULT_VIEW_PREFERENCES.showAgentNotes,
     copyDecorations: resolvedOptions.copyDecorations ?? DEFAULT_VIEW_PREFERENCES.copyDecorations,
     transparentBackground: resolvedOptions.transparentBackground ?? false,
+    colorMoved: resolvedOptions.colorMoved,
   };
 
   if (resolvedOptions.theme === "custom" && !resolvedCustomTheme) {
