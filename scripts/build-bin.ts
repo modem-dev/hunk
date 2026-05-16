@@ -12,16 +12,15 @@ const legacyOutfile = path.join(distDir, process.platform === "win32" ? "otdiff.
 mkdirSync(distDir, { recursive: true });
 rmSync(legacyOutfile, { force: true });
 
+const buildArgs = ["bun", "build", "--compile", "--no-compile-autoload-bunfig"];
+const targetTriple = process.env.HUNK_TARGET_TRIPLE;
+if (targetTriple) {
+  buildArgs.push("--target", targetTriple);
+}
+buildArgs.push(path.join(repoRoot, "src", "main.tsx"), "--outfile", outfile);
+
 const proc = Bun.spawnSync(
-  [
-    "bun",
-    "build",
-    "--compile",
-    "--no-compile-autoload-bunfig",
-    path.join(repoRoot, "src", "main.tsx"),
-    "--outfile",
-    outfile,
-  ],
+  buildArgs,
   {
     cwd: repoRoot,
     stdin: "inherit",
