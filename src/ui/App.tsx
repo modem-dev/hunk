@@ -181,7 +181,6 @@ export function App({
     openAgentNotes,
     reloadSession: onReloadSession,
     removeLiveComment: review.removeLiveComment,
-    removeUserNote: review.removeUserNote,
     reviewNoteCount: review.reviewNoteCount,
     reviewNoteSummaries: review.reviewNoteSummaries,
     selectedFile,
@@ -358,14 +357,6 @@ export function App({
   const toggleHunkHeaders = () => {
     setShowHunkHeaders((current) => !current);
   };
-
-  /** Jump to an annotated hunk without changing the global note visibility toggle. */
-  const openAgentNotesAtHunk = useCallback(
-    (fileId: string, hunkIndex: number) => {
-      review.selectHunk(fileId, hunkIndex);
-    },
-    [review.selectHunk],
-  );
 
   const canRefreshCurrentInput = canReloadInput(bootstrap.input);
   const watchEnabled = Boolean(bootstrap.input.options.watch && canRefreshCurrentInput);
@@ -827,7 +818,6 @@ export function App({
           selectedHunkRevealRequestId={review.selectedHunkRevealRequestId}
           theme={activeTheme}
           width={diffPaneWidth}
-          onOpenAgentNotesAtHunk={openAgentNotesAtHunk}
           onActiveAddNoteAffordanceChange={setActiveAddNoteTarget}
           onRemoveUserNote={review.removeUserNote}
           onSaveDraftNote={saveDraftNote}

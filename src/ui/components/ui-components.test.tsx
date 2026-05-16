@@ -227,7 +227,6 @@ function createDiffPaneProps(
     wrapToggleScrollTop: null,
     theme,
     width: 76,
-    onOpenAgentNotesAtHunk: () => {},
     onSelectFile: () => {},
     ...overrides,
   };
@@ -485,7 +484,6 @@ describe("UI components", () => {
         wrapToggleScrollTop={null}
         theme={theme}
         width={76}
-        onOpenAgentNotesAtHunk={() => {}}
         onSelectFile={() => {}}
       />,
       80,
@@ -525,7 +523,6 @@ describe("UI components", () => {
         codeHorizontalOffset={0}
         theme={theme}
         selected={false}
-        annotated={false}
         showAddNoteBadge={true}
         onStartUserNoteAtHunk={startUserNote}
       />,
@@ -1467,7 +1464,6 @@ describe("UI components", () => {
         wrapToggleScrollTop={null}
         theme={theme}
         width={92}
-        onOpenAgentNotesAtHunk={() => {}}
         onSelectFile={() => {}}
       />,
       96,
@@ -1509,7 +1505,6 @@ describe("UI components", () => {
         wrapToggleScrollTop={null}
         theme={theme}
         width={92}
-        onOpenAgentNotesAtHunk={() => {}}
         onSelectFile={() => {}}
       />,
       96,
@@ -1567,7 +1562,6 @@ describe("UI components", () => {
         wrapToggleScrollTop={null}
         theme={theme}
         width={92}
-        onOpenAgentNotesAtHunk={() => {}}
         onSelectFile={() => {}}
       />,
       96,
@@ -1836,7 +1830,6 @@ describe("UI components", () => {
         wrapToggleScrollTop={null}
         theme={theme}
         width={76}
-        onOpenAgentNotesAtHunk={() => {}}
         onSelectFile={() => {}}
       />,
       80,
@@ -1867,7 +1860,6 @@ describe("UI components", () => {
         wrapToggleScrollTop={null}
         theme={theme}
         width={76}
-        onOpenAgentNotesAtHunk={() => {}}
         onSelectFile={() => {}}
       />,
       80,
@@ -1901,7 +1893,6 @@ describe("UI components", () => {
         wrapToggleScrollTop={null}
         theme={theme}
         width={52}
-        onOpenAgentNotesAtHunk={() => {}}
         onSelectFile={() => {}}
       />,
       56,
@@ -1935,7 +1926,6 @@ describe("UI components", () => {
         wrapToggleScrollTop={null}
         theme={theme}
         width={76}
-        onOpenAgentNotesAtHunk={() => {}}
         onSelectFile={() => {}}
       />,
       80,

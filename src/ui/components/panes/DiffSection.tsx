@@ -3,7 +3,7 @@ import type { DiffFile, LayoutMode, UserNoteLineTarget } from "../../../core/typ
 import { PierreDiffView, type ActiveAddNoteAffordance } from "../../diff/PierreDiffView";
 import type { VisibleBodyBounds } from "../../diff/rowWindowing";
 import type { DiffSectionGeometry } from "../../lib/diffSectionGeometry";
-import { getAnnotatedHunkIndices, type VisibleAgentNote } from "../../lib/agentAnnotations";
+import type { VisibleAgentNote } from "../../lib/agentAnnotations";
 import { diffSectionId } from "../../lib/ids";
 import { fitText } from "../../lib/text";
 import type { AppTheme } from "../../themes";
@@ -28,7 +28,6 @@ interface DiffSectionProps {
   visibleAgentNotes: VisibleAgentNote[];
   visibleBodyBounds?: VisibleBodyBounds;
   viewWidth: number;
-  onOpenAgentNotesAtHunk: (hunkIndex: number) => void;
   hoverActive?: boolean;
   onHover: () => void;
   onActiveAddNoteAffordanceChange?: (affordance: ActiveAddNoteAffordance | null) => void;
@@ -56,15 +55,12 @@ function DiffSectionComponent({
   visibleAgentNotes,
   visibleBodyBounds,
   viewWidth,
-  onOpenAgentNotesAtHunk,
   hoverActive = true,
   onHover,
   onActiveAddNoteAffordanceChange,
   onStartUserNoteAtHunk,
   onSelect,
 }: DiffSectionProps) {
-  const annotatedHunkIndices = getAnnotatedHunkIndices(file);
-
   return (
     <box
       id={diffSectionId(file.id)}
@@ -109,11 +105,9 @@ function DiffSectionComponent({
         codeHorizontalOffset={codeHorizontalOffset}
         theme={theme}
         width={viewWidth}
-        annotatedHunkIndices={annotatedHunkIndices}
         visibleAgentNotes={visibleAgentNotes}
         hoverActive={hoverActive}
         onHover={onHover}
-        onOpenAgentNotesAtHunk={onOpenAgentNotesAtHunk}
         onActiveAddNoteAffordanceChange={onActiveAddNoteAffordanceChange}
         onStartUserNoteAtHunk={onStartUserNoteAtHunk}
         selectedHunkIndex={selectedHunkIndex}

@@ -453,11 +453,9 @@ function renderHeaderRow(
   width: number,
   theme: AppTheme,
   selected: boolean,
-  annotated: boolean,
   anchorId?: string,
   showAddNoteBadge = false,
   onHoverRow?: (rowKey: string) => void,
-  onOpenAgentNotesAtHunk?: (hunkIndex: number) => void,
   onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void,
 ) {
   const badges = [
@@ -642,12 +640,10 @@ function renderRow(
   codeHorizontalOffset: number,
   theme: AppTheme,
   selected: boolean,
-  annotated: boolean,
   anchorId?: string,
   noteGuideSide?: "old" | "new",
   showAddNoteBadge = false,
   onHoverRow?: (rowKey: string) => void,
-  onOpenAgentNotesAtHunk?: (hunkIndex: number) => void,
   onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void,
 ) {
   let baseRow: ReactNode;
@@ -658,11 +654,9 @@ function renderRow(
       width,
       theme,
       selected,
-      annotated,
       anchorId,
       showAddNoteBadge,
       onHoverRow,
-      onOpenAgentNotesAtHunk,
       onStartUserNoteAtHunk,
     );
   } else if (row.type === "hunk-header") {
@@ -672,11 +666,9 @@ function renderRow(
           width,
           theme,
           selected,
-          annotated,
           anchorId,
           showAddNoteBadge,
           onHoverRow,
-          onOpenAgentNotesAtHunk,
           onStartUserNoteAtHunk,
         )
       : null;
@@ -991,12 +983,10 @@ interface DiffRowViewProps {
   codeHorizontalOffset: number;
   theme: AppTheme;
   selected: boolean;
-  annotated: boolean;
   anchorId?: string;
   noteGuideSide?: "old" | "new";
   showAddNoteBadge?: boolean;
   onHoverRow?: (rowKey: string) => void;
-  onOpenAgentNotesAtHunk?: (hunkIndex: number) => void;
   onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void;
 }
 
@@ -1012,12 +1002,10 @@ export const DiffRowView = memo(
     codeHorizontalOffset,
     theme,
     selected,
-    annotated,
     anchorId,
     noteGuideSide,
     showAddNoteBadge,
     onHoverRow,
-    onOpenAgentNotesAtHunk,
     onStartUserNoteAtHunk,
   }: DiffRowViewProps) {
     return renderRow(
@@ -1030,12 +1018,10 @@ export const DiffRowView = memo(
       codeHorizontalOffset,
       theme,
       selected,
-      annotated,
       anchorId,
       noteGuideSide,
       showAddNoteBadge,
       onHoverRow,
-      onOpenAgentNotesAtHunk,
       onStartUserNoteAtHunk,
     );
   },
@@ -1050,12 +1036,10 @@ export const DiffRowView = memo(
       previous.codeHorizontalOffset === next.codeHorizontalOffset &&
       previous.theme === next.theme &&
       previous.selected === next.selected &&
-      previous.annotated === next.annotated &&
       previous.anchorId === next.anchorId &&
       previous.noteGuideSide === next.noteGuideSide &&
       previous.showAddNoteBadge === next.showAddNoteBadge &&
       previous.onHoverRow === next.onHoverRow &&
-      previous.onOpenAgentNotesAtHunk === next.onOpenAgentNotesAtHunk &&
       previous.onStartUserNoteAtHunk === next.onStartUserNoteAtHunk
     );
   },

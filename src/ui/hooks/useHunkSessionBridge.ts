@@ -22,7 +22,6 @@ export function useHunkSessionBridge({
   openAgentNotes,
   reloadSession,
   removeLiveComment,
-  removeUserNote,
   reviewNoteCount,
   reviewNoteSummaries,
   selectedFile,
@@ -43,7 +42,6 @@ export function useHunkSessionBridge({
     options?: { resetApp?: boolean; sourcePath?: string },
   ) => Promise<ReloadedSessionResult>;
   removeLiveComment: ReviewController["removeLiveComment"];
-  removeUserNote: ReviewController["removeUserNote"];
   reviewNoteCount: number;
   reviewNoteSummaries: SessionReviewNoteSummary[];
   selectedFile: DiffFile | undefined;
@@ -61,7 +59,6 @@ export function useHunkSessionBridge({
         openAgentNotes,
         reloadSession: (nextInput, options) => reloadSession(nextInput, { ...options }),
         removeLiveComment,
-        removeUserNote,
       }),
     [
       addLiveComment,
@@ -71,7 +68,6 @@ export function useHunkSessionBridge({
       openAgentNotes,
       reloadSession,
       removeLiveComment,
-      removeUserNote,
     ],
   );
 

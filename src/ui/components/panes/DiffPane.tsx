@@ -162,7 +162,6 @@ export function DiffPane({
   selectedHunkRevealRequestId,
   theme,
   width,
-  onOpenAgentNotesAtHunk,
   onActiveAddNoteAffordanceChange,
   onRemoveUserNote,
   onSaveDraftNote,
@@ -200,7 +199,6 @@ export function DiffPane({
   selectedHunkRevealRequestId?: number;
   theme: AppTheme;
   width: number;
-  onOpenAgentNotesAtHunk: (fileId: string, hunkIndex: number) => void;
   onActiveAddNoteAffordanceChange?: (
     affordance: (ActiveAddNoteAffordance & { fileId: string }) | null,
   ) => void;
@@ -1302,9 +1300,6 @@ export function DiffPane({
                         visibleAgentNotesByFile.get(file.id) ?? EMPTY_VISIBLE_AGENT_NOTES
                       }
                       visibleBodyBounds={visibleBodyBoundsByFile.get(file.id)}
-                      onOpenAgentNotesAtHunk={(hunkIndex) =>
-                        onOpenAgentNotesAtHunk(file.id, hunkIndex)
-                      }
                       onHover={() => setHoveredFileId(file.id)}
                       onActiveAddNoteAffordanceChange={(affordance) =>
                         onActiveAddNoteAffordanceChange?.(

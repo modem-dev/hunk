@@ -164,8 +164,3 @@ export function listHunkSessionNotes(
     return true;
   });
 }
-
-/** Find one review note in a Hunk session snapshot by id. */
-export function getHunkSessionNote(session: ListedSession, noteId: string) {
-  return (session.snapshot.state.reviewNotes ?? []).find((note) => note.noteId === noteId) ?? null;
-}

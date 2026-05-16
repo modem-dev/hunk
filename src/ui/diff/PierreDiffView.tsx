@@ -14,7 +14,6 @@ import { resolveVisiblePlannedRowWindow, type VisibleBodyBounds } from "./rowWin
 import { diffMessage, DiffRowView, fitText } from "./renderRows";
 import { useHighlightedDiff } from "./useHighlightedDiff";
 
-const EMPTY_ANNOTATED_HUNK_INDICES = new Set<number>();
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
 const ADD_NOTE_IDLE_HIDE_DELAY_MS = 2000;
 
@@ -54,12 +53,10 @@ function addNoteAffordanceForRow(row: DiffRow): ActiveAddNoteAffordance {
 
 /** Render a file diff in split or stack mode, with inline agent notes inserted between diff rows. */
 export function PierreDiffView({
-  annotatedHunkIndices = EMPTY_ANNOTATED_HUNK_INDICES,
   codeHorizontalOffset = 0,
   file,
   layout,
   onHover,
-  onOpenAgentNotesAtHunk,
   onActiveAddNoteAffordanceChange,
   onStartUserNoteAtHunk,
   showLineNumbers = true,
@@ -75,12 +72,10 @@ export function PierreDiffView({
   scrollable = true,
   visibleBodyBounds,
 }: {
-  annotatedHunkIndices?: Set<number>;
   codeHorizontalOffset?: number;
   file: DiffFile | undefined;
   layout: Exclude<LayoutMode, "auto">;
   onHover?: () => void;
-  onOpenAgentNotesAtHunk?: (hunkIndex: number) => void;
   onActiveAddNoteAffordanceChange?: (affordance: ActiveAddNoteAffordance | null) => void;
   onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void;
   showLineNumbers?: boolean;
@@ -288,10 +283,6 @@ export function PierreDiffView({
               codeHorizontalOffset={codeHorizontalOffset}
               theme={theme}
               selected={plannedRow.row.hunkIndex === selectedHunkIndex}
-              annotated={
-                plannedRow.row.type === "hunk-header" &&
-                annotatedHunkIndices.has(plannedRow.row.hunkIndex)
-              }
               anchorId={plannedRow.anchorId}
               noteGuideSide={plannedRow.noteGuideSide}
               showAddNoteBadge={hoveredRowKey === plannedRow.key && Boolean(onStartUserNoteAtHunk)}
@@ -299,7 +290,6 @@ export function PierreDiffView({
                 onHover?.();
                 activateHoveredRow(plannedRow.key, addNoteAffordanceForRow(plannedRow.row));
               }}
-              onOpenAgentNotesAtHunk={onOpenAgentNotesAtHunk}
               onStartUserNoteAtHunk={onStartUserNoteAtHunk}
             />
           </box>

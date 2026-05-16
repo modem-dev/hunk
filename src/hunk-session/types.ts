@@ -105,10 +105,6 @@ export interface RemoveCommentToolInput extends SessionTargetInput {
   commentId: string;
 }
 
-export interface RemoveUserNoteToolInput extends SessionTargetInput {
-  noteId: string;
-}
-
 export interface ClearCommentsToolInput extends SessionTargetInput {
   filePath?: string;
 }
@@ -248,7 +244,6 @@ export type HunkSessionCommandResult =
   | AppliedCommentBatchResult
   | NavigatedSelectionResult
   | RemovedCommentResult
-  | RemovedUserNoteResult
   | ClearedCommentsResult
   | ReloadedSessionResult;
 
@@ -271,5 +266,4 @@ export type HunkSessionServerMessage =
   | SessionServerMessage<"navigate_to_hunk", NavigateToHunkToolInput>
   | SessionServerMessage<"reload_session", ReloadSessionToolInput>
   | SessionServerMessage<"remove_comment", RemoveCommentToolInput>
-  | SessionServerMessage<"remove_user_note", RemoveUserNoteToolInput>
   | SessionServerMessage<"clear_comments", ClearCommentsToolInput>;

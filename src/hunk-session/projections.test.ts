@@ -8,7 +8,6 @@ import {
   buildHunkSessionReview,
   buildListedHunkSession,
   buildSelectedHunkSessionContext,
-  getHunkSessionNote,
   listHunkSessionComments,
   listHunkSessionNotes,
 } from "./projections";
@@ -121,7 +120,7 @@ describe("hunk session projections", () => {
     ]);
   });
 
-  test("listHunkSessionNotes filters by file and source and getHunkSessionNote finds one id", () => {
+  test("listHunkSessionNotes filters by file and source", () => {
     const session = buildListedHunkSession({
       registration: createTestSessionRegistration(),
       snapshot: createTestSessionSnapshot({
@@ -153,8 +152,5 @@ describe("hunk session projections", () => {
     expect(listHunkSessionNotes(session, { filePath: "src/other.ts" })).toEqual([
       expect.objectContaining({ noteId: "agent:1" }),
     ]);
-    expect(getHunkSessionNote(session, "user:1")).toEqual(
-      expect.objectContaining({ body: "Human note" }),
-    );
   });
 });
