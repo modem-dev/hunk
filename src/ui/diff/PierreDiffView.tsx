@@ -212,9 +212,6 @@ export function PierreDiffView({
               onHover?.();
               setHoveredRowKey(plannedRow.key);
             }}
-            onMouseOut={() => {
-              setHoveredRowKey((current) => (current === plannedRow.key ? null : current));
-            }}
           >
             <DiffRowView
               row={plannedRow.row}
