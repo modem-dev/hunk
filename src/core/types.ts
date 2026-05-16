@@ -7,6 +7,11 @@ export type TerminalThemeMode = "light" | "dark";
 export type ReviewNoteSource = "ai" | "agent" | "user";
 export type SessionCommentListType = "live" | "all" | ReviewNoteSource;
 
+export interface UserNoteLineTarget {
+  side: "old" | "new";
+  line: number;
+}
+
 export interface ReviewNote {
   id: string;
   source: ReviewNoteSource;

@@ -20,7 +20,7 @@ import {
   firstCommentTargetForHunk,
   resolveCommentTarget,
 } from "../../core/liveComments";
-import type { AgentAnnotation, DiffFile } from "../../core/types";
+import type { AgentAnnotation, DiffFile, UserNoteLineTarget } from "../../core/types";
 import type {
   AppliedCommentBatchResult,
   AppliedCommentResult,
@@ -76,11 +76,6 @@ export interface UserReviewNote extends AgentAnnotation {
   createdAt: string;
   updatedAt?: string;
   editable: true;
-}
-
-export interface UserNoteLineTarget {
-  side: "old" | "new";
-  line: number;
 }
 
 export interface DraftReviewNote {

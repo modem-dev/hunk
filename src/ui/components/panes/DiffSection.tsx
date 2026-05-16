@@ -1,6 +1,5 @@
 import { memo } from "react";
-import type { DiffFile, LayoutMode } from "../../../core/types";
-import type { UserNoteLineTarget } from "../../hooks/useReviewController";
+import type { DiffFile, LayoutMode, UserNoteLineTarget } from "../../../core/types";
 import { PierreDiffView, type ActiveAddNoteAffordance } from "../../diff/PierreDiffView";
 import type { VisibleBodyBounds } from "../../diff/rowWindowing";
 import type { DiffSectionGeometry } from "../../lib/diffSectionGeometry";

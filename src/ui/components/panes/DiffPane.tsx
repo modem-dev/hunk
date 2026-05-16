@@ -9,9 +9,14 @@ import {
   useState,
   type RefObject,
 } from "react";
-import type { AgentAnnotation, DiffFile, LayoutMode } from "../../../core/types";
+import type {
+  AgentAnnotation,
+  DiffFile,
+  LayoutMode,
+  UserNoteLineTarget,
+} from "../../../core/types";
 import type { ActiveAddNoteAffordance } from "../../diff/PierreDiffView";
-import type { DraftReviewNote, UserNoteLineTarget } from "../../hooks/useReviewController";
+import type { DraftReviewNote } from "../../hooks/useReviewController";
 import {
   alwaysShowReviewNote,
   reviewNoteSource,

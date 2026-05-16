@@ -5,7 +5,7 @@ import {
 } from "@opentui/core";
 import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState, useRef } from "react";
-import type { AppBootstrap, CliInput, LayoutMode } from "../core/types";
+import type { AppBootstrap, CliInput, LayoutMode, UserNoteLineTarget } from "../core/types";
 import { canReloadInput, computeWatchSignature } from "../core/watch";
 import type { HunkSessionBrokerClient, ReloadedSessionResult } from "../hunk-session/types";
 import { MenuBar } from "./components/chrome/MenuBar";
@@ -22,7 +22,7 @@ import type { ActiveAddNoteAffordance } from "./diff/PierreDiffView";
 import { useAppKeyboardShortcuts } from "./hooks/useAppKeyboardShortcuts";
 import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
 import { useMenuController } from "./hooks/useMenuController";
-import { useReviewController, type UserNoteLineTarget } from "./hooks/useReviewController";
+import { useReviewController } from "./hooks/useReviewController";
 import { buildAppMenus } from "./lib/appMenus";
 import { fileRowId } from "./lib/ids";
 import { openSelectedFileInEditor } from "./lib/openInEditor";

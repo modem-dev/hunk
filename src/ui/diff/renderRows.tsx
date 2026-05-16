@@ -1,6 +1,5 @@
 import { memo, type ReactNode } from "react";
-import type { DiffFile } from "../../core/types";
-import type { UserNoteLineTarget } from "../hooks/useReviewController";
+import type { DiffFile, UserNoteLineTarget } from "../../core/types";
 import type { AppTheme } from "../themes";
 import {
   resolveSplitCellGeometry,

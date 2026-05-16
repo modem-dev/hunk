@@ -1,7 +1,6 @@
 import { useRenderer } from "@opentui/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { DiffFile, LayoutMode } from "../../core/types";
-import type { UserNoteLineTarget } from "../hooks/useReviewController";
+import type { DiffFile, LayoutMode, UserNoteLineTarget } from "../../core/types";
 import { AgentInlineNote } from "../components/panes/AgentInlineNote";
 import type { VisibleAgentNote } from "../lib/agentAnnotations";
 import type { DiffSectionGeometry } from "../lib/diffSectionGeometry";
