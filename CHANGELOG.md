@@ -6,20 +6,25 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Added
 
-- Added an `e` shortcut to open the selected diff file in `$EDITOR`.
-- Added `g` and `G` keyboard aliases for jump-to-top and jump-to-bottom review navigation.
-- Added session-persistent user-authored inline notes with `c` to draft/save notes.
-- Added `hunk session comment list --type <live|all|ai|agent|user>` so agents can read human-authored notes through the comment workflow.
-
 ### Changed
-
-- Clarified inline note draft actions by labeling buttons as `Save (^S)` and `Cancel (Esc)`.
 
 ### Fixed
 
-- Fixed draft note focus handling so app shortcuts resume after the note textarea blurs without discarding the draft.
-- Preserved the resolved auto theme across `--watch` refreshes instead of falling back to the default dark theme.
-- Included the bundled Hunk review skill in standalone prebuilt release archives so `hunk skill path` works after extracting a tarball or installing via Homebrew.
+## [0.13.0-beta.0] - 2026-05-16
+
+### Added
+
+- Added an `e` shortcut to open the selected diff file in `$EDITOR` ([#310](https://github.com/modem-dev/hunk/pull/310)).
+- Added `g` and `G` keyboard aliases for jump-to-top and jump-to-bottom review navigation ([#289](https://github.com/modem-dev/hunk/pull/289)).
+- Added session-persistent user-authored inline notes with `c` to draft/save notes ([#281](https://github.com/modem-dev/hunk/pull/281)).
+- Added `hunk session comment list --type <live|all|ai|agent|user>` so agents can read human-authored notes through the comment workflow ([#281](https://github.com/modem-dev/hunk/pull/281)).
+
+### Changed
+
+### Fixed
+
+- Preserved the resolved auto theme across `--watch` refreshes instead of falling back to the default dark theme ([#318](https://github.com/modem-dev/hunk/pull/318)).
+- Included the bundled Hunk review skill in standalone prebuilt release archives so `hunk skill path` works after extracting a tarball or installing via Homebrew ([#302](https://github.com/modem-dev/hunk/pull/302)).
 
 ## [0.12.0] - 2026-05-12
 
@@ -323,7 +328,8 @@ All notable user-visible changes to Hunk are documented in this file.
 
 - Stabilized diff repainting, active-hunk scrolling, syntax highlighting, pager stdin patch handling, and terminal cleanup on exit.
 
-[Unreleased]: https://github.com/modem-dev/hunk/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/modem-dev/hunk/compare/v0.13.0-beta.0...HEAD
+[0.13.0-beta.0]: https://github.com/modem-dev/hunk/compare/v0.12.0...v0.13.0-beta.0
 [0.12.0]: https://github.com/modem-dev/hunk/compare/v0.11.1...v0.12.0
 [0.11.1]: https://github.com/modem-dev/hunk/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/modem-dev/hunk/compare/v0.10.0...v0.11.0
