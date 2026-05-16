@@ -1393,6 +1393,45 @@ describe("UI components", () => {
     expect(frame).toContain("╰───────────┴──────────────╯");
   });
 
+  test("AgentInlineNote grows draft composer for soft-wrapped text", async () => {
+    const theme = resolveTheme("midnight", null);
+    const file = createTestDiffFile(
+      "draft-wrap",
+      "src/core/cli.ts",
+      "export const value = 1;\n",
+      "export const value = 2;\n",
+    );
+    const body =
+      "This draft note is long enough to soft wrap inside the composer without manually inserted newlines.";
+    const frame = await captureFrame(
+      <AgentInlineNote
+        annotation={{ newRange: [611, 611], source: "user-draft", summary: body }}
+        draft={{
+          body,
+          focused: true,
+          onCancel: () => {},
+          onInput: () => {},
+          onSave: () => {},
+        }}
+        file={file}
+        anchorSide="new"
+        layout="stack"
+        theme={theme}
+        width={48}
+      />,
+      52,
+      12,
+    );
+
+    const lines = frame.split("\n");
+    const saveLineIndex = lines.findIndex(
+      (line) => line.includes("Save (^S)") && line.includes("Cancel (Esc)"),
+    );
+    expect(lines.some((line) => line.includes("soft"))).toBe(true);
+    expect(lines.some((line) => line.includes("wrap inside"))).toBe(true);
+    expect(saveLineIndex).toBeGreaterThan(5);
+  });
+
   test("DiffPane renders all visible hunk notes across the review stream", async () => {
     const bootstrap = createBootstrap();
     bootstrap.changeset.files[1]!.agent = {

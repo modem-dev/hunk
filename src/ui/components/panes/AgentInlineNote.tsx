@@ -32,6 +32,17 @@ function draftLineCount(text: string) {
   return Math.max(1, text.split("\n").length);
 }
 
+/** Estimate the textarea's wrapped visual row count for a given content width. */
+function draftVisualLineCount(text: string, width: number) {
+  const usableWidth = Math.max(1, width);
+  return Math.max(
+    1,
+    text
+      .split("\n")
+      .reduce((total, line) => total + Math.max(1, Math.ceil(line.length / usableWidth)), 0),
+  );
+}
+
 function isNewlineKey(key: { ctrl?: boolean; name?: string; sequence?: string }) {
   return (
     key.name === "return" ||
@@ -179,7 +190,32 @@ export function AgentInlineNote({
     };
   }, [draft]);
 
-  const draftVisibleRows = draft ? Math.max(draftLineCountHint, draftLineCount(draft.body)) : 0;
+  const closeText = onClose ? "[x]" : "";
+  const titleText = `${inlineNoteTitle(annotation, noteIndex, noteCount)} - ${annotationRangeLabel(annotation, file)}`;
+  const splitWidths = splitColumnWidths(width);
+  const canDockRight = layout === "split" && anchorSide === "new" && width >= 84;
+  const canDockLeft = layout === "split" && anchorSide === "old" && width >= 84;
+  const preferredDockWidth = canDockRight
+    ? splitWidths.rightWidth
+    : canDockLeft
+      ? splitWidths.leftWidth
+      : Math.max(34, width - 4);
+  const boxWidth = clamp(preferredDockWidth, 28, Math.max(28, width - 4));
+  const boxLeft = canDockRight
+    ? Math.max(0, width - boxWidth)
+    : canDockLeft
+      ? 0
+      : Math.min(4, Math.max(0, width - boxWidth));
+  const innerWidth = Math.max(1, boxWidth - 2);
+  const closeGapWidth = closeText ? 1 : 0;
+  const closeWidth = closeText.length;
+  const bodyWidth = innerWidth;
+  const contentWidth = Math.max(1, bodyWidth - 2);
+  const draftInnerWidth = Math.max(1, boxWidth - 2);
+  const draftContentWidth = Math.max(1, draftInnerWidth - 2);
+  const draftVisibleRows = draft
+    ? Math.max(draftLineCountHint, draftVisualLineCount(draft.body, draftContentWidth))
+    : 0;
 
   useLayoutEffect(() => {
     if (!draft || draftVisibleRows <= 0) {
@@ -208,27 +244,6 @@ export function AgentInlineNote({
     });
   };
 
-  const closeText = onClose ? "[x]" : "";
-  const titleText = `${inlineNoteTitle(annotation, noteIndex, noteCount)} - ${annotationRangeLabel(annotation, file)}`;
-  const splitWidths = splitColumnWidths(width);
-  const canDockRight = layout === "split" && anchorSide === "new" && width >= 84;
-  const canDockLeft = layout === "split" && anchorSide === "old" && width >= 84;
-  const preferredDockWidth = canDockRight
-    ? splitWidths.rightWidth
-    : canDockLeft
-      ? splitWidths.leftWidth
-      : Math.max(34, width - 4);
-  const boxWidth = clamp(preferredDockWidth, 28, Math.max(28, width - 4));
-  const boxLeft = canDockRight
-    ? Math.max(0, width - boxWidth)
-    : canDockLeft
-      ? 0
-      : Math.min(4, Math.max(0, width - boxWidth));
-  const innerWidth = Math.max(1, boxWidth - 2);
-  const closeGapWidth = closeText ? 1 : 0;
-  const closeWidth = closeText.length;
-  const bodyWidth = innerWidth;
-  const contentWidth = Math.max(1, bodyWidth - 2);
   const lines: AgentInlineNoteLine[] = [
     ...wrapNoteText(annotation.summary, contentWidth).map((text) => ({
       kind: "summary" as const,
@@ -255,8 +270,6 @@ export function AgentInlineNote({
   if (draft) {
     const draftVisibleLineCount = draftVisibleRows;
     const draftTitleText = fitText(` ${titleText} `, Math.max(0, boxWidth - 4));
-    const draftInnerWidth = Math.max(1, boxWidth - 2);
-    const draftContentWidth = Math.max(1, draftInnerWidth - 2);
     const saveInnerWidth = 11;
     const cancelInnerWidth = 14;
     const footerRemainderWidth = Math.max(0, boxWidth - saveInnerWidth - cancelInnerWidth - 4);
@@ -363,14 +376,23 @@ export function AgentInlineNote({
             focusedTextColor={theme.text}
             keyBindings={[{ name: "j", ctrl: true, action: "newline" }]}
             onContentChange={() => {
-              const nextBody = textareaRef.current?.plainText ?? "";
-              updateDraftLineCountHint(draftLineCount(nextBody));
+              const textarea = textareaRef.current;
+              const nextBody = textarea?.plainText ?? "";
+              updateDraftLineCountHint(
+                Math.max(
+                  draftVisualLineCount(nextBody, draftContentWidth),
+                  textarea?.virtualLineCount ?? 0,
+                ),
+              );
               draft.onInput(nextBody);
             }}
             onKeyDown={(key) => {
               if (isNewlineKey(key)) {
                 updateDraftLineCountHint(
-                  draftLineCount(textareaRef.current?.plainText ?? draft.body) + 1,
+                  draftVisualLineCount(
+                    textareaRef.current?.plainText ?? draft.body,
+                    draftContentWidth,
+                  ) + 1,
                 );
               }
 
