@@ -1586,13 +1586,13 @@ describe("UI components", () => {
     const frame = await captureFrame(
       <HelpDialog
         canRefresh={true}
-        terminalHeight={36}
+        terminalHeight={38}
         terminalWidth={76}
         theme={theme}
         onClose={() => {}}
       />,
       76,
-      36,
+      38,
     );
 
     const expectedRows = [
@@ -1605,6 +1605,7 @@ describe("UI components", () => {
       "Shift+Space     page up (alt)",
       "d / u           half page down / up",
       "[ / ]           previous / next hunk",
+      ", / .           previous / next file",
       "{ / }           previous / next comment",
       "← / →           scroll code left / right (Shift = faster)",
       "Home / End      jump to top / bottom",
@@ -1617,6 +1618,7 @@ describe("UI components", () => {
       "s / t           sidebar / theme",
       "a               toggle AI notes",
       "l / w / m       lines / wrap / metadata",
+      "e               open file in $EDITOR",
       "Review",
       "/               focus file filter",
       "Tab             toggle files/filter focus",
