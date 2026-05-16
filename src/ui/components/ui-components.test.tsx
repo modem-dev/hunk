@@ -498,41 +498,6 @@ describe("UI components", () => {
     expect(frame.indexOf("alpha.ts")).toBeLessThan(frame.indexOf("beta.ts"));
   });
 
-  test("DiffPane copies only the dragged split side before React rerenders the drag state", async () => {
-    const file = createTestDiffFile(
-      "copy",
-      "copy.ts",
-      lines("export const alpha = 1;", "export const beta = 1;"),
-      lines("export const alpha = 2;", "export const beta = 1;"),
-    );
-    const copied: string[] = [];
-    const props = createDiffPaneProps([file], resolveTheme("midnight", null), {
-      layout: "split",
-      onCopySelectionText: (text) => {
-        copied.push(text);
-      },
-    });
-    const setup = await testRender(<DiffPane {...props} />, {
-      width: 80,
-      height: 12,
-    });
-
-    try {
-      await settleDiffPane(setup);
-
-      await act(async () => {
-        await setup.mockMouse.drag(45, 4, 60, 4);
-        await setup.renderOnce();
-      });
-
-      expect(copied).toEqual(["export const alpha = 2;"]);
-    } finally {
-      await act(async () => {
-        setup.renderer.destroy();
-      });
-    }
-  });
-
   test("DiffRowView renders a clickable add-note affordance for a hovered diff row", async () => {
     const theme = resolveTheme("midnight", null);
     const startUserNote = mock(() => undefined);

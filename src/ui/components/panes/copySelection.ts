@@ -104,6 +104,21 @@ export function copySelectionPointsEqual(left: CopySelectionPoint, right: CopySe
   );
 }
 
+/** Return whether two points are on the same selectable terminal row. */
+export function copySelectionPointsShareRow(left: CopySelectionPoint, right: CopySelectionPoint) {
+  if (left.kind !== right.kind) {
+    return false;
+  }
+
+  if (left.kind === "pinned-header" && right.kind === "pinned-header") {
+    return left.fileId === right.fileId && left.nextVisualRow === right.nextVisualRow;
+  }
+
+  return (
+    left.kind === "review-row" && right.kind === "review-row" && left.visualRow === right.visualRow
+  );
+}
+
 /** Order two selection points by terminal row first, then column. */
 export function normalizeCopySelectionRange(anchor: CopySelectionPoint, focus: CopySelectionPoint) {
   const anchorRow = copySelectionSortRow(anchor);
@@ -119,6 +134,11 @@ export function normalizeCopySelectionRange(anchor: CopySelectionPoint, focus: C
 /** Trim padding introduced only to fill fixed terminal cells. */
 function trimCopiedLine(line: string) {
   return line.replace(/[ \t]+$/g, "");
+}
+
+/** Return whether a character should be part of a double-click word selection. */
+function isCopyWordChar(char: string | undefined) {
+  return char !== undefined && /[A-Za-z0-9_$]/.test(char);
 }
 
 /** Render one file header as plain text using the same visible columns as DiffFileHeaderRow. */
@@ -289,6 +309,12 @@ export function renderCopySelectionText({
       continue;
     }
 
+    const copySide =
+      side ??
+      (context.layout === "split" && start.kind === "review-row"
+        ? resolveCopySelectionSide(start.column, context.layout, context.width)
+        : undefined);
+
     for (let rowIndex = 0; rowIndex < geometry.rowBounds.length; rowIndex += 1) {
       const rowBounds = geometry.rowBounds[rowIndex]!;
       const row = geometry.plannedRows[rowIndex];
@@ -310,14 +336,55 @@ export function renderCopySelectionText({
         lineNumberDigits: geometry.lineNumberDigits,
         showHunkHeaders,
         showLineNumbers,
-        side,
+        side: copySide,
         theme,
         width,
         wrapLines,
       });
 
       if (!copyDecorations) {
-        lines.push(...renderedLines.map(trimCopiedLine).filter(Boolean));
+        const codeColumnOffset =
+          row.kind === "diff-row" && row.row.type === "stack-line"
+            ? DIFF_RAIL_PREFIX_WIDTH +
+              resolveStackCellGeometry(
+                width,
+                geometry.lineNumberDigits,
+                showLineNumbers,
+                DIFF_RAIL_PREFIX_WIDTH,
+              ).gutterWidth
+            : row.kind === "diff-row" && row.row.type === "split-line" && copySide
+              ? (copySide === "right" ? resolveSplitPaneWidths(width).leftWidth : 0) +
+                DIFF_RAIL_PREFIX_WIDTH +
+                resolveSplitCellGeometry(
+                  copySide === "right"
+                    ? width - resolveSplitPaneWidths(width).leftWidth
+                    : resolveSplitPaneWidths(width).leftWidth,
+                  geometry.lineNumberDigits,
+                  showLineNumbers,
+                  DIFF_RAIL_PREFIX_WIDTH,
+                ).gutterWidth
+              : 0;
+
+        for (let lineIndex = 0; lineIndex < renderedLines.length; lineIndex += 1) {
+          const lineVisualRow = rowTop + lineIndex;
+          if (lineVisualRow < startRow || lineVisualRow > endRow) {
+            continue;
+          }
+
+          const line = renderedLines[lineIndex] ?? "";
+          const startColumn =
+            start.kind === "review-row" && lineVisualRow === start.visualRow
+              ? Math.max(0, start.column - codeColumnOffset)
+              : 0;
+          const endColumn =
+            end.kind === "review-row" && lineVisualRow === end.visualRow
+              ? Math.min(Math.max(0, line.length - 1), Math.max(0, end.column - codeColumnOffset))
+              : Math.max(0, line.length - 1);
+          const copiedLine = trimCopiedLine(line.slice(startColumn, endColumn + 1));
+          if (copiedLine) {
+            lines.push(copiedLine);
+          }
+        }
         continue;
       }
 
@@ -327,7 +394,7 @@ export function renderCopySelectionText({
       // adjusted by subtracting the left-pane offset when side="right" so the slice
       // aligns with the actual rendered string.
       const paneOffset =
-        side === "right" && context.layout === "split"
+        copySide === "right" && context.layout === "split"
           ? resolveSplitPaneWidths(context.width).leftWidth
           : 0;
 
@@ -404,7 +471,7 @@ export function expandSelectionPoint(
       return null;
     }
 
-    if (clickCount === 3) {
+    if (clickCount === 3 && context.copyDecorations) {
       // Triple-click: select the entire rendered line.
       // In split layout, scope to the side containing the click so triple-click never
       // selects across both panes or resolves to the wrong side for copy/highlight.
@@ -465,13 +532,19 @@ export function expandSelectionPoint(
       return null;
     }
 
+    if (clickCount === 3) {
+      return {
+        startCol: globalContentStart,
+        endCol: globalContentStart + lineText.length - 1,
+      };
+    }
+
     // Convert the global click column to a code-local column.
     const localCol = Math.max(0, Math.min(lineText.length - 1, point.column - globalContentStart));
 
-    // When double-clicking on whitespace, the word loops below don't advance,
-    // producing an inverted range (endCol < startCol). Select just the
-    // whitespace character itself instead.
-    if (lineText[localCol] === " " || lineText[localCol] === "\t") {
+    // Punctuation and whitespace are separators for word selection; selecting just the clicked
+    // separator matches terminal/editor double-click behavior without swallowing code punctuation.
+    if (!isCopyWordChar(lineText[localCol])) {
       return {
         startCol: localCol + globalContentStart,
         endCol: localCol + globalContentStart,
@@ -482,11 +555,11 @@ export function expandSelectionPoint(
     let wordEnd = localCol;
 
     // Expand left to word start.
-    while (wordStart > 0 && lineText[wordStart - 1] !== " " && lineText[wordStart - 1] !== "\t") {
+    while (wordStart > 0 && isCopyWordChar(lineText[wordStart - 1])) {
       wordStart -= 1;
     }
     // Expand right to word end (exclusive).
-    while (wordEnd < lineText.length && lineText[wordEnd] !== " " && lineText[wordEnd] !== "\t") {
+    while (wordEnd < lineText.length && isCopyWordChar(lineText[wordEnd])) {
       wordEnd += 1;
     }
 

@@ -8,6 +8,7 @@ import {
   buildCopySelectedRowKeys,
   clampCopyColumn,
   copySelectionPointsEqual,
+  copySelectionPointsShareRow,
   expandSelectionPoint,
   findCopySelectionPoint,
   normalizeCopySelectionRange,
@@ -19,7 +20,6 @@ import {
 } from "./copySelection";
 import {
   DIFF_RAIL_PREFIX_WIDTH,
-  resolveSplitCellGeometry,
   resolveStackCellGeometry,
   resolveSplitPaneWidths,
 } from "../../diff/codeColumns";
@@ -138,6 +138,20 @@ describe("copySelectionPointsEqual", () => {
   });
 });
 
+describe("copySelectionPointsShareRow", () => {
+  test("matches review-row points on the same visual row", () => {
+    const a: CopySelectionPoint = { kind: "review-row", column: 2, visualRow: 4 };
+    const b: CopySelectionPoint = { kind: "review-row", column: 20, visualRow: 4 };
+    expect(copySelectionPointsShareRow(a, b)).toBe(true);
+  });
+
+  test("rejects review-row points on different visual rows", () => {
+    const a: CopySelectionPoint = { kind: "review-row", column: 2, visualRow: 4 };
+    const b: CopySelectionPoint = { kind: "review-row", column: 2, visualRow: 5 };
+    expect(copySelectionPointsShareRow(a, b)).toBe(false);
+  });
+});
+
 describe("normalizeCopySelectionRange", () => {
   test("orders forward selections by row then column", () => {
     const anchor: CopySelectionPoint = { kind: "review-row", column: 2, visualRow: 1 };
@@ -244,6 +258,32 @@ describe("renderCopySelectionText", () => {
     expect(text).not.toContain("▌");
     expect(text).toContain("export const answer = 41;");
     expect(text).toContain("export const answer = 42;");
+  });
+
+  test("code-only single-row selections preserve selected columns", () => {
+    const { context, fileSectionLayouts, sectionGeometry } = buildContext("stack");
+    const section = fileSectionLayouts[0]!;
+    const geometry = sectionGeometry[0]!;
+    const rowIndex = geometry.plannedRows.findIndex(
+      (row) => row.kind === "diff-row" && row.row.type === "stack-line",
+    );
+    const visualRow = section.bodyTop + geometry.rowBounds[rowIndex]!.top;
+    const { gutterWidth } = resolveStackCellGeometry(
+      context.width,
+      geometry.lineNumberDigits,
+      context.showLineNumbers,
+      DIFF_RAIL_PREFIX_WIDTH,
+    );
+    const codeStart = DIFF_RAIL_PREFIX_WIDTH + gutterWidth;
+    const undecoratedContext: CopySelectionContext = { ...context, copyDecorations: false };
+
+    const text = renderCopySelectionText({
+      context: undecoratedContext,
+      start: { kind: "review-row", column: codeStart + 7, visualRow },
+      end: { kind: "review-row", column: codeStart + 11, visualRow },
+    });
+
+    expect(text).toBe("const");
   });
 
   test("includes the pinned header when the drag starts in it", () => {
@@ -374,6 +414,33 @@ describe("buildCopySelectedRowKeys", () => {
 });
 
 describe("expandSelectionPoint", () => {
+  test("triple-click with code-only copy selects the code line", () => {
+    const { context, fileSectionLayouts, sectionGeometry } = buildContext("stack");
+    const section = fileSectionLayouts[0]!;
+    const geometry = sectionGeometry[0]!;
+    const undecoratedContext: CopySelectionContext = { ...context, copyDecorations: false };
+    const { gutterWidth } = resolveStackCellGeometry(
+      context.width,
+      geometry.lineNumberDigits,
+      context.showLineNumbers,
+      DIFF_RAIL_PREFIX_WIDTH,
+    );
+    const globalContentStart = DIFF_RAIL_PREFIX_WIDTH + gutterWidth;
+    const lineText = "export const answer = 42;";
+    const point: CopySelectionPoint = {
+      kind: "review-row",
+      column: globalContentStart + 10,
+      visualRow: section.bodyTop + 2,
+    };
+
+    const result = expandSelectionPoint(point, 3, undecoratedContext);
+
+    expect(result).toEqual({
+      startCol: globalContentStart,
+      endCol: globalContentStart + lineText.length - 1,
+    });
+  });
+
   test("triple-click in stack selects the full width", () => {
     const { context, fileSectionLayouts } = buildContext("stack");
     const section = fileSectionLayouts[0]!;
@@ -465,6 +532,32 @@ describe("expandSelectionPoint", () => {
       expect(result.startCol).toBe(spaceCol);
       expect(result.endCol).toBe(spaceCol);
     }
+  });
+
+  test("double-click on a word stops at code punctuation", () => {
+    const { context, fileSectionLayouts, sectionGeometry } = buildContext("stack");
+    const section = fileSectionLayouts[0]!;
+    const geometry = sectionGeometry[0]!;
+    const { gutterWidth } = resolveStackCellGeometry(
+      context.width,
+      geometry.lineNumberDigits,
+      context.showLineNumbers,
+      DIFF_RAIL_PREFIX_WIDTH,
+    );
+    const globalContentStart = DIFF_RAIL_PREFIX_WIDTH + gutterWidth;
+    const numberCol = globalContentStart + 22;
+    const point: CopySelectionPoint = {
+      kind: "review-row",
+      column: numberCol,
+      visualRow: section.bodyTop + 2,
+    };
+
+    const result = expandSelectionPoint(point, 2, context);
+
+    expect(result).toEqual({
+      startCol: numberCol,
+      endCol: numberCol + 1,
+    });
   });
 });
 

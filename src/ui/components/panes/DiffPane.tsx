@@ -58,6 +58,7 @@ import {
   buildCopySelectedRowKeys,
   clampCopyColumn,
   copySelectionPointsEqual,
+  copySelectionPointsShareRow,
   expandSelectionPoint,
   findCopySelectionPoint,
   normalizeCopySelectionRange,
@@ -387,6 +388,7 @@ export function DiffPane({
   const copySelectionDragRef = useRef<CopySelectionDrag | null>(null);
   const lastClickTimeRef = useRef(0);
   const clickCountRef = useRef(0);
+  const lastClickPointRef = useRef<CopySelectionPoint | null>(null);
   const scrollbarRef = useRef<VerticalScrollbarHandle>(null);
   const prevScrollTopRef = useRef(0);
   const previousSectionGeometryRef = useRef<DiffSectionGeometry[] | null>(null);
@@ -772,6 +774,8 @@ export function DiffPane({
       const point = resolveCopySelectionPoint(event);
       if (!point) {
         copySelectionDragRef.current = null;
+        clickCountRef.current = 0;
+        lastClickPointRef.current = null;
         setCopySelectionDrag(null);
         return;
       }
@@ -779,10 +783,16 @@ export function DiffPane({
       // Detect double-click and triple-click for word/line selection.
       const now = Date.now();
       const timeSinceLastClick = now - lastClickTimeRef.current;
+      const previousClickPoint = lastClickPointRef.current;
+      const repeatedClickTarget =
+        previousClickPoint !== null &&
+        copySelectionPointsShareRow(previousClickPoint, point) &&
+        Math.abs(previousClickPoint.column - point.column) <= 2;
       lastClickTimeRef.current = now;
+      lastClickPointRef.current = point;
 
       let clickCount = 1;
-      if (timeSinceLastClick < 350 && timeSinceLastClick >= 0) {
+      if (timeSinceLastClick < 350 && timeSinceLastClick >= 0 && repeatedClickTarget) {
         clickCountRef.current += 1;
         clickCount = Math.min(clickCountRef.current, 3);
       } else {
@@ -884,19 +894,15 @@ export function DiffPane({
       }
 
       const { start, end } = normalizeCopySelectionRange(current.anchor, current.focus);
-      const selectedSide =
-        current.anchor.kind === "review-row"
-          ? resolveCopySelectionSide(current.anchor.column, layout, diffContentWidth)
-          : undefined;
       const text = renderCopySelectionText({
         context: copySelectionContext,
         end,
-        side: selectedSide,
+        side: copySelectionSide,
         start,
       });
       copySelectionText(text);
     },
-    [copySelectionContext, copySelectionText, diffContentWidth, layout],
+    [copySelectionContext, copySelectionSide, copySelectionText],
   );
 
   // Expose the cancel hook so an ancestor (App's outer container) can release a stuck drag when
