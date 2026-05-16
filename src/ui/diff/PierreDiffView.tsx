@@ -230,9 +230,9 @@ export function PierreDiffView({
               anchorId={plannedRow.anchorId}
               noteGuideSide={plannedRow.noteGuideSide}
               showAddNoteBadge={hoveredRowKey === plannedRow.key && Boolean(onStartUserNoteAtHunk)}
-              onHoverRow={(rowKey) => {
+              onHoverRow={() => {
                 onHover?.();
-                setHoveredRowKey(rowKey);
+                setHoveredRowKey(plannedRow.key);
               }}
               onOpenAgentNotesAtHunk={onOpenAgentNotesAtHunk}
               onStartUserNoteAtHunk={onStartUserNoteAtHunk}
