@@ -105,9 +105,8 @@ export function measureAgentInlineNoteHeight({
   ];
 
   if (annotation.source === "user-draft") {
-    const draftBodyRows = Math.max(3, draftLineCount(annotation.summary) + 2);
-    // Title border + expandable body + button footer.
-    return 1 + draftBodyRows + 3;
+    // Keep geometry aligned with the rendered textarea rows, including soft wraps.
+    return draftVisualLineCount(annotation.summary, contentWidth) + 6;
   }
 
   // top border + title row + body lines + bottom border

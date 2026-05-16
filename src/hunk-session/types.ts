@@ -173,12 +173,6 @@ export interface RemovedCommentResult {
   remainingCommentCount: number;
 }
 
-export interface RemovedUserNoteResult {
-  noteId: string;
-  removed: boolean;
-  remainingNoteCount: number;
-}
-
 export interface ClearedCommentsResult {
   removedCount: number;
   remainingCommentCount: number;

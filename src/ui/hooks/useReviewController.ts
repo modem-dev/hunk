@@ -31,11 +31,11 @@ import type {
   NavigateToHunkToolInput,
   NavigatedSelectionResult,
   RemovedCommentResult,
-  RemovedUserNoteResult,
   SessionLiveCommentSummary,
   SessionReviewNoteSummary,
 } from "../../hunk-session/types";
 import { findNextHunkCursor } from "../lib/hunks";
+import { reviewNoteSource } from "../lib/agentAnnotations";
 import {
   buildReviewState,
   buildSelectedHunkSummary,
@@ -74,7 +74,6 @@ export interface UserReviewNote extends AgentAnnotation {
   summary: string;
   author: string;
   createdAt: string;
-  updatedAt?: string;
   editable: true;
 }
 
@@ -88,7 +87,6 @@ export interface DraftReviewNote {
   oldRange?: [number, number];
   newRange?: [number, number];
   body: string;
-  editingNoteId?: string;
 }
 
 export interface ReviewSelectionOptions {
@@ -135,8 +133,7 @@ export interface ReviewController {
   navigateToLocation: (input: NavigateToHunkToolInput) => NavigatedSelectionResult;
   removeLiveComment: (commentId: string) => RemovedCommentResult;
   cancelDraftNote: () => void;
-  editUserNote: (noteId: string) => void;
-  removeUserNote: (noteId: string) => RemovedUserNoteResult;
+  removeUserNote: (noteId: string) => void;
   saveDraftNote: () => UserReviewNote | null;
   selectFile: (fileId: string, nextHunkIndex?: number, options?: ReviewSelectionOptions) => void;
   selectHunk: (fileId: string, hunkIndex: number, options?: ReviewSelectionOptions) => void;
@@ -609,12 +606,8 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
       return null;
     }
 
-    const existingNote = (userNotesByFileId[draftNote.fileId] ?? []).find(
-      (note) => note.id === draftNote.editingNoteId,
-    );
-    const now = new Date().toISOString();
     const savedNote: UserReviewNote = {
-      id: draftNote.editingNoteId ?? `user:${Date.now()}`,
+      id: `user:${Date.now()}`,
       source: "user",
       filePath: draftNote.filePath,
       hunkIndex: draftNote.hunkIndex,
@@ -623,61 +616,23 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
       oldRange: draftNote.oldRange,
       newRange: draftNote.newRange,
       summary: body,
-      author: existingNote?.author ?? "user",
-      createdAt: existingNote?.createdAt ?? now,
-      updatedAt: existingNote ? now : undefined,
+      author: "user",
+      createdAt: new Date().toISOString(),
       editable: true,
     };
 
-    setUserNotesByFileId((notesByFile) => {
-      const existing = notesByFile[draftNote.fileId] ?? [];
-      const withoutEdited = draftNote.editingNoteId
-        ? existing.filter((note) => note.id !== draftNote.editingNoteId)
-        : existing;
-      return {
-        ...notesByFile,
-        [draftNote.fileId]: [...withoutEdited, savedNote],
-      };
-    });
+    setUserNotesByFileId((notesByFile) => ({
+      ...notesByFile,
+      [draftNote.fileId]: [...(notesByFile[draftNote.fileId] ?? []), savedNote],
+    }));
     setDraftNote(null);
     return savedNote;
-  }, [draftNote, userNotesByFileId]);
-
-  /** Reopen an existing user note as the active inline draft. */
-  const editUserNote = useCallback(
-    (noteId: string) => {
-      for (const [fileId, notes] of Object.entries(userNotesByFileId)) {
-        const note = notes.find((candidate) => candidate.id === noteId);
-        if (!note) {
-          continue;
-        }
-
-        setDraftNote({
-          id: `draft:${note.id}`,
-          fileId,
-          filePath: note.filePath,
-          hunkIndex: note.hunkIndex,
-          side: note.side,
-          line: note.line,
-          oldRange: note.oldRange,
-          newRange: note.newRange,
-          body: note.summary,
-          editingNoteId: note.id,
-        });
-        selectHunk(fileId, note.hunkIndex, { scrollToNote: true });
-        return;
-      }
-
-      throw new Error(`No user note matches id ${noteId}.`);
-    },
-    [selectHunk, userNotesByFileId],
-  );
+  }, [draftNote]);
 
   /** Remove one in-memory user note by id. */
   const removeUserNote = useCallback(
-    (noteId: string): RemovedUserNoteResult => {
+    (noteId: string) => {
       let removed = false;
-      let remainingNoteCount = 0;
       const next: Record<string, UserReviewNote[]> = {};
 
       for (const [fileId, notes] of Object.entries(userNotesByFileId)) {
@@ -687,7 +642,6 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
         }
         if (filtered.length > 0) {
           next[fileId] = filtered;
-          remainingNoteCount += filtered.length;
         }
       }
 
@@ -696,8 +650,6 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
       }
 
       setUserNotesByFileId(next);
-      setDraftNote((current) => (current?.editingNoteId === noteId ? null : current));
-      return { noteId, removed: true, remainingNoteCount };
     },
     [userNotesByFileId],
   );
@@ -713,6 +665,23 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     const noteSummaries: SessionReviewNoteSummary[] = [];
 
     files.forEach((file) => {
+      (file.agent?.annotations ?? []).forEach((annotation, index) => {
+        const source = reviewNoteSource(annotation);
+        noteSummaries.push({
+          noteId: annotation.id ?? `${source}:${file.id}:${index}`,
+          source,
+          filePath: file.path,
+          oldRange: annotation.oldRange,
+          newRange: annotation.newRange,
+          body: [annotation.summary, annotation.rationale].filter(Boolean).join("\n\n"),
+          title: annotation.title,
+          author: annotation.author,
+          createdAt: annotation.createdAt ?? "1970-01-01T00:00:00.000Z",
+          updatedAt: annotation.updatedAt,
+          editable: false,
+        });
+      });
+
       (liveCommentsByFileId[file.id] ?? []).forEach((comment) => {
         noteSummaries.push({
           noteId: comment.id,
@@ -739,7 +708,6 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
           body: note.summary,
           author: note.author,
           createdAt: note.createdAt,
-          updatedAt: note.updatedAt,
           editable: true,
         });
       });
@@ -794,7 +762,6 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     clearFilter,
     cancelDraftNote,
     clearLiveComments,
-    editUserNote,
     moveToAnnotatedFile,
     moveToAnnotatedHunk,
     moveToFile,

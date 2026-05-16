@@ -12,21 +12,6 @@ export interface UserNoteLineTarget {
   line: number;
 }
 
-export interface ReviewNote {
-  id: string;
-  source: ReviewNoteSource;
-  filePath: string;
-  hunkIndex?: number;
-  oldRange?: [number, number];
-  newRange?: [number, number];
-  body: string;
-  title?: string;
-  author?: string;
-  createdAt: string;
-  updatedAt?: string;
-  editable: boolean;
-}
-
 export interface AgentAnnotation {
   id?: string;
   oldRange?: [number, number];
