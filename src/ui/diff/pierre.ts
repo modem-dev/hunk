@@ -195,7 +195,16 @@ function strengthenWordDiffBg(lineBg: string, signColor: string) {
 
 /** Resolve the inline word-diff background, strengthening theme colors that are too subtle to see. */
 function wordDiffHighlightBg(kind: SplitLineCell["kind"], theme: AppTheme) {
-  let cached = wordDiffBackgroundCache.get(theme.id);
+  const cacheKey = [
+    theme.id,
+    theme.addedBg,
+    theme.addedContentBg,
+    theme.removedBg,
+    theme.removedContentBg,
+    theme.contextContentBg,
+    theme.panelAlt,
+  ].join(":");
+  let cached = wordDiffBackgroundCache.get(cacheKey);
   if (!cached) {
     const addition =
       hexColorDistance(theme.addedContentBg, theme.addedBg) >= MIN_WORD_DIFF_BG_DISTANCE
@@ -212,7 +221,7 @@ function wordDiffHighlightBg(kind: SplitLineCell["kind"], theme: AppTheme) {
       deletion,
       empty: theme.panelAlt,
     };
-    wordDiffBackgroundCache.set(theme.id, cached);
+    wordDiffBackgroundCache.set(cacheKey, cached);
   }
 
   return cached[kind];

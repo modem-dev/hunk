@@ -83,6 +83,7 @@ describe("parseCli", () => {
       "--wrap",
       "--no-hunk-headers",
       "--agent-notes",
+      "--transparent-background",
       "--watch",
     ]);
 
@@ -99,6 +100,25 @@ describe("parseCli", () => {
         wrapLines: true,
         hunkHeaders: false,
         agentNotes: true,
+        transparentBackground: true,
+      },
+    });
+  });
+
+  test("parses transparent background toggles", async () => {
+    const transparent = await parseCli(["bun", "hunk", "diff", "--transparent-background"]);
+    const opaque = await parseCli(["bun", "hunk", "diff", "--no-transparent-background"]);
+
+    expect(transparent).toMatchObject({
+      kind: "vcs",
+      options: {
+        transparentBackground: true,
+      },
+    });
+    expect(opaque).toMatchObject({
+      kind: "vcs",
+      options: {
+        transparentBackground: false,
       },
     });
   });

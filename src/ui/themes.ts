@@ -1,5 +1,7 @@
 import { RGBA, SyntaxStyle, type ThemeMode } from "@opentui/core";
 
+export const TRANSPARENT_BACKGROUND = "transparent";
+
 export interface AppTheme {
   id: string;
   label: string;
@@ -299,4 +301,24 @@ export function resolveTheme(requested: string | undefined, themeMode: ThemeMode
   }
 
   return THEMES.find((theme) => theme.id === "graphite") ?? THEMES[0]!;
+}
+
+/** Return a copy of a theme whose painted surfaces allow the terminal background through. */
+export function withTransparentBackground(theme: AppTheme): AppTheme {
+  return {
+    ...theme,
+    background: TRANSPARENT_BACKGROUND,
+    panel: TRANSPARENT_BACKGROUND,
+    panelAlt: TRANSPARENT_BACKGROUND,
+    addedBg: TRANSPARENT_BACKGROUND,
+    removedBg: TRANSPARENT_BACKGROUND,
+    contextBg: TRANSPARENT_BACKGROUND,
+    addedContentBg: TRANSPARENT_BACKGROUND,
+    removedContentBg: TRANSPARENT_BACKGROUND,
+    contextContentBg: TRANSPARENT_BACKGROUND,
+    lineNumberBg: TRANSPARENT_BACKGROUND,
+    selectedHunk: TRANSPARENT_BACKGROUND,
+    noteBackground: TRANSPARENT_BACKGROUND,
+    noteTitleBackground: TRANSPARENT_BACKGROUND,
+  };
 }
