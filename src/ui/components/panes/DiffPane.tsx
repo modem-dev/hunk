@@ -884,15 +884,19 @@ export function DiffPane({
       }
 
       const { start, end } = normalizeCopySelectionRange(current.anchor, current.focus);
+      const selectedSide =
+        current.anchor.kind === "review-row"
+          ? resolveCopySelectionSide(current.anchor.column, layout, diffContentWidth)
+          : undefined;
       const text = renderCopySelectionText({
         context: copySelectionContext,
         end,
-        side: copySelectionSide,
+        side: selectedSide,
         start,
       });
       copySelectionText(text);
     },
-    [copySelectionContext, copySelectionSide, copySelectionText],
+    [copySelectionContext, copySelectionText, diffContentWidth, layout],
   );
 
   // Expose the cancel hook so an ancestor (App's outer container) can release a stuck drag when
