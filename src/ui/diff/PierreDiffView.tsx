@@ -1,5 +1,5 @@
 import { useRenderer } from "@opentui/react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DiffFile, LayoutMode } from "../../core/types";
 import type { UserNoteLineTarget } from "../hooks/useReviewController";
 import { AgentInlineNote } from "../components/panes/AgentInlineNote";
@@ -17,6 +17,7 @@ import { useHighlightedDiff } from "./useHighlightedDiff";
 
 const EMPTY_ANNOTATED_HUNK_INDICES = new Set<number>();
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
+const ADD_NOTE_IDLE_HIDE_DELAY_MS = 2000;
 
 /** Render a file diff in split or stack mode, with inline agent notes inserted between diff rows. */
 export function PierreDiffView({
@@ -62,21 +63,47 @@ export function PierreDiffView({
 }) {
   const renderer = useRenderer();
   const [hoveredRowKey, setHoveredRowKey] = useState<string | null>(null);
+  const hoverIdleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearHoverIdleTimeout = useCallback(() => {
+    if (hoverIdleTimeoutRef.current) {
+      clearTimeout(hoverIdleTimeoutRef.current);
+      hoverIdleTimeoutRef.current = null;
+    }
+  }, []);
+
+  const clearHoveredRow = useCallback(() => {
+    clearHoverIdleTimeout();
+    setHoveredRowKey(null);
+  }, [clearHoverIdleTimeout]);
+
+  const activateHoveredRow = useCallback(
+    (rowKey: string) => {
+      setHoveredRowKey(rowKey);
+      clearHoverIdleTimeout();
+      hoverIdleTimeoutRef.current = setTimeout(() => {
+        setHoveredRowKey((current) => (current === rowKey ? null : current));
+        hoverIdleTimeoutRef.current = null;
+      }, ADD_NOTE_IDLE_HIDE_DELAY_MS);
+    },
+    [clearHoverIdleTimeout],
+  );
 
   useEffect(() => {
     if (!hoverActive) {
-      setHoveredRowKey(null);
+      clearHoveredRow();
     }
-  }, [hoverActive]);
+  }, [clearHoveredRow, hoverActive]);
 
   useEffect(() => {
     /** Hide hover-only affordances when terminal focus leaves Hunk. */
-    const clearHoveredRow = () => setHoveredRowKey(null);
     renderer.on("blur", clearHoveredRow);
     return () => {
       renderer.off("blur", clearHoveredRow);
     };
-  }, [renderer]);
+  }, [clearHoveredRow, renderer]);
+
+  useEffect(() => clearHoverIdleTimeout, [clearHoverIdleTimeout]);
 
   const resolvedHighlighted = useHighlightedDiff({
     file,
@@ -185,7 +212,7 @@ export function PierreDiffView({
               key={plannedRow.key}
               id={rowId}
               style={{ width: "100%", flexDirection: "column" }}
-              onMouseOver={() => setHoveredRowKey(null)}
+              onMouseOver={clearHoveredRow}
             >
               <AgentInlineNote
                 annotation={plannedRow.annotation}
@@ -210,7 +237,7 @@ export function PierreDiffView({
             style={{ width: "100%", flexDirection: "column" }}
             onMouseOver={() => {
               onHover?.();
-              setHoveredRowKey(plannedRow.key);
+              activateHoveredRow(plannedRow.key);
             }}
           >
             <DiffRowView
@@ -232,7 +259,7 @@ export function PierreDiffView({
               showAddNoteBadge={hoveredRowKey === plannedRow.key && Boolean(onStartUserNoteAtHunk)}
               onHoverRow={() => {
                 onHover?.();
-                setHoveredRowKey(plannedRow.key);
+                activateHoveredRow(plannedRow.key);
               }}
               onOpenAgentNotesAtHunk={onOpenAgentNotesAtHunk}
               onStartUserNoteAtHunk={onStartUserNoteAtHunk}
