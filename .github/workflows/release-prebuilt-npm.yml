@@ -184,6 +184,7 @@ jobs:
       - name: Download platform artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
+          pattern: hunkdiff-*
           path: dist/release/artifacts
 
       - name: Archive release assets
@@ -205,7 +206,7 @@ jobs:
             fi
             chmod 0755 "$binary"
             tar -C "$(dirname "$directory")" -czf "dist/release/github/${package_name}.tar.gz" "$package_name"
-          done < <(find dist/release/artifacts -mindepth 1 -maxdepth 1 -type d -print0 | sort -z)
+          done < <(find dist/release/artifacts -mindepth 1 -maxdepth 1 -type d -name 'hunkdiff-*' -print0 | sort -z)
           find dist/release/github -maxdepth 1 -type f | sort
 
       - name: Create or update GitHub release
