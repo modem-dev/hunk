@@ -1,4 +1,5 @@
 import type { DiffFile, LayoutMode } from "../../core/types";
+import { displayWidth } from "./displayWidth";
 
 export const DIFF_CODE_TAB_WIDTH = 2;
 export const DIFF_RAIL_PREFIX_WIDTH = 1;
@@ -11,7 +12,7 @@ export function expandDiffTabs(text: string) {
 
 /** Measure one rendered code line after tab expansion and newline trimming. */
 export function measureRenderedCodeLineWidth(line: string | undefined) {
-  return expandDiffTabs((line ?? "").replace(/\n$/, "")).length;
+  return displayWidth(expandDiffTabs((line ?? "").replace(/\n$/, "")));
 }
 
 /** Track the widest rendered code line for one file. */

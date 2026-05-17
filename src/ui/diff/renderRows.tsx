@@ -6,6 +6,7 @@ import {
   resolveSplitPaneWidths,
   resolveStackCellGeometry,
 } from "./codeColumns";
+import { displayWidth, sliceByDisplayWidth } from "./displayWidth";
 import type { DiffRow, RenderSpan, SplitLineCell, StackLineCell } from "./pierre";
 import {
   diffRailMarker,
@@ -25,7 +26,7 @@ export function fitText(text: string, width: number) {
     return "";
   }
 
-  if (text.length <= width) {
+  if (displayWidth(text) <= width) {
     return text;
   }
 
@@ -33,7 +34,7 @@ export function fitText(text: string, width: number) {
     return "…";
   }
 
-  return `${text.slice(0, width - 1)}…`;
+  return `${sliceByDisplayWidth(text, 0, width - 1).text}…`;
 }
 
 /** Slice styled spans to one visible window while preserving color runs. */
@@ -55,22 +56,26 @@ function sliceSpansWindow(spans: RenderSpan[], offset: number, width: number) {
       break;
     }
 
-    if (remainingOffset >= span.text.length) {
-      remainingOffset -= span.text.length;
+    const spanColumns = displayWidth(span.text);
+    if (remainingOffset >= spanColumns) {
+      remainingOffset -= spanColumns;
       continue;
     }
 
-    const start = remainingOffset;
-    const text = span.text.slice(start, start + remaining);
+    const slice = sliceByDisplayWidth(span.text, remainingOffset, remaining);
     remainingOffset = 0;
 
-    if (text.length === 0) {
+    if (slice.text.length === 0) {
+      // A wide grapheme straddled the window edge; the alignment-padding the
+      // caller adds will cover the half-cell, so keep walking.
+      remaining -= slice.trailingDropped;
+      usedWidth += slice.trailingDropped;
       continue;
     }
 
     const nextSpan = {
       ...span,
-      text,
+      text: slice.text,
     };
 
     const previous = sliced.at(-1);
@@ -80,8 +85,8 @@ function sliceSpansWindow(spans: RenderSpan[], offset: number, width: number) {
       sliced.push(nextSpan);
     }
 
-    remaining -= text.length;
-    usedWidth += text.length;
+    remaining -= slice.consumedColumns;
+    usedWidth += slice.consumedColumns;
   }
 
   return {
@@ -163,35 +168,50 @@ function wrapSpans(spans: RenderSpan[], width: number) {
   let current = lines[0]!;
   let remaining = width;
 
-  for (const span of spans) {
-    let offset = 0;
-
-    while (offset < span.text.length) {
-      if (remaining <= 0) {
-        current = [];
-        lines.push(current);
-        remaining = width;
-      }
-
-      const text = span.text.slice(offset, offset + remaining);
-      if (text.length === 0) {
-        break;
-      }
-
-      const nextSpan = {
-        ...span,
-        text,
-      };
-      const previous = current.at(-1);
-      if (previous && previous.fg === nextSpan.fg && previous.bg === nextSpan.bg) {
-        previous.text += nextSpan.text;
-      } else {
-        current.push(nextSpan);
-      }
-
-      offset += text.length;
-      remaining -= text.length;
+  const appendToCurrent = (span: RenderSpan, text: string) => {
+    const nextSpan = { ...span, text };
+    const previous = current.at(-1);
+    if (previous && previous.fg === nextSpan.fg && previous.bg === nextSpan.bg) {
+      previous.text += nextSpan.text;
+    } else {
+      current.push(nextSpan);
     }
+  };
+
+  for (const span of spans) {
+    let pending = "";
+    let pendingColumns = 0;
+
+    const flushPending = () => {
+      if (pending.length === 0) return;
+      appendToCurrent(span, pending);
+      remaining -= pendingColumns;
+      pending = "";
+      pendingColumns = 0;
+    };
+
+    for (const grapheme of span.text) {
+      const w = displayWidth(grapheme);
+
+      if (pendingColumns + w > remaining) {
+        // If the current line already has content (in this span or upstream),
+        // wrap. If the line is fresh AND this single grapheme exceeds `width`,
+        // place it alone and accept the overflow — matches the prior
+        // code-unit behavior of letting an oversized character render past
+        // its cell rather than disappearing.
+        if (pending.length > 0 || remaining < width) {
+          flushPending();
+          current = [];
+          lines.push(current);
+          remaining = width;
+        }
+      }
+
+      pending += grapheme;
+      pendingColumns += w;
+    }
+
+    flushPending();
   }
 
   return lines;
