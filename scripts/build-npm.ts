@@ -8,6 +8,7 @@ const outdir = path.join(repoRoot, "dist", "npm");
 const typesOutdir = path.join(repoRoot, "dist", "npm-types");
 const opentuiOutdir = path.join(outdir, "opentui");
 const opentuiTypesDir = path.join(typesOutdir, "opentui");
+const embeddedOutdir = path.join(outdir, "embedded");
 
 const bunEnv = {
   ...process.env,
@@ -32,6 +33,7 @@ function runBun(args: string[]) {
 rmSync(outdir, { recursive: true, force: true });
 rmSync(typesOutdir, { recursive: true, force: true });
 mkdirSync(opentuiOutdir, { recursive: true });
+mkdirSync(embeddedOutdir, { recursive: true });
 
 runBun([
   "build",
@@ -81,6 +83,22 @@ runBun([
   "index.js",
 ]);
 
+const embeddedBuild = await Bun.build({
+  entrypoints: [path.join(repoRoot, "src", "embedded", "index.tsx")],
+  target: "node",
+  format: "esm",
+  outdir: embeddedOutdir,
+  naming: { entry: "index.js" },
+  external: ["@opentui/core", "@opentui/react", "@pierre/diffs", "react", "react/jsx-runtime"],
+});
+
+if (!embeddedBuild.success) {
+  for (const log of embeddedBuild.logs) {
+    console.error(log.message);
+  }
+  throw new Error("Failed to build embedded Hunk export.");
+}
+
 runBun(["x", "tsc", "-p", path.join(repoRoot, "tsconfig.opentui.json")]);
 
 for (const entry of readdirSync(opentuiTypesDir)) {
@@ -89,7 +107,13 @@ for (const entry of readdirSync(opentuiTypesDir)) {
   }
 }
 
+copyFileSync(
+  path.join(repoRoot, "src", "embedded", "index.d.ts"),
+  path.join(embeddedOutdir, "index.d.ts"),
+);
+
 rmSync(typesOutdir, { recursive: true, force: true });
 
 console.log(`Built ${mainJs}`);
 console.log(`Built ${path.join(opentuiOutdir, "index.js")}`);
+console.log(`Built ${path.join(embeddedOutdir, "index.js")}`);

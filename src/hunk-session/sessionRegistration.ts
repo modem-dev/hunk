@@ -52,14 +52,17 @@ function buildSessionFiles(bootstrap: AppBootstrap): SessionReviewFile[] {
 }
 
 /** Build the broker-facing envelope for one live Hunk review session. */
-export function createSessionRegistration(bootstrap: AppBootstrap): HunkSessionRegistration {
+export function createSessionRegistration(
+  bootstrap: AppBootstrap,
+  options: { cwd?: string } = {},
+): HunkSessionRegistration {
   const terminal = resolveSessionTerminalMetadata({ tty: ttyname() });
 
   return {
     registrationVersion: SESSION_BROKER_REGISTRATION_VERSION,
     sessionId: randomUUID(),
     pid: process.pid,
-    cwd: process.cwd(),
+    cwd: options.cwd ?? process.cwd(),
     repoRoot: inferRepoRoot(bootstrap),
     launchedAt: new Date().toISOString(),
     terminal,

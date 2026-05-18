@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { resolveConfiguredCliInput } from "../core/config";
 import { loadAppBootstrap } from "../core/loaders";
 import { resolveRuntimeCliInput } from "../core/terminal";
@@ -14,11 +14,13 @@ import { useStartupUpdateNotice } from "./hooks/useStartupUpdateNotice";
 
 /** Keep one live Hunk app mounted while allowing daemon-driven session reloads. */
 export function AppHost({
+  active = true,
   bootstrap,
   hostClient,
   onQuit = () => process.exit(0),
   startupNoticeResolver,
 }: {
+  active?: boolean;
   bootstrap: AppBootstrap;
   hostClient?: HunkSessionBrokerClient;
   onQuit?: () => void;
@@ -30,6 +32,10 @@ export function AppHost({
     enabled: !bootstrap.input.options.pager,
     resolver: startupNoticeResolver,
   });
+
+  useEffect(() => {
+    setActiveBootstrap(bootstrap);
+  }, [bootstrap]);
 
   const reloadSession = useCallback(
     async (nextInput: CliInput, options?: { resetApp?: boolean; sourcePath?: string }) => {
@@ -81,6 +87,7 @@ export function AppHost({
 
   return (
     <App
+      active={active}
       key={appVersion}
       bootstrap={activeBootstrap}
       hostClient={hostClient}

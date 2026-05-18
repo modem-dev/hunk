@@ -167,6 +167,16 @@ function createLineScrollBootstrap(pager = false): AppBootstrap {
   });
 }
 
+function createLiveCommentScrollBootstrap(): AppBootstrap {
+  const before = lines(...createNumberedAssignmentLines(1, 18));
+  const after = lines(...createNumberedAssignmentLines(1, 18, 100));
+
+  return createTestVcsAppBootstrap({
+    changesetId: "changeset:app-live-comment-scroll",
+    files: [createTestDiffFile("scroll-live", "scroll-live.ts", before, after)],
+  });
+}
+
 /** Build a two-hunk fixture with a deep inline note for CLI comment-navigation scroll tests. */
 function createDeepNoteBootstrap(): AppBootstrap {
   const beforeLines = Array.from(
@@ -2130,6 +2140,49 @@ describe("App interactions", () => {
         currentFrame.includes("Note anchored on second hunk."),
       );
       expect(frame).toContain("Note anchored on second hunk.");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("focused live comments scroll the new inline note into view", async () => {
+    const { dispatchCommand, hostClient } = createMockHostClient();
+    const setup = await testRender(
+      <AppHost bootstrap={createLiveCommentScrollBootstrap()} hostClient={hostClient} />,
+      {
+        width: 104,
+        height: 12,
+      },
+    );
+
+    try {
+      await flush(setup);
+
+      let frame = setup.captureCharFrame();
+      expect(frame).not.toContain("Live note anchored near the bottom.");
+
+      await act(async () => {
+        await dispatchCommand({
+          type: "command",
+          requestId: "comment-1",
+          command: "comment",
+          input: {
+            sessionId: "session-1",
+            filePath: "scroll-live.ts",
+            side: "new",
+            line: 12,
+            summary: "Live note anchored near the bottom.",
+            reveal: true,
+          },
+        });
+      });
+
+      frame = await waitForFrame(setup, (currentFrame) =>
+        currentFrame.includes("Live note anchored near the bottom."),
+      );
+      expect(frame).toContain("Live note anchored near the bottom.");
     } finally {
       await act(async () => {
         setup.renderer.destroy();
