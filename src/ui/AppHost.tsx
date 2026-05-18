@@ -14,13 +14,11 @@ import { useStartupUpdateNotice } from "./hooks/useStartupUpdateNotice";
 
 /** Keep one live Hunk app mounted while allowing daemon-driven session reloads. */
 export function AppHost({
-  active = true,
   bootstrap,
   hostClient,
   onQuit = () => process.exit(0),
   startupNoticeResolver,
 }: {
-  active?: boolean;
   bootstrap: AppBootstrap;
   hostClient?: HunkSessionBrokerClient;
   onQuit?: () => void;
@@ -94,7 +92,6 @@ export function AppHost({
 
   return (
     <App
-      active={active}
       key={appVersion}
       bootstrap={activeBootstrap}
       hostClient={hostClient}

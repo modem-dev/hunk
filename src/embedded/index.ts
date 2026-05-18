@@ -17,13 +17,10 @@ import type {
 } from "./types";
 
 /** Create one embedded Hunk review session from a public embedded source. */
-export function createEmbeddedHunkSession(
+export const createEmbeddedHunkSession = (
   input: CreateEmbeddedHunkSessionInput,
-): Promise<EmbeddedHunkSession> {
-  return createEmbeddedHunkSessionImpl(input);
-}
+): Promise<EmbeddedHunkSession> => createEmbeddedHunkSessionImpl(input);
 
 /** Mount one embedded Hunk app into a host-owned OpenTUI container. */
-export function mountEmbeddedHunkApp(input: MountEmbeddedHunkAppInput): EmbeddedHunkMount {
-  return mountEmbeddedHunkAppImpl(input);
-}
+export const mountEmbeddedHunkApp = (input: MountEmbeddedHunkAppInput): EmbeddedHunkMount =>
+  mountEmbeddedHunkAppImpl(input);

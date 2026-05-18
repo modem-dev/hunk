@@ -1,5 +1,7 @@
+import { isDeepStrictEqual } from "node:util";
+import { resolveConfiguredCliInput } from "../core/config";
 import { loadAppBootstrap } from "../core/loaders";
-import type { AppBootstrap } from "../core/types";
+import type { AppBootstrap, CliInput, CommonOptions } from "../core/types";
 import {
   createInitialSessionSnapshot,
   createSessionRegistration,
@@ -7,11 +9,6 @@ import {
 } from "../hunk-session/sessionRegistration";
 import type { HunkSessionBrokerClient } from "../hunk-session/types";
 import { SessionBrokerClient } from "../session-broker/brokerClient";
-import {
-  embeddedHunkSourcesEqual,
-  normalizeEmbeddedHunkSource,
-  resolveEmbeddedCliInput,
-} from "./source";
 import type {
   CreateEmbeddedHunkSessionInput,
   EmbeddedHunkSession,
@@ -20,9 +17,11 @@ import type {
 } from "./types";
 
 export type EmbeddedHunkRenderSnapshot =
-  | { status: "loading"; source: EmbeddedHunkSource; bootstrap: AppBootstrap; error?: undefined }
-  | { status: "ready"; source: EmbeddedHunkSource; bootstrap: AppBootstrap; error?: undefined }
-  | { status: "error"; source: EmbeddedHunkSource; bootstrap: AppBootstrap; error: string };
+  | { status: "loading"; bootstrap: AppBootstrap; error?: undefined }
+  | { status: "ready"; bootstrap: AppBootstrap; error?: undefined }
+  | { status: "error"; bootstrap: AppBootstrap; error: string };
+
+type NormalizedEmbeddedHunkSource = EmbeddedHunkSource & { options: CommonOptions };
 
 /** Convert unknown thrown values into stable user-facing error text. */
 function errorMessage(error: unknown) {
@@ -30,27 +29,69 @@ function errorMessage(error: unknown) {
   return String(error || "Failed to load Hunk.");
 }
 
-/** Build the host-facing embedded snapshot without exposing app bootstrap internals. */
-function publicSnapshot(snapshot: EmbeddedHunkRenderSnapshot): EmbeddedHunkSnapshot {
-  switch (snapshot.status) {
-    case "loading":
-      return { status: "loading", source: snapshot.source };
-    case "ready":
+/** Return a session-owned source copy with normalized options and pathspec identity. */
+function normalizeEmbeddedHunkSource(source: EmbeddedHunkSource): NormalizedEmbeddedHunkSource {
+  const pathspecs = "pathspecs" in source ? source.pathspecs : undefined;
+  return {
+    ...source,
+    ...(pathspecs ? { pathspecs: [...pathspecs] } : {}),
+    options: { ...(source.options ?? {}) },
+  } as NormalizedEmbeddedHunkSource;
+}
+
+/** Adapt a public embedded source into the internal CLI input pipeline. */
+function embeddedSourceToCliInput(source: EmbeddedHunkSource): CliInput {
+  const normalized = normalizeEmbeddedHunkSource(source);
+
+  switch (normalized.kind) {
+    case "worktree":
       return {
-        status: "ready",
-        source: snapshot.source,
-        title: snapshot.bootstrap.changeset.title,
-        fileCount: snapshot.bootstrap.changeset.files.length,
+        kind: "vcs",
+        staged: false,
+        pathspecs: normalized.pathspecs,
+        options: normalized.options,
       };
-    case "error":
+    case "staged":
       return {
-        status: "error",
-        source: snapshot.source,
-        title: snapshot.bootstrap.changeset.title,
-        fileCount: snapshot.bootstrap.changeset.files.length,
-        error: snapshot.error,
+        kind: "vcs",
+        staged: true,
+        pathspecs: normalized.pathspecs,
+        options: normalized.options,
       };
+    case "patch":
+      return {
+        kind: "patch",
+        text: normalized.text,
+        file: normalized.file ?? normalized.label,
+        options: normalized.options,
+      };
+    default:
+      return normalized as CliInput;
   }
+}
+
+/** Resolve embedded input through the same config layers as the CLI. */
+function resolveEmbeddedCliInput(source: EmbeddedHunkSource, cwd: string) {
+  return resolveConfiguredCliInput(embeddedSourceToCliInput(source), { cwd }).input;
+}
+
+/** Build the host-facing embedded snapshot without exposing app bootstrap internals. */
+function publicSnapshot(
+  source: EmbeddedHunkSource,
+  snapshot: EmbeddedHunkRenderSnapshot,
+): EmbeddedHunkSnapshot {
+  if (snapshot.status === "loading") {
+    return { status: "loading", source };
+  }
+
+  const base = {
+    source,
+    title: snapshot.bootstrap.changeset.title,
+    fileCount: snapshot.bootstrap.changeset.files.length,
+  };
+  return snapshot.status === "error"
+    ? { ...base, status: "error", error: snapshot.error }
+    : { ...base, status: "ready" };
 }
 
 /** Own one embedded Hunk review session, including source identity and broker registration. */
@@ -58,7 +99,6 @@ class EmbeddedHunkSessionImpl implements EmbeddedHunkSession {
   private listeners = new Set<() => void>();
   private disposed = false;
   private renderSnapshot: EmbeddedHunkRenderSnapshot;
-  private snapshot: EmbeddedHunkSnapshot;
 
   readonly hostClient: HunkSessionBrokerClient;
 
@@ -67,8 +107,7 @@ class EmbeddedHunkSessionImpl implements EmbeddedHunkSession {
     public source: EmbeddedHunkSource,
     bootstrap: AppBootstrap,
   ) {
-    this.renderSnapshot = { status: "ready", source, bootstrap };
-    this.snapshot = publicSnapshot(this.renderSnapshot);
+    this.renderSnapshot = { status: "ready", bootstrap };
     this.hostClient = new SessionBrokerClient(
       createSessionRegistration(bootstrap, { cwd }),
       createInitialSessionSnapshot(bootstrap),
@@ -76,7 +115,7 @@ class EmbeddedHunkSessionImpl implements EmbeddedHunkSession {
     this.hostClient.start();
   }
 
-  getSnapshot = () => this.snapshot;
+  getSnapshot = () => publicSnapshot(this.source, this.renderSnapshot);
 
   getRenderSnapshot = () => this.renderSnapshot;
 
@@ -87,7 +126,9 @@ class EmbeddedHunkSessionImpl implements EmbeddedHunkSession {
 
   async open(source: EmbeddedHunkSource) {
     const nextSource = normalizeEmbeddedHunkSource(source);
-    if (this.disposed || embeddedHunkSourcesEqual(this.source, nextSource)) return;
+    if (this.disposed || isDeepStrictEqual(normalizeEmbeddedHunkSource(this.source), nextSource)) {
+      return;
+    }
     await this.load(nextSource, { updateSource: true });
   }
 
@@ -105,7 +146,6 @@ class EmbeddedHunkSessionImpl implements EmbeddedHunkSession {
   private async load(source: EmbeddedHunkSource, { updateSource }: { updateSource: boolean }) {
     this.setRenderSnapshot({
       status: "loading",
-      source: this.source,
       bootstrap: this.renderSnapshot.bootstrap,
     });
 
@@ -120,12 +160,11 @@ class EmbeddedHunkSessionImpl implements EmbeddedHunkSession {
         updateSessionRegistration(this.hostClient.getRegistration(), bootstrap),
         createInitialSessionSnapshot(bootstrap),
       );
-      this.setRenderSnapshot({ status: "ready", source: this.source, bootstrap });
+      this.setRenderSnapshot({ status: "ready", bootstrap });
     } catch (error) {
       const message = errorMessage(error);
       this.setRenderSnapshot({
         status: "error",
-        source: this.source,
         bootstrap: this.renderSnapshot.bootstrap,
         error: message,
       });
@@ -135,7 +174,6 @@ class EmbeddedHunkSessionImpl implements EmbeddedHunkSession {
 
   private setRenderSnapshot(snapshot: EmbeddedHunkRenderSnapshot) {
     this.renderSnapshot = snapshot;
-    this.snapshot = publicSnapshot(snapshot);
     for (const listener of this.listeners) listener();
   }
 }

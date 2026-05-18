@@ -29,27 +29,9 @@ export type EmbeddedHunkSource =
   | { kind: "difftool"; left: string; right: string; path?: string; options?: EmbeddedHunkOptions };
 
 export type EmbeddedHunkSnapshot =
-  | {
-      status: "loading";
-      source: EmbeddedHunkSource;
-      error?: undefined;
-      fileCount?: undefined;
-      title?: undefined;
-    }
-  | {
-      status: "ready";
-      source: EmbeddedHunkSource;
-      error?: undefined;
-      fileCount: number;
-      title: string;
-    }
-  | {
-      status: "error";
-      source: EmbeddedHunkSource;
-      error: string;
-      fileCount: number;
-      title: string;
-    };
+  | { status: "loading"; source: EmbeddedHunkSource }
+  | { status: "ready"; source: EmbeddedHunkSource; fileCount: number; title: string }
+  | { status: "error"; source: EmbeddedHunkSource; fileCount: number; title: string; error: string };
 
 export interface EmbeddedHunkSession {
   readonly cwd: string;

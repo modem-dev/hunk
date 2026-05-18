@@ -41,7 +41,6 @@ function isUppercaseGKey(key: KeyEvent) {
 }
 
 export interface UseAppKeyboardShortcutsOptions {
-  active?: boolean;
   activeMenuId: MenuId | null;
   activateCurrentMenuItem: () => void;
   canRefreshCurrentInput: boolean;
@@ -78,7 +77,6 @@ export interface UseAppKeyboardShortcutsOptions {
 
 /** Register the app's scoped keyboard handling while keeping mode precedence explicit. */
 export function useAppKeyboardShortcuts({
-  active = true,
   activeMenuId,
   activateCurrentMenuItem,
   canRefreshCurrentInput,
@@ -112,13 +110,11 @@ export function useAppKeyboardShortcuts({
   triggerEditSelectedFile,
   triggerRefreshCurrentInput,
 }: UseAppKeyboardShortcutsOptions) {
-  const activeRef = useRef(active);
   const activeMenuIdRef = useRef(activeMenuId);
   const focusAreaRef = useRef(focusArea);
   const pagerModeRef = useRef(pagerMode);
   const showHelpRef = useRef(showHelp);
 
-  activeRef.current = active;
   activeMenuIdRef.current = activeMenuId;
   focusAreaRef.current = focusArea;
   pagerModeRef.current = pagerMode;
@@ -491,10 +487,6 @@ export function useAppKeyboardShortcuts({
   };
 
   useKeyboard((key: KeyEvent) => {
-    if (!activeRef.current) {
-      return;
-    }
-
     if (handleMenuToggleShortcut(key)) {
       return;
     }

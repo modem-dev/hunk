@@ -14,11 +14,6 @@ type KeyInputSource = Readonly<{
   off: (event: string, listener: KeyInputListener) => unknown;
 }>;
 
-/** Return whether one renderer input event should be visibility-scoped for embedded Hunk. */
-function isScopedKeyInputEvent(event: string): event is ScopedKeyInputEvent {
-  return scopedKeyInputEvents.includes(event as ScopedKeyInputEvent);
-}
-
 /** Scope Hunk keyboard and paste listeners so inactive embedded mounts stay alive but quiet. */
 export function createScopedKeyInput(source: KeyInputSource, enabled: () => boolean) {
   const listeners = new Map<ScopedKeyInputEvent, Set<KeyInputListener>>();
@@ -34,25 +29,27 @@ export function createScopedKeyInput(source: KeyInputSource, enabled: () => bool
 
   const scoped = {
     on(event: string, listener: KeyInputListener) {
-      if (!isScopedKeyInputEvent(event)) {
+      if (!scopedKeyInputEvents.includes(event as ScopedKeyInputEvent)) {
         source.on(event, listener);
         return scoped;
       }
 
-      const eventListeners = listeners.get(event)!;
-      if (eventListeners.size === 0) source.on(event, forwarders.get(event)!);
+      const scopedEvent = event as ScopedKeyInputEvent;
+      const eventListeners = listeners.get(scopedEvent)!;
+      if (eventListeners.size === 0) source.on(scopedEvent, forwarders.get(scopedEvent)!);
       eventListeners.add(listener);
       return scoped;
     },
     off(event: string, listener: KeyInputListener) {
-      if (!isScopedKeyInputEvent(event)) {
+      if (!scopedKeyInputEvents.includes(event as ScopedKeyInputEvent)) {
         source.off(event, listener);
         return scoped;
       }
 
-      const eventListeners = listeners.get(event)!;
+      const scopedEvent = event as ScopedKeyInputEvent;
+      const eventListeners = listeners.get(scopedEvent)!;
       eventListeners.delete(listener);
-      if (eventListeners.size === 0) source.off(event, forwarders.get(event)!);
+      if (eventListeners.size === 0) source.off(scopedEvent, forwarders.get(scopedEvent)!);
       return scoped;
     },
   };
@@ -87,11 +84,9 @@ function scopedRenderer(
 }
 
 function EmbeddedHunkRoot({
-  active,
   onQuit,
   session,
 }: {
-  active: boolean;
   onQuit: () => void;
   session: EmbeddedHunkSession;
 }) {
@@ -104,7 +99,6 @@ function EmbeddedHunkRoot({
 
   return (
     <AppHost
-      active={active}
       bootstrap={snapshot.bootstrap}
       hostClient={internals.hostClient}
       onQuit={onQuit}
@@ -127,7 +121,7 @@ export function mountEmbeddedHunkApp({
 
   const render = (next: { active: boolean; onQuit: () => void }) => {
     currentActive = next.active;
-    root.render(<EmbeddedHunkRoot active={next.active} onQuit={next.onQuit} session={session} />);
+    root.render(<EmbeddedHunkRoot onQuit={next.onQuit} session={session} />);
   };
 
   render({ active, onQuit });

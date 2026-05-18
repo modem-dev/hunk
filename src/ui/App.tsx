@@ -75,14 +75,12 @@ function withCurrentViewOptions(
 
 /** Orchestrate global app state, layout, navigation, and pane coordination. */
 export function App({
-  active = true,
   bootstrap,
   hostClient,
   noticeText,
   onQuit = () => process.exit(0),
   onReloadSession,
 }: {
-  active?: boolean;
   bootstrap: AppBootstrap;
   hostClient?: HunkSessionBrokerClient;
   noticeText?: string | null;
@@ -631,7 +629,6 @@ export function App({
   } = useMenuController(menus);
 
   useAppKeyboardShortcuts({
-    active,
     activeMenuId,
     activateCurrentMenuItem,
     canRefreshCurrentInput,
