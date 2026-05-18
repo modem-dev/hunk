@@ -25,31 +25,38 @@ export type EmbeddedHunkSource =
   | { kind: "show"; ref?: string; pathspecs?: string[]; options?: EmbeddedHunkOptions }
   | { kind: "stash-show"; ref?: string; options?: EmbeddedHunkOptions }
   | { kind: "diff"; left: string; right: string; options?: EmbeddedHunkOptions }
-  | {
-      kind: "patch";
-      file?: string;
-      text?: string;
-      label?: string;
-      options?: EmbeddedHunkOptions;
-    }
-  | {
-      kind: "difftool";
-      left: string;
-      right: string;
-      path?: string;
-      options?: EmbeddedHunkOptions;
-    };
+  | { kind: "patch"; file?: string; text?: string; label?: string; options?: EmbeddedHunkOptions }
+  | { kind: "difftool"; left: string; right: string; path?: string; options?: EmbeddedHunkOptions };
 
 export type EmbeddedHunkSnapshot =
-  | { status: "loading"; bootstrap: unknown; error?: undefined }
-  | { status: "ready"; bootstrap: unknown; error?: undefined }
-  | { status: "error"; bootstrap: unknown; error: string };
+  | {
+      status: "loading";
+      source: EmbeddedHunkSource;
+      error?: undefined;
+      fileCount?: undefined;
+      title?: undefined;
+    }
+  | {
+      status: "ready";
+      source: EmbeddedHunkSource;
+      error?: undefined;
+      fileCount: number;
+      title: string;
+    }
+  | {
+      status: "error";
+      source: EmbeddedHunkSource;
+      error: string;
+      fileCount: number;
+      title: string;
+    };
 
 export interface EmbeddedHunkSession {
   readonly cwd: string;
   readonly source: EmbeddedHunkSource;
   getSnapshot(): EmbeddedHunkSnapshot;
-  load(source: EmbeddedHunkSource): Promise<void>;
+  open(source: EmbeddedHunkSource): Promise<void>;
+  reload(): Promise<void>;
   subscribe(listener: () => void): () => void;
   dispose(): void;
 }
@@ -59,14 +66,15 @@ export interface EmbeddedHunkMount {
   unmount(): void;
 }
 
-export declare function createEmbeddedHunkSession(input: {
+export interface CreateEmbeddedHunkSessionInput {
   cwd?: string;
   source: EmbeddedHunkSource;
-}): Promise<EmbeddedHunkSession>;
-export declare function mountEmbeddedHunkApp(input: {
+}
+
+export interface MountEmbeddedHunkAppInput {
   active: boolean;
   container: Renderable;
   onQuit: () => void;
   renderer: CliRenderer;
   session: EmbeddedHunkSession;
-}): EmbeddedHunkMount;
+}

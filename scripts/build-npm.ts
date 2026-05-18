@@ -7,8 +7,9 @@ const repoRoot = path.resolve(import.meta.dir, "..");
 const outdir = path.join(repoRoot, "dist", "npm");
 const typesOutdir = path.join(repoRoot, "dist", "npm-types");
 const opentuiOutdir = path.join(outdir, "opentui");
-const opentuiTypesDir = path.join(typesOutdir, "opentui");
+const opentuiTypesDir = path.join(typesOutdir, "src", "opentui");
 const embeddedOutdir = path.join(outdir, "embedded");
+const embeddedTypesDir = path.join(typesOutdir, "src", "embedded");
 const libraryExternals = [
   "react",
   "react/jsx-runtime",
@@ -89,11 +90,11 @@ await buildLibraryExport(
 );
 await buildLibraryExport(
   "embedded Hunk",
-  path.join(repoRoot, "src", "embedded", "index.tsx"),
+  path.join(repoRoot, "src", "embedded", "index.ts"),
   embeddedOutdir,
 );
 
-runBun(["x", "tsc", "-p", path.join(repoRoot, "tsconfig.opentui.json")]);
+runBun(["x", "tsc", "-p", path.join(repoRoot, "tsconfig.npm-exports.json")]);
 
 for (const entry of readdirSync(opentuiTypesDir)) {
   if (entry.endsWith(".d.ts")) {
@@ -101,10 +102,9 @@ for (const entry of readdirSync(opentuiTypesDir)) {
   }
 }
 
-copyFileSync(
-  path.join(repoRoot, "src", "embedded", "index.d.ts"),
-  path.join(embeddedOutdir, "index.d.ts"),
-);
+for (const entry of ["index.d.ts", "types.d.ts"]) {
+  copyFileSync(path.join(embeddedTypesDir, entry), path.join(embeddedOutdir, entry));
+}
 
 rmSync(typesOutdir, { recursive: true, force: true });
 

@@ -67,6 +67,8 @@ const metaPack = runPackDryRun(metaDir);
 assertPaths(metaPack, [
   "bin/hunk.cjs",
   "dist/npm/main.js",
+  "dist/npm/embedded/index.d.ts",
+  "dist/npm/embedded/index.js",
   "dist/npm/opentui/index.d.ts",
   "dist/npm/opentui/index.js",
   "skills/hunk-review/SKILL.md",
