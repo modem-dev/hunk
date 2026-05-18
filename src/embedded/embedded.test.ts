@@ -86,7 +86,7 @@ describe("embedded Hunk sessions", () => {
     }
   });
 
-  test("open reuses the loaded review when source identity has not changed", async () => {
+  test("open reuses the loaded review when source identity is equivalent", async () => {
     const root = mkdtempSync(join(tmpdir(), "hunk-embedded-open-same-source-"));
     const left = join(root, "before.ts");
     const right = join(root, "after.ts");
@@ -95,12 +95,17 @@ describe("embedded Hunk sessions", () => {
       writeFileSync(left, "export const value = 1;\n");
       writeFileSync(right, "export const value = 2;\nexport const first = true;\n");
 
-      const source = { kind: "diff", left, right } as const;
+      const source = {
+        kind: "diff",
+        left,
+        right,
+        options: { wrapLines: undefined },
+      } as const;
       const session = await createEmbeddedHunkSession({ cwd: root, source });
       expect(loadedPatch(session)).toContain("first");
 
       writeFileSync(right, "export const value = 2;\nexport const second = true;\n");
-      const reusedSnapshot = await session.open(source);
+      const reusedSnapshot = await session.open({ kind: "diff", left, right });
 
       expect(reusedSnapshot.status).toBe("ready");
       if (reusedSnapshot.status !== "ready") throw new Error("Expected reused snapshot.");

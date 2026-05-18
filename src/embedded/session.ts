@@ -30,14 +30,25 @@ function errorMessage(error: unknown) {
   return String(error || "Failed to load Hunk.");
 }
 
+/** Copy only explicitly defined fields so source identity has one canonical shape. */
+function compactRecord<T extends object>(source: T): T {
+  const next = {} as T;
+  for (const [key, value] of Object.entries(source) as [keyof T, T[keyof T]][]) {
+    if (value !== undefined) {
+      next[key] = value;
+    }
+  }
+  return next;
+}
+
 /** Return a session-owned source copy with normalized options and pathspec identity. */
 function normalizeEmbeddedHunkSource(source: EmbeddedHunkSource): NormalizedEmbeddedHunkSource {
   const pathspecs = "pathspecs" in source ? source.pathspecs : undefined;
-  return {
+  return compactRecord({
     ...source,
-    ...(pathspecs ? { pathspecs: [...pathspecs] } : {}),
-    options: { ...source.options },
-  } as NormalizedEmbeddedHunkSource;
+    ...(pathspecs !== undefined ? { pathspecs: [...pathspecs] } : {}),
+    options: compactRecord({ ...source.options }),
+  }) as NormalizedEmbeddedHunkSource;
 }
 
 /** Adapt a public embedded source into the internal CLI input pipeline. */

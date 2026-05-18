@@ -16,6 +16,7 @@ describe("embedded session broker daemon launcher", () => {
       cwd: "/repo",
       env: { HUNK_MCP_PORT: "48658" },
       hunkCliPath: "/deps/hunkdiff/bin/hunk.cjs",
+      runtimePath: "/usr/local/bin/node",
       timeoutMs: 1234,
       ensureAvailable: async (options) => {
         captured = options;
@@ -25,12 +26,31 @@ describe("embedded session broker daemon launcher", () => {
     await ensureBroker(testConfig);
 
     expect(captured).toEqual({
-      argv: ["/deps/hunkdiff/bin/hunk.cjs"],
+      argv: ["/usr/local/bin/node", "/deps/hunkdiff/bin/hunk.cjs"],
       config: testConfig,
       cwd: "/repo",
       env: { HUNK_MCP_PORT: "48658" },
-      execPath: "/deps/hunkdiff/bin/hunk.cjs",
+      execPath: "/usr/local/bin/node",
       timeoutMs: 1234,
+    });
+  });
+
+  test("passes direct Hunk executable paths through without a runtime wrapper", async () => {
+    let captured: EnsureSessionBrokerAvailableOptions | undefined;
+    const ensureBroker = createEmbeddedSessionBrokerAvailability({
+      cwd: "/repo",
+      hunkCliPath: "/deps/hunkdiff/bin/hunk",
+      runtimePath: "/usr/local/bin/node",
+      ensureAvailable: async (options) => {
+        captured = options;
+      },
+    });
+
+    await ensureBroker(testConfig);
+
+    expect(captured).toMatchObject({
+      argv: ["/deps/hunkdiff/bin/hunk"],
+      execPath: "/deps/hunkdiff/bin/hunk",
     });
   });
 });
