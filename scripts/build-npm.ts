@@ -9,6 +9,16 @@ const typesOutdir = path.join(repoRoot, "dist", "npm-types");
 const opentuiOutdir = path.join(outdir, "opentui");
 const opentuiTypesDir = path.join(typesOutdir, "opentui");
 const embeddedOutdir = path.join(outdir, "embedded");
+const libraryExternals = [
+  "react",
+  "react/jsx-runtime",
+  "react/jsx-dev-runtime",
+  "@opentui/core",
+  "@opentui/react",
+  "@opentui/react/jsx-runtime",
+  "@opentui/react/jsx-dev-runtime",
+  "@pierre/diffs",
+];
 
 const bunEnv = {
   ...process.env,
@@ -27,6 +37,24 @@ function runBun(args: string[]) {
 
   if (proc.exitCode !== 0) {
     throw new Error(`bun ${args.join(" ")} failed with exit ${proc.exitCode}`);
+  }
+}
+
+async function buildLibraryExport(name: string, entrypoint: string, outputDirectory: string) {
+  const build = await Bun.build({
+    entrypoints: [entrypoint],
+    target: "node",
+    format: "esm",
+    outdir: outputDirectory,
+    naming: { entry: "index.js" },
+    external: libraryExternals,
+  });
+
+  if (!build.success) {
+    for (const log of build.logs) {
+      console.error(log.message);
+    }
+    throw new Error(`Failed to build ${name} export.`);
   }
 }
 
@@ -54,50 +82,16 @@ if (process.platform !== "win32") {
   chmodSync(mainJs, 0o755);
 }
 
-runBun([
-  "build",
+await buildLibraryExport(
+  "OpenTUI",
   path.join(repoRoot, "src", "opentui", "index.ts"),
-  "--target",
-  "node",
-  "--format",
-  "esm",
-  "--external",
-  "react",
-  "--external",
-  "react/jsx-runtime",
-  "--external",
-  "react/jsx-dev-runtime",
-  "--external",
-  "@opentui/core",
-  "--external",
-  "@opentui/react",
-  "--external",
-  "@opentui/react/jsx-runtime",
-  "--external",
-  "@opentui/react/jsx-dev-runtime",
-  "--external",
-  "@pierre/diffs",
-  "--outdir",
   opentuiOutdir,
-  "--entry-naming",
-  "index.js",
-]);
-
-const embeddedBuild = await Bun.build({
-  entrypoints: [path.join(repoRoot, "src", "embedded", "index.tsx")],
-  target: "node",
-  format: "esm",
-  outdir: embeddedOutdir,
-  naming: { entry: "index.js" },
-  external: ["@opentui/core", "@opentui/react", "@pierre/diffs", "react", "react/jsx-runtime"],
-});
-
-if (!embeddedBuild.success) {
-  for (const log of embeddedBuild.logs) {
-    console.error(log.message);
-  }
-  throw new Error("Failed to build embedded Hunk export.");
-}
+);
+await buildLibraryExport(
+  "embedded Hunk",
+  path.join(repoRoot, "src", "embedded", "index.tsx"),
+  embeddedOutdir,
+);
 
 runBun(["x", "tsc", "-p", path.join(repoRoot, "tsconfig.opentui.json")]);
 

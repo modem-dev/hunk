@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createEmbeddedHunkSession, embeddedSourceToCliInput } from "./index";
+import { createEmbeddedHunkSession } from "./index";
 
 const patchText = [
   "diff --git a/example.ts b/example.ts",
@@ -14,72 +14,7 @@ const patchText = [
   "",
 ].join("\n");
 
-describe("embeddedSourceToCliInput", () => {
-  test("maps embedded review sources to Hunk CLI inputs", () => {
-    expect(embeddedSourceToCliInput({ kind: "worktree", options: { theme: "midnight" } })).toEqual({
-      kind: "vcs",
-      staged: false,
-      options: { theme: "midnight" },
-    });
-    expect(embeddedSourceToCliInput({ kind: "staged" })).toEqual({
-      kind: "vcs",
-      staged: true,
-      options: {},
-    });
-    expect(embeddedSourceToCliInput({ kind: "show", ref: "HEAD~1" })).toEqual({
-      kind: "show",
-      ref: "HEAD~1",
-      options: {},
-    });
-    expect(
-      embeddedSourceToCliInput({
-        kind: "vcs",
-        range: "main",
-        staged: false,
-        pathspecs: ["src/app.ts"],
-        options: { vcs: "jj" },
-      }),
-    ).toEqual({
-      kind: "vcs",
-      range: "main",
-      staged: false,
-      pathspecs: ["src/app.ts"],
-      options: { vcs: "jj" },
-    });
-    expect(
-      embeddedSourceToCliInput({ kind: "diff", left: "before.ts", right: "after.ts" }),
-    ).toEqual({
-      kind: "diff",
-      left: "before.ts",
-      right: "after.ts",
-      options: {},
-    });
-    expect(embeddedSourceToCliInput({ kind: "stash-show", ref: "stash@{1}" })).toEqual({
-      kind: "stash-show",
-      ref: "stash@{1}",
-      options: {},
-    });
-    expect(embeddedSourceToCliInput({ kind: "patch", file: "changes.patch" })).toEqual({
-      kind: "patch",
-      file: "changes.patch",
-      options: {},
-    });
-    expect(
-      embeddedSourceToCliInput({
-        kind: "difftool",
-        left: "left.ts",
-        right: "right.ts",
-        path: "src/app.ts",
-      }),
-    ).toEqual({
-      kind: "difftool",
-      left: "left.ts",
-      right: "right.ts",
-      path: "src/app.ts",
-      options: {},
-    });
-  });
-
+describe("embedded Hunk sessions", () => {
   test("loads embedded sessions through Hunk config resolution", async () => {
     const root = mkdtempSync(join(tmpdir(), "hunk-embedded-config-"));
     const previousXdgConfigHome = process.env.XDG_CONFIG_HOME;
@@ -131,7 +66,8 @@ describe("embeddedSourceToCliInput", () => {
       expect(session.source).toEqual(initialSource);
       const snapshot = session.getSnapshot();
       expect(snapshot.status).toBe("error");
-      expect(snapshot.bootstrap).toBeDefined();
+      if (snapshot.status !== "error") throw new Error("Expected embedded reload to fail.");
+      expect(snapshot.error).toContain("missing.patch");
 
       session.dispose();
     } finally {

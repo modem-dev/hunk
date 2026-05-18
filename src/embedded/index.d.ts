@@ -41,9 +41,9 @@ export type EmbeddedHunkSource =
     };
 
 export type EmbeddedHunkSnapshot =
-  | { status: "loading"; bootstrap?: unknown; error?: undefined }
+  | { status: "loading"; bootstrap: unknown; error?: undefined }
   | { status: "ready"; bootstrap: unknown; error?: undefined }
-  | { status: "error"; bootstrap?: unknown; error: string };
+  | { status: "error"; bootstrap: unknown; error: string };
 
 export interface EmbeddedHunkSession {
   readonly cwd: string;
@@ -59,7 +59,6 @@ export interface EmbeddedHunkMount {
   unmount(): void;
 }
 
-export declare function embeddedSourceToCliInput(source: EmbeddedHunkSource): unknown;
 export declare function createEmbeddedHunkSession(input: {
   cwd?: string;
   source: EmbeddedHunkSource;

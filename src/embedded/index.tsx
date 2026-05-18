@@ -30,9 +30,9 @@ export type EmbeddedHunkSource =
   | { kind: "difftool"; left: string; right: string; path?: string; options?: CommonOptions };
 
 export type EmbeddedHunkSnapshot =
-  | { status: "loading"; bootstrap?: AppBootstrap; error?: undefined }
+  | { status: "loading"; bootstrap: AppBootstrap; error?: undefined }
   | { status: "ready"; bootstrap: AppBootstrap; error?: undefined }
-  | { status: "error"; bootstrap?: AppBootstrap; error: string };
+  | { status: "error"; bootstrap: AppBootstrap; error: string };
 
 export interface EmbeddedHunkSession {
   readonly cwd: string;
@@ -43,74 +43,38 @@ export interface EmbeddedHunkSession {
   dispose(): void;
 }
 
-interface EmbeddedHunkSessionHandle extends EmbeddedHunkSession {
-  readonly hostClient: HunkSessionBrokerClient;
-}
-
 export interface EmbeddedHunkMount {
   update(options: { active: boolean; onQuit: () => void }): void;
   unmount(): void;
 }
 
-export function embeddedSourceToCliInput(source: EmbeddedHunkSource): CliInput {
+function embeddedSourceToCliInput(source: EmbeddedHunkSource): CliInput {
+  const options = source.options ?? {};
+
   switch (source.kind) {
     case "worktree":
       return {
         kind: "vcs",
         staged: false,
         pathspecs: source.pathspecs,
-        options: source.options ?? {},
+        options,
       };
     case "staged":
       return {
         kind: "vcs",
         staged: true,
         pathspecs: source.pathspecs,
-        options: source.options ?? {},
-      };
-    case "vcs":
-      return {
-        kind: "vcs",
-        range: source.range,
-        staged: source.staged,
-        pathspecs: source.pathspecs,
-        options: source.options ?? {},
-      };
-    case "show":
-      return {
-        kind: "show",
-        ref: source.ref,
-        pathspecs: source.pathspecs,
-        options: source.options ?? {},
-      };
-    case "stash-show":
-      return {
-        kind: "stash-show",
-        ref: source.ref,
-        options: source.options ?? {},
-      };
-    case "diff":
-      return {
-        kind: "diff",
-        left: source.left,
-        right: source.right,
-        options: source.options ?? {},
+        options,
       };
     case "patch":
       return {
         kind: "patch",
         text: source.text,
         file: source.file ?? source.label,
-        options: source.options ?? {},
+        options,
       };
-    case "difftool":
-      return {
-        kind: "difftool",
-        left: source.left,
-        right: source.right,
-        path: source.path,
-        options: source.options ?? {},
-      };
+    default:
+      return { ...source, options } as CliInput;
   }
 }
 
@@ -123,14 +87,14 @@ function errorMessage(error: unknown) {
   return String(error || "Failed to load Hunk.");
 }
 
-class EmbeddedHunkSessionImpl implements EmbeddedHunkSessionHandle {
+class EmbeddedHunkSessionImpl implements EmbeddedHunkSession {
   private listeners = new Set<() => void>();
   private disposed = false;
   private snapshot: EmbeddedHunkSnapshot;
 
   readonly hostClient: HunkSessionBrokerClient;
 
-  private constructor(
+  constructor(
     readonly cwd: string,
     public source: EmbeddedHunkSource,
     bootstrap: AppBootstrap,
@@ -141,11 +105,6 @@ class EmbeddedHunkSessionImpl implements EmbeddedHunkSessionHandle {
       createInitialSessionSnapshot(bootstrap),
     );
     this.hostClient.start();
-  }
-
-  static async create({ cwd, source }: { cwd: string; source: EmbeddedHunkSource }) {
-    const bootstrap = await loadAppBootstrap(resolveEmbeddedCliInput(source, cwd), { cwd });
-    return new EmbeddedHunkSessionImpl(cwd, source, bootstrap);
   }
 
   getSnapshot = () => this.snapshot;
@@ -194,11 +153,10 @@ class EmbeddedHunkSessionImpl implements EmbeddedHunkSessionHandle {
 
 /** Resolve the internal broker client owned by sessions created through this entrypoint. */
 function sessionHostClient(session: EmbeddedHunkSession) {
-  const hostClient = (session as Partial<EmbeddedHunkSessionHandle>).hostClient;
-  if (!hostClient) {
-    throw new Error("mountEmbeddedHunkApp requires a session from createEmbeddedHunkSession.");
+  if (session instanceof EmbeddedHunkSessionImpl) {
+    return session.hostClient;
   }
-  return hostClient;
+  throw new Error("mountEmbeddedHunkApp requires a session from createEmbeddedHunkSession.");
 }
 
 function EmbeddedHunkRoot({
@@ -216,26 +174,10 @@ function EmbeddedHunkRoot({
     session.getSnapshot,
   );
 
-  if (snapshot.status === "loading" && !snapshot.bootstrap) {
-    return (
-      <box style={{ width: "100%", height: "100%", paddingLeft: 1, paddingTop: 1 }}>
-        <text>Loading Hunk...</text>
-      </box>
-    );
-  }
-
-  if (snapshot.status === "error" && !snapshot.bootstrap) {
-    return (
-      <box style={{ width: "100%", height: "100%", paddingLeft: 1, paddingTop: 1 }}>
-        <text>{`Hunk failed: ${snapshot.error}`}</text>
-      </box>
-    );
-  }
-
   return (
     <AppHost
       active={active}
-      bootstrap={snapshot.bootstrap!}
+      bootstrap={snapshot.bootstrap}
       hostClient={sessionHostClient(session)}
       onQuit={onQuit}
       startupNoticeResolver={async () => null}
@@ -256,7 +198,8 @@ export async function createEmbeddedHunkSession({
   cwd?: string;
   source: EmbeddedHunkSource;
 }): Promise<EmbeddedHunkSession> {
-  return EmbeddedHunkSessionImpl.create({ cwd, source });
+  const bootstrap = await loadAppBootstrap(resolveEmbeddedCliInput(source, cwd), { cwd });
+  return new EmbeddedHunkSessionImpl(cwd, source, bootstrap);
 }
 
 export function mountEmbeddedHunkApp({
