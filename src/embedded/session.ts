@@ -9,6 +9,7 @@ import {
 } from "../hunk-session/sessionRegistration";
 import type { HunkSessionBrokerClient } from "../hunk-session/types";
 import { SessionBrokerClient } from "../session-broker/brokerClient";
+import { createEmbeddedSessionBrokerAvailability } from "./daemon";
 import type {
   CreateEmbeddedHunkSessionInput,
   EmbeddedHunkSession,
@@ -35,7 +36,7 @@ function normalizeEmbeddedHunkSource(source: EmbeddedHunkSource): NormalizedEmbe
   return {
     ...source,
     ...(pathspecs ? { pathspecs: [...pathspecs] } : {}),
-    options: { ...(source.options ?? {}) },
+    options: { ...source.options },
   } as NormalizedEmbeddedHunkSource;
 }
 
@@ -111,6 +112,9 @@ class EmbeddedHunkSessionImpl implements EmbeddedHunkSession {
     this.hostClient = new SessionBrokerClient(
       createSessionRegistration(bootstrap, { cwd }),
       createInitialSessionSnapshot(bootstrap),
+      {
+        ensureBrokerAvailable: createEmbeddedSessionBrokerAvailability({ cwd }),
+      },
     );
     this.hostClient.start();
   }
@@ -124,17 +128,19 @@ class EmbeddedHunkSessionImpl implements EmbeddedHunkSession {
     return () => this.listeners.delete(listener);
   };
 
+  /** Open a source idempotently; callers can re-open without learning source identity rules. */
   async open(source: EmbeddedHunkSource) {
     const nextSource = normalizeEmbeddedHunkSource(source);
     if (this.disposed || isDeepStrictEqual(normalizeEmbeddedHunkSource(this.source), nextSource)) {
-      return;
+      return this.getSnapshot();
     }
-    await this.load(nextSource, { updateSource: true });
+    return this.load(nextSource, { updateSource: true });
   }
 
+  /** Reload the currently loaded source, preserving source identity for the host. */
   async reload() {
-    if (this.disposed) return;
-    await this.load(this.source, { updateSource: false });
+    if (this.disposed) return this.getSnapshot();
+    return this.load(this.source, { updateSource: false });
   }
 
   dispose() {
@@ -143,7 +149,10 @@ class EmbeddedHunkSessionImpl implements EmbeddedHunkSession {
     this.listeners.clear();
   }
 
-  private async load(source: EmbeddedHunkSource, { updateSource }: { updateSource: boolean }) {
+  private async load(
+    source: EmbeddedHunkSource,
+    { updateSource }: { updateSource: boolean },
+  ): Promise<EmbeddedHunkSnapshot> {
     this.setRenderSnapshot({
       status: "loading",
       bootstrap: this.renderSnapshot.bootstrap,
@@ -161,6 +170,7 @@ class EmbeddedHunkSessionImpl implements EmbeddedHunkSession {
         createInitialSessionSnapshot(bootstrap),
       );
       this.setRenderSnapshot({ status: "ready", bootstrap });
+      return this.getSnapshot();
     } catch (error) {
       const message = errorMessage(error);
       this.setRenderSnapshot({

@@ -31,14 +31,23 @@ export type EmbeddedHunkSource =
 export type EmbeddedHunkSnapshot =
   | { status: "loading"; source: EmbeddedHunkSource }
   | { status: "ready"; source: EmbeddedHunkSource; fileCount: number; title: string }
-  | { status: "error"; source: EmbeddedHunkSource; fileCount: number; title: string; error: string };
+  | {
+      status: "error";
+      source: EmbeddedHunkSource;
+      fileCount: number;
+      title: string;
+      error: string;
+    };
 
 export interface EmbeddedHunkSession {
   readonly cwd: string;
+  /** The currently loaded source. Failed opens keep the previous source. */
   readonly source: EmbeddedHunkSource;
   getSnapshot(): EmbeddedHunkSnapshot;
-  open(source: EmbeddedHunkSource): Promise<void>;
-  reload(): Promise<void>;
+  /** Open a source idempotently; same-source opens reuse the current review. */
+  open(source: EmbeddedHunkSource): Promise<EmbeddedHunkSnapshot>;
+  /** Refresh the currently loaded source contents without changing source identity. */
+  reload(): Promise<EmbeddedHunkSnapshot>;
   subscribe(listener: () => void): () => void;
   dispose(): void;
 }

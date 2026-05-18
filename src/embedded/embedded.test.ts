@@ -100,13 +100,19 @@ describe("embedded Hunk sessions", () => {
       expect(loadedPatch(session)).toContain("first");
 
       writeFileSync(right, "export const value = 2;\nexport const second = true;\n");
-      await session.open(source);
+      const reusedSnapshot = await session.open(source);
 
+      expect(reusedSnapshot.status).toBe("ready");
+      if (reusedSnapshot.status !== "ready") throw new Error("Expected reused snapshot.");
+      expect(reusedSnapshot.source).toEqual(session.source);
       expect(loadedPatch(session)).toContain("first");
       expect(loadedPatch(session)).not.toContain("second");
 
-      await session.reload();
+      const reloadedSnapshot = await session.reload();
 
+      expect(reloadedSnapshot.status).toBe("ready");
+      if (reloadedSnapshot.status !== "ready") throw new Error("Expected reloaded snapshot.");
+      expect(reloadedSnapshot.source).toEqual(session.source);
       expect(loadedPatch(session)).toContain("second");
       expect(loadedPatch(session)).not.toContain("first");
 

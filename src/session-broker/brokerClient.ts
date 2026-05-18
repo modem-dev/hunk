@@ -37,6 +37,12 @@ type SessionAppBridge<
   Result = unknown,
 > = SessionBrokerConnectionBridge<ServerMessage, Result>;
 
+export type EnsureSessionBrokerAdapter = (config: ResolvedSessionBrokerConfig) => Promise<void>;
+
+export interface SessionBrokerClientOptions {
+  ensureBrokerAvailable?: EnsureSessionBrokerAdapter;
+}
+
 /** Keep one running app session registered with the local session broker daemon. */
 export class SessionBrokerClient<
   Info = unknown,
@@ -60,6 +66,7 @@ export class SessionBrokerClient<
   constructor(
     private registration: SessionRegistration<Info>,
     private snapshot: SessionSnapshot<State>,
+    private options: SessionBrokerClientOptions = {},
   ) {}
 
   start() {
@@ -117,18 +124,20 @@ export class SessionBrokerClient<
   }
 
   private async ensureDaemonAvailable(config: ResolvedSessionBrokerConfig) {
-    await ensureSessionBrokerAvailable({
-      config,
-      timeoutMs: DAEMON_STARTUP_TIMEOUT_MS,
-    });
+    const ensureBrokerAvailable =
+      this.options.ensureBrokerAvailable ??
+      ((resolvedConfig: ResolvedSessionBrokerConfig) =>
+        ensureSessionBrokerAvailable({
+          config: resolvedConfig,
+          timeoutMs: DAEMON_STARTUP_TIMEOUT_MS,
+        }));
+
+    await ensureBrokerAvailable(config);
 
     const capabilities = await readHunkSessionDaemonCapabilities(config);
     if (!capabilities) {
       await this.restartIncompatibleDaemon(config);
-      await ensureSessionBrokerAvailable({
-        config,
-        timeoutMs: DAEMON_STARTUP_TIMEOUT_MS,
-      });
+      await ensureBrokerAvailable(config);
 
       if (!(await readHunkSessionDaemonCapabilities(config))) {
         throw new Error(

@@ -76,6 +76,34 @@ afterEach(() => {
 });
 
 describe("Hunk session daemon client", () => {
+  test("uses an injected broker availability adapter during startup", async () => {
+    delete process.env.HUNK_MCP_DISABLE;
+    const ensuredOrigins: string[] = [];
+    const messages: string[] = [];
+    console.error = (...args: unknown[]) => {
+      messages.push(args.map((value) => String(value)).join(" "));
+    };
+    const client = new SessionBrokerClient(createRegistration(), createSnapshot(), {
+      ensureBrokerAvailable: async (resolvedConfig) => {
+        ensuredOrigins.push(resolvedConfig.httpOrigin);
+        throw new Error("custom broker availability failed");
+      },
+    });
+
+    try {
+      client.start();
+      await waitUntil(
+        "custom broker availability adapter",
+        () => ensuredOrigins.length === 1 && messages.length === 1,
+      );
+
+      expect(ensuredOrigins).toEqual(["http://127.0.0.1:47657"]);
+      expect(messages[0]).toContain("[session:broker] custom broker availability failed");
+    } finally {
+      client.stop();
+    }
+  });
+
   test("logs one actionable warning when the session daemon is configured for a non-loopback host without opt-in", async () => {
     process.env.HUNK_MCP_HOST = "0.0.0.0";
     process.env.HUNK_MCP_PORT = "47657";
