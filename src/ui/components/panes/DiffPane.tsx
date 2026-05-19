@@ -218,6 +218,13 @@ export function DiffPane({
     () => createReviewMouseWheelScrollAcceleration(),
     [],
   );
+  const [addNoteHoverClearSignal, setAddNoteHoverClearSignal] = useState(0);
+
+  /** Hide hover-only row controls when content scrolls under a stationary mouse pointer. */
+  const clearAddNoteHoverForScroll = useCallback(() => {
+    setAddNoteHoverClearSignal((current) => current + 1);
+    onActiveAddNoteAffordanceChange?.(null);
+  }, [onActiveAddNoteAffordanceChange]);
 
   const adjacentPrefetchFileIds = useMemo(
     () => buildAdjacentPrefetchFileIds(files, selectedFileId),
@@ -229,7 +236,13 @@ export function DiffPane({
     (event: TuiMouseEvent) => {
       const scrollBox = scrollRef.current;
       const direction = event.scroll?.direction;
-      if (!direction || !scrollBox || wrapLines) {
+      if (!direction) {
+        return;
+      }
+
+      clearAddNoteHoverForScroll();
+
+      if (!scrollBox || wrapLines) {
         return;
       }
 
@@ -273,7 +286,7 @@ export function DiffPane({
       event.preventDefault();
       event.stopPropagation();
     },
-    [onScrollCodeHorizontally, scrollRef, wrapLines],
+    [clearAddNoteHoverForScroll, onScrollCodeHorizontally, scrollRef, wrapLines],
   );
 
   const allAgentNotesByFile = useMemo(() => {
@@ -409,9 +422,11 @@ export function DiffPane({
       const nextTop = scrollBox.scrollTop ?? 0;
       const nextHeight = scrollBox.viewport.height ?? 0;
 
-      // Detect scroll activity and show scrollbar.
+      // Detect scroll activity, show scrollbar, and clear hover-only controls. The pointer may
+      // now sit over a different row, but only an actual mouse move should reveal row actions.
       if (nextTop !== prevScrollTopRef.current) {
         scrollbarRef.current?.show();
+        clearAddNoteHoverForScroll();
         prevScrollTopRef.current = nextTop;
       }
 
@@ -459,7 +474,7 @@ export function DiffPane({
       scrollBox.viewport.off("layout-changed", handleViewportChange);
       scrollBox.viewport.off("resized", handleViewportChange);
     };
-  }, [files.length, scrollRef]);
+  }, [clearAddNoteHoverForScroll, files.length, scrollRef]);
 
   const sectionHeaderHeights = useMemo(() => buildInStreamFileHeaderHeights(files), [files]);
 
@@ -1295,12 +1310,14 @@ export function DiffPane({
                       wrapLines={wrapLines}
                       theme={theme}
                       hoverActive={hoveredFileId === null || hoveredFileId === file.id}
+                      hoverClearSignal={addNoteHoverClearSignal}
                       viewWidth={diffContentWidth}
                       visibleAgentNotes={
                         visibleAgentNotesByFile.get(file.id) ?? EMPTY_VISIBLE_AGENT_NOTES
                       }
                       visibleBodyBounds={visibleBodyBoundsByFile.get(file.id)}
                       onHover={() => setHoveredFileId(file.id)}
+                      onMouseScroll={clearAddNoteHoverForScroll}
                       onActiveAddNoteAffordanceChange={(affordance) =>
                         onActiveAddNoteAffordanceChange?.(
                           affordance ? { ...affordance, fileId: file.id } : null,

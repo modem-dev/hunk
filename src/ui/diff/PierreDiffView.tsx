@@ -65,6 +65,7 @@ export function PierreDiffView({
   theme,
   visibleAgentNotes = EMPTY_VISIBLE_AGENT_NOTES,
   hoverActive = true,
+  hoverClearSignal = 0,
   width,
   selectedHunkIndex,
   sectionGeometry,
@@ -84,6 +85,7 @@ export function PierreDiffView({
   theme: AppTheme;
   visibleAgentNotes?: VisibleAgentNote[];
   hoverActive?: boolean;
+  hoverClearSignal?: number;
   width: number;
   selectedHunkIndex: number;
   sectionGeometry?: DiffSectionGeometry;
@@ -94,6 +96,7 @@ export function PierreDiffView({
   const renderer = useRenderer();
   const [hoveredRowKey, setHoveredRowKey] = useState<string | null>(null);
   const hoverIdleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const previousHoverClearSignalRef = useRef(hoverClearSignal);
 
   const clearHoverIdleTimeout = useCallback(() => {
     if (hoverIdleTimeoutRef.current) {
@@ -127,6 +130,15 @@ export function PierreDiffView({
       clearHoveredRow();
     }
   }, [clearHoveredRow, hoverActive]);
+
+  useEffect(() => {
+    if (previousHoverClearSignalRef.current === hoverClearSignal) {
+      return;
+    }
+
+    previousHoverClearSignalRef.current = hoverClearSignal;
+    clearHoveredRow();
+  }, [clearHoveredRow, hoverClearSignal]);
 
   useEffect(() => {
     /** Hide hover-only affordances when terminal focus leaves Hunk. */
@@ -264,15 +276,7 @@ export function PierreDiffView({
         }
 
         return (
-          <box
-            key={plannedRow.key}
-            id={rowId}
-            style={{ width: "100%", flexDirection: "column" }}
-            onMouseOver={() => {
-              onHover?.();
-              activateHoveredRow(plannedRow.key, addNoteAffordanceForRow(plannedRow.row));
-            }}
-          >
+          <box key={plannedRow.key} id={rowId} style={{ width: "100%", flexDirection: "column" }}>
             <DiffRowView
               row={plannedRow.row}
               width={width}
