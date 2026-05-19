@@ -411,10 +411,7 @@ export function renderCopySelectionText({
             : 0;
         const endColumn =
           end.kind === "review-row" && lineVisualRow === end.visualRow
-            ? Math.min(
-                Math.max(0, line.length - 1),
-                Math.max(0, end.column - paneOffset),
-              )
+            ? Math.min(Math.max(0, line.length - 1), Math.max(0, end.column - paneOffset))
             : Math.max(0, line.length - 1);
         lines.push(trimCopiedLine(line.slice(startColumn, endColumn + 1)));
       }

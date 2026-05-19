@@ -383,7 +383,9 @@ describe("buildCopySelectedRowKeys", () => {
     const point: CopySelectionPoint = { kind: "review-row", column: 0, visualRow: 0 };
     const drag: CopySelectionDrag = { anchor: point, focus: point, moved: false };
 
-    expect(buildCopySelectedRowKeys({ drag, fileSectionLayouts, sectionGeometry, width: 120 }).size).toBe(0);
+    expect(
+      buildCopySelectedRowKeys({ drag, fileSectionLayouts, sectionGeometry, width: 120 }).size,
+    ).toBe(0);
   });
 
   test("collects every row key intersected by a multi-row drag", () => {

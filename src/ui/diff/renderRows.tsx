@@ -213,7 +213,8 @@ function renderInlineSpans(
       if (padStart < selectionColRange.end && padEnd > selectionColRange.start) {
         // Split padding into outside/before, selected, and after.
         const beforeSel = Math.max(0, selectionColRange.start - padStart);
-        const inSel = Math.min(paddingAmount, selectionColRange.end - padStart) - Math.max(0, beforeSel);
+        const inSel =
+          Math.min(paddingAmount, selectionColRange.end - padStart) - Math.max(0, beforeSel);
         const afterSel = paddingAmount - beforeSel - Math.max(0, inSel);
 
         if (beforeSel > 0) {
@@ -664,15 +665,8 @@ export function renderCodeOnlyPlannedRowText(
   row: PlannedReviewRow,
   options: PlannedRowTextOptions,
 ) {
-  const {
-    width,
-    lineNumberDigits,
-    showLineNumbers,
-    wrapLines,
-    codeHorizontalOffset,
-    theme,
-    side,
-  } = options;
+  const { width, lineNumberDigits, showLineNumbers, wrapLines, codeHorizontalOffset, theme, side } =
+    options;
 
   if (width <= 0 || row.kind !== "diff-row") {
     return [];
@@ -794,9 +788,10 @@ function resolvePlainContentWidth(totalWidth: number, prefixWidth: number, gutte
  * blend uniformly across every rendered span (including syntax-emphasis spans that supply their
  * own bg). Pre-blending contentBg would cause the fallback path to double-blend.
  */
-function applySelectionPalette<
-  P extends { gutterBg: string; contentBg: string },
->(palette: P, theme: AppTheme): P {
+function applySelectionPalette<P extends { gutterBg: string; contentBg: string }>(
+  palette: P,
+  theme: AppTheme,
+): P {
   return {
     ...palette,
     gutterBg: selectionHighlightBg(palette.gutterBg, theme),
@@ -847,7 +842,10 @@ function renderSplitCell(
     selectionColRange && globalContentStart < selectionColRange.endCol
       ? {
           start: Math.max(0, selectionColRange.startCol - globalContentStart),
-          end: Math.min(contentWidth, Math.max(0, selectionColRange.endCol - globalContentStart + 1)),
+          end: Math.min(
+            contentWidth,
+            Math.max(0, selectionColRange.endCol - globalContentStart + 1),
+          ),
         }
       : undefined;
 
@@ -909,7 +907,10 @@ function renderStackCell(
     selectionColRange && globalContentStart < selectionColRange.endCol
       ? {
           start: Math.max(0, selectionColRange.startCol - globalContentStart),
-          end: Math.min(contentWidth, Math.max(0, selectionColRange.endCol - globalContentStart + 1)),
+          end: Math.min(
+            contentWidth,
+            Math.max(0, selectionColRange.endCol - globalContentStart + 1),
+          ),
         }
       : undefined;
 
@@ -963,7 +964,10 @@ function renderWrappedSplitCellLine(
     selectionColRange && globalContentStart < selectionColRange.endCol
       ? {
           start: Math.max(0, selectionColRange.startCol - globalContentStart),
-          end: Math.min(contentWidth, Math.max(0, selectionColRange.endCol - globalContentStart + 1)),
+          end: Math.min(
+            contentWidth,
+            Math.max(0, selectionColRange.endCol - globalContentStart + 1),
+          ),
         }
       : undefined;
 
@@ -1018,7 +1022,10 @@ function renderWrappedStackCellLine(
     selectionColRange && globalContentStart < selectionColRange.endCol
       ? {
           start: Math.max(0, selectionColRange.startCol - globalContentStart),
-          end: Math.min(contentWidth, Math.max(0, selectionColRange.endCol - globalContentStart + 1)),
+          end: Math.min(
+            contentWidth,
+            Math.max(0, selectionColRange.endCol - globalContentStart + 1),
+          ),
         }
       : undefined;
 

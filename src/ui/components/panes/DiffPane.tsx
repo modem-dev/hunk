@@ -662,11 +662,7 @@ export function DiffPane({
     if (!copySelectionDrag || copySelectionDrag.anchor.kind !== "review-row") {
       return undefined;
     }
-    return resolveCopySelectionSide(
-      copySelectionDrag.anchor.column,
-      layout,
-      diffContentWidth,
-    );
+    return resolveCopySelectionSide(copySelectionDrag.anchor.column, layout, diffContentWidth);
   }, [copySelectionDrag, diffContentWidth, layout]);
 
   const copySelectedRowKeysByFile = useMemo(
@@ -800,11 +796,7 @@ export function DiffPane({
       }
 
       if (clickCount >= 2 && point.kind === "review-row") {
-        const expanded = expandSelectionPoint(
-          point,
-          clickCount as 2 | 3,
-          copySelectionContext,
-        );
+        const expanded = expandSelectionPoint(point, clickCount as 2 | 3, copySelectionContext);
         if (expanded) {
           const drag: CopySelectionDrag = {
             anchor: { ...point, column: expanded.startCol },
