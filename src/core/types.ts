@@ -79,6 +79,7 @@ export interface CommonOptions {
   wrapLines?: boolean;
   hunkHeaders?: boolean;
   agentNotes?: boolean;
+  transparentBackground?: boolean;
 }
 
 export interface PersistedViewPreferences {

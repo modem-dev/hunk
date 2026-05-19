@@ -127,9 +127,11 @@ exclude_untracked = false
 line_numbers = true
 wrap_lines = false
 agent_notes = false
+transparent_background = false
 ```
 
 `exclude_untracked` affects Git working-tree `hunk diff` sessions only.
+`transparent_background` can also be written as `transparentBackground`.
 
 ### Git integration
 

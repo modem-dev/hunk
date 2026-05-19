@@ -6,6 +6,8 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Added
 
+- Added a `--transparent-background` flag and `transparent_background` config option for translucent terminal setups.
+
 ### Changed
 
 ### Fixed
