@@ -531,6 +531,53 @@ describe("live UI integration", () => {
     }
   });
 
+  test("add-note affordance appears only after mouse movement in a real PTY", async () => {
+    const fixture = harness.createScrollableFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      cols: 120,
+      rows: 12,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      await moveMouse(session, 8, 5);
+      await session.waitForText(/\[\+\]/, { timeout: 5_000 });
+
+      await session.scrollDown(2);
+      const afterWheel = await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("[+]"),
+        5_000,
+      );
+      expect(afterWheel).not.toContain("[+]");
+
+      await sleep(250);
+      const afterWheelIdle = await session.text({ immediate: true });
+      expect(afterWheelIdle).not.toContain("[+]");
+
+      await moveMouse(session, 9, 5);
+      await session.waitForText(/\[\+\]/, { timeout: 5_000 });
+
+      await session.press("down");
+      const afterKeyboard = await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("[+]"),
+        5_000,
+      );
+      expect(afterKeyboard).not.toContain("[+]");
+
+      await sleep(250);
+      const afterKeyboardIdle = await session.text({ immediate: true });
+      expect(afterKeyboardIdle).not.toContain("[+]");
+    } finally {
+      session.close();
+    }
+  });
+
   test("clicking diff add-note affordances can cancel and save draft notes", async () => {
     const fixture = harness.createLongWrapFilePair();
     const session = await harness.launchHunk({

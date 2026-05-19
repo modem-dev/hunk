@@ -556,11 +556,13 @@ describe("UI components", () => {
     }
   });
 
-  test("DiffPane hides the hover add-note affordance during mouse-wheel scrolling", async () => {
+  test("DiffPane only shows the add-note affordance after pointer movement", async () => {
     const files = createWindowingFiles(6);
     const theme = resolveTheme("midnight", null);
+    const scrollRef = createRef<ScrollBoxRenderable>();
     const props = createDiffPaneProps(files, theme, {
       diffContentWidth: 88,
+      scrollRef,
       onStartUserNoteAtHunk: () => {},
       separatorWidth: 84,
       width: 92,
@@ -588,8 +590,27 @@ describe("UI components", () => {
       frame = await waitForFrame(setup, (nextFrame) => !nextFrame.includes("[+]"), 12);
       expect(frame).not.toContain("[+]");
 
-      frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("[+]"), 16);
+      await act(async () => {
+        await Bun.sleep(250);
+        await setup.renderOnce();
+      });
+      frame = setup.captureCharFrame();
+      expect(frame).not.toContain("[+]");
+
+      await act(async () => {
+        await setup.mockMouse.moveTo(34, 4);
+        await setup.renderOnce();
+      });
+      frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("[+]"), 12);
       expect(frame).toContain("[+]");
+
+      await act(async () => {
+        scrollRef.current?.scrollTo({ x: 0, y: 2 });
+        await Bun.sleep(0);
+        await setup.renderOnce();
+      });
+      frame = await waitForFrame(setup, (nextFrame) => !nextFrame.includes("[+]"), 12);
+      expect(frame).not.toContain("[+]");
     } finally {
       await act(async () => {
         setup.renderer.destroy();

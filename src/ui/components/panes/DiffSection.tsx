@@ -29,7 +29,7 @@ interface DiffSectionProps {
   visibleBodyBounds?: VisibleBodyBounds;
   viewWidth: number;
   hoverActive?: boolean;
-  hoverSuppressed?: boolean;
+  hoverClearSignal?: number;
   onHover: () => void;
   onMouseScroll?: () => void;
   onActiveAddNoteAffordanceChange?: (affordance: ActiveAddNoteAffordance | null) => void;
@@ -58,7 +58,7 @@ function DiffSectionComponent({
   visibleBodyBounds,
   viewWidth,
   hoverActive = true,
-  hoverSuppressed = false,
+  hoverClearSignal = 0,
   onHover,
   onMouseScroll,
   onActiveAddNoteAffordanceChange,
@@ -112,7 +112,7 @@ function DiffSectionComponent({
         width={viewWidth}
         visibleAgentNotes={visibleAgentNotes}
         hoverActive={hoverActive}
-        hoverSuppressed={hoverSuppressed}
+        hoverClearSignal={hoverClearSignal}
         onHover={onHover}
         onActiveAddNoteAffordanceChange={onActiveAddNoteAffordanceChange}
         onStartUserNoteAtHunk={onStartUserNoteAtHunk}
@@ -146,7 +146,7 @@ export const DiffSection = memo(DiffSectionComponent, (previous, next) => {
     previous.showHeader === next.showHeader &&
     previous.showSeparator === next.showSeparator &&
     previous.hoverActive === next.hoverActive &&
-    previous.hoverSuppressed === next.hoverSuppressed &&
+    previous.hoverClearSignal === next.hoverClearSignal &&
     previous.onMouseScroll === next.onMouseScroll &&
     previous.theme === next.theme &&
     previous.visibleAgentNotes === next.visibleAgentNotes &&
