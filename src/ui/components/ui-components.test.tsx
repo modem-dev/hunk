@@ -556,6 +556,47 @@ describe("UI components", () => {
     }
   });
 
+  test("DiffPane hides the hover add-note affordance during mouse-wheel scrolling", async () => {
+    const files = createWindowingFiles(6);
+    const theme = resolveTheme("midnight", null);
+    const props = createDiffPaneProps(files, theme, {
+      diffContentWidth: 88,
+      onStartUserNoteAtHunk: () => {},
+      separatorWidth: 84,
+      width: 92,
+    });
+    const setup = await testRender(<DiffPane {...props} />, {
+      width: 96,
+      height: 12,
+    });
+
+    try {
+      await settleDiffPane(setup);
+
+      await act(async () => {
+        await setup.mockMouse.moveTo(32, 4);
+        await setup.renderOnce();
+      });
+      let frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("[+]"), 12);
+      expect(frame).toContain("[+]");
+
+      await act(async () => {
+        await setup.mockMouse.scroll(32, 4, "down");
+        await Bun.sleep(0);
+        await setup.renderOnce();
+      });
+      frame = await waitForFrame(setup, (nextFrame) => !nextFrame.includes("[+]"), 12);
+      expect(frame).not.toContain("[+]");
+
+      frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("[+]"), 16);
+      expect(frame).toContain("[+]");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("DiffPane scrolls a later selected file into view in the windowed path", async () => {
     const files = createWindowingFiles(6);
     const theme = resolveTheme("midnight", null);

@@ -65,6 +65,7 @@ export function PierreDiffView({
   theme,
   visibleAgentNotes = EMPTY_VISIBLE_AGENT_NOTES,
   hoverActive = true,
+  hoverSuppressed = false,
   width,
   selectedHunkIndex,
   sectionGeometry,
@@ -84,6 +85,7 @@ export function PierreDiffView({
   theme: AppTheme;
   visibleAgentNotes?: VisibleAgentNote[];
   hoverActive?: boolean;
+  hoverSuppressed?: boolean;
   width: number;
   selectedHunkIndex: number;
   sectionGeometry?: DiffSectionGeometry;
@@ -94,6 +96,9 @@ export function PierreDiffView({
   const renderer = useRenderer();
   const [hoveredRowKey, setHoveredRowKey] = useState<string | null>(null);
   const hoverIdleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hoverIdleDeadlineRef = useRef<number | null>(null);
+  const lastHoveredRowKeyRef = useRef<string | null>(null);
+  const previousHoverSuppressedRef = useRef(hoverSuppressed);
 
   const clearHoverIdleTimeout = useCallback(() => {
     if (hoverIdleTimeoutRef.current) {
@@ -104,22 +109,54 @@ export function PierreDiffView({
 
   const clearHoveredRow = useCallback(() => {
     clearHoverIdleTimeout();
+    hoverIdleDeadlineRef.current = null;
+    lastHoveredRowKeyRef.current = null;
     setHoveredRowKey(null);
     onActiveAddNoteAffordanceChange?.(null);
   }, [clearHoverIdleTimeout, onActiveAddNoteAffordanceChange]);
 
-  const activateHoveredRow = useCallback(
-    (rowKey: string, affordance: ActiveAddNoteAffordance) => {
-      setHoveredRowKey(rowKey);
-      onActiveAddNoteAffordanceChange?.(affordance);
+  const scheduleHoverIdleHide = useCallback(
+    (rowKey: string, clearCurrentRow: boolean) => {
       clearHoverIdleTimeout();
+      const deadline = Date.now() + ADD_NOTE_IDLE_HIDE_DELAY_MS;
+      hoverIdleDeadlineRef.current = deadline;
       hoverIdleTimeoutRef.current = setTimeout(() => {
-        setHoveredRowKey((current) => (current === rowKey ? null : current));
-        onActiveAddNoteAffordanceChange?.(null);
+        if (hoverIdleDeadlineRef.current !== deadline) {
+          return;
+        }
+
+        if (clearCurrentRow || lastHoveredRowKeyRef.current === rowKey) {
+          lastHoveredRowKeyRef.current = null;
+          setHoveredRowKey(null);
+          onActiveAddNoteAffordanceChange?.(null);
+        }
+        hoverIdleDeadlineRef.current = null;
         hoverIdleTimeoutRef.current = null;
       }, ADD_NOTE_IDLE_HIDE_DELAY_MS);
     },
     [clearHoverIdleTimeout, onActiveAddNoteAffordanceChange],
+  );
+
+  const activateHoveredRow = useCallback(
+    (rowKey: string, affordance: ActiveAddNoteAffordance) => {
+      if (hoverSuppressed) {
+        lastHoveredRowKeyRef.current = rowKey;
+        setHoveredRowKey(rowKey);
+        onActiveAddNoteAffordanceChange?.(affordance);
+        if ((hoverIdleDeadlineRef.current ?? 0) <= Date.now()) {
+          // Keep one idle deadline during scroll suppression, but let it clear whichever row
+          // ended up under the mouse after scroll-induced hover churn settles.
+          scheduleHoverIdleHide(rowKey, true);
+        }
+        return;
+      }
+
+      lastHoveredRowKeyRef.current = rowKey;
+      setHoveredRowKey(rowKey);
+      onActiveAddNoteAffordanceChange?.(affordance);
+      scheduleHoverIdleHide(rowKey, false);
+    },
+    [hoverSuppressed, onActiveAddNoteAffordanceChange, scheduleHoverIdleHide],
   );
 
   useEffect(() => {
@@ -127,6 +164,14 @@ export function PierreDiffView({
       clearHoveredRow();
     }
   }, [clearHoveredRow, hoverActive]);
+
+  useEffect(() => {
+    const wasSuppressed = previousHoverSuppressedRef.current;
+    previousHoverSuppressedRef.current = hoverSuppressed;
+    if (wasSuppressed && !hoverSuppressed && (hoverIdleDeadlineRef.current ?? 0) > Date.now()) {
+      setHoveredRowKey(lastHoveredRowKeyRef.current);
+    }
+  }, [hoverSuppressed]);
 
   useEffect(() => {
     /** Hide hover-only affordances when terminal focus leaves Hunk. */
@@ -285,7 +330,11 @@ export function PierreDiffView({
               selected={plannedRow.row.hunkIndex === selectedHunkIndex}
               anchorId={plannedRow.anchorId}
               noteGuideSide={plannedRow.noteGuideSide}
-              showAddNoteBadge={hoveredRowKey === plannedRow.key && Boolean(onStartUserNoteAtHunk)}
+              showAddNoteBadge={
+                !hoverSuppressed &&
+                hoveredRowKey === plannedRow.key &&
+                Boolean(onStartUserNoteAtHunk)
+              }
               onHoverRow={() => {
                 onHover?.();
                 activateHoveredRow(plannedRow.key, addNoteAffordanceForRow(plannedRow.row));

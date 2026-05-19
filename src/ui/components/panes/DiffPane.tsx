@@ -52,6 +52,7 @@ import type { VisibleBodyBounds } from "../../diff/rowWindowing";
 import { prefetchHighlightedDiff } from "../../diff/useHighlightedDiff";
 
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
+const ADD_NOTE_SCROLL_SUPPRESS_DELAY_MS = 160;
 
 /**
  * Clamp one vertical scroll target into the currently reachable review-stream extent.
@@ -218,6 +219,28 @@ export function DiffPane({
     () => createReviewMouseWheelScrollAcceleration(),
     [],
   );
+  const addNoteHoverSuppressTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [addNoteHoverSuppressed, setAddNoteHoverSuppressed] = useState(false);
+
+  /** Temporarily hide hover-only row controls during wheel scrolling so they do not flicker row-by-row. */
+  const suppressAddNoteHoverForMouseScroll = useCallback(() => {
+    setAddNoteHoverSuppressed(true);
+    if (addNoteHoverSuppressTimeoutRef.current) {
+      clearTimeout(addNoteHoverSuppressTimeoutRef.current);
+    }
+    addNoteHoverSuppressTimeoutRef.current = setTimeout(() => {
+      setAddNoteHoverSuppressed(false);
+      addNoteHoverSuppressTimeoutRef.current = null;
+    }, ADD_NOTE_SCROLL_SUPPRESS_DELAY_MS);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (addNoteHoverSuppressTimeoutRef.current) {
+        clearTimeout(addNoteHoverSuppressTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const adjacentPrefetchFileIds = useMemo(
     () => buildAdjacentPrefetchFileIds(files, selectedFileId),
@@ -229,7 +252,13 @@ export function DiffPane({
     (event: TuiMouseEvent) => {
       const scrollBox = scrollRef.current;
       const direction = event.scroll?.direction;
-      if (!direction || !scrollBox || wrapLines) {
+      if (!direction) {
+        return;
+      }
+
+      suppressAddNoteHoverForMouseScroll();
+
+      if (!scrollBox || wrapLines) {
         return;
       }
 
@@ -273,7 +302,7 @@ export function DiffPane({
       event.preventDefault();
       event.stopPropagation();
     },
-    [onScrollCodeHorizontally, scrollRef, wrapLines],
+    [onScrollCodeHorizontally, scrollRef, suppressAddNoteHoverForMouseScroll, wrapLines],
   );
 
   const allAgentNotesByFile = useMemo(() => {
@@ -1295,12 +1324,14 @@ export function DiffPane({
                       wrapLines={wrapLines}
                       theme={theme}
                       hoverActive={hoveredFileId === null || hoveredFileId === file.id}
+                      hoverSuppressed={addNoteHoverSuppressed}
                       viewWidth={diffContentWidth}
                       visibleAgentNotes={
                         visibleAgentNotesByFile.get(file.id) ?? EMPTY_VISIBLE_AGENT_NOTES
                       }
                       visibleBodyBounds={visibleBodyBoundsByFile.get(file.id)}
                       onHover={() => setHoveredFileId(file.id)}
+                      onMouseScroll={suppressAddNoteHoverForMouseScroll}
                       onActiveAddNoteAffordanceChange={(affordance) =>
                         onActiveAddNoteAffordanceChange?.(
                           affordance ? { ...affordance, fileId: file.id } : null,
