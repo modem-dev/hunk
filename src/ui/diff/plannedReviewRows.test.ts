@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import type { VisibleAgentNote } from "../lib/agentAnnotations";
 import { reviewRowId } from "../lib/ids";
 import type { PlannedReviewRow } from "./reviewRenderPlan";
 import {
@@ -78,6 +79,14 @@ function splitLine(key: string, hunkIndex: number, anchorId?: string): PlannedRe
 }
 
 function inlineNote(key: string, hunkIndex: number): PlannedReviewRow {
+  const annotation = {
+    id: "note-1",
+    newRange: [1, 1] as [number, number],
+    summary: "Explain why this branch changed.",
+    rationale: "The note should reserve space in the hunk bounds.",
+  };
+  const note: VisibleAgentNote = { id: "note-1", annotation };
+
   return {
     kind: "inline-note",
     key,
@@ -85,26 +94,19 @@ function inlineNote(key: string, hunkIndex: number): PlannedReviewRow {
     fileId: "file-1",
     hunkIndex,
     annotationId: "note-1",
-    annotation: {
-      id: "note-1",
-      newRange: [1, 1],
-      summary: "Explain why this branch changed.",
-      rationale: "The note should reserve space in the hunk bounds.",
-    },
+    annotation,
+    note,
     anchorSide: "new",
     noteCount: 1,
     noteIndex: 0,
   };
 }
 
-function guideCap(key: string, hunkIndex: number): PlannedReviewRow {
+function guidedLine(key: string, hunkIndex: number): PlannedReviewRow {
+  const row = splitLine(key, hunkIndex) as Extract<PlannedReviewRow, { kind: "diff-row" }>;
   return {
-    kind: "note-guide-cap",
-    key,
-    stableKey: key,
-    fileId: "file-1",
-    hunkIndex,
-    side: "new",
+    ...row,
+    noteGuideSide: "new",
   };
 }
 
@@ -124,17 +126,17 @@ describe("planned review row geometry", () => {
       }),
     ).toBe(false);
     expect(plannedReviewRowHeight(splitLine("line", 0), baseOptions)).toBe(1);
-    expect(plannedReviewRowHeight(guideCap("cap", 0), baseOptions)).toBe(1);
+    expect(plannedReviewRowHeight(guidedLine("guide", 0), baseOptions)).toBe(1);
     expect(plannedReviewRowHeight(inlineNote("note", 0), baseOptions)).toBeGreaterThan(3);
   });
 
-  test("measured hunk bounds ignore collapsed gaps but include inline notes and guide caps", () => {
+  test("measured hunk bounds ignore collapsed gaps but include inline notes and guide rows", () => {
     const rows = [
       hunkHeader("h0", 0, "hunk-0"),
       splitLine("line-0", 0),
       collapsedRow("gap", 0),
       inlineNote("note", 0),
-      guideCap("cap", 0),
+      guidedLine("guide", 0),
       hunkHeader("h1", 1, "hunk-1"),
       splitLine("line-1", 1),
     ];
@@ -149,7 +151,7 @@ describe("planned review row geometry", () => {
       top: 0,
       height: 3 + noteHeight,
       startRowId: reviewRowId("h0"),
-      endRowId: reviewRowId("cap"),
+      endRowId: reviewRowId("guide"),
     });
     expect(measured.hunkBounds.get(1)).toEqual({
       top: 4 + noteHeight,

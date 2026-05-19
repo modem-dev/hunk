@@ -98,10 +98,11 @@ function createConnection() {
 }
 
 describe("session broker daemon", () => {
-  test("serves health and raw list/get requests", async () => {
+  test("serves health and raw list/get requests when the HTTP API is enabled", async () => {
     const daemon = createSessionBrokerDaemon({
       broker: createBroker(),
       capabilities: { version: 1, name: "test-broker" },
+      exposeHttpApi: true,
     });
     const { connection } = createConnection();
     daemon.handleConnectionMessage(
@@ -149,10 +150,38 @@ describe("session broker daemon", () => {
     daemon.shutdown();
   });
 
+  test("does not expose the raw broker HTTP API by default", async () => {
+    const daemon = createSessionBrokerDaemon({
+      broker: createBroker(),
+      capabilities: { version: 1 },
+    });
+
+    await expect(
+      daemon.handleRequest(new Request("http://broker.test/broker/capabilities")),
+    ).resolves.toBeNull();
+
+    await expect(
+      daemon.handleRequest(
+        new Request("http://broker.test/broker", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "list" }),
+        }),
+      ),
+    ).resolves.toBeNull();
+
+    await expect(
+      daemon.handleRequest(new Request("http://broker.test/health")),
+    ).resolves.toBeInstanceOf(Response);
+    expect(daemon.paths).toEqual({ health: "/health", socket: "/session" });
+    daemon.shutdown();
+  });
+
   test("requires JSON content type for raw broker API posts", async () => {
     const daemon = createSessionBrokerDaemon({
       broker: createBroker(),
       capabilities: { version: 1 },
+      exposeHttpApi: true,
     });
 
     const response = await daemon.handleRequest(
@@ -174,6 +203,7 @@ describe("session broker daemon", () => {
     const daemon = createSessionBrokerDaemon({
       broker: createBroker(),
       capabilities: { version: 1 },
+      exposeHttpApi: true,
     });
     const session = createConnection();
     const { connection, sent } = session;

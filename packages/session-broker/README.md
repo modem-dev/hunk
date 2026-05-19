@@ -9,7 +9,7 @@ Use this package when you want to:
 - track live sessions
 - register and update session snapshots
 - route commands to one live session
-- expose broker health and raw list/get/dispatch APIs
+- expose broker health and optional raw list/get/dispatch APIs
 - manage session-side websocket connection state
 
 ## Package roles
@@ -29,7 +29,7 @@ If you are choosing one package to build against, start here.
 - `SessionBrokerDaemon` runtime-neutral daemon engine
 - `SessionBrokerConnection` runtime-neutral session-side websocket helper
 - raw broker HTTP request types
-- health and capabilities handling
+- health handling and optional capabilities API handling
 - stale-session pruning and idle shutdown
 
 ## What this package does not own
@@ -103,10 +103,21 @@ const daemon = createSessionBrokerDaemon({
 At this point the daemon can:
 
 - handle health requests
-- handle capabilities requests
-- handle raw `list` / `get` / `dispatch` broker API requests
 - process websocket register/snapshot/heartbeat/result messages
 - prune stale sessions and request idle shutdown
+
+The raw HTTP broker API is opt-in. Enable it only when your host application wants to expose the generic `list` / `get` / `dispatch` command surface:
+
+```ts
+const daemon = createSessionBrokerDaemon({
+  broker,
+  capabilities: {
+    version: 1,
+    name: "example-broker",
+  },
+  exposeHttpApi: true,
+});
+```
 
 ### 3. Serve it through a runtime adapter
 
@@ -167,7 +178,7 @@ The helper owns:
 
 ## Raw broker API
 
-The daemon's runtime-neutral HTTP API is intentionally small:
+The daemon's runtime-neutral HTTP API is intentionally small and disabled by default. When `exposeHttpApi: true` is set, it serves:
 
 - `GET /health`
 - `GET /broker/capabilities`

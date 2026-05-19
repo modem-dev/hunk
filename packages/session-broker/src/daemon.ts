@@ -25,6 +25,7 @@ export interface SessionBrokerDaemonOptions<
   broker: SessionBrokerController<SessionView, ServerMessage, CommandResult>;
   capabilities?: SessionBrokerCapabilities;
   paths?: Partial<SessionBrokerHttpPaths>;
+  exposeHttpApi?: boolean;
   idleTimeoutMs?: number;
   staleSessionTtlMs?: number;
   staleSessionSweepIntervalMs?: number;
@@ -105,11 +106,14 @@ export class SessionBrokerDaemon<
       "broker"
     > = {},
   ) {
+    const exposeHttpApi = options.exposeHttpApi ?? false;
     this.paths = {
       health: options.paths?.health ?? DEFAULT_SESSION_BROKER_HEALTH_PATH,
-      api: options.paths?.api ?? DEFAULT_SESSION_BROKER_API_PATH,
-      capabilities: options.paths?.capabilities ?? DEFAULT_SESSION_BROKER_CAPABILITIES_PATH,
       socket: options.paths?.socket ?? DEFAULT_SESSION_BROKER_SOCKET_PATH,
+      api: exposeHttpApi ? (options.paths?.api ?? DEFAULT_SESSION_BROKER_API_PATH) : undefined,
+      capabilities: exposeHttpApi
+        ? (options.paths?.capabilities ?? DEFAULT_SESSION_BROKER_CAPABILITIES_PATH)
+        : undefined,
     };
     this.capabilities = options.capabilities ?? { version: 1 };
     this.idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
@@ -162,12 +166,12 @@ export class SessionBrokerDaemon<
       return Response.json(this.getHealth());
     }
 
-    if (url.pathname === this.paths.capabilities) {
+    if (this.paths.capabilities && url.pathname === this.paths.capabilities) {
       this.noteActivity();
       return Response.json(this.capabilities);
     }
 
-    if (url.pathname === this.paths.api) {
+    if (this.paths.api && url.pathname === this.paths.api) {
       this.noteActivity();
       return this.handleApiRequest(request);
     }

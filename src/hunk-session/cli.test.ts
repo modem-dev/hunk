@@ -388,6 +388,7 @@ describe("Hunk session CLI formatters", () => {
         "Selected hunk: -",
         "Agent notes visible: no",
         "Live comments: 1",
+        "Review notes: 0",
         "Files:",
         "  - src/first.ts (+2 -1, hunks: 2)",
         "      hunk 1: @@ -1,1 +1,2 @@",

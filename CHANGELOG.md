@@ -11,6 +11,7 @@ All notable user-visible changes to Hunk are documented in this file.
 ### Fixed
 
 - Hardened the local session daemon against browser-originated requests by validating Host and Origin headers and requiring JSON content types for API posts.
+- Disabled the generic broker HTTP API by default so Hunk's supported session API is the only app-daemon command surface.
 
 ## [0.13.0] - 2026-05-18
 

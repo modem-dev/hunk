@@ -18,6 +18,10 @@ interface HealthResponse {
   pid: number;
   sessions: number;
   pendingCommands: number;
+  paths?: Record<string, string>;
+  sessionApi?: string;
+  sessionCapabilities?: string;
+  sessionSocket?: string;
 }
 
 async function reserveLoopbackPort() {
@@ -250,7 +254,7 @@ describe("Hunk session daemon server", () => {
     }
   });
 
-  test("exposes session capabilities and rejects the old MCP tool endpoint", async () => {
+  test("exposes only Hunk session endpoints and rejects the old MCP tool endpoint", async () => {
     const port = await reserveLoopbackPort();
     process.env.HUNK_MCP_HOST = "127.0.0.1";
     process.env.HUNK_MCP_PORT = String(port);
@@ -258,6 +262,31 @@ describe("Hunk session daemon server", () => {
     const server = serveSessionBrokerDaemon();
 
     try {
+      const health = await fetch(`http://127.0.0.1:${port}/health`);
+      expect(health.status).toBe(200);
+      const healthPayload = (await health.json()) as HealthResponse;
+      expect(healthPayload.paths).toEqual({
+        health: "/health",
+        socket: "/session",
+      });
+      expect(healthPayload).toMatchObject({
+        sessionApi: `http://127.0.0.1:${port}/session-api`,
+        sessionCapabilities: `http://127.0.0.1:${port}/session-api/capabilities`,
+        sessionSocket: `ws://127.0.0.1:${port}/session`,
+      });
+
+      const genericCapabilities = await fetch(`http://127.0.0.1:${port}/broker/capabilities`);
+      expect(genericCapabilities.status).toBe(404);
+
+      const genericBroker = await fetch(`http://127.0.0.1:${port}/broker`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ action: "list" }),
+      });
+      expect(genericBroker.status).toBe(404);
+
       const capabilities = await fetch(`http://127.0.0.1:${port}/session-api/capabilities`);
       expect(capabilities.status).toBe(200);
       await expect(capabilities.json()).resolves.toMatchObject({
