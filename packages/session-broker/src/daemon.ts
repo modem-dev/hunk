@@ -53,10 +53,20 @@ function parseSocketEnvelope(message: string) {
     : null;
 }
 
+/** Return whether one raw broker API request body was explicitly sent as JSON. */
+function hasJsonContentType(request: Request) {
+  const contentType = request.headers.get("content-type");
+  return contentType?.split(";", 1)[0]?.trim().toLowerCase() === "application/json";
+}
+
 /** Decode one raw broker API request body and surface a friendly transport-level error. */
 async function parseJsonRequest<CommandName extends string = string, CommandInput = unknown>(
   request: Request,
 ) {
+  if (!hasJsonContentType(request)) {
+    throw new Error("Expected Content-Type application/json.");
+  }
+
   try {
     return (await request.json()) as SessionBrokerDaemonRequest<CommandName, CommandInput>;
   } catch {
@@ -320,6 +330,10 @@ export class SessionBrokerDaemon<
   private async handleApiRequest(request: Request) {
     if (request.method !== "POST") {
       return jsonError("Broker API requests must use POST.", 405);
+    }
+
+    if (!hasJsonContentType(request)) {
+      return jsonError("Expected Content-Type application/json.", 415);
     }
 
     try {

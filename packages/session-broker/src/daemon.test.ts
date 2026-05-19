@@ -123,6 +123,7 @@ describe("session broker daemon", () => {
     const listResponse = await daemon.handleRequest(
       new Request("http://broker.test/broker", {
         method: "POST",
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "list" }),
       }),
     );
@@ -134,6 +135,7 @@ describe("session broker daemon", () => {
     const getResponse = await daemon.handleRequest(
       new Request("http://broker.test/broker", {
         method: "POST",
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "get", selector: { sessionId: "session-1" } }),
       }),
     );
@@ -144,6 +146,27 @@ describe("session broker daemon", () => {
       },
     });
 
+    daemon.shutdown();
+  });
+
+  test("requires JSON content type for raw broker API posts", async () => {
+    const daemon = createSessionBrokerDaemon({
+      broker: createBroker(),
+      capabilities: { version: 1 },
+    });
+
+    const response = await daemon.handleRequest(
+      new Request("http://broker.test/broker", {
+        method: "POST",
+        headers: { "content-type": "text/plain" },
+        body: JSON.stringify({ action: "list" }),
+      }),
+    );
+
+    expect(response?.status).toBe(415);
+    await expect(response?.json()).resolves.toEqual({
+      error: "Expected Content-Type application/json.",
+    });
     daemon.shutdown();
   });
 
@@ -166,6 +189,7 @@ describe("session broker daemon", () => {
     const pendingResponse = daemon.handleRequest(
       new Request("http://broker.test/broker", {
         method: "POST",
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({
           action: "dispatch",
           selector: { sessionId: "session-1" },
