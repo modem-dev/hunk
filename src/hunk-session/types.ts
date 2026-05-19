@@ -1,4 +1,5 @@
-import type { AgentAnnotation, CliInput, ReviewNoteSource } from "../core/types";
+import type { CommentTargetInput, DiffSide } from "../core/liveComments";
+import type { CliInput, ReviewNoteSource } from "../core/types";
 import type { SessionBrokerClient } from "../session-broker/brokerClient";
 import type {
   SessionClientMessage,
@@ -9,7 +10,7 @@ import type {
   SessionTerminalMetadata,
 } from "@hunk/session-broker-core";
 
-export type DiffSide = "old" | "new";
+export type { CommentTargetInput, DiffSide, LiveComment } from "../core/liveComments";
 
 export interface SessionFileSummary {
   id: string;
@@ -63,16 +64,6 @@ export interface HunkSessionState {
 export type HunkSessionRegistration = SessionRegistration<HunkSessionInfo>;
 export type HunkSessionSnapshot = SessionSnapshot<HunkSessionState>;
 
-export interface CommentTargetInput {
-  filePath: string;
-  hunkIndex?: number;
-  side?: DiffSide;
-  line?: number;
-  summary: string;
-  rationale?: string;
-  author?: string;
-}
-
 export interface CommentToolInput extends SessionTargetInput, CommentTargetInput {
   reveal?: boolean;
 }
@@ -107,17 +98,6 @@ export interface RemoveCommentToolInput extends SessionTargetInput {
 
 export interface ClearCommentsToolInput extends SessionTargetInput {
   filePath?: string;
-}
-
-export interface LiveComment extends AgentAnnotation {
-  id: string;
-  source: "mcp";
-  author?: string;
-  createdAt: string;
-  filePath: string;
-  hunkIndex: number;
-  side: DiffSide;
-  line: number;
 }
 
 export interface SessionLiveCommentSummary {

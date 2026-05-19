@@ -1,6 +1,28 @@
 import type { Hunk } from "@pierre/diffs";
-import type { DiffFile } from "./types";
-import type { CommentTargetInput, DiffSide, LiveComment } from "../hunk-session/types";
+import type { AgentAnnotation, DiffFile } from "./types";
+
+export type DiffSide = "old" | "new";
+
+export interface CommentTargetInput {
+  filePath: string;
+  hunkIndex?: number;
+  side?: DiffSide;
+  line?: number;
+  summary: string;
+  rationale?: string;
+  author?: string;
+}
+
+export interface LiveComment extends AgentAnnotation {
+  id: string;
+  source: "mcp";
+  author?: string;
+  createdAt: string;
+  filePath: string;
+  hunkIndex: number;
+  side: DiffSide;
+  line: number;
+}
 
 export interface ResolvedCommentTarget {
   hunkIndex: number;
