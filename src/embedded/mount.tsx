@@ -13,6 +13,11 @@ type KeyInputSource = Readonly<{
   on: (event: string, listener: KeyInputListener) => unknown;
   off: (event: string, listener: KeyInputListener) => unknown;
 }>;
+type RendererListener = (...args: unknown[]) => void;
+type ScopedRendererScope = {
+  renderer: CliRenderer;
+  dispose(): void;
+};
 
 /** Scope Hunk keyboard and paste listeners so inactive embedded mounts stay alive but quiet. */
 export function createScopedKeyInput(source: KeyInputSource, enabled: () => boolean) {
@@ -66,21 +71,65 @@ export function createScopedKeyInput(source: KeyInputSource, enabled: () => bool
   };
 }
 
-/** Scope the renderer root and input stream to the host-provided embedded container. */
-function scopedRenderer(
+/** Scope renderer APIs that embedded Hunk reads to the host-provided container. */
+export function createEmbeddedRendererScope(
   renderer: CliRenderer,
   root: Renderable,
   keyInput: CliRenderer["keyInput"],
-) {
+): ScopedRendererScope {
   const scoped = Object.create(renderer) as CliRenderer;
-  Object.defineProperty(scoped, "root", { value: root });
-  Object.defineProperty(scoped, "keyInput", { value: keyInput });
-  Object.defineProperty(scoped, "intermediateRender", {
-    value() {
-      if (!renderer.isDestroyed) renderer.requestRender();
+  const resizeListeners = new Set<RendererListener>();
+  const readWidth = () => Math.max(1, root.width);
+  const readHeight = () => Math.max(1, root.height);
+  const emitResize = () => {
+    for (const listener of resizeListeners) listener(readWidth(), readHeight());
+  };
+
+  root.on("resize", emitResize);
+
+  Object.defineProperties(scoped, {
+    height: { get: readHeight },
+    intermediateRender: {
+      value() {
+        if (!renderer.isDestroyed) renderer.requestRender();
+      },
     },
+    keyInput: { value: keyInput },
+    off: {
+      value(event: string | symbol, listener: RendererListener) {
+        if (event === "resize") {
+          resizeListeners.delete(listener);
+          return scoped;
+        }
+
+        renderer.off(event, listener);
+        return scoped;
+      },
+    },
+    on: {
+      value(event: string | symbol, listener: RendererListener) {
+        if (event === "resize") {
+          resizeListeners.add(listener);
+          return scoped;
+        }
+
+        renderer.on(event, listener);
+        return scoped;
+      },
+    },
+    root: { value: root },
+    terminalHeight: { get: readHeight },
+    terminalWidth: { get: readWidth },
+    width: { get: readWidth },
   });
-  return scoped;
+
+  return {
+    renderer: scoped,
+    dispose() {
+      root.off("resize", emitResize);
+      resizeListeners.clear();
+    },
+  };
 }
 
 function EmbeddedHunkRoot({
@@ -117,7 +166,8 @@ export function mountEmbeddedHunkApp({
 }: MountEmbeddedHunkAppInput): EmbeddedHunkMount {
   let currentActive = active;
   const scopedKeyInput = createScopedKeyInput(renderer.keyInput, () => currentActive);
-  const root = createRoot(scopedRenderer(renderer, container, scopedKeyInput.keyInput));
+  const scopedRenderer = createEmbeddedRendererScope(renderer, container, scopedKeyInput.keyInput);
+  const root = createRoot(scopedRenderer.renderer);
 
   const render = (next: { active: boolean; onQuit: () => void }) => {
     currentActive = next.active;
@@ -130,6 +180,7 @@ export function mountEmbeddedHunkApp({
     update: render,
     unmount() {
       root.unmount();
+      scopedRenderer.dispose();
       scopedKeyInput.dispose();
     },
   };

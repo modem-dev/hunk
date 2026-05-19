@@ -1,13 +1,15 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { BoxRenderable } from "@opentui/core";
+import { createTestRenderer } from "@opentui/core/testing";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createEmbeddedHunkSession } from "./index";
-import { createScopedKeyInput } from "./mount";
+import { createEmbeddedRendererScope, createScopedKeyInput } from "./mount";
 import { embeddedHunkSessionInternals } from "./session";
 import type { EmbeddedHunkSession } from "./types";
 
-const patchText = [
+const testPatchText = [
   "diff --git a/example.ts b/example.ts",
   "--- a/example.ts",
   "+++ b/example.ts",
@@ -19,15 +21,11 @@ const patchText = [
 
 let previousHunkMcpDisable: string | undefined;
 
-/** Return the private app bootstrap for assertions that public snapshots intentionally hide. */
-function renderBootstrap(session: EmbeddedHunkSession) {
-  return embeddedHunkSessionInternals(session).getRenderSnapshot().bootstrap;
-}
-
 /** Return the loaded patch text for one embedded session. */
-function loadedPatch(session: EmbeddedHunkSession) {
-  return renderBootstrap(session)
-    .changeset.files.map((file) => file.patch)
+function getTestLoadedPatch(session: EmbeddedHunkSession) {
+  return embeddedHunkSessionInternals(session)
+    .getRenderSnapshot()
+    .bootstrap.changeset.files.map((file) => file.patch)
     .join("\n");
 }
 
@@ -60,7 +58,7 @@ describe("embedded Hunk sessions", () => {
 
       const session = await createEmbeddedHunkSession({
         cwd: root,
-        source: { kind: "patch", text: patchText, options: { theme: "paper" } },
+        source: { kind: "patch", text: testPatchText, options: { theme: "paper" } },
       });
       const snapshot = session.getSnapshot();
 
@@ -70,7 +68,7 @@ describe("embedded Hunk sessions", () => {
       expect(snapshot.title).toBe("Patch review: stdin patch");
       expect(snapshot.fileCount).toBe(1);
 
-      const bootstrap = renderBootstrap(session);
+      const bootstrap = embeddedHunkSessionInternals(session).getRenderSnapshot().bootstrap;
       expect(bootstrap.initialMode).toBe("stack");
       expect(bootstrap.initialShowLineNumbers).toBe(false);
       expect(bootstrap.initialTheme).toBe("paper");
@@ -102,7 +100,7 @@ describe("embedded Hunk sessions", () => {
         options: { wrapLines: undefined },
       } as const;
       const session = await createEmbeddedHunkSession({ cwd: root, source });
-      expect(loadedPatch(session)).toContain("first");
+      expect(getTestLoadedPatch(session)).toContain("first");
 
       writeFileSync(right, "export const value = 2;\nexport const second = true;\n");
       const reusedSnapshot = await session.open({ kind: "diff", left, right });
@@ -110,16 +108,16 @@ describe("embedded Hunk sessions", () => {
       expect(reusedSnapshot.status).toBe("ready");
       if (reusedSnapshot.status !== "ready") throw new Error("Expected reused snapshot.");
       expect(reusedSnapshot.source).toEqual(session.source);
-      expect(loadedPatch(session)).toContain("first");
-      expect(loadedPatch(session)).not.toContain("second");
+      expect(getTestLoadedPatch(session)).toContain("first");
+      expect(getTestLoadedPatch(session)).not.toContain("second");
 
       const reloadedSnapshot = await session.reload();
 
       expect(reloadedSnapshot.status).toBe("ready");
       if (reloadedSnapshot.status !== "ready") throw new Error("Expected reloaded snapshot.");
       expect(reloadedSnapshot.source).toEqual(session.source);
-      expect(loadedPatch(session)).toContain("second");
-      expect(loadedPatch(session)).not.toContain("first");
+      expect(getTestLoadedPatch(session)).toContain("second");
+      expect(getTestLoadedPatch(session)).not.toContain("first");
 
       session.dispose();
     } finally {
@@ -131,13 +129,13 @@ describe("embedded Hunk sessions", () => {
     const root = mkdtempSync(join(tmpdir(), "hunk-embedded-reload-error-"));
 
     try {
-      const initialSource = { kind: "patch", text: patchText, label: "initial patch" } as const;
+      const initialSource = { kind: "patch", text: testPatchText, label: "initial patch" } as const;
       const session = await createEmbeddedHunkSession({
         cwd: root,
         source: initialSource,
       });
 
-      await expect(session.open({ kind: "patch", file: "missing.patch" })).rejects.toThrow();
+      expect(session.open({ kind: "patch", file: "missing.patch" })).rejects.toThrow();
 
       expect(session.source).toMatchObject(initialSource);
       const snapshot = session.getSnapshot();
@@ -181,5 +179,52 @@ describe("embedded Hunk sessions", () => {
 
     scoped.dispose();
     expect(sourceListeners.get("keypress")?.size).toBe(0);
+  });
+
+  test("sizes embedded renderer reads and resize events from the host container", async () => {
+    const setup = await createTestRenderer({ width: 120, height: 40 });
+
+    try {
+      const container = new BoxRenderable(setup.renderer, {
+        height: 12,
+        id: "embedded-container",
+        width: 60,
+      });
+      setup.renderer.root.add(container);
+      await setup.renderOnce();
+
+      const scope = createEmbeddedRendererScope(setup.renderer, container, setup.renderer.keyInput);
+      const resizes: Array<{ height: number; width: number }> = [];
+      const onResize = (width: unknown, height: unknown) => {
+        resizes.push({ height: Number(height), width: Number(width) });
+      };
+
+      try {
+        scope.renderer.on("resize", onResize);
+
+        expect(scope.renderer.width).toBe(60);
+        expect(scope.renderer.height).toBe(12);
+        expect(scope.renderer.terminalWidth).toBe(60);
+        expect(scope.renderer.terminalHeight).toBe(12);
+
+        container.width = 48;
+        container.height = 9;
+        await setup.renderOnce();
+
+        expect(scope.renderer.width).toBe(48);
+        expect(scope.renderer.height).toBe(9);
+        expect(resizes).toEqual([{ height: 9, width: 48 }]);
+
+        scope.renderer.off("resize", onResize);
+        container.width = 36;
+        await setup.renderOnce();
+
+        expect(resizes).toEqual([{ height: 9, width: 48 }]);
+      } finally {
+        scope.dispose();
+      }
+    } finally {
+      setup.renderer.destroy();
+    }
   });
 });

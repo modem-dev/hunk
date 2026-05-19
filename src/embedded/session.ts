@@ -24,31 +24,31 @@ export type EmbeddedHunkRenderSnapshot =
 
 type NormalizedEmbeddedHunkSource = EmbeddedHunkSource & { options: CommonOptions };
 
-/** Convert unknown thrown values into stable user-facing error text. */
-function errorMessage(error: unknown) {
-  if (error instanceof Error && error.message) return error.message;
-  return String(error || "Failed to load Hunk.");
-}
-
-/** Copy only explicitly defined fields so source identity has one canonical shape. */
-function compactRecord<T extends object>(source: T): T {
-  const next = {} as T;
-  for (const [key, value] of Object.entries(source) as [keyof T, T[keyof T]][]) {
-    if (value !== undefined) {
-      next[key] = value;
-    }
+/** Drop undefined option entries so equivalent embedded sources compare the same. */
+function normalizeEmbeddedOptions(options: EmbeddedHunkSource["options"] = {}): CommonOptions {
+  const normalized = { ...options };
+  for (const key of Object.keys(normalized) as Array<keyof typeof normalized>) {
+    if (normalized[key] === undefined) delete normalized[key];
   }
-  return next;
+  return normalized;
 }
 
 /** Return a session-owned source copy with normalized options and pathspec identity. */
 function normalizeEmbeddedHunkSource(source: EmbeddedHunkSource): NormalizedEmbeddedHunkSource {
-  const pathspecs = "pathspecs" in source ? source.pathspecs : undefined;
-  return compactRecord({
+  const normalized = {
     ...source,
-    ...(pathspecs !== undefined ? { pathspecs: [...pathspecs] } : {}),
-    options: compactRecord({ ...source.options }),
-  }) as NormalizedEmbeddedHunkSource;
+    options: normalizeEmbeddedOptions(source.options),
+  } as NormalizedEmbeddedHunkSource;
+
+  if ("pathspecs" in normalized) {
+    if (normalized.pathspecs === undefined) {
+      delete normalized.pathspecs;
+    } else {
+      normalized.pathspecs = [...normalized.pathspecs];
+    }
+  }
+
+  return normalized;
 }
 
 /** Adapt a public embedded source into the internal CLI input pipeline. */
@@ -183,13 +183,13 @@ class EmbeddedHunkSessionImpl implements EmbeddedHunkSession {
       this.setRenderSnapshot({ status: "ready", bootstrap });
       return this.getSnapshot();
     } catch (error) {
-      const message = errorMessage(error);
+      const message = error instanceof Error ? error.message : String(error);
       this.setRenderSnapshot({
         status: "error",
         bootstrap: this.renderSnapshot.bootstrap,
         error: message,
       });
-      throw error instanceof Error ? error : new Error(message);
+      throw error;
     }
   }
 
