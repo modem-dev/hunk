@@ -91,20 +91,49 @@ function inlineNote(key: string, hunkIndex: number): PlannedReviewRow {
       summary: "Explain why this branch changed.",
       rationale: "The note should reserve space in the hunk bounds.",
     },
+    note: {
+      id: "note-1",
+      annotation: {
+        id: "note-1",
+        newRange: [1, 1],
+        summary: "Explain why this branch changed.",
+        rationale: "The note should reserve space in the hunk bounds.",
+      },
+    },
     anchorSide: "new",
     noteCount: 1,
     noteIndex: 0,
   };
 }
 
+// Inline notes were unified into the diff-row stream, so the standalone "note-guide-cap" row
+// kind is gone: a guide cap is now a regular diff-row that carries a noteGuideSide marker.
 function guideCap(key: string, hunkIndex: number): PlannedReviewRow {
   return {
-    kind: "note-guide-cap",
+    kind: "diff-row",
     key,
     stableKey: key,
     fileId: "file-1",
     hunkIndex,
-    side: "new",
+    noteGuideSide: "new",
+    row: {
+      type: "split-line",
+      key,
+      fileId: "file-1",
+      hunkIndex,
+      left: {
+        kind: "deletion",
+        sign: "-",
+        lineNumber: 1,
+        spans: [{ text: "old" }],
+      },
+      right: {
+        kind: "addition",
+        sign: "+",
+        lineNumber: 1,
+        spans: [{ text: "new" }],
+      },
+    },
   };
 }
 
