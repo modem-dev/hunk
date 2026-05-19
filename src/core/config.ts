@@ -1,7 +1,14 @@
 import fs from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { join } from "node:path";
 import { resolveGlobalConfigPath } from "./paths";
-import type { CliInput, CommonOptions, LayoutMode, PersistedViewPreferences } from "./types";
+import { detectVcs, findVcsRepoRootCandidate, isVcsId } from "./vcs";
+import type {
+  CliInput,
+  CommonOptions,
+  LayoutMode,
+  PersistedViewPreferences,
+  VcsMode,
+} from "./types";
 
 const DEFAULT_VIEW_PREFERENCES: PersistedViewPreferences = {
   mode: "auto",
@@ -31,6 +38,11 @@ function normalizeLayoutMode(value: unknown): LayoutMode | undefined {
   return value === "auto" || value === "split" || value === "stack" ? value : undefined;
 }
 
+/** Accept only the VCS backends Hunk can load directly. */
+function normalizeVcsMode(value: unknown): VcsMode | undefined {
+  return isVcsId(value) ? value : undefined;
+}
+
 /** Accept only plain booleans from config files. */
 function normalizeBoolean(value: unknown) {
   return typeof value === "boolean" ? value : undefined;
@@ -45,7 +57,9 @@ function normalizeString(value: unknown) {
 function readConfigPreferences(source: Record<string, unknown>): CommonOptions {
   return {
     mode: normalizeLayoutMode(source.mode),
+    vcs: normalizeVcsMode(source.vcs),
     theme: normalizeString(source.theme),
+    watch: normalizeBoolean(source.watch),
     excludeUntracked: normalizeBoolean(source.exclude_untracked),
     lineNumbers: normalizeBoolean(source.line_numbers),
     wrapLines: normalizeBoolean(source.wrap_lines),
@@ -59,6 +73,7 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
   return {
     ...base,
     mode: overrides.mode ?? base.mode,
+    vcs: overrides.vcs ?? base.vcs,
     theme: overrides.theme ?? base.theme,
     agentContext: overrides.agentContext ?? base.agentContext,
     pager: overrides.pager ?? base.pager,
@@ -88,22 +103,9 @@ function resolveConfigLayer(source: Record<string, unknown>, input: CliInput): C
   return resolved;
 }
 
-/** Return the first parent that looks like a Git repository root. */
-function findRepoRoot(cwd = process.cwd()) {
-  let current = resolve(cwd);
-
-  for (;;) {
-    if (fs.existsSync(join(current, ".git"))) {
-      return current;
-    }
-
-    const parent = dirname(current);
-    if (parent === current) {
-      return undefined;
-    }
-
-    current = parent;
-  }
+/** Choose the VCS backend that best matches the discovered checkout. */
+function detectRepoVcsMode(cwd: string): VcsMode {
+  return detectVcs(cwd)?.id ?? "git";
 }
 
 /** Parse one TOML config file into a plain object. */
@@ -125,12 +127,13 @@ export function resolveConfiguredCliInput(
   input: CliInput,
   { cwd = process.cwd(), env = process.env }: ConfigResolutionOptions = {},
 ): HunkConfigResolution {
-  const repoRoot = findRepoRoot(cwd);
+  const repoRoot = findVcsRepoRootCandidate(cwd);
   const repoConfigPath = repoRoot ? join(repoRoot, ".hunk", "config.toml") : undefined;
   const userConfigPath = resolveGlobalConfigPath(env);
 
   let resolvedOptions: CommonOptions = {
     mode: DEFAULT_VIEW_PREFERENCES.mode,
+    vcs: detectRepoVcsMode(cwd),
     // Keep the built-in theme default explicit so stdin-backed startup paths do not depend on
     // renderer theme-mode detection for their initial palette.
     theme: "graphite",
@@ -163,8 +166,9 @@ export function resolveConfiguredCliInput(
     ...resolvedOptions,
     agentContext: input.options.agentContext,
     pager: input.options.pager ?? false,
-    watch: input.options.watch ?? false,
+    watch: input.options.watch ?? resolvedOptions.watch ?? false,
     excludeUntracked: resolvedOptions.excludeUntracked ?? false,
+    vcs: resolvedOptions.vcs ?? "git",
     mode: resolvedOptions.mode ?? DEFAULT_VIEW_PREFERENCES.mode,
     lineNumbers: resolvedOptions.lineNumbers ?? DEFAULT_VIEW_PREFERENCES.showLineNumbers,
     wrapLines: resolvedOptions.wrapLines ?? DEFAULT_VIEW_PREFERENCES.wrapLines,

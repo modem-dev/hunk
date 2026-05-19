@@ -18,7 +18,7 @@ export interface BuildAppMenusOptions {
   showHelp: boolean;
   showHunkHeaders: boolean;
   showLineNumbers: boolean;
-  sidebarVisible: boolean;
+  renderSidebar: boolean;
   toggleAgentNotes: () => void;
   toggleFocusArea: () => void;
   toggleHelp: () => void;
@@ -26,6 +26,7 @@ export interface BuildAppMenusOptions {
   toggleLineNumbers: () => void;
   toggleLineWrap: () => void;
   toggleSidebar: () => void;
+  triggerEditSelectedFile: () => void;
   wrapLines: boolean;
 }
 
@@ -46,7 +47,7 @@ export function buildAppMenus({
   showHelp,
   showHunkHeaders,
   showLineNumbers,
-  sidebarVisible,
+  renderSidebar,
   toggleAgentNotes,
   toggleFocusArea,
   toggleHelp,
@@ -54,6 +55,7 @@ export function buildAppMenus({
   toggleLineNumbers,
   toggleLineWrap,
   toggleSidebar,
+  triggerEditSelectedFile,
   wrapLines,
 }: BuildAppMenusOptions): Record<MenuId, MenuEntry[]> {
   const themeMenuEntries: MenuEntry[] = THEMES.map((theme) => ({
@@ -75,6 +77,12 @@ export function buildAppMenus({
       label: "Focus filter",
       hint: "/",
       action: focusFilter,
+    },
+    {
+      kind: "item",
+      label: "Open file in editor",
+      hint: "e",
+      action: triggerEditSelectedFile,
     },
   ];
 
@@ -126,7 +134,7 @@ export function buildAppMenus({
         kind: "item",
         label: "Sidebar",
         hint: "s",
-        checked: sidebarVisible,
+        checked: renderSidebar,
         action: toggleSidebar,
       },
       { kind: "separator" },

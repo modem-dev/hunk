@@ -26,9 +26,11 @@ export function HelpDialog({
         ["Shift+Space", "page up (alt)"],
         ["d / u", "half page down / up"],
         ["[ / ]", "previous / next hunk"],
+        [", / .", "previous / next file"],
         ["{ / }", "previous / next comment"],
         ["← / →", "scroll code left / right (Shift = faster)"],
         ["Home / End", "jump to top / bottom"],
+        ["g / G", "jump to top / bottom (less-style)"],
       ],
     },
     {
@@ -45,12 +47,14 @@ export function HelpDialog({
         ["s / t", "sidebar / theme"],
         ["a", "toggle AI notes"],
         ["l / w / m", "lines / wrap / metadata"],
+        ["e", "open file in $EDITOR"],
       ],
     },
     {
       title: "Review",
       items: [
         ["/", "focus file filter"],
+        ["c", "create review note"],
         ["Tab", "toggle files/filter focus"],
         ["F10", "open menus"],
         [canRefresh ? "r / q" : "q", canRefresh ? "reload / quit" : "quit"],

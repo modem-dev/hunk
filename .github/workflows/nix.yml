@@ -1,0 +1,59 @@
+name: Nix
+
+on:
+  pull_request:
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "assets/**"
+      - "LICENSE"
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "assets/**"
+      - "LICENSE"
+
+concurrency:
+  group: nix-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: Package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3 # v31.10.6
+        with:
+          extra_nix_config: |
+            extra-trusted-substituters = https://nix-community.cachix.org
+            extra-trusted-public-keys = nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
+
+      - name: Verify Nix dependency lockfile
+        run: |
+          nix run .#update-bun-lock
+          if ! git diff --exit-code nix/bun.lock.nix; then
+            echo "::error::Nix lockfile is out of date. Please run 'bun run nix:update-lock' and commit the changes to nix/bun.lock.nix."
+            exit 1
+          fi
+
+      - name: Check flake outputs
+        run: nix flake check --print-build-logs
+
+      - name: Evaluate all supported systems
+        run: nix flake check --all-systems --no-build
+
+      - name: Build Hunk package
+        run: nix build .#default --print-build-logs
+
+      - name: Smoke test Nix package
+        run: |
+          ./result/bin/hunk --version
+          skill_path="$(./result/bin/hunk skill path)"
+          test -f "$skill_path"

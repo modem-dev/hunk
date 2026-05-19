@@ -1,16 +1,8 @@
 import fs from "node:fs";
-import { join } from "node:path";
-import {
-  buildGitDiffArgs,
-  buildGitShowArgs,
-  buildGitStashShowArgs,
-  listGitUntrackedFiles,
-  resolveGitRepoRoot,
-  runGitText,
-} from "./git";
+import { createUnsupportedVcsOperationError, getVcsAdapter, operationFromInput } from "./vcs";
 import type { CliInput } from "./types";
 
-/** Return whether the current input can be rebuilt from files or Git state without rereading stdin. */
+/** Return whether the current input can be rebuilt from files or VCS state without rereading stdin. */
 export function canReloadInput(input: CliInput) {
   if (input.options.agentContext === "-") {
     return false;
@@ -29,38 +21,27 @@ function statSignature(path: string) {
   return `${path}:${stat.size}:${stat.mtimeMs}:${stat.ino}`;
 }
 
-/** Build the cheaper watch signature for working-tree git diff inputs without rendering full untracked patches. */
-function gitWorkingTreeWatchSignature(input: Extract<CliInput, { kind: "git" }>) {
-  const trackedPatch = runGitText({ input, args: buildGitDiffArgs(input) });
-  const repoRoot = resolveGitRepoRoot(input);
-  const untrackedSignatures = listGitUntrackedFiles(input, { repoRoot }).map(
-    (filePath) => `untracked:${statSignature(join(repoRoot, filePath))}`,
-  );
-
-  return [trackedPatch, ...untrackedSignatures].join("\n---\n");
-}
-
-/** Build one exact patch signature for Git-backed review inputs. */
-function gitPatchSignature(input: Extract<CliInput, { kind: "git" | "show" | "stash-show" }>) {
-  switch (input.kind) {
-    case "git":
-      return gitWorkingTreeWatchSignature(input);
-    case "show":
-      return runGitText({ input, args: buildGitShowArgs(input) });
-    case "stash-show":
-      return runGitText({ input, args: buildGitStashShowArgs(input) });
+/** Build one exact patch signature for adapter-backed review inputs. */
+function vcsPatchSignature(input: Extract<CliInput, { kind: "vcs" | "show" | "stash-show" }>) {
+  const adapter = getVcsAdapter(input.options.vcs ?? "git");
+  if (!adapter.watchSignature) {
+    throw new Error(`${adapter.name} does not support watch signatures.`);
   }
+  const operation = operationFromInput(input);
+  if (!adapter.capabilities.reviewOperations.has(operation.kind)) {
+    throw createUnsupportedVcsOperationError(adapter, operation);
+  }
+  return adapter.watchSignature(operation, { cwd: process.cwd() });
 }
-
 /** Compute a change-detection signature for one watchable input. */
 export function computeWatchSignature(input: CliInput) {
   const parts: string[] = [input.kind];
 
   switch (input.kind) {
-    case "git":
+    case "vcs":
     case "show":
     case "stash-show":
-      parts.push(gitPatchSignature(input));
+      parts.push(vcsPatchSignature(input));
       break;
     case "diff":
     case "difftool":

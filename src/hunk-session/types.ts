@@ -1,4 +1,4 @@
-import type { AgentAnnotation, CliInput } from "../core/types";
+import type { AgentAnnotation, CliInput, ReviewNoteSource } from "../core/types";
 import type { SessionBrokerClient } from "../session-broker/brokerClient";
 import type {
   SessionClientMessage,
@@ -56,6 +56,8 @@ export interface HunkSessionState {
   showAgentNotes: boolean;
   liveCommentCount: number;
   liveComments: SessionLiveCommentSummary[];
+  reviewNoteCount?: number;
+  reviewNotes?: SessionReviewNoteSummary[];
 }
 
 export type HunkSessionRegistration = SessionRegistration<HunkSessionInfo>;
@@ -128,6 +130,21 @@ export interface SessionLiveCommentSummary {
   rationale?: string;
   author?: string;
   createdAt: string;
+}
+
+export interface SessionReviewNoteSummary {
+  noteId: string;
+  source: ReviewNoteSource;
+  filePath: string;
+  hunkIndex?: number;
+  oldRange?: [number, number];
+  newRange?: [number, number];
+  body: string;
+  title?: string;
+  author?: string;
+  createdAt: string;
+  updatedAt?: string;
+  editable: boolean;
 }
 
 export interface AppliedCommentResult {
@@ -211,6 +228,8 @@ export interface SessionReview {
   selectedHunk: SessionReviewHunk | null;
   showAgentNotes: boolean;
   liveCommentCount: number;
+  reviewNoteCount?: number;
+  reviewNotes?: SessionReviewNoteSummary[];
   files: SessionReviewFile[];
 }
 

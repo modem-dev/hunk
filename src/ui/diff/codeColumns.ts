@@ -19,11 +19,17 @@ export function maxFileCodeLineWidth(file: DiffFile) {
   const deletionLines = file.metadata.deletionLines ?? [];
   const additionLines = file.metadata.additionLines ?? [];
 
-  return Math.max(
-    0,
-    ...deletionLines.map(measureRenderedCodeLineWidth),
-    ...additionLines.map(measureRenderedCodeLineWidth),
-  );
+  let maxWidth = 0;
+
+  for (const line of deletionLines) {
+    maxWidth = Math.max(maxWidth, measureRenderedCodeLineWidth(line));
+  }
+
+  for (const line of additionLines) {
+    maxWidth = Math.max(maxWidth, measureRenderedCodeLineWidth(line));
+  }
+
+  return maxWidth;
 }
 
 /** Find the widest line-number gutter needed for one file. */

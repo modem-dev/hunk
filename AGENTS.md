@@ -118,6 +118,12 @@ CLI input
 - For CLI, config, or pager work: make sure the relevant source invocation still works (`diff`, `show`, `patch`, or `pager`).
 - Preserve current interaction model unless the user asks to change it explicitly.
 
+## cross-platform support
+
+- Hunk should work on macOS, Linux, and Windows. Keep tests and CI portable unless a case is explicitly Unix-only (PTY/TTY smoke coverage is Unix-only).
+- In tests, avoid hard-coded POSIX paths, separators, shell syntax, and filenames invalid on Windows; use Node path helpers for real filesystem paths while preserving user-provided/protocol paths when pass-through is intentional.
+- If Windows-only Bun behavior appears around timers, sockets, or line endings, prefer a small compatibility fix or a narrowly scoped skip with a comment over broadening Unix assumptions.
+
 ## releases
 
 - Maintain the top-level `CHANGELOG.md` as the source of truth for user-visible changes.

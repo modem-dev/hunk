@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
+import type { Session } from "tuistory";
 import { createPtyHarness } from "./harness";
 
 const harness = createPtyHarness();
@@ -9,6 +10,48 @@ setDefaultTimeout(20_000);
 afterEach(() => {
   harness.cleanup();
 });
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Send an SGR mouse motion event at zero-based terminal coordinates. */
+async function moveMouse(session: Session, x: number, y: number) {
+  session.writeRaw(`\x1b[<35;${x + 1};${y + 1}M`);
+  await session.waitIdle();
+}
+
+/** Drag with the left mouse button using zero-based terminal coordinates. */
+async function dragMouse(
+  session: Session,
+  startX: number,
+  startY: number,
+  endX: number,
+  endY: number,
+) {
+  session.writeRaw(`\x1b[<0;${startX + 1};${startY + 1}M`);
+  await sleep(10);
+  const steps = 5;
+  for (let step = 1; step <= steps; step += 1) {
+    const x = Math.round(startX + ((endX - startX) * step) / steps);
+    const y = Math.round(startY + ((endY - startY) * step) / steps);
+    session.writeRaw(`\x1b[<32;${x + 1};${y + 1}M`);
+    await sleep(10);
+  }
+  session.writeRaw(`\x1b[<0;${endX + 1};${endY + 1}m`);
+  await session.waitIdle();
+}
+
+/** Find the rightmost visible column for text in a terminal snapshot. */
+function rightmostColumnOf(text: string, needle: string) {
+  return Math.max(
+    ...text
+      .split("\n")
+      .map((line) => line.lastIndexOf(needle))
+      .filter((column) => column >= 0),
+    -1,
+  );
+}
 
 describe("live UI integration", () => {
   test("real PTY sessions can toggle wrapped lines on and off", async () => {
@@ -92,6 +135,99 @@ describe("live UI integration", () => {
     }
   });
 
+  test("comment navigation resumes from an unannotated hunk in stream order", async () => {
+    const fixture = harness.createAgentNavigationRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split", "--agent-context", fixture.agentContext, "--agent-notes"],
+      cwd: fixture.dir,
+      cols: 160,
+      rows: 14,
+    });
+
+    try {
+      const initial = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+      expect(initial).not.toContain("Maximum update depth exceeded");
+
+      await session.press("}");
+      const alphaNote = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("Alpha note for navigation."),
+        5_000,
+      );
+      expect(alphaNote).toContain("Alpha note for navigation.");
+      expect(alphaNote).not.toContain("Maximum update depth exceeded");
+
+      await session.press(".");
+      await harness.waitForSnapshot(session, (text) => text.includes("line101 = 10100"), 5_000);
+
+      await session.press("}");
+      const gammaNote = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("Gamma note for navigation."),
+        5_000,
+      );
+
+      expect(gammaNote).toContain("Gamma note for navigation.");
+      expect(gammaNote).not.toContain("Alpha note for navigation.");
+      expect(gammaNote).not.toContain("Maximum update depth exceeded");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("user notes can be drafted and saved inline in a real PTY", async () => {
+    const fixture = harness.createLongWrapFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      cols: 120,
+      rows: 20,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      await session.press("c");
+      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await session.type("Please cover this edge case.");
+
+      const draftBeforeNewline = await session.waitForText(/Please cover this edge case\./, {
+        timeout: 5_000,
+      });
+      const saveRowBeforeNewline = draftBeforeNewline
+        .split("\n")
+        .findIndex((line) => line.includes("Save") && line.includes("Cancel"));
+      expect(saveRowBeforeNewline).toBeGreaterThanOrEqual(0);
+
+      await session.type("\x0a");
+      await harness.waitForSnapshot(
+        session,
+        (text) => {
+          const saveRowAfterNewline = text
+            .split("\n")
+            .findIndex((line) => line.includes("Save") && line.includes("Cancel"));
+          return (
+            text.includes("Please cover this edge case.") &&
+            saveRowAfterNewline > saveRowBeforeNewline
+          );
+        },
+        5_000,
+      );
+
+      await session.type("Second line.");
+      await session.type("\x13");
+
+      const savedNote = await session.waitForText(/Your note/, { timeout: 5_000 });
+      expect(savedNote).toContain("Please cover this edge case.");
+      expect(savedNote).toContain("Second line.");
+    } finally {
+      session.close();
+    }
+  });
+
   test("real hunk navigation jumps to later hunks in the review stream", async () => {
     const fixture = harness.createMultiHunkFilePair();
     const session = await harness.launchHunk({
@@ -117,6 +253,87 @@ describe("live UI integration", () => {
 
       expect(secondHunk).toContain("line60 = 6000");
       expect(secondHunk).not.toContain("line1 = 100");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("backward cross-file hunk navigation reveals the target hunk in a real PTY", async () => {
+    const fixture = harness.createCrossFileHunkNavigationRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split"],
+      cwd: fixture.dir,
+      cols: 120,
+      rows: 16,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      for (let index = 0; index < 19; index += 1) {
+        await session.press("]");
+        await session.waitIdle({ timeout: 40 });
+      }
+
+      await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("export const mid = 4;"),
+        5_000,
+      );
+
+      await session.press("[");
+      await session.waitIdle({ timeout: 80 });
+      await session.press("[");
+      const backward = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("line 341 changed") || text.includes("line 002 changed"),
+        5_000,
+      );
+
+      expect(backward).toContain("line 341 changed");
+      expect(backward).not.toContain("line 002 changed");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("PTY sessions can navigate forward and backward between distant hunks in one large file", async () => {
+    const fixture = harness.createMultiHunkFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      cols: 104,
+      rows: 12,
+    });
+
+    try {
+      const initial = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      expect(initial).toContain("line1 = 100");
+      expect(initial).not.toContain("line60 = 6000");
+
+      await session.press("]");
+      const secondHunk = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("line60 = 6000") && !text.includes("line1 = 100"),
+        5_000,
+      );
+
+      expect(secondHunk).toContain("line60 = 6000");
+      expect(secondHunk).not.toContain("line1 = 100");
+
+      await session.press("[");
+      const firstHunk = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("line1 = 100") && !text.includes("line60 = 6000"),
+        5_000,
+      );
+
+      expect(firstHunk).toContain("line1 = 100");
+      expect(firstHunk).not.toContain("line60 = 6000");
     } finally {
       session.close();
     }
@@ -220,6 +437,243 @@ describe("live UI integration", () => {
       expect(jumped).toContain("deltaOnly = true");
       expect(jumped).not.toContain("alphaOnly = true");
       expect(harness.countMatches(jumped, /epsilon\.ts/g)).toBeGreaterThanOrEqual(2);
+    } finally {
+      session.close();
+    }
+  });
+
+  test("dragging the sidebar divider resizes the review pane in a real PTY", async () => {
+    const fixture = harness.createTwoFileRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split"],
+      cwd: fixture.dir,
+      cols: 220,
+      rows: 18,
+    });
+
+    try {
+      const initial = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+      const initialMainColumn = rightmostColumnOf(initial, "alpha.ts");
+
+      expect(initialMainColumn).toBeGreaterThan(34);
+
+      await dragMouse(session, 34, 6, 54, 6);
+      const resized = await harness.waitForSnapshot(
+        session,
+        (text) => rightmostColumnOf(text, "alpha.ts") >= initialMainColumn + 3,
+        5_000,
+      );
+
+      expect(rightmostColumnOf(resized, "alpha.ts")).toBeGreaterThan(initialMainColumn);
+      expect(resized).toContain("beta.ts");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("clicking and dragging the live scrollbar scrolls the review pane", async () => {
+    const fixture = harness.createScrollableFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      cols: 120,
+      rows: 10,
+    });
+
+    try {
+      const initial = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      expect(initial).toContain("line01 = 101");
+      expect(initial).not.toContain("line12 = 112");
+
+      await session.scrollDown(5, 60, 6);
+      await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("line08 = 108") || text.includes("line09 = 109"),
+        5_000,
+      );
+
+      let scrollbarX: number | null = null;
+      let trackClicked = "";
+      for (const x of [119, 118, 117, 116]) {
+        await session.clickAt(x, 8);
+        try {
+          trackClicked = await harness.waitForSnapshot(
+            session,
+            (text) => text.includes("line12 = 112") || text.includes("line13 = 113"),
+            1_000,
+          );
+          scrollbarX = x;
+          break;
+        } catch {
+          // Try the next near-edge column; PTY backends differ by one cell at pane edges.
+        }
+      }
+
+      expect(scrollbarX).not.toBeNull();
+      expect(trackClicked).toContain("line1");
+      expect(trackClicked).not.toContain("line01 = 101");
+
+      await dragMouse(session, scrollbarX ?? 118, 5, scrollbarX ?? 118, 8);
+      const thumbDragged = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("line15 = 115") || text.includes("line16 = 116"),
+        5_000,
+      );
+
+      expect(thumbDragged).toContain("line1");
+      expect(thumbDragged).not.toContain("line01 = 101");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("add-note affordance appears only after mouse movement in a real PTY", async () => {
+    const fixture = harness.createScrollableFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      cols: 120,
+      rows: 12,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      await moveMouse(session, 8, 5);
+      await session.waitForText(/\[\+\]/, { timeout: 5_000 });
+
+      await session.scrollDown(2);
+      const afterWheel = await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("[+]"),
+        5_000,
+      );
+      expect(afterWheel).not.toContain("[+]");
+
+      await sleep(250);
+      const afterWheelIdle = await session.text({ immediate: true });
+      expect(afterWheelIdle).not.toContain("[+]");
+
+      await moveMouse(session, 9, 5);
+      await session.waitForText(/\[\+\]/, { timeout: 5_000 });
+
+      await session.press("down");
+      const afterKeyboard = await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("[+]"),
+        5_000,
+      );
+      expect(afterKeyboard).not.toContain("[+]");
+
+      await sleep(250);
+      const afterKeyboardIdle = await session.text({ immediate: true });
+      expect(afterKeyboardIdle).not.toContain("[+]");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("clicking diff add-note affordances can cancel and save draft notes", async () => {
+    const fixture = harness.createLongWrapFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      cols: 120,
+      rows: 20,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      await moveMouse(session, 8, 5);
+      await session.waitForText(/\[\+\]/, { timeout: 5_000 });
+      await session.click(/\[\+\]/);
+      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await session.type("Cancel this draft.");
+      await session.click(/Cancel \(Esc\)/);
+      const cancelled = await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("Draft note") && !text.includes("Cancel this draft."),
+        5_000,
+      );
+
+      expect(cancelled).not.toContain("Your note");
+
+      await moveMouse(session, 8, 5);
+      await session.waitForText(/\[\+\]/, { timeout: 5_000 });
+      await session.click(/\[\+\]/);
+      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await session.type("Save this clicked draft.");
+      await session.click(/Save \(\^S\)/);
+      const saved = await session.waitForText(/Your note/, { timeout: 5_000 });
+
+      expect(saved).toContain("Save this clicked draft.");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("top menu mouse navigation can select themes, toggle agent notes, and open help", async () => {
+    const fixture = harness.createAgentFilePair();
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        fixture.before,
+        fixture.after,
+        "--mode",
+        "split",
+        "--agent-context",
+        fixture.agentContext,
+        "--agent-notes",
+      ],
+      cols: 140,
+      rows: 20,
+    });
+
+    try {
+      const initial = await session.waitForText(/Adds bonus export\./, { timeout: 15_000 });
+      expect(initial).toContain("Highlights the follow-up addition for review.");
+
+      await session.click(/Theme/);
+      const themeMenu = await session.waitForText(/Midnight/, { timeout: 5_000 });
+      expect(themeMenu).toContain("Paper");
+
+      await session.click(/Paper/);
+      const themeSelected = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("Adds bonus export.") && !text.includes("Midnight"),
+        5_000,
+      );
+      expect(themeSelected).toContain("Adds bonus export.");
+
+      await session.click(/Agent/, { first: true });
+      const agentMenu = await session.waitForText(/Next annotated file/, { timeout: 5_000 });
+      expect(agentMenu).toContain("Agent notes");
+
+      await session.click(/Agent notes/);
+      await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("Adds bonus export.") && !text.includes("Agent notes"),
+        5_000,
+      );
+
+      await session.click(/Agent/, { first: true });
+      await session.waitForText(/Agent notes/, { timeout: 5_000 });
+      await session.click(/Agent notes/);
+      await session.waitForText(/Adds bonus export\./, { timeout: 5_000 });
+
+      await session.click(/Help/);
+      await session.waitForText(/Controls help/, { timeout: 5_000 });
+      await session.click(/Controls help/);
+      const helpDialog = await session.waitForText(/Navigation/, { timeout: 5_000 });
+
+      expect(helpDialog).toContain("g / G");
     } finally {
       session.close();
     }
@@ -591,6 +1045,28 @@ describe("live UI integration", () => {
     }
   });
 
+  test("piped stdin still allows concrete-theme app startup to read terminal input", async () => {
+    const fixture = harness.createTwoFileRepoFixture();
+    const session = await harness.launchShellCommand({
+      command: `printf ignored | ${harness.buildHunkCommand(["diff", "--theme", "graphite"])}`,
+      cwd: fixture.dir,
+      cols: 120,
+      rows: 14,
+    });
+
+    try {
+      const initial = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+      expect(initial).toContain("alpha.ts");
+
+      await session.press("q");
+      await session.waitIdle({ timeout: 500 });
+    } finally {
+      session.close();
+    }
+  });
+
   test("stdin patch mode enables mouse wheel scrolling in pager UI", async () => {
     const fixture = harness.createPagerPatchFixture(60);
     const session = await harness.launchHunkWithFileBackedStdin({
@@ -633,6 +1109,35 @@ describe("live UI integration", () => {
     }
   });
 
+  test("stdin patch auto theme still enables mouse wheel scrolling", async () => {
+    const fixture = harness.createPagerPatchFixture(60);
+    const session = await harness.launchHunkWithFileBackedStdin({
+      stdinFile: fixture.patchFile,
+      args: ["patch", "-", "--theme", "auto"],
+      cols: 120,
+      rows: 12,
+    });
+
+    try {
+      const initial = await session.waitForText(/scroll\.ts/, { timeout: 15_000 });
+
+      expect(initial).toContain("before_01");
+      expect(initial).not.toContain("before_12");
+
+      await session.waitIdle({ timeout: 200 });
+      await session.scrollDown(10);
+      const scrolled = await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("before_01") && text.includes("before_12"),
+        5_000,
+      );
+
+      expect(scrolled).toContain("before_12");
+    } finally {
+      session.close();
+    }
+  });
+
   test("general pager mode enables mouse wheel scrolling for diff-like stdin", async () => {
     const fixture = harness.createPagerPatchFixture(60);
     const session = await harness.launchHunkWithFileBackedStdin({
@@ -670,6 +1175,36 @@ describe("live UI integration", () => {
 
       expect(restored).toContain("before_01");
       expect(restored).not.toContain("before_12");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("general pager mode can display the sidebar file tree", async () => {
+    const fixture = harness.createPagerPatchFixture();
+    const session = await harness.launchHunkWithFileBackedStdin({
+      stdinFile: fixture.patchFile,
+      args: ["pager"],
+      cols: 120,
+      rows: 14,
+    });
+
+    try {
+      const initial = await session.waitForText(/scroll\.ts/, { timeout: 15_000 });
+
+      expect(initial).not.toContain("View  Navigate  Theme  Agent  Help");
+      expect(harness.countMatches(initial, /scroll\.ts/g)).toBe(1);
+
+      await session.press("s");
+      const sidebarRow = /\bM scroll\.ts\s+\+40 -40/;
+      const withSidebar = await harness.waitForSnapshot(
+        session,
+        (text) => sidebarRow.test(text),
+        5_000,
+      );
+
+      expect(withSidebar).not.toContain("View  Navigate  Theme  Agent  Help");
+      expect(withSidebar).toMatch(sidebarRow);
     } finally {
       session.close();
     }

@@ -1,9 +1,9 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { testRender } from "@opentui/react/test-utils";
 import { act, createRef, useEffect, useState, type ReactNode } from "react";
 import type { AppBootstrap, DiffFile } from "../../core/types";
-import { createTestGitAppBootstrap } from "../../../test/helpers/app-bootstrap";
+import { createTestVcsAppBootstrap } from "../../../test/helpers/app-bootstrap";
 import { createTestDiffFile as buildTestDiffFile, lines } from "../../../test/helpers/diff-helpers";
 import { hexColorDistance } from "../lib/color";
 import { resolveTheme } from "../themes";
@@ -21,6 +21,7 @@ const { MenuDropdown } = await import("./chrome/MenuDropdown");
 const { StatusBar } = await import("./chrome/StatusBar");
 const { DiffSectionPlaceholder } = await import("./panes/DiffSectionPlaceholder");
 const { PierreDiffView } = await import("../diff/PierreDiffView");
+const { DiffRowView } = await import("../diff/renderRows");
 
 function createTestDiffFile(
   id: string,
@@ -226,7 +227,6 @@ function createDiffPaneProps(
     wrapToggleScrollTop: null,
     theme,
     width: 76,
-    onOpenAgentNotesAtHunk: () => {},
     onSelectFile: () => {},
     ...overrides,
   };
@@ -263,7 +263,7 @@ async function waitForFrame(
 }
 
 function createBootstrap(): AppBootstrap {
-  return createTestGitAppBootstrap({
+  return createTestVcsAppBootstrap({
     agentSummary: "Changeset summary",
     changesetId: "changeset:ui",
     files: [
@@ -288,7 +288,7 @@ function createBootstrap(): AppBootstrap {
 }
 
 function createWrapBootstrap(): AppBootstrap {
-  return createTestGitAppBootstrap({
+  return createTestVcsAppBootstrap({
     changesetId: "changeset:wrap",
     files: [
       createTestDiffFile(
@@ -484,7 +484,6 @@ describe("UI components", () => {
         wrapToggleScrollTop={null}
         theme={theme}
         width={76}
-        onOpenAgentNotesAtHunk={() => {}}
         onSelectFile={() => {}}
       />,
       80,
@@ -495,8 +494,128 @@ describe("UI components", () => {
     expect(frame).toContain("beta.ts");
     expect(frame).toContain("@@ -1,1 +1,2 @@");
     expect(frame).toContain("@@ -1,1 +1,1 @@");
-    expect(frame).toContain("[AI]");
+    expect(frame).not.toContain("[AI]");
     expect(frame.indexOf("alpha.ts")).toBeLessThan(frame.indexOf("beta.ts"));
+  });
+
+  test("DiffRowView renders a clickable add-note affordance for a hovered diff row", async () => {
+    const theme = resolveTheme("midnight", null);
+    const startUserNote = mock(() => undefined);
+    const setup = await testRender(
+      <DiffRowView
+        row={{
+          type: "stack-line",
+          key: "alpha:line:1",
+          fileId: "alpha",
+          hunkIndex: 0,
+          cell: {
+            kind: "addition",
+            sign: "+",
+            newLineNumber: 2,
+            spans: [{ text: "export const alpha = 2;" }],
+          },
+        }}
+        width={72}
+        lineNumberDigits={1}
+        showLineNumbers={true}
+        showHunkHeaders={true}
+        wrapLines={false}
+        codeHorizontalOffset={0}
+        theme={theme}
+        selected={false}
+        showAddNoteBadge={true}
+        onStartUserNoteAtHunk={startUserNote}
+      />,
+      { width: 80, height: 3 },
+    );
+
+    try {
+      await act(async () => {
+        await setup.renderOnce();
+      });
+      const frame = setup.captureCharFrame();
+      expect(frame).toContain("[+]");
+      const addNoteY = frame.split("\n").findIndex((line) => line.includes("[+]"));
+      const addNoteX = frame.split("\n")[addNoteY]?.indexOf("[+]") ?? -1;
+      expect(addNoteY).toBeGreaterThanOrEqual(0);
+      expect(addNoteX).toBeGreaterThanOrEqual(0);
+
+      await act(async () => {
+        await setup.mockMouse.click(4, addNoteY);
+      });
+      expect(startUserNote).not.toHaveBeenCalled();
+
+      await act(async () => {
+        await setup.mockMouse.click(addNoteX + 1, addNoteY);
+      });
+      expect(startUserNote).toHaveBeenCalledWith(0, { side: "new", line: 2 });
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("DiffPane only shows the add-note affordance after pointer movement", async () => {
+    const files = createWindowingFiles(6);
+    const theme = resolveTheme("midnight", null);
+    const scrollRef = createRef<ScrollBoxRenderable>();
+    const props = createDiffPaneProps(files, theme, {
+      diffContentWidth: 88,
+      scrollRef,
+      onStartUserNoteAtHunk: () => {},
+      separatorWidth: 84,
+      width: 92,
+    });
+    const setup = await testRender(<DiffPane {...props} />, {
+      width: 96,
+      height: 12,
+    });
+
+    try {
+      await settleDiffPane(setup);
+
+      await act(async () => {
+        await setup.mockMouse.moveTo(32, 4);
+        await setup.renderOnce();
+      });
+      let frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("[+]"), 12);
+      expect(frame).toContain("[+]");
+
+      await act(async () => {
+        await setup.mockMouse.scroll(32, 4, "down");
+        await Bun.sleep(0);
+        await setup.renderOnce();
+      });
+      frame = await waitForFrame(setup, (nextFrame) => !nextFrame.includes("[+]"), 12);
+      expect(frame).not.toContain("[+]");
+
+      await act(async () => {
+        await Bun.sleep(250);
+        await setup.renderOnce();
+      });
+      frame = setup.captureCharFrame();
+      expect(frame).not.toContain("[+]");
+
+      await act(async () => {
+        await setup.mockMouse.moveTo(34, 4);
+        await setup.renderOnce();
+      });
+      frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("[+]"), 12);
+      expect(frame).toContain("[+]");
+
+      await act(async () => {
+        scrollRef.current?.scrollTo({ x: 0, y: 2 });
+        await Bun.sleep(0);
+        await setup.renderOnce();
+      });
+      frame = await waitForFrame(setup, (nextFrame) => !nextFrame.includes("[+]"), 12);
+      expect(frame).not.toContain("[+]");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
   });
 
   test("DiffPane scrolls a later selected file into view in the windowed path", async () => {
@@ -856,6 +975,64 @@ describe("UI components", () => {
     }
   });
 
+  test("DiffPane keeps bottom scroll stable when offscreen agent notes are windowed out", async () => {
+    const theme = resolveTheme("midnight", null);
+    const firstFile = createTallDiffFile("first", "first.ts", 18);
+    firstFile.agent = {
+      path: firstFile.path,
+      summary: "first.ts note",
+      annotations: [
+        {
+          newRange: [2, 2],
+          summary: "Offscreen note should still reserve geometry at EOF.",
+          rationale:
+            "If measurement drops this note after first.ts leaves the viewport, max scroll shrinks.",
+        },
+      ],
+    };
+    const files = [firstFile, createTallDiffFile("last", "last.ts", 24)];
+    const scrollRef = createRef<ScrollBoxRenderable>();
+    const props = createDiffPaneProps(files, theme, {
+      diffContentWidth: 88,
+      headerLabelWidth: 48,
+      headerStatsWidth: 16,
+      scrollRef,
+      selectedFileId: undefined,
+      separatorWidth: 84,
+      showAgentNotes: true,
+      width: 92,
+    });
+    const setup = await testRender(<DiffPane {...props} />, {
+      width: 96,
+      height: 10,
+    });
+
+    try {
+      await settleDiffPane(setup);
+
+      let bottomScrollTop = 0;
+      await act(async () => {
+        scrollRef.current?.scrollTo(1_000_000);
+        bottomScrollTop = scrollRef.current?.scrollTop ?? 0;
+      });
+      expect(bottomScrollTop).toBeGreaterThan(0);
+
+      await settleDiffPane(setup);
+      expect(scrollRef.current?.scrollTop ?? 0).toBe(bottomScrollTop);
+
+      await act(async () => {
+        scrollRef.current?.scrollTo(bottomScrollTop + 1);
+      });
+      await settleDiffPane(setup);
+
+      expect(scrollRef.current?.scrollTop ?? 0).toBe(bottomScrollTop);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("DiffPane lets manual scrolling move away from a bottom-clamped file-top alignment", async () => {
     const theme = resolveTheme("midnight", null);
     const files = [
@@ -1001,6 +1178,34 @@ describe("UI components", () => {
     }
   });
 
+  test("DiffPane keeps a distant selected hunk visible when row windowing narrows one file body", async () => {
+    const theme = resolveTheme("midnight", null);
+    const props = createDiffPaneProps([createWideTwoHunkDiffFile("target", "target.ts")], theme, {
+      diffContentWidth: 96,
+      headerLabelWidth: 48,
+      selectedFileId: "target",
+      selectedHunkIndex: 1,
+      separatorWidth: 92,
+      width: 100,
+    });
+    const setup = await testRender(<DiffPane {...props} />, {
+      width: 104,
+      height: 12,
+    });
+
+    try {
+      await settleDiffPane(setup);
+      const frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("line60 = 5901"));
+
+      expect(frame).toContain("line60 = 5901");
+      expect(frame).not.toContain("line1 = 1001");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("DiffPane keeps a selected hunk with inline notes fully visible when it fits", async () => {
     const theme = resolveTheme("midnight", null);
     const file = createViewportSizedBottomHunkDiffFile("target", "target.ts");
@@ -1033,7 +1238,8 @@ describe("UI components", () => {
       await settleDiffPane(setup);
       const frame = setup.captureCharFrame();
 
-      expect(frame).toContain("Keep the selected hunk visible with its note.");
+      expect(frame).toContain("Keep the selected hunk visible with its");
+      expect(frame).toContain("note.");
       expect(frame).toContain("11   export const line11 = 11;");
       expect(frame).toContain("16 + export const line16 = 1600;");
       expect(frame).toContain("export const line19 = 19;");
@@ -1191,12 +1397,98 @@ describe("UI components", () => {
     );
 
     const lines = frame.split("\n");
-    expect(lines[0]?.trimStart().startsWith("┌")).toBe(true);
-    expect(lines[1]).toContain("AI note · ▶ new 2-4");
-    expect(lines[1]).toContain("[x]");
+    expect(lines[0]?.trimStart().startsWith("╭")).toBe(true);
+    expect(lines[0]).toContain("Agent note - R2–R4");
+    expect(lines[0]).toContain("[x]");
+    expect(lines[1]).toContain("│                                              │");
     expect(lines[2]).toContain("Summary line");
     expect(lines[3]).toContain("Rationale line.");
-    expect(lines[4]?.trimStart().startsWith("└")).toBe(true);
+    expect(lines[4]?.trimStart().startsWith("╰")).toBe(true);
+  });
+
+  test("AgentInlineNote renders draft notes as an editable composer", async () => {
+    const theme = resolveTheme("midnight", null);
+    const file = createTestDiffFile(
+      "draft",
+      "src/core/cli.ts",
+      "export const value = 1;\n",
+      "export const value = 2;\n",
+    );
+    const frame = await captureFrame(
+      <AgentInlineNote
+        annotation={{
+          newRange: [611, 611],
+          source: "user-draft",
+          summary: "Here's my comment. I think we should think",
+        }}
+        draft={{
+          body: "Here's my comment. I think we should think",
+          focused: true,
+          onCancel: () => {},
+          onInput: () => {},
+          onSave: () => {},
+        }}
+        file={file}
+        anchorSide="new"
+        layout="split"
+        theme={theme}
+        width={96}
+      />,
+      100,
+      12,
+    );
+
+    const lines = frame.split("\n");
+    expect(lines[0]).toContain("╭─ Draft note - src/core/cli.ts R611 ");
+    expect(lines[1]).toContain("│                                              │");
+    expect(lines[2]).toContain("│ Here's my comment. I think we should think");
+    expect(lines[3]).toContain("│                                              │");
+    const saveLine = lines.find(
+      (line) => line.includes("Save (^S)") && line.includes("Cancel (Esc)"),
+    );
+    expect(saveLine).toBeDefined();
+    expect(saveLine!.indexOf("Save")).toBeGreaterThan(lines[2]!.indexOf("Here's"));
+    expect(frame).toContain("┬───────────┬──────────────┤");
+    expect(frame).toContain("╰───────────┴──────────────╯");
+  });
+
+  test("AgentInlineNote grows draft composer for soft-wrapped text", async () => {
+    const theme = resolveTheme("midnight", null);
+    const file = createTestDiffFile(
+      "draft-wrap",
+      "src/core/cli.ts",
+      "export const value = 1;\n",
+      "export const value = 2;\n",
+    );
+    const body =
+      "This draft note is long enough to soft wrap inside the composer without manually inserted newlines.";
+    const frame = await captureFrame(
+      <AgentInlineNote
+        annotation={{ newRange: [611, 611], source: "user-draft", summary: body }}
+        draft={{
+          body,
+          focused: true,
+          onCancel: () => {},
+          onInput: () => {},
+          onSave: () => {},
+        }}
+        file={file}
+        anchorSide="new"
+        layout="stack"
+        theme={theme}
+        width={48}
+      />,
+      52,
+      12,
+    );
+
+    const lines = frame.split("\n");
+    const saveLineIndex = lines.findIndex(
+      (line) => line.includes("Save (^S)") && line.includes("Cancel (Esc)"),
+    );
+    expect(lines.some((line) => line.includes("soft"))).toBe(true);
+    expect(lines.some((line) => line.includes("wrap inside"))).toBe(true);
+    expect(saveLineIndex).toBeGreaterThan(5);
   });
 
   test("DiffPane renders all visible hunk notes across the review stream", async () => {
@@ -1234,20 +1526,19 @@ describe("UI components", () => {
         wrapToggleScrollTop={null}
         theme={theme}
         width={92}
-        onOpenAgentNotesAtHunk={() => {}}
         onSelectFile={() => {}}
       />,
       96,
       28,
     );
 
-    expect(frame).toContain("AI note · ▶ new 2");
+    expect(frame).toContain("Agent note - alpha.ts R2");
     expect(frame).toContain("Annotation for alpha.ts");
     expect(frame).toContain("Why alpha.ts changed");
-    expect(frame.indexOf("AI note · ▶ new 2")).toBeLessThan(
+    expect(frame.indexOf("Agent note - alpha.ts R2")).toBeLessThan(
       frame.indexOf("2 + export const add = true;"),
     );
-    expect(frame).toContain("AI note · ▶ new 1");
+    expect(frame).toContain("Agent note - beta.ts R1");
     expect(frame).toContain("Annotation for beta.ts");
     expect(frame).toContain("Why beta.ts changed");
     expect(frame).not.toContain("alpha.ts note");
@@ -1276,7 +1567,6 @@ describe("UI components", () => {
         wrapToggleScrollTop={null}
         theme={theme}
         width={92}
-        onOpenAgentNotesAtHunk={() => {}}
         onSelectFile={() => {}}
       />,
       96,
@@ -1284,7 +1574,7 @@ describe("UI components", () => {
     );
 
     const lines = frame.split("\n");
-    const noteBottomIndex = lines.findIndex((line) => line.includes("└") && line.includes("┤"));
+    const noteBottomIndex = lines.findIndex((line) => line.includes("╰") && line.includes("╯"));
     expect(noteBottomIndex).toBeGreaterThanOrEqual(0);
     expect(lines[noteBottomIndex + 1]).toContain("export const add = true;");
     expect(lines[noteBottomIndex + 1]?.trim()).not.toBe("│");
@@ -1334,15 +1624,14 @@ describe("UI components", () => {
         wrapToggleScrollTop={null}
         theme={theme}
         width={92}
-        onOpenAgentNotesAtHunk={() => {}}
         onSelectFile={() => {}}
       />,
       96,
       24,
     );
 
-    expect(frame).toContain("AI note 1/2");
-    expect(frame).toContain("AI note 2/2");
+    expect(frame).toContain("Agent note 1/2");
+    expect(frame).toContain("Agent note 2/2");
     expect(frame).toContain("First note");
     expect(frame).toContain("First rationale.");
     expect(frame).toContain("Second note");
@@ -1500,13 +1789,13 @@ describe("UI components", () => {
     const frame = await captureFrame(
       <HelpDialog
         canRefresh={true}
-        terminalHeight={36}
+        terminalHeight={38}
         terminalWidth={76}
         theme={theme}
         onClose={() => {}}
       />,
       76,
-      36,
+      38,
     );
 
     const expectedRows = [
@@ -1519,9 +1808,11 @@ describe("UI components", () => {
       "Shift+Space     page up (alt)",
       "d / u           half page down / up",
       "[ / ]           previous / next hunk",
+      ", / .           previous / next file",
       "{ / }           previous / next comment",
       "← / →           scroll code left / right (Shift = faster)",
       "Home / End      jump to top / bottom",
+      "g / G           jump to top / bottom (less-style)",
       "Mouse",
       "Wheel           scroll vertically",
       "Shift+Wheel     scroll code horizontally",
@@ -1530,8 +1821,10 @@ describe("UI components", () => {
       "s / t           sidebar / theme",
       "a               toggle AI notes",
       "l / w / m       lines / wrap / metadata",
+      "e               open file in $EDITOR",
       "Review",
       "/               focus file filter",
+      "c               create review note",
       "Tab             toggle files/filter focus",
       "F10             open menus",
       "r / q           reload / quit",
@@ -1599,7 +1892,6 @@ describe("UI components", () => {
         wrapToggleScrollTop={null}
         theme={theme}
         width={76}
-        onOpenAgentNotesAtHunk={() => {}}
         onSelectFile={() => {}}
       />,
       80,
@@ -1630,7 +1922,6 @@ describe("UI components", () => {
         wrapToggleScrollTop={null}
         theme={theme}
         width={76}
-        onOpenAgentNotesAtHunk={() => {}}
         onSelectFile={() => {}}
       />,
       80,
@@ -1664,7 +1955,6 @@ describe("UI components", () => {
         wrapToggleScrollTop={null}
         theme={theme}
         width={52}
-        onOpenAgentNotesAtHunk={() => {}}
         onSelectFile={() => {}}
       />,
       56,
@@ -1698,7 +1988,6 @@ describe("UI components", () => {
         wrapToggleScrollTop={null}
         theme={theme}
         width={76}
-        onOpenAgentNotesAtHunk={() => {}}
         onSelectFile={() => {}}
       />,
       80,
@@ -1852,11 +2141,11 @@ describe("UI components", () => {
     );
 
     expect(frame).not.toContain("@@ -1,1 +1,2 @@");
-    expect(frame).toContain("AI note · hunk");
+    expect(frame).toContain("Agent note - note-fallback.ts hunk");
     expect(frame).toContain("Ungrounded note");
     expect(frame).toContain("Falls back to the first visible");
     expect(frame).toContain("row.");
-    expect(frame.indexOf("AI note · hunk")).toBeLessThan(
+    expect(frame.indexOf("Agent note - note-fallback.ts hunk")).toBeLessThan(
       frame.indexOf("1 - export const value = 1;"),
     );
   });
@@ -2123,7 +2412,7 @@ describe("UI components", () => {
     }
   });
 
-  test("App renders the menu bar, multi-file stream, and AI badges", async () => {
+  test("App renders the menu bar and multi-file stream", async () => {
     const bootstrap = createBootstrap();
     const frame = await captureFrame(<AppHost bootstrap={bootstrap} />, 280, 24);
 
@@ -2132,7 +2421,7 @@ describe("UI components", () => {
     expect(frame).toContain("beta.ts");
     expect(frame).toContain("@@ -1,1 +1,2 @@");
     expect(frame).toContain("@@ -1,1 +1,1 @@");
-    expect(frame).toContain("[AI]");
+    expect(frame).not.toContain("[AI]");
     expect(frame).not.toContain("Changeset summary");
   });
 });

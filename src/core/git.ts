@@ -1,9 +1,9 @@
 import fs from "node:fs";
 import { join } from "node:path";
 import { HunkUserError } from "./errors";
-import type { GitCommandInput, ShowCommandInput, StashShowCommandInput } from "./types";
+import type { VcsCommandInput, ShowCommandInput, StashShowCommandInput } from "./types";
 
-export type GitBackedInput = GitCommandInput | ShowCommandInput | StashShowCommandInput;
+export type GitBackedInput = VcsCommandInput | ShowCommandInput | StashShowCommandInput;
 
 export interface RunGitTextOptions {
   input: GitBackedInput;
@@ -49,8 +49,33 @@ function withNormalizedDiffPrefixes(args: string[]) {
 }
 
 /** Build the exact `git diff` arguments used for the shared working-tree and range review path. */
-export function buildGitDiffArgs(input: GitCommandInput) {
+export function buildGitDiffArgs(input: VcsCommandInput, excludedPathspecs: string[] = []) {
   const args = ["diff", "--no-ext-diff", "--find-renames", "--no-color"];
+
+  if (input.staged) {
+    args.push("--staged");
+  }
+
+  if (input.range) {
+    args.push(input.range);
+  }
+
+  if (excludedPathspecs.length > 0) {
+    args.push(
+      "--",
+      ...(input.pathspecs ?? []),
+      ...excludedPathspecs.map((path) => `:(exclude)${path}`),
+    );
+  } else {
+    appendGitPathspecs(args, input.pathspecs);
+  }
+
+  return withNormalizedDiffPrefixes(args);
+}
+
+/** Build the cheap tracked-file stats query used to skip huge file diffs before patch output. */
+export function buildGitDiffNumstatArgs(input: VcsCommandInput) {
+  const args = ["diff", "--no-ext-diff", "--find-renames", "--no-color", "--numstat", "-z"];
 
   if (input.staged) {
     args.push("--staged");
@@ -65,7 +90,7 @@ export function buildGitDiffArgs(input: GitCommandInput) {
 }
 
 /** Build the porcelain status query used to discover untracked files for working-tree review. */
-function buildGitStatusArgs(input: GitCommandInput) {
+function buildGitStatusArgs(input: VcsCommandInput) {
   const args = ["status", "--porcelain=v1", "-z", "--untracked-files=all"];
 
   appendGitPathspecs(args, input.pathspecs);
@@ -74,8 +99,11 @@ function buildGitStatusArgs(input: GitCommandInput) {
 
 /** Build the synthetic patch used to render one untracked file as a new-file diff. */
 function buildGitNewFileDiffArgs(filePath: string) {
+  // `--no-ext-diff` keeps user-configured `diff.external` tools (difftastic, delta, etc.)
+  // from replacing the unified-diff output Pierre needs to parse this synthetic patch.
   return withNormalizedDiffPrefixes([
     "diff",
+    "--no-ext-diff",
     "--no-index",
     "--no-color",
     "--",
@@ -98,7 +126,7 @@ export function buildGitShowArgs(input: ShowCommandInput) {
 
 /** Build the exact `git stash show -p` arguments used for stash review. */
 export function buildGitStashShowArgs(input: StashShowCommandInput) {
-  const args = ["stash", "show", "-p", "--find-renames", "--no-color"];
+  const args = ["stash", "show", "-p", "--no-ext-diff", "--find-renames", "--no-color"];
 
   if (input.ref) {
     args.push(input.ref);
@@ -109,7 +137,7 @@ export function buildGitStashShowArgs(input: StashShowCommandInput) {
 
 export function formatGitCommandLabel(input: GitBackedInput) {
   switch (input.kind) {
-    case "git":
+    case "vcs":
       if (input.staged) {
         return "hunk diff --staged";
       }
@@ -123,7 +151,7 @@ export function formatGitCommandLabel(input: GitBackedInput) {
 }
 
 function getMissingRepoHelp(input: GitBackedInput) {
-  if (input.kind === "git") {
+  if (input.kind === "vcs") {
     return [
       "Run the command from a Git checkout, or compare files directly instead:",
       "  hunk diff <before-file> <after-file>",
@@ -179,8 +207,8 @@ function createMissingRepoError(input: GitBackedInput) {
   );
 }
 
-function createInvalidRevisionError(input: GitCommandInput | ShowCommandInput) {
-  if (input.kind === "git") {
+function createInvalidRevisionError(input: VcsCommandInput | ShowCommandInput) {
+  if (input.kind === "vcs") {
     return new HunkUserError(
       `\`${formatGitCommandLabel(input)}\` could not resolve Git revision or range \`${input.range}\`.`,
       ["Check the revision or range and try again."],
@@ -238,7 +266,7 @@ function translateGitExitFailure(input: GitBackedInput, stderr: string) {
     return createMissingStashError(input);
   }
 
-  if (input.kind === "git" && input.range && isUnknownRevisionMessage(stderr)) {
+  if (input.kind === "vcs" && input.range && isUnknownRevisionMessage(stderr)) {
     return createInvalidRevisionError(input);
   }
 
@@ -305,7 +333,7 @@ export function runGitText(options: RunGitTextOptions) {
 const workingTreeGitDiffInputCache = new Map<string, boolean>();
 
 function isWorkingTreeGitDiffInput(
-  input: GitCommandInput,
+  input: VcsCommandInput,
   {
     cwd = process.cwd(),
     gitExecutable = "git",
@@ -346,7 +374,7 @@ function isWorkingTreeGitDiffInput(
 
 /** Return whether working-tree review should synthesize untracked files into the patch stream. */
 function shouldIncludeUntrackedFiles(
-  input: GitCommandInput,
+  input: VcsCommandInput,
   options: Pick<RunGitTextOptions, "cwd" | "gitExecutable"> & { repoRoot?: string } = {},
 ) {
   return input.options.excludeUntracked !== true && isWorkingTreeGitDiffInput(input, options);
@@ -393,7 +421,7 @@ function isReviewableUntrackedPath(repoRoot: string, filePath: string) {
 
 /** Return the repo-root-relative untracked files for a working-tree review input. */
 export function listGitUntrackedFiles(
-  input: GitCommandInput,
+  input: VcsCommandInput,
   {
     cwd = process.cwd(),
     repoRoot,
@@ -422,9 +450,43 @@ export function listGitUntrackedFiles(
   );
 }
 
+/** Escape only the filename characters that break unified-diff header parsing. */
+function escapeUntrackedPatchPath(path: string) {
+  return path
+    .replaceAll("\\", "\\\\")
+    .replaceAll("\t", "\\t")
+    .replaceAll("\n", "\\n")
+    .replaceAll("\r", "\\r");
+}
+
+/** Rewrite Git's quoted untracked-file headers into parser-friendly paths. */
+export function normalizeUntrackedPatchHeaders(patchText: string, filePath: string) {
+  const safePath = escapeUntrackedPatchPath(filePath);
+
+  return patchText
+    .replaceAll("\r\n", "\n")
+    .split("\n")
+    .map((line) => {
+      if (line.startsWith("diff --git ")) {
+        return `diff --git a/${safePath} b/${safePath}`;
+      }
+
+      if (line.startsWith("+++ ")) {
+        return `+++ b/${safePath}`;
+      }
+
+      if (line.startsWith("Binary files /dev/null and ")) {
+        return `Binary files /dev/null and b/${safePath} differ`;
+      }
+
+      return line;
+    })
+    .join("\n");
+}
+
 /** Return the raw Git patch text for one untracked file using `git diff --no-index`. */
 export function runGitUntrackedFileDiffText(
-  input: GitCommandInput,
+  input: VcsCommandInput,
   filePath: string,
   {
     cwd = process.cwd(),

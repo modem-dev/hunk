@@ -167,6 +167,14 @@ describe("CLI entrypoint contracts", () => {
     expect(existsSync(resolvedPath)).toBe(true);
   });
 
+  test("package manifest exposes hunkdiff as an npm exec alias", () => {
+    const packageJson = require("../../package.json");
+    expect(packageJson.bin).toEqual({
+      hunk: "./bin/hunk.cjs",
+      hunkdiff: "./bin/hunk.cjs",
+    });
+  });
+
   test("bin wrapper fails clearly when the bundled skill is missing", () => {
     const tempDir = mkdtempSync(join(tmpdir(), "hunk-wrapper-skill-missing-"));
     const tempBinDir = join(tempDir, "bin");
@@ -197,20 +205,13 @@ describe("CLI entrypoint contracts", () => {
   });
 
   test("general pager mode falls back to plain text for non-diff stdin", () => {
-    const proc = Bun.spawnSync(
-      [
-        "bash",
-        "-lc",
-        "printf '* main\\n  feature/demo\\n' | HUNK_TEXT_PAGER=cat bun run src/main.tsx pager",
-      ],
-      {
-        cwd: process.cwd(),
-        stdin: "ignore",
-        stdout: "pipe",
-        stderr: "pipe",
-        env: process.env,
-      },
-    );
+    const proc = Bun.spawnSync(["bun", "run", "src/main.tsx", "pager"], {
+      cwd: process.cwd(),
+      stdin: Buffer.from("* main\n  feature/demo\n"),
+      stdout: "pipe",
+      stderr: "pipe",
+      env: process.env,
+    });
 
     const stdout = Buffer.from(proc.stdout).toString("utf8");
     const stderr = Buffer.from(proc.stderr).toString("utf8");
@@ -220,6 +221,25 @@ describe("CLI entrypoint contracts", () => {
     expect(stdout).toContain("* main");
     expect(stdout).toContain("feature/demo");
     expect(stdout).not.toContain("View  Navigate  Theme  Agent  Help");
+    expect(stdout).not.toContain("\u001b[?1049h");
+  });
+
+  test("general pager mode passes diff stdin through when stdout is not a terminal", () => {
+    const patchText = "diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n";
+    const proc = Bun.spawnSync(["bun", "run", "src/main.tsx", "pager"], {
+      cwd: process.cwd(),
+      stdin: Buffer.from(patchText),
+      stdout: "pipe",
+      stderr: "pipe",
+      env: process.env,
+    });
+
+    const stdout = Buffer.from(proc.stdout).toString("utf8");
+    const stderr = Buffer.from(proc.stderr).toString("utf8");
+
+    expect(proc.exitCode).toBe(0);
+    expect(stderr).toBe("");
+    expect(stdout).toBe(patchText);
     expect(stdout).not.toContain("\u001b[?1049h");
   });
 

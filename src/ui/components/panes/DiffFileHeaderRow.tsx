@@ -19,7 +19,7 @@ export function DiffFileHeaderRow({
   theme,
   onSelect,
 }: DiffFileHeaderRowProps) {
-  const additionsText = `+${file.stats.additions}`;
+  const additionsText = `+${file.stats.additions}${file.statsTruncated ? "+" : ""}`;
   const deletionsText = `-${file.stats.deletions}`;
   const { filename, stateLabel } = fileLabelParts(file);
 

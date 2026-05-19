@@ -37,8 +37,8 @@ function sidebarFileName(file: DiffFile) {
 }
 
 /** Hide zero-value file stats so the sidebar only shows real line deltas. */
-function formatSidebarStat(prefix: "+" | "-", value: number) {
-  return value > 0 ? `${prefix}${value}` : null;
+function formatSidebarStat(prefix: "+" | "-", value: number, truncated = false) {
+  return value > 0 ? `${prefix}${value}${truncated ? "+" : ""}` : null;
 }
 
 /** Build the visible stats badges for one sidebar row.
@@ -144,7 +144,7 @@ export function buildSidebarEntries(files: DiffFile[]): SidebarEntry[] {
       id: file.id,
       name: sidebarFileName(file),
       agentCommentsText: agentCommentCount > 0 ? `*${agentCommentCount}` : null,
-      additionsText: formatSidebarStat("+", file.stats.additions),
+      additionsText: formatSidebarStat("+", file.stats.additions, file.statsTruncated),
       deletionsText: formatSidebarStat("-", file.stats.deletions),
       changeType: file.metadata.type,
       isUntracked: file.isUntracked ?? false,

@@ -5,7 +5,7 @@ import {
 } from "@opentui/core";
 import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState, useRef } from "react";
-import type { AppBootstrap, CliInput, LayoutMode } from "../core/types";
+import type { AppBootstrap, CliInput, LayoutMode, UserNoteLineTarget } from "../core/types";
 import { canReloadInput, computeWatchSignature } from "../core/watch";
 import type { HunkSessionBrokerClient, ReloadedSessionResult } from "../hunk-session/types";
 import { MenuBar } from "./components/chrome/MenuBar";
@@ -18,17 +18,20 @@ import {
   maxFileCodeLineWidth,
   resolveCodeViewportWidth,
 } from "./diff/codeColumns";
+import type { ActiveAddNoteAffordance } from "./diff/PierreDiffView";
 import { useAppKeyboardShortcuts } from "./hooks/useAppKeyboardShortcuts";
 import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
 import { useMenuController } from "./hooks/useMenuController";
 import { useReviewController } from "./hooks/useReviewController";
 import { buildAppMenus } from "./lib/appMenus";
 import { fileRowId } from "./lib/ids";
+import { openSelectedFileInEditor } from "./lib/openInEditor";
 import { resolveResponsiveLayout } from "./lib/responsive";
 import { resizeSidebarWidth } from "./lib/sidebar";
 import { resolveTheme, THEMES } from "./themes";
 
-type FocusArea = "files" | "filter";
+type FocusArea = "files" | "filter" | "note";
+type ActiveAddNoteTarget = ActiveAddNoteAffordance & { fileId: string };
 
 const FAST_CODE_HORIZONTAL_SCROLL_COLUMNS = 8;
 
@@ -93,6 +96,7 @@ export function App({
   const DIVIDER_WIDTH = 1;
   const DIVIDER_HIT_WIDTH = 5;
 
+  const pagerMode = Boolean(bootstrap.input.options.pager);
   const renderer = useRenderer();
   const terminal = useTerminalDimensions();
   const sidebarScrollRef = useRef<ScrollBoxRenderable | null>(null);
@@ -101,30 +105,37 @@ export function App({
   const layoutToggleScrollTopRef = useRef<number | null>(null);
   const [layoutToggleRequestId, setLayoutToggleRequestId] = useState(0);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(bootstrap.initialMode);
-  const [themeId, setThemeId] = useState(
-    () => resolveTheme(bootstrap.initialTheme, renderer.themeMode).id,
+  const [themeId, setThemeId] = useState(() =>
+    bootstrap.initialTheme === "auto"
+      ? "auto"
+      : resolveTheme(bootstrap.initialTheme, bootstrap.initialThemeMode ?? null).id,
   );
+  // Soft reloads replace bootstrap without re-running startup terminal theme detection.
+  const [detectedThemeMode] = useState(() => bootstrap.initialThemeMode);
   const [showAgentNotes, setShowAgentNotes] = useState(bootstrap.initialShowAgentNotes ?? false);
   const [showLineNumbers, setShowLineNumbers] = useState(bootstrap.initialShowLineNumbers ?? true);
   const [wrapLines, setWrapLines] = useState(bootstrap.initialWrapLines ?? false);
   const [codeHorizontalOffset, setCodeHorizontalOffset] = useState(0);
   const [showHunkHeaders, setShowHunkHeaders] = useState(bootstrap.initialShowHunkHeaders ?? true);
-  const [sidebarVisible, setSidebarVisible] = useState(true);
+  const [sidebarVisible, setSidebarVisible] = useState(() => !pagerMode);
   const [forceSidebarOpen, setForceSidebarOpen] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [focusArea, setFocusArea] = useState<FocusArea>("files");
+  const [activeAddNoteTarget, setActiveAddNoteTarget] = useState<ActiveAddNoteTarget | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(34);
   const [resizeDragOriginX, setResizeDragOriginX] = useState<number | null>(null);
   const [resizeStartWidth, setResizeStartWidth] = useState<number | null>(null);
+  const [sessionNoticeText, setSessionNoticeText] = useState<string | null>(null);
+  const sessionNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const pagerMode = Boolean(bootstrap.input.options.pager);
-  const activeTheme = resolveTheme(themeId, renderer.themeMode);
+  const activeTheme = resolveTheme(themeId, detectedThemeMode ?? null);
   const review = useReviewController({ files: bootstrap.changeset.files });
   const filteredFiles = review.visibleFiles;
   const selectedFile = review.selectedFile;
   const selectedHunkIndex = review.selectedHunkIndex;
   const moveToAnnotatedFile = review.moveToAnnotatedFile;
   const moveToAnnotatedHunk = review.moveToAnnotatedHunk;
+  const moveToFile = review.moveToFile;
 
   const jumpToFile = useCallback(
     (fileId: string, nextHunkIndex = 0, options?: { alignFileHeaderTop?: boolean }) => {
@@ -139,6 +150,26 @@ export function App({
     setShowAgentNotes(true);
   }, []);
 
+  const showSessionNotice = useCallback((message: string) => {
+    setSessionNoticeText(message);
+    if (sessionNoticeTimeoutRef.current) {
+      clearTimeout(sessionNoticeTimeoutRef.current);
+    }
+
+    sessionNoticeTimeoutRef.current = setTimeout(() => {
+      setSessionNoticeText((current) => (current === message ? null : current));
+      sessionNoticeTimeoutRef.current = null;
+    }, 4000);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (sessionNoticeTimeoutRef.current) {
+        clearTimeout(sessionNoticeTimeoutRef.current);
+      }
+    };
+  }, []);
+
   useHunkSessionBridge({
     addLiveComment: review.addLiveComment,
     addLiveCommentBatch: review.addLiveCommentBatch,
@@ -150,6 +181,8 @@ export function App({
     openAgentNotes,
     reloadSession: onReloadSession,
     removeLiveComment: review.removeLiveComment,
+    reviewNoteCount: review.reviewNoteCount,
+    reviewNoteSummaries: review.reviewNoteSummaries,
     selectedFile,
     selectedHunk: review.selectedHunk,
     selectedHunkIndex,
@@ -160,9 +193,8 @@ export function App({
   const bodyWidth = Math.max(0, terminal.width - bodyPadding);
   const responsiveLayout = resolveResponsiveLayout(layoutMode, terminal.width);
   const canForceShowSidebar = bodyWidth >= SIDEBAR_MIN_WIDTH + DIVIDER_WIDTH + DIFF_MIN_WIDTH;
-  const renderSidebar = pagerMode
-    ? false
-    : sidebarVisible && (responsiveLayout.showSidebar || (forceSidebarOpen && canForceShowSidebar));
+  const renderSidebar =
+    sidebarVisible && (responsiveLayout.showSidebar || (forceSidebarOpen && canForceShowSidebar));
   const centerWidth = bodyWidth;
   const resolvedLayout = responsiveLayout.layout;
   const availableCenterWidth = renderSidebar
@@ -326,14 +358,6 @@ export function App({
     setShowHunkHeaders((current) => !current);
   };
 
-  /** Jump to an annotated hunk without changing the global note visibility toggle. */
-  const openAgentNotesAtHunk = useCallback(
-    (fileId: string, hunkIndex: number) => {
-      review.selectHunk(fileId, hunkIndex);
-    },
-    [review.selectHunk],
-  );
-
   const canRefreshCurrentInput = canReloadInput(bootstrap.input);
   const watchEnabled = Boolean(bootstrap.input.options.watch && canRefreshCurrentInput);
 
@@ -355,7 +379,7 @@ export function App({
     await onReloadSession(nextInput, {
       resetApp: false,
       sourcePath:
-        bootstrap.input.kind === "git" ||
+        bootstrap.input.kind === "vcs" ||
         bootstrap.input.kind === "show" ||
         bootstrap.input.kind === "stash-show"
           ? bootstrap.changeset.sourceLabel
@@ -379,6 +403,30 @@ export function App({
       console.error("Failed to reload the current diff.", error);
     });
   }, [refreshCurrentInput]);
+
+  const triggerEditSelectedFile = useCallback(() => {
+    const message = openSelectedFileInEditor({
+      file: selectedFile,
+      renderer,
+      selectedHunk: review.selectedHunk,
+    });
+
+    if (message) {
+      showSessionNotice(message);
+      return;
+    }
+
+    if (canRefreshCurrentInput) {
+      triggerRefreshCurrentInput();
+    }
+  }, [
+    canRefreshCurrentInput,
+    renderer,
+    review.selectedHunk,
+    selectedFile,
+    showSessionNotice,
+    triggerRefreshCurrentInput,
+  ]);
 
   useEffect(() => {
     if (!watchEnabled) {
@@ -461,6 +509,45 @@ export function App({
     setFocusArea((current) => (current === "files" ? "filter" : "files"));
   }, []);
 
+  /** Start a user-authored inline note and move keyboard focus into it. */
+  const startUserNote = useCallback(
+    (fileId?: string, hunkIndex?: number, target?: UserNoteLineTarget) => {
+      const hoverTarget = fileId === undefined ? activeAddNoteTarget : null;
+      const draft = review.startUserNote(
+        fileId ?? hoverTarget?.fileId,
+        hunkIndex ?? hoverTarget?.hunkIndex,
+        target ?? hoverTarget?.target,
+      );
+      if (draft) {
+        setActiveAddNoteTarget(null);
+        setFocusArea("note");
+      }
+    },
+    [activeAddNoteTarget, review.startUserNote],
+  );
+
+  /** Mark the inline draft note textarea as the active keyboard input. */
+  const focusDraftNote = useCallback(() => {
+    setFocusArea("note");
+  }, []);
+
+  /** Return keyboard focus to review navigation when the draft textarea loses focus. */
+  const blurDraftNote = useCallback(() => {
+    setFocusArea((current) => (current === "note" ? "files" : current));
+  }, []);
+
+  /** Save the active draft note and return focus to review navigation. */
+  const saveDraftNote = useCallback(() => {
+    review.saveDraftNote();
+    setFocusArea("files");
+  }, [review.saveDraftNote]);
+
+  /** Cancel the active draft note and return focus to review navigation. */
+  const cancelDraftNote = useCallback(() => {
+    review.cancelDraftNote();
+    setFocusArea("files");
+  }, [review.cancelDraftNote]);
+
   /** Cycle through the available built-in themes. */
   const cycleTheme = useCallback(() => {
     const currentIndex = THEMES.findIndex((theme) => theme.id === activeTheme.id);
@@ -486,7 +573,7 @@ export function App({
         showHelp,
         showHunkHeaders,
         showLineNumbers,
-        sidebarVisible,
+        renderSidebar,
         toggleAgentNotes,
         toggleFocusArea,
         toggleHelp,
@@ -494,6 +581,7 @@ export function App({
         toggleLineNumbers,
         toggleLineWrap,
         toggleSidebar,
+        triggerEditSelectedFile,
         wrapLines,
       }),
     [
@@ -511,7 +599,7 @@ export function App({
       showHelp,
       showHunkHeaders,
       showLineNumbers,
-      sidebarVisible,
+      renderSidebar,
       toggleAgentNotes,
       toggleFocusArea,
       toggleHelp,
@@ -519,6 +607,7 @@ export function App({
       toggleLineNumbers,
       toggleLineWrap,
       toggleSidebar,
+      triggerEditSelectedFile,
       wrapLines,
     ],
   );
@@ -546,18 +635,22 @@ export function App({
     closeHelp,
     closeMenu,
     cycleTheme,
+    cancelDraftNote,
     focusArea,
     focusFilter,
     moveToAnnotatedHunk,
+    moveToFile,
     moveToHunk: review.moveToHunk,
     moveMenuItem,
     openMenu,
     pagerMode,
     requestQuit,
     scrollCodeHorizontally,
+    saveDraftNote,
     scrollDiff,
     selectLayoutMode,
     showHelp,
+    startUserNote: () => startUserNote(),
     switchMenu,
     toggleAgentNotes,
     toggleFocusArea,
@@ -566,6 +659,7 @@ export function App({
     toggleLineNumbers,
     toggleLineWrap,
     toggleSidebar,
+    triggerEditSelectedFile,
     triggerRefreshCurrentInput,
   });
 
@@ -710,6 +804,8 @@ export function App({
           selectedFileId={selectedFile?.id}
           selectedHunkIndex={selectedHunkIndex}
           scrollToNote={review.scrollToNote}
+          draftNote={review.draftNote}
+          draftNoteFocused={focusArea === "note"}
           separatorWidth={diffSeparatorWidth}
           showAgentNotes={showAgentNotes}
           showLineNumbers={showLineNumbers}
@@ -722,7 +818,14 @@ export function App({
           selectedHunkRevealRequestId={review.selectedHunkRevealRequestId}
           theme={activeTheme}
           width={diffPaneWidth}
-          onOpenAgentNotesAtHunk={openAgentNotesAtHunk}
+          onActiveAddNoteAffordanceChange={setActiveAddNoteTarget}
+          onRemoveUserNote={review.removeUserNote}
+          onSaveDraftNote={saveDraftNote}
+          onStartUserNoteAtHunk={startUserNote}
+          onUpdateDraftNote={review.updateDraftNote}
+          onBlurDraftNote={blurDraftNote}
+          onCancelDraftNote={cancelDraftNote}
+          onFocusDraftNote={focusDraftNote}
           onScrollCodeHorizontally={(delta) => {
             scrollCodeHorizontally(delta * FAST_CODE_HORIZONTAL_SCROLL_COLUMNS);
           }}
@@ -733,11 +836,15 @@ export function App({
         />
       </box>
 
-      {!pagerMode && (focusArea === "filter" || Boolean(review.filter) || Boolean(noticeText)) ? (
+      {!pagerMode &&
+      (focusArea === "filter" ||
+        Boolean(review.filter) ||
+        Boolean(sessionNoticeText) ||
+        Boolean(noticeText)) ? (
         <StatusBar
           filter={review.filter}
           filterFocused={focusArea === "filter"}
-          noticeText={noticeText ?? undefined}
+          noticeText={sessionNoticeText ?? noticeText ?? undefined}
           terminalWidth={terminal.width}
           theme={activeTheme}
           onCloseMenu={closeMenu}

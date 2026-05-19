@@ -17,6 +17,7 @@ import type {
   SelectedSessionContext,
   SessionLiveCommentSummary,
   SessionReview,
+  SessionReviewNoteSummary,
 } from "./types";
 import type {
   SessionCommentAddCommandInput,
@@ -41,7 +42,9 @@ export interface HunkSessionCliClient {
   reloadSession(input: SessionReloadCommandInput): Promise<ReloadedSessionResult>;
   addComment(input: SessionCommentAddCommandInput): Promise<AppliedCommentResult>;
   applyComments(input: SessionCommentApplyCommandInput): Promise<AppliedCommentBatchResult>;
-  listComments(input: SessionCommentListCommandInput): Promise<SessionLiveCommentSummary[]>;
+  listComments(
+    input: SessionCommentListCommandInput,
+  ): Promise<Array<SessionLiveCommentSummary | SessionReviewNoteSummary>>;
   removeComment(input: SessionCommentRemoveCommandInput): Promise<RemovedCommentResult>;
   clearComments(input: SessionCommentClearCommandInput): Promise<ClearedCommentsResult>;
 }
@@ -102,6 +105,7 @@ class HttpHunkSessionCliClient implements HunkSessionCliClient {
         action: "review",
         selector: input.selector,
         includePatch: input.includePatch,
+        includeNotes: input.includeNotes,
       })
     ).review;
   }
@@ -160,11 +164,14 @@ class HttpHunkSessionCliClient implements HunkSessionCliClient {
 
   async listComments(input: SessionCommentListCommandInput) {
     return (
-      await this.request<{ comments: SessionLiveCommentSummary[] }>({
-        action: "comment-list",
-        selector: input.selector,
-        filePath: input.filePath,
-      })
+      await this.request<{ comments: Array<SessionLiveCommentSummary | SessionReviewNoteSummary> }>(
+        {
+          action: "comment-list",
+          selector: input.selector,
+          filePath: input.filePath,
+          type: input.type,
+        },
+      )
     ).comments;
   }
 
@@ -350,6 +357,15 @@ export function formatReviewOutput(review: SessionReview) {
     `Selected hunk: ${hunkNumber}`,
     `Agent notes visible: ${review.showAgentNotes ? "yes" : "no"}`,
     `Live comments: ${review.liveCommentCount}`,
+    `Review notes: ${review.reviewNoteCount ?? review.reviewNotes?.length ?? 0}`,
+    ...(review.reviewNotes
+      ? [
+          "Notes:",
+          ...review.reviewNotes.map(
+            (note) => `  - ${note.noteId} [${note.source}] ${note.filePath}: ${note.body}`,
+          ),
+        ]
+      : []),
     "Files:",
     ...review.files.flatMap((file) => [
       `  - ${file.path} (+${file.additions} -${file.deletions}, hunks: ${file.hunkCount})`,
@@ -420,6 +436,26 @@ export function formatRemoveCommentOutput(
   result: RemovedCommentResult,
 ) {
   return `Removed live comment ${result.commentId} from ${describeSessionSelector(selector)}. Remaining comments: ${result.remainingCommentCount}.\n`;
+}
+
+export function formatNoteListOutput(
+  selector: SessionSelectorInput,
+  notes: SessionReviewNoteSummary[],
+) {
+  if (notes.length === 0) {
+    return `No review notes for ${describeSessionSelector(selector)}.\n`;
+  }
+
+  return `${notes
+    .map((note) =>
+      [
+        `${note.noteId}  ${note.filePath} [${note.source}]`,
+        ...(note.hunkIndex !== undefined ? [`  hunk: ${note.hunkIndex + 1}`] : []),
+        `  body: ${note.body}`,
+        ...(note.author ? [`  author: ${note.author}`] : []),
+      ].join("\n"),
+    )
+    .join("\n\n")}\n`;
 }
 
 export function formatClearCommentsOutput(

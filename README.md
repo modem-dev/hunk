@@ -15,12 +15,12 @@ Hunk is a review-first terminal diff viewer for agent-authored changesets, built
 <table>
  <tr>
    <td width="60%" align="center">
-     <img width="794" alt="image" src="https://github.com/user-attachments/assets/f6ffd9c4-67f5-483c-88f1-cbe88c19f52f" />
+    <img width="845" alt="image" src="https://github.com/user-attachments/assets/35605618-be3f-479e-b6e0-edb089910651" />
      <br />
      <sub>Split view with sidebar and inline AI notes</sub>
    </td>
    <td width="40%" align="center">
-     <img width="508" height="920" alt="image" src="https://github.com/user-attachments/assets/44c542a2-0a09-41cd-b264-fbd942e92f06" />
+     <img width="507"alt="image" src="https://github.com/user-attachments/assets/92eb8993-f044-436d-a038-8139da5ad8de" />
      <br />
      <sub>Stacked view and mouse-selectable menus</sub>
    </td>
@@ -33,11 +33,19 @@ Hunk is a review-first terminal diff viewer for agent-authored changesets, built
 npm i -g hunkdiff
 ```
 
+Or with Homebrew:
+
+```bash
+brew install modem-dev/tap/hunk
+```
+
 Requirements:
 
 - Node.js 18+
-- macOS or Linux
+- macOS, Linux, or Windows
 - Git recommended for most workflows
+
+> Nix users can use the `default` package exported in `flake.nix` instead. See [nix/README.md](./nix/README.md) for details.
 
 ## Quick start
 
@@ -57,6 +65,10 @@ hunk show                      # review the latest commit
 hunk show HEAD~1               # review an earlier commit
 ```
 
+### Working with Jujutsu
+
+Hunk auto-detects Jujutsu checkouts, so `hunk diff [revset]` and `hunk show [revset]` use jj revsets inside a jj workspace. To override VCS detection, set `vcs = "git"` or `vcs = "jj"` in [config](#config).
+
 ### Working with raw files and patches
 
 ```bash
@@ -68,7 +80,7 @@ git diff --no-color | hunk patch -          # review a patch from stdin
 ### Working with agents
 
 1. Open Hunk in another terminal with `hunk diff` or `hunk show`.
-2. Load the Hunk review skill: [`skills/hunk-review/SKILL.md`](skills/hunk-review/SKILL.md).
+2. Tell your agent to add the skill file returned by `hunk skill path`.
 3. Ask your agent to use the skill against the live Hunk session.
 
 A good generic prompt is:
@@ -76,9 +88,6 @@ A good generic prompt is:
 ```text
 Load the Hunk skill and use it for this review.
 ```
-
-> [!NOTE]
-> `hunk skill path` lands in Hunk 0.10.0. Until that release is out, load the skill from the repo path above.
 
 For the full live-session and `--agent-context` workflow guide, see [docs/agent-workflows.md](docs/agent-workflows.md).
 
@@ -112,13 +121,15 @@ Example:
 ```toml
 theme = "graphite"   # graphite, midnight, paper, ember
 mode = "auto"        # auto, split, stack
+vcs = "git"          # git, jj
+watch = false
 exclude_untracked = false
 line_numbers = true
 wrap_lines = false
 agent_notes = false
 ```
 
-`exclude_untracked` affects working-tree `hunk diff` sessions only.
+`exclude_untracked` affects Git working-tree `hunk diff` sessions only.
 
 ### Git integration
 
@@ -145,9 +156,19 @@ git config --global alias.hdiff "-c core.pager=\"hunk pager\" diff"
 git config --global alias.hshow "-c core.pager=\"hunk pager\" show"
 ```
 
+### Jujutsu pager integration
+
+To use Hunk as jj's pager, run `jj config edit --user` and update:
+
+```toml
+[ui]
+pager = ["hunk", "pager"]
+diff-formatter = ":git"
+```
+
 ### OpenTUI component
 
-Hunk also publishes `HunkDiffView` from `hunkdiff/opentui` for embedding the same diff renderer in your own OpenTUI app.
+Hunk also publishes `HunkDiffView` and lower-level primitives from `hunkdiff/opentui` for embedding the same diff renderer in your own OpenTUI app.
 
 See [docs/opentui-component.md](docs/opentui-component.md) for install, API, and runnable examples.
 
@@ -158,6 +179,8 @@ Ready-to-run demo diffs live in [`examples/`](examples/README.md).
 Each example includes the exact command to run from the repository root.
 
 ## Contributing
+
+💬 _Chat with users/contributors on the [Modem Discord server](https://discord.gg/WZFjaP6Gt8)_
 
 For source setup, tests, packaging checks, and repo architecture, see [CONTRIBUTING.md](CONTRIBUTING.md).
 

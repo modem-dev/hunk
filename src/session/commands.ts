@@ -3,6 +3,7 @@ import type {
   SessionCommandOutput,
   SessionSelectorInput,
 } from "../core/types";
+import type { SessionLiveCommentSummary, SessionReviewNoteSummary } from "../hunk-session/types";
 import {
   ensureSessionBrokerAvailable,
   isSessionBrokerHealthy,
@@ -21,6 +22,7 @@ import {
   formatContextOutput,
   formatListOutput,
   formatNavigationOutput,
+  formatNoteListOutput,
   formatReloadOutput,
   formatRemoveCommentOutput,
   formatReviewOutput,
@@ -179,10 +181,8 @@ export async function runSessionCommand(input: SessionCommandInput) {
   }
 
   const normalizedSelector = "selector" in input ? normalizeSessionSelector(input.selector) : null;
-  await ensureRequiredAction(
-    REQUIRED_ACTION_BY_COMMAND[input.action],
-    normalizedSelector ?? undefined,
-  );
+  const requiredAction = REQUIRED_ACTION_BY_COMMAND[input.action];
+  await ensureRequiredAction(requiredAction, normalizedSelector ?? undefined);
 
   const client = createDaemonCliClient();
 
@@ -247,8 +247,16 @@ export async function runSessionCommand(input: SessionCommandInput) {
         ...input,
         selector: normalizedSelector!,
       });
+
+      if (input.type && input.type !== "live") {
+        const notes = comments as SessionReviewNoteSummary[];
+        return renderOutput(input.output, { comments: notes }, () =>
+          formatNoteListOutput(input.selector, notes),
+        );
+      }
+
       return renderOutput(input.output, { comments }, () =>
-        formatCommentListOutput(input.selector, comments),
+        formatCommentListOutput(input.selector, comments as SessionLiveCommentSummary[]),
       );
     }
     case "comment-rm": {

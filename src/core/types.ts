@@ -1,6 +1,16 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
 
 export type LayoutMode = "auto" | "split" | "stack";
+export type VcsMode = "git" | "jj";
+export type TerminalThemeMode = "light" | "dark";
+
+export type ReviewNoteSource = "ai" | "agent" | "user";
+export type SessionCommentListType = "live" | "all" | ReviewNoteSource;
+
+export interface UserNoteLineTarget {
+  side: "old" | "new";
+  line: number;
+}
 
 export interface AgentAnnotation {
   id?: string;
@@ -11,8 +21,11 @@ export interface AgentAnnotation {
   tags?: string[];
   confidence?: "low" | "medium" | "high";
   source?: string;
+  title?: string;
   author?: string;
   createdAt?: string;
+  updatedAt?: string;
+  editable?: boolean;
 }
 
 export interface AgentFileContext {
@@ -41,6 +54,8 @@ export interface DiffFile {
   agent: AgentFileContext | null;
   isUntracked?: boolean;
   isBinary?: boolean;
+  isTooLarge?: boolean;
+  statsTruncated?: boolean;
 }
 
 export interface Changeset {
@@ -54,6 +69,7 @@ export interface Changeset {
 
 export interface CommonOptions {
   mode?: LayoutMode;
+  vcs?: VcsMode;
   theme?: string;
   agentContext?: string;
   pager?: boolean;
@@ -115,6 +131,7 @@ export interface SessionReviewCommandInput {
   output: SessionCommandOutput;
   selector: SessionSelectorInput;
   includePatch: boolean;
+  includeNotes?: boolean;
 }
 
 export interface SessionNavigateCommandInput {
@@ -177,6 +194,7 @@ export interface SessionCommentListCommandInput {
   output: SessionCommandOutput;
   selector: SessionSelectorInput;
   filePath?: string;
+  type?: SessionCommentListType;
 }
 
 export interface SessionCommentRemoveCommandInput {
@@ -208,8 +226,8 @@ export type SessionCommandInput =
   | SessionCommentRemoveCommandInput
   | SessionCommentClearCommandInput;
 
-export interface GitCommandInput {
-  kind: "git";
+export interface VcsCommandInput {
+  kind: "vcs";
   range?: string;
   staged: boolean;
   pathspecs?: string[];
@@ -252,7 +270,7 @@ export interface DiffToolCommandInput {
 }
 
 export type CliInput =
-  | GitCommandInput
+  | VcsCommandInput
   | ShowCommandInput
   | StashShowCommandInput
   | FileCommandInput
@@ -271,6 +289,7 @@ export interface AppBootstrap {
   changeset: Changeset;
   initialMode: LayoutMode;
   initialTheme?: string;
+  initialThemeMode?: TerminalThemeMode;
   initialShowLineNumbers?: boolean;
   initialWrapLines?: boolean;
   initialShowHunkHeaders?: boolean;

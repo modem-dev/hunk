@@ -155,6 +155,73 @@ export function createPtyHarness() {
     return { dir, before, after, agentContext };
   }
 
+  function createAgentNavigationRepoFixture() {
+    const alphaBeforeLines = createNumberedExportLines(1, 80).split("\n");
+    const alphaAfterLines = [...alphaBeforeLines];
+    alphaAfterLines[0] = "export const line01 = 1001;";
+    alphaAfterLines[59] = "export const line60 = 6000;";
+
+    const betaBeforeLines = createNumberedExportLines(81, 20).split("\n");
+    const betaAfterLines = [...betaBeforeLines];
+    betaAfterLines[0] = "export const line81 = 8100;";
+
+    const gammaBeforeLines = createNumberedExportLines(101, 80).split("\n");
+    const gammaAfterLines = [...gammaBeforeLines];
+    gammaAfterLines[0] = "export const line101 = 10100;";
+    gammaAfterLines[59] = "export const line160 = 16000;";
+
+    const fixture = createGitRepoFixture([
+      {
+        path: "alpha.ts",
+        before: `${alphaBeforeLines.join("\n")}\n`,
+        after: `${alphaAfterLines.join("\n")}\n`,
+      },
+      {
+        path: "beta.ts",
+        before: `${betaBeforeLines.join("\n")}\n`,
+        after: `${betaAfterLines.join("\n")}\n`,
+      },
+      {
+        path: "gamma.ts",
+        before: `${gammaBeforeLines.join("\n")}\n`,
+        after: `${gammaAfterLines.join("\n")}\n`,
+      },
+    ]);
+    const agentContext = join(fixture.dir, "agent-context.json");
+
+    writeText(
+      agentContext,
+      JSON.stringify({
+        version: 1,
+        summary: "Agent navigation notes",
+        files: [
+          {
+            path: "alpha.ts",
+            annotations: [
+              {
+                newRange: [60, 60],
+                summary: "Alpha note for navigation.",
+                rationale: "Used to prove comment navigation can leave an earlier note.",
+              },
+            ],
+          },
+          {
+            path: "gamma.ts",
+            annotations: [
+              {
+                newRange: [60, 60],
+                summary: "Gamma note for navigation.",
+                rationale: "Used to prove comment navigation resumes after an unannotated hunk.",
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    return { ...fixture, agentContext };
+  }
+
   function createMultiHunkFilePair() {
     const dir = makeTempDir("hunk-tuistory-hunks-");
     const before = join(dir, "before.ts");
@@ -332,6 +399,46 @@ export function createPtyHarness() {
     ]);
   }
 
+  /** Build the cross-file hunk-navigation shape that used to jump backward to the file top. */
+  function createCrossFileHunkNavigationRepoFixture() {
+    const longBeforeLines = Array.from(
+      { length: 342 },
+      (_, index) => `line ${String(index + 1).padStart(3, "0")}`,
+    );
+    const longAfterLines = [...longBeforeLines];
+    for (const lineNumber of [
+      2, 21, 41, 61, 81, 101, 121, 141, 161, 181, 201, 221, 241, 261, 281, 301, 321, 341,
+    ]) {
+      longAfterLines[lineNumber - 1] = `line ${String(lineNumber).padStart(3, "0")} changed`;
+    }
+
+    const shortBeforeLines = [
+      "// hunk 0 - at the very top of the file",
+      "export const top = 1;",
+      "",
+      "",
+      ...Array.from({ length: 25 }, (_, index) => `// filler ${index + 1}`),
+      "// hunk 1 - mid-file",
+      "export const mid = 3;",
+    ];
+    const shortAfterLines = [...shortBeforeLines];
+    shortAfterLines[1] = "export const top = 2;";
+    shortAfterLines[30] = "export const mid = 4;";
+
+    return createGitRepoFixture([
+      {
+        path: "long-file.txt",
+        before: `${longBeforeLines.join("\n")}\n`,
+        after: `${longAfterLines.join("\n")}\n`,
+      },
+      {
+        path: "short-file.ts",
+        before: `${shortBeforeLines.join("\n")}\n`,
+        after: `${shortAfterLines.join("\n")}\n`,
+      },
+    ]);
+  }
+
   function createPagerPatchFixture(lines = 40) {
     const dir = makeTempDir("hunk-tuistory-pager-");
     const beforeDir = join(dir, "before");
@@ -475,8 +582,10 @@ export function createPtyHarness() {
     cleanup,
     countMatches,
     createAgentFilePair,
+    createAgentNavigationRepoFixture,
     createBottomClampedRepoFixture,
     createCollapsedTopRepoFixture,
+    createCrossFileHunkNavigationRepoFixture,
     createLongWrapFilePair,
     createMultiHunkFilePair,
     createPagerPatchFixture,

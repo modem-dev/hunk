@@ -14,10 +14,31 @@ import {
   isStepUpKey,
 } from "../lib/keyboard";
 
-type FocusArea = "files" | "filter";
+type FocusArea = "files" | "filter" | "note";
 type ScrollUnit = "step" | "viewport" | "content" | "half";
 
 const FAST_CODE_HORIZONTAL_SCROLL_COLUMNS = 8;
+
+type JumpShortcut = "top" | "bottom";
+
+/** Detect an unmodified lowercase g keypress. */
+function isLowercaseGKey(key: KeyEvent) {
+  return (
+    (key.name === "g" || key.sequence === "g") &&
+    !key.shift &&
+    !key.option &&
+    !key.ctrl &&
+    !key.meta
+  );
+}
+
+/** Detect an unmodified uppercase G keypress. */
+function isUppercaseGKey(key: KeyEvent) {
+  return (
+    (key.sequence === "G" && !key.option && !key.ctrl && !key.meta) ||
+    (key.name === "g" && key.shift && !key.option && !key.ctrl && !key.meta)
+  );
+}
 
 export interface UseAppKeyboardShortcutsOptions {
   activeMenuId: MenuId | null;
@@ -26,9 +47,11 @@ export interface UseAppKeyboardShortcutsOptions {
   closeHelp: () => void;
   closeMenu: () => void;
   cycleTheme: () => void;
+  cancelDraftNote: () => void;
   focusArea: FocusArea;
   focusFilter: () => void;
   moveToAnnotatedHunk: (delta: number) => void;
+  moveToFile: (delta: number) => void;
   moveToHunk: (delta: number) => void;
   moveMenuItem: (delta: number) => void;
   openMenu: (menuId: MenuId) => void;
@@ -36,8 +59,10 @@ export interface UseAppKeyboardShortcutsOptions {
   requestQuit: () => void;
   scrollCodeHorizontally: (delta: number) => void;
   scrollDiff: (delta: number, unit: ScrollUnit) => void;
+  saveDraftNote: () => void;
   selectLayoutMode: (mode: LayoutMode) => void;
   showHelp: boolean;
+  startUserNote: () => void;
   switchMenu: (delta: number) => void;
   toggleAgentNotes: () => void;
   toggleFocusArea: () => void;
@@ -46,6 +71,7 @@ export interface UseAppKeyboardShortcutsOptions {
   toggleLineNumbers: () => void;
   toggleLineWrap: () => void;
   toggleSidebar: () => void;
+  triggerEditSelectedFile: () => void;
   triggerRefreshCurrentInput: () => void;
 }
 
@@ -57,18 +83,22 @@ export function useAppKeyboardShortcuts({
   closeHelp,
   closeMenu,
   cycleTheme,
+  cancelDraftNote,
   focusArea,
   focusFilter,
   moveToAnnotatedHunk,
+  moveToFile,
   moveToHunk,
   moveMenuItem,
   openMenu,
   pagerMode,
   requestQuit,
   scrollCodeHorizontally,
+  saveDraftNote,
   scrollDiff,
   selectLayoutMode,
   showHelp,
+  startUserNote,
   switchMenu,
   toggleAgentNotes,
   toggleFocusArea,
@@ -77,6 +107,7 @@ export function useAppKeyboardShortcuts({
   toggleLineNumbers,
   toggleLineWrap,
   toggleSidebar,
+  triggerEditSelectedFile,
   triggerRefreshCurrentInput,
 }: UseAppKeyboardShortcutsOptions) {
   const activeMenuIdRef = useRef(activeMenuId);
@@ -88,6 +119,18 @@ export function useAppKeyboardShortcuts({
   focusAreaRef.current = focusArea;
   pagerModeRef.current = pagerMode;
   showHelpRef.current = showHelp;
+
+  const resolveJumpShortcut = (key: KeyEvent): JumpShortcut | null => {
+    if (isUppercaseGKey(key)) {
+      return "bottom";
+    }
+
+    if (isLowercaseGKey(key)) {
+      return "top";
+    }
+
+    return null;
+  };
 
   const runAndCloseMenu = (action: () => void) => {
     action();
@@ -113,6 +156,17 @@ export function useAppKeyboardShortcuts({
   };
 
   const handlePagerShortcut = (key: KeyEvent) => {
+    const jumpShortcut = resolveJumpShortcut(key);
+    if (jumpShortcut === "top") {
+      scrollDiff(-1, "content");
+      return;
+    }
+
+    if (jumpShortcut === "bottom") {
+      scrollDiff(1, "content");
+      return;
+    }
+
     if (key.name === "q" || isEscapeKey(key)) {
       requestQuit();
       return;
@@ -170,6 +224,11 @@ export function useAppKeyboardShortcuts({
 
     if (key.name === "w" || key.sequence === "w") {
       toggleLineWrap();
+      return;
+    }
+
+    if (key.name === "s" || key.sequence === "s") {
+      toggleSidebar();
     }
   };
 
@@ -220,21 +279,47 @@ export function useAppKeyboardShortcuts({
     return false;
   };
 
-  const handleFilterShortcut = (key: KeyEvent) => {
-    if (focusAreaRef.current !== "filter") {
-      return false;
-    }
+  const handleFocusedInputShortcut = (key: KeyEvent) => {
+    if (focusAreaRef.current === "filter") {
+      if (key.name === "tab") {
+        toggleFocusArea();
+        return true;
+      }
 
-    if (key.name === "tab") {
-      toggleFocusArea();
+      // Let the focused input own filter editing and escape handling.
       return true;
     }
 
-    // Let the focused input own filter editing and escape handling.
+    if (focusAreaRef.current !== "note") {
+      return false;
+    }
+
+    if (isEscapeKey(key)) {
+      cancelDraftNote();
+      return true;
+    }
+
+    if (key.ctrl && (key.name === "s" || key.sequence === "\u0013")) {
+      saveDraftNote();
+      return true;
+    }
+
+    // Let the focused inline note input own text editing.
     return true;
   };
 
   const handleAppShortcut = (key: KeyEvent) => {
+    const jumpShortcut = resolveJumpShortcut(key);
+    if (jumpShortcut === "top") {
+      scrollDiff(-1, "content");
+      return;
+    }
+
+    if (jumpShortcut === "bottom") {
+      scrollDiff(1, "content");
+      return;
+    }
+
     if (key.name === "q") {
       requestQuit();
       return;
@@ -258,6 +343,11 @@ export function useAppKeyboardShortcuts({
 
     if (key.name === "/") {
       focusFilter();
+      return;
+    }
+
+    if (key.name?.toLowerCase() === "c" || key.sequence?.toLowerCase() === "c") {
+      runAndCloseMenu(startUserNote);
       return;
     }
 
@@ -361,6 +451,11 @@ export function useAppKeyboardShortcuts({
       return;
     }
 
+    if (key.name === "e" || key.sequence === "e") {
+      runAndCloseMenu(triggerEditSelectedFile);
+      return;
+    }
+
     if (key.name === "[") {
       runAndCloseMenu(() => moveToHunk(-1));
       return;
@@ -368,6 +463,16 @@ export function useAppKeyboardShortcuts({
 
     if (key.name === "]") {
       runAndCloseMenu(() => moveToHunk(1));
+      return;
+    }
+
+    if (key.name === "," || key.sequence === ",") {
+      runAndCloseMenu(() => moveToFile(-1));
+      return;
+    }
+
+    if (key.name === "." || key.sequence === ".") {
+      runAndCloseMenu(() => moveToFile(1));
       return;
     }
 
@@ -399,7 +504,7 @@ export function useAppKeyboardShortcuts({
       return;
     }
 
-    if (handleFilterShortcut(key)) {
+    if (handleFocusedInputShortcut(key)) {
       return;
     }
 

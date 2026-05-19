@@ -224,7 +224,7 @@ afterEach(() => {
 describe("TTY render smoke", () => {
   const ttyTest = enableTtySmokeTests ? test : test.skip;
 
-  ttyTest("split mode renders chrome, rails, and AI badges in a terminal transcript", async () => {
+  ttyTest("split mode renders chrome and rails in a terminal transcript", async () => {
     if (!ttyToolsAvailable) {
       return;
     }
@@ -233,7 +233,7 @@ describe("TTY render smoke", () => {
 
     expect(output).toContain("View  Navigate  Theme  Agent  Help");
     expect(output).toContain("before.ts ↔ after.ts");
-    expect(output).toContain("[AI]");
+    expect(output).not.toContain("[AI]");
     expect(output).toContain("▌@@ -1,1 +1,2 @@");
     expect(output).toContain("▌1 - export const answer = 41;");
     expect(output).toContain("▌1 + export const answer = 42;");

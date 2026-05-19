@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { parseCli } from "./cli";
 import { resolveCliVersion } from "./version";
 
@@ -87,7 +87,7 @@ describe("parseCli", () => {
     ]);
 
     expect(parsed).toMatchObject({
-      kind: "git",
+      kind: "vcs",
       range: "main...feature",
       staged: false,
       options: {
@@ -107,8 +107,8 @@ describe("parseCli", () => {
     const staged = await parseCli(["bun", "hunk", "diff", "--staged"]);
     const cached = await parseCli(["bun", "hunk", "diff", "--cached"]);
 
-    expect(staged).toMatchObject({ kind: "git", staged: true });
-    expect(cached).toMatchObject({ kind: "git", staged: true });
+    expect(staged).toMatchObject({ kind: "vcs", staged: true });
+    expect(cached).toMatchObject({ kind: "vcs", staged: true });
   });
 
   test("parses untracked file toggles for git diff", async () => {
@@ -116,14 +116,14 @@ describe("parseCli", () => {
     const included = await parseCli(["bun", "hunk", "diff", "--no-exclude-untracked"]);
 
     expect(excluded).toMatchObject({
-      kind: "git",
+      kind: "vcs",
       staged: false,
       options: {
         excludeUntracked: true,
       },
     });
     expect(included).toMatchObject({
-      kind: "git",
+      kind: "vcs",
       staged: false,
       options: {
         excludeUntracked: false,
@@ -162,9 +162,19 @@ describe("parseCli", () => {
     ]);
 
     expect(parsed).toMatchObject({
-      kind: "git",
+      kind: "vcs",
       range: "main",
       pathspecs: ["src/app.ts", "test/app.test.ts"],
+    });
+  });
+
+  test("parses target followed by pathspecs without a separator", async () => {
+    const parsed = await parseCli(["bun", "hunk", "diff", "trunk()..@", ".github"]);
+
+    expect(parsed).toMatchObject({
+      kind: "vcs",
+      range: "trunk()..@",
+      pathspecs: [".github"],
     });
   });
 
@@ -291,6 +301,27 @@ describe("parseCli", () => {
     });
   });
 
+  test("parses session review with live notes included", async () => {
+    const parsed = await parseCli([
+      "bun",
+      "hunk",
+      "session",
+      "review",
+      "session-1",
+      "--include-notes",
+      "--json",
+    ]);
+
+    expect(parsed).toMatchObject({
+      kind: "session",
+      action: "review",
+      selector: { sessionId: "session-1" },
+      output: "json",
+      includePatch: false,
+      includeNotes: true,
+    });
+  });
+
   test("parses session navigate by hunk number", async () => {
     const parsed = await parseCli([
       "bun",
@@ -361,10 +392,10 @@ describe("parseCli", () => {
     expect(parsed).toEqual({
       kind: "session",
       action: "reload",
-      selector: { sessionPath: "/tmp/live-window" },
-      sourcePath: "/tmp/source-repo",
+      selector: { sessionPath: resolve("/tmp/live-window") },
+      sourcePath: resolve("/tmp/source-repo"),
       nextInput: {
-        kind: "git",
+        kind: "vcs",
         staged: false,
         options: {},
       },
@@ -553,6 +584,39 @@ describe("parseCli", () => {
     });
   });
 
+  test("rejects the removed session note namespace", async () => {
+    await expect(parseCli(["bun", "hunk", "session", "note", "list", "session-1"])).rejects.toThrow(
+      "Unknown session command: note",
+    );
+  });
+
+  test("parses session comment list with review-note type filter", async () => {
+    const parsed = await parseCli([
+      "bun",
+      "hunk",
+      "session",
+      "comment",
+      "list",
+      "session-1",
+      "--type",
+      "user",
+    ]);
+
+    expect(parsed).toEqual({
+      kind: "session",
+      action: "comment-list",
+      selector: { sessionId: "session-1" },
+      type: "user",
+      output: "text",
+    });
+  });
+
+  test("rejects session comment list with an unsupported type", async () => {
+    await expect(
+      parseCli(["bun", "hunk", "session", "comment", "list", "session-1", "--type", "robot"]),
+    ).rejects.toThrow("Comment type must be one of live, all, ai, agent, or user.");
+  });
+
   test("parses session comment rm", async () => {
     const parsed = await parseCli([
       "bun",
@@ -616,7 +680,7 @@ describe("parseCli", () => {
     expect(parsed).toEqual({
       kind: "session",
       action: "navigate",
-      selector: { repoRoot: "/tmp/repo" },
+      selector: { repoRoot: resolve("/tmp/repo") },
       commentDirection: "next",
       output: "text",
     });

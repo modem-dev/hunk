@@ -1,4 +1,8 @@
-import type { SessionServerMessage } from "@hunk/session-broker-core";
+import {
+  MAX_WS_MESSAGE_BYTES,
+  utf8ByteLength,
+  type SessionServerMessage,
+} from "@hunk/session-broker-core";
 import type { SessionBrokerDaemon } from "@hunk/session-broker";
 
 export interface ServeSessionBrokerDaemonOptions<
@@ -88,8 +92,17 @@ export function serveSessionBrokerDaemon<
         return (await options.notFound?.(request)) ?? defaultNotFound();
       },
       websocket: {
+        // Let Bun reject oversized frames at the protocol layer before they are ever buffered.
+        maxPayloadLength: MAX_WS_MESSAGE_BYTES,
         message: (socket, message) => {
           if (typeof message !== "string") {
+            return;
+          }
+
+          // Defense in depth: Bun's maxPayloadLength already bounds raw frames, but guard the
+          // decoded string too so a registration payload cannot be parsed unbounded here.
+          if (utf8ByteLength(message) > MAX_WS_MESSAGE_BYTES) {
+            socket.close(1009, "Message exceeds the session broker size limit.");
             return;
           }
 

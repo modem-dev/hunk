@@ -30,7 +30,7 @@ export interface HunkSessionBridgeHandlers {
       HunkSessionServerMessage,
       { command: "reload_session" }
     >["input"]["nextInput"],
-    options?: { sourcePath?: string },
+    options?: { resetApp?: boolean; sourcePath?: string },
   ) => Promise<ReloadedSessionResult>;
   removeLiveComment: (commentId: string) => RemovedCommentResult;
 }
@@ -68,6 +68,7 @@ export function createHunkSessionBridge(handlers: HunkSessionBridgeHandlers) {
           return handlers.navigateToLocation(message.input);
         case "reload_session":
           return handlers.reloadSession(message.input.nextInput, {
+            resetApp: false,
             sourcePath: message.input.sourcePath,
           });
         case "remove_comment":

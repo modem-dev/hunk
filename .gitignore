@@ -28,6 +28,7 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .eslintcache
 .cache
 *.tsbuildinfo
+.direnv/
 
 # IntelliJ based IDEs
 .idea
@@ -42,3 +43,4 @@ tmp
 .pi/
 autoresearch.jsonl
 autoresearch.ideas.md
+result

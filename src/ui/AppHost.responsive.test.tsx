@@ -2,13 +2,13 @@ import { describe, expect, mock, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
 import type { AppBootstrap, LayoutMode } from "../core/types";
-import { createTestGitAppBootstrap } from "../../test/helpers/app-bootstrap";
+import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
 import { createTestDiffFile } from "../../test/helpers/diff-helpers";
 
 const { AppHost } = await import("./AppHost");
 
 function createBootstrap(initialMode: LayoutMode = "auto", pager = false): AppBootstrap {
-  return createTestGitAppBootstrap({
+  return createTestVcsAppBootstrap({
     agentSummary: "Changeset summary",
     changesetId: "changeset:responsive",
     files: [
@@ -106,6 +106,73 @@ describe("responsive app", () => {
     expect(tight).not.toContain("Files");
     expect(tight).not.toContain("Changeset summary");
     expect(tight).not.toMatch(/▌.*▌/);
+  });
+
+  test("View menu sidebar checkmark follows actual medium-viewport visibility", async () => {
+    const setup = await testRender(<AppHost bootstrap={createBootstrap("auto")} />, {
+      width: 180,
+      height: 24,
+    });
+
+    try {
+      await act(async () => {
+        await setup.renderOnce();
+      });
+
+      const initialFrame = setup.captureCharFrame();
+      expect((initialFrame.match(/alpha\.ts/g) ?? []).length).toBe(1);
+
+      await act(async () => {
+        await setup.mockInput.pressKey("F10");
+      });
+      await act(async () => {
+        await setup.renderOnce();
+      });
+      await act(async () => {
+        await setup.mockInput.pressArrow("right");
+      });
+      await act(async () => {
+        await setup.renderOnce();
+      });
+
+      const menuFrame = setup.captureCharFrame();
+      expect(menuFrame).toContain("[ ] Sidebar");
+      expect(menuFrame).not.toContain("[x] Sidebar");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("sidebar shortcut opens the hidden sidebar on medium viewport", async () => {
+    const setup = await testRender(<AppHost bootstrap={createBootstrap("auto")} />, {
+      width: 180,
+      height: 24,
+    });
+
+    try {
+      await act(async () => {
+        await setup.renderOnce();
+      });
+
+      let frame = setup.captureCharFrame();
+      expect((frame.match(/alpha\.ts/g) ?? []).length).toBe(1);
+
+      await act(async () => {
+        await setup.mockInput.typeText("s");
+      });
+      await act(async () => {
+        await setup.renderOnce();
+      });
+
+      frame = setup.captureCharFrame();
+      expect((frame.match(/alpha\.ts/g) ?? []).length).toBe(2);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
   });
 
   test("explicit split and stack modes override responsive auto switching", async () => {

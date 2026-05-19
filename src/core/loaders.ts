@@ -1,24 +1,19 @@
 import {
-  getFiletypeFromFileName,
   parseDiffFromFile,
   parsePatchFiles,
   type FileContents,
   type FileDiffMetadata,
 } from "@pierre/diffs";
 import { createTwoFilesPatch } from "diff";
-import { resolve as resolvePath } from "node:path";
+import fs from "node:fs";
+import { join, resolve as resolvePath } from "node:path";
 import { findAgentFileContext, loadAgentContext } from "./agent";
-import { createSkippedBinaryMetadata, isProbablyBinaryFile, patchLooksBinary } from "./binary";
-import { normalizeDiffMetadataPaths, normalizeDiffPath } from "./diffPaths";
-import {
-  buildGitDiffArgs,
-  buildGitShowArgs,
-  buildGitStashShowArgs,
-  listGitUntrackedFiles,
-  resolveGitRepoRoot,
-  runGitText,
-  runGitUntrackedFileDiffText,
-} from "./git";
+import { createSkippedBinaryMetadata, isProbablyBinaryFile } from "./binary";
+import { normalizeUntrackedPatchHeaders, runGitUntrackedFileDiffText } from "./git";
+import { splitPatchIntoFileChunks, findPatchChunk } from "./patch/chunks";
+import { buildDiffFile, createSkippedLargeMetadata } from "./diffFile";
+import { normalizePatchText } from "./patch/normalize";
+import { createUnsupportedVcsOperationError, getVcsAdapter, operationFromInput } from "./vcs";
 import type {
   AppBootstrap,
   AgentContext,
@@ -27,7 +22,7 @@ import type {
   DiffFile,
   DiffToolCommandInput,
   FileCommandInput,
-  GitCommandInput,
+  VcsCommandInput,
   PatchCommandInput,
   ShowCommandInput,
   StashShowCommandInput,
@@ -37,169 +32,88 @@ interface LoadAppBootstrapOptions {
   cwd?: string;
 }
 
+const LARGE_DIFF_FILE_MAX_BYTES = 1_000_000;
+const LARGE_DIFF_FILE_MAX_LINES = 20_000;
+const LARGE_DIFF_FILE_SNIFF_BYTES = 256 * 1024;
+
 /** Return the final path segment for display-oriented labels. */
 function basename(path: string) {
-  return path.split("/").filter(Boolean).pop() ?? path;
+  return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
 }
 
-/** Remove git-style a/ and b/ prefixes before matching diff paths. */
-function stripPrefixes(path: string) {
-  return path.replace(/^[ab]\//, "");
+interface CountedLines {
+  complete: boolean;
+  lines: number;
 }
 
-/** Remove terminal escape sequences so Git-colored pager input still parses as plain patch text. */
-function stripTerminalControl(text: string) {
-  return text
-    .replace(/\x1bP[\s\S]*?\x1b\\/g, "")
-    .replace(/\x1b\][\s\S]*?(?:\x07|\x1b\\)/g, "")
-    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
-    .replace(/\x1b[@-_]/g, "");
-}
+/** Count text lines with a byte cap so huge skipped-file stats do not block startup. */
+function countLinesInFile(path: string, maxBytes: number, size: number): CountedLines {
+  let fd: number | undefined;
 
-/** Split a multi-file patch into per-file chunks so each diff file keeps its original patch text. */
-function splitPatchIntoFileChunks(rawPatch: string) {
-  const patch = rawPatch.replaceAll("\r\n", "\n");
-  const lines = patch.split("\n");
-  const chunks: string[] = [];
-  let current: string[] = [];
-  const hasGitHeaders = lines.some((line) => line.startsWith("diff --git "));
+  try {
+    fd = fs.openSync(path, "r");
+    const buffer = Buffer.alloc(Math.min(64 * 1024, maxBytes));
+    let position = 0;
+    let lineCount = 0;
+    let lastByte: number | undefined;
 
-  const flush = () => {
-    if (current.length > 0) {
-      chunks.push(`${current.join("\n").trimEnd()}\n`);
-      current = [];
-    }
-  };
+    while (position < maxBytes) {
+      const bytesToRead = Math.min(buffer.length, maxBytes - position);
+      const bytesRead = fs.readSync(fd, buffer, 0, bytesToRead, position);
+      if (bytesRead === 0) {
+        break;
+      }
 
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index]!;
-
-    if (hasGitHeaders && line.startsWith("diff --git ")) {
-      flush();
-      current.push(line);
-      continue;
-    }
-
-    if (!hasGitHeaders && line.startsWith("--- ") && lines[index + 1]?.startsWith("+++ ")) {
-      flush();
-      current.push(line);
-      current.push(lines[index + 1]!);
-      index += 1;
-      continue;
-    }
-
-    if (current.length > 0) {
-      current.push(line);
-    }
-  }
-
-  flush();
-  return chunks;
-}
-
-/** Count visible additions and deletions from parsed diff metadata. */
-function countDiffStats(metadata: FileDiffMetadata) {
-  let additions = 0;
-  let deletions = 0;
-
-  for (const hunk of metadata.hunks) {
-    for (const content of hunk.hunkContent) {
-      if (content.type === "change") {
-        additions += content.additions;
-        deletions += content.deletions;
+      position += bytesRead;
+      for (let index = 0; index < bytesRead; index += 1) {
+        lastByte = buffer[index];
+        if (lastByte === 0x0a) {
+          lineCount += 1;
+        }
       }
     }
+
+    return {
+      complete: position >= size,
+      lines: lastByte !== undefined && lastByte !== 0x0a ? lineCount + 1 : lineCount,
+    };
+  } catch {
+    return { complete: true, lines: 0 };
+  } finally {
+    if (fd !== undefined) {
+      fs.closeSync(fd);
+    }
+  }
+}
+
+interface LargeUntrackedFileCheck {
+  shouldSkip: boolean;
+  stats?: DiffFile["stats"];
+  statsTruncated?: boolean;
+}
+
+/** Return whether an untracked file is too large to synthesize into a full in-memory patch. */
+function inspectLargeUntrackedFile(repoRoot: string, filePath: string): LargeUntrackedFileCheck {
+  const absolutePath = join(repoRoot, filePath);
+
+  let stat: fs.Stats;
+  try {
+    stat = fs.statSync(absolutePath);
+  } catch {
+    return { shouldSkip: false };
   }
 
-  return { additions, deletions };
-}
-
-/** Recover the original patch chunk for one parsed file, preferring index order before path matching. */
-function findPatchChunk(metadata: FileDiffMetadata, chunks: string[], index: number) {
-  const byIndex = chunks[index];
-  if (byIndex) {
-    return byIndex;
-  }
-
-  return (
-    chunks.find((chunk) =>
-      [metadata.name, metadata.prevName]
-        .map(normalizeDiffPath)
-        .filter((value): value is string => Boolean(value))
-        .map(stripPrefixes)
-        .some(
-          (path) =>
-            chunk.includes(`a/${path}`) || chunk.includes(`b/${path}`) || chunk.includes(path),
-        ),
-    ) ?? ""
-  );
-}
-
-interface BuildDiffFileOptions {
-  isUntracked?: boolean;
-  previousPath?: string;
-  isBinary?: boolean;
-}
-
-/** Build the normalized per-file model used by the UI regardless of input mode. */
-function buildDiffFile(
-  metadata: FileDiffMetadata,
-  patch: string,
-  index: number,
-  sourcePrefix: string,
-  agentContext: AgentContext | null,
-  { isUntracked, previousPath, isBinary }: BuildDiffFileOptions = {},
-): DiffFile {
-  const normalizedMetadata = normalizeDiffMetadataPaths(metadata);
-  const path = normalizedMetadata.name;
-  const resolvedPreviousPath = normalizeDiffPath(previousPath) ?? normalizedMetadata.prevName;
+  const byteLimit =
+    stat.size > LARGE_DIFF_FILE_MAX_BYTES ? LARGE_DIFF_FILE_MAX_BYTES : LARGE_DIFF_FILE_SNIFF_BYTES;
+  const counted = countLinesInFile(absolutePath, byteLimit, stat.size);
+  const shouldSkip =
+    stat.size > LARGE_DIFF_FILE_MAX_BYTES || counted.lines > LARGE_DIFF_FILE_MAX_LINES;
 
   return {
-    id: `${sourcePrefix}:${index}:${path}`,
-    path,
-    previousPath: resolvedPreviousPath,
-    patch,
-    language: getFiletypeFromFileName(path) ?? undefined,
-    stats: countDiffStats(normalizedMetadata),
-    metadata: normalizedMetadata,
-    agent: findAgentFileContext(agentContext, path, resolvedPreviousPath),
-    isUntracked,
-    isBinary: isBinary ?? patchLooksBinary(patch),
+    shouldSkip,
+    stats: shouldSkip ? { additions: counted.lines, deletions: 0 } : undefined,
+    statsTruncated: shouldSkip ? !counted.complete : undefined,
   };
-}
-
-/** Escape only the filename characters that break unified-diff header parsing. */
-function escapeUntrackedPatchPath(path: string) {
-  return path
-    .replaceAll("\\", "\\\\")
-    .replaceAll("\t", "\\t")
-    .replaceAll("\n", "\\n")
-    .replaceAll("\r", "\\r");
-}
-
-/** Rewrite Git's quoted untracked-file headers into parser-friendly paths. */
-function normalizeUntrackedPatchHeaders(patchText: string, filePath: string) {
-  const safePath = escapeUntrackedPatchPath(filePath);
-
-  return patchText
-    .replaceAll("\r\n", "\n")
-    .split("\n")
-    .map((line) => {
-      if (line.startsWith("diff --git ")) {
-        return `diff --git a/${safePath} b/${safePath}`;
-      }
-
-      if (line.startsWith("+++ ")) {
-        return `+++ b/${safePath}`;
-      }
-
-      if (line.startsWith("Binary files /dev/null and ")) {
-        return `Binary files /dev/null and b/${safePath} differ`;
-      }
-
-      return line;
-    })
-    .join("\n");
 }
 
 /** Parse one synthetic untracked-file patch and reattach the real path after header normalization. */
@@ -232,13 +146,30 @@ function parseUntrackedPatchFile(patchText: string, filePath: string) {
 
 /** Build one reviewable diff file for an untracked working-tree file. */
 function buildUntrackedDiffFile(
-  input: GitCommandInput,
+  input: VcsCommandInput,
   filePath: string,
   index: number,
   repoRoot: string,
   sourcePrefix: string,
   agentContext: AgentContext | null,
 ) {
+  const largeFileCheck = inspectLargeUntrackedFile(repoRoot, filePath);
+  if (largeFileCheck.shouldSkip) {
+    return buildDiffFile(
+      createSkippedLargeMetadata(filePath, "new"),
+      "",
+      index,
+      sourcePrefix,
+      agentContext,
+      {
+        isTooLarge: true,
+        isUntracked: true,
+        stats: largeFileCheck.stats,
+        statsTruncated: largeFileCheck.statsTruncated,
+      },
+    );
+  }
+
   const patch = normalizeUntrackedPatchHeaders(
     runGitUntrackedFileDiffText(input, filePath, { repoRoot }),
     filePath,
@@ -300,7 +231,7 @@ function normalizePatchChangeset(
   sourceLabel: string,
   agentContext: AgentContext | null,
 ): Changeset {
-  const normalizedPatchText = stripTerminalControl(patchText.replaceAll("\r\n", "\n"));
+  const normalizedPatchText = normalizePatchText(patchText);
 
   let parsedPatches: ReturnType<typeof parsePatchFiles>;
   try {
@@ -446,82 +377,55 @@ async function loadFileDiffChangeset(
   } satisfies Changeset;
 }
 
-/** Build a changeset from the current repository working tree or a git range. */
-async function loadGitChangeset(
-  input: GitCommandInput,
+/** Build a changeset from an adapter-backed VCS review operation. */
+async function loadVcsChangeset(
+  input: VcsCommandInput | ShowCommandInput | StashShowCommandInput,
   agentContext: AgentContext | null,
   cwd = process.cwd(),
 ) {
-  const repoRoot = resolveGitRepoRoot(input, { cwd });
-  const repoName = basename(repoRoot);
-  const title = input.staged
-    ? `${repoName} staged changes`
-    : input.range
-      ? `${repoName} ${input.range}`
-      : `${repoName} working tree`;
-  const trackedChangeset = normalizePatchChangeset(
-    runGitText({ input, args: buildGitDiffArgs(input), cwd }),
-    title,
-    repoRoot,
+  const adapter = getVcsAdapter(input.options.vcs ?? "git");
+  const operation = operationFromInput(input);
+  if (!adapter.capabilities.reviewOperations.has(operation.kind)) {
+    throw createUnsupportedVcsOperationError(adapter, operation);
+  }
+
+  const result = await adapter.loadReview(operation, { cwd });
+  const parsedChangeset = normalizePatchChangeset(
+    result.patchText,
+    result.title,
+    result.sourceLabel,
     agentContext,
   );
-  const trackedFiles = trackedChangeset.files;
-  const untrackedFiles = listGitUntrackedFiles(input, { cwd, repoRoot });
+  const adapterFiles = (result.extraFiles ?? []).map((file, index) => ({
+    ...file,
+    id: `${file.id}:extra:${index}`,
+    agent: findAgentFileContext(agentContext, file.path, file.previousPath),
+  }));
+  const trackedFiles = [...parsedChangeset.files, ...adapterFiles];
 
-  if (untrackedFiles.length === 0) {
-    return trackedChangeset;
+  if (operation.kind !== "working-tree-diff" || !result.untrackedFiles?.length) {
+    return {
+      ...parsedChangeset,
+      files: trackedFiles,
+    } satisfies Changeset;
   }
 
   return {
-    ...trackedChangeset,
+    ...parsedChangeset,
     files: [
       ...trackedFiles,
-      ...untrackedFiles.map((filePath, index) =>
+      ...result.untrackedFiles.map((filePath, index) =>
         buildUntrackedDiffFile(
-          input,
+          operation.input,
           filePath,
           trackedFiles.length + index,
-          repoRoot,
-          repoRoot,
+          result.repoRoot,
+          result.sourceLabel,
           agentContext,
         ),
       ),
     ],
   } satisfies Changeset;
-}
-
-/** Build a changeset from `git show`, suppressing commit-message chrome so only the patch feeds the UI. */
-async function loadShowChangeset(
-  input: ShowCommandInput,
-  agentContext: AgentContext | null,
-  cwd = process.cwd(),
-) {
-  const repoRoot = resolveGitRepoRoot(input, { cwd });
-  const repoName = basename(repoRoot);
-
-  return normalizePatchChangeset(
-    runGitText({ input, args: buildGitShowArgs(input), cwd }),
-    input.ref ? `${repoName} show ${input.ref}` : `${repoName} show HEAD`,
-    repoRoot,
-    agentContext,
-  );
-}
-
-/** Build a changeset from `git stash show -p`, which naturally maps to one reviewable patch. */
-async function loadStashShowChangeset(
-  input: StashShowCommandInput,
-  agentContext: AgentContext | null,
-  cwd = process.cwd(),
-) {
-  const repoRoot = resolveGitRepoRoot(input, { cwd });
-  const repoName = basename(repoRoot);
-
-  return normalizePatchChangeset(
-    runGitText({ input, args: buildGitStashShowArgs(input), cwd }),
-    input.ref ? `${repoName} stash ${input.ref}` : `${repoName} stash`,
-    repoRoot,
-    agentContext,
-  );
 }
 
 /** Build a changeset from patch text supplied by file or stdin. */
@@ -555,14 +459,10 @@ export async function loadAppBootstrap(
   let changeset: Changeset;
 
   switch (input.kind) {
-    case "git":
-      changeset = await loadGitChangeset(input, agentContext, cwd);
-      break;
+    case "vcs":
     case "show":
-      changeset = await loadShowChangeset(input, agentContext, cwd);
-      break;
     case "stash-show":
-      changeset = await loadStashShowChangeset(input, agentContext, cwd);
+      changeset = await loadVcsChangeset(input, agentContext, cwd);
       break;
     case "diff":
       changeset = await loadFileDiffChangeset(input, agentContext, cwd);

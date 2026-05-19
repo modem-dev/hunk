@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -73,22 +72,21 @@ describe("session daemon launcher", () => {
   });
 
   test("detects whether some process is already listening on the daemon port", async () => {
-    const listener = createServer(() => undefined);
-    await new Promise<void>((resolve, reject) => {
-      listener.once("error", reject);
-      listener.listen(0, "127.0.0.1", () => resolve());
+    const listener = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: () => new Response("ok"),
     });
-
-    const address = listener.address();
-    const port = typeof address === "object" && address ? address.port : 0;
+    const port = listener.port;
+    expect(port).toBeDefined();
 
     try {
-      await expect(isLoopbackPortReachable({ host: "127.0.0.1", port })).resolves.toBe(true);
+      await expect(isLoopbackPortReachable({ host: "127.0.0.1", port: port! })).resolves.toBe(true);
     } finally {
-      await new Promise<void>((resolve) => listener.close(() => resolve()));
+      listener.stop(true);
     }
 
-    await expect(isLoopbackPortReachable({ host: "127.0.0.1", port })).resolves.toBe(false);
+    await expect(isLoopbackPortReachable({ host: "127.0.0.1", port: port! })).resolves.toBe(false);
   });
 
   test("coordinates concurrent ensure calls so only one launcher runs", async () => {

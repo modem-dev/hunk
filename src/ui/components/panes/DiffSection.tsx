@@ -1,7 +1,9 @@
 import { memo } from "react";
-import type { DiffFile, LayoutMode } from "../../../core/types";
-import { PierreDiffView } from "../../diff/PierreDiffView";
-import { getAnnotatedHunkIndices, type VisibleAgentNote } from "../../lib/agentAnnotations";
+import type { DiffFile, LayoutMode, UserNoteLineTarget } from "../../../core/types";
+import { PierreDiffView, type ActiveAddNoteAffordance } from "../../diff/PierreDiffView";
+import type { VisibleBodyBounds } from "../../diff/rowWindowing";
+import type { DiffSectionGeometry } from "../../lib/diffSectionGeometry";
+import type { VisibleAgentNote } from "../../lib/agentAnnotations";
 import { diffSectionId } from "../../lib/ids";
 import { fitText } from "../../lib/text";
 import type { AppTheme } from "../../themes";
@@ -15,6 +17,7 @@ interface DiffSectionProps {
   layout: Exclude<LayoutMode, "auto">;
   selectedHunkIndex: number;
   shouldLoadHighlight: boolean;
+  sectionGeometry?: DiffSectionGeometry;
   separatorWidth: number;
   showLineNumbers: boolean;
   showHunkHeaders: boolean;
@@ -23,8 +26,14 @@ interface DiffSectionProps {
   showSeparator: boolean;
   theme: AppTheme;
   visibleAgentNotes: VisibleAgentNote[];
+  visibleBodyBounds?: VisibleBodyBounds;
   viewWidth: number;
-  onOpenAgentNotesAtHunk: (hunkIndex: number) => void;
+  hoverActive?: boolean;
+  hoverClearSignal?: number;
+  onHover: () => void;
+  onMouseScroll?: () => void;
+  onActiveAddNoteAffordanceChange?: (affordance: ActiveAddNoteAffordance | null) => void;
+  onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void;
   onSelect: () => void;
 }
 
@@ -37,6 +46,7 @@ function DiffSectionComponent({
   layout,
   selectedHunkIndex,
   shouldLoadHighlight,
+  sectionGeometry,
   separatorWidth,
   showLineNumbers,
   showHunkHeaders,
@@ -45,15 +55,21 @@ function DiffSectionComponent({
   showSeparator,
   theme,
   visibleAgentNotes,
+  visibleBodyBounds,
   viewWidth,
-  onOpenAgentNotesAtHunk,
+  hoverActive = true,
+  hoverClearSignal = 0,
+  onHover,
+  onMouseScroll,
+  onActiveAddNoteAffordanceChange,
+  onStartUserNoteAtHunk,
   onSelect,
 }: DiffSectionProps) {
-  const annotatedHunkIndices = getAnnotatedHunkIndices(file);
-
   return (
     <box
       id={diffSectionId(file.id)}
+      onMouseOver={onHover}
+      onMouseScroll={onMouseScroll}
       style={{
         width: "100%",
         flexDirection: "column",
@@ -94,13 +110,18 @@ function DiffSectionComponent({
         codeHorizontalOffset={codeHorizontalOffset}
         theme={theme}
         width={viewWidth}
-        annotatedHunkIndices={annotatedHunkIndices}
         visibleAgentNotes={visibleAgentNotes}
-        onOpenAgentNotesAtHunk={onOpenAgentNotesAtHunk}
+        hoverActive={hoverActive}
+        hoverClearSignal={hoverClearSignal}
+        onHover={onHover}
+        onActiveAddNoteAffordanceChange={onActiveAddNoteAffordanceChange}
+        onStartUserNoteAtHunk={onStartUserNoteAtHunk}
         selectedHunkIndex={selectedHunkIndex}
+        sectionGeometry={sectionGeometry}
         shouldLoadHighlight={shouldLoadHighlight}
         // The parent review stream owns scrolling across files.
         scrollable={false}
+        visibleBodyBounds={visibleBodyBounds}
       />
     </box>
   );
@@ -117,14 +138,19 @@ export const DiffSection = memo(DiffSectionComponent, (previous, next) => {
     previous.layout === next.layout &&
     previous.selectedHunkIndex === next.selectedHunkIndex &&
     previous.shouldLoadHighlight === next.shouldLoadHighlight &&
+    previous.sectionGeometry === next.sectionGeometry &&
     previous.separatorWidth === next.separatorWidth &&
     previous.showLineNumbers === next.showLineNumbers &&
     previous.showHunkHeaders === next.showHunkHeaders &&
     previous.wrapLines === next.wrapLines &&
     previous.showHeader === next.showHeader &&
     previous.showSeparator === next.showSeparator &&
+    previous.hoverActive === next.hoverActive &&
+    previous.hoverClearSignal === next.hoverClearSignal &&
+    previous.onMouseScroll === next.onMouseScroll &&
     previous.theme === next.theme &&
     previous.visibleAgentNotes === next.visibleAgentNotes &&
+    previous.visibleBodyBounds === next.visibleBodyBounds &&
     previous.viewWidth === next.viewWidth
   );
 });

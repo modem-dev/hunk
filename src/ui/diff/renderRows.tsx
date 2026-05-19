@@ -1,5 +1,5 @@
 import { memo, type ReactNode } from "react";
-import type { DiffFile } from "../../core/types";
+import type { DiffFile, UserNoteLineTarget } from "../../core/types";
 import type { AppTheme } from "../themes";
 import {
   resolveSplitCellGeometry,
@@ -7,7 +7,17 @@ import {
   resolveStackCellGeometry,
 } from "./codeColumns";
 import type { DiffRow, RenderSpan, SplitLineCell, StackLineCell } from "./pierre";
-import { blendHex } from "../lib/color";
+import {
+  diffRailMarker,
+  dimRailColor,
+  neutralRailColor,
+  splitCellPalette,
+  splitLeftRailColor,
+  splitRightRailColor,
+  stackCellPalette,
+  stackGutterText,
+  stackRailColor,
+} from "./rowStyle";
 
 /** Clamp a label to one terminal row with an ellipsis. */
 export function fitText(text: string, width: number) {
@@ -80,114 +90,8 @@ function sliceSpansWindow(spans: RenderSpan[], offset: number, width: number) {
   };
 }
 
-const INACTIVE_RAIL_BLEND = 0.35;
-
-/** Dim a rail color for inactive hunks by blending toward the panel background. */
-function dimRailColor(color: string, theme: AppTheme) {
-  return blendHex(color, theme.panel, INACTIVE_RAIL_BLEND);
-}
-
-/** The rail marker is always visible. */
-function marker() {
-  return "▌";
-}
-
-/** Return the neutral active-hunk rail color for the current theme. */
-function neutralRailColor(theme: AppTheme) {
-  return theme.lineNumberFg;
-}
-
-/** Pick the stack-view rail color for one rendered row. */
-function stackRailColor(kind: StackLineCell["kind"], theme: AppTheme, selected: boolean) {
-  let color: string;
-
-  if (kind === "addition") {
-    color = theme.addedSignColor;
-  } else if (kind === "deletion") {
-    color = theme.removedSignColor;
-  } else {
-    color = neutralRailColor(theme);
-  }
-
-  return selected ? color : dimRailColor(color, theme);
-}
-
-/** Pick the left split-view rail color from the old-side cell state. */
-function splitLeftRailColor(kind: SplitLineCell["kind"], theme: AppTheme, selected: boolean) {
-  const color = kind === "deletion" ? theme.removedSignColor : neutralRailColor(theme);
-  return selected ? color : dimRailColor(color, theme);
-}
-
-/** Pick the right split-view rail color from the new-side cell state. */
-function splitRightRailColor(kind: SplitLineCell["kind"], theme: AppTheme, selected: boolean) {
-  const color = kind === "addition" ? theme.addedSignColor : neutralRailColor(theme);
-  return selected ? color : dimRailColor(color, theme);
-}
-
-/** Pick split-view colors from the semantic diff cell kind. */
-function splitCellPalette(kind: SplitLineCell["kind"], theme: AppTheme) {
-  if (kind === "addition") {
-    return {
-      gutterBg: theme.addedBg,
-      contentBg: theme.addedBg,
-      signColor: theme.addedSignColor,
-      numberColor: theme.addedSignColor,
-    };
-  }
-
-  if (kind === "deletion") {
-    return {
-      gutterBg: theme.removedBg,
-      contentBg: theme.removedBg,
-      signColor: theme.removedSignColor,
-      numberColor: theme.removedSignColor,
-    };
-  }
-
-  if (kind === "empty") {
-    return {
-      gutterBg: theme.lineNumberBg,
-      contentBg: theme.panelAlt,
-      signColor: theme.muted,
-      numberColor: theme.lineNumberFg,
-    };
-  }
-
-  return {
-    gutterBg: theme.lineNumberBg,
-    contentBg: theme.contextBg,
-    signColor: theme.muted,
-    numberColor: theme.lineNumberFg,
-  };
-}
-
-/** Pick stack-view colors from the semantic diff cell kind. */
-function stackCellPalette(kind: StackLineCell["kind"], theme: AppTheme) {
-  if (kind === "addition") {
-    return {
-      gutterBg: theme.addedBg,
-      contentBg: theme.addedBg,
-      signColor: theme.addedSignColor,
-      numberColor: theme.addedSignColor,
-    };
-  }
-
-  if (kind === "deletion") {
-    return {
-      gutterBg: theme.removedBg,
-      contentBg: theme.removedBg,
-      signColor: theme.removedSignColor,
-      numberColor: theme.removedSignColor,
-    };
-  }
-
-  return {
-    gutterBg: theme.lineNumberBg,
-    contentBg: theme.contextBg,
-    signColor: theme.muted,
-    numberColor: theme.lineNumberFg,
-  };
-}
+const marker = diffRailMarker;
+const addNoteBadgeText = "[+]";
 
 /** Render a fixed-width inline span sequence for one diff cell. */
 function renderInlineSpans(
@@ -342,15 +246,9 @@ function buildWrappedStackCell(
     showLineNumbers,
     prefixWidth,
   );
-  const oldNumber = cell.oldLineNumber
-    ? String(cell.oldLineNumber).padStart(lineNumberDigits, " ")
-    : " ".repeat(lineNumberDigits);
-  const newNumber = cell.newLineNumber
-    ? String(cell.newLineNumber).padStart(lineNumberDigits, " ")
-    : " ".repeat(lineNumberDigits);
-  const firstGutterText = (
-    showLineNumbers ? `${oldNumber} ${newNumber} ${cell.sign}` : `${cell.sign} `
-  ).padEnd(gutterWidth);
+  const firstGutterText = stackGutterText(cell, lineNumberDigits, showLineNumbers).padEnd(
+    gutterWidth,
+  );
   const wrappedSpans = wrapSpans(cell.spans, contentWidth);
 
   return {
@@ -438,13 +336,6 @@ function renderStackCell(
     prefixWidth,
   );
 
-  const oldNumber = cell.oldLineNumber
-    ? String(cell.oldLineNumber).padStart(lineNumberDigits, " ")
-    : " ".repeat(lineNumberDigits);
-  const newNumber = cell.newLineNumber
-    ? String(cell.newLineNumber).padStart(lineNumberDigits, " ")
-    : " ".repeat(lineNumberDigits);
-
   return (
     <>
       {prefix ? (
@@ -453,9 +344,7 @@ function renderStackCell(
         </span>
       ) : null}
       <span key={`${keyPrefix}:gutter`} fg={palette.numberColor} bg={palette.gutterBg}>
-        {(showLineNumbers ? `${oldNumber} ${newNumber} ${cell.sign}` : `${cell.sign} `).padEnd(
-          gutterWidth,
-        )}
+        {stackGutterText(cell, lineNumberDigits, showLineNumbers).padEnd(gutterWidth)}
       </span>
       {renderInlineSpans(
         cell.spans,
@@ -543,6 +432,10 @@ export function diffMessage(file: DiffFile) {
     return "Binary file skipped";
   }
 
+  if (file.isTooLarge) {
+    return "File too large to render automatically.";
+  }
+
   if (file.metadata.type === "new") {
     return "No textual hunks. The file is marked as new.";
   }
@@ -554,24 +447,33 @@ export function diffMessage(file: DiffFile) {
   return "No textual hunks to render for this file.";
 }
 
-/** Render collapsed and hunk-header rows, including the optional AI badge target. */
+/** Render collapsed and hunk-header rows, including the optional add-note target. */
 function renderHeaderRow(
   row: Extract<DiffRow, { type: "collapsed" | "hunk-header" }>,
   width: number,
   theme: AppTheme,
   selected: boolean,
-  annotated: boolean,
   anchorId?: string,
-  onOpenAgentNotesAtHunk?: (hunkIndex: number) => void,
+  showAddNoteBadge = false,
+  onHoverRow?: (rowKey: string) => void,
+  onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void,
 ) {
-  const badgeText = annotated ? "[AI]" : "";
-  const badgeWidth = annotated ? badgeText.length + 1 : 0;
+  const badges = [
+    showAddNoteBadge
+      ? {
+          key: "user-note",
+          text: "[+]",
+          onClick: () => onStartUserNoteAtHunk?.(row.hunkIndex),
+        }
+      : null,
+  ].filter((badge): badge is { key: string; text: string; onClick: () => void } => Boolean(badge));
+  const badgeWidth = badges.reduce((total, badge) => total + badge.text.length + 1, 0);
   const label =
     row.type === "collapsed"
       ? fitText(`··· ${row.text} ···`, Math.max(0, width - 1 - badgeWidth))
       : fitText(row.text, Math.max(0, width - 1 - badgeWidth));
 
-  if (!annotated) {
+  if (badges.length === 0) {
     return (
       <box
         key={row.key}
@@ -581,6 +483,7 @@ function renderHeaderRow(
           height: 1,
           backgroundColor: theme.panelAlt,
         }}
+        onMouseMove={() => onHoverRow?.(row.key)}
       >
         <text>
           <span
@@ -610,6 +513,7 @@ function renderHeaderRow(
         flexDirection: "row",
         backgroundColor: theme.panelAlt,
       }}
+      onMouseMove={() => onHoverRow?.(row.key)}
     >
       <box style={{ width: Math.max(0, width - badgeWidth), height: 1 }}>
         <text>
@@ -627,12 +531,36 @@ function renderHeaderRow(
           </span>
         </text>
       </box>
-      <box
-        style={{ width: badgeWidth, height: 1 }}
-        onMouseUp={() => onOpenAgentNotesAtHunk?.(row.hunkIndex)}
-      >
-        <text fg={theme.noteTitleText} bg={theme.noteTitleBackground}>{` ${badgeText}`}</text>
-      </box>
+      {badges.map((badge) => (
+        <box
+          key={badge.key}
+          style={{ width: badge.text.length + 1, height: 1 }}
+          onMouseUp={badge.onClick}
+        >
+          <text fg={theme.noteTitleText} bg={theme.noteTitleBackground}>{` ${badge.text}`}</text>
+        </box>
+      ))}
+    </box>
+  );
+}
+
+/** Render the hover-only add-note target as a separate clickable hit area. */
+function renderAddNoteButton(
+  key: string,
+  theme: AppTheme,
+  hunkIndex: number,
+  target: UserNoteLineTarget | undefined,
+  onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void,
+) {
+  return (
+    <box
+      key={key}
+      style={{ width: addNoteBadgeText.length, height: 1 }}
+      onMouseUp={() => onStartUserNoteAtHunk?.(hunkIndex, target)}
+    >
+      <text fg={theme.noteTitleText} bg={theme.noteTitleBackground}>
+        {addNoteBadgeText}
+      </text>
     </box>
   );
 }
@@ -712,10 +640,11 @@ function renderRow(
   codeHorizontalOffset: number,
   theme: AppTheme,
   selected: boolean,
-  annotated: boolean,
   anchorId?: string,
   noteGuideSide?: "old" | "new",
-  onOpenAgentNotesAtHunk?: (hunkIndex: number) => void,
+  showAddNoteBadge = false,
+  onHoverRow?: (rowKey: string) => void,
+  onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void,
 ) {
   let baseRow: ReactNode;
 
@@ -725,21 +654,38 @@ function renderRow(
       width,
       theme,
       selected,
-      annotated,
       anchorId,
-      onOpenAgentNotesAtHunk,
+      showAddNoteBadge,
+      onHoverRow,
+      onStartUserNoteAtHunk,
     );
   } else if (row.type === "hunk-header") {
     baseRow = showHunkHeaders
-      ? renderHeaderRow(row, width, theme, selected, annotated, anchorId, onOpenAgentNotesAtHunk)
+      ? renderHeaderRow(
+          row,
+          width,
+          theme,
+          selected,
+          anchorId,
+          showAddNoteBadge,
+          onHoverRow,
+          onStartUserNoteAtHunk,
+        )
       : null;
   } else if (row.type === "split-line") {
     const guideOnOldSide = noteGuideSide === "old";
     const guideOnNewSide = noteGuideSide === "new";
+    const addNoteTarget: UserNoteLineTarget | undefined =
+      row.right.lineNumber !== undefined
+        ? { side: "new", line: row.right.lineNumber }
+        : row.left.lineNumber !== undefined
+          ? { side: "old", line: row.left.lineNumber }
+          : undefined;
 
-    // Reserve fixed columns for the diff rails and center separator slot.
+    // Reserve fixed columns for the diff rails, center separator slot, and hover affordance.
+    const addBadgeWidth = showAddNoteBadge ? addNoteBadgeText.length : 0;
     const { leftWidth, rightWidth } = resolveSplitPaneWidths(width);
-    const rightRenderWidth = Math.max(0, rightWidth - (guideOnNewSide ? 1 : 0));
+    const rightRenderWidth = Math.max(0, rightWidth - (guideOnNewSide ? 1 : 0) - addBadgeWidth);
     const leftPrefix = {
       text: guideOnOldSide ? "│" : marker(),
       fg: guideOnOldSide ? theme.noteBorder : splitLeftRailColor(row.left.kind, theme, selected),
@@ -753,34 +699,54 @@ function renderRow(
 
     if (!wrapLines) {
       baseRow = (
-        <box id={anchorId} style={{ width: "100%", height: 1 }}>
-          <text>
-            {renderSplitCell(
-              row.left,
-              leftWidth,
-              lineNumberDigits,
-              showLineNumbers,
-              theme,
-              `${row.key}:left`,
-              codeHorizontalOffset,
-              leftPrefix,
-            )}
-            {renderSplitCell(
-              row.right,
-              rightRenderWidth,
-              lineNumberDigits,
-              showLineNumbers,
-              theme,
-              `${row.key}:right`,
-              codeHorizontalOffset,
-              rightPrefix,
-            )}
-            {guideOnNewSide ? (
-              <span key={`${row.key}:note-guide`} fg={theme.noteBorder}>
-                │
-              </span>
-            ) : null}
-          </text>
+        <box
+          id={anchorId}
+          style={{ width: "100%", height: 1, flexDirection: "row" }}
+          onMouseMove={() => onHoverRow?.(row.key)}
+        >
+          <box
+            style={{
+              width: showAddNoteBadge ? Math.max(0, width - addBadgeWidth) : "100%",
+              height: 1,
+            }}
+          >
+            <text>
+              {renderSplitCell(
+                row.left,
+                leftWidth,
+                lineNumberDigits,
+                showLineNumbers,
+                theme,
+                `${row.key}:left`,
+                codeHorizontalOffset,
+                leftPrefix,
+              )}
+              {renderSplitCell(
+                row.right,
+                rightRenderWidth,
+                lineNumberDigits,
+                showLineNumbers,
+                theme,
+                `${row.key}:right`,
+                codeHorizontalOffset,
+                rightPrefix,
+              )}
+              {guideOnNewSide ? (
+                <span key={`${row.key}:note-guide`} fg={theme.noteBorder}>
+                  │
+                </span>
+              ) : null}
+            </text>
+          </box>
+          {showAddNoteBadge
+            ? renderAddNoteButton(
+                `${row.key}:add-note`,
+                theme,
+                row.hunkIndex,
+                addNoteTarget,
+                onStartUserNoteAtHunk,
+              )
+            : null}
         </box>
       );
     } else {
@@ -822,31 +788,53 @@ function renderRow(
               spans: [],
             };
 
+            const showBadgeOnLine = showAddNoteBadge && index === 0;
+
             return (
-              <box key={`${row.key}:wrap:${index}`} style={{ width: "100%", height: 1 }}>
-                <text>
-                  {renderWrappedSplitCellLine(
-                    leftLine,
-                    leftLayout.palette,
-                    leftContentWidth,
-                    theme,
-                    `${row.key}:left:${index}`,
-                    leftPrefix,
-                  )}
-                  {renderWrappedSplitCellLine(
-                    rightLine,
-                    rightLayout.palette,
-                    rightContentWidth,
-                    theme,
-                    `${row.key}:right:${index}`,
-                    rightPrefix,
-                  )}
-                  {guideOnNewSide ? (
-                    <span key={`${row.key}:note-guide:${index}`} fg={theme.noteBorder}>
-                      │
-                    </span>
-                  ) : null}
-                </text>
+              <box
+                key={`${row.key}:wrap:${index}`}
+                style={{ width: "100%", height: 1, flexDirection: "row" }}
+                onMouseMove={() => onHoverRow?.(row.key)}
+              >
+                <box
+                  style={{
+                    width: showBadgeOnLine ? Math.max(0, width - addBadgeWidth) : "100%",
+                    height: 1,
+                  }}
+                >
+                  <text>
+                    {renderWrappedSplitCellLine(
+                      leftLine,
+                      leftLayout.palette,
+                      leftContentWidth,
+                      theme,
+                      `${row.key}:left:${index}`,
+                      leftPrefix,
+                    )}
+                    {renderWrappedSplitCellLine(
+                      rightLine,
+                      rightLayout.palette,
+                      rightContentWidth,
+                      theme,
+                      `${row.key}:right:${index}`,
+                      rightPrefix,
+                    )}
+                    {guideOnNewSide ? (
+                      <span key={`${row.key}:note-guide:${index}`} fg={theme.noteBorder}>
+                        │
+                      </span>
+                    ) : null}
+                  </text>
+                </box>
+                {showBadgeOnLine
+                  ? renderAddNoteButton(
+                      `${row.key}:add-note:${index}`,
+                      theme,
+                      row.hunkIndex,
+                      addNoteTarget,
+                      onStartUserNoteAtHunk,
+                    )
+                  : null}
               </box>
             );
           })}
@@ -856,7 +844,14 @@ function renderRow(
   } else if (row.type === "stack-line") {
     const guideOnOldSide = noteGuideSide === "old";
     const guideOnNewSide = noteGuideSide === "new";
-    const contentWidth = Math.max(0, width - (guideOnNewSide ? 1 : 0));
+    const addNoteTarget: UserNoteLineTarget | undefined =
+      row.cell.newLineNumber !== undefined
+        ? { side: "new", line: row.cell.newLineNumber }
+        : row.cell.oldLineNumber !== undefined
+          ? { side: "old", line: row.cell.oldLineNumber }
+          : undefined;
+    const addBadgeWidth = showAddNoteBadge ? addNoteBadgeText.length : 0;
+    const contentWidth = Math.max(0, width - (guideOnNewSide ? 1 : 0) - addBadgeWidth);
     const prefix = {
       text: guideOnOldSide ? "│" : marker(),
       fg: guideOnOldSide ? theme.noteBorder : stackRailColor(row.cell.kind, theme, selected),
@@ -865,24 +860,44 @@ function renderRow(
 
     if (!wrapLines) {
       baseRow = (
-        <box id={anchorId} style={{ width: "100%", height: 1 }}>
-          <text>
-            {renderStackCell(
-              row.cell,
-              contentWidth,
-              lineNumberDigits,
-              showLineNumbers,
-              theme,
-              `${row.key}:stack`,
-              codeHorizontalOffset,
-              prefix,
-            )}
-            {guideOnNewSide ? (
-              <span key={`${row.key}:note-guide`} fg={theme.noteBorder}>
-                │
-              </span>
-            ) : null}
-          </text>
+        <box
+          id={anchorId}
+          style={{ width: "100%", height: 1, flexDirection: "row" }}
+          onMouseMove={() => onHoverRow?.(row.key)}
+        >
+          <box
+            style={{
+              width: showAddNoteBadge ? Math.max(0, width - addBadgeWidth) : "100%",
+              height: 1,
+            }}
+          >
+            <text>
+              {renderStackCell(
+                row.cell,
+                contentWidth,
+                lineNumberDigits,
+                showLineNumbers,
+                theme,
+                `${row.key}:stack`,
+                codeHorizontalOffset,
+                prefix,
+              )}
+              {guideOnNewSide ? (
+                <span key={`${row.key}:note-guide`} fg={theme.noteBorder}>
+                  │
+                </span>
+              ) : null}
+            </text>
+          </box>
+          {showAddNoteBadge
+            ? renderAddNoteButton(
+                `${row.key}:add-note`,
+                theme,
+                row.hunkIndex,
+                addNoteTarget,
+                onStartUserNoteAtHunk,
+              )
+            : null}
         </box>
       );
     } else {
@@ -901,25 +916,49 @@ function renderRow(
 
       baseRow = (
         <box id={anchorId} style={{ width: "100%", flexDirection: "column" }}>
-          {layout.lines.map((line, index) => (
-            <box key={`${row.key}:wrap:${index}`} style={{ width: "100%", height: 1 }}>
-              <text>
-                {renderWrappedStackCellLine(
-                  line,
-                  layout.palette,
-                  wrappedContentWidth,
-                  theme,
-                  `${row.key}:stack:${index}`,
-                  prefix,
-                )}
-                {guideOnNewSide ? (
-                  <span key={`${row.key}:note-guide:${index}`} fg={theme.noteBorder}>
-                    │
-                  </span>
-                ) : null}
-              </text>
-            </box>
-          ))}
+          {layout.lines.map((line, index) => {
+            const showBadgeOnLine = showAddNoteBadge && index === 0;
+
+            return (
+              <box
+                key={`${row.key}:wrap:${index}`}
+                style={{ width: "100%", height: 1, flexDirection: "row" }}
+                onMouseMove={() => onHoverRow?.(row.key)}
+              >
+                <box
+                  style={{
+                    width: showBadgeOnLine ? Math.max(0, width - addBadgeWidth) : "100%",
+                    height: 1,
+                  }}
+                >
+                  <text>
+                    {renderWrappedStackCellLine(
+                      line,
+                      layout.palette,
+                      wrappedContentWidth,
+                      theme,
+                      `${row.key}:stack:${index}`,
+                      prefix,
+                    )}
+                    {guideOnNewSide ? (
+                      <span key={`${row.key}:note-guide:${index}`} fg={theme.noteBorder}>
+                        │
+                      </span>
+                    ) : null}
+                  </text>
+                </box>
+                {showBadgeOnLine
+                  ? renderAddNoteButton(
+                      `${row.key}:add-note:${index}`,
+                      theme,
+                      row.hunkIndex,
+                      addNoteTarget,
+                      onStartUserNoteAtHunk,
+                    )
+                  : null}
+              </box>
+            );
+          })}
         </box>
       );
     }
@@ -944,10 +983,11 @@ interface DiffRowViewProps {
   codeHorizontalOffset: number;
   theme: AppTheme;
   selected: boolean;
-  annotated: boolean;
   anchorId?: string;
   noteGuideSide?: "old" | "new";
-  onOpenAgentNotesAtHunk?: (hunkIndex: number) => void;
+  showAddNoteBadge?: boolean;
+  onHoverRow?: (rowKey: string) => void;
+  onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void;
 }
 
 /** Render one diff row, memoized to avoid unnecessary rerenders. */
@@ -962,10 +1002,11 @@ export const DiffRowView = memo(
     codeHorizontalOffset,
     theme,
     selected,
-    annotated,
     anchorId,
     noteGuideSide,
-    onOpenAgentNotesAtHunk,
+    showAddNoteBadge,
+    onHoverRow,
+    onStartUserNoteAtHunk,
   }: DiffRowViewProps) {
     return renderRow(
       row,
@@ -977,10 +1018,11 @@ export const DiffRowView = memo(
       codeHorizontalOffset,
       theme,
       selected,
-      annotated,
       anchorId,
       noteGuideSide,
-      onOpenAgentNotesAtHunk,
+      showAddNoteBadge,
+      onHoverRow,
+      onStartUserNoteAtHunk,
     );
   },
   (previous, next) => {
@@ -994,9 +1036,11 @@ export const DiffRowView = memo(
       previous.codeHorizontalOffset === next.codeHorizontalOffset &&
       previous.theme === next.theme &&
       previous.selected === next.selected &&
-      previous.annotated === next.annotated &&
       previous.anchorId === next.anchorId &&
-      previous.noteGuideSide === next.noteGuideSide
+      previous.noteGuideSide === next.noteGuideSide &&
+      previous.showAddNoteBadge === next.showAddNoteBadge &&
+      previous.onHoverRow === next.onHoverRow &&
+      previous.onStartUserNoteAtHunk === next.onStartUserNoteAtHunk
     );
   },
 );

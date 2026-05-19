@@ -8,15 +8,25 @@ export interface ResolvedCommentTarget {
   line: number;
 }
 
-/** Compute the inclusive old/new line spans touched by one hunk. */
+/**
+ * Compute the inclusive old/new line spans for the visible extent of a hunk.
+ *
+ * Use the per-side `*Count` from the hunk header (`-X,count` / `+X,count`),
+ * which includes both context and changed lines, not the `*Lines` count which
+ * is only the `+` / `-` lines. Comments anchored at a context-region line
+ * (e.g. resolved by `firstCommentTargetForHunk` walking past leading context)
+ * fall outside the additions-only range and silently disappear from
+ * `getAnnotatedHunkIndices` / `findHunkIndexForLine` if those use the wrong
+ * extent.
+ */
 export function hunkLineRange(hunk: Hunk) {
   const newEnd = Math.max(
     hunk.additionStart,
-    hunk.additionStart + Math.max(hunk.additionLines, 1) - 1,
+    hunk.additionStart + Math.max(hunk.additionCount, 1) - 1,
   );
   const oldEnd = Math.max(
     hunk.deletionStart,
-    hunk.deletionStart + Math.max(hunk.deletionLines, 1) - 1,
+    hunk.deletionStart + Math.max(hunk.deletionCount, 1) - 1,
   );
 
   return {
