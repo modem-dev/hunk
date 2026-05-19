@@ -6,6 +6,8 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Added
 
+- Added Catppuccin Latte and Mocha as built-in themes.
+
 ### Changed
 
 ### Fixed
