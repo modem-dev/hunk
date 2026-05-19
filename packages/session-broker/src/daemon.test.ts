@@ -203,6 +203,7 @@ describe("session broker daemon", () => {
     const daemon = createSessionBrokerDaemon({
       broker: createBroker(),
       capabilities: { version: 1 },
+      exposeHttpApi: true,
     });
 
     const oversized = JSON.stringify({ action: "list", filler: "x".repeat(5 * 1024 * 1024) });
