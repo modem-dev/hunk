@@ -24,6 +24,11 @@ import type {
   ReloadedSessionResult,
   RemovedCommentResult,
 } from "../hunk-session/types";
+import {
+  MAX_HTTP_BODY_BYTES,
+  PayloadTooLargeError,
+  readRequestTextWithLimit,
+} from "@hunk/session-broker-core";
 import { listHunkSessionNotes } from "../hunk-session/projections";
 import {
   HUNK_SESSION_API_PATH,
@@ -195,8 +200,9 @@ function validateOriginHeader(request: Request, expectedPort: number, allowRemot
 }
 
 async function parseJsonRequest(request: Request) {
+  const text = await readRequestTextWithLimit(request, MAX_HTTP_BODY_BYTES);
   try {
-    return (await request.json()) as SessionDaemonRequest;
+    return JSON.parse(text) as SessionDaemonRequest;
   } catch {
     throw new Error("Expected one JSON request body.");
   }
@@ -362,6 +368,10 @@ async function handleSessionApiRequest(state: HunkSessionBrokerState, request: R
 
     return Response.json(response);
   } catch (error) {
+    if (error instanceof PayloadTooLargeError) {
+      return jsonError(error.message, 413);
+    }
+
     return jsonError(error instanceof Error ? error.message : "Unknown session API error.");
   }
 }

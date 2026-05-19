@@ -399,6 +399,29 @@ describe("Hunk session daemon server", () => {
     }
   });
 
+  test("rejects session API bodies that exceed the size limit", async () => {
+    const port = await reserveLoopbackPort();
+    process.env.HUNK_MCP_HOST = "127.0.0.1";
+    process.env.HUNK_MCP_PORT = String(port);
+
+    const server = serveSessionBrokerDaemon();
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/session-api`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "list", filler: "x".repeat(5 * 1024 * 1024) }),
+      });
+
+      expect(response.status).toBe(413);
+      await expect(response.json()).resolves.toMatchObject({
+        error: expect.stringContaining("session broker limit"),
+      });
+    } finally {
+      server.stop(true);
+    }
+  });
+
   test("closes snapshots for missing sessions with a specific not-registered reason", async () => {
     // Bun's Windows WebSocket client does not reliably surface this immediate server close.
     // The daemon-core test covers the close code/reason without the flaky transport layer.

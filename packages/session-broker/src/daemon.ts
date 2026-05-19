@@ -1,4 +1,10 @@
-import type { SessionServerMessage, SessionTargetSelector } from "@hunk/session-broker-core";
+import {
+  MAX_HTTP_BODY_BYTES,
+  PayloadTooLargeError,
+  readRequestTextWithLimit,
+  type SessionServerMessage,
+  type SessionTargetSelector,
+} from "@hunk/session-broker-core";
 import type { SessionBrokerController, SessionBrokerPeer } from "./broker";
 import {
   DEFAULT_SESSION_BROKER_API_PATH,
@@ -64,8 +70,9 @@ function hasJsonContentType(request: Request) {
 async function parseJsonRequest<CommandName extends string = string, CommandInput = unknown>(
   request: Request,
 ) {
+  const text = await readRequestTextWithLimit(request, MAX_HTTP_BODY_BYTES);
   try {
-    return (await request.json()) as SessionBrokerDaemonRequest<CommandName, CommandInput>;
+    return JSON.parse(text) as SessionBrokerDaemonRequest<CommandName, CommandInput>;
   } catch {
     throw new Error("Expected one JSON request body.");
   }
@@ -369,6 +376,10 @@ export class SessionBrokerDaemon<
 
       return Response.json(response);
     } catch (error) {
+      if (error instanceof PayloadTooLargeError) {
+        return jsonError(error.message, 413);
+      }
+
       return jsonError(error instanceof Error ? error.message : "Unknown broker API error.");
     }
   }

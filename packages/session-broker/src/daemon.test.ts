@@ -199,6 +199,28 @@ describe("session broker daemon", () => {
     daemon.shutdown();
   });
 
+  test("rejects raw broker API bodies that exceed the size limit", async () => {
+    const daemon = createSessionBrokerDaemon({
+      broker: createBroker(),
+      capabilities: { version: 1 },
+    });
+
+    const oversized = JSON.stringify({ action: "list", filler: "x".repeat(5 * 1024 * 1024) });
+    const response = await daemon.handleRequest(
+      new Request("http://broker.test/broker", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: oversized,
+      }),
+    );
+
+    expect(response?.status).toBe(413);
+    await expect(response?.json()).resolves.toMatchObject({
+      error: expect.stringContaining("session broker limit"),
+    });
+    daemon.shutdown();
+  });
+
   test("dispatches one raw command through the broker API", async () => {
     const daemon = createSessionBrokerDaemon({
       broker: createBroker(),
