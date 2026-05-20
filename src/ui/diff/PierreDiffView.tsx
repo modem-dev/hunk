@@ -31,8 +31,15 @@ export interface ActiveAddNoteAffordance {
   target?: UserNoteLineTarget;
 }
 
+type AddNoteTargetRow = Extract<DiffRow, { type: "split-line" | "stack-line" }>;
+
+/** Return whether a diff row can be used as an inline user-note target. */
+function isAddNoteTargetRow(row: DiffRow): row is AddNoteTargetRow {
+  return row.type === "split-line" || row.type === "stack-line";
+}
+
 /** Resolve the note insertion target represented by a visible add-note affordance. */
-function addNoteAffordanceForRow(row: DiffRow): ActiveAddNoteAffordance {
+function addNoteAffordanceForRow(row: AddNoteTargetRow): ActiveAddNoteAffordance {
   if (row.type === "split-line") {
     return {
       hunkIndex: row.hunkIndex,
@@ -45,19 +52,15 @@ function addNoteAffordanceForRow(row: DiffRow): ActiveAddNoteAffordance {
     };
   }
 
-  if (row.type === "stack-line") {
-    return {
-      hunkIndex: row.hunkIndex,
-      target:
-        row.cell.newLineNumber !== undefined
-          ? { side: "new", line: row.cell.newLineNumber }
-          : row.cell.oldLineNumber !== undefined
-            ? { side: "old", line: row.cell.oldLineNumber }
-            : undefined,
-    };
-  }
-
-  return { hunkIndex: row.hunkIndex };
+  return {
+    hunkIndex: row.hunkIndex,
+    target:
+      row.cell.newLineNumber !== undefined
+        ? { side: "new", line: row.cell.newLineNumber }
+        : row.cell.oldLineNumber !== undefined
+          ? { side: "old", line: row.cell.oldLineNumber }
+          : undefined,
+  };
 }
 
 /** Render a file diff in split or stack mode, with inline agent notes inserted between diff rows. */
@@ -331,6 +334,10 @@ export function PierreDiffView({
           );
         }
 
+        const addNoteAffordance = isAddNoteTargetRow(plannedRow.row)
+          ? addNoteAffordanceForRow(plannedRow.row)
+          : null;
+
         return (
           <box key={plannedRow.key} id={rowId} style={{ width: "100%", flexDirection: "column" }}>
             <DiffRowView
@@ -347,10 +354,18 @@ export function PierreDiffView({
               copySelectedSide={copySelectedSide}
               anchorId={plannedRow.anchorId}
               noteGuideSide={plannedRow.noteGuideSide}
-              showAddNoteBadge={hoveredRowKey === plannedRow.key && Boolean(onStartUserNoteAtHunk)}
+              showAddNoteBadge={
+                addNoteAffordance !== null &&
+                hoveredRowKey === plannedRow.key &&
+                Boolean(onStartUserNoteAtHunk)
+              }
               onHoverRow={() => {
                 onHover?.();
-                activateHoveredRow(plannedRow.key, addNoteAffordanceForRow(plannedRow.row));
+                if (addNoteAffordance) {
+                  activateHoveredRow(plannedRow.key, addNoteAffordance);
+                } else {
+                  clearHoveredRow();
+                }
               }}
               onStartUserNoteAtHunk={onStartUserNoteAtHunk}
               onToggleGap={gapToggleHandler}

@@ -1919,8 +1919,8 @@ describe("UI components", () => {
       "1 / 2 / 0       split / stack / auto",
       "s / t           sidebar / theme",
       "a               toggle AI notes",
+      "z               toggle unchanged context",
       "l / w / m       lines / wrap / metadata",
-      "e               open file in $EDITOR",
       "Review",
       "/               focus file filter",
       "c               create review note",
@@ -2366,6 +2366,77 @@ describe("UI components", () => {
       40,
     );
     expect(expandableFrame).toContain("▾");
+  });
+
+  test("PierreDiffView hides add-note affordances on collapsed and hunk-header rows", async () => {
+    const expandable = createExpandableContextDiffFile("meta-hover", "meta-hover.ts");
+    const file = {
+      ...expandable.file,
+      sourceFetcher: createTestSourceFetcher(() => expandable.after),
+    };
+    const theme = resolveTheme("midnight", null);
+    const setup = await testRender(
+      <PierreDiffView
+        file={file}
+        layout="split"
+        theme={theme}
+        width={120}
+        selectedHunkIndex={0}
+        scrollable={false}
+        onStartUserNoteAtHunk={() => {}}
+        onToggleGap={() => {}}
+      />,
+      { width: 120, height: 40 },
+    );
+
+    try {
+      await act(async () => {
+        await setup.renderOnce();
+      });
+
+      const frame = setup.captureCharFrame();
+      const frameLines = frame.split("\n");
+      const collapsedY = frameLines.findIndex((line) => line.includes("unchanged lines"));
+      const hunkHeaderY = frameLines.findIndex((line) => line.includes("@@"));
+      const codeY = frameLines.findIndex((line) => line.includes("line 5 modified"));
+      expect(collapsedY).toBeGreaterThanOrEqual(0);
+      expect(hunkHeaderY).toBeGreaterThanOrEqual(0);
+      expect(codeY).toBeGreaterThanOrEqual(0);
+
+      await act(async () => {
+        await setup.mockMouse.moveTo(4, collapsedY);
+        await setup.renderOnce();
+      });
+      expect(setup.captureCharFrame()).not.toContain("[+]");
+
+      await act(async () => {
+        await setup.mockMouse.moveTo(4, hunkHeaderY);
+        await setup.renderOnce();
+      });
+      expect(setup.captureCharFrame()).not.toContain("[+]");
+
+      let codeHoverFrame = "";
+      for (const y of [codeY, codeY + 1]) {
+        for (const x of [4, 16, 48, 76]) {
+          await act(async () => {
+            await setup.mockMouse.moveTo(x, y);
+            await setup.renderOnce();
+          });
+          codeHoverFrame = setup.captureCharFrame();
+          if (codeHoverFrame.includes("[+]")) {
+            break;
+          }
+        }
+        if (codeHoverFrame.includes("[+]")) {
+          break;
+        }
+      }
+      expect(codeHoverFrame).toContain("[+]");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
   });
 
   test("PierreDiffView toggles a collapsed gap when clicked", async () => {

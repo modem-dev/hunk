@@ -274,7 +274,7 @@ describe("live UI integration", () => {
       expect(initial).toContain("▾ 1 unchanged line");
       expect(initial).not.toContain("hiddenLine01");
 
-      await session.press("e");
+      await session.press("z");
       const expanded = await harness.waitForSnapshot(
         session,
         (text) => text.includes("Hide 1 unchanged line") && text.includes("hiddenLine01"),
@@ -283,7 +283,7 @@ describe("live UI integration", () => {
 
       expect(expanded).toContain("hiddenLine01");
 
-      await session.press("e");
+      await session.press("z");
       const collapsed = await harness.waitForSnapshot(
         session,
         (text) => text.includes("▾ 1 unchanged line") && !text.includes("hiddenLine01"),
@@ -1666,7 +1666,7 @@ describe("live UI integration", () => {
       });
 
       expect(initial).toContain("aaa-collapsed.ts");
-      expect(initial).toContain("··· 362 unchanged lines ···");
+      expect(initial).toContain("▾ 362 unchanged lines");
       expect(initial).not.toContain("366 - export const line366 = 366;");
 
       await session.scrollDown(1);
@@ -1708,12 +1708,12 @@ describe("live UI integration", () => {
       const restored = await harness.waitForSnapshot(
         session,
         (text) =>
-          text.includes("··· 362 unchanged lines ···") &&
+          text.includes("▾ 362 unchanged lines") &&
           harness.countMatches(text, /aaa-collapsed\.ts/g) === initialHeaderCount,
         5_000,
       );
 
-      expect(restored).toContain("··· 362 unchanged lines ···");
+      expect(restored).toContain("▾ 362 unchanged lines");
       expect(restored).not.toContain("366 - export const line366 = 366;");
       expect(harness.countMatches(restored, /aaa-collapsed\.ts/g)).toBe(initialHeaderCount);
     } finally {

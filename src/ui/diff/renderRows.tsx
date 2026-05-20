@@ -1134,6 +1134,7 @@ function renderHeaderRow(
           backgroundColor: theme.panelAlt,
         }}
         onMouseMove={() => onHoverRow?.(row.key)}
+        onMouseOver={() => onHoverRow?.(row.key)}
         onMouseUp={handleCollapsedClick}
       >
         <text>
@@ -1165,6 +1166,7 @@ function renderHeaderRow(
         backgroundColor: theme.panelAlt,
       }}
       onMouseMove={() => onHoverRow?.(row.key)}
+      onMouseOver={() => onHoverRow?.(row.key)}
     >
       <box
         style={{ width: Math.max(0, width - badgeWidth), height: 1 }}

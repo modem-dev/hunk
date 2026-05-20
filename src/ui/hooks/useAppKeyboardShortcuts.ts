@@ -109,7 +109,6 @@ export function useAppKeyboardShortcuts({
   toggleLineNumbers,
   toggleLineWrap,
   toggleSidebar,
-  triggerEditSelectedFile,
   triggerRefreshCurrentInput,
 }: UseAppKeyboardShortcutsOptions) {
   const activeMenuIdRef = useRef(activeMenuId);
@@ -453,7 +452,7 @@ export function useAppKeyboardShortcuts({
       return;
     }
 
-    if (key.name === "e" || key.sequence === "e") {
+    if (key.name === "z" || key.sequence === "z") {
       runAndCloseMenu(toggleGapForSelectedHunk);
       return;
     }
