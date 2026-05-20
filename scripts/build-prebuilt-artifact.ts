@@ -83,6 +83,18 @@ export function stagePrebuiltArtifact(options: StagePrebuiltArtifactOptions = {}
   }
 
   cpSync(skillsSource, path.join(outputDir, "skills"), { recursive: true });
+
+  const kittySource = path.join(repoRoot, "kitty");
+  if (!existsSync(kittySource)) {
+    throw new Error(`Missing Kitty integration directory at ${kittySource}.`);
+  }
+
+  const kittyWatcher = path.join(kittySource, "hunk-follow.py");
+  if (!existsSync(kittyWatcher)) {
+    throw new Error(`Missing bundled Kitty watcher at ${kittyWatcher}.`);
+  }
+
+  cpSync(kittySource, path.join(outputDir, "kitty"), { recursive: true });
   writeFileSync(
     path.join(outputDir, "metadata.json"),
     `${JSON.stringify(

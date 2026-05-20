@@ -85,6 +85,7 @@ function stageMetaPackage(
   cpSync(path.join(repoRoot, "dist", "npm"), path.join(metaDir, "dist", "npm"), {
     recursive: true,
   });
+  cpSync(path.join(repoRoot, "kitty"), path.join(metaDir, "kitty"), { recursive: true });
   cpSync(path.join(repoRoot, "skills"), path.join(metaDir, "skills"), { recursive: true });
   cpSync(path.join(repoRoot, "README.md"), path.join(metaDir, "README.md"));
   cpSync(path.join(repoRoot, "LICENSE"), path.join(metaDir, "LICENSE"));
@@ -97,7 +98,7 @@ function stageMetaPackage(
       hunk: "./bin/hunk.cjs",
       hunkdiff: "./bin/hunk.cjs",
     },
-    files: ["bin", "dist/npm", "skills", "README.md", "LICENSE"],
+    files: ["bin", "dist/npm", "kitty", "skills", "README.md", "LICENSE"],
     type: rootPackage.type,
     exports: rootPackage.exports,
     keywords: rootPackage.keywords,

@@ -91,6 +91,29 @@ Load the Hunk skill and use it for this review.
 
 For the full live-session and `--agent-context` workflow guide, see [docs/agent-workflows.md](docs/agent-workflows.md).
 
+### Following Kitty focus
+
+Kitty users can mark one live working-tree review as a follow target:
+
+```bash
+hunk diff --kitty-follow
+```
+
+Then add the bundled watcher path to `kitty.conf`:
+
+```conf
+# Replace this with the output of `hunk kitty watcher-path`.
+watcher /absolute/path/to/hunk-follow.py
+```
+
+Get the exact path with:
+
+```bash
+hunk kitty watcher-path
+```
+
+The watcher uses Kitty remote control to reload the marked Hunk session from the active Kitty pane's repository. For focus-change following from the watcher, configure Kitty remote control with a listen socket; see Kitty's [remote control docs](https://sw.kovidgoyal.net/kitty/remote-control/).
+
 ## Feature comparison
 
 | Capability                         | [hunk](https://github.com/modem-dev/hunk) | [lumen](https://github.com/jnsahaj/lumen) | [difftastic](https://github.com/Wilfred/difftastic) | [delta](https://github.com/dandavison/delta) | [diff-so-fancy](https://github.com/so-fancy/diff-so-fancy) | [diff](https://www.gnu.org/software/diffutils/) |

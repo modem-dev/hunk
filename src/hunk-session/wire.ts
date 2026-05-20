@@ -216,6 +216,7 @@ function parseHunkSessionInfo(value: unknown): HunkSessionInfo | null {
     inputKind,
     title,
     sourceLabel,
+    kittyFollow: typeof record.kittyFollow === "boolean" ? record.kittyFollow : undefined,
     files: files as SessionReviewFile[],
   };
 }

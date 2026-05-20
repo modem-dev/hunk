@@ -8,6 +8,8 @@ describe("session terminal metadata", () => {
         TERM_PROGRAM: "tmux",
         LC_TERMINAL: "iTerm2",
         ITERM_SESSION_ID: "w1t2p3:ABCDEF",
+        KITTY_WINDOW_ID: "42",
+        WINDOWID: "9001",
         TMUX_PANE: "%7",
       },
       tty: "/dev/ttys003",
@@ -18,6 +20,7 @@ describe("session terminal metadata", () => {
       locations: [
         { source: "tty", tty: "/dev/ttys003" },
         { source: "tmux", paneId: "%7" },
+        { source: "kitty", windowId: "42", terminalId: "9001" },
         {
           source: "iterm2",
           windowId: "1",

@@ -277,6 +277,7 @@ export function formatListOutput(sessions: ListedSession[]) {
         `${session.sessionId}  ${session.title}`,
         `  path: ${session.cwd}`,
         `  repo: ${session.repoRoot ?? "-"}`,
+        `  kitty follow: ${session.kittyFollow ? "yes" : "no"}`,
         ...formatTerminalLines(terminal, {
           headerLabel: "  terminal",
           locationLabel: "  location",
@@ -299,6 +300,7 @@ export function formatSessionOutput(session: ListedSession) {
     `Path: ${session.cwd}`,
     `Repo: ${session.repoRoot ?? "-"}`,
     `Input: ${session.inputKind}`,
+    `Kitty follow: ${session.kittyFollow ? "yes" : "no"}`,
     `Launched: ${session.launchedAt}`,
     ...formatTerminalLines(terminal, {
       headerLabel: "Terminal",
