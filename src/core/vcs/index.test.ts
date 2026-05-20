@@ -32,16 +32,17 @@ afterEach(() => {
 });
 
 describe("VCS adapter registry", () => {
-  test("registers Git and Jujutsu adapters", () => {
-    expect(vcsAdapters.map((adapter) => adapter.id)).toEqual(["jj", "git"]);
+  test("registers Git, Jujutsu, and Sapling adapters", () => {
+    expect(vcsAdapters.map((adapter) => adapter.id)).toEqual(["jj", "sl", "git"]);
     expect(getVcsAdapter("git").capabilities.reviewOperations.has("stash-show")).toBe(true);
     expect(getVcsAdapter("jj").capabilities.reviewOperations.has("stash-show")).toBe(false);
+    expect(getVcsAdapter("sl").capabilities.reviewOperations.has("stash-show")).toBe(false);
   });
 
   test("validates VCS ids from the registered adapter list", () => {
     expect(isVcsId("git")).toBe(true);
     expect(isVcsId("jj")).toBe(true);
-    expect(isVcsId("sl")).toBe(false);
+    expect(isVcsId("sl")).toBe(true);
     expect(isVcsId("hg")).toBe(false);
   });
 

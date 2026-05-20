@@ -2,9 +2,10 @@ import { dirname, resolve } from "node:path";
 import { HunkUserError } from "../errors";
 import { gitAdapter } from "./git";
 import { jjAdapter } from "./jj";
+import { slAdapter } from "./sl";
 import type { VcsAdapter, VcsDetection, VcsId, VcsReviewInput, VcsReviewOperation } from "./types";
 
-export const vcsAdapters: VcsAdapter[] = [jjAdapter, gitAdapter];
+export const vcsAdapters: VcsAdapter[] = [jjAdapter, slAdapter, gitAdapter];
 
 export function getVcsAdapter(id: VcsId): VcsAdapter {
   const adapter = vcsAdapters.find((candidate) => candidate.id === id);

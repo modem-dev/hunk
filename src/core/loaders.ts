@@ -153,6 +153,7 @@ function buildUntrackedDiffFile(
   sourcePrefix: string,
   agentContext: AgentContext | null,
 ) {
+  const absolutePath = join(repoRoot, filePath);
   const largeFileCheck = inspectLargeUntrackedFile(repoRoot, filePath);
   if (largeFileCheck.shouldSkip) {
     return buildDiffFile(
@@ -166,6 +167,40 @@ function buildUntrackedDiffFile(
         isUntracked: true,
         stats: largeFileCheck.stats,
         statsTruncated: largeFileCheck.statsTruncated,
+      },
+    );
+  }
+
+  if (input.options.vcs === "sl") {
+    if (isProbablyBinaryFile(absolutePath)) {
+      return buildDiffFile(
+        createSkippedBinaryMetadata(filePath, "new"),
+        `Binary file skipped: ${filePath}\n`,
+        index,
+        sourcePrefix,
+        agentContext,
+        { isBinary: true, isUntracked: true },
+      );
+    }
+
+    const patch = createTwoFilesPatch(
+      "/dev/null",
+      escapeUntrackedPatchPath(filePath),
+      "",
+      fs.readFileSync(absolutePath, "utf8"),
+      "",
+      "",
+      { context: 3 },
+    ).replaceAll("\r\n", "\n");
+
+    return buildDiffFile(
+      parseUntrackedPatchFile(patch, filePath),
+      patch,
+      index,
+      sourcePrefix,
+      agentContext,
+      {
+        isUntracked: true,
       },
     );
   }
