@@ -29,6 +29,7 @@
   "files": [
     "bin",
     "dist/npm",
+    "kitty",
     "skills",
     "README.md",
     "LICENSE"

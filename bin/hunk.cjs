@@ -9,6 +9,10 @@ function bundledSkillPath() {
   return path.join(__dirname, "..", "skills", "hunk-review", "SKILL.md");
 }
 
+function bundledKittyWatcherPath() {
+  return path.join(__dirname, "..", "kitty", "hunk-follow.py");
+}
+
 function ensureExecutable(target) {
   if (process.platform === "win32") {
     return;
@@ -111,6 +115,21 @@ if (forwardedArgs.length === 2 && forwardedArgs[0] === "skill" && forwardedArgs[
   }
 
   process.stdout.write(`${skillPath}\n`);
+  process.exit(0);
+}
+
+if (
+  forwardedArgs.length === 2 &&
+  forwardedArgs[0] === "kitty" &&
+  forwardedArgs[1] === "watcher-path"
+) {
+  const watcherPath = bundledKittyWatcherPath();
+  if (!fs.existsSync(watcherPath)) {
+    console.error(`hunk: could not locate the bundled Kitty watcher at ${watcherPath}`);
+    process.exit(1);
+  }
+
+  process.stdout.write(`${watcherPath}\n`);
   process.exit(0);
 }
 

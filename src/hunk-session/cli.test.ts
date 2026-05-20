@@ -291,6 +291,7 @@ describe("Hunk session CLI formatters", () => {
         "session-1  repo working tree",
         "  path: /repo",
         "  repo: /repo",
+        "  kitty follow: no",
         "  terminal: ghostty",
         "  location[tty]: /dev/ttys005",
         "  location[tmux]: pane %7, session work",

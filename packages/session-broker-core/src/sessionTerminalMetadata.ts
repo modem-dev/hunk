@@ -91,6 +91,15 @@ export function resolveSessionTerminalMetadata({
     pushLocation(locations, { source: "tmux", paneId: tmuxPane });
   }
 
+  const kittyWindowId = trimmed(env.KITTY_WINDOW_ID);
+  if (kittyWindowId) {
+    pushLocation(locations, {
+      source: "kitty",
+      windowId: kittyWindowId,
+      terminalId: trimmed(env.WINDOWID),
+    });
+  }
+
   const iTermSessionId = trimmed(env.ITERM_SESSION_ID);
   if (iTermSessionId) {
     pushLocation(locations, {

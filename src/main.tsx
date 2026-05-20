@@ -29,6 +29,7 @@ import type {
   HunkSessionState,
 } from "./hunk-session/types";
 import { runSessionCommand } from "./session/commands";
+import { runKittyCommand } from "./kitty/sync";
 
 async function main() {
   const startupPlan = await prepareStartupPlan();
@@ -46,6 +47,11 @@ async function main() {
 
   if (startupPlan.kind === "session-command") {
     process.stdout.write(await runSessionCommand(startupPlan.input));
+    process.exit(0);
+  }
+
+  if (startupPlan.kind === "kitty-command") {
+    process.stdout.write(await runKittyCommand(startupPlan.input));
     process.exit(0);
   }
 

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
 const HUNK_REVIEW_SKILL_RELATIVE_PATH = join("skills", "hunk-review", "SKILL.md");
+const KITTY_WATCHER_RELATIVE_PATH = join("kitty", "hunk-follow.py");
 
 /** Resolve the base config directory Hunk should use for user-scoped files. */
 export function resolveUserConfigDir(env: NodeJS.ProcessEnv = process.env) {
@@ -74,4 +75,25 @@ export function resolveBundledHunkReviewSkillPath(searchRoots?: string[]) {
   }
 
   throw new Error("Could not locate the bundled Hunk review skill.");
+}
+
+/** Resolve the bundled Kitty watcher path from source, npm, or prebuilt package layouts. */
+export function resolveBundledKittyWatcherPath(searchRoots?: string[]) {
+  const roots = searchRoots ?? [import.meta.dir, process.execPath];
+  const relativeCandidates = [
+    KITTY_WATCHER_RELATIVE_PATH,
+    join("hunkdiff", KITTY_WATCHER_RELATIVE_PATH),
+    join("node_modules", "hunkdiff", KITTY_WATCHER_RELATIVE_PATH),
+  ];
+
+  for (const root of roots) {
+    for (const relativePath of relativeCandidates) {
+      const resolvedPath = findRelativePathFromAncestors(root, relativePath);
+      if (resolvedPath) {
+        return resolvedPath;
+      }
+    }
+  }
+
+  throw new Error("Could not locate the bundled Kitty watcher.");
 }

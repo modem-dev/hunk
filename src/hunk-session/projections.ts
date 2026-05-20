@@ -73,6 +73,7 @@ export function buildListedHunkSession(entry: HunkSessionEntryLike): ListedSessi
     launchedAt: entry.registration.launchedAt,
     terminal: entry.registration.terminal,
     inputKind: entry.registration.info.inputKind,
+    kittyFollow: entry.registration.info.kittyFollow ?? false,
     title: entry.registration.info.title,
     sourceLabel: entry.registration.info.sourceLabel,
     fileCount: entry.registration.info.files.length,

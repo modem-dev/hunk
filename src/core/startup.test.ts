@@ -65,6 +65,24 @@ describe("startup planning", () => {
     expect(loaded).toBe(false);
   });
 
+  test("passes Kitty commands through without app bootstrap work", async () => {
+    let loaded = false;
+
+    const plan = await prepareStartupPlan(["bun", "hunk", "kitty", "watcher-path"], {
+      parseCliImpl: async () => ({ kind: "kitty", action: "watcher-path" }),
+      loadAppBootstrapImpl: async () => {
+        loaded = true;
+        throw new Error("unreachable");
+      },
+    });
+
+    expect(plan).toEqual({
+      kind: "kitty-command",
+      input: { kind: "kitty", action: "watcher-path" },
+    });
+    expect(loaded).toBe(false);
+  });
+
   test("routes non-diff pager stdin to the plain-text pager path", async () => {
     let loaded = false;
 

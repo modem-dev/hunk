@@ -15,10 +15,12 @@ function createTestRepo() {
   const binaryName = binaryFilenameForSpec(spec);
 
   mkdirSync(path.join(repoRoot, "dist"), { recursive: true });
+  mkdirSync(path.join(repoRoot, "kitty"), { recursive: true });
   mkdirSync(path.join(repoRoot, "skills", "hunk-review"), { recursive: true });
   writeFileSync(path.join(repoRoot, "dist", binaryName), "#!/bin/sh\necho hunk\n", {
     mode: 0o600,
   });
+  writeFileSync(path.join(repoRoot, "kitty", "hunk-follow.py"), "# watcher\n");
   writeFileSync(path.join(repoRoot, "skills", "hunk-review", "SKILL.md"), "# Hunk review\n");
 
   return { repoRoot, spec, binaryName };
@@ -46,7 +48,14 @@ describe("stagePrebuiltArtifact", () => {
     expect(() => stagePrebuiltArtifact({ repoRoot })).toThrow("Missing bundled Hunk review skill");
   });
 
-  test("includes the bundled skill next to standalone release binaries", () => {
+  test("rejects missing bundled Kitty watcher with an actionable error", () => {
+    const { repoRoot } = createTestRepo();
+    rmSync(path.join(repoRoot, "kitty", "hunk-follow.py"), { force: true });
+
+    expect(() => stagePrebuiltArtifact({ repoRoot })).toThrow("Missing bundled Kitty watcher");
+  });
+
+  test("includes bundled support files next to standalone release binaries", () => {
     const { repoRoot, spec, binaryName } = createTestRepo();
     const outputRoot = path.join(tempRoot!, "artifacts");
 
@@ -55,6 +64,7 @@ describe("stagePrebuiltArtifact", () => {
     expect(outputDir).toBe(path.join(outputRoot, spec.packageName));
     expect(existsSync(path.join(outputDir, binaryName))).toBe(true);
     expect(existsSync(path.join(outputDir, "metadata.json"))).toBe(true);
+    expect(existsSync(path.join(outputDir, "kitty", "hunk-follow.py"))).toBe(true);
     expect(existsSync(path.join(outputDir, "skills", "hunk-review", "SKILL.md"))).toBe(true);
 
     if (process.platform !== "win32") {

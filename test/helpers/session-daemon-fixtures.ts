@@ -74,7 +74,10 @@ export function createTestSessionSnapshot(
 export function createTestSessionRegistration(
   overrides: Partial<HunkSessionRegistration> &
     Partial<
-      Pick<HunkSessionRegistration["info"], "inputKind" | "title" | "sourceLabel" | "files">
+      Pick<
+        HunkSessionRegistration["info"],
+        "inputKind" | "title" | "sourceLabel" | "kittyFollow" | "files"
+      >
     > & {
       info?: Partial<HunkSessionRegistration["info"]>;
     } = {},
@@ -83,6 +86,7 @@ export function createTestSessionRegistration(
     inputKind,
     title,
     sourceLabel,
+    kittyFollow,
     files,
     info: infoOverrides,
     ...registrationOverrides
@@ -101,6 +105,7 @@ export function createTestSessionRegistration(
       inputKind: inputKind ?? infoOverrides?.inputKind ?? "vcs",
       title: title ?? infoOverrides?.title ?? "repo working tree",
       sourceLabel: sourceLabel ?? infoOverrides?.sourceLabel ?? "/repo",
+      kittyFollow: kittyFollow ?? infoOverrides?.kittyFollow,
       files: resolvedFiles,
     },
   };
@@ -117,6 +122,7 @@ export function createTestListedSession(overrides: Partial<ListedSession> = {}):
     repoRoot: "/repo",
     launchedAt: "2026-03-22T00:00:00.000Z",
     inputKind: "vcs",
+    kittyFollow: false,
     title: "repo working tree",
     sourceLabel: "/repo",
     ...overrides,
