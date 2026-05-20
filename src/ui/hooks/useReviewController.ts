@@ -394,7 +394,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
       }));
 
       if (options?.reveal ?? false) {
-        selectHunk(file.id, target.hunkIndex);
+        selectHunk(file.id, target.hunkIndex, { scrollToNote: true });
       }
 
       return {
@@ -453,7 +453,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
 
       if (options?.revealMode === "first" && prepared.length > 0) {
         const first = prepared[0]!;
-        selectHunk(first.file.id, first.target.hunkIndex);
+        selectHunk(first.file.id, first.target.hunkIndex, { scrollToNote: true });
       }
 
       return {

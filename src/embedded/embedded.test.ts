@@ -1,0 +1,236 @@
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { BoxRenderable } from "@opentui/core";
+import { createTestRenderer } from "@opentui/core/testing";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createEmbeddedHunkSession } from "./index";
+import { createEmbeddedRendererScope, createScopedKeyInput } from "./mount";
+import { embeddedHunkSessionInternals } from "./session";
+import type { EmbeddedHunkSession, EmbeddedHunkSnapshot } from "./types";
+
+const testPatchText = [
+  "diff --git a/example.ts b/example.ts",
+  "--- a/example.ts",
+  "+++ b/example.ts",
+  "@@ -1 +1 @@",
+  "-const value = 1;",
+  "+const value = 2;",
+  "",
+].join("\n");
+
+let previousHunkMcpDisable: string | undefined;
+
+/** Return the loaded patch text for one embedded session. */
+function getTestLoadedPatch(session: EmbeddedHunkSession) {
+  return embeddedHunkSessionInternals(session)
+    .getRenderSnapshot()
+    .bootstrap.changeset.files.map((file) => file.patch)
+    .join("\n");
+}
+
+/** Expect a snapshot to be ready and narrow it for the rest of the test. */
+function expectTestReadySnapshot(snapshot: EmbeddedHunkSnapshot) {
+  expect(snapshot.status).toBe("ready");
+  return snapshot as Extract<EmbeddedHunkSnapshot, { status: "ready" }>;
+}
+
+/** Expect a snapshot to be errored and narrow it for the rest of the test. */
+function expectTestErrorSnapshot(snapshot: EmbeddedHunkSnapshot) {
+  expect(snapshot.status).toBe("error");
+  return snapshot as Extract<EmbeddedHunkSnapshot, { status: "error" }>;
+}
+
+describe("embedded Hunk sessions", () => {
+  beforeEach(() => {
+    previousHunkMcpDisable = process.env.HUNK_MCP_DISABLE;
+    process.env.HUNK_MCP_DISABLE = "1";
+  });
+
+  afterEach(() => {
+    if (previousHunkMcpDisable === undefined) {
+      delete process.env.HUNK_MCP_DISABLE;
+    } else {
+      process.env.HUNK_MCP_DISABLE = previousHunkMcpDisable;
+    }
+  });
+
+  test("loads embedded sessions through Hunk config resolution", async () => {
+    const root = mkdtempSync(join(tmpdir(), "hunk-embedded-config-"));
+    const previousXdgConfigHome = process.env.XDG_CONFIG_HOME;
+
+    try {
+      const configHome = join(root, "config");
+      mkdirSync(join(configHome, "hunk"), { recursive: true });
+      writeFileSync(
+        join(configHome, "hunk", "config.toml"),
+        ['theme = "midnight"', 'mode = "stack"', "line_numbers = false"].join("\n"),
+      );
+      process.env.XDG_CONFIG_HOME = configHome;
+
+      const session = await createEmbeddedHunkSession({
+        cwd: root,
+        source: { kind: "patch", text: testPatchText, options: { theme: "paper" } },
+      });
+      const snapshot = expectTestReadySnapshot(session.getSnapshot());
+
+      expect("bootstrap" in snapshot).toBe(false);
+      expect(snapshot.title).toBe("Patch review: stdin patch");
+      expect(snapshot.fileCount).toBe(1);
+
+      const bootstrap = embeddedHunkSessionInternals(session).getRenderSnapshot().bootstrap;
+      expect(bootstrap.initialMode).toBe("stack");
+      expect(bootstrap.initialShowLineNumbers).toBe(false);
+      expect(bootstrap.initialTheme).toBe("paper");
+
+      session.dispose();
+    } finally {
+      if (previousXdgConfigHome === undefined) {
+        delete process.env.XDG_CONFIG_HOME;
+      } else {
+        process.env.XDG_CONFIG_HOME = previousXdgConfigHome;
+      }
+      rmSync(root, { force: true, recursive: true });
+    }
+  });
+
+  test("open reuses the loaded review when source identity is equivalent", async () => {
+    const root = mkdtempSync(join(tmpdir(), "hunk-embedded-open-same-source-"));
+    const left = join(root, "before.ts");
+    const right = join(root, "after.ts");
+
+    try {
+      writeFileSync(left, "export const value = 1;\n");
+      writeFileSync(right, "export const value = 2;\nexport const first = true;\n");
+
+      const source = {
+        kind: "diff",
+        left,
+        right,
+        options: { wrapLines: undefined },
+      } as const;
+      const session = await createEmbeddedHunkSession({ cwd: root, source });
+      expect(getTestLoadedPatch(session)).toContain("first");
+
+      writeFileSync(right, "export const value = 2;\nexport const second = true;\n");
+      const reusedSnapshot = expectTestReadySnapshot(
+        await session.open({ kind: "diff", left, right }),
+      );
+
+      expect(reusedSnapshot.source).toEqual(session.source);
+      expect(getTestLoadedPatch(session)).toContain("first");
+      expect(getTestLoadedPatch(session)).not.toContain("second");
+
+      const reloadedSnapshot = expectTestReadySnapshot(await session.reload());
+
+      expect(reloadedSnapshot.source).toEqual(session.source);
+      expect(getTestLoadedPatch(session)).toContain("second");
+      expect(getTestLoadedPatch(session)).not.toContain("first");
+
+      session.dispose();
+    } finally {
+      rmSync(root, { force: true, recursive: true });
+    }
+  });
+
+  test("keeps the previous source and reports errors when open fails", async () => {
+    const root = mkdtempSync(join(tmpdir(), "hunk-embedded-reload-error-"));
+
+    try {
+      const initialSource = { kind: "patch", text: testPatchText, label: "initial patch" } as const;
+      const session = await createEmbeddedHunkSession({
+        cwd: root,
+        source: initialSource,
+      });
+
+      await expect(session.open({ kind: "patch", file: "missing.patch" })).rejects.toThrow();
+
+      expect(session.source).toMatchObject(initialSource);
+      const snapshot = expectTestErrorSnapshot(session.getSnapshot());
+      expect(snapshot.error).toContain("missing.patch");
+      expect(snapshot.title).toBe("Patch review: initial patch");
+      expect("bootstrap" in snapshot).toBe(false);
+
+      session.dispose();
+    } finally {
+      rmSync(root, { force: true, recursive: true });
+    }
+  });
+
+  test("scopes embedded key input to the active mount", () => {
+    const sourceListeners = new Map<string, Set<(...args: unknown[]) => void>>();
+    const source = {
+      on(event: string, listener: (...args: unknown[]) => void) {
+        const listeners = sourceListeners.get(event) ?? new Set();
+        listeners.add(listener);
+        sourceListeners.set(event, listeners);
+      },
+      off(event: string, listener: (...args: unknown[]) => void) {
+        sourceListeners.get(event)?.delete(listener);
+      },
+    };
+    let active = false;
+    const scoped = createScopedKeyInput(source, () => active);
+    const received: unknown[] = [];
+
+    scoped.keyInput.on("keypress", (event: unknown) => {
+      received.push(event);
+    });
+
+    sourceListeners.get("keypress")?.forEach((listener) => listener("hidden"));
+    active = true;
+    sourceListeners.get("keypress")?.forEach((listener) => listener("visible"));
+
+    expect(received).toEqual(["visible"]);
+
+    scoped.dispose();
+    expect(sourceListeners.get("keypress")?.size).toBe(0);
+  });
+
+  test("sizes embedded renderer reads and resize events from the host container", async () => {
+    const setup = await createTestRenderer({ width: 120, height: 40 });
+
+    try {
+      const container = new BoxRenderable(setup.renderer, {
+        height: 12,
+        id: "embedded-container",
+        width: 60,
+      });
+      setup.renderer.root.add(container);
+      await setup.renderOnce();
+
+      const scope = createEmbeddedRendererScope(setup.renderer, container, setup.renderer.keyInput);
+      const resizes: Array<{ height: number; width: number }> = [];
+      const onResize = (width: unknown, height: unknown) => {
+        resizes.push({ height: Number(height), width: Number(width) });
+      };
+
+      try {
+        scope.renderer.on("resize", onResize);
+
+        expect(scope.renderer.width).toBe(60);
+        expect(scope.renderer.height).toBe(12);
+        expect(scope.renderer.terminalWidth).toBe(60);
+        expect(scope.renderer.terminalHeight).toBe(12);
+
+        container.width = 48;
+        container.height = 9;
+        await setup.renderOnce();
+
+        expect(scope.renderer.width).toBe(48);
+        expect(scope.renderer.height).toBe(9);
+        expect(resizes).toEqual([{ height: 9, width: 48 }]);
+
+        scope.renderer.off("resize", onResize);
+        container.width = 36;
+        await setup.renderOnce();
+
+        expect(resizes).toEqual([{ height: 9, width: 48 }]);
+      } finally {
+        scope.dispose();
+      }
+    } finally {
+      setup.renderer.destroy();
+    }
+  });
+});

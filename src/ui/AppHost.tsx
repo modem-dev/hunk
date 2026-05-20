@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { resolveConfiguredCliInput } from "../core/config";
 import { loadAppBootstrap } from "../core/loaders";
 import { resolveRuntimeCliInput } from "../core/terminal";
@@ -26,10 +26,21 @@ export function AppHost({
 }) {
   const [activeBootstrap, setActiveBootstrap] = useState(bootstrap);
   const [appVersion, setAppVersion] = useState(0);
+  const previousBootstrapRef = useRef(bootstrap);
   const startupNoticeText = useStartupUpdateNotice({
     enabled: !bootstrap.input.options.pager,
     resolver: startupNoticeResolver,
   });
+
+  useEffect(() => {
+    if (previousBootstrapRef.current === bootstrap) {
+      return;
+    }
+
+    previousBootstrapRef.current = bootstrap;
+    setActiveBootstrap(bootstrap);
+    setAppVersion((current) => current + 1);
+  }, [bootstrap]);
 
   const reloadSession = useCallback(
     async (nextInput: CliInput, options?: { resetApp?: boolean; sourcePath?: string }) => {

@@ -5,8 +5,8 @@
     "declaration": true,
     "emitDeclarationOnly": true,
     "outDir": "./dist/npm-types",
-    "rootDir": "./src"
+    "rootDir": "."
   },
   "include": [],
-  "files": ["src/opentui/index.ts"]
+  "files": ["src/opentui/index.ts", "src/embedded/index.ts"]
 }

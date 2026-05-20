@@ -48,6 +48,8 @@ const publishedPaths = new Set(pack.files.map((file) => file.path));
 const requiredPaths = [
   "bin/hunk.cjs",
   "dist/npm/main.js",
+  "dist/npm/embedded/index.d.ts",
+  "dist/npm/embedded/index.js",
   "dist/npm/opentui/index.d.ts",
   "dist/npm/opentui/index.js",
   "README.md",

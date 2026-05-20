@@ -39,6 +39,10 @@
       "types": "./dist/npm/opentui/index.d.ts",
       "import": "./dist/npm/opentui/index.js"
     },
+    "./embedded": {
+      "types": "./dist/npm/embedded/index.d.ts",
+      "import": "./dist/npm/embedded/index.js"
+    },
     "./package.json": "./package.json"
   },
   "publishConfig": {
