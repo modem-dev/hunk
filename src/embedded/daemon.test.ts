@@ -1,13 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { createEmbeddedSessionBrokerAvailability } from "./daemon";
+import { resolveSessionBrokerConfig } from "../session-broker/brokerConfig";
 import type { EnsureSessionBrokerAvailableOptions } from "../session-broker/brokerLauncher";
 
-const testConfig = {
-  host: "127.0.0.1",
-  port: 47657,
-  httpOrigin: "http://127.0.0.1:47657",
-  wsOrigin: "ws://127.0.0.1:47657",
-};
+const testConfig = resolveSessionBrokerConfig({ HUNK_MCP_PORT: "47657" });
 
 describe("embedded session broker daemon launcher", () => {
   test("passes Hunk package-bin launch options through the broker availability adapter", async () => {

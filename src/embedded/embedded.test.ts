@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { createEmbeddedHunkSession } from "./index";
 import { createEmbeddedRendererScope, createScopedKeyInput } from "./mount";
 import { embeddedHunkSessionInternals } from "./session";
-import type { EmbeddedHunkSession } from "./types";
+import type { EmbeddedHunkSession, EmbeddedHunkSnapshot } from "./types";
 
 const testPatchText = [
   "diff --git a/example.ts b/example.ts",
@@ -27,6 +27,18 @@ function getTestLoadedPatch(session: EmbeddedHunkSession) {
     .getRenderSnapshot()
     .bootstrap.changeset.files.map((file) => file.patch)
     .join("\n");
+}
+
+/** Expect a snapshot to be ready and narrow it for the rest of the test. */
+function expectTestReadySnapshot(snapshot: EmbeddedHunkSnapshot) {
+  expect(snapshot.status).toBe("ready");
+  return snapshot as Extract<EmbeddedHunkSnapshot, { status: "ready" }>;
+}
+
+/** Expect a snapshot to be errored and narrow it for the rest of the test. */
+function expectTestErrorSnapshot(snapshot: EmbeddedHunkSnapshot) {
+  expect(snapshot.status).toBe("error");
+  return snapshot as Extract<EmbeddedHunkSnapshot, { status: "error" }>;
 }
 
 describe("embedded Hunk sessions", () => {
@@ -60,10 +72,8 @@ describe("embedded Hunk sessions", () => {
         cwd: root,
         source: { kind: "patch", text: testPatchText, options: { theme: "paper" } },
       });
-      const snapshot = session.getSnapshot();
+      const snapshot = expectTestReadySnapshot(session.getSnapshot());
 
-      expect(snapshot.status).toBe("ready");
-      if (snapshot.status !== "ready") throw new Error("Expected embedded session to load.");
       expect("bootstrap" in snapshot).toBe(false);
       expect(snapshot.title).toBe("Patch review: stdin patch");
       expect(snapshot.fileCount).toBe(1);
@@ -103,18 +113,16 @@ describe("embedded Hunk sessions", () => {
       expect(getTestLoadedPatch(session)).toContain("first");
 
       writeFileSync(right, "export const value = 2;\nexport const second = true;\n");
-      const reusedSnapshot = await session.open({ kind: "diff", left, right });
+      const reusedSnapshot = expectTestReadySnapshot(
+        await session.open({ kind: "diff", left, right }),
+      );
 
-      expect(reusedSnapshot.status).toBe("ready");
-      if (reusedSnapshot.status !== "ready") throw new Error("Expected reused snapshot.");
       expect(reusedSnapshot.source).toEqual(session.source);
       expect(getTestLoadedPatch(session)).toContain("first");
       expect(getTestLoadedPatch(session)).not.toContain("second");
 
-      const reloadedSnapshot = await session.reload();
+      const reloadedSnapshot = expectTestReadySnapshot(await session.reload());
 
-      expect(reloadedSnapshot.status).toBe("ready");
-      if (reloadedSnapshot.status !== "ready") throw new Error("Expected reloaded snapshot.");
       expect(reloadedSnapshot.source).toEqual(session.source);
       expect(getTestLoadedPatch(session)).toContain("second");
       expect(getTestLoadedPatch(session)).not.toContain("first");
@@ -135,12 +143,10 @@ describe("embedded Hunk sessions", () => {
         source: initialSource,
       });
 
-      expect(session.open({ kind: "patch", file: "missing.patch" })).rejects.toThrow();
+      await expect(session.open({ kind: "patch", file: "missing.patch" })).rejects.toThrow();
 
       expect(session.source).toMatchObject(initialSource);
-      const snapshot = session.getSnapshot();
-      expect(snapshot.status).toBe("error");
-      if (snapshot.status !== "error") throw new Error("Expected embedded reload to fail.");
+      const snapshot = expectTestErrorSnapshot(session.getSnapshot());
       expect(snapshot.error).toContain("missing.patch");
       expect(snapshot.title).toBe("Patch review: initial patch");
       expect("bootstrap" in snapshot).toBe(false);

@@ -27,6 +27,19 @@ const bunEnv = {
   BUN_INSTALL: path.join(repoRoot, ".bun-install"),
 };
 
+type LibraryBuildLog = Awaited<ReturnType<typeof Bun.build>>["logs"][number];
+
+interface BuildLibraryExportOptions {
+  entrypoint: string;
+  name: string;
+  outputDirectory: string;
+}
+
+interface FormatBuildLibraryExportErrorOptions {
+  logs: readonly LibraryBuildLog[];
+  name: string;
+}
+
 function runBun(args: string[]) {
   const proc = Bun.spawnSync(["bun", ...args], {
     cwd: repoRoot,
@@ -41,7 +54,24 @@ function runBun(args: string[]) {
   }
 }
 
-async function buildLibraryExport(name: string, entrypoint: string, outputDirectory: string) {
+/** Format a Bun.build failure so the runtime reports the build diagnostics once. */
+function formatBuildLibraryExportError({ logs, name }: FormatBuildLibraryExportErrorOptions) {
+  const details = logs
+    .map((log) => log.message)
+    .filter((message) => message.length > 0)
+    .join("\n");
+
+  return details
+    ? `Failed to build ${name} export:\n${details}`
+    : `Failed to build ${name} export.`;
+}
+
+/** Build one npm package subpath export. */
+async function buildLibraryExport({
+  entrypoint,
+  name,
+  outputDirectory,
+}: BuildLibraryExportOptions) {
   const build = await Bun.build({
     entrypoints: [entrypoint],
     target: "node",
@@ -52,10 +82,7 @@ async function buildLibraryExport(name: string, entrypoint: string, outputDirect
   });
 
   if (!build.success) {
-    for (const log of build.logs) {
-      console.error(log.message);
-    }
-    throw new Error(`Failed to build ${name} export.`);
+    throw new Error(formatBuildLibraryExportError({ logs: build.logs, name }));
   }
 }
 
@@ -83,16 +110,16 @@ if (process.platform !== "win32") {
   chmodSync(mainJs, 0o755);
 }
 
-await buildLibraryExport(
-  "OpenTUI",
-  path.join(repoRoot, "src", "opentui", "index.ts"),
-  opentuiOutdir,
-);
-await buildLibraryExport(
-  "embedded Hunk",
-  path.join(repoRoot, "src", "embedded", "index.ts"),
-  embeddedOutdir,
-);
+await buildLibraryExport({
+  entrypoint: path.join(repoRoot, "src", "opentui", "index.ts"),
+  name: "OpenTUI",
+  outputDirectory: opentuiOutdir,
+});
+await buildLibraryExport({
+  entrypoint: path.join(repoRoot, "src", "embedded", "index.ts"),
+  name: "embedded Hunk",
+  outputDirectory: embeddedOutdir,
+});
 
 runBun(["x", "tsc", "-p", path.join(repoRoot, "tsconfig.npm-exports.json")]);
 
