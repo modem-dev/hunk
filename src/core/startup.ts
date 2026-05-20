@@ -213,7 +213,7 @@ export async function prepareStartupPlan(
 
   let bootstrap: AppBootstrap;
   try {
-    bootstrap = await loadAppBootstrapImpl(cliInput);
+    bootstrap = await loadAppBootstrapImpl(cliInput, { customTheme: configured.customTheme });
   } catch (error) {
     controllingTerminal?.close();
     throw error;

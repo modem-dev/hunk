@@ -1,9 +1,10 @@
 import type { LayoutMode } from "../../core/types";
 import type { MenuEntry, MenuId } from "../components/chrome/menu";
-import { THEMES } from "../themes";
+import type { AppTheme } from "../themes";
 
 export interface BuildAppMenusOptions {
   activeThemeId: string;
+  availableThemes: AppTheme[];
   canRefreshCurrentInput: boolean;
   focusFilter: () => void;
   layoutMode: LayoutMode;
@@ -35,6 +36,7 @@ export interface BuildAppMenusOptions {
 /** Build the top-level app menus from the current app state and actions. */
 export function buildAppMenus({
   activeThemeId,
+  availableThemes,
   canRefreshCurrentInput,
   focusFilter,
   layoutMode,
@@ -62,7 +64,7 @@ export function buildAppMenus({
   triggerEditSelectedFile,
   wrapLines,
 }: BuildAppMenusOptions): Record<MenuId, MenuEntry[]> {
-  const themeMenuEntries: MenuEntry[] = THEMES.map((theme) => ({
+  const themeMenuEntries: MenuEntry[] = availableThemes.map((theme) => ({
     kind: "item",
     label: theme.label,
     checked: theme.id === activeThemeId,

@@ -195,7 +195,12 @@ describe("loadAppBootstrap", () => {
     writeFileSync(
       join(nested, "agent.json"),
       JSON.stringify({
-        files: [{ path: "example.ts", annotations: [{ newRange: [1, 1], summary: "updated" }] }],
+        files: [
+          {
+            path: "example.ts",
+            annotations: [{ newRange: [1, 1], summary: "updated" }],
+          },
+        ],
       }),
     );
 
@@ -328,7 +333,10 @@ describe("loadAppBootstrap", () => {
     expect(bootstrap.changeset.files).toHaveLength(1);
     expect(bootstrap.changeset.files[0]?.path).toBe("large.txt");
     expect(bootstrap.changeset.files[0]?.isTooLarge).toBe(true);
-    expect(bootstrap.changeset.files[0]?.stats).toEqual({ additions: 100_001, deletions: 1 });
+    expect(bootstrap.changeset.files[0]?.stats).toEqual({
+      additions: 100_001,
+      deletions: 1,
+    });
     expect(bootstrap.changeset.files[0]?.metadata.hunks).toHaveLength(0);
   });
 
@@ -349,7 +357,10 @@ describe("loadAppBootstrap", () => {
     expect(bootstrap.changeset.files).toHaveLength(1);
     expect(bootstrap.changeset.files[0]?.path).toBe("large.txt");
     expect(bootstrap.changeset.files[0]?.isTooLarge).toBe(true);
-    expect(bootstrap.changeset.files[0]?.stats).toEqual({ additions: 100_001, deletions: 0 });
+    expect(bootstrap.changeset.files[0]?.stats).toEqual({
+      additions: 100_001,
+      deletions: 0,
+    });
     expect(bootstrap.changeset.files[0]?.statsTruncated).toBe(false);
     expect(bootstrap.changeset.files[0]?.metadata.hunks).toHaveLength(0);
   });
@@ -371,7 +382,10 @@ describe("loadAppBootstrap", () => {
     expect(bootstrap.changeset.files).toHaveLength(1);
     expect(bootstrap.changeset.files[0]?.path).toBe("large-single-line.txt");
     expect(bootstrap.changeset.files[0]?.isTooLarge).toBe(true);
-    expect(bootstrap.changeset.files[0]?.stats).toEqual({ additions: 1, deletions: 0 });
+    expect(bootstrap.changeset.files[0]?.stats).toEqual({
+      additions: 1,
+      deletions: 0,
+    });
     expect(bootstrap.changeset.files[0]?.statsTruncated).toBe(true);
     expect(bootstrap.changeset.files[0]?.metadata.hunks).toHaveLength(0);
   });
@@ -1105,6 +1119,48 @@ describe("loadAppBootstrap", () => {
     expect(bootstrap.changeset.files[0]?.stats.additions).toBeGreaterThan(0);
   });
 
+  test("loads no-index patches whose file paths include /2/ segments", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "hunk-patch-"));
+    tempDirs.push(dir);
+
+    const beforeDir = join(dir, "before", "feat", "2.0");
+    const afterDir = join(dir, "after", "feat", "2.0");
+    const before = join(beforeDir, "auth.ts");
+    const after = join(afterDir, "auth.ts");
+    const patch = join(dir, "input.patch");
+
+    mkdirSync(beforeDir, { recursive: true });
+    mkdirSync(afterDir, { recursive: true });
+    writeFileSync(before, "export const answer = 41;\n");
+    writeFileSync(after, "export const answer = 42;\nexport const added = true;\n");
+
+    const diffProc = Bun.spawnSync(
+      ["git", "diff", "--no-index", "--color=always", "--", before, after],
+      {
+        cwd: dir,
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+
+    if (diffProc.exitCode !== 0 && diffProc.exitCode !== 1) {
+      const stderr = Buffer.from(diffProc.stderr).toString("utf8");
+      throw new Error(stderr.trim() || `git diff --color=always failed`);
+    }
+
+    writeFileSync(patch, Buffer.from(diffProc.stdout).toString("utf8"));
+
+    const bootstrap = await loadAppBootstrap({
+      kind: "patch",
+      file: patch,
+      options: { mode: "auto" },
+    });
+
+    expect(bootstrap.changeset.files).toHaveLength(1);
+    expect(bootstrap.changeset.files[0]?.path).toContain("feat/2.0/auth.ts");
+  });
+
   test("loads patch text emitted with diff.noprefix=true (e.g. from `hunk pager` stdin)", async () => {
     const bootstrap = await loadAppBootstrap({
       kind: "patch",
@@ -1151,7 +1207,10 @@ describe("loadAppBootstrap", () => {
       path: "example.ts",
       metadata: { name: "example.ts", type: "change" },
     });
-    expect(bootstrap.changeset.files[0]?.stats).toEqual({ additions: 1, deletions: 1 });
+    expect(bootstrap.changeset.files[0]?.stats).toEqual({
+      additions: 1,
+      deletions: 1,
+    });
   });
 
   test("loads renamed patch text emitted with diff.mnemonicPrefix=true", async () => {
@@ -1253,7 +1312,10 @@ describe("loadAppBootstrap", () => {
       path: "src\\tfile.txt",
       metadata: { name: "src\\tfile.txt", type: "change" },
     });
-    expect(bootstrap.changeset.files[0]?.stats).toEqual({ additions: 1, deletions: 1 });
+    expect(bootstrap.changeset.files[0]?.stats).toEqual({
+      additions: 1,
+      deletions: 1,
+    });
   });
 
   test("does not mangle a deleted SQL `-- comment` line in a noprefix patch", async () => {

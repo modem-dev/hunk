@@ -25,7 +25,7 @@ import { fitText, padText } from "./text";
 import { computeHunkRevealScrollTop } from "./hunkScroll";
 import { estimateDiffSectionBodyRows, measureDiffSectionGeometry } from "./diffSectionGeometry";
 import { resizeSidebarWidth } from "./sidebar";
-import { resolveTheme } from "../themes";
+import { availableThemes, resolveTheme } from "../themes";
 
 function lines(...values: string[]) {
   return `${values.join("\n")}\n`;
@@ -110,9 +110,21 @@ describe("ui helpers", () => {
 
   test("menuWidth and menuBoxHeight account for checks and hints", () => {
     const entries: MenuEntry[] = [
-      { kind: "item", label: "Split view", hint: "1", checked: true, action: () => {} },
+      {
+        kind: "item",
+        label: "Split view",
+        hint: "1",
+        checked: true,
+        action: () => {},
+      },
       { kind: "separator" },
-      { kind: "item", label: "Line numbers", hint: "l", checked: false, action: () => {} },
+      {
+        kind: "item",
+        label: "Line numbers",
+        hint: "l",
+        checked: false,
+        action: () => {},
+      },
     ];
 
     expect(menuWidth(entries)).toBeGreaterThanOrEqual(18);
@@ -122,6 +134,7 @@ describe("ui helpers", () => {
   test("buildAppMenus creates checked entries from the current app state", () => {
     const menus = buildAppMenus({
       activeThemeId: "graphite",
+      availableThemes: availableThemes(),
       canRefreshCurrentInput: true,
       focusFilter: () => {},
       layoutMode: "stack",
@@ -182,6 +195,50 @@ describe("ui helpers", () => {
     expect(
       menus.theme.some(
         (entry) => entry.kind === "item" && entry.label === "Graphite" && entry.checked,
+      ),
+    ).toBe(true);
+  });
+
+  test("buildAppMenus includes a config-defined custom theme when available", () => {
+    const menus = buildAppMenus({
+      activeThemeId: "custom",
+      availableThemes: availableThemes({
+        base: "midnight",
+        label: "My Theme",
+      }),
+      canRefreshCurrentInput: false,
+      focusFilter: () => {},
+      layoutMode: "split",
+      moveToAnnotatedFile: () => {},
+      moveToAnnotatedHunk: () => {},
+      moveToHunk: () => {},
+      refreshCurrentInput: () => {},
+      requestQuit: () => {},
+      selectLayoutMode: () => {},
+      selectThemeId: () => {},
+      showAgentNotes: false,
+      showHelp: false,
+      showHunkHeaders: true,
+      showLineNumbers: true,
+      sidebarVisible: true,
+      toggleAgentNotes: () => {},
+      toggleFocusArea: () => {},
+      toggleHelp: () => {},
+      toggleHunkHeaders: () => {},
+      toggleLineNumbers: () => {},
+      toggleLineWrap: () => {},
+      toggleSidebar: () => {},
+      wrapLines: false,
+    });
+
+    expect(
+      menus.theme
+        .filter((entry): entry is Extract<MenuEntry, { kind: "item" }> => entry.kind === "item")
+        .map((entry) => entry.label),
+    ).toEqual(["Graphite", "Midnight", "Paper", "Ember", "My Theme"]);
+    expect(
+      menus.theme.some(
+        (entry) => entry.kind === "item" && entry.label === "My Theme" && entry.checked,
       ),
     ).toBe(true);
   });
@@ -374,12 +431,28 @@ describe("ui helpers", () => {
     const missingDark = resolveTheme("missing", "dark");
     const autoLight = resolveTheme("auto", "light");
     const autoDark = resolveTheme("auto", "dark");
+    const custom = resolveTheme("custom", null, {
+      base: "paper",
+      label: "My Theme",
+      accent: "#7755aa",
+      syntax: {
+        keyword: "#123456",
+      },
+    });
+    const missingCustom = resolveTheme("custom", null);
 
     expect(midnight.id).toBe("midnight");
     expect(missingLight.id).toBe("graphite");
     expect(missingDark.id).toBe("graphite");
     expect(autoLight.id).toBe("paper");
     expect(autoDark.id).toBe("graphite");
+    expect(custom.id).toBe("custom");
+    expect(custom.label).toBe("My Theme");
+    expect(custom.appearance).toBe("light");
+    expect(custom.accent).toBe("#7755aa");
+    expect(custom.syntaxColors.keyword).toBe("#123456");
+    expect(missingCustom.id).toBe("graphite");
     expect(resolveTheme("ember", null).syntaxStyle).toBeDefined();
+    expect(custom.syntaxStyle).toBeDefined();
   });
 });
