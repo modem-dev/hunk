@@ -186,9 +186,9 @@ For source setup, tests, packaging checks, and repo architecture, see [CONTRIBUT
 
 ## Sponsor
 
-Sponsored by [Modem](https://modem.dev?utm_source=github&utm_medium=oss&utm_campaign=hunk).
+Sponsored by [Modem](https://modem.dev?utm_source=github&utm_medium=oss&utm_campaign=oss_hunk&utm_content=readme_footer).
 
-<a href="https://modem.dev?utm_source=github&utm_medium=oss&utm_campaign=hunk">
+<a href="https://modem.dev?utm_source=github&utm_medium=oss&utm_campaign=oss_hunk&utm_content=readme_footer">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://modem.dev/images/logo/svg/modem-combined-white.svg">
     <source media="(prefers-color-scheme: light)" srcset="https://modem.dev/images/logo/svg/modem-combined-black.svg">
