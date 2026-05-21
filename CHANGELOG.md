@@ -12,6 +12,8 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Fixed
 
+- Fixed VCS auto-detection so a Git repository nested under a parent Jujutsu workspace still uses Git mode by default.
+
 ## [0.13.1] - 2026-05-19
 
 ### Fixed
