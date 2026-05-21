@@ -81,6 +81,18 @@ describe("VCS adapter registry", () => {
     expect(findVcsRepoRootCandidate(nested)).toBe(repo);
   });
 
+  test("prefers the nearest checkout over a parent repository with higher adapter priority", () => {
+    const parent = createTempDir("hunk-vcs-parent-jj-");
+    const repo = join(parent, "project");
+    const nested = join(repo, "src", "nested");
+    mkdirSync(join(parent, ".jj"));
+    mkdirSync(join(repo, ".git"), { recursive: true });
+    mkdirSync(nested, { recursive: true });
+
+    expect(detectVcs(nested)).toEqual({ id: "git", repoRoot: repo });
+    expect(findVcsRepoRootCandidate(nested)).toBe(repo);
+  });
+
   test("maps CLI inputs to neutral review operations", () => {
     const diffInput = {
       kind: "vcs",
