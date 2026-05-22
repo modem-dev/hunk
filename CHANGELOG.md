@@ -7,11 +7,18 @@ All notable user-visible changes to Hunk are documented in this file.
 ### Added
 
 - Added a keyboard-driven comment cursor (`c`) so reviewers can mark a diff row, type a single-line note with `i` / Enter, and persist it as a user-authored review comment that agents pick up through the existing `hunk session comment *` commands.
+- Added mouse support to the comment cursor: clicking any addition or deletion row positions the cursor and enters cursor mode, ready for `i` / Enter to open the composer.
+- Added an orange "My note" palette for user-authored review notes so they read distinctly from purple AI notes across all four built-in themes.
 
 ### Changed
 
+- Highlighted the entire diff row under the comment cursor (not just the left rail) and dropped the redundant trailing cap on single-row inline notes so the review stream reads cleaner.
+- Auto-scroll the review stream so the comment cursor stays in view when keyboard navigation crosses past the viewport edge.
+
 ### Fixed
 
+- Fixed the comment cursor painting in every file that happened to share the same hunk/side/line as the active cursor; it now appears only in the file the cursor is actually in.
+- Fixed clicking a diff row stealing focus into the review scrollbox so that arrow keys no longer scroll and move the cursor at the same time.
 - Included the bundled Hunk review skill in standalone prebuilt release archives so `hunk skill path` works after extracting a tarball or installing via Homebrew.
 
 ## [0.12.0] - 2026-05-12
