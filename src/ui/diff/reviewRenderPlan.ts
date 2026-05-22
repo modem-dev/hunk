@@ -256,10 +256,15 @@ function buildInlineVisibleNotePlacements(rows: DiffRow[], visibleAgentNotes: Vi
       coveredRows.length > 0 ? coveredRows : fallbackGuideRow ? [fallbackGuideRow] : [];
     const anchorPlacements = placementsByAnchor.get(anchorRow.key) ?? [];
 
+    // Single-row guides do not need a trailing cap — the note card sits directly above
+    // the only highlighted row, so a closing `╵` adds an empty visual row without
+    // communicating new structure.
+    const endGuideAfterKey = guideRows.length > 1 ? guideRows.at(-1)?.key : undefined;
+
     anchorPlacements.push({
       anchorKey: anchorRow.key,
       anchorSide,
-      endGuideAfterKey: guideRows.at(-1)?.key,
+      endGuideAfterKey,
       guidedRowKeys:
         guideRows.length > 0 ? new Set(guideRows.map((row) => row.key)) : EMPTY_ROW_KEYS,
       hunkIndex: anchorRow.hunkIndex,

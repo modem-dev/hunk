@@ -1,5 +1,6 @@
 import { memo, type ReactNode } from "react";
 import type { DiffFile } from "../../core/types";
+import { blendHex } from "../lib/color";
 import type { AppTheme } from "../themes";
 import {
   resolveSplitCellGeometry,
@@ -18,6 +19,16 @@ import {
   stackGutterText,
   stackRailColor,
 } from "./rowStyle";
+
+// Fraction of the cursor accent that is mixed into a row bg when the cursor sits on it.
+// 0.55 was picked by eye: strong enough that the row stands out clearly across the whole
+// width, subtle enough that addition/deletion colors and syntax highlighting stay readable.
+const CURSOR_ROW_TINT = 0.55;
+
+/** Blend the cursor accent into one cell bg so the row reads as the cursor row. */
+function cursorRowBg(cellBg: string, theme: AppTheme) {
+  return blendHex(theme.noteTitleBackground, cellBg, CURSOR_ROW_TINT);
+}
 
 /** Clamp a label to one terminal row with an ellipsis. */
 export function fitText(text: string, width: number) {
@@ -274,8 +285,11 @@ function renderSplitCell(
     fg: string;
     bg: string;
   },
+  bgOverride?: string,
 ) {
   const palette = splitCellPalette(cell.kind, theme);
+  const gutterBg = bgOverride ?? palette.gutterBg;
+  const contentBg = bgOverride ?? palette.contentBg;
   const prefixWidth = prefix?.text.length ?? 0;
   const { gutterWidth, contentWidth } = resolveSplitCellGeometry(
     width,
@@ -296,14 +310,14 @@ function renderSplitCell(
           {prefix.text}
         </span>
       ) : null}
-      <span key={`${keyPrefix}:gutter`} fg={palette.numberColor} bg={palette.gutterBg}>
+      <span key={`${keyPrefix}:gutter`} fg={palette.numberColor} bg={gutterBg}>
         {gutterText}
       </span>
       {renderInlineSpans(
         cell.spans,
         contentWidth,
         theme.text,
-        palette.contentBg,
+        contentBg,
         `${keyPrefix}:content`,
         contentOffset,
       )}
@@ -325,8 +339,11 @@ function renderStackCell(
     fg: string;
     bg: string;
   },
+  bgOverride?: string,
 ) {
   const palette = stackCellPalette(cell.kind, theme);
+  const gutterBg = bgOverride ?? palette.gutterBg;
+  const contentBg = bgOverride ?? palette.contentBg;
   const prefixWidth = prefix?.text.length ?? 0;
   const { gutterWidth, contentWidth } = resolveStackCellGeometry(
     width,
@@ -342,14 +359,14 @@ function renderStackCell(
           {prefix.text}
         </span>
       ) : null}
-      <span key={`${keyPrefix}:gutter`} fg={palette.numberColor} bg={palette.gutterBg}>
+      <span key={`${keyPrefix}:gutter`} fg={palette.numberColor} bg={gutterBg}>
         {stackGutterText(cell, lineNumberDigits, showLineNumbers).padEnd(gutterWidth)}
       </span>
       {renderInlineSpans(
         cell.spans,
         contentWidth,
         theme.text,
-        palette.contentBg,
+        contentBg,
         `${keyPrefix}:content`,
         contentOffset,
       )}
@@ -369,22 +386,19 @@ function renderWrappedSplitCellLine(
     fg: string;
     bg: string;
   },
+  bgOverride?: string,
 ) {
+  const gutterBg = bgOverride ?? palette.gutterBg;
+  const contentBg = bgOverride ?? palette.contentBg;
   return (
     <>
       <span key={`${keyPrefix}:prefix`} fg={prefix.fg} bg={prefix.bg}>
         {prefix.text}
       </span>
-      <span key={`${keyPrefix}:gutter`} fg={palette.numberColor} bg={palette.gutterBg}>
+      <span key={`${keyPrefix}:gutter`} fg={palette.numberColor} bg={gutterBg}>
         {line.gutterText}
       </span>
-      {renderInlineSpans(
-        line.spans,
-        contentWidth,
-        theme.text,
-        palette.contentBg,
-        `${keyPrefix}:content`,
-      )}
+      {renderInlineSpans(line.spans, contentWidth, theme.text, contentBg, `${keyPrefix}:content`)}
     </>
   );
 }
@@ -401,22 +415,19 @@ function renderWrappedStackCellLine(
     fg: string;
     bg: string;
   },
+  bgOverride?: string,
 ) {
+  const gutterBg = bgOverride ?? palette.gutterBg;
+  const contentBg = bgOverride ?? palette.contentBg;
   return (
     <>
       <span key={`${keyPrefix}:prefix`} fg={prefix.fg} bg={prefix.bg}>
         {prefix.text}
       </span>
-      <span key={`${keyPrefix}:gutter`} fg={palette.numberColor} bg={palette.gutterBg}>
+      <span key={`${keyPrefix}:gutter`} fg={palette.numberColor} bg={gutterBg}>
         {line.gutterText}
       </span>
-      {renderInlineSpans(
-        line.spans,
-        contentWidth,
-        theme.text,
-        palette.contentBg,
-        `${keyPrefix}:content`,
-      )}
+      {renderInlineSpans(line.spans, contentWidth, theme.text, contentBg, `${keyPrefix}:content`)}
     </>
   );
 }
@@ -633,6 +644,10 @@ function renderRow(
     // Reserve fixed columns for the diff rails and center separator slot.
     const { leftWidth, rightWidth } = resolveSplitPaneWidths(width);
     const rightRenderWidth = Math.max(0, rightWidth - (guideOnNewSide ? 1 : 0));
+    const leftPalette = splitCellPalette(row.left.kind, theme);
+    const rightPalette = splitCellPalette(row.right.kind, theme);
+    const leftBgOverride = isCursor ? cursorRowBg(leftPalette.contentBg, theme) : undefined;
+    const rightBgOverride = isCursor ? cursorRowBg(rightPalette.contentBg, theme) : undefined;
     const leftPrefix = {
       text: guideOnOldSide ? "│" : isCursor ? "▶" : marker(),
       fg: guideOnOldSide
@@ -645,7 +660,7 @@ function renderRow(
     const rightPrefix = {
       text: "▌",
       fg: splitRightRailColor(row.right.kind, theme, selected),
-      bg: theme.panel,
+      bg: rightBgOverride ?? theme.panel,
     };
 
     if (!wrapLines) {
@@ -661,6 +676,7 @@ function renderRow(
               `${row.key}:left`,
               codeHorizontalOffset,
               leftPrefix,
+              leftBgOverride,
             )}
             {renderSplitCell(
               row.right,
@@ -671,6 +687,7 @@ function renderRow(
               `${row.key}:right`,
               codeHorizontalOffset,
               rightPrefix,
+              rightBgOverride,
             )}
             {guideOnNewSide ? (
               <span key={`${row.key}:note-guide`} fg={theme.noteBorder}>
@@ -729,6 +746,7 @@ function renderRow(
                     theme,
                     `${row.key}:left:${index}`,
                     leftPrefix,
+                    leftBgOverride,
                   )}
                   {renderWrappedSplitCellLine(
                     rightLine,
@@ -737,6 +755,7 @@ function renderRow(
                     theme,
                     `${row.key}:right:${index}`,
                     rightPrefix,
+                    rightBgOverride,
                   )}
                   {guideOnNewSide ? (
                     <span key={`${row.key}:note-guide:${index}`} fg={theme.noteBorder}>
@@ -754,6 +773,8 @@ function renderRow(
     const guideOnOldSide = noteGuideSide === "old";
     const guideOnNewSide = noteGuideSide === "new";
     const contentWidth = Math.max(0, width - (guideOnNewSide ? 1 : 0));
+    const stackPalette = stackCellPalette(row.cell.kind, theme);
+    const stackBgOverride = isCursor ? cursorRowBg(stackPalette.contentBg, theme) : undefined;
     const prefix = {
       text: guideOnOldSide ? "│" : isCursor ? "▶" : marker(),
       fg: guideOnOldSide
@@ -777,6 +798,7 @@ function renderRow(
               `${row.key}:stack`,
               codeHorizontalOffset,
               prefix,
+              stackBgOverride,
             )}
             {guideOnNewSide ? (
               <span key={`${row.key}:note-guide`} fg={theme.noteBorder}>
@@ -812,6 +834,7 @@ function renderRow(
                   theme,
                   `${row.key}:stack:${index}`,
                   prefix,
+                  stackBgOverride,
                 )}
                 {guideOnNewSide ? (
                   <span key={`${row.key}:note-guide:${index}`} fg={theme.noteBorder}>

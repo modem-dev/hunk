@@ -126,7 +126,11 @@ describe("review render plan", () => {
     const file = createDiffFile(
       "deleted",
       "deleted.ts",
-      lines("export const removed = true;", "export const kept = 1;"),
+      lines(
+        "export const removed = true;",
+        "export const also_removed = true;",
+        "export const kept = 1;",
+      ),
       lines("export const kept = 1;"),
     );
     const rows = buildSplitRows(file, null, theme);
@@ -139,8 +143,8 @@ describe("review render plan", () => {
         {
           id: "annotation:deleted:0:0",
           annotation: {
-            oldRange: [1, 1],
-            summary: "Explain the removed line",
+            oldRange: [1, 2],
+            summary: "Explain the removed lines",
             rationale: "Deletion notes should visually anchor on the old side.",
           },
         },
@@ -163,13 +167,44 @@ describe("review render plan", () => {
       }
     }
 
-    expect(guidedSplitLineNumbers(plannedRows, "old")).toEqual([1]);
+    expect(guidedSplitLineNumbers(plannedRows, "old")).toEqual([1, 2]);
 
     const cap = plannedRows.find((row) => row.kind === "note-guide-cap");
     expect(cap?.kind).toBe("note-guide-cap");
     if (cap?.kind === "note-guide-cap") {
       expect(cap.side).toBe("old");
     }
+  });
+
+  test("omits the trailing guide cap when the note covers a single row", () => {
+    const theme = resolveTheme("midnight", null);
+    const file = createDiffFile(
+      "single",
+      "single.ts",
+      lines("export const removed = true;", "export const kept = 1;"),
+      lines("export const kept = 1;"),
+    );
+    const rows = buildSplitRows(file, null, theme);
+    const plannedRows = buildReviewRenderPlan({
+      fileId: file.id,
+      rows,
+      selectedHunkIndex: 0,
+      showHunkHeaders: true,
+      visibleAgentNotes: [
+        {
+          id: "annotation:single:0:0",
+          annotation: {
+            oldRange: [1, 1],
+            summary: "Single-line deletion note",
+            rationale: "Caps are skipped for one-row ranges.",
+          },
+        },
+      ],
+    });
+
+    // The note still guides its single row, but there is no trailing `╵` cap row.
+    expect(guidedSplitLineNumbers(plannedRows, "old")).toEqual([1]);
+    expect(plannedRows.some((row) => row.kind === "note-guide-cap")).toBe(false);
   });
 
   test("assigns hunk anchor ids from the first visible row for every hunk when hunk headers are hidden", () => {
