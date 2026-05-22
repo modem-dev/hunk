@@ -72,15 +72,31 @@ function hostCandidates() {
   return [];
 }
 
+function readPackageVersion(packageRoot) {
+  try {
+    const packageJson = JSON.parse(fs.readFileSync(path.join(packageRoot, "package.json"), "utf8"));
+    return typeof packageJson.version === "string" ? packageJson.version : null;
+  } catch {
+    return null;
+  }
+}
+
 function findInstalledBinary(startDir) {
+  const expectedVersion = readPackageVersion(path.join(__dirname, ".."));
   let current = startDir;
 
   for (;;) {
     const modulesDir = path.join(current, "node_modules");
     if (fs.existsSync(modulesDir)) {
       for (const candidate of hostCandidates()) {
-        const resolved = path.join(modulesDir, candidate.packageName, "bin", candidate.binary);
+        const packageRoot = path.join(modulesDir, candidate.packageName);
+        const resolved = path.join(packageRoot, "bin", candidate.binary);
         if (fs.existsSync(resolved)) {
+          const installedVersion = readPackageVersion(packageRoot);
+          if (expectedVersion && installedVersion && installedVersion !== expectedVersion) {
+            continue;
+          }
+
           return resolved;
         }
       }

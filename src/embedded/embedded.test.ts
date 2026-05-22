@@ -4,7 +4,7 @@ import { createTestRenderer } from "@opentui/core/testing";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createEmbeddedHunkSession } from "./index";
+import { createEmbeddedHunkSession, mountEmbeddedHunkApp } from "./index";
 import { createEmbeddedRendererScope, createScopedKeyInput } from "./mount";
 import { embeddedHunkSessionInternals } from "./session";
 import type { EmbeddedHunkSession, EmbeddedHunkSnapshot } from "./types";
@@ -152,6 +152,71 @@ describe("embedded Hunk sessions", () => {
       expect("bootstrap" in snapshot).toBe(false);
 
       session.dispose();
+    } finally {
+      rmSync(root, { force: true, recursive: true });
+    }
+  });
+
+  test("preserves headless agent notes for the next embedded mount", async () => {
+    const root = mkdtempSync(join(tmpdir(), "hunk-embedded-headless-notes-"));
+    const noteSummary = "Persisted agent note from hidden Hunk";
+
+    try {
+      const session = await createEmbeddedHunkSession({
+        cwd: root,
+        source: { kind: "patch", text: testPatchText },
+      });
+      const internals = embeddedHunkSessionInternals(session);
+
+      await internals.dispatchCommand({
+        type: "command",
+        requestId: "comment-batch-1",
+        command: "comment_batch",
+        input: {
+          comments: [
+            {
+              filePath: "example.ts",
+              hunkIndex: 0,
+              summary: noteSummary,
+            },
+          ],
+          revealMode: "first",
+        },
+      });
+
+      expect(internals.getSessionSnapshot().state.showAgentNotes).toBe(true);
+      expect(internals.getSessionSnapshot().state.liveCommentCount).toBe(1);
+
+      const setup = await createTestRenderer({ width: 120, height: 24 });
+      const container = new BoxRenderable(setup.renderer, {
+        height: 18,
+        id: "embedded-hunk",
+        width: 100,
+      });
+      setup.renderer.root.add(container);
+
+      const mount = mountEmbeddedHunkApp({
+        active: true,
+        container,
+        onQuit: () => undefined,
+        renderer: setup.renderer,
+        session,
+      });
+
+      try {
+        let frame = "";
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+          await setup.renderOnce();
+          frame = setup.captureCharFrame();
+          if (frame.includes(noteSummary)) break;
+          await Bun.sleep(0);
+        }
+        expect(frame).toContain(noteSummary);
+      } finally {
+        mount.unmount();
+        setup.renderer.destroy();
+        session.dispose();
+      }
     } finally {
       rmSync(root, { force: true, recursive: true });
     }

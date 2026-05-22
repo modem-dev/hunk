@@ -1,5 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -15,6 +23,30 @@ function git(cwd: string, ...args: string[]) {
     throw new Error(
       Buffer.from(proc.stderr).toString("utf8").trim() || `git ${args.join(" ")} failed`,
     );
+  }
+}
+
+/** Return the optional prebuilt package name for the current test host. */
+function currentPlatformPackageName() {
+  const platformMap: Partial<Record<NodeJS.Platform, string>> = {
+    darwin: "darwin",
+    linux: "linux",
+    win32: "windows",
+  };
+  const archMap: Partial<Record<NodeJS.Architecture, string>> = {
+    arm64: "arm64",
+    x64: "x64",
+  };
+  const platform = platformMap[process.platform];
+  const arch = archMap[process.arch];
+  return platform && arch ? `hunkdiff-${platform}-${arch}` : null;
+}
+
+/** Write a small executable JS file for wrapper integration tests. */
+function writeExecutableScript(path: string, source: string) {
+  writeFileSync(path, source);
+  if (process.platform !== "win32") {
+    chmodSync(path, 0o755);
   }
 }
 
@@ -199,6 +231,70 @@ describe("CLI entrypoint contracts", () => {
       expect(stdout).toBe("");
       expect(stderr).toContain("hunk: could not locate the bundled Hunk review skill");
       expect(stderr).toContain(join("skills", "hunk-review", "SKILL.md"));
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("bin wrapper ignores a mismatched prebuilt package and falls back to bundled JS", () => {
+    if (process.platform === "win32") {
+      // This test builds fake shebang executables, which Windows cannot launch directly.
+      return;
+    }
+
+    const platformPackageName = currentPlatformPackageName();
+    if (!platformPackageName) {
+      return;
+    }
+
+    const tempDir = mkdtempSync(join(tmpdir(), "hunk-wrapper-stale-prebuilt-"));
+    const packageRoot = join(tempDir, "hunkdiff");
+    const tempBinDir = join(packageRoot, "bin");
+    const stalePackageRoot = join(packageRoot, "node_modules", platformPackageName);
+    const staleBinDir = join(stalePackageRoot, "bin");
+    const fakeBunDir = join(packageRoot, "node_modules", "bun", "bin");
+
+    try {
+      mkdirSync(tempBinDir, { recursive: true });
+      mkdirSync(join(packageRoot, "dist", "npm"), { recursive: true });
+      mkdirSync(staleBinDir, { recursive: true });
+      mkdirSync(fakeBunDir, { recursive: true });
+      copyFileSync(join(process.cwd(), "bin", "hunk.cjs"), join(tempBinDir, "hunk.cjs"));
+      writeFileSync(join(packageRoot, "package.json"), JSON.stringify({ version: "2.0.0" }));
+      writeFileSync(join(stalePackageRoot, "package.json"), JSON.stringify({ version: "1.0.0" }));
+      writeExecutableScript(
+        join(staleBinDir, "hunk"),
+        "#!/usr/bin/env node\nconsole.log('stale prebuilt');\n",
+      );
+      writeExecutableScript(
+        join(fakeBunDir, "bun.exe"),
+        [
+          "#!/usr/bin/env node",
+          'const { spawnSync } = require("node:child_process");',
+          "const result = spawnSync(process.execPath, process.argv.slice(2), { stdio: 'inherit' });",
+          "process.exit(typeof result.status === 'number' ? result.status : 1);",
+          "",
+        ].join("\n"),
+      );
+      writeExecutableScript(
+        join(packageRoot, "dist", "npm", "main.js"),
+        "#!/usr/bin/env node\nconsole.log('fallback bundled js');\n",
+      );
+
+      const proc = Bun.spawnSync(["node", join(tempBinDir, "hunk.cjs"), "--version"], {
+        cwd: tempDir,
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+        env: process.env,
+      });
+
+      const stdout = Buffer.from(proc.stdout).toString("utf8");
+      const stderr = Buffer.from(proc.stderr).toString("utf8");
+
+      expect(proc.exitCode).toBe(0);
+      expect(stdout).toBe("fallback bundled js\n");
+      expect(stderr).toBe("");
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }

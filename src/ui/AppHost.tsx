@@ -8,7 +8,7 @@ import {
   createInitialSessionSnapshot,
   updateSessionRegistration,
 } from "../hunk-session/sessionRegistration";
-import type { HunkSessionBrokerClient } from "../hunk-session/types";
+import type { HunkSessionBrokerClient, HunkSessionState } from "../hunk-session/types";
 import { App } from "./App";
 import { useStartupUpdateNotice } from "./hooks/useStartupUpdateNotice";
 
@@ -16,11 +16,13 @@ import { useStartupUpdateNotice } from "./hooks/useStartupUpdateNotice";
 export function AppHost({
   bootstrap,
   hostClient,
+  initialSessionState,
   onQuit = () => process.exit(0),
   startupNoticeResolver,
 }: {
   bootstrap: AppBootstrap;
   hostClient?: HunkSessionBrokerClient;
+  initialSessionState?: HunkSessionState;
   onQuit?: () => void;
   startupNoticeResolver?: () => Promise<UpdateNotice | null>;
 }) {
@@ -95,6 +97,7 @@ export function AppHost({
       key={appVersion}
       bootstrap={activeBootstrap}
       hostClient={hostClient}
+      initialSessionState={initialSessionState}
       noticeText={startupNoticeText}
       onQuit={onQuit}
       onReloadSession={reloadSession}

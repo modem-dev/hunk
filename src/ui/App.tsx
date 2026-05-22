@@ -7,7 +7,11 @@ import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState, useRef } from "react";
 import type { AppBootstrap, CliInput, LayoutMode, UserNoteLineTarget } from "../core/types";
 import { canReloadInput, computeWatchSignature } from "../core/watch";
-import type { HunkSessionBrokerClient, ReloadedSessionResult } from "../hunk-session/types";
+import type {
+  HunkSessionBrokerClient,
+  HunkSessionState,
+  ReloadedSessionResult,
+} from "../hunk-session/types";
 import { MenuBar } from "./components/chrome/MenuBar";
 import { StatusBar } from "./components/chrome/StatusBar";
 import { DiffPane } from "./components/panes/DiffPane";
@@ -77,12 +81,14 @@ function withCurrentViewOptions(
 export function App({
   bootstrap,
   hostClient,
+  initialSessionState,
   noticeText,
   onQuit = () => process.exit(0),
   onReloadSession,
 }: {
   bootstrap: AppBootstrap;
   hostClient?: HunkSessionBrokerClient;
+  initialSessionState?: HunkSessionState;
   noticeText?: string | null;
   onQuit?: () => void;
   onReloadSession: (
@@ -112,7 +118,9 @@ export function App({
   );
   // Soft reloads replace bootstrap without re-running startup terminal theme detection.
   const [detectedThemeMode] = useState(() => bootstrap.initialThemeMode);
-  const [showAgentNotes, setShowAgentNotes] = useState(bootstrap.initialShowAgentNotes ?? false);
+  const [showAgentNotes, setShowAgentNotes] = useState(
+    initialSessionState?.showAgentNotes ?? bootstrap.initialShowAgentNotes ?? false,
+  );
   const [showLineNumbers, setShowLineNumbers] = useState(bootstrap.initialShowLineNumbers ?? true);
   const [wrapLines, setWrapLines] = useState(bootstrap.initialWrapLines ?? false);
   const [codeHorizontalOffset, setCodeHorizontalOffset] = useState(0);
@@ -129,7 +137,12 @@ export function App({
   const sessionNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const activeTheme = resolveTheme(themeId, detectedThemeMode ?? null);
-  const review = useReviewController({ files: bootstrap.changeset.files });
+  const review = useReviewController({
+    files: bootstrap.changeset.files,
+    initialLiveComments: initialSessionState?.liveComments,
+    initialSelectedFileId: initialSessionState?.selectedFileId,
+    initialSelectedHunkIndex: initialSessionState?.selectedHunkIndex,
+  });
   const filteredFiles = review.visibleFiles;
   const selectedFile = review.selectedFile;
   const selectedHunkIndex = review.selectedHunkIndex;

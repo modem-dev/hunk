@@ -146,16 +146,61 @@ export interface ReviewController {
   updateDraftNote: (body: string) => void;
 }
 
+/** Rehydrate daemon-snapshot live comments into the review controller's annotation map. */
+function liveCommentsByFileFromSummaries(
+  files: DiffFile[],
+  summaries: SessionLiveCommentSummary[] = [],
+): Record<string, LiveComment[]> {
+  const byFileId: Record<string, LiveComment[]> = {};
+
+  summaries.forEach((summary) => {
+    const file = findDiffFileByPath(files, summary.filePath);
+    if (!file) {
+      return;
+    }
+
+    const comment: LiveComment = {
+      id: summary.commentId,
+      source: "mcp",
+      filePath: summary.filePath,
+      hunkIndex: summary.hunkIndex,
+      side: summary.side,
+      line: summary.line,
+      summary: summary.summary,
+      rationale: summary.rationale,
+      author: summary.author,
+      createdAt: summary.createdAt,
+      oldRange: summary.side === "old" ? [summary.line, summary.line] : undefined,
+      newRange: summary.side === "new" ? [summary.line, summary.line] : undefined,
+      tags: ["mcp"],
+      confidence: "high",
+    };
+    byFileId[file.id] = [...(byFileId[file.id] ?? []), comment];
+  });
+
+  return byFileId;
+}
+
 /** Own the shared review stream state used by both the UI and session bridge. */
-export function useReviewController({ files }: { files: DiffFile[] }): ReviewController {
+export function useReviewController({
+  files,
+  initialLiveComments,
+  initialSelectedFileId,
+  initialSelectedHunkIndex,
+}: {
+  files: DiffFile[];
+  initialLiveComments?: SessionLiveCommentSummary[];
+  initialSelectedFileId?: string;
+  initialSelectedHunkIndex?: number;
+}): ReviewController {
   const [filter, setFilter] = useState("");
-  const [selectedFileId, setSelectedFileId] = useState(files[0]?.id ?? "");
-  const [selectedHunkIndex, setSelectedHunkIndex] = useState(0);
+  const [selectedFileId, setSelectedFileId] = useState(initialSelectedFileId ?? files[0]?.id ?? "");
+  const [selectedHunkIndex, setSelectedHunkIndex] = useState(initialSelectedHunkIndex ?? 0);
   const [selectedFileTopAlignRequestId, setSelectedFileTopAlignRequestId] = useState(0);
   const [selectedHunkRevealRequestId, setSelectedHunkRevealRequestId] = useState(0);
   const [scrollToNote, setScrollToNote] = useState(false);
   const [liveCommentsByFileId, setLiveCommentsByFileId] = useState<Record<string, LiveComment[]>>(
-    {},
+    () => liveCommentsByFileFromSummaries(files, initialLiveComments),
   );
   const [userNotesByFileId, setUserNotesByFileId] = useState<Record<string, UserReviewNote[]>>({});
   const [draftNote, setDraftNote] = useState<DraftReviewNote | null>(null);

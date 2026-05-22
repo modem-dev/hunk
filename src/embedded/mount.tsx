@@ -150,6 +150,7 @@ function EmbeddedHunkRoot({
     <AppHost
       bootstrap={snapshot.bootstrap}
       hostClient={internals.hostClient}
+      initialSessionState={internals.getSessionSnapshot().state}
       onQuit={onQuit}
       startupNoticeResolver={async () => null}
     />
