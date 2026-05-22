@@ -10,6 +10,10 @@ import { loadAppBootstrap } from "../core/loaders";
 import type { AppBootstrap, CliInput, CommonOptions } from "../core/types";
 import { createHunkSessionBridge } from "../hunk-session/bridge";
 import {
+  liveCommentsByFileFromSummaries,
+  summarizeLiveComment,
+} from "../hunk-session/liveCommentSummaries";
+import {
   createInitialSessionSnapshot,
   createSessionRegistration,
   updateSessionRegistration,
@@ -26,7 +30,6 @@ import type {
   LiveComment,
   NavigatedSelectionResult,
   RemovedCommentResult,
-  SessionLiveCommentSummary,
   SessionReviewNoteSummary,
 } from "../hunk-session/types";
 import { SessionBrokerClient } from "../session-broker/brokerClient";
@@ -127,57 +130,6 @@ function publicSnapshot(
   return snapshot.status === "error"
     ? { ...base, status: "error", error: snapshot.error }
     : { ...base, status: "ready" };
-}
-
-/** Convert one live comment into the broker snapshot's summary shape. */
-function summarizeLiveComment(comment: LiveComment): SessionLiveCommentSummary {
-  return {
-    commentId: comment.id,
-    filePath: comment.filePath,
-    hunkIndex: comment.hunkIndex,
-    side: comment.side,
-    line: comment.line,
-    summary: comment.summary,
-    rationale: comment.rationale,
-    author: comment.author,
-    createdAt: comment.createdAt,
-  };
-}
-
-/** Rehydrate broker snapshot comments into the session-owned live annotation map. */
-function liveCommentsByFileFromSnapshot(
-  bootstrap: AppBootstrap,
-  comments: SessionLiveCommentSummary[],
-) {
-  const byFileId: Record<string, LiveComment[]> = {};
-  comments.forEach((comment) => {
-    const file = findDiffFileByPath(bootstrap.changeset.files, comment.filePath);
-    if (!file) {
-      return;
-    }
-
-    byFileId[file.id] = [
-      ...(byFileId[file.id] ?? []),
-      {
-        id: comment.commentId,
-        source: "mcp",
-        filePath: comment.filePath,
-        hunkIndex: comment.hunkIndex,
-        side: comment.side,
-        line: comment.line,
-        summary: comment.summary,
-        rationale: comment.rationale,
-        author: comment.author,
-        createdAt: comment.createdAt,
-        oldRange: comment.side === "old" ? [comment.line, comment.line] : undefined,
-        newRange: comment.side === "new" ? [comment.line, comment.line] : undefined,
-        tags: ["mcp"],
-        confidence: "high",
-      },
-    ];
-  });
-
-  return byFileId;
 }
 
 /** Own one embedded Hunk review session, including source identity and broker registration. */
@@ -345,8 +297,8 @@ class EmbeddedHunkSessionImpl implements EmbeddedHunkSession {
   /** Persist the latest mounted-app snapshot so future embedded mounts start from it. */
   private persistSessionSnapshot(snapshot: HunkSessionSnapshot) {
     this.sessionSnapshot = snapshot;
-    this.liveCommentsByFileId = liveCommentsByFileFromSnapshot(
-      this.renderSnapshot.bootstrap,
+    this.liveCommentsByFileId = liveCommentsByFileFromSummaries(
+      this.renderSnapshot.bootstrap.changeset.files,
       snapshot.state.liveComments,
     );
   }
@@ -354,7 +306,9 @@ class EmbeddedHunkSessionImpl implements EmbeddedHunkSession {
   /** Return all session-owned live comments in file order. */
   private liveCommentSummaries() {
     return this.renderSnapshot.bootstrap.changeset.files.flatMap((file) =>
-      (this.liveCommentsByFileId[file.id] ?? []).map(summarizeLiveComment),
+      (this.liveCommentsByFileId[file.id] ?? []).map((comment) =>
+        summarizeLiveComment(file.path, comment),
+      ),
     );
   }
 

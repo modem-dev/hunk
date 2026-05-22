@@ -21,6 +21,10 @@ import {
   resolveCommentTarget,
 } from "../../core/liveComments";
 import type { AgentAnnotation, DiffFile, UserNoteLineTarget } from "../../core/types";
+import {
+  liveCommentsByFileFromSummaries,
+  summarizeLiveComment,
+} from "../../hunk-session/liveCommentSummaries";
 import type {
   AppliedCommentBatchResult,
   AppliedCommentResult,
@@ -144,41 +148,6 @@ export interface ReviewController {
   ) => DraftReviewNote | null;
   setFilter: (value: string) => void;
   updateDraftNote: (body: string) => void;
-}
-
-/** Rehydrate daemon-snapshot live comments into the review controller's annotation map. */
-function liveCommentsByFileFromSummaries(
-  files: DiffFile[],
-  summaries: SessionLiveCommentSummary[] = [],
-): Record<string, LiveComment[]> {
-  const byFileId: Record<string, LiveComment[]> = {};
-
-  summaries.forEach((summary) => {
-    const file = findDiffFileByPath(files, summary.filePath);
-    if (!file) {
-      return;
-    }
-
-    const comment: LiveComment = {
-      id: summary.commentId,
-      source: "mcp",
-      filePath: summary.filePath,
-      hunkIndex: summary.hunkIndex,
-      side: summary.side,
-      line: summary.line,
-      summary: summary.summary,
-      rationale: summary.rationale,
-      author: summary.author,
-      createdAt: summary.createdAt,
-      oldRange: summary.side === "old" ? [summary.line, summary.line] : undefined,
-      newRange: summary.side === "new" ? [summary.line, summary.line] : undefined,
-      tags: ["mcp"],
-      confidence: "high",
-    };
-    byFileId[file.id] = [...(byFileId[file.id] ?? []), comment];
-  });
-
-  return byFileId;
 }
 
 /** Own the shared review stream state used by both the UI and session bridge. */
@@ -768,17 +737,9 @@ export function useReviewController({
   const liveCommentSummaries = useMemo<SessionLiveCommentSummary[]>(
     () =>
       allFiles.flatMap((file) =>
-        (liveCommentsByFileId[file.id] ?? []).map((comment) => ({
-          commentId: comment.id,
-          filePath: file.path,
-          hunkIndex: comment.hunkIndex,
-          side: comment.side,
-          line: comment.line,
-          summary: comment.summary,
-          rationale: comment.rationale,
-          author: comment.author,
-          createdAt: comment.createdAt,
-        })),
+        (liveCommentsByFileId[file.id] ?? []).map((comment) =>
+          summarizeLiveComment(file.path, comment),
+        ),
       ),
     [allFiles, liveCommentsByFileId],
   );

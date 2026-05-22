@@ -1,21 +1,15 @@
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
-import {
-  ensureSessionBrokerAvailable,
-  type EnsureSessionBrokerAvailableOptions,
-} from "../session-broker/brokerLauncher";
-import type { ResolvedSessionBrokerConfig } from "../session-broker/brokerConfig";
+import { ensureSessionBrokerAvailable } from "../session-broker/brokerLauncher";
 import type { EnsureSessionBrokerAdapter } from "../session-broker/brokerClient";
 
 const require = createRequire(import.meta.url);
 const JAVASCRIPT_ENTRYPOINT_PATTERN = /\.(?:[cm]?js|tsx?)$/;
 
-type EmbeddedEnsureSessionBroker = typeof ensureSessionBrokerAvailable;
-
 export interface EmbeddedSessionBrokerAvailabilityOptions {
   cwd: string;
   env?: NodeJS.ProcessEnv;
-  ensureAvailable?: EmbeddedEnsureSessionBroker;
+  ensureAvailable?: typeof ensureSessionBrokerAvailable;
   hunkCliPath?: string;
   runtimePath?: string;
   timeoutMs?: number;
@@ -30,22 +24,17 @@ export function createEmbeddedSessionBrokerAvailability({
   runtimePath = process.execPath,
   timeoutMs,
 }: EmbeddedSessionBrokerAvailabilityOptions): EnsureSessionBrokerAdapter {
-  return (config: ResolvedSessionBrokerConfig) => {
+  return (config) => {
     // The published package bin is a JS wrapper, so launch it through the active runtime instead
     // of spawning the script path directly. Direct executable overrides still run as-is.
     const scriptEntrypoint = JAVASCRIPT_ENTRYPOINT_PATTERN.test(hunkCliPath);
-    const options: EnsureSessionBrokerAvailableOptions = {
+    return ensureAvailable({
       argv: scriptEntrypoint ? [runtimePath, hunkCliPath] : [hunkCliPath],
       config,
       cwd,
       env,
       execPath: scriptEntrypoint ? runtimePath : hunkCliPath,
-    };
-
-    if (timeoutMs !== undefined) {
-      options.timeoutMs = timeoutMs;
-    }
-
-    return ensureAvailable(options);
+      ...(timeoutMs === undefined ? {} : { timeoutMs }),
+    });
   };
 }

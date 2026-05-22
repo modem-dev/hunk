@@ -41,35 +41,18 @@ function run(target, args) {
 }
 
 function hostCandidates() {
-  const platformMap = {
-    darwin: "darwin",
-    linux: "linux",
-    win32: "windows",
-  };
-  const archMap = {
-    x64: "x64",
-    arm64: "arm64",
-  };
-
-  const platform = platformMap[os.platform()] || os.platform();
-  const arch = archMap[os.arch()] || os.arch();
-  const binary = platform === "windows" ? "hunk.exe" : "hunk";
-
-  if (platform === "darwin") {
-    if (arch === "arm64") return [{ packageName: "hunkdiff-darwin-arm64", binary }];
-    if (arch === "x64") return [{ packageName: "hunkdiff-darwin-x64", binary }];
+  const platform = { darwin: "darwin", linux: "linux", win32: "windows" }[os.platform()];
+  const arch = { x64: "x64", arm64: "arm64" }[os.arch()];
+  if (!platform || !arch || (platform === "windows" && arch !== "x64")) {
+    return [];
   }
 
-  if (platform === "linux") {
-    if (arch === "arm64") return [{ packageName: "hunkdiff-linux-arm64", binary }];
-    if (arch === "x64") return [{ packageName: "hunkdiff-linux-x64", binary }];
-  }
-
-  if (platform === "windows") {
-    if (arch === "x64") return [{ packageName: "hunkdiff-windows-x64", binary }];
-  }
-
-  return [];
+  return [
+    {
+      packageName: `hunkdiff-${platform}-${arch}`,
+      binary: platform === "windows" ? "hunk.exe" : "hunk",
+    },
+  ];
 }
 
 function readPackageVersion(packageRoot) {
