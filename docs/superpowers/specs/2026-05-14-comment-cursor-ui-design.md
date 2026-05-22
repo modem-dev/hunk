@@ -131,17 +131,17 @@ The cursor highlight itself is applied by the existing row renderer when it sees
 
 A new mode handler `handleCursorShortcut(key)` is added to `useAppKeyboardShortcuts.ts`, slotted between `handleMenuShortcut` and `handleFilterShortcut` so menus and the filter input still take precedence.
 
-| Mode | Key | Action |
-|---|---|---|
-| off | `c` | enter `navigating` on the first row of the selected hunk |
-| navigating | `up` / `k` | move cursor up one row |
-| navigating | `down` / `j` | move cursor down one row |
-| navigating | `[` / `]` | jump to the previous / next hunk's first row |
-| navigating | `i` or `return` | promote to `composing` |
-| navigating | `c` or `esc` | return to `off` |
-| composing | `return` | save the comment, return to `navigating` on the same row |
-| composing | `esc` | discard, return to `navigating` |
-| composing | any other key | owned by the focused `<input>` |
+| Mode       | Key             | Action                                                   |
+| ---------- | --------------- | -------------------------------------------------------- |
+| off        | `c`             | enter `navigating` on the first row of the selected hunk |
+| navigating | `up` / `k`      | move cursor up one row                                   |
+| navigating | `down` / `j`    | move cursor down one row                                 |
+| navigating | `[` / `]`       | jump to the previous / next hunk's first row             |
+| navigating | `i` or `return` | promote to `composing`                                   |
+| navigating | `c` or `esc`    | return to `off`                                          |
+| composing  | `return`        | save the comment, return to `navigating` on the same row |
+| composing  | `esc`           | discard, return to `navigating`                          |
+| composing  | any other key   | owned by the focused `<input>`                           |
 
 Default scrolling behaviour for users who never press `c` is unaffected: `up` / `down` still scroll one row, `[` / `]` still navigate hunks. The cursor handler only intercepts when `cursor.mode !== "off"`.
 

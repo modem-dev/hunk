@@ -133,9 +133,10 @@ export function measureDiffSectionGeometry(
   // Width, wrapping, and line-number visibility all affect rendered row heights, so they must
   // participate in the cache key alongside the structural file/layout inputs.
   // Composer state is included so the cache invalidates when the composer mounts or moves.
-  const composerKey = composer && composer.fileId === file.id
-    ? `${composer.hunkIndex}:${composer.side}:${composer.line}`
-    : "none";
+  const composerKey =
+    composer && composer.fileId === file.id
+      ? `${composer.hunkIndex}:${composer.side}:${composer.line}`
+      : "none";
   const cacheKey = `${file.id}:${layout}:${showHunkHeaders ? 1 : 0}:${theme.id}:${width}:${showLineNumbers ? 1 : 0}:${wrapLines ? 1 : 0}:${composerKey}`;
   if (visibleAgentNotes.length > 0) {
     const cachedByNotes = NOTE_AWARE_SECTION_GEOMETRY_CACHE.get(visibleAgentNotes);

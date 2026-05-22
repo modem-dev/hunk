@@ -40,6 +40,7 @@
 ### Task 1: Widen `LiveComment.source`
 
 **Files:**
+
 - Modify: `src/hunk-session/types.ts`
 
 - [ ] **Step 1: Widen the source union**
@@ -82,6 +83,7 @@ git commit -m "refactor(types): widen LiveComment.source to accept user-authored
 ### Task 2: Add `buildUserLiveComment`
 
 **Files:**
+
 - Modify: `src/core/liveComments.ts`
 - Test: `src/core/liveComments.test.ts`
 
@@ -90,57 +92,57 @@ git commit -m "refactor(types): widen LiveComment.source to accept user-authored
 In `src/core/liveComments.test.ts`, append inside the `describe("live comment helpers", ...)` block:
 
 ```ts
-  test("builds a live user comment annotation", () => {
-    const comment = buildUserLiveComment(
-      {
-        filePath: "src/example.ts",
-        side: "new",
-        line: 4,
-        summary: "Look at this addition",
-        author: "andrew",
-      },
-      "user:test-1",
-      "2026-05-14T00:00:00.000Z",
-      0,
-    );
-
-    expect(comment).toMatchObject({
-      id: "user:test-1",
-      source: "user",
-      author: "andrew",
+test("builds a live user comment annotation", () => {
+  const comment = buildUserLiveComment(
+    {
       filePath: "src/example.ts",
-      hunkIndex: 0,
       side: "new",
       line: 4,
       summary: "Look at this addition",
-      newRange: [4, 4],
-      tags: ["user"],
-    });
-    expect(comment.confidence).toBeUndefined();
+      author: "andrew",
+    },
+    "user:test-1",
+    "2026-05-14T00:00:00.000Z",
+    0,
+  );
+
+  expect(comment).toMatchObject({
+    id: "user:test-1",
+    source: "user",
+    author: "andrew",
+    filePath: "src/example.ts",
+    hunkIndex: 0,
+    side: "new",
+    line: 4,
+    summary: "Look at this addition",
+    newRange: [4, 4],
+    tags: ["user"],
   });
+  expect(comment.confidence).toBeUndefined();
+});
 
-  test("builds an old-side user comment with an oldRange instead of newRange", () => {
-    const comment = buildUserLiveComment(
-      {
-        filePath: "src/example.ts",
-        side: "old",
-        line: 2,
-        summary: "Why was this removed?",
-      },
-      "user:test-2",
-      "2026-05-14T00:00:00.000Z",
-      0,
-    );
-
-    expect(comment).toMatchObject({
-      source: "user",
+test("builds an old-side user comment with an oldRange instead of newRange", () => {
+  const comment = buildUserLiveComment(
+    {
+      filePath: "src/example.ts",
       side: "old",
       line: 2,
-      oldRange: [2, 2],
-      tags: ["user"],
-    });
-    expect(comment.newRange).toBeUndefined();
+      summary: "Why was this removed?",
+    },
+    "user:test-2",
+    "2026-05-14T00:00:00.000Z",
+    0,
+  );
+
+  expect(comment).toMatchObject({
+    source: "user",
+    side: "old",
+    line: 2,
+    oldRange: [2, 2],
+    tags: ["user"],
   });
+  expect(comment.newRange).toBeUndefined();
+});
 ```
 
 Add the new import at the top of the file, replacing the existing `liveComments` import line:
@@ -209,6 +211,7 @@ git commit -m "feat(comments): add buildUserLiveComment for cursor-authored comm
 ### Task 3: Cursor geometry helpers
 
 **Files:**
+
 - Create: `src/ui/lib/commentCursor.ts`
 - Test: `src/ui/lib/commentCursor.test.ts`
 
@@ -355,9 +358,7 @@ describe("moveCursor", () => {
   });
 
   test("returns null when given an empty file list", () => {
-    expect(
-      moveCursor([], { fileId: "ghost", hunkIndex: 0, side: "new", line: 1 }, 1),
-    ).toBeNull();
+    expect(moveCursor([], { fileId: "ghost", hunkIndex: 0, side: "new", line: 1 }, 1)).toBeNull();
   });
 });
 ```
@@ -403,10 +404,7 @@ export function cursorRowStableKey(cursor: CommentCursorPosition): string {
 }
 
 /** Walk through every content line of a hunk on the cursor's anchor side. */
-function* walkHunkLines(
-  hunk: Hunk,
-  side: DiffSide,
-): Generator<{ side: DiffSide; line: number }> {
+function* walkHunkLines(hunk: Hunk, side: DiffSide): Generator<{ side: DiffSide; line: number }> {
   const range = hunkLineRange(hunk);
   const [start, end] = side === "new" ? range.newRange : range.oldRange;
 
@@ -416,10 +414,7 @@ function* walkHunkLines(
 }
 
 /** Build the ordered list of cursor positions for the full review stream on the cursor's side. */
-function buildCursorPositions(
-  files: DiffFile[],
-  preferredSide: DiffSide,
-): CommentCursorPosition[] {
+function buildCursorPositions(files: DiffFile[], preferredSide: DiffSide): CommentCursorPosition[] {
   const positions: CommentCursorPosition[] = [];
 
   for (const file of files) {
@@ -487,6 +482,7 @@ git commit -m "feat(ui): add commentCursor geometry helpers"
 ### Task 4: Cursor state in `useReviewController`
 
 **Files:**
+
 - Modify: `src/ui/hooks/useReviewController.ts`
 - Test: `src/ui/hooks/useReviewController.test.tsx`
 
@@ -624,16 +620,14 @@ Extend the `ReviewController` interface to add (place these next to the existing
 Inside `useReviewController`, near the other `useState` calls, add:
 
 ```ts
-  const [commentCursor, setCommentCursor] = useState<CommentCursorState>(() => ({
-    mode: "off",
-    fileId: files[0]?.id ?? "",
-    hunkIndex: 0,
-    side: "new",
-    line: files[0]?.metadata.hunks[0]
-      ? firstCursorTargetForHunk(files[0], 0).line
-      : 1,
-  }));
-  const userCommentCounterRef = useRef(0);
+const [commentCursor, setCommentCursor] = useState<CommentCursorState>(() => ({
+  mode: "off",
+  fileId: files[0]?.id ?? "",
+  hunkIndex: 0,
+  side: "new",
+  line: files[0]?.metadata.hunks[0] ? firstCursorTargetForHunk(files[0], 0).line : 1,
+}));
+const userCommentCounterRef = useRef(0);
 ```
 
 Add `useRef` to the React import at the top of the file if it is not already present:
@@ -653,187 +647,184 @@ import {
 Define the cursor actions (place these after `clearLiveComments` and before the controller return statement):
 
 ```ts
-  /** Enter, switch, or leave the cursor mode. Seeds position from the selected hunk on enter. */
-  const setCommentCursorMode = useCallback(
-    (mode: CommentCursorMode) => {
-      setCommentCursor((current) => {
-        if (mode === "off") {
-          return { ...current, mode };
-        }
-
-        if (current.mode !== "off") {
-          return { ...current, mode };
-        }
-
-        const file = visibleFiles.find((entry) => entry.id === selectedFileId) ?? visibleFiles[0];
-        if (!file || file.metadata.hunks.length === 0) {
-          return { ...current, mode };
-        }
-
-        const hunkIndex = Math.max(
-          0,
-          Math.min(selectedHunkIndex, file.metadata.hunks.length - 1),
-        );
-        const anchor = firstCursorTargetForHunk(file, hunkIndex);
-        return {
-          mode,
-          fileId: file.id,
-          hunkIndex,
-          side: anchor.side,
-          line: anchor.line,
-        };
-      });
-    },
-    [selectedFileId, selectedHunkIndex, visibleFiles],
-  );
-
-  /** Walk the cursor row-by-row through the review stream. */
-  const moveCommentCursor = useCallback(
-    (delta: number) => {
-      setCommentCursor((current) => {
-        if (current.mode === "off") {
-          return current;
-        }
-
-        const next = moveCursor(visibleFiles, current, delta);
-        if (!next) {
-          return current;
-        }
-
-        return { ...current, ...next };
-      });
-    },
-    [visibleFiles],
-  );
-
-  /** Jump the cursor to the first content row of the previous or next hunk. */
-  const jumpCommentCursorToHunk = useCallback(
-    (delta: number) => {
-      setCommentCursor((current) => {
-        if (current.mode === "off") {
-          return current;
-        }
-
-        const fileIndex = visibleFiles.findIndex((file) => file.id === current.fileId);
-        if (fileIndex < 0) {
-          return current;
-        }
-
-        let nextFileIndex = fileIndex;
-        let nextHunkIndex = current.hunkIndex + delta;
-
-        while (true) {
-          const file = visibleFiles[nextFileIndex];
-          if (!file) {
-            return current;
-          }
-
-          if (nextHunkIndex >= 0 && nextHunkIndex < file.metadata.hunks.length) {
-            const anchor = firstCursorTargetForHunk(file, nextHunkIndex);
-            return {
-              ...current,
-              fileId: file.id,
-              hunkIndex: nextHunkIndex,
-              side: anchor.side,
-              line: anchor.line,
-            };
-          }
-
-          if (delta > 0) {
-            nextFileIndex += 1;
-            nextHunkIndex = 0;
-          } else {
-            nextFileIndex -= 1;
-            const previous = visibleFiles[nextFileIndex];
-            if (!previous) {
-              return current;
-            }
-            nextHunkIndex = previous.metadata.hunks.length - 1;
-          }
-        }
-      });
-    },
-    [visibleFiles],
-  );
-
-  /** Persist one user-authored comment using the same store as MCP comments. */
-  const addUserLiveComment = useCallback(
-    (target: AddUserLiveCommentTarget, summary: string): AppliedCommentResult => {
-      const file = allFiles.find((entry) => entry.id === target.fileId);
-      if (!file) {
-        throw new Error(`No diff file matches ${target.fileId}.`);
+/** Enter, switch, or leave the cursor mode. Seeds position from the selected hunk on enter. */
+const setCommentCursorMode = useCallback(
+  (mode: CommentCursorMode) => {
+    setCommentCursor((current) => {
+      if (mode === "off") {
+        return { ...current, mode };
       }
 
-      const trimmed = summary.trim();
-      if (!trimmed) {
-        throw new Error("User comments must have a non-empty summary.");
+      if (current.mode !== "off") {
+        return { ...current, mode };
       }
 
-      userCommentCounterRef.current += 1;
-      const commentId = `user:${Date.now()}-${userCommentCounterRef.current}`;
-      const liveComment = buildUserLiveComment(
-        {
-          filePath: file.path,
-          side: target.side,
-          line: target.line,
-          summary: trimmed,
-          author: target.author,
-        },
-        commentId,
-        new Date().toISOString(),
-        target.hunkIndex,
-      );
+      const file = visibleFiles.find((entry) => entry.id === selectedFileId) ?? visibleFiles[0];
+      if (!file || file.metadata.hunks.length === 0) {
+        return { ...current, mode };
+      }
 
-      setLiveCommentsByFileId((current) => ({
-        ...current,
-        [file.id]: [...(current[file.id] ?? []), liveComment],
-      }));
-
+      const hunkIndex = Math.max(0, Math.min(selectedHunkIndex, file.metadata.hunks.length - 1));
+      const anchor = firstCursorTargetForHunk(file, hunkIndex);
       return {
-        commentId,
+        mode,
         fileId: file.id,
-        filePath: file.path,
-        hunkIndex: target.hunkIndex,
-        side: target.side,
-        line: target.line,
+        hunkIndex,
+        side: anchor.side,
+        line: anchor.line,
       };
-    },
-    [allFiles],
-  );
+    });
+  },
+  [selectedFileId, selectedHunkIndex, visibleFiles],
+);
 
-  const commentCursorRowStableKey =
-    commentCursor.mode === "off" ? null : cursorRowStableKey(commentCursor);
-```
-
-Add a reconcile effect so the cursor never points at a file that disappeared from the visible stream. Place it next to the existing `reconcileSelectedFile` effect block:
-
-```ts
-  useEffect(() => {
+/** Walk the cursor row-by-row through the review stream. */
+const moveCommentCursor = useCallback(
+  (delta: number) => {
     setCommentCursor((current) => {
       if (current.mode === "off") {
         return current;
       }
 
-      const file = visibleFiles.find((entry) => entry.id === current.fileId);
-      if (file && current.hunkIndex < file.metadata.hunks.length) {
+      const next = moveCursor(visibleFiles, current, delta);
+      if (!next) {
         return current;
       }
 
-      const fallbackFile = visibleFiles[0];
-      if (!fallbackFile || fallbackFile.metadata.hunks.length === 0) {
-        return { ...current, mode: "off" };
+      return { ...current, ...next };
+    });
+  },
+  [visibleFiles],
+);
+
+/** Jump the cursor to the first content row of the previous or next hunk. */
+const jumpCommentCursorToHunk = useCallback(
+  (delta: number) => {
+    setCommentCursor((current) => {
+      if (current.mode === "off") {
+        return current;
       }
 
-      const anchor = firstCursorTargetForHunk(fallbackFile, 0);
-      return {
-        mode: current.mode,
-        fileId: fallbackFile.id,
-        hunkIndex: 0,
-        side: anchor.side,
-        line: anchor.line,
-      };
+      const fileIndex = visibleFiles.findIndex((file) => file.id === current.fileId);
+      if (fileIndex < 0) {
+        return current;
+      }
+
+      let nextFileIndex = fileIndex;
+      let nextHunkIndex = current.hunkIndex + delta;
+
+      while (true) {
+        const file = visibleFiles[nextFileIndex];
+        if (!file) {
+          return current;
+        }
+
+        if (nextHunkIndex >= 0 && nextHunkIndex < file.metadata.hunks.length) {
+          const anchor = firstCursorTargetForHunk(file, nextHunkIndex);
+          return {
+            ...current,
+            fileId: file.id,
+            hunkIndex: nextHunkIndex,
+            side: anchor.side,
+            line: anchor.line,
+          };
+        }
+
+        if (delta > 0) {
+          nextFileIndex += 1;
+          nextHunkIndex = 0;
+        } else {
+          nextFileIndex -= 1;
+          const previous = visibleFiles[nextFileIndex];
+          if (!previous) {
+            return current;
+          }
+          nextHunkIndex = previous.metadata.hunks.length - 1;
+        }
+      }
     });
-  }, [visibleFiles]);
+  },
+  [visibleFiles],
+);
+
+/** Persist one user-authored comment using the same store as MCP comments. */
+const addUserLiveComment = useCallback(
+  (target: AddUserLiveCommentTarget, summary: string): AppliedCommentResult => {
+    const file = allFiles.find((entry) => entry.id === target.fileId);
+    if (!file) {
+      throw new Error(`No diff file matches ${target.fileId}.`);
+    }
+
+    const trimmed = summary.trim();
+    if (!trimmed) {
+      throw new Error("User comments must have a non-empty summary.");
+    }
+
+    userCommentCounterRef.current += 1;
+    const commentId = `user:${Date.now()}-${userCommentCounterRef.current}`;
+    const liveComment = buildUserLiveComment(
+      {
+        filePath: file.path,
+        side: target.side,
+        line: target.line,
+        summary: trimmed,
+        author: target.author,
+      },
+      commentId,
+      new Date().toISOString(),
+      target.hunkIndex,
+    );
+
+    setLiveCommentsByFileId((current) => ({
+      ...current,
+      [file.id]: [...(current[file.id] ?? []), liveComment],
+    }));
+
+    return {
+      commentId,
+      fileId: file.id,
+      filePath: file.path,
+      hunkIndex: target.hunkIndex,
+      side: target.side,
+      line: target.line,
+    };
+  },
+  [allFiles],
+);
+
+const commentCursorRowStableKey =
+  commentCursor.mode === "off" ? null : cursorRowStableKey(commentCursor);
+```
+
+Add a reconcile effect so the cursor never points at a file that disappeared from the visible stream. Place it next to the existing `reconcileSelectedFile` effect block:
+
+```ts
+useEffect(() => {
+  setCommentCursor((current) => {
+    if (current.mode === "off") {
+      return current;
+    }
+
+    const file = visibleFiles.find((entry) => entry.id === current.fileId);
+    if (file && current.hunkIndex < file.metadata.hunks.length) {
+      return current;
+    }
+
+    const fallbackFile = visibleFiles[0];
+    if (!fallbackFile || fallbackFile.metadata.hunks.length === 0) {
+      return { ...current, mode: "off" };
+    }
+
+    const anchor = firstCursorTargetForHunk(fallbackFile, 0);
+    return {
+      mode: current.mode,
+      fileId: fallbackFile.id,
+      hunkIndex: 0,
+      side: anchor.side,
+      line: anchor.line,
+    };
+  });
+}, [visibleFiles]);
 ```
 
 Add the new fields to the `return` block at the bottom of `useReviewController`:
@@ -869,6 +860,7 @@ git commit -m "feat(review): own comment cursor state and addUserLiveComment in 
 ### Task 5: `CommentComposer` component
 
 **Files:**
+
 - Create: `src/ui/components/panes/CommentComposer.tsx`
 
 - [ ] **Step 1: Write the component**
@@ -1023,6 +1015,7 @@ git commit -m "feat(ui): add CommentComposer card for inline cursor-driven comme
 ### Task 6: `comment-composer` planned row kind
 
 **Files:**
+
 - Modify: `src/ui/diff/reviewRenderPlan.ts`
 
 - [ ] **Step 1: Extend the planned-row type and insertion logic**
@@ -1180,6 +1173,7 @@ git commit -m "feat(diff): add comment-composer planned row kind for inline comm
 ### Task 7: Composer row geometry
 
 **Files:**
+
 - Modify: `src/ui/lib/diffSectionGeometry.ts`
 
 - [ ] **Step 1: Plumb the composer through geometry and measure its height**
@@ -1302,9 +1296,10 @@ export function measureDiffSectionGeometry(
     };
   }
 
-  const composerKey = composer && composer.fileId === file.id
-    ? `${composer.hunkIndex}:${composer.side}:${composer.line}`
-    : "none";
+  const composerKey =
+    composer && composer.fileId === file.id
+      ? `${composer.hunkIndex}:${composer.side}:${composer.line}`
+      : "none";
   const cacheKey = `${file.id}:${layout}:${showHunkHeaders ? 1 : 0}:${theme.id}:${width}:${showLineNumbers ? 1 : 0}:${wrapLines ? 1 : 0}:${composerKey}`;
   if (visibleAgentNotes.length > 0) {
     const cachedByNotes = NOTE_AWARE_SECTION_GEOMETRY_CACHE.get(visibleAgentNotes);
@@ -1425,6 +1420,7 @@ git commit -m "feat(diff): measure the comment composer row in diff section geom
 ### Task 8: Render the cursor highlight and composer in the diff view
 
 **Files:**
+
 - Modify: `src/ui/diff/renderRows.tsx`
 - Modify: `src/ui/diff/PierreDiffView.tsx`
 
@@ -1437,49 +1433,49 @@ Locate `renderRow` and update its parameter list to include `isCursor: boolean =
 Find these lines inside the split-line branch:
 
 ```ts
-    const leftPrefix = {
-      text: guideOnOldSide ? "│" : marker(),
-      fg: guideOnOldSide ? theme.noteBorder : splitLeftRailColor(row.left.kind, theme, selected),
-      bg: theme.panel,
-    };
+const leftPrefix = {
+  text: guideOnOldSide ? "│" : marker(),
+  fg: guideOnOldSide ? theme.noteBorder : splitLeftRailColor(row.left.kind, theme, selected),
+  bg: theme.panel,
+};
 ```
 
 Replace with:
 
 ```ts
-    const leftPrefix = {
-      text: guideOnOldSide ? "│" : isCursor ? "▶" : marker(),
-      fg: guideOnOldSide
-        ? theme.noteBorder
-        : isCursor
-          ? theme.noteTitleText
-          : splitLeftRailColor(row.left.kind, theme, selected),
-      bg: isCursor ? theme.noteTitleBackground : theme.panel,
-    };
+const leftPrefix = {
+  text: guideOnOldSide ? "│" : isCursor ? "▶" : marker(),
+  fg: guideOnOldSide
+    ? theme.noteBorder
+    : isCursor
+      ? theme.noteTitleText
+      : splitLeftRailColor(row.left.kind, theme, selected),
+  bg: isCursor ? theme.noteTitleBackground : theme.panel,
+};
 ```
 
 Find these lines inside the stack-line branch:
 
 ```ts
-    const prefix = {
-      text: guideOnOldSide ? "│" : marker(),
-      fg: guideOnOldSide ? theme.noteBorder : stackRailColor(row.cell.kind, theme, selected),
-      bg: theme.panel,
-    };
+const prefix = {
+  text: guideOnOldSide ? "│" : marker(),
+  fg: guideOnOldSide ? theme.noteBorder : stackRailColor(row.cell.kind, theme, selected),
+  bg: theme.panel,
+};
 ```
 
 Replace with:
 
 ```ts
-    const prefix = {
-      text: guideOnOldSide ? "│" : isCursor ? "▶" : marker(),
-      fg: guideOnOldSide
-        ? theme.noteBorder
-        : isCursor
-          ? theme.noteTitleText
-          : stackRailColor(row.cell.kind, theme, selected),
-      bg: isCursor ? theme.noteTitleBackground : theme.panel,
-    };
+const prefix = {
+  text: guideOnOldSide ? "│" : isCursor ? "▶" : marker(),
+  fg: guideOnOldSide
+    ? theme.noteBorder
+    : isCursor
+      ? theme.noteTitleText
+      : stackRailColor(row.cell.kind, theme, selected),
+  bg: isCursor ? theme.noteTitleBackground : theme.panel,
+};
 ```
 
 Add `isCursor` to the `renderRow` parameter list. Find:
@@ -1665,19 +1661,19 @@ export function PierreDiffView({
 Update the `plannedRows` `useMemo` to pass the composer through to `buildReviewRenderPlan`:
 
 ```ts
-  const plannedRows = useMemo(
-    () =>
-      file
-        ? buildReviewRenderPlan({
-            fileId: file.id,
-            rows,
-            showHunkHeaders,
-            visibleAgentNotes,
-            composer: composer ?? null,
-          })
-        : [],
-    [composer, file, rows, showHunkHeaders, visibleAgentNotes],
-  );
+const plannedRows = useMemo(
+  () =>
+    file
+      ? buildReviewRenderPlan({
+          fileId: file.id,
+          rows,
+          showHunkHeaders,
+          visibleAgentNotes,
+          composer: composer ?? null,
+        })
+      : [],
+  [composer, file, rows, showHunkHeaders, visibleAgentNotes],
+);
 ```
 
 Inside the row-mapping branch, add a render case for the `comment-composer` row before the existing diff-row return. Replace:
@@ -1796,6 +1792,7 @@ git commit -m "feat(diff): render the cursor highlight and inline composer in Pi
 ### Task 9: Plumb the cursor through `DiffPane` and `DiffSection`
 
 **Files:**
+
 - Modify: `src/ui/components/panes/DiffPane.tsx`
 - Modify: `src/ui/components/panes/DiffSection.tsx`
 
@@ -1894,28 +1891,28 @@ Forward the new props to `PierreDiffView`. Replace the `<PierreDiffView ... />` 
 Extend the memo comparator. Replace the existing comparator's return expression with:
 
 ```ts
-  return (
-    previous.codeHorizontalOffset === next.codeHorizontalOffset &&
-    previous.commentCursorRowStableKey === next.commentCursorRowStableKey &&
-    previous.composer === next.composer &&
-    previous.file === next.file &&
-    previous.headerLabelWidth === next.headerLabelWidth &&
-    previous.headerStatsWidth === next.headerStatsWidth &&
-    previous.layout === next.layout &&
-    previous.selectedHunkIndex === next.selectedHunkIndex &&
-    previous.shouldLoadHighlight === next.shouldLoadHighlight &&
-    previous.sectionGeometry === next.sectionGeometry &&
-    previous.separatorWidth === next.separatorWidth &&
-    previous.showLineNumbers === next.showLineNumbers &&
-    previous.showHunkHeaders === next.showHunkHeaders &&
-    previous.wrapLines === next.wrapLines &&
-    previous.showHeader === next.showHeader &&
-    previous.showSeparator === next.showSeparator &&
-    previous.theme === next.theme &&
-    previous.visibleAgentNotes === next.visibleAgentNotes &&
-    previous.visibleBodyBounds === next.visibleBodyBounds &&
-    previous.viewWidth === next.viewWidth
-  );
+return (
+  previous.codeHorizontalOffset === next.codeHorizontalOffset &&
+  previous.commentCursorRowStableKey === next.commentCursorRowStableKey &&
+  previous.composer === next.composer &&
+  previous.file === next.file &&
+  previous.headerLabelWidth === next.headerLabelWidth &&
+  previous.headerStatsWidth === next.headerStatsWidth &&
+  previous.layout === next.layout &&
+  previous.selectedHunkIndex === next.selectedHunkIndex &&
+  previous.shouldLoadHighlight === next.shouldLoadHighlight &&
+  previous.sectionGeometry === next.sectionGeometry &&
+  previous.separatorWidth === next.separatorWidth &&
+  previous.showLineNumbers === next.showLineNumbers &&
+  previous.showHunkHeaders === next.showHunkHeaders &&
+  previous.wrapLines === next.wrapLines &&
+  previous.showHeader === next.showHeader &&
+  previous.showSeparator === next.showSeparator &&
+  previous.theme === next.theme &&
+  previous.visibleAgentNotes === next.visibleAgentNotes &&
+  previous.visibleBodyBounds === next.visibleBodyBounds &&
+  previous.viewWidth === next.viewWidth
+);
 ```
 
 - [ ] **Step 2: Accept cursor + composer props in `DiffPane`**
@@ -1946,40 +1943,40 @@ after `codeHorizontalOffset`. Add them to the prop type as well:
 When `DiffPane` measures `sectionGeometry` for the selected file, pass the composer through so the composer row contributes to the file's body height. Locate the `measureDiffSectionGeometry` call inside the `sectionGeometry` `useMemo` and update it to pass `composer` as the ninth argument. Replace the relevant `useMemo` block (the one assigned to `sectionGeometry`) with:
 
 ```ts
-  const sectionGeometry = useMemo(
-    () =>
-      files.map((file, index) => {
-        const notes = allAgentNotesByFile.get(file.id) ?? EMPTY_VISIBLE_AGENT_NOTES;
-        const fileComposer = composer && composer.fileId === file.id ? composer : null;
-        if (notes.length === 0 && !fileComposer) {
-          return baseSectionGeometry[index]!;
-        }
+const sectionGeometry = useMemo(
+  () =>
+    files.map((file, index) => {
+      const notes = allAgentNotesByFile.get(file.id) ?? EMPTY_VISIBLE_AGENT_NOTES;
+      const fileComposer = composer && composer.fileId === file.id ? composer : null;
+      if (notes.length === 0 && !fileComposer) {
+        return baseSectionGeometry[index]!;
+      }
 
-        return measureDiffSectionGeometry(
-          file,
-          layout,
-          showHunkHeaders,
-          theme,
-          notes,
-          diffContentWidth,
-          showLineNumbers,
-          wrapLines,
-          fileComposer,
-        );
-      }),
-    [
-      allAgentNotesByFile,
-      baseSectionGeometry,
-      composer,
-      diffContentWidth,
-      files,
-      layout,
-      showHunkHeaders,
-      showLineNumbers,
-      theme,
-      wrapLines,
-    ],
-  );
+      return measureDiffSectionGeometry(
+        file,
+        layout,
+        showHunkHeaders,
+        theme,
+        notes,
+        diffContentWidth,
+        showLineNumbers,
+        wrapLines,
+        fileComposer,
+      );
+    }),
+  [
+    allAgentNotesByFile,
+    baseSectionGeometry,
+    composer,
+    diffContentWidth,
+    files,
+    layout,
+    showHunkHeaders,
+    showLineNumbers,
+    theme,
+    wrapLines,
+  ],
+);
 ```
 
 Forward `commentCursorRowStableKey`, `composer`, and the composer callbacks to each `<DiffSection ... />` in the render branch. Inside the `files.map(...)` block, replace the `<DiffSection key={file.id} ... />` element with:
@@ -2042,6 +2039,7 @@ git commit -m "feat(diff): plumb the comment cursor and composer through DiffPan
 ### Task 10: `handleCursorShortcut` in the keyboard router
 
 **Files:**
+
 - Modify: `src/ui/hooks/useAppKeyboardShortcuts.ts`
 
 - [ ] **Step 1: Extend the options interface**
@@ -2064,95 +2062,95 @@ Pull those fields out of the function parameters next to the existing ones.
 Add this helper inside `useAppKeyboardShortcuts`, between `handleMenuShortcut` and `handleFilterShortcut`:
 
 ```ts
-  const commentCursorModeRef = useRef(commentCursorMode);
-  commentCursorModeRef.current = commentCursorMode;
+const commentCursorModeRef = useRef(commentCursorMode);
+commentCursorModeRef.current = commentCursorMode;
 
-  const handleCursorShortcut = (key: KeyEvent) => {
-    const mode = commentCursorModeRef.current;
+const handleCursorShortcut = (key: KeyEvent) => {
+  const mode = commentCursorModeRef.current;
 
-    if (mode === "off") {
-      return false;
-    }
-
-    if (mode === "composing") {
-      // The focused composer input owns its own keys; the router stays out of its way.
-      return true;
-    }
-
-    if (isEscapeKey(key) || key.name === "c" || key.sequence === "c") {
-      exitCommentCursor();
-      return true;
-    }
-
-    if (key.name === "return" || key.name === "enter" || key.name === "i" || key.sequence === "i") {
-      openCommentComposer();
-      return true;
-    }
-
-    if (isStepUpKey(key)) {
-      moveCommentCursor(-1);
-      return true;
-    }
-
-    if (isStepDownKey(key)) {
-      moveCommentCursor(1);
-      return true;
-    }
-
-    if (key.name === "[") {
-      jumpCommentCursorToHunk(-1);
-      return true;
-    }
-
-    if (key.name === "]") {
-      jumpCommentCursorToHunk(1);
-      return true;
-    }
-
+  if (mode === "off") {
     return false;
-  };
+  }
+
+  if (mode === "composing") {
+    // The focused composer input owns its own keys; the router stays out of its way.
+    return true;
+  }
+
+  if (isEscapeKey(key) || key.name === "c" || key.sequence === "c") {
+    exitCommentCursor();
+    return true;
+  }
+
+  if (key.name === "return" || key.name === "enter" || key.name === "i" || key.sequence === "i") {
+    openCommentComposer();
+    return true;
+  }
+
+  if (isStepUpKey(key)) {
+    moveCommentCursor(-1);
+    return true;
+  }
+
+  if (isStepDownKey(key)) {
+    moveCommentCursor(1);
+    return true;
+  }
+
+  if (key.name === "[") {
+    jumpCommentCursorToHunk(-1);
+    return true;
+  }
+
+  if (key.name === "]") {
+    jumpCommentCursorToHunk(1);
+    return true;
+  }
+
+  return false;
+};
 ```
 
-Add cursor entry to `handleAppShortcut`. Find the block that begins with `if (key.name === "a") {` and insert this new branch *before* it:
+Add cursor entry to `handleAppShortcut`. Find the block that begins with `if (key.name === "a") {` and insert this new branch _before_ it:
 
 ```ts
-    if (key.name === "c" || key.sequence === "c") {
-      runAndCloseMenu(enterCommentCursor);
-      return;
-    }
+if (key.name === "c" || key.sequence === "c") {
+  runAndCloseMenu(enterCommentCursor);
+  return;
+}
 ```
 
 Wire the new handler into the `useKeyboard` callback. Replace the existing callback body with:
 
 ```ts
-  useKeyboard((key: KeyEvent) => {
-    if (handleMenuToggleShortcut(key)) {
-      return;
-    }
+useKeyboard((key: KeyEvent) => {
+  if (handleMenuToggleShortcut(key)) {
+    return;
+  }
 
-    if (pagerModeRef.current) {
-      handlePagerShortcut(key);
-      return;
-    }
+  if (pagerModeRef.current) {
+    handlePagerShortcut(key);
+    return;
+  }
 
-    if (handleHelpShortcut(key)) {
-      return;
-    }
+  if (handleHelpShortcut(key)) {
+    return;
+  }
 
-    if (handleMenuShortcut(key)) {
-      return;
-    }
+  if (handleMenuShortcut(key)) {
+    return;
+  }
 
-    if (handleCursorShortcut(key)) {
-      return;
-    }
+  if (handleCursorShortcut(key)) {
+    return;
+  }
 
-    if (handleFilterShortcut(key)) {
-      return;
-    }
+  if (handleFilterShortcut(key)) {
+    return;
+  }
 
-    handleAppShortcut(key);
-  });
+  handleAppShortcut(key);
+});
 ```
 
 - [ ] **Step 3: Run typecheck**
@@ -2172,6 +2170,7 @@ git commit -m "feat(keys): add cursor-mode handler to the app keyboard router"
 ### Task 11: Wire cursor state into `App.tsx`
 
 **Files:**
+
 - Modify: `src/ui/App.tsx`
 - Modify: `src/ui/lib/appMenus.ts`
 
@@ -2180,12 +2179,12 @@ git commit -m "feat(keys): add cursor-mode handler to the app keyboard router"
 In `src/ui/App.tsx`, near the existing `review.*` destructure (around line 124-130), add:
 
 ```ts
-  const commentCursor = review.commentCursor;
-  const commentCursorRowStableKey = review.commentCursorRowStableKey;
-  const addUserLiveComment = review.addUserLiveComment;
-  const setCommentCursorMode = review.setCommentCursorMode;
-  const moveCommentCursor = review.moveCommentCursor;
-  const jumpCommentCursorToHunk = review.jumpCommentCursorToHunk;
+const commentCursor = review.commentCursor;
+const commentCursorRowStableKey = review.commentCursorRowStableKey;
+const addUserLiveComment = review.addUserLiveComment;
+const setCommentCursorMode = review.setCommentCursorMode;
+const moveCommentCursor = review.moveCommentCursor;
+const jumpCommentCursorToHunk = review.jumpCommentCursorToHunk;
 ```
 
 - [ ] **Step 2: Build the composer descriptor and callbacks**
@@ -2193,59 +2192,59 @@ In `src/ui/App.tsx`, near the existing `review.*` destructure (around line 124-1
 Below the destructure above, add:
 
 ```ts
-  const composerDescriptor =
-    commentCursor.mode === "composing"
-      ? {
+const composerDescriptor =
+  commentCursor.mode === "composing"
+    ? {
+        fileId: commentCursor.fileId,
+        hunkIndex: commentCursor.hunkIndex,
+        side: commentCursor.side,
+        line: commentCursor.line,
+      }
+    : null;
+
+const enterCommentCursor = useCallback(() => {
+  setCommentCursorMode(commentCursor.mode === "off" ? "navigating" : "off");
+}, [commentCursor.mode, setCommentCursorMode]);
+
+const exitCommentCursor = useCallback(() => {
+  setCommentCursorMode("off");
+}, [setCommentCursorMode]);
+
+const openCommentComposer = useCallback(() => {
+  setCommentCursorMode("composing");
+}, [setCommentCursorMode]);
+
+const cancelCommentComposer = useCallback(() => {
+  setCommentCursorMode("navigating");
+}, [setCommentCursorMode]);
+
+const submitCommentComposer = useCallback(
+  (summary: string) => {
+    try {
+      addUserLiveComment(
+        {
           fileId: commentCursor.fileId,
           hunkIndex: commentCursor.hunkIndex,
           side: commentCursor.side,
           line: commentCursor.line,
-        }
-      : null;
-
-  const enterCommentCursor = useCallback(() => {
-    setCommentCursorMode(commentCursor.mode === "off" ? "navigating" : "off");
-  }, [commentCursor.mode, setCommentCursorMode]);
-
-  const exitCommentCursor = useCallback(() => {
-    setCommentCursorMode("off");
-  }, [setCommentCursorMode]);
-
-  const openCommentComposer = useCallback(() => {
-    setCommentCursorMode("composing");
-  }, [setCommentCursorMode]);
-
-  const cancelCommentComposer = useCallback(() => {
-    setCommentCursorMode("navigating");
-  }, [setCommentCursorMode]);
-
-  const submitCommentComposer = useCallback(
-    (summary: string) => {
-      try {
-        addUserLiveComment(
-          {
-            fileId: commentCursor.fileId,
-            hunkIndex: commentCursor.hunkIndex,
-            side: commentCursor.side,
-            line: commentCursor.line,
-          },
-          summary,
-        );
-      } catch (error) {
-        console.error("Failed to add user comment.", error);
-      } finally {
-        setCommentCursorMode("navigating");
-      }
-    },
-    [
-      addUserLiveComment,
-      commentCursor.fileId,
-      commentCursor.hunkIndex,
-      commentCursor.line,
-      commentCursor.side,
-      setCommentCursorMode,
-    ],
-  );
+        },
+        summary,
+      );
+    } catch (error) {
+      console.error("Failed to add user comment.", error);
+    } finally {
+      setCommentCursorMode("navigating");
+    }
+  },
+  [
+    addUserLiveComment,
+    commentCursor.fileId,
+    commentCursor.hunkIndex,
+    commentCursor.line,
+    commentCursor.side,
+    setCommentCursorMode,
+  ],
+);
 ```
 
 - [ ] **Step 3: Pass cursor and composer through to `DiffPane`**
@@ -2359,6 +2358,7 @@ git commit -m "feat(app): wire the comment cursor into App, DiffPane, and the vi
 ### Task 12: AppHost interaction tests
 
 **Files:**
+
 - Modify: `src/ui/AppHost.interactions.test.tsx`
 
 - [ ] **Step 1: Add the failing tests**
@@ -2479,6 +2479,7 @@ git commit -m "test(app): cover the comment cursor toggle, composer, and save fl
 ### Task 13: PTY integration coverage
 
 **Files:**
+
 - Create: `test/pty/comment-cursor-integration.test.ts`
 
 - [ ] **Step 1: Write the integration test**
@@ -2562,6 +2563,7 @@ git commit -m "test(pty): cover the comment cursor end-to-end through a real PTY
 ### Task 14: Changelog entry
 
 **Files:**
+
 - Modify: `CHANGELOG.md`
 
 - [ ] **Step 1: Record the feature**
