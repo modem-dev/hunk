@@ -4,6 +4,7 @@ import { PierreDiffView, type ActiveAddNoteAffordance } from "../../diff/PierreD
 import type { VisibleBodyBounds } from "../../diff/rowWindowing";
 import type { DiffSectionGeometry } from "../../lib/diffSectionGeometry";
 import type { VisibleAgentNote } from "../../lib/agentAnnotations";
+import type { CopySelectedRowRange } from "./copySelection";
 import { diffSectionId } from "../../lib/ids";
 import { fitText } from "../../lib/text";
 import type { AppTheme } from "../../themes";
@@ -16,6 +17,8 @@ interface DiffSectionProps {
   headerStatsWidth: number;
   layout: Exclude<LayoutMode, "auto">;
   selectedHunkIndex: number;
+  copySelectedRowRanges?: Map<string, CopySelectedRowRange>;
+  copySelectedSide?: "left" | "right";
   shouldLoadHighlight: boolean;
   sectionGeometry?: DiffSectionGeometry;
   separatorWidth: number;
@@ -29,7 +32,9 @@ interface DiffSectionProps {
   visibleBodyBounds?: VisibleBodyBounds;
   viewWidth: number;
   hoverActive?: boolean;
+  hoverClearSignal?: number;
   onHover: () => void;
+  onMouseScroll?: () => void;
   onActiveAddNoteAffordanceChange?: (affordance: ActiveAddNoteAffordance | null) => void;
   onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void;
   onSelect: () => void;
@@ -43,6 +48,8 @@ function DiffSectionComponent({
   headerStatsWidth,
   layout,
   selectedHunkIndex,
+  copySelectedRowRanges,
+  copySelectedSide,
   shouldLoadHighlight,
   sectionGeometry,
   separatorWidth,
@@ -56,7 +63,9 @@ function DiffSectionComponent({
   visibleBodyBounds,
   viewWidth,
   hoverActive = true,
+  hoverClearSignal = 0,
   onHover,
+  onMouseScroll,
   onActiveAddNoteAffordanceChange,
   onStartUserNoteAtHunk,
   onSelect,
@@ -65,6 +74,7 @@ function DiffSectionComponent({
     <box
       id={diffSectionId(file.id)}
       onMouseOver={onHover}
+      onMouseScroll={onMouseScroll}
       style={{
         width: "100%",
         flexDirection: "column",
@@ -103,10 +113,13 @@ function DiffSectionComponent({
         showHunkHeaders={showHunkHeaders}
         wrapLines={wrapLines}
         codeHorizontalOffset={codeHorizontalOffset}
+        copySelectedRowRanges={copySelectedRowRanges}
+        copySelectedSide={copySelectedSide}
         theme={theme}
         width={viewWidth}
         visibleAgentNotes={visibleAgentNotes}
         hoverActive={hoverActive}
+        hoverClearSignal={hoverClearSignal}
         onHover={onHover}
         onActiveAddNoteAffordanceChange={onActiveAddNoteAffordanceChange}
         onStartUserNoteAtHunk={onStartUserNoteAtHunk}
@@ -131,6 +144,8 @@ export const DiffSection = memo(DiffSectionComponent, (previous, next) => {
     previous.headerStatsWidth === next.headerStatsWidth &&
     previous.layout === next.layout &&
     previous.selectedHunkIndex === next.selectedHunkIndex &&
+    previous.copySelectedRowRanges === next.copySelectedRowRanges &&
+    previous.copySelectedSide === next.copySelectedSide &&
     previous.shouldLoadHighlight === next.shouldLoadHighlight &&
     previous.sectionGeometry === next.sectionGeometry &&
     previous.separatorWidth === next.separatorWidth &&
@@ -140,6 +155,8 @@ export const DiffSection = memo(DiffSectionComponent, (previous, next) => {
     previous.showHeader === next.showHeader &&
     previous.showSeparator === next.showSeparator &&
     previous.hoverActive === next.hoverActive &&
+    previous.hoverClearSignal === next.hoverClearSignal &&
+    previous.onMouseScroll === next.onMouseScroll &&
     previous.theme === next.theme &&
     previous.visibleAgentNotes === next.visibleAgentNotes &&
     previous.visibleBodyBounds === next.visibleBodyBounds &&

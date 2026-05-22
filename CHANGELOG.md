@@ -6,11 +6,24 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Added
 
+- Added mouse-drag text selection in diff views that copies selected rows to the system clipboard via OSC 52. A `View > Copy decorations` toggle (or `copy_decorations` config) controls whether the clipboard includes diff rails, gutters, and file headers or only the changed code.
+
 ### Changed
 
 ### Fixed
 
-## [0.13.0-beta.0] - 2026-05-16
+- Fixed VCS auto-detection so a Git repository nested under a parent Jujutsu workspace still uses Git mode by default.
+
+## [0.13.1] - 2026-05-19
+
+### Fixed
+
+- Hid the inline add-note affordance while scrolling and only show it after deliberate pointer movement, so it no longer flickers during review navigation.
+- Hardened the local session daemon against browser-originated requests by validating Host and Origin headers and requiring JSON content types for API posts.
+- Disabled the generic broker HTTP API by default so Hunk's supported session API is the only app-daemon command surface.
+- Bounded session daemon memory by capping HTTP request body and websocket message sizes and rejecting session registrations with oversized file, hunk, patch, comment, or note payloads.
+
+## [0.13.0] - 2026-05-18
 
 ### Added
 
@@ -27,6 +40,12 @@ All notable user-visible changes to Hunk are documented in this file.
 
 - Fixed draft note focus handling so app shortcuts resume after the note textarea blurs without discarding the draft.
 - Preserved the resolved auto theme across `--watch` refreshes instead of falling back to the default dark theme.
+- Fixed standalone release archive generation so staged npm package directories are not accidentally packaged as GitHub release assets.
+
+## [0.12.1] - 2026-05-14
+
+### Fixed
+
 - Included the bundled Hunk review skill in standalone prebuilt release archives so `hunk skill path` works after extracting a tarball or installing via Homebrew.
 
 ## [0.12.0] - 2026-05-12
@@ -331,8 +350,9 @@ All notable user-visible changes to Hunk are documented in this file.
 
 - Stabilized diff repainting, active-hunk scrolling, syntax highlighting, pager stdin patch handling, and terminal cleanup on exit.
 
-[Unreleased]: https://github.com/modem-dev/hunk/compare/v0.13.0-beta.0...HEAD
-[0.13.0-beta.0]: https://github.com/modem-dev/hunk/compare/v0.12.0...v0.13.0-beta.0
+[Unreleased]: https://github.com/modem-dev/hunk/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/modem-dev/hunk/compare/v0.12.1...v0.13.0
+[0.12.1]: https://github.com/modem-dev/hunk/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/modem-dev/hunk/compare/v0.11.1...v0.12.0
 [0.11.1]: https://github.com/modem-dev/hunk/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/modem-dev/hunk/compare/v0.10.0...v0.11.0

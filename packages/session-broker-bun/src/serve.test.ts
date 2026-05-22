@@ -139,7 +139,11 @@ describe("session broker bun adapter", () => {
       parseRegistration: (value) => parseSessionRegistrationEnvelope(value, parseInfo),
       parseSnapshot: (value) => parseSessionSnapshotEnvelope(value, parseState),
     });
-    const daemon = createSessionBrokerDaemon({ broker, capabilities: { version: 1 } });
+    const daemon = createSessionBrokerDaemon({
+      broker,
+      capabilities: { version: 1 },
+      exposeHttpApi: true,
+    });
     const port = await reserveLoopbackPort();
     const server = serveSessionBrokerDaemon({
       daemon,

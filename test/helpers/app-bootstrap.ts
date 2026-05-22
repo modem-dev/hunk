@@ -6,6 +6,7 @@ export function createTestVcsAppBootstrap({
   files,
   vcsOptions = {},
   initialMode = "split",
+  initialCopyDecorations,
   initialShowAgentNotes,
   initialShowHunkHeaders,
   initialShowLineNumbers,
@@ -22,6 +23,7 @@ export function createTestVcsAppBootstrap({
   files: DiffFile[];
   vcsOptions?: Partial<VcsCommandInput["options"]>;
   initialMode?: LayoutMode;
+  initialCopyDecorations?: boolean;
   initialShowAgentNotes?: boolean;
   initialShowHunkHeaders?: boolean;
   initialShowLineNumbers?: boolean;
@@ -52,6 +54,7 @@ export function createTestVcsAppBootstrap({
       title,
     },
     initialMode,
+    initialCopyDecorations,
     initialShowAgentNotes,
     initialShowHunkHeaders,
     initialShowLineNumbers,

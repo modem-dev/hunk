@@ -1,4 +1,4 @@
-import { dirname, resolve } from "node:path";
+import { dirname, relative, resolve } from "node:path";
 import { HunkUserError } from "../errors";
 import { gitAdapter } from "./git";
 import { jjAdapter } from "./jj";
@@ -18,14 +18,28 @@ export function isVcsId(value: unknown): value is VcsId {
   return vcsAdapters.some((adapter) => adapter.id === value);
 }
 
+/** Detect the nearest containing VCS checkout, using adapter order only to break same-root ties. */
 export function detectVcs(cwd: string): VcsDetection | null {
+  const start = resolve(cwd);
+  let bestDetection: VcsDetection | null = null;
+  let bestDistance = Number.POSITIVE_INFINITY;
+
   for (const adapter of vcsAdapters) {
-    const detected = adapter.detect(cwd);
-    if (detected) {
-      return detected;
+    const detected = adapter.detect(start);
+    if (!detected) {
+      continue;
+    }
+
+    const distance = relative(detected.repoRoot, start)
+      .split(/[\\/]+/)
+      .filter(Boolean).length;
+    if (distance < bestDistance) {
+      bestDetection = detected;
+      bestDistance = distance;
     }
   }
-  return null;
+
+  return bestDetection;
 }
 
 export function findVcsRepoRootCandidate(cwd = process.cwd()) {

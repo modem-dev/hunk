@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { createServer } from "node:net";
+import { randomBytes } from "node:crypto";
+import { connect, createServer } from "node:net";
 import { platform } from "node:os";
 import {
   createTestSessionRegistration,
@@ -17,6 +18,10 @@ interface HealthResponse {
   pid: number;
   sessions: number;
   pendingCommands: number;
+  paths?: Record<string, string>;
+  sessionApi?: string;
+  sessionCapabilities?: string;
+  sessionSocket?: string;
 }
 
 async function reserveLoopbackPort() {
@@ -116,6 +121,47 @@ async function openSessionSocket(port: number) {
   return socket;
 }
 
+async function readRawWebSocketHandshake(port: number, headers: string[]) {
+  return new Promise<string>((resolve, reject) => {
+    const socket = connect({ host: "127.0.0.1", port }, () => {
+      const key = randomBytes(16).toString("base64");
+      socket.write(
+        [
+          "GET /session HTTP/1.1",
+          `Host: 127.0.0.1:${port}`,
+          "Upgrade: websocket",
+          "Connection: Upgrade",
+          `Sec-WebSocket-Key: ${key}`,
+          "Sec-WebSocket-Version: 13",
+          ...headers,
+          "",
+          "",
+        ].join("\r\n"),
+      );
+    });
+    let response = "";
+    const timeout = setTimeout(() => {
+      socket.destroy();
+      reject(new Error("Timed out waiting for raw websocket handshake response."));
+    }, 1_000);
+
+    socket.on("data", (chunk) => {
+      response += chunk.toString("utf8");
+      if (!response.includes("\r\n\r\n")) {
+        return;
+      }
+
+      clearTimeout(timeout);
+      socket.destroy();
+      resolve(response);
+    });
+    socket.on("error", (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+  });
+}
+
 async function openRegisteredSession(
   port: number,
   sessionId = "session-1",
@@ -208,7 +254,7 @@ describe("Hunk session daemon server", () => {
     }
   });
 
-  test("exposes session capabilities and rejects the old MCP tool endpoint", async () => {
+  test("exposes only Hunk session endpoints and rejects the old MCP tool endpoint", async () => {
     const port = await reserveLoopbackPort();
     process.env.HUNK_MCP_HOST = "127.0.0.1";
     process.env.HUNK_MCP_PORT = String(port);
@@ -216,6 +262,31 @@ describe("Hunk session daemon server", () => {
     const server = serveSessionBrokerDaemon();
 
     try {
+      const health = await fetch(`http://127.0.0.1:${port}/health`);
+      expect(health.status).toBe(200);
+      const healthPayload = (await health.json()) as HealthResponse;
+      expect(healthPayload.paths).toEqual({
+        health: "/health",
+        socket: "/session",
+      });
+      expect(healthPayload).toMatchObject({
+        sessionApi: `http://127.0.0.1:${port}/session-api`,
+        sessionCapabilities: `http://127.0.0.1:${port}/session-api/capabilities`,
+        sessionSocket: `ws://127.0.0.1:${port}/session`,
+      });
+
+      const genericCapabilities = await fetch(`http://127.0.0.1:${port}/broker/capabilities`);
+      expect(genericCapabilities.status).toBe(404);
+
+      const genericBroker = await fetch(`http://127.0.0.1:${port}/broker`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ action: "list" }),
+      });
+      expect(genericBroker.status).toBe(404);
+
       const capabilities = await fetch(`http://127.0.0.1:${port}/session-api/capabilities`);
       expect(capabilities.status).toBe(200);
       await expect(capabilities.json()).resolves.toMatchObject({
@@ -246,6 +317,105 @@ describe("Hunk session daemon server", () => {
       expect(legacyMcp.status).toBe(410);
       await expect(legacyMcp.json()).resolves.toMatchObject({
         error: "This app no longer exposes agent-facing MCP tools. Use the session CLI instead.",
+      });
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("rejects HTTP requests with non-loopback or wrong-port Host headers", async () => {
+    const port = await reserveLoopbackPort();
+    process.env.HUNK_MCP_HOST = "127.0.0.1";
+    process.env.HUNK_MCP_PORT = String(port);
+
+    const server = serveSessionBrokerDaemon();
+
+    try {
+      const attackerHostResponse = await fetch(`http://127.0.0.1:${port}/health`, {
+        headers: { host: `attacker.example:${port}` },
+      });
+
+      expect(attackerHostResponse.status).toBe(403);
+      await expect(attackerHostResponse.json()).resolves.toEqual({
+        error: "Host header is not allowed for the local session broker.",
+      });
+
+      const missingPortResponse = await fetch(`http://127.0.0.1:${port}/health`, {
+        headers: { host: "127.0.0.1" },
+      });
+
+      expect(missingPortResponse.status).toBe(403);
+      await expect(missingPortResponse.json()).resolves.toEqual({
+        error: "Host header is not allowed for the local session broker.",
+      });
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("rejects non-local Origin headers for HTTP and websocket requests", async () => {
+    const port = await reserveLoopbackPort();
+    process.env.HUNK_MCP_HOST = "127.0.0.1";
+    process.env.HUNK_MCP_PORT = String(port);
+
+    const server = serveSessionBrokerDaemon();
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/session-api/capabilities`, {
+        headers: { origin: "https://attacker.example" },
+      });
+      expect(response.status).toBe(403);
+      await expect(response.json()).resolves.toEqual({
+        error: "Origin is not allowed for the local session broker.",
+      });
+
+      const handshake = await readRawWebSocketHandshake(port, ["Origin: https://attacker.example"]);
+      expect(handshake).toStartWith("HTTP/1.1 403");
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("requires JSON content type for session API posts", async () => {
+    const port = await reserveLoopbackPort();
+    process.env.HUNK_MCP_HOST = "127.0.0.1";
+    process.env.HUNK_MCP_PORT = String(port);
+
+    const server = serveSessionBrokerDaemon();
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/session-api`, {
+        method: "POST",
+        headers: { "content-type": "text/plain" },
+        body: JSON.stringify({ action: "list" }),
+      });
+
+      expect(response.status).toBe(415);
+      await expect(response.json()).resolves.toEqual({
+        error: "Expected Content-Type application/json.",
+      });
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("rejects session API bodies that exceed the size limit", async () => {
+    const port = await reserveLoopbackPort();
+    process.env.HUNK_MCP_HOST = "127.0.0.1";
+    process.env.HUNK_MCP_PORT = String(port);
+
+    const server = serveSessionBrokerDaemon();
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/session-api`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "list", filler: "x".repeat(5 * 1024 * 1024) }),
+      });
+
+      expect(response.status).toBe(413);
+      await expect(response.json()).resolves.toMatchObject({
+        error: expect.stringContaining("session broker limit"),
       });
     } finally {
       server.stop(true);

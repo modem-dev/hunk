@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DiffFile, LayoutMode, UserNoteLineTarget } from "../../core/types";
 import { AgentInlineNote } from "../components/panes/AgentInlineNote";
 import type { VisibleAgentNote } from "../lib/agentAnnotations";
+import type { CopySelectedRowRange } from "../components/panes/copySelection";
 import type { DiffSectionGeometry } from "../lib/diffSectionGeometry";
 import { reviewRowId } from "../lib/ids";
 import type { AppTheme } from "../themes";
@@ -54,6 +55,8 @@ function addNoteAffordanceForRow(row: DiffRow): ActiveAddNoteAffordance {
 /** Render a file diff in split or stack mode, with inline agent notes inserted between diff rows. */
 export function PierreDiffView({
   codeHorizontalOffset = 0,
+  copySelectedRowRanges,
+  copySelectedSide,
   file,
   layout,
   onHover,
@@ -65,6 +68,7 @@ export function PierreDiffView({
   theme,
   visibleAgentNotes = EMPTY_VISIBLE_AGENT_NOTES,
   hoverActive = true,
+  hoverClearSignal = 0,
   width,
   selectedHunkIndex,
   sectionGeometry,
@@ -73,6 +77,8 @@ export function PierreDiffView({
   visibleBodyBounds,
 }: {
   codeHorizontalOffset?: number;
+  copySelectedRowRanges?: Map<string, CopySelectedRowRange>;
+  copySelectedSide?: "left" | "right";
   file: DiffFile | undefined;
   layout: Exclude<LayoutMode, "auto">;
   onHover?: () => void;
@@ -84,6 +90,7 @@ export function PierreDiffView({
   theme: AppTheme;
   visibleAgentNotes?: VisibleAgentNote[];
   hoverActive?: boolean;
+  hoverClearSignal?: number;
   width: number;
   selectedHunkIndex: number;
   sectionGeometry?: DiffSectionGeometry;
@@ -94,6 +101,7 @@ export function PierreDiffView({
   const renderer = useRenderer();
   const [hoveredRowKey, setHoveredRowKey] = useState<string | null>(null);
   const hoverIdleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const previousHoverClearSignalRef = useRef(hoverClearSignal);
 
   const clearHoverIdleTimeout = useCallback(() => {
     if (hoverIdleTimeoutRef.current) {
@@ -127,6 +135,15 @@ export function PierreDiffView({
       clearHoveredRow();
     }
   }, [clearHoveredRow, hoverActive]);
+
+  useEffect(() => {
+    if (previousHoverClearSignalRef.current === hoverClearSignal) {
+      return;
+    }
+
+    previousHoverClearSignalRef.current = hoverClearSignal;
+    clearHoveredRow();
+  }, [clearHoveredRow, hoverClearSignal]);
 
   useEffect(() => {
     /** Hide hover-only affordances when terminal focus leaves Hunk. */
@@ -264,15 +281,7 @@ export function PierreDiffView({
         }
 
         return (
-          <box
-            key={plannedRow.key}
-            id={rowId}
-            style={{ width: "100%", flexDirection: "column" }}
-            onMouseOver={() => {
-              onHover?.();
-              activateHoveredRow(plannedRow.key, addNoteAffordanceForRow(plannedRow.row));
-            }}
-          >
+          <box key={plannedRow.key} id={rowId} style={{ width: "100%", flexDirection: "column" }}>
             <DiffRowView
               row={plannedRow.row}
               width={width}
@@ -283,6 +292,8 @@ export function PierreDiffView({
               codeHorizontalOffset={codeHorizontalOffset}
               theme={theme}
               selected={plannedRow.row.hunkIndex === selectedHunkIndex}
+              copySelectedRowRange={copySelectedRowRanges?.get(plannedRow.key)}
+              copySelectedSide={copySelectedSide}
               anchorId={plannedRow.anchorId}
               noteGuideSide={plannedRow.noteGuideSide}
               showAddNoteBadge={hoveredRowKey === plannedRow.key && Boolean(onStartUserNoteAtHunk)}

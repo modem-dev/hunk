@@ -16,25 +16,29 @@ export interface DiffSectionRowBounds extends VerticalBounds {
   stableKeys: string[];
 }
 
-/** Cached placeholder sizing and hunk navigation geometry for one file section. */
+/**
+ * Cached placeholder sizing and hunk navigation geometry for one file section.
+ *
+ * `plannedRows` is retained alongside the row-bounds map so downstream features (notably
+ * clipboard rendering of mouse selections) can re-render the exact same rows the layout was
+ * measured against, without rebuilding the plan. The cache is keyed off the agent-notes input
+ * via a WeakMap so memory grows in step with the visible diff, not per-render.
+ */
 export interface DiffSectionGeometry extends SectionGeometry<PlannedHunkBounds> {
+  lineNumberDigits: number;
+  plannedRows: PlannedReviewRow[];
   rowBounds: DiffSectionRowBounds[];
   rowBoundsByKey: Map<string, DiffSectionRowBounds>;
   rowBoundsByStableKey: Map<string, DiffSectionRowBounds>;
 }
 
-const NOTE_AWARE_SECTION_GEOMETRY_CACHE = new WeakMap<
-  VisibleAgentNote[],
-  Map<string, DiffSectionGeometry>
->();
-
-/** Build the exact review rows for one file before converting them into section geometry. */
-function buildBasePlannedRows(
+/** Build the planned row stream for one file section using the same shape as geometry measurement. */
+function buildPlannedSectionRows(
   file: DiffFile,
   layout: Exclude<LayoutMode, "auto">,
   showHunkHeaders: boolean,
   theme: AppTheme,
-  visibleAgentNotes: VisibleAgentNote[],
+  visibleAgentNotes: VisibleAgentNote[] = [],
 ) {
   const rows =
     layout === "split" ? buildSplitRows(file, null, theme) : buildStackRows(file, null, theme);
@@ -42,11 +46,15 @@ function buildBasePlannedRows(
   return buildReviewRenderPlan({
     fileId: file.id,
     rows,
-    selectedHunkIndex: -1,
     showHunkHeaders,
     visibleAgentNotes,
   });
 }
+
+const NOTE_AWARE_SECTION_GEOMETRY_CACHE = new WeakMap<
+  VisibleAgentNote[],
+  Map<string, DiffSectionGeometry>
+>();
 
 /** Measure how many terminal rows one planned review row occupies for the current view settings. */
 function plannedRowHeight(
@@ -102,6 +110,8 @@ export function measureDiffSectionGeometry(
       bodyHeight: 1,
       hunkAnchorRows: new Map(),
       hunkBounds: new Map(),
+      lineNumberDigits: String(findMaxLineNumber(file)).length,
+      plannedRows: [],
       rowBounds: [],
       rowBoundsByKey: new Map(),
       rowBoundsByStableKey: new Map(),
@@ -119,7 +129,13 @@ export function measureDiffSectionGeometry(
     }
   }
 
-  const plannedRows = buildBasePlannedRows(file, layout, showHunkHeaders, theme, visibleAgentNotes);
+  const plannedRows = buildPlannedSectionRows(
+    file,
+    layout,
+    showHunkHeaders,
+    theme,
+    visibleAgentNotes,
+  );
   const hunkAnchorRows = new Map<number, number>();
   const hunkBounds = new Map<number, PlannedHunkBounds>();
   const rowBounds: DiffSectionRowBounds[] = [];
@@ -188,6 +204,8 @@ export function measureDiffSectionGeometry(
     bodyHeight,
     hunkAnchorRows,
     hunkBounds,
+    lineNumberDigits,
+    plannedRows,
     rowBounds,
     rowBoundsByKey,
     rowBoundsByStableKey,
@@ -201,7 +219,6 @@ export function measureDiffSectionGeometry(
 
   return geometry;
 }
-
 /** Estimate the number of diff-body rows for one file section in the windowed path. */
 export function estimateDiffSectionBodyRows(
   file: DiffFile,

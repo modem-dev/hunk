@@ -246,12 +246,16 @@ describe("config resolution", () => {
     const jjRepo = createTempDir("hunk-config-jj-repo-");
     const colocatedRepo = createTempDir("hunk-config-colocated-repo-");
     const gitRepo = createTempDir("hunk-config-git-repo-");
+    const parentJjRepo = createTempDir("hunk-config-parent-jj-");
+    const gitRepoInsideParentJj = join(parentJjRepo, "git-project");
     const plainDir = createTempDir("hunk-config-no-repo-");
 
     createJjRepo(jjRepo);
     createRepo(colocatedRepo);
     createJjRepo(colocatedRepo);
     createRepo(gitRepo);
+    createJjRepo(parentJjRepo);
+    createRepo(gitRepoInsideParentJj);
 
     const input = {
       kind: "vcs",
@@ -268,6 +272,10 @@ describe("config resolution", () => {
     ).toBe("jj");
     expect(
       resolveConfiguredCliInput(input, { cwd: gitRepo, env: { HOME: home } }).input.options.vcs,
+    ).toBe("git");
+    expect(
+      resolveConfiguredCliInput(input, { cwd: gitRepoInsideParentJj, env: { HOME: home } }).input
+        .options.vcs,
     ).toBe("git");
     expect(
       resolveConfiguredCliInput(input, { cwd: plainDir, env: { HOME: home } }).input.options.vcs,
@@ -308,6 +316,7 @@ describe("config resolution", () => {
         "wrap_lines = true",
         "hunk_headers = false",
         "agent_notes = true",
+        "copy_decorations = false",
       ].join("\n"),
     );
 
@@ -333,6 +342,7 @@ describe("config resolution", () => {
     expect(bootstrap.initialWrapLines).toBe(true);
     expect(bootstrap.initialShowHunkHeaders).toBe(false);
     expect(bootstrap.initialShowAgentNotes).toBe(true);
+    expect(bootstrap.initialCopyDecorations).toBe(false);
   });
 
   test("loadAppBootstrap exposes graphite when no theme is configured", async () => {

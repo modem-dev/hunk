@@ -556,6 +556,68 @@ describe("UI components", () => {
     }
   });
 
+  test("DiffPane only shows the add-note affordance after pointer movement", async () => {
+    const files = createWindowingFiles(6);
+    const theme = resolveTheme("midnight", null);
+    const scrollRef = createRef<ScrollBoxRenderable>();
+    const props = createDiffPaneProps(files, theme, {
+      diffContentWidth: 88,
+      scrollRef,
+      onStartUserNoteAtHunk: () => {},
+      separatorWidth: 84,
+      width: 92,
+    });
+    const setup = await testRender(<DiffPane {...props} />, {
+      width: 96,
+      height: 12,
+    });
+
+    try {
+      await settleDiffPane(setup);
+
+      await act(async () => {
+        await setup.mockMouse.moveTo(32, 4);
+        await setup.renderOnce();
+      });
+      let frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("[+]"), 12);
+      expect(frame).toContain("[+]");
+
+      await act(async () => {
+        await setup.mockMouse.scroll(32, 4, "down");
+        await Bun.sleep(0);
+        await setup.renderOnce();
+      });
+      frame = await waitForFrame(setup, (nextFrame) => !nextFrame.includes("[+]"), 12);
+      expect(frame).not.toContain("[+]");
+
+      await act(async () => {
+        await Bun.sleep(250);
+        await setup.renderOnce();
+      });
+      frame = setup.captureCharFrame();
+      expect(frame).not.toContain("[+]");
+
+      await act(async () => {
+        await setup.mockMouse.moveTo(34, 4);
+        await setup.renderOnce();
+      });
+      frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("[+]"), 12);
+      expect(frame).toContain("[+]");
+
+      await act(async () => {
+        scrollRef.current?.scrollTo({ x: 0, y: 2 });
+        await Bun.sleep(0);
+        await setup.renderOnce();
+      });
+      frame = await waitForFrame(setup, (nextFrame) => !nextFrame.includes("[+]"), 12);
+      expect(frame).not.toContain("[+]");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("DiffPane scrolls a later selected file into view in the windowed path", async () => {
     const files = createWindowingFiles(6);
     const theme = resolveTheme("midnight", null);

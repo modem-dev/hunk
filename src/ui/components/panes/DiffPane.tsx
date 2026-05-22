@@ -1,4 +1,8 @@
-import { type MouseEvent as TuiMouseEvent, type ScrollBoxRenderable } from "@opentui/core";
+import {
+  MouseButton,
+  type MouseEvent as TuiMouseEvent,
+  type ScrollBoxRenderable,
+} from "@opentui/core";
 import { useRenderer } from "@opentui/react";
 import {
   useCallback,
@@ -50,6 +54,21 @@ import { DiffSectionPlaceholder } from "./DiffSectionPlaceholder";
 import { VerticalScrollbar, type VerticalScrollbarHandle } from "../scrollbar/VerticalScrollbar";
 import type { VisibleBodyBounds } from "../../diff/rowWindowing";
 import { prefetchHighlightedDiff } from "../../diff/useHighlightedDiff";
+import {
+  buildCopySelectedRowKeys,
+  clampCopyColumn,
+  copySelectionPointsEqual,
+  copySelectionPointsShareRow,
+  expandSelectionPoint,
+  findCopySelectionPoint,
+  normalizeCopySelectionRange,
+  renderCopySelectionText,
+  resolveCopySelectionSide,
+  type CopySelectionContext,
+  type CopySelectionDrag,
+  type CopySelectionPoint,
+  type CopySelectionSide,
+} from "./copySelection";
 
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
 
@@ -151,6 +170,9 @@ export function DiffPane({
   draftNoteFocused = false,
   separatorWidth,
   pagerMode = false,
+  copyDecorations = false,
+  screenLeft = 0,
+  screenTop = 0,
   showAgentNotes,
   showLineNumbers,
   showHunkHeaders,
@@ -162,6 +184,7 @@ export function DiffPane({
   selectedHunkRevealRequestId,
   theme,
   width,
+  cancelCopySelectionRef,
   onActiveAddNoteAffordanceChange,
   onRemoveUserNote,
   onSaveDraftNote,
@@ -170,6 +193,8 @@ export function DiffPane({
   onBlurDraftNote,
   onCancelDraftNote,
   onFocusDraftNote,
+  onCopyFeedback,
+  onCopySelectionText,
   onScrollCodeHorizontally = () => {},
   onSelectFile,
   onViewportCenteredHunkChange,
@@ -188,6 +213,9 @@ export function DiffPane({
   draftNoteFocused?: boolean;
   separatorWidth: number;
   pagerMode?: boolean;
+  copyDecorations?: boolean;
+  screenLeft?: number;
+  screenTop?: number;
   showAgentNotes: boolean;
   showLineNumbers: boolean;
   showHunkHeaders: boolean;
@@ -199,6 +227,7 @@ export function DiffPane({
   selectedHunkRevealRequestId?: number;
   theme: AppTheme;
   width: number;
+  cancelCopySelectionRef?: RefObject<(() => void) | null>;
   onActiveAddNoteAffordanceChange?: (
     affordance: (ActiveAddNoteAffordance & { fileId: string }) | null,
   ) => void;
@@ -209,6 +238,8 @@ export function DiffPane({
   onBlurDraftNote?: () => void;
   onCancelDraftNote?: () => void;
   onFocusDraftNote?: () => void;
+  onCopyFeedback?: (text: string) => void;
+  onCopySelectionText?: (text: string) => void | boolean;
   onScrollCodeHorizontally?: (delta: number) => void;
   onSelectFile: (fileId: string) => void;
   onViewportCenteredHunkChange?: (fileId: string, hunkIndex: number) => void;
@@ -218,6 +249,13 @@ export function DiffPane({
     () => createReviewMouseWheelScrollAcceleration(),
     [],
   );
+  const [addNoteHoverClearSignal, setAddNoteHoverClearSignal] = useState(0);
+
+  /** Hide hover-only row controls when content scrolls under a stationary mouse pointer. */
+  const clearAddNoteHoverForScroll = useCallback(() => {
+    setAddNoteHoverClearSignal((current) => current + 1);
+    onActiveAddNoteAffordanceChange?.(null);
+  }, [onActiveAddNoteAffordanceChange]);
 
   const adjacentPrefetchFileIds = useMemo(
     () => buildAdjacentPrefetchFileIds(files, selectedFileId),
@@ -229,7 +267,13 @@ export function DiffPane({
     (event: TuiMouseEvent) => {
       const scrollBox = scrollRef.current;
       const direction = event.scroll?.direction;
-      if (!direction || !scrollBox || wrapLines) {
+      if (!direction) {
+        return;
+      }
+
+      clearAddNoteHoverForScroll();
+
+      if (!scrollBox || wrapLines) {
         return;
       }
 
@@ -273,7 +317,7 @@ export function DiffPane({
       event.preventDefault();
       event.stopPropagation();
     },
-    [onScrollCodeHorizontally, scrollRef, wrapLines],
+    [clearAddNoteHoverForScroll, onScrollCodeHorizontally, scrollRef, wrapLines],
   );
 
   const allAgentNotesByFile = useMemo(() => {
@@ -351,6 +395,13 @@ export function DiffPane({
   const windowingEnabled = !wrapLines;
   const [scrollViewport, setScrollViewport] = useState({ top: 0, height: 0 });
   const [hoveredFileId, setHoveredFileId] = useState<string | null>(null);
+  const [copySelectionDrag, setCopySelectionDrag] = useState<CopySelectionDrag | null>(null);
+  // Mirror the drag state in a ref so updateCopySelection can suppress native selection
+  // on the very first drag event, before React has re-rendered with the new state.
+  const copySelectionDragRef = useRef<CopySelectionDrag | null>(null);
+  const lastClickTimeRef = useRef(0);
+  const clickCountRef = useRef(0);
+  const lastClickPointRef = useRef<CopySelectionPoint | null>(null);
   const scrollbarRef = useRef<VerticalScrollbarHandle>(null);
   const prevScrollTopRef = useRef(0);
   const previousSectionGeometryRef = useRef<DiffSectionGeometry[] | null>(null);
@@ -409,9 +460,11 @@ export function DiffPane({
       const nextTop = scrollBox.scrollTop ?? 0;
       const nextHeight = scrollBox.viewport.height ?? 0;
 
-      // Detect scroll activity and show scrollbar.
+      // Detect scroll activity, show scrollbar, and clear hover-only controls. The pointer may
+      // now sit over a different row, but only an actual mouse move should reveal row actions.
       if (nextTop !== prevScrollTopRef.current) {
         scrollbarRef.current?.show();
+        clearAddNoteHoverForScroll();
         prevScrollTopRef.current = nextTop;
       }
 
@@ -459,7 +512,7 @@ export function DiffPane({
       scrollBox.viewport.off("layout-changed", handleViewportChange);
       scrollBox.viewport.off("resized", handleViewportChange);
     };
-  }, [files.length, scrollRef]);
+  }, [clearAddNoteHoverForScroll, files.length, scrollRef]);
 
   const sectionHeaderHeights = useMemo(() => buildInStreamFileHeaderHeights(files), [files]);
 
@@ -563,6 +616,316 @@ export function DiffPane({
   );
   const totalContentHeight = fileSectionLayouts[fileSectionLayouts.length - 1]?.sectionBottom ?? 0;
 
+  // Read the live scroll box position during render so pinned-header ownership flips
+  // immediately after imperative scrolls instead of waiting for the polled viewport snapshot.
+  const effectiveScrollTop = scrollRef.current?.scrollTop ?? scrollViewport.top;
+  const pinnedHeaderFile = useMemo(() => {
+    if (files.length === 0) {
+      return null;
+    }
+
+    // The current file header always owns the pinned top row.
+    // Use the previous visible row to decide ownership so the next file's real header can still
+    // scroll through the stream before the pinned header hands off to it on the following row.
+    const owner = findHeaderOwningFileSection(
+      fileSectionLayouts,
+      Math.max(0, effectiveScrollTop - 1),
+    );
+
+    return owner ? (files[owner.sectionIndex] ?? null) : (files[0] ?? null);
+  }, [effectiveScrollTop, fileSectionLayouts, files]);
+  const pinnedHeaderFileId = pinnedHeaderFile?.id ?? null;
+
+  const copySelectionContext = useMemo(
+    (): CopySelectionContext => ({
+      codeHorizontalOffset,
+      copyDecorations,
+      files,
+      fileSectionLayouts,
+      headerLabelWidth,
+      headerStatsWidth,
+      layout,
+      pinnedHeaderFile,
+      sectionGeometry,
+      showHunkHeaders,
+      showLineNumbers,
+      theme,
+      width: diffContentWidth,
+      wrapLines,
+    }),
+    [
+      codeHorizontalOffset,
+      copyDecorations,
+      diffContentWidth,
+      fileSectionLayouts,
+      files,
+      headerLabelWidth,
+      headerStatsWidth,
+      layout,
+      pinnedHeaderFile,
+      sectionGeometry,
+      showHunkHeaders,
+      showLineNumbers,
+      theme,
+      wrapLines,
+    ],
+  );
+
+  // In split layout, anchor the visible selection (and clipboard copy) to whichever side of
+  // the diff the drag began on. Stack layout has only one column, so the side stays undefined.
+  const copySelectionSide: CopySelectionSide | undefined = useMemo(() => {
+    if (!copySelectionDrag || copySelectionDrag.anchor.kind !== "review-row") {
+      return undefined;
+    }
+    return resolveCopySelectionSide(copySelectionDrag.anchor.column, layout, diffContentWidth);
+  }, [copySelectionDrag, diffContentWidth, layout]);
+
+  const copySelectedRowKeysByFile = useMemo(
+    () =>
+      buildCopySelectedRowKeys({
+        drag: copySelectionDrag,
+        fileSectionLayouts,
+        sectionGeometry,
+        width: diffContentWidth,
+      }),
+    [copySelectionDrag, diffContentWidth, fileSectionLayouts, sectionGeometry],
+  );
+
+  /** Copy selected text through the injected boundary or the renderer's OSC 52 clipboard support. */
+  const copySelectionText = useCallback(
+    (text: string) => {
+      if (text.length === 0) {
+        return;
+      }
+
+      if (onCopySelectionText) {
+        onCopySelectionText(text);
+        return;
+      }
+
+      const supportsOsc52 = renderer.isOsc52Supported?.() ?? false;
+      if (supportsOsc52 && typeof renderer.copyToClipboardOSC52 === "function") {
+        renderer.copyToClipboardOSC52(text);
+        onCopyFeedback?.("Copied selection to clipboard");
+        return;
+      }
+
+      onCopyFeedback?.(
+        "Clipboard copy unsupported in this terminal (enable OSC 52 to capture selections)",
+      );
+    },
+    [onCopyFeedback, onCopySelectionText, renderer],
+  );
+
+  /** Convert one mouse event into a review-stream copy-selection point. */
+  const resolveCopySelectionPoint = useCallback(
+    (event: TuiMouseEvent): CopySelectionPoint | null => {
+      const scrollBox = scrollRef.current;
+      if (!scrollBox) {
+        return null;
+      }
+
+      const reviewPaneTopChromeRows = pagerMode ? 0 : 2;
+      const pinnedHeaderHeight = pinnedHeaderFileId ? 1 : 0;
+      const paneY = Math.floor(event.y - screenTop);
+      const pinnedHeaderY = reviewPaneTopChromeRows;
+      if (copyDecorations && pinnedHeaderFileId && paneY === pinnedHeaderY) {
+        return {
+          kind: "pinned-header",
+          column: clampCopyColumn(Math.floor(event.x - screenLeft), diffContentWidth),
+          fileId: pinnedHeaderFileId,
+          nextVisualRow: Math.floor(scrollBox.scrollTop ?? 0),
+        };
+      }
+
+      const paneChromeHeight = reviewPaneTopChromeRows + pinnedHeaderHeight;
+      const viewportY = Math.floor(event.y - screenTop - paneChromeHeight);
+      if (viewportY < 0 || viewportY >= Math.max(1, scrollBox.viewport.height ?? 0)) {
+        return null;
+      }
+
+      return findCopySelectionPoint({
+        column: Math.floor(event.x - screenLeft),
+        copyDecorations,
+        fileSectionLayouts,
+        sectionGeometry,
+        visualRow: Math.floor((scrollBox.scrollTop ?? 0) + viewportY),
+        width: diffContentWidth,
+      });
+    },
+    [
+      copyDecorations,
+      diffContentWidth,
+      fileSectionLayouts,
+      pagerMode,
+      pinnedHeaderFileId,
+      screenLeft,
+      screenTop,
+      scrollRef,
+      sectionGeometry,
+    ],
+  );
+
+  // OpenTUI starts a native cross-renderable text selection on mouse-down over any selectable
+  // <text> before our handler runs. That native selection ignores element bounds and paints
+  // across the whole screen, so we eagerly clear it whenever Hunk owns the drag.
+  const suppressNativeSelection = useCallback(() => {
+    if (renderer.hasSelection) {
+      renderer.clearSelection();
+    }
+  }, [renderer]);
+
+  /** Start selecting diff text when the user drags inside the review stream. */
+  const beginCopySelection = useCallback(
+    (event: TuiMouseEvent) => {
+      if (event.button !== MouseButton.LEFT) {
+        return;
+      }
+
+      const point = resolveCopySelectionPoint(event);
+      if (!point) {
+        copySelectionDragRef.current = null;
+        clickCountRef.current = 0;
+        lastClickPointRef.current = null;
+        setCopySelectionDrag(null);
+        return;
+      }
+
+      // Detect double-click and triple-click for word/line selection.
+      const now = Date.now();
+      const timeSinceLastClick = now - lastClickTimeRef.current;
+      const previousClickPoint = lastClickPointRef.current;
+      const repeatedClickTarget =
+        previousClickPoint !== null &&
+        copySelectionPointsShareRow(previousClickPoint, point) &&
+        Math.abs(previousClickPoint.column - point.column) <= 2;
+      lastClickTimeRef.current = now;
+      lastClickPointRef.current = point;
+
+      let clickCount = 1;
+      if (timeSinceLastClick < 350 && timeSinceLastClick >= 0 && repeatedClickTarget) {
+        clickCountRef.current += 1;
+        clickCount = Math.min(clickCountRef.current, 3);
+      } else {
+        clickCountRef.current = 1;
+      }
+
+      if (clickCount >= 2 && point.kind === "review-row") {
+        const expanded = expandSelectionPoint(point, clickCount as 2 | 3, copySelectionContext);
+        if (expanded) {
+          const drag: CopySelectionDrag = {
+            anchor: { ...point, column: expanded.startCol },
+            focus: { ...point, column: expanded.endCol },
+            moved: true,
+          };
+          copySelectionDragRef.current = drag;
+          setCopySelectionDrag(drag);
+          suppressNativeSelection();
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+      }
+
+      const initial: CopySelectionDrag = { anchor: point, focus: point, moved: false };
+      copySelectionDragRef.current = initial;
+      setCopySelectionDrag(initial);
+      suppressNativeSelection();
+      event.preventDefault();
+      event.stopPropagation();
+    },
+    [copySelectionContext, resolveCopySelectionPoint, suppressNativeSelection],
+  );
+
+  /** Extend the active diff text selection while the pointer moves. */
+  const updateCopySelection = useCallback(
+    (event: TuiMouseEvent) => {
+      // Use the ref (not state) so that native-selection suppression fires on the very
+      // first drag event, before React has re-rendered with the new copySelectionDrag.
+      setCopySelectionDrag((current) => {
+        if (!current) {
+          return current;
+        }
+
+        const point = resolveCopySelectionPoint(event);
+        if (!point) {
+          return current;
+        }
+
+        return {
+          anchor: current.anchor,
+          focus: point,
+          moved: current.moved || !copySelectionPointsEqual(point, current.anchor),
+        };
+      });
+
+      // The state updater above sets the ref during the render phase. Update the ref
+      // synchronously as well so that endCopySelection can read the correct moved flag
+      // even if the mouse-up event fires before React processes the pending state update.
+      const refDrag = copySelectionDragRef.current;
+      if (refDrag) {
+        const point = resolveCopySelectionPoint(event);
+        if (point) {
+          copySelectionDragRef.current = {
+            anchor: refDrag.anchor,
+            focus: point,
+            moved: refDrag.moved || !copySelectionPointsEqual(point, refDrag.anchor),
+          };
+        }
+      }
+
+      if (copySelectionDragRef.current) {
+        suppressNativeSelection();
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    },
+    [resolveCopySelectionPoint, suppressNativeSelection],
+  );
+
+  /** Finish a drag selection and copy its rendered text. */
+  const endCopySelection = useCallback(
+    (event?: TuiMouseEvent) => {
+      const current = copySelectionDragRef.current;
+      if (!current) {
+        return;
+      }
+
+      copySelectionDragRef.current = null;
+      setCopySelectionDrag(null);
+      event?.preventDefault();
+      event?.stopPropagation();
+
+      if (!current.moved) {
+        return;
+      }
+
+      const { start, end } = normalizeCopySelectionRange(current.anchor, current.focus);
+      const text = renderCopySelectionText({
+        context: copySelectionContext,
+        end,
+        side: copySelectionSide,
+        start,
+      });
+      copySelectionText(text);
+    },
+    [copySelectionContext, copySelectionSide, copySelectionText],
+  );
+
+  // Expose the cancel hook so an ancestor (App's outer container) can release a stuck drag when
+  // the pointer leaves the diff pane and is released over the sidebar, menu bar, or status bar.
+  useEffect(() => {
+    if (!cancelCopySelectionRef) {
+      return;
+    }
+    cancelCopySelectionRef.current = () => endCopySelection();
+    return () => {
+      if (cancelCopySelectionRef.current) {
+        cancelCopySelectionRef.current = null;
+      }
+    };
+  }, [cancelCopySelectionRef, endCopySelection]);
+
   /** Clamp one requested review scroll target against the latest planned content height. */
   const clampReviewScrollTop = useCallback(
     (requestedTop: number, viewportHeight: number) =>
@@ -606,10 +969,6 @@ export function DiffPane({
       });
     }
   }, [files, highlightPrefetchFileIds, theme.appearance]);
-
-  // Read the live scroll box position during render so pinned-header ownership flips
-  // immediately after imperative scrolls instead of waiting for the polled viewport snapshot.
-  const effectiveScrollTop = scrollRef.current?.scrollTop ?? scrollViewport.top;
 
   // Keep the selected file/hunk derived from the visible viewport for actual scroll-driven
   // movement, while leaving the initial mount and non-scroll relayouts alone.
@@ -657,23 +1016,6 @@ export function DiffPane({
     selectedFileId,
     selectedHunkIndex,
   ]);
-
-  const pinnedHeaderFile = useMemo(() => {
-    if (files.length === 0) {
-      return null;
-    }
-
-    // The current file header always owns the pinned top row.
-    // Use the previous visible row to decide ownership so the next file's real header can still
-    // scroll through the stream before the pinned header hands off to it on the following row.
-    const owner = findHeaderOwningFileSection(
-      fileSectionLayouts,
-      Math.max(0, effectiveScrollTop - 1),
-    );
-
-    return owner ? (files[owner.sectionIndex] ?? null) : (files[0] ?? null);
-  }, [effectiveScrollTop, fileSectionLayouts, files]);
-  const pinnedHeaderFileId = pinnedHeaderFile?.id ?? null;
 
   useLayoutEffect(() => {
     renderer.intermediateRender();
@@ -1216,12 +1558,20 @@ export function DiffPane({
         paddingX: 0,
         flexDirection: "column",
       }}
+      onMouseDragEnd={endCopySelection}
+      onMouseUp={endCopySelection}
     >
       {files.length > 0 ? (
         <box style={{ width: "100%", height: "100%", flexGrow: 1, flexDirection: "column" }}>
           {/* Always pin the current file header in a dedicated top row. */}
           {pinnedHeaderFile ? (
-            <box style={{ width: "100%", height: 1, minHeight: 1, flexShrink: 0 }}>
+            <box
+              style={{ width: "100%", height: 1, minHeight: 1, flexShrink: 0 }}
+              onMouseDown={beginCopySelection}
+              onMouseDrag={updateCopySelection}
+              onMouseDragEnd={endCopySelection}
+              onMouseUp={endCopySelection}
+            >
               <DiffFileHeaderRow
                 file={pinnedHeaderFile}
                 headerLabelWidth={headerLabelWidth}
@@ -1239,7 +1589,11 @@ export function DiffPane({
               scrollY={true}
               viewportCulling={true}
               focused={pagerMode}
+              onMouseDown={beginCopySelection}
+              onMouseDrag={updateCopySelection}
+              onMouseDragEnd={endCopySelection}
               onMouseScroll={handleMouseScroll}
+              onMouseUp={endCopySelection}
               scrollAcceleration={mouseWheelScrollAcceleration}
               rootOptions={{ backgroundColor: theme.panel }}
               wrapperOptions={{ backgroundColor: theme.panel }}
@@ -1285,6 +1639,8 @@ export function DiffPane({
                       headerStatsWidth={headerStatsWidth}
                       layout={layout}
                       selectedHunkIndex={file.id === selectedFileId ? selectedHunkIndex : -1}
+                      copySelectedRowRanges={copySelectedRowKeysByFile.get(file.id)}
+                      copySelectedSide={copySelectionSide}
                       shouldLoadHighlight={highlightPrefetchFileIds.has(file.id)}
                       sectionGeometry={sectionGeometry[index]}
                       separatorWidth={separatorWidth}
@@ -1295,12 +1651,14 @@ export function DiffPane({
                       wrapLines={wrapLines}
                       theme={theme}
                       hoverActive={hoveredFileId === null || hoveredFileId === file.id}
+                      hoverClearSignal={addNoteHoverClearSignal}
                       viewWidth={diffContentWidth}
                       visibleAgentNotes={
                         visibleAgentNotesByFile.get(file.id) ?? EMPTY_VISIBLE_AGENT_NOTES
                       }
                       visibleBodyBounds={visibleBodyBoundsByFile.get(file.id)}
                       onHover={() => setHoveredFileId(file.id)}
+                      onMouseScroll={clearAddNoteHoverForScroll}
                       onActiveAddNoteAffordanceChange={(affordance) =>
                         onActiveAddNoteAffordanceChange?.(
                           affordance ? { ...affordance, fileId: file.id } : null,

@@ -14,11 +14,13 @@ export interface BuildAppMenusOptions {
   requestQuit: () => void;
   selectLayoutMode: (mode: LayoutMode) => void;
   selectThemeId: (themeId: string) => void;
+  copyDecorations: boolean;
   showAgentNotes: boolean;
   showHelp: boolean;
   showHunkHeaders: boolean;
   showLineNumbers: boolean;
   renderSidebar: boolean;
+  toggleCopyDecorations: () => void;
   toggleAgentNotes: () => void;
   toggleFocusArea: () => void;
   toggleHelp: () => void;
@@ -43,11 +45,13 @@ export function buildAppMenus({
   requestQuit,
   selectLayoutMode,
   selectThemeId,
+  copyDecorations,
   showAgentNotes,
   showHelp,
   showHunkHeaders,
   showLineNumbers,
   renderSidebar,
+  toggleCopyDecorations,
   toggleAgentNotes,
   toggleFocusArea,
   toggleHelp,
@@ -165,6 +169,12 @@ export function buildAppMenus({
         hint: "m",
         checked: showHunkHeaders,
         action: toggleHunkHeaders,
+      },
+      {
+        kind: "item",
+        label: "Copy decorations",
+        checked: copyDecorations,
+        action: toggleCopyDecorations,
       },
     ],
     navigate: [

@@ -15,12 +15,12 @@ Hunk is a review-first terminal diff viewer for agent-authored changesets, built
 <table>
  <tr>
    <td width="60%" align="center">
-     <img width="794" alt="image" src="https://github.com/user-attachments/assets/f6ffd9c4-67f5-483c-88f1-cbe88c19f52f" />
+    <img width="845" alt="image" src="https://github.com/user-attachments/assets/35605618-be3f-479e-b6e0-edb089910651" />
      <br />
      <sub>Split view with sidebar and inline AI notes</sub>
    </td>
    <td width="40%" align="center">
-     <img width="508" alt="image" src="https://github.com/user-attachments/assets/44c542a2-0a09-41cd-b264-fbd942e92f06" />
+     <img width="507"alt="image" src="https://github.com/user-attachments/assets/92eb8993-f044-436d-a038-8139da5ad8de" />
      <br />
      <sub>Stacked view and mouse-selectable menus</sub>
    </td>
@@ -186,9 +186,9 @@ For source setup, tests, packaging checks, and repo architecture, see [CONTRIBUT
 
 ## Sponsor
 
-Sponsored by [Modem](https://modem.dev?utm_source=github&utm_medium=oss&utm_campaign=hunk).
+Sponsored by [Modem](https://modem.dev?utm_source=github&utm_medium=oss&utm_campaign=oss_hunk&utm_content=readme_footer).
 
-<a href="https://modem.dev?utm_source=github&utm_medium=oss&utm_campaign=hunk">
+<a href="https://modem.dev?utm_source=github&utm_medium=oss&utm_campaign=oss_hunk&utm_content=readme_footer">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://modem.dev/images/logo/svg/modem-combined-white.svg">
     <source media="(prefers-color-scheme: light)" srcset="https://modem.dev/images/logo/svg/modem-combined-black.svg">

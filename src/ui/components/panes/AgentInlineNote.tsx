@@ -8,7 +8,7 @@ import { annotationRangeLabel, reviewNoteSource } from "../../lib/agentAnnotatio
 import { fitText, padText } from "../../lib/text";
 import type { AppTheme } from "../../themes";
 
-function inlineNoteTitle(annotation: AgentAnnotation, noteIndex: number, noteCount: number) {
+export function inlineNoteTitle(annotation: AgentAnnotation, noteIndex: number, noteCount: number) {
   if (annotation.source === "user-draft") {
     return "Draft note";
   }

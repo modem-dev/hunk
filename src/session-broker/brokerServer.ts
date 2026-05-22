@@ -6,6 +6,8 @@ import {
 import {
   LEGACY_MCP_PATH,
   SESSION_BROKER_SOCKET_PATH,
+  allowsUnsafeRemoteSessionBroker,
+  isLoopbackHost,
   resolveSessionBrokerConfig,
 } from "./brokerConfig";
 import {
@@ -22,6 +24,11 @@ import type {
   ReloadedSessionResult,
   RemovedCommentResult,
 } from "../hunk-session/types";
+import {
+  MAX_HTTP_BODY_BYTES,
+  PayloadTooLargeError,
+  readRequestTextWithLimit,
+} from "@hunk/session-broker-core";
 import { listHunkSessionNotes } from "../hunk-session/projections";
 import {
   HUNK_SESSION_API_PATH,
@@ -89,9 +96,113 @@ function jsonError(message: string, status = 400) {
   return Response.json({ error: message }, { status });
 }
 
-async function parseJsonRequest(request: Request) {
+/** Return whether one request body was explicitly sent as JSON. */
+function hasJsonContentType(request: Request) {
+  const contentType = request.headers.get("content-type");
+  return contentType?.split(";", 1)[0]?.trim().toLowerCase() === "application/json";
+}
+
+/** Parse a Host-style value into hostname and optional port pieces. */
+function parseHostAndPort(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  if (trimmed.startsWith("[")) {
+    const closeBracketIndex = trimmed.indexOf("]");
+    if (closeBracketIndex < 0) {
+      return null;
+    }
+
+    const host = trimmed.slice(1, closeBracketIndex);
+    const rest = trimmed.slice(closeBracketIndex + 1);
+    if (!rest) {
+      return { host, port: undefined };
+    }
+
+    if (!rest.startsWith(":")) {
+      return null;
+    }
+
+    const port = Number.parseInt(rest.slice(1), 10);
+    return Number.isInteger(port) && port > 0 ? { host, port } : null;
+  }
+
+  const colonCount = [...trimmed].filter((character) => character === ":").length;
+  if (colonCount === 0) {
+    return { host: trimmed, port: undefined };
+  }
+
+  if (colonCount === 1) {
+    const [host, rawPort] = trimmed.split(":");
+    const port = Number.parseInt(rawPort ?? "", 10);
+    return host && Number.isInteger(port) && port > 0 ? { host, port } : null;
+  }
+
+  // Unbracketed IPv6 literals are invalid in Host headers, but accepting the address without a
+  // port keeps validation strict enough for DNS-rebinding while tolerating unusual native clients.
+  return { host: trimmed, port: undefined };
+}
+
+/** Return whether a parsed authority targets an accepted broker host and port. */
+function isAllowedHostPort(
+  hostPort: { host: string; port?: number },
+  expectedPort: number,
+  options: { allowRemote: boolean },
+) {
+  const hostAllowed = options.allowRemote || isLoopbackHost(hostPort.host);
+  const defaultHttpPort = 80;
+  const port = hostPort.port ?? defaultHttpPort;
+  return hostAllowed && port === expectedPort;
+}
+
+/** Block DNS-rebinding style requests whose Host does not name a permitted broker endpoint. */
+function validateHostHeader(request: Request, expectedPort: number, allowRemote: boolean) {
+  const hostHeader = request.headers.get("host");
+  if (!hostHeader) {
+    return jsonError("Expected Host header for the local session broker.", 400);
+  }
+
+  const hostPort = parseHostAndPort(hostHeader);
+  if (!hostPort || !isAllowedHostPort(hostPort, expectedPort, { allowRemote })) {
+    return jsonError("Host header is not allowed for the local session broker.", 403);
+  }
+
+  return null;
+}
+
+/** Block browser-originated requests from non-local or wrong-port origins. */
+function validateOriginHeader(request: Request, expectedPort: number, allowRemote: boolean) {
+  const origin = request.headers.get("origin");
+  if (!origin) {
+    return null;
+  }
+
+  let url: URL;
   try {
-    return (await request.json()) as SessionDaemonRequest;
+    url = new URL(origin);
+  } catch {
+    return jsonError("Origin is not allowed for the local session broker.", 403);
+  }
+
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    return jsonError("Origin is not allowed for the local session broker.", 403);
+  }
+
+  const defaultPort = url.protocol === "http:" ? 80 : 443;
+  const port = url.port ? Number.parseInt(url.port, 10) : defaultPort;
+  if (!isAllowedHostPort({ host: url.hostname, port }, expectedPort, { allowRemote })) {
+    return jsonError("Origin is not allowed for the local session broker.", 403);
+  }
+
+  return null;
+}
+
+async function parseJsonRequest(request: Request) {
+  const text = await readRequestTextWithLimit(request, MAX_HTTP_BODY_BYTES);
+  try {
+    return JSON.parse(text) as SessionDaemonRequest;
   } catch {
     throw new Error("Expected one JSON request body.");
   }
@@ -100,6 +211,10 @@ async function parseJsonRequest(request: Request) {
 async function handleSessionApiRequest(state: HunkSessionBrokerState, request: Request) {
   if (request.method !== "POST") {
     return jsonError("Session API requests must use POST.", 405);
+  }
+
+  if (!hasJsonContentType(request)) {
+    return jsonError("Expected Content-Type application/json.", 415);
   }
 
   try {
@@ -253,6 +368,10 @@ async function handleSessionApiRequest(state: HunkSessionBrokerState, request: R
 
     return Response.json(response);
   } catch (error) {
+    if (error instanceof PayloadTooLargeError) {
+      return jsonError(error.message, 413);
+    }
+
     return jsonError(error instanceof Error ? error.message : "Unknown session API error.");
   }
 }
@@ -291,6 +410,7 @@ export function serveSessionBrokerDaemon(
   options: ServeSessionBrokerDaemonOptions = {},
 ): RunningSessionBrokerDaemon {
   const config = resolveSessionBrokerConfig();
+  const allowRemote = allowsUnsafeRemoteSessionBroker();
   const idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
   const staleSessionTtlMs = options.staleSessionTtlMs ?? DEFAULT_STALE_SESSION_TTL_MS;
   const staleSessionSweepIntervalMs =
@@ -317,6 +437,16 @@ export function serveSessionBrokerDaemon(
     port: config.port,
     formatServeError: (error, _address) => formatDaemonServeError(error, config.host, config.port),
     handleRequest: async (request) => {
+      const hostError = validateHostHeader(request, config.port, allowRemote);
+      if (hostError) {
+        return hostError;
+      }
+
+      const originError = validateOriginHeader(request, config.port, allowRemote);
+      if (originError) {
+        return originError;
+      }
+
       const url = new URL(request.url);
 
       if (url.pathname === "/health") {

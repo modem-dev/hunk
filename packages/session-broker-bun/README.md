@@ -10,7 +10,7 @@ Use this package when you want to serve a runtime-neutral `SessionBrokerDaemon` 
 - upgrades websocket requests on the daemon socket path
 - forwards websocket messages and close events into the daemon
 - exposes a `stopped` promise compatible with Hunk's daemon lifecycle
-- lets callers override or add custom HTTP routes before the generic broker routes
+- lets callers override or add custom HTTP routes before the daemon's built-in routes
 
 ## Usage
 
@@ -55,7 +55,7 @@ const server = serveSessionBrokerDaemon({
 });
 ```
 
-Return `undefined` to fall through to the generic broker routes.
+Return `undefined` to fall through to the daemon's built-in routes. The raw `/broker` HTTP API is available only when the daemon was created with `exposeHttpApi: true`.
 
 ## License
 

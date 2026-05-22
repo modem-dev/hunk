@@ -109,7 +109,9 @@ export function App({
   const diffScrollRef = useRef<ScrollBoxRenderable | null>(null);
   const wrapToggleScrollTopRef = useRef<number | null>(null);
   const layoutToggleScrollTopRef = useRef<number | null>(null);
+  const cancelCopySelectionRef = useRef<(() => void) | null>(null);
   const [layoutToggleRequestId, setLayoutToggleRequestId] = useState(0);
+  const [transientNoticeText, setTransientNoticeText] = useState<string | null>(null);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(bootstrap.initialMode);
   const [themeId, setThemeId] = useState(() =>
     bootstrap.initialTheme === "auto"
@@ -123,6 +125,7 @@ export function App({
   );
   const [showLineNumbers, setShowLineNumbers] = useState(bootstrap.initialShowLineNumbers ?? true);
   const [wrapLines, setWrapLines] = useState(bootstrap.initialWrapLines ?? false);
+  const [copyDecorations, setCopyDecorations] = useState(bootstrap.initialCopyDecorations ?? false);
   const [codeHorizontalOffset, setCodeHorizontalOffset] = useState(0);
   const [showHunkHeaders, setShowHunkHeaders] = useState(bootstrap.initialShowHunkHeaders ?? true);
   const [sidebarVisible, setSidebarVisible] = useState(() => !pagerMode);
@@ -337,6 +340,35 @@ export function App({
   const toggleLineNumbers = () => {
     setShowLineNumbers((current) => !current);
   };
+
+  /** Toggle whether mouse selection copies review decorations or only file content. */
+  const toggleCopyDecorations = () => {
+    setCopyDecorations((current) => !current);
+  };
+
+  // Show a short-lived status-bar message. Used to surface clipboard-copy outcomes that would
+  // otherwise be invisible to the user (OSC52 unsupported, etc.).
+  // Track the timer so we can clear it on unmount and avoid React state updates after unmount.
+  const transientTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showTransientNotice = useCallback((text: string, durationMs = 3000) => {
+    if (transientTimerRef.current !== null) {
+      clearTimeout(transientTimerRef.current);
+    }
+    setTransientNoticeText(text);
+    transientTimerRef.current = setTimeout(() => {
+      transientTimerRef.current = null;
+      setTransientNoticeText((current) => (current === text ? null : current));
+    }, durationMs);
+  }, []);
+
+  // Clear any pending transient-notice timer on unmount to avoid state updates after unmount.
+  useEffect(() => {
+    return () => {
+      if (transientTimerRef.current !== null) {
+        clearTimeout(transientTimerRef.current);
+      }
+    };
+  }, []);
 
   /** Toggle whether diff code rows wrap instead of truncating to one terminal row. */
   const toggleLineWrap = () => {
@@ -582,11 +614,13 @@ export function App({
         requestQuit,
         selectLayoutMode,
         selectThemeId: setThemeId,
+        copyDecorations,
         showAgentNotes,
         showHelp,
         showHunkHeaders,
         showLineNumbers,
         renderSidebar,
+        toggleCopyDecorations,
         toggleAgentNotes,
         toggleFocusArea,
         toggleHelp,
@@ -600,6 +634,7 @@ export function App({
     [
       activeTheme.id,
       canRefreshCurrentInput,
+      copyDecorations,
       focusFilter,
       layoutMode,
       moveToAnnotatedFile,
@@ -608,6 +643,7 @@ export function App({
       review.moveToHunk,
       selectLayoutMode,
       triggerRefreshCurrentInput,
+      toggleCopyDecorations,
       showAgentNotes,
       showHelp,
       showHunkHeaders,
@@ -733,6 +769,11 @@ export function App({
   const diffHeaderStatsWidth = Math.min(24, Math.max(16, Math.floor(diffContentWidth / 3)));
   const diffHeaderLabelWidth = Math.max(8, diffContentWidth - diffHeaderStatsWidth - 1);
   const diffSeparatorWidth = Math.max(4, diffContentWidth - 2);
+  // Mirror the App layout: bodyPadding/2 left-padding, then sidebar + divider when visible. Keep
+  // this in lockstep with the body container's paddingLeft and the sidebar render branch below.
+  const diffPaneScreenLeft =
+    bodyPadding / 2 + (renderSidebar ? clampedSidebarWidth + DIVIDER_WIDTH : 0);
+  const diffPaneScreenTop = pagerMode ? 0 : 1;
 
   return (
     <box
@@ -771,10 +812,14 @@ export function App({
           position: "relative",
         }}
         onMouseDrag={updateSidebarResize}
-        onMouseDragEnd={endSidebarResize}
+        onMouseDragEnd={(event) => {
+          endSidebarResize(event);
+          cancelCopySelectionRef.current?.();
+        }}
         onMouseUp={(event) => {
           endSidebarResize(event);
           closeMenu();
+          cancelCopySelectionRef.current?.();
         }}
       >
         {renderSidebar ? (
@@ -806,10 +851,14 @@ export function App({
         ) : null}
 
         <DiffPane
+          cancelCopySelectionRef={cancelCopySelectionRef}
           codeHorizontalOffset={codeHorizontalOffset}
+          copyDecorations={copyDecorations}
           diffContentWidth={diffContentWidth}
           files={filteredFiles}
           pagerMode={pagerMode}
+          screenLeft={diffPaneScreenLeft}
+          screenTop={diffPaneScreenTop}
           headerLabelWidth={diffHeaderLabelWidth}
           headerStatsWidth={diffHeaderStatsWidth}
           layout={resolvedLayout}
@@ -842,6 +891,7 @@ export function App({
           onScrollCodeHorizontally={(delta) => {
             scrollCodeHorizontally(delta * FAST_CODE_HORIZONTAL_SCROLL_COLUMNS);
           }}
+          onCopyFeedback={showTransientNotice}
           onSelectFile={jumpToFile}
           onViewportCenteredHunkChange={(fileId, hunkIndex) =>
             review.selectHunk(fileId, hunkIndex, { preserveViewport: true })
@@ -852,12 +902,11 @@ export function App({
       {!pagerMode &&
       (focusArea === "filter" ||
         Boolean(review.filter) ||
-        Boolean(sessionNoticeText) ||
-        Boolean(noticeText)) ? (
+        Boolean(sessionNoticeText ?? transientNoticeText ?? noticeText)) ? (
         <StatusBar
           filter={review.filter}
           filterFocused={focusArea === "filter"}
-          noticeText={sessionNoticeText ?? noticeText ?? undefined}
+          noticeText={sessionNoticeText ?? transientNoticeText ?? noticeText ?? undefined}
           terminalWidth={terminal.width}
           theme={activeTheme}
           onCloseMenu={closeMenu}

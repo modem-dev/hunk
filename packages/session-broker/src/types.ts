@@ -15,9 +15,9 @@ export interface SessionBrokerCapabilities {
 
 export interface SessionBrokerHttpPaths {
   health: string;
-  api: string;
-  capabilities: string;
   socket: string;
+  api?: string;
+  capabilities?: string;
 }
 
 export type SessionBrokerDaemonRequest<
