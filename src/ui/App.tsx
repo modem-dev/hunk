@@ -437,7 +437,14 @@ export function App({
   }, [refreshCurrentInput]);
 
   const triggerEditSelectedFile = useCallback(() => {
+    const basePath =
+      bootstrap.input.kind === "vcs" ||
+      bootstrap.input.kind === "show" ||
+      bootstrap.input.kind === "stash-show"
+        ? bootstrap.changeset.sourceLabel
+        : undefined;
     const message = openSelectedFileInEditor({
+      basePath,
       file: selectedFile,
       renderer,
       selectedHunk: review.selectedHunk,
@@ -452,6 +459,8 @@ export function App({
       triggerRefreshCurrentInput();
     }
   }, [
+    bootstrap.changeset.sourceLabel,
+    bootstrap.input.kind,
     canRefreshCurrentInput,
     renderer,
     review.selectedHunk,
