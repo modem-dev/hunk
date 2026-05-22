@@ -7,6 +7,7 @@ All notable user-visible changes to Hunk are documented in this file.
 ### Added
 
 - Added mouse-drag text selection in diff views that copies selected rows to the system clipboard via OSC 52. A `View > Copy decorations` toggle (or `copy_decorations` config) controls whether the clipboard includes diff rails, gutters, and file headers or only the changed code.
+- Added `hunk diff --kitty-follow` plus bundled Kitty watcher support so marked live Hunk sessions can follow the active Kitty pane's repository.
 
 ### Changed
 

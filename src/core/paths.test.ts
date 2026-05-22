@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
+  resolveBundledKittyWatcherPath,
   resolveBundledHunkReviewSkillPath,
   resolveGlobalConfigPath,
   resolveHunkStatePath,
@@ -49,6 +50,25 @@ describe("paths", () => {
       writeFileSync(fakeBinary, "binary\n");
 
       expect(resolveBundledHunkReviewSkillPath([fakeBinary])).toBe(skillPath);
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  test("locates the bundled Kitty watcher through a nested hunkdiff package", () => {
+    const tempRoot = createTempRoot("hunk-kitty-watcher-path-");
+
+    try {
+      const nestedPackageRoot = join(tempRoot, "node_modules", "hunkdiff");
+      const watcherPath = join(nestedPackageRoot, "kitty", "hunk-follow.py");
+      const fakeBinary = join(tempRoot, "node_modules", "hunkdiff-linux-x64", "bin", "hunk");
+
+      mkdirSync(dirname(watcherPath), { recursive: true });
+      mkdirSync(dirname(fakeBinary), { recursive: true });
+      writeFileSync(watcherPath, "# watcher\n");
+      writeFileSync(fakeBinary, "binary\n");
+
+      expect(resolveBundledKittyWatcherPath([fakeBinary])).toBe(watcherPath);
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }

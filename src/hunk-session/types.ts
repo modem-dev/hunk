@@ -44,6 +44,7 @@ export interface HunkSessionInfo {
   inputKind: CliInput["kind"];
   title: string;
   sourceLabel: string;
+  kittyFollow?: boolean;
   files: SessionReviewFile[];
 }
 
@@ -177,6 +178,7 @@ export interface ListedSession {
   launchedAt: string;
   terminal?: SessionTerminalMetadata;
   inputKind: CliInput["kind"];
+  kittyFollow: boolean;
   title: string;
   sourceLabel: string;
   fileCount: number;

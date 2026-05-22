@@ -9,7 +9,13 @@ import {
   usesPipedPatchInput,
   type ControllingTerminal,
 } from "./terminal";
-import type { AppBootstrap, CliInput, ParsedCliInput, SessionCommandInput } from "./types";
+import type {
+  AppBootstrap,
+  CliInput,
+  KittyCommandInput,
+  ParsedCliInput,
+  SessionCommandInput,
+} from "./types";
 import { canReloadInput } from "./watch";
 import { parseCli } from "./cli";
 
@@ -24,6 +30,10 @@ export type StartupPlan =
   | {
       kind: "session-command";
       input: SessionCommandInput;
+    }
+  | {
+      kind: "kitty-command";
+      input: KittyCommandInput;
     }
   | {
       kind: "plain-text-pager";
@@ -110,6 +120,13 @@ export async function prepareStartupPlan(
   if (parsedCliInput.kind === "session") {
     return {
       kind: "session-command",
+      input: parsedCliInput,
+    };
+  }
+
+  if (parsedCliInput.kind === "kitty") {
+    return {
+      kind: "kitty-command",
       input: parsedCliInput,
     };
   }

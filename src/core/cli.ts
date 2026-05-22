@@ -59,6 +59,7 @@ function buildCommonOptions(
     agentContext?: string;
     pager?: boolean;
     watch?: boolean;
+    kittyFollow?: boolean;
   },
   argv: string[],
 ): CommonOptions {
@@ -68,6 +69,7 @@ function buildCommonOptions(
     agentContext: options.agentContext,
     pager: options.pager ? true : undefined,
     watch: options.watch ? true : undefined,
+    kittyFollow: options.kittyFollow ? true : undefined,
     excludeUntracked: resolveBooleanFlag(argv, "--exclude-untracked", "--no-exclude-untracked"),
     lineNumbers: resolveBooleanFlag(argv, "--line-numbers", "--no-line-numbers"),
     wrapLines: resolveBooleanFlag(argv, "--wrap", "--no-wrap"),
@@ -136,6 +138,7 @@ function renderCliHelp() {
     "  hunk pager                              general Git pager wrapper with diff detection",
     "  hunk difftool <left> <right> [path]     review Git difftool file pairs",
     "  hunk session <subcommand>               inspect or control a live Hunk session",
+    "  hunk kitty <subcommand>                 integrate live Hunk sessions with Kitty",
     "  hunk skill path                         print the bundled Hunk review skill path",
     "  hunk daemon serve                       run the local Hunk session daemon",
     "",
@@ -375,6 +378,7 @@ async function parseDiffCommand(tokens: string[], argv: string[]): Promise<Parse
   )
     .option("--staged", "show staged changes instead of the working tree")
     .option("--cached", "alias for --staged")
+    .option("--kitty-follow", "allow Kitty focus changes to reload this live diff session")
     .option("--exclude-untracked", "exclude untracked files from working tree reviews")
     .addOption(
       new Option(
@@ -401,6 +405,10 @@ async function parseDiffCommand(tokens: string[], argv: string[]): Promise<Parse
   const staged = Boolean(parsedOptions.staged) || Boolean(parsedOptions.cached);
   const options = buildCommonOptions(parsedOptions, argv);
   const normalizedPathspecs = pathspecs.length > 0 ? pathspecs : undefined;
+
+  if (options.kittyFollow && (staged || parsedTargets.length > 0 || normalizedPathspecs)) {
+    throw new Error("`--kitty-follow` only supports working-tree `hunk diff` sessions.");
+  }
 
   if (parsedTargets.length === 0) {
     return {
@@ -570,6 +578,10 @@ function requireReloadableCliInput(input: ParsedCliInput): CliInput {
 
   if (input.kind === "session") {
     throw new Error("Session reload cannot invoke another session command.");
+  }
+
+  if (input.kind === "kitty") {
+    throw new Error("Session reload cannot invoke a Kitty integration command.");
   }
 
   if (input.kind === "patch" && (!input.file || input.file === "-")) {
@@ -1214,6 +1226,73 @@ async function parseSkillCommand(tokens: string[]): Promise<HelpCommandInput> {
   };
 }
 
+/** Parse commands used by Kitty watcher/keybinding integrations. */
+async function parseKittyCommand(tokens: string[]): Promise<ParsedCliInput> {
+  const [subcommand, ...rest] = tokens;
+  if (!subcommand || subcommand === "--help" || subcommand === "-h") {
+    return {
+      kind: "help",
+      text:
+        [
+          "Usage: hunk kitty <subcommand>",
+          "",
+          "Integrate live Hunk sessions with Kitty.",
+          "",
+          "Subcommands:",
+          "  hunk kitty watcher-path              print the bundled Kitty watcher path",
+          "  hunk kitty sync --window-id <id>     reload a marked Hunk session from Kitty focus",
+        ].join("\n") + "\n",
+    };
+  }
+
+  if (subcommand === "watcher-path") {
+    const command = new Command("kitty watcher-path").description(
+      "print the bundled Kitty watcher path",
+    );
+
+    if (rest.includes("--help") || rest.includes("-h")) {
+      return { kind: "help", text: `${command.helpInformation().trimEnd()}\n` };
+    }
+
+    await parseStandaloneCommand(command, rest);
+
+    return {
+      kind: "kitty",
+      action: "watcher-path",
+    };
+  }
+
+  if (subcommand === "sync") {
+    const command = new Command("kitty sync")
+      .description("reload one marked live Hunk session from the active Kitty pane")
+      .requiredOption("--window-id <id>", "Kitty window id from the focus-change event")
+      .option("--to <address>", "Kitty remote-control socket address for `kitten @ --to`")
+      .option("--json", "emit structured JSON");
+
+    let parsedOptions: { windowId?: string; to?: string; json?: boolean } = {};
+
+    command.action((options: { windowId?: string; to?: string; json?: boolean }) => {
+      parsedOptions = options;
+    });
+
+    if (rest.includes("--help") || rest.includes("-h")) {
+      return { kind: "help", text: `${command.helpInformation().trimEnd()}\n` };
+    }
+
+    await parseStandaloneCommand(command, rest);
+
+    return {
+      kind: "kitty",
+      action: "sync",
+      output: parsedOptions.json ? "json" : "text",
+      windowId: parsedOptions.windowId!,
+      to: parsedOptions.to,
+    };
+  }
+
+  throw new Error(`Unknown kitty command: ${subcommand}`);
+}
+
 /** Parse `hunk daemon serve` as the canonical local daemon entrypoint. */
 async function parseDaemonCommand(tokens: string[]): Promise<ParsedCliInput> {
   const [subcommand, ...rest] = tokens;
@@ -1331,6 +1410,8 @@ export async function parseCli(argv: string[]): Promise<ParsedCliInput> {
       return parseStashCommand(rest, argv);
     case "session":
       return parseSessionCommand(rest);
+    case "kitty":
+      return parseKittyCommand(rest);
     case "skill":
       return parseSkillCommand(rest);
     case "daemon":

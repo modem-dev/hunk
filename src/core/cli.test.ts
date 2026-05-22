@@ -35,6 +35,7 @@ describe("parseCli", () => {
     expect(parsed.text).toContain("hunk diff");
     expect(parsed.text).toContain("hunk show");
     expect(parsed.text).toContain("hunk skill path");
+    expect(parsed.text).toContain("hunk kitty <subcommand>");
     expect(parsed.text).toContain("Global options:");
     expect(parsed.text).toContain("Common review options:");
     expect(parsed.text).toContain("auto-reload when the current diff input changes");
@@ -101,6 +102,27 @@ describe("parseCli", () => {
         agentNotes: true,
       },
     });
+  });
+
+  test("parses Kitty follow opt-in for working-tree diffs", async () => {
+    const parsed = await parseCli(["bun", "hunk", "diff", "--kitty-follow"]);
+
+    expect(parsed).toMatchObject({
+      kind: "vcs",
+      staged: false,
+      options: {
+        kittyFollow: true,
+      },
+    });
+  });
+
+  test("rejects Kitty follow for non-working-tree diff forms", async () => {
+    await expect(parseCli(["bun", "hunk", "diff", "--kitty-follow", "--staged"])).rejects.toThrow(
+      "`--kitty-follow` only supports working-tree `hunk diff` sessions.",
+    );
+    await expect(parseCli(["bun", "hunk", "diff", "--kitty-follow", "main"])).rejects.toThrow(
+      "`--kitty-follow` only supports working-tree `hunk diff` sessions.",
+    );
   });
 
   test("parses staged git-style diff aliases", async () => {
@@ -222,6 +244,33 @@ describe("parseCli", () => {
         "Load or symlink that file in your coding agent to keep it in sync across Hunk upgrades.",
         "",
       ].join("\n"),
+    });
+  });
+
+  test("parses Kitty integration commands", async () => {
+    expect(await parseCli(["bun", "hunk", "kitty", "watcher-path"])).toEqual({
+      kind: "kitty",
+      action: "watcher-path",
+    });
+
+    expect(
+      await parseCli([
+        "bun",
+        "hunk",
+        "kitty",
+        "sync",
+        "--window-id",
+        "42",
+        "--to",
+        "unix:/tmp/kitty",
+        "--json",
+      ]),
+    ).toEqual({
+      kind: "kitty",
+      action: "sync",
+      output: "json",
+      windowId: "42",
+      to: "unix:/tmp/kitty",
     });
   });
 

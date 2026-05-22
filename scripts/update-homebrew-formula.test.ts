@@ -80,6 +80,7 @@ describe("update-homebrew-formula", () => {
       expect(formula).toContain("hunkdiff-linux-x64.tar.gz");
       expect(formula).toContain('chmod 0755, "hunk"');
       expect(formula).toContain('libexec.install "hunk"');
+      expect(formula).toContain('libexec.install "kitty"');
       expect(formula).toContain('libexec.install "skills"');
       expect(formula).toContain(
         '(bin/"hunk").write_env_script libexec/"hunk", HUNK_INSTALL_SOURCE: "homebrew"',

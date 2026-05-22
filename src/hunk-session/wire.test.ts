@@ -80,6 +80,7 @@ describe("hunk session wire parsing", () => {
         inputKind: "vcs",
         title: "repo working tree",
         sourceLabel: "/repo",
+        kittyFollow: true,
         files: [],
       },
     });
@@ -88,6 +89,7 @@ describe("hunk session wire parsing", () => {
       inputKind: "vcs",
       title: "repo working tree",
       sourceLabel: "/repo",
+      kittyFollow: true,
       files: [],
     });
   });

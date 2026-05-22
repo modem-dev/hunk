@@ -50,6 +50,7 @@ const requiredPaths = [
   "dist/npm/main.js",
   "dist/npm/opentui/index.d.ts",
   "dist/npm/opentui/index.js",
+  "kitty/hunk-follow.py",
   "README.md",
   "LICENSE",
   "package.json",

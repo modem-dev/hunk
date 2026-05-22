@@ -34,10 +34,20 @@ describe("hunk session projections", () => {
     expect(buildListedHunkSession(entry)).toEqual(
       expect.objectContaining({
         terminal: entry.registration.terminal,
+        kittyFollow: false,
         fileCount: 1,
         files: [expect.objectContaining({ path: "src/example.ts", hunkCount: 1 })],
       }),
     );
+  });
+
+  test("buildListedHunkSession exposes Kitty follow opt-in", () => {
+    const listed = buildListedHunkSession({
+      registration: createTestSessionRegistration({ kittyFollow: true }),
+      snapshot: createTestSessionSnapshot(),
+    });
+
+    expect(listed.kittyFollow).toBe(true);
   });
 
   test("buildSelectedHunkSessionContext projects the current file and selected ranges", () => {

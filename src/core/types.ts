@@ -74,6 +74,7 @@ export interface CommonOptions {
   agentContext?: string;
   pager?: boolean;
   watch?: boolean;
+  kittyFollow?: boolean;
   excludeUntracked?: boolean;
   lineNumbers?: boolean;
   wrapLines?: boolean;
@@ -105,6 +106,23 @@ export interface PagerCommandInput {
 export interface DaemonServeCommandInput {
   kind: "daemon-serve";
 }
+
+export type KittyCommandOutput = "text" | "json";
+
+export interface KittyWatcherPathCommandInput {
+  kind: "kitty";
+  action: "watcher-path";
+}
+
+export interface KittySyncCommandInput {
+  kind: "kitty";
+  action: "sync";
+  output: KittyCommandOutput;
+  windowId: string;
+  to?: string;
+}
+
+export type KittyCommandInput = KittyWatcherPathCommandInput | KittySyncCommandInput;
 
 export type SessionCommandOutput = "text" | "json";
 
@@ -284,6 +302,7 @@ export type ParsedCliInput =
   | HelpCommandInput
   | PagerCommandInput
   | DaemonServeCommandInput
+  | KittyCommandInput
   | SessionCommandInput;
 
 export interface AppBootstrap {
