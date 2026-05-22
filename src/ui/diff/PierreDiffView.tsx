@@ -1,10 +1,13 @@
 import { useMemo } from "react";
+import type { MouseEvent as TuiMouseEvent } from "@opentui/core";
 import type { DiffFile, LayoutMode } from "../../core/types";
+import type { DiffSide } from "../../hunk-session/types";
 import { AgentInlineNote, AgentInlineNoteGuideCap } from "../components/panes/AgentInlineNote";
 import { CommentComposer } from "../components/panes/CommentComposer";
 import type { VisibleAgentNote } from "../lib/agentAnnotations";
+import { clickTargetForDiffRow } from "../lib/commentCursor";
 import type { DiffSectionGeometry } from "../lib/diffSectionGeometry";
-import { reviewRowId } from "../lib/ids";
+import { COMMENT_CURSOR_ANCHOR_ID, reviewRowId } from "../lib/ids";
 import type { AppTheme } from "../themes";
 import { findMaxLineNumber } from "./codeColumns";
 import { buildSplitRows, buildStackRows } from "./pierre";
@@ -28,6 +31,7 @@ export function PierreDiffView({
   onCommentComposerCancel,
   onCommentComposerSubmit,
   onOpenAgentNotesAtHunk,
+  onSelectCommentTarget,
   showLineNumbers = true,
   showHunkHeaders = true,
   wrapLines = false,
@@ -54,6 +58,7 @@ export function PierreDiffView({
   onCommentComposerCancel?: () => void;
   onCommentComposerSubmit?: (summary: string) => void;
   onOpenAgentNotesAtHunk?: (hunkIndex: number) => void;
+  onSelectCommentTarget?: (target: { hunkIndex: number; side: DiffSide; line: number }) => void;
   showLineNumbers?: boolean;
   showHunkHeaders?: boolean;
   wrapLines?: boolean;
@@ -211,31 +216,68 @@ export function PierreDiffView({
 
         const isCursorRow = Boolean(
           commentCursorRowStableKey &&
-            (plannedRow.stableKey === commentCursorRowStableKey ||
-              plannedRow.stableAliasKeys?.includes(commentCursorRowStableKey)),
+          (plannedRow.stableKey === commentCursorRowStableKey ||
+            plannedRow.stableAliasKeys?.includes(commentCursorRowStableKey)),
+        );
+        // Resolve the click target up front so the wrapper only registers a handler when the
+        // clicked row is actually commentable (additions and deletions, not context/headers).
+        const clickTarget = onSelectCommentTarget ? clickTargetForDiffRow(plannedRow.row) : null;
+        // OpenTUI's renderer auto-focuses the nearest focusable ancestor on left-button mouseDown
+        // unless the event has had preventDefault() called. The diff scrollbox is focusable, so a
+        // bare click would steer arrow keys into its internal scroll handler *in parallel* with
+        // the cursor hook. Suppressing the default on mouseDown keeps focus where it was and lets
+        // the cursor hook be the sole owner of arrow keys.
+        const handleRowMouseDown = clickTarget
+          ? (event: TuiMouseEvent) => {
+              event.preventDefault();
+            }
+          : undefined;
+        const handleRowMouseUp = clickTarget
+          ? (event: TuiMouseEvent) => {
+              event.stopPropagation();
+              onSelectCommentTarget?.(clickTarget);
+            }
+          : undefined;
+
+        const diffRowView = (
+          <DiffRowView
+            row={plannedRow.row}
+            width={width}
+            lineNumberDigits={lineNumberDigits}
+            showLineNumbers={showLineNumbers}
+            showHunkHeaders={showHunkHeaders}
+            wrapLines={wrapLines}
+            codeHorizontalOffset={codeHorizontalOffset}
+            theme={theme}
+            selected={plannedRow.row.hunkIndex === selectedHunkIndex}
+            annotated={
+              plannedRow.row.type === "hunk-header" &&
+              annotatedHunkIndices.has(plannedRow.row.hunkIndex)
+            }
+            anchorId={plannedRow.anchorId}
+            noteGuideSide={plannedRow.noteGuideSide}
+            onOpenAgentNotesAtHunk={onOpenAgentNotesAtHunk}
+            isCursor={isCursorRow}
+          />
         );
 
         return (
-          <box key={plannedRow.key} id={rowId} style={{ width: "100%", flexDirection: "column" }}>
-            <DiffRowView
-              row={plannedRow.row}
-              width={width}
-              lineNumberDigits={lineNumberDigits}
-              showLineNumbers={showLineNumbers}
-              showHunkHeaders={showHunkHeaders}
-              wrapLines={wrapLines}
-              codeHorizontalOffset={codeHorizontalOffset}
-              theme={theme}
-              selected={plannedRow.row.hunkIndex === selectedHunkIndex}
-              annotated={
-                plannedRow.row.type === "hunk-header" &&
-                annotatedHunkIndices.has(plannedRow.row.hunkIndex)
-              }
-              anchorId={plannedRow.anchorId}
-              noteGuideSide={plannedRow.noteGuideSide}
-              onOpenAgentNotesAtHunk={onOpenAgentNotesAtHunk}
-              isCursor={isCursorRow}
-            />
+          <box
+            key={plannedRow.key}
+            id={rowId}
+            style={{ width: "100%", flexDirection: "column" }}
+            onMouseDown={handleRowMouseDown}
+            onMouseUp={handleRowMouseUp}
+          >
+            {isCursorRow ? (
+              // Tag the active cursor row with a constant id so the scroll engine can target it
+              // via scrollChildIntoView when the cursor moves out of the viewport.
+              <box id={COMMENT_CURSOR_ANCHOR_ID} style={{ width: "100%", flexDirection: "column" }}>
+                {diffRowView}
+              </box>
+            ) : (
+              diffRowView
+            )}
           </box>
         );
       })}

@@ -25,7 +25,7 @@ import {
   shouldRenderInStreamFileHeader,
   type FileSectionLayout,
 } from "../../lib/fileSectionLayout";
-import { diffHunkId, diffSectionId } from "../../lib/ids";
+import { COMMENT_CURSOR_ANCHOR_ID, diffHunkId, diffSectionId } from "../../lib/ids";
 import { findViewportCenteredHunkTarget } from "../../lib/viewportSelection";
 import {
   findViewportRowAnchor,
@@ -128,6 +128,8 @@ function buildHighlightPrefetchFileIds({
 /** Render the main multi-file review stream. */
 export function DiffPane({
   codeHorizontalOffset = 0,
+  commentCursorFileId = null,
+  commentCursorRevealRequestId = 0,
   commentCursorRowStableKey,
   composer,
   diffContentWidth,
@@ -156,10 +158,13 @@ export function DiffPane({
   onCommentComposerSubmit,
   onOpenAgentNotesAtHunk,
   onScrollCodeHorizontally = () => {},
+  onSelectCommentTarget,
   onSelectFile,
   onViewportCenteredHunkChange,
 }: {
   codeHorizontalOffset?: number;
+  commentCursorFileId?: string | null;
+  commentCursorRevealRequestId?: number;
   commentCursorRowStableKey?: string | null;
   composer?: {
     fileId: string;
@@ -193,6 +198,12 @@ export function DiffPane({
   onCommentComposerSubmit?: (summary: string) => void;
   onOpenAgentNotesAtHunk: (fileId: string, hunkIndex: number) => void;
   onScrollCodeHorizontally?: (delta: number) => void;
+  onSelectCommentTarget?: (target: {
+    fileId: string;
+    hunkIndex: number;
+    side: "old" | "new";
+    line: number;
+  }) => void;
   onSelectFile: (fileId: string) => void;
   onViewportCenteredHunkChange?: (fileId: string, hunkIndex: number) => void;
 }) {
@@ -1097,6 +1108,35 @@ export function DiffPane({
     suppressViewportSelectionSync,
   ]);
 
+  // Scroll the comment cursor row back into view whenever the controller bumps the reveal id.
+  // The id is bumped on every cursor *position* change (j/k, [/], click, hunk jump, file switch),
+  // but not on a pure mode toggle, so a tap of `c` does not yank the viewport around.
+  const previousCommentCursorRevealRequestIdRef = useRef(commentCursorRevealRequestId);
+  useLayoutEffect(() => {
+    if (commentCursorRevealRequestId === previousCommentCursorRevealRequestIdRef.current) {
+      return;
+    }
+    previousCommentCursorRevealRequestIdRef.current = commentCursorRevealRequestId;
+
+    const revealCursor = () => {
+      const scrollBox = scrollRef.current;
+      if (!scrollBox) {
+        return;
+      }
+      // scrollChildIntoView is a no-op when the anchor row is already inside the viewport, so this
+      // only nudges the viewport on movements that actually leave the visible window.
+      scrollBox.scrollChildIntoView(COMMENT_CURSOR_ANCHOR_ID);
+    };
+
+    revealCursor();
+    // Match the hunk reveal pattern: retry across a couple of paint cycles so cursor moves into a
+    // currently-culled row still resolve once the row mounts.
+    const retries = [16, 48].map((delay) => setTimeout(revealCursor, delay));
+    return () => {
+      retries.forEach((timeout) => clearTimeout(timeout));
+    };
+  }, [commentCursorRevealRequestId, scrollRef]);
+
   // Keep keyboard step scrolling at exactly one row while wheel scrolling uses its own multiplier.
   useEffect(() => {
     const scrollBox = scrollRef.current;
@@ -1180,7 +1220,9 @@ export function DiffPane({
                     <DiffSection
                       key={file.id}
                       codeHorizontalOffset={codeHorizontalOffset}
-                      commentCursorRowStableKey={commentCursorRowStableKey ?? null}
+                      commentCursorRowStableKey={
+                        commentCursorFileId === file.id ? (commentCursorRowStableKey ?? null) : null
+                      }
                       composer={composer && composer.fileId === file.id ? composer : null}
                       file={file}
                       headerLabelWidth={headerLabelWidth}
@@ -1205,6 +1247,11 @@ export function DiffPane({
                       onCommentComposerSubmit={onCommentComposerSubmit}
                       onOpenAgentNotesAtHunk={(hunkIndex) =>
                         onOpenAgentNotesAtHunk(file.id, hunkIndex)
+                      }
+                      onSelectCommentTarget={
+                        onSelectCommentTarget
+                          ? (target) => onSelectCommentTarget({ fileId: file.id, ...target })
+                          : undefined
                       }
                       onSelect={() => onSelectFile(file.id)}
                     />

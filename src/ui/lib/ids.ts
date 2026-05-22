@@ -17,3 +17,11 @@ export function diffHunkId(fileId: string, hunkIndex: number) {
 export function reviewRowId(rowKey: string) {
   return `review-row:${rowKey}`;
 }
+
+/**
+ * Constant id placed on the diff row currently under the comment cursor.
+ *
+ * There is only ever one cursor row in the review stream at a time, so we can use a single fixed
+ * id and have the scroll engine target it directly via scrollChildIntoView.
+ */
+export const COMMENT_CURSOR_ANCHOR_ID = "comment-cursor-anchor";

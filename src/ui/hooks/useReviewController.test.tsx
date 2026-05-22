@@ -400,6 +400,98 @@ describe("useReviewController cursor state", () => {
     }
   });
 
+  test("commentCursorRevealRequestId bumps on position changes but not on pure mode toggles", async () => {
+    let controllerRef: ReviewController | null = null;
+    const file = createTwoHunkFile();
+    const setup = await testRender(
+      <ReviewControllerHarness
+        initialFiles={[file]}
+        onController={(controller) => {
+          controllerRef = controller;
+        }}
+      />,
+      { width: 80, height: 24 },
+    );
+
+    try {
+      await flush(setup);
+      const initial = expectValue<ReviewController | null>(controllerRef);
+      const baselineRequestId = initial.commentCursorRevealRequestId;
+
+      // Entering cursor mode positions it on a row → reveal request bumps.
+      await act(async () => {
+        initial.setCommentCursorMode("navigating");
+      });
+      await flush(setup);
+      const afterEnter = expectValue<ReviewController | null>(controllerRef);
+      expect(afterEnter.commentCursorRevealRequestId).toBeGreaterThan(baselineRequestId);
+
+      // Toggling into composing mode (no position change) must not bump the reveal request.
+      const beforeComposeId = afterEnter.commentCursorRevealRequestId;
+      await act(async () => {
+        afterEnter.setCommentCursorMode("composing");
+      });
+      await flush(setup);
+      const afterCompose = expectValue<ReviewController | null>(controllerRef);
+      expect(afterCompose.commentCursorRevealRequestId).toBe(beforeComposeId);
+
+      // Jumping to the next hunk moves the cursor → reveal request bumps again.
+      await act(async () => {
+        afterCompose.setCommentCursorMode("navigating");
+        afterCompose.jumpCommentCursorToHunk(1);
+      });
+      await flush(setup);
+      const afterJump = expectValue<ReviewController | null>(controllerRef);
+      expect(afterJump.commentCursorRevealRequestId).toBeGreaterThan(beforeComposeId);
+      expect(afterJump.commentCursor.hunkIndex).toBe(1);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("enterCommentCursorAt jumps the cursor to a specific line and switches into navigating mode", async () => {
+    let controllerRef: ReviewController | null = null;
+    const file = createTwoHunkFile();
+    const setup = await testRender(
+      <ReviewControllerHarness
+        initialFiles={[file]}
+        onController={(controller) => {
+          controllerRef = controller;
+        }}
+      />,
+      { width: 80, height: 24 },
+    );
+
+    try {
+      await flush(setup);
+      const controller = expectValue<ReviewController | null>(controllerRef);
+      expect(controller.commentCursor.mode).toBe("off");
+
+      await act(async () => {
+        controller.enterCommentCursorAt({
+          fileId: file.id,
+          hunkIndex: 1,
+          side: "new",
+          line: 11,
+        });
+      });
+      await flush(setup);
+
+      const next = expectValue<ReviewController | null>(controllerRef);
+      expect(next.commentCursor.mode).toBe("navigating");
+      expect(next.commentCursor.fileId).toBe(file.id);
+      expect(next.commentCursor.hunkIndex).toBe(1);
+      expect(next.commentCursor.side).toBe("new");
+      expect(next.commentCursor.line).toBe(11);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("addUserLiveComment stores a user comment that surfaces in liveCommentSummaries", async () => {
     let controllerRef: ReviewController | null = null;
     const file = createTwoHunkFile();

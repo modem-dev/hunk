@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { createTestDiffFile, lines } from "../../../test/helpers/diff-helpers";
+import type { DiffRow } from "../diff/pierre";
 import {
+  clickTargetForDiffRow,
   cursorRowStableKey,
   firstCursorTargetForHunk,
   moveCursor,
@@ -136,8 +138,71 @@ describe("moveCursor", () => {
   });
 
   test("returns null when given an empty file list", () => {
-    expect(
-      moveCursor([], { fileId: "ghost", hunkIndex: 0, side: "new", line: 1 }, 1),
-    ).toBeNull();
+    expect(moveCursor([], { fileId: "ghost", hunkIndex: 0, side: "new", line: 1 }, 1)).toBeNull();
+  });
+});
+
+describe("clickTargetForDiffRow", () => {
+  test("resolves a split-line addition to the new side", () => {
+    const row: DiffRow = {
+      type: "split-line",
+      key: "row:0",
+      fileId: "alpha",
+      hunkIndex: 2,
+      left: { kind: "empty", sign: " ", spans: [] },
+      right: { kind: "addition", sign: "+", lineNumber: 7, spans: [] },
+    };
+
+    expect(clickTargetForDiffRow(row)).toEqual({ hunkIndex: 2, side: "new", line: 7 });
+  });
+
+  test("resolves a split-line deletion to the old side", () => {
+    const row: DiffRow = {
+      type: "split-line",
+      key: "row:1",
+      fileId: "alpha",
+      hunkIndex: 3,
+      left: { kind: "deletion", sign: "-", lineNumber: 12, spans: [] },
+      right: { kind: "empty", sign: " ", spans: [] },
+    };
+
+    expect(clickTargetForDiffRow(row)).toEqual({ hunkIndex: 3, side: "old", line: 12 });
+  });
+
+  test("ignores context rows in split mode", () => {
+    const row: DiffRow = {
+      type: "split-line",
+      key: "row:2",
+      fileId: "alpha",
+      hunkIndex: 1,
+      left: { kind: "context", sign: " ", lineNumber: 4, spans: [] },
+      right: { kind: "context", sign: " ", lineNumber: 4, spans: [] },
+    };
+
+    expect(clickTargetForDiffRow(row)).toBeNull();
+  });
+
+  test("resolves a stack-line addition to the new side", () => {
+    const row: DiffRow = {
+      type: "stack-line",
+      key: "row:3",
+      fileId: "alpha",
+      hunkIndex: 0,
+      cell: { kind: "addition", sign: "+", newLineNumber: 9, spans: [] },
+    };
+
+    expect(clickTargetForDiffRow(row)).toEqual({ hunkIndex: 0, side: "new", line: 9 });
+  });
+
+  test("ignores hunk header rows", () => {
+    const row: DiffRow = {
+      type: "hunk-header",
+      key: "row:4",
+      fileId: "alpha",
+      hunkIndex: 0,
+      text: "@@",
+    };
+
+    expect(clickTargetForDiffRow(row)).toBeNull();
   });
 });

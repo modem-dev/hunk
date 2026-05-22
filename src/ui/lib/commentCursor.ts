@@ -2,6 +2,7 @@ import type { Hunk } from "@pierre/diffs";
 import type { DiffFile } from "../../core/types";
 import { firstCommentTargetForHunk } from "../../core/liveComments";
 import type { DiffSide } from "../../hunk-session/types";
+import type { DiffRow } from "../diff/pierre";
 
 export interface CommentCursorPosition {
   fileId: string;
@@ -29,16 +30,50 @@ export function cursorRowStableKey(cursor: CommentCursorPosition): string {
 }
 
 /**
+ * Resolve the cursor target for a click on one diff row.
+ *
+ * Mirrors the changed-lines-only policy that {@link moveCursor} walks: clicks on
+ * additions land on the new side, clicks on deletions land on the old side, and
+ * clicks on context / hunk header / empty cells are not commentable so we return null.
+ */
+export function clickTargetForDiffRow(
+  row: DiffRow,
+): { hunkIndex: number; side: DiffSide; line: number } | null {
+  if (row.type === "split-line") {
+    if (row.right.kind === "addition" && row.right.lineNumber !== undefined) {
+      return { hunkIndex: row.hunkIndex, side: "new", line: row.right.lineNumber };
+    }
+
+    if (row.left.kind === "deletion" && row.left.lineNumber !== undefined) {
+      return { hunkIndex: row.hunkIndex, side: "old", line: row.left.lineNumber };
+    }
+
+    return null;
+  }
+
+  if (row.type === "stack-line") {
+    if (row.cell.kind === "addition" && row.cell.newLineNumber !== undefined) {
+      return { hunkIndex: row.hunkIndex, side: "new", line: row.cell.newLineNumber };
+    }
+
+    if (row.cell.kind === "deletion" && row.cell.oldLineNumber !== undefined) {
+      return { hunkIndex: row.hunkIndex, side: "old", line: row.cell.oldLineNumber };
+    }
+
+    return null;
+  }
+
+  return null;
+}
+
+/**
  * Walk through every changed (non-context) line of a hunk on the cursor's anchor side.
  *
  * Skips context lines so that the cursor positions list aligns with the first
  * changed line returned by firstCursorTargetForHunk, allowing backward clamping
  * to reach the same anchor position.
  */
-function* walkHunkLines(
-  hunk: Hunk,
-  side: DiffSide,
-): Generator<{ side: DiffSide; line: number }> {
+function* walkHunkLines(hunk: Hunk, side: DiffSide): Generator<{ side: DiffSide; line: number }> {
   let oldLine = hunk.deletionStart;
   let newLine = hunk.additionStart;
 
@@ -67,10 +102,7 @@ function* walkHunkLines(
 }
 
 /** Build the ordered list of cursor positions for the full review stream on the cursor's side. */
-function buildCursorPositions(
-  files: DiffFile[],
-  preferredSide: DiffSide,
-): CommentCursorPosition[] {
+function buildCursorPositions(files: DiffFile[], preferredSide: DiffSide): CommentCursorPosition[] {
   const positions: CommentCursorPosition[] = [];
 
   for (const file of files) {

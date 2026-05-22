@@ -78,6 +78,7 @@ export interface ReviewSelectionOptions {
 export interface ReviewController {
   allFiles: DiffFile[];
   commentCursor: CommentCursorState;
+  commentCursorRevealRequestId: number;
   commentCursorRowStableKey: string | null;
   filter: string;
   liveCommentCount: number;
@@ -108,6 +109,7 @@ export interface ReviewController {
   addUserLiveComment: (target: AddUserLiveCommentTarget, summary: string) => AppliedCommentResult;
   clearFilter: () => void;
   clearLiveComments: (filePath?: string) => ClearedCommentsResult;
+  enterCommentCursorAt: (target: CommentCursorPosition) => void;
   jumpCommentCursorToHunk: (delta: number) => void;
   moveCommentCursor: (delta: number) => void;
   navigateToLocation: (input: NavigateToHunkToolInput) => NavigatedSelectionResult;
@@ -134,10 +136,29 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     fileId: files[0]?.id ?? "",
     hunkIndex: 0,
     side: "new",
-    line: files[0]?.metadata.hunks[0]
-      ? firstCursorTargetForHunk(files[0], 0).line
-      : 1,
+    line: files[0]?.metadata.hunks[0] ? firstCursorTargetForHunk(files[0], 0).line : 1,
   }));
+  const [commentCursorRevealRequestId, setCommentCursorRevealRequestId] = useState(0);
+  // Wraps any setCommentCursor caller so the viewport reveal happens whenever the position
+  // actually moves (not merely the mode toggles), since mode toggles do not require a scroll.
+  const updateCommentCursor = useCallback(
+    (updater: (current: CommentCursorState) => CommentCursorState) => {
+      setCommentCursor((current) => {
+        const next = updater(current);
+        const positionChanged =
+          next.fileId !== current.fileId ||
+          next.hunkIndex !== current.hunkIndex ||
+          next.side !== current.side ||
+          next.line !== current.line;
+        const reenteredCursor = current.mode === "off" && next.mode !== "off";
+        if (positionChanged || reenteredCursor) {
+          setCommentCursorRevealRequestId((id) => id + 1);
+        }
+        return next;
+      });
+    },
+    [],
+  );
   const userCommentCounterRef = useRef(0);
   const deferredFilter = useDeferredValue(filter);
 
@@ -232,7 +253,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
 
   /** Fall back the cursor to the first visible hunk when its target file or hunk disappears. */
   useEffect(() => {
-    setCommentCursor((current) => {
+    updateCommentCursor((current) => {
       if (current.mode === "off") {
         return current;
       }
@@ -256,7 +277,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
         line: anchor.line,
       };
     });
-  }, [visibleFiles]);
+  }, [updateCommentCursor, visibleFiles]);
 
   /** Move through the full visible review stream one hunk at a time. */
   const moveToHunk = useCallback(
@@ -528,7 +549,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
   /** Enter, switch, or leave the cursor mode. Seeds position from the selected hunk on enter. */
   const setCommentCursorMode = useCallback(
     (mode: CommentCursorMode) => {
-      setCommentCursor((current) => {
+      updateCommentCursor((current) => {
         if (mode === "off") {
           return { ...current, mode };
         }
@@ -542,10 +563,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
           return { ...current, mode };
         }
 
-        const hunkIndex = Math.max(
-          0,
-          Math.min(selectedHunkIndex, file.metadata.hunks.length - 1),
-        );
+        const hunkIndex = Math.max(0, Math.min(selectedHunkIndex, file.metadata.hunks.length - 1));
         const anchor = firstCursorTargetForHunk(file, hunkIndex);
         return {
           mode,
@@ -556,13 +574,28 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
         };
       });
     },
-    [selectedFileId, selectedHunkIndex, visibleFiles],
+    [selectedFileId, selectedHunkIndex, updateCommentCursor, visibleFiles],
+  );
+
+  /** Position the cursor on one specific row and enter navigating mode (used by mouse clicks). */
+  const enterCommentCursorAt = useCallback(
+    (target: CommentCursorPosition) => {
+      updateCommentCursor((current) => ({
+        ...current,
+        mode: current.mode === "composing" ? "composing" : "navigating",
+        fileId: target.fileId,
+        hunkIndex: target.hunkIndex,
+        side: target.side,
+        line: target.line,
+      }));
+    },
+    [updateCommentCursor],
   );
 
   /** Walk the cursor row-by-row through the review stream. */
   const moveCommentCursor = useCallback(
     (delta: number) => {
-      setCommentCursor((current) => {
+      updateCommentCursor((current) => {
         if (current.mode === "off") {
           return current;
         }
@@ -575,13 +608,13 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
         return { ...current, ...next };
       });
     },
-    [visibleFiles],
+    [updateCommentCursor, visibleFiles],
   );
 
   /** Jump the cursor to the first content row of the previous or next hunk. */
   const jumpCommentCursorToHunk = useCallback(
     (delta: number) => {
-      setCommentCursor((current) => {
+      updateCommentCursor((current) => {
         if (current.mode === "off") {
           return current;
         }
@@ -625,7 +658,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
         }
       });
     },
-    [visibleFiles],
+    [updateCommentCursor, visibleFiles],
   );
 
   /** Persist one user-authored comment using the same store as MCP comments. */
@@ -704,6 +737,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
   return {
     allFiles,
     commentCursor,
+    commentCursorRevealRequestId,
     commentCursorRowStableKey,
     filter,
     liveCommentCount,
@@ -723,6 +757,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     addUserLiveComment,
     clearFilter,
     clearLiveComments,
+    enterCommentCursorAt,
     jumpCommentCursorToHunk,
     moveCommentCursor,
     moveToAnnotatedFile,

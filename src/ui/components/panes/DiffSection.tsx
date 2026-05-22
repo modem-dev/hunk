@@ -1,5 +1,6 @@
 import { memo } from "react";
 import type { DiffFile, LayoutMode } from "../../../core/types";
+import type { DiffSide } from "../../../hunk-session/types";
 import { PierreDiffView } from "../../diff/PierreDiffView";
 import type { VisibleBodyBounds } from "../../diff/rowWindowing";
 import type { DiffSectionGeometry } from "../../lib/diffSectionGeometry";
@@ -38,6 +39,7 @@ interface DiffSectionProps {
   onCommentComposerCancel?: () => void;
   onCommentComposerSubmit?: (summary: string) => void;
   onOpenAgentNotesAtHunk: (hunkIndex: number) => void;
+  onSelectCommentTarget?: (target: { hunkIndex: number; side: DiffSide; line: number }) => void;
   onSelect: () => void;
 }
 
@@ -66,6 +68,7 @@ function DiffSectionComponent({
   onCommentComposerCancel,
   onCommentComposerSubmit,
   onOpenAgentNotesAtHunk,
+  onSelectCommentTarget,
   onSelect,
 }: DiffSectionProps) {
   const annotatedHunkIndices = getAnnotatedHunkIndices(file);
@@ -120,6 +123,7 @@ function DiffSectionComponent({
         onCommentComposerCancel={onCommentComposerCancel}
         onCommentComposerSubmit={onCommentComposerSubmit}
         onOpenAgentNotesAtHunk={onOpenAgentNotesAtHunk}
+        onSelectCommentTarget={onSelectCommentTarget}
         selectedHunkIndex={selectedHunkIndex}
         sectionGeometry={sectionGeometry}
         shouldLoadHighlight={shouldLoadHighlight}

@@ -134,6 +134,7 @@ export function App({
   const setCommentCursorMode = review.setCommentCursorMode;
   const moveCommentCursor = review.moveCommentCursor;
   const jumpCommentCursorToHunk = review.jumpCommentCursorToHunk;
+  const enterCommentCursorAt = review.enterCommentCursorAt;
 
   const composerDescriptor =
     commentCursor.mode === "composing"
@@ -795,6 +796,8 @@ export function App({
           selectedHunkRevealRequestId={review.selectedHunkRevealRequestId}
           theme={activeTheme}
           width={diffPaneWidth}
+          commentCursorFileId={commentCursor.mode === "off" ? null : commentCursor.fileId}
+          commentCursorRevealRequestId={review.commentCursorRevealRequestId}
           commentCursorRowStableKey={commentCursorRowStableKey}
           composer={composerDescriptor}
           onCommentComposerCancel={cancelCommentComposer}
@@ -803,6 +806,7 @@ export function App({
           onScrollCodeHorizontally={(delta) => {
             scrollCodeHorizontally(delta * FAST_CODE_HORIZONTAL_SCROLL_COLUMNS);
           }}
+          onSelectCommentTarget={enterCommentCursorAt}
           onSelectFile={jumpToFile}
           onViewportCenteredHunkChange={(fileId, hunkIndex) =>
             review.selectHunk(fileId, hunkIndex, { preserveViewport: true })
