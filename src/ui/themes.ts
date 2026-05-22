@@ -35,6 +35,10 @@ export interface AppTheme {
   noteBackground: string;
   noteTitleBackground: string;
   noteTitleText: string;
+  userNoteBorder: string;
+  userNoteBackground: string;
+  userNoteTitleBackground: string;
+  userNoteTitleText: string;
   syntaxColors: SyntaxColors;
   syntaxStyle: SyntaxStyle;
 }
@@ -124,6 +128,10 @@ export const THEMES: AppTheme[] = [
       noteBackground: "#241c31",
       noteTitleBackground: "#322446",
       noteTitleText: "#f5edff",
+      userNoteBorder: "#ffb070",
+      userNoteBackground: "#2a1d10",
+      userNoteTitleBackground: "#4a2e16",
+      userNoteTitleText: "#ffe5cc",
     },
     {
       default: "#f2f4f6",
@@ -173,6 +181,10 @@ export const THEMES: AppTheme[] = [
       noteBackground: "#211a36",
       noteTitleBackground: "#30234f",
       noteTitleText: "#f5eeff",
+      userNoteBorder: "#ffb070",
+      userNoteBackground: "#271a0e",
+      userNoteTitleBackground: "#4a2e16",
+      userNoteTitleText: "#ffe5cc",
     },
     {
       default: "#e8f1ff",
@@ -222,6 +234,10 @@ export const THEMES: AppTheme[] = [
       noteBackground: "#efe6ff",
       noteTitleBackground: "#e3d7ff",
       noteTitleText: "#462b74",
+      userNoteBorder: "#c47a1a",
+      userNoteBackground: "#fff1de",
+      userNoteTitleBackground: "#ffe2b8",
+      userNoteTitleText: "#6a3e0e",
     },
     {
       default: "#2f2417",
@@ -271,6 +287,10 @@ export const THEMES: AppTheme[] = [
       noteBackground: "#311d36",
       noteTitleBackground: "#452650",
       noteTitleText: "#fff0ff",
+      userNoteBorder: "#ff8c40",
+      userNoteBackground: "#2e1a08",
+      userNoteTitleBackground: "#5c2a10",
+      userNoteTitleText: "#ffe9d2",
     },
     {
       default: "#fff0e6",

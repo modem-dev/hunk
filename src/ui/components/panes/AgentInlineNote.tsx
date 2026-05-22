@@ -4,8 +4,28 @@ import { annotationRangeLabel } from "../../lib/agentAnnotations";
 import { fitText, padText } from "../../lib/text";
 import type { AppTheme } from "../../themes";
 
-function inlineNoteTitle(noteIndex: number, noteCount: number) {
-  return noteCount > 1 ? `AI note ${noteIndex + 1}/${noteCount}` : "AI note";
+function inlineNoteTitle(noteIndex: number, noteCount: number, isUserAuthored: boolean) {
+  const label = isUserAuthored ? "My note" : "AI note";
+  return noteCount > 1 ? `${label} ${noteIndex + 1}/${noteCount}` : label;
+}
+
+/** Resolve the framed note palette — user-authored notes get the warmer orange treatment. */
+function inlineNotePalette(theme: AppTheme, isUserAuthored: boolean) {
+  if (isUserAuthored) {
+    return {
+      border: theme.userNoteBorder,
+      background: theme.userNoteBackground,
+      titleBackground: theme.userNoteTitleBackground,
+      titleText: theme.userNoteTitleText,
+    };
+  }
+
+  return {
+    border: theme.noteBorder,
+    background: theme.noteBackground,
+    titleBackground: theme.noteTitleBackground,
+    titleText: theme.noteTitleText,
+  };
 }
 
 interface AgentInlineNoteLine {
@@ -83,7 +103,9 @@ export function AgentInlineNote({
   width: number;
 }) {
   const closeText = onClose ? "[x]" : "";
-  const titleText = `${inlineNoteTitle(noteIndex, noteCount)} · ${annotationRangeLabel(annotation)}`;
+  const isUserAuthored = annotation.source === "user";
+  const palette = inlineNotePalette(theme, isUserAuthored);
+  const titleText = `${inlineNoteTitle(noteIndex, noteCount, isUserAuthored)} · ${annotationRangeLabel(annotation)}`;
   const splitWidths = splitColumnWidths(width);
   const canDockRight = layout === "split" && anchorSide === "new" && width >= 84;
   const canDockLeft = layout === "split" && anchorSide === "old" && width >= 84;
@@ -125,7 +147,7 @@ export function AgentInlineNote({
           <text>{" ".repeat(boxLeft)}</text>
         </box>
         <box style={{ width: boxWidth, height: 1, backgroundColor: theme.panel }}>
-          <text fg={theme.noteBorder} bg={theme.noteBackground}>
+          <text fg={palette.border} bg={palette.background}>
             {topBorder}
           </text>
         </box>
@@ -136,12 +158,12 @@ export function AgentInlineNote({
           <text>{" ".repeat(boxLeft)}</text>
         </box>
         <box style={{ width: 1, height: 1, backgroundColor: theme.panel }}>
-          <text fg={theme.noteBorder} bg={theme.noteBackground}>
+          <text fg={palette.border} bg={palette.background}>
             │
           </text>
         </box>
         <box style={{ width: titleWidth, height: 1, backgroundColor: theme.panel }}>
-          <text fg={theme.noteTitleText} bg={theme.noteTitleBackground}>
+          <text fg={palette.titleText} bg={palette.titleBackground}>
             {padText(fitText(titleText, titleWidth), titleWidth)}
           </text>
         </box>
@@ -150,11 +172,11 @@ export function AgentInlineNote({
             onMouseUp={onClose}
             style={{ width: closeText.length + 1, height: 1, backgroundColor: theme.panel }}
           >
-            <text fg={theme.noteTitleText} bg={theme.noteTitleBackground}>{` ${closeText}`}</text>
+            <text fg={palette.titleText} bg={palette.titleBackground}>{` ${closeText}`}</text>
           </box>
         ) : null}
         <box style={{ width: 1, height: 1, backgroundColor: theme.panel }}>
-          <text fg={theme.noteBorder} bg={theme.noteBackground}>
+          <text fg={palette.border} bg={palette.background}>
             │
           </text>
         </box>
@@ -169,17 +191,17 @@ export function AgentInlineNote({
             <text>{" ".repeat(boxLeft)}</text>
           </box>
           <box style={{ width: 1, height: 1, backgroundColor: theme.panel }}>
-            <text fg={theme.noteBorder} bg={theme.noteBackground}>
+            <text fg={palette.border} bg={palette.background}>
               │
             </text>
           </box>
           <box style={{ width: bodyWidth, height: 1, backgroundColor: theme.panel }}>
-            <text fg={line.kind === "summary" ? theme.text : theme.muted} bg={theme.noteBackground}>
+            <text fg={line.kind === "summary" ? theme.text : theme.muted} bg={palette.background}>
               {padText(line.text, bodyWidth)}
             </text>
           </box>
           <box style={{ width: 1, height: 1, backgroundColor: theme.panel }}>
-            <text fg={theme.noteBorder} bg={theme.noteBackground}>
+            <text fg={palette.border} bg={palette.background}>
               │
             </text>
           </box>
@@ -191,7 +213,7 @@ export function AgentInlineNote({
           <text>{" ".repeat(boxLeft)}</text>
         </box>
         <box style={{ width: boxWidth, height: 1, backgroundColor: theme.panel }}>
-          <text fg={theme.noteBorder} bg={theme.noteBackground}>
+          <text fg={palette.border} bg={palette.background}>
             {bottomBorder}
           </text>
         </box>

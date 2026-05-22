@@ -1285,6 +1285,28 @@ describe("UI components", () => {
     expect(lines[4]?.trimStart().startsWith("└")).toBe(true);
   });
 
+  test("AgentInlineNote uses the My note label for user-authored annotations", async () => {
+    const theme = resolveTheme("midnight", null);
+    const frame = await captureFrame(
+      <AgentInlineNote
+        annotation={{
+          newRange: [2, 2],
+          summary: "Review this please",
+          source: "user",
+        }}
+        anchorSide="new"
+        layout="split"
+        theme={theme}
+        width={60}
+      />,
+      64,
+      5,
+    );
+
+    expect(frame).toContain("My note");
+    expect(frame).not.toContain("AI note");
+  });
+
   test("DiffPane renders all visible hunk notes across the review stream", async () => {
     const bootstrap = createBootstrap();
     bootstrap.changeset.files[1]!.agent = {
