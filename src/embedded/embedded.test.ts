@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { BoxRenderable } from "@opentui/core";
+import { BoxRenderable, InputRenderable } from "@opentui/core";
 import { createTestRenderer } from "@opentui/core/testing";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -291,6 +291,57 @@ describe("embedded Hunk sessions", () => {
         await setup.renderOnce();
 
         expect(resizes).toEqual([{ height: 9, width: 48 }]);
+      } finally {
+        scope.dispose();
+      }
+    } finally {
+      setup.renderer.destroy();
+    }
+  });
+
+  test("hides host cursor only while the embedded scope is active", async () => {
+    const setup = await createTestRenderer({ width: 80, height: 24 });
+
+    try {
+      const hostInput = new InputRenderable(setup.renderer, {
+        id: "host-input",
+        left: 4,
+        position: "absolute",
+        top: 2,
+        value: "host",
+        width: 20,
+      });
+      const container = new BoxRenderable(setup.renderer, {
+        height: 10,
+        id: "embedded-container",
+        width: 40,
+      });
+      setup.renderer.root.add(hostInput);
+      setup.renderer.root.add(container);
+      hostInput.focus();
+      await setup.renderOnce();
+      expect(setup.renderer.getCursorState().visible).toBe(true);
+
+      let active = false;
+      const scope = createEmbeddedRendererScope(
+        setup.renderer,
+        container,
+        setup.renderer.keyInput,
+        () => active,
+      );
+
+      try {
+        await setup.renderOnce();
+        expect(setup.renderer.getCursorState().visible).toBe(true);
+
+        active = true;
+        await setup.renderOnce();
+        expect(setup.renderer.getCursorState().visible).toBe(false);
+
+        scope.renderer.setCursorPosition(11, 12, true);
+        setup.renderer.setCursorPosition(2, 3, true);
+        await setup.renderOnce();
+        expect(setup.renderer.getCursorState()).toMatchObject({ x: 11, y: 12, visible: true });
       } finally {
         scope.dispose();
       }

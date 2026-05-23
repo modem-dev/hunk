@@ -76,16 +76,34 @@ export function createEmbeddedRendererScope(
   renderer: CliRenderer,
   root: Renderable,
   keyInput: CliRenderer["keyInput"],
+  active: () => boolean = () => true,
 ): ScopedRendererScope {
   const scoped = Object.create(renderer) as CliRenderer;
   const resizeListeners = new Set<RendererListener>();
+  let embeddedCursor: { x: number; y: number; visible: boolean } | undefined;
+  let wasActive = active();
   const readWidth = () => Math.max(1, root.width);
   const readHeight = () => Math.max(1, root.height);
   const emitResize = () => {
     for (const listener of resizeListeners) listener(readWidth(), readHeight());
   };
+  const hideHostCursor = () => renderer.setCursorPosition(0, 0, false);
+  const enforceCursorScope: Parameters<CliRenderer["addPostProcessFn"]>[0] = () => {
+    const isActive = active();
+    if (isActive) {
+      if (embeddedCursor?.visible)
+        renderer.setCursorPosition(embeddedCursor.x, embeddedCursor.y, true);
+      else hideHostCursor();
+    } else if (wasActive) {
+      hideHostCursor();
+    }
+
+    embeddedCursor = undefined;
+    wasActive = isActive;
+  };
 
   root.on("resize", emitResize);
+  renderer.addPostProcessFn(enforceCursorScope);
 
   Object.defineProperties(scoped, {
     height: { get: readHeight },
@@ -95,6 +113,17 @@ export function createEmbeddedRendererScope(
       },
     },
     keyInput: { value: keyInput },
+    setCursorPosition: {
+      value(x: number, y: number, visible = true) {
+        if (!active()) {
+          embeddedCursor = undefined;
+          return;
+        }
+
+        embeddedCursor = { x, y, visible };
+        renderer.setCursorPosition(x, y, visible);
+      },
+    },
     off: {
       value(event: string | symbol, listener: RendererListener) {
         if (event === "resize") {
@@ -127,6 +156,7 @@ export function createEmbeddedRendererScope(
     renderer: scoped,
     dispose() {
       root.off("resize", emitResize);
+      renderer.removePostProcessFn(enforceCursorScope);
       resizeListeners.clear();
     },
   };
@@ -167,7 +197,12 @@ export function mountEmbeddedHunkApp({
 }: MountEmbeddedHunkAppInput): EmbeddedHunkMount {
   let currentActive = active;
   const scopedKeyInput = createScopedKeyInput(renderer.keyInput, () => currentActive);
-  const scopedRenderer = createEmbeddedRendererScope(renderer, container, scopedKeyInput.keyInput);
+  const scopedRenderer = createEmbeddedRendererScope(
+    renderer,
+    container,
+    scopedKeyInput.keyInput,
+    () => currentActive,
+  );
   const root = createRoot(scopedRenderer.renderer);
 
   const render = (next: { active: boolean; onQuit: () => void }) => {
