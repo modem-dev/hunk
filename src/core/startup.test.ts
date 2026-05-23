@@ -182,11 +182,12 @@ describe("startup planning", () => {
   test("routes diff-like pager stdin to static output when the host advertises a captured pager", async () => {
     let loaded = false;
     const patchText = "diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n";
+    const customTheme = { base: "paper", text: "#123456" };
 
     const plan = await prepareStartupPlan(["bun", "hunk", "pager"], {
       parseCliImpl: async () => ({
         kind: "pager",
-        options: { theme: "paper" },
+        options: { theme: "custom" },
       }),
       readStdinText: async () => patchText,
       looksLikePatchInputImpl: () => true,
@@ -197,8 +198,9 @@ describe("startup planning", () => {
         ({
           input: {
             ...input,
-            options: { ...input.options, lineNumbers: false, theme: "paper" },
+            options: { ...input.options, lineNumbers: false, theme: "custom" },
           },
+          customTheme,
         }) as never,
       loadAppBootstrapImpl: async () => {
         loaded = true;
@@ -209,7 +211,8 @@ describe("startup planning", () => {
     expect(plan).toEqual({
       kind: "static-diff-pager",
       text: patchText,
-      options: { theme: "paper", pager: true, lineNumbers: false },
+      options: { theme: "custom", pager: true, lineNumbers: false },
+      customTheme,
     });
     expect(loaded).toBe(false);
   });

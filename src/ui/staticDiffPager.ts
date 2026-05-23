@@ -15,7 +15,7 @@
  * text so pager pipelines keep working.
  */
 import { loadAppBootstrap } from "../core/loaders";
-import type { CommonOptions, DiffFile } from "../core/types";
+import type { CommonOptions, CustomThemeConfig, DiffFile } from "../core/types";
 import { buildStackRows, loadHighlightedDiff, type DiffRow, type RenderSpan } from "./diff/pierre";
 import {
   diffRailMarker,
@@ -202,6 +202,7 @@ function fallbackMessage(error: unknown) {
 }
 
 export interface StaticDiffPagerDeps {
+  customTheme?: CustomThemeConfig;
   stderr?: Pick<NodeJS.WriteStream, "write">;
 }
 
@@ -225,7 +226,7 @@ export async function renderStaticDiffPager(
         pager: true,
       },
     });
-    const theme = resolveTheme(options.theme, null);
+    const theme = resolveTheme(options.theme, null, deps.customTheme);
     const rendered = await Promise.all(
       bootstrap.changeset.files.map((file) => renderStaticFile(file, theme, options)),
     );
