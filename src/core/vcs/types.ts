@@ -1,3 +1,4 @@
+import type { BuildDiffFileOptions } from "../diffFile";
 import type {
   DiffFile,
   ShowCommandInput,
@@ -39,6 +40,7 @@ export interface VcsPatchResult {
   sourceLabel: string;
   title: string;
   patchText: string;
+  sourceFetcherBuilder?: BuildDiffFileOptions["sourceFetcherBuilder"];
   untrackedFiles?: string[];
   extraFiles?: DiffFile[];
 }

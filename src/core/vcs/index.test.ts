@@ -35,7 +35,9 @@ describe("VCS adapter registry", () => {
   test("registers Git and Jujutsu adapters", () => {
     expect(vcsAdapters.map((adapter) => adapter.id)).toEqual(["jj", "git"]);
     expect(getVcsAdapter("git").capabilities.reviewOperations.has("stash-show")).toBe(true);
+    expect(getVcsAdapter("git").capabilities.sourceFetching).toBe(true);
     expect(getVcsAdapter("jj").capabilities.reviewOperations.has("stash-show")).toBe(false);
+    expect(getVcsAdapter("jj").capabilities.sourceFetching).toBeUndefined();
   });
 
   test("validates VCS ids from the registered adapter list", () => {

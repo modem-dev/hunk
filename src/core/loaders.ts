@@ -15,23 +15,11 @@ import {
   type BuildDiffFileOptions,
   type DiffFileSourceContext,
 } from "./diffFile";
-import {
-  createFileSourceFetcher,
-  type FileSourceFetcherOptions,
-  type FileSourceSpec,
-} from "./fileSource";
-import {
-  normalizeUntrackedPatchHeaders,
-  resolveGitCommitRef,
-  resolveGitDiffEndpoints,
-  runGitUntrackedFileDiffText,
-  type GitDiffEndpoint,
-  type GitDiffEndpoints,
-} from "./git";
+import { createFileSourceFetcher, type FileSourceSpec } from "./fileSource";
+import { normalizeUntrackedPatchHeaders, runGitUntrackedFileDiffText } from "./git";
 import { splitPatchIntoFileChunks, findPatchChunk } from "./patch/chunks";
 import { normalizePatchText } from "./patch/normalize";
 import { createUnsupportedVcsOperationError, getVcsAdapter, operationFromInput } from "./vcs";
-import type { VcsReviewOperation } from "./vcs/types";
 import type {
   AppBootstrap,
   AgentContext,
@@ -68,7 +56,6 @@ interface ResolvedFileSourceSpecs {
 /** Build a binary-aware source-fetcher factory from per-file source specs. */
 function createSourceFetcherBuilder(
   resolveSpecs: (file: DiffFileSourceContext) => ResolvedFileSourceSpecs | undefined,
-  options: FileSourceFetcherOptions = {},
 ): NonNullable<BuildDiffFileOptions["sourceFetcherBuilder"]> {
   return (file) => {
     if (file.isBinary) {
@@ -76,93 +63,8 @@ function createSourceFetcherBuilder(
     }
 
     const specs = resolveSpecs(file);
-    return specs ? createFileSourceFetcher(specs, options) : undefined;
+    return specs ? createFileSourceFetcher(specs) : undefined;
   };
-}
-
-/** Convert one Git diff endpoint into the corresponding file source lookup. */
-function gitEndpointSourceSpec(
-  endpoint: GitDiffEndpoint,
-  repoRoot: string,
-  filePath: string,
-): FileSourceSpec {
-  switch (endpoint.kind) {
-    case "none":
-      return { kind: "none" };
-    case "git-ref":
-      return { kind: "git-blob", repoRoot, ref: endpoint.ref, path: filePath };
-    case "index":
-      return { kind: "git-index", repoRoot, path: filePath };
-    case "worktree":
-      return { kind: "fs", absolutePath: join(repoRoot, filePath) };
-  }
-}
-
-/** Build source fetchers for Git-backed diffs from explicit old/new endpoints. */
-function buildGitEndpointSourceFetcherBuilder(
-  repoRoot: string,
-  endpoints: GitDiffEndpoints,
-  options: FileSourceFetcherOptions = {},
-): NonNullable<BuildDiffFileOptions["sourceFetcherBuilder"]> {
-  return createSourceFetcherBuilder(({ path, previousPath, type }) => {
-    const oldPath = previousPath ?? path;
-
-    return {
-      old:
-        type === "new" ? { kind: "none" } : gitEndpointSourceSpec(endpoints.old, repoRoot, oldPath),
-      new:
-        type === "deleted"
-          ? { kind: "none" }
-          : gitEndpointSourceSpec(endpoints.new, repoRoot, path),
-    };
-  }, options);
-}
-
-function buildRefRangeSourceFetcherBuilder(
-  repoRoot: string,
-  oldRef: string,
-  newRef: string,
-  options: FileSourceFetcherOptions = {},
-): NonNullable<BuildDiffFileOptions["sourceFetcherBuilder"]> {
-  return buildGitEndpointSourceFetcherBuilder(
-    repoRoot,
-    {
-      old: { kind: "git-ref", ref: oldRef },
-      new: { kind: "git-ref", ref: newRef },
-    },
-    options,
-  );
-}
-
-/** Build source fetchers for Git review operations when the source sides are exact. */
-function buildGitReviewSourceFetcherBuilder(
-  operation: VcsReviewOperation,
-  repoRoot: string,
-  cwd: string,
-  gitExecutable = "git",
-): NonNullable<BuildDiffFileOptions["sourceFetcherBuilder"]> | undefined {
-  switch (operation.kind) {
-    case "working-tree-diff": {
-      const endpoints = resolveGitDiffEndpoints(operation.input, { cwd, repoRoot, gitExecutable });
-      return endpoints
-        ? buildGitEndpointSourceFetcherBuilder(repoRoot, endpoints, { gitExecutable })
-        : undefined;
-    }
-    case "revision-show": {
-      const newRef = resolveGitCommitRef(operation.input, operation.input.ref ?? "HEAD", {
-        cwd: repoRoot,
-        gitExecutable,
-      });
-      return buildRefRangeSourceFetcherBuilder(repoRoot, `${newRef}^`, newRef, { gitExecutable });
-    }
-    case "stash-show": {
-      const newRef = resolveGitCommitRef(operation.input, operation.input.ref ?? "stash@{0}", {
-        cwd: repoRoot,
-        gitExecutable,
-      });
-      return buildRefRangeSourceFetcherBuilder(repoRoot, `${newRef}^`, newRef, { gitExecutable });
-    }
-  }
 }
 
 interface CountedLines {
@@ -526,16 +428,12 @@ async function loadVcsChangeset(
   }
 
   const result = await adapter.loadReview(operation, { cwd, gitExecutable });
-  const sourceFetcherBuilder =
-    adapter.id === "git"
-      ? buildGitReviewSourceFetcherBuilder(operation, result.repoRoot, cwd, gitExecutable)
-      : undefined;
   const parsedChangeset = normalizePatchChangeset(
     result.patchText,
     result.title,
     result.sourceLabel,
     agentContext,
-    sourceFetcherBuilder ? { sourceFetcherBuilder } : undefined,
+    result.sourceFetcherBuilder ? { sourceFetcherBuilder: result.sourceFetcherBuilder } : undefined,
   );
   const adapterFiles = (result.extraFiles ?? []).map((file, index) => ({
     ...file,

@@ -101,6 +101,7 @@ describe("jjAdapter", () => {
       expect(diffResult.title).toContain("working copy");
       expect(diffResult.patchText).toContain("diff --git a/file.txt b/file.txt");
       expect(diffResult.patchText).toContain("+two");
+      expect(diffResult.sourceFetcherBuilder).toBeUndefined();
 
       const showInput = {
         kind: "show",

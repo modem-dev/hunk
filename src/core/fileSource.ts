@@ -1,9 +1,10 @@
 /**
- * Resolve full file contents for one diff file across input modes.
+ * Low-level readers for full file contents used by input and VCS adapters.
  *
  * Each `DiffFile` may carry a `FileSourceFetcher` that knows how to read the
- * file's "old" and "new" sides without re-running the original diff. Returns
- * `null` when source content is unreachable.
+ * file's "old" and "new" sides without re-running the original diff. VCS
+ * adapters own VCS-specific source-spec construction; this module only executes
+ * the concrete reads and returns `null` when source content is unreachable.
  */
 
 export type FileSourceSpec =
