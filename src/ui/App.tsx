@@ -120,9 +120,6 @@ export function App({
   );
   // Soft reloads replace bootstrap without re-running startup terminal theme detection.
   const [detectedThemeMode] = useState(() => bootstrap.initialThemeMode);
-  const [showAgentNotes, setShowAgentNotes] = useState(
-    initialSessionState?.showAgentNotes ?? bootstrap.initialShowAgentNotes ?? false,
-  );
   const [showLineNumbers, setShowLineNumbers] = useState(bootstrap.initialShowLineNumbers ?? true);
   const [wrapLines, setWrapLines] = useState(bootstrap.initialWrapLines ?? false);
   const [copyDecorations, setCopyDecorations] = useState(bootstrap.initialCopyDecorations ?? false);
@@ -142,9 +139,8 @@ export function App({
   const activeTheme = resolveTheme(themeId, detectedThemeMode ?? null);
   const review = useReviewController({
     files: bootstrap.changeset.files,
-    initialLiveComments: initialSessionState?.liveComments,
-    initialSelectedFileId: initialSessionState?.selectedFileId,
-    initialSelectedHunkIndex: initialSessionState?.selectedHunkIndex,
+    initialSessionState,
+    initialShowAgentNotes: bootstrap.initialShowAgentNotes ?? false,
   });
   const filteredFiles = review.visibleFiles;
   const selectedFile = review.selectedFile;
@@ -163,8 +159,8 @@ export function App({
   );
 
   const openAgentNotes = useCallback(() => {
-    setShowAgentNotes(true);
-  }, []);
+    review.setAgentNotesVisible(true);
+  }, [review.setAgentNotesVisible]);
 
   const showSessionNotice = useCallback((message: string) => {
     setSessionNoticeText(message);
@@ -191,18 +187,11 @@ export function App({
     addLiveCommentBatch: review.addLiveCommentBatch,
     clearLiveComments: review.clearLiveComments,
     hostClient,
-    liveCommentCount: review.liveCommentCount,
-    liveCommentSummaries: review.liveCommentSummaries,
     navigateToLocation: review.navigateToLocation,
     openAgentNotes,
     reloadSession: onReloadSession,
     removeLiveComment: review.removeLiveComment,
-    reviewNoteCount: review.reviewNoteCount,
-    reviewNoteSummaries: review.reviewNoteSummaries,
-    selectedFile,
-    selectedHunk: review.selectedHunk,
-    selectedHunkIndex,
-    showAgentNotes,
+    sessionSnapshot: review.sessionSnapshot,
   });
 
   const bodyPadding = pagerMode ? 0 : BODY_PADDING;
@@ -331,10 +320,8 @@ export function App({
     setLayoutMode(mode);
   }, []);
 
-  /** Toggle the global agent note layer on or off. */
-  const toggleAgentNotes = () => {
-    setShowAgentNotes((current) => !current);
-  };
+  const showAgentNotes = review.showAgentNotes;
+  const toggleAgentNotes = review.toggleAgentNotes;
 
   /** Toggle line-number gutters without changing the diff content itself. */
   const toggleLineNumbers = () => {

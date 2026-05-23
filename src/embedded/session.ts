@@ -1,20 +1,21 @@
 import { isDeepStrictEqual } from "node:util";
 import { resolveConfiguredCliInput } from "../core/config";
-import {
-  buildLiveComment,
-  findDiffFileByPath,
-  hunkLineRange,
-  resolveCommentTarget,
-} from "../core/liveComments";
 import { loadAppBootstrap } from "../core/loaders";
 import type { AppBootstrap, CliInput, CommonOptions } from "../core/types";
 import { createHunkSessionBridge } from "../hunk-session/bridge";
 import {
-  liveCommentsByFileFromSummaries,
-  summarizeLiveComment,
-} from "../hunk-session/liveCommentSummaries";
+  addReviewLiveComment,
+  addReviewLiveCommentBatch,
+  buildReviewSessionSnapshot,
+  clearReviewLiveComments,
+  createReviewCommandState,
+  navigateReviewCommandState,
+  reviewCommandFiles,
+  removeReviewLiveComment,
+  setReviewAgentNotesVisible,
+  type ReviewCommandState,
+} from "../hunk-session/reviewCommandState";
 import {
-  createInitialSessionSnapshot,
   createSessionRegistration,
   updateSessionRegistration,
 } from "../hunk-session/sessionRegistration";
@@ -27,14 +28,10 @@ import type {
   HunkSessionRegistration,
   HunkSessionServerMessage,
   HunkSessionSnapshot,
-  LiveComment,
   NavigatedSelectionResult,
   RemovedCommentResult,
-  SessionReviewNoteSummary,
 } from "../hunk-session/types";
 import { SessionBrokerClient } from "../session-broker/brokerClient";
-import { reviewNoteSource } from "../ui/lib/agentAnnotations";
-import { buildSelectedHunkSummary, resolveReviewNavigationTarget } from "../ui/lib/reviewState";
 import { createEmbeddedSessionBrokerAvailability } from "./daemon";
 import type {
   CreateEmbeddedHunkSessionInput,
@@ -137,8 +134,8 @@ class EmbeddedHunkSessionImpl implements EmbeddedHunkSession {
   private listeners = new Set<() => void>();
   private disposed = false;
   private renderSnapshot: EmbeddedHunkRenderSnapshot;
+  private reviewState: ReviewCommandState;
   private sessionSnapshot: HunkSessionSnapshot;
-  private liveCommentsByFileId: Record<string, LiveComment[]> = {};
   private mountedBridge: Parameters<HunkSessionBrokerClient["setBridge"]>[0] = null;
 
   readonly brokerClient: HunkSessionBrokerClient;
@@ -150,7 +147,11 @@ class EmbeddedHunkSessionImpl implements EmbeddedHunkSession {
     bootstrap: AppBootstrap,
   ) {
     this.renderSnapshot = { status: "ready", bootstrap };
-    this.sessionSnapshot = createInitialSessionSnapshot(bootstrap);
+    this.reviewState = createReviewCommandState({
+      files: bootstrap.changeset.files,
+      initialShowAgentNotes: bootstrap.initialShowAgentNotes ?? false,
+    });
+    this.sessionSnapshot = this.buildSessionSnapshot();
     this.brokerClient = new SessionBrokerClient(
       createSessionRegistration(bootstrap, { cwd }),
       this.sessionSnapshot,
@@ -198,12 +199,10 @@ class EmbeddedHunkSessionImpl implements EmbeddedHunkSession {
     }
 
     const bridge = createHunkSessionBridge({
-      addLiveComment: (input, commentId, options) =>
-        this.addHeadlessLiveComment(input, commentId, options),
-      addLiveCommentBatch: (inputs, requestId, options) =>
-        this.addHeadlessLiveCommentBatch(inputs, requestId, options),
-      clearLiveComments: (filePath) => this.clearHeadlessLiveComments(filePath),
-      navigateToLocation: (input) => this.navigateHeadless(input),
+      addLiveComment: this.addHeadlessLiveComment.bind(this),
+      addLiveCommentBatch: this.addHeadlessLiveCommentBatch.bind(this),
+      clearLiveComments: this.clearHeadlessLiveComments.bind(this),
+      navigateToLocation: this.navigateHeadless.bind(this),
       openAgentNotes: () => this.setHeadlessAgentNotesVisible(true),
       reloadSession: async (nextInput) => {
         const result = await this.load(nextInput as EmbeddedHunkSource, {
@@ -222,7 +221,7 @@ class EmbeddedHunkSessionImpl implements EmbeddedHunkSession {
           selectedHunkIndex: this.sessionSnapshot.state.selectedHunkIndex,
         };
       },
-      removeLiveComment: (commentId) => this.removeHeadlessLiveComment(commentId),
+      removeLiveComment: this.removeHeadlessLiveComment.bind(this),
     });
 
     return bridge.dispatchCommand(message);
@@ -250,8 +249,11 @@ class EmbeddedHunkSessionImpl implements EmbeddedHunkSession {
       if (updateSource) {
         this.source = source;
       }
-      this.liveCommentsByFileId = {};
-      this.sessionSnapshot = createInitialSessionSnapshot(bootstrap);
+      this.reviewState = createReviewCommandState({
+        files: bootstrap.changeset.files,
+        initialShowAgentNotes: bootstrap.initialShowAgentNotes ?? false,
+      });
+      this.sessionSnapshot = this.buildSessionSnapshot(bootstrap);
       this.brokerClient.replaceSession(
         updateSessionRegistration(this.brokerClient.getRegistration(), bootstrap),
         this.sessionSnapshot,
@@ -272,6 +274,15 @@ class EmbeddedHunkSessionImpl implements EmbeddedHunkSession {
   private setRenderSnapshot(snapshot: EmbeddedHunkRenderSnapshot) {
     this.renderSnapshot = snapshot;
     for (const listener of this.listeners) listener();
+  }
+
+  /** Build the broker-facing snapshot from the current command state. */
+  private buildSessionSnapshot(bootstrap = this.renderSnapshot.bootstrap) {
+    return buildReviewSessionSnapshot({
+      files: bootstrap.changeset.files,
+      state: this.reviewState,
+      now: new Date().toISOString(),
+    });
   }
 
   /** Build the host client facade used by mounted React apps without giving up headless handling. */
@@ -297,89 +308,29 @@ class EmbeddedHunkSessionImpl implements EmbeddedHunkSession {
   /** Persist the latest mounted-app snapshot so future embedded mounts start from it. */
   private persistSessionSnapshot(snapshot: HunkSessionSnapshot) {
     this.sessionSnapshot = snapshot;
-    this.liveCommentsByFileId = liveCommentsByFileFromSummaries(
-      this.renderSnapshot.bootstrap.changeset.files,
-      snapshot.state.liveComments,
-    );
-  }
-
-  /** Return all session-owned live comments in file order. */
-  private liveCommentSummaries() {
-    return this.renderSnapshot.bootstrap.changeset.files.flatMap((file) =>
-      (this.liveCommentsByFileId[file.id] ?? []).map((comment) =>
-        summarizeLiveComment(file.path, comment),
-      ),
-    );
-  }
-
-  /** Return all review notes visible to session commands, including headless live comments. */
-  private reviewNoteSummaries(): SessionReviewNoteSummary[] {
-    const summaries: SessionReviewNoteSummary[] = [];
-
-    this.renderSnapshot.bootstrap.changeset.files.forEach((file) => {
-      (file.agent?.annotations ?? []).forEach((annotation, index) => {
-        const source = reviewNoteSource(annotation);
-        summaries.push({
-          noteId: annotation.id ?? `${source}:${file.id}:${index}`,
-          source,
-          filePath: file.path,
-          oldRange: annotation.oldRange,
-          newRange: annotation.newRange,
-          body: [annotation.summary, annotation.rationale].filter(Boolean).join("\n\n"),
-          title: annotation.title,
-          author: annotation.author,
-          createdAt: annotation.createdAt ?? "1970-01-01T00:00:00.000Z",
-          updatedAt: annotation.updatedAt,
-          editable: false,
-        });
-      });
-
-      (this.liveCommentsByFileId[file.id] ?? []).forEach((comment) => {
-        summaries.push({
-          noteId: comment.id,
-          source: "agent",
-          filePath: file.path,
-          hunkIndex: comment.hunkIndex,
-          oldRange: comment.oldRange,
-          newRange: comment.newRange,
-          body: [comment.summary, comment.rationale].filter(Boolean).join("\n\n"),
-          author: comment.author,
-          createdAt: comment.createdAt,
-          editable: false,
-        });
-      });
+    this.reviewState = createReviewCommandState({
+      files: this.renderSnapshot.bootstrap.changeset.files,
+      initialSessionState: snapshot.state,
     });
-
-    return summaries;
   }
 
   /** Publish the current session-owned review state to the daemon. */
   private updateHeadlessSnapshot() {
-    const liveComments = this.liveCommentSummaries();
-    const reviewNotes = this.reviewNoteSummaries();
-    this.sessionSnapshot = {
-      updatedAt: new Date().toISOString(),
-      state: {
-        ...this.sessionSnapshot.state,
-        liveCommentCount: liveComments.length,
-        liveComments,
-        reviewNoteCount: reviewNotes.length,
-        reviewNotes,
-      },
-    };
+    this.sessionSnapshot = this.buildSessionSnapshot();
     this.brokerClient.updateSnapshot(this.sessionSnapshot);
     for (const listener of this.listeners) listener();
   }
 
+  /** Apply a headless review-state transition and publish it to the daemon. */
+  private applyHeadlessTransition<T>(transition: { state: ReviewCommandState; result: T }): T {
+    this.reviewState = transition.state;
+    this.updateHeadlessSnapshot();
+    return transition.result;
+  }
+
   /** Update the persisted agent-note visibility bit. */
   private setHeadlessAgentNotesVisible(visible: boolean) {
-    this.sessionSnapshot = {
-      ...this.sessionSnapshot,
-      state: {
-        ...this.sessionSnapshot.state,
-        showAgentNotes: visible,
-      },
-    };
+    this.reviewState = setReviewAgentNotesVisible(this.reviewState, visible);
     this.updateHeadlessSnapshot();
   }
 
@@ -389,41 +340,16 @@ class EmbeddedHunkSessionImpl implements EmbeddedHunkSession {
     commentId: string,
     options?: { reveal?: boolean },
   ): AppliedCommentResult {
-    const file = findDiffFileByPath(this.renderSnapshot.bootstrap.changeset.files, input.filePath);
-    if (!file) {
-      throw new Error(`No diff file matches ${input.filePath}.`);
-    }
-
-    const target = resolveCommentTarget(file, input);
-    const liveComment = buildLiveComment(
-      {
-        ...input,
-        side: target.side,
-        line: target.line,
-      },
-      commentId,
-      new Date().toISOString(),
-      target.hunkIndex,
+    return this.applyHeadlessTransition(
+      addReviewLiveComment({
+        files: this.renderSnapshot.bootstrap.changeset.files,
+        state: this.reviewState,
+        input,
+        commentId,
+        now: new Date().toISOString(),
+        options,
+      }),
     );
-    this.liveCommentsByFileId[file.id] = [
-      ...(this.liveCommentsByFileId[file.id] ?? []),
-      liveComment,
-    ];
-
-    if (options?.reveal ?? false) {
-      this.selectHeadlessHunk(file.id, file.path, target.hunkIndex);
-      this.sessionSnapshot.state.showAgentNotes = true;
-    }
-
-    this.updateHeadlessSnapshot();
-    return {
-      commentId,
-      fileId: file.id,
-      filePath: file.path,
-      hunkIndex: target.hunkIndex,
-      side: target.side,
-      line: target.line,
-    };
   }
 
   /** Apply a validated batch of live comments to the session-owned review state. */
@@ -432,152 +358,50 @@ class EmbeddedHunkSessionImpl implements EmbeddedHunkSession {
     requestId: string,
     options?: { revealMode?: "none" | "first" },
   ): AppliedCommentBatchResult {
-    const createdAt = new Date().toISOString();
-    const prepared = inputs.map((input, index) => {
-      const file = findDiffFileByPath(
-        this.renderSnapshot.bootstrap.changeset.files,
-        input.filePath,
-      );
-      if (!file) {
-        throw new Error(`No diff file matches ${input.filePath}.`);
-      }
-
-      const target = resolveCommentTarget(file, input);
-      return {
-        file,
-        target,
-        liveComment: buildLiveComment(
-          {
-            ...input,
-            side: target.side,
-            line: target.line,
-          },
-          `mcp:${requestId}:${index}`,
-          createdAt,
-          target.hunkIndex,
-        ),
-      };
-    });
-
-    prepared.forEach(({ file, liveComment }) => {
-      this.liveCommentsByFileId[file.id] = [
-        ...(this.liveCommentsByFileId[file.id] ?? []),
-        liveComment,
-      ];
-    });
-
-    if (options?.revealMode === "first" && prepared.length > 0) {
-      const first = prepared[0]!;
-      this.selectHeadlessHunk(first.file.id, first.file.path, first.target.hunkIndex);
-      this.sessionSnapshot.state.showAgentNotes = true;
-    }
-
-    this.updateHeadlessSnapshot();
-    return {
-      applied: prepared.map(({ file, target, liveComment }) => ({
-        commentId: liveComment.id,
-        fileId: file.id,
-        filePath: file.path,
-        hunkIndex: target.hunkIndex,
-        side: target.side,
-        line: target.line,
-      })),
-    };
+    return this.applyHeadlessTransition(
+      addReviewLiveCommentBatch({
+        files: this.renderSnapshot.bootstrap.changeset.files,
+        state: this.reviewState,
+        inputs,
+        requestId,
+        now: new Date().toISOString(),
+        options,
+      }),
+    );
   }
 
   /** Navigate the persisted hidden-session selection. */
   private navigateHeadless(
     input: Extract<HunkSessionServerMessage, { command: "navigate_to_hunk" }>["input"],
   ): NavigatedSelectionResult {
-    const files = this.renderSnapshot.bootstrap.changeset.files;
-    const target = resolveReviewNavigationTarget({
-      allFiles: files,
-      currentFileId: this.sessionSnapshot.state.selectedFileId,
-      currentHunkIndex: this.sessionSnapshot.state.selectedHunkIndex,
-      input,
-      visibleFiles: files,
-    });
-    this.selectHeadlessHunk(target.file.id, target.file.path, target.hunkIndex);
-    this.updateHeadlessSnapshot();
-    return {
-      fileId: target.file.id,
-      filePath: target.file.path,
-      hunkIndex: target.hunkIndex,
-      selectedHunk: buildSelectedHunkSummary(target.file, target.hunkIndex),
-    };
+    const files = reviewCommandFiles(
+      this.renderSnapshot.bootstrap.changeset.files,
+      this.reviewState,
+    );
+    return this.applyHeadlessTransition(
+      navigateReviewCommandState({
+        allFiles: files,
+        visibleFiles: files,
+        state: this.reviewState,
+        input,
+      }),
+    );
   }
 
   /** Remove one persisted live comment. */
   private removeHeadlessLiveComment(commentId: string): RemovedCommentResult {
-    let removed = false;
-    let remainingCommentCount = 0;
-    const next: Record<string, LiveComment[]> = {};
-
-    for (const [fileId, comments] of Object.entries(this.liveCommentsByFileId)) {
-      const filtered = comments.filter((comment) => comment.id !== commentId);
-      if (filtered.length !== comments.length) {
-        removed = true;
-      }
-      if (filtered.length > 0) {
-        next[fileId] = filtered;
-        remainingCommentCount += filtered.length;
-      }
-    }
-
-    if (!removed) {
-      throw new Error(`No live comment matches id ${commentId}.`);
-    }
-
-    this.liveCommentsByFileId = next;
-    this.updateHeadlessSnapshot();
-    return { commentId, removed: true, remainingCommentCount };
+    return this.applyHeadlessTransition(removeReviewLiveComment(this.reviewState, commentId));
   }
 
   /** Clear persisted live comments, optionally scoped to one file. */
   private clearHeadlessLiveComments(filePath?: string): ClearedCommentsResult {
-    let removedCount = 0;
-    let remainingCommentCount = 0;
-
-    if (filePath) {
-      const file = findDiffFileByPath(this.renderSnapshot.bootstrap.changeset.files, filePath);
-      if (!file) {
-        throw new Error(`No diff file matches ${filePath}.`);
-      }
-
-      const next: Record<string, LiveComment[]> = {};
-      for (const [fileId, comments] of Object.entries(this.liveCommentsByFileId)) {
-        if (fileId === file.id) {
-          removedCount = comments.length;
-          continue;
-        }
-        next[fileId] = comments;
-        remainingCommentCount += comments.length;
-      }
-      this.liveCommentsByFileId = next;
-    } else {
-      removedCount = Object.values(this.liveCommentsByFileId).reduce(
-        (sum, comments) => sum + comments.length,
-        0,
-      );
-      this.liveCommentsByFileId = {};
-    }
-
-    this.updateHeadlessSnapshot();
-    return { removedCount, remainingCommentCount, filePath };
-  }
-
-  /** Update the persisted selection fields from one file/hunk target. */
-  private selectHeadlessHunk(fileId: string, filePath: string, hunkIndex: number) {
-    const file = this.renderSnapshot.bootstrap.changeset.files.find(
-      (candidate) => candidate.id === fileId,
+    return this.applyHeadlessTransition(
+      clearReviewLiveComments({
+        files: this.renderSnapshot.bootstrap.changeset.files,
+        state: this.reviewState,
+        filePath,
+      }),
     );
-    const hunk = file?.metadata.hunks[hunkIndex];
-    const range = hunk ? hunkLineRange(hunk) : null;
-    this.sessionSnapshot.state.selectedFileId = fileId;
-    this.sessionSnapshot.state.selectedFilePath = filePath;
-    this.sessionSnapshot.state.selectedHunkIndex = hunkIndex;
-    this.sessionSnapshot.state.selectedHunkOldRange = range?.oldRange;
-    this.sessionSnapshot.state.selectedHunkNewRange = range?.newRange;
   }
 }
 

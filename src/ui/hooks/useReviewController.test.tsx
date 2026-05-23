@@ -361,6 +361,43 @@ describe("useReviewController", () => {
     }
   });
 
+  test("explicit session navigation reveals the selected hunk", async () => {
+    const controllerRef: { current: ReviewController | null } = { current: null };
+    const setup = await testRender(
+      <ReviewControllerHarness
+        initialFiles={[createTwoHunkFile()]}
+        onController={(nextController) => {
+          controllerRef.current = nextController;
+        }}
+      />,
+      { width: 80, height: 4 },
+    );
+
+    try {
+      await flush(setup);
+      const initialRevealRequestId = expectValue(controllerRef.current).selectedHunkRevealRequestId;
+
+      await act(async () => {
+        const result = expectValue(controllerRef.current).navigateToLocation({
+          filePath: "alpha.ts",
+          hunkIndex: 1,
+        });
+        expect(result).toMatchObject({ filePath: "alpha.ts", hunkIndex: 1 });
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).selectedHunkIndex).toBe(1);
+      expect(expectValue(controllerRef.current).selectedHunkRevealRequestId).toBe(
+        initialRevealRequestId + 1,
+      );
+      expect(expectValue(controllerRef.current).scrollToNote).toBe(false);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("batch live comments validate together and reveal the first applied hunk", async () => {
     const controllerRef: { current: ReviewController | null } = { current: null };
     const setup = await testRender(

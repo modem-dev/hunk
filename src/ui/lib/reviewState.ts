@@ -7,14 +7,9 @@
  * tested without React state in the loop.
  */
 import { findDiffFileByPath, findHunkIndexForLine, hunkLineRange } from "../../core/liveComments";
-import type { AgentAnnotation, DiffFile } from "../../core/types";
+import type { DiffFile } from "../../core/types";
 import type { NavigateToHunkToolInput, SelectedHunkSummary } from "../../hunk-session/types";
-import {
-  buildSidebarEntries,
-  filterReviewFiles,
-  mergeFileAnnotationsByFileId,
-  type SidebarEntry,
-} from "./files";
+import { buildSidebarEntries, filterReviewFiles, type SidebarEntry } from "./files";
 import {
   buildAnnotatedHunkCursors,
   buildHunkCursors,
@@ -24,7 +19,6 @@ import {
 
 export interface BuildReviewStateOptions {
   files: DiffFile[];
-  liveCommentsByFileId: Record<string, AgentAnnotation[]>;
   filterQuery: string;
   selectedFileId: string;
   selectedHunkIndex: number;
@@ -49,17 +43,15 @@ export interface ReviewNavigationTarget {
 /** Build the derived review stream state from files, filter text, and selection. */
 export function buildReviewState({
   files,
-  liveCommentsByFileId,
   filterQuery,
   selectedFileId,
   selectedHunkIndex,
 }: BuildReviewStateOptions): ReviewState {
-  const allFiles = mergeFileAnnotationsByFileId(files, liveCommentsByFileId);
-  const visibleFiles = filterReviewFiles(allFiles, filterQuery);
-  const selectedFile = resolveSelectedFile(allFiles, visibleFiles, selectedFileId);
+  const visibleFiles = filterReviewFiles(files, filterQuery);
+  const selectedFile = resolveSelectedFile(files, visibleFiles, selectedFileId);
 
   return {
-    allFiles,
+    allFiles: files,
     visibleFiles,
     sidebarEntries: buildSidebarEntries(visibleFiles),
     selectedFile,
