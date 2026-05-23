@@ -79,6 +79,21 @@ async function revealAddNoteNear(session: Session, row: number) {
   throw new Error("Could not reveal add-note affordance near target row.");
 }
 
+/** Reveal the add-note control without falling back to adjacent rows. */
+async function revealAddNoteOnRow(session: Session, row: number) {
+  for (const x of [8, 20, 60]) {
+    await moveMouse(session, x, row);
+    try {
+      await session.waitForText(/\[\+\]/, { timeout: 200 });
+      return;
+    } catch {
+      // Try nearby columns on the same rendered row, but do not mask row-target regressions.
+    }
+  }
+
+  throw new Error("Could not reveal add-note affordance on target row.");
+}
+
 describe("live UI integration", () => {
   test("real PTY sessions can toggle wrapped lines on and off", async () => {
     const fixture = harness.createLongWrapFilePair();
@@ -734,6 +749,34 @@ describe("live UI integration", () => {
       const saved = await session.waitForText(/Your note/, { timeout: 5_000 });
 
       expect(saved).toContain("Save this deletion draft.");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("clicking context-row add-note affordances can save draft notes", async () => {
+    const fixture = harness.createDeletionOnlyFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      cols: 120,
+      rows: 16,
+    });
+
+    try {
+      const initial = await session.waitForText(/keep = true/, {
+        timeout: 15_000,
+      });
+      const targetRow = lineIndexOf(initial, "keep = true");
+      expect(targetRow).toBeGreaterThan(0);
+
+      await revealAddNoteOnRow(session, targetRow);
+      await session.click(/\[\+\]/);
+      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await session.type("Save this context draft.");
+      await session.press(["ctrl", "s"]);
+      const saved = await session.waitForText(/Your note/, { timeout: 5_000 });
+
+      expect(saved).toContain("Save this context draft.");
     } finally {
       session.close();
     }
