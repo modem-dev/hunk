@@ -575,6 +575,50 @@ describe("UI components", () => {
     }
   });
 
+  test("DiffRowView preserves zero-width combining spans in nowrap and wrapped rows", async () => {
+    const theme = resolveTheme("midnight", null);
+    const row = {
+      type: "stack-line" as const,
+      key: "alpha:line:combining",
+      fileId: "alpha",
+      hunkIndex: 0,
+      cell: {
+        kind: "addition" as const,
+        sign: "+" as const,
+        newLineNumber: 2,
+        spans: [{ text: "e" }, { text: "\u0301" }, { text: "x" }],
+      },
+    };
+
+    for (const wrapLines of [false, true]) {
+      const setup = await testRender(
+        <DiffRowView
+          row={row}
+          width={40}
+          lineNumberDigits={1}
+          showLineNumbers={true}
+          showHunkHeaders={true}
+          wrapLines={wrapLines}
+          codeHorizontalOffset={0}
+          theme={theme}
+          selected={false}
+        />,
+        { width: 48, height: 3 },
+      );
+
+      try {
+        await act(async () => {
+          await setup.renderOnce();
+        });
+        expect(setup.captureCharFrame()).toContain("e\u0301x");
+      } finally {
+        await act(async () => {
+          setup.renderer.destroy();
+        });
+      }
+    }
+  });
+
   test("DiffPane only shows the add-note affordance after pointer movement", async () => {
     const files = createWindowingFiles(6);
     const theme = resolveTheme("midnight", null);

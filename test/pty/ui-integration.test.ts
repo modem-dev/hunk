@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
+import stringWidth from "string-width";
 import type { Session } from "tuistory";
 import { createPtyHarness } from "./harness";
 
@@ -109,6 +110,46 @@ async function revealAddNoteOnRow(session: Session, row: number) {
 }
 
 describe("live UI integration", () => {
+  test("split rows keep the center separator aligned after wide characters", async () => {
+    const fixture = harness.createWideCharacterFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      cols: 140,
+      rows: 16,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+      const snapshot = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("日本語") && text.includes("plain"),
+        5_000,
+      );
+      const lines = snapshot.split("\n");
+      const wideLine = lines.find((line) => line.includes("日本語"));
+      const plainLine = lines.find((line) => line.includes("plain"));
+
+      expect(wideLine).toBeDefined();
+      expect(plainLine).toBeDefined();
+      if (!wideLine || !plainLine) {
+        throw new Error(`Expected wide and plain split rows in snapshot:\n${snapshot}`);
+      }
+
+      const wideSeparatorIndex = wideLine.indexOf("▌", 1);
+      const plainSeparatorIndex = plainLine.indexOf("▌", 1);
+
+      expect(wideSeparatorIndex).toBeGreaterThan(0);
+      expect(plainSeparatorIndex).toBeGreaterThan(0);
+      expect(stringWidth(wideLine.slice(0, wideSeparatorIndex))).toBe(
+        stringWidth(plainLine.slice(0, plainSeparatorIndex)),
+      );
+    } finally {
+      session.close();
+    }
+  });
+
   test("real PTY sessions can toggle wrapped lines on and off", async () => {
     const fixture = harness.createLongWrapFilePair();
     const session = await harness.launchHunk({
@@ -365,16 +406,23 @@ describe("live UI integration", () => {
         timeout: 15_000,
       });
 
-      for (let index = 0; index < 19; index += 1) {
+      let reachedShortFileMidHunk = false;
+      for (let index = 0; index < 24; index += 1) {
         await session.press("]");
-        await session.waitIdle({ timeout: 40 });
+        const snapshot = await session.text({ immediate: true });
+        if (snapshot.includes("export const mid = 4;")) {
+          reachedShortFileMidHunk = true;
+          break;
+        }
       }
 
-      await harness.waitForSnapshot(
-        session,
-        (text) => text.includes("export const mid = 4;"),
-        5_000,
-      );
+      if (!reachedShortFileMidHunk) {
+        await harness.waitForSnapshot(
+          session,
+          (text) => text.includes("export const mid = 4;"),
+          5_000,
+        );
+      }
 
       await session.press("[");
       await session.waitIdle({ timeout: 80 });

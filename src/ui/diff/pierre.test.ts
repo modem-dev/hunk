@@ -9,8 +9,10 @@ import {
   spansForHighlightedSourceLine,
   type DiffRow,
 } from "./pierre";
+import { resolveSplitPaneWidths } from "./codeColumns";
 import { renderCodeOnlyPlannedRowText, renderDecoratedPlannedRowText } from "./renderRows";
 import { buildReviewRenderPlan } from "./reviewRenderPlan";
+import { measureTextWidth } from "../lib/text";
 import { resolveTheme } from "../themes";
 
 function createDiffFile(): DiffFile {
@@ -203,6 +205,66 @@ describe("Pierre diff rows", () => {
 
     expect(line).toContain("- export const answer = 41;");
     expect(line).toContain("+ export const answer = 42;");
+  });
+
+  test("keeps the split separator aligned after wide characters", () => {
+    const metadata = parseDiffFromFile(
+      {
+        name: "i18n.ts",
+        contents: "export const message = '日本語';\n",
+        cacheKey: "before-wide",
+      },
+      {
+        name: "i18n.ts",
+        contents: "export const message = 'abc';\n",
+        cacheKey: "after-wide",
+      },
+      { context: 3 },
+      true,
+    );
+    const file: DiffFile = {
+      id: "i18n",
+      path: "i18n.ts",
+      patch: "",
+      language: "typescript",
+      stats: { additions: 1, deletions: 1 },
+      metadata,
+      agent: null,
+    };
+    const theme = resolveTheme("midnight", null);
+    const rows = buildSplitRows(file, null, theme);
+    const plannedRows = buildReviewRenderPlan({ fileId: file.id, rows, showHunkHeaders: true });
+    const changedRow = plannedRows.find(
+      (row) =>
+        row.kind === "diff-row" &&
+        row.row.type === "split-line" &&
+        row.row.left.kind === "deletion",
+    );
+
+    expect(changedRow).toBeDefined();
+    if (!changedRow || changedRow.kind !== "diff-row") {
+      throw new Error("Expected a planned split diff row");
+    }
+
+    const width = 80;
+    const { leftWidth } = resolveSplitPaneWidths(width);
+    const line = renderDecoratedPlannedRowText(changedRow, {
+      codeHorizontalOffset: 0,
+      lineNumberDigits: 1,
+      showHunkHeaders: true,
+      showLineNumbers: true,
+      theme,
+      width,
+      wrapLines: false,
+    })[0];
+    expect(line).toBeDefined();
+    if (!line) {
+      throw new Error("Expected a rendered split row");
+    }
+    const centerSeparatorIndex = line.indexOf("▌", 1);
+
+    expect(line).toContain("日本語");
+    expect(measureTextWidth(line.slice(0, centerSeparatorIndex))).toBe(leftWidth);
   });
 
   test("renders planned stack rows with horizontal copy offset", () => {

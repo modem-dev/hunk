@@ -125,6 +125,17 @@ export function createPtyHarness() {
     return { dir, before, after };
   }
 
+  function createWideCharacterFilePair() {
+    const dir = makeTempDir("hunk-tuistory-wide-");
+    const before = join(dir, "before.ts");
+    const after = join(dir, "after.ts");
+
+    writeText(before, "export const wide = '日本語';\nexport const plain = 'before';\n");
+    writeText(after, "export const wide = '한국어';\nexport const plain = 'after';\n");
+
+    return { dir, before, after };
+  }
+
   function createDeletionOnlyFilePair() {
     const dir = makeTempDir("hunk-tuistory-deletion-");
     const before = join(dir, "before.ts");
@@ -625,6 +636,7 @@ export function createPtyHarness() {
     createScrollableFilePair,
     createSidebarJumpRepoFixture,
     createTwoFileRepoFixture,
+    createWideCharacterFilePair,
     launchHunk,
     launchHunkWithFileBackedStdin,
     launchShellCommand,

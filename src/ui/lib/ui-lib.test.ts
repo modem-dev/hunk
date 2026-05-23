@@ -21,7 +21,7 @@ import {
   isStepDownKey,
   isStepUpKey,
 } from "./keyboard";
-import { fitText, padText } from "./text";
+import { fitText, measureTextWidth, padText, sliceTextByWidth } from "./text";
 import { computeHunkRevealScrollTop } from "./hunkScroll";
 import { estimateDiffSectionBodyRows, measureDiffSectionGeometry } from "./diffSectionGeometry";
 import { resizeSidebarWidth } from "./sidebar";
@@ -275,6 +275,14 @@ describe("ui helpers", () => {
     expect(fitText("hello", 4)).toBe("hel.");
     expect(padText("hello", 4)).toBe("hel.");
     expect(padText("ok", 4)).toBe("ok  ");
+  });
+
+  test("text helpers measure and slice wide characters by terminal cells", () => {
+    expect(measureTextWidth("日本語")).toBe(6);
+    expect(sliceTextByWidth("a日本b", 1, 4)).toEqual({ text: "日本", width: 4 });
+    expect(sliceTextByWidth("a日本b", 2, 4)).toEqual({ text: "本b", width: 3 });
+    expect(fitText("日本語", 5)).toBe("日本.");
+    expect(measureTextWidth(padText("日本", 6))).toBe(6);
   });
 
   test("agent popover helpers wrap text and right-align the card within the viewport", () => {

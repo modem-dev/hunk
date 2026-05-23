@@ -29,6 +29,12 @@ describe("code column measurement", () => {
 
     expect(maxFileCodeLineWidth(file)).toBe("the widest generated line".length);
   });
+
+  test("counts wide CJK characters by terminal cells", () => {
+    const file = createLargeLineFixture(2, "日本語");
+
+    expect(maxFileCodeLineWidth(file)).toBe(6);
+  });
 });
 
 describe("findMaxLineNumberInRows", () => {
