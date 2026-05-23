@@ -216,11 +216,13 @@ describe("ui helpers", () => {
       requestQuit: () => {},
       selectLayoutMode: () => {},
       selectThemeId: () => {},
+      copyDecorations: false,
       showAgentNotes: false,
       showHelp: false,
       showHunkHeaders: true,
       showLineNumbers: true,
-      sidebarVisible: true,
+      renderSidebar: true,
+      toggleCopyDecorations: () => {},
       toggleAgentNotes: () => {},
       toggleFocusArea: () => {},
       toggleHelp: () => {},
@@ -228,6 +230,7 @@ describe("ui helpers", () => {
       toggleLineNumbers: () => {},
       toggleLineWrap: () => {},
       toggleSidebar: () => {},
+      triggerEditSelectedFile: () => {},
       wrapLines: false,
     });
 

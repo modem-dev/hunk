@@ -591,7 +591,7 @@ describe("live UI integration", () => {
         timeout: 15_000,
       });
 
-      await moveMouse(session, 8, 5);
+      await moveMouse(session, 8, 4);
       await session.waitForText(/\[\+\]/, { timeout: 5_000 });
       await session.click(/\[\+\]/);
       await session.waitForText(/Draft note/, { timeout: 5_000 });
@@ -605,7 +605,7 @@ describe("live UI integration", () => {
 
       expect(cancelled).not.toContain("Your note");
 
-      await moveMouse(session, 8, 5);
+      await moveMouse(session, 8, 4);
       await session.waitForText(/\[\+\]/, { timeout: 5_000 });
       await session.click(/\[\+\]/);
       await session.waitForText(/Draft note/, { timeout: 5_000 });
@@ -632,7 +632,7 @@ describe("live UI integration", () => {
         timeout: 15_000,
       });
 
-      await moveMouse(session, 8, 5);
+      await moveMouse(session, 8, 4);
       await session.waitForText(/\[\+\]/, { timeout: 5_000 });
       await session.click(/\[\+\]/);
       await session.waitForText(/Draft note/, { timeout: 5_000 });
@@ -646,7 +646,7 @@ describe("live UI integration", () => {
 
       expect(cancelled).not.toContain("Your note");
 
-      await moveMouse(session, 8, 5);
+      await moveMouse(session, 8, 4);
       await session.waitForText(/\[\+\]/, { timeout: 5_000 });
       await session.click(/\[\+\]/);
       await session.waitForText(/Draft note/, { timeout: 5_000 });
