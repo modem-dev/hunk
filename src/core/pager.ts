@@ -24,10 +24,47 @@ export function resolveTextPagerCommand(env: NodeJS.ProcessEnv = process.env) {
   return candidate;
 }
 
+function parsePagerCommand(command: string): [string, string[]] {
+  const args: string[] = [];
+  let current = "";
+  let inQuotes = false;
+  let quoteChar = "";
+
+  for (let i = 0; i < command.length; i++) {
+    const char = command[i];
+
+    if (inQuotes) {
+      if (char === quoteChar) {
+        inQuotes = false;
+        quoteChar = "";
+      } else {
+        current += char;
+      }
+    } else if (char === '"' || char === "'") {
+      inQuotes = true;
+      quoteChar = char;
+    } else if (char === " " || char === "\t") {
+      if (current.length > 0) {
+        args.push(current);
+        current = "";
+      }
+    } else {
+      current += char;
+    }
+  }
+
+  if (current.length > 0) {
+    args.push(current);
+  }
+
+  const [executable, ...rest] = args;
+  return [executable ?? "", rest];
+}
+
 /** Minimal dependencies for testing pager behavior without spawning a real subprocess. */
 export interface PlainTextPagerDeps {
   stdout: Pick<NodeJS.WriteStream, "isTTY" | "write">;
-  spawnImpl: (command: string, options: SpawnOptions) => ChildProcess;
+  spawnImpl: (command: string, args: string[], options: SpawnOptions) => ChildProcess;
 }
 
 /** Stream plain text through a normal pager, or write directly when not attached to a terminal. */
@@ -45,8 +82,9 @@ export async function pagePlainText(
   }
 
   const pagerCommand = resolveTextPagerCommand(env);
-  const pager = deps.spawnImpl(pagerCommand, {
-    shell: true,
+  const [executable, args] = parsePagerCommand(pagerCommand);
+  const pager = deps.spawnImpl(executable, args, {
+    shell: false,
     stdio: ["pipe", "inherit", "inherit"],
     env,
   });
