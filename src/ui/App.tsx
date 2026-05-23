@@ -708,6 +708,7 @@ export function App({
     switchMenu,
     toggleAgentNotes,
     toggleFocusArea,
+    toggleGapForSelectedHunk: review.toggleSelectedHunkGap,
     toggleHelp,
     toggleHunkHeaders,
     toggleLineNumbers,
@@ -860,6 +861,7 @@ export function App({
           codeHorizontalOffset={codeHorizontalOffset}
           copyDecorations={copyDecorations}
           diffContentWidth={diffContentWidth}
+          expandedGapsByFileId={review.expandedGapsByFileId}
           files={filteredFiles}
           pagerMode={pagerMode}
           screenLeft={diffPaneScreenLeft}
@@ -877,6 +879,7 @@ export function App({
           showAgentNotes={showAgentNotes}
           showLineNumbers={showLineNumbers}
           showHunkHeaders={showHunkHeaders}
+          sourceStatusByFileId={review.sourceStatusByFileId}
           wrapLines={wrapLines}
           wrapToggleScrollTop={wrapToggleScrollTopRef.current}
           layoutToggleScrollTop={layoutToggleScrollTopRef.current}
@@ -898,6 +901,7 @@ export function App({
           }}
           onCopyFeedback={showTransientNotice}
           onSelectFile={jumpToFile}
+          onToggleGap={review.toggleGap}
           onViewportCenteredHunkChange={(fileId, hunkIndex) =>
             review.selectHunk(fileId, hunkIndex, { preserveViewport: true })
           }

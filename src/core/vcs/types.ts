@@ -1,3 +1,4 @@
+import type { BuildDiffFileOptions } from "../diffFile";
 import type {
   DiffFile,
   ShowCommandInput,
@@ -15,6 +16,7 @@ export interface VcsDetection {
 
 export interface VcsLoadContext {
   cwd: string;
+  gitExecutable?: string;
 }
 
 export type VcsReviewInput = VcsCommandInput | ShowCommandInput | StashShowCommandInput;
@@ -38,6 +40,7 @@ export interface VcsPatchResult {
   sourceLabel: string;
   title: string;
   patchText: string;
+  sourceFetcherBuilder?: BuildDiffFileOptions["sourceFetcherBuilder"];
   untrackedFiles?: string[];
   extraFiles?: DiffFile[];
 }

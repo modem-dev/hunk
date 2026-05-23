@@ -1,5 +1,6 @@
 import { memo } from "react";
 import type { DiffFile, LayoutMode, UserNoteLineTarget } from "../../../core/types";
+import type { FileSourceStatus } from "../../diff/expandCollapsedRows";
 import { PierreDiffView, type ActiveAddNoteAffordance } from "../../diff/PierreDiffView";
 import type { VisibleBodyBounds } from "../../diff/rowWindowing";
 import type { DiffSectionGeometry } from "../../lib/diffSectionGeometry";
@@ -12,6 +13,7 @@ import { DiffFileHeaderRow } from "./DiffFileHeaderRow";
 
 interface DiffSectionProps {
   codeHorizontalOffset: number;
+  expandedGapKeys: ReadonlySet<string>;
   file: DiffFile;
   headerLabelWidth: number;
   headerStatsWidth: number;
@@ -24,6 +26,7 @@ interface DiffSectionProps {
   separatorWidth: number;
   showLineNumbers: boolean;
   showHunkHeaders: boolean;
+  sourceStatus: FileSourceStatus | undefined;
   wrapLines: boolean;
   showHeader: boolean;
   showSeparator: boolean;
@@ -38,11 +41,13 @@ interface DiffSectionProps {
   onActiveAddNoteAffordanceChange?: (affordance: ActiveAddNoteAffordance | null) => void;
   onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void;
   onSelect: () => void;
+  onToggleGap: (gapKey: string) => void;
 }
 
 /** Render one file section in the main review stream. */
 function DiffSectionComponent({
   codeHorizontalOffset,
+  expandedGapKeys,
   file,
   headerLabelWidth,
   headerStatsWidth,
@@ -55,6 +60,7 @@ function DiffSectionComponent({
   separatorWidth,
   showLineNumbers,
   showHunkHeaders,
+  sourceStatus,
   wrapLines,
   showHeader,
   showSeparator,
@@ -69,6 +75,7 @@ function DiffSectionComponent({
   onActiveAddNoteAffordanceChange,
   onStartUserNoteAtHunk,
   onSelect,
+  onToggleGap,
 }: DiffSectionProps) {
   return (
     <box
@@ -107,10 +114,12 @@ function DiffSectionComponent({
       ) : null}
 
       <PierreDiffView
+        expandedGapKeys={expandedGapKeys}
         file={file}
         layout={layout}
         showLineNumbers={showLineNumbers}
         showHunkHeaders={showHunkHeaders}
+        sourceStatus={sourceStatus}
         wrapLines={wrapLines}
         codeHorizontalOffset={codeHorizontalOffset}
         copySelectedRowRanges={copySelectedRowRanges}
@@ -123,6 +132,7 @@ function DiffSectionComponent({
         onHover={onHover}
         onActiveAddNoteAffordanceChange={onActiveAddNoteAffordanceChange}
         onStartUserNoteAtHunk={onStartUserNoteAtHunk}
+        onToggleGap={onToggleGap}
         selectedHunkIndex={selectedHunkIndex}
         sectionGeometry={sectionGeometry}
         shouldLoadHighlight={shouldLoadHighlight}
@@ -139,6 +149,7 @@ export const DiffSection = memo(DiffSectionComponent, (previous, next) => {
   // This comparator relies on stable upstream object identity for files and visible-note arrays.
   return (
     previous.codeHorizontalOffset === next.codeHorizontalOffset &&
+    previous.expandedGapKeys === next.expandedGapKeys &&
     previous.file === next.file &&
     previous.headerLabelWidth === next.headerLabelWidth &&
     previous.headerStatsWidth === next.headerStatsWidth &&
@@ -151,6 +162,7 @@ export const DiffSection = memo(DiffSectionComponent, (previous, next) => {
     previous.separatorWidth === next.separatorWidth &&
     previous.showLineNumbers === next.showLineNumbers &&
     previous.showHunkHeaders === next.showHunkHeaders &&
+    previous.sourceStatus === next.sourceStatus &&
     previous.wrapLines === next.wrapLines &&
     previous.showHeader === next.showHeader &&
     previous.showSeparator === next.showSeparator &&

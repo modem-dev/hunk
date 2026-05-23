@@ -82,6 +82,15 @@ describe("gitAdapter", () => {
     expect(result.patchText).toContain("diff --git a/tracked.txt b/tracked.txt");
     expect(result.patchText).toContain("+new");
     expect(result.untrackedFiles).toEqual(["untracked.txt"]);
+
+    const sourceFetcher = result.sourceFetcherBuilder?.({
+      path: "tracked.txt",
+      type: "change",
+      isUntracked: false,
+      isBinary: false,
+    });
+    expect(await sourceFetcher?.getFullText("old")).toBe("old\n");
+    expect(await sourceFetcher?.getFullText("new")).toBe("new\n");
   });
 
   test("loads revision and stash patches through adapter operations", async () => {
@@ -105,6 +114,15 @@ describe("gitAdapter", () => {
     expect(showResult.title).toContain("show HEAD");
     expect(showResult.patchText).toContain("diff --git a/file.txt b/file.txt");
     expect(showResult.patchText).toContain("+two");
+
+    const showSourceFetcher = showResult.sourceFetcherBuilder?.({
+      path: "file.txt",
+      type: "change",
+      isUntracked: false,
+      isBinary: false,
+    });
+    expect(await showSourceFetcher?.getFullText("old")).toBe("one\n");
+    expect(await showSourceFetcher?.getFullText("new")).toBe("two\n");
 
     writeFileSync(join(repo, "file.txt"), "three\n");
     git(repo, "stash", "push", "-m", "adapter stash");

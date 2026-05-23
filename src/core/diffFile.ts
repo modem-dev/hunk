@@ -2,6 +2,7 @@ import { getFiletypeFromFileName, type FileDiffMetadata } from "@pierre/diffs";
 import { findAgentFileContext } from "./agent";
 import { patchLooksBinary } from "./binary";
 import { normalizeDiffMetadataPaths, normalizeDiffPath } from "./diffPaths";
+import type { FileSourceFetcher } from "./fileSource";
 import type { AgentContext, DiffFile } from "./types";
 
 /** Count visible additions and deletions from parsed diff metadata. */
@@ -21,10 +22,19 @@ export function countDiffStats(metadata: FileDiffMetadata) {
   return { additions, deletions };
 }
 
+export interface DiffFileSourceContext {
+  path: string;
+  previousPath?: string;
+  type: FileDiffMetadata["type"];
+  isUntracked: boolean;
+  isBinary: boolean;
+}
+
 export interface BuildDiffFileOptions {
   isUntracked?: boolean;
   previousPath?: string;
   isBinary?: boolean;
+  sourceFetcherBuilder?: (file: DiffFileSourceContext) => FileSourceFetcher | undefined;
   isTooLarge?: boolean;
   stats?: DiffFile["stats"];
   statsTruncated?: boolean;
@@ -41,6 +51,7 @@ export function buildDiffFile(
     isUntracked,
     previousPath,
     isBinary,
+    sourceFetcherBuilder,
     isTooLarge,
     stats,
     statsTruncated,
@@ -49,6 +60,14 @@ export function buildDiffFile(
   const normalizedMetadata = normalizeDiffMetadataPaths(metadata);
   const path = normalizedMetadata.name;
   const resolvedPreviousPath = normalizeDiffPath(previousPath) ?? normalizedMetadata.prevName;
+  const resolvedIsBinary = isBinary ?? patchLooksBinary(patch);
+  const sourceFetcher = sourceFetcherBuilder?.({
+    path,
+    previousPath: resolvedPreviousPath,
+    type: normalizedMetadata.type,
+    isUntracked: Boolean(isUntracked),
+    isBinary: resolvedIsBinary,
+  });
 
   return {
     id: `${sourcePrefix}:${index}:${path}`,
@@ -60,9 +79,10 @@ export function buildDiffFile(
     metadata: normalizedMetadata,
     agent: findAgentFileContext(agentContext, path, resolvedPreviousPath),
     isUntracked,
-    isBinary: isBinary ?? patchLooksBinary(patch),
+    isBinary: resolvedIsBinary,
     isTooLarge,
     statsTruncated,
+    sourceFetcher,
   };
 }
 

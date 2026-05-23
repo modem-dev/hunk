@@ -66,6 +66,7 @@ export interface UseAppKeyboardShortcutsOptions {
   switchMenu: (delta: number) => void;
   toggleAgentNotes: () => void;
   toggleFocusArea: () => void;
+  toggleGapForSelectedHunk: () => void;
   toggleHelp: () => void;
   toggleHunkHeaders: () => void;
   toggleLineNumbers: () => void;
@@ -102,12 +103,12 @@ export function useAppKeyboardShortcuts({
   switchMenu,
   toggleAgentNotes,
   toggleFocusArea,
+  toggleGapForSelectedHunk,
   toggleHelp,
   toggleHunkHeaders,
   toggleLineNumbers,
   toggleLineWrap,
   toggleSidebar,
-  triggerEditSelectedFile,
   triggerRefreshCurrentInput,
 }: UseAppKeyboardShortcutsOptions) {
   const activeMenuIdRef = useRef(activeMenuId);
@@ -451,8 +452,8 @@ export function useAppKeyboardShortcuts({
       return;
     }
 
-    if (key.name === "e" || key.sequence === "e") {
-      runAndCloseMenu(triggerEditSelectedFile);
+    if (key.name === "z" || key.sequence === "z") {
+      runAndCloseMenu(toggleGapForSelectedHunk);
       return;
     }
 

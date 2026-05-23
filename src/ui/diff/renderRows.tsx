@@ -6,6 +6,7 @@ import {
   resolveSplitPaneWidths,
   resolveStackCellGeometry,
 } from "./codeColumns";
+import { gapKey } from "./expandCollapsedRows";
 import type { DiffRow, RenderSpan, SplitLineCell, StackLineCell } from "./pierre";
 import {
   diffRailMarker,
@@ -1080,6 +1081,17 @@ export function diffMessage(file: DiffFile) {
   return "No textual hunks to render for this file.";
 }
 
+/** Build the rendered label text for one collapsed gap row. */
+function collapsedRowLabel(text: string, expandable: boolean) {
+  if (!expandable) {
+    return `··· ${text} ···`;
+  }
+
+  // The leading chevron hints that the row is interactive on terminals that
+  // render Unicode glyphs. The label still reads naturally on plain VT100.
+  return `▾ ${text}`;
+}
+
 /** Render collapsed and hunk-header rows, including the optional add-note target. */
 function renderHeaderRow(
   row: Extract<DiffRow, { type: "collapsed" | "hunk-header" }>,
@@ -1090,6 +1102,7 @@ function renderHeaderRow(
   showAddNoteBadge = false,
   onHoverRow?: (rowKey: string) => void,
   onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void,
+  onToggleGap?: (gapKey: string) => void,
 ) {
   const badges = [
     showAddNoteBadge
@@ -1101,10 +1114,14 @@ function renderHeaderRow(
       : null,
   ].filter((badge): badge is { key: string; text: string; onClick: () => void } => Boolean(badge));
   const badgeWidth = badges.reduce((total, badge) => total + badge.text.length + 1, 0);
-  const label =
-    row.type === "collapsed"
-      ? fitText(`··· ${row.text} ···`, Math.max(0, width - 1 - badgeWidth))
-      : fitText(row.text, Math.max(0, width - 1 - badgeWidth));
+  const collapsedExpandable = row.type === "collapsed" && Boolean(onToggleGap);
+  const labelText =
+    row.type === "collapsed" ? collapsedRowLabel(row.text, collapsedExpandable) : row.text;
+  const label = fitText(labelText, Math.max(0, width - 1 - badgeWidth));
+  const handleCollapsedClick =
+    row.type === "collapsed" && onToggleGap
+      ? () => onToggleGap(gapKey(row.position, row.hunkIndex))
+      : undefined;
 
   if (badges.length === 0) {
     return (
@@ -1117,6 +1134,8 @@ function renderHeaderRow(
           backgroundColor: theme.panelAlt,
         }}
         onMouseMove={() => onHoverRow?.(row.key)}
+        onMouseOver={() => onHoverRow?.(row.key)}
+        onMouseUp={handleCollapsedClick}
       >
         <text>
           <span
@@ -1147,8 +1166,12 @@ function renderHeaderRow(
         backgroundColor: theme.panelAlt,
       }}
       onMouseMove={() => onHoverRow?.(row.key)}
+      onMouseOver={() => onHoverRow?.(row.key)}
     >
-      <box style={{ width: Math.max(0, width - badgeWidth), height: 1 }}>
+      <box
+        style={{ width: Math.max(0, width - badgeWidth), height: 1 }}
+        onMouseUp={handleCollapsedClick}
+      >
         <text>
           <span
             fg={selected ? neutralRailColor(theme) : dimRailColor(neutralRailColor(theme), theme)}
@@ -1280,6 +1303,7 @@ function renderRow(
   showAddNoteBadge = false,
   onHoverRow?: (rowKey: string) => void,
   onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void,
+  onToggleGap?: (gapKey: string) => void,
 ) {
   const hasCopySelection = !!copySelectedRowRange;
 
@@ -1300,6 +1324,7 @@ function renderRow(
       showAddNoteBadge,
       onHoverRow,
       onStartUserNoteAtHunk,
+      onToggleGap,
     );
   } else if (row.type === "hunk-header") {
     baseRow = showHunkHeaders
@@ -1652,6 +1677,7 @@ interface DiffRowViewProps {
   showAddNoteBadge?: boolean;
   onHoverRow?: (rowKey: string) => void;
   onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void;
+  onToggleGap?: (gapKey: string) => void;
 }
 
 /** Render one diff row, memoized to avoid unnecessary rerenders. */
@@ -1673,6 +1699,7 @@ export const DiffRowView = memo(
     showAddNoteBadge,
     onHoverRow,
     onStartUserNoteAtHunk,
+    onToggleGap,
   }: DiffRowViewProps) {
     return renderRow(
       row,
@@ -1691,6 +1718,7 @@ export const DiffRowView = memo(
       showAddNoteBadge,
       onHoverRow,
       onStartUserNoteAtHunk,
+      onToggleGap,
     );
   },
   (previous, next) => {
@@ -1710,7 +1738,8 @@ export const DiffRowView = memo(
       previous.noteGuideSide === next.noteGuideSide &&
       previous.showAddNoteBadge === next.showAddNoteBadge &&
       previous.onHoverRow === next.onHoverRow &&
-      previous.onStartUserNoteAtHunk === next.onStartUserNoteAtHunk
+      previous.onStartUserNoteAtHunk === next.onStartUserNoteAtHunk &&
+      previous.onToggleGap === next.onToggleGap
     );
   },
 );

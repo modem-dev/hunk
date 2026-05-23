@@ -4,7 +4,11 @@ import { testRender } from "@opentui/react/test-utils";
 import { act, createRef, useEffect, useState, type ReactNode } from "react";
 import type { AppBootstrap, DiffFile } from "../../core/types";
 import { createTestVcsAppBootstrap } from "../../../test/helpers/app-bootstrap";
-import { createTestDiffFile as buildTestDiffFile, lines } from "../../../test/helpers/diff-helpers";
+import {
+  createTestDiffFile as buildTestDiffFile,
+  createTestSourceFetcher,
+  lines,
+} from "../../../test/helpers/diff-helpers";
 import { hexColorDistance } from "../lib/color";
 import { resolveTheme } from "../themes";
 import { measureDiffSectionGeometry } from "../lib/diffSectionGeometry";
@@ -203,6 +207,21 @@ function createCollapsedTopDiffFile(
   afterLines[changedLine - 1] = `export const line${changedLine} = 9999;`;
 
   return createTestDiffFile(id, path, lines(...beforeLines), lines(...afterLines));
+}
+
+/** Build a file whose first hunk leaves a collapsed gap that can be expanded. */
+function createExpandableContextDiffFile(
+  id: string,
+  path: string,
+  sourceFetcher?: DiffFile["sourceFetcher"],
+) {
+  const before = Array.from({ length: 30 }, (_, i) => `line ${i + 1}\n`).join("");
+  const after = before.replace("line 5\n", "line 5 modified\n");
+
+  return {
+    after,
+    file: buildTestDiffFile({ after, before, context: 3, id, path, sourceFetcher }),
+  };
 }
 
 function createDiffPaneProps(
@@ -874,6 +893,86 @@ describe("UI components", () => {
       expect(frame).toContain("second.ts");
       expect(frame).not.toContain("@@ -1,18 +1,18 @@");
       expect(scrollRef.current?.viewport.height ?? 0).toBe(stickyViewportHeight);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("DiffPane positions later files after expanded context rows", async () => {
+    const theme = resolveTheme("midnight", null);
+    const beforeLines = Array.from({ length: 30 }, (_, index) => `first line ${index + 1}`);
+    const afterLines = [...beforeLines];
+    afterLines[4] = "first line 5 changed";
+    const after = lines(...afterLines);
+    const firstFile = buildTestDiffFile({
+      after,
+      before: lines(...beforeLines),
+      context: 0,
+      id: "first-expanded",
+      path: "first-expanded.ts",
+    });
+    const secondFile = createTestDiffFile(
+      "second-after-expanded",
+      "second-after-expanded.ts",
+      "export const second = 1;\n",
+      "export const second = 2;\n",
+    );
+    const files = [firstFile, secondFile];
+    const expandedKeys = new Set(["trailing:0"]);
+    const sourceStatus = { kind: "loaded", text: after } as const;
+    const firstGeometry = measureDiffSectionGeometry(
+      firstFile,
+      "split",
+      true,
+      theme,
+      [],
+      88,
+      true,
+      false,
+      expandedKeys,
+      sourceStatus,
+    );
+    const secondGeometry = measureDiffSectionGeometry(secondFile, "split", true, theme, [], 88);
+    const fileSectionLayouts = buildFileSectionLayouts(
+      files,
+      [firstGeometry.bodyHeight, secondGeometry.bodyHeight],
+      buildInStreamFileHeaderHeights(files),
+    );
+    const scrollRef = createRef<ScrollBoxRenderable>();
+    const props = createDiffPaneProps(files, theme, {
+      diffContentWidth: 88,
+      expandedGapsByFileId: { [firstFile.id]: expandedKeys },
+      headerLabelWidth: 48,
+      headerStatsWidth: 16,
+      scrollRef,
+      separatorWidth: 84,
+      sourceStatusByFileId: { [firstFile.id]: sourceStatus },
+      width: 92,
+    });
+    const setup = await testRender(<DiffPane {...props} />, {
+      width: 96,
+      height: 10,
+    });
+
+    try {
+      await settleDiffPane(setup);
+
+      let frame = setup.captureCharFrame();
+      expect(frame).toContain("Hide 25 unchanged lines");
+      expect(frame).toContain("first line 6");
+      expect(frame).not.toContain("second-after-expanded.ts");
+
+      await act(async () => {
+        scrollRef.current?.scrollTo(fileSectionLayouts[1]!.sectionTop);
+      });
+      await settleDiffPane(setup);
+
+      frame = await waitForFrame(setup, (nextFrame) =>
+        nextFrame.includes("second-after-expanded.ts"),
+      );
+      expect(frame).toContain("second-after-expanded.ts");
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -1820,8 +1919,8 @@ describe("UI components", () => {
       "1 / 2 / 0       split / stack / auto",
       "s / t           sidebar / theme",
       "a               toggle AI notes",
+      "z               toggle unchanged context",
       "l / w / m       lines / wrap / metadata",
-      "e               open file in $EDITOR",
       "Review",
       "/               focus file filter",
       "c               create review note",
@@ -2227,6 +2326,226 @@ describe("UI components", () => {
       6,
     );
     expect(binaryFileFrame).toContain("Binary file skipped");
+  });
+
+  test("PierreDiffView shows the expand chevron only when a source fetcher is attached", async () => {
+    const { file: baseFile } = createExpandableContextDiffFile("expand-affordance", "expand.ts");
+    const theme = resolveTheme("midnight", null);
+
+    const noFetcherFrame = await captureFrame(
+      <PierreDiffView
+        file={baseFile}
+        layout="split"
+        theme={theme}
+        width={120}
+        selectedHunkIndex={0}
+        scrollable={false}
+      />,
+      120,
+      40,
+    );
+    expect(noFetcherFrame).toContain("unchanged lines");
+    expect(noFetcherFrame).not.toContain("▾");
+
+    const fileWithFetcher = {
+      ...baseFile,
+      sourceFetcher: createTestSourceFetcher(() => null),
+    };
+
+    const expandableFrame = await captureFrame(
+      <PierreDiffView
+        file={fileWithFetcher}
+        layout="split"
+        theme={theme}
+        width={120}
+        selectedHunkIndex={0}
+        scrollable={false}
+        onToggleGap={() => {}}
+      />,
+      120,
+      40,
+    );
+    expect(expandableFrame).toContain("▾");
+  });
+
+  test("PierreDiffView hides add-note affordances on collapsed and hunk-header rows", async () => {
+    const expandable = createExpandableContextDiffFile("meta-hover", "meta-hover.ts");
+    const file = {
+      ...expandable.file,
+      sourceFetcher: createTestSourceFetcher(() => expandable.after),
+    };
+    const theme = resolveTheme("midnight", null);
+    const setup = await testRender(
+      <PierreDiffView
+        file={file}
+        layout="split"
+        theme={theme}
+        width={120}
+        selectedHunkIndex={0}
+        scrollable={false}
+        onStartUserNoteAtHunk={() => {}}
+        onToggleGap={() => {}}
+      />,
+      { width: 120, height: 40 },
+    );
+
+    try {
+      await act(async () => {
+        await setup.renderOnce();
+      });
+
+      const frame = setup.captureCharFrame();
+      const frameLines = frame.split("\n");
+      const collapsedY = frameLines.findIndex((line) => line.includes("unchanged lines"));
+      const hunkHeaderY = frameLines.findIndex((line) => line.includes("@@"));
+      const codeY = frameLines.findIndex((line) => line.includes("line 5 modified"));
+      expect(collapsedY).toBeGreaterThanOrEqual(0);
+      expect(hunkHeaderY).toBeGreaterThanOrEqual(0);
+      expect(codeY).toBeGreaterThanOrEqual(0);
+
+      await act(async () => {
+        await setup.mockMouse.moveTo(4, collapsedY);
+        await setup.renderOnce();
+      });
+      expect(setup.captureCharFrame()).not.toContain("[+]");
+
+      await act(async () => {
+        await setup.mockMouse.moveTo(4, hunkHeaderY);
+        await setup.renderOnce();
+      });
+      expect(setup.captureCharFrame()).not.toContain("[+]");
+
+      let codeHoverFrame = "";
+      for (const y of [codeY, codeY + 1]) {
+        for (const x of [4, 16, 48, 76]) {
+          await act(async () => {
+            await setup.mockMouse.moveTo(x, y);
+            await setup.renderOnce();
+          });
+          codeHoverFrame = setup.captureCharFrame();
+          if (codeHoverFrame.includes("[+]")) {
+            break;
+          }
+        }
+        if (codeHoverFrame.includes("[+]")) {
+          break;
+        }
+      }
+      expect(codeHoverFrame).toContain("[+]");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("PierreDiffView toggles a collapsed gap when clicked", async () => {
+    const expandable = createExpandableContextDiffFile("expand-click", "expand-click.ts");
+    const file = {
+      ...expandable.file,
+      sourceFetcher: createTestSourceFetcher(() => expandable.after),
+    };
+    const toggledGaps: string[] = [];
+    const theme = resolveTheme("midnight", null);
+    const setup = await testRender(
+      <PierreDiffView
+        file={file}
+        layout="split"
+        theme={theme}
+        width={120}
+        selectedHunkIndex={0}
+        scrollable={false}
+        onToggleGap={(gapKey) => {
+          toggledGaps.push(gapKey);
+        }}
+      />,
+      { width: 120, height: 40 },
+    );
+
+    try {
+      await act(async () => {
+        await setup.renderOnce();
+      });
+
+      const frame = setup.captureCharFrame();
+      const gapLineIndex = frame.split("\n").findIndex((line) => line.includes("▾"));
+      expect(gapLineIndex).toBeGreaterThanOrEqual(0);
+
+      for (const y of [gapLineIndex, gapLineIndex + 1]) {
+        for (const x of [2, 8, 24]) {
+          await act(async () => {
+            await setup.mockMouse.click(x, y);
+          });
+          if (toggledGaps.length > 0) {
+            break;
+          }
+        }
+        if (toggledGaps.length > 0) {
+          break;
+        }
+      }
+
+      expect(toggledGaps).toEqual(["before:0"]);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("PierreDiffView highlights expanded unchanged source rows", async () => {
+    const beforeLines = Array.from({ length: 30 }, (_, index) =>
+      index === 0
+        ? "export const expandedMarker = 1;"
+        : `export const line${index + 1} = ${index + 1};`,
+    );
+    const afterLines = [...beforeLines];
+    afterLines[4] = "export const line5 = 999;";
+    const after = lines(...afterLines);
+    const file = buildTestDiffFile({
+      after,
+      before: lines(...beforeLines),
+      context: 3,
+      id: "expanded-highlight",
+      path: "expanded-highlight.ts",
+    });
+    const theme = resolveTheme("midnight", null);
+    const setup = await testRender(
+      <PierreDiffView
+        file={file}
+        layout="split"
+        theme={theme}
+        width={140}
+        selectedHunkIndex={0}
+        expandedGapKeys={new Set(["before:0"])}
+        sourceStatus={{ kind: "loaded", text: after }}
+        scrollable={false}
+      />,
+      { width: 144, height: 20 },
+    );
+
+    try {
+      let highlighted = false;
+      for (let iteration = 0; iteration < 400; iteration += 1) {
+        await act(async () => {
+          await setup.renderOnce();
+          await Bun.sleep(0);
+          await setup.renderOnce();
+          await Bun.sleep(0);
+        });
+
+        if (frameHasHighlightedMarker(setup.captureSpans(), "expandedMarker")) {
+          highlighted = true;
+          break;
+        }
+      }
+
+      expect(highlighted).toBe(true);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
   });
 
   test("PierreDiffView renders word-diff spans with a visibly different background in split view", async () => {

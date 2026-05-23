@@ -13,6 +13,7 @@ export interface RunGitTextOptions {
 }
 
 interface RunGitCommandResult {
+  stderr: string;
   stdout: string;
   exitCode: number;
 }
@@ -184,6 +185,7 @@ function isUnknownRevisionMessage(stderr: string) {
     "bad revision",
     "unknown revision or path not in the working tree",
     "ambiguous argument",
+    "Needed a single revision",
   ].some((fragment) => stderr.includes(fragment));
 }
 
@@ -262,7 +264,10 @@ function translateGitExitFailure(input: GitBackedInput, stderr: string) {
     return createMissingRepoError(input);
   }
 
-  if (input.kind === "stash-show" && isNoStashEntriesMessage(stderr)) {
+  if (
+    input.kind === "stash-show" &&
+    (isNoStashEntriesMessage(stderr) || isUnknownRevisionMessage(stderr))
+  ) {
     return createMissingStashError(input);
   }
 
@@ -313,6 +318,7 @@ function runGitCommand({
   }
 
   return {
+    stderr,
     stdout,
     exitCode: proc.exitCode,
   };
@@ -514,4 +520,197 @@ export function resolveGitRepoRoot(
     args: ["rev-parse", "--show-toplevel"],
     ...options,
   }).trim();
+}
+
+/** Resolve one commit-ish ref to the exact commit object used for later blob reads. */
+export function resolveGitCommitRef(
+  input: GitBackedInput,
+  ref: string,
+  options: Omit<RunGitTextOptions, "input" | "args"> = {},
+) {
+  return runGitText({
+    input,
+    args: ["rev-parse", "--verify", "--end-of-options", `${ref}^{commit}`],
+    ...options,
+  })
+    .split("\n")[0]!
+    .trim();
+}
+
+/** Resolve a commit-ish ref, returning null when that ref does not exist. */
+function tryResolveGitCommitRef(
+  input: GitBackedInput,
+  ref: string,
+  options: Omit<RunGitTextOptions, "input" | "args"> = {},
+) {
+  const result = runGitCommand({
+    input,
+    args: ["rev-parse", "--verify", "--end-of-options", `${ref}^{commit}`],
+    ...options,
+    acceptedExitCodes: [0, 1, 128],
+  });
+
+  if (result.exitCode === 0) {
+    return result.stdout.split("\n")[0]!.trim();
+  }
+
+  if (isUnknownRevisionMessage(result.stderr)) {
+    return null;
+  }
+
+  throw translateGitExitFailure(input, result.stderr.trim() || `Could not resolve Git ref ${ref}.`);
+}
+
+export type GitDiffEndpoint =
+  | { kind: "none" }
+  | { kind: "git-ref"; ref: string }
+  | { kind: "index" }
+  | { kind: "worktree" };
+
+/** Endpoints describing what each diff side compares for one VCS diff input. */
+export interface GitDiffEndpoints {
+  old: GitDiffEndpoint;
+  new: GitDiffEndpoint;
+}
+
+/** Parse "A...B" into its two refs, defaulting empty sides to HEAD as Git does. */
+function parseSymmetricDiffRange(range: string): { left: string; right: string } | null {
+  // Runs of four or more dots are not a valid range; bail rather than
+  // silently treating the first three as a symmetric-diff separator.
+  if (/\.{4,}/.test(range)) {
+    return null;
+  }
+
+  const parts = range.split("...");
+  if (parts.length !== 2) {
+    return null;
+  }
+
+  return { left: parts[0] || "HEAD", right: parts[1] || "HEAD" };
+}
+
+/** Resolve rev-parse output into positive and negative revisions for one diff range. */
+function resolveRangeRevisions(
+  input: VcsCommandInput,
+  range: string,
+  {
+    cwd = process.cwd(),
+    gitExecutable = "git",
+    repoRoot,
+  }: Omit<RunGitTextOptions, "input" | "args"> & { repoRoot?: string } = {},
+): { positives: string[]; negatives: string[] } {
+  const revs = runGitText({
+    input,
+    args: ["rev-parse", "--revs-only", range],
+    cwd: repoRoot ?? cwd,
+    gitExecutable,
+  })
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  return {
+    positives: revs.filter((rev) => !rev.startsWith("^")),
+    negatives: revs.filter((rev) => rev.startsWith("^")).map((rev) => rev.slice(1)),
+  };
+}
+
+/**
+ * Resolve the old/new endpoints implied by a `hunk diff` invocation.
+ *
+ * Returns `null` when the range maps to a shape we cannot represent as a
+ * single old/new pair. Callers should treat that as "do not attempt to read
+ * source by ref" rather than silently falling back to the working tree.
+ */
+export function resolveGitDiffEndpoints(
+  input: VcsCommandInput,
+  {
+    cwd = process.cwd(),
+    gitExecutable = "git",
+    repoRoot,
+  }: Omit<RunGitTextOptions, "input" | "args"> & { repoRoot?: string } = {},
+): GitDiffEndpoints | null {
+  if (input.staged) {
+    if (!input.range) {
+      const headRef = tryResolveGitCommitRef(input, "HEAD", {
+        cwd: repoRoot ?? cwd,
+        gitExecutable,
+      });
+
+      return {
+        old: headRef ? { kind: "git-ref", ref: headRef } : { kind: "none" },
+        new: { kind: "index" },
+      };
+    }
+
+    const { positives, negatives } = resolveRangeRevisions(input, input.range, {
+      cwd,
+      gitExecutable,
+      repoRoot,
+    });
+
+    if (positives.length === 1 && negatives.length === 0) {
+      return { old: { kind: "git-ref", ref: positives[0]! }, new: { kind: "index" } };
+    }
+
+    return null;
+  }
+
+  if (!input.range) {
+    return { old: { kind: "index" }, new: { kind: "worktree" } };
+  }
+
+  // `git diff A...B` compares merge-base(A, B) against B, not HEAD or the
+  // working tree. Resolve the merge base explicitly so expanded source rows
+  // read from the same revisions the diff was computed from.
+  const symmetric = parseSymmetricDiffRange(input.range);
+  if (symmetric) {
+    const mergeBase = runGitText({
+      input,
+      args: ["merge-base", symmetric.left, symmetric.right],
+      cwd: repoRoot ?? cwd,
+      gitExecutable,
+    })
+      .split("\n")[0]
+      ?.trim();
+    if (!mergeBase) {
+      return null;
+    }
+
+    const rightRef = resolveGitCommitRef(input, symmetric.right, {
+      cwd: repoRoot ?? cwd,
+      gitExecutable,
+    });
+
+    return {
+      old: { kind: "git-ref", ref: mergeBase },
+      new: { kind: "git-ref", ref: rightRef },
+    };
+  }
+
+  // Real rev-parse failures (bogus refs, missing repo) propagate to the caller
+  // so the user sees a clear error instead of a silent working-tree fallback.
+  const { positives, negatives } = resolveRangeRevisions(input, input.range, {
+    cwd,
+    gitExecutable,
+    repoRoot,
+  });
+
+  if (positives.length === 1 && negatives.length === 0) {
+    // Single revision diffs against the working tree.
+    return { old: { kind: "git-ref", ref: positives[0]! }, new: { kind: "worktree" } };
+  }
+
+  if (positives.length === 1 && negatives.length === 1) {
+    return {
+      old: { kind: "git-ref", ref: negatives[0]! },
+      new: { kind: "git-ref", ref: positives[0]! },
+    };
+  }
+
+  // Multi-revision ranges that succeeded rev-parse but don't fit a simple
+  // old/new pair (octopus merges, multi-positive sets) have no safe mapping.
+  // Returning null disables source-by-ref reads so we never render source
+  // from the wrong revision.
+  return null;
 }
