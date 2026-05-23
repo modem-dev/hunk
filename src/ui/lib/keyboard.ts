@@ -1,7 +1,6 @@
 import type { KeyEvent } from "@opentui/core";
 
 const CTRL_S = "\u0013";
-const CTRL_S_HEX_LABEL = "0x13";
 const CTRL_S_CSI_U = "\u001b[115;5u";
 
 function isSpaceKey(key: KeyEvent) {
@@ -24,9 +23,7 @@ export function isSaveDraftNoteKey(key: KeyEvent) {
     sequence === CTRL_S ||
     raw === CTRL_S ||
     sequence === CTRL_S_CSI_U ||
-    raw === CTRL_S_CSI_U ||
-    sequence === CTRL_S_HEX_LABEL ||
-    raw === CTRL_S_HEX_LABEL
+    raw === CTRL_S_CSI_U
   );
 }
 
