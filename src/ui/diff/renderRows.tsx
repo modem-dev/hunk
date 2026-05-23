@@ -6,6 +6,7 @@ import {
   resolveSplitPaneWidths,
   resolveStackCellGeometry,
 } from "./codeColumns";
+import { gapKey } from "./expandCollapsedRows";
 import type { DiffRow, RenderSpan, SplitLineCell, StackLineCell } from "./pierre";
 import {
   diffRailMarker,
@@ -23,6 +24,7 @@ import {
 import { type PlannedReviewRow } from "./reviewRenderPlan";
 import { inlineNoteTitle } from "../components/panes/AgentInlineNote";
 import { wrapText } from "../lib/agentPopover";
+import { measureTextWidth, padText as padTextByWidth, sliceTextByWidth } from "../lib/text";
 import type { CopySelectedRowRange } from "../components/panes/copySelection";
 
 /** Clamp a label to one terminal row with an ellipsis. */
@@ -31,7 +33,7 @@ export function fitText(text: string, width: number) {
     return "";
   }
 
-  if (text.length <= width) {
+  if (measureTextWidth(text) <= width) {
     return text;
   }
 
@@ -39,7 +41,17 @@ export function fitText(text: string, width: number) {
     return "…";
   }
 
-  return `${text.slice(0, width - 1)}…`;
+  return `${sliceTextByWidth(text, 0, width - 1).text}…`;
+}
+
+/** Append a styled span while preserving color-run coalescing. */
+function appendRenderSpan(target: RenderSpan[], span: RenderSpan) {
+  const previous = target.at(-1);
+  if (previous && previous.fg === span.fg && previous.bg === span.bg) {
+    previous.text += span.text;
+  } else {
+    target.push(span);
+  }
 }
 
 /** Slice styled spans to one visible window while preserving color runs. */
@@ -61,33 +73,33 @@ function sliceSpansWindow(spans: RenderSpan[], offset: number, width: number) {
       break;
     }
 
-    if (remainingOffset >= span.text.length) {
-      remainingOffset -= span.text.length;
+    const spanWidth = measureTextWidth(span.text);
+    if (spanWidth === 0) {
+      appendRenderSpan(sliced, span);
       continue;
     }
 
-    const start = remainingOffset;
-    const text = span.text.slice(start, start + remaining);
+    if (remainingOffset >= spanWidth) {
+      remainingOffset -= spanWidth;
+      continue;
+    }
+
+    const visible = sliceTextByWidth(span.text, remainingOffset, remaining);
     remainingOffset = 0;
 
-    if (text.length === 0) {
+    if (visible.text.length === 0) {
       continue;
     }
 
     const nextSpan = {
       ...span,
-      text,
+      text: visible.text,
     };
 
-    const previous = sliced.at(-1);
-    if (previous && previous.fg === nextSpan.fg && previous.bg === nextSpan.bg) {
-      previous.text += nextSpan.text;
-    } else {
-      sliced.push(nextSpan);
-    }
+    appendRenderSpan(sliced, nextSpan);
 
-    remaining -= text.length;
-    usedWidth += text.length;
+    remaining -= visible.width;
+    usedWidth += visible.width;
   }
 
   return {
@@ -120,8 +132,9 @@ function renderInlineSpans(
   let elementIndex = 0;
 
   for (const span of trimmed) {
+    const spanWidth = measureTextWidth(span.text);
     const spanStart = colPos;
-    const spanEnd = colPos + span.text.length;
+    const spanEnd = colPos + spanWidth;
     colPos = spanEnd;
 
     if (
@@ -144,7 +157,7 @@ function renderInlineSpans(
 
     // Compute the split offsets within this span's text.
     const localSelStart = Math.max(0, selectionColRange.start - spanStart);
-    const localSelEnd = Math.min(span.text.length, selectionColRange.end - spanStart);
+    const localSelEnd = Math.min(spanWidth, selectionColRange.end - spanStart);
 
     if (localSelStart >= localSelEnd) {
       // No overlap after clamping — render original.
@@ -161,9 +174,9 @@ function renderInlineSpans(
     }
 
     // Split the span at selection boundaries for character-level precision.
-    const prefix = span.text.slice(0, localSelStart);
-    const selected = span.text.slice(localSelStart, localSelEnd);
-    const suffix = span.text.slice(localSelEnd);
+    const prefix = sliceTextByWidth(span.text, 0, localSelStart).text;
+    const selected = sliceTextByWidth(span.text, localSelStart, localSelEnd - localSelStart).text;
+    const suffix = sliceTextByWidth(span.text, localSelEnd, spanWidth - localSelEnd).text;
 
     if (prefix) {
       elements.push(
@@ -203,8 +216,8 @@ function renderInlineSpans(
   // Trailing padding after all spans.
   if (needsBlending) {
     // Compute how much of the padding falls within the selection.
-    // The padding starts at colPos (which is now sum of all span text lengths =
-    // usedWidth after slicing) and extends to `width`.
+    // The padding starts at colPos (which is now the terminal-cell width consumed by
+    // the rendered spans) and extends to `width`.
     const padStart = colPos;
     const padEnd = colPos + Math.max(0, width - usedWidth);
     const paddingAmount = Math.max(0, width - usedWidth);
@@ -285,33 +298,49 @@ function wrapSpans(spans: RenderSpan[], width: number) {
   let remaining = width;
 
   for (const span of spans) {
+    const spanWidth = measureTextWidth(span.text);
+    if (spanWidth === 0) {
+      appendRenderSpan(current, span);
+      continue;
+    }
+
     let offset = 0;
 
-    while (offset < span.text.length) {
+    while (offset < spanWidth) {
       if (remaining <= 0) {
         current = [];
         lines.push(current);
         remaining = width;
       }
 
-      const text = span.text.slice(offset, offset + remaining);
-      if (text.length === 0) {
-        break;
+      const visible = sliceTextByWidth(span.text, offset, remaining);
+      if (visible.width === 0) {
+        // A single wide cluster cannot fit in the remaining cells; continue on the next row.
+        current = [];
+        lines.push(current);
+        remaining = width;
+        const forced = sliceTextByWidth(span.text, offset, width);
+        if (forced.width === 0) {
+          break;
+        }
+        const nextSpan = {
+          ...span,
+          text: forced.text,
+        };
+        current.push(nextSpan);
+        offset += forced.width;
+        remaining = Math.max(0, width - forced.width);
+        continue;
       }
 
       const nextSpan = {
         ...span,
-        text,
+        text: visible.text,
       };
-      const previous = current.at(-1);
-      if (previous && previous.fg === nextSpan.fg && previous.bg === nextSpan.bg) {
-        previous.text += nextSpan.text;
-      } else {
-        current.push(nextSpan);
-      }
+      appendRenderSpan(current, nextSpan);
 
-      offset += text.length;
-      remaining -= text.length;
+      offset += visible.width;
+      remaining -= visible.width;
     }
   }
 
@@ -388,12 +417,13 @@ function spansToPlainText(spans: RenderSpan[], width: number, horizontalOffset =
     return "";
   }
 
-  const visibleText = spans
-    .map((span) => span.text)
-    .join("")
-    .slice(Math.max(0, horizontalOffset), Math.max(0, horizontalOffset) + width);
+  const visible = sliceTextByWidth(
+    spans.map((span) => span.text).join(""),
+    Math.max(0, horizontalOffset),
+    width,
+  );
 
-  return visibleText.padEnd(Math.max(0, width), " ");
+  return padTextByWidth(visible.text, Math.max(0, width));
 }
 
 /** Flatten styled spans to their visible text content. */
@@ -403,7 +433,8 @@ function spansText(spans: RenderSpan[]) {
 
 /** Return one cell's code text without rail, gutter, sign, or line-number decorations. */
 function cellCodeText(spans: RenderSpan[], horizontalOffset = 0) {
-  return spansText(spans).slice(Math.max(0, horizontalOffset));
+  return sliceTextByWidth(spansText(spans), Math.max(0, horizontalOffset), Number.MAX_SAFE_INTEGER)
+    .text;
 }
 
 function buildPlainSplitCellLines(
@@ -500,7 +531,7 @@ function buildPlainStackCellLines(
 /** Render the marker + label that hunk-header and collapsed rows share in plain-text form. */
 function renderHeaderRowText(text: string, width: number) {
   const label = fitText(text, Math.max(0, width - 1));
-  return marker() + label.padEnd(Math.max(0, width - 1), " ");
+  return marker() + padTextByWidth(label, Math.max(0, width - 1));
 }
 
 interface PlannedRowTextOptions {
@@ -607,14 +638,11 @@ export function renderDecoratedPlannedRowText(
         contentWidth: rightContentWidth,
         spansText: " ".repeat(Math.max(0, rightRenderWidth - rightPrefixPad)),
       };
-      const normalizedLeft = (
-        `${leftPrefix}${leftLine.spansText}` +
-        " ".repeat(Math.max(0, leftWidth - leftLine.spansText.length))
-      ).slice(0, Math.max(0, leftWidth));
-      const normalizedRight = (
-        `${rightPrefix}${rightLine.spansText}` +
-        " ".repeat(Math.max(0, rightRenderWidth - rightLine.spansText.length))
-      ).slice(0, Math.max(0, rightRenderWidth));
+      const normalizedLeft = padTextByWidth(`${leftPrefix}${leftLine.spansText}`, leftWidth);
+      const normalizedRight = padTextByWidth(
+        `${rightPrefix}${rightLine.spansText}`,
+        rightRenderWidth,
+      );
 
       if (side === "left") {
         return normalizedLeft;
@@ -648,7 +676,7 @@ export function renderDecoratedPlannedRowText(
 
   return cellLines.map((line) => {
     const visibleLine = `${prefix}${line.spansText}`;
-    const normalized = visibleLine.padEnd(Math.max(1, contentWidth + prefix.length), " ");
+    const normalized = padTextByWidth(visibleLine, Math.max(1, contentWidth + prefix.length));
     return `${normalized}${guideOnNewSide ? "│" : ""}`;
   });
 }
@@ -1080,6 +1108,17 @@ export function diffMessage(file: DiffFile) {
   return "No textual hunks to render for this file.";
 }
 
+/** Build the rendered label text for one collapsed gap row. */
+function collapsedRowLabel(text: string, expandable: boolean) {
+  if (!expandable) {
+    return `··· ${text} ···`;
+  }
+
+  // The leading chevron hints that the row is interactive on terminals that
+  // render Unicode glyphs. The label still reads naturally on plain VT100.
+  return `▾ ${text}`;
+}
+
 /** Render collapsed and hunk-header rows, including the optional add-note target. */
 function renderHeaderRow(
   row: Extract<DiffRow, { type: "collapsed" | "hunk-header" }>,
@@ -1090,6 +1129,7 @@ function renderHeaderRow(
   showAddNoteBadge = false,
   onHoverRow?: (rowKey: string) => void,
   onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void,
+  onToggleGap?: (gapKey: string) => void,
 ) {
   const badges = [
     showAddNoteBadge
@@ -1101,10 +1141,14 @@ function renderHeaderRow(
       : null,
   ].filter((badge): badge is { key: string; text: string; onClick: () => void } => Boolean(badge));
   const badgeWidth = badges.reduce((total, badge) => total + badge.text.length + 1, 0);
-  const label =
-    row.type === "collapsed"
-      ? fitText(`··· ${row.text} ···`, Math.max(0, width - 1 - badgeWidth))
-      : fitText(row.text, Math.max(0, width - 1 - badgeWidth));
+  const collapsedExpandable = row.type === "collapsed" && Boolean(onToggleGap);
+  const labelText =
+    row.type === "collapsed" ? collapsedRowLabel(row.text, collapsedExpandable) : row.text;
+  const label = fitText(labelText, Math.max(0, width - 1 - badgeWidth));
+  const handleCollapsedClick =
+    row.type === "collapsed" && onToggleGap
+      ? () => onToggleGap(gapKey(row.position, row.hunkIndex))
+      : undefined;
 
   if (badges.length === 0) {
     return (
@@ -1117,6 +1161,8 @@ function renderHeaderRow(
           backgroundColor: theme.panelAlt,
         }}
         onMouseMove={() => onHoverRow?.(row.key)}
+        onMouseOver={() => onHoverRow?.(row.key)}
+        onMouseUp={handleCollapsedClick}
       >
         <text>
           <span
@@ -1147,8 +1193,12 @@ function renderHeaderRow(
         backgroundColor: theme.panelAlt,
       }}
       onMouseMove={() => onHoverRow?.(row.key)}
+      onMouseOver={() => onHoverRow?.(row.key)}
     >
-      <box style={{ width: Math.max(0, width - badgeWidth), height: 1 }}>
+      <box
+        style={{ width: Math.max(0, width - badgeWidth), height: 1 }}
+        onMouseUp={handleCollapsedClick}
+      >
         <text>
           <span
             fg={selected ? neutralRailColor(theme) : dimRailColor(neutralRailColor(theme), theme)}
@@ -1280,6 +1330,7 @@ function renderRow(
   showAddNoteBadge = false,
   onHoverRow?: (rowKey: string) => void,
   onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void,
+  onToggleGap?: (gapKey: string) => void,
 ) {
   const hasCopySelection = !!copySelectedRowRange;
 
@@ -1300,6 +1351,7 @@ function renderRow(
       showAddNoteBadge,
       onHoverRow,
       onStartUserNoteAtHunk,
+      onToggleGap,
     );
   } else if (row.type === "hunk-header") {
     baseRow = showHunkHeaders
@@ -1652,6 +1704,7 @@ interface DiffRowViewProps {
   showAddNoteBadge?: boolean;
   onHoverRow?: (rowKey: string) => void;
   onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void;
+  onToggleGap?: (gapKey: string) => void;
 }
 
 /** Render one diff row, memoized to avoid unnecessary rerenders. */
@@ -1673,6 +1726,7 @@ export const DiffRowView = memo(
     showAddNoteBadge,
     onHoverRow,
     onStartUserNoteAtHunk,
+    onToggleGap,
   }: DiffRowViewProps) {
     return renderRow(
       row,
@@ -1691,6 +1745,7 @@ export const DiffRowView = memo(
       showAddNoteBadge,
       onHoverRow,
       onStartUserNoteAtHunk,
+      onToggleGap,
     );
   },
   (previous, next) => {
@@ -1710,7 +1765,8 @@ export const DiffRowView = memo(
       previous.noteGuideSide === next.noteGuideSide &&
       previous.showAddNoteBadge === next.showAddNoteBadge &&
       previous.onHoverRow === next.onHoverRow &&
-      previous.onStartUserNoteAtHunk === next.onStartUserNoteAtHunk
+      previous.onStartUserNoteAtHunk === next.onStartUserNoteAtHunk &&
+      previous.onToggleGap === next.onToggleGap
     );
   },
 );

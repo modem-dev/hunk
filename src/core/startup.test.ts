@@ -51,7 +51,11 @@ describe("startup planning", () => {
     let loaded = false;
 
     const plan = await prepareStartupPlan(["bun", "hunk", "session", "list"], {
-      parseCliImpl: async () => ({ kind: "session", action: "list", output: "text" }),
+      parseCliImpl: async () => ({
+        kind: "session",
+        action: "list",
+        output: "text",
+      }),
       loadAppBootstrapImpl: async () => {
         loaded = true;
         throw new Error("unreachable");
@@ -69,7 +73,10 @@ describe("startup planning", () => {
     let loaded = false;
 
     const plan = await prepareStartupPlan(["bun", "hunk", "pager"], {
-      parseCliImpl: async () => ({ kind: "pager", options: { theme: "paper" } }),
+      parseCliImpl: async () => ({
+        kind: "pager",
+        options: { theme: "paper" },
+      }),
       readStdinText: async () => "* main\n  feature/demo\n",
       looksLikePatchInputImpl: () => false,
       loadAppBootstrapImpl: async () => {
@@ -78,7 +85,10 @@ describe("startup planning", () => {
       },
     });
 
-    expect(plan).toEqual({ kind: "plain-text-pager", text: "* main\n  feature/demo\n" });
+    expect(plan).toEqual({
+      kind: "plain-text-pager",
+      text: "* main\n  feature/demo\n",
+    });
     expect(loaded).toBe(false);
   });
 
@@ -86,12 +96,18 @@ describe("startup planning", () => {
     const seenInputs: CliInput[] = [];
 
     const plan = await prepareStartupPlan(["bun", "hunk", "pager"], {
-      parseCliImpl: async () => ({ kind: "pager", options: { theme: "paper" } }),
+      parseCliImpl: async () => ({
+        kind: "pager",
+        options: { theme: "paper" },
+      }),
       readStdinText: async () => "diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n",
       looksLikePatchInputImpl: () => true,
       stdoutIsTTY: true,
       env: { TERM: "xterm-256color" },
-      openControllingTerminalImpl: () => ({ stdin: {} as never, close: () => {} }),
+      openControllingTerminalImpl: () => ({
+        stdin: {} as never,
+        close: () => {},
+      }),
       resolveRuntimeCliInputImpl(input) {
         seenInputs.push(input);
         return input;
@@ -166,9 +182,13 @@ describe("startup planning", () => {
   test("routes diff-like pager stdin to static output when the host advertises a captured pager", async () => {
     let loaded = false;
     const patchText = "diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n";
+    const customTheme = { base: "paper", text: "#123456" };
 
     const plan = await prepareStartupPlan(["bun", "hunk", "pager"], {
-      parseCliImpl: async () => ({ kind: "pager", options: { theme: "paper" } }),
+      parseCliImpl: async () => ({
+        kind: "pager",
+        options: { theme: "custom" },
+      }),
       readStdinText: async () => patchText,
       looksLikePatchInputImpl: () => true,
       stdoutIsTTY: true,
@@ -176,7 +196,11 @@ describe("startup planning", () => {
       resolveRuntimeCliInputImpl: (input) => input,
       resolveConfiguredCliInputImpl: (input) =>
         ({
-          input: { ...input, options: { ...input.options, lineNumbers: false, theme: "paper" } },
+          input: {
+            ...input,
+            options: { ...input.options, lineNumbers: false, theme: "custom" },
+          },
+          customTheme,
         }) as never,
       loadAppBootstrapImpl: async () => {
         loaded = true;
@@ -187,7 +211,8 @@ describe("startup planning", () => {
     expect(plan).toEqual({
       kind: "static-diff-pager",
       text: patchText,
-      options: { theme: "paper", pager: true, lineNumbers: false },
+      options: { theme: "custom", pager: true, lineNumbers: false },
+      customTheme,
     });
     expect(loaded).toBe(false);
   });
@@ -217,6 +242,35 @@ describe("startup planning", () => {
       options: { pager: true },
     });
     expect(loaded).toBe(false);
+  });
+
+  test("passes configured custom theme data into app bootstrap", async () => {
+    const cliInput: CliInput = {
+      kind: "patch",
+      file: "-",
+      options: {
+        theme: "custom",
+      },
+    };
+    const customTheme = {
+      base: "midnight",
+      accent: "#123456",
+    };
+
+    await prepareStartupPlan(["bun", "hunk", "patch", "-"], {
+      parseCliImpl: async () => cliInput as ParsedCliInput,
+      resolveRuntimeCliInputImpl: (input) => input,
+      resolveConfiguredCliInputImpl: (input) => ({ input, customTheme }) as never,
+      loadAppBootstrapImpl: async (input, options) => {
+        expect(input).toBe(cliInput);
+        expect(options).toEqual({ customTheme });
+        return {
+          ...createBootstrap(input),
+          customTheme,
+        };
+      },
+      usesPipedPatchInputImpl: () => false,
+    });
   });
 
   test("rejects watch mode for stdin-backed patch inputs", async () => {
@@ -316,7 +370,11 @@ describe("startup planning", () => {
         pager: true,
       },
     };
-    const controllingTerminal = { stdin: {} as never, stdout: {} as never, close: () => {} };
+    const controllingTerminal = {
+      stdin: {} as never,
+      stdout: {} as never,
+      close: () => {},
+    };
     let opened = 0;
 
     const plan = await prepareStartupPlan(["bun", "hunk", "patch", "-"], {

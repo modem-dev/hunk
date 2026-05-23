@@ -9,9 +9,15 @@ import fs from "node:fs";
 import { join, resolve as resolvePath } from "node:path";
 import { findAgentFileContext, loadAgentContext } from "./agent";
 import { createSkippedBinaryMetadata, isProbablyBinaryFile } from "./binary";
+import {
+  buildDiffFile,
+  createSkippedLargeMetadata,
+  type BuildDiffFileOptions,
+  type DiffFileSourceContext,
+} from "./diffFile";
+import { createFileSourceFetcher, type FileSourceSpec } from "./fileSource";
 import { normalizeUntrackedPatchHeaders, runGitUntrackedFileDiffText } from "./git";
 import { splitPatchIntoFileChunks, findPatchChunk } from "./patch/chunks";
-import { buildDiffFile, createSkippedLargeMetadata } from "./diffFile";
 import { normalizePatchText } from "./patch/normalize";
 import { createUnsupportedVcsOperationError, getVcsAdapter, operationFromInput } from "./vcs";
 import type {
@@ -19,6 +25,7 @@ import type {
   AgentContext,
   Changeset,
   CliInput,
+  CustomThemeConfig,
   DiffFile,
   DiffToolCommandInput,
   FileCommandInput,
@@ -30,6 +37,8 @@ import type {
 
 interface LoadAppBootstrapOptions {
   cwd?: string;
+  customTheme?: CustomThemeConfig;
+  gitExecutable?: string;
 }
 
 const LARGE_DIFF_FILE_MAX_BYTES = 1_000_000;
@@ -39,6 +48,25 @@ const LARGE_DIFF_FILE_SNIFF_BYTES = 256 * 1024;
 /** Return the final path segment for display-oriented labels. */
 function basename(path: string) {
   return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+}
+
+interface ResolvedFileSourceSpecs {
+  old: FileSourceSpec;
+  new: FileSourceSpec;
+}
+
+/** Build a binary-aware source-fetcher factory from per-file source specs. */
+function createSourceFetcherBuilder(
+  resolveSpecs: (file: DiffFileSourceContext) => ResolvedFileSourceSpecs | undefined,
+): NonNullable<BuildDiffFileOptions["sourceFetcherBuilder"]> {
+  return (file) => {
+    if (file.isBinary) {
+      return undefined;
+    }
+
+    const specs = resolveSpecs(file);
+    return specs ? createFileSourceFetcher(specs) : undefined;
+  };
 }
 
 interface CountedLines {
@@ -152,6 +180,7 @@ function buildUntrackedDiffFile(
   repoRoot: string,
   sourcePrefix: string,
   agentContext: AgentContext | null,
+  gitExecutable = "git",
 ) {
   const largeFileCheck = inspectLargeUntrackedFile(repoRoot, filePath);
   if (largeFileCheck.shouldSkip) {
@@ -171,7 +200,7 @@ function buildUntrackedDiffFile(
   }
 
   const patch = normalizeUntrackedPatchHeaders(
-    runGitUntrackedFileDiffText(input, filePath, { repoRoot }),
+    runGitUntrackedFileDiffText(input, filePath, { repoRoot, gitExecutable }),
     filePath,
   );
 
@@ -183,6 +212,10 @@ function buildUntrackedDiffFile(
     agentContext,
     {
       isUntracked: true,
+      sourceFetcherBuilder: createSourceFetcherBuilder(() => ({
+        old: { kind: "none" },
+        new: { kind: "fs", absolutePath: join(repoRoot, filePath) },
+      })),
     },
   );
 }
@@ -230,6 +263,7 @@ function normalizePatchChangeset(
   title: string,
   sourceLabel: string,
   agentContext: AgentContext | null,
+  perFileOptions?: Pick<BuildDiffFileOptions, "sourceFetcherBuilder">,
 ): Changeset {
   const normalizedPatchText = normalizePatchText(patchText);
 
@@ -267,6 +301,7 @@ function normalizePatchChangeset(
         index,
         sourceLabel,
         agentContext,
+        perFileOptions,
       ),
     ),
   };
@@ -372,6 +407,10 @@ async function loadFileDiffChangeset(
     files: [
       buildDiffFile(metadata, patch, 0, displayPath, agentContext, {
         previousPath: basename(input.left),
+        sourceFetcherBuilder: createSourceFetcherBuilder(() => ({
+          old: { kind: "fs", absolutePath: leftPath },
+          new: { kind: "fs", absolutePath: rightPath },
+        })),
       }),
     ],
   } satisfies Changeset;
@@ -382,6 +421,7 @@ async function loadVcsChangeset(
   input: VcsCommandInput | ShowCommandInput | StashShowCommandInput,
   agentContext: AgentContext | null,
   cwd = process.cwd(),
+  gitExecutable = "git",
 ) {
   const adapter = getVcsAdapter(input.options.vcs ?? "git");
   const operation = operationFromInput(input);
@@ -389,12 +429,13 @@ async function loadVcsChangeset(
     throw createUnsupportedVcsOperationError(adapter, operation);
   }
 
-  const result = await adapter.loadReview(operation, { cwd });
+  const result = await adapter.loadReview(operation, { cwd, gitExecutable });
   const parsedChangeset = normalizePatchChangeset(
     result.patchText,
     result.title,
     result.sourceLabel,
     agentContext,
+    result.sourceFetcherBuilder ? { sourceFetcherBuilder: result.sourceFetcherBuilder } : undefined,
   );
   const adapterFiles = (result.extraFiles ?? []).map((file, index) => ({
     ...file,
@@ -422,6 +463,7 @@ async function loadVcsChangeset(
           result.repoRoot,
           result.sourceLabel,
           agentContext,
+          gitExecutable,
         ),
       ),
     ],
@@ -452,9 +494,11 @@ async function loadPatchChangeset(
 /** Resolve CLI input into the fully loaded app bootstrap state. */
 export async function loadAppBootstrap(
   input: CliInput,
-  { cwd = process.cwd() }: LoadAppBootstrapOptions = {},
+  { cwd = process.cwd(), customTheme, gitExecutable = "git" }: LoadAppBootstrapOptions = {},
 ): Promise<AppBootstrap> {
-  const agentContext = await loadAgentContext(input.options.agentContext, { cwd });
+  const agentContext = await loadAgentContext(input.options.agentContext, {
+    cwd,
+  });
 
   let changeset: Changeset;
 
@@ -462,7 +506,7 @@ export async function loadAppBootstrap(
     case "vcs":
     case "show":
     case "stash-show":
-      changeset = await loadVcsChangeset(input, agentContext, cwd);
+      changeset = await loadVcsChangeset(input, agentContext, cwd, gitExecutable);
       break;
     case "diff":
       changeset = await loadFileDiffChangeset(input, agentContext, cwd);
@@ -485,6 +529,7 @@ export async function loadAppBootstrap(
     changeset,
     initialMode: input.options.mode ?? "auto",
     initialTheme: input.options.theme,
+    customTheme,
     initialShowLineNumbers: input.options.lineNumbers ?? true,
     initialWrapLines: input.options.wrapLines ?? false,
     initialShowHunkHeaders: input.options.hunkHeaders ?? true,

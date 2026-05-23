@@ -1,4 +1,5 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
+import type { FileSourceFetcher } from "./fileSource";
 
 export type LayoutMode = "auto" | "split" | "stack";
 export type VcsMode = "git" | "jj";
@@ -56,6 +57,9 @@ export interface DiffFile {
   isBinary?: boolean;
   isTooLarge?: boolean;
   statsTruncated?: boolean;
+  // Optional capability for fetching the file's full text on either side.
+  // Loaders attach this when source content is reachable; absent when not.
+  sourceFetcher?: FileSourceFetcher;
 }
 
 export interface Changeset {
@@ -80,6 +84,55 @@ export interface CommonOptions {
   hunkHeaders?: boolean;
   agentNotes?: boolean;
   copyDecorations?: boolean;
+}
+
+export interface CustomSyntaxColorsConfig {
+  default?: string;
+  keyword?: string;
+  string?: string;
+  comment?: string;
+  number?: string;
+  function?: string;
+  property?: string;
+  type?: string;
+  punctuation?: string;
+}
+
+export interface CustomThemeConfig {
+  base?: string;
+  label?: string;
+  background?: string;
+  panel?: string;
+  panelAlt?: string;
+  border?: string;
+  accent?: string;
+  accentMuted?: string;
+  text?: string;
+  muted?: string;
+  addedBg?: string;
+  removedBg?: string;
+  contextBg?: string;
+  addedContentBg?: string;
+  removedContentBg?: string;
+  contextContentBg?: string;
+  addedSignColor?: string;
+  removedSignColor?: string;
+  lineNumberBg?: string;
+  lineNumberFg?: string;
+  selectedHunk?: string;
+  badgeAdded?: string;
+  badgeRemoved?: string;
+  badgeNeutral?: string;
+  fileNew?: string;
+  fileDeleted?: string;
+  fileRenamed?: string;
+  fileModified?: string;
+  fileUntracked?: string;
+  noteBorder?: string;
+  noteBackground?: string;
+  noteTitleBackground?: string;
+  noteTitleText?: string;
+  syntax?: CustomSyntaxColorsConfig;
 }
 
 export interface PersistedViewPreferences {
@@ -292,6 +345,7 @@ export interface AppBootstrap {
   initialMode: LayoutMode;
   initialTheme?: string;
   initialThemeMode?: TerminalThemeMode;
+  customTheme?: CustomThemeConfig;
   initialShowLineNumbers?: boolean;
   initialWrapLines?: boolean;
   initialShowHunkHeaders?: boolean;

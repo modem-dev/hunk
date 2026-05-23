@@ -45,7 +45,10 @@ function createNumberedAssignmentLines(start: number, count: number, valueOffset
   });
 }
 
-function createMockHostClient() {
+function createMockHostClient({
+  cwd = process.cwd(),
+  repoRoot = process.cwd(),
+}: { cwd?: string; repoRoot?: string } = {}) {
   type Bridge = Parameters<HunkSessionBrokerClient["setBridge"]>[0];
 
   let bridge: Bridge = null;
@@ -54,8 +57,8 @@ function createMockHostClient() {
     registrationVersion: SESSION_BROKER_REGISTRATION_VERSION,
     sessionId: "session-1",
     pid: process.pid,
-    cwd: process.cwd(),
-    repoRoot: process.cwd(),
+    cwd,
+    repoRoot,
     launchedAt: "2026-03-24T00:00:00.000Z",
     info: {
       inputKind: "vcs",
@@ -1100,7 +1103,7 @@ describe("App interactions", () => {
   });
 
   test("reload shortcut reloads the current file diff from disk", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "hunk-reload-"));
+    const dir = mkdtempSync(join(process.cwd(), ".hunk-reload-"));
     const left = join(dir, "before.ts");
     const right = join(dir, "after.ts");
 
@@ -1154,7 +1157,7 @@ describe("App interactions", () => {
   });
 
   test("session reload preserves live comments while refreshing the file diff", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "hunk-session-reload-"));
+    const dir = mkdtempSync(join(process.cwd(), ".hunk-session-reload-"));
     const left = join(dir, "before.ts");
     const right = join(dir, "after.ts");
     const reviewNote = "Keep this daemon review note";
@@ -1216,7 +1219,6 @@ describe("App interactions", () => {
                 mode: "split",
               },
             },
-            sourcePath: dir,
           },
         });
       });
@@ -1237,8 +1239,63 @@ describe("App interactions", () => {
     }
   });
 
+  test("session reload rejects file reads outside the initial repo root", async () => {
+    const repo = mkdtempSync(join(tmpdir(), "hunk-session-reload-root-"));
+    const outside = mkdtempSync(join(tmpdir(), "hunk-session-reload-outside-"));
+    const left = join(outside, "before.ts");
+    const right = join(outside, "after.ts");
+
+    writeFileSync(left, "export const secret = 1;\n");
+    writeFileSync(right, "export const secret = 2;\n");
+
+    const baseBootstrap = createBootstrap();
+    const bootstrap = {
+      ...baseBootstrap,
+      changeset: {
+        ...baseBootstrap.changeset,
+        sourceLabel: repo,
+      },
+    };
+    const { dispatchCommand, hostClient } = createMockHostClient({ cwd: repo, repoRoot: repo });
+
+    const setup = await testRender(<AppHost bootstrap={bootstrap} hostClient={hostClient} />, {
+      width: 220,
+      height: 20,
+    });
+
+    try {
+      await flush(setup);
+
+      await expect(
+        dispatchCommand({
+          type: "command",
+          requestId: "reload-outside-root",
+          command: "reload_session",
+          input: {
+            sessionId: "session-1",
+            nextInput: {
+              kind: "diff",
+              left,
+              right,
+              options: {
+                mode: "split",
+              },
+            },
+            sourcePath: outside,
+          },
+        }),
+      ).rejects.toThrow("outside the initial Hunk root");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+      rmSync(repo, { force: true, recursive: true });
+      rmSync(outside, { force: true, recursive: true });
+    }
+  });
+
   test("watch mode reloads the current file diff from disk", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "hunk-watch-"));
+    const dir = mkdtempSync(join(process.cwd(), ".hunk-watch-"));
     const left = join(dir, "before.ts");
     const right = join(dir, "after.ts");
 
@@ -1289,7 +1346,7 @@ describe("App interactions", () => {
   });
 
   test("watch mode preserves the resolved auto theme after refreshing the file diff", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "hunk-watch-theme-"));
+    const dir = mkdtempSync(join(process.cwd(), ".hunk-watch-theme-"));
     const left = join(dir, "before.ts");
     const right = join(dir, "after.ts");
 
@@ -1334,6 +1391,46 @@ describe("App interactions", () => {
         setup.renderer.destroy();
       });
       rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
+  test("custom theme stays active in the Theme menu when bootstrap provides a custom palette", async () => {
+    const bootstrap = createBootstrap();
+    bootstrap.initialTheme = "custom";
+    bootstrap.customTheme = {
+      base: "paper",
+      label: "My Theme",
+      accent: "#7755aa",
+    };
+
+    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
+      width: 220,
+      height: 20,
+    });
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.pressKey("F10");
+      });
+
+      await waitForFrame(setup, (frame) => frame.includes("Toggle files/filter focus"), 12);
+
+      for (let index = 0; index < 3; index += 1) {
+        await act(async () => {
+          await setup.mockInput.pressArrow("right");
+        });
+        await flush(setup);
+      }
+
+      const menuFrame = await waitForFrame(setup, (frame) => frame.includes("My Theme"), 12);
+      expect(menuFrame).toContain("[x] My Theme");
+      expect(menuFrame).toContain("[ ] Graphite");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
     }
   });
 
@@ -2260,6 +2357,42 @@ describe("App interactions", () => {
       expect(frame).toContain("Draft note");
       expect(frame).toContain("s");
       expect((frame.match(/beta\.ts/g) ?? []).length).toBe(betaCountWithSidebar);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("draft note saves Ctrl-S when tmux sends CSI-u input", async () => {
+    const setup = await testRender(<AppHost bootstrap={createBootstrap()} />, {
+      width: 240,
+      height: 24,
+      useKittyKeyboard: null,
+    });
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.typeText("c");
+      });
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.typeText("Save from tmux CSI-u.");
+      });
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.pressKeys(["\u001b[115;5u"]);
+      });
+      await flush(setup);
+
+      const frame = setup.captureCharFrame();
+      expect(frame).toContain("Your note");
+      expect(frame).toContain("Save from tmux CSI-u.");
+      expect(frame).not.toContain("Draft note");
     } finally {
       await act(async () => {
         setup.renderer.destroy();

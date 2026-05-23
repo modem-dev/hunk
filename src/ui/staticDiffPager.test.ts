@@ -35,6 +35,20 @@ describe("static diff pager", () => {
     expect(plain).toContain("▌+ const value = 2;");
   });
 
+  test("uses configured custom themes in static pager output", async () => {
+    const patchText =
+      "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-const value = 1;\n+const value = 2;\n";
+
+    const output = await renderStaticDiffPager(
+      patchText,
+      { theme: "custom" },
+      { customTheme: { base: "graphite", text: "#123456" } },
+    );
+
+    expect(stripAnsi(output)).toContain("a.ts modified +1 -1");
+    expect(output).toContain("\x1b[38;2;18;52;86m");
+  });
+
   test("shows semantic file metadata without raw patch headers", async () => {
     const patchText = [
       "diff --git a/new.txt b/new.txt",

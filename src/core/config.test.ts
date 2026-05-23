@@ -90,6 +90,105 @@ describe("config resolution", () => {
     });
   });
 
+  test("merges custom theme overrides from global and repo config", () => {
+    const home = createTempDir("hunk-config-home-");
+    const repo = createTempDir("hunk-config-repo-");
+    createRepo(repo);
+
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(
+      join(home, ".config", "hunk", "config.toml"),
+      [
+        'theme = "custom"',
+        "",
+        "[custom_theme]",
+        'base = "midnight"',
+        'label = "Global Custom"',
+        'accent = "#123456"',
+        "",
+        "[custom_theme.syntax]",
+        'keyword = "#abcdef"',
+      ].join("\n"),
+    );
+
+    mkdirSync(join(repo, ".hunk"), { recursive: true });
+    writeFileSync(
+      join(repo, ".hunk", "config.toml"),
+      [
+        'theme = "custom"',
+        "",
+        "[custom_theme]",
+        'label = "Repo Custom"',
+        'panel = "#654321"',
+        "",
+        "[custom_theme.syntax]",
+        'string = "#fedcba"',
+      ].join("\n"),
+    );
+
+    const resolved = resolveConfiguredCliInput(createPatchPagerInput(), {
+      cwd: repo,
+      env: { HOME: home },
+    });
+
+    expect(resolved.input.options.theme).toBe("custom");
+    expect(resolved.customTheme).toEqual({
+      base: "midnight",
+      label: "Repo Custom",
+      accent: "#123456",
+      panel: "#654321",
+      syntax: {
+        keyword: "#abcdef",
+        string: "#fedcba",
+      },
+    });
+  });
+
+  test("rejects invalid custom theme base ids", () => {
+    const home = createTempDir("hunk-config-home-");
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(
+      join(home, ".config", "hunk", "config.toml"),
+      ["[custom_theme]", 'base = "unknown"'].join("\n"),
+    );
+
+    expect(() =>
+      resolveConfiguredCliInput(createPatchPagerInput(), {
+        cwd: createTempDir("hunk-config-cwd-"),
+        env: { HOME: home },
+      }),
+    ).toThrow("Expected custom_theme.base to be one of: graphite, midnight, paper, ember.");
+  });
+
+  test("rejects invalid custom theme color values", () => {
+    const home = createTempDir("hunk-config-home-");
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(
+      join(home, ".config", "hunk", "config.toml"),
+      ["[custom_theme]", 'accent = "blue"'].join("\n"),
+    );
+
+    expect(() =>
+      resolveConfiguredCliInput(createPatchPagerInput(), {
+        cwd: createTempDir("hunk-config-cwd-"),
+        env: { HOME: home },
+      }),
+    ).toThrow("Expected custom_theme.accent to be a hex color like #112233.");
+  });
+
+  test("rejects theme = custom when no [custom_theme] table is configured", () => {
+    const home = createTempDir("hunk-config-home-");
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(join(home, ".config", "hunk", "config.toml"), 'theme = "custom"\n');
+
+    expect(() =>
+      resolveConfiguredCliInput(createPatchPagerInput(), {
+        cwd: createTempDir("hunk-config-cwd-"),
+        env: { HOME: home },
+      }),
+    ).toThrow('Expected a [custom_theme] table when config selects theme = "custom".');
+  });
+
   test("defaults unspecified themes to graphite, including piped pager-style patch input", () => {
     const home = createTempDir("hunk-config-home-");
     const cwd = createTempDir("hunk-config-cwd-");
@@ -343,6 +442,52 @@ describe("config resolution", () => {
     expect(bootstrap.initialShowHunkHeaders).toBe(false);
     expect(bootstrap.initialShowAgentNotes).toBe(true);
     expect(bootstrap.initialCopyDecorations).toBe(false);
+  });
+
+  test("loadAppBootstrap carries the configured custom theme into the UI bootstrap", async () => {
+    const home = createTempDir("hunk-config-home-");
+    const repo = createTempDir("hunk-config-repo-");
+    createRepo(repo);
+
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(
+      join(home, ".config", "hunk", "config.toml"),
+      [
+        'theme = "custom"',
+        "",
+        "[custom_theme]",
+        'base = "paper"',
+        'accent = "#7755aa"',
+        "",
+        "[custom_theme.syntax]",
+        'comment = "#998877"',
+      ].join("\n"),
+    );
+
+    const before = join(repo, "before.ts");
+    const after = join(repo, "after.ts");
+    writeFileSync(before, "export const alpha = 1;\n");
+    writeFileSync(after, "export const alpha = 2;\n");
+
+    const resolved = resolveConfiguredCliInput(
+      {
+        kind: "diff",
+        left: before,
+        right: after,
+        options: {},
+      },
+      { cwd: repo, env: { HOME: home } },
+    );
+    const bootstrap = await loadAppBootstrap(resolved.input, { customTheme: resolved.customTheme });
+
+    expect(bootstrap.initialTheme).toBe("custom");
+    expect(bootstrap.customTheme).toEqual({
+      base: "paper",
+      accent: "#7755aa",
+      syntax: {
+        comment: "#998877",
+      },
+    });
   });
 
   test("loadAppBootstrap exposes graphite when no theme is configured", async () => {

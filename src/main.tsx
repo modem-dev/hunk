@@ -60,7 +60,12 @@ async function main() {
   }
 
   if (startupPlan.kind === "static-diff-pager") {
-    process.stdout.write(await renderStaticDiffPager(startupPlan.text, startupPlan.options));
+    process.stdout.write(
+      await renderStaticDiffPager(startupPlan.text, startupPlan.options, {
+        customTheme: startupPlan.customTheme,
+        stderr: process.stderr,
+      }),
+    );
     process.exit(0);
   }
 

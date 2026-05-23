@@ -37,6 +37,7 @@ export type StartupPlan =
       kind: "static-diff-pager";
       text: string;
       options: CliInput["options"];
+      customTheme?: AppBootstrap["customTheme"];
     }
   | {
       kind: "app";
@@ -127,15 +128,18 @@ export async function prepareStartupPlan(
           pager: true,
         },
       };
-      const configuredStaticInput = resolveConfiguredCliInputImpl(
+      const configuredStatic = resolveConfiguredCliInputImpl(
         resolveRuntimeCliInputImpl(staticPatchInput),
-      ).input;
-
-      return {
+      );
+      const staticPlan = {
         kind: "static-diff-pager" as const,
         text: stdinText,
-        options: configuredStaticInput.options,
+        options: configuredStatic.input.options,
       };
+
+      return configuredStatic.customTheme
+        ? { ...staticPlan, customTheme: configuredStatic.customTheme }
+        : staticPlan;
     };
 
     if (!looksLikePatchInputImpl(stdinText)) {
@@ -213,7 +217,7 @@ export async function prepareStartupPlan(
 
   let bootstrap: AppBootstrap;
   try {
-    bootstrap = await loadAppBootstrapImpl(cliInput);
+    bootstrap = await loadAppBootstrapImpl(cliInput, { customTheme: configured.customTheme });
   } catch (error) {
     controllingTerminal?.close();
     throw error;

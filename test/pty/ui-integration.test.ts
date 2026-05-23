@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
+import stringWidth from "string-width";
 import type { Session } from "tuistory";
 import { createPtyHarness } from "./harness";
 
@@ -19,6 +20,20 @@ function sleep(ms: number) {
 async function moveMouse(session: Session, x: number, y: number) {
   session.writeRaw(`\x1b[<35;${x + 1};${y + 1}M`);
   await session.waitIdle();
+}
+
+/** Reveal the hover-only add-note badge across fixture-specific row offsets. */
+async function revealAddNoteAffordance(session: Session, x: number, yCandidates: number[]) {
+  for (const y of yCandidates) {
+    await moveMouse(session, x, y);
+    try {
+      return await session.waitForText(/\[\+\]/, { timeout: 1_000 });
+    } catch {
+      // Keep trying nearby rows; hunk header visibility changes the diff row offset.
+    }
+  }
+
+  throw new Error(`Failed to reveal add-note affordance at x=${x}.`);
 }
 
 /** Drag with the left mouse button using zero-based terminal coordinates. */
@@ -53,7 +68,88 @@ function rightmostColumnOf(text: string, needle: string) {
   );
 }
 
+/** Locate a visible terminal row containing text so mouse tests can target rendered content. */
+function lineIndexOf(text: string, needle: string) {
+  return text.split("\n").findIndex((line) => line.includes(needle));
+}
+
+/** Move near a rendered row until the hover-only add-note control appears. */
+async function revealAddNoteNear(session: Session, row: number) {
+  for (const y of [row, row - 1, row + 1]) {
+    if (y < 0) {
+      continue;
+    }
+
+    for (const x of [8, 20, 60]) {
+      await moveMouse(session, x, y);
+      try {
+        await session.waitForText(/\[\+\]/, { timeout: 200 });
+        return;
+      } catch {
+        // Try nearby cells; PTY snapshots and wrapped rows can differ by a column or row.
+      }
+    }
+  }
+
+  throw new Error("Could not reveal add-note affordance near target row.");
+}
+
+/** Reveal the add-note control without falling back to adjacent rows. */
+async function revealAddNoteOnRow(session: Session, row: number) {
+  for (const x of [8, 20, 60]) {
+    await moveMouse(session, x, row);
+    try {
+      await session.waitForText(/\[\+\]/, { timeout: 200 });
+      return;
+    } catch {
+      // Try nearby columns on the same rendered row, but do not mask row-target regressions.
+    }
+  }
+
+  throw new Error("Could not reveal add-note affordance on target row.");
+}
+
 describe("live UI integration", () => {
+  test("split rows keep the center separator aligned after wide characters", async () => {
+    const fixture = harness.createWideCharacterFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      cols: 140,
+      rows: 16,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+      const snapshot = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("日本語") && text.includes("plain"),
+        5_000,
+      );
+      const lines = snapshot.split("\n");
+      const wideLine = lines.find((line) => line.includes("日本語"));
+      const plainLine = lines.find((line) => line.includes("plain"));
+
+      expect(wideLine).toBeDefined();
+      expect(plainLine).toBeDefined();
+      if (!wideLine || !plainLine) {
+        throw new Error(`Expected wide and plain split rows in snapshot:\n${snapshot}`);
+      }
+
+      const wideSeparatorIndex = wideLine.indexOf("▌", 1);
+      const plainSeparatorIndex = plainLine.indexOf("▌", 1);
+
+      expect(wideSeparatorIndex).toBeGreaterThan(0);
+      expect(plainSeparatorIndex).toBeGreaterThan(0);
+      expect(stringWidth(wideLine.slice(0, wideSeparatorIndex))).toBe(
+        stringWidth(plainLine.slice(0, plainSeparatorIndex)),
+      );
+    } finally {
+      session.close();
+    }
+  });
+
   test("real PTY sessions can toggle wrapped lines on and off", async () => {
     const fixture = harness.createLongWrapFilePair();
     const session = await harness.launchHunk({
@@ -258,6 +354,44 @@ describe("live UI integration", () => {
     }
   });
 
+  test("real PTY sessions can expand and collapse unchanged context", async () => {
+    const fixture = harness.createExpandableContextFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      cols: 140,
+      rows: 16,
+    });
+
+    try {
+      const initial = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      expect(initial).toContain("▾ 1 unchanged line");
+      expect(initial).not.toContain("hiddenLine01");
+
+      await session.press("z");
+      const expanded = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("Hide 1 unchanged line") && text.includes("hiddenLine01"),
+        5_000,
+      );
+
+      expect(expanded).toContain("hiddenLine01");
+
+      await session.press("z");
+      const collapsed = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("▾ 1 unchanged line") && !text.includes("hiddenLine01"),
+        5_000,
+      );
+
+      expect(collapsed).not.toContain("hiddenLine01");
+    } finally {
+      session.close();
+    }
+  });
+
   test("backward cross-file hunk navigation reveals the target hunk in a real PTY", async () => {
     const fixture = harness.createCrossFileHunkNavigationRepoFixture();
     const session = await harness.launchHunk({
@@ -272,16 +406,23 @@ describe("live UI integration", () => {
         timeout: 15_000,
       });
 
-      for (let index = 0; index < 19; index += 1) {
+      let reachedShortFileMidHunk = false;
+      for (let index = 0; index < 24; index += 1) {
         await session.press("]");
-        await session.waitIdle({ timeout: 40 });
+        const snapshot = await session.text({ immediate: true });
+        if (snapshot.includes("export const mid = 4;")) {
+          reachedShortFileMidHunk = true;
+          break;
+        }
       }
 
-      await harness.waitForSnapshot(
-        session,
-        (text) => text.includes("export const mid = 4;"),
-        5_000,
-      );
+      if (!reachedShortFileMidHunk) {
+        await harness.waitForSnapshot(
+          session,
+          (text) => text.includes("export const mid = 4;"),
+          5_000,
+        );
+      }
 
       await session.press("[");
       await session.waitIdle({ timeout: 80 });
@@ -459,6 +600,7 @@ describe("live UI integration", () => {
 
       expect(initialMainColumn).toBeGreaterThan(34);
 
+      await session.waitIdle({ timeout: 200 });
       await dragMouse(session, 34, 6, 54, 6);
       const resized = await harness.waitForSnapshot(
         session,
@@ -591,12 +733,11 @@ describe("live UI integration", () => {
         timeout: 15_000,
       });
 
-      await moveMouse(session, 8, 5);
-      await session.waitForText(/\[\+\]/, { timeout: 5_000 });
+      await revealAddNoteAffordance(session, 8, [4, 5]);
       await session.click(/\[\+\]/);
       await session.waitForText(/Draft note/, { timeout: 5_000 });
       await session.type("Cancel this shortcut draft.");
-      await session.press("escape");
+      await session.type("\x1b");
       const cancelled = await harness.waitForSnapshot(
         session,
         (text) => !text.includes("Draft note") && !text.includes("Cancel this shortcut draft."),
@@ -605,8 +746,7 @@ describe("live UI integration", () => {
 
       expect(cancelled).not.toContain("Your note");
 
-      await moveMouse(session, 8, 5);
-      await session.waitForText(/\[\+\]/, { timeout: 5_000 });
+      await revealAddNoteAffordance(session, 8, [4, 5]);
       await session.click(/\[\+\]/);
       await session.waitForText(/Draft note/, { timeout: 5_000 });
       await session.type("Save this shortcut draft.");
@@ -614,6 +754,90 @@ describe("live UI integration", () => {
       const saved = await session.waitForText(/Your note/, { timeout: 5_000 });
 
       expect(saved).toContain("Save this shortcut draft.");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("clicking stack-mode add-note affordances can save draft notes", async () => {
+    const fixture = harness.createLongWrapFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "stack"],
+      cols: 100,
+      rows: 20,
+    });
+
+    try {
+      const initial = await session.waitForText(/this is a very long/, {
+        timeout: 15_000,
+      });
+      const targetRow = lineIndexOf(initial, "this is a very long");
+      expect(targetRow).toBeGreaterThan(0);
+
+      await revealAddNoteNear(session, targetRow);
+      await session.click(/\[\+\]/);
+      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await session.type("Save this stack draft.");
+      await session.press(["ctrl", "s"]);
+      const saved = await session.waitForText(/Your note/, { timeout: 5_000 });
+
+      expect(saved).toContain("Save this stack draft.");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("clicking deletion-only add-note affordances can save draft notes", async () => {
+    const fixture = harness.createDeletionOnlyFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      cols: 120,
+      rows: 16,
+    });
+
+    try {
+      const initial = await session.waitForText(/removeMe/, {
+        timeout: 15_000,
+      });
+      const targetRow = lineIndexOf(initial, "removeMe");
+      expect(targetRow).toBeGreaterThan(0);
+
+      await revealAddNoteNear(session, targetRow);
+      await session.click(/\[\+\]/);
+      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await session.type("Save this deletion draft.");
+      await session.press(["ctrl", "s"]);
+      const saved = await session.waitForText(/Your note/, { timeout: 5_000 });
+
+      expect(saved).toContain("Save this deletion draft.");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("clicking context-row add-note affordances can save draft notes", async () => {
+    const fixture = harness.createDeletionOnlyFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      cols: 120,
+      rows: 16,
+    });
+
+    try {
+      const initial = await session.waitForText(/keep = true/, {
+        timeout: 15_000,
+      });
+      const targetRow = lineIndexOf(initial, "keep = true");
+      expect(targetRow).toBeGreaterThan(0);
+
+      await revealAddNoteOnRow(session, targetRow);
+      await session.click(/\[\+\]/);
+      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await session.type("Save this context draft.");
+      await session.press(["ctrl", "s"]);
+      const saved = await session.waitForText(/Your note/, { timeout: 5_000 });
+
+      expect(saved).toContain("Save this context draft.");
     } finally {
       session.close();
     }
@@ -632,8 +856,7 @@ describe("live UI integration", () => {
         timeout: 15_000,
       });
 
-      await moveMouse(session, 8, 5);
-      await session.waitForText(/\[\+\]/, { timeout: 5_000 });
+      await revealAddNoteAffordance(session, 8, [4, 5]);
       await session.click(/\[\+\]/);
       await session.waitForText(/Draft note/, { timeout: 5_000 });
       await session.type("Cancel this draft.");
@@ -646,8 +869,7 @@ describe("live UI integration", () => {
 
       expect(cancelled).not.toContain("Your note");
 
-      await moveMouse(session, 8, 5);
-      await session.waitForText(/\[\+\]/, { timeout: 5_000 });
+      await revealAddNoteAffordance(session, 8, [4, 5]);
       await session.click(/\[\+\]/);
       await session.waitForText(/Draft note/, { timeout: 5_000 });
       await session.type("Save this clicked draft.");
@@ -921,6 +1143,11 @@ describe("live UI integration", () => {
       expect(initial).toContain("betaValue");
 
       await session.press("tab");
+      await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("filter: type to filter files"),
+        5_000,
+      );
       await session.type("beta");
       const filtered = await harness.waitForSnapshot(
         session,
@@ -1669,7 +1896,7 @@ describe("live UI integration", () => {
       });
 
       expect(initial).toContain("aaa-collapsed.ts");
-      expect(initial).toContain("··· 362 unchanged lines ···");
+      expect(initial).toContain("▾ 362 unchanged lines");
       expect(initial).not.toContain("366 - export const line366 = 366;");
 
       await session.scrollDown(1);
@@ -1711,12 +1938,12 @@ describe("live UI integration", () => {
       const restored = await harness.waitForSnapshot(
         session,
         (text) =>
-          text.includes("··· 362 unchanged lines ···") &&
+          text.includes("▾ 362 unchanged lines") &&
           harness.countMatches(text, /aaa-collapsed\.ts/g) === initialHeaderCount,
         5_000,
       );
 
-      expect(restored).toContain("··· 362 unchanged lines ···");
+      expect(restored).toContain("▾ 362 unchanged lines");
       expect(restored).not.toContain("366 - export const line366 = 366;");
       expect(harness.countMatches(restored, /aaa-collapsed\.ts/g)).toBe(initialHeaderCount);
     } finally {

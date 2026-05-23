@@ -7,15 +7,23 @@ import type { CopySelectedRowRange } from "../components/panes/copySelection";
 import type { DiffSectionGeometry } from "../lib/diffSectionGeometry";
 import { reviewRowId } from "../lib/ids";
 import type { AppTheme } from "../themes";
-import { findMaxLineNumber } from "./codeColumns";
-import { buildSplitRows, buildStackRows, type DiffRow } from "./pierre";
+import { findMaxLineNumber, findMaxLineNumberInRows } from "./codeColumns";
+import { expandCollapsedRows, type FileSourceStatus } from "./expandCollapsedRows";
+import {
+  buildSplitRows,
+  buildStackRows,
+  spansForHighlightedSourceLine,
+  type DiffRow,
+} from "./pierre";
 import { plannedReviewRowVisible } from "./plannedReviewRows";
 import { buildReviewRenderPlan } from "./reviewRenderPlan";
 import { resolveVisiblePlannedRowWindow, type VisibleBodyBounds } from "./rowWindowing";
 import { diffMessage, DiffRowView, fitText } from "./renderRows";
 import { useHighlightedDiff } from "./useHighlightedDiff";
+import { useHighlightedSource } from "./useHighlightedSource";
 
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
+const EMPTY_EXPANDED_GAP_KEYS: ReadonlySet<string> = new Set();
 const ADD_NOTE_IDLE_HIDE_DELAY_MS = 2000;
 
 export interface ActiveAddNoteAffordance {
@@ -23,8 +31,15 @@ export interface ActiveAddNoteAffordance {
   target?: UserNoteLineTarget;
 }
 
+type AddNoteTargetRow = Extract<DiffRow, { type: "split-line" | "stack-line" }>;
+
+/** Return whether a diff row can be used as an inline user-note target. */
+function isAddNoteTargetRow(row: DiffRow): row is AddNoteTargetRow {
+  return row.type === "split-line" || row.type === "stack-line";
+}
+
 /** Resolve the note insertion target represented by a visible add-note affordance. */
-function addNoteAffordanceForRow(row: DiffRow): ActiveAddNoteAffordance {
+function addNoteAffordanceForRow(row: AddNoteTargetRow): ActiveAddNoteAffordance {
   if (row.type === "split-line") {
     return {
       hunkIndex: row.hunkIndex,
@@ -37,19 +52,15 @@ function addNoteAffordanceForRow(row: DiffRow): ActiveAddNoteAffordance {
     };
   }
 
-  if (row.type === "stack-line") {
-    return {
-      hunkIndex: row.hunkIndex,
-      target:
-        row.cell.newLineNumber !== undefined
-          ? { side: "new", line: row.cell.newLineNumber }
-          : row.cell.oldLineNumber !== undefined
-            ? { side: "old", line: row.cell.oldLineNumber }
-            : undefined,
-    };
-  }
-
-  return { hunkIndex: row.hunkIndex };
+  return {
+    hunkIndex: row.hunkIndex,
+    target:
+      row.cell.newLineNumber !== undefined
+        ? { side: "new", line: row.cell.newLineNumber }
+        : row.cell.oldLineNumber !== undefined
+          ? { side: "old", line: row.cell.oldLineNumber }
+          : undefined,
+  };
 }
 
 /** Render a file diff in split or stack mode, with inline agent notes inserted between diff rows. */
@@ -57,13 +68,16 @@ export function PierreDiffView({
   codeHorizontalOffset = 0,
   copySelectedRowRanges,
   copySelectedSide,
+  expandedGapKeys = EMPTY_EXPANDED_GAP_KEYS,
   file,
   layout,
   onHover,
   onActiveAddNoteAffordanceChange,
   onStartUserNoteAtHunk,
+  onToggleGap,
   showLineNumbers = true,
   showHunkHeaders = true,
+  sourceStatus,
   wrapLines = false,
   theme,
   visibleAgentNotes = EMPTY_VISIBLE_AGENT_NOTES,
@@ -79,13 +93,16 @@ export function PierreDiffView({
   codeHorizontalOffset?: number;
   copySelectedRowRanges?: Map<string, CopySelectedRowRange>;
   copySelectedSide?: "left" | "right";
+  expandedGapKeys?: ReadonlySet<string>;
   file: DiffFile | undefined;
   layout: Exclude<LayoutMode, "auto">;
   onHover?: () => void;
   onActiveAddNoteAffordanceChange?: (affordance: ActiveAddNoteAffordance | null) => void;
   onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void;
+  onToggleGap?: (gapKey: string) => void;
   showLineNumbers?: boolean;
   showHunkHeaders?: boolean;
+  sourceStatus?: FileSourceStatus | undefined;
   wrapLines?: boolean;
   theme: AppTheme;
   visibleAgentNotes?: VisibleAgentNote[];
@@ -160,6 +177,23 @@ export function PierreDiffView({
     appearance: theme.appearance,
     shouldLoadHighlight,
   });
+  const sourceTextForHighlight =
+    sourceStatus?.kind === "loaded" && expandedGapKeys.size > 0 ? sourceStatus.text : undefined;
+  const resolvedHighlightedSource = useHighlightedSource({
+    file,
+    text: sourceTextForHighlight,
+    appearance: theme.appearance,
+    shouldLoadHighlight: shouldLoadHighlight && expandedGapKeys.size > 0,
+  });
+  const sourceLineSpans = useCallback(
+    (line: string | undefined, sourceLineNumber: number) =>
+      spansForHighlightedSourceLine(
+        line,
+        resolvedHighlightedSource?.lines[sourceLineNumber],
+        theme,
+      ),
+    [resolvedHighlightedSource, theme],
+  );
 
   const rows = useMemo(
     () =>
@@ -170,19 +204,39 @@ export function PierreDiffView({
         : [],
     [file, layout, resolvedHighlighted, theme],
   );
+  const expansionSide = file?.metadata.type === "deleted" ? "old" : "new";
+  const fileHasSourceFetcher = Boolean(file?.sourceFetcher);
+  const gapToggleHandler = useMemo(
+    () => (fileHasSourceFetcher ? onToggleGap : undefined),
+    [fileHasSourceFetcher, onToggleGap],
+  );
+  const expandedRows = useMemo(
+    () =>
+      expandCollapsedRows(rows, {
+        layout,
+        expandedKeys: expandedGapKeys,
+        sourceLineSpans,
+        sourceStatus,
+        side: expansionSide,
+      }),
+    [rows, layout, expandedGapKeys, sourceLineSpans, sourceStatus, expansionSide],
+  );
   const plannedRows = useMemo(
     () =>
       file
         ? buildReviewRenderPlan({
             fileId: file.id,
-            rows,
+            rows: expandedRows,
             showHunkHeaders,
             visibleAgentNotes,
           })
         : [],
-    [file, rows, showHunkHeaders, visibleAgentNotes],
+    [file, expandedRows, showHunkHeaders, visibleAgentNotes],
   );
-  const lineNumberDigits = useMemo(() => String(file ? findMaxLineNumber(file) : 1).length, [file]);
+  const lineNumberDigits = useMemo(
+    () => String(findMaxLineNumberInRows(expandedRows, file ? findMaxLineNumber(file) : 1)).length,
+    [expandedRows, file],
+  );
   const visiblePlannedRowWindow = useMemo(() => {
     // Fall back to the full row list unless all three row-windowing inputs are ready:
     // - the complete planned row stream for this file
@@ -280,6 +334,10 @@ export function PierreDiffView({
           );
         }
 
+        const addNoteAffordance = isAddNoteTargetRow(plannedRow.row)
+          ? addNoteAffordanceForRow(plannedRow.row)
+          : null;
+
         return (
           <box key={plannedRow.key} id={rowId} style={{ width: "100%", flexDirection: "column" }}>
             <DiffRowView
@@ -296,12 +354,21 @@ export function PierreDiffView({
               copySelectedSide={copySelectedSide}
               anchorId={plannedRow.anchorId}
               noteGuideSide={plannedRow.noteGuideSide}
-              showAddNoteBadge={hoveredRowKey === plannedRow.key && Boolean(onStartUserNoteAtHunk)}
+              showAddNoteBadge={
+                addNoteAffordance !== null &&
+                hoveredRowKey === plannedRow.key &&
+                Boolean(onStartUserNoteAtHunk)
+              }
               onHoverRow={() => {
                 onHover?.();
-                activateHoveredRow(plannedRow.key, addNoteAffordanceForRow(plannedRow.row));
+                if (addNoteAffordance) {
+                  activateHoveredRow(plannedRow.key, addNoteAffordance);
+                } else {
+                  clearHoveredRow();
+                }
               }}
               onStartUserNoteAtHunk={onStartUserNoteAtHunk}
+              onToggleGap={gapToggleHandler}
             />
           </box>
         );

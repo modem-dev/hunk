@@ -1,8 +1,12 @@
 import type { DiffFile, LayoutMode } from "../../core/types";
+import { measureTextWidth } from "../lib/text";
+import type { DiffRow } from "./pierre";
 
 export const DIFF_CODE_TAB_WIDTH = 2;
 export const DIFF_RAIL_PREFIX_WIDTH = 1;
 export const DIFF_SPLIT_SEPARATOR_WIDTH = 1;
+
+const maxFileCodeLineWidthCache = new WeakMap<DiffFile["metadata"], number>();
 
 /** Expand tabs the same way the diff renderer does before measuring visible columns. */
 export function expandDiffTabs(text: string) {
@@ -11,11 +15,16 @@ export function expandDiffTabs(text: string) {
 
 /** Measure one rendered code line after tab expansion and newline trimming. */
 export function measureRenderedCodeLineWidth(line: string | undefined) {
-  return expandDiffTabs((line ?? "").replace(/\n$/, "")).length;
+  return measureTextWidth(expandDiffTabs((line ?? "").replace(/\n$/, "")));
 }
 
 /** Track the widest rendered code line for one file. */
 export function maxFileCodeLineWidth(file: DiffFile) {
+  const cachedWidth = maxFileCodeLineWidthCache.get(file.metadata);
+  if (cachedWidth !== undefined) {
+    return cachedWidth;
+  }
+
   const deletionLines = file.metadata.deletionLines ?? [];
   const additionLines = file.metadata.additionLines ?? [];
 
@@ -29,6 +38,7 @@ export function maxFileCodeLineWidth(file: DiffFile) {
     maxWidth = Math.max(maxWidth, measureRenderedCodeLineWidth(line));
   }
 
+  maxFileCodeLineWidthCache.set(file.metadata, maxWidth);
   return maxWidth;
 }
 
@@ -42,6 +52,29 @@ export function findMaxLineNumber(file: DiffFile) {
       hunk.deletionStart + hunk.deletionCount,
       hunk.additionStart + hunk.additionCount,
     );
+  }
+
+  return Math.max(highest, 1);
+}
+
+/** Find the widest line-number gutter needed for an already-expanded row stream. */
+export function findMaxLineNumberInRows(rows: Iterable<DiffRow>, fallback = 1) {
+  let highest = fallback;
+
+  for (const row of rows) {
+    if (row.type === "collapsed") {
+      highest = Math.max(highest, row.oldRange[1], row.newRange[1]);
+      continue;
+    }
+
+    if (row.type === "split-line") {
+      highest = Math.max(highest, row.left.lineNumber ?? 0, row.right.lineNumber ?? 0);
+      continue;
+    }
+
+    if (row.type === "stack-line") {
+      highest = Math.max(highest, row.cell.oldLineNumber ?? 0, row.cell.newLineNumber ?? 0);
+    }
   }
 
   return Math.max(highest, 1);

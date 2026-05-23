@@ -9,6 +9,7 @@ import {
   isHalfPageUpKey,
   isPageDownKey,
   isPageUpKey,
+  isSaveDraftNoteKey,
   isShiftSpacePageUpKey,
   isStepDownKey,
   isStepUpKey,
@@ -66,6 +67,7 @@ export interface UseAppKeyboardShortcutsOptions {
   switchMenu: (delta: number) => void;
   toggleAgentNotes: () => void;
   toggleFocusArea: () => void;
+  toggleGapForSelectedHunk: () => void;
   toggleHelp: () => void;
   toggleHunkHeaders: () => void;
   toggleLineNumbers: () => void;
@@ -102,6 +104,7 @@ export function useAppKeyboardShortcuts({
   switchMenu,
   toggleAgentNotes,
   toggleFocusArea,
+  toggleGapForSelectedHunk,
   toggleHelp,
   toggleHunkHeaders,
   toggleLineNumbers,
@@ -135,6 +138,11 @@ export function useAppKeyboardShortcuts({
   const runAndCloseMenu = (action: () => void) => {
     action();
     closeMenu();
+  };
+
+  const consumeKey = (key: KeyEvent) => {
+    key.preventDefault();
+    key.stopPropagation();
   };
 
   const handleMenuToggleShortcut = (key: KeyEvent) => {
@@ -295,11 +303,13 @@ export function useAppKeyboardShortcuts({
     }
 
     if (isEscapeKey(key)) {
+      consumeKey(key);
       cancelDraftNote();
       return true;
     }
 
-    if (key.ctrl && (key.name === "s" || key.sequence === "\u0013")) {
+    if (isSaveDraftNoteKey(key)) {
+      consumeKey(key);
       saveDraftNote();
       return true;
     }
@@ -453,6 +463,11 @@ export function useAppKeyboardShortcuts({
 
     if (key.name === "e" || key.sequence === "e") {
       runAndCloseMenu(triggerEditSelectedFile);
+      return;
+    }
+
+    if (key.name === "z" || key.sequence === "z") {
+      runAndCloseMenu(toggleGapForSelectedHunk);
       return;
     }
 

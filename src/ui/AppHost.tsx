@@ -8,6 +8,10 @@ import {
   createInitialSessionSnapshot,
   updateSessionRegistration,
 } from "../hunk-session/sessionRegistration";
+import {
+  createSessionReloadBounds,
+  validateSessionReloadWithinBounds,
+} from "../hunk-session/sessionFileBounds";
 import type { HunkSessionBrokerClient, HunkSessionState } from "../hunk-session/types";
 import { App } from "./App";
 import { useStartupUpdateNotice } from "./hooks/useStartupUpdateNotice";
@@ -29,6 +33,11 @@ export function AppHost({
   const [activeBootstrap, setActiveBootstrap] = useState(bootstrap);
   const [appVersion, setAppVersion] = useState(0);
   const previousBootstrapRef = useRef(bootstrap);
+  const [sessionFileBounds] = useState(() =>
+    createSessionReloadBounds(bootstrap, {
+      cwd: hostClient?.getRegistration().cwd,
+    }),
+  );
   const startupNoticeText = useStartupUpdateNotice({
     enabled: !bootstrap.input.options.pager,
     resolver: startupNoticeResolver,
@@ -51,11 +60,13 @@ export function AppHost({
       // `sourcePath` matters for daemon-driven reloads that ask Hunk to reopen content from a
       // different working directory than the process originally started in.
       const runtimeInput = resolveRuntimeCliInput(nextInput);
-      const configuredInput = resolveConfiguredCliInput(runtimeInput, {
-        cwd: options?.sourcePath,
-      }).input;
-      const nextBootstrap = await loadAppBootstrap(configuredInput, {
-        cwd: options?.sourcePath,
+      const { cwd } = validateSessionReloadWithinBounds(sessionFileBounds, runtimeInput, {
+        sourcePath: options?.sourcePath,
+      });
+      const configured = resolveConfiguredCliInput(runtimeInput, { cwd });
+      const nextBootstrap = await loadAppBootstrap(configured.input, {
+        cwd,
+        customTheme: configured.customTheme,
       });
       const nextSnapshot = createInitialSessionSnapshot(nextBootstrap);
 
@@ -89,7 +100,7 @@ export function AppHost({
         selectedHunkIndex: nextSnapshot.state.selectedHunkIndex,
       };
     },
-    [hostClient],
+    [hostClient, sessionFileBounds],
   );
 
   return (

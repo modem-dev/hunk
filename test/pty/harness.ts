@@ -125,6 +125,28 @@ export function createPtyHarness() {
     return { dir, before, after };
   }
 
+  function createWideCharacterFilePair() {
+    const dir = makeTempDir("hunk-tuistory-wide-");
+    const before = join(dir, "before.ts");
+    const after = join(dir, "after.ts");
+
+    writeText(before, "export const wide = '日本語';\nexport const plain = 'before';\n");
+    writeText(after, "export const wide = '한국어';\nexport const plain = 'after';\n");
+
+    return { dir, before, after };
+  }
+
+  function createDeletionOnlyFilePair() {
+    const dir = makeTempDir("hunk-tuistory-deletion-");
+    const before = join(dir, "before.ts");
+    const after = join(dir, "after.ts");
+
+    writeText(before, "export const keep = true;\nexport const removeMe = true;\n");
+    writeText(after, "export const keep = true;\n");
+
+    return { dir, before, after };
+  }
+
   function createAgentFilePair() {
     const dir = makeTempDir("hunk-tuistory-agent-");
     const before = join(dir, "before.ts");
@@ -239,6 +261,25 @@ export function createPtyHarness() {
     afterLines[62] = "export const line63 = 6300;";
     afterLines[63] = "export const line64 = 6400;";
     afterLines[64] = "export const line65 = 6500;";
+
+    writeText(before, `${beforeLines.join("\n")}\n`);
+    writeText(after, `${afterLines.join("\n")}\n`);
+
+    return { dir, before, after };
+  }
+
+  function createExpandableContextFilePair() {
+    const dir = makeTempDir("hunk-tuistory-expand-");
+    const before = join(dir, "before.ts");
+    const after = join(dir, "after.ts");
+
+    const beforeLines = Array.from({ length: 30 }, (_, index) =>
+      index === 0
+        ? "export const hiddenLine01 = 1;"
+        : `export const line${String(index + 1).padStart(2, "0")} = ${index + 1};`,
+    );
+    const afterLines = [...beforeLines];
+    afterLines[4] = "export const line05 = 500;";
 
     writeText(before, `${beforeLines.join("\n")}\n`);
     writeText(after, `${afterLines.join("\n")}\n`);
@@ -585,7 +626,9 @@ export function createPtyHarness() {
     createAgentNavigationRepoFixture,
     createBottomClampedRepoFixture,
     createCollapsedTopRepoFixture,
+    createExpandableContextFilePair,
     createCrossFileHunkNavigationRepoFixture,
+    createDeletionOnlyFilePair,
     createLongWrapFilePair,
     createMultiHunkFilePair,
     createPagerPatchFixture,
@@ -593,6 +636,7 @@ export function createPtyHarness() {
     createScrollableFilePair,
     createSidebarJumpRepoFixture,
     createTwoFileRepoFixture,
+    createWideCharacterFilePair,
     launchHunk,
     launchHunkWithFileBackedStdin,
     launchShellCommand,

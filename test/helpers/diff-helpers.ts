@@ -1,4 +1,5 @@
 import { parseDiffFromFile } from "@pierre/diffs";
+import type { FileSourceFetcher, FileSourceSide } from "../../src/core/fileSource";
 import type { AgentAnnotation, AgentFileContext, DiffFile } from "../../src/core/types";
 
 function collectChangeStats(metadata: DiffFile["metadata"]) {
@@ -53,6 +54,7 @@ export function createTestDiffFile({
   previousPath,
   context = 0,
   agent = null,
+  sourceFetcher,
 }: {
   after?: string;
   before?: string;
@@ -62,6 +64,7 @@ export function createTestDiffFile({
   previousPath?: string;
   context?: number;
   agent?: DiffFile["agent"] | boolean;
+  sourceFetcher?: FileSourceFetcher;
 } = {}): DiffFile {
   const metadata = parseDiffFromFile(
     { cacheKey: `${id}:before`, contents: before, name: path },
@@ -78,7 +81,35 @@ export function createTestDiffFile({
     patch: "",
     path,
     previousPath,
+    sourceFetcher,
     stats: collectChangeStats(metadata),
+  };
+}
+
+/** Build a promise handle that lets async tests settle work manually. */
+export function createTestDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((nextResolve, nextReject) => {
+    resolve = nextResolve;
+    reject = nextReject;
+  });
+
+  return { promise, reject, resolve };
+}
+
+/** Build a source fetcher that records every requested side. */
+export function createTestSourceFetcher(
+  read: (side: FileSourceSide) => string | null | Promise<string | null>,
+): FileSourceFetcher & { calls: FileSourceSide[] } {
+  const calls: FileSourceSide[] = [];
+
+  return {
+    calls,
+    async getFullText(side) {
+      calls.push(side);
+      return read(side);
+    },
   };
 }
 

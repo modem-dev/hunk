@@ -45,6 +45,9 @@ function collapsedRow(key: string, hunkIndex: number): PlannedReviewRow {
       fileId: "file-1",
       hunkIndex,
       text: "⋯",
+      position: "before",
+      oldRange: [1, 1],
+      newRange: [1, 1],
     },
   };
 }

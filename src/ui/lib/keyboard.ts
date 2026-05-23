@@ -1,5 +1,8 @@
 import type { KeyEvent } from "@opentui/core";
 
+const CTRL_S = "\u0013";
+const CTRL_S_CSI_U = "\u001b[115;5u";
+
 function isSpaceKey(key: KeyEvent) {
   return key.name === "space" || key.name === " " || key.sequence === " ";
 }
@@ -7,6 +10,21 @@ function isSpaceKey(key: KeyEvent) {
 /** Normalize the escape key aliases emitted by different terminal input paths. */
 export function isEscapeKey(key: KeyEvent) {
   return key.name === "escape" || key.name === "esc";
+}
+
+/** Match Ctrl-S across raw, Kitty/CSI-u, and tmux control-mode encodings. */
+export function isSaveDraftNoteKey(key: KeyEvent) {
+  const name = key.name?.toLowerCase();
+  const sequence = key.sequence;
+  const raw = key.raw;
+
+  return (
+    (key.ctrl && (name === "s" || sequence === "s" || sequence === CTRL_S)) ||
+    sequence === CTRL_S ||
+    raw === CTRL_S ||
+    sequence === CTRL_S_CSI_U ||
+    raw === CTRL_S_CSI_U
+  );
 }
 
 /** Match any key alias that should scroll forward by a full viewport. */

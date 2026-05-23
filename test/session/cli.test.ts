@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -199,11 +199,7 @@ describe("session CLI integration", () => {
       ["export const alpha = 1;"],
       ["export const alpha = 2;", "export const beta = true;"],
     );
-    const fixtureB = createFixtureFiles(
-      "reload-beta",
-      ["export const before = 10;"],
-      ["export const after = 20;", "export const extra = 'yes';"],
-    );
+    mkdirSync(join(fixtureA.dir, ".git"));
     const session = spawnHunkSession(fixtureA, { port, quitAfterSeconds: 18, timeoutSeconds: 20 });
 
     try {
@@ -218,8 +214,11 @@ describe("session CLI integration", () => {
       });
 
       const sessionId = listed[0]!.sessionId;
+      writeFileSync(fixtureA.before, "export const before = 10;\n");
+      writeFileSync(fixtureA.after, "export const after = 20;\nexport const extra = 'yes';\n");
+
       const reload = runSessionCli(
-        ["reload", sessionId, "--json", "--", "diff", fixtureB.before, fixtureB.after],
+        ["reload", sessionId, "--json", "--", "diff", fixtureA.before, fixtureA.after],
         port,
       );
       expect(reload.proc.exitCode).toBe(0);
@@ -229,7 +228,7 @@ describe("session CLI integration", () => {
           sessionId,
           inputKind: "diff",
           fileCount: 1,
-          selectedFilePath: fixtureB.afterName,
+          selectedFilePath: fixtureA.afterName,
           selectedHunkIndex: 0,
         },
       });
@@ -246,13 +245,74 @@ describe("session CLI integration", () => {
             files?: Array<{ path: string }>;
           };
         };
-        return parsed.session?.files?.[0]?.path === fixtureB.afterName ? parsed : null;
+        return parsed.session?.files?.[0]?.path === fixtureA.afterName ? parsed : null;
       });
 
       expect(reloaded).toMatchObject({
         session: {
           inputKind: "diff",
-          files: [{ path: fixtureB.afterName }],
+          files: [{ path: fixtureA.afterName }],
+        },
+      });
+    } finally {
+      session.kill();
+      await session.exited;
+    }
+  }, 20_000);
+
+  test("reload refuses to read files outside the live session root", async () => {
+    if (!ttyToolsAvailable) {
+      return;
+    }
+
+    const port = 48966;
+    const fixture = createFixtureFiles(
+      "reload-denied",
+      ["export const visible = 1;"],
+      ["export const visible = 2;"],
+    );
+    const outside = createFixtureFiles(
+      "reload-secret",
+      ["export const secret = 1;"],
+      ["export const secret = 2;"],
+    );
+    mkdirSync(join(fixture.dir, ".git"));
+    const session = spawnHunkSession(fixture, { port, quitAfterSeconds: 18, timeoutSeconds: 20 });
+
+    try {
+      const listed = await waitUntil("registered live session", () => {
+        const { proc, stdout } = runSessionCli(["list", "--json"], port);
+        if (proc.exitCode !== 0) {
+          return null;
+        }
+
+        const parsed = JSON.parse(stdout) as SessionListJson;
+        return parsed.sessions.length > 0 ? parsed.sessions : null;
+      });
+
+      const sessionId = listed[0]!.sessionId;
+      const reload = runSessionCli(
+        [
+          "reload",
+          sessionId,
+          "--json",
+          "--source",
+          outside.dir,
+          "--",
+          "diff",
+          outside.before,
+          outside.after,
+        ],
+        port,
+      );
+      expect(reload.proc.exitCode).not.toBe(0);
+      expect(reload.stderr).toContain("outside the initial Hunk root");
+
+      const get = runSessionCli(["get", sessionId, "--json"], port);
+      expect(get.proc.exitCode).toBe(0);
+      expect(JSON.parse(get.stdout)).toMatchObject({
+        session: {
+          files: [{ path: fixture.afterName }],
         },
       });
     } finally {
