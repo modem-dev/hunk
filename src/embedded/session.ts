@@ -397,6 +397,14 @@ class EmbeddedHunkSessionImpl implements EmbeddedHunkSession {
     });
   }
 
+  /** Sync session-owned state after the mounted AppHost loads a replacement review. */
+  syncMountedReload(bootstrap: AppBootstrap, snapshot: HunkSessionSnapshot) {
+    this.source = cliInputToEmbeddedSource(bootstrap.input);
+    this.renderSnapshot = { status: "ready", bootstrap };
+    this.persistSessionSnapshot(snapshot);
+    for (const listener of this.listeners) listener();
+  }
+
   /** Publish the current session-owned review state to the daemon. */
   private updateHeadlessSnapshot() {
     this.sessionSnapshot = this.buildSessionSnapshot();
@@ -496,6 +504,7 @@ export function embeddedHunkSessionInternals(session: EmbeddedHunkSession) {
       getRenderSnapshot: session.getRenderSnapshot,
       getSessionSnapshot: session.getSessionSnapshot,
       hostClient: session.hostClient,
+      syncMountedReload: session.syncMountedReload.bind(session),
     };
   }
   throw new Error("mountEmbeddedHunkApp requires a session from createEmbeddedHunkSession.");

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { BoxRenderable, InputRenderable } from "@opentui/core";
 import { createTestRenderer } from "@opentui/core/testing";
+import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -39,6 +40,17 @@ async function flushTestRenderer(setup: Awaited<ReturnType<typeof createTestRend
   await setup.renderOnce();
   await Bun.sleep(0);
   await setup.renderOnce();
+}
+
+/** Run one git command for embedded reload-boundary tests. */
+function runTestGit(cwd: string, ...args: string[]) {
+  const proc = spawnSync("git", args, { cwd, stdio: "pipe" });
+  if (proc.error) {
+    throw proc.error;
+  }
+  if (proc.status !== 0) {
+    throw new Error(Buffer.from(proc.stderr).toString("utf8"));
+  }
 }
 
 /** Render until an expected frame fragment appears, or return the last captured frame. */
@@ -288,6 +300,63 @@ describe("embedded Hunk sessions", () => {
             expect(countTestFrameOccurrences(frame, otherLabel)).toBe(0);
           }
         }
+      } finally {
+        mount.unmount();
+        setup.renderer.destroy();
+        session.dispose();
+      }
+    } finally {
+      rmSync(root, { force: true, recursive: true });
+    }
+  });
+
+  test("mounted session reloads update the session-owned review", async () => {
+    const root = mkdtempSync(join(tmpdir(), "hunk-embedded-mounted-reload-"));
+    const initialPatchPath = join(root, "initial.patch");
+    const nextPatchText = testPatchText.replace("value = 2", "value = 3");
+
+    try {
+      runTestGit(root, "init");
+      writeFileSync(initialPatchPath, testPatchText);
+      const session = await createEmbeddedHunkSession({
+        cwd: root,
+        source: { kind: "patch", file: initialPatchPath },
+      });
+      const setup = await createTestRenderer({ width: 140, height: 24 });
+      const container = new BoxRenderable(setup.renderer, {
+        height: 20,
+        id: "embedded-hunk",
+        width: 120,
+      });
+      setup.renderer.root.add(container);
+
+      const mount = mountEmbeddedHunkApp({
+        active: true,
+        container,
+        onQuit: () => undefined,
+        renderer: setup.renderer,
+        session,
+      });
+
+      try {
+        await flushTestRenderer(setup);
+        const internals = embeddedHunkSessionInternals(session);
+
+        await internals.dispatchCommand({
+          type: "command",
+          requestId: "reload-1",
+          command: "reload_session",
+          input: {
+            sessionId: "session-1",
+            nextInput: { kind: "patch", text: nextPatchText, options: {} },
+          },
+        });
+
+        expect(getTestLoadedPatch(session)).toContain("+const value = 3;");
+        expect(session.getSnapshot().source).toMatchObject({
+          kind: "patch",
+          text: nextPatchText,
+        });
       } finally {
         mount.unmount();
         setup.renderer.destroy();

@@ -12,7 +12,11 @@ import {
   createSessionReloadBounds,
   validateSessionReloadWithinBounds,
 } from "../hunk-session/sessionFileBounds";
-import type { HunkSessionBrokerClient, HunkSessionState } from "../hunk-session/types";
+import type {
+  HunkSessionBrokerClient,
+  HunkSessionSnapshot,
+  HunkSessionState,
+} from "../hunk-session/types";
 import { App } from "./App";
 import { useStartupUpdateNotice } from "./hooks/useStartupUpdateNotice";
 
@@ -21,12 +25,14 @@ export function AppHost({
   bootstrap,
   hostClient,
   initialSessionState,
+  onSessionReloaded,
   onQuit = () => process.exit(0),
   startupNoticeResolver,
 }: {
   bootstrap: AppBootstrap;
   hostClient?: HunkSessionBrokerClient;
   initialSessionState?: HunkSessionState;
+  onSessionReloaded?: (event: { bootstrap: AppBootstrap; snapshot: HunkSessionSnapshot }) => void;
   onQuit?: () => void;
   startupNoticeResolver?: () => Promise<UpdateNotice | null>;
 }) {
@@ -70,6 +76,9 @@ export function AppHost({
       });
       const nextSnapshot = createInitialSessionSnapshot(nextBootstrap);
 
+      previousBootstrapRef.current = nextBootstrap;
+      onSessionReloaded?.({ bootstrap: nextBootstrap, snapshot: nextSnapshot });
+
       let sessionId = "local-session";
       if (hostClient) {
         // Keep the daemon-facing session registration in sync with whatever the UI is about to
@@ -100,7 +109,7 @@ export function AppHost({
         selectedHunkIndex: nextSnapshot.state.selectedHunkIndex,
       };
     },
-    [hostClient, sessionFileBounds],
+    [hostClient, onSessionReloaded, sessionFileBounds],
   );
 
   return (
