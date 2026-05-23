@@ -45,7 +45,10 @@ function createNumberedAssignmentLines(start: number, count: number, valueOffset
   });
 }
 
-function createMockHostClient() {
+function createMockHostClient({
+  cwd = process.cwd(),
+  repoRoot = process.cwd(),
+}: { cwd?: string; repoRoot?: string } = {}) {
   type Bridge = Parameters<HunkSessionBrokerClient["setBridge"]>[0];
 
   let bridge: Bridge = null;
@@ -54,8 +57,8 @@ function createMockHostClient() {
     registrationVersion: SESSION_BROKER_REGISTRATION_VERSION,
     sessionId: "session-1",
     pid: process.pid,
-    cwd: process.cwd(),
-    repoRoot: process.cwd(),
+    cwd,
+    repoRoot,
     launchedAt: "2026-03-24T00:00:00.000Z",
     info: {
       inputKind: "vcs",
@@ -1090,7 +1093,7 @@ describe("App interactions", () => {
   });
 
   test("reload shortcut reloads the current file diff from disk", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "hunk-reload-"));
+    const dir = mkdtempSync(join(process.cwd(), ".hunk-reload-"));
     const left = join(dir, "before.ts");
     const right = join(dir, "after.ts");
 
@@ -1144,7 +1147,7 @@ describe("App interactions", () => {
   });
 
   test("session reload preserves live comments while refreshing the file diff", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "hunk-session-reload-"));
+    const dir = mkdtempSync(join(process.cwd(), ".hunk-session-reload-"));
     const left = join(dir, "before.ts");
     const right = join(dir, "after.ts");
     const reviewNote = "Keep this daemon review note";
@@ -1206,7 +1209,6 @@ describe("App interactions", () => {
                 mode: "split",
               },
             },
-            sourcePath: dir,
           },
         });
       });
@@ -1227,8 +1229,63 @@ describe("App interactions", () => {
     }
   });
 
+  test("session reload rejects file reads outside the initial repo root", async () => {
+    const repo = mkdtempSync(join(tmpdir(), "hunk-session-reload-root-"));
+    const outside = mkdtempSync(join(tmpdir(), "hunk-session-reload-outside-"));
+    const left = join(outside, "before.ts");
+    const right = join(outside, "after.ts");
+
+    writeFileSync(left, "export const secret = 1;\n");
+    writeFileSync(right, "export const secret = 2;\n");
+
+    const baseBootstrap = createBootstrap();
+    const bootstrap = {
+      ...baseBootstrap,
+      changeset: {
+        ...baseBootstrap.changeset,
+        sourceLabel: repo,
+      },
+    };
+    const { dispatchCommand, hostClient } = createMockHostClient({ cwd: repo, repoRoot: repo });
+
+    const setup = await testRender(<AppHost bootstrap={bootstrap} hostClient={hostClient} />, {
+      width: 220,
+      height: 20,
+    });
+
+    try {
+      await flush(setup);
+
+      await expect(
+        dispatchCommand({
+          type: "command",
+          requestId: "reload-outside-root",
+          command: "reload_session",
+          input: {
+            sessionId: "session-1",
+            nextInput: {
+              kind: "diff",
+              left,
+              right,
+              options: {
+                mode: "split",
+              },
+            },
+            sourcePath: outside,
+          },
+        }),
+      ).rejects.toThrow("outside the initial Hunk root");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+      rmSync(repo, { force: true, recursive: true });
+      rmSync(outside, { force: true, recursive: true });
+    }
+  });
+
   test("watch mode reloads the current file diff from disk", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "hunk-watch-"));
+    const dir = mkdtempSync(join(process.cwd(), ".hunk-watch-"));
     const left = join(dir, "before.ts");
     const right = join(dir, "after.ts");
 
@@ -1279,7 +1336,7 @@ describe("App interactions", () => {
   });
 
   test("watch mode preserves the resolved auto theme after refreshing the file diff", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "hunk-watch-theme-"));
+    const dir = mkdtempSync(join(process.cwd(), ".hunk-watch-theme-"));
     const left = join(dir, "before.ts");
     const right = join(dir, "after.ts");
 

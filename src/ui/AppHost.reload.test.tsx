@@ -28,7 +28,7 @@ async function settleHighlights(setup: Awaited<ReturnType<typeof testRender>>) {
 
 describe("reload stale highlight cache", () => {
   test("r key picks up new file content for file-pair diffs", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "hunk-reload-file-"));
+    const dir = mkdtempSync(join(process.cwd(), ".hunk-reload-file-"));
     const left = join(dir, "before.ts");
     const right = join(dir, "after.ts");
 
