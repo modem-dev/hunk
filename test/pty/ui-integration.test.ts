@@ -53,6 +53,32 @@ function rightmostColumnOf(text: string, needle: string) {
   );
 }
 
+/** Locate a visible terminal row containing text so mouse tests can target rendered content. */
+function lineIndexOf(text: string, needle: string) {
+  return text.split("\n").findIndex((line) => line.includes(needle));
+}
+
+/** Move near a rendered row until the hover-only add-note control appears. */
+async function revealAddNoteNear(session: Session, row: number) {
+  for (const y of [row, row - 1, row + 1]) {
+    if (y < 0) {
+      continue;
+    }
+
+    for (const x of [8, 20, 60]) {
+      await moveMouse(session, x, y);
+      try {
+        await session.waitForText(/\[\+\]/, { timeout: 200 });
+        return;
+      } catch {
+        // Try nearby cells; PTY snapshots and wrapped rows can differ by a column or row.
+      }
+    }
+  }
+
+  throw new Error("Could not reveal add-note affordance near target row.");
+}
+
 describe("live UI integration", () => {
   test("real PTY sessions can toggle wrapped lines on and off", async () => {
     const fixture = harness.createLongWrapFilePair();
@@ -614,6 +640,62 @@ describe("live UI integration", () => {
       const saved = await session.waitForText(/Your note/, { timeout: 5_000 });
 
       expect(saved).toContain("Save this shortcut draft.");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("clicking stack-mode add-note affordances can save draft notes", async () => {
+    const fixture = harness.createLongWrapFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "stack"],
+      cols: 100,
+      rows: 20,
+    });
+
+    try {
+      const initial = await session.waitForText(/this is a very long/, {
+        timeout: 15_000,
+      });
+      const targetRow = lineIndexOf(initial, "this is a very long");
+      expect(targetRow).toBeGreaterThan(0);
+
+      await revealAddNoteNear(session, targetRow);
+      await session.click(/\[\+\]/);
+      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await session.type("Save this stack draft.");
+      await session.press(["ctrl", "s"]);
+      const saved = await session.waitForText(/Your note/, { timeout: 5_000 });
+
+      expect(saved).toContain("Save this stack draft.");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("clicking deletion-only add-note affordances can save draft notes", async () => {
+    const fixture = harness.createDeletionOnlyFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      cols: 120,
+      rows: 16,
+    });
+
+    try {
+      const initial = await session.waitForText(/removeMe/, {
+        timeout: 15_000,
+      });
+      const targetRow = lineIndexOf(initial, "removeMe");
+      expect(targetRow).toBeGreaterThan(0);
+
+      await revealAddNoteNear(session, targetRow);
+      await session.click(/\[\+\]/);
+      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await session.type("Save this deletion draft.");
+      await session.press(["ctrl", "s"]);
+      const saved = await session.waitForText(/Your note/, { timeout: 5_000 });
+
+      expect(saved).toContain("Save this deletion draft.");
     } finally {
       session.close();
     }
