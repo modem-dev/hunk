@@ -138,10 +138,6 @@ export function useReviewController({
   const [draftNote, setDraftNote] = useState<DraftReviewNote | null>(null);
   const deferredFilter = useDeferredValue(filter);
 
-  useEffect(() => {
-    commandStateRef.current = commandState;
-  }, [commandState]);
-
   /** Update command state and its imperative mirror together. */
   const updateCommandState = useCallback(
     (updater: (state: ReviewCommandState) => ReviewCommandState) => {
@@ -487,10 +483,12 @@ export function useReviewController({
   }, [draftNote, updateCommandState]);
 
   /** Remove one in-memory user note by id. */
-  const removeUserNote = useCallback((noteId: string) => {
-    commandStateRef.current = removeSavedUserReviewNote(commandStateRef.current, noteId);
-    setCommandState(commandStateRef.current);
-  }, []);
+  const removeUserNote = useCallback(
+    (noteId: string) => {
+      updateCommandState((current) => removeSavedUserReviewNote(current, noteId));
+    },
+    [updateCommandState],
+  );
 
   const setAgentNotesVisible = useCallback(
     (visible: boolean) => {

@@ -595,10 +595,12 @@ describe("useReviewController", () => {
       ]);
 
       await act(async () => {
+        expectValue(controllerRef.current).setAgentNotesVisible(true);
         expectValue(controllerRef.current).removeUserNote(savedNoteId);
       });
       await flush(setup);
 
+      expect(expectValue(controllerRef.current).showAgentNotes).toBe(true);
       expect(expectValue(controllerRef.current).userNotesByFileId.alpha).toBeUndefined();
       expect(expectValue(controllerRef.current).reviewNoteSummaries).toEqual([]);
     } finally {

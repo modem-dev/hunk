@@ -93,6 +93,34 @@ function embeddedSourceToCliInput(source: EmbeddedHunkSource): CliInput {
         pathspecs: normalized.pathspecs,
         options: normalized.options,
       };
+    case "vcs":
+      return {
+        kind: "vcs",
+        range: normalized.range,
+        staged: normalized.staged,
+        pathspecs: normalized.pathspecs,
+        options: normalized.options,
+      };
+    case "show":
+      return {
+        kind: "show",
+        ref: normalized.ref,
+        pathspecs: normalized.pathspecs,
+        options: normalized.options,
+      };
+    case "stash-show":
+      return {
+        kind: "stash-show",
+        ref: normalized.ref,
+        options: normalized.options,
+      };
+    case "diff":
+      return {
+        kind: "diff",
+        left: normalized.left,
+        right: normalized.right,
+        options: normalized.options,
+      };
     case "patch":
       return {
         kind: "patch",
@@ -100,8 +128,63 @@ function embeddedSourceToCliInput(source: EmbeddedHunkSource): CliInput {
         file: normalized.file ?? normalized.label,
         options: normalized.options,
       };
-    default:
-      return normalized as CliInput;
+    case "difftool":
+      return {
+        kind: "difftool",
+        left: normalized.left,
+        right: normalized.right,
+        path: normalized.path,
+        options: normalized.options,
+      };
+  }
+}
+
+/** Adapt daemon reload input back into a normalized embedded source without unsafe casts. */
+function cliInputToEmbeddedSource(input: CliInput): NormalizedEmbeddedHunkSource {
+  switch (input.kind) {
+    case "vcs":
+      return normalizeEmbeddedHunkSource({
+        kind: "vcs",
+        range: input.range,
+        staged: input.staged,
+        pathspecs: input.pathspecs,
+        options: input.options,
+      });
+    case "show":
+      return normalizeEmbeddedHunkSource({
+        kind: "show",
+        ref: input.ref,
+        pathspecs: input.pathspecs,
+        options: input.options,
+      });
+    case "stash-show":
+      return normalizeEmbeddedHunkSource({
+        kind: "stash-show",
+        ref: input.ref,
+        options: input.options,
+      });
+    case "diff":
+      return normalizeEmbeddedHunkSource({
+        kind: "diff",
+        left: input.left,
+        right: input.right,
+        options: input.options,
+      });
+    case "patch":
+      return normalizeEmbeddedHunkSource({
+        kind: "patch",
+        file: input.file,
+        text: input.text,
+        options: input.options,
+      });
+    case "difftool":
+      return normalizeEmbeddedHunkSource({
+        kind: "difftool",
+        left: input.left,
+        right: input.right,
+        path: input.path,
+        options: input.options,
+      });
   }
 }
 
@@ -205,7 +288,7 @@ class EmbeddedHunkSessionImpl implements EmbeddedHunkSession {
       navigateToLocation: this.navigateHeadless.bind(this),
       openAgentNotes: () => this.setHeadlessAgentNotesVisible(true),
       reloadSession: async (nextInput) => {
-        const result = await this.load(nextInput as EmbeddedHunkSource, {
+        const result = await this.load(cliInputToEmbeddedSource(nextInput), {
           updateSource: true,
         });
         return {

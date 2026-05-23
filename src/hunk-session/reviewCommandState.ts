@@ -82,6 +82,50 @@ function liveCommentsByFileFromSummaries(
   return byFileId;
 }
 
+/** Resolve a persisted review-note summary back to its editable line target. */
+function reviewNoteTarget(summary: SessionReviewNoteSummary, file: DiffFile) {
+  if (summary.newRange) return { side: "new" as const, line: summary.newRange[0] };
+  if (summary.oldRange) return { side: "old" as const, line: summary.oldRange[0] };
+
+  const hunk = summary.hunkIndex === undefined ? undefined : file.metadata.hunks[summary.hunkIndex];
+  const range = hunk ? hunkLineRange(hunk) : undefined;
+  return { side: "new" as const, line: range?.newRange[0] ?? 0 };
+}
+
+/** Rehydrate editable user notes from a broker snapshot for remounted sessions. */
+function userNotesByFileFromSummaries(
+  files: DiffFile[],
+  summaries: SessionReviewNoteSummary[] = [],
+) {
+  const byFileId: Record<string, SavedUserReviewNote[]> = {};
+  summaries.forEach((summary) => {
+    if (summary.source !== "user" || !summary.editable) return;
+    const file = findDiffFileByPath(files, summary.filePath);
+    if (!file) return;
+
+    const target = reviewNoteTarget(summary, file);
+    const notes = (byFileId[file.id] ??= []);
+    notes.push({
+      id: summary.noteId,
+      source: "user",
+      fileId: file.id,
+      filePath: file.path,
+      hunkIndex: summary.hunkIndex ?? 0,
+      side: target.side,
+      line: target.line,
+      oldRange: summary.oldRange,
+      newRange: summary.newRange,
+      summary: summary.body,
+      title: summary.title,
+      author: summary.author ?? "user",
+      createdAt: summary.createdAt,
+      updatedAt: summary.updatedAt,
+      editable: true,
+    });
+  });
+  return byFileId;
+}
+
 function summarizeLiveComment(filePath: string, comment: LiveComment): SessionLiveCommentSummary {
   return {
     commentId: comment.id,
@@ -124,7 +168,7 @@ export function createReviewCommandState({
         files,
         initialSessionState?.liveComments,
       ),
-      userNotesByFileId: {},
+      userNotesByFileId: userNotesByFileFromSummaries(files, initialSessionState?.reviewNotes),
     },
   });
 }
