@@ -108,7 +108,12 @@ export function App({
   const [transientNoticeText, setTransientNoticeText] = useState<string | null>(null);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(bootstrap.initialMode);
   const [themeId, setThemeId] = useState(
-    () => resolveTheme(bootstrap.initialTheme, renderer.themeMode, bootstrap.customTheme).id,
+    () =>
+      resolveTheme(
+        bootstrap.initialTheme,
+        bootstrap.initialThemeMode ?? renderer.themeMode,
+        bootstrap.customTheme,
+      ).id,
   );
   // Soft reloads replace bootstrap without re-running startup terminal theme detection.
   const [detectedThemeMode] = useState(() => bootstrap.initialThemeMode);
@@ -133,7 +138,7 @@ export function App({
     () => availableThemes(bootstrap.customTheme),
     [bootstrap.customTheme],
   );
-  const activeTheme = resolveTheme(themeId, detectedThemeMode ?? null);
+  const activeTheme = resolveTheme(themeId, detectedThemeMode ?? null, bootstrap.customTheme);
   const review = useReviewController({ files: bootstrap.changeset.files });
   const filteredFiles = review.visibleFiles;
   const selectedFile = review.selectedFile;

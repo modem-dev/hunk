@@ -1327,6 +1327,46 @@ describe("App interactions", () => {
     }
   });
 
+  test("custom theme stays active in the Theme menu when bootstrap provides a custom palette", async () => {
+    const bootstrap = createBootstrap();
+    bootstrap.initialTheme = "custom";
+    bootstrap.customTheme = {
+      base: "paper",
+      label: "My Theme",
+      accent: "#7755aa",
+    };
+
+    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
+      width: 220,
+      height: 20,
+    });
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.pressKey("F10");
+      });
+
+      await waitForFrame(setup, (frame) => frame.includes("Toggle files/filter focus"), 12);
+
+      for (let index = 0; index < 3; index += 1) {
+        await act(async () => {
+          await setup.mockInput.pressArrow("right");
+        });
+        await flush(setup);
+      }
+
+      const menuFrame = await waitForFrame(setup, (frame) => frame.includes("My Theme"), 12);
+      expect(menuFrame).toContain("[x] My Theme");
+      expect(menuFrame).toContain("[ ] Graphite");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("a shows notes that are visible in the current review viewport", async () => {
     const bootstrap = createBootstrap();
     bootstrap.changeset.files[1]!.agent = {
