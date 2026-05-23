@@ -843,6 +843,87 @@ describe("live UI integration", () => {
     }
   });
 
+  test("draft note focus blocks app shortcuts until cancelled", async () => {
+    const fixture = harness.createMultiHunkFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      cols: 104,
+      rows: 12,
+    });
+
+    try {
+      const initial = await session.waitForText(/line1 = 100/, {
+        timeout: 15_000,
+      });
+      expect(initial).not.toContain("line60 = 6000");
+
+      await session.press("c");
+      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await session.type("Keep focus here");
+      await session.press("]");
+      const whileFocused = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("Keep focus here]") && !text.includes("line60 = 6000"),
+        5_000,
+      );
+      expect(whileFocused).toContain("Draft note");
+
+      await session.type("\x1b");
+      await harness.waitForSnapshot(session, (text) => !text.includes("Draft note"), 5_000);
+      await session.press("]");
+      const afterCancel = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("line60 = 6000"),
+        5_000,
+      );
+
+      expect(afterCancel).not.toContain("Keep focus here]");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("multiple add-note drafts can be saved on one hunk", async () => {
+    const fixture = harness.createDeletionOnlyFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      cols: 120,
+      rows: 20,
+    });
+
+    try {
+      const initial = await session.waitForText(/keep = true/, {
+        timeout: 15_000,
+      });
+      const contextRow = lineIndexOf(initial, "keep = true");
+      expect(contextRow).toBeGreaterThan(0);
+
+      await revealAddNoteOnRow(session, contextRow);
+      await session.click(/\[\+\]/);
+      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await session.type("First note on the context row.");
+      await session.press(["ctrl", "s"]);
+      const firstSaved = await session.waitForText(/First note on the context row\./, {
+        timeout: 5_000,
+      });
+      const deletionRow = lineIndexOf(firstSaved, "removeMe");
+      expect(deletionRow).toBeGreaterThan(0);
+
+      await revealAddNoteNear(session, deletionRow);
+      await session.click(/\[\+\]/);
+      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await session.type("Second note on the deletion row.");
+      await session.press(["ctrl", "s"]);
+      const secondSaved = await session.waitForText(/Second note on the deletion row\./, {
+        timeout: 5_000,
+      });
+
+      expect(secondSaved).toContain("First note on the context row.");
+    } finally {
+      session.close();
+    }
+  });
+
   test("clicking diff add-note affordances can cancel and save draft notes", async () => {
     const fixture = harness.createLongWrapFilePair();
     const session = await harness.launchHunk({
