@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { buildEditorCommand, shouldSuspendForEditor } from "./openInEditor";
+import { resolve } from "node:path";
+import {
+  buildEditorCommand,
+  resolveEditableFilePath,
+  shouldSuspendForEditor,
+} from "./openInEditor";
 
 describe("open in editor helpers", () => {
   test("builds vi-style editor args without shell quoting", () => {
@@ -58,5 +63,11 @@ describe("open in editor helpers", () => {
     expect(shouldSuspendForEditor("code --reuse-window")).toBe(false);
     expect(shouldSuspendForEditor('"C:\\Program Files\\Cursor\\cursor.exe"')).toBe(false);
     expect(shouldSuspendForEditor("nvim")).toBe(true);
+  });
+
+  test("resolves repo-relative diff paths from the diff source path", () => {
+    expect(resolveEditableFilePath("src/main.tsx", "/tmp/project")).toBe(
+      resolve("/tmp/project", "src/main.tsx"),
+    );
   });
 });

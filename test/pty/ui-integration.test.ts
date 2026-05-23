@@ -578,6 +578,47 @@ describe("live UI integration", () => {
     }
   });
 
+  test("clicked add-note drafts can cancel and save with keyboard shortcuts", async () => {
+    const fixture = harness.createLongWrapFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      cols: 120,
+      rows: 20,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      await moveMouse(session, 8, 5);
+      await session.waitForText(/\[\+\]/, { timeout: 5_000 });
+      await session.click(/\[\+\]/);
+      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await session.type("Cancel this shortcut draft.");
+      await session.press("escape");
+      const cancelled = await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("Draft note") && !text.includes("Cancel this shortcut draft."),
+        5_000,
+      );
+
+      expect(cancelled).not.toContain("Your note");
+
+      await moveMouse(session, 8, 5);
+      await session.waitForText(/\[\+\]/, { timeout: 5_000 });
+      await session.click(/\[\+\]/);
+      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await session.type("Save this shortcut draft.");
+      await session.press(["ctrl", "s"]);
+      const saved = await session.waitForText(/Your note/, { timeout: 5_000 });
+
+      expect(saved).toContain("Save this shortcut draft.");
+    } finally {
+      session.close();
+    }
+  });
+
   test("clicking diff add-note affordances can cancel and save draft notes", async () => {
     const fixture = harness.createLongWrapFilePair();
     const session = await harness.launchHunk({
