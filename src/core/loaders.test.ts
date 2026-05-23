@@ -1158,7 +1158,7 @@ describe("loadAppBootstrap", () => {
     });
 
     expect(bootstrap.changeset.files).toHaveLength(1);
-    expect(bootstrap.changeset.files[0]?.path).toContain("feat/2.0/auth.ts");
+    expect(bootstrap.changeset.files[0]?.path).toMatch(/feat[\\/]+2\.0[\\/]+auth\.ts$/);
   });
 
   test("loads patch text emitted with diff.noprefix=true (e.g. from `hunk pager` stdin)", async () => {
