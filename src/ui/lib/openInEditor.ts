@@ -71,12 +71,19 @@ export function buildEditorCommand({
   return { command, args: [...editorArgs, filePath] };
 }
 
+/** Resolve diff paths relative to their source repo instead of the launch cwd. */
+export function resolveEditableFilePath(filePath: string, basePath = process.cwd()) {
+  return resolve(basePath, filePath);
+}
+
 /** Open the selected file in $EDITOR, suspending TUI for terminal editors. */
 export function openSelectedFileInEditor({
+  basePath,
   file,
   renderer,
   selectedHunk,
 }: {
+  basePath?: string;
   file: DiffFile | undefined;
   renderer: Pick<CliRenderer, "suspend" | "resume" | "isDestroyed">;
   selectedHunk: DiffFile["metadata"]["hunks"][number] | undefined;
@@ -90,7 +97,7 @@ export function openSelectedFileInEditor({
     return "$EDITOR is not set.";
   }
 
-  const absolutePath = resolve(process.cwd(), file.path);
+  const absolutePath = resolveEditableFilePath(file.path, basePath);
   if (!existsSync(absolutePath)) {
     return `Cannot edit ${file.path}: file does not exist on disk.`;
   }
