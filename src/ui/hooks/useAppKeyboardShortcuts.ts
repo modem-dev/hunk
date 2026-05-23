@@ -9,6 +9,7 @@ import {
   isHalfPageUpKey,
   isPageDownKey,
   isPageUpKey,
+  isSaveDraftNoteKey,
   isShiftSpacePageUpKey,
   isStepDownKey,
   isStepUpKey,
@@ -136,6 +137,11 @@ export function useAppKeyboardShortcuts({
   const runAndCloseMenu = (action: () => void) => {
     action();
     closeMenu();
+  };
+
+  const consumeKey = (key: KeyEvent) => {
+    key.preventDefault();
+    key.stopPropagation();
   };
 
   const handleMenuToggleShortcut = (key: KeyEvent) => {
@@ -296,11 +302,13 @@ export function useAppKeyboardShortcuts({
     }
 
     if (isEscapeKey(key)) {
+      consumeKey(key);
       cancelDraftNote();
       return true;
     }
 
-    if (key.ctrl && (key.name === "s" || key.sequence === "\u0013")) {
+    if (isSaveDraftNoteKey(key)) {
+      consumeKey(key);
       saveDraftNote();
       return true;
     }

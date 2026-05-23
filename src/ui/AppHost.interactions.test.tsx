@@ -2214,6 +2214,42 @@ describe("App interactions", () => {
     }
   });
 
+  test("draft note saves Ctrl-S when tmux sends CSI-u input", async () => {
+    const setup = await testRender(<AppHost bootstrap={createBootstrap()} />, {
+      width: 240,
+      height: 24,
+      useKittyKeyboard: null,
+    });
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.typeText("c");
+      });
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.typeText("Save from tmux CSI-u.");
+      });
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.pressKeys(["\u001b[115;5u"]);
+      });
+      await flush(setup);
+
+      const frame = setup.captureCharFrame();
+      expect(frame).toContain("Your note");
+      expect(frame).toContain("Save from tmux CSI-u.");
+      expect(frame).not.toContain("Draft note");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("draft note blur restores app shortcuts without discarding the draft", async () => {
     const setup = await testRender(<AppHost bootstrap={createBootstrap()} />, {
       width: 240,

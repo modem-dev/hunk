@@ -13,6 +13,7 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Fixed
 
+- Fixed Ctrl-S saving for inline notes when tmux sends CSI-u keyboard input.
 - Fixed the `e` editor shortcut when Hunk is launched from a repo subdirectory.
 - Fixed VCS auto-detection so a Git repository nested under a parent Jujutsu workspace still uses Git mode by default.
 

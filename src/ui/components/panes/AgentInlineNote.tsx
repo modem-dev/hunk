@@ -2,7 +2,7 @@ import type { TextareaRenderable } from "@opentui/core";
 import { flushSync } from "@opentui/react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { AgentAnnotation, DiffFile, LayoutMode } from "../../../core/types";
-import { isEscapeKey } from "../../lib/keyboard";
+import { isEscapeKey, isSaveDraftNoteKey } from "../../lib/keyboard";
 import { wrapText } from "../../lib/agentPopover";
 import { annotationRangeLabel, reviewNoteSource } from "../../lib/agentAnnotations";
 import { fitText, padText } from "../../lib/text";
@@ -393,6 +393,13 @@ export function AgentInlineNote({
                     draftContentWidth,
                   ) + 1,
                 );
+              }
+
+              if (isSaveDraftNoteKey(key)) {
+                key.preventDefault();
+                key.stopPropagation();
+                draft.onSave();
+                return;
               }
 
               if (isEscapeKey(key)) {
