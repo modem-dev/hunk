@@ -3,7 +3,7 @@ import type { DiffFile, LayoutMode, UserNoteLineTarget } from "../../../core/typ
 import type { FileSourceStatus } from "../../diff/expandCollapsedRows";
 import { PierreDiffView, type ActiveAddNoteAffordance } from "../../diff/PierreDiffView";
 import type { VisibleBodyBounds } from "../../diff/rowWindowing";
-import type { DiffSectionGeometry } from "../../lib/diffSectionGeometry";
+import type { DiffSectionGeometry } from "../../diff/diffSectionGeometry";
 import type { VisibleAgentNote } from "../../lib/agentAnnotations";
 import type { CopySelectedRowRange } from "./copySelection";
 import { diffSectionId } from "../../lib/ids";

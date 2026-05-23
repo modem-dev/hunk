@@ -4,19 +4,13 @@ import type { DiffFile, LayoutMode, UserNoteLineTarget } from "../../core/types"
 import { AgentInlineNote } from "../components/panes/AgentInlineNote";
 import type { VisibleAgentNote } from "../lib/agentAnnotations";
 import type { CopySelectedRowRange } from "../components/panes/copySelection";
-import type { DiffSectionGeometry } from "../lib/diffSectionGeometry";
+import type { DiffSectionGeometry } from "./diffSectionGeometry";
 import { reviewRowId } from "../lib/ids";
 import type { AppTheme } from "../themes";
-import { findMaxLineNumber, findMaxLineNumberInRows } from "./codeColumns";
-import { expandCollapsedRows, type FileSourceStatus } from "./expandCollapsedRows";
-import {
-  buildSplitRows,
-  buildStackRows,
-  spansForHighlightedSourceLine,
-  type DiffRow,
-} from "./pierre";
+import { type FileSourceStatus } from "./expandCollapsedRows";
+import { spansForHighlightedSourceLine, type DiffRow } from "./pierre";
 import { plannedReviewRowVisible } from "./plannedReviewRows";
-import { buildReviewRenderPlan } from "./reviewRenderPlan";
+import { buildDiffSectionRowPlan } from "./diffSectionRowPlan";
 import { resolveVisiblePlannedRowWindow, type VisibleBodyBounds } from "./rowWindowing";
 import { diffMessage, DiffRowView, fitText } from "./renderRows";
 import { useHighlightedDiff } from "./useHighlightedDiff";
@@ -195,47 +189,37 @@ export function PierreDiffView({
     [resolvedHighlightedSource, theme],
   );
 
-  const rows = useMemo(
+  const sectionRowPlan = useMemo(
     () =>
-      file
-        ? layout === "split"
-          ? buildSplitRows(file, resolvedHighlighted, theme)
-          : buildStackRows(file, resolvedHighlighted, theme)
-        : [],
-    [file, layout, resolvedHighlighted, theme],
+      buildDiffSectionRowPlan({
+        expandedKeys: expandedGapKeys,
+        file,
+        highlightedDiff: resolvedHighlighted,
+        layout,
+        showHunkHeaders,
+        sourceLineSpans,
+        sourceStatus,
+        theme,
+        visibleAgentNotes,
+      }),
+    [
+      expandedGapKeys,
+      file,
+      layout,
+      resolvedHighlighted,
+      showHunkHeaders,
+      sourceLineSpans,
+      sourceStatus,
+      theme,
+      visibleAgentNotes,
+    ],
   );
-  const expansionSide = file?.metadata.type === "deleted" ? "old" : "new";
+  const plannedRows = sectionRowPlan.plannedRows;
+  const lineNumberDigits = sectionRowPlan.lineNumberDigits;
   const fileHasSourceFetcher = Boolean(file?.sourceFetcher);
   const gapToggleHandler = useMemo(
     () => (fileHasSourceFetcher ? onToggleGap : undefined),
     [fileHasSourceFetcher, onToggleGap],
-  );
-  const expandedRows = useMemo(
-    () =>
-      expandCollapsedRows(rows, {
-        layout,
-        expandedKeys: expandedGapKeys,
-        sourceLineSpans,
-        sourceStatus,
-        side: expansionSide,
-      }),
-    [rows, layout, expandedGapKeys, sourceLineSpans, sourceStatus, expansionSide],
-  );
-  const plannedRows = useMemo(
-    () =>
-      file
-        ? buildReviewRenderPlan({
-            fileId: file.id,
-            rows: expandedRows,
-            showHunkHeaders,
-            visibleAgentNotes,
-          })
-        : [],
-    [file, expandedRows, showHunkHeaders, visibleAgentNotes],
-  );
-  const lineNumberDigits = useMemo(
-    () => String(findMaxLineNumberInRows(expandedRows, file ? findMaxLineNumber(file) : 1)).length,
-    [expandedRows, file],
   );
   const visiblePlannedRowWindow = useMemo(() => {
     // Fall back to the full row list unless all three row-windowing inputs are ready:

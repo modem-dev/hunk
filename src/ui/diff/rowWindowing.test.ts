@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { DiffSectionGeometry } from "../lib/diffSectionGeometry";
+import type { DiffSectionGeometry } from "./diffSectionGeometry";
 import type { PlannedReviewRow } from "./reviewRenderPlan";
 import { resolveVisiblePlannedRowWindow } from "./rowWindowing";
 

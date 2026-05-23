@@ -1,18 +1,18 @@
 import type { DiffFile, LayoutMode } from "../../core/types";
 import { measureAgentInlineNoteHeight } from "../components/panes/AgentInlineNote";
-import { findMaxLineNumber, findMaxLineNumberInRows } from "../diff/codeColumns";
-import { expandCollapsedRows, type FileSourceStatus } from "../diff/expandCollapsedRows";
-import { buildSplitRows, buildStackRows } from "../diff/pierre";
-import { measureRenderedRowHeight } from "../diff/renderRows";
+import type { VisibleAgentNote } from "../lib/agentAnnotations";
+import type { SectionGeometry, VerticalBounds } from "../lib/diffSpatial";
+import { reviewRowId } from "../lib/ids";
+import type { AppTheme } from "../themes";
+import { findMaxLineNumber } from "./codeColumns";
+import { buildDiffSectionRowPlan, type DiffSectionRowPlan } from "./diffSectionRowPlan";
+import { type FileSourceStatus } from "./expandCollapsedRows";
 import {
   plannedReviewRowContributesToHunkBounds,
   type PlannedHunkBounds,
-} from "../diff/plannedReviewRows";
-import { buildReviewRenderPlan, type PlannedReviewRow } from "../diff/reviewRenderPlan";
-import type { SectionGeometry, VerticalBounds } from "./diffSpatial";
-import { reviewRowId } from "./ids";
-import type { VisibleAgentNote } from "./agentAnnotations";
-import type { AppTheme } from "../themes";
+} from "./plannedReviewRows";
+import type { PlannedReviewRow } from "./reviewRenderPlan";
+import { measureRenderedRowHeight } from "./renderRows";
 
 const EMPTY_EXPANDED_GAP_KEYS: ReadonlySet<string> = new Set();
 
@@ -36,38 +36,6 @@ export interface DiffSectionGeometry extends SectionGeometry<PlannedHunkBounds> 
   rowBounds: DiffSectionRowBounds[];
   rowBoundsByKey: Map<string, DiffSectionRowBounds>;
   rowBoundsByStableKey: Map<string, DiffSectionRowBounds>;
-}
-
-/** Build the planned row stream for one file section using the same shape as geometry measurement. */
-function buildPlannedSectionRows(
-  file: DiffFile,
-  layout: Exclude<LayoutMode, "auto">,
-  showHunkHeaders: boolean,
-  theme: AppTheme,
-  visibleAgentNotes: VisibleAgentNote[] = [],
-  expandedKeys: ReadonlySet<string> = EMPTY_EXPANDED_GAP_KEYS,
-  sourceStatus: FileSourceStatus | undefined = undefined,
-) {
-  const baseRows =
-    layout === "split" ? buildSplitRows(file, null, theme) : buildStackRows(file, null, theme);
-  const side = file.metadata.type === "deleted" ? "old" : "new";
-  const rows = expandCollapsedRows(baseRows, {
-    layout,
-    expandedKeys,
-    sourceStatus,
-    side,
-  });
-
-  return {
-    plannedRows: buildReviewRenderPlan({
-      fileId: file.id,
-      rows,
-      selectedHunkIndex: -1,
-      showHunkHeaders,
-      visibleAgentNotes,
-    }),
-    rows,
-  };
 }
 
 /** Fingerprint loaded source text so same-length edits invalidate geometry. */
@@ -106,16 +74,51 @@ const NOTE_AWARE_SECTION_GEOMETRY_CACHE = new WeakMap<
   Map<string, DiffSectionGeometry>
 >();
 
-/** Measure how many terminal rows one planned review row occupies for the current view settings. */
-function plannedRowHeight(
+interface DiffSectionRowHeightOptions {
+  layout: Exclude<LayoutMode, "auto">;
+  lineNumberDigits: number;
+  showHunkHeaders: boolean;
+  showLineNumbers: boolean;
+  theme: AppTheme;
+  width: number;
+  wrapLines: boolean;
+}
+
+/** Bundle the layout inputs needed to measure rows from a shared section row plan. */
+function buildDiffSectionRowHeightOptions(
+  rowPlan: DiffSectionRowPlan,
+  {
+    layout,
+    showHunkHeaders,
+    showLineNumbers,
+    theme,
+    width,
+    wrapLines,
+  }: Omit<DiffSectionRowHeightOptions, "lineNumberDigits">,
+): DiffSectionRowHeightOptions {
+  return {
+    layout,
+    lineNumberDigits: rowPlan.lineNumberDigits,
+    showHunkHeaders,
+    showLineNumbers,
+    theme,
+    width,
+    wrapLines,
+  };
+}
+
+/** Measure how many terminal rows one planned row occupies in a concrete section row plan. */
+function measurePlannedDiffSectionRowHeight(
   row: PlannedReviewRow,
-  showHunkHeaders: boolean,
-  layout: Exclude<LayoutMode, "auto">,
-  width: number,
-  lineNumberDigits: number,
-  showLineNumbers: boolean,
-  wrapLines: boolean,
-  theme: AppTheme,
+  {
+    layout,
+    lineNumberDigits,
+    showHunkHeaders,
+    showLineNumbers,
+    theme,
+    width,
+    wrapLines,
+  }: DiffSectionRowHeightOptions,
 ) {
   if (row.kind === "inline-note") {
     return measureAgentInlineNoteHeight({
@@ -175,21 +178,30 @@ export function measureDiffSectionGeometry(
     }
   }
 
-  const { plannedRows, rows } = buildPlannedSectionRows(
+  const sectionRowPlan = buildDiffSectionRowPlan({
+    expandedKeys,
     file,
     layout,
     showHunkHeaders,
+    sourceStatus,
     theme,
     visibleAgentNotes,
-    expandedKeys,
-    sourceStatus,
-  );
+  });
+  const { plannedRows } = sectionRowPlan;
   const hunkAnchorRows = new Map<number, number>();
   const hunkBounds = new Map<number, PlannedHunkBounds>();
   const rowBounds: DiffSectionRowBounds[] = [];
   const rowBoundsByKey = new Map<string, DiffSectionRowBounds>();
   const rowBoundsByStableKey = new Map<string, DiffSectionRowBounds>();
-  const lineNumberDigits = String(findMaxLineNumberInRows(rows, findMaxLineNumber(file))).length;
+  const lineNumberDigits = sectionRowPlan.lineNumberDigits;
+  const rowHeightOptions = buildDiffSectionRowHeightOptions(sectionRowPlan, {
+    layout,
+    showHunkHeaders,
+    showLineNumbers,
+    theme,
+    width,
+    wrapLines,
+  });
   let bodyHeight = 0;
 
   for (const row of plannedRows) {
@@ -197,16 +209,7 @@ export function measureDiffSectionGeometry(
       hunkAnchorRows.set(row.hunkIndex, bodyHeight);
     }
 
-    const height = plannedRowHeight(
-      row,
-      showHunkHeaders,
-      layout,
-      width,
-      lineNumberDigits,
-      showLineNumbers,
-      wrapLines,
-      theme,
-    );
+    const height = measurePlannedDiffSectionRowHeight(row, rowHeightOptions);
     const stableKeys = [
       row.stableKey,
       ...(row.kind === "diff-row" ? (row.stableAliasKeys ?? []) : []),

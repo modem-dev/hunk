@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { parseDiffFromFile } from "@pierre/diffs";
 import type { DiffFile } from "../../../core/types";
 import { resolveTheme } from "../../themes";
-import { measureDiffSectionGeometry } from "../../lib/diffSectionGeometry";
+import { measureDiffSectionGeometry } from "../../diff/diffSectionGeometry";
 import { buildFileSectionLayouts } from "../../lib/fileSectionLayout";
 import {
   buildCopySelectedRowKeys,

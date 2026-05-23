@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createTestDiffFile, lines } from "../../../test/helpers/diff-helpers";
-import { measureDiffSectionGeometry } from "./diffSectionGeometry";
+import { measureDiffSectionGeometry } from "../diff/diffSectionGeometry";
 import { buildFileSectionLayouts, buildInStreamFileHeaderHeights } from "./fileSectionLayout";
 import { findViewportCenteredHunkTarget } from "./viewportSelection";
 import { resolveTheme } from "../themes";

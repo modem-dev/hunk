@@ -23,7 +23,10 @@ import {
 } from "./keyboard";
 import { fitText, padText } from "./text";
 import { computeHunkRevealScrollTop } from "./hunkScroll";
-import { estimateDiffSectionBodyRows, measureDiffSectionGeometry } from "./diffSectionGeometry";
+import {
+  estimateDiffSectionBodyRows,
+  measureDiffSectionGeometry,
+} from "../diff/diffSectionGeometry";
 import { resizeSidebarWidth } from "./sidebar";
 import { availableThemes, resolveTheme } from "../themes";
 
