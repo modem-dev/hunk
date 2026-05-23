@@ -51,6 +51,12 @@ CLI input
 - Prefer one implementation path per feature instead of separate "old" and "new" codepaths that duplicate behavior.
 - When refactoring logic that spans helpers and UI components, add tests at the level where the user-visible behavior actually lives, not only at the lowest helper layer.
 
+## theme guidance
+
+- Built-in themes live in `src/ui/themes/<theme-id>.ts`; register them in `src/ui/themes.ts` `THEMES` to control menu/cycle order.
+- When adding or renaming a built-in theme, update config validation, OpenTUI theme exports, docs/README examples, changelog, and tests that assert theme order.
+- Keep official palette tokens separate from Hunk's semantic `AppTheme` mapping, and cover non-trivial derived colors with tests.
+
 ## testing
 
 - Colocate unit tests with the code they cover (`src/core/foo.ts` + `src/core/foo.test.ts`, `src/ui/AppHost.*.test.tsx`, `src/ui/lib/*.test.ts`).
