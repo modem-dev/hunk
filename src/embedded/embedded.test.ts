@@ -29,6 +29,32 @@ function getTestLoadedPatch(session: EmbeddedHunkSession) {
     .join("\n");
 }
 
+/** Count non-overlapping occurrences of a text fragment in a rendered frame. */
+function countTestFrameOccurrences(frame: string, text: string) {
+  return frame.split(text).length - 1;
+}
+
+/** Flush enough render cycles for embedded React updates to reach the test frame. */
+async function flushTestRenderer(setup: Awaited<ReturnType<typeof createTestRenderer>>) {
+  await setup.renderOnce();
+  await Bun.sleep(0);
+  await setup.renderOnce();
+}
+
+/** Render until an expected frame fragment appears, or return the last captured frame. */
+async function captureSettledTestFrame(
+  setup: Awaited<ReturnType<typeof createTestRenderer>>,
+  expectedText: string,
+) {
+  let frame = "";
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    await flushTestRenderer(setup);
+    frame = setup.captureCharFrame();
+    if (frame.includes(expectedText)) break;
+  }
+  return frame;
+}
+
 /** Expect a snapshot to be ready and narrow it for the rest of the test. */
 function expectTestReadySnapshot(snapshot: EmbeddedHunkSnapshot) {
   expect(snapshot.status).toBe("ready");
@@ -212,6 +238,56 @@ describe("embedded Hunk sessions", () => {
           await Bun.sleep(0);
         }
         expect(frame).toContain(noteSummary);
+      } finally {
+        mount.unmount();
+        setup.renderer.destroy();
+        session.dispose();
+      }
+    } finally {
+      rmSync(root, { force: true, recursive: true });
+    }
+  });
+
+  test("updates an embedded mount without stacking app roots", async () => {
+    const root = mkdtempSync(join(tmpdir(), "hunk-embedded-mount-update-"));
+    const labels = ["alpha embedded source", "beta embedded source", "gamma embedded source"];
+
+    try {
+      const session = await createEmbeddedHunkSession({
+        cwd: root,
+        source: { kind: "patch", text: testPatchText, label: labels[0] },
+      });
+      const setup = await createTestRenderer({ width: 140, height: 24 });
+      const container = new BoxRenderable(setup.renderer, {
+        height: 20,
+        id: "embedded-hunk",
+        width: 120,
+      });
+      setup.renderer.root.add(container);
+
+      const mount = mountEmbeddedHunkApp({
+        active: true,
+        container,
+        onQuit: () => undefined,
+        renderer: setup.renderer,
+        session,
+      });
+
+      try {
+        let frame = await captureSettledTestFrame(setup, labels[0]!);
+        expect(countTestFrameOccurrences(frame, labels[0]!)).toBe(1);
+
+        for (const label of [labels[1]!, labels[2]!, labels[0]!, labels[1]!]) {
+          mount.update({ active: false, onQuit: () => undefined });
+          await session.open({ kind: "patch", text: testPatchText, label });
+          mount.update({ active: true, onQuit: () => undefined });
+
+          frame = await captureSettledTestFrame(setup, label);
+          expect(countTestFrameOccurrences(frame, label)).toBe(1);
+          for (const otherLabel of labels.filter((candidate) => candidate !== label)) {
+            expect(countTestFrameOccurrences(frame, otherLabel)).toBe(0);
+          }
+        }
       } finally {
         mount.unmount();
         setup.renderer.destroy();

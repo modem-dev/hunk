@@ -196,6 +196,8 @@ export function mountEmbeddedHunkApp({
   session,
 }: MountEmbeddedHunkAppInput): EmbeddedHunkMount {
   let currentActive = active;
+  let currentOnQuit = onQuit;
+  const handleQuit = () => currentOnQuit();
   const scopedKeyInput = createScopedKeyInput(renderer.keyInput, () => currentActive);
   const scopedRenderer = createEmbeddedRendererScope(
     renderer,
@@ -205,15 +207,15 @@ export function mountEmbeddedHunkApp({
   );
   const root = createRoot(scopedRenderer.renderer);
 
-  const render = (next: { active: boolean; onQuit: () => void }) => {
-    currentActive = next.active;
-    root.render(<EmbeddedHunkRoot onQuit={next.onQuit} session={session} />);
-  };
-
-  render({ active, onQuit });
+  // Keep one React root mounted; repeated root.render calls leave sibling OpenTUI trees behind.
+  root.render(<EmbeddedHunkRoot onQuit={handleQuit} session={session} />);
 
   return {
-    update: render,
+    update(next) {
+      currentActive = next.active;
+      currentOnQuit = next.onQuit;
+      if (!renderer.isDestroyed) renderer.requestRender();
+    },
     unmount() {
       root.unmount();
       scopedRenderer.dispose();
