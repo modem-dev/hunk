@@ -6,6 +6,14 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.14.0-beta.0] - 2026-05-24
+
+### Added
+
 - Added Catppuccin Latte and Mocha as built-in themes.
 - Added mouse-drag text selection in diff views that copies selected rows to the system clipboard via OSC 52. A `View > Copy decorations` toggle (or `copy_decorations` config) controls whether the clipboard includes diff rails, gutters, and file headers or only the changed code.
 - Added inline expansion for collapsed unchanged file content. Click an unchanged-context row (`▾ N unchanged lines` when expandable, otherwise the static `··· N unchanged lines ···` form) or press `e` while a hunk is selected to reveal surrounding and trailing file lines without leaving the review. The affordance is shown only for input modes that have reachable source content (`hunk diff`, `show`, `stash show`, file-pair `diff` and `difftool`, untracked files); raw `hunk patch` input still renders as before. Failed and in-flight loads surface a one-line status ("Loading…", "Could not load N unchanged lines") on the gap row. Expanded context rows use the same syntax highlighting as the surrounding diff.
@@ -360,7 +368,9 @@ All notable user-visible changes to Hunk are documented in this file.
 
 - Stabilized diff repainting, active-hunk scrolling, syntax highlighting, pager stdin patch handling, and terminal cleanup on exit.
 
-[Unreleased]: https://github.com/modem-dev/hunk/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/modem-dev/hunk/compare/v0.14.0-beta.0...HEAD
+[0.14.0-beta.0]: https://github.com/modem-dev/hunk/compare/v0.13.1...v0.14.0-beta.0
+[0.13.1]: https://github.com/modem-dev/hunk/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/modem-dev/hunk/compare/v0.12.1...v0.13.0
 [0.12.1]: https://github.com/modem-dev/hunk/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/modem-dev/hunk/compare/v0.11.1...v0.12.0
