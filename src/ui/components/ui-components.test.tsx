@@ -1634,6 +1634,147 @@ describe("UI components", () => {
     expect(saveLineIndex).toBeGreaterThan(5);
   });
 
+  test("AgentInlineNote shows author name in title when author is set", async () => {
+    const theme = resolveTheme("midnight", null);
+    const frame = await captureFrame(
+      <AgentInlineNote
+        annotation={{
+          newRange: [2, 4],
+          summary: "Summary line",
+          author: "sonnet",
+        }}
+        anchorSide="new"
+        layout="split"
+        theme={theme}
+        width={96}
+        onClose={() => {}}
+      />,
+      100,
+      5,
+    );
+
+    const lines = frame.split("\n");
+    expect(lines[0]).toContain("sonnet");
+    expect(lines[0]).not.toContain("AI note");
+  });
+
+  test("AgentInlineNote falls back to 'Agent note' when author is absent", async () => {
+    const theme = resolveTheme("midnight", null);
+    const frame = await captureFrame(
+      <AgentInlineNote
+        annotation={{
+          newRange: [2, 4],
+          summary: "Summary line",
+        }}
+        anchorSide="new"
+        layout="split"
+        theme={theme}
+        width={96}
+        onClose={() => {}}
+      />,
+      100,
+      5,
+    );
+
+    const lines = frame.split("\n");
+    expect(lines[0]).toContain("Agent note");
+  });
+
+  test("AgentInlineNote includes index when multiple notes share a hunk", async () => {
+    const theme = resolveTheme("midnight", null);
+    const frame = await captureFrame(
+      <AgentInlineNote
+        annotation={{
+          newRange: [2, 4],
+          summary: "Summary line",
+          author: "sonnet",
+        }}
+        anchorSide="new"
+        layout="split"
+        noteCount={2}
+        noteIndex={0}
+        theme={theme}
+        width={96}
+        onClose={() => {}}
+      />,
+      100,
+      5,
+    );
+
+    const lines = frame.split("\n");
+    expect(lines[0]).toContain("sonnet");
+    expect(lines[0]).toContain("1/2");
+  });
+
+  test("AgentInlineNote preserves special characters in author", async () => {
+    const theme = resolveTheme("midnight", null);
+    const frame = await captureFrame(
+      <AgentInlineNote
+        annotation={{
+          newRange: [2, 4],
+          summary: "Summary line",
+          author: "prism (arbiter)",
+        }}
+        anchorSide="new"
+        layout="split"
+        theme={theme}
+        width={96}
+        onClose={() => {}}
+      />,
+      100,
+      5,
+    );
+
+    const lines = frame.split("\n");
+    expect(lines[0]).toContain("prism (arbiter)");
+  });
+
+  test("AgentCard shows author in title when set", async () => {
+    const theme = resolveTheme("midnight", null);
+    const frame = await captureFrame(
+      <AgentCard
+        locationLabel="alpha.ts +2"
+        rationale="Why alpha.ts changed"
+        summary="Annotation for alpha.ts"
+        author="sonnet"
+        theme={theme}
+        width={34}
+        onClose={() => {}}
+      />,
+      40,
+      12,
+    );
+
+    const lines = frame
+      .split("\n")
+      .slice(0, 8)
+      .map((line) => line.trimEnd());
+    expect(lines[1]).toContain("sonnet");
+    expect(lines[1]).not.toContain("AI note");
+  });
+
+  test("AgentCard falls back to 'AI note' when author absent", async () => {
+    const theme = resolveTheme("midnight", null);
+    const frame = await captureFrame(
+      <AgentCard
+        locationLabel="alpha.ts +2"
+        rationale="Why alpha.ts changed"
+        summary="Annotation for alpha.ts"
+        theme={theme}
+        width={34}
+        onClose={() => {}}
+      />,
+      40,
+      12,
+    );
+
+    const lines = frame
+      .split("\n")
+      .slice(0, 8)
+      .map((line) => line.trimEnd());
+    expect(lines[1]).toContain("AI note");
+  });
+
   test("DiffPane renders all visible hunk notes across the review stream", async () => {
     const bootstrap = createBootstrap();
     bootstrap.changeset.files[1]!.agent = {
