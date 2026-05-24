@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { VisibleAgentNote } from "./agentAnnotations";
+import type { VisibleAgentNote } from "../lib/agentAnnotations";
 import { measureDiffSectionGeometry } from "./diffSectionGeometry";
 import { resolveTheme } from "../themes";
 import {

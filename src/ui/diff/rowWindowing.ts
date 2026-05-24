@@ -1,4 +1,4 @@
-import type { DiffSectionGeometry } from "../lib/diffSectionGeometry";
+import type { DiffSectionGeometry } from "./diffSectionGeometry";
 import type { PlannedReviewRow } from "./reviewRenderPlan";
 
 /** One visible slice within a file body, measured in file-local row units. */

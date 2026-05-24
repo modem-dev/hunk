@@ -136,6 +136,8 @@ export function App({
   const [sidebarWidth, setSidebarWidth] = useState(34);
   const [resizeDragOriginX, setResizeDragOriginX] = useState<number | null>(null);
   const [resizeStartWidth, setResizeStartWidth] = useState<number | null>(null);
+  const resizeDragOriginXRef = useRef<number | null>(null);
+  const resizeStartWidthRef = useRef<number | null>(null);
   const [sessionNoticeText, setSessionNoticeText] = useState<string | null>(null);
   const sessionNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -249,6 +251,8 @@ export function App({
 
   useEffect(() => {
     if (!renderSidebar) {
+      resizeDragOriginXRef.current = null;
+      resizeStartWidthRef.current = null;
       setResizeDragOriginX(null);
       setResizeStartWidth(null);
       return;
@@ -725,6 +729,8 @@ export function App({
     }
 
     closeMenu();
+    resizeDragOriginXRef.current = event.x;
+    resizeStartWidthRef.current = clampedSidebarWidth;
     setResizeDragOriginX(event.x);
     setResizeStartWidth(clampedSidebarWidth);
     event.preventDefault();
@@ -733,18 +739,14 @@ export function App({
 
   /** Update the sidebar width while a drag resize is active. */
   const updateSidebarResize = (event: TuiMouseEvent) => {
-    if (!isResizingSidebar || resizeDragOriginX === null || resizeStartWidth === null) {
+    const dragOriginX = resizeDragOriginXRef.current;
+    const startWidth = resizeStartWidthRef.current;
+    if (dragOriginX === null || startWidth === null) {
       return;
     }
 
     setSidebarWidth(
-      resizeSidebarWidth(
-        resizeStartWidth,
-        resizeDragOriginX,
-        event.x,
-        SIDEBAR_MIN_WIDTH,
-        maxSidebarWidth,
-      ),
+      resizeSidebarWidth(startWidth, dragOriginX, event.x, SIDEBAR_MIN_WIDTH, maxSidebarWidth),
     );
     event.preventDefault();
     event.stopPropagation();
@@ -752,10 +754,12 @@ export function App({
 
   /** End the current sidebar resize interaction. */
   const endSidebarResize = (event?: TuiMouseEvent) => {
-    if (!isResizingSidebar) {
+    if (resizeDragOriginXRef.current === null || resizeStartWidthRef.current === null) {
       return;
     }
 
+    resizeDragOriginXRef.current = null;
+    resizeStartWidthRef.current = null;
     setResizeDragOriginX(null);
     setResizeStartWidth(null);
     event?.preventDefault();

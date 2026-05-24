@@ -20,10 +20,14 @@ import {
   isShiftSpacePageUpKey,
   isStepDownKey,
   isStepUpKey,
+  isTabKey,
 } from "./keyboard";
 import { fitText, measureTextWidth, padText, sliceTextByWidth } from "./text";
 import { computeHunkRevealScrollTop } from "./hunkScroll";
-import { estimateDiffSectionBodyRows, measureDiffSectionGeometry } from "./diffSectionGeometry";
+import {
+  estimateDiffSectionBodyRows,
+  measureDiffSectionGeometry,
+} from "../diff/diffSectionGeometry";
 import { resizeSidebarWidth } from "./sidebar";
 import { availableThemes, resolveTheme } from "../themes";
 
@@ -271,10 +275,14 @@ describe("ui helpers", () => {
     expect(isStepDownKey(createKeyEvent({ sequence: "j" }))).toBe(true);
     expect(isStepUpKey(createKeyEvent({ name: "up" }))).toBe(true);
     expect(isStepUpKey(createKeyEvent({ sequence: "k" }))).toBe(true);
+    expect(isTabKey(createKeyEvent({ name: "tab" }))).toBe(true);
+    expect(isTabKey(createKeyEvent({ sequence: "\t" }))).toBe(true);
+    expect(isTabKey(createKeyEvent({ raw: "\t" }))).toBe(true);
     expect(isEscapeKey(createKeyEvent({ name: "q" }))).toBe(false);
     expect(isPageDownKey(createKeyEvent({ name: "space", shift: true }))).toBe(false);
     expect(isPageDownKey(createKeyEvent({ name: "q" }))).toBe(false);
     expect(isShiftSpacePageUpKey(createKeyEvent({ name: "space", shift: false }))).toBe(false);
+    expect(isTabKey(createKeyEvent({ name: "q" }))).toBe(false);
   });
 
   test("fitText and padText clamp using the terminal fallback marker", () => {

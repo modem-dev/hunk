@@ -13,6 +13,7 @@ import {
   isShiftSpacePageUpKey,
   isStepDownKey,
   isStepUpKey,
+  isTabKey,
 } from "../lib/keyboard";
 
 type FocusArea = "files" | "filter" | "note";
@@ -264,7 +265,7 @@ export function useAppKeyboardShortcuts({
       return true;
     }
 
-    if (key.name === "right" || key.name === "tab") {
+    if (key.name === "right" || isTabKey(key)) {
       switchMenu(1);
       return true;
     }
@@ -289,7 +290,7 @@ export function useAppKeyboardShortcuts({
 
   const handleFocusedInputShortcut = (key: KeyEvent) => {
     if (focusAreaRef.current === "filter") {
-      if (key.name === "tab") {
+      if (isTabKey(key)) {
         toggleFocusArea();
         return true;
       }
@@ -346,7 +347,7 @@ export function useAppKeyboardShortcuts({
       return;
     }
 
-    if (key.name === "tab") {
+    if (isTabKey(key)) {
       toggleFocusArea();
       return;
     }

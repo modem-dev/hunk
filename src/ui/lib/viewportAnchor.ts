@@ -1,5 +1,5 @@
 import type { DiffFile } from "../../core/types";
-import type { DiffSectionGeometry, DiffSectionRowBounds } from "./diffSectionGeometry";
+import type { DiffSectionGeometry, DiffSectionRowBounds } from "../diff/diffSectionGeometry";
 import { buildFileSectionLayouts } from "./fileSectionLayout";
 
 /** Identify the rendered review row that currently owns the viewport top. */

@@ -14,6 +14,7 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Fixed
 
+- Hardened plain-text pager startup so `PAGER` and `HUNK_TEXT_PAGER` shell metacharacters are passed as arguments instead of being evaluated implicitly.
 - Fixed split diff alignment for wide CJK and emoji characters by measuring rendered text in terminal cells.
 - Fixed Ctrl-S saving for inline notes when tmux sends CSI-u keyboard input.
 - Restricted session reloads so daemon commands cannot read files outside the initial Hunk session root.

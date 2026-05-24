@@ -55,8 +55,101 @@ interface ChangedFileSpec {
   after: string;
 }
 
-function sleep(ms: number) {
+export function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Send an SGR mouse motion event at zero-based terminal coordinates. */
+export async function moveMouse(session: Session, x: number, y: number) {
+  session.writeRaw(`\x1b[<35;${x + 1};${y + 1}M`);
+  await session.waitIdle();
+}
+
+/** Reveal the hover-only add-note badge across fixture-specific row offsets. */
+export async function revealAddNoteAffordance(session: Session, x: number, yCandidates: number[]) {
+  for (const y of yCandidates) {
+    await moveMouse(session, x, y);
+    try {
+      return await session.waitForText(/\[\+\]/, { timeout: 1_000 });
+    } catch {
+      // Keep trying nearby rows; hunk header visibility changes the diff row offset.
+    }
+  }
+
+  throw new Error(`Failed to reveal add-note affordance at x=${x}.`);
+}
+
+/** Drag with the left mouse button using zero-based terminal coordinates. */
+export async function dragMouse(
+  session: Session,
+  startX: number,
+  startY: number,
+  endX: number,
+  endY: number,
+) {
+  session.writeRaw(`\x1b[<0;${startX + 1};${startY + 1}M`);
+  await sleep(10);
+  const steps = 5;
+  for (let step = 1; step <= steps; step += 1) {
+    const x = Math.round(startX + ((endX - startX) * step) / steps);
+    const y = Math.round(startY + ((endY - startY) * step) / steps);
+    session.writeRaw(`\x1b[<32;${x + 1};${y + 1}M`);
+    await sleep(10);
+  }
+  session.writeRaw(`\x1b[<0;${endX + 1};${endY + 1}m`);
+  await session.waitIdle();
+}
+
+/** Find the rightmost visible column for text in a terminal snapshot. */
+export function rightmostColumnOf(text: string, needle: string) {
+  return Math.max(
+    ...text
+      .split("\n")
+      .map((line) => line.lastIndexOf(needle))
+      .filter((column) => column >= 0),
+    -1,
+  );
+}
+
+/** Locate a visible terminal row containing text so mouse tests can target rendered content. */
+export function lineIndexOf(text: string, needle: string) {
+  return text.split("\n").findIndex((line) => line.includes(needle));
+}
+
+/** Move near a rendered row until the hover-only add-note control appears. */
+export async function revealAddNoteNear(session: Session, row: number) {
+  for (const y of [row, row - 1, row + 1]) {
+    if (y < 0) {
+      continue;
+    }
+
+    for (const x of [8, 20, 60]) {
+      await moveMouse(session, x, y);
+      try {
+        await session.waitForText(/\[\+\]/, { timeout: 200 });
+        return;
+      } catch {
+        // Try nearby cells; PTY snapshots and wrapped rows can differ by a column or row.
+      }
+    }
+  }
+
+  throw new Error("Could not reveal add-note affordance near target row.");
+}
+
+/** Reveal the add-note control without falling back to adjacent rows. */
+export async function revealAddNoteOnRow(session: Session, row: number) {
+  for (const x of [8, 20, 60]) {
+    await moveMouse(session, x, row);
+    try {
+      await session.waitForText(/\[\+\]/, { timeout: 200 });
+      return;
+    } catch {
+      // Try nearby columns on the same rendered row, but do not mask row-target regressions.
+    }
+  }
+
+  throw new Error("Could not reveal add-note affordance on target row.");
 }
 
 function writeText(path: string, content: string) {

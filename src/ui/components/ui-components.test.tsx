@@ -11,7 +11,7 @@ import {
 } from "../../../test/helpers/diff-helpers";
 import { hexColorDistance } from "../lib/color";
 import { resolveTheme } from "../themes";
-import { measureDiffSectionGeometry } from "../lib/diffSectionGeometry";
+import { measureDiffSectionGeometry } from "../diff/diffSectionGeometry";
 import { buildFileSectionLayouts, buildInStreamFileHeaderHeights } from "../lib/fileSectionLayout";
 
 const { AppHost } = await import("../AppHost");

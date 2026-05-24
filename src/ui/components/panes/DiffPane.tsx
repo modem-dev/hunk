@@ -31,7 +31,7 @@ import { computeHunkRevealScrollTop } from "../../lib/hunkScroll";
 import {
   measureDiffSectionGeometry,
   type DiffSectionGeometry,
-} from "../../lib/diffSectionGeometry";
+} from "../../diff/diffSectionGeometry";
 import { createReviewMouseWheelScrollAcceleration } from "../../lib/scrollAcceleration";
 import {
   buildFileSectionLayouts,

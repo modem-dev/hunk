@@ -6,7 +6,10 @@ import {
   resolveStackCellGeometry,
 } from "../../diff/codeColumns";
 import { renderCodeOnlyPlannedRowText, renderDecoratedPlannedRowText } from "../../diff/renderRows";
-import { type DiffSectionGeometry, type DiffSectionRowBounds } from "../../lib/diffSectionGeometry";
+import {
+  type DiffSectionGeometry,
+  type DiffSectionRowBounds,
+} from "../../diff/diffSectionGeometry";
 import type { FileSectionLayout } from "../../lib/fileSectionLayout";
 import { fileLabelParts } from "../../lib/files";
 import { fitText } from "../../lib/text";
