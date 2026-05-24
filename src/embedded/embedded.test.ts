@@ -5,9 +5,10 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { loadAppBootstrap } from "../core/loaders";
 import { createEmbeddedHunkSession, mountEmbeddedHunkApp } from "./index";
 import { createEmbeddedRendererScope, createScopedKeyInput } from "./mount";
-import { embeddedHunkSessionInternals } from "./session";
+import { createEmbeddedHunkSessionForTest, embeddedHunkSessionInternals } from "./session";
 import type { EmbeddedHunkSession, EmbeddedHunkSnapshot } from "./types";
 
 const testPatchText = [
@@ -167,6 +168,63 @@ describe("embedded Hunk sessions", () => {
 
       session.dispose();
     } finally {
+      rmSync(root, { force: true, recursive: true });
+    }
+  });
+
+  test("ignores stale embedded loads that finish after a newer open", async () => {
+    const root = mkdtempSync(join(tmpdir(), "hunk-embedded-stale-load-"));
+    const slowPatchText = testPatchText.replace("value = 2", "slow = true");
+    const fastPatchText = testPatchText.replace("value = 2", "fast = true");
+    let markSlowStarted: () => void = () => undefined;
+    let releaseSlow: () => void = () => undefined;
+    const slowStarted = new Promise<void>((resolve) => {
+      markSlowStarted = resolve;
+    });
+    const slowReleased = new Promise<void>((resolve) => {
+      releaseSlow = resolve;
+    });
+    let session: EmbeddedHunkSession | undefined;
+
+    try {
+      const loadBootstrap: typeof loadAppBootstrap = async (input, options) => {
+        if (input.kind === "patch" && input.text === slowPatchText) {
+          markSlowStarted();
+          await slowReleased;
+        }
+
+        return loadAppBootstrap(input, options);
+      };
+      session = await createEmbeddedHunkSessionForTest(
+        {
+          cwd: root,
+          source: { kind: "patch", text: testPatchText, label: "initial.patch" },
+        },
+        loadBootstrap,
+      );
+
+      const slowOpen = session.open({
+        kind: "patch",
+        text: slowPatchText,
+        label: "slow.patch",
+      });
+      await slowStarted;
+
+      const fastSnapshot = expectTestReadySnapshot(
+        await session.open({ kind: "patch", text: fastPatchText, label: "fast.patch" }),
+      );
+
+      expect(fastSnapshot.title).toBe("Patch review: fast.patch");
+      releaseSlow();
+      const staleSnapshot = expectTestReadySnapshot(await slowOpen);
+
+      expect(staleSnapshot.title).toBe("Patch review: fast.patch");
+      expect(session.getSnapshot().source).toMatchObject({ kind: "patch", label: "fast.patch" });
+      expect(getTestLoadedPatch(session)).toContain("+const fast = true;");
+      expect(getTestLoadedPatch(session)).not.toContain("+const slow = true;");
+    } finally {
+      releaseSlow();
+      session?.dispose();
       rmSync(root, { force: true, recursive: true });
     }
   });
@@ -364,6 +422,50 @@ describe("embedded Hunk sessions", () => {
       }
     } finally {
       rmSync(root, { force: true, recursive: true });
+    }
+  });
+
+  test("headless session reloads reject file reads outside the initial root", async () => {
+    const repo = mkdtempSync(join(tmpdir(), "hunk-embedded-reload-root-"));
+    const outside = mkdtempSync(join(tmpdir(), "hunk-embedded-reload-outside-"));
+    const patch = join(repo, "changes.patch");
+    const left = join(outside, "before.ts");
+    const right = join(outside, "after.ts");
+    let session: EmbeddedHunkSession | undefined;
+
+    try {
+      mkdirSync(join(repo, ".git"));
+      writeFileSync(patch, testPatchText);
+      writeFileSync(left, "export const secret = 1;\n");
+      writeFileSync(right, "export const secret = 2;\n");
+
+      session = await createEmbeddedHunkSession({
+        cwd: repo,
+        source: { kind: "patch", file: patch },
+      });
+      const internals = embeddedHunkSessionInternals(session);
+
+      await expect(
+        internals.dispatchCommand({
+          type: "command",
+          requestId: "reload-outside-root",
+          command: "reload_session",
+          input: {
+            sessionId: "session-1",
+            nextInput: {
+              kind: "diff",
+              left,
+              right,
+              options: {},
+            },
+            sourcePath: outside,
+          },
+        }),
+      ).rejects.toThrow("outside the initial Hunk root");
+    } finally {
+      session?.dispose();
+      rmSync(repo, { force: true, recursive: true });
+      rmSync(outside, { force: true, recursive: true });
     }
   });
 

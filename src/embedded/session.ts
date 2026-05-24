@@ -1,6 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
 import { resolveConfiguredCliInput } from "../core/config";
 import { loadAppBootstrap } from "../core/loaders";
+import { resolveRuntimeCliInput } from "../core/terminal";
 import type { AppBootstrap, CliInput, CommonOptions } from "../core/types";
 import { createHunkSessionBridge } from "../hunk-session/bridge";
 import {
@@ -19,6 +20,11 @@ import {
   createSessionRegistration,
   updateSessionRegistration,
 } from "../hunk-session/sessionRegistration";
+import {
+  createSessionReloadBounds,
+  validateSessionReloadWithinBounds,
+  type SessionReloadBounds,
+} from "../hunk-session/sessionFileBounds";
 import type {
   AppliedCommentBatchResult,
   AppliedCommentResult,
@@ -46,6 +52,7 @@ export type EmbeddedHunkRenderSnapshot =
   | { status: "error"; bootstrap: AppBootstrap; error: string };
 
 type NormalizedEmbeddedHunkSource = EmbeddedHunkSource & { options: CommonOptions };
+type LoadEmbeddedAppBootstrap = typeof loadAppBootstrap;
 
 /** Drop undefined option entries so equivalent embedded sources compare the same. */
 function normalizeEmbeddedOptions(options: EmbeddedHunkSource["options"] = {}): CommonOptions {
@@ -216,9 +223,12 @@ function publicSnapshot(
 class EmbeddedHunkSessionImpl implements EmbeddedHunkSession {
   private listeners = new Set<() => void>();
   private disposed = false;
+  private nextLoadRequestId = 1;
+  private activeLoadRequestId = 0;
   private renderSnapshot: EmbeddedHunkRenderSnapshot;
   private reviewState: ReviewCommandState;
   private sessionSnapshot: HunkSessionSnapshot;
+  private sessionFileBounds: SessionReloadBounds;
   private mountedBridge: Parameters<HunkSessionBrokerClient["setBridge"]>[0] = null;
 
   readonly brokerClient: HunkSessionBrokerClient;
@@ -228,8 +238,10 @@ class EmbeddedHunkSessionImpl implements EmbeddedHunkSession {
     readonly cwd: string,
     public source: EmbeddedHunkSource,
     bootstrap: AppBootstrap,
+    private readonly loadBootstrap: LoadEmbeddedAppBootstrap = loadAppBootstrap,
   ) {
     this.renderSnapshot = { status: "ready", bootstrap };
+    this.sessionFileBounds = createSessionReloadBounds(bootstrap, { cwd });
     this.reviewState = createReviewCommandState({
       files: bootstrap.changeset.files,
       initialShowAgentNotes: bootstrap.initialShowAgentNotes ?? false,
@@ -287,8 +299,15 @@ class EmbeddedHunkSessionImpl implements EmbeddedHunkSession {
       clearLiveComments: this.clearHeadlessLiveComments.bind(this),
       navigateToLocation: this.navigateHeadless.bind(this),
       openAgentNotes: () => this.setHeadlessAgentNotesVisible(true),
-      reloadSession: async (nextInput) => {
-        const result = await this.load(cliInputToEmbeddedSource(nextInput), {
+      reloadSession: async (nextInput, options) => {
+        const runtimeInput = resolveRuntimeCliInput(nextInput);
+        const { cwd } = validateSessionReloadWithinBounds(this.sessionFileBounds, runtimeInput, {
+          sourcePath: options?.sourcePath,
+        });
+        const configured = resolveConfiguredCliInput(runtimeInput, { cwd });
+        const result = await this.loadResolvedCliInput(configured.input, {
+          cwd,
+          source: cliInputToEmbeddedSource(configured.input),
           updateSource: true,
         });
         return {
@@ -320,15 +339,42 @@ class EmbeddedHunkSessionImpl implements EmbeddedHunkSession {
     source: EmbeddedHunkSource,
     { updateSource }: { updateSource: boolean },
   ): Promise<EmbeddedHunkSnapshot> {
+    return this.loadResolvedCliInput(resolveEmbeddedCliInput(source, this.cwd), {
+      cwd: this.cwd,
+      source,
+      updateSource,
+    });
+  }
+
+  private isCurrentLoadRequest(requestId: number) {
+    return !this.disposed && this.activeLoadRequestId === requestId;
+  }
+
+  private async loadResolvedCliInput(
+    input: CliInput,
+    {
+      cwd,
+      source,
+      updateSource,
+    }: { cwd: string; source: EmbeddedHunkSource; updateSource: boolean },
+  ): Promise<EmbeddedHunkSnapshot> {
+    if (this.disposed) return this.getSnapshot();
+
+    const requestId = this.nextLoadRequestId;
+    this.nextLoadRequestId += 1;
+    this.activeLoadRequestId = requestId;
+
     this.setRenderSnapshot({
       status: "loading",
       bootstrap: this.renderSnapshot.bootstrap,
     });
 
     try {
-      const bootstrap = await loadAppBootstrap(resolveEmbeddedCliInput(source, this.cwd), {
-        cwd: this.cwd,
-      });
+      const bootstrap = await this.loadBootstrap(input, { cwd });
+      if (!this.isCurrentLoadRequest(requestId)) {
+        return this.getSnapshot();
+      }
+
       if (updateSource) {
         this.source = source;
       }
@@ -344,6 +390,10 @@ class EmbeddedHunkSessionImpl implements EmbeddedHunkSession {
       this.setRenderSnapshot({ status: "ready", bootstrap });
       return this.getSnapshot();
     } catch (error) {
+      if (!this.isCurrentLoadRequest(requestId)) {
+        return this.getSnapshot();
+      }
+
       const message = error instanceof Error ? error.message : String(error);
       this.setRenderSnapshot({
         status: "error",
@@ -518,4 +568,14 @@ export async function createEmbeddedHunkSession({
   const normalizedSource = normalizeEmbeddedHunkSource(source);
   const bootstrap = await loadAppBootstrap(resolveEmbeddedCliInput(normalizedSource, cwd), { cwd });
   return new EmbeddedHunkSessionImpl(cwd, normalizedSource, bootstrap);
+}
+
+/** Create an embedded session with a test-controlled bootstrap loader. */
+export async function createEmbeddedHunkSessionForTest(
+  { cwd = process.cwd(), source }: CreateEmbeddedHunkSessionInput,
+  loadBootstrap: LoadEmbeddedAppBootstrap,
+): Promise<EmbeddedHunkSession> {
+  const normalizedSource = normalizeEmbeddedHunkSource(source);
+  const bootstrap = await loadBootstrap(resolveEmbeddedCliInput(normalizedSource, cwd), { cwd });
+  return new EmbeddedHunkSessionImpl(cwd, normalizedSource, bootstrap, loadBootstrap);
 }
