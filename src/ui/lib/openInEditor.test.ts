@@ -3,7 +3,6 @@ import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createTestDiffFile } from "../../../test/helpers/diff-helpers";
-import type { DiffFile } from "../../core/types";
 import {
   buildEditorCommand,
   openSelectedFileInEditor,
@@ -121,7 +120,7 @@ describe("open in editor helpers", () => {
     );
   });
 
-  test("reports missing selection, editor, and on-disk file before spawning", () => {
+  test("returns an error when no file is selected", () => {
     const renderer = createRenderer();
     const spawnCalls: string[][] = [];
     mockSpawnSync((cmds) => {
@@ -137,22 +136,46 @@ describe("open in editor helpers", () => {
       }),
     ).toBe("No file selected.");
 
+    expect(spawnCalls).toEqual([]);
+    expect(renderer.suspend).not.toHaveBeenCalled();
+    expect(renderer.resume).not.toHaveBeenCalled();
+  });
+
+  test("returns an error when $EDITOR is unset", () => {
+    const renderer = createRenderer();
+    const spawnCalls: string[][] = [];
+    mockSpawnSync((cmds) => {
+      spawnCalls.push(cmds);
+      return { exitCode: 0 };
+    });
     delete process.env.EDITOR;
-    const missingEditorFile = createTestDiffFile({ path: "missing-editor.ts" });
+
     expect(
       openSelectedFileInEditor({
-        file: missingEditorFile,
+        file: createTestDiffFile({ path: "missing-editor.ts" }),
         renderer,
         selectedHunk: undefined,
       }),
     ).toBe("$EDITOR is not set.");
 
+    expect(spawnCalls).toEqual([]);
+    expect(renderer.suspend).not.toHaveBeenCalled();
+    expect(renderer.resume).not.toHaveBeenCalled();
+  });
+
+  test("returns an error when the file does not exist on disk", () => {
+    const renderer = createRenderer();
+    const spawnCalls: string[][] = [];
+    mockSpawnSync((cmds) => {
+      spawnCalls.push(cmds);
+      return { exitCode: 0 };
+    });
     process.env.EDITOR = "nvim";
-    const missingDiskFile = createTestDiffFile({ path: "missing-on-disk.ts" });
+
     expect(
       openSelectedFileInEditor({
         basePath: createTempDir(),
-        file: missingDiskFile,
+        file: createTestDiffFile({ path: "missing-on-disk.ts" }),
         renderer,
         selectedHunk: undefined,
       }),
@@ -210,14 +233,19 @@ describe("open in editor helpers", () => {
       return { exitCode: 0 };
     });
 
+    const baseFile = createTestDiffFile({ path: "deleted.ts" });
     const file = {
-      metadata: { type: "deleted" },
-      path: "deleted.ts",
-    } as DiffFile;
+      ...baseFile,
+      metadata: {
+        ...baseFile.metadata,
+        type: "deleted" as const,
+      },
+    };
     const selectedHunk = {
+      ...file.metadata.hunks[0]!,
       additionStart: 2,
       deletionStart: 9,
-    } as DiffFile["metadata"]["hunks"][number];
+    };
 
     expect(
       openSelectedFileInEditor({
