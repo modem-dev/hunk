@@ -10,6 +10,10 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Fixed
 
+## [0.14.0-beta.1] - 2026-05-24
+
+### Fixed
+
 - Fixed custom theme configuration so Catppuccin Latte and Mocha can be used as base themes.
 
 ## [0.14.0-beta.0] - 2026-05-24
@@ -370,7 +374,8 @@ All notable user-visible changes to Hunk are documented in this file.
 
 - Stabilized diff repainting, active-hunk scrolling, syntax highlighting, pager stdin patch handling, and terminal cleanup on exit.
 
-[Unreleased]: https://github.com/modem-dev/hunk/compare/v0.14.0-beta.0...HEAD
+[Unreleased]: https://github.com/modem-dev/hunk/compare/v0.14.0-beta.1...HEAD
+[0.14.0-beta.1]: https://github.com/modem-dev/hunk/compare/v0.14.0-beta.0...v0.14.0-beta.1
 [0.14.0-beta.0]: https://github.com/modem-dev/hunk/compare/v0.13.1...v0.14.0-beta.0
 [0.13.1]: https://github.com/modem-dev/hunk/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/modem-dev/hunk/compare/v0.12.1...v0.13.0
