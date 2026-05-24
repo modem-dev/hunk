@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
+import type { Session } from "tuistory";
 import { createPtyHarness } from "./harness";
 
 const harness = createPtyHarness();
@@ -9,6 +10,35 @@ setDefaultTimeout(20_000);
 afterEach(() => {
   harness.cleanup();
 });
+
+/** Retry PTY wheel ticks one at a time so slow CI does not drop a whole scroll burst. */
+async function scrollWheelUntil(
+  session: Session,
+  direction: "down" | "up",
+  predicate: (text: string) => boolean,
+) {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    if (direction === "down") {
+      await session.scrollDown(1);
+    } else {
+      await session.scrollUp(1);
+    }
+
+    try {
+      return await harness.waitForSnapshot(session, predicate, 700);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (lastError instanceof Error) {
+    throw lastError;
+  }
+
+  throw new Error(`Timed out waiting for pager wheel scroll ${direction}.`);
+}
 
 describe("PTY pager", () => {
   test("pager mode hides chrome and pages forward on space", async () => {
@@ -155,22 +185,20 @@ describe("PTY pager", () => {
       expect(initial).not.toContain("before_12");
 
       await session.waitIdle({ timeout: 200 });
-      await session.scrollDown(10);
-      const scrolled = await harness.waitForSnapshot(
+      const scrolled = await scrollWheelUntil(
         session,
+        "down",
         (text) => !text.includes("before_01") && text.includes("before_12"),
-        5_000,
       );
 
       expect(scrolled).not.toContain("View  Navigate  Theme  Agent  Help");
       expect(scrolled).not.toContain("before_01");
       expect(scrolled).toContain("before_12");
 
-      await session.scrollUp(10);
-      const restored = await harness.waitForSnapshot(
+      const restored = await scrollWheelUntil(
         session,
+        "up",
         (text) => text.includes("before_01") && !text.includes("before_12"),
-        5_000,
       );
 
       expect(restored).toContain("before_01");
@@ -196,11 +224,10 @@ describe("PTY pager", () => {
       expect(initial).not.toContain("before_12");
 
       await session.waitIdle({ timeout: 200 });
-      await session.scrollDown(10);
-      const scrolled = await harness.waitForSnapshot(
+      const scrolled = await scrollWheelUntil(
         session,
+        "down",
         (text) => !text.includes("before_01") && text.includes("before_12"),
-        5_000,
       );
 
       expect(scrolled).toContain("before_12");
@@ -226,22 +253,20 @@ describe("PTY pager", () => {
       expect(initial).not.toContain("before_12");
 
       await session.waitIdle({ timeout: 200 });
-      await session.scrollDown(10);
-      const scrolled = await harness.waitForSnapshot(
+      const scrolled = await scrollWheelUntil(
         session,
+        "down",
         (text) => !text.includes("before_01") && text.includes("before_12"),
-        5_000,
       );
 
       expect(scrolled).not.toContain("View  Navigate  Theme  Agent  Help");
       expect(scrolled).not.toContain("before_01");
       expect(scrolled).toContain("before_12");
 
-      await session.scrollUp(10);
-      const restored = await harness.waitForSnapshot(
+      const restored = await scrollWheelUntil(
         session,
+        "up",
         (text) => text.includes("before_01") && !text.includes("before_12"),
-        5_000,
       );
 
       expect(restored).toContain("before_01");
@@ -297,22 +322,20 @@ describe("PTY pager", () => {
       expect(initial).not.toContain("before_12");
 
       await session.waitIdle({ timeout: 200 });
-      await session.scrollDown(10);
-      const scrolled = await harness.waitForSnapshot(
+      const scrolled = await scrollWheelUntil(
         session,
+        "down",
         (text) => !text.includes("before_01") && text.includes("before_12"),
-        5_000,
       );
 
       expect(scrolled).not.toContain("View  Navigate  Theme  Agent  Help");
       expect(scrolled).not.toContain("before_01");
       expect(scrolled).toContain("before_12");
 
-      await session.scrollUp(10);
-      const restored = await harness.waitForSnapshot(
+      const restored = await scrollWheelUntil(
         session,
+        "up",
         (text) => text.includes("before_01") && !text.includes("before_12"),
-        5_000,
       );
 
       expect(restored).toContain("before_01");
