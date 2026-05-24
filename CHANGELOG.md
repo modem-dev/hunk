@@ -20,6 +20,7 @@ All notable user-visible changes to Hunk are documented in this file.
 - Fixed Ctrl-S saving for inline notes when tmux sends CSI-u keyboard input.
 - Restricted session reloads so daemon commands cannot read files outside the initial Hunk session root.
 - Fixed static pager output so captured pager hosts honor configured custom themes.
+- Made `hunk pager` pass non-diff text through in captured pager and dumb-terminal contexts instead of spawning `less`.
 - Fixed the `e` editor shortcut when Hunk is launched from a repo subdirectory.
 - Fixed VCS auto-detection so a Git repository nested under a parent Jujutsu workspace still uses Git mode by default.
 

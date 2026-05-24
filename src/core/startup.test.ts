@@ -79,6 +79,8 @@ describe("startup planning", () => {
       }),
       readStdinText: async () => "* main\n  feature/demo\n",
       looksLikePatchInputImpl: () => false,
+      stdoutIsTTY: true,
+      env: { TERM: "xterm-256color" },
       loadAppBootstrapImpl: async () => {
         loaded = true;
         throw new Error("unreachable");
@@ -89,6 +91,49 @@ describe("startup planning", () => {
       kind: "plain-text-pager",
       text: "* main\n  feature/demo\n",
     });
+    expect(loaded).toBe(false);
+  });
+
+  test("passes non-diff pager stdin through for captured pager hosts", async () => {
+    let loaded = false;
+    const text = "* main\n  feature/demo\n";
+
+    const plan = await prepareStartupPlan(["bun", "hunk", "pager"], {
+      parseCliImpl: async () => ({
+        kind: "pager",
+        options: { theme: "paper" },
+      }),
+      readStdinText: async () => text,
+      looksLikePatchInputImpl: () => false,
+      stdoutIsTTY: true,
+      env: { TERM: "dumb", LAZYGIT_NEW_DIR_FILE: "/tmp/lazygit-dir" },
+      loadAppBootstrapImpl: async () => {
+        loaded = true;
+        throw new Error("unreachable");
+      },
+    });
+
+    expect(plan).toEqual({ kind: "passthrough", text });
+    expect(loaded).toBe(false);
+  });
+
+  test("passes non-diff pager stdin through for a plain dumb terminal", async () => {
+    let loaded = false;
+    const text = "* main\n  feature/demo\n";
+
+    const plan = await prepareStartupPlan(["bun", "hunk", "pager"], {
+      parseCliImpl: async () => ({ kind: "pager", options: {} }),
+      readStdinText: async () => text,
+      looksLikePatchInputImpl: () => false,
+      stdoutIsTTY: true,
+      env: { TERM: "dumb" },
+      loadAppBootstrapImpl: async () => {
+        loaded = true;
+        throw new Error("unreachable");
+      },
+    });
+
+    expect(plan).toEqual({ kind: "passthrough", text });
     expect(loaded).toBe(false);
   });
 
