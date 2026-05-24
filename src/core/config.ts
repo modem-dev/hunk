@@ -12,7 +12,14 @@ import type {
   VcsMode,
 } from "./types";
 
-const BUILT_IN_THEME_IDS = ["graphite", "midnight", "paper", "ember"] as const;
+const BUILT_IN_THEME_IDS = [
+  "graphite",
+  "midnight",
+  "paper",
+  "ember",
+  "catppuccin-latte",
+  "catppuccin-mocha",
+] as const;
 const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
 const CUSTOM_THEME_COLOR_KEYS = [
   "background",

@@ -144,6 +144,25 @@ describe("config resolution", () => {
     });
   });
 
+  test.each(["graphite", "midnight", "paper", "ember", "catppuccin-latte", "catppuccin-mocha"])(
+    "accepts custom theme base id: %s",
+    (base) => {
+      const home = createTempDir("hunk-config-home-");
+      mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+      writeFileSync(
+        join(home, ".config", "hunk", "config.toml"),
+        ["[custom_theme]", `base = "${base}"`].join("\n"),
+      );
+
+      const resolved = resolveConfiguredCliInput(createPatchPagerInput(), {
+        cwd: createTempDir("hunk-config-cwd-"),
+        env: { HOME: home },
+      });
+
+      expect(resolved.customTheme).toEqual({ base });
+    },
+  );
+
   test("rejects invalid custom theme base ids", () => {
     const home = createTempDir("hunk-config-home-");
     mkdirSync(join(home, ".config", "hunk"), { recursive: true });
@@ -157,7 +176,9 @@ describe("config resolution", () => {
         cwd: createTempDir("hunk-config-cwd-"),
         env: { HOME: home },
       }),
-    ).toThrow("Expected custom_theme.base to be one of: graphite, midnight, paper, ember.");
+    ).toThrow(
+      "Expected custom_theme.base to be one of: graphite, midnight, paper, ember, catppuccin-latte, catppuccin-mocha.",
+    );
   });
 
   test("rejects invalid custom theme color values", () => {

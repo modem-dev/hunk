@@ -10,6 +10,8 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Fixed
 
+- Fixed custom theme configuration so Catppuccin Latte and Mocha can be used as base themes.
+
 ## [0.14.0-beta.0] - 2026-05-24
 
 ### Added
