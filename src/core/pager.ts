@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
 import { parse as parseShellCommand, type ParseEntry } from "shell-quote";
 import { stripTerminalControl } from "./patch/normalize";
+import { sanitizeTerminalText } from "../lib/terminalText";
 
 /** Detect whether generic pager stdin looks like a diff/patch that Hunk should review. */
 export function looksLikePatchInput(text: string) {
@@ -149,8 +150,10 @@ export async function pagePlainText(
     spawnImpl: spawn,
   },
 ) {
+  const safeText = sanitizeTerminalText(text);
+
   if (!deps.stdout.isTTY) {
-    deps.stdout.write(text);
+    deps.stdout.write(safeText);
     return;
   }
 
@@ -181,7 +184,7 @@ export async function pagePlainText(
     });
   });
 
-  pager.stdin?.end(text);
+  pager.stdin?.end(safeText);
   const code = await closeCode;
 
   if (spawnError || (typeof code === "number" && code !== 0)) {

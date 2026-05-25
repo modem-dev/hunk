@@ -1,3 +1,4 @@
+import { sanitizeTerminalLine } from "../../lib/terminalText";
 import { fitText } from "./text";
 
 function clamp(value: number, min: number, max: number) {
@@ -10,7 +11,7 @@ export function wrapText(text: string, width: number) {
     return [""];
   }
 
-  const normalized = text.trim().replace(/\s+/g, " ");
+  const normalized = sanitizeTerminalLine(text).trim().replace(/\s+/g, " ");
   if (normalized.length === 0) {
     return [""];
   }
@@ -52,7 +53,8 @@ export function wrapText(text: string, width: number) {
 /** Title shown above an agent note — author name if present, otherwise "AI note", with optional "i/n" suffix. */
 export function formatAgentNoteTitle(noteIndex: number, noteCount: number, author?: string) {
   if (author) {
-    return noteCount > 1 ? `${author} ${noteIndex + 1}/${noteCount}` : author;
+    const safeAuthor = sanitizeTerminalLine(author);
+    return noteCount > 1 ? `${safeAuthor} ${noteIndex + 1}/${noteCount}` : safeAuthor;
   }
   return noteCount > 1 ? `AI note ${noteIndex + 1}/${noteCount}` : "AI note";
 }

@@ -5,6 +5,7 @@ import type { AgentAnnotation, DiffFile, LayoutMode } from "../../../core/types"
 import { annotationRangeLabel, reviewNoteSource } from "../../lib/agentAnnotations";
 import { wrapText } from "../../lib/agentPopover";
 import { isEscapeKey, isSaveDraftNoteKey } from "../../lib/keyboard";
+import { sanitizeTerminalLine } from "../../../lib/terminalText";
 import { fitText, padText } from "../../lib/text";
 import type { AppTheme } from "../../themes";
 
@@ -14,7 +15,7 @@ export function inlineNoteTitle(annotation: AgentAnnotation, noteIndex: number, 
   }
 
   const source = reviewNoteSource(annotation);
-  const author = annotation.author?.trim();
+  const author = sanitizeTerminalLine(annotation.author?.trim() ?? "");
   const label = source === "user" ? "Your note" : author ? `${author} note` : "Agent note";
   return noteCount > 1 ? `${label} ${noteIndex + 1}/${noteCount}` : label;
 }
@@ -56,7 +57,7 @@ function isNewlineKey(key: { ctrl?: boolean; name?: string; sequence?: string })
 
 /** Wrap text while preserving author-entered line breaks in review notes. */
 function wrapNoteText(text: string, width: number) {
-  return text.split("\n").flatMap((line) => wrapText(line, width));
+  return text.split("\n").flatMap((line) => wrapText(sanitizeTerminalLine(line), width));
 }
 
 function splitColumnWidths(width: number) {

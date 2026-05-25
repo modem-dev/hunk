@@ -24,6 +24,7 @@ import {
   stackGutterText,
   stackRailColor,
 } from "./diff/rowStyle";
+import { sanitizeTerminalLine, sanitizeTerminalText } from "../lib/terminalText";
 import { resolveTheme, type AppTheme } from "./themes";
 
 const RESET = "\x1b[0m";
@@ -43,12 +44,13 @@ function ansiColor(kind: "fg" | "bg", hex: string | undefined) {
 
 /** Wrap one terminal text fragment in ANSI colors. */
 function colorText(text: string, fg?: string, bg?: string) {
-  if (!text) {
+  const safeText = sanitizeTerminalLine(text);
+  if (!safeText) {
     return "";
   }
 
   const prefix = `${ansiColor("fg", fg)}${ansiColor("bg", bg)}`;
-  return prefix ? `${prefix}${text}${RESET}` : text;
+  return prefix ? `${prefix}${safeText}${RESET}` : safeText;
 }
 
 /** Serialize highlighted code spans into ANSI text, preserving a row background when present. */
@@ -149,7 +151,9 @@ function fileStatusLabel(file: DiffFile) {
 /** Use an arrow label for renamed files so static output keeps important path metadata. */
 function fileDisplayPath(file: DiffFile) {
   const previousPath = file.previousPath ?? file.metadata.prevName;
-  return previousPath && previousPath !== file.path ? `${previousPath} → ${file.path}` : file.path;
+  return previousPath && previousPath !== file.path
+    ? `${sanitizeTerminalLine(previousPath)} → ${sanitizeTerminalLine(file.path)}`
+    : sanitizeTerminalLine(file.path);
 }
 
 function fileModeText(file: DiffFile) {
@@ -207,7 +211,9 @@ export interface StaticDiffPagerDeps {
 }
 
 function warnFallback(deps: StaticDiffPagerDeps, reason: string) {
-  deps.stderr?.write(`hunk: static pager render failed; falling back to raw diff (${reason}).\n`);
+  deps.stderr?.write(
+    `hunk: static pager render failed; falling back to raw diff (${sanitizeTerminalLine(reason)}).\n`,
+  );
 }
 
 /** Render diff-like pager stdin as colored static output, falling back to the original patch on failure. */
@@ -233,12 +239,12 @@ export async function renderStaticDiffPager(
 
     if (rendered.length === 0) {
       warnFallback(deps, "no files rendered");
-      return text;
+      return sanitizeTerminalText(text);
     }
 
     return `${rendered.join("\n\n")}\n`;
   } catch (error) {
     warnFallback(deps, fallbackMessage(error));
-    return text;
+    return sanitizeTerminalText(text);
   }
 }

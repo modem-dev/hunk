@@ -24,24 +24,26 @@ import {
 import { type PlannedReviewRow } from "./reviewRenderPlan";
 import { inlineNoteTitle } from "../components/panes/AgentInlineNote";
 import { wrapText } from "../lib/agentPopover";
+import { sanitizeTerminalLine, sanitizeTerminalSpans } from "../../lib/terminalText";
 import { measureTextWidth, padText as padTextByWidth, sliceTextByWidth } from "../lib/text";
 import type { CopySelectedRowRange } from "../components/panes/copySelection";
 
 /** Clamp a label to one terminal row with an ellipsis. */
 export function fitText(text: string, width: number) {
+  const safeText = sanitizeTerminalLine(text);
   if (width <= 0) {
     return "";
   }
 
-  if (measureTextWidth(text) <= width) {
-    return text;
+  if (measureTextWidth(safeText) <= width) {
+    return safeText;
   }
 
   if (width === 1) {
     return "…";
   }
 
-  return `${sliceTextByWidth(text, 0, width - 1).text}…`;
+  return `${sliceTextByWidth(safeText, 0, width - 1).text}…`;
 }
 
 /** Append a styled span while preserving color-run coalescing. */
@@ -122,7 +124,11 @@ function renderInlineSpans(
   selectionTheme?: AppTheme,
   selectionColRange?: { start: number; end: number },
 ) {
-  const { spans: trimmed, usedWidth } = sliceSpansWindow(spans, horizontalOffset, width);
+  const { spans: trimmed, usedWidth } = sliceSpansWindow(
+    sanitizeTerminalSpans(spans),
+    horizontalOffset,
+    width,
+  );
   const needsBlending = selectionTheme && selectionColRange;
 
   // Build the final element list by splitting spans at selection boundaries so the highlight
@@ -297,7 +303,7 @@ function wrapSpans(spans: RenderSpan[], width: number) {
   let current = lines[0]!;
   let remaining = width;
 
-  for (const span of spans) {
+  for (const span of sanitizeTerminalSpans(spans)) {
     const spanWidth = measureTextWidth(span.text);
     if (spanWidth === 0) {
       appendRenderSpan(current, span);
@@ -418,7 +424,9 @@ function spansToPlainText(spans: RenderSpan[], width: number, horizontalOffset =
   }
 
   const visible = sliceTextByWidth(
-    spans.map((span) => span.text).join(""),
+    sanitizeTerminalSpans(spans)
+      .map((span) => span.text)
+      .join(""),
     Math.max(0, horizontalOffset),
     width,
   );
@@ -428,7 +436,9 @@ function spansToPlainText(spans: RenderSpan[], width: number, horizontalOffset =
 
 /** Flatten styled spans to their visible text content. */
 function spansText(spans: RenderSpan[]) {
-  return spans.map((span) => span.text).join("");
+  return sanitizeTerminalSpans(spans)
+    .map((span) => span.text)
+    .join("");
 }
 
 /** Return one cell's code text without rail, gutter, sign, or line-number decorations. */

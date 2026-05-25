@@ -10,6 +10,7 @@ import {
 import { formatHunkHeader } from "../../core/hunkHeader";
 import type { DiffFile } from "../../core/types";
 import { blendHex, hexColorDistance } from "../lib/color";
+import { sanitizeTerminalLine } from "../../lib/terminalText";
 import type { AppTheme } from "../themes";
 import { expandDiffTabs } from "./codeColumns";
 
@@ -141,7 +142,7 @@ export type DiffRow =
 
 /** Replace tabs with fixed spaces so terminal cell widths stay predictable. */
 function tabify(text: string) {
-  return expandDiffTabs(text);
+  return expandDiffTabs(sanitizeTerminalLine(text));
 }
 
 const EMPTY_STYLE_VALUES = new Map<string, string>();

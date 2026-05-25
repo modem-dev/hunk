@@ -21,6 +21,20 @@ const { AppHost } = await import("./AppHost");
 const TEST_KEY_PAGE_UP = "\x1B[5~";
 const TEST_KEY_PAGE_DOWN = "\x1B[6~";
 
+const OSC52_CLIPBOARD = "\x1b]52;c;SGVsbG8=\x07";
+const CSI_CLEAR_SCREEN = "\x1b[2J";
+const DCS_PAYLOAD = "\x1bPqpayload\x1b\\";
+
+function expectNoTerminalControls(text: string) {
+  expect(text).not.toContain(OSC52_CLIPBOARD);
+  expect(text).not.toContain(CSI_CLEAR_SCREEN);
+  expect(text).not.toContain(DCS_PAYLOAD);
+  expect(text).not.toContain("\x07");
+  expect(text).not.toContain("\r");
+  expect(text).not.toContain("\b");
+  expect(text).not.toContain("\x1b");
+}
+
 function createTestDiffFile(
   id: string,
   path: string,
@@ -518,6 +532,56 @@ function firstVisibleAddedLineNumber(frame: string) {
 }
 
 describe("App interactions", () => {
+  test("dynamic review output does not pass terminal controls from paths, notes, or diff content", async () => {
+    const payload = `${OSC52_CLIPBOARD}${CSI_CLEAR_SCREEN}${DCS_PAYLOAD}\x07\rspoof\bhidden\x1b`;
+    const file = createTestDiffFile(
+      "malicious",
+      `evil${payload}.ts`,
+      `export const value = "before${payload}";\n`,
+      `export const value = "after${payload}";\n`,
+    );
+    const bootstrap = createTestVcsAppBootstrap({
+      changesetId: "changeset:terminal-control-injection",
+      files: [
+        {
+          ...file,
+          agent: {
+            path: file.path,
+            summary: `summary${payload}`,
+            annotations: [
+              {
+                newRange: [1, 1],
+                summary: `annotation${payload}`,
+                rationale: `rationale${payload}`,
+              },
+            ],
+          },
+        },
+      ],
+      initialMode: "stack",
+    });
+
+    const setup = await testRender(<AppHost bootstrap={bootstrap} />, { width: 240, height: 24 });
+
+    try {
+      await flush(setup);
+      await act(async () => {
+        await setup.mockInput.typeText("a");
+      });
+      await flush(setup);
+      const frame = setup.captureCharFrame();
+
+      expect(frame).toContain("evil");
+      expect(frame).toContain("before");
+      expect(frame).toContain("after");
+      expectNoTerminalControls(frame);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("rapid hunk navigation and wheel scrolling do not recurse through viewport updates", async () => {
     const updateDepthErrors: string[] = [];
     const originalError = console.error;

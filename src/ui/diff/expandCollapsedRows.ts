@@ -1,3 +1,4 @@
+import { sanitizeTerminalLine, sanitizeTerminalSpans } from "../../lib/terminalText";
 import { expandDiffTabs } from "./codeColumns";
 import type {
   CollapsedGapPosition,
@@ -84,7 +85,7 @@ function sliceLines(sourceText: string) {
 }
 
 function spansFor(line: string | undefined): RenderSpan[] {
-  const text = expandDiffTabs(line ?? "");
+  const text = expandDiffTabs(sanitizeTerminalLine(line ?? ""));
   return text.length > 0 ? [{ text }] : [];
 }
 
@@ -220,7 +221,9 @@ export function expandCollapsedRows(
       }
 
       const text = sourceLines[sourceLineNumber];
-      const spans = sourceLineSpans?.(text, sourceLineNumber) ?? spansFor(text);
+      const spans = sourceLineSpans
+        ? sanitizeTerminalSpans(sourceLineSpans(text, sourceLineNumber))
+        : spansFor(text);
 
       result.push(
         layout === "split"

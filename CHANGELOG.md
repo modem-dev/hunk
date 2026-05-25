@@ -11,6 +11,7 @@ All notable user-visible changes to Hunk are documented in this file.
 ### Fixed
 
 - Capped inline context expansion source reads so huge files cannot freeze or exhaust memory when expanding unchanged lines.
+- Hardened terminal rendering against control-sequence injection from diffs, file paths, notes, expanded context, copied selections, and pager fallback output.
 
 ## [0.14.0-beta.1] - 2026-05-24
 

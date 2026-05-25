@@ -17,6 +17,20 @@ function createClosingPager(code = 0) {
   return pager;
 }
 
+const OSC52_CLIPBOARD = "\x1b]52;c;SGVsbG8=\x07";
+const CSI_CLEAR_SCREEN = "\x1b[2J";
+const DCS_PAYLOAD = "\x1bPqpayload\x1b\\";
+
+function expectNoUnsafeTerminalControls(text: string) {
+  expect(text).not.toContain(OSC52_CLIPBOARD);
+  expect(text).not.toContain(CSI_CLEAR_SCREEN);
+  expect(text).not.toContain(DCS_PAYLOAD);
+  expect(text).not.toContain("\x07");
+  expect(text).not.toContain("\r");
+  expect(text).not.toContain("\b");
+  expect(text).not.toContain("\x1b");
+}
+
 function createPagerDeps(overrides: Partial<PlainTextPagerDeps> = {}): PlainTextPagerDeps {
   return {
     stdout: {
@@ -142,6 +156,29 @@ describe("plain text pager fallback", () => {
     expect(spawnCalled).toBe(false);
   });
 
+  test("sanitizes terminal controls before writing plain text directly", async () => {
+    let written = "";
+
+    await pagePlainText(
+      `plain${OSC52_CLIPBOARD}${CSI_CLEAR_SCREEN}${DCS_PAYLOAD}\x07\rspoof\bhidden\x1b text`,
+      {},
+      createPagerDeps({
+        stdout: {
+          isTTY: false,
+          write(chunk) {
+            written += String(chunk);
+            return true;
+          },
+        },
+      }),
+    );
+
+    expect(written).toContain("plain");
+    expect(written).toContain("spoof");
+    expect(written).toContain("hidden");
+    expectNoUnsafeTerminalControls(written);
+  });
+
   test("spawns pager commands without a shell", async () => {
     const pager = new EventEmitter() as EventEmitter & { stdin: PassThrough };
     pager.stdin = new PassThrough();
@@ -167,6 +204,33 @@ describe("plain text pager fallback", () => {
     );
 
     expect(written).toBe("needs pager");
+  });
+
+  test("sanitizes terminal controls before sending text to the pager", async () => {
+    const pager = new EventEmitter() as EventEmitter & { stdin: PassThrough };
+    pager.stdin = new PassThrough();
+    let written = "";
+    pager.stdin.on("data", (chunk) => {
+      written += String(chunk);
+    });
+
+    await pagePlainText(
+      `plain${OSC52_CLIPBOARD}${CSI_CLEAR_SCREEN}${DCS_PAYLOAD}\x07\rspoof\bhidden\x1b text`,
+      { PAGER: "less -R" },
+      createPagerDeps({
+        spawnImpl() {
+          queueMicrotask(() => {
+            pager.emit("close", 0);
+          });
+          return pager as never;
+        },
+      }),
+    );
+
+    expect(written).toContain("plain");
+    expect(written).toContain("spoof");
+    expect(written).toContain("hidden");
+    expectNoUnsafeTerminalControls(written);
   });
 
   test("passes shell metacharacters as pager arguments instead of evaluating them", async () => {

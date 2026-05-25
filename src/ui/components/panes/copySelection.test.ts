@@ -24,6 +24,20 @@ import {
   resolveSplitPaneWidths,
 } from "../../diff/codeColumns";
 
+const OSC52_CLIPBOARD = "\x1b]52;c;SGVsbG8=\x07";
+const CSI_CLEAR_SCREEN = "\x1b[2J";
+const DCS_PAYLOAD = "\x1bPqpayload\x1b\\";
+
+function expectNoUnsafeTerminalControls(text: string) {
+  expect(text).not.toContain(OSC52_CLIPBOARD);
+  expect(text).not.toContain(CSI_CLEAR_SCREEN);
+  expect(text).not.toContain(DCS_PAYLOAD);
+  expect(text).not.toContain("\x07");
+  expect(text).not.toContain("\r");
+  expect(text).not.toContain("\b");
+  expect(text).not.toContain("\x1b");
+}
+
 function createDiffFile(): DiffFile {
   const metadata = parseDiffFromFile(
     {
@@ -55,16 +69,47 @@ function createDiffFile(): DiffFile {
   };
 }
 
+function createMaliciousDiffFile(): DiffFile {
+  const payload = `${OSC52_CLIPBOARD}${CSI_CLEAR_SCREEN}${DCS_PAYLOAD}\x07\rspoof\bhidden\x1b`;
+  const metadata = parseDiffFromFile(
+    {
+      name: `evil${payload}.ts`,
+      contents: `export const answer = "before${payload}";\n`,
+      cacheKey: "malicious-before",
+    },
+    {
+      name: `evil${payload}.ts`,
+      contents: `export const answer = "after${payload}";\n`,
+      cacheKey: "malicious-after",
+    },
+    { context: 3 },
+    true,
+  );
+
+  return {
+    id: "malicious",
+    path: `evil${payload}.ts`,
+    patch: "",
+    language: "typescript",
+    stats: {
+      additions: 1,
+      deletions: 1,
+    },
+    metadata,
+    agent: null,
+  };
+}
+
 function buildContext(
   layout: "stack" | "split" = "stack",
   width = 120,
+  file: DiffFile = createDiffFile(),
 ): {
   context: CopySelectionContext;
   fileSectionLayouts: ReturnType<typeof buildFileSectionLayouts>;
   sectionGeometry: ReturnType<typeof measureDiffSectionGeometry>[];
 } {
   const theme = resolveTheme("midnight", null);
-  const file = createDiffFile();
   const geometry = measureDiffSectionGeometry(file, layout, true, theme, [], width, true, false);
   const sectionGeometry = [geometry];
   const fileSectionLayouts = buildFileSectionLayouts([file], [geometry.bodyHeight]);
@@ -302,6 +347,27 @@ describe("renderCopySelectionText", () => {
 
     const text = renderCopySelectionText({ context, start, end });
     expect(text).toContain("example.ts");
+  });
+
+  test("does not include terminal controls from copied paths or code", () => {
+    const { context, fileSectionLayouts } = buildContext("stack", 160, createMaliciousDiffFile());
+    const start: CopySelectionPoint = {
+      kind: "pinned-header",
+      column: 0,
+      fileId: "malicious",
+      nextVisualRow: fileSectionLayouts[0]!.bodyTop,
+    };
+    const end: CopySelectionPoint = {
+      kind: "review-row",
+      column: context.width - 1,
+      visualRow: fileSectionLayouts[0]!.sectionBottom - 1,
+    };
+
+    const text = renderCopySelectionText({ context, start, end });
+    expect(text).toContain("evil");
+    expect(text).toContain("before");
+    expect(text).toContain("after");
+    expectNoUnsafeTerminalControls(text);
   });
 });
 

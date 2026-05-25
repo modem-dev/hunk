@@ -31,6 +31,19 @@ function makeHunkHeader(hunkIndex: number): Extract<DiffRow, { type: "hunk-heade
 }
 
 const SOURCE = ["alpha", "beta", "gamma", "delta", "epsilon", "zeta"].join("\n") + "\n";
+const OSC52_CLIPBOARD = "\x1b]52;c;SGVsbG8=\x07";
+const CSI_CLEAR_SCREEN = "\x1b[2J";
+const DCS_PAYLOAD = "\x1bPqpayload\x1b\\";
+
+function expectNoUnsafeTerminalControls(text: string) {
+  expect(text).not.toContain(OSC52_CLIPBOARD);
+  expect(text).not.toContain(CSI_CLEAR_SCREEN);
+  expect(text).not.toContain(DCS_PAYLOAD);
+  expect(text).not.toContain("\x07");
+  expect(text).not.toContain("\r");
+  expect(text).not.toContain("\b");
+  expect(text).not.toContain("\x1b");
+}
 
 describe("expandCollapsedRows", () => {
   test("returns rows unchanged when no gaps are expanded", () => {
@@ -250,6 +263,29 @@ describe("expandCollapsedRows", () => {
       throw new Error("expected stack-line context row");
     }
     expect(inserted.cell.spans[0]?.text).toBe("alpha");
+  });
+
+  test("does not pass terminal controls through expanded source rows", () => {
+    const sourceWithControls = `safe${OSC52_CLIPBOARD}${CSI_CLEAR_SCREEN}${DCS_PAYLOAD}\x07\rspoof\bhidden\x1b\nfollow\n`;
+    const rows: DiffRow[] = [makeCollapsedRow("before", 0, [1, 1], [1, 1]), makeHunkHeader(0)];
+
+    const result = expandCollapsedRows(rows, {
+      layout: "stack",
+      expandedKeys: new Set([gapKey("before", 0)]),
+      sourceStatus: { kind: "loaded", text: sourceWithControls },
+      side: "new",
+    });
+
+    const inserted = result[1];
+    if (!inserted || inserted.type !== "stack-line") {
+      throw new Error("expected one stack-line row");
+    }
+
+    const text = inserted.cell.spans.map((span) => span.text).join("");
+    expect(text).toContain("safe");
+    expect(text).toContain("spoof");
+    expect(text).toContain("hidden");
+    expectNoUnsafeTerminalControls(text);
   });
 
   test("expands tabs in source lines so terminal cells stay aligned", () => {

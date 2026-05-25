@@ -5,6 +5,31 @@ function stripAnsi(text: string) {
   return text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
 }
 
+/** Remove Hunk's intentional SGR color codes while leaving unsafe controls visible. */
+function stripColorSgr(text: string) {
+  return text.replace(/\x1b\[[0-9;]*m/g, "");
+}
+
+const OSC52_CLIPBOARD = "\x1b]52;c;SGVsbG8=\x07";
+const CSI_CLEAR_SCREEN = "\x1b[2J";
+const DCS_PAYLOAD = "\x1bPqpayload\x1b\\";
+const APC_PAYLOAD = "\x1b_payload\x1b\\";
+const PM_PAYLOAD = "\x1b^payload\x1b\\";
+const SOS_PAYLOAD = "\x1bXpayload\x1b\\";
+
+function expectNoUnsafeTerminalControls(text: string) {
+  expect(text).not.toContain(OSC52_CLIPBOARD);
+  expect(text).not.toContain(CSI_CLEAR_SCREEN);
+  expect(text).not.toContain(DCS_PAYLOAD);
+  expect(text).not.toContain(APC_PAYLOAD);
+  expect(text).not.toContain(PM_PAYLOAD);
+  expect(text).not.toContain(SOS_PAYLOAD);
+  expect(text).not.toContain("\x07");
+  expect(text).not.toContain("\r");
+  expect(text).not.toContain("\b");
+  expect(text).not.toContain("\x1b");
+}
+
 describe("static diff pager", () => {
   test("renders diff-like stdin as non-interactive ANSI output", async () => {
     const patchText =
@@ -88,5 +113,60 @@ describe("static diff pager", () => {
     ).resolves.toBe(text);
     expect(warning).toContain("hunk: static pager render failed");
     expect(warning).toContain("falling back to raw diff");
+  });
+
+  test("does not pass terminal control sequences through malformed pager fallback", async () => {
+    const text = [
+      "diff --git incomplete",
+      `clipboard ${OSC52_CLIPBOARD}`,
+      `clear-screen ${CSI_CLEAR_SCREEN}`,
+      `device-control ${DCS_PAYLOAD}`,
+      "bell \x07",
+      "carriage\rspoof",
+      "backspace\bspoof",
+      "bare-escape \x1b",
+      "",
+    ].join("\n");
+
+    const output = stripColorSgr(
+      await renderStaticDiffPager(text, {}, { stderr: { write: () => true } }),
+    );
+
+    expectNoUnsafeTerminalControls(output);
+  });
+
+  test("does not pass terminal controls through parsed file paths or hunk headers", async () => {
+    const payload = `${OSC52_CLIPBOARD}${CSI_CLEAR_SCREEN}${DCS_PAYLOAD}${APC_PAYLOAD}${PM_PAYLOAD}${SOS_PAYLOAD}\x07\rspoof\bhidden\x1b`;
+    const patchText = [
+      `diff --git a/evil${payload}.ts b/evil${payload}.ts`,
+      `--- a/evil${payload}.ts`,
+      `+++ b/evil${payload}.ts`,
+      `@@ -1 +1 @@ ${payload}`,
+      "-const value = 1;",
+      "+const value = 2;",
+      "",
+    ].join("\n");
+
+    const output = stripColorSgr(await renderStaticDiffPager(patchText));
+
+    expect(output).toContain("evil");
+    expect(output).toContain("@@ -1 +1 @@");
+    expectNoUnsafeTerminalControls(output);
+  });
+
+  test("does not pass terminal control sequences through parsed diff content", async () => {
+    const patchText = [
+      "diff --git a/a.ts b/a.ts",
+      "--- a/a.ts",
+      "+++ b/a.ts",
+      "@@ -1 +1 @@",
+      `-safe${OSC52_CLIPBOARD}${CSI_CLEAR_SCREEN}${DCS_PAYLOAD}\x07\rspoof\bhidden\x1b`,
+      "+const value = 2;",
+      "",
+    ].join("\n");
+
+    const output = stripColorSgr(await renderStaticDiffPager(patchText));
+
+    expectNoUnsafeTerminalControls(output);
   });
 });

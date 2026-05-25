@@ -10,6 +10,7 @@ import {
   type JobControlSuspendSupport,
 } from "./core/jobControl";
 import { pagePlainText } from "./core/pager";
+import { sanitizeTerminalText } from "./lib/terminalText";
 import { shutdownSession } from "./core/shutdown";
 import { renderStaticDiffPager } from "./ui/staticDiffPager";
 import { prepareStartupPlan } from "./core/startup";
@@ -55,7 +56,7 @@ async function main() {
   }
 
   if (startupPlan.kind === "passthrough") {
-    process.stdout.write(startupPlan.text);
+    process.stdout.write(sanitizeTerminalText(startupPlan.text));
     process.exit(0);
   }
 
