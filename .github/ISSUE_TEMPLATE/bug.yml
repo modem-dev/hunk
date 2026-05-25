@@ -1,0 +1,42 @@
+name: Bug Report
+description: Report something that's broken
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Before you start:** Please read [CONTRIBUTING.md](https://github.com/modem-dev/hunk/blob/main/CONTRIBUTING.md).
+
+        Keep this concise and concrete. A short report with clear reproduction steps is much easier to investigate.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Be specific. Include error messages, screenshots, or terminal output if helpful.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps or commands that trigger the bug.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect Hunk to do instead?
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: e.g. output from `hunk --version` or the npm package version
+    validations:
+      required: false
