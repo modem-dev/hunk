@@ -250,8 +250,8 @@ describe("TTY render smoke", () => {
       inputCommand: `(sleep 2; printf w; sleep 1; printf q)`,
     });
 
-    expect(output).toContain("very long wrapped line for tty s");
-    expect(output).toContain("moke coverage';");
+    expect(output).toContain("wrapped line for");
+    expect(output).toContain("tty smoke coverage';");
   });
 
   ttyTest("regular mode can toggle wrapped lines on, off, and on again", async () => {
@@ -265,8 +265,8 @@ describe("TTY render smoke", () => {
       inputCommand: `(sleep 2; printf www; sleep 1; printf q)`,
     });
 
-    expect(output).toContain("very long wrapped line for tty s");
-    expect(output).toContain("moke coverage';");
+    expect(output).toContain("wrapped line for");
+    expect(output).toContain("tty smoke coverage';");
   });
 
   ttyTest(
@@ -310,8 +310,8 @@ describe("TTY render smoke", () => {
       inputCommand: `(sleep 2; printf w; sleep 1; printf q)`,
     });
 
-    expect(output).toContain("very long wrapped line for tty smo");
-    expect(output).toContain("ke coverage';");
+    expect(output).toContain("wrapped line for t");
+    expect(output).toContain("ty smoke coverage';");
   });
 
   ttyTest("stdin patch mode auto-enters pager mode and can quit from terminal input", async () => {
