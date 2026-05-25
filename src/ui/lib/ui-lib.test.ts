@@ -12,6 +12,7 @@ import {
 import { buildAgentPopoverContent, resolveAgentPopoverPlacement, wrapText } from "./agentPopover";
 import { buildAppMenus } from "./appMenus";
 import {
+  isCreateReviewNoteKey,
   isEscapeKey,
   isHalfPageDownKey,
   isHalfPageUpKey,
@@ -278,6 +279,15 @@ describe("ui helpers", () => {
     expect(isPageDownKey(createKeyEvent({ name: "space", shift: true }))).toBe(false);
     expect(isPageDownKey(createKeyEvent({ name: "q" }))).toBe(false);
     expect(isShiftSpacePageUpKey(createKeyEvent({ name: "space", shift: false }))).toBe(false);
+  });
+
+  test("review note shortcut only matches unmodified c", () => {
+    expect(isCreateReviewNoteKey(createKeyEvent({ name: "c" }))).toBe(true);
+    expect(isCreateReviewNoteKey(createKeyEvent({ sequence: "c" }))).toBe(true);
+    expect(isCreateReviewNoteKey(createKeyEvent({ name: "C", shift: true }))).toBe(false);
+    expect(isCreateReviewNoteKey(createKeyEvent({ name: "c", ctrl: true }))).toBe(false);
+    expect(isCreateReviewNoteKey(createKeyEvent({ name: "c", meta: true }))).toBe(false);
+    expect(isCreateReviewNoteKey(createKeyEvent({ name: "c", option: true }))).toBe(false);
   });
 
   test("fitText and padText clamp using the terminal fallback marker", () => {

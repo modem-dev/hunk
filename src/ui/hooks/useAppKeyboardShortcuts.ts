@@ -4,6 +4,7 @@ import { useRef } from "react";
 import type { LayoutMode } from "../../core/types";
 import type { MenuId } from "../components/chrome/menu";
 import {
+  isCreateReviewNoteKey,
   isEscapeKey,
   isHalfPageDownKey,
   isHalfPageUpKey,
@@ -355,7 +356,7 @@ export function useAppKeyboardShortcuts({
       return;
     }
 
-    if (key.name?.toLowerCase() === "c" || key.sequence?.toLowerCase() === "c") {
+    if (isCreateReviewNoteKey(key)) {
       runAndCloseMenu(startUserNote);
       return;
     }

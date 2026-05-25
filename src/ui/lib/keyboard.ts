@@ -27,6 +27,17 @@ export function isSaveDraftNoteKey(key: KeyEvent) {
   );
 }
 
+/** Match the unmodified review-note shortcut without stealing terminal copy chords. */
+export function isCreateReviewNoteKey(key: KeyEvent) {
+  return (
+    (key.name === "c" || key.sequence === "c") &&
+    !key.ctrl &&
+    !key.meta &&
+    !key.option &&
+    !key.shift
+  );
+}
+
 /** Match any key alias that should scroll forward by a full viewport. */
 export function isPageDownKey(key: KeyEvent) {
   return (
