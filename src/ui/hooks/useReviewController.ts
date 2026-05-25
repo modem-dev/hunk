@@ -21,6 +21,7 @@ import {
   firstCommentTargetForHunk,
   resolveCommentTarget,
 } from "../../core/liveComments";
+import { SourceTextTooLargeError } from "../../core/fileSource";
 import type { AgentAnnotation, DiffFile, UserNoteLineTarget } from "../../core/types";
 import type {
   AppliedCommentBatchResult,
@@ -490,11 +491,17 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
             return;
           }
 
-          console.error(
-            `hunk: failed to load ${side} source for ${file.path} (${file.id}).`,
-            error,
-          );
-          setSettledStatus({ kind: "error" });
+          const reason = error instanceof SourceTextTooLargeError ? "too-large" : undefined;
+          if (reason !== "too-large") {
+            console.error(
+              `hunk: failed to load ${side} source for ${file.path} (${file.id}).`,
+              error,
+            );
+          }
+          setSettledStatus({
+            kind: "error",
+            reason,
+          });
         });
     },
     [allFiles],

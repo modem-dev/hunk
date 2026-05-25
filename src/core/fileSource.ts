@@ -25,8 +25,19 @@ export interface FileSourceFetcher {
   getFullText(side: FileSourceSide): Promise<string | null>;
 }
 
+export const DEFAULT_SOURCE_TEXT_MAX_BYTES = 1_000_000;
+
+/** Raised when expanded-context source would require reading an unsafe amount of text. */
+export class SourceTextTooLargeError extends Error {
+  constructor(readonly maxBytes: number) {
+    super(`Source text exceeds ${maxBytes} bytes.`);
+    this.name = "SourceTextTooLargeError";
+  }
+}
+
 export interface FileSourceFetcherOptions {
   gitExecutable?: string;
+  maxSourceBytes?: number;
 }
 
 interface ResolvedSpecs {
@@ -65,15 +76,26 @@ function isExpectedMissingGitSource(stderr: string) {
   ].some((fragment) => normalized.includes(fragment));
 }
 
-async function readFsSpec(spec: Extract<FileSourceSpec, { kind: "fs" }>): Promise<string | null> {
+async function readFsSpec(
+  spec: Extract<FileSourceSpec, { kind: "fs" }>,
+  maxSourceBytes: number,
+): Promise<string | null> {
   try {
     const file = Bun.file(spec.absolutePath);
     if (!(await file.exists())) {
       return null;
     }
 
+    if (file.size > maxSourceBytes) {
+      throw new SourceTextTooLargeError(maxSourceBytes);
+    }
+
     return await file.text();
   } catch (error) {
+    if (error instanceof SourceTextTooLargeError) {
+      throw error;
+    }
+
     logSourceDiagnostic(`failed to read source file ${spec.absolutePath}`, error);
     return null;
   }
@@ -82,15 +104,63 @@ async function readFsSpec(spec: Extract<FileSourceSpec, { kind: "fs" }>): Promis
 function readGitBlobSpec(
   spec: Extract<FileSourceSpec, { kind: "git-blob" }>,
   gitExecutable = "git",
+  maxSourceBytes: number,
 ): Promise<string | null> {
-  return readGitObjectSpec(spec.repoRoot, `${spec.ref}:${spec.path}`, gitExecutable);
+  return readGitObjectSpec(
+    spec.repoRoot,
+    `${spec.ref}:${spec.path}`,
+    gitExecutable,
+    maxSourceBytes,
+  );
 }
 
 function readGitIndexSpec(
   spec: Extract<FileSourceSpec, { kind: "git-index" }>,
   gitExecutable = "git",
+  maxSourceBytes: number,
 ): Promise<string | null> {
-  return readGitObjectSpec(spec.repoRoot, `:${spec.path}`, gitExecutable);
+  return readGitObjectSpec(spec.repoRoot, `:${spec.path}`, gitExecutable, maxSourceBytes);
+}
+
+async function readStreamTextWithLimit(
+  stream: ReadableStream<Uint8Array> | null,
+  maxBytes: number,
+  onTooLarge?: () => void,
+  createLimitError: (maxBytes: number) => Error = (maxBytes) =>
+    new SourceTextTooLargeError(maxBytes),
+) {
+  if (!stream) {
+    return "";
+  }
+
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+
+    totalBytes += value.byteLength;
+    if (totalBytes > maxBytes) {
+      onTooLarge?.();
+      await reader.cancel().catch(() => undefined);
+      throw createLimitError(maxBytes);
+    }
+
+    chunks.push(value);
+  }
+
+  const combined = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    combined.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
+  return new TextDecoder().decode(combined);
 }
 
 /** Read a blob-like Git object spec such as `HEAD:path` or `:path`. */
@@ -98,6 +168,7 @@ async function readGitObjectSpec(
   repoRoot: string,
   objectName: string,
   gitExecutable = "git",
+  maxSourceBytes: number,
 ): Promise<string | null> {
   let proc: Bun.ReadableSubprocess;
 
@@ -117,10 +188,21 @@ async function readGitObjectSpec(
   try {
     output = await Promise.all([
       proc.exited,
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
+      readStreamTextWithLimit(proc.stdout, maxSourceBytes, () => proc.kill()),
+      readStreamTextWithLimit(
+        proc.stderr,
+        64 * 1024,
+        undefined,
+        (maxBytes) => new Error(`Git source diagnostics exceeded ${maxBytes} bytes.`),
+      ),
     ]);
   } catch (error) {
+    if (error instanceof SourceTextTooLargeError) {
+      proc.kill();
+      await proc.exited.catch(() => undefined);
+      throw error;
+    }
+
     logSourceDiagnostic(`failed to collect Git source ${objectName}`, error);
     return null;
   }
@@ -139,27 +221,33 @@ async function readGitObjectSpec(
 
 async function readSpec(
   spec: FileSourceSpec,
-  { gitExecutable = "git" }: FileSourceFetcherOptions = {},
+  {
+    gitExecutable = "git",
+    maxSourceBytes = DEFAULT_SOURCE_TEXT_MAX_BYTES,
+  }: FileSourceFetcherOptions = {},
 ): Promise<string | null> {
   if (spec.kind === "none") {
     return null;
   }
 
   if (spec.kind === "fs") {
-    return readFsSpec(spec);
+    return readFsSpec(spec, maxSourceBytes);
   }
 
   if (spec.kind === "git-index") {
-    return readGitIndexSpec(spec, gitExecutable);
+    return readGitIndexSpec(spec, gitExecutable, maxSourceBytes);
   }
 
-  return readGitBlobSpec(spec, gitExecutable);
+  return readGitBlobSpec(spec, gitExecutable, maxSourceBytes);
 }
 
 /** Build a per-file source fetcher that caches each side's resolved text. */
 export function createFileSourceFetcher(
   specs: ResolvedSpecs,
-  { gitExecutable = "git" }: Readonly<FileSourceFetcherOptions> = {},
+  {
+    gitExecutable = "git",
+    maxSourceBytes = DEFAULT_SOURCE_TEXT_MAX_BYTES,
+  }: Readonly<FileSourceFetcherOptions> = {},
 ): FileSourceFetcher {
   const cache = new Map<FileSourceSide, string | null>();
 
@@ -169,7 +257,7 @@ export function createFileSourceFetcher(
         return cache.get(side) ?? null;
       }
 
-      const text = await readSpec(specs[side], { gitExecutable });
+      const text = await readSpec(specs[side], { gitExecutable, maxSourceBytes });
       cache.set(side, text);
       return text;
     },

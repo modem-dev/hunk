@@ -13,7 +13,7 @@ export type ExpansionLayout = "split" | "stack";
 export type FileSourceStatus =
   | { kind: "loading" }
   | { kind: "loaded"; text: string }
-  | { kind: "error" };
+  | { kind: "error"; reason?: "too-large" };
 
 export interface ExpandCollapsedRowsOptions {
   layout: ExpansionLayout;
@@ -68,7 +68,11 @@ function loadingRowText(lineCount: number) {
   return `Loading ${lineCount} unchanged ${lineCount === 1 ? "line" : "lines"}…`;
 }
 
-function errorRowText(lineCount: number) {
+function errorRowText(lineCount: number, reason?: "too-large") {
+  if (reason === "too-large") {
+    return `Source too large to expand ${lineCount} unchanged ${lineCount === 1 ? "line" : "lines"}`;
+  }
+
   return `Could not load ${lineCount} unchanged ${lineCount === 1 ? "line" : "lines"}`;
 }
 
@@ -179,7 +183,7 @@ export function expandCollapsedRows(
     }
 
     if (sourceStatus?.kind === "error") {
-      result.push({ ...row, text: errorRowText(lineCount) });
+      result.push({ ...row, text: errorRowText(lineCount, sourceStatus.reason) });
       continue;
     }
 

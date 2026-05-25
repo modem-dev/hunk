@@ -10,6 +10,8 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Fixed
 
+- Capped inline context expansion source reads so huge files cannot freeze or exhaust memory when expanding unchanged lines.
+
 ## [0.14.0-beta.1] - 2026-05-24
 
 ### Fixed

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { platform, tmpdir } from "node:os";
 import { join } from "node:path";
+import { SourceTextTooLargeError } from "./fileSource";
 import { loadAppBootstrap } from "./loaders";
 import type { CliInput } from "./types";
 
@@ -338,6 +339,7 @@ describe("loadAppBootstrap", () => {
       deletions: 1,
     });
     expect(bootstrap.changeset.files[0]?.metadata.hunks).toHaveLength(0);
+    expect(bootstrap.changeset.files[0]?.sourceFetcher).toBeUndefined();
   });
 
   test("keeps generated large untracked files as skipped placeholders", async () => {
@@ -363,6 +365,7 @@ describe("loadAppBootstrap", () => {
     });
     expect(bootstrap.changeset.files[0]?.statsTruncated).toBe(false);
     expect(bootstrap.changeset.files[0]?.metadata.hunks).toHaveLength(0);
+    expect(bootstrap.changeset.files[0]?.sourceFetcher).toBeUndefined();
   });
 
   test("caps skipped untracked-file stats when byte-size detection would require a full huge read", async () => {
@@ -1559,6 +1562,32 @@ describe("loadAppBootstrap source fetcher attachment", () => {
     expect(file?.sourceFetcher).toBeDefined();
     expect(await file?.sourceFetcher?.getFullText("new")).toBe("second\n");
     expect(await file?.sourceFetcher?.getFullText("old")).toBe("first\n");
+  });
+
+  test("`hunk show <ref>` refuses to expand source blobs above the source cap", async () => {
+    const dir = createTempRepo("hunk-source-show-large-");
+    const lines = Array.from({ length: 130_000 }, (_, index) => `line ${index + 1}`);
+    writeFileSync(join(dir, "large.txt"), `${lines.join("\n")}\n`);
+    git(dir, "add", "large.txt");
+    git(dir, "commit", "-m", "initial");
+
+    lines[65_000] = "line 65001 changed";
+    writeFileSync(join(dir, "large.txt"), `${lines.join("\n")}\n`);
+    git(dir, "add", "large.txt");
+    git(dir, "commit", "-m", "change middle line");
+
+    const bootstrap = await loadFromRepo(dir, {
+      kind: "show",
+      ref: "HEAD",
+      options: { mode: "auto" },
+    });
+
+    const file = bootstrap.changeset.files[0];
+    expect(file?.sourceFetcher).toBeDefined();
+    expect(file?.metadata.hunks.length).toBeGreaterThan(0);
+    await expect(file?.sourceFetcher?.getFullText("new")).rejects.toBeInstanceOf(
+      SourceTextTooLargeError,
+    );
   });
 
   test("`hunk show <ref>` pins expansion sources after the ref moves", async () => {

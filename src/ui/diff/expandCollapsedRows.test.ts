@@ -101,6 +101,23 @@ describe("expandCollapsedRows", () => {
     expect(collapsed.text.toLowerCase()).toContain("could not load");
   });
 
+  test("rewrites the label when source is too large to expand", () => {
+    const rows: DiffRow[] = [makeCollapsedRow("before", 0, [1, 3], [1, 3]), makeHunkHeader(0)];
+
+    const result = expandCollapsedRows(rows, {
+      layout: "split",
+      expandedKeys: new Set([gapKey("before", 0)]),
+      sourceStatus: { kind: "error", reason: "too-large" },
+      side: "new",
+    });
+
+    const collapsed = result[0];
+    if (!collapsed || collapsed.type !== "collapsed") {
+      throw new Error("expected first row to be collapsed");
+    }
+    expect(collapsed.text.toLowerCase()).toContain("source too large");
+  });
+
   test("inserts split-line context rows after the expanded collapsed row", () => {
     const rows: DiffRow[] = [makeCollapsedRow("before", 0, [1, 3], [1, 3]), makeHunkHeader(0)];
 

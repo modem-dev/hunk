@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act, StrictMode, useEffect, useState } from "react";
+import { SourceTextTooLargeError } from "../../core/fileSource";
 import type { DiffFile } from "../../core/types";
 import {
   createTestDeferred,
@@ -717,6 +718,32 @@ describe("useReviewController", () => {
       expect(String(loggedErrors[0]?.[0])).toContain("alpha");
     } finally {
       console.error = originalConsoleError;
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("toggleGap marks over-limit source loads as too large", async () => {
+    const tooLargeFetcher = createTestSourceFetcher(() => {
+      throw new SourceTextTooLargeError(5);
+    });
+
+    const { controllerRef, setup } = await renderReviewController([
+      createAlphaFile(tooLargeFetcher),
+    ]);
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        expectValue(controllerRef.current).toggleGap("alpha", "before:0");
+      });
+      await flush(setup);
+
+      const status = expectValue(controllerRef.current).sourceStatusByFileId["alpha"];
+      expect(status).toEqual({ kind: "error", reason: "too-large" });
+    } finally {
       await act(async () => {
         setup.renderer.destroy();
       });

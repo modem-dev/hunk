@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createFileSourceFetcher } from "./fileSource";
+import { createFileSourceFetcher, SourceTextTooLargeError } from "./fileSource";
 
 const tempDirs: string[] = [];
 
@@ -100,6 +100,22 @@ describe("createFileSourceFetcher", () => {
     expect(await fetcher.getFullText("old")).toBeNull();
   });
 
+  test("rejects fs source reads that exceed the configured byte cap", async () => {
+    const dir = createTempDir("hunk-source-fs-large-");
+    const target = join(dir, "large.txt");
+    writeFileSync(target, "0123456789\n");
+
+    const fetcher = createFileSourceFetcher(
+      {
+        old: { kind: "fs", absolutePath: target },
+        new: { kind: "none" },
+      },
+      { maxSourceBytes: 5 },
+    );
+
+    await expect(fetcher.getFullText("old")).rejects.toBeInstanceOf(SourceTextTooLargeError);
+  });
+
   test("reads git blob contents for both sides via `git show`", async () => {
     const repoRoot = createTempRepo("hunk-source-git-");
     const filePath = "note.txt";
@@ -138,6 +154,63 @@ describe("createFileSourceFetcher", () => {
 
     expect(await fetcher.getFullText("old")).toBe("staged\n");
     expect(await fetcher.getFullText("new")).toBe("working tree\n");
+  });
+
+  test("rejects git blob and index source reads that exceed the configured byte cap", async () => {
+    const repoRoot = createTempRepo("hunk-source-git-large-");
+    const filePath = "note.txt";
+
+    writeFileSync(join(repoRoot, filePath), "committed source\n");
+    git(repoRoot, "add", filePath);
+    git(repoRoot, "commit", "-m", "first");
+    writeFileSync(join(repoRoot, filePath), "staged source\n");
+    git(repoRoot, "add", filePath);
+
+    const fetcher = createFileSourceFetcher(
+      {
+        old: { kind: "git-blob", repoRoot, ref: "HEAD", path: filePath },
+        new: { kind: "git-index", repoRoot, path: filePath },
+      },
+      { maxSourceBytes: 5 },
+    );
+
+    await expect(fetcher.getFullText("old")).rejects.toBeInstanceOf(SourceTextTooLargeError);
+    await expect(fetcher.getFullText("new")).rejects.toBeInstanceOf(SourceTextTooLargeError);
+  });
+
+  test("treats oversized git stderr as a generic source failure", async () => {
+    const originalSpawn = Bun.spawn;
+    const mutableBun = Bun as unknown as { spawn: typeof Bun.spawn };
+
+    mutableBun.spawn = (() =>
+      originalSpawn(
+        [
+          process.execPath,
+          "--eval",
+          "process.stdout.write('small source\\n'); process.stderr.write('x'.repeat(70000));",
+        ],
+        {
+          stdin: "ignore",
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      )) as typeof Bun.spawn;
+
+    try {
+      const fetcher = createFileSourceFetcher({
+        old: { kind: "git-blob", repoRoot: process.cwd(), ref: "HEAD", path: "note.txt" },
+        new: { kind: "none" },
+      });
+
+      const loggedErrors = await captureConsoleErrors(async () => {
+        await expect(fetcher.getFullText("old")).resolves.toBeNull();
+      });
+
+      expect(String(loggedErrors[0]?.[0])).toContain("failed to collect Git source");
+      expect(String(loggedErrors[0]?.[1])).toContain("diagnostics exceeded");
+    } finally {
+      mutableBun.spawn = originalSpawn;
+    }
   });
 
   test("passes custom git executable through async git source reads", async () => {
