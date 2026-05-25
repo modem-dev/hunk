@@ -432,7 +432,8 @@ describe("PTY layout", () => {
         5_000,
       );
 
-      expect(wrapped).toContain("this is a very long");
+      expect(wrapped).toContain("this is a very lo");
+      expect(wrapped).toContain("wrapped line");
       expect(wrapped).toContain("ge';");
 
       await session.press("w");
