@@ -10,27 +10,7 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Fixed
 
-## [0.14.0-beta.3] - 2026-05-25
-
-### Fixed
-
-- Fixed inline note draft shortcuts so copy chords such as Ctrl-C and Ctrl-Shift-C no longer trigger note actions.
-- Stabilized hover backgrounds on wrapped diff rows so add-note affordances do not shift row layout.
-
-## [0.14.0-beta.2] - 2026-05-25
-
-### Fixed
-
-- Capped inline context expansion source reads so huge files cannot freeze or exhaust memory when expanding unchanged lines.
-- Hardened terminal rendering against control-sequence injection from diffs, file paths, notes, expanded context, copied selections, and pager fallback output.
-
-## [0.14.0-beta.1] - 2026-05-24
-
-### Fixed
-
-- Fixed custom theme configuration so Catppuccin Latte and Mocha can be used as base themes.
-
-## [0.14.0-beta.0] - 2026-05-24
+## [0.14.0] - 2026-05-26
 
 ### Added
 
@@ -43,9 +23,14 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Fixed
 
+- Capped inline context expansion source reads so huge files cannot freeze or exhaust memory when expanding unchanged lines.
 - Hardened plain-text pager startup so `PAGER` and `HUNK_TEXT_PAGER` shell metacharacters are passed as arguments instead of being evaluated implicitly.
+- Hardened terminal rendering against control-sequence injection from diffs, file paths, notes, expanded context, copied selections, and pager fallback output.
+- Fixed custom theme configuration so Catppuccin Latte and Mocha can be used as base themes.
+- Fixed inline note draft shortcuts so copy chords such as Ctrl-C and Ctrl-Shift-C no longer trigger note actions.
 - Fixed split diff alignment for wide CJK and emoji characters by measuring rendered text in terminal cells.
 - Fixed Ctrl-S saving for inline notes when tmux sends CSI-u keyboard input.
+- Stabilized hover backgrounds on wrapped diff rows so add-note affordances do not shift row layout.
 - Restricted session reloads so daemon commands cannot read files outside the initial Hunk session root.
 - Fixed static pager output so captured pager hosts honor configured custom themes.
 - Made `hunk pager` pass non-diff text through in captured pager and dumb-terminal contexts instead of spawning `less`.
@@ -388,11 +373,8 @@ All notable user-visible changes to Hunk are documented in this file.
 
 - Stabilized diff repainting, active-hunk scrolling, syntax highlighting, pager stdin patch handling, and terminal cleanup on exit.
 
-[Unreleased]: https://github.com/modem-dev/hunk/compare/v0.14.0-beta.3...HEAD
-[0.14.0-beta.3]: https://github.com/modem-dev/hunk/compare/v0.14.0-beta.2...v0.14.0-beta.3
-[0.14.0-beta.2]: https://github.com/modem-dev/hunk/compare/v0.14.0-beta.1...v0.14.0-beta.2
-[0.14.0-beta.1]: https://github.com/modem-dev/hunk/compare/v0.14.0-beta.0...v0.14.0-beta.1
-[0.14.0-beta.0]: https://github.com/modem-dev/hunk/compare/v0.13.1...v0.14.0-beta.0
+[Unreleased]: https://github.com/modem-dev/hunk/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/modem-dev/hunk/compare/v0.13.1...v0.14.0
 [0.13.1]: https://github.com/modem-dev/hunk/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/modem-dev/hunk/compare/v0.12.1...v0.13.0
 [0.12.1]: https://github.com/modem-dev/hunk/compare/v0.12.0...v0.12.1
