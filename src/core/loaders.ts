@@ -18,7 +18,7 @@ import {
 import { createFileSourceFetcher, type FileSourceSpec } from "./fileSource";
 import { normalizeUntrackedPatchHeaders, runGitUntrackedFileDiffText } from "./git";
 import { splitPatchIntoFileChunks, findPatchChunk } from "./patch/chunks";
-import { normalizePatchText } from "./patch/normalize";
+import { escapeUntrackedPatchPath, normalizePatchText } from "./patch/normalize";
 import { createUnsupportedVcsOperationError, getVcsAdapter, operationFromInput } from "./vcs";
 import type {
   AppBootstrap,
@@ -182,6 +182,7 @@ function buildUntrackedDiffFile(
   agentContext: AgentContext | null,
   gitExecutable = "git",
 ) {
+  const absolutePath = join(repoRoot, filePath);
   const largeFileCheck = inspectLargeUntrackedFile(repoRoot, filePath);
   if (largeFileCheck.shouldSkip) {
     return buildDiffFile(
@@ -195,6 +196,40 @@ function buildUntrackedDiffFile(
         isUntracked: true,
         stats: largeFileCheck.stats,
         statsTruncated: largeFileCheck.statsTruncated,
+      },
+    );
+  }
+
+  if (input.options.vcs === "sl") {
+    if (isProbablyBinaryFile(absolutePath)) {
+      return buildDiffFile(
+        createSkippedBinaryMetadata(filePath, "new"),
+        `Binary file skipped: ${filePath}\n`,
+        index,
+        sourcePrefix,
+        agentContext,
+        { isBinary: true, isUntracked: true },
+      );
+    }
+
+    const patch = createTwoFilesPatch(
+      "/dev/null",
+      escapeUntrackedPatchPath(filePath),
+      "",
+      fs.readFileSync(absolutePath, "utf8"),
+      "",
+      "",
+      { context: 3 },
+    ).replaceAll("\r\n", "\n");
+
+    return buildDiffFile(
+      parseUntrackedPatchFile(patch, filePath),
+      patch,
+      index,
+      sourcePrefix,
+      agentContext,
+      {
+        isUntracked: true,
       },
     );
   }

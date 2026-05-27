@@ -65,9 +65,9 @@ hunk show                      # review the latest commit
 hunk show HEAD~1               # review an earlier commit
 ```
 
-### Working with Jujutsu
+### Working with Jujutsu and Sapling
 
-Hunk auto-detects Jujutsu checkouts, so `hunk diff [revset]` and `hunk show [revset]` use jj revsets inside a jj workspace. To override VCS detection, set `vcs = "git"` or `vcs = "jj"` in [config](#config).
+Hunk auto-detects Jujutsu and Sapling checkouts, so `hunk diff [revset]` and `hunk show [revset]` use native revsets inside jj or Sapling workspaces. To override VCS detection, set `vcs = "git"` or `vcs = "jj"` or `vcs = "sl"` in [config](#config).
 
 ### Working with raw files and patches
 
@@ -121,7 +121,7 @@ Example:
 ```toml
 theme = "graphite"   # graphite, midnight, paper, ember, catppuccin-latte, catppuccin-mocha, custom
 mode = "auto"        # auto, split, stack
-vcs = "git"          # git, jj
+vcs = "git"          # git, jj, sl
 watch = false
 exclude_untracked = false
 line_numbers = true
@@ -129,7 +129,7 @@ wrap_lines = false
 agent_notes = false
 ```
 
-`exclude_untracked` affects Git working-tree `hunk diff` sessions only.
+`exclude_untracked` affects Git/Sapling working-tree `hunk diff` sessions only.
 
 Custom themes can inherit from any built-in base theme and override only the colors you care about:
 
@@ -184,6 +184,15 @@ To use Hunk as jj's pager, run `jj config edit --user` and update:
 [ui]
 pager = ["hunk", "pager"]
 diff-formatter = ":git"
+```
+
+### Sapling pager integration
+
+To use Hunk as Sapling's pager, run `sl config -u` and update:
+
+```ini
+[pager]
+pager = hunk pager
 ```
 
 ### OpenTUI component
