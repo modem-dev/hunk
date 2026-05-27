@@ -10,6 +10,8 @@ const tempDirs: string[] = [];
 
 // Jujutsu subprocess setup can exceed Bun's default 5s test timeout on Windows CI.
 const JjLoaderIntegrationTestTimeoutMs = 20_000;
+// Sapling subprocess setup can exceed Bun's default 5s test timeout on slower machines.
+const SlLoaderIntegrationTestTimeoutMs = 20_000;
 
 function cleanupTempDirs() {
   while (tempDirs.length > 0) {
@@ -76,6 +78,22 @@ function jj(cwd: string, ...cmd: string[]) {
   return Buffer.from(proc.stdout).toString("utf8");
 }
 
+function sl(cwd: string, ...cmd: string[]) {
+  const proc = Bun.spawnSync(["sl", "--noninteractive", "--color", "never", ...cmd], {
+    cwd,
+    stdout: "pipe",
+    stderr: "pipe",
+    stdin: "ignore",
+  });
+
+  if (proc.exitCode !== 0) {
+    const stderr = Buffer.from(proc.stderr).toString("utf8");
+    throw new Error(stderr.trim() || `sl ${cmd.join(" ")} failed`);
+  }
+
+  return Buffer.from(proc.stdout).toString("utf8");
+}
+
 function createTempRepo(prefix: string) {
   const dir = createTempDir(prefix);
 
@@ -95,8 +113,19 @@ function createTempJjRepo(prefix: string) {
   return dir;
 }
 
+function createTempSlRepo(prefix: string) {
+  const dir = createTempDir(prefix);
+
+  sl(dir, "init", "--git");
+  sl(dir, "config", "--local", "ui.username", "Test User <test@example.com>");
+
+  return dir;
+}
+
 // Keep jj-backed loader coverage opt-in on machines that have the external CLI installed.
 const jjTest = Bun.which("jj") ? test : test.skip;
+// Keep sl-backed loader coverage opt-in on machines that have the external CLI installed.
+const slTest = Bun.which("sl") ? test : test.skip;
 
 async function runWithHome<T>(home: string, task: () => Promise<T>) {
   const previousHome = process.env.HOME;
@@ -316,6 +345,30 @@ describe("loadAppBootstrap", () => {
     ]);
     expect(bootstrap.changeset.files[1]?.patch).toContain("new file mode");
   });
+
+  slTest(
+    "includes Sapling unknown files in working copy reviews",
+    async () => {
+      const dir = createTempSlRepo("hunk-sl-untracked-");
+
+      writeFileSync(join(dir, "tracked.ts"), "export const value = 1;\n");
+      sl(dir, "add", "tracked.ts");
+      sl(dir, "commit", "-m", "initial");
+
+      writeFileSync(join(dir, "new-file.ts"), "export const added = true;\n");
+
+      const bootstrap = await loadFromRepo(dir, {
+        kind: "vcs",
+        staged: false,
+        options: { mode: "auto", vcs: "sl" },
+      });
+
+      const file = bootstrap.changeset.files[0];
+      expect(bootstrap.changeset.files.map((entry) => entry.path)).toEqual(["new-file.ts"]);
+      expect(file?.isUntracked).toBe(true);
+    },
+    SlLoaderIntegrationTestTimeoutMs,
+  );
 
   test("keeps generated large tracked diffs as skipped placeholders", async () => {
     const dir = createTempRepo("hunk-git-large-tracked-");

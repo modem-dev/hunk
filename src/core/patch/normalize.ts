@@ -1,6 +1,15 @@
 import { normalizeGitPatchPrefixes } from "./gitFormat";
 import { stripGitLogMetadata } from "./gitLog";
 
+/** Escape only path characters that break unified-diff header parsing. */
+export function escapeUntrackedPatchPath(path: string) {
+  return path
+    .replaceAll("\\", "\\\\")
+    .replaceAll("\t", "\\t")
+    .replaceAll("\n", "\\n")
+    .replaceAll("\r", "\\r");
+}
+
 /** Remove terminal escape sequences so Git-colored pager input still parses as plain patch text. */
 export function stripTerminalControl(text: string) {
   return text
