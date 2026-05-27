@@ -6,6 +6,8 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Added
 
+- Added a GitHub-facing keyboard shortcuts section to the README.
+
 ### Changed
 
 ### Fixed
