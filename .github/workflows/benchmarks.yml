@@ -9,10 +9,22 @@ on:
       - "docs/**"
       - "assets/**"
       - "LICENSE"
+  pull_request:
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "assets/**"
+      - "LICENSE"
   workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
 
 env:
   SKIP_INSTALL_SIMPLE_GIT_HOOKS: "1"
+  HUNK_BENCHMARK_SAMPLES: "3"
 
 concurrency:
   group: benchmarks-${{ github.workflow }}-${{ github.ref }}
@@ -25,6 +37,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
@@ -34,36 +48,65 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Run bootstrap benchmark
+      - name: Run head benchmarks
         run: |
           mkdir -p benchmark-results
-          bun run bench:bootstrap-load | tee benchmark-results/bootstrap-load.txt
+          bun run bench -- --samples "$HUNK_BENCHMARK_SAMPLES" --include-competitors --out benchmark-results/head.json \
+            | tee benchmark-results/head.txt
 
-      - name: Run highlight prefetch benchmark
+      - name: Run base benchmarks
+        if: github.event_name == 'pull_request'
         run: |
-          bun run bench:highlight-prefetch | tee benchmark-results/highlight-prefetch.txt
+          git fetch origin main
+          git worktree add ../hunk-benchmark-base origin/main
+          rm -rf ../hunk-benchmark-base/benchmarks
+          cp -R benchmarks ../hunk-benchmark-base/benchmarks
+          cd ../hunk-benchmark-base
+          bun install --frozen-lockfile
+          bun run benchmarks/run.ts --samples "$HUNK_BENCHMARK_SAMPLES" --include-competitors --out "$GITHUB_WORKSPACE/benchmark-results/base.json" \
+            | tee "$GITHUB_WORKSPACE/benchmark-results/base.txt"
 
-      - name: Run large stream benchmark
+      - name: Compare benchmark results
+        id: compare
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
         run: |
-          bun run bench:large-stream | tee benchmark-results/large-stream.txt
+          bun run bench:compare -- \
+            --base benchmark-results/base.json \
+            --head benchmark-results/head.json \
+            --out benchmark-results/comparison.json \
+            --markdown benchmark-results/summary.md
 
       - name: Publish benchmark summary
+        if: always()
         run: |
-          {
-            echo '## Benchmark results'
-            echo
-            for file in benchmark-results/*.txt; do
-              echo "### $(basename "$file")"
-              echo '```text'
-              cat "$file"
-              echo '```'
+          if [ -f benchmark-results/summary.md ]; then
+            cat benchmark-results/summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo '## Benchmark results'
               echo
-            done
-          } >> "$GITHUB_STEP_SUMMARY"
+              echo '```text'
+              cat benchmark-results/head.txt
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Comment benchmark summary on PR
+        if: always() && github.event_name == 'pull_request' && hashFiles('benchmark-results/summary.md') != ''
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bun run bench:comment-pr -- --body benchmark-results/summary.md
+
+      - name: Fail on benchmark regression
+        if: github.event_name == 'pull_request' && steps.compare.outcome == 'failure'
+        run: exit 1
 
       - name: Upload benchmark artifacts
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: benchmark-results
-          path: benchmark-results/*.txt
+          path: benchmark-results/*
           if-no-files-found: error

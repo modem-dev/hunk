@@ -6,6 +6,8 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Added
 
+- Added CI performance benchmarks with PR comparison comments to guard Hunk startup, loading, rendering, highlighting, navigation, and memory costs.
+
 ### Changed
 
 ### Fixed
