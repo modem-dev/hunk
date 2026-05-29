@@ -14,7 +14,6 @@ export interface BenchmarkMetricResult {
   max: number;
   threshold?: BenchmarkThreshold;
   comparable: boolean;
-  informational?: boolean;
   source: string;
 }
 
@@ -65,6 +64,10 @@ export function percentile(samples: number[], percentileValue: number) {
 export function classifyMetric(
   name: string,
 ): Pick<BenchmarkMetricResult, "unit" | "comparable" | "threshold"> {
+  if (name.startsWith("competitor_")) {
+    return { unit: "ms", comparable: false };
+  }
+
   if (name.endsWith("_ms")) {
     return {
       unit: "ms",
@@ -91,10 +94,6 @@ export function classifyMetric(
 
   if (name.endsWith("_bytes")) {
     return { unit: "bytes", comparable: false };
-  }
-
-  if (name.startsWith("competitor_")) {
-    return { unit: "ms", comparable: false };
   }
 
   return { unit: "count", comparable: false };

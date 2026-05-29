@@ -88,7 +88,7 @@ function compareMetric(
     status = "missing-base";
   } else if (!head) {
     status = "missing-head";
-  } else if (!metric.comparable || metric.informational || metric.name.includes("competitor_")) {
+  } else if (!metric.comparable || metric.name.includes("competitor_")) {
     status = "informational";
   } else if (
     metric.threshold &&

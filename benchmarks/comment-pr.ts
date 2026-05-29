@@ -47,6 +47,23 @@ async function githubRequest(path: string, init: RequestInit = {}) {
   return response.status === 204 ? null : response.json();
 }
 
+/** Fetch every issue comment page so the marker lookup can update old bot comments. */
+async function fetchAllComments(repository: string, pullRequestNumber: number) {
+  const comments: Array<{ id: number; body?: string }> = [];
+
+  for (let page = 1; ; page += 1) {
+    const batch = (await githubRequest(
+      `/repos/${repository}/issues/${pullRequestNumber}/comments?per_page=100&page=${page}`,
+    )) as Array<{ id: number; body?: string }>;
+
+    comments.push(...batch);
+
+    if (batch.length < 100) {
+      return comments;
+    }
+  }
+}
+
 const { bodyPath } = parseArgs(Bun.argv.slice(2));
 const repository = requireEnv("GITHUB_REPOSITORY");
 const eventPath = requireEnv("GITHUB_EVENT_PATH");
@@ -59,9 +76,7 @@ if (!pullRequestNumber) {
 }
 
 const body = readFileSync(bodyPath, "utf8");
-const comments = (await githubRequest(
-  `/repos/${repository}/issues/${pullRequestNumber}/comments?per_page=100`,
-)) as Array<{ id: number; body?: string }>;
+const comments = await fetchAllComments(repository, pullRequestNumber);
 const existing = comments.find((comment) => comment.body?.includes(marker));
 
 if (existing) {
