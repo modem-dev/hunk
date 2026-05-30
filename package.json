@@ -68,10 +68,16 @@
     "publish:prebuilt:npm": "bun run ./scripts/publish-prebuilt-npm.ts",
     "update:homebrew-formula": "bun run ./scripts/update-homebrew-formula.ts",
     "prepack": "bun run build:npm",
+    "bench": "bun run benchmarks/run.ts",
     "bench:bootstrap-load": "bun run benchmarks/bootstrap-load.ts",
+    "bench:working-tree-load": "bun run benchmarks/working-tree-load.ts",
+    "bench:changeset-parse": "bun run benchmarks/changeset-parse.ts",
+    "bench:render-layout": "bun run benchmarks/render-layout.ts",
     "bench:highlight-prefetch": "bun run benchmarks/highlight-prefetch.ts",
     "bench:large-stream": "bun run benchmarks/large-stream.ts",
     "bench:large-stream-profile": "bun run benchmarks/large-stream-profile.ts",
+    "bench:memory": "bun run benchmarks/memory.ts",
+    "bench:competitors": "bun run benchmarks/competitors.ts",
     "nix:update-lock": "nix run .#update-bun-lock"
   },
   "dependencies": {

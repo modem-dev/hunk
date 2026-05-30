@@ -3,37 +3,19 @@ import type { AppBootstrap, DiffFile } from "../src/core/types";
 
 export const DEFAULT_FILE_COUNT = 180;
 export const DEFAULT_LINES_PER_FILE = 120;
-export const DEFAULT_NOTES_PER_FILE = 2;
-
 interface LargeSplitStreamFixtureOptions {
   fileCount?: number;
   linesPerFile?: number;
-  notesPerFile?: number;
-}
-
-function createAgentAnnotations(index: number, notesPerFile: number) {
-  if (notesPerFile <= 0) {
-    return [];
-  }
-
-  return Array.from({ length: notesPerFile }, (_, noteIndex) => {
-    const startLine = 40 + noteIndex * 12;
-    const endLine = startLine + 5;
-    return {
-      id: `note:${index}:${noteIndex}`,
-      newRange: [startLine, endLine] as [number, number],
-      summary: `Explain the split-mode refactor in file ${index}, hunk note ${noteIndex + 1}.`,
-      rationale:
-        "Synthetic benchmark note to exercise inline note placement, guide rows, and note-enabled full-stream rendering.",
-    };
-  });
+  changedStartLine?: number;
+  changedEndLine?: number;
 }
 
 export function createLargeSplitDiffFile(
   index: number,
   {
     linesPerFile = DEFAULT_LINES_PER_FILE,
-    notesPerFile = 0,
+    changedStartLine = 37,
+    changedEndLine = 84,
   }: Omit<LargeSplitStreamFixtureOptions, "fileCount"> = {},
 ): DiffFile {
   const path = `src/stream${index}.ts`;
@@ -44,7 +26,7 @@ export function createLargeSplitDiffFile(
 
   const after = Array.from({ length: linesPerFile }, (_, lineIndex) => {
     const line = lineIndex + 1;
-    if (lineIndex >= 36 && lineIndex < 84) {
+    if (line >= changedStartLine && line <= changedEndLine) {
       return `export function stream${index}_${line}(value: number) { return value * ${line} + ${index}; }\n`;
     }
 
@@ -66,40 +48,40 @@ export function createLargeSplitDiffFile(
     true,
   );
 
-  const annotations = createAgentAnnotations(index, notesPerFile);
-
   return {
     id: `stream:${index}`,
     path,
     patch: "",
     language: "typescript",
-    stats: { additions: 48, deletions: 48 },
+    stats: {
+      additions: Math.max(0, changedEndLine - changedStartLine + 1),
+      deletions: Math.max(0, changedEndLine - changedStartLine + 1),
+    },
     metadata,
-    agent:
-      annotations.length > 0
-        ? {
-            path,
-            summary: `Synthetic note-heavy benchmark context for ${path}`,
-            annotations,
-          }
-        : null,
+    agent: null,
   };
 }
 
 export function createLargeSplitStreamFiles({
   fileCount = DEFAULT_FILE_COUNT,
   linesPerFile = DEFAULT_LINES_PER_FILE,
-  notesPerFile = 0,
+  changedStartLine,
+  changedEndLine,
 }: LargeSplitStreamFixtureOptions = {}) {
   return Array.from({ length: fileCount }, (_, index) =>
-    createLargeSplitDiffFile(index + 1, { linesPerFile, notesPerFile }),
+    createLargeSplitDiffFile(index + 1, {
+      linesPerFile,
+      changedStartLine,
+      changedEndLine,
+    }),
   );
 }
 
 export function createLargeSplitStreamBootstrap({
   fileCount = DEFAULT_FILE_COUNT,
   linesPerFile = DEFAULT_LINES_PER_FILE,
-  notesPerFile = 0,
+  changedStartLine,
+  changedEndLine,
 }: LargeSplitStreamFixtureOptions = {}): AppBootstrap {
   return {
     input: {
@@ -110,13 +92,18 @@ export function createLargeSplitStreamBootstrap({
       },
     },
     changeset: {
-      id: `changeset:large-split-stream:${fileCount}:${linesPerFile}:${notesPerFile}`,
+      id: `changeset:large-split-stream:${fileCount}:${linesPerFile}`,
       sourceLabel: "repo",
       title: "repo working tree",
-      files: createLargeSplitStreamFiles({ fileCount, linesPerFile, notesPerFile }),
+      files: createLargeSplitStreamFiles({
+        fileCount,
+        linesPerFile,
+        changedStartLine,
+        changedEndLine,
+      }),
     },
     initialMode: "split",
     initialTheme: "midnight",
-    initialShowAgentNotes: notesPerFile > 0,
+    initialShowAgentNotes: false,
   };
 }
