@@ -84,7 +84,7 @@ Each script prints `METRIC name=value` lines. `benchmarks/run.ts` repeats script
 6. Uploads raw JSON/text artifacts.
 7. Posts or updates one PR comment with a curated key-benchmark table, always including regressions and hiding noisy supporting metrics.
 
-The default CI suite intentionally excludes optional memory profiling, pure-planning profiling, and competitor comparisons to keep PR feedback fast. Run `bun run bench -- --include-competitors` or focused scripts locally when deeper diagnostics are needed.
+The default CI suite intentionally excludes optional memory profiling, pure-planning profiling, and competitor comparisons to keep PR feedback fast. Pull requests use one sample per benchmark so the benchmark job should finish around the normal CI runtime; `main` runs keep three samples for a more stable history. Run `bun run bench -- --include-competitors` or focused scripts locally when deeper diagnostics are needed.
 
 Initial thresholds:
 

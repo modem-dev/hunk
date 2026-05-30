@@ -24,7 +24,7 @@ permissions:
 
 env:
   SKIP_INSTALL_SIMPLE_GIT_HOOKS: "1"
-  HUNK_BENCHMARK_SAMPLES: "3"
+  HUNK_BENCHMARK_SAMPLES: ${{ github.event_name == 'pull_request' && '1' || '3' }}
 
 concurrency:
   group: benchmarks-${{ github.workflow }}-${{ github.ref }}

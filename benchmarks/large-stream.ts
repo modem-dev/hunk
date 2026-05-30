@@ -14,7 +14,7 @@ const VIEWPORT = {
   width: 240,
   height: 28,
 } as const;
-const SCROLL_TICKS = 8;
+const SCROLL_TICKS = 4;
 const SCROLL_TARGET = {
   x: 170,
   y: 12,
