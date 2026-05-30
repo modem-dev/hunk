@@ -13,7 +13,10 @@ export interface VisiblePlannedRowWindow {
   topSpacerHeight: number;
 }
 
-/** Find the first row whose bottom edge is after the visible top boundary. */
+/**
+ * Find the first row whose bottom edge is after the visible top boundary.
+ * Requires row bounds to be sorted by non-decreasing row bottom.
+ */
 function findFirstRowWithBottomAfter(rowBounds: DiffSectionGeometry["rowBounds"], top: number) {
   let low = 0;
   let high = rowBounds.length - 1;
@@ -34,7 +37,10 @@ function findFirstRowWithBottomAfter(rowBounds: DiffSectionGeometry["rowBounds"]
   return result;
 }
 
-/** Find the last row whose top edge is before the visible bottom boundary. */
+/**
+ * Find the last row whose top edge is before the visible bottom boundary.
+ * Requires row bounds to be sorted by non-decreasing row top.
+ */
 function findLastRowWithTopBefore(rowBounds: DiffSectionGeometry["rowBounds"], bottom: number) {
   let low = 0;
   let high = rowBounds.length - 1;
@@ -128,6 +134,8 @@ export function resolveVisiblePlannedRowWindow({
     firstVisibleIndex = -1;
   }
 
+  // firstVisibleIndex > lastVisibleIndex should not happen with sorted row bounds, but keep the
+  // empty-window fallback defensive in case an upstream geometry invariant is ever broken.
   if (firstVisibleIndex < 0 || lastVisibleIndex < 0 || firstVisibleIndex > lastVisibleIndex) {
     const topSpacerHeight = Math.min(sectionGeometry.bodyHeight, minVisibleTop);
 
