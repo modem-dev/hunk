@@ -183,10 +183,12 @@ function parseStyleValue(styleValue: unknown) {
 const RESERVED_PIERRE_TOKEN_COLORS = {
   dark: {
     "#ff6762": "keyword",
+    "#ff855e": "keyword",
     "#5ecc71": "string",
   },
   light: {
     "#d52c36": "keyword",
+    "#d5512f": "keyword",
     "#199f43": "string",
   },
 } as const;
