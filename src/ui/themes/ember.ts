@@ -17,6 +17,8 @@ export const EMBER_THEME: AppTheme = withLazySyntaxStyle(
     muted: "#c7a18d",
     addedBg: "#183424",
     removedBg: "#4a1f1f",
+    movedAddedBg: "#17303a",
+    movedRemovedBg: "#3c273b",
     contextBg: "#24140e",
     addedContentBg: "#21432c",
     removedContentBg: "#5a2727",

@@ -14,6 +14,8 @@ export interface AppTheme {
   muted: string;
   addedBg: string;
   removedBg: string;
+  movedAddedBg: string;
+  movedRemovedBg: string;
   contextBg: string;
   addedContentBg: string;
   removedContentBg: string;

@@ -47,6 +47,8 @@ function buildCustomTheme(customTheme: CustomThemeConfig) {
     muted: customTheme.muted ?? baseTheme.muted,
     addedBg: customTheme.addedBg ?? baseTheme.addedBg,
     removedBg: customTheme.removedBg ?? baseTheme.removedBg,
+    movedAddedBg: customTheme.movedAddedBg ?? baseTheme.movedAddedBg,
+    movedRemovedBg: customTheme.movedRemovedBg ?? baseTheme.movedRemovedBg,
     contextBg: customTheme.contextBg ?? baseTheme.contextBg,
     addedContentBg: customTheme.addedContentBg ?? baseTheme.addedContentBg,
     removedContentBg: customTheme.removedContentBg ?? baseTheme.removedContentBg,

@@ -67,11 +67,15 @@ export function splitRightRailColor(
 }
 
 /** Pick split-view colors from the semantic diff cell kind. */
-export function splitCellPalette(kind: SplitLineCell["kind"], theme: AppTheme) {
+export function splitCellPalette(
+  kind: SplitLineCell["kind"],
+  theme: AppTheme,
+  moveKind?: SplitLineCell["moveKind"],
+) {
   if (kind === "addition") {
     return {
-      gutterBg: theme.addedBg,
-      contentBg: theme.addedBg,
+      gutterBg: moveKind ? theme.movedAddedBg : theme.addedBg,
+      contentBg: moveKind ? theme.movedAddedBg : theme.addedBg,
       signColor: theme.addedSignColor,
       numberColor: theme.addedSignColor,
     };
@@ -79,8 +83,8 @@ export function splitCellPalette(kind: SplitLineCell["kind"], theme: AppTheme) {
 
   if (kind === "deletion") {
     return {
-      gutterBg: theme.removedBg,
-      contentBg: theme.removedBg,
+      gutterBg: moveKind ? theme.movedRemovedBg : theme.removedBg,
+      contentBg: moveKind ? theme.movedRemovedBg : theme.removedBg,
       signColor: theme.removedSignColor,
       numberColor: theme.removedSignColor,
     };
@@ -104,11 +108,15 @@ export function splitCellPalette(kind: SplitLineCell["kind"], theme: AppTheme) {
 }
 
 /** Pick stack-view colors from the semantic diff cell kind. */
-export function stackCellPalette(kind: StackLineCell["kind"], theme: AppTheme) {
+export function stackCellPalette(
+  kind: StackLineCell["kind"],
+  theme: AppTheme,
+  moveKind?: StackLineCell["moveKind"],
+) {
   if (kind === "addition") {
     return {
-      gutterBg: theme.addedBg,
-      contentBg: theme.addedBg,
+      gutterBg: moveKind ? theme.movedAddedBg : theme.addedBg,
+      contentBg: moveKind ? theme.movedAddedBg : theme.addedBg,
       signColor: theme.addedSignColor,
       numberColor: theme.addedSignColor,
     };
@@ -116,8 +124,8 @@ export function stackCellPalette(kind: StackLineCell["kind"], theme: AppTheme) {
 
   if (kind === "deletion") {
     return {
-      gutterBg: theme.removedBg,
-      contentBg: theme.removedBg,
+      gutterBg: moveKind ? theme.movedRemovedBg : theme.removedBg,
+      contentBg: moveKind ? theme.movedRemovedBg : theme.removedBg,
       signColor: theme.removedSignColor,
       numberColor: theme.removedSignColor,
     };
