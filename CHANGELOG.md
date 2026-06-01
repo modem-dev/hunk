@@ -12,6 +12,8 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Fixed
 
+- Fixed npm installs by pinning `@pierre/diffs` to the version Hunk is tested with instead of allowing the broken `1.2.6` release.
+
 ## [0.14.0] - 2026-05-26
 
 ### Added
