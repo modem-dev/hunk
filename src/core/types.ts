@@ -2,7 +2,7 @@ import type { FileDiffMetadata } from "@pierre/diffs";
 import type { FileSourceFetcher } from "./fileSource";
 
 export type LayoutMode = "auto" | "split" | "stack";
-export type VcsMode = "git" | "jj";
+export type VcsMode = "git" | "jj" | "sl";
 export type TerminalThemeMode = "light" | "dark";
 
 export type ReviewNoteSource = "ai" | "agent" | "user";

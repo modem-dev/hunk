@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import { join } from "node:path";
 import { HunkUserError } from "./errors";
+import { escapeUntrackedPatchPath } from "./patch/normalize";
 import type { VcsCommandInput, ShowCommandInput, StashShowCommandInput } from "./types";
 
 export type GitBackedInput = VcsCommandInput | ShowCommandInput | StashShowCommandInput;
@@ -454,15 +455,6 @@ export function listGitUntrackedFiles(
   return untrackedFiles.filter((filePath) =>
     isReviewableUntrackedPath(normalizedRepoRoot, filePath),
   );
-}
-
-/** Escape only the filename characters that break unified-diff header parsing. */
-function escapeUntrackedPatchPath(path: string) {
-  return path
-    .replaceAll("\\", "\\\\")
-    .replaceAll("\t", "\\t")
-    .replaceAll("\n", "\\n")
-    .replaceAll("\r", "\\r");
 }
 
 /** Rewrite Git's quoted untracked-file headers into parser-friendly paths. */
