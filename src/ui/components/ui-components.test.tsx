@@ -1711,6 +1711,32 @@ describe("UI components", () => {
     expect(lines[4]?.trimStart().startsWith("╰")).toBe(true);
   });
 
+  test("AgentInlineNote marks the active saved note with a neutral left arrow", async () => {
+    const theme = resolveTheme("midnight", null);
+    const frame = await captureFrame(
+      <AgentInlineNote
+        active={true}
+        annotation={{
+          newRange: [2, 4],
+          summary: "Summary line",
+          rationale: "Rationale line.",
+        }}
+        anchorSide="new"
+        layout="split"
+        theme={theme}
+        width={96}
+      />,
+      100,
+      5,
+    );
+
+    const lines = frame.split("\n");
+    expect(lines[0]).toContain("» ╭─ Agent note - R2–R4");
+    expect(lines[0]).not.toContain("ACTIVE");
+    expect(lines[2]).not.toContain("»");
+    expect(lines[2]).toContain("Summary line");
+  });
+
   test("AgentInlineNote renders draft notes as an editable composer", async () => {
     const theme = resolveTheme("midnight", null);
     const file = createTestDiffFile(

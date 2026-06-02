@@ -25,6 +25,7 @@ import type { DraftReviewNote } from "../../hooks/useReviewController";
 import {
   alwaysShowReviewNote,
   reviewNoteSource,
+  visibleReviewNoteId,
   type VisibleAgentNote,
 } from "../../lib/agentAnnotations";
 import {
@@ -178,6 +179,7 @@ export function DiffPane({
   scrollRef,
   selectedFileId,
   selectedHunkIndex,
+  activeNoteId = null,
   scrollToNote = false,
   draftNote = null,
   draftNoteFocused = false,
@@ -224,6 +226,7 @@ export function DiffPane({
   scrollRef: RefObject<ScrollBoxRenderable | null>;
   selectedFileId?: string;
   selectedHunkIndex: number;
+  activeNoteId?: string | null;
   scrollToNote?: boolean;
   draftNote?: DraftReviewNote | null;
   draftNoteFocused?: boolean;
@@ -346,16 +349,19 @@ export function DiffPane({
         (annotation) => showAgentNotes || alwaysShowReviewNote(annotation),
       );
       const notes: VisibleAgentNote[] = annotations.map((annotation, index) => {
+        const id = visibleReviewNoteId(file, annotation, index);
         const source = reviewNoteSource(annotation);
         if (source !== "user") {
           return {
-            id: `annotation:${file.id}:${annotation.id ?? index}`,
+            id,
+            active: id === activeNoteId,
             annotation,
           };
         }
 
         return {
-          id: `annotation:${file.id}:${annotation.id ?? index}`,
+          id,
+          active: id === activeNoteId,
           annotation,
           source,
           editable: true,
@@ -396,6 +402,7 @@ export function DiffPane({
 
     return next;
   }, [
+    activeNoteId,
     draftNote,
     draftNoteFocused,
     files,
@@ -1215,12 +1222,22 @@ export function DiffPane({
     const sectionRelativeHunkTop =
       selectedEstimatedHunkBounds.top - selectedEstimatedHunkBounds.sectionTop;
     const sectionRelativeHunkBottom = sectionRelativeHunkTop + selectedEstimatedHunkBounds.height;
-    const noteRow = geometry.rowBounds.find(
-      (row) =>
-        row.key.startsWith("inline-note:") &&
-        row.top >= sectionRelativeHunkTop &&
-        row.top < sectionRelativeHunkBottom,
-    );
+    const noteRow = activeNoteId
+      ? geometry.rowBoundsByStableKey.get(`inline-note:${activeNoteId}`)
+      : geometry.rowBounds.find(
+          (row) =>
+            row.key.startsWith("inline-note:") &&
+            row.top >= sectionRelativeHunkTop &&
+            row.top < sectionRelativeHunkBottom,
+        );
+
+    if (
+      noteRow &&
+      activeNoteId &&
+      (noteRow.top < sectionRelativeHunkTop || noteRow.top >= sectionRelativeHunkBottom)
+    ) {
+      return null;
+    }
 
     if (!noteRow) {
       return null;
@@ -1230,7 +1247,7 @@ export function DiffPane({
       top: selectedEstimatedHunkBounds.sectionTop + noteRow.top,
       height: noteRow.height,
     };
-  }, [scrollToNote, sectionGeometry, selectedEstimatedHunkBounds, selectedFileIndex]);
+  }, [activeNoteId, scrollToNote, sectionGeometry, selectedEstimatedHunkBounds, selectedFileIndex]);
   const selectedEstimatedHunkTop = selectedEstimatedHunkBounds?.top ?? null;
   const selectedEstimatedHunkHeight = selectedEstimatedHunkBounds?.height ?? null;
   const selectedEstimatedHunkStartRowId = selectedEstimatedHunkBounds?.startRowId ?? null;
@@ -1714,7 +1731,9 @@ export function DiffPane({
                       headerLabelWidth={headerLabelWidth}
                       headerStatsWidth={headerStatsWidth}
                       layout={layout}
-                      selectedHunkIndex={file.id === selectedFileId ? selectedHunkIndex : -1}
+                      selectedHunkIndex={
+                        activeNoteId ? -1 : file.id === selectedFileId ? selectedHunkIndex : -1
+                      }
                       copySelectedRowRanges={copySelectedRowKeysByFile.get(file.id)}
                       copySelectedSide={copySelectionSide}
                       shouldLoadHighlight={highlightPrefetchFileIds.has(file.id)}

@@ -7,6 +7,7 @@ export interface VisibleAgentNote {
   id: string;
   annotation: AgentAnnotation;
   source?: ReviewNoteSource | "draft";
+  active?: boolean;
   editable?: boolean;
   draft?: {
     body: string;
@@ -43,13 +44,18 @@ export function alwaysShowReviewNote(annotation: AgentAnnotation) {
   return reviewNoteSource(annotation) === "user";
 }
 
+/** Build the stable UI id used for selecting and rendering one review note. */
+export function visibleReviewNoteId(file: DiffFile, annotation: AgentAnnotation, index: number) {
+  return `annotation:${file.id}:${annotation.id ?? index}`;
+}
+
 /** Check whether two inclusive line ranges overlap. */
 function overlap(rangeA: [number, number], rangeB: [number, number]) {
   return rangeA[0] <= rangeB[1] && rangeB[0] <= rangeA[1];
 }
 
 /** Check whether an annotation belongs to the visible span of a hunk. */
-function annotationOverlapsHunk(annotation: AgentAnnotation, hunk: Hunk) {
+export function annotationOverlapsHunk(annotation: AgentAnnotation, hunk: Hunk) {
   const hunkRange = hunkLineRange(hunk);
 
   if (annotation.newRange && overlap(annotation.newRange, hunkRange.newRange)) {
@@ -61,6 +67,12 @@ function annotationOverlapsHunk(annotation: AgentAnnotation, hunk: Hunk) {
   }
 
   return false;
+}
+
+/** Resolve the hunk that owns one annotation, falling back to the first hunk for range-less notes. */
+export function annotationHunkIndex(file: DiffFile, annotation: AgentAnnotation) {
+  const index = file.metadata.hunks.findIndex((hunk) => annotationOverlapsHunk(annotation, hunk));
+  return index >= 0 ? index : file.metadata.hunks.length > 0 ? 0 : -1;
 }
 
 /** Return the annotations relevant to the currently selected hunk. */

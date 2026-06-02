@@ -122,6 +122,7 @@ export function AgentInlineNote({
   layout,
   noteCount = 1,
   noteIndex = 0,
+  active = false,
   draft,
   onClose,
   theme,
@@ -133,6 +134,7 @@ export function AgentInlineNote({
   layout: Exclude<LayoutMode, "auto">;
   noteCount?: number;
   noteIndex?: number;
+  active?: boolean;
   draft?: {
     body: string;
     focused: boolean;
@@ -192,6 +194,7 @@ export function AgentInlineNote({
 
   const closeText = onClose ? "[x]" : "";
   const titleText = `${inlineNoteTitle(annotation, noteIndex, noteCount)} - ${annotationRangeLabel(annotation, file)}`;
+  const savedDisplayTitleText = titleText;
   const splitWidths = splitColumnWidths(width);
   const canDockRight = layout === "split" && anchorSide === "new" && width >= 84;
   const canDockLeft = layout === "split" && anchorSide === "old" && width >= 84;
@@ -257,7 +260,7 @@ export function AgentInlineNote({
       : []),
   ];
   const savedTitleText = fitText(
-    ` ${titleText} `,
+    ` ${savedDisplayTitleText} `,
     Math.max(0, boxWidth - 4 - closeGapWidth - closeWidth),
   );
   const savedTopBorderSuffixWidth = Math.max(
@@ -266,6 +269,29 @@ export function AgentInlineNote({
   );
   const savedTopPrefixWidth = 2 + savedTitleText.length + savedTopBorderSuffixWidth;
   const bottomBorder = `╰${"─".repeat(Math.max(0, boxWidth - 2))}╯`;
+  const savedBorderColor = theme.noteBorder;
+  const savedHeaderBackground = theme.panel;
+  const activeCursor = "»";
+  const savedTopLeft = active && boxLeft === 0 ? activeCursor : "╭";
+  const savedTopLeftColor = active && boxLeft === 0 ? theme.text : savedBorderColor;
+  const renderSavedHeaderGutter = () => {
+    if (!active || boxLeft <= 0) {
+      return <text>{" ".repeat(boxLeft)}</text>;
+    }
+
+    if (boxLeft === 1) {
+      return <text fg={theme.text}>{activeCursor}</text>;
+    }
+
+    return (
+      <text>
+        {" ".repeat(Math.max(0, boxLeft - 2))}
+        <span fg={theme.text} bg={theme.panel}>
+          {activeCursor}
+        </span>{" "}
+      </text>
+    );
+  };
 
   if (draft) {
     const draftVisibleLineCount = draftVisibleRows;
@@ -504,7 +530,7 @@ export function AgentInlineNote({
         <text>{" ".repeat(boxLeft)}</text>
       </box>
       <box style={{ width: 1, height: 1, backgroundColor: theme.panel }}>
-        <text fg={theme.noteBorder} bg={theme.panel}>
+        <text fg={savedBorderColor} bg={theme.panel}>
           │
         </text>
       </box>
@@ -516,7 +542,7 @@ export function AgentInlineNote({
       </box>
       <box style={{ width: 1, height: 1, backgroundColor: theme.panel }} />
       <box style={{ width: 1, height: 1, backgroundColor: theme.panel }}>
-        <text fg={theme.noteBorder} bg={theme.panel}>
+        <text fg={savedBorderColor} bg={theme.panel}>
           │
         </text>
       </box>
@@ -527,38 +553,44 @@ export function AgentInlineNote({
     <box style={{ width: "100%", flexDirection: "column", backgroundColor: theme.panel }}>
       <box style={{ width: "100%", height: 1, flexDirection: "row", backgroundColor: theme.panel }}>
         <box style={{ width: boxLeft, height: 1, backgroundColor: theme.panel }}>
-          <text>{" ".repeat(boxLeft)}</text>
+          {renderSavedHeaderGutter()}
         </box>
-        <box style={{ width: savedTopPrefixWidth, height: 1, backgroundColor: theme.panel }}>
+        <box
+          style={{
+            width: savedTopPrefixWidth,
+            height: 1,
+            backgroundColor: savedHeaderBackground,
+          }}
+        >
           <text>
-            <span fg={theme.noteBorder} bg={theme.panel}>
-              ╭─
+            <span fg={savedTopLeftColor} bg={savedHeaderBackground}>
+              {savedTopLeft}─
             </span>
-            <span fg={theme.noteTitleText} bg={theme.panel}>
+            <span fg={theme.noteTitleText} bg={savedHeaderBackground}>
               {savedTitleText}
             </span>
-            <span fg={theme.noteBorder} bg={theme.panel}>
+            <span fg={savedBorderColor} bg={savedHeaderBackground}>
               {"─".repeat(savedTopBorderSuffixWidth)}
             </span>
           </text>
         </box>
         {closeText ? (
-          <box style={{ width: closeGapWidth, height: 1, backgroundColor: theme.panel }}>
-            <text bg={theme.panel}>{" ".repeat(closeGapWidth)}</text>
+          <box style={{ width: closeGapWidth, height: 1, backgroundColor: savedHeaderBackground }}>
+            <text bg={savedHeaderBackground}>{" ".repeat(closeGapWidth)}</text>
           </box>
         ) : null}
         {closeText ? (
           <box
             onMouseUp={onClose}
-            style={{ width: closeWidth, height: 1, backgroundColor: theme.panel }}
+            style={{ width: closeWidth, height: 1, backgroundColor: savedHeaderBackground }}
           >
-            <text fg={theme.noteTitleText} bg={theme.panel}>
+            <text fg={theme.noteTitleText} bg={savedHeaderBackground}>
               {closeText}
             </text>
           </box>
         ) : null}
-        <box style={{ width: 1, height: 1, backgroundColor: theme.panel }}>
-          <text fg={theme.noteBorder} bg={theme.panel}>
+        <box style={{ width: 1, height: 1, backgroundColor: savedHeaderBackground }}>
+          <text fg={savedBorderColor} bg={savedHeaderBackground}>
             ╮
           </text>
         </box>
@@ -575,7 +607,7 @@ export function AgentInlineNote({
           <text>{" ".repeat(boxLeft)}</text>
         </box>
         <box style={{ width: boxWidth, height: 1, backgroundColor: theme.panel }}>
-          <text fg={theme.noteBorder} bg={theme.panel}>
+          <text fg={savedBorderColor} bg={theme.panel}>
             {bottomBorder}
           </text>
         </box>

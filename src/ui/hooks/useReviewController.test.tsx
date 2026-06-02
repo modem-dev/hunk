@@ -345,6 +345,55 @@ describe("useReviewController", () => {
     }
   });
 
+  test("annotated navigation advances note-by-note and tracks the active note", async () => {
+    const { controllerRef, setup } = await renderReviewController([
+      createDiffFile(
+        "alpha",
+        "alpha.ts",
+        "export const alpha = 1;\n",
+        "export const alpha = 2;\n",
+        {
+          path: "alpha.ts",
+          summary: "file note",
+          annotations: [
+            { id: "first", newRange: [1, 1], summary: "First note" },
+            { id: "second", newRange: [1, 1], summary: "Second note" },
+          ],
+        },
+      ),
+      createDiffFile("beta", "beta.ts", "export const beta = 1;\n", "export const beta = 2;\n"),
+    ]);
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        expectValue(controllerRef.current).moveToAnnotatedHunk(1);
+      });
+      await flush(setup);
+      expect(expectValue(controllerRef.current).activeNoteId).toBe("annotation:alpha:first");
+      expect(expectValue(controllerRef.current).scrollToNote).toBe(true);
+
+      await act(async () => {
+        expectValue(controllerRef.current).moveToAnnotatedHunk(1);
+      });
+      await flush(setup);
+      expect(expectValue(controllerRef.current).activeNoteId).toBe("annotation:alpha:second");
+      expect(expectValue(controllerRef.current).selectedHunkIndex).toBe(0);
+
+      await act(async () => {
+        expectValue(controllerRef.current).moveToHunk(1);
+      });
+      await flush(setup);
+      expect(expectValue(controllerRef.current).activeNoteId).toBeNull();
+      expect(expectValue(controllerRef.current).selectedFile?.path).toBe("beta.ts");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("batch live comments validate together and reveal the first applied hunk", async () => {
     const { controllerRef, setup } = await renderReviewController([createTwoHunkFile()]);
 

@@ -872,6 +872,7 @@ export function App({
           scrollRef={diffScrollRef}
           selectedFileId={selectedFile?.id}
           selectedHunkIndex={selectedHunkIndex}
+          activeNoteId={review.activeNoteId}
           scrollToNote={review.scrollToNote}
           draftNote={review.draftNote}
           draftNoteFocused={focusArea === "note"}

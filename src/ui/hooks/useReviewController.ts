@@ -40,7 +40,11 @@ import type { FileSourceStatus } from "../diff/expandCollapsedRows";
 import { selectGapForKeyboardToggle } from "../diff/expandCollapsedRows";
 import { trailingCollapsedLines } from "../diff/pierre";
 import { findNextHunkCursor } from "../lib/hunks";
-import { reviewNoteSource } from "../lib/agentAnnotations";
+import {
+  annotationHunkIndex,
+  reviewNoteSource,
+  visibleReviewNoteId,
+} from "../lib/agentAnnotations";
 import {
   buildReviewState,
   buildSelectedHunkSummary,
@@ -83,6 +87,75 @@ function removeKeys<T>(record: Record<string, T>, keys: ReadonlySet<string>): Re
   return changed ? next : record;
 }
 
+/** Move through note cursors using the active note first, then the current hunk as a fallback. */
+function findNextReviewNoteCursor({
+  activeNoteId,
+  currentFileId,
+  currentHunkIndex,
+  cursors,
+  delta,
+  streamCursors,
+}: {
+  activeNoteId: string | null;
+  currentFileId: string | undefined;
+  currentHunkIndex: number;
+  cursors: ReviewNoteCursor[];
+  delta: number;
+  streamCursors: { fileId: string; hunkIndex: number }[];
+}) {
+  if (cursors.length === 0) {
+    return null;
+  }
+
+  const activeIndex = activeNoteId
+    ? cursors.findIndex((cursor) => cursor.noteId === activeNoteId)
+    : -1;
+  if (activeIndex >= 0) {
+    return cursors[Math.min(Math.max(activeIndex + delta, 0), cursors.length - 1)] ?? null;
+  }
+
+  const currentHunkNoteIndices = cursors
+    .map((cursor, index) => ({ cursor, index }))
+    .filter(
+      ({ cursor }) => cursor.fileId === currentFileId && cursor.hunkIndex === currentHunkIndex,
+    )
+    .map(({ index }) => index);
+  if (currentHunkNoteIndices.length > 0) {
+    return (
+      cursors[delta >= 0 ? currentHunkNoteIndices[0]! : currentHunkNoteIndices.at(-1)!] ?? null
+    );
+  }
+
+  const currentStreamIndex = streamCursors.findIndex(
+    (cursor) => cursor.fileId === currentFileId && cursor.hunkIndex === currentHunkIndex,
+  );
+  if (currentStreamIndex < 0) {
+    return cursors[delta >= 0 ? 0 : cursors.length - 1] ?? null;
+  }
+
+  const streamIndexByHunk = new Map(
+    streamCursors.map((cursor, index) => [`${cursor.fileId}\0${cursor.hunkIndex}`, index] as const),
+  );
+  const indexedCursors = cursors
+    .map((cursor, index) => ({
+      index,
+      streamIndex: streamIndexByHunk.get(`${cursor.fileId}\0${cursor.hunkIndex}`) ?? -1,
+    }))
+    .filter(({ streamIndex }) => streamIndex >= 0);
+
+  if (delta >= 0) {
+    return (
+      cursors[
+        indexedCursors.find(({ streamIndex }) => streamIndex > currentStreamIndex)?.index ??
+          cursors.length - 1
+      ] ?? null
+    );
+  }
+
+  const previous = indexedCursors.findLast(({ streamIndex }) => streamIndex < currentStreamIndex);
+  return cursors[previous?.index ?? 0] ?? null;
+}
+
 export interface UserReviewNote extends AgentAnnotation {
   id: string;
   source: "user";
@@ -114,7 +187,14 @@ interface SourceLoadRequest {
   side: "old" | "new";
 }
 
+interface ReviewNoteCursor {
+  noteId: string;
+  fileId: string;
+  hunkIndex: number;
+}
+
 export interface ReviewSelectionOptions {
+  activeNoteId?: string | null;
   alignFileHeaderTop?: boolean;
   preserveViewport?: boolean;
   scrollToNote?: boolean;
@@ -124,6 +204,7 @@ export interface ReviewController {
   allFiles: DiffFile[];
   expandedGapsByFileId: Record<string, ReadonlySet<string>>;
   filter: string;
+  activeNoteId: string | null;
   draftNote: DraftReviewNote | null;
   liveCommentCount: number;
   liveCommentSummaries: SessionLiveCommentSummary[];
@@ -183,6 +264,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
   const [selectedFileTopAlignRequestId, setSelectedFileTopAlignRequestId] = useState(0);
   const [selectedHunkRevealRequestId, setSelectedHunkRevealRequestId] = useState(0);
   const [scrollToNote, setScrollToNote] = useState(false);
+  const [activeNoteId, setActiveNoteId] = useState<string | null>(null);
   const [liveCommentsByFileId, setLiveCommentsByFileId] = useState<Record<string, LiveComment[]>>(
     {},
   );
@@ -233,38 +315,51 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
 
   const deferredFilter = useDeferredValue(filter);
 
-  const {
-    allFiles,
-    visibleFiles,
-    sidebarEntries,
-    selectedFile,
-    selectedHunk,
-    hunkCursors,
-    annotatedHunkCursors,
-  } = useMemo(
-    () =>
-      buildReviewState({
+  const { allFiles, visibleFiles, sidebarEntries, selectedFile, selectedHunk, hunkCursors } =
+    useMemo(
+      () =>
+        buildReviewState({
+          files,
+          liveCommentsByFileId: mergeAnnotationMaps(liveCommentsByFileId, userNotesByFileId),
+          filterQuery: deferredFilter,
+          selectedFileId,
+          selectedHunkIndex,
+        }),
+      [
+        deferredFilter,
         files,
-        liveCommentsByFileId: mergeAnnotationMaps(liveCommentsByFileId, userNotesByFileId),
-        filterQuery: deferredFilter,
+        liveCommentsByFileId,
         selectedFileId,
         selectedHunkIndex,
-      }),
-    [
-      deferredFilter,
-      files,
-      liveCommentsByFileId,
-      selectedFileId,
-      selectedHunkIndex,
-      userNotesByFileId,
-    ],
+        userNotesByFileId,
+      ],
+    );
+
+  const reviewNoteCursors = useMemo<ReviewNoteCursor[]>(
+    () =>
+      visibleFiles.flatMap((file) =>
+        (file.agent?.annotations ?? []).flatMap((annotation, index) => {
+          const hunkIndex = annotationHunkIndex(file, annotation);
+          return hunkIndex >= 0
+            ? [{ noteId: visibleReviewNoteId(file, annotation, index), fileId: file.id, hunkIndex }]
+            : [];
+        }),
+      ),
+    [visibleFiles],
   );
 
-  /** Update the selection and reveal intent together so diff scrolling stays explicit. */
+  useEffect(() => {
+    if (activeNoteId && !reviewNoteCursors.some((cursor) => cursor.noteId === activeNoteId)) {
+      setActiveNoteId(null);
+    }
+  }, [activeNoteId, reviewNoteCursors]);
+
+  /** Update the active target, selection, and reveal intent together so diff scrolling stays explicit. */
   const selectHunk = useCallback(
     (fileId: string, hunkIndex: number, options?: ReviewSelectionOptions) => {
       setSelectedFileId(fileId);
       setSelectedHunkIndex(hunkIndex);
+      setActiveNoteId(options?.activeNoteId ?? null);
       setScrollToNote(Boolean(options?.scrollToNote));
 
       if (options?.alignFileHeaderTop) {
@@ -354,23 +449,27 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     [hunkCursors, selectHunk, selectedFile?.id, selectedHunkIndex],
   );
 
-  /** Move through only hunks that currently have agent notes or live comments. */
+  /** Move through notes in review-stream order and make the destination note active. */
   const moveToAnnotatedHunk = useCallback(
     (delta: number) => {
-      const nextCursor = findNextHunkCursor(
-        annotatedHunkCursors,
-        selectedFile?.id,
-        selectedHunkIndex,
+      const nextCursor = findNextReviewNoteCursor({
+        activeNoteId,
+        currentFileId: selectedFile?.id,
+        currentHunkIndex: selectedHunkIndex,
+        cursors: reviewNoteCursors,
         delta,
-        hunkCursors,
-      );
+        streamCursors: hunkCursors,
+      });
       if (!nextCursor) {
         return;
       }
 
-      selectHunk(nextCursor.fileId, nextCursor.hunkIndex, { scrollToNote: true });
+      selectHunk(nextCursor.fileId, nextCursor.hunkIndex, {
+        activeNoteId: nextCursor.noteId,
+        scrollToNote: true,
+      });
     },
-    [annotatedHunkCursors, hunkCursors, selectHunk, selectedFile?.id, selectedHunkIndex],
+    [activeNoteId, hunkCursors, reviewNoteCursors, selectHunk, selectedFile?.id, selectedHunkIndex],
   );
 
   /** Cycle through only the currently visible files that carry annotations. */
@@ -807,6 +906,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
       ...notesByFile,
       [draftNote.fileId]: [...(notesByFile[draftNote.fileId] ?? []), savedNote],
     }));
+    setActiveNoteId(`annotation:${draftNote.fileId}:${savedNote.id}`);
     setDraftNote(null);
     return savedNote;
   }, [draftNote]);
@@ -831,6 +931,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
         throw new Error(`No user note matches id ${noteId}.`);
       }
 
+      setActiveNoteId((current) => (current?.endsWith(`:${noteId}`) ? null : current));
       setUserNotesByFileId(next);
     },
     [userNotesByFileId],
@@ -922,6 +1023,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
 
   return {
     allFiles,
+    activeNoteId,
     draftNote,
     expandedGapsByFileId,
     filter,
