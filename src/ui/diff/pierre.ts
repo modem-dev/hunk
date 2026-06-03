@@ -184,11 +184,21 @@ const RESERVED_PIERRE_TOKEN_COLORS = {
   dark: {
     "#ff6762": "keyword",
     "#ff855e": "keyword",
+    "#ff678d": "keyword",
+    "#d568ea": "keyword",
+    "#9d6afb": "function",
+    "#ffab16": "default",
+    "#68cdf2": "number",
     "#5ecc71": "string",
   },
   light: {
     "#d52c36": "keyword",
     "#d5512f": "keyword",
+    "#d32a61": "keyword",
+    "#a631be": "keyword",
+    "#693acf": "function",
+    "#d5901c": "default",
+    "#1ca1c7": "number",
     "#199f43": "string",
   },
 } as const;

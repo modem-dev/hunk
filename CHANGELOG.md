@@ -10,6 +10,7 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Fixed
 
+- Made diff syntax highlighting follow the active theme: keyword, function, number, and variable token colors now resolve to the configured theme's palette (including custom themes) in both light and dark, instead of passing through Pierre's built-in syntax colors.
 - Expanded the diff window during rapid scrolling bursts so large reviews keep real rows mounted instead of falling back to blank placeholder regions.
 
 ## [0.14.1] - 2026-06-01

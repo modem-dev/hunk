@@ -548,4 +548,45 @@ describe("Pierre diff rows", () => {
       ).toBe(true);
     }
   });
+
+  test("maps Pierre TypeScript syntax hues onto theme syntax colors in dark and light", async () => {
+    const metadata = parseDiffFromFile(
+      { name: "syntax.ts", contents: "const a = 1;\n", cacheKey: "syntax-before" },
+      {
+        name: "syntax.ts",
+        contents: "const a = 1;\nexport function compute(): number {\n  return 42;\n}\n",
+        cacheKey: "syntax-after",
+      },
+      { context: 3 },
+      true,
+    );
+    const file: DiffFile = {
+      id: "syntax",
+      path: "syntax.ts",
+      patch: "",
+      language: "typescript",
+      stats: { additions: 3, deletions: 0 },
+      metadata,
+      agent: null,
+    };
+
+    for (const themeId of ["graphite", "paper"] as const) {
+      const theme = resolveTheme(themeId, null);
+      const highlighted = await loadHighlightedDiff(file, theme.appearance);
+      const spans = buildStackRows(file, highlighted, theme)
+        .filter(
+          (row): row is Extract<DiffRow, { type: "stack-line" }> =>
+            row.type === "stack-line" && row.cell.kind === "addition",
+        )
+        .flatMap((row) => row.cell.spans);
+
+      expect(spans.find((span) => span.text.includes("function"))?.fg).toBe(
+        theme.syntaxColors.keyword,
+      );
+      expect(spans.find((span) => span.text.includes("compute"))?.fg).toBe(
+        theme.syntaxColors.function,
+      );
+      expect(spans.find((span) => span.text.trim() === "42")?.fg).toBe(theme.syntaxColors.number);
+    }
+  });
 });
