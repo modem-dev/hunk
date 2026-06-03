@@ -7,6 +7,7 @@ import { MIDNIGHT_THEME } from "./themes/midnight";
 import { PAPER_THEME } from "./themes/paper";
 import { withLazySyntaxStyle } from "./themes/syntax";
 import type { AppTheme, ThemeBase } from "./themes/types";
+import { ZENBURN_THEME } from "./themes/zenburn";
 
 export { CATPPUCCIN_PALETTES } from "./themes/catppuccin";
 export type { AppTheme, SyntaxColors, ThemeBase } from "./themes/types";
@@ -18,6 +19,7 @@ export const THEMES: AppTheme[] = [
   EMBER_THEME,
   CATPPUCCIN_LATTE_THEME,
   CATPPUCCIN_MOCHA_THEME,
+  ZENBURN_THEME,
 ];
 
 /** Return the built-in theme by id so config-defined themes can inherit from it. */

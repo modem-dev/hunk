@@ -90,4 +90,21 @@ describe("themes", () => {
       punctuation: CATPPUCCIN_PALETTES.mocha.overlay2,
     });
   });
+
+  test("resolves Zenburn by theme id with its tuned dark palette", () => {
+    const zenburn = resolveTheme("zenburn", null);
+
+    expect(zenburn.id).toBe("zenburn");
+    expect(zenburn.label).toBe("Zenburn");
+    expect(zenburn.appearance).toBe("dark");
+    expect(zenburn.background).toBe("#3f3f3f");
+    expect(zenburn.text).toBe("#dcdccc");
+    expect(zenburn.syntaxColors).toMatchObject({
+      keyword: "#f0dfaf",
+      string: "#dca3a3",
+      comment: "#60b48a",
+      function: "#94bff3",
+      type: "#94bff3",
+    });
+  });
 });

@@ -162,6 +162,7 @@ describe("OpenTUI public components", () => {
       "ember",
       "catppuccin-latte",
       "catppuccin-mocha",
+      "zenburn",
     ]);
   });
 });

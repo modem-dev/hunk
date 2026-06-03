@@ -19,6 +19,7 @@ const BUILT_IN_THEME_IDS = [
   "ember",
   "catppuccin-latte",
   "catppuccin-mocha",
+  "zenburn",
 ] as const;
 const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
 const CUSTOM_THEME_COLOR_KEYS = [
