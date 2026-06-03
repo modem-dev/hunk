@@ -18,6 +18,8 @@ const BUILT_IN_THEME_IDS = [
   "paper",
   "ember",
   "catppuccin-latte",
+  "catppuccin-frappe",
+  "catppuccin-macchiato",
   "catppuccin-mocha",
   "zenburn",
 ] as const;

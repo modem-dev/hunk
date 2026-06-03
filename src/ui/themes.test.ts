@@ -3,13 +3,21 @@ import { blendHex, hexColorDistance } from "./lib/color";
 import { CATPPUCCIN_PALETTES, resolveTheme } from "./themes";
 
 describe("themes", () => {
-  test("resolves Catppuccin Latte and Mocha by theme id", () => {
+  test("resolves all Catppuccin flavors by theme id", () => {
     const latte = resolveTheme("catppuccin-latte", null);
+    const frappe = resolveTheme("catppuccin-frappe", null);
+    const macchiato = resolveTheme("catppuccin-macchiato", null);
     const mocha = resolveTheme("catppuccin-mocha", null);
 
     expect(latte.id).toBe("catppuccin-latte");
     expect(latte.label).toBe("Catppuccin Latte");
     expect(latte.appearance).toBe("light");
+    expect(frappe.id).toBe("catppuccin-frappe");
+    expect(frappe.label).toBe("Catppuccin Frappé");
+    expect(frappe.appearance).toBe("dark");
+    expect(macchiato.id).toBe("catppuccin-macchiato");
+    expect(macchiato.label).toBe("Catppuccin Macchiato");
+    expect(macchiato.appearance).toBe("dark");
     expect(mocha.id).toBe("catppuccin-mocha");
     expect(mocha.label).toBe("Catppuccin Mocha");
     expect(mocha.appearance).toBe("dark");
@@ -20,6 +28,14 @@ describe("themes", () => {
     expect(CATPPUCCIN_PALETTES.latte.mauve).toBe("#8839ef");
     expect(CATPPUCCIN_PALETTES.latte.green).toBe("#40a02b");
     expect(CATPPUCCIN_PALETTES.latte.red).toBe("#d20f39");
+    expect(CATPPUCCIN_PALETTES.frappe.base).toBe("#303446");
+    expect(CATPPUCCIN_PALETTES.frappe.mauve).toBe("#ca9ee6");
+    expect(CATPPUCCIN_PALETTES.frappe.green).toBe("#a6d189");
+    expect(CATPPUCCIN_PALETTES.frappe.red).toBe("#e78284");
+    expect(CATPPUCCIN_PALETTES.macchiato.base).toBe("#24273a");
+    expect(CATPPUCCIN_PALETTES.macchiato.mauve).toBe("#c6a0f6");
+    expect(CATPPUCCIN_PALETTES.macchiato.green).toBe("#a6da95");
+    expect(CATPPUCCIN_PALETTES.macchiato.red).toBe("#ed8796");
     expect(CATPPUCCIN_PALETTES.mocha.base).toBe("#1e1e2e");
     expect(CATPPUCCIN_PALETTES.mocha.mauve).toBe("#cba6f7");
     expect(CATPPUCCIN_PALETTES.mocha.green).toBe("#a6e3a1");
@@ -51,6 +67,8 @@ describe("themes", () => {
   test("keeps Catppuccin add and remove rows semantically distinct", () => {
     for (const theme of [
       resolveTheme("catppuccin-latte", null),
+      resolveTheme("catppuccin-frappe", null),
+      resolveTheme("catppuccin-macchiato", null),
       resolveTheme("catppuccin-mocha", null),
     ]) {
       expect(theme.addedBg).not.toBe(theme.removedBg);

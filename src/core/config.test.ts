@@ -150,6 +150,8 @@ describe("config resolution", () => {
     "paper",
     "ember",
     "catppuccin-latte",
+    "catppuccin-frappe",
+    "catppuccin-macchiato",
     "catppuccin-mocha",
     "zenburn",
   ])("accepts custom theme base id: %s", (base) => {
@@ -182,7 +184,7 @@ describe("config resolution", () => {
         env: { HOME: home },
       }),
     ).toThrow(
-      "Expected custom_theme.base to be one of: graphite, midnight, paper, ember, catppuccin-latte, catppuccin-mocha, zenburn.",
+      "Expected custom_theme.base to be one of: graphite, midnight, paper, ember, catppuccin-latte, catppuccin-frappe, catppuccin-macchiato, catppuccin-mocha, zenburn.",
     );
   });
 

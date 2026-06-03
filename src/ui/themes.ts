@@ -1,6 +1,11 @@
 import type { ThemeMode } from "@opentui/core";
 import type { CustomThemeConfig } from "../core/types";
-import { CATPPUCCIN_LATTE_THEME, CATPPUCCIN_MOCHA_THEME } from "./themes/catppuccin";
+import {
+  CATPPUCCIN_FRAPPE_THEME,
+  CATPPUCCIN_LATTE_THEME,
+  CATPPUCCIN_MACCHIATO_THEME,
+  CATPPUCCIN_MOCHA_THEME,
+} from "./themes/catppuccin";
 import { EMBER_THEME } from "./themes/ember";
 import { GRAPHITE_THEME } from "./themes/graphite";
 import { MIDNIGHT_THEME } from "./themes/midnight";
@@ -18,6 +23,8 @@ export const THEMES: AppTheme[] = [
   PAPER_THEME,
   EMBER_THEME,
   CATPPUCCIN_LATTE_THEME,
+  CATPPUCCIN_FRAPPE_THEME,
+  CATPPUCCIN_MACCHIATO_THEME,
   CATPPUCCIN_MOCHA_THEME,
   ZENBURN_THEME,
 ];

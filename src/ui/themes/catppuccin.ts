@@ -63,6 +63,62 @@ export const CATPPUCCIN_PALETTES = {
     mantle: "#e6e9ef",
     crust: "#dce0e8",
   },
+  frappe: {
+    rosewater: "#f2d5cf",
+    flamingo: "#eebebe",
+    pink: "#f4b8e4",
+    mauve: "#ca9ee6",
+    red: "#e78284",
+    maroon: "#ea999c",
+    peach: "#ef9f76",
+    yellow: "#e5c890",
+    green: "#a6d189",
+    teal: "#81c8be",
+    sky: "#99d1db",
+    sapphire: "#85c1dc",
+    blue: "#8caaee",
+    lavender: "#babbf1",
+    text: "#c6d0f5",
+    subtext1: "#b5bfe2",
+    subtext0: "#a5adce",
+    overlay2: "#949cbb",
+    overlay1: "#838ba7",
+    overlay0: "#737994",
+    surface2: "#626880",
+    surface1: "#51576d",
+    surface0: "#414559",
+    base: "#303446",
+    mantle: "#292c3c",
+    crust: "#232634",
+  },
+  macchiato: {
+    rosewater: "#f4dbd6",
+    flamingo: "#f0c6c6",
+    pink: "#f5bde6",
+    mauve: "#c6a0f6",
+    red: "#ed8796",
+    maroon: "#ee99a0",
+    peach: "#f5a97f",
+    yellow: "#eed49f",
+    green: "#a6da95",
+    teal: "#8bd5ca",
+    sky: "#91d7e3",
+    sapphire: "#7dc4e4",
+    blue: "#8aadf4",
+    lavender: "#b7bdf8",
+    text: "#cad3f5",
+    subtext1: "#b8c0e0",
+    subtext0: "#a5adcb",
+    overlay2: "#939ab7",
+    overlay1: "#8087a2",
+    overlay0: "#6e738d",
+    surface2: "#5b6078",
+    surface1: "#494d64",
+    surface0: "#363a4f",
+    base: "#24273a",
+    mantle: "#1e2030",
+    crust: "#181926",
+  },
   mocha: {
     rosewater: "#f5e0dc",
     flamingo: "#f2cdcd",
@@ -91,14 +147,21 @@ export const CATPPUCCIN_PALETTES = {
     mantle: "#181825",
     crust: "#11111b",
   },
-} as const satisfies Record<"latte" | "mocha", CatppuccinPalette>;
+} as const satisfies Record<"latte" | "frappe" | "macchiato" | "mocha", CatppuccinPalette>;
 
 type CatppuccinFlavor = keyof typeof CATPPUCCIN_PALETTES;
+
+const CATPPUCCIN_LABELS: Record<CatppuccinFlavor, string> = {
+  latte: "Catppuccin Latte",
+  frappe: "Catppuccin Frappé",
+  macchiato: "Catppuccin Macchiato",
+  mocha: "Catppuccin Mocha",
+};
 
 /** Map official Catppuccin palette tokens into Hunk's semantic theme slots. */
 export function createCatppuccinTheme(flavor: CatppuccinFlavor) {
   const palette = CATPPUCCIN_PALETTES[flavor];
-  const label = flavor === "latte" ? "Catppuccin Latte" : "Catppuccin Mocha";
+  const label = CATPPUCCIN_LABELS[flavor];
   const appearance: AppTheme["appearance"] = flavor === "latte" ? "light" : "dark";
   const panel = flavor === "latte" ? palette.base : palette.mantle;
   const panelAlt = flavor === "latte" ? palette.mantle : palette.base;
@@ -157,6 +220,12 @@ export function createCatppuccinTheme(flavor: CatppuccinFlavor) {
 
 /** Built-in Catppuccin Latte theme. */
 export const CATPPUCCIN_LATTE_THEME = createCatppuccinTheme("latte");
+
+/** Built-in Catppuccin Frappé theme. */
+export const CATPPUCCIN_FRAPPE_THEME = createCatppuccinTheme("frappe");
+
+/** Built-in Catppuccin Macchiato theme. */
+export const CATPPUCCIN_MACCHIATO_THEME = createCatppuccinTheme("macchiato");
 
 /** Built-in Catppuccin Mocha theme. */
 export const CATPPUCCIN_MOCHA_THEME = createCatppuccinTheme("mocha");

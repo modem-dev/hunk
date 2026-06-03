@@ -7,6 +7,7 @@ All notable user-visible changes to Hunk are documented in this file.
 ### Added
 
 - Show the newly selected theme in the footer status bar when switching themes.
+- Added Catppuccin Frappé and Macchiato as built-in themes, completing the four official Catppuccin flavors.
 - Added a Zenburn built-in theme (`theme = "zenburn"`), a warm low-contrast dark palette inspired by Jani Nurminen's original Zenburn. It also works as a custom-theme `base`.
 
 ### Changed

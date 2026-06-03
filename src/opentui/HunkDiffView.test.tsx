@@ -161,6 +161,8 @@ describe("OpenTUI public components", () => {
       "paper",
       "ember",
       "catppuccin-latte",
+      "catppuccin-frappe",
+      "catppuccin-macchiato",
       "catppuccin-mocha",
       "zenburn",
     ]);

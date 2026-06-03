@@ -201,6 +201,8 @@ describe("ui helpers", () => {
       "Paper",
       "Ember",
       "Catppuccin Latte",
+      "Catppuccin Frappé",
+      "Catppuccin Macchiato",
       "Catppuccin Mocha",
       "Zenburn",
     ]);
@@ -256,6 +258,8 @@ describe("ui helpers", () => {
       "Paper",
       "Ember",
       "Catppuccin Latte",
+      "Catppuccin Frappé",
+      "Catppuccin Macchiato",
       "Catppuccin Mocha",
       "Zenburn",
       "My Theme",
@@ -496,6 +500,8 @@ describe("ui helpers", () => {
     expect(resolveTheme("ember", null).syntaxStyle).toBeDefined();
     expect(custom.syntaxStyle).toBeDefined();
     expect(resolveTheme("catppuccin-latte", null).syntaxStyle).toBeDefined();
+    expect(resolveTheme("catppuccin-frappe", null).syntaxStyle).toBeDefined();
+    expect(resolveTheme("catppuccin-macchiato", null).syntaxStyle).toBeDefined();
     expect(resolveTheme("catppuccin-mocha", null).syntaxStyle).toBeDefined();
   });
 });
