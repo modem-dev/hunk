@@ -1711,7 +1711,7 @@ describe("UI components", () => {
     expect(lines[4]?.trimStart().startsWith("╰")).toBe(true);
   });
 
-  test("AgentInlineNote marks the active saved note with a neutral left arrow", async () => {
+  test("AgentInlineNote marks the active saved note with a bold title chevron", async () => {
     const theme = resolveTheme("midnight", null);
     const frame = await captureFrame(
       <AgentInlineNote
@@ -1731,10 +1731,11 @@ describe("UI components", () => {
     );
 
     const lines = frame.split("\n");
-    expect(lines[0]).toContain("» ╭─ Agent note - R2–R4");
+    expect(lines[0]).toContain("╭─ › Agent note - R2–R4");
     expect(lines[0]).not.toContain("ACTIVE");
-    expect(lines[2]).not.toContain("»");
+    expect(lines[2]).not.toContain("›");
     expect(lines[2]).toContain("Summary line");
+    expect(lines[4]).toContain("[ Reply (r) ]");
   });
 
   test("AgentInlineNote renders draft notes as an editable composer", async () => {
