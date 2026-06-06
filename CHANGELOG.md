@@ -16,6 +16,7 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Fixed
 
+- Preserved split diff alignment when horizontal scrolling starts inside a wide CJK or emoji character.
 - Made diff syntax highlighting follow the active theme: keyword, function, number, and variable token colors now resolve to the configured theme's palette (including custom themes) in both light and dark, instead of passing through Pierre's built-in syntax colors.
 - Expanded the diff window during rapid scrolling bursts so large reviews keep real rows mounted instead of falling back to blank placeholder regions.
 

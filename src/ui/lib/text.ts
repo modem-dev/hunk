@@ -53,6 +53,11 @@ export function sliceTextByWidth(text: string, offset: number, width: number) {
       continue;
     }
     if (clusterStart < startOffset) {
+      const hiddenCellWidth = Math.min(clusterEnd, startOffset + maxWidth) - startOffset;
+      if (hiddenCellWidth > 0) {
+        visibleText += " ".repeat(hiddenCellWidth);
+        usedWidth += hiddenCellWidth;
+      }
       continue;
     }
     if (usedWidth + clusterWidth > maxWidth) {
