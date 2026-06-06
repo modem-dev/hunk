@@ -22,7 +22,14 @@ import {
   isStepDownKey,
   isStepUpKey,
 } from "./keyboard";
-import { fitText, measureTextWidth, padText, sliceTextByWidth } from "./text";
+import {
+  fitText,
+  measureTextWidth,
+  padText,
+  sliceTextByTerminalCells,
+  sliceTextByWidth,
+  terminalCellWidth,
+} from "./text";
 import { computeHunkRevealScrollTop } from "./hunkScroll";
 import {
   estimateDiffSectionBodyRows,
@@ -314,9 +321,39 @@ describe("ui helpers", () => {
   test("text helpers measure and slice wide characters by terminal cells", () => {
     expect(measureTextWidth("日本語")).toBe(6);
     expect(sliceTextByWidth("a日本b", 1, 4)).toEqual({ text: "日本", width: 4 });
-    expect(sliceTextByWidth("a日本b", 2, 4)).toEqual({ text: "本b", width: 3 });
+    expect(sliceTextByWidth("a日本b", 2, 4)).toEqual({ text: " 本b", width: 4 });
     expect(fitText("日本語", 5)).toBe("日本.");
     expect(measureTextWidth(padText("日本", 6))).toBe(6);
+    expect(terminalCellWidth("中文 mixed")).toBe(10);
+    expect(terminalCellWidth("かなカナ漢字 mixed")).toBe(18);
+    expect(terminalCellWidth("한글 테스트 mixed")).toBe(17);
+    expect(sliceTextByTerminalCells("中文 mixed", 0, 5)).toEqual({
+      clipped: true,
+      text: "中文 ",
+      width: 5,
+    });
+    expect(sliceTextByTerminalCells("かなmixed", 0, 5)).toEqual({
+      clipped: true,
+      text: "かなm",
+      width: 5,
+    });
+    expect(sliceTextByTerminalCells("한글 mixed", 0, 5)).toEqual({
+      clipped: true,
+      text: "한글 ",
+      width: 5,
+    });
+    expect(sliceTextByTerminalCells("中", 1, 3)).toEqual({
+      clipped: false,
+      text: " ",
+      width: 1,
+    });
+    expect(sliceTextByTerminalCells("中文", 1, 3)).toEqual({
+      clipped: false,
+      text: " 文",
+      width: 3,
+    });
+    expect(fitText("中文 mixed", 6)).toBe("中文 .");
+    expect(padText("中文", 5)).toBe("中文 ");
   });
 
   test("agent popover helpers wrap text and right-align the card within the viewport", () => {

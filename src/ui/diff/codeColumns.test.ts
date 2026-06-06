@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { DiffFile } from "../../core/types";
-import { findMaxLineNumberInRows, maxFileCodeLineWidth } from "./codeColumns";
+import {
+  findMaxLineNumberInRows,
+  maxFileCodeLineWidth,
+  measureRenderedCodeLineWidth,
+} from "./codeColumns";
 import type { DiffRow } from "./pierre";
 
 /** Generate a large diff metadata fixture without checking a huge file into the repo. */
@@ -30,10 +34,13 @@ describe("code column measurement", () => {
     expect(maxFileCodeLineWidth(file)).toBe("the widest generated line".length);
   });
 
-  test("counts wide CJK characters by terminal cells", () => {
-    const file = createLargeLineFixture(2, "日本語");
+  test("measures CJK lines in terminal cells", () => {
+    const file = createLargeLineFixture(3, "かなカナ漢字 mixed");
 
-    expect(maxFileCodeLineWidth(file)).toBe(6);
+    expect(measureRenderedCodeLineWidth("中文 mixed")).toBe(10);
+    expect(measureRenderedCodeLineWidth("かなカナ漢字 mixed")).toBe(18);
+    expect(measureRenderedCodeLineWidth("한글 테스트 mixed")).toBe(17);
+    expect(maxFileCodeLineWidth(file)).toBe(18);
   });
 });
 
