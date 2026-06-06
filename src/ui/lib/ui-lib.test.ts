@@ -315,6 +315,8 @@ describe("ui helpers", () => {
     expect(measureTextWidth("日本語")).toBe(6);
     expect(sliceTextByWidth("a日本b", 1, 4)).toEqual({ text: "日本", width: 4 });
     expect(sliceTextByWidth("a日本b", 2, 4)).toEqual({ text: " 本b", width: 4 });
+    expect(sliceTextByWidth("日本b", 3, 3)).toEqual({ text: " b", width: 2 });
+    expect(sliceTextByWidth("日", 1, 1)).toEqual({ text: " ", width: 1 });
     expect(fitText("日本語", 5)).toBe("日本.");
     expect(measureTextWidth(padText("日本", 6))).toBe(6);
   });
