@@ -6,6 +6,14 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.15.0] - 2026-06-08
+
+### Added
+
 - Show the newly selected theme in the footer status bar when switching themes.
 - Added Catppuccin Frappé and Macchiato as built-in themes, completing the four official Catppuccin flavors.
 - Added a Zenburn built-in theme (`theme = "zenburn"`), a warm low-contrast dark palette inspired by Jani Nurminen's original Zenburn. It also works as a custom-theme `base`.
@@ -396,7 +404,8 @@ All notable user-visible changes to Hunk are documented in this file.
 
 - Stabilized diff repainting, active-hunk scrolling, syntax highlighting, pager stdin patch handling, and terminal cleanup on exit.
 
-[Unreleased]: https://github.com/modem-dev/hunk/compare/v0.14.1...HEAD
+[Unreleased]: https://github.com/modem-dev/hunk/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/modem-dev/hunk/compare/v0.14.1...v0.15.0
 [0.14.1]: https://github.com/modem-dev/hunk/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/modem-dev/hunk/compare/v0.13.1...v0.14.0
 [0.13.1]: https://github.com/modem-dev/hunk/compare/v0.13.0...v0.13.1
