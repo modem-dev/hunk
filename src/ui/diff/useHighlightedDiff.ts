@@ -2,8 +2,14 @@ import { useLayoutEffect, useState } from "react";
 import type { DiffFile } from "../../core/types";
 import { loadHighlightedDiff, type HighlightedDiffCode } from "./pierre";
 
-/** Maximum cached highlight results. Prevents unbounded growth during long watch sessions. */
-const MAX_CACHE_ENTRIES = 150;
+/**
+ * Maximum cached highlight results.
+ *
+ * Highlighted HAST nodes and their flattened render spans are expensive enough that a whole-review
+ * cache can dominate memory while navigating large changesets. Keep a viewport-local working set
+ * instead of retaining every file the user has visited in the current review.
+ */
+const MAX_CACHE_ENTRIES = 40;
 
 const SHARED_HIGHLIGHTED_DIFF_CACHE = new Map<string, HighlightedDiffCode>();
 const SHARED_HIGHLIGHT_PROMISES = new Map<string, Promise<HighlightedDiffCode>>();
