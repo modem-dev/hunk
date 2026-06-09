@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
   buildGitDiffArgs,
   buildGitStashShowArgs,
+  buildGitStatusArgs,
   resolveGitDiffEndpoints,
   runGitText,
 } from "./git";
@@ -82,6 +83,16 @@ describe("git command helpers", () => {
     });
 
     expect(args).toContain("--no-ext-diff");
+  });
+
+  test("prevents optional index locks while discovering untracked files", () => {
+    expect(buildGitStatusArgs(makeGitInput())).toEqual([
+      "--no-optional-locks",
+      "status",
+      "--porcelain=v1",
+      "-z",
+      "--untracked-files=all",
+    ]);
   });
 
   test("reports a friendly error when git is not installed or not on PATH", () => {

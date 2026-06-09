@@ -10,6 +10,8 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Fixed
 
+- Prevented Git watch polling from taking optional index locks while discovering untracked files.
+
 ## [0.15.1] - 2026-06-09
 
 ### Fixed
