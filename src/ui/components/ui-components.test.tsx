@@ -2235,13 +2235,13 @@ describe("UI components", () => {
     const frame = await captureFrame(
       <HelpDialog
         canRefresh={true}
-        terminalHeight={38}
+        terminalHeight={39}
         terminalWidth={76}
         theme={theme}
         onClose={() => {}}
       />,
       76,
-      38,
+      39,
     );
 
     const expectedRows = [
