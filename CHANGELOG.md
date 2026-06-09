@@ -10,6 +10,7 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Fixed
 
+- Added timeouts to `hunk session *` daemon capability and API calls so unresponsive daemons fail instead of hanging indefinitely.
 - Updated OpenTUI so light and dark theme backgrounds render without the native renderer's color shift.
 - Prevented Git watch polling from taking optional index locks while discovering untracked files.
 

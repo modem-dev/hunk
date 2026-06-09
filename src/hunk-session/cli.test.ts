@@ -95,6 +95,7 @@ describe("HTTP Hunk session CLI client", () => {
 
     globalThis.fetch = (async (input, init) => {
       const url = String(input);
+      expect(init?.signal).toBeInstanceOf(AbortSignal);
       if (url.endsWith(`${HUNK_SESSION_API_PATH}/capabilities`)) {
         return Response.json({
           version: HUNK_SESSION_API_VERSION,
@@ -243,6 +244,21 @@ describe("HTTP Hunk session CLI client", () => {
       { action: "comment-rm", selector, commentId: "comment-1" },
       { action: "comment-clear", selector, filePath: "src/app.ts" },
     ]);
+  });
+
+  test("times out hung daemon session API requests", async () => {
+    globalThis.fetch = (async (_input, init) => {
+      const signal = init?.signal as AbortSignal | undefined;
+      return new Promise<Response>((_resolve, reject) => {
+        signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+      });
+    }) as typeof fetch;
+
+    const client = createHttpHunkSessionCliClient({ timeoutMs: 10 });
+
+    await expect(client.listSessions()).rejects.toThrow(
+      "Timed out waiting for the Hunk session daemon to complete session list.",
+    );
   });
 
   test("throws daemon response errors with JSON messages or status text fallbacks", async () => {
