@@ -11,6 +11,7 @@ All notable user-visible changes to Hunk are documented in this file.
 ### Fixed
 
 - Updated OpenTUI so light and dark theme backgrounds render without the native renderer's color shift.
+- Prevented Git watch polling from taking optional index locks while discovering untracked files.
 
 ## [0.15.1] - 2026-06-09
 

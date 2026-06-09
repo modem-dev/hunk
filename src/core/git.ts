@@ -142,8 +142,8 @@ export function buildGitDiffNumstatArgs(input: VcsCommandInput) {
 }
 
 /** Build the porcelain status query used to discover untracked files for working-tree review. */
-function buildGitStatusArgs(input: VcsCommandInput) {
-  const args = ["status", "--porcelain=v1", "-z", "--untracked-files=all"];
+export function buildGitStatusArgs(input: VcsCommandInput) {
+  const args = ["--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=all"];
 
   appendGitPathspecs(args, input.pathspecs);
   return args;
