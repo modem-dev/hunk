@@ -108,6 +108,7 @@ export function useAppKeyboardShortcuts({
   toggleGapForSelectedHunk,
   toggleHelp,
   toggleHunkHeaders,
+  triggerEditSelectedFile,
   toggleLineNumbers,
   toggleLineWrap,
   toggleSidebar,
@@ -463,6 +464,11 @@ export function useAppKeyboardShortcuts({
 
     if (key.name === "z" || key.sequence === "z") {
       runAndCloseMenu(toggleGapForSelectedHunk);
+      return;
+    }
+
+    if (key.name === "e" || key.sequence === "e") {
+      runAndCloseMenu(triggerEditSelectedFile);
       return;
     }
 
