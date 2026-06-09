@@ -87,6 +87,7 @@ export function buildAppMenus({
     {
       kind: "item",
       label: "Open file in editor",
+      hint: "e",
       action: triggerEditSelectedFile,
     },
   ];

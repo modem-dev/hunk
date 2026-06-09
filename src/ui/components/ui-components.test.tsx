@@ -2268,6 +2268,7 @@ describe("UI components", () => {
       "a               toggle AI notes",
       "z               toggle unchanged context",
       "l / w / m       lines / wrap / metadata",
+      "e               open file in $EDITOR",
       "Review",
       "/               focus file filter",
       "c               create review note",
