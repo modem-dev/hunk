@@ -137,37 +137,37 @@
     url = "https://registry.npmjs.org/@jimp/utils/-/utils-1.6.0.tgz";
     hash = "sha512-gqFTGEosKbOkYF/WFj26jMHOI5OH2jeP1MmC/zbK6BF6VJBf8rIC5898dPfSzZEbSA0wbbV5slbntWVc5PKLFA==";
   };
-  "@opentui/core-darwin-arm64@0.1.88" = fetchurl {
-    url = "https://registry.npmjs.org/@opentui/core-darwin-arm64/-/core-darwin-arm64-0.1.88.tgz";
-    hash = "sha512-oGRexWwZFeQJymOK5ORrLrwJUbPHMYaFa0EcLnlhvPnymm1xyMcRKm39ez0WSIdtiCCi/PmMHX95CfyyJB5VMA==";
+  "@opentui/core-darwin-arm64@0.1.89" = fetchurl {
+    url = "https://registry.npmjs.org/@opentui/core-darwin-arm64/-/core-darwin-arm64-0.1.89.tgz";
+    hash = "sha512-FI+lJ1BehL5Kfu9DMmqluOBXmu4+i8mP3KhhDghOWbq95x0jrjAS9GPSubPF3v6JVvn/8MeyzTKfqRMyDEUzFA==";
   };
-  "@opentui/core-darwin-x64@0.1.88" = fetchurl {
-    url = "https://registry.npmjs.org/@opentui/core-darwin-x64/-/core-darwin-x64-0.1.88.tgz";
-    hash = "sha512-ddnruYpXt7gXsAqZoQzNrHtZ50niYQfESVT3rhE5qgsz7zoWBdKe/RxLKcb6zQmHMZML6SjSh0NrMG86lsH4dQ==";
+  "@opentui/core-darwin-x64@0.1.89" = fetchurl {
+    url = "https://registry.npmjs.org/@opentui/core-darwin-x64/-/core-darwin-x64-0.1.89.tgz";
+    hash = "sha512-1IyZj2T+TqlJ5ldtYIgVUaXqvqGUnqs1h0JrSr+uI25GHJIoXPYVjlYWDQeOD1HoFT0QyWqPmp2bb5MFyPmNJg==";
   };
-  "@opentui/core-linux-arm64@0.1.88" = fetchurl {
-    url = "https://registry.npmjs.org/@opentui/core-linux-arm64/-/core-linux-arm64-0.1.88.tgz";
-    hash = "sha512-jfcU/Sw8re3aWWb9cQ4OXmVNp/pchu6lgDRqvfy0EKTpzd7CNIu6a0xm+rcUKiPO7BrTrwtumT5/jZWWgCdHlg==";
+  "@opentui/core-linux-arm64@0.1.89" = fetchurl {
+    url = "https://registry.npmjs.org/@opentui/core-linux-arm64/-/core-linux-arm64-0.1.89.tgz";
+    hash = "sha512-XDw08IohGiinLU/CjgzXjBcJEb0WvmwsaJFS0vhYEBJAiu0WSoc3NEfdEk3CAMexM3aZzNr3YQIN9K3x/v0GhA==";
   };
-  "@opentui/core-linux-x64@0.1.88" = fetchurl {
-    url = "https://registry.npmjs.org/@opentui/core-linux-x64/-/core-linux-x64-0.1.88.tgz";
-    hash = "sha512-nyfilOYLu6XWRlPl1R0Y6WzdL+jVdIFnwShBWcZL+QC5HiJnQc6LKy5yX8uv0fVbY5xs1wBvlHVeUj1UwFQyFQ==";
+  "@opentui/core-linux-x64@0.1.89" = fetchurl {
+    url = "https://registry.npmjs.org/@opentui/core-linux-x64/-/core-linux-x64-0.1.89.tgz";
+    hash = "sha512-5agVbWzWp2GFHGZz2n1Uc7TLCk37DVP3buRsmJTdpmHMH3ZRG+9bZPliy+uoJYyeDiu/xfy5h5wItXUoLbRgGQ==";
   };
-  "@opentui/core-win32-arm64@0.1.88" = fetchurl {
-    url = "https://registry.npmjs.org/@opentui/core-win32-arm64/-/core-win32-arm64-0.1.88.tgz";
-    hash = "sha512-jv/dQwcku7YZ4lNnYjivVvjPwTfDfzGfcplUqHxmirnv1Q1pZL1qS5wH1PV6RhAKN779vHTvnYMD4OgHWzqVaA==";
+  "@opentui/core-win32-arm64@0.1.89" = fetchurl {
+    url = "https://registry.npmjs.org/@opentui/core-win32-arm64/-/core-win32-arm64-0.1.89.tgz";
+    hash = "sha512-170CvSCQGjnJCOC0lOrVVCMsljSgdXEmP7QWaEW189Fyxz2feReeun8zLHBvHyUicq1yJaI1WV0ZKDLL2LverA==";
   };
-  "@opentui/core-win32-x64@0.1.88" = fetchurl {
-    url = "https://registry.npmjs.org/@opentui/core-win32-x64/-/core-win32-x64-0.1.88.tgz";
-    hash = "sha512-saGvsQqwL8H7B0VBCQ+szMCKh9WIfTebOR8cwPa2+DR+1FnrEG2I4kiikoj4hfYfRMX18A0A11vQxSh3vvy8Ig==";
+  "@opentui/core-win32-x64@0.1.89" = fetchurl {
+    url = "https://registry.npmjs.org/@opentui/core-win32-x64/-/core-win32-x64-0.1.89.tgz";
+    hash = "sha512-oNefCzRFuGcI+//BWFxSgTNND/dT60HMDMvQo4ysE6K105F/bzeEtWDf1PRar4EL/O8M23Pr1TU8I7NIa6Sa3w==";
   };
-  "@opentui/core@0.1.88" = fetchurl {
-    url = "https://registry.npmjs.org/@opentui/core/-/core-0.1.88.tgz";
-    hash = "sha512-eaDVZfAzZraddOIkgWSHMVkyaY0O20foYnPWKPQx1TY4t7G1oatIoan2zkytx67epW+4BZQ9vGib+61/uNM1MA==";
+  "@opentui/core@0.1.89" = fetchurl {
+    url = "https://registry.npmjs.org/@opentui/core/-/core-0.1.89.tgz";
+    hash = "sha512-88/e4PDfAJs01r+qTLaZ/2wghIpho76IDDmq4C7TgpZyHKcBTtllVA+ice5UY6aBZW6a9Ty3bBfqIsPKEpcSYQ==";
   };
-  "@opentui/react@0.1.88" = fetchurl {
-    url = "https://registry.npmjs.org/@opentui/react/-/react-0.1.88.tgz";
-    hash = "sha512-EfEUBlGgCx9LqpbB852L+m7F19NcR8yeUww+C8NytIQeVKJbFIhSLu3r3wjBEGNoYiRk1DtAwWBpG5YaVvkXXw==";
+  "@opentui/react@0.1.89" = fetchurl {
+    url = "https://registry.npmjs.org/@opentui/react/-/react-0.1.89.tgz";
+    hash = "sha512-S6oZd2OR1qcD12dCGQQgVSFqlQrehDWO2ttWZe36aejAJqA2e3OvKX7rhI2hdyP4GldyqK4FiANHqrcOfDLMag==";
   };
   "@oven/bun-darwin-aarch64@1.3.11" = fetchurl {
     url = "https://registry.npmjs.org/@oven/bun-darwin-aarch64/-/bun-darwin-aarch64-1.3.11.tgz";
