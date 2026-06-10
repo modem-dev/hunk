@@ -32,12 +32,13 @@ export async function withSessionDaemonHttpTimeout<ResultType>({
   let timeoutTriggered = false;
   let timeout: ReturnType<typeof setTimeout>;
   const timeoutPromise = new Promise<never>((_resolve, reject) => {
+    // Keep this timer referenced: Bun 1.3.x on Windows can skip unref'ed timeout guards,
+    // which leaves CLI requests and tests hung forever.
     timeout = setTimeout(() => {
       timeoutTriggered = true;
       controller.abort(timeoutError);
       reject(timeoutError);
     }, timeoutMs);
-    timeout.unref?.();
   });
   const taskPromise = task(controller.signal);
 
