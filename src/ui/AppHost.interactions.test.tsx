@@ -13,6 +13,7 @@ import type {
 } from "../hunk-session/types";
 import type { AppBootstrap, LayoutMode } from "../core/types";
 import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
+import { capturedTestColorToHex } from "../../test/helpers/test-color-helpers";
 import { createTestDiffFile as buildTestDiffFile, lines } from "../../test/helpers/diff-helpers";
 import { resolveTheme } from "./themes";
 
@@ -452,33 +453,36 @@ async function waitForFrame(
   return frame;
 }
 
-/** Convert captured RGBA output back into a #rrggbb color string for background assertions. */
-function capturedColorToHex(color: { buffer?: ArrayLike<number> } | undefined) {
-  const buffer = color?.buffer;
-  if (!buffer || buffer[0] == null || buffer[1] == null || buffer[2] == null) {
-    return null;
-  }
-
-  const componentToHex = (value: number) =>
-    Math.max(0, Math.min(255, Math.round(value * 255)))
-      .toString(16)
-      .padStart(2, "0");
-
-  return `#${componentToHex(buffer[0])}${componentToHex(buffer[1])}${componentToHex(buffer[2])}`;
-}
-
 /** Return whether rendered text has the expected inherited background color. */
 function hasLineWithBackground(
   frame: ReturnType<Awaited<ReturnType<typeof testRender>>["captureSpans"]>,
   text: string,
   backgroundColor: string,
 ) {
-  return frame.lines.some((line) =>
-    line.spans.map((span) => span.text).join("").includes(text) &&
-      line.spans.some(
-        (span) => capturedColorToHex(span.bg)?.toLowerCase() === backgroundColor.toLowerCase(),
-      ),
-  );
+  return frame.lines.some((line) => {
+    const lineText = line.spans.map((span) => span.text).join("");
+    const matchStart = lineText.indexOf(text);
+
+    if (matchStart < 0) {
+      return false;
+    }
+
+    const matchEnd = matchStart + text.length;
+    let spanStart = 0;
+    const matchingSpans = line.spans.filter((span) => {
+      const spanEnd = spanStart + span.text.length;
+      const overlapsMatch = spanStart < matchEnd && spanEnd > matchStart;
+      spanStart = spanEnd;
+      return overlapsMatch;
+    });
+
+    return (
+      matchingSpans.length > 0 &&
+      matchingSpans.every(
+        (span) => capturedTestColorToHex(span.bg)?.toLowerCase() === backgroundColor.toLowerCase(),
+      )
+    );
+  });
 }
 
 /** Open the top-level Theme menu and wait for the expected active light theme marker. */
@@ -2418,8 +2422,9 @@ describe("App interactions", () => {
         12,
       );
       expect(menuFrame).toContain("Toggle files/filter focus");
+      expect(menuFrame).toContain("Focus filter");
       expect(
-        hasLineWithBackground(setup.captureSpans(), "Toggle files/filter focus", theme.accentMuted),
+        hasLineWithBackground(setup.captureSpans(), "Focus filter", theme.panel),
       ).toBe(true);
 
       await act(async () => {

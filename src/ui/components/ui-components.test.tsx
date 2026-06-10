@@ -4,6 +4,7 @@ import { testRender } from "@opentui/react/test-utils";
 import { act, createRef, useEffect, useState, type ReactNode } from "react";
 import type { AppBootstrap, DiffFile } from "../../core/types";
 import { createTestVcsAppBootstrap } from "../../../test/helpers/app-bootstrap";
+import { capturedTestColorToHex } from "../../../test/helpers/test-color-helpers";
 import {
   createTestDiffFile as buildTestDiffFile,
   createTestSourceFetcher,
@@ -372,21 +373,6 @@ function frameHasHighlightedMarker(
   });
 }
 
-/** Convert captured RGBA output back into a #rrggbb color string for contrast assertions. */
-function capturedColorToHex(color: { buffer?: ArrayLike<number> } | undefined) {
-  const buffer = color?.buffer;
-  if (!buffer || buffer[0] == null || buffer[1] == null || buffer[2] == null) {
-    return null;
-  }
-
-  const componentToHex = (value: number) =>
-    Math.max(0, Math.min(255, Math.round(value * 255)))
-      .toString(16)
-      .padStart(2, "0");
-
-  return `#${componentToHex(buffer[0])}${componentToHex(buffer[1])}${componentToHex(buffer[2])}`;
-}
-
 /** Measure the rendered background contrast between one word-diff span and its surrounding line. */
 function renderedWordDiffBackgroundDistance(
   frame: { lines: Array<{ spans: Array<{ text: string; bg?: { buffer?: ArrayLike<number> } }> }> },
@@ -398,8 +384,8 @@ function renderedWordDiffBackgroundDistance(
       continue;
     }
 
-    const wordBg = capturedColorToHex(line.spans[spanIndex]?.bg);
-    const surroundingBg = capturedColorToHex(line.spans[spanIndex - 1]?.bg);
+    const wordBg = capturedTestColorToHex(line.spans[spanIndex]?.bg);
+    const surroundingBg = capturedTestColorToHex(line.spans[spanIndex - 1]?.bg);
     if (!wordBg || !surroundingBg) {
       continue;
     }
@@ -685,7 +671,7 @@ describe("UI components", () => {
       const hasAddedBgSpacer = line?.spans.some(
         (span) =>
           span.text === " ".repeat(3) &&
-          capturedColorToHex(span.bg)?.toLowerCase() === theme.addedBg.toLowerCase(),
+          capturedTestColorToHex(span.bg)?.toLowerCase() === theme.addedBg.toLowerCase(),
       );
 
       expect(hasAddedBgSpacer).toBe(true);
@@ -724,7 +710,7 @@ describe("UI components", () => {
         await setup.renderOnce();
       });
       const panelAltWidth = setup.captureSpans().lines[0]?.spans.reduce((total, span) => {
-        return capturedColorToHex(span.bg)?.toLowerCase() === theme.panelAlt.toLowerCase()
+        return capturedTestColorToHex(span.bg)?.toLowerCase() === theme.panelAlt.toLowerCase()
           ? total + span.text.length
           : total;
       }, 0);
