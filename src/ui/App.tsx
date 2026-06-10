@@ -954,7 +954,7 @@ export function App({
             activeMenuSpec={activeMenuSpec}
             activeMenuWidth={activeMenuWidth}
             terminalWidth={terminal.width}
-            theme={activeTheme}
+            theme={baseTheme}
             onHoverItem={setActiveMenuItemIndex}
             onSelectItem={(entry) => {
               entry.action();
@@ -970,7 +970,7 @@ export function App({
             canRefresh={canRefreshCurrentInput}
             terminalHeight={terminal.height}
             terminalWidth={terminal.width}
-            theme={activeTheme}
+            theme={baseTheme}
             onClose={closeHelp}
           />
         </Suspense>

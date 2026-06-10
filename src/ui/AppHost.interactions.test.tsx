@@ -14,6 +14,7 @@ import type {
 import type { AppBootstrap, LayoutMode } from "../core/types";
 import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
 import { createTestDiffFile as buildTestDiffFile, lines } from "../../test/helpers/diff-helpers";
+import { resolveTheme } from "./themes";
 
 const { loadAppBootstrap } = await import("../core/loaders");
 const { AppHost } = await import("./AppHost");
@@ -449,6 +450,35 @@ async function waitForFrame(
   }
 
   return frame;
+}
+
+/** Convert captured RGBA output back into a #rrggbb color string for background assertions. */
+function capturedColorToHex(color: { buffer?: ArrayLike<number> } | undefined) {
+  const buffer = color?.buffer;
+  if (!buffer || buffer[0] == null || buffer[1] == null || buffer[2] == null) {
+    return null;
+  }
+
+  const componentToHex = (value: number) =>
+    Math.max(0, Math.min(255, Math.round(value * 255)))
+      .toString(16)
+      .padStart(2, "0");
+
+  return `#${componentToHex(buffer[0])}${componentToHex(buffer[1])}${componentToHex(buffer[2])}`;
+}
+
+/** Return whether rendered text has the expected inherited background color. */
+function hasLineWithBackground(
+  frame: ReturnType<Awaited<ReturnType<typeof testRender>>["captureSpans"]>,
+  text: string,
+  backgroundColor: string,
+) {
+  return frame.lines.some((line) =>
+    line.spans.map((span) => span.text).join("").includes(text) &&
+      line.spans.some(
+        (span) => capturedColorToHex(span.bg)?.toLowerCase() === backgroundColor.toLowerCase(),
+      ),
+  );
 }
 
 /** Open the top-level Theme menu and wait for the expected active light theme marker. */
@@ -2360,6 +2390,48 @@ describe("App interactions", () => {
       frame = setup.captureCharFrame();
       expect(frame).toContain("Toggle files/filter focus");
       expect(frame).not.toContain("Controls help");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("transparent background keeps menus and help dialog opaque", async () => {
+    const bootstrap = createBootstrap();
+    bootstrap.input.options.transparentBackground = true;
+    const theme = resolveTheme(bootstrap.initialTheme, null);
+    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
+      width: 220,
+      height: 24,
+    });
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.pressKey("F10");
+      });
+      const menuFrame = await waitForFrame(
+        setup,
+        (frame) => frame.includes("Toggle files/filter focus"),
+        12,
+      );
+      expect(menuFrame).toContain("Toggle files/filter focus");
+      expect(
+        hasLineWithBackground(setup.captureSpans(), "Toggle files/filter focus", theme.accentMuted),
+      ).toBe(true);
+
+      await act(async () => {
+        await setup.mockInput.pressArrow("left");
+      });
+      await flush(setup);
+      await act(async () => {
+        await setup.mockInput.pressEnter();
+      });
+      const helpFrame = await waitForFrame(setup, (frame) => frame.includes("Navigation"), 12);
+      expect(helpFrame).toContain("Controls help");
+      expect(hasLineWithBackground(setup.captureSpans(), "Navigation", theme.panel)).toBe(true);
     } finally {
       await act(async () => {
         setup.renderer.destroy();
