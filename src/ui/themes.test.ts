@@ -5,6 +5,7 @@ import {
   resolveTheme,
   TRANSPARENT_BACKGROUND,
   withTransparentBackground,
+  withTransparentSurfaces,
 } from "./themes";
 
 describe("themes", () => {
@@ -158,5 +159,26 @@ describe("themes", () => {
     expect(transparent.removedSignColor).toBe(theme.removedSignColor);
     expect(transparent.syntaxColors).toBe(theme.syntaxColors);
     expect(theme.background).not.toBe(TRANSPARENT_BACKGROUND);
+  });
+
+  test("withTransparentSurfaces keeps added/removed row tints", () => {
+    const theme = resolveTheme("graphite", null);
+    const transparent = withTransparentSurfaces(theme);
+
+    expect(transparent).toMatchObject({
+      background: TRANSPARENT_BACKGROUND,
+      panel: TRANSPARENT_BACKGROUND,
+      panelAlt: TRANSPARENT_BACKGROUND,
+      contextBg: TRANSPARENT_BACKGROUND,
+      contextContentBg: TRANSPARENT_BACKGROUND,
+      lineNumberBg: TRANSPARENT_BACKGROUND,
+    });
+    expect(transparent.addedBg).toBe(theme.addedBg);
+    expect(transparent.removedBg).toBe(theme.removedBg);
+    expect(transparent.movedAddedBg).toBe(theme.movedAddedBg);
+    expect(transparent.movedRemovedBg).toBe(theme.movedRemovedBg);
+    expect(transparent.addedContentBg).toBe(theme.addedContentBg);
+    expect(transparent.removedContentBg).toBe(theme.removedContentBg);
+    expect(transparent.syntaxColors).toBe(theme.syntaxColors);
   });
 });

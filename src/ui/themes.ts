@@ -143,3 +143,20 @@ export function withTransparentBackground(theme: AppTheme): AppTheme {
     noteTitleBackground: TRANSPARENT_BACKGROUND,
   };
 }
+
+/**
+ * Return a copy of a theme whose neutral surfaces allow the terminal background through while
+ * added/removed row tints stay painted. Static pager hosts use this so diff rows keep their
+ * semantic backgrounds on translucent terminals.
+ */
+export function withTransparentSurfaces(theme: AppTheme): AppTheme {
+  return {
+    ...theme,
+    background: TRANSPARENT_BACKGROUND,
+    panel: TRANSPARENT_BACKGROUND,
+    panelAlt: TRANSPARENT_BACKGROUND,
+    contextBg: TRANSPARENT_BACKGROUND,
+    contextContentBg: TRANSPARENT_BACKGROUND,
+    lineNumberBg: TRANSPARENT_BACKGROUND,
+  };
+}
