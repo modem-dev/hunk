@@ -13,6 +13,19 @@ export function buildHunkCursors(files: DiffFile[]): HunkCursor[] {
   );
 }
 
+/** Flatten the stream into cursors for hunks that still need review (mark-and-advance targets). */
+export function buildUnreviewedHunkCursors(
+  files: DiffFile[],
+  reviewedHunkIndicesByFileId: Record<string, ReadonlySet<number>>,
+): HunkCursor[] {
+  return files.flatMap((file) => {
+    const reviewed = reviewedHunkIndicesByFileId[file.id];
+    return file.metadata.hunks
+      .map((_, hunkIndex) => ({ fileId: file.id, hunkIndex }))
+      .filter((cursor) => !reviewed?.has(cursor.hunkIndex));
+  });
+}
+
 /** Flatten only the annotated hunks into a cursor list for comment navigation. */
 export function buildAnnotatedHunkCursors(files: DiffFile[]): HunkCursor[] {
   return files.flatMap((file) => {

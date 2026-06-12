@@ -592,6 +592,10 @@ export function renderDecoratedPlannedRowText(
     return [fitText(title, width), ...summaryLines, ...rationaleLines];
   }
 
+  if (row.kind === "reviewed-hunk-marker") {
+    return [renderHeaderRowText(reviewedMarkerRowLabel(row.hiddenLineCount), width)];
+  }
+
   const preparedRow = row.row;
 
   if (preparedRow.type === "hunk-header") {
@@ -1238,6 +1242,57 @@ function renderHeaderRow(
           <text fg={theme.noteTitleText} bg={theme.noteTitleBackground}>{` ${badge.text}`}</text>
         </box>
       ))}
+    </box>
+  );
+}
+
+/** Build the one-line label shown in place of a reviewed hunk's body. */
+export function reviewedMarkerRowLabel(hiddenLineCount: number) {
+  // The chevron mirrors collapsed-gap rows: it hints the row expands on click.
+  return `▸ ✓ reviewed (${hiddenLineCount} ${hiddenLineCount === 1 ? "line" : "lines"})`;
+}
+
+/** Render the one-line stand-in for a reviewed hunk collapsed to a marker. */
+export function ReviewedMarkerRowView({
+  hiddenLineCount,
+  hunkIndex,
+  width,
+  theme,
+  selected,
+  anchorId,
+  onToggleExpansion,
+}: {
+  hiddenLineCount: number;
+  hunkIndex: number;
+  width: number;
+  theme: AppTheme;
+  selected: boolean;
+  anchorId?: string;
+  onToggleExpansion?: (hunkIndex: number) => void;
+}) {
+  const label = fitText(reviewedMarkerRowLabel(hiddenLineCount), Math.max(0, width - 1));
+
+  return (
+    <box
+      id={anchorId}
+      style={{
+        width,
+        height: 1,
+        backgroundColor: theme.panelAlt,
+      }}
+      onMouseUp={onToggleExpansion ? () => onToggleExpansion(hunkIndex) : undefined}
+    >
+      <text>
+        <span
+          fg={selected ? neutralRailColor(theme) : dimRailColor(neutralRailColor(theme), theme)}
+          bg={theme.panelAlt}
+        >
+          {marker()}
+        </span>
+        <span fg={theme.muted} bg={theme.panelAlt}>
+          {label}
+        </span>
+      </text>
     </box>
   );
 }

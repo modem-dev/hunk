@@ -22,6 +22,8 @@ import {
   resolveCommentTarget,
 } from "../../core/liveComments";
 import { SourceTextTooLargeError } from "../../core/fileSource";
+import { reviewedHunkHash } from "../../core/reviewedHunks";
+import type { ReviewedMarkerStore } from "../../core/reviewedMarkerStore";
 import type { AgentAnnotation, DiffFile, UserNoteLineTarget } from "../../core/types";
 import type {
   AppliedCommentBatchResult,
@@ -122,6 +124,7 @@ export interface ReviewSelectionOptions {
 
 export interface ReviewController {
   allFiles: DiffFile[];
+  collapsedReviewedHunksByFileId: Record<string, ReadonlySet<number>>;
   expandedGapsByFileId: Record<string, ReadonlySet<string>>;
   filter: string;
   draftNote: DraftReviewNote | null;
@@ -130,6 +133,7 @@ export interface ReviewController {
   liveCommentsByFileId: Record<string, LiveComment[]>;
   reviewNoteCount: number;
   reviewNoteSummaries: SessionReviewNoteSummary[];
+  reviewedHunkIndicesByFileId: Record<string, ReadonlySet<number>>;
   userNotesByFileId: Record<string, UserReviewNote[]>;
   moveToAnnotatedFile: (delta: number) => void;
   moveToAnnotatedHunk: (delta: number) => void;
@@ -145,6 +149,9 @@ export interface ReviewController {
   sidebarEntries: ReviewState["sidebarEntries"];
   sourceStatusByFileId: Record<string, FileSourceStatus>;
   toggleGap: (fileId: string, gapKey: string) => void;
+  toggleReviewedForSelectedHunk: () => void;
+  toggleReviewedHunkExpansion: (fileId: string, hunkIndex: number) => void;
+  toggleSelectedReviewedHunkExpansion: () => void;
   toggleSelectedHunkGap: () => void;
   visibleFiles: DiffFile[];
   addLiveComment: (
@@ -176,8 +183,23 @@ export interface ReviewController {
 }
 
 /** Own the shared review stream state used by both the UI and session bridge. */
-export function useReviewController({ files }: { files: DiffFile[] }): ReviewController {
+export function useReviewController({
+  files,
+  reviewedMarkerStore,
+}: {
+  files: DiffFile[];
+  // Optional per-repo persistence; without it, reviewed state is session-only.
+  reviewedMarkerStore?: ReviewedMarkerStore;
+}): ReviewController {
   const [filter, setFilter] = useState("");
+  // Lazy init keeps the one disk read (plus TTL garbage collection) at mount;
+  // hard reloads remount the app and therefore re-read the store.
+  const [reviewedHashes, setReviewedHashes] = useState<ReadonlySet<string>>(
+    () => reviewedMarkerStore?.load() ?? new Set(),
+  );
+  const [expandedReviewedHunksByFileId, setExpandedReviewedHunksByFileId] = useState<
+    Record<string, ReadonlySet<number>>
+  >({});
   const [selectedFileId, setSelectedFileId] = useState(files[0]?.id ?? "");
   const [selectedHunkIndex, setSelectedHunkIndex] = useState(0);
   const [selectedFileTopAlignRequestId, setSelectedFileTopAlignRequestId] = useState(0);
@@ -228,6 +250,9 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
       }
       setSourceStatusByFileId((prev) => removeKeys(prev, staleFileIds));
       setExpandedGapsByFileId((prev) => removeKeys(prev, staleFileIds));
+      // Reviewed hashes survive reloads (they re-resolve against new content),
+      // but per-hunk expansion is positional and must reset with the file.
+      setExpandedReviewedHunksByFileId((prev) => removeKeys(prev, staleFileIds));
     }
   }
 
@@ -241,6 +266,9 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     selectedHunk,
     hunkCursors,
     annotatedHunkCursors,
+    reviewedHunkIndicesByFileId,
+    collapsedReviewedHunksByFileId,
+    unreviewedHunkCursors,
   } = useMemo(
     () =>
       buildReviewState({
@@ -249,11 +277,15 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
         filterQuery: deferredFilter,
         selectedFileId,
         selectedHunkIndex,
+        reviewedHashes,
+        expandedReviewedHunksByFileId,
       }),
     [
       deferredFilter,
+      expandedReviewedHunksByFileId,
       files,
       liveCommentsByFileId,
+      reviewedHashes,
       selectedFileId,
       selectedHunkIndex,
       userNotesByFileId,
@@ -329,7 +361,11 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     reconcileSelectedHunkIndex();
   }, [reconcileSelectedHunkIndex]);
 
-  /** Move through the full visible review stream one hunk at a time. */
+  /**
+   * Move through the full visible review stream one hunk at a time.
+   * Collapsed reviewed markers stay navigation stops on purpose: landing on
+   * one lets the keyboard expand it or un-mark a mistaken review.
+   */
   const moveToHunk = useCallback(
     (delta: number) => {
       const nextCursor = findNextHunkCursor(
@@ -353,6 +389,112 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     },
     [hunkCursors, selectHunk, selectedFile?.id, selectedHunkIndex],
   );
+
+  /** Toggle reviewed state for the selected hunk; marking also advances to the next unreviewed hunk. */
+  const toggleReviewedForSelectedHunk = useCallback(() => {
+    const file = selectedFile;
+    if (!file) {
+      return;
+    }
+
+    const hash = reviewedHunkHash(file, selectedHunkIndex);
+    if (!hash) {
+      return;
+    }
+
+    if (reviewedHashes.has(hash)) {
+      // Un-mark in place, whether the hunk is currently collapsed or expanded.
+      reviewedMarkerStore?.remove(hash);
+      setReviewedHashes((current) => {
+        const next = new Set(current);
+        next.delete(hash);
+        return next;
+      });
+      setExpandedReviewedHunksByFileId((current) => {
+        const expanded = current[file.id];
+        if (!expanded?.has(selectedHunkIndex)) {
+          return current;
+        }
+        const next = new Set(expanded);
+        next.delete(selectedHunkIndex);
+        return { ...current, [file.id]: next };
+      });
+      return;
+    }
+
+    reviewedMarkerStore?.add(hash);
+    setReviewedHashes((current) => new Set(current).add(hash));
+    // A freshly marked hunk always starts collapsed.
+    setExpandedReviewedHunksByFileId((current) => {
+      const expanded = current[file.id];
+      if (!expanded?.has(selectedHunkIndex)) {
+        return current;
+      }
+      const next = new Set(expanded);
+      next.delete(selectedHunkIndex);
+      return { ...current, [file.id]: next };
+    });
+
+    // Advance to the next hunk that still needs review (the just-marked hunk
+    // is filtered out because the memoized cursors predate this toggle).
+    const remainingCursors = unreviewedHunkCursors.filter(
+      (cursor) => !(cursor.fileId === file.id && cursor.hunkIndex === selectedHunkIndex),
+    );
+    const nextCursor = findNextHunkCursor(
+      remainingCursors,
+      file.id,
+      selectedHunkIndex,
+      1,
+      hunkCursors,
+    );
+    if (!nextCursor) {
+      return;
+    }
+
+    selectHunk(nextCursor.fileId, nextCursor.hunkIndex, {
+      alignFileHeaderTop: nextCursor.fileId !== file.id,
+    });
+  }, [
+    hunkCursors,
+    unreviewedHunkCursors,
+    reviewedHashes,
+    reviewedMarkerStore,
+    selectHunk,
+    selectedFile,
+    selectedHunkIndex,
+  ]);
+
+  /** Expand or re-collapse one reviewed hunk without changing its reviewed mark. */
+  const toggleReviewedHunkExpansion = useCallback(
+    (fileId: string, hunkIndex: number) => {
+      if (!reviewedHunkIndicesByFileId[fileId]?.has(hunkIndex)) {
+        return;
+      }
+
+      setExpandedReviewedHunksByFileId((current) => {
+        const expanded = current[fileId];
+        const next = new Set(expanded ?? []);
+        if (next.has(hunkIndex)) {
+          next.delete(hunkIndex);
+        } else {
+          next.add(hunkIndex);
+        }
+        return { ...current, [fileId]: next };
+      });
+      // Keep the selection on the toggled hunk so keyboard flow continues there.
+      selectHunk(fileId, hunkIndex, { preserveViewport: true });
+    },
+    [reviewedHunkIndicesByFileId, selectHunk],
+  );
+
+  /** Expand or re-collapse the selected reviewed hunk from the keyboard. */
+  const toggleSelectedReviewedHunkExpansion = useCallback(() => {
+    if (!selectedFile) {
+      return;
+    }
+
+    toggleReviewedHunkExpansion(selectedFile.id, selectedHunkIndex);
+  }, [selectedFile, selectedHunkIndex, toggleReviewedHunkExpansion]);
 
   /** Move through only hunks that currently have agent notes or live comments. */
   const moveToAnnotatedHunk = useCallback(
@@ -922,6 +1064,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
 
   return {
     allFiles,
+    collapsedReviewedHunksByFileId,
     draftNote,
     expandedGapsByFileId,
     filter,
@@ -930,6 +1073,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     liveCommentsByFileId,
     reviewNoteCount,
     reviewNoteSummaries,
+    reviewedHunkIndicesByFileId,
     userNotesByFileId,
     scrollToNote,
     selectedFile,
@@ -941,6 +1085,9 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     sidebarEntries,
     sourceStatusByFileId,
     toggleGap,
+    toggleReviewedForSelectedHunk,
+    toggleReviewedHunkExpansion,
+    toggleSelectedReviewedHunkExpansion,
     toggleSelectedHunkGap,
     visibleFiles,
     addLiveComment,

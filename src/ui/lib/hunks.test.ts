@@ -1,7 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { parseDiffFromFile } from "@pierre/diffs";
 import type { DiffFile } from "../../core/types";
-import { buildAnnotatedHunkCursors, findNextHunkCursor, type HunkCursor } from "./hunks";
+import {
+  buildAnnotatedHunkCursors,
+  buildUnreviewedHunkCursors,
+  findNextHunkCursor,
+  type HunkCursor,
+} from "./hunks";
 
 /** Build a minimal DiffFile with real Pierre-parsed hunks and optional annotations. */
 function createTestFile(
@@ -205,5 +210,27 @@ describe("annotated hunk navigation", () => {
       fileId: "gamma",
       hunkIndex: 1,
     });
+  });
+});
+
+describe("buildUnreviewedHunkCursors", () => {
+  test("drops reviewed hunks and keeps everything else in stream order", () => {
+    const stable = Array.from({ length: 10 }, (_, index) => `stable${index + 1}`).join("\n");
+    const alpha = createTestFile(
+      "alpha",
+      "alpha.ts",
+      `const a = 1;\n${stable}\nconst z = 1;\n`,
+      `const a = 2;\n${stable}\nconst z = 2;\n`,
+      null,
+    );
+    const beta = createTestFile("beta", "beta.ts", "const b = 1;\n", "const b = 2;\n", null);
+
+    expect(alpha.metadata.hunks.length).toBe(2);
+    expect(buildUnreviewedHunkCursors([alpha, beta], { alpha: new Set([1]) })).toEqual([
+      { fileId: "alpha", hunkIndex: 0 },
+      { fileId: "beta", hunkIndex: 0 },
+    ]);
+
+    expect(buildUnreviewedHunkCursors([alpha, beta], {})).toHaveLength(3);
   });
 });

@@ -14,6 +14,7 @@ import {
   isShiftSpacePageUpKey,
   isStepDownKey,
   isStepUpKey,
+  isToggleReviewedHunkKey,
 } from "../lib/keyboard";
 
 type FocusArea = "files" | "filter" | "note";
@@ -73,6 +74,8 @@ export interface UseAppKeyboardShortcutsOptions {
   toggleHunkHeaders: () => void;
   toggleLineNumbers: () => void;
   toggleLineWrap: () => void;
+  toggleReviewedHunk: () => void;
+  toggleSelectedReviewedHunkExpansion: () => void;
   toggleSidebar: () => void;
   triggerEditSelectedFile: () => void;
   triggerRefreshCurrentInput: () => void;
@@ -111,6 +114,8 @@ export function useAppKeyboardShortcuts({
   triggerEditSelectedFile,
   toggleLineNumbers,
   toggleLineWrap,
+  toggleReviewedHunk,
+  toggleSelectedReviewedHunkExpansion,
   toggleSidebar,
   triggerRefreshCurrentInput,
 }: UseAppKeyboardShortcutsOptions) {
@@ -359,6 +364,18 @@ export function useAppKeyboardShortcuts({
 
     if (isCreateReviewNoteKey(key)) {
       runAndCloseMenu(startUserNote);
+      return;
+    }
+
+    if (isToggleReviewedHunkKey(key)) {
+      runAndCloseMenu(toggleReviewedHunk);
+      return;
+    }
+
+    // Enter expands or re-collapses the selected reviewed marker; it is a
+    // no-op on unreviewed hunks (menus consume Enter before this handler).
+    if (key.name === "return" || key.name === "enter") {
+      runAndCloseMenu(toggleSelectedReviewedHunkExpansion);
       return;
     }
 

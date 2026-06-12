@@ -12,12 +12,13 @@ import { spansForHighlightedSourceLine, type DiffRow } from "./pierre";
 import { plannedReviewRowVisible } from "./plannedReviewRows";
 import { buildDiffSectionRowPlan } from "./diffSectionRowPlan";
 import { resolveVisiblePlannedRowWindow, type VisibleBodyBounds } from "./rowWindowing";
-import { diffMessage, DiffRowView, fitText } from "./renderRows";
+import { diffMessage, DiffRowView, fitText, ReviewedMarkerRowView } from "./renderRows";
 import { useHighlightedDiff } from "./useHighlightedDiff";
 import { useHighlightedSource } from "./useHighlightedSource";
 
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
 const EMPTY_EXPANDED_GAP_KEYS: ReadonlySet<string> = new Set();
+const EMPTY_COLLAPSED_REVIEWED_HUNKS: ReadonlySet<number> = new Set();
 const ADD_NOTE_IDLE_HIDE_DELAY_MS = 2000;
 
 export interface ActiveAddNoteAffordance {
@@ -60,6 +61,7 @@ function addNoteAffordanceForRow(row: AddNoteTargetRow): ActiveAddNoteAffordance
 /** Render a file diff in split or stack mode, with inline agent notes inserted between diff rows. */
 export function PierreDiffView({
   codeHorizontalOffset = 0,
+  collapsedReviewedHunkIndices = EMPTY_COLLAPSED_REVIEWED_HUNKS,
   copySelectedRowRanges,
   copySelectedSide,
   expandedGapKeys = EMPTY_EXPANDED_GAP_KEYS,
@@ -69,6 +71,7 @@ export function PierreDiffView({
   onActiveAddNoteAffordanceChange,
   onStartUserNoteAtHunk,
   onToggleGap,
+  onToggleReviewedHunkExpansion,
   showLineNumbers = true,
   showHunkHeaders = true,
   sourceStatus,
@@ -85,6 +88,7 @@ export function PierreDiffView({
   visibleBodyBounds,
 }: {
   codeHorizontalOffset?: number;
+  collapsedReviewedHunkIndices?: ReadonlySet<number>;
   copySelectedRowRanges?: Map<string, CopySelectedRowRange>;
   copySelectedSide?: "left" | "right";
   expandedGapKeys?: ReadonlySet<string>;
@@ -94,6 +98,7 @@ export function PierreDiffView({
   onActiveAddNoteAffordanceChange?: (affordance: ActiveAddNoteAffordance | null) => void;
   onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void;
   onToggleGap?: (gapKey: string) => void;
+  onToggleReviewedHunkExpansion?: (hunkIndex: number) => void;
   showLineNumbers?: boolean;
   showHunkHeaders?: boolean;
   sourceStatus?: FileSourceStatus | undefined;
@@ -192,6 +197,7 @@ export function PierreDiffView({
   const sectionRowPlan = useMemo(
     () =>
       buildDiffSectionRowPlan({
+        collapsedReviewedHunkIndices,
         expandedKeys: expandedGapKeys,
         file,
         highlightedDiff: resolvedHighlighted,
@@ -203,6 +209,7 @@ export function PierreDiffView({
         visibleAgentNotes,
       }),
     [
+      collapsedReviewedHunkIndices,
       expandedGapKeys,
       file,
       layout,
@@ -313,6 +320,27 @@ export function PierreDiffView({
                 onClose={plannedRow.note.onRemove}
                 theme={theme}
                 width={width}
+              />
+            </box>
+          );
+        }
+
+        if (plannedRow.kind === "reviewed-hunk-marker") {
+          return (
+            <box
+              key={plannedRow.key}
+              id={rowId}
+              style={{ width: "100%", flexDirection: "column" }}
+              onMouseOver={clearHoveredRow}
+            >
+              <ReviewedMarkerRowView
+                hiddenLineCount={plannedRow.hiddenLineCount}
+                hunkIndex={plannedRow.hunkIndex}
+                width={width}
+                theme={theme}
+                selected={plannedRow.hunkIndex === selectedHunkIndex}
+                anchorId={plannedRow.anchorId}
+                onToggleExpansion={onToggleReviewedHunkExpansion}
               />
             </box>
           );

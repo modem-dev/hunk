@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act, StrictMode, useEffect, useState } from "react";
 import { SourceTextTooLargeError } from "../../core/fileSource";
+import { reviewedHunkHash } from "../../core/reviewedHunks";
+import type { ReviewedMarkerStore } from "../../core/reviewedMarkerStore";
 import type { DiffFile } from "../../core/types";
 import {
   createTestDeferred,
@@ -88,13 +90,15 @@ function ReviewControllerHarness({
   initialFiles,
   onController,
   onSetFiles,
+  reviewedMarkerStore,
 }: {
   initialFiles: DiffFile[];
   onController: (controller: ReviewController) => void;
   onSetFiles?: (setFiles: (nextFiles: DiffFile[]) => void) => void;
+  reviewedMarkerStore?: ReviewedMarkerStore;
 }) {
   const [files, setFiles] = useState(initialFiles);
-  const controller = useReviewController({ files });
+  const controller = useReviewController({ files, reviewedMarkerStore });
 
   useEffect(() => {
     onController(controller);
@@ -110,7 +114,10 @@ function ReviewControllerHarness({
 /** Render the controller hook and expose its latest state to tests. */
 async function renderReviewController(
   initialFiles: DiffFile[],
-  { strictMode = false }: { strictMode?: boolean } = {},
+  {
+    strictMode = false,
+    reviewedMarkerStore,
+  }: { strictMode?: boolean; reviewedMarkerStore?: ReviewedMarkerStore } = {},
 ) {
   const controllerRef: { current: ReviewController | null } = { current: null };
   const setFilesRef: { current: ((nextFiles: DiffFile[]) => void) | null } = { current: null };
@@ -123,6 +130,7 @@ async function renderReviewController(
       onSetFiles={(nextSetFiles) => {
         setFilesRef.current = nextSetFiles;
       }}
+      reviewedMarkerStore={reviewedMarkerStore}
     />
   );
   const setup = await testRender(strictMode ? <StrictMode>{harness}</StrictMode> : harness, {
@@ -977,6 +985,221 @@ describe("useReviewController", () => {
       expect(String(loggedErrors[0]?.[0])).toContain("alpha");
     } finally {
       console.error = originalConsoleError;
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+});
+
+/** In-memory ReviewedMarkerStore double that records add/remove calls. */
+function createFakeMarkerStore(initialHashes: string[] = []) {
+  const persisted = new Set(initialHashes);
+  const added: string[] = [];
+  const removed: string[] = [];
+
+  const store: ReviewedMarkerStore = {
+    load: () => new Set(persisted),
+    add: (hash) => {
+      persisted.add(hash);
+      added.push(hash);
+    },
+    remove: (hash) => {
+      persisted.delete(hash);
+      removed.push(hash);
+    },
+  };
+
+  return { store, persisted, added, removed };
+}
+
+describe("useReviewController reviewed hunks", () => {
+  test("marking the selected hunk collapses it, persists it, and advances to the next unreviewed hunk", async () => {
+    const fake = createFakeMarkerStore();
+    const alpha = createTwoHunkFile();
+    const { controllerRef, setup } = await renderReviewController([alpha], {
+      reviewedMarkerStore: fake.store,
+    });
+
+    try {
+      await flush(setup);
+      expect(expectValue(controllerRef.current).selectedHunkIndex).toBe(0);
+
+      await act(async () => {
+        expectValue(controllerRef.current).toggleReviewedForSelectedHunk();
+      });
+      await flush(setup);
+
+      const controller = expectValue(controllerRef.current);
+      expect([...(controller.reviewedHunkIndicesByFileId["alpha"] ?? [])]).toEqual([0]);
+      expect([...(controller.collapsedReviewedHunksByFileId["alpha"] ?? [])]).toEqual([0]);
+      expect(controller.selectedHunkIndex).toBe(1);
+      expect(fake.added).toEqual([reviewedHunkHash(alpha, 0) as string]);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("hunk navigation stops on collapsed markers so they can be expanded or un-marked", async () => {
+    const alpha = createTwoHunkFile();
+    const beta = createDiffFile(
+      "beta",
+      "beta.ts",
+      "export const beta = 1;\n",
+      "export const beta = 2;\n",
+    );
+    const { controllerRef, setup } = await renderReviewController([alpha, beta]);
+
+    try {
+      await flush(setup);
+
+      // Mark alpha hunk 1 reviewed from alpha hunk 0 by stepping onto it first.
+      await act(async () => {
+        expectValue(controllerRef.current).selectHunk("alpha", 1);
+      });
+      await flush(setup);
+      await act(async () => {
+        expectValue(controllerRef.current).toggleReviewedForSelectedHunk();
+      });
+      await flush(setup);
+
+      // Marking advanced past alpha into beta; walking back lands ON the
+      // collapsed marker, keeping it reachable from the keyboard.
+      expect(expectValue(controllerRef.current).selectedFileId).toBe("beta");
+      await act(async () => {
+        expectValue(controllerRef.current).moveToHunk(-1);
+      });
+      await flush(setup);
+      expect(expectValue(controllerRef.current).selectedFileId).toBe("alpha");
+      expect(expectValue(controllerRef.current).selectedHunkIndex).toBe(1);
+
+      // Enter-style expansion of the selected marker reveals the body without
+      // dropping the reviewed mark.
+      await act(async () => {
+        expectValue(controllerRef.current).toggleSelectedReviewedHunkExpansion();
+      });
+      await flush(setup);
+      const expanded = expectValue(controllerRef.current);
+      expect([...(expanded.reviewedHunkIndicesByFileId["alpha"] ?? [])]).toEqual([1]);
+      expect(expanded.collapsedReviewedHunksByFileId["alpha"]).toBeUndefined();
+      expect(expanded.selectedFileId).toBe("alpha");
+      expect(expanded.selectedHunkIndex).toBe(1);
+
+      // Toggling again re-collapses the marker.
+      await act(async () => {
+        expectValue(controllerRef.current).toggleSelectedReviewedHunkExpansion();
+      });
+      await flush(setup);
+      expect([
+        ...(expectValue(controllerRef.current).collapsedReviewedHunksByFileId["alpha"] ?? []),
+      ]).toEqual([1]);
+
+      // The selected marker can be un-marked in place to undo a mistaken `v`.
+      await act(async () => {
+        expectValue(controllerRef.current).toggleReviewedForSelectedHunk();
+      });
+      await flush(setup);
+      expect(
+        expectValue(controllerRef.current).reviewedHunkIndicesByFileId["alpha"],
+      ).toBeUndefined();
+      expect(expectValue(controllerRef.current).selectedHunkIndex).toBe(1);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("expansion toggle is a no-op on unreviewed hunks", async () => {
+    const { controllerRef, setup } = await renderReviewController([createTwoHunkFile()]);
+
+    try {
+      await flush(setup);
+      await act(async () => {
+        expectValue(controllerRef.current).toggleSelectedReviewedHunkExpansion();
+      });
+      await flush(setup);
+
+      const controller = expectValue(controllerRef.current);
+      expect(controller.selectedHunkIndex).toBe(0);
+      expect(controller.reviewedHunkIndicesByFileId["alpha"]).toBeUndefined();
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("toggling a reviewed hunk again un-marks it and removes the marker", async () => {
+    const fake = createFakeMarkerStore();
+    const alpha = createTwoHunkFile();
+    const { controllerRef, setup } = await renderReviewController([alpha], {
+      reviewedMarkerStore: fake.store,
+    });
+
+    try {
+      await flush(setup);
+      await act(async () => {
+        expectValue(controllerRef.current).toggleReviewedForSelectedHunk();
+      });
+      await flush(setup);
+
+      // Step back onto the collapsed reviewed hunk and un-mark it.
+      await act(async () => {
+        expectValue(controllerRef.current).selectHunk("alpha", 0);
+      });
+      await flush(setup);
+      await act(async () => {
+        expectValue(controllerRef.current).toggleReviewedForSelectedHunk();
+      });
+      await flush(setup);
+
+      const controller = expectValue(controllerRef.current);
+      expect(controller.reviewedHunkIndicesByFileId["alpha"]).toBeUndefined();
+      expect(controller.selectedHunkIndex).toBe(0);
+      expect(fake.removed).toEqual([reviewedHunkHash(alpha, 0) as string]);
+      expect(fake.persisted.size).toBe(0);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("hashes persisted by the store start collapsed on mount", async () => {
+    const alpha = createTwoHunkFile();
+    const fake = createFakeMarkerStore([reviewedHunkHash(alpha, 1) as string]);
+    const { controllerRef, setup } = await renderReviewController([alpha], {
+      reviewedMarkerStore: fake.store,
+    });
+
+    try {
+      await flush(setup);
+      const controller = expectValue(controllerRef.current);
+      expect([...(controller.collapsedReviewedHunksByFileId["alpha"] ?? [])]).toEqual([1]);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("works session-only without a marker store", async () => {
+    const { controllerRef, setup } = await renderReviewController([createTwoHunkFile()]);
+
+    try {
+      await flush(setup);
+      await act(async () => {
+        expectValue(controllerRef.current).toggleReviewedForSelectedHunk();
+      });
+      await flush(setup);
+
+      expect([
+        ...(expectValue(controllerRef.current).collapsedReviewedHunksByFileId["alpha"] ?? []),
+      ]).toEqual([0]);
+    } finally {
       await act(async () => {
         setup.renderer.destroy();
       });

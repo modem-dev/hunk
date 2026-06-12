@@ -319,3 +319,89 @@ describe("measureDiffSectionGeometry", () => {
     expect(longGeometry.bodyHeight).toBeGreaterThan(shortGeometry.bodyHeight);
   });
 });
+
+describe("collapsed reviewed hunks in section geometry", () => {
+  const theme = resolveTheme("midnight", null);
+  const stable = Array.from({ length: 10 }, (_, index) => `stable${index + 1}`);
+
+  function createTwoHunkFile() {
+    return createTestDiffFile({
+      id: "alpha",
+      path: "alpha.ts",
+      before: lines("const a = 1;", ...stable, "const z = 1;"),
+      after: lines("const a = 2;", ...stable, "const z = 2;"),
+      context: 0,
+    });
+  }
+
+  test("collapsing a reviewed hunk shrinks its bounds to one marker row", () => {
+    const file = createTwoHunkFile();
+    expect(file.metadata.hunks).toHaveLength(2);
+
+    const base = measureDiffSectionGeometry(file, "split", true, theme, [], 120);
+    const collapsed = measureDiffSectionGeometry(
+      file,
+      "split",
+      true,
+      theme,
+      [],
+      120,
+      true,
+      false,
+      new Set<string>(),
+      undefined,
+      false,
+      new Set([0]),
+    );
+
+    expect(collapsed.bodyHeight).toBeLessThan(base.bodyHeight);
+    expect(collapsed.hunkBounds.get(0)?.height).toBe(1);
+    // The marker keeps the hunk anchored for navigation and reveal scrolling.
+    expect(collapsed.hunkAnchorRows.has(0)).toBe(true);
+    // Hunk 1 still has its normal bounds.
+    expect(collapsed.hunkBounds.get(1)?.height).toBe(base.hunkBounds.get(1)?.height);
+  });
+
+  test("the collapsed reviewed set participates in the geometry cache key", () => {
+    const file = createTwoHunkFile();
+    const visibleAgentNotes: VisibleAgentNote[] = [
+      {
+        id: "annotation:alpha:0",
+        annotation: { newRange: [1, 1], summary: "note" },
+      },
+    ];
+
+    // Same note array (the cache key owner) with different collapsed sets must
+    // not return the same cached geometry.
+    const expanded = measureDiffSectionGeometry(
+      file,
+      "split",
+      true,
+      theme,
+      visibleAgentNotes,
+      120,
+      true,
+      false,
+      new Set<string>(),
+      undefined,
+      false,
+      new Set<number>(),
+    );
+    const collapsed = measureDiffSectionGeometry(
+      file,
+      "split",
+      true,
+      theme,
+      visibleAgentNotes,
+      120,
+      true,
+      false,
+      new Set<string>(),
+      undefined,
+      false,
+      new Set([0]),
+    );
+
+    expect(collapsed.bodyHeight).toBeLessThan(expanded.bodyHeight);
+  });
+});

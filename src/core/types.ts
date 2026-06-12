@@ -94,6 +94,8 @@ export interface CommonOptions {
   copyDecorations?: boolean;
   transparentBackground?: boolean;
   colorMoved?: boolean;
+  // TTL for persisted reviewed-hunk markers; `reviewed_ttl_days` in config.
+  reviewedTtlDays?: number;
 }
 
 export interface CustomSyntaxColorsConfig {
@@ -354,6 +356,10 @@ export type ParsedCliInput =
 export interface AppBootstrap {
   input: CliInput;
   changeset: Changeset;
+  // VCS repo root when the review targets a repository; enables per-repo
+  // persistence (e.g. reviewed-hunk markers). Absent for stdin/patch inputs
+  // outside a repo, where such features degrade to session-only behavior.
+  repoRoot?: string;
   initialMode: LayoutMode;
   initialTheme?: string;
   initialThemeMode?: TerminalThemeMode;

@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { createTestAgentFileContext, createTestDiffFile } from "../../../test/helpers/diff-helpers";
+import { reviewedHunkHash } from "../../core/reviewedHunks";
 import {
+  buildReviewState,
   buildSelectedHunkSummary,
   findNextAnnotatedFile,
   resolveReviewNavigationTarget,
@@ -113,5 +115,50 @@ describe("review state helpers", () => {
         input: { filePath: "src/alpha.ts", hunkIndex: 20 },
       }),
     ).toThrow("No diff hunk");
+  });
+});
+
+describe("buildReviewState reviewed hunks", () => {
+  test("derives reviewed, collapsed, and unreviewed structures from the hash set", () => {
+    const stable = Array.from({ length: 10 }, (_, index) => `stable${index + 1}`).join("\n");
+    const alpha = createTestDiffFile({
+      id: "alpha",
+      path: "alpha.ts",
+      before: `const a = 1;\n${stable}\nconst z = 1;\n`,
+      after: `const a = 2;\n${stable}\nconst z = 2;\n`,
+      context: 0,
+    });
+    expect(alpha.metadata.hunks).toHaveLength(2);
+    const reviewedHash = reviewedHunkHash(alpha, 0) as string;
+
+    const collapsedState = buildReviewState({
+      files: [alpha],
+      liveCommentsByFileId: {},
+      filterQuery: "",
+      selectedFileId: "alpha",
+      selectedHunkIndex: 0,
+      reviewedHashes: new Set([reviewedHash]),
+      expandedReviewedHunksByFileId: {},
+    });
+    expect([...(collapsedState.reviewedHunkIndicesByFileId["alpha"] ?? [])]).toEqual([0]);
+    expect([...(collapsedState.collapsedReviewedHunksByFileId["alpha"] ?? [])]).toEqual([0]);
+    expect(collapsedState.unreviewedHunkCursors).toEqual([{ fileId: "alpha", hunkIndex: 1 }]);
+    const sidebarFile = collapsedState.sidebarEntries.find((entry) => entry.kind === "file");
+    expect(sidebarFile).toMatchObject({ reviewedHunkCount: 1, hunkCount: 2 });
+
+    // Expanding un-collapses the marker but the hunk stays reviewed, so it is
+    // still not a mark-and-advance target.
+    const expandedState = buildReviewState({
+      files: [alpha],
+      liveCommentsByFileId: {},
+      filterQuery: "",
+      selectedFileId: "alpha",
+      selectedHunkIndex: 0,
+      reviewedHashes: new Set([reviewedHash]),
+      expandedReviewedHunksByFileId: { alpha: new Set([0]) },
+    });
+    expect([...(expandedState.reviewedHunkIndicesByFileId["alpha"] ?? [])]).toEqual([0]);
+    expect(expandedState.collapsedReviewedHunksByFileId["alpha"]).toBeUndefined();
+    expect(expandedState.unreviewedHunkCursors).toEqual([{ fileId: "alpha", hunkIndex: 1 }]);
   });
 });

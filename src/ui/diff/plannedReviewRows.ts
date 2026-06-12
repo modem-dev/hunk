@@ -60,6 +60,12 @@ export function plannedReviewRowHeight(
     });
   }
 
+  // The reviewed marker is the hunk's whole visible extent, so it stays one
+  // row tall even when hunk headers are hidden.
+  if (row.kind === "reviewed-hunk-marker") {
+    return 1;
+  }
+
   if (row.row.type === "hunk-header") {
     return showHunkHeaders ? 1 : 0;
   }
@@ -89,9 +95,10 @@ export function measurePlannedSectionGeometry(
   let bodyHeight = 0;
 
   for (const row of plannedRows) {
-    if (row.kind === "diff-row" && row.anchorId && !hunkAnchorRows.has(row.hunkIndex)) {
+    if (row.kind !== "inline-note" && row.anchorId && !hunkAnchorRows.has(row.hunkIndex)) {
       // Track the renderer's anchor row separately from the full hunk bounds so navigation can
-      // still target the same semantic row when headers are hidden.
+      // still target the same semantic row when headers are hidden. Reviewed markers carry their
+      // hunk's anchor while the hunk body is collapsed.
       hunkAnchorRows.set(row.hunkIndex, bodyHeight);
     }
 

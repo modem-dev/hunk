@@ -366,3 +366,113 @@ describe("review render plan", () => {
     expect(inlineNotes.every((row) => row.noteIndex === 0 && row.noteCount === 1)).toBe(true);
   });
 });
+
+describe("reviewed hunk markers", () => {
+  const stableBlock = Array.from({ length: 10 }, (_, index) => `stable${index + 1}`);
+
+  function createTwoHunkFile() {
+    return createDiffFile(
+      "alpha",
+      "alpha.ts",
+      lines("const a = 1;", ...stableBlock, "const z = 1;"),
+      lines("const a = 2;", ...stableBlock, "const z = 2;"),
+    );
+  }
+
+  test("replaces a collapsed reviewed hunk's rows with one marker carrying the hunk anchor", () => {
+    const theme = resolveTheme("midnight", null);
+    const file = createTwoHunkFile();
+    expect(file.metadata.hunks).toHaveLength(2);
+
+    const rows = buildSplitRows(file, null, theme);
+    const plannedRows = buildReviewRenderPlan({
+      fileId: file.id,
+      rows,
+      showHunkHeaders: true,
+      collapsedReviewedHunkIndices: new Set([0]),
+      hiddenLineCountForHunk: () => 5,
+    });
+
+    const markers = plannedRows.filter((row) => row.kind === "reviewed-hunk-marker");
+    expect(markers).toHaveLength(1);
+    expect(markers[0]).toMatchObject({
+      hunkIndex: 0,
+      hiddenLineCount: 5,
+      anchorId: "diff-hunk:alpha:0",
+    });
+
+    // No body rows remain for hunk 0, except gap rows that belong to context.
+    const hunkZeroBodyRows = plannedRows.filter(
+      (row) => row.kind === "diff-row" && row.hunkIndex === 0 && row.row.type !== "collapsed",
+    );
+    expect(hunkZeroBodyRows).toHaveLength(0);
+
+    // Hunk 1 still renders normally and keeps its own anchor.
+    const hunkOneRows = plannedRows.filter((row) => row.kind === "diff-row" && row.hunkIndex === 1);
+    expect(hunkOneRows.length).toBeGreaterThan(0);
+    expect(
+      hunkOneRows.some((row) => row.kind === "diff-row" && row.anchorId === "diff-hunk:alpha:1"),
+    ).toBe(true);
+  });
+
+  test("keeps collapsed-gap rows visible around a reviewed hunk", () => {
+    const theme = resolveTheme("midnight", null);
+    const file = createTwoHunkFile();
+    const rows = buildSplitRows(file, null, theme);
+
+    const plannedRows = buildReviewRenderPlan({
+      fileId: file.id,
+      rows,
+      showHunkHeaders: true,
+      collapsedReviewedHunkIndices: new Set([1]),
+      hiddenLineCountForHunk: () => 2,
+    });
+
+    // The context gap between the hunks is attributed to hunk 1 but must survive its collapse.
+    const gapRows = plannedRows.filter(
+      (row) => row.kind === "diff-row" && row.row.type === "collapsed",
+    );
+    expect(gapRows.length).toBeGreaterThan(0);
+  });
+
+  test("drops inline notes anchored inside a collapsed reviewed hunk", () => {
+    const theme = resolveTheme("midnight", null);
+    const file = createTwoHunkFile();
+    const rows = buildSplitRows(file, null, theme);
+
+    const plannedRows = buildReviewRenderPlan({
+      fileId: file.id,
+      rows,
+      showHunkHeaders: true,
+      collapsedReviewedHunkIndices: new Set([0]),
+      hiddenLineCountForHunk: () => 5,
+      visibleAgentNotes: [
+        {
+          id: "annotation:alpha:0:0",
+          annotation: {
+            newRange: [1, 1],
+            summary: "Anchored in the reviewed hunk",
+          },
+        },
+      ],
+    });
+
+    expect(plannedRows.some((row) => row.kind === "inline-note")).toBe(false);
+  });
+
+  test("emits the marker even when hunk headers are hidden", () => {
+    const theme = resolveTheme("midnight", null);
+    const file = createTwoHunkFile();
+    const rows = buildSplitRows(file, null, theme);
+
+    const plannedRows = buildReviewRenderPlan({
+      fileId: file.id,
+      rows,
+      showHunkHeaders: false,
+      collapsedReviewedHunkIndices: new Set([0]),
+      hiddenLineCountForHunk: () => 5,
+    });
+
+    expect(plannedRows.filter((row) => row.kind === "reviewed-hunk-marker")).toHaveLength(1);
+  });
+});

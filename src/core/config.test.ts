@@ -94,6 +94,48 @@ describe("config resolution", () => {
     });
   });
 
+  test("reads reviewed_ttl_days with command-section override and a default of 30", () => {
+    const home = createTempDir("hunk-config-home-");
+    const repo = createTempDir("hunk-config-repo-");
+    createRepo(repo);
+
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(
+      join(home, ".config", "hunk", "config.toml"),
+      ["reviewed_ttl_days = 7", "", "[patch]", "reviewed_ttl_days = 14"].join("\n"),
+    );
+
+    const resolved = resolveConfiguredCliInput(createPatchPagerInput(), {
+      cwd: repo,
+      env: { HOME: home },
+    });
+    expect(resolved.input.options.reviewedTtlDays).toBe(14);
+
+    const defaulted = resolveConfiguredCliInput(createPatchPagerInput(), {
+      cwd: repo,
+      env: { HOME: createTempDir("hunk-config-empty-home-") },
+    });
+    expect(defaulted.input.options.reviewedTtlDays).toBe(30);
+  });
+
+  test("rejects a non-positive or fractional reviewed_ttl_days", () => {
+    const home = createTempDir("hunk-config-home-");
+    const repo = createTempDir("hunk-config-repo-");
+    createRepo(repo);
+
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(join(home, ".config", "hunk", "config.toml"), "reviewed_ttl_days = 0");
+
+    expect(() =>
+      resolveConfiguredCliInput(createPatchPagerInput(), { cwd: repo, env: { HOME: home } }),
+    ).toThrow("Expected reviewed_ttl_days to be a positive integer.");
+
+    writeFileSync(join(home, ".config", "hunk", "config.toml"), "reviewed_ttl_days = 1.5");
+    expect(() =>
+      resolveConfiguredCliInput(createPatchPagerInput(), { cwd: repo, env: { HOME: home } }),
+    ).toThrow("Expected reviewed_ttl_days to be a positive integer.");
+  });
+
   test("merges custom theme overrides from global and repo config", () => {
     const home = createTempDir("hunk-config-home-");
     const repo = createTempDir("hunk-config-repo-");

@@ -74,6 +74,8 @@ export function FileListItem({
   const iconWidth = icon ? 2 : 0; // icon + space
   const statsSectionWidth = statsWidth > 0 ? statsWidth + 1 : 0;
   const nameWidth = Math.max(1, textWidth - 1 - iconWidth - statsSectionWidth);
+  // Fully reviewed files fade back so attention goes to remaining work.
+  const allHunksReviewed = entry.hunkCount > 0 && entry.reviewedHunkCount >= entry.hunkCount;
 
   return (
     <box
@@ -103,7 +105,9 @@ export function FileListItem({
         }}
       >
         {icon && <text fg={color}>{icon} </text>}
-        <text fg={theme.text}>{padText(fitText(entry.name, nameWidth), nameWidth)}</text>
+        <text fg={allHunksReviewed ? theme.muted : theme.text}>
+          {padText(fitText(entry.name, nameWidth), nameWidth)}
+        </text>
         {statsSectionWidth > 0 && (
           <box
             style={{
@@ -126,7 +130,9 @@ export function FileListItem({
                       ? theme.noteBorder
                       : stat.kind === "addition"
                         ? theme.badgeAdded
-                        : theme.badgeRemoved
+                        : stat.kind === "reviewed"
+                          ? theme.muted
+                          : theme.badgeRemoved
                   }
                 >
                   {stat.text}

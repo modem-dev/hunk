@@ -8,6 +8,7 @@ Hunk is a review-first terminal diff viewer for agent-authored changesets, built
 
 - multi-file review stream with sidebar navigation
 - inline AI and agent annotations beside the code
+- mark hunks as reviewed (`v`) with per-repo persistence and sidebar progress
 - split, stack, and responsive auto layouts
 - watch mode for auto-reloading file and Git-backed reviews
 - keyboard, mouse, pager, and Git difftool support
@@ -128,10 +129,12 @@ line_numbers = true
 wrap_lines = false
 agent_notes = false
 transparent_background = false
+reviewed_ttl_days = 30
 ```
 
 `exclude_untracked` affects Git/Sapling working-tree `hunk diff` sessions only.
 `transparent_background` can also be written as `transparentBackground`.
+`reviewed_ttl_days` controls how long reviewed-hunk markers (`v` in the app, stored per repo in `.hunk/cache/reviewed/`) are kept before they expire.
 
 Custom themes can inherit from any built-in base theme and override only the colors you care about:
 

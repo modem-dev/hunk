@@ -1,3 +1,4 @@
+import { hunkBodyLineCount } from "../../core/reviewedHunks";
 import type { DiffFile, LayoutMode } from "../../core/types";
 import type { VisibleAgentNote } from "../lib/agentAnnotations";
 import type { AppTheme } from "../themes";
@@ -13,6 +14,7 @@ import { buildReviewRenderPlan, type PlannedReviewRow } from "./reviewRenderPlan
 
 const EMPTY_EXPANDED_GAP_KEYS: ReadonlySet<string> = new Set();
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
+const EMPTY_COLLAPSED_REVIEWED_HUNKS: ReadonlySet<number> = new Set();
 
 export interface DiffSectionRowPlan {
   lineNumberDigits: number;
@@ -20,6 +22,7 @@ export interface DiffSectionRowPlan {
 }
 
 export interface BuildDiffSectionRowPlanOptions {
+  collapsedReviewedHunkIndices?: ReadonlySet<number>;
   expandedKeys?: ReadonlySet<string>;
   file: DiffFile | undefined;
   highlightedDiff?: HighlightedDiffCode | null;
@@ -45,6 +48,7 @@ function buildBaseRows(
 
 /** Build the shared file-level diff plan consumed by rendering and geometry measurement. */
 export function buildDiffSectionRowPlan({
+  collapsedReviewedHunkIndices = EMPTY_COLLAPSED_REVIEWED_HUNKS,
   expandedKeys = EMPTY_EXPANDED_GAP_KEYS,
   file,
   highlightedDiff = null,
@@ -79,6 +83,8 @@ export function buildDiffSectionRowPlan({
       rows,
       showHunkHeaders,
       visibleAgentNotes,
+      collapsedReviewedHunkIndices,
+      hiddenLineCountForHunk: (hunkIndex) => hunkBodyLineCount(file.metadata, hunkIndex),
     }),
   };
 }

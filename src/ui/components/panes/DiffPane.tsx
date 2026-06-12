@@ -163,12 +163,15 @@ function buildHighlightPrefetchFileIds({
 
 const EMPTY_EXPANDED_GAP_KEYS: ReadonlySet<string> = new Set();
 const EMPTY_EXPANDED_GAPS_BY_FILE_ID: Record<string, ReadonlySet<string>> = {};
+const EMPTY_COLLAPSED_REVIEWED_BY_FILE_ID: Record<string, ReadonlySet<number>> = {};
+const EMPTY_COLLAPSED_REVIEWED_HUNKS: ReadonlySet<number> = new Set();
 const EMPTY_SOURCE_STATUS_BY_FILE_ID: Record<string, FileSourceStatus> = {};
 const NOOP_TOGGLE_GAP = () => {};
 
 /** Render the main multi-file review stream. */
 export function DiffPane({
   codeHorizontalOffset = 0,
+  collapsedReviewedHunksByFileId = EMPTY_COLLAPSED_REVIEWED_BY_FILE_ID,
   diffContentWidth,
   expandedGapsByFileId = EMPTY_EXPANDED_GAPS_BY_FILE_ID,
   files,
@@ -212,9 +215,11 @@ export function DiffPane({
   onScrollCodeHorizontally = () => {},
   onSelectFile,
   onToggleGap = NOOP_TOGGLE_GAP,
+  onToggleReviewedHunkExpansion,
   onViewportCenteredHunkChange,
 }: {
   codeHorizontalOffset?: number;
+  collapsedReviewedHunksByFileId?: Record<string, ReadonlySet<number>>;
   diffContentWidth: number;
   expandedGapsByFileId?: Record<string, ReadonlySet<string>>;
   files: DiffFile[];
@@ -260,6 +265,7 @@ export function DiffPane({
   onScrollCodeHorizontally?: (delta: number) => void;
   onSelectFile: (fileId: string) => void;
   onToggleGap?: (fileId: string, gapKey: string) => void;
+  onToggleReviewedHunkExpansion?: (fileId: string, hunkIndex: number) => void;
   onViewportCenteredHunkChange?: (fileId: string, hunkIndex: number) => void;
 }) {
   const renderer = useRenderer();
@@ -583,9 +589,11 @@ export function DiffPane({
           expandedGapsByFileId[file.id] ?? EMPTY_EXPANDED_GAP_KEYS,
           sourceStatusByFileId[file.id],
           Boolean(onStartUserNoteAtHunk),
+          collapsedReviewedHunksByFileId[file.id] ?? EMPTY_COLLAPSED_REVIEWED_HUNKS,
         ),
       ),
     [
+      collapsedReviewedHunksByFileId,
       diffContentWidth,
       expandedGapsByFileId,
       files,
@@ -661,11 +669,13 @@ export function DiffPane({
           expandedGapsByFileId[file.id] ?? EMPTY_EXPANDED_GAP_KEYS,
           sourceStatusByFileId[file.id],
           Boolean(onStartUserNoteAtHunk),
+          collapsedReviewedHunksByFileId[file.id] ?? EMPTY_COLLAPSED_REVIEWED_HUNKS,
         );
       }),
     [
       allAgentNotesByFile,
       baseSectionGeometry,
+      collapsedReviewedHunksByFileId,
       diffContentWidth,
       expandedGapsByFileId,
       files,
@@ -1709,6 +1719,9 @@ export function DiffPane({
                     <DiffSection
                       key={file.id}
                       codeHorizontalOffset={codeHorizontalOffset}
+                      collapsedReviewedHunkIndices={
+                        collapsedReviewedHunksByFileId[file.id] ?? EMPTY_COLLAPSED_REVIEWED_HUNKS
+                      }
                       expandedGapKeys={expandedGapsByFileId[file.id] ?? EMPTY_EXPANDED_GAP_KEYS}
                       file={file}
                       headerLabelWidth={headerLabelWidth}
@@ -1748,6 +1761,11 @@ export function DiffPane({
                       }
                       onSelect={() => onSelectFile(file.id)}
                       onToggleGap={(gapKey) => onToggleGap(file.id, gapKey)}
+                      onToggleReviewedHunkExpansion={
+                        onToggleReviewedHunkExpansion
+                          ? (hunkIndex) => onToggleReviewedHunkExpansion(file.id, hunkIndex)
+                          : undefined
+                      }
                     />
                   );
                 })}

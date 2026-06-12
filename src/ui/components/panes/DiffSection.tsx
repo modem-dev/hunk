@@ -13,6 +13,7 @@ import { DiffFileHeaderRow } from "./DiffFileHeaderRow";
 
 interface DiffSectionProps {
   codeHorizontalOffset: number;
+  collapsedReviewedHunkIndices?: ReadonlySet<number>;
   expandedGapKeys: ReadonlySet<string>;
   file: DiffFile;
   headerLabelWidth: number;
@@ -42,11 +43,13 @@ interface DiffSectionProps {
   onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void;
   onSelect: () => void;
   onToggleGap: (gapKey: string) => void;
+  onToggleReviewedHunkExpansion?: (hunkIndex: number) => void;
 }
 
 /** Render one file section in the main review stream. */
 function DiffSectionComponent({
   codeHorizontalOffset,
+  collapsedReviewedHunkIndices,
   expandedGapKeys,
   file,
   headerLabelWidth,
@@ -76,6 +79,7 @@ function DiffSectionComponent({
   onStartUserNoteAtHunk,
   onSelect,
   onToggleGap,
+  onToggleReviewedHunkExpansion,
 }: DiffSectionProps) {
   return (
     <box
@@ -114,6 +118,7 @@ function DiffSectionComponent({
       ) : null}
 
       <PierreDiffView
+        collapsedReviewedHunkIndices={collapsedReviewedHunkIndices}
         expandedGapKeys={expandedGapKeys}
         file={file}
         layout={layout}
@@ -133,6 +138,7 @@ function DiffSectionComponent({
         onActiveAddNoteAffordanceChange={onActiveAddNoteAffordanceChange}
         onStartUserNoteAtHunk={onStartUserNoteAtHunk}
         onToggleGap={onToggleGap}
+        onToggleReviewedHunkExpansion={onToggleReviewedHunkExpansion}
         selectedHunkIndex={selectedHunkIndex}
         sectionGeometry={sectionGeometry}
         shouldLoadHighlight={shouldLoadHighlight}
@@ -149,6 +155,7 @@ export const DiffSection = memo(DiffSectionComponent, (previous, next) => {
   // This comparator relies on stable upstream object identity for files and visible-note arrays.
   return (
     previous.codeHorizontalOffset === next.codeHorizontalOffset &&
+    previous.collapsedReviewedHunkIndices === next.collapsedReviewedHunkIndices &&
     previous.expandedGapKeys === next.expandedGapKeys &&
     previous.file === next.file &&
     previous.headerLabelWidth === next.headerLabelWidth &&

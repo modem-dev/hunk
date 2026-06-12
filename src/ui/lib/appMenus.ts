@@ -28,6 +28,7 @@ export interface BuildAppMenusOptions {
   toggleHunkHeaders: () => void;
   toggleLineNumbers: () => void;
   toggleLineWrap: () => void;
+  toggleReviewedHunk: () => void;
   toggleSidebar: () => void;
   triggerEditSelectedFile: () => void;
   wrapLines: boolean;
@@ -60,6 +61,7 @@ export function buildAppMenus({
   toggleHunkHeaders,
   toggleLineNumbers,
   toggleLineWrap,
+  toggleReviewedHunk,
   toggleSidebar,
   triggerEditSelectedFile,
   wrapLines,
@@ -191,6 +193,12 @@ export function buildAppMenus({
         label: "Next hunk",
         hint: "]",
         action: () => moveToHunk(1),
+      },
+      {
+        kind: "item",
+        label: "Mark hunk reviewed",
+        hint: "v",
+        action: toggleReviewedHunk,
       },
       { kind: "separator" },
       {

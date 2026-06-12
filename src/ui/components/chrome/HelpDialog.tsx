@@ -56,6 +56,8 @@ export function HelpDialog({
       items: [
         ["/", "focus file filter"],
         ["c", "create review note"],
+        ["v", "mark hunk reviewed / unmark"],
+        ["Enter", "expand / collapse reviewed hunk"],
         ["Tab", "toggle files/filter focus"],
         ["F10", "open menus"],
         [canRefresh ? "r / q" : "q", canRefresh ? "reload / quit" : "quit"],

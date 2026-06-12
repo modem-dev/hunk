@@ -182,3 +182,36 @@ describe("planned review row geometry", () => {
     });
   });
 });
+
+describe("reviewed-hunk-marker rows", () => {
+  const markerRow: PlannedReviewRow = {
+    kind: "reviewed-hunk-marker",
+    key: "reviewed-marker:file-1:0",
+    stableKey: "meta:reviewed-marker:0",
+    fileId: "file-1",
+    hunkIndex: 0,
+    hiddenLineCount: 7,
+    anchorId: "diff-hunk:file-1:0",
+  };
+
+  test("is one row tall even when hunk headers are hidden", () => {
+    expect(plannedReviewRowHeight(markerRow, baseOptions)).toBe(1);
+    expect(plannedReviewRowHeight(markerRow, { ...baseOptions, showHunkHeaders: false })).toBe(1);
+    expect(plannedReviewRowVisible(markerRow, { ...baseOptions, showHunkHeaders: false })).toBe(
+      true,
+    );
+  });
+
+  test("acts as its hunk's anchor and full bounds in section geometry", () => {
+    const geometry = measurePlannedSectionGeometry([markerRow], baseOptions);
+
+    expect(geometry.bodyHeight).toBe(1);
+    expect(geometry.hunkAnchorRows.get(0)).toBe(0);
+    expect(geometry.hunkBounds.get(0)).toMatchObject({
+      top: 0,
+      height: 1,
+      startRowId: reviewRowId(markerRow.key),
+      endRowId: reviewRowId(markerRow.key),
+    });
+  });
+});
