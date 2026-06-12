@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseCli } from "./cli";
@@ -284,6 +284,42 @@ describe("parseCli", () => {
     });
   });
 
+  test("resolves --repo from a subdirectory to the containing repo root", async () => {
+    const repoRoot = realpathSync.native(createTempDir("hunk-cli-repo-"));
+    mkdirSync(join(repoRoot, ".git"));
+    const subdir = join(repoRoot, "packages", "app");
+    mkdirSync(subdir, { recursive: true });
+
+    const parsed = await parseCli(["bun", "hunk", "session", "get", "--repo", subdir]);
+
+    expect(parsed).toMatchObject({
+      kind: "session",
+      action: "get",
+      selector: { repoRoot },
+    });
+  });
+
+  test("resolves --repo through a symlinked path to the canonical repo root", async () => {
+    const repoRoot = realpathSync.native(createTempDir("hunk-cli-symlink-"));
+    mkdirSync(join(repoRoot, ".git"));
+    const linkParent = realpathSync.native(createTempDir("hunk-cli-symlink-link-"));
+    const link = join(linkParent, "repo-link");
+    try {
+      symlinkSync(repoRoot, link, "dir");
+    } catch {
+      // Skip where symlink creation is unsupported (e.g. Windows without privilege).
+      return;
+    }
+
+    const parsed = await parseCli(["bun", "hunk", "session", "get", "--repo", link]);
+
+    expect(parsed).toMatchObject({
+      kind: "session",
+      action: "get",
+      selector: { repoRoot },
+    });
+  });
+
   test("parses session review by repo alias", async () => {
     const parsed = await parseCli(["bun", "hunk", "session", "review", "--repo", ".", "--json"]);
 
@@ -420,6 +456,30 @@ describe("parseCli", () => {
         options: {},
       },
       output: "json",
+    });
+  });
+
+  test("resolves session reload --repo from a subdirectory to the containing repo root", async () => {
+    const repoRoot = realpathSync.native(createTempDir("hunk-cli-reload-"));
+    mkdirSync(join(repoRoot, ".git"));
+    const subdir = join(repoRoot, "packages", "app");
+    mkdirSync(subdir, { recursive: true });
+
+    const parsed = await parseCli([
+      "bun",
+      "hunk",
+      "session",
+      "reload",
+      "--repo",
+      subdir,
+      "--",
+      "diff",
+    ]);
+
+    expect(parsed).toMatchObject({
+      kind: "session",
+      action: "reload",
+      selector: { repoRoot },
     });
   });
 

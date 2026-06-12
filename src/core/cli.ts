@@ -1,4 +1,4 @@
-import { existsSync, statSync } from "node:fs";
+import { existsSync, realpathSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { Command, Option } from "commander";
 import type {
@@ -12,6 +12,7 @@ import type {
   SessionCommentApplyItemInput,
 } from "./types";
 import { resolveBundledHunkReviewSkillPath } from "./paths";
+import { detectVcs } from "./vcs";
 import { resolveCliVersion } from "./version";
 
 /** Validate one requested layout mode from CLI input. */
@@ -309,6 +310,23 @@ function parseSessionCommentApplyPayload(raw: string): SessionCommentApplyItemIn
   });
 }
 
+/**
+ * Resolve a `--repo <path>` selector to the containing VCS toplevel.
+ *
+ * Sessions register under their repo root, so the selector must walk up from the
+ * given path to that root; otherwise a query run from a subdirectory would never
+ * match. The detected root is canonicalized through symlinks to mirror the
+ * session's registered repoRoot (git's `--show-toplevel` is realpath-canonical),
+ * so matching also holds under a symlinked ancestor like macOS `/tmp`. Falls back
+ * to the resolved path when it is not inside a known checkout.
+ */
+function resolveRepoSelectorRoot(repoPath: string): string {
+  const resolved = resolve(repoPath);
+  const repoRoot = detectVcs(resolved)?.repoRoot;
+  // The detected root always exists on disk, so realpath cannot throw here.
+  return repoRoot ? realpathSync.native(repoRoot) : resolved;
+}
+
 /** Normalize one explicit session selector from either session id or repo root. */
 function resolveExplicitSessionSelector(
   sessionId: string | undefined,
@@ -322,7 +340,7 @@ function resolveExplicitSessionSelector(
     throw new Error("Specify one live Hunk session with <session-id> or --repo <path>.");
   }
 
-  return sessionId ? { sessionId } : { repoRoot: resolve(repoRoot!) };
+  return sessionId ? { sessionId } : { repoRoot: resolveRepoSelectorRoot(repoRoot!) };
 }
 
 function resolveReloadSelector(
@@ -362,7 +380,7 @@ function resolveReloadSelector(
 
   if (repoRoot) {
     return {
-      selector: { repoRoot: resolve(repoRoot) },
+      selector: { repoRoot: resolveRepoSelectorRoot(repoRoot) },
       sourcePath: resolvedSource,
     };
   }
