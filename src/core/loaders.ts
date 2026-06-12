@@ -23,7 +23,12 @@ import {
   normalizePatchText,
   stripTerminalControl,
 } from "./patch/normalize";
-import { createUnsupportedVcsOperationError, getVcsAdapter, operationFromInput } from "./vcs";
+import {
+  createUnsupportedVcsOperationError,
+  findVcsRepoRootCandidate,
+  getVcsAdapter,
+  operationFromInput,
+} from "./vcs";
 import type {
   AppBootstrap,
   AgentContext,
@@ -679,6 +684,7 @@ export async function loadAppBootstrap(
   return {
     input,
     changeset,
+    repoRoot: findVcsRepoRootCandidate(cwd),
     initialMode: input.options.mode ?? "auto",
     initialTheme: input.options.theme,
     customTheme,

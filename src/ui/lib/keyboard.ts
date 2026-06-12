@@ -38,6 +38,17 @@ export function isCreateReviewNoteKey(key: KeyEvent) {
   );
 }
 
+/** Match the unmodified mark-hunk-reviewed shortcut. */
+export function isToggleReviewedHunkKey(key: KeyEvent) {
+  return (
+    (key.name === "v" || key.sequence === "v") &&
+    !key.ctrl &&
+    !key.meta &&
+    !key.option &&
+    !key.shift
+  );
+}
+
 /** Match any key alias that should scroll forward by a full viewport. */
 export function isPageDownKey(key: KeyEvent) {
   return (

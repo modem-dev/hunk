@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import { join } from "node:path";
 import { resolveGlobalConfigPath } from "./paths";
+import { DEFAULT_REVIEWED_TTL_DAYS } from "./reviewedMarkerStore";
 import { detectVcs, findVcsRepoRootCandidate, isVcsId } from "./vcs";
 import type {
   CliInput,
@@ -114,6 +115,19 @@ function normalizeBoolean(value: unknown) {
 /** Accept only plain strings from config files. */
 function normalizeString(value: unknown) {
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+/** Accept only positive integers and report the failing TOML key path. */
+function normalizePositiveInteger(value: unknown, keyPath: string) {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+    throw new Error(`Expected ${keyPath} to be a positive integer.`);
+  }
+
+  return value;
 }
 
 /** Accept only #rrggbb theme colors and report the failing TOML key path. */
@@ -242,6 +256,7 @@ function readConfigPreferences(source: Record<string, unknown>): CommonOptions {
       normalizeBoolean(source.transparentBackground) ??
       normalizeBoolean(source.transparent_background),
     colorMoved: normalizeBoolean(source.color_moved),
+    reviewedTtlDays: normalizePositiveInteger(source.reviewed_ttl_days, "reviewed_ttl_days"),
   };
 }
 
@@ -263,6 +278,7 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
     copyDecorations: overrides.copyDecorations ?? base.copyDecorations,
     transparentBackground: overrides.transparentBackground ?? base.transparentBackground,
     colorMoved: overrides.colorMoved ?? base.colorMoved,
+    reviewedTtlDays: overrides.reviewedTtlDays ?? base.reviewedTtlDays,
   };
 }
 
@@ -358,6 +374,7 @@ export function resolveConfiguredCliInput(
     copyDecorations: resolvedOptions.copyDecorations ?? DEFAULT_VIEW_PREFERENCES.copyDecorations,
     transparentBackground: resolvedOptions.transparentBackground ?? false,
     colorMoved: resolvedOptions.colorMoved,
+    reviewedTtlDays: resolvedOptions.reviewedTtlDays ?? DEFAULT_REVIEWED_TTL_DAYS,
   };
 
   if (resolvedOptions.theme === "custom" && !resolvedCustomTheme) {

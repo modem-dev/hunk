@@ -13,6 +13,8 @@ export interface FileListEntry {
   deletionsText: string | null;
   changeType: FileDiffMetadata["type"];
   isUntracked: boolean;
+  reviewedHunkCount: number;
+  hunkCount: number;
 }
 
 export interface FileGroupEntry {
@@ -44,13 +46,21 @@ function formatSidebarStat(prefix: "+" | "-", value: number, truncated = false) 
   return value > 0 ? `${prefix}${value}${truncated ? "+" : ""}` : null;
 }
 
+type SidebarStatsSource = Pick<
+  FileListEntry,
+  "agentCommentsText" | "additionsText" | "deletionsText" | "reviewedHunkCount" | "hunkCount"
+>;
+
 /** Build the visible stats badges for one sidebar row.
  * Keep the agent-note badge first so it reads as review context before line churn.
+ * Review progress comes last; a fully reviewed file shows a checkmark instead
+ * of its counts.
  */
-export function sidebarEntryStats(
-  entry: Pick<FileListEntry, "agentCommentsText" | "additionsText" | "deletionsText">,
-) {
-  const stats: Array<{ kind: "agent-comment" | "addition" | "deletion"; text: string }> = [];
+export function sidebarEntryStats(entry: SidebarStatsSource) {
+  const stats: Array<{
+    kind: "agent-comment" | "addition" | "deletion" | "reviewed";
+    text: string;
+  }> = [];
 
   if (entry.agentCommentsText) {
     stats.push({ kind: "agent-comment", text: entry.agentCommentsText });
@@ -64,13 +74,19 @@ export function sidebarEntryStats(
     stats.push({ kind: "deletion", text: entry.deletionsText });
   }
 
+  if (entry.reviewedHunkCount > 0 && entry.hunkCount > 0) {
+    const allReviewed = entry.reviewedHunkCount >= entry.hunkCount;
+    stats.push({
+      kind: "reviewed",
+      text: allReviewed ? "✓" : `${entry.reviewedHunkCount}/${entry.hunkCount}`,
+    });
+  }
+
   return stats;
 }
 
 /** Measure the rendered sidebar stats width, including the space between badges. */
-export function sidebarEntryStatsWidth(
-  entry: Pick<FileListEntry, "agentCommentsText" | "additionsText" | "deletionsText">,
-) {
+export function sidebarEntryStatsWidth(entry: SidebarStatsSource) {
   return sidebarEntryStats(entry).reduce(
     (width, stat, index) => width + stat.text.length + (index > 0 ? 1 : 0),
     0,
@@ -120,7 +136,10 @@ export function filterReviewFiles(files: DiffFile[], query: string): DiffFile[] 
 }
 
 /** Build the grouped sidebar entries while preserving the review stream order. */
-export function buildSidebarEntries(files: DiffFile[]): SidebarEntry[] {
+export function buildSidebarEntries(
+  files: DiffFile[],
+  reviewedHunkIndicesByFileId: Record<string, ReadonlySet<number>> = {},
+): SidebarEntry[] {
   const entries: SidebarEntry[] = [];
   let activeGroup: string | null = null;
 
@@ -151,6 +170,8 @@ export function buildSidebarEntries(files: DiffFile[]): SidebarEntry[] {
       deletionsText: formatSidebarStat("-", file.stats.deletions),
       changeType: file.metadata.type,
       isUntracked: file.isUntracked ?? false,
+      reviewedHunkCount: reviewedHunkIndicesByFileId[file.id]?.size ?? 0,
+      hunkCount: file.metadata.hunks.length,
     });
   });
 

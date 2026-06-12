@@ -255,6 +255,33 @@ describe("loadAppBootstrap", () => {
     expect(bootstrap.changeset.files[0]?.agent?.annotations).toHaveLength(1);
   });
 
+  test("exposes the VCS repo root, and leaves it absent outside a repository", async () => {
+    const repo = createTempRepo("hunk-repo-root-");
+    const left = join(repo, "before.ts");
+    const right = join(repo, "after.ts");
+    writeFileSync(left, "export const value = 1;\n");
+    writeFileSync(right, "export const value = 2;\n");
+
+    const inRepo = await loadAppBootstrap(
+      { kind: "diff", left, right, options: { mode: "auto" } },
+      { cwd: repo },
+    );
+    expect(inRepo.repoRoot).toBe(repo);
+
+    const plain = mkdtempSync(join(tmpdir(), "hunk-no-repo-"));
+    tempDirs.push(plain);
+    const plainLeft = join(plain, "before.ts");
+    const plainRight = join(plain, "after.ts");
+    writeFileSync(plainLeft, "export const value = 1;\n");
+    writeFileSync(plainRight, "export const value = 2;\n");
+
+    const outside = await loadAppBootstrap(
+      { kind: "diff", left: plainLeft, right: plainRight, options: { mode: "auto" } },
+      { cwd: plain },
+    );
+    expect(outside.repoRoot).toBeUndefined();
+  });
+
   test("skips binary file-pair diffs instead of reading their contents", async () => {
     const dir = mkdtempSync(join(tmpdir(), "hunk-binary-diff-"));
     tempDirs.push(dir);

@@ -5,6 +5,7 @@ import type { DiffRow } from "./pierre";
 
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
 const EMPTY_ROW_KEYS = new Set<string>();
+const EMPTY_COLLAPSED_REVIEWED_HUNKS: ReadonlySet<number> = new Set();
 
 type DiffLineRow = Extract<DiffRow, { type: "split-line" | "stack-line" }>;
 
@@ -42,6 +43,18 @@ export type PlannedReviewRow =
       anchorSide?: "old" | "new";
       noteCount: number;
       noteIndex: number;
+    }
+  | {
+      // One-line stand-in for a hunk marked as reviewed: the hunk's own rows
+      // are not emitted, and this marker becomes the hunk's anchor and full
+      // visible extent.
+      kind: "reviewed-hunk-marker";
+      key: string;
+      stableKey: string;
+      fileId: string;
+      hunkIndex: number;
+      hiddenLineCount: number;
+      anchorId: string;
     };
 
 function lineRows(rows: DiffRow[]) {
@@ -283,12 +296,16 @@ export function buildReviewRenderPlan({
   showHunkHeaders,
   visibleAgentNotes = EMPTY_VISIBLE_AGENT_NOTES,
   selectedHunkIndex: _selectedHunkIndex,
+  collapsedReviewedHunkIndices = EMPTY_COLLAPSED_REVIEWED_HUNKS,
+  hiddenLineCountForHunk,
 }: {
   fileId: string;
   rows: DiffRow[];
   showHunkHeaders: boolean;
   visibleAgentNotes?: VisibleAgentNote[];
   selectedHunkIndex?: number;
+  collapsedReviewedHunkIndices?: ReadonlySet<number>;
+  hiddenLineCountForHunk?: (hunkIndex: number) => number;
 }) {
   const placementsByAnchor = buildInlineVisibleNotePlacements(rows, visibleAgentNotes);
   const noteGuideSideByRowKey = buildNoteGuideSideByRowKey(placementsByAnchor);
@@ -296,6 +313,32 @@ export function buildReviewRenderPlan({
   const anchoredHunks = new Set<number>();
 
   for (const row of rows) {
+    if (collapsedReviewedHunkIndices.has(row.hunkIndex)) {
+      // Collapsed-gap rows (and rows expanded out of those gaps) belong to the
+      // surrounding context, not the reviewed hunk body, so they stay visible.
+      const isGapRow =
+        row.type === "collapsed" ||
+        ((row.type === "split-line" || row.type === "stack-line") && row.isExpansionRow === true);
+
+      if (!isGapRow) {
+        // Replace the hunk body with one marker at its header position. Inline
+        // notes anchored inside the hunk drop with their anchor rows.
+        if (row.type === "hunk-header" && !anchoredHunks.has(row.hunkIndex)) {
+          anchoredHunks.add(row.hunkIndex);
+          plannedRows.push({
+            kind: "reviewed-hunk-marker",
+            key: `reviewed-marker:${fileId}:${row.hunkIndex}`,
+            stableKey: `meta:reviewed-marker:${row.hunkIndex}`,
+            fileId,
+            hunkIndex: row.hunkIndex,
+            hiddenLineCount: hiddenLineCountForHunk?.(row.hunkIndex) ?? 0,
+            anchorId: diffHunkId(fileId, row.hunkIndex),
+          });
+        }
+        continue;
+      }
+    }
+
     const shouldAnchorHunk =
       rowCanAnchorHunk(row, showHunkHeaders) && !anchoredHunks.has(row.hunkIndex);
     const anchorId = shouldAnchorHunk ? diffHunkId(fileId, row.hunkIndex) : undefined;

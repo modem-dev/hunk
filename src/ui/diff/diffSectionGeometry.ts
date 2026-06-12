@@ -15,6 +15,7 @@ import type { PlannedReviewRow } from "./reviewRenderPlan";
 import { measureRenderedRowHeight } from "./renderRows";
 
 const EMPTY_EXPANDED_GAP_KEYS: ReadonlySet<string> = new Set();
+const EMPTY_COLLAPSED_REVIEWED_HUNKS: ReadonlySet<number> = new Set();
 
 export interface DiffSectionRowBounds extends VerticalBounds {
   key: string;
@@ -67,6 +68,15 @@ function expansionCacheKey(
         ? `loaded:${sourceTextFingerprint(sourceStatus.text)}`
         : sourceStatus.kind;
   return `:${sortedKeys}:${statusKey}`;
+}
+
+/** Stable suffix that captures which reviewed hunks are collapsed to markers. */
+function reviewedCacheKey(collapsedReviewedHunkIndices: ReadonlySet<number>) {
+  if (collapsedReviewedHunkIndices.size === 0) {
+    return "";
+  }
+
+  return `:reviewed:${[...collapsedReviewedHunkIndices].sort((a, b) => a - b).join(",")}`;
 }
 
 const NOTE_AWARE_SECTION_GEOMETRY_CACHE = new WeakMap<
@@ -133,6 +143,11 @@ function measurePlannedDiffSectionRowHeight(
     });
   }
 
+  // Reviewed markers are always one fixed terminal row.
+  if (row.kind === "reviewed-hunk-marker") {
+    return 1;
+  }
+
   return measureRenderedRowHeight(
     row.row,
     width,
@@ -158,6 +173,7 @@ export function measureDiffSectionGeometry(
   expandedKeys: ReadonlySet<string> = EMPTY_EXPANDED_GAP_KEYS,
   sourceStatus: FileSourceStatus | undefined = undefined,
   reserveAddNoteColumn = false,
+  collapsedReviewedHunkIndices: ReadonlySet<number> = EMPTY_COLLAPSED_REVIEWED_HUNKS,
 ): DiffSectionGeometry {
   if (file.metadata.hunks.length === 0) {
     return {
@@ -174,8 +190,8 @@ export function measureDiffSectionGeometry(
 
   // Width, wrapping, and line-number visibility all affect rendered row heights, so they must
   // participate in the cache key alongside the structural file/layout inputs. Expansion state
-  // changes the row stream, so it has to participate too.
-  const cacheKey = `${file.id}:${layout}:${showHunkHeaders ? 1 : 0}:${theme.id}:${width}:${showLineNumbers ? 1 : 0}:${wrapLines ? 1 : 0}:${reserveAddNoteColumn ? 1 : 0}${expansionCacheKey(expandedKeys, sourceStatus)}`;
+  // and collapsed reviewed hunks change the row stream, so they have to participate too.
+  const cacheKey = `${file.id}:${layout}:${showHunkHeaders ? 1 : 0}:${theme.id}:${width}:${showLineNumbers ? 1 : 0}:${wrapLines ? 1 : 0}:${reserveAddNoteColumn ? 1 : 0}${expansionCacheKey(expandedKeys, sourceStatus)}${reviewedCacheKey(collapsedReviewedHunkIndices)}`;
   if (visibleAgentNotes.length > 0) {
     const cachedByNotes = NOTE_AWARE_SECTION_GEOMETRY_CACHE.get(visibleAgentNotes);
     const cached = cachedByNotes?.get(cacheKey);
@@ -185,6 +201,7 @@ export function measureDiffSectionGeometry(
   }
 
   const sectionRowPlan = buildDiffSectionRowPlan({
+    collapsedReviewedHunkIndices,
     expandedKeys,
     file,
     layout,
@@ -212,7 +229,7 @@ export function measureDiffSectionGeometry(
   let bodyHeight = 0;
 
   for (const row of plannedRows) {
-    if (row.kind === "diff-row" && row.anchorId && !hunkAnchorRows.has(row.hunkIndex)) {
+    if (row.kind !== "inline-note" && row.anchorId && !hunkAnchorRows.has(row.hunkIndex)) {
       hunkAnchorRows.set(row.hunkIndex, bodyHeight);
     }
 

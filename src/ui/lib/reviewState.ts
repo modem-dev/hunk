@@ -7,6 +7,7 @@
  * tested without React state in the loop.
  */
 import { findDiffFileByPath, findHunkIndexForLine, hunkLineRange } from "../../core/liveComments";
+import { resolveReviewedHunkIndices } from "../../core/reviewedHunks";
 import type { AgentAnnotation, DiffFile } from "../../core/types";
 import type { NavigateToHunkToolInput, SelectedHunkSummary } from "../../hunk-session/types";
 import {
@@ -18,6 +19,7 @@ import {
 import {
   buildAnnotatedHunkCursors,
   buildHunkCursors,
+  buildUnreviewedHunkCursors,
   findNextHunkCursor,
   type HunkCursor,
 } from "./hunks";
@@ -28,6 +30,8 @@ export interface BuildReviewStateOptions {
   filterQuery: string;
   selectedFileId: string;
   selectedHunkIndex: number;
+  reviewedHashes: ReadonlySet<string>;
+  expandedReviewedHunksByFileId: Record<string, ReadonlySet<number>>;
 }
 
 export interface ReviewState {
@@ -38,6 +42,15 @@ export interface ReviewState {
   selectedHunk: DiffFile["metadata"]["hunks"][number] | undefined;
   hunkCursors: HunkCursor[];
   annotatedHunkCursors: HunkCursor[];
+  // Hunk indices whose content hash is in the reviewed set, per visible file.
+  reviewedHunkIndicesByFileId: Record<string, ReadonlySet<number>>;
+  // Reviewed hunks currently rendered as collapsed markers (reviewed minus
+  // explicitly expanded ones).
+  collapsedReviewedHunksByFileId: Record<string, ReadonlySet<number>>;
+  // Stream cursors that still need review. `[`/`]` walk the full stream
+  // (markers included so they can be expanded or un-marked from the
+  // keyboard); this subset only drives mark-and-advance.
+  unreviewedHunkCursors: HunkCursor[];
 }
 
 export interface ReviewNavigationTarget {
@@ -53,19 +66,42 @@ export function buildReviewState({
   filterQuery,
   selectedFileId,
   selectedHunkIndex,
+  reviewedHashes,
+  expandedReviewedHunksByFileId,
 }: BuildReviewStateOptions): ReviewState {
   const allFiles = mergeFileAnnotationsByFileId(files, liveCommentsByFileId);
   const visibleFiles = filterReviewFiles(allFiles, filterQuery);
   const selectedFile = resolveSelectedFile(allFiles, visibleFiles, selectedFileId);
 
+  const reviewedHunkIndicesByFileId: Record<string, ReadonlySet<number>> = {};
+  const collapsedReviewedHunksByFileId: Record<string, ReadonlySet<number>> = {};
+  for (const file of visibleFiles) {
+    const reviewed = resolveReviewedHunkIndices(file, reviewedHashes);
+    if (reviewed.size === 0) {
+      continue;
+    }
+
+    reviewedHunkIndicesByFileId[file.id] = reviewed;
+    const expanded = expandedReviewedHunksByFileId[file.id];
+    const collapsed = expanded
+      ? new Set([...reviewed].filter((hunkIndex) => !expanded.has(hunkIndex)))
+      : reviewed;
+    if (collapsed.size > 0) {
+      collapsedReviewedHunksByFileId[file.id] = collapsed;
+    }
+  }
+
   return {
     allFiles,
     visibleFiles,
-    sidebarEntries: buildSidebarEntries(visibleFiles),
+    sidebarEntries: buildSidebarEntries(visibleFiles, reviewedHunkIndicesByFileId),
     selectedFile,
     selectedHunk: selectedFile?.metadata.hunks[selectedHunkIndex],
     hunkCursors: buildHunkCursors(visibleFiles),
     annotatedHunkCursors: buildAnnotatedHunkCursors(visibleFiles),
+    reviewedHunkIndicesByFileId,
+    collapsedReviewedHunksByFileId,
+    unreviewedHunkCursors: buildUnreviewedHunkCursors(visibleFiles, reviewedHunkIndicesByFileId),
   };
 }
 

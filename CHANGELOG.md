@@ -6,6 +6,8 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Added
 
+- Press `v` to mark the selected hunk as reviewed: it collapses to a one-line `✓ reviewed` marker and the selection advances to the next unreviewed hunk. The sidebar shows per-file review progress with a checkmark when a file is fully reviewed. `[` / `]` still stop on markers, so Enter (or a click) expands one in place and `v` un-marks it. Reviewed state persists per repository under `.hunk/cache/reviewed/` using content hashes, so an edited hunk automatically comes back as unreviewed; markers expire after `reviewed_ttl_days` (default 30, configurable).
+
 ### Changed
 
 ### Fixed

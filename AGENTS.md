@@ -88,6 +88,7 @@ CLI input
 - `auto` should choose split on wide terminals and stack on narrow ones.
 - Explicit `split` and `stack` choices override responsive `auto` layout selection.
 - `[` and `]` navigate hunks across the full review stream. Do not reintroduce `j`/`k` hunk navigation unless the user asks.
+- `v` toggles the selected hunk's reviewed state and, when marking, advances to the next unreviewed hunk. Reviewed hunks collapse to a one-line marker in the render-plan layer. `[`/`]` stop on collapsed markers (so the keyboard can expand them with Enter or un-mark a mistaken `v`), and identity is a content hash over the hunk body plus file path (`src/core/reviewedHunks.ts`). Markers persist per repo in `.hunk/cache/reviewed/` with a `reviewed_ttl_days` GC (`src/core/reviewedMarkerStore.ts`); non-repo inputs are session-only.
 - Agent context belongs beside the code, not hidden in a separate mode or workflow.
 - Agent notes are hunk-specific: show notes for the selected hunk, render them in the diff flow near the annotated row, and keep a clear spatial relationship to the code they explain.
 - Keep note behavior explicit. If the UI intentionally prioritizes one note, one selection, or one active target, encode that as a named policy rather than scattering array-index assumptions through the codebase.

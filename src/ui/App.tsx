@@ -5,6 +5,7 @@ import {
 } from "@opentui/core";
 import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState, useRef } from "react";
+import { createReviewedMarkerStore } from "../core/reviewedMarkerStore";
 import type { AppBootstrap, CliInput, LayoutMode, UserNoteLineTarget } from "../core/types";
 import { canReloadInput, computeWatchSignature } from "../core/watch";
 import type { HunkSessionBrokerClient, ReloadedSessionResult } from "../hunk-session/types";
@@ -149,7 +150,18 @@ export function App({
         : baseTheme,
     [baseTheme, bootstrap.input.options.transparentBackground],
   );
-  const review = useReviewController({ files: bootstrap.changeset.files });
+  // Per-repo persistence for reviewed-hunk markers; non-repo inputs (stdin
+  // patches outside a checkout) fall back to session-only reviewed state.
+  const reviewedMarkerStore = useMemo(
+    () =>
+      bootstrap.repoRoot
+        ? createReviewedMarkerStore(bootstrap.repoRoot, {
+            ttlDays: bootstrap.input.options.reviewedTtlDays,
+          })
+        : undefined,
+    [bootstrap.repoRoot, bootstrap.input.options.reviewedTtlDays],
+  );
+  const review = useReviewController({ files: bootstrap.changeset.files, reviewedMarkerStore });
   const filteredFiles = review.visibleFiles;
   const selectedFile = review.selectedFile;
   const selectedHunkIndex = review.selectedHunkIndex;
@@ -651,6 +663,7 @@ export function App({
         toggleHunkHeaders,
         toggleLineNumbers,
         toggleLineWrap,
+        toggleReviewedHunk: review.toggleReviewedForSelectedHunk,
         toggleSidebar,
         triggerEditSelectedFile,
         wrapLines,
@@ -681,6 +694,7 @@ export function App({
       toggleHunkHeaders,
       toggleLineNumbers,
       toggleLineWrap,
+      review.toggleReviewedForSelectedHunk,
       toggleSidebar,
       triggerEditSelectedFile,
       wrapLines,
@@ -734,6 +748,8 @@ export function App({
     toggleHunkHeaders,
     toggleLineNumbers,
     toggleLineWrap,
+    toggleReviewedHunk: review.toggleReviewedForSelectedHunk,
+    toggleSelectedReviewedHunkExpansion: review.toggleSelectedReviewedHunkExpansion,
     toggleSidebar,
     triggerEditSelectedFile,
     triggerRefreshCurrentInput,
@@ -880,6 +896,7 @@ export function App({
         <DiffPane
           cancelCopySelectionRef={cancelCopySelectionRef}
           codeHorizontalOffset={codeHorizontalOffset}
+          collapsedReviewedHunksByFileId={review.collapsedReviewedHunksByFileId}
           copyDecorations={copyDecorations}
           diffContentWidth={diffContentWidth}
           expandedGapsByFileId={review.expandedGapsByFileId}
@@ -923,6 +940,7 @@ export function App({
           onCopyFeedback={showTransientNotice}
           onSelectFile={jumpToFile}
           onToggleGap={review.toggleGap}
+          onToggleReviewedHunkExpansion={review.toggleReviewedHunkExpansion}
           onViewportCenteredHunkChange={(fileId, hunkIndex) =>
             review.selectHunk(fileId, hunkIndex, { preserveViewport: true })
           }

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createTestDiffFile, lines } from "../../../test/helpers/diff-helpers";
-import { buildSidebarEntries, fileLabelParts } from "./files";
+import { buildSidebarEntries, fileLabelParts, sidebarEntryStats } from "./files";
 
 describe("files helpers", () => {
   test("buildSidebarEntries hides zero-value sidebar stats", () => {
@@ -133,5 +133,38 @@ describe("files helpers", () => {
       filename: "pi/extensions/loop.ts -> agents/pi/extensions/notify.ts",
       stateLabel: null,
     });
+  });
+});
+
+describe("reviewed sidebar stats", () => {
+  test("buildSidebarEntries reports reviewed and total hunk counts", () => {
+    const file = createTestDiffFile({ id: "alpha", path: "alpha.ts" });
+
+    const [withProgress] = buildSidebarEntries([file], { alpha: new Set([0]) }).filter(
+      (entry) => entry.kind === "file",
+    );
+    expect(withProgress).toMatchObject({
+      reviewedHunkCount: 1,
+      hunkCount: file.metadata.hunks.length,
+    });
+
+    const [withoutProgress] = buildSidebarEntries([file]).filter((entry) => entry.kind === "file");
+    expect(withoutProgress).toMatchObject({ reviewedHunkCount: 0 });
+  });
+
+  test("sidebarEntryStats shows partial progress and a checkmark when complete", () => {
+    const base = {
+      agentCommentsText: null,
+      additionsText: null,
+      deletionsText: null,
+    };
+
+    expect(sidebarEntryStats({ ...base, reviewedHunkCount: 2, hunkCount: 5 })).toEqual([
+      { kind: "reviewed", text: "2/5" },
+    ]);
+    expect(sidebarEntryStats({ ...base, reviewedHunkCount: 5, hunkCount: 5 })).toEqual([
+      { kind: "reviewed", text: "✓" },
+    ]);
+    expect(sidebarEntryStats({ ...base, reviewedHunkCount: 0, hunkCount: 5 })).toEqual([]);
   });
 });
