@@ -47,6 +47,7 @@ import {
 } from "../../lib/fileSectionLayout";
 import { diffHunkId, diffSectionId } from "../../lib/ids";
 import { findViewportCenteredHunkTarget } from "../../lib/viewportSelection";
+import { VIEWPORT_READ_COALESCE_MS } from "../../lib/viewportTiming";
 import {
   findViewportRowAnchor,
   resolveViewportRowAnchorTop,
@@ -568,7 +569,7 @@ export function DiffPane({
         } finally {
           scheduled = false;
         }
-      }, 16);
+      }, VIEWPORT_READ_COALESCE_MS);
     };
 
     readViewport();

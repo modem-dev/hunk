@@ -3,6 +3,7 @@ import { performance } from "perf_hooks";
 import React from "react";
 import { testRender } from "@opentui/react/test-utils";
 import { AppHost } from "../src/ui/AppHost";
+import { VIEWPORT_READ_COALESCE_MS } from "../src/ui/lib/viewportTiming";
 import {
   createLargeSplitStreamBootstrap,
   DEFAULT_FILE_COUNT,
@@ -14,7 +15,6 @@ const VIEWPORT = {
   height: 28,
 } as const;
 const SCROLL_TICKS = 4;
-const VIEWPORT_READ_COALESCE_MS = 16;
 const SCROLL_TARGET = {
   x: 170,
   y: 12,
