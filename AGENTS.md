@@ -132,13 +132,10 @@ CLI input
 
 ## releases
 
-- Maintain the top-level `CHANGELOG.md` as the source of truth for user-visible changes.
-- Keep upcoming work under `## [Unreleased]` with these subsections:
-  - `### Added`
-  - `### Changed`
-  - `### Fixed`
-- Append to existing subsections instead of creating duplicates.
-- When cutting a release, move the relevant unreleased entries into a new immutable version section and start a fresh `## [Unreleased]` section.
+- Use Changesets for user-visible release notes. Add a `.changeset/*.md` entry with `bun run changeset` instead of editing `CHANGELOG.md` directly.
+- Target the public `hunkdiff` package in changesets. Use `patch` for fixes and small behavior changes, `minor` for new user-facing features, and `major` for breaking changes.
+- For maintenance-only PRs that should not appear in release notes, add an empty changeset with `bun run changeset -- --empty`.
+- Keep the top-level `CHANGELOG.md` as the released changelog artifact. It is updated during release prep with `bun run release:version`, not by normal feature/fix PRs.
 - Use the released changelog section as the starting point for the GitHub release body.
 - GitHub releases should follow this format:
 

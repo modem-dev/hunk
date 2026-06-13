@@ -1,15 +1,5 @@
 # Changelog
 
-All notable user-visible changes to Hunk are documented in this file.
-
-## [Unreleased]
-
-### Added
-
-### Changed
-
-### Fixed
-
 ## [0.15.3] - 2026-06-13
 
 ### Added

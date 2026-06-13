@@ -24,6 +24,7 @@
     "hunkdiff": "./bin/hunk.cjs"
   },
   "workspaces": [
+    ".",
     "packages/*"
   ],
   "files": [
@@ -58,6 +59,9 @@
     "format:check": "oxfmt --check .",
     "lint": "oxlint . --deny-warnings",
     "lint:fix": "oxlint . --fix",
+    "changeset": "bunx @changesets/cli@2.31.0",
+    "changeset:status": "bunx @changesets/cli@2.31.0 status",
+    "release:version": "bunx @changesets/cli@2.31.0 version",
     "prepare": "simple-git-hooks",
     "test": "\"${npm_execpath:-bun}\" test ./src ./packages ./scripts ./test/cli ./test/session",
     "test:integration": "\"${npm_execpath:-bun}\" test ./test/pty",

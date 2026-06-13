@@ -154,4 +154,19 @@ Key rules:
 
 - The npm package name is `hunkdiff`.
 - The installed CLI command remains `hunk`.
+- Add a Changeset for user-visible changes instead of editing `CHANGELOG.md` directly:
+
+  ```bash
+  bun run changeset
+  ```
+
+  Select `hunkdiff`, then choose `patch` for fixes and small behavior changes, `minor` for new user-facing features, or `major` for breaking changes.
+
+- For maintenance-only PRs that should not appear in release notes, add an empty changeset:
+
+  ```bash
+  bun run changeset -- --empty
+  ```
+
+- Release prep runs `bun run release:version` to consume pending changesets, update `CHANGELOG.md`, and bump package versions.
 - The automated prebuilt publish workflow lives in `.github/workflows/release-prebuilt-npm.yml`.
