@@ -714,7 +714,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
       return {
         commentId,
         removed: true,
-        remainingCommentCount: remainingLiveCommentCount,
+        remainingCommentCount: remainingLiveCommentCount + countFileMapItems(userNotesByFileId),
         source: "agent",
       };
     },
@@ -784,8 +784,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
 
       return {
         removedCount: removedLiveCommentCount + removedUserNoteCount,
-        remainingCommentCount:
-          remainingLiveCommentCount + (options.includeUser ? remainingUserNoteCount : 0),
+        remainingCommentCount: remainingLiveCommentCount + remainingUserNoteCount,
         filePath,
         includeUser: options.includeUser,
         removedLiveCommentCount,

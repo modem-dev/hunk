@@ -570,6 +570,51 @@ describe("useReviewController", () => {
       await flush(setup);
 
       await act(async () => {
+        const result = expectValue(controllerRef.current).removeLiveComment("comment-1");
+        expect(result).toMatchObject({
+          commentId: "comment-1",
+          removed: true,
+          remainingCommentCount: 1,
+          source: "agent",
+        });
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).liveCommentSummaries).toEqual([]);
+      expect(expectValue(controllerRef.current).userNotesByFileId.alpha).toHaveLength(1);
+
+      await act(async () => {
+        expectValue(controllerRef.current).addLiveComment(
+          { filePath: "alpha.ts", hunkIndex: 0, summary: "Default clear agent note" },
+          "comment-2",
+        );
+      });
+      await flush(setup);
+
+      await act(async () => {
+        const result = expectValue(controllerRef.current).clearLiveComments();
+        expect(result).toMatchObject({
+          removedCount: 1,
+          remainingCommentCount: 1,
+          removedLiveCommentCount: 1,
+          removedUserNoteCount: 0,
+          remainingUserNoteCount: 1,
+        });
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).liveCommentSummaries).toEqual([]);
+      expect(expectValue(controllerRef.current).userNotesByFileId.alpha).toHaveLength(1);
+
+      await act(async () => {
+        expectValue(controllerRef.current).addLiveComment(
+          { filePath: "alpha.ts", hunkIndex: 0, summary: "Inclusive clear agent note" },
+          "comment-3",
+        );
+      });
+      await flush(setup);
+
+      await act(async () => {
         const result = expectValue(controllerRef.current).clearLiveComments(undefined, {
           includeUser: true,
         });
