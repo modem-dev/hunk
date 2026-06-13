@@ -146,7 +146,9 @@ function DiffSectionComponent({
 
 /** Memoize file sections so hunk navigation does not rerender the whole review stream. */
 export const DiffSection = memo(DiffSectionComponent, (previous, next) => {
-  // This comparator relies on stable upstream object identity for files and visible-note arrays.
+  // This comparator relies on stable upstream object identity for files, visible-note arrays,
+  // and visibleBodyBounds: DiffPane reuses the previous bounds object whenever top/height are
+  // numerically unchanged, so a reference change here always means the visible slice moved.
   return (
     previous.codeHorizontalOffset === next.codeHorizontalOffset &&
     previous.expandedGapKeys === next.expandedGapKeys &&

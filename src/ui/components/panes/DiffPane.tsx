@@ -1149,9 +1149,16 @@ export function DiffPane({
 
     return next;
   }, [adjacentPrefetchFileIds, selectedFileId, visibleViewportFileIds, windowingEnabled]);
+  // Previous snapshot used to keep VisibleBodyBounds object identity stable across scroll
+  // commits; DiffSection's memo comparator checks `visibleBodyBounds` by reference, so handing
+  // back the prior object when top/height are numerically unchanged lets mounted sections skip
+  // re-rendering even though the Map itself is rebuilt every snapshot.
+  const previousVisibleBodyBoundsRef = useRef<Map<string, VisibleBodyBounds>>(new Map());
   const visibleBodyBoundsByFile = useMemo(() => {
+    const previous = previousVisibleBodyBoundsRef.current;
     const next = new Map<string, VisibleBodyBounds>();
     if (scrollViewport.height <= 0) {
+      previousVisibleBodyBoundsRef.current = next;
       return next;
     }
 
@@ -1184,12 +1191,17 @@ export function DiffPane({
       // { top, height } so the row slicer can rebuild the matching [top, bottom) window later.
       const clampedTop = Math.min(geometry.bodyHeight, Math.max(0, minTop));
       const clampedBottom = Math.min(geometry.bodyHeight, Math.max(clampedTop, maxBottom));
-      next.set(file.id, {
-        top: clampedTop,
-        height: clampedBottom - clampedTop,
-      });
+      const height = clampedBottom - clampedTop;
+      const previousBounds = previous.get(file.id);
+      next.set(
+        file.id,
+        previousBounds && previousBounds.top === clampedTop && previousBounds.height === height
+          ? previousBounds
+          : { top: clampedTop, height },
+      );
     });
 
+    previousVisibleBodyBoundsRef.current = next;
     return next;
   }, [
     fileSectionLayouts,
