@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { join } from "node:path";
 import { HunkUserError } from "./errors";
 import type { VcsCommandInput, ShowCommandInput } from "./types";
-import { normalizeWindowsPath } from "../lib/windowsPath";
+import { normalizePathForOS } from "../lib/osPath";
 
 export type SlBackedInput = VcsCommandInput | ShowCommandInput;
 
@@ -271,5 +271,5 @@ export function resolveSlRepoRoot(
     args: ["root"],
     ...options,
   }).trim();
-  return normalizeWindowsPath(repoRoot);
+  return normalizePathForOS(repoRoot);
 }

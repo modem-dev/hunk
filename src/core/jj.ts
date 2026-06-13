@@ -1,6 +1,6 @@
 import { HunkUserError } from "./errors";
 import type { VcsCommandInput, ShowCommandInput } from "./types";
-import { normalizeWindowsPath } from "../lib/windowsPath";
+import { normalizePathForOS } from "../lib/osPath";
 
 export type JjBackedInput = VcsCommandInput | ShowCommandInput;
 
@@ -188,5 +188,5 @@ export function resolveJjRepoRoot(
     args: ["root"],
     ...options,
   }).trim();
-  return normalizeWindowsPath(repoRoot);
+  return normalizePathForOS(repoRoot);
 }

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { HunkUserError } from "./errors";
 import { escapeUntrackedPatchPath } from "./patch/normalize";
 import type { VcsCommandInput, ShowCommandInput, StashShowCommandInput } from "./types";
-import { normalizeWindowsPath } from "../lib/windowsPath";
+import { normalizePathForOS } from "../lib/osPath";
 
 export type GitBackedInput = VcsCommandInput | ShowCommandInput | StashShowCommandInput;
 
@@ -648,7 +648,7 @@ export function resolveGitRepoRoot(
     args: ["rev-parse", "--show-toplevel"],
     ...options,
   }).trim();
-  return normalizeWindowsPath(repoRoot);
+  return normalizePathForOS(repoRoot);
 }
 
 /** Resolve one commit-ish ref to the exact commit object used for later blob reads. */
