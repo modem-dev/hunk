@@ -85,6 +85,49 @@ describe("measureDiffSectionGeometry", () => {
     expect(noteGeometry.rowBounds.some((row) => row.key.startsWith("inline-note:"))).toBe(true);
   });
 
+  test("reuses note-aware geometry across equivalent note arrays", () => {
+    const file = createTestDiffFile();
+    const buildNotes = (summary: string): VisibleAgentNote[] => [
+      {
+        id: "annotation:example:0",
+        annotation: {
+          newRange: [1, 1],
+          rationale: "Keep note height in section geometry.",
+          summary,
+        },
+      },
+    ];
+
+    const first = measureDiffSectionGeometry(
+      file,
+      "split",
+      true,
+      theme,
+      buildNotes("Explain"),
+      120,
+    );
+    const sameContent = measureDiffSectionGeometry(
+      file,
+      "split",
+      true,
+      theme,
+      buildNotes("Explain"),
+      120,
+    );
+    const changedSummary = measureDiffSectionGeometry(
+      file,
+      "split",
+      true,
+      theme,
+      buildNotes("Explain this change with enough words to wrap onto another note line."),
+      120,
+    );
+
+    expect(sameContent).toBe(first);
+    expect(changedSummary).not.toBe(first);
+    expect(changedSummary.bodyHeight).toBeGreaterThan(first.bodyHeight);
+  });
+
   test("wraps long rows into taller section geometry when wrapping is enabled", () => {
     const file = createTestDiffFile({
       before: lines("const alpha = 1;", "const beta = 2;"),

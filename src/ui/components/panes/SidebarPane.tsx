@@ -140,7 +140,7 @@ export function SidebarPane({
                 statsWidth={statsWidth}
                 textWidth={textWidth}
                 theme={theme}
-                onSelect={() => onSelectFile(entry.id)}
+                onSelectFile={onSelectFile}
               />
             );
           })}

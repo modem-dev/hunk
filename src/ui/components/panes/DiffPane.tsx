@@ -59,7 +59,11 @@ import { DiffFileHeaderRow } from "./DiffFileHeaderRow";
 import { VerticalScrollbar, type VerticalScrollbarHandle } from "../scrollbar/VerticalScrollbar";
 import type { VisibleBodyBounds } from "../../diff/rowWindowing";
 import { prefetchHighlightedDiff } from "../../diff/useHighlightedDiff";
-import { buildFileRenderWindow, type FileRenderWindowItem } from "../../lib/fileRenderWindow";
+import {
+  buildFileRenderWindow,
+  buildFileSectionIndexById,
+  type FileRenderWindowItem,
+} from "../../lib/fileRenderWindow";
 import {
   buildCopySelectedRowKeys,
   clampCopyColumn,
@@ -1171,12 +1175,17 @@ export function DiffPane({
       files.map((file, sectionIndex) => ({ kind: "file", fileId: file.id, sectionIndex })),
     [files],
   );
+  const fileSectionIndexById = useMemo(
+    () => buildFileSectionIndexById(fileSectionLayouts),
+    [fileSectionLayouts],
+  );
   const fileRenderWindow = useMemo(
     () =>
       windowingEnabled
         ? buildFileRenderWindow({
             fileSectionLayouts,
             includeFileIds: adjacentPrefetchFileIds,
+            indexByFileId: fileSectionIndexById,
             overscanFiles: 2,
             scrollTop: scrollViewport.top,
             selectedFileId,
@@ -1185,6 +1194,7 @@ export function DiffPane({
         : null,
     [
       adjacentPrefetchFileIds,
+      fileSectionIndexById,
       fileSectionLayouts,
       scrollViewport.height,
       scrollViewport.top,

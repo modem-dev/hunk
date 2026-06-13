@@ -26,6 +26,15 @@ export interface FileRenderWindowPlan {
   bottomSpacerHeight: number;
 }
 
+/** Build a file-id lookup for repeated render-window planning over the same section layout. */
+export function buildFileSectionIndexById(fileSectionLayouts: FileSectionLayout[]) {
+  const indexByFileId = new Map<string, number>();
+  fileSectionLayouts.forEach((layout, index) => {
+    indexByFileId.set(layout.fileId, index);
+  });
+  return indexByFileId;
+}
+
 /** Find the first section whose bottom can intersect a viewport ending after `minY`. */
 function findFirstPotentiallyVisibleIndex(layouts: FileSectionLayout[], minY: number) {
   let low = 0;
@@ -110,6 +119,7 @@ function sectionRangeHeight(layouts: FileSectionLayout[], startIndex: number, en
 export function buildFileRenderWindow({
   fileSectionLayouts,
   includeFileIds = [],
+  indexByFileId = buildFileSectionIndexById(fileSectionLayouts),
   overscanFiles = 2,
   scrollTop,
   selectedFileId,
@@ -117,6 +127,7 @@ export function buildFileRenderWindow({
 }: {
   fileSectionLayouts: FileSectionLayout[];
   includeFileIds?: Iterable<string>;
+  indexByFileId?: ReadonlyMap<string, number>;
   overscanFiles?: number;
   scrollTop: number;
   selectedFileId?: string;
@@ -134,11 +145,6 @@ export function buildFileRenderWindow({
       fileSectionLayouts.length,
     );
   }
-
-  const indexByFileId = new Map<string, number>();
-  fileSectionLayouts.forEach((layout, index) => {
-    indexByFileId.set(layout.fileId, index);
-  });
 
   if (selectedFileId) {
     const selectedIndex = indexByFileId.get(selectedFileId);
