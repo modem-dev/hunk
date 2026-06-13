@@ -594,6 +594,22 @@ export function App({
     [activeAddNoteTarget, review.startUserNote],
   );
 
+  /** Start editing the active user note and move keyboard focus into it. */
+  const editActiveNote = useCallback(() => {
+    const draft = review.editActiveNote();
+    if (draft) {
+      setFocusArea("note");
+    }
+  }, [review.editActiveNote]);
+
+  /** Start a reply draft for the active review note and move keyboard focus into it. */
+  const replyToActiveNote = useCallback(() => {
+    const draft = review.replyToActiveNote();
+    if (draft) {
+      setFocusArea("note");
+    }
+  }, [review.replyToActiveNote]);
+
   /** Mark the inline draft note textarea as the active keyboard input. */
   const focusDraftNote = useCallback(() => {
     setFocusArea("note");
@@ -706,11 +722,14 @@ export function App({
   useAppKeyboardShortcuts({
     activeMenuId,
     activateCurrentMenuItem,
+    canEditActiveNote: review.activeNoteCanEdit,
     canRefreshCurrentInput,
+    canReplyToActiveNote: Boolean(review.activeNoteId),
     closeHelp,
     closeMenu,
     cycleTheme,
     cancelDraftNote,
+    editActiveNote,
     focusArea,
     focusFilter,
     moveToAnnotatedHunk,
@@ -720,6 +739,7 @@ export function App({
     openMenu,
     pagerMode,
     requestQuit,
+    replyToActiveNote,
     scrollCodeHorizontally,
     saveDraftNote,
     scrollDiff,
@@ -893,6 +913,7 @@ export function App({
           scrollRef={diffScrollRef}
           selectedFileId={selectedFile?.id}
           selectedHunkIndex={selectedHunkIndex}
+          activeNoteId={review.activeNoteId}
           scrollToNote={review.scrollToNote}
           draftNote={review.draftNote}
           draftNoteFocused={focusArea === "note"}
@@ -910,7 +931,9 @@ export function App({
           theme={activeTheme}
           width={diffPaneWidth}
           onActiveAddNoteAffordanceChange={setActiveAddNoteTarget}
+          onEditActiveNote={editActiveNote}
           onRemoveUserNote={review.removeUserNote}
+          onReplyToActiveNote={replyToActiveNote}
           onSaveDraftNote={saveDraftNote}
           onStartUserNoteAtHunk={startUserNote}
           onUpdateDraftNote={review.updateDraftNote}

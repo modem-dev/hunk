@@ -304,6 +304,7 @@ export function PierreDiffView({
             >
               <AgentInlineNote
                 annotation={plannedRow.annotation}
+                active={plannedRow.note.active}
                 anchorSide={plannedRow.anchorSide}
                 draft={plannedRow.note.draft}
                 file={file}
@@ -311,6 +312,8 @@ export function PierreDiffView({
                 noteCount={plannedRow.noteCount}
                 noteIndex={plannedRow.noteIndex}
                 onClose={plannedRow.note.onRemove}
+                onEdit={plannedRow.note.onEdit}
+                onReply={plannedRow.note.onReply}
                 theme={theme}
                 width={width}
               />

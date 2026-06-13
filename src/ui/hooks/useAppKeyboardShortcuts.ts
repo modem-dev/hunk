@@ -45,11 +45,14 @@ function isUppercaseGKey(key: KeyEvent) {
 export interface UseAppKeyboardShortcutsOptions {
   activeMenuId: MenuId | null;
   activateCurrentMenuItem: () => void;
+  canEditActiveNote: boolean;
   canRefreshCurrentInput: boolean;
+  canReplyToActiveNote: boolean;
   closeHelp: () => void;
   closeMenu: () => void;
   cycleTheme: () => void;
   cancelDraftNote: () => void;
+  editActiveNote: () => void;
   focusArea: FocusArea;
   focusFilter: () => void;
   moveToAnnotatedHunk: (delta: number) => void;
@@ -59,6 +62,7 @@ export interface UseAppKeyboardShortcutsOptions {
   openMenu: (menuId: MenuId) => void;
   pagerMode: boolean;
   requestQuit: () => void;
+  replyToActiveNote: () => void;
   scrollCodeHorizontally: (delta: number) => void;
   scrollDiff: (delta: number, unit: ScrollUnit) => void;
   saveDraftNote: () => void;
@@ -82,11 +86,14 @@ export interface UseAppKeyboardShortcutsOptions {
 export function useAppKeyboardShortcuts({
   activeMenuId,
   activateCurrentMenuItem,
+  canEditActiveNote,
   canRefreshCurrentInput,
+  canReplyToActiveNote,
   closeHelp,
   closeMenu,
   cycleTheme,
   cancelDraftNote,
+  editActiveNote,
   focusArea,
   focusFilter,
   moveToAnnotatedHunk,
@@ -96,6 +103,7 @@ export function useAppKeyboardShortcuts({
   openMenu,
   pagerMode,
   requestQuit,
+  replyToActiveNote,
   scrollCodeHorizontally,
   saveDraftNote,
   scrollDiff,
@@ -432,8 +440,22 @@ export function useAppKeyboardShortcuts({
       return;
     }
 
-    if ((key.name === "r" || key.sequence === "r") && canRefreshCurrentInput) {
-      runAndCloseMenu(triggerRefreshCurrentInput);
+    if (key.name === "r" || key.sequence === "r") {
+      runAndCloseMenu(() => {
+        if (canReplyToActiveNote) {
+          replyToActiveNote();
+          return;
+        }
+
+        if (canRefreshCurrentInput) {
+          triggerRefreshCurrentInput();
+        }
+      });
+      return;
+    }
+
+    if ((key.name === "e" || key.sequence === "e") && canEditActiveNote) {
+      runAndCloseMenu(editActiveNote);
       return;
     }
 

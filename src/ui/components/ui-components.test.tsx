@@ -1655,6 +1655,74 @@ describe("UI components", () => {
     }
   });
 
+  test("DiffPane scrollToNote leaves an already-visible inline note in place", async () => {
+    const theme = resolveTheme("midnight", null);
+    const scrollRef = createRef<ScrollBoxRenderable>();
+    const beforeLines = Array.from(
+      { length: 12 },
+      (_, index) => `export const line${index + 1} = ${index + 1};`,
+    );
+    const afterLines = [...beforeLines];
+    afterLines[3] = "export const line4 = 400;";
+    const file = createTestDiffFile(
+      "visible-note",
+      "visible-note.ts",
+      lines(...beforeLines),
+      lines(...afterLines),
+    );
+    file.agent = {
+      path: file.path,
+      annotations: [{ newRange: [4, 4], summary: "Already visible note." }],
+    };
+    let revealNote = () => {};
+
+    function VisibleNoteHarness() {
+      const [request, setRequest] = useState({ id: 0, scrollToNote: false });
+      revealNote = () => setRequest({ id: 1, scrollToNote: true });
+
+      return (
+        <DiffPane
+          {...createDiffPaneProps([file], theme, {
+            diffContentWidth: 96,
+            headerLabelWidth: 48,
+            scrollRef,
+            selectedFileId: file.id,
+            selectedHunkIndex: 0,
+            selectedHunkRevealRequestId: request.id,
+            scrollToNote: request.scrollToNote,
+            separatorWidth: 92,
+            showAgentNotes: true,
+            showHunkHeaders: true,
+            width: 100,
+          })}
+        />
+      );
+    }
+
+    const setup = await testRender(<VisibleNoteHarness />, { width: 104, height: 12 });
+
+    try {
+      await settleDiffPane(setup);
+      await act(async () => {
+        scrollRef.current?.scrollTo(2);
+      });
+      await settleDiffPane(setup);
+      const scrollTopBeforeReveal = scrollRef.current?.scrollTop ?? 0;
+      expect(setup.captureCharFrame()).toContain("Already visible note.");
+
+      await act(async () => {
+        revealNote();
+      });
+      await settleDiffPane(setup);
+
+      expect(scrollRef.current?.scrollTop ?? 0).toBe(scrollTopBeforeReveal);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("AgentCard removes top and bottom padding while keeping the footer inside the frame", async () => {
     const theme = resolveTheme("midnight", null);
     const frame = await captureFrame(
@@ -1709,6 +1777,80 @@ describe("UI components", () => {
     expect(lines[2]).toContain("Summary line");
     expect(lines[3]).toContain("Rationale line.");
     expect(lines[4]?.trimStart().startsWith("╰")).toBe(true);
+  });
+
+  test("AgentInlineNote marks the active saved note with a bold title chevron", async () => {
+    const theme = resolveTheme("midnight", null);
+    const frame = await captureFrame(
+      <AgentInlineNote
+        active={true}
+        annotation={{
+          newRange: [2, 4],
+          summary: "Summary line",
+          rationale: "Rationale line.",
+          editable: true,
+        }}
+        anchorSide="new"
+        layout="split"
+        theme={theme}
+        width={96}
+      />,
+      100,
+      5,
+    );
+
+    const lines = frame.split("\n");
+    expect(lines[0]).toContain("╭─ › Agent note - R2–R4");
+    expect(lines[0]).not.toContain("ACTIVE");
+    expect(lines[2]).not.toContain("›");
+    expect(lines[2]).toContain("Summary line");
+    expect(lines[4]).toContain("[ Reply (r) ] [ Edit (e) ]");
+  });
+
+  test("AgentInlineNote active action hints are clickable", async () => {
+    const theme = resolveTheme("midnight", null);
+    const onReply = mock(() => {});
+    const onEdit = mock(() => {});
+    const setup = await testRender(
+      <AgentInlineNote
+        active={true}
+        annotation={{
+          newRange: [2, 4],
+          summary: "Summary line",
+          editable: true,
+        }}
+        anchorSide="new"
+        layout="split"
+        onEdit={onEdit}
+        onReply={onReply}
+        theme={theme}
+        width={96}
+      />,
+      { width: 100, height: 5 },
+    );
+
+    try {
+      await act(async () => {
+        await setup.renderOnce();
+      });
+      const lines = setup.captureCharFrame().split("\n");
+      const actionY = lines.findIndex((line) => line.includes("[ Reply (r) ]"));
+      const replyX = lines[actionY]!.indexOf("[ Reply (r) ]") + 1;
+      const editX = lines[actionY]!.indexOf("[ Edit (e) ]") + 1;
+
+      await act(async () => {
+        await setup.mockMouse.click(replyX, actionY);
+        await setup.mockMouse.click(editX, actionY);
+        await setup.renderOnce();
+      });
+
+      expect(onReply).toHaveBeenCalledTimes(1);
+      expect(onEdit).toHaveBeenCalledTimes(1);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
   });
 
   test("AgentInlineNote renders draft notes as an editable composer", async () => {
