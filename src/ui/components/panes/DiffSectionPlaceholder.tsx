@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { DiffFile } from "../../../core/types";
 import { diffSectionId } from "../../lib/ids";
 import { fitText } from "../../lib/text";
@@ -17,7 +18,7 @@ interface DiffSectionPlaceholderProps {
 }
 
 /** Reserve offscreen section height without mounting its full diff rows. */
-export function DiffSectionPlaceholder({
+function DiffSectionPlaceholderComponent({
   bodyHeight,
   file,
   headerLabelWidth,
@@ -65,3 +66,10 @@ export function DiffSectionPlaceholder({
     </box>
   );
 }
+
+/**
+ * Memoize placeholders so the O(files) offscreen set does not re-render on every scroll/hover/
+ * selection commit. Relies on DiffPane passing stable `file`, `theme`, and per-file `onSelect`
+ * identities; all remaining props are scalars, so the default shallow comparison suffices.
+ */
+export const DiffSectionPlaceholder = memo(DiffSectionPlaceholderComponent);

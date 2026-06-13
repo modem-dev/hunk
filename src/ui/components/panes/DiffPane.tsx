@@ -291,6 +291,21 @@ export function DiffPane({
     [files, selectedFileId],
   );
 
+  // Stable per-file select callbacks keep memoized placeholders/sections from re-rendering just
+  // because DiffPane re-rendered. The latest-onSelectFile ref means the cached closures never go
+  // stale even though their identity is fixed for the life of the pane.
+  const onSelectFileRef = useRef(onSelectFile);
+  onSelectFileRef.current = onSelectFile;
+  const selectFileCallbacksRef = useRef(new Map<string, () => void>());
+  const selectFileCallback = useCallback((fileId: string) => {
+    let callback = selectFileCallbacksRef.current.get(fileId);
+    if (!callback) {
+      callback = () => onSelectFileRef.current(fileId);
+      selectFileCallbacksRef.current.set(fileId, callback);
+    }
+    return callback;
+  }, []);
+
   /** Route shifted wheel input into horizontal code-column scrolling without disturbing vertical review scroll. */
   const handleMouseScroll = useCallback(
     (event: TuiMouseEvent) => {
@@ -1722,7 +1737,7 @@ export function DiffPane({
                         showHeader={shouldRenderInStreamFileHeader(index)}
                         showSeparator={index > 0}
                         theme={theme}
-                        onSelect={() => onSelectFile(file.id)}
+                        onSelect={selectFileCallback(file.id)}
                       />
                     );
                   }
@@ -1770,7 +1785,7 @@ export function DiffPane({
                           ? (hunkIndex, target) => onStartUserNoteAtHunk(file.id, hunkIndex, target)
                           : undefined
                       }
-                      onSelect={() => onSelectFile(file.id)}
+                      onSelect={selectFileCallback(file.id)}
                       onToggleGap={(gapKey) => onToggleGap(file.id, gapKey)}
                     />
                   );
