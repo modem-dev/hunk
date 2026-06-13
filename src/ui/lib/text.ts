@@ -16,8 +16,63 @@ function textClusters(text: string) {
   return Array.from(graphemeSegmenter.segment(text), (segment) => segment.segment);
 }
 
+// Measured terminal-cell widths for single non-ASCII characters. Hunk re-measures the same
+// chrome glyphs ("─", "▌", "│", ...) constantly, and string-width's grapheme/emoji regexes make
+// each cold measure expensive, so cache per-character widths once.
+const singleCharWidthCache = new Map<string, number>();
+
+/**
+ * Return the single UTF-16 code unit repeated across `text`, or null when text mixes characters.
+ * Surrogate halves are rejected because they pair into multi-unit clusters (emoji, rare CJK).
+ */
+function repeatedSingleUnitChar(text: string): string | null {
+  if (text.length < 2) {
+    return null;
+  }
+
+  const unit = text.charCodeAt(0);
+  if (unit >= 0xd800 && unit <= 0xdfff) {
+    return null;
+  }
+
+  for (let index = 1; index < text.length; index += 1) {
+    if (text.charCodeAt(index) !== unit) {
+      return null;
+    }
+  }
+
+  return text[0] ?? null;
+}
+
+/** Measure one character through string-width, memoized for repeat lookups. */
+function cachedSingleCharWidth(char: string): number {
+  let width = singleCharWidthCache.get(char);
+  if (width === undefined) {
+    width = stringWidth(char);
+    singleCharWidthCache.set(char, width);
+  }
+  return width;
+}
+
 function measureSanitizedTextWidth(text: string) {
-  return printableAsciiRegex.test(text) ? text.length : stringWidth(text);
+  if (printableAsciiRegex.test(text)) {
+    return text.length;
+  }
+
+  // Fast path for chrome glyph runs like "─".repeat(separatorWidth): string-width costs
+  // milliseconds for long non-ASCII runs, but a run of one repeated non-combining character is
+  // always run-length × single-character width. Each repeated unit with a non-zero width is its
+  // own grapheme cluster, so the multiplication is exact.
+  const repeatedChar = repeatedSingleUnitChar(text);
+  if (repeatedChar !== null) {
+    const charWidth = cachedSingleCharWidth(repeatedChar);
+    // Zero-width units (combining marks) can merge with neighbors; defer to string-width.
+    if (charWidth > 0) {
+      return charWidth * text.length;
+    }
+  }
+
+  return stringWidth(text);
 }
 
 /** Measure text in terminal cells, treating CJK and emoji clusters as wide. */
