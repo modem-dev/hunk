@@ -282,13 +282,29 @@ function formatUnit(unit: BenchmarkMetricResult["unit"]) {
   return unit === "bytes" ? "B" : unit;
 }
 
-function formatThreshold(threshold: BenchmarkThreshold | undefined) {
+function formatThresholdValue(value: number, unit: BenchmarkMetricResult["unit"]) {
+  if (unit === "bytes") {
+    return `${formatNumber(value / (1024 * 1024))} MiB`;
+  }
+
+  if (unit === "ms") {
+    return `${formatNumber(value)} ms`;
+  }
+
+  return `${formatNumber(value)} ${formatUnit(unit)}`;
+}
+
+function formatThreshold(
+  threshold: BenchmarkThreshold | undefined,
+  unit: BenchmarkMetricResult["unit"],
+) {
   if (!threshold) {
     return "—";
   }
 
-  return `+${((threshold.maxRegressionRatio - 1) * 100).toFixed(0)}% and +${formatNumber(
+  return `+${((threshold.maxRegressionRatio - 1) * 100).toFixed(0)}% and +${formatThresholdValue(
     threshold.minAbsoluteRegression,
+    unit,
   )}`;
 }
 
@@ -320,7 +336,7 @@ export function formatComparisonMarkdown(
     lines.push(
       `| ${status} ${row.status} | \`${row.name}\` | ${formatNumber(row.baseMedian)} ${unit} | ${formatNumber(
         row.headMedian,
-      )} ${unit} | ${formatDeltaPercent(row.relativeDelta)} | ${formatThreshold(row.threshold)} |`,
+      )} ${unit} | ${formatDeltaPercent(row.relativeDelta)} | ${formatThreshold(row.threshold, row.unit)} |`,
     );
   }
 

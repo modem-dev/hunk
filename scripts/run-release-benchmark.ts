@@ -8,7 +8,7 @@ import {
   readPackageVersion,
 } from "./compare-release-benchmarks";
 
-interface RunReleaseBenchmarkOptions {
+export interface RunReleaseBenchmarkOptions {
   version: string;
   samples: number;
   out: string;
@@ -24,20 +24,26 @@ function readArgValue(args: string[], index: number) {
   return value;
 }
 
-async function parseArgs(args: string[]): Promise<RunReleaseBenchmarkOptions> {
+/** Parse release benchmark CLI options while preserving explicit output paths. */
+export async function parseRunReleaseBenchmarkArgs(
+  args: string[],
+): Promise<RunReleaseBenchmarkOptions> {
   const version = await readPackageVersion(repoRoot);
   const options: RunReleaseBenchmarkOptions = {
     version,
     samples: Number(process.env.HUNK_RELEASE_BENCHMARK_SAMPLES ?? 5),
     out: releaseBenchmarkPath(version, releaseBenchmarkDir(repoRoot)),
   };
+  let outExplicitlySet = false;
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]!;
 
     if (arg === "--version") {
       options.version = readArgValue(args, index);
-      options.out = releaseBenchmarkPath(options.version, releaseBenchmarkDir(repoRoot));
+      if (!outExplicitlySet) {
+        options.out = releaseBenchmarkPath(options.version, releaseBenchmarkDir(repoRoot));
+      }
       index += 1;
       continue;
     }
@@ -50,6 +56,7 @@ async function parseArgs(args: string[]): Promise<RunReleaseBenchmarkOptions> {
 
     if (arg === "--out") {
       options.out = path.resolve(readArgValue(args, index));
+      outExplicitlySet = true;
       index += 1;
       continue;
     }
@@ -66,7 +73,7 @@ async function parseArgs(args: string[]): Promise<RunReleaseBenchmarkOptions> {
 
 /** Run the default benchmark suite and write the versioned release snapshot. */
 export async function main(args = Bun.argv.slice(2)) {
-  const options = await parseArgs(args);
+  const options = await parseRunReleaseBenchmarkArgs(args);
   mkdirSync(path.dirname(options.out), { recursive: true });
 
   const proc = Bun.spawn(

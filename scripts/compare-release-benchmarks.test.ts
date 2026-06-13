@@ -6,8 +6,10 @@ import type { BenchmarkMetricResult, BenchmarkRunResult } from "../benchmarks/li
 import {
   compareBenchmarkRuns,
   findPreviousReleaseBenchmark,
+  formatComparisonMarkdown,
   isMaterialRegression,
 } from "./compare-release-benchmarks";
+import { parseRunReleaseBenchmarkArgs } from "./run-release-benchmark";
 
 let tempRoot: string | undefined;
 
@@ -76,6 +78,19 @@ describe("isMaterialRegression", () => {
   });
 });
 
+describe("parseRunReleaseBenchmarkArgs", () => {
+  test("keeps an explicit output path when --version appears later", async () => {
+    const outPath = path.join(os.tmpdir(), "custom-release-benchmark.json");
+
+    await expect(
+      parseRunReleaseBenchmarkArgs(["--out", outPath, "--version", "0.16.0"]),
+    ).resolves.toMatchObject({
+      version: "0.16.0",
+      out: outPath,
+    });
+  });
+});
+
 describe("compareBenchmarkRuns", () => {
   test("fails material comparable regressions", () => {
     const comparison = compareBenchmarkRuns(
@@ -109,5 +124,40 @@ describe("compareBenchmarkRuns", () => {
 
     expect(comparison.failed).toBe(true);
     expect(comparison.rows[0]?.status).toBe("missing-head");
+  });
+});
+
+describe("formatComparisonMarkdown", () => {
+  test("shows absolute threshold units", () => {
+    const comparison = compareBenchmarkRuns(
+      runResult([
+        metric({ median: 100 }),
+        metric({
+          name: "memory/rss_bytes",
+          source: "memory",
+          unit: "bytes",
+          median: 100 * 1024 * 1024,
+          threshold: { maxRegressionRatio: 1.2, minAbsoluteRegression: 8 * 1024 * 1024 },
+        }),
+      ]),
+      runResult([
+        metric({ median: 110 }),
+        metric({
+          name: "memory/rss_bytes",
+          source: "memory",
+          unit: "bytes",
+          median: 105 * 1024 * 1024,
+          threshold: { maxRegressionRatio: 1.2, minAbsoluteRegression: 8 * 1024 * 1024 },
+        }),
+      ]),
+    );
+
+    const markdown = formatComparisonMarkdown(comparison, {
+      baseLabel: "0.15.1",
+      headLabel: "0.15.2",
+    });
+
+    expect(markdown).toContain("+15% and +5.00 ms");
+    expect(markdown).toContain("+20% and +8.00 MiB");
   });
 });
