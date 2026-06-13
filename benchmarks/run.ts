@@ -10,12 +10,15 @@ const defaultScripts = [
   "render-layout.ts",
   "highlight-prefetch.ts",
   "large-stream.ts",
+  "interaction-latency.ts",
+  "non-ascii-stream.ts",
 ];
 
 interface RunOptions {
   samples: number;
   out?: string;
   includeCompetitors: boolean;
+  includeHuge: boolean;
   scripts: string[];
 }
 
@@ -31,6 +34,8 @@ function parseArgs(args: string[]): RunOptions {
   const options: RunOptions = {
     samples: Number(process.env.HUNK_BENCHMARK_SAMPLES ?? 3),
     includeCompetitors: false,
+    // Opt-in: a single huge-stream sample can take minutes on slow builds.
+    includeHuge: process.env.HUNK_BENCH_INCLUDE_HUGE === "1",
     scripts: [],
   };
 
@@ -51,6 +56,11 @@ function parseArgs(args: string[]): RunOptions {
 
     if (arg === "--include-competitors") {
       options.includeCompetitors = true;
+      continue;
+    }
+
+    if (arg === "--include-huge") {
+      options.includeHuge = true;
       continue;
     }
 
@@ -135,6 +145,9 @@ function formatValue(value: number) {
 
 const options = parseArgs(Bun.argv.slice(2));
 const scripts = options.scripts.length > 0 ? options.scripts : [...defaultScripts];
+if (options.includeHuge) {
+  scripts.push("huge-stream.ts");
+}
 if (options.includeCompetitors) {
   scripts.push("competitors.ts");
 }
