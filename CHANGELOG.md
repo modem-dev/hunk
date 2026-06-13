@@ -21,6 +21,7 @@ All notable user-visible changes to Hunk are documented in this file.
 ### Fixed
 
 - Fixed Windows launches from Cygwin, Git Bash, and WSL-style VCS paths by normalizing Unix-style repo roots before reusing them as subprocess working directories or filesystem roots.
+- Fixed release staging so benchmark comparison artifacts are not mistaken for platform binary artifacts.
 - Reduced hunk-navigation latency and memory growth on large reviews by keeping diff geometry memoized when the selected hunk changes.
 - Reduced scroll and hunk-navigation latency on large reviews by avoiding repeated separator measurement and preserving memoized offscreen/visible diff rows across viewport updates.
 - Reduced main diff pane rendering work on large reviews by virtualizing offscreen file sections behind exact-height spacers.
