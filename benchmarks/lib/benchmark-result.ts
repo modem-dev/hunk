@@ -23,6 +23,11 @@ export interface BenchmarkRuntimeInfo {
   arch: string;
 }
 
+export interface AcceptedBenchmarkRegression {
+  name: string;
+  reason: string;
+}
+
 export interface BenchmarkRunResult {
   version: 1;
   generatedAt: string;
@@ -30,6 +35,7 @@ export interface BenchmarkRunResult {
   packageVersion?: string;
   runtime?: BenchmarkRuntimeInfo;
   samplesPerBenchmark: number;
+  acceptedRegressions?: AcceptedBenchmarkRegression[];
   results: BenchmarkMetricResult[];
 }
 
@@ -41,7 +47,7 @@ export interface BenchmarkComparisonRow {
   absoluteDelta: number;
   relativeDelta: number;
   threshold?: BenchmarkThreshold;
-  status: "pass" | "fail" | "missing-base" | "missing-head" | "informational";
+  status: "pass" | "fail" | "accepted" | "missing-base" | "missing-head" | "informational";
   source: string;
 }
 

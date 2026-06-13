@@ -33,6 +33,8 @@ The gate compares benchmark medians and only fails on regressions that exceed bo
 
 New metrics are informational until a later release has a baseline. Missing previously comparable metrics fail, because that means the gate can no longer protect that measurement.
 
+If a release intentionally accepts a measured tradeoff, record the metric names and rationale in the new snapshot's `acceptedRegressions` array. The comparison report will mark those rows as accepted instead of failing, while preserving the audit trail in the committed release artifact.
+
 ## Backfilling
 
 When adding this gate or restoring a missing baseline, check out the release tag and generate the snapshot with the same Bun version and runner class used for current release prep. Commit backfilled snapshots before relying on the release gate.

@@ -102,6 +102,18 @@ describe("compareBenchmarkRuns", () => {
     expect(comparison.rows[0]?.status).toBe("fail");
   });
 
+  test("passes explicitly accepted material regressions", () => {
+    const head = runResult([metric({ median: 120 })]);
+    head.acceptedRegressions = [
+      { name: "large-stream/cold_first_frame_ms", reason: "Accepted release tradeoff." },
+    ];
+
+    const comparison = compareBenchmarkRuns(runResult([metric({ median: 100 })]), head);
+
+    expect(comparison.failed).toBe(false);
+    expect(comparison.rows[0]?.status).toBe("accepted");
+  });
+
   test("passes comparable changes inside the material threshold", () => {
     const comparison = compareBenchmarkRuns(
       runResult([metric({ median: 100 })]),

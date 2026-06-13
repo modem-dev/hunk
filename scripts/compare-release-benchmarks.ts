@@ -185,6 +185,9 @@ export function compareBenchmarkRuns(
 ): BenchmarkComparisonResult {
   const baseByName = new Map(base.results.map((result) => [result.name, result]));
   const headByName = new Map(head.results.map((result) => [result.name, result]));
+  const acceptedRegressionNames = new Set(
+    (head.acceptedRegressions ?? []).map((entry) => entry.name),
+  );
   const names = [...new Set([...baseByName.keys(), ...headByName.keys()])].sort();
   const rows: BenchmarkComparisonRow[] = names.map((name) => {
     const baseResult = baseByName.get(name);
@@ -239,10 +242,17 @@ export function compareBenchmarkRuns(
       return row;
     }
 
+    const materiallyRegressed = isMaterialRegression(
+      checkedBase.median,
+      checkedHead.median,
+      threshold,
+    );
     return {
       ...row,
-      status: isMaterialRegression(checkedBase.median, checkedHead.median, threshold)
-        ? "fail"
+      status: materiallyRegressed
+        ? acceptedRegressionNames.has(name)
+          ? "accepted"
+          : "fail"
         : "pass",
     };
   });
@@ -321,7 +331,7 @@ export function formatComparisonMarkdown(
     "",
     comparison.failed
       ? `❌ ${failedRows.length} material benchmark regression${failedRows.length === 1 ? "" : "s"} found.`
-      : "✅ No material benchmark regressions found.",
+      : "✅ No unaccepted material benchmark regressions found.",
     "",
     `Base: \`${options.baseLabel}\`  `,
     `Head: \`${options.headLabel}\``,
@@ -332,7 +342,12 @@ export function formatComparisonMarkdown(
 
   for (const row of comparison.rows) {
     const unit = formatUnit(row.unit);
-    const status = row.status === "fail" || row.status === "missing-head" ? "❌" : "✅";
+    const status =
+      row.status === "fail" || row.status === "missing-head"
+        ? "❌"
+        : row.status === "accepted"
+          ? "⚠️"
+          : "✅";
     lines.push(
       `| ${status} ${row.status} | \`${row.name}\` | ${formatNumber(row.baseMedian)} ${unit} | ${formatNumber(
         row.headMedian,

@@ -6,7 +6,15 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Added
 
-- Added release benchmark snapshots and a release workflow gate that blocks publishing when committed benchmark results show material performance regressions.
+### Changed
+
+### Fixed
+
+## [0.15.3] - 2026-06-13
+
+### Added
+
+- Added release benchmark snapshots and a release workflow gate that blocks publishing when committed benchmark results show material performance regressions, with auditable accepted-regression records for intentional release tradeoffs.
 
 ### Changed
 
@@ -435,7 +443,8 @@ All notable user-visible changes to Hunk are documented in this file.
 
 - Stabilized diff repainting, active-hunk scrolling, syntax highlighting, pager stdin patch handling, and terminal cleanup on exit.
 
-[Unreleased]: https://github.com/modem-dev/hunk/compare/v0.15.2...HEAD
+[Unreleased]: https://github.com/modem-dev/hunk/compare/v0.15.3...HEAD
+[0.15.3]: https://github.com/modem-dev/hunk/compare/v0.15.2...v0.15.3
 [0.15.2]: https://github.com/modem-dev/hunk/compare/v0.15.1...v0.15.2
 [0.15.1]: https://github.com/modem-dev/hunk/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/modem-dev/hunk/compare/v0.14.1...v0.15.0
