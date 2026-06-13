@@ -56,10 +56,10 @@ import {
 import type { AppTheme } from "../../themes";
 import { DiffSection } from "./DiffSection";
 import { DiffFileHeaderRow } from "./DiffFileHeaderRow";
-import { DiffSectionPlaceholder } from "./DiffSectionPlaceholder";
 import { VerticalScrollbar, type VerticalScrollbarHandle } from "../scrollbar/VerticalScrollbar";
 import type { VisibleBodyBounds } from "../../diff/rowWindowing";
 import { prefetchHighlightedDiff } from "../../diff/useHighlightedDiff";
+import { buildFileRenderWindow, type FileRenderWindowItem } from "../../lib/fileRenderWindow";
 import {
   buildCopySelectedRowKeys,
   clampCopyColumn,
@@ -1132,23 +1132,34 @@ export function DiffPane({
     renderer.intermediateRender();
   }, [renderer, pinnedHeaderFileId]);
 
-  const visibleWindowedFileIds = useMemo(() => {
-    if (!windowingEnabled) {
-      return null;
-    }
-
-    const next = new Set(visibleViewportFileIds);
-
-    if (selectedFileId) {
-      next.add(selectedFileId);
-    }
-
-    for (const fileId of adjacentPrefetchFileIds) {
-      next.add(fileId);
-    }
-
-    return next;
-  }, [adjacentPrefetchFileIds, selectedFileId, visibleViewportFileIds, windowingEnabled]);
+  const fullFileRenderItems = useMemo(
+    (): FileRenderWindowItem[] =>
+      files.map((file, sectionIndex) => ({ kind: "file", fileId: file.id, sectionIndex })),
+    [files],
+  );
+  const fileRenderWindow = useMemo(
+    () =>
+      windowingEnabled
+        ? buildFileRenderWindow({
+            fileSectionLayouts,
+            includeFileIds: adjacentPrefetchFileIds,
+            overscanFiles: 2,
+            scrollTop: scrollViewport.top,
+            selectedFileId,
+            viewportHeight: scrollViewport.height,
+          })
+        : null,
+    [
+      adjacentPrefetchFileIds,
+      fileSectionLayouts,
+      scrollViewport.height,
+      scrollViewport.top,
+      selectedFileId,
+      windowingEnabled,
+    ],
+  );
+  const fileRenderItems = fileRenderWindow?.items ?? fullFileRenderItems;
+  const mountedFileIndices = fileRenderWindow?.mountedFileIndices ?? null;
   // Previous snapshot used to keep VisibleBodyBounds object identity stable across scroll
   // commits; DiffSection's memo comparator checks `visibleBodyBounds` by reference, so handing
   // back the prior object when top/height are numerically unchanged lets mounted sections skip
@@ -1164,16 +1175,14 @@ export function DiffPane({
 
     const overscanTerminalRows = Math.max(24, scrollViewport.height * 2, rapidScrollOverscanRows);
 
-    files.forEach((file, index) => {
+    const indicesToMeasure = mountedFileIndices ?? files.map((_, index) => index);
+
+    for (const index of indicesToMeasure) {
+      const file = files[index];
       const sectionLayout = fileSectionLayouts[index];
       const geometry = sectionGeometry[index];
-      if (!sectionLayout || !geometry) {
-        return;
-      }
-
-      const shouldRenderSection = visibleWindowedFileIds?.has(file.id) ?? true;
-      if (!shouldRenderSection) {
-        return;
+      if (!file || !sectionLayout || !geometry) {
+        continue;
       }
 
       // Convert the absolute review-stream viewport into file-body-local coordinates.
@@ -1199,7 +1208,7 @@ export function DiffPane({
           ? previousBounds
           : { top: clampedTop, height },
       );
-    });
+    }
 
     previousVisibleBodyBoundsRef.current = next;
     return next;
@@ -1210,7 +1219,7 @@ export function DiffPane({
     scrollViewport.height,
     scrollViewport.top,
     sectionGeometry,
-    visibleWindowedFileIds,
+    mountedFileIndices,
   ]);
 
   const selectedFileIndex = selectedFileId
@@ -1732,26 +1741,20 @@ export function DiffPane({
                 key={`diff-content:${layout}:${wrapLines ? "wrap" : "nowrap"}:${width}`}
                 style={{ width: "100%", flexDirection: "column", overflow: "visible" }}
               >
-                {files.map((file, index) => {
-                  const shouldRenderSection = visibleWindowedFileIds?.has(file.id) ?? true;
-
-                  // Windowing keeps offscreen files cheap: render placeholders with identical
-                  // section geometry so scroll math and pinned-header ownership stay stable.
-                  if (!shouldRenderSection) {
+                {fileRenderItems.map((item) => {
+                  if (item.kind === "spacer") {
                     return (
-                      <DiffSectionPlaceholder
-                        key={file.id}
-                        bodyHeight={estimatedBodyHeights[index] ?? 0}
-                        file={file}
-                        headerLabelWidth={headerLabelWidth}
-                        headerStatsWidth={headerStatsWidth}
-                        separatorWidth={separatorWidth}
-                        showHeader={shouldRenderInStreamFileHeader(index)}
-                        showSeparator={index > 0}
-                        theme={theme}
-                        onSelect={selectFileCallback(file.id)}
+                      <box
+                        key={item.key}
+                        style={{ width: "100%", height: item.height, backgroundColor: theme.panel }}
                       />
                     );
+                  }
+
+                  const { sectionIndex: index } = item;
+                  const file = files[index];
+                  if (!file) {
+                    return null;
                   }
 
                   return (
