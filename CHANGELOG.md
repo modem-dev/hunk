@@ -12,6 +12,7 @@ All notable user-visible changes to Hunk are documented in this file.
 
 - Reduced scroll and hunk-navigation latency on large reviews by avoiding repeated separator measurement and preserving memoized offscreen/visible diff rows across viewport updates.
 - Reduced main diff pane rendering work on large reviews by virtualizing offscreen file sections behind exact-height spacers.
+- Reduced sidebar rendering work on many-file reviews by virtualizing offscreen file rows behind exact-height spacers.
 
 ## [0.15.2] - 2026-06-13
 
