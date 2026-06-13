@@ -8,11 +8,20 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Changed
 
+### Fixed
+
+## [0.15.2] - 2026-06-13
+
+### Added
+
+### Changed
+
 - Coalesced scroll-position React updates into a single per-frame read and shifted background syntax highlighting from microtasks to timers, so rapid wheel or held-arrow scrolling no longer produces visible jank from per-delta state updates or per-file highlight work starving input and render callbacks.
 
 ### Fixed
 
 - Honored `--transparent-bg` and `transparent_background` in static pager output, so captured pager hosts like LazyGit let translucent terminal backgrounds through on context lines, gutters, and hunk headers while added/removed rows keep their tinted backgrounds.
+- Kept menu dropdowns and the help dialog on the base theme in transparent-background mode so popups remain readable over translucent terminals.
 - Resolved `hunk session ... --repo <path>` selectors to the containing repo root before matching, so `--repo .` (and any path inside the tree) targets the live session from a subdirectory instead of reporting no match.
 
 ## [0.15.1] - 2026-06-09
@@ -418,7 +427,8 @@ All notable user-visible changes to Hunk are documented in this file.
 
 - Stabilized diff repainting, active-hunk scrolling, syntax highlighting, pager stdin patch handling, and terminal cleanup on exit.
 
-[Unreleased]: https://github.com/modem-dev/hunk/compare/v0.15.1...HEAD
+[Unreleased]: https://github.com/modem-dev/hunk/compare/v0.15.2...HEAD
+[0.15.2]: https://github.com/modem-dev/hunk/compare/v0.15.1...v0.15.2
 [0.15.1]: https://github.com/modem-dev/hunk/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/modem-dev/hunk/compare/v0.14.1...v0.15.0
 [0.14.1]: https://github.com/modem-dev/hunk/compare/v0.14.0...v0.14.1
