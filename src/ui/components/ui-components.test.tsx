@@ -24,7 +24,6 @@ const { AgentInlineNote } = await import("./panes/AgentInlineNote");
 const { DiffPane } = await import("./panes/DiffPane");
 const { MenuDropdown } = await import("./chrome/MenuDropdown");
 const { StatusBar } = await import("./chrome/StatusBar");
-const { DiffSectionPlaceholder } = await import("./panes/DiffSectionPlaceholder");
 const { DiffFileHeaderRow } = await import("./panes/DiffFileHeaderRow");
 const { PierreDiffView } = await import("../diff/PierreDiffView");
 const { DiffRowView } = await import("../diff/renderRows");
@@ -2375,31 +2374,6 @@ describe("UI components", () => {
     expect(lines[reviewHeaderIndex - 1]).toMatch(blankModalRow);
     expect(frame).not.toContain("linese/Awrapt/smetadata");
     expect(frame).not.toContain("reloade/uquit");
-  });
-
-  test("DiffSectionPlaceholder preserves offscreen section chrome without mounting rows", async () => {
-    const bootstrap = createBootstrap();
-    const theme = resolveTheme("midnight", null);
-    const frame = await captureFrame(
-      <DiffSectionPlaceholder
-        bodyHeight={6}
-        file={bootstrap.changeset.files[0]!}
-        headerLabelWidth={40}
-        headerStatsWidth={16}
-        separatorWidth={68}
-        showHeader={true}
-        showSeparator={true}
-        theme={theme}
-        onSelect={() => {}}
-      />,
-      80,
-      10,
-    );
-
-    expect(frame).toContain("alpha.ts");
-    expect(frame).toContain("+2");
-    expect(frame).toContain("-1");
-    expect(frame).not.toContain("export const alpha = 2;");
   });
 
   test("DiffPane renders an empty-state message when no files are visible", async () => {

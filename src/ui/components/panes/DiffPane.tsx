@@ -293,8 +293,8 @@ export function DiffPane({
     [files, selectedFileId],
   );
 
-  // Stable per-file select callbacks keep memoized placeholders/sections from re-rendering just
-  // because DiffPane re-rendered. The latest-onSelectFile ref means the cached closures never go
+  // Stable per-file select callbacks keep memoized sections from re-rendering just because
+  // DiffPane re-rendered. The latest-onSelectFile ref means the cached closures never go
   // stale even though their identity is fixed for the life of the pane.
   const onSelectFileRef = useRef(onSelectFile);
   onSelectFileRef.current = onSelectFile;
@@ -467,8 +467,8 @@ export function DiffPane({
     showAgentNotes,
   ]);
 
-  // Keep exact row rendering for wrapped lines and the selected file's visible notes;
-  // other files can still use placeholders and viewport windowing.
+  // Keep the full file-section path for wrapped lines, where exact wrapped heights depend on
+  // mounting each section; nowrap reviews can window offscreen files behind exact spacers.
   const windowingEnabled = !wrapLines;
   const [scrollViewport, setScrollViewport] = useState({ top: 0, height: 0 });
   const [rapidScrollOverscanRows, setRapidScrollOverscanRows] = useState(0);
