@@ -56,10 +56,14 @@ import {
 import type { AppTheme } from "../../themes";
 import { DiffSection } from "./DiffSection";
 import { DiffFileHeaderRow } from "./DiffFileHeaderRow";
-import { DiffSectionPlaceholder } from "./DiffSectionPlaceholder";
 import { VerticalScrollbar, type VerticalScrollbarHandle } from "../scrollbar/VerticalScrollbar";
 import type { VisibleBodyBounds } from "../../diff/rowWindowing";
 import { prefetchHighlightedDiff } from "../../diff/useHighlightedDiff";
+import {
+  buildFileRenderWindow,
+  buildFileSectionIndexById,
+  type FileRenderWindowItem,
+} from "../../lib/fileRenderWindow";
 import {
   buildCopySelectedRowKeys,
   clampCopyColumn,
@@ -271,6 +275,8 @@ export function DiffPane({
   const [addNoteHoverClearSignal, setAddNoteHoverClearSignal] = useState(0);
   const [addNoteHoverClearFileId, setAddNoteHoverClearFileId] = useState<string | null>(null);
   const hoveredFileIdRef = useRef<string | null>(null);
+  const onActiveAddNoteAffordanceChangeRef = useRef(onActiveAddNoteAffordanceChange);
+  onActiveAddNoteAffordanceChangeRef.current = onActiveAddNoteAffordanceChange;
 
   /** Hide hover-only row controls when content scrolls under a stationary mouse pointer. */
   const clearAddNoteHoverForScroll = useCallback(() => {
@@ -283,13 +289,59 @@ export function DiffPane({
     setAddNoteHoverClearSignal((current) => current + 1);
     setHoveredFileId(null);
     hoveredFileIdRef.current = null;
-    onActiveAddNoteAffordanceChange?.(null);
-  }, [onActiveAddNoteAffordanceChange]);
+    onActiveAddNoteAffordanceChangeRef.current?.(null);
+  }, []);
 
   const adjacentPrefetchFileIds = useMemo(
     () => buildAdjacentPrefetchFileIds(files, selectedFileId),
     [files, selectedFileId],
   );
+
+  // Stable per-file select callbacks keep memoized sections from re-rendering just because
+  // DiffPane re-rendered. The latest-onSelectFile ref means the cached closures never go
+  // stale even though their identity is fixed for the life of the pane.
+  const onSelectFileRef = useRef(onSelectFile);
+  onSelectFileRef.current = onSelectFile;
+  const selectFileCallbacksRef = useRef(new Map<string, () => void>());
+  const selectFileCallback = useCallback((fileId: string) => {
+    let callback = selectFileCallbacksRef.current.get(fileId);
+    if (!callback) {
+      callback = () => onSelectFileRef.current(fileId);
+      selectFileCallbacksRef.current.set(fileId, callback);
+    }
+    return callback;
+  }, []);
+
+  // Add-note row handlers are cached per file so mounted DiffSections keep a stable prop identity,
+  // while the ref indirection ensures clicks still use the latest App/review callback after hunk
+  // navigation changes the selected-file defaults upstream.
+  const onStartUserNoteAtHunkRef = useRef(onStartUserNoteAtHunk);
+  onStartUserNoteAtHunkRef.current = onStartUserNoteAtHunk;
+  const startUserNoteAtHunkCallbacksRef = useRef(
+    new Map<string, (hunkIndex: number, target?: UserNoteLineTarget) => void>(),
+  );
+  const startUserNoteAtHunkCallback = useCallback((fileId: string) => {
+    let callback = startUserNoteAtHunkCallbacksRef.current.get(fileId);
+    if (!callback) {
+      callback = (hunkIndex, target) =>
+        onStartUserNoteAtHunkRef.current?.(fileId, hunkIndex, target);
+      startUserNoteAtHunkCallbacksRef.current.set(fileId, callback);
+    }
+    return callback;
+  }, []);
+
+  const activeAddNoteAffordanceCallbacksRef = useRef(
+    new Map<string, (affordance: ActiveAddNoteAffordance | null) => void>(),
+  );
+  const activeAddNoteAffordanceCallback = useCallback((fileId: string) => {
+    let callback = activeAddNoteAffordanceCallbacksRef.current.get(fileId);
+    if (!callback) {
+      callback = (affordance) =>
+        onActiveAddNoteAffordanceChangeRef.current?.(affordance ? { ...affordance, fileId } : null);
+      activeAddNoteAffordanceCallbacksRef.current.set(fileId, callback);
+    }
+    return callback;
+  }, []);
 
   /** Route shifted wheel input into horizontal code-column scrolling without disturbing vertical review scroll. */
   const handleMouseScroll = useCallback(
@@ -419,8 +471,8 @@ export function DiffPane({
     showAgentNotes,
   ]);
 
-  // Keep exact row rendering for wrapped lines and the selected file's visible notes;
-  // other files can still use placeholders and viewport windowing.
+  // Keep the full file-section path for wrapped lines, where exact wrapped heights depend on
+  // mounting each section; nowrap reviews can window offscreen files behind exact spacers.
   const windowingEnabled = !wrapLines;
   const [scrollViewport, setScrollViewport] = useState({ top: 0, height: 0 });
   const [rapidScrollOverscanRows, setRapidScrollOverscanRows] = useState(0);
@@ -589,6 +641,7 @@ export function DiffPane({
   }, [activateRapidScrollOverscan, clearAddNoteHoverForScroll, files.length, scrollRef]);
 
   const sectionHeaderHeights = useMemo(() => buildInStreamFileHeaderHeights(files), [files]);
+  const reserveAddNoteColumn = Boolean(onStartUserNoteAtHunk);
 
   const baseSectionGeometry = useMemo(
     () =>
@@ -604,7 +657,7 @@ export function DiffPane({
           wrapLines,
           expandedGapsByFileId[file.id] ?? EMPTY_EXPANDED_GAP_KEYS,
           sourceStatusByFileId[file.id],
-          Boolean(onStartUserNoteAtHunk),
+          reserveAddNoteColumn,
         ),
       ),
     [
@@ -612,7 +665,7 @@ export function DiffPane({
       expandedGapsByFileId,
       files,
       layout,
-      onStartUserNoteAtHunk,
+      reserveAddNoteColumn,
       showHunkHeaders,
       showLineNumbers,
       sourceStatusByFileId,
@@ -682,7 +735,7 @@ export function DiffPane({
           wrapLines,
           expandedGapsByFileId[file.id] ?? EMPTY_EXPANDED_GAP_KEYS,
           sourceStatusByFileId[file.id],
-          Boolean(onStartUserNoteAtHunk),
+          reserveAddNoteColumn,
         );
       }),
     [
@@ -692,7 +745,7 @@ export function DiffPane({
       expandedGapsByFileId,
       files,
       layout,
-      onStartUserNoteAtHunk,
+      reserveAddNoteColumn,
       showHunkHeaders,
       showLineNumbers,
       sourceStatusByFileId,
@@ -1117,41 +1170,63 @@ export function DiffPane({
     renderer.intermediateRender();
   }, [renderer, pinnedHeaderFileId]);
 
-  const visibleWindowedFileIds = useMemo(() => {
-    if (!windowingEnabled) {
-      return null;
-    }
-
-    const next = new Set(visibleViewportFileIds);
-
-    if (selectedFileId) {
-      next.add(selectedFileId);
-    }
-
-    for (const fileId of adjacentPrefetchFileIds) {
-      next.add(fileId);
-    }
-
-    return next;
-  }, [adjacentPrefetchFileIds, selectedFileId, visibleViewportFileIds, windowingEnabled]);
+  const fullFileRenderItems = useMemo(
+    (): FileRenderWindowItem[] =>
+      files.map((file, sectionIndex) => ({ kind: "file", fileId: file.id, sectionIndex })),
+    [files],
+  );
+  const fileSectionIndexById = useMemo(
+    () => buildFileSectionIndexById(fileSectionLayouts),
+    [fileSectionLayouts],
+  );
+  const fileRenderWindow = useMemo(
+    () =>
+      windowingEnabled
+        ? buildFileRenderWindow({
+            fileSectionLayouts,
+            includeFileIds: adjacentPrefetchFileIds,
+            indexByFileId: fileSectionIndexById,
+            overscanFiles: 2,
+            scrollTop: scrollViewport.top,
+            selectedFileId,
+            viewportHeight: scrollViewport.height,
+          })
+        : null,
+    [
+      adjacentPrefetchFileIds,
+      fileSectionIndexById,
+      fileSectionLayouts,
+      scrollViewport.height,
+      scrollViewport.top,
+      selectedFileId,
+      windowingEnabled,
+    ],
+  );
+  const fileRenderItems = fileRenderWindow?.items ?? fullFileRenderItems;
+  const mountedFileIndices = fileRenderWindow?.mountedFileIndices ?? null;
+  // Previous snapshot used to keep VisibleBodyBounds object identity stable across scroll
+  // commits; DiffSection's memo comparator checks `visibleBodyBounds` by reference, so handing
+  // back the prior object when top/height are numerically unchanged lets mounted sections skip
+  // re-rendering even though the Map itself is rebuilt every snapshot.
+  const previousVisibleBodyBoundsRef = useRef<Map<string, VisibleBodyBounds>>(new Map());
   const visibleBodyBoundsByFile = useMemo(() => {
+    const previous = previousVisibleBodyBoundsRef.current;
     const next = new Map<string, VisibleBodyBounds>();
     if (scrollViewport.height <= 0) {
+      previousVisibleBodyBoundsRef.current = next;
       return next;
     }
 
     const overscanTerminalRows = Math.max(24, scrollViewport.height * 2, rapidScrollOverscanRows);
 
-    files.forEach((file, index) => {
+    const indicesToMeasure = mountedFileIndices ?? files.map((_, index) => index);
+
+    for (const index of indicesToMeasure) {
+      const file = files[index];
       const sectionLayout = fileSectionLayouts[index];
       const geometry = sectionGeometry[index];
-      if (!sectionLayout || !geometry) {
-        return;
-      }
-
-      const shouldRenderSection = visibleWindowedFileIds?.has(file.id) ?? true;
-      if (!shouldRenderSection) {
-        return;
+      if (!file || !sectionLayout || !geometry) {
+        continue;
       }
 
       // Convert the absolute review-stream viewport into file-body-local coordinates.
@@ -1169,12 +1244,17 @@ export function DiffPane({
       // { top, height } so the row slicer can rebuild the matching [top, bottom) window later.
       const clampedTop = Math.min(geometry.bodyHeight, Math.max(0, minTop));
       const clampedBottom = Math.min(geometry.bodyHeight, Math.max(clampedTop, maxBottom));
-      next.set(file.id, {
-        top: clampedTop,
-        height: clampedBottom - clampedTop,
-      });
-    });
+      const height = clampedBottom - clampedTop;
+      const previousBounds = previous.get(file.id);
+      next.set(
+        file.id,
+        previousBounds && previousBounds.top === clampedTop && previousBounds.height === height
+          ? previousBounds
+          : { top: clampedTop, height },
+      );
+    }
 
+    previousVisibleBodyBoundsRef.current = next;
     return next;
   }, [
     fileSectionLayouts,
@@ -1183,7 +1263,7 @@ export function DiffPane({
     scrollViewport.height,
     scrollViewport.top,
     sectionGeometry,
-    visibleWindowedFileIds,
+    mountedFileIndices,
   ]);
 
   const selectedFileIndex = selectedFileId
@@ -1705,26 +1785,20 @@ export function DiffPane({
                 key={`diff-content:${layout}:${wrapLines ? "wrap" : "nowrap"}:${width}`}
                 style={{ width: "100%", flexDirection: "column", overflow: "visible" }}
               >
-                {files.map((file, index) => {
-                  const shouldRenderSection = visibleWindowedFileIds?.has(file.id) ?? true;
-
-                  // Windowing keeps offscreen files cheap: render placeholders with identical
-                  // section geometry so scroll math and pinned-header ownership stay stable.
-                  if (!shouldRenderSection) {
+                {fileRenderItems.map((item) => {
+                  if (item.kind === "spacer") {
                     return (
-                      <DiffSectionPlaceholder
-                        key={file.id}
-                        bodyHeight={estimatedBodyHeights[index] ?? 0}
-                        file={file}
-                        headerLabelWidth={headerLabelWidth}
-                        headerStatsWidth={headerStatsWidth}
-                        separatorWidth={separatorWidth}
-                        showHeader={shouldRenderInStreamFileHeader(index)}
-                        showSeparator={index > 0}
-                        theme={theme}
-                        onSelect={() => onSelectFile(file.id)}
+                      <box
+                        key={item.key}
+                        style={{ width: "100%", height: item.height, backgroundColor: theme.panel }}
                       />
                     );
+                  }
+
+                  const { sectionIndex: index } = item;
+                  const file = files[index];
+                  if (!file) {
+                    return null;
                   }
 
                   return (
@@ -1760,17 +1834,15 @@ export function DiffPane({
                       visibleBodyBounds={visibleBodyBoundsByFile.get(file.id)}
                       onHover={() => setHoveredFileForRowActions(file.id)}
                       onMouseScroll={clearAddNoteHoverForScroll}
-                      onActiveAddNoteAffordanceChange={(affordance) =>
-                        onActiveAddNoteAffordanceChange?.(
-                          affordance ? { ...affordance, fileId: file.id } : null,
-                        )
-                      }
-                      onStartUserNoteAtHunk={
-                        onStartUserNoteAtHunk
-                          ? (hunkIndex, target) => onStartUserNoteAtHunk(file.id, hunkIndex, target)
+                      onActiveAddNoteAffordanceChange={
+                        onActiveAddNoteAffordanceChange
+                          ? activeAddNoteAffordanceCallback(file.id)
                           : undefined
                       }
-                      onSelect={() => onSelectFile(file.id)}
+                      onStartUserNoteAtHunk={
+                        reserveAddNoteColumn ? startUserNoteAtHunkCallback(file.id) : undefined
+                      }
+                      onSelect={selectFileCallback(file.id)}
                       onToggleGap={(gapKey) => onToggleGap(file.id, gapKey)}
                     />
                   );

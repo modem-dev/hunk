@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { fileRowId } from "../../lib/ids";
 import { sidebarEntryStats, type FileGroupEntry, type FileListEntry } from "../../lib/files";
 import { fitText, padText } from "../../lib/text";
@@ -51,14 +52,14 @@ export function FileGroupHeader({
 }
 
 /** Render one file row in the navigation sidebar. */
-export function FileListItem({
+export const FileListItem = memo(function FileListItem({
   entry,
   paddingLeft = 1,
   selected,
   statsWidth,
   textWidth,
   theme,
-  onSelect,
+  onSelectFile,
 }: {
   entry: FileListEntry;
   paddingLeft?: number;
@@ -66,7 +67,7 @@ export function FileListItem({
   statsWidth: number;
   textWidth: number;
   theme: AppTheme;
-  onSelect: () => void;
+  onSelectFile: (fileId: string) => void;
 }) {
   const rowBackground = selected ? theme.panelAlt : theme.panel;
   const stats = sidebarEntryStats(entry);
@@ -84,7 +85,7 @@ export function FileListItem({
         backgroundColor: rowBackground,
         flexDirection: "row",
       }}
-      onMouseUp={onSelect}
+      onMouseUp={() => onSelectFile(entry.id)}
     >
       <box
         style={{
@@ -138,4 +139,4 @@ export function FileListItem({
       </box>
     </box>
   );
-}
+});

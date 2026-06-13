@@ -23,6 +23,40 @@ describe("measureDiffSectionGeometry", () => {
     expect(stack.hunkBounds.get(0)?.height).toBeGreaterThan(split.hunkBounds.get(0)?.height ?? 0);
   });
 
+  test("reuses no-note geometry for the same file and layout inputs", () => {
+    const file = createTestDiffFile();
+
+    const first = measureDiffSectionGeometry(file, "split", true, theme, [], 120, true, false);
+    const second = measureDiffSectionGeometry(file, "split", true, theme, [], 120, true, false);
+    const differentWidth = measureDiffSectionGeometry(
+      file,
+      "split",
+      true,
+      theme,
+      [],
+      121,
+      true,
+      false,
+    );
+    const differentAddNotePolicy = measureDiffSectionGeometry(
+      file,
+      "split",
+      true,
+      theme,
+      [],
+      120,
+      true,
+      false,
+      undefined,
+      undefined,
+      true,
+    );
+
+    expect(second).toBe(first);
+    expect(differentWidth).not.toBe(first);
+    expect(differentAddNotePolicy).not.toBe(first);
+  });
+
   test("accounts for visible inline notes without moving the hunk anchor", () => {
     const file = createTestDiffFile();
     const visibleAgentNotes: VisibleAgentNote[] = [
@@ -49,6 +83,49 @@ describe("measureDiffSectionGeometry", () => {
     expect(noteGeometry.bodyHeight).toBeGreaterThan(baseGeometry.bodyHeight);
     expect(noteGeometry.hunkAnchorRows.get(0)).toBe(baseGeometry.hunkAnchorRows.get(0));
     expect(noteGeometry.rowBounds.some((row) => row.key.startsWith("inline-note:"))).toBe(true);
+  });
+
+  test("reuses note-aware geometry across equivalent note arrays", () => {
+    const file = createTestDiffFile();
+    const buildNotes = (summary: string): VisibleAgentNote[] => [
+      {
+        id: "annotation:example:0",
+        annotation: {
+          newRange: [1, 1],
+          rationale: "Keep note height in section geometry.",
+          summary,
+        },
+      },
+    ];
+
+    const first = measureDiffSectionGeometry(
+      file,
+      "split",
+      true,
+      theme,
+      buildNotes("Explain"),
+      120,
+    );
+    const sameContent = measureDiffSectionGeometry(
+      file,
+      "split",
+      true,
+      theme,
+      buildNotes("Explain"),
+      120,
+    );
+    const changedSummary = measureDiffSectionGeometry(
+      file,
+      "split",
+      true,
+      theme,
+      buildNotes("Explain this change with enough words to wrap onto another note line."),
+      120,
+    );
+
+    expect(sameContent).toBe(first);
+    expect(changedSummary).not.toBe(first);
+    expect(changedSummary.bodyHeight).toBeGreaterThan(first.bodyHeight);
   });
 
   test("wraps long rows into taller section geometry when wrapping is enabled", () => {

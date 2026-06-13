@@ -858,6 +858,7 @@ export function App({
               textWidth={sidebarTextWidth}
               theme={activeTheme}
               width={clampedSidebarWidth}
+              estimatedViewportRows={terminal.height}
               onSelectFile={(fileId) => {
                 focusFiles();
                 jumpToFile(fileId, 0, { alignFileHeaderTop: true });

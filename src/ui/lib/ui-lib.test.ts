@@ -321,6 +321,24 @@ describe("ui helpers", () => {
     expect(measureTextWidth(padText("日本", 6))).toBe(6);
   });
 
+  test("repeated single-character runs use the fast width path without losing correctness", () => {
+    // Chrome glyph separators: single-cell non-ASCII characters repeated to fill a row.
+    expect(measureTextWidth("─".repeat(240))).toBe(240);
+    expect(fitText("─".repeat(240), 240)).toBe("─".repeat(240));
+    expect(fitText("─".repeat(300), 240)).toBe(`${"─".repeat(239)}.`);
+
+    // A repeated wide (CJK) character must still count two cells per character.
+    expect(measureTextWidth("好".repeat(120))).toBe(240);
+    expect(fitText("好".repeat(4), 6)).toBe("好好.");
+
+    // Surrogate-pair runs (emoji) skip the fast path and stay correct via string-width.
+    expect(measureTextWidth("👍".repeat(3))).toBe(6);
+
+    // Zero-width combining marks defer to string-width instead of multiplying to a bogus width.
+    expect(measureTextWidth("\u0301".repeat(4))).toBe(0);
+    expect(measureTextWidth("e\u0301")).toBe(1);
+  });
+
   test("agent popover helpers wrap text and right-align the card within the viewport", () => {
     expect(wrapText("alpha beta gamma", 8)).toEqual(["alpha", "beta", "gamma"]);
     expect(wrapText("supercalifragilistic", 6)).toEqual(["superc", "alifra", "gilist", "ic"]);

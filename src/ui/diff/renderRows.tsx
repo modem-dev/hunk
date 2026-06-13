@@ -1750,7 +1750,13 @@ interface DiffRowViewProps {
   onToggleGap?: (gapKey: string) => void;
 }
 
-/** Render one diff row, memoized to avoid unnecessary rerenders. */
+/**
+ * Render one diff row, memoized to avoid unnecessary rerenders.
+ *
+ * The comparator checks every handler by reference, so callers (PierreDiffView) must pass
+ * identity-stable callbacks — e.g. one shared onHoverRow that receives the row key — or the memo
+ * silently degrades to re-rendering every visible row per parent render.
+ */
 export const DiffRowView = memo(
   function DiffRowViewComponent({
     row,

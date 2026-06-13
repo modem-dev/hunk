@@ -40,7 +40,7 @@ export function HunkFileNav({
             statsWidth={statsWidth}
             textWidth={textWidth}
             theme={resolvedTheme}
-            onSelect={() => onSelectFile(entry.id)}
+            onSelectFile={onSelectFile}
           />
         ),
       )}

@@ -27,8 +27,8 @@ export interface DiffSectionRowBounds extends VerticalBounds {
  *
  * `plannedRows` is retained alongside the row-bounds map so downstream features (notably
  * clipboard rendering of mouse selections) can re-render the exact same rows the layout was
- * measured against, without rebuilding the plan. The cache is keyed off the agent-notes input
- * via a WeakMap so memory grows in step with the visible diff, not per-render.
+ * measured against, without rebuilding the plan. The cache is owned by the immutable DiffFile
+ * object and includes note content in its key, so memory grows with visible diff lifetimes.
  */
 export interface DiffSectionGeometry extends SectionGeometry<PlannedHunkBounds> {
   lineNumberDigits: number;
@@ -50,6 +50,29 @@ function sourceTextFingerprint(text: string) {
   return `${text.length}:${(hash >>> 0).toString(36)}`;
 }
 
+/** Stable suffix that captures note content/order for the geometry cache key. */
+function notesCacheKey(visibleAgentNotes: VisibleAgentNote[]) {
+  if (visibleAgentNotes.length === 0) {
+    return "";
+  }
+
+  return `:notes:${visibleAgentNotes
+    .map(({ annotation }) => {
+      const key = JSON.stringify({
+        author: annotation.author,
+        id: annotation.id,
+        newRange: annotation.newRange,
+        oldRange: annotation.oldRange,
+        rationale: annotation.rationale,
+        source: annotation.source,
+        summary: annotation.summary,
+        title: annotation.title,
+      });
+      return `${key.length}:${key}`;
+    })
+    .join("")}`;
+}
+
 /** Stable suffix that captures expansion state for the geometry cache key. */
 function expansionCacheKey(
   expandedKeys: ReadonlySet<string>,
@@ -69,10 +92,9 @@ function expansionCacheKey(
   return `:${sortedKeys}:${statusKey}`;
 }
 
-const NOTE_AWARE_SECTION_GEOMETRY_CACHE = new WeakMap<
-  VisibleAgentNote[],
-  Map<string, DiffSectionGeometry>
->();
+// Cache geometry by immutable DiffFile object so hunk navigation can survive parent re-renders
+// without rebuilding every file section. Replaced file objects naturally drop from the WeakMap.
+const SECTION_GEOMETRY_CACHE = new WeakMap<DiffFile, Map<string, DiffSectionGeometry>>();
 
 interface DiffSectionRowHeightOptions {
   layout: Exclude<LayoutMode, "auto">;
@@ -175,13 +197,11 @@ export function measureDiffSectionGeometry(
   // Width, wrapping, and line-number visibility all affect rendered row heights, so they must
   // participate in the cache key alongside the structural file/layout inputs. Expansion state
   // changes the row stream, so it has to participate too.
-  const cacheKey = `${file.id}:${layout}:${showHunkHeaders ? 1 : 0}:${theme.id}:${width}:${showLineNumbers ? 1 : 0}:${wrapLines ? 1 : 0}:${reserveAddNoteColumn ? 1 : 0}${expansionCacheKey(expandedKeys, sourceStatus)}`;
-  if (visibleAgentNotes.length > 0) {
-    const cachedByNotes = NOTE_AWARE_SECTION_GEOMETRY_CACHE.get(visibleAgentNotes);
-    const cached = cachedByNotes?.get(cacheKey);
-    if (cached) {
-      return cached;
-    }
+  const cacheKey = `${file.id}:${layout}:${showHunkHeaders ? 1 : 0}:${theme.id}:${width}:${showLineNumbers ? 1 : 0}:${wrapLines ? 1 : 0}:${reserveAddNoteColumn ? 1 : 0}${expansionCacheKey(expandedKeys, sourceStatus)}${notesCacheKey(visibleAgentNotes)}`;
+  const cachedByFile = SECTION_GEOMETRY_CACHE.get(file);
+  const cached = cachedByFile?.get(cacheKey);
+  if (cached) {
+    return cached;
   }
 
   const sectionRowPlan = buildDiffSectionRowPlan({
@@ -269,14 +289,13 @@ export function measureDiffSectionGeometry(
     rowBoundsByStableKey,
   };
 
-  if (visibleAgentNotes.length > 0) {
-    const cachedByNotes = NOTE_AWARE_SECTION_GEOMETRY_CACHE.get(visibleAgentNotes) ?? new Map();
-    cachedByNotes.set(cacheKey, geometry);
-    NOTE_AWARE_SECTION_GEOMETRY_CACHE.set(visibleAgentNotes, cachedByNotes);
-  }
+  const nextCachedByFile = cachedByFile ?? new Map();
+  nextCachedByFile.set(cacheKey, geometry);
+  SECTION_GEOMETRY_CACHE.set(file, nextCachedByFile);
 
   return geometry;
 }
+
 /** Estimate the number of diff-body rows for one file section in the windowed path. */
 export function estimateDiffSectionBodyRows(
   file: DiffFile,
