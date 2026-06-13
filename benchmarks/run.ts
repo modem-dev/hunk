@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import os from "node:os";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { aggregateMetric, type BenchmarkRunResult } from "./lib/benchmark-result";
@@ -94,6 +95,15 @@ function gitSha() {
   return Buffer.from(proc.stdout).toString("utf8").trim();
 }
 
+async function packageVersion() {
+  try {
+    const packageJson = JSON.parse(await Bun.file("package.json").text()) as { version?: string };
+    return packageJson.version;
+  } catch {
+    return undefined;
+  }
+}
+
 function parseMetrics(output: string) {
   const metrics = new Map<string, number>();
   const metricPattern = /^METRIC\s+([A-Za-z0-9_.:-]+)=(-?\d+(?:\.\d+)?)$/;
@@ -179,6 +189,12 @@ const runResult: BenchmarkRunResult = {
   version: 1,
   generatedAt: new Date().toISOString(),
   gitSha: gitSha(),
+  packageVersion: await packageVersion(),
+  runtime: {
+    bunVersion: Bun.version,
+    platform: os.platform(),
+    arch: os.arch(),
+  },
   samplesPerBenchmark: options.samples,
   results,
 };

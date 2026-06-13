@@ -22,6 +22,13 @@ Include the opt-in huge fixture tier (~1k files / 300k+ diff lines plus one ~50k
 bun run bench -- --samples 1 --include-huge --out benchmarks/results/local-with-huge.json
 ```
 
+Generate the committed release benchmark snapshot during release prep:
+
+```bash
+bun run bench:release
+bun run bench:release:compare
+```
+
 Run focused scripts while iterating:
 
 ```bash

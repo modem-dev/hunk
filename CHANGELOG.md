@@ -6,6 +6,8 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Added
 
+- Added release benchmark snapshots and a release workflow gate that blocks publishing when committed benchmark results show material performance regressions.
+
 ### Changed
 
 ### Fixed

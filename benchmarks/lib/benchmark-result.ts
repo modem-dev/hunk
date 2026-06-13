@@ -17,10 +17,18 @@ export interface BenchmarkMetricResult {
   source: string;
 }
 
+export interface BenchmarkRuntimeInfo {
+  bunVersion?: string;
+  platform: string;
+  arch: string;
+}
+
 export interface BenchmarkRunResult {
   version: 1;
   generatedAt: string;
   gitSha?: string;
+  packageVersion?: string;
+  runtime?: BenchmarkRuntimeInfo;
   samplesPerBenchmark: number;
   results: BenchmarkMetricResult[];
 }

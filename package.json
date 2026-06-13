@@ -69,6 +69,8 @@
     "update:homebrew-formula": "bun run ./scripts/update-homebrew-formula.ts",
     "prepack": "bun run build:npm",
     "bench": "bun run benchmarks/run.ts",
+    "bench:release": "bun run ./scripts/run-release-benchmark.ts",
+    "bench:release:compare": "bun run ./scripts/compare-release-benchmarks.ts",
     "bench:bootstrap-load": "bun run benchmarks/bootstrap-load.ts",
     "bench:working-tree-load": "bun run benchmarks/working-tree-load.ts",
     "bench:changeset-parse": "bun run benchmarks/changeset-parse.ts",
