@@ -10,6 +10,7 @@
 
 ### Fixed
 
+- Allowed `hunk session comment rm` to remove human `c` notes by `user:*` id, and added `hunk session comment clear --include-user`/`--all` to clear human notes alongside live agent comments.
 - Fixed Windows launches from Cygwin, Git Bash, and WSL-style VCS paths by normalizing Unix-style repo roots before reusing them as subprocess working directories or filesystem roots.
 - Fixed release staging so benchmark comparison artifacts are not mistaken for platform binary artifacts.
 - Reduced hunk-navigation latency and memory growth on large reviews by keeping diff geometry memoized when the selected hunk changes.

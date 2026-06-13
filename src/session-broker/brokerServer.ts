@@ -357,6 +357,7 @@ async function handleSessionApiRequest(state: HunkSessionBrokerState, request: R
             input: {
               ...input.selector,
               filePath: input.filePath,
+              includeUser: input.includeUser,
             },
             timeoutMessage: "Timed out waiting for the session to clear the requested comments.",
           }),

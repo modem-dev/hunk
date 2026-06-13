@@ -83,6 +83,11 @@ function removeKeys<T>(record: Record<string, T>, keys: ReadonlySet<string>): Re
   return changed ? next : record;
 }
 
+/** Count array-backed entries in a file-id keyed note map. */
+function countFileMapItems<T>(record: Record<string, T[]>) {
+  return Object.values(record).reduce((sum, items) => sum + items.length, 0);
+}
+
 export interface UserReviewNote extends AgentAnnotation {
   id: string;
   source: "user";
@@ -158,7 +163,10 @@ export interface ReviewController {
     options?: { revealMode?: "none" | "first" },
   ) => AppliedCommentBatchResult;
   clearFilter: () => void;
-  clearLiveComments: (filePath?: string) => ClearedCommentsResult;
+  clearLiveComments: (
+    filePath?: string,
+    options?: { includeUser?: boolean },
+  ) => ClearedCommentsResult;
   navigateToLocation: (input: NavigateToHunkToolInput) => NavigatedSelectionResult;
   removeLiveComment: (commentId: string) => RemovedCommentResult;
   cancelDraftNote: () => void;
@@ -652,11 +660,38 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     [allFiles, selectHunk],
   );
 
-  /** Remove one live comment by id and report how many remain. */
+  /** Remove one daemon-addressable comment, including human notes by stable `user:*` id. */
   const removeLiveComment = useCallback(
     (commentId: string): RemovedCommentResult => {
+      if (commentId.startsWith("user:")) {
+        let removed = false;
+        const next: Record<string, UserReviewNote[]> = {};
+
+        for (const [fileId, notes] of Object.entries(userNotesByFileId)) {
+          const filtered = notes.filter((note) => note.id !== commentId);
+          if (filtered.length !== notes.length) {
+            removed = true;
+          }
+          if (filtered.length > 0) {
+            next[fileId] = filtered;
+          }
+        }
+
+        if (!removed) {
+          throw new Error(`No user note matches id ${commentId}.`);
+        }
+
+        setUserNotesByFileId(next);
+        return {
+          commentId,
+          removed: true,
+          remainingCommentCount: countFileMapItems(liveCommentsByFileId) + countFileMapItems(next),
+          source: "user",
+        };
+      }
+
       let removed = false;
-      let remainingCommentCount = 0;
+      let remainingLiveCommentCount = 0;
       const next: Record<string, LiveComment[]> = {};
 
       for (const [fileId, comments] of Object.entries(liveCommentsByFileId)) {
@@ -667,7 +702,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
 
         if (filtered.length > 0) {
           next[fileId] = filtered;
-          remainingCommentCount += filtered.length;
+          remainingLiveCommentCount += filtered.length;
         }
       }
 
@@ -679,55 +714,87 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
       return {
         commentId,
         removed: true,
-        remainingCommentCount,
+        remainingCommentCount: remainingLiveCommentCount,
+        source: "agent",
       };
     },
-    [liveCommentsByFileId],
+    [liveCommentsByFileId, userNotesByFileId],
   );
 
-  /** Clear all live comments, or only the comments attached to one specific file. */
+  /** Clear live comments, optionally including human notes, globally or for one file. */
   const clearLiveComments = useCallback(
-    (filePath?: string): ClearedCommentsResult => {
-      let removedCount = 0;
-      let remainingCommentCount = 0;
+    (filePath?: string, options: { includeUser?: boolean } = {}): ClearedCommentsResult => {
+      const file = filePath ? findDiffFileByPath(allFiles, filePath) : undefined;
+      if (filePath && !file) {
+        throw new Error(`No diff file matches ${filePath}.`);
+      }
 
-      if (filePath) {
-        const file = findDiffFileByPath(allFiles, filePath);
-        if (!file) {
-          throw new Error(`No diff file matches ${filePath}.`);
-        }
+      let removedLiveCommentCount = 0;
+      let remainingLiveCommentCount = 0;
+      let nextLiveCommentsByFileId: Record<string, LiveComment[]> = liveCommentsByFileId;
 
-        const next: Record<string, LiveComment[]> = {};
+      if (file) {
+        nextLiveCommentsByFileId = {};
         for (const [fileId, comments] of Object.entries(liveCommentsByFileId)) {
           if (fileId === file.id) {
-            removedCount = comments.length;
+            removedLiveCommentCount = comments.length;
             continue;
           }
 
-          next[fileId] = comments;
-          remainingCommentCount += comments.length;
-        }
-
-        if (removedCount > 0) {
-          setLiveCommentsByFileId(next);
+          nextLiveCommentsByFileId[fileId] = comments;
+          remainingLiveCommentCount += comments.length;
         }
       } else {
-        removedCount = Object.values(liveCommentsByFileId).reduce(
-          (sum, comments) => sum + comments.length,
-          0,
-        );
-        if (removedCount > 0) {
-          setLiveCommentsByFileId({});
+        removedLiveCommentCount = countFileMapItems(liveCommentsByFileId);
+        remainingLiveCommentCount = 0;
+        nextLiveCommentsByFileId = {};
+      }
+
+      if (removedLiveCommentCount > 0) {
+        setLiveCommentsByFileId(nextLiveCommentsByFileId);
+      }
+
+      let removedUserNoteCount = 0;
+      let remainingUserNoteCount = countFileMapItems(userNotesByFileId);
+      let nextUserNotesByFileId = userNotesByFileId;
+
+      if (options.includeUser) {
+        if (file) {
+          nextUserNotesByFileId = {};
+          remainingUserNoteCount = 0;
+          for (const [fileId, notes] of Object.entries(userNotesByFileId)) {
+            if (fileId === file.id) {
+              removedUserNoteCount = notes.length;
+              continue;
+            }
+
+            nextUserNotesByFileId[fileId] = notes;
+            remainingUserNoteCount += notes.length;
+          }
+        } else {
+          removedUserNoteCount = countFileMapItems(userNotesByFileId);
+          remainingUserNoteCount = 0;
+          nextUserNotesByFileId = {};
+        }
+
+        if (removedUserNoteCount > 0) {
+          setUserNotesByFileId(nextUserNotesByFileId);
         }
       }
 
       return {
-        removedCount,
-        remainingCommentCount,
+        removedCount: removedLiveCommentCount + removedUserNoteCount,
+        remainingCommentCount:
+          remainingLiveCommentCount + (options.includeUser ? remainingUserNoteCount : 0),
         filePath,
+        includeUser: options.includeUser,
+        removedLiveCommentCount,
+        removedUserNoteCount,
+        remainingLiveCommentCount,
+        remainingUserNoteCount,
       };
     },
-    [allFiles, liveCommentsByFileId],
+    [allFiles, liveCommentsByFileId, userNotesByFileId],
   );
 
   /** Start a human-authored draft note at the selected or requested hunk. */

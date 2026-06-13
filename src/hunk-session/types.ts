@@ -98,6 +98,7 @@ export interface RemoveCommentToolInput extends SessionTargetInput {
 
 export interface ClearCommentsToolInput extends SessionTargetInput {
   filePath?: string;
+  includeUser?: boolean;
 }
 
 export interface SessionLiveCommentSummary {
@@ -151,12 +152,18 @@ export interface RemovedCommentResult {
   commentId: string;
   removed: boolean;
   remainingCommentCount: number;
+  source?: ReviewNoteSource;
 }
 
 export interface ClearedCommentsResult {
   removedCount: number;
   remainingCommentCount: number;
   filePath?: string;
+  includeUser?: boolean;
+  removedLiveCommentCount?: number;
+  removedUserNoteCount?: number;
+  remainingLiveCommentCount?: number;
+  remainingUserNoteCount?: number;
 }
 
 export interface ReloadedSessionResult {

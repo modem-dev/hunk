@@ -204,6 +204,7 @@ class HttpHunkSessionCliClient implements HunkSessionCliClient {
         action: "comment-clear",
         selector: input.selector,
         filePath: input.filePath,
+        includeUser: input.includeUser,
       })
     ).result;
   }
@@ -450,7 +451,8 @@ export function formatRemoveCommentOutput(
   selector: SessionSelectorInput,
   result: RemovedCommentResult,
 ) {
-  return `Removed live comment ${result.commentId} from ${describeSessionSelector(selector)}. Remaining comments: ${result.remainingCommentCount}.\n`;
+  const label = result.source === "user" ? "user note" : "live comment";
+  return `Removed ${label} ${result.commentId} from ${describeSessionSelector(selector)}. Remaining comments: ${result.remainingCommentCount}.\n`;
 }
 
 export function formatNoteListOutput(
@@ -480,5 +482,6 @@ export function formatClearCommentsOutput(
   const scope = result.filePath
     ? `${result.filePath} in ${describeSessionSelector(selector)}`
     : describeSessionSelector(selector);
-  return `Cleared ${result.removedCount} live comments from ${scope}. Remaining comments: ${result.remainingCommentCount}.\n`;
+  const label = result.includeUser ? "comments" : "live comments";
+  return `Cleared ${result.removedCount} ${label} from ${scope}. Remaining comments: ${result.remainingCommentCount}.\n`;
 }

@@ -278,6 +278,7 @@ export interface SessionCommentClearCommandInput {
   output: SessionCommandOutput;
   selector: SessionSelectorInput;
   filePath?: string;
+  includeUser?: boolean;
   confirmed: boolean;
 }
 

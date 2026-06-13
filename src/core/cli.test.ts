@@ -717,6 +717,29 @@ describe("parseCli", () => {
     });
   });
 
+  test("parses session comment rm with a repo selector", async () => {
+    const repo = createTempDir("hunk-cli-rm-repo-");
+    mkdirSync(join(repo, ".git"));
+    const parsed = await parseCli([
+      "bun",
+      "hunk",
+      "session",
+      "comment",
+      "rm",
+      "--repo",
+      repo,
+      "user:1",
+    ]);
+
+    expect(parsed).toEqual({
+      kind: "session",
+      action: "comment-rm",
+      selector: { repoRoot: realpathSync.native(repo) },
+      commentId: "user:1",
+      output: "text",
+    });
+  });
+
   test("parses session comment clear", async () => {
     const parsed = await parseCli([
       "bun",
@@ -735,6 +758,28 @@ describe("parseCli", () => {
       action: "comment-clear",
       selector: { sessionId: "session-1" },
       filePath: "README.md",
+      confirmed: true,
+      output: "text",
+    });
+  });
+
+  test("parses session comment clear with user notes included", async () => {
+    const parsed = await parseCli([
+      "bun",
+      "hunk",
+      "session",
+      "comment",
+      "clear",
+      "session-1",
+      "--all",
+      "--yes",
+    ]);
+
+    expect(parsed).toEqual({
+      kind: "session",
+      action: "comment-clear",
+      selector: { sessionId: "session-1" },
+      includeUser: true,
       confirmed: true,
       output: "text",
     });
@@ -827,7 +872,7 @@ describe("parseCli", () => {
   test("rejects session comment clear without confirmation", async () => {
     await expect(
       parseCli(["bun", "hunk", "session", "comment", "clear", "session-1"]),
-    ).rejects.toThrow("Pass --yes to clear live comments.");
+    ).rejects.toThrow("Pass --yes to clear comments.");
   });
 
   test("parses stash show mode", async () => {

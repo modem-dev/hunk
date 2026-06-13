@@ -630,7 +630,7 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
           "  hunk session comment apply (<session-id> | --repo <path>) --stdin [--focus]",
           "  hunk session comment list (<session-id> | --repo <path>) [--type <live|all|ai|agent|user>]",
           "  hunk session comment rm (<session-id> | --repo <path>) <comment-id>",
-          "  hunk session comment clear (<session-id> | --repo <path>) --yes",
+          "  hunk session comment clear (<session-id> | --repo <path>) [--include-user|--all] --yes",
         ].join("\n") + "\n",
     };
   }
@@ -904,7 +904,7 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
             "  hunk session comment apply (<session-id> | --repo <path>) --stdin [--focus]",
             "  hunk session comment list (<session-id> | --repo <path>) [--file <path>] [--type <live|all|ai|agent|user>]",
             "  hunk session comment rm (<session-id> | --repo <path>) <comment-id>",
-            "  hunk session comment clear (<session-id> | --repo <path>) [--file <path>] --yes",
+            "  hunk session comment clear (<session-id> | --repo <path>) [--file <path>] [--include-user|--all] --yes",
           ].join("\n") + "\n",
       };
     }
@@ -1112,27 +1112,18 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
 
     if (commentSubcommand === "rm") {
       const command = new Command("session comment rm")
-        .description("remove one live inline review note")
-        .argument("[sessionId]")
-        .argument("<commentId>")
+        .description("remove one inline review note")
+        .argument("[targets...]", "<session-id> <comment-id>, or <comment-id> with --repo")
         .option("--repo <path>", "target the live session whose repo root matches this path")
         .option("--json", "emit structured JSON");
 
-      let parsedSessionId: string | undefined;
-      let parsedCommentId = "";
+      let parsedTargets: string[] = [];
       let parsedOptions: { repo?: string; json?: boolean } = {};
 
-      command.action(
-        (
-          sessionId: string | undefined,
-          commentId: string,
-          options: { repo?: string; json?: boolean },
-        ) => {
-          parsedSessionId = sessionId;
-          parsedCommentId = commentId;
-          parsedOptions = options;
-        },
-      );
+      command.action((targets: string[], options: { repo?: string; json?: boolean }) => {
+        parsedTargets = targets;
+        parsedOptions = options;
+      });
 
       if (commentRest.includes("--help") || commentRest.includes("-h")) {
         return { kind: "help", text: `${command.helpInformation().trimEnd()}\n` };
@@ -1140,28 +1131,44 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
 
       await parseStandaloneCommand(command, commentRest);
 
+      const expectedTargetCount = parsedOptions.repo ? 1 : 2;
+      if (parsedTargets.length !== expectedTargetCount) {
+        throw new Error(
+          parsedOptions.repo
+            ? "Specify exactly one comment id with --repo <path>."
+            : "Specify a session id and comment id, or pass --repo <path> with one comment id.",
+        );
+      }
+
+      const parsedSessionId = parsedOptions.repo ? undefined : parsedTargets[0];
+      const parsedCommentId = parsedOptions.repo ? parsedTargets[0] : parsedTargets[1];
+
       return {
         kind: "session",
         action: "comment-rm",
         output: resolveJsonOutput(parsedOptions),
         selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
-        commentId: parsedCommentId,
+        commentId: parsedCommentId ?? "",
       };
     }
 
     if (commentSubcommand === "clear") {
       const command = new Command("session comment clear")
-        .description("clear live inline review notes")
+        .description("clear inline review notes")
         .argument("[sessionId]")
         .option("--repo <path>", "target the live session whose repo root matches this path")
         .option("--file <path>", "clear only one diff file's comments")
-        .option("--yes", "confirm destructive live comment clearing")
+        .option("--include-user", "also clear human notes created with the TUI `c` action")
+        .option("--all", "clear both live agent comments and human user notes")
+        .option("--yes", "confirm destructive comment clearing")
         .option("--json", "emit structured JSON");
 
       let parsedSessionId: string | undefined;
       let parsedOptions: {
         repo?: string;
         file?: string;
+        includeUser?: boolean;
+        all?: boolean;
         yes?: boolean;
         json?: boolean;
       } = {};
@@ -1172,6 +1179,8 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
           options: {
             repo?: string;
             file?: string;
+            includeUser?: boolean;
+            all?: boolean;
             yes?: boolean;
             json?: boolean;
           },
@@ -1187,7 +1196,7 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
 
       await parseStandaloneCommand(command, commentRest);
       if (!parsedOptions.yes) {
-        throw new Error("Pass --yes to clear live comments.");
+        throw new Error("Pass --yes to clear comments.");
       }
 
       return {
@@ -1196,6 +1205,7 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
         output: resolveJsonOutput(parsedOptions),
         selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
         filePath: parsedOptions.file,
+        ...(parsedOptions.includeUser || parsedOptions.all ? { includeUser: true } : {}),
         confirmed: true,
       };
     }

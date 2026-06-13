@@ -108,7 +108,10 @@ For comment cleanup and inspection, use:
 hunk session comment list --repo .
 hunk session comment rm --repo . <comment-id>
 hunk session comment clear --repo . --file README.md --yes
+hunk session comment clear --repo . --all --yes # also clears human `c` notes
 ```
+
+Agents can remove or bulk-clear human notes for cleanup, but cannot create or edit them through the session CLI.
 
 ## Session targeting
 
