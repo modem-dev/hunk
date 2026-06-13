@@ -236,8 +236,9 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: modem-dev/homebrew-tap
+          ref: main
           path: dist/release/homebrew-tap
-          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          persist-credentials: false
 
       - name: Update Homebrew formula
         if: ${{ !contains(github.ref_name, '-alpha') && !contains(github.ref_name, '-beta') && !contains(github.ref_name, '-rc') }}
@@ -253,14 +254,21 @@ jobs:
         if: ${{ !contains(github.ref_name, '-alpha') && !contains(github.ref_name, '-beta') && !contains(github.ref_name, '-rc') }}
         working-directory: dist/release/homebrew-tap
         env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           TAG_NAME: ${{ github.ref_name }}
         run: |
+          if [ -z "${HOMEBREW_TAP_TOKEN:-}" ]; then
+            echo "Missing HOMEBREW_TAP_TOKEN; cannot push the Homebrew formula update." >&2
+            exit 1
+          fi
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/modem-dev/homebrew-tap.git"
           git add Formula/hunk.rb
           if git diff --cached --quiet; then
             echo "Homebrew formula already up to date."
           else
             git commit -m "hunk $TAG_NAME"
-            git push
+            git push origin HEAD:main
           fi
