@@ -9,24 +9,39 @@
  *
  * This module is the fallback output adapter for those contexts. It intentionally reuses Hunk's
  * normal parse/highlight/render planning stack (`loadAppBootstrap`, Pierre metadata,
- * `loadHighlightedDiff`, and `buildStackRows`) and only serializes the resulting stack rows to ANSI
+ * `loadHighlightedDiff`, and Pierre row builders) and only serializes the resulting rows to ANSI
  * text. Keep it as a thin adapter: do not introduce a second diff parser or a parallel review model
  * here. If the static renderer cannot parse or render safely, callers fall back to the original patch
  * text so pager pipelines keep working.
  */
 import { loadAppBootstrap } from "../core/loaders";
 import type { CommonOptions, CustomThemeConfig, DiffFile } from "../core/types";
-import { buildStackRows, loadHighlightedDiff, type DiffRow, type RenderSpan } from "./diff/pierre";
+import {
+  buildSplitRows,
+  buildStackRows,
+  loadHighlightedDiff,
+  type DiffRow,
+  type RenderSpan,
+  type SplitLineCell,
+} from "./diff/pierre";
+import { resolveSplitPaneWidths, resolveSplitCellGeometry } from "./diff/codeColumns";
 import {
   diffRailMarker,
   neutralRailColor,
+  splitCellPalette,
+  splitGutterText,
+  splitLeftRailColor,
+  splitRightRailColor,
   stackCellPalette,
   stackGutterText,
   stackRailColor,
 } from "./diff/rowStyle";
+import { sliceTextByWidth } from "./lib/text";
 import { sanitizeTerminalLine, sanitizeTerminalText } from "../lib/terminalText";
 import { resolveTheme, withTransparentSurfaces, type AppTheme } from "./themes";
 
+const DEFAULT_STATIC_WIDTH = 120;
+const MIN_STATIC_WIDTH = 20;
 const RESET = "\x1b[0m";
 
 /** Convert a six-digit hex color into one ANSI truecolor code. */
@@ -58,10 +73,41 @@ function serializeSpans(spans: RenderSpan[], rowBg: string) {
   return spans.map((span) => colorText(span.text, span.fg, span.bg ?? rowBg)).join("");
 }
 
+/** Serialize spans into one fixed-width pane so split rows keep both sides aligned. */
+function serializeSpansFixedWidth(spans: RenderSpan[], rowBg: string, width: number) {
+  let remaining = Math.max(0, width);
+  let usedWidth = 0;
+  let output = "";
+
+  for (const span of spans) {
+    if (remaining <= 0) {
+      break;
+    }
+
+    const visible = sliceTextByWidth(span.text, 0, remaining);
+    if (visible.text) {
+      output += colorText(visible.text, span.fg, span.bg ?? rowBg);
+      usedWidth += visible.width;
+      remaining -= visible.width;
+    }
+  }
+
+  if (usedWidth < width) {
+    output += colorText(" ".repeat(width - usedWidth), undefined, rowBg);
+  }
+
+  return output;
+}
+
 const marker = diffRailMarker;
 
 function renderHeaderLikeRow(text: string, fg: string, bg: string, theme: AppTheme) {
   return `${colorText(marker(), neutralRailColor(theme), bg)}${colorText(text.trimEnd(), fg, bg)}`;
+}
+
+function fixedWidthText(text: string, width: number) {
+  const visible = sliceTextByWidth(text, 0, width);
+  return `${visible.text}${" ".repeat(Math.max(0, width - visible.width))}`;
 }
 
 function staticStackGutterText(
@@ -74,8 +120,18 @@ function staticStackGutterText(
   );
 }
 
+function staticSplitGutterText(
+  cell: SplitLineCell,
+  lineNumberWidth: number,
+  showLineNumbers: boolean,
+) {
+  return splitGutterText(cell, lineNumberWidth, showLineNumbers).padEnd(
+    showLineNumbers ? lineNumberWidth + 3 : 2,
+  );
+}
+
 /** Render one non-interactive stacked diff row as ANSI text. */
-function renderStaticRow(
+function renderStaticStackRow(
   row: DiffRow,
   theme: AppTheme,
   lineNumberWidth: number,
@@ -104,18 +160,89 @@ function renderStaticRow(
   )}${serializeSpans(cell.spans, palette.contentBg)}`;
 }
 
+function renderStaticSplitCell(
+  cell: SplitLineCell,
+  side: "left" | "right",
+  width: number,
+  theme: AppTheme,
+  lineNumberWidth: number,
+  options: CommonOptions,
+) {
+  const palette = splitCellPalette(cell.kind, theme, cell.moveKind);
+  const { gutterWidth, contentWidth } = resolveSplitCellGeometry(
+    width,
+    lineNumberWidth,
+    options.lineNumbers !== false,
+    marker().length,
+  );
+  const railColor =
+    side === "left"
+      ? splitLeftRailColor(cell.kind, theme, true)
+      : splitRightRailColor(cell.kind, theme, true);
+  const gutterText = fixedWidthText(
+    staticSplitGutterText(cell, lineNumberWidth, options.lineNumbers !== false),
+    gutterWidth,
+  );
+
+  return `${colorText(marker(), railColor, theme.panel)}${colorText(
+    gutterText,
+    palette.numberColor,
+    palette.gutterBg,
+  )}${serializeSpansFixedWidth(cell.spans, palette.contentBg, contentWidth)}`;
+}
+
+/** Render one non-interactive split diff row as ANSI text. */
+function renderStaticSplitRow(
+  row: DiffRow,
+  theme: AppTheme,
+  lineNumberWidth: number,
+  options: CommonOptions,
+  width: number,
+) {
+  if (row.type === "collapsed") {
+    return renderHeaderLikeRow(`··· ${row.text} ···`, theme.muted, theme.panelAlt, theme);
+  }
+
+  if (row.type === "hunk-header") {
+    return options.hunkHeaders === false
+      ? ""
+      : renderHeaderLikeRow(row.text, theme.badgeNeutral, theme.panelAlt, theme);
+  }
+
+  if (row.type !== "split-line") {
+    return "";
+  }
+
+  const { leftWidth, rightWidth } = resolveSplitPaneWidths(width);
+  return `${renderStaticSplitCell(
+    row.left,
+    "left",
+    leftWidth,
+    theme,
+    lineNumberWidth,
+    options,
+  )}${renderStaticSplitCell(row.right, "right", rightWidth, theme, lineNumberWidth, options)}`;
+}
+
 function maxLineNumberWidth(file: DiffFile, rows: DiffRow[]) {
   let max = 1;
   for (const row of rows) {
-    if (row.type !== "stack-line") {
+    if (row.type === "stack-line") {
+      max = Math.max(
+        max,
+        row.cell.oldLineNumber ? String(row.cell.oldLineNumber).length : 1,
+        row.cell.newLineNumber ? String(row.cell.newLineNumber).length : 1,
+      );
       continue;
     }
 
-    max = Math.max(
-      max,
-      row.cell.oldLineNumber ? String(row.cell.oldLineNumber).length : 1,
-      row.cell.newLineNumber ? String(row.cell.newLineNumber).length : 1,
-    );
+    if (row.type === "split-line") {
+      max = Math.max(
+        max,
+        row.left.lineNumber ? String(row.left.lineNumber).length : 1,
+        row.right.lineNumber ? String(row.right.lineNumber).length : 1,
+      );
+    }
   }
 
   return Math.max(max, String(file.metadata.additionLines.length).length);
@@ -172,11 +299,26 @@ function fileModeText(file: DiffFile) {
   return "";
 }
 
+function resolveStaticLayout(options: CommonOptions) {
+  // Static pager output has historically defaulted to stack rows even on wide terminals.
+  // Honor only an explicit split request here so captured hosts avoid surprise layout changes.
+  return options.mode === "split" ? "split" : "stack";
+}
+
 /** Format one parsed diff file for static pager hosts like LazyGit's diff panel. */
-async function renderStaticFile(file: DiffFile, theme: AppTheme, options: CommonOptions) {
+async function renderStaticFile(
+  file: DiffFile,
+  theme: AppTheme,
+  options: CommonOptions,
+  width: number,
+) {
   const highlighted =
     file.isBinary || file.isTooLarge ? null : await loadHighlightedDiff(file, theme.appearance);
-  const rows = buildStackRows(file, highlighted, theme);
+  const layout = resolveStaticLayout(options);
+  const rows =
+    layout === "split"
+      ? buildSplitRows(file, highlighted, theme)
+      : buildStackRows(file, highlighted, theme);
   const lineNumberWidth = maxLineNumberWidth(file, rows);
   const stats = `${colorText(`+${file.stats.additions}${file.statsTruncated ? "+" : ""}`, theme.badgeAdded)} ${colorText(`-${file.stats.deletions}`, theme.badgeRemoved)}`;
   const status = colorText(`${fileStatusLabel(file)}${fileModeText(file)}`, theme.muted);
@@ -193,7 +335,13 @@ async function renderStaticFile(file: DiffFile, theme: AppTheme, options: Common
 
   return [
     header,
-    ...rows.map((row) => renderStaticRow(row, theme, lineNumberWidth, options)).filter(Boolean),
+    ...rows
+      .map((row) =>
+        layout === "split"
+          ? renderStaticSplitRow(row, theme, lineNumberWidth, options, width)
+          : renderStaticStackRow(row, theme, lineNumberWidth, options),
+      )
+      .filter(Boolean),
   ].join("\n");
 }
 
@@ -208,6 +356,14 @@ function fallbackMessage(error: unknown) {
 export interface StaticDiffPagerDeps {
   customTheme?: CustomThemeConfig;
   stderr?: Pick<NodeJS.WriteStream, "write">;
+  terminalColumns?: number;
+}
+
+function resolveStaticWidth(deps: StaticDiffPagerDeps) {
+  return Math.max(
+    MIN_STATIC_WIDTH,
+    Math.floor(deps.terminalColumns ?? process.stdout.columns ?? DEFAULT_STATIC_WIDTH),
+  );
 }
 
 function warnFallback(deps: StaticDiffPagerDeps, reason: string) {
@@ -236,8 +392,9 @@ export async function renderStaticDiffPager(
     const theme = options.transparentBackground
       ? withTransparentSurfaces(resolvedTheme)
       : resolvedTheme;
+    const width = resolveStaticWidth(deps);
     const rendered = await Promise.all(
-      bootstrap.changeset.files.map((file) => renderStaticFile(file, theme, options)),
+      bootstrap.changeset.files.map((file) => renderStaticFile(file, theme, options, width)),
     );
 
     if (rendered.length === 0) {

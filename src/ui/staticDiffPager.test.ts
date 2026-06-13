@@ -60,6 +60,41 @@ describe("static diff pager", () => {
     expect(plain).toContain("▌+ const value = 2;");
   });
 
+  test("honors explicit split mode in static pager output", async () => {
+    const patchText =
+      "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-const value = 1;\n+const value = 2;\n";
+
+    const plain = stripAnsi(
+      await renderStaticDiffPager(
+        patchText,
+        { mode: "split" },
+        { terminalColumns: 80, stderr: { write: () => true } },
+      ),
+    );
+    const changedLine = plain.split("\n").find((line) => line.includes("const value"));
+
+    expect(changedLine).toBeDefined();
+    expect(changedLine).toContain("▌1 - const value = 1;");
+    expect(changedLine).toContain("▌1 + const value = 2;");
+    expect(plain).not.toContain("▌  1 +  const value = 2;");
+  });
+
+  test("keeps auto mode stacked in static pager output", async () => {
+    const patchText =
+      "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-const value = 1;\n+const value = 2;\n";
+
+    const plain = stripAnsi(
+      await renderStaticDiffPager(
+        patchText,
+        { mode: "auto" },
+        { terminalColumns: 200, stderr: { write: () => true } },
+      ),
+    );
+
+    expect(plain).toContain("▌1   -  const value = 1;");
+    expect(plain).toContain("▌  1 +  const value = 2;");
+  });
+
   test("uses configured custom themes in static pager output", async () => {
     const patchText =
       "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-const value = 1;\n+const value = 2;\n";
