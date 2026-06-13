@@ -23,6 +23,40 @@ describe("measureDiffSectionGeometry", () => {
     expect(stack.hunkBounds.get(0)?.height).toBeGreaterThan(split.hunkBounds.get(0)?.height ?? 0);
   });
 
+  test("reuses no-note geometry for the same file and layout inputs", () => {
+    const file = createTestDiffFile();
+
+    const first = measureDiffSectionGeometry(file, "split", true, theme, [], 120, true, false);
+    const second = measureDiffSectionGeometry(file, "split", true, theme, [], 120, true, false);
+    const differentWidth = measureDiffSectionGeometry(
+      file,
+      "split",
+      true,
+      theme,
+      [],
+      121,
+      true,
+      false,
+    );
+    const differentAddNotePolicy = measureDiffSectionGeometry(
+      file,
+      "split",
+      true,
+      theme,
+      [],
+      120,
+      true,
+      false,
+      undefined,
+      undefined,
+      true,
+    );
+
+    expect(second).toBe(first);
+    expect(differentWidth).not.toBe(first);
+    expect(differentAddNotePolicy).not.toBe(first);
+  });
+
   test("accounts for visible inline notes without moving the hunk anchor", () => {
     const file = createTestDiffFile();
     const visibleAgentNotes: VisibleAgentNote[] = [

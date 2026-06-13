@@ -171,6 +171,8 @@ export const DiffSection = memo(DiffSectionComponent, (previous, next) => {
     previous.hoverActive === next.hoverActive &&
     previous.hoverClearSignal === next.hoverClearSignal &&
     previous.onMouseScroll === next.onMouseScroll &&
+    previous.onActiveAddNoteAffordanceChange === next.onActiveAddNoteAffordanceChange &&
+    previous.onStartUserNoteAtHunk === next.onStartUserNoteAtHunk &&
     previous.theme === next.theme &&
     previous.visibleAgentNotes === next.visibleAgentNotes &&
     previous.visibleBodyBounds === next.visibleBodyBounds &&

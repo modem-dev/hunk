@@ -69,6 +69,9 @@ function expansionCacheKey(
   return `:${sortedKeys}:${statusKey}`;
 }
 
+// Cache no-note geometry by immutable DiffFile object so hunk navigation can survive parent
+// re-renders without rebuilding every file section. Replaced file objects naturally drop from the WeakMap.
+const BASE_SECTION_GEOMETRY_CACHE = new WeakMap<DiffFile, Map<string, DiffSectionGeometry>>();
 const NOTE_AWARE_SECTION_GEOMETRY_CACHE = new WeakMap<
   VisibleAgentNote[],
   Map<string, DiffSectionGeometry>
@@ -176,12 +179,13 @@ export function measureDiffSectionGeometry(
   // participate in the cache key alongside the structural file/layout inputs. Expansion state
   // changes the row stream, so it has to participate too.
   const cacheKey = `${file.id}:${layout}:${showHunkHeaders ? 1 : 0}:${theme.id}:${width}:${showLineNumbers ? 1 : 0}:${wrapLines ? 1 : 0}:${reserveAddNoteColumn ? 1 : 0}${expansionCacheKey(expandedKeys, sourceStatus)}`;
-  if (visibleAgentNotes.length > 0) {
-    const cachedByNotes = NOTE_AWARE_SECTION_GEOMETRY_CACHE.get(visibleAgentNotes);
-    const cached = cachedByNotes?.get(cacheKey);
-    if (cached) {
-      return cached;
-    }
+  const cachedByOwner =
+    visibleAgentNotes.length > 0
+      ? NOTE_AWARE_SECTION_GEOMETRY_CACHE.get(visibleAgentNotes)
+      : BASE_SECTION_GEOMETRY_CACHE.get(file);
+  const cached = cachedByOwner?.get(cacheKey);
+  if (cached) {
+    return cached;
   }
 
   const sectionRowPlan = buildDiffSectionRowPlan({
@@ -273,10 +277,15 @@ export function measureDiffSectionGeometry(
     const cachedByNotes = NOTE_AWARE_SECTION_GEOMETRY_CACHE.get(visibleAgentNotes) ?? new Map();
     cachedByNotes.set(cacheKey, geometry);
     NOTE_AWARE_SECTION_GEOMETRY_CACHE.set(visibleAgentNotes, cachedByNotes);
+  } else {
+    const cachedByFile = BASE_SECTION_GEOMETRY_CACHE.get(file) ?? new Map();
+    cachedByFile.set(cacheKey, geometry);
+    BASE_SECTION_GEOMETRY_CACHE.set(file, cachedByFile);
   }
 
   return geometry;
 }
+
 /** Estimate the number of diff-body rows for one file section in the windowed path. */
 export function estimateDiffSectionBodyRows(
   file: DiffFile,

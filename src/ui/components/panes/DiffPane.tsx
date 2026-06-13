@@ -271,6 +271,8 @@ export function DiffPane({
   const [addNoteHoverClearSignal, setAddNoteHoverClearSignal] = useState(0);
   const [addNoteHoverClearFileId, setAddNoteHoverClearFileId] = useState<string | null>(null);
   const hoveredFileIdRef = useRef<string | null>(null);
+  const onActiveAddNoteAffordanceChangeRef = useRef(onActiveAddNoteAffordanceChange);
+  onActiveAddNoteAffordanceChangeRef.current = onActiveAddNoteAffordanceChange;
 
   /** Hide hover-only row controls when content scrolls under a stationary mouse pointer. */
   const clearAddNoteHoverForScroll = useCallback(() => {
@@ -283,8 +285,8 @@ export function DiffPane({
     setAddNoteHoverClearSignal((current) => current + 1);
     setHoveredFileId(null);
     hoveredFileIdRef.current = null;
-    onActiveAddNoteAffordanceChange?.(null);
-  }, [onActiveAddNoteAffordanceChange]);
+    onActiveAddNoteAffordanceChangeRef.current?.(null);
+  }, []);
 
   const adjacentPrefetchFileIds = useMemo(
     () => buildAdjacentPrefetchFileIds(files, selectedFileId),
@@ -302,6 +304,37 @@ export function DiffPane({
     if (!callback) {
       callback = () => onSelectFileRef.current(fileId);
       selectFileCallbacksRef.current.set(fileId, callback);
+    }
+    return callback;
+  }, []);
+
+  // Add-note row handlers are cached per file so mounted DiffSections keep a stable prop identity,
+  // while the ref indirection ensures clicks still use the latest App/review callback after hunk
+  // navigation changes the selected-file defaults upstream.
+  const onStartUserNoteAtHunkRef = useRef(onStartUserNoteAtHunk);
+  onStartUserNoteAtHunkRef.current = onStartUserNoteAtHunk;
+  const startUserNoteAtHunkCallbacksRef = useRef(
+    new Map<string, (hunkIndex: number, target?: UserNoteLineTarget) => void>(),
+  );
+  const startUserNoteAtHunkCallback = useCallback((fileId: string) => {
+    let callback = startUserNoteAtHunkCallbacksRef.current.get(fileId);
+    if (!callback) {
+      callback = (hunkIndex, target) =>
+        onStartUserNoteAtHunkRef.current?.(fileId, hunkIndex, target);
+      startUserNoteAtHunkCallbacksRef.current.set(fileId, callback);
+    }
+    return callback;
+  }, []);
+
+  const activeAddNoteAffordanceCallbacksRef = useRef(
+    new Map<string, (affordance: ActiveAddNoteAffordance | null) => void>(),
+  );
+  const activeAddNoteAffordanceCallback = useCallback((fileId: string) => {
+    let callback = activeAddNoteAffordanceCallbacksRef.current.get(fileId);
+    if (!callback) {
+      callback = (affordance) =>
+        onActiveAddNoteAffordanceChangeRef.current?.(affordance ? { ...affordance, fileId } : null);
+      activeAddNoteAffordanceCallbacksRef.current.set(fileId, callback);
     }
     return callback;
   }, []);
@@ -604,6 +637,7 @@ export function DiffPane({
   }, [activateRapidScrollOverscan, clearAddNoteHoverForScroll, files.length, scrollRef]);
 
   const sectionHeaderHeights = useMemo(() => buildInStreamFileHeaderHeights(files), [files]);
+  const reserveAddNoteColumn = Boolean(onStartUserNoteAtHunk);
 
   const baseSectionGeometry = useMemo(
     () =>
@@ -619,7 +653,7 @@ export function DiffPane({
           wrapLines,
           expandedGapsByFileId[file.id] ?? EMPTY_EXPANDED_GAP_KEYS,
           sourceStatusByFileId[file.id],
-          Boolean(onStartUserNoteAtHunk),
+          reserveAddNoteColumn,
         ),
       ),
     [
@@ -627,7 +661,7 @@ export function DiffPane({
       expandedGapsByFileId,
       files,
       layout,
-      onStartUserNoteAtHunk,
+      reserveAddNoteColumn,
       showHunkHeaders,
       showLineNumbers,
       sourceStatusByFileId,
@@ -697,7 +731,7 @@ export function DiffPane({
           wrapLines,
           expandedGapsByFileId[file.id] ?? EMPTY_EXPANDED_GAP_KEYS,
           sourceStatusByFileId[file.id],
-          Boolean(onStartUserNoteAtHunk),
+          reserveAddNoteColumn,
         );
       }),
     [
@@ -707,7 +741,7 @@ export function DiffPane({
       expandedGapsByFileId,
       files,
       layout,
-      onStartUserNoteAtHunk,
+      reserveAddNoteColumn,
       showHunkHeaders,
       showLineNumbers,
       sourceStatusByFileId,
@@ -1790,15 +1824,13 @@ export function DiffPane({
                       visibleBodyBounds={visibleBodyBoundsByFile.get(file.id)}
                       onHover={() => setHoveredFileForRowActions(file.id)}
                       onMouseScroll={clearAddNoteHoverForScroll}
-                      onActiveAddNoteAffordanceChange={(affordance) =>
-                        onActiveAddNoteAffordanceChange?.(
-                          affordance ? { ...affordance, fileId: file.id } : null,
-                        )
+                      onActiveAddNoteAffordanceChange={
+                        onActiveAddNoteAffordanceChange
+                          ? activeAddNoteAffordanceCallback(file.id)
+                          : undefined
                       }
                       onStartUserNoteAtHunk={
-                        onStartUserNoteAtHunk
-                          ? (hunkIndex, target) => onStartUserNoteAtHunk(file.id, hunkIndex, target)
-                          : undefined
+                        reserveAddNoteColumn ? startUserNoteAtHunkCallback(file.id) : undefined
                       }
                       onSelect={selectFileCallback(file.id)}
                       onToggleGap={(gapKey) => onToggleGap(file.id, gapKey)}

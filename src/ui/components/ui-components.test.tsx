@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { testRender } from "@opentui/react/test-utils";
-import { act, createRef, useEffect, useState, type ReactNode } from "react";
+import { act, createRef, useCallback, useEffect, useState, type ReactNode } from "react";
 import type { AppBootstrap, DiffFile } from "../../core/types";
 import { createTestVcsAppBootstrap } from "../../../test/helpers/app-bootstrap";
 import { capturedTestColorToHex } from "../../../test/helpers/test-color-helpers";
@@ -767,6 +767,23 @@ describe("UI components", () => {
     }
   });
 
+  test("DiffPane geometry memo depends on add-note presence instead of callback identity", async () => {
+    const source = await Bun.file(new URL("./panes/DiffPane.tsx", import.meta.url)).text();
+    const baseMemo = source.slice(
+      source.indexOf("const baseSectionGeometry = useMemo"),
+      source.indexOf("const baseEstimatedBodyHeights = useMemo"),
+    );
+    const noteAwareMemo = source.slice(
+      source.indexOf("const sectionGeometry = useMemo"),
+      source.indexOf("const estimatedBodyHeights = useMemo"),
+    );
+
+    expect(baseMemo).toContain("reserveAddNoteColumn");
+    expect(baseMemo).not.toContain("onStartUserNoteAtHunk,");
+    expect(noteAwareMemo).toContain("reserveAddNoteColumn");
+    expect(noteAwareMemo).not.toContain("onStartUserNoteAtHunk,");
+  });
+
   test("DiffPane only shows the add-note affordance after pointer movement", async () => {
     const files = createWindowingFiles(6);
     const theme = resolveTheme("midnight", null);
@@ -822,6 +839,86 @@ describe("UI components", () => {
       });
       frame = await waitForFrame(setup, (nextFrame) => !nextFrame.includes("[+]"), 12);
       expect(frame).not.toContain("[+]");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("DiffPane add-note clicks keep targeting the current hunk after navigation", async () => {
+    const file = createWideTwoHunkDiffFile("target", "target.ts");
+    const files = [file];
+    const theme = resolveTheme("midnight", null);
+    const scrollRef = createRef<ScrollBoxRenderable>();
+    const calls: Array<{
+      fileId: string;
+      hunkIndex: number;
+      target?: { side: "old" | "new"; line: number };
+    }> = [];
+    let navigateToSecondHunk: (() => void) | null = null;
+
+    function AddNoteNavigationHarness() {
+      const [selectedHunk, setSelectedHunk] = useState(0);
+      navigateToSecondHunk = () => setSelectedHunk(1);
+      const startUserNote = useCallback(
+        (fileId: string, hunkIndex: number, target?: { side: "old" | "new"; line: number }) => {
+          if (selectedHunk < 0) {
+            return;
+          }
+          calls.push({ fileId, hunkIndex, target });
+        },
+        [selectedHunk],
+      );
+
+      return (
+        <DiffPane
+          {...createDiffPaneProps(files, theme, {
+            diffContentWidth: 96,
+            scrollRef,
+            selectedHunkIndex: selectedHunk,
+            selectedHunkRevealRequestId: selectedHunk,
+            separatorWidth: 92,
+            width: 100,
+            onStartUserNoteAtHunk: startUserNote,
+          })}
+        />
+      );
+    }
+
+    const setup = await testRender(<AddNoteNavigationHarness />, {
+      width: 104,
+      height: 14,
+    });
+
+    try {
+      await settleDiffPane(setup);
+      await act(async () => {
+        navigateToSecondHunk?.();
+        await setup.renderOnce();
+      });
+      const secondHunkFrame = await waitForFrame(setup, (frame) => frame.includes("line60"), 12);
+      const secondHunkY = secondHunkFrame.split("\n").findIndex((line) => line.includes("line60"));
+      expect(secondHunkY).toBeGreaterThanOrEqual(0);
+
+      await act(async () => {
+        await setup.mockMouse.moveTo(32, secondHunkY);
+        await setup.renderOnce();
+      });
+      const affordanceFrame = await waitForFrame(setup, (frame) => frame.includes("[+]"), 12);
+      const affordanceLines = affordanceFrame.split("\n");
+      const addNoteY = affordanceLines.findIndex((line) => line.includes("[+]"));
+      const addNoteX = affordanceLines[addNoteY]?.indexOf("[+]") ?? -1;
+      expect(addNoteY).toBeGreaterThanOrEqual(0);
+      expect(addNoteX).toBeGreaterThanOrEqual(0);
+
+      await act(async () => {
+        await setup.mockMouse.click(addNoteX + 1, addNoteY);
+      });
+
+      expect(calls).toEqual([
+        { fileId: "target", hunkIndex: 1, target: { side: "new", line: 60 } },
+      ]);
     } finally {
       await act(async () => {
         setup.renderer.destroy();
