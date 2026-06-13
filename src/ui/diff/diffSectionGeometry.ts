@@ -92,9 +92,48 @@ function expansionCacheKey(
   return `:${sortedKeys}:${statusKey}`;
 }
 
+interface SectionGeometryCacheEntry {
+  key: string;
+  geometry: DiffSectionGeometry;
+}
+
+interface SectionGeometryCacheSlots {
+  base?: SectionGeometryCacheEntry;
+  notes?: SectionGeometryCacheEntry;
+}
+
 // Cache geometry by immutable DiffFile object so hunk navigation can survive parent re-renders
 // without rebuilding every file section. Replaced file objects naturally drop from the WeakMap.
-const SECTION_GEOMETRY_CACHE = new WeakMap<DiffFile, Map<string, DiffSectionGeometry>>();
+// Keep one no-note and one note-aware variant: large row-bounds arrays from old terminal widths
+// are replaced on resize, while note rendering can still compare against a stable base geometry.
+const SECTION_GEOMETRY_CACHE = new WeakMap<DiffFile, SectionGeometryCacheSlots>();
+
+/** Resolve which bounded per-file cache slot owns one geometry variant. */
+function sectionGeometryCacheSlot(visibleAgentNotes: VisibleAgentNote[]) {
+  return visibleAgentNotes.length > 0 ? "notes" : "base";
+}
+
+/** Read one cached geometry entry when the exact active variant is still retained. */
+function getCachedSectionGeometry(
+  file: DiffFile,
+  slot: keyof SectionGeometryCacheSlots,
+  cacheKey: string,
+) {
+  const cached = SECTION_GEOMETRY_CACHE.get(file)?.[slot];
+  return cached?.key === cacheKey ? cached.geometry : null;
+}
+
+/** Store one geometry entry, replacing stale variants for the same slot. */
+function setCachedSectionGeometry(
+  file: DiffFile,
+  slot: keyof SectionGeometryCacheSlots,
+  cacheKey: string,
+  geometry: DiffSectionGeometry,
+) {
+  const cachedByFile = SECTION_GEOMETRY_CACHE.get(file) ?? {};
+  cachedByFile[slot] = { key: cacheKey, geometry };
+  SECTION_GEOMETRY_CACHE.set(file, cachedByFile);
+}
 
 interface DiffSectionRowHeightOptions {
   layout: Exclude<LayoutMode, "auto">;
@@ -198,8 +237,8 @@ export function measureDiffSectionGeometry(
   // participate in the cache key alongside the structural file/layout inputs. Expansion state
   // changes the row stream, so it has to participate too.
   const cacheKey = `${file.id}:${layout}:${showHunkHeaders ? 1 : 0}:${theme.id}:${width}:${showLineNumbers ? 1 : 0}:${wrapLines ? 1 : 0}:${reserveAddNoteColumn ? 1 : 0}${expansionCacheKey(expandedKeys, sourceStatus)}${notesCacheKey(visibleAgentNotes)}`;
-  const cachedByFile = SECTION_GEOMETRY_CACHE.get(file);
-  const cached = cachedByFile?.get(cacheKey);
+  const cacheSlot = sectionGeometryCacheSlot(visibleAgentNotes);
+  const cached = getCachedSectionGeometry(file, cacheSlot, cacheKey);
   if (cached) {
     return cached;
   }
@@ -289,9 +328,7 @@ export function measureDiffSectionGeometry(
     rowBoundsByStableKey,
   };
 
-  const nextCachedByFile = cachedByFile ?? new Map();
-  nextCachedByFile.set(cacheKey, geometry);
-  SECTION_GEOMETRY_CACHE.set(file, nextCachedByFile);
+  setCachedSectionGeometry(file, cacheSlot, cacheKey, geometry);
 
   return geometry;
 }

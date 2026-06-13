@@ -57,6 +57,41 @@ describe("measureDiffSectionGeometry", () => {
     expect(differentAddNotePolicy).not.toBe(first);
   });
 
+  test("replaces stale width variants while retaining separate base and note slots", () => {
+    const file = createTestDiffFile();
+    const visibleAgentNotes: VisibleAgentNote[] = [
+      {
+        id: "annotation:example:0",
+        annotation: {
+          newRange: [1, 1],
+          rationale: "Keep a note-aware geometry slot.",
+          summary: "Explain",
+        },
+      },
+    ];
+
+    const width100 = measureDiffSectionGeometry(file, "split", true, theme, [], 100, true, false);
+    const noteWidth100 = measureDiffSectionGeometry(
+      file,
+      "split",
+      true,
+      theme,
+      visibleAgentNotes,
+      100,
+      true,
+      false,
+    );
+    const width101 = measureDiffSectionGeometry(file, "split", true, theme, [], 101, true, false);
+
+    expect(width101).not.toBe(width100);
+    expect(measureDiffSectionGeometry(file, "split", true, theme, [], 100, true, false)).not.toBe(
+      width100,
+    );
+    expect(
+      measureDiffSectionGeometry(file, "split", true, theme, visibleAgentNotes, 100, true, false),
+    ).toBe(noteWidth100);
+  });
+
   test("accounts for visible inline notes without moving the hunk anchor", () => {
     const file = createTestDiffFile();
     const visibleAgentNotes: VisibleAgentNote[] = [

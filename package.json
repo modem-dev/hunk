@@ -81,6 +81,7 @@
     "bench:large-stream-profile": "bun run benchmarks/large-stream-profile.ts",
     "bench:memory": "bun run benchmarks/memory.ts",
     "bench:navigation-memory": "bun run benchmarks/navigation-memory.ts",
+    "bench:resize-memory": "bun run benchmarks/resize-memory.ts",
     "bench:daemon-memory": "bun run scripts/daemon-memory-check.ts",
     "bench:competitors": "bun run benchmarks/competitors.ts",
     "nix:update-lock": "nix run .#update-bun-lock"
