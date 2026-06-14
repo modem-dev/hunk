@@ -86,6 +86,7 @@ import {
 } from "./copySelection";
 
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
+const EMPTY_VISIBLE_AGENT_NOTES_BY_FILE = new Map<string, VisibleAgentNote[]>();
 
 /**
  * Clamp one vertical scroll target into the currently reachable review-stream extent.
@@ -696,6 +697,11 @@ export function DiffPane(props: DiffPaneProps) {
   });
 
   const visibleAgentNotesByFile = createMemo(() => {
+    const notesByFile = allAgentNotesByFile();
+    if (notesByFile.size === 0) {
+      return EMPTY_VISIBLE_AGENT_NOTES_BY_FILE;
+    }
+
     const next = new Map<string, VisibleAgentNote[]>();
 
     const fileIdsToMeasure = new Set(visibleViewportFileIds());
@@ -706,7 +712,6 @@ export function DiffPane(props: DiffPaneProps) {
       fileIdsToMeasure.add(currentSelectedFileId);
     }
 
-    const notesByFile = allAgentNotesByFile();
     for (const fileId of fileIdsToMeasure) {
       const visibleNotes = notesByFile.get(fileId);
       if (visibleNotes && visibleNotes.length > 0) {

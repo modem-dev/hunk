@@ -42,3 +42,8 @@ The script runs the default benchmark suite (`bun run bench -- --samples 3`) aga
 
 - Setup captured `origin/main` React baseline into `autoresearch.baseline.react-main.json` and created a comparison harness.
 - Initial hypothesis from migration report: Solid reduces steady-state scroll latency but regresses `interaction-latency/hunk_nav_press_*` and `after_navigation_heap_used_bytes`, likely from reactive graph/update churn around selection/navigation or repeated row tree creation.
+- Kept: split `useReviewController` review-state memos so file lists, sidebar entries, and hunk cursors no longer rebuild on every selected hunk change. This improved `perf_score` ~15% and reduced navigation heap.
+- Kept: use Solid `createSelector` for selected-hunk row styling in `PierreDiffView`. This was the biggest win so far, cutting worst-ratio tail scroll regressions and avoiding every mounted row subscribing directly to hunk-index changes.
+- Kept: trim selected-hunk reveal retries from `[0, 16, 48]` to `[0]`. This reduced timer churn and improved hunk-nav median/p95 plus navigation heap while preserving benchmarked reveal behavior.
+- Discarded: lowering viewport read coalescing to `0` or `8` ms. It improved some large-stream timing but worsened non-ASCII scroll tails and primary score; keep the 16ms coalescing.
+- Discarded: selected-file `createSelector`, explicit `batch()` in `selectHunk`, visible-bounds DOM lookup skipping, note-map pre-scan, smaller highlight halo, smaller row overscan, file-id maps, row-color Map caches, and precomputed hover callbacks. These mostly added reactive dependencies or allocation overhead that outweighed their theoretical wins.
