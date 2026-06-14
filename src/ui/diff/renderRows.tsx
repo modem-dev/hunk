@@ -1736,35 +1736,23 @@ interface DiffRowViewProps {
  * is passed as an accessor so it toggles in place without rebuilding the whole row.
  */
 export function DiffRowView(props: DiffRowViewProps) {
-  // renderRow builds a static row tree from plain values, but a Solid component runs only once —
-  // so without a tracking scope, changes to reactive props (horizontal scroll offset, selection
-  // highlight, copy selection) never re-render the row. Returning a function child makes Solid
-  // re-invoke renderRow whenever the props it reads change. Per-row props like `selected` change
-  // only for the affected rows (stays fine-grained); a shared `codeHorizontalOffset` change
-  // re-renders every visible row, which is exactly what horizontal scrolling needs.
-  return (
-    <>
-      {() =>
-        renderRow(
-          props.row,
-          props.width,
-          props.lineNumberDigits,
-          props.showLineNumbers,
-          props.showHunkHeaders,
-          props.wrapLines,
-          props.codeHorizontalOffset,
-          props.theme,
-          props.selected,
-          props.copySelectedRowRange,
-          props.copySelectedSide,
-          props.anchorId,
-          props.noteGuideSide,
-          () => props.showAddNoteBadge ?? false,
-          props.onHoverRow,
-          props.onStartUserNoteAtHunk,
-          props.onToggleGap,
-        )
-      }
-    </>
+  return renderRow(
+    props.row,
+    props.width,
+    props.lineNumberDigits,
+    props.showLineNumbers,
+    props.showHunkHeaders,
+    props.wrapLines,
+    props.codeHorizontalOffset,
+    props.theme,
+    props.selected,
+    props.copySelectedRowRange,
+    props.copySelectedSide,
+    props.anchorId,
+    props.noteGuideSide,
+    () => props.showAddNoteBadge ?? false,
+    props.onHoverRow,
+    props.onStartUserNoteAtHunk,
+    props.onToggleGap,
   );
 }
