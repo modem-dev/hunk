@@ -1,3 +1,22 @@
+diff --git a/node_modules/@opentui/solid/.bun-tag-e5b06ea2c3c2a841 b/.bun-tag-e5b06ea2c3c2a841
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/index.js b/index.js
+index 998d82d4faa37ffe59b921d71b7c8783f7877c9e..cc072dc2e99308fa326656a7d479b821e9536ee0 100644
+--- a/index.js
++++ b/index.js
+@@ -1144,7 +1144,10 @@ var mountSolidRoot = (renderer, node) => {
+     }), renderer.root);
+   } finally {
+     mounting = false;
+-    renderer.destroy = originalDestroy;
++    renderer.destroy = () => {
++      runDispose();
++      originalDestroy();
++    };
+   }
+   if (disposeRequested) {
+     runDispose();
 diff --git a/src/types/elements.d.ts b/src/types/elements.d.ts
 index 5d228e2356f0106b3d86301636a0dec95add2841..9cc9d4280106fed2e3d8a80c31c176cfa82c75b1 100644
 --- a/src/types/elements.d.ts
