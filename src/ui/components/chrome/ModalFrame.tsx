@@ -1,20 +1,12 @@
 import type { MouseEvent as TuiMouseEvent } from "@opentui/core";
-import type { ReactNode } from "react";
+import type { JSX } from "solid-js";
+import { Show } from "solid-js";
 import { fitText, padText } from "../../lib/text";
 import type { AppTheme } from "../../themes";
 
 /** Render a centered framed modal container that other dialogs can reuse. */
-export function ModalFrame({
-  children,
-  height,
-  onClose,
-  terminalHeight,
-  terminalWidth,
-  theme,
-  title,
-  width,
-}: {
-  children: ReactNode;
+export function ModalFrame(props: {
+  children: JSX.Element;
   height: number;
   onClose?: () => void;
   terminalHeight: number;
@@ -23,11 +15,11 @@ export function ModalFrame({
   title: string;
   width: number;
 }) {
-  const clampedWidth = Math.min(width, Math.max(24, terminalWidth - 2));
-  const clampedHeight = Math.min(height, Math.max(5, terminalHeight - 2));
-  const left = Math.max(1, Math.floor((terminalWidth - clampedWidth) / 2));
-  const top = Math.max(1, Math.floor((terminalHeight - clampedHeight) / 2));
-  const closeText = onClose ? "[Esc]" : "";
+  const clampedWidth = Math.min(props.width, Math.max(24, props.terminalWidth - 2));
+  const clampedHeight = Math.min(props.height, Math.max(5, props.terminalHeight - 2));
+  const left = Math.max(1, Math.floor((props.terminalWidth - clampedWidth) / 2));
+  const top = Math.max(1, Math.floor((props.terminalHeight - clampedHeight) / 2));
+  const closeText = props.onClose ? "[Esc]" : "";
   const titleWidth = Math.max(1, clampedWidth - 2 - (closeText ? closeText.length + 1 : 0));
 
   return (
@@ -37,11 +29,11 @@ export function ModalFrame({
           position: "absolute",
           top: 0,
           left: 0,
-          width: terminalWidth,
-          height: terminalHeight,
+          width: props.terminalWidth,
+          height: props.terminalHeight,
           zIndex: 55,
         }}
-        onMouseUp={onClose}
+        onMouseUp={props.onClose}
       />
       <box
         style={{
@@ -52,8 +44,8 @@ export function ModalFrame({
           height: clampedHeight,
           zIndex: 60,
           border: true,
-          borderColor: theme.accent,
-          backgroundColor: theme.panel,
+          borderColor: props.theme.accent,
+          backgroundColor: props.theme.panel,
           flexDirection: "column",
         }}
         onMouseUp={(event: TuiMouseEvent) => event.stopPropagation()}
@@ -66,17 +58,17 @@ export function ModalFrame({
             flexDirection: "row",
           }}
         >
-          <text fg={theme.text}>{padText(fitText(title, titleWidth), titleWidth)}</text>
-          {closeText ? (
+          <text fg={props.theme.text}>{padText(fitText(props.title, titleWidth), titleWidth)}</text>
+          <Show when={closeText}>
             <box
               onMouseUp={(event: TuiMouseEvent) => {
                 event.stopPropagation();
-                onClose?.();
+                props.onClose?.();
               }}
             >
-              <text fg={theme.badgeNeutral}>{closeText}</text>
+              <text fg={props.theme.badgeNeutral}>{closeText}</text>
             </box>
-          ) : null}
+          </Show>
         </box>
         <box
           style={{
@@ -87,7 +79,7 @@ export function ModalFrame({
             flexGrow: 1,
           }}
         >
-          {children}
+          {props.children}
         </box>
       </box>
     </>

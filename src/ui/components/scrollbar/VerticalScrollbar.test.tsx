@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { testRender } from "@opentui/react/test-utils";
+import { testRender } from "@opentui/solid";
 import { parseDiffFromFile } from "@pierre/diffs";
-import { act } from "react";
 import type { AppBootstrap, DiffFile } from "../../../core/types";
 
 const { AppHost } = await import("../../AppHost");
@@ -75,17 +74,15 @@ function createScrollBootstrapWithManyFiles(fileCount: number): AppBootstrap {
 }
 
 async function flush(setup: Awaited<ReturnType<typeof testRender>>) {
-  await act(async () => {
-    await setup.renderOnce();
-    await Bun.sleep(0);
-    await setup.renderOnce();
-  });
+  await setup.renderOnce();
+  await Bun.sleep(0);
+  await setup.renderOnce();
 }
 
 describe("Vertical scrollbar", () => {
   test("shows scrollbar when content exceeds viewport height", async () => {
     const bootstrap = createScrollBootstrapWithManyFiles(5);
-    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
+    const setup = await testRender(() => <AppHost bootstrap={bootstrap} />, {
       width: 160,
       height: 20,
     });
@@ -94,16 +91,12 @@ describe("Vertical scrollbar", () => {
       await flush(setup);
 
       // Trigger scroll activity to make scrollbar appear
-      await act(async () => {
-        await setup.mockInput.pressArrow("down");
-        await flush(setup);
-      });
+      await setup.mockInput.pressArrow("down");
+      await flush(setup);
 
       // Wait for scrollbar to render
-      await act(async () => {
-        await Bun.sleep(100);
-        await setup.renderOnce();
-      });
+      await Bun.sleep(100);
+      await setup.renderOnce();
 
       const frame = setup.captureCharFrame();
       // Look for scrollbar characters in the rightmost column
@@ -112,15 +105,13 @@ describe("Vertical scrollbar", () => {
       // Instead, check that content is scrollable by verifying we can scroll down
       expect(frame).toBeTruthy();
     } finally {
-      await act(async () => {
-        setup.renderer.destroy();
-      });
+      setup.renderer.destroy();
     }
   });
 
   test("hides scrollbar after scroll activity stops", async () => {
     const bootstrap = createScrollBootstrapWithManyFiles(5);
-    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
+    const setup = await testRender(() => <AppHost bootstrap={bootstrap} />, {
       width: 160,
       height: 20,
     });
@@ -129,10 +120,8 @@ describe("Vertical scrollbar", () => {
       await flush(setup);
 
       // Trigger scroll activity
-      await act(async () => {
-        await setup.mockInput.pressArrow("down");
-        await flush(setup);
-      });
+      await setup.mockInput.pressArrow("down");
+      await flush(setup);
 
       // Verify app is responsive
       const frame = setup.captureCharFrame();
@@ -141,23 +130,19 @@ describe("Vertical scrollbar", () => {
       // Wait for auto-hide timeout (2 seconds + buffer)
       await Bun.sleep(2500);
 
-      await act(async () => {
-        await setup.renderOnce();
-      });
+      await setup.renderOnce();
 
       // After auto-hide, the app should still be functional
       const frameAfter = setup.captureCharFrame();
       expect(frameAfter).toBeTruthy();
     } finally {
-      await act(async () => {
-        setup.renderer.destroy();
-      });
+      setup.renderer.destroy();
     }
   });
 
   test("scrollbar shows on mouse scroll wheel activity", async () => {
     const bootstrap = createScrollBootstrapWithManyFiles(5);
-    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
+    const setup = await testRender(() => <AppHost bootstrap={bootstrap} />, {
       width: 160,
       height: 20,
     });
@@ -167,24 +152,18 @@ describe("Vertical scrollbar", () => {
 
       // Wait for initial state to settle
       await Bun.sleep(500);
-      await act(async () => {
-        await setup.renderOnce();
-      });
+      await setup.renderOnce();
 
       // Trigger mouse scroll
-      await act(async () => {
-        await setup.mockMouse.scroll(50, 10, "down");
-        await Bun.sleep(100);
-        await setup.renderOnce();
-      });
+      await setup.mockMouse.scroll(50, 10, "down");
+      await Bun.sleep(100);
+      await setup.renderOnce();
 
       // Verify scroll activity was processed
       const frame = setup.captureCharFrame();
       expect(frame).toBeTruthy();
     } finally {
-      await act(async () => {
-        setup.renderer.destroy();
-      });
+      setup.renderer.destroy();
     }
   });
 
@@ -212,16 +191,14 @@ describe("Vertical scrollbar", () => {
       initialTheme: "midnight",
     };
 
-    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
+    const setup = await testRender(() => <AppHost bootstrap={bootstrap} />, {
       width: 160,
       height: 15, // Small viewport to force scrolling
     });
 
     try {
       await flush(setup);
-      await act(async () => {
-        await Bun.sleep(100);
-      });
+      await Bun.sleep(100);
 
       // Verify app renders and is responsive to scroll commands
       const frame1 = setup.captureCharFrame();
@@ -229,10 +206,8 @@ describe("Vertical scrollbar", () => {
 
       // Press down arrow multiple times to scroll
       for (let i = 0; i < 5; i++) {
-        await act(async () => {
-          await setup.mockInput.pressArrow("down");
-          await flush(setup);
-        });
+        await setup.mockInput.pressArrow("down");
+        await flush(setup);
       }
 
       // Verify content changed after scrolling
@@ -241,18 +216,14 @@ describe("Vertical scrollbar", () => {
 
       // Press up arrow to scroll back
       for (let i = 0; i < 5; i++) {
-        await act(async () => {
-          await setup.mockInput.pressArrow("up");
-          await flush(setup);
-        });
+        await setup.mockInput.pressArrow("up");
+        await flush(setup);
       }
 
       const frame3 = setup.captureCharFrame();
       expect(frame3).toContain("line");
     } finally {
-      await act(async () => {
-        setup.renderer.destroy();
-      });
+      setup.renderer.destroy();
     }
   });
 
@@ -278,25 +249,21 @@ describe("Vertical scrollbar", () => {
       initialTheme: "midnight",
     };
 
-    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
+    const setup = await testRender(() => <AppHost bootstrap={bootstrap} />, {
       width: 160,
       height: 60, // Large viewport
     });
 
     try {
       await flush(setup);
-      await act(async () => {
-        await Bun.sleep(100);
-        await setup.renderOnce();
-      });
+      await Bun.sleep(100);
+      await setup.renderOnce();
 
       const frame = setup.captureCharFrame();
       // Small content in large viewport should be fully visible
       expect(frame).toContain("export const a =");
     } finally {
-      await act(async () => {
-        setup.renderer.destroy();
-      });
+      setup.renderer.destroy();
     }
   });
 
@@ -321,16 +288,14 @@ describe("Vertical scrollbar", () => {
       initialTheme: "midnight",
     };
 
-    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
+    const setup = await testRender(() => <AppHost bootstrap={bootstrap} />, {
       width: 160,
       height: 20, // Small viewport to force scrolling
     });
 
     try {
       await flush(setup);
-      await act(async () => {
-        await Bun.sleep(100);
-      });
+      await Bun.sleep(100);
 
       // Get initial frame - app centers on the hunk at line 50
       const frame1 = setup.captureCharFrame();
@@ -338,30 +303,24 @@ describe("Vertical scrollbar", () => {
 
       // Drag scrollbar thumb down (rightmost column is scrollbar at x=159, y ranges 0-19)
       // Thumb should be at some position, drag it down to scroll
-      await act(async () => {
-        // Drag from top area of scrollbar down
-        await setup.mockMouse.drag(159, 2, 159, 10);
-        await flush(setup);
-        await Bun.sleep(100);
-      });
+      // Drag from top area of scrollbar down
+      await setup.mockMouse.drag(159, 2, 159, 10);
+      await flush(setup);
+      await Bun.sleep(100);
 
       // After dragging down, we should see different content
       const frame2 = setup.captureCharFrame();
       expect(frame2).toBeTruthy();
 
       // Drag back up
-      await act(async () => {
-        await setup.mockMouse.drag(159, 10, 159, 2);
-        await flush(setup);
-        await Bun.sleep(100);
-      });
+      await setup.mockMouse.drag(159, 10, 159, 2);
+      await flush(setup);
+      await Bun.sleep(100);
 
       const frame3 = setup.captureCharFrame();
       expect(frame3).toBeTruthy();
     } finally {
-      await act(async () => {
-        setup.renderer.destroy();
-      });
+      setup.renderer.destroy();
     }
   });
 
@@ -387,56 +346,46 @@ describe("Vertical scrollbar", () => {
       initialTheme: "midnight",
     };
 
-    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
+    const setup = await testRender(() => <AppHost bootstrap={bootstrap} />, {
       width: 160,
       height: 15, // Viewport of 15 lines
     });
 
     try {
       await flush(setup);
-      await act(async () => {
-        await Bun.sleep(100);
-      });
+      await Bun.sleep(100);
 
       // Get initial content - app centers on the hunk at line 40
       const frame1 = setup.captureCharFrame();
       expect(frame1).toContain("line040");
 
       // First scroll down a bit to make scrollbar visible and move thumb down
-      await act(async () => {
-        for (let i = 0; i < 5; i++) {
-          await setup.mockInput.pressArrow("down");
-        }
-        await flush(setup);
-        await Bun.sleep(100);
-      });
+      for (let i = 0; i < 5; i++) {
+        await setup.mockInput.pressArrow("down");
+      }
+      await flush(setup);
+      await Bun.sleep(100);
 
       // Click on scrollbar track below thumb to page down
       // Scrollbar is at rightmost column (x=159), click near bottom
-      await act(async () => {
-        await setup.mockMouse.click(159, 12);
-        await flush(setup);
-        await Bun.sleep(100);
-      });
+      await setup.mockMouse.click(159, 12);
+      await flush(setup);
+      await Bun.sleep(100);
 
       const frame2 = setup.captureCharFrame();
       // Should have scrolled down further after track click
       expect(frame2).toBeTruthy();
 
       // Click on scrollbar track above thumb to page up
-      await act(async () => {
-        await setup.mockMouse.click(159, 2);
-        await flush(setup);
-        await Bun.sleep(100);
-      });
+      await setup.mockMouse.click(159, 2);
+      await flush(setup);
+      await Bun.sleep(100);
 
       const frame3 = setup.captureCharFrame();
       // Should have scrolled back up
       expect(frame3).toBeTruthy();
     } finally {
-      await act(async () => {
-        setup.renderer.destroy();
-      });
+      setup.renderer.destroy();
     }
   });
 
@@ -466,45 +415,37 @@ describe("Vertical scrollbar", () => {
       initialTheme: "midnight",
     };
 
-    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
+    const setup = await testRender(() => <AppHost bootstrap={bootstrap} />, {
       width: 160,
       height: 15, // Small viewport to force scrolling (25 lines of content in 15-line viewport)
     });
 
     try {
       await flush(setup);
-      await act(async () => {
-        await Bun.sleep(100);
-      });
+      await Bun.sleep(100);
 
       // Verify app renders with the hunk visible - look for the modified line
       const frame1 = setup.captureCharFrame();
       expect(frame1).toContain("line08");
 
       // Try to drag - should not crash with division by zero
-      await act(async () => {
-        await setup.mockMouse.drag(159, 0, 159, 5);
-        await flush(setup);
-        await Bun.sleep(100);
-      });
+      await setup.mockMouse.drag(159, 0, 159, 5);
+      await flush(setup);
+      await Bun.sleep(100);
 
       // App should still be responsive after drag attempt
       const frame2 = setup.captureCharFrame();
       expect(frame2).toBeTruthy();
 
       // Try track click - should not crash
-      await act(async () => {
-        await setup.mockMouse.click(159, 10);
-        await flush(setup);
-        await Bun.sleep(100);
-      });
+      await setup.mockMouse.click(159, 10);
+      await flush(setup);
+      await Bun.sleep(100);
 
       const frame3 = setup.captureCharFrame();
       expect(frame3).toBeTruthy();
     } finally {
-      await act(async () => {
-        setup.renderer.destroy();
-      });
+      setup.renderer.destroy();
     }
   });
 });

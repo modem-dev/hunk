@@ -1,6 +1,6 @@
-import { useEffect, useMemo } from "react";
-import type { CliInput, DiffFile } from "../../core/types";
+import { type Accessor, createEffect, onCleanup, onMount } from "solid-js";
 import { hunkLineRange } from "../../core/liveComments";
+import type { CliInput, DiffFile } from "../../core/types";
 import { createHunkSessionBridge } from "../../hunk-session/bridge";
 import type {
   HunkSessionBrokerClient,
@@ -10,31 +10,19 @@ import type {
 } from "../../hunk-session/types";
 import type { ReviewController } from "./useReviewController";
 
-/** Bridge one live Hunk review session to the local session daemon. */
-export function useHunkSessionBridge({
-  addLiveComment,
-  addLiveCommentBatch,
-  clearLiveComments,
-  hostClient,
-  liveCommentCount,
-  liveCommentSummaries,
-  navigateToLocation,
-  openAgentNotes,
-  reloadSession,
-  removeLiveComment,
-  reviewNoteCount,
-  reviewNoteSummaries,
-  selectedFile,
-  selectedHunk,
-  selectedHunkIndex,
-  showAgentNotes,
-}: {
+/**
+ * Bridge one live Hunk review session to the local session daemon.
+ *
+ * Action callbacks and `hostClient` are stable references captured once; the selection/comment
+ * fields are accessors so the snapshot push re-runs whenever the reviewed location changes.
+ */
+export function useHunkSessionBridge(params: {
   addLiveComment: ReviewController["addLiveComment"];
   addLiveCommentBatch: ReviewController["addLiveCommentBatch"];
   clearLiveComments: ReviewController["clearLiveComments"];
   hostClient?: HunkSessionBrokerClient;
-  liveCommentCount: number;
-  liveCommentSummaries: SessionLiveCommentSummary[];
+  liveCommentCount: Accessor<number>;
+  liveCommentSummaries: Accessor<SessionLiveCommentSummary[]>;
   navigateToLocation: ReviewController["navigateToLocation"];
   openAgentNotes: () => void;
   reloadSession: (
@@ -42,48 +30,41 @@ export function useHunkSessionBridge({
     options?: { resetApp?: boolean; sourcePath?: string },
   ) => Promise<ReloadedSessionResult>;
   removeLiveComment: ReviewController["removeLiveComment"];
-  reviewNoteCount: number;
-  reviewNoteSummaries: SessionReviewNoteSummary[];
-  selectedFile: DiffFile | undefined;
-  selectedHunk: DiffFile["metadata"]["hunks"][number] | undefined;
-  selectedHunkIndex: number;
-  showAgentNotes: boolean;
+  reviewNoteCount: Accessor<number>;
+  reviewNoteSummaries: Accessor<SessionReviewNoteSummary[]>;
+  selectedFile: Accessor<DiffFile | undefined>;
+  selectedHunk: Accessor<DiffFile["metadata"]["hunks"][number] | undefined>;
+  selectedHunkIndex: Accessor<number>;
+  showAgentNotes: Accessor<boolean>;
 }) {
-  const bridge = useMemo(
-    () =>
-      createHunkSessionBridge({
-        addLiveComment,
-        addLiveCommentBatch,
-        clearLiveComments,
-        navigateToLocation,
-        openAgentNotes,
-        reloadSession: (nextInput, options) => reloadSession(nextInput, { ...options }),
-        removeLiveComment,
-      }),
-    [
-      addLiveComment,
-      addLiveCommentBatch,
-      clearLiveComments,
-      navigateToLocation,
-      openAgentNotes,
-      reloadSession,
-      removeLiveComment,
-    ],
-  );
+  const { hostClient } = params;
 
-  useEffect(() => {
+  // Action callbacks are stable for the controller's lifetime, so the bridge is built once.
+  const bridge = createHunkSessionBridge({
+    addLiveComment: params.addLiveComment,
+    addLiveCommentBatch: params.addLiveCommentBatch,
+    clearLiveComments: params.clearLiveComments,
+    navigateToLocation: params.navigateToLocation,
+    openAgentNotes: params.openAgentNotes,
+    reloadSession: (nextInput, options) => params.reloadSession(nextInput, { ...options }),
+    removeLiveComment: params.removeLiveComment,
+  });
+
+  onMount(() => {
     if (!hostClient) {
       return;
     }
 
     hostClient.setBridge(bridge);
-
-    return () => {
+    onCleanup(() => {
       hostClient.setBridge(null);
-    };
-  }, [bridge, hostClient]);
+    });
+  });
 
-  useEffect(() => {
+  // Push a fresh snapshot whenever the selected location or comment/note state changes.
+  createEffect(() => {
+    const selectedHunk = params.selectedHunk();
+    const selectedFile = params.selectedFile();
     const selectedRange = selectedHunk ? hunkLineRange(selectedHunk) : undefined;
 
     hostClient?.updateSnapshot({
@@ -91,26 +72,15 @@ export function useHunkSessionBridge({
       state: {
         selectedFileId: selectedFile?.id,
         selectedFilePath: selectedFile?.path,
-        selectedHunkIndex,
+        selectedHunkIndex: params.selectedHunkIndex(),
         selectedHunkOldRange: selectedRange?.oldRange,
         selectedHunkNewRange: selectedRange?.newRange,
-        showAgentNotes,
-        liveCommentCount,
-        liveComments: liveCommentSummaries,
-        reviewNoteCount,
-        reviewNotes: reviewNoteSummaries,
+        showAgentNotes: params.showAgentNotes(),
+        liveCommentCount: params.liveCommentCount(),
+        liveComments: params.liveCommentSummaries(),
+        reviewNoteCount: params.reviewNoteCount(),
+        reviewNotes: params.reviewNoteSummaries(),
       },
     });
-  }, [
-    hostClient,
-    liveCommentCount,
-    liveCommentSummaries,
-    reviewNoteCount,
-    reviewNoteSummaries,
-    selectedFile?.id,
-    selectedFile?.path,
-    selectedHunk,
-    selectedHunkIndex,
-    showAgentNotes,
-  ]);
+  });
 }

@@ -1,7 +1,6 @@
 // Shared helpers for interaction-latency benchmarks driven by the OpenTUI test renderer.
 import { performance } from "node:perf_hooks";
-import type { testRender } from "@opentui/react/test-utils";
-import { act } from "react";
+import type { testRender } from "@opentui/solid";
 import { percentile } from "./benchmark-result";
 
 export type TestRendererSetup = Awaited<ReturnType<typeof testRender>>;
@@ -15,18 +14,14 @@ export const SCROLL_TARGET = { x: 170, y: 12 } as const;
 /** Drive one or more full render passes through the test renderer. */
 export async function renderPass(setup: TestRendererSetup, passes = 1) {
   for (let index = 0; index < passes; index += 1) {
-    await act(async () => {
-      await setup.renderOnce();
-      await Bun.sleep(0);
-    });
+    await setup.renderOnce();
+    await Bun.sleep(0);
   }
 }
 
-/** Destroy the test renderer inside act so pending React work settles. */
+/** Destroy the test renderer. */
 export async function destroyRenderer(setup: TestRendererSetup) {
-  await act(async () => {
-    setup.renderer.destroy();
-  });
+  setup.renderer.destroy();
 }
 
 /** Measure per-press latency (key dispatch + render + flush) for a navigation key. */
@@ -39,11 +34,9 @@ export async function measureKeyPressLatencies(
 
   for (let index = 0; index < presses; index += 1) {
     const start = performance.now();
-    await act(async () => {
-      await setup.mockInput.typeText(key);
-      await setup.renderOnce();
-      await Bun.sleep(0);
-    });
+    await setup.mockInput.typeText(key);
+    await setup.renderOnce();
+    await Bun.sleep(0);
     latencies.push(performance.now() - start);
   }
 
@@ -60,11 +53,9 @@ export async function measureScrollTickLatencies(
 
   for (let index = 0; index < ticks; index += 1) {
     const start = performance.now();
-    await act(async () => {
-      await setup.mockMouse.scroll(target.x, target.y, "down");
-      await setup.renderOnce();
-      await Bun.sleep(0);
-    });
+    await setup.mockMouse.scroll(target.x, target.y, "down");
+    await setup.renderOnce();
+    await Bun.sleep(0);
     latencies.push(performance.now() - start);
   }
 

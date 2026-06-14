@@ -1,10 +1,9 @@
 // Measure both first selected-file highlighting and how ready the next file is
 // once low-priority adjacent prefetch has had a chance to start.
 import { performance } from "perf_hooks";
-import React from "react";
-import { testRender } from "@opentui/react/test-utils";
+import { testRender } from "@opentui/solid";
 import { parseDiffFromFile } from "@pierre/diffs";
-import { act } from "react";
+import { createComponent } from "solid-js";
 import { AppHost } from "../src/ui/AppHost";
 import type { AppBootstrap, DiffFile } from "../src/core/types";
 
@@ -94,7 +93,7 @@ function frameHasHighlightedMarker(
   });
 }
 
-const setup = await testRender(React.createElement(AppHost, { bootstrap: createBootstrap() }), {
+const setup = await testRender(() => createComponent(AppHost, { bootstrap: createBootstrap() }), {
   width: 240,
   height: 24,
 });
@@ -106,10 +105,8 @@ let adjacentReadyBeforeMove = false;
 try {
   while (iterations < 400) {
     iterations += 1;
-    await act(async () => {
-      await setup.renderOnce();
-      await Bun.sleep(0);
-    });
+    await setup.renderOnce();
+    await Bun.sleep(0);
 
     const frame = setup.captureSpans();
     if (frameHasHighlightedMarker(frame, "alphaMarker")) {
@@ -119,28 +116,22 @@ try {
     }
   }
 
-  await act(async () => {
-    await setup.renderOnce();
-    await Bun.sleep(0);
-    await setup.renderOnce();
-    await Bun.sleep(0);
-  });
+  await setup.renderOnce();
+  await Bun.sleep(0);
+  await setup.renderOnce();
+  await Bun.sleep(0);
 
   const moveStart = performance.now();
 
-  await act(async () => {
-    setup.mockInput.pressArrow("down");
-    await setup.renderOnce();
-    await Bun.sleep(0);
-  });
+  setup.mockInput.pressArrow("down");
+  await setup.renderOnce();
+  await Bun.sleep(0);
 
   let nextFileReadyMs = 0;
   while (iterations < 800) {
     iterations += 1;
-    await act(async () => {
-      await setup.renderOnce();
-      await Bun.sleep(0);
-    });
+    await setup.renderOnce();
+    await Bun.sleep(0);
 
     const frame = setup.captureSpans();
     if (frameHasHighlightedMarker(frame, "betaMarker")) {
@@ -155,7 +146,5 @@ try {
   console.log(`METRIC files=4`);
   console.log(`METRIC iterations=${iterations}`);
 } finally {
-  await act(async () => {
-    setup.renderer.destroy();
-  });
+  setup.renderer.destroy();
 }

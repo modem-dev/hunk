@@ -1,4 +1,4 @@
-import { memo, type ReactNode } from "react";
+import { For, Show, type JSX } from "solid-js";
 import type { DiffFile, UserNoteLineTarget } from "../../core/types";
 import type { AppTheme } from "../themes";
 import {
@@ -138,9 +138,8 @@ function renderInlineSpans(
 
   // Build the final element list by splitting spans at selection boundaries so the highlight
   // applies at character-level precision rather than whole-token granularity.
-  const elements: ReactNode[] = [];
+  const elements: JSX.Element[] = [];
   let colPos = 0;
-  let elementIndex = 0;
 
   for (const span of trimmed) {
     const spanWidth = measureTextWidth(span.text);
@@ -155,11 +154,7 @@ function renderInlineSpans(
     ) {
       // Span is entirely outside the selection — render with original styling.
       elements.push(
-        <span
-          key={`${keyPrefix}:${elementIndex++}`}
-          fg={span.fg ?? fallbackColor}
-          bg={span.bg ?? fallbackBg}
-        >
+        <span fg={span.fg ?? fallbackColor} bg={span.bg ?? fallbackBg}>
           {span.text}
         </span>,
       );
@@ -173,11 +168,7 @@ function renderInlineSpans(
     if (localSelStart >= localSelEnd) {
       // No overlap after clamping — render original.
       elements.push(
-        <span
-          key={`${keyPrefix}:${elementIndex++}`}
-          fg={span.fg ?? fallbackColor}
-          bg={span.bg ?? fallbackBg}
-        >
+        <span fg={span.fg ?? fallbackColor} bg={span.bg ?? fallbackBg}>
           {span.text}
         </span>,
       );
@@ -191,11 +182,7 @@ function renderInlineSpans(
 
     if (prefix) {
       elements.push(
-        <span
-          key={`${keyPrefix}:${elementIndex++}`}
-          fg={span.fg ?? fallbackColor}
-          bg={span.bg ?? fallbackBg}
-        >
+        <span fg={span.fg ?? fallbackColor} bg={span.bg ?? fallbackBg}>
           {prefix}
         </span>,
       );
@@ -203,7 +190,6 @@ function renderInlineSpans(
     if (selected) {
       elements.push(
         <span
-          key={`${keyPrefix}:${elementIndex++}`}
           fg={span.fg ?? fallbackColor}
           bg={selectionHighlightBg(span.bg ?? fallbackBg, selectionTheme)}
         >
@@ -213,11 +199,7 @@ function renderInlineSpans(
     }
     if (suffix) {
       elements.push(
-        <span
-          key={`${keyPrefix}:${elementIndex++}`}
-          fg={span.fg ?? fallbackColor}
-          bg={span.bg ?? fallbackBg}
-        >
+        <span fg={span.fg ?? fallbackColor} bg={span.bg ?? fallbackBg}>
           {suffix}
         </span>,
       );
@@ -243,32 +225,28 @@ function renderInlineSpans(
 
         if (beforeSel > 0) {
           elements.push(
-            <span key={`${keyPrefix}:pad-before`} fg={fallbackColor} bg={fallbackBg}>
+            <span fg={fallbackColor} bg={fallbackBg}>
               {" ".repeat(beforeSel)}
             </span>,
           );
         }
         if (inSel > 0) {
           elements.push(
-            <span
-              key={`${keyPrefix}:pad-sel`}
-              fg={fallbackColor}
-              bg={selectionHighlightBg(fallbackBg, selectionTheme)}
-            >
+            <span fg={fallbackColor} bg={selectionHighlightBg(fallbackBg, selectionTheme)}>
               {" ".repeat(inSel)}
             </span>,
           );
         }
         if (afterSel > 0) {
           elements.push(
-            <span key={`${keyPrefix}:pad-after`} fg={fallbackColor} bg={fallbackBg}>
+            <span fg={fallbackColor} bg={fallbackBg}>
               {" ".repeat(afterSel)}
             </span>,
           );
         }
       } else {
         elements.push(
-          <span key={`${keyPrefix}:pad`} fg={fallbackColor} bg={fallbackBg}>
+          <span fg={fallbackColor} bg={fallbackBg}>
             {" ".repeat(paddingAmount)}
           </span>,
         );
@@ -277,7 +255,7 @@ function renderInlineSpans(
   } else if (width - usedWidth > 0) {
     // No blending — always render a separate padding span.
     elements.push(
-      <span key={`${keyPrefix}:pad`} fg={fallbackColor} bg={fallbackBg}>
+      <span fg={fallbackColor} bg={fallbackBg}>
         {" ".repeat(width - usedWidth)}
       </span>,
     );
@@ -894,12 +872,14 @@ function renderSplitCell(
 
   return (
     <>
-      {resolvedPrefix ? (
-        <span key={`${keyPrefix}:prefix`} fg={resolvedPrefix.fg} bg={resolvedPrefix.bg}>
-          {resolvedPrefix.text}
-        </span>
-      ) : null}
-      <span key={`${keyPrefix}:gutter`} fg={palette.numberColor} bg={palette.gutterBg}>
+      <Show when={resolvedPrefix}>
+        {(activePrefix) => (
+          <span fg={activePrefix().fg} bg={activePrefix().bg}>
+            {activePrefix().text}
+          </span>
+        )}
+      </Show>
+      <span fg={palette.numberColor} bg={palette.gutterBg}>
         {gutterText}
       </span>
       {renderInlineSpans(
@@ -959,12 +939,14 @@ function renderStackCell(
 
   return (
     <>
-      {resolvedPrefix ? (
-        <span key={`${keyPrefix}:prefix`} fg={resolvedPrefix.fg} bg={resolvedPrefix.bg}>
-          {resolvedPrefix.text}
-        </span>
-      ) : null}
-      <span key={`${keyPrefix}:gutter`} fg={palette.numberColor} bg={palette.gutterBg}>
+      <Show when={resolvedPrefix}>
+        {(activePrefix) => (
+          <span fg={activePrefix().fg} bg={activePrefix().bg}>
+            {activePrefix().text}
+          </span>
+        )}
+      </Show>
+      <span fg={palette.numberColor} bg={palette.gutterBg}>
         {stackGutterText(cell, lineNumberDigits, showLineNumbers).padEnd(gutterWidth)}
       </span>
       {renderInlineSpans(
@@ -1016,14 +998,10 @@ function renderWrappedSplitCellLine(
 
   return (
     <>
-      <span key={`${keyPrefix}:prefix`} fg={resolvedPrefix.fg} bg={resolvedPrefix.bg}>
+      <span fg={resolvedPrefix.fg} bg={resolvedPrefix.bg}>
         {resolvedPrefix.text}
       </span>
-      <span
-        key={`${keyPrefix}:gutter`}
-        fg={resolvedPalette.numberColor}
-        bg={resolvedPalette.gutterBg}
-      >
+      <span fg={resolvedPalette.numberColor} bg={resolvedPalette.gutterBg}>
         {line.gutterText}
       </span>
       {renderInlineSpans(
@@ -1074,14 +1052,10 @@ function renderWrappedStackCellLine(
 
   return (
     <>
-      <span key={`${keyPrefix}:prefix`} fg={resolvedPrefix.fg} bg={resolvedPrefix.bg}>
+      <span fg={resolvedPrefix.fg} bg={resolvedPrefix.bg}>
         {resolvedPrefix.text}
       </span>
-      <span
-        key={`${keyPrefix}:gutter`}
-        fg={resolvedPalette.numberColor}
-        bg={resolvedPalette.gutterBg}
-      >
+      <span fg={resolvedPalette.numberColor} bg={resolvedPalette.gutterBg}>
         {line.gutterText}
       </span>
       {renderInlineSpans(
@@ -1168,7 +1142,6 @@ function renderHeaderRow(
   if (badges.length === 0) {
     return (
       <box
-        key={row.key}
         id={anchorId}
         style={{
           width,
@@ -1199,7 +1172,6 @@ function renderHeaderRow(
 
   return (
     <box
-      key={row.key}
       id={anchorId}
       style={{
         width,
@@ -1229,15 +1201,13 @@ function renderHeaderRow(
           </span>
         </text>
       </box>
-      {badges.map((badge) => (
-        <box
-          key={badge.key}
-          style={{ width: badge.text.length + 1, height: 1 }}
-          onMouseUp={badge.onClick}
-        >
-          <text fg={theme.noteTitleText} bg={theme.noteTitleBackground}>{` ${badge.text}`}</text>
-        </box>
-      ))}
+      <For each={badges}>
+        {(badge) => (
+          <box style={{ width: badge.text.length + 1, height: 1 }} onMouseUp={badge.onClick}>
+            <text fg={theme.noteTitleText} bg={theme.noteTitleBackground}>{` ${badge.text}`}</text>
+          </box>
+        )}
+      </For>
     </box>
   );
 }
@@ -1252,7 +1222,6 @@ function renderAddNoteButton(
 ) {
   return (
     <box
-      key={key}
       style={{ width: addNoteBadgeText.length, height: 1 }}
       onMouseUp={() => onStartUserNoteAtHunk?.(hunkIndex, target)}
     >
@@ -1270,7 +1239,7 @@ function renderAddNoteSpacer(key: string, width: number, bg: string) {
   }
 
   return (
-    <box key={key} style={{ width, height: 1 }}>
+    <box style={{ width, height: 1 }}>
       <text>
         <span bg={bg}>{" ".repeat(width)}</span>
       </text>
@@ -1372,7 +1341,7 @@ function renderRow(
   // selection represents.
   const hasLeftSelection = hasCopySelection && copySelectedSide !== "right";
   const hasRightSelection = hasCopySelection && copySelectedSide !== "left";
-  let baseRow: ReactNode;
+  let baseRow: JSX.Element;
 
   if (row.type === "collapsed") {
     baseRow = renderHeaderRow(
@@ -1467,22 +1436,20 @@ function renderRow(
                 hasRightSelection ? copySelectedRowRange : undefined,
                 leftWidth,
               )}
-              {guideOnNewSide ? (
-                <span key={`${row.key}:note-guide`} fg={theme.noteBorder}>
-                  │
-                </span>
-              ) : null}
+              <Show when={guideOnNewSide}>
+                <span fg={theme.noteBorder}>│</span>
+              </Show>
             </text>
           </box>
-          {showAddNoteBadge
-            ? renderAddNoteButton(
-                `${row.key}:add-note`,
-                theme,
-                row.hunkIndex,
-                addNoteTarget,
-                onStartUserNoteAtHunk,
-              )
-            : null}
+          <Show when={showAddNoteBadge}>
+            {renderAddNoteButton(
+              `${row.key}:add-note`,
+              theme,
+              row.hunkIndex,
+              addNoteTarget,
+              onStartUserNoteAtHunk,
+            )}
+          </Show>
         </box>
       );
     } else {
@@ -1514,76 +1481,78 @@ function renderRow(
 
       baseRow = (
         <box id={anchorId} style={{ width: "100%", flexDirection: "column" }}>
-          {Array.from({ length: visualLineCount }, (_, index) => {
-            const leftLine = leftLayout.lines[index] ?? {
-              gutterText: " ".repeat(leftLayout.gutterWidth),
-              spans: [],
-            };
-            const rightLine = rightLayout.lines[index] ?? {
-              gutterText: " ".repeat(rightLayout.gutterWidth),
-              spans: [],
-            };
+          <For each={Array.from({ length: visualLineCount }, (_, i) => i)}>
+            {(index) => {
+              const leftLine = leftLayout.lines[index] ?? {
+                gutterText: " ".repeat(leftLayout.gutterWidth),
+                spans: [],
+              };
+              const rightLine = rightLayout.lines[index] ?? {
+                gutterText: " ".repeat(rightLayout.gutterWidth),
+                spans: [],
+              };
 
-            const showBadgeOnLine = showAddNoteBadge && index === 0;
+              const showBadgeOnLine = showAddNoteBadge && index === 0;
 
-            return (
-              <box
-                key={`${row.key}:wrap:${index}`}
-                style={{ width: "100%", height: 1, flexDirection: "row" }}
-                onMouseMove={() => onHoverRow?.(row.key)}
-              >
+              return (
                 <box
-                  style={{
-                    width: addBadgeWidth > 0 ? Math.max(0, width - addBadgeWidth) : "100%",
-                    height: 1,
-                  }}
+                  style={{ width: "100%", height: 1, flexDirection: "row" }}
+                  onMouseMove={() => onHoverRow?.(row.key)}
                 >
-                  <text>
-                    {renderWrappedSplitCellLine(
-                      leftLine,
-                      leftLayout.palette,
-                      leftContentWidth,
-                      theme,
-                      `${row.key}:left:${index}`,
-                      leftPrefix,
-                      hasLeftSelection,
-                      hasLeftSelection ? copySelectedRowRange : undefined,
-                      0,
+                  <box
+                    style={{
+                      width: addBadgeWidth > 0 ? Math.max(0, width - addBadgeWidth) : "100%",
+                      height: 1,
+                    }}
+                  >
+                    <text>
+                      {renderWrappedSplitCellLine(
+                        leftLine,
+                        leftLayout.palette,
+                        leftContentWidth,
+                        theme,
+                        `${row.key}:left:${index}`,
+                        leftPrefix,
+                        hasLeftSelection,
+                        hasLeftSelection ? copySelectedRowRange : undefined,
+                        0,
+                      )}
+                      {renderWrappedSplitCellLine(
+                        rightLine,
+                        rightLayout.palette,
+                        rightContentWidth,
+                        theme,
+                        `${row.key}:right:${index}`,
+                        rightPrefix,
+                        hasRightSelection,
+                        hasRightSelection ? copySelectedRowRange : undefined,
+                        leftWidth,
+                      )}
+                      <Show when={guideOnNewSide}>
+                        <span fg={theme.noteBorder}>│</span>
+                      </Show>
+                    </text>
+                  </box>
+                  <Show
+                    when={showBadgeOnLine}
+                    fallback={renderAddNoteSpacer(
+                      `${row.key}:add-note-spacer:${index}`,
+                      addBadgeWidth,
+                      rightLayout.palette.contentBg,
                     )}
-                    {renderWrappedSplitCellLine(
-                      rightLine,
-                      rightLayout.palette,
-                      rightContentWidth,
-                      theme,
-                      `${row.key}:right:${index}`,
-                      rightPrefix,
-                      hasRightSelection,
-                      hasRightSelection ? copySelectedRowRange : undefined,
-                      leftWidth,
-                    )}
-                    {guideOnNewSide ? (
-                      <span key={`${row.key}:note-guide:${index}`} fg={theme.noteBorder}>
-                        │
-                      </span>
-                    ) : null}
-                  </text>
-                </box>
-                {showBadgeOnLine
-                  ? renderAddNoteButton(
+                  >
+                    {renderAddNoteButton(
                       `${row.key}:add-note:${index}`,
                       theme,
                       row.hunkIndex,
                       addNoteTarget,
                       onStartUserNoteAtHunk,
-                    )
-                  : renderAddNoteSpacer(
-                      `${row.key}:add-note-spacer:${index}`,
-                      addBadgeWidth,
-                      rightLayout.palette.contentBg,
                     )}
-              </box>
-            );
-          })}
+                  </Show>
+                </box>
+              );
+            }}
+          </For>
         </box>
       );
     }
@@ -1633,22 +1602,20 @@ function renderRow(
                 hasCopySelection,
                 hasCopySelection ? copySelectedRowRange : undefined,
               )}
-              {guideOnNewSide ? (
-                <span key={`${row.key}:note-guide`} fg={theme.noteBorder}>
-                  │
-                </span>
-              ) : null}
+              <Show when={guideOnNewSide}>
+                <span fg={theme.noteBorder}>│</span>
+              </Show>
             </text>
           </box>
-          {showAddNoteBadge
-            ? renderAddNoteButton(
-                `${row.key}:add-note`,
-                theme,
-                row.hunkIndex,
-                addNoteTarget,
-                onStartUserNoteAtHunk,
-              )
-            : null}
+          <Show when={showAddNoteBadge}>
+            {renderAddNoteButton(
+              `${row.key}:add-note`,
+              theme,
+              row.hunkIndex,
+              addNoteTarget,
+              onStartUserNoteAtHunk,
+            )}
+          </Show>
         </box>
       );
     } else {
@@ -1667,55 +1634,57 @@ function renderRow(
 
       baseRow = (
         <box id={anchorId} style={{ width: "100%", flexDirection: "column" }}>
-          {layout.lines.map((line, index) => {
-            const showBadgeOnLine = showAddNoteBadge && index === 0;
+          <For each={layout.lines}>
+            {(line, index) => {
+              const showBadgeOnLine = showAddNoteBadge && index() === 0;
 
-            return (
-              <box
-                key={`${row.key}:wrap:${index}`}
-                style={{ width: "100%", height: 1, flexDirection: "row" }}
-                onMouseMove={() => onHoverRow?.(row.key)}
-              >
+              return (
                 <box
-                  style={{
-                    width: addBadgeWidth > 0 ? Math.max(0, width - addBadgeWidth) : "100%",
-                    height: 1,
-                  }}
+                  style={{ width: "100%", height: 1, flexDirection: "row" }}
+                  onMouseMove={() => onHoverRow?.(row.key)}
                 >
-                  <text>
-                    {renderWrappedStackCellLine(
-                      line,
-                      layout.palette,
-                      wrappedContentWidth,
-                      theme,
-                      `${row.key}:stack:${index}`,
-                      prefix,
-                      hasCopySelection,
-                      hasCopySelection ? copySelectedRowRange : undefined,
+                  <box
+                    style={{
+                      width: addBadgeWidth > 0 ? Math.max(0, width - addBadgeWidth) : "100%",
+                      height: 1,
+                    }}
+                  >
+                    <text>
+                      {renderWrappedStackCellLine(
+                        line,
+                        layout.palette,
+                        wrappedContentWidth,
+                        theme,
+                        `${row.key}:stack:${index()}`,
+                        prefix,
+                        hasCopySelection,
+                        hasCopySelection ? copySelectedRowRange : undefined,
+                      )}
+                      <Show when={guideOnNewSide}>
+                        <span fg={theme.noteBorder}>│</span>
+                      </Show>
+                    </text>
+                  </box>
+                  <Show
+                    when={showBadgeOnLine}
+                    fallback={renderAddNoteSpacer(
+                      `${row.key}:add-note-spacer:${index()}`,
+                      addBadgeWidth,
+                      layout.palette.contentBg,
                     )}
-                    {guideOnNewSide ? (
-                      <span key={`${row.key}:note-guide:${index}`} fg={theme.noteBorder}>
-                        │
-                      </span>
-                    ) : null}
-                  </text>
-                </box>
-                {showBadgeOnLine
-                  ? renderAddNoteButton(
-                      `${row.key}:add-note:${index}`,
+                  >
+                    {renderAddNoteButton(
+                      `${row.key}:add-note:${index()}`,
                       theme,
                       row.hunkIndex,
                       addNoteTarget,
                       onStartUserNoteAtHunk,
-                    )
-                  : renderAddNoteSpacer(
-                      `${row.key}:add-note-spacer:${index}`,
-                      addBadgeWidth,
-                      layout.palette.contentBg,
                     )}
-              </box>
-            );
-          })}
+                  </Show>
+                </box>
+              );
+            }}
+          </For>
         </box>
       );
     }
@@ -1751,71 +1720,30 @@ interface DiffRowViewProps {
 }
 
 /**
- * Render one diff row, memoized to avoid unnecessary rerenders.
+ * Render one diff row.
  *
- * The comparator checks every handler by reference, so callers (PierreDiffView) must pass
- * identity-stable callbacks — e.g. one shared onHoverRow that receives the row key — or the memo
- * silently degrades to re-rendering every visible row per parent render.
+ * Solid's fine-grained reactivity replaces the previous React memo: the component runs once and
+ * the renderer only updates the spans whose backing props actually change, so no manual prop
+ * comparator is needed to avoid re-rendering every visible row.
  */
-export const DiffRowView = memo(
-  function DiffRowViewComponent({
-    row,
-    width,
-    lineNumberDigits,
-    showLineNumbers,
-    showHunkHeaders,
-    wrapLines,
-    codeHorizontalOffset,
-    theme,
-    selected,
-    copySelectedRowRange,
-    copySelectedSide,
-    anchorId,
-    noteGuideSide,
-    showAddNoteBadge,
-    onHoverRow,
-    onStartUserNoteAtHunk,
-    onToggleGap,
-  }: DiffRowViewProps) {
-    return renderRow(
-      row,
-      width,
-      lineNumberDigits,
-      showLineNumbers,
-      showHunkHeaders,
-      wrapLines,
-      codeHorizontalOffset,
-      theme,
-      selected,
-      copySelectedRowRange,
-      copySelectedSide,
-      anchorId,
-      noteGuideSide,
-      showAddNoteBadge,
-      onHoverRow,
-      onStartUserNoteAtHunk,
-      onToggleGap,
-    );
-  },
-  (previous, next) => {
-    return (
-      previous.row === next.row &&
-      previous.width === next.width &&
-      previous.lineNumberDigits === next.lineNumberDigits &&
-      previous.showLineNumbers === next.showLineNumbers &&
-      previous.showHunkHeaders === next.showHunkHeaders &&
-      previous.wrapLines === next.wrapLines &&
-      previous.codeHorizontalOffset === next.codeHorizontalOffset &&
-      previous.theme === next.theme &&
-      previous.selected === next.selected &&
-      previous.copySelectedRowRange === next.copySelectedRowRange &&
-      previous.copySelectedSide === next.copySelectedSide &&
-      previous.anchorId === next.anchorId &&
-      previous.noteGuideSide === next.noteGuideSide &&
-      previous.showAddNoteBadge === next.showAddNoteBadge &&
-      previous.onHoverRow === next.onHoverRow &&
-      previous.onStartUserNoteAtHunk === next.onStartUserNoteAtHunk &&
-      previous.onToggleGap === next.onToggleGap
-    );
-  },
-);
+export function DiffRowView(props: DiffRowViewProps) {
+  return renderRow(
+    props.row,
+    props.width,
+    props.lineNumberDigits,
+    props.showLineNumbers,
+    props.showHunkHeaders,
+    props.wrapLines,
+    props.codeHorizontalOffset,
+    props.theme,
+    props.selected,
+    props.copySelectedRowRange,
+    props.copySelectedSide,
+    props.anchorId,
+    props.noteGuideSide,
+    props.showAddNoteBadge,
+    props.onHoverRow,
+    props.onStartUserNoteAtHunk,
+    props.onToggleGap,
+  );
+}

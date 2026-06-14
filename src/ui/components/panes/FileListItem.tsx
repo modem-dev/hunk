@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { For, mergeProps, Show } from "solid-js";
 import { fileRowId } from "../../lib/ids";
 import { sidebarEntryStats, type FileGroupEntry, type FileListEntry } from "../../lib/files";
 import { fitText, padText } from "../../lib/text";
@@ -26,41 +26,31 @@ function getFileStateIcon(entry: FileListEntry, theme: AppTheme): { icon: string
 }
 
 /** Render one folder header in the navigation sidebar. */
-export function FileGroupHeader({
-  entry,
-  paddingLeft = 1,
-  textWidth,
-  theme,
-}: {
+export function FileGroupHeader(props: {
   entry: FileGroupEntry;
   paddingLeft?: number;
   textWidth: number;
   theme: AppTheme;
 }) {
+  const merged = mergeProps({ paddingLeft: 1 }, props);
   return (
     <box
       style={{
         width: "100%",
         height: 1,
-        paddingLeft,
-        backgroundColor: theme.panel,
+        paddingLeft: merged.paddingLeft,
+        backgroundColor: merged.theme.panel,
       }}
     >
-      <text fg={theme.muted}>{fitText(entry.label, Math.max(1, textWidth))}</text>
+      <text fg={merged.theme.muted}>
+        {fitText(merged.entry.label, Math.max(1, merged.textWidth))}
+      </text>
     </box>
   );
 }
 
 /** Render one file row in the navigation sidebar. */
-export const FileListItem = memo(function FileListItem({
-  entry,
-  paddingLeft = 1,
-  selected,
-  statsWidth,
-  textWidth,
-  theme,
-  onSelectFile,
-}: {
+export function FileListItem(props: {
   entry: FileListEntry;
   paddingLeft?: number;
   selected: boolean;
@@ -69,74 +59,80 @@ export const FileListItem = memo(function FileListItem({
   theme: AppTheme;
   onSelectFile: (fileId: string) => void;
 }) {
-  const rowBackground = selected ? theme.panelAlt : theme.panel;
-  const stats = sidebarEntryStats(entry);
-  const { icon, color } = getFileStateIcon(entry, theme);
-  const iconWidth = icon ? 2 : 0; // icon + space
-  const statsSectionWidth = statsWidth > 0 ? statsWidth + 1 : 0;
-  const nameWidth = Math.max(1, textWidth - 1 - iconWidth - statsSectionWidth);
+  const merged = mergeProps({ paddingLeft: 1 }, props);
+  const rowBackground = () => (merged.selected ? merged.theme.panelAlt : merged.theme.panel);
+  const stats = () => sidebarEntryStats(merged.entry);
+  const stateIcon = () => getFileStateIcon(merged.entry, merged.theme);
+  const iconWidth = () => (stateIcon().icon ? 2 : 0); // icon + space
+  const statsSectionWidth = () => (merged.statsWidth > 0 ? merged.statsWidth + 1 : 0);
+  const nameWidth = () => Math.max(1, merged.textWidth - 1 - iconWidth() - statsSectionWidth());
 
   return (
     <box
-      id={fileRowId(entry.id)}
+      id={fileRowId(merged.entry.id)}
       style={{
         width: "100%",
         height: 1,
-        backgroundColor: rowBackground,
+        backgroundColor: rowBackground(),
         flexDirection: "row",
       }}
-      onMouseUp={() => onSelectFile(entry.id)}
+      onMouseUp={() => merged.onSelectFile(merged.entry.id)}
     >
       <box
         style={{
           width: 1,
           height: 1,
-          backgroundColor: selected ? theme.accent : rowBackground,
+          backgroundColor: merged.selected ? merged.theme.accent : rowBackground(),
         }}
       />
       <box
         style={{
           flexGrow: 1,
           height: 1,
-          paddingLeft,
+          paddingLeft: merged.paddingLeft,
           flexDirection: "row",
-          backgroundColor: rowBackground,
+          backgroundColor: rowBackground(),
         }}
       >
-        {icon && <text fg={color}>{icon} </text>}
-        <text fg={theme.text}>{padText(fitText(entry.name, nameWidth), nameWidth)}</text>
-        {statsSectionWidth > 0 && (
+        <Show when={stateIcon().icon}>
+          <text fg={stateIcon().color}>{stateIcon().icon} </text>
+        </Show>
+        <text fg={merged.theme.text}>
+          {padText(fitText(merged.entry.name, nameWidth()), nameWidth())}
+        </text>
+        <Show when={statsSectionWidth() > 0}>
           <box
             style={{
-              width: statsSectionWidth,
+              width: statsSectionWidth(),
               height: 1,
               flexDirection: "row",
               justifyContent: "flex-end",
-              backgroundColor: rowBackground,
+              backgroundColor: rowBackground(),
             }}
           >
-            {stats.map((stat, index) => (
-              <box
-                key={`${entry.id}:${stat.kind}`}
-                style={{ height: 1, flexDirection: "row", backgroundColor: rowBackground }}
-              >
-                {index > 0 && <text fg={selected ? theme.text : theme.muted}> </text>}
-                <text
-                  fg={
-                    stat.kind === "agent-comment"
-                      ? theme.noteBorder
-                      : stat.kind === "addition"
-                        ? theme.badgeAdded
-                        : theme.badgeRemoved
-                  }
-                >
-                  {stat.text}
-                </text>
-              </box>
-            ))}
+            <For each={stats()}>
+              {(stat, index) => (
+                <box style={{ height: 1, flexDirection: "row", backgroundColor: rowBackground() }}>
+                  <Show when={index() > 0}>
+                    <text fg={merged.selected ? merged.theme.text : merged.theme.muted}> </text>
+                  </Show>
+                  <text
+                    fg={
+                      stat.kind === "agent-comment"
+                        ? merged.theme.noteBorder
+                        : stat.kind === "addition"
+                          ? merged.theme.badgeAdded
+                          : merged.theme.badgeRemoved
+                    }
+                  >
+                    {stat.text}
+                  </text>
+                </box>
+              )}
+            </For>
           </box>
-        )}
+        </Show>
       </box>
     </box>
   );
-});
+}

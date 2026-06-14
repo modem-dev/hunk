@@ -1,0 +1,19 @@
+diff --git a/src/types/elements.d.ts b/src/types/elements.d.ts
+index 5d228e2356f0106b3d86301636a0dec95add2841..9cc9d4280106fed2e3d8a80c31c176cfa82c75b1 100644
+--- a/src/types/elements.d.ts
++++ b/src/types/elements.d.ts
+@@ -1,4 +1,4 @@
+-import type { ASCIIFontOptions, ASCIIFontRenderable, BaseRenderable, BoxOptions, BoxRenderable, CodeOptions, CodeRenderable, InputRenderable, InputRenderableOptions, KeyEvent, MarkdownOptions, MarkdownRenderable, RenderableOptions, RenderContext, ScrollBoxOptions, ScrollBoxRenderable, SelectOption, SelectRenderable, SelectRenderableOptions, TabSelectOption, TabSelectRenderable, TabSelectRenderableOptions, TextareaOptions, TextareaRenderable, TextNodeRenderable, TextOptions, TextRenderable } from "@opentui/core";
++import type { ASCIIFontOptions, ASCIIFontRenderable, BaseRenderable, BoxOptions, BoxRenderable, CodeOptions, CodeRenderable, InputRenderable, InputRenderableOptions, KeyEvent, MarkdownOptions, MarkdownRenderable, RenderableOptions, RenderContext, ScrollBoxOptions, ScrollBoxRenderable, SelectOption, SelectRenderable, SelectRenderableOptions, TabSelectOption, TabSelectRenderable, TabSelectRenderableOptions, TextareaOptions, TextareaRenderable, TextNodeOptions, TextNodeRenderable, TextOptions, TextRenderable } from "@opentui/core";
+ import type { Ref } from "solid-js";
+ import type { JSX } from "../../jsx-runtime";
+ /** Properties that should not be included in the style prop */
+@@ -28,7 +28,7 @@ type TextChildren = string | number | boolean | null | undefined | JSX.Element;
+ export type TextProps = ComponentProps<TextOptions, TextRenderable> & {
+     children?: TextChildren | Array<TextChildren>;
+ };
+-export type SpanProps = ComponentProps<{}, TextNodeRenderable> & {
++export type SpanProps = ComponentProps<TextNodeOptions, TextNodeRenderable> & {
+     children?: TextChildren | Array<TextChildren>;
+ };
+ export type LinkProps = SpanProps & {

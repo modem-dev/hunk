@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useState } from "react";
+import { type Accessor, createMemo, createRenderEffect, createSignal, onCleanup } from "solid-js";
 import type { DiffFile } from "../../core/types";
 import { loadHighlightedSourceLines, type HighlightedSourceCode } from "./pierre";
 
@@ -24,53 +24,61 @@ function buildSourceCacheKey(appearance: string, file: DiffFile, text: string) {
   return `${appearance}:${file.id}:${file.path}:${file.language ?? ""}:${sourceTextFingerprint(text)}`;
 }
 
-/** Resolve highlighted full-source content for expanded unchanged rows. */
-export function useHighlightedSource({
-  file,
-  text,
-  appearance,
-  shouldLoadHighlight,
-}: {
-  file: DiffFile | undefined;
-  text: string | undefined;
-  appearance: "light" | "dark";
-  shouldLoadHighlight?: boolean;
-}) {
-  const [state, setState] = useState<HighlightedSourceState | null>(null);
-  const cacheKey = useMemo(
-    () => (file && text !== undefined ? buildSourceCacheKey(appearance, file, text) : null),
-    [appearance, file, text],
-  );
+/**
+ * Resolve highlighted full-source content for expanded unchanged rows.
+ *
+ * Args are accessors so the highlight re-resolves when the loaded source text (e.g. after a gap
+ * expansion) or theme appearance changes while the same component stays mounted. Returns an
+ * `Accessor<HighlightedSourceCode | null>`: call it to read the current snapshot reactively.
+ */
+export function useHighlightedSource(args: {
+  file: Accessor<DiffFile | undefined>;
+  text: Accessor<string | undefined>;
+  appearance: Accessor<"light" | "dark">;
+  shouldLoadHighlight?: Accessor<boolean | undefined>;
+}): Accessor<HighlightedSourceCode | null> {
+  const [state, setState] = createSignal<HighlightedSourceState | null>(null);
+  const cacheKey = createMemo(() => {
+    const file = args.file();
+    const text = args.text();
+    return file && text !== undefined ? buildSourceCacheKey(args.appearance(), file, text) : null;
+  });
 
-  useLayoutEffect(() => {
-    if (!file || text === undefined || !cacheKey) {
+  createRenderEffect(() => {
+    const key = cacheKey();
+    const file = args.file();
+    const text = args.text();
+    if (!file || text === undefined || !key) {
       setState(null);
       return;
     }
 
-    if (state?.cacheKey === cacheKey || !shouldLoadHighlight) {
+    if (state()?.cacheKey === key || !args.shouldLoadHighlight?.()) {
       return;
     }
 
     let cancelled = false;
     setState(null);
 
-    loadHighlightedSourceLines({ file, text, appearance })
+    loadHighlightedSourceLines({ file, text, appearance: args.appearance() })
       .then((highlighted) => {
         if (!cancelled) {
-          setState({ cacheKey, highlighted });
+          setState({ cacheKey: key, highlighted });
         }
       })
       .catch(() => {
         if (!cancelled) {
-          setState({ cacheKey, highlighted: { lines: [] } });
+          setState({ cacheKey: key, highlighted: { lines: [] } });
         }
       });
 
-    return () => {
+    onCleanup(() => {
       cancelled = true;
-    };
-  }, [appearance, cacheKey, file, shouldLoadHighlight, state?.cacheKey, text]);
+    });
+  });
 
-  return state?.cacheKey === cacheKey ? state.highlighted : null;
+  return () => {
+    const current = state();
+    return current?.cacheKey === cacheKey() ? current.highlighted : null;
+  };
 }

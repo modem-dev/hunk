@@ -1,17 +1,9 @@
+import { Match, Switch } from "solid-js";
 import { isEscapeKey } from "../../lib/keyboard";
 import type { AppTheme } from "../../themes";
 
 /** Render the active file filter input or current filter summary. */
-export function StatusBar({
-  filter,
-  filterFocused,
-  noticeText,
-  terminalWidth,
-  theme,
-  onCloseMenu,
-  onFilterInput,
-  onFilterSubmit,
-}: {
+export function StatusBar(props: {
   filter: string;
   filterFocused: boolean;
   noticeText?: string;
@@ -25,27 +17,27 @@ export function StatusBar({
     <box
       style={{
         height: 1,
-        backgroundColor: theme.panelAlt,
+        backgroundColor: props.theme.panelAlt,
         paddingLeft: 1,
         paddingRight: 1,
         alignItems: "center",
         flexDirection: "row",
       }}
-      onMouseUp={onCloseMenu}
+      onMouseUp={props.onCloseMenu}
     >
-      {filterFocused ? (
-        <>
-          <text fg={theme.badgeNeutral}>filter:</text>
+      <Switch fallback={<text fg={props.theme.muted}>{props.noticeText ?? ""}</text>}>
+        <Match when={props.filterFocused}>
+          <text fg={props.theme.badgeNeutral}>filter:</text>
           <box style={{ width: 1, height: 1 }}>
-            <text fg={theme.muted}> </text>
+            <text fg={props.theme.muted}> </text>
           </box>
           <input
-            width={Math.max(12, terminalWidth - 11)}
-            value={filter}
+            width={Math.max(12, props.terminalWidth - 11)}
+            value={props.filter}
             placeholder="type to filter files"
             focused={true}
-            onInput={onFilterInput}
-            onSubmit={onFilterSubmit}
+            onInput={props.onFilterInput}
+            onSubmit={props.onFilterSubmit}
             onKeyDown={(key) => {
               if (!isEscapeKey(key)) {
                 return;
@@ -54,20 +46,19 @@ export function StatusBar({
               key.preventDefault();
               key.stopPropagation();
 
-              if (filter.length > 0) {
-                onFilterInput("");
+              if (props.filter.length > 0) {
+                props.onFilterInput("");
                 return;
               }
 
-              onFilterSubmit();
+              props.onFilterSubmit();
             }}
           />
-        </>
-      ) : filter.length > 0 ? (
-        <text fg={theme.muted}>{`filter=${filter}`}</text>
-      ) : (
-        <text fg={theme.muted}>{noticeText ?? ""}</text>
-      )}
+        </Match>
+        <Match when={props.filter.length > 0}>
+          <text fg={props.theme.muted}>{`filter=${props.filter}`}</text>
+        </Match>
+      </Switch>
     </box>
   );
 }

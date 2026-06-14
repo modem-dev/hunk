@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { type Accessor, createSignal, onCleanup, onMount } from "solid-js";
 import type { UpdateNotice } from "../../core/updateNotice";
 
 const DEFAULT_STARTUP_NOTICE_DELAY_MS = 1200;
@@ -13,18 +13,24 @@ interface StartupUpdateNoticeOptions {
   resolver?: () => Promise<UpdateNotice | null>;
 }
 
-/** Manage the session-lifetime background update notice without coupling it to chrome rendering. */
-export function useStartupUpdateNotice({
-  delayMs = DEFAULT_STARTUP_NOTICE_DELAY_MS,
-  durationMs = DEFAULT_STARTUP_NOTICE_DURATION_MS,
-  enabled,
-  repeatMs = DEFAULT_STARTUP_NOTICE_REPEAT_MS,
-  resolver,
-}: StartupUpdateNoticeOptions) {
-  const [noticeText, setNoticeText] = useState<string | null>(null);
-  const lastShownKeyRef = useRef<string | null>(null);
+/**
+ * Manage the session-lifetime background update notice without coupling it to chrome rendering.
+ * Returns an accessor for the current notice text (null when nothing should be shown). The
+ * `enabled`/`resolver`/timing options are captured once at mount, matching the prior one-shot
+ * effect setup.
+ */
+export function useStartupUpdateNotice(
+  options: StartupUpdateNoticeOptions,
+): Accessor<string | null> {
+  const delayMs = options.delayMs ?? DEFAULT_STARTUP_NOTICE_DELAY_MS;
+  const durationMs = options.durationMs ?? DEFAULT_STARTUP_NOTICE_DURATION_MS;
+  const repeatMs = options.repeatMs ?? DEFAULT_STARTUP_NOTICE_REPEAT_MS;
+  const { enabled, resolver } = options;
 
-  useEffect(() => {
+  const [noticeText, setNoticeText] = createSignal<string | null>(null);
+  let lastShownKey: string | null = null;
+
+  onMount(() => {
     if (!enabled || !resolver) {
       setNoticeText(null);
       return;
@@ -55,11 +61,11 @@ export function useStartupUpdateNotice({
             return;
           }
 
-          if (notice.key === lastShownKeyRef.current) {
+          if (notice.key === lastShownKey) {
             return;
           }
 
-          lastShownKeyRef.current = notice.key;
+          lastShownKey = notice.key;
           setNoticeText(notice.message);
           clearDismissTimer();
           dismissTimer = setTimeout(() => {
@@ -88,14 +94,14 @@ export function useStartupUpdateNotice({
     const repeatTimer = setInterval(runUpdateCheck, repeatMs);
     repeatTimer.unref?.();
 
-    return () => {
+    onCleanup(() => {
       cancelled = true;
       inFlight = false;
       clearTimeout(delayTimer);
       clearInterval(repeatTimer);
       clearDismissTimer();
-    };
-  }, [delayMs, durationMs, enabled, repeatMs, resolver]);
+    });
+  });
 
   return noticeText;
 }

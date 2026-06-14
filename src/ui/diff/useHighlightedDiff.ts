@@ -1,4 +1,4 @@
-import { useLayoutEffect, useState } from "react";
+import { type Accessor, createRenderEffect, createSignal, onCleanup } from "solid-js";
 import type { DiffFile } from "../../core/types";
 import { loadHighlightedDiff, type HighlightedDiffCode } from "./pierre";
 
@@ -166,65 +166,76 @@ function resolveHighlightedSnapshot({
   return SHARED_HIGHLIGHTED_DIFF_CACHE.get(appearanceCacheKey) ?? null;
 }
 
-/** Resolve highlighted diff content with shared caching and background prefetch support. */
-export function useHighlightedDiff({
-  file,
-  appearance,
-  shouldLoadHighlight,
-}: {
-  file: DiffFile | undefined;
-  appearance: "light" | "dark";
-  shouldLoadHighlight?: boolean;
-}) {
-  const [highlighted, setHighlighted] = useState<HighlightedDiffCode | null>(null);
-  const [highlightedCacheKey, setHighlightedCacheKey] = useState<string | null>(null);
-  const appearanceCacheKey = file ? buildCacheKey(appearance, file) : null;
+/**
+ * Resolve highlighted diff content with shared caching and background prefetch support.
+ *
+ * Args are accessors so the highlight re-resolves when the file or theme appearance changes
+ * while the same component stays mounted (theme toggle, soft reload). Returns an
+ * `Accessor<HighlightedDiffCode | null>`: call it to read the current snapshot reactively.
+ */
+export function useHighlightedDiff(args: {
+  file: Accessor<DiffFile | undefined>;
+  appearance: Accessor<"light" | "dark">;
+  shouldLoadHighlight?: Accessor<boolean | undefined>;
+}): Accessor<HighlightedDiffCode | null> {
+  const [highlighted, setHighlighted] = createSignal<HighlightedDiffCode | null>(null);
+  const [highlightedCacheKey, setHighlightedCacheKey] = createSignal<string | null>(null);
+  const appearanceCacheKey = (): string | null => {
+    const file = args.file();
+    return file ? buildCacheKey(args.appearance(), file) : null;
+  };
 
-  // Use a layout effect so a newly available cached result can replace the plain-text fallback
+  // Use a render effect so a newly available cached result can replace the plain-text fallback
   // before the next diff paint whenever possible. That reduces flash/stutter as files enter view.
-  useLayoutEffect(() => {
-    if (!file || !appearanceCacheKey) {
+  // Reading args.file()/args.appearance() here tracks them, so a theme/file change re-runs this.
+  createRenderEffect(() => {
+    const file = args.file();
+    const appearance = args.appearance();
+    const cacheKey = file ? buildCacheKey(appearance, file) : null;
+
+    if (!file || !cacheKey) {
       setHighlighted(null);
       setHighlightedCacheKey(null);
       return;
     }
 
-    if (highlightedCacheKey === appearanceCacheKey) {
+    if (highlightedCacheKey() === cacheKey) {
       return;
     }
 
-    const cached = SHARED_HIGHLIGHTED_DIFF_CACHE.get(appearanceCacheKey);
+    const cached = SHARED_HIGHLIGHTED_DIFF_CACHE.get(cacheKey);
     if (cached) {
       setHighlighted(cached);
-      setHighlightedCacheKey(appearanceCacheKey);
+      setHighlightedCacheKey(cacheKey);
       return;
     }
 
-    if (!shouldLoadHighlight) {
+    if (!args.shouldLoadHighlight?.()) {
       return;
     }
 
     let cancelled = false;
     setHighlighted(null);
 
-    ensureHighlightedDiffLoaded(file, appearance, appearanceCacheKey).then((nextHighlighted) => {
+    ensureHighlightedDiffLoaded(file, appearance, cacheKey).then((nextHighlighted) => {
       if (cancelled) {
         return;
       }
 
       setHighlighted(nextHighlighted);
-      setHighlightedCacheKey(appearanceCacheKey);
+      setHighlightedCacheKey(cacheKey);
     });
 
-    return () => {
+    onCleanup(() => {
       cancelled = true;
-    };
-  }, [appearance, appearanceCacheKey, file, highlightedCacheKey, shouldLoadHighlight]);
+    });
+  });
 
   // Prefer cached highlights during render so revisiting a file can paint immediately.
-  return resolveHighlightedSnapshot({
-    appearanceCacheKey,
-    highlighted,
-    highlightedCacheKey,
-  });
+  return () =>
+    resolveHighlightedSnapshot({
+      appearanceCacheKey: appearanceCacheKey(),
+      highlighted: highlighted(),
+      highlightedCacheKey: highlightedCacheKey(),
+    });
 }

@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { ScrollBoxRenderable } from "@opentui/core";
-import { testRender } from "@opentui/react/test-utils";
-import { act, createRef, useCallback, useEffect, useState, type ReactNode } from "react";
+import { testRender } from "@opentui/solid";
+import { createSignal, onMount, type JSX } from "solid-js";
 import type { AppBootstrap, DiffFile } from "../../core/types";
 import { createTestVcsAppBootstrap } from "../../../test/helpers/app-bootstrap";
 import { capturedTestColorToHex } from "../../../test/helpers/test-color-helpers";
@@ -225,6 +225,11 @@ function createExpandableContextDiffFile(
   };
 }
 
+/** Create a scroll-ref container matching the mutable `{ current }` shape DiffPane expects. */
+function createScrollRef(): { current: ScrollBoxRenderable | null } {
+  return { current: null };
+}
+
 function createDiffPaneProps(
   files: DiffFile[],
   theme = resolveTheme("midnight", null),
@@ -232,15 +237,17 @@ function createDiffPaneProps(
 ): Parameters<typeof DiffPane>[0] {
   return {
     diffContentWidth: 72,
-    files,
+    // DiffPane's review-state props (files, selectedFileId, selectedHunkIndex, showAgentNotes)
+    // are accessors because they originate from useReviewController; wrap the defaults as getters.
+    files: () => files,
     headerLabelWidth: 40,
     headerStatsWidth: 16,
     layout: "split" as const,
-    scrollRef: createRef<ScrollBoxRenderable>(),
-    selectedFileId: files[0]?.id,
-    selectedHunkIndex: 0,
+    scrollRef: createScrollRef(),
+    selectedFileId: () => files[0]?.id,
+    selectedHunkIndex: () => 0,
     separatorWidth: 68,
-    showAgentNotes: false,
+    showAgentNotes: () => false,
     showLineNumbers: true,
     showHunkHeaders: true,
     wrapLines: false,
@@ -252,12 +259,25 @@ function createDiffPaneProps(
   };
 }
 
-function settleDiffPane(setup: Awaited<ReturnType<typeof testRender>>) {
-  return act(async () => {
+async function settleDiffPane(setup: Awaited<ReturnType<typeof testRender>>) {
+  // The Solid hunk-reveal path settles asynchronously across several cycles: an imperative scroll
+  // fires a viewport event, which re-windows mounted sections, which can shift geometry and kick
+  // off syntax-highlight loads — each needing another render pass to propagate. A fixed two-pass
+  // settle is only reliable when the event loop is otherwise idle (a single test); in a full file
+  // the cascade lands later and earlier tests' cached highlights change row heights. Render and
+  // idle repeatedly until two consecutive frames match (quiescent) so assertions see the final
+  // state regardless of timing, early-exiting once stable.
+  let previous = "";
+  for (let attempt = 0; attempt < 12; attempt += 1) {
     await setup.renderOnce();
-    await Bun.sleep(100);
-    await setup.renderOnce();
-  });
+    await Bun.sleep(20);
+    const frame = setup.captureCharFrame();
+    if (frame === previous) {
+      break;
+    }
+    previous = frame;
+  }
+  await setup.renderOnce();
 }
 
 async function waitForFrame(
@@ -272,10 +292,8 @@ async function waitForFrame(
       return frame;
     }
 
-    await act(async () => {
-      await Bun.sleep(50);
-      await setup.renderOnce();
-    });
+    await Bun.sleep(50);
+    await setup.renderOnce();
     frame = setup.captureCharFrame();
   }
 
@@ -339,19 +357,15 @@ function createEmptyDiffFile(type: "change" | "rename-pure" | "new" | "deleted")
   };
 }
 
-async function captureFrame(node: ReactNode, width = 120, height = 24) {
+async function captureFrame(node: () => JSX.Element, width = 120, height = 24) {
   const setup = await testRender(node, { width, height });
 
   try {
-    await act(async () => {
-      await setup.renderOnce();
-    });
+    await setup.renderOnce();
 
     return setup.captureCharFrame();
   } finally {
-    await act(async () => {
-      setup.renderer.destroy();
-    });
+    setup.renderer.destroy();
   }
 }
 
@@ -442,15 +456,17 @@ describe("UI components", () => {
       },
     ];
     const frame = await captureFrame(
-      <SidebarPane
-        entries={buildSidebarEntries(files)}
-        scrollRef={createRef()}
-        selectedFileId="app"
-        textWidth={28}
-        theme={theme}
-        width={32}
-        onSelectFile={() => {}}
-      />,
+      () => (
+        <SidebarPane
+          entries={buildSidebarEntries(files)}
+          scrollRef={createScrollRef()}
+          selectedFileId="app"
+          textWidth={28}
+          theme={theme}
+          width={32}
+          onSelectFile={() => {}}
+        />
+      ),
       36,
       10,
     );
@@ -472,25 +488,27 @@ describe("UI components", () => {
     const bootstrap = createBootstrap();
     const theme = resolveTheme("midnight", null);
     const frame = await captureFrame(
-      <DiffPane
-        diffContentWidth={72}
-        files={bootstrap.changeset.files}
-        headerLabelWidth={40}
-        headerStatsWidth={16}
-        layout="split"
-        scrollRef={createRef()}
-        selectedFileId="alpha"
-        selectedHunkIndex={0}
-        separatorWidth={68}
-        showAgentNotes={false}
-        showLineNumbers={true}
-        showHunkHeaders={true}
-        wrapLines={false}
-        wrapToggleScrollTop={null}
-        theme={theme}
-        width={76}
-        onSelectFile={() => {}}
-      />,
+      () => (
+        <DiffPane
+          diffContentWidth={72}
+          files={() => bootstrap.changeset.files}
+          headerLabelWidth={40}
+          headerStatsWidth={16}
+          layout="split"
+          scrollRef={createScrollRef()}
+          selectedFileId={() => "alpha"}
+          selectedHunkIndex={() => 0}
+          separatorWidth={68}
+          showAgentNotes={() => false}
+          showLineNumbers={true}
+          showHunkHeaders={true}
+          wrapLines={false}
+          wrapToggleScrollTop={null}
+          theme={theme}
+          width={76}
+          onSelectFile={() => {}}
+        />
+      ),
       80,
       18,
     );
@@ -506,17 +524,19 @@ describe("UI components", () => {
   test("DiffFileHeaderRow leaves one column after line counts", async () => {
     const theme = resolveTheme("midnight", null);
     const frame = await captureFrame(
-      <DiffFileHeaderRow
-        file={createTestDiffFile(
-          "stats-align",
-          "stats-align.ts",
-          lines("export const value = 1;"),
-          lines("export const value = 2;", "export const next = 3;"),
-        )}
-        headerLabelWidth={20}
-        headerStatsWidth={8}
-        theme={theme}
-      />,
+      () => (
+        <DiffFileHeaderRow
+          file={createTestDiffFile(
+            "stats-align",
+            "stats-align.ts",
+            lines("export const value = 1;"),
+            lines("export const value = 2;", "export const next = 3;"),
+          )}
+          headerLabelWidth={20}
+          headerStatsWidth={8}
+          theme={theme}
+        />
+      ),
       40,
       2,
     );
@@ -532,37 +552,37 @@ describe("UI components", () => {
     const theme = resolveTheme("midnight", null);
     const startUserNote = mock(() => undefined);
     const setup = await testRender(
-      <DiffRowView
-        row={{
-          type: "stack-line",
-          key: "alpha:line:1",
-          fileId: "alpha",
-          hunkIndex: 0,
-          cell: {
-            kind: "addition",
-            sign: "+",
-            newLineNumber: 2,
-            spans: [{ text: "export const alpha = 2;" }],
-          },
-        }}
-        width={72}
-        lineNumberDigits={1}
-        showLineNumbers={true}
-        showHunkHeaders={true}
-        wrapLines={false}
-        codeHorizontalOffset={0}
-        theme={theme}
-        selected={false}
-        showAddNoteBadge={true}
-        onStartUserNoteAtHunk={startUserNote}
-      />,
+      () => (
+        <DiffRowView
+          row={{
+            type: "stack-line",
+            key: "alpha:line:1",
+            fileId: "alpha",
+            hunkIndex: 0,
+            cell: {
+              kind: "addition",
+              sign: "+",
+              newLineNumber: 2,
+              spans: [{ text: "export const alpha = 2;" }],
+            },
+          }}
+          width={72}
+          lineNumberDigits={1}
+          showLineNumbers={true}
+          showHunkHeaders={true}
+          wrapLines={false}
+          codeHorizontalOffset={0}
+          theme={theme}
+          selected={false}
+          showAddNoteBadge={true}
+          onStartUserNoteAtHunk={startUserNote}
+        />
+      ),
       { width: 80, height: 3 },
     );
 
     try {
-      await act(async () => {
-        await setup.renderOnce();
-      });
+      await setup.renderOnce();
       const frame = setup.captureCharFrame();
       expect(frame).toContain("[+]");
       const addNoteY = frame.split("\n").findIndex((line) => line.includes("[+]"));
@@ -570,19 +590,13 @@ describe("UI components", () => {
       expect(addNoteY).toBeGreaterThanOrEqual(0);
       expect(addNoteX).toBeGreaterThanOrEqual(0);
 
-      await act(async () => {
-        await setup.mockMouse.click(4, addNoteY);
-      });
+      await setup.mockMouse.click(4, addNoteY);
       expect(startUserNote).not.toHaveBeenCalled();
 
-      await act(async () => {
-        await setup.mockMouse.click(addNoteX + 1, addNoteY);
-      });
+      await setup.mockMouse.click(addNoteX + 1, addNoteY);
       expect(startUserNote).toHaveBeenCalledWith(0, { side: "new", line: 2 });
     } finally {
-      await act(async () => {
-        setup.renderer.destroy();
-      });
+      setup.renderer.destroy();
     }
   });
 
@@ -602,19 +616,21 @@ describe("UI components", () => {
     };
     const renderRow = (showAddNoteBadge: boolean) =>
       captureFrame(
-        <DiffRowView
-          row={row}
-          width={24}
-          lineNumberDigits={1}
-          showLineNumbers={true}
-          showHunkHeaders={true}
-          wrapLines={true}
-          codeHorizontalOffset={0}
-          theme={theme}
-          selected={false}
-          showAddNoteBadge={showAddNoteBadge}
-          onStartUserNoteAtHunk={() => {}}
-        />,
+        () => (
+          <DiffRowView
+            row={row}
+            width={24}
+            lineNumberDigits={1}
+            showLineNumbers={true}
+            showHunkHeaders={true}
+            wrapLines={true}
+            codeHorizontalOffset={0}
+            theme={theme}
+            selected={false}
+            showAddNoteBadge={showAddNoteBadge}
+            onStartUserNoteAtHunk={() => {}}
+          />
+        ),
         32,
         5,
       );
@@ -634,36 +650,36 @@ describe("UI components", () => {
   test("DiffRowView fills the reserved wrapped add-note column with row background", async () => {
     const theme = resolveTheme("midnight", null);
     const setup = await testRender(
-      <DiffRowView
-        row={{
-          type: "stack-line",
-          key: "alpha:line:hover-wrap-bg",
-          fileId: "alpha",
-          hunkIndex: 0,
-          cell: {
-            kind: "addition",
-            sign: "+",
-            newLineNumber: 2,
-            spans: [{ text: "abcdefghij klmnopqrst uvwxyz" }],
-          },
-        }}
-        width={24}
-        lineNumberDigits={1}
-        showLineNumbers={true}
-        showHunkHeaders={true}
-        wrapLines={true}
-        codeHorizontalOffset={0}
-        theme={theme}
-        selected={false}
-        onStartUserNoteAtHunk={() => {}}
-      />,
+      () => (
+        <DiffRowView
+          row={{
+            type: "stack-line",
+            key: "alpha:line:hover-wrap-bg",
+            fileId: "alpha",
+            hunkIndex: 0,
+            cell: {
+              kind: "addition",
+              sign: "+",
+              newLineNumber: 2,
+              spans: [{ text: "abcdefghij klmnopqrst uvwxyz" }],
+            },
+          }}
+          width={24}
+          lineNumberDigits={1}
+          showLineNumbers={true}
+          showHunkHeaders={true}
+          wrapLines={true}
+          codeHorizontalOffset={0}
+          theme={theme}
+          selected={false}
+          onStartUserNoteAtHunk={() => {}}
+        />
+      ),
       { width: 32, height: 5 },
     );
 
     try {
-      await act(async () => {
-        await setup.renderOnce();
-      });
+      await setup.renderOnce();
       const line = setup
         .captureSpans()
         .lines.find((nextLine) => nextLine.spans.some((span) => span.text.includes("abcdefghij")));
@@ -675,39 +691,37 @@ describe("UI components", () => {
 
       expect(hasAddedBgSpacer).toBe(true);
     } finally {
-      await act(async () => {
-        setup.renderer.destroy();
-      });
+      setup.renderer.destroy();
     }
   });
 
   test("DiffRowView keeps metadata row background within the measured row width", async () => {
     const theme = resolveTheme("midnight", null);
     const setup = await testRender(
-      <DiffRowView
-        row={{
-          type: "hunk-header",
-          key: "alpha:hunk:0",
-          fileId: "alpha",
-          hunkIndex: 0,
-          text: "@@ -1 +1 @@",
-        }}
-        width={24}
-        lineNumberDigits={1}
-        showLineNumbers={true}
-        showHunkHeaders={true}
-        wrapLines={true}
-        codeHorizontalOffset={0}
-        theme={theme}
-        selected={false}
-      />,
+      () => (
+        <DiffRowView
+          row={{
+            type: "hunk-header",
+            key: "alpha:hunk:0",
+            fileId: "alpha",
+            hunkIndex: 0,
+            text: "@@ -1 +1 @@",
+          }}
+          width={24}
+          lineNumberDigits={1}
+          showLineNumbers={true}
+          showHunkHeaders={true}
+          wrapLines={true}
+          codeHorizontalOffset={0}
+          theme={theme}
+          selected={false}
+        />
+      ),
       { width: 32, height: 2 },
     );
 
     try {
-      await act(async () => {
-        await setup.renderOnce();
-      });
+      await setup.renderOnce();
       const panelAltWidth = setup.captureSpans().lines[0]?.spans.reduce((total, span) => {
         return capturedTestColorToHex(span.bg)?.toLowerCase() === theme.panelAlt.toLowerCase()
           ? total + span.text.length
@@ -716,9 +730,7 @@ describe("UI components", () => {
 
       expect(panelAltWidth).toBe(24);
     } finally {
-      await act(async () => {
-        setup.renderer.destroy();
-      });
+      setup.renderer.destroy();
     }
   });
 
@@ -739,29 +751,27 @@ describe("UI components", () => {
 
     for (const wrapLines of [false, true]) {
       const setup = await testRender(
-        <DiffRowView
-          row={row}
-          width={40}
-          lineNumberDigits={1}
-          showLineNumbers={true}
-          showHunkHeaders={true}
-          wrapLines={wrapLines}
-          codeHorizontalOffset={0}
-          theme={theme}
-          selected={false}
-        />,
+        () => (
+          <DiffRowView
+            row={row}
+            width={40}
+            lineNumberDigits={1}
+            showLineNumbers={true}
+            showHunkHeaders={true}
+            wrapLines={wrapLines}
+            codeHorizontalOffset={0}
+            theme={theme}
+            selected={false}
+          />
+        ),
         { width: 48, height: 3 },
       );
 
       try {
-        await act(async () => {
-          await setup.renderOnce();
-        });
+        await setup.renderOnce();
         expect(setup.captureCharFrame()).toContain("e\u0301x");
       } finally {
-        await act(async () => {
-          setup.renderer.destroy();
-        });
+        setup.renderer.destroy();
       }
     }
   });
@@ -786,7 +796,7 @@ describe("UI components", () => {
   test("DiffPane only shows the add-note affordance after pointer movement", async () => {
     const files = createWindowingFiles(6);
     const theme = resolveTheme("midnight", null);
-    const scrollRef = createRef<ScrollBoxRenderable>();
+    const scrollRef = createScrollRef();
     const props = createDiffPaneProps(files, theme, {
       diffContentWidth: 88,
       scrollRef,
@@ -794,7 +804,7 @@ describe("UI components", () => {
       separatorWidth: 84,
       width: 92,
     });
-    const setup = await testRender(<DiffPane {...props} />, {
+    const setup = await testRender(() => <DiffPane {...props} />, {
       width: 96,
       height: 12,
     });
@@ -802,46 +812,34 @@ describe("UI components", () => {
     try {
       await settleDiffPane(setup);
 
-      await act(async () => {
-        await setup.mockMouse.moveTo(32, 4);
-        await setup.renderOnce();
-      });
+      await setup.mockMouse.moveTo(32, 4);
+      await setup.renderOnce();
       let frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("[+]"), 12);
       expect(frame).toContain("[+]");
 
-      await act(async () => {
-        await setup.mockMouse.scroll(32, 4, "down");
-        await Bun.sleep(0);
-        await setup.renderOnce();
-      });
+      await setup.mockMouse.scroll(32, 4, "down");
+      await Bun.sleep(0);
+      await setup.renderOnce();
       frame = await waitForFrame(setup, (nextFrame) => !nextFrame.includes("[+]"), 12);
       expect(frame).not.toContain("[+]");
 
-      await act(async () => {
-        await Bun.sleep(250);
-        await setup.renderOnce();
-      });
+      await Bun.sleep(250);
+      await setup.renderOnce();
       frame = setup.captureCharFrame();
       expect(frame).not.toContain("[+]");
 
-      await act(async () => {
-        await setup.mockMouse.moveTo(34, 4);
-        await setup.renderOnce();
-      });
+      await setup.mockMouse.moveTo(34, 4);
+      await setup.renderOnce();
       frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("[+]"), 12);
       expect(frame).toContain("[+]");
 
-      await act(async () => {
-        scrollRef.current?.scrollTo({ x: 0, y: 2 });
-        await Bun.sleep(0);
-        await setup.renderOnce();
-      });
+      scrollRef.current?.scrollTo({ x: 0, y: 2 });
+      await Bun.sleep(0);
+      await setup.renderOnce();
       frame = await waitForFrame(setup, (nextFrame) => !nextFrame.includes("[+]"), 12);
       expect(frame).not.toContain("[+]");
     } finally {
-      await act(async () => {
-        setup.renderer.destroy();
-      });
+      setup.renderer.destroy();
     }
   });
 
@@ -849,26 +847,31 @@ describe("UI components", () => {
     const file = createWideTwoHunkDiffFile("target", "target.ts");
     const files = [file];
     const theme = resolveTheme("midnight", null);
-    const scrollRef = createRef<ScrollBoxRenderable>();
+    const scrollRef = createScrollRef();
     const calls: Array<{
       fileId: string;
       hunkIndex: number;
       target?: { side: "old" | "new"; line: number };
     }> = [];
-    let navigateToSecondHunk: (() => void) | null = null;
+    // Hold the navigation callback in a mutable container so reads keep the declared type
+    // (a bare `let` would be control-flow-narrowed to its initial null at the call site).
+    const navigateToSecondHunkRef: { current: (() => void) | null } = { current: null };
 
     function AddNoteNavigationHarness() {
-      const [selectedHunk, setSelectedHunk] = useState(0);
-      navigateToSecondHunk = () => setSelectedHunk(1);
-      const startUserNote = useCallback(
-        (fileId: string, hunkIndex: number, target?: { side: "old" | "new"; line: number }) => {
-          if (selectedHunk < 0) {
-            return;
-          }
-          calls.push({ fileId, hunkIndex, target });
-        },
-        [selectedHunk],
-      );
+      const [selectedHunk, setSelectedHunk] = createSignal(0);
+      navigateToSecondHunkRef.current = () => {
+        setSelectedHunk(1);
+      };
+      const startUserNote = (
+        fileId: string,
+        hunkIndex: number,
+        target?: { side: "old" | "new"; line: number },
+      ) => {
+        if (selectedHunk() < 0) {
+          return;
+        }
+        calls.push({ fileId, hunkIndex, target });
+      };
 
       return (
         <DiffPane
@@ -885,25 +888,21 @@ describe("UI components", () => {
       );
     }
 
-    const setup = await testRender(<AddNoteNavigationHarness />, {
+    const setup = await testRender(() => <AddNoteNavigationHarness />, {
       width: 104,
       height: 14,
     });
 
     try {
       await settleDiffPane(setup);
-      await act(async () => {
-        navigateToSecondHunk?.();
-        await setup.renderOnce();
-      });
+      navigateToSecondHunkRef.current?.();
+      await setup.renderOnce();
       const secondHunkFrame = await waitForFrame(setup, (frame) => frame.includes("line60"), 12);
       const secondHunkY = secondHunkFrame.split("\n").findIndex((line) => line.includes("line60"));
       expect(secondHunkY).toBeGreaterThanOrEqual(0);
 
-      await act(async () => {
-        await setup.mockMouse.moveTo(32, secondHunkY);
-        await setup.renderOnce();
-      });
+      await setup.mockMouse.moveTo(32, secondHunkY);
+      await setup.renderOnce();
       const affordanceFrame = await waitForFrame(setup, (frame) => frame.includes("[+]"), 12);
       const affordanceLines = affordanceFrame.split("\n");
       const addNoteY = affordanceLines.findIndex((line) => line.includes("[+]"));
@@ -911,17 +910,13 @@ describe("UI components", () => {
       expect(addNoteY).toBeGreaterThanOrEqual(0);
       expect(addNoteX).toBeGreaterThanOrEqual(0);
 
-      await act(async () => {
-        await setup.mockMouse.click(addNoteX + 1, addNoteY);
-      });
+      await setup.mockMouse.click(addNoteX + 1, addNoteY);
 
       expect(calls).toEqual([
         { fileId: "target", hunkIndex: 1, target: { side: "new", line: 60 } },
       ]);
     } finally {
-      await act(async () => {
-        setup.renderer.destroy();
-      });
+      setup.renderer.destroy();
     }
   });
 
@@ -930,11 +925,11 @@ describe("UI components", () => {
     const theme = resolveTheme("midnight", null);
     const props = createDiffPaneProps(files, theme, {
       diffContentWidth: 88,
-      selectedFileId: files[5]?.id,
+      selectedFileId: () => files[5]?.id,
       separatorWidth: 84,
       width: 92,
     });
-    const setup = await testRender(<DiffPane {...props} />, {
+    const setup = await testRender(() => <DiffPane {...props} />, {
       width: 96,
       height: 12,
     });
@@ -951,9 +946,7 @@ describe("UI components", () => {
       expect(frame).toContain("export const file6Extra = true;");
       expect(frame).not.toContain("window-1.ts");
     } finally {
-      await act(async () => {
-        setup.renderer.destroy();
-      });
+      setup.renderer.destroy();
     }
   });
 
@@ -971,13 +964,13 @@ describe("UI components", () => {
     const props = createDiffPaneProps(files, theme, {
       diffContentWidth: 96,
       headerLabelWidth: 48,
-      selectedFileId: "target",
-      selectedHunkIndex: 1,
+      selectedFileId: () => "target",
+      selectedHunkIndex: () => 1,
       separatorWidth: 92,
       showHunkHeaders: false,
       width: 100,
     });
-    const setup = await testRender(<DiffPane {...props} />, {
+    const setup = await testRender(() => <DiffPane {...props} />, {
       width: 104,
       height: 12,
     });
@@ -993,9 +986,7 @@ describe("UI components", () => {
       expect(frame).not.toContain("intro.ts");
       expect(frame).not.toContain("@@ -1,3 +1,3 @@");
     } finally {
-      await act(async () => {
-        setup.renderer.destroy();
-      });
+      setup.renderer.destroy();
     }
   });
 
@@ -1010,11 +1001,11 @@ describe("UI components", () => {
       ),
       createWideTwoHunkDiffFile("second", "second.ts", 100),
     ];
-    const scrollRef = createRef<ScrollBoxRenderable>();
+    const scrollRef = createScrollRef();
     let latestSelection = { fileId: files[0]!.id, hunkIndex: 0 };
 
     function ViewportSelectionHarness() {
-      const [selection, setSelection] = useState(latestSelection);
+      const [selection, setSelection] = createSignal(latestSelection);
 
       return (
         <DiffPane
@@ -1022,9 +1013,9 @@ describe("UI components", () => {
             diffContentWidth: 96,
             headerLabelWidth: 48,
             scrollRef,
-            selectedFileId: selection.fileId,
-            selectedHunkIndex: selection.hunkIndex,
-            selectedHunkRevealRequestId: 0,
+            selectedFileId: () => selection().fileId,
+            selectedHunkIndex: () => selection().hunkIndex,
+            selectedHunkRevealRequestId: () => 0,
             separatorWidth: 92,
             width: 100,
           })}
@@ -1036,7 +1027,7 @@ describe("UI components", () => {
       );
     }
 
-    const setup = await testRender(<ViewportSelectionHarness />, {
+    const setup = await testRender(() => <ViewportSelectionHarness />, {
       width: 104,
       height: 12,
     });
@@ -1060,17 +1051,13 @@ describe("UI components", () => {
         fileSectionLayouts[1]!.bodyTop + sectionGeometry[1]!.hunkBounds.get(1)!.top;
       const targetScrollTop = scrollTopForCenter(secondFileSecondHunkTop, viewportHeight);
 
-      await act(async () => {
-        scrollRef.current?.scrollTo(targetScrollTop);
-      });
+      scrollRef.current?.scrollTo(targetScrollTop);
       await settleDiffPane(setup);
 
       expect(latestSelection).toEqual({ fileId: "second", hunkIndex: 1 });
       expect(scrollRef.current?.scrollTop ?? 0).toBe(targetScrollTop);
     } finally {
-      await act(async () => {
-        setup.renderer.destroy();
-      });
+      setup.renderer.destroy();
     }
   });
 
@@ -1078,7 +1065,7 @@ describe("UI components", () => {
     const theme = resolveTheme("midnight", null);
     const firstFile = createTallDiffFile("first", "first.ts", 18);
     const secondFile = createTallDiffFile("second", "second.ts", 18);
-    const scrollRef = createRef<ScrollBoxRenderable>();
+    const scrollRef = createScrollRef();
     const props = createDiffPaneProps([firstFile, secondFile], theme, {
       diffContentWidth: 88,
       headerLabelWidth: 48,
@@ -1087,7 +1074,7 @@ describe("UI components", () => {
       separatorWidth: 84,
       width: 92,
     });
-    const setup = await testRender(<DiffPane {...props} />, {
+    const setup = await testRender(() => <DiffPane {...props} />, {
       width: 96,
       height: 10,
     });
@@ -1105,12 +1092,10 @@ describe("UI components", () => {
     const secondHeaderTop = firstBodyHeight + 1;
     const separatorTop = firstBodyHeight;
     const settleStickyScroll = async () => {
-      await act(async () => {
-        for (let iteration = 0; iteration < 6; iteration += 1) {
-          await Bun.sleep(60);
-          await setup.renderOnce();
-        }
-      });
+      for (let iteration = 0; iteration < 6; iteration += 1) {
+        await Bun.sleep(60);
+        await setup.renderOnce();
+      }
     };
 
     try {
@@ -1119,9 +1104,7 @@ describe("UI components", () => {
       let frame = setup.captureCharFrame();
       expect((frame.match(/first\.ts/g) ?? []).length).toBe(1);
 
-      await act(async () => {
-        scrollRef.current?.scrollTo(3);
-      });
+      scrollRef.current?.scrollTo(3);
       await settleStickyScroll();
 
       frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("first.ts"));
@@ -1129,9 +1112,7 @@ describe("UI components", () => {
       const stickyViewportHeight = scrollRef.current?.viewport.height ?? 0;
       expect(stickyViewportHeight).toBeGreaterThan(0);
 
-      await act(async () => {
-        scrollRef.current?.scrollTo(separatorTop);
-      });
+      scrollRef.current?.scrollTo(separatorTop);
       await settleStickyScroll();
 
       frame = await waitForFrame(
@@ -1142,9 +1123,7 @@ describe("UI components", () => {
       expect(frame).toContain("────");
       expect(scrollRef.current?.viewport.height ?? 0).toBe(stickyViewportHeight);
 
-      await act(async () => {
-        scrollRef.current?.scrollTo(secondHeaderTop);
-      });
+      scrollRef.current?.scrollTo(secondHeaderTop);
       await settleStickyScroll();
 
       frame = await waitForFrame(
@@ -1155,9 +1134,7 @@ describe("UI components", () => {
       expect(frame).toContain("second.ts");
       expect(scrollRef.current?.viewport.height ?? 0).toBe(stickyViewportHeight);
 
-      await act(async () => {
-        scrollRef.current?.scrollTo(secondHeaderTop + 1);
-      });
+      scrollRef.current?.scrollTo(secondHeaderTop + 1);
       await settleStickyScroll();
 
       frame = await waitForFrame(
@@ -1169,9 +1146,7 @@ describe("UI components", () => {
       expect(frame).toContain("@@ -1,18 +1,18 @@");
       expect(scrollRef.current?.viewport.height ?? 0).toBe(stickyViewportHeight);
 
-      await act(async () => {
-        scrollRef.current?.scrollTo(secondHeaderTop + 2);
-      });
+      scrollRef.current?.scrollTo(secondHeaderTop + 2);
       await settleStickyScroll();
 
       frame = await waitForFrame(
@@ -1182,9 +1157,7 @@ describe("UI components", () => {
       expect(frame).not.toContain("@@ -1,18 +1,18 @@");
       expect(scrollRef.current?.viewport.height ?? 0).toBe(stickyViewportHeight);
     } finally {
-      await act(async () => {
-        setup.renderer.destroy();
-      });
+      setup.renderer.destroy();
     }
   });
 
@@ -1228,18 +1201,18 @@ describe("UI components", () => {
       [firstGeometry.bodyHeight, secondGeometry.bodyHeight],
       buildInStreamFileHeaderHeights(files),
     );
-    const scrollRef = createRef<ScrollBoxRenderable>();
+    const scrollRef = createScrollRef();
     const props = createDiffPaneProps(files, theme, {
       diffContentWidth: 88,
-      expandedGapsByFileId: { [firstFile.id]: expandedKeys },
+      expandedGapsByFileId: () => ({ [firstFile.id]: expandedKeys }),
       headerLabelWidth: 48,
       headerStatsWidth: 16,
       scrollRef,
       separatorWidth: 84,
-      sourceStatusByFileId: { [firstFile.id]: sourceStatus },
+      sourceStatusByFileId: () => ({ [firstFile.id]: sourceStatus }),
       width: 92,
     });
-    const setup = await testRender(<DiffPane {...props} />, {
+    const setup = await testRender(() => <DiffPane {...props} />, {
       width: 96,
       height: 10,
     });
@@ -1252,9 +1225,7 @@ describe("UI components", () => {
       expect(frame).toContain("first line 6");
       expect(frame).not.toContain("second-after-expanded.ts");
 
-      await act(async () => {
-        scrollRef.current?.scrollTo(fileSectionLayouts[1]!.sectionTop);
-      });
+      scrollRef.current?.scrollTo(fileSectionLayouts[1]!.sectionTop);
       await settleDiffPane(setup);
 
       frame = await waitForFrame(setup, (nextFrame) =>
@@ -1262,9 +1233,7 @@ describe("UI components", () => {
       );
       expect(frame).toContain("second-after-expanded.ts");
     } finally {
-      await act(async () => {
-        setup.renderer.destroy();
-      });
+      setup.renderer.destroy();
     }
   });
 
@@ -1272,7 +1241,7 @@ describe("UI components", () => {
     const theme = resolveTheme("midnight", null);
     const firstFile = createCollapsedTopDiffFile("late", "late.ts", 400, 366);
     const secondFile = createTallDiffFile("second", "second.ts", 4);
-    const scrollRef = createRef<ScrollBoxRenderable>();
+    const scrollRef = createScrollRef();
     const props = createDiffPaneProps([firstFile, secondFile], theme, {
       diffContentWidth: 88,
       headerLabelWidth: 48,
@@ -1281,7 +1250,7 @@ describe("UI components", () => {
       separatorWidth: 84,
       width: 92,
     });
-    const setup = await testRender(<DiffPane {...props} />, {
+    const setup = await testRender(() => <DiffPane {...props} />, {
       width: 96,
       height: 9,
     });
@@ -1294,9 +1263,7 @@ describe("UI components", () => {
       expect(frame).toContain("··· 362 unchanged lines ···");
       expect(frame).not.toContain("366 - export const line366 = 366;");
 
-      await act(async () => {
-        scrollRef.current?.scrollTo(1);
-      });
+      scrollRef.current?.scrollTo(1);
       await settleDiffPane(setup);
 
       frame = await waitForFrame(setup, (nextFrame) =>
@@ -1304,9 +1271,7 @@ describe("UI components", () => {
       );
       expect(frame).toContain("366 - export const line366 = 366;");
     } finally {
-      await act(async () => {
-        setup.renderer.destroy();
-      });
+      setup.renderer.destroy();
     }
   });
 
@@ -1314,7 +1279,7 @@ describe("UI components", () => {
     const theme = resolveTheme("midnight", null);
     const firstFile = createCollapsedTopDiffFile("late", "late.ts", 400, 366);
     const secondFile = createTallDiffFile("second", "second.ts", 4);
-    const scrollRef = createRef<ScrollBoxRenderable>();
+    const scrollRef = createScrollRef();
     const props = createDiffPaneProps([firstFile, secondFile], theme, {
       diffContentWidth: 88,
       headerLabelWidth: 48,
@@ -1323,7 +1288,7 @@ describe("UI components", () => {
       separatorWidth: 84,
       width: 92,
     });
-    const setup = await testRender(<DiffPane {...props} />, {
+    const setup = await testRender(() => <DiffPane {...props} />, {
       width: 96,
       height: 9,
     });
@@ -1331,9 +1296,7 @@ describe("UI components", () => {
     try {
       await settleDiffPane(setup);
 
-      await act(async () => {
-        scrollRef.current?.scrollTo(1);
-      });
+      scrollRef.current?.scrollTo(1);
       await settleDiffPane(setup);
 
       let frame = await waitForFrame(setup, (nextFrame) =>
@@ -1341,9 +1304,7 @@ describe("UI components", () => {
       );
       expect((frame.match(/late\.ts/g) ?? []).length).toBe(1);
 
-      await act(async () => {
-        scrollRef.current?.scrollTo(0);
-      });
+      scrollRef.current?.scrollTo(0);
       await settleDiffPane(setup);
 
       frame = await waitForFrame(
@@ -1356,9 +1317,7 @@ describe("UI components", () => {
       expect(frame).not.toContain("366 - export const line366 = 366;");
       expect((frame.match(/late\.ts/g) ?? []).length).toBe(1);
     } finally {
-      await act(async () => {
-        setup.renderer.destroy();
-      });
+      setup.renderer.destroy();
     }
   });
 
@@ -1378,18 +1337,18 @@ describe("UI components", () => {
       ],
     };
     const files = [firstFile, createTallDiffFile("last", "last.ts", 24)];
-    const scrollRef = createRef<ScrollBoxRenderable>();
+    const scrollRef = createScrollRef();
     const props = createDiffPaneProps(files, theme, {
       diffContentWidth: 88,
       headerLabelWidth: 48,
       headerStatsWidth: 16,
       scrollRef,
-      selectedFileId: undefined,
+      selectedFileId: () => undefined,
       separatorWidth: 84,
-      showAgentNotes: true,
+      showAgentNotes: () => true,
       width: 92,
     });
-    const setup = await testRender(<DiffPane {...props} />, {
+    const setup = await testRender(() => <DiffPane {...props} />, {
       width: 96,
       height: 10,
     });
@@ -1398,25 +1357,19 @@ describe("UI components", () => {
       await settleDiffPane(setup);
 
       let bottomScrollTop = 0;
-      await act(async () => {
-        scrollRef.current?.scrollTo(1_000_000);
-        bottomScrollTop = scrollRef.current?.scrollTop ?? 0;
-      });
+      scrollRef.current?.scrollTo(1_000_000);
+      bottomScrollTop = scrollRef.current?.scrollTop ?? 0;
       expect(bottomScrollTop).toBeGreaterThan(0);
 
       await settleDiffPane(setup);
       expect(scrollRef.current?.scrollTop ?? 0).toBe(bottomScrollTop);
 
-      await act(async () => {
-        scrollRef.current?.scrollTo(bottomScrollTop + 1);
-      });
+      scrollRef.current?.scrollTo(bottomScrollTop + 1);
       await settleDiffPane(setup);
 
       expect(scrollRef.current?.scrollTop ?? 0).toBe(bottomScrollTop);
     } finally {
-      await act(async () => {
-        setup.renderer.destroy();
-      });
+      setup.renderer.destroy();
     }
   });
 
@@ -1439,14 +1392,14 @@ describe("UI components", () => {
         ),
       ),
     ];
-    const scrollRef = createRef<ScrollBoxRenderable>();
+    const scrollRef = createScrollRef();
 
     function BottomAlignedFileHarness() {
-      const [selectedFileTopAlignRequestId, setSelectedFileTopAlignRequestId] = useState(0);
+      const [selectedFileTopAlignRequestId, setSelectedFileTopAlignRequestId] = createSignal(0);
 
-      useEffect(() => {
+      onMount(() => {
         setSelectedFileTopAlignRequestId(1);
-      }, []);
+      });
 
       return (
         <DiffPane
@@ -1455,8 +1408,8 @@ describe("UI components", () => {
             headerLabelWidth: 48,
             headerStatsWidth: 16,
             scrollRef,
-            selectedFileId: "second",
-            selectedHunkIndex: 0,
+            selectedFileId: () => "second",
+            selectedHunkIndex: () => 0,
             selectedFileTopAlignRequestId,
             separatorWidth: 84,
             width: 92,
@@ -1465,7 +1418,7 @@ describe("UI components", () => {
       );
     }
 
-    const setup = await testRender(<BottomAlignedFileHarness />, {
+    const setup = await testRender(() => <BottomAlignedFileHarness />, {
       width: 96,
       height: 10,
     });
@@ -1476,16 +1429,12 @@ describe("UI components", () => {
       const bottomScrollTop = scrollRef.current?.scrollTop ?? 0;
       expect(bottomScrollTop).toBeGreaterThan(0);
 
-      await act(async () => {
-        scrollRef.current?.scrollTo(bottomScrollTop - 1);
-      });
+      scrollRef.current?.scrollTo(bottomScrollTop - 1);
       await settleDiffPane(setup);
 
       expect(scrollRef.current?.scrollTop ?? 0).toBe(bottomScrollTop - 1);
     } finally {
-      await act(async () => {
-        setup.renderer.destroy();
-      });
+      setup.renderer.destroy();
     }
   });
 
@@ -1497,14 +1446,14 @@ describe("UI components", () => {
       {
         diffContentWidth: 96,
         headerLabelWidth: 48,
-        selectedFileId: "target",
-        selectedHunkIndex: 1,
+        selectedFileId: () => "target",
+        selectedHunkIndex: () => 1,
         separatorWidth: 92,
         showHunkHeaders: false,
         width: 100,
       },
     );
-    const setup = await testRender(<DiffPane {...props} />, {
+    const setup = await testRender(() => <DiffPane {...props} />, {
       width: 104,
       height: 12,
     });
@@ -1521,9 +1470,7 @@ describe("UI components", () => {
       expect(frame).not.toContain("2 - export const line2 = 2;");
       expect(frame).not.toContain("2 + export const line2 = 200;");
     } finally {
-      await act(async () => {
-        setup.renderer.destroy();
-      });
+      setup.renderer.destroy();
     }
   });
 
@@ -1535,15 +1482,15 @@ describe("UI components", () => {
       {
         diffContentWidth: 76,
         headerLabelWidth: 40,
-        selectedFileId: "target",
-        selectedHunkIndex: 1,
+        selectedFileId: () => "target",
+        selectedHunkIndex: () => 1,
         separatorWidth: 72,
         showHunkHeaders: false,
         width: 80,
         wrapLines: true,
       },
     );
-    const setup = await testRender(<DiffPane {...props} />, {
+    const setup = await testRender(() => <DiffPane {...props} />, {
       width: 84,
       height: 16,
     });
@@ -1559,9 +1506,7 @@ describe("UI components", () => {
       expect(frame).not.toContain("2 - export const line2 = 2;");
       expect(frame).not.toContain("2 + export const line2 = 200;");
     } finally {
-      await act(async () => {
-        setup.renderer.destroy();
-      });
+      setup.renderer.destroy();
     }
   });
 
@@ -1570,12 +1515,12 @@ describe("UI components", () => {
     const props = createDiffPaneProps([createWideTwoHunkDiffFile("target", "target.ts")], theme, {
       diffContentWidth: 96,
       headerLabelWidth: 48,
-      selectedFileId: "target",
-      selectedHunkIndex: 1,
+      selectedFileId: () => "target",
+      selectedHunkIndex: () => 1,
       separatorWidth: 92,
       width: 100,
     });
-    const setup = await testRender(<DiffPane {...props} />, {
+    const setup = await testRender(() => <DiffPane {...props} />, {
       width: 104,
       height: 12,
     });
@@ -1587,9 +1532,7 @@ describe("UI components", () => {
       expect(frame).toContain("line60 = 5901");
       expect(frame).not.toContain("line1 = 1001");
     } finally {
-      await act(async () => {
-        setup.renderer.destroy();
-      });
+      setup.renderer.destroy();
     }
   });
 
@@ -1609,14 +1552,14 @@ describe("UI components", () => {
     const props = createDiffPaneProps([file], theme, {
       diffContentWidth: 96,
       headerLabelWidth: 48,
-      selectedFileId: "target",
-      selectedHunkIndex: 1,
+      selectedFileId: () => "target",
+      selectedHunkIndex: () => 1,
       separatorWidth: 92,
-      showAgentNotes: true,
+      showAgentNotes: () => true,
       showHunkHeaders: false,
       width: 100,
     });
-    const setup = await testRender(<DiffPane {...props} />, {
+    const setup = await testRender(() => <DiffPane {...props} />, {
       width: 104,
       height: 20,
     });
@@ -1633,9 +1576,7 @@ describe("UI components", () => {
       expect(frame).not.toContain("2 - export const line2 = 2;");
       expect(frame).not.toContain("2 + export const line2 = 200;");
     } finally {
-      await act(async () => {
-        setup.renderer.destroy();
-      });
+      setup.renderer.destroy();
     }
   });
 
@@ -1681,14 +1622,14 @@ describe("UI components", () => {
     const propsWithoutFlag = createDiffPaneProps([file], theme, {
       diffContentWidth: 96,
       headerLabelWidth: 48,
-      selectedFileId: "deep-note",
-      selectedHunkIndex: 1,
+      selectedFileId: () => "deep-note",
+      selectedHunkIndex: () => 1,
       separatorWidth: 92,
-      showAgentNotes: true,
+      showAgentNotes: () => true,
       showHunkHeaders: true,
       width: 100,
     });
-    const setupWithout = await testRender(<DiffPane {...propsWithoutFlag} />, {
+    const setupWithout = await testRender(() => <DiffPane {...propsWithoutFlag} />, {
       width: 104,
       height: 12,
     });
@@ -1702,24 +1643,22 @@ describe("UI components", () => {
       // Note card should NOT be visible — it's below the 12-row viewport.
       expect(frameWithout).not.toContain("Note anchored on second hunk.");
     } finally {
-      await act(async () => {
-        setupWithout.renderer.destroy();
-      });
+      setupWithout.renderer.destroy();
     }
 
     // With scrollToNote: note card should be near the viewport top.
     const propsWithFlag = createDiffPaneProps([file], theme, {
       diffContentWidth: 96,
       headerLabelWidth: 48,
-      selectedFileId: "deep-note",
-      selectedHunkIndex: 1,
-      scrollToNote: true,
+      selectedFileId: () => "deep-note",
+      selectedHunkIndex: () => 1,
+      scrollToNote: () => true,
       separatorWidth: 92,
-      showAgentNotes: true,
+      showAgentNotes: () => true,
       showHunkHeaders: true,
       width: 100,
     });
-    const setupWith = await testRender(<DiffPane {...propsWithFlag} />, {
+    const setupWith = await testRender(() => <DiffPane {...propsWithFlag} />, {
       width: 104,
       height: 12,
     });
@@ -1731,23 +1670,23 @@ describe("UI components", () => {
       // Note should be visible.
       expect(frameWith).toContain("Note anchored on second hunk.");
     } finally {
-      await act(async () => {
-        setupWith.renderer.destroy();
-      });
+      setupWith.renderer.destroy();
     }
   });
 
   test("AgentCard removes top and bottom padding while keeping the footer inside the frame", async () => {
     const theme = resolveTheme("midnight", null);
     const frame = await captureFrame(
-      <AgentCard
-        locationLabel="alpha.ts +2"
-        rationale="Why alpha.ts changed"
-        summary="Annotation for alpha.ts"
-        theme={theme}
-        width={34}
-        onClose={() => {}}
-      />,
+      () => (
+        <AgentCard
+          locationLabel="alpha.ts +2"
+          rationale="Why alpha.ts changed"
+          summary="Annotation for alpha.ts"
+          theme={theme}
+          width={34}
+          onClose={() => {}}
+        />
+      ),
       40,
       12,
     );
@@ -1767,18 +1706,20 @@ describe("UI components", () => {
   test("AgentInlineNote renders a connected bordered panel without a blank connector row", async () => {
     const theme = resolveTheme("midnight", null);
     const frame = await captureFrame(
-      <AgentInlineNote
-        annotation={{
-          newRange: [2, 4],
-          summary: "Summary line",
-          rationale: "Rationale line.",
-        }}
-        anchorSide="new"
-        layout="split"
-        theme={theme}
-        width={96}
-        onClose={() => {}}
-      />,
+      () => (
+        <AgentInlineNote
+          annotation={{
+            newRange: [2, 4],
+            summary: "Summary line",
+            rationale: "Rationale line.",
+          }}
+          anchorSide="new"
+          layout="split"
+          theme={theme}
+          width={96}
+          onClose={() => {}}
+        />
+      ),
       100,
       5,
     );
@@ -1802,25 +1743,27 @@ describe("UI components", () => {
       "export const value = 2;\n",
     );
     const frame = await captureFrame(
-      <AgentInlineNote
-        annotation={{
-          newRange: [611, 611],
-          source: "user-draft",
-          summary: "Here's my comment. I think we should think",
-        }}
-        draft={{
-          body: "Here's my comment. I think we should think",
-          focused: true,
-          onCancel: () => {},
-          onInput: () => {},
-          onSave: () => {},
-        }}
-        file={file}
-        anchorSide="new"
-        layout="split"
-        theme={theme}
-        width={96}
-      />,
+      () => (
+        <AgentInlineNote
+          annotation={{
+            newRange: [611, 611],
+            source: "user-draft",
+            summary: "Here's my comment. I think we should think",
+          }}
+          draft={{
+            body: "Here's my comment. I think we should think",
+            focused: true,
+            onCancel: () => {},
+            onInput: () => {},
+            onSave: () => {},
+          }}
+          file={file}
+          anchorSide="new"
+          layout="split"
+          theme={theme}
+          width={96}
+        />
+      ),
       100,
       12,
     );
@@ -1850,21 +1793,23 @@ describe("UI components", () => {
     const body =
       "This draft note is long enough to soft wrap inside the composer without manually inserted newlines.";
     const frame = await captureFrame(
-      <AgentInlineNote
-        annotation={{ newRange: [611, 611], source: "user-draft", summary: body }}
-        draft={{
-          body,
-          focused: true,
-          onCancel: () => {},
-          onInput: () => {},
-          onSave: () => {},
-        }}
-        file={file}
-        anchorSide="new"
-        layout="stack"
-        theme={theme}
-        width={48}
-      />,
+      () => (
+        <AgentInlineNote
+          annotation={{ newRange: [611, 611], source: "user-draft", summary: body }}
+          draft={{
+            body,
+            focused: true,
+            onCancel: () => {},
+            onInput: () => {},
+            onSave: () => {},
+          }}
+          file={file}
+          anchorSide="new"
+          layout="stack"
+          theme={theme}
+          width={48}
+        />
+      ),
       52,
       12,
     );
@@ -1881,18 +1826,20 @@ describe("UI components", () => {
   test("AgentInlineNote shows author name in title when author is set", async () => {
     const theme = resolveTheme("midnight", null);
     const frame = await captureFrame(
-      <AgentInlineNote
-        annotation={{
-          newRange: [2, 4],
-          summary: "Summary line",
-          author: "sonnet",
-        }}
-        anchorSide="new"
-        layout="split"
-        theme={theme}
-        width={96}
-        onClose={() => {}}
-      />,
+      () => (
+        <AgentInlineNote
+          annotation={{
+            newRange: [2, 4],
+            summary: "Summary line",
+            author: "sonnet",
+          }}
+          anchorSide="new"
+          layout="split"
+          theme={theme}
+          width={96}
+          onClose={() => {}}
+        />
+      ),
       100,
       5,
     );
@@ -1905,17 +1852,19 @@ describe("UI components", () => {
   test("AgentInlineNote falls back to 'Agent note' when author is absent", async () => {
     const theme = resolveTheme("midnight", null);
     const frame = await captureFrame(
-      <AgentInlineNote
-        annotation={{
-          newRange: [2, 4],
-          summary: "Summary line",
-        }}
-        anchorSide="new"
-        layout="split"
-        theme={theme}
-        width={96}
-        onClose={() => {}}
-      />,
+      () => (
+        <AgentInlineNote
+          annotation={{
+            newRange: [2, 4],
+            summary: "Summary line",
+          }}
+          anchorSide="new"
+          layout="split"
+          theme={theme}
+          width={96}
+          onClose={() => {}}
+        />
+      ),
       100,
       5,
     );
@@ -1927,20 +1876,22 @@ describe("UI components", () => {
   test("AgentInlineNote includes index when multiple notes share a hunk", async () => {
     const theme = resolveTheme("midnight", null);
     const frame = await captureFrame(
-      <AgentInlineNote
-        annotation={{
-          newRange: [2, 4],
-          summary: "Summary line",
-          author: "sonnet",
-        }}
-        anchorSide="new"
-        layout="split"
-        noteCount={2}
-        noteIndex={0}
-        theme={theme}
-        width={96}
-        onClose={() => {}}
-      />,
+      () => (
+        <AgentInlineNote
+          annotation={{
+            newRange: [2, 4],
+            summary: "Summary line",
+            author: "sonnet",
+          }}
+          anchorSide="new"
+          layout="split"
+          noteCount={2}
+          noteIndex={0}
+          theme={theme}
+          width={96}
+          onClose={() => {}}
+        />
+      ),
       100,
       5,
     );
@@ -1953,18 +1904,20 @@ describe("UI components", () => {
   test("AgentInlineNote preserves special characters in author", async () => {
     const theme = resolveTheme("midnight", null);
     const frame = await captureFrame(
-      <AgentInlineNote
-        annotation={{
-          newRange: [2, 4],
-          summary: "Summary line",
-          author: "prism (arbiter)",
-        }}
-        anchorSide="new"
-        layout="split"
-        theme={theme}
-        width={96}
-        onClose={() => {}}
-      />,
+      () => (
+        <AgentInlineNote
+          annotation={{
+            newRange: [2, 4],
+            summary: "Summary line",
+            author: "prism (arbiter)",
+          }}
+          anchorSide="new"
+          layout="split"
+          theme={theme}
+          width={96}
+          onClose={() => {}}
+        />
+      ),
       100,
       5,
     );
@@ -1976,15 +1929,17 @@ describe("UI components", () => {
   test("AgentCard shows author in title when set", async () => {
     const theme = resolveTheme("midnight", null);
     const frame = await captureFrame(
-      <AgentCard
-        locationLabel="alpha.ts +2"
-        rationale="Why alpha.ts changed"
-        summary="Annotation for alpha.ts"
-        author="sonnet"
-        theme={theme}
-        width={34}
-        onClose={() => {}}
-      />,
+      () => (
+        <AgentCard
+          locationLabel="alpha.ts +2"
+          rationale="Why alpha.ts changed"
+          summary="Annotation for alpha.ts"
+          author="sonnet"
+          theme={theme}
+          width={34}
+          onClose={() => {}}
+        />
+      ),
       40,
       12,
     );
@@ -2000,14 +1955,16 @@ describe("UI components", () => {
   test("AgentCard falls back to 'AI note' when author absent", async () => {
     const theme = resolveTheme("midnight", null);
     const frame = await captureFrame(
-      <AgentCard
-        locationLabel="alpha.ts +2"
-        rationale="Why alpha.ts changed"
-        summary="Annotation for alpha.ts"
-        theme={theme}
-        width={34}
-        onClose={() => {}}
-      />,
+      () => (
+        <AgentCard
+          locationLabel="alpha.ts +2"
+          rationale="Why alpha.ts changed"
+          summary="Annotation for alpha.ts"
+          theme={theme}
+          width={34}
+          onClose={() => {}}
+        />
+      ),
       40,
       12,
     );
@@ -2037,25 +1994,27 @@ describe("UI components", () => {
 
     const theme = resolveTheme("midnight", null);
     const frame = await captureFrame(
-      <DiffPane
-        diffContentWidth={88}
-        files={bootstrap.changeset.files}
-        headerLabelWidth={48}
-        headerStatsWidth={16}
-        layout="split"
-        scrollRef={createRef()}
-        selectedFileId="alpha"
-        selectedHunkIndex={0}
-        separatorWidth={84}
-        showAgentNotes={true}
-        showLineNumbers={true}
-        showHunkHeaders={true}
-        wrapLines={false}
-        wrapToggleScrollTop={null}
-        theme={theme}
-        width={92}
-        onSelectFile={() => {}}
-      />,
+      () => (
+        <DiffPane
+          diffContentWidth={88}
+          files={() => bootstrap.changeset.files}
+          headerLabelWidth={48}
+          headerStatsWidth={16}
+          layout="split"
+          scrollRef={createScrollRef()}
+          selectedFileId={() => "alpha"}
+          selectedHunkIndex={() => 0}
+          separatorWidth={84}
+          showAgentNotes={() => true}
+          showLineNumbers={true}
+          showHunkHeaders={true}
+          wrapLines={false}
+          wrapToggleScrollTop={null}
+          theme={theme}
+          width={92}
+          onSelectFile={() => {}}
+        />
+      ),
       96,
       28,
     );
@@ -2078,25 +2037,27 @@ describe("UI components", () => {
     const bootstrap = createBootstrap();
     const theme = resolveTheme("midnight", null);
     const frame = await captureFrame(
-      <DiffPane
-        diffContentWidth={88}
-        files={bootstrap.changeset.files}
-        headerLabelWidth={48}
-        headerStatsWidth={16}
-        layout="split"
-        scrollRef={createRef()}
-        selectedFileId="alpha"
-        selectedHunkIndex={0}
-        separatorWidth={84}
-        showAgentNotes={true}
-        showLineNumbers={true}
-        showHunkHeaders={true}
-        wrapLines={false}
-        wrapToggleScrollTop={null}
-        theme={theme}
-        width={92}
-        onSelectFile={() => {}}
-      />,
+      () => (
+        <DiffPane
+          diffContentWidth={88}
+          files={() => bootstrap.changeset.files}
+          headerLabelWidth={48}
+          headerStatsWidth={16}
+          layout="split"
+          scrollRef={createScrollRef()}
+          selectedFileId={() => "alpha"}
+          selectedHunkIndex={() => 0}
+          separatorWidth={84}
+          showAgentNotes={() => true}
+          showLineNumbers={true}
+          showHunkHeaders={true}
+          wrapLines={false}
+          wrapToggleScrollTop={null}
+          theme={theme}
+          width={92}
+          onSelectFile={() => {}}
+        />
+      ),
       96,
       16,
     );
@@ -2135,25 +2096,27 @@ describe("UI components", () => {
     };
 
     const frame = await captureFrame(
-      <DiffPane
-        diffContentWidth={88}
-        files={bootstrap.changeset.files}
-        headerLabelWidth={48}
-        headerStatsWidth={16}
-        layout="split"
-        scrollRef={createRef()}
-        selectedFileId="alpha"
-        selectedHunkIndex={0}
-        separatorWidth={84}
-        showAgentNotes={true}
-        showLineNumbers={true}
-        showHunkHeaders={true}
-        wrapLines={false}
-        wrapToggleScrollTop={null}
-        theme={theme}
-        width={92}
-        onSelectFile={() => {}}
-      />,
+      () => (
+        <DiffPane
+          diffContentWidth={88}
+          files={() => bootstrap.changeset.files}
+          headerLabelWidth={48}
+          headerStatsWidth={16}
+          layout="split"
+          scrollRef={createScrollRef()}
+          selectedFileId={() => "alpha"}
+          selectedHunkIndex={() => 0}
+          separatorWidth={84}
+          showAgentNotes={() => true}
+          showLineNumbers={true}
+          showHunkHeaders={true}
+          wrapLines={false}
+          wrapToggleScrollTop={null}
+          theme={theme}
+          width={92}
+          onSelectFile={() => {}}
+        />
+      ),
       96,
       24,
     );
@@ -2169,23 +2132,25 @@ describe("UI components", () => {
   test("MenuDropdown renders checked items and key hints", async () => {
     const theme = resolveTheme("midnight", null);
     const frame = await captureFrame(
-      <MenuDropdown
-        activeMenuId="view"
-        activeMenuEntries={[
-          { kind: "item", label: "Split view", hint: "1", checked: true, action: () => {} },
-          { kind: "item", label: "Stacked view", hint: "2", checked: false, action: () => {} },
-          { kind: "item", label: "Line numbers", hint: "l", checked: true, action: () => {} },
-          { kind: "item", label: "Line wrapping", hint: "w", checked: false, action: () => {} },
-          { kind: "item", label: "Hunk metadata", hint: "m", checked: true, action: () => {} },
-        ]}
-        activeMenuItemIndex={0}
-        activeMenuSpec={{ id: "view", left: 2, width: 6, label: "View" }}
-        activeMenuWidth={24}
-        terminalWidth={30}
-        theme={theme}
-        onHoverItem={() => {}}
-        onSelectItem={() => {}}
-      />,
+      () => (
+        <MenuDropdown
+          activeMenuId="view"
+          activeMenuEntries={[
+            { kind: "item", label: "Split view", hint: "1", checked: true, action: () => {} },
+            { kind: "item", label: "Stacked view", hint: "2", checked: false, action: () => {} },
+            { kind: "item", label: "Line numbers", hint: "l", checked: true, action: () => {} },
+            { kind: "item", label: "Line wrapping", hint: "w", checked: false, action: () => {} },
+            { kind: "item", label: "Hunk metadata", hint: "m", checked: true, action: () => {} },
+          ]}
+          activeMenuItemIndex={0}
+          activeMenuSpec={{ id: "view", left: 2, width: 6, label: "View" }}
+          activeMenuWidth={24}
+          terminalWidth={30}
+          theme={theme}
+          onHoverItem={() => {}}
+          onSelectItem={() => {}}
+        />
+      ),
       30,
       8,
     );
@@ -2205,20 +2170,22 @@ describe("UI components", () => {
   test("MenuDropdown repositions wide menus to stay inside the terminal", async () => {
     const theme = resolveTheme("midnight", null);
     const frame = await captureFrame(
-      <MenuDropdown
-        activeMenuId="agent"
-        activeMenuEntries={[
-          { kind: "item", label: "Next annotated file", action: () => {} },
-          { kind: "item", label: "Previous annotated file", action: () => {} },
-        ]}
-        activeMenuItemIndex={0}
-        activeMenuSpec={{ id: "agent", left: 22, width: 7, label: "Agent" }}
-        activeMenuWidth={30}
-        terminalWidth={34}
-        theme={theme}
-        onHoverItem={() => {}}
-        onSelectItem={() => {}}
-      />,
+      () => (
+        <MenuDropdown
+          activeMenuId="agent"
+          activeMenuEntries={[
+            { kind: "item", label: "Next annotated file", action: () => {} },
+            { kind: "item", label: "Previous annotated file", action: () => {} },
+          ]}
+          activeMenuItemIndex={0}
+          activeMenuSpec={{ id: "agent", left: 22, width: 7, label: "Agent" }}
+          activeMenuWidth={30}
+          terminalWidth={34}
+          theme={theme}
+          onHoverItem={() => {}}
+          onSelectItem={() => {}}
+        />
+      ),
       34,
       6,
     );
@@ -2232,15 +2199,17 @@ describe("UI components", () => {
   test("StatusBar renders filter mode affordance", async () => {
     const theme = resolveTheme("midnight", null);
     const frame = await captureFrame(
-      <StatusBar
-        filter="beta"
-        filterFocused={true}
-        terminalWidth={60}
-        theme={theme}
-        onCloseMenu={() => {}}
-        onFilterInput={() => {}}
-        onFilterSubmit={() => {}}
-      />,
+      () => (
+        <StatusBar
+          filter="beta"
+          filterFocused={true}
+          terminalWidth={60}
+          theme={theme}
+          onCloseMenu={() => {}}
+          onFilterInput={() => {}}
+          onFilterSubmit={() => {}}
+        />
+      ),
       60,
       3,
     );
@@ -2252,16 +2221,18 @@ describe("UI components", () => {
   test("StatusBar renders a notice when no filter is active", async () => {
     const theme = resolveTheme("midnight", null);
     const frame = await captureFrame(
-      <StatusBar
-        filter=""
-        filterFocused={false}
-        noticeText="Update available: 9.9.9 • npm i -g hunkdiff"
-        terminalWidth={60}
-        theme={theme}
-        onCloseMenu={() => {}}
-        onFilterInput={() => {}}
-        onFilterSubmit={() => {}}
-      />,
+      () => (
+        <StatusBar
+          filter=""
+          filterFocused={false}
+          noticeText="Update available: 9.9.9 • npm i -g hunkdiff"
+          terminalWidth={60}
+          theme={theme}
+          onCloseMenu={() => {}}
+          onFilterInput={() => {}}
+          onFilterSubmit={() => {}}
+        />
+      ),
       60,
       3,
     );
@@ -2272,16 +2243,18 @@ describe("UI components", () => {
   test("StatusBar keeps filter input precedence over a notice", async () => {
     const theme = resolveTheme("midnight", null);
     const frame = await captureFrame(
-      <StatusBar
-        filter="beta"
-        filterFocused={true}
-        noticeText="Update available: 9.9.9 • npm i -g hunkdiff"
-        terminalWidth={60}
-        theme={theme}
-        onCloseMenu={() => {}}
-        onFilterInput={() => {}}
-        onFilterSubmit={() => {}}
-      />,
+      () => (
+        <StatusBar
+          filter="beta"
+          filterFocused={true}
+          noticeText="Update available: 9.9.9 • npm i -g hunkdiff"
+          terminalWidth={60}
+          theme={theme}
+          onCloseMenu={() => {}}
+          onFilterInput={() => {}}
+          onFilterSubmit={() => {}}
+        />
+      ),
       60,
       3,
     );
@@ -2294,16 +2267,18 @@ describe("UI components", () => {
   test("StatusBar keeps filter summary precedence over a notice", async () => {
     const theme = resolveTheme("midnight", null);
     const frame = await captureFrame(
-      <StatusBar
-        filter="beta"
-        filterFocused={false}
-        noticeText="Update available: 9.9.9 • npm i -g hunkdiff"
-        terminalWidth={60}
-        theme={theme}
-        onCloseMenu={() => {}}
-        onFilterInput={() => {}}
-        onFilterSubmit={() => {}}
-      />,
+      () => (
+        <StatusBar
+          filter="beta"
+          filterFocused={false}
+          noticeText="Update available: 9.9.9 • npm i -g hunkdiff"
+          terminalWidth={60}
+          theme={theme}
+          onCloseMenu={() => {}}
+          onFilterInput={() => {}}
+          onFilterSubmit={() => {}}
+        />
+      ),
       60,
       3,
     );
@@ -2315,13 +2290,15 @@ describe("UI components", () => {
   test("HelpDialog renders every documented control row without overlap", async () => {
     const theme = resolveTheme("midnight", null);
     const frame = await captureFrame(
-      <HelpDialog
-        canRefresh={true}
-        terminalHeight={39}
-        terminalWidth={76}
-        theme={theme}
-        onClose={() => {}}
-      />,
+      () => (
+        <HelpDialog
+          canRefresh={true}
+          terminalHeight={39}
+          terminalWidth={76}
+          theme={theme}
+          onClose={() => {}}
+        />
+      ),
       76,
       39,
     );
@@ -2379,25 +2356,27 @@ describe("UI components", () => {
   test("DiffPane renders an empty-state message when no files are visible", async () => {
     const theme = resolveTheme("midnight", null);
     const frame = await captureFrame(
-      <DiffPane
-        diffContentWidth={72}
-        files={[]}
-        headerLabelWidth={40}
-        headerStatsWidth={16}
-        layout="split"
-        scrollRef={createRef()}
-        selectedFileId={undefined}
-        selectedHunkIndex={0}
-        separatorWidth={68}
-        showAgentNotes={false}
-        showLineNumbers={true}
-        showHunkHeaders={true}
-        wrapLines={false}
-        wrapToggleScrollTop={null}
-        theme={theme}
-        width={76}
-        onSelectFile={() => {}}
-      />,
+      () => (
+        <DiffPane
+          diffContentWidth={72}
+          files={() => []}
+          headerLabelWidth={40}
+          headerStatsWidth={16}
+          layout="split"
+          scrollRef={createScrollRef()}
+          selectedFileId={() => undefined}
+          selectedHunkIndex={() => 0}
+          separatorWidth={68}
+          showAgentNotes={() => false}
+          showLineNumbers={true}
+          showHunkHeaders={true}
+          wrapLines={false}
+          wrapToggleScrollTop={null}
+          theme={theme}
+          width={76}
+          onSelectFile={() => {}}
+        />
+      ),
       80,
       10,
     );
@@ -2409,25 +2388,27 @@ describe("UI components", () => {
     const bootstrap = createBootstrap();
     const theme = resolveTheme("midnight", null);
     const frame = await captureFrame(
-      <DiffPane
-        diffContentWidth={72}
-        files={bootstrap.changeset.files}
-        headerLabelWidth={40}
-        headerStatsWidth={16}
-        layout="split"
-        scrollRef={createRef()}
-        selectedFileId="alpha"
-        selectedHunkIndex={0}
-        separatorWidth={68}
-        showAgentNotes={false}
-        showLineNumbers={false}
-        showHunkHeaders={true}
-        wrapLines={false}
-        wrapToggleScrollTop={null}
-        theme={theme}
-        width={76}
-        onSelectFile={() => {}}
-      />,
+      () => (
+        <DiffPane
+          diffContentWidth={72}
+          files={() => bootstrap.changeset.files}
+          headerLabelWidth={40}
+          headerStatsWidth={16}
+          layout="split"
+          scrollRef={createScrollRef()}
+          selectedFileId={() => "alpha"}
+          selectedHunkIndex={() => 0}
+          separatorWidth={68}
+          showAgentNotes={() => false}
+          showLineNumbers={false}
+          showHunkHeaders={true}
+          wrapLines={false}
+          wrapToggleScrollTop={null}
+          theme={theme}
+          width={76}
+          onSelectFile={() => {}}
+        />
+      ),
       80,
       18,
     );
@@ -2442,25 +2423,27 @@ describe("UI components", () => {
     const bootstrap = createWrapBootstrap();
     const theme = resolveTheme("midnight", null);
     const frame = await captureFrame(
-      <DiffPane
-        diffContentWidth={48}
-        files={bootstrap.changeset.files}
-        headerLabelWidth={24}
-        headerStatsWidth={12}
-        layout="split"
-        scrollRef={createRef()}
-        selectedFileId="wrap"
-        selectedHunkIndex={0}
-        separatorWidth={44}
-        showAgentNotes={false}
-        showLineNumbers={true}
-        showHunkHeaders={true}
-        wrapLines={true}
-        wrapToggleScrollTop={null}
-        theme={theme}
-        width={52}
-        onSelectFile={() => {}}
-      />,
+      () => (
+        <DiffPane
+          diffContentWidth={48}
+          files={() => bootstrap.changeset.files}
+          headerLabelWidth={24}
+          headerStatsWidth={12}
+          layout="split"
+          scrollRef={createScrollRef()}
+          selectedFileId={() => "wrap"}
+          selectedHunkIndex={() => 0}
+          separatorWidth={44}
+          showAgentNotes={() => false}
+          showLineNumbers={true}
+          showHunkHeaders={true}
+          wrapLines={true}
+          wrapToggleScrollTop={null}
+          theme={theme}
+          width={52}
+          onSelectFile={() => {}}
+        />
+      ),
       56,
       20,
     );
@@ -2475,25 +2458,27 @@ describe("UI components", () => {
     const bootstrap = createBootstrap();
     const theme = resolveTheme("midnight", null);
     const frame = await captureFrame(
-      <DiffPane
-        diffContentWidth={72}
-        files={bootstrap.changeset.files}
-        headerLabelWidth={40}
-        headerStatsWidth={16}
-        layout="split"
-        scrollRef={createRef()}
-        selectedFileId="alpha"
-        selectedHunkIndex={0}
-        separatorWidth={68}
-        showAgentNotes={false}
-        showLineNumbers={true}
-        showHunkHeaders={false}
-        wrapLines={false}
-        wrapToggleScrollTop={null}
-        theme={theme}
-        width={76}
-        onSelectFile={() => {}}
-      />,
+      () => (
+        <DiffPane
+          diffContentWidth={72}
+          files={() => bootstrap.changeset.files}
+          headerLabelWidth={40}
+          headerStatsWidth={16}
+          layout="split"
+          scrollRef={createScrollRef()}
+          selectedFileId={() => "alpha"}
+          selectedHunkIndex={() => 0}
+          separatorWidth={68}
+          showAgentNotes={() => false}
+          showLineNumbers={true}
+          showHunkHeaders={false}
+          wrapLines={false}
+          wrapToggleScrollTop={null}
+          theme={theme}
+          width={76}
+          onSelectFile={() => {}}
+        />
+      ),
       80,
       18,
     );
@@ -2508,15 +2493,17 @@ describe("UI components", () => {
     const file = createWrapBootstrap().changeset.files[0]!;
     const theme = resolveTheme("midnight", null);
     const frame = await captureFrame(
-      <PierreDiffView
-        file={file}
-        layout="stack"
-        theme={theme}
-        width={48}
-        selectedHunkIndex={0}
-        wrapLines={true}
-        scrollable={false}
-      />,
+      () => (
+        <PierreDiffView
+          file={file}
+          layout="stack"
+          theme={theme}
+          width={48}
+          selectedHunkIndex={0}
+          wrapLines={true}
+          scrollable={false}
+        />
+      ),
       52,
       18,
     );
@@ -2540,29 +2527,33 @@ describe("UI components", () => {
     const theme = resolveTheme("midnight", null);
 
     const baseFrame = await captureFrame(
-      <PierreDiffView
-        file={file}
-        layout="stack"
-        theme={theme}
-        width={48}
-        selectedHunkIndex={0}
-        wrapLines={false}
-        scrollable={false}
-      />,
+      () => (
+        <PierreDiffView
+          file={file}
+          layout="stack"
+          theme={theme}
+          width={48}
+          selectedHunkIndex={0}
+          wrapLines={false}
+          scrollable={false}
+        />
+      ),
       52,
       12,
     );
     const shiftedFrame = await captureFrame(
-      <PierreDiffView
-        file={file}
-        layout="stack"
-        theme={theme}
-        width={48}
-        selectedHunkIndex={0}
-        wrapLines={false}
-        codeHorizontalOffset={48}
-        scrollable={false}
-      />,
+      () => (
+        <PierreDiffView
+          file={file}
+          layout="stack"
+          theme={theme}
+          width={48}
+          selectedHunkIndex={0}
+          wrapLines={false}
+          codeHorizontalOffset={48}
+          scrollable={false}
+        />
+      ),
       52,
       12,
     );
@@ -2579,28 +2570,32 @@ describe("UI components", () => {
     const width = 64;
 
     const splitFrame = await captureFrame(
-      <PierreDiffView
-        file={file}
-        layout="split"
-        theme={theme}
-        width={width}
-        selectedHunkIndex={0}
-        wrapLines={true}
-        scrollable={false}
-      />,
+      () => (
+        <PierreDiffView
+          file={file}
+          layout="split"
+          theme={theme}
+          width={width}
+          selectedHunkIndex={0}
+          wrapLines={true}
+          scrollable={false}
+        />
+      ),
       width + 4,
       18,
     );
     const stackFrame = await captureFrame(
-      <PierreDiffView
-        file={file}
-        layout="stack"
-        theme={theme}
-        width={width}
-        selectedHunkIndex={0}
-        wrapLines={true}
-        scrollable={false}
-      />,
+      () => (
+        <PierreDiffView
+          file={file}
+          layout="stack"
+          theme={theme}
+          width={width}
+          selectedHunkIndex={0}
+          wrapLines={true}
+          scrollable={false}
+        />
+      ),
       width + 4,
       18,
     );
@@ -2622,24 +2617,26 @@ describe("UI components", () => {
     );
     const theme = resolveTheme("midnight", null);
     const frame = await captureFrame(
-      <PierreDiffView
-        file={file}
-        layout="split"
-        theme={theme}
-        width={88}
-        selectedHunkIndex={0}
-        visibleAgentNotes={[
-          {
-            id: "note:ungrounded",
-            annotation: {
-              summary: "Ungrounded note",
-              rationale: "Falls back to the first visible row.",
+      () => (
+        <PierreDiffView
+          file={file}
+          layout="split"
+          theme={theme}
+          width={88}
+          selectedHunkIndex={0}
+          visibleAgentNotes={[
+            {
+              id: "note:ungrounded",
+              annotation: {
+                summary: "Ungrounded note",
+                rationale: "Falls back to the first visible row.",
+              },
             },
-          },
-        ]}
-        showHunkHeaders={false}
-        scrollable={false}
-      />,
+          ]}
+          showHunkHeaders={false}
+          scrollable={false}
+        />
+      ),
       92,
       18,
     );
@@ -2658,75 +2655,85 @@ describe("UI components", () => {
     const theme = resolveTheme("midnight", null);
 
     const noFileFrame = await captureFrame(
-      <PierreDiffView
-        file={undefined}
-        layout="split"
-        theme={theme}
-        width={72}
-        selectedHunkIndex={0}
-        scrollable={false}
-      />,
+      () => (
+        <PierreDiffView
+          file={undefined}
+          layout="split"
+          theme={theme}
+          width={72}
+          selectedHunkIndex={0}
+          scrollable={false}
+        />
+      ),
       76,
       6,
     );
     expect(noFileFrame).toContain("No file selected.");
 
     const renameOnlyFrame = await captureFrame(
-      <PierreDiffView
-        file={createEmptyDiffFile("rename-pure")}
-        layout="split"
-        theme={theme}
-        width={72}
-        selectedHunkIndex={0}
-        scrollable={false}
-      />,
+      () => (
+        <PierreDiffView
+          file={createEmptyDiffFile("rename-pure")}
+          layout="split"
+          theme={theme}
+          width={72}
+          selectedHunkIndex={0}
+          scrollable={false}
+        />
+      ),
       76,
       6,
     );
     expect(renameOnlyFrame).toContain("This change only renames the file.");
 
     const newFileFrame = await captureFrame(
-      <PierreDiffView
-        file={createEmptyDiffFile("new")}
-        layout="split"
-        theme={theme}
-        width={72}
-        selectedHunkIndex={0}
-        scrollable={false}
-      />,
+      () => (
+        <PierreDiffView
+          file={createEmptyDiffFile("new")}
+          layout="split"
+          theme={theme}
+          width={72}
+          selectedHunkIndex={0}
+          scrollable={false}
+        />
+      ),
       76,
       6,
     );
     expect(newFileFrame).toContain("The file is marked as new.");
 
     const deletedFileFrame = await captureFrame(
-      <PierreDiffView
-        file={createEmptyDiffFile("deleted")}
-        layout="split"
-        theme={theme}
-        width={72}
-        selectedHunkIndex={0}
-        scrollable={false}
-      />,
+      () => (
+        <PierreDiffView
+          file={createEmptyDiffFile("deleted")}
+          layout="split"
+          theme={theme}
+          width={72}
+          selectedHunkIndex={0}
+          scrollable={false}
+        />
+      ),
       76,
       6,
     );
     expect(deletedFileFrame).toContain("The file is marked as deleted.");
 
     const binaryFileFrame = await captureFrame(
-      <PierreDiffView
-        file={{
-          ...createEmptyDiffFile("change"),
-          id: "empty:binary",
-          isBinary: true,
-          path: "image.png",
-        }}
-        layout="split"
-        theme={theme}
-        width={72}
-        selectedHunkIndex={0}
-        scrollable={false}
-      />,
+      () => (
+        <PierreDiffView
+          file={{
+            ...createEmptyDiffFile("change"),
+            id: "empty:binary",
+            isBinary: true,
+            path: "image.png",
+          }}
+          layout="split"
+          theme={theme}
+          width={72}
+          selectedHunkIndex={0}
+          scrollable={false}
+        />
+      ),
       76,
       6,
     );
@@ -2738,14 +2745,16 @@ describe("UI components", () => {
     const theme = resolveTheme("midnight", null);
 
     const noFetcherFrame = await captureFrame(
-      <PierreDiffView
-        file={baseFile}
-        layout="split"
-        theme={theme}
-        width={120}
-        selectedHunkIndex={0}
-        scrollable={false}
-      />,
+      () => (
+        <PierreDiffView
+          file={baseFile}
+          layout="split"
+          theme={theme}
+          width={120}
+          selectedHunkIndex={0}
+          scrollable={false}
+        />
+      ),
       120,
       40,
     );
@@ -2758,15 +2767,17 @@ describe("UI components", () => {
     };
 
     const expandableFrame = await captureFrame(
-      <PierreDiffView
-        file={fileWithFetcher}
-        layout="split"
-        theme={theme}
-        width={120}
-        selectedHunkIndex={0}
-        scrollable={false}
-        onToggleGap={() => {}}
-      />,
+      () => (
+        <PierreDiffView
+          file={fileWithFetcher}
+          layout="split"
+          theme={theme}
+          width={120}
+          selectedHunkIndex={0}
+          scrollable={false}
+          onToggleGap={() => {}}
+        />
+      ),
       120,
       40,
     );
@@ -2781,23 +2792,23 @@ describe("UI components", () => {
     };
     const theme = resolveTheme("midnight", null);
     const setup = await testRender(
-      <PierreDiffView
-        file={file}
-        layout="split"
-        theme={theme}
-        width={120}
-        selectedHunkIndex={0}
-        scrollable={false}
-        onStartUserNoteAtHunk={() => {}}
-        onToggleGap={() => {}}
-      />,
+      () => (
+        <PierreDiffView
+          file={file}
+          layout="split"
+          theme={theme}
+          width={120}
+          selectedHunkIndex={0}
+          scrollable={false}
+          onStartUserNoteAtHunk={() => {}}
+          onToggleGap={() => {}}
+        />
+      ),
       { width: 120, height: 40 },
     );
 
     try {
-      await act(async () => {
-        await setup.renderOnce();
-      });
+      await setup.renderOnce();
 
       const frame = setup.captureCharFrame();
       const frameLines = frame.split("\n");
@@ -2808,25 +2819,19 @@ describe("UI components", () => {
       expect(hunkHeaderY).toBeGreaterThanOrEqual(0);
       expect(codeY).toBeGreaterThanOrEqual(0);
 
-      await act(async () => {
-        await setup.mockMouse.moveTo(4, collapsedY);
-        await setup.renderOnce();
-      });
+      await setup.mockMouse.moveTo(4, collapsedY);
+      await setup.renderOnce();
       expect(setup.captureCharFrame()).not.toContain("[+]");
 
-      await act(async () => {
-        await setup.mockMouse.moveTo(4, hunkHeaderY);
-        await setup.renderOnce();
-      });
+      await setup.mockMouse.moveTo(4, hunkHeaderY);
+      await setup.renderOnce();
       expect(setup.captureCharFrame()).not.toContain("[+]");
 
       let codeHoverFrame = "";
       for (const y of [codeY, codeY + 1]) {
         for (const x of [4, 16, 48, 76]) {
-          await act(async () => {
-            await setup.mockMouse.moveTo(x, y);
-            await setup.renderOnce();
-          });
+          await setup.mockMouse.moveTo(x, y);
+          await setup.renderOnce();
           codeHoverFrame = setup.captureCharFrame();
           if (codeHoverFrame.includes("[+]")) {
             break;
@@ -2838,9 +2843,7 @@ describe("UI components", () => {
       }
       expect(codeHoverFrame).toContain("[+]");
     } finally {
-      await act(async () => {
-        setup.renderer.destroy();
-      });
+      setup.renderer.destroy();
     }
   });
 
@@ -2853,24 +2856,24 @@ describe("UI components", () => {
     const toggledGaps: string[] = [];
     const theme = resolveTheme("midnight", null);
     const setup = await testRender(
-      <PierreDiffView
-        file={file}
-        layout="split"
-        theme={theme}
-        width={120}
-        selectedHunkIndex={0}
-        scrollable={false}
-        onToggleGap={(gapKey) => {
-          toggledGaps.push(gapKey);
-        }}
-      />,
+      () => (
+        <PierreDiffView
+          file={file}
+          layout="split"
+          theme={theme}
+          width={120}
+          selectedHunkIndex={0}
+          scrollable={false}
+          onToggleGap={(gapKey) => {
+            toggledGaps.push(gapKey);
+          }}
+        />
+      ),
       { width: 120, height: 40 },
     );
 
     try {
-      await act(async () => {
-        await setup.renderOnce();
-      });
+      await setup.renderOnce();
 
       const frame = setup.captureCharFrame();
       const gapLineIndex = frame.split("\n").findIndex((line) => line.includes("▾"));
@@ -2878,9 +2881,7 @@ describe("UI components", () => {
 
       for (const y of [gapLineIndex, gapLineIndex + 1]) {
         for (const x of [2, 8, 24]) {
-          await act(async () => {
-            await setup.mockMouse.click(x, y);
-          });
+          await setup.mockMouse.click(x, y);
           if (toggledGaps.length > 0) {
             break;
           }
@@ -2892,9 +2893,7 @@ describe("UI components", () => {
 
       expect(toggledGaps).toEqual(["before:0"]);
     } finally {
-      await act(async () => {
-        setup.renderer.destroy();
-      });
+      setup.renderer.destroy();
     }
   });
 
@@ -2916,28 +2915,28 @@ describe("UI components", () => {
     });
     const theme = resolveTheme("midnight", null);
     const setup = await testRender(
-      <PierreDiffView
-        file={file}
-        layout="split"
-        theme={theme}
-        width={140}
-        selectedHunkIndex={0}
-        expandedGapKeys={new Set(["before:0"])}
-        sourceStatus={{ kind: "loaded", text: after }}
-        scrollable={false}
-      />,
+      () => (
+        <PierreDiffView
+          file={file}
+          layout="split"
+          theme={theme}
+          width={140}
+          selectedHunkIndex={0}
+          expandedGapKeys={new Set(["before:0"])}
+          sourceStatus={{ kind: "loaded", text: after }}
+          scrollable={false}
+        />
+      ),
       { width: 144, height: 20 },
     );
 
     try {
       let highlighted = false;
       for (let iteration = 0; iteration < 400; iteration += 1) {
-        await act(async () => {
-          await setup.renderOnce();
-          await Bun.sleep(0);
-          await setup.renderOnce();
-          await Bun.sleep(0);
-        });
+        await setup.renderOnce();
+        await Bun.sleep(0);
+        await setup.renderOnce();
+        await Bun.sleep(0);
 
         if (frameHasHighlightedMarker(setup.captureSpans(), "expandedMarker")) {
           highlighted = true;
@@ -2947,9 +2946,7 @@ describe("UI components", () => {
 
       expect(highlighted).toBe(true);
     } finally {
-      await act(async () => {
-        setup.renderer.destroy();
-      });
+      setup.renderer.destroy();
     }
   });
 
@@ -2962,14 +2959,16 @@ describe("UI components", () => {
     );
     const theme = resolveTheme("graphite", null);
     const setup = await testRender(
-      <PierreDiffView
-        file={file}
-        layout="split"
-        theme={theme}
-        width={120}
-        selectedHunkIndex={0}
-        scrollable={false}
-      />,
+      () => (
+        <PierreDiffView
+          file={file}
+          layout="split"
+          theme={theme}
+          width={120}
+          selectedHunkIndex={0}
+          scrollable={false}
+        />
+      ),
       { width: 124, height: 10 },
     );
 
@@ -2978,12 +2977,10 @@ describe("UI components", () => {
       let addedBackgroundDistance: number | null = null;
 
       for (let iteration = 0; iteration < 200; iteration += 1) {
-        await act(async () => {
-          await setup.renderOnce();
-          await Bun.sleep(0);
-          await setup.renderOnce();
-          await Bun.sleep(0);
-        });
+        await setup.renderOnce();
+        await Bun.sleep(0);
+        await setup.renderOnce();
+        await Bun.sleep(0);
 
         const frame = setup.captureSpans();
         removedBackgroundDistance = renderedWordDiffBackgroundDistance(frame, "41");
@@ -3002,9 +2999,7 @@ describe("UI components", () => {
       expect(removedBackgroundDistance).toBeGreaterThanOrEqual(28);
       expect(addedBackgroundDistance).toBeGreaterThanOrEqual(28);
     } finally {
-      await act(async () => {
-        setup.renderer.destroy();
-      });
+      setup.renderer.destroy();
     }
   });
 
@@ -3018,26 +3013,26 @@ describe("UI components", () => {
     const theme = resolveTheme("midnight", null);
 
     const firstSetup = await testRender(
-      <PierreDiffView
-        file={file}
-        layout="split"
-        theme={theme}
-        width={180}
-        selectedHunkIndex={0}
-        scrollable={false}
-      />,
+      () => (
+        <PierreDiffView
+          file={file}
+          layout="split"
+          theme={theme}
+          width={180}
+          selectedHunkIndex={0}
+          scrollable={false}
+        />
+      ),
       { width: 184, height: 10 },
     );
 
     try {
       let ready = false;
       for (let iteration = 0; iteration < 400; iteration += 1) {
-        await act(async () => {
-          await firstSetup.renderOnce();
-          await Bun.sleep(0);
-          await firstSetup.renderOnce();
-          await Bun.sleep(0);
-        });
+        await firstSetup.renderOnce();
+        await Bun.sleep(0);
+        await firstSetup.renderOnce();
+        await Bun.sleep(0);
 
         if (frameHasHighlightedMarker(firstSetup.captureSpans(), "cacheMarker")) {
           ready = true;
@@ -3047,34 +3042,30 @@ describe("UI components", () => {
 
       expect(ready).toBe(true);
     } finally {
-      await act(async () => {
-        firstSetup.renderer.destroy();
-      });
+      firstSetup.renderer.destroy();
     }
 
     const secondSetup = await testRender(
-      <PierreDiffView
-        file={file}
-        layout="split"
-        theme={theme}
-        width={180}
-        selectedHunkIndex={0}
-        shouldLoadHighlight={false}
-        scrollable={false}
-      />,
+      () => (
+        <PierreDiffView
+          file={file}
+          layout="split"
+          theme={theme}
+          width={180}
+          selectedHunkIndex={0}
+          shouldLoadHighlight={false}
+          scrollable={false}
+        />
+      ),
       { width: 184, height: 10 },
     );
 
     try {
-      await act(async () => {
-        await secondSetup.renderOnce();
-      });
+      await secondSetup.renderOnce();
 
       expect(frameHasHighlightedMarker(secondSetup.captureSpans(), "cacheMarker")).toBe(true);
     } finally {
-      await act(async () => {
-        secondSetup.renderer.destroy();
-      });
+      secondSetup.renderer.destroy();
     }
   });
 
@@ -3082,25 +3073,29 @@ describe("UI components", () => {
     const files = createHighlightPrefetchWindowFiles();
     const theme = resolveTheme("midnight", null);
     const setup = await testRender(
-      <DiffPane
-        {...createDiffPaneProps(files, theme, {
-          diffContentWidth: 92,
-          separatorWidth: 88,
-          width: 96,
-        })}
-      />,
+      () => (
+        <DiffPane
+          {...createDiffPaneProps(files, theme, {
+            diffContentWidth: 92,
+            separatorWidth: 88,
+            width: 96,
+          })}
+        />
+      ),
       { width: 100, height: 10 },
     );
     const thirdFileCheck = await testRender(
-      <PierreDiffView
-        file={files[2]}
-        layout="split"
-        theme={theme}
-        width={180}
-        selectedHunkIndex={0}
-        shouldLoadHighlight={false}
-        scrollable={false}
-      />,
+      () => (
+        <PierreDiffView
+          file={files[2]}
+          layout="split"
+          theme={theme}
+          width={180}
+          selectedHunkIndex={0}
+          shouldLoadHighlight={false}
+          scrollable={false}
+        />
+      ),
       { width: 184, height: 10 },
     );
 
@@ -3112,14 +3107,12 @@ describe("UI components", () => {
 
       let prefetched = false;
       for (let iteration = 0; iteration < 400; iteration += 1) {
-        await act(async () => {
-          await setup.renderOnce();
-          await thirdFileCheck.renderOnce();
-          await Bun.sleep(0);
-          await setup.renderOnce();
-          await thirdFileCheck.renderOnce();
-          await Bun.sleep(0);
-        });
+        await setup.renderOnce();
+        await thirdFileCheck.renderOnce();
+        await Bun.sleep(0);
+        await setup.renderOnce();
+        await thirdFileCheck.renderOnce();
+        await Bun.sleep(0);
 
         if (frameHasHighlightedMarker(thirdFileCheck.captureSpans(), "prefetchMarker3")) {
           prefetched = true;
@@ -3129,16 +3122,14 @@ describe("UI components", () => {
 
       expect(prefetched).toBe(true);
     } finally {
-      await act(async () => {
-        thirdFileCheck.renderer.destroy();
-        setup.renderer.destroy();
-      });
+      thirdFileCheck.renderer.destroy();
+      setup.renderer.destroy();
     }
   });
 
   test("App renders the menu bar and multi-file stream", async () => {
     const bootstrap = createBootstrap();
-    const frame = await captureFrame(<AppHost bootstrap={bootstrap} />, 280, 24);
+    const frame = await captureFrame(() => <AppHost bootstrap={bootstrap} />, 280, 24);
 
     expect(frame).toContain("File  View  Navigate  Theme  Agent  Help");
     expect(frame).toContain("alpha.ts");

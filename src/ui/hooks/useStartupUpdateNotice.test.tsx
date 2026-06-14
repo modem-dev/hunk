@@ -1,17 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { testRender } from "@opentui/react/test-utils";
-import { act } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { testRender } from "@opentui/solid";
+import { createEffect } from "solid-js";
 import { useStartupUpdateNotice } from "./useStartupUpdateNotice";
 
-function NoticeHarness({
-  delayMs = 1,
-  durationMs = 5,
-  enabled = true,
-  repeatMs = 10,
-  resolver,
-  onNoticeText,
-}: {
+function NoticeHarness(props: {
   delayMs?: number;
   durationMs?: number;
   enabled?: boolean;
@@ -20,61 +12,28 @@ function NoticeHarness({
   onNoticeText?: (value: string | null) => void;
 }) {
   const noticeText = useStartupUpdateNotice({
-    delayMs,
-    durationMs,
-    enabled,
-    repeatMs,
-    resolver,
+    delayMs: props.delayMs ?? 1,
+    durationMs: props.durationMs ?? 5,
+    enabled: props.enabled ?? true,
+    repeatMs: props.repeatMs ?? 10,
+    resolver: props.resolver,
   });
 
-  useEffect(() => {
-    onNoticeText?.(noticeText);
-  }, [noticeText, onNoticeText]);
+  // Report every notice-text transition so tests can assert the sequence.
+  createEffect(() => {
+    props.onNoticeText?.(noticeText());
+  });
 
   return (
     <box>
-      <text>{noticeText ?? ""}</text>
+      <text>{noticeText() ?? ""}</text>
     </box>
   );
 }
 
-function ResolverSwapHarness({ onNoticeText }: { onNoticeText?: (value: string | null) => void }) {
-  const [useSecondResolver, setUseSecondResolver] = useState(false);
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setUseSecondResolver(true);
-    }, 0);
-
-    return () => {
-      clearTimeout(timer);
-    };
-  }, []);
-
-  const resolver = useMemo(
-    () => async () =>
-      useSecondResolver
-        ? { key: "latest:2.0.0", message: "Update available: 2.0.0" }
-        : { key: "latest:1.0.0", message: "Update available: 1.0.0" },
-    [useSecondResolver],
-  );
-
-  return (
-    <NoticeHarness
-      delayMs={50}
-      durationMs={200}
-      repeatMs={1_000}
-      resolver={resolver}
-      onNoticeText={onNoticeText}
-    />
-  );
-}
-
 async function advance(setup: Awaited<ReturnType<typeof testRender>>, ms: number) {
-  await act(async () => {
-    await Bun.sleep(ms);
-    await setup.renderOnce();
-  });
+  await Bun.sleep(ms);
+  await setup.renderOnce();
 }
 
 describe("useStartupUpdateNotice", () => {
@@ -87,7 +46,7 @@ describe("useStartupUpdateNotice", () => {
     };
 
     const setup = await testRender(
-      <NoticeHarness resolver={resolver} onNoticeText={(value) => seen.push(value)} />,
+      () => <NoticeHarness resolver={resolver} onNoticeText={(value) => seen.push(value)} />,
       { width: 80, height: 2 },
     );
 
@@ -102,30 +61,38 @@ describe("useStartupUpdateNotice", () => {
       expect(seen.includes(null)).toBe(true);
       expect(setup.captureCharFrame()).not.toContain("Update available: 9.9.9");
     } finally {
-      await act(async () => {
-        setup.renderer.destroy();
-      });
+      setup.renderer.destroy();
     }
   });
 
-  test("restarts cleanly when the resolver identity changes before the first delayed check", async () => {
+  test("shows the resolved notice, then clears it after the duration elapses", async () => {
     const seen: Array<string | null> = [];
+    const resolver = async () => ({ key: "latest:1.0.0", message: "Update available: 1.0.0" });
+
     const setup = await testRender(
-      <ResolverSwapHarness onNoticeText={(value) => seen.push(value)} />,
+      () => (
+        <NoticeHarness
+          delayMs={1}
+          durationMs={20}
+          repeatMs={1_000}
+          resolver={resolver}
+          onNoticeText={(value) => seen.push(value)}
+        />
+      ),
       { width: 80, height: 2 },
     );
 
     try {
-      await advance(setup, 0);
-      await advance(setup, 10);
-      await advance(setup, 60);
+      await advance(setup, 5);
+      expect(seen).toContain("Update available: 1.0.0");
+      expect(setup.captureCharFrame()).toContain("Update available: 1.0.0");
 
-      expect(seen).toContain("Update available: 2.0.0");
-      expect(seen).not.toContain("Update available: 1.0.0");
+      // After the dismiss timer fires the notice should be cleared back to null.
+      await advance(setup, 40);
+      expect(seen[seen.length - 1]).toBeNull();
+      expect(setup.captureCharFrame()).not.toContain("Update available: 1.0.0");
     } finally {
-      await act(async () => {
-        setup.renderer.destroy();
-      });
+      setup.renderer.destroy();
     }
   });
 });

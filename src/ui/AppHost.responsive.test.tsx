@@ -1,6 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
-import { testRender } from "@opentui/react/test-utils";
-import { act } from "react";
+import { testRender } from "@opentui/solid";
 import type { AppBootstrap, LayoutMode } from "../core/types";
 import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
 import { createTestDiffFile } from "../../test/helpers/diff-helpers";
@@ -35,56 +34,42 @@ function createBootstrap(initialMode: LayoutMode = "auto", pager = false): AppBo
 }
 
 async function captureFrameForBootstrap(bootstrap: AppBootstrap, width: number, height = 24) {
-  const setup = await testRender(<AppHost bootstrap={bootstrap} />, { width, height });
+  const setup = await testRender(() => <AppHost bootstrap={bootstrap} />, { width, height });
 
   try {
-    await act(async () => {
-      await setup.renderOnce();
-    });
+    await setup.renderOnce();
 
     return setup.captureCharFrame();
   } finally {
-    await act(async () => {
-      setup.renderer.destroy();
-    });
+    setup.renderer.destroy();
   }
 }
 
 async function captureResponsiveFrames() {
-  const setup = await testRender(<AppHost bootstrap={createBootstrap()} />, {
+  const setup = await testRender(() => <AppHost bootstrap={createBootstrap()} />, {
     width: 280,
     height: 24,
   });
 
   try {
-    await act(async () => {
-      await setup.renderOnce();
-    });
+    await setup.renderOnce();
     const ultraWide = setup.captureCharFrame();
 
-    await act(async () => {
-      setup.resize(220, 24);
-      await setup.renderOnce();
-    });
+    setup.resize(220, 24);
+    await setup.renderOnce();
     const full = setup.captureCharFrame();
 
-    await act(async () => {
-      setup.resize(160, 24);
-      await setup.renderOnce();
-    });
+    setup.resize(160, 24);
+    await setup.renderOnce();
     const medium = setup.captureCharFrame();
 
-    await act(async () => {
-      setup.resize(159, 24);
-      await setup.renderOnce();
-    });
+    setup.resize(159, 24);
+    await setup.renderOnce();
     const tight = setup.captureCharFrame();
 
     return { ultraWide, full, medium, tight };
   } finally {
-    await act(async () => {
-      setup.renderer.destroy();
-    });
+    setup.renderer.destroy();
   }
 }
 
@@ -109,69 +94,49 @@ describe("responsive app", () => {
   });
 
   test("View menu sidebar checkmark follows actual medium-viewport visibility", async () => {
-    const setup = await testRender(<AppHost bootstrap={createBootstrap("auto")} />, {
+    const setup = await testRender(() => <AppHost bootstrap={createBootstrap("auto")} />, {
       width: 180,
       height: 24,
     });
 
     try {
-      await act(async () => {
-        await setup.renderOnce();
-      });
+      await setup.renderOnce();
 
       const initialFrame = setup.captureCharFrame();
       expect((initialFrame.match(/alpha\.ts/g) ?? []).length).toBe(1);
 
-      await act(async () => {
-        await setup.mockInput.pressKey("F10");
-      });
-      await act(async () => {
-        await setup.renderOnce();
-      });
-      await act(async () => {
-        await setup.mockInput.pressArrow("right");
-      });
-      await act(async () => {
-        await setup.renderOnce();
-      });
+      await setup.mockInput.pressKey("F10");
+      await setup.renderOnce();
+      await setup.mockInput.pressArrow("right");
+      await setup.renderOnce();
 
       const menuFrame = setup.captureCharFrame();
       expect(menuFrame).toContain("[ ] Sidebar");
       expect(menuFrame).not.toContain("[x] Sidebar");
     } finally {
-      await act(async () => {
-        setup.renderer.destroy();
-      });
+      setup.renderer.destroy();
     }
   });
 
   test("sidebar shortcut opens the hidden sidebar on medium viewport", async () => {
-    const setup = await testRender(<AppHost bootstrap={createBootstrap("auto")} />, {
+    const setup = await testRender(() => <AppHost bootstrap={createBootstrap("auto")} />, {
       width: 180,
       height: 24,
     });
 
     try {
-      await act(async () => {
-        await setup.renderOnce();
-      });
+      await setup.renderOnce();
 
       let frame = setup.captureCharFrame();
       expect((frame.match(/alpha\.ts/g) ?? []).length).toBe(1);
 
-      await act(async () => {
-        await setup.mockInput.typeText("s");
-      });
-      await act(async () => {
-        await setup.renderOnce();
-      });
+      await setup.mockInput.typeText("s");
+      await setup.renderOnce();
 
       frame = setup.captureCharFrame();
       expect((frame.match(/alpha\.ts/g) ?? []).length).toBe(2);
     } finally {
-      await act(async () => {
-        setup.renderer.destroy();
-      });
+      setup.renderer.destroy();
     }
   });
 
@@ -208,22 +173,18 @@ describe("responsive app", () => {
     const exitMock = mock(() => undefined as never);
     (process as typeof process & { exit: typeof exitMock }).exit = exitMock;
 
-    const setup = await testRender(<AppHost bootstrap={createBootstrap()} />, {
+    const setup = await testRender(() => <AppHost bootstrap={createBootstrap()} />, {
       width: 240,
       height: 24,
     });
 
     try {
-      await act(async () => {
-        await setup.renderOnce();
-        await setup.mockInput.pressTab();
-        await setup.renderOnce();
-      });
+      await setup.renderOnce();
+      await setup.mockInput.pressTab();
+      await setup.renderOnce();
 
-      await act(async () => {
-        await setup.mockInput.typeText("q");
-        await setup.renderOnce();
-      });
+      await setup.mockInput.typeText("q");
+      await setup.renderOnce();
 
       const frame = setup.captureCharFrame();
       expect(exitMock).not.toHaveBeenCalled();
@@ -231,9 +192,7 @@ describe("responsive app", () => {
       expect(frame).toContain("q");
     } finally {
       (process as typeof process & { exit: typeof originalExit }).exit = originalExit;
-      await act(async () => {
-        setup.renderer.destroy();
-      });
+      setup.renderer.destroy();
     }
   });
 });

@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 import { createCliRenderer } from "@opentui/core";
-import { createRoot } from "@opentui/react";
+import { render } from "@opentui/solid";
 import { formatCliError } from "./core/errors";
 import {
   installJobControlInterruptSupport,
@@ -96,7 +96,6 @@ async function main() {
   });
 
   const appRenderer = renderer;
-  const root = createRoot(appRenderer);
   const shutdownSignals: NodeJS.Signals[] = ["SIGINT", "SIGTERM"];
   let shuttingDown = false;
   let jobControlSuspendSupport: JobControlSuspendSupport = { dispose: () => undefined };
@@ -115,7 +114,8 @@ async function main() {
     jobControlInterruptSupport.dispose();
     jobControlSuspendSupport.dispose();
     hostClient.stop();
-    shutdownSession({ root, renderer: appRenderer });
+    // Solid disposes the mounted tree via renderer.destroy() (see shutdownSession).
+    shutdownSession({ renderer: appRenderer });
   }
 
   for (const signal of shutdownSignals) {
@@ -125,13 +125,18 @@ async function main() {
   jobControlSuspendSupport = installJobControlSuspendSupport(appRenderer);
 
   // The app owns the full alternate screen session from this point on.
-  root.render(
-    <AppHost
-      bootstrap={bootstrap}
-      hostClient={hostClient}
-      onQuit={shutdown}
-      startupNoticeResolver={resolveStartupUpdateNotice}
-    />,
+  // Pass the pre-created renderer so our stdin/mouse/onDestroy config is kept;
+  // render() attaches to it and mounts the Solid tree into renderer.root.
+  await render(
+    () => (
+      <AppHost
+        bootstrap={bootstrap}
+        hostClient={hostClient}
+        onQuit={shutdown}
+        startupNoticeResolver={resolveStartupUpdateNotice}
+      />
+    ),
+    appRenderer,
   );
 }
 

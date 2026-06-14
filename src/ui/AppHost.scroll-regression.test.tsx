@@ -1,6 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
-import { testRender } from "@opentui/react/test-utils";
-import { act } from "react";
+import { testRender } from "@opentui/solid";
 import type { AppBootstrap } from "../core/types";
 import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
 import { createTestDiffFile } from "../../test/helpers/diff-helpers";
@@ -36,27 +35,23 @@ function createScrollBootstrap(): AppBootstrap {
 
 describe("UI scroll regression", () => {
   test("keeps split diff lines intact after a wheel scroll repaint", async () => {
-    const setup = await testRender(<AppHost bootstrap={createScrollBootstrap()} />, {
+    const setup = await testRender(() => <AppHost bootstrap={createScrollBootstrap()} />, {
       width: 160,
       height: 20,
     });
 
     try {
-      await act(async () => {
-        await setup.renderOnce();
-        await Bun.sleep(100);
-        await setup.renderOnce();
-      });
+      await setup.renderOnce();
+      await Bun.sleep(100);
+      await setup.renderOnce();
 
       const initialFrame = setup.captureCharFrame();
       expect(initialFrame).toContain("36 - line 36 old value");
       expect(initialFrame).toContain("36 + line 36 new value with long long te");
 
-      await act(async () => {
-        await setup.mockMouse.scroll(50, 10, "down");
-        await Bun.sleep(0);
-        await setup.renderOnce();
-      });
+      await setup.mockMouse.scroll(50, 10, "down");
+      await Bun.sleep(0);
+      await setup.renderOnce();
 
       const scrolledFrame = setup.captureCharFrame();
       expect(scrolledFrame).toContain("36 - line 36 old value");
@@ -64,9 +59,7 @@ describe("UI scroll regression", () => {
       expect(scrolledFrame).not.toContain("lold value");
       expect(scrolledFrame).not.toContain("36 +  with long long te");
     } finally {
-      await act(async () => {
-        setup.renderer.destroy();
-      });
+      setup.renderer.destroy();
     }
   });
 });

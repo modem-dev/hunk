@@ -11,17 +11,21 @@ export interface ShutdownRenderer {
 /**
  * Tear down the TUI session and let the renderer restore the previous terminal screen.
  * The caller owns any once-only guard around this helper.
+ *
+ * `root` is optional: under @opentui/solid there is no separate root handle —
+ * `render()` wires the reactive root's disposal to `renderer.destroy()`, so
+ * destroying the renderer also disposes the mounted component tree.
  */
 export function shutdownSession({
   root,
   renderer,
   exit = (code: number) => process.exit(code),
 }: {
-  root: ShutdownRoot;
+  root?: ShutdownRoot;
   renderer: ShutdownRenderer;
   exit?: (code: number) => never | void;
 }) {
-  root.unmount();
+  root?.unmount();
   renderer.destroy();
   exit(0);
 }

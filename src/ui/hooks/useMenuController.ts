@@ -1,17 +1,23 @@
-import { useMemo, useState } from "react";
+import { type Accessor, createMemo, createSignal } from "solid-js";
 import {
-  MENU_ORDER,
   buildMenuSpecs,
-  menuWidth,
-  nextMenuItemIndex,
   type MenuEntry,
   type MenuId,
+  MENU_ORDER,
+  menuWidth,
+  nextMenuItemIndex,
 } from "../components/chrome/menu";
 
-/** Drive menu selection/open state for the desktop-style top menu bar. */
-export function useMenuController(menus: Record<MenuId, MenuEntry[]>) {
-  const [activeMenuId, setActiveMenuId] = useState<MenuId | null>(null);
-  const [activeMenuItemIndex, setActiveMenuItemIndex] = useState(0);
+/**
+ * Drive menu selection/open state for the desktop-style top menu bar.
+ *
+ * `menus` is an accessor so menu contents stay current as review state changes. The returned
+ * state fields (`activeMenuId`, `activeMenuItemIndex`, and the derived specs/width/entries) are
+ * accessors — call them in a tracking scope to react to open/close and navigation.
+ */
+export function useMenuController(menus: Accessor<Record<MenuId, MenuEntry[]>>) {
+  const [activeMenuId, setActiveMenuId] = createSignal<MenuId | null>(null);
+  const [activeMenuItemIndex, setActiveMenuItemIndex] = createSignal(0);
 
   const closeMenu = () => {
     setActiveMenuId(null);
@@ -19,11 +25,11 @@ export function useMenuController(menus: Record<MenuId, MenuEntry[]>) {
 
   const openMenu = (menuId: MenuId) => {
     setActiveMenuId(menuId);
-    setActiveMenuItemIndex(nextMenuItemIndex(menus[menuId], -1, 1));
+    setActiveMenuItemIndex(nextMenuItemIndex(menus()[menuId], -1, 1));
   };
 
   const toggleMenu = (menuId: MenuId) => {
-    if (activeMenuId === menuId) {
+    if (activeMenuId() === menuId) {
       closeMenu();
       return;
     }
@@ -32,22 +38,25 @@ export function useMenuController(menus: Record<MenuId, MenuEntry[]>) {
   };
 
   const switchMenu = (delta: number) => {
-    const currentIndex = Math.max(0, activeMenuId ? MENU_ORDER.indexOf(activeMenuId) : 0);
+    const active = activeMenuId();
+    const currentIndex = Math.max(0, active ? MENU_ORDER.indexOf(active) : 0);
     const nextIndex = (currentIndex + delta + MENU_ORDER.length) % MENU_ORDER.length;
     openMenu(MENU_ORDER[nextIndex]!);
   };
 
   const moveMenuItem = (delta: number) => {
-    const entries = activeMenuId ? menus[activeMenuId] : [];
+    const active = activeMenuId();
+    const entries = active ? menus()[active] : [];
     setActiveMenuItemIndex((current) => nextMenuItemIndex(entries, current, delta));
   };
 
   const activateCurrentMenuItem = () => {
-    if (!activeMenuId) {
+    const active = activeMenuId();
+    if (!active) {
       return;
     }
 
-    const entry = menus[activeMenuId][activeMenuItemIndex];
+    const entry = menus()[active][activeMenuItemIndex()];
     if (!entry || entry.kind !== "item") {
       return;
     }
@@ -56,10 +65,14 @@ export function useMenuController(menus: Record<MenuId, MenuEntry[]>) {
     closeMenu();
   };
 
-  const menuSpecs = useMemo(() => buildMenuSpecs(), []);
-  const activeMenuEntries = activeMenuId ? menus[activeMenuId] : [];
-  const activeMenuSpec = menuSpecs.find((menu) => menu.id === activeMenuId);
-  const activeMenuWidth = menuWidth(activeMenuEntries) + 2;
+  // Menu specs are static for the session (was useMemo with empty deps).
+  const menuSpecs = buildMenuSpecs();
+  const activeMenuEntries = createMemo<MenuEntry[]>(() => {
+    const active = activeMenuId();
+    return active ? menus()[active] : [];
+  });
+  const activeMenuSpec = createMemo(() => menuSpecs.find((menu) => menu.id === activeMenuId()));
+  const activeMenuWidth = createMemo(() => menuWidth(activeMenuEntries()) + 2);
 
   return {
     activeMenuEntries,

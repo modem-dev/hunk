@@ -1,3 +1,4 @@
+import { Show } from "solid-js";
 import type { DiffFile } from "../../../core/types";
 import { fileLabelParts } from "../../lib/files";
 import { fitText } from "../../lib/text";
@@ -12,16 +13,11 @@ interface DiffFileHeaderRowProps {
 }
 
 /** Render one file header row in the review stream or sticky overlay. */
-export function DiffFileHeaderRow({
-  file,
-  headerLabelWidth,
-  headerStatsWidth,
-  theme,
-  onSelect,
-}: DiffFileHeaderRowProps) {
-  const additionsText = `+${file.stats.additions}${file.statsTruncated ? "+" : ""}`;
-  const deletionsText = `-${file.stats.deletions}`;
-  const { filename, stateLabel } = fileLabelParts(file);
+export function DiffFileHeaderRow(props: DiffFileHeaderRowProps) {
+  const additionsText = () =>
+    `+${props.file.stats.additions}${props.file.statsTruncated ? "+" : ""}`;
+  const deletionsText = () => `-${props.file.stats.deletions}`;
+  const labelParts = () => fileLabelParts(props.file);
 
   return (
     <box
@@ -33,29 +29,34 @@ export function DiffFileHeaderRow({
         justifyContent: "space-between",
         paddingLeft: 1,
         paddingRight: 1,
-        backgroundColor: theme.panel,
+        backgroundColor: props.theme.panel,
       }}
-      onMouseUp={onSelect}
+      onMouseUp={props.onSelect}
     >
       {/* Clicking the file header jumps the main stream selection without collapsing to a single-file view. */}
       <box style={{ flexDirection: "row" }}>
-        <text fg={theme.text}>
-          {fitText(filename, Math.max(1, headerLabelWidth - (stateLabel?.length ?? 0)))}
+        <text fg={props.theme.text}>
+          {fitText(
+            labelParts().filename,
+            Math.max(1, props.headerLabelWidth - (labelParts().stateLabel?.length ?? 0)),
+          )}
         </text>
-        {stateLabel && <text fg={theme.muted}>{stateLabel}</text>}
+        <Show when={labelParts().stateLabel}>
+          <text fg={props.theme.muted}>{labelParts().stateLabel}</text>
+        </Show>
       </box>
       <box
         style={{
-          width: headerStatsWidth,
+          width: props.headerStatsWidth,
           height: 1,
           flexDirection: "row",
           justifyContent: "flex-end",
         }}
       >
-        <text fg={theme.badgeAdded}>{additionsText}</text>
-        <text fg={theme.muted}> </text>
-        <text fg={theme.badgeRemoved}>{deletionsText}</text>
-        <text fg={theme.muted}> </text>
+        <text fg={props.theme.badgeAdded}>{additionsText()}</text>
+        <text fg={props.theme.muted}> </text>
+        <text fg={props.theme.badgeRemoved}>{deletionsText()}</text>
+        <text fg={props.theme.muted}> </text>
       </box>
     </box>
   );

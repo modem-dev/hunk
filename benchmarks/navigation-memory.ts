@@ -1,8 +1,7 @@
 // Track retained memory while repeatedly navigating a mounted Hunk review stream.
-import { testRender } from "@opentui/react/test-utils";
+import { testRender } from "@opentui/solid";
 import { performance } from "node:perf_hooks";
-import React from "react";
-import { act } from "react";
+import { createComponent } from "solid-js";
 import { AppHost } from "../src/ui/AppHost";
 import { createLargeSplitStreamBootstrap } from "./large-stream-fixture";
 
@@ -203,18 +202,14 @@ function nextNavigationKey(
 }
 
 async function renderOnce(setup: Awaited<ReturnType<typeof testRender>>) {
-  await act(async () => {
-    await setup.renderOnce();
-    await Bun.sleep(0);
-  });
+  await setup.renderOnce();
+  await Bun.sleep(0);
 }
 
 async function pressNavigationKey(setup: Awaited<ReturnType<typeof testRender>>, key: "]" | "[") {
-  await act(async () => {
-    await setup.mockInput.typeText(key);
-    await setup.renderOnce();
-    await Bun.sleep(0);
-  });
+  await setup.mockInput.typeText(key);
+  await setup.renderOnce();
+  await Bun.sleep(0);
 }
 
 async function main() {
@@ -231,7 +226,7 @@ async function main() {
   );
   samples.push(sampleMemory("after_bootstrap", 0, options));
 
-  const setup = await testRender(React.createElement(AppHost, { bootstrap }), {
+  const setup = await testRender(() => createComponent(AppHost, { bootstrap }), {
     width: options.width,
     height: options.height,
   });
@@ -262,10 +257,8 @@ async function main() {
       }
     }
   } finally {
-    await act(async () => {
-      setup.renderer.destroy();
-      await Bun.sleep(0);
-    });
+    setup.renderer.destroy();
+    await Bun.sleep(0);
     samples.push(sampleMemory("after_destroy", options.navigations, options));
   }
 

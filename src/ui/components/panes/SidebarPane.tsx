@@ -1,23 +1,14 @@
 import type { ScrollBoxRenderable } from "@opentui/core";
-import { useEffect, useMemo, useState, type RefObject } from "react";
+import { createEffect, createMemo, createSignal, For, Match, mergeProps, Switch } from "solid-js";
 import { sidebarEntryStatsWidth, type SidebarEntry } from "../../lib/files";
 import { buildSidebarRenderWindow } from "../../lib/sidebarRenderWindow";
 import type { AppTheme } from "../../themes";
 import { FileGroupHeader, FileListItem } from "./FileListItem";
 
 /** Render the file navigation sidebar. */
-export function SidebarPane({
-  entries,
-  scrollRef,
-  selectedFileId,
-  textWidth,
-  theme,
-  width,
-  estimatedViewportRows = 32,
-  onSelectFile,
-}: {
+export function SidebarPane(props: {
   entries: SidebarEntry[];
-  scrollRef: RefObject<ScrollBoxRenderable | null>;
+  scrollRef: { current: ScrollBoxRenderable | null };
   selectedFileId?: string;
   textWidth: number;
   theme: AppTheme;
@@ -25,24 +16,28 @@ export function SidebarPane({
   estimatedViewportRows?: number;
   onSelectFile: (fileId: string) => void;
 }) {
-  const [scrollViewport, setScrollViewport] = useState({ top: 0, height: 0 });
-  const fileEntries = entries.filter((entry) => entry.kind === "file");
-  const statsWidth = Math.max(0, ...fileEntries.map((entry) => sidebarEntryStatsWidth(entry)));
-  const renderWindow = useMemo(
-    () =>
-      buildSidebarRenderWindow({
-        entries,
-        estimatedViewportRows,
-        overscanRows: 4,
-        scrollTop: scrollViewport.top,
-        selectedFileId,
-        viewportHeight: scrollViewport.height,
-      }),
-    [entries, estimatedViewportRows, scrollViewport.height, scrollViewport.top, selectedFileId],
+  const merged = mergeProps({ estimatedViewportRows: 32 }, props);
+  const [scrollViewport, setScrollViewport] = createSignal({ top: 0, height: 0 });
+  const fileEntries = () => merged.entries.filter((entry) => entry.kind === "file");
+  const statsWidth = () =>
+    Math.max(0, ...fileEntries().map((entry) => sidebarEntryStatsWidth(entry)));
+  const renderWindow = createMemo(() =>
+    buildSidebarRenderWindow({
+      entries: merged.entries,
+      estimatedViewportRows: merged.estimatedViewportRows,
+      overscanRows: 4,
+      scrollTop: scrollViewport().top,
+      selectedFileId: merged.selectedFileId,
+      viewportHeight: scrollViewport().height,
+    }),
   );
 
-  useEffect(() => {
-    const scrollBox = scrollRef.current;
+  // Bind viewport listeners to the live scrollbox and re-bind when the entry count
+  // or scroll ref changes (matches the old [entries.length, scrollRef] deps).
+  createEffect(() => {
+    // Track the dependencies that should force a re-bind.
+    void merged.entries.length;
+    const scrollBox = merged.scrollRef.current;
     if (!scrollBox) {
       return;
     }
@@ -90,60 +85,77 @@ export function SidebarPane({
       scrollBox.viewport.off("layout-changed", handleViewportChange);
       scrollBox.viewport.off("resized", handleViewportChange);
     };
-  }, [entries.length, scrollRef]);
+  });
 
   return (
     <box
       style={{
-        width,
+        width: merged.width,
         border: ["top"],
-        borderColor: theme.border,
-        backgroundColor: theme.panel,
+        borderColor: merged.theme.border,
+        backgroundColor: merged.theme.panel,
         paddingY: 1,
         paddingX: 0,
         flexDirection: "column",
       }}
     >
       <scrollbox
-        ref={scrollRef}
+        ref={(el) => (merged.scrollRef.current = el)}
         width="100%"
         height="100%"
         focused={false}
         scrollY={true}
         viewportCulling={true}
-        rootOptions={{ backgroundColor: theme.panel }}
-        wrapperOptions={{ backgroundColor: theme.panel }}
-        viewportOptions={{ backgroundColor: theme.panel }}
-        contentOptions={{ backgroundColor: theme.panel }}
+        rootOptions={{ backgroundColor: merged.theme.panel }}
+        wrapperOptions={{ backgroundColor: merged.theme.panel }}
+        viewportOptions={{ backgroundColor: merged.theme.panel }}
+        contentOptions={{ backgroundColor: merged.theme.panel }}
         verticalScrollbarOptions={{ visible: false }}
         horizontalScrollbarOptions={{ visible: false }}
       >
         <box style={{ width: "100%", flexDirection: "column" }}>
-          {renderWindow.items.map((item) => {
-            if (item.kind === "spacer") {
-              return (
-                <box
-                  key={item.key}
-                  style={{ width: "100%", height: item.height, backgroundColor: theme.panel }}
-                />
-              );
-            }
-
-            const { entry } = item;
-            return entry.kind === "group" ? (
-              <FileGroupHeader key={entry.id} entry={entry} textWidth={textWidth} theme={theme} />
-            ) : (
-              <FileListItem
-                key={entry.id}
-                entry={entry}
-                selected={entry.id === selectedFileId}
-                statsWidth={statsWidth}
-                textWidth={textWidth}
-                theme={theme}
-                onSelectFile={onSelectFile}
-              />
-            );
-          })}
+          <For each={renderWindow().items}>
+            {(item) => (
+              <Switch>
+                <Match when={item.kind === "spacer" ? item : null}>
+                  {(spacer) => (
+                    <box
+                      style={{
+                        width: "100%",
+                        height: spacer().height,
+                        backgroundColor: merged.theme.panel,
+                      }}
+                    />
+                  )}
+                </Match>
+                <Match
+                  when={item.kind === "entry" && item.entry.kind === "group" ? item.entry : null}
+                >
+                  {(entry) => (
+                    <FileGroupHeader
+                      entry={entry()}
+                      textWidth={merged.textWidth}
+                      theme={merged.theme}
+                    />
+                  )}
+                </Match>
+                <Match
+                  when={item.kind === "entry" && item.entry.kind === "file" ? item.entry : null}
+                >
+                  {(entry) => (
+                    <FileListItem
+                      entry={entry()}
+                      selected={entry().id === merged.selectedFileId}
+                      statsWidth={statsWidth()}
+                      textWidth={merged.textWidth}
+                      theme={merged.theme}
+                      onSelectFile={merged.onSelectFile}
+                    />
+                  )}
+                </Match>
+              </Switch>
+            )}
+          </For>
         </box>
       </scrollbox>
     </box>

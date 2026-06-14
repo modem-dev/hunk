@@ -1,6 +1,6 @@
 import type { KeyEvent } from "@opentui/core";
-import { useKeyboard } from "@opentui/react";
-import { useRef } from "react";
+import { useKeyboard } from "@opentui/solid";
+import type { Accessor } from "solid-js";
 import type { LayoutMode } from "../../core/types";
 import type { MenuId } from "../components/chrome/menu";
 import {
@@ -43,27 +43,27 @@ function isUppercaseGKey(key: KeyEvent) {
 }
 
 export interface UseAppKeyboardShortcutsOptions {
-  activeMenuId: MenuId | null;
+  activeMenuId: Accessor<MenuId | null>;
   activateCurrentMenuItem: () => void;
-  canRefreshCurrentInput: boolean;
+  canRefreshCurrentInput: Accessor<boolean>;
   closeHelp: () => void;
   closeMenu: () => void;
   cycleTheme: () => void;
   cancelDraftNote: () => void;
-  focusArea: FocusArea;
+  focusArea: Accessor<FocusArea>;
   focusFilter: () => void;
   moveToAnnotatedHunk: (delta: number) => void;
   moveToFile: (delta: number) => void;
   moveToHunk: (delta: number) => void;
   moveMenuItem: (delta: number) => void;
   openMenu: (menuId: MenuId) => void;
-  pagerMode: boolean;
+  pagerMode: Accessor<boolean>;
   requestQuit: () => void;
   scrollCodeHorizontally: (delta: number) => void;
   scrollDiff: (delta: number, unit: ScrollUnit) => void;
   saveDraftNote: () => void;
   selectLayoutMode: (mode: LayoutMode) => void;
-  showHelp: boolean;
+  showHelp: Accessor<boolean>;
   startUserNote: () => void;
   switchMenu: (delta: number) => void;
   toggleAgentNotes: () => void;
@@ -114,15 +114,9 @@ export function useAppKeyboardShortcuts({
   toggleSidebar,
   triggerRefreshCurrentInput,
 }: UseAppKeyboardShortcutsOptions) {
-  const activeMenuIdRef = useRef(activeMenuId);
-  const focusAreaRef = useRef(focusArea);
-  const pagerModeRef = useRef(pagerMode);
-  const showHelpRef = useRef(showHelp);
-
-  activeMenuIdRef.current = activeMenuId;
-  focusAreaRef.current = focusArea;
-  pagerModeRef.current = pagerMode;
-  showHelpRef.current = showHelp;
+  // Reactive inputs arrive as accessors. The keyboard callback reads them at the moment
+  // each key is pressed (e.g. `pagerMode()`), so it always observes live state — this
+  // replaces React's "mirror prop into a ref so the callback sees the latest value" pattern.
 
   const resolveJumpShortcut = (key: KeyEvent): JumpShortcut | null => {
     if (isUppercaseGKey(key)) {
@@ -151,11 +145,11 @@ export function useAppKeyboardShortcuts({
       return false;
     }
 
-    if (pagerModeRef.current) {
+    if (pagerMode()) {
       return true;
     }
 
-    if (activeMenuIdRef.current) {
+    if (activeMenuId()) {
       closeMenu();
     } else {
       openMenu("file");
@@ -242,7 +236,7 @@ export function useAppKeyboardShortcuts({
   };
 
   const handleHelpShortcut = (key: KeyEvent) => {
-    if (!showHelpRef.current || !isEscapeKey(key)) {
+    if (!showHelp() || !isEscapeKey(key)) {
       return false;
     }
 
@@ -251,7 +245,7 @@ export function useAppKeyboardShortcuts({
   };
 
   const handleMenuShortcut = (key: KeyEvent) => {
-    if (!activeMenuIdRef.current) {
+    if (!activeMenuId()) {
       return false;
     }
 
@@ -289,7 +283,7 @@ export function useAppKeyboardShortcuts({
   };
 
   const handleFocusedInputShortcut = (key: KeyEvent) => {
-    if (focusAreaRef.current === "filter") {
+    if (focusArea() === "filter") {
       if (key.name === "tab") {
         toggleFocusArea();
         return true;
@@ -299,7 +293,7 @@ export function useAppKeyboardShortcuts({
       return true;
     }
 
-    if (focusAreaRef.current !== "note") {
+    if (focusArea() !== "note") {
       return false;
     }
 
@@ -432,7 +426,7 @@ export function useAppKeyboardShortcuts({
       return;
     }
 
-    if ((key.name === "r" || key.sequence === "r") && canRefreshCurrentInput) {
+    if ((key.name === "r" || key.sequence === "r") && canRefreshCurrentInput()) {
       runAndCloseMenu(triggerRefreshCurrentInput);
       return;
     }
@@ -507,7 +501,7 @@ export function useAppKeyboardShortcuts({
       return;
     }
 
-    if (pagerModeRef.current) {
+    if (pagerMode()) {
       handlePagerShortcut(key);
       return;
     }

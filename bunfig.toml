@@ -1,3 +1,11 @@
+# Compile JSX with babel-preset-solid at load time (dev/run/test).
+# The compiled binary wires the same transform via @opentui/solid/bun-plugin
+# in scripts/build-bin.ts.
+preload = ["@opentui/solid/preload"]
+
+[test]
+preload = ["@opentui/solid/preload"]
+
 [install]
 # Only install packages published at least 7 days ago.
 minimumReleaseAge = 604800

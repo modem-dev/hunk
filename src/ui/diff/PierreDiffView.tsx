@@ -1,5 +1,14 @@
-import { useRenderer } from "@opentui/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRenderer } from "@opentui/solid";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  Match,
+  onCleanup,
+  Show,
+  Switch,
+} from "solid-js";
 import type { DiffFile, LayoutMode, UserNoteLineTarget } from "../../core/types";
 import { AgentInlineNote } from "../components/panes/AgentInlineNote";
 import type { VisibleAgentNote } from "../lib/agentAnnotations";
@@ -57,33 +66,7 @@ function addNoteAffordanceForRow(row: AddNoteTargetRow): ActiveAddNoteAffordance
   };
 }
 
-/** Render a file diff in split or stack mode, with inline agent notes inserted between diff rows. */
-export function PierreDiffView({
-  codeHorizontalOffset = 0,
-  copySelectedRowRanges,
-  copySelectedSide,
-  expandedGapKeys = EMPTY_EXPANDED_GAP_KEYS,
-  file,
-  layout,
-  onHover,
-  onActiveAddNoteAffordanceChange,
-  onStartUserNoteAtHunk,
-  onToggleGap,
-  showLineNumbers = true,
-  showHunkHeaders = true,
-  sourceStatus,
-  wrapLines = false,
-  theme,
-  visibleAgentNotes = EMPTY_VISIBLE_AGENT_NOTES,
-  hoverActive = true,
-  hoverClearSignal = 0,
-  width,
-  selectedHunkIndex,
-  sectionGeometry,
-  shouldLoadHighlight = true,
-  scrollable = true,
-  visibleBodyBounds,
-}: {
+interface PierreDiffViewProps {
   codeHorizontalOffset?: number;
   copySelectedRowRanges?: Map<string, CopySelectedRowRange>;
   copySelectedSide?: "left" | "right";
@@ -108,177 +91,161 @@ export function PierreDiffView({
   shouldLoadHighlight?: boolean;
   scrollable?: boolean;
   visibleBodyBounds?: VisibleBodyBounds;
-}) {
+}
+
+/** Render a file diff in split or stack mode, with inline agent notes inserted between diff rows. */
+export function PierreDiffView(props: PierreDiffViewProps) {
+  const codeHorizontalOffset = () => props.codeHorizontalOffset ?? 0;
+  const expandedGapKeys = () => props.expandedGapKeys ?? EMPTY_EXPANDED_GAP_KEYS;
+  const showLineNumbers = () => props.showLineNumbers ?? true;
+  const showHunkHeaders = () => props.showHunkHeaders ?? true;
+  const wrapLines = () => props.wrapLines ?? false;
+  const visibleAgentNotes = () => props.visibleAgentNotes ?? EMPTY_VISIBLE_AGENT_NOTES;
+  const hoverActive = () => props.hoverActive ?? true;
+  const hoverClearSignal = () => props.hoverClearSignal ?? 0;
+  const shouldLoadHighlight = () => props.shouldLoadHighlight ?? true;
+  const scrollable = () => props.scrollable ?? true;
+
   const renderer = useRenderer();
-  const [hoveredRowKey, setHoveredRowKey] = useState<string | null>(null);
-  const hoverIdleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const previousHoverClearSignalRef = useRef(hoverClearSignal);
+  const [hoveredRowKey, setHoveredRowKey] = createSignal<string | null>(null);
+  const hoverIdleTimeoutRef: { current: ReturnType<typeof setTimeout> | null } = {
+    current: null,
+  };
+  const previousHoverClearSignalRef: { current: number } = { current: hoverClearSignal() };
 
-  // Latest-value refs for upstream handlers that DiffPane/DiffSection recreate on every render.
-  // Row-level callbacks read these at invocation time, which keeps the callbacks below
-  // referentially stable so DiffRowView's memo comparator can actually hold across re-renders.
-  const onHoverRef = useRef(onHover);
-  onHoverRef.current = onHover;
-  const onActiveAddNoteAffordanceChangeRef = useRef(onActiveAddNoteAffordanceChange);
-  onActiveAddNoteAffordanceChangeRef.current = onActiveAddNoteAffordanceChange;
-  const onStartUserNoteAtHunkRef = useRef(onStartUserNoteAtHunk);
-  onStartUserNoteAtHunkRef.current = onStartUserNoteAtHunk;
-  const onToggleGapRef = useRef(onToggleGap);
-  onToggleGapRef.current = onToggleGap;
-
-  const clearHoverIdleTimeout = useCallback(() => {
+  const clearHoverIdleTimeout = () => {
     if (hoverIdleTimeoutRef.current) {
       clearTimeout(hoverIdleTimeoutRef.current);
       hoverIdleTimeoutRef.current = null;
     }
-  }, []);
+  };
 
-  const clearHoveredRow = useCallback(() => {
+  const clearHoveredRow = () => {
     clearHoverIdleTimeout();
     setHoveredRowKey(null);
-    onActiveAddNoteAffordanceChangeRef.current?.(null);
-  }, [clearHoverIdleTimeout]);
+    props.onActiveAddNoteAffordanceChange?.(null);
+  };
 
-  const activateHoveredRow = useCallback(
-    (rowKey: string, affordance: ActiveAddNoteAffordance) => {
-      setHoveredRowKey(rowKey);
-      onActiveAddNoteAffordanceChangeRef.current?.(affordance);
-      clearHoverIdleTimeout();
-      hoverIdleTimeoutRef.current = setTimeout(() => {
-        setHoveredRowKey((current) => (current === rowKey ? null : current));
-        onActiveAddNoteAffordanceChangeRef.current?.(null);
-        hoverIdleTimeoutRef.current = null;
-      }, ADD_NOTE_IDLE_HIDE_DELAY_MS);
-    },
-    [clearHoverIdleTimeout],
-  );
+  const activateHoveredRow = (rowKey: string, affordance: ActiveAddNoteAffordance) => {
+    setHoveredRowKey(rowKey);
+    props.onActiveAddNoteAffordanceChange?.(affordance);
+    clearHoverIdleTimeout();
+    hoverIdleTimeoutRef.current = setTimeout(() => {
+      setHoveredRowKey((current) => (current === rowKey ? null : current));
+      props.onActiveAddNoteAffordanceChange?.(null);
+      hoverIdleTimeoutRef.current = null;
+    }, ADD_NOTE_IDLE_HIDE_DELAY_MS);
+  };
 
-  useEffect(() => {
-    if (!hoverActive) {
+  createEffect(() => {
+    if (!hoverActive()) {
       clearHoveredRow();
     }
-  }, [clearHoveredRow, hoverActive]);
+  });
 
-  useEffect(() => {
-    if (previousHoverClearSignalRef.current === hoverClearSignal) {
+  createEffect(() => {
+    if (previousHoverClearSignalRef.current === hoverClearSignal()) {
       return;
     }
 
-    previousHoverClearSignalRef.current = hoverClearSignal;
+    previousHoverClearSignalRef.current = hoverClearSignal();
     clearHoveredRow();
-  }, [clearHoveredRow, hoverClearSignal]);
+  });
 
-  useEffect(() => {
-    /** Hide hover-only affordances when terminal focus leaves Hunk. */
+  /** Hide hover-only affordances when terminal focus leaves Hunk. */
+  createEffect(() => {
     renderer.on("blur", clearHoveredRow);
-    return () => {
+    onCleanup(() => {
       renderer.off("blur", clearHoveredRow);
-    };
-  }, [clearHoveredRow, renderer]);
+    });
+  });
 
-  useEffect(() => clearHoverIdleTimeout, [clearHoverIdleTimeout]);
+  onCleanup(clearHoverIdleTimeout);
 
   const resolvedHighlighted = useHighlightedDiff({
-    file,
-    appearance: theme.appearance,
+    file: () => props.file,
+    appearance: () => props.theme.appearance,
     shouldLoadHighlight,
   });
-  const sourceTextForHighlight =
-    sourceStatus?.kind === "loaded" && expandedGapKeys.size > 0 ? sourceStatus.text : undefined;
+  const sourceTextForHighlight = () =>
+    props.sourceStatus?.kind === "loaded" && expandedGapKeys().size > 0
+      ? props.sourceStatus.text
+      : undefined;
   const resolvedHighlightedSource = useHighlightedSource({
-    file,
+    file: () => props.file,
     text: sourceTextForHighlight,
-    appearance: theme.appearance,
-    shouldLoadHighlight: shouldLoadHighlight && expandedGapKeys.size > 0,
+    appearance: () => props.theme.appearance,
+    shouldLoadHighlight: () => shouldLoadHighlight() && expandedGapKeys().size > 0,
   });
-  const sourceLineSpans = useCallback(
-    (line: string | undefined, sourceLineNumber: number) =>
-      spansForHighlightedSourceLine(
-        line,
-        resolvedHighlightedSource?.lines[sourceLineNumber],
-        theme,
-      ),
-    [resolvedHighlightedSource, theme],
-  );
+  const sourceLineSpans = (line: string | undefined, sourceLineNumber: number) =>
+    spansForHighlightedSourceLine(
+      line,
+      resolvedHighlightedSource()?.lines[sourceLineNumber],
+      props.theme,
+    );
 
-  const sectionRowPlan = useMemo(
-    () =>
-      buildDiffSectionRowPlan({
-        expandedKeys: expandedGapKeys,
-        file,
-        highlightedDiff: resolvedHighlighted,
-        layout,
-        showHunkHeaders,
-        sourceLineSpans,
-        sourceStatus,
-        theme,
-        visibleAgentNotes,
-      }),
-    [
-      expandedGapKeys,
-      file,
-      layout,
-      resolvedHighlighted,
-      showHunkHeaders,
+  const sectionRowPlan = createMemo(() =>
+    buildDiffSectionRowPlan({
+      expandedKeys: expandedGapKeys(),
+      file: props.file,
+      highlightedDiff: resolvedHighlighted(),
+      layout: props.layout,
+      showHunkHeaders: showHunkHeaders(),
       sourceLineSpans,
-      sourceStatus,
-      theme,
-      visibleAgentNotes,
-    ],
+      sourceStatus: props.sourceStatus,
+      theme: props.theme,
+      visibleAgentNotes: visibleAgentNotes(),
+    }),
   );
-  const plannedRows = sectionRowPlan.plannedRows;
-  const lineNumberDigits = sectionRowPlan.lineNumberDigits;
-  const fileHasSourceFetcher = Boolean(file?.sourceFetcher);
+  const plannedRows = () => sectionRowPlan().plannedRows;
+  const lineNumberDigits = () => sectionRowPlan().lineNumberDigits;
+  const fileHasSourceFetcher = () => Boolean(props.file?.sourceFetcher);
 
   // Stable wrappers around the unstable upstream handlers. Presence/absence still mirrors the
   // incoming props so rows keep hiding affordances when the handlers are not provided.
-  const stableToggleGap = useCallback((gapKey: string) => onToggleGapRef.current?.(gapKey), []);
-  const gapToggleHandler = fileHasSourceFetcher && onToggleGap ? stableToggleGap : undefined;
-  const stableStartUserNoteAtHunk = useCallback(
-    (hunkIndex: number, target?: UserNoteLineTarget) =>
-      onStartUserNoteAtHunkRef.current?.(hunkIndex, target),
-    [],
-  );
-  const startUserNoteAtHunkHandler = onStartUserNoteAtHunk ? stableStartUserNoteAtHunk : undefined;
+  const stableToggleGap = (gapKey: string) => props.onToggleGap?.(gapKey);
+  const gapToggleHandler = () =>
+    fileHasSourceFetcher() && props.onToggleGap ? stableToggleGap : undefined;
+  const stableStartUserNoteAtHunk = (hunkIndex: number, target?: UserNoteLineTarget) =>
+    props.onStartUserNoteAtHunk?.(hunkIndex, target);
+  const startUserNoteAtHunkHandler = () =>
+    props.onStartUserNoteAtHunk ? stableStartUserNoteAtHunk : undefined;
 
   // Precompute each hoverable row's note-insertion target so the shared hover callback can stay
   // identity-stable and look targets up by row key instead of closing over per-row state.
   // Keyed by the DiffRow key (not the planned-row key) because that is what DiffRowView reports
   // back through onHoverRow.
-  const addNoteAffordanceByRowKey = useMemo(() => {
+  const addNoteAffordanceByRowKey = createMemo(() => {
     const next = new Map<string, ActiveAddNoteAffordance>();
-    for (const plannedRow of plannedRows) {
+    for (const plannedRow of plannedRows()) {
       if (plannedRow.kind === "diff-row" && isAddNoteTargetRow(plannedRow.row)) {
         next.set(plannedRow.row.key, addNoteAffordanceForRow(plannedRow.row));
       }
     }
     return next;
-  }, [plannedRows]);
+  });
 
   /** One shared hover handler for every diff row; DiffRowView passes the hovered row's key. */
-  const handleHoverRow = useCallback(
-    (rowKey: string) => {
-      onHoverRef.current?.();
-      const affordance = addNoteAffordanceByRowKey.get(rowKey);
-      if (affordance) {
-        activateHoveredRow(rowKey, affordance);
-      } else {
-        clearHoveredRow();
-      }
-    },
-    [activateHoveredRow, addNoteAffordanceByRowKey, clearHoveredRow],
-  );
-  const visiblePlannedRowWindow = useMemo(() => {
+  const handleHoverRow = (rowKey: string) => {
+    props.onHover?.();
+    const affordance = addNoteAffordanceByRowKey().get(rowKey);
+    if (affordance) {
+      activateHoveredRow(rowKey, affordance);
+    } else {
+      clearHoveredRow();
+    }
+  };
+  const visiblePlannedRowWindow = createMemo(() => {
     // Fall back to the full row list unless all three row-windowing inputs are ready:
     // - the complete planned row stream for this file
     // - measured per-row geometry for that same stream
     // - one file-local visible body slice from DiffPane
     // The helper relies on those structures staying in lockstep, so any missing input means
     // "render everything" instead of risking a mismatched partial slice.
-    if (!sectionGeometry || !visibleBodyBounds) {
+    if (!props.sectionGeometry || !props.visibleBodyBounds) {
       return {
         bottomSpacerHeight: 0,
-        plannedRows,
+        plannedRows: plannedRows(),
         topSpacerHeight: 0,
       };
     }
@@ -292,127 +259,144 @@ export function PierreDiffView({
     // scroll stream. That lets navigation, sticky headers, and reveal math keep using the same
     // absolute geometry even though most rows are temporarily unmounted.
     return resolveVisiblePlannedRowWindow({
-      plannedRows,
-      sectionGeometry,
-      visibleBodyBounds,
+      plannedRows: plannedRows(),
+      sectionGeometry: props.sectionGeometry,
+      visibleBodyBounds: props.visibleBodyBounds,
     });
-  }, [plannedRows, sectionGeometry, visibleBodyBounds]);
+  });
 
-  if (!file) {
-    return (
-      <box style={{ width: "100%", paddingLeft: 1, paddingRight: 1 }}>
-        <text fg={theme.muted}>{fitText("No file selected.", Math.max(1, width - 2))}</text>
-      </box>
-    );
-  }
-
-  if (file.metadata.hunks.length === 0) {
-    return (
-      <box style={{ width: "100%", paddingLeft: 1, paddingRight: 1, paddingBottom: 1 }}>
-        <text fg={theme.muted}>{fitText(diffMessage(file), Math.max(1, width - 2))}</text>
-      </box>
-    );
-  }
-
-  const content = (
+  /** Shared body content for both scrollable and inline (non-scrollable) layouts. */
+  const content = () => (
     <box style={{ width: "100%", flexDirection: "column" }}>
-      {visiblePlannedRowWindow.topSpacerHeight > 0 ? (
-        // Reserve the skipped height above the mounted slice so the file body keeps its original
-        // absolute row positions inside the larger review stream.
+      <Show when={visiblePlannedRowWindow().topSpacerHeight > 0}>
+        {/* Reserve the skipped height above the mounted slice so the file body keeps its original
+            absolute row positions inside the larger review stream. */}
         <box
           style={{
             width: "100%",
-            height: visiblePlannedRowWindow.topSpacerHeight,
-            backgroundColor: theme.panel,
+            height: visiblePlannedRowWindow().topSpacerHeight,
+            backgroundColor: props.theme.panel,
           }}
         />
-      ) : null}
-      {visiblePlannedRowWindow.plannedRows.map((plannedRow) => {
-        // Mirror the same visibility/id decisions used by the scroll-bound helpers so the mounted
-        // tree can be measured by hunk later.
-        const rowId = reviewRowId(plannedRow.key);
-        const visible = plannedReviewRowVisible(plannedRow, {
-          showHunkHeaders,
-          layout,
-          width,
-        });
+      </Show>
+      <For each={visiblePlannedRowWindow().plannedRows}>
+        {(plannedRow) => {
+          // Mirror the same visibility/id decisions used by the scroll-bound helpers so the mounted
+          // tree can be measured by hunk later.
+          const rowId = reviewRowId(plannedRow.key);
+          const visible = plannedReviewRowVisible(plannedRow, {
+            showHunkHeaders: showHunkHeaders(),
+            layout: props.layout,
+            width: props.width,
+          });
 
-        if (!visible) {
-          return null;
-        }
-
-        if (plannedRow.kind === "inline-note") {
           return (
-            <box
-              key={plannedRow.key}
-              id={rowId}
-              style={{ width: "100%", flexDirection: "column" }}
-              onMouseOver={clearHoveredRow}
-            >
-              <AgentInlineNote
-                annotation={plannedRow.annotation}
-                anchorSide={plannedRow.anchorSide}
-                draft={plannedRow.note.draft}
-                file={file}
-                layout={layout}
-                noteCount={plannedRow.noteCount}
-                noteIndex={plannedRow.noteIndex}
-                onClose={plannedRow.note.onRemove}
-                theme={theme}
-                width={width}
-              />
-            </box>
+            <Show when={visible}>
+              <Switch>
+                <Match when={plannedRow.kind === "inline-note" ? plannedRow : undefined}>
+                  {(inlineNote) => (
+                    <box
+                      id={rowId}
+                      style={{ width: "100%", flexDirection: "column" }}
+                      onMouseOver={clearHoveredRow}
+                    >
+                      <AgentInlineNote
+                        annotation={inlineNote().annotation}
+                        anchorSide={inlineNote().anchorSide}
+                        draft={inlineNote().note.draft}
+                        file={props.file}
+                        layout={props.layout}
+                        noteCount={inlineNote().noteCount}
+                        noteIndex={inlineNote().noteIndex}
+                        onClose={inlineNote().note.onRemove}
+                        theme={props.theme}
+                        width={props.width}
+                      />
+                    </box>
+                  )}
+                </Match>
+                <Match when={plannedRow.kind === "diff-row" ? plannedRow : undefined}>
+                  {(diffRow) => (
+                    <box id={rowId} style={{ width: "100%", flexDirection: "column" }}>
+                      <DiffRowView
+                        row={diffRow().row}
+                        width={props.width}
+                        lineNumberDigits={lineNumberDigits()}
+                        showLineNumbers={showLineNumbers()}
+                        showHunkHeaders={showHunkHeaders()}
+                        wrapLines={wrapLines()}
+                        codeHorizontalOffset={codeHorizontalOffset()}
+                        theme={props.theme}
+                        selected={diffRow().row.hunkIndex === props.selectedHunkIndex}
+                        copySelectedRowRange={props.copySelectedRowRanges?.get(diffRow().key)}
+                        copySelectedSide={props.copySelectedSide}
+                        anchorId={diffRow().anchorId}
+                        noteGuideSide={diffRow().noteGuideSide}
+                        showAddNoteBadge={
+                          startUserNoteAtHunkHandler() !== undefined &&
+                          hoveredRowKey() === diffRow().row.key &&
+                          addNoteAffordanceByRowKey().has(diffRow().row.key)
+                        }
+                        onHoverRow={handleHoverRow}
+                        onStartUserNoteAtHunk={startUserNoteAtHunkHandler()}
+                        onToggleGap={gapToggleHandler()}
+                      />
+                    </box>
+                  )}
+                </Match>
+              </Switch>
+            </Show>
           );
-        }
-
-        return (
-          <box key={plannedRow.key} id={rowId} style={{ width: "100%", flexDirection: "column" }}>
-            <DiffRowView
-              row={plannedRow.row}
-              width={width}
-              lineNumberDigits={lineNumberDigits}
-              showLineNumbers={showLineNumbers}
-              showHunkHeaders={showHunkHeaders}
-              wrapLines={wrapLines}
-              codeHorizontalOffset={codeHorizontalOffset}
-              theme={theme}
-              selected={plannedRow.row.hunkIndex === selectedHunkIndex}
-              copySelectedRowRange={copySelectedRowRanges?.get(plannedRow.key)}
-              copySelectedSide={copySelectedSide}
-              anchorId={plannedRow.anchorId}
-              noteGuideSide={plannedRow.noteGuideSide}
-              showAddNoteBadge={
-                startUserNoteAtHunkHandler !== undefined &&
-                hoveredRowKey === plannedRow.row.key &&
-                addNoteAffordanceByRowKey.has(plannedRow.row.key)
-              }
-              onHoverRow={handleHoverRow}
-              onStartUserNoteAtHunk={startUserNoteAtHunkHandler}
-              onToggleGap={gapToggleHandler}
-            />
-          </box>
-        );
-      })}
-      {visiblePlannedRowWindow.bottomSpacerHeight > 0 ? (
-        // Mirror that reservation below the mounted slice so total file-body height stays stable.
+        }}
+      </For>
+      <Show when={visiblePlannedRowWindow().bottomSpacerHeight > 0}>
+        {/* Mirror that reservation below the mounted slice so total file-body height stays stable. */}
         <box
           style={{
             width: "100%",
-            height: visiblePlannedRowWindow.bottomSpacerHeight,
-            backgroundColor: theme.panel,
+            height: visiblePlannedRowWindow().bottomSpacerHeight,
+            backgroundColor: props.theme.panel,
           }}
         />
-      ) : null}
+      </Show>
     </box>
   );
 
-  if (!scrollable) {
-    return content;
-  }
-
   return (
-    <scrollbox width="100%" height="100%" scrollY={true} viewportCulling={true} focused={false}>
-      {content}
-    </scrollbox>
+    <Show
+      when={props.file}
+      fallback={
+        <box style={{ width: "100%", paddingLeft: 1, paddingRight: 1 }}>
+          <text fg={props.theme.muted}>
+            {fitText("No file selected.", Math.max(1, props.width - 2))}
+          </text>
+        </box>
+      }
+    >
+      {(file) => (
+        <Show
+          when={file().metadata.hunks.length > 0}
+          fallback={
+            <box style={{ width: "100%", paddingLeft: 1, paddingRight: 1, paddingBottom: 1 }}>
+              <text fg={props.theme.muted}>
+                {fitText(diffMessage(file()), Math.max(1, props.width - 2))}
+              </text>
+            </box>
+          }
+        >
+          <Show when={scrollable()} fallback={content()}>
+            <scrollbox
+              width="100%"
+              height="100%"
+              scrollY={true}
+              viewportCulling={true}
+              focused={false}
+            >
+              {content()}
+            </scrollbox>
+          </Show>
+        </Show>
+      )}
+    </Show>
   );
 }

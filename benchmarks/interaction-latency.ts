@@ -2,8 +2,8 @@
 // per-tick scrolling on the large review stream, plus RSS/heap ceilings before
 // and after navigation (the default-suite slice of memory.ts).
 import { performance } from "node:perf_hooks";
-import { testRender } from "@opentui/react/test-utils";
-import React from "react";
+import { testRender } from "@opentui/solid";
+import { createComponent } from "solid-js";
 import { AppHost } from "../src/ui/AppHost";
 import {
   createLargeSplitStreamBootstrap,
@@ -26,7 +26,7 @@ const SCROLL_TICKS = 8;
 /** Measure `]` per-press latency plus memory ceilings on a fresh renderer. */
 async function measureNavigation() {
   const setup = await testRender(
-    React.createElement(AppHost, { bootstrap: createLargeSplitStreamBootstrap() }),
+    () => createComponent(AppHost, { bootstrap: createLargeSplitStreamBootstrap() }),
     INTERACTION_VIEWPORT,
   );
 
@@ -51,7 +51,7 @@ async function measureNavigation() {
 /** Measure per-scroll-tick latency on a fresh renderer (no navigation state). */
 async function measureScrolling() {
   const setup = await testRender(
-    React.createElement(AppHost, { bootstrap: createLargeSplitStreamBootstrap() }),
+    () => createComponent(AppHost, { bootstrap: createLargeSplitStreamBootstrap() }),
     INTERACTION_VIEWPORT,
   );
 

@@ -1,3 +1,4 @@
+import { For, Show } from "solid-js";
 import type { AppTheme } from "../../themes";
 import { padText } from "../../lib/text";
 import type { MenuEntry, MenuId, MenuSpec } from "./menu";
@@ -23,27 +24,17 @@ function renderMenuLine(
       <box style={{ width: leftWidth, height: 1 }}>
         <text fg={theme.text}>{padText(text, leftWidth)}</text>
       </box>
-      {hint ? (
+      <Show when={hint}>
         <box style={{ width: hint.length, height: 1 }}>
           <text fg={selected ? theme.text : theme.muted}>{hint}</text>
         </box>
-      ) : null}
+      </Show>
     </box>
   );
 }
 
 /** Render the dropdown for the currently active top-level menu. */
-export function MenuDropdown({
-  activeMenuId,
-  activeMenuEntries,
-  activeMenuItemIndex,
-  activeMenuSpec,
-  activeMenuWidth,
-  terminalWidth,
-  theme,
-  onHoverItem,
-  onSelectItem,
-}: {
+export function MenuDropdown(props: {
   activeMenuId: MenuId;
   activeMenuEntries: MenuEntry[];
   activeMenuItemIndex: number;
@@ -54,49 +45,61 @@ export function MenuDropdown({
   onHoverItem: (index: number) => void;
   onSelectItem: (entry: Extract<MenuEntry, { kind: "item" }>) => void;
 }) {
-  const clampedWidth = Math.min(activeMenuWidth, Math.max(22, terminalWidth - 2));
-  const clampedLeft = Math.max(1, Math.min(activeMenuSpec.left, terminalWidth - clampedWidth - 1));
+  const clampedWidth = () => Math.min(props.activeMenuWidth, Math.max(22, props.terminalWidth - 2));
+  const clampedLeft = () =>
+    Math.max(1, Math.min(props.activeMenuSpec.left, props.terminalWidth - clampedWidth() - 1));
 
   return (
     <box
       style={{
         position: "absolute",
         top: 1,
-        left: clampedLeft,
-        width: clampedWidth,
-        height: activeMenuEntries.length + 2,
+        left: clampedLeft(),
+        width: clampedWidth(),
+        height: props.activeMenuEntries.length + 2,
         zIndex: 40,
         border: true,
-        borderColor: theme.border,
-        backgroundColor: theme.panel,
+        borderColor: props.theme.border,
+        backgroundColor: props.theme.panel,
         flexDirection: "column",
       }}
     >
-      {activeMenuEntries.map((entry, index) =>
-        entry.kind === "separator" ? (
-          <box
-            key={`${activeMenuId}:separator:${index}`}
-            style={{ height: 1, paddingLeft: 1, paddingRight: 1 }}
+      <For each={props.activeMenuEntries}>
+        {(entry, index) => (
+          <Show
+            when={entry.kind === "separator"}
+            fallback={
+              <box
+                style={{
+                  height: 1,
+                  paddingLeft: 1,
+                  paddingRight: 1,
+                  flexDirection: "row",
+                  backgroundColor:
+                    props.activeMenuItemIndex === index()
+                      ? props.theme.accentMuted
+                      : props.theme.panel,
+                }}
+                onMouseOver={() => props.onHoverItem(index())}
+                onMouseUp={() => props.onSelectItem(entry as Extract<MenuEntry, { kind: "item" }>)}
+              >
+                {renderMenuLine(
+                  entry as Extract<MenuEntry, { kind: "item" }>,
+                  clampedWidth() - 2,
+                  props.theme,
+                  props.activeMenuItemIndex === index(),
+                )}
+              </box>
+            }
           >
-            <text fg={theme.border}>{padText("-".repeat(clampedWidth - 4), clampedWidth - 2)}</text>
-          </box>
-        ) : (
-          <box
-            key={`${activeMenuId}:${entry.label}`}
-            style={{
-              height: 1,
-              paddingLeft: 1,
-              paddingRight: 1,
-              flexDirection: "row",
-              backgroundColor: activeMenuItemIndex === index ? theme.accentMuted : theme.panel,
-            }}
-            onMouseOver={() => onHoverItem(index)}
-            onMouseUp={() => onSelectItem(entry)}
-          >
-            {renderMenuLine(entry, clampedWidth - 2, theme, activeMenuItemIndex === index)}
-          </box>
-        ),
-      )}
+            <box style={{ height: 1, paddingLeft: 1, paddingRight: 1 }}>
+              <text fg={props.theme.border}>
+                {padText("-".repeat(clampedWidth() - 4), clampedWidth() - 2)}
+              </text>
+            </box>
+          </Show>
+        )}
+      </For>
     </box>
   );
 }

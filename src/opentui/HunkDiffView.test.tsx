@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { testRender } from "@opentui/react/test-utils";
-import { act } from "react";
-import type { ReactNode } from "react";
+import { testRender } from "@opentui/solid";
+import type { JSX } from "solid-js";
 import {
   HUNK_DIFF_THEME_NAMES,
   HunkDiffBody,
@@ -14,19 +13,15 @@ import {
   parseDiffFromFile,
 } from "./index";
 
-async function captureFrame(node: ReactNode, width = 120, height = 24) {
+async function captureFrame(node: () => JSX.Element, width = 120, height = 24) {
   const setup = await testRender(node, { width, height });
 
   try {
-    await act(async () => {
-      await setup.renderOnce();
-    });
+    await setup.renderOnce();
 
     return setup.captureCharFrame();
   } finally {
-    await act(async () => {
-      setup.renderer.destroy();
-    });
+    setup.renderer.destroy();
   }
 }
 
@@ -57,13 +52,15 @@ function createExampleDiff() {
 describe("OpenTUI public components", () => {
   test("renders a diff through the public OpenTUI entrypoint", async () => {
     const frame = await captureFrame(
-      <HunkDiffView
-        diff={createExampleDiff()}
-        layout="split"
-        theme="midnight"
-        width={88}
-        scrollable={false}
-      />,
+      () => (
+        <HunkDiffView
+          diff={createExampleDiff()}
+          layout="split"
+          theme="midnight"
+          width={88}
+          scrollable={false}
+        />
+      ),
       92,
       12,
     );
@@ -76,13 +73,15 @@ describe("OpenTUI public components", () => {
 
   test("renders the lower-level single-file body primitive", async () => {
     const frame = await captureFrame(
-      <HunkDiffBody
-        file={createExampleDiff()}
-        layout="stack"
-        theme="graphite"
-        width={88}
-        highlight={false}
-      />,
+      () => (
+        <HunkDiffBody
+          file={createExampleDiff()}
+          layout="stack"
+          theme="graphite"
+          width={88}
+          highlight={false}
+        />
+      ),
       92,
       12,
     );
@@ -95,10 +94,12 @@ describe("OpenTUI public components", () => {
   test("renders reusable file header and multi-file review stream primitives", async () => {
     const diff = createExampleDiff();
     const frame = await captureFrame(
-      <box style={{ width: "100%", flexDirection: "column" }}>
-        <HunkDiffFileHeader file={diff} width={88} theme="paper" />
-        <HunkReviewStream files={[diff]} layout="split" width={88} theme="paper" />
-      </box>,
+      () => (
+        <box style={{ width: "100%", flexDirection: "column" }}>
+          <HunkDiffFileHeader file={diff} width={88} theme="paper" />
+          <HunkReviewStream files={[diff]} layout="split" width={88} theme="paper" />
+        </box>
+      ),
       92,
       14,
     );
@@ -110,12 +111,14 @@ describe("OpenTUI public components", () => {
 
   test("renders the dedicated file navigation primitive", async () => {
     const frame = await captureFrame(
-      <HunkFileNav
-        files={[createExampleDiff()]}
-        selectedFileId="example"
-        width={32}
-        theme="midnight"
-      />,
+      () => (
+        <HunkFileNav
+          files={[createExampleDiff()]}
+          selectedFileId="example"
+          width={32}
+          theme="midnight"
+        />
+      ),
       36,
       8,
     );

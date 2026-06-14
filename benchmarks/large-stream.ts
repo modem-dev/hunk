@@ -1,7 +1,7 @@
 // Benchmark split-mode startup and scroll behaviour on very large review streams.
 import { performance } from "perf_hooks";
-import React from "react";
-import { testRender } from "@opentui/react/test-utils";
+import { testRender } from "@opentui/solid";
+import { createComponent } from "solid-js";
 import { AppHost } from "../src/ui/AppHost";
 import { VIEWPORT_READ_COALESCE_MS } from "../src/ui/lib/viewportTiming";
 import {
@@ -25,16 +25,12 @@ type BenchmarkRenderer = Awaited<ReturnType<typeof testRender>>;
 
 async function createBenchmarkRenderer() {
   const setup = await testRender(
-    React.createElement(AppHost, {
-      bootstrap: createLargeSplitStreamBootstrap(),
-    }),
+    () =>
+      createComponent(AppHost, {
+        bootstrap: createLargeSplitStreamBootstrap(),
+      }),
     VIEWPORT,
   );
-
-  // This script measures OpenTUI render-loop cost, not React test assertions. Keeping React's
-  // act environment enabled makes queued timer/microtask work drain through the test scheduler and
-  // can dominate the benchmark with harness time instead of frame time.
-  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = false;
 
   return setup;
 }

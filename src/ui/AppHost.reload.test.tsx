@@ -3,18 +3,15 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
-import { testRender } from "@opentui/react/test-utils";
-import { act } from "react";
+import { testRender } from "@opentui/solid";
 
 const { loadAppBootstrap } = await import("../core/loaders");
 const { AppHost } = await import("./AppHost");
 
 async function flush(setup: Awaited<ReturnType<typeof testRender>>) {
-  await act(async () => {
-    await setup.renderOnce();
-    await Bun.sleep(0);
-    await setup.renderOnce();
-  });
+  await setup.renderOnce();
+  await Bun.sleep(0);
+  await setup.renderOnce();
 }
 
 /** Settle renders long enough for the async syntax-highlight cache to populate.
@@ -42,7 +39,7 @@ describe("reload stale highlight cache", () => {
       options: { mode: "stack" },
     });
 
-    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
+    const setup = await testRender(() => <AppHost bootstrap={bootstrap} />, {
       width: 220,
       height: 20,
     });
@@ -56,9 +53,7 @@ describe("reload stale highlight cache", () => {
       // Modify the right file while hunk is open
       writeFileSync(right, "export const answer = 42;\nexport const second = true;\n");
 
-      await act(async () => {
-        await setup.mockInput.typeText("r");
-      });
+      await setup.mockInput.typeText("r");
 
       let refreshed = false;
       for (let attempt = 0; attempt < 30; attempt++) {
@@ -73,9 +68,7 @@ describe("reload stale highlight cache", () => {
 
       expect(refreshed).toBe(true);
     } finally {
-      await act(async () => {
-        setup.renderer.destroy();
-      });
+      setup.renderer.destroy();
       rmSync(dir, { force: true, recursive: true });
     }
   });
@@ -98,7 +91,7 @@ describe("reload stale highlight cache", () => {
       { cwd: dir },
     );
 
-    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
+    const setup = await testRender(() => <AppHost bootstrap={bootstrap} />, {
       width: 120,
       height: 20,
     });
@@ -111,9 +104,7 @@ describe("reload stale highlight cache", () => {
 
       writeFileSync(file, "original line\nsecond change\n");
 
-      await act(async () => {
-        await setup.mockInput.typeText("r");
-      });
+      await setup.mockInput.typeText("r");
 
       let refreshed = false;
       for (let attempt = 0; attempt < 30; attempt++) {
@@ -128,9 +119,7 @@ describe("reload stale highlight cache", () => {
 
       expect(refreshed).toBe(true);
     } finally {
-      await act(async () => {
-        setup.renderer.destroy();
-      });
+      setup.renderer.destroy();
       rmSync(dir, { force: true, recursive: true });
     }
   });

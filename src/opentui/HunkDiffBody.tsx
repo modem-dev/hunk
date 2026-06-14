@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { createMemo, For, mergeProps, Show } from "solid-js";
 import { findMaxLineNumber } from "../ui/diff/codeColumns";
 import { buildSplitRows, buildStackRows } from "../ui/diff/pierre";
 import { diffMessage, DiffRowView, fitText } from "../ui/diff/renderRows";
@@ -8,74 +8,86 @@ import { toInternalDiffFile } from "./model";
 import type { HunkDiffBodyProps } from "./types";
 
 /** Render one diff file body without owning navigation, app chrome, or global shortcuts. */
-export function HunkDiffBody({
-  file,
-  layout = "split",
-  width,
-  theme = "graphite",
-  showLineNumbers = true,
-  showHunkHeaders = true,
-  wrapLines = false,
-  horizontalOffset = 0,
-  highlight = true,
-  selectedHunkIndex = 0,
-}: HunkDiffBodyProps) {
-  const resolvedTheme = resolveTheme(theme, null);
-  const internalFile = useMemo(() => (file ? toInternalDiffFile(file) : undefined), [file]);
+export function HunkDiffBody(props: HunkDiffBodyProps) {
+  const merged = mergeProps(
+    {
+      layout: "split" as const,
+      theme: "graphite" as const,
+      showLineNumbers: true,
+      showHunkHeaders: true,
+      wrapLines: false,
+      horizontalOffset: 0,
+      highlight: true,
+      selectedHunkIndex: 0,
+    },
+    props,
+  );
+  const resolvedTheme = createMemo(() => resolveTheme(merged.theme, null));
+  const internalFile = createMemo(() =>
+    merged.file ? toInternalDiffFile(merged.file) : undefined,
+  );
   const resolvedHighlighted = useHighlightedDiff({
     file: internalFile,
-    appearance: resolvedTheme.appearance,
-    shouldLoadHighlight: highlight,
+    appearance: () => resolvedTheme().appearance,
+    shouldLoadHighlight: () => merged.highlight,
   });
-  const rows = useMemo(
-    () =>
-      internalFile
-        ? layout === "split"
-          ? buildSplitRows(internalFile, resolvedHighlighted, resolvedTheme)
-          : buildStackRows(internalFile, resolvedHighlighted, resolvedTheme)
-        : [],
-    [internalFile, layout, resolvedHighlighted, resolvedTheme],
-  );
-  const lineNumberDigits = useMemo(
-    () => String(internalFile ? findMaxLineNumber(internalFile) : 1).length,
-    [internalFile],
-  );
-
-  if (!internalFile) {
-    return (
-      <box style={{ width: "100%", paddingLeft: 1, paddingRight: 1 }}>
-        <text fg={resolvedTheme.muted}>{fitText("No file selected.", Math.max(1, width - 2))}</text>
-      </box>
-    );
-  }
-
-  if (internalFile.metadata.hunks.length === 0) {
-    return (
-      <box style={{ width: "100%", paddingLeft: 1, paddingRight: 1, paddingBottom: 1 }}>
-        <text fg={resolvedTheme.muted}>
-          {fitText(diffMessage(internalFile), Math.max(1, width - 2))}
-        </text>
-      </box>
-    );
-  }
+  const rows = createMemo(() => {
+    const file = internalFile();
+    if (!file) {
+      return [];
+    }
+    return merged.layout === "split"
+      ? buildSplitRows(file, resolvedHighlighted(), resolvedTheme())
+      : buildStackRows(file, resolvedHighlighted(), resolvedTheme());
+  });
+  const lineNumberDigits = createMemo(() => {
+    const file = internalFile();
+    return String(file ? findMaxLineNumber(file) : 1).length;
+  });
 
   return (
-    <box style={{ width: "100%", flexDirection: "column" }}>
-      {rows.map((row) => (
-        <box key={row.key} style={{ width: "100%", flexDirection: "column" }}>
-          <DiffRowView
-            row={row}
-            width={width}
-            lineNumberDigits={lineNumberDigits}
-            showLineNumbers={showLineNumbers}
-            showHunkHeaders={showHunkHeaders}
-            wrapLines={wrapLines}
-            codeHorizontalOffset={horizontalOffset}
-            theme={resolvedTheme}
-            selected={row.hunkIndex === selectedHunkIndex}
-          />
+    <Show
+      when={internalFile()}
+      fallback={
+        <box style={{ width: "100%", paddingLeft: 1, paddingRight: 1 }}>
+          <text fg={resolvedTheme().muted}>
+            {fitText("No file selected.", Math.max(1, merged.width - 2))}
+          </text>
         </box>
-      ))}
-    </box>
+      }
+    >
+      {(file) => (
+        <Show
+          when={file().metadata.hunks.length > 0}
+          fallback={
+            <box style={{ width: "100%", paddingLeft: 1, paddingRight: 1, paddingBottom: 1 }}>
+              <text fg={resolvedTheme().muted}>
+                {fitText(diffMessage(file()), Math.max(1, merged.width - 2))}
+              </text>
+            </box>
+          }
+        >
+          <box style={{ width: "100%", flexDirection: "column" }}>
+            <For each={rows()}>
+              {(row) => (
+                <box style={{ width: "100%", flexDirection: "column" }}>
+                  <DiffRowView
+                    row={row}
+                    width={merged.width}
+                    lineNumberDigits={lineNumberDigits()}
+                    showLineNumbers={merged.showLineNumbers}
+                    showHunkHeaders={merged.showHunkHeaders}
+                    wrapLines={merged.wrapLines}
+                    codeHorizontalOffset={merged.horizontalOffset}
+                    theme={resolvedTheme()}
+                    selected={row.hunkIndex === merged.selectedHunkIndex}
+                  />
+                </box>
+              )}
+            </For>
+          </box>
+        </Show>
+      )}
+    </Show>
   );
 }

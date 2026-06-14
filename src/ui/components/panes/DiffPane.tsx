@@ -3,16 +3,21 @@ import {
   type MouseEvent as TuiMouseEvent,
   type ScrollBoxRenderable,
 } from "@opentui/core";
-import { useRenderer } from "@opentui/react";
 import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type RefObject,
-} from "react";
+  createEffect,
+  createMemo,
+  createRenderEffect,
+  createSignal,
+  For,
+  Match,
+  mergeProps,
+  onCleanup,
+  Show,
+  Switch,
+  untrack,
+  type Accessor,
+} from "solid-js";
+import { useRenderer } from "@opentui/solid";
 import type {
   AgentAnnotation,
   DiffFile,
@@ -171,85 +176,48 @@ const EMPTY_EXPANDED_GAPS_BY_FILE_ID: Record<string, ReadonlySet<string>> = {};
 const EMPTY_SOURCE_STATUS_BY_FILE_ID: Record<string, FileSourceStatus> = {};
 const NOOP_TOGGLE_GAP = () => {};
 
-/** Render the main multi-file review stream. */
-export function DiffPane({
-  codeHorizontalOffset = 0,
-  diffContentWidth,
-  expandedGapsByFileId = EMPTY_EXPANDED_GAPS_BY_FILE_ID,
-  files,
-  headerLabelWidth,
-  headerStatsWidth,
-  layout,
-  scrollRef,
-  selectedFileId,
-  selectedHunkIndex,
-  scrollToNote = false,
-  draftNote = null,
-  draftNoteFocused = false,
-  separatorWidth,
-  pagerMode = false,
-  copyDecorations = false,
-  screenLeft = 0,
-  screenTop = 0,
-  showAgentNotes,
-  showLineNumbers,
-  showHunkHeaders,
-  sourceStatusByFileId = EMPTY_SOURCE_STATUS_BY_FILE_ID,
-  wrapLines,
-  wrapToggleScrollTop,
-  layoutToggleScrollTop = null,
-  layoutToggleRequestId = 0,
-  selectedFileTopAlignRequestId = 0,
-  selectedHunkRevealRequestId,
-  theme,
-  width,
-  cancelCopySelectionRef,
-  onActiveAddNoteAffordanceChange,
-  onRemoveUserNote,
-  onSaveDraftNote,
-  onStartUserNoteAtHunk,
-  onUpdateDraftNote,
-  onBlurDraftNote,
-  onCancelDraftNote,
-  onFocusDraftNote,
-  onCopyFeedback,
-  onCopySelectionText,
-  onScrollCodeHorizontally = () => {},
-  onSelectFile,
-  onToggleGap = NOOP_TOGGLE_GAP,
-  onViewportCenteredHunkChange,
-}: {
+/**
+ * Props for {@link DiffPane}.
+ *
+ * Several review-state fields arrive as `Accessor<T>` getters because they originate from
+ * `useReviewController` (whose reactive state is uniformly exposed as accessors). They keep their
+ * original prop NAMES so callers don't have to rename anything; DiffPane simply calls them.
+ * The accessor-typed props are:
+ *   files, selectedFileId, selectedHunkIndex, scrollToNote, draftNote, expandedGapsByFileId,
+ *   sourceStatusByFileId, showAgentNotes, selectedFileTopAlignRequestId, selectedHunkRevealRequestId.
+ */
+interface DiffPaneProps {
   codeHorizontalOffset?: number;
   diffContentWidth: number;
-  expandedGapsByFileId?: Record<string, ReadonlySet<string>>;
-  files: DiffFile[];
+  expandedGapsByFileId?: Accessor<Record<string, ReadonlySet<string>>>;
+  files: Accessor<DiffFile[]>;
   headerLabelWidth: number;
   headerStatsWidth: number;
   layout: Exclude<LayoutMode, "auto">;
-  scrollRef: RefObject<ScrollBoxRenderable | null>;
-  selectedFileId?: string;
-  selectedHunkIndex: number;
-  scrollToNote?: boolean;
-  draftNote?: DraftReviewNote | null;
+  scrollRef: { current: ScrollBoxRenderable | null };
+  selectedFileId?: Accessor<string | undefined>;
+  selectedHunkIndex: Accessor<number>;
+  scrollToNote?: Accessor<boolean>;
+  draftNote?: Accessor<DraftReviewNote | null>;
   draftNoteFocused?: boolean;
   separatorWidth: number;
   pagerMode?: boolean;
   copyDecorations?: boolean;
   screenLeft?: number;
   screenTop?: number;
-  showAgentNotes: boolean;
+  showAgentNotes: Accessor<boolean>;
   showLineNumbers: boolean;
   showHunkHeaders: boolean;
-  sourceStatusByFileId?: Record<string, FileSourceStatus>;
+  sourceStatusByFileId?: Accessor<Record<string, FileSourceStatus>>;
   wrapLines: boolean;
   wrapToggleScrollTop: number | null;
   layoutToggleScrollTop?: number | null;
   layoutToggleRequestId?: number;
-  selectedFileTopAlignRequestId?: number;
-  selectedHunkRevealRequestId?: number;
+  selectedFileTopAlignRequestId?: Accessor<number>;
+  selectedHunkRevealRequestId?: Accessor<number | undefined>;
   theme: AppTheme;
   width: number;
-  cancelCopySelectionRef?: RefObject<(() => void) | null>;
+  cancelCopySelectionRef?: { current: (() => void) | null };
   onActiveAddNoteAffordanceChange?: (
     affordance: (ActiveAddNoteAffordance & { fileId: string }) | null,
   ) => void;
@@ -266,20 +234,69 @@ export function DiffPane({
   onSelectFile: (fileId: string) => void;
   onToggleGap?: (fileId: string, gapKey: string) => void;
   onViewportCenteredHunkChange?: (fileId: string, hunkIndex: number) => void;
-}) {
-  const renderer = useRenderer();
-  const mouseWheelScrollAcceleration = useMemo(
-    () => createReviewMouseWheelScrollAcceleration(),
-    [],
+}
+
+/** Render the main multi-file review stream. */
+export function DiffPane(props: DiffPaneProps) {
+  // Defaults for optional props. Function-valued accessor defaults are wrapped so reading them is
+  // identical to reading a real review-controller accessor.
+  const merged = mergeProps(
+    {
+      codeHorizontalOffset: 0,
+      expandedGapsByFileId: (() => EMPTY_EXPANDED_GAPS_BY_FILE_ID) as Accessor<
+        Record<string, ReadonlySet<string>>
+      >,
+      scrollToNote: (() => false) as Accessor<boolean>,
+      draftNote: (() => null) as Accessor<DraftReviewNote | null>,
+      draftNoteFocused: false,
+      pagerMode: false,
+      copyDecorations: false,
+      screenLeft: 0,
+      screenTop: 0,
+      sourceStatusByFileId: (() => EMPTY_SOURCE_STATUS_BY_FILE_ID) as Accessor<
+        Record<string, FileSourceStatus>
+      >,
+      layoutToggleScrollTop: null as number | null,
+      layoutToggleRequestId: 0,
+      selectedFileTopAlignRequestId: (() => 0) as Accessor<number>,
+      onScrollCodeHorizontally: (() => {}) as (delta: number) => void,
+      onToggleGap: NOOP_TOGGLE_GAP,
+    },
+    props,
   );
-  const [addNoteHoverClearSignal, setAddNoteHoverClearSignal] = useState(0);
-  const [addNoteHoverClearFileId, setAddNoteHoverClearFileId] = useState<string | null>(null);
-  const hoveredFileIdRef = useRef<string | null>(null);
-  const onActiveAddNoteAffordanceChangeRef = useRef(onActiveAddNoteAffordanceChange);
-  onActiveAddNoteAffordanceChangeRef.current = onActiveAddNoteAffordanceChange;
+
+  // Accessor convenience readers. These call the review-controller accessors so the rest of the
+  // body can read review state with simple function calls and Solid tracks them fine-grained.
+  const files = () => merged.files();
+  const selectedFileId = () => merged.selectedFileId?.();
+  const selectedHunkIndex = () => merged.selectedHunkIndex();
+  const scrollToNote = () => merged.scrollToNote();
+  const draftNote = () => merged.draftNote();
+  const expandedGapsByFileId = () => merged.expandedGapsByFileId();
+  const sourceStatusByFileId = () => merged.sourceStatusByFileId();
+  const showAgentNotes = () => merged.showAgentNotes();
+  const selectedFileTopAlignRequestId = () => merged.selectedFileTopAlignRequestId();
+  const selectedHunkRevealRequestId = () => merged.selectedHunkRevealRequestId?.();
+
+  const renderer = useRenderer();
+  // Created once for the lifetime of the pane (was useMemo([])).
+  const mouseWheelScrollAcceleration = createReviewMouseWheelScrollAcceleration();
+
+  const [addNoteHoverClearSignal, setAddNoteHoverClearSignal] = createSignal(0);
+  const [addNoteHoverClearFileId, setAddNoteHoverClearFileId] = createSignal<string | null>(null);
+  const hoveredFileIdRef: { current: string | null } = { current: null };
+  // Latest-callback ref so cached per-file closures never call a stale handler.
+  const onActiveAddNoteAffordanceChangeRef: {
+    current:
+      | ((affordance: (ActiveAddNoteAffordance & { fileId: string }) | null) => void)
+      | undefined;
+  } = { current: merged.onActiveAddNoteAffordanceChange };
+  createRenderEffect(() => {
+    onActiveAddNoteAffordanceChangeRef.current = merged.onActiveAddNoteAffordanceChange;
+  });
 
   /** Hide hover-only row controls when content scrolls under a stationary mouse pointer. */
-  const clearAddNoteHoverForScroll = useCallback(() => {
+  const clearAddNoteHoverForScroll = () => {
     const hoveredFileId = hoveredFileIdRef.current;
     if (!hoveredFileId) {
       return;
@@ -290,37 +307,42 @@ export function DiffPane({
     setHoveredFileId(null);
     hoveredFileIdRef.current = null;
     onActiveAddNoteAffordanceChangeRef.current?.(null);
-  }, []);
+  };
 
-  const adjacentPrefetchFileIds = useMemo(
-    () => buildAdjacentPrefetchFileIds(files, selectedFileId),
-    [files, selectedFileId],
+  const adjacentPrefetchFileIds = createMemo(() =>
+    buildAdjacentPrefetchFileIds(files(), selectedFileId()),
   );
 
-  // Stable per-file select callbacks keep memoized sections from re-rendering just because
-  // DiffPane re-rendered. The latest-onSelectFile ref means the cached closures never go
-  // stale even though their identity is fixed for the life of the pane.
-  const onSelectFileRef = useRef(onSelectFile);
-  onSelectFileRef.current = onSelectFile;
-  const selectFileCallbacksRef = useRef(new Map<string, () => void>());
-  const selectFileCallback = useCallback((fileId: string) => {
+  // Stable per-file select callbacks keep mounted sections from re-running just because DiffPane
+  // re-derived. The latest-onSelectFile ref means the cached closures never go stale even though
+  // their identity is fixed for the life of the pane.
+  const onSelectFileRef: { current: (fileId: string) => void } = { current: merged.onSelectFile };
+  createRenderEffect(() => {
+    onSelectFileRef.current = merged.onSelectFile;
+  });
+  const selectFileCallbacksRef: { current: Map<string, () => void> } = { current: new Map() };
+  const selectFileCallback = (fileId: string) => {
     let callback = selectFileCallbacksRef.current.get(fileId);
     if (!callback) {
       callback = () => onSelectFileRef.current(fileId);
       selectFileCallbacksRef.current.set(fileId, callback);
     }
     return callback;
-  }, []);
+  };
 
   // Add-note row handlers are cached per file so mounted DiffSections keep a stable prop identity,
   // while the ref indirection ensures clicks still use the latest App/review callback after hunk
   // navigation changes the selected-file defaults upstream.
-  const onStartUserNoteAtHunkRef = useRef(onStartUserNoteAtHunk);
-  onStartUserNoteAtHunkRef.current = onStartUserNoteAtHunk;
-  const startUserNoteAtHunkCallbacksRef = useRef(
-    new Map<string, (hunkIndex: number, target?: UserNoteLineTarget) => void>(),
-  );
-  const startUserNoteAtHunkCallback = useCallback((fileId: string) => {
+  const onStartUserNoteAtHunkRef: {
+    current: ((fileId: string, hunkIndex: number, target?: UserNoteLineTarget) => void) | undefined;
+  } = { current: merged.onStartUserNoteAtHunk };
+  createRenderEffect(() => {
+    onStartUserNoteAtHunkRef.current = merged.onStartUserNoteAtHunk;
+  });
+  const startUserNoteAtHunkCallbacksRef: {
+    current: Map<string, (hunkIndex: number, target?: UserNoteLineTarget) => void>;
+  } = { current: new Map() };
+  const startUserNoteAtHunkCallback = (fileId: string) => {
     let callback = startUserNoteAtHunkCallbacksRef.current.get(fileId);
     if (!callback) {
       callback = (hunkIndex, target) =>
@@ -328,12 +350,12 @@ export function DiffPane({
       startUserNoteAtHunkCallbacksRef.current.set(fileId, callback);
     }
     return callback;
-  }, []);
+  };
 
-  const activeAddNoteAffordanceCallbacksRef = useRef(
-    new Map<string, (affordance: ActiveAddNoteAffordance | null) => void>(),
-  );
-  const activeAddNoteAffordanceCallback = useCallback((fileId: string) => {
+  const activeAddNoteAffordanceCallbacksRef: {
+    current: Map<string, (affordance: ActiveAddNoteAffordance | null) => void>;
+  } = { current: new Map() };
+  const activeAddNoteAffordanceCallback = (fileId: string) => {
     let callback = activeAddNoteAffordanceCallbacksRef.current.get(fileId);
     if (!callback) {
       callback = (affordance) =>
@@ -341,72 +363,71 @@ export function DiffPane({
       activeAddNoteAffordanceCallbacksRef.current.set(fileId, callback);
     }
     return callback;
-  }, []);
+  };
 
   /** Route shifted wheel input into horizontal code-column scrolling without disturbing vertical review scroll. */
-  const handleMouseScroll = useCallback(
-    (event: TuiMouseEvent) => {
-      const scrollBox = scrollRef.current;
-      const direction = event.scroll?.direction;
-      if (!direction) {
+  const handleMouseScroll = (event: TuiMouseEvent) => {
+    const scrollBox = merged.scrollRef.current;
+    const direction = event.scroll?.direction;
+    if (!direction) {
+      return;
+    }
+
+    clearAddNoteHoverForScroll();
+
+    if (!scrollBox || merged.wrapLines) {
+      return;
+    }
+
+    const preservedScrollTop = scrollBox.scrollTop;
+    const preservedScrollLeft = scrollBox.scrollLeft;
+    const scrollInfo = event.scroll;
+
+    if (direction === "left") {
+      merged.onScrollCodeHorizontally(-1);
+    } else if (direction === "right") {
+      merged.onScrollCodeHorizontally(1);
+    } else if (event.modifiers.shift && direction === "up") {
+      merged.onScrollCodeHorizontally(-1);
+    } else if (event.modifiers.shift && direction === "down") {
+      merged.onScrollCodeHorizontally(1);
+    } else {
+      return;
+    }
+
+    // OpenTUI runs ScrollBox's own wheel handler after this listener and it ignores
+    // preventDefault(). Zero the wheel delta first so native Shift+Wheel left/right events
+    // cannot be remapped back into vertical scroll, then restore the viewport and clear any
+    // residual fractional state on the next microtask as a final guard.
+    if (scrollInfo) {
+      scrollInfo.delta = 0;
+    }
+
+    queueMicrotask(() => {
+      const currentScrollBox = merged.scrollRef.current;
+      if (!currentScrollBox) {
         return;
       }
 
-      clearAddNoteHoverForScroll();
+      currentScrollBox.scrollTo({ x: preservedScrollLeft, y: preservedScrollTop });
+      currentScrollBox.scrollAcceleration.reset();
+      (
+        currentScrollBox as unknown as { resetScrollAccumulators?: () => void }
+      ).resetScrollAccumulators?.();
+    });
 
-      if (!scrollBox || wrapLines) {
-        return;
-      }
+    event.preventDefault();
+    event.stopPropagation();
+  };
 
-      const preservedScrollTop = scrollBox.scrollTop;
-      const preservedScrollLeft = scrollBox.scrollLeft;
-      const scrollInfo = event.scroll;
-
-      if (direction === "left") {
-        onScrollCodeHorizontally(-1);
-      } else if (direction === "right") {
-        onScrollCodeHorizontally(1);
-      } else if (event.modifiers.shift && direction === "up") {
-        onScrollCodeHorizontally(-1);
-      } else if (event.modifiers.shift && direction === "down") {
-        onScrollCodeHorizontally(1);
-      } else {
-        return;
-      }
-
-      // OpenTUI runs ScrollBox's own wheel handler after this listener and it ignores
-      // preventDefault(). Zero the wheel delta first so native Shift+Wheel left/right events
-      // cannot be remapped back into vertical scroll, then restore the viewport and clear any
-      // residual fractional state on the next microtask as a final guard.
-      if (scrollInfo) {
-        scrollInfo.delta = 0;
-      }
-
-      queueMicrotask(() => {
-        const currentScrollBox = scrollRef.current;
-        if (!currentScrollBox) {
-          return;
-        }
-
-        currentScrollBox.scrollTo({ x: preservedScrollLeft, y: preservedScrollTop });
-        currentScrollBox.scrollAcceleration.reset();
-        (
-          currentScrollBox as unknown as { resetScrollAccumulators?: () => void }
-        ).resetScrollAccumulators?.();
-      });
-
-      event.preventDefault();
-      event.stopPropagation();
-    },
-    [clearAddNoteHoverForScroll, onScrollCodeHorizontally, scrollRef, wrapLines],
-  );
-
-  const allAgentNotesByFile = useMemo(() => {
+  const allAgentNotesByFile = createMemo(() => {
     const next = new Map<string, VisibleAgentNote[]>();
+    const currentDraftNote = draftNote();
+    const currentShowAgentNotes = showAgentNotes();
 
-    files.forEach((file) => {
+    files().forEach((file) => {
       const annotations = (file.agent?.annotations ?? []).filter(
-        (annotation) => showAgentNotes || alwaysShowReviewNote(annotation),
+        (annotation) => currentShowAgentNotes || alwaysShowReviewNote(annotation),
       );
       const notes: VisibleAgentNote[] = annotations.map((annotation, index) => {
         const source = reviewNoteSource(annotation);
@@ -422,32 +443,32 @@ export function DiffPane({
           annotation,
           source,
           editable: true,
-          onRemove: annotation.id ? () => onRemoveUserNote?.(annotation.id!) : undefined,
+          onRemove: annotation.id ? () => merged.onRemoveUserNote?.(annotation.id!) : undefined,
         };
       });
 
-      if (draftNote?.fileId === file.id) {
+      if (currentDraftNote?.fileId === file.id) {
         const draftAnnotation: AgentAnnotation = {
-          id: draftNote.id,
+          id: currentDraftNote.id,
           source: "user-draft",
-          summary: draftNote.body || " ",
-          oldRange: draftNote.oldRange,
-          newRange: draftNote.newRange,
+          summary: currentDraftNote.body || " ",
+          oldRange: currentDraftNote.oldRange,
+          newRange: currentDraftNote.newRange,
           editable: true,
         };
         notes.push({
-          id: draftNote.id,
+          id: currentDraftNote.id,
           annotation: draftAnnotation,
           source: "draft",
           editable: true,
           draft: {
-            body: draftNote.body,
-            focused: draftNoteFocused,
-            onBlur: onBlurDraftNote,
-            onCancel: onCancelDraftNote ?? (() => {}),
-            onFocus: onFocusDraftNote,
-            onInput: onUpdateDraftNote ?? (() => {}),
-            onSave: onSaveDraftNote ?? (() => {}),
+            body: currentDraftNote.body,
+            focused: merged.draftNoteFocused,
+            onBlur: merged.onBlurDraftNote,
+            onCancel: merged.onCancelDraftNote ?? (() => {}),
+            onFocus: merged.onFocusDraftNote,
+            onInput: merged.onUpdateDraftNote ?? (() => {}),
+            onSave: merged.onSaveDraftNote ?? (() => {}),
           },
         });
       }
@@ -458,62 +479,59 @@ export function DiffPane({
     });
 
     return next;
-  }, [
-    draftNote,
-    draftNoteFocused,
-    files,
-    onBlurDraftNote,
-    onCancelDraftNote,
-    onFocusDraftNote,
-    onRemoveUserNote,
-    onSaveDraftNote,
-    onUpdateDraftNote,
-    showAgentNotes,
-  ]);
+  });
 
   // Keep the full file-section path for wrapped lines, where exact wrapped heights depend on
   // mounting each section; nowrap reviews can window offscreen files behind exact spacers.
-  const windowingEnabled = !wrapLines;
-  const [scrollViewport, setScrollViewport] = useState({ top: 0, height: 0 });
-  const [rapidScrollOverscanRows, setRapidScrollOverscanRows] = useState(0);
-  const [hoveredFileId, setHoveredFileId] = useState<string | null>(null);
-  const [copySelectionDrag, setCopySelectionDrag] = useState<CopySelectionDrag | null>(null);
+  const windowingEnabled = () => !merged.wrapLines;
+  const [scrollViewport, setScrollViewport] = createSignal({ top: 0, height: 0 });
+  const [rapidScrollOverscanRows, setRapidScrollOverscanRows] = createSignal(0);
+  const [hoveredFileId, setHoveredFileId] = createSignal<string | null>(null);
+  const [copySelectionDrag, setCopySelectionDrag] = createSignal<CopySelectionDrag | null>(null);
   // Mirror the drag state in a ref so updateCopySelection can suppress native selection
-  // on the very first drag event, before React has re-rendered with the new state.
-  const copySelectionDragRef = useRef<CopySelectionDrag | null>(null);
-  const lastClickTimeRef = useRef(0);
-  const clickCountRef = useRef(0);
-  const lastClickPointRef = useRef<CopySelectionPoint | null>(null);
-  const scrollbarRef = useRef<VerticalScrollbarHandle>(null);
-  const prevScrollTopRef = useRef(0);
-  const hasReadScrollViewportRef = useRef(false);
-  const previousSectionGeometryRef = useRef<DiffSectionGeometry[] | null>(null);
-  const previousFilesRef = useRef<DiffFile[]>(files);
-  const previousLayoutRef = useRef(layout);
-  const previousWrapLinesRef = useRef(wrapLines);
-  const previousDraftNoteIdRef = useRef(draftNote?.id ?? null);
-  const previousSelectedFileTopAlignRequestIdRef = useRef(selectedFileTopAlignRequestId);
-  const previousLayoutToggleRequestIdRef = useRef(layoutToggleRequestId);
-  const previousSelectedHunkRevealRequestIdRef = useRef(selectedHunkRevealRequestId);
-  const pendingFileTopAlignFileIdRef = useRef<string | null>(null);
-  const suppressViewportSelectionSyncRef = useRef(false);
-  const suppressViewportSelectionSyncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
-  const rapidScrollOverscanTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Initialized to null so the first render never fires a selection change; a real scroll
+  // on the very first drag event, before a re-render has applied the new state.
+  const copySelectionDragRef: { current: CopySelectionDrag | null } = { current: null };
+  const lastClickTimeRef = { current: 0 };
+  const clickCountRef = { current: 0 };
+  const lastClickPointRef: { current: CopySelectionPoint | null } = { current: null };
+  const scrollbarRef: { current: VerticalScrollbarHandle | null } = { current: null };
+  const prevScrollTopRef = { current: 0 };
+  const hasReadScrollViewportRef = { current: false };
+  const previousSectionGeometryRef: { current: DiffSectionGeometry[] | null } = { current: null };
+  const previousFilesRef: { current: DiffFile[] } = { current: untrack(files) };
+  const previousLayoutRef = { current: merged.layout };
+  const previousWrapLinesRef = { current: merged.wrapLines };
+  const previousDraftNoteIdRef: { current: string | null } = {
+    current: untrack(draftNote)?.id ?? null,
+  };
+  const previousSelectedFileTopAlignRequestIdRef = {
+    current: untrack(selectedFileTopAlignRequestId),
+  };
+  const previousLayoutToggleRequestIdRef = { current: merged.layoutToggleRequestId };
+  const previousSelectedHunkRevealRequestIdRef: { current: number | undefined } = {
+    current: untrack(selectedHunkRevealRequestId),
+  };
+  const pendingFileTopAlignFileIdRef: { current: string | null } = { current: null };
+  const suppressViewportSelectionSyncRef = { current: false };
+  const suppressViewportSelectionSyncTimeoutRef: {
+    current: ReturnType<typeof setTimeout> | null;
+  } = { current: null };
+  const rapidScrollOverscanTimeoutRef: { current: ReturnType<typeof setTimeout> | null } = {
+    current: null,
+  };
+  // Initialized to null so the first read never fires a selection change; a real scroll
   // is required before passive viewport-follow selection can trigger.
-  const lastViewportSelectionTopRef = useRef<number | null>(null);
-  const lastViewportRowAnchorRef = useRef<ViewportRowAnchor | null>(null);
+  const lastViewportSelectionTopRef: { current: number | null } = { current: null };
+  const lastViewportRowAnchorRef: { current: ViewportRowAnchor | null } = { current: null };
 
   /** Track the currently hover-owned file without making scroll handlers depend on render state. */
-  const setHoveredFileForRowActions = useCallback((fileId: string) => {
+  const setHoveredFileForRowActions = (fileId: string) => {
     hoveredFileIdRef.current = fileId;
     setHoveredFileId(fileId);
-  }, []);
+  };
 
   /** Temporarily widen the mounted diff window while scroll input is arriving in bursts. */
-  const activateRapidScrollOverscan = useCallback((overscanRows: number) => {
+  const activateRapidScrollOverscan = (overscanRows: number) => {
     if (overscanRows <= 0) {
       return;
     }
@@ -526,13 +544,13 @@ export function DiffPane({
       rapidScrollOverscanTimeoutRef.current = null;
       setRapidScrollOverscanRows(0);
     }, RAPID_SCROLL_OVERSCAN_IDLE_MS);
-  }, []);
+  };
 
   /**
    * Ignore viewport-follow selection updates while the pane is scrolling to an explicit selection.
    * That lets direct hunk/file navigation own the viewport until the jump settles.
    */
-  const suppressViewportSelectionSync = useCallback((durationMs = 160) => {
+  const suppressViewportSelectionSync = (durationMs = 160) => {
     suppressViewportSelectionSyncRef.current = true;
     if (suppressViewportSelectionSyncTimeoutRef.current) {
       clearTimeout(suppressViewportSelectionSyncTimeoutRef.current);
@@ -541,23 +559,24 @@ export function DiffPane({
       suppressViewportSelectionSyncRef.current = false;
       suppressViewportSelectionSyncTimeoutRef.current = null;
     }, durationMs);
-  }, []);
+  };
 
-  useEffect(() => {
-    return () => {
-      if (suppressViewportSelectionSyncTimeoutRef.current) {
-        clearTimeout(suppressViewportSelectionSyncTimeoutRef.current);
-      }
-      if (rapidScrollOverscanTimeoutRef.current) {
-        clearTimeout(rapidScrollOverscanTimeoutRef.current);
-      }
-    };
-  }, []);
+  onCleanup(() => {
+    if (suppressViewportSelectionSyncTimeoutRef.current) {
+      clearTimeout(suppressViewportSelectionSyncTimeoutRef.current);
+    }
+    if (rapidScrollOverscanTimeoutRef.current) {
+      clearTimeout(rapidScrollOverscanTimeoutRef.current);
+    }
+  });
 
-  // Mirror the imperative OpenTUI scrollbox state into React state so geometry planning,
-  // windowing, pinned-header ownership, and prefetching can all read the same viewport snapshot.
-  useEffect(() => {
-    const scrollBox = scrollRef.current;
+  // Mirror the imperative OpenTUI scrollbox state into a signal so geometry planning, windowing,
+  // pinned-header ownership, and prefetching can all read the same viewport snapshot. Re-bind when
+  // the file count or scroll ref changes (was [files.length, scrollRef] deps).
+  createEffect(() => {
+    // Track the dependencies that should force a re-bind.
+    void files().length;
+    const scrollBox = merged.scrollRef.current;
     if (!scrollBox) {
       return;
     }
@@ -597,13 +616,12 @@ export function DiffPane({
       );
     };
 
-    // OpenTUI emits `change` synchronously from inside its own slider sync, and other
-    // useLayoutEffects in this pane scroll the box from inside React's commit phase.
-    // Calling setScrollViewport directly from the listener can run setState while React
-    // is already committing — which downstream layout effects can amplify into a render
-    // loop and trip React's max-update-depth guard. Coalesce listener events into one
-    // timer-deferred read so rapid wheel/key bursts collapse into at most one React update
-    // per frame instead of turning every native scroll delta into a full review-stream render.
+    // OpenTUI emits `change` synchronously from inside its own slider sync, and other render
+    // effects in this pane scroll the box from inside the commit phase. Calling setScrollViewport
+    // directly from the listener can run a write while a paint is already committing — which
+    // downstream layout effects can amplify into a render loop. Coalesce listener events into one
+    // timer-deferred read so rapid wheel/key bursts collapse into at most one update per frame
+    // instead of turning every native scroll delta into a full review-stream re-plan.
     const handleViewportChange = () => {
       if (scheduled) {
         return;
@@ -629,7 +647,7 @@ export function DiffPane({
     scrollBox.viewport.on("layout-changed", handleViewportChange);
     scrollBox.viewport.on("resized", handleViewportChange);
 
-    return () => {
+    onCleanup(() => {
       cancelled = true;
       if (scheduledViewportRead) {
         clearTimeout(scheduledViewportRead);
@@ -637,77 +655,67 @@ export function DiffPane({
       scrollBox.verticalScrollBar.off("change", handleViewportChange);
       scrollBox.viewport.off("layout-changed", handleViewportChange);
       scrollBox.viewport.off("resized", handleViewportChange);
-    };
-  }, [activateRapidScrollOverscan, clearAddNoteHoverForScroll, files.length, scrollRef]);
+    });
+  });
 
-  const sectionHeaderHeights = useMemo(() => buildInStreamFileHeaderHeights(files), [files]);
-  const reserveAddNoteColumn = Boolean(onStartUserNoteAtHunk);
+  const sectionHeaderHeights = createMemo(() => buildInStreamFileHeaderHeights(files()));
+  const reserveAddNoteColumn = () => Boolean(merged.onStartUserNoteAtHunk);
 
-  const baseSectionGeometry = useMemo(
-    () =>
-      files.map((file) =>
-        measureDiffSectionGeometry(
-          file,
-          layout,
-          showHunkHeaders,
-          theme,
-          EMPTY_VISIBLE_AGENT_NOTES,
-          diffContentWidth,
-          showLineNumbers,
-          wrapLines,
-          expandedGapsByFileId[file.id] ?? EMPTY_EXPANDED_GAP_KEYS,
-          sourceStatusByFileId[file.id],
-          reserveAddNoteColumn,
-        ),
+  const baseSectionGeometry = createMemo(() => {
+    const currentExpanded = expandedGapsByFileId();
+    const currentSourceStatus = sourceStatusByFileId();
+    return files().map((file) =>
+      measureDiffSectionGeometry(
+        file,
+        merged.layout,
+        merged.showHunkHeaders,
+        merged.theme,
+        EMPTY_VISIBLE_AGENT_NOTES,
+        merged.diffContentWidth,
+        merged.showLineNumbers,
+        merged.wrapLines,
+        currentExpanded[file.id] ?? EMPTY_EXPANDED_GAP_KEYS,
+        currentSourceStatus[file.id],
+        reserveAddNoteColumn(),
       ),
-    [
-      diffContentWidth,
-      expandedGapsByFileId,
-      files,
-      layout,
-      reserveAddNoteColumn,
-      showHunkHeaders,
-      showLineNumbers,
-      sourceStatusByFileId,
-      theme,
-      wrapLines,
-    ],
+    );
+  });
+  const baseEstimatedBodyHeights = createMemo(() =>
+    baseSectionGeometry().map((metrics) => metrics.bodyHeight),
   );
-  const baseEstimatedBodyHeights = useMemo(
-    () => baseSectionGeometry.map((metrics) => metrics.bodyHeight),
-    [baseSectionGeometry],
-  );
-  const baseFileSectionLayouts = useMemo(
-    () => buildFileSectionLayouts(files, baseEstimatedBodyHeights, sectionHeaderHeights),
-    [baseEstimatedBodyHeights, files, sectionHeaderHeights],
+  const baseFileSectionLayouts = createMemo(() =>
+    buildFileSectionLayouts(files(), baseEstimatedBodyHeights(), sectionHeaderHeights()),
   );
 
-  const visibleViewportFileIds = useMemo(() => {
-    const overscanTerminalRows = Math.max(8, rapidScrollOverscanRows);
-    const minVisibleY = Math.max(0, scrollViewport.top - overscanTerminalRows);
-    const maxVisibleY = scrollViewport.top + scrollViewport.height + overscanTerminalRows;
-    return collectIntersectingFileSectionIds(baseFileSectionLayouts, minVisibleY, maxVisibleY);
-  }, [baseFileSectionLayouts, rapidScrollOverscanRows, scrollViewport.height, scrollViewport.top]);
+  const visibleViewportFileIds = createMemo(() => {
+    const viewport = scrollViewport();
+    const overscanTerminalRows = Math.max(8, rapidScrollOverscanRows());
+    const minVisibleY = Math.max(0, viewport.top - overscanTerminalRows);
+    const maxVisibleY = viewport.top + viewport.height + overscanTerminalRows;
+    return collectIntersectingFileSectionIds(baseFileSectionLayouts(), minVisibleY, maxVisibleY);
+  });
 
-  const visibleAgentNotesByFile = useMemo(() => {
+  const visibleAgentNotesByFile = createMemo(() => {
     const next = new Map<string, VisibleAgentNote[]>();
 
-    const fileIdsToMeasure = new Set(visibleViewportFileIds);
+    const fileIdsToMeasure = new Set(visibleViewportFileIds());
     // Always measure the selected file with its real note rows so hunk navigation can compute
     // accurate bounds even before the file scrolls into the visible viewport.
-    if (selectedFileId) {
-      fileIdsToMeasure.add(selectedFileId);
+    const currentSelectedFileId = selectedFileId();
+    if (currentSelectedFileId) {
+      fileIdsToMeasure.add(currentSelectedFileId);
     }
 
+    const notesByFile = allAgentNotesByFile();
     for (const fileId of fileIdsToMeasure) {
-      const visibleNotes = allAgentNotesByFile.get(fileId);
+      const visibleNotes = notesByFile.get(fileId);
       if (visibleNotes && visibleNotes.length > 0) {
         next.set(fileId, visibleNotes);
       }
     }
 
     return next;
-  }, [allAgentNotesByFile, selectedFileId, showAgentNotes, visibleViewportFileIds]);
+  });
 
   // Measure with the *full* set of agent notes per file, not just the visible-viewport set.
   // The visible set is correct for rendering (skip painting cards on off-screen files), but
@@ -716,58 +724,49 @@ export function DiffPane({
   // shrinks `totalContentHeight`, which tightens `clampReviewScrollTop`'s ceiling, which
   // snaps the viewport upward by the height of the off-top note rows. Always include notes
   // in geometry for stable bottom-edge clamping.
-  const sectionGeometry = useMemo(
-    () =>
-      files.map((file, index) => {
-        const notes = allAgentNotesByFile.get(file.id) ?? EMPTY_VISIBLE_AGENT_NOTES;
-        if (notes.length === 0) {
-          return baseSectionGeometry[index]!;
-        }
+  const sectionGeometry = createMemo(() => {
+    const notesByFile = allAgentNotesByFile();
+    const baseGeometry = baseSectionGeometry();
+    const currentExpanded = expandedGapsByFileId();
+    const currentSourceStatus = sourceStatusByFileId();
+    return files().map((file, index) => {
+      const notes = notesByFile.get(file.id) ?? EMPTY_VISIBLE_AGENT_NOTES;
+      if (notes.length === 0) {
+        return baseGeometry[index]!;
+      }
 
-        return measureDiffSectionGeometry(
-          file,
-          layout,
-          showHunkHeaders,
-          theme,
-          notes,
-          diffContentWidth,
-          showLineNumbers,
-          wrapLines,
-          expandedGapsByFileId[file.id] ?? EMPTY_EXPANDED_GAP_KEYS,
-          sourceStatusByFileId[file.id],
-          reserveAddNoteColumn,
-        );
-      }),
-    [
-      allAgentNotesByFile,
-      baseSectionGeometry,
-      diffContentWidth,
-      expandedGapsByFileId,
-      files,
-      layout,
-      reserveAddNoteColumn,
-      showHunkHeaders,
-      showLineNumbers,
-      sourceStatusByFileId,
-      theme,
-      wrapLines,
-    ],
+      return measureDiffSectionGeometry(
+        file,
+        merged.layout,
+        merged.showHunkHeaders,
+        merged.theme,
+        notes,
+        merged.diffContentWidth,
+        merged.showLineNumbers,
+        merged.wrapLines,
+        currentExpanded[file.id] ?? EMPTY_EXPANDED_GAP_KEYS,
+        currentSourceStatus[file.id],
+        reserveAddNoteColumn(),
+      );
+    });
+  });
+  const estimatedBodyHeights = createMemo(() =>
+    sectionGeometry().map((metrics) => metrics.bodyHeight),
   );
-  const estimatedBodyHeights = useMemo(
-    () => sectionGeometry.map((metrics) => metrics.bodyHeight),
-    [sectionGeometry],
+  const fileSectionLayouts = createMemo(() =>
+    buildFileSectionLayouts(files(), estimatedBodyHeights(), sectionHeaderHeights()),
   );
-  const fileSectionLayouts = useMemo(
-    () => buildFileSectionLayouts(files, estimatedBodyHeights, sectionHeaderHeights),
-    [estimatedBodyHeights, files, sectionHeaderHeights],
-  );
-  const totalContentHeight = fileSectionLayouts[fileSectionLayouts.length - 1]?.sectionBottom ?? 0;
+  const totalContentHeight = () => {
+    const layouts = fileSectionLayouts();
+    return layouts[layouts.length - 1]?.sectionBottom ?? 0;
+  };
 
-  // Read the live scroll box position during render so pinned-header ownership flips
+  // Read the live scroll box position when computing pinned-header ownership so it flips
   // immediately after imperative scrolls instead of waiting for the polled viewport snapshot.
-  const effectiveScrollTop = scrollRef.current?.scrollTop ?? scrollViewport.top;
-  const pinnedHeaderFile = useMemo(() => {
-    if (files.length === 0) {
+  const effectiveScrollTop = () => merged.scrollRef.current?.scrollTop ?? scrollViewport().top;
+  const pinnedHeaderFile = createMemo(() => {
+    const currentFiles = files();
+    if (currentFiles.length === 0) {
       return null;
     }
 
@@ -775,466 +774,439 @@ export function DiffPane({
     // Use the previous visible row to decide ownership so the next file's real header can still
     // scroll through the stream before the pinned header hands off to it on the following row.
     const owner = findHeaderOwningFileSection(
-      fileSectionLayouts,
-      Math.max(0, effectiveScrollTop - 1),
+      fileSectionLayouts(),
+      Math.max(0, effectiveScrollTop() - 1),
     );
 
-    return owner ? (files[owner.sectionIndex] ?? null) : (files[0] ?? null);
-  }, [effectiveScrollTop, fileSectionLayouts, files]);
-  const pinnedHeaderFileId = pinnedHeaderFile?.id ?? null;
+    return owner ? (currentFiles[owner.sectionIndex] ?? null) : (currentFiles[0] ?? null);
+  });
+  const pinnedHeaderFileId = () => pinnedHeaderFile()?.id ?? null;
 
-  const copySelectionContext = useMemo(
+  const copySelectionContext = createMemo(
     (): CopySelectionContext => ({
-      codeHorizontalOffset,
-      copyDecorations,
-      files,
-      fileSectionLayouts,
-      headerLabelWidth,
-      headerStatsWidth,
-      layout,
-      pinnedHeaderFile,
-      sectionGeometry,
-      showHunkHeaders,
-      showLineNumbers,
-      theme,
-      width: diffContentWidth,
-      wrapLines,
+      codeHorizontalOffset: merged.codeHorizontalOffset,
+      copyDecorations: merged.copyDecorations,
+      files: files(),
+      fileSectionLayouts: fileSectionLayouts(),
+      headerLabelWidth: merged.headerLabelWidth,
+      headerStatsWidth: merged.headerStatsWidth,
+      layout: merged.layout,
+      pinnedHeaderFile: pinnedHeaderFile(),
+      sectionGeometry: sectionGeometry(),
+      showHunkHeaders: merged.showHunkHeaders,
+      showLineNumbers: merged.showLineNumbers,
+      theme: merged.theme,
+      width: merged.diffContentWidth,
+      wrapLines: merged.wrapLines,
     }),
-    [
-      codeHorizontalOffset,
-      copyDecorations,
-      diffContentWidth,
-      fileSectionLayouts,
-      files,
-      headerLabelWidth,
-      headerStatsWidth,
-      layout,
-      pinnedHeaderFile,
-      sectionGeometry,
-      showHunkHeaders,
-      showLineNumbers,
-      theme,
-      wrapLines,
-    ],
   );
 
   // In split layout, anchor the visible selection (and clipboard copy) to whichever side of
   // the diff the drag began on. Stack layout has only one column, so the side stays undefined.
-  const copySelectionSide: CopySelectionSide | undefined = useMemo(() => {
-    if (!copySelectionDrag || copySelectionDrag.anchor.kind !== "review-row") {
+  const copySelectionSide = createMemo((): CopySelectionSide | undefined => {
+    const drag = copySelectionDrag();
+    if (!drag || drag.anchor.kind !== "review-row") {
       return undefined;
     }
-    return resolveCopySelectionSide(copySelectionDrag.anchor.column, layout, diffContentWidth);
-  }, [copySelectionDrag, diffContentWidth, layout]);
+    return resolveCopySelectionSide(drag.anchor.column, merged.layout, merged.diffContentWidth);
+  });
 
-  const copySelectedRowKeysByFile = useMemo(
-    () =>
-      buildCopySelectedRowKeys({
-        drag: copySelectionDrag,
-        fileSectionLayouts,
-        sectionGeometry,
-        width: diffContentWidth,
-      }),
-    [copySelectionDrag, diffContentWidth, fileSectionLayouts, sectionGeometry],
+  const copySelectedRowKeysByFile = createMemo(() =>
+    buildCopySelectedRowKeys({
+      drag: copySelectionDrag(),
+      fileSectionLayouts: fileSectionLayouts(),
+      sectionGeometry: sectionGeometry(),
+      width: merged.diffContentWidth,
+    }),
   );
 
   /** Copy selected text through the injected boundary or the renderer's OSC 52 clipboard support. */
-  const copySelectionText = useCallback(
-    (text: string) => {
-      if (text.length === 0) {
-        return;
-      }
+  const copySelectionText = (text: string) => {
+    if (text.length === 0) {
+      return;
+    }
 
-      if (onCopySelectionText) {
-        onCopySelectionText(text);
-        return;
-      }
+    if (merged.onCopySelectionText) {
+      merged.onCopySelectionText(text);
+      return;
+    }
 
-      const supportsOsc52 = renderer.isOsc52Supported?.() ?? false;
-      if (supportsOsc52 && typeof renderer.copyToClipboardOSC52 === "function") {
-        renderer.copyToClipboardOSC52(text);
-        onCopyFeedback?.("Copied selection to clipboard");
-        return;
-      }
+    const supportsOsc52 = renderer.isOsc52Supported?.() ?? false;
+    if (supportsOsc52 && typeof renderer.copyToClipboardOSC52 === "function") {
+      renderer.copyToClipboardOSC52(text);
+      merged.onCopyFeedback?.("Copied selection to clipboard");
+      return;
+    }
 
-      onCopyFeedback?.(
-        "Clipboard copy unsupported in this terminal (enable OSC 52 to capture selections)",
-      );
-    },
-    [onCopyFeedback, onCopySelectionText, renderer],
-  );
+    merged.onCopyFeedback?.(
+      "Clipboard copy unsupported in this terminal (enable OSC 52 to capture selections)",
+    );
+  };
 
   /** Convert one mouse event into a review-stream copy-selection point. */
-  const resolveCopySelectionPoint = useCallback(
-    (event: TuiMouseEvent): CopySelectionPoint | null => {
-      const scrollBox = scrollRef.current;
-      if (!scrollBox) {
-        return null;
-      }
+  const resolveCopySelectionPoint = (event: TuiMouseEvent): CopySelectionPoint | null => {
+    const scrollBox = merged.scrollRef.current;
+    if (!scrollBox) {
+      return null;
+    }
 
-      const reviewPaneTopChromeRows = pagerMode ? 0 : 2;
-      const pinnedHeaderHeight = pinnedHeaderFileId ? 1 : 0;
-      const paneY = Math.floor(event.y - screenTop);
-      const pinnedHeaderY = reviewPaneTopChromeRows;
-      if (copyDecorations && pinnedHeaderFileId && paneY === pinnedHeaderY) {
-        return {
-          kind: "pinned-header",
-          column: clampCopyColumn(Math.floor(event.x - screenLeft), diffContentWidth),
-          fileId: pinnedHeaderFileId,
-          nextVisualRow: Math.floor(scrollBox.scrollTop ?? 0),
-        };
-      }
+    const currentPinnedHeaderFileId = pinnedHeaderFileId();
+    const reviewPaneTopChromeRows = merged.pagerMode ? 0 : 2;
+    const pinnedHeaderHeight = currentPinnedHeaderFileId ? 1 : 0;
+    const paneY = Math.floor(event.y - merged.screenTop);
+    const pinnedHeaderY = reviewPaneTopChromeRows;
+    if (merged.copyDecorations && currentPinnedHeaderFileId && paneY === pinnedHeaderY) {
+      return {
+        kind: "pinned-header",
+        column: clampCopyColumn(Math.floor(event.x - merged.screenLeft), merged.diffContentWidth),
+        fileId: currentPinnedHeaderFileId,
+        nextVisualRow: Math.floor(scrollBox.scrollTop ?? 0),
+      };
+    }
 
-      const paneChromeHeight = reviewPaneTopChromeRows + pinnedHeaderHeight;
-      const viewportY = Math.floor(event.y - screenTop - paneChromeHeight);
-      if (viewportY < 0 || viewportY >= Math.max(1, scrollBox.viewport.height ?? 0)) {
-        return null;
-      }
+    const paneChromeHeight = reviewPaneTopChromeRows + pinnedHeaderHeight;
+    const viewportY = Math.floor(event.y - merged.screenTop - paneChromeHeight);
+    if (viewportY < 0 || viewportY >= Math.max(1, scrollBox.viewport.height ?? 0)) {
+      return null;
+    }
 
-      return findCopySelectionPoint({
-        column: Math.floor(event.x - screenLeft),
-        copyDecorations,
-        fileSectionLayouts,
-        sectionGeometry,
-        visualRow: Math.floor((scrollBox.scrollTop ?? 0) + viewportY),
-        width: diffContentWidth,
-      });
-    },
-    [
-      copyDecorations,
-      diffContentWidth,
-      fileSectionLayouts,
-      pagerMode,
-      pinnedHeaderFileId,
-      screenLeft,
-      screenTop,
-      scrollRef,
-      sectionGeometry,
-    ],
-  );
+    return findCopySelectionPoint({
+      column: Math.floor(event.x - merged.screenLeft),
+      copyDecorations: merged.copyDecorations,
+      fileSectionLayouts: fileSectionLayouts(),
+      sectionGeometry: sectionGeometry(),
+      visualRow: Math.floor((scrollBox.scrollTop ?? 0) + viewportY),
+      width: merged.diffContentWidth,
+    });
+  };
 
   // OpenTUI starts a native cross-renderable text selection on mouse-down over any selectable
   // <text> before our handler runs. That native selection ignores element bounds and paints
   // across the whole screen, so we eagerly clear it whenever Hunk owns the drag.
-  const suppressNativeSelection = useCallback(() => {
+  const suppressNativeSelection = () => {
     if (renderer.hasSelection) {
       renderer.clearSelection();
     }
-  }, [renderer]);
+  };
 
   /** Start selecting diff text when the user drags inside the review stream. */
-  const beginCopySelection = useCallback(
-    (event: TuiMouseEvent) => {
-      if (event.button !== MouseButton.LEFT) {
+  const beginCopySelection = (event: TuiMouseEvent) => {
+    if (event.button !== MouseButton.LEFT) {
+      return;
+    }
+
+    const point = resolveCopySelectionPoint(event);
+    if (!point) {
+      copySelectionDragRef.current = null;
+      clickCountRef.current = 0;
+      lastClickPointRef.current = null;
+      setCopySelectionDrag(null);
+      return;
+    }
+
+    // Detect double-click and triple-click for word/line selection.
+    const now = Date.now();
+    const timeSinceLastClick = now - lastClickTimeRef.current;
+    const previousClickPoint = lastClickPointRef.current;
+    const repeatedClickTarget =
+      previousClickPoint !== null &&
+      copySelectionPointsShareRow(previousClickPoint, point) &&
+      Math.abs(previousClickPoint.column - point.column) <= 2;
+    lastClickTimeRef.current = now;
+    lastClickPointRef.current = point;
+
+    let clickCount = 1;
+    if (timeSinceLastClick < 350 && timeSinceLastClick >= 0 && repeatedClickTarget) {
+      clickCountRef.current += 1;
+      clickCount = Math.min(clickCountRef.current, 3);
+    } else {
+      clickCountRef.current = 1;
+    }
+
+    if (clickCount >= 2 && point.kind === "review-row") {
+      const expanded = expandSelectionPoint(point, clickCount as 2 | 3, copySelectionContext());
+      if (expanded) {
+        const drag: CopySelectionDrag = {
+          anchor: { ...point, column: expanded.startCol },
+          focus: { ...point, column: expanded.endCol },
+          moved: true,
+        };
+        copySelectionDragRef.current = drag;
+        setCopySelectionDrag(drag);
+        suppressNativeSelection();
+        event.preventDefault();
+        event.stopPropagation();
         return;
+      }
+    }
+
+    const initial: CopySelectionDrag = { anchor: point, focus: point, moved: false };
+    copySelectionDragRef.current = initial;
+    setCopySelectionDrag(initial);
+    suppressNativeSelection();
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  /** Extend the active diff text selection while the pointer moves. */
+  const updateCopySelection = (event: TuiMouseEvent) => {
+    // Use the ref (not the signal) so that native-selection suppression fires on the very
+    // first drag event, before the next render has applied the new copySelectionDrag.
+    setCopySelectionDrag((current) => {
+      if (!current) {
+        return current;
       }
 
       const point = resolveCopySelectionPoint(event);
       if (!point) {
-        copySelectionDragRef.current = null;
-        clickCountRef.current = 0;
-        lastClickPointRef.current = null;
-        setCopySelectionDrag(null);
-        return;
+        return current;
       }
 
-      // Detect double-click and triple-click for word/line selection.
-      const now = Date.now();
-      const timeSinceLastClick = now - lastClickTimeRef.current;
-      const previousClickPoint = lastClickPointRef.current;
-      const repeatedClickTarget =
-        previousClickPoint !== null &&
-        copySelectionPointsShareRow(previousClickPoint, point) &&
-        Math.abs(previousClickPoint.column - point.column) <= 2;
-      lastClickTimeRef.current = now;
-      lastClickPointRef.current = point;
+      return {
+        anchor: current.anchor,
+        focus: point,
+        moved: current.moved || !copySelectionPointsEqual(point, current.anchor),
+      };
+    });
 
-      let clickCount = 1;
-      if (timeSinceLastClick < 350 && timeSinceLastClick >= 0 && repeatedClickTarget) {
-        clickCountRef.current += 1;
-        clickCount = Math.min(clickCountRef.current, 3);
-      } else {
-        clickCountRef.current = 1;
+    // The updater above does not touch the ref; update the ref synchronously here so that
+    // endCopySelection can read the correct moved flag even if the mouse-up event fires before
+    // the pending signal write is observed.
+    const refDrag = copySelectionDragRef.current;
+    if (refDrag) {
+      const point = resolveCopySelectionPoint(event);
+      if (point) {
+        copySelectionDragRef.current = {
+          anchor: refDrag.anchor,
+          focus: point,
+          moved: refDrag.moved || !copySelectionPointsEqual(point, refDrag.anchor),
+        };
       }
+    }
 
-      if (clickCount >= 2 && point.kind === "review-row") {
-        const expanded = expandSelectionPoint(point, clickCount as 2 | 3, copySelectionContext);
-        if (expanded) {
-          const drag: CopySelectionDrag = {
-            anchor: { ...point, column: expanded.startCol },
-            focus: { ...point, column: expanded.endCol },
-            moved: true,
-          };
-          copySelectionDragRef.current = drag;
-          setCopySelectionDrag(drag);
-          suppressNativeSelection();
-          event.preventDefault();
-          event.stopPropagation();
-          return;
-        }
-      }
-
-      const initial: CopySelectionDrag = { anchor: point, focus: point, moved: false };
-      copySelectionDragRef.current = initial;
-      setCopySelectionDrag(initial);
+    if (copySelectionDragRef.current) {
       suppressNativeSelection();
       event.preventDefault();
       event.stopPropagation();
-    },
-    [copySelectionContext, resolveCopySelectionPoint, suppressNativeSelection],
-  );
-
-  /** Extend the active diff text selection while the pointer moves. */
-  const updateCopySelection = useCallback(
-    (event: TuiMouseEvent) => {
-      // Use the ref (not state) so that native-selection suppression fires on the very
-      // first drag event, before React has re-rendered with the new copySelectionDrag.
-      setCopySelectionDrag((current) => {
-        if (!current) {
-          return current;
-        }
-
-        const point = resolveCopySelectionPoint(event);
-        if (!point) {
-          return current;
-        }
-
-        return {
-          anchor: current.anchor,
-          focus: point,
-          moved: current.moved || !copySelectionPointsEqual(point, current.anchor),
-        };
-      });
-
-      // The state updater above sets the ref during the render phase. Update the ref
-      // synchronously as well so that endCopySelection can read the correct moved flag
-      // even if the mouse-up event fires before React processes the pending state update.
-      const refDrag = copySelectionDragRef.current;
-      if (refDrag) {
-        const point = resolveCopySelectionPoint(event);
-        if (point) {
-          copySelectionDragRef.current = {
-            anchor: refDrag.anchor,
-            focus: point,
-            moved: refDrag.moved || !copySelectionPointsEqual(point, refDrag.anchor),
-          };
-        }
-      }
-
-      if (copySelectionDragRef.current) {
-        suppressNativeSelection();
-        event.preventDefault();
-        event.stopPropagation();
-      }
-    },
-    [resolveCopySelectionPoint, suppressNativeSelection],
-  );
+    }
+  };
 
   /** Finish a drag selection and copy its rendered text. */
-  const endCopySelection = useCallback(
-    (event?: TuiMouseEvent) => {
-      const current = copySelectionDragRef.current;
-      if (!current) {
-        return;
-      }
+  const endCopySelection = (event?: TuiMouseEvent) => {
+    const current = copySelectionDragRef.current;
+    if (!current) {
+      return;
+    }
 
-      copySelectionDragRef.current = null;
-      setCopySelectionDrag(null);
-      event?.preventDefault();
-      event?.stopPropagation();
+    copySelectionDragRef.current = null;
+    setCopySelectionDrag(null);
+    event?.preventDefault();
+    event?.stopPropagation();
 
-      if (!current.moved) {
-        return;
-      }
+    if (!current.moved) {
+      return;
+    }
 
-      const { start, end } = normalizeCopySelectionRange(current.anchor, current.focus);
-      const text = renderCopySelectionText({
-        context: copySelectionContext,
-        end,
-        side: copySelectionSide,
-        start,
-      });
-      copySelectionText(text);
-    },
-    [copySelectionContext, copySelectionSide, copySelectionText],
-  );
+    const { start, end } = normalizeCopySelectionRange(current.anchor, current.focus);
+    const text = renderCopySelectionText({
+      context: copySelectionContext(),
+      end,
+      side: copySelectionSide(),
+      start,
+    });
+    copySelectionText(text);
+  };
 
   // Expose the cancel hook so an ancestor (App's outer container) can release a stuck drag when
   // the pointer leaves the diff pane and is released over the sidebar, menu bar, or status bar.
-  useEffect(() => {
-    if (!cancelCopySelectionRef) {
+  createEffect(() => {
+    const cancelRef = merged.cancelCopySelectionRef;
+    if (!cancelRef) {
       return;
     }
-    cancelCopySelectionRef.current = () => endCopySelection();
-    return () => {
-      if (cancelCopySelectionRef.current) {
-        cancelCopySelectionRef.current = null;
+    cancelRef.current = () => endCopySelection();
+    onCleanup(() => {
+      if (cancelRef.current) {
+        cancelRef.current = null;
       }
-    };
-  }, [cancelCopySelectionRef, endCopySelection]);
+    });
+  });
 
   /** Clamp one requested review scroll target against the latest planned content height. */
-  const clampReviewScrollTop = useCallback(
-    (requestedTop: number, viewportHeight: number) =>
-      clampVerticalScrollTop(requestedTop, totalContentHeight, viewportHeight),
-    [totalContentHeight],
-  );
+  const clampReviewScrollTop = (requestedTop: number, viewportHeight: number) =>
+    clampVerticalScrollTop(requestedTop, totalContentHeight(), viewportHeight);
 
-  const highlightPrefetchFileIds = useMemo(
-    () =>
-      buildHighlightPrefetchFileIds({
-        adjacentPrefetchFileIds,
-        fileSectionLayouts,
-        rapidScrollOverscanRows,
-        scrollTop: scrollViewport.top,
-        viewportHeight: scrollViewport.height,
-        selectedFileId,
-      }),
-    [
-      adjacentPrefetchFileIds,
-      fileSectionLayouts,
-      rapidScrollOverscanRows,
-      scrollViewport.height,
-      scrollViewport.top,
-      selectedFileId,
-    ],
-  );
+  const highlightPrefetchFileIds = createMemo(() => {
+    const viewport = scrollViewport();
+    return buildHighlightPrefetchFileIds({
+      adjacentPrefetchFileIds: adjacentPrefetchFileIds(),
+      fileSectionLayouts: fileSectionLayouts(),
+      rapidScrollOverscanRows: rapidScrollOverscanRows(),
+      scrollTop: viewport.top,
+      viewportHeight: viewport.height,
+      selectedFileId: selectedFileId(),
+    });
+  });
 
   // Kick off highlight work from viewport planning rather than waiting for the section to mount.
   // That avoids the "plain rows first, color later" stutter when a file is about to scroll onscreen.
-  useEffect(() => {
-    if (files.length === 0) {
+  createEffect(() => {
+    const currentFiles = files();
+    if (currentFiles.length === 0) {
       return;
     }
 
-    for (const file of files) {
-      if (!highlightPrefetchFileIds.has(file.id)) {
+    const prefetchIds = highlightPrefetchFileIds();
+    const appearance = merged.theme.appearance;
+    for (const file of currentFiles) {
+      if (!prefetchIds.has(file.id)) {
         continue;
       }
 
       void prefetchHighlightedDiff({
         file,
-        appearance: theme.appearance,
+        appearance,
       });
     }
-  }, [files, highlightPrefetchFileIds, theme.appearance]);
+  });
 
   // Keep the selected file/hunk derived from the visible viewport for actual scroll-driven
-  // movement, while leaving the initial mount and non-scroll relayouts alone.
-  useLayoutEffect(() => {
+  // movement, while leaving the initial mount and non-scroll relayouts alone. Runs before paint
+  // (createRenderEffect) like the former useLayoutEffect.
+  createRenderEffect(() => {
+    const viewport = scrollViewport();
     const previousViewportTop = lastViewportSelectionTopRef.current;
-    lastViewportSelectionTopRef.current = scrollViewport.top;
+    lastViewportSelectionTopRef.current = viewport.top;
+
+    const onViewportCenteredHunkChange = merged.onViewportCenteredHunkChange;
+    const currentFiles = files();
 
     if (
       previousViewportTop === null ||
-      previousViewportTop === scrollViewport.top ||
+      previousViewportTop === viewport.top ||
       !onViewportCenteredHunkChange ||
       suppressViewportSelectionSyncRef.current ||
-      files.length === 0 ||
-      scrollViewport.height <= 0
+      currentFiles.length === 0 ||
+      viewport.height <= 0
     ) {
       return;
     }
 
     const centeredTarget = findViewportCenteredHunkTarget({
-      files,
-      fileSectionLayouts,
-      sectionGeometry,
-      scrollTop: scrollViewport.top,
-      viewportHeight: scrollViewport.height,
+      files: currentFiles,
+      fileSectionLayouts: fileSectionLayouts(),
+      sectionGeometry: sectionGeometry(),
+      scrollTop: viewport.top,
+      viewportHeight: viewport.height,
     });
     if (!centeredTarget) {
       return;
     }
 
     if (
-      centeredTarget.fileId === selectedFileId &&
-      centeredTarget.hunkIndex === selectedHunkIndex
+      centeredTarget.fileId === selectedFileId() &&
+      centeredTarget.hunkIndex === selectedHunkIndex()
     ) {
       return;
     }
 
     onViewportCenteredHunkChange(centeredTarget.fileId, centeredTarget.hunkIndex);
-  }, [
-    fileSectionLayouts,
-    files,
-    onViewportCenteredHunkChange,
-    scrollViewport.height,
-    scrollViewport.top,
-    sectionGeometry,
-    selectedFileId,
-    selectedHunkIndex,
-  ]);
+  });
 
-  useLayoutEffect(() => {
+  // Re-paint when the pinned header owner changes so the sticky row updates in lockstep with the
+  // stream (was a useLayoutEffect keyed on pinnedHeaderFileId).
+  createRenderEffect(() => {
+    void pinnedHeaderFileId();
     renderer.intermediateRender();
-  }, [renderer, pinnedHeaderFileId]);
+  });
 
-  const fullFileRenderItems = useMemo(
-    (): FileRenderWindowItem[] =>
-      files.map((file, sectionIndex) => ({ kind: "file", fileId: file.id, sectionIndex })),
-    [files],
+  const fullFileRenderItems = createMemo((): FileRenderWindowItem[] =>
+    files().map((file, sectionIndex) => ({ kind: "file", fileId: file.id, sectionIndex })),
   );
-  const fileSectionIndexById = useMemo(
-    () => buildFileSectionIndexById(fileSectionLayouts),
-    [fileSectionLayouts],
-  );
-  const fileRenderWindow = useMemo(
-    () =>
-      windowingEnabled
-        ? buildFileRenderWindow({
-            fileSectionLayouts,
-            includeFileIds: adjacentPrefetchFileIds,
-            indexByFileId: fileSectionIndexById,
-            overscanFiles: 2,
-            scrollTop: scrollViewport.top,
-            selectedFileId,
-            viewportHeight: scrollViewport.height,
-          })
-        : null,
-    [
-      adjacentPrefetchFileIds,
-      fileSectionIndexById,
-      fileSectionLayouts,
-      scrollViewport.height,
-      scrollViewport.top,
-      selectedFileId,
-      windowingEnabled,
-    ],
-  );
-  const fileRenderItems = fileRenderWindow?.items ?? fullFileRenderItems;
-  const mountedFileIndices = fileRenderWindow?.mountedFileIndices ?? null;
+  const fileSectionIndexById = createMemo(() => buildFileSectionIndexById(fileSectionLayouts()));
+  const fileRenderWindow = createMemo(() => {
+    if (!windowingEnabled()) {
+      return null;
+    }
+    const viewport = scrollViewport();
+    return buildFileRenderWindow({
+      fileSectionLayouts: fileSectionLayouts(),
+      includeFileIds: adjacentPrefetchFileIds(),
+      indexByFileId: fileSectionIndexById(),
+      overscanFiles: 2,
+      scrollTop: viewport.top,
+      selectedFileId: selectedFileId(),
+      viewportHeight: viewport.height,
+    });
+  });
+  // Solid's <For> reconciles rows by object identity. buildFileRenderWindow returns brand-new
+  // item objects on every scroll/selection change, which would tear down and recreate every
+  // mounted section each navigation — re-running each section's expensive Pierre row plan and
+  // span flattening (the dominant per-press cost). Reconcile against the previous snapshot so
+  // unchanged file/spacer items keep their reference and their <For> rows stay mounted; only
+  // genuinely new or resized items get fresh objects.
+  const previousRenderItemsRef: { current: Map<string, FileRenderWindowItem> } = {
+    current: new Map(),
+  };
+  const fileRenderItems = createMemo<FileRenderWindowItem[]>(() => {
+    const raw = fileRenderWindow()?.items ?? fullFileRenderItems();
+    const previous = previousRenderItemsRef.current;
+    const next = new Map<string, FileRenderWindowItem>();
+    const result = raw.map((item) => {
+      const key = item.kind === "file" ? `file:${item.fileId}` : `spacer:${item.key}`;
+      const prior = previous.get(key);
+      const unchanged =
+        prior?.kind === item.kind &&
+        (item.kind === "file"
+          ? prior.kind === "file" && prior.sectionIndex === item.sectionIndex
+          : prior.kind === "spacer" &&
+            prior.height === item.height &&
+            prior.startIndex === item.startIndex &&
+            prior.endIndex === item.endIndex);
+      const reused = unchanged ? prior! : item;
+      next.set(key, reused);
+      return reused;
+    });
+    previousRenderItemsRef.current = next;
+    return result;
+  });
+  const mountedFileIndices = () => fileRenderWindow()?.mountedFileIndices ?? null;
   // Previous snapshot used to keep VisibleBodyBounds object identity stable across scroll
-  // commits; DiffSection's memo comparator checks `visibleBodyBounds` by reference, so handing
-  // back the prior object when top/height are numerically unchanged lets mounted sections skip
-  // re-rendering even though the Map itself is rebuilt every snapshot.
-  const previousVisibleBodyBoundsRef = useRef<Map<string, VisibleBodyBounds>>(new Map());
-  const visibleBodyBoundsByFile = useMemo(() => {
+  // commits; reusing the prior object when top/height are numerically unchanged lets mounted
+  // sections skip re-rendering even though the Map itself is rebuilt every snapshot.
+  const previousVisibleBodyBoundsRef: { current: Map<string, VisibleBodyBounds> } = {
+    current: new Map(),
+  };
+  const visibleBodyBoundsByFile = createMemo(() => {
+    const viewport = scrollViewport();
     const previous = previousVisibleBodyBoundsRef.current;
     const next = new Map<string, VisibleBodyBounds>();
-    if (scrollViewport.height <= 0) {
+    if (viewport.height <= 0) {
       previousVisibleBodyBoundsRef.current = next;
       return next;
     }
 
-    const overscanTerminalRows = Math.max(24, scrollViewport.height * 2, rapidScrollOverscanRows);
+    const overscanTerminalRows = Math.max(24, viewport.height * 2, rapidScrollOverscanRows());
 
-    const indicesToMeasure = mountedFileIndices ?? files.map((_, index) => index);
+    const currentFiles = files();
+    const layouts = fileSectionLayouts();
+    const geometry = sectionGeometry();
+    const indicesToMeasure = mountedFileIndices() ?? currentFiles.map((_, index) => index);
 
     for (const index of indicesToMeasure) {
-      const file = files[index];
-      const sectionLayout = fileSectionLayouts[index];
-      const geometry = sectionGeometry[index];
-      if (!file || !sectionLayout || !geometry) {
+      const file = currentFiles[index];
+      const sectionLayout = layouts[index];
+      const fileGeometry = geometry[index];
+      if (!file || !sectionLayout || !fileGeometry) {
         continue;
       }
 
       // Convert the absolute review-stream viewport into file-body-local coordinates.
       // Example: if the viewport starts at row 2_000 globally and this file body starts at row
       // 1_940, then the file-local visible top is 60 rows into this file.
-      const minTop = scrollViewport.top - sectionLayout.bodyTop - overscanTerminalRows;
+      const minTop = viewport.top - sectionLayout.bodyTop - overscanTerminalRows;
       const maxBottom =
-        scrollViewport.top + scrollViewport.height - sectionLayout.bodyTop + overscanTerminalRows;
+        viewport.top + viewport.height - sectionLayout.bodyTop + overscanTerminalRows;
 
       // Keep the mounted rows bounded to the viewport slice. Selection reveal uses planned hunk
       // geometry as its fallback, so mounting an offscreen selected hunk is not necessary and would
@@ -1242,8 +1214,8 @@ export function DiffPane({
 
       // Clamp the requested file-local interval back into the real body extent, then store it as
       // { top, height } so the row slicer can rebuild the matching [top, bottom) window later.
-      const clampedTop = Math.min(geometry.bodyHeight, Math.max(0, minTop));
-      const clampedBottom = Math.min(geometry.bodyHeight, Math.max(clampedTop, maxBottom));
+      const clampedTop = Math.min(fileGeometry.bodyHeight, Math.max(0, minTop));
+      const clampedBottom = Math.min(fileGeometry.bodyHeight, Math.max(clampedTop, maxBottom));
       const height = clampedBottom - clampedTop;
       const previousBounds = previous.get(file.id);
       next.set(
@@ -1256,40 +1228,42 @@ export function DiffPane({
 
     previousVisibleBodyBoundsRef.current = next;
     return next;
-  }, [
-    fileSectionLayouts,
-    files,
-    rapidScrollOverscanRows,
-    scrollViewport.height,
-    scrollViewport.top,
-    sectionGeometry,
-    mountedFileIndices,
-  ]);
+  });
 
-  const selectedFileIndex = selectedFileId
-    ? files.findIndex((file) => file.id === selectedFileId)
-    : -1;
-  const selectedFile = selectedFileIndex >= 0 ? files[selectedFileIndex] : undefined;
-  const selectedAnchorId = selectedFile
-    ? selectedFile.metadata.hunks[selectedHunkIndex]
-      ? diffHunkId(selectedFile.id, selectedHunkIndex)
-      : diffSectionId(selectedFile.id)
-    : null;
-  const selectedEstimatedHunkBounds = useMemo(() => {
-    if (!selectedFile || selectedFileIndex < 0 || selectedFile.metadata.hunks.length === 0) {
+  const selectedFileIndex = () => {
+    const id = selectedFileId();
+    return id ? files().findIndex((file) => file.id === id) : -1;
+  };
+  const selectedFile = () => {
+    const index = selectedFileIndex();
+    return index >= 0 ? files()[index] : undefined;
+  };
+  const selectedAnchorId = () => {
+    const file = selectedFile();
+    if (!file) {
+      return null;
+    }
+    return file.metadata.hunks[selectedHunkIndex()]
+      ? diffHunkId(file.id, selectedHunkIndex())
+      : diffSectionId(file.id);
+  };
+  const selectedEstimatedHunkBounds = createMemo(() => {
+    const file = selectedFile();
+    const index = selectedFileIndex();
+    if (!file || index < 0 || file.metadata.hunks.length === 0) {
       return null;
     }
 
-    const selectedFileSectionLayout = fileSectionLayouts[selectedFileIndex];
+    const selectedFileSectionLayout = fileSectionLayouts()[index];
     if (!selectedFileSectionLayout) {
       return null;
     }
 
     const clampedHunkIndex = Math.max(
       0,
-      Math.min(selectedHunkIndex, selectedFile.metadata.hunks.length - 1),
+      Math.min(selectedHunkIndex(), file.metadata.hunks.length - 1),
     );
-    const hunkBounds = sectionGeometry[selectedFileIndex]?.hunkBounds.get(clampedHunkIndex);
+    const hunkBounds = sectionGeometry()[index]?.hunkBounds.get(clampedHunkIndex);
     if (!hunkBounds) {
       return null;
     }
@@ -1301,22 +1275,23 @@ export function DiffPane({
       endRowId: hunkBounds.endRowId,
       sectionTop: selectedFileSectionLayout.sectionTop,
     };
-  }, [fileSectionLayouts, sectionGeometry, selectedFile, selectedFileIndex, selectedHunkIndex]);
+  });
 
   /** Absolute scroll offset and height of the first inline note in the selected hunk, if any. */
-  const selectedNoteBounds = useMemo(() => {
-    if (!scrollToNote || !selectedEstimatedHunkBounds || selectedFileIndex < 0) {
+  const selectedNoteBounds = createMemo(() => {
+    const hunkBounds = selectedEstimatedHunkBounds();
+    const index = selectedFileIndex();
+    if (!scrollToNote() || !hunkBounds || index < 0) {
       return null;
     }
 
-    const geometry = sectionGeometry[selectedFileIndex];
+    const geometry = sectionGeometry()[index];
     if (!geometry) {
       return null;
     }
 
-    const sectionRelativeHunkTop =
-      selectedEstimatedHunkBounds.top - selectedEstimatedHunkBounds.sectionTop;
-    const sectionRelativeHunkBottom = sectionRelativeHunkTop + selectedEstimatedHunkBounds.height;
+    const sectionRelativeHunkTop = hunkBounds.top - hunkBounds.sectionTop;
+    const sectionRelativeHunkBottom = sectionRelativeHunkTop + hunkBounds.height;
     const noteRow = geometry.rowBounds.find(
       (row) =>
         row.key.startsWith("inline-note:") &&
@@ -1329,65 +1304,77 @@ export function DiffPane({
     }
 
     return {
-      top: selectedEstimatedHunkBounds.sectionTop + noteRow.top,
+      top: hunkBounds.sectionTop + noteRow.top,
       height: noteRow.height,
     };
-  }, [scrollToNote, sectionGeometry, selectedEstimatedHunkBounds, selectedFileIndex]);
-  const selectedEstimatedHunkTop = selectedEstimatedHunkBounds?.top ?? null;
-  const selectedEstimatedHunkHeight = selectedEstimatedHunkBounds?.height ?? null;
-  const selectedEstimatedHunkStartRowId = selectedEstimatedHunkBounds?.startRowId ?? null;
-  const selectedEstimatedHunkEndRowId = selectedEstimatedHunkBounds?.endRowId ?? null;
-  const selectedNoteTop = selectedNoteBounds?.top ?? null;
-  const selectedNoteHeight = selectedNoteBounds?.height ?? null;
+  });
+  const selectedEstimatedHunkTop = () => selectedEstimatedHunkBounds()?.top ?? null;
+  const selectedEstimatedHunkHeight = () => selectedEstimatedHunkBounds()?.height ?? null;
+  const selectedEstimatedHunkStartRowId = () => selectedEstimatedHunkBounds()?.startRowId ?? null;
+  const selectedEstimatedHunkEndRowId = () => selectedEstimatedHunkBounds()?.endRowId ?? null;
+  const selectedNoteTop = () => selectedNoteBounds()?.top ?? null;
+  const selectedNoteHeight = () => selectedNoteBounds()?.height ?? null;
 
   /** The bodyTop of the currently selected file's section layout, used to floor hunk reveal scroll targets so they never cross above the owning file boundary. */
-  const selectedFileBodyTop =
-    selectedFileIndex >= 0 ? (fileSectionLayouts[selectedFileIndex]?.bodyTop ?? 0) : 0;
+  const selectedFileBodyTop = () => {
+    const index = selectedFileIndex();
+    return index >= 0 ? (fileSectionLayouts()[index]?.bodyTop ?? 0) : 0;
+  };
 
   // Track the previous selected anchor to detect actual selection changes.
-  const prevSelectedAnchorIdRef = useRef<string | null>(null);
-  const prevPinnedHeaderFileIdRef = useRef<string | null>(null);
-  const pendingSelectionSettleRef = useRef(false);
+  const prevSelectedAnchorIdRef: { current: string | null } = { current: null };
+  const prevPinnedHeaderFileIdRef: { current: string | null } = { current: null };
+  const pendingSelectionSettleRef = { current: false };
 
   /** Clear any pending "selected file to top" follow-up. */
-  const clearPendingFileTopAlign = useCallback(() => {
+  const clearPendingFileTopAlign = () => {
     pendingFileTopAlignFileIdRef.current = null;
-  }, []);
+  };
 
   /** Scroll one file so it immediately owns the viewport top using the latest planned geometry. */
-  const scrollFileHeaderToTop = useCallback(
-    (fileId: string) => {
-      const targetSection = fileSectionLayouts.find((layout) => layout.fileId === fileId);
-      if (!targetSection) {
-        return false;
-      }
+  const scrollFileHeaderToTop = (fileId: string) => {
+    const targetSection = fileSectionLayouts().find((layout) => layout.fileId === fileId);
+    if (!targetSection) {
+      return false;
+    }
 
-      const scrollBox = scrollRef.current;
-      if (!scrollBox) {
-        return false;
-      }
+    const scrollBox = merged.scrollRef.current;
+    if (!scrollBox) {
+      return false;
+    }
 
-      const viewportHeight = Math.max(scrollViewport.height, scrollBox.viewport.height ?? 0);
+    const viewportHeight = Math.max(scrollViewport().height, scrollBox.viewport.height ?? 0);
 
-      // The pinned header owns the top row, so align the review stream to the file body. Clamp the
-      // request so short trailing files can still settle cleanly at the reachable bottom edge.
-      scrollBox.scrollTo(clampReviewScrollTop(targetSection.bodyTop, viewportHeight));
-      return true;
-    },
-    [clampReviewScrollTop, fileSectionLayouts, scrollRef, scrollViewport.height],
-  );
+    // The pinned header owns the top row, so align the review stream to the file body. Clamp the
+    // request so short trailing files can still settle cleanly at the reachable bottom edge.
+    scrollBox.scrollTo(clampReviewScrollTop(targetSection.bodyTop, viewportHeight));
+    return true;
+  };
 
-  useLayoutEffect(() => {
+  // Restore the viewport anchor across layout/wrap/draft-note relayouts. Auto-tracks layout,
+  // wrapLines, draftNote id, files, sectionGeometry, sectionHeaderHeights, scrollViewport.top,
+  // layoutToggleRequestId, layoutToggleScrollTop, and wrapToggleScrollTop (matches former deps).
+  createRenderEffect(() => {
+    const layout = merged.layout;
+    const wrapLines = merged.wrapLines;
+    const layoutToggleRequestId = merged.layoutToggleRequestId;
+    const layoutToggleScrollTop = merged.layoutToggleScrollTop;
+    const wrapToggleScrollTop = merged.wrapToggleScrollTop;
+    const currentFiles = files();
+    const currentSectionGeometry = sectionGeometry();
+    const currentSectionHeaderHeights = sectionHeaderHeights();
+    const viewportTop = scrollViewport().top;
+
     const layoutChanged = previousLayoutRef.current !== layout;
     const explicitLayoutToggle = previousLayoutToggleRequestIdRef.current !== layoutToggleRequestId;
     const wrapChanged = previousWrapLinesRef.current !== wrapLines;
     const previousSectionMetrics = previousSectionGeometryRef.current;
     const previousFiles = previousFilesRef.current;
-    const currentDraftNoteId = draftNote?.id ?? null;
+    const currentDraftNoteId = draftNote()?.id ?? null;
     const draftChanged = previousDraftNoteIdRef.current !== currentDraftNoteId;
 
     if (draftChanged && previousSectionMetrics && previousFiles.length > 0) {
-      const previousScrollTop = scrollRef.current?.scrollTop ?? scrollViewport.top;
+      const previousScrollTop = merged.scrollRef.current?.scrollTop ?? viewportTop;
       const anchor =
         lastViewportRowAnchorRef.current ??
         findViewportRowAnchor(
@@ -1398,13 +1385,13 @@ export function DiffPane({
         );
       if (anchor) {
         const nextTop = resolveViewportRowAnchorTop(
-          files,
-          sectionGeometry,
+          currentFiles,
+          currentSectionGeometry,
           anchor,
-          sectionHeaderHeights,
+          currentSectionHeaderHeights,
         );
         const restoreViewportAnchor = () => {
-          scrollRef.current?.scrollTo(nextTop);
+          merged.scrollRef.current?.scrollTo(nextTop);
         };
 
         lastViewportRowAnchorRef.current = anchor;
@@ -1417,12 +1404,13 @@ export function DiffPane({
         previousLayoutRef.current = layout;
         previousLayoutToggleRequestIdRef.current = layoutToggleRequestId;
         previousWrapLinesRef.current = wrapLines;
-        previousSectionGeometryRef.current = sectionGeometry;
-        previousFilesRef.current = files;
+        previousSectionGeometryRef.current = currentSectionGeometry;
+        previousFilesRef.current = currentFiles;
 
-        return () => {
+        onCleanup(() => {
           timeouts.forEach((timeout) => clearTimeout(timeout));
-        };
+        });
+        return;
       }
     }
 
@@ -1435,8 +1423,8 @@ export function DiffPane({
           ? wrapToggleScrollTop
           : layoutChanged && explicitLayoutToggle && layoutToggleScrollTop != null
             ? layoutToggleScrollTop
-            : (scrollRef.current?.scrollTop ??
-              Math.max(prevScrollTopRef.current, scrollViewport.top));
+            : (merged.scrollRef.current?.scrollTop ??
+              Math.max(prevScrollTopRef.current, viewportTop));
       const anchor = findViewportRowAnchor(
         previousFiles,
         previousSectionMetrics,
@@ -1446,13 +1434,13 @@ export function DiffPane({
       );
       if (anchor) {
         const nextTop = resolveViewportRowAnchorTop(
-          files,
-          sectionGeometry,
+          currentFiles,
+          currentSectionGeometry,
           anchor,
-          sectionHeaderHeights,
+          currentSectionHeaderHeights,
         );
         const restoreViewportAnchor = () => {
-          scrollRef.current?.scrollTo(nextTop);
+          merged.scrollRef.current?.scrollTo(nextTop);
         };
 
         lastViewportRowAnchorRef.current = anchor;
@@ -1466,12 +1454,13 @@ export function DiffPane({
         previousLayoutRef.current = layout;
         previousLayoutToggleRequestIdRef.current = layoutToggleRequestId;
         previousWrapLinesRef.current = wrapLines;
-        previousSectionGeometryRef.current = sectionGeometry;
-        previousFilesRef.current = files;
+        previousSectionGeometryRef.current = currentSectionGeometry;
+        previousFilesRef.current = currentFiles;
 
-        return () => {
+        onCleanup(() => {
           timeouts.forEach((timeout) => clearTimeout(timeout));
-        };
+        });
+        return;
       }
     }
 
@@ -1479,93 +1468,93 @@ export function DiffPane({
     previousLayoutRef.current = layout;
     previousLayoutToggleRequestIdRef.current = layoutToggleRequestId;
     previousWrapLinesRef.current = wrapLines;
-    previousSectionGeometryRef.current = sectionGeometry;
-    previousFilesRef.current = files;
-  }, [
-    draftNote?.id,
-    files,
-    layout,
-    layoutToggleRequestId,
-    layoutToggleScrollTop,
-    scrollRef,
-    scrollViewport.top,
-    sectionGeometry,
-    sectionHeaderHeights,
-    suppressViewportSelectionSync,
-    wrapLines,
-    wrapToggleScrollTop,
-  ]);
+    previousSectionGeometryRef.current = currentSectionGeometry;
+    previousFilesRef.current = currentFiles;
+  });
 
-  useLayoutEffect(() => {
-    if (files.length === 0) {
+  // Keep the row anchor tracking the live viewport top so later relayouts have a fresh anchor.
+  createRenderEffect(() => {
+    const currentFiles = files();
+    const currentSectionGeometry = sectionGeometry();
+    const currentSectionHeaderHeights = sectionHeaderHeights();
+    const viewportTop = scrollViewport().top;
+
+    if (currentFiles.length === 0) {
       lastViewportRowAnchorRef.current = null;
       return;
     }
 
-    const currentScrollTop = scrollRef.current?.scrollTop ?? scrollViewport.top;
+    const currentScrollTop = merged.scrollRef.current?.scrollTop ?? viewportTop;
     const nextAnchor = findViewportRowAnchor(
-      files,
-      sectionGeometry,
+      currentFiles,
+      currentSectionGeometry,
       currentScrollTop,
-      sectionHeaderHeights,
+      currentSectionHeaderHeights,
       lastViewportRowAnchorRef.current?.stableKey,
     );
 
     if (nextAnchor) {
       lastViewportRowAnchorRef.current = nextAnchor;
     }
-  }, [files, scrollRef, scrollViewport.top, sectionGeometry, sectionHeaderHeights]);
+  });
 
-  useLayoutEffect(() => {
-    if (previousSelectedFileTopAlignRequestIdRef.current === selectedFileTopAlignRequestId) {
+  // Sidebar navigation should make the selected file immediately own the viewport top. Auto-tracks
+  // selectedFileTopAlignRequestId, selectedFileId, and selectedFileIndex (former deps).
+  createRenderEffect(() => {
+    const currentRequestId = selectedFileTopAlignRequestId();
+    const currentSelectedFileId = selectedFileId();
+    const index = selectedFileIndex();
+
+    if (previousSelectedFileTopAlignRequestIdRef.current === currentRequestId) {
       return;
     }
 
-    previousSelectedFileTopAlignRequestIdRef.current = selectedFileTopAlignRequestId;
+    previousSelectedFileTopAlignRequestIdRef.current = currentRequestId;
     clearPendingFileTopAlign();
 
-    if (!selectedFileId || selectedFileIndex < 0) {
+    if (!currentSelectedFileId || index < 0) {
       return;
     }
 
-    // Sidebar navigation should make the selected file immediately own the viewport top.
     suppressViewportSelectionSync();
-    pendingFileTopAlignFileIdRef.current = selectedFileId;
-    scrollFileHeaderToTop(selectedFileId);
-  }, [
-    clearPendingFileTopAlign,
-    scrollFileHeaderToTop,
-    selectedFileTopAlignRequestId,
-    selectedFileId,
-    selectedFileIndex,
-    suppressViewportSelectionSync,
-  ]);
+    pendingFileTopAlignFileIdRef.current = currentSelectedFileId;
+    scrollFileHeaderToTop(currentSelectedFileId);
+  });
 
-  useLayoutEffect(() => {
+  // Re-settle a pending "selected file to top" request as geometry/viewport changes. Auto-tracks
+  // files, fileSectionLayouts, scrollViewport (height/top) like the former deps array.
+  createRenderEffect(() => {
+    const currentFiles = files();
+    const layouts = fileSectionLayouts();
+    const viewport = scrollViewport();
+
     const pendingFileId = pendingFileTopAlignFileIdRef.current;
     if (!pendingFileId) {
       return;
     }
 
     // Stop retrying if the sidebar selection points at a file that disappeared mid-settle.
-    const fileStillPresent = files.some((file) => file.id === pendingFileId);
+    const fileStillPresent = currentFiles.some((file) => file.id === pendingFileId);
     if (!fileStillPresent) {
       clearPendingFileTopAlign();
       return;
     }
 
-    const targetSection = fileSectionLayouts.find((layout) => layout.fileId === pendingFileId);
+    const targetSection = layouts.find((layout) => layout.fileId === pendingFileId);
     if (!targetSection) {
       return;
     }
 
-    const viewportHeight = Math.max(scrollViewport.height, scrollRef.current?.viewport.height ?? 0);
+    const viewportHeight = Math.max(
+      viewport.height,
+      merged.scrollRef.current?.viewport.height ?? 0,
+    );
     // Compare against the reachable target, not the raw file body top. The last short file often
     // cannot actually own the viewport top near EOF, and treating that unreachable top as pending
     // would keep snapping manual upward scrolling back down to the bottom edge.
     const desiredTop = clampReviewScrollTop(targetSection.bodyTop, viewportHeight);
 
-    const currentTop = scrollRef.current?.scrollTop ?? scrollViewport.top;
+    const currentTop = merged.scrollRef.current?.scrollTop ?? viewport.top;
     if (Math.abs(currentTop - desiredTop) <= 0.5) {
       clearPendingFileTopAlign();
       return;
@@ -1573,79 +1562,86 @@ export function DiffPane({
 
     suppressViewportSelectionSync();
     scrollFileHeaderToTop(pendingFileId);
-  }, [
-    clampReviewScrollTop,
-    clearPendingFileTopAlign,
-    fileSectionLayouts,
-    files,
-    scrollFileHeaderToTop,
-    scrollRef,
-    scrollViewport.height,
-    scrollViewport.top,
-    suppressViewportSelectionSync,
-  ]);
+  });
 
-  useLayoutEffect(() => {
-    const revealFollowsSelectionChange = selectedHunkRevealRequestId === undefined;
+  // Reveal the selected hunk/note. Auto-tracks the same reactive values the former useLayoutEffect
+  // listed (selection ids, hunk/note bounds, pinned header, viewport height, reveal request id).
+  createRenderEffect(() => {
+    const currentSelectedAnchorId = selectedAnchorId();
+    const currentHunkBounds = selectedEstimatedHunkBounds();
+    const currentNoteBounds = selectedNoteBounds();
+    const currentPinnedHeaderFileId = pinnedHeaderFileId();
+    const index = selectedFileIndex();
+    const hunkIndex = selectedHunkIndex();
+    const fileBodyTop = selectedFileBodyTop();
+    const viewportHeightSignal = scrollViewport().height;
+    const revealRequestId = selectedHunkRevealRequestId();
+    // Establish dependence on the derived bound accessors so this re-runs as they change.
+    void selectedEstimatedHunkTop();
+    void selectedEstimatedHunkHeight();
+    void selectedEstimatedHunkStartRowId();
+    void selectedEstimatedHunkEndRowId();
+    void selectedNoteTop();
+    void selectedNoteHeight();
+
+    const revealFollowsSelectionChange = revealRequestId === undefined;
     const revealRequested = revealFollowsSelectionChange
-      ? prevSelectedAnchorIdRef.current !== selectedAnchorId
-      : previousSelectedHunkRevealRequestIdRef.current !== selectedHunkRevealRequestId;
-    previousSelectedHunkRevealRequestIdRef.current = selectedHunkRevealRequestId;
+      ? prevSelectedAnchorIdRef.current !== currentSelectedAnchorId
+      : previousSelectedHunkRevealRequestIdRef.current !== revealRequestId;
+    previousSelectedHunkRevealRequestIdRef.current = revealRequestId;
 
-    if (!selectedAnchorId && !selectedEstimatedHunkBounds) {
+    if (!currentSelectedAnchorId && !currentHunkBounds) {
       prevSelectedAnchorIdRef.current = null;
-      prevPinnedHeaderFileIdRef.current = pinnedHeaderFileId;
+      prevPinnedHeaderFileIdRef.current = currentPinnedHeaderFileId;
       pendingSelectionSettleRef.current = false;
       return;
     }
 
     const shouldTrackPinnedHeaderResettle =
-      selectedFileIndex > 0 || selectedHunkIndex > 0 || selectedNoteBounds !== null;
+      index > 0 || hunkIndex > 0 || currentNoteBounds !== null;
     const pinnedHeaderChangedWhileSettling =
       shouldTrackPinnedHeaderResettle &&
       pendingSelectionSettleRef.current &&
-      prevPinnedHeaderFileIdRef.current !== pinnedHeaderFileId;
-    prevSelectedAnchorIdRef.current = selectedAnchorId;
-    prevPinnedHeaderFileIdRef.current = pinnedHeaderFileId;
+      prevPinnedHeaderFileIdRef.current !== currentPinnedHeaderFileId;
+    prevSelectedAnchorIdRef.current = currentSelectedAnchorId;
+    prevPinnedHeaderFileIdRef.current = currentPinnedHeaderFileId;
 
     if (!revealRequested && !pinnedHeaderChangedWhileSettling) {
       return;
     }
 
     const scrollSelectionIntoView = () => {
-      const scrollBox = scrollRef.current;
+      const scrollBox = merged.scrollRef.current;
       if (!scrollBox) {
         return;
       }
 
-      const viewportHeight = Math.max(scrollViewport.height, scrollBox.viewport.height ?? 0);
+      const viewportHeight = Math.max(viewportHeightSignal, scrollBox.viewport.height ?? 0);
       const preferredTopPadding = Math.max(2, Math.floor(viewportHeight * 0.25));
 
       // When navigating comment-to-comment, scroll the inline note card near the viewport top
       // instead of positioning the entire hunk. Clamp the reveal target too: notes in the final
       // hunk can request a top offset that is no longer reachable once the viewport hits EOF.
       // Using the reachable value keeps the reveal logic from fighting later manual scrolling.
-      if (selectedNoteBounds) {
+      if (currentNoteBounds) {
         const revealScrollTop = computeHunkRevealScrollTop({
-          hunkTop: selectedNoteBounds.top,
-          hunkHeight: selectedNoteBounds.height,
+          hunkTop: currentNoteBounds.top,
+          hunkHeight: currentNoteBounds.height,
           preferredTopPadding,
           viewportHeight,
         });
         // Floor against the owning file's body boundary so the viewport never crosses above it
         // and triggers a pinned-header flash.
-        const flooredScrollTop = Math.max(revealScrollTop, selectedFileBodyTop);
+        const flooredScrollTop = Math.max(revealScrollTop, fileBodyTop);
         scrollBox.scrollTo(clampReviewScrollTop(flooredScrollTop, viewportHeight));
         return;
       }
 
-      if (selectedEstimatedHunkBounds) {
+      if (currentHunkBounds) {
         const viewportTop = scrollBox.viewport.y;
         const currentScrollTop = scrollBox.scrollTop;
-        const startRow = scrollBox.content.findDescendantById(
-          selectedEstimatedHunkBounds.startRowId,
-        );
-        const endRow = scrollBox.content.findDescendantById(selectedEstimatedHunkBounds.endRowId);
+        const startRow = scrollBox.content.findDescendantById(currentHunkBounds.startRowId);
+        const endRow = scrollBox.content.findDescendantById(currentHunkBounds.endRowId);
 
         // Prefer exact mounted bounds when both edges are available. If only one edge has mounted
         // so far, fall back to the planned bounds as one atomic estimate instead of mixing sources.
@@ -1656,10 +1652,10 @@ export function DiffPane({
           ? currentScrollTop + (endRow.y + endRow.height - viewportTop)
           : null;
         const renderedBoundsReady = renderedTop !== null && renderedBottom !== null;
-        const hunkTop = renderedBoundsReady ? renderedTop : selectedEstimatedHunkBounds.top;
+        const hunkTop = renderedBoundsReady ? renderedTop : currentHunkBounds.top;
         const hunkHeight = renderedBoundsReady
           ? Math.max(0, renderedBottom - renderedTop)
-          : selectedEstimatedHunkBounds.height;
+          : currentHunkBounds.height;
 
         const revealScrollTop = computeHunkRevealScrollTop({
           hunkTop,
@@ -1669,13 +1665,13 @@ export function DiffPane({
         });
         // Floor against the owning file's body boundary so the viewport never crosses above it
         // and triggers a pinned-header flash.
-        const flooredScrollTop = Math.max(revealScrollTop, selectedFileBodyTop);
+        const flooredScrollTop = Math.max(revealScrollTop, fileBodyTop);
         scrollBox.scrollTo(clampReviewScrollTop(flooredScrollTop, viewportHeight));
         return;
       }
 
-      if (selectedAnchorId) {
-        scrollBox.scrollChildIntoView(selectedAnchorId);
+      if (currentSelectedAnchorId) {
+        scrollBox.scrollChildIntoView(currentSelectedAnchorId);
       }
     };
 
@@ -1691,178 +1687,202 @@ export function DiffPane({
           pendingSelectionSettleRef.current = false;
         }, 120)
       : null;
-    return () => {
+    onCleanup(() => {
       timeouts.forEach((timeout) => clearTimeout(timeout));
       if (settleReset) {
         clearTimeout(settleReset);
       }
-    };
-  }, [
-    clampReviewScrollTop,
-    pinnedHeaderFileId,
-    scrollRef,
-    scrollViewport.height,
-    selectedAnchorId,
-    selectedEstimatedHunkEndRowId,
-    selectedEstimatedHunkHeight,
-    selectedEstimatedHunkStartRowId,
-    selectedEstimatedHunkTop,
-    selectedFileIndex,
-    selectedHunkIndex,
-    selectedHunkRevealRequestId,
-    selectedFileBodyTop,
-    selectedNoteHeight,
-    selectedNoteTop,
-    suppressViewportSelectionSync,
-  ]);
+    });
+  });
 
   // Keep keyboard step scrolling at exactly one row while wheel scrolling uses its own multiplier.
-  useEffect(() => {
-    const scrollBox = scrollRef.current;
+  createEffect(() => {
+    const scrollBox = merged.scrollRef.current;
     if (scrollBox) {
       scrollBox.verticalScrollBar.scrollStep = 1;
     }
-  }, [scrollRef]);
+  });
 
   return (
     <box
       style={{
-        width,
-        border: pagerMode ? [] : ["top"],
-        borderColor: theme.border,
-        backgroundColor: theme.panel,
-        paddingY: pagerMode ? 0 : 1,
+        width: merged.width,
+        border: merged.pagerMode ? [] : ["top"],
+        borderColor: merged.theme.border,
+        backgroundColor: merged.theme.panel,
+        paddingY: merged.pagerMode ? 0 : 1,
         paddingX: 0,
         flexDirection: "column",
       }}
       onMouseDragEnd={endCopySelection}
       onMouseUp={endCopySelection}
     >
-      {files.length > 0 ? (
+      <Show
+        when={files().length > 0}
+        fallback={
+          <box style={{ flexGrow: 1, alignItems: "center", justifyContent: "center" }}>
+            <text fg={merged.theme.muted}>No files match the current filter.</text>
+          </box>
+        }
+      >
         <box style={{ width: "100%", height: "100%", flexGrow: 1, flexDirection: "column" }}>
           {/* Always pin the current file header in a dedicated top row. */}
-          {pinnedHeaderFile ? (
-            <box
-              style={{ width: "100%", height: 1, minHeight: 1, flexShrink: 0 }}
-              onMouseDown={beginCopySelection}
-              onMouseDrag={updateCopySelection}
-              onMouseDragEnd={endCopySelection}
-              onMouseUp={endCopySelection}
-            >
-              <DiffFileHeaderRow
-                file={pinnedHeaderFile}
-                headerLabelWidth={headerLabelWidth}
-                headerStatsWidth={headerStatsWidth}
-                theme={theme}
-                onSelect={() => onSelectFile(pinnedHeaderFile.id)}
-              />
-            </box>
-          ) : null}
+          <Show when={pinnedHeaderFile()}>
+            {(pinned) => (
+              <box
+                style={{ width: "100%", height: 1, minHeight: 1, flexShrink: 0 }}
+                onMouseDown={beginCopySelection}
+                onMouseDrag={updateCopySelection}
+                onMouseDragEnd={endCopySelection}
+                onMouseUp={endCopySelection}
+              >
+                <DiffFileHeaderRow
+                  file={pinned()}
+                  headerLabelWidth={merged.headerLabelWidth}
+                  headerStatsWidth={merged.headerStatsWidth}
+                  theme={merged.theme}
+                  onSelect={() => merged.onSelectFile(pinned().id)}
+                />
+              </box>
+            )}
+          </Show>
           <box style={{ position: "relative", width: "100%", flexGrow: 1 }}>
             <scrollbox
-              ref={scrollRef}
+              ref={(el) => (merged.scrollRef.current = el)}
               width="100%"
               height="100%"
               scrollY={true}
               viewportCulling={true}
-              focused={pagerMode}
+              focused={merged.pagerMode}
               onMouseDown={beginCopySelection}
               onMouseDrag={updateCopySelection}
               onMouseDragEnd={endCopySelection}
               onMouseScroll={handleMouseScroll}
               onMouseUp={endCopySelection}
               scrollAcceleration={mouseWheelScrollAcceleration}
-              rootOptions={{ backgroundColor: theme.panel }}
-              wrapperOptions={{ backgroundColor: theme.panel }}
-              viewportOptions={{ backgroundColor: theme.panel }}
-              contentOptions={{ backgroundColor: theme.panel }}
+              rootOptions={{ backgroundColor: merged.theme.panel }}
+              wrapperOptions={{ backgroundColor: merged.theme.panel }}
+              viewportOptions={{ backgroundColor: merged.theme.panel }}
+              contentOptions={{ backgroundColor: merged.theme.panel }}
               verticalScrollbarOptions={{ visible: false }}
               horizontalScrollbarOptions={{ visible: false }}
             >
-              <box
-                // Remount the diff content when width/layout/wrap mode changes so viewport culling
-                // recomputes against the new row geometry, while the outer scrollbox keeps its state.
-                key={`diff-content:${layout}:${wrapLines ? "wrap" : "nowrap"}:${width}`}
-                style={{ width: "100%", flexDirection: "column", overflow: "visible" }}
+              {/* Remount the diff content when width/layout/wrap mode changes so viewport culling
+                  recomputes against the new row geometry, while the outer scrollbox keeps its
+                  state. The keyed Show forces a fresh subtree on those changes. */}
+              <Show
+                when={`diff-content:${merged.layout}:${merged.wrapLines ? "wrap" : "nowrap"}:${merged.width}`}
+                keyed
               >
-                {fileRenderItems.map((item) => {
-                  if (item.kind === "spacer") {
-                    return (
-                      <box
-                        key={item.key}
-                        style={{ width: "100%", height: item.height, backgroundColor: theme.panel }}
-                      />
-                    );
-                  }
-
-                  const { sectionIndex: index } = item;
-                  const file = files[index];
-                  if (!file) {
-                    return null;
-                  }
-
-                  return (
-                    <DiffSection
-                      key={file.id}
-                      codeHorizontalOffset={codeHorizontalOffset}
-                      expandedGapKeys={expandedGapsByFileId[file.id] ?? EMPTY_EXPANDED_GAP_KEYS}
-                      file={file}
-                      headerLabelWidth={headerLabelWidth}
-                      headerStatsWidth={headerStatsWidth}
-                      layout={layout}
-                      selectedHunkIndex={file.id === selectedFileId ? selectedHunkIndex : -1}
-                      copySelectedRowRanges={copySelectedRowKeysByFile.get(file.id)}
-                      copySelectedSide={copySelectionSide}
-                      shouldLoadHighlight={highlightPrefetchFileIds.has(file.id)}
-                      sectionGeometry={sectionGeometry[index]}
-                      separatorWidth={separatorWidth}
-                      showHeader={shouldRenderInStreamFileHeader(index)}
-                      showSeparator={index > 0}
-                      showLineNumbers={showLineNumbers}
-                      showHunkHeaders={showHunkHeaders}
-                      sourceStatus={sourceStatusByFileId[file.id]}
-                      wrapLines={wrapLines}
-                      theme={theme}
-                      hoverActive={hoveredFileId === null || hoveredFileId === file.id}
-                      hoverClearSignal={
-                        addNoteHoverClearFileId === file.id ? addNoteHoverClearSignal : 0
-                      }
-                      viewWidth={diffContentWidth}
-                      visibleAgentNotes={
-                        visibleAgentNotesByFile.get(file.id) ?? EMPTY_VISIBLE_AGENT_NOTES
-                      }
-                      visibleBodyBounds={visibleBodyBoundsByFile.get(file.id)}
-                      onHover={() => setHoveredFileForRowActions(file.id)}
-                      onMouseScroll={clearAddNoteHoverForScroll}
-                      onActiveAddNoteAffordanceChange={
-                        onActiveAddNoteAffordanceChange
-                          ? activeAddNoteAffordanceCallback(file.id)
-                          : undefined
-                      }
-                      onStartUserNoteAtHunk={
-                        reserveAddNoteColumn ? startUserNoteAtHunkCallback(file.id) : undefined
-                      }
-                      onSelect={selectFileCallback(file.id)}
-                      onToggleGap={(gapKey) => onToggleGap(file.id, gapKey)}
-                    />
-                  );
-                })}
-              </box>
+                <box style={{ width: "100%", flexDirection: "column", overflow: "visible" }}>
+                  <For each={fileRenderItems()}>
+                    {(item) => (
+                      <Switch>
+                        {/* Spacer rows reserve the exact height of windowed-out files. */}
+                        <Match when={item.kind === "spacer" ? item : null}>
+                          {(spacer) => (
+                            <box
+                              style={{
+                                width: "100%",
+                                height: spacer().height,
+                                backgroundColor: merged.theme.panel,
+                              }}
+                            />
+                          )}
+                        </Match>
+                        <Match when={item.kind === "file" ? item : null}>
+                          {(fileItem) => {
+                            const index = () => fileItem().sectionIndex;
+                            const file = () => files()[index()];
+                            return (
+                              <Show when={file()}>
+                                {(presentFile) => (
+                                  <DiffSection
+                                    codeHorizontalOffset={merged.codeHorizontalOffset}
+                                    expandedGapKeys={
+                                      expandedGapsByFileId()[presentFile().id] ??
+                                      EMPTY_EXPANDED_GAP_KEYS
+                                    }
+                                    file={presentFile()}
+                                    headerLabelWidth={merged.headerLabelWidth}
+                                    headerStatsWidth={merged.headerStatsWidth}
+                                    layout={merged.layout}
+                                    selectedHunkIndex={
+                                      presentFile().id === selectedFileId()
+                                        ? selectedHunkIndex()
+                                        : -1
+                                    }
+                                    copySelectedRowRanges={copySelectedRowKeysByFile().get(
+                                      presentFile().id,
+                                    )}
+                                    copySelectedSide={copySelectionSide()}
+                                    shouldLoadHighlight={highlightPrefetchFileIds().has(
+                                      presentFile().id,
+                                    )}
+                                    sectionGeometry={sectionGeometry()[index()]}
+                                    separatorWidth={merged.separatorWidth}
+                                    showHeader={shouldRenderInStreamFileHeader(index())}
+                                    showSeparator={index() > 0}
+                                    showLineNumbers={merged.showLineNumbers}
+                                    showHunkHeaders={merged.showHunkHeaders}
+                                    sourceStatus={sourceStatusByFileId()[presentFile().id]}
+                                    wrapLines={merged.wrapLines}
+                                    theme={merged.theme}
+                                    hoverActive={
+                                      hoveredFileId() === null ||
+                                      hoveredFileId() === presentFile().id
+                                    }
+                                    hoverClearSignal={
+                                      addNoteHoverClearFileId() === presentFile().id
+                                        ? addNoteHoverClearSignal()
+                                        : 0
+                                    }
+                                    viewWidth={merged.diffContentWidth}
+                                    visibleAgentNotes={
+                                      visibleAgentNotesByFile().get(presentFile().id) ??
+                                      EMPTY_VISIBLE_AGENT_NOTES
+                                    }
+                                    visibleBodyBounds={visibleBodyBoundsByFile().get(
+                                      presentFile().id,
+                                    )}
+                                    onHover={() => setHoveredFileForRowActions(presentFile().id)}
+                                    onMouseScroll={clearAddNoteHoverForScroll}
+                                    onActiveAddNoteAffordanceChange={
+                                      merged.onActiveAddNoteAffordanceChange
+                                        ? activeAddNoteAffordanceCallback(presentFile().id)
+                                        : undefined
+                                    }
+                                    onStartUserNoteAtHunk={
+                                      reserveAddNoteColumn()
+                                        ? startUserNoteAtHunkCallback(presentFile().id)
+                                        : undefined
+                                    }
+                                    onSelect={selectFileCallback(presentFile().id)}
+                                    onToggleGap={(gapKey) =>
+                                      merged.onToggleGap(presentFile().id, gapKey)
+                                    }
+                                  />
+                                )}
+                              </Show>
+                            );
+                          }}
+                        </Match>
+                      </Switch>
+                    )}
+                  </For>
+                </box>
+              </Show>
             </scrollbox>
             <VerticalScrollbar
-              ref={scrollbarRef}
-              scrollRef={scrollRef}
-              contentHeight={totalContentHeight}
-              height={scrollViewport.height}
-              theme={theme}
+              apiRef={(api) => (scrollbarRef.current = api)}
+              scrollRef={merged.scrollRef}
+              contentHeight={totalContentHeight()}
+              height={scrollViewport().height}
+              theme={merged.theme}
             />
           </box>
         </box>
-      ) : (
-        <box style={{ flexGrow: 1, alignItems: "center", justifyContent: "center" }}>
-          <text fg={theme.muted}>No files match the current filter.</text>
-        </box>
-      )}
+      </Show>
     </box>
   );
 }

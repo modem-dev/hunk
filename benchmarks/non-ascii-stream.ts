@@ -3,8 +3,8 @@
 // measureTextWidth's ASCII fast path, so this exercises the string-width cost on
 // real line content rather than just chrome glyphs.
 import { performance } from "node:perf_hooks";
-import { testRender } from "@opentui/react/test-utils";
-import React from "react";
+import { testRender } from "@opentui/solid";
+import { createComponent } from "solid-js";
 import { AppHost } from "../src/ui/AppHost";
 import { createLargeSplitStreamBootstrap } from "./large-stream-fixture";
 import {
@@ -31,7 +31,7 @@ function createNonAsciiBootstrap() {
 /** Measure cold first frame on the non-ASCII content stream. */
 async function measureFirstFrameMs() {
   const setup = await testRender(
-    React.createElement(AppHost, { bootstrap: createNonAsciiBootstrap() }),
+    () => createComponent(AppHost, { bootstrap: createNonAsciiBootstrap() }),
     INTERACTION_VIEWPORT,
   );
   const start = performance.now();
@@ -47,7 +47,7 @@ async function measureFirstFrameMs() {
 /** Measure per-scroll-tick latency on the non-ASCII content stream. */
 async function measureScrolling() {
   const setup = await testRender(
-    React.createElement(AppHost, { bootstrap: createNonAsciiBootstrap() }),
+    () => createComponent(AppHost, { bootstrap: createNonAsciiBootstrap() }),
     INTERACTION_VIEWPORT,
   );
 

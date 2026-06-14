@@ -2,16 +2,7 @@ import type { MouseEvent as TuiMouseEvent } from "@opentui/core";
 import type { AppTheme } from "../../themes";
 
 /** Render the visible divider plus a wider invisible drag target. */
-export function PaneDivider({
-  dividerHitLeft,
-  dividerHitWidth,
-  isResizing,
-  theme,
-  onMouseDown,
-  onMouseDrag,
-  onMouseDragEnd,
-  onMouseUp,
-}: {
+export function PaneDivider(props: {
   dividerHitLeft: number;
   dividerHitWidth: number;
   isResizing: boolean;
@@ -27,8 +18,8 @@ export function PaneDivider({
         style={{
           width: 1,
           border: ["top", "left"],
-          borderColor: isResizing ? theme.accent : theme.border,
-          backgroundColor: isResizing ? theme.accentMuted : theme.panel,
+          borderColor: props.isResizing ? props.theme.accent : props.theme.border,
+          backgroundColor: props.isResizing ? props.theme.accentMuted : props.theme.panel,
         }}
         customBorderChars={{
           topLeft: "┬",
@@ -50,15 +41,15 @@ export function PaneDivider({
           position: "absolute",
           top: 1,
           bottom: 1,
-          left: dividerHitLeft,
-          width: dividerHitWidth,
+          left: props.dividerHitLeft,
+          width: props.dividerHitWidth,
           zIndex: 30,
         }}
         // The visible divider is only one column wide, so dragging uses a larger hit area.
-        onMouseDown={onMouseDown}
-        onMouseDrag={onMouseDrag}
-        onMouseUp={onMouseUp}
-        onMouseDragEnd={onMouseDragEnd}
+        onMouseDown={props.onMouseDown}
+        onMouseDrag={props.onMouseDrag}
+        onMouseUp={props.onMouseUp}
+        onMouseDragEnd={props.onMouseDragEnd}
       />
     </>
   );

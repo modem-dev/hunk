@@ -5,8 +5,8 @@
 // This tier is opt-in (run.ts --include-huge or HUNK_BENCH_INCLUDE_HUGE=1) because
 // a single sample can take minutes on the unoptimized hot path.
 import { performance } from "node:perf_hooks";
-import { testRender } from "@opentui/react/test-utils";
-import React from "react";
+import { testRender } from "@opentui/solid";
+import { createComponent } from "solid-js";
 import { AppHost } from "../src/ui/AppHost";
 import {
   createHugeStreamBootstrap,
@@ -33,7 +33,7 @@ console.log(`METRIC huge_fixture_build_ms=${(performance.now() - fixtureStart).t
 
 // One renderer for the whole script: mounting the huge stream twice would double
 // an already multi-minute runtime without improving the measurements.
-const setup = await testRender(React.createElement(AppHost, { bootstrap }), INTERACTION_VIEWPORT);
+const setup = await testRender(() => createComponent(AppHost, { bootstrap }), INTERACTION_VIEWPORT);
 
 try {
   const firstFrameStart = performance.now();

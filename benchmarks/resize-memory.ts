@@ -1,9 +1,9 @@
 // Track retained memory while repeatedly resizing a mounted Hunk review stream.
-import { testRender } from "@opentui/react/test-utils";
+import { testRender } from "@opentui/solid";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
-import React from "react";
+import { createComponent } from "solid-js";
 import { AppHost } from "../src/ui/AppHost";
 import { createLargeSplitStreamBootstrap } from "./large-stream-fixture";
 
@@ -181,21 +181,16 @@ async function main() {
   });
   const firstWidth = options.widths[0]!;
 
-  // This benchmark measures renderer/retained-memory behaviour directly. Avoid React act harness
-  // scheduling overhead so timings describe the resize path rather than test assertions.
-  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = false;
-
   console.log(
     `resize memory fixture files=${options.fileCount} lines=${options.linesPerFile} ` +
       `widths=${options.widths.join(",")} cycles=${options.cycles} gc=${options.gc ? "on" : "off"}`,
   );
   samples.push(sampleMemory("after_bootstrap", 0, firstWidth, options));
 
-  const setup = await testRender(React.createElement(AppHost, { bootstrap }), {
+  const setup = await testRender(() => createComponent(AppHost, { bootstrap }), {
     width: firstWidth,
     height: options.height,
   });
-  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = false;
 
   try {
     await renderOnce(setup);
