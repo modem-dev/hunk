@@ -16,7 +16,7 @@ rm -f "$out"
 bun run bench -- --samples "$samples" --out "$out"
 
 bun -e '
-const [baselinePath, headPath] = Bun.argv.slice(2);
+const [baselinePath, headPath] = Bun.argv.slice(1);
 const base = await Bun.file(baselinePath).json();
 const head = await Bun.file(headPath).json();
 const baseByName = new Map(base.results.map((result) => [result.name, result]));
