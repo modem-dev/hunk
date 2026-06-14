@@ -280,6 +280,24 @@ async function settleDiffPane(setup: Awaited<ReturnType<typeof testRender>>) {
   await setup.renderOnce();
 }
 
+/**
+ * Settle a DiffPane whose final frame depends on a deferred hunk-reveal scroll.
+ *
+ * The reveal effect schedules `scrollSelectionIntoView` on `setTimeout(0/16/48)` timers, so the
+ * scroll only lands after real time elapses and the selected section has mounted. A plain
+ * `settleDiffPane` can stop on a stable-but-un-revealed frame under a busy event loop (full-file
+ * runs). This settles, yields enough real time for those timers to fire, then settles again so the
+ * assertion sees the post-reveal state. Use only for tests that depend on the reveal scroll.
+ */
+async function settleDiffPaneReveal(setup: Awaited<ReturnType<typeof testRender>>) {
+  // The reveal scroll lands on deferred timers (`setTimeout(0/16/48)` in DiffPane) after the
+  // selected section mounts. Settle, yield real time so those timers fire, then settle again so the
+  // assertion observes the post-reveal frame instead of a momentarily-stable un-revealed one.
+  await settleDiffPane(setup);
+  await Bun.sleep(120);
+  await settleDiffPane(setup);
+}
+
 async function waitForFrame(
   setup: Awaited<ReturnType<typeof testRender>>,
   predicate: (frame: string) => boolean,
@@ -776,21 +794,61 @@ describe("UI components", () => {
     }
   });
 
-  test("DiffPane geometry memo depends on add-note presence instead of callback identity", async () => {
-    const source = await Bun.file(new URL("./panes/DiffPane.tsx", import.meta.url)).text();
-    const baseMemo = source.slice(
-      source.indexOf("const baseSectionGeometry = useMemo"),
-      source.indexOf("const baseEstimatedBodyHeights = useMemo"),
+  test("DiffPane section geometry depends on add-note presence, not callback identity", () => {
+    // The add-note column is reserved based on whether a note callback is present (a boolean), not
+    // on the callback's identity. Geometry is derived from `measureDiffSectionGeometry`, whose
+    // `reserveAddNoteColumn` flag is the only add-note input — so swapping the callback function
+    // cannot change the measured geometry, but adding/removing the affordance does.
+    const file = createTestDiffFile(
+      "alpha",
+      "alpha.ts",
+      lines("export const alpha = 1;"),
+      lines("export const alpha = 2;", "export const beta = true;"),
     );
-    const noteAwareMemo = source.slice(
-      source.indexOf("const sectionGeometry = useMemo"),
-      source.indexOf("const estimatedBodyHeights = useMemo"),
+    const theme = resolveTheme("midnight", null);
+
+    const withoutNotes = measureDiffSectionGeometry(
+      file,
+      "split",
+      true,
+      theme,
+      [],
+      120,
+      true,
+      false,
+    );
+    const withNotes = measureDiffSectionGeometry(
+      file,
+      "split",
+      true,
+      theme,
+      [],
+      120,
+      true,
+      false,
+      undefined,
+      undefined,
+      true,
+    );
+    const withNotesAgain = measureDiffSectionGeometry(
+      file,
+      "split",
+      true,
+      theme,
+      [],
+      120,
+      true,
+      false,
+      undefined,
+      undefined,
+      true,
     );
 
-    expect(baseMemo).toContain("reserveAddNoteColumn");
-    expect(baseMemo).not.toContain("onStartUserNoteAtHunk,");
-    expect(noteAwareMemo).toContain("reserveAddNoteColumn");
-    expect(noteAwareMemo).not.toContain("onStartUserNoteAtHunk,");
+    // Presence flips the reserved-column policy and therefore the cached geometry instance.
+    expect(withNotes).not.toBe(withoutNotes);
+    // Identical inputs (including the add-note policy) reuse the same geometry, so callback identity
+    // is irrelevant to the measurement.
+    expect(withNotesAgain).toBe(withNotes);
   });
 
   test("DiffPane only shows the add-note affordance after pointer movement", async () => {
@@ -896,13 +954,15 @@ describe("UI components", () => {
     try {
       await settleDiffPane(setup);
       navigateToSecondHunkRef.current?.();
-      await setup.renderOnce();
+      // Settle until quiescent: the reveal-scroll triggered by navigation finishes asynchronously,
+      // and a trailing scroll event would otherwise clear the hover affordance right as we click it.
+      await settleDiffPane(setup);
       const secondHunkFrame = await waitForFrame(setup, (frame) => frame.includes("line60"), 12);
       const secondHunkY = secondHunkFrame.split("\n").findIndex((line) => line.includes("line60"));
       expect(secondHunkY).toBeGreaterThanOrEqual(0);
 
       await setup.mockMouse.moveTo(32, secondHunkY);
-      await setup.renderOnce();
+      await settleDiffPane(setup);
       const affordanceFrame = await waitForFrame(setup, (frame) => frame.includes("[+]"), 12);
       const affordanceLines = affordanceFrame.split("\n");
       const addNoteY = affordanceLines.findIndex((line) => line.includes("[+]"));
@@ -1459,7 +1519,7 @@ describe("UI components", () => {
     });
 
     try {
-      await settleDiffPane(setup);
+      await settleDiffPaneReveal(setup);
       const frame = setup.captureCharFrame();
 
       expect(frame).toContain("export const line11 = 11;");
@@ -1496,7 +1556,7 @@ describe("UI components", () => {
     });
 
     try {
-      await settleDiffPane(setup);
+      await settleDiffPaneReveal(setup);
       const frame = setup.captureCharFrame();
 
       expect(frame).toContain("11   export const line11 = 11;");

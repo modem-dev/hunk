@@ -331,13 +331,11 @@ export function AgentInlineNote(props: {
               }}
             >
               <text>
-                <span fg={props.theme.noteBorder} bg={props.theme.panel}>
-                  ╭─
-                </span>
-                <span fg={props.theme.noteTitleText} bg={props.theme.panel}>
+                <span style={{ fg: props.theme.noteBorder, bg: props.theme.panel }}>╭─</span>
+                <span style={{ fg: props.theme.noteTitleText, bg: props.theme.panel }}>
                   {savedTitleText()}
                 </span>
-                <span fg={props.theme.noteBorder} bg={props.theme.panel}>
+                <span style={{ fg: props.theme.noteBorder, bg: props.theme.panel }}>
                   {"─".repeat(savedTopBorderSuffixWidth())}
                 </span>
               </text>
@@ -425,13 +423,11 @@ export function AgentInlineNote(props: {
               </box>
               <box style={{ width: boxWidth(), height: 1, backgroundColor: props.theme.panel }}>
                 <text>
-                  <span fg={props.theme.noteBorder} bg={props.theme.panel}>
-                    ╭─
-                  </span>
-                  <span fg={props.theme.noteTitleText} bg={props.theme.panel}>
+                  <span style={{ fg: props.theme.noteBorder, bg: props.theme.panel }}>╭─</span>
+                  <span style={{ fg: props.theme.noteTitleText, bg: props.theme.panel }}>
                     {draftTitleText()}
                   </span>
-                  <span fg={props.theme.noteBorder} bg={props.theme.panel}>
+                  <span style={{ fg: props.theme.noteBorder, bg: props.theme.panel }}>
                     {draftTopBorderSuffix()}
                   </span>
                 </text>

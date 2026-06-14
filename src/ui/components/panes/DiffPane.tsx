@@ -763,7 +763,15 @@ export function DiffPane(props: DiffPaneProps) {
 
   // Read the live scroll box position when computing pinned-header ownership so it flips
   // immediately after imperative scrolls instead of waiting for the polled viewport snapshot.
-  const effectiveScrollTop = () => merged.scrollRef.current?.scrollTop ?? scrollViewport().top;
+  // Always read `scrollViewport()` first so callers running inside a tracking scope (e.g. the
+  // `pinnedHeaderFile` memo) take a reactive dependency on it: the polled snapshot updates on every
+  // scroll event, which is what re-runs the memo. Without this read, the `??` short-circuit would
+  // skip `scrollViewport()` whenever the live value is present, leaving the memo with no scroll
+  // dependency and a stale pinned header after imperative scrolls.
+  const effectiveScrollTop = () => {
+    const polledTop = scrollViewport().top;
+    return merged.scrollRef.current?.scrollTop ?? polledTop;
+  };
   const pinnedHeaderFile = createMemo(() => {
     const currentFiles = files();
     if (currentFiles.length === 0) {

@@ -106,9 +106,18 @@ describe("responsive app", () => {
       expect((initialFrame.match(/alpha\.ts/g) ?? []).length).toBe(1);
 
       await setup.mockInput.pressKey("F10");
-      await setup.renderOnce();
+      // The menu-bar open and its dropdown content render across a couple of reactive cycles, so a
+      // single renderOnce can capture the frame before the menu has painted. Settle after each
+      // keystroke until the dropdown is on screen.
+      for (let attempt = 0; attempt < 6; attempt += 1) {
+        await setup.renderOnce();
+        await Bun.sleep(20);
+      }
       await setup.mockInput.pressArrow("right");
-      await setup.renderOnce();
+      for (let attempt = 0; attempt < 6; attempt += 1) {
+        await setup.renderOnce();
+        await Bun.sleep(20);
+      }
 
       const menuFrame = setup.captureCharFrame();
       expect(menuFrame).toContain("[ ] Sidebar");

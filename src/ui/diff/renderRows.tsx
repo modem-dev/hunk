@@ -154,7 +154,7 @@ function renderInlineSpans(
     ) {
       // Span is entirely outside the selection — render with original styling.
       elements.push(
-        <span fg={span.fg ?? fallbackColor} bg={span.bg ?? fallbackBg}>
+        <span style={{ fg: span.fg ?? fallbackColor, bg: span.bg ?? fallbackBg }}>
           {span.text}
         </span>,
       );
@@ -168,7 +168,7 @@ function renderInlineSpans(
     if (localSelStart >= localSelEnd) {
       // No overlap after clamping — render original.
       elements.push(
-        <span fg={span.fg ?? fallbackColor} bg={span.bg ?? fallbackBg}>
+        <span style={{ fg: span.fg ?? fallbackColor, bg: span.bg ?? fallbackBg }}>
           {span.text}
         </span>,
       );
@@ -182,16 +182,16 @@ function renderInlineSpans(
 
     if (prefix) {
       elements.push(
-        <span fg={span.fg ?? fallbackColor} bg={span.bg ?? fallbackBg}>
-          {prefix}
-        </span>,
+        <span style={{ fg: span.fg ?? fallbackColor, bg: span.bg ?? fallbackBg }}>{prefix}</span>,
       );
     }
     if (selected) {
       elements.push(
         <span
-          fg={span.fg ?? fallbackColor}
-          bg={selectionHighlightBg(span.bg ?? fallbackBg, selectionTheme)}
+          style={{
+            fg: span.fg ?? fallbackColor,
+            bg: selectionHighlightBg(span.bg ?? fallbackBg, selectionTheme),
+          }}
         >
           {selected}
         </span>,
@@ -199,9 +199,7 @@ function renderInlineSpans(
     }
     if (suffix) {
       elements.push(
-        <span fg={span.fg ?? fallbackColor} bg={span.bg ?? fallbackBg}>
-          {suffix}
-        </span>,
+        <span style={{ fg: span.fg ?? fallbackColor, bg: span.bg ?? fallbackBg }}>{suffix}</span>,
       );
     }
   }
@@ -225,39 +223,33 @@ function renderInlineSpans(
 
         if (beforeSel > 0) {
           elements.push(
-            <span fg={fallbackColor} bg={fallbackBg}>
-              {" ".repeat(beforeSel)}
-            </span>,
+            <span style={{ fg: fallbackColor, bg: fallbackBg }}>{" ".repeat(beforeSel)}</span>,
           );
         }
         if (inSel > 0) {
           elements.push(
-            <span fg={fallbackColor} bg={selectionHighlightBg(fallbackBg, selectionTheme)}>
+            <span
+              style={{ fg: fallbackColor, bg: selectionHighlightBg(fallbackBg, selectionTheme) }}
+            >
               {" ".repeat(inSel)}
             </span>,
           );
         }
         if (afterSel > 0) {
           elements.push(
-            <span fg={fallbackColor} bg={fallbackBg}>
-              {" ".repeat(afterSel)}
-            </span>,
+            <span style={{ fg: fallbackColor, bg: fallbackBg }}>{" ".repeat(afterSel)}</span>,
           );
         }
       } else {
         elements.push(
-          <span fg={fallbackColor} bg={fallbackBg}>
-            {" ".repeat(paddingAmount)}
-          </span>,
+          <span style={{ fg: fallbackColor, bg: fallbackBg }}>{" ".repeat(paddingAmount)}</span>,
         );
       }
     }
   } else if (width - usedWidth > 0) {
     // No blending — always render a separate padding span.
     elements.push(
-      <span fg={fallbackColor} bg={fallbackBg}>
-        {" ".repeat(width - usedWidth)}
-      </span>,
+      <span style={{ fg: fallbackColor, bg: fallbackBg }}>{" ".repeat(width - usedWidth)}</span>,
     );
   }
 
@@ -874,14 +866,12 @@ function renderSplitCell(
     <>
       <Show when={resolvedPrefix}>
         {(activePrefix) => (
-          <span fg={activePrefix().fg} bg={activePrefix().bg}>
+          <span style={{ fg: activePrefix().fg, bg: activePrefix().bg }}>
             {activePrefix().text}
           </span>
         )}
       </Show>
-      <span fg={palette.numberColor} bg={palette.gutterBg}>
-        {gutterText}
-      </span>
+      <span style={{ fg: palette.numberColor, bg: palette.gutterBg }}>{gutterText}</span>
       {renderInlineSpans(
         cell.spans,
         contentWidth,
@@ -941,12 +931,12 @@ function renderStackCell(
     <>
       <Show when={resolvedPrefix}>
         {(activePrefix) => (
-          <span fg={activePrefix().fg} bg={activePrefix().bg}>
+          <span style={{ fg: activePrefix().fg, bg: activePrefix().bg }}>
             {activePrefix().text}
           </span>
         )}
       </Show>
-      <span fg={palette.numberColor} bg={palette.gutterBg}>
+      <span style={{ fg: palette.numberColor, bg: palette.gutterBg }}>
         {stackGutterText(cell, lineNumberDigits, showLineNumbers).padEnd(gutterWidth)}
       </span>
       {renderInlineSpans(
@@ -998,10 +988,8 @@ function renderWrappedSplitCellLine(
 
   return (
     <>
-      <span fg={resolvedPrefix.fg} bg={resolvedPrefix.bg}>
-        {resolvedPrefix.text}
-      </span>
-      <span fg={resolvedPalette.numberColor} bg={resolvedPalette.gutterBg}>
+      <span style={{ fg: resolvedPrefix.fg, bg: resolvedPrefix.bg }}>{resolvedPrefix.text}</span>
+      <span style={{ fg: resolvedPalette.numberColor, bg: resolvedPalette.gutterBg }}>
         {line.gutterText}
       </span>
       {renderInlineSpans(
@@ -1052,10 +1040,8 @@ function renderWrappedStackCellLine(
 
   return (
     <>
-      <span fg={resolvedPrefix.fg} bg={resolvedPrefix.bg}>
-        {resolvedPrefix.text}
-      </span>
-      <span fg={resolvedPalette.numberColor} bg={resolvedPalette.gutterBg}>
+      <span style={{ fg: resolvedPrefix.fg, bg: resolvedPrefix.bg }}>{resolvedPrefix.text}</span>
+      <span style={{ fg: resolvedPalette.numberColor, bg: resolvedPalette.gutterBg }}>
         {line.gutterText}
       </span>
       {renderInlineSpans(
@@ -1115,13 +1101,15 @@ function renderHeaderRow(
   theme: AppTheme,
   selected: boolean,
   anchorId?: string,
-  showAddNoteBadge = false,
+  // Header/collapsed rows are never add-note targets, so the badge is always absent here; the
+  // accessor is accepted only to keep the call signature uniform with diff-row rendering.
+  showAddNoteBadge: () => boolean = () => false,
   onHoverRow?: (rowKey: string) => void,
   onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void,
   onToggleGap?: (gapKey: string) => void,
 ) {
   const badges = [
-    showAddNoteBadge
+    showAddNoteBadge()
       ? {
           key: "user-note",
           text: "[+]",
@@ -1154,14 +1142,18 @@ function renderHeaderRow(
       >
         <text>
           <span
-            fg={selected ? neutralRailColor(theme) : dimRailColor(neutralRailColor(theme), theme)}
-            bg={theme.panelAlt}
+            style={{
+              fg: selected ? neutralRailColor(theme) : dimRailColor(neutralRailColor(theme), theme),
+              bg: theme.panelAlt,
+            }}
           >
             {marker()}
           </span>
           <span
-            fg={row.type === "collapsed" ? theme.muted : theme.badgeNeutral}
-            bg={theme.panelAlt}
+            style={{
+              fg: row.type === "collapsed" ? theme.muted : theme.badgeNeutral,
+              bg: theme.panelAlt,
+            }}
           >
             {label}
           </span>
@@ -1188,14 +1180,18 @@ function renderHeaderRow(
       >
         <text>
           <span
-            fg={selected ? neutralRailColor(theme) : dimRailColor(neutralRailColor(theme), theme)}
-            bg={theme.panelAlt}
+            style={{
+              fg: selected ? neutralRailColor(theme) : dimRailColor(neutralRailColor(theme), theme),
+              bg: theme.panelAlt,
+            }}
           >
             {marker()}
           </span>
           <span
-            fg={row.type === "collapsed" ? theme.muted : theme.badgeNeutral}
-            bg={theme.panelAlt}
+            style={{
+              fg: row.type === "collapsed" ? theme.muted : theme.badgeNeutral,
+              bg: theme.panelAlt,
+            }}
           >
             {label}
           </span>
@@ -1241,7 +1237,7 @@ function renderAddNoteSpacer(key: string, width: number, bg: string) {
   return (
     <box style={{ width, height: 1 }}>
       <text>
-        <span bg={bg}>{" ".repeat(width)}</span>
+        <span style={{ bg }}>{" ".repeat(width)}</span>
       </text>
     </box>
   );
@@ -1328,7 +1324,11 @@ function renderRow(
   copySelectedSide: "left" | "right" | undefined,
   anchorId?: string,
   noteGuideSide?: "old" | "new",
-  showAddNoteBadge = false,
+  // Accessor (not a plain boolean) so the hover-only "[+]" affordance stays reactive: the row body
+  // is built once, but the badge must appear/disappear as the hovered row key changes. Reading the
+  // accessor inside JSX lets Solid's fine-grained effects toggle the badge (and the reserved code
+  // width) without re-running the whole row.
+  showAddNoteBadge: () => boolean = () => false,
   onHoverRow?: (rowKey: string) => void,
   onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void,
   onToggleGap?: (gapKey: string) => void,
@@ -1379,10 +1379,14 @@ function renderRow(
           : undefined;
 
     // Reserve fixed columns for the diff rails, center separator slot, and hover affordance.
-    const addBadgeWidth =
-      showAddNoteBadge || (wrapLines && reserveAddNoteColumn) ? addNoteBadgeText.length : 0;
+    // `addBadgeWidth` is reactive so the hover badge column appears/disappears with the badge; the
+    // cell content is rendered once at the badge-reserved width (`cellReserveWidth`) and clipped by
+    // its container so hover never reflows the surrounding code.
+    const addBadgeWidth = () =>
+      showAddNoteBadge() || (wrapLines && reserveAddNoteColumn) ? addNoteBadgeText.length : 0;
+    const cellReserveWidth = wrapLines && reserveAddNoteColumn ? addNoteBadgeText.length : 0;
     const { leftWidth, rightWidth } = resolveSplitPaneWidths(width);
-    const rightRenderWidth = Math.max(0, rightWidth - (guideOnNewSide ? 1 : 0) - addBadgeWidth);
+    const rightRenderWidth = Math.max(0, rightWidth - (guideOnNewSide ? 1 : 0) - cellReserveWidth);
     const leftPrefix = {
       text: guideOnOldSide ? "│" : marker(),
       fg: guideOnOldSide
@@ -1405,7 +1409,7 @@ function renderRow(
         >
           <box
             style={{
-              width: showAddNoteBadge ? Math.max(0, width - addBadgeWidth) : "100%",
+              width: showAddNoteBadge() ? Math.max(0, width - addBadgeWidth()) : "100%",
               height: 1,
             }}
           >
@@ -1437,11 +1441,11 @@ function renderRow(
                 leftWidth,
               )}
               <Show when={guideOnNewSide}>
-                <span fg={theme.noteBorder}>│</span>
+                <span style={{ fg: theme.noteBorder }}>│</span>
               </Show>
             </text>
           </box>
-          <Show when={showAddNoteBadge}>
+          <Show when={showAddNoteBadge()}>
             {renderAddNoteButton(
               `${row.key}:add-note`,
               theme,
@@ -1492,7 +1496,9 @@ function renderRow(
                 spans: [],
               };
 
-              const showBadgeOnLine = showAddNoteBadge && index === 0;
+              // The badge only shows on the first wrapped line of the hovered row. Read the hover
+              // accessor inside JSX so Solid toggles it reactively.
+              const showBadgeOnLine = () => showAddNoteBadge() && index === 0;
 
               return (
                 <box
@@ -1501,7 +1507,7 @@ function renderRow(
                 >
                   <box
                     style={{
-                      width: addBadgeWidth > 0 ? Math.max(0, width - addBadgeWidth) : "100%",
+                      width: addBadgeWidth() > 0 ? Math.max(0, width - addBadgeWidth()) : "100%",
                       height: 1,
                     }}
                   >
@@ -1529,15 +1535,15 @@ function renderRow(
                         leftWidth,
                       )}
                       <Show when={guideOnNewSide}>
-                        <span fg={theme.noteBorder}>│</span>
+                        <span style={{ fg: theme.noteBorder }}>│</span>
                       </Show>
                     </text>
                   </box>
                   <Show
-                    when={showBadgeOnLine}
+                    when={showBadgeOnLine()}
                     fallback={renderAddNoteSpacer(
                       `${row.key}:add-note-spacer:${index}`,
-                      addBadgeWidth,
+                      addBadgeWidth(),
                       rightLayout.palette.contentBg,
                     )}
                   >
@@ -1565,9 +1571,12 @@ function renderRow(
         : row.cell.oldLineNumber !== undefined
           ? { side: "old", line: row.cell.oldLineNumber }
           : undefined;
-    const addBadgeWidth =
-      showAddNoteBadge || (wrapLines && reserveAddNoteColumn) ? addNoteBadgeText.length : 0;
-    const contentWidth = Math.max(0, width - (guideOnNewSide ? 1 : 0) - addBadgeWidth);
+    // Reactive badge column (see split-line path above): the cell content is laid out once at the
+    // statically reserved width and clipped by its container so the hover badge never reflows code.
+    const addBadgeWidth = () =>
+      showAddNoteBadge() || (wrapLines && reserveAddNoteColumn) ? addNoteBadgeText.length : 0;
+    const cellReserveWidth = wrapLines && reserveAddNoteColumn ? addNoteBadgeText.length : 0;
+    const contentWidth = Math.max(0, width - (guideOnNewSide ? 1 : 0) - cellReserveWidth);
     const prefix = {
       text: guideOnOldSide ? "│" : marker(),
       fg: guideOnOldSide
@@ -1585,7 +1594,7 @@ function renderRow(
         >
           <box
             style={{
-              width: showAddNoteBadge ? Math.max(0, width - addBadgeWidth) : "100%",
+              width: showAddNoteBadge() ? Math.max(0, width - addBadgeWidth()) : "100%",
               height: 1,
             }}
           >
@@ -1603,11 +1612,11 @@ function renderRow(
                 hasCopySelection ? copySelectedRowRange : undefined,
               )}
               <Show when={guideOnNewSide}>
-                <span fg={theme.noteBorder}>│</span>
+                <span style={{ fg: theme.noteBorder }}>│</span>
               </Show>
             </text>
           </box>
-          <Show when={showAddNoteBadge}>
+          <Show when={showAddNoteBadge()}>
             {renderAddNoteButton(
               `${row.key}:add-note`,
               theme,
@@ -1636,7 +1645,7 @@ function renderRow(
         <box id={anchorId} style={{ width: "100%", flexDirection: "column" }}>
           <For each={layout.lines}>
             {(line, index) => {
-              const showBadgeOnLine = showAddNoteBadge && index() === 0;
+              const showBadgeOnLine = () => showAddNoteBadge() && index() === 0;
 
               return (
                 <box
@@ -1645,7 +1654,7 @@ function renderRow(
                 >
                   <box
                     style={{
-                      width: addBadgeWidth > 0 ? Math.max(0, width - addBadgeWidth) : "100%",
+                      width: addBadgeWidth() > 0 ? Math.max(0, width - addBadgeWidth()) : "100%",
                       height: 1,
                     }}
                   >
@@ -1661,15 +1670,15 @@ function renderRow(
                         hasCopySelection ? copySelectedRowRange : undefined,
                       )}
                       <Show when={guideOnNewSide}>
-                        <span fg={theme.noteBorder}>│</span>
+                        <span style={{ fg: theme.noteBorder }}>│</span>
                       </Show>
                     </text>
                   </box>
                   <Show
-                    when={showBadgeOnLine}
+                    when={showBadgeOnLine()}
                     fallback={renderAddNoteSpacer(
                       `${row.key}:add-note-spacer:${index()}`,
-                      addBadgeWidth,
+                      addBadgeWidth(),
                       layout.palette.contentBg,
                     )}
                   >
@@ -1722,9 +1731,9 @@ interface DiffRowViewProps {
 /**
  * Render one diff row.
  *
- * Solid's fine-grained reactivity replaces the previous React memo: the component runs once and
- * the renderer only updates the spans whose backing props actually change, so no manual prop
- * comparator is needed to avoid re-rendering every visible row.
+ * `renderRow` builds the row's element tree once; OpenTUI's solid renderer then keeps the leaf
+ * spans/boxes whose backing reactive expressions change up to date in place. The hover "[+]" badge
+ * is passed as an accessor so it toggles in place without rebuilding the whole row.
  */
 export function DiffRowView(props: DiffRowViewProps) {
   return renderRow(
@@ -1741,7 +1750,7 @@ export function DiffRowView(props: DiffRowViewProps) {
     props.copySelectedSide,
     props.anchorId,
     props.noteGuideSide,
-    props.showAddNoteBadge,
+    () => props.showAddNoteBadge ?? false,
     props.onHoverRow,
     props.onStartUserNoteAtHunk,
     props.onToggleGap,
