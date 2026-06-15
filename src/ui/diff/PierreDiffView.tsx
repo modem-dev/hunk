@@ -2,6 +2,7 @@ import { useRenderer } from "@opentui/solid";
 import {
   createEffect,
   createMemo,
+  createSelector,
   createSignal,
   For,
   Match,
@@ -235,6 +236,10 @@ export function PierreDiffView(props: PierreDiffViewProps) {
       clearHoveredRow();
     }
   };
+  // Only rows in the previous and next selected hunk need selection styling updates; using a
+  // selector avoids making every mounted row reactive to every hunk-index change.
+  const isSelectedHunk = createSelector(() => props.selectedHunkIndex);
+
   const visiblePlannedRowWindow = createMemo(() => {
     // Fall back to the full row list unless all three row-windowing inputs are ready:
     // - the complete planned row stream for this file
@@ -327,7 +332,7 @@ export function PierreDiffView(props: PierreDiffViewProps) {
                         wrapLines={wrapLines()}
                         codeHorizontalOffset={codeHorizontalOffset()}
                         theme={props.theme}
-                        selected={diffRow().row.hunkIndex === props.selectedHunkIndex}
+                        selected={isSelectedHunk(diffRow().row.hunkIndex)}
                         copySelectedRowRange={props.copySelectedRowRanges?.get(diffRow().key)}
                         copySelectedSide={props.copySelectedSide}
                         anchorId={diffRow().anchorId}

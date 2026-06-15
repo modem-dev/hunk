@@ -86,6 +86,7 @@ import {
 } from "./copySelection";
 
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
+const EMPTY_VISIBLE_AGENT_NOTES_BY_FILE = new Map<string, VisibleAgentNote[]>();
 
 /**
  * Clamp one vertical scroll target into the currently reachable review-stream extent.
@@ -696,6 +697,11 @@ export function DiffPane(props: DiffPaneProps) {
   });
 
   const visibleAgentNotesByFile = createMemo(() => {
+    const notesByFile = allAgentNotesByFile();
+    if (notesByFile.size === 0) {
+      return EMPTY_VISIBLE_AGENT_NOTES_BY_FILE;
+    }
+
     const next = new Map<string, VisibleAgentNote[]>();
 
     const fileIdsToMeasure = new Set(visibleViewportFileIds());
@@ -706,7 +712,6 @@ export function DiffPane(props: DiffPaneProps) {
       fileIdsToMeasure.add(currentSelectedFileId);
     }
 
-    const notesByFile = allAgentNotesByFile();
     for (const fileId of fileIdsToMeasure) {
       const visibleNotes = notesByFile.get(fileId);
       if (visibleNotes && visibleNotes.length > 0) {
@@ -1675,12 +1680,12 @@ export function DiffPane(props: DiffPaneProps) {
       }
     };
 
-    // Run after this pane renders the selected section/hunk, then retry briefly while layout
-    // settles across a couple of repaint cycles.
+    // Run after this pane renders the selected section/hunk, then retry once on the next task so
+    // mounted row bounds can settle without stacking multiple delayed timers per navigation press.
     suppressViewportSelectionSync();
     scrollSelectionIntoView();
     pendingSelectionSettleRef.current = shouldTrackPinnedHeaderResettle;
-    const retryDelays = [0, 16, 48];
+    const retryDelays = [0];
     const timeouts = retryDelays.map((delay) => setTimeout(scrollSelectionIntoView, delay));
     const settleReset = shouldTrackPinnedHeaderResettle
       ? setTimeout(() => {
