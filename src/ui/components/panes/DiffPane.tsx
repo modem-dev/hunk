@@ -1138,7 +1138,7 @@ export function DiffPane(props: DiffPaneProps) {
       fileSectionLayouts: fileSectionLayouts(),
       includeFileIds: adjacentPrefetchFileIds(),
       indexByFileId: fileSectionIndexById(),
-      overscanFiles: 2,
+      overscanFiles: 1,
       scrollTop: viewport.top,
       selectedFileId: selectedFileId(),
       viewportHeight: viewport.height,
@@ -1313,13 +1313,6 @@ export function DiffPane(props: DiffPaneProps) {
       height: noteRow.height,
     };
   });
-  const selectedEstimatedHunkTop = () => selectedEstimatedHunkBounds()?.top ?? null;
-  const selectedEstimatedHunkHeight = () => selectedEstimatedHunkBounds()?.height ?? null;
-  const selectedEstimatedHunkStartRowId = () => selectedEstimatedHunkBounds()?.startRowId ?? null;
-  const selectedEstimatedHunkEndRowId = () => selectedEstimatedHunkBounds()?.endRowId ?? null;
-  const selectedNoteTop = () => selectedNoteBounds()?.top ?? null;
-  const selectedNoteHeight = () => selectedNoteBounds()?.height ?? null;
-
   /** The bodyTop of the currently selected file's section layout, used to floor hunk reveal scroll targets so they never cross above the owning file boundary. */
   const selectedFileBodyTop = () => {
     const index = selectedFileIndex();
@@ -1581,14 +1574,6 @@ export function DiffPane(props: DiffPaneProps) {
     const fileBodyTop = selectedFileBodyTop();
     const viewportHeightSignal = scrollViewport().height;
     const revealRequestId = selectedHunkRevealRequestId();
-    // Establish dependence on the derived bound accessors so this re-runs as they change.
-    void selectedEstimatedHunkTop();
-    void selectedEstimatedHunkHeight();
-    void selectedEstimatedHunkStartRowId();
-    void selectedEstimatedHunkEndRowId();
-    void selectedNoteTop();
-    void selectedNoteHeight();
-
     const revealFollowsSelectionChange = revealRequestId === undefined;
     const revealRequested = revealFollowsSelectionChange
       ? prevSelectedAnchorIdRef.current !== currentSelectedAnchorId

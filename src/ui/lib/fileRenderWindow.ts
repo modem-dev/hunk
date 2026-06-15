@@ -161,9 +161,7 @@ export function buildFileRenderWindow({
   }
 
   const mountedFileIndices = Array.from(mountedIndices).sort((left, right) => left - right);
-  const mountedFileIds = new Set(
-    mountedFileIndices.map((index) => fileSectionLayouts[index]!.fileId),
-  );
+  const mountedFileIds = new Set<string>();
   const items: FileRenderWindowItem[] = [];
   let cursor = 0;
   let topSpacerHeight = 0;
@@ -197,6 +195,7 @@ export function buildFileRenderWindow({
     }
 
     const layout = fileSectionLayouts[index]!;
+    mountedFileIds.add(layout.fileId);
     items.push({ kind: "file", fileId: layout.fileId, sectionIndex: index });
     cursor = index + 1;
   }
