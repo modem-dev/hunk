@@ -1191,7 +1191,11 @@ export function DiffPane(props: DiffPaneProps) {
       return next;
     }
 
-    const overscanTerminalRows = Math.max(24, viewport.height * 2, rapidScrollOverscanRows());
+    const overscanTerminalRows = Math.max(
+      24,
+      Math.ceil(viewport.height * 1.5),
+      rapidScrollOverscanRows(),
+    );
 
     const currentFiles = files();
     const layouts = fileSectionLayouts();
