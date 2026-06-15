@@ -1679,12 +1679,12 @@ export function DiffPane({
       }
     };
 
-    // Run after this pane renders the selected section/hunk, then retry briefly while layout
-    // settles across a couple of repaint cycles.
+    // Run after this pane renders the selected section/hunk, then retry once on the next task
+    // after the mounted row bounds settle.
     suppressViewportSelectionSync();
     scrollSelectionIntoView();
     pendingSelectionSettleRef.current = shouldTrackPinnedHeaderResettle;
-    const retryDelays = [0, 16, 48];
+    const retryDelays = [0];
     const timeouts = retryDelays.map((delay) => setTimeout(scrollSelectionIntoView, delay));
     const settleReset = shouldTrackPinnedHeaderResettle
       ? setTimeout(() => {
