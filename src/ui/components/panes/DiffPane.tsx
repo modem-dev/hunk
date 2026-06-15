@@ -1186,7 +1186,7 @@ export function DiffPane({
             fileSectionLayouts,
             includeFileIds: adjacentPrefetchFileIds,
             indexByFileId: fileSectionIndexById,
-            overscanFiles: 2,
+            overscanFiles: 1,
             scrollTop: scrollViewport.top,
             selectedFileId,
             viewportHeight: scrollViewport.height,
