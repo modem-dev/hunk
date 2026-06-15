@@ -6,6 +6,9 @@ import { join } from "node:path";
 
 const repoRoot = process.cwd();
 const sourceEntrypoint = join(repoRoot, "src/main.tsx");
+// Source-run hunk needs the @opentui/solid babel preload; bunfig only applies it from the repo
+// CWD, but these sessions launch in a fixture repo dir, so pass it explicitly (CWD-independent).
+const solidPreload = Bun.resolveSync("@opentui/solid/preload", repoRoot);
 const tempDirs: string[] = [];
 const ttyToolsAvailable =
   Bun.spawnSync(["bash", "-lc", "command -v script >/dev/null && command -v timeout >/dev/null"], {
@@ -110,7 +113,7 @@ function spawnHunkSession(
     timeoutSeconds?: number;
   },
 ) {
-  const innerCommand = `bun run ${shellQuote(sourceEntrypoint)} diff ${shellQuote(fixture.before)} ${shellQuote(fixture.after)}`;
+  const innerCommand = `bun --preload ${shellQuote(solidPreload)} ${shellQuote(sourceEntrypoint)} diff ${shellQuote(fixture.before)} ${shellQuote(fixture.after)}`;
   const hunkCommand = [
     `(sleep ${quitAfterSeconds}; printf q) | timeout ${timeoutSeconds} script -q -f -e -c`,
     shellQuote(innerCommand),
