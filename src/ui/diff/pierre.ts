@@ -78,6 +78,8 @@ export interface RenderSpan {
   text: string;
   fg?: string;
   bg?: string;
+  /** True when text was already normalized for terminal rendering. */
+  terminalSafe?: true;
 }
 
 export interface SplitLineCell {
@@ -332,6 +334,8 @@ function mergeSpan(target: RenderSpan[], next: RenderSpan) {
   const previous = target[target.length - 1];
   if (previous && previous.fg === next.fg && previous.bg === next.bg) {
     previous.text += next.text;
+    previous.terminalSafe =
+      previous.terminalSafe && next.terminalSafe ? previous.terminalSafe : undefined;
     return;
   }
 
@@ -370,6 +374,7 @@ function flattenHighlightedLine(node: HastNode | undefined, theme: AppTheme, emp
         text: tabify(cleanLastNewline(current.value)),
         fg: inherited.fg,
         bg: inherited.bg,
+        terminalSafe: true,
       });
       return;
     }
@@ -430,13 +435,13 @@ function makeSplitCell(
   let spans: RenderSpan[];
   if (highlightedLine === undefined) {
     const fallbackText = cleanDiffLine(rawLine);
-    spans = fallbackText.length > 0 ? [{ text: fallbackText }] : [];
+    spans = fallbackText.length > 0 ? [{ text: fallbackText, terminalSafe: true }] : [];
   } else {
     spans = flattenHighlightedLine(highlightedLine, theme, wordDiffHighlightBg(kind, theme));
 
     if (spans.length === 0) {
       const fallbackText = cleanDiffLine(rawLine);
-      spans = fallbackText.length > 0 ? [{ text: fallbackText }] : [];
+      spans = fallbackText.length > 0 ? [{ text: fallbackText, terminalSafe: true }] : [];
     }
   }
 
@@ -464,13 +469,13 @@ function makeStackCell(
   let spans: RenderSpan[];
   if (highlightedLine === undefined) {
     const fallbackText = cleanDiffLine(rawLine);
-    spans = fallbackText.length > 0 ? [{ text: fallbackText }] : [];
+    spans = fallbackText.length > 0 ? [{ text: fallbackText, terminalSafe: true }] : [];
   } else {
     spans = flattenHighlightedLine(highlightedLine, theme, wordDiffHighlightBg(kind, theme));
 
     if (spans.length === 0) {
       const fallbackText = cleanDiffLine(rawLine);
-      spans = fallbackText.length > 0 ? [{ text: fallbackText }] : [];
+      spans = fallbackText.length > 0 ? [{ text: fallbackText, terminalSafe: true }] : [];
     }
   }
 

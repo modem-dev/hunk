@@ -51,6 +51,8 @@ function appendRenderSpan(target: RenderSpan[], span: RenderSpan) {
   const previous = target.at(-1);
   if (previous && previous.fg === span.fg && previous.bg === span.bg) {
     previous.text += span.text;
+    previous.terminalSafe =
+      previous.terminalSafe && span.terminalSafe ? previous.terminalSafe : undefined;
   } else {
     target.push(span);
   }
