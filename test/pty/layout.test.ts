@@ -12,6 +12,45 @@ afterEach(() => {
 });
 
 describe("PTY layout", () => {
+  test("the first frame fills the viewport bottom with the next file section", async () => {
+    // The first review frame must fill the whole viewport: when the leading file overflows just
+    // enough, the start of the next file has to render at the bottom without any scroll input.
+    //
+    // This guards a related Solid-port symptom: the scrollbox viewport height is computed during
+    // the first layout pass, which can land after DiffPane attaches its `layout-changed` listener,
+    // so the initial event is lost and the windowing memo plans against height 0 — leaving the
+    // bottom of the first frame under-filled until a scroll self-heals it. DiffPane now seeds the
+    // height once it materializes. NOTE: the raw race only reproduces when nothing resizes the
+    // terminal after the first paint; the PTY backend issues a post-launch resize that masks it,
+    // so the seed fix itself is verified manually in a real terminal. This test still locks in the
+    // user-visible contract — a multi-file first paint fills to the bottom edge — on the first frame.
+    const fixture = harness.createPinnedHeaderRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split"],
+      cwd: fixture.dir,
+      cols: 120,
+      rows: 28,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      // first.ts overflows just enough that second.ts must peek at the bottom of the first frame.
+      const firstFrame = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("second.ts") && text.includes("line17 = 117"),
+        8_000,
+      );
+
+      expect(firstFrame).toContain("second.ts");
+      expect(firstFrame).toContain("line17 = 117");
+    } finally {
+      session.close();
+    }
+  });
+
   test("split rows keep the center separator aligned after wide characters", async () => {
     const fixture = harness.createWideCharacterFilePair();
     const session = await harness.launchHunk({

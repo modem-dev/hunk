@@ -52,7 +52,11 @@ import {
 } from "../../lib/fileSectionLayout";
 import { diffHunkId, diffSectionId } from "../../lib/ids";
 import { findViewportCenteredHunkTarget } from "../../lib/viewportSelection";
-import { VIEWPORT_READ_COALESCE_MS } from "../../lib/viewportTiming";
+import {
+  VIEWPORT_HEIGHT_SEED_MAX_ATTEMPTS,
+  VIEWPORT_HEIGHT_SEED_RETRY_MS,
+  VIEWPORT_READ_COALESCE_MS,
+} from "../../lib/viewportTiming";
 import {
   findViewportRowAnchor,
   resolveViewportRowAnchorTop,
@@ -647,10 +651,42 @@ export function DiffPane(props: DiffPaneProps) {
     scrollBox.viewport.on("layout-changed", handleViewportChange);
     scrollBox.viewport.on("resized", handleViewportChange);
 
+    // First-paint height seed. OpenTUI computes the viewport height during its first layout
+    // pass; that pass can finish after this effect runs, so the initial `layout-changed` event
+    // fires before the listener above is attached and is lost. Nothing recalculates layout again
+    // until a scroll, so without this the windowing memo plans against height 0 and the bottom of
+    // the first frame is left under-filled until the user scrolls. Poll the already-computed
+    // height a few early frames apart until it materializes, then read it once and stop — a
+    // bounded one-shot, not a steady-state cost (the synchronous read above already covers the
+    // common case where layout has settled before this effect runs).
+    let seedAttempts = 0;
+    let seedTimer: ReturnType<typeof setTimeout> | null = null;
+    const seedViewportHeight = () => {
+      seedTimer = null;
+      if (cancelled) {
+        return;
+      }
+      if ((scrollBox.viewport.height ?? 0) > 0) {
+        readViewport();
+        return;
+      }
+      if (seedAttempts >= VIEWPORT_HEIGHT_SEED_MAX_ATTEMPTS) {
+        return;
+      }
+      seedAttempts += 1;
+      seedTimer = setTimeout(seedViewportHeight, VIEWPORT_HEIGHT_SEED_RETRY_MS);
+    };
+    if ((scrollBox.viewport.height ?? 0) <= 0) {
+      seedTimer = setTimeout(seedViewportHeight, VIEWPORT_HEIGHT_SEED_RETRY_MS);
+    }
+
     onCleanup(() => {
       cancelled = true;
       if (scheduledViewportRead) {
         clearTimeout(scheduledViewportRead);
+      }
+      if (seedTimer) {
+        clearTimeout(seedTimer);
       }
       scrollBox.verticalScrollBar.off("change", handleViewportChange);
       scrollBox.viewport.off("layout-changed", handleViewportChange);
