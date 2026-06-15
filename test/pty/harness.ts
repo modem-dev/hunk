@@ -9,6 +9,12 @@ const integrationDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(integrationDir, "../..");
 const sourceEntrypoint = join(repoRoot, "src/main.tsx");
 
+// Source-run Hunk needs the @opentui/solid babel preload to compile its JSX. bunfig only applies
+// the preload from the repo root, but PTY sessions launch with the fixture directory as cwd, so
+// resolve the preload to an absolute path (from the repo root) and pass it explicitly. Without it
+// the source run renders a blank screen under Solid. Mirrors test/session and test/smoke.
+const solidPreload = Bun.resolveSync("@opentui/solid/preload", repoRoot);
+
 function resolveBunExecutable() {
   const envCandidate = process.env.BUN_BIN ?? process.env.BUN;
   if (envCandidate) {
@@ -607,7 +613,8 @@ export function createPtyHarness() {
   function buildHunkCommand(args: string[]) {
     return [
       shellQuote(bunExecutable),
-      "run",
+      "--preload",
+      shellQuote(solidPreload),
       shellQuote(sourceEntrypoint),
       "--",
       ...args.map(shellQuote),
@@ -625,7 +632,7 @@ export function createPtyHarness() {
 
     return launchTerminal({
       command: bunExecutable,
-      args: ["run", sourceEntrypoint, "--", ...options.args],
+      args: ["--preload", solidPreload, sourceEntrypoint, "--", ...options.args],
       cwd: options.cwd ?? repoRoot,
       cols: options.cols ?? 140,
       rows: options.rows ?? 24,
