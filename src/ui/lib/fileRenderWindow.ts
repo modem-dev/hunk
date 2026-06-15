@@ -18,7 +18,6 @@ export type FileRenderWindowItem = FileRenderWindowFileItem | FileRenderWindowSp
 
 export interface FileRenderWindowPlan {
   items: FileRenderWindowItem[];
-  mountedFileIds: Set<string>;
   mountedFileIndices: number[];
   visibleStartIndex: number | null;
   visibleEndIndex: number | null;
@@ -161,7 +160,6 @@ export function buildFileRenderWindow({
   }
 
   const mountedFileIndices = Array.from(mountedIndices).sort((left, right) => left - right);
-  const mountedFileIds = new Set<string>();
   const items: FileRenderWindowItem[] = [];
   let cursor = 0;
   let topSpacerHeight = 0;
@@ -195,7 +193,6 @@ export function buildFileRenderWindow({
     }
 
     const layout = fileSectionLayouts[index]!;
-    mountedFileIds.add(layout.fileId);
     items.push({ kind: "file", fileId: layout.fileId, sectionIndex: index });
     cursor = index + 1;
   }
@@ -213,7 +210,6 @@ export function buildFileRenderWindow({
 
   return {
     items,
-    mountedFileIds,
     mountedFileIndices,
     visibleStartIndex: visibleRange?.startIndex ?? null,
     visibleEndIndex: visibleRange?.endIndex ?? null,
