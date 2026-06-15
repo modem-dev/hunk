@@ -75,7 +75,7 @@ export function sanitizeTerminalSpans<T extends { text: string }>(spans: readonl
   for (const span of spans) {
     const text = sanitizeTerminalLine(span.text);
     if (text.length > 0) {
-      sanitized.push({ ...span, text } as T);
+      sanitized.push(text === span.text ? span : ({ ...span, text, cellWidth: undefined } as T));
     }
   }
   return sanitized;

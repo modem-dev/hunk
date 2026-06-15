@@ -46,11 +46,20 @@ export function fitText(text: string, width: number) {
   return `${sliceTextByWidth(safeText, 0, width - 1).text}…`;
 }
 
+/** Measure one render span, preferring widths planned during row construction. */
+function measureRenderSpanWidth(span: RenderSpan) {
+  return span.cellWidth ?? measureTextWidth(span.text);
+}
+
 /** Append a styled span while preserving color-run coalescing. */
 function appendRenderSpan(target: RenderSpan[], span: RenderSpan) {
   const previous = target.at(-1);
   if (previous && previous.fg === span.fg && previous.bg === span.bg) {
     previous.text += span.text;
+    previous.cellWidth =
+      previous.cellWidth !== undefined && span.cellWidth !== undefined
+        ? previous.cellWidth + span.cellWidth
+        : undefined;
   } else {
     target.push(span);
   }
@@ -75,7 +84,7 @@ function sliceSpansWindow(spans: RenderSpan[], offset: number, width: number) {
       break;
     }
 
-    const spanWidth = measureTextWidth(span.text);
+    const spanWidth = measureRenderSpanWidth(span);
     if (spanWidth === 0) {
       appendRenderSpan(sliced, span);
       continue;
@@ -96,6 +105,7 @@ function sliceSpansWindow(spans: RenderSpan[], offset: number, width: number) {
     const nextSpan = {
       ...span,
       text: visible.text,
+      cellWidth: visible.width,
     };
 
     appendRenderSpan(sliced, nextSpan);
@@ -142,7 +152,7 @@ function renderInlineSpans(
   let colPos = 0;
 
   for (const span of trimmed) {
-    const spanWidth = measureTextWidth(span.text);
+    const spanWidth = measureRenderSpanWidth(span);
     const spanStart = colPos;
     const spanEnd = colPos + spanWidth;
     colPos = spanEnd;
@@ -287,7 +297,7 @@ function wrapSpans(spans: RenderSpan[], width: number) {
   let remaining = width;
 
   for (const span of sanitizeTerminalSpans(spans)) {
-    const spanWidth = measureTextWidth(span.text);
+    const spanWidth = measureRenderSpanWidth(span);
     if (spanWidth === 0) {
       appendRenderSpan(current, span);
       continue;
@@ -315,6 +325,7 @@ function wrapSpans(spans: RenderSpan[], width: number) {
         const nextSpan = {
           ...span,
           text: forced.text,
+          cellWidth: forced.width,
         };
         current.push(nextSpan);
         offset += forced.width;
@@ -325,6 +336,7 @@ function wrapSpans(spans: RenderSpan[], width: number) {
       const nextSpan = {
         ...span,
         text: visible.text,
+        cellWidth: visible.width,
       };
       appendRenderSpan(current, nextSpan);
 

@@ -10,6 +10,7 @@ import {
 import { formatHunkHeader } from "../../core/hunkHeader";
 import type { DiffFile, DiffLineMoveKind } from "../../core/types";
 import { blendHex, hexColorDistance } from "../lib/color";
+import { measureTextWidth } from "../lib/text";
 import { sanitizeTerminalLine } from "../../lib/terminalText";
 import { TRANSPARENT_BACKGROUND, type AppTheme } from "../themes";
 import { expandDiffTabs } from "./codeColumns";
@@ -78,6 +79,8 @@ export interface RenderSpan {
   text: string;
   fg?: string;
   bg?: string;
+  /** Cached terminal-cell width for sanitized span text. */
+  cellWidth?: number;
 }
 
 export interface SplitLineCell {
@@ -323,19 +326,27 @@ function normalizeHighlightedColor(color: string | undefined, theme: AppTheme) {
   return resolvedColor;
 }
 
+/** Build one styled span and measure it once while row construction has stable ownership. */
+function createRenderSpan(text: string, style: Pick<RenderSpan, "fg" | "bg"> = {}): RenderSpan {
+  return { ...style, text, cellWidth: measureTextWidth(text) };
+}
+
 /** Append a span while coalescing adjacent runs with identical colors. */
 function mergeSpan(target: RenderSpan[], next: RenderSpan) {
   if (next.text.length === 0) {
     return;
   }
 
+  const nextWidth = next.cellWidth ?? measureTextWidth(next.text);
   const previous = target[target.length - 1];
   if (previous && previous.fg === next.fg && previous.bg === next.bg) {
+    const previousWidth = previous.cellWidth ?? measureTextWidth(previous.text);
     previous.text += next.text;
+    previous.cellWidth = previousWidth + nextWidth;
     return;
   }
 
-  target.push(next);
+  target.push({ ...next, cellWidth: nextWidth });
 }
 
 /** Flatten one highlighted HAST line into terminal-friendly styled text spans. */
@@ -366,11 +377,7 @@ function flattenHighlightedLine(node: HastNode | undefined, theme: AppTheme, emp
       // Pierre injects a "\n" placeholder into empty line nodes so they aren't childless.
       // Strip it the same way cleanDiffLine does for the unhighlighted path, or the literal
       // newline ends up in the span text and breaks terminal row rendering.
-      mergeSpan(spans, {
-        text: tabify(cleanLastNewline(current.value)),
-        fg: inherited.fg,
-        bg: inherited.bg,
-      });
+      mergeSpan(spans, createRenderSpan(tabify(cleanLastNewline(current.value)), inherited));
       return;
     }
 
@@ -430,13 +437,13 @@ function makeSplitCell(
   let spans: RenderSpan[];
   if (highlightedLine === undefined) {
     const fallbackText = cleanDiffLine(rawLine);
-    spans = fallbackText.length > 0 ? [{ text: fallbackText }] : [];
+    spans = fallbackText.length > 0 ? [createRenderSpan(fallbackText)] : [];
   } else {
     spans = flattenHighlightedLine(highlightedLine, theme, wordDiffHighlightBg(kind, theme));
 
     if (spans.length === 0) {
       const fallbackText = cleanDiffLine(rawLine);
-      spans = fallbackText.length > 0 ? [{ text: fallbackText }] : [];
+      spans = fallbackText.length > 0 ? [createRenderSpan(fallbackText)] : [];
     }
   }
 
@@ -464,13 +471,13 @@ function makeStackCell(
   let spans: RenderSpan[];
   if (highlightedLine === undefined) {
     const fallbackText = cleanDiffLine(rawLine);
-    spans = fallbackText.length > 0 ? [{ text: fallbackText }] : [];
+    spans = fallbackText.length > 0 ? [createRenderSpan(fallbackText)] : [];
   } else {
     spans = flattenHighlightedLine(highlightedLine, theme, wordDiffHighlightBg(kind, theme));
 
     if (spans.length === 0) {
       const fallbackText = cleanDiffLine(rawLine);
-      spans = fallbackText.length > 0 ? [{ text: fallbackText }] : [];
+      spans = fallbackText.length > 0 ? [createRenderSpan(fallbackText)] : [];
     }
   }
 
