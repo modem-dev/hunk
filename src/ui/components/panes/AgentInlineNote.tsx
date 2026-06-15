@@ -1,5 +1,13 @@
 import type { TextareaRenderable } from "@opentui/core";
-import { createEffect, createRenderEffect, createSignal, For, onCleanup, Show } from "solid-js";
+import {
+  createEffect,
+  createRenderEffect,
+  createSignal,
+  For,
+  onCleanup,
+  Show,
+  untrack,
+} from "solid-js";
 import type { AgentAnnotation, DiffFile, LayoutMode } from "../../../core/types";
 import { annotationRangeLabel, reviewNoteSource } from "../../lib/agentAnnotations";
 import { wrapText } from "../../lib/agentPopover";
@@ -389,6 +397,12 @@ export function AgentInlineNote(props: {
       }
     >
       {(draft) => {
+        // Seed the textarea exactly once. `initialValue` must be a static, untracked read: the
+        // textarea is the source of truth for its own content, and onContentChange already pushes
+        // edits back into the draft signal. Binding it reactively to draft().body would re-seed the
+        // editor on every keystroke (write -> re-render -> re-seed -> contentChange -> write...),
+        // an infinite loop that ultimately aborts the layout engine.
+        const initialBody = untrack(() => draft().body);
         const draftVisibleLineCount = () => draftVisibleRows();
         const draftTitleText = () => fitText(` ${titleText()} `, Math.max(0, boxWidth() - 4));
         const saveInnerWidth = 11;
@@ -478,7 +492,7 @@ export function AgentInlineNote(props: {
                 ref={(el) => (textareaRef.current = el)}
                 width={draftContentWidth()}
                 height={draftTextareaRows()}
-                initialValue={draft().body}
+                initialValue={initialBody}
                 placeholder="Write a note…"
                 focused={draft().focused}
                 backgroundColor={props.theme.panel}

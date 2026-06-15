@@ -814,7 +814,10 @@ export function useReviewController({ files }: { files: Accessor<DiffFile[]> }):
 
   /** Update the body of the active draft note. */
   const updateDraftNote = (body: string) => {
-    setDraftNote((current) => (current ? { ...current, body } : current));
+    // Skip no-op writes. The textarea re-emits its content during the re-render its own edits
+    // trigger; without this guard that echo (same body) would write the signal again and loop the
+    // render until the layout engine aborts. Returning the identical object keeps the signal stable.
+    setDraftNote((current) => (current && current.body !== body ? { ...current, body } : current));
   };
 
   /** Discard the active human note draft. */
