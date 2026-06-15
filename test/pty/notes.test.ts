@@ -163,6 +163,38 @@ describe("PTY notes", () => {
     }
   });
 
+  test("a single Escape cancels a freshly opened empty draft note", async () => {
+    const fixture = harness.createMultiHunkFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      cols: 120,
+      rows: 20,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      // Open an empty draft via the keyboard and immediately cancel it. The very first Escape must
+      // close it — a regression once required two presses because the focus area had not yet
+      // settled to the note when the first Escape arrived.
+      await session.press("c");
+      await session.waitForText(/Draft note/, { timeout: 5_000 });
+
+      await session.press("escape");
+      const cancelled = await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("Draft note"),
+        5_000,
+      );
+
+      expect(cancelled).not.toContain("Draft note");
+    } finally {
+      session.close();
+    }
+  });
+
   test("clicked add-note drafts can cancel and save with keyboard shortcuts", async () => {
     const fixture = harness.createLongWrapFilePair();
     const session = await harness.launchHunk({
