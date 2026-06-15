@@ -74,7 +74,12 @@ describe("PTY notes", () => {
       });
 
       await session.press("c");
-      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      const freshDraft = await session.waitForText(/Draft note/, { timeout: 5_000 });
+      // The "c" that opened the note must not be inserted into the editor. A fresh, empty draft
+      // shows its placeholder; if the opening keystroke leaked in, the editor would hold "c" and
+      // the placeholder would be gone.
+      expect(freshDraft).toContain("Write a note");
+
       await session.type("Please cover this edge case.");
 
       const draftBeforeNewline = await session.waitForText(/Please cover this edge case\./, {
@@ -153,6 +158,38 @@ describe("PTY notes", () => {
       await sleep(250);
       const afterKeyboardIdle = await session.text({ immediate: true });
       expect(afterKeyboardIdle).not.toContain("[+]");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("a single Escape cancels a freshly opened empty draft note", async () => {
+    const fixture = harness.createMultiHunkFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      cols: 120,
+      rows: 20,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      // Open an empty draft via the keyboard and immediately cancel it. The very first Escape must
+      // close it — a regression once required two presses because the focus area had not yet
+      // settled to the note when the first Escape arrived.
+      await session.press("c");
+      await session.waitForText(/Draft note/, { timeout: 5_000 });
+
+      await session.press("escape");
+      const cancelled = await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("Draft note"),
+        5_000,
+      );
+
+      expect(cancelled).not.toContain("Draft note");
     } finally {
       session.close();
     }

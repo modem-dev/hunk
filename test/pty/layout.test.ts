@@ -12,6 +12,37 @@ afterEach(() => {
 });
 
 describe("PTY layout", () => {
+  test("the first frame fills the viewport bottom with the next file section", async () => {
+    // The first review frame must fill the whole viewport: when the leading file overflows just
+    // enough, the start of the next file has to render at the bottom without any scroll input.
+    // Locks in the user-visible contract — a multi-file first paint fills to the bottom edge.
+    const fixture = harness.createPinnedHeaderRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split"],
+      cwd: fixture.dir,
+      cols: 120,
+      rows: 28,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      // first.ts overflows just enough that second.ts must peek at the bottom of the first frame.
+      const firstFrame = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("second.ts") && text.includes("line17 = 117"),
+        8_000,
+      );
+
+      expect(firstFrame).toContain("second.ts");
+      expect(firstFrame).toContain("line17 = 117");
+    } finally {
+      session.close();
+    }
+  });
+
   test("split rows keep the center separator aligned after wide characters", async () => {
     const fixture = harness.createWideCharacterFilePair();
     const session = await harness.launchHunk({
