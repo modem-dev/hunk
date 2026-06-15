@@ -333,76 +333,84 @@ export function PierreDiffView(props: PierreDiffViewProps) {
           }}
         />
       </Show>
-      <For each={visiblePlannedRowWindow().plannedRows}>
-        {(plannedRow) => {
-          // Mirror the same visibility/id decisions used by the scroll-bound helpers so the mounted
-          // tree can be measured by hunk later.
-          const rowId = reviewRowId(plannedRow.key);
-          const visible = plannedReviewRowVisible(plannedRow, {
-            showHunkHeaders: showHunkHeaders(),
-            layout: props.layout,
-            width: props.width,
-          });
+      {/* Keep the windowed rows inside a dedicated, always-mounted column box. The @opentui/solid
+          `reconcileArrays` anchor is `getNextSibling(previousArray[last])`, which is null when the
+          `<For>` grows from empty — so its first rows would be appended to the END of the parent,
+          landing *after* the bottom spacer and scrolling off-screen (a blank file body while paging
+          into a tall section). Giving the `<For>` its own empty parent makes "append to end" the
+          correct position regardless, and keeps the surrounding spacers in order. */}
+      <box style={{ width: "100%", flexDirection: "column" }}>
+        <For each={visiblePlannedRowWindow().plannedRows}>
+          {(plannedRow) => {
+            // Mirror the same visibility/id decisions used by the scroll-bound helpers so the mounted
+            // tree can be measured by hunk later.
+            const rowId = reviewRowId(plannedRow.key);
+            const visible = plannedReviewRowVisible(plannedRow, {
+              showHunkHeaders: showHunkHeaders(),
+              layout: props.layout,
+              width: props.width,
+            });
 
-          return (
-            <Show when={visible}>
-              <Switch>
-                <Match when={plannedRow.kind === "inline-note" ? plannedRow : undefined}>
-                  {(inlineNote) => (
-                    <box
-                      id={rowId}
-                      style={{ width: "100%", flexDirection: "column" }}
-                      onMouseOver={clearHoveredRow}
-                    >
-                      <AgentInlineNote
-                        annotation={inlineNote().annotation}
-                        anchorSide={inlineNote().anchorSide}
-                        draft={inlineNote().note.draft}
-                        file={props.file}
-                        layout={props.layout}
-                        noteCount={inlineNote().noteCount}
-                        noteIndex={inlineNote().noteIndex}
-                        onClose={inlineNote().note.onRemove}
-                        theme={props.theme}
-                        width={props.width}
-                      />
-                    </box>
-                  )}
-                </Match>
-                <Match when={plannedRow.kind === "diff-row" ? plannedRow : undefined}>
-                  {(diffRow) => (
-                    <box id={rowId} style={{ width: "100%", flexDirection: "column" }}>
-                      <DiffRowView
-                        row={diffRow().row}
-                        width={props.width}
-                        lineNumberDigits={lineNumberDigits()}
-                        showLineNumbers={showLineNumbers()}
-                        showHunkHeaders={showHunkHeaders()}
-                        wrapLines={wrapLines()}
-                        codeHorizontalOffset={codeHorizontalOffset()}
-                        theme={props.theme}
-                        selected={diffRow().row.hunkIndex === props.selectedHunkIndex}
-                        copySelectedRowRange={props.copySelectedRowRanges?.get(diffRow().key)}
-                        copySelectedSide={props.copySelectedSide}
-                        anchorId={diffRow().anchorId}
-                        noteGuideSide={diffRow().noteGuideSide}
-                        showAddNoteBadge={
-                          startUserNoteAtHunkHandler() !== undefined &&
-                          hoveredRowKey() === diffRow().row.key &&
-                          addNoteAffordanceByRowKey().has(diffRow().row.key)
-                        }
-                        onHoverRow={handleHoverRow}
-                        onStartUserNoteAtHunk={startUserNoteAtHunkHandler()}
-                        onToggleGap={gapToggleHandler()}
-                      />
-                    </box>
-                  )}
-                </Match>
-              </Switch>
-            </Show>
-          );
-        }}
-      </For>
+            return (
+              <Show when={visible}>
+                <Switch>
+                  <Match when={plannedRow.kind === "inline-note" ? plannedRow : undefined}>
+                    {(inlineNote) => (
+                      <box
+                        id={rowId}
+                        style={{ width: "100%", flexDirection: "column" }}
+                        onMouseOver={clearHoveredRow}
+                      >
+                        <AgentInlineNote
+                          annotation={inlineNote().annotation}
+                          anchorSide={inlineNote().anchorSide}
+                          draft={inlineNote().note.draft}
+                          file={props.file}
+                          layout={props.layout}
+                          noteCount={inlineNote().noteCount}
+                          noteIndex={inlineNote().noteIndex}
+                          onClose={inlineNote().note.onRemove}
+                          theme={props.theme}
+                          width={props.width}
+                        />
+                      </box>
+                    )}
+                  </Match>
+                  <Match when={plannedRow.kind === "diff-row" ? plannedRow : undefined}>
+                    {(diffRow) => (
+                      <box id={rowId} style={{ width: "100%", flexDirection: "column" }}>
+                        <DiffRowView
+                          row={diffRow().row}
+                          width={props.width}
+                          lineNumberDigits={lineNumberDigits()}
+                          showLineNumbers={showLineNumbers()}
+                          showHunkHeaders={showHunkHeaders()}
+                          wrapLines={wrapLines()}
+                          codeHorizontalOffset={codeHorizontalOffset()}
+                          theme={props.theme}
+                          selected={diffRow().row.hunkIndex === props.selectedHunkIndex}
+                          copySelectedRowRange={props.copySelectedRowRanges?.get(diffRow().key)}
+                          copySelectedSide={props.copySelectedSide}
+                          anchorId={diffRow().anchorId}
+                          noteGuideSide={diffRow().noteGuideSide}
+                          showAddNoteBadge={
+                            startUserNoteAtHunkHandler() !== undefined &&
+                            hoveredRowKey() === diffRow().row.key &&
+                            addNoteAffordanceByRowKey().has(diffRow().row.key)
+                          }
+                          onHoverRow={handleHoverRow}
+                          onStartUserNoteAtHunk={startUserNoteAtHunkHandler()}
+                          onToggleGap={gapToggleHandler()}
+                        />
+                      </box>
+                    )}
+                  </Match>
+                </Switch>
+              </Show>
+            );
+          }}
+        </For>
+      </box>
       <Show when={visiblePlannedRowWindow().bottomSpacerHeight > 0}>
         {/* Mirror that reservation below the mounted slice so total file-body height stays stable. */}
         <box

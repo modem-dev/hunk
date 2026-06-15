@@ -1,7 +1,10 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import { createPtyHarness } from "./harness";
 
 const harness = createPtyHarness();
+
+/** PTY launches slow down as the suite mounts many renderers in one process; give startup headroom. */
+setDefaultTimeout(20_000);
 
 describe("filter escape clearing (PTY)", () => {
   test("a second Escape clears a re-typed no-match filter query", async () => {
