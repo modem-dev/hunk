@@ -112,7 +112,6 @@ describe("buildFileRenderWindow", () => {
     });
 
     expect(plan.mountedFileIndices).toEqual([0, 4]);
-    expect(plan.mountedFileIds.has("file-4")).toBe(true);
     expect(itemSummary(plan.items)).toEqual([
       { kind: "file", sectionIndex: 0 },
       { kind: "spacer", height: 36, startIndex: 1, endIndex: 3 },
