@@ -90,6 +90,7 @@ import {
 } from "./copySelection";
 
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
+const EMPTY_VISIBLE_AGENT_NOTES_BY_FILE = new Map<string, VisibleAgentNote[]>();
 
 /**
  * Clamp one vertical scroll target into the currently reachable review-stream extent.
@@ -732,6 +733,11 @@ export function DiffPane(props: DiffPaneProps) {
   });
 
   const visibleAgentNotesByFile = createMemo(() => {
+    const notesByFile = allAgentNotesByFile();
+    if (notesByFile.size === 0) {
+      return EMPTY_VISIBLE_AGENT_NOTES_BY_FILE;
+    }
+
     const next = new Map<string, VisibleAgentNote[]>();
 
     const fileIdsToMeasure = new Set(visibleViewportFileIds());
@@ -742,7 +748,6 @@ export function DiffPane(props: DiffPaneProps) {
       fileIdsToMeasure.add(currentSelectedFileId);
     }
 
-    const notesByFile = allAgentNotesByFile();
     for (const fileId of fileIdsToMeasure) {
       const visibleNotes = notesByFile.get(fileId);
       if (visibleNotes && visibleNotes.length > 0) {
@@ -1815,7 +1820,11 @@ export function DiffPane(props: DiffPaneProps) {
                   recomputes against the new row geometry, while the outer scrollbox keeps its
                   state. The keyed Show forces a fresh subtree on those changes. */}
               <Show
-                when={`diff-content:${merged.layout}:${merged.wrapLines ? "wrap" : "nowrap"}:${merged.width}`}
+                when={`diff-content:${merged.layout}:${merged.wrapLines ? "wrap" : "nowrap"}:${
+                  merged.showLineNumbers ? "lines" : "no-lines"
+                }:${merged.showHunkHeaders ? "headers" : "no-headers"}:${merged.theme.id}:${
+                  merged.theme.appearance
+                }:${merged.width}`}
                 keyed
               >
                 <box style={{ width: "100%", flexDirection: "column", overflow: "visible" }}>

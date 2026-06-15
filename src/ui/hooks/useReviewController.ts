@@ -31,14 +31,15 @@ import type {
 import type { FileSourceStatus } from "../diff/expandCollapsedRows";
 import { selectGapForKeyboardToggle } from "../diff/expandCollapsedRows";
 import { trailingCollapsedLines } from "../diff/pierre";
-import { findNextHunkCursor } from "../lib/hunks";
+import { buildAnnotatedHunkCursors, buildHunkCursors, findNextHunkCursor } from "../lib/hunks";
 import { reviewNoteSource } from "../lib/agentAnnotations";
+import { buildSidebarEntries, filterReviewFiles, mergeFileAnnotationsByFileId } from "../lib/files";
 import {
-  buildReviewState,
   buildSelectedHunkSummary,
   findNextAnnotatedFile,
   type ReviewState,
   resolveReviewNavigationTarget,
+  resolveSelectedFile,
 } from "../lib/reviewState";
 
 /** Clamp one numeric index into an inclusive range. */
@@ -249,37 +250,31 @@ export function useReviewController({ files }: { files: Accessor<DiffFile[]> }):
     }
   });
 
-  // The filter feeds an expensive review-state recompute. React deferred it via
-  // `useDeferredValue` to keep typing responsive; Solid's fine-grained updates
-  // recompute only the dependent memo, so we read the filter signal directly
-  // here instead of deferring. Behavior change: filter results now update
-  // synchronously with each keystroke rather than after a deferred pass.
-  const reviewState = createMemo(() =>
-    buildReviewState({
-      files: files(),
-      liveCommentsByFileId: mergeAnnotationMaps(liveCommentsByFileId(), userNotesByFileId()),
-      filterQuery: filter(),
-      selectedFileId: selectedFileId(),
-      selectedHunkIndex: selectedHunkIndex(),
-    }),
-  );
-
-  // `reviewState` recomputes on every selection change (it reads the selected file/hunk), which
-  // hands back fresh array references for these selection-independent lists. Without an equality
-  // guard that propagates downstream into expensive consumers (e.g. DiffPane re-measures every
-  // file's geometry on each hunk navigation). Compare by element identity so these only notify
-  // when the underlying list actually changes (filter edit, reload) — not on navigation.
+  // Compare file lists by element identity so selection-independent review-stream derivatives do
+  // not notify expensive consumers unless the actual stream changes (filter edit, reload, notes).
   const sameFileList = (a: DiffFile[], b: DiffFile[]) =>
     a === b || (a.length === b.length && a.every((file, index) => file === b[index]));
-  const allFiles = createMemo(() => reviewState().allFiles, undefined, { equals: sameFileList });
-  const visibleFiles = createMemo(() => reviewState().visibleFiles, undefined, {
+
+  const mergedAnnotationsByFileId = createMemo(() =>
+    mergeAnnotationMaps(liveCommentsByFileId(), userNotesByFileId()),
+  );
+  const allFiles = createMemo(
+    () => mergeFileAnnotationsByFileId(files(), mergedAnnotationsByFileId()),
+    undefined,
+    { equals: sameFileList },
+  );
+  // The filter feeds expensive sidebar and hunk-cursor derivations. Keep it independent from the
+  // selected file/hunk so normal `[`/`]` navigation does not rebuild the whole review stream.
+  const visibleFiles = createMemo(() => filterReviewFiles(allFiles(), filter()), undefined, {
     equals: sameFileList,
   });
-  const sidebarEntries = createMemo(() => reviewState().sidebarEntries);
-  const selectedFile = createMemo(() => reviewState().selectedFile);
-  const selectedHunk = createMemo(() => reviewState().selectedHunk);
-  const hunkCursors = createMemo(() => reviewState().hunkCursors);
-  const annotatedHunkCursors = createMemo(() => reviewState().annotatedHunkCursors);
+  const sidebarEntries = createMemo(() => buildSidebarEntries(visibleFiles()));
+  const selectedFile = createMemo(() =>
+    resolveSelectedFile(allFiles(), visibleFiles(), selectedFileId()),
+  );
+  const selectedHunk = createMemo(() => selectedFile()?.metadata.hunks[selectedHunkIndex()]);
+  const hunkCursors = createMemo(() => buildHunkCursors(visibleFiles()));
+  const annotatedHunkCursors = createMemo(() => buildAnnotatedHunkCursors(visibleFiles()));
 
   /** Update the selection and reveal intent together so diff scrolling stays explicit. */
   const selectHunk = (fileId: string, hunkIndex: number, options?: ReviewSelectionOptions) => {

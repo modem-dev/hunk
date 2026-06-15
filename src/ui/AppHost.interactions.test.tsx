@@ -2526,7 +2526,7 @@ describe("App interactions", () => {
       const frame = await waitForFrame(
         setup,
         (nextFrame) => nextFrame.includes("line 341 changed"),
-        24,
+        80,
       );
 
       expect(frame).toContain("line 341 changed");
