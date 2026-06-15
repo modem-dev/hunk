@@ -1317,7 +1317,13 @@ function renderRow(
   showLineNumbers: boolean,
   showHunkHeaders: boolean,
   wrapLines: boolean,
-  codeHorizontalOffset: number,
+  // Accessor (not a plain number) so nowrap rows stay reactive to horizontal scrolling. The row's
+  // element tree is built once, but the visible code window depends on this offset; reading it
+  // inside a keyed <Show> lets Solid re-slice and re-emit the leaf spans in place when the user
+  // scrolls left/right. The @opentui/solid reconciler does not reactively replace a returned
+  // subtree, so the reactive read must happen inside control flow (<Show>/<For>), not via a plain
+  // function child.
+  codeHorizontalOffset: () => number,
   theme: AppTheme,
   selected: boolean,
   copySelectedRowRange: CopySelectedRowRange | undefined,
@@ -1414,34 +1420,42 @@ function renderRow(
             }}
           >
             <text>
-              {renderSplitCell(
-                row.left,
-                leftWidth,
-                lineNumberDigits,
-                showLineNumbers,
-                theme,
-                `${row.key}:left`,
-                codeHorizontalOffset,
-                leftPrefix,
-                hasLeftSelection,
-                hasLeftSelection ? copySelectedRowRange : undefined,
-                0,
-              )}
-              {renderSplitCell(
-                row.right,
-                rightRenderWidth,
-                lineNumberDigits,
-                showLineNumbers,
-                theme,
-                `${row.key}:right`,
-                codeHorizontalOffset,
-                rightPrefix,
-                hasRightSelection,
-                hasRightSelection ? copySelectedRowRange : undefined,
-                leftWidth,
-              )}
-              <Show when={guideOnNewSide}>
-                <span style={{ fg: theme.noteBorder }}>│</span>
+              {/* Keyed on the offset so a horizontal scroll re-runs the slice and replaces the
+                  visible spans in place. offset+1 keeps the key truthy at offset 0. */}
+              <Show when={codeHorizontalOffset() + 1} keyed>
+                {(offsetKey) => (
+                  <>
+                    {renderSplitCell(
+                      row.left,
+                      leftWidth,
+                      lineNumberDigits,
+                      showLineNumbers,
+                      theme,
+                      `${row.key}:left`,
+                      offsetKey - 1,
+                      leftPrefix,
+                      hasLeftSelection,
+                      hasLeftSelection ? copySelectedRowRange : undefined,
+                      0,
+                    )}
+                    {renderSplitCell(
+                      row.right,
+                      rightRenderWidth,
+                      lineNumberDigits,
+                      showLineNumbers,
+                      theme,
+                      `${row.key}:right`,
+                      offsetKey - 1,
+                      rightPrefix,
+                      hasRightSelection,
+                      hasRightSelection ? copySelectedRowRange : undefined,
+                      leftWidth,
+                    )}
+                    <Show when={guideOnNewSide}>
+                      <span style={{ fg: theme.noteBorder }}>│</span>
+                    </Show>
+                  </>
+                )}
               </Show>
             </text>
           </box>
@@ -1599,20 +1613,28 @@ function renderRow(
             }}
           >
             <text>
-              {renderStackCell(
-                row.cell,
-                contentWidth,
-                lineNumberDigits,
-                showLineNumbers,
-                theme,
-                `${row.key}:stack`,
-                codeHorizontalOffset,
-                prefix,
-                hasCopySelection,
-                hasCopySelection ? copySelectedRowRange : undefined,
-              )}
-              <Show when={guideOnNewSide}>
-                <span style={{ fg: theme.noteBorder }}>│</span>
+              {/* Keyed on the offset so a horizontal scroll re-slices and replaces the visible
+                  spans in place. offset+1 keeps the key truthy at offset 0. */}
+              <Show when={codeHorizontalOffset() + 1} keyed>
+                {(offsetKey) => (
+                  <>
+                    {renderStackCell(
+                      row.cell,
+                      contentWidth,
+                      lineNumberDigits,
+                      showLineNumbers,
+                      theme,
+                      `${row.key}:stack`,
+                      offsetKey - 1,
+                      prefix,
+                      hasCopySelection,
+                      hasCopySelection ? copySelectedRowRange : undefined,
+                    )}
+                    <Show when={guideOnNewSide}>
+                      <span style={{ fg: theme.noteBorder }}>│</span>
+                    </Show>
+                  </>
+                )}
               </Show>
             </text>
           </box>
@@ -1743,7 +1765,8 @@ export function DiffRowView(props: DiffRowViewProps) {
     props.showLineNumbers,
     props.showHunkHeaders,
     props.wrapLines,
-    props.codeHorizontalOffset,
+    // Pass as an accessor so the nowrap rows re-slice reactively when the offset prop changes.
+    () => props.codeHorizontalOffset,
     props.theme,
     props.selected,
     props.copySelectedRowRange,
