@@ -1136,7 +1136,7 @@ export function DiffPane(props: DiffPaneProps) {
     const viewport = scrollViewport();
     return buildFileRenderWindow({
       fileSectionLayouts: fileSectionLayouts(),
-      includeFileIds: adjacentPrefetchFileIds(),
+      includeFileIds: [],
       indexByFileId: fileSectionIndexById(),
       overscanFiles: 1,
       scrollTop: viewport.top,

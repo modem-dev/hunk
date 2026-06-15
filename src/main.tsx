@@ -89,7 +89,7 @@ async function main() {
     useMouse: shouldUseMouseForApp({
       hasControllingTerminal: Boolean(controllingTerminal),
     }),
-    useAlternateScreen: true,
+    screenMode: "alternate-screen",
     exitOnCtrlC: false,
     openConsoleOnError: true,
     onDestroy: () => controllingTerminal?.close(),
