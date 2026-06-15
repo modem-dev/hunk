@@ -20,6 +20,7 @@ import { type FileSourceStatus } from "./expandCollapsedRows";
 import { spansForHighlightedSourceLine, type DiffRow } from "./pierre";
 import { plannedReviewRowVisible } from "./plannedReviewRows";
 import { buildDiffSectionRowPlan } from "./diffSectionRowPlan";
+import type { PlannedReviewRow } from "./reviewRenderPlan";
 import { resolveVisiblePlannedRowWindow, type VisibleBodyBounds } from "./rowWindowing";
 import { diffMessage, DiffRowView, fitText } from "./renderRows";
 import { useHighlightedDiff } from "./useHighlightedDiff";
@@ -197,7 +198,60 @@ export function PierreDiffView(props: PierreDiffViewProps) {
       visibleAgentNotes: visibleAgentNotes(),
     }),
   );
-  const plannedRows = () => sectionRowPlan().plannedRows;
+  // The active draft (inline-note) row needs a *stable object identity* across plan rebuilds.
+  // The row plan is rebuilt on every draft keystroke (the draft body feeds `visibleAgentNotes`, a
+  // plan dependency), and the <For> below keys rows by reference — so a fresh row object each
+  // keystroke tears down and recreates the inline-note subtree, including the uncontrolled
+  // <textarea>. Recreation re-seeds the editor and parks the cursor at the start, scrambling rapid
+  // input into reversed chunks. We freeze the row's identity (matched by body-independent stableKey)
+  // so <For> keeps the editor mounted, and back the draft's mutable fields (body, focus, handlers)
+  // with getters that re-read the *live* note, so AgentInlineNote still reacts to focus and growth
+  // without a remount. Edits flow to the controller through the live `onInput`, and the save path
+  // reads the live draft signal, so nothing depends on a stale snapshot.
+  const liveDraftNote = () => visibleAgentNotes().find((note) => note.draft)?.draft;
+  const draftFieldProxy: NonNullable<VisibleAgentNote["draft"]> = {
+    get body() {
+      return liveDraftNote()?.body ?? "";
+    },
+    get focused() {
+      return liveDraftNote()?.focused ?? false;
+    },
+    get onBlur() {
+      return liveDraftNote()?.onBlur;
+    },
+    get onCancel() {
+      return liveDraftNote()?.onCancel ?? (() => {});
+    },
+    get onFocus() {
+      return liveDraftNote()?.onFocus;
+    },
+    get onInput() {
+      return liveDraftNote()?.onInput ?? (() => {});
+    },
+    get onSave() {
+      return liveDraftNote()?.onSave ?? (() => {});
+    },
+  };
+  let stableDraftRow: PlannedReviewRow | null = null;
+  const plannedRows = createMemo(() => {
+    let sawDraft = false;
+    const rows = sectionRowPlan().plannedRows.map((row) => {
+      if (row.kind !== "inline-note" || !row.note.draft) {
+        return row;
+      }
+      sawDraft = true;
+      if (stableDraftRow?.kind === "inline-note" && stableDraftRow.stableKey === row.stableKey) {
+        return stableDraftRow;
+      }
+      // First sighting of this draft: anchor a frozen row whose draft reads through the proxy.
+      stableDraftRow = { ...row, note: { ...row.note, draft: draftFieldProxy } };
+      return stableDraftRow;
+    });
+    if (!sawDraft) {
+      stableDraftRow = null;
+    }
+    return rows;
+  });
   const lineNumberDigits = () => sectionRowPlan().lineNumberDigits;
   const fileHasSourceFetcher = () => Boolean(props.file?.sourceFetcher);
 
