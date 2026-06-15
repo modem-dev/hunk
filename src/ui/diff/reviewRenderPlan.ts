@@ -272,43 +272,6 @@ function rowCanAnchorHunk(row: DiffRow, showHunkHeaders: boolean) {
   return row.isExpansionRow !== true;
 }
 
-/** Build the common no-note row plan without allocating note-placement maps. */
-function buildDiffOnlyReviewRenderPlan({
-  fileId,
-  rows,
-  showHunkHeaders,
-}: {
-  fileId: string;
-  rows: DiffRow[];
-  showHunkHeaders: boolean;
-}) {
-  const plannedRows: PlannedReviewRow[] = [];
-  const anchoredHunks = new Set<number>();
-
-  for (const row of rows) {
-    const shouldAnchorHunk =
-      rowCanAnchorHunk(row, showHunkHeaders) && !anchoredHunks.has(row.hunkIndex);
-    const diffStableKeys = diffRowStableKeys(row);
-
-    if (shouldAnchorHunk) {
-      anchoredHunks.add(row.hunkIndex);
-    }
-
-    plannedRows.push({
-      kind: "diff-row",
-      key: `diff-row:${row.key}`,
-      stableKey: diffStableKeys[0] ?? `row:${row.key}`,
-      stableAliasKeys: diffStableKeys.slice(1),
-      fileId: row.fileId,
-      hunkIndex: row.hunkIndex,
-      row,
-      anchorId: shouldAnchorHunk ? diffHunkId(fileId, row.hunkIndex) : undefined,
-    });
-  }
-
-  return plannedRows;
-}
-
 /**
  * Build the explicit presentational row plan for one file diff body.
  * The plan always preserves diff-row order and may insert inline notes for every visible note
@@ -327,10 +290,6 @@ export function buildReviewRenderPlan({
   visibleAgentNotes?: VisibleAgentNote[];
   selectedHunkIndex?: number;
 }) {
-  if (visibleAgentNotes.length === 0) {
-    return buildDiffOnlyReviewRenderPlan({ fileId, rows, showHunkHeaders });
-  }
-
   const placementsByAnchor = buildInlineVisibleNotePlacements(rows, visibleAgentNotes);
   const noteGuideSideByRowKey = buildNoteGuideSideByRowKey(placementsByAnchor);
   const plannedRows: PlannedReviewRow[] = [];
