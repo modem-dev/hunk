@@ -60,6 +60,8 @@ function appendRenderSpan(target: RenderSpan[], span: RenderSpan) {
       previous.cellWidth !== undefined && span.cellWidth !== undefined
         ? previous.cellWidth + span.cellWidth
         : undefined;
+    previous.terminalSafe =
+      previous.terminalSafe && span.terminalSafe ? previous.terminalSafe : undefined;
   } else {
     target.push(span);
   }

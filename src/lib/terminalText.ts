@@ -73,9 +73,22 @@ export function sanitizeTerminalLine(text: string) {
 export function sanitizeTerminalSpans<T extends { text: string }>(spans: readonly T[]): T[] {
   const sanitized: T[] = [];
   for (const span of spans) {
+    // Pierre-built spans are already normalized with sanitizeTerminalLine before row planning.
+    // Trust only the explicit marker so external/test-authored spans still take the safe path.
+    if ((span as T & { terminalSafe?: true }).terminalSafe) {
+      if (span.text.length > 0) {
+        sanitized.push(span);
+      }
+      continue;
+    }
+
     const text = sanitizeTerminalLine(span.text);
     if (text.length > 0) {
-      sanitized.push(text === span.text ? span : ({ ...span, text, cellWidth: undefined } as T));
+      sanitized.push(
+        text === span.text
+          ? span
+          : ({ ...span, text, cellWidth: undefined, terminalSafe: undefined } as T),
+      );
     }
   }
   return sanitized;

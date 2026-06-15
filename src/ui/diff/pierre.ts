@@ -81,6 +81,8 @@ export interface RenderSpan {
   bg?: string;
   /** Cached terminal-cell width for sanitized span text. */
   cellWidth?: number;
+  /** True when text was already normalized for terminal rendering. */
+  terminalSafe?: true;
 }
 
 export interface SplitLineCell {
@@ -328,7 +330,7 @@ function normalizeHighlightedColor(color: string | undefined, theme: AppTheme) {
 
 /** Build one styled span and measure it once while row construction has stable ownership. */
 function createRenderSpan(text: string, style: Pick<RenderSpan, "fg" | "bg"> = {}): RenderSpan {
-  return { ...style, text, cellWidth: measureTextWidth(text) };
+  return { ...style, text, cellWidth: measureTextWidth(text), terminalSafe: true };
 }
 
 /** Append a span while coalescing adjacent runs with identical colors. */
@@ -343,6 +345,8 @@ function mergeSpan(target: RenderSpan[], next: RenderSpan) {
     const previousWidth = previous.cellWidth ?? measureTextWidth(previous.text);
     previous.text += next.text;
     previous.cellWidth = previousWidth + nextWidth;
+    previous.terminalSafe =
+      previous.terminalSafe && next.terminalSafe ? previous.terminalSafe : undefined;
     return;
   }
 
