@@ -18,6 +18,7 @@ import {
   isHalfPageUpKey,
   isPageDownKey,
   isPageUpKey,
+  isSaveDraftNoteKey,
   isShiftSpacePageUpKey,
   isStepDownKey,
   isStepUpKey,
@@ -301,6 +302,26 @@ describe("ui helpers", () => {
     expect(isCreateReviewNoteKey(createKeyEvent({ name: "c", ctrl: true }))).toBe(false);
     expect(isCreateReviewNoteKey(createKeyEvent({ name: "c", meta: true }))).toBe(false);
     expect(isCreateReviewNoteKey(createKeyEvent({ name: "c", option: true }))).toBe(false);
+  });
+
+  test("save-draft-note shortcut matches Ctrl-S across raw, CSI-u, and tmux encodings", () => {
+    const CTRL_S = "\u0013";
+    const CTRL_S_CSI_U = "\u001b[115;5u";
+
+    // Modifier-flagged Ctrl-S from terminals that report ctrl + the letter.
+    expect(isSaveDraftNoteKey(createKeyEvent({ ctrl: true, name: "s" }))).toBe(true);
+    expect(isSaveDraftNoteKey(createKeyEvent({ ctrl: true, sequence: "s" }))).toBe(true);
+    // Raw control byte with no modifier flag set (sequence or raw channel).
+    expect(isSaveDraftNoteKey(createKeyEvent({ sequence: CTRL_S }))).toBe(true);
+    expect(isSaveDraftNoteKey(createKeyEvent({ raw: CTRL_S } as Partial<KeyEvent>))).toBe(true);
+    // Kitty/CSI-u encoding on either channel.
+    expect(isSaveDraftNoteKey(createKeyEvent({ sequence: CTRL_S_CSI_U }))).toBe(true);
+    expect(isSaveDraftNoteKey(createKeyEvent({ raw: CTRL_S_CSI_U } as Partial<KeyEvent>))).toBe(
+      true,
+    );
+    // Unmodified s and other ctrl chords must not save.
+    expect(isSaveDraftNoteKey(createKeyEvent({ name: "s" }))).toBe(false);
+    expect(isSaveDraftNoteKey(createKeyEvent({ ctrl: true, name: "x" }))).toBe(false);
   });
 
   test("fitText and padText clamp using the terminal fallback marker", () => {
