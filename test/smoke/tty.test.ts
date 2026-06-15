@@ -5,6 +5,9 @@ import { join } from "node:path";
 
 const repoRoot = process.cwd();
 const sourceEntrypoint = join(repoRoot, "src/main.tsx");
+// Source-run hunk needs the @opentui/solid babel preload; bunfig only applies it from the repo
+// root, but these smokes spawn from a fixture cwd, so pass the preload explicitly.
+const solidPreload = Bun.resolveSync("@opentui/solid/preload", repoRoot);
 const tempDirs: string[] = [];
 const enableTtySmokeTests = process.env.HUNK_RUN_TTY_SMOKE === "1";
 if (enableTtySmokeTests) {
@@ -159,7 +162,7 @@ async function runTtySmoke(options: {
     args.push("--agent-context", (fixture as ReturnType<typeof createFixtureFiles>).agent);
   }
 
-  const hunkCommand = `bun run ${shellQuote(sourceEntrypoint)} ${args.map(shellQuote).join(" ")}`;
+  const hunkCommand = `bun --preload ${shellQuote(solidPreload)} ${shellQuote(sourceEntrypoint)} ${args.map(shellQuote).join(" ")}`;
   const scriptCommand = `timeout 7 script -q -f -e -c ${shellQuote(hunkCommand)} ${shellQuote(transcript)}`;
   const inputCommand = options.inputCommand ?? `(sleep 2; printf q)`;
   const proc = Bun.spawnSync(["bash", "-lc", `${inputCommand} | ${scriptCommand}`], {
@@ -192,7 +195,7 @@ async function runStdinPagerSmoke(options?: {
   const fixture = createFixtureFiles(options?.lines ?? 1);
   const transcript = join(fixture.dir, "stdin-pager-transcript.txt");
   const subcommand = options?.command === "pager" ? "pager" : "patch -";
-  const patchCommand = `cat ${shellQuote(fixture.coloredPatch)} | bun run ${shellQuote(sourceEntrypoint)} ${subcommand}`;
+  const patchCommand = `cat ${shellQuote(fixture.coloredPatch)} | bun --preload ${shellQuote(solidPreload)} ${shellQuote(sourceEntrypoint)} ${subcommand}`;
   const scriptCommand = `timeout 7 script -q -f -e -c ${shellQuote(patchCommand)} ${shellQuote(transcript)}`;
   const inputCommand =
     options?.inputCommand ?? `(sleep 2; printf ${shellQuote(options?.input ?? "q")})`;

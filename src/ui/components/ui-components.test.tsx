@@ -2,7 +2,8 @@ import { describe, expect, mock, test } from "bun:test";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { testRender } from "@opentui/solid";
 import { createSignal, onMount, type JSX } from "solid-js";
-import type { AppBootstrap, DiffFile } from "../../core/types";
+import type { AgentAnnotation, AppBootstrap, DiffFile } from "../../core/types";
+import type { VisibleAgentNote } from "../lib/agentAnnotations";
 import { createTestVcsAppBootstrap } from "../../../test/helpers/app-bootstrap";
 import { capturedTestColorToHex } from "../../../test/helpers/test-color-helpers";
 import {
@@ -14,6 +15,7 @@ import { hexColorDistance } from "../lib/color";
 import { resolveTheme } from "../themes";
 import { measureDiffSectionGeometry } from "../diff/diffSectionGeometry";
 import { buildFileSectionLayouts, buildInStreamFileHeaderHeights } from "../lib/fileSectionLayout";
+import { computeHunkRevealScrollTop } from "../lib/hunkScroll";
 
 const { AppHost } = await import("../AppHost");
 const { buildSidebarEntries } = await import("../lib/files");
@@ -278,24 +280,6 @@ async function settleDiffPane(setup: Awaited<ReturnType<typeof testRender>>) {
     previous = frame;
   }
   await setup.renderOnce();
-}
-
-/**
- * Settle a DiffPane whose final frame depends on a deferred hunk-reveal scroll.
- *
- * The reveal effect schedules `scrollSelectionIntoView` on `setTimeout(0/16/48)` timers, so the
- * scroll only lands after real time elapses and the selected section has mounted. A plain
- * `settleDiffPane` can stop on a stable-but-un-revealed frame under a busy event loop (full-file
- * runs). This settles, yields enough real time for those timers to fire, then settles again so the
- * assertion sees the post-reveal state. Use only for tests that depend on the reveal scroll.
- */
-async function settleDiffPaneReveal(setup: Awaited<ReturnType<typeof testRender>>) {
-  // The reveal scroll lands on deferred timers (`setTimeout(0/16/48)` in DiffPane) after the
-  // selected section mounts. Settle, yield real time so those timers fire, then settle again so the
-  // assertion observes the post-reveal frame instead of a momentarily-stable un-revealed one.
-  await settleDiffPane(setup);
-  await Bun.sleep(120);
-  await settleDiffPane(setup);
 }
 
 async function waitForFrame(
@@ -980,8 +964,7 @@ describe("UI components", () => {
     }
   });
 
-  // SKIP(solid-migration): DiffPane render-integration geometry assertion; flaky under the shared-process OpenTUI yoga-layout singleton. The geometry LOGIC is covered renderer-free by diffSectionGeometry/fileSectionLayout/plannedReviewRows/rowWindowing/reviewRenderPlan tests.
-  test.skip("DiffPane scrolls a later selected file into view in the windowed path", async () => {
+  test("DiffPane scrolls a later selected file into view in the windowed path", async () => {
     const files = createWindowingFiles(6);
     const theme = resolveTheme("midnight", null);
     const props = createDiffPaneProps(files, theme, {
@@ -1011,8 +994,7 @@ describe("UI components", () => {
     }
   });
 
-  // SKIP(solid-migration): DiffPane render-integration geometry assertion; flaky under the shared-process OpenTUI yoga-layout singleton. The geometry LOGIC is covered renderer-free by diffSectionGeometry/fileSectionLayout/plannedReviewRows/rowWindowing/reviewRenderPlan tests.
-  test.skip("DiffPane scrolls to the selected later hunk when hunk headers are hidden", async () => {
+  test("DiffPane scrolls to the selected later hunk when hunk headers are hidden", async () => {
     const theme = resolveTheme("midnight", null);
     const files = [
       createTestDiffFile(
@@ -1052,8 +1034,7 @@ describe("UI components", () => {
     }
   });
 
-  // SKIP(solid-migration): DiffPane render-integration geometry assertion; flaky under the shared-process OpenTUI yoga-layout singleton. The geometry LOGIC is covered renderer-free by diffSectionGeometry/fileSectionLayout/plannedReviewRows/rowWindowing/reviewRenderPlan tests.
-  test.skip("DiffPane viewport-follow selection does not move the scroll position", async () => {
+  test("DiffPane viewport-follow selection does not move the scroll position", async () => {
     const theme = resolveTheme("midnight", null);
     const files = [
       createTestDiffFile(
@@ -1124,8 +1105,7 @@ describe("UI components", () => {
     }
   });
 
-  // SKIP(solid-migration): DiffPane render-integration geometry assertion; flaky under the shared-process OpenTUI yoga-layout singleton. The geometry LOGIC is covered renderer-free by diffSectionGeometry/fileSectionLayout/plannedReviewRows/rowWindowing/reviewRenderPlan tests.
-  test.skip("DiffPane keeps the sticky-header lane stable through the divider and next-header handoff", async () => {
+  test("DiffPane keeps the sticky-header lane stable through the divider and next-header handoff", async () => {
     const theme = resolveTheme("midnight", null);
     const firstFile = createTallDiffFile("first", "first.ts", 18);
     const secondFile = createTallDiffFile("second", "second.ts", 18);
@@ -1225,8 +1205,7 @@ describe("UI components", () => {
     }
   });
 
-  // SKIP(solid-migration): DiffPane render-integration geometry assertion; flaky under the shared-process OpenTUI yoga-layout singleton. The geometry LOGIC is covered renderer-free by diffSectionGeometry/fileSectionLayout/plannedReviewRows/rowWindowing/reviewRenderPlan tests.
-  test.skip("DiffPane positions later files after expanded context rows", async () => {
+  test("DiffPane positions later files after expanded context rows", async () => {
     const theme = resolveTheme("midnight", null);
     const beforeLines = Array.from({ length: 30 }, (_, index) => `first line ${index + 1}`);
     const afterLines = [...beforeLines];
@@ -1386,8 +1365,7 @@ describe("UI components", () => {
     }
   });
 
-  // SKIP(solid-migration): DiffPane render-integration geometry assertion; flaky under the shared-process OpenTUI yoga-layout singleton. The geometry LOGIC is covered renderer-free by diffSectionGeometry/fileSectionLayout/plannedReviewRows/rowWindowing/reviewRenderPlan tests.
-  test.skip("DiffPane keeps bottom scroll stable when offscreen agent notes are windowed out", async () => {
+  test("DiffPane keeps bottom scroll stable when offscreen agent notes are windowed out", async () => {
     const theme = resolveTheme("midnight", null);
     const firstFile = createTallDiffFile("first", "first.ts", 18);
     firstFile.agent = {
@@ -1504,150 +1482,157 @@ describe("UI components", () => {
     }
   });
 
-  // SKIP(solid-migration): passes in isolation; fails only under the shared-process OpenTUI yoga singleton (geometry accumulation). Behavior is sound; convert to a renderer-free reveal-geometry test (computeHunkRevealScrollTop) to restore coverage.
-  test.skip("DiffPane keeps a viewport-sized selected hunk fully visible when it fits", async () => {
-    const theme = resolveTheme("midnight", null);
-    const props = createDiffPaneProps(
-      [createViewportSizedBottomHunkDiffFile("target", "target.ts")],
-      theme,
-      {
-        diffContentWidth: 96,
-        headerLabelWidth: 48,
-        selectedFileId: () => "target",
-        selectedHunkIndex: () => 1,
-        separatorWidth: 92,
-        showHunkHeaders: false,
-        width: 100,
-      },
-    );
-    const setup = await testRender(() => <DiffPane {...props} />, {
-      width: 104,
-      height: 12,
-    });
-
-    try {
-      await settleDiffPaneReveal(setup);
-      const frame = setup.captureCharFrame();
-
-      expect(frame).toContain("export const line11 = 11;");
-      expect(frame).toContain("14 - export const line14 = 14;");
-      expect(frame).toContain("14 + export const line14 = 1400;");
-      expect(frame).toContain("16 - export const line16 = 16;");
-      expect(frame).toContain("16 + export const line16 = 1600;");
-      expect(frame).not.toContain("2 - export const line2 = 2;");
-      expect(frame).not.toContain("2 + export const line2 = 200;");
-    } finally {
-      setup.renderer.destroy();
-    }
-  });
-
-  // SKIP(solid-migration): passes in isolation; fails only under the shared-process OpenTUI yoga singleton (geometry accumulation). Behavior is sound; convert to a renderer-free reveal-geometry test (computeHunkRevealScrollTop) to restore coverage.
-  test.skip("DiffPane keeps a selected wrapped hunk fully visible when it fits", async () => {
-    const theme = resolveTheme("midnight", null);
-    const props = createDiffPaneProps(
-      [createWrappedViewportSizedBottomHunkDiffFile("target", "target.ts")],
-      theme,
-      {
-        diffContentWidth: 76,
-        headerLabelWidth: 40,
-        selectedFileId: () => "target",
-        selectedHunkIndex: () => 1,
-        separatorWidth: 72,
-        showHunkHeaders: false,
-        width: 80,
-        wrapLines: true,
-      },
-    );
-    const setup = await testRender(() => <DiffPane {...props} />, {
-      width: 84,
-      height: 16,
-    });
-
-    try {
-      await settleDiffPaneReveal(setup);
-      const frame = setup.captureCharFrame();
-
-      expect(frame).toContain("11   export const line11 = 11;");
-      expect(frame).toContain("14 + export const line14 = 'this is a");
-      expect(frame).toContain("15 + export const line15 = 'this is a");
-      expect(frame).toContain("18   export const line18 = 18;");
-      expect(frame).not.toContain("2 - export const line2 = 2;");
-      expect(frame).not.toContain("2 + export const line2 = 200;");
-    } finally {
-      setup.renderer.destroy();
-    }
-  });
-
-  // SKIP(solid-migration): DiffPane render-integration geometry assertion; flaky under the shared-process OpenTUI yoga-layout singleton. The geometry LOGIC is covered renderer-free by diffSectionGeometry/fileSectionLayout/plannedReviewRows/rowWindowing/reviewRenderPlan tests.
-  test.skip("DiffPane keeps a distant selected hunk visible when row windowing narrows one file body", async () => {
-    const theme = resolveTheme("midnight", null);
-    const props = createDiffPaneProps([createWideTwoHunkDiffFile("target", "target.ts")], theme, {
-      diffContentWidth: 96,
-      headerLabelWidth: 48,
-      selectedFileId: () => "target",
-      selectedHunkIndex: () => 1,
-      separatorWidth: 92,
-      width: 100,
-    });
-    const setup = await testRender(() => <DiffPane {...props} />, {
-      width: 104,
-      height: 12,
-    });
-
-    try {
-      await settleDiffPane(setup);
-      const frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("line60 = 5901"));
-
-      expect(frame).toContain("line60 = 5901");
-      expect(frame).not.toContain("line1 = 1001");
-    } finally {
-      setup.renderer.destroy();
-    }
-  });
-
-  // SKIP(solid-migration): DiffPane render-integration geometry assertion; flaky under the shared-process OpenTUI yoga-layout singleton. The geometry LOGIC is covered renderer-free by diffSectionGeometry/fileSectionLayout/plannedReviewRows/rowWindowing/reviewRenderPlan tests.
-  test.skip("DiffPane keeps a selected hunk with inline notes fully visible when it fits", async () => {
+  // Renderer-free: the full-app render-integration version of this assertion is fundamentally flaky
+  // under the shared-process OpenTUI yoga-layout singleton (geometry accumulates across tests, so
+  // which adjacent reveal test fails flips run to run). The user-visible behavior — "a hunk that
+  // fits is revealed fully, not clipped or left pinned at the file top" — lives in the reveal-scroll
+  // math over the measured section geometry, which is pure and immune to the singleton. The windowed
+  // render path is still covered by the sibling DiffPane render tests above and by PTY integration.
+  test("reveal scroll keeps a viewport-sized selected hunk fully visible when it fits", () => {
     const theme = resolveTheme("midnight", null);
     const file = createViewportSizedBottomHunkDiffFile("target", "target.ts");
-    file.agent = {
-      path: file.path,
-      summary: "target note",
-      annotations: [
-        {
-          newRange: [14, 16],
-          summary: "Keep the selected hunk visible with its note.",
-        },
-      ],
-    };
-    const props = createDiffPaneProps([file], theme, {
-      diffContentWidth: 96,
-      headerLabelWidth: 48,
-      selectedFileId: () => "target",
-      selectedHunkIndex: () => 1,
-      separatorWidth: 92,
-      showAgentNotes: () => true,
-      showHunkHeaders: false,
-      width: 100,
-    });
-    const setup = await testRender(() => <DiffPane {...props} />, {
-      width: 104,
-      height: 20,
+    const geometry = measureDiffSectionGeometry(file, "split", false, theme, [], 96, true, false);
+    const bounds = geometry.hunkBounds.get(1);
+    expect(bounds).toBeDefined();
+
+    // A viewport the hunk fits inside, but smaller than the whole file body, so revealing it
+    // requires scrolling down past the first hunk.
+    const viewportHeight = bounds!.height + 2;
+    expect(viewportHeight).toBeLessThan(geometry.bodyHeight);
+
+    const preferredTopPadding = Math.max(2, Math.floor(viewportHeight * 0.25));
+    const scrollTop = computeHunkRevealScrollTop({
+      hunkTop: bounds!.top,
+      hunkHeight: bounds!.height,
+      preferredTopPadding,
+      viewportHeight,
     });
 
-    try {
-      await settleDiffPane(setup);
-      const frame = setup.captureCharFrame();
+    // The reveal scrolls down to the hunk (does not stay pinned at the file top)...
+    expect(scrollTop).toBeGreaterThan(0);
+    // ...and keeps the entire hunk within the viewport.
+    expect(scrollTop).toBeLessThanOrEqual(bounds!.top);
+    expect(scrollTop + viewportHeight).toBeGreaterThanOrEqual(bounds!.top + bounds!.height);
+  });
 
-      expect(frame).toContain("Keep the selected hunk visible with its");
-      expect(frame).toContain("note.");
-      expect(frame).toContain("11   export const line11 = 11;");
-      expect(frame).toContain("16 + export const line16 = 1600;");
-      expect(frame).toContain("export const line19 = 19;");
-      expect(frame).not.toContain("2 - export const line2 = 2;");
-      expect(frame).not.toContain("2 + export const line2 = 200;");
-    } finally {
-      setup.renderer.destroy();
-    }
+  // Renderer-free, same rationale as the viewport-sized case above. This one additionally guards the
+  // wrapped-height path: the long replacement lines wrap to several visual rows, so the measured hunk
+  // is taller than its raw line count, and the reveal must account for that to keep the whole hunk on
+  // screen. (The full-app wrapped render is also un-capturable here: wrap mode disables row windowing
+  // so every row mounts, and the test harness's frame capture does not apply scrollbox scroll
+  // translation — only windowing-based scroll shows up in the captured frame.)
+  test("reveal scroll keeps a selected wrapped hunk fully visible when it fits", () => {
+    const theme = resolveTheme("midnight", null);
+    const file = createWrappedViewportSizedBottomHunkDiffFile("target", "target.ts");
+    const wrapped = measureDiffSectionGeometry(file, "split", false, theme, [], 76, true, true);
+    const unwrapped = measureDiffSectionGeometry(file, "split", false, theme, [], 76, true, false);
+    const wrappedBounds = wrapped.hunkBounds.get(1);
+    const unwrappedBounds = unwrapped.hunkBounds.get(1);
+    expect(wrappedBounds).toBeDefined();
+    expect(unwrappedBounds).toBeDefined();
+
+    // Wrapping the long replacement lines makes the selected hunk taller than its unwrapped form.
+    expect(wrappedBounds!.height).toBeGreaterThan(unwrappedBounds!.height);
+
+    const viewportHeight = wrappedBounds!.height + 2;
+    expect(viewportHeight).toBeLessThan(wrapped.bodyHeight);
+
+    const preferredTopPadding = Math.max(2, Math.floor(viewportHeight * 0.25));
+    const scrollTop = computeHunkRevealScrollTop({
+      hunkTop: wrappedBounds!.top,
+      hunkHeight: wrappedBounds!.height,
+      preferredTopPadding,
+      viewportHeight,
+    });
+
+    expect(scrollTop).toBeGreaterThan(0);
+    expect(scrollTop).toBeLessThanOrEqual(wrappedBounds!.top);
+    expect(scrollTop + viewportHeight).toBeGreaterThanOrEqual(
+      wrappedBounds!.top + wrappedBounds!.height,
+    );
+  });
+
+  // Renderer-free, same rationale as the other reveal-fit tests: the distant second hunk sits far
+  // down a tall file, so the reveal must scroll to it. The reveal-scroll math over the measured
+  // geometry is the user-visible behavior and is immune to the yoga-layout singleton.
+  test("reveal scroll keeps a distant selected hunk visible", () => {
+    const theme = resolveTheme("midnight", null);
+    const file = createWideTwoHunkDiffFile("target", "target.ts");
+    const geometry = measureDiffSectionGeometry(file, "split", true, theme, [], 96, true, false);
+    const bounds = geometry.hunkBounds.get(1);
+    expect(bounds).toBeDefined();
+
+    const viewportHeight = bounds!.height + 2;
+    expect(viewportHeight).toBeLessThan(geometry.bodyHeight);
+
+    const preferredTopPadding = Math.max(2, Math.floor(viewportHeight * 0.25));
+    const scrollTop = computeHunkRevealScrollTop({
+      hunkTop: bounds!.top,
+      hunkHeight: bounds!.height,
+      preferredTopPadding,
+      viewportHeight,
+    });
+
+    // Reveals the distant hunk (well past the first hunk at the file top)...
+    expect(scrollTop).toBeGreaterThan(0);
+    // ...while keeping the whole hunk on screen.
+    expect(scrollTop).toBeLessThanOrEqual(bounds!.top);
+    expect(scrollTop + viewportHeight).toBeGreaterThanOrEqual(bounds!.top + bounds!.height);
+  });
+
+  // Renderer-free, same rationale as the other reveal-fit tests. The inline note is anchored inside
+  // the selected hunk, so it grows the hunk's measured height; the reveal must account for that taller
+  // region and still keep the whole hunk (note included) on screen.
+  test("reveal scroll keeps a selected hunk with inline notes fully visible when it fits", () => {
+    const theme = resolveTheme("midnight", null);
+    const file = createViewportSizedBottomHunkDiffFile("target", "target.ts");
+    const annotation = {
+      newRange: [14, 16],
+      summary: "Keep the selected hunk visible with its note.",
+    } as AgentAnnotation;
+    file.agent = { path: file.path, summary: "target note", annotations: [annotation] };
+    const visibleNotes: VisibleAgentNote[] = [{ id: "target-note", annotation }];
+
+    const withNote = measureDiffSectionGeometry(
+      file,
+      "split",
+      false,
+      theme,
+      visibleNotes,
+      96,
+      true,
+      false,
+    );
+    const withoutNote = measureDiffSectionGeometry(
+      file,
+      "split",
+      false,
+      theme,
+      [],
+      96,
+      true,
+      false,
+    );
+    const bounds = withNote.hunkBounds.get(1);
+    expect(bounds).toBeDefined();
+
+    // The anchored note grows the hunk region it sits in.
+    expect(bounds!.height).toBeGreaterThan(withoutNote.hunkBounds.get(1)!.height);
+
+    const viewportHeight = bounds!.height + 2;
+    expect(viewportHeight).toBeLessThan(withNote.bodyHeight);
+
+    const preferredTopPadding = Math.max(2, Math.floor(viewportHeight * 0.25));
+    const scrollTop = computeHunkRevealScrollTop({
+      hunkTop: bounds!.top,
+      hunkHeight: bounds!.height,
+      preferredTopPadding,
+      viewportHeight,
+    });
+
+    expect(scrollTop).toBeGreaterThan(0);
+    expect(scrollTop).toBeLessThanOrEqual(bounds!.top);
+    expect(scrollTop + viewportHeight).toBeGreaterThanOrEqual(bounds!.top + bounds!.height);
   });
 
   test("DiffPane scrollToNote positions the inline note near the viewport top instead of the hunk top", async () => {
