@@ -149,6 +149,51 @@ describe("responsive app", () => {
     }
   });
 
+  test("sidebar opens to the left of the diff, even after toggling", async () => {
+    const setup = await testRender(() => <AppHost bootstrap={createBootstrap("auto")} />, {
+      width: 180,
+      height: 24,
+    });
+
+    // The sidebar lives left of the pane divider (│); the diff gutter (▌) lives right of it.
+    // Assert that ordering directly so a regression that moves the sidebar to the wrong side
+    // fails here instead of merely changing how many times a filename appears.
+    const expectSidebarLeftOfDiff = (frame: string) => {
+      const row = frame.split("\n").find((line) => line.includes("│") && line.includes("▌"));
+      expect(row, "expected a row with both the pane divider and a diff gutter").toBeDefined();
+      expect(row!.indexOf("│")).toBeLessThan(row!.indexOf("▌"));
+    };
+
+    // The dropdown/sidebar reveal spans a few reactive cycles, so settle after each keystroke.
+    const settle = async () => {
+      for (let attempt = 0; attempt < 6; attempt += 1) {
+        await setup.renderOnce();
+        await Bun.sleep(20);
+      }
+    };
+
+    try {
+      await setup.renderOnce();
+
+      // Force the hidden sidebar open (medium viewport hides it by default). This is the
+      // <Show> false→true transition that previously mis-anchored the sidebar to the right of
+      // the diff because @opentui/solid appended the revealed nodes after the static diff pane.
+      await setup.mockInput.typeText("s");
+      await settle();
+      expect((setup.captureCharFrame().match(/alpha\.ts/g) ?? []).length).toBe(2);
+      expectSidebarLeftOfDiff(setup.captureCharFrame());
+
+      // Hide and reopen: re-revealing the sidebar is the strongest form of the regression.
+      await setup.mockInput.typeText("s");
+      await settle();
+      await setup.mockInput.typeText("s");
+      await settle();
+      expectSidebarLeftOfDiff(setup.captureCharFrame());
+    } finally {
+      setup.renderer.destroy();
+    }
+  });
+
   test("explicit split and stack modes override responsive auto switching", async () => {
     const forcedSplit = await captureFrameForBootstrap(createBootstrap("split"), 140);
     const forcedStack = await captureFrameForBootstrap(createBootstrap("stack"), 240);

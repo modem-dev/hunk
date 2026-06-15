@@ -799,32 +799,45 @@ export function App(props: {
           cancelCopySelectionRef.current?.();
         }}
       >
-        <Show when={renderSidebar()}>
-          <SidebarPane
-            entries={review.sidebarEntries()}
-            scrollRef={sidebarScrollRef}
-            selectedFileId={selectedFile()?.id}
-            textWidth={sidebarTextWidth()}
-            theme={activeTheme()}
-            width={clampedSidebarWidth()}
-            estimatedViewportRows={terminal().height}
-            onSelectFile={(fileId) => {
-              focusFiles();
-              jumpToFile(fileId, 0, { alignFileHeaderTop: true });
-            }}
-          />
+        {/*
+          Always-mounted sidebar region. This wrapper keeps the body row's direct
+          children in a stable order ([sidebar region, diff pane]) so the diff pane
+          is never displaced. @opentui/solid mis-anchors a multi-child <Show> placed
+          directly before a static sibling: when the Show flips false→true it appends
+          the revealed nodes to the end of the parent instead of at the Show's marker,
+          which would move the sidebar to the *right* of the diff after a toggle.
+          Toggling inside this stable wrapper sidesteps that re-insertion bug. The
+          wrapper has no width of its own; it shrinks to its children (and to zero
+          width when the sidebar is hidden), so the existing width math is unchanged.
+        */}
+        <box style={{ flexDirection: "row", flexShrink: 0 }}>
+          <Show when={renderSidebar()}>
+            <SidebarPane
+              entries={review.sidebarEntries()}
+              scrollRef={sidebarScrollRef}
+              selectedFileId={selectedFile()?.id}
+              textWidth={sidebarTextWidth()}
+              theme={activeTheme()}
+              width={clampedSidebarWidth()}
+              estimatedViewportRows={terminal().height}
+              onSelectFile={(fileId) => {
+                focusFiles();
+                jumpToFile(fileId, 0, { alignFileHeaderTop: true });
+              }}
+            />
 
-          <PaneDivider
-            dividerHitLeft={dividerHitLeft()}
-            dividerHitWidth={DIVIDER_HIT_WIDTH}
-            isResizing={isResizingSidebar()}
-            theme={activeTheme()}
-            onMouseDown={beginSidebarResize}
-            onMouseDrag={updateSidebarResize}
-            onMouseDragEnd={endSidebarResize}
-            onMouseUp={endSidebarResize}
-          />
-        </Show>
+            <PaneDivider
+              dividerHitLeft={dividerHitLeft()}
+              dividerHitWidth={DIVIDER_HIT_WIDTH}
+              isResizing={isResizingSidebar()}
+              theme={activeTheme()}
+              onMouseDown={beginSidebarResize}
+              onMouseDrag={updateSidebarResize}
+              onMouseDragEnd={endSidebarResize}
+              onMouseUp={endSidebarResize}
+            />
+          </Show>
+        </box>
 
         <DiffPane
           cancelCopySelectionRef={cancelCopySelectionRef}
