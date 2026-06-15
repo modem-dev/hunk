@@ -1055,7 +1055,7 @@ export function DiffPane(props: DiffPaneProps) {
 
   // Kick off highlight work from viewport planning rather than waiting for the section to mount.
   // That avoids the "plain rows first, color later" stutter when a file is about to scroll onscreen.
-  createEffect(() => {
+  createRenderEffect(() => {
     const currentFiles = files();
     if (currentFiles.length === 0) {
       return;
