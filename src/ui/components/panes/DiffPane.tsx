@@ -1184,6 +1184,7 @@ export function DiffPane({
       windowingEnabled
         ? buildFileRenderWindow({
             fileSectionLayouts,
+            includeFileIds: adjacentPrefetchFileIds,
             indexByFileId: fileSectionIndexById,
             overscanFiles: 1,
             scrollTop: scrollViewport.top,
@@ -1192,6 +1193,7 @@ export function DiffPane({
           })
         : null,
     [
+      adjacentPrefetchFileIds,
       fileSectionIndexById,
       fileSectionLayouts,
       scrollViewport.height,

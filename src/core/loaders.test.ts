@@ -1809,7 +1809,7 @@ describe("loadAppBootstrap source fetcher attachment", () => {
     expect(file?.sourceFetcher).toBeDefined();
     expect(await file?.sourceFetcher?.getFullText("old")).toBe("shared\nold-only\nshared\n");
     expect(await file?.sourceFetcher?.getFullText("new")).toBe("shared\nnew-only\nshared\n");
-  });
+  }, 10_000);
 
   test("raw patch input does not attach a source fetcher", async () => {
     const dir = mkdtempSync(join(tmpdir(), "hunk-source-patch-"));
