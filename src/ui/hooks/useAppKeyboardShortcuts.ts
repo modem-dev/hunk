@@ -347,6 +347,12 @@ export function useAppKeyboardShortcuts({
     }
 
     if (key.name === "/") {
+      // Consume the key before focusing the filter. OpenTUI dispatches a keypress to global
+      // handlers first and then to focused renderables, stopping only when propagation is halted.
+      // Under Solid the filter input mounts and focuses synchronously inside this dispatch, so
+      // without stopping propagation the same "/" would also be inserted as the filter's first
+      // character. (Under React the input mounted on a later tick, sidestepping this.)
+      consumeKey(key);
       focusFilter();
       return;
     }
