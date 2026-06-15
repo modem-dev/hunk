@@ -358,6 +358,10 @@ export function useAppKeyboardShortcuts({
     }
 
     if (isCreateReviewNoteKey(key)) {
+      // Consume the key before opening the note. Like the filter "/", the draft note's textarea
+      // mounts and focuses synchronously inside this dispatch under Solid, so without stopping
+      // propagation the "c" would also be inserted as the note's first character.
+      consumeKey(key);
       runAndCloseMenu(startUserNote);
       return;
     }

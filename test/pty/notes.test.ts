@@ -74,7 +74,12 @@ describe("PTY notes", () => {
       });
 
       await session.press("c");
-      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      const freshDraft = await session.waitForText(/Draft note/, { timeout: 5_000 });
+      // The "c" that opened the note must not be inserted into the editor. A fresh, empty draft
+      // shows its placeholder; if the opening keystroke leaked in, the editor would hold "c" and
+      // the placeholder would be gone.
+      expect(freshDraft).toContain("Write a note");
+
       await session.type("Please cover this edge case.");
 
       const draftBeforeNewline = await session.waitForText(/Please cover this edge case\./, {
