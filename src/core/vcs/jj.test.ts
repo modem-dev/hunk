@@ -143,3 +143,43 @@ describe("jjAdapter", () => {
     JjAdapterIntegrationTestTimeoutMs,
   );
 });
+
+// These branches run before any `jj` invocation, so they need no external binary.
+describe("jjAdapter without the jj binary", () => {
+  test("detects a .jj workspace marker from a nested directory", () => {
+    const repo = createTempDir("hunk-jj-detect-marker-");
+    mkdirSync(join(repo, ".jj"));
+    const nested = join(repo, "src", "nested");
+    mkdirSync(nested, { recursive: true });
+
+    expect(jjAdapter.detect(nested)).toEqual({ id: "jj", repoRoot: repo });
+  });
+
+  test("returns null when no .jj marker exists up to the filesystem root", () => {
+    expect(jjAdapter.detect(createTempDir("hunk-jj-detect-none-"))).toBeNull();
+  });
+
+  test("rejects staged working-tree diffs before spawning jj", async () => {
+    const stagedInput = {
+      kind: "vcs",
+      staged: true,
+      options: { vcs: "jj" },
+    } satisfies VcsCommandInput;
+    await expect(
+      jjAdapter.loadReview({ kind: "working-tree-diff", input: stagedInput }, { cwd: tmpdir() }),
+    ).rejects.toThrow("Jujutsu has no staging area");
+  });
+
+  test("rejects stash-show in both loadReview and watchSignature", async () => {
+    const stashInput = {
+      kind: "stash-show",
+      options: { vcs: "jj" },
+    } satisfies StashShowCommandInput;
+    await expect(
+      jjAdapter.loadReview({ kind: "stash-show", input: stashInput }, { cwd: tmpdir() }),
+    ).rejects.toThrow("requires Git VCS mode");
+    expect(() =>
+      jjAdapter.watchSignature!({ kind: "stash-show", input: stashInput }, { cwd: tmpdir() }),
+    ).toThrow("requires Git VCS mode");
+  });
+});

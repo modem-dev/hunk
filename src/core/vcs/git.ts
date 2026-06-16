@@ -56,8 +56,8 @@ interface GitNumstatFile {
   deletions: number;
 }
 
-/** Parse `git diff --numstat -z` output for normal path entries. */
-function parseGitNumstat(text: string): GitNumstatFile[] {
+/** Parse `git diff --numstat -z` output for normal path entries. Exported for unit testing. */
+export function parseGitNumstat(text: string): GitNumstatFile[] {
   return text
     .split("\0")
     .filter(Boolean)
@@ -77,8 +77,8 @@ function parseGitNumstat(text: string): GitNumstatFile[] {
     });
 }
 
-/** Return whether tracked diff stats are too large to render by default. */
-function shouldSkipLargeTrackedDiff(file: GitNumstatFile, repoRoot: string) {
+/** Return whether tracked diff stats are too large to render by default. Exported for unit testing. */
+export function shouldSkipLargeTrackedDiff(file: GitNumstatFile, repoRoot: string) {
   if (file.additions + file.deletions > LARGE_DIFF_FILE_MAX_LINES) {
     return true;
   }
@@ -127,8 +127,8 @@ function createSourceFetcherBuilder(
   };
 }
 
-/** Convert one Git diff endpoint into the corresponding source lookup. */
-function gitEndpointSourceSpec(
+/** Convert one Git diff endpoint into the corresponding source lookup. Exported for unit testing. */
+export function gitEndpointSourceSpec(
   endpoint: GitDiffEndpoint,
   repoRoot: string,
   filePath: string,
@@ -342,8 +342,8 @@ export const gitAdapter: VcsAdapter = {
   },
 };
 
-/** Format one file stat into a stable signature fragment, or mark the path missing. */
-function statSignature(path: string) {
+/** Format one file stat into a stable signature fragment, or mark the path missing. Exported for unit testing. */
+export function statSignature(path: string) {
   if (!fs.existsSync(path)) {
     return `${path}:missing`;
   }

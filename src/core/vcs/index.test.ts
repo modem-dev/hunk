@@ -49,6 +49,10 @@ describe("VCS adapter registry", () => {
     expect(isVcsId("hg")).toBe(false);
   });
 
+  test("throws for an unregistered VCS id", () => {
+    expect(() => getVcsAdapter("hg" as VcsAdapter["id"])).toThrow("Unsupported VCS: hg");
+  });
+
   test("finds repo root candidates through adapter detection instead of id-derived markers", () => {
     const repo = createTempDir("hunk-vcs-custom-marker-");
     const nested = join(repo, "src", "nested");
@@ -127,6 +131,19 @@ describe("VCS adapter registry", () => {
 
     expect(createUnsupportedVcsOperationError(adapter, operationFromInput(input)).message).toBe(
       "`hunk stash show` requires Git VCS mode.",
+    );
+  });
+
+  test("names the adapter and operation for non-stash unsupported operations", () => {
+    const adapter = getVcsAdapter("jj");
+    const input = {
+      kind: "vcs",
+      staged: false,
+      options: { vcs: "jj" },
+    } satisfies VcsCommandInput;
+
+    expect(createUnsupportedVcsOperationError(adapter, operationFromInput(input)).message).toBe(
+      "Jujutsu does not support working-tree-diff.",
     );
   });
 });

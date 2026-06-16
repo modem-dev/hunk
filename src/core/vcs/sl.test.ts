@@ -152,3 +152,41 @@ describe("slAdapter", () => {
     SlAdapterIntegrationTestTimeoutMs,
   );
 });
+
+// These branches run before any `sl` invocation, so they need no external binary.
+describe("slAdapter without the sl binary", () => {
+  test("treats a .hg directory with no requires file as non-Sapling", () => {
+    const repo = createTempDir("hunk-sl-hg-no-requires-");
+    mkdirSync(join(repo, ".hg"));
+    // No `.hg/requires` file, so the Sapling check reads a missing file and falls back to false.
+    expect(slAdapter.detect(repo)).toBeNull();
+  });
+
+  test("returns null when no Sapling marker exists up to the filesystem root", () => {
+    expect(slAdapter.detect(createTempDir("hunk-sl-detect-none-"))).toBeNull();
+  });
+
+  test("rejects staged working-tree diffs before spawning sl", async () => {
+    const stagedInput = {
+      kind: "vcs",
+      staged: true,
+      options: { vcs: "sl" },
+    } satisfies VcsCommandInput;
+    await expect(
+      slAdapter.loadReview({ kind: "working-tree-diff", input: stagedInput }, { cwd: tmpdir() }),
+    ).rejects.toThrow("Sapling has no staging area");
+  });
+
+  test("rejects stash-show in both loadReview and watchSignature", async () => {
+    const stashInput = {
+      kind: "stash-show",
+      options: { vcs: "sl" },
+    } satisfies StashShowCommandInput;
+    await expect(
+      slAdapter.loadReview({ kind: "stash-show", input: stashInput }, { cwd: tmpdir() }),
+    ).rejects.toThrow("requires Git VCS mode");
+    expect(() =>
+      slAdapter.watchSignature!({ kind: "stash-show", input: stashInput }, { cwd: tmpdir() }),
+    ).toThrow("requires Git VCS mode");
+  });
+});
