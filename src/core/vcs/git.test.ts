@@ -159,12 +159,13 @@ describe("gitAdapter", () => {
     git(repo, "commit", "-m", "initial");
     writeFileSync(join(repo, "file.txt"), "two\n");
     writeFileSync(join(repo, "untracked.txt"), "fresh\n");
-    git(repo, "stash", "push", "--include-untracked", "-m", "watch stash");
 
     // watchSignature reads process.cwd(), so run it from inside the temp repo.
     const previousCwd = process.cwd();
     process.chdir(repo);
     try {
+      // Measure the working-tree signature while the tree is actually dirty, so the assertion is
+      // meaningful: it must carry the tracked diff and an untracked-file stat signature.
       const diffSignature = gitAdapter.watchSignature!(
         {
           kind: "working-tree-diff",
@@ -172,6 +173,9 @@ describe("gitAdapter", () => {
         },
         { cwd: repo },
       );
+      expect(diffSignature).toContain("diff --git a/file.txt b/file.txt");
+      expect(diffSignature).toContain("untracked:");
+
       const showSignature = gitAdapter.watchSignature!(
         {
           kind: "revision-show",
@@ -179,6 +183,10 @@ describe("gitAdapter", () => {
         },
         { cwd: repo },
       );
+      expect(showSignature).toContain("diff --git");
+
+      // Stash the dirty state so a stash entry exists for the stash-show signature.
+      git(repo, "stash", "push", "--include-untracked", "-m", "watch stash");
       const stashSignature = gitAdapter.watchSignature!(
         {
           kind: "stash-show",
@@ -186,9 +194,6 @@ describe("gitAdapter", () => {
         },
         { cwd: repo },
       );
-
-      expect(diffSignature).toBeString();
-      expect(showSignature).toContain("diff --git");
       expect(stashSignature).toContain("diff --git");
     } finally {
       process.chdir(previousCwd);
@@ -203,6 +208,12 @@ describe("git numstat and source-spec helpers", () => {
       { path: "src/a.ts", additions: 3, deletions: 1 },
       { path: "src/c.ts", additions: 2, deletions: 0 },
     ]);
+  });
+
+  test("parseGitNumstat drops binary-file entries that report '-' counts", () => {
+    // Git emits `-\t-\t<path>` for binary files; the non-numeric counts fail the finite guard.
+    const text = ["-\t-\tsrc/logo.png", "3\t1\tsrc/a.ts"].join("\0");
+    expect(parseGitNumstat(text)).toEqual([{ path: "src/a.ts", additions: 3, deletions: 1 }]);
   });
 
   test("parseGitNumstat returns nothing for empty output", () => {
