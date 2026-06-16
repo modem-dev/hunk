@@ -17,10 +17,10 @@ describe("patchLooksBinary", () => {
     expect(patchLooksBinary("diff --git a/x b/x\nGIT binary patch\nliteral 4\n")).toBe(true);
   });
 
-  test("requires a preceding newline for the GIT binary patch marker", () => {
-    // Documents the current limitation: the marker is matched as `\nGIT binary patch\n`, so a
-    // patch string that opens with the marker (no leading newline) is not detected.
-    expect(patchLooksBinary("GIT binary patch\nliteral 4\n")).toBe(false);
+  test("detects a GIT binary patch marker at the very start of the string", () => {
+    // The marker anchors to start-of-line, so a patch that opens with it (no leading
+    // newline) is still detected — symmetric with the `Binary files ... differ` marker.
+    expect(patchLooksBinary("GIT binary patch\nliteral 4\n")).toBe(true);
   });
 
   test("does not flag ordinary text diffs", () => {
