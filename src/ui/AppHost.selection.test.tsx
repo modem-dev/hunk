@@ -54,7 +54,12 @@ async function flush(setup: Harness) {
 }
 
 /** Poll rendered frames until `predicate` matches, resilient to async repaints. */
-async function waitForFrame(setup: Harness, predicate: (frame: string) => boolean, attempts = 10) {
+async function waitForFrame(
+  setup: Harness,
+  predicate: (frame: string) => boolean,
+  description = "frame predicate",
+  attempts = 10,
+) {
   let frame = setup.captureCharFrame();
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     if (predicate(frame)) {
@@ -66,6 +71,9 @@ async function waitForFrame(setup: Harness, predicate: (frame: string) => boolea
     });
     frame = setup.captureCharFrame();
   }
+  // Surface the timeout so a follow-up assertion failure points at the unmet condition
+  // rather than a generic "string does not contain" message during flake investigations.
+  console.warn(`waitForFrame: "${description}" never matched after ${attempts} attempts`);
   return frame;
 }
 
@@ -105,7 +113,16 @@ async function renderSelectionApp(
     return true;
   };
 
-  await flush(setup);
+  // Destroy the renderer if the initial settle throws, since the caller's try/finally only
+  // takes over once this helper has returned the harness.
+  try {
+    await flush(setup);
+  } catch (error) {
+    await act(async () => {
+      setup.renderer.destroy();
+    });
+    throw error;
+  }
   return { setup, copied };
 }
 
@@ -128,8 +145,10 @@ describe("DiffPane copy selection", () => {
       // The drag moved across rows, so release copies the rendered text and shows feedback.
       expect(copied.length).toBeGreaterThan(0);
       expect(copied.join("\n")).toContain("item");
-      const noticeFrame = await waitForFrame(setup, (text) =>
-        text.includes("Copied selection to clipboard"),
+      const noticeFrame = await waitForFrame(
+        setup,
+        (text) => text.includes("Copied selection to clipboard"),
+        "copied-selection notice",
       );
       expect(noticeFrame).toContain("Copied selection to clipboard");
     } finally {
@@ -281,7 +300,11 @@ describe("DiffPane copy selection", () => {
 
       // The drag still resolves a selection, but the unsupported terminal falls back to a notice.
       expect(copied.length).toBe(0);
-      const noticeFrame = await waitForFrame(setup, (text) => text.includes("Clipboard copy"));
+      const noticeFrame = await waitForFrame(
+        setup,
+        (text) => text.includes("Clipboard copy"),
+        "clipboard-unsupported notice",
+      );
       expect(noticeFrame).toContain("Clipboard copy");
     } finally {
       await act(async () => {
