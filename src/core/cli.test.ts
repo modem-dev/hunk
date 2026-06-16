@@ -13,6 +13,24 @@ function createTempDir(prefix: string) {
   return dir;
 }
 
+/** Run `fn` with Bun.stdin.stream replaced by a one-shot reader of `text`. */
+async function withStdin<T>(text: string, fn: () => Promise<T>): Promise<T> {
+  const originalStdin = Bun.stdin.stream;
+  Bun.stdin.stream = () =>
+    new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(text));
+        controller.close();
+      },
+    });
+
+  try {
+    return await fn();
+  } finally {
+    Bun.stdin.stream = originalStdin;
+  }
+}
+
 afterEach(() => {
   while (tempDirs.length > 0) {
     const dir = tempDirs.pop();
@@ -931,5 +949,371 @@ describe("parseCli", () => {
     }
 
     expect(parsed.options.pager).toBeUndefined();
+  });
+});
+
+describe("parseCli command help text", () => {
+  /** Parse `tokens` and assert it resolved to help output, returning the text. */
+  async function expectHelp(tokens: string[]) {
+    const parsed = await parseCli(["bun", "hunk", ...tokens]);
+    expect(parsed.kind).toBe("help");
+    if (parsed.kind !== "help") {
+      throw new Error(`Expected help output for: ${tokens.join(" ")}`);
+    }
+    return parsed.text;
+  }
+
+  test("renders per-command help for the primary review commands", async () => {
+    expect(await expectHelp(["diff", "--help"])).toContain("review diffs or compare two concrete");
+    expect(await expectHelp(["show", "-h"])).toContain("review the last commit or a given ref");
+    expect(await expectHelp(["patch", "--help"])).toContain("review a patch file");
+    expect(await expectHelp(["pager", "--help"])).toContain("general Git pager wrapper");
+    expect(await expectHelp(["difftool", "--help"])).toContain("review Git difftool file pairs");
+  });
+
+  test("renders the stash command overview and the stash show command help", async () => {
+    const overview = await expectHelp(["stash"]);
+    expect(overview).toContain("Usage: hunk stash show [ref] [options]");
+    expect(overview).toContain("hunk stash show stash@{1}");
+    expect(overview).toBe(await expectHelp(["stash", "--help"]));
+
+    expect(await expectHelp(["stash", "show", "--help"])).toContain(
+      "review a stash entry as a full Hunk changeset",
+    );
+  });
+
+  test("renders the daemon overview and the daemon serve command help", async () => {
+    const overview = await expectHelp(["daemon"]);
+    expect(overview).toContain("Usage: hunk daemon serve");
+    expect(overview).toContain("HUNK_MCP_PORT");
+    expect(overview).toBe(await expectHelp(["daemon", "--help"]));
+
+    expect(await expectHelp(["daemon", "serve", "--help"])).toContain(
+      "Run the local Hunk session daemon and websocket session broker.",
+    );
+  });
+
+  test("renders the session overview for a bare session command and --help", async () => {
+    const overview = await expectHelp(["session"]);
+    expect(overview).toContain("Usage: hunk session <subcommand> [options]");
+    expect(overview).toContain("hunk session comment add");
+    expect(overview).toBe(await expectHelp(["session", "--help"]));
+  });
+
+  test("renders help for each session subcommand", async () => {
+    expect(await expectHelp(["session", "list", "--help"])).toContain("list live Hunk sessions");
+    expect(await expectHelp(["session", "get", "--help"])).toContain("show one live Hunk session");
+    expect(await expectHelp(["session", "navigate", "--help"])).toContain(
+      "move a live Hunk session to one diff hunk",
+    );
+
+    const reloadHelp = await expectHelp(["session", "reload", "--help"]);
+    expect(reloadHelp).toContain("replace the contents of one live Hunk session");
+    expect(reloadHelp).toContain("hunk session reload --repo . -- diff");
+  });
+
+  test("renders skill help for both `skill --help` and `skill path --help`", async () => {
+    const bare = await expectHelp(["skill", "--help"]);
+    expect(bare).toContain("Usage: hunk skill path");
+    expect(await expectHelp(["skill", "path", "--help"])).toBe(bare);
+  });
+
+  test("renders the comment overview and per-comment-subcommand help", async () => {
+    const overview = await expectHelp(["session", "comment"]);
+    expect(overview).toContain("hunk session comment add");
+    expect(overview).toBe(await expectHelp(["session", "comment", "--help"]));
+
+    expect(await expectHelp(["session", "comment", "add", "--help"])).toContain(
+      "attach one live inline review note",
+    );
+
+    const applyHelp = await expectHelp(["session", "comment", "apply", "--help"]);
+    expect(applyHelp).toContain("apply many live inline review notes from stdin JSON");
+    expect(applyHelp).toContain("Stdin JSON shape:");
+
+    expect(await expectHelp(["session", "comment", "list", "--help"])).toContain(
+      "list live inline review notes",
+    );
+    expect(await expectHelp(["session", "comment", "rm", "--help"])).toContain(
+      "remove one inline review note",
+    );
+    expect(await expectHelp(["session", "comment", "clear", "--help"])).toContain(
+      "clear inline review notes",
+    );
+  });
+});
+
+describe("parseCli argument validation", () => {
+  test("rejects an invalid layout mode and rethrows the parser error", async () => {
+    await expect(parseCli(["bun", "hunk", "diff", "--mode", "bogus"])).rejects.toThrow(
+      "Invalid layout mode: bogus",
+    );
+  });
+
+  test("rethrows commander errors for unknown options", async () => {
+    await expect(parseCli(["bun", "hunk", "diff", "--not-a-real-flag"])).rejects.toThrow(
+      /unknown option/,
+    );
+  });
+
+  test("rejects a non-positive integer navigation target", async () => {
+    await expect(
+      parseCli([
+        "bun",
+        "hunk",
+        "session",
+        "navigate",
+        "session-1",
+        "--file",
+        "README.md",
+        "--hunk",
+        "0",
+      ]),
+    ).rejects.toThrow("Invalid positive integer: 0");
+  });
+
+  test("rejects ambiguous diff input that is neither a single target nor a file pair", async () => {
+    await expect(parseCli(["bun", "hunk", "diff", "--staged", "left", "right"])).rejects.toThrow(
+      "Use `hunk diff [target]",
+    );
+  });
+
+  test("rejects specifying both a session id and --repo for an explicit selector", async () => {
+    await expect(
+      parseCli(["bun", "hunk", "session", "get", "session-1", "--repo", "."]),
+    ).rejects.toThrow("Specify either <session-id> or --repo <path>, not both.");
+  });
+
+  test("rejects unknown top-level, skill, daemon, stash, and comment subcommands", async () => {
+    await expect(parseCli(["bun", "hunk", "skill", "bogus"])).rejects.toThrow(
+      "Only `hunk skill path` is supported.",
+    );
+    await expect(parseCli(["bun", "hunk", "skill", "path", "extra"])).rejects.toThrow(
+      "`hunk skill path` does not accept additional arguments.",
+    );
+    await expect(parseCli(["bun", "hunk", "daemon", "bogus"])).rejects.toThrow(
+      "Only `hunk daemon serve` is supported.",
+    );
+    await expect(parseCli(["bun", "hunk", "stash", "bogus"])).rejects.toThrow(
+      "Only `hunk stash show` is supported.",
+    );
+    await expect(
+      parseCli(["bun", "hunk", "session", "comment", "bogus", "session-1"]),
+    ).rejects.toThrow("Supported comment subcommands are add, apply, list, rm, and clear.");
+  });
+
+  test("rejects a comment-add target that is not exactly one of --old-line or --new-line", async () => {
+    await expect(
+      parseCli([
+        "bun",
+        "hunk",
+        "session",
+        "comment",
+        "add",
+        "session-1",
+        "--file",
+        "README.md",
+        "--summary",
+        "note",
+      ]),
+    ).rejects.toThrow("Specify exactly one comment target: --old-line <n> or --new-line <n>.");
+  });
+
+  test("rejects comment apply without --stdin before reading any input", async () => {
+    await expect(
+      parseCli(["bun", "hunk", "session", "comment", "apply", "session-1"]),
+    ).rejects.toThrow("Pass --stdin to read batch comments from stdin JSON.");
+  });
+
+  test("rejects comment rm with the wrong target count for each selector style", async () => {
+    await expect(
+      parseCli(["bun", "hunk", "session", "comment", "rm", "session-1"]),
+    ).rejects.toThrow(
+      "Specify a session id and comment id, or pass --repo <path> with one comment id.",
+    );
+
+    const repo = createTempDir("hunk-cli-rm-count-");
+    mkdirSync(join(repo, ".git"));
+    await expect(
+      parseCli([
+        "bun",
+        "hunk",
+        "session",
+        "comment",
+        "rm",
+        "--repo",
+        repo,
+        "comment-1",
+        "comment-2",
+      ]),
+    ).rejects.toThrow("Specify exactly one comment id with --repo <path>.");
+  });
+});
+
+describe("parseCli session reload validation", () => {
+  test("rejects a reload with the `--` separator but no nested command", async () => {
+    await expect(parseCli(["bun", "hunk", "session", "reload", "session-1", "--"])).rejects.toThrow(
+      "Pass the replacement Hunk command after `--`",
+    );
+  });
+
+  test("rejects a reload that has no session target at all", async () => {
+    await expect(parseCli(["bun", "hunk", "session", "reload", "--", "diff"])).rejects.toThrow(
+      "Specify one live Hunk session with <session-id> or --repo <path>",
+    );
+  });
+
+  test("rejects conflicting reload selectors", async () => {
+    await expect(
+      parseCli([
+        "bun",
+        "hunk",
+        "session",
+        "reload",
+        "--session-path",
+        "/tmp/live",
+        "--repo",
+        "/tmp/repo",
+        "--",
+        "diff",
+      ]),
+    ).rejects.toThrow(
+      "Specify either --session-path <path> or --repo <path> as the target, not both.",
+    );
+
+    await expect(
+      parseCli([
+        "bun",
+        "hunk",
+        "session",
+        "reload",
+        "session-1",
+        "--session-path",
+        "/tmp/live",
+        "--",
+        "diff",
+      ]),
+    ).rejects.toThrow("Specify either <session-id> or --session-path <path>, not both.");
+
+    await expect(
+      parseCli([
+        "bun",
+        "hunk",
+        "session",
+        "reload",
+        "session-1",
+        "--repo",
+        "/tmp/repo",
+        "--",
+        "diff",
+      ]),
+    ).rejects.toThrow("Specify either <session-id> or --repo <path>, not both.");
+  });
+
+  test("rejects reloading into commands that cannot back a live session", async () => {
+    await expect(
+      parseCli(["bun", "hunk", "session", "reload", "session-1", "--", "pager"]),
+    ).rejects.toThrow("Session reload requires a Hunk review command after --");
+
+    await expect(
+      parseCli(["bun", "hunk", "session", "reload", "session-1", "--", "session", "list"]),
+    ).rejects.toThrow("Session reload cannot invoke another session command.");
+
+    await expect(
+      parseCli(["bun", "hunk", "session", "reload", "session-1", "--", "patch"]),
+    ).rejects.toThrow("Session reload does not support `patch -` or stdin-backed patch input.");
+  });
+});
+
+describe("parseCli session comment apply payload", () => {
+  /** Parse a `comment apply` invocation reading `payload` from stdin. */
+  function applyWithPayload(payload: string) {
+    return withStdin(payload, () =>
+      parseCli(["bun", "hunk", "session", "comment", "apply", "session-1", "--stdin"]),
+    );
+  }
+
+  test("parses a hunk-targeted batch with rationale and author into apply input", async () => {
+    const parsed = await applyWithPayload(
+      JSON.stringify({
+        comments: [
+          { filePath: "a.ts", oldLine: 4, summary: "old side", rationale: "why", author: "Pi" },
+          { filePath: "b.ts", newLine: 9, summary: "new side" },
+        ],
+      }),
+    );
+
+    expect(parsed).toMatchObject({
+      kind: "session",
+      action: "comment-apply",
+      comments: [
+        {
+          filePath: "a.ts",
+          side: "old",
+          line: 4,
+          summary: "old side",
+          rationale: "why",
+          author: "Pi",
+        },
+        { filePath: "b.ts", side: "new", line: 9, summary: "new side" },
+      ],
+      revealMode: "none",
+    });
+  });
+
+  test("rejects an empty stdin payload", async () => {
+    await expect(applyWithPayload("   ")).rejects.toThrow(
+      "Session comment apply expected one JSON object on stdin.",
+    );
+  });
+
+  test("rejects invalid JSON", async () => {
+    await expect(applyWithPayload("{not json")).rejects.toThrow(
+      "Session comment apply expected valid JSON on stdin.",
+    );
+  });
+
+  test("rejects a non-object top-level value", async () => {
+    await expect(applyWithPayload("123")).rejects.toThrow(
+      "Session comment apply expected one JSON object with a comments array.",
+    );
+  });
+
+  test("rejects a payload without a comments array", async () => {
+    await expect(applyWithPayload(JSON.stringify({ notes: [] }))).rejects.toThrow(
+      "Session comment apply expected a top-level `comments` array.",
+    );
+  });
+
+  test("rejects a non-object comment entry", async () => {
+    await expect(applyWithPayload(JSON.stringify({ comments: [42] }))).rejects.toThrow(
+      "Comment 1 must be a JSON object.",
+    );
+  });
+
+  test("rejects a comment missing filePath", async () => {
+    await expect(
+      applyWithPayload(JSON.stringify({ comments: [{ summary: "x" }] })),
+    ).rejects.toThrow("Comment 1 requires a non-empty `filePath`.");
+  });
+
+  test("rejects a comment missing summary", async () => {
+    await expect(
+      applyWithPayload(JSON.stringify({ comments: [{ filePath: "a.ts" }] })),
+    ).rejects.toThrow("Comment 1 requires a non-empty `summary`.");
+  });
+
+  test("rejects a non-positive-integer hunk selector", async () => {
+    await expect(
+      applyWithPayload(JSON.stringify({ comments: [{ filePath: "a.ts", summary: "x", hunk: 0 }] })),
+    ).rejects.toThrow("Comment 1 field `hunk` must be a positive integer.");
+  });
+
+  test("rejects a comment with no line or hunk selector", async () => {
+    await expect(
+      applyWithPayload(JSON.stringify({ comments: [{ filePath: "a.ts", summary: "x" }] })),
+    ).rejects.toThrow(
+      "Comment 1 must specify exactly one of `hunk`, `hunkNumber`, `oldLine`, or `newLine`.",
+    );
   });
 });
