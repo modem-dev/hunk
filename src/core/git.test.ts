@@ -9,7 +9,7 @@ import {
   resolveGitDiffEndpoints,
   runGitText,
 } from "./git";
-import type { VcsCommandInput } from "./types";
+import type { VcsDiffCommandInput } from "./types";
 
 const tempDirs: string[] = [];
 
@@ -39,7 +39,7 @@ function createTempRepo(prefix: string) {
   return dir;
 }
 
-function makeGitInput(overrides: Partial<VcsCommandInput> = {}): VcsCommandInput {
+function makeGitInput(overrides: Partial<VcsDiffCommandInput> = {}): VcsDiffCommandInput {
   return {
     kind: "vcs",
     staged: false,

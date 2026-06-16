@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { createUnsupportedVcsOperationError, getVcsAdapter, operationFromInput } from "./vcs";
+import { createVcsWatchSignature, getConfiguredVcsAdapter, operationFromInput } from "./vcs";
 import type { CliInput } from "./types";
 
 /** Return whether the current input can be rebuilt from files or VCS state without rereading stdin. */
@@ -23,15 +23,9 @@ function statSignature(path: string) {
 
 /** Build one exact patch signature for adapter-backed review inputs. */
 function vcsPatchSignature(input: Extract<CliInput, { kind: "vcs" | "show" | "stash-show" }>) {
-  const adapter = getVcsAdapter(input.options.vcs ?? "git");
-  if (!adapter.watchSignature) {
-    throw new Error(`${adapter.name} does not support watch signatures.`);
-  }
+  const adapter = getConfiguredVcsAdapter(input.options.vcs);
   const operation = operationFromInput(input);
-  if (!adapter.capabilities.reviewOperations.has(operation.kind)) {
-    throw createUnsupportedVcsOperationError(adapter, operation);
-  }
-  return adapter.watchSignature(operation, { cwd: process.cwd() });
+  return createVcsWatchSignature(adapter, operation, { cwd: process.cwd() });
 }
 /** Compute a change-detection signature for one watchable input. */
 export function computeWatchSignature(input: CliInput) {

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import { join } from "node:path";
 import { resolveGlobalConfigPath } from "./paths";
-import { detectVcs, findVcsRepoRootCandidate, isVcsId } from "./vcs";
+import { detectVcs, findVcsRepoRootCandidate, getDefaultVcsAdapter, isVcsId } from "./vcs";
 import type {
   CliInput,
   CommonOptions,
@@ -285,7 +285,7 @@ function resolveConfigLayer(source: Record<string, unknown>, input: CliInput): C
 
 /** Choose the VCS backend that best matches the discovered checkout. */
 function detectRepoVcsMode(cwd: string): VcsMode {
-  return detectVcs(cwd)?.id ?? "git";
+  return detectVcs(cwd)?.id ?? getDefaultVcsAdapter().id;
 }
 
 /** Parse one TOML config file into a plain object. */
@@ -349,7 +349,7 @@ export function resolveConfiguredCliInput(
     pager: input.options.pager ?? false,
     watch: input.options.watch ?? resolvedOptions.watch ?? false,
     excludeUntracked: resolvedOptions.excludeUntracked ?? false,
-    vcs: resolvedOptions.vcs ?? "git",
+    vcs: resolvedOptions.vcs ?? getDefaultVcsAdapter().id,
     mode: resolvedOptions.mode ?? DEFAULT_VIEW_PREFERENCES.mode,
     lineNumbers: resolvedOptions.lineNumbers ?? DEFAULT_VIEW_PREFERENCES.showLineNumbers,
     wrapLines: resolvedOptions.wrapLines ?? DEFAULT_VIEW_PREFERENCES.wrapLines,

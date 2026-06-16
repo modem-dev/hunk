@@ -2,7 +2,7 @@ import type { FileDiffMetadata } from "@pierre/diffs";
 import type { FileSourceFetcher } from "./fileSource";
 
 export type LayoutMode = "auto" | "split" | "stack";
-export type VcsMode = "git" | "jj" | "sl";
+export type VcsMode = string;
 export type TerminalThemeMode = "light" | "dark";
 
 export type ReviewNoteSource = "ai" | "agent" | "user";
@@ -294,7 +294,7 @@ export type SessionCommandInput =
   | SessionCommentRemoveCommandInput
   | SessionCommentClearCommandInput;
 
-export interface VcsCommandInput {
+export interface VcsDiffCommandInput {
   kind: "vcs";
   range?: string;
   staged: boolean;
@@ -302,14 +302,14 @@ export interface VcsCommandInput {
   options: CommonOptions;
 }
 
-export interface ShowCommandInput {
+export interface VcsShowCommandInput {
   kind: "show";
   ref?: string;
   pathspecs?: string[];
   options: CommonOptions;
 }
 
-export interface StashShowCommandInput {
+export interface VcsStashShowCommandInput {
   kind: "stash-show";
   ref?: string;
   options: CommonOptions;
@@ -338,9 +338,9 @@ export interface DiffToolCommandInput {
 }
 
 export type CliInput =
-  | VcsCommandInput
-  | ShowCommandInput
-  | StashShowCommandInput
+  | VcsDiffCommandInput
+  | VcsShowCommandInput
+  | VcsStashShowCommandInput
   | FileCommandInput
   | PatchCommandInput
   | DiffToolCommandInput;

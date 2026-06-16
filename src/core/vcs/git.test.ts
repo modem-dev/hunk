@@ -3,13 +3,13 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import { platform, tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  gitAdapter,
+  GitVcsAdapter,
   gitEndpointSourceSpec,
   parseGitNumstat,
   shouldSkipLargeTrackedDiff,
   statSignature,
 } from "./git";
-import type { ShowCommandInput, StashShowCommandInput, VcsCommandInput } from "../types";
+import type { VcsShowCommandInput, VcsStashShowCommandInput, VcsDiffCommandInput } from "../types";
 
 const tempDirs: string[] = [];
 
@@ -59,13 +59,13 @@ afterEach(() => {
   }
 });
 
-describe("gitAdapter", () => {
+describe("GitVcsAdapter", () => {
   test("detects Git repositories from nested directories", () => {
     const repo = createTempRepo("hunk-git-adapter-detect-");
     const nested = join(repo, "src", "nested");
     mkdirSync(nested, { recursive: true });
 
-    expect(gitAdapter.detect(nested)).toEqual({ id: "git", repoRoot: repo });
+    expect(GitVcsAdapter.detect(nested)).toEqual({ id: "git", repoRoot: repo });
   });
 
   test("loads working-tree diffs with untracked files through the neutral operation", async () => {
@@ -80,14 +80,14 @@ describe("gitAdapter", () => {
       kind: "vcs",
       staged: false,
       options: { vcs: "git" },
-    } satisfies VcsCommandInput;
-    const result = await gitAdapter.loadReview({ kind: "working-tree-diff", input }, { cwd: repo });
+    } satisfies VcsDiffCommandInput;
+    const result = await GitVcsAdapter.operations["working-tree-diff"]!.load(input, { cwd: repo });
 
     expect(normalizeComparablePath(result.repoRoot)).toBe(normalizeComparablePath(repo));
     expect(result.title).toContain("working tree");
     expect(result.patchText).toContain("diff --git a/tracked.txt b/tracked.txt");
     expect(result.patchText).toContain("+new");
-    expect(result.untrackedFiles).toEqual(["untracked.txt"]);
+    expect(result.extraFiles?.map((file) => file.path)).toContain("untracked.txt");
 
     const sourceFetcher = result.sourceFetcherBuilder?.({
       path: "tracked.txt",
@@ -111,11 +111,10 @@ describe("gitAdapter", () => {
       kind: "show",
       ref: "HEAD",
       options: { vcs: "git" },
-    } satisfies ShowCommandInput;
-    const showResult = await gitAdapter.loadReview(
-      { kind: "revision-show", input: showInput },
-      { cwd: repo },
-    );
+    } satisfies VcsShowCommandInput;
+    const showResult = await GitVcsAdapter.operations["revision-show"]!.load(showInput, {
+      cwd: repo,
+    });
 
     expect(showResult.title).toContain("show HEAD");
     expect(showResult.patchText).toContain("diff --git a/file.txt b/file.txt");
@@ -136,11 +135,10 @@ describe("gitAdapter", () => {
     const stashInput = {
       kind: "stash-show",
       options: { vcs: "git" },
-    } satisfies StashShowCommandInput;
-    const stashResult = await gitAdapter.loadReview(
-      { kind: "stash-show", input: stashInput },
-      { cwd: repo },
-    );
+    } satisfies VcsStashShowCommandInput;
+    const stashResult = await GitVcsAdapter.operations["stash-show"]!.load(stashInput, {
+      cwd: repo,
+    });
 
     expect(stashResult.title).toContain("stash");
     expect(stashResult.patchText).toContain("diff --git a/file.txt b/file.txt");
@@ -149,7 +147,7 @@ describe("gitAdapter", () => {
 
   test("returns null when no Git marker exists up to the filesystem root", () => {
     // A bare temp dir has no .git in any ancestor, exercising the walk-to-root null return.
-    expect(gitAdapter.detect(createTempDir("hunk-git-adapter-none-"))).toBeNull();
+    expect(GitVcsAdapter.detect(createTempDir("hunk-git-adapter-none-"))).toBeNull();
   });
 
   test("computes watch signatures for each review operation", () => {
@@ -166,32 +164,23 @@ describe("gitAdapter", () => {
     try {
       // Measure the working-tree signature while the tree is actually dirty, so the assertion is
       // meaningful: it must carry the tracked diff and an untracked-file stat signature.
-      const diffSignature = gitAdapter.watchSignature!(
-        {
-          kind: "working-tree-diff",
-          input: { kind: "vcs", staged: false, options: { vcs: "git" } },
-        },
+      const diffSignature = GitVcsAdapter.operations["working-tree-diff"]!.watchSignature!(
+        { kind: "vcs", staged: false, options: { vcs: "git" } },
         { cwd: repo },
       );
       expect(diffSignature).toContain("diff --git a/file.txt b/file.txt");
       expect(diffSignature).toContain("untracked:");
 
-      const showSignature = gitAdapter.watchSignature!(
-        {
-          kind: "revision-show",
-          input: { kind: "show", ref: "HEAD", options: { vcs: "git" } },
-        },
+      const showSignature = GitVcsAdapter.operations["revision-show"]!.watchSignature!(
+        { kind: "show", ref: "HEAD", options: { vcs: "git" } },
         { cwd: repo },
       );
       expect(showSignature).toContain("diff --git");
 
       // Stash the dirty state so a stash entry exists for the stash-show signature.
       git(repo, "stash", "push", "--include-untracked", "-m", "watch stash");
-      const stashSignature = gitAdapter.watchSignature!(
-        {
-          kind: "stash-show",
-          input: { kind: "stash-show", options: { vcs: "git" } },
-        },
+      const stashSignature = GitVcsAdapter.operations["stash-show"]!.watchSignature!(
+        { kind: "stash-show", options: { vcs: "git" } },
         { cwd: repo },
       );
       expect(stashSignature).toContain("diff --git");

@@ -6,26 +6,34 @@ import {
   buildGitShowArgs,
   buildGitStashShowArgs,
   listGitUntrackedFiles,
+  normalizeUntrackedPatchHeaders,
   resolveGitColorMovedOptions,
   resolveGitCommitRef,
   resolveGitDiffEndpoints,
   resolveGitRepoRoot,
   runGitText,
+  runGitUntrackedFileDiffText,
   type GitDiffEndpoint,
   type GitDiffEndpoints,
 } from "../git";
 import {
+  buildDiffFile,
   createSkippedLargeMetadata,
   type BuildDiffFileOptions,
   type DiffFileSourceContext,
 } from "../diffFile";
 import {
-  createFileSourceFetcher,
-  type FileSourceFetcherOptions,
-  type FileSourceSpec,
-} from "../fileSource";
-import type { DiffFile } from "../types";
+  createGitFileSourceFetcher,
+  type GitFileSourceFetcherOptions,
+  type GitFileSourceSpec,
+} from "./gitSource";
+import type { DiffFile, VcsDiffCommandInput } from "../types";
 import type { VcsAdapter, VcsReviewOperation } from "./types";
+import {
+  buildSkippedLargeUntrackedDiffFile,
+  inspectLargeUntrackedFile,
+  parseUntrackedPatchFile,
+} from "./untracked";
 
 const LARGE_DIFF_FILE_MAX_BYTES = 1_000_000;
 const LARGE_DIFF_FILE_MAX_LINES = 20_000;
@@ -107,15 +115,43 @@ function buildSkippedLargeTrackedDiffFile(
   };
 }
 
+/** Build one Git-backed untracked file diff, preserving Git's binary and path quoting behavior. */
+function buildGitUntrackedDiffFile(
+  input: VcsDiffCommandInput,
+  filePath: string,
+  index: number,
+  repoRoot: string,
+  sourcePrefix: string,
+  gitExecutable: string,
+) {
+  const largeFileCheck = inspectLargeUntrackedFile(repoRoot, filePath);
+  if (largeFileCheck.shouldSkip) {
+    return buildSkippedLargeUntrackedDiffFile(filePath, index, sourcePrefix, largeFileCheck);
+  }
+
+  const patch = normalizeUntrackedPatchHeaders(
+    runGitUntrackedFileDiffText(input, filePath, { repoRoot, gitExecutable }),
+    filePath,
+  );
+
+  return buildDiffFile(parseUntrackedPatchFile(patch, filePath), patch, index, sourcePrefix, null, {
+    isUntracked: true,
+    sourceFetcherBuilder: createSourceFetcherBuilder(() => ({
+      old: { kind: "none" },
+      new: { kind: "fs", absolutePath: join(repoRoot, filePath) },
+    })),
+  });
+}
+
 interface ResolvedFileSourceSpecs {
-  old: FileSourceSpec;
-  new: FileSourceSpec;
+  old: GitFileSourceSpec;
+  new: GitFileSourceSpec;
 }
 
 /** Build a binary-aware source-fetcher factory from per-file source specs. */
 function createSourceFetcherBuilder(
   resolveSpecs: (file: DiffFileSourceContext) => ResolvedFileSourceSpecs | undefined,
-  options: FileSourceFetcherOptions = {},
+  options: GitFileSourceFetcherOptions = {},
 ): NonNullable<BuildDiffFileOptions["sourceFetcherBuilder"]> {
   return (file) => {
     if (file.isBinary) {
@@ -123,7 +159,7 @@ function createSourceFetcherBuilder(
     }
 
     const specs = resolveSpecs(file);
-    return specs ? createFileSourceFetcher(specs, options) : undefined;
+    return specs ? createGitFileSourceFetcher(specs, options) : undefined;
   };
 }
 
@@ -132,7 +168,7 @@ export function gitEndpointSourceSpec(
   endpoint: GitDiffEndpoint,
   repoRoot: string,
   filePath: string,
-): FileSourceSpec {
+): GitFileSourceSpec {
   switch (endpoint.kind) {
     case "none":
       return { kind: "none" };
@@ -149,7 +185,7 @@ export function gitEndpointSourceSpec(
 function buildGitEndpointSourceFetcherBuilder(
   repoRoot: string,
   endpoints: GitDiffEndpoints,
-  options: FileSourceFetcherOptions = {},
+  options: GitFileSourceFetcherOptions = {},
 ): NonNullable<BuildDiffFileOptions["sourceFetcherBuilder"]> {
   return createSourceFetcherBuilder(({ path, previousPath, type }) => {
     const oldPath = previousPath ?? path;
@@ -169,7 +205,7 @@ function buildRefRangeSourceFetcherBuilder(
   repoRoot: string,
   oldRef: string,
   newRef: string,
-  options: FileSourceFetcherOptions = {},
+  options: GitFileSourceFetcherOptions = {},
 ): NonNullable<BuildDiffFileOptions["sourceFetcherBuilder"]> {
   return buildGitEndpointSourceFetcherBuilder(
     repoRoot,
@@ -213,22 +249,14 @@ function buildGitReviewSourceFetcherBuilder(
 }
 
 /** VCS adapter translating neutral review operations to Git commands. */
-export const gitAdapter: VcsAdapter = {
+export const GitVcsAdapter: VcsAdapter = {
   id: "git",
   name: "Git",
-  capabilities: {
-    reviewOperations: new Set(["working-tree-diff", "revision-show", "stash-show"]),
-    stagedDiff: true,
-    sourceFetching: true,
-    watchSignatures: true,
-  },
-
   detect: detectGitRepo,
-
-  async loadReview(operation, { cwd, gitExecutable = "git" }) {
-    switch (operation.kind) {
-      case "working-tree-diff": {
-        const input = operation.input;
+  operations: {
+    "working-tree-diff": {
+      async load(input, { cwd, gitExecutable = "git" }) {
+        const operation: VcsReviewOperation = { kind: "working-tree-diff", input };
         const repoRoot = resolveGitRepoRoot(input, { cwd, gitExecutable });
         const repoName = basename(repoRoot);
         const title = input.staged
@@ -260,14 +288,36 @@ export const gitAdapter: VcsAdapter = {
             cwd,
             gitExecutable,
           ),
-          untrackedFiles: listGitUntrackedFiles(input, { cwd, repoRoot, gitExecutable }),
-          extraFiles: largeTrackedFiles.map((file, index) =>
-            buildSkippedLargeTrackedDiffFile(file, index, repoRoot),
-          ),
+          extraFiles: [
+            ...largeTrackedFiles.map((file, index) =>
+              buildSkippedLargeTrackedDiffFile(file, index, repoRoot),
+            ),
+            ...listGitUntrackedFiles(input, { cwd, repoRoot, gitExecutable }).map(
+              (filePath, index) =>
+                buildGitUntrackedDiffFile(
+                  input,
+                  filePath,
+                  largeTrackedFiles.length + index,
+                  repoRoot,
+                  repoRoot,
+                  gitExecutable,
+                ),
+            ),
+          ],
         };
-      }
-      case "revision-show": {
-        const input = operation.input;
+      },
+      watchSignature(input) {
+        const trackedPatch = runGitText({ input, args: buildGitDiffArgs(input) });
+        const repoRoot = resolveGitRepoRoot(input);
+        const untrackedSignatures = listGitUntrackedFiles(input, { repoRoot }).map(
+          (filePath) => `untracked:${statSignature(join(repoRoot, filePath))}`,
+        );
+        return [trackedPatch, ...untrackedSignatures].join("\n---\n");
+      },
+    },
+    "revision-show": {
+      async load(input, { cwd, gitExecutable = "git" }) {
+        const operation: VcsReviewOperation = { kind: "revision-show", input };
         const repoRoot = resolveGitRepoRoot(input, { cwd, gitExecutable });
         const repoName = basename(repoRoot);
         return {
@@ -290,9 +340,14 @@ export const gitAdapter: VcsAdapter = {
             gitExecutable,
           ),
         };
-      }
-      case "stash-show": {
-        const input = operation.input;
+      },
+      watchSignature(input) {
+        return runGitText({ input, args: buildGitShowArgs(input) });
+      },
+    },
+    "stash-show": {
+      async load(input, { cwd, gitExecutable = "git" }) {
+        const operation: VcsReviewOperation = { kind: "stash-show", input };
         const repoRoot = resolveGitRepoRoot(input, { cwd, gitExecutable });
         const repoName = basename(repoRoot);
         return {
@@ -315,30 +370,11 @@ export const gitAdapter: VcsAdapter = {
             gitExecutable,
           ),
         };
-      }
-    }
-  },
-
-  watchSignature(operation) {
-    switch (operation.kind) {
-      case "working-tree-diff": {
-        const input = operation.input;
-        const trackedPatch = runGitText({ input, args: buildGitDiffArgs(input) });
-        const repoRoot = resolveGitRepoRoot(input);
-        const untrackedSignatures = listGitUntrackedFiles(input, { repoRoot }).map(
-          (filePath) => `untracked:${statSignature(join(repoRoot, filePath))}`,
-        );
-        return [trackedPatch, ...untrackedSignatures].join("\n---\n");
-      }
-      case "revision-show": {
-        const input = operation.input;
-        return runGitText({ input, args: buildGitShowArgs(input) });
-      }
-      case "stash-show": {
-        const input = operation.input;
+      },
+      watchSignature(input) {
         return runGitText({ input, args: buildGitStashShowArgs(input) });
-      }
-    }
+      },
+    },
   },
 };
 

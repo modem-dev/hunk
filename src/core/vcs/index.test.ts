@@ -8,10 +8,11 @@ import {
   findVcsRepoRootCandidate,
   getVcsAdapter,
   isVcsId,
+  loadVcsReview,
   operationFromInput,
   vcsAdapters,
 } from ".";
-import type { ShowCommandInput, StashShowCommandInput, VcsCommandInput } from "../types";
+import type { VcsShowCommandInput, VcsStashShowCommandInput, VcsDiffCommandInput } from "../types";
 import type { VcsAdapter } from "./types";
 
 const tempDirs: string[] = [];
@@ -32,14 +33,17 @@ afterEach(() => {
 });
 
 describe("VCS adapter registry", () => {
-  test("registers Git, Jujutsu, and Sapling adapters", () => {
+  test("registers Git, Jujutsu, and Sapling operation maps", () => {
     expect(vcsAdapters.map((adapter) => adapter.id)).toEqual(["jj", "sl", "git"]);
-    expect(getVcsAdapter("git").capabilities.reviewOperations.has("stash-show")).toBe(true);
-    expect(getVcsAdapter("git").capabilities.sourceFetching).toBe(true);
-    expect(getVcsAdapter("jj").capabilities.reviewOperations.has("stash-show")).toBe(false);
-    expect(getVcsAdapter("jj").capabilities.sourceFetching).toBeUndefined();
-    expect(getVcsAdapter("sl").capabilities.reviewOperations.has("stash-show")).toBe(false);
-    expect(getVcsAdapter("sl").capabilities.sourceFetching).toBeUndefined();
+    expect(getVcsAdapter("git").operations["working-tree-diff"]).toBeDefined();
+    expect(getVcsAdapter("git").operations["revision-show"]).toBeDefined();
+    expect(getVcsAdapter("git").operations["stash-show"]).toBeDefined();
+    expect(getVcsAdapter("jj").operations["working-tree-diff"]).toBeDefined();
+    expect(getVcsAdapter("jj").operations["revision-show"]).toBeDefined();
+    expect(getVcsAdapter("jj").operations["stash-show"]).toBeUndefined();
+    expect(getVcsAdapter("sl").operations["working-tree-diff"]).toBeDefined();
+    expect(getVcsAdapter("sl").operations["revision-show"]).toBeDefined();
+    expect(getVcsAdapter("sl").operations["stash-show"]).toBeUndefined();
   });
 
   test("validates VCS ids from the registered adapter list", () => {
@@ -62,13 +66,10 @@ describe("VCS adapter registry", () => {
     const adapter: VcsAdapter = {
       id: "git",
       name: "Custom marker test adapter",
-      capabilities: { reviewOperations: new Set(), watchSignatures: false },
       detect(cwd) {
         return cwd === repo ? { id: "git", repoRoot: repo } : null;
       },
-      async loadReview() {
-        throw new Error("not used");
-      },
+      operations: {},
     };
 
     vcsAdapters.unshift(adapter);
@@ -106,44 +107,52 @@ describe("VCS adapter registry", () => {
       kind: "vcs",
       staged: false,
       options: { vcs: "git" },
-    } satisfies VcsCommandInput;
+    } satisfies VcsDiffCommandInput;
     const showInput = {
       kind: "show",
       ref: "HEAD",
       options: { vcs: "git" },
-    } satisfies ShowCommandInput;
+    } satisfies VcsShowCommandInput;
     const stashInput = {
       kind: "stash-show",
       options: { vcs: "git" },
-    } satisfies StashShowCommandInput;
+    } satisfies VcsStashShowCommandInput;
 
     expect(operationFromInput(diffInput)).toEqual({ kind: "working-tree-diff", input: diffInput });
     expect(operationFromInput(showInput)).toEqual({ kind: "revision-show", input: showInput });
     expect(operationFromInput(stashInput)).toEqual({ kind: "stash-show", input: stashInput });
   });
 
-  test("creates friendly errors for unsupported adapter operations", () => {
+  test("creates friendly errors for unsupported adapter operations", async () => {
     const adapter = getVcsAdapter("jj");
     const input = {
       kind: "stash-show",
       options: { vcs: "jj" },
-    } satisfies StashShowCommandInput;
+    } satisfies VcsStashShowCommandInput;
 
-    expect(createUnsupportedVcsOperationError(adapter, operationFromInput(input)).message).toBe(
-      "`hunk stash show` requires Git VCS mode.",
-    );
+    expect(
+      createUnsupportedVcsOperationError(adapter, operationFromInput(input).kind).message,
+    ).toBe("`hunk stash show` requires Git VCS mode.");
+    await expect(
+      loadVcsReview(adapter, operationFromInput(input), { cwd: process.cwd() }),
+    ).rejects.toThrow("`hunk stash show` requires Git VCS mode.");
   });
 
   test("names the adapter and operation for non-stash unsupported operations", () => {
-    const adapter = getVcsAdapter("jj");
+    const adapter = {
+      id: "custom",
+      name: "Custom VCS",
+      detect: () => null,
+      operations: {},
+    } satisfies VcsAdapter;
     const input = {
       kind: "vcs",
       staged: false,
-      options: { vcs: "jj" },
-    } satisfies VcsCommandInput;
+      options: { vcs: "custom" },
+    } satisfies VcsDiffCommandInput;
 
-    expect(createUnsupportedVcsOperationError(adapter, operationFromInput(input)).message).toBe(
-      "Jujutsu does not support working-tree-diff.",
-    );
+    expect(
+      createUnsupportedVcsOperationError(adapter, operationFromInput(input).kind).message,
+    ).toBe("Custom VCS does not support working-tree-diff.");
   });
 });

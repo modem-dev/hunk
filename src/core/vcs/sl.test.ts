@@ -2,8 +2,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { platform, tmpdir } from "node:os";
 import { join } from "node:path";
-import { slAdapter } from "./sl";
-import type { ShowCommandInput, StashShowCommandInput, VcsCommandInput } from "../types";
+import { SaplingVcsAdapter } from "./sl";
+import type { VcsShowCommandInput, VcsDiffCommandInput } from "../types";
 
 const slAvailable = (() => {
   try {
@@ -62,14 +62,14 @@ afterEach(() => {
   }
 });
 
-describe("slAdapter", () => {
+describe("SaplingVcsAdapter", () => {
   test("detects Sapling repositories from nested directories", () => {
     const repo = createTempDir("hunk-sl-adapter-detect-");
     mkdirSync(join(repo, ".sl"));
     const nested = join(repo, "src", "nested");
     mkdirSync(nested, { recursive: true });
 
-    expect(slAdapter.detect(nested)).toEqual({ id: "sl", repoRoot: repo });
+    expect(SaplingVcsAdapter.detect(nested)).toEqual({ id: "sl", repoRoot: repo });
   });
 
   test("auto-detects .hg directories with treestate as Sapling", () => {
@@ -77,7 +77,7 @@ describe("slAdapter", () => {
     mkdirSync(join(repo, ".hg"));
     writeFileSync(join(repo, ".hg", "requires"), "revlogv1\nstore\ntreestate\n");
 
-    expect(slAdapter.detect(repo)).toEqual({ id: "sl", repoRoot: repo });
+    expect(SaplingVcsAdapter.detect(repo)).toEqual({ id: "sl", repoRoot: repo });
   });
 
   test("does not auto-detect .hg directories without treestate", () => {
@@ -85,7 +85,7 @@ describe("slAdapter", () => {
     mkdirSync(join(repo, ".hg"));
     writeFileSync(join(repo, ".hg", "requires"), "revlogv1\nstore\n");
 
-    expect(slAdapter.detect(repo)).toBeNull();
+    expect(SaplingVcsAdapter.detect(repo)).toBeNull();
   });
 
   test.skipIf(!slAvailable)(
@@ -101,11 +101,10 @@ describe("slAdapter", () => {
         kind: "vcs",
         staged: false,
         options: { vcs: "sl" },
-      } satisfies VcsCommandInput;
-      const diffResult = await slAdapter.loadReview(
-        { kind: "working-tree-diff", input: diffInput },
-        { cwd: repo },
-      );
+      } satisfies VcsDiffCommandInput;
+      const diffResult = await SaplingVcsAdapter.operations["working-tree-diff"]!.load(diffInput, {
+        cwd: repo,
+      });
 
       expect(normalizeComparablePath(diffResult.repoRoot)).toBe(normalizeComparablePath(repo));
       expect(diffResult.title).toContain("working copy");
@@ -116,11 +115,10 @@ describe("slAdapter", () => {
         kind: "show",
         ref: ".",
         options: { vcs: "sl" },
-      } satisfies ShowCommandInput;
-      const showResult = await slAdapter.loadReview(
-        { kind: "revision-show", input: showInput },
-        { cwd: repo },
-      );
+      } satisfies VcsShowCommandInput;
+      const showResult = await SaplingVcsAdapter.operations["revision-show"]!.load(showInput, {
+        cwd: repo,
+      });
 
       expect(showResult.title).toContain("show .");
       expect(showResult.patchText).toContain("diff --git a/file.txt b/file.txt");
@@ -136,34 +134,27 @@ describe("slAdapter", () => {
         kind: "vcs",
         staged: true,
         options: { vcs: "sl" },
-      } satisfies VcsCommandInput;
-      const stashInput = {
-        kind: "stash-show",
-        options: { vcs: "sl" },
-      } satisfies StashShowCommandInput;
-
+      } satisfies VcsDiffCommandInput;
       await expect(
-        slAdapter.loadReview({ kind: "working-tree-diff", input: stagedInput }, { cwd: repo }),
+        SaplingVcsAdapter.operations["working-tree-diff"]!.load(stagedInput, { cwd: repo }),
       ).rejects.toThrow("Sapling has no staging area");
-      await expect(
-        slAdapter.loadReview({ kind: "stash-show", input: stashInput }, { cwd: repo }),
-      ).rejects.toThrow("requires Git VCS mode");
+      expect(SaplingVcsAdapter.operations["stash-show"]).toBeUndefined();
     },
     SlAdapterIntegrationTestTimeoutMs,
   );
 });
 
 // These branches run before any `sl` invocation, so they need no external binary.
-describe("slAdapter without the sl binary", () => {
+describe("SaplingVcsAdapter without the sl binary", () => {
   test("treats a .hg directory with no requires file as non-Sapling", () => {
     const repo = createTempDir("hunk-sl-hg-no-requires-");
     mkdirSync(join(repo, ".hg"));
     // No `.hg/requires` file, so the Sapling check reads a missing file and falls back to false.
-    expect(slAdapter.detect(repo)).toBeNull();
+    expect(SaplingVcsAdapter.detect(repo)).toBeNull();
   });
 
   test("returns null when no Sapling marker exists up to the filesystem root", () => {
-    expect(slAdapter.detect(createTempDir("hunk-sl-detect-none-"))).toBeNull();
+    expect(SaplingVcsAdapter.detect(createTempDir("hunk-sl-detect-none-"))).toBeNull();
   });
 
   test("rejects staged working-tree diffs before spawning sl", async () => {
@@ -171,22 +162,13 @@ describe("slAdapter without the sl binary", () => {
       kind: "vcs",
       staged: true,
       options: { vcs: "sl" },
-    } satisfies VcsCommandInput;
+    } satisfies VcsDiffCommandInput;
     await expect(
-      slAdapter.loadReview({ kind: "working-tree-diff", input: stagedInput }, { cwd: tmpdir() }),
+      SaplingVcsAdapter.operations["working-tree-diff"]!.load(stagedInput, { cwd: tmpdir() }),
     ).rejects.toThrow("Sapling has no staging area");
   });
 
-  test("rejects stash-show in both loadReview and watchSignature", async () => {
-    const stashInput = {
-      kind: "stash-show",
-      options: { vcs: "sl" },
-    } satisfies StashShowCommandInput;
-    await expect(
-      slAdapter.loadReview({ kind: "stash-show", input: stashInput }, { cwd: tmpdir() }),
-    ).rejects.toThrow("requires Git VCS mode");
-    expect(() =>
-      slAdapter.watchSignature!({ kind: "stash-show", input: stashInput }, { cwd: tmpdir() }),
-    ).toThrow("requires Git VCS mode");
+  test("does not expose a stash-show operation", () => {
+    expect(SaplingVcsAdapter.operations["stash-show"]).toBeUndefined();
   });
 });

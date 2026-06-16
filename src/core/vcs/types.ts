@@ -1,13 +1,12 @@
 import type { BuildDiffFileOptions } from "../diffFile";
 import type {
   DiffFile,
-  ShowCommandInput,
-  StashShowCommandInput,
-  VcsCommandInput,
-  VcsMode,
+  VcsShowCommandInput,
+  VcsStashShowCommandInput,
+  VcsDiffCommandInput,
 } from "../types";
 
-export type VcsId = VcsMode;
+export type VcsId = string;
 
 export interface VcsDetection {
   id: VcsId;
@@ -19,20 +18,24 @@ export interface VcsLoadContext {
   gitExecutable?: string;
 }
 
-export type VcsReviewInput = VcsCommandInput | ShowCommandInput | StashShowCommandInput;
+export type VcsReviewInput = VcsDiffCommandInput | VcsShowCommandInput | VcsStashShowCommandInput;
 
 export type VcsReviewOperation =
-  | { kind: "working-tree-diff"; input: VcsCommandInput }
-  | { kind: "revision-show"; input: ShowCommandInput }
-  | { kind: "stash-show"; input: StashShowCommandInput };
+  | { kind: "working-tree-diff"; input: VcsDiffCommandInput }
+  | { kind: "revision-show"; input: VcsShowCommandInput }
+  | { kind: "stash-show"; input: VcsStashShowCommandInput };
 
 export type VcsReviewOperationKind = VcsReviewOperation["kind"];
 
-export interface VcsCapabilities {
-  reviewOperations: ReadonlySet<VcsReviewOperationKind>;
-  stagedDiff?: boolean;
-  sourceFetching?: boolean;
-  watchSignatures?: boolean;
+export interface VcsOperation<Input extends VcsReviewInput> {
+  load(input: Input, context: VcsLoadContext): Promise<VcsPatchResult>;
+  watchSignature?: (input: Input, context: VcsLoadContext) => string;
+}
+
+export interface VcsOperations {
+  "working-tree-diff"?: VcsOperation<VcsDiffCommandInput>;
+  "revision-show"?: VcsOperation<VcsShowCommandInput>;
+  "stash-show"?: VcsOperation<VcsStashShowCommandInput>;
 }
 
 export interface VcsPatchResult {
@@ -41,15 +44,12 @@ export interface VcsPatchResult {
   title: string;
   patchText: string;
   sourceFetcherBuilder?: BuildDiffFileOptions["sourceFetcherBuilder"];
-  untrackedFiles?: string[];
   extraFiles?: DiffFile[];
 }
 
 export interface VcsAdapter {
   id: VcsId;
   name: string;
-  capabilities: VcsCapabilities;
   detect(cwd: string): VcsDetection | null;
-  loadReview(operation: VcsReviewOperation, context: VcsLoadContext): Promise<VcsPatchResult>;
-  watchSignature?: (operation: VcsReviewOperation, context: VcsLoadContext) => string;
+  operations: VcsOperations;
 }

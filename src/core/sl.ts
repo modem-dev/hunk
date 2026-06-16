@@ -1,10 +1,10 @@
 import fs from "node:fs";
 import { join } from "node:path";
 import { HunkUserError } from "./errors";
-import type { VcsCommandInput, ShowCommandInput } from "./types";
+import type { VcsDiffCommandInput, VcsShowCommandInput } from "./types";
 import { normalizePathForOS } from "../lib/osPath";
 
-export type SlBackedInput = VcsCommandInput | ShowCommandInput;
+export type SlBackedInput = VcsDiffCommandInput | VcsShowCommandInput;
 
 export interface RunSlTextOptions {
   input: SlBackedInput;
@@ -23,7 +23,7 @@ function appendSlPathspecs(args: string[], pathspecs?: string[]) {
 }
 
 /** Build the `sl diff --git` arguments for working-copy and revset reviews. */
-export function buildSlDiffArgs(input: VcsCommandInput) {
+export function buildSlDiffArgs(input: VcsDiffCommandInput) {
   const args = ["diff", "--git"];
 
   if (input.range) {
@@ -35,7 +35,7 @@ export function buildSlDiffArgs(input: VcsCommandInput) {
 }
 
 /** Build the `sl diff --git --change` arguments used for `hunk show` in Sapling mode. */
-export function buildSlShowArgs(input: ShowCommandInput) {
+export function buildSlShowArgs(input: VcsShowCommandInput) {
   const args = ["diff", "--git", "--change", input.ref ?? "."];
 
   appendSlPathspecs(args, input.pathspecs);
@@ -43,7 +43,7 @@ export function buildSlShowArgs(input: ShowCommandInput) {
 }
 
 /** Build the status query used to discover Sapling unknown files for working-copy review. */
-function buildSlStatusArgs(input: VcsCommandInput) {
+function buildSlStatusArgs(input: VcsDiffCommandInput) {
   const args = ["status", "--unknown", "--print0", "--root-relative"];
 
   appendSlPathspecs(args, input.pathspecs);
@@ -108,7 +108,7 @@ function createMissingSlRepoError(input: SlBackedInput) {
 }
 
 /** Return the user-facing error when `--staged` is used with Sapling. */
-export function createSlStagedError(input: VcsCommandInput) {
+export function createSlStagedError(input: VcsDiffCommandInput) {
   return new HunkUserError(
     `\`${formatSlCommandLabel(input)}\` requires Git VCS mode because Sapling has no staging area.`,
     ['Remove `--staged`, or set `vcs = "git"` in Hunk config.'],
@@ -192,7 +192,7 @@ export function runSlText(options: RunSlTextOptions) {
 }
 
 /** Return whether working-copy review should synthesize unknown Sapling files into the patch stream. */
-function shouldIncludeUntrackedFiles(input: VcsCommandInput) {
+function shouldIncludeUntrackedFiles(input: VcsDiffCommandInput) {
   return !input.staged && input.options.excludeUntracked !== true;
 }
 
@@ -232,7 +232,7 @@ function isReviewableUntrackedPath(repoRoot: string, filePath: string) {
 
 /** Return the repo-root-relative unknown files for a working-copy Sapling review. */
 export function listSlUntrackedFiles(
-  input: VcsCommandInput,
+  input: VcsDiffCommandInput,
   {
     cwd = process.cwd(),
     repoRoot,

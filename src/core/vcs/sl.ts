@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { HunkUserError } from "../errors";
 import {
   buildSlDiffArgs,
   buildSlShowArgs,
@@ -10,6 +9,7 @@ import {
   runSlText,
 } from "../sl";
 import type { VcsAdapter } from "./types";
+import { buildFilesystemUntrackedDiffFile } from "./untracked";
 
 /** Return the last path segment for review titles. */
 function basename(path: string) {
@@ -45,13 +45,6 @@ function detectSlRepo(cwd: string) {
   }
 }
 
-/** Return the user-facing error for Sapling operations that only Git supports. */
-function createSlUnsupportedStashShowError() {
-  return new HunkUserError("`hunk stash show` requires Git VCS mode.", [
-    'Set `vcs = "git"` in Hunk config, then try again.',
-  ]);
-}
-
 /** Format one file stat into a stable signature fragment, or mark the path missing. */
 function statSignature(path: string) {
   if (!fs.existsSync(path)) {
@@ -63,21 +56,13 @@ function statSignature(path: string) {
 }
 
 /** VCS adapter translating neutral review operations to Sapling commands. */
-export const slAdapter: VcsAdapter = {
+export const SaplingVcsAdapter: VcsAdapter = {
   id: "sl",
   name: "Sapling",
-  capabilities: {
-    reviewOperations: new Set(["working-tree-diff", "revision-show"]),
-    stagedDiff: false,
-    watchSignatures: true,
-  },
-
   detect: detectSlRepo,
-
-  async loadReview(operation, { cwd }) {
-    switch (operation.kind) {
-      case "working-tree-diff": {
-        const input = operation.input;
+  operations: {
+    "working-tree-diff": {
+      async load(input, { cwd }) {
         if (input.staged) {
           throw createSlStagedError(input);
         }
@@ -88,11 +73,22 @@ export const slAdapter: VcsAdapter = {
           sourceLabel: repoRoot,
           title: input.range ? `${repoName} ${input.range}` : `${repoName} working copy`,
           patchText: runSlText({ input, args: buildSlDiffArgs(input), cwd }),
-          untrackedFiles: listSlUntrackedFiles(input, { cwd, repoRoot }),
+          extraFiles: listSlUntrackedFiles(input, { cwd, repoRoot }).map((filePath, index) =>
+            buildFilesystemUntrackedDiffFile(repoRoot, filePath, index, repoRoot),
+          ),
         };
-      }
-      case "revision-show": {
-        const input = operation.input;
+      },
+      watchSignature(input, { cwd }) {
+        const trackedPatch = runSlText({ input, args: buildSlDiffArgs(input), cwd });
+        const repoRoot = resolveSlRepoRoot(input, { cwd });
+        const untrackedSignatures = listSlUntrackedFiles(input, { cwd, repoRoot }).map(
+          (filePath) => `untracked:${statSignature(join(repoRoot, filePath))}`,
+        );
+        return [trackedPatch, ...untrackedSignatures].join("\n---\n");
+      },
+    },
+    "revision-show": {
+      async load(input, { cwd }) {
         const repoRoot = resolveSlRepoRoot(input, { cwd });
         const repoName = basename(repoRoot);
         const revset = input.ref ?? ".";
@@ -102,29 +98,10 @@ export const slAdapter: VcsAdapter = {
           title: `${repoName} show ${revset}`,
           patchText: runSlText({ input, args: buildSlShowArgs(input), cwd }),
         };
-      }
-      case "stash-show":
-        throw createSlUnsupportedStashShowError();
-    }
-  },
-
-  watchSignature(operation, { cwd }) {
-    switch (operation.kind) {
-      case "working-tree-diff": {
-        const input = operation.input;
-        const trackedPatch = runSlText({ input, args: buildSlDiffArgs(input), cwd });
-        const repoRoot = resolveSlRepoRoot(input, { cwd });
-        const untrackedSignatures = listSlUntrackedFiles(input, { cwd, repoRoot }).map(
-          (filePath) => `untracked:${statSignature(join(repoRoot, filePath))}`,
-        );
-        return [trackedPatch, ...untrackedSignatures].join("\n---\n");
-      }
-      case "revision-show": {
-        const input = operation.input;
+      },
+      watchSignature(input, { cwd }) {
         return runSlText({ input, args: buildSlShowArgs(input), cwd });
-      }
-      case "stash-show":
-        throw createSlUnsupportedStashShowError();
-    }
+      },
+    },
   },
 };
