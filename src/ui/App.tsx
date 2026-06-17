@@ -25,10 +25,16 @@ import { useMenuController } from "./hooks/useMenuController";
 import { useReviewController } from "./hooks/useReviewController";
 import { buildAppMenus } from "./lib/appMenus";
 import { fileRowId } from "./lib/ids";
+import { BUNDLED_SHIKI_THEME_IDS } from "./lib/shikiThemes";
 import { openSelectedFileInEditor } from "./lib/openInEditor";
 import { resolveResponsiveLayout } from "./lib/responsive";
 import { resizeSidebarWidth } from "./lib/sidebar";
-import { availableThemes, resolveTheme, withTransparentBackground } from "./themes";
+import {
+  availableThemes,
+  resolveTheme,
+  withSyntaxTheme,
+  withTransparentBackground,
+} from "./themes";
 
 type FocusArea = "files" | "filter" | "note";
 type ActiveAddNoteTarget = ActiveAddNoteAffordance & { fileId: string };
@@ -40,6 +46,9 @@ const LazyHelpDialog = lazy(async () => ({
 }));
 const LazyMenuDropdown = lazy(async () => ({
   default: (await import("./components/chrome/MenuDropdown")).MenuDropdown,
+}));
+const LazyThemeSelectorDialog = lazy(async () => ({
+  default: (await import("./components/chrome/ThemeSelectorDialog")).ThemeSelectorDialog,
 }));
 
 /** Clamp a value into an inclusive range. */
@@ -56,6 +65,7 @@ function withCurrentViewOptions(
     showAgentNotes: boolean;
     showHunkHeaders: boolean;
     showLineNumbers: boolean;
+    syntaxTheme?: string;
     wrapLines: boolean;
   },
 ): CliInput {
@@ -65,6 +75,7 @@ function withCurrentViewOptions(
       ...input.options,
       mode: view.layoutMode,
       theme: view.themeId,
+      syntaxTheme: view.syntaxTheme,
       agentNotes: view.showAgentNotes,
       hunkHeaders: view.showHunkHeaders,
       lineNumbers: view.showLineNumbers,
@@ -123,6 +134,9 @@ export function App({
   const [copyDecorations, setCopyDecorations] = useState(bootstrap.initialCopyDecorations ?? false);
   const [codeHorizontalOffset, setCodeHorizontalOffset] = useState(0);
   const [showHunkHeaders, setShowHunkHeaders] = useState(bootstrap.initialShowHunkHeaders ?? true);
+  const [syntaxThemeId, setSyntaxThemeId] = useState(bootstrap.input.options.syntaxTheme);
+  const [themeSelectorOpen, setThemeSelectorOpen] = useState(false);
+  const [themeSelectorIndex, setThemeSelectorIndex] = useState(0);
   const [sidebarVisible, setSidebarVisible] = useState(() => !pagerMode);
   const [forceSidebarOpen, setForceSidebarOpen] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -133,6 +147,10 @@ export function App({
   const [resizeStartWidth, setResizeStartWidth] = useState<number | null>(null);
   const [sessionNoticeText, setSessionNoticeText] = useState<string | null>(null);
   const sessionNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const themeSelectorOriginRef = useRef<{
+    themeId: string;
+    syntaxThemeId: string | undefined;
+  } | null>(null);
 
   const themeOptions = useMemo(
     () => availableThemes(bootstrap.customTheme),
@@ -142,12 +160,37 @@ export function App({
     () => resolveTheme(themeId, detectedThemeMode ?? null, bootstrap.customTheme),
     [themeId, detectedThemeMode, bootstrap.customTheme],
   );
-  const activeTheme = useMemo(
-    () =>
-      bootstrap.input.options.transparentBackground
-        ? withTransparentBackground(baseTheme)
-        : baseTheme,
-    [baseTheme, bootstrap.input.options.transparentBackground],
+  const activeTheme = useMemo(() => {
+    const syntaxTheme = withSyntaxTheme(baseTheme, syntaxThemeId);
+    return bootstrap.input.options.transparentBackground
+      ? withTransparentBackground(syntaxTheme)
+      : syntaxTheme;
+  }, [baseTheme, syntaxThemeId, bootstrap.input.options.transparentBackground]);
+  const themeSelectorItems = useMemo(
+    () => [
+      ...themeOptions.map((theme) => ({
+        id: theme.id,
+        label: theme.label,
+        description: theme.id === activeTheme.id ? "active UI" : "UI theme",
+        kind: "ui" as const,
+        active: theme.id === activeTheme.id,
+      })),
+      {
+        id: "__default_syntax__",
+        label: "Theme default",
+        description: syntaxThemeId ? "reset syntax" : "active syntax",
+        kind: "syntax" as const,
+        active: !syntaxThemeId,
+      },
+      ...BUNDLED_SHIKI_THEME_IDS.map((syntaxTheme) => ({
+        id: syntaxTheme,
+        label: syntaxTheme,
+        description: syntaxTheme === syntaxThemeId ? "active syntax" : "Shiki theme",
+        kind: "syntax" as const,
+        active: syntaxTheme === syntaxThemeId,
+      })),
+    ],
+    [activeTheme.id, syntaxThemeId, themeOptions],
   );
   const review = useReviewController({ files: bootstrap.changeset.files });
   const filteredFiles = review.visibleFiles;
@@ -393,6 +436,74 @@ export function App({
     [showTransientNotice, themeOptions],
   );
 
+  /** Switch the active Shiki syntax theme without changing the Hunk UI palette. */
+  const selectSyntaxTheme = useCallback(
+    (nextSyntaxThemeId: string | undefined) => {
+      setSyntaxThemeId(nextSyntaxThemeId);
+      showTransientNotice(`Syntax theme: ${nextSyntaxThemeId ?? "Theme default"}`);
+    },
+    [showTransientNotice],
+  );
+
+  /** Preview one theme selector row without committing the choice yet. */
+  const previewThemeSelectorItem = useCallback((item: (typeof themeSelectorItems)[number]) => {
+    if (item.kind === "ui") {
+      setThemeId(item.id);
+    } else {
+      setSyntaxThemeId(item.id === "__default_syntax__" ? undefined : item.id);
+    }
+  }, []);
+
+  /** Open the keyboard-driven theme selector with the current UI theme highlighted. */
+  const openThemeSelector = useCallback(() => {
+    const currentIndex = themeSelectorItems.findIndex(
+      (item) => item.kind === "ui" && item.id === activeTheme.id,
+    );
+    themeSelectorOriginRef.current = { themeId, syntaxThemeId };
+    setThemeSelectorIndex(Math.max(0, currentIndex));
+    setThemeSelectorOpen(true);
+  }, [activeTheme.id, syntaxThemeId, themeId, themeSelectorItems]);
+
+  const closeThemeSelector = useCallback(() => {
+    const origin = themeSelectorOriginRef.current;
+    if (origin) {
+      setThemeId(origin.themeId);
+      setSyntaxThemeId(origin.syntaxThemeId);
+      themeSelectorOriginRef.current = null;
+    }
+    setThemeSelectorOpen(false);
+  }, []);
+
+  const moveThemeSelector = useCallback(
+    (delta: number) => {
+      setThemeSelectorIndex((current) => {
+        if (themeSelectorItems.length === 0) {
+          return 0;
+        }
+
+        const nextIndex = (current + delta + themeSelectorItems.length) % themeSelectorItems.length;
+        previewThemeSelectorItem(themeSelectorItems[nextIndex]!);
+        return nextIndex;
+      });
+    },
+    [previewThemeSelectorItem, themeSelectorItems],
+  );
+
+  const acceptThemeSelector = useCallback(() => {
+    const item = themeSelectorItems[themeSelectorIndex];
+    if (!item) {
+      return;
+    }
+
+    themeSelectorOriginRef.current = null;
+    if (item.kind === "ui") {
+      selectTheme(item.id);
+    } else {
+      selectSyntaxTheme(item.id === "__default_syntax__" ? undefined : item.id);
+    }
+    setThemeSelectorOpen(false);
+  }, [selectSyntaxTheme, selectTheme, themeSelectorIndex, themeSelectorItems]);
+
   /** Toggle the sidebar, forcing it open on narrower layouts when the app can still fit both panes. */
   const toggleSidebar = () => {
     if (sidebarVisible && (responsiveLayout.showSidebar || forceSidebarOpen)) {
@@ -432,6 +543,7 @@ export function App({
       showAgentNotes,
       showHunkHeaders,
       showLineNumbers,
+      syntaxTheme: syntaxThemeId,
       wrapLines,
     });
 
@@ -453,6 +565,7 @@ export function App({
     showAgentNotes,
     showHunkHeaders,
     showLineNumbers,
+    syntaxThemeId,
     themeId,
     wrapLines,
   ]);
@@ -616,13 +729,6 @@ export function App({
     setFocusArea("files");
   }, [review.cancelDraftNote]);
 
-  /** Cycle through the themes exposed by the current app configuration. */
-  const cycleTheme = useCallback(() => {
-    const currentIndex = themeOptions.findIndex((theme) => theme.id === activeTheme.id);
-    const nextIndex = (currentIndex + 1) % themeOptions.length;
-    selectTheme(themeOptions[nextIndex]!.id);
-  }, [activeTheme.id, selectTheme, themeOptions]);
-
   const menus = useMemo(
     () =>
       buildAppMenus({
@@ -709,15 +815,18 @@ export function App({
     canRefreshCurrentInput,
     closeHelp,
     closeMenu,
-    cycleTheme,
+    acceptThemeSelector,
     cancelDraftNote,
+    closeThemeSelector,
     focusArea,
     focusFilter,
     moveToAnnotatedHunk,
     moveToFile,
     moveToHunk: review.moveToHunk,
     moveMenuItem,
+    moveThemeSelector,
     openMenu,
+    openThemeSelector,
     pagerMode,
     requestQuit,
     scrollCodeHorizontally,
@@ -727,6 +836,7 @@ export function App({
     showHelp,
     startUserNote: () => startUserNote(),
     switchMenu,
+    themeSelectorOpen,
     toggleAgentNotes,
     toggleFocusArea,
     toggleGapForSelectedHunk: review.toggleSelectedHunkGap,
@@ -973,6 +1083,35 @@ export function App({
             terminalWidth={terminal.width}
             theme={baseTheme}
             onClose={closeHelp}
+          />
+        </Suspense>
+      ) : null}
+
+      {!pagerMode && themeSelectorOpen ? (
+        <Suspense fallback={null}>
+          <LazyThemeSelectorDialog
+            items={themeSelectorItems}
+            selectedIndex={themeSelectorIndex}
+            terminalHeight={terminal.height}
+            terminalWidth={terminal.width}
+            theme={baseTheme}
+            onClose={closeThemeSelector}
+            onHoverItem={(index) => {
+              setThemeSelectorIndex(index);
+              const item = themeSelectorItems[index];
+              if (item) {
+                previewThemeSelectorItem(item);
+              }
+            }}
+            onSelectItem={(item) => {
+              themeSelectorOriginRef.current = null;
+              if (item.kind === "ui") {
+                selectTheme(item.id);
+              } else {
+                selectSyntaxTheme(item.id === "__default_syntax__" ? undefined : item.id);
+              }
+              setThemeSelectorOpen(false);
+            }}
           />
         </Suspense>
       ) : null}

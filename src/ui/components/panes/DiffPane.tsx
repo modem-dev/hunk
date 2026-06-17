@@ -1114,10 +1114,10 @@ export function DiffPane({
 
       void prefetchHighlightedDiff({
         file,
-        appearance: theme.appearance,
+        theme,
       });
     }
-  }, [files, highlightPrefetchFileIds, theme.appearance]);
+  }, [files, highlightPrefetchFileIds, theme]);
 
   // Keep the selected file/hunk derived from the visible viewport for actual scroll-driven
   // movement, while leaving the initial mount and non-scroll relayouts alone.

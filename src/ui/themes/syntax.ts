@@ -12,10 +12,11 @@ export function createSyntaxStyle(colors: SyntaxColors) {
     function: { fg: RGBA.fromHex(colors.function) },
     method: { fg: RGBA.fromHex(colors.function) },
     property: { fg: RGBA.fromHex(colors.property) },
-    variable: { fg: RGBA.fromHex(colors.default) },
+    variable: { fg: RGBA.fromHex(colors.variable ?? colors.default) },
     constant: { fg: RGBA.fromHex(colors.number), bold: true },
     type: { fg: RGBA.fromHex(colors.type) },
     class: { fg: RGBA.fromHex(colors.type) },
+    operator: { fg: RGBA.fromHex(colors.operator ?? colors.punctuation) },
     punctuation: { fg: RGBA.fromHex(colors.punctuation) },
   });
 }

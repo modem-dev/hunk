@@ -19,31 +19,34 @@ const PIERRE_THEME = {
   dark: "pierre-dark",
 } as const;
 
-/** Resolve the single Pierre theme name needed for the current appearance. */
+type HighlightThemeInput = AppTheme | AppTheme["appearance"];
+
+/** Resolve the default Pierre theme name needed for one light/dark appearance. */
 function pierreThemeName(appearance: AppTheme["appearance"]) {
   return PIERRE_THEME[appearance];
 }
 
-const PIERRE_RENDER_OPTIONS_BY_APPEARANCE = {
-  light: {
-    theme: pierreThemeName("light"),
-    useTokenTransformer: false,
-    tokenizeMaxLineLength: 1_000,
-    lineDiffType: "word-alt" as const,
-    maxLineDiffLength: 10_000,
-  },
-  dark: {
-    theme: pierreThemeName("dark"),
-    useTokenTransformer: false,
-    tokenizeMaxLineLength: 1_000,
-    lineDiffType: "word-alt" as const,
-    maxLineDiffLength: 10_000,
-  },
-} as const;
+/** Return the light/dark mode for a theme object or legacy appearance argument. */
+function highlightThemeAppearance(theme: HighlightThemeInput) {
+  return typeof theme === "string" ? theme : theme.appearance;
+}
 
-/** Reuse the render options for one appearance so startup work avoids extra object churn. */
-function pierreRenderOptions(appearance: AppTheme["appearance"]) {
-  return PIERRE_RENDER_OPTIONS_BY_APPEARANCE[appearance];
+/** Resolve the Shiki/Pierre syntax theme that should color highlighted code. */
+function highlighterThemeName(theme: HighlightThemeInput) {
+  return typeof theme === "string"
+    ? pierreThemeName(theme)
+    : (theme.syntaxTheme ?? pierreThemeName(theme.appearance));
+}
+
+/** Build render options for the active syntax theme. */
+function pierreRenderOptions(theme: HighlightThemeInput) {
+  return {
+    theme: highlighterThemeName(theme),
+    useTokenTransformer: false,
+    tokenizeMaxLineLength: 1_000,
+    lineDiffType: "word-alt" as const,
+    maxLineDiffLength: 10_000,
+  };
 }
 
 type HighlightOptions = ReturnType<typeof getHighlighterOptions>;
@@ -193,6 +196,10 @@ const RESERVED_PIERRE_TOKEN_COLORS = {
     "#ffca00": "default",
     "#68cdf2": "number",
     "#5ecc71": "string",
+    "#ffa359": "property",
+    "#a3a3a3": "variable",
+    "#08c0ef": "operator",
+    "#636363": "punctuation",
   },
   light: {
     "#d52c36": "keyword",
@@ -207,6 +214,10 @@ const RESERVED_PIERRE_TOKEN_COLORS = {
     "#d5a910": "default",
     "#1ca1c7": "number",
     "#199f43": "string",
+    "#d47628": "property",
+    "#a3a3a3": "variable",
+    "#08c0ef": "operator",
+    "#636363": "punctuation",
   },
 } as const;
 // After style parsing, token colors still need one normalization step so syntax hues never
@@ -318,7 +329,10 @@ function normalizeHighlightedColor(color: string | undefined, theme: AppTheme) {
     RESERVED_PIERRE_TOKEN_COLORS[theme.appearance][
       normalized as keyof (typeof RESERVED_PIERRE_TOKEN_COLORS)[typeof theme.appearance]
     ];
-  const resolvedColor = reserved ? theme.syntaxColors[reserved] : color;
+  const resolvedColor = reserved
+    ? (theme.syntaxColors[reserved] ??
+      (reserved === "operator" ? theme.syntaxColors.punctuation : theme.syntaxColors.default))
+    : color;
   cacheForTheme.set(color, resolvedColor);
   return resolvedColor;
 }
@@ -535,17 +549,15 @@ export function trailingCollapsedLines(metadata: FileDiffMetadata) {
   return Math.max(additionRemaining, 0);
 }
 
-/** Prepare syntax highlighting for one language/appearance pair using Pierre's shared highlighter. */
-async function prepareHighlighter(
-  language: string | undefined,
-  appearance: AppTheme["appearance"],
-) {
+/** Prepare syntax highlighting for one language/theme pair using Pierre's shared highlighter. */
+async function prepareHighlighter(language: string | undefined, theme: HighlightThemeInput) {
   const resolvedLanguage = language ?? "text";
-  const cacheKey = `${appearance}:${resolvedLanguage}`;
+  const syntaxTheme = highlighterThemeName(theme);
+  const cacheKey = `${syntaxTheme}:${resolvedLanguage}`;
   const options =
     highlighterOptionsByKey.get(cacheKey) ??
     getHighlighterOptions(resolvedLanguage, {
-      theme: pierreThemeName(appearance),
+      theme: syntaxTheme,
     });
 
   if (!highlighterOptionsByKey.has(cacheKey)) {
@@ -644,15 +656,15 @@ function aliasHighlightedContextLines(file: DiffFile, highlighted: HighlightedDi
 /** Highlight a diff file and return just the rendered line trees the UI needs. */
 export async function loadHighlightedDiff(
   file: DiffFile,
-  appearance: AppTheme["appearance"] = "dark",
+  theme: HighlightThemeInput = "dark",
 ): Promise<HighlightedDiffCode> {
   try {
-    const highlighter = await prepareHighlighter(file.language, appearance);
+    const highlighter = await prepareHighlighter(file.language, theme);
     return queueHighlightedWork(() => {
       const highlighted = renderDiffWithHighlighter(
         file.metadata,
         highlighter,
-        pierreRenderOptions(appearance),
+        pierreRenderOptions(theme),
       );
       return aliasHighlightedContextLines(file, {
         deletionLines: highlighted.code.deletionLines as Array<HastNode | undefined>,
@@ -660,12 +672,13 @@ export async function loadHighlightedDiff(
       });
     });
   } catch {
-    const highlighter = await prepareHighlighter("text", appearance);
+    const fallbackTheme = highlightThemeAppearance(theme);
+    const highlighter = await prepareHighlighter("text", fallbackTheme);
     return queueHighlightedWork(() => {
       const highlighted = renderDiffWithHighlighter(
         { ...file.metadata, lang: "text" },
         highlighter,
-        pierreRenderOptions(appearance),
+        pierreRenderOptions(fallbackTheme),
       );
       return aliasHighlightedContextLines(file, {
         deletionLines: highlighted.code.deletionLines as Array<HastNode | undefined>,
@@ -679,31 +692,32 @@ export async function loadHighlightedDiff(
 export async function loadHighlightedSourceLines({
   file,
   text,
-  appearance = "dark",
+  theme = "dark",
 }: {
   file: DiffFile;
   text: string;
-  appearance?: AppTheme["appearance"];
+  theme?: HighlightThemeInput;
 }): Promise<HighlightedSourceCode> {
   try {
-    const highlighter = await prepareHighlighter(file.language, appearance);
+    const highlighter = await prepareHighlighter(file.language, theme);
     return queueHighlightedWork(() => {
       const highlighted = renderFileWithHighlighter(
         sourceFileContents(file, text, file.language),
         highlighter,
-        pierreRenderOptions(appearance),
+        pierreRenderOptions(theme),
       );
       return {
         lines: highlighted.code as Array<HastNode | undefined>,
       };
     });
   } catch {
-    const highlighter = await prepareHighlighter("text", appearance);
+    const fallbackTheme = highlightThemeAppearance(theme);
+    const highlighter = await prepareHighlighter("text", fallbackTheme);
     return queueHighlightedWork(() => {
       const highlighted = renderFileWithHighlighter(
         sourceFileContents(file, text, "text"),
         highlighter,
-        pierreRenderOptions(appearance),
+        pierreRenderOptions(fallbackTheme),
       );
       return {
         lines: highlighted.code as Array<HastNode | undefined>,

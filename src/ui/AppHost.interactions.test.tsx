@@ -719,7 +719,7 @@ describe("App interactions", () => {
     }
   });
 
-  test("theme shortcut shows the selected theme in the status bar", async () => {
+  test("theme shortcut opens a selector and Enter applies the highlighted theme", async () => {
     const setup = await testRender(<AppHost bootstrap={createSingleFileBootstrap()} />, {
       width: 240,
       height: 24,
@@ -731,14 +731,25 @@ describe("App interactions", () => {
       await act(async () => {
         await setup.mockInput.typeText("t");
       });
-      let frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("Theme: Paper"));
-      expect(frame).toContain("Theme: Paper");
+      let frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("Theme selector"));
+      expect(frame).toContain("↑/↓ preview  Enter select  Esc cancel");
+      expect(frame).toContain("›  UI      Midnight");
 
       await act(async () => {
-        await setup.mockInput.typeText("t");
+        await setup.mockInput.pressArrow("down");
       });
-      frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("Theme: Ember"));
-      expect(frame).toContain("Theme: Ember");
+      frame = await waitForFrame(
+        setup,
+        (nextFrame) => nextFrame.includes("›  UI      Paper") && nextFrame.includes("active UI"),
+      );
+      expect(frame).toContain("›  UI      Paper");
+
+      await act(async () => {
+        await setup.mockInput.pressEnter();
+      });
+      frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("Theme: Paper"));
+      expect(frame).toContain("Theme: Paper");
+      expect(frame).not.toContain("Theme selector");
     } finally {
       await act(async () => {
         setup.renderer.destroy();

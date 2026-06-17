@@ -431,7 +431,7 @@ describe("Pierre diff rows", () => {
     const highlighted = await loadHighlightedSourceLines({
       file,
       text,
-      appearance: theme.appearance,
+      theme,
     });
     const spans = spansForHighlightedSourceLine(
       "export const hiddenMarker = true;",
@@ -662,11 +662,56 @@ describe("Pierre diff rows", () => {
       );
       expect(spans.find((span) => span.text.trim() === "42")?.fg).toBe(theme.syntaxColors.number);
       expect(spans.find((span) => span.text.includes("greeting"))?.fg).toBe(
-        theme.syntaxColors.default,
+        theme.syntaxColors.variable,
+      );
+      expect(spans.find((span) => span.text.trim() === "=")?.fg).toBe(theme.syntaxColors.operator);
+      expect(spans.find((span) => span.text.trim() === "{")?.fg).toBe(
+        theme.syntaxColors.punctuation,
       );
       expect(spans.find((span) => span.text.includes('"hello"'))?.fg).toBe(
         theme.syntaxColors.string,
       );
     }
+  });
+
+  test("uses Shiki's bundled Catppuccin theme for Catppuccin syntax", async () => {
+    const metadata = parseDiffFromFile(
+      { name: "syntax.ts", contents: "const a = 1;\n", cacheKey: "catppuccin-before" },
+      {
+        name: "syntax.ts",
+        contents:
+          'const a = 1;\nexport class Greeter {\n  count = 42;\n  greet(user: User) {\n    return "hello" + user.name;\n  }\n}\n',
+        cacheKey: "catppuccin-after",
+      },
+      { context: 3 },
+      true,
+    );
+    const file: DiffFile = {
+      id: "catppuccin-syntax",
+      path: "syntax.ts",
+      patch: "",
+      language: "typescript",
+      stats: { additions: 6, deletions: 0 },
+      metadata,
+      agent: null,
+    };
+    const theme = resolveTheme("catppuccin-mocha", null);
+    const highlighted = await loadHighlightedDiff(file, theme);
+    const spans = buildStackRows(file, highlighted, theme)
+      .filter(
+        (row): row is Extract<DiffRow, { type: "stack-line" }> =>
+          row.type === "stack-line" && row.cell.kind === "addition",
+      )
+      .flatMap((row) => row.cell.spans);
+
+    expect(theme.syntaxTheme).toBe("catppuccin-mocha");
+    expect(spans.find((span) => span.text.includes("class"))?.fg?.toLowerCase()).toBe("#cba6f7");
+    expect(spans.find((span) => span.text.includes("Greeter"))?.fg?.toLowerCase()).toBe("#f9e2af");
+    expect(spans.find((span) => span.text.includes("=") && span.fg)?.fg?.toLowerCase()).toBe(
+      "#94e2d5",
+    );
+    expect(spans.find((span) => span.text.includes("user") && span.fg)?.fg?.toLowerCase()).toBe(
+      "#eba0ac",
+    );
   });
 });

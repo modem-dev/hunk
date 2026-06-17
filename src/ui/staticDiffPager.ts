@@ -38,7 +38,7 @@ import {
 } from "./diff/rowStyle";
 import { sliceTextByWidth } from "./lib/text";
 import { sanitizeTerminalLine, sanitizeTerminalText } from "../lib/terminalText";
-import { resolveTheme, withTransparentSurfaces, type AppTheme } from "./themes";
+import { resolveTheme, withSyntaxTheme, withTransparentSurfaces, type AppTheme } from "./themes";
 
 const DEFAULT_STATIC_WIDTH = 120;
 const MIN_STATIC_WIDTH = 20;
@@ -313,7 +313,7 @@ async function renderStaticFile(
   width: number,
 ) {
   const highlighted =
-    file.isBinary || file.isTooLarge ? null : await loadHighlightedDiff(file, theme.appearance);
+    file.isBinary || file.isTooLarge ? null : await loadHighlightedDiff(file, theme);
   const layout = resolveStaticLayout(options);
   const rows =
     layout === "split"
@@ -388,7 +388,10 @@ export async function renderStaticDiffPager(
         pager: true,
       },
     });
-    const resolvedTheme = resolveTheme(options.theme, null, deps.customTheme);
+    const resolvedTheme = withSyntaxTheme(
+      resolveTheme(options.theme, null, deps.customTheme),
+      options.syntaxTheme,
+    );
     const theme = options.transparentBackground
       ? withTransparentSurfaces(resolvedTheme)
       : resolvedTheme;

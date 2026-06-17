@@ -81,6 +81,9 @@ function buildCustomTheme(customTheme: CustomThemeConfig) {
     noteBackground: customTheme.noteBackground ?? baseTheme.noteBackground,
     noteTitleBackground: customTheme.noteTitleBackground ?? baseTheme.noteTitleBackground,
     noteTitleText: customTheme.noteTitleText ?? baseTheme.noteTitleText,
+    // Explicit syntax color overrides should use Hunk's semantic remap path rather than the
+    // inherited Shiki theme, otherwise the overrides would never affect highlighted code.
+    syntaxTheme: customTheme.syntax ? undefined : baseTheme.syntaxTheme,
   };
 
   return withLazySyntaxStyle(themeBase, {
@@ -122,6 +125,11 @@ export function resolveTheme(
   }
 
   return fallbackTheme();
+}
+
+/** Return a copy of a theme with a configured Shiki syntax theme override. */
+export function withSyntaxTheme(theme: AppTheme, syntaxTheme: string | undefined): AppTheme {
+  return syntaxTheme ? { ...theme, syntaxTheme } : theme;
 }
 
 /** Return a copy of a theme whose painted surfaces allow the terminal background through. */

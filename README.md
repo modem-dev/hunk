@@ -120,6 +120,7 @@ Example:
 
 ```toml
 theme = "graphite"   # graphite, midnight, paper, ember, catppuccin-latte, catppuccin-frappe, catppuccin-macchiato, catppuccin-mocha, zenburn, custom
+syntax_theme = "dracula" # optional Shiki syntax theme; UI theme stays unchanged
 mode = "auto"        # auto, split, stack
 vcs = "git"          # git, jj, sl
 watch = false
@@ -149,9 +150,13 @@ noteBorder = "#c49bff"
 keyword = "#8ed4ff"
 string = "#c7b4ff"
 comment = "#6e85a7"
+operator = "#7fd1ff"
+variable = "#eef4ff"
 ```
 
 All custom theme colors must use `#rrggbb` hex values.
+
+Use `syntax_theme` when you want a complete bundled Shiki syntax palette instead of per-role overrides. For example, `syntax_theme = "dracula"` keeps Hunk's UI theme but asks the Shiki highlighter to color code with Dracula. Press `t` in the app to open the theme selector for UI themes and bundled Shiki syntax themes. Built-in Catppuccin themes source their code syntax from Shiki's bundled Catppuccin themes by default.
 
 ### Git integration
 

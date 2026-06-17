@@ -94,6 +94,32 @@ describe("config resolution", () => {
     });
   });
 
+  test("resolves syntax theme config independently from UI theme", () => {
+    const home = createTempDir("hunk-config-home-");
+    const repo = createTempDir("hunk-config-repo-");
+    createRepo(repo);
+
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(
+      join(home, ".config", "hunk", "config.toml"),
+      ['theme = "graphite"', 'syntax_theme = "dracula"'].join("\n"),
+    );
+
+    mkdirSync(join(repo, ".hunk"), { recursive: true });
+    writeFileSync(join(repo, ".hunk", "config.toml"), 'syntax_theme = "nord"\n');
+
+    const resolved = resolveConfiguredCliInput(
+      createPatchPagerInput({ syntaxTheme: "catppuccin-mocha" }),
+      {
+        cwd: repo,
+        env: { HOME: home },
+      },
+    );
+
+    expect(resolved.input.options.theme).toBe("graphite");
+    expect(resolved.input.options.syntaxTheme).toBe("catppuccin-mocha");
+  });
+
   test("merges custom theme overrides from global and repo config", () => {
     const home = createTempDir("hunk-config-home-");
     const repo = createTempDir("hunk-config-repo-");

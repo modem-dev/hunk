@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { blendHex, hexColorDistance } from "./lib/color";
+import { blendHex, contrastRatio, hexColorDistance } from "./lib/color";
 import {
   CATPPUCCIN_PALETTES,
   resolveTheme,
@@ -8,7 +8,169 @@ import {
   withTransparentSurfaces,
 } from "./themes";
 
+const MIN_READABLE_TEXT_CONTRAST = 4.5;
+const CONTRAST_GATED_THEME_IDS = ["graphite", "midnight", "paper", "ember"] as const;
+
+/** Return a compact failure list for semantic theme foreground/background pairs. */
+function themeContrastFailures(
+  pairs: Array<{ label: string; foreground: string; background: string; minimum?: number }>,
+) {
+  return pairs.flatMap(
+    ({ label, foreground, background, minimum = MIN_READABLE_TEXT_CONTRAST }) => {
+      const ratio = contrastRatio(foreground, background);
+      return ratio + 0.005 < minimum
+        ? [`${label}: ${ratio.toFixed(2)} (${foreground} on ${background})`]
+        : [];
+    },
+  );
+}
+
 describe("themes", () => {
+  test("keeps contrast-gated theme diff row text and gutters within thresholds", () => {
+    const failures = CONTRAST_GATED_THEME_IDS.flatMap((themeId) => {
+      const theme = resolveTheme(themeId, null);
+      return themeContrastFailures([
+        {
+          label: `${theme.id} text/contextBg`,
+          foreground: theme.text,
+          background: theme.contextBg,
+        },
+        { label: `${theme.id} text/addedBg`, foreground: theme.text, background: theme.addedBg },
+        {
+          label: `${theme.id} text/removedBg`,
+          foreground: theme.text,
+          background: theme.removedBg,
+        },
+        {
+          label: `${theme.id} text/contextContentBg`,
+          foreground: theme.text,
+          background: theme.contextContentBg,
+        },
+        {
+          label: `${theme.id} text/addedContentBg`,
+          foreground: theme.text,
+          background: theme.addedContentBg,
+        },
+        {
+          label: `${theme.id} text/removedContentBg`,
+          foreground: theme.text,
+          background: theme.removedContentBg,
+        },
+        {
+          label: `${theme.id} addedSignColor/addedBg`,
+          foreground: theme.addedSignColor,
+          background: theme.addedBg,
+        },
+        {
+          label: `${theme.id} removedSignColor/removedBg`,
+          foreground: theme.removedSignColor,
+          background: theme.removedBg,
+        },
+        {
+          label: `${theme.id} lineNumberFg/lineNumberBg`,
+          foreground: theme.lineNumberFg,
+          background: theme.lineNumberBg,
+        },
+      ]);
+    });
+
+    expect(failures).toEqual([]);
+  });
+
+  test("keeps contrast-gated theme syntax colors within thresholds", () => {
+    const syntaxRoles = [
+      "default",
+      "keyword",
+      "string",
+      "comment",
+      "number",
+      "function",
+      "property",
+      "type",
+      "variable",
+      "operator",
+      "punctuation",
+    ] as const;
+    const failures = CONTRAST_GATED_THEME_IDS.flatMap((themeId) => {
+      const theme = resolveTheme(themeId, null);
+      return themeContrastFailures(
+        syntaxRoles.flatMap((role) => [
+          {
+            label: `${theme.id} syntax.${role}/contextBg`,
+            foreground: theme.syntaxColors[role] ?? theme.syntaxColors.default,
+            background: theme.contextBg,
+          },
+          {
+            label: `${theme.id} syntax.${role}/addedBg`,
+            foreground: theme.syntaxColors[role] ?? theme.syntaxColors.default,
+            background: theme.addedBg,
+          },
+          {
+            label: `${theme.id} syntax.${role}/removedBg`,
+            foreground: theme.syntaxColors[role] ?? theme.syntaxColors.default,
+            background: theme.removedBg,
+          },
+          {
+            label: `${theme.id} syntax.${role}/contextContentBg`,
+            foreground: theme.syntaxColors[role] ?? theme.syntaxColors.default,
+            background: theme.contextContentBg,
+          },
+          {
+            label: `${theme.id} syntax.${role}/addedContentBg`,
+            foreground: theme.syntaxColors[role] ?? theme.syntaxColors.default,
+            background: theme.addedContentBg,
+          },
+          {
+            label: `${theme.id} syntax.${role}/removedContentBg`,
+            foreground: theme.syntaxColors[role] ?? theme.syntaxColors.default,
+            background: theme.removedContentBg,
+          },
+        ]),
+      );
+    });
+
+    expect(failures).toEqual([]);
+  });
+
+  test("keeps contrast-gated theme sidebar and chrome colors within thresholds", () => {
+    const failures = CONTRAST_GATED_THEME_IDS.flatMap((themeId) => {
+      const theme = resolveTheme(themeId, null);
+      const sidebarForegrounds = [
+        ["badgeAdded", theme.badgeAdded],
+        ["badgeRemoved", theme.badgeRemoved],
+        ["badgeNeutral", theme.badgeNeutral],
+        ["fileNew", theme.fileNew],
+        ["fileDeleted", theme.fileDeleted],
+        ["fileRenamed", theme.fileRenamed],
+        ["fileModified", theme.fileModified],
+        ["fileUntracked", theme.fileUntracked],
+      ] as const;
+      const sidebarPairs = sidebarForegrounds.flatMap(([field, foreground]) => [
+        { label: `${theme.id} ${field}/panel`, foreground, background: theme.panel },
+        { label: `${theme.id} ${field}/panelAlt`, foreground, background: theme.panelAlt },
+      ]);
+
+      return themeContrastFailures([
+        { label: `${theme.id} text/panel`, foreground: theme.text, background: theme.panel },
+        { label: `${theme.id} text/panelAlt`, foreground: theme.text, background: theme.panelAlt },
+        { label: `${theme.id} muted/panel`, foreground: theme.muted, background: theme.panel },
+        {
+          label: `${theme.id} muted/panelAlt`,
+          foreground: theme.muted,
+          background: theme.panelAlt,
+        },
+        {
+          label: `${theme.id} active menu text/accentMuted`,
+          foreground: theme.text,
+          background: theme.accentMuted,
+        },
+        ...sidebarPairs,
+      ]);
+    });
+
+    expect(failures).toEqual([]);
+  });
+
   test("resolves all Catppuccin flavors by theme id", () => {
     const latte = resolveTheme("catppuccin-latte", null);
     const frappe = resolveTheme("catppuccin-frappe", null);
@@ -93,6 +255,8 @@ describe("themes", () => {
     const latte = resolveTheme("catppuccin-latte", null);
     const mocha = resolveTheme("catppuccin-mocha", null);
 
+    expect(latte.syntaxTheme).toBe("catppuccin-latte");
+    expect(mocha.syntaxTheme).toBe("catppuccin-mocha");
     expect(latte.syntaxColors).toMatchObject({
       keyword: CATPPUCCIN_PALETTES.latte.mauve,
       string: CATPPUCCIN_PALETTES.latte.green,

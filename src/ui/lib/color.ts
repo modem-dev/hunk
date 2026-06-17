@@ -32,6 +32,31 @@ export function blendHex(fg: string, bg: string, ratio: number) {
     .padStart(6, "0")}`;
 }
 
+/** Convert one sRGB channel into linear-light space for WCAG contrast math. */
+function linearizedChannel(channel: number) {
+  const value = channel / 255;
+  return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+}
+
+/** Return the WCAG relative luminance for a #rrggbb color. */
+export function relativeLuminance(hex: string) {
+  const color = hexToRgb(hex);
+  return (
+    0.2126 * linearizedChannel(color.r) +
+    0.7152 * linearizedChannel(color.g) +
+    0.0722 * linearizedChannel(color.b)
+  );
+}
+
+/** Return the WCAG contrast ratio between two #rrggbb colors. */
+export function contrastRatio(foreground: string, background: string) {
+  const foregroundLuminance = relativeLuminance(foreground);
+  const backgroundLuminance = relativeLuminance(background);
+  const lighter = Math.max(foregroundLuminance, backgroundLuminance);
+  const darker = Math.min(foregroundLuminance, backgroundLuminance);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
 /** Measure how visually separated two #rrggbb colors are using channel deltas. */
 export function hexColorDistance(left: string, right: string) {
   const a = hexToRgb(left);

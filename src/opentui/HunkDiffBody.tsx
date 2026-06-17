@@ -24,7 +24,7 @@ export function HunkDiffBody({
   const internalFile = useMemo(() => (file ? toInternalDiffFile(file) : undefined), [file]);
   const resolvedHighlighted = useHighlightedDiff({
     file: internalFile,
-    appearance: resolvedTheme.appearance,
+    theme: resolvedTheme,
     shouldLoadHighlight: highlight,
   });
   const rows = useMemo(

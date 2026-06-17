@@ -68,6 +68,8 @@ const CUSTOM_SYNTAX_COLOR_KEYS = [
   "function",
   "property",
   "type",
+  "variable",
+  "operator",
   "punctuation",
 ] as const;
 
@@ -231,6 +233,7 @@ function readConfigPreferences(source: Record<string, unknown>): CommonOptions {
     mode: normalizeLayoutMode(source.mode),
     vcs: normalizeVcsMode(source.vcs),
     theme: normalizeString(source.theme),
+    syntaxTheme: normalizeString(source.syntax_theme),
     watch: normalizeBoolean(source.watch),
     excludeUntracked: normalizeBoolean(source.exclude_untracked),
     lineNumbers: normalizeBoolean(source.line_numbers),
@@ -252,6 +255,7 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
     mode: overrides.mode ?? base.mode,
     vcs: overrides.vcs ?? base.vcs,
     theme: overrides.theme ?? base.theme,
+    syntaxTheme: overrides.syntaxTheme ?? base.syntaxTheme,
     agentContext: overrides.agentContext ?? base.agentContext,
     pager: overrides.pager ?? base.pager,
     watch: overrides.watch ?? base.watch,
@@ -318,6 +322,7 @@ export function resolveConfiguredCliInput(
     // Keep the built-in theme default explicit so stdin-backed startup paths do not depend on
     // renderer theme-mode detection for their initial palette.
     theme: "graphite",
+    syntaxTheme: undefined,
     agentContext: input.options.agentContext,
     pager: input.options.pager ?? false,
     watch: input.options.watch ?? false,
@@ -349,6 +354,7 @@ export function resolveConfiguredCliInput(
     pager: input.options.pager ?? false,
     watch: input.options.watch ?? resolvedOptions.watch ?? false,
     excludeUntracked: resolvedOptions.excludeUntracked ?? false,
+    syntaxTheme: resolvedOptions.syntaxTheme,
     vcs: resolvedOptions.vcs ?? "git",
     mode: resolvedOptions.mode ?? DEFAULT_VIEW_PREFERENCES.mode,
     lineNumbers: resolvedOptions.lineNumbers ?? DEFAULT_VIEW_PREFERENCES.showLineNumbers,

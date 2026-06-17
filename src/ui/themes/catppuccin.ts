@@ -205,6 +205,7 @@ export function createCatppuccinTheme(flavor: CatppuccinFlavor) {
       noteBackground: blendHex(palette.mauve, panel, 0.12),
       noteTitleBackground: blendHex(palette.mauve, panel, 0.22),
       noteTitleText: palette.text,
+      syntaxTheme: `catppuccin-${flavor}`,
     },
     {
       default: palette.text,

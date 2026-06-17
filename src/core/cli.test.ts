@@ -77,6 +77,8 @@ describe("parseCli", () => {
       "split",
       "--theme",
       "paper",
+      "--syntax-theme",
+      "dracula",
       "--agent-context",
       "notes.json",
       "--no-line-numbers",
@@ -94,6 +96,7 @@ describe("parseCli", () => {
       options: {
         mode: "split",
         theme: "paper",
+        syntaxTheme: "dracula",
         agentContext: "notes.json",
         watch: true,
         lineNumbers: false,

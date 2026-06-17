@@ -83,6 +83,7 @@ export interface CommonOptions {
   mode?: LayoutMode;
   vcs?: VcsMode;
   theme?: string;
+  syntaxTheme?: string;
   agentContext?: string;
   pager?: boolean;
   watch?: boolean;
@@ -105,6 +106,8 @@ export interface CustomSyntaxColorsConfig {
   function?: string;
   property?: string;
   type?: string;
+  variable?: string;
+  operator?: string;
   punctuation?: string;
 }
 
