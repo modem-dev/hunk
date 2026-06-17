@@ -732,7 +732,7 @@ describe("App interactions", () => {
         await setup.mockInput.typeText("t");
       });
       let frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("Theme selector"));
-      expect(frame).toContain("↑/↓ preview  Enter select  Esc cancel");
+      expect(frame).toContain("↑/↓/Tab preview  Enter select  Esc cancel");
       expect(frame).toContain("›  UI      Midnight");
 
       await act(async () => {
@@ -750,6 +750,79 @@ describe("App interactions", () => {
       frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("Theme: Paper"));
       expect(frame).toContain("Theme: Paper");
       expect(frame).not.toContain("Theme selector");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("theme selector reopens on the active syntax theme and UI choices reset syntax overrides", async () => {
+    const bootstrap = createTestVcsAppBootstrap({
+      files: [
+        createTestDiffFile(
+          "alpha",
+          "alpha.ts",
+          "export const alpha = 1;\n",
+          "export const alpha = 2;\n",
+        ),
+      ],
+      initialTheme: "zenburn",
+      vcsOptions: { syntaxTheme: "andromeeda" },
+    });
+    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
+      width: 240,
+      height: 24,
+    });
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.typeText("t");
+      });
+      let frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("Theme selector"));
+      expect(frame).toContain("›  Syntax  andromeeda");
+
+      await act(async () => {
+        await setup.mockInput.pressTab();
+      });
+      frame = await waitForFrame(
+        setup,
+        (nextFrame) =>
+          nextFrame.includes("›  Syntax  aurora-x") && nextFrame.includes("active syntax + bg"),
+      );
+      expect(frame).toContain("›  Syntax  aurora-x");
+
+      await act(async () => {
+        await setup.mockInput.pressArrow("up");
+        await setup.mockInput.pressArrow("up");
+        await setup.mockInput.pressArrow("up");
+      });
+      frame = await waitForFrame(
+        setup,
+        (nextFrame) => nextFrame.includes("›  UI      Zenburn") && nextFrame.includes("active UI"),
+      );
+      expect(frame).toContain("›  UI      Zenburn");
+      expect(frame).toContain("active syntax + bg");
+
+      await act(async () => {
+        await setup.mockInput.pressEnter();
+      });
+      frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("Theme: Zenburn"));
+      expect(frame).not.toContain("Theme selector");
+
+      await act(async () => {
+        await setup.mockInput.typeText("t");
+      });
+      frame = await waitForFrame(
+        setup,
+        (nextFrame) =>
+          nextFrame.includes("›  UI      Zenburn") && nextFrame.includes("Theme default"),
+      );
+      expect(frame).toContain("›  UI      Zenburn");
+      expect(frame).toContain("✓  Syntax  Theme default");
+      expect(frame).toContain("active syntax + bg");
     } finally {
       await act(async () => {
         setup.renderer.destroy();

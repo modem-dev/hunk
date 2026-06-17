@@ -283,6 +283,12 @@ export function useAppKeyboardShortcuts({
       return true;
     }
 
+    if (key.name === "tab") {
+      consumeKey(key);
+      moveThemeSelector(key.shift ? -1 : 1);
+      return true;
+    }
+
     if (key.name === "return" || key.name === "enter") {
       consumeKey(key);
       acceptThemeSelector();

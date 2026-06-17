@@ -426,11 +426,12 @@ export function App({
     setWrapLines((current) => !current);
   };
 
-  /** Switch the active theme and surface the result in the shared footer notice area. */
+  /** Switch the active UI theme and reset explicit syntax overrides to its built-in palette. */
   const selectTheme = useCallback(
     (nextThemeId: string) => {
       const nextTheme = themeOptions.find((theme) => theme.id === nextThemeId);
       setThemeId(nextThemeId);
+      setSyntaxThemeId(undefined);
       showTransientNotice(`Theme: ${nextTheme?.label ?? nextThemeId}`);
     },
     [showTransientNotice, themeOptions],
@@ -449,15 +450,18 @@ export function App({
   const previewThemeSelectorItem = useCallback((item: (typeof themeSelectorItems)[number]) => {
     if (item.kind === "ui") {
       setThemeId(item.id);
+      setSyntaxThemeId(undefined);
     } else {
       setSyntaxThemeId(item.id === "__default_syntax__" ? undefined : item.id);
     }
   }, []);
 
-  /** Open the keyboard-driven theme selector with the current UI theme highlighted. */
+  /** Open the keyboard-driven theme selector with the active explicit syntax theme, or current UI theme, highlighted. */
   const openThemeSelector = useCallback(() => {
-    const currentIndex = themeSelectorItems.findIndex(
-      (item) => item.kind === "ui" && item.id === activeTheme.id,
+    const currentIndex = themeSelectorItems.findIndex((item) =>
+      syntaxThemeId
+        ? item.kind === "syntax" && item.id === syntaxThemeId
+        : item.kind === "ui" && item.id === activeTheme.id,
     );
     themeSelectorOriginRef.current = { themeId, syntaxThemeId };
     setThemeSelectorIndex(Math.max(0, currentIndex));

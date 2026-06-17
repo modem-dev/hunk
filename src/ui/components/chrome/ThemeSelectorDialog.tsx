@@ -64,7 +64,9 @@ export function ThemeSelectorDialog({
       onClose={onClose}
     >
       <box style={{ width: "100%", height: 1 }}>
-        <text fg={theme.muted}>{fitText("↑/↓ preview  Enter select  Esc cancel", bodyWidth)}</text>
+        <text fg={theme.muted}>
+          {fitText("↑/↓/Tab preview  Enter select  Esc cancel", bodyWidth)}
+        </text>
       </box>
       <box style={{ width: "100%", height: 1 }} />
       {visibleItems.map((item, offset) => {
