@@ -81,7 +81,9 @@ export function ThemeSelectorDialog({
           <box
             key={`${item.kind}:${item.id}`}
             style={{ width: "100%", height: 1, flexDirection: "row", backgroundColor: bg }}
-            onMouseOver={() => onHoverItem(index)}
+            // Use movement, not enter/over, so palette preview rerenders do not reselect the row
+            // currently under a stationary mouse while the user navigates with the keyboard.
+            onMouseMove={() => onHoverItem(index)}
             onMouseUp={(event: TuiMouseEvent) => {
               event.stopPropagation();
               onSelectItem(item);
