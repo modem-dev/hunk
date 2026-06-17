@@ -136,9 +136,79 @@ export const BUNDLED_SHIKI_THEME_BACKGROUNDS: Record<BundledShikiThemeId, string
   "vitesse-light": "#ffffff",
 };
 
+export const BUNDLED_SHIKI_THEME_FOREGROUNDS: Partial<Record<BundledShikiThemeId, string>> = {
+  andromeeda: "#d5ced9",
+  "ayu-dark": "#bfbdb6",
+  "ayu-light": "#5c6166",
+  "ayu-mirage": "#cccac2",
+  "catppuccin-frappe": "#c6d0f5",
+  "catppuccin-latte": "#4c4f69",
+  "catppuccin-macchiato": "#cad3f5",
+  "catppuccin-mocha": "#cdd6f4",
+  "dark-plus": "#d4d4d4",
+  dracula: "#f8f8f2",
+  "dracula-soft": "#f6f6f4",
+  "everforest-dark": "#d3c6aa",
+  "everforest-light": "#5c6a72",
+  "github-dark": "#e1e4e8",
+  "github-dark-default": "#e6edf3",
+  "github-dark-dimmed": "#adbac7",
+  "github-dark-high-contrast": "#f0f3f6",
+  "github-light": "#24292e",
+  "github-light-default": "#1f2328",
+  "github-light-high-contrast": "#0e1116",
+  "gruvbox-dark-hard": "#ebdbb2",
+  "gruvbox-dark-medium": "#ebdbb2",
+  "gruvbox-dark-soft": "#ebdbb2",
+  "gruvbox-light-hard": "#3c3836",
+  "gruvbox-light-medium": "#3c3836",
+  "gruvbox-light-soft": "#3c3836",
+  houston: "#eef0f9",
+  "kanagawa-dragon": "#c5c9c5",
+  "kanagawa-lotus": "#545464",
+  "kanagawa-wave": "#dcd7ba",
+  laserwave: "#ffffff",
+  "light-plus": "#000000",
+  "material-theme": "#eeffff",
+  "material-theme-darker": "#eeffff",
+  "material-theme-lighter": "#90a4ae",
+  "material-theme-ocean": "#babed8",
+  "material-theme-palenight": "#babed8",
+  "min-light": "#212121",
+  monokai: "#f8f8f2",
+  "night-owl": "#d6deeb",
+  "night-owl-light": "#403f53",
+  nord: "#d8dee9",
+  "one-dark-pro": "#abb2bf",
+  "one-light": "#383a42",
+  plastic: "#a9b2c3",
+  poimandres: "#a6accd",
+  red: "#f8f8f8",
+  "rose-pine": "#e0def4",
+  "rose-pine-dawn": "#575279",
+  "rose-pine-moon": "#e0def4",
+  "slack-dark": "#e6e6e6",
+  "slack-ochin": "#000000",
+  "snazzy-light": "#565869",
+  "solarized-dark": "#839496",
+  "solarized-light": "#657b83",
+  "tokyo-night": "#a9b1d6",
+  vesper: "#ffffff",
+  "vitesse-black": "#dbd7ca",
+  "vitesse-dark": "#dbd7ca",
+  "vitesse-light": "#393a34",
+};
+
 /** Return the editor surface declared by a bundled Shiki theme, when Hunk knows it. */
 export function getBundledShikiThemeBackground(themeId: string | undefined) {
   return themeId && themeId in BUNDLED_SHIKI_THEME_BACKGROUNDS
     ? BUNDLED_SHIKI_THEME_BACKGROUNDS[themeId as BundledShikiThemeId]
+    : undefined;
+}
+
+/** Return the editor foreground declared by a bundled Shiki theme, when Hunk knows it. */
+export function getBundledShikiThemeForeground(themeId: string | undefined) {
+  return themeId && themeId in BUNDLED_SHIKI_THEME_FOREGROUNDS
+    ? BUNDLED_SHIKI_THEME_FOREGROUNDS[themeId as BundledShikiThemeId]
     : undefined;
 }

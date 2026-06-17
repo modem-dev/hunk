@@ -905,7 +905,7 @@ function renderSplitCell(
       {renderInlineSpans(
         cell.spans,
         contentWidth,
-        theme.text,
+        theme.syntaxColors.default,
         palette.contentBg,
         `${keyPrefix}:content`,
         contentOffset,
@@ -970,7 +970,7 @@ function renderStackCell(
       {renderInlineSpans(
         cell.spans,
         contentWidth,
-        theme.text,
+        theme.syntaxColors.default,
         palette.contentBg,
         `${keyPrefix}:content`,
         contentOffset,
@@ -1029,7 +1029,7 @@ function renderWrappedSplitCellLine(
       {renderInlineSpans(
         line.spans,
         contentWidth,
-        theme.text,
+        theme.syntaxColors.default,
         resolvedPalette.contentBg,
         `${keyPrefix}:content`,
         0,
@@ -1087,7 +1087,7 @@ function renderWrappedStackCellLine(
       {renderInlineSpans(
         line.spans,
         contentWidth,
-        theme.text,
+        theme.syntaxColors.default,
         resolvedPalette.contentBg,
         `${keyPrefix}:content`,
         0,

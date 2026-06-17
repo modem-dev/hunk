@@ -1,7 +1,7 @@
 import type { ThemeMode } from "@opentui/core";
 import type { CustomThemeConfig } from "../core/types";
 import { blendHex, contrastRatio, relativeLuminance } from "./lib/color";
-import { getBundledShikiThemeBackground } from "./lib/shikiThemes";
+import { getBundledShikiThemeBackground, getBundledShikiThemeForeground } from "./lib/shikiThemes";
 import {
   CATPPUCCIN_FRAPPE_THEME,
   CATPPUCCIN_LATTE_THEME,
@@ -135,6 +135,15 @@ const DEFAULT_SYNTAX_BACKGROUND_MODE: SyntaxBackgroundMode = "editor-surface";
 const MIN_GUTTER_CONTRAST = 4.5;
 const MIN_DIFF_SIGN_CONTRAST = 3;
 
+/** Return a high-contrast foreground layered over an arbitrary editor surface. */
+function readableForeground(preferred: string | undefined, background: string) {
+  if (preferred && contrastRatio(preferred, background) >= MIN_GUTTER_CONTRAST) {
+    return preferred;
+  }
+
+  return relativeLuminance(background) > 0.45 ? "#000000" : "#ffffff";
+}
+
 /** Return a readable dim foreground for gutters layered over an arbitrary editor surface. */
 function readableDimForeground(preferred: string, background: string) {
   if (contrastRatio(preferred, background) >= MIN_GUTTER_CONTRAST) {
@@ -158,7 +167,11 @@ function readableDiffSign(preferred: string, background: string) {
 }
 
 /** Derive diff row tints around one syntax theme editor background. */
-function withSyntaxEditorSurface(theme: AppTheme, editorBackground: string): AppTheme {
+function withSyntaxEditorSurface(
+  theme: AppTheme,
+  editorBackground: string,
+  editorForeground: string | undefined,
+): AppTheme {
   const isLightSurface = relativeLuminance(editorBackground) > 0.45;
   const rowTint = isLightSurface ? 0.09 : 0.14;
   const contentTint = isLightSurface ? 0.16 : 0.23;
@@ -167,6 +180,7 @@ function withSyntaxEditorSurface(theme: AppTheme, editorBackground: string): App
   const neutralPanel = blendHex(theme.panel, editorBackground, isLightSurface ? 0.1 : 0.18);
   const addedSignColor = readableDiffSign(theme.addedSignColor, editorBackground);
   const removedSignColor = readableDiffSign(theme.removedSignColor, editorBackground);
+  const codeForeground = readableForeground(editorForeground, editorBackground);
 
   return {
     ...theme,
@@ -186,6 +200,11 @@ function withSyntaxEditorSurface(theme: AppTheme, editorBackground: string): App
     selectedHunk: blendHex(theme.accent, editorBackground, selectedTint),
     noteBackground: neutralPanel,
     noteTitleBackground: neutralPanel,
+    syntaxColors: {
+      ...theme.syntaxColors,
+      default: codeForeground,
+      variable: theme.syntaxColors.variable ?? codeForeground,
+    },
   };
 }
 
@@ -205,7 +224,10 @@ export function withSyntaxTheme(
   }
 
   const editorBackground = getBundledShikiThemeBackground(syntaxTheme);
-  return editorBackground ? withSyntaxEditorSurface(nextTheme, editorBackground) : nextTheme;
+  const editorForeground = getBundledShikiThemeForeground(syntaxTheme);
+  return editorBackground
+    ? withSyntaxEditorSurface(nextTheme, editorBackground, editorForeground)
+    : nextTheme;
 }
 
 /** Return a copy of a theme whose painted surfaces allow the terminal background through. */

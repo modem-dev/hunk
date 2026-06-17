@@ -320,6 +320,7 @@ describe("themes", () => {
     expect(githubLight.syntaxTheme).toBe("github-light");
     expect(githubLight.background).toBe("#ffffff");
     expect(githubLight.contextBg).toBe("#ffffff");
+    expect(githubLight.syntaxColors.default).toBe("#24292e");
     expect(githubLight.addedBg).not.toBe(githubLight.contextBg);
     expect(githubLight.removedBg).not.toBe(githubLight.contextBg);
     expect(
@@ -336,6 +337,11 @@ describe("themes", () => {
           label: `${syntaxTheme} line number`,
           foreground: theme.lineNumberFg,
           background: theme.lineNumberBg,
+        },
+        {
+          label: `${syntaxTheme} code foreground`,
+          foreground: theme.syntaxColors.default,
+          background: theme.contextBg,
         },
         {
           label: `${syntaxTheme} added sign`,
