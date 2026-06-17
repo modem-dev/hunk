@@ -1,5 +1,7 @@
 import type { ThemeMode } from "@opentui/core";
 import type { CustomThemeConfig } from "../core/types";
+import { blendHex, contrastRatio, relativeLuminance } from "./lib/color";
+import { getBundledShikiThemeBackground } from "./lib/shikiThemes";
 import {
   CATPPUCCIN_FRAPPE_THEME,
   CATPPUCCIN_LATTE_THEME,
@@ -127,9 +129,83 @@ export function resolveTheme(
   return fallbackTheme();
 }
 
-/** Return a copy of a theme with a configured Shiki syntax theme override. */
-export function withSyntaxTheme(theme: AppTheme, syntaxTheme: string | undefined): AppTheme {
-  return syntaxTheme ? { ...theme, syntaxTheme } : theme;
+export type SyntaxBackgroundMode = "tokens-only" | "editor-surface";
+
+const DEFAULT_SYNTAX_BACKGROUND_MODE: SyntaxBackgroundMode = "editor-surface";
+const MIN_GUTTER_CONTRAST = 4.5;
+const MIN_DIFF_SIGN_CONTRAST = 3;
+
+/** Return a readable dim foreground for gutters layered over an arbitrary editor surface. */
+function readableDimForeground(preferred: string, background: string) {
+  if (contrastRatio(preferred, background) >= MIN_GUTTER_CONTRAST) {
+    return preferred;
+  }
+
+  return relativeLuminance(background) > 0.45
+    ? blendHex("#000000", background, 0.62)
+    : blendHex("#ffffff", background, 0.62);
+}
+
+/** Return a semantic diff marker color that remains legible on a syntax editor surface. */
+function readableDiffSign(preferred: string, background: string) {
+  if (contrastRatio(preferred, background) >= MIN_DIFF_SIGN_CONTRAST) {
+    return preferred;
+  }
+
+  return relativeLuminance(background) > 0.45
+    ? blendHex("#000000", preferred, 0.45)
+    : blendHex("#ffffff", preferred, 0.45);
+}
+
+/** Derive diff row tints around one syntax theme editor background. */
+function withSyntaxEditorSurface(theme: AppTheme, editorBackground: string): AppTheme {
+  const isLightSurface = relativeLuminance(editorBackground) > 0.45;
+  const rowTint = isLightSurface ? 0.09 : 0.14;
+  const contentTint = isLightSurface ? 0.16 : 0.23;
+  const movedTint = isLightSurface ? 0.13 : 0.19;
+  const selectedTint = isLightSurface ? 0.14 : 0.2;
+  const neutralPanel = blendHex(theme.panel, editorBackground, isLightSurface ? 0.1 : 0.18);
+  const addedSignColor = readableDiffSign(theme.addedSignColor, editorBackground);
+  const removedSignColor = readableDiffSign(theme.removedSignColor, editorBackground);
+
+  return {
+    ...theme,
+    background: editorBackground,
+    contextBg: editorBackground,
+    contextContentBg: editorBackground,
+    addedBg: blendHex(addedSignColor, editorBackground, rowTint),
+    removedBg: blendHex(removedSignColor, editorBackground, rowTint),
+    movedAddedBg: blendHex(addedSignColor, editorBackground, movedTint),
+    movedRemovedBg: blendHex(removedSignColor, editorBackground, movedTint),
+    addedContentBg: blendHex(addedSignColor, editorBackground, contentTint),
+    removedContentBg: blendHex(removedSignColor, editorBackground, contentTint),
+    addedSignColor,
+    removedSignColor,
+    lineNumberBg: editorBackground,
+    lineNumberFg: readableDimForeground(theme.lineNumberFg, editorBackground),
+    selectedHunk: blendHex(theme.accent, editorBackground, selectedTint),
+    noteBackground: neutralPanel,
+    noteTitleBackground: neutralPanel,
+  };
+}
+
+/** Return a copy of a theme with a configured Shiki syntax theme and background policy. */
+export function withSyntaxTheme(
+  theme: AppTheme,
+  syntaxTheme: string | undefined,
+  syntaxBackgroundMode = DEFAULT_SYNTAX_BACKGROUND_MODE,
+): AppTheme {
+  if (!syntaxTheme) {
+    return theme;
+  }
+
+  const nextTheme = { ...theme, syntaxTheme };
+  if (syntaxBackgroundMode === "tokens-only") {
+    return nextTheme;
+  }
+
+  const editorBackground = getBundledShikiThemeBackground(syntaxTheme);
+  return editorBackground ? withSyntaxEditorSurface(nextTheme, editorBackground) : nextTheme;
 }
 
 /** Return a copy of a theme whose painted surfaces allow the terminal background through. */

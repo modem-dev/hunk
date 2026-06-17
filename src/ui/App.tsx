@@ -178,14 +178,14 @@ export function App({
       {
         id: "__default_syntax__",
         label: "Theme default",
-        description: syntaxThemeId ? "reset syntax" : "active syntax",
+        description: syntaxThemeId ? "reset syntax + bg" : "active syntax + bg",
         kind: "syntax" as const,
         active: !syntaxThemeId,
       },
       ...BUNDLED_SHIKI_THEME_IDS.map((syntaxTheme) => ({
         id: syntaxTheme,
         label: syntaxTheme,
-        description: syntaxTheme === syntaxThemeId ? "active syntax" : "Shiki theme",
+        description: syntaxTheme === syntaxThemeId ? "active syntax + bg" : "Shiki syntax + bg",
         kind: "syntax" as const,
         active: syntaxTheme === syntaxThemeId,
       })),

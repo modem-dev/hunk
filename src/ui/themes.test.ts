@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { blendHex, contrastRatio, hexColorDistance } from "./lib/color";
+import { BUNDLED_SHIKI_THEME_IDS } from "./lib/shikiThemes";
 import {
   CATPPUCCIN_PALETTES,
   resolveTheme,
   TRANSPARENT_BACKGROUND,
+  withSyntaxTheme,
   withTransparentBackground,
   withTransparentSurfaces,
 } from "./themes";
@@ -294,6 +296,91 @@ describe("themes", () => {
       function: "#94bff3",
       type: "#94bff3",
     });
+  });
+
+  test("withSyntaxTheme derives diff surfaces from bundled Shiki editor backgrounds", () => {
+    const graphite = resolveTheme("graphite", null);
+    const dracula = withSyntaxTheme(graphite, "dracula");
+    const githubLight = withSyntaxTheme(graphite, "github-light");
+
+    expect(dracula.syntaxTheme).toBe("dracula");
+    expect(dracula.background).toBe("#282a36");
+    expect(dracula.contextBg).toBe("#282a36");
+    expect(dracula.contextContentBg).toBe("#282a36");
+    expect(dracula.addedBg).not.toBe(dracula.contextBg);
+    expect(dracula.removedBg).not.toBe(dracula.contextBg);
+    expect(hexColorDistance(dracula.addedContentBg, dracula.contextBg)).toBeGreaterThan(
+      hexColorDistance(dracula.addedBg, dracula.contextBg),
+    );
+    expect(hexColorDistance(dracula.removedContentBg, dracula.contextBg)).toBeGreaterThan(
+      hexColorDistance(dracula.removedBg, dracula.contextBg),
+    );
+    expect(contrastRatio(dracula.lineNumberFg, dracula.lineNumberBg)).toBeGreaterThanOrEqual(4.5);
+
+    expect(githubLight.syntaxTheme).toBe("github-light");
+    expect(githubLight.background).toBe("#ffffff");
+    expect(githubLight.contextBg).toBe("#ffffff");
+    expect(githubLight.addedBg).not.toBe(githubLight.contextBg);
+    expect(githubLight.removedBg).not.toBe(githubLight.contextBg);
+    expect(
+      contrastRatio(githubLight.lineNumberFg, githubLight.lineNumberBg),
+    ).toBeGreaterThanOrEqual(4.5);
+  });
+
+  test("withSyntaxTheme keeps derived bundled Shiki backgrounds usable", () => {
+    const graphite = resolveTheme("graphite", null);
+    const failures = BUNDLED_SHIKI_THEME_IDS.flatMap((syntaxTheme) => {
+      const theme = withSyntaxTheme(graphite, syntaxTheme);
+      const checks = [
+        {
+          label: `${syntaxTheme} line number`,
+          foreground: theme.lineNumberFg,
+          background: theme.lineNumberBg,
+        },
+        {
+          label: `${syntaxTheme} added sign`,
+          foreground: theme.addedSignColor,
+          background: theme.addedBg,
+          minimum: 3,
+        },
+        {
+          label: `${syntaxTheme} removed sign`,
+          foreground: theme.removedSignColor,
+          background: theme.removedBg,
+          minimum: 3,
+        },
+      ];
+
+      return [
+        ...themeContrastFailures(checks),
+        ...(theme.addedBg === theme.contextBg ? [`${syntaxTheme} added bg matches context`] : []),
+        ...(theme.removedBg === theme.contextBg
+          ? [`${syntaxTheme} removed bg matches context`]
+          : []),
+      ];
+    });
+
+    expect(failures).toEqual([]);
+  });
+
+  test("withSyntaxTheme can keep syntax themes token-only through explicit policy", () => {
+    const graphite = resolveTheme("graphite", null);
+    const tokenOnly = withSyntaxTheme(graphite, "dracula", "tokens-only");
+
+    expect(tokenOnly.syntaxTheme).toBe("dracula");
+    expect(tokenOnly.background).toBe(graphite.background);
+    expect(tokenOnly.contextBg).toBe(graphite.contextBg);
+    expect(tokenOnly.addedBg).toBe(graphite.addedBg);
+  });
+
+  test("withSyntaxTheme leaves unknown syntax theme backgrounds on the UI palette", () => {
+    const graphite = resolveTheme("graphite", null);
+    const custom = withSyntaxTheme(graphite, "custom-theme-file");
+
+    expect(custom.syntaxTheme).toBe("custom-theme-file");
+    expect(custom.background).toBe(graphite.background);
+    expect(custom.contextBg).toBe(graphite.contextBg);
+    expect(custom.addedBg).toBe(graphite.addedBg);
   });
 
   test("withTransparentBackground only swaps painted background fields", () => {

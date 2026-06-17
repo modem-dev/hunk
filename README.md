@@ -156,7 +156,7 @@ variable = "#eef4ff"
 
 All custom theme colors must use `#rrggbb` hex values.
 
-Use `syntax_theme` when you want a complete bundled Shiki syntax palette instead of per-role overrides. For example, `syntax_theme = "dracula"` keeps Hunk's UI theme but asks the Shiki highlighter to color code with Dracula. Press `t` in the app to open the theme selector for UI themes and bundled Shiki syntax themes. Built-in Catppuccin themes source their code syntax from Shiki's bundled Catppuccin themes by default.
+Use `syntax_theme` when you want a complete bundled Shiki syntax palette instead of per-role overrides. For example, `syntax_theme = "dracula"` keeps Hunk's chrome from the active UI theme while asking the Shiki highlighter to color code with Dracula and deriving diff row surfaces from Dracula's editor background. Press `t` in the app to open the theme selector for UI themes and bundled Shiki syntax themes; moving through syntax themes previews both token colors and their editor backgrounds. Built-in Catppuccin UI themes source their code syntax from Shiki's bundled Catppuccin themes by default while keeping Hunk's Catppuccin diff palette until you choose an explicit syntax theme.
 
 ### Git integration
 
