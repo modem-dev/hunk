@@ -236,7 +236,18 @@ export function measureDiffSectionGeometry(
   // Width, wrapping, and line-number visibility all affect rendered row heights, so they must
   // participate in the cache key alongside the structural file/layout inputs. Expansion state
   // changes the row stream, so it has to participate too.
-  const cacheKey = `${file.id}:${layout}:${showHunkHeaders ? 1 : 0}:${theme.id}:${width}:${showLineNumbers ? 1 : 0}:${wrapLines ? 1 : 0}:${reserveAddNoteColumn ? 1 : 0}${expansionCacheKey(expandedKeys, sourceStatus)}${notesCacheKey(visibleAgentNotes)}`;
+  const themeCacheKey = [
+    theme.id,
+    theme.syntaxTheme ?? "",
+    theme.background,
+    theme.panelAlt,
+    theme.contextBg,
+    theme.addedBg,
+    theme.removedBg,
+    theme.lineNumberBg,
+    theme.lineNumberFg,
+  ].join(":");
+  const cacheKey = `${file.id}:${layout}:${showHunkHeaders ? 1 : 0}:${themeCacheKey}:${width}:${showLineNumbers ? 1 : 0}:${wrapLines ? 1 : 0}:${reserveAddNoteColumn ? 1 : 0}${expansionCacheKey(expandedKeys, sourceStatus)}${notesCacheKey(visibleAgentNotes)}`;
   const cacheSlot = sectionGeometryCacheSlot(visibleAgentNotes);
   const cached = getCachedSectionGeometry(file, cacheSlot, cacheKey);
   if (cached) {

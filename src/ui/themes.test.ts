@@ -307,6 +307,8 @@ describe("themes", () => {
     expect(dracula.background).toBe("#282a36");
     expect(dracula.contextBg).toBe("#282a36");
     expect(dracula.contextContentBg).toBe("#282a36");
+    expect(dracula.panelAlt).not.toBe(graphite.panelAlt);
+    expect(contrastRatio(dracula.text, dracula.panelAlt)).toBeGreaterThanOrEqual(4.5);
     expect(dracula.addedSignColor).toBe("#50fa7b");
     expect(dracula.removedSignColor).toBe("#ff5555");
     expect(dracula.accent).toBe("#8be9fd");
@@ -323,6 +325,7 @@ describe("themes", () => {
     expect(githubLight.syntaxTheme).toBe("github-light");
     expect(githubLight.background).toBe("#ffffff");
     expect(githubLight.contextBg).toBe("#ffffff");
+    expect(githubLight.panelAlt).not.toBe(graphite.panelAlt);
     expect(githubLight.syntaxColors.default).toBe("#24292e");
     expect(githubLight.addedSignColor).toBe("#28a745");
     expect(githubLight.removedSignColor).toBe("#d73a49");
@@ -348,6 +351,11 @@ describe("themes", () => {
           label: `${syntaxTheme} code foreground`,
           foreground: theme.syntaxColors.default,
           background: theme.contextBg,
+        },
+        {
+          label: `${syntaxTheme} metadata foreground`,
+          foreground: theme.text,
+          background: theme.panelAlt,
         },
         {
           label: `${syntaxTheme} added sign`,
@@ -382,6 +390,7 @@ describe("themes", () => {
     expect(shikiSurface.syntaxTheme).toBe("dracula");
     expect(shikiSurface.background).toBe("#282a36");
     expect(shikiSurface.contextBg).toBe("#282a36");
+    expect(shikiSurface.panelAlt).not.toBe(graphite.panelAlt);
     expect(shikiSurface.syntaxColors.default).toBe("#f8f8f2");
     expect(shikiSurface.addedSignColor).toBe("#50fa7b");
     expect(shikiSurface.removedSignColor).toBe("#ff5555");

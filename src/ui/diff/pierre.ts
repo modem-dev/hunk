@@ -54,6 +54,35 @@ type HighlightOptions = ReturnType<typeof getHighlighterOptions>;
 const highlighterOptionsByKey = new Map<string, HighlightOptions>();
 let queuedHighlightWork = Promise.resolve();
 
+/** Build a cache key for theme-dependent terminal colors, not just the stable UI theme id. */
+function themeRenderCacheKey(theme: AppTheme) {
+  return [
+    theme.id,
+    theme.syntaxTheme ?? "",
+    theme.appearance,
+    theme.background,
+    theme.panelAlt,
+    theme.contextBg,
+    theme.addedBg,
+    theme.removedBg,
+    theme.addedContentBg,
+    theme.removedContentBg,
+    theme.addedSignColor,
+    theme.removedSignColor,
+    theme.syntaxColors.default,
+    theme.syntaxColors.keyword,
+    theme.syntaxColors.string,
+    theme.syntaxColors.comment,
+    theme.syntaxColors.number,
+    theme.syntaxColors.function,
+    theme.syntaxColors.property,
+    theme.syntaxColors.type,
+    theme.syntaxColors.variable ?? "",
+    theme.syntaxColors.operator ?? "",
+    theme.syntaxColors.punctuation,
+  ].join(":");
+}
+
 type HastNode = HastTextNode | HastElementNode;
 
 interface HastTextNode {
@@ -273,15 +302,7 @@ function resolveWordDiffHighlightBg(contentBg: string, lineBg: string, signColor
 
 /** Resolve the inline word-diff background, strengthening theme colors that are too subtle to see. */
 function wordDiffHighlightBg(kind: SplitLineCell["kind"], theme: AppTheme) {
-  const cacheKey = [
-    theme.id,
-    theme.addedBg,
-    theme.addedContentBg,
-    theme.removedBg,
-    theme.removedContentBg,
-    theme.contextContentBg,
-    theme.panelAlt,
-  ].join(":");
+  const cacheKey = [themeRenderCacheKey(theme), theme.contextContentBg, theme.panelAlt].join(":");
   let cached = wordDiffBackgroundCache.get(cacheKey);
   if (!cached) {
     const addition = resolveWordDiffHighlightBg(
@@ -313,10 +334,11 @@ function normalizeHighlightedColor(color: string | undefined, theme: AppTheme) {
     return color;
   }
 
-  let cacheForTheme = normalizedColorCache.get(theme.id);
+  const themeKey = themeRenderCacheKey(theme);
+  let cacheForTheme = normalizedColorCache.get(themeKey);
   if (!cacheForTheme) {
     cacheForTheme = new Map<string, string>();
-    normalizedColorCache.set(theme.id, cacheForTheme);
+    normalizedColorCache.set(themeKey, cacheForTheme);
   }
 
   const cached = cacheForTheme.get(color);
@@ -358,7 +380,7 @@ function flattenHighlightedLine(node: HastNode | undefined, theme: AppTheme, emp
     return [];
   }
 
-  const cacheKey = `${theme.id}:${emphasisBg}`;
+  const cacheKey = `${themeRenderCacheKey(theme)}:${emphasisBg}`;
   const cachedByTheme = flattenedHighlightedLineCache.get(node);
   const cached = cachedByTheme?.get(cacheKey);
   if (cached) {

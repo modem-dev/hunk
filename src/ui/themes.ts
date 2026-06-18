@@ -257,7 +257,17 @@ function withSyntaxEditorSurface(
   const contentTint = isLightSurface ? 0.18 : 0.28;
   const movedTint = rowTint;
   const selectedTint = isLightSurface ? 0.18 : 0.25;
-  const neutralPanel = blendHex(theme.panel, editorBackground, isLightSurface ? 0.1 : 0.18);
+  const codeForeground = readableForeground(editorForeground, editorBackground);
+  // Keep hunk metadata, empty rows, and note surfaces on the syntax theme surface too; otherwise
+  // light/dark UI palettes bleed into the code stream after switching syntax themes.
+  const neutralPanel = blendHex(codeForeground, editorBackground, isLightSurface ? 0.04 : 0.08);
+  const neutralPanelAlt = blendHex(codeForeground, editorBackground, isLightSurface ? 0.08 : 0.12);
+  const neutralBorder = blendHex(codeForeground, editorBackground, isLightSurface ? 0.15 : 0.18);
+  const textForeground = readableForeground(editorForeground ?? codeForeground, neutralPanelAlt);
+  const mutedForeground = readableDimForeground(
+    blendHex(textForeground, editorBackground, 0.56),
+    editorBackground,
+  );
   const addedSignColor = readableDiffSign(
     diffColors?.added ?? fallbackDiffColors.added,
     editorBackground,
@@ -270,12 +280,17 @@ function withSyntaxEditorSurface(
     diffColors?.modified ?? fallbackDiffColors.modified,
     editorBackground,
   );
-  const codeForeground = readableForeground(editorForeground, editorBackground);
 
   return {
     ...theme,
     background: editorBackground,
+    panel: neutralPanel,
+    panelAlt: neutralPanelAlt,
+    border: neutralBorder,
     accent: modifiedColor,
+    accentMuted: blendHex(modifiedColor, editorBackground, selectedTint),
+    text: textForeground,
+    muted: mutedForeground,
     contextBg: editorBackground,
     contextContentBg: editorBackground,
     addedBg: blendHex(addedSignColor, editorBackground, rowTint),
@@ -287,7 +302,7 @@ function withSyntaxEditorSurface(
     addedSignColor,
     removedSignColor,
     lineNumberBg: editorBackground,
-    lineNumberFg: readableDimForeground(editorForeground ?? theme.lineNumberFg, editorBackground),
+    lineNumberFg: mutedForeground,
     selectedHunk: blendHex(modifiedColor, editorBackground, selectedTint),
     noteBackground: neutralPanel,
     noteTitleBackground: neutralPanel,
