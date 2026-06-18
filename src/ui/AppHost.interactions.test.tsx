@@ -790,7 +790,7 @@ describe("App interactions", () => {
       frame = await waitForFrame(
         setup,
         (nextFrame) =>
-          nextFrame.includes("›  Syntax  aurora-x") && nextFrame.includes("active syntax + Pie"),
+          nextFrame.includes("›  Syntax  aurora-x") && nextFrame.includes("active syntax + Shi"),
       );
       expect(frame).toContain("›  Syntax  aurora-x");
 
@@ -804,7 +804,7 @@ describe("App interactions", () => {
         (nextFrame) => nextFrame.includes("›  UI      Zenburn") && nextFrame.includes("active UI"),
       );
       expect(frame).toContain("›  UI      Zenburn");
-      expect(frame).toContain("active syntax + Pie");
+      expect(frame).toContain("active syntax + Shi");
 
       await act(async () => {
         await setup.mockInput.pressEnter();
@@ -822,7 +822,7 @@ describe("App interactions", () => {
       );
       expect(frame).toContain("›  UI      Zenburn");
       expect(frame).toContain("✓  Syntax  Theme default");
-      expect(frame).toContain("active syntax + Pie");
+      expect(frame).toContain("active syntax + Shi");
     } finally {
       await act(async () => {
         setup.renderer.destroy();

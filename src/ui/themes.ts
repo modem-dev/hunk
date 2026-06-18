@@ -1,7 +1,12 @@
 import type { ThemeMode } from "@opentui/core";
 import type { CustomThemeConfig } from "../core/types";
 import { blendHex, contrastRatio, relativeLuminance } from "./lib/color";
-import { getBundledShikiThemeBackground, getBundledShikiThemeForeground } from "./lib/shikiThemes";
+import {
+  getBundledShikiThemeBackground,
+  getBundledShikiThemeDiffColors,
+  getBundledShikiThemeForeground,
+  type BundledShikiThemeDiffColors,
+} from "./lib/shikiThemes";
 import {
   CATPPUCCIN_FRAPPE_THEME,
   CATPPUCCIN_LATTE_THEME,
@@ -131,10 +136,10 @@ export function resolveTheme(
 
 export type SyntaxBackgroundMode = "tokens-only" | "editor-surface" | "pierre-surface";
 
-// Flip these while evaluating syntax-theme backgrounds. Pierre mode keeps Shiki token colors but
-// uses Pierre's stable editor surface instead of each Shiki theme's own background.
-export const USE_SHIKI_EDITOR_BACKGROUNDS = false;
-export const USE_PIERRE_EDITOR_BACKGROUNDS = true;
+// Flip these while evaluating syntax-theme backgrounds. Shiki mode mirrors diffs.com by using
+// each syntax theme's editor surface and semantic add/remove colors when available.
+export const USE_SHIKI_EDITOR_BACKGROUNDS = true;
+export const USE_PIERRE_EDITOR_BACKGROUNDS = false;
 
 const DEFAULT_SYNTAX_BACKGROUND_MODE: SyntaxBackgroundMode = USE_SHIKI_EDITOR_BACKGROUNDS
   ? "editor-surface"
@@ -172,6 +177,11 @@ const PIERRE_EDITOR_SURFACES = {
 } as const;
 const MIN_GUTTER_CONTRAST = 4.5;
 const MIN_DIFF_SIGN_CONTRAST = 3;
+
+const FALLBACK_DIFF_COLORS = {
+  dark: { added: "#5ecc71", removed: "#ff6762", modified: "#69b1ff" },
+  light: { added: "#0dbe4e", removed: "#ff2e3f", modified: "#009fff" },
+} as const;
 
 /** Return a high-contrast foreground layered over an arbitrary editor surface. */
 function readableForeground(preferred: string | undefined, background: string) {
@@ -239,35 +249,54 @@ function withSyntaxEditorSurface(
   theme: AppTheme,
   editorBackground: string,
   editorForeground: string | undefined,
+  diffColors?: BundledShikiThemeDiffColors,
 ): AppTheme {
   const isLightSurface = relativeLuminance(editorBackground) > 0.45;
-  const rowTint = isLightSurface ? 0.09 : 0.14;
-  const contentTint = isLightSurface ? 0.16 : 0.23;
-  const movedTint = isLightSurface ? 0.13 : 0.19;
-  const selectedTint = isLightSurface ? 0.14 : 0.2;
+  const fallbackDiffColors = FALLBACK_DIFF_COLORS[isLightSurface ? "light" : "dark"];
+  const rowTint = isLightSurface ? 0.12 : 0.2;
+  const contentTint = isLightSurface ? 0.18 : 0.28;
+  const movedTint = rowTint;
+  const selectedTint = isLightSurface ? 0.18 : 0.25;
   const neutralPanel = blendHex(theme.panel, editorBackground, isLightSurface ? 0.1 : 0.18);
-  const addedSignColor = readableDiffSign(theme.addedSignColor, editorBackground);
-  const removedSignColor = readableDiffSign(theme.removedSignColor, editorBackground);
+  const addedSignColor = readableDiffSign(
+    diffColors?.added ?? fallbackDiffColors.added,
+    editorBackground,
+  );
+  const removedSignColor = readableDiffSign(
+    diffColors?.removed ?? fallbackDiffColors.removed,
+    editorBackground,
+  );
+  const modifiedColor = readableDiffSign(
+    diffColors?.modified ?? fallbackDiffColors.modified,
+    editorBackground,
+  );
   const codeForeground = readableForeground(editorForeground, editorBackground);
 
   return {
     ...theme,
     background: editorBackground,
+    accent: modifiedColor,
     contextBg: editorBackground,
     contextContentBg: editorBackground,
     addedBg: blendHex(addedSignColor, editorBackground, rowTint),
     removedBg: blendHex(removedSignColor, editorBackground, rowTint),
-    movedAddedBg: blendHex(addedSignColor, editorBackground, movedTint),
-    movedRemovedBg: blendHex(removedSignColor, editorBackground, movedTint),
+    movedAddedBg: blendHex(modifiedColor, editorBackground, movedTint),
+    movedRemovedBg: blendHex(modifiedColor, editorBackground, movedTint),
     addedContentBg: blendHex(addedSignColor, editorBackground, contentTint),
     removedContentBg: blendHex(removedSignColor, editorBackground, contentTint),
     addedSignColor,
     removedSignColor,
     lineNumberBg: editorBackground,
-    lineNumberFg: readableDimForeground(theme.lineNumberFg, editorBackground),
-    selectedHunk: blendHex(theme.accent, editorBackground, selectedTint),
+    lineNumberFg: readableDimForeground(editorForeground ?? theme.lineNumberFg, editorBackground),
+    selectedHunk: blendHex(modifiedColor, editorBackground, selectedTint),
     noteBackground: neutralPanel,
     noteTitleBackground: neutralPanel,
+    badgeAdded: addedSignColor,
+    badgeRemoved: removedSignColor,
+    fileNew: addedSignColor,
+    fileDeleted: removedSignColor,
+    fileModified: modifiedColor,
+    fileUntracked: addedSignColor,
     syntaxColors: {
       ...theme.syntaxColors,
       default: codeForeground,
@@ -294,13 +323,18 @@ export function withSyntaxTheme(
   if (syntaxBackgroundMode === "pierre-surface") {
     const pierreTheme = withPierreBasePalette(nextTheme);
     const surface = PIERRE_EDITOR_SURFACES[theme.appearance];
-    return withSyntaxEditorSurface(pierreTheme, surface.background, surface.foreground);
+    return withSyntaxEditorSurface(pierreTheme, surface.background, surface.foreground, {
+      added: surface.addedSignColor,
+      removed: surface.removedSignColor,
+      modified: surface.accent,
+    });
   }
 
   const editorBackground = getBundledShikiThemeBackground(syntaxTheme);
   const editorForeground = getBundledShikiThemeForeground(syntaxTheme);
+  const diffColors = getBundledShikiThemeDiffColors(syntaxTheme);
   return editorBackground
-    ? withSyntaxEditorSurface(nextTheme, editorBackground, editorForeground)
+    ? withSyntaxEditorSurface(nextTheme, editorBackground, editorForeground, diffColors)
     : nextTheme;
 }
 

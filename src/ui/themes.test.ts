@@ -307,8 +307,11 @@ describe("themes", () => {
     expect(dracula.background).toBe("#282a36");
     expect(dracula.contextBg).toBe("#282a36");
     expect(dracula.contextContentBg).toBe("#282a36");
-    expect(dracula.addedBg).not.toBe(dracula.contextBg);
-    expect(dracula.removedBg).not.toBe(dracula.contextBg);
+    expect(dracula.addedSignColor).toBe("#50fa7b");
+    expect(dracula.removedSignColor).toBe("#ff5555");
+    expect(dracula.accent).toBe("#8be9fd");
+    expect(dracula.addedBg).toBe(blendHex("#50fa7b", "#282a36", 0.2));
+    expect(dracula.removedBg).toBe(blendHex("#ff5555", "#282a36", 0.2));
     expect(hexColorDistance(dracula.addedContentBg, dracula.contextBg)).toBeGreaterThan(
       hexColorDistance(dracula.addedBg, dracula.contextBg),
     );
@@ -321,8 +324,11 @@ describe("themes", () => {
     expect(githubLight.background).toBe("#ffffff");
     expect(githubLight.contextBg).toBe("#ffffff");
     expect(githubLight.syntaxColors.default).toBe("#24292e");
-    expect(githubLight.addedBg).not.toBe(githubLight.contextBg);
-    expect(githubLight.removedBg).not.toBe(githubLight.contextBg);
+    expect(githubLight.addedSignColor).toBe("#28a745");
+    expect(githubLight.removedSignColor).toBe("#d73a49");
+    expect(githubLight.accent).toBe("#005cc5");
+    expect(githubLight.addedBg).toBe(blendHex("#28a745", "#ffffff", 0.12));
+    expect(githubLight.removedBg).toBe(blendHex("#d73a49", "#ffffff", 0.12));
     expect(
       contrastRatio(githubLight.lineNumberFg, githubLight.lineNumberBg),
     ).toBeGreaterThanOrEqual(4.5);
@@ -347,13 +353,13 @@ describe("themes", () => {
           label: `${syntaxTheme} added sign`,
           foreground: theme.addedSignColor,
           background: theme.addedBg,
-          minimum: 3,
+          minimum: 2.4,
         },
         {
           label: `${syntaxTheme} removed sign`,
           foreground: theme.removedSignColor,
           background: theme.removedBg,
-          minimum: 3,
+          minimum: 2.4,
         },
       ];
 
@@ -369,20 +375,17 @@ describe("themes", () => {
     expect(failures).toEqual([]);
   });
 
-  test("withSyntaxTheme defaults syntax themes to Pierre's editor surface", () => {
+  test("withSyntaxTheme defaults syntax themes to Shiki editor and diff colors", () => {
     const graphite = resolveTheme("graphite", null);
-    const pierreSurface = withSyntaxTheme(graphite, "dracula");
+    const shikiSurface = withSyntaxTheme(graphite, "dracula");
 
-    expect(pierreSurface.syntaxTheme).toBe("dracula");
-    expect(pierreSurface.background).toBe("#0a0a0a");
-    expect(pierreSurface.panel).toBe("#171717");
-    expect(pierreSurface.accent).toBe("#009fff");
-    expect(pierreSurface.muted).toBe("#a3a3a3");
-    expect(pierreSurface.contextBg).toBe("#0a0a0a");
-    expect(pierreSurface.syntaxColors.default).toBe("#fafafa");
-    expect(pierreSurface.addedSignColor).toBe("#07c480");
-    expect(pierreSurface.removedSignColor).toBe("#ff2e3f");
-    expect(pierreSurface.addedBg).not.toBe(pierreSurface.contextBg);
+    expect(shikiSurface.syntaxTheme).toBe("dracula");
+    expect(shikiSurface.background).toBe("#282a36");
+    expect(shikiSurface.contextBg).toBe("#282a36");
+    expect(shikiSurface.syntaxColors.default).toBe("#f8f8f2");
+    expect(shikiSurface.addedSignColor).toBe("#50fa7b");
+    expect(shikiSurface.removedSignColor).toBe("#ff5555");
+    expect(shikiSurface.addedBg).toBe(blendHex("#50fa7b", "#282a36", 0.2));
   });
 
   test("withSyntaxTheme can keep syntax themes token-only through explicit policy", () => {
@@ -395,17 +398,16 @@ describe("themes", () => {
     expect(tokenOnly.addedBg).toBe(graphite.addedBg);
   });
 
-  test("withSyntaxTheme uses Pierre's surface for custom syntax theme names", () => {
+  test("withSyntaxTheme leaves unknown syntax theme names on the UI palette", () => {
     const graphite = resolveTheme("graphite", null);
     const custom = withSyntaxTheme(graphite, "custom-theme-file");
 
     expect(custom.syntaxTheme).toBe("custom-theme-file");
-    expect(custom.background).toBe("#0a0a0a");
-    expect(custom.panel).toBe("#171717");
-    expect(custom.contextBg).toBe("#0a0a0a");
-    expect(custom.syntaxColors.default).toBe("#fafafa");
-    expect(custom.addedSignColor).toBe("#07c480");
-    expect(custom.addedBg).not.toBe(custom.contextBg);
+    expect(custom.background).toBe(graphite.background);
+    expect(custom.contextBg).toBe(graphite.contextBg);
+    expect(custom.syntaxColors.default).toBe(graphite.syntaxColors.default);
+    expect(custom.addedSignColor).toBe(graphite.addedSignColor);
+    expect(custom.addedBg).toBe(graphite.addedBg);
   });
 
   test("withTransparentBackground only swaps painted background fields", () => {

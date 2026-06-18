@@ -68,6 +68,12 @@ export const BUNDLED_SHIKI_THEME_IDS = [
 
 export type BundledShikiThemeId = (typeof BUNDLED_SHIKI_THEME_IDS)[number];
 
+export interface BundledShikiThemeDiffColors {
+  added?: string;
+  removed?: string;
+  modified?: string;
+}
+
 export const BUNDLED_SHIKI_THEME_BACKGROUNDS: Record<BundledShikiThemeId, string> = {
   andromeeda: "#23262e",
   "aurora-x": "#07090f",
@@ -199,6 +205,70 @@ export const BUNDLED_SHIKI_THEME_FOREGROUNDS: Partial<Record<BundledShikiThemeId
   "vitesse-light": "#393a34",
 };
 
+export const BUNDLED_SHIKI_THEME_DIFF_COLORS: Partial<
+  Record<BundledShikiThemeId, BundledShikiThemeDiffColors>
+> = {
+  andromeeda: { added: "#96e072", removed: "#ee5d43", modified: "#7cb7ff" },
+  "aurora-x": { added: "#63d188", removed: "#dd5074", modified: "#c778db" },
+  "ayu-dark": { added: "#70bf56", removed: "#f26d78", modified: "#73b8ff" },
+  "ayu-light": { added: "#6cbf43", removed: "#ff7383", modified: "#478acc" },
+  "ayu-mirage": { added: "#87d96c", removed: "#f27983", modified: "#80bfff" },
+  "catppuccin-frappe": { added: "#a6d189", removed: "#e78284", modified: "#e5c890" },
+  "catppuccin-latte": { added: "#40a02b", removed: "#d20f39", modified: "#df8e1d" },
+  "catppuccin-macchiato": { added: "#a6da95", removed: "#ed8796", modified: "#eed49f" },
+  "catppuccin-mocha": { added: "#a6e3a1", removed: "#f38ba8", modified: "#f9e2af" },
+  dracula: { added: "#50fa7b", removed: "#ff5555", modified: "#8be9fd" },
+  "dracula-soft": { added: "#62e884", removed: "#ee6666", modified: "#97e1f1" },
+  "everforest-dark": { added: "#7a8c66", removed: "#a16366", modified: "#608986" },
+  "everforest-light": { added: "#b7c155", removed: "#fa9188", modified: "#83b9d0" },
+  "github-dark": { added: "#34d058", removed: "#ea4a5a", modified: "#79b8ff" },
+  "github-dark-default": { added: "#3fb950", removed: "#f85149", modified: "#d29922" },
+  "github-dark-dimmed": { added: "#57ab5a", removed: "#e5534b", modified: "#c69026" },
+  "github-dark-high-contrast": { added: "#26cd4d", removed: "#ff6a69", modified: "#f0b72f" },
+  "github-light": { added: "#28a745", removed: "#d73a49", modified: "#005cc5" },
+  "github-light-default": { added: "#1a7f37", removed: "#cf222e", modified: "#9a6700" },
+  "github-light-high-contrast": { added: "#055d20", removed: "#a0111f", modified: "#744500" },
+  "gruvbox-dark-hard": { added: "#ebdbb2", removed: "#cc241d", modified: "#d79921" },
+  "gruvbox-dark-medium": { added: "#ebdbb2", removed: "#cc241d", modified: "#d79921" },
+  "gruvbox-dark-soft": { added: "#ebdbb2", removed: "#cc241d", modified: "#d79921" },
+  "gruvbox-light-hard": { added: "#3c3836", removed: "#cc241d", modified: "#d79921" },
+  "gruvbox-light-medium": { added: "#3c3836", removed: "#cc241d", modified: "#d79921" },
+  "gruvbox-light-soft": { added: "#3c3836", removed: "#cc241d", modified: "#d79921" },
+  horizon: { added: "#24a075", removed: "#f43e5c", modified: "#fab38e" },
+  "horizon-bright": { added: "#60c9a0", removed: "#f43e5c", modified: "#af5427" },
+  houston: { added: "#4bf3c8", removed: "#f4587e", modified: "#ffd493" },
+  "kanagawa-dragon": { added: "#8a9a7b", removed: "#c4746e", modified: "#8ba4b0" },
+  "kanagawa-lotus": { added: "#6f894e", removed: "#c84053", modified: "#4d699b" },
+  "kanagawa-wave": { added: "#76946a", removed: "#c34043", modified: "#7e9cd8" },
+  laserwave: { added: "#74dfc4", removed: "#b381c5", modified: "#74dfc4" },
+  "material-theme": { added: "#c3e88d", removed: "#98565c", modified: "#5a76a8" },
+  "material-theme-darker": { added: "#c3e88d", removed: "#964e52", modified: "#586e9e" },
+  "material-theme-lighter": { added: "#91b859", removed: "#ee8d8b", modified: "#a4b6d5" },
+  "material-theme-ocean": { added: "#c3e88d", removed: "#8e474f", modified: "#50679b" },
+  "material-theme-palenight": { added: "#c3e88d", removed: "#99535f", modified: "#5b74ab" },
+  "min-light": { added: "#77cc00", removed: "#d32f2f", modified: "#e0e0e0" },
+  monokai: { added: "#86b42b", removed: "#c4265e", modified: "#6a7ec8" },
+  "night-owl": { added: "#22da6e", removed: "#87383e", modified: "#a2bffc" },
+  "night-owl-light": { added: "#08916a", removed: "#de3d3b", modified: "#288ed7" },
+  nord: { added: "#a3be8c", removed: "#bf616a", modified: "#ebcb8b" },
+  "one-dark-pro": { added: "#8cc265", removed: "#e05561", modified: "#4aa5f0" },
+  plastic: { added: "#98c379", removed: "#e06c75", modified: "#d19a66" },
+  poimandres: { added: "#5fb3a1", removed: "#d0679d", modified: "#add7ff" },
+  "rose-pine": { added: "#9ccfd8", removed: "#908caa", modified: "#ebbcba" },
+  "rose-pine-dawn": { added: "#56949f", removed: "#797593", modified: "#d7827e" },
+  "rose-pine-moon": { added: "#9ccfd8", removed: "#908caa", modified: "#ea9a97" },
+  "slack-dark": { added: "#ecb22e", removed: "#ffffff", modified: "#ecb22e" },
+  "slack-ochin": { added: "#ecb22e", removed: "#ffffff", modified: "#ecb22e" },
+  "snazzy-light": { added: "#2dae58", removed: "#ff5c57", modified: "#00a39f" },
+  "solarized-dark": { added: "#859900", removed: "#dc322f", modified: "#268bd2" },
+  "solarized-light": { added: "#859900", removed: "#dc322f", modified: "#268bd2" },
+  "synthwave-84": { added: "#63c89e", removed: "#fe4450", modified: "#ae8cc4" },
+  "tokyo-night": { added: "#449dab", removed: "#914c54", modified: "#6183bb" },
+  "vitesse-black": { added: "#4d9375", removed: "#cb7676", modified: "#6394bf" },
+  "vitesse-dark": { added: "#4d9375", removed: "#cb7676", modified: "#6394bf" },
+  "vitesse-light": { added: "#1e754f", removed: "#ab5959", modified: "#296aa3" },
+};
+
 /** Return the editor surface declared by a bundled Shiki theme, when Hunk knows it. */
 export function getBundledShikiThemeBackground(themeId: string | undefined) {
   return themeId && themeId in BUNDLED_SHIKI_THEME_BACKGROUNDS
@@ -210,5 +280,12 @@ export function getBundledShikiThemeBackground(themeId: string | undefined) {
 export function getBundledShikiThemeForeground(themeId: string | undefined) {
   return themeId && themeId in BUNDLED_SHIKI_THEME_FOREGROUNDS
     ? BUNDLED_SHIKI_THEME_FOREGROUNDS[themeId as BundledShikiThemeId]
+    : undefined;
+}
+
+/** Return semantic diff colors declared by a bundled Shiki theme, when Hunk knows them. */
+export function getBundledShikiThemeDiffColors(themeId: string | undefined) {
+  return themeId && themeId in BUNDLED_SHIKI_THEME_DIFF_COLORS
+    ? BUNDLED_SHIKI_THEME_DIFF_COLORS[themeId as BundledShikiThemeId]
     : undefined;
 }

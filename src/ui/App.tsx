@@ -169,7 +169,7 @@ export function App({
       : syntaxTheme;
   }, [baseTheme, syntaxThemeId, bootstrap.input.options.transparentBackground]);
   const syntaxThemeDescription = USE_SHIKI_EDITOR_BACKGROUNDS
-    ? "syntax + Shiki bg"
+    ? "syntax + Shiki diff"
     : USE_PIERRE_EDITOR_BACKGROUNDS
       ? "syntax + Pierre bg"
       : "syntax only";

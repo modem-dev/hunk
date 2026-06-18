@@ -2,4 +2,4 @@
 "hunkdiff": minor
 ---
 
-Expose Shiki syntax themes through `syntax_theme` / `--syntax-theme`, source Catppuccin code highlighting from Shiki's bundled Catppuccin themes, and add an in-app theme selector on `t` for UI themes and bundled Shiki syntax themes on Pierre-style editor surfaces.
+Expose Shiki syntax themes through `syntax_theme` / `--syntax-theme`, source Catppuccin code highlighting from Shiki's bundled Catppuccin themes, and add an in-app theme selector on `t` for UI themes and bundled Shiki syntax themes with theme-matched diff row colors.
