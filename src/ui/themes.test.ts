@@ -369,14 +369,15 @@ describe("themes", () => {
     expect(failures).toEqual([]);
   });
 
-  test("withSyntaxTheme defaults syntax themes to token-only while the background flag is off", () => {
+  test("withSyntaxTheme defaults syntax themes to Pierre's editor surface", () => {
     const graphite = resolveTheme("graphite", null);
-    const tokenOnly = withSyntaxTheme(graphite, "dracula");
+    const pierreSurface = withSyntaxTheme(graphite, "dracula");
 
-    expect(tokenOnly.syntaxTheme).toBe("dracula");
-    expect(tokenOnly.background).toBe(graphite.background);
-    expect(tokenOnly.contextBg).toBe(graphite.contextBg);
-    expect(tokenOnly.addedBg).toBe(graphite.addedBg);
+    expect(pierreSurface.syntaxTheme).toBe("dracula");
+    expect(pierreSurface.background).toBe("#0a0a0a");
+    expect(pierreSurface.contextBg).toBe("#0a0a0a");
+    expect(pierreSurface.syntaxColors.default).toBe("#fafafa");
+    expect(pierreSurface.addedBg).not.toBe(pierreSurface.contextBg);
   });
 
   test("withSyntaxTheme can keep syntax themes token-only through explicit policy", () => {
@@ -389,14 +390,15 @@ describe("themes", () => {
     expect(tokenOnly.addedBg).toBe(graphite.addedBg);
   });
 
-  test("withSyntaxTheme leaves unknown syntax theme backgrounds on the UI palette", () => {
+  test("withSyntaxTheme uses Pierre's surface for custom syntax theme names", () => {
     const graphite = resolveTheme("graphite", null);
     const custom = withSyntaxTheme(graphite, "custom-theme-file");
 
     expect(custom.syntaxTheme).toBe("custom-theme-file");
-    expect(custom.background).toBe(graphite.background);
-    expect(custom.contextBg).toBe(graphite.contextBg);
-    expect(custom.addedBg).toBe(graphite.addedBg);
+    expect(custom.background).toBe("#0a0a0a");
+    expect(custom.contextBg).toBe("#0a0a0a");
+    expect(custom.syntaxColors.default).toBe("#fafafa");
+    expect(custom.addedBg).not.toBe(custom.contextBg);
   });
 
   test("withTransparentBackground only swaps painted background fields", () => {

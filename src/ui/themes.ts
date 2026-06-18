@@ -129,15 +129,23 @@ export function resolveTheme(
   return fallbackTheme();
 }
 
-export type SyntaxBackgroundMode = "tokens-only" | "editor-surface";
+export type SyntaxBackgroundMode = "tokens-only" | "editor-surface" | "pierre-surface";
 
-// Flip this while evaluating Shiki editor-background previews. When false, Hunk behaves like
-// Pierre/diffs.com: syntax themes provide token colors while Hunk keeps its own diff surfaces.
+// Flip these while evaluating syntax-theme backgrounds. Pierre mode keeps Shiki token colors but
+// uses Pierre's stable editor surface instead of each Shiki theme's own background.
 export const USE_SHIKI_EDITOR_BACKGROUNDS = false;
+export const USE_PIERRE_EDITOR_BACKGROUNDS = true;
 
 const DEFAULT_SYNTAX_BACKGROUND_MODE: SyntaxBackgroundMode = USE_SHIKI_EDITOR_BACKGROUNDS
   ? "editor-surface"
-  : "tokens-only";
+  : USE_PIERRE_EDITOR_BACKGROUNDS
+    ? "pierre-surface"
+    : "tokens-only";
+
+const PIERRE_EDITOR_SURFACES = {
+  dark: { background: "#0a0a0a", foreground: "#fafafa" },
+  light: { background: "#ffffff", foreground: "#0a0a0a" },
+} as const;
 const MIN_GUTTER_CONTRAST = 4.5;
 const MIN_DIFF_SIGN_CONTRAST = 3;
 
@@ -227,6 +235,11 @@ export function withSyntaxTheme(
   const nextTheme = { ...theme, syntaxTheme };
   if (syntaxBackgroundMode === "tokens-only") {
     return nextTheme;
+  }
+
+  if (syntaxBackgroundMode === "pierre-surface") {
+    const surface = PIERRE_EDITOR_SURFACES[theme.appearance];
+    return withSyntaxEditorSurface(nextTheme, surface.background, surface.foreground);
   }
 
   const editorBackground = getBundledShikiThemeBackground(syntaxTheme);

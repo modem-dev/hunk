@@ -32,6 +32,7 @@ import { resizeSidebarWidth } from "./lib/sidebar";
 import {
   availableThemes,
   resolveTheme,
+  USE_PIERRE_EDITOR_BACKGROUNDS,
   USE_SHIKI_EDITOR_BACKGROUNDS,
   withSyntaxTheme,
   withTransparentBackground,
@@ -167,10 +168,15 @@ export function App({
       ? withTransparentBackground(syntaxTheme)
       : syntaxTheme;
   }, [baseTheme, syntaxThemeId, bootstrap.input.options.transparentBackground]);
-  const syntaxThemeDescription = USE_SHIKI_EDITOR_BACKGROUNDS ? "syntax + bg" : "syntax only";
-  const syntaxThemeResetDescription = USE_SHIKI_EDITOR_BACKGROUNDS
-    ? "reset syntax + bg"
-    : "reset syntax";
+  const syntaxThemeDescription = USE_SHIKI_EDITOR_BACKGROUNDS
+    ? "syntax + Shiki bg"
+    : USE_PIERRE_EDITOR_BACKGROUNDS
+      ? "syntax + Pierre bg"
+      : "syntax only";
+  const syntaxThemeResetDescription =
+    USE_SHIKI_EDITOR_BACKGROUNDS || USE_PIERRE_EDITOR_BACKGROUNDS
+      ? "reset syntax + bg"
+      : "reset syntax";
 
   const themeSelectorItems = useMemo(
     () => [
