@@ -143,8 +143,32 @@ const DEFAULT_SYNTAX_BACKGROUND_MODE: SyntaxBackgroundMode = USE_SHIKI_EDITOR_BA
     : "tokens-only";
 
 const PIERRE_EDITOR_SURFACES = {
-  dark: { background: "#0a0a0a", foreground: "#fafafa" },
-  light: { background: "#ffffff", foreground: "#0a0a0a" },
+  dark: {
+    background: "#0a0a0a",
+    foreground: "#fafafa",
+    panel: "#171717",
+    panelAlt: "#101010",
+    border: "#1d1d1d",
+    accent: "#009fff",
+    accentMuted: "#19283c",
+    muted: "#a3a3a3",
+    lineNumberFg: "#737373",
+    addedSignColor: "#07c480",
+    removedSignColor: "#ff2e3f",
+  },
+  light: {
+    background: "#ffffff",
+    foreground: "#0a0a0a",
+    panel: "#f5f5f5",
+    panelAlt: "#fafafa",
+    border: "#e5e5e5",
+    accent: "#009fff",
+    accentMuted: "#dfebff",
+    muted: "#525252",
+    lineNumberFg: "#737373",
+    addedSignColor: "#18a46c",
+    removedSignColor: "#d52c36",
+  },
 } as const;
 const MIN_GUTTER_CONTRAST = 4.5;
 const MIN_DIFF_SIGN_CONTRAST = 3;
@@ -178,6 +202,36 @@ function readableDiffSign(preferred: string, background: string) {
   return relativeLuminance(background) > 0.45
     ? blendHex("#000000", preferred, 0.45)
     : blendHex("#ffffff", preferred, 0.45);
+}
+
+/** Reset app chrome and semantic diff markers to Pierre's stable theme before syntax colors apply. */
+function withPierreBasePalette(theme: AppTheme): AppTheme {
+  const surface = PIERRE_EDITOR_SURFACES[theme.appearance];
+
+  return {
+    ...theme,
+    background: surface.background,
+    panel: surface.panel,
+    panelAlt: surface.panelAlt,
+    border: surface.border,
+    accent: surface.accent,
+    accentMuted: surface.accentMuted,
+    text: surface.foreground,
+    muted: surface.muted,
+    addedSignColor: surface.addedSignColor,
+    removedSignColor: surface.removedSignColor,
+    lineNumberFg: surface.lineNumberFg,
+    badgeAdded: surface.addedSignColor,
+    badgeRemoved: surface.removedSignColor,
+    badgeNeutral: surface.muted,
+    fileNew: surface.addedSignColor,
+    fileDeleted: surface.removedSignColor,
+    fileRenamed: surface.accent,
+    fileModified: surface.accent,
+    fileUntracked: surface.accent,
+    noteBorder: surface.accent,
+    noteTitleText: surface.foreground,
+  };
 }
 
 /** Derive diff row tints around one syntax theme editor background. */
@@ -238,8 +292,9 @@ export function withSyntaxTheme(
   }
 
   if (syntaxBackgroundMode === "pierre-surface") {
+    const pierreTheme = withPierreBasePalette(nextTheme);
     const surface = PIERRE_EDITOR_SURFACES[theme.appearance];
-    return withSyntaxEditorSurface(nextTheme, surface.background, surface.foreground);
+    return withSyntaxEditorSurface(pierreTheme, surface.background, surface.foreground);
   }
 
   const editorBackground = getBundledShikiThemeBackground(syntaxTheme);

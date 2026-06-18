@@ -375,8 +375,13 @@ describe("themes", () => {
 
     expect(pierreSurface.syntaxTheme).toBe("dracula");
     expect(pierreSurface.background).toBe("#0a0a0a");
+    expect(pierreSurface.panel).toBe("#171717");
+    expect(pierreSurface.accent).toBe("#009fff");
+    expect(pierreSurface.muted).toBe("#a3a3a3");
     expect(pierreSurface.contextBg).toBe("#0a0a0a");
     expect(pierreSurface.syntaxColors.default).toBe("#fafafa");
+    expect(pierreSurface.addedSignColor).toBe("#07c480");
+    expect(pierreSurface.removedSignColor).toBe("#ff2e3f");
     expect(pierreSurface.addedBg).not.toBe(pierreSurface.contextBg);
   });
 
@@ -396,8 +401,10 @@ describe("themes", () => {
 
     expect(custom.syntaxTheme).toBe("custom-theme-file");
     expect(custom.background).toBe("#0a0a0a");
+    expect(custom.panel).toBe("#171717");
     expect(custom.contextBg).toBe("#0a0a0a");
     expect(custom.syntaxColors.default).toBe("#fafafa");
+    expect(custom.addedSignColor).toBe("#07c480");
     expect(custom.addedBg).not.toBe(custom.contextBg);
   });
 
