@@ -130,8 +130,8 @@ agent_notes = false
 transparent_background = false
 ```
 
-`exclude_untracked` affects Git/Sapling working-tree `hunk diff` sessions only.
 `theme = "auto"` and `--theme auto` query the terminal background at startup, choose `paper` for light backgrounds and `graphite` for dark backgrounds, and fall back to `graphite` if the terminal does not answer.
+`exclude_untracked` affects Git/Sapling working-tree `hunk diff` sessions only.
 `transparent_background` can also be written as `transparentBackground`.
 
 Custom themes can inherit from any built-in base theme and override only the colors you care about:
