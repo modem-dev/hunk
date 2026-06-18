@@ -32,6 +32,7 @@ import { resizeSidebarWidth } from "./lib/sidebar";
 import {
   availableThemes,
   resolveTheme,
+  USE_SHIKI_EDITOR_BACKGROUNDS,
   withSyntaxTheme,
   withTransparentBackground,
 } from "./themes";
@@ -166,6 +167,11 @@ export function App({
       ? withTransparentBackground(syntaxTheme)
       : syntaxTheme;
   }, [baseTheme, syntaxThemeId, bootstrap.input.options.transparentBackground]);
+  const syntaxThemeDescription = USE_SHIKI_EDITOR_BACKGROUNDS ? "syntax + bg" : "syntax only";
+  const syntaxThemeResetDescription = USE_SHIKI_EDITOR_BACKGROUNDS
+    ? "reset syntax + bg"
+    : "reset syntax";
+
   const themeSelectorItems = useMemo(
     () => [
       ...themeOptions.map((theme) => ({
@@ -178,19 +184,30 @@ export function App({
       {
         id: "__default_syntax__",
         label: "Theme default",
-        description: syntaxThemeId ? "reset syntax + bg" : "active syntax + bg",
+        description: syntaxThemeId
+          ? syntaxThemeResetDescription
+          : `active ${syntaxThemeDescription}`,
         kind: "syntax" as const,
         active: !syntaxThemeId,
       },
       ...BUNDLED_SHIKI_THEME_IDS.map((syntaxTheme) => ({
         id: syntaxTheme,
         label: syntaxTheme,
-        description: syntaxTheme === syntaxThemeId ? "active syntax + bg" : "Shiki syntax + bg",
+        description:
+          syntaxTheme === syntaxThemeId
+            ? `active ${syntaxThemeDescription}`
+            : `Shiki ${syntaxThemeDescription}`,
         kind: "syntax" as const,
         active: syntaxTheme === syntaxThemeId,
       })),
     ],
-    [activeTheme.id, syntaxThemeId, themeOptions],
+    [
+      activeTheme.id,
+      syntaxThemeDescription,
+      syntaxThemeId,
+      syntaxThemeResetDescription,
+      themeOptions,
+    ],
   );
   const review = useReviewController({ files: bootstrap.changeset.files });
   const filteredFiles = review.visibleFiles;

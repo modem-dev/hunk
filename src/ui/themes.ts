@@ -131,7 +131,13 @@ export function resolveTheme(
 
 export type SyntaxBackgroundMode = "tokens-only" | "editor-surface";
 
-const DEFAULT_SYNTAX_BACKGROUND_MODE: SyntaxBackgroundMode = "editor-surface";
+// Flip this while evaluating Shiki editor-background previews. When false, Hunk behaves like
+// Pierre/diffs.com: syntax themes provide token colors while Hunk keeps its own diff surfaces.
+export const USE_SHIKI_EDITOR_BACKGROUNDS = false;
+
+const DEFAULT_SYNTAX_BACKGROUND_MODE: SyntaxBackgroundMode = USE_SHIKI_EDITOR_BACKGROUNDS
+  ? "editor-surface"
+  : "tokens-only";
 const MIN_GUTTER_CONTRAST = 4.5;
 const MIN_DIFF_SIGN_CONTRAST = 3;
 

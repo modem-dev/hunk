@@ -300,8 +300,8 @@ describe("themes", () => {
 
   test("withSyntaxTheme derives diff surfaces from bundled Shiki editor backgrounds", () => {
     const graphite = resolveTheme("graphite", null);
-    const dracula = withSyntaxTheme(graphite, "dracula");
-    const githubLight = withSyntaxTheme(graphite, "github-light");
+    const dracula = withSyntaxTheme(graphite, "dracula", "editor-surface");
+    const githubLight = withSyntaxTheme(graphite, "github-light", "editor-surface");
 
     expect(dracula.syntaxTheme).toBe("dracula");
     expect(dracula.background).toBe("#282a36");
@@ -331,7 +331,7 @@ describe("themes", () => {
   test("withSyntaxTheme keeps derived bundled Shiki backgrounds usable", () => {
     const graphite = resolveTheme("graphite", null);
     const failures = BUNDLED_SHIKI_THEME_IDS.flatMap((syntaxTheme) => {
-      const theme = withSyntaxTheme(graphite, syntaxTheme);
+      const theme = withSyntaxTheme(graphite, syntaxTheme, "editor-surface");
       const checks = [
         {
           label: `${syntaxTheme} line number`,
@@ -367,6 +367,16 @@ describe("themes", () => {
     });
 
     expect(failures).toEqual([]);
+  });
+
+  test("withSyntaxTheme defaults syntax themes to token-only while the background flag is off", () => {
+    const graphite = resolveTheme("graphite", null);
+    const tokenOnly = withSyntaxTheme(graphite, "dracula");
+
+    expect(tokenOnly.syntaxTheme).toBe("dracula");
+    expect(tokenOnly.background).toBe(graphite.background);
+    expect(tokenOnly.contextBg).toBe(graphite.contextBg);
+    expect(tokenOnly.addedBg).toBe(graphite.addedBg);
   });
 
   test("withSyntaxTheme can keep syntax themes token-only through explicit policy", () => {
