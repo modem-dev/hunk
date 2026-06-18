@@ -470,14 +470,20 @@ export function App({
   );
 
   /** Preview one theme selector row without committing the choice yet. */
-  const previewThemeSelectorItem = useCallback((item: (typeof themeSelectorItems)[number]) => {
-    if (item.kind === "ui") {
-      setThemeId(item.id);
-      setSyntaxThemeId(undefined);
-    } else {
-      setSyntaxThemeId(item.id === "__default_syntax__" ? undefined : item.id);
-    }
-  }, []);
+  const previewThemeSelectorItem = useCallback(
+    (item: (typeof themeSelectorItems)[number]) => {
+      const origin = themeSelectorOriginRef.current;
+      if (item.kind === "ui") {
+        setThemeId(item.id);
+        setSyntaxThemeId(undefined);
+      } else {
+        // Syntax previews should not keep whichever UI row the cursor crossed on the way here.
+        setThemeId(origin?.themeId ?? themeId);
+        setSyntaxThemeId(item.id === "__default_syntax__" ? undefined : item.id);
+      }
+    },
+    [themeId],
+  );
 
   /** Open the keyboard-driven theme selector with the active explicit syntax theme, or current UI theme, highlighted. */
   const openThemeSelector = useCallback(() => {
@@ -522,10 +528,14 @@ export function App({
       return;
     }
 
+    const origin = themeSelectorOriginRef.current;
     themeSelectorOriginRef.current = null;
     if (item.kind === "ui") {
       selectTheme(item.id);
     } else {
+      if (origin) {
+        setThemeId(origin.themeId);
+      }
       selectSyntaxTheme(item.id === "__default_syntax__" ? undefined : item.id);
     }
     setThemeSelectorOpen(false);
@@ -1131,10 +1141,14 @@ export function App({
               }
             }}
             onSelectItem={(item) => {
+              const origin = themeSelectorOriginRef.current;
               themeSelectorOriginRef.current = null;
               if (item.kind === "ui") {
                 selectTheme(item.id);
               } else {
+                if (origin) {
+                  setThemeId(origin.themeId);
+                }
                 selectSyntaxTheme(item.id === "__default_syntax__" ? undefined : item.id);
               }
               setThemeSelectorOpen(false);

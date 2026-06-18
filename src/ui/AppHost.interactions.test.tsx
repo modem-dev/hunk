@@ -830,6 +830,72 @@ describe("App interactions", () => {
     }
   });
 
+  test("theme selector does not commit crossed UI previews when choosing syntax", async () => {
+    const bootstrap = createTestVcsAppBootstrap({
+      files: [
+        createTestDiffFile(
+          "alpha",
+          "alpha.ts",
+          "export const alpha = 1;\n",
+          "export const alpha = 2;\n",
+        ),
+      ],
+      initialTheme: "midnight",
+    });
+    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
+      width: 240,
+      height: 24,
+    });
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.typeText("t");
+      });
+      await waitForFrame(setup, (nextFrame) => nextFrame.includes("›  UI      Midnight"));
+
+      await act(async () => {
+        for (let index = 0; index < 19; index += 1) {
+          await setup.mockInput.pressArrow("down");
+        }
+      });
+      let frame = await waitForFrame(setup, (nextFrame) =>
+        nextFrame.includes("›  Syntax  dracula"),
+      );
+      expect(frame).toContain("active syntax + Shi");
+
+      await act(async () => {
+        await setup.mockInput.pressEnter();
+      });
+      await waitForFrame(setup, (nextFrame) => nextFrame.includes("Syntax theme: dracula"));
+
+      await act(async () => {
+        await setup.mockInput.typeText("t");
+      });
+      await waitForFrame(setup, (nextFrame) => nextFrame.includes("›  Syntax  dracula"));
+
+      await act(async () => {
+        for (let index = 0; index < 11; index += 1) {
+          await setup.mockInput.pressArrow("up");
+        }
+        await setup.mockInput.pressEnter();
+      });
+      await waitForFrame(setup, (nextFrame) => nextFrame.includes("Syntax theme: Theme default"));
+
+      await act(async () => {
+        await setup.mockInput.typeText("t");
+      });
+      frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("›  UI      Midnight"));
+      expect(frame).toContain("›  UI      Midnight");
+      expect(frame).toContain("Midnight                                    active UI");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("keyboard shortcut can wrap long lines in the app", async () => {
     const setup = await testRender(<AppHost bootstrap={createWrapBootstrap()} />, {
       width: 140,
