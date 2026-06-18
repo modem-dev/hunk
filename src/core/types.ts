@@ -83,7 +83,6 @@ export interface CommonOptions {
   mode?: LayoutMode;
   vcs?: VcsMode;
   theme?: string;
-  syntaxTheme?: string;
   agentContext?: string;
   pager?: boolean;
   watch?: boolean;

@@ -31,7 +31,7 @@ function scrollTopForCenter(centerOffset: number, viewportHeight: number) {
 }
 
 describe("findViewportCenteredHunkTarget", () => {
-  const theme = resolveTheme("midnight", null);
+  const theme = resolveTheme("github-dark-default", null);
 
   test("switches the active file when the viewport center enters a later file", () => {
     const firstFile = createTestDiffFile({

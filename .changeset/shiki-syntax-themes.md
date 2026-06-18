@@ -2,4 +2,4 @@
 "hunkdiff": minor
 ---
 
-Expose Shiki syntax themes through `syntax_theme` / `--syntax-theme`, source Catppuccin code highlighting from Shiki's bundled Catppuccin themes, and add an in-app theme selector on `t` for UI themes and bundled Shiki syntax themes with theme-matched diff row colors.
+Refresh Hunk's built-in theme system, default to `github-dark-default`, and simplify theme selection around one `theme` setting with `View -> Themes…` / `t` opening the selector. Custom themes can inherit from any built-in theme with `custom_theme.base` while keeping explicit syntax color overrides.

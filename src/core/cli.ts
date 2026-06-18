@@ -57,7 +57,6 @@ function buildCommonOptions(
   options: {
     mode?: LayoutMode;
     theme?: string;
-    syntaxTheme?: string;
     agentContext?: string;
     pager?: boolean;
     watch?: boolean;
@@ -68,7 +67,6 @@ function buildCommonOptions(
   return {
     mode: options.mode,
     theme: options.theme,
-    syntaxTheme: options.syntaxTheme,
     agentContext: options.agentContext,
     pager: options.pager ? true : undefined,
     watch: options.watch ? true : undefined,
@@ -86,7 +84,6 @@ function applyCommonOptions(command: Command) {
   return command
     .option("--mode <mode>", "layout mode: auto, split, stack", parseLayoutMode)
     .option("--theme <theme>", "named theme override")
-    .option("--syntax-theme <theme>", "Shiki syntax theme override")
     .option("--agent-context <path>", "JSON sidecar with agent rationale")
     .option("--pager", "use pager-style chrome and controls")
     .option("--line-numbers", "show line numbers")
@@ -162,7 +159,6 @@ function renderCliHelp() {
     "  --agent-notes / --no-agent-notes        show or hide agent notes by default",
     "  --transparent-bg / --no-transparent-bg  let terminal background show through Hunk surfaces",
     "  --theme <theme>                         named theme override",
-    "  --syntax-theme <theme>                  Shiki syntax theme override",
     "",
     "Git diff options:",
     "  --staged, --cached                      review staged changes",

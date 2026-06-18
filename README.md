@@ -119,8 +119,7 @@ You can persist preferences to a config file:
 Example:
 
 ```toml
-theme = "graphite"   # graphite, midnight, paper, ember, catppuccin-latte, catppuccin-frappe, catppuccin-macchiato, catppuccin-mocha, zenburn, custom
-syntax_theme = "dracula" # optional Shiki syntax theme; UI theme stays unchanged
+theme = "github-dark-default" # any built-in theme id, or custom
 mode = "auto"        # auto, split, stack
 vcs = "git"          # git, jj, sl
 watch = false
@@ -134,13 +133,13 @@ transparent_background = false
 `exclude_untracked` affects Git/Sapling working-tree `hunk diff` sessions only.
 `transparent_background` can also be written as `transparentBackground`.
 
-Custom themes can inherit from any built-in base theme and override only the colors you care about:
+Custom themes can inherit from any built-in theme and override only the colors you care about:
 
 ```toml
 theme = "custom"
 
 [custom_theme]
-base = "graphite"    # graphite, midnight, paper, ember, catppuccin-latte, catppuccin-frappe, catppuccin-macchiato, catppuccin-mocha, zenburn
+base = "catppuccin-mocha"
 label = "My Theme"
 accent = "#7fd1ff"
 panel = "#10161d"
@@ -154,9 +153,7 @@ operator = "#7fd1ff"
 variable = "#eef4ff"
 ```
 
-All custom theme colors must use `#rrggbb` hex values.
-
-Use `syntax_theme` when you want a complete bundled Shiki syntax palette instead of per-role overrides. For example, `syntax_theme = "dracula"` uses Dracula's code tokens, editor surface, semantic add/remove colors, and matching diff metadata surfaces. Press `t` in the app to open the theme selector for UI themes and bundled Shiki syntax themes. Built-in Catppuccin UI themes source their code syntax from Shiki's bundled Catppuccin themes by default.
+All custom theme colors must use `#rrggbb` hex values. Press `t` in the app, or choose `View -> Themes…`, to open the theme selector.
 
 ### Git integration
 

@@ -6,7 +6,7 @@ import { findViewportRowAnchor, resolveViewportRowAnchorTop } from "./viewportAn
 import { createTestDiffFile, lines } from "../../../test/helpers/diff-helpers";
 
 describe("viewport row anchors", () => {
-  const theme = resolveTheme("midnight", null);
+  const theme = resolveTheme("github-dark-default", null);
 
   function createChangedFile() {
     return createTestDiffFile({

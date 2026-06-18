@@ -29,7 +29,7 @@ import {
   measureDiffSectionGeometry,
 } from "../diff/diffSectionGeometry";
 import { resizeSidebarWidth } from "./sidebar";
-import { availableThemes, resolveTheme } from "../themes";
+import { resolveTheme } from "../themes";
 
 function lines(...values: string[]) {
   return `${values.join("\n")}\n`;
@@ -80,21 +80,13 @@ describe("ui helpers", () => {
   test("buildMenuSpecs lays out the fixed top-level order", () => {
     const specs = buildMenuSpecs();
 
-    expect(specs.map((spec) => spec.id)).toEqual([
-      "file",
-      "view",
-      "navigate",
-      "theme",
-      "agent",
-      "help",
-    ]);
+    expect(specs.map((spec) => spec.id)).toEqual(["file", "view", "navigate", "agent", "help"]);
     expect(specs).toMatchObject([
       { id: "file", left: 1, width: 6, label: "File" },
       { id: "view", left: 7, width: 6, label: "View" },
       { id: "navigate", left: 13, width: 10, label: "Navigate" },
-      { id: "theme", left: 23, width: 7, label: "Theme" },
-      { id: "agent", left: 30, width: 7, label: "Agent" },
-      { id: "help", left: 37, width: 6, label: "Help" },
+      { id: "agent", left: 23, width: 7, label: "Agent" },
+      { id: "help", left: 30, width: 6, label: "Help" },
     ]);
   });
 
@@ -137,8 +129,6 @@ describe("ui helpers", () => {
 
   test("buildAppMenus creates checked entries from the current app state", () => {
     const menus = buildAppMenus({
-      activeThemeId: "graphite",
-      availableThemes: availableThemes(),
       canRefreshCurrentInput: true,
       focusFilter: () => {},
       layoutMode: "stack",
@@ -148,7 +138,7 @@ describe("ui helpers", () => {
       refreshCurrentInput: () => {},
       requestQuit: () => {},
       selectLayoutMode: () => {},
-      selectThemeId: () => {},
+      openThemeSelector: () => {},
       copyDecorations: true,
       showAgentNotes: true,
       showHelp: false,
@@ -192,83 +182,10 @@ describe("ui helpers", () => {
         .map((entry) => entry.label),
     ).toEqual(["Stacked view", "Agent notes", "Line numbers", "Line wrapping", "Copy decorations"]);
     expect(
-      menus.theme
+      menus.view
         .filter((entry): entry is Extract<MenuEntry, { kind: "item" }> => entry.kind === "item")
         .map((entry) => entry.label),
-    ).toEqual([
-      "Graphite",
-      "Midnight",
-      "Paper",
-      "Ember",
-      "Catppuccin Latte",
-      "Catppuccin Frappé",
-      "Catppuccin Macchiato",
-      "Catppuccin Mocha",
-      "Zenburn",
-    ]);
-    expect(
-      menus.theme.some(
-        (entry) => entry.kind === "item" && entry.label === "Graphite" && entry.checked,
-      ),
-    ).toBe(true);
-  });
-
-  test("buildAppMenus includes a config-defined custom theme when available", () => {
-    const menus = buildAppMenus({
-      activeThemeId: "custom",
-      availableThemes: availableThemes({
-        base: "midnight",
-        label: "My Theme",
-      }),
-      canRefreshCurrentInput: false,
-      focusFilter: () => {},
-      layoutMode: "split",
-      moveToAnnotatedFile: () => {},
-      moveToAnnotatedHunk: () => {},
-      moveToHunk: () => {},
-      refreshCurrentInput: () => {},
-      requestQuit: () => {},
-      selectLayoutMode: () => {},
-      selectThemeId: () => {},
-      copyDecorations: false,
-      showAgentNotes: false,
-      showHelp: false,
-      showHunkHeaders: true,
-      showLineNumbers: true,
-      renderSidebar: true,
-      toggleCopyDecorations: () => {},
-      toggleAgentNotes: () => {},
-      toggleFocusArea: () => {},
-      toggleHelp: () => {},
-      toggleHunkHeaders: () => {},
-      toggleLineNumbers: () => {},
-      toggleLineWrap: () => {},
-      toggleSidebar: () => {},
-      triggerEditSelectedFile: () => {},
-      wrapLines: false,
-    });
-
-    expect(
-      menus.theme
-        .filter((entry): entry is Extract<MenuEntry, { kind: "item" }> => entry.kind === "item")
-        .map((entry) => entry.label),
-    ).toEqual([
-      "Graphite",
-      "Midnight",
-      "Paper",
-      "Ember",
-      "Catppuccin Latte",
-      "Catppuccin Frappé",
-      "Catppuccin Macchiato",
-      "Catppuccin Mocha",
-      "Zenburn",
-      "My Theme",
-    ]);
-    expect(
-      menus.theme.some(
-        (entry) => entry.kind === "item" && entry.label === "My Theme" && entry.checked,
-      ),
-    ).toBe(true);
+    ).toContain("Themes…");
   });
 
   test("keyboard alias helpers normalize the shared scroll shortcut keys", () => {
@@ -390,7 +307,7 @@ describe("ui helpers", () => {
 
   test("estimateDiffSectionBodyRows matches split and stack row counts from the render plan", async () => {
     const file = createDiffFile();
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
 
     expect(estimateDiffSectionBodyRows(file, "split", true, theme)).toBeGreaterThan(0);
     expect(estimateDiffSectionBodyRows(file, "stack", true, theme)).toBeGreaterThan(
@@ -432,7 +349,7 @@ describe("ui helpers", () => {
         "const line12 = 12;",
       ),
     );
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const metrics = measureDiffSectionGeometry(file, "split", false, theme);
 
     expect(metrics.bodyHeight).toBeGreaterThan(0);
@@ -447,7 +364,7 @@ describe("ui helpers", () => {
 
   test("measureDiffSectionGeometry includes visible inline note rows in split mode", () => {
     const file = createDiffFile();
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const baseGeometry = measureDiffSectionGeometry(file, "split", true, theme);
     const noteGeometry = measureDiffSectionGeometry(
       file,
@@ -490,14 +407,14 @@ describe("ui helpers", () => {
     ).toBe(16);
   });
 
-  test("resolveTheme falls back by requested id to graphite while lazily exposing syntax styles", () => {
-    const midnight = resolveTheme("midnight", null);
+  test("resolveTheme falls back to GitHub defaults while lazily exposing syntax styles", () => {
+    const dracula = resolveTheme("dracula", null);
     const missingLight = resolveTheme("missing", "light");
     const missingDark = resolveTheme("missing", "dark");
     const autoLight = resolveTheme("auto", "light");
     const autoDark = resolveTheme("auto", "dark");
     const custom = resolveTheme("custom", null, {
-      base: "paper",
+      base: "github-light-default",
       label: "My Theme",
       accent: "#7755aa",
       syntax: {
@@ -506,18 +423,18 @@ describe("ui helpers", () => {
     });
     const missingCustom = resolveTheme("custom", null);
 
-    expect(midnight.id).toBe("midnight");
-    expect(missingLight.id).toBe("graphite");
-    expect(missingDark.id).toBe("graphite");
-    expect(autoLight.id).toBe("paper");
-    expect(autoDark.id).toBe("graphite");
+    expect(dracula.id).toBe("dracula");
+    expect(missingLight.id).toBe("github-light-default");
+    expect(missingDark.id).toBe("github-dark-default");
+    expect(autoLight.id).toBe("github-light-default");
+    expect(autoDark.id).toBe("github-dark-default");
     expect(custom.id).toBe("custom");
     expect(custom.label).toBe("My Theme");
     expect(custom.appearance).toBe("light");
     expect(custom.accent).toBe("#7755aa");
     expect(custom.syntaxColors.keyword).toBe("#123456");
-    expect(missingCustom.id).toBe("graphite");
-    expect(resolveTheme("ember", null).syntaxStyle).toBeDefined();
+    expect(missingCustom.id).toBe("github-dark-default");
+    expect(resolveTheme("github-dark-default", null).syntaxStyle).toBeDefined();
     expect(custom.syntaxStyle).toBeDefined();
     expect(resolveTheme("catppuccin-latte", null).syntaxStyle).toBeDefined();
     expect(resolveTheme("catppuccin-frappe", null).syntaxStyle).toBeDefined();

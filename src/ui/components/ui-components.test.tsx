@@ -227,7 +227,7 @@ function createExpandableContextDiffFile(
 
 function createDiffPaneProps(
   files: DiffFile[],
-  theme = resolveTheme("midnight", null),
+  theme = resolveTheme("github-dark-default", null),
   overrides: Partial<Parameters<typeof DiffPane>[0]> = {},
 ): Parameters<typeof DiffPane>[0] {
   return {
@@ -397,7 +397,7 @@ function renderedWordDiffBackgroundDistance(
 
 describe("UI components", () => {
   test("SidebarPane renders grouped file rows with indented filenames and right-aligned stats", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const files = [
       createTestDiffFile(
         "app",
@@ -470,7 +470,7 @@ describe("UI components", () => {
 
   test("DiffPane renders all diff sections in file order", async () => {
     const bootstrap = createBootstrap();
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <DiffPane
         diffContentWidth={72}
@@ -504,7 +504,7 @@ describe("UI components", () => {
   });
 
   test("DiffFileHeaderRow leaves one column after line counts", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <DiffFileHeaderRow
         file={createTestDiffFile(
@@ -529,7 +529,7 @@ describe("UI components", () => {
   });
 
   test("DiffRowView renders a clickable add-note affordance for a hovered diff row", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const startUserNote = mock(() => undefined);
     const setup = await testRender(
       <DiffRowView
@@ -587,7 +587,7 @@ describe("UI components", () => {
   });
 
   test("DiffRowView keeps wrapped text stable when showing the add-note affordance", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const row = {
       type: "stack-line" as const,
       key: "alpha:line:hover-wrap",
@@ -632,7 +632,7 @@ describe("UI components", () => {
   });
 
   test("DiffRowView fills the reserved wrapped add-note column with row background", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const setup = await testRender(
       <DiffRowView
         row={{
@@ -682,7 +682,7 @@ describe("UI components", () => {
   });
 
   test("DiffRowView keeps metadata row background within the measured row width", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const setup = await testRender(
       <DiffRowView
         row={{
@@ -723,7 +723,7 @@ describe("UI components", () => {
   });
 
   test("DiffRowView preserves zero-width combining spans in nowrap and wrapped rows", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const row = {
       type: "stack-line" as const,
       key: "alpha:line:combining",
@@ -785,7 +785,7 @@ describe("UI components", () => {
 
   test("DiffPane only shows the add-note affordance after pointer movement", async () => {
     const files = createWindowingFiles(6);
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const scrollRef = createRef<ScrollBoxRenderable>();
     const props = createDiffPaneProps(files, theme, {
       diffContentWidth: 88,
@@ -848,7 +848,7 @@ describe("UI components", () => {
   test("DiffPane add-note clicks keep targeting the current hunk after navigation", async () => {
     const file = createWideTwoHunkDiffFile("target", "target.ts");
     const files = [file];
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const scrollRef = createRef<ScrollBoxRenderable>();
     const calls: Array<{
       fileId: string;
@@ -927,7 +927,7 @@ describe("UI components", () => {
 
   test("DiffPane scrolls a later selected file into view in the windowed path", async () => {
     const files = createWindowingFiles(6);
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const props = createDiffPaneProps(files, theme, {
       diffContentWidth: 88,
       selectedFileId: files[5]?.id,
@@ -958,7 +958,7 @@ describe("UI components", () => {
   });
 
   test("DiffPane scrolls to the selected later hunk when hunk headers are hidden", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const files = [
       createTestDiffFile(
         "intro",
@@ -1000,7 +1000,7 @@ describe("UI components", () => {
   });
 
   test("DiffPane viewport-follow selection does not move the scroll position", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const files = [
       createTestDiffFile(
         "first",
@@ -1075,7 +1075,7 @@ describe("UI components", () => {
   });
 
   test("DiffPane keeps the sticky-header lane stable through the divider and next-header handoff", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const firstFile = createTallDiffFile("first", "first.ts", 18);
     const secondFile = createTallDiffFile("second", "second.ts", 18);
     const scrollRef = createRef<ScrollBoxRenderable>();
@@ -1189,7 +1189,7 @@ describe("UI components", () => {
   });
 
   test("DiffPane positions later files after expanded context rows", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const beforeLines = Array.from({ length: 30 }, (_, index) => `first line ${index + 1}`);
     const afterLines = [...beforeLines];
     afterLines[4] = "first line 5 changed";
@@ -1269,7 +1269,7 @@ describe("UI components", () => {
   });
 
   test("DiffPane advances the review stream under the always-pinned file header above a collapsed gap", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const firstFile = createCollapsedTopDiffFile("late", "late.ts", 400, 366);
     const secondFile = createTallDiffFile("second", "second.ts", 4);
     const scrollRef = createRef<ScrollBoxRenderable>();
@@ -1311,7 +1311,7 @@ describe("UI components", () => {
   });
 
   test("DiffPane returns cleanly to the collapsed-gap view after scrolling back up under the pinned file header", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const firstFile = createCollapsedTopDiffFile("late", "late.ts", 400, 366);
     const secondFile = createTallDiffFile("second", "second.ts", 4);
     const scrollRef = createRef<ScrollBoxRenderable>();
@@ -1363,7 +1363,7 @@ describe("UI components", () => {
   });
 
   test("DiffPane keeps bottom scroll stable when offscreen agent notes are windowed out", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const firstFile = createTallDiffFile("first", "first.ts", 18);
     firstFile.agent = {
       path: firstFile.path,
@@ -1421,7 +1421,7 @@ describe("UI components", () => {
   });
 
   test("DiffPane lets manual scrolling move away from a bottom-clamped file-top alignment", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const files = [
       createTallDiffFile("first", "first.ts", 30),
       createTestDiffFile(
@@ -1490,7 +1490,7 @@ describe("UI components", () => {
   });
 
   test("DiffPane keeps a viewport-sized selected hunk fully visible when it fits", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const props = createDiffPaneProps(
       [createViewportSizedBottomHunkDiffFile("target", "target.ts")],
       theme,
@@ -1528,7 +1528,7 @@ describe("UI components", () => {
   });
 
   test("DiffPane keeps a selected wrapped hunk fully visible when it fits", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const props = createDiffPaneProps(
       [createWrappedViewportSizedBottomHunkDiffFile("target", "target.ts")],
       theme,
@@ -1566,7 +1566,7 @@ describe("UI components", () => {
   });
 
   test("DiffPane keeps a distant selected hunk visible when row windowing narrows one file body", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const props = createDiffPaneProps([createWideTwoHunkDiffFile("target", "target.ts")], theme, {
       diffContentWidth: 96,
       headerLabelWidth: 48,
@@ -1594,7 +1594,7 @@ describe("UI components", () => {
   });
 
   test("DiffPane keeps a selected hunk with inline notes fully visible when it fits", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const file = createViewportSizedBottomHunkDiffFile("target", "target.ts");
     file.agent = {
       path: file.path,
@@ -1640,7 +1640,7 @@ describe("UI components", () => {
   });
 
   test("DiffPane scrollToNote positions the inline note near the viewport top instead of the hunk top", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
 
     // Build a file with two distant hunks so the second hunk is far below the first when scrolled
     // to the hunk top. The annotation anchors on the second hunk.
@@ -1738,7 +1738,7 @@ describe("UI components", () => {
   });
 
   test("AgentCard removes top and bottom padding while keeping the footer inside the frame", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <AgentCard
         locationLabel="alpha.ts +2"
@@ -1765,7 +1765,7 @@ describe("UI components", () => {
   });
 
   test("AgentInlineNote renders a connected bordered panel without a blank connector row", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <AgentInlineNote
         annotation={{
@@ -1794,7 +1794,7 @@ describe("UI components", () => {
   });
 
   test("AgentInlineNote renders draft notes as an editable composer", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const file = createTestDiffFile(
       "draft",
       "src/core/cli.ts",
@@ -1840,7 +1840,7 @@ describe("UI components", () => {
   });
 
   test("AgentInlineNote grows draft composer for soft-wrapped text", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const file = createTestDiffFile(
       "draft-wrap",
       "src/core/cli.ts",
@@ -1879,7 +1879,7 @@ describe("UI components", () => {
   });
 
   test("AgentInlineNote shows author name in title when author is set", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <AgentInlineNote
         annotation={{
@@ -1903,7 +1903,7 @@ describe("UI components", () => {
   });
 
   test("AgentInlineNote falls back to 'Agent note' when author is absent", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <AgentInlineNote
         annotation={{
@@ -1925,7 +1925,7 @@ describe("UI components", () => {
   });
 
   test("AgentInlineNote includes index when multiple notes share a hunk", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <AgentInlineNote
         annotation={{
@@ -1951,7 +1951,7 @@ describe("UI components", () => {
   });
 
   test("AgentInlineNote preserves special characters in author", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <AgentInlineNote
         annotation={{
@@ -1974,7 +1974,7 @@ describe("UI components", () => {
   });
 
   test("AgentCard shows author in title when set", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <AgentCard
         locationLabel="alpha.ts +2"
@@ -1998,7 +1998,7 @@ describe("UI components", () => {
   });
 
   test("AgentCard falls back to 'AI note' when author absent", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <AgentCard
         locationLabel="alpha.ts +2"
@@ -2035,7 +2035,7 @@ describe("UI components", () => {
       ],
     };
 
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <DiffPane
         diffContentWidth={88}
@@ -2076,7 +2076,7 @@ describe("UI components", () => {
 
   test("DiffPane split inline notes hand off directly to the anchored row without shifting it", async () => {
     const bootstrap = createBootstrap();
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <DiffPane
         diffContentWidth={88}
@@ -2116,7 +2116,7 @@ describe("UI components", () => {
 
   test("DiffPane shows all inline notes when a hunk has multiple notes", async () => {
     const bootstrap = createBootstrap();
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const file = bootstrap.changeset.files[0]!;
     file.agent = {
       ...file.agent!,
@@ -2167,7 +2167,7 @@ describe("UI components", () => {
   });
 
   test("MenuDropdown renders checked items and key hints", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <MenuDropdown
         activeMenuId="view"
@@ -2203,7 +2203,7 @@ describe("UI components", () => {
   });
 
   test("MenuDropdown repositions wide menus to stay inside the terminal", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <MenuDropdown
         activeMenuId="agent"
@@ -2230,7 +2230,7 @@ describe("UI components", () => {
   });
 
   test("StatusBar renders filter mode affordance", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <StatusBar
         filter="beta"
@@ -2250,7 +2250,7 @@ describe("UI components", () => {
   });
 
   test("StatusBar renders a notice when no filter is active", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <StatusBar
         filter=""
@@ -2270,7 +2270,7 @@ describe("UI components", () => {
   });
 
   test("StatusBar keeps filter input precedence over a notice", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <StatusBar
         filter="beta"
@@ -2292,7 +2292,7 @@ describe("UI components", () => {
   });
 
   test("StatusBar keeps filter summary precedence over a notice", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <StatusBar
         filter="beta"
@@ -2313,7 +2313,7 @@ describe("UI components", () => {
   });
 
   test("HelpDialog renders every documented control row without overlap", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <HelpDialog
         canRefresh={true}
@@ -2377,7 +2377,7 @@ describe("UI components", () => {
   });
 
   test("DiffPane renders an empty-state message when no files are visible", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <DiffPane
         diffContentWidth={72}
@@ -2407,7 +2407,7 @@ describe("UI components", () => {
 
   test("DiffPane can hide line numbers while keeping diff signs visible", async () => {
     const bootstrap = createBootstrap();
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <DiffPane
         diffContentWidth={72}
@@ -2440,7 +2440,7 @@ describe("UI components", () => {
 
   test("DiffPane can wrap long diff lines onto continuation rows", async () => {
     const bootstrap = createWrapBootstrap();
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <DiffPane
         diffContentWidth={48}
@@ -2473,7 +2473,7 @@ describe("UI components", () => {
 
   test("DiffPane can hide hunk metadata rows without hiding code lines", async () => {
     const bootstrap = createBootstrap();
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <DiffPane
         diffContentWidth={72}
@@ -2506,7 +2506,7 @@ describe("UI components", () => {
 
   test("PierreDiffView renders stack-mode wrapped continuation rows", async () => {
     const file = createWrapBootstrap().changeset.files[0]!;
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <PierreDiffView
         file={file}
@@ -2537,7 +2537,7 @@ describe("UI components", () => {
 
   test("PierreDiffView can reveal offscreen code columns in nowrap mode", async () => {
     const file = createWrapBootstrap().changeset.files[0]!;
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
 
     const baseFrame = await captureFrame(
       <PierreDiffView
@@ -2575,7 +2575,7 @@ describe("UI components", () => {
 
   test("split view wraps the same long diff line across more rows than stack view at the same width", async () => {
     const file = createWrapBootstrap().changeset.files[0]!;
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const width = 64;
 
     const splitFrame = await captureFrame(
@@ -2620,7 +2620,7 @@ describe("UI components", () => {
       "export const value = 1;\n",
       "export const value = 2;\nexport const added = true;\n",
     );
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <PierreDiffView
         file={file}
@@ -2655,7 +2655,7 @@ describe("UI components", () => {
   });
 
   test("PierreDiffView shows contextual messages when there is no selected file or no textual hunks", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
 
     const noFileFrame = await captureFrame(
       <PierreDiffView
@@ -2735,7 +2735,7 @@ describe("UI components", () => {
 
   test("PierreDiffView shows the expand chevron only when a source fetcher is attached", async () => {
     const { file: baseFile } = createExpandableContextDiffFile("expand-affordance", "expand.ts");
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
 
     const noFetcherFrame = await captureFrame(
       <PierreDiffView
@@ -2779,7 +2779,7 @@ describe("UI components", () => {
       ...expandable.file,
       sourceFetcher: createTestSourceFetcher(() => expandable.after),
     };
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const setup = await testRender(
       <PierreDiffView
         file={file}
@@ -2851,7 +2851,7 @@ describe("UI components", () => {
       sourceFetcher: createTestSourceFetcher(() => expandable.after),
     };
     const toggledGaps: string[] = [];
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const setup = await testRender(
       <PierreDiffView
         file={file}
@@ -2914,7 +2914,7 @@ describe("UI components", () => {
       id: "expanded-highlight",
       path: "expanded-highlight.ts",
     });
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const setup = await testRender(
       <PierreDiffView
         file={file}
@@ -2960,7 +2960,7 @@ describe("UI components", () => {
       "export const answer = 41;\nexport const stable = true;\n",
       "export const answer = 42;\nexport const stable = true;\n",
     );
-    const theme = resolveTheme("graphite", null);
+    const theme = resolveTheme("github-dark-default", null);
     const setup = await testRender(
       <PierreDiffView
         file={file}
@@ -3015,7 +3015,7 @@ describe("UI components", () => {
       "export const cacheMarker = 1;\nexport function cacheKeep(value: number) { return value + 1; }\n",
       "export const cacheMarker = 2;\nexport function cacheKeep(value: number) { return value * 2; }\n",
     );
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
 
     const firstSetup = await testRender(
       <PierreDiffView
@@ -3080,7 +3080,7 @@ describe("UI components", () => {
 
   test("DiffPane prefetches highlight data for files approaching the viewport before they mount", async () => {
     const files = createHighlightPrefetchWindowFiles();
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const setup = await testRender(
       <DiffPane
         {...createDiffPaneProps(files, theme, {
@@ -3140,7 +3140,7 @@ describe("UI components", () => {
     const bootstrap = createBootstrap();
     const frame = await captureFrame(<AppHost bootstrap={bootstrap} />, 280, 24);
 
-    expect(frame).toContain("File  View  Navigate  Theme  Agent  Help");
+    expect(frame).toContain("File  View  Navigate  Agent  Help");
     expect(frame).toContain("alpha.ts");
     expect(frame).toContain("beta.ts");
     expect(frame).toContain("@@ -1,1 +1,2 @@");

@@ -70,7 +70,7 @@ function guidedSplitLineNumbers(plannedRows: PlannedReviewRow[], side: "old" | "
 
 describe("review render plan", () => {
   test("inserts an inline note before the anchor row and starts the guide after the anchor", () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const file = createDiffFile(
       "alpha",
       "alpha.ts",
@@ -116,7 +116,7 @@ describe("review render plan", () => {
   });
 
   test("anchors deletion-only notes to old-side rows without a dangling guide below the note", () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const file = createDiffFile(
       "deleted",
       "deleted.ts",
@@ -161,7 +161,7 @@ describe("review render plan", () => {
   });
 
   test("assigns hunk anchor ids from the first visible row for every hunk when hunk headers are hidden", () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const file = createDiffFile(
       "beta",
       "beta.ts",
@@ -217,7 +217,7 @@ describe("review render plan", () => {
   });
 
   test("anchors range-less notes to the first visible line row without guide rows", () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const file = createDiffFile(
       "stack",
       "stack.ts",
@@ -259,7 +259,7 @@ describe("review render plan", () => {
   });
 
   test("anchors notes on the matching hunk in multi-hunk diffs", () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const file = createDiffFile(
       "multi",
       "multi.ts",
@@ -322,7 +322,7 @@ describe("review render plan", () => {
   });
 
   test("renders every visible note at its own anchor row", () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const file = createDiffFile(
       "counted",
       "counted.ts",

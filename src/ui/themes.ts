@@ -2,41 +2,240 @@ import type { ThemeMode } from "@opentui/core";
 import type { CustomThemeConfig } from "../core/types";
 import { blendHex, contrastRatio, relativeLuminance } from "./lib/color";
 import {
+  BUNDLED_SHIKI_THEME_IDS,
   getBundledShikiThemeBackground,
   getBundledShikiThemeDiffColors,
   getBundledShikiThemeForeground,
   type BundledShikiThemeDiffColors,
+  type BundledShikiThemeId,
 } from "./lib/shikiThemes";
-import {
-  CATPPUCCIN_FRAPPE_THEME,
-  CATPPUCCIN_LATTE_THEME,
-  CATPPUCCIN_MACCHIATO_THEME,
-  CATPPUCCIN_MOCHA_THEME,
-} from "./themes/catppuccin";
-import { EMBER_THEME } from "./themes/ember";
-import { GRAPHITE_THEME } from "./themes/graphite";
-import { MIDNIGHT_THEME } from "./themes/midnight";
-import { PAPER_THEME } from "./themes/paper";
 import { withLazySyntaxStyle } from "./themes/syntax";
-import type { AppTheme, ThemeBase } from "./themes/types";
-import { ZENBURN_THEME } from "./themes/zenburn";
+import type { AppTheme, SyntaxColors, ThemeBase } from "./themes/types";
 
-export { CATPPUCCIN_PALETTES } from "./themes/catppuccin";
 export type { AppTheme, SyntaxColors, ThemeBase } from "./themes/types";
 
 export const TRANSPARENT_BACKGROUND = "transparent";
+export const DEFAULT_DARK_THEME_ID = "github-dark-default";
+export const DEFAULT_LIGHT_THEME_ID = "github-light-default";
 
-export const THEMES: AppTheme[] = [
-  GRAPHITE_THEME,
-  MIDNIGHT_THEME,
-  PAPER_THEME,
-  EMBER_THEME,
-  CATPPUCCIN_LATTE_THEME,
-  CATPPUCCIN_FRAPPE_THEME,
-  CATPPUCCIN_MACCHIATO_THEME,
-  CATPPUCCIN_MOCHA_THEME,
-  ZENBURN_THEME,
-];
+const MIN_GUTTER_CONTRAST = 4.5;
+const MIN_DIFF_SIGN_CONTRAST = 3;
+
+const FALLBACK_DIFF_COLORS = {
+  dark: { added: "#5ecc71", removed: "#ff6762", modified: "#69b1ff" },
+  light: { added: "#0dbe4e", removed: "#ff2e3f", modified: "#009fff" },
+} as const;
+
+/** Return a high-contrast foreground layered over an arbitrary editor surface. */
+function readableForeground(preferred: string | undefined, background: string) {
+  if (preferred && contrastRatio(preferred, background) >= MIN_GUTTER_CONTRAST) {
+    return preferred;
+  }
+
+  return relativeLuminance(background) > 0.45 ? "#000000" : "#ffffff";
+}
+
+/** Return a readable dim foreground for gutters layered over an arbitrary editor surface. */
+function readableDimForeground(preferred: string, background: string) {
+  if (contrastRatio(preferred, background) >= MIN_GUTTER_CONTRAST) {
+    return preferred;
+  }
+
+  return relativeLuminance(background) > 0.45
+    ? blendHex("#000000", background, 0.62)
+    : blendHex("#ffffff", background, 0.62);
+}
+
+/** Return a semantic diff marker color that remains legible on a theme editor surface. */
+function readableDiffSign(preferred: string, background: string) {
+  if (contrastRatio(preferred, background) >= MIN_DIFF_SIGN_CONTRAST) {
+    return preferred;
+  }
+
+  return relativeLuminance(background) > 0.45
+    ? blendHex("#000000", preferred, 0.45)
+    : blendHex("#ffffff", preferred, 0.45);
+}
+
+/** Build Hunk's fallback semantic syntax palette for non-Shiki custom highlighting. */
+function buildSyntaxColors(codeForeground: string): SyntaxColors {
+  return {
+    default: codeForeground,
+    keyword: codeForeground,
+    string: codeForeground,
+    comment: codeForeground,
+    number: codeForeground,
+    function: codeForeground,
+    property: codeForeground,
+    type: codeForeground,
+    variable: codeForeground,
+    operator: codeForeground,
+    punctuation: codeForeground,
+  };
+}
+
+/** Return the strongest tinted background that keeps foreground text readable. */
+function readableTintedBackground(
+  tintColor: string,
+  background: string,
+  foreground: string,
+  preferredAmount: number,
+) {
+  for (let amount = preferredAmount; amount >= 0.02; amount -= 0.02) {
+    const candidate = blendHex(tintColor, background, amount);
+    if (contrastRatio(foreground, candidate) >= MIN_GUTTER_CONTRAST) {
+      return candidate;
+    }
+  }
+
+  return background;
+}
+
+/** Keep semantic status colors readable on sidebar and menu surfaces. */
+function readableChromeColor(preferred: string, panel: string, panelAlt: string) {
+  if (
+    contrastRatio(preferred, panel) >= MIN_GUTTER_CONTRAST &&
+    contrastRatio(preferred, panelAlt) >= MIN_GUTTER_CONTRAST
+  ) {
+    return preferred;
+  }
+
+  const lightPanel = relativeLuminance(panelAlt) > 0.45;
+  const anchor = lightPanel ? "#000000" : "#ffffff";
+  for (const amount of [0.35, 0.5, 0.65, 0.8, 1]) {
+    const candidate = blendHex(anchor, preferred, amount);
+    if (
+      contrastRatio(candidate, panel) >= MIN_GUTTER_CONTRAST &&
+      contrastRatio(candidate, panelAlt) >= MIN_GUTTER_CONTRAST
+    ) {
+      return candidate;
+    }
+  }
+
+  return anchor;
+}
+
+/** Derive one complete Hunk theme from one bundled Shiki editor theme. */
+function buildShikiTheme(themeId: BundledShikiThemeId): AppTheme {
+  const editorBackground = getBundledShikiThemeBackground(themeId) ?? "#0d1117";
+  const editorForeground = getBundledShikiThemeForeground(themeId);
+  const diffColors = getBundledShikiThemeDiffColors(themeId);
+  const isLightSurface = relativeLuminance(editorBackground) > 0.45;
+  const fallbackDiffColors = FALLBACK_DIFF_COLORS[isLightSurface ? "light" : "dark"];
+  const rowTint = isLightSurface ? 0.12 : 0.2;
+  const contentTint = isLightSurface ? 0.18 : 0.28;
+  const selectedTint = isLightSurface ? 0.18 : 0.25;
+  const codeForeground = readableForeground(editorForeground, editorBackground);
+  const neutralPanel = blendHex(codeForeground, editorBackground, isLightSurface ? 0.04 : 0.08);
+  const neutralPanelAlt = blendHex(codeForeground, editorBackground, isLightSurface ? 0.08 : 0.12);
+  const neutralBorder = blendHex(codeForeground, editorBackground, isLightSurface ? 0.15 : 0.18);
+  const textForeground = readableForeground(editorForeground ?? codeForeground, neutralPanelAlt);
+  const lineNumberForeground = readableDimForeground(
+    blendHex(textForeground, editorBackground, 0.56),
+    editorBackground,
+  );
+  const mutedForeground = readableDimForeground(
+    blendHex(textForeground, editorBackground, 0.56),
+    neutralPanelAlt,
+  );
+  const addedSignColor = readableDiffSign(
+    diffColors?.added ?? fallbackDiffColors.added,
+    editorBackground,
+  );
+  const removedSignColor = readableDiffSign(
+    diffColors?.removed ?? fallbackDiffColors.removed,
+    editorBackground,
+  );
+  const modifiedColor = readableDiffSign(
+    diffColors?.modified ?? fallbackDiffColors.modified,
+    editorBackground,
+  );
+  const addedBg = readableTintedBackground(
+    addedSignColor,
+    editorBackground,
+    textForeground,
+    rowTint,
+  );
+  const removedBg = readableTintedBackground(
+    removedSignColor,
+    editorBackground,
+    textForeground,
+    rowTint,
+  );
+  const movedBg = readableTintedBackground(
+    modifiedColor,
+    editorBackground,
+    textForeground,
+    rowTint,
+  );
+  const addedContentBg = readableTintedBackground(
+    addedSignColor,
+    editorBackground,
+    textForeground,
+    contentTint,
+  );
+  const removedContentBg = readableTintedBackground(
+    removedSignColor,
+    editorBackground,
+    textForeground,
+    contentTint,
+  );
+  const accentMuted = readableTintedBackground(
+    modifiedColor,
+    editorBackground,
+    textForeground,
+    selectedTint,
+  );
+  const syntaxColors = buildSyntaxColors(textForeground);
+  const badgeAdded = readableChromeColor(addedSignColor, neutralPanel, neutralPanelAlt);
+  const badgeRemoved = readableChromeColor(removedSignColor, neutralPanel, neutralPanelAlt);
+  const badgeModified = readableChromeColor(modifiedColor, neutralPanel, neutralPanelAlt);
+  const themeBase: ThemeBase = {
+    id: themeId,
+    label: themeId,
+    appearance: isLightSurface ? "light" : "dark",
+    background: editorBackground,
+    panel: neutralPanel,
+    panelAlt: neutralPanelAlt,
+    border: neutralBorder,
+    accent: modifiedColor,
+    accentMuted,
+    text: textForeground,
+    muted: mutedForeground,
+    contextBg: editorBackground,
+    contextContentBg: editorBackground,
+    addedBg,
+    removedBg,
+    movedAddedBg: movedBg,
+    movedRemovedBg: movedBg,
+    addedContentBg,
+    removedContentBg,
+    addedSignColor,
+    removedSignColor,
+    lineNumberBg: editorBackground,
+    lineNumberFg: lineNumberForeground,
+    selectedHunk: blendHex(modifiedColor, editorBackground, selectedTint),
+    noteBackground: neutralPanel,
+    noteBorder: modifiedColor,
+    noteTitleBackground: neutralPanel,
+    noteTitleText: textForeground,
+    badgeAdded,
+    badgeRemoved,
+    badgeNeutral: mutedForeground,
+    fileNew: badgeAdded,
+    fileDeleted: badgeRemoved,
+    fileRenamed: badgeModified,
+    fileModified: badgeModified,
+    fileUntracked: badgeAdded,
+    syntaxTheme: themeId,
+  };
+
+  return withLazySyntaxStyle(themeBase, syntaxColors);
+}
+
+export const THEMES: AppTheme[] = BUNDLED_SHIKI_THEME_IDS.map((themeId) =>
+  buildShikiTheme(themeId),
+);
 
 /** Return the built-in theme by id so config-defined themes can inherit from it. */
 function builtInThemeById(themeId: string | undefined) {
@@ -44,11 +243,12 @@ function builtInThemeById(themeId: string | undefined) {
 }
 
 /** Return the explicit built-in fallback theme used across startup and missing ids. */
-function fallbackTheme() {
-  return builtInThemeById("graphite") ?? THEMES[0]!;
+function fallbackTheme(themeMode?: ThemeMode | null) {
+  const fallbackId = themeMode === "light" ? DEFAULT_LIGHT_THEME_ID : DEFAULT_DARK_THEME_ID;
+  return builtInThemeById(fallbackId) ?? THEMES[0]!;
 }
 
-/** Build one config-defined custom theme by inheriting from a built-in base palette. */
+/** Build one config-defined custom theme by inheriting from a Shiki-backed base palette. */
 function buildCustomTheme(customTheme: CustomThemeConfig) {
   const baseTheme = builtInThemeById(customTheme.base) ?? fallbackTheme();
   const themeBase: ThemeBase = {
@@ -108,249 +308,41 @@ export function availableThemeIds(customTheme?: CustomThemeConfig): string[] {
   return themeIds;
 }
 
-/** Return the menu/cycle themes, adding the config-defined custom theme only when available. */
+/** Return selectable themes, adding the config-defined custom theme only when available. */
 export function availableThemes(customTheme?: CustomThemeConfig): AppTheme[] {
   return customTheme ? [...THEMES, buildCustomTheme(customTheme)] : THEMES;
 }
 
-/** Resolve a named theme, including explicit terminal-background auto mode and custom themes, or fall back to Hunk's explicit built-in default. */
+/** Resolve a named theme, including terminal-background auto mode and custom themes. */
 export function resolveTheme(
   requested: string | undefined,
   themeMode: ThemeMode | null,
   customTheme?: CustomThemeConfig,
 ) {
   if (requested === "auto") {
-    const preferred = themeMode === "light" ? "paper" : "graphite";
-    return THEMES.find((theme) => theme.id === preferred) ?? THEMES[0]!;
-  } else if (requested === "custom" && customTheme) {
+    return fallbackTheme(themeMode);
+  }
+
+  if (requested === "custom" && customTheme) {
     return buildCustomTheme(customTheme);
   }
 
-  const exact = THEMES.find((theme) => theme.id === requested);
+  const exact = builtInThemeById(requested);
   if (exact) {
     return exact;
   }
 
-  return fallbackTheme();
+  return fallbackTheme(themeMode);
 }
 
-export type SyntaxBackgroundMode = "tokens-only" | "editor-surface" | "pierre-surface";
-
-// Flip these while evaluating syntax-theme backgrounds. Shiki mode mirrors diffs.com by using
-// each syntax theme's editor surface and semantic add/remove colors when available.
-export const USE_SHIKI_EDITOR_BACKGROUNDS = true;
-export const USE_PIERRE_EDITOR_BACKGROUNDS = false;
-
-const DEFAULT_SYNTAX_BACKGROUND_MODE: SyntaxBackgroundMode = USE_SHIKI_EDITOR_BACKGROUNDS
-  ? "editor-surface"
-  : USE_PIERRE_EDITOR_BACKGROUNDS
-    ? "pierre-surface"
-    : "tokens-only";
-
-const PIERRE_EDITOR_SURFACES = {
-  dark: {
-    background: "#0a0a0a",
-    foreground: "#fafafa",
-    panel: "#171717",
-    panelAlt: "#101010",
-    border: "#1d1d1d",
-    accent: "#009fff",
-    accentMuted: "#19283c",
-    muted: "#a3a3a3",
-    lineNumberFg: "#737373",
-    addedSignColor: "#07c480",
-    removedSignColor: "#ff2e3f",
-  },
-  light: {
-    background: "#ffffff",
-    foreground: "#0a0a0a",
-    panel: "#f5f5f5",
-    panelAlt: "#fafafa",
-    border: "#e5e5e5",
-    accent: "#009fff",
-    accentMuted: "#dfebff",
-    muted: "#525252",
-    lineNumberFg: "#737373",
-    addedSignColor: "#18a46c",
-    removedSignColor: "#d52c36",
-  },
-} as const;
-const MIN_GUTTER_CONTRAST = 4.5;
-const MIN_DIFF_SIGN_CONTRAST = 3;
-
-const FALLBACK_DIFF_COLORS = {
-  dark: { added: "#5ecc71", removed: "#ff6762", modified: "#69b1ff" },
-  light: { added: "#0dbe4e", removed: "#ff2e3f", modified: "#009fff" },
-} as const;
-
-/** Return a high-contrast foreground layered over an arbitrary editor surface. */
-function readableForeground(preferred: string | undefined, background: string) {
-  if (preferred && contrastRatio(preferred, background) >= MIN_GUTTER_CONTRAST) {
-    return preferred;
-  }
-
-  return relativeLuminance(background) > 0.45 ? "#000000" : "#ffffff";
+/** Return whether a custom theme base id can inherit from a bundled theme. */
+export function isBuiltInThemeId(themeId: string) {
+  return builtInThemeById(themeId) !== undefined;
 }
 
-/** Return a readable dim foreground for gutters layered over an arbitrary editor surface. */
-function readableDimForeground(preferred: string, background: string) {
-  if (contrastRatio(preferred, background) >= MIN_GUTTER_CONTRAST) {
-    return preferred;
-  }
-
-  return relativeLuminance(background) > 0.45
-    ? blendHex("#000000", background, 0.62)
-    : blendHex("#ffffff", background, 0.62);
-}
-
-/** Return a semantic diff marker color that remains legible on a syntax editor surface. */
-function readableDiffSign(preferred: string, background: string) {
-  if (contrastRatio(preferred, background) >= MIN_DIFF_SIGN_CONTRAST) {
-    return preferred;
-  }
-
-  return relativeLuminance(background) > 0.45
-    ? blendHex("#000000", preferred, 0.45)
-    : blendHex("#ffffff", preferred, 0.45);
-}
-
-/** Reset app chrome and semantic diff markers to Pierre's stable theme before syntax colors apply. */
-function withPierreBasePalette(theme: AppTheme): AppTheme {
-  const surface = PIERRE_EDITOR_SURFACES[theme.appearance];
-
-  return {
-    ...theme,
-    background: surface.background,
-    panel: surface.panel,
-    panelAlt: surface.panelAlt,
-    border: surface.border,
-    accent: surface.accent,
-    accentMuted: surface.accentMuted,
-    text: surface.foreground,
-    muted: surface.muted,
-    addedSignColor: surface.addedSignColor,
-    removedSignColor: surface.removedSignColor,
-    lineNumberFg: surface.lineNumberFg,
-    badgeAdded: surface.addedSignColor,
-    badgeRemoved: surface.removedSignColor,
-    badgeNeutral: surface.muted,
-    fileNew: surface.addedSignColor,
-    fileDeleted: surface.removedSignColor,
-    fileRenamed: surface.accent,
-    fileModified: surface.accent,
-    fileUntracked: surface.accent,
-    noteBorder: surface.accent,
-    noteTitleText: surface.foreground,
-  };
-}
-
-/** Derive diff row tints around one syntax theme editor background. */
-function withSyntaxEditorSurface(
-  theme: AppTheme,
-  editorBackground: string,
-  editorForeground: string | undefined,
-  diffColors?: BundledShikiThemeDiffColors,
-): AppTheme {
-  const isLightSurface = relativeLuminance(editorBackground) > 0.45;
-  const fallbackDiffColors = FALLBACK_DIFF_COLORS[isLightSurface ? "light" : "dark"];
-  const rowTint = isLightSurface ? 0.12 : 0.2;
-  const contentTint = isLightSurface ? 0.18 : 0.28;
-  const movedTint = rowTint;
-  const selectedTint = isLightSurface ? 0.18 : 0.25;
-  const codeForeground = readableForeground(editorForeground, editorBackground);
-  // Keep hunk metadata, empty rows, and note surfaces on the syntax theme surface too; otherwise
-  // light/dark UI palettes bleed into the code stream after switching syntax themes.
-  const neutralPanel = blendHex(codeForeground, editorBackground, isLightSurface ? 0.04 : 0.08);
-  const neutralPanelAlt = blendHex(codeForeground, editorBackground, isLightSurface ? 0.08 : 0.12);
-  const neutralBorder = blendHex(codeForeground, editorBackground, isLightSurface ? 0.15 : 0.18);
-  const textForeground = readableForeground(editorForeground ?? codeForeground, neutralPanelAlt);
-  const mutedForeground = readableDimForeground(
-    blendHex(textForeground, editorBackground, 0.56),
-    editorBackground,
-  );
-  const addedSignColor = readableDiffSign(
-    diffColors?.added ?? fallbackDiffColors.added,
-    editorBackground,
-  );
-  const removedSignColor = readableDiffSign(
-    diffColors?.removed ?? fallbackDiffColors.removed,
-    editorBackground,
-  );
-  const modifiedColor = readableDiffSign(
-    diffColors?.modified ?? fallbackDiffColors.modified,
-    editorBackground,
-  );
-
-  return {
-    ...theme,
-    background: editorBackground,
-    panel: neutralPanel,
-    panelAlt: neutralPanelAlt,
-    border: neutralBorder,
-    accent: modifiedColor,
-    accentMuted: blendHex(modifiedColor, editorBackground, selectedTint),
-    text: textForeground,
-    muted: mutedForeground,
-    contextBg: editorBackground,
-    contextContentBg: editorBackground,
-    addedBg: blendHex(addedSignColor, editorBackground, rowTint),
-    removedBg: blendHex(removedSignColor, editorBackground, rowTint),
-    movedAddedBg: blendHex(modifiedColor, editorBackground, movedTint),
-    movedRemovedBg: blendHex(modifiedColor, editorBackground, movedTint),
-    addedContentBg: blendHex(addedSignColor, editorBackground, contentTint),
-    removedContentBg: blendHex(removedSignColor, editorBackground, contentTint),
-    addedSignColor,
-    removedSignColor,
-    lineNumberBg: editorBackground,
-    lineNumberFg: mutedForeground,
-    selectedHunk: blendHex(modifiedColor, editorBackground, selectedTint),
-    noteBackground: neutralPanel,
-    noteTitleBackground: neutralPanel,
-    badgeAdded: addedSignColor,
-    badgeRemoved: removedSignColor,
-    fileNew: addedSignColor,
-    fileDeleted: removedSignColor,
-    fileModified: modifiedColor,
-    fileUntracked: addedSignColor,
-    syntaxColors: {
-      ...theme.syntaxColors,
-      default: codeForeground,
-      variable: theme.syntaxColors.variable ?? codeForeground,
-    },
-  };
-}
-
-/** Return a copy of a theme with a configured Shiki syntax theme and background policy. */
-export function withSyntaxTheme(
-  theme: AppTheme,
-  syntaxTheme: string | undefined,
-  syntaxBackgroundMode = DEFAULT_SYNTAX_BACKGROUND_MODE,
-): AppTheme {
-  if (!syntaxTheme) {
-    return theme;
-  }
-
-  const nextTheme = { ...theme, syntaxTheme };
-  if (syntaxBackgroundMode === "tokens-only") {
-    return nextTheme;
-  }
-
-  if (syntaxBackgroundMode === "pierre-surface") {
-    const pierreTheme = withPierreBasePalette(nextTheme);
-    const surface = PIERRE_EDITOR_SURFACES[theme.appearance];
-    return withSyntaxEditorSurface(pierreTheme, surface.background, surface.foreground, {
-      added: surface.addedSignColor,
-      removed: surface.removedSignColor,
-      modified: surface.accent,
-    });
-  }
-
-  const editorBackground = getBundledShikiThemeBackground(syntaxTheme);
-  const editorForeground = getBundledShikiThemeForeground(syntaxTheme);
-  const diffColors = getBundledShikiThemeDiffColors(syntaxTheme);
-  return editorBackground
-    ? withSyntaxEditorSurface(nextTheme, editorBackground, editorForeground, diffColors)
-    : nextTheme;
+/** Return known semantic diff colors for a bundled Shiki-backed theme. */
+export function bundledThemeDiffColors(themeId: string): BundledShikiThemeDiffColors | undefined {
+  return getBundledShikiThemeDiffColors(themeId);
 }
 
 /** Return a copy of a theme whose painted surfaces allow the terminal background through. */

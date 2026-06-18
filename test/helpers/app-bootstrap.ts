@@ -10,7 +10,7 @@ export function createTestVcsAppBootstrap({
   initialShowAgentNotes,
   initialShowHunkHeaders,
   initialShowLineNumbers,
-  initialTheme = "midnight",
+  initialTheme = "github-dark-default",
   initialWrapLines,
   inputMode = initialMode,
   pager = false,

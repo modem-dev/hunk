@@ -38,7 +38,7 @@ import {
 } from "./diff/rowStyle";
 import { sliceTextByWidth } from "./lib/text";
 import { sanitizeTerminalLine, sanitizeTerminalText } from "../lib/terminalText";
-import { resolveTheme, withSyntaxTheme, withTransparentSurfaces, type AppTheme } from "./themes";
+import { resolveTheme, withTransparentSurfaces, type AppTheme } from "./themes";
 
 const DEFAULT_STATIC_WIDTH = 120;
 const MIN_STATIC_WIDTH = 20;
@@ -388,10 +388,7 @@ export async function renderStaticDiffPager(
         pager: true,
       },
     });
-    const resolvedTheme = withSyntaxTheme(
-      resolveTheme(options.theme, null, deps.customTheme),
-      options.syntaxTheme,
-    );
+    const resolvedTheme = resolveTheme(options.theme, null, deps.customTheme);
     const theme = options.transparentBackground
       ? withTransparentSurfaces(resolvedTheme)
       : resolvedTheme;

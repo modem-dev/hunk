@@ -7,7 +7,6 @@ export interface ThemeSelectorItem {
   id: string;
   label: string;
   description: string;
-  kind: "ui" | "syntax";
   active: boolean;
 }
 
@@ -21,7 +20,7 @@ function visibleWindowStart(selectedIndex: number, rowCount: number, visibleRows
   return Math.min(Math.max(centered, 0), rowCount - visibleRows);
 }
 
-/** Render an opencode-style selector for Hunk UI themes and Shiki syntax themes. */
+/** Render an opencode-style selector for Hunk themes. */
 export function ThemeSelectorDialog({
   items,
   selectedIndex,
@@ -48,10 +47,9 @@ export function ThemeSelectorDialog({
   const visibleRows = Math.max(4, modalHeight - 7);
   const start = visibleWindowStart(selectedIndex, items.length, visibleRows);
   const visibleItems = items.slice(start, start + visibleRows);
-  const kindWidth = 8;
   const markerWidth = 3;
-  const descriptionWidth = 20;
-  const labelWidth = Math.max(8, bodyWidth - markerWidth - kindWidth - descriptionWidth - 3);
+  const descriptionWidth = 12;
+  const labelWidth = Math.max(8, bodyWidth - markerWidth - descriptionWidth - 2);
 
   return (
     <ModalFrame
@@ -75,11 +73,10 @@ export function ThemeSelectorDialog({
         const marker = selected ? "›" : item.active ? "✓" : " ";
         const bg = selected ? theme.accentMuted : theme.panel;
         const fg = selected ? theme.text : item.active ? theme.badgeNeutral : theme.muted;
-        const kind = item.kind === "ui" ? "UI" : "Syntax";
 
         return (
           <box
-            key={`${item.kind}:${item.id}`}
+            key={item.id}
             style={{ width: "100%", height: 1, flexDirection: "row", backgroundColor: bg }}
             // Use movement, not enter/over, so palette preview rerenders do not reselect the row
             // currently under a stationary mouse while the user navigates with the keyboard.
@@ -90,9 +87,6 @@ export function ThemeSelectorDialog({
             }}
           >
             <text fg={fg}>{padText(marker, markerWidth)}</text>
-            <text fg={item.kind === "ui" ? theme.accent : theme.badgeNeutral}>
-              {padText(kind, kindWidth)}
-            </text>
             <text fg={fg}>{padText(fitText(item.label, labelWidth), labelWidth)}</text>
             <text fg={theme.muted}>{fitText(item.description, descriptionWidth)}</text>
           </box>

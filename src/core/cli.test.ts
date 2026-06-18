@@ -76,9 +76,7 @@ describe("parseCli", () => {
       "--mode",
       "split",
       "--theme",
-      "paper",
-      "--syntax-theme",
-      "dracula",
+      "github-light-default",
       "--agent-context",
       "notes.json",
       "--no-line-numbers",
@@ -95,8 +93,7 @@ describe("parseCli", () => {
       staged: false,
       options: {
         mode: "split",
-        theme: "paper",
-        syntaxTheme: "dracula",
+        theme: "github-light-default",
         agentContext: "notes.json",
         watch: true,
         lineNumbers: false,
@@ -212,12 +209,12 @@ describe("parseCli", () => {
   });
 
   test("parses general pager mode", async () => {
-    const parsed = await parseCli(["bun", "hunk", "pager", "--theme", "paper"]);
+    const parsed = await parseCli(["bun", "hunk", "pager", "--theme", "github-light-default"]);
 
     expect(parsed).toMatchObject({
       kind: "pager",
       options: {
-        theme: "paper",
+        theme: "github-light-default",
       },
     });
   });

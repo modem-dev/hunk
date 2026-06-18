@@ -110,7 +110,7 @@ function createMarkdownDiffFile(): DiffFile {
 describe("Pierre diff rows", () => {
   test("builds split rows with Pierre-highlighted emphasis spans", async () => {
     const file = createDiffFile();
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const highlighted = await loadHighlightedDiff(file);
     const rows = buildSplitRows(file, highlighted, theme);
 
@@ -149,7 +149,7 @@ describe("Pierre diff rows", () => {
 
   test("keeps word-diff highlight backgrounds transparent in transparent mode", async () => {
     const file = createDiffFile();
-    const theme = withTransparentBackground(resolveTheme("midnight", null));
+    const theme = withTransparentBackground(resolveTheme("github-dark-default", null));
     const highlighted = await loadHighlightedDiff(file);
     const rows = buildSplitRows(file, highlighted, theme);
     const changedRow = rows.find(
@@ -171,7 +171,7 @@ describe("Pierre diff rows", () => {
 
   test("builds stacked rows with separate deletion and addition lines", () => {
     const file = createDiffFile();
-    const theme = resolveTheme("paper", null);
+    const theme = resolveTheme("github-light-default", null);
     const rows = buildStackRows(file, null, theme);
 
     const deletionRow = rows.find(
@@ -204,7 +204,7 @@ describe("Pierre diff rows", () => {
       deletionLines: ["moved"],
       additionLines: ["moved"],
     };
-    const theme = resolveTheme("graphite", null);
+    const theme = resolveTheme("github-dark-default", null);
     const rows = buildStackRows(file, null, theme);
     const movedDeletion = rows.find(
       (row) => row.type === "stack-line" && row.cell.kind === "deletion",
@@ -236,7 +236,7 @@ describe("Pierre diff rows", () => {
 
   test("renders planned split rows to copyable visible text", () => {
     const file = createDiffFile();
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const rows = buildSplitRows(file, null, theme);
     const plannedRows = buildReviewRenderPlan({
       fileId: file.id,
@@ -290,7 +290,7 @@ describe("Pierre diff rows", () => {
       metadata,
       agent: null,
     };
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const rows = buildSplitRows(file, null, theme);
     const plannedRows = buildReviewRenderPlan({ fileId: file.id, rows, showHunkHeaders: true });
     const changedRow = plannedRows.find(
@@ -328,7 +328,7 @@ describe("Pierre diff rows", () => {
 
   test("renders planned stack rows with horizontal copy offset", () => {
     const file = createDiffFile();
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const rows = buildStackRows(file, null, theme);
     const plannedRows = buildReviewRenderPlan({
       fileId: file.id,
@@ -363,7 +363,7 @@ describe("Pierre diff rows", () => {
 
   test("renders planned rows as code-only copy text when decorations are disabled", () => {
     const file = createDiffFile();
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const rows = buildSplitRows(file, null, theme);
     const plannedRows = buildReviewRenderPlan({
       fileId: file.id,
@@ -409,7 +409,7 @@ describe("Pierre diff rows", () => {
 
   test("does not produce newline characters in spans for highlighted empty lines", async () => {
     const file = createEmptyLineDiffFile();
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const highlighted = await loadHighlightedDiff(file);
 
     for (const buildRows of [buildSplitRows, buildStackRows]) {
@@ -426,7 +426,7 @@ describe("Pierre diff rows", () => {
 
   test("builds syntax spans for highlighted full-source lines", async () => {
     const file = createDiffFile();
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const text = "export const hiddenMarker = true;\n";
     const highlighted = await loadHighlightedSourceLines({
       file,
@@ -449,8 +449,8 @@ describe("Pierre diff rows", () => {
     const file = createMarkdownDiffFile();
 
     for (const themeId of [
-      "midnight",
-      "paper",
+      "github-dark-default",
+      "github-light-default",
       "catppuccin-latte",
       "catppuccin-frappe",
       "catppuccin-macchiato",
@@ -520,7 +520,7 @@ describe("Pierre diff rows", () => {
       agent: null,
     };
 
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
 
     for (const buildRows of [buildSplitRows, buildStackRows]) {
       const rows = buildRows(file, null, theme);
@@ -565,7 +565,7 @@ describe("Pierre diff rows", () => {
       agent: null,
     };
 
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const rows = buildSplitRows(file, null, theme);
     const between = rows.find(
       (row): row is Extract<DiffRow, { type: "collapsed" }> =>
@@ -582,9 +582,9 @@ describe("Pierre diff rows", () => {
     const highlighted = await loadHighlightedDiff(file, "dark");
 
     for (const themeId of [
-      "graphite",
-      "midnight",
-      "ember",
+      "github-dark-default",
+      "github-dark-default",
+      "dracula",
       "catppuccin-frappe",
       "catppuccin-macchiato",
       "catppuccin-mocha",
@@ -644,8 +644,15 @@ describe("Pierre diff rows", () => {
       agent: null,
     };
 
-    for (const themeId of ["graphite", "paper"] as const) {
-      const theme = resolveTheme(themeId, null);
+    for (const themeId of ["github-dark-default", "github-light-default"] as const) {
+      const theme = resolveTheme("custom", null, {
+        base: themeId,
+        syntax: {
+          keyword: "#112233",
+          function: "#223344",
+          string: "#334455",
+        },
+      });
       const highlighted = await loadHighlightedDiff(file, theme.appearance);
       const spans = buildStackRows(file, highlighted, theme)
         .filter(
@@ -654,23 +661,9 @@ describe("Pierre diff rows", () => {
         )
         .flatMap((row) => row.cell.spans);
 
-      expect(spans.find((span) => span.text.includes("function"))?.fg).toBe(
-        theme.syntaxColors.keyword,
-      );
-      expect(spans.find((span) => span.text.includes("compute"))?.fg).toBe(
-        theme.syntaxColors.function,
-      );
-      expect(spans.find((span) => span.text.trim() === "42")?.fg).toBe(theme.syntaxColors.number);
-      expect(spans.find((span) => span.text.includes("greeting"))?.fg).toBe(
-        theme.syntaxColors.variable,
-      );
-      expect(spans.find((span) => span.text.trim() === "=")?.fg).toBe(theme.syntaxColors.operator);
-      expect(spans.find((span) => span.text.trim() === "{")?.fg).toBe(
-        theme.syntaxColors.punctuation,
-      );
-      expect(spans.find((span) => span.text.includes('"hello"'))?.fg).toBe(
-        theme.syntaxColors.string,
-      );
+      expect(spans.find((span) => span.text.includes("function"))?.fg).toBe("#112233");
+      expect(spans.find((span) => span.text.includes("compute"))?.fg).toBe("#223344");
+      expect(spans.find((span) => span.text.includes('"hello"'))?.fg).toBe("#334455");
     }
   });
 

@@ -2,16 +2,30 @@ import { describe, expect, test } from "bun:test";
 import { blendHex, contrastRatio, hexColorDistance } from "./lib/color";
 import { BUNDLED_SHIKI_THEME_IDS } from "./lib/shikiThemes";
 import {
-  CATPPUCCIN_PALETTES,
+  availableThemeIds,
+  availableThemes,
+  DEFAULT_DARK_THEME_ID,
+  DEFAULT_LIGHT_THEME_ID,
   resolveTheme,
   TRANSPARENT_BACKGROUND,
-  withSyntaxTheme,
   withTransparentBackground,
   withTransparentSurfaces,
 } from "./themes";
 
 const MIN_READABLE_TEXT_CONTRAST = 4.5;
-const CONTRAST_GATED_THEME_IDS = ["graphite", "midnight", "paper", "ember"] as const;
+const SYNTAX_ROLES = [
+  "default",
+  "keyword",
+  "string",
+  "comment",
+  "number",
+  "function",
+  "property",
+  "type",
+  "variable",
+  "operator",
+  "punctuation",
+] as const;
 
 /** Return a compact failure list for semantic theme foreground/background pairs. */
 function themeContrastFailures(
@@ -28,75 +42,107 @@ function themeContrastFailures(
 }
 
 describe("themes", () => {
-  test("keeps contrast-gated theme diff row text and gutters within thresholds", () => {
-    const failures = CONTRAST_GATED_THEME_IDS.flatMap((themeId) => {
+  test("defaults to GitHub's dark theme and auto chooses GitHub light/dark", () => {
+    expect(resolveTheme(undefined, null).id).toBe(DEFAULT_DARK_THEME_ID);
+    expect(resolveTheme("missing", null).id).toBe(DEFAULT_DARK_THEME_ID);
+    expect(resolveTheme("auto", "dark").id).toBe(DEFAULT_DARK_THEME_ID);
+    expect(resolveTheme("auto", "light").id).toBe(DEFAULT_LIGHT_THEME_ID);
+  });
+
+  test("exposes every bundled theme as a selectable theme", () => {
+    expect(availableThemeIds()).toEqual([...BUNDLED_SHIKI_THEME_IDS]);
+    expect(availableThemes().map((theme) => theme.id)).toEqual([...BUNDLED_SHIKI_THEME_IDS]);
+
+    for (const themeId of BUNDLED_SHIKI_THEME_IDS) {
       const theme = resolveTheme(themeId, null);
-      return themeContrastFailures([
-        {
-          label: `${theme.id} text/contextBg`,
-          foreground: theme.text,
-          background: theme.contextBg,
-        },
-        { label: `${theme.id} text/addedBg`, foreground: theme.text, background: theme.addedBg },
-        {
-          label: `${theme.id} text/removedBg`,
-          foreground: theme.text,
-          background: theme.removedBg,
-        },
-        {
-          label: `${theme.id} text/contextContentBg`,
-          foreground: theme.text,
-          background: theme.contextContentBg,
-        },
-        {
-          label: `${theme.id} text/addedContentBg`,
-          foreground: theme.text,
-          background: theme.addedContentBg,
-        },
-        {
-          label: `${theme.id} text/removedContentBg`,
-          foreground: theme.text,
-          background: theme.removedContentBg,
-        },
-        {
-          label: `${theme.id} addedSignColor/addedBg`,
-          foreground: theme.addedSignColor,
-          background: theme.addedBg,
-        },
-        {
-          label: `${theme.id} removedSignColor/removedBg`,
-          foreground: theme.removedSignColor,
-          background: theme.removedBg,
-        },
-        {
-          label: `${theme.id} lineNumberFg/lineNumberBg`,
-          foreground: theme.lineNumberFg,
-          background: theme.lineNumberBg,
-        },
-      ]);
+      expect(theme.id).toBe(themeId);
+      expect(theme.label).toBe(themeId);
+      expect(theme.syntaxTheme).toBe(themeId);
+      expect(theme.syntaxStyle).toBeDefined();
+    }
+  });
+
+  test("derives GitHub default surfaces from bundled theme metadata", () => {
+    const dark = resolveTheme("github-dark-default", null);
+    const light = resolveTheme("github-light-default", null);
+
+    expect(dark.background).toBe("#0d1117");
+    expect(dark.syntaxColors.default).toBe("#e6edf3");
+    expect(dark.addedSignColor).toBe("#3fb950");
+    expect(dark.removedSignColor).toBe("#f85149");
+    expect(dark.addedBg).toBe(blendHex("#3fb950", "#0d1117", 0.2));
+    expect(dark.removedBg).toBe(blendHex("#f85149", "#0d1117", 0.2));
+
+    expect(light.background).toBe("#ffffff");
+    expect(light.syntaxColors.default).toBe("#1f2328");
+    expect(light.addedSignColor).toBe("#1a7f37");
+    expect(light.removedSignColor).toBe("#cf222e");
+    expect(light.addedBg).toBe(blendHex("#1a7f37", "#ffffff", 0.12));
+    expect(light.removedBg).toBe(blendHex("#cf222e", "#ffffff", 0.12));
+  });
+
+  test("keeps every bundled theme diff row text and gutters readable", () => {
+    const failures = BUNDLED_SHIKI_THEME_IDS.flatMap((themeId) => {
+      const theme = resolveTheme(themeId, null);
+      return [
+        ...themeContrastFailures([
+          {
+            label: `${theme.id} text/contextBg`,
+            foreground: theme.text,
+            background: theme.contextBg,
+          },
+          { label: `${theme.id} text/addedBg`, foreground: theme.text, background: theme.addedBg },
+          {
+            label: `${theme.id} text/removedBg`,
+            foreground: theme.text,
+            background: theme.removedBg,
+          },
+          {
+            label: `${theme.id} text/contextContentBg`,
+            foreground: theme.text,
+            background: theme.contextContentBg,
+          },
+          {
+            label: `${theme.id} text/addedContentBg`,
+            foreground: theme.text,
+            background: theme.addedContentBg,
+          },
+          {
+            label: `${theme.id} text/removedContentBg`,
+            foreground: theme.text,
+            background: theme.removedContentBg,
+          },
+          {
+            label: `${theme.id} addedSignColor/addedBg`,
+            foreground: theme.addedSignColor,
+            background: theme.addedBg,
+            minimum: 2.4,
+          },
+          {
+            label: `${theme.id} removedSignColor/removedBg`,
+            foreground: theme.removedSignColor,
+            background: theme.removedBg,
+            minimum: 2.4,
+          },
+          {
+            label: `${theme.id} lineNumberFg/lineNumberBg`,
+            foreground: theme.lineNumberFg,
+            background: theme.lineNumberBg,
+          },
+        ]),
+        ...(theme.addedBg === theme.contextBg ? [`${theme.id} added bg matches context`] : []),
+        ...(theme.removedBg === theme.contextBg ? [`${theme.id} removed bg matches context`] : []),
+      ];
     });
 
     expect(failures).toEqual([]);
   });
 
-  test("keeps contrast-gated theme syntax colors within thresholds", () => {
-    const syntaxRoles = [
-      "default",
-      "keyword",
-      "string",
-      "comment",
-      "number",
-      "function",
-      "property",
-      "type",
-      "variable",
-      "operator",
-      "punctuation",
-    ] as const;
-    const failures = CONTRAST_GATED_THEME_IDS.flatMap((themeId) => {
+  test("keeps fallback syntax colors readable on every bundled theme", () => {
+    const failures = BUNDLED_SHIKI_THEME_IDS.flatMap((themeId) => {
       const theme = resolveTheme(themeId, null);
       return themeContrastFailures(
-        syntaxRoles.flatMap((role) => [
+        SYNTAX_ROLES.flatMap((role) => [
           {
             label: `${theme.id} syntax.${role}/contextBg`,
             foreground: theme.syntaxColors[role] ?? theme.syntaxColors.default,
@@ -112,21 +158,6 @@ describe("themes", () => {
             foreground: theme.syntaxColors[role] ?? theme.syntaxColors.default,
             background: theme.removedBg,
           },
-          {
-            label: `${theme.id} syntax.${role}/contextContentBg`,
-            foreground: theme.syntaxColors[role] ?? theme.syntaxColors.default,
-            background: theme.contextContentBg,
-          },
-          {
-            label: `${theme.id} syntax.${role}/addedContentBg`,
-            foreground: theme.syntaxColors[role] ?? theme.syntaxColors.default,
-            background: theme.addedContentBg,
-          },
-          {
-            label: `${theme.id} syntax.${role}/removedContentBg`,
-            foreground: theme.syntaxColors[role] ?? theme.syntaxColors.default,
-            background: theme.removedContentBg,
-          },
         ]),
       );
     });
@@ -134,8 +165,8 @@ describe("themes", () => {
     expect(failures).toEqual([]);
   });
 
-  test("keeps contrast-gated theme sidebar and chrome colors within thresholds", () => {
-    const failures = CONTRAST_GATED_THEME_IDS.flatMap((themeId) => {
+  test("keeps every bundled theme chrome colors readable", () => {
+    const failures = BUNDLED_SHIKI_THEME_IDS.flatMap((themeId) => {
       const theme = resolveTheme(themeId, null);
       const sidebarForegrounds = [
         ["badgeAdded", theme.badgeAdded],
@@ -173,67 +204,6 @@ describe("themes", () => {
     expect(failures).toEqual([]);
   });
 
-  test("resolves all Catppuccin flavors by theme id", () => {
-    const latte = resolveTheme("catppuccin-latte", null);
-    const frappe = resolveTheme("catppuccin-frappe", null);
-    const macchiato = resolveTheme("catppuccin-macchiato", null);
-    const mocha = resolveTheme("catppuccin-mocha", null);
-
-    expect(latte.id).toBe("catppuccin-latte");
-    expect(latte.label).toBe("Catppuccin Latte");
-    expect(latte.appearance).toBe("light");
-    expect(frappe.id).toBe("catppuccin-frappe");
-    expect(frappe.label).toBe("Catppuccin Frappé");
-    expect(frappe.appearance).toBe("dark");
-    expect(macchiato.id).toBe("catppuccin-macchiato");
-    expect(macchiato.label).toBe("Catppuccin Macchiato");
-    expect(macchiato.appearance).toBe("dark");
-    expect(mocha.id).toBe("catppuccin-mocha");
-    expect(mocha.label).toBe("Catppuccin Mocha");
-    expect(mocha.appearance).toBe("dark");
-  });
-
-  test("keeps official Catppuccin sentinel colors in source", () => {
-    expect(CATPPUCCIN_PALETTES.latte.base).toBe("#eff1f5");
-    expect(CATPPUCCIN_PALETTES.latte.mauve).toBe("#8839ef");
-    expect(CATPPUCCIN_PALETTES.latte.green).toBe("#40a02b");
-    expect(CATPPUCCIN_PALETTES.latte.red).toBe("#d20f39");
-    expect(CATPPUCCIN_PALETTES.frappe.base).toBe("#303446");
-    expect(CATPPUCCIN_PALETTES.frappe.mauve).toBe("#ca9ee6");
-    expect(CATPPUCCIN_PALETTES.frappe.green).toBe("#a6d189");
-    expect(CATPPUCCIN_PALETTES.frappe.red).toBe("#e78284");
-    expect(CATPPUCCIN_PALETTES.macchiato.base).toBe("#24273a");
-    expect(CATPPUCCIN_PALETTES.macchiato.mauve).toBe("#c6a0f6");
-    expect(CATPPUCCIN_PALETTES.macchiato.green).toBe("#a6da95");
-    expect(CATPPUCCIN_PALETTES.macchiato.red).toBe("#ed8796");
-    expect(CATPPUCCIN_PALETTES.mocha.base).toBe("#1e1e2e");
-    expect(CATPPUCCIN_PALETTES.mocha.mauve).toBe("#cba6f7");
-    expect(CATPPUCCIN_PALETTES.mocha.green).toBe("#a6e3a1");
-    expect(CATPPUCCIN_PALETTES.mocha.red).toBe("#f38ba8");
-  });
-
-  test("derives Catppuccin diff backgrounds from official semantic tokens", () => {
-    const latte = resolveTheme("catppuccin-latte", null);
-    const mocha = resolveTheme("catppuccin-mocha", null);
-
-    expect(latte.addedBg).toBe(blendHex(CATPPUCCIN_PALETTES.latte.green, latte.contextBg, 0.15));
-    expect(latte.removedBg).toBe(blendHex(CATPPUCCIN_PALETTES.latte.red, latte.contextBg, 0.15));
-    expect(latte.addedContentBg).toBe(
-      blendHex(CATPPUCCIN_PALETTES.latte.green, latte.contextBg, 0.25),
-    );
-    expect(latte.removedContentBg).toBe(
-      blendHex(CATPPUCCIN_PALETTES.latte.red, latte.contextBg, 0.25),
-    );
-    expect(mocha.addedBg).toBe(blendHex(CATPPUCCIN_PALETTES.mocha.green, mocha.contextBg, 0.15));
-    expect(mocha.removedBg).toBe(blendHex(CATPPUCCIN_PALETTES.mocha.red, mocha.contextBg, 0.15));
-    expect(mocha.addedContentBg).toBe(
-      blendHex(CATPPUCCIN_PALETTES.mocha.green, mocha.contextBg, 0.25),
-    );
-    expect(mocha.removedContentBg).toBe(
-      blendHex(CATPPUCCIN_PALETTES.mocha.red, mocha.contextBg, 0.25),
-    );
-  });
-
   test("keeps Catppuccin add and remove rows semantically distinct", () => {
     for (const theme of [
       resolveTheme("catppuccin-latte", null),
@@ -253,174 +223,24 @@ describe("themes", () => {
     }
   });
 
-  test("maps Catppuccin syntax roles to documented editor tokens", () => {
-    const latte = resolveTheme("catppuccin-latte", null);
-    const mocha = resolveTheme("catppuccin-mocha", null);
-
-    expect(latte.syntaxTheme).toBe("catppuccin-latte");
-    expect(mocha.syntaxTheme).toBe("catppuccin-mocha");
-    expect(latte.syntaxColors).toMatchObject({
-      keyword: CATPPUCCIN_PALETTES.latte.mauve,
-      string: CATPPUCCIN_PALETTES.latte.green,
-      comment: CATPPUCCIN_PALETTES.latte.overlay2,
-      number: CATPPUCCIN_PALETTES.latte.peach,
-      function: CATPPUCCIN_PALETTES.latte.blue,
-      property: CATPPUCCIN_PALETTES.latte.blue,
-      type: CATPPUCCIN_PALETTES.latte.yellow,
-      punctuation: CATPPUCCIN_PALETTES.latte.overlay2,
-    });
-    expect(mocha.syntaxColors).toMatchObject({
-      keyword: CATPPUCCIN_PALETTES.mocha.mauve,
-      string: CATPPUCCIN_PALETTES.mocha.green,
-      comment: CATPPUCCIN_PALETTES.mocha.overlay2,
-      number: CATPPUCCIN_PALETTES.mocha.peach,
-      function: CATPPUCCIN_PALETTES.mocha.blue,
-      property: CATPPUCCIN_PALETTES.mocha.blue,
-      type: CATPPUCCIN_PALETTES.mocha.yellow,
-      punctuation: CATPPUCCIN_PALETTES.mocha.overlay2,
-    });
-  });
-
-  test("resolves Zenburn by theme id with its tuned dark palette", () => {
-    const zenburn = resolveTheme("zenburn", null);
-
-    expect(zenburn.id).toBe("zenburn");
-    expect(zenburn.label).toBe("Zenburn");
-    expect(zenburn.appearance).toBe("dark");
-    expect(zenburn.background).toBe("#3f3f3f");
-    expect(zenburn.text).toBe("#dcdccc");
-    expect(zenburn.syntaxColors).toMatchObject({
-      keyword: "#f0dfaf",
-      string: "#dca3a3",
-      comment: "#60b48a",
-      function: "#94bff3",
-      type: "#94bff3",
-    });
-  });
-
-  test("withSyntaxTheme derives diff surfaces from bundled Shiki editor backgrounds", () => {
-    const graphite = resolveTheme("graphite", null);
-    const dracula = withSyntaxTheme(graphite, "dracula", "editor-surface");
-    const githubLight = withSyntaxTheme(graphite, "github-light", "editor-surface");
-
-    expect(dracula.syntaxTheme).toBe("dracula");
-    expect(dracula.background).toBe("#282a36");
-    expect(dracula.contextBg).toBe("#282a36");
-    expect(dracula.contextContentBg).toBe("#282a36");
-    expect(dracula.panelAlt).not.toBe(graphite.panelAlt);
-    expect(contrastRatio(dracula.text, dracula.panelAlt)).toBeGreaterThanOrEqual(4.5);
-    expect(dracula.addedSignColor).toBe("#50fa7b");
-    expect(dracula.removedSignColor).toBe("#ff5555");
-    expect(dracula.accent).toBe("#8be9fd");
-    expect(dracula.addedBg).toBe(blendHex("#50fa7b", "#282a36", 0.2));
-    expect(dracula.removedBg).toBe(blendHex("#ff5555", "#282a36", 0.2));
-    expect(hexColorDistance(dracula.addedContentBg, dracula.contextBg)).toBeGreaterThan(
-      hexColorDistance(dracula.addedBg, dracula.contextBg),
-    );
-    expect(hexColorDistance(dracula.removedContentBg, dracula.contextBg)).toBeGreaterThan(
-      hexColorDistance(dracula.removedBg, dracula.contextBg),
-    );
-    expect(contrastRatio(dracula.lineNumberFg, dracula.lineNumberBg)).toBeGreaterThanOrEqual(4.5);
-
-    expect(githubLight.syntaxTheme).toBe("github-light");
-    expect(githubLight.background).toBe("#ffffff");
-    expect(githubLight.contextBg).toBe("#ffffff");
-    expect(githubLight.panelAlt).not.toBe(graphite.panelAlt);
-    expect(githubLight.syntaxColors.default).toBe("#24292e");
-    expect(githubLight.addedSignColor).toBe("#28a745");
-    expect(githubLight.removedSignColor).toBe("#d73a49");
-    expect(githubLight.accent).toBe("#005cc5");
-    expect(githubLight.addedBg).toBe(blendHex("#28a745", "#ffffff", 0.12));
-    expect(githubLight.removedBg).toBe(blendHex("#d73a49", "#ffffff", 0.12));
-    expect(
-      contrastRatio(githubLight.lineNumberFg, githubLight.lineNumberBg),
-    ).toBeGreaterThanOrEqual(4.5);
-  });
-
-  test("withSyntaxTheme keeps derived bundled Shiki backgrounds usable", () => {
-    const graphite = resolveTheme("graphite", null);
-    const failures = BUNDLED_SHIKI_THEME_IDS.flatMap((syntaxTheme) => {
-      const theme = withSyntaxTheme(graphite, syntaxTheme, "editor-surface");
-      const checks = [
-        {
-          label: `${syntaxTheme} line number`,
-          foreground: theme.lineNumberFg,
-          background: theme.lineNumberBg,
-        },
-        {
-          label: `${syntaxTheme} code foreground`,
-          foreground: theme.syntaxColors.default,
-          background: theme.contextBg,
-        },
-        {
-          label: `${syntaxTheme} metadata foreground`,
-          foreground: theme.text,
-          background: theme.panelAlt,
-        },
-        {
-          label: `${syntaxTheme} added sign`,
-          foreground: theme.addedSignColor,
-          background: theme.addedBg,
-          minimum: 2.4,
-        },
-        {
-          label: `${syntaxTheme} removed sign`,
-          foreground: theme.removedSignColor,
-          background: theme.removedBg,
-          minimum: 2.4,
-        },
-      ];
-
-      return [
-        ...themeContrastFailures(checks),
-        ...(theme.addedBg === theme.contextBg ? [`${syntaxTheme} added bg matches context`] : []),
-        ...(theme.removedBg === theme.contextBg
-          ? [`${syntaxTheme} removed bg matches context`]
-          : []),
-      ];
+  test("layers custom theme overrides on a bundled base", () => {
+    const custom = resolveTheme("custom", null, {
+      base: "catppuccin-mocha",
+      label: "My Theme",
+      text: "#ffffff",
+      syntax: { keyword: "#ff00ff" },
     });
 
-    expect(failures).toEqual([]);
-  });
-
-  test("withSyntaxTheme defaults syntax themes to Shiki editor and diff colors", () => {
-    const graphite = resolveTheme("graphite", null);
-    const shikiSurface = withSyntaxTheme(graphite, "dracula");
-
-    expect(shikiSurface.syntaxTheme).toBe("dracula");
-    expect(shikiSurface.background).toBe("#282a36");
-    expect(shikiSurface.contextBg).toBe("#282a36");
-    expect(shikiSurface.panelAlt).not.toBe(graphite.panelAlt);
-    expect(shikiSurface.syntaxColors.default).toBe("#f8f8f2");
-    expect(shikiSurface.addedSignColor).toBe("#50fa7b");
-    expect(shikiSurface.removedSignColor).toBe("#ff5555");
-    expect(shikiSurface.addedBg).toBe(blendHex("#50fa7b", "#282a36", 0.2));
-  });
-
-  test("withSyntaxTheme can keep syntax themes token-only through explicit policy", () => {
-    const graphite = resolveTheme("graphite", null);
-    const tokenOnly = withSyntaxTheme(graphite, "dracula", "tokens-only");
-
-    expect(tokenOnly.syntaxTheme).toBe("dracula");
-    expect(tokenOnly.background).toBe(graphite.background);
-    expect(tokenOnly.contextBg).toBe(graphite.contextBg);
-    expect(tokenOnly.addedBg).toBe(graphite.addedBg);
-  });
-
-  test("withSyntaxTheme leaves unknown syntax theme names on the UI palette", () => {
-    const graphite = resolveTheme("graphite", null);
-    const custom = withSyntaxTheme(graphite, "custom-theme-file");
-
-    expect(custom.syntaxTheme).toBe("custom-theme-file");
-    expect(custom.background).toBe(graphite.background);
-    expect(custom.contextBg).toBe(graphite.contextBg);
-    expect(custom.syntaxColors.default).toBe(graphite.syntaxColors.default);
-    expect(custom.addedSignColor).toBe(graphite.addedSignColor);
-    expect(custom.addedBg).toBe(graphite.addedBg);
+    expect(custom.id).toBe("custom");
+    expect(custom.label).toBe("My Theme");
+    expect(custom.background).toBe(resolveTheme("catppuccin-mocha", null).background);
+    expect(custom.text).toBe("#ffffff");
+    expect(custom.syntaxTheme).toBeUndefined();
+    expect(custom.syntaxColors.keyword).toBe("#ff00ff");
   });
 
   test("withTransparentBackground only swaps painted background fields", () => {
-    const theme = resolveTheme("graphite", null);
+    const theme = resolveTheme("github-dark-default", null);
     const transparent = withTransparentBackground(theme);
 
     expect(transparent).toMatchObject({
@@ -449,7 +269,7 @@ describe("themes", () => {
   });
 
   test("withTransparentSurfaces keeps added/removed row tints", () => {
-    const theme = resolveTheme("graphite", null);
+    const theme = resolveTheme("github-dark-default", null);
     const transparent = withTransparentSurfaces(theme);
 
     expect(transparent).toMatchObject({

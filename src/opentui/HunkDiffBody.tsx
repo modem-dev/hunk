@@ -12,7 +12,7 @@ export function HunkDiffBody({
   file,
   layout = "split",
   width,
-  theme = "graphite",
+  theme = "github-dark-default",
   showLineNumbers = true,
   showHunkHeaders = true,
   wrapLines = false,
