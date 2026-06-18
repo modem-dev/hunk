@@ -192,12 +192,12 @@ describe("responsive app", () => {
     const wide = await captureFrameForBootstrap(createBootstrap("auto", true), 220);
     const narrow = await captureFrameForBootstrap(createBootstrap("auto", true), 150);
 
-    expect(wide).not.toContain("File  View  Navigate  Theme  Agent  Help");
+    expect(wide).not.toContain("File  View  Navigate  Agent  Help");
     expect(wide).not.toContain("F10 menu");
     expect((wide.match(/alpha\.ts/g) ?? []).length).toBe(1);
     expect(wide).toMatch(/▌.*▌/);
 
-    expect(narrow).not.toContain("File  View  Navigate  Theme  Agent  Help");
+    expect(narrow).not.toContain("File  View  Navigate  Agent  Help");
     expect(narrow).not.toContain("F10 menu");
     expect((narrow.match(/alpha\.ts/g) ?? []).length).toBe(1);
     expect(narrow).not.toMatch(/▌.*▌/);

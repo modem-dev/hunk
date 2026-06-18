@@ -48,15 +48,18 @@ export interface UseAppKeyboardShortcutsOptions {
   canRefreshCurrentInput: boolean;
   closeHelp: () => void;
   closeMenu: () => void;
-  cycleTheme: () => void;
+  acceptThemeSelector: () => void;
   cancelDraftNote: () => void;
+  closeThemeSelector: () => void;
   focusArea: FocusArea;
   focusFilter: () => void;
   moveToAnnotatedHunk: (delta: number) => void;
   moveToFile: (delta: number) => void;
   moveToHunk: (delta: number) => void;
   moveMenuItem: (delta: number) => void;
+  moveThemeSelector: (delta: number) => void;
   openMenu: (menuId: MenuId) => void;
+  openThemeSelector: () => void;
   pagerMode: boolean;
   requestQuit: () => void;
   scrollCodeHorizontally: (delta: number) => void;
@@ -73,6 +76,7 @@ export interface UseAppKeyboardShortcutsOptions {
   toggleHunkHeaders: () => void;
   toggleLineNumbers: () => void;
   toggleLineWrap: () => void;
+  themeSelectorOpen: boolean;
   toggleSidebar: () => void;
   triggerEditSelectedFile: () => void;
   triggerRefreshCurrentInput: () => void;
@@ -85,15 +89,18 @@ export function useAppKeyboardShortcuts({
   canRefreshCurrentInput,
   closeHelp,
   closeMenu,
-  cycleTheme,
+  acceptThemeSelector,
   cancelDraftNote,
+  closeThemeSelector,
   focusArea,
   focusFilter,
   moveToAnnotatedHunk,
   moveToFile,
   moveToHunk,
   moveMenuItem,
+  moveThemeSelector,
   openMenu,
+  openThemeSelector,
   pagerMode,
   requestQuit,
   scrollCodeHorizontally,
@@ -107,6 +114,7 @@ export function useAppKeyboardShortcuts({
   toggleFocusArea,
   toggleGapForSelectedHunk,
   toggleHelp,
+  themeSelectorOpen,
   toggleHunkHeaders,
   triggerEditSelectedFile,
   toggleLineNumbers,
@@ -118,11 +126,13 @@ export function useAppKeyboardShortcuts({
   const focusAreaRef = useRef(focusArea);
   const pagerModeRef = useRef(pagerMode);
   const showHelpRef = useRef(showHelp);
+  const themeSelectorOpenRef = useRef(themeSelectorOpen);
 
   activeMenuIdRef.current = activeMenuId;
   focusAreaRef.current = focusArea;
   pagerModeRef.current = pagerMode;
   showHelpRef.current = showHelp;
+  themeSelectorOpenRef.current = themeSelectorOpen;
 
   const resolveJumpShortcut = (key: KeyEvent): JumpShortcut | null => {
     if (isUppercaseGKey(key)) {
@@ -247,6 +257,44 @@ export function useAppKeyboardShortcuts({
     }
 
     closeHelp();
+    return true;
+  };
+
+  const handleThemeSelectorShortcut = (key: KeyEvent) => {
+    if (!themeSelectorOpenRef.current) {
+      return false;
+    }
+
+    if (isEscapeKey(key)) {
+      consumeKey(key);
+      closeThemeSelector();
+      return true;
+    }
+
+    if (key.name === "up") {
+      consumeKey(key);
+      moveThemeSelector(-1);
+      return true;
+    }
+
+    if (key.name === "down") {
+      consumeKey(key);
+      moveThemeSelector(1);
+      return true;
+    }
+
+    if (key.name === "tab") {
+      consumeKey(key);
+      moveThemeSelector(key.shift ? -1 : 1);
+      return true;
+    }
+
+    if (key.name === "return" || key.name === "enter") {
+      consumeKey(key);
+      acceptThemeSelector();
+      return true;
+    }
+
     return true;
   };
 
@@ -438,7 +486,7 @@ export function useAppKeyboardShortcuts({
     }
 
     if (key.name === "t") {
-      runAndCloseMenu(cycleTheme);
+      runAndCloseMenu(openThemeSelector);
       return;
     }
 
@@ -513,6 +561,10 @@ export function useAppKeyboardShortcuts({
     }
 
     if (handleHelpShortcut(key)) {
+      return;
+    }
+
+    if (handleThemeSelectorShortcut(key)) {
       return;
     }
 

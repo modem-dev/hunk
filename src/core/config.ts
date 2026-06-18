@@ -1,5 +1,7 @@
 import fs from "node:fs";
 import { join } from "node:path";
+import { BUNDLED_SHIKI_THEME_IDS } from "../ui/lib/shikiThemes";
+import { normalizeBuiltInThemeId } from "../ui/themes";
 import { resolveGlobalConfigPath } from "./paths";
 import { detectVcs, findVcsRepoRootCandidate, getDefaultVcsAdapter, isVcsId } from "./vcs";
 import type {
@@ -12,17 +14,7 @@ import type {
   VcsMode,
 } from "./types";
 
-const BUILT_IN_THEME_IDS = [
-  "graphite",
-  "midnight",
-  "paper",
-  "ember",
-  "catppuccin-latte",
-  "catppuccin-frappe",
-  "catppuccin-macchiato",
-  "catppuccin-mocha",
-  "zenburn",
-] as const;
+const BUILT_IN_THEME_IDS = BUNDLED_SHIKI_THEME_IDS;
 const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
 const CUSTOM_THEME_COLOR_KEYS = [
   "background",
@@ -68,6 +60,8 @@ const CUSTOM_SYNTAX_COLOR_KEYS = [
   "function",
   "property",
   "type",
+  "variable",
+  "operator",
   "punctuation",
 ] as const;
 
@@ -129,20 +123,26 @@ function normalizeThemeColor(value: unknown, keyPath: string) {
   return value.toLowerCase();
 }
 
-/** Accept only built-in base theme ids for config-defined custom themes. */
+/** Accept only built-in theme ids for config-defined custom themes. */
 function normalizeCustomThemeBase(value: unknown) {
   if (value === undefined) {
     return undefined;
   }
 
-  if (
-    typeof value !== "string" ||
-    !BUILT_IN_THEME_IDS.includes(value as (typeof BUILT_IN_THEME_IDS)[number])
-  ) {
-    throw new Error(`Expected custom_theme.base to be one of: ${BUILT_IN_THEME_IDS.join(", ")}.`);
+  if (typeof value !== "string") {
+    throw new Error(
+      `Expected custom_theme.base to be a built-in theme id. Known themes: ${BUILT_IN_THEME_IDS.join(", ")}.`,
+    );
   }
 
-  return value;
+  const resolvedThemeId = normalizeBuiltInThemeId(value);
+  if (!resolvedThemeId) {
+    throw new Error(
+      `Expected custom_theme.base to be a built-in theme id. Known themes: ${BUILT_IN_THEME_IDS.join(", ")}.`,
+    );
+  }
+
+  return resolvedThemeId;
 }
 
 /** Read the nested syntax color overrides from a [custom_theme.syntax] TOML table. */
@@ -213,7 +213,7 @@ function mergeCustomTheme(
   return {
     ...base,
     ...overrides,
-    base: overrides.base ?? base.base ?? "graphite",
+    base: overrides.base ?? base.base ?? "github-dark-default",
     label: overrides.label ?? base.label,
     syntax:
       base.syntax || overrides.syntax
@@ -317,7 +317,7 @@ export function resolveConfiguredCliInput(
     vcs: detectRepoVcsMode(cwd),
     // Keep the built-in theme default explicit so stdin-backed startup paths do not depend on
     // renderer theme-mode detection for their initial palette.
-    theme: "graphite",
+    theme: "github-dark-default",
     agentContext: input.options.agentContext,
     pager: input.options.pager ?? false,
     watch: input.options.watch ?? false,
@@ -349,6 +349,7 @@ export function resolveConfiguredCliInput(
     pager: input.options.pager ?? false,
     watch: input.options.watch ?? resolvedOptions.watch ?? false,
     excludeUntracked: resolvedOptions.excludeUntracked ?? false,
+    theme: resolvedOptions.theme,
     vcs: resolvedOptions.vcs ?? getDefaultVcsAdapter().id,
     mode: resolvedOptions.mode ?? DEFAULT_VIEW_PREFERENCES.mode,
     lineNumbers: resolvedOptions.lineNumbers ?? DEFAULT_VIEW_PREFERENCES.showLineNumbers,

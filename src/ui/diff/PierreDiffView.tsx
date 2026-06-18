@@ -180,7 +180,7 @@ export function PierreDiffView({
 
   const resolvedHighlighted = useHighlightedDiff({
     file,
-    appearance: theme.appearance,
+    theme,
     shouldLoadHighlight,
   });
   const sourceTextForHighlight =
@@ -188,7 +188,7 @@ export function PierreDiffView({
   const resolvedHighlightedSource = useHighlightedSource({
     file,
     text: sourceTextForHighlight,
-    appearance: theme.appearance,
+    theme,
     shouldLoadHighlight: shouldLoadHighlight && expandedGapKeys.size > 0,
   });
   const sourceLineSpans = useCallback(

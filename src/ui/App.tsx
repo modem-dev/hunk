@@ -41,6 +41,9 @@ const LazyHelpDialog = lazy(async () => ({
 const LazyMenuDropdown = lazy(async () => ({
   default: (await import("./components/chrome/MenuDropdown")).MenuDropdown,
 }));
+const LazyThemeSelectorDialog = lazy(async () => ({
+  default: (await import("./components/chrome/ThemeSelectorDialog")).ThemeSelectorDialog,
+}));
 
 /** Clamp a value into an inclusive range. */
 function clamp(value: number, min: number, max: number) {
@@ -123,6 +126,8 @@ export function App({
   const [copyDecorations, setCopyDecorations] = useState(bootstrap.initialCopyDecorations ?? false);
   const [codeHorizontalOffset, setCodeHorizontalOffset] = useState(0);
   const [showHunkHeaders, setShowHunkHeaders] = useState(bootstrap.initialShowHunkHeaders ?? true);
+  const [themeSelectorOpen, setThemeSelectorOpen] = useState(false);
+  const [themeSelectorIndex, setThemeSelectorIndex] = useState(0);
   const [sidebarVisible, setSidebarVisible] = useState(() => !pagerMode);
   const [forceSidebarOpen, setForceSidebarOpen] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -133,6 +138,7 @@ export function App({
   const [resizeStartWidth, setResizeStartWidth] = useState<number | null>(null);
   const [sessionNoticeText, setSessionNoticeText] = useState<string | null>(null);
   const sessionNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const themeSelectorOriginRef = useRef<{ themeId: string } | null>(null);
 
   const themeOptions = useMemo(
     () => availableThemes(bootstrap.customTheme),
@@ -148,6 +154,17 @@ export function App({
         ? withTransparentBackground(baseTheme)
         : baseTheme,
     [baseTheme, bootstrap.input.options.transparentBackground],
+  );
+
+  const themeSelectorItems = useMemo(
+    () =>
+      themeOptions.map((theme) => ({
+        id: theme.id,
+        label: theme.label,
+        description: theme.id === activeTheme.id ? "active" : "",
+        active: theme.id === activeTheme.id,
+      })),
+    [activeTheme.id, themeOptions],
   );
   const review = useReviewController({ files: bootstrap.changeset.files });
   const filteredFiles = review.visibleFiles;
@@ -383,7 +400,7 @@ export function App({
     setWrapLines((current) => !current);
   };
 
-  /** Switch the active theme and surface the result in the shared footer notice area. */
+  /** Switch the active theme. */
   const selectTheme = useCallback(
     (nextThemeId: string) => {
       const nextTheme = themeOptions.find((theme) => theme.id === nextThemeId);
@@ -392,6 +409,54 @@ export function App({
     },
     [showTransientNotice, themeOptions],
   );
+
+  /** Preview one theme selector row without committing the choice yet. */
+  const previewThemeSelectorItem = useCallback((item: (typeof themeSelectorItems)[number]) => {
+    setThemeId(item.id);
+  }, []);
+
+  /** Open the keyboard-driven theme selector with the current theme highlighted. */
+  const openThemeSelector = useCallback(() => {
+    const currentIndex = themeSelectorItems.findIndex((item) => item.id === activeTheme.id);
+    themeSelectorOriginRef.current = { themeId };
+    setThemeSelectorIndex(Math.max(0, currentIndex));
+    setThemeSelectorOpen(true);
+  }, [activeTheme.id, themeId, themeSelectorItems]);
+
+  const closeThemeSelector = useCallback(() => {
+    const origin = themeSelectorOriginRef.current;
+    if (origin) {
+      setThemeId(origin.themeId);
+      themeSelectorOriginRef.current = null;
+    }
+    setThemeSelectorOpen(false);
+  }, []);
+
+  const moveThemeSelector = useCallback(
+    (delta: number) => {
+      setThemeSelectorIndex((current) => {
+        if (themeSelectorItems.length === 0) {
+          return 0;
+        }
+
+        const nextIndex = (current + delta + themeSelectorItems.length) % themeSelectorItems.length;
+        previewThemeSelectorItem(themeSelectorItems[nextIndex]!);
+        return nextIndex;
+      });
+    },
+    [previewThemeSelectorItem, themeSelectorItems],
+  );
+
+  const acceptThemeSelector = useCallback(() => {
+    const item = themeSelectorItems[themeSelectorIndex];
+    if (!item) {
+      return;
+    }
+
+    themeSelectorOriginRef.current = null;
+    selectTheme(item.id);
+    setThemeSelectorOpen(false);
+  }, [selectTheme, themeSelectorIndex, themeSelectorItems]);
 
   /** Toggle the sidebar, forcing it open on narrower layouts when the app can still fit both panes. */
   const toggleSidebar = () => {
@@ -616,18 +681,9 @@ export function App({
     setFocusArea("files");
   }, [review.cancelDraftNote]);
 
-  /** Cycle through the themes exposed by the current app configuration. */
-  const cycleTheme = useCallback(() => {
-    const currentIndex = themeOptions.findIndex((theme) => theme.id === activeTheme.id);
-    const nextIndex = (currentIndex + 1) % themeOptions.length;
-    selectTheme(themeOptions[nextIndex]!.id);
-  }, [activeTheme.id, selectTheme, themeOptions]);
-
   const menus = useMemo(
     () =>
       buildAppMenus({
-        activeThemeId: activeTheme.id,
-        availableThemes: themeOptions,
         canRefreshCurrentInput,
         focusFilter,
         layoutMode,
@@ -637,7 +693,7 @@ export function App({
         refreshCurrentInput: triggerRefreshCurrentInput,
         requestQuit,
         selectLayoutMode,
-        selectThemeId: selectTheme,
+        openThemeSelector,
         copyDecorations,
         showAgentNotes,
         showHelp,
@@ -656,8 +712,6 @@ export function App({
         wrapLines,
       }),
     [
-      activeTheme.id,
-      themeOptions,
       canRefreshCurrentInput,
       copyDecorations,
       focusFilter,
@@ -667,7 +721,7 @@ export function App({
       requestQuit,
       review.moveToHunk,
       selectLayoutMode,
-      selectTheme,
+      openThemeSelector,
       triggerRefreshCurrentInput,
       toggleCopyDecorations,
       showAgentNotes,
@@ -709,15 +763,18 @@ export function App({
     canRefreshCurrentInput,
     closeHelp,
     closeMenu,
-    cycleTheme,
+    acceptThemeSelector,
     cancelDraftNote,
+    closeThemeSelector,
     focusArea,
     focusFilter,
     moveToAnnotatedHunk,
     moveToFile,
     moveToHunk: review.moveToHunk,
     moveMenuItem,
+    moveThemeSelector,
     openMenu,
+    openThemeSelector,
     pagerMode,
     requestQuit,
     scrollCodeHorizontally,
@@ -727,6 +784,7 @@ export function App({
     showHelp,
     startUserNote: () => startUserNote(),
     switchMenu,
+    themeSelectorOpen,
     toggleAgentNotes,
     toggleFocusArea,
     toggleGapForSelectedHunk: review.toggleSelectedHunkGap,
@@ -973,6 +1031,31 @@ export function App({
             terminalWidth={terminal.width}
             theme={baseTheme}
             onClose={closeHelp}
+          />
+        </Suspense>
+      ) : null}
+
+      {!pagerMode && themeSelectorOpen ? (
+        <Suspense fallback={null}>
+          <LazyThemeSelectorDialog
+            items={themeSelectorItems}
+            selectedIndex={themeSelectorIndex}
+            terminalHeight={terminal.height}
+            terminalWidth={terminal.width}
+            theme={baseTheme}
+            onClose={closeThemeSelector}
+            onHoverItem={(index) => {
+              setThemeSelectorIndex(index);
+              const item = themeSelectorItems[index];
+              if (item) {
+                previewThemeSelectorItem(item);
+              }
+            }}
+            onSelectItem={(item) => {
+              themeSelectorOriginRef.current = null;
+              selectTheme(item.id);
+              setThemeSelectorOpen(false);
+            }}
           />
         </Suspense>
       ) : null}

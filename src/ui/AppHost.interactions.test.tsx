@@ -485,8 +485,8 @@ function hasLineWithBackground(
   });
 }
 
-/** Open the top-level Theme menu and wait for the expected active light theme marker. */
-async function openThemeMenu(setup: Awaited<ReturnType<typeof testRender>>) {
+/** Open the theme selector modal through the View menu. */
+async function openThemesModalFromViewMenu(setup: Awaited<ReturnType<typeof testRender>>) {
   await act(async () => {
     await setup.mockInput.pressKey("F10");
   });
@@ -498,14 +498,16 @@ async function openThemeMenu(setup: Awaited<ReturnType<typeof testRender>>) {
   );
   expect(openedFrame).toContain("Toggle files/filter focus");
 
-  for (let index = 0; index < 3; index += 1) {
-    await act(async () => {
-      await setup.mockInput.pressArrow("right");
-    });
-    await flush(setup);
-  }
+  await act(async () => {
+    await setup.mockInput.pressArrow("right");
+  });
+  await flush(setup);
 
-  return waitForFrame(setup, (frame) => frame.includes("[x] Paper"), 12);
+  await act(async () => {
+    await setup.mockInput.typeText("t");
+  });
+
+  return waitForFrame(setup, (frame) => frame.includes("Theme selector"), 12);
 }
 
 async function pressHunkNavigationKey(
@@ -719,7 +721,7 @@ describe("App interactions", () => {
     }
   });
 
-  test("theme shortcut shows the selected theme in the status bar", async () => {
+  test("theme shortcut opens a selector and Enter applies the highlighted theme", async () => {
     const setup = await testRender(<AppHost bootstrap={createSingleFileBootstrap()} />, {
       width: 240,
       height: 24,
@@ -731,14 +733,127 @@ describe("App interactions", () => {
       await act(async () => {
         await setup.mockInput.typeText("t");
       });
-      let frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("Theme: Paper"));
-      expect(frame).toContain("Theme: Paper");
+      let frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("Theme selector"));
+      expect(frame).toContain("↑/↓/Tab preview  Enter select  Esc cancel");
+      expect(frame).toContain("›  github-dark-default");
+      expect(frame).toContain("active");
+
+      await act(async () => {
+        await setup.mockInput.pressArrow("down");
+      });
+      frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("›  github-dark-dimmed"));
+      expect(frame).not.toContain("UI");
+      expect(frame).not.toContain("Syntax");
+
+      await act(async () => {
+        await setup.mockInput.pressEnter();
+      });
+      frame = await waitForFrame(setup, (nextFrame) =>
+        nextFrame.includes("Theme: github-dark-dimmed"),
+      );
+      expect(frame).toContain("Theme: github-dark-dimmed");
+      expect(frame).not.toContain("Theme selector");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("theme selector reopens on the active theme", async () => {
+    const bootstrap = createTestVcsAppBootstrap({
+      files: [
+        createTestDiffFile(
+          "alpha",
+          "alpha.ts",
+          "export const alpha = 1;\n",
+          "export const alpha = 2;\n",
+        ),
+      ],
+      initialTheme: "dracula",
+    });
+    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
+      width: 240,
+      height: 24,
+    });
+
+    try {
+      await flush(setup);
 
       await act(async () => {
         await setup.mockInput.typeText("t");
       });
-      frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("Theme: Ember"));
-      expect(frame).toContain("Theme: Ember");
+      let frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("Theme selector"));
+      expect(frame).toContain("›  dracula");
+      expect(frame).toContain("active");
+
+      await act(async () => {
+        await setup.mockInput.pressTab();
+      });
+      frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("›  dracula-soft"));
+      expect(frame).toContain("›  dracula-soft");
+
+      await act(async () => {
+        await setup.mockInput.pressEnter();
+      });
+      frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("Theme: dracula-soft"));
+      expect(frame).not.toContain("Theme selector");
+
+      await act(async () => {
+        await setup.mockInput.typeText("t");
+      });
+      frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("›  dracula-soft"));
+      expect(frame).toContain("active");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("theme selector Escape reverts previews", async () => {
+    const bootstrap = createTestVcsAppBootstrap({
+      files: [
+        createTestDiffFile(
+          "alpha",
+          "alpha.ts",
+          "export const alpha = 1;\n",
+          "export const alpha = 2;\n",
+        ),
+      ],
+      initialTheme: "github-dark-default",
+    });
+    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
+      width: 240,
+      height: 24,
+    });
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.typeText("t");
+      });
+      await waitForFrame(setup, (nextFrame) => nextFrame.includes("›  github-dark-default"));
+
+      await act(async () => {
+        await setup.mockInput.pressArrow("down");
+        await setup.mockInput.pressArrow("down");
+      });
+      await waitForFrame(setup, (nextFrame) => nextFrame.includes("›  github-dark-high-contrast"));
+
+      await act(async () => {
+        await setup.mockInput.pressEscape();
+      });
+      await waitForFrame(setup, (nextFrame) => !nextFrame.includes("Theme selector"));
+
+      await act(async () => {
+        await setup.mockInput.typeText("t");
+      });
+      const frame = await waitForFrame(setup, (nextFrame) =>
+        nextFrame.includes("›  github-dark-default"),
+      );
+      expect(frame).toContain("active");
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -1137,7 +1252,7 @@ describe("App interactions", () => {
             ],
           },
           initialMode: "split",
-          initialTheme: "paper",
+          initialTheme: "github-light-default",
           initialShowLineNumbers: false,
           initialWrapLines: true,
           initialShowHunkHeaders: false,
@@ -1498,9 +1613,9 @@ describe("App interactions", () => {
       );
       expect(refreshedFrame).toContain("export const added = true;");
 
-      const menuFrame = await openThemeMenu(setup);
-      expect(menuFrame).toContain("[x] Paper");
-      expect(menuFrame).toContain("[ ] Graphite");
+      const modalFrame = await openThemesModalFromViewMenu(setup);
+      expect(modalFrame).toContain("›  github-light-default");
+      expect(modalFrame).toContain("active");
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -1509,11 +1624,11 @@ describe("App interactions", () => {
     }
   });
 
-  test("custom theme stays active in the Theme menu when bootstrap provides a custom palette", async () => {
+  test("custom theme stays active in the theme selector when bootstrap provides a custom palette", async () => {
     const bootstrap = createBootstrap();
     bootstrap.initialTheme = "custom";
     bootstrap.customTheme = {
-      base: "paper",
+      base: "github-light-default",
       label: "My Theme",
       accent: "#7755aa",
     };
@@ -1526,22 +1641,9 @@ describe("App interactions", () => {
     try {
       await flush(setup);
 
-      await act(async () => {
-        await setup.mockInput.pressKey("F10");
-      });
-
-      await waitForFrame(setup, (frame) => frame.includes("Toggle files/filter focus"), 12);
-
-      for (let index = 0; index < 3; index += 1) {
-        await act(async () => {
-          await setup.mockInput.pressArrow("right");
-        });
-        await flush(setup);
-      }
-
-      const menuFrame = await waitForFrame(setup, (frame) => frame.includes("My Theme"), 12);
-      expect(menuFrame).toContain("[x] My Theme");
-      expect(menuFrame).toContain("[ ] Graphite");
+      const menuFrame = await openThemesModalFromViewMenu(setup);
+      expect(menuFrame).toContain("›  My Theme");
+      expect(menuFrame).toContain("active");
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -1921,7 +2023,7 @@ describe("App interactions", () => {
         files: [createTestDiffFile("space", "space.ts", before, after)],
       },
       initialMode: "split",
-      initialTheme: "midnight",
+      initialTheme: "github-dark-default",
     };
 
     const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
@@ -1974,7 +2076,7 @@ describe("App interactions", () => {
         files: [createTestDiffFile("pageup", "pageup.ts", before, after)],
       },
       initialMode: "split",
-      initialTheme: "midnight",
+      initialTheme: "github-dark-default",
     };
 
     const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
@@ -2032,7 +2134,7 @@ describe("App interactions", () => {
         files: [createTestDiffFile("half", "half.ts", before, after)],
       },
       initialMode: "split",
-      initialTheme: "midnight",
+      initialTheme: "github-dark-default",
     };
 
     const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
@@ -2105,7 +2207,7 @@ describe("App interactions", () => {
         files: [createTestDiffFile("g", "g.ts", before, after)],
       },
       initialMode: "split",
-      initialTheme: "midnight",
+      initialTheme: "github-dark-default",
     };
 
     const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
@@ -2167,7 +2269,7 @@ describe("App interactions", () => {
         files: [createTestDiffFile("pager-g", "pager-g.ts", before, after)],
       },
       initialMode: "split",
-      initialTheme: "midnight",
+      initialTheme: "github-dark-default",
     };
 
     const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
@@ -2599,7 +2701,7 @@ describe("App interactions", () => {
       await flush(setup);
 
       let frame = setup.captureCharFrame();
-      expect(frame).not.toContain("File  View  Navigate  Theme  Agent  Help");
+      expect(frame).not.toContain("File  View  Navigate  Agent  Help");
       expect((frame.match(/alpha\.ts/g) ?? []).length).toBe(1);
 
       await act(async () => {
@@ -2608,7 +2710,7 @@ describe("App interactions", () => {
       await flush(setup);
 
       frame = setup.captureCharFrame();
-      expect(frame).not.toContain("File  View  Navigate  Theme  Agent  Help");
+      expect(frame).not.toContain("File  View  Navigate  Agent  Help");
       expect((frame.match(/alpha\.ts/g) ?? []).length).toBe(2);
 
       await act(async () => {

@@ -1,10 +1,7 @@
 import type { LayoutMode } from "../../core/types";
 import type { MenuEntry, MenuId } from "../components/chrome/menu";
-import type { AppTheme } from "../themes";
 
 export interface BuildAppMenusOptions {
-  activeThemeId: string;
-  availableThemes: AppTheme[];
   canRefreshCurrentInput: boolean;
   focusFilter: () => void;
   layoutMode: LayoutMode;
@@ -14,7 +11,7 @@ export interface BuildAppMenusOptions {
   refreshCurrentInput: () => void;
   requestQuit: () => void;
   selectLayoutMode: (mode: LayoutMode) => void;
-  selectThemeId: (themeId: string) => void;
+  openThemeSelector: () => void;
   copyDecorations: boolean;
   showAgentNotes: boolean;
   showHelp: boolean;
@@ -35,8 +32,6 @@ export interface BuildAppMenusOptions {
 
 /** Build the top-level app menus from the current app state and actions. */
 export function buildAppMenus({
-  activeThemeId,
-  availableThemes,
   canRefreshCurrentInput,
   focusFilter,
   layoutMode,
@@ -46,7 +41,7 @@ export function buildAppMenus({
   refreshCurrentInput,
   requestQuit,
   selectLayoutMode,
-  selectThemeId,
+  openThemeSelector,
   copyDecorations,
   showAgentNotes,
   showHelp,
@@ -64,13 +59,6 @@ export function buildAppMenus({
   triggerEditSelectedFile,
   wrapLines,
 }: BuildAppMenusOptions): Record<MenuId, MenuEntry[]> {
-  const themeMenuEntries: MenuEntry[] = availableThemes.map((theme) => ({
-    kind: "item",
-    label: theme.label,
-    checked: theme.id === activeThemeId,
-    action: () => selectThemeId(theme.id),
-  }));
-
   const fileMenuEntries: MenuEntry[] = [
     {
       kind: "item",
@@ -146,6 +134,13 @@ export function buildAppMenus({
       { kind: "separator" },
       {
         kind: "item",
+        label: "Themes…",
+        hint: "t",
+        action: openThemeSelector,
+      },
+      { kind: "separator" },
+      {
+        kind: "item",
         label: "Agent notes",
         hint: "a",
         checked: showAgentNotes,
@@ -213,7 +208,6 @@ export function buildAppMenus({
         action: focusFilter,
       },
     ],
-    theme: themeMenuEntries,
     agent: [
       {
         kind: "item",

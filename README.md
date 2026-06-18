@@ -119,7 +119,7 @@ You can persist preferences to a config file:
 Example:
 
 ```toml
-theme = "graphite"   # auto, graphite, midnight, paper, ember, catppuccin-latte, catppuccin-frappe, catppuccin-macchiato, catppuccin-mocha, zenburn, custom
+theme = "github-dark-default" # any built-in theme id, auto, or custom
 mode = "auto"        # auto, split, stack
 vcs = "git"          # git, jj, sl
 watch = false
@@ -130,17 +130,18 @@ agent_notes = false
 transparent_background = false
 ```
 
-`theme = "auto"` and `--theme auto` query the terminal background at startup, choose `paper` for light backgrounds and `graphite` for dark backgrounds, and fall back to `graphite` if the terminal does not answer.
+`theme = "auto"` and `--theme auto` query the terminal background at startup, choose `github-light-default` for light backgrounds and `github-dark-default` for dark backgrounds, and fall back to `github-dark-default` if the terminal does not answer.
+Older theme ids such as `graphite` and `paper` remain accepted as compatibility aliases.
 `exclude_untracked` affects Git/Sapling working-tree `hunk diff` sessions only.
 `transparent_background` can also be written as `transparentBackground`.
 
-Custom themes can inherit from any built-in base theme and override only the colors you care about:
+Custom themes can inherit from any built-in theme and override only the colors you care about:
 
 ```toml
 theme = "custom"
 
 [custom_theme]
-base = "graphite"    # graphite, midnight, paper, ember, catppuccin-latte, catppuccin-frappe, catppuccin-macchiato, catppuccin-mocha, zenburn
+base = "catppuccin-mocha"
 label = "My Theme"
 accent = "#7fd1ff"
 panel = "#10161d"
@@ -150,9 +151,11 @@ noteBorder = "#c49bff"
 keyword = "#8ed4ff"
 string = "#c7b4ff"
 comment = "#6e85a7"
+operator = "#7fd1ff"
+variable = "#eef4ff"
 ```
 
-All custom theme colors must use `#rrggbb` hex values.
+All custom theme colors must use `#rrggbb` hex values. Press `t` in the app, or choose `View -> Themes…`, to open the theme selector.
 
 ### Git integration
 

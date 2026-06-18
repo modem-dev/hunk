@@ -37,6 +37,8 @@ export interface AppTheme {
   noteBackground: string;
   noteTitleBackground: string;
   noteTitleText: string;
+  /** Optional Shiki/Pierre theme name for source-accurate code highlighting. */
+  syntaxTheme?: string;
   syntaxColors: SyntaxColors;
   syntaxStyle: SyntaxStyle;
 }
@@ -50,6 +52,8 @@ export type SyntaxColors = {
   function: string;
   property: string;
   type: string;
+  variable?: string;
+  operator?: string;
   punctuation: string;
 };
 

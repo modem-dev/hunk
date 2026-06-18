@@ -8,7 +8,7 @@ import type { HunkDiffFileHeaderProps } from "./types";
 export function HunkDiffFileHeader({
   file,
   width,
-  theme = "graphite",
+  theme = "github-dark-default",
   onSelect,
 }: HunkDiffFileHeaderProps) {
   const resolvedTheme = resolveTheme(theme, null);

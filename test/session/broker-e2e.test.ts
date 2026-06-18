@@ -539,7 +539,7 @@ describe("session broker end-to-end", () => {
       expect([0, 124]).toContain(exitCode);
 
       const transcript = stripTerminalControl(await Bun.file(fixture.transcript).text());
-      expect(transcript).toContain("View  Navigate  Theme  Agent  Help");
+      expect(transcript).toContain("View  Navigate  Agent  Help");
       expect(transcript).toContain(`${fixture.afterName}`);
       expect(transcript).toContain("export const gamma = true;");
     } finally {
