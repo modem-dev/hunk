@@ -85,6 +85,9 @@ jobs:
       - name: Typecheck
         run: bun run typecheck
 
+      - name: Theme contrast check
+        run: bun run test:theme-contrast
+
       - name: Test suite
         run: bun test ./src ./packages ./scripts ./test/cli ./test/session
 
@@ -135,6 +138,9 @@ jobs:
 
       - name: Typecheck
         run: bun run typecheck
+
+      - name: Theme contrast check
+        run: bun run test:theme-contrast
 
       - name: Test suite
         run: bun run test

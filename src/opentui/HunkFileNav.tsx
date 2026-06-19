@@ -10,7 +10,7 @@ export function HunkFileNav({
   files,
   selectedFileId,
   width,
-  theme = "graphite",
+  theme = "github-dark-default",
   onSelectFile = () => {},
 }: HunkFileNavProps) {
   const resolvedTheme = resolveTheme(theme, null);

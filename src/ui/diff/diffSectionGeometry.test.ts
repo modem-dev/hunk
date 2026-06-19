@@ -9,7 +9,7 @@ import {
 } from "../../../test/helpers/diff-helpers";
 
 describe("measureDiffSectionGeometry", () => {
-  const theme = resolveTheme("midnight", null);
+  const theme = resolveTheme("github-dark-default", null);
 
   test("measures split and stack layouts from the render plan", () => {
     const file = createTestDiffFile();

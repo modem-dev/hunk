@@ -25,7 +25,7 @@ describe("PTY layout", () => {
     });
 
     try {
-      await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
         timeout: 15_000,
       });
 
@@ -52,7 +52,7 @@ describe("PTY layout", () => {
     });
 
     try {
-      await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
         timeout: 15_000,
       });
       const snapshot = await harness.waitForSnapshot(
@@ -92,7 +92,7 @@ describe("PTY layout", () => {
     });
 
     try {
-      const initial = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+      const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
         timeout: 15_000,
       });
 
@@ -132,7 +132,7 @@ describe("PTY layout", () => {
     });
 
     try {
-      const initial = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+      const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
         timeout: 15_000,
       });
 
@@ -171,7 +171,7 @@ describe("PTY layout", () => {
     });
 
     try {
-      const wide = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+      const wide = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
         timeout: 15_000,
       });
 
@@ -200,7 +200,7 @@ describe("PTY layout", () => {
     });
 
     try {
-      const initial = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+      const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
         timeout: 15_000,
       });
       const initialMainColumn = rightmostColumnOf(initial, "alpha.ts");
@@ -231,7 +231,7 @@ describe("PTY layout", () => {
     });
 
     try {
-      const wide = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+      const wide = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
         timeout: 15_000,
       });
 
@@ -261,7 +261,7 @@ describe("PTY layout", () => {
     });
 
     try {
-      const narrow = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+      const narrow = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
         timeout: 15_000,
       });
 
@@ -291,7 +291,7 @@ describe("PTY layout", () => {
     });
 
     try {
-      const initial = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+      const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
         timeout: 15_000,
       });
 
@@ -339,7 +339,7 @@ describe("PTY layout", () => {
     });
 
     try {
-      const initial = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+      const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
         timeout: 15_000,
       });
 
@@ -393,7 +393,7 @@ describe("PTY layout", () => {
     });
 
     try {
-      const initial = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+      const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
         timeout: 15_000,
       });
 
@@ -437,7 +437,7 @@ describe("PTY layout", () => {
     });
 
     try {
-      const initial = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+      const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
         timeout: 15_000,
       });
 

@@ -231,7 +231,7 @@ describe("TTY render smoke", () => {
 
     const output = await runTtySmoke({ mode: "split", agentContext: true });
 
-    expect(output).toContain("View  Navigate  Theme  Agent  Help");
+    expect(output).toContain("View  Navigate  Agent  Help");
     expect(output).toContain("before.ts ↔ after.ts");
     expect(output).not.toContain("[AI]");
     expect(output).toContain("▌@@ -1,1 +1,2 @@");
@@ -278,7 +278,7 @@ describe("TTY render smoke", () => {
 
       const output = await runTtySmoke({ mode: "stack" });
 
-      expect(output).toContain("View  Navigate  Theme  Agent  Help");
+      expect(output).toContain("View  Navigate  Agent  Help");
       expect(output).toContain("▌1   -  export const answer = 41;");
       expect(output).toContain("▌  1 +  export const answer = 42;");
       expect(output).not.toContain("│1 + export const answer = 42;");
@@ -292,7 +292,7 @@ describe("TTY render smoke", () => {
 
     const output = await runTtySmoke({ pager: true });
 
-    expect(output).not.toContain("View  Navigate  Theme  Agent  Help");
+    expect(output).not.toContain("View  Navigate  Agent  Help");
     expect(output).not.toContain("F10 menu");
     expect(output).toContain("before.ts -> after.ts");
     expect(output).toContain("export const answer = 42;");
@@ -321,7 +321,7 @@ describe("TTY render smoke", () => {
 
     const output = await runStdinPagerSmoke();
 
-    expect(output).not.toContain("View  Navigate  Theme  Agent  Help");
+    expect(output).not.toContain("View  Navigate  Agent  Help");
     expect(output).not.toContain("F10 menu");
     expect(output).toContain("after.ts");
     expect(output).toContain("@@ -1 +1,2 @@");
@@ -349,7 +349,7 @@ describe("TTY render smoke", () => {
 
     const output = await runStdinPagerSmoke({ command: "pager" });
 
-    expect(output).not.toContain("View  Navigate  Theme  Agent  Help");
+    expect(output).not.toContain("View  Navigate  Agent  Help");
     expect(output).toContain("after.ts");
     expect(output).toContain("@@ -1 +1,2 @@");
     expect(output).toContain("export const answer = 42;");

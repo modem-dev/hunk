@@ -109,7 +109,7 @@ function buildContext(
   fileSectionLayouts: ReturnType<typeof buildFileSectionLayouts>;
   sectionGeometry: ReturnType<typeof measureDiffSectionGeometry>[];
 } {
-  const theme = resolveTheme("midnight", null);
+  const theme = resolveTheme("github-dark-default", null);
   const geometry = measureDiffSectionGeometry(file, layout, true, theme, [], width, true, false);
   const sectionGeometry = [geometry];
   const fileSectionLayouts = buildFileSectionLayouts([file], [geometry.bodyHeight]);

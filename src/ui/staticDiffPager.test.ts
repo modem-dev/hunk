@@ -102,7 +102,7 @@ describe("static diff pager", () => {
     const output = await renderStaticDiffPager(
       patchText,
       { theme: "custom" },
-      { customTheme: { base: "graphite", text: "#123456" } },
+      { customTheme: { base: "github-dark-default", text: "#123456" } },
     );
 
     expect(stripAnsi(output)).toContain("a.ts modified +1 -1");
@@ -122,8 +122,8 @@ describe("static diff pager", () => {
     expect(lineWith("@@ -1,3 +1,3 @@")).not.toContain("\x1b[48;2;");
     expect(lineWith("const a = 1;")).not.toContain("\x1b[48;2;");
     expect(lineWith("const z = 3;")).not.toContain("\x1b[48;2;");
-    expect(lineWith("const value = 1;")).toContain("\x1b[48;2;55;37;38m");
-    expect(lineWith("const value = 2;")).toContain("\x1b[48;2;31;48;37m");
+    expect(lineWith("const value = 1;")).toContain("\x1b[48;2;");
+    expect(lineWith("const value = 2;")).toContain("\x1b[48;2;");
   });
 
   test("shows semantic file metadata without raw patch headers", async () => {

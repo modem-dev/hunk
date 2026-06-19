@@ -313,7 +313,7 @@ async function renderStaticFile(
   width: number,
 ) {
   const highlighted =
-    file.isBinary || file.isTooLarge ? null : await loadHighlightedDiff(file, theme.appearance);
+    file.isBinary || file.isTooLarge ? null : await loadHighlightedDiff(file, theme);
   const layout = resolveStaticLayout(options);
   const rows =
     layout === "split"

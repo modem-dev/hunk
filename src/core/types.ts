@@ -105,6 +105,8 @@ export interface CustomSyntaxColorsConfig {
   function?: string;
   property?: string;
   type?: string;
+  variable?: string;
+  operator?: string;
   punctuation?: string;
 }
 

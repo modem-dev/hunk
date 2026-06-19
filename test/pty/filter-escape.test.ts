@@ -21,7 +21,7 @@ describe("filter escape clearing (PTY)", () => {
     });
 
     try {
-      await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, { timeout: 15_000 });
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
 
       // Open filter, type a no-match query.
       await session.type("/");
