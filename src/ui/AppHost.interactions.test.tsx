@@ -734,7 +734,7 @@ describe("App interactions", () => {
         await setup.mockInput.typeText("t");
       });
       let frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("Theme selector"));
-      expect(frame).toContain("↑/↓/Wheel preview  Click select  Enter accept  Esc cancel");
+      expect(frame).toContain("↑/↓/Tab preview  Enter accept  Esc cancel");
       expect(frame).toContain("›  github-dark-default");
       expect(frame).toContain("active");
 
