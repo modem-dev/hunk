@@ -447,6 +447,19 @@ export function App({
     [previewThemeSelectorItem, themeSelectorItems],
   );
 
+  const pickThemeSelectorItem = useCallback(
+    (index: number) => {
+      const item = themeSelectorItems[index];
+      if (!item) {
+        return;
+      }
+
+      setThemeSelectorIndex(index);
+      previewThemeSelectorItem(item);
+    },
+    [previewThemeSelectorItem, themeSelectorItems],
+  );
+
   const acceptThemeSelector = useCallback(() => {
     const item = themeSelectorItems[themeSelectorIndex];
     if (!item) {
@@ -1044,18 +1057,8 @@ export function App({
             terminalWidth={terminal.width}
             theme={baseTheme}
             onClose={closeThemeSelector}
-            onHoverItem={(index) => {
-              setThemeSelectorIndex(index);
-              const item = themeSelectorItems[index];
-              if (item) {
-                previewThemeSelectorItem(item);
-              }
-            }}
-            onSelectItem={(item) => {
-              themeSelectorOriginRef.current = null;
-              selectTheme(item.id);
-              setThemeSelectorOpen(false);
-            }}
+            onPickItem={pickThemeSelectorItem}
+            onScroll={moveThemeSelector}
           />
         </Suspense>
       ) : null}

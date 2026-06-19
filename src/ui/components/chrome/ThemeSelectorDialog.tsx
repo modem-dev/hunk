@@ -28,8 +28,8 @@ export function ThemeSelectorDialog({
   terminalWidth,
   theme,
   onClose,
-  onHoverItem,
-  onSelectItem,
+  onPickItem,
+  onScroll,
 }: {
   items: ThemeSelectorItem[];
   selectedIndex: number;
@@ -37,8 +37,8 @@ export function ThemeSelectorDialog({
   terminalWidth: number;
   theme: AppTheme;
   onClose: () => void;
-  onHoverItem: (index: number) => void;
-  onSelectItem: (item: ThemeSelectorItem) => void;
+  onPickItem: (index: number) => void;
+  onScroll: (delta: number) => void;
 }) {
   const width = Math.min(82, Math.max(56, terminalWidth - 8));
   const modalHeight = Math.min(Math.max(12, terminalHeight - 4), 28);
@@ -60,10 +60,18 @@ export function ThemeSelectorDialog({
       title="Theme selector"
       width={width}
       onClose={onClose}
+      onMouseScroll={(event) => {
+        const direction = event.scroll?.direction;
+        if (direction === "up") {
+          onScroll(-1);
+        } else if (direction === "down") {
+          onScroll(1);
+        }
+      }}
     >
       <box style={{ width: "100%", height: 1 }}>
         <text fg={theme.muted}>
-          {fitText("↑/↓/Tab preview  Enter select  Esc cancel", bodyWidth)}
+          {fitText("↑/↓/Wheel preview  Click select  Enter accept  Esc cancel", bodyWidth)}
         </text>
       </box>
       <box style={{ width: "100%", height: 1 }} />
@@ -78,12 +86,9 @@ export function ThemeSelectorDialog({
           <box
             key={item.id}
             style={{ width: "100%", height: 1, flexDirection: "row", backgroundColor: bg }}
-            // Use movement, not enter/over, so palette preview rerenders do not reselect the row
-            // currently under a stationary mouse while the user navigates with the keyboard.
-            onMouseMove={() => onHoverItem(index)}
             onMouseUp={(event: TuiMouseEvent) => {
               event.stopPropagation();
-              onSelectItem(item);
+              onPickItem(index);
             }}
           >
             <text fg={fg}>{padText(marker, markerWidth)}</text>

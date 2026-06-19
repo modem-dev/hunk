@@ -734,7 +734,7 @@ describe("App interactions", () => {
         await setup.mockInput.typeText("t");
       });
       let frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("Theme selector"));
-      expect(frame).toContain("↑/↓/Tab preview  Enter select  Esc cancel");
+      expect(frame).toContain("↑/↓/Wheel preview  Click select  Enter accept  Esc cancel");
       expect(frame).toContain("›  github-dark-default");
       expect(frame).toContain("active");
 
@@ -753,6 +753,83 @@ describe("App interactions", () => {
       );
       expect(frame).toContain("Theme: github-dark-dimmed");
       expect(frame).not.toContain("Theme selector");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("theme selector mouse hover does not preview and click selects without accepting", async () => {
+    const setup = await testRender(<AppHost bootstrap={createSingleFileBootstrap()} />, {
+      width: 240,
+      height: 24,
+    });
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.typeText("t");
+      });
+      let frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("Theme selector"));
+      expect(frame).toContain("›  github-dark-default");
+
+      const lines = frame.split("\n");
+      const targetY = lines.findIndex((line) => line.includes("github-dark-dimmed"));
+      expect(targetY).toBeGreaterThanOrEqual(0);
+      const targetX = Math.max(0, lines[targetY]!.indexOf("github-dark-dimmed"));
+
+      await act(async () => {
+        await setup.mockMouse.moveTo(targetX, targetY);
+      });
+      await flush(setup);
+      frame = setup.captureCharFrame();
+      expect(frame).toContain("›  github-dark-default");
+      expect(frame).not.toContain("›  github-dark-dimmed");
+
+      await act(async () => {
+        await setup.mockMouse.click(targetX, targetY);
+      });
+      frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("›  github-dark-dimmed"));
+      expect(frame).toContain("Theme selector");
+
+      await act(async () => {
+        await setup.mockInput.pressEnter();
+      });
+      frame = await waitForFrame(setup, (nextFrame) =>
+        nextFrame.includes("Theme: github-dark-dimmed"),
+      );
+      expect(frame).not.toContain("Theme selector");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("theme selector mouse wheel previews the next row", async () => {
+    const setup = await testRender(<AppHost bootstrap={createSingleFileBootstrap()} />, {
+      width: 240,
+      height: 24,
+    });
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.typeText("t");
+      });
+      const frame = await waitForFrame(setup, (nextFrame) =>
+        nextFrame.includes("›  github-dark-default"),
+      );
+      const selectedY = frame.split("\n").findIndex((line) => line.includes("github-dark-default"));
+      expect(selectedY).toBeGreaterThanOrEqual(0);
+
+      await act(async () => {
+        await setup.mockMouse.scroll(120, selectedY, "down");
+      });
+      await waitForFrame(setup, (nextFrame) => nextFrame.includes("›  github-dark-dimmed"));
     } finally {
       await act(async () => {
         setup.renderer.destroy();
