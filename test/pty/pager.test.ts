@@ -287,6 +287,8 @@ describe("PTY pager", () => {
       expect(initial).not.toContain("View  Navigate  Agent  Help");
       expect(harness.countMatches(initial, /scroll\.ts/g)).toBe(1);
 
+      // CI can surface the pager content before the file-backed stdin path is ready for keys.
+      await session.waitIdle({ timeout: 200 });
       await session.press("s");
       const sidebarRow = /\bM scroll\.ts\s+\+40 -40/;
       const withSidebar = await harness.waitForSnapshot(
