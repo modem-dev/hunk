@@ -912,7 +912,12 @@ describe("UI components", () => {
       expect(addNoteX).toBeGreaterThanOrEqual(0);
 
       await act(async () => {
+        await setup.mockMouse.moveTo(addNoteX + 1, addNoteY);
+        await setup.renderOnce();
+      });
+      await act(async () => {
         await setup.mockMouse.click(addNoteX + 1, addNoteY);
+        await setup.renderOnce();
       });
 
       expect(calls).toEqual([

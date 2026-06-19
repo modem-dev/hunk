@@ -32,6 +32,11 @@ import { availableThemes, resolveTheme, withTransparentBackground } from "./them
 
 type FocusArea = "files" | "filter" | "note";
 type ActiveAddNoteTarget = ActiveAddNoteAffordance & { fileId: string };
+type ThemeSelectorState = {
+  open: boolean;
+  selectedIndex: number;
+  previewThemeId: string | null;
+};
 
 const FAST_CODE_HORIZONTAL_SCROLL_COLUMNS = 8;
 
@@ -126,8 +131,11 @@ export function App({
   const [copyDecorations, setCopyDecorations] = useState(bootstrap.initialCopyDecorations ?? false);
   const [codeHorizontalOffset, setCodeHorizontalOffset] = useState(0);
   const [showHunkHeaders, setShowHunkHeaders] = useState(bootstrap.initialShowHunkHeaders ?? true);
-  const [themeSelectorOpen, setThemeSelectorOpen] = useState(false);
-  const [themeSelectorIndex, setThemeSelectorIndex] = useState(0);
+  const [themeSelectorState, setThemeSelectorState] = useState<ThemeSelectorState>({
+    open: false,
+    selectedIndex: 0,
+    previewThemeId: null,
+  });
   const [sidebarVisible, setSidebarVisible] = useState(() => !pagerMode);
   const [forceSidebarOpen, setForceSidebarOpen] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -138,15 +146,15 @@ export function App({
   const [resizeStartWidth, setResizeStartWidth] = useState<number | null>(null);
   const [sessionNoticeText, setSessionNoticeText] = useState<string | null>(null);
   const sessionNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const themeSelectorOriginRef = useRef<{ themeId: string } | null>(null);
 
   const themeOptions = useMemo(
     () => availableThemes(bootstrap.customTheme),
     [bootstrap.customTheme],
   );
+  const effectiveThemeId = themeSelectorState.previewThemeId ?? themeId;
   const baseTheme = useMemo(
-    () => resolveTheme(themeId, detectedThemeMode ?? null, bootstrap.customTheme),
-    [themeId, detectedThemeMode, bootstrap.customTheme],
+    () => resolveTheme(effectiveThemeId, detectedThemeMode ?? null, bootstrap.customTheme),
+    [effectiveThemeId, detectedThemeMode, bootstrap.customTheme],
   );
   const activeTheme = useMemo(
     () =>
@@ -410,41 +418,35 @@ export function App({
     [showTransientNotice, themeOptions],
   );
 
-  /** Preview one theme selector row without committing the choice yet. */
-  const previewThemeSelectorItem = useCallback((item: (typeof themeSelectorItems)[number]) => {
-    setThemeId(item.id);
-  }, []);
-
   /** Open the keyboard-driven theme selector with the current theme highlighted. */
   const openThemeSelector = useCallback(() => {
     const currentIndex = themeSelectorItems.findIndex((item) => item.id === activeTheme.id);
-    themeSelectorOriginRef.current = { themeId };
-    setThemeSelectorIndex(Math.max(0, currentIndex));
-    setThemeSelectorOpen(true);
-  }, [activeTheme.id, themeId, themeSelectorItems]);
+    setThemeSelectorState({
+      open: true,
+      selectedIndex: Math.max(0, currentIndex),
+      previewThemeId: null,
+    });
+  }, [activeTheme.id, themeSelectorItems]);
 
   const closeThemeSelector = useCallback(() => {
-    const origin = themeSelectorOriginRef.current;
-    if (origin) {
-      setThemeId(origin.themeId);
-      themeSelectorOriginRef.current = null;
-    }
-    setThemeSelectorOpen(false);
+    // Dropping the preview id reverts all previewed colors in the same state transition.
+    setThemeSelectorState((current) => ({ ...current, open: false, previewThemeId: null }));
   }, []);
 
   const moveThemeSelector = useCallback(
     (delta: number) => {
-      setThemeSelectorIndex((current) => {
+      setThemeSelectorState((current) => {
         if (themeSelectorItems.length === 0) {
-          return 0;
+          return { ...current, selectedIndex: 0, previewThemeId: null };
         }
 
-        const nextIndex = (current + delta + themeSelectorItems.length) % themeSelectorItems.length;
-        previewThemeSelectorItem(themeSelectorItems[nextIndex]!);
-        return nextIndex;
+        const nextIndex =
+          (current.selectedIndex + delta + themeSelectorItems.length) % themeSelectorItems.length;
+        const item = themeSelectorItems[nextIndex]!;
+        return { ...current, selectedIndex: nextIndex, previewThemeId: item.id };
       });
     },
-    [previewThemeSelectorItem, themeSelectorItems],
+    [themeSelectorItems],
   );
 
   const pickThemeSelectorItem = useCallback(
@@ -454,22 +456,25 @@ export function App({
         return;
       }
 
-      setThemeSelectorIndex(index);
-      previewThemeSelectorItem(item);
+      setThemeSelectorState((current) => ({
+        ...current,
+        selectedIndex: index,
+        previewThemeId: item.id,
+      }));
     },
-    [previewThemeSelectorItem, themeSelectorItems],
+    [themeSelectorItems],
   );
 
   const acceptThemeSelector = useCallback(() => {
-    const item = themeSelectorItems[themeSelectorIndex];
+    const item = themeSelectorItems[themeSelectorState.selectedIndex];
     if (!item) {
       return;
     }
 
-    themeSelectorOriginRef.current = null;
     selectTheme(item.id);
-    setThemeSelectorOpen(false);
-  }, [selectTheme, themeSelectorIndex, themeSelectorItems]);
+    // Close without a preview id; the committed theme id now supplies the same effective theme.
+    setThemeSelectorState((current) => ({ ...current, open: false, previewThemeId: null }));
+  }, [selectTheme, themeSelectorState.selectedIndex, themeSelectorItems]);
 
   /** Toggle the sidebar, forcing it open on narrower layouts when the app can still fit both panes. */
   const toggleSidebar = () => {
@@ -797,7 +802,7 @@ export function App({
     showHelp,
     startUserNote: () => startUserNote(),
     switchMenu,
-    themeSelectorOpen,
+    themeSelectorOpen: themeSelectorState.open,
     toggleAgentNotes,
     toggleFocusArea,
     toggleGapForSelectedHunk: review.toggleSelectedHunkGap,
@@ -1048,11 +1053,11 @@ export function App({
         </Suspense>
       ) : null}
 
-      {!pagerMode && themeSelectorOpen ? (
+      {!pagerMode && themeSelectorState.open ? (
         <Suspense fallback={null}>
           <LazyThemeSelectorDialog
             items={themeSelectorItems}
-            selectedIndex={themeSelectorIndex}
+            selectedIndex={themeSelectorState.selectedIndex}
             terminalHeight={terminal.height}
             terminalWidth={terminal.width}
             theme={baseTheme}
