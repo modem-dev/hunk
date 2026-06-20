@@ -5,10 +5,18 @@ import {
 } from "@opentui/core";
 import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState, useRef } from "react";
-import type { AppBootstrap, CliInput, LayoutMode, UserNoteLineTarget } from "../core/types";
+import { saveGlobalViewPreferences } from "../core/config";
+import type {
+  AppBootstrap,
+  CliInput,
+  LayoutMode,
+  PersistedViewPreferences,
+  UserNoteLineTarget,
+} from "../core/types";
 import { canReloadInput, computeWatchSignature } from "../core/watch";
 import type { HunkSessionBrokerClient, ReloadedSessionResult } from "../hunk-session/types";
 import { MenuBar } from "./components/chrome/MenuBar";
+import { ModalFrame } from "./components/chrome/ModalFrame";
 import { StatusBar } from "./components/chrome/StatusBar";
 import { DiffPane } from "./components/panes/DiffPane";
 import { SidebarPane } from "./components/panes/SidebarPane";
@@ -139,6 +147,7 @@ export function App({
   const [sidebarVisible, setSidebarVisible] = useState(() => !pagerMode);
   const [forceSidebarOpen, setForceSidebarOpen] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [saveConfigPromptOpen, setSaveConfigPromptOpen] = useState(false);
   const [focusArea, setFocusArea] = useState<FocusArea>("files");
   const [activeAddNoteTarget, setActiveAddNoteTarget] = useState<ActiveAddNoteTarget | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(34);
@@ -174,6 +183,72 @@ export function App({
       })),
     [activeTheme.id, themeOptions],
   );
+  const currentViewPreferences = useMemo<PersistedViewPreferences>(
+    () => ({
+      mode: layoutMode,
+      theme: themeId,
+      showLineNumbers,
+      wrapLines,
+      showHunkHeaders,
+      showAgentNotes,
+      copyDecorations,
+    }),
+    [
+      copyDecorations,
+      layoutMode,
+      showAgentNotes,
+      showHunkHeaders,
+      showLineNumbers,
+      themeId,
+      wrapLines,
+    ],
+  );
+  const initialViewPreferencesRef = useRef(currentViewPreferences);
+  const changedViewPreferenceLines = useMemo(() => {
+    const initial = initialViewPreferencesRef.current;
+    const changes: string[] = [];
+    if (currentViewPreferences.theme !== initial.theme) {
+      changes.push(
+        `Theme: ${initial.theme ?? "default"} → ${currentViewPreferences.theme ?? "default"}`,
+      );
+    }
+    if (currentViewPreferences.mode !== initial.mode) {
+      changes.push(`Layout: ${initial.mode} → ${currentViewPreferences.mode}`);
+    }
+    if (currentViewPreferences.showLineNumbers !== initial.showLineNumbers) {
+      changes.push(
+        `Line numbers: ${initial.showLineNumbers ? "on" : "off"} → ${currentViewPreferences.showLineNumbers ? "on" : "off"}`,
+      );
+    }
+    if (currentViewPreferences.wrapLines !== initial.wrapLines) {
+      changes.push(
+        `Line wrapping: ${initial.wrapLines ? "on" : "off"} → ${currentViewPreferences.wrapLines ? "on" : "off"}`,
+      );
+    }
+    if (currentViewPreferences.showHunkHeaders !== initial.showHunkHeaders) {
+      changes.push(
+        `Hunk headers: ${initial.showHunkHeaders ? "shown" : "hidden"} → ${currentViewPreferences.showHunkHeaders ? "shown" : "hidden"}`,
+      );
+    }
+    if (currentViewPreferences.showAgentNotes !== initial.showAgentNotes) {
+      changes.push(
+        `Agent notes: ${initial.showAgentNotes ? "shown" : "hidden"} → ${currentViewPreferences.showAgentNotes ? "shown" : "hidden"}`,
+      );
+    }
+    if (currentViewPreferences.copyDecorations !== initial.copyDecorations) {
+      changes.push(
+        `Copy decorations: ${initial.copyDecorations ? "on" : "off"} → ${currentViewPreferences.copyDecorations ? "on" : "off"}`,
+      );
+    }
+    return changes;
+  }, [currentViewPreferences]);
+  const hasUnsavedViewPreferences = changedViewPreferenceLines.length > 0;
+  const viewPreferencesConfigLabel = useMemo(() => {
+    const path = bootstrap.viewPreferencesConfigPath ?? "~/.config/hunk/config.toml";
+    return process.env.HOME && path.startsWith(process.env.HOME)
+      ? `~${path.slice(process.env.HOME.length)}`
+      : path;
+  }, [bootstrap.viewPreferencesConfigPath]);
   const review = useReviewController({ files: bootstrap.changeset.files });
   const filteredFiles = review.visibleFiles;
   const selectedFile = review.selectedFile;
@@ -630,10 +705,42 @@ export function App({
     };
   }, [bootstrap.input, refreshCurrentInput, watchEnabled]);
 
-  /** Leave the app through the shared shutdown path. */
-  const requestQuit = useCallback(() => {
+  /** Save current view preferences to user config and then leave the app. */
+  const saveViewPreferencesAndQuit = useCallback(() => {
+    try {
+      const configPath = saveGlobalViewPreferences(currentViewPreferences, {
+        configPath: bootstrap.viewPreferencesConfigPath,
+      });
+      initialViewPreferencesRef.current = currentViewPreferences;
+      showSessionNotice(`Saved view preferences to ${configPath}`);
+      setTimeout(onQuit, 120);
+    } catch (error) {
+      showSessionNotice(
+        error instanceof Error ? error.message : "Failed to save view preferences.",
+      );
+    }
+  }, [bootstrap.viewPreferencesConfigPath, currentViewPreferences, onQuit, showSessionNotice]);
+
+  /** Leave the app without writing view preference changes. */
+  const discardViewPreferencesAndQuit = useCallback(() => {
+    setSaveConfigPromptOpen(false);
     onQuit();
   }, [onQuit]);
+
+  /** Leave the app through the shared shutdown path, prompting before discarding view changes. */
+  const requestQuit = useCallback(() => {
+    if (!pagerMode && hasUnsavedViewPreferences) {
+      setShowHelp(false);
+      setSaveConfigPromptOpen(true);
+      return;
+    }
+
+    onQuit();
+  }, [hasUnsavedViewPreferences, onQuit, pagerMode]);
+
+  const closeSaveConfigPrompt = useCallback(() => {
+    setSaveConfigPromptOpen(false);
+  }, []);
 
   /** Close the modal keyboard help overlay. */
   const closeHelp = useCallback(() => {
@@ -795,6 +902,10 @@ export function App({
     openThemeSelector,
     pagerMode,
     requestQuit,
+    saveConfigPromptOpen,
+    saveViewPreferencesAndQuit,
+    discardViewPreferencesAndQuit,
+    closeSaveConfigPrompt,
     scrollCodeHorizontally,
     saveDraftNote,
     scrollDiff,
@@ -1051,6 +1162,52 @@ export function App({
             onClose={closeHelp}
           />
         </Suspense>
+      ) : null}
+
+      {!pagerMode && saveConfigPromptOpen ? (
+        <ModalFrame
+          height={Math.min(16, Math.max(11, changedViewPreferenceLines.length + 8))}
+          terminalHeight={terminal.height}
+          terminalWidth={terminal.width}
+          theme={baseTheme}
+          title="Save view preferences?"
+          width={68}
+          onClose={closeSaveConfigPrompt}
+        >
+          <box style={{ width: "100%", height: 1 }}>
+            <text fg={baseTheme.text}>
+              Save your local view changes to {viewPreferencesConfigLabel}?
+            </text>
+          </box>
+          <box style={{ width: "100%", height: 1 }} />
+          {changedViewPreferenceLines.map((line) => (
+            <box key={line} style={{ width: "100%", height: 1 }}>
+              <text fg={baseTheme.muted}>{line}</text>
+            </box>
+          ))}
+          <box style={{ width: "100%", height: 1 }} />
+          <box style={{ width: "100%", height: 1, flexDirection: "row" }}>
+            <box
+              onMouseUp={(event: TuiMouseEvent) => {
+                event.stopPropagation();
+                saveViewPreferencesAndQuit();
+              }}
+            >
+              <text fg={baseTheme.accent}>[Enter/s] Save and quit</text>
+            </box>
+            <text fg={baseTheme.muted}> </text>
+            <box
+              onMouseUp={(event: TuiMouseEvent) => {
+                event.stopPropagation();
+                discardViewPreferencesAndQuit();
+              }}
+            >
+              <text fg={baseTheme.badgeNeutral}>[d] Discard</text>
+            </box>
+            <text fg={baseTheme.muted}> </text>
+            <text fg={baseTheme.muted}>[Esc] Cancel</text>
+          </box>
+        </ModalFrame>
       ) : null}
 
       {!pagerMode && themeSelectorState.open ? (

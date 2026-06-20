@@ -232,6 +232,7 @@ export async function prepareStartupPlan(
   }
 
   bootstrap.initialThemeMode = initialThemeMode ?? bootstrap.initialThemeMode;
+  bootstrap.viewPreferencesConfigPath = configured.viewPreferencesConfigPath;
 
   controllingTerminal ??= usesPipedPatchInputImpl(cliInput) ? openControllingTerminalImpl() : null;
 

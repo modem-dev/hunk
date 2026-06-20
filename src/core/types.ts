@@ -366,4 +366,5 @@ export interface AppBootstrap {
   initialShowHunkHeaders?: boolean;
   initialShowAgentNotes?: boolean;
   initialCopyDecorations?: boolean;
+  viewPreferencesConfigPath?: string;
 }

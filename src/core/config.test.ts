@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CliInput } from "./types";
-import { resolveConfiguredCliInput } from "./config";
+import { resolveConfiguredCliInput, saveGlobalViewPreferences } from "./config";
 import { loadAppBootstrap } from "./loaders";
 
 const tempDirs: string[] = [];
@@ -44,6 +44,56 @@ function createPatchPagerInput(overrides: Partial<CliInput["options"]> = {}): Cl
 
 afterEach(() => {
   cleanupTempDirs();
+});
+
+describe("config persistence", () => {
+  test("writes accepted view preferences to user config without disturbing tables", () => {
+    const home = createTempDir("hunk-save-config-home-");
+    const configPath = join(home, ".config", "hunk", "config.toml");
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(
+      configPath,
+      [
+        "# personal defaults",
+        'theme = "github-dark-default"',
+        "wrap_lines = false",
+        "",
+        "[custom_theme]",
+        'label = "Keep me"',
+      ].join("\n"),
+    );
+
+    const savedPath = saveGlobalViewPreferences(
+      {
+        mode: "split",
+        theme: "dracula",
+        showLineNumbers: false,
+        wrapLines: true,
+        showHunkHeaders: false,
+        showAgentNotes: true,
+        copyDecorations: true,
+      },
+      { env: { HOME: home } },
+    );
+
+    expect(savedPath).toBe(configPath);
+    expect(readFileSync(configPath, "utf8")).toBe(
+      [
+        "# personal defaults",
+        'theme = "dracula"',
+        "wrap_lines = true",
+        'mode = "split"',
+        "line_numbers = false",
+        "hunk_headers = false",
+        "agent_notes = true",
+        "copy_decorations = true",
+        "",
+        "[custom_theme]",
+        'label = "Keep me"',
+        "",
+      ].join("\n"),
+    );
+  });
 });
 
 describe("config resolution", () => {
@@ -87,6 +137,7 @@ describe("config resolution", () => {
     });
 
     expect(resolved.repoConfigPath).toBe(join(repo, ".hunk", "config.toml"));
+    expect(resolved.viewPreferencesConfigPath).toBe(join(repo, ".hunk", "config.toml"));
     expect(resolved.input.options).toMatchObject({
       pager: true,
       mode: "stack",
@@ -271,6 +322,7 @@ describe("config resolution", () => {
     });
 
     expect(resolved.repoConfigPath).toBeUndefined();
+    expect(resolved.viewPreferencesConfigPath).toBe(join(home, ".config", "hunk", "config.toml"));
     expect(resolved.input.options.theme).toBe("github-dark-default");
   });
 

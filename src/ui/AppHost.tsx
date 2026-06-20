@@ -55,6 +55,7 @@ export function AppHost({
         cwd,
         customTheme: configured.customTheme,
       });
+      nextBootstrap.viewPreferencesConfigPath = configured.viewPreferencesConfigPath;
       const nextSnapshot = createInitialSessionSnapshot(nextBootstrap);
 
       let sessionId = "local-session";
