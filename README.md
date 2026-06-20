@@ -131,12 +131,14 @@ line_numbers = true
 wrap_lines = false
 menu_bar = true
 agent_notes = false
+prompt_save_view_preferences = true
 transparent_background = false
 ```
 
 `theme = "auto"` and `--theme auto` query the terminal background at startup, choose `github-light-default` for light backgrounds and `github-dark-default` for dark backgrounds, and fall back to `github-dark-default` if the terminal does not answer.
 Older theme ids such as `graphite` and `paper` remain accepted as compatibility aliases.
 `exclude_untracked` affects Git/Sapling working-tree `hunk diff` sessions only.
+`prompt_save_view_preferences = false` disables the quit prompt for saving changed view preferences.
 `transparent_background` can also be written as `transparentBackground`.
 
 Custom themes can inherit from any built-in theme and override only the colors you care about:

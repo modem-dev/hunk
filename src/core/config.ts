@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { BUNDLED_SHIKI_THEME_IDS } from "../ui/lib/shikiThemes";
 import { normalizeBuiltInThemeId } from "../ui/themes";
 import { resolveGlobalConfigPath } from "./paths";
@@ -75,6 +75,21 @@ const DEFAULT_VIEW_PREFERENCES: PersistedViewPreferences = {
   copyDecorations: false,
 };
 
+const VIEW_PREFERENCES_PROMPT_CONFIG_KEY = "prompt_save_view_preferences";
+const PERSISTED_VIEW_PREFERENCE_KEYS: Array<{
+  configKey: string;
+  value: (preferences: PersistedViewPreferences) => string | boolean | undefined;
+}> = [
+  { configKey: "theme", value: (preferences) => preferences.theme },
+  { configKey: "mode", value: (preferences) => preferences.mode },
+  { configKey: "line_numbers", value: (preferences) => preferences.showLineNumbers },
+  { configKey: "wrap_lines", value: (preferences) => preferences.wrapLines },
+  { configKey: "hunk_headers", value: (preferences) => preferences.showHunkHeaders },
+  { configKey: "menu_bar", value: (preferences) => preferences.showMenuBar },
+  { configKey: "agent_notes", value: (preferences) => preferences.showAgentNotes },
+  { configKey: "copy_decorations", value: (preferences) => preferences.copyDecorations },
+];
+
 interface ConfigResolutionOptions {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
@@ -85,10 +100,52 @@ interface HunkConfigResolution {
   customTheme?: CustomThemeConfig;
   globalConfigPath?: string;
   repoConfigPath?: string;
+  viewPreferencesConfigPath?: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Serialize one primitive TOML preference value. */
+function serializeTomlPreferenceValue(value: string | boolean) {
+  if (typeof value === "boolean") {
+    return value ? "true" : "false";
+  }
+
+  return JSON.stringify(value);
+}
+
+/** Update one top-level TOML key while preserving sections and unrelated comments. */
+function upsertTopLevelTomlValue(source: string, key: string, value: string | boolean) {
+  const lines = source.length > 0 ? source.split("\n") : [];
+  const serialized = serializeTomlPreferenceValue(value);
+  const assignment = `${key} = ${serialized}`;
+  let firstTableIndex = lines.findIndex((line) => /^\s*\[/.test(line));
+  if (firstTableIndex < 0) {
+    firstTableIndex = lines.length;
+  }
+
+  const keyPattern = new RegExp(`^\\s*${key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*=`);
+  for (let index = 0; index < firstTableIndex; index += 1) {
+    if (keyPattern.test(lines[index] ?? "")) {
+      lines[index] = assignment;
+      return `${lines.join("\n").replace(/\n*$/, "")}\n`;
+    }
+  }
+
+  let insertAt = firstTableIndex;
+  const hasTableSpacer = insertAt > 0 && lines[insertAt - 1] === "";
+  if (hasTableSpacer) {
+    insertAt -= 1;
+  }
+  lines.splice(
+    insertAt,
+    0,
+    assignment,
+    ...(hasTableSpacer || insertAt === lines.length ? [] : [""]),
+  );
+  return `${lines.join("\n").replace(/\n*$/, "")}\n`;
 }
 
 /** Accept only the layout names Hunk already supports. */
@@ -240,6 +297,7 @@ function readConfigPreferences(source: Record<string, unknown>): CommonOptions {
     menuBar: normalizeBoolean(source.menu_bar),
     agentNotes: normalizeBoolean(source.agent_notes),
     copyDecorations: normalizeBoolean(source.copy_decorations),
+    promptSaveViewPreferences: normalizeBoolean(source[VIEW_PREFERENCES_PROMPT_CONFIG_KEY]),
     transparentBackground:
       normalizeBoolean(source.transparentBackground) ??
       normalizeBoolean(source.transparent_background),
@@ -264,6 +322,8 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
     menuBar: overrides.menuBar ?? base.menuBar,
     agentNotes: overrides.agentNotes ?? base.agentNotes,
     copyDecorations: overrides.copyDecorations ?? base.copyDecorations,
+    promptSaveViewPreferences:
+      overrides.promptSaveViewPreferences ?? base.promptSaveViewPreferences,
     transparentBackground: overrides.transparentBackground ?? base.transparentBackground,
     colorMoved: overrides.colorMoved ?? base.colorMoved,
   };
@@ -305,6 +365,67 @@ function readTomlRecord(path: string) {
   return parsed;
 }
 
+/** Read a config file if it already exists. */
+function readConfigSource(configPath: string) {
+  return fs.existsSync(configPath) ? fs.readFileSync(configPath, "utf8") : "";
+}
+
+/** Resolve the config file path used for interactive persistence. */
+function resolveWritableConfigPath(configuredPath: string | undefined, env: NodeJS.ProcessEnv) {
+  const configPath = configuredPath ?? resolveGlobalConfigPath(env);
+  if (!configPath) {
+    throw new Error("Could not resolve a config path because HOME/XDG_CONFIG_HOME is unset.");
+  }
+
+  return configPath;
+}
+
+/** Write an updated config source after ensuring the parent directory exists. */
+function writeConfigSource(configPath: string, source: string) {
+  fs.mkdirSync(dirname(configPath), { recursive: true });
+  fs.writeFileSync(configPath, source);
+}
+
+/** Persist accepted in-app view preferences to the selected Hunk config file. */
+export function saveGlobalViewPreferences(
+  preferences: PersistedViewPreferences,
+  {
+    configPath: configuredPath,
+    env = process.env,
+  }: Pick<ConfigResolutionOptions, "env"> & { configPath?: string } = {},
+) {
+  const configPath = resolveWritableConfigPath(configuredPath, env);
+  let nextSource = readConfigSource(configPath);
+  for (const key of PERSISTED_VIEW_PREFERENCE_KEYS) {
+    const value = key.value(preferences);
+    if (value !== undefined) {
+      nextSource = upsertTopLevelTomlValue(nextSource, key.configKey, value);
+    }
+  }
+
+  writeConfigSource(configPath, nextSource);
+  return configPath;
+}
+
+/** Persist whether Hunk should prompt before discarding changed view preferences. */
+export function saveViewPreferencesPromptPreference(
+  promptSaveViewPreferences: boolean,
+  {
+    configPath: configuredPath,
+    env = process.env,
+  }: Pick<ConfigResolutionOptions, "env"> & { configPath?: string } = {},
+) {
+  const configPath = resolveWritableConfigPath(configuredPath, env);
+  const nextSource = upsertTopLevelTomlValue(
+    readConfigSource(configPath),
+    VIEW_PREFERENCES_PROMPT_CONFIG_KEY,
+    promptSaveViewPreferences,
+  );
+
+  writeConfigSource(configPath, nextSource);
+  return configPath;
+}
+
 /** Resolve CLI input against global and repo-local config files. */
 export function resolveConfiguredCliInput(
   input: CliInput,
@@ -331,6 +452,7 @@ export function resolveConfiguredCliInput(
     menuBar: DEFAULT_VIEW_PREFERENCES.showMenuBar,
     agentNotes: DEFAULT_VIEW_PREFERENCES.showAgentNotes,
     copyDecorations: DEFAULT_VIEW_PREFERENCES.copyDecorations,
+    promptSaveViewPreferences: true,
     transparentBackground: false,
   };
 
@@ -362,6 +484,7 @@ export function resolveConfiguredCliInput(
     menuBar: resolvedOptions.menuBar ?? DEFAULT_VIEW_PREFERENCES.showMenuBar,
     agentNotes: resolvedOptions.agentNotes ?? DEFAULT_VIEW_PREFERENCES.showAgentNotes,
     copyDecorations: resolvedOptions.copyDecorations ?? DEFAULT_VIEW_PREFERENCES.copyDecorations,
+    promptSaveViewPreferences: resolvedOptions.promptSaveViewPreferences ?? true,
     transparentBackground: resolvedOptions.transparentBackground ?? false,
     colorMoved: resolvedOptions.colorMoved,
   };
@@ -378,5 +501,9 @@ export function resolveConfiguredCliInput(
     customTheme: resolvedCustomTheme,
     globalConfigPath: userConfigPath,
     repoConfigPath,
+    // Persist in the repo config only when the repo already has one; otherwise keep personal view
+    // choices user-scoped so Hunk does not create project policy files from an interactive prompt.
+    viewPreferencesConfigPath:
+      repoConfigPath && fs.existsSync(repoConfigPath) ? repoConfigPath : userConfigPath,
   };
 }
