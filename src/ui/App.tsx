@@ -40,6 +40,9 @@ type ThemeSelectorState = {
 
 const FAST_CODE_HORIZONTAL_SCROLL_COLUMNS = 8;
 
+const LazyAgentSkillDialog = lazy(async () => ({
+  default: (await import("./components/chrome/AgentSkillDialog")).AgentSkillDialog,
+}));
 const LazyHelpDialog = lazy(async () => ({
   default: (await import("./components/chrome/HelpDialog")).HelpDialog,
 }));
@@ -139,6 +142,7 @@ export function App({
   const [sidebarVisible, setSidebarVisible] = useState(() => !pagerMode);
   const [forceSidebarOpen, setForceSidebarOpen] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [showAgentSkill, setShowAgentSkill] = useState(false);
   const [focusArea, setFocusArea] = useState<FocusArea>("files");
   const [activeAddNoteTarget, setActiveAddNoteTarget] = useState<ActiveAddNoteTarget | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(34);
@@ -640,6 +644,28 @@ export function App({
     setShowHelp(false);
   }, []);
 
+  /** Close the agent skill setup overlay. */
+  const closeAgentSkill = useCallback(() => {
+    setShowAgentSkill(false);
+  }, []);
+
+  /** Open the agent skill setup overlay. */
+  const openAgentSkill = useCallback(() => {
+    setShowAgentSkill(true);
+  }, []);
+
+  /** Copy the agent skill prompt through the terminal clipboard integration. */
+  const copyAgentSkillPrompt = useCallback(async () => {
+    const { AGENT_SKILL_PROMPT } = await import("./components/chrome/AgentSkillDialog");
+    if (renderer.isOsc52Supported?.() && typeof renderer.copyToClipboardOSC52 === "function") {
+      renderer.copyToClipboardOSC52(AGENT_SKILL_PROMPT);
+      showTransientNotice("Copied agent skill prompt to clipboard");
+      return;
+    }
+
+    showTransientNotice("Clipboard copy unsupported in this terminal (enable OSC 52)");
+  }, [renderer, showTransientNotice]);
+
   /** Toggle the modal keyboard help overlay. */
   const toggleHelp = useCallback(() => {
     setShowHelp((current) => !current);
@@ -714,6 +740,7 @@ export function App({
         openThemeSelector,
         copyDecorations,
         showAgentNotes,
+        showAgentSkill,
         showHelp,
         showHunkHeaders,
         showLineNumbers,
@@ -721,6 +748,7 @@ export function App({
         toggleCopyDecorations,
         toggleAgentNotes,
         toggleFocusArea,
+        openAgentSkill,
         toggleHelp,
         toggleHunkHeaders,
         toggleLineNumbers,
@@ -738,11 +766,13 @@ export function App({
       moveToAnnotatedHunk,
       requestQuit,
       review.moveToHunk,
+      openAgentSkill,
       selectLayoutMode,
       openThemeSelector,
       triggerRefreshCurrentInput,
       toggleCopyDecorations,
       showAgentNotes,
+      showAgentSkill,
       showHelp,
       showHunkHeaders,
       showLineNumbers,
@@ -779,6 +809,7 @@ export function App({
     activeMenuId,
     activateCurrentMenuItem,
     canRefreshCurrentInput,
+    closeAgentSkill,
     closeHelp,
     closeMenu,
     acceptThemeSelector,
@@ -799,6 +830,7 @@ export function App({
     saveDraftNote,
     scrollDiff,
     selectLayoutMode,
+    showAgentSkill,
     showHelp,
     startUserNote: () => startUserNote(),
     switchMenu,
@@ -1037,6 +1069,19 @@ export function App({
               entry.action();
               closeMenu();
             }}
+          />
+        </Suspense>
+      ) : null}
+
+      {!pagerMode && showAgentSkill ? (
+        <Suspense fallback={null}>
+          <LazyAgentSkillDialog
+            copySupported={renderer.isOsc52Supported?.() ?? false}
+            terminalHeight={terminal.height}
+            terminalWidth={terminal.width}
+            theme={baseTheme}
+            onClose={closeAgentSkill}
+            onCopyPrompt={copyAgentSkillPrompt}
           />
         </Suspense>
       ) : null}

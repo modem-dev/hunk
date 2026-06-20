@@ -46,6 +46,7 @@ export interface UseAppKeyboardShortcutsOptions {
   activeMenuId: MenuId | null;
   activateCurrentMenuItem: () => void;
   canRefreshCurrentInput: boolean;
+  closeAgentSkill: () => void;
   closeHelp: () => void;
   closeMenu: () => void;
   acceptThemeSelector: () => void;
@@ -66,6 +67,7 @@ export interface UseAppKeyboardShortcutsOptions {
   scrollDiff: (delta: number, unit: ScrollUnit) => void;
   saveDraftNote: () => void;
   selectLayoutMode: (mode: LayoutMode) => void;
+  showAgentSkill: boolean;
   showHelp: boolean;
   startUserNote: () => void;
   switchMenu: (delta: number) => void;
@@ -87,6 +89,7 @@ export function useAppKeyboardShortcuts({
   activeMenuId,
   activateCurrentMenuItem,
   canRefreshCurrentInput,
+  closeAgentSkill,
   closeHelp,
   closeMenu,
   acceptThemeSelector,
@@ -107,6 +110,7 @@ export function useAppKeyboardShortcuts({
   saveDraftNote,
   scrollDiff,
   selectLayoutMode,
+  showAgentSkill,
   showHelp,
   startUserNote,
   switchMenu,
@@ -125,12 +129,14 @@ export function useAppKeyboardShortcuts({
   const activeMenuIdRef = useRef(activeMenuId);
   const focusAreaRef = useRef(focusArea);
   const pagerModeRef = useRef(pagerMode);
+  const showAgentSkillRef = useRef(showAgentSkill);
   const showHelpRef = useRef(showHelp);
   const themeSelectorOpenRef = useRef(themeSelectorOpen);
 
   activeMenuIdRef.current = activeMenuId;
   focusAreaRef.current = focusArea;
   pagerModeRef.current = pagerMode;
+  showAgentSkillRef.current = showAgentSkill;
   showHelpRef.current = showHelp;
   themeSelectorOpenRef.current = themeSelectorOpen;
 
@@ -251,13 +257,22 @@ export function useAppKeyboardShortcuts({
     }
   };
 
-  const handleHelpShortcut = (key: KeyEvent) => {
-    if (!showHelpRef.current || !isEscapeKey(key)) {
+  const handleDialogShortcut = (key: KeyEvent) => {
+    if (!isEscapeKey(key)) {
       return false;
     }
 
-    closeHelp();
-    return true;
+    if (showAgentSkillRef.current) {
+      closeAgentSkill();
+      return true;
+    }
+
+    if (showHelpRef.current) {
+      closeHelp();
+      return true;
+    }
+
+    return false;
   };
 
   const handleThemeSelectorShortcut = (key: KeyEvent) => {
@@ -560,7 +575,7 @@ export function useAppKeyboardShortcuts({
       return;
     }
 
-    if (handleHelpShortcut(key)) {
+    if (handleDialogShortcut(key)) {
       return;
     }
 

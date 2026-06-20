@@ -14,6 +14,7 @@ export interface BuildAppMenusOptions {
   openThemeSelector: () => void;
   copyDecorations: boolean;
   showAgentNotes: boolean;
+  showAgentSkill: boolean;
   showHelp: boolean;
   showHunkHeaders: boolean;
   showLineNumbers: boolean;
@@ -21,6 +22,7 @@ export interface BuildAppMenusOptions {
   toggleCopyDecorations: () => void;
   toggleAgentNotes: () => void;
   toggleFocusArea: () => void;
+  openAgentSkill: () => void;
   toggleHelp: () => void;
   toggleHunkHeaders: () => void;
   toggleLineNumbers: () => void;
@@ -44,6 +46,7 @@ export function buildAppMenus({
   openThemeSelector,
   copyDecorations,
   showAgentNotes,
+  showAgentSkill,
   showHelp,
   showHunkHeaders,
   showLineNumbers,
@@ -51,6 +54,7 @@ export function buildAppMenus({
   toggleCopyDecorations,
   toggleAgentNotes,
   toggleFocusArea,
+  openAgentSkill,
   toggleHelp,
   toggleHunkHeaders,
   toggleLineNumbers,
@@ -216,6 +220,13 @@ export function buildAppMenus({
         checked: showAgentNotes,
         action: toggleAgentNotes,
       },
+      {
+        kind: "item",
+        label: "Agent skill",
+        checked: showAgentSkill,
+        action: openAgentSkill,
+      },
+      { kind: "separator" },
       {
         kind: "item",
         label: "Next annotated file",

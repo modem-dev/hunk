@@ -15,6 +15,7 @@ import type { AppBootstrap, LayoutMode } from "../core/types";
 import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
 import { capturedTestColorToHex } from "../../test/helpers/test-color-helpers";
 import { createTestDiffFile as buildTestDiffFile, lines } from "../../test/helpers/diff-helpers";
+import { AGENT_SKILL_COMMAND, AGENT_SKILL_PROMPT } from "./components/chrome/AgentSkillDialog";
 import { resolveTheme } from "./themes";
 
 const { loadAppBootstrap } = await import("../core/loaders");
@@ -1721,6 +1722,65 @@ describe("App interactions", () => {
       const menuFrame = await openThemesModalFromViewMenu(setup);
       expect(menuFrame).toContain("›  My Theme");
       expect(menuFrame).toContain("active");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("Agent menu opens copyable agent skill guidance", async () => {
+    const bootstrap = createBootstrap();
+    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
+      width: 120,
+      height: 24,
+    });
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.pressKey("F10");
+      });
+      await waitForFrame(setup, (frame) => frame.includes("Toggle files/filter focus"), 12);
+
+      for (let index = 0; index < 3; index += 1) {
+        await act(async () => {
+          await setup.mockInput.pressArrow("right");
+        });
+        await flush(setup);
+      }
+
+      let frame = await waitForFrame(
+        setup,
+        (currentFrame) =>
+          currentFrame.includes("Agent skill") && currentFrame.includes("Next annotated file"),
+        12,
+      );
+      expect(frame).toContain("Agent skill");
+      expect(frame).toContain("Next annotated file");
+
+      await act(async () => {
+        await setup.mockInput.pressArrow("down");
+      });
+      await flush(setup);
+      await act(async () => {
+        await setup.mockInput.pressEnter();
+      });
+
+      frame = await waitForFrame(
+        setup,
+        (currentFrame) => currentFrame.includes("Teach your agent"),
+        12,
+      );
+      expect(frame).toContain("Load the Hunk skill and use it for this review");
+      expect(AGENT_SKILL_PROMPT).toContain(AGENT_SKILL_COMMAND);
+      expect(frame).toContain(AGENT_SKILL_COMMAND);
+      expect(frame).toContain("Copy");
+
+      await act(async () => {
+        await setup.mockInput.pressEscape();
+      });
     } finally {
       await act(async () => {
         setup.renderer.destroy();
