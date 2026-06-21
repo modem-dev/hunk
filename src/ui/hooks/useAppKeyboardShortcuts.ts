@@ -62,6 +62,10 @@ export interface UseAppKeyboardShortcutsOptions {
   openThemeSelector: () => void;
   pagerMode: boolean;
   requestQuit: () => void;
+  saveConfigPromptOpen: boolean;
+  saveViewPreferencesAndQuit: () => void;
+  discardViewPreferencesAndQuit: () => void;
+  closeSaveConfigPrompt: () => void;
   scrollCodeHorizontally: (delta: number) => void;
   scrollDiff: (delta: number, unit: ScrollUnit) => void;
   saveDraftNote: () => void;
@@ -103,6 +107,10 @@ export function useAppKeyboardShortcuts({
   openThemeSelector,
   pagerMode,
   requestQuit,
+  saveConfigPromptOpen,
+  saveViewPreferencesAndQuit,
+  discardViewPreferencesAndQuit,
+  closeSaveConfigPrompt,
   scrollCodeHorizontally,
   saveDraftNote,
   scrollDiff,
@@ -126,12 +134,14 @@ export function useAppKeyboardShortcuts({
   const focusAreaRef = useRef(focusArea);
   const pagerModeRef = useRef(pagerMode);
   const showHelpRef = useRef(showHelp);
+  const saveConfigPromptOpenRef = useRef(saveConfigPromptOpen);
   const themeSelectorOpenRef = useRef(themeSelectorOpen);
 
   activeMenuIdRef.current = activeMenuId;
   focusAreaRef.current = focusArea;
   pagerModeRef.current = pagerMode;
   showHelpRef.current = showHelp;
+  saveConfigPromptOpenRef.current = saveConfigPromptOpen;
   themeSelectorOpenRef.current = themeSelectorOpen;
 
   const resolveJumpShortcut = (key: KeyEvent): JumpShortcut | null => {
@@ -257,6 +267,30 @@ export function useAppKeyboardShortcuts({
     }
 
     closeHelp();
+    return true;
+  };
+
+  const handleSaveConfigPromptShortcut = (key: KeyEvent) => {
+    if (!saveConfigPromptOpenRef.current) {
+      return false;
+    }
+
+    consumeKey(key);
+    if (key.name === "return" || key.name === "enter" || key.name === "s" || key.sequence === "s") {
+      saveViewPreferencesAndQuit();
+      return true;
+    }
+
+    if (key.name === "d" || key.sequence === "d" || key.name === "n" || key.sequence === "n") {
+      discardViewPreferencesAndQuit();
+      return true;
+    }
+
+    if (isEscapeKey(key)) {
+      closeSaveConfigPrompt();
+      return true;
+    }
+
     return true;
   };
 
@@ -557,6 +591,10 @@ export function useAppKeyboardShortcuts({
 
     if (pagerModeRef.current) {
       handlePagerShortcut(key);
+      return;
+    }
+
+    if (handleSaveConfigPromptShortcut(key)) {
       return;
     }
 
