@@ -14,7 +14,6 @@ export interface BuildAppMenusOptions {
   openThemeSelector: () => void;
   copyDecorations: boolean;
   showAgentNotes: boolean;
-  showAgentSkill: boolean;
   showHelp: boolean;
   showHunkHeaders: boolean;
   showLineNumbers: boolean;
@@ -46,7 +45,6 @@ export function buildAppMenus({
   openThemeSelector,
   copyDecorations,
   showAgentNotes,
-  showAgentSkill,
   showHelp,
   showHunkHeaders,
   showLineNumbers,
@@ -223,7 +221,6 @@ export function buildAppMenus({
       {
         kind: "item",
         label: "Agent skill",
-        checked: showAgentSkill,
         action: openAgentSkill,
       },
       { kind: "separator" },

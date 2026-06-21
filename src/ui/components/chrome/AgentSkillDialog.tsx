@@ -4,8 +4,11 @@ import type { AppTheme } from "../../themes";
 import { ModalFrame } from "./ModalFrame";
 
 export const AGENT_SKILL_COMMAND = "hunk skill path";
-export const AGENT_SKILL_PROMPT =
-  "Load the Hunk skill and use it for this review. Run `hunk skill path` to get the skill path.";
+export const AGENT_SKILL_PROMPT_ROWS = [
+  "Load the Hunk skill and use it for this review.",
+  "Run `hunk skill path` to get the skill path.",
+];
+export const AGENT_SKILL_PROMPT = AGENT_SKILL_PROMPT_ROWS.join(" ");
 
 /** Render copyable setup guidance for connecting an agent to the live Hunk session. */
 export function AgentSkillDialog({
@@ -26,10 +29,7 @@ export function AgentSkillDialog({
   const width = Math.min(84, Math.max(58, terminalWidth - 8));
   const bodyWidth = Math.max(1, width - 4);
   const promptWidth = Math.max(1, bodyWidth - 4);
-  const promptRows = [
-    "Load the Hunk skill and use it for this review.",
-    "Run `hunk skill path` to get the skill path.",
-  ];
+  const promptRows = AGENT_SKILL_PROMPT_ROWS;
   const cardWidth = Math.max(1, bodyWidth - 4);
   const cardTextWidth = Math.max(1, cardWidth - 4);
   const requiredModalHeight = promptRows.length + 11;

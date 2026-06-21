@@ -142,7 +142,6 @@ describe("ui helpers", () => {
       openThemeSelector: () => {},
       copyDecorations: true,
       showAgentNotes: true,
-      showAgentSkill: true,
       showHelp: false,
       showHunkHeaders: false,
       showLineNumbers: true,
@@ -194,11 +193,6 @@ describe("ui helpers", () => {
         .filter((entry): entry is Extract<MenuEntry, { kind: "item" }> => entry.kind === "item")
         .map((entry) => entry.label),
     ).toEqual(["Agent notes", "Agent skill", "Next annotated file", "Previous annotated file"]);
-    expect(
-      menus.agent.some(
-        (entry) => entry.kind === "item" && entry.label === "Agent skill" && entry.checked,
-      ),
-    ).toBe(true);
   });
 
   test("keyboard alias helpers normalize the shared scroll shortcut keys", () => {
