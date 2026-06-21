@@ -47,6 +47,7 @@ export function HelpDialog({
         ["s / t", "sidebar / theme selector"],
         ["a", "toggle AI notes"],
         ["z", "toggle unchanged context"],
+        ["x", "collapse / expand file"],
         ["l / w / m", "lines / wrap / metadata"],
         ["e", "open file in $EDITOR"],
       ],

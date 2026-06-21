@@ -13,6 +13,9 @@ export interface FileListEntry {
   deletionsText: string | null;
   changeType: FileDiffMetadata["type"];
   isUntracked: boolean;
+  // True when the row is rendered as a collapse placeholder, so the sidebar can
+  // de-emphasize noise files that are hidden in the main stream.
+  collapsed: boolean;
 }
 
 export interface FileGroupEntry {
@@ -151,6 +154,7 @@ export function buildSidebarEntries(files: DiffFile[]): SidebarEntry[] {
       deletionsText: formatSidebarStat("-", file.stats.deletions),
       changeType: file.metadata.type,
       isUntracked: file.isUntracked ?? false,
+      collapsed: Boolean(file.isCollapsedPlaceholder),
     });
   });
 
