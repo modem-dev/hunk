@@ -287,6 +287,103 @@ describe("useReviewController", () => {
     }
   });
 
+  test("toggleFileCollapsed expands a default-collapsed noise file and re-pins it to the top", async () => {
+    const lock = createDiffFile("lock", "bun.lock", "lockData = 1\n", "lockData = 2\n");
+    // Simulate what buildDiffFile records for a recognized lockfile.
+    lock.noiseKind = "lockfile";
+    const source = createDiffFile(
+      "alpha",
+      "alpha.ts",
+      "export const alpha = 1;\n",
+      "export const alpha = 2;\n",
+    );
+    const { controllerRef, setup } = await renderReviewController([lock, source]);
+
+    try {
+      await flush(setup);
+
+      // The lockfile starts collapsed under the default noise policy.
+      let controller = expectValue(controllerRef.current);
+      expect(controller.collapsedFileIds.has("lock")).toBe(true);
+      const baselineTopAlign = controller.selectedFileTopAlignRequestId;
+
+      // Expanding it selects the file and re-pins its header so the height change can't
+      // scroll it out of view.
+      await act(async () => {
+        expectValue(controllerRef.current).toggleFileCollapsed("lock");
+      });
+      await flush(setup);
+
+      controller = expectValue(controllerRef.current);
+      expect(controller.collapsedFileIds.has("lock")).toBe(false);
+      expect(controller.selectedFileId).toBe("lock");
+      expect(controller.selectedFileTopAlignRequestId).toBe(baselineTopAlign + 1);
+
+      // Toggling again re-collapses it.
+      await act(async () => {
+        expectValue(controllerRef.current).toggleFileCollapsed("lock");
+      });
+      await flush(setup);
+
+      controller = expectValue(controllerRef.current);
+      expect(controller.collapsedFileIds.has("lock")).toBe(true);
+      expect(controller.selectedFileTopAlignRequestId).toBe(baselineTopAlign + 2);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("manual collapse and expand overrides survive a watch-style reload", async () => {
+    const makeFiles = () => {
+      const lock = createDiffFile("lock", "bun.lock", "lockData = 1\n", "lockData = 2\n");
+      // Simulate what buildDiffFile records for a recognized lockfile.
+      lock.noiseKind = "lockfile";
+      const source = createDiffFile(
+        "alpha",
+        "alpha.ts",
+        "export const alpha = 1;\n",
+        "export const alpha = 2;\n",
+      );
+      return [lock, source];
+    };
+    const { controllerRef, setFilesRef, setup } = await renderReviewController(makeFiles());
+
+    try {
+      await flush(setup);
+
+      // Collapse the ordinary file and expand the default-collapsed lockfile.
+      await act(async () => {
+        expectValue(controllerRef.current).toggleFileCollapsed("alpha");
+      });
+      await flush(setup);
+      await act(async () => {
+        expectValue(controllerRef.current).toggleFileCollapsed("lock");
+      });
+      await flush(setup);
+
+      let controller = expectValue(controllerRef.current);
+      expect(controller.collapsedFileIds.has("alpha")).toBe(true);
+      expect(controller.collapsedFileIds.has("lock")).toBe(false);
+
+      // Reload with fresh file objects (new identity, same ids) as a watch reload would.
+      await act(async () => {
+        expectValue(setFilesRef.current)(makeFiles());
+      });
+      await flush(setup);
+
+      // Collapse intent is keyed by identity, so it must persist across the rewrite.
+      controller = expectValue(controllerRef.current);
+      expect(controller.collapsedFileIds.has("alpha")).toBe(true);
+      expect(controller.collapsedFileIds.has("lock")).toBe(false);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("live comment mutations update annotated navigation without remounting the app", async () => {
     const { controllerRef, setup } = await renderReviewController([
       createDiffFile("alpha", "alpha.ts", "export const alpha = 1;\n", "export const alpha = 2;\n"),

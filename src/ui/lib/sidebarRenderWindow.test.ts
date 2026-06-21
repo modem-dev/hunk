@@ -16,6 +16,7 @@ function createEntries(ids: string[]): SidebarEntry[] {
           deletionsText: null,
           changeType: "change",
           isUntracked: false,
+          collapsed: false,
         },
   );
 }

@@ -9,6 +9,7 @@
 import { findDiffFileByPath, findHunkIndexForLine, hunkLineRange } from "../../core/liveComments";
 import type { AgentAnnotation, DiffFile } from "../../core/types";
 import type { NavigateToHunkToolInput, SelectedHunkSummary } from "../../hunk-session/types";
+import { collapsedFileVariant } from "./fileCollapse";
 import {
   buildSidebarEntries,
   filterReviewFiles,
@@ -28,6 +29,9 @@ export interface BuildReviewStateOptions {
   filterQuery: string;
   selectedFileId: string;
   selectedHunkIndex: number;
+  // Ids of files that should render as collapse placeholders. Defaults to empty so
+  // non-interactive callers and tests keep the full diff stream.
+  collapsedFileIds?: ReadonlySet<string>;
 }
 
 export interface ReviewState {
@@ -53,9 +57,19 @@ export function buildReviewState({
   filterQuery,
   selectedFileId,
   selectedHunkIndex,
+  collapsedFileIds,
 }: BuildReviewStateOptions): ReviewState {
   const allFiles = mergeFileAnnotationsByFileId(files, liveCommentsByFileId);
-  const visibleFiles = filterReviewFiles(allFiles, filterQuery);
+  const filteredFiles = filterReviewFiles(allFiles, filterQuery);
+  // Swap collapsed files for their empty-hunk placeholder variant. Downstream
+  // derivations (sidebar, hunk cursors, geometry) then treat them as hunkless, so a
+  // collapsed file is skipped by hunk navigation while still listed in the sidebar.
+  const visibleFiles =
+    collapsedFileIds && collapsedFileIds.size > 0
+      ? filteredFiles.map((file) =>
+          collapsedFileIds.has(file.id) ? collapsedFileVariant(file) : file,
+        )
+      : filteredFiles;
   const selectedFile = resolveSelectedFile(allFiles, visibleFiles, selectedFileId);
 
   return {

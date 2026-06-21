@@ -41,6 +41,7 @@ import { selectGapForKeyboardToggle } from "../diff/expandCollapsedRows";
 import { trailingCollapsedLines } from "../diff/pierre";
 import { findNextHunkCursor } from "../lib/hunks";
 import { reviewNoteSource } from "../lib/agentAnnotations";
+import { resolveCollapsedFileIds } from "../lib/fileCollapse";
 import {
   buildReviewState,
   buildSelectedHunkSummary,
@@ -81,6 +82,38 @@ function removeKeys<T>(record: Record<string, T>, keys: ReadonlySet<string>): Re
     }
   }
   return changed ? next : record;
+}
+
+/** Add or remove one id from a set immutably, reusing the reference when unchanged. */
+function withSetMembership(
+  set: ReadonlySet<string>,
+  id: string,
+  present: boolean,
+): ReadonlySet<string> {
+  if (present === set.has(id)) {
+    return set;
+  }
+  const next = new Set(set);
+  if (present) {
+    next.add(id);
+  } else {
+    next.delete(id);
+  }
+  return next;
+}
+
+/** Drop the given ids from a set, returning the same reference when nothing changed. */
+function removeSetKeys(set: ReadonlySet<string>, keys: ReadonlySet<string>): ReadonlySet<string> {
+  let changed = false;
+  const next = new Set<string>();
+  for (const id of set) {
+    if (keys.has(id)) {
+      changed = true;
+    } else {
+      next.add(id);
+    }
+  }
+  return changed ? next : set;
 }
 
 /** Count array-backed entries in a file-id keyed note map. */
@@ -127,6 +160,8 @@ export interface ReviewSelectionOptions {
 
 export interface ReviewController {
   allFiles: DiffFile[];
+  collapsedFileIds: ReadonlySet<string>;
+  toggleFileCollapsed: (fileId: string) => void;
   expandedGapsByFileId: Record<string, ReadonlySet<string>>;
   filter: string;
   draftNote: DraftReviewNote | null;
@@ -184,7 +219,13 @@ export interface ReviewController {
 }
 
 /** Own the shared review stream state used by both the UI and session bridge. */
-export function useReviewController({ files }: { files: DiffFile[] }): ReviewController {
+export function useReviewController({
+  files,
+  collapseGenerated = true,
+}: {
+  files: DiffFile[];
+  collapseGenerated?: boolean;
+}): ReviewController {
   const [filter, setFilter] = useState("");
   const [selectedFileId, setSelectedFileId] = useState(files[0]?.id ?? "");
   const [selectedHunkIndex, setSelectedHunkIndex] = useState(0);
@@ -199,6 +240,14 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
   const [expandedGapsByFileId, setExpandedGapsByFileId] = useState<
     Record<string, ReadonlySet<string>>
   >({});
+  // Per-file collapse overrides on top of the noise-default policy: a file the user
+  // explicitly collapsed, or explicitly expanded out of its default-collapsed state.
+  const [manuallyCollapsedFileIds, setManuallyCollapsedFileIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const [manuallyExpandedFileIds, setManuallyExpandedFileIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const [sourceStatusByFileId, setSourceStatusByFileId] = useState<
     Record<string, FileSourceStatus>
   >({});
@@ -222,11 +271,15 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
       currentFetcherByFileId.set(file.id, file.sourceFetcher);
     }
     const staleFileIds = new Set<string>();
+    const removedFileIds = new Set<string>();
     for (const previousFile of filesSnapshot) {
-      const currentFetcher = currentFetcherByFileId.get(previousFile.id);
-      // Either the file was removed, or its fetcher (and thus its patch)
-      // was replaced. Both invalidate any state keyed by file id.
-      if (currentFetcher !== previousFile.sourceFetcher) {
+      const fileStillPresent = currentFetcherByFileId.has(previousFile.id);
+      if (!fileStillPresent) {
+        removedFileIds.add(previousFile.id);
+      }
+      // A replaced fetcher (and thus patch) invalidates content-tied state even when the
+      // file id survives the reload.
+      if (currentFetcherByFileId.get(previousFile.id) !== previousFile.sourceFetcher) {
         staleFileIds.add(previousFile.id);
       }
     }
@@ -237,9 +290,32 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
       setSourceStatusByFileId((prev) => removeKeys(prev, staleFileIds));
       setExpandedGapsByFileId((prev) => removeKeys(prev, staleFileIds));
     }
+    // Collapse intent is tied to file identity, not content: a file you collapsed should
+    // stay collapsed across watch reloads that merely rewrite it. Only forget the override
+    // when the file leaves the changeset entirely.
+    if (removedFileIds.size > 0) {
+      setManuallyCollapsedFileIds((prev) => removeSetKeys(prev, removedFileIds));
+      setManuallyExpandedFileIds((prev) => removeSetKeys(prev, removedFileIds));
+    }
   }
 
   const deferredFilter = useDeferredValue(filter);
+
+  // Resolve the active collapse set from the noise-default policy plus per-file
+  // overrides. A ref mirrors it so the toggle callback can read the current value
+  // without depending on render-time state.
+  const collapsedFileIds = useMemo(
+    () =>
+      resolveCollapsedFileIds({
+        files,
+        collapseGenerated,
+        manuallyCollapsedFileIds,
+        manuallyExpandedFileIds,
+      }),
+    [files, collapseGenerated, manuallyCollapsedFileIds, manuallyExpandedFileIds],
+  );
+  const collapsedFileIdsRef = useRef(collapsedFileIds);
+  collapsedFileIdsRef.current = collapsedFileIds;
 
   const {
     allFiles,
@@ -257,8 +333,10 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
         filterQuery: deferredFilter,
         selectedFileId,
         selectedHunkIndex,
+        collapsedFileIds,
       }),
     [
+      collapsedFileIds,
       deferredFilter,
       files,
       liveCommentsByFileId,
@@ -294,6 +372,23 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     },
     [selectHunk],
   );
+
+  /**
+   * Toggle one file between collapsed and expanded, recording an explicit override
+   * so the choice survives the noise-default policy (and future reloads of the
+   * same file id). The two override sets stay mutually exclusive.
+   *
+   * Collapsing or expanding changes the file's height, which would otherwise let the
+   * scroll position drift (the acted-on file can fall out of view). Re-pin the file's
+   * header to the top of the viewport so the toggle keeps it anchored and visible.
+   */
+  const toggleFileCollapsed = useCallback((fileId: string) => {
+    const expand = collapsedFileIdsRef.current.has(fileId);
+    setManuallyCollapsedFileIds((prev) => withSetMembership(prev, fileId, !expand));
+    setManuallyExpandedFileIds((prev) => withSetMembership(prev, fileId, expand));
+    setSelectedFileId(fileId);
+    setSelectedFileTopAlignRequestId((current) => current + 1);
+  }, []);
 
   /** Reset selection to the first visible file when the current target disappears from the review stream. */
   const reselectFirstVisibleFile = useCallback(() => {
@@ -988,6 +1083,8 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
 
   return {
     allFiles,
+    collapsedFileIds,
+    toggleFileCollapsed,
     draftNote,
     expandedGapsByFileId,
     filter,

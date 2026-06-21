@@ -1,4 +1,5 @@
 import { memo, type ReactNode } from "react";
+import { noiseKindLabel } from "../../core/fileClassification";
 import type { DiffFile, UserNoteLineTarget } from "../../core/types";
 import type { AppTheme } from "../themes";
 import {
@@ -1100,6 +1101,13 @@ function renderWrappedStackCellLine(
 
 /** Explain why a file still appears in the review stream even when it has no textual hunks. */
 export function diffMessage(file: DiffFile) {
+  if (file.isCollapsedPlaceholder) {
+    const label = file.noiseKind ? noiseKindLabel(file.noiseKind) : "File";
+    // The leading chevron marks the row as an interactive reveal target; the body box
+    // is click-to-expand and `x` toggles the selected file from the keyboard.
+    return `▸ ${label} collapsed · +${file.stats.additions} -${file.stats.deletions} · click or press x to expand`;
+  }
+
   if (file.metadata.type === "rename-pure") {
     return "No textual hunks. This change only renames the file.";
   }

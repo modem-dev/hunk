@@ -42,6 +42,7 @@ interface DiffSectionProps {
   onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void;
   onSelect: () => void;
   onToggleGap: (gapKey: string) => void;
+  onExpandCollapsed?: () => void;
 }
 
 /** Render one file section in the main review stream. */
@@ -76,6 +77,7 @@ function DiffSectionComponent({
   onStartUserNoteAtHunk,
   onSelect,
   onToggleGap,
+  onExpandCollapsed,
 }: DiffSectionProps) {
   return (
     <box
@@ -133,6 +135,7 @@ function DiffSectionComponent({
         onActiveAddNoteAffordanceChange={onActiveAddNoteAffordanceChange}
         onStartUserNoteAtHunk={onStartUserNoteAtHunk}
         onToggleGap={onToggleGap}
+        onExpandCollapsed={onExpandCollapsed}
         selectedHunkIndex={selectedHunkIndex}
         sectionGeometry={sectionGeometry}
         shouldLoadHighlight={shouldLoadHighlight}

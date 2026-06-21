@@ -242,6 +242,7 @@ function readConfigPreferences(source: Record<string, unknown>): CommonOptions {
       normalizeBoolean(source.transparentBackground) ??
       normalizeBoolean(source.transparent_background),
     colorMoved: normalizeBoolean(source.color_moved),
+    collapseGenerated: normalizeBoolean(source.collapse_generated),
   };
 }
 
@@ -263,6 +264,7 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
     copyDecorations: overrides.copyDecorations ?? base.copyDecorations,
     transparentBackground: overrides.transparentBackground ?? base.transparentBackground,
     colorMoved: overrides.colorMoved ?? base.colorMoved,
+    collapseGenerated: overrides.collapseGenerated ?? base.collapseGenerated,
   };
 }
 
@@ -328,6 +330,8 @@ export function resolveConfiguredCliInput(
     agentNotes: DEFAULT_VIEW_PREFERENCES.showAgentNotes,
     copyDecorations: DEFAULT_VIEW_PREFERENCES.copyDecorations,
     transparentBackground: false,
+    // Collapse review noise (lockfiles/minified/generated) by default.
+    collapseGenerated: true,
   };
 
   if (userConfigPath) {
@@ -359,6 +363,7 @@ export function resolveConfiguredCliInput(
     copyDecorations: resolvedOptions.copyDecorations ?? DEFAULT_VIEW_PREFERENCES.copyDecorations,
     transparentBackground: resolvedOptions.transparentBackground ?? false,
     colorMoved: resolvedOptions.colorMoved,
+    collapseGenerated: resolvedOptions.collapseGenerated ?? true,
   };
 
   if (resolvedOptions.theme === "custom" && !resolvedCustomTheme) {

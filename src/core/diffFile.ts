@@ -2,6 +2,7 @@ import { getFiletypeFromFileName, type FileDiffMetadata } from "@pierre/diffs";
 import { findAgentFileContext } from "./agent";
 import { patchLooksBinary } from "./binary";
 import { normalizeDiffMetadataPaths, normalizeDiffPath } from "./diffPaths";
+import { classifyNoiseFile } from "./fileClassification";
 import type { FileSourceFetcher } from "./fileSource";
 import type { AgentContext, DiffFile, DiffLineMoveKinds } from "./types";
 
@@ -84,8 +85,29 @@ export function buildDiffFile(
     isUntracked,
     isBinary: resolvedIsBinary,
     isTooLarge,
+    // Binary files have no readable text to scan; classify the rest as review noise
+    // (lockfile/minified/generated) so the UI can collapse them by default.
+    noiseKind: resolvedIsBinary ? undefined : (classifyNoiseFile(path, patch) ?? undefined),
     statsTruncated,
     sourceFetcher,
+  };
+}
+
+/** Build placeholder metadata for a noise file that is collapsed but expandable. */
+export function createCollapsedMetadata(
+  filePath: string,
+  type: FileDiffMetadata["type"],
+): FileDiffMetadata {
+  return {
+    name: filePath,
+    type,
+    hunks: [],
+    splitLineCount: 0,
+    unifiedLineCount: 0,
+    isPartial: true,
+    additionLines: [],
+    deletionLines: [],
+    cacheKey: `${filePath}:collapsed`,
   };
 }
 

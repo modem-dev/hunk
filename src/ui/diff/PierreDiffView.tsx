@@ -69,6 +69,7 @@ export function PierreDiffView({
   onActiveAddNoteAffordanceChange,
   onStartUserNoteAtHunk,
   onToggleGap,
+  onExpandCollapsed,
   showLineNumbers = true,
   showHunkHeaders = true,
   sourceStatus,
@@ -94,6 +95,7 @@ export function PierreDiffView({
   onActiveAddNoteAffordanceChange?: (affordance: ActiveAddNoteAffordance | null) => void;
   onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void;
   onToggleGap?: (gapKey: string) => void;
+  onExpandCollapsed?: () => void;
   showLineNumbers?: boolean;
   showHunkHeaders?: boolean;
   sourceStatus?: FileSourceStatus | undefined;
@@ -119,6 +121,10 @@ export function PierreDiffView({
   // referentially stable so DiffRowView's memo comparator can actually hold across re-renders.
   const onHoverRef = useRef(onHover);
   onHoverRef.current = onHover;
+  // Stash the reveal callback in a ref so the click handler stays current even though
+  // DiffSection's memo intentionally ignores callback identity changes.
+  const onExpandCollapsedRef = useRef(onExpandCollapsed);
+  onExpandCollapsedRef.current = onExpandCollapsed;
   const onActiveAddNoteAffordanceChangeRef = useRef(onActiveAddNoteAffordanceChange);
   onActiveAddNoteAffordanceChangeRef.current = onActiveAddNoteAffordanceChange;
   const onStartUserNoteAtHunkRef = useRef(onStartUserNoteAtHunk);
@@ -307,9 +313,17 @@ export function PierreDiffView({
   }
 
   if (file.metadata.hunks.length === 0) {
+    // A collapse placeholder is an interactive reveal target: clicking it expands the file,
+    // mirroring the keyboard `x` toggle. Other empty-body messages (binary, too-large) stay inert.
+    const revealable = Boolean(file.isCollapsedPlaceholder);
     return (
-      <box style={{ width: "100%", paddingLeft: 1, paddingRight: 1, paddingBottom: 1 }}>
-        <text fg={theme.muted}>{fitText(diffMessage(file), Math.max(1, width - 2))}</text>
+      <box
+        style={{ width: "100%", paddingLeft: 1, paddingRight: 1, paddingBottom: 1 }}
+        onMouseDown={revealable ? () => onExpandCollapsedRef.current?.() : undefined}
+      >
+        <text fg={revealable ? theme.accent : theme.muted}>
+          {fitText(diffMessage(file), Math.max(1, width - 2))}
+        </text>
       </box>
     );
   }
