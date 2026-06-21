@@ -181,7 +181,10 @@ export function App({
       })),
     [activeTheme.id, themeOptions],
   );
-  const review = useReviewController({ files: bootstrap.changeset.files });
+  const review = useReviewController({
+    files: bootstrap.changeset.files,
+    collapseGenerated: bootstrap.input.options.collapseGenerated ?? true,
+  });
   const filteredFiles = review.visibleFiles;
   const selectedFile = review.selectedFile;
   const selectedHunkIndex = review.selectedHunkIndex;
@@ -850,6 +853,11 @@ export function App({
     toggleAgentNotes,
     toggleFocusArea,
     toggleGapForSelectedHunk: review.toggleSelectedHunkGap,
+    toggleSelectedFileCollapsed: () => {
+      if (review.selectedFileId) {
+        review.toggleFileCollapsed(review.selectedFileId);
+      }
+    },
     toggleHelp,
     toggleHunkHeaders,
     toggleLineNumbers,
@@ -1047,6 +1055,7 @@ export function App({
           onCopyFeedback={showTransientNotice}
           onSelectFile={jumpToFile}
           onToggleGap={review.toggleGap}
+          onToggleFileCollapsed={review.toggleFileCollapsed}
           onViewportCenteredHunkChange={(fileId, hunkIndex) =>
             review.selectHunk(fileId, hunkIndex, { preserveViewport: true })
           }

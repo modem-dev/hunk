@@ -100,6 +100,14 @@ export async function dragMouse(
   await session.waitIdle();
 }
 
+/** Send a left-button click (press + release) at one cell using SGR mouse encoding. */
+export async function clickMouse(session: Session, x: number, y: number) {
+  session.writeRaw(`\x1b[<0;${x + 1};${y + 1}M`);
+  await sleep(10);
+  session.writeRaw(`\x1b[<0;${x + 1};${y + 1}m`);
+  await session.waitIdle();
+}
+
 /** Find the rightmost visible column for text in a terminal snapshot. */
 export function rightmostColumnOf(text: string, needle: string) {
   return Math.max(
@@ -446,6 +454,27 @@ export function createPtyHarness() {
     ]);
   }
 
+  /**
+   * Repo with a lockfile (review noise) sorted before an ordinary source file, so
+   * the noise file is selected first and its default-collapsed placeholder can be
+   * toggled with `x`. `collapseProbe` only appears in the lockfile's diff body, so
+   * its presence/absence proves whether the lockfile is expanded or collapsed.
+   */
+  function createNoiseFileRepoFixture() {
+    return createGitRepoFixture([
+      {
+        path: "bun.lock",
+        before: "collapseProbe = 1\n",
+        after: "collapseProbe = 2\n",
+      },
+      {
+        path: "zeta.ts",
+        before: "export const zeta = 1;\n",
+        after: "export const zeta = 2;\nexport const extra = true;\n",
+      },
+    ]);
+  }
+
   function createPinnedHeaderRepoFixture() {
     return createGitRepoFixture([
       {
@@ -734,6 +763,7 @@ export function createPtyHarness() {
     createDeletionOnlyFilePair,
     createLongWrapFilePair,
     createMultiHunkFilePair,
+    createNoiseFileRepoFixture,
     createPagerPatchFixture,
     createPinnedHeaderRepoFixture,
     createScrollableFilePair,

@@ -76,6 +76,7 @@ function buildCommonOptions(
     hunkHeaders: resolveBooleanFlag(argv, "--hunk-headers", "--no-hunk-headers"),
     agentNotes: resolveBooleanFlag(argv, "--agent-notes", "--no-agent-notes"),
     transparentBackground: resolveBooleanFlag(argv, "--transparent-bg", "--no-transparent-bg"),
+    collapseGenerated: resolveBooleanFlag(argv, "--collapse-generated", "--no-collapse-generated"),
   };
 }
 
@@ -95,7 +96,9 @@ function applyCommonOptions(command: Command) {
     .option("--agent-notes", "show agent notes by default")
     .option("--no-agent-notes", "hide agent notes by default")
     .option("--transparent-bg", "let terminal background show through Hunk surfaces")
-    .option("--no-transparent-bg", "paint Hunk surfaces with the active theme");
+    .option("--no-transparent-bg", "paint Hunk surfaces with the active theme")
+    .option("--collapse-generated", "collapse lockfiles, minified, and generated files")
+    .option("--no-collapse-generated", "show generated and lockfile diffs in full");
 }
 
 /** Attach auto-refresh support to review commands that can reopen their source input. */

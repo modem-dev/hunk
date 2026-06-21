@@ -2339,13 +2339,13 @@ describe("UI components", () => {
     const frame = await captureFrame(
       <HelpDialog
         canRefresh={true}
-        terminalHeight={39}
+        terminalHeight={41}
         terminalWidth={76}
         theme={theme}
         onClose={() => {}}
       />,
       76,
-      39,
+      41,
     );
 
     const expectedRows = [
@@ -2371,6 +2371,7 @@ describe("UI components", () => {
       "s / t           sidebar / theme",
       "a               toggle AI notes",
       "z               toggle unchanged context",
+      "x               collapse / expand file",
       "l / w / m / M   lines / wrap / metadata / menu",
       "e               open file in $EDITOR",
       "Review",
