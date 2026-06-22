@@ -11,6 +11,31 @@ export function diffRailMarker() {
 }
 
 /**
+ * Glyph tiled across a split-view cell that has no equivalent line on this side.
+ *
+ * The ASCII diagonal keeps hit-test geometry stable across terminal backends while still reading
+ * as a "nothing here" hatch. Rendered instead of a flat filler block so absent regions stay legible
+ * without a heavy grey background.
+ */
+export const EMPTY_CELL_HATCH_GLYPH = "/";
+
+/** Dim foreground for the empty-cell diagonal hatch, kept subtle against the panel background. */
+export function emptyHatchColor(theme: AppTheme) {
+  return blendHex(theme.lineNumberFg, theme.background, 0.55);
+}
+
+/**
+ * Faint background tint behind the empty-cell hatch.
+ *
+ * A subtle muted wash under the diagonal lines reads as a faded/disabled region without the heavy
+ * grey filler block. Kept lighter than {@link AppTheme.panelAlt} so the hatch, not the fill, carries
+ * the "absent" cue.
+ */
+export function emptyHatchBg(theme: AppTheme) {
+  return blendHex(theme.lineNumberFg, theme.background, 0.1);
+}
+
+/**
  * Blend a base cell background toward the selection highlight color.
  *
  * blendHex(fg, bg, ratio) returns `bg + (fg - bg) * ratio`. We pass the highlight color as the
@@ -91,9 +116,11 @@ export function splitCellPalette(
   }
 
   if (kind === "empty") {
+    // The cell renders a diagonal hatch over a faint muted wash (not a flat grey filler block),
+    // so the gutter and content share the subtle "faded/disabled" background.
     return {
-      gutterBg: theme.lineNumberBg,
-      contentBg: theme.panelAlt,
+      gutterBg: emptyHatchBg(theme),
+      contentBg: emptyHatchBg(theme),
       signColor: theme.muted,
       numberColor: theme.lineNumberFg,
     };
