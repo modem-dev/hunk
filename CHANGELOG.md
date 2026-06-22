@@ -37,6 +37,8 @@
 
 ### Added
 
+- Added a GitHub-facing keyboard shortcuts section to the README.
+
 ### Changed
 
 - Coalesced scroll-position React updates into a single per-frame read and shifted background syntax highlighting from microtasks to timers, so rapid wheel or held-arrow scrolling no longer produces visible jank from per-delta state updates or per-file highlight work starving input and render callbacks.
