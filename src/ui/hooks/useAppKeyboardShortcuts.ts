@@ -1,11 +1,7 @@
 import type { KeyEvent } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
 import { useRef } from "react";
-import {
-  isCreateReviewNoteKey,
-  isEscapeKey,
-  isSaveDraftNoteKey,
-} from "../../core/keyboard";
+import { isCreateReviewNoteKey, isEscapeKey, isSaveDraftNoteKey } from "../../core/keyboard";
 import type { ActionId, ActionScope } from "../../core/keymap/actions";
 import type { Keymap } from "../../core/keymap/match";
 import { matchesAction } from "../../core/keymap/match";
