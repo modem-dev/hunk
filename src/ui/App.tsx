@@ -67,6 +67,7 @@ function withCurrentViewOptions(
     showAgentNotes: boolean;
     showHunkHeaders: boolean;
     showLineNumbers: boolean;
+    nerdFontIcons: boolean;
     wrapLines: boolean;
   },
 ): CliInput {
@@ -79,6 +80,7 @@ function withCurrentViewOptions(
       agentNotes: view.showAgentNotes,
       hunkHeaders: view.showHunkHeaders,
       lineNumbers: view.showLineNumbers,
+      nerdFontIcons: view.nerdFontIcons,
       wrapLines: view.wrapLines,
     },
   };
@@ -132,7 +134,7 @@ export function App({
   const [showLineNumbers, setShowLineNumbers] = useState(bootstrap.initialShowLineNumbers ?? true);
   const [wrapLines, setWrapLines] = useState(bootstrap.initialWrapLines ?? false);
   const [copyDecorations, setCopyDecorations] = useState(bootstrap.initialCopyDecorations ?? false);
-  const nerdFontIcons = bootstrap.initialNerdFontIcons ?? false;
+  const [nerdFontIcons, setNerdFontIcons] = useState(bootstrap.initialNerdFontIcons ?? false);
   const [codeHorizontalOffset, setCodeHorizontalOffset] = useState(0);
   const [showHunkHeaders, setShowHunkHeaders] = useState(bootstrap.initialShowHunkHeaders ?? true);
   const [themeSelectorState, setThemeSelectorState] = useState<ThemeSelectorState>({
@@ -375,6 +377,11 @@ export function App({
     setShowLineNumbers((current) => !current);
   };
 
+  /** Toggle optional Nerd Font file and folder icons without changing git status markers. */
+  const toggleNerdFontIcons = () => {
+    setNerdFontIcons((current) => !current);
+  };
+
   /** Toggle whether mouse selection copies review decorations or only file content. */
   const toggleCopyDecorations = () => {
     setCopyDecorations((current) => !current);
@@ -520,6 +527,7 @@ export function App({
       showAgentNotes,
       showHunkHeaders,
       showLineNumbers,
+      nerdFontIcons,
       wrapLines,
     });
 
@@ -541,6 +549,7 @@ export function App({
     showAgentNotes,
     showHunkHeaders,
     showLineNumbers,
+    nerdFontIcons,
     themeId,
     wrapLines,
   ]);
@@ -744,6 +753,7 @@ export function App({
         showHelp,
         showHunkHeaders,
         showLineNumbers,
+        nerdFontIcons,
         renderSidebar,
         toggleCopyDecorations,
         toggleAgentNotes,
@@ -752,6 +762,7 @@ export function App({
         toggleHelp,
         toggleHunkHeaders,
         toggleLineNumbers,
+        toggleNerdFontIcons,
         toggleLineWrap,
         toggleSidebar,
         triggerEditSelectedFile,
@@ -775,12 +786,14 @@ export function App({
       showHelp,
       showHunkHeaders,
       showLineNumbers,
+      nerdFontIcons,
       renderSidebar,
       toggleAgentNotes,
       toggleFocusArea,
       toggleHelp,
       toggleHunkHeaders,
       toggleLineNumbers,
+      toggleNerdFontIcons,
       toggleLineWrap,
       toggleSidebar,
       triggerEditSelectedFile,

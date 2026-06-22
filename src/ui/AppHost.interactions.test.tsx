@@ -20,6 +20,7 @@ import { resolveTheme } from "./themes";
 
 const { loadAppBootstrap } = await import("../core/loaders");
 const { AppHost } = await import("./AppHost");
+const { iconForFile } = await import("./lib/fileIcons");
 
 const TEST_KEY_PAGE_UP = "\x1B[5~";
 const TEST_KEY_PAGE_DOWN = "\x1B[6~";
@@ -1403,6 +1404,52 @@ describe("App interactions", () => {
       frame = setup.captureCharFrame();
       expect(frame).not.toContain("Split view");
       expect(frame).toContain("1   -  export const alpha = 1;");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("View menu can toggle Nerd Font file icons", async () => {
+    const setup = await testRender(<AppHost bootstrap={createBootstrap()} />, {
+      width: 220,
+      height: 24,
+    });
+
+    try {
+      await flush(setup);
+
+      let frame = setup.captureCharFrame();
+      expect(frame).not.toContain(iconForFile("alpha.ts").icon);
+
+      await act(async () => {
+        await setup.mockInput.pressKey("F10");
+      });
+      await flush(setup);
+      await act(async () => {
+        await setup.mockInput.pressArrow("right");
+      });
+      await flush(setup);
+
+      for (let index = 0; index < 4; index += 1) {
+        await act(async () => {
+          await setup.mockInput.pressArrow("down");
+        });
+        await flush(setup);
+      }
+
+      frame = setup.captureCharFrame();
+      expect(frame).toContain("File icons");
+      expect(frame).toContain("[ ] File icons");
+
+      await act(async () => {
+        await setup.mockInput.pressEnter();
+      });
+      await flush(setup);
+
+      frame = setup.captureCharFrame();
+      expect(frame).toContain(iconForFile("alpha.ts").icon);
     } finally {
       await act(async () => {
         setup.renderer.destroy();
