@@ -58,6 +58,7 @@ function buildCommonOptions(
     mode?: LayoutMode;
     theme?: string;
     agentContext?: string;
+    storeNotes?: string;
     pager?: boolean;
     watch?: boolean;
     transparentBackground?: boolean;
@@ -68,6 +69,7 @@ function buildCommonOptions(
     mode: options.mode,
     theme: options.theme,
     agentContext: options.agentContext,
+    storeNotes: options.storeNotes,
     pager: options.pager ? true : undefined,
     watch: options.watch ? true : undefined,
     excludeUntracked: resolveBooleanFlag(argv, "--exclude-untracked", "--no-exclude-untracked"),
@@ -85,6 +87,10 @@ function applyCommonOptions(command: Command) {
     .option("--mode <mode>", "layout mode: auto, split, stack", parseLayoutMode)
     .option("--theme <theme>", "named theme override")
     .option("--agent-context <path>", "JSON sidecar with agent rationale")
+    .option(
+      "--store-notes <path>",
+      "persist review notes to a JSON sidecar at <path> (cwd-relative)",
+    )
     .option("--pager", "use pager-style chrome and controls")
     .option("--line-numbers", "show line numbers")
     .option("--no-line-numbers", "hide line numbers")

@@ -12,6 +12,7 @@ import {
 import type { AppBootstrap, CliInput, ParsedCliInput, SessionCommandInput } from "./types";
 import { canReloadInput } from "./watch";
 import { parseCli } from "./cli";
+import { userNotesWriteWarning } from "./userNotesStore";
 
 export type StartupPlan =
   | {
@@ -232,6 +233,15 @@ export async function prepareStartupPlan(
   }
 
   bootstrap.initialThemeMode = initialThemeMode ?? bootstrap.initialThemeMode;
+
+  // Warn before the TUI takes the screen if --store-notes points somewhere we
+  // cannot write, so review notes are not silently lost on save.
+  if (bootstrap.userNotesSidecarPath) {
+    const warning = userNotesWriteWarning(bootstrap.userNotesSidecarPath);
+    if (warning) {
+      process.stderr.write(`${warning}\n`);
+    }
+  }
 
   controllingTerminal ??= usesPipedPatchInputImpl(cliInput) ? openControllingTerminalImpl() : null;
 

@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act, StrictMode, useEffect, useState } from "react";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { SourceTextTooLargeError } from "../../core/fileSource";
 import type { DiffFile } from "../../core/types";
 import {
@@ -9,7 +12,12 @@ import {
   createTestSourceFetcher,
   lines,
 } from "../../../test/helpers/diff-helpers";
-import { useReviewController, type ReviewController } from "./useReviewController";
+import { readUserNotes, writeUserNotes } from "../../core/userNotesStore";
+import {
+  useReviewController,
+  type ReviewController,
+  type UserReviewNote,
+} from "./useReviewController";
 
 /** Build a DiffFile with real parsed hunks using the controller's preferred defaults. */
 function createDiffFile(
@@ -88,13 +96,15 @@ function ReviewControllerHarness({
   initialFiles,
   onController,
   onSetFiles,
+  userNotesSidecarPath,
 }: {
   initialFiles: DiffFile[];
   onController: (controller: ReviewController) => void;
   onSetFiles?: (setFiles: (nextFiles: DiffFile[]) => void) => void;
+  userNotesSidecarPath?: string;
 }) {
   const [files, setFiles] = useState(initialFiles);
-  const controller = useReviewController({ files });
+  const controller = useReviewController({ files, userNotesSidecarPath });
 
   useEffect(() => {
     onController(controller);
@@ -110,13 +120,17 @@ function ReviewControllerHarness({
 /** Render the controller hook and expose its latest state to tests. */
 async function renderReviewController(
   initialFiles: DiffFile[],
-  { strictMode = false }: { strictMode?: boolean } = {},
+  {
+    strictMode = false,
+    userNotesSidecarPath,
+  }: { strictMode?: boolean; userNotesSidecarPath?: string } = {},
 ) {
   const controllerRef: { current: ReviewController | null } = { current: null };
   const setFilesRef: { current: ((nextFiles: DiffFile[]) => void) | null } = { current: null };
   const harness = (
     <ReviewControllerHarness
       initialFiles={initialFiles}
+      userNotesSidecarPath={userNotesSidecarPath}
       onController={(nextController) => {
         controllerRef.current = nextController;
       }}
@@ -1080,6 +1094,161 @@ describe("useReviewController", () => {
       await act(async () => {
         setup.renderer.destroy();
       });
+    }
+  });
+});
+
+describe("useReviewController note persistence", () => {
+  function seedNote(id: string, summary: string): UserReviewNote {
+    return {
+      id,
+      source: "user",
+      filePath: "alpha.ts",
+      hunkIndex: 0,
+      side: "new",
+      line: 1,
+      summary,
+      author: "user",
+      editable: true,
+    } as UserReviewNote;
+  }
+
+  async function saveUserNote(
+    controllerRef: { current: ReviewController | null },
+    setup: Awaited<ReturnType<typeof renderReviewController>>["setup"],
+    body: string,
+  ) {
+    await act(async () => {
+      expectValue(controllerRef.current).startUserNote("alpha", 0);
+    });
+    await flush(setup);
+    await act(async () => {
+      expectValue(controllerRef.current).updateDraftNote(body);
+    });
+    await flush(setup);
+    let savedId = "";
+    await act(async () => {
+      savedId = expectValue(controllerRef.current).saveDraftNote()?.id ?? "";
+    });
+    await flush(setup);
+    return savedId;
+  }
+
+  test("seeds user notes from the sidecar on mount", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "hunk-controller-notes-"));
+    const path = join(dir, "notes.json");
+    const seeded = { alpha: [seedNote("user:seeded", "from a prior review")] };
+    writeUserNotes(path, seeded);
+
+    const { controllerRef, setup } = await renderReviewController([createAlphaFile()], {
+      userNotesSidecarPath: path,
+    });
+    try {
+      await flush(setup);
+      expect(expectValue(controllerRef.current).userNotesByFileId).toEqual(seeded);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("writes saved notes through to the sidecar, creating missing dirs", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "hunk-controller-notes-"));
+    const path = join(dir, ".hunk", "notes.json");
+
+    const { controllerRef, setup } = await renderReviewController([createAlphaFile()], {
+      userNotesSidecarPath: path,
+    });
+    try {
+      await flush(setup);
+      const savedId = await saveUserNote(controllerRef, setup, "persist me");
+
+      expect(savedId).toStartWith("user:");
+      // Disk mirrors in-memory state after the write-through.
+      expect(readUserNotes(path)).toEqual(expectValue(controllerRef.current).userNotesByFileId);
+      expect(readUserNotes(path).alpha).toHaveLength(1);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("removeUserNote and removeLiveComment write removals through to the sidecar", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "hunk-controller-notes-"));
+    const path = join(dir, "notes.json");
+
+    const { controllerRef, setup } = await renderReviewController([createAlphaFile()], {
+      userNotesSidecarPath: path,
+    });
+    try {
+      await flush(setup);
+
+      const firstId = await saveUserNote(controllerRef, setup, "remove via removeUserNote");
+      await act(async () => {
+        expectValue(controllerRef.current).removeUserNote(firstId);
+      });
+      await flush(setup);
+      expect(readUserNotes(path)).toEqual({});
+
+      const secondId = await saveUserNote(controllerRef, setup, "remove via removeLiveComment");
+      await act(async () => {
+        expectValue(controllerRef.current).removeLiveComment(secondId);
+      });
+      await flush(setup);
+      expect(readUserNotes(path)).toEqual({});
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("clearLiveComments({ includeUser }) is written through to the sidecar", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "hunk-controller-notes-"));
+    const path = join(dir, "notes.json");
+
+    const { controllerRef, setup } = await renderReviewController([createAlphaFile()], {
+      userNotesSidecarPath: path,
+    });
+    try {
+      await flush(setup);
+      await saveUserNote(controllerRef, setup, "clear me");
+      expect(readUserNotes(path).alpha).toHaveLength(1);
+
+      await act(async () => {
+        expectValue(controllerRef.current).clearLiveComments(undefined, { includeUser: true });
+      });
+      await flush(setup);
+      expect(readUserNotes(path)).toEqual({});
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("does not touch disk when no sidecar path is configured", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "hunk-controller-notes-"));
+    const path = join(dir, "notes.json");
+
+    const { controllerRef, setup } = await renderReviewController([createAlphaFile()]);
+    try {
+      await flush(setup);
+      await saveUserNote(controllerRef, setup, "in-memory only");
+
+      expect(expectValue(controllerRef.current).userNotesByFileId.alpha).toHaveLength(1);
+      expect(existsSync(path)).toBe(false);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });

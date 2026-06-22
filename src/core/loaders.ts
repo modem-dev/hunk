@@ -452,6 +452,9 @@ export async function loadAppBootstrap(
   return {
     input,
     changeset,
+    userNotesSidecarPath: input.options.storeNotes
+      ? resolvePath(cwd, input.options.storeNotes)
+      : undefined,
     initialMode: input.options.mode ?? "auto",
     initialTheme: input.options.theme,
     customTheme,
