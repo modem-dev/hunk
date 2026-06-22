@@ -16,7 +16,7 @@ import {
   isStepUpKey,
 } from "../lib/keyboard";
 
-type FocusArea = "files" | "filter" | "note";
+type FocusArea = "files" | "filter" | "search" | "note";
 type ScrollUnit = "step" | "viewport" | "content" | "half";
 
 const FAST_CODE_HORIZONTAL_SCROLL_COLUMNS = 8;
@@ -53,7 +53,8 @@ export interface UseAppKeyboardShortcutsOptions {
   cancelDraftNote: () => void;
   closeThemeSelector: () => void;
   focusArea: FocusArea;
-  focusFilter: () => void;
+  focusSearch: () => void;
+  advanceSearchCursor: (delta: 1 | -1) => void;
   moveToAnnotatedHunk: (delta: number) => void;
   moveToFile: (delta: number) => void;
   moveToHunk: (delta: number) => void;
@@ -96,7 +97,8 @@ export function useAppKeyboardShortcuts({
   cancelDraftNote,
   closeThemeSelector,
   focusArea,
-  focusFilter,
+  focusSearch,
+  advanceSearchCursor,
   moveToAnnotatedHunk,
   moveToFile,
   moveToHunk,
@@ -362,6 +364,11 @@ export function useAppKeyboardShortcuts({
       return true;
     }
 
+    if (focusAreaRef.current === "search") {
+      // Let the focused input own search text editing and escape handling.
+      return true;
+    }
+
     if (focusAreaRef.current !== "note") {
       return false;
     }
@@ -416,7 +423,7 @@ export function useAppKeyboardShortcuts({
     }
 
     if (key.name === "/") {
-      focusFilter();
+      focusSearch();
       return;
     }
 
@@ -562,6 +569,16 @@ export function useAppKeyboardShortcuts({
 
     if (key.sequence === "}") {
       runAndCloseMenu(() => moveToAnnotatedHunk(1));
+      return;
+    }
+
+    if (key.sequence === "N" || (key.name === "n" && key.shift)) {
+      runAndCloseMenu(() => advanceSearchCursor(-1));
+      return;
+    }
+
+    if (key.name === "n" || key.sequence === "n") {
+      runAndCloseMenu(() => advanceSearchCursor(1));
     }
   };
 

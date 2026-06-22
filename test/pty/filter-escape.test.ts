@@ -24,7 +24,7 @@ describe("filter escape clearing (PTY)", () => {
       await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
 
       // Open filter, type a no-match query.
-      await session.type("/");
+      await session.press("tab");
       await harness.waitForSnapshot(
         session,
         (t) => t.includes("filter: type to filter files"),

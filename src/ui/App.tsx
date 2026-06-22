@@ -19,6 +19,7 @@ import {
   resolveCodeViewportWidth,
 } from "./diff/codeColumns";
 import type { ActiveAddNoteAffordance } from "./diff/PierreDiffView";
+import { SearchHighlightProvider } from "./diff/searchHighlight";
 import { useAppKeyboardShortcuts } from "./hooks/useAppKeyboardShortcuts";
 import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
 import { useMenuController } from "./hooks/useMenuController";
@@ -30,7 +31,7 @@ import { resolveResponsiveLayout } from "./lib/responsive";
 import { resizeSidebarWidth } from "./lib/sidebar";
 import { availableThemes, resolveTheme, withTransparentBackground } from "./themes";
 
-type FocusArea = "files" | "filter" | "note";
+type FocusArea = "files" | "filter" | "search" | "note";
 type ActiveAddNoteTarget = ActiveAddNoteAffordance & { fileId: string };
 type ThemeSelectorState = {
   open: boolean;
@@ -681,6 +682,12 @@ export function App({
     setFocusArea("filter");
   }, []);
 
+  /** Open the search prompt with an empty draft, keeping prior highlights painted until the user types. */
+  const focusSearch = useCallback(() => {
+    review.beginSearch();
+    setFocusArea("search");
+  }, [review.beginSearch]);
+
   /** Toggle keyboard focus between the file list and the file filter. */
   const toggleFocusArea = useCallback(() => {
     setFocusArea((current) => (current === "files" ? "filter" : "files"));
@@ -814,7 +821,8 @@ export function App({
     cancelDraftNote,
     closeThemeSelector,
     focusArea,
-    focusFilter,
+    focusSearch,
+    advanceSearchCursor: review.advanceSearchCursor,
     moveToAnnotatedHunk,
     moveToFile,
     moveToHunk: review.moveToHunk,
@@ -909,207 +917,221 @@ export function App({
   const diffPaneScreenTop = pagerMode ? 0 : 1;
 
   return (
-    <box
-      style={{
-        width: "100%",
-        height: "100%",
-        flexDirection: "column",
-        backgroundColor: activeTheme.background,
-      }}
-    >
-      {!pagerMode ? (
-        <MenuBar
-          activeMenuId={activeMenuId}
-          menuSpecs={menuSpecs}
-          terminalWidth={terminal.width}
-          theme={activeTheme}
-          topTitle={topTitle}
-          onHoverMenu={(menuId) => {
-            if (activeMenuId) {
-              openMenu(menuId);
-            }
-          }}
-          onToggleMenu={toggleMenu}
-        />
-      ) : null}
-
+    <SearchHighlightProvider query={review.searchQuery}>
       <box
         style={{
-          flexGrow: 1,
-          flexDirection: "row",
-          gap: 0,
-          paddingLeft: bodyPadding / 2,
-          paddingRight: bodyPadding / 2,
-          paddingTop: 0,
-          paddingBottom: 0,
-          position: "relative",
-        }}
-        onMouseDrag={updateSidebarResize}
-        onMouseDragEnd={(event) => {
-          endSidebarResize(event);
-          cancelCopySelectionRef.current?.();
-        }}
-        onMouseUp={(event) => {
-          endSidebarResize(event);
-          closeMenu();
-          cancelCopySelectionRef.current?.();
+          width: "100%",
+          height: "100%",
+          flexDirection: "column",
+          backgroundColor: activeTheme.background,
         }}
       >
-        {renderSidebar ? (
-          <>
-            <SidebarPane
-              entries={review.sidebarEntries}
-              scrollRef={sidebarScrollRef}
-              selectedFileId={selectedFile?.id}
-              textWidth={sidebarTextWidth}
-              theme={activeTheme}
-              width={clampedSidebarWidth}
-              estimatedViewportRows={terminal.height}
-              onSelectFile={(fileId) => {
-                focusFiles();
-                jumpToFile(fileId, 0, { alignFileHeaderTop: true });
-              }}
-            />
-
-            <PaneDivider
-              dividerHitLeft={dividerHitLeft}
-              dividerHitWidth={DIVIDER_HIT_WIDTH}
-              isResizing={isResizingSidebar}
-              theme={activeTheme}
-              onMouseDown={beginSidebarResize}
-              onMouseDrag={updateSidebarResize}
-              onMouseDragEnd={endSidebarResize}
-              onMouseUp={endSidebarResize}
-            />
-          </>
+        {!pagerMode ? (
+          <MenuBar
+            activeMenuId={activeMenuId}
+            menuSpecs={menuSpecs}
+            terminalWidth={terminal.width}
+            theme={activeTheme}
+            topTitle={topTitle}
+            onHoverMenu={(menuId) => {
+              if (activeMenuId) {
+                openMenu(menuId);
+              }
+            }}
+            onToggleMenu={toggleMenu}
+          />
         ) : null}
 
-        <DiffPane
-          cancelCopySelectionRef={cancelCopySelectionRef}
-          codeHorizontalOffset={codeHorizontalOffset}
-          copyDecorations={copyDecorations}
-          diffContentWidth={diffContentWidth}
-          expandedGapsByFileId={review.expandedGapsByFileId}
-          files={filteredFiles}
-          pagerMode={pagerMode}
-          screenLeft={diffPaneScreenLeft}
-          screenTop={diffPaneScreenTop}
-          headerLabelWidth={diffHeaderLabelWidth}
-          headerStatsWidth={diffHeaderStatsWidth}
-          layout={resolvedLayout}
-          scrollRef={diffScrollRef}
-          selectedFileId={selectedFile?.id}
-          selectedHunkIndex={selectedHunkIndex}
-          scrollToNote={review.scrollToNote}
-          draftNote={review.draftNote}
-          draftNoteFocused={focusArea === "note"}
-          separatorWidth={diffSeparatorWidth}
-          showAgentNotes={showAgentNotes}
-          showLineNumbers={showLineNumbers}
-          showHunkHeaders={showHunkHeaders}
-          sourceStatusByFileId={review.sourceStatusByFileId}
-          wrapLines={wrapLines}
-          wrapToggleScrollTop={wrapToggleScrollTopRef.current}
-          layoutToggleScrollTop={layoutToggleScrollTopRef.current}
-          layoutToggleRequestId={layoutToggleRequestId}
-          selectedFileTopAlignRequestId={review.selectedFileTopAlignRequestId}
-          selectedHunkRevealRequestId={review.selectedHunkRevealRequestId}
-          theme={activeTheme}
-          width={diffPaneWidth}
-          onActiveAddNoteAffordanceChange={setActiveAddNoteTarget}
-          onRemoveUserNote={review.removeUserNote}
-          onSaveDraftNote={saveDraftNote}
-          onStartUserNoteAtHunk={startUserNote}
-          onUpdateDraftNote={review.updateDraftNote}
-          onBlurDraftNote={blurDraftNote}
-          onCancelDraftNote={cancelDraftNote}
-          onFocusDraftNote={focusDraftNote}
-          onScrollCodeHorizontally={(delta) => {
-            scrollCodeHorizontally(delta * FAST_CODE_HORIZONTAL_SCROLL_COLUMNS);
+        <box
+          style={{
+            flexGrow: 1,
+            flexDirection: "row",
+            gap: 0,
+            paddingLeft: bodyPadding / 2,
+            paddingRight: bodyPadding / 2,
+            paddingTop: 0,
+            paddingBottom: 0,
+            position: "relative",
           }}
-          onCopyFeedback={showTransientNotice}
-          onSelectFile={jumpToFile}
-          onToggleGap={review.toggleGap}
-          onViewportCenteredHunkChange={(fileId, hunkIndex) =>
-            review.selectHunk(fileId, hunkIndex, { preserveViewport: true })
-          }
-        />
-      </box>
+          onMouseDrag={updateSidebarResize}
+          onMouseDragEnd={(event) => {
+            endSidebarResize(event);
+            cancelCopySelectionRef.current?.();
+          }}
+          onMouseUp={(event) => {
+            endSidebarResize(event);
+            closeMenu();
+            cancelCopySelectionRef.current?.();
+          }}
+        >
+          {renderSidebar ? (
+            <>
+              <SidebarPane
+                entries={review.sidebarEntries}
+                scrollRef={sidebarScrollRef}
+                selectedFileId={selectedFile?.id}
+                textWidth={sidebarTextWidth}
+                theme={activeTheme}
+                width={clampedSidebarWidth}
+                estimatedViewportRows={terminal.height}
+                onSelectFile={(fileId) => {
+                  focusFiles();
+                  jumpToFile(fileId, 0, { alignFileHeaderTop: true });
+                }}
+              />
 
-      {!pagerMode &&
-      (focusArea === "filter" ||
-        Boolean(review.filter) ||
-        Boolean(sessionNoticeText ?? transientNoticeText ?? noticeText)) ? (
-        <StatusBar
-          filter={review.filter}
-          filterFocused={focusArea === "filter"}
-          noticeText={sessionNoticeText ?? transientNoticeText ?? noticeText ?? undefined}
-          terminalWidth={terminal.width}
-          theme={activeTheme}
-          onCloseMenu={closeMenu}
-          onFilterInput={review.setFilter}
-          onFilterSubmit={focusFiles}
-        />
-      ) : null}
+              <PaneDivider
+                dividerHitLeft={dividerHitLeft}
+                dividerHitWidth={DIVIDER_HIT_WIDTH}
+                isResizing={isResizingSidebar}
+                theme={activeTheme}
+                onMouseDown={beginSidebarResize}
+                onMouseDrag={updateSidebarResize}
+                onMouseDragEnd={endSidebarResize}
+                onMouseUp={endSidebarResize}
+              />
+            </>
+          ) : null}
 
-      {!pagerMode && activeMenuId && activeMenuSpec ? (
-        <Suspense fallback={null}>
-          <LazyMenuDropdown
-            activeMenuId={activeMenuId}
-            activeMenuEntries={activeMenuEntries}
-            activeMenuItemIndex={activeMenuItemIndex}
-            activeMenuSpec={activeMenuSpec}
-            activeMenuWidth={activeMenuWidth}
-            terminalWidth={terminal.width}
-            theme={baseTheme}
-            onHoverItem={setActiveMenuItemIndex}
-            onSelectItem={(entry) => {
-              entry.action();
-              closeMenu();
+          <DiffPane
+            cancelCopySelectionRef={cancelCopySelectionRef}
+            codeHorizontalOffset={codeHorizontalOffset}
+            copyDecorations={copyDecorations}
+            diffContentWidth={diffContentWidth}
+            expandedGapsByFileId={review.expandedGapsByFileId}
+            files={filteredFiles}
+            pagerMode={pagerMode}
+            screenLeft={diffPaneScreenLeft}
+            screenTop={diffPaneScreenTop}
+            headerLabelWidth={diffHeaderLabelWidth}
+            headerStatsWidth={diffHeaderStatsWidth}
+            layout={resolvedLayout}
+            scrollRef={diffScrollRef}
+            selectedFileId={selectedFile?.id}
+            selectedHunkIndex={selectedHunkIndex}
+            scrollToNote={review.scrollToNote}
+            draftNote={review.draftNote}
+            draftNoteFocused={focusArea === "note"}
+            separatorWidth={diffSeparatorWidth}
+            showAgentNotes={showAgentNotes}
+            showLineNumbers={showLineNumbers}
+            showHunkHeaders={showHunkHeaders}
+            sourceStatusByFileId={review.sourceStatusByFileId}
+            wrapLines={wrapLines}
+            wrapToggleScrollTop={wrapToggleScrollTopRef.current}
+            layoutToggleScrollTop={layoutToggleScrollTopRef.current}
+            layoutToggleRequestId={layoutToggleRequestId}
+            selectedFileTopAlignRequestId={review.selectedFileTopAlignRequestId}
+            selectedHunkRevealRequestId={review.selectedHunkRevealRequestId}
+            theme={activeTheme}
+            width={diffPaneWidth}
+            onActiveAddNoteAffordanceChange={setActiveAddNoteTarget}
+            onRemoveUserNote={review.removeUserNote}
+            onSaveDraftNote={saveDraftNote}
+            onStartUserNoteAtHunk={startUserNote}
+            onUpdateDraftNote={review.updateDraftNote}
+            onBlurDraftNote={blurDraftNote}
+            onCancelDraftNote={cancelDraftNote}
+            onFocusDraftNote={focusDraftNote}
+            onScrollCodeHorizontally={(delta) => {
+              scrollCodeHorizontally(delta * FAST_CODE_HORIZONTAL_SCROLL_COLUMNS);
             }}
+            onCopyFeedback={showTransientNotice}
+            onSelectFile={jumpToFile}
+            onToggleGap={review.toggleGap}
+            onViewportCenteredHunkChange={(fileId, hunkIndex) =>
+              review.selectHunk(fileId, hunkIndex, { preserveViewport: true })
+            }
           />
-        </Suspense>
-      ) : null}
+        </box>
 
-      {!pagerMode && showAgentSkill ? (
-        <Suspense fallback={null}>
-          <LazyAgentSkillDialog
-            copySupported={renderer.isOsc52Supported?.() ?? false}
-            terminalHeight={terminal.height}
+        {!pagerMode &&
+        (focusArea === "filter" ||
+          focusArea === "search" ||
+          Boolean(review.filter) ||
+          Boolean(review.searchQuery) ||
+          Boolean(sessionNoticeText ?? transientNoticeText ?? noticeText)) ? (
+          <StatusBar
+            filter={review.filter}
+            filterFocused={focusArea === "filter"}
+            searchQuery={review.searchQuery}
+            searchInputDraft={review.searchInputDraft}
+            searchFocused={focusArea === "search"}
+            noticeText={sessionNoticeText ?? transientNoticeText ?? noticeText ?? undefined}
             terminalWidth={terminal.width}
-            theme={baseTheme}
-            onClose={closeAgentSkill}
-            onCopyPrompt={copyAgentSkillPrompt}
+            theme={activeTheme}
+            onCloseMenu={closeMenu}
+            onFilterInput={review.setFilter}
+            onFilterSubmit={focusFiles}
+            onSearchInput={review.applySearchInput}
+            onSearchSubmit={() => {
+              review.submitSearch();
+              focusFiles();
+            }}
+            searchMatchCount={review.searchMatches.length}
+            searchMatchIndex={review.searchCursor}
           />
-        </Suspense>
-      ) : null}
+        ) : null}
 
-      {!pagerMode && showHelp ? (
-        <Suspense fallback={null}>
-          <LazyHelpDialog
-            canRefresh={canRefreshCurrentInput}
-            terminalHeight={terminal.height}
-            terminalWidth={terminal.width}
-            theme={baseTheme}
-            onClose={closeHelp}
-          />
-        </Suspense>
-      ) : null}
+        {!pagerMode && activeMenuId && activeMenuSpec ? (
+          <Suspense fallback={null}>
+            <LazyMenuDropdown
+              activeMenuId={activeMenuId}
+              activeMenuEntries={activeMenuEntries}
+              activeMenuItemIndex={activeMenuItemIndex}
+              activeMenuSpec={activeMenuSpec}
+              activeMenuWidth={activeMenuWidth}
+              terminalWidth={terminal.width}
+              theme={baseTheme}
+              onHoverItem={setActiveMenuItemIndex}
+              onSelectItem={(entry) => {
+                entry.action();
+                closeMenu();
+              }}
+            />
+          </Suspense>
+        ) : null}
 
-      {!pagerMode && themeSelectorState.open ? (
-        <Suspense fallback={null}>
-          <LazyThemeSelectorDialog
-            items={themeSelectorItems}
-            selectedIndex={themeSelectorState.selectedIndex}
-            terminalHeight={terminal.height}
-            terminalWidth={terminal.width}
-            theme={baseTheme}
-            onClose={closeThemeSelector}
-            onPickItem={pickThemeSelectorItem}
-            onScroll={moveThemeSelector}
-          />
-        </Suspense>
-      ) : null}
-    </box>
+        {!pagerMode && showAgentSkill ? (
+          <Suspense fallback={null}>
+            <LazyAgentSkillDialog
+              copySupported={renderer.isOsc52Supported?.() ?? false}
+              terminalHeight={terminal.height}
+              terminalWidth={terminal.width}
+              theme={baseTheme}
+              onClose={closeAgentSkill}
+              onCopyPrompt={copyAgentSkillPrompt}
+            />
+          </Suspense>
+        ) : null}
+
+        {!pagerMode && showHelp ? (
+          <Suspense fallback={null}>
+            <LazyHelpDialog
+              canRefresh={canRefreshCurrentInput}
+              terminalHeight={terminal.height}
+              terminalWidth={terminal.width}
+              theme={baseTheme}
+              onClose={closeHelp}
+            />
+          </Suspense>
+        ) : null}
+
+        {!pagerMode && themeSelectorState.open ? (
+          <Suspense fallback={null}>
+            <LazyThemeSelectorDialog
+              items={themeSelectorItems}
+              selectedIndex={themeSelectorState.selectedIndex}
+              terminalHeight={terminal.height}
+              terminalWidth={terminal.width}
+              theme={baseTheme}
+              onClose={closeThemeSelector}
+              onPickItem={pickThemeSelectorItem}
+              onScroll={moveThemeSelector}
+            />
+          </Suspense>
+        ) : null}
+      </box>
+    </SearchHighlightProvider>
   );
 }

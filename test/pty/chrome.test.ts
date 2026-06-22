@@ -111,7 +111,7 @@ describe("PTY chrome", () => {
     }
   });
 
-  test("slash focuses the filter and narrows the visible review stream", async () => {
+  test("tab focuses the filter and narrows the visible review stream", async () => {
     const fixture = harness.createSidebarJumpRepoFixture();
     const session = await harness.launchHunk({
       args: ["diff", "--mode", "split"],
@@ -128,7 +128,7 @@ describe("PTY chrome", () => {
       expect(initial).toContain("alphaOnly = true");
       expect(initial).toContain("betaValue = 2");
 
-      await session.type("/");
+      await session.press("tab");
       await harness.waitForSnapshot(
         session,
         (text) => text.includes("filter: type to filter files"),
@@ -149,6 +149,40 @@ describe("PTY chrome", () => {
       expect(filtered).toContain("delta");
       expect(filtered).toContain("deltaOnly = true");
       expect(filtered).not.toContain("alphaOnly = true");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("slash opens the in-diff content search and highlights matches", async () => {
+    const fixture = harness.createSidebarJumpRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split"],
+      cwd: fixture.dir,
+      cols: 220,
+      rows: 12,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+
+      await session.type("/");
+      await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("search: type to search diff content"),
+        5_000,
+      );
+
+      await session.type("alpha");
+      await session.press("enter");
+
+      const result = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("search=alpha"),
+        5_000,
+      );
+
+      expect(result).toContain("search=alpha");
     } finally {
       session.close();
     }

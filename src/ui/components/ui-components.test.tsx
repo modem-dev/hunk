@@ -2245,6 +2245,11 @@ describe("UI components", () => {
         onCloseMenu={() => {}}
         onFilterInput={() => {}}
         onFilterSubmit={() => {}}
+        searchQuery=""
+        searchInputDraft=""
+        searchFocused={false}
+        onSearchInput={() => {}}
+        onSearchSubmit={() => {}}
       />,
       60,
       3,
@@ -2266,6 +2271,11 @@ describe("UI components", () => {
         onCloseMenu={() => {}}
         onFilterInput={() => {}}
         onFilterSubmit={() => {}}
+        searchQuery=""
+        searchInputDraft=""
+        searchFocused={false}
+        onSearchInput={() => {}}
+        onSearchSubmit={() => {}}
       />,
       60,
       3,
@@ -2286,6 +2296,11 @@ describe("UI components", () => {
         onCloseMenu={() => {}}
         onFilterInput={() => {}}
         onFilterSubmit={() => {}}
+        searchQuery=""
+        searchInputDraft=""
+        searchFocused={false}
+        onSearchInput={() => {}}
+        onSearchSubmit={() => {}}
       />,
       60,
       3,
@@ -2308,6 +2323,11 @@ describe("UI components", () => {
         onCloseMenu={() => {}}
         onFilterInput={() => {}}
         onFilterSubmit={() => {}}
+        searchQuery=""
+        searchInputDraft=""
+        searchFocused={false}
+        onSearchInput={() => {}}
+        onSearchSubmit={() => {}}
       />,
       60,
       3,
