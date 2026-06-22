@@ -110,9 +110,23 @@ export interface CustomSyntaxColorsConfig {
   punctuation?: string;
 }
 
+/**
+ * A full VS Code / Shiki theme JSON loaded from disk and registered with the
+ * highlighter for source-accurate syntax coloring. Only `name` is required; the
+ * remaining TextMate fields are passed through to Shiki untouched.
+ */
+export interface CustomSyntaxThemeData {
+  name: string;
+  [key: string]: unknown;
+}
+
 export interface CustomThemeConfig {
   base?: string;
   label?: string;
+  /** Path (from config) to a Shiki theme JSON used for syntax highlighting. */
+  syntaxThemePath?: string;
+  /** The loaded + validated Shiki theme JSON referenced by `syntaxThemePath`. */
+  syntaxThemeData?: CustomSyntaxThemeData;
   background?: string;
   panel?: string;
   panelAlt?: string;

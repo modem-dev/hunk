@@ -157,6 +157,16 @@ variable = "#eef4ff"
 
 All custom theme colors must use `#rrggbb` hex values. Press `t` in the app, or choose `View -> Themes…`, to open the theme selector.
 
+For source-accurate syntax highlighting, point `syntax_theme` at a VS Code / Shiki theme JSON file. Hunk loads it and hands it to its Shiki-based highlighter, so any VS Code theme colors your code exactly as that theme would:
+
+```toml
+[custom_theme]
+base = "catppuccin-mocha"
+syntax_theme = "shades-of-purple.json"   # absolute, or relative to this config file
+```
+
+When `syntax_theme` is set it drives code highlighting; the `[custom_theme.syntax]` colors then only refine tokens that would otherwise collide with diff add/remove backgrounds.
+
 ### Git integration
 
 Set Hunk as your Git pager so `git diff` and `git show` open in Hunk automatically:

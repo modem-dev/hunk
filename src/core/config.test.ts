@@ -221,6 +221,72 @@ describe("config resolution", () => {
     ).toThrow("Expected custom_theme.accent to be a hex color like #112233.");
   });
 
+  test("loads a custom_theme.syntax_theme JSON relative to the config file", () => {
+    const home = createTempDir("hunk-config-home-");
+    const hunkDir = join(home, ".config", "hunk");
+    mkdirSync(hunkDir, { recursive: true });
+    writeFileSync(
+      join(hunkDir, "my-theme.json"),
+      JSON.stringify({ name: "My VS Code Theme", type: "dark", tokenColors: [] }),
+    );
+    writeFileSync(
+      join(hunkDir, "config.toml"),
+      [
+        'theme = "custom"',
+        "",
+        "[custom_theme]",
+        'base = "github-dark-default"',
+        'syntax_theme = "my-theme.json"',
+      ].join("\n"),
+    );
+
+    const resolved = resolveConfiguredCliInput(createPatchPagerInput(), {
+      cwd: createTempDir("hunk-config-cwd-"),
+      env: { HOME: home },
+    });
+
+    expect(resolved.customTheme?.syntaxThemePath).toBe("my-theme.json");
+    expect(resolved.customTheme?.syntaxThemeData).toEqual({
+      name: "My VS Code Theme",
+      type: "dark",
+      tokenColors: [],
+    });
+  });
+
+  test("rejects a custom_theme.syntax_theme that does not exist", () => {
+    const home = createTempDir("hunk-config-home-");
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(
+      join(home, ".config", "hunk", "config.toml"),
+      ["[custom_theme]", 'syntax_theme = "missing.json"'].join("\n"),
+    );
+
+    expect(() =>
+      resolveConfiguredCliInput(createPatchPagerInput(), {
+        cwd: createTempDir("hunk-config-cwd-"),
+        env: { HOME: home },
+      }),
+    ).toThrow("Expected custom_theme.syntax_theme to point at a file.");
+  });
+
+  test("rejects a custom_theme.syntax_theme JSON without a name", () => {
+    const home = createTempDir("hunk-config-home-");
+    const hunkDir = join(home, ".config", "hunk");
+    mkdirSync(hunkDir, { recursive: true });
+    writeFileSync(join(hunkDir, "nameless.json"), JSON.stringify({ type: "dark" }));
+    writeFileSync(
+      join(hunkDir, "config.toml"),
+      ["[custom_theme]", 'syntax_theme = "nameless.json"'].join("\n"),
+    );
+
+    expect(() =>
+      resolveConfiguredCliInput(createPatchPagerInput(), {
+        cwd: createTempDir("hunk-config-cwd-"),
+        env: { HOME: home },
+      }),
+    ).toThrow('to be a Shiki theme with a non-empty "name".');
+  });
+
   test("rejects theme = custom when no [custom_theme] table is configured", () => {
     const home = createTempDir("hunk-config-home-");
     mkdirSync(join(home, ".config", "hunk"), { recursive: true });

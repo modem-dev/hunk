@@ -290,9 +290,15 @@ function buildCustomTheme(customTheme: CustomThemeConfig) {
     noteBackground: customTheme.noteBackground ?? baseTheme.noteBackground,
     noteTitleBackground: customTheme.noteTitleBackground ?? baseTheme.noteTitleBackground,
     noteTitleText: customTheme.noteTitleText ?? baseTheme.noteTitleText,
-    // Explicit syntax color overrides should use Hunk's semantic remap path rather than the
-    // inherited Shiki theme, otherwise the overrides would never affect highlighted code.
-    syntaxTheme: customTheme.syntax ? undefined : baseTheme.syntaxTheme,
+    // A full Shiki theme JSON wins: highlight from its own tokens for source-accurate color.
+    // Otherwise explicit 9-token overrides use Hunk's semantic remap path (so they actually
+    // affect highlighted code), and a bare custom palette inherits the base theme's syntax.
+    syntaxTheme: customTheme.syntaxThemeData
+      ? customTheme.syntaxThemeData.name
+      : customTheme.syntax
+        ? undefined
+        : baseTheme.syntaxTheme,
+    syntaxThemeData: customTheme.syntaxThemeData,
   };
 
   return withLazySyntaxStyle(themeBase, {

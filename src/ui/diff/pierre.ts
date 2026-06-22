@@ -2,6 +2,7 @@ import {
   cleanLastNewline,
   getHighlighterOptions,
   getSharedHighlighter,
+  registerCustomTheme,
   renderDiffWithHighlighter,
   renderFileWithHighlighter,
   type FileContents,
@@ -571,8 +572,33 @@ export function trailingCollapsedLines(metadata: FileDiffMetadata) {
   return Math.max(additionRemaining, 0);
 }
 
+// Custom Shiki themes are registered once with Pierre's global theme registry. Track which
+// names we've registered so repeated highlight passes don't re-register (Pierre warns on dupes).
+const registeredCustomSyntaxThemes = new Set<string>();
+
+/** Register a config-provided Shiki theme JSON with Pierre before it's referenced by name. */
+function ensureCustomSyntaxThemeRegistered(theme: HighlightThemeInput) {
+  if (typeof theme === "string") {
+    return;
+  }
+
+  const data = theme.syntaxThemeData;
+  if (!data || registeredCustomSyntaxThemes.has(data.name)) {
+    return;
+  }
+
+  registeredCustomSyntaxThemes.add(data.name);
+  // Pierre resolves themes by name against its custom registry first, then Shiki's bundled
+  // themes. The registry stores async loaders, so hand it one resolving to the loaded JSON.
+  type CustomThemeLoader = Parameters<typeof registerCustomTheme>[1];
+  const loader: CustomThemeLoader = () =>
+    Promise.resolve(data as unknown as Awaited<ReturnType<CustomThemeLoader>>);
+  registerCustomTheme(data.name, loader);
+}
+
 /** Prepare syntax highlighting for one language/theme pair using Pierre's shared highlighter. */
 async function prepareHighlighter(language: string | undefined, theme: HighlightThemeInput) {
+  ensureCustomSyntaxThemeRegistered(theme);
   const resolvedLanguage = language ?? "text";
   const syntaxTheme = highlighterThemeName(theme);
   const cacheKey = `${syntaxTheme}:${resolvedLanguage}`;

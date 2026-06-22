@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { join } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { BUNDLED_SHIKI_THEME_IDS } from "../ui/lib/shikiThemes";
 import { normalizeBuiltInThemeId } from "../ui/themes";
 import { resolveGlobalConfigPath } from "./paths";
@@ -8,6 +8,7 @@ import type {
   CliInput,
   CommonOptions,
   CustomSyntaxColorsConfig,
+  CustomSyntaxThemeData,
   CustomThemeConfig,
   LayoutMode,
   PersistedViewPreferences,
@@ -161,8 +162,52 @@ function readCustomSyntaxColors(
   return Object.keys(syntax).length > 0 ? syntax : undefined;
 }
 
+/**
+ * Load and validate a full Shiki theme JSON referenced by `custom_theme.syntax_theme`.
+ * The path may be absolute or relative to the config file that declared it. We read it
+ * eagerly so a bad path fails fast at config time rather than silently dropping
+ * highlighting later.
+ */
+function readCustomSyntaxTheme(
+  value: unknown,
+  configPath: string | undefined,
+): CustomSyntaxThemeData | undefined {
+  const rawPath = normalizeString(value);
+  if (rawPath === undefined) {
+    return undefined;
+  }
+
+  const basis = configPath ? dirname(configPath) : process.cwd();
+  const themePath = isAbsolute(rawPath) ? rawPath : resolve(basis, rawPath);
+
+  if (!fs.existsSync(themePath)) {
+    throw new Error(`Expected custom_theme.syntax_theme to point at a file. Missing: ${themePath}`);
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(fs.readFileSync(themePath, "utf8"));
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `Expected custom_theme.syntax_theme (${themePath}) to be valid JSON: ${reason}`,
+    );
+  }
+
+  if (!isRecord(parsed) || typeof parsed.name !== "string" || parsed.name.length === 0) {
+    throw new Error(
+      `Expected custom_theme.syntax_theme (${themePath}) to be a Shiki theme with a non-empty "name".`,
+    );
+  }
+
+  return parsed as CustomSyntaxThemeData;
+}
+
 /** Read the optional config-defined custom theme palette from one TOML object level. */
-function readCustomTheme(source: Record<string, unknown>): CustomThemeConfig | undefined {
+function readCustomTheme(
+  source: Record<string, unknown>,
+  configPath?: string,
+): CustomThemeConfig | undefined {
   const customThemeSource = source.custom_theme;
   if (!isRecord(customThemeSource)) {
     return undefined;
@@ -179,6 +224,12 @@ function readCustomTheme(source: Record<string, unknown>): CustomThemeConfig | u
   const label = normalizeString(customThemeSource.label);
   if (label !== undefined) {
     customTheme.label = label;
+  }
+
+  const syntaxThemePath = normalizeString(customThemeSource.syntax_theme);
+  if (syntaxThemePath !== undefined) {
+    customTheme.syntaxThemePath = syntaxThemePath;
+    customTheme.syntaxThemeData = readCustomSyntaxTheme(customThemeSource.syntax_theme, configPath);
   }
 
   for (const key of CUSTOM_THEME_COLOR_KEYS) {
@@ -215,6 +266,8 @@ function mergeCustomTheme(
     ...overrides,
     base: overrides.base ?? base.base ?? "github-dark-default",
     label: overrides.label ?? base.label,
+    syntaxThemePath: overrides.syntaxThemePath ?? base.syntaxThemePath,
+    syntaxThemeData: overrides.syntaxThemeData ?? base.syntaxThemeData,
     syntax:
       base.syntax || overrides.syntax
         ? {
@@ -333,13 +386,19 @@ export function resolveConfiguredCliInput(
   if (userConfigPath) {
     const userConfig = readTomlRecord(userConfigPath);
     resolvedOptions = mergeOptions(resolvedOptions, resolveConfigLayer(userConfig, input));
-    resolvedCustomTheme = mergeCustomTheme(resolvedCustomTheme, readCustomTheme(userConfig));
+    resolvedCustomTheme = mergeCustomTheme(
+      resolvedCustomTheme,
+      readCustomTheme(userConfig, userConfigPath),
+    );
   }
 
   if (repoConfigPath) {
     const repoConfig = readTomlRecord(repoConfigPath);
     resolvedOptions = mergeOptions(resolvedOptions, resolveConfigLayer(repoConfig, input));
-    resolvedCustomTheme = mergeCustomTheme(resolvedCustomTheme, readCustomTheme(repoConfig));
+    resolvedCustomTheme = mergeCustomTheme(
+      resolvedCustomTheme,
+      readCustomTheme(repoConfig, repoConfigPath),
+    );
   }
 
   resolvedOptions = mergeOptions(resolvedOptions, input.options);
