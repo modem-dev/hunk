@@ -2,6 +2,7 @@ import type { DiffFile } from "../../../core/types";
 import { fileLabelParts } from "../../lib/files";
 import { fitText } from "../../lib/text";
 import type { AppTheme } from "../../themes";
+import { chromeSurfaceBg } from "../chrome/chromeSurface";
 
 interface DiffFileHeaderRowProps {
   file: DiffFile;
@@ -33,7 +34,7 @@ export function DiffFileHeaderRow({
         justifyContent: "space-between",
         paddingLeft: 1,
         paddingRight: 1,
-        backgroundColor: theme.panel,
+        backgroundColor: chromeSurfaceBg(theme, "sectionHeader"),
       }}
       onMouseUp={onSelect}
     >

@@ -13,7 +13,7 @@ import {
 import { withLazySyntaxStyle } from "./themes/syntax";
 import type { AppTheme, SyntaxColors, ThemeBase } from "./themes/types";
 
-export type { AppTheme, SyntaxColors, ThemeBase } from "./themes/types";
+export type { AppTheme, ChromeMode, ChromeSurfaces, SyntaxColors, ThemeBase } from "./themes/types";
 
 export const TRANSPARENT_BACKGROUND = "transparent";
 export const DEFAULT_DARK_THEME_ID = "github-dark-default";
@@ -369,6 +369,16 @@ export function withTransparentBackground(theme: AppTheme): AppTheme {
     selectedHunk: TRANSPARENT_BACKGROUND,
     noteBackground: TRANSPARENT_BACKGROUND,
     noteTitleBackground: TRANSPARENT_BACKGROUND,
+    surfaces: {
+      ...theme.surfaces,
+      code: TRANSPARENT_BACKGROUND,
+      contextBand: TRANSPARENT_BACKGROUND,
+      sectionHeader: TRANSPARENT_BACKGROUND,
+      sidebar: TRANSPARENT_BACKGROUND,
+      overlay: TRANSPARENT_BACKGROUND,
+      note: TRANSPARENT_BACKGROUND,
+      noteTitle: TRANSPARENT_BACKGROUND,
+    },
   };
 }
 
@@ -386,5 +396,12 @@ export function withTransparentSurfaces(theme: AppTheme): AppTheme {
     contextBg: TRANSPARENT_BACKGROUND,
     contextContentBg: TRANSPARENT_BACKGROUND,
     lineNumberBg: TRANSPARENT_BACKGROUND,
+    surfaces: {
+      ...theme.surfaces,
+      code: TRANSPARENT_BACKGROUND,
+      contextBand: TRANSPARENT_BACKGROUND,
+      sectionHeader: TRANSPARENT_BACKGROUND,
+      sidebar: TRANSPARENT_BACKGROUND,
+    },
   };
 }

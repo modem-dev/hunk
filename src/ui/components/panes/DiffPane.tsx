@@ -1724,14 +1724,21 @@ export function DiffPane({
     }
   }, [scrollRef]);
 
+  // Borderless chrome paints the diff stream on the editor canvas (code surface) so the structural
+  // pane background matches the context rows; bordered mode keeps the legacy panel background framed
+  // by its borders.
+  const paneBg = theme.chrome === "borderless" ? theme.surfaces.code : theme.panel;
+
   return (
     <box
       style={{
         width,
-        border: pagerMode ? [] : ["top"],
+        // Borderless chrome drops the rule + gap under the menu bar; the menu-bar
+        // band and first file-header band carry the separation instead.
+        border: pagerMode || theme.chrome === "borderless" ? [] : ["top"],
         borderColor: theme.border,
-        backgroundColor: theme.panel,
-        paddingY: pagerMode ? 0 : 1,
+        backgroundColor: paneBg,
+        paddingY: pagerMode || theme.chrome === "borderless" ? 0 : 1,
         paddingX: 0,
         flexDirection: "column",
       }}
@@ -1772,10 +1779,10 @@ export function DiffPane({
               onMouseScroll={handleMouseScroll}
               onMouseUp={endCopySelection}
               scrollAcceleration={mouseWheelScrollAcceleration}
-              rootOptions={{ backgroundColor: theme.panel }}
-              wrapperOptions={{ backgroundColor: theme.panel }}
-              viewportOptions={{ backgroundColor: theme.panel }}
-              contentOptions={{ backgroundColor: theme.panel }}
+              rootOptions={{ backgroundColor: paneBg }}
+              wrapperOptions={{ backgroundColor: paneBg }}
+              viewportOptions={{ backgroundColor: paneBg }}
+              contentOptions={{ backgroundColor: paneBg }}
               verticalScrollbarOptions={{ visible: false }}
               horizontalScrollbarOptions={{ visible: false }}
             >
@@ -1790,7 +1797,7 @@ export function DiffPane({
                     return (
                       <box
                         key={item.key}
-                        style={{ width: "100%", height: item.height, backgroundColor: theme.panel }}
+                        style={{ width: "100%", height: item.height, backgroundColor: paneBg }}
                       />
                     );
                   }

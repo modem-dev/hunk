@@ -1,4 +1,5 @@
 import { RGBA, SyntaxStyle } from "@opentui/core";
+import { deriveSurfaces } from "./surfaces";
 import type { AppTheme, SyntaxColors, ThemeBase } from "./types";
 
 /** Build the syntax palette OpenTUI should use for in-terminal code rendering. */
@@ -27,6 +28,9 @@ export function withLazySyntaxStyle(theme: ThemeBase, syntaxColors: SyntaxColors
 
   return {
     ...theme,
+    // Default to bordered chrome; the app overrides this from the user toggle.
+    chrome: "bordered",
+    surfaces: deriveSurfaces(theme),
     syntaxColors,
     get syntaxStyle() {
       syntaxStyle ??= createSyntaxStyle(syntaxColors);

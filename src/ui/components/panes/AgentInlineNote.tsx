@@ -190,6 +190,20 @@ export function AgentInlineNote({
     };
   }, [draft]);
 
+  // In borderless chrome the note keeps its box-drawing rows for geometry, but the
+  // glyphs are painted in the band color so no lines show — a filled note band.
+  const borderless = theme.chrome === "borderless";
+  const surfaceBg = borderless ? theme.surfaces.note : theme.panel;
+  const borderFg = borderless ? surfaceBg : theme.noteBorder;
+  // Borderless chrome layers the card: a slightly higher title band over the body, and
+  // filled primary/secondary action buttons, so the box structure reads without any border.
+  // The title-row border glyphs hide against the title band (not the body) in this mode.
+  const titleBg = borderless ? theme.surfaces.noteTitle : theme.panel;
+  const titleBorderFg = borderless ? titleBg : theme.noteBorder;
+  const saveBg = borderless ? theme.accent : surfaceBg;
+  const saveFg = borderless ? theme.background : theme.noteTitleText;
+  const cancelBg = borderless ? theme.surfaces.noteTitle : surfaceBg;
+  const cancelFg = theme.noteTitleText;
   const closeText = onClose ? "[x]" : "";
   const titleText = `${inlineNoteTitle(annotation, noteIndex, noteCount)} - ${annotationRangeLabel(annotation, file)}`;
   const splitWidths = splitColumnWidths(width);
@@ -285,23 +299,23 @@ export function AgentInlineNote({
       Array.from({ length: rowCount }, (_, rowIndex) => (
         <box
           key={`${keyPrefix}:${rowIndex}`}
-          style={{ width: "100%", height: 1, flexDirection: "row", backgroundColor: theme.panel }}
+          style={{ width: "100%", height: 1, flexDirection: "row", backgroundColor: surfaceBg }}
         >
-          <box style={{ width: boxLeft, height: 1, backgroundColor: theme.panel }}>
+          <box style={{ width: boxLeft, height: 1, backgroundColor: surfaceBg }}>
             <text>{" ".repeat(boxLeft)}</text>
           </box>
-          <box style={{ width: 1, height: 1, backgroundColor: theme.panel }}>
-            <text fg={theme.noteBorder} bg={theme.panel}>
+          <box style={{ width: 1, height: 1, backgroundColor: surfaceBg }}>
+            <text fg={borderFg} bg={surfaceBg}>
               │
             </text>
           </box>
-          <box style={{ width: 1, height: 1, backgroundColor: theme.panel }} />
-          <box style={{ width: draftContentWidth, height: 1, backgroundColor: theme.panel }}>
-            <text bg={theme.panel}>{" ".repeat(draftContentWidth)}</text>
+          <box style={{ width: 1, height: 1, backgroundColor: surfaceBg }} />
+          <box style={{ width: draftContentWidth, height: 1, backgroundColor: surfaceBg }}>
+            <text bg={surfaceBg}>{" ".repeat(draftContentWidth)}</text>
           </box>
-          <box style={{ width: 1, height: 1, backgroundColor: theme.panel }} />
-          <box style={{ width: 1, height: 1, backgroundColor: theme.panel }}>
-            <text fg={theme.noteBorder} bg={theme.panel}>
+          <box style={{ width: 1, height: 1, backgroundColor: surfaceBg }} />
+          <box style={{ width: 1, height: 1, backgroundColor: surfaceBg }}>
+            <text fg={borderFg} bg={surfaceBg}>
               │
             </text>
           </box>
@@ -309,22 +323,20 @@ export function AgentInlineNote({
       ));
 
     return (
-      <box style={{ width: "100%", flexDirection: "column", backgroundColor: theme.panel }}>
-        <box
-          style={{ width: "100%", height: 1, flexDirection: "row", backgroundColor: theme.panel }}
-        >
-          <box style={{ width: boxLeft, height: 1, backgroundColor: theme.panel }}>
+      <box style={{ width: "100%", flexDirection: "column", backgroundColor: surfaceBg }}>
+        <box style={{ width: "100%", height: 1, flexDirection: "row", backgroundColor: surfaceBg }}>
+          <box style={{ width: boxLeft, height: 1, backgroundColor: surfaceBg }}>
             <text>{" ".repeat(boxLeft)}</text>
           </box>
-          <box style={{ width: boxWidth, height: 1, backgroundColor: theme.panel }}>
+          <box style={{ width: boxWidth, height: 1, backgroundColor: titleBg }}>
             <text>
-              <span fg={theme.noteBorder} bg={theme.panel}>
+              <span fg={titleBorderFg} bg={titleBg}>
                 ╭─
               </span>
-              <span fg={theme.noteTitleText} bg={theme.panel}>
+              <span fg={theme.noteTitleText} bg={titleBg}>
                 {draftTitleText}
               </span>
-              <span fg={theme.noteBorder} bg={theme.panel}>
+              <span fg={titleBorderFg} bg={titleBg}>
                 {draftTopBorderSuffix}
               </span>
             </text>
@@ -338,31 +350,25 @@ export function AgentInlineNote({
             width: "100%",
             height: draftTextareaRows,
             flexDirection: "row",
-            backgroundColor: theme.panel,
+            backgroundColor: surfaceBg,
           }}
         >
-          <box
-            style={{ width: boxLeft, height: draftTextareaRows, backgroundColor: theme.panel }}
-          />
+          <box style={{ width: boxLeft, height: draftTextareaRows, backgroundColor: surfaceBg }} />
           <box
             style={{
               width: 1,
               height: draftTextareaRows,
               flexDirection: "column",
-              backgroundColor: theme.panel,
+              backgroundColor: surfaceBg,
             }}
           >
             {Array.from({ length: draftTextareaRows }, (_, rowIndex) => (
-              <text
-                key={`draft-textarea-left-border:${rowIndex}`}
-                fg={theme.noteBorder}
-                bg={theme.panel}
-              >
+              <text key={`draft-textarea-left-border:${rowIndex}`} fg={borderFg} bg={surfaceBg}>
                 │
               </text>
             ))}
           </box>
-          <box style={{ width: 1, height: draftTextareaRows, backgroundColor: theme.panel }} />
+          <box style={{ width: 1, height: draftTextareaRows, backgroundColor: surfaceBg }} />
           <textarea
             ref={textareaRef}
             width={draftContentWidth}
@@ -370,9 +376,9 @@ export function AgentInlineNote({
             initialValue={draft.body}
             placeholder="Write a note…"
             focused={draft.focused}
-            backgroundColor={theme.panel}
+            backgroundColor={surfaceBg}
             textColor={theme.text}
-            focusedBackgroundColor={theme.panel}
+            focusedBackgroundColor={surfaceBg}
             focusedTextColor={theme.text}
             keyBindings={[{ name: "j", ctrl: true, action: "newline" }]}
             onContentChange={() => {
@@ -410,21 +416,17 @@ export function AgentInlineNote({
               }
             }}
           />
-          <box style={{ width: 1, height: draftTextareaRows, backgroundColor: theme.panel }} />
+          <box style={{ width: 1, height: draftTextareaRows, backgroundColor: surfaceBg }} />
           <box
             style={{
               width: 1,
               height: draftTextareaRows,
               flexDirection: "column",
-              backgroundColor: theme.panel,
+              backgroundColor: surfaceBg,
             }}
           >
             {Array.from({ length: draftTextareaRows }, (_, rowIndex) => (
-              <text
-                key={`draft-textarea-right-border:${rowIndex}`}
-                fg={theme.noteBorder}
-                bg={theme.panel}
-              >
+              <text key={`draft-textarea-right-border:${rowIndex}`} fg={borderFg} bg={surfaceBg}>
                 │
               </text>
             ))}
@@ -433,60 +435,54 @@ export function AgentInlineNote({
 
         {renderDraftBodyPaddingRows("draft-body-bottom-padding", draftBottomPaddingRows)}
 
-        <box
-          style={{ width: "100%", height: 1, flexDirection: "row", backgroundColor: theme.panel }}
-        >
-          <box style={{ width: boxLeft, height: 1, backgroundColor: theme.panel }}>
+        <box style={{ width: "100%", height: 1, flexDirection: "row", backgroundColor: surfaceBg }}>
+          <box style={{ width: boxLeft, height: 1, backgroundColor: surfaceBg }}>
             <text>{" ".repeat(boxLeft)}</text>
           </box>
-          <box style={{ width: boxWidth, height: 1, backgroundColor: theme.panel }}>
-            <text fg={theme.noteBorder} bg={theme.panel}>
+          <box style={{ width: boxWidth, height: 1, backgroundColor: surfaceBg }}>
+            <text fg={borderFg} bg={surfaceBg}>
               {draftActionBorder}
             </text>
           </box>
         </box>
 
-        <box
-          style={{ width: "100%", height: 1, flexDirection: "row", backgroundColor: theme.panel }}
-        >
-          <box style={{ width: footerButtonLeft, height: 1, backgroundColor: theme.panel }}>
+        <box style={{ width: "100%", height: 1, flexDirection: "row", backgroundColor: surfaceBg }}>
+          <box style={{ width: footerButtonLeft, height: 1, backgroundColor: surfaceBg }}>
             <text>{" ".repeat(footerButtonLeft)}</text>
           </box>
-          <box style={{ width: 1, height: 1, backgroundColor: theme.panel }}>
-            <text fg={theme.noteBorder} bg={theme.panel}>
+          <box style={{ width: 1, height: 1, backgroundColor: surfaceBg }}>
+            <text fg={borderFg} bg={surfaceBg}>
               │
             </text>
           </box>
           <box onMouseUp={draft.onSave} style={{ width: saveInnerWidth, height: 1 }}>
-            <text fg={theme.noteTitleText} bg={theme.panel}>
+            <text fg={saveFg} bg={saveBg}>
               {padText(" Save (^S) ", saveInnerWidth)}
             </text>
           </box>
-          <box style={{ width: 1, height: 1, backgroundColor: theme.panel }}>
-            <text fg={theme.noteBorder} bg={theme.panel}>
+          <box style={{ width: 1, height: 1, backgroundColor: surfaceBg }}>
+            <text fg={borderFg} bg={surfaceBg}>
               │
             </text>
           </box>
           <box onMouseUp={draft.onCancel} style={{ width: cancelInnerWidth, height: 1 }}>
-            <text fg={theme.noteTitleText} bg={theme.panel}>
+            <text fg={cancelFg} bg={cancelBg}>
               {padText(" Cancel (Esc) ", cancelInnerWidth)}
             </text>
           </box>
-          <box style={{ width: 1, height: 1, backgroundColor: theme.panel }}>
-            <text fg={theme.noteBorder} bg={theme.panel}>
+          <box style={{ width: 1, height: 1, backgroundColor: surfaceBg }}>
+            <text fg={borderFg} bg={surfaceBg}>
               │
             </text>
           </box>
         </box>
 
-        <box
-          style={{ width: "100%", height: 1, flexDirection: "row", backgroundColor: theme.panel }}
-        >
-          <box style={{ width: footerButtonLeft, height: 1, backgroundColor: theme.panel }}>
+        <box style={{ width: "100%", height: 1, flexDirection: "row", backgroundColor: surfaceBg }}>
+          <box style={{ width: footerButtonLeft, height: 1, backgroundColor: surfaceBg }}>
             <text>{" ".repeat(footerButtonLeft)}</text>
           </box>
-          <box style={{ width: footerButtonWidth, height: 1, backgroundColor: theme.panel }}>
-            <text fg={theme.noteBorder} bg={theme.panel}>
+          <box style={{ width: footerButtonWidth, height: 1, backgroundColor: surfaceBg }}>
+            <text fg={borderFg} bg={surfaceBg}>
               {draftButtonBottom}
             </text>
           </box>
@@ -498,25 +494,25 @@ export function AgentInlineNote({
   const renderSavedBodyRow = (key: string, text: string, kind: AgentInlineNoteLine["kind"]) => (
     <box
       key={key}
-      style={{ width: "100%", height: 1, flexDirection: "row", backgroundColor: theme.panel }}
+      style={{ width: "100%", height: 1, flexDirection: "row", backgroundColor: surfaceBg }}
     >
-      <box style={{ width: boxLeft, height: 1, backgroundColor: theme.panel }}>
+      <box style={{ width: boxLeft, height: 1, backgroundColor: surfaceBg }}>
         <text>{" ".repeat(boxLeft)}</text>
       </box>
-      <box style={{ width: 1, height: 1, backgroundColor: theme.panel }}>
-        <text fg={theme.noteBorder} bg={theme.panel}>
+      <box style={{ width: 1, height: 1, backgroundColor: surfaceBg }}>
+        <text fg={borderFg} bg={surfaceBg}>
           │
         </text>
       </box>
-      <box style={{ width: 1, height: 1, backgroundColor: theme.panel }} />
-      <box style={{ width: contentWidth, height: 1, backgroundColor: theme.panel }}>
-        <text fg={kind === "summary" ? theme.text : theme.muted} bg={theme.panel}>
+      <box style={{ width: 1, height: 1, backgroundColor: surfaceBg }} />
+      <box style={{ width: contentWidth, height: 1, backgroundColor: surfaceBg }}>
+        <text fg={kind === "summary" ? theme.text : theme.muted} bg={surfaceBg}>
           {padText(text, contentWidth)}
         </text>
       </box>
-      <box style={{ width: 1, height: 1, backgroundColor: theme.panel }} />
-      <box style={{ width: 1, height: 1, backgroundColor: theme.panel }}>
-        <text fg={theme.noteBorder} bg={theme.panel}>
+      <box style={{ width: 1, height: 1, backgroundColor: surfaceBg }} />
+      <box style={{ width: 1, height: 1, backgroundColor: surfaceBg }}>
+        <text fg={borderFg} bg={surfaceBg}>
           │
         </text>
       </box>
@@ -524,41 +520,41 @@ export function AgentInlineNote({
   );
 
   return (
-    <box style={{ width: "100%", flexDirection: "column", backgroundColor: theme.panel }}>
-      <box style={{ width: "100%", height: 1, flexDirection: "row", backgroundColor: theme.panel }}>
-        <box style={{ width: boxLeft, height: 1, backgroundColor: theme.panel }}>
+    <box style={{ width: "100%", flexDirection: "column", backgroundColor: surfaceBg }}>
+      <box style={{ width: "100%", height: 1, flexDirection: "row", backgroundColor: surfaceBg }}>
+        <box style={{ width: boxLeft, height: 1, backgroundColor: surfaceBg }}>
           <text>{" ".repeat(boxLeft)}</text>
         </box>
-        <box style={{ width: savedTopPrefixWidth, height: 1, backgroundColor: theme.panel }}>
+        <box style={{ width: savedTopPrefixWidth, height: 1, backgroundColor: titleBg }}>
           <text>
-            <span fg={theme.noteBorder} bg={theme.panel}>
+            <span fg={titleBorderFg} bg={titleBg}>
               ╭─
             </span>
-            <span fg={theme.noteTitleText} bg={theme.panel}>
+            <span fg={theme.noteTitleText} bg={titleBg}>
               {savedTitleText}
             </span>
-            <span fg={theme.noteBorder} bg={theme.panel}>
+            <span fg={titleBorderFg} bg={titleBg}>
               {"─".repeat(savedTopBorderSuffixWidth)}
             </span>
           </text>
         </box>
         {closeText ? (
-          <box style={{ width: closeGapWidth, height: 1, backgroundColor: theme.panel }}>
-            <text bg={theme.panel}>{" ".repeat(closeGapWidth)}</text>
+          <box style={{ width: closeGapWidth, height: 1, backgroundColor: titleBg }}>
+            <text bg={titleBg}>{" ".repeat(closeGapWidth)}</text>
           </box>
         ) : null}
         {closeText ? (
           <box
             onMouseUp={onClose}
-            style={{ width: closeWidth, height: 1, backgroundColor: theme.panel }}
+            style={{ width: closeWidth, height: 1, backgroundColor: titleBg }}
           >
-            <text fg={theme.noteTitleText} bg={theme.panel}>
+            <text fg={theme.noteTitleText} bg={titleBg}>
               {closeText}
             </text>
           </box>
         ) : null}
-        <box style={{ width: 1, height: 1, backgroundColor: theme.panel }}>
-          <text fg={theme.noteBorder} bg={theme.panel}>
+        <box style={{ width: 1, height: 1, backgroundColor: titleBg }}>
+          <text fg={titleBorderFg} bg={titleBg}>
             ╮
           </text>
         </box>
@@ -570,12 +566,12 @@ export function AgentInlineNote({
         renderSavedBodyRow(`${line.kind}:${index}`, line.text, line.kind),
       )}
 
-      <box style={{ width: "100%", height: 1, flexDirection: "row", backgroundColor: theme.panel }}>
-        <box style={{ width: boxLeft, height: 1, backgroundColor: theme.panel }}>
+      <box style={{ width: "100%", height: 1, flexDirection: "row", backgroundColor: surfaceBg }}>
+        <box style={{ width: boxLeft, height: 1, backgroundColor: surfaceBg }}>
           <text>{" ".repeat(boxLeft)}</text>
         </box>
-        <box style={{ width: boxWidth, height: 1, backgroundColor: theme.panel }}>
-          <text fg={theme.noteBorder} bg={theme.panel}>
+        <box style={{ width: boxWidth, height: 1, backgroundColor: surfaceBg }}>
+          <text fg={borderFg} bg={surfaceBg}>
             {bottomBorder}
           </text>
         </box>

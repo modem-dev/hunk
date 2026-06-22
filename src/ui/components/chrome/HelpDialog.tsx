@@ -48,6 +48,7 @@ export function HelpDialog({
         ["a", "toggle AI notes"],
         ["z", "toggle unchanged context"],
         ["l / w / m", "lines / wrap / metadata"],
+        ["B", "toggle borderless chrome"],
         ["e", "open file in $EDITOR"],
       ],
     },

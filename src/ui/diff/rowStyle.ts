@@ -101,7 +101,10 @@ export function splitCellPalette(
 
   return {
     gutterBg: theme.lineNumberBg,
-    contentBg: theme.contextBg,
+    // Borderless chrome paints context code on the editor canvas (contextContentBg) so the diff
+    // body reads as the editor, matching the pane background; bordered mode keeps the legacy
+    // contextBg. For bundled themes the two are identical, so this only affects custom palettes.
+    contentBg: theme.chrome === "borderless" ? theme.contextContentBg : theme.contextBg,
     signColor: theme.muted,
     numberColor: theme.lineNumberFg,
   };
@@ -133,7 +136,10 @@ export function stackCellPalette(
 
   return {
     gutterBg: theme.lineNumberBg,
-    contentBg: theme.contextBg,
+    // Borderless chrome paints context code on the editor canvas (contextContentBg) so the diff
+    // body reads as the editor, matching the pane background; bordered mode keeps the legacy
+    // contextBg. For bundled themes the two are identical, so this only affects custom palettes.
+    contentBg: theme.chrome === "borderless" ? theme.contextContentBg : theme.contextBg,
     signColor: theme.muted,
     numberColor: theme.lineNumberFg,
   };

@@ -72,6 +72,7 @@ const DEFAULT_VIEW_PREFERENCES: PersistedViewPreferences = {
   showHunkHeaders: true,
   showAgentNotes: false,
   copyDecorations: false,
+  borderless: false,
 };
 
 interface ConfigResolutionOptions {
@@ -238,6 +239,7 @@ function readConfigPreferences(source: Record<string, unknown>): CommonOptions {
     hunkHeaders: normalizeBoolean(source.hunk_headers),
     agentNotes: normalizeBoolean(source.agent_notes),
     copyDecorations: normalizeBoolean(source.copy_decorations),
+    borderless: normalizeBoolean(source.borderless),
     transparentBackground:
       normalizeBoolean(source.transparentBackground) ??
       normalizeBoolean(source.transparent_background),
@@ -261,6 +263,7 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
     hunkHeaders: overrides.hunkHeaders ?? base.hunkHeaders,
     agentNotes: overrides.agentNotes ?? base.agentNotes,
     copyDecorations: overrides.copyDecorations ?? base.copyDecorations,
+    borderless: overrides.borderless ?? base.borderless,
     transparentBackground: overrides.transparentBackground ?? base.transparentBackground,
     colorMoved: overrides.colorMoved ?? base.colorMoved,
   };
@@ -327,6 +330,7 @@ export function resolveConfiguredCliInput(
     hunkHeaders: DEFAULT_VIEW_PREFERENCES.showHunkHeaders,
     agentNotes: DEFAULT_VIEW_PREFERENCES.showAgentNotes,
     copyDecorations: DEFAULT_VIEW_PREFERENCES.copyDecorations,
+    borderless: DEFAULT_VIEW_PREFERENCES.borderless,
     transparentBackground: false,
   };
 
@@ -357,6 +361,7 @@ export function resolveConfiguredCliInput(
     hunkHeaders: resolvedOptions.hunkHeaders ?? DEFAULT_VIEW_PREFERENCES.showHunkHeaders,
     agentNotes: resolvedOptions.agentNotes ?? DEFAULT_VIEW_PREFERENCES.showAgentNotes,
     copyDecorations: resolvedOptions.copyDecorations ?? DEFAULT_VIEW_PREFERENCES.copyDecorations,
+    borderless: resolvedOptions.borderless ?? DEFAULT_VIEW_PREFERENCES.borderless,
     transparentBackground: resolvedOptions.transparentBackground ?? false,
     colorMoved: resolvedOptions.colorMoved,
   };

@@ -56,7 +56,11 @@ export function isPageDownKey(key: KeyEvent) {
 
 /** Match any key alias that should scroll backward by a full viewport. */
 export function isPageUpKey(key: KeyEvent) {
-  return key.name === "pageup" || key.name === "b" || key.sequence === "b";
+  // The less-style `b` alias is unmodified only, so Shift+B stays free for the borderless toggle.
+  if (key.name === "pageup") {
+    return true;
+  }
+  return (key.name === "b" || key.sequence === "b") && !key.shift;
 }
 
 /** Match any key alias that should scroll forward by a single diff row. */

@@ -1,9 +1,43 @@
 import type { SyntaxStyle } from "@opentui/core";
 
+/** Whether chrome boundaries are drawn as lines/boxes or as filled background bands. */
+export type ChromeMode = "bordered" | "borderless";
+
+/**
+ * Ordered elevation ladder of background surfaces, low -> high. Adjacent levels
+ * are derived to stay visually distinct so borderless chrome reads as layered
+ * bands instead of one flat field. Every theme carries the full ladder; the
+ * active {@link ChromeMode} decides whether primitives draw a border or fill a band.
+ */
+export interface ChromeSurfaces {
+  /** Editor body / code area (base). */
+  code: string;
+  /** Quiet context affordances inside a file, e.g. the unchanged-lines/gap toggle. */
+  contextBand: string;
+  /** File-section headers and the top menu bar. */
+  sectionHeader: string;
+  /** File-tree sidebar panel. */
+  sidebar: string;
+  /** Floating overlays: popups, menus, dialogs. */
+  overlay: string;
+  /** Agent comment body. */
+  note: string;
+  /** Agent comment title band. */
+  noteTitle: string;
+  /** Hovered/selected row inside menus and lists. */
+  selection: string;
+  /** Primary/active selection (accent), e.g. the active theme row or a Save action. */
+  selectionPrimary: string;
+}
+
 export interface AppTheme {
   id: string;
   label: string;
   appearance: "light" | "dark";
+  /** How chrome boundaries render. Defaults to "bordered"; set per the user toggle. */
+  chrome: ChromeMode;
+  /** Derived elevation ladder used by borderless chrome primitives. */
+  surfaces: ChromeSurfaces;
   background: string;
   panel: string;
   panelAlt: string;
@@ -57,4 +91,4 @@ export type SyntaxColors = {
   punctuation: string;
 };
 
-export type ThemeBase = Omit<AppTheme, "syntaxColors" | "syntaxStyle">;
+export type ThemeBase = Omit<AppTheme, "syntaxColors" | "syntaxStyle" | "chrome" | "surfaces">;

@@ -1,6 +1,7 @@
 import { buildAgentPopoverContent } from "../../lib/agentPopover";
 import { fitText, padText } from "../../lib/text";
 import type { AppTheme } from "../../themes";
+import { overlaySurfaceStyle } from "../chrome/chromeSurface";
 
 /** Render one framed floating agent note popover. */
 export function AgentCard({
@@ -40,9 +41,7 @@ export function AgentCard({
       style={{
         width,
         height: popover.height,
-        border: true,
-        borderColor: theme.accent,
-        backgroundColor: theme.panel,
+        ...overlaySurfaceStyle(theme, theme.accent),
         paddingLeft: 1,
         paddingRight: 1,
         paddingTop: 0,
