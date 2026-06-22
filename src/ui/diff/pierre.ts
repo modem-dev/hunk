@@ -574,6 +574,11 @@ export function trailingCollapsedLines(metadata: FileDiffMetadata) {
 
 // Custom Shiki themes are registered once with Pierre's global theme registry. Track which
 // names we've registered so repeated highlight passes don't re-register (Pierre warns on dupes).
+// ponytail: dedup is by theme name only. Pierre's registry is itself keyed by name and rejects
+// re-registration, so swapping a theme's JSON under the same name within one process would keep
+// serving the original tokens. There is no in-process JSON-reload path today (config is read once
+// at startup; the theme picker only cycles already-built themes), so this is a non-issue in
+// practice. If live theme-file reload is ever added, register under a content-derived name.
 const registeredCustomSyntaxThemes = new Set<string>();
 
 /** Register a config-provided Shiki theme JSON with Pierre before it's referenced by name. */

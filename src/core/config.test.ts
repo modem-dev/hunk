@@ -269,6 +269,24 @@ describe("config resolution", () => {
     ).toThrow("Expected custom_theme.syntax_theme to point at a file.");
   });
 
+  test("rejects a custom_theme.syntax_theme that is not valid JSON", () => {
+    const home = createTempDir("hunk-config-home-");
+    const hunkDir = join(home, ".config", "hunk");
+    mkdirSync(hunkDir, { recursive: true });
+    writeFileSync(join(hunkDir, "broken.json"), "{ not valid json }");
+    writeFileSync(
+      join(hunkDir, "config.toml"),
+      ["[custom_theme]", 'syntax_theme = "broken.json"'].join("\n"),
+    );
+
+    expect(() =>
+      resolveConfiguredCliInput(createPatchPagerInput(), {
+        cwd: createTempDir("hunk-config-cwd-"),
+        env: { HOME: home },
+      }),
+    ).toThrow("to be valid JSON:");
+  });
+
   test("rejects a custom_theme.syntax_theme JSON without a name", () => {
     const home = createTempDir("hunk-config-home-");
     const hunkDir = join(home, ".config", "hunk");
