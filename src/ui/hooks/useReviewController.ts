@@ -40,6 +40,7 @@ import type { FileSourceStatus } from "../diff/expandCollapsedRows";
 import { selectGapForKeyboardToggle } from "../diff/expandCollapsedRows";
 import { trailingCollapsedLines } from "../diff/pierre";
 import { findNextHunkCursor } from "../lib/hunks";
+import { findMatchesInFiles, moveSearchCursor, type FileSearchMatch } from "../lib/searchMatches";
 import { reviewNoteSource } from "../lib/agentAnnotations";
 import {
   buildReviewState,
@@ -129,6 +130,10 @@ export interface ReviewController {
   allFiles: DiffFile[];
   expandedGapsByFileId: Record<string, ReadonlySet<string>>;
   filter: string;
+  searchQuery: string;
+  searchInputDraft: string;
+  searchMatches: FileSearchMatch[];
+  searchCursor: number;
   draftNote: DraftReviewNote | null;
   liveCommentCount: number;
   liveCommentSummaries: SessionLiveCommentSummary[];
@@ -180,12 +185,20 @@ export interface ReviewController {
     target?: UserNoteLineTarget,
   ) => DraftReviewNote | null;
   setFilter: (value: string) => void;
+  setSearchQuery: (value: string) => void;
+  applySearchInput: (value: string) => void;
+  beginSearch: () => void;
+  submitSearch: () => void;
+  advanceSearchCursor: (delta: 1 | -1) => void;
+  clearSearch: () => void;
   updateDraftNote: (body: string) => void;
 }
 
 /** Own the shared review stream state used by both the UI and session bridge. */
 export function useReviewController({ files }: { files: DiffFile[] }): ReviewController {
   const [filter, setFilter] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchInputDraft, setSearchInputDraft] = useState("");
   const [selectedFileId, setSelectedFileId] = useState(files[0]?.id ?? "");
   const [selectedHunkIndex, setSelectedHunkIndex] = useState(0);
   const [selectedFileTopAlignRequestId, setSelectedFileTopAlignRequestId] = useState(0);
@@ -422,6 +435,24 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     setFilter("");
   }, []);
 
+  const clearSearch = useCallback(() => {
+    setSearchQuery("");
+    setSearchInputDraft("");
+    setSearchMatches([]);
+    setSearchCursor(-1);
+  }, []);
+
+  /** Empty the search prompt input without disturbing the painted highlights. */
+  const beginSearch = useCallback(() => {
+    setSearchInputDraft("");
+  }, []);
+
+  /** Apply a new search prompt input as the live highlight query. */
+  const applySearchInput = useCallback((value: string) => {
+    setSearchInputDraft(value);
+    setSearchQuery(value);
+  }, []);
+
   /** Toggle expansion of one collapsed gap and lazily load source when needed. */
   const toggleGap = useCallback(
     (fileId: string, gapKey: string) => {
@@ -552,6 +583,41 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
       };
     },
     [allFiles, selectHunk, selectedFile?.id, selectedHunkIndex, visibleFiles],
+  );
+
+  const [searchMatches, setSearchMatches] = useState<FileSearchMatch[]>([]);
+  const [searchCursor, setSearchCursor] = useState(-1);
+
+  const jumpToMatch = useCallback(
+    (match: FileSearchMatch) => {
+      navigateToLocation({ filePath: match.filePath, side: match.side, line: match.line });
+    },
+    [navigateToLocation],
+  );
+
+  /** Recompute matches against the current visible files and jump to the first one. */
+  const submitSearch = useCallback(() => {
+    const matches = findMatchesInFiles(visibleFiles, searchQuery);
+    setSearchMatches(matches);
+    if (matches.length === 0) {
+      setSearchCursor(-1);
+      return;
+    }
+    setSearchCursor(0);
+    jumpToMatch(matches[0]!);
+  }, [jumpToMatch, searchQuery, visibleFiles]);
+
+  /** Step the search cursor by delta (with wrap-around) and jump to the new match. */
+  const advanceSearchCursor = useCallback(
+    (delta: 1 | -1) => {
+      if (searchMatches.length === 0) {
+        return;
+      }
+      const next = moveSearchCursor(searchMatches.length, searchCursor, delta);
+      setSearchCursor(next);
+      jumpToMatch(searchMatches[next]!);
+    },
+    [jumpToMatch, searchCursor, searchMatches],
   );
 
   /** Add one live comment, optionally revealing its hunk in the active review. */
@@ -1026,6 +1092,16 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     selectHunk,
     startUserNote,
     setFilter,
+    searchQuery,
+    setSearchQuery,
+    searchInputDraft,
+    applySearchInput,
+    beginSearch,
+    searchMatches,
+    searchCursor,
+    submitSearch,
+    advanceSearchCursor,
+    clearSearch,
     updateDraftNote,
   };
 }

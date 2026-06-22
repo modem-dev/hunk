@@ -13,6 +13,7 @@ import { plannedReviewRowVisible } from "./plannedReviewRows";
 import { buildDiffSectionRowPlan } from "./diffSectionRowPlan";
 import { resolveVisiblePlannedRowWindow, type VisibleBodyBounds } from "./rowWindowing";
 import { diffMessage, DiffRowView, fitText } from "./renderRows";
+import { applyHighlightToRow, useSearchHighlightQuery } from "./searchHighlight";
 import { useHighlightedDiff } from "./useHighlightedDiff";
 import { useHighlightedSource } from "./useHighlightedSource";
 
@@ -125,6 +126,8 @@ export function PierreDiffView({
   onStartUserNoteAtHunkRef.current = onStartUserNoteAtHunk;
   const onToggleGapRef = useRef(onToggleGap);
   onToggleGapRef.current = onToggleGap;
+
+  const searchQuery = useSearchHighlightQuery();
 
   const clearHoverIdleTimeout = useCallback(() => {
     if (hoverIdleTimeoutRef.current) {
@@ -365,10 +368,14 @@ export function PierreDiffView({
           );
         }
 
+        const rowForRender = searchQuery
+          ? applyHighlightToRow(plannedRow.row, searchQuery, theme)
+          : plannedRow.row;
+
         return (
           <box key={plannedRow.key} id={rowId} style={{ width: "100%", flexDirection: "column" }}>
             <DiffRowView
-              row={plannedRow.row}
+              row={rowForRender}
               width={width}
               lineNumberDigits={lineNumberDigits}
               showLineNumbers={showLineNumbers}
