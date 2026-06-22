@@ -39,6 +39,7 @@ export function MenuDropdown({
   activeMenuItemIndex,
   activeMenuSpec,
   activeMenuWidth,
+  top = 1,
   terminalWidth,
   theme,
   onHoverItem,
@@ -49,6 +50,7 @@ export function MenuDropdown({
   activeMenuItemIndex: number;
   activeMenuSpec: MenuSpec;
   activeMenuWidth: number;
+  top?: number;
   terminalWidth: number;
   theme: AppTheme;
   onHoverItem: (index: number) => void;
@@ -61,7 +63,7 @@ export function MenuDropdown({
     <box
       style={{
         position: "absolute",
-        top: 1,
+        top,
         left: clampedLeft,
         width: clampedWidth,
         height: activeMenuEntries.length + 2,

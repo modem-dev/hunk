@@ -126,6 +126,7 @@ watch = false
 exclude_untracked = false
 line_numbers = true
 wrap_lines = false
+menu_bar = true
 agent_notes = false
 transparent_background = false
 ```

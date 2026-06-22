@@ -145,6 +145,7 @@ describe("ui helpers", () => {
       showHelp: false,
       showHunkHeaders: false,
       showLineNumbers: true,
+      showMenuBar: true,
       renderSidebar: false,
       toggleCopyDecorations: () => {},
       toggleAgentNotes: () => {},
@@ -153,6 +154,7 @@ describe("ui helpers", () => {
       toggleHelp: () => {},
       toggleHunkHeaders: () => {},
       toggleLineNumbers: () => {},
+      toggleMenuBar: () => {},
       toggleLineWrap: () => {},
       toggleSidebar: () => {},
       triggerEditSelectedFile: () => {},
@@ -182,7 +184,14 @@ describe("ui helpers", () => {
             entry.kind === "item" && Boolean(entry.checked),
         )
         .map((entry) => entry.label),
-    ).toEqual(["Stacked view", "Agent notes", "Line numbers", "Line wrapping", "Copy decorations"]);
+    ).toEqual([
+      "Stacked view",
+      "Menu bar",
+      "Agent notes",
+      "Line numbers",
+      "Line wrapping",
+      "Copy decorations",
+    ]);
     expect(
       menus.view
         .filter((entry): entry is Extract<MenuEntry, { kind: "item" }> => entry.kind === "item")

@@ -67,6 +67,7 @@ function withCurrentViewOptions(
     showAgentNotes: boolean;
     showHunkHeaders: boolean;
     showLineNumbers: boolean;
+    showMenuBar: boolean;
     wrapLines: boolean;
   },
 ): CliInput {
@@ -79,6 +80,7 @@ function withCurrentViewOptions(
       agentNotes: view.showAgentNotes,
       hunkHeaders: view.showHunkHeaders,
       lineNumbers: view.showLineNumbers,
+      menuBar: view.showMenuBar,
       wrapLines: view.wrapLines,
     },
   };
@@ -134,6 +136,7 @@ export function App({
   const [copyDecorations, setCopyDecorations] = useState(bootstrap.initialCopyDecorations ?? false);
   const [codeHorizontalOffset, setCodeHorizontalOffset] = useState(0);
   const [showHunkHeaders, setShowHunkHeaders] = useState(bootstrap.initialShowHunkHeaders ?? true);
+  const [showMenuBar, setShowMenuBar] = useState(bootstrap.initialShowMenuBar ?? true);
   const [themeSelectorState, setThemeSelectorState] = useState<ThemeSelectorState>({
     open: false,
     selectedIndex: 0,
@@ -504,6 +507,11 @@ export function App({
     setShowHunkHeaders((current) => !current);
   };
 
+  /** Toggle the top menu bar while keeping F10 menu navigation available. */
+  const toggleMenuBar = () => {
+    setShowMenuBar((current) => !current);
+  };
+
   const canRefreshCurrentInput = canReloadInput(bootstrap.input);
   const watchEnabled = Boolean(bootstrap.input.options.watch && canRefreshCurrentInput);
 
@@ -519,6 +527,7 @@ export function App({
       showAgentNotes,
       showHunkHeaders,
       showLineNumbers,
+      showMenuBar,
       wrapLines,
     });
 
@@ -540,6 +549,7 @@ export function App({
     showAgentNotes,
     showHunkHeaders,
     showLineNumbers,
+    showMenuBar,
     themeId,
     wrapLines,
   ]);
@@ -743,6 +753,7 @@ export function App({
         showHelp,
         showHunkHeaders,
         showLineNumbers,
+        showMenuBar,
         renderSidebar,
         toggleCopyDecorations,
         toggleAgentNotes,
@@ -751,6 +762,7 @@ export function App({
         toggleHelp,
         toggleHunkHeaders,
         toggleLineNumbers,
+        toggleMenuBar,
         toggleLineWrap,
         toggleSidebar,
         triggerEditSelectedFile,
@@ -774,12 +786,14 @@ export function App({
       showHelp,
       showHunkHeaders,
       showLineNumbers,
+      showMenuBar,
       renderSidebar,
       toggleAgentNotes,
       toggleFocusArea,
       toggleHelp,
       toggleHunkHeaders,
       toggleLineNumbers,
+      toggleMenuBar,
       toggleLineWrap,
       toggleSidebar,
       triggerEditSelectedFile,
@@ -839,6 +853,7 @@ export function App({
     toggleHelp,
     toggleHunkHeaders,
     toggleLineNumbers,
+    toggleMenuBar,
     toggleLineWrap,
     toggleSidebar,
     triggerEditSelectedFile,
@@ -906,7 +921,7 @@ export function App({
   // this in lockstep with the body container's paddingLeft and the sidebar render branch below.
   const diffPaneScreenLeft =
     bodyPadding / 2 + (renderSidebar ? clampedSidebarWidth + DIVIDER_WIDTH : 0);
-  const diffPaneScreenTop = pagerMode ? 0 : 1;
+  const diffPaneScreenTop = pagerMode || !showMenuBar ? 0 : 1;
 
   return (
     <box
@@ -917,7 +932,7 @@ export function App({
         backgroundColor: activeTheme.background,
       }}
     >
-      {!pagerMode ? (
+      {!pagerMode && showMenuBar ? (
         <MenuBar
           activeMenuId={activeMenuId}
           menuSpecs={menuSpecs}
@@ -1060,6 +1075,7 @@ export function App({
             activeMenuItemIndex={activeMenuItemIndex}
             activeMenuSpec={activeMenuSpec}
             activeMenuWidth={activeMenuWidth}
+            top={showMenuBar ? 1 : 0}
             terminalWidth={terminal.width}
             theme={baseTheme}
             onHoverItem={setActiveMenuItemIndex}

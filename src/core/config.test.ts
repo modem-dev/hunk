@@ -75,6 +75,7 @@ describe("config resolution", () => {
       [
         'theme = "github-light-default"',
         "wrap_lines = true",
+        "menu_bar = false",
         "",
         "[pager]",
         "hunk_headers = false",
@@ -93,6 +94,7 @@ describe("config resolution", () => {
       theme: "github-light-default",
       lineNumbers: false,
       wrapLines: true,
+      menuBar: false,
       hunkHeaders: false,
       agentNotes: true,
       transparentBackground: true,
@@ -485,6 +487,7 @@ describe("config resolution", () => {
         'theme = "github-light-default"',
         "line_numbers = false",
         "wrap_lines = true",
+        "menu_bar = false",
         "hunk_headers = false",
         "agent_notes = true",
         "copy_decorations = false",
@@ -511,6 +514,7 @@ describe("config resolution", () => {
     expect(bootstrap.initialTheme).toBe("github-light-default");
     expect(bootstrap.initialShowLineNumbers).toBe(false);
     expect(bootstrap.initialWrapLines).toBe(true);
+    expect(bootstrap.initialShowMenuBar).toBe(false);
     expect(bootstrap.initialShowHunkHeaders).toBe(false);
     expect(bootstrap.initialShowAgentNotes).toBe(true);
     expect(bootstrap.initialCopyDecorations).toBe(false);

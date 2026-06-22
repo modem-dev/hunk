@@ -458,6 +458,7 @@ export async function loadAppBootstrap(
     initialShowLineNumbers: input.options.lineNumbers ?? true,
     initialWrapLines: input.options.wrapLines ?? false,
     initialShowHunkHeaders: input.options.hunkHeaders ?? true,
+    initialShowMenuBar: input.options.menuBar ?? true,
     initialShowAgentNotes: input.options.agentNotes ?? false,
     initialCopyDecorations: input.options.copyDecorations ?? false,
   };

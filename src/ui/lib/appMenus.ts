@@ -17,6 +17,7 @@ export interface BuildAppMenusOptions {
   showHelp: boolean;
   showHunkHeaders: boolean;
   showLineNumbers: boolean;
+  showMenuBar: boolean;
   renderSidebar: boolean;
   toggleCopyDecorations: () => void;
   toggleAgentNotes: () => void;
@@ -25,6 +26,7 @@ export interface BuildAppMenusOptions {
   toggleHelp: () => void;
   toggleHunkHeaders: () => void;
   toggleLineNumbers: () => void;
+  toggleMenuBar: () => void;
   toggleLineWrap: () => void;
   toggleSidebar: () => void;
   triggerEditSelectedFile: () => void;
@@ -48,6 +50,7 @@ export function buildAppMenus({
   showHelp,
   showHunkHeaders,
   showLineNumbers,
+  showMenuBar,
   renderSidebar,
   toggleCopyDecorations,
   toggleAgentNotes,
@@ -56,6 +59,7 @@ export function buildAppMenus({
   toggleHelp,
   toggleHunkHeaders,
   toggleLineNumbers,
+  toggleMenuBar,
   toggleLineWrap,
   toggleSidebar,
   triggerEditSelectedFile,
@@ -132,6 +136,13 @@ export function buildAppMenus({
         hint: "s",
         checked: renderSidebar,
         action: toggleSidebar,
+      },
+      {
+        kind: "item",
+        label: "Menu bar",
+        hint: "M",
+        checked: showMenuBar,
+        action: toggleMenuBar,
       },
       { kind: "separator" },
       {

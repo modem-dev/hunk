@@ -722,6 +722,71 @@ describe("App interactions", () => {
     }
   });
 
+  test("Shift-M hides the menu bar without disabling F10 menus", async () => {
+    const setup = await testRender(<AppHost bootstrap={createSingleFileBootstrap()} />, {
+      width: 240,
+      height: 24,
+    });
+
+    try {
+      await flush(setup);
+
+      let frame = setup.captureCharFrame();
+      expect(frame).toContain("File  View  Navigate  Agent  Help");
+
+      await act(async () => {
+        await setup.mockInput.pressKey("m", { shift: true });
+      });
+      await flush(setup);
+
+      frame = setup.captureCharFrame();
+      expect(frame).not.toContain("File  View  Navigate  Agent  Help");
+
+      await act(async () => {
+        await setup.mockInput.pressKey("F10");
+      });
+      frame = await waitForFrame(setup, (nextFrame) =>
+        nextFrame.includes("Toggle files/filter focus"),
+      );
+      expect(frame).toContain("Toggle files/filter focus");
+      expect(frame).not.toContain("File  View  Navigate  Agent  Help");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("configured hidden menu bar starts hidden while menus remain keyboard-accessible", async () => {
+    const setup = await testRender(
+      <AppHost bootstrap={{ ...createSingleFileBootstrap(), initialShowMenuBar: false }} />,
+      {
+        width: 240,
+        height: 24,
+      },
+    );
+
+    try {
+      await flush(setup);
+
+      let frame = setup.captureCharFrame();
+      expect(frame).not.toContain("File  View  Navigate  Agent  Help");
+
+      await act(async () => {
+        await setup.mockInput.pressKey("F10");
+      });
+      frame = await waitForFrame(setup, (nextFrame) =>
+        nextFrame.includes("Toggle files/filter focus"),
+      );
+      expect(frame).toContain("Toggle files/filter focus");
+      expect(frame).not.toContain("File  View  Navigate  Agent  Help");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("theme shortcut opens a selector and Enter applies the highlighted theme", async () => {
     const setup = await testRender(<AppHost bootstrap={createSingleFileBootstrap()} />, {
       width: 240,
