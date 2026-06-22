@@ -191,7 +191,7 @@ export function DiffPane({
   copyDecorations = false,
   screenLeft = 0,
   screenTop = 0,
-  showTopChrome = !pagerMode,
+  showTopChrome,
   showAgentNotes,
   showLineNumbers,
   showHunkHeaders,
@@ -269,6 +269,7 @@ export function DiffPane({
   onToggleGap?: (fileId: string, gapKey: string) => void;
   onViewportCenteredHunkChange?: (fileId: string, hunkIndex: number) => void;
 }) {
+  const renderTopChrome = showTopChrome ?? !pagerMode;
   const renderer = useRenderer();
   const mouseWheelScrollAcceleration = useMemo(
     () => createReviewMouseWheelScrollAcceleration(),
@@ -1730,10 +1731,10 @@ export function DiffPane({
     <box
       style={{
         width,
-        border: showTopChrome ? ["top"] : [],
+        border: renderTopChrome ? ["top"] : [],
         borderColor: theme.border,
         backgroundColor: theme.panel,
-        paddingTop: showTopChrome ? 1 : 0,
+        paddingTop: renderTopChrome ? 1 : 0,
         paddingBottom: pagerMode ? 0 : 1,
         paddingX: 0,
         flexDirection: "column",
