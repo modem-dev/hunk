@@ -1,5 +1,6 @@
 import { memo } from "react";
 import { fileRowId } from "../../lib/ids";
+import { iconForFile } from "../../lib/fileIcons";
 import { sidebarEntryStats, type FileGroupEntry, type FileListEntry } from "../../lib/files";
 import { fitText, padText } from "../../lib/text";
 import type { AppTheme } from "../../themes";
@@ -28,25 +29,31 @@ function getFileStateIcon(entry: FileListEntry, theme: AppTheme): { icon: string
 /** Render one folder header in the navigation sidebar. */
 export function FileGroupHeader({
   entry,
+  nerdFontIcons = false,
   paddingLeft = 1,
   textWidth,
   theme,
 }: {
   entry: FileGroupEntry;
+  nerdFontIcons?: boolean;
   paddingLeft?: number;
   textWidth: number;
   theme: AppTheme;
 }) {
+  const folderIcon = nerdFontIcons ? iconForFile(entry.label, true) : null;
+  const iconWidth = folderIcon ? 2 : 0;
   return (
     <box
       style={{
         width: "100%",
         height: 1,
         paddingLeft,
+        flexDirection: "row",
         backgroundColor: theme.panel,
       }}
     >
-      <text fg={theme.muted}>{fitText(entry.label, Math.max(1, textWidth))}</text>
+      {folderIcon ? <text fg={folderIcon.color}>{folderIcon.icon} </text> : null}
+      <text fg={theme.muted}>{fitText(entry.label, Math.max(1, textWidth - iconWidth))}</text>
     </box>
   );
 }
@@ -54,6 +61,7 @@ export function FileGroupHeader({
 /** Render one file row in the navigation sidebar. */
 export const FileListItem = memo(function FileListItem({
   entry,
+  nerdFontIcons = false,
   paddingLeft = 1,
   selected,
   statsWidth,
@@ -62,6 +70,7 @@ export const FileListItem = memo(function FileListItem({
   onSelectFile,
 }: {
   entry: FileListEntry;
+  nerdFontIcons?: boolean;
   paddingLeft?: number;
   selected: boolean;
   statsWidth: number;
@@ -72,7 +81,8 @@ export const FileListItem = memo(function FileListItem({
   const rowBackground = selected ? theme.panelAlt : theme.panel;
   const stats = sidebarEntryStats(entry);
   const { icon, color } = getFileStateIcon(entry, theme);
-  const iconWidth = icon ? 2 : 0; // icon + space
+  const typeIcon = nerdFontIcons ? iconForFile(entry.name) : null;
+  const iconWidth = (icon ? 2 : 0) + (typeIcon ? 2 : 0); // icons + spaces
   const statsSectionWidth = statsWidth > 0 ? statsWidth + 1 : 0;
   const nameWidth = Math.max(1, textWidth - 1 - iconWidth - statsSectionWidth);
 
@@ -104,6 +114,7 @@ export const FileListItem = memo(function FileListItem({
         }}
       >
         {icon && <text fg={color}>{icon} </text>}
+        {typeIcon && <text fg={typeIcon.color}>{typeIcon.icon} </text>}
         <text fg={theme.text}>{padText(fitText(entry.name, nameWidth), nameWidth)}</text>
         {statsSectionWidth > 0 && (
           <box

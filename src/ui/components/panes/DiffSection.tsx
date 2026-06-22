@@ -17,6 +17,7 @@ interface DiffSectionProps {
   file: DiffFile;
   headerLabelWidth: number;
   headerStatsWidth: number;
+  nerdFontIcons?: boolean;
   layout: Exclude<LayoutMode, "auto">;
   selectedHunkIndex: number;
   copySelectedRowRanges?: Map<string, CopySelectedRowRange>;
@@ -51,6 +52,7 @@ function DiffSectionComponent({
   file,
   headerLabelWidth,
   headerStatsWidth,
+  nerdFontIcons = false,
   layout,
   selectedHunkIndex,
   copySelectedRowRanges,
@@ -108,6 +110,7 @@ function DiffSectionComponent({
           file={file}
           headerLabelWidth={headerLabelWidth}
           headerStatsWidth={headerStatsWidth}
+          nerdFontIcons={nerdFontIcons}
           theme={theme}
           onSelect={onSelect}
         />
@@ -155,6 +158,7 @@ export const DiffSection = memo(DiffSectionComponent, (previous, next) => {
     previous.file === next.file &&
     previous.headerLabelWidth === next.headerLabelWidth &&
     previous.headerStatsWidth === next.headerStatsWidth &&
+    previous.nerdFontIcons === next.nerdFontIcons &&
     previous.layout === next.layout &&
     previous.selectedHunkIndex === next.selectedHunkIndex &&
     previous.copySelectedRowRanges === next.copySelectedRowRanges &&

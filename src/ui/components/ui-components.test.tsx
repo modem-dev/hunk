@@ -17,6 +17,7 @@ import { buildFileSectionLayouts, buildInStreamFileHeaderHeights } from "../lib/
 
 const { AppHost } = await import("../AppHost");
 const { buildSidebarEntries } = await import("../lib/files");
+const { iconForFile } = await import("../lib/fileIcons");
 const { HelpDialog } = await import("./chrome/HelpDialog");
 const { SidebarPane } = await import("./panes/SidebarPane");
 const { AgentCard } = await import("./panes/AgentCard");
@@ -466,6 +467,36 @@ describe("UI components", () => {
     expect(frame).not.toContain("+0");
     expect(frame).not.toContain("-0");
     expect(frame).not.toContain("M +2 -1 AI");
+  });
+
+  test("SidebarPane can add Nerd Font file and folder icons without replacing git status", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const files = [
+      createTestDiffFile(
+        "app",
+        "src/ui/App.tsx",
+        "export const app = 1;\n",
+        "export const app = 2;\nexport const view = true;\n",
+        true,
+      ),
+    ];
+    const frame = await captureFrame(
+      <SidebarPane
+        entries={buildSidebarEntries(files)}
+        scrollRef={createRef()}
+        selectedFileId="app"
+        nerdFontIcons={true}
+        textWidth={28}
+        theme={theme}
+        width={32}
+        onSelectFile={() => {}}
+      />,
+      36,
+      6,
+    );
+
+    expect(frame).toContain(`${iconForFile("src/ui", true).icon} src/ui/`);
+    expect(frame).toContain(`M ${iconForFile("App.tsx").icon} App.tsx`);
   });
 
   test("DiffPane renders all diff sections in file order", async () => {
