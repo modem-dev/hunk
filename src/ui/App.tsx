@@ -976,6 +976,7 @@ export function App({
               entries={review.sidebarEntries}
               scrollRef={sidebarScrollRef}
               selectedFileId={selectedFile?.id}
+              showTopChrome={showMenuBar}
               textWidth={sidebarTextWidth}
               theme={activeTheme}
               width={clampedSidebarWidth}
@@ -1009,6 +1010,7 @@ export function App({
           pagerMode={pagerMode}
           screenLeft={diffPaneScreenLeft}
           screenTop={diffPaneScreenTop}
+          showTopChrome={showMenuBar && !pagerMode}
           headerLabelWidth={diffHeaderLabelWidth}
           headerStatsWidth={diffHeaderStatsWidth}
           layout={resolvedLayout}

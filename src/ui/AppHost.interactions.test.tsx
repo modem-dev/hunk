@@ -62,6 +62,10 @@ function createNumberedAssignmentLines(start: number, count: number, valueOffset
   });
 }
 
+function firstNonEmptyLine(text: string) {
+  return text.split("\n").find((line) => line.trim().length > 0) ?? "";
+}
+
 function createMockHostClient({
   cwd = process.cwd(),
   repoRoot = process.cwd(),
@@ -741,6 +745,7 @@ describe("App interactions", () => {
 
       frame = setup.captureCharFrame();
       expect(frame).not.toContain("File  View  Navigate  Agent  Help");
+      expect(firstNonEmptyLine(frame)).not.toContain("─");
 
       await act(async () => {
         await setup.mockInput.pressKey("F10");
@@ -771,6 +776,7 @@ describe("App interactions", () => {
 
       let frame = setup.captureCharFrame();
       expect(frame).not.toContain("File  View  Navigate  Agent  Help");
+      expect(firstNonEmptyLine(frame)).not.toContain("─");
 
       await act(async () => {
         await setup.mockInput.pressKey("F10");
