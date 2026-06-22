@@ -305,7 +305,8 @@ const ICON_BY_EXT: Record<string, NerdFontIcon> = {
   ".cxx": { icon: "\ue646", color: "#0188d1" },
   ".cxxm": { icon: "\ue61d", color: "#519aba" },
   ".d": { icon: "\ue7af", color: "#b03931" },
-  ".d.ts": { icon: "\ue628", color: "#0188d1" },
+  // extname("foo.d.ts") returns ".ts", so declaration files fall through to ".ts".
+  // ".d.ts": { icon: "\ue628", color: "#0188d1" },
   ".dart": { icon: "\ue64c", color: "#59b6f0" },
   ".db": { icon: "\uf1c0", color: "#ffca29" },
   ".dconf": { icon: "\ue706", color: "#dad8d8" },

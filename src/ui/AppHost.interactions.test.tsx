@@ -1442,6 +1442,13 @@ describe("App interactions", () => {
       frame = setup.captureCharFrame();
       expect(frame).toContain("File icons");
       expect(frame).toContain("[ ] File icons");
+      expect(
+        hasLineWithBackground(
+          setup.captureSpans(),
+          "[ ] File icons",
+          resolveTheme("github-dark-default", null).accentMuted,
+        ),
+      ).toBe(true);
 
       await act(async () => {
         await setup.mockInput.pressEnter();
