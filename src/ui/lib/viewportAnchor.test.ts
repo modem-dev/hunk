@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { resolveTheme } from "../themes";
 import { buildInStreamFileHeaderHeights } from "./fileSectionLayout";
-import { measureDiffSectionGeometry } from "./diffSectionGeometry";
+import { measureDiffSectionGeometry } from "../diff/diffSectionGeometry";
 import { findViewportRowAnchor, resolveViewportRowAnchorTop } from "./viewportAnchor";
 import { createTestDiffFile, lines } from "../../../test/helpers/diff-helpers";
 
 describe("viewport row anchors", () => {
-  const theme = resolveTheme("midnight", null);
+  const theme = resolveTheme("github-dark-default", null);
 
   function createChangedFile() {
     return createTestDiffFile({

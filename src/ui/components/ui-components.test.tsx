@@ -1,13 +1,18 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { testRender } from "@opentui/react/test-utils";
-import { act, createRef, useEffect, useState, type ReactNode } from "react";
+import { act, createRef, useCallback, useEffect, useState, type ReactNode } from "react";
 import type { AppBootstrap, DiffFile } from "../../core/types";
 import { createTestVcsAppBootstrap } from "../../../test/helpers/app-bootstrap";
-import { createTestDiffFile as buildTestDiffFile, lines } from "../../../test/helpers/diff-helpers";
+import { capturedTestColorToHex } from "../../../test/helpers/test-color-helpers";
+import {
+  createTestDiffFile as buildTestDiffFile,
+  createTestSourceFetcher,
+  lines,
+} from "../../../test/helpers/diff-helpers";
 import { hexColorDistance } from "../lib/color";
 import { resolveTheme } from "../themes";
-import { measureDiffSectionGeometry } from "../lib/diffSectionGeometry";
+import { measureDiffSectionGeometry } from "../diff/diffSectionGeometry";
 import { buildFileSectionLayouts, buildInStreamFileHeaderHeights } from "../lib/fileSectionLayout";
 
 const { AppHost } = await import("../AppHost");
@@ -20,8 +25,9 @@ const { AgentInlineNote } = await import("./panes/AgentInlineNote");
 const { DiffPane } = await import("./panes/DiffPane");
 const { MenuDropdown } = await import("./chrome/MenuDropdown");
 const { StatusBar } = await import("./chrome/StatusBar");
-const { DiffSectionPlaceholder } = await import("./panes/DiffSectionPlaceholder");
+const { DiffFileHeaderRow } = await import("./panes/DiffFileHeaderRow");
 const { PierreDiffView } = await import("../diff/PierreDiffView");
+const { DiffRowView } = await import("../diff/renderRows");
 
 function createTestDiffFile(
   id: string,
@@ -205,9 +211,24 @@ function createCollapsedTopDiffFile(
   return createTestDiffFile(id, path, lines(...beforeLines), lines(...afterLines));
 }
 
+/** Build a file whose first hunk leaves a collapsed gap that can be expanded. */
+function createExpandableContextDiffFile(
+  id: string,
+  path: string,
+  sourceFetcher?: DiffFile["sourceFetcher"],
+) {
+  const before = Array.from({ length: 30 }, (_, i) => `line ${i + 1}\n`).join("");
+  const after = before.replace("line 5\n", "line 5 modified\n");
+
+  return {
+    after,
+    file: buildTestDiffFile({ after, before, context: 3, id, path, sourceFetcher }),
+  };
+}
+
 function createDiffPaneProps(
   files: DiffFile[],
-  theme = resolveTheme("midnight", null),
+  theme = resolveTheme("github-dark-default", null),
   overrides: Partial<Parameters<typeof DiffPane>[0]> = {},
 ): Parameters<typeof DiffPane>[0] {
   return {
@@ -227,7 +248,6 @@ function createDiffPaneProps(
     wrapToggleScrollTop: null,
     theme,
     width: 76,
-    onOpenAgentNotesAtHunk: () => {},
     onSelectFile: () => {},
     ...overrides,
   };
@@ -353,21 +373,6 @@ function frameHasHighlightedMarker(
   });
 }
 
-/** Convert captured RGBA output back into a #rrggbb color string for contrast assertions. */
-function capturedColorToHex(color: { buffer?: ArrayLike<number> } | undefined) {
-  const buffer = color?.buffer;
-  if (!buffer || buffer[0] == null || buffer[1] == null || buffer[2] == null) {
-    return null;
-  }
-
-  const componentToHex = (value: number) =>
-    Math.max(0, Math.min(255, Math.round(value * 255)))
-      .toString(16)
-      .padStart(2, "0");
-
-  return `#${componentToHex(buffer[0])}${componentToHex(buffer[1])}${componentToHex(buffer[2])}`;
-}
-
 /** Measure the rendered background contrast between one word-diff span and its surrounding line. */
 function renderedWordDiffBackgroundDistance(
   frame: { lines: Array<{ spans: Array<{ text: string; bg?: { buffer?: ArrayLike<number> } }> }> },
@@ -379,8 +384,8 @@ function renderedWordDiffBackgroundDistance(
       continue;
     }
 
-    const wordBg = capturedColorToHex(line.spans[spanIndex]?.bg);
-    const surroundingBg = capturedColorToHex(line.spans[spanIndex - 1]?.bg);
+    const wordBg = capturedTestColorToHex(line.spans[spanIndex]?.bg);
+    const surroundingBg = capturedTestColorToHex(line.spans[spanIndex - 1]?.bg);
     if (!wordBg || !surroundingBg) {
       continue;
     }
@@ -393,7 +398,7 @@ function renderedWordDiffBackgroundDistance(
 
 describe("UI components", () => {
   test("SidebarPane renders grouped file rows with indented filenames and right-aligned stats", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const files = [
       createTestDiffFile(
         "app",
@@ -466,7 +471,7 @@ describe("UI components", () => {
 
   test("DiffPane renders all diff sections in file order", async () => {
     const bootstrap = createBootstrap();
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <DiffPane
         diffContentWidth={72}
@@ -485,7 +490,6 @@ describe("UI components", () => {
         wrapToggleScrollTop={null}
         theme={theme}
         width={76}
-        onOpenAgentNotesAtHunk={() => {}}
         onSelectFile={() => {}}
       />,
       80,
@@ -496,13 +500,440 @@ describe("UI components", () => {
     expect(frame).toContain("beta.ts");
     expect(frame).toContain("@@ -1,1 +1,2 @@");
     expect(frame).toContain("@@ -1,1 +1,1 @@");
-    expect(frame).toContain("[AI]");
+    expect(frame).not.toContain("[AI]");
     expect(frame.indexOf("alpha.ts")).toBeLessThan(frame.indexOf("beta.ts"));
+  });
+
+  test("DiffFileHeaderRow leaves one column after line counts", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const frame = await captureFrame(
+      <DiffFileHeaderRow
+        file={createTestDiffFile(
+          "stats-align",
+          "stats-align.ts",
+          lines("export const value = 1;"),
+          lines("export const value = 2;", "export const next = 3;"),
+        )}
+        headerLabelWidth={20}
+        headerStatsWidth={8}
+        theme={theme}
+      />,
+      40,
+      2,
+    );
+    const firstLine = frame.split("\n")[0] ?? "";
+    const statsIndex = firstLine.indexOf("+2 -1");
+
+    expect(statsIndex).toBeGreaterThanOrEqual(0);
+    expect(firstLine[statsIndex + "+2 -1".length]).toBe(" ");
+    expect(firstLine[statsIndex + "+2 -1".length + 1]).toBe(" ");
+  });
+
+  test("DiffRowView renders a clickable add-note affordance for a hovered diff row", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const startUserNote = mock(() => undefined);
+    const setup = await testRender(
+      <DiffRowView
+        row={{
+          type: "stack-line",
+          key: "alpha:line:1",
+          fileId: "alpha",
+          hunkIndex: 0,
+          cell: {
+            kind: "addition",
+            sign: "+",
+            newLineNumber: 2,
+            spans: [{ text: "export const alpha = 2;" }],
+          },
+        }}
+        width={72}
+        lineNumberDigits={1}
+        showLineNumbers={true}
+        showHunkHeaders={true}
+        wrapLines={false}
+        codeHorizontalOffset={0}
+        theme={theme}
+        selected={false}
+        showAddNoteBadge={true}
+        onStartUserNoteAtHunk={startUserNote}
+      />,
+      { width: 80, height: 3 },
+    );
+
+    try {
+      await act(async () => {
+        await setup.renderOnce();
+      });
+      const frame = setup.captureCharFrame();
+      expect(frame).toContain("[+]");
+      const addNoteY = frame.split("\n").findIndex((line) => line.includes("[+]"));
+      const addNoteX = frame.split("\n")[addNoteY]?.indexOf("[+]") ?? -1;
+      expect(addNoteY).toBeGreaterThanOrEqual(0);
+      expect(addNoteX).toBeGreaterThanOrEqual(0);
+
+      await act(async () => {
+        await setup.mockMouse.click(4, addNoteY);
+      });
+      expect(startUserNote).not.toHaveBeenCalled();
+
+      await act(async () => {
+        await setup.mockMouse.click(addNoteX + 1, addNoteY);
+      });
+      expect(startUserNote).toHaveBeenCalledWith(0, { side: "new", line: 2 });
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("DiffRowView keeps wrapped text stable when showing the add-note affordance", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const row = {
+      type: "stack-line" as const,
+      key: "alpha:line:hover-wrap",
+      fileId: "alpha",
+      hunkIndex: 0,
+      cell: {
+        kind: "addition" as const,
+        sign: "+" as const,
+        newLineNumber: 2,
+        spans: [{ text: "abcdefghij klmnopqrst uvwxyz" }],
+      },
+    };
+    const renderRow = (showAddNoteBadge: boolean) =>
+      captureFrame(
+        <DiffRowView
+          row={row}
+          width={24}
+          lineNumberDigits={1}
+          showLineNumbers={true}
+          showHunkHeaders={true}
+          wrapLines={true}
+          codeHorizontalOffset={0}
+          theme={theme}
+          selected={false}
+          showAddNoteBadge={showAddNoteBadge}
+          onStartUserNoteAtHunk={() => {}}
+        />,
+        32,
+        5,
+      );
+    const normalize = (frame: string) =>
+      frame
+        .replace("[+]", "")
+        .split("\n")
+        .map((line) => line.trimEnd())
+        .filter(Boolean);
+
+    const hiddenFrame = await renderRow(false);
+    const shownFrame = await renderRow(true);
+
+    expect(normalize(shownFrame)).toEqual(normalize(hiddenFrame));
+  });
+
+  test("DiffRowView fills the reserved wrapped add-note column with row background", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const setup = await testRender(
+      <DiffRowView
+        row={{
+          type: "stack-line",
+          key: "alpha:line:hover-wrap-bg",
+          fileId: "alpha",
+          hunkIndex: 0,
+          cell: {
+            kind: "addition",
+            sign: "+",
+            newLineNumber: 2,
+            spans: [{ text: "abcdefghij klmnopqrst uvwxyz" }],
+          },
+        }}
+        width={24}
+        lineNumberDigits={1}
+        showLineNumbers={true}
+        showHunkHeaders={true}
+        wrapLines={true}
+        codeHorizontalOffset={0}
+        theme={theme}
+        selected={false}
+        onStartUserNoteAtHunk={() => {}}
+      />,
+      { width: 32, height: 5 },
+    );
+
+    try {
+      await act(async () => {
+        await setup.renderOnce();
+      });
+      const line = setup
+        .captureSpans()
+        .lines.find((nextLine) => nextLine.spans.some((span) => span.text.includes("abcdefghij")));
+      const hasAddedBgSpacer = line?.spans.some(
+        (span) =>
+          span.text === " ".repeat(3) &&
+          capturedTestColorToHex(span.bg)?.toLowerCase() === theme.addedBg.toLowerCase(),
+      );
+
+      expect(hasAddedBgSpacer).toBe(true);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("DiffRowView keeps metadata row background within the measured row width", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const setup = await testRender(
+      <DiffRowView
+        row={{
+          type: "hunk-header",
+          key: "alpha:hunk:0",
+          fileId: "alpha",
+          hunkIndex: 0,
+          text: "@@ -1 +1 @@",
+        }}
+        width={24}
+        lineNumberDigits={1}
+        showLineNumbers={true}
+        showHunkHeaders={true}
+        wrapLines={true}
+        codeHorizontalOffset={0}
+        theme={theme}
+        selected={false}
+      />,
+      { width: 32, height: 2 },
+    );
+
+    try {
+      await act(async () => {
+        await setup.renderOnce();
+      });
+      const panelAltWidth = setup.captureSpans().lines[0]?.spans.reduce((total, span) => {
+        return capturedTestColorToHex(span.bg)?.toLowerCase() === theme.panelAlt.toLowerCase()
+          ? total + span.text.length
+          : total;
+      }, 0);
+
+      expect(panelAltWidth).toBe(24);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("DiffRowView preserves zero-width combining spans in nowrap and wrapped rows", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const row = {
+      type: "stack-line" as const,
+      key: "alpha:line:combining",
+      fileId: "alpha",
+      hunkIndex: 0,
+      cell: {
+        kind: "addition" as const,
+        sign: "+" as const,
+        newLineNumber: 2,
+        spans: [{ text: "e" }, { text: "\u0301" }, { text: "x" }],
+      },
+    };
+
+    for (const wrapLines of [false, true]) {
+      const setup = await testRender(
+        <DiffRowView
+          row={row}
+          width={40}
+          lineNumberDigits={1}
+          showLineNumbers={true}
+          showHunkHeaders={true}
+          wrapLines={wrapLines}
+          codeHorizontalOffset={0}
+          theme={theme}
+          selected={false}
+        />,
+        { width: 48, height: 3 },
+      );
+
+      try {
+        await act(async () => {
+          await setup.renderOnce();
+        });
+        expect(setup.captureCharFrame()).toContain("e\u0301x");
+      } finally {
+        await act(async () => {
+          setup.renderer.destroy();
+        });
+      }
+    }
+  });
+
+  test("DiffPane geometry memo depends on add-note presence instead of callback identity", async () => {
+    const source = await Bun.file(new URL("./panes/DiffPane.tsx", import.meta.url)).text();
+    const baseMemo = source.slice(
+      source.indexOf("const baseSectionGeometry = useMemo"),
+      source.indexOf("const baseEstimatedBodyHeights = useMemo"),
+    );
+    const noteAwareMemo = source.slice(
+      source.indexOf("const sectionGeometry = useMemo"),
+      source.indexOf("const estimatedBodyHeights = useMemo"),
+    );
+
+    expect(baseMemo).toContain("reserveAddNoteColumn");
+    expect(baseMemo).not.toContain("onStartUserNoteAtHunk,");
+    expect(noteAwareMemo).toContain("reserveAddNoteColumn");
+    expect(noteAwareMemo).not.toContain("onStartUserNoteAtHunk,");
+  });
+
+  test("DiffPane only shows the add-note affordance after pointer movement", async () => {
+    const files = createWindowingFiles(6);
+    const theme = resolveTheme("github-dark-default", null);
+    const scrollRef = createRef<ScrollBoxRenderable>();
+    const props = createDiffPaneProps(files, theme, {
+      diffContentWidth: 88,
+      scrollRef,
+      onStartUserNoteAtHunk: () => {},
+      separatorWidth: 84,
+      width: 92,
+    });
+    const setup = await testRender(<DiffPane {...props} />, {
+      width: 96,
+      height: 12,
+    });
+
+    try {
+      await settleDiffPane(setup);
+
+      await act(async () => {
+        await setup.mockMouse.moveTo(32, 4);
+        await setup.renderOnce();
+      });
+      let frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("[+]"), 12);
+      expect(frame).toContain("[+]");
+
+      await act(async () => {
+        await setup.mockMouse.scroll(32, 4, "down");
+        await Bun.sleep(0);
+        await setup.renderOnce();
+      });
+      frame = await waitForFrame(setup, (nextFrame) => !nextFrame.includes("[+]"), 12);
+      expect(frame).not.toContain("[+]");
+
+      await act(async () => {
+        await Bun.sleep(250);
+        await setup.renderOnce();
+      });
+      frame = setup.captureCharFrame();
+      expect(frame).not.toContain("[+]");
+
+      await act(async () => {
+        await setup.mockMouse.moveTo(34, 4);
+        await setup.renderOnce();
+      });
+      frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("[+]"), 12);
+      expect(frame).toContain("[+]");
+
+      await act(async () => {
+        scrollRef.current?.scrollTo({ x: 0, y: 2 });
+        await Bun.sleep(0);
+        await setup.renderOnce();
+      });
+      frame = await waitForFrame(setup, (nextFrame) => !nextFrame.includes("[+]"), 12);
+      expect(frame).not.toContain("[+]");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("DiffPane add-note clicks keep targeting the current hunk after navigation", async () => {
+    const file = createWideTwoHunkDiffFile("target", "target.ts");
+    const files = [file];
+    const theme = resolveTheme("github-dark-default", null);
+    const scrollRef = createRef<ScrollBoxRenderable>();
+    const calls: Array<{
+      fileId: string;
+      hunkIndex: number;
+      target?: { side: "old" | "new"; line: number };
+    }> = [];
+    let navigateToSecondHunk: (() => void) | null = null;
+
+    function AddNoteNavigationHarness() {
+      const [selectedHunk, setSelectedHunk] = useState(0);
+      navigateToSecondHunk = () => setSelectedHunk(1);
+      const startUserNote = useCallback(
+        (fileId: string, hunkIndex: number, target?: { side: "old" | "new"; line: number }) => {
+          if (selectedHunk < 0) {
+            return;
+          }
+          calls.push({ fileId, hunkIndex, target });
+        },
+        [selectedHunk],
+      );
+
+      return (
+        <DiffPane
+          {...createDiffPaneProps(files, theme, {
+            diffContentWidth: 96,
+            scrollRef,
+            selectedHunkIndex: selectedHunk,
+            selectedHunkRevealRequestId: selectedHunk,
+            separatorWidth: 92,
+            width: 100,
+            onStartUserNoteAtHunk: startUserNote,
+          })}
+        />
+      );
+    }
+
+    const setup = await testRender(<AddNoteNavigationHarness />, {
+      width: 104,
+      height: 14,
+    });
+
+    try {
+      await settleDiffPane(setup);
+      await act(async () => {
+        navigateToSecondHunk?.();
+        await setup.renderOnce();
+      });
+      const secondHunkFrame = await waitForFrame(setup, (frame) => frame.includes("line60"), 12);
+      const secondHunkY = secondHunkFrame.split("\n").findIndex((line) => line.includes("line60"));
+      expect(secondHunkY).toBeGreaterThanOrEqual(0);
+
+      await act(async () => {
+        await setup.mockMouse.moveTo(32, secondHunkY);
+        await setup.renderOnce();
+      });
+      const affordanceFrame = await waitForFrame(setup, (frame) => frame.includes("[+]"), 12);
+      const affordanceLines = affordanceFrame.split("\n");
+      const addNoteY = affordanceLines.findIndex((line) => line.includes("[+]"));
+      const addNoteX = affordanceLines[addNoteY]?.indexOf("[+]") ?? -1;
+      expect(addNoteY).toBeGreaterThanOrEqual(0);
+      expect(addNoteX).toBeGreaterThanOrEqual(0);
+
+      await act(async () => {
+        await setup.mockMouse.moveTo(addNoteX + 1, addNoteY);
+        await setup.renderOnce();
+      });
+      await act(async () => {
+        await setup.mockMouse.click(addNoteX + 1, addNoteY);
+        await setup.renderOnce();
+      });
+
+      expect(calls).toEqual([
+        { fileId: "target", hunkIndex: 1, target: { side: "new", line: 60 } },
+      ]);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
   });
 
   test("DiffPane scrolls a later selected file into view in the windowed path", async () => {
     const files = createWindowingFiles(6);
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const props = createDiffPaneProps(files, theme, {
       diffContentWidth: 88,
       selectedFileId: files[5]?.id,
@@ -533,7 +964,7 @@ describe("UI components", () => {
   });
 
   test("DiffPane scrolls to the selected later hunk when hunk headers are hidden", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const files = [
       createTestDiffFile(
         "intro",
@@ -575,7 +1006,7 @@ describe("UI components", () => {
   });
 
   test("DiffPane viewport-follow selection does not move the scroll position", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const files = [
       createTestDiffFile(
         "first",
@@ -650,7 +1081,7 @@ describe("UI components", () => {
   });
 
   test("DiffPane keeps the sticky-header lane stable through the divider and next-header handoff", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const firstFile = createTallDiffFile("first", "first.ts", 18);
     const secondFile = createTallDiffFile("second", "second.ts", 18);
     const scrollRef = createRef<ScrollBoxRenderable>();
@@ -763,8 +1194,88 @@ describe("UI components", () => {
     }
   });
 
+  test("DiffPane positions later files after expanded context rows", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const beforeLines = Array.from({ length: 30 }, (_, index) => `first line ${index + 1}`);
+    const afterLines = [...beforeLines];
+    afterLines[4] = "first line 5 changed";
+    const after = lines(...afterLines);
+    const firstFile = buildTestDiffFile({
+      after,
+      before: lines(...beforeLines),
+      context: 0,
+      id: "first-expanded",
+      path: "first-expanded.ts",
+    });
+    const secondFile = createTestDiffFile(
+      "second-after-expanded",
+      "second-after-expanded.ts",
+      "export const second = 1;\n",
+      "export const second = 2;\n",
+    );
+    const files = [firstFile, secondFile];
+    const expandedKeys = new Set(["trailing:0"]);
+    const sourceStatus = { kind: "loaded", text: after } as const;
+    const firstGeometry = measureDiffSectionGeometry(
+      firstFile,
+      "split",
+      true,
+      theme,
+      [],
+      88,
+      true,
+      false,
+      expandedKeys,
+      sourceStatus,
+    );
+    const secondGeometry = measureDiffSectionGeometry(secondFile, "split", true, theme, [], 88);
+    const fileSectionLayouts = buildFileSectionLayouts(
+      files,
+      [firstGeometry.bodyHeight, secondGeometry.bodyHeight],
+      buildInStreamFileHeaderHeights(files),
+    );
+    const scrollRef = createRef<ScrollBoxRenderable>();
+    const props = createDiffPaneProps(files, theme, {
+      diffContentWidth: 88,
+      expandedGapsByFileId: { [firstFile.id]: expandedKeys },
+      headerLabelWidth: 48,
+      headerStatsWidth: 16,
+      scrollRef,
+      separatorWidth: 84,
+      sourceStatusByFileId: { [firstFile.id]: sourceStatus },
+      width: 92,
+    });
+    const setup = await testRender(<DiffPane {...props} />, {
+      width: 96,
+      height: 10,
+    });
+
+    try {
+      await settleDiffPane(setup);
+
+      let frame = setup.captureCharFrame();
+      expect(frame).toContain("Hide 25 unchanged lines");
+      expect(frame).toContain("first line 6");
+      expect(frame).not.toContain("second-after-expanded.ts");
+
+      await act(async () => {
+        scrollRef.current?.scrollTo(fileSectionLayouts[1]!.sectionTop);
+      });
+      await settleDiffPane(setup);
+
+      frame = await waitForFrame(setup, (nextFrame) =>
+        nextFrame.includes("second-after-expanded.ts"),
+      );
+      expect(frame).toContain("second-after-expanded.ts");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("DiffPane advances the review stream under the always-pinned file header above a collapsed gap", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const firstFile = createCollapsedTopDiffFile("late", "late.ts", 400, 366);
     const secondFile = createTallDiffFile("second", "second.ts", 4);
     const scrollRef = createRef<ScrollBoxRenderable>();
@@ -806,7 +1317,7 @@ describe("UI components", () => {
   });
 
   test("DiffPane returns cleanly to the collapsed-gap view after scrolling back up under the pinned file header", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const firstFile = createCollapsedTopDiffFile("late", "late.ts", 400, 366);
     const secondFile = createTallDiffFile("second", "second.ts", 4);
     const scrollRef = createRef<ScrollBoxRenderable>();
@@ -858,7 +1369,7 @@ describe("UI components", () => {
   });
 
   test("DiffPane keeps bottom scroll stable when offscreen agent notes are windowed out", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const firstFile = createTallDiffFile("first", "first.ts", 18);
     firstFile.agent = {
       path: firstFile.path,
@@ -916,7 +1427,7 @@ describe("UI components", () => {
   });
 
   test("DiffPane lets manual scrolling move away from a bottom-clamped file-top alignment", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const files = [
       createTallDiffFile("first", "first.ts", 30),
       createTestDiffFile(
@@ -985,7 +1496,7 @@ describe("UI components", () => {
   });
 
   test("DiffPane keeps a viewport-sized selected hunk fully visible when it fits", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const props = createDiffPaneProps(
       [createViewportSizedBottomHunkDiffFile("target", "target.ts")],
       theme,
@@ -1023,7 +1534,7 @@ describe("UI components", () => {
   });
 
   test("DiffPane keeps a selected wrapped hunk fully visible when it fits", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const props = createDiffPaneProps(
       [createWrappedViewportSizedBottomHunkDiffFile("target", "target.ts")],
       theme,
@@ -1061,7 +1572,7 @@ describe("UI components", () => {
   });
 
   test("DiffPane keeps a distant selected hunk visible when row windowing narrows one file body", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const props = createDiffPaneProps([createWideTwoHunkDiffFile("target", "target.ts")], theme, {
       diffContentWidth: 96,
       headerLabelWidth: 48,
@@ -1089,7 +1600,7 @@ describe("UI components", () => {
   });
 
   test("DiffPane keeps a selected hunk with inline notes fully visible when it fits", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const file = createViewportSizedBottomHunkDiffFile("target", "target.ts");
     file.agent = {
       path: file.path,
@@ -1120,7 +1631,8 @@ describe("UI components", () => {
       await settleDiffPane(setup);
       const frame = setup.captureCharFrame();
 
-      expect(frame).toContain("Keep the selected hunk visible with its note.");
+      expect(frame).toContain("Keep the selected hunk visible with its");
+      expect(frame).toContain("note.");
       expect(frame).toContain("11   export const line11 = 11;");
       expect(frame).toContain("16 + export const line16 = 1600;");
       expect(frame).toContain("export const line19 = 19;");
@@ -1134,7 +1646,7 @@ describe("UI components", () => {
   });
 
   test("DiffPane scrollToNote positions the inline note near the viewport top instead of the hunk top", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
 
     // Build a file with two distant hunks so the second hunk is far below the first when scrolled
     // to the hunk top. The annotation anchors on the second hunk.
@@ -1232,7 +1744,7 @@ describe("UI components", () => {
   });
 
   test("AgentCard removes top and bottom padding while keeping the footer inside the frame", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <AgentCard
         locationLabel="alpha.ts +2"
@@ -1259,7 +1771,7 @@ describe("UI components", () => {
   });
 
   test("AgentInlineNote renders a connected bordered panel without a blank connector row", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <AgentInlineNote
         annotation={{
@@ -1278,12 +1790,239 @@ describe("UI components", () => {
     );
 
     const lines = frame.split("\n");
-    expect(lines[0]?.trimStart().startsWith("┌")).toBe(true);
-    expect(lines[1]).toContain("AI note · ▶ new 2-4");
-    expect(lines[1]).toContain("[x]");
+    expect(lines[0]?.trimStart().startsWith("╭")).toBe(true);
+    expect(lines[0]).toContain("Agent note - R2–R4");
+    expect(lines[0]).toContain("[x]");
+    expect(lines[1]).toContain("│                                              │");
     expect(lines[2]).toContain("Summary line");
     expect(lines[3]).toContain("Rationale line.");
-    expect(lines[4]?.trimStart().startsWith("└")).toBe(true);
+    expect(lines[4]?.trimStart().startsWith("╰")).toBe(true);
+  });
+
+  test("AgentInlineNote renders draft notes as an editable composer", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const file = createTestDiffFile(
+      "draft",
+      "src/core/cli.ts",
+      "export const value = 1;\n",
+      "export const value = 2;\n",
+    );
+    const frame = await captureFrame(
+      <AgentInlineNote
+        annotation={{
+          newRange: [611, 611],
+          source: "user-draft",
+          summary: "Here's my comment. I think we should think",
+        }}
+        draft={{
+          body: "Here's my comment. I think we should think",
+          focused: true,
+          onCancel: () => {},
+          onInput: () => {},
+          onSave: () => {},
+        }}
+        file={file}
+        anchorSide="new"
+        layout="split"
+        theme={theme}
+        width={96}
+      />,
+      100,
+      12,
+    );
+
+    const lines = frame.split("\n");
+    expect(lines[0]).toContain("╭─ Draft note - src/core/cli.ts R611 ");
+    expect(lines[1]).toContain("│                                              │");
+    expect(lines[2]).toContain("│ Here's my comment. I think we should think");
+    expect(lines[3]).toContain("│                                              │");
+    const saveLine = lines.find(
+      (line) => line.includes("Save (^S)") && line.includes("Cancel (Esc)"),
+    );
+    expect(saveLine).toBeDefined();
+    expect(saveLine!.indexOf("Save")).toBeGreaterThan(lines[2]!.indexOf("Here's"));
+    expect(frame).toContain("┬───────────┬──────────────┤");
+    expect(frame).toContain("╰───────────┴──────────────╯");
+  });
+
+  test("AgentInlineNote grows draft composer for soft-wrapped text", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const file = createTestDiffFile(
+      "draft-wrap",
+      "src/core/cli.ts",
+      "export const value = 1;\n",
+      "export const value = 2;\n",
+    );
+    const body =
+      "This draft note is long enough to soft wrap inside the composer without manually inserted newlines.";
+    const frame = await captureFrame(
+      <AgentInlineNote
+        annotation={{ newRange: [611, 611], source: "user-draft", summary: body }}
+        draft={{
+          body,
+          focused: true,
+          onCancel: () => {},
+          onInput: () => {},
+          onSave: () => {},
+        }}
+        file={file}
+        anchorSide="new"
+        layout="stack"
+        theme={theme}
+        width={48}
+      />,
+      52,
+      12,
+    );
+
+    const lines = frame.split("\n");
+    const saveLineIndex = lines.findIndex(
+      (line) => line.includes("Save (^S)") && line.includes("Cancel (Esc)"),
+    );
+    expect(lines.some((line) => line.includes("soft"))).toBe(true);
+    expect(lines.some((line) => line.includes("wrap inside"))).toBe(true);
+    expect(saveLineIndex).toBeGreaterThan(5);
+  });
+
+  test("AgentInlineNote shows author name in title when author is set", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const frame = await captureFrame(
+      <AgentInlineNote
+        annotation={{
+          newRange: [2, 4],
+          summary: "Summary line",
+          author: "sonnet",
+        }}
+        anchorSide="new"
+        layout="split"
+        theme={theme}
+        width={96}
+        onClose={() => {}}
+      />,
+      100,
+      5,
+    );
+
+    const lines = frame.split("\n");
+    expect(lines[0]).toContain("sonnet");
+    expect(lines[0]).not.toContain("AI note");
+  });
+
+  test("AgentInlineNote falls back to 'Agent note' when author is absent", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const frame = await captureFrame(
+      <AgentInlineNote
+        annotation={{
+          newRange: [2, 4],
+          summary: "Summary line",
+        }}
+        anchorSide="new"
+        layout="split"
+        theme={theme}
+        width={96}
+        onClose={() => {}}
+      />,
+      100,
+      5,
+    );
+
+    const lines = frame.split("\n");
+    expect(lines[0]).toContain("Agent note");
+  });
+
+  test("AgentInlineNote includes index when multiple notes share a hunk", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const frame = await captureFrame(
+      <AgentInlineNote
+        annotation={{
+          newRange: [2, 4],
+          summary: "Summary line",
+          author: "sonnet",
+        }}
+        anchorSide="new"
+        layout="split"
+        noteCount={2}
+        noteIndex={0}
+        theme={theme}
+        width={96}
+        onClose={() => {}}
+      />,
+      100,
+      5,
+    );
+
+    const lines = frame.split("\n");
+    expect(lines[0]).toContain("sonnet");
+    expect(lines[0]).toContain("1/2");
+  });
+
+  test("AgentInlineNote preserves special characters in author", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const frame = await captureFrame(
+      <AgentInlineNote
+        annotation={{
+          newRange: [2, 4],
+          summary: "Summary line",
+          author: "prism (arbiter)",
+        }}
+        anchorSide="new"
+        layout="split"
+        theme={theme}
+        width={96}
+        onClose={() => {}}
+      />,
+      100,
+      5,
+    );
+
+    const lines = frame.split("\n");
+    expect(lines[0]).toContain("prism (arbiter)");
+  });
+
+  test("AgentCard shows author in title when set", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const frame = await captureFrame(
+      <AgentCard
+        locationLabel="alpha.ts +2"
+        rationale="Why alpha.ts changed"
+        summary="Annotation for alpha.ts"
+        author="sonnet"
+        theme={theme}
+        width={34}
+        onClose={() => {}}
+      />,
+      40,
+      12,
+    );
+
+    const lines = frame
+      .split("\n")
+      .slice(0, 8)
+      .map((line) => line.trimEnd());
+    expect(lines[1]).toContain("sonnet");
+    expect(lines[1]).not.toContain("AI note");
+  });
+
+  test("AgentCard falls back to 'AI note' when author absent", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const frame = await captureFrame(
+      <AgentCard
+        locationLabel="alpha.ts +2"
+        rationale="Why alpha.ts changed"
+        summary="Annotation for alpha.ts"
+        theme={theme}
+        width={34}
+        onClose={() => {}}
+      />,
+      40,
+      12,
+    );
+
+    const lines = frame
+      .split("\n")
+      .slice(0, 8)
+      .map((line) => line.trimEnd());
+    expect(lines[1]).toContain("AI note");
   });
 
   test("DiffPane renders all visible hunk notes across the review stream", async () => {
@@ -1302,7 +2041,7 @@ describe("UI components", () => {
       ],
     };
 
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <DiffPane
         diffContentWidth={88}
@@ -1321,20 +2060,19 @@ describe("UI components", () => {
         wrapToggleScrollTop={null}
         theme={theme}
         width={92}
-        onOpenAgentNotesAtHunk={() => {}}
         onSelectFile={() => {}}
       />,
       96,
       28,
     );
 
-    expect(frame).toContain("AI note · ▶ new 2");
+    expect(frame).toContain("Agent note - alpha.ts R2");
     expect(frame).toContain("Annotation for alpha.ts");
     expect(frame).toContain("Why alpha.ts changed");
-    expect(frame.indexOf("AI note · ▶ new 2")).toBeLessThan(
+    expect(frame.indexOf("Agent note - alpha.ts R2")).toBeLessThan(
       frame.indexOf("2 + export const add = true;"),
     );
-    expect(frame).toContain("AI note · ▶ new 1");
+    expect(frame).toContain("Agent note - beta.ts R1");
     expect(frame).toContain("Annotation for beta.ts");
     expect(frame).toContain("Why beta.ts changed");
     expect(frame).not.toContain("alpha.ts note");
@@ -1344,7 +2082,7 @@ describe("UI components", () => {
 
   test("DiffPane split inline notes hand off directly to the anchored row without shifting it", async () => {
     const bootstrap = createBootstrap();
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <DiffPane
         diffContentWidth={88}
@@ -1363,7 +2101,6 @@ describe("UI components", () => {
         wrapToggleScrollTop={null}
         theme={theme}
         width={92}
-        onOpenAgentNotesAtHunk={() => {}}
         onSelectFile={() => {}}
       />,
       96,
@@ -1371,7 +2108,7 @@ describe("UI components", () => {
     );
 
     const lines = frame.split("\n");
-    const noteBottomIndex = lines.findIndex((line) => line.includes("└") && line.includes("┤"));
+    const noteBottomIndex = lines.findIndex((line) => line.includes("╰") && line.includes("╯"));
     expect(noteBottomIndex).toBeGreaterThanOrEqual(0);
     expect(lines[noteBottomIndex + 1]).toContain("export const add = true;");
     expect(lines[noteBottomIndex + 1]?.trim()).not.toBe("│");
@@ -1385,7 +2122,7 @@ describe("UI components", () => {
 
   test("DiffPane shows all inline notes when a hunk has multiple notes", async () => {
     const bootstrap = createBootstrap();
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const file = bootstrap.changeset.files[0]!;
     file.agent = {
       ...file.agent!,
@@ -1421,15 +2158,14 @@ describe("UI components", () => {
         wrapToggleScrollTop={null}
         theme={theme}
         width={92}
-        onOpenAgentNotesAtHunk={() => {}}
         onSelectFile={() => {}}
       />,
       96,
       24,
     );
 
-    expect(frame).toContain("AI note 1/2");
-    expect(frame).toContain("AI note 2/2");
+    expect(frame).toContain("Agent note 1/2");
+    expect(frame).toContain("Agent note 2/2");
     expect(frame).toContain("First note");
     expect(frame).toContain("First rationale.");
     expect(frame).toContain("Second note");
@@ -1437,7 +2173,7 @@ describe("UI components", () => {
   });
 
   test("MenuDropdown renders checked items and key hints", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <MenuDropdown
         activeMenuId="view"
@@ -1473,7 +2209,7 @@ describe("UI components", () => {
   });
 
   test("MenuDropdown repositions wide menus to stay inside the terminal", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <MenuDropdown
         activeMenuId="agent"
@@ -1500,7 +2236,7 @@ describe("UI components", () => {
   });
 
   test("StatusBar renders filter mode affordance", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <StatusBar
         filter="beta"
@@ -1520,7 +2256,7 @@ describe("UI components", () => {
   });
 
   test("StatusBar renders a notice when no filter is active", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <StatusBar
         filter=""
@@ -1540,7 +2276,7 @@ describe("UI components", () => {
   });
 
   test("StatusBar keeps filter input precedence over a notice", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <StatusBar
         filter="beta"
@@ -1562,7 +2298,7 @@ describe("UI components", () => {
   });
 
   test("StatusBar keeps filter summary precedence over a notice", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <StatusBar
         filter="beta"
@@ -1583,19 +2319,19 @@ describe("UI components", () => {
   });
 
   test("HelpDialog renders every documented control row without overlap", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const keymap = loadKeymapDefaults();
     const frame = await captureFrame(
       <HelpDialog
         canRefresh={true}
         keymap={keymap}
-        terminalHeight={56}
+        terminalHeight={64}
         terminalWidth={76}
         theme={theme}
         onClose={() => {}}
       />,
       76,
-      56,
+      64,
     );
 
     // The exact row layout is now driven by the action registry; assert that
@@ -1606,11 +2342,18 @@ describe("UI components", () => {
       "Navigation",
       "Mouse",
       "View",
-      "App",
       "Review",
+      "App",
+      "Notes",
       "move line-by-line (down)",
       "page down",
+      "jump to top",
+      "jump to bottom",
       "previous hunk",
+      "previous file",
+      "next file",
+      "toggle context gap for the selected hunk",
+      "edit selected file in $EDITOR",
       "next comment",
       "split layout",
       "toggle agent notes",
@@ -1619,6 +2362,8 @@ describe("UI components", () => {
       "reload current input",
       "open menus",
       "scroll vertically",
+      "create review note",
+      "save draft note",
     ];
 
     for (const fragment of expectedFragments) {
@@ -1666,33 +2411,8 @@ describe("UI components", () => {
     expect(quitLine!).not.toMatch(/^[^a-zA-Z0-9]*q\s/);
   });
 
-  test("DiffSectionPlaceholder preserves offscreen section chrome without mounting rows", async () => {
-    const bootstrap = createBootstrap();
-    const theme = resolveTheme("midnight", null);
-    const frame = await captureFrame(
-      <DiffSectionPlaceholder
-        bodyHeight={6}
-        file={bootstrap.changeset.files[0]!}
-        headerLabelWidth={40}
-        headerStatsWidth={16}
-        separatorWidth={68}
-        showHeader={true}
-        showSeparator={true}
-        theme={theme}
-        onSelect={() => {}}
-      />,
-      80,
-      10,
-    );
-
-    expect(frame).toContain("alpha.ts");
-    expect(frame).toContain("+2");
-    expect(frame).toContain("-1");
-    expect(frame).not.toContain("export const alpha = 2;");
-  });
-
   test("DiffPane renders an empty-state message when no files are visible", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <DiffPane
         diffContentWidth={72}
@@ -1711,7 +2431,6 @@ describe("UI components", () => {
         wrapToggleScrollTop={null}
         theme={theme}
         width={76}
-        onOpenAgentNotesAtHunk={() => {}}
         onSelectFile={() => {}}
       />,
       80,
@@ -1723,7 +2442,7 @@ describe("UI components", () => {
 
   test("DiffPane can hide line numbers while keeping diff signs visible", async () => {
     const bootstrap = createBootstrap();
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <DiffPane
         diffContentWidth={72}
@@ -1742,7 +2461,6 @@ describe("UI components", () => {
         wrapToggleScrollTop={null}
         theme={theme}
         width={76}
-        onOpenAgentNotesAtHunk={() => {}}
         onSelectFile={() => {}}
       />,
       80,
@@ -1757,7 +2475,7 @@ describe("UI components", () => {
 
   test("DiffPane can wrap long diff lines onto continuation rows", async () => {
     const bootstrap = createWrapBootstrap();
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <DiffPane
         diffContentWidth={48}
@@ -1776,7 +2494,6 @@ describe("UI components", () => {
         wrapToggleScrollTop={null}
         theme={theme}
         width={52}
-        onOpenAgentNotesAtHunk={() => {}}
         onSelectFile={() => {}}
       />,
       56,
@@ -1791,7 +2508,7 @@ describe("UI components", () => {
 
   test("DiffPane can hide hunk metadata rows without hiding code lines", async () => {
     const bootstrap = createBootstrap();
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <DiffPane
         diffContentWidth={72}
@@ -1810,7 +2527,6 @@ describe("UI components", () => {
         wrapToggleScrollTop={null}
         theme={theme}
         width={76}
-        onOpenAgentNotesAtHunk={() => {}}
         onSelectFile={() => {}}
       />,
       80,
@@ -1825,7 +2541,7 @@ describe("UI components", () => {
 
   test("PierreDiffView renders stack-mode wrapped continuation rows", async () => {
     const file = createWrapBootstrap().changeset.files[0]!;
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <PierreDiffView
         file={file}
@@ -1856,7 +2572,7 @@ describe("UI components", () => {
 
   test("PierreDiffView can reveal offscreen code columns in nowrap mode", async () => {
     const file = createWrapBootstrap().changeset.files[0]!;
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
 
     const baseFrame = await captureFrame(
       <PierreDiffView
@@ -1894,7 +2610,7 @@ describe("UI components", () => {
 
   test("split view wraps the same long diff line across more rows than stack view at the same width", async () => {
     const file = createWrapBootstrap().changeset.files[0]!;
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const width = 64;
 
     const splitFrame = await captureFrame(
@@ -1939,7 +2655,7 @@ describe("UI components", () => {
       "export const value = 1;\n",
       "export const value = 2;\nexport const added = true;\n",
     );
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <PierreDiffView
         file={file}
@@ -1964,17 +2680,17 @@ describe("UI components", () => {
     );
 
     expect(frame).not.toContain("@@ -1,1 +1,2 @@");
-    expect(frame).toContain("AI note · hunk");
+    expect(frame).toContain("Agent note - note-fallback.ts hunk");
     expect(frame).toContain("Ungrounded note");
     expect(frame).toContain("Falls back to the first visible");
     expect(frame).toContain("row.");
-    expect(frame.indexOf("AI note · hunk")).toBeLessThan(
+    expect(frame.indexOf("Agent note - note-fallback.ts hunk")).toBeLessThan(
       frame.indexOf("1 - export const value = 1;"),
     );
   });
 
   test("PierreDiffView shows contextual messages when there is no selected file or no textual hunks", async () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
 
     const noFileFrame = await captureFrame(
       <PierreDiffView
@@ -2052,6 +2768,226 @@ describe("UI components", () => {
     expect(binaryFileFrame).toContain("Binary file skipped");
   });
 
+  test("PierreDiffView shows the expand chevron only when a source fetcher is attached", async () => {
+    const { file: baseFile } = createExpandableContextDiffFile("expand-affordance", "expand.ts");
+    const theme = resolveTheme("github-dark-default", null);
+
+    const noFetcherFrame = await captureFrame(
+      <PierreDiffView
+        file={baseFile}
+        layout="split"
+        theme={theme}
+        width={120}
+        selectedHunkIndex={0}
+        scrollable={false}
+      />,
+      120,
+      40,
+    );
+    expect(noFetcherFrame).toContain("unchanged lines");
+    expect(noFetcherFrame).not.toContain("▾");
+
+    const fileWithFetcher = {
+      ...baseFile,
+      sourceFetcher: createTestSourceFetcher(() => null),
+    };
+
+    const expandableFrame = await captureFrame(
+      <PierreDiffView
+        file={fileWithFetcher}
+        layout="split"
+        theme={theme}
+        width={120}
+        selectedHunkIndex={0}
+        scrollable={false}
+        onToggleGap={() => {}}
+      />,
+      120,
+      40,
+    );
+    expect(expandableFrame).toContain("▾");
+  });
+
+  test("PierreDiffView hides add-note affordances on collapsed and hunk-header rows", async () => {
+    const expandable = createExpandableContextDiffFile("meta-hover", "meta-hover.ts");
+    const file = {
+      ...expandable.file,
+      sourceFetcher: createTestSourceFetcher(() => expandable.after),
+    };
+    const theme = resolveTheme("github-dark-default", null);
+    const setup = await testRender(
+      <PierreDiffView
+        file={file}
+        layout="split"
+        theme={theme}
+        width={120}
+        selectedHunkIndex={0}
+        scrollable={false}
+        onStartUserNoteAtHunk={() => {}}
+        onToggleGap={() => {}}
+      />,
+      { width: 120, height: 40 },
+    );
+
+    try {
+      await act(async () => {
+        await setup.renderOnce();
+      });
+
+      const frame = setup.captureCharFrame();
+      const frameLines = frame.split("\n");
+      const collapsedY = frameLines.findIndex((line) => line.includes("unchanged lines"));
+      const hunkHeaderY = frameLines.findIndex((line) => line.includes("@@"));
+      const codeY = frameLines.findIndex((line) => line.includes("line 5 modified"));
+      expect(collapsedY).toBeGreaterThanOrEqual(0);
+      expect(hunkHeaderY).toBeGreaterThanOrEqual(0);
+      expect(codeY).toBeGreaterThanOrEqual(0);
+
+      await act(async () => {
+        await setup.mockMouse.moveTo(4, collapsedY);
+        await setup.renderOnce();
+      });
+      expect(setup.captureCharFrame()).not.toContain("[+]");
+
+      await act(async () => {
+        await setup.mockMouse.moveTo(4, hunkHeaderY);
+        await setup.renderOnce();
+      });
+      expect(setup.captureCharFrame()).not.toContain("[+]");
+
+      let codeHoverFrame = "";
+      for (const y of [codeY, codeY + 1]) {
+        for (const x of [4, 16, 48, 76]) {
+          await act(async () => {
+            await setup.mockMouse.moveTo(x, y);
+            await setup.renderOnce();
+          });
+          codeHoverFrame = setup.captureCharFrame();
+          if (codeHoverFrame.includes("[+]")) {
+            break;
+          }
+        }
+        if (codeHoverFrame.includes("[+]")) {
+          break;
+        }
+      }
+      expect(codeHoverFrame).toContain("[+]");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("PierreDiffView toggles a collapsed gap when clicked", async () => {
+    const expandable = createExpandableContextDiffFile("expand-click", "expand-click.ts");
+    const file = {
+      ...expandable.file,
+      sourceFetcher: createTestSourceFetcher(() => expandable.after),
+    };
+    const toggledGaps: string[] = [];
+    const theme = resolveTheme("github-dark-default", null);
+    const setup = await testRender(
+      <PierreDiffView
+        file={file}
+        layout="split"
+        theme={theme}
+        width={120}
+        selectedHunkIndex={0}
+        scrollable={false}
+        onToggleGap={(gapKey) => {
+          toggledGaps.push(gapKey);
+        }}
+      />,
+      { width: 120, height: 40 },
+    );
+
+    try {
+      await act(async () => {
+        await setup.renderOnce();
+      });
+
+      const frame = setup.captureCharFrame();
+      const gapLineIndex = frame.split("\n").findIndex((line) => line.includes("▾"));
+      expect(gapLineIndex).toBeGreaterThanOrEqual(0);
+
+      for (const y of [gapLineIndex, gapLineIndex + 1]) {
+        for (const x of [2, 8, 24]) {
+          await act(async () => {
+            await setup.mockMouse.click(x, y);
+          });
+          if (toggledGaps.length > 0) {
+            break;
+          }
+        }
+        if (toggledGaps.length > 0) {
+          break;
+        }
+      }
+
+      expect(toggledGaps).toEqual(["before:0"]);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("PierreDiffView highlights expanded unchanged source rows", async () => {
+    const beforeLines = Array.from({ length: 30 }, (_, index) =>
+      index === 0
+        ? "export const expandedMarker = 1;"
+        : `export const line${index + 1} = ${index + 1};`,
+    );
+    const afterLines = [...beforeLines];
+    afterLines[4] = "export const line5 = 999;";
+    const after = lines(...afterLines);
+    const file = buildTestDiffFile({
+      after,
+      before: lines(...beforeLines),
+      context: 3,
+      id: "expanded-highlight",
+      path: "expanded-highlight.ts",
+    });
+    const theme = resolveTheme("github-dark-default", null);
+    const setup = await testRender(
+      <PierreDiffView
+        file={file}
+        layout="split"
+        theme={theme}
+        width={140}
+        selectedHunkIndex={0}
+        expandedGapKeys={new Set(["before:0"])}
+        sourceStatus={{ kind: "loaded", text: after }}
+        scrollable={false}
+      />,
+      { width: 144, height: 20 },
+    );
+
+    try {
+      let highlighted = false;
+      for (let iteration = 0; iteration < 400; iteration += 1) {
+        await act(async () => {
+          await setup.renderOnce();
+          await Bun.sleep(0);
+          await setup.renderOnce();
+          await Bun.sleep(0);
+        });
+
+        if (frameHasHighlightedMarker(setup.captureSpans(), "expandedMarker")) {
+          highlighted = true;
+          break;
+        }
+      }
+
+      expect(highlighted).toBe(true);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("PierreDiffView renders word-diff spans with a visibly different background in split view", async () => {
     const file = createTestDiffFile(
       "word-diff",
@@ -2059,7 +2995,7 @@ describe("UI components", () => {
       "export const answer = 41;\nexport const stable = true;\n",
       "export const answer = 42;\nexport const stable = true;\n",
     );
-    const theme = resolveTheme("graphite", null);
+    const theme = resolveTheme("github-dark-default", null);
     const setup = await testRender(
       <PierreDiffView
         file={file}
@@ -2114,7 +3050,7 @@ describe("UI components", () => {
       "export const cacheMarker = 1;\nexport function cacheKeep(value: number) { return value + 1; }\n",
       "export const cacheMarker = 2;\nexport function cacheKeep(value: number) { return value * 2; }\n",
     );
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
 
     const firstSetup = await testRender(
       <PierreDiffView
@@ -2179,7 +3115,7 @@ describe("UI components", () => {
 
   test("DiffPane prefetches highlight data for files approaching the viewport before they mount", async () => {
     const files = createHighlightPrefetchWindowFiles();
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const setup = await testRender(
       <DiffPane
         {...createDiffPaneProps(files, theme, {
@@ -2235,16 +3171,16 @@ describe("UI components", () => {
     }
   });
 
-  test("App renders the menu bar, multi-file stream, and AI badges", async () => {
+  test("App renders the menu bar and multi-file stream", async () => {
     const bootstrap = createBootstrap();
     const frame = await captureFrame(<AppHost bootstrap={bootstrap} />, 280, 24);
 
-    expect(frame).toContain("File  View  Navigate  Theme  Agent  Help");
+    expect(frame).toContain("File  View  Navigate  Agent  Help");
     expect(frame).toContain("alpha.ts");
     expect(frame).toContain("beta.ts");
     expect(frame).toContain("@@ -1,1 +1,2 @@");
     expect(frame).toContain("@@ -1,1 +1,1 @@");
-    expect(frame).toContain("[AI]");
+    expect(frame).not.toContain("[AI]");
     expect(frame).not.toContain("Changeset summary");
   });
 });

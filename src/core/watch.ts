@@ -1,14 +1,5 @@
 import fs from "node:fs";
-import { join } from "node:path";
-import {
-  buildGitDiffArgs,
-  buildGitShowArgs,
-  buildGitStashShowArgs,
-  listGitUntrackedFiles,
-  resolveGitRepoRoot,
-  runGitText,
-} from "./git";
-import { buildJjDiffArgs, buildJjShowArgs, runJjText } from "./jj";
+import { createVcsWatchSignature, getConfiguredVcsAdapter, operationFromInput } from "./vcs";
 import type { CliInput } from "./types";
 
 /** Return whether the current input can be rebuilt from files or VCS state without rereading stdin. */
@@ -30,52 +21,21 @@ function statSignature(path: string) {
   return `${path}:${stat.size}:${stat.mtimeMs}:${stat.ino}`;
 }
 
-/** Build the cheaper watch signature for working-tree git diff inputs without rendering full untracked patches. */
-function gitWorkingTreeWatchSignature(input: Extract<CliInput, { kind: "vcs" }>) {
-  const trackedPatch = runGitText({ input, args: buildGitDiffArgs(input) });
-  const repoRoot = resolveGitRepoRoot(input);
-  const untrackedSignatures = listGitUntrackedFiles(input, { repoRoot }).map(
-    (filePath) => `untracked:${statSignature(join(repoRoot, filePath))}`,
-  );
-
-  return [trackedPatch, ...untrackedSignatures].join("\n---\n");
+/** Build one exact patch signature for adapter-backed review inputs. */
+function vcsPatchSignature(input: Extract<CliInput, { kind: "vcs" | "show" | "stash-show" }>) {
+  const adapter = getConfiguredVcsAdapter(input.options.vcs);
+  const operation = operationFromInput(input);
+  return createVcsWatchSignature(adapter, operation, { cwd: process.cwd() });
 }
-
-/** Build one exact patch signature for Git-backed review inputs. */
-function gitPatchSignature(input: Extract<CliInput, { kind: "vcs" | "show" | "stash-show" }>) {
-  switch (input.kind) {
-    case "vcs":
-      return gitWorkingTreeWatchSignature(input);
-    case "show":
-      return runGitText({ input, args: buildGitShowArgs(input) });
-    case "stash-show":
-      return runGitText({ input, args: buildGitStashShowArgs(input) });
-  }
-}
-
-/** Build one exact patch signature for Jujutsu-backed review inputs. */
-function jjPatchSignature(input: Extract<CliInput, { kind: "vcs" | "show" }>) {
-  switch (input.kind) {
-    case "vcs":
-      return runJjText({ input, args: buildJjDiffArgs(input) });
-    case "show":
-      return runJjText({ input, args: buildJjShowArgs(input) });
-  }
-}
-
 /** Compute a change-detection signature for one watchable input. */
 export function computeWatchSignature(input: CliInput) {
   const parts: string[] = [input.kind];
 
   switch (input.kind) {
     case "vcs":
-      parts.push(input.options.vcs === "jj" ? jjPatchSignature(input) : gitPatchSignature(input));
-      break;
     case "show":
-      parts.push(input.options.vcs === "jj" ? jjPatchSignature(input) : gitPatchSignature(input));
-      break;
     case "stash-show":
-      parts.push(gitPatchSignature(input));
+      parts.push(vcsPatchSignature(input));
       break;
     case "diff":
     case "difftool":

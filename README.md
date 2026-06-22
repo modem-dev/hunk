@@ -15,12 +15,12 @@ Hunk is a review-first terminal diff viewer for agent-authored changesets, built
 <table>
  <tr>
    <td width="60%" align="center">
-     <img width="794" alt="image" src="https://github.com/user-attachments/assets/f6ffd9c4-67f5-483c-88f1-cbe88c19f52f" />
+    <img width="845" alt="image" src="https://github.com/user-attachments/assets/35605618-be3f-479e-b6e0-edb089910651" />
      <br />
      <sub>Split view with sidebar and inline AI notes</sub>
    </td>
    <td width="40%" align="center">
-     <img width="508" alt="image" src="https://github.com/user-attachments/assets/44c542a2-0a09-41cd-b264-fbd942e92f06" />
+     <img width="507"alt="image" src="https://github.com/user-attachments/assets/92eb8993-f044-436d-a038-8139da5ad8de" />
      <br />
      <sub>Stacked view and mouse-selectable menus</sub>
    </td>
@@ -42,8 +42,10 @@ brew install modem-dev/tap/hunk
 Requirements:
 
 - Node.js 18+
-- macOS or Linux
+- macOS, Linux, or Windows
 - Git recommended for most workflows
+
+> Nix users can use the `default` package exported in `flake.nix` instead. See [nix/README.md](./nix/README.md) for details.
 
 ## Quick start
 
@@ -63,9 +65,9 @@ hunk show                      # review the latest commit
 hunk show HEAD~1               # review an earlier commit
 ```
 
-### Working with Jujutsu
+### Working with Jujutsu and Sapling
 
-Hunk auto-detects Jujutsu checkouts, so `hunk diff [revset]` and `hunk show [revset]` use jj revsets inside a jj workspace. To override VCS detection, set `vcs = "git"` or `vcs = "jj"` in [config](#config).
+Hunk auto-detects Jujutsu and Sapling checkouts, so `hunk diff [revset]` and `hunk show [revset]` use native revsets inside jj or Sapling workspaces. To override VCS detection, set `vcs = "git"` or `vcs = "jj"` or `vcs = "sl"` in [config](#config).
 
 ### Working with raw files and patches
 
@@ -84,7 +86,7 @@ git diff --no-color | hunk patch -          # review a patch from stdin
 A good generic prompt is:
 
 ```text
-Load the Hunk skill and use it for this review.
+Load the Hunk skill and use it for this review. Run `hunk skill path` to get the skill path.
 ```
 
 For the full live-session and `--agent-context` workflow guide, see [docs/agent-workflows.md](docs/agent-workflows.md).
@@ -117,16 +119,43 @@ You can persist preferences to a config file:
 Example:
 
 ```toml
-theme = "graphite"   # graphite, midnight, paper, ember
+theme = "github-dark-default" # any built-in theme id, auto, or custom
 mode = "auto"        # auto, split, stack
-vcs = "git"          # git, jj
+vcs = "git"          # git, jj, sl
+watch = false
 exclude_untracked = false
 line_numbers = true
 wrap_lines = false
 agent_notes = false
+transparent_background = false
 ```
 
-`exclude_untracked` affects Git working-tree `hunk diff` sessions only.
+`theme = "auto"` and `--theme auto` query the terminal background at startup, choose `github-light-default` for light backgrounds and `github-dark-default` for dark backgrounds, and fall back to `github-dark-default` if the terminal does not answer.
+Older theme ids such as `graphite` and `paper` remain accepted as compatibility aliases.
+`exclude_untracked` affects Git/Sapling working-tree `hunk diff` sessions only.
+`transparent_background` can also be written as `transparentBackground`.
+
+Custom themes can inherit from any built-in theme and override only the colors you care about:
+
+```toml
+theme = "custom"
+
+[custom_theme]
+base = "catppuccin-mocha"
+label = "My Theme"
+accent = "#7fd1ff"
+panel = "#10161d"
+noteBorder = "#c49bff"
+
+[custom_theme.syntax]
+keyword = "#8ed4ff"
+string = "#c7b4ff"
+comment = "#6e85a7"
+operator = "#7fd1ff"
+variable = "#eef4ff"
+```
+
+All custom theme colors must use `#rrggbb` hex values. Press `t` in the app, or choose `View -> Themes…`, to open the theme selector.
 
 Keybindings are configurable through the same files; see
 [`docs/keybindings.md`](docs/keybindings.md) for the action reference and
@@ -167,6 +196,15 @@ pager = ["hunk", "pager"]
 diff-formatter = ":git"
 ```
 
+### Sapling pager integration
+
+To use Hunk as Sapling's pager, run `sl config -u` and update:
+
+```ini
+[pager]
+pager = hunk pager
+```
+
 ### OpenTUI component
 
 Hunk also publishes `HunkDiffView` and lower-level primitives from `hunkdiff/opentui` for embedding the same diff renderer in your own OpenTUI app.
@@ -187,9 +225,9 @@ For source setup, tests, packaging checks, and repo architecture, see [CONTRIBUT
 
 ## Sponsor
 
-Sponsored by [Modem](https://modem.dev?utm_source=github&utm_medium=oss&utm_campaign=hunk).
+Sponsored by [Modem](https://modem.dev?utm_source=github&utm_medium=oss&utm_campaign=oss_hunk&utm_content=readme_footer).
 
-<a href="https://modem.dev?utm_source=github&utm_medium=oss&utm_campaign=hunk">
+<a href="https://modem.dev?utm_source=github&utm_medium=oss&utm_campaign=oss_hunk&utm_content=readme_footer">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://modem.dev/images/logo/svg/modem-combined-white.svg">
     <source media="(prefers-color-scheme: light)" srcset="https://modem.dev/images/logo/svg/modem-combined-black.svg">

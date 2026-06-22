@@ -17,12 +17,23 @@ interface HelpSection {
   items: HelpRow[];
 }
 
-/** Hardcoded mouse hints — the keymap doesn't model mouse input. */
+/** Hardcoded mouse hints; the keymap doesn't model mouse input. */
 const MOUSE_SECTION: HelpSection = {
   title: "Mouse",
   items: [
     { keys: "Wheel", description: "scroll vertically" },
     { keys: "Shift+Wheel", description: "scroll code horizontally" },
+  ],
+};
+
+// Hard-coded note shortcuts; these use strict-modifier matchers that the
+// keymap registry can't express, so they live outside ACTIONS.
+const NOTES_SECTION: HelpSection = {
+  title: "Notes",
+  items: [
+    { keys: "c", description: "create review note" },
+    { keys: "Ctrl+S", description: "save draft note" },
+    { keys: "Esc", description: "cancel draft note" },
   ],
 };
 
@@ -61,11 +72,12 @@ function buildHelpSections(keymap: Keymap, canRefresh: boolean): HelpSection[] {
     items: buckets.get(title) ?? [],
   }));
 
-  // Preserve "Mouse" placement between Navigation and View — it sits with the
+  // Preserve "Mouse" placement between Navigation and View; it sits with the
   // primary movement controls. Insert just before the "View" group.
   const viewIndex = sections.findIndex((section) => section.title === "View");
   const insertAt = viewIndex >= 0 ? viewIndex : sections.length;
   sections.splice(insertAt, 0, MOUSE_SECTION);
+  sections.push(NOTES_SECTION);
 
   return sections;
 }

@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { buildJjDiffArgs, runJjText } from "./jj";
 
 const tempDirs: string[] = [];
+// Windows subprocess setup can exceed Bun's default 5s timeout while generating enough jj changes.
+const JjAmbiguousPrefixTestTimeoutMs = 20_000;
 
 function cleanupTempDirs() {
   while (tempDirs.length > 0) {
@@ -80,6 +82,9 @@ afterEach(() => {
   cleanupTempDirs();
 });
 
+// Keep jj-backed integration checks opt-in on machines that have the external CLI installed.
+const jjTest = Bun.which("jj") ? test : test.skip;
+
 describe("jj command helpers", () => {
   test("reports a friendly error when jj is not installed or not on PATH", () => {
     expect(() =>
@@ -97,7 +102,7 @@ describe("jj command helpers", () => {
     );
   });
 
-  test("reports a friendly error outside a jj repository", () => {
+  jjTest("reports a friendly error outside a jj repository", () => {
     const dir = createTempDir("hunk-jj-nonrepo-");
 
     expect(() =>
@@ -113,7 +118,7 @@ describe("jj command helpers", () => {
     ).toThrow('`hunk diff` must be run inside a Jujutsu repository when `vcs = "jj"`.');
   });
 
-  test("reports a friendly error for invalid revsets", () => {
+  jjTest("reports a friendly error for invalid revsets", () => {
     const dir = createTempJjRepo("hunk-jj-invalid-revset-");
     const input = {
       kind: "vcs" as const,
@@ -131,36 +136,40 @@ describe("jj command helpers", () => {
     ).toThrow("`hunk diff missing_revision` could not resolve Jujutsu revset `missing_revision`.");
   });
 
-  test("reports a friendly error for ambiguous change id prefixes", () => {
-    const dir = createTempJjRepo("hunk-jj-ambiguous-prefix-");
-    let prefix: string | undefined;
+  jjTest(
+    "reports a friendly error for ambiguous change id prefixes",
+    () => {
+      const dir = createTempJjRepo("hunk-jj-ambiguous-prefix-");
+      let prefix: string | undefined;
 
-    for (let index = 0; index < 32 && !prefix; index += 1) {
-      writeFileSync(join(dir, `file-${index}.txt`), `${index}\n`);
-      jj(dir, "commit", "-m", `commit ${index}`);
+      for (let index = 0; index < 32 && !prefix; index += 1) {
+        writeFileSync(join(dir, `file-${index}.txt`), `${index}\n`);
+        jj(dir, "commit", "-m", `commit ${index}`);
 
-      prefix = findDuplicatePrefix(
-        jj(dir, "log", "--no-graph", "-T", 'change_id ++ "\n"').trim().split("\n"),
-      );
-    }
+        prefix = findDuplicatePrefix(
+          jj(dir, "log", "--no-graph", "-T", 'change_id ++ "\n"').trim().split("\n"),
+        );
+      }
 
-    if (!prefix) {
-      throw new Error("Expected generated jj changes to include an ambiguous prefix.");
-    }
+      if (!prefix) {
+        throw new Error("Expected generated jj changes to include an ambiguous prefix.");
+      }
 
-    const input = {
-      kind: "vcs" as const,
-      range: prefix,
-      staged: false,
-      options: { mode: "auto" as const, vcs: "jj" as const },
-    };
+      const input = {
+        kind: "vcs" as const,
+        range: prefix,
+        staged: false,
+        options: { mode: "auto" as const, vcs: "jj" as const },
+      };
 
-    expect(() =>
-      runJjText({
-        input,
-        args: buildJjDiffArgs(input),
-        cwd: dir,
-      }),
-    ).toThrow(`\`hunk diff ${prefix}\` could not resolve Jujutsu revset \`${prefix}\`.`);
-  });
+      expect(() =>
+        runJjText({
+          input,
+          args: buildJjDiffArgs(input),
+          cwd: dir,
+        }),
+      ).toThrow(`\`hunk diff ${prefix}\` could not resolve Jujutsu revset \`${prefix}\`.`);
+    },
+    JjAmbiguousPrefixTestTimeoutMs,
+  );
 });

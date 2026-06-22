@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createTestDiffFile, lines } from "../../../test/helpers/diff-helpers";
-import { measureDiffSectionGeometry } from "./diffSectionGeometry";
+import { measureDiffSectionGeometry } from "../diff/diffSectionGeometry";
 import { buildFileSectionLayouts, buildInStreamFileHeaderHeights } from "./fileSectionLayout";
 import { findViewportCenteredHunkTarget } from "./viewportSelection";
 import { resolveTheme } from "../themes";
@@ -31,7 +31,7 @@ function scrollTopForCenter(centerOffset: number, viewportHeight: number) {
 }
 
 describe("findViewportCenteredHunkTarget", () => {
-  const theme = resolveTheme("midnight", null);
+  const theme = resolveTheme("github-dark-default", null);
 
   test("switches the active file when the viewport center enters a later file", () => {
     const firstFile = createTestDiffFile({

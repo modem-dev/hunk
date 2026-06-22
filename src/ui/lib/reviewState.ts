@@ -7,12 +7,8 @@
  * tested without React state in the loop.
  */
 import { findDiffFileByPath, findHunkIndexForLine, hunkLineRange } from "../../core/liveComments";
-import type { DiffFile } from "../../core/types";
-import type {
-  LiveComment,
-  NavigateToHunkToolInput,
-  SelectedHunkSummary,
-} from "../../hunk-session/types";
+import type { AgentAnnotation, DiffFile } from "../../core/types";
+import type { NavigateToHunkToolInput, SelectedHunkSummary } from "../../hunk-session/types";
 import {
   buildSidebarEntries,
   filterReviewFiles,
@@ -28,7 +24,7 @@ import {
 
 export interface BuildReviewStateOptions {
   files: DiffFile[];
-  liveCommentsByFileId: Record<string, LiveComment[]>;
+  liveCommentsByFileId: Record<string, AgentAnnotation[]>;
   filterQuery: string;
   selectedFileId: string;
   selectedHunkIndex: number;
@@ -132,8 +128,15 @@ export function resolveReviewNavigationTarget({
 }): ReviewNavigationTarget {
   if (input.commentDirection) {
     const delta = input.commentDirection === "next" ? 1 : -1;
+    const hunkCursors = buildHunkCursors(visibleFiles);
     const annotatedCursors = buildAnnotatedHunkCursors(visibleFiles);
-    const nextCursor = findNextHunkCursor(annotatedCursors, currentFileId, currentHunkIndex, delta);
+    const nextCursor = findNextHunkCursor(
+      annotatedCursors,
+      currentFileId,
+      currentHunkIndex,
+      delta,
+      hunkCursors,
+    );
 
     if (!nextCursor) {
       throw new Error("No annotated hunks found in the current review.");

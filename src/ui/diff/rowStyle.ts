@@ -3,10 +3,22 @@ import { blendHex } from "../lib/color";
 import type { SplitLineCell, StackLineCell } from "./pierre";
 
 const INACTIVE_RAIL_BLEND = 0.35;
+const SELECTION_BG_BLEND = 0.75;
 
 /** The diff rail marker is always visible in Hunk stack and split rows. */
 export function diffRailMarker() {
   return "▌";
+}
+
+/**
+ * Blend a base cell background toward the selection highlight color.
+ *
+ * blendHex(fg, bg, ratio) returns `bg + (fg - bg) * ratio`. We pass the highlight color as the
+ * "front" and the cell's base bg as the "back", so a higher SELECTION_BG_BLEND pulls the result
+ * harder toward the visible highlight color.
+ */
+export function selectionHighlightBg(baseBg: string, theme: AppTheme) {
+  return blendHex(theme.selectedHunk, baseBg, SELECTION_BG_BLEND);
 }
 
 /** Return the neutral active-hunk rail color for the current theme. */
@@ -55,11 +67,15 @@ export function splitRightRailColor(
 }
 
 /** Pick split-view colors from the semantic diff cell kind. */
-export function splitCellPalette(kind: SplitLineCell["kind"], theme: AppTheme) {
+export function splitCellPalette(
+  kind: SplitLineCell["kind"],
+  theme: AppTheme,
+  moveKind?: SplitLineCell["moveKind"],
+) {
   if (kind === "addition") {
     return {
-      gutterBg: theme.addedBg,
-      contentBg: theme.addedBg,
+      gutterBg: moveKind ? theme.movedAddedBg : theme.addedBg,
+      contentBg: moveKind ? theme.movedAddedBg : theme.addedBg,
       signColor: theme.addedSignColor,
       numberColor: theme.addedSignColor,
     };
@@ -67,8 +83,8 @@ export function splitCellPalette(kind: SplitLineCell["kind"], theme: AppTheme) {
 
   if (kind === "deletion") {
     return {
-      gutterBg: theme.removedBg,
-      contentBg: theme.removedBg,
+      gutterBg: moveKind ? theme.movedRemovedBg : theme.removedBg,
+      contentBg: moveKind ? theme.movedRemovedBg : theme.removedBg,
       signColor: theme.removedSignColor,
       numberColor: theme.removedSignColor,
     };
@@ -92,11 +108,15 @@ export function splitCellPalette(kind: SplitLineCell["kind"], theme: AppTheme) {
 }
 
 /** Pick stack-view colors from the semantic diff cell kind. */
-export function stackCellPalette(kind: StackLineCell["kind"], theme: AppTheme) {
+export function stackCellPalette(
+  kind: StackLineCell["kind"],
+  theme: AppTheme,
+  moveKind?: StackLineCell["moveKind"],
+) {
   if (kind === "addition") {
     return {
-      gutterBg: theme.addedBg,
-      contentBg: theme.addedBg,
+      gutterBg: moveKind ? theme.movedAddedBg : theme.addedBg,
+      contentBg: moveKind ? theme.movedAddedBg : theme.addedBg,
       signColor: theme.addedSignColor,
       numberColor: theme.addedSignColor,
     };
@@ -104,8 +124,8 @@ export function stackCellPalette(kind: StackLineCell["kind"], theme: AppTheme) {
 
   if (kind === "deletion") {
     return {
-      gutterBg: theme.removedBg,
-      contentBg: theme.removedBg,
+      gutterBg: moveKind ? theme.movedRemovedBg : theme.removedBg,
+      contentBg: moveKind ? theme.movedRemovedBg : theme.removedBg,
       signColor: theme.removedSignColor,
       numberColor: theme.removedSignColor,
     };
@@ -137,4 +157,20 @@ export function stackGutterText(
   const oldNumber = diffLineNumberText(cell.oldLineNumber, lineNumberDigits);
   const newNumber = diffLineNumberText(cell.newLineNumber, lineNumberDigits);
   return `${oldNumber} ${newNumber} ${cell.sign}`;
+}
+
+/** Build the split-view gutter text shared by the TUI and clipboard renderers. */
+export function splitGutterText(
+  cell: SplitLineCell,
+  lineNumberDigits: number,
+  showLineNumbers: boolean,
+) {
+  if (!showLineNumbers) {
+    return `${cell.sign} `;
+  }
+
+  const number = cell.lineNumber
+    ? String(cell.lineNumber).padStart(lineNumberDigits, " ")
+    : " ".repeat(lineNumberDigits);
+  return `${number} ${cell.sign}`;
 }

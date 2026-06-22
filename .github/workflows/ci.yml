@@ -4,11 +4,6 @@ on:
   push:
     branches:
       - main
-    paths-ignore:
-      - "**/*.md"
-      - "docs/**"
-      - "assets/**"
-      - "LICENSE"
 
 env:
   SKIP_INSTALL_SIMPLE_GIT_HOOKS: "1"
@@ -18,8 +13,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Detect code changes
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.detect.outputs.code_changed }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Detect code changes
+        id: detect
+        env:
+          BASE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: .github/scripts/detect-code-changes.sh "$BASE_SHA" "$HEAD_SHA"
+
   validate:
     name: Typecheck + tests
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -31,9 +44,21 @@ jobs:
           bun-version: 1.3.10
 
       - name: Install Jujutsu
-        uses: taiki-e/install-action@3fa6878dc4ae603f73960271565a082bf196ab96 # v2.77.2
+        uses: taiki-e/install-action@213ccc1a076163c093f914550b94feb90fab916d # v2.79.2
         with:
           tool: jj-cli
+
+      - name: Install Sapling
+        run: |
+          sudo apt-get install -y xz-utils
+          sudo mkdir -p /opt/sapling
+          SAPLING_URL="https://github.com/facebook/sapling/releases/download/0.2.20260317-201835%2B0234c21f/sapling-0.2.20260317-201835%2B0234c21f-linux-x64.tar.xz"
+          SAPLING_SHA256="2dca0b964a2f3e2e3ad3f4f01794dc7e829de4aedddb2798a7bae883ce6cd71f"
+          curl -fsSL "$SAPLING_URL" -o /tmp/sapling.tar.xz
+          echo "$SAPLING_SHA256  /tmp/sapling.tar.xz" | sha256sum --check
+          sudo tar -xJf /tmp/sapling.tar.xz -C /opt/sapling
+          sudo ln -s /opt/sapling/sl /usr/local/bin/sl
+          sl version
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -47,6 +72,9 @@ jobs:
       - name: Typecheck
         run: bun run typecheck
 
+      - name: Theme contrast check
+        run: bun run test:theme-contrast
+
       - name: Test suite
         run: bun run test
 
@@ -55,6 +83,8 @@ jobs:
 
   tty-smoke:
     name: Terminal smoke tests
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -78,6 +108,8 @@ jobs:
 
   pack-npm:
     name: Verify npm package
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -119,6 +151,8 @@ jobs:
 
   prebuilt-npm:
     name: Verify prebuilt npm package (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -126,6 +160,7 @@ jobs:
         os:
           - ubuntu-latest
           - macos-latest
+          - windows-latest
     steps:
       - name: Check out repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -154,6 +189,8 @@ jobs:
 
   build-bin:
     name: Build compiled binary
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository

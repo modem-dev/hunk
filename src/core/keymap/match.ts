@@ -30,15 +30,33 @@ export type Keymap = {
 /** Match a single KeySpec against a live KeyEvent. */
 export function matchesKey(spec: KeySpec, key: KeyEvent): boolean {
   if (spec.sequence !== undefined) {
-    if (key.sequence === spec.sequence) return true;
+    // Lowercase-letter sequence specs must not match Shift+letter events.
+    // OpenTUI's modifyOtherKeys path produces `{name:"g", sequence:"g",
+    // shift:true}` for Shift+G; the raw path produces `{name:"g",
+    // sequence:"G", shift:true}`. Without this guard, scroll.toTop ("g")
+    // would shadow scroll.toBottom ("G") in the first encoding.
+    const isLowercaseLetter =
+      spec.sequence.length === 1 && spec.sequence >= "a" && spec.sequence <= "z";
+    if (key.sequence === spec.sequence && !(isLowercaseLetter && key.shift)) {
+      return true;
+    }
     // Defensive parity for single-character specs — some OpenTUI paths
     // populate `key.name` without `key.sequence`. Gate on `!key.shift` so a
     // lowercase-letter spec doesn't shadow an uppercase-letter spec on
-    // Shift+letter events: OpenTUI lowercases `key.name` and sets
-    // `key.shift = true` for `A-Z`, which would otherwise let `g` match
-    // Shift+G (the literal `key.sequence === "G"`) ahead of an explicit `G`
-    // binding.
+    // Shift+letter events.
     if (spec.sequence.length === 1 && !key.shift && key.name === spec.sequence) {
+      return true;
+    }
+    // Modifier-aware path: an uppercase-letter spec must match Shift+letter
+    // events even when the encoding produces `{name:"g", sequence:"g", shift:true}`
+    // instead of `sequence:"G"`.
+    if (
+      spec.sequence.length === 1 &&
+      spec.sequence >= "A" &&
+      spec.sequence <= "Z" &&
+      key.shift &&
+      key.name === spec.sequence.toLowerCase()
+    ) {
       return true;
     }
     return false;

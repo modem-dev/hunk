@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { DiffSectionGeometry } from "../lib/diffSectionGeometry";
+import type { DiffSectionGeometry } from "./diffSectionGeometry";
 import type { PlannedReviewRow } from "./reviewRenderPlan";
 import { resolveVisiblePlannedRowWindow } from "./rowWindowing";
 
@@ -36,6 +36,8 @@ function createTestSectionGeometry(
     bodyHeight,
     hunkAnchorRows: new Map(),
     hunkBounds: new Map(),
+    lineNumberDigits: 1,
+    plannedRows: rowBounds.map((row) => createTestPlannedRow(row.key)),
     rowBounds: normalizedRowBounds,
     rowBoundsByKey: new Map(normalizedRowBounds.map((row) => [row.key, row])),
     rowBoundsByStableKey: new Map(normalizedRowBounds.map((row) => [row.stableKey, row])),
@@ -135,5 +137,31 @@ describe("resolveVisiblePlannedRowWindow", () => {
     expect(window.topSpacerHeight).toBe(0);
     expect(window.bottomSpacerHeight).toBe(4);
     expect(window.plannedRows).toHaveLength(0);
+  });
+
+  test("finds visible rows in a very large row-bound array", () => {
+    const rowBounds = Array.from({ length: 50_000 }, (_, index) => ({
+      key: `row:${index}`,
+      top: index,
+      height: 1,
+    }));
+    const plannedRows = rowBounds.map((row) => createTestPlannedRow(row.key));
+    const sectionGeometry = createTestSectionGeometry(rowBounds, rowBounds.length);
+
+    const window = resolveVisiblePlannedRowWindow({
+      plannedRows,
+      sectionGeometry,
+      visibleBodyBounds: { top: 30_000, height: 5 },
+    });
+
+    expect(window.topSpacerHeight).toBe(30_000);
+    expect(window.bottomSpacerHeight).toBe(19_995);
+    expect(window.plannedRows.map((row) => row.key)).toEqual([
+      "row:30000",
+      "row:30001",
+      "row:30002",
+      "row:30003",
+      "row:30004",
+    ]);
   });
 });

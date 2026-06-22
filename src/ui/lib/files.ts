@@ -2,6 +2,7 @@ import { basename, dirname } from "node:path/posix";
 import type { FileDiffMetadata } from "@pierre/diffs";
 import { normalizeDiffPath } from "../../core/diffPaths";
 import type { AgentAnnotation, DiffFile } from "../../core/types";
+import { sanitizeTerminalLine } from "../../lib/terminalText";
 
 export interface FileListEntry {
   kind: "file";
@@ -24,8 +25,10 @@ export type SidebarEntry = FileListEntry | FileGroupEntry;
 
 /** Build the filename-first label shown inside one sidebar row. */
 function sidebarFileName(file: DiffFile) {
-  const path = normalizeDiffPath(file.path) ?? file.path;
-  const previousPath = normalizeDiffPath(file.previousPath);
+  const path = sanitizeTerminalLine(normalizeDiffPath(file.path) ?? file.path);
+  const previousPath = file.previousPath
+    ? sanitizeTerminalLine(normalizeDiffPath(file.previousPath) ?? file.previousPath)
+    : undefined;
 
   if (!previousPath || previousPath === path) {
     return basename(path);
@@ -122,7 +125,7 @@ export function buildSidebarEntries(files: DiffFile[]): SidebarEntry[] {
   let activeGroup: string | null = null;
 
   files.forEach((file, index) => {
-    const path = normalizeDiffPath(file.path) ?? file.path;
+    const path = sanitizeTerminalLine(normalizeDiffPath(file.path) ?? file.path);
     const group = dirname(path);
     const nextGroup = group === "." ? null : group;
 
@@ -169,8 +172,10 @@ export function fileLabelParts(file: DiffFile | undefined): {
     return { filename: "No file selected", stateLabel: null };
   }
 
-  const path = normalizeDiffPath(file.path) ?? file.path;
-  const previousPath = normalizeDiffPath(file.previousPath);
+  const path = sanitizeTerminalLine(normalizeDiffPath(file.path) ?? file.path);
+  const previousPath = file.previousPath
+    ? sanitizeTerminalLine(normalizeDiffPath(file.previousPath) ?? file.previousPath)
+    : undefined;
   const baseLabel = previousPath && previousPath !== path ? `${previousPath} -> ${path}` : path;
 
   // Determine state label for special cases

@@ -118,6 +118,15 @@ describe("computeWatchSignature", () => {
     expect(changedSignature).toEqual(initialSignature);
   });
 
+  test("rejects unsupported watch operations before invoking adapter signatures", () => {
+    expect(() =>
+      computeWatchSignature({
+        kind: "stash-show",
+        options: { mode: "auto", vcs: "jj" },
+      }),
+    ).toThrow("`hunk stash show` requires Git VCS mode.");
+  });
+
   test("tracks untracked file changes when diff compares the working tree against one ref", () => {
     const dir = createTempRepo("hunk-watch-ref-untracked-");
 

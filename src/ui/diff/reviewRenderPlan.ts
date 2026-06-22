@@ -11,7 +11,6 @@ type DiffLineRow = Extract<DiffRow, { type: "split-line" | "stack-line" }>;
 interface InlineVisibleNotePlacement {
   anchorKey: string;
   anchorSide?: "old" | "new";
-  endGuideAfterKey?: string;
   guidedRowKeys: Set<string>;
   hunkIndex: number;
   note: VisibleAgentNote;
@@ -39,17 +38,10 @@ export type PlannedReviewRow =
       hunkIndex: number;
       annotationId: string;
       annotation: AgentAnnotation;
+      note: VisibleAgentNote;
       anchorSide?: "old" | "new";
       noteCount: number;
       noteIndex: number;
-    }
-  | {
-      kind: "note-guide-cap";
-      key: string;
-      stableKey: string;
-      fileId: string;
-      hunkIndex: number;
-      side: "old" | "new";
     };
 
 function lineRows(rows: DiffRow[]) {
@@ -95,11 +87,7 @@ function contextLineStableKey(hunkIndex: number, oldLineNumber?: number, newLine
 /** Resolve the stable anchor keys for one rendered diff row across split and stack layouts. */
 function diffRowStableKeys(row: DiffRow) {
   if (row.type === "collapsed") {
-    return [
-      row.key.endsWith(":trailing")
-        ? `meta:collapsed:trailing:${row.hunkIndex}`
-        : `meta:collapsed:before:${row.hunkIndex}`,
-    ];
+    return [`meta:collapsed:${row.position}:${row.hunkIndex}`];
   }
 
   if (row.type === "hunk-header") {
@@ -129,10 +117,6 @@ function diffRowStableKeys(row: DiffRow) {
     ]);
   }
 
-  if (row.type !== "stack-line") {
-    return [`row:${row.key}`];
-  }
-
   const contextKey = contextLineStableKey(
     row.hunkIndex,
     row.cell.oldLineNumber,
@@ -151,23 +135,6 @@ function diffRowStableKeys(row: DiffRow) {
     newLineStableKey(row.hunkIndex, row.cell.newLineNumber),
     oldLineStableKey(row.hunkIndex, row.cell.oldLineNumber),
   ]);
-}
-
-/** Pick the stable anchor that best matches one old/new-side guide row. */
-function diffRowStableKeyForSide(row: DiffRow, side: "old" | "new") {
-  if (row.type === "split-line") {
-    return side === "new"
-      ? newLineStableKey(row.hunkIndex, row.right.lineNumber)
-      : oldLineStableKey(row.hunkIndex, row.left.lineNumber);
-  }
-
-  if (row.type === "stack-line") {
-    return side === "new"
-      ? newLineStableKey(row.hunkIndex, row.cell.newLineNumber)
-      : oldLineStableKey(row.hunkIndex, row.cell.oldLineNumber);
-  }
-
-  return diffRowStableKeys(row)[0];
 }
 
 /** Check whether a rendered diff row visually covers the note anchor line. */
@@ -242,15 +209,14 @@ function buildInlineVisibleNotePlacements(rows: DiffRow[], visibleAgentNotes: Vi
 
     const anchorSide = annotationAnchor(note.annotation)?.side;
     const coveredRows = fileLineRows.filter((row) => rowOverlapsAnnotation(row, note.annotation));
-    const fallbackGuideRow = anchorSide ? anchorRow : undefined;
-    const guideRows =
-      coveredRows.length > 0 ? coveredRows : fallbackGuideRow ? [fallbackGuideRow] : [];
+    // The inline card already sits directly above its anchor; start any range guide after that row
+    // so the first code line below the note does not show a dangling right-gutter connector.
+    const guideRows = coveredRows.filter((row) => row.key !== anchorRow.key);
     const anchorPlacements = placementsByAnchor.get(anchorRow.key) ?? [];
 
     anchorPlacements.push({
       anchorKey: anchorRow.key,
       anchorSide,
-      endGuideAfterKey: guideRows.at(-1)?.key,
       guidedRowKeys:
         guideRows.length > 0 ? new Set(guideRows.map((row) => row.key)) : EMPTY_ROW_KEYS,
       hunkIndex: anchorRow.hunkIndex,
@@ -291,36 +257,25 @@ function buildNoteGuideSideByRowKey(placementsByAnchor: Map<string, InlineVisibl
   return guideSideByRowKey;
 }
 
-function buildGuideCapsByRowKey(placementsByAnchor: Map<string, InlineVisibleNotePlacement[]>) {
-  const guideCapsByRowKey = new Map<string, Set<"old" | "new">>();
-
-  for (const placements of placementsByAnchor.values()) {
-    for (const placement of placements) {
-      if (!placement.anchorSide || !placement.endGuideAfterKey) {
-        continue;
-      }
-
-      const rowCaps = guideCapsByRowKey.get(placement.endGuideAfterKey) ?? new Set<"old" | "new">();
-      rowCaps.add(placement.anchorSide);
-      guideCapsByRowKey.set(placement.endGuideAfterKey, rowCaps);
-    }
-  }
-
-  return guideCapsByRowKey;
-}
-
 function rowCanAnchorHunk(row: DiffRow, showHunkHeaders: boolean) {
   if (showHunkHeaders) {
     return row.type === "hunk-header";
   }
 
-  return row.type !== "collapsed" && row.type !== "hunk-header";
+  if (row.type === "collapsed" || row.type === "hunk-header") {
+    return false;
+  }
+
+  // Synthesized collapsed-gap rows carry the neighbor hunk's index for placement,
+  // but anchoring on them would scroll navigation to the top of the expanded gap
+  // instead of the actual changed code.
+  return row.isExpansionRow !== true;
 }
 
 /**
  * Build the explicit presentational row plan for one file diff body.
- * The plan always preserves diff-row order and may insert inline notes plus
- * trailing guide caps for every visible note anchored in this file.
+ * The plan always preserves diff-row order and may insert inline notes for every visible note
+ * anchored in this file.
  */
 export function buildReviewRenderPlan({
   fileId,
@@ -337,7 +292,6 @@ export function buildReviewRenderPlan({
 }) {
   const placementsByAnchor = buildInlineVisibleNotePlacements(rows, visibleAgentNotes);
   const noteGuideSideByRowKey = buildNoteGuideSideByRowKey(placementsByAnchor);
-  const guideCapsByRowKey = buildGuideCapsByRowKey(placementsByAnchor);
   const plannedRows: PlannedReviewRow[] = [];
   const anchoredHunks = new Set<number>();
 
@@ -363,6 +317,7 @@ export function buildReviewRenderPlan({
         hunkIndex: placement.hunkIndex,
         annotationId: placement.note.id,
         annotation: placement.note.annotation,
+        note: placement.note,
         anchorSide: placement.anchorSide,
         noteCount: placement.noteCount,
         noteIndex: placement.noteIndex,
@@ -380,20 +335,6 @@ export function buildReviewRenderPlan({
       anchorId,
       noteGuideSide: noteGuideSideByRowKey.get(row.key),
     });
-
-    const guideCaps = guideCapsByRowKey.get(row.key);
-    if (guideCaps) {
-      Array.from(guideCaps).forEach((side) => {
-        plannedRows.push({
-          kind: "note-guide-cap",
-          key: `note-guide-cap:${row.key}:${side}`,
-          stableKey: `note-guide-cap:${side}:${diffRowStableKeyForSide(row, side) ?? diffStableKey}`,
-          fileId,
-          hunkIndex: row.hunkIndex,
-          side,
-        });
-      });
-    }
   }
 
   return plannedRows;

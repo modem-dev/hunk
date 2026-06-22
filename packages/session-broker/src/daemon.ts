@@ -1,4 +1,10 @@
-import type { SessionServerMessage, SessionTargetSelector } from "@hunk/session-broker-core";
+import {
+  MAX_HTTP_BODY_BYTES,
+  PayloadTooLargeError,
+  readRequestTextWithLimit,
+  type SessionServerMessage,
+  type SessionTargetSelector,
+} from "@hunk/session-broker-core";
 import type { SessionBrokerController, SessionBrokerPeer } from "./broker";
 import {
   DEFAULT_SESSION_BROKER_API_PATH,
@@ -25,6 +31,7 @@ export interface SessionBrokerDaemonOptions<
   broker: SessionBrokerController<SessionView, ServerMessage, CommandResult>;
   capabilities?: SessionBrokerCapabilities;
   paths?: Partial<SessionBrokerHttpPaths>;
+  exposeHttpApi?: boolean;
   idleTimeoutMs?: number;
   staleSessionTtlMs?: number;
   staleSessionSweepIntervalMs?: number;
@@ -53,12 +60,19 @@ function parseSocketEnvelope(message: string) {
     : null;
 }
 
+/** Return whether one raw broker API request body was explicitly sent as JSON. */
+function hasJsonContentType(request: Request) {
+  const contentType = request.headers.get("content-type");
+  return contentType?.split(";", 1)[0]?.trim().toLowerCase() === "application/json";
+}
+
 /** Decode one raw broker API request body and surface a friendly transport-level error. */
 async function parseJsonRequest<CommandName extends string = string, CommandInput = unknown>(
   request: Request,
 ) {
+  const text = await readRequestTextWithLimit(request, MAX_HTTP_BODY_BYTES);
   try {
-    return (await request.json()) as SessionBrokerDaemonRequest<CommandName, CommandInput>;
+    return JSON.parse(text) as SessionBrokerDaemonRequest<CommandName, CommandInput>;
   } catch {
     throw new Error("Expected one JSON request body.");
   }
@@ -99,11 +113,14 @@ export class SessionBrokerDaemon<
       "broker"
     > = {},
   ) {
+    const exposeHttpApi = options.exposeHttpApi ?? false;
     this.paths = {
       health: options.paths?.health ?? DEFAULT_SESSION_BROKER_HEALTH_PATH,
-      api: options.paths?.api ?? DEFAULT_SESSION_BROKER_API_PATH,
-      capabilities: options.paths?.capabilities ?? DEFAULT_SESSION_BROKER_CAPABILITIES_PATH,
       socket: options.paths?.socket ?? DEFAULT_SESSION_BROKER_SOCKET_PATH,
+      api: exposeHttpApi ? (options.paths?.api ?? DEFAULT_SESSION_BROKER_API_PATH) : undefined,
+      capabilities: exposeHttpApi
+        ? (options.paths?.capabilities ?? DEFAULT_SESSION_BROKER_CAPABILITIES_PATH)
+        : undefined,
     };
     this.capabilities = options.capabilities ?? { version: 1 };
     this.idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
@@ -156,12 +173,12 @@ export class SessionBrokerDaemon<
       return Response.json(this.getHealth());
     }
 
-    if (url.pathname === this.paths.capabilities) {
+    if (this.paths.capabilities && url.pathname === this.paths.capabilities) {
       this.noteActivity();
       return Response.json(this.capabilities);
     }
 
-    if (url.pathname === this.paths.api) {
+    if (this.paths.api && url.pathname === this.paths.api) {
       this.noteActivity();
       return this.handleApiRequest(request);
     }
@@ -322,6 +339,10 @@ export class SessionBrokerDaemon<
       return jsonError("Broker API requests must use POST.", 405);
     }
 
+    if (!hasJsonContentType(request)) {
+      return jsonError("Expected Content-Type application/json.", 415);
+    }
+
     try {
       const input = await parseJsonRequest<ServerMessage["command"]>(request);
       let response: SessionBrokerDaemonResponse<SessionView, CommandResult>;
@@ -355,6 +376,10 @@ export class SessionBrokerDaemon<
 
       return Response.json(response);
     } catch (error) {
+      if (error instanceof PayloadTooLargeError) {
+        return jsonError(error.message, 413);
+      }
+
       return jsonError(error instanceof Error ? error.message : "Unknown broker API error.");
     }
   }

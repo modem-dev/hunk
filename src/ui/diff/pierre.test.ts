@@ -1,8 +1,20 @@
 import { describe, expect, test } from "bun:test";
 import { parseDiffFromFile } from "@pierre/diffs";
 import type { DiffFile } from "../../core/types";
-import { buildSplitRows, buildStackRows, loadHighlightedDiff, type DiffRow } from "./pierre";
-import { resolveTheme } from "../themes";
+import {
+  buildSplitRows,
+  buildStackRows,
+  loadHighlightedDiff,
+  loadHighlightedSourceLines,
+  spansForHighlightedSourceLine,
+  type DiffRow,
+} from "./pierre";
+import { resolveSplitPaneWidths } from "./codeColumns";
+import { renderCodeOnlyPlannedRowText, renderDecoratedPlannedRowText } from "./renderRows";
+import { stackCellPalette } from "./rowStyle";
+import { buildReviewRenderPlan } from "./reviewRenderPlan";
+import { measureTextWidth } from "../lib/text";
+import { TRANSPARENT_BACKGROUND, resolveTheme, withTransparentBackground } from "../themes";
 
 function createDiffFile(): DiffFile {
   const metadata = parseDiffFromFile(
@@ -98,7 +110,7 @@ function createMarkdownDiffFile(): DiffFile {
 describe("Pierre diff rows", () => {
   test("builds split rows with Pierre-highlighted emphasis spans", async () => {
     const file = createDiffFile();
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const highlighted = await loadHighlightedDiff(file);
     const rows = buildSplitRows(file, highlighted, theme);
 
@@ -135,9 +147,31 @@ describe("Pierre diff rows", () => {
     ).toBe(true);
   });
 
+  test("keeps word-diff highlight backgrounds transparent in transparent mode", async () => {
+    const file = createDiffFile();
+    const theme = withTransparentBackground(resolveTheme("github-dark-default", null));
+    const highlighted = await loadHighlightedDiff(file);
+    const rows = buildSplitRows(file, highlighted, theme);
+    const changedRow = rows.find(
+      (row) =>
+        row.type === "split-line" && row.left.kind === "deletion" && row.right.kind === "addition",
+    );
+
+    expect(changedRow).toBeDefined();
+    if (!changedRow || changedRow.type !== "split-line") {
+      throw new Error("Expected a split-line change row");
+    }
+
+    const removedWordSpan = changedRow.left.spans.find((span) => span.text.includes("41"));
+    const addedWordSpan = changedRow.right.spans.find((span) => span.text.includes("42"));
+
+    expect(removedWordSpan?.bg).toBe(TRANSPARENT_BACKGROUND);
+    expect(addedWordSpan?.bg).toBe(TRANSPARENT_BACKGROUND);
+  });
+
   test("builds stacked rows with separate deletion and addition lines", () => {
     const file = createDiffFile();
-    const theme = resolveTheme("paper", null);
+    const theme = resolveTheme("github-light-default", null);
     const rows = buildStackRows(file, null, theme);
 
     const deletionRow = rows.find(
@@ -164,9 +198,218 @@ describe("Pierre diff rows", () => {
     expect(additionRow.cell.newLineNumber).toBe(1);
   });
 
+  test("carries moved-line tags into row palettes", () => {
+    const file = createDiffFile();
+    file.lineMoveKinds = {
+      deletionLines: ["moved"],
+      additionLines: ["moved"],
+    };
+    const theme = resolveTheme("github-dark-default", null);
+    const rows = buildStackRows(file, null, theme);
+    const movedDeletion = rows.find(
+      (row) => row.type === "stack-line" && row.cell.kind === "deletion",
+    );
+    const movedAddition = rows.find(
+      (row) => row.type === "stack-line" && row.cell.kind === "addition",
+    );
+
+    expect(movedDeletion).toBeDefined();
+    expect(movedAddition).toBeDefined();
+
+    if (!movedDeletion || movedDeletion.type !== "stack-line") {
+      throw new Error("Expected a moved deletion row");
+    }
+
+    if (!movedAddition || movedAddition.type !== "stack-line") {
+      throw new Error("Expected a moved addition row");
+    }
+
+    expect(movedDeletion.cell.moveKind).toBe("moved");
+    expect(movedAddition.cell.moveKind).toBe("moved");
+    expect(
+      stackCellPalette(movedDeletion.cell.kind, theme, movedDeletion.cell.moveKind).contentBg,
+    ).toBe(theme.movedRemovedBg);
+    expect(
+      stackCellPalette(movedAddition.cell.kind, theme, movedAddition.cell.moveKind).contentBg,
+    ).toBe(theme.movedAddedBg);
+  });
+
+  test("renders planned split rows to copyable visible text", () => {
+    const file = createDiffFile();
+    const theme = resolveTheme("github-dark-default", null);
+    const rows = buildSplitRows(file, null, theme);
+    const plannedRows = buildReviewRenderPlan({
+      fileId: file.id,
+      rows,
+      showHunkHeaders: true,
+    });
+    const changedRow = plannedRows.find(
+      (row) => row.kind === "diff-row" && row.row.type === "split-line",
+    );
+
+    expect(changedRow).toBeDefined();
+    if (!changedRow || changedRow.kind !== "diff-row") {
+      throw new Error("Expected a planned split diff row");
+    }
+
+    const [line] = renderDecoratedPlannedRowText(changedRow, {
+      codeHorizontalOffset: 0,
+      lineNumberDigits: 1,
+      showHunkHeaders: true,
+      showLineNumbers: true,
+      theme,
+      width: 80,
+      wrapLines: false,
+    });
+
+    expect(line).toContain("- export const answer = 41;");
+    expect(line).toContain("+ export const answer = 42;");
+  });
+
+  test("keeps the split separator aligned after wide characters", () => {
+    const metadata = parseDiffFromFile(
+      {
+        name: "i18n.ts",
+        contents: "export const message = '日本語';\n",
+        cacheKey: "before-wide",
+      },
+      {
+        name: "i18n.ts",
+        contents: "export const message = 'abc';\n",
+        cacheKey: "after-wide",
+      },
+      { context: 3 },
+      true,
+    );
+    const file: DiffFile = {
+      id: "i18n",
+      path: "i18n.ts",
+      patch: "",
+      language: "typescript",
+      stats: { additions: 1, deletions: 1 },
+      metadata,
+      agent: null,
+    };
+    const theme = resolveTheme("github-dark-default", null);
+    const rows = buildSplitRows(file, null, theme);
+    const plannedRows = buildReviewRenderPlan({ fileId: file.id, rows, showHunkHeaders: true });
+    const changedRow = plannedRows.find(
+      (row) =>
+        row.kind === "diff-row" &&
+        row.row.type === "split-line" &&
+        row.row.left.kind === "deletion",
+    );
+
+    expect(changedRow).toBeDefined();
+    if (!changedRow || changedRow.kind !== "diff-row") {
+      throw new Error("Expected a planned split diff row");
+    }
+
+    const width = 80;
+    const { leftWidth } = resolveSplitPaneWidths(width);
+    const line = renderDecoratedPlannedRowText(changedRow, {
+      codeHorizontalOffset: 0,
+      lineNumberDigits: 1,
+      showHunkHeaders: true,
+      showLineNumbers: true,
+      theme,
+      width,
+      wrapLines: false,
+    })[0];
+    expect(line).toBeDefined();
+    if (!line) {
+      throw new Error("Expected a rendered split row");
+    }
+    const centerSeparatorIndex = line.indexOf("▌", 1);
+
+    expect(line).toContain("日本語");
+    expect(measureTextWidth(line.slice(0, centerSeparatorIndex))).toBe(leftWidth);
+  });
+
+  test("renders planned stack rows with horizontal copy offset", () => {
+    const file = createDiffFile();
+    const theme = resolveTheme("github-dark-default", null);
+    const rows = buildStackRows(file, null, theme);
+    const plannedRows = buildReviewRenderPlan({
+      fileId: file.id,
+      rows,
+      showHunkHeaders: true,
+    });
+    const additionRow = plannedRows.find(
+      (row) =>
+        row.kind === "diff-row" &&
+        row.row.type === "stack-line" &&
+        row.row.cell.kind === "addition",
+    );
+
+    expect(additionRow).toBeDefined();
+    if (!additionRow || additionRow.kind !== "diff-row") {
+      throw new Error("Expected a planned stack addition row");
+    }
+
+    const [line] = renderDecoratedPlannedRowText(additionRow, {
+      codeHorizontalOffset: 7,
+      lineNumberDigits: 1,
+      showHunkHeaders: true,
+      showLineNumbers: true,
+      theme,
+      width: 40,
+      wrapLines: false,
+    });
+
+    expect(line).toContain("nst answer = 42;");
+    expect(line).not.toContain("export const");
+  });
+
+  test("renders planned rows as code-only copy text when decorations are disabled", () => {
+    const file = createDiffFile();
+    const theme = resolveTheme("github-dark-default", null);
+    const rows = buildSplitRows(file, null, theme);
+    const plannedRows = buildReviewRenderPlan({
+      fileId: file.id,
+      rows,
+      showHunkHeaders: true,
+    });
+    const headerRow = plannedRows.find(
+      (row) => row.kind === "diff-row" && row.row.type === "hunk-header",
+    );
+    const changedRow = plannedRows.find(
+      (row) => row.kind === "diff-row" && row.row.type === "split-line",
+    );
+
+    expect(headerRow).toBeDefined();
+    expect(changedRow).toBeDefined();
+    if (!headerRow || !changedRow) {
+      throw new Error("Expected planned header and split rows");
+    }
+
+    expect(
+      renderCodeOnlyPlannedRowText(headerRow, {
+        codeHorizontalOffset: 0,
+        lineNumberDigits: 1,
+        showHunkHeaders: true,
+        showLineNumbers: true,
+        theme,
+        width: 80,
+        wrapLines: false,
+      }),
+    ).toEqual([]);
+    expect(
+      renderCodeOnlyPlannedRowText(changedRow, {
+        codeHorizontalOffset: 0,
+        lineNumberDigits: 1,
+        showHunkHeaders: true,
+        showLineNumbers: true,
+        theme,
+        width: 80,
+        wrapLines: false,
+      }),
+    ).toEqual(["export const answer = 41;", "export const answer = 42;"]);
+  });
+
   test("does not produce newline characters in spans for highlighted empty lines", async () => {
     const file = createEmptyLineDiffFile();
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const highlighted = await loadHighlightedDiff(file);
 
     for (const buildRows of [buildSplitRows, buildStackRows]) {
@@ -181,10 +424,38 @@ describe("Pierre diff rows", () => {
     }
   });
 
+  test("builds syntax spans for highlighted full-source lines", async () => {
+    const file = createDiffFile();
+    const theme = resolveTheme("github-dark-default", null);
+    const text = "export const hiddenMarker = true;\n";
+    const highlighted = await loadHighlightedSourceLines({
+      file,
+      text,
+      theme,
+    });
+    const spans = spansForHighlightedSourceLine(
+      "export const hiddenMarker = true;",
+      highlighted.lines[0],
+      theme,
+    );
+
+    expect(spans.map((span) => span.text).join("")).toBe("export const hiddenMarker = true;");
+    expect(spans.some((span) => span.text.includes("export") && typeof span.fg === "string")).toBe(
+      true,
+    );
+  });
+
   test("remaps Pierre markdown reds and greens away from diff-semantic hues", async () => {
     const file = createMarkdownDiffFile();
 
-    for (const themeId of ["midnight", "paper"] as const) {
+    for (const themeId of [
+      "github-dark-default",
+      "github-light-default",
+      "catppuccin-latte",
+      "catppuccin-frappe",
+      "catppuccin-macchiato",
+      "catppuccin-mocha",
+    ] as const) {
       const theme = resolveTheme(themeId, null);
       const highlighted = await loadHighlightedDiff(file, theme.appearance);
       const rows = buildStackRows(file, highlighted, theme).filter(
@@ -225,11 +496,99 @@ describe("Pierre diff rows", () => {
     }
   });
 
+  test("collapsed rows carry line ranges and position on both layouts", () => {
+    // Fixture: a 30-line file with a single change at line 5, context=3.
+    // Pierre produces one hunk covering old/new lines 2..8 (1 change + 3 lines of
+    // surrounding context). One leading gap (line 1) and one trailing gap
+    // (lines 9..30) should appear as collapsed rows with explicit ranges.
+    const before = Array.from({ length: 30 }, (_, i) => `line ${i + 1}\n`).join("");
+    const after = before.replace("line 5\n", "line 5 modified\n");
+
+    const metadata = parseDiffFromFile(
+      { name: "f.txt", contents: before, cacheKey: "single-change-before" },
+      { name: "f.txt", contents: after, cacheKey: "single-change-after" },
+      { context: 3 },
+      true,
+    );
+
+    const file: DiffFile = {
+      id: "single-change",
+      path: "f.txt",
+      patch: "",
+      stats: { additions: 1, deletions: 1 },
+      metadata,
+      agent: null,
+    };
+
+    const theme = resolveTheme("github-dark-default", null);
+
+    for (const buildRows of [buildSplitRows, buildStackRows]) {
+      const rows = buildRows(file, null, theme);
+      const collapsedRows = rows.filter(
+        (row): row is Extract<DiffRow, { type: "collapsed" }> => row.type === "collapsed",
+      );
+
+      const leading = collapsedRows.find((row) => row.position === "before");
+      const trailing = collapsedRows.find((row) => row.position === "trailing");
+
+      expect(leading).toBeDefined();
+      expect(trailing).toBeDefined();
+
+      expect(leading?.oldRange).toEqual([1, 1]);
+      expect(leading?.newRange).toEqual([1, 1]);
+      expect(trailing?.oldRange?.[0]).toBe(9);
+      expect(trailing?.newRange?.[0]).toBe(9);
+    }
+  });
+
+  test("between-hunks collapsed row spans the unchanged region between two hunks", () => {
+    // Fixture: changes at lines 5 and 25 with context=3 produce two hunks
+    // separated by lines 9..21 of unchanged context.
+    const before = Array.from({ length: 30 }, (_, i) => `line ${i + 1}\n`).join("");
+    const after = before
+      .replace("line 5\n", "line 5 changed\n")
+      .replace("line 25\n", "line 25 changed\n");
+
+    const metadata = parseDiffFromFile(
+      { name: "f.txt", contents: before, cacheKey: "two-hunks-before" },
+      { name: "f.txt", contents: after, cacheKey: "two-hunks-after" },
+      { context: 3 },
+      true,
+    );
+
+    const file: DiffFile = {
+      id: "two-hunks",
+      path: "f.txt",
+      patch: "",
+      stats: { additions: 2, deletions: 2 },
+      metadata,
+      agent: null,
+    };
+
+    const theme = resolveTheme("github-dark-default", null);
+    const rows = buildSplitRows(file, null, theme);
+    const between = rows.find(
+      (row): row is Extract<DiffRow, { type: "collapsed" }> =>
+        row.type === "collapsed" && row.position === "before" && row.hunkIndex === 1,
+    );
+
+    expect(between).toBeDefined();
+    expect(between?.oldRange).toEqual([9, 21]);
+    expect(between?.newRange).toEqual([9, 21]);
+  });
+
   test("keeps reserved-color remaps isolated across dark themes", async () => {
     const file = createMarkdownDiffFile();
     const highlighted = await loadHighlightedDiff(file, "dark");
 
-    for (const themeId of ["graphite", "midnight", "ember"] as const) {
+    for (const themeId of [
+      "github-dark-default",
+      "github-dark-default",
+      "dracula",
+      "catppuccin-frappe",
+      "catppuccin-macchiato",
+      "catppuccin-mocha",
+    ] as const) {
       const theme = resolveTheme(themeId, null);
       const rows = buildStackRows(file, highlighted, theme).filter(
         (row): row is Extract<DiffRow, { type: "stack-line" }> =>
@@ -261,5 +620,91 @@ describe("Pierre diff rows", () => {
         ),
       ).toBe(true);
     }
+  });
+
+  test("maps Pierre TypeScript syntax hues onto theme syntax colors in dark and light", async () => {
+    const metadata = parseDiffFromFile(
+      { name: "syntax.ts", contents: "const a = 1;\n", cacheKey: "syntax-before" },
+      {
+        name: "syntax.ts",
+        contents:
+          'const a = 1;\nexport function compute(): number {\n  return 42;\n}\nconst greeting = "hello";\n',
+        cacheKey: "syntax-after",
+      },
+      { context: 3 },
+      true,
+    );
+    const file: DiffFile = {
+      id: "syntax",
+      path: "syntax.ts",
+      patch: "",
+      language: "typescript",
+      stats: { additions: 4, deletions: 0 },
+      metadata,
+      agent: null,
+    };
+
+    for (const themeId of ["github-dark-default", "github-light-default"] as const) {
+      const theme = resolveTheme("custom", null, {
+        base: themeId,
+        syntax: {
+          keyword: "#112233",
+          function: "#223344",
+          string: "#334455",
+        },
+      });
+      const highlighted = await loadHighlightedDiff(file, theme.appearance);
+      const spans = buildStackRows(file, highlighted, theme)
+        .filter(
+          (row): row is Extract<DiffRow, { type: "stack-line" }> =>
+            row.type === "stack-line" && row.cell.kind === "addition",
+        )
+        .flatMap((row) => row.cell.spans);
+
+      expect(spans.find((span) => span.text.includes("function"))?.fg).toBe("#112233");
+      expect(spans.find((span) => span.text.includes("compute"))?.fg).toBe("#223344");
+      expect(spans.find((span) => span.text.includes('"hello"'))?.fg).toBe("#334455");
+    }
+  });
+
+  test("uses Shiki's bundled Catppuccin theme for Catppuccin syntax", async () => {
+    const metadata = parseDiffFromFile(
+      { name: "syntax.ts", contents: "const a = 1;\n", cacheKey: "catppuccin-before" },
+      {
+        name: "syntax.ts",
+        contents:
+          'const a = 1;\nexport class Greeter {\n  count = 42;\n  greet(user: User) {\n    return "hello" + user.name;\n  }\n}\n',
+        cacheKey: "catppuccin-after",
+      },
+      { context: 3 },
+      true,
+    );
+    const file: DiffFile = {
+      id: "catppuccin-syntax",
+      path: "syntax.ts",
+      patch: "",
+      language: "typescript",
+      stats: { additions: 6, deletions: 0 },
+      metadata,
+      agent: null,
+    };
+    const theme = resolveTheme("catppuccin-mocha", null);
+    const highlighted = await loadHighlightedDiff(file, theme);
+    const spans = buildStackRows(file, highlighted, theme)
+      .filter(
+        (row): row is Extract<DiffRow, { type: "stack-line" }> =>
+          row.type === "stack-line" && row.cell.kind === "addition",
+      )
+      .flatMap((row) => row.cell.spans);
+
+    expect(theme.syntaxTheme).toBe("catppuccin-mocha");
+    expect(spans.find((span) => span.text.includes("class"))?.fg?.toLowerCase()).toBe("#cba6f7");
+    expect(spans.find((span) => span.text.includes("Greeter"))?.fg?.toLowerCase()).toBe("#f9e2af");
+    expect(spans.find((span) => span.text.includes("=") && span.fg)?.fg?.toLowerCase()).toBe(
+      "#94e2d5",
+    );
+    expect(spans.find((span) => span.text.includes("user") && span.fg)?.fg?.toLowerCase()).toBe(
+      "#eba0ac",
+    );
   });
 });

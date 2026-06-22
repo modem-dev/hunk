@@ -12,14 +12,17 @@ import {
   useDeferredValue,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
   buildLiveComment,
   findDiffFileByPath,
+  firstCommentTargetForHunk,
   resolveCommentTarget,
 } from "../../core/liveComments";
-import type { DiffFile } from "../../core/types";
+import { SourceTextTooLargeError } from "../../core/fileSource";
+import type { AgentAnnotation, DiffFile, UserNoteLineTarget } from "../../core/types";
 import type {
   AppliedCommentBatchResult,
   AppliedCommentResult,
@@ -31,8 +34,13 @@ import type {
   NavigatedSelectionResult,
   RemovedCommentResult,
   SessionLiveCommentSummary,
+  SessionReviewNoteSummary,
 } from "../../hunk-session/types";
+import type { FileSourceStatus } from "../diff/expandCollapsedRows";
+import { selectGapForKeyboardToggle } from "../diff/expandCollapsedRows";
+import { trailingCollapsedLines } from "../diff/pierre";
 import { findNextHunkCursor } from "../lib/hunks";
+import { reviewNoteSource } from "../lib/agentAnnotations";
 import {
   buildReviewState,
   buildSelectedHunkSummary,
@@ -46,6 +54,71 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
+/** Merge file-id keyed annotation maps without losing their concrete item types. */
+function mergeAnnotationMaps<T extends AgentAnnotation, U extends AgentAnnotation>(
+  first: Record<string, T[]>,
+  second: Record<string, U[]>,
+): Record<string, Array<T | U>> {
+  const next: Record<string, Array<T | U>> = {};
+  for (const [fileId, annotations] of Object.entries(first)) {
+    next[fileId] = [...annotations];
+  }
+  for (const [fileId, annotations] of Object.entries(second)) {
+    next[fileId] = [...(next[fileId] ?? []), ...annotations];
+  }
+  return next;
+}
+
+/** Return a new record with the given keys omitted, or the original when nothing changed. */
+function removeKeys<T>(record: Record<string, T>, keys: ReadonlySet<string>): Record<string, T> {
+  let changed = false;
+  const next: Record<string, T> = {};
+  for (const [key, value] of Object.entries(record)) {
+    if (keys.has(key)) {
+      changed = true;
+    } else {
+      next[key] = value;
+    }
+  }
+  return changed ? next : record;
+}
+
+/** Count array-backed entries in a file-id keyed note map. */
+function countFileMapItems<T>(record: Record<string, T[]>) {
+  return Object.values(record).reduce((sum, items) => sum + items.length, 0);
+}
+
+export interface UserReviewNote extends AgentAnnotation {
+  id: string;
+  source: "user";
+  filePath: string;
+  hunkIndex: number;
+  side: "old" | "new";
+  line: number;
+  summary: string;
+  author: string;
+  createdAt: string;
+  editable: true;
+}
+
+export interface DraftReviewNote {
+  id: string;
+  fileId: string;
+  filePath: string;
+  hunkIndex: number;
+  side: "old" | "new";
+  line: number;
+  oldRange?: [number, number];
+  newRange?: [number, number];
+  body: string;
+}
+
+interface SourceLoadRequest {
+  fetcher: NonNullable<DiffFile["sourceFetcher"]>;
+  requestId: number;
+  side: "old" | "new";
+}
+
 export interface ReviewSelectionOptions {
   alignFileHeaderTop?: boolean;
   preserveViewport?: boolean;
@@ -54,12 +127,18 @@ export interface ReviewSelectionOptions {
 
 export interface ReviewController {
   allFiles: DiffFile[];
+  expandedGapsByFileId: Record<string, ReadonlySet<string>>;
   filter: string;
+  draftNote: DraftReviewNote | null;
   liveCommentCount: number;
   liveCommentSummaries: SessionLiveCommentSummary[];
   liveCommentsByFileId: Record<string, LiveComment[]>;
+  reviewNoteCount: number;
+  reviewNoteSummaries: SessionReviewNoteSummary[];
+  userNotesByFileId: Record<string, UserReviewNote[]>;
   moveToAnnotatedFile: (delta: number) => void;
   moveToAnnotatedHunk: (delta: number) => void;
+  moveToFile: (delta: number) => void;
   moveToHunk: (delta: number) => void;
   scrollToNote: boolean;
   selectedFile: DiffFile | undefined;
@@ -69,6 +148,9 @@ export interface ReviewController {
   selectedHunk: DiffFile["metadata"]["hunks"][number] | undefined;
   selectedHunkIndex: number;
   sidebarEntries: ReviewState["sidebarEntries"];
+  sourceStatusByFileId: Record<string, FileSourceStatus>;
+  toggleGap: (fileId: string, gapKey: string) => void;
+  toggleSelectedHunkGap: () => void;
   visibleFiles: DiffFile[];
   addLiveComment: (
     input: CommentToolInput,
@@ -81,12 +163,24 @@ export interface ReviewController {
     options?: { revealMode?: "none" | "first" },
   ) => AppliedCommentBatchResult;
   clearFilter: () => void;
-  clearLiveComments: (filePath?: string) => ClearedCommentsResult;
+  clearLiveComments: (
+    filePath?: string,
+    options?: { includeUser?: boolean },
+  ) => ClearedCommentsResult;
   navigateToLocation: (input: NavigateToHunkToolInput) => NavigatedSelectionResult;
   removeLiveComment: (commentId: string) => RemovedCommentResult;
+  cancelDraftNote: () => void;
+  removeUserNote: (noteId: string) => void;
+  saveDraftNote: () => UserReviewNote | null;
   selectFile: (fileId: string, nextHunkIndex?: number, options?: ReviewSelectionOptions) => void;
   selectHunk: (fileId: string, hunkIndex: number, options?: ReviewSelectionOptions) => void;
+  startUserNote: (
+    fileId?: string,
+    hunkIndex?: number,
+    target?: UserNoteLineTarget,
+  ) => DraftReviewNote | null;
   setFilter: (value: string) => void;
+  updateDraftNote: (body: string) => void;
 }
 
 /** Own the shared review stream state used by both the UI and session bridge. */
@@ -100,6 +194,51 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
   const [liveCommentsByFileId, setLiveCommentsByFileId] = useState<Record<string, LiveComment[]>>(
     {},
   );
+  const [userNotesByFileId, setUserNotesByFileId] = useState<Record<string, UserReviewNote[]>>({});
+  const [draftNote, setDraftNote] = useState<DraftReviewNote | null>(null);
+  const [expandedGapsByFileId, setExpandedGapsByFileId] = useState<
+    Record<string, ReadonlySet<string>>
+  >({});
+  const [sourceStatusByFileId, setSourceStatusByFileId] = useState<
+    Record<string, FileSourceStatus>
+  >({});
+  // Mirror sourceStatusByFileId so toggleGap can dedup synchronously without
+  // waiting for React's state updater to commit.
+  const sourceStatusRef = useRef(sourceStatusByFileId);
+  sourceStatusRef.current = sourceStatusByFileId;
+  const sourceLoadRequestsRef = useRef(new Map<string, SourceLoadRequest>());
+  const nextSourceLoadRequestIdRef = useRef(1);
+
+  // Track the files array we last reconciled against so we can invalidate
+  // expansion state when a soft reload replaces a file's sourceFetcher.
+  // Without this, the same file id could outlive a reload while its
+  // cached `loaded` source text refers to the previous patch, and toggleGap
+  // would short-circuit on stale state instead of re-fetching.
+  const [filesSnapshot, setFilesSnapshot] = useState(files);
+  if (filesSnapshot !== files) {
+    setFilesSnapshot(files);
+    const currentFetcherByFileId = new Map<string, DiffFile["sourceFetcher"]>();
+    for (const file of files) {
+      currentFetcherByFileId.set(file.id, file.sourceFetcher);
+    }
+    const staleFileIds = new Set<string>();
+    for (const previousFile of filesSnapshot) {
+      const currentFetcher = currentFetcherByFileId.get(previousFile.id);
+      // Either the file was removed, or its fetcher (and thus its patch)
+      // was replaced. Both invalidate any state keyed by file id.
+      if (currentFetcher !== previousFile.sourceFetcher) {
+        staleFileIds.add(previousFile.id);
+      }
+    }
+    if (staleFileIds.size > 0) {
+      for (const fileId of staleFileIds) {
+        sourceLoadRequestsRef.current.delete(fileId);
+      }
+      setSourceStatusByFileId((prev) => removeKeys(prev, staleFileIds));
+      setExpandedGapsByFileId((prev) => removeKeys(prev, staleFileIds));
+    }
+  }
+
   const deferredFilter = useDeferredValue(filter);
 
   const {
@@ -114,12 +253,19 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     () =>
       buildReviewState({
         files,
-        liveCommentsByFileId,
+        liveCommentsByFileId: mergeAnnotationMaps(liveCommentsByFileId, userNotesByFileId),
         filterQuery: deferredFilter,
         selectedFileId,
         selectedHunkIndex,
       }),
-    [deferredFilter, files, liveCommentsByFileId, selectedFileId, selectedHunkIndex],
+    [
+      deferredFilter,
+      files,
+      liveCommentsByFileId,
+      selectedFileId,
+      selectedHunkIndex,
+      userNotesByFileId,
+    ],
   );
 
   /** Update the selection and reveal intent together so diff scrolling stays explicit. */
@@ -224,6 +370,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
         selectedFile?.id,
         selectedHunkIndex,
         delta,
+        hunkCursors,
       );
       if (!nextCursor) {
         return;
@@ -231,7 +378,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
 
       selectHunk(nextCursor.fileId, nextCursor.hunkIndex, { scrollToNote: true });
     },
-    [annotatedHunkCursors, selectHunk, selectedFile?.id, selectedHunkIndex],
+    [annotatedHunkCursors, hunkCursors, selectHunk, selectedFile?.id, selectedHunkIndex],
   );
 
   /** Cycle through only the currently visible files that carry annotations. */
@@ -247,10 +394,143 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     [selectFile, selectedFile?.id, visibleFiles],
   );
 
+  /** Move through all currently visible files without wrapping past either end. */
+  const moveToFile = useCallback(
+    (delta: number) => {
+      const currentIndex = visibleFiles.findIndex((file) => file.id === selectedFile?.id);
+      if (currentIndex < 0) {
+        return;
+      }
+
+      const nextIndex = clamp(currentIndex + delta, 0, visibleFiles.length - 1);
+      if (nextIndex === currentIndex) {
+        return;
+      }
+
+      const nextFile = visibleFiles[nextIndex];
+      if (!nextFile) {
+        return;
+      }
+
+      selectFile(nextFile.id, 0, { alignFileHeaderTop: true });
+    },
+    [selectFile, selectedFile?.id, visibleFiles],
+  );
+
   /** Clear the active file filter without touching the current selection. */
   const clearFilter = useCallback(() => {
     setFilter("");
   }, []);
+
+  /** Toggle expansion of one collapsed gap and lazily load source when needed. */
+  const toggleGap = useCallback(
+    (fileId: string, gapKey: string) => {
+      const file = allFiles.find((entry) => entry.id === fileId);
+      if (!file?.sourceFetcher) {
+        return;
+      }
+
+      setExpandedGapsByFileId((prev) => {
+        const current = prev[fileId];
+        const next = new Set(current ?? []);
+        if (next.has(gapKey)) {
+          next.delete(gapKey);
+        } else {
+          next.add(gapKey);
+        }
+        return { ...prev, [fileId]: next };
+      });
+
+      // The fetcher caches its own resolved text; we mirror it into React state
+      // as a tagged status so the UI can distinguish loading, loaded, and error
+      // states. Skip the fetch when one is already in flight or has resolved
+      // to avoid redundant work and stale "loading" flicker.
+      const currentStatus = sourceStatusRef.current[fileId]?.kind;
+      if (currentStatus === "loaded" || currentStatus === "loading") {
+        return;
+      }
+
+      const side = file.metadata.type === "deleted" ? "old" : "new";
+      const request = {
+        fetcher: file.sourceFetcher,
+        requestId: nextSourceLoadRequestIdRef.current,
+        side,
+      } satisfies SourceLoadRequest;
+      nextSourceLoadRequestIdRef.current += 1;
+      sourceLoadRequestsRef.current.set(fileId, request);
+
+      const loadingStatus = { kind: "loading" } satisfies FileSourceStatus;
+      sourceStatusRef.current = { ...sourceStatusRef.current, [fileId]: loadingStatus };
+      setSourceStatusByFileId((prev) => ({ ...prev, [fileId]: loadingStatus }));
+
+      const isCurrentRequest = () => {
+        const current = sourceLoadRequestsRef.current.get(fileId);
+        return (
+          current?.requestId === request.requestId &&
+          current.fetcher === request.fetcher &&
+          current.side === request.side
+        );
+      };
+
+      const setSettledStatus = (nextStatus: FileSourceStatus) => {
+        if (!isCurrentRequest()) {
+          return;
+        }
+
+        sourceLoadRequestsRef.current.delete(fileId);
+        sourceStatusRef.current = { ...sourceStatusRef.current, [fileId]: nextStatus };
+        setSourceStatusByFileId((prev) => ({
+          ...prev,
+          [fileId]: nextStatus,
+        }));
+      };
+
+      void file.sourceFetcher
+        .getFullText(side)
+        .then((text) => {
+          setSettledStatus(text === null ? { kind: "error" } : { kind: "loaded", text });
+        })
+        .catch((error: unknown) => {
+          if (!isCurrentRequest()) {
+            console.error(
+              `hunk: ignored stale ${side} source load failure for ${file.path} (${file.id}).`,
+              error,
+            );
+            return;
+          }
+
+          const reason = error instanceof SourceTextTooLargeError ? "too-large" : undefined;
+          if (reason !== "too-large") {
+            console.error(
+              `hunk: failed to load ${side} source for ${file.path} (${file.id}).`,
+              error,
+            );
+          }
+          setSettledStatus({
+            kind: "error",
+            reason,
+          });
+        });
+    },
+    [allFiles],
+  );
+
+  /** Toggle the collapsed gap nearest to the current hunk selection. */
+  const toggleSelectedHunkGap = useCallback(() => {
+    const file = selectedFile;
+    if (!file?.sourceFetcher) {
+      return;
+    }
+
+    const target = selectGapForKeyboardToggle(
+      file.metadata.hunks,
+      selectedHunkIndex,
+      trailingCollapsedLines(file.metadata) > 0,
+    );
+    if (target) {
+      toggleGap(file.id, target);
+    }
+  }, [selectedFile, selectedHunkIndex, toggleGap]);
 
   /** Resolve one session-daemon navigation request against the current review state and select it. */
   const navigateToLocation = useCallback(
@@ -380,11 +660,38 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     [allFiles, selectHunk],
   );
 
-  /** Remove one live comment by id and report how many remain. */
+  /** Remove one daemon-addressable comment, including human notes by stable `user:*` id. */
   const removeLiveComment = useCallback(
     (commentId: string): RemovedCommentResult => {
+      if (commentId.startsWith("user:")) {
+        let removed = false;
+        const next: Record<string, UserReviewNote[]> = {};
+
+        for (const [fileId, notes] of Object.entries(userNotesByFileId)) {
+          const filtered = notes.filter((note) => note.id !== commentId);
+          if (filtered.length !== notes.length) {
+            removed = true;
+          }
+          if (filtered.length > 0) {
+            next[fileId] = filtered;
+          }
+        }
+
+        if (!removed) {
+          throw new Error(`No user note matches id ${commentId}.`);
+        }
+
+        setUserNotesByFileId(next);
+        return {
+          commentId,
+          removed: true,
+          remainingCommentCount: countFileMapItems(liveCommentsByFileId) + countFileMapItems(next),
+          source: "user",
+        };
+      }
+
       let removed = false;
-      let remainingCommentCount = 0;
+      let remainingLiveCommentCount = 0;
       const next: Record<string, LiveComment[]> = {};
 
       for (const [fileId, comments] of Object.entries(liveCommentsByFileId)) {
@@ -395,7 +702,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
 
         if (filtered.length > 0) {
           next[fileId] = filtered;
-          remainingCommentCount += filtered.length;
+          remainingLiveCommentCount += filtered.length;
         }
       }
 
@@ -407,55 +714,192 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
       return {
         commentId,
         removed: true,
-        remainingCommentCount,
+        remainingCommentCount: remainingLiveCommentCount + countFileMapItems(userNotesByFileId),
+        source: "agent",
       };
     },
-    [liveCommentsByFileId],
+    [liveCommentsByFileId, userNotesByFileId],
   );
 
-  /** Clear all live comments, or only the comments attached to one specific file. */
+  /** Clear live comments, optionally including human notes, globally or for one file. */
   const clearLiveComments = useCallback(
-    (filePath?: string): ClearedCommentsResult => {
-      let removedCount = 0;
-      let remainingCommentCount = 0;
+    (filePath?: string, options: { includeUser?: boolean } = {}): ClearedCommentsResult => {
+      const file = filePath ? findDiffFileByPath(allFiles, filePath) : undefined;
+      if (filePath && !file) {
+        throw new Error(`No diff file matches ${filePath}.`);
+      }
 
-      if (filePath) {
-        const file = findDiffFileByPath(allFiles, filePath);
-        if (!file) {
-          throw new Error(`No diff file matches ${filePath}.`);
-        }
+      let removedLiveCommentCount = 0;
+      let remainingLiveCommentCount = 0;
+      let nextLiveCommentsByFileId: Record<string, LiveComment[]> = liveCommentsByFileId;
 
-        const next: Record<string, LiveComment[]> = {};
+      if (file) {
+        nextLiveCommentsByFileId = {};
         for (const [fileId, comments] of Object.entries(liveCommentsByFileId)) {
           if (fileId === file.id) {
-            removedCount = comments.length;
+            removedLiveCommentCount = comments.length;
             continue;
           }
 
-          next[fileId] = comments;
-          remainingCommentCount += comments.length;
-        }
-
-        if (removedCount > 0) {
-          setLiveCommentsByFileId(next);
+          nextLiveCommentsByFileId[fileId] = comments;
+          remainingLiveCommentCount += comments.length;
         }
       } else {
-        removedCount = Object.values(liveCommentsByFileId).reduce(
-          (sum, comments) => sum + comments.length,
-          0,
-        );
-        if (removedCount > 0) {
-          setLiveCommentsByFileId({});
+        removedLiveCommentCount = countFileMapItems(liveCommentsByFileId);
+        remainingLiveCommentCount = 0;
+        nextLiveCommentsByFileId = {};
+      }
+
+      if (removedLiveCommentCount > 0) {
+        setLiveCommentsByFileId(nextLiveCommentsByFileId);
+      }
+
+      let removedUserNoteCount = 0;
+      let remainingUserNoteCount = countFileMapItems(userNotesByFileId);
+      let nextUserNotesByFileId = userNotesByFileId;
+
+      if (options.includeUser) {
+        if (file) {
+          nextUserNotesByFileId = {};
+          remainingUserNoteCount = 0;
+          for (const [fileId, notes] of Object.entries(userNotesByFileId)) {
+            if (fileId === file.id) {
+              removedUserNoteCount = notes.length;
+              continue;
+            }
+
+            nextUserNotesByFileId[fileId] = notes;
+            remainingUserNoteCount += notes.length;
+          }
+        } else {
+          removedUserNoteCount = countFileMapItems(userNotesByFileId);
+          remainingUserNoteCount = 0;
+          nextUserNotesByFileId = {};
+        }
+
+        if (removedUserNoteCount > 0) {
+          setUserNotesByFileId(nextUserNotesByFileId);
         }
       }
 
       return {
-        removedCount,
-        remainingCommentCount,
+        removedCount: removedLiveCommentCount + removedUserNoteCount,
+        remainingCommentCount: remainingLiveCommentCount + remainingUserNoteCount,
         filePath,
+        includeUser: options.includeUser,
+        removedLiveCommentCount,
+        removedUserNoteCount,
+        remainingLiveCommentCount,
+        remainingUserNoteCount,
       };
     },
-    [allFiles, liveCommentsByFileId],
+    [allFiles, liveCommentsByFileId, userNotesByFileId],
+  );
+
+  /** Start a human-authored draft note at the selected or requested hunk. */
+  const startUserNote = useCallback(
+    (
+      fileId = selectedFile?.id,
+      hunkIndex = selectedHunkIndex,
+      requestedTarget?: UserNoteLineTarget,
+    ): DraftReviewNote | null => {
+      const file = allFiles.find((candidate) => candidate.id === fileId);
+      const hunk = file?.metadata.hunks[hunkIndex];
+      if (!file || !hunk) {
+        return null;
+      }
+
+      const target = requestedTarget ?? firstCommentTargetForHunk(hunk);
+      const draft: DraftReviewNote = {
+        id: `draft:${file.id}:${hunkIndex}:${Date.now()}`,
+        fileId: file.id,
+        filePath: file.path,
+        hunkIndex,
+        side: target.side,
+        line: target.line,
+        oldRange: target.side === "old" ? [target.line, target.line] : undefined,
+        newRange: target.side === "new" ? [target.line, target.line] : undefined,
+        body: "",
+      };
+      setDraftNote(draft);
+      selectHunk(
+        file.id,
+        hunkIndex,
+        requestedTarget ? { preserveViewport: true } : { scrollToNote: true },
+      );
+      return draft;
+    },
+    [allFiles, selectHunk, selectedFile?.id, selectedHunkIndex],
+  );
+
+  /** Update the body of the active draft note. */
+  const updateDraftNote = useCallback((body: string) => {
+    setDraftNote((current) => (current ? { ...current, body } : current));
+  }, []);
+
+  /** Discard the active human note draft. */
+  const cancelDraftNote = useCallback(() => {
+    setDraftNote(null);
+  }, []);
+
+  /** Persist the active draft into the in-memory user note collection. */
+  const saveDraftNote = useCallback((): UserReviewNote | null => {
+    if (!draftNote) {
+      return null;
+    }
+
+    const body = draftNote.body.trim();
+    if (!body) {
+      setDraftNote(null);
+      return null;
+    }
+
+    const savedNote: UserReviewNote = {
+      id: `user:${Date.now()}`,
+      source: "user",
+      filePath: draftNote.filePath,
+      hunkIndex: draftNote.hunkIndex,
+      side: draftNote.side,
+      line: draftNote.line,
+      oldRange: draftNote.oldRange,
+      newRange: draftNote.newRange,
+      summary: body,
+      author: "user",
+      createdAt: new Date().toISOString(),
+      editable: true,
+    };
+
+    setUserNotesByFileId((notesByFile) => ({
+      ...notesByFile,
+      [draftNote.fileId]: [...(notesByFile[draftNote.fileId] ?? []), savedNote],
+    }));
+    setDraftNote(null);
+    return savedNote;
+  }, [draftNote]);
+
+  /** Remove one in-memory user note by id. */
+  const removeUserNote = useCallback(
+    (noteId: string) => {
+      let removed = false;
+      const next: Record<string, UserReviewNote[]> = {};
+
+      for (const [fileId, notes] of Object.entries(userNotesByFileId)) {
+        const filtered = notes.filter((note) => note.id !== noteId);
+        if (filtered.length !== notes.length) {
+          removed = true;
+        }
+        if (filtered.length > 0) {
+          next[fileId] = filtered;
+        }
+      }
+
+      if (!removed) {
+        throw new Error(`No user note matches id ${noteId}.`);
+      }
+
+      setUserNotesByFileId(next);
+    },
+    [userNotesByFileId],
   );
 
   /** Count all currently tracked live comments, including ones hidden by the active filter. */
@@ -463,6 +907,65 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     () => Object.values(liveCommentsByFileId).reduce((sum, comments) => sum + comments.length, 0),
     [liveCommentsByFileId],
   );
+
+  /** Format current inline notes for daemon snapshots without exposing UI-only objects. */
+  const reviewNoteSummaries = useMemo<SessionReviewNoteSummary[]>(() => {
+    const noteSummaries: SessionReviewNoteSummary[] = [];
+
+    files.forEach((file) => {
+      (file.agent?.annotations ?? []).forEach((annotation, index) => {
+        const source = reviewNoteSource(annotation);
+        noteSummaries.push({
+          noteId: annotation.id ?? `${source}:${file.id}:${index}`,
+          source,
+          filePath: file.path,
+          oldRange: annotation.oldRange,
+          newRange: annotation.newRange,
+          body: [annotation.summary, annotation.rationale].filter(Boolean).join("\n\n"),
+          title: annotation.title,
+          author: annotation.author,
+          createdAt: annotation.createdAt ?? "1970-01-01T00:00:00.000Z",
+          updatedAt: annotation.updatedAt,
+          editable: false,
+        });
+      });
+
+      (liveCommentsByFileId[file.id] ?? []).forEach((comment) => {
+        noteSummaries.push({
+          noteId: comment.id,
+          source: "agent",
+          filePath: file.path,
+          hunkIndex: comment.hunkIndex,
+          oldRange: comment.oldRange,
+          newRange: comment.newRange,
+          body: [comment.summary, comment.rationale].filter(Boolean).join("\n\n"),
+          author: comment.author,
+          createdAt: comment.createdAt,
+          editable: false,
+        });
+      });
+
+      (userNotesByFileId[file.id] ?? []).forEach((note) => {
+        noteSummaries.push({
+          noteId: note.id,
+          source: "user",
+          filePath: file.path,
+          hunkIndex: note.hunkIndex,
+          oldRange: note.oldRange,
+          newRange: note.newRange,
+          body: note.summary,
+          author: note.author,
+          createdAt: note.createdAt,
+          editable: true,
+        });
+      });
+    });
+
+    return noteSummaries;
+  }, [files, liveCommentsByFileId, userNotesByFileId]);
+
+  /** Count all currently tracked review notes, including AI, agent, and user notes. */
+  const reviewNoteCount = reviewNoteSummaries.length;
 
   /** Format current live comments for daemon snapshots without exposing merged UI-only objects. */
   const liveCommentSummaries = useMemo<SessionLiveCommentSummary[]>(
@@ -485,10 +988,15 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
 
   return {
     allFiles,
+    draftNote,
+    expandedGapsByFileId,
     filter,
     liveCommentCount,
     liveCommentSummaries,
     liveCommentsByFileId,
+    reviewNoteCount,
+    reviewNoteSummaries,
+    userNotesByFileId,
     scrollToNote,
     selectedFile,
     selectedFileId,
@@ -497,18 +1005,27 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     selectedHunk,
     selectedHunkIndex,
     sidebarEntries,
+    sourceStatusByFileId,
+    toggleGap,
+    toggleSelectedHunkGap,
     visibleFiles,
     addLiveComment,
     addLiveCommentBatch,
     clearFilter,
+    cancelDraftNote,
     clearLiveComments,
     moveToAnnotatedFile,
     moveToAnnotatedHunk,
+    moveToFile,
     moveToHunk,
     navigateToLocation,
     removeLiveComment,
+    removeUserNote,
+    saveDraftNote,
     selectFile,
     selectHunk,
+    startUserNote,
     setFilter,
+    updateDraftNote,
   };
 }

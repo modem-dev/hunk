@@ -8,6 +8,7 @@ import {
   HUNK_SESSION_DAEMON_VERSION,
   type SessionDaemonCapabilities,
 } from "./protocol";
+import { HUNK_SESSION_DAEMON_HTTP_TIMEOUT_MS, requestSessionDaemonHttp } from "./daemonHttp";
 
 export const HUNK_DAEMON_UPGRADE_RESTART_NOTICE =
   "[hunk:session] Restarting stale session daemon after upgrade.";
@@ -23,32 +24,41 @@ export function reportHunkDaemonUpgradeRestart(log: (message: string) => void = 
  */
 export async function readHunkSessionDaemonCapabilities(
   config: ResolvedSessionBrokerConfig = resolveSessionBrokerConfig(),
+  timeoutMs = HUNK_SESSION_DAEMON_HTTP_TIMEOUT_MS,
 ): Promise<SessionDaemonCapabilities | null> {
-  const response = await fetch(`${config.httpOrigin}${HUNK_SESSION_CAPABILITIES_PATH}`);
-  if (response.status === 404 || response.status === 410) {
-    return null;
-  }
+  return requestSessionDaemonHttp({
+    config,
+    path: HUNK_SESSION_CAPABILITIES_PATH,
+    operation: "report capabilities",
+    timeoutMs,
+    parse: async (response) => {
+      if (response.status === 404 || response.status === 410) {
+        return null;
+      }
 
-  if (!response.ok) {
-    return null;
-  }
+      if (!response.ok) {
+        return null;
+      }
 
-  let capabilities: unknown;
-  try {
-    capabilities = await response.json();
-  } catch {
-    return null;
-  }
+      let capabilities: unknown;
+      try {
+        capabilities = await response.json();
+      } catch {
+        return null;
+      }
 
-  if (
-    !capabilities ||
-    typeof capabilities !== "object" ||
-    (capabilities as { version?: unknown }).version !== HUNK_SESSION_API_VERSION ||
-    (capabilities as { daemonVersion?: unknown }).daemonVersion !== HUNK_SESSION_DAEMON_VERSION ||
-    !Array.isArray((capabilities as { actions?: unknown }).actions)
-  ) {
-    return null;
-  }
+      if (
+        !capabilities ||
+        typeof capabilities !== "object" ||
+        (capabilities as { version?: unknown }).version !== HUNK_SESSION_API_VERSION ||
+        (capabilities as { daemonVersion?: unknown }).daemonVersion !==
+          HUNK_SESSION_DAEMON_VERSION ||
+        !Array.isArray((capabilities as { actions?: unknown }).actions)
+      ) {
+        return null;
+      }
 
-  return capabilities as SessionDaemonCapabilities;
+      return capabilities as SessionDaemonCapabilities;
+    },
+  });
 }

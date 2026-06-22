@@ -1,14 +1,18 @@
 import type { KeyEvent } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
 import { useRef } from "react";
+import {
+  isCreateReviewNoteKey,
+  isEscapeKey,
+  isSaveDraftNoteKey,
+} from "../../core/keyboard";
 import type { ActionId, ActionScope } from "../../core/keymap/actions";
 import type { Keymap } from "../../core/keymap/match";
 import { matchesAction } from "../../core/keymap/match";
-import { isEscapeKey } from "../../core/keyboard";
 import type { LayoutMode } from "../../core/types";
 import type { MenuId } from "../components/chrome/menu";
 
-type FocusArea = "files" | "filter";
+type FocusArea = "files" | "filter" | "note";
 type ScrollUnit = "step" | "viewport" | "content" | "half";
 
 const FAST_CODE_HORIZONTAL_SCROLL_COLUMNS = 8;
@@ -16,31 +20,43 @@ const FAST_CODE_HORIZONTAL_SCROLL_COLUMNS = 8;
 export interface UseAppKeyboardShortcutsOptions {
   activeMenuId: MenuId | null;
   activateCurrentMenuItem: () => void;
+  acceptThemeSelector: () => void;
+  cancelDraftNote: () => void;
   canRefreshCurrentInput: boolean;
+  closeAgentSkill: () => void;
   closeHelp: () => void;
   closeMenu: () => void;
-  cycleTheme: () => void;
+  closeThemeSelector: () => void;
   focusArea: FocusArea;
   focusFilter: () => void;
   keymap: Keymap;
   moveToAnnotatedHunk: (delta: number) => void;
+  moveToFile: (delta: number) => void;
   moveToHunk: (delta: number) => void;
   moveMenuItem: (delta: number) => void;
+  moveThemeSelector: (delta: number) => void;
   openMenu: (menuId: MenuId) => void;
+  openThemeSelector: () => void;
   pagerMode: boolean;
   requestQuit: () => void;
+  saveDraftNote: () => void;
   scrollCodeHorizontally: (delta: number) => void;
   scrollDiff: (delta: number, unit: ScrollUnit) => void;
   selectLayoutMode: (mode: LayoutMode) => void;
+  showAgentSkill: boolean;
   showHelp: boolean;
+  startUserNote: () => void;
   switchMenu: (delta: number) => void;
+  themeSelectorOpen: boolean;
   toggleAgentNotes: () => void;
   toggleFocusArea: () => void;
+  toggleGapForSelectedHunk: () => void;
   toggleHelp: () => void;
   toggleHunkHeaders: () => void;
   toggleLineNumbers: () => void;
   toggleLineWrap: () => void;
   toggleSidebar: () => void;
+  triggerEditSelectedFile: () => void;
   triggerRefreshCurrentInput: () => void;
 }
 
@@ -48,48 +64,69 @@ export interface UseAppKeyboardShortcutsOptions {
 export function useAppKeyboardShortcuts({
   activeMenuId,
   activateCurrentMenuItem,
+  acceptThemeSelector,
+  cancelDraftNote,
   canRefreshCurrentInput,
+  closeAgentSkill,
   closeHelp,
   closeMenu,
-  cycleTheme,
+  closeThemeSelector,
   focusArea,
   focusFilter,
   keymap,
   moveToAnnotatedHunk,
+  moveToFile,
   moveToHunk,
   moveMenuItem,
+  moveThemeSelector,
   openMenu,
+  openThemeSelector,
   pagerMode,
   requestQuit,
+  saveDraftNote,
   scrollCodeHorizontally,
   scrollDiff,
   selectLayoutMode,
+  showAgentSkill,
   showHelp,
+  startUserNote,
   switchMenu,
+  themeSelectorOpen,
   toggleAgentNotes,
   toggleFocusArea,
+  toggleGapForSelectedHunk,
   toggleHelp,
   toggleHunkHeaders,
   toggleLineNumbers,
   toggleLineWrap,
   toggleSidebar,
+  triggerEditSelectedFile,
   triggerRefreshCurrentInput,
 }: UseAppKeyboardShortcutsOptions) {
   const activeMenuIdRef = useRef(activeMenuId);
   const focusAreaRef = useRef(focusArea);
   const pagerModeRef = useRef(pagerMode);
+  const showAgentSkillRef = useRef(showAgentSkill);
   const showHelpRef = useRef(showHelp);
+  const themeSelectorOpenRef = useRef(themeSelectorOpen);
   const keymapRef = useRef(keymap);
 
   activeMenuIdRef.current = activeMenuId;
   focusAreaRef.current = focusArea;
   pagerModeRef.current = pagerMode;
+  showAgentSkillRef.current = showAgentSkill;
   showHelpRef.current = showHelp;
+  themeSelectorOpenRef.current = themeSelectorOpen;
   keymapRef.current = keymap;
 
   const runAndCloseMenu = (action: () => void) => {
     action();
     closeMenu();
+  };
+
+  const consumeKey = (key: KeyEvent) => {
+    key.preventDefault();
+    key.stopPropagation();
   };
 
   const isAction = (scope: ActionScope, id: ActionId, key: KeyEvent) =>
@@ -119,8 +156,8 @@ export function useAppKeyboardShortcuts({
       return;
     }
 
-    // pageUp must be queried before pageDown — see match.test.ts "Shift+Space
-    // page-up precedence". Same pattern repeats for codeLeftFast/codeRightFast.
+    // pageUp must be queried before pageDown (see match.test.ts "Shift+Space
+    // page-up precedence"). Same pattern repeats for codeLeftFast/codeRightFast.
     if (isAction("pager", "scroll.pageUp", key)) {
       scrollDiff(-1, "viewport");
       return;
@@ -191,12 +228,68 @@ export function useAppKeyboardShortcuts({
     }
   };
 
+  const handleDialogShortcut = (key: KeyEvent) => {
+    if (!isEscapeKey(key)) {
+      return false;
+    }
+
+    if (showAgentSkillRef.current) {
+      closeAgentSkill();
+      return true;
+    }
+
+    if (showHelpRef.current) {
+      closeHelp();
+      return true;
+    }
+
+    return false;
+  };
+
   const handleHelpShortcut = (key: KeyEvent) => {
     if (!showHelpRef.current) return false;
     // Only Esc and the help-toggle binding close help here. Other keys (notably
     // `quit`) fall through so they continue to fire their app-level handlers.
     if (!isEscapeKey(key) && !isAction("global", "help.toggle", key)) return false;
     closeHelp();
+    return true;
+  };
+
+  const handleThemeSelectorShortcut = (key: KeyEvent) => {
+    if (!themeSelectorOpenRef.current) {
+      return false;
+    }
+
+    if (isEscapeKey(key)) {
+      consumeKey(key);
+      closeThemeSelector();
+      return true;
+    }
+
+    if (key.name === "up") {
+      consumeKey(key);
+      moveThemeSelector(-1);
+      return true;
+    }
+
+    if (key.name === "down") {
+      consumeKey(key);
+      moveThemeSelector(1);
+      return true;
+    }
+
+    if (key.name === "tab") {
+      consumeKey(key);
+      moveThemeSelector(key.shift ? -1 : 1);
+      return true;
+    }
+
+    if (key.name === "return" || key.name === "enter") {
+      consumeKey(key);
+      acceptThemeSelector();
+      return true;
+    }
+
     return true;
   };
 
@@ -238,17 +331,34 @@ export function useAppKeyboardShortcuts({
     return false;
   };
 
-  const handleFilterShortcut = (key: KeyEvent) => {
-    if (focusAreaRef.current !== "filter") {
-      return false;
-    }
+  const handleFocusedInputShortcut = (key: KeyEvent) => {
+    if (focusAreaRef.current === "filter") {
+      if (isAction("filter", "focus.toggle", key)) {
+        toggleFocusArea();
+        return true;
+      }
 
-    if (isAction("filter", "focus.toggle", key)) {
-      toggleFocusArea();
+      // Let the focused input own filter editing and escape handling.
       return true;
     }
 
-    // Let the focused input own filter editing and escape handling.
+    if (focusAreaRef.current !== "note") {
+      return false;
+    }
+
+    if (isEscapeKey(key)) {
+      consumeKey(key);
+      cancelDraftNote();
+      return true;
+    }
+
+    if (isSaveDraftNoteKey(key)) {
+      consumeKey(key);
+      saveDraftNote();
+      return true;
+    }
+
+    // Let the focused inline note input own text editing.
     return true;
   };
 
@@ -271,6 +381,13 @@ export function useAppKeyboardShortcuts({
 
     if (isAction("global", "filter.focus", key)) {
       focusFilter();
+      return;
+    }
+
+    // `c` is matched with strict modifier rules so terminal copy chords don't
+    // start a note. Not routed through the modifier-permissive keymap matcher.
+    if (isCreateReviewNoteKey(key)) {
+      runAndCloseMenu(startUserNote);
       return;
     }
 
@@ -360,7 +477,7 @@ export function useAppKeyboardShortcuts({
     }
 
     if (isAction("global", "theme.cycle", key)) {
-      runAndCloseMenu(cycleTheme);
+      runAndCloseMenu(openThemeSelector);
       return;
     }
 
@@ -394,6 +511,16 @@ export function useAppKeyboardShortcuts({
       return;
     }
 
+    if (isAction("global", "file.prev", key)) {
+      runAndCloseMenu(() => moveToFile(-1));
+      return;
+    }
+
+    if (isAction("global", "file.next", key)) {
+      runAndCloseMenu(() => moveToFile(1));
+      return;
+    }
+
     if (isAction("global", "annotatedHunk.prev", key)) {
       runAndCloseMenu(() => moveToAnnotatedHunk(-1));
       return;
@@ -401,6 +528,16 @@ export function useAppKeyboardShortcuts({
 
     if (isAction("global", "annotatedHunk.next", key)) {
       runAndCloseMenu(() => moveToAnnotatedHunk(1));
+      return;
+    }
+
+    if (isAction("global", "hunk.toggleGap", key)) {
+      runAndCloseMenu(toggleGapForSelectedHunk);
+      return;
+    }
+
+    if (isAction("global", "file.edit", key)) {
+      runAndCloseMenu(triggerEditSelectedFile);
     }
   };
 
@@ -414,7 +551,15 @@ export function useAppKeyboardShortcuts({
       return;
     }
 
+    if (handleDialogShortcut(key)) {
+      return;
+    }
+
     if (handleHelpShortcut(key)) {
+      return;
+    }
+
+    if (handleThemeSelectorShortcut(key)) {
       return;
     }
 
@@ -422,7 +567,7 @@ export function useAppKeyboardShortcuts({
       return;
     }
 
-    if (handleFilterShortcut(key)) {
+    if (handleFocusedInputShortcut(key)) {
       return;
     }
 

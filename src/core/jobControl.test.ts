@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { KeyEvent } from "@opentui/core";
-import { installJobControlSuspendSupport } from "./jobControl";
+import { installJobControlInterruptSupport, installJobControlSuspendSupport } from "./jobControl";
 
 function createTestKey(overrides: Partial<KeyEvent> = {}) {
   let defaultPrevented = false;
@@ -104,6 +104,58 @@ function createSignalHarness() {
     removed,
   };
 }
+
+describe("installJobControlInterruptSupport", () => {
+  test("routes Ctrl-C through the provided shutdown callback", () => {
+    const renderer = createMockRenderer();
+    let interruptCalls = 0;
+
+    installJobControlInterruptSupport(renderer, () => {
+      interruptCalls += 1;
+    });
+
+    const ctrlC = createTestKey({ ctrl: true, name: "c" });
+    renderer.emitKeypress(ctrlC);
+
+    expect(ctrlC.defaultPrevented).toBe(true);
+    expect(ctrlC.propagationStopped).toBe(true);
+    expect(interruptCalls).toBe(1);
+  });
+
+  test("ignores non-Ctrl-C keys and removes its listener on dispose", () => {
+    const renderer = createMockRenderer();
+    let interruptCalls = 0;
+    const support = installJobControlInterruptSupport(renderer, () => {
+      interruptCalls += 1;
+    });
+
+    renderer.emitKeypress(createTestKey({ ctrl: true, name: "z" }));
+    expect(interruptCalls).toBe(0);
+
+    support.dispose();
+    expect(renderer.keypressListeners.size).toBe(0);
+
+    renderer.emitKeypress(createTestKey({ ctrl: true, name: "c" }));
+    expect(interruptCalls).toBe(0);
+  });
+
+  test("ignores Ctrl-C after the renderer has already been destroyed", () => {
+    const renderer = createMockRenderer();
+    let interruptCalls = 0;
+
+    installJobControlInterruptSupport(renderer, () => {
+      interruptCalls += 1;
+    });
+
+    renderer.isDestroyed = true;
+    const ctrlC = createTestKey({ ctrl: true, name: "c" });
+    renderer.emitKeypress(ctrlC);
+
+    expect(ctrlC.defaultPrevented).toBe(false);
+    expect(ctrlC.propagationStopped).toBe(false);
+    expect(interruptCalls).toBe(0);
+  });
+});
 
 describe("installJobControlSuspendSupport", () => {
   test("does not install keypress listeners on Windows", () => {

@@ -3,12 +3,15 @@ import {
   getHighlighterOptions,
   getSharedHighlighter,
   renderDiffWithHighlighter,
+  renderFileWithHighlighter,
+  type FileContents,
   type FileDiffMetadata,
 } from "@pierre/diffs";
 import { formatHunkHeader } from "../../core/hunkHeader";
-import type { DiffFile } from "../../core/types";
+import type { DiffFile, DiffLineMoveKind } from "../../core/types";
 import { blendHex, hexColorDistance } from "../lib/color";
-import type { AppTheme } from "../themes";
+import { sanitizeTerminalLine } from "../../lib/terminalText";
+import { TRANSPARENT_BACKGROUND, type AppTheme } from "../themes";
 import { expandDiffTabs } from "./codeColumns";
 
 const PIERRE_THEME = {
@@ -16,37 +19,69 @@ const PIERRE_THEME = {
   dark: "pierre-dark",
 } as const;
 
-/** Resolve the single Pierre theme name needed for the current appearance. */
+type HighlightThemeInput = AppTheme | AppTheme["appearance"];
+
+/** Resolve the default Pierre theme name needed for one light/dark appearance. */
 function pierreThemeName(appearance: AppTheme["appearance"]) {
   return PIERRE_THEME[appearance];
 }
 
-const PIERRE_RENDER_OPTIONS_BY_APPEARANCE = {
-  light: {
-    theme: pierreThemeName("light"),
-    useTokenTransformer: false,
-    tokenizeMaxLineLength: 1_000,
-    lineDiffType: "word-alt" as const,
-    maxLineDiffLength: 10_000,
-  },
-  dark: {
-    theme: pierreThemeName("dark"),
-    useTokenTransformer: false,
-    tokenizeMaxLineLength: 1_000,
-    lineDiffType: "word-alt" as const,
-    maxLineDiffLength: 10_000,
-  },
-} as const;
+/** Return the light/dark mode for a theme object or legacy appearance argument. */
+function highlightThemeAppearance(theme: HighlightThemeInput) {
+  return typeof theme === "string" ? theme : theme.appearance;
+}
 
-/** Reuse the render options for one appearance so startup work avoids extra object churn. */
-function pierreRenderOptions(appearance: AppTheme["appearance"]) {
-  return PIERRE_RENDER_OPTIONS_BY_APPEARANCE[appearance];
+/** Resolve the Shiki/Pierre syntax theme that should color highlighted code. */
+function highlighterThemeName(theme: HighlightThemeInput) {
+  return typeof theme === "string"
+    ? pierreThemeName(theme)
+    : (theme.syntaxTheme ?? pierreThemeName(theme.appearance));
+}
+
+/** Build render options for the active syntax theme. */
+function pierreRenderOptions(theme: HighlightThemeInput) {
+  return {
+    theme: highlighterThemeName(theme),
+    useTokenTransformer: false,
+    tokenizeMaxLineLength: 1_000,
+    lineDiffType: "word-alt" as const,
+    maxLineDiffLength: 10_000,
+  };
 }
 
 type HighlightOptions = ReturnType<typeof getHighlighterOptions>;
 
 const highlighterOptionsByKey = new Map<string, HighlightOptions>();
 let queuedHighlightWork = Promise.resolve();
+
+/** Build a cache key for theme-dependent terminal colors, not just the stable UI theme id. */
+function themeRenderCacheKey(theme: AppTheme) {
+  return [
+    theme.id,
+    theme.syntaxTheme ?? "",
+    theme.appearance,
+    theme.background,
+    theme.panelAlt,
+    theme.contextBg,
+    theme.addedBg,
+    theme.removedBg,
+    theme.addedContentBg,
+    theme.removedContentBg,
+    theme.addedSignColor,
+    theme.removedSignColor,
+    theme.syntaxColors.default,
+    theme.syntaxColors.keyword,
+    theme.syntaxColors.string,
+    theme.syntaxColors.comment,
+    theme.syntaxColors.number,
+    theme.syntaxColors.function,
+    theme.syntaxColors.property,
+    theme.syntaxColors.type,
+    theme.syntaxColors.variable ?? "",
+    theme.syntaxColors.operator ?? "",
+    theme.syntaxColors.punctuation,
+  ].join(":");
+}
 
 type HastNode = HastTextNode | HastElementNode;
 
@@ -67,6 +102,10 @@ export interface HighlightedDiffCode {
   additionLines: Array<HastNode | undefined>;
 }
 
+export interface HighlightedSourceCode {
+  lines: Array<HastNode | undefined>;
+}
+
 export interface RenderSpan {
   text: string;
   fg?: string;
@@ -77,6 +116,7 @@ export interface SplitLineCell {
   kind: "context" | "addition" | "deletion" | "empty";
   sign: string;
   lineNumber?: number;
+  moveKind?: DiffLineMoveKind;
   spans: RenderSpan[];
 }
 
@@ -85,12 +125,29 @@ export interface StackLineCell {
   sign: string;
   oldLineNumber?: number;
   newLineNumber?: number;
+  moveKind?: DiffLineMoveKind;
   spans: RenderSpan[];
 }
 
+export type CollapsedGapPosition = "before" | "trailing";
+
 export type DiffRow =
   | {
-      type: "collapsed" | "hunk-header";
+      type: "collapsed";
+      key: string;
+      fileId: string;
+      hunkIndex: number;
+      text: string;
+      // Where this gap sits relative to the surrounding hunks; "before" attaches to
+      // the gap leading into hunkIndex, "trailing" sits after the final hunk.
+      position: CollapsedGapPosition;
+      // 1-based inclusive file-line ranges this gap covers on each side. Expansion
+      // uses these to slice the file contents that fill the gap.
+      oldRange: [number, number];
+      newRange: [number, number];
+    }
+  | {
+      type: "hunk-header";
       key: string;
       fileId: string;
       hunkIndex: number;
@@ -103,6 +160,10 @@ export type DiffRow =
       hunkIndex: number;
       left: SplitLineCell;
       right: SplitLineCell;
+      // True when this row was synthesized to fill an expanded collapsed gap.
+      // Expanded rows carry the neighbor hunk's index for ordering but must not
+      // count toward that hunk's bounds or anchor position.
+      isExpansionRow?: true;
     }
   | {
       type: "stack-line";
@@ -110,11 +171,12 @@ export type DiffRow =
       fileId: string;
       hunkIndex: number;
       cell: StackLineCell;
+      isExpansionRow?: true;
     };
 
 /** Replace tabs with fixed spaces so terminal cell widths stay predictable. */
 function tabify(text: string) {
-  return expandDiffTabs(text);
+  return expandDiffTabs(sanitizeTerminalLine(text));
 }
 
 const EMPTY_STYLE_VALUES = new Map<string, string>();
@@ -155,11 +217,36 @@ function parseStyleValue(styleValue: unknown) {
 const RESERVED_PIERRE_TOKEN_COLORS = {
   dark: {
     "#ff6762": "keyword",
+    "#ff855e": "keyword",
+    "#ff678d": "keyword",
+    "#d568ea": "keyword",
+    "#9d6afb": "function",
+    "#ffab16": "default",
+    "#ffca00": "default",
+    "#68cdf2": "number",
     "#5ecc71": "string",
+    "#ffa359": "property",
+    "#a3a3a3": "variable",
+    "#08c0ef": "operator",
+    "#636363": "punctuation",
   },
   light: {
     "#d52c36": "keyword",
+    "#d5512f": "keyword",
+    "#d32a61": "keyword",
+    "#fc2b73": "keyword",
+    "#a631be": "keyword",
+    "#c635e4": "keyword",
+    "#693acf": "function",
+    "#7b43f8": "function",
+    "#d5901c": "default",
+    "#d5a910": "default",
+    "#1ca1c7": "number",
     "#199f43": "string",
+    "#d47628": "property",
+    "#a3a3a3": "variable",
+    "#08c0ef": "operator",
+    "#636363": "punctuation",
   },
 } as const;
 // After style parsing, token colors still need one normalization step so syntax hues never
@@ -193,18 +280,41 @@ function strengthenWordDiffBg(lineBg: string, signColor: string) {
   return strongestCandidate;
 }
 
+/** Return whether a theme color can safely participate in RGB distance and blend math. */
+function isHexThemeColor(color: string) {
+  return /^#[0-9a-f]{6}$/i.test(color);
+}
+
+/** Resolve one word-diff background without turning transparent surfaces into black blends. */
+function resolveWordDiffHighlightBg(contentBg: string, lineBg: string, signColor: string) {
+  if (contentBg === TRANSPARENT_BACKGROUND || lineBg === TRANSPARENT_BACKGROUND) {
+    return contentBg;
+  }
+
+  if (!isHexThemeColor(contentBg) || !isHexThemeColor(lineBg)) {
+    return contentBg;
+  }
+
+  return hexColorDistance(contentBg, lineBg) >= MIN_WORD_DIFF_BG_DISTANCE
+    ? contentBg
+    : strengthenWordDiffBg(lineBg, signColor);
+}
+
 /** Resolve the inline word-diff background, strengthening theme colors that are too subtle to see. */
 function wordDiffHighlightBg(kind: SplitLineCell["kind"], theme: AppTheme) {
-  let cached = wordDiffBackgroundCache.get(theme.id);
+  const cacheKey = [themeRenderCacheKey(theme), theme.contextContentBg, theme.panelAlt].join(":");
+  let cached = wordDiffBackgroundCache.get(cacheKey);
   if (!cached) {
-    const addition =
-      hexColorDistance(theme.addedContentBg, theme.addedBg) >= MIN_WORD_DIFF_BG_DISTANCE
-        ? theme.addedContentBg
-        : strengthenWordDiffBg(theme.addedBg, theme.addedSignColor);
-    const deletion =
-      hexColorDistance(theme.removedContentBg, theme.removedBg) >= MIN_WORD_DIFF_BG_DISTANCE
-        ? theme.removedContentBg
-        : strengthenWordDiffBg(theme.removedBg, theme.removedSignColor);
+    const addition = resolveWordDiffHighlightBg(
+      theme.addedContentBg,
+      theme.addedBg,
+      theme.addedSignColor,
+    );
+    const deletion = resolveWordDiffHighlightBg(
+      theme.removedContentBg,
+      theme.removedBg,
+      theme.removedSignColor,
+    );
 
     cached = {
       addition,
@@ -212,7 +322,7 @@ function wordDiffHighlightBg(kind: SplitLineCell["kind"], theme: AppTheme) {
       deletion,
       empty: theme.panelAlt,
     };
-    wordDiffBackgroundCache.set(theme.id, cached);
+    wordDiffBackgroundCache.set(cacheKey, cached);
   }
 
   return cached[kind];
@@ -224,10 +334,11 @@ function normalizeHighlightedColor(color: string | undefined, theme: AppTheme) {
     return color;
   }
 
-  let cacheForTheme = normalizedColorCache.get(theme.id);
+  const themeKey = themeRenderCacheKey(theme);
+  let cacheForTheme = normalizedColorCache.get(themeKey);
   if (!cacheForTheme) {
     cacheForTheme = new Map<string, string>();
-    normalizedColorCache.set(theme.id, cacheForTheme);
+    normalizedColorCache.set(themeKey, cacheForTheme);
   }
 
   const cached = cacheForTheme.get(color);
@@ -240,7 +351,10 @@ function normalizeHighlightedColor(color: string | undefined, theme: AppTheme) {
     RESERVED_PIERRE_TOKEN_COLORS[theme.appearance][
       normalized as keyof (typeof RESERVED_PIERRE_TOKEN_COLORS)[typeof theme.appearance]
     ];
-  const resolvedColor = reserved ? theme.syntaxColors[reserved] : color;
+  const resolvedColor = reserved
+    ? (theme.syntaxColors[reserved] ??
+      (reserved === "operator" ? theme.syntaxColors.punctuation : theme.syntaxColors.default))
+    : color;
   cacheForTheme.set(color, resolvedColor);
   return resolvedColor;
 }
@@ -266,7 +380,7 @@ function flattenHighlightedLine(node: HastNode | undefined, theme: AppTheme, emp
     return [];
   }
 
-  const cacheKey = `${theme.id}:${emphasisBg}`;
+  const cacheKey = `${themeRenderCacheKey(theme)}:${emphasisBg}`;
   const cachedByTheme = flattenedHighlightedLineCache.get(node);
   const cached = cachedByTheme?.get(cacheKey);
   if (cached) {
@@ -336,6 +450,7 @@ function makeSplitCell(
   rawLine: string | undefined,
   highlightedLine: HastNode | undefined,
   theme: AppTheme,
+  moveKind?: DiffLineMoveKind,
 ) {
   if (kind === "empty") {
     return {
@@ -365,6 +480,7 @@ function makeSplitCell(
     kind,
     sign: kind === "addition" ? "+" : kind === "deletion" ? "-" : " ",
     lineNumber,
+    moveKind,
     spans,
   } satisfies SplitLineCell;
 }
@@ -377,6 +493,7 @@ function makeStackCell(
   rawLine: string | undefined,
   highlightedLine: HastNode | undefined,
   theme: AppTheme,
+  moveKind?: DiffLineMoveKind,
 ) {
   // Same lazy-fallback strategy as split cells: only normalize the raw source line when we really
   // need the plain-text fallback, not when highlighted spans are already ready to reuse.
@@ -398,17 +515,45 @@ function makeStackCell(
     sign: kind === "addition" ? "+" : kind === "deletion" ? "-" : " ",
     oldLineNumber,
     newLineNumber,
+    moveKind,
     spans,
   } satisfies StackLineCell;
 }
 
-/** Describe a collapsed unchanged region between visible hunks. */
+/** Describe one collapsed unchanged region in the diff stream. */
 function collapsedRowText(lines: number) {
   return `${lines} unchanged ${lines === 1 ? "line" : "lines"}`;
 }
 
+/** Compute the file-line ranges covered by the gap leading into one hunk. */
+function leadingCollapsedRanges(hunk: FileDiffMetadata["hunks"][number]) {
+  return {
+    oldRange: [hunk.deletionStart - hunk.collapsedBefore, hunk.deletionStart - 1] as [
+      number,
+      number,
+    ],
+    newRange: [hunk.additionStart - hunk.collapsedBefore, hunk.additionStart - 1] as [
+      number,
+      number,
+    ],
+  };
+}
+
+/** Compute the file-line ranges covered by the trailing gap after the final hunk. */
+function trailingCollapsedRanges(
+  lastHunk: FileDiffMetadata["hunks"][number],
+  trailingLines: number,
+) {
+  const oldStart = lastHunk.deletionStart + lastHunk.deletionCount;
+  const newStart = lastHunk.additionStart + lastHunk.additionCount;
+  return {
+    oldRange: [oldStart, oldStart + trailingLines - 1] as [number, number],
+    newRange: [newStart, newStart + trailingLines - 1] as [number, number],
+  };
+}
+
 /** Count hidden unchanged lines after the final visible hunk when Pierre omits them. */
-function trailingCollapsedLines(metadata: FileDiffMetadata) {
+export function trailingCollapsedLines(metadata: FileDiffMetadata) {
   const lastHunk = metadata.hunks.at(-1);
   if (!lastHunk || metadata.isPartial) {
     return 0;
@@ -426,17 +571,15 @@ function trailingCollapsedLines(metadata: FileDiffMetadata) {
   return Math.max(additionRemaining, 0);
 }
 
-/** Prepare syntax highlighting for one language/appearance pair using Pierre's shared highlighter. */
-async function prepareHighlighter(
-  language: string | undefined,
-  appearance: AppTheme["appearance"],
-) {
+/** Prepare syntax highlighting for one language/theme pair using Pierre's shared highlighter. */
+async function prepareHighlighter(language: string | undefined, theme: HighlightThemeInput) {
   const resolvedLanguage = language ?? "text";
-  const cacheKey = `${appearance}:${resolvedLanguage}`;
+  const syntaxTheme = highlighterThemeName(theme);
+  const cacheKey = `${syntaxTheme}:${resolvedLanguage}`;
   const options =
     highlighterOptionsByKey.get(cacheKey) ??
     getHighlighterOptions(resolvedLanguage, {
-      theme: pierreThemeName(appearance),
+      theme: syntaxTheme,
     });
 
   if (!highlighterOptionsByKey.has(cacheKey)) {
@@ -449,18 +592,20 @@ async function prepareHighlighter(
   });
 }
 
-/** Queue highlight rendering so startup work stays serialized in request order. */
-function queueHighlightedDiff(run: () => HighlightedDiffCode) {
+/** Queue highlight rendering so startup work stays serialized without starving input/render timers. */
+function queueHighlightedWork<T>(run: () => T) {
   const queued = queuedHighlightWork.then(
     () =>
-      new Promise<HighlightedDiffCode>((resolve, reject) => {
-        queueMicrotask(() => {
+      new Promise<T>((resolve, reject) => {
+        // Highlighting is CPU-heavy background work. Scheduling each serialized job as a timer,
+        // rather than a microtask, yields back to OpenTUI input and frame timers between files.
+        setTimeout(() => {
           try {
             resolve(run());
           } catch (error) {
             reject(error);
           }
-        });
+        }, 0);
       }),
   );
 
@@ -470,6 +615,26 @@ function queueHighlightedDiff(run: () => HighlightedDiffCode) {
   );
 
   return queued;
+}
+
+/** Normalize source text the same way expanded-row slicing does before highlighting. */
+function normalizeSourceText(text: string) {
+  return text.replaceAll("\r\n", "\n");
+}
+
+/** Build Pierre file contents for a full-source highlight request. */
+function sourceFileContents(file: DiffFile, text: string, language: string | undefined) {
+  const contents: FileContents = {
+    name: file.path,
+    contents: normalizeSourceText(text),
+    cacheKey: `${file.id}:${file.path}:${language ?? ""}:${text.length}`,
+  };
+
+  if (language) {
+    contents.lang = language as FileContents["lang"];
+  }
+
+  return contents;
 }
 
 /**
@@ -513,15 +678,15 @@ function aliasHighlightedContextLines(file: DiffFile, highlighted: HighlightedDi
 /** Highlight a diff file and return just the rendered line trees the UI needs. */
 export async function loadHighlightedDiff(
   file: DiffFile,
-  appearance: AppTheme["appearance"] = "dark",
+  theme: HighlightThemeInput = "dark",
 ): Promise<HighlightedDiffCode> {
   try {
-    const highlighter = await prepareHighlighter(file.language, appearance);
-    return queueHighlightedDiff(() => {
+    const highlighter = await prepareHighlighter(file.language, theme);
+    return queueHighlightedWork(() => {
       const highlighted = renderDiffWithHighlighter(
         file.metadata,
         highlighter,
-        pierreRenderOptions(appearance),
+        pierreRenderOptions(theme),
       );
       return aliasHighlightedContextLines(file, {
         deletionLines: highlighted.code.deletionLines as Array<HastNode | undefined>,
@@ -529,12 +694,13 @@ export async function loadHighlightedDiff(
       });
     });
   } catch {
-    const highlighter = await prepareHighlighter("text", appearance);
-    return queueHighlightedDiff(() => {
+    const fallbackTheme = highlightThemeAppearance(theme);
+    const highlighter = await prepareHighlighter("text", fallbackTheme);
+    return queueHighlightedWork(() => {
       const highlighted = renderDiffWithHighlighter(
         { ...file.metadata, lang: "text" },
         highlighter,
-        pierreRenderOptions(appearance),
+        pierreRenderOptions(fallbackTheme),
       );
       return aliasHighlightedContextLines(file, {
         deletionLines: highlighted.code.deletionLines as Array<HastNode | undefined>,
@@ -542,6 +708,64 @@ export async function loadHighlightedDiff(
       });
     });
   }
+}
+
+/** Highlight a full source file for unchanged lines synthesized during gap expansion. */
+export async function loadHighlightedSourceLines({
+  file,
+  text,
+  theme = "dark",
+}: {
+  file: DiffFile;
+  text: string;
+  theme?: HighlightThemeInput;
+}): Promise<HighlightedSourceCode> {
+  try {
+    const highlighter = await prepareHighlighter(file.language, theme);
+    return queueHighlightedWork(() => {
+      const highlighted = renderFileWithHighlighter(
+        sourceFileContents(file, text, file.language),
+        highlighter,
+        pierreRenderOptions(theme),
+      );
+      return {
+        lines: highlighted.code as Array<HastNode | undefined>,
+      };
+    });
+  } catch {
+    const fallbackTheme = highlightThemeAppearance(theme);
+    const highlighter = await prepareHighlighter("text", fallbackTheme);
+    return queueHighlightedWork(() => {
+      const highlighted = renderFileWithHighlighter(
+        sourceFileContents(file, text, "text"),
+        highlighter,
+        pierreRenderOptions(fallbackTheme),
+      );
+      return {
+        lines: highlighted.code as Array<HastNode | undefined>,
+      };
+    });
+  }
+}
+
+/** Convert one highlighted full-source line into the spans used by expanded context rows. */
+export function spansForHighlightedSourceLine(
+  rawLine: string | undefined,
+  highlightedLine: HastNode | undefined,
+  theme: AppTheme,
+): RenderSpan[] {
+  if (highlightedLine === undefined) {
+    const fallbackText = cleanDiffLine(rawLine);
+    return fallbackText.length > 0 ? [{ text: fallbackText }] : [];
+  }
+
+  const spans = flattenHighlightedLine(highlightedLine, theme, theme.contextContentBg);
+  if (spans.length > 0) {
+    return spans;
+  }
+
+  const fallbackText = cleanDiffLine(rawLine);
+  return fallbackText.length > 0 ? [{ text: fallbackText }] : [];
 }
 
 /** Expand Pierre metadata into the flat split-view row stream consumed by the renderer. */
@@ -562,6 +786,8 @@ export function buildSplitRows(
         fileId: file.id,
         hunkIndex,
         text: collapsedRowText(hunk.collapsedBefore),
+        position: "before",
+        ...leadingCollapsedRanges(hunk),
       });
     }
 
@@ -628,6 +854,7 @@ export function buildSplitRows(
                 file.metadata.deletionLines[deletionLineIndex + offset],
                 deletionLines[deletionLineIndex + offset],
                 theme,
+                file.lineMoveKinds?.deletionLines[deletionLineIndex + offset],
               )
             : makeSplitCell("empty", undefined, undefined, undefined, theme),
           right: hasAddition
@@ -637,6 +864,7 @@ export function buildSplitRows(
                 file.metadata.additionLines[additionLineIndex + offset],
                 additionLines[additionLineIndex + offset],
                 theme,
+                file.lineMoveKinds?.additionLines[additionLineIndex + offset],
               )
             : makeSplitCell("empty", undefined, undefined, undefined, theme),
         });
@@ -650,13 +878,16 @@ export function buildSplitRows(
   }
 
   const trailingLines = trailingCollapsedLines(file.metadata);
-  if (trailingLines > 0) {
+  const lastHunk = file.metadata.hunks.at(-1);
+  if (trailingLines > 0 && lastHunk) {
     rows.push({
       type: "collapsed",
       key: `${file.id}:collapsed:trailing`,
       fileId: file.id,
-      hunkIndex: Math.max(file.metadata.hunks.length - 1, 0),
+      hunkIndex: file.metadata.hunks.length - 1,
       text: collapsedRowText(trailingLines),
+      position: "trailing",
+      ...trailingCollapsedRanges(lastHunk, trailingLines),
     });
   }
 
@@ -681,6 +912,8 @@ export function buildStackRows(
         fileId: file.id,
         hunkIndex,
         text: collapsedRowText(hunk.collapsedBefore),
+        position: "before",
+        ...leadingCollapsedRanges(hunk),
       });
     }
 
@@ -736,6 +969,7 @@ export function buildStackRows(
             file.metadata.deletionLines[deletionLineIndex + offset],
             deletionLines[deletionLineIndex + offset],
             theme,
+            file.lineMoveKinds?.deletionLines[deletionLineIndex + offset],
           ),
         });
       }
@@ -753,6 +987,7 @@ export function buildStackRows(
             file.metadata.additionLines[additionLineIndex + offset],
             additionLines[additionLineIndex + offset],
             theme,
+            file.lineMoveKinds?.additionLines[additionLineIndex + offset],
           ),
         });
       }
@@ -765,13 +1000,16 @@ export function buildStackRows(
   }
 
   const trailingLines = trailingCollapsedLines(file.metadata);
-  if (trailingLines > 0) {
+  const lastHunk = file.metadata.hunks.at(-1);
+  if (trailingLines > 0 && lastHunk) {
     rows.push({
       type: "collapsed",
       key: `${file.id}:stack:collapsed:trailing`,
       fileId: file.id,
-      hunkIndex: Math.max(file.metadata.hunks.length - 1, 0),
+      hunkIndex: file.metadata.hunks.length - 1,
       text: collapsedRowText(trailingLines),
+      position: "trailing",
+      ...trailingCollapsedRanges(lastHunk, trailingLines),
     });
   }
 

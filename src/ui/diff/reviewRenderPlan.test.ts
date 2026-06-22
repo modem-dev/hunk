@@ -69,8 +69,8 @@ function guidedSplitLineNumbers(plannedRows: PlannedReviewRow[], side: "old" | "
 }
 
 describe("review render plan", () => {
-  test("inserts an inline note before the anchor row and continues the guide through the covered range", () => {
-    const theme = resolveTheme("midnight", null);
+  test("inserts an inline note before the anchor row and starts the guide after the anchor", () => {
+    const theme = resolveTheme("github-dark-default", null);
     const file = createDiffFile(
       "alpha",
       "alpha.ts",
@@ -112,17 +112,11 @@ describe("review render plan", () => {
       }
     }
 
-    expect(guidedSplitLineNumbers(plannedRows, "new")).toEqual([2, 3]);
-
-    const cap = plannedRows.find((row) => row.kind === "note-guide-cap");
-    expect(cap?.kind).toBe("note-guide-cap");
-    if (cap?.kind === "note-guide-cap") {
-      expect(cap.side).toBe("new");
-    }
+    expect(guidedSplitLineNumbers(plannedRows, "new")).toEqual([3]);
   });
 
-  test("anchors deletion-only notes to old-side rows and guides the old column", () => {
-    const theme = resolveTheme("midnight", null);
+  test("anchors deletion-only notes to old-side rows without a dangling guide below the note", () => {
+    const theme = resolveTheme("github-dark-default", null);
     const file = createDiffFile(
       "deleted",
       "deleted.ts",
@@ -163,17 +157,11 @@ describe("review render plan", () => {
       }
     }
 
-    expect(guidedSplitLineNumbers(plannedRows, "old")).toEqual([1]);
-
-    const cap = plannedRows.find((row) => row.kind === "note-guide-cap");
-    expect(cap?.kind).toBe("note-guide-cap");
-    if (cap?.kind === "note-guide-cap") {
-      expect(cap.side).toBe("old");
-    }
+    expect(guidedSplitLineNumbers(plannedRows, "old")).toEqual([]);
   });
 
   test("assigns hunk anchor ids from the first visible row for every hunk when hunk headers are hidden", () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const file = createDiffFile(
       "beta",
       "beta.ts",
@@ -229,7 +217,7 @@ describe("review render plan", () => {
   });
 
   test("anchors range-less notes to the first visible line row without guide rows", () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const file = createDiffFile(
       "stack",
       "stack.ts",
@@ -259,7 +247,6 @@ describe("review render plan", () => {
       expect(note.anchorSide).toBeUndefined();
     }
 
-    expect(plannedRows.some((row) => row.kind === "note-guide-cap")).toBe(false);
     expect(
       plannedRows.some((row) => row.kind === "diff-row" && row.noteGuideSide !== undefined),
     ).toBe(false);
@@ -272,7 +259,7 @@ describe("review render plan", () => {
   });
 
   test("anchors notes on the matching hunk in multi-hunk diffs", () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const file = createDiffFile(
       "multi",
       "multi.ts",
@@ -335,7 +322,7 @@ describe("review render plan", () => {
   });
 
   test("renders every visible note at its own anchor row", () => {
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const file = createDiffFile(
       "counted",
       "counted.ts",

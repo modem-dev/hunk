@@ -55,8 +55,101 @@ interface ChangedFileSpec {
   after: string;
 }
 
-function sleep(ms: number) {
+export function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Send an SGR mouse motion event at zero-based terminal coordinates. */
+export async function moveMouse(session: Session, x: number, y: number) {
+  session.writeRaw(`\x1b[<35;${x + 1};${y + 1}M`);
+  await session.waitIdle();
+}
+
+/** Reveal the hover-only add-note badge across fixture-specific row offsets. */
+export async function revealAddNoteAffordance(session: Session, x: number, yCandidates: number[]) {
+  for (const y of yCandidates) {
+    await moveMouse(session, x, y);
+    try {
+      return await session.waitForText(/\[\+\]/, { timeout: 1_000 });
+    } catch {
+      // Keep trying nearby rows; hunk header visibility changes the diff row offset.
+    }
+  }
+
+  throw new Error(`Failed to reveal add-note affordance at x=${x}.`);
+}
+
+/** Drag with the left mouse button using zero-based terminal coordinates. */
+export async function dragMouse(
+  session: Session,
+  startX: number,
+  startY: number,
+  endX: number,
+  endY: number,
+) {
+  session.writeRaw(`\x1b[<0;${startX + 1};${startY + 1}M`);
+  await sleep(10);
+  const steps = 5;
+  for (let step = 1; step <= steps; step += 1) {
+    const x = Math.round(startX + ((endX - startX) * step) / steps);
+    const y = Math.round(startY + ((endY - startY) * step) / steps);
+    session.writeRaw(`\x1b[<32;${x + 1};${y + 1}M`);
+    await sleep(10);
+  }
+  session.writeRaw(`\x1b[<0;${endX + 1};${endY + 1}m`);
+  await session.waitIdle();
+}
+
+/** Find the rightmost visible column for text in a terminal snapshot. */
+export function rightmostColumnOf(text: string, needle: string) {
+  return Math.max(
+    ...text
+      .split("\n")
+      .map((line) => line.lastIndexOf(needle))
+      .filter((column) => column >= 0),
+    -1,
+  );
+}
+
+/** Locate a visible terminal row containing text so mouse tests can target rendered content. */
+export function lineIndexOf(text: string, needle: string) {
+  return text.split("\n").findIndex((line) => line.includes(needle));
+}
+
+/** Move near a rendered row until the hover-only add-note control appears. */
+export async function revealAddNoteNear(session: Session, row: number) {
+  for (const y of [row, row - 1, row + 1]) {
+    if (y < 0) {
+      continue;
+    }
+
+    for (const x of [8, 20, 60]) {
+      await moveMouse(session, x, y);
+      try {
+        await session.waitForText(/\[\+\]/, { timeout: 200 });
+        return;
+      } catch {
+        // Try nearby cells; PTY snapshots and wrapped rows can differ by a column or row.
+      }
+    }
+  }
+
+  throw new Error("Could not reveal add-note affordance near target row.");
+}
+
+/** Reveal the add-note control without falling back to adjacent rows. */
+export async function revealAddNoteOnRow(session: Session, row: number) {
+  for (const x of [8, 20, 60]) {
+    await moveMouse(session, x, row);
+    try {
+      await session.waitForText(/\[\+\]/, { timeout: 200 });
+      return;
+    } catch {
+      // Try nearby columns on the same rendered row, but do not mask row-target regressions.
+    }
+  }
+
+  throw new Error("Could not reveal add-note affordance on target row.");
 }
 
 function writeText(path: string, content: string) {
@@ -125,6 +218,28 @@ export function createPtyHarness() {
     return { dir, before, after };
   }
 
+  function createWideCharacterFilePair() {
+    const dir = makeTempDir("hunk-tuistory-wide-");
+    const before = join(dir, "before.ts");
+    const after = join(dir, "after.ts");
+
+    writeText(before, "export const wide = '日本語';\nexport const plain = 'before';\n");
+    writeText(after, "export const wide = '한국어';\nexport const plain = 'after';\n");
+
+    return { dir, before, after };
+  }
+
+  function createDeletionOnlyFilePair() {
+    const dir = makeTempDir("hunk-tuistory-deletion-");
+    const before = join(dir, "before.ts");
+    const after = join(dir, "after.ts");
+
+    writeText(before, "export const keep = true;\nexport const removeMe = true;\n");
+    writeText(after, "export const keep = true;\n");
+
+    return { dir, before, after };
+  }
+
   function createAgentFilePair() {
     const dir = makeTempDir("hunk-tuistory-agent-");
     const before = join(dir, "before.ts");
@@ -155,6 +270,73 @@ export function createPtyHarness() {
     return { dir, before, after, agentContext };
   }
 
+  function createAgentNavigationRepoFixture() {
+    const alphaBeforeLines = createNumberedExportLines(1, 80).split("\n");
+    const alphaAfterLines = [...alphaBeforeLines];
+    alphaAfterLines[0] = "export const line01 = 1001;";
+    alphaAfterLines[59] = "export const line60 = 6000;";
+
+    const betaBeforeLines = createNumberedExportLines(81, 20).split("\n");
+    const betaAfterLines = [...betaBeforeLines];
+    betaAfterLines[0] = "export const line81 = 8100;";
+
+    const gammaBeforeLines = createNumberedExportLines(101, 80).split("\n");
+    const gammaAfterLines = [...gammaBeforeLines];
+    gammaAfterLines[0] = "export const line101 = 10100;";
+    gammaAfterLines[59] = "export const line160 = 16000;";
+
+    const fixture = createGitRepoFixture([
+      {
+        path: "alpha.ts",
+        before: `${alphaBeforeLines.join("\n")}\n`,
+        after: `${alphaAfterLines.join("\n")}\n`,
+      },
+      {
+        path: "beta.ts",
+        before: `${betaBeforeLines.join("\n")}\n`,
+        after: `${betaAfterLines.join("\n")}\n`,
+      },
+      {
+        path: "gamma.ts",
+        before: `${gammaBeforeLines.join("\n")}\n`,
+        after: `${gammaAfterLines.join("\n")}\n`,
+      },
+    ]);
+    const agentContext = join(fixture.dir, "agent-context.json");
+
+    writeText(
+      agentContext,
+      JSON.stringify({
+        version: 1,
+        summary: "Agent navigation notes",
+        files: [
+          {
+            path: "alpha.ts",
+            annotations: [
+              {
+                newRange: [60, 60],
+                summary: "Alpha note for navigation.",
+                rationale: "Used to prove comment navigation can leave an earlier note.",
+              },
+            ],
+          },
+          {
+            path: "gamma.ts",
+            annotations: [
+              {
+                newRange: [60, 60],
+                summary: "Gamma note for navigation.",
+                rationale: "Used to prove comment navigation resumes after an unannotated hunk.",
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    return { ...fixture, agentContext };
+  }
+
   function createMultiHunkFilePair() {
     const dir = makeTempDir("hunk-tuistory-hunks-");
     const before = join(dir, "before.ts");
@@ -172,6 +354,25 @@ export function createPtyHarness() {
     afterLines[62] = "export const line63 = 6300;";
     afterLines[63] = "export const line64 = 6400;";
     afterLines[64] = "export const line65 = 6500;";
+
+    writeText(before, `${beforeLines.join("\n")}\n`);
+    writeText(after, `${afterLines.join("\n")}\n`);
+
+    return { dir, before, after };
+  }
+
+  function createExpandableContextFilePair() {
+    const dir = makeTempDir("hunk-tuistory-expand-");
+    const before = join(dir, "before.ts");
+    const after = join(dir, "after.ts");
+
+    const beforeLines = Array.from({ length: 30 }, (_, index) =>
+      index === 0
+        ? "export const hiddenLine01 = 1;"
+        : `export const line${String(index + 1).padStart(2, "0")} = ${index + 1};`,
+    );
+    const afterLines = [...beforeLines];
+    afterLines[4] = "export const line05 = 500;";
 
     writeText(before, `${beforeLines.join("\n")}\n`);
     writeText(after, `${afterLines.join("\n")}\n`);
@@ -515,9 +716,12 @@ export function createPtyHarness() {
     cleanup,
     countMatches,
     createAgentFilePair,
+    createAgentNavigationRepoFixture,
     createBottomClampedRepoFixture,
     createCollapsedTopRepoFixture,
+    createExpandableContextFilePair,
     createCrossFileHunkNavigationRepoFixture,
+    createDeletionOnlyFilePair,
     createLongWrapFilePair,
     createMultiHunkFilePair,
     createPagerPatchFixture,
@@ -525,6 +729,7 @@ export function createPtyHarness() {
     createScrollableFilePair,
     createSidebarJumpRepoFixture,
     createTwoFileRepoFixture,
+    createWideCharacterFilePair,
     launchHunk,
     launchHunkWithFileBackedStdin,
     launchShellCommand,

@@ -98,10 +98,11 @@ function createConnection() {
 }
 
 describe("session broker daemon", () => {
-  test("serves health and raw list/get requests", async () => {
+  test("serves health and raw list/get requests when the HTTP API is enabled", async () => {
     const daemon = createSessionBrokerDaemon({
       broker: createBroker(),
       capabilities: { version: 1, name: "test-broker" },
+      exposeHttpApi: true,
     });
     const { connection } = createConnection();
     daemon.handleConnectionMessage(
@@ -123,6 +124,7 @@ describe("session broker daemon", () => {
     const listResponse = await daemon.handleRequest(
       new Request("http://broker.test/broker", {
         method: "POST",
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "list" }),
       }),
     );
@@ -134,6 +136,7 @@ describe("session broker daemon", () => {
     const getResponse = await daemon.handleRequest(
       new Request("http://broker.test/broker", {
         method: "POST",
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "get", selector: { sessionId: "session-1" } }),
       }),
     );
@@ -147,10 +150,83 @@ describe("session broker daemon", () => {
     daemon.shutdown();
   });
 
+  test("does not expose the raw broker HTTP API by default", async () => {
+    const daemon = createSessionBrokerDaemon({
+      broker: createBroker(),
+      capabilities: { version: 1 },
+    });
+
+    await expect(
+      daemon.handleRequest(new Request("http://broker.test/broker/capabilities")),
+    ).resolves.toBeNull();
+
+    await expect(
+      daemon.handleRequest(
+        new Request("http://broker.test/broker", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "list" }),
+        }),
+      ),
+    ).resolves.toBeNull();
+
+    await expect(
+      daemon.handleRequest(new Request("http://broker.test/health")),
+    ).resolves.toBeInstanceOf(Response);
+    expect(daemon.paths).toEqual({ health: "/health", socket: "/session" });
+    daemon.shutdown();
+  });
+
+  test("requires JSON content type for raw broker API posts", async () => {
+    const daemon = createSessionBrokerDaemon({
+      broker: createBroker(),
+      capabilities: { version: 1 },
+      exposeHttpApi: true,
+    });
+
+    const response = await daemon.handleRequest(
+      new Request("http://broker.test/broker", {
+        method: "POST",
+        headers: { "content-type": "text/plain" },
+        body: JSON.stringify({ action: "list" }),
+      }),
+    );
+
+    expect(response?.status).toBe(415);
+    await expect(response?.json()).resolves.toEqual({
+      error: "Expected Content-Type application/json.",
+    });
+    daemon.shutdown();
+  });
+
+  test("rejects raw broker API bodies that exceed the size limit", async () => {
+    const daemon = createSessionBrokerDaemon({
+      broker: createBroker(),
+      capabilities: { version: 1 },
+      exposeHttpApi: true,
+    });
+
+    const oversized = JSON.stringify({ action: "list", filler: "x".repeat(5 * 1024 * 1024) });
+    const response = await daemon.handleRequest(
+      new Request("http://broker.test/broker", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: oversized,
+      }),
+    );
+
+    expect(response?.status).toBe(413);
+    await expect(response?.json()).resolves.toMatchObject({
+      error: expect.stringContaining("session broker limit"),
+    });
+    daemon.shutdown();
+  });
+
   test("dispatches one raw command through the broker API", async () => {
     const daemon = createSessionBrokerDaemon({
       broker: createBroker(),
       capabilities: { version: 1 },
+      exposeHttpApi: true,
     });
     const session = createConnection();
     const { connection, sent } = session;
@@ -166,6 +242,7 @@ describe("session broker daemon", () => {
     const pendingResponse = daemon.handleRequest(
       new Request("http://broker.test/broker", {
         method: "POST",
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({
           action: "dispatch",
           selector: { sessionId: "session-1" },

@@ -3,26 +3,16 @@
 import { performance } from "perf_hooks";
 import { buildSplitRows } from "../src/ui/diff/pierre";
 import { buildReviewRenderPlan } from "../src/ui/diff/reviewRenderPlan";
-import { measureDiffSectionGeometry } from "../src/ui/lib/diffSectionGeometry";
+import { measureDiffSectionGeometry } from "../src/ui/diff/diffSectionGeometry";
 import { resolveTheme } from "../src/ui/themes";
 import {
   createLargeSplitStreamFiles,
   DEFAULT_FILE_COUNT,
   DEFAULT_LINES_PER_FILE,
-  DEFAULT_NOTES_PER_FILE,
 } from "./large-stream-fixture";
 
 const theme = resolveTheme("midnight", null);
-const windowedFiles = createLargeSplitStreamFiles({ notesPerFile: 0 });
-const noteFiles = createLargeSplitStreamFiles({ notesPerFile: DEFAULT_NOTES_PER_FILE });
-
-function visibleAgentNotesForFile(file: (typeof noteFiles)[number]) {
-  const annotations = file.agent?.annotations ?? [];
-  return annotations.map((annotation, index) => ({
-    id: `annotation:${file.id}:${annotation.id ?? index}`,
-    annotation,
-  }));
-}
+const windowedFiles = createLargeSplitStreamFiles();
 
 function measureMs(run: () => void) {
   const start = performance.now();
@@ -43,24 +33,23 @@ const splitRowsMs = measureMs(() => {
   });
 });
 
-let notePlannedRows = 0;
-const noteReviewPlanMs = measureMs(() => {
-  noteFiles.forEach((file) => {
+let plannedRows = 0;
+const reviewPlanMs = measureMs(() => {
+  windowedFiles.forEach((file) => {
     const rows = buildSplitRows(file, null, theme);
-    notePlannedRows += buildReviewRenderPlan({
+    plannedRows += buildReviewRenderPlan({
       fileId: file.id,
       rows,
       showHunkHeaders: true,
-      visibleAgentNotes: visibleAgentNotesForFile(file),
+      visibleAgentNotes: [],
     }).length;
   });
 });
 
 console.log(`METRIC section_geometry_ms=${sectionGeometryMs.toFixed(2)}`);
 console.log(`METRIC split_rows_ms=${splitRowsMs.toFixed(2)}`);
-console.log(`METRIC note_review_plan_ms=${noteReviewPlanMs.toFixed(2)}`);
+console.log(`METRIC review_plan_ms=${reviewPlanMs.toFixed(2)}`);
 console.log(`METRIC split_rows=${windowedRows}`);
-console.log(`METRIC note_planned_rows=${notePlannedRows}`);
+console.log(`METRIC planned_rows=${plannedRows}`);
 console.log(`METRIC files=${DEFAULT_FILE_COUNT}`);
 console.log(`METRIC lines_per_file=${DEFAULT_LINES_PER_FILE}`);
-console.log(`METRIC notes_per_file=${DEFAULT_NOTES_PER_FILE}`);

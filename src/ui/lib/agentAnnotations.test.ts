@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { createTestDiffFile, lines } from "../../../test/helpers/diff-helpers";
 import { buildLiveComment, resolveCommentTarget } from "../../core/liveComments";
-import { getAnnotatedHunkIndices, getSelectedAnnotations } from "./agentAnnotations";
+import {
+  annotationRangeLabel,
+  getAnnotatedHunkIndices,
+  getSelectedAnnotations,
+} from "./agentAnnotations";
 
 function createContextHeavyHunkFile() {
   const beforeLines = Array.from({ length: 25 }, (_, i) => `line${i + 1}`);
@@ -18,6 +22,20 @@ function createContextHeavyHunkFile() {
 }
 
 describe("agent annotations", () => {
+  test("formats inline note locations with GitHub-style file and side anchors", () => {
+    const file = createContextHeavyHunkFile();
+
+    expect(annotationRangeLabel({ summary: "Added", newRange: [142, 142] }, file)).toBe(
+      "src/sparse.ts R142",
+    );
+    expect(annotationRangeLabel({ summary: "Removed", oldRange: [88, 91] }, file)).toBe(
+      "src/sparse.ts L88–L91",
+    );
+    expect(
+      annotationRangeLabel({ summary: "Changed", oldRange: [10, 11], newRange: [20, 21] }, file),
+    ).toBe("src/sparse.ts L10–L11 → R20–R21");
+  });
+
   test("keeps hunk-number comments visible when anchored after leading context", () => {
     const file = createContextHeavyHunkFile();
     const hunk = file.metadata.hunks[0]!;

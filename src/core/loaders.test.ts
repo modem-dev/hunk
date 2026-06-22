@@ -2,10 +2,16 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { platform, tmpdir } from "node:os";
 import { join } from "node:path";
+import { SourceTextTooLargeError } from "./fileSource";
 import { loadAppBootstrap } from "./loaders";
 import type { CliInput } from "./types";
 
 const tempDirs: string[] = [];
+
+// Jujutsu subprocess setup can exceed Bun's default 5s test timeout on Windows CI.
+const JjLoaderIntegrationTestTimeoutMs = 20_000;
+// Sapling subprocess setup can exceed Bun's default 5s test timeout on slower machines.
+const SlLoaderIntegrationTestTimeoutMs = 20_000;
 
 function cleanupTempDirs() {
   while (tempDirs.length > 0) {
@@ -72,6 +78,22 @@ function jj(cwd: string, ...cmd: string[]) {
   return Buffer.from(proc.stdout).toString("utf8");
 }
 
+function sl(cwd: string, ...cmd: string[]) {
+  const proc = Bun.spawnSync(["sl", "--noninteractive", "--color", "never", ...cmd], {
+    cwd,
+    stdout: "pipe",
+    stderr: "pipe",
+    stdin: "ignore",
+  });
+
+  if (proc.exitCode !== 0) {
+    const stderr = Buffer.from(proc.stderr).toString("utf8");
+    throw new Error(stderr.trim() || `sl ${cmd.join(" ")} failed`);
+  }
+
+  return Buffer.from(proc.stdout).toString("utf8");
+}
+
 function createTempRepo(prefix: string) {
   const dir = createTempDir(prefix);
 
@@ -90,6 +112,20 @@ function createTempJjRepo(prefix: string) {
 
   return dir;
 }
+
+function createTempSlRepo(prefix: string) {
+  const dir = createTempDir(prefix);
+
+  sl(dir, "init", "--git");
+  sl(dir, "config", "--local", "ui.username", "Test User <test@example.com>");
+
+  return dir;
+}
+
+// Keep jj-backed loader coverage opt-in on machines that have the external CLI installed.
+const jjTest = Bun.which("jj") ? test : test.skip;
+// Keep sl-backed loader coverage opt-in on machines that have the external CLI installed.
+const slTest = Bun.which("sl") ? test : test.skip;
 
 async function runWithHome<T>(home: string, task: () => Promise<T>) {
   const previousHome = process.env.HOME;
@@ -189,7 +225,12 @@ describe("loadAppBootstrap", () => {
     writeFileSync(
       join(nested, "agent.json"),
       JSON.stringify({
-        files: [{ path: "example.ts", annotations: [{ newRange: [1, 1], summary: "updated" }] }],
+        files: [
+          {
+            path: "example.ts",
+            annotations: [{ newRange: [1, 1], summary: "updated" }],
+          },
+        ],
       }),
     );
 
@@ -305,6 +346,30 @@ describe("loadAppBootstrap", () => {
     expect(bootstrap.changeset.files[1]?.patch).toContain("new file mode");
   });
 
+  slTest(
+    "includes Sapling unknown files in working copy reviews",
+    async () => {
+      const dir = createTempSlRepo("hunk-sl-untracked-");
+
+      writeFileSync(join(dir, "tracked.ts"), "export const value = 1;\n");
+      sl(dir, "add", "tracked.ts");
+      sl(dir, "commit", "-m", "initial");
+
+      writeFileSync(join(dir, "new-file.ts"), "export const added = true;\n");
+
+      const bootstrap = await loadFromRepo(dir, {
+        kind: "vcs",
+        staged: false,
+        options: { mode: "auto", vcs: "sl" },
+      });
+
+      const file = bootstrap.changeset.files[0];
+      expect(bootstrap.changeset.files.map((entry) => entry.path)).toEqual(["new-file.ts"]);
+      expect(file?.isUntracked).toBe(true);
+    },
+    SlLoaderIntegrationTestTimeoutMs,
+  );
+
   test("keeps generated large tracked diffs as skipped placeholders", async () => {
     const dir = createTempRepo("hunk-git-large-tracked-");
 
@@ -322,8 +387,12 @@ describe("loadAppBootstrap", () => {
     expect(bootstrap.changeset.files).toHaveLength(1);
     expect(bootstrap.changeset.files[0]?.path).toBe("large.txt");
     expect(bootstrap.changeset.files[0]?.isTooLarge).toBe(true);
-    expect(bootstrap.changeset.files[0]?.stats).toEqual({ additions: 100_001, deletions: 1 });
+    expect(bootstrap.changeset.files[0]?.stats).toEqual({
+      additions: 100_001,
+      deletions: 1,
+    });
     expect(bootstrap.changeset.files[0]?.metadata.hunks).toHaveLength(0);
+    expect(bootstrap.changeset.files[0]?.sourceFetcher).toBeUndefined();
   });
 
   test("keeps generated large untracked files as skipped placeholders", async () => {
@@ -343,9 +412,13 @@ describe("loadAppBootstrap", () => {
     expect(bootstrap.changeset.files).toHaveLength(1);
     expect(bootstrap.changeset.files[0]?.path).toBe("large.txt");
     expect(bootstrap.changeset.files[0]?.isTooLarge).toBe(true);
-    expect(bootstrap.changeset.files[0]?.stats).toEqual({ additions: 100_001, deletions: 0 });
+    expect(bootstrap.changeset.files[0]?.stats).toEqual({
+      additions: 100_001,
+      deletions: 0,
+    });
     expect(bootstrap.changeset.files[0]?.statsTruncated).toBe(false);
     expect(bootstrap.changeset.files[0]?.metadata.hunks).toHaveLength(0);
+    expect(bootstrap.changeset.files[0]?.sourceFetcher).toBeUndefined();
   });
 
   test("caps skipped untracked-file stats when byte-size detection would require a full huge read", async () => {
@@ -365,7 +438,10 @@ describe("loadAppBootstrap", () => {
     expect(bootstrap.changeset.files).toHaveLength(1);
     expect(bootstrap.changeset.files[0]?.path).toBe("large-single-line.txt");
     expect(bootstrap.changeset.files[0]?.isTooLarge).toBe(true);
-    expect(bootstrap.changeset.files[0]?.stats).toEqual({ additions: 1, deletions: 0 });
+    expect(bootstrap.changeset.files[0]?.stats).toEqual({
+      additions: 1,
+      deletions: 0,
+    });
     expect(bootstrap.changeset.files[0]?.statsTruncated).toBe(true);
     expect(bootstrap.changeset.files[0]?.metadata.hunks).toHaveLength(0);
   });
@@ -630,6 +706,62 @@ describe("loadAppBootstrap", () => {
     ]);
   });
 
+  test("tags moved lines from git diff.colorMoved output", async () => {
+    const dir = createTempRepo("hunk-git-color-moved-");
+
+    writeFileSync(
+      join(dir, "example.txt"),
+      [
+        "start anchor",
+        "relocated block first line has many chars",
+        "relocated block second line has many chars",
+        "relocated block third line has many chars",
+        "middle unchanged one has many chars",
+        "middle unchanged two has many chars",
+        "end anchor",
+        "",
+      ].join("\n"),
+    );
+    git(dir, "add", "example.txt");
+    git(dir, "commit", "-m", "initial");
+    git(dir, "config", "--local", "diff.colorMoved", "zebra");
+
+    writeFileSync(
+      join(dir, "example.txt"),
+      [
+        "start anchor",
+        "middle unchanged one has many chars",
+        "middle unchanged two has many chars",
+        "relocated block first line has many chars",
+        "relocated block second line has many chars",
+        "relocated block third line has many chars",
+        "end anchor",
+        "",
+      ].join("\n"),
+    );
+
+    const bootstrap = await loadFromRepo(dir, {
+      kind: "vcs",
+      staged: false,
+      options: { mode: "auto" },
+    });
+    const file = bootstrap.changeset.files[0];
+
+    expect(file?.path).toBe("example.txt");
+    expect(file?.lineMoveKinds?.additionLines.some(Boolean)).toBe(true);
+    expect(file?.lineMoveKinds?.deletionLines.some(Boolean)).toBe(true);
+
+    const movedAdditions = file?.metadata.additionLines.filter(
+      (_line, index) => file.lineMoveKinds?.additionLines[index] === "moved",
+    );
+    const movedDeletions = file?.metadata.deletionLines.filter(
+      (_line, index) => file.lineMoveKinds?.deletionLines[index] === "moved",
+    );
+
+    expect(movedAdditions).toContain("middle unchanged one has many chars\n");
+    expect(movedDeletions).toContain("middle unchanged one has many chars\n");
+  });
+
   test("reports a friendly error when git review runs outside a repository", async () => {
     const dir = mkdtempSync(join(tmpdir(), "hunk-nonrepo-"));
     tempDirs.push(dir);
@@ -727,6 +859,54 @@ describe("loadAppBootstrap", () => {
     expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["alpha.ts"]);
   });
 
+  test("loads staged new files before the first commit", async () => {
+    const dir = createTempRepo("hunk-git-staged-unborn-");
+
+    writeFileSync(join(dir, "alpha.ts"), "export const alpha = 1;\n");
+    git(dir, "add", "alpha.ts");
+
+    const bootstrap = await loadFromRepo(dir, {
+      kind: "vcs",
+      staged: true,
+      options: { mode: "auto" },
+    });
+
+    const file = bootstrap.changeset.files[0];
+    expect(bootstrap.changeset.files.map((entry) => entry.path)).toEqual(["alpha.ts"]);
+    expect(file?.metadata.type).toBe("new");
+    expect(file?.sourceFetcher).toBeDefined();
+    expect(await file?.sourceFetcher?.getFullText("old")).toBeNull();
+    expect(await file?.sourceFetcher?.getFullText("new")).toBe("export const alpha = 1;\n");
+  });
+
+  test("staged diffs against an explicit ref fetch old source from that ref", async () => {
+    const dir = createTempRepo("hunk-git-staged-ref-source-");
+
+    writeFileSync(join(dir, "alpha.ts"), "export const alpha = 1;\n");
+    git(dir, "add", "alpha.ts");
+    git(dir, "commit", "-m", "first");
+    const firstRef = git(dir, "rev-parse", "HEAD").trim();
+
+    writeFileSync(join(dir, "alpha.ts"), "export const alpha = 2;\n");
+    git(dir, "add", "alpha.ts");
+    git(dir, "commit", "-m", "second");
+
+    writeFileSync(join(dir, "alpha.ts"), "export const alpha = 3;\n");
+    git(dir, "add", "alpha.ts");
+
+    const bootstrap = await loadFromRepo(dir, {
+      kind: "vcs",
+      staged: true,
+      range: firstRef,
+      options: { mode: "auto" },
+    });
+
+    const file = bootstrap.changeset.files[0];
+    expect(file?.path).toBe("alpha.ts");
+    expect(await file?.sourceFetcher?.getFullText("old")).toBe("export const alpha = 1;\n");
+    expect(await file?.sourceFetcher?.getFullText("new")).toBe("export const alpha = 3;\n");
+  });
+
   test("loads staged-only git diffs when diff.noprefix is enabled", async () => {
     const dir = createTempRepo("hunk-git-staged-noprefix-");
 
@@ -770,54 +950,62 @@ describe("loadAppBootstrap", () => {
     expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["beta.ts"]);
   });
 
-  test("loads jj diff output for a configured revset", async () => {
-    const home = createTempDir("hunk-jj-home-");
+  jjTest(
+    "loads jj diff output for a configured revset",
+    async () => {
+      const home = createTempDir("hunk-jj-home-");
 
-    await runWithHome(home, async () => {
-      const dir = createTempJjRepo("hunk-jj-revset-");
+      await runWithHome(home, async () => {
+        const dir = createTempJjRepo("hunk-jj-revset-");
 
-      writeFileSync(join(dir, "alpha.ts"), "export const alpha = 1;\n");
-      jj(dir, "commit", "-m", "initial");
+        writeFileSync(join(dir, "alpha.ts"), "export const alpha = 1;\n");
+        jj(dir, "commit", "-m", "initial");
 
-      writeFileSync(join(dir, "alpha.ts"), "export const alpha = 2;\n");
-      writeFileSync(join(dir, "beta.ts"), "export const beta = true;\n");
+        writeFileSync(join(dir, "alpha.ts"), "export const alpha = 2;\n");
+        writeFileSync(join(dir, "beta.ts"), "export const beta = true;\n");
 
-      const bootstrap = await loadFromRepo(dir, {
-        kind: "vcs",
-        range: "@",
-        staged: false,
-        options: { mode: "auto", vcs: "jj" },
+        const bootstrap = await loadFromRepo(dir, {
+          kind: "vcs",
+          range: "@",
+          staged: false,
+          options: { mode: "auto", vcs: "jj" },
+        });
+
+        expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["alpha.ts", "beta.ts"]);
+        expect(bootstrap.changeset.title).toStartWith("hunk-jj-revset-");
+        expect(bootstrap.changeset.title).toEndWith(" @");
       });
+    },
+    JjLoaderIntegrationTestTimeoutMs,
+  );
 
-      expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["alpha.ts", "beta.ts"]);
-      expect(bootstrap.changeset.title).toStartWith("hunk-jj-revset-");
-      expect(bootstrap.changeset.title).toEndWith(" @");
-    });
-  });
+  jjTest(
+    "loads jj show output for a configured revset",
+    async () => {
+      const home = createTempDir("hunk-jj-home-");
 
-  test("loads jj show output for a configured revset", async () => {
-    const home = createTempDir("hunk-jj-home-");
+      await runWithHome(home, async () => {
+        const dir = createTempJjRepo("hunk-jj-show-");
 
-    await runWithHome(home, async () => {
-      const dir = createTempJjRepo("hunk-jj-show-");
+        writeFileSync(join(dir, "alpha.ts"), "export const alpha = 1;\n");
+        jj(dir, "commit", "-m", "initial");
 
-      writeFileSync(join(dir, "alpha.ts"), "export const alpha = 1;\n");
-      jj(dir, "commit", "-m", "initial");
+        writeFileSync(join(dir, "alpha.ts"), "export const alpha = 2;\n");
+        jj(dir, "commit", "-m", "update alpha");
 
-      writeFileSync(join(dir, "alpha.ts"), "export const alpha = 2;\n");
-      jj(dir, "commit", "-m", "update alpha");
+        const bootstrap = await loadFromRepo(dir, {
+          kind: "show",
+          ref: "@-",
+          options: { mode: "auto", vcs: "jj" },
+        });
 
-      const bootstrap = await loadFromRepo(dir, {
-        kind: "show",
-        ref: "@-",
-        options: { mode: "auto", vcs: "jj" },
+        expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["alpha.ts"]);
+        expect(bootstrap.changeset.title).toStartWith("hunk-jj-show-");
+        expect(bootstrap.changeset.title).toEndWith(" show @-");
       });
-
-      expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["alpha.ts"]);
-      expect(bootstrap.changeset.title).toStartWith("hunk-jj-show-");
-      expect(bootstrap.changeset.title).toEndWith(" show @-");
-    });
-  });
+    },
+    JjLoaderIntegrationTestTimeoutMs,
+  );
 
   test("applies pathspec filtering to untracked files in working tree reviews", async () => {
     const dir = createTempRepo("hunk-git-untracked-pathspec-");
@@ -1091,6 +1279,48 @@ describe("loadAppBootstrap", () => {
     expect(bootstrap.changeset.files[0]?.stats.additions).toBeGreaterThan(0);
   });
 
+  test("loads no-index patches whose file paths include /2/ segments", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "hunk-patch-"));
+    tempDirs.push(dir);
+
+    const beforeDir = join(dir, "before", "feat", "2.0");
+    const afterDir = join(dir, "after", "feat", "2.0");
+    const before = join(beforeDir, "auth.ts");
+    const after = join(afterDir, "auth.ts");
+    const patch = join(dir, "input.patch");
+
+    mkdirSync(beforeDir, { recursive: true });
+    mkdirSync(afterDir, { recursive: true });
+    writeFileSync(before, "export const answer = 41;\n");
+    writeFileSync(after, "export const answer = 42;\nexport const added = true;\n");
+
+    const diffProc = Bun.spawnSync(
+      ["git", "diff", "--no-index", "--color=always", "--", before, after],
+      {
+        cwd: dir,
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+
+    if (diffProc.exitCode !== 0 && diffProc.exitCode !== 1) {
+      const stderr = Buffer.from(diffProc.stderr).toString("utf8");
+      throw new Error(stderr.trim() || `git diff --color=always failed`);
+    }
+
+    writeFileSync(patch, Buffer.from(diffProc.stdout).toString("utf8"));
+
+    const bootstrap = await loadAppBootstrap({
+      kind: "patch",
+      file: patch,
+      options: { mode: "auto" },
+    });
+
+    expect(bootstrap.changeset.files).toHaveLength(1);
+    expect(bootstrap.changeset.files[0]?.path).toMatch(/feat[\\/]+2\.0[\\/]+auth\.ts$/);
+  });
+
   test("loads patch text emitted with diff.noprefix=true (e.g. from `hunk pager` stdin)", async () => {
     const bootstrap = await loadAppBootstrap({
       kind: "patch",
@@ -1137,7 +1367,10 @@ describe("loadAppBootstrap", () => {
       path: "example.ts",
       metadata: { name: "example.ts", type: "change" },
     });
-    expect(bootstrap.changeset.files[0]?.stats).toEqual({ additions: 1, deletions: 1 });
+    expect(bootstrap.changeset.files[0]?.stats).toEqual({
+      additions: 1,
+      deletions: 1,
+    });
   });
 
   test("loads renamed patch text emitted with diff.mnemonicPrefix=true", async () => {
@@ -1239,7 +1472,10 @@ describe("loadAppBootstrap", () => {
       path: "src\\tfile.txt",
       metadata: { name: "src\\tfile.txt", type: "change" },
     });
-    expect(bootstrap.changeset.files[0]?.stats).toEqual({ additions: 1, deletions: 1 });
+    expect(bootstrap.changeset.files[0]?.stats).toEqual({
+      additions: 1,
+      deletions: 1,
+    });
   });
 
   test("does not mangle a deleted SQL `-- comment` line in a noprefix patch", async () => {
@@ -1291,5 +1527,314 @@ describe("loadAppBootstrap", () => {
 
     expect(bootstrap.changeset.files).toHaveLength(1);
     expect(bootstrap.changeset.files[0]?.path).toBe("a/inner.ts");
+  });
+});
+
+describe("loadAppBootstrap source fetcher attachment", () => {
+  test("file-pair diffs attach a fetcher that resolves both fs sides", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "hunk-source-pair-"));
+    tempDirs.push(dir);
+
+    const left = join(dir, "before.ts");
+    const right = join(dir, "after.ts");
+    writeFileSync(left, "old\n");
+    writeFileSync(right, "new\n");
+
+    const bootstrap = await loadAppBootstrap({
+      kind: "diff",
+      left,
+      right,
+      options: { mode: "auto" },
+    });
+
+    const file = bootstrap.changeset.files[0];
+    expect(file?.sourceFetcher).toBeDefined();
+    expect(await file?.sourceFetcher?.getFullText("old")).toBe("old\n");
+    expect(await file?.sourceFetcher?.getFullText("new")).toBe("new\n");
+  });
+
+  test("git working-tree diffs read the new side from the working tree and the old side from the index", async () => {
+    const dir = createTempRepo("hunk-source-git-wt-");
+    writeFileSync(join(dir, "value.txt"), "first\n");
+    git(dir, "add", "value.txt");
+    git(dir, "commit", "-m", "initial");
+
+    writeFileSync(join(dir, "value.txt"), "second\n");
+
+    const bootstrap = await loadFromRepo(dir, {
+      kind: "vcs",
+      staged: false,
+      options: { mode: "auto" },
+    });
+
+    const file = bootstrap.changeset.files[0];
+    expect(file?.sourceFetcher).toBeDefined();
+    expect(await file?.sourceFetcher?.getFullText("new")).toBe("second\n");
+    expect(await file?.sourceFetcher?.getFullText("old")).toBe("first\n");
+  });
+
+  test("git source fetchers use the custom git executable from bootstrap loading", async () => {
+    const dir = createTempRepo("hunk-source-custom-git-");
+    writeFileSync(join(dir, "value.txt"), "first\n");
+    git(dir, "add", "value.txt");
+    git(dir, "commit", "-m", "initial");
+    writeFileSync(join(dir, "value.txt"), "second\n");
+
+    const gitExecutable = "hunk-custom-git";
+    const syncCalls: string[][] = [];
+    const asyncCalls: string[][] = [];
+    const originalSpawnSync = Bun.spawnSync;
+    const originalSpawn = Bun.spawn;
+    const mutableBun = Bun as unknown as {
+      spawnSync: typeof Bun.spawnSync;
+      spawn: typeof Bun.spawn;
+    };
+
+    mutableBun.spawnSync = ((cmds: string[], options?: Parameters<typeof Bun.spawnSync>[1]) => {
+      if (cmds[0] === gitExecutable) {
+        syncCalls.push(cmds);
+        return originalSpawnSync(["git", ...cmds.slice(1)], options);
+      }
+
+      return originalSpawnSync(cmds, options);
+    }) as typeof Bun.spawnSync;
+    mutableBun.spawn = ((cmds: string[], options?: Parameters<typeof Bun.spawn>[1]) => {
+      if (cmds[0] === gitExecutable) {
+        asyncCalls.push(cmds);
+        return originalSpawn(["git", ...cmds.slice(1)], options);
+      }
+
+      return originalSpawn(cmds, options);
+    }) as typeof Bun.spawn;
+
+    try {
+      const bootstrap = await loadAppBootstrap(
+        {
+          kind: "vcs",
+          staged: false,
+          options: { mode: "auto" },
+        },
+        { cwd: dir, gitExecutable },
+      );
+
+      const file = bootstrap.changeset.files[0];
+      expect(await file?.sourceFetcher?.getFullText("old")).toBe("first\n");
+    } finally {
+      mutableBun.spawnSync = originalSpawnSync;
+      mutableBun.spawn = originalSpawn;
+    }
+
+    expect(syncCalls.some((call) => call.includes("rev-parse"))).toBe(true);
+    expect(syncCalls.some((call) => call.includes("diff"))).toBe(true);
+    expect(asyncCalls).toContainEqual([gitExecutable, "show", ":value.txt"]);
+  });
+
+  test("unstaged working-tree diffs read old source from the index when it differs from HEAD", async () => {
+    const dir = createTempRepo("hunk-source-git-wt-index-");
+    writeFileSync(join(dir, "value.txt"), "committed\n");
+    git(dir, "add", "value.txt");
+    git(dir, "commit", "-m", "initial");
+
+    writeFileSync(join(dir, "value.txt"), "staged\n");
+    git(dir, "add", "value.txt");
+    writeFileSync(join(dir, "value.txt"), "working tree\n");
+
+    const bootstrap = await loadFromRepo(dir, {
+      kind: "vcs",
+      staged: false,
+      options: { mode: "auto" },
+    });
+
+    const file = bootstrap.changeset.files[0];
+    expect(file?.sourceFetcher).toBeDefined();
+    expect(await file?.sourceFetcher?.getFullText("old")).toBe("staged\n");
+    expect(await file?.sourceFetcher?.getFullText("new")).toBe("working tree\n");
+  });
+
+  test("`hunk show <ref>` resolves both sides through git blobs", async () => {
+    const dir = createTempRepo("hunk-source-show-");
+    writeFileSync(join(dir, "value.txt"), "first\n");
+    git(dir, "add", "value.txt");
+    git(dir, "commit", "-m", "initial");
+
+    writeFileSync(join(dir, "value.txt"), "second\n");
+    git(dir, "add", "value.txt");
+    git(dir, "commit", "-m", "second");
+
+    const bootstrap = await loadFromRepo(dir, {
+      kind: "show",
+      ref: "HEAD",
+      options: { mode: "auto" },
+    });
+
+    const file = bootstrap.changeset.files[0];
+    expect(file?.sourceFetcher).toBeDefined();
+    expect(await file?.sourceFetcher?.getFullText("new")).toBe("second\n");
+    expect(await file?.sourceFetcher?.getFullText("old")).toBe("first\n");
+  });
+
+  test("`hunk show <ref>` refuses to expand source blobs above the source cap", async () => {
+    const dir = createTempRepo("hunk-source-show-large-");
+    const lines = Array.from({ length: 130_000 }, (_, index) => `line ${index + 1}`);
+    writeFileSync(join(dir, "large.txt"), `${lines.join("\n")}\n`);
+    git(dir, "add", "large.txt");
+    git(dir, "commit", "-m", "initial");
+
+    lines[65_000] = "line 65001 changed";
+    writeFileSync(join(dir, "large.txt"), `${lines.join("\n")}\n`);
+    git(dir, "add", "large.txt");
+    git(dir, "commit", "-m", "change middle line");
+
+    const bootstrap = await loadFromRepo(dir, {
+      kind: "show",
+      ref: "HEAD",
+      options: { mode: "auto" },
+    });
+
+    const file = bootstrap.changeset.files[0];
+    expect(file?.sourceFetcher).toBeDefined();
+    expect(file?.metadata.hunks.length).toBeGreaterThan(0);
+    await expect(file?.sourceFetcher?.getFullText("new")).rejects.toBeInstanceOf(
+      SourceTextTooLargeError,
+    );
+  });
+
+  test("`hunk show <ref>` pins expansion sources after the ref moves", async () => {
+    const dir = createTempRepo("hunk-source-show-pinned-");
+    writeFileSync(join(dir, "value.txt"), "first\n");
+    git(dir, "add", "value.txt");
+    git(dir, "commit", "-m", "initial");
+
+    writeFileSync(join(dir, "value.txt"), "second\n");
+    git(dir, "add", "value.txt");
+    git(dir, "commit", "-m", "second");
+
+    const bootstrap = await loadFromRepo(dir, {
+      kind: "show",
+      ref: "HEAD",
+      options: { mode: "auto" },
+    });
+
+    writeFileSync(join(dir, "value.txt"), "third\n");
+    git(dir, "add", "value.txt");
+    git(dir, "commit", "-m", "third");
+
+    const file = bootstrap.changeset.files[0];
+    expect(await file?.sourceFetcher?.getFullText("new")).toBe("second\n");
+    expect(await file?.sourceFetcher?.getFullText("old")).toBe("first\n");
+  });
+
+  test("`hunk stash show` pins expansion sources after stash@{0} moves", async () => {
+    const dir = createTempRepo("hunk-source-stash-pinned-");
+    writeFileSync(join(dir, "value.txt"), "base\n");
+    git(dir, "add", "value.txt");
+    git(dir, "commit", "-m", "initial");
+
+    writeFileSync(join(dir, "value.txt"), "first stash\n");
+    git(dir, "stash", "push", "-m", "first stash");
+
+    const bootstrap = await loadFromRepo(dir, {
+      kind: "stash-show",
+      options: { mode: "auto" },
+    });
+
+    writeFileSync(join(dir, "value.txt"), "second stash\n");
+    git(dir, "stash", "push", "-m", "second stash");
+
+    const file = bootstrap.changeset.files[0];
+    expect(await file?.sourceFetcher?.getFullText("new")).toBe("first stash\n");
+    expect(await file?.sourceFetcher?.getFullText("old")).toBe("base\n");
+  });
+
+  test("untracked files attach a fetcher whose old side is null", async () => {
+    const dir = createTempRepo("hunk-source-untracked-");
+    writeFileSync(join(dir, "tracked.ts"), "tracked\n");
+    git(dir, "add", "tracked.ts");
+    git(dir, "commit", "-m", "initial");
+
+    writeFileSync(join(dir, "added.txt"), "added contents\n");
+
+    const bootstrap = await loadFromRepo(dir, {
+      kind: "vcs",
+      staged: false,
+      options: { mode: "auto" },
+    });
+
+    const untracked = bootstrap.changeset.files.find((entry) => entry.isUntracked);
+    expect(untracked?.sourceFetcher).toBeDefined();
+    expect(await untracked?.sourceFetcher?.getFullText("new")).toBe("added contents\n");
+    expect(await untracked?.sourceFetcher?.getFullText("old")).toBeNull();
+  });
+
+  test("deleted files attach a fetcher with new=null and old reading the prior contents", async () => {
+    const dir = createTempRepo("hunk-source-deleted-");
+    writeFileSync(join(dir, "victim.txt"), "going away\n");
+    git(dir, "add", "victim.txt");
+    git(dir, "commit", "-m", "add victim");
+    git(dir, "rm", "victim.txt");
+    git(dir, "commit", "-m", "remove victim");
+
+    const bootstrap = await loadFromRepo(dir, {
+      kind: "show",
+      ref: "HEAD",
+      options: { mode: "auto" },
+    });
+
+    const file = bootstrap.changeset.files[0];
+    expect(file?.metadata.type).toBe("deleted");
+    expect(file?.sourceFetcher).toBeDefined();
+    expect(await file?.sourceFetcher?.getFullText("new")).toBeNull();
+    expect(await file?.sourceFetcher?.getFullText("old")).toBe("going away\n");
+  });
+
+  test("renamed files read the old side from previousPath blob", async () => {
+    const dir = createTempRepo("hunk-source-renamed-");
+    writeFileSync(join(dir, "before.txt"), "shared\nold-only\nshared\n");
+    git(dir, "add", "before.txt");
+    git(dir, "commit", "-m", "add before");
+    git(dir, "mv", "before.txt", "after.txt");
+    writeFileSync(join(dir, "after.txt"), "shared\nnew-only\nshared\n");
+    git(dir, "add", "after.txt");
+    git(dir, "commit", "-m", "rename and modify");
+
+    const bootstrap = await loadFromRepo(dir, {
+      kind: "show",
+      ref: "HEAD",
+      options: { mode: "auto" },
+    });
+
+    const file = bootstrap.changeset.files[0];
+    expect(file?.path).toBe("after.txt");
+    expect(file?.previousPath).toBe("before.txt");
+    expect(file?.sourceFetcher).toBeDefined();
+    expect(await file?.sourceFetcher?.getFullText("old")).toBe("shared\nold-only\nshared\n");
+    expect(await file?.sourceFetcher?.getFullText("new")).toBe("shared\nnew-only\nshared\n");
+  }, 10_000);
+
+  test("raw patch input does not attach a source fetcher", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "hunk-source-patch-"));
+    tempDirs.push(dir);
+
+    const patch = join(dir, "change.patch");
+    writeFileSync(
+      patch,
+      [
+        "diff --git a/a.txt b/a.txt",
+        "--- a/a.txt",
+        "+++ b/a.txt",
+        "@@ -1 +1 @@",
+        "-old",
+        "+new",
+        "",
+      ].join("\n"),
+    );
+
+    const bootstrap = await loadAppBootstrap({
+      kind: "patch",
+      file: patch,
+      options: { mode: "auto" },
+    });
+
+    expect(bootstrap.changeset.files[0]?.sourceFetcher).toBeUndefined();
   });
 });

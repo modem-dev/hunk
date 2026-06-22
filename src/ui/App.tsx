@@ -6,7 +6,7 @@ import {
 import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { loadKeymapDefaults } from "../core/keymap/load";
-import type { AppBootstrap, CliInput, LayoutMode } from "../core/types";
+import type { AppBootstrap, CliInput, LayoutMode, UserNoteLineTarget } from "../core/types";
 import { canReloadInput, computeWatchSignature } from "../core/watch";
 import type { HunkSessionBrokerClient, ReloadedSessionResult } from "../hunk-session/types";
 import { MenuBar } from "./components/chrome/MenuBar";
@@ -19,25 +19,39 @@ import {
   maxFileCodeLineWidth,
   resolveCodeViewportWidth,
 } from "./diff/codeColumns";
+import type { ActiveAddNoteAffordance } from "./diff/PierreDiffView";
 import { useAppKeyboardShortcuts } from "./hooks/useAppKeyboardShortcuts";
 import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
 import { useMenuController } from "./hooks/useMenuController";
 import { useReviewController } from "./hooks/useReviewController";
 import { buildAppMenus } from "./lib/appMenus";
 import { fileRowId } from "./lib/ids";
+import { openSelectedFileInEditor } from "./lib/openInEditor";
 import { resolveResponsiveLayout } from "./lib/responsive";
 import { resizeSidebarWidth } from "./lib/sidebar";
-import { resolveTheme, THEMES } from "./themes";
+import { availableThemes, resolveTheme, withTransparentBackground } from "./themes";
 
-type FocusArea = "files" | "filter";
+type FocusArea = "files" | "filter" | "note";
+type ActiveAddNoteTarget = ActiveAddNoteAffordance & { fileId: string };
+type ThemeSelectorState = {
+  open: boolean;
+  selectedIndex: number;
+  previewThemeId: string | null;
+};
 
 const FAST_CODE_HORIZONTAL_SCROLL_COLUMNS = 8;
 
+const LazyAgentSkillDialog = lazy(async () => ({
+  default: (await import("./components/chrome/AgentSkillDialog")).AgentSkillDialog,
+}));
 const LazyHelpDialog = lazy(async () => ({
   default: (await import("./components/chrome/HelpDialog")).HelpDialog,
 }));
 const LazyMenuDropdown = lazy(async () => ({
   default: (await import("./components/chrome/MenuDropdown")).MenuDropdown,
+}));
+const LazyThemeSelectorDialog = lazy(async () => ({
+  default: (await import("./components/chrome/ThemeSelectorDialog")).ThemeSelectorDialog,
 }));
 
 /** Clamp a value into an inclusive range. */
@@ -101,31 +115,77 @@ export function App({
   const diffScrollRef = useRef<ScrollBoxRenderable | null>(null);
   const wrapToggleScrollTopRef = useRef<number | null>(null);
   const layoutToggleScrollTopRef = useRef<number | null>(null);
+  const cancelCopySelectionRef = useRef<(() => void) | null>(null);
   const [layoutToggleRequestId, setLayoutToggleRequestId] = useState(0);
+  const [transientNoticeText, setTransientNoticeText] = useState<string | null>(null);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(bootstrap.initialMode);
   const [themeId, setThemeId] = useState(
-    () => resolveTheme(bootstrap.initialTheme, renderer.themeMode).id,
+    () =>
+      resolveTheme(
+        bootstrap.initialTheme,
+        bootstrap.initialThemeMode ?? renderer.themeMode,
+        bootstrap.customTheme,
+      ).id,
   );
+  // Soft reloads replace bootstrap without re-running startup terminal theme detection.
+  const [detectedThemeMode] = useState(() => bootstrap.initialThemeMode);
   const [showAgentNotes, setShowAgentNotes] = useState(bootstrap.initialShowAgentNotes ?? false);
   const [showLineNumbers, setShowLineNumbers] = useState(bootstrap.initialShowLineNumbers ?? true);
   const [wrapLines, setWrapLines] = useState(bootstrap.initialWrapLines ?? false);
+  const [copyDecorations, setCopyDecorations] = useState(bootstrap.initialCopyDecorations ?? false);
   const [codeHorizontalOffset, setCodeHorizontalOffset] = useState(0);
   const [showHunkHeaders, setShowHunkHeaders] = useState(bootstrap.initialShowHunkHeaders ?? true);
+  const [themeSelectorState, setThemeSelectorState] = useState<ThemeSelectorState>({
+    open: false,
+    selectedIndex: 0,
+    previewThemeId: null,
+  });
   const [sidebarVisible, setSidebarVisible] = useState(() => !pagerMode);
   const [forceSidebarOpen, setForceSidebarOpen] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [showAgentSkill, setShowAgentSkill] = useState(false);
   const [focusArea, setFocusArea] = useState<FocusArea>("files");
+  const [activeAddNoteTarget, setActiveAddNoteTarget] = useState<ActiveAddNoteTarget | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(34);
   const [resizeDragOriginX, setResizeDragOriginX] = useState<number | null>(null);
   const [resizeStartWidth, setResizeStartWidth] = useState<number | null>(null);
+  const [sessionNoticeText, setSessionNoticeText] = useState<string | null>(null);
+  const sessionNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const activeTheme = resolveTheme(themeId, renderer.themeMode);
+  const themeOptions = useMemo(
+    () => availableThemes(bootstrap.customTheme),
+    [bootstrap.customTheme],
+  );
+  const effectiveThemeId = themeSelectorState.previewThemeId ?? themeId;
+  const baseTheme = useMemo(
+    () => resolveTheme(effectiveThemeId, detectedThemeMode ?? null, bootstrap.customTheme),
+    [effectiveThemeId, detectedThemeMode, bootstrap.customTheme],
+  );
+  const activeTheme = useMemo(
+    () =>
+      bootstrap.input.options.transparentBackground
+        ? withTransparentBackground(baseTheme)
+        : baseTheme,
+    [baseTheme, bootstrap.input.options.transparentBackground],
+  );
+
+  const themeSelectorItems = useMemo(
+    () =>
+      themeOptions.map((theme) => ({
+        id: theme.id,
+        label: theme.label,
+        description: theme.id === activeTheme.id ? "active" : "",
+        active: theme.id === activeTheme.id,
+      })),
+    [activeTheme.id, themeOptions],
+  );
   const review = useReviewController({ files: bootstrap.changeset.files });
   const filteredFiles = review.visibleFiles;
   const selectedFile = review.selectedFile;
   const selectedHunkIndex = review.selectedHunkIndex;
   const moveToAnnotatedFile = review.moveToAnnotatedFile;
   const moveToAnnotatedHunk = review.moveToAnnotatedHunk;
+  const moveToFile = review.moveToFile;
 
   const jumpToFile = useCallback(
     (fileId: string, nextHunkIndex = 0, options?: { alignFileHeaderTop?: boolean }) => {
@@ -140,6 +200,26 @@ export function App({
     setShowAgentNotes(true);
   }, []);
 
+  const showSessionNotice = useCallback((message: string) => {
+    setSessionNoticeText(message);
+    if (sessionNoticeTimeoutRef.current) {
+      clearTimeout(sessionNoticeTimeoutRef.current);
+    }
+
+    sessionNoticeTimeoutRef.current = setTimeout(() => {
+      setSessionNoticeText((current) => (current === message ? null : current));
+      sessionNoticeTimeoutRef.current = null;
+    }, 4000);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (sessionNoticeTimeoutRef.current) {
+        clearTimeout(sessionNoticeTimeoutRef.current);
+      }
+    };
+  }, []);
+
   useHunkSessionBridge({
     addLiveComment: review.addLiveComment,
     addLiveCommentBatch: review.addLiveCommentBatch,
@@ -151,6 +231,8 @@ export function App({
     openAgentNotes,
     reloadSession: onReloadSession,
     removeLiveComment: review.removeLiveComment,
+    reviewNoteCount: review.reviewNoteCount,
+    reviewNoteSummaries: review.reviewNoteSummaries,
     selectedFile,
     selectedHunk: review.selectedHunk,
     selectedHunkIndex,
@@ -293,6 +375,35 @@ export function App({
     setShowLineNumbers((current) => !current);
   };
 
+  /** Toggle whether mouse selection copies review decorations or only file content. */
+  const toggleCopyDecorations = () => {
+    setCopyDecorations((current) => !current);
+  };
+
+  // Show a short-lived status-bar message. Used to surface clipboard-copy outcomes that would
+  // otherwise be invisible to the user (OSC52 unsupported, etc.).
+  // Track the timer so we can clear it on unmount and avoid React state updates after unmount.
+  const transientTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showTransientNotice = useCallback((text: string, durationMs = 3000) => {
+    if (transientTimerRef.current !== null) {
+      clearTimeout(transientTimerRef.current);
+    }
+    setTransientNoticeText(text);
+    transientTimerRef.current = setTimeout(() => {
+      transientTimerRef.current = null;
+      setTransientNoticeText((current) => (current === text ? null : current));
+    }, durationMs);
+  }, []);
+
+  // Clear any pending transient-notice timer on unmount to avoid state updates after unmount.
+  useEffect(() => {
+    return () => {
+      if (transientTimerRef.current !== null) {
+        clearTimeout(transientTimerRef.current);
+      }
+    };
+  }, []);
+
   /** Toggle whether diff code rows wrap instead of truncating to one terminal row. */
   const toggleLineWrap = () => {
     // Capture the pre-toggle viewport position synchronously so DiffPane can restore the same
@@ -301,6 +412,74 @@ export function App({
     setCodeHorizontalOffset(0);
     setWrapLines((current) => !current);
   };
+
+  /** Switch the active theme. */
+  const selectTheme = useCallback(
+    (nextThemeId: string) => {
+      const nextTheme = themeOptions.find((theme) => theme.id === nextThemeId);
+      setThemeId(nextThemeId);
+      showTransientNotice(`Theme: ${nextTheme?.label ?? nextThemeId}`);
+    },
+    [showTransientNotice, themeOptions],
+  );
+
+  /** Open the keyboard-driven theme selector with the current theme highlighted. */
+  const openThemeSelector = useCallback(() => {
+    const currentIndex = themeSelectorItems.findIndex((item) => item.id === activeTheme.id);
+    setThemeSelectorState({
+      open: true,
+      selectedIndex: Math.max(0, currentIndex),
+      previewThemeId: null,
+    });
+  }, [activeTheme.id, themeSelectorItems]);
+
+  const closeThemeSelector = useCallback(() => {
+    // Dropping the preview id reverts all previewed colors in the same state transition.
+    setThemeSelectorState((current) => ({ ...current, open: false, previewThemeId: null }));
+  }, []);
+
+  const moveThemeSelector = useCallback(
+    (delta: number) => {
+      setThemeSelectorState((current) => {
+        if (themeSelectorItems.length === 0) {
+          return { ...current, selectedIndex: 0, previewThemeId: null };
+        }
+
+        const nextIndex =
+          (current.selectedIndex + delta + themeSelectorItems.length) % themeSelectorItems.length;
+        const item = themeSelectorItems[nextIndex]!;
+        return { ...current, selectedIndex: nextIndex, previewThemeId: item.id };
+      });
+    },
+    [themeSelectorItems],
+  );
+
+  const pickThemeSelectorItem = useCallback(
+    (index: number) => {
+      const item = themeSelectorItems[index];
+      if (!item) {
+        return;
+      }
+
+      setThemeSelectorState((current) => ({
+        ...current,
+        selectedIndex: index,
+        previewThemeId: item.id,
+      }));
+    },
+    [themeSelectorItems],
+  );
+
+  const acceptThemeSelector = useCallback(() => {
+    const item = themeSelectorItems[themeSelectorState.selectedIndex];
+    if (!item) {
+      return;
+    }
+
+    selectTheme(item.id);
+    // Close without a preview id; the committed theme id now supplies the same effective theme.
+    setThemeSelectorState((current) => ({ ...current, open: false, previewThemeId: null }));
+  }, [selectTheme, themeSelectorState.selectedIndex, themeSelectorItems]);
 
   /** Toggle the sidebar, forcing it open on narrower layouts when the app can still fit both panes. */
   const toggleSidebar = () => {
@@ -325,14 +504,6 @@ export function App({
   const toggleHunkHeaders = () => {
     setShowHunkHeaders((current) => !current);
   };
-
-  /** Jump to an annotated hunk without changing the global note visibility toggle. */
-  const openAgentNotesAtHunk = useCallback(
-    (fileId: string, hunkIndex: number) => {
-      review.selectHunk(fileId, hunkIndex);
-    },
-    [review.selectHunk],
-  );
 
   const canRefreshCurrentInput = canReloadInput(bootstrap.input);
   const watchEnabled = Boolean(bootstrap.input.options.watch && canRefreshCurrentInput);
@@ -379,6 +550,39 @@ export function App({
       console.error("Failed to reload the current diff.", error);
     });
   }, [refreshCurrentInput]);
+
+  const triggerEditSelectedFile = useCallback(() => {
+    const basePath =
+      bootstrap.input.kind === "vcs" ||
+      bootstrap.input.kind === "show" ||
+      bootstrap.input.kind === "stash-show"
+        ? bootstrap.changeset.sourceLabel
+        : undefined;
+    const message = openSelectedFileInEditor({
+      basePath,
+      file: selectedFile,
+      renderer,
+      selectedHunk: review.selectedHunk,
+    });
+
+    if (message) {
+      showSessionNotice(message);
+      return;
+    }
+
+    if (canRefreshCurrentInput) {
+      triggerRefreshCurrentInput();
+    }
+  }, [
+    bootstrap.changeset.sourceLabel,
+    bootstrap.input.kind,
+    canRefreshCurrentInput,
+    renderer,
+    review.selectedHunk,
+    selectedFile,
+    showSessionNotice,
+    triggerRefreshCurrentInput,
+  ]);
 
   useEffect(() => {
     if (!watchEnabled) {
@@ -441,6 +645,28 @@ export function App({
     setShowHelp(false);
   }, []);
 
+  /** Close the agent skill setup overlay. */
+  const closeAgentSkill = useCallback(() => {
+    setShowAgentSkill(false);
+  }, []);
+
+  /** Open the agent skill setup overlay. */
+  const openAgentSkill = useCallback(() => {
+    setShowAgentSkill(true);
+  }, []);
+
+  /** Copy the agent skill prompt through the terminal clipboard integration. */
+  const copyAgentSkillPrompt = useCallback(async () => {
+    const { AGENT_SKILL_PROMPT } = await import("./components/chrome/AgentSkillDialog");
+    if (renderer.isOsc52Supported?.() && typeof renderer.copyToClipboardOSC52 === "function") {
+      renderer.copyToClipboardOSC52(AGENT_SKILL_PROMPT);
+      showTransientNotice("Copied agent skill prompt to clipboard");
+      return;
+    }
+
+    showTransientNotice("Clipboard copy unsupported in this terminal (enable OSC 52)");
+  }, [renderer, showTransientNotice]);
+
   /** Toggle the modal keyboard help overlay. */
   const toggleHelp = useCallback(() => {
     setShowHelp((current) => !current);
@@ -461,17 +687,48 @@ export function App({
     setFocusArea((current) => (current === "files" ? "filter" : "files"));
   }, []);
 
-  /** Cycle through the available built-in themes. */
-  const cycleTheme = useCallback(() => {
-    const currentIndex = THEMES.findIndex((theme) => theme.id === activeTheme.id);
-    const nextIndex = (currentIndex + 1) % THEMES.length;
-    setThemeId(THEMES[nextIndex]!.id);
-  }, [activeTheme.id]);
+  /** Start a user-authored inline note and move keyboard focus into it. */
+  const startUserNote = useCallback(
+    (fileId?: string, hunkIndex?: number, target?: UserNoteLineTarget) => {
+      const hoverTarget = fileId === undefined ? activeAddNoteTarget : null;
+      const draft = review.startUserNote(
+        fileId ?? hoverTarget?.fileId,
+        hunkIndex ?? hoverTarget?.hunkIndex,
+        target ?? hoverTarget?.target,
+      );
+      if (draft) {
+        setActiveAddNoteTarget(null);
+        setFocusArea("note");
+      }
+    },
+    [activeAddNoteTarget, review.startUserNote],
+  );
+
+  /** Mark the inline draft note textarea as the active keyboard input. */
+  const focusDraftNote = useCallback(() => {
+    setFocusArea("note");
+  }, []);
+
+  /** Return keyboard focus to review navigation when the draft textarea loses focus. */
+  const blurDraftNote = useCallback(() => {
+    setFocusArea((current) => (current === "note" ? "files" : current));
+  }, []);
+
+  /** Save the active draft note and return focus to review navigation. */
+  const saveDraftNote = useCallback(() => {
+    review.saveDraftNote();
+    setFocusArea("files");
+  }, [review.saveDraftNote]);
+
+  /** Cancel the active draft note and return focus to review navigation. */
+  const cancelDraftNote = useCallback(() => {
+    review.cancelDraftNote();
+    setFocusArea("files");
+  }, [review.cancelDraftNote]);
 
   const menus = useMemo(
     () =>
       buildAppMenus({
-        activeThemeId: activeTheme.id,
         canRefreshCurrentInput,
         focusFilter,
         layoutMode,
@@ -481,32 +738,39 @@ export function App({
         refreshCurrentInput: triggerRefreshCurrentInput,
         requestQuit,
         selectLayoutMode,
-        selectThemeId: setThemeId,
+        openThemeSelector,
+        copyDecorations,
         showAgentNotes,
         showHelp,
         showHunkHeaders,
         showLineNumbers,
         renderSidebar,
+        toggleCopyDecorations,
         toggleAgentNotes,
         toggleFocusArea,
+        openAgentSkill,
         toggleHelp,
         toggleHunkHeaders,
         toggleLineNumbers,
         toggleLineWrap,
         toggleSidebar,
+        triggerEditSelectedFile,
         wrapLines,
       }),
     [
-      activeTheme.id,
       canRefreshCurrentInput,
+      copyDecorations,
       focusFilter,
       layoutMode,
       moveToAnnotatedFile,
       moveToAnnotatedHunk,
       requestQuit,
       review.moveToHunk,
+      openAgentSkill,
       selectLayoutMode,
+      openThemeSelector,
       triggerRefreshCurrentInput,
+      toggleCopyDecorations,
       showAgentNotes,
       showHelp,
       showHunkHeaders,
@@ -519,6 +783,7 @@ export function App({
       toggleLineNumbers,
       toggleLineWrap,
       toggleSidebar,
+      triggerEditSelectedFile,
       wrapLines,
     ],
   );
@@ -550,30 +815,42 @@ export function App({
     activeMenuId,
     activateCurrentMenuItem,
     canRefreshCurrentInput,
+    closeAgentSkill,
     closeHelp,
     closeMenu,
-    cycleTheme,
+    acceptThemeSelector,
+    cancelDraftNote,
+    closeThemeSelector,
     focusArea,
     focusFilter,
     keymap,
     moveToAnnotatedHunk,
+    moveToFile,
     moveToHunk: review.moveToHunk,
     moveMenuItem,
+    moveThemeSelector,
     openMenu,
+    openThemeSelector,
     pagerMode,
     requestQuit,
     scrollCodeHorizontally,
+    saveDraftNote,
     scrollDiff,
     selectLayoutMode,
+    showAgentSkill,
     showHelp,
+    startUserNote: () => startUserNote(),
     switchMenu,
+    themeSelectorOpen: themeSelectorState.open,
     toggleAgentNotes,
     toggleFocusArea,
+    toggleGapForSelectedHunk: review.toggleSelectedHunkGap,
     toggleHelp,
     toggleHunkHeaders,
     toggleLineNumbers,
     toggleLineWrap,
     toggleSidebar,
+    triggerEditSelectedFile,
     triggerRefreshCurrentInput,
   });
 
@@ -634,6 +911,11 @@ export function App({
   const diffHeaderStatsWidth = Math.min(24, Math.max(16, Math.floor(diffContentWidth / 3)));
   const diffHeaderLabelWidth = Math.max(8, diffContentWidth - diffHeaderStatsWidth - 1);
   const diffSeparatorWidth = Math.max(4, diffContentWidth - 2);
+  // Mirror the App layout: bodyPadding/2 left-padding, then sidebar + divider when visible. Keep
+  // this in lockstep with the body container's paddingLeft and the sidebar render branch below.
+  const diffPaneScreenLeft =
+    bodyPadding / 2 + (renderSidebar ? clampedSidebarWidth + DIVIDER_WIDTH : 0);
+  const diffPaneScreenTop = pagerMode ? 0 : 1;
 
   return (
     <box
@@ -672,10 +954,14 @@ export function App({
           position: "relative",
         }}
         onMouseDrag={updateSidebarResize}
-        onMouseDragEnd={endSidebarResize}
+        onMouseDragEnd={(event) => {
+          endSidebarResize(event);
+          cancelCopySelectionRef.current?.();
+        }}
         onMouseUp={(event) => {
           endSidebarResize(event);
           closeMenu();
+          cancelCopySelectionRef.current?.();
         }}
       >
         {renderSidebar ? (
@@ -687,6 +973,7 @@ export function App({
               textWidth={sidebarTextWidth}
               theme={activeTheme}
               width={clampedSidebarWidth}
+              estimatedViewportRows={terminal.height}
               onSelectFile={(fileId) => {
                 focusFiles();
                 jumpToFile(fileId, 0, { alignFileHeaderTop: true });
@@ -707,10 +994,15 @@ export function App({
         ) : null}
 
         <DiffPane
+          cancelCopySelectionRef={cancelCopySelectionRef}
           codeHorizontalOffset={codeHorizontalOffset}
+          copyDecorations={copyDecorations}
           diffContentWidth={diffContentWidth}
+          expandedGapsByFileId={review.expandedGapsByFileId}
           files={filteredFiles}
           pagerMode={pagerMode}
+          screenLeft={diffPaneScreenLeft}
+          screenTop={diffPaneScreenTop}
           headerLabelWidth={diffHeaderLabelWidth}
           headerStatsWidth={diffHeaderStatsWidth}
           layout={resolvedLayout}
@@ -718,10 +1010,13 @@ export function App({
           selectedFileId={selectedFile?.id}
           selectedHunkIndex={selectedHunkIndex}
           scrollToNote={review.scrollToNote}
+          draftNote={review.draftNote}
+          draftNoteFocused={focusArea === "note"}
           separatorWidth={diffSeparatorWidth}
           showAgentNotes={showAgentNotes}
           showLineNumbers={showLineNumbers}
           showHunkHeaders={showHunkHeaders}
+          sourceStatusByFileId={review.sourceStatusByFileId}
           wrapLines={wrapLines}
           wrapToggleScrollTop={wrapToggleScrollTopRef.current}
           layoutToggleScrollTop={layoutToggleScrollTopRef.current}
@@ -730,22 +1025,34 @@ export function App({
           selectedHunkRevealRequestId={review.selectedHunkRevealRequestId}
           theme={activeTheme}
           width={diffPaneWidth}
-          onOpenAgentNotesAtHunk={openAgentNotesAtHunk}
+          onActiveAddNoteAffordanceChange={setActiveAddNoteTarget}
+          onRemoveUserNote={review.removeUserNote}
+          onSaveDraftNote={saveDraftNote}
+          onStartUserNoteAtHunk={startUserNote}
+          onUpdateDraftNote={review.updateDraftNote}
+          onBlurDraftNote={blurDraftNote}
+          onCancelDraftNote={cancelDraftNote}
+          onFocusDraftNote={focusDraftNote}
           onScrollCodeHorizontally={(delta) => {
             scrollCodeHorizontally(delta * FAST_CODE_HORIZONTAL_SCROLL_COLUMNS);
           }}
+          onCopyFeedback={showTransientNotice}
           onSelectFile={jumpToFile}
+          onToggleGap={review.toggleGap}
           onViewportCenteredHunkChange={(fileId, hunkIndex) =>
             review.selectHunk(fileId, hunkIndex, { preserveViewport: true })
           }
         />
       </box>
 
-      {!pagerMode && (focusArea === "filter" || Boolean(review.filter) || Boolean(noticeText)) ? (
+      {!pagerMode &&
+      (focusArea === "filter" ||
+        Boolean(review.filter) ||
+        Boolean(sessionNoticeText ?? transientNoticeText ?? noticeText)) ? (
         <StatusBar
           filter={review.filter}
           filterFocused={focusArea === "filter"}
-          noticeText={noticeText ?? undefined}
+          noticeText={sessionNoticeText ?? transientNoticeText ?? noticeText ?? undefined}
           terminalWidth={terminal.width}
           theme={activeTheme}
           onCloseMenu={closeMenu}
@@ -763,12 +1070,25 @@ export function App({
             activeMenuSpec={activeMenuSpec}
             activeMenuWidth={activeMenuWidth}
             terminalWidth={terminal.width}
-            theme={activeTheme}
+            theme={baseTheme}
             onHoverItem={setActiveMenuItemIndex}
             onSelectItem={(entry) => {
               entry.action();
               closeMenu();
             }}
+          />
+        </Suspense>
+      ) : null}
+
+      {!pagerMode && showAgentSkill ? (
+        <Suspense fallback={null}>
+          <LazyAgentSkillDialog
+            copySupported={renderer.isOsc52Supported?.() ?? false}
+            terminalHeight={terminal.height}
+            terminalWidth={terminal.width}
+            theme={baseTheme}
+            onClose={closeAgentSkill}
+            onCopyPrompt={copyAgentSkillPrompt}
           />
         </Suspense>
       ) : null}
@@ -780,8 +1100,23 @@ export function App({
             keymap={keymap}
             terminalHeight={terminal.height}
             terminalWidth={terminal.width}
-            theme={activeTheme}
+            theme={baseTheme}
             onClose={closeHelp}
+          />
+        </Suspense>
+      ) : null}
+
+      {!pagerMode && themeSelectorState.open ? (
+        <Suspense fallback={null}>
+          <LazyThemeSelectorDialog
+            items={themeSelectorItems}
+            selectedIndex={themeSelectorState.selectedIndex}
+            terminalHeight={terminal.height}
+            terminalWidth={terminal.width}
+            theme={baseTheme}
+            onClose={closeThemeSelector}
+            onPickItem={pickThemeSelectorItem}
+            onScroll={moveThemeSelector}
           />
         </Suspense>
       ) : null}

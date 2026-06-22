@@ -1,9 +1,7 @@
 import type { LayoutMode } from "../../core/types";
 import type { MenuEntry, MenuId } from "../components/chrome/menu";
-import { THEMES } from "../themes";
 
 export interface BuildAppMenusOptions {
-  activeThemeId: string;
   canRefreshCurrentInput: boolean;
   focusFilter: () => void;
   layoutMode: LayoutMode;
@@ -13,25 +11,28 @@ export interface BuildAppMenusOptions {
   refreshCurrentInput: () => void;
   requestQuit: () => void;
   selectLayoutMode: (mode: LayoutMode) => void;
-  selectThemeId: (themeId: string) => void;
+  openThemeSelector: () => void;
+  copyDecorations: boolean;
   showAgentNotes: boolean;
   showHelp: boolean;
   showHunkHeaders: boolean;
   showLineNumbers: boolean;
   renderSidebar: boolean;
+  toggleCopyDecorations: () => void;
   toggleAgentNotes: () => void;
   toggleFocusArea: () => void;
+  openAgentSkill: () => void;
   toggleHelp: () => void;
   toggleHunkHeaders: () => void;
   toggleLineNumbers: () => void;
   toggleLineWrap: () => void;
   toggleSidebar: () => void;
+  triggerEditSelectedFile: () => void;
   wrapLines: boolean;
 }
 
 /** Build the top-level app menus from the current app state and actions. */
 export function buildAppMenus({
-  activeThemeId,
   canRefreshCurrentInput,
   focusFilter,
   layoutMode,
@@ -41,28 +42,25 @@ export function buildAppMenus({
   refreshCurrentInput,
   requestQuit,
   selectLayoutMode,
-  selectThemeId,
+  openThemeSelector,
+  copyDecorations,
   showAgentNotes,
   showHelp,
   showHunkHeaders,
   showLineNumbers,
   renderSidebar,
+  toggleCopyDecorations,
   toggleAgentNotes,
   toggleFocusArea,
+  openAgentSkill,
   toggleHelp,
   toggleHunkHeaders,
   toggleLineNumbers,
   toggleLineWrap,
   toggleSidebar,
+  triggerEditSelectedFile,
   wrapLines,
 }: BuildAppMenusOptions): Record<MenuId, MenuEntry[]> {
-  const themeMenuEntries: MenuEntry[] = THEMES.map((theme) => ({
-    kind: "item",
-    label: theme.label,
-    checked: theme.id === activeThemeId,
-    action: () => selectThemeId(theme.id),
-  }));
-
   const fileMenuEntries: MenuEntry[] = [
     {
       kind: "item",
@@ -75,6 +73,12 @@ export function buildAppMenus({
       label: "Focus filter",
       hint: "/",
       action: focusFilter,
+    },
+    {
+      kind: "item",
+      label: "Open file in editor",
+      hint: "e",
+      action: triggerEditSelectedFile,
     },
   ];
 
@@ -132,6 +136,13 @@ export function buildAppMenus({
       { kind: "separator" },
       {
         kind: "item",
+        label: "Themes…",
+        hint: "t",
+        action: openThemeSelector,
+      },
+      { kind: "separator" },
+      {
+        kind: "item",
         label: "Agent notes",
         hint: "a",
         checked: showAgentNotes,
@@ -157,6 +168,12 @@ export function buildAppMenus({
         hint: "m",
         checked: showHunkHeaders,
         action: toggleHunkHeaders,
+      },
+      {
+        kind: "item",
+        label: "Copy decorations",
+        checked: copyDecorations,
+        action: toggleCopyDecorations,
       },
     ],
     navigate: [
@@ -193,7 +210,6 @@ export function buildAppMenus({
         action: focusFilter,
       },
     ],
-    theme: themeMenuEntries,
     agent: [
       {
         kind: "item",
@@ -202,6 +218,12 @@ export function buildAppMenus({
         checked: showAgentNotes,
         action: toggleAgentNotes,
       },
+      {
+        kind: "item",
+        label: "Agent skill",
+        action: openAgentSkill,
+      },
+      { kind: "separator" },
       {
         kind: "item",
         label: "Next annotated file",

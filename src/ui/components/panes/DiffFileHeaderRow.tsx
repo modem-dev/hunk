@@ -55,6 +55,7 @@ export function DiffFileHeaderRow({
         <text fg={theme.badgeAdded}>{additionsText}</text>
         <text fg={theme.muted}> </text>
         <text fg={theme.badgeRemoved}>{deletionsText}</text>
+        <text fg={theme.muted}> </text>
       </box>
     </box>
   );

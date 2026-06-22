@@ -96,6 +96,30 @@ export function findFileSectionAtOffset(fileSectionLayouts: FileSectionLayout[],
   return lastSection;
 }
 
+/** Find the first section whose bottom edge can intersect a range starting at `minY`. */
+function findFirstPotentiallyIntersectingSectionIndex(
+  fileSectionLayouts: FileSectionLayout[],
+  minY: number,
+) {
+  let low = 0;
+  let high = fileSectionLayouts.length - 1;
+  let result = fileSectionLayouts.length;
+
+  while (low <= high) {
+    const mid = (low + high) >>> 1;
+    const layout = fileSectionLayouts[mid]!;
+
+    if (layout.sectionBottom >= minY) {
+      result = mid;
+      high = mid - 1;
+    } else {
+      low = mid + 1;
+    }
+  }
+
+  return result;
+}
+
 /** Collect every file section that intersects one absolute review-stream range. */
 export function collectIntersectingFileSectionIds(
   fileSectionLayouts: FileSectionLayout[],
@@ -103,11 +127,20 @@ export function collectIntersectingFileSectionIds(
   maxY: number,
 ) {
   const next = new Set<string>();
+  if (fileSectionLayouts.length === 0 || maxY < minY) {
+    return next;
+  }
 
-  for (const layout of fileSectionLayouts) {
-    if (layout.sectionBottom >= minY && layout.sectionTop <= maxY) {
-      next.add(layout.fileId);
+  // Layouts are ordered by stream position. Binary-search to the first section that can overlap
+  // the range, then only walk the visible/overscan run instead of every file in huge reviews.
+  const startIndex = findFirstPotentiallyIntersectingSectionIndex(fileSectionLayouts, minY);
+  for (let index = startIndex; index < fileSectionLayouts.length; index += 1) {
+    const layout = fileSectionLayouts[index]!;
+    if (layout.sectionTop > maxY) {
+      break;
     }
+
+    next.add(layout.fileId);
   }
 
   return next;

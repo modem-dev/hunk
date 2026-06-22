@@ -20,7 +20,10 @@ export interface HunkSessionBridgeHandlers {
     requestId: string,
     options?: { revealMode?: "none" | "first" },
   ) => AppliedCommentBatchResult;
-  clearLiveComments: (filePath?: string) => ClearedCommentsResult;
+  clearLiveComments: (
+    filePath?: string,
+    options?: { includeUser?: boolean },
+  ) => ClearedCommentsResult;
   navigateToLocation: (
     input: Extract<HunkSessionServerMessage, { command: "navigate_to_hunk" }>["input"],
   ) => NavigatedSelectionResult;
@@ -30,7 +33,7 @@ export interface HunkSessionBridgeHandlers {
       HunkSessionServerMessage,
       { command: "reload_session" }
     >["input"]["nextInput"],
-    options?: { sourcePath?: string },
+    options?: { resetApp?: boolean; sourcePath?: string },
   ) => Promise<ReloadedSessionResult>;
   removeLiveComment: (commentId: string) => RemovedCommentResult;
 }
@@ -68,12 +71,15 @@ export function createHunkSessionBridge(handlers: HunkSessionBridgeHandlers) {
           return handlers.navigateToLocation(message.input);
         case "reload_session":
           return handlers.reloadSession(message.input.nextInput, {
+            resetApp: false,
             sourcePath: message.input.sourcePath,
           });
         case "remove_comment":
           return handlers.removeLiveComment(message.input.commentId);
         case "clear_comments":
-          return handlers.clearLiveComments(message.input.filePath);
+          return handlers.clearLiveComments(message.input.filePath, {
+            includeUser: message.input.includeUser,
+          });
       }
     },
   };

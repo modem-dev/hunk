@@ -11,12 +11,15 @@ import {
 } from "../components/chrome/menu";
 import { buildAgentPopoverContent, resolveAgentPopoverPlacement, wrapText } from "./agentPopover";
 import { buildAppMenus } from "./appMenus";
-import { isEscapeKey } from "../../core/keyboard";
+import { isCreateReviewNoteKey, isEscapeKey, isSaveDraftNoteKey } from "../../core/keyboard";
 import { loadKeymapDefaults } from "../../core/keymap/load";
 import { matchesAction } from "../../core/keymap/match";
-import { fitText, padText } from "./text";
+import { fitText, measureTextWidth, padText, sliceTextByWidth } from "./text";
 import { computeHunkRevealScrollTop } from "./hunkScroll";
-import { estimateDiffSectionBodyRows, measureDiffSectionGeometry } from "./diffSectionGeometry";
+import {
+  estimateDiffSectionBodyRows,
+  measureDiffSectionGeometry,
+} from "../diff/diffSectionGeometry";
 import { resizeSidebarWidth } from "./sidebar";
 import { resolveTheme } from "../themes";
 
@@ -69,21 +72,13 @@ describe("ui helpers", () => {
   test("buildMenuSpecs lays out the fixed top-level order", () => {
     const specs = buildMenuSpecs();
 
-    expect(specs.map((spec) => spec.id)).toEqual([
-      "file",
-      "view",
-      "navigate",
-      "theme",
-      "agent",
-      "help",
-    ]);
+    expect(specs.map((spec) => spec.id)).toEqual(["file", "view", "navigate", "agent", "help"]);
     expect(specs).toMatchObject([
       { id: "file", left: 1, width: 6, label: "File" },
       { id: "view", left: 7, width: 6, label: "View" },
       { id: "navigate", left: 13, width: 10, label: "Navigate" },
-      { id: "theme", left: 23, width: 7, label: "Theme" },
-      { id: "agent", left: 30, width: 7, label: "Agent" },
-      { id: "help", left: 37, width: 6, label: "Help" },
+      { id: "agent", left: 23, width: 7, label: "Agent" },
+      { id: "help", left: 30, width: 6, label: "Help" },
     ]);
   });
 
@@ -103,9 +98,21 @@ describe("ui helpers", () => {
 
   test("menuWidth and menuBoxHeight account for checks and hints", () => {
     const entries: MenuEntry[] = [
-      { kind: "item", label: "Split view", hint: "1", checked: true, action: () => {} },
+      {
+        kind: "item",
+        label: "Split view",
+        hint: "1",
+        checked: true,
+        action: () => {},
+      },
       { kind: "separator" },
-      { kind: "item", label: "Line numbers", hint: "l", checked: false, action: () => {} },
+      {
+        kind: "item",
+        label: "Line numbers",
+        hint: "l",
+        checked: false,
+        action: () => {},
+      },
     ];
 
     expect(menuWidth(entries)).toBeGreaterThanOrEqual(18);
@@ -114,7 +121,6 @@ describe("ui helpers", () => {
 
   test("buildAppMenus creates checked entries from the current app state", () => {
     const menus = buildAppMenus({
-      activeThemeId: "graphite",
       canRefreshCurrentInput: true,
       focusFilter: () => {},
       layoutMode: "stack",
@@ -124,19 +130,23 @@ describe("ui helpers", () => {
       refreshCurrentInput: () => {},
       requestQuit: () => {},
       selectLayoutMode: () => {},
-      selectThemeId: () => {},
+      openThemeSelector: () => {},
+      copyDecorations: true,
       showAgentNotes: true,
       showHelp: false,
       showHunkHeaders: false,
       showLineNumbers: true,
       renderSidebar: false,
+      toggleCopyDecorations: () => {},
       toggleAgentNotes: () => {},
       toggleFocusArea: () => {},
+      openAgentSkill: () => {},
       toggleHelp: () => {},
       toggleHunkHeaders: () => {},
       toggleLineNumbers: () => {},
       toggleLineWrap: () => {},
       toggleSidebar: () => {},
+      triggerEditSelectedFile: () => {},
       wrapLines: true,
     });
 
@@ -144,7 +154,13 @@ describe("ui helpers", () => {
       menus.file
         .filter((entry): entry is Extract<MenuEntry, { kind: "item" }> => entry.kind === "item")
         .map((entry) => entry.label),
-    ).toEqual(["Toggle files/filter focus", "Focus filter", "Reload", "Quit"]);
+    ).toEqual([
+      "Toggle files/filter focus",
+      "Focus filter",
+      "Open file in editor",
+      "Reload",
+      "Quit",
+    ]);
     expect(menus.file[0]).toMatchObject({
       kind: "item",
       label: "Toggle files/filter focus",
@@ -157,17 +173,17 @@ describe("ui helpers", () => {
             entry.kind === "item" && Boolean(entry.checked),
         )
         .map((entry) => entry.label),
-    ).toEqual(["Stacked view", "Agent notes", "Line numbers", "Line wrapping"]);
+    ).toEqual(["Stacked view", "Agent notes", "Line numbers", "Line wrapping", "Copy decorations"]);
     expect(
-      menus.theme
+      menus.view
         .filter((entry): entry is Extract<MenuEntry, { kind: "item" }> => entry.kind === "item")
         .map((entry) => entry.label),
-    ).toEqual(["Graphite", "Midnight", "Paper", "Ember"]);
+    ).toContain("Themes…");
     expect(
-      menus.theme.some(
-        (entry) => entry.kind === "item" && entry.label === "Graphite" && entry.checked,
-      ),
-    ).toBe(true);
+      menus.agent
+        .filter((entry): entry is Extract<MenuEntry, { kind: "item" }> => entry.kind === "item")
+        .map((entry) => entry.label),
+    ).toEqual(["Agent notes", "Agent skill", "Next annotated file", "Previous annotated file"]);
   });
 
   test("default keymap covers the shared scroll shortcut keys", () => {
@@ -221,12 +237,67 @@ describe("ui helpers", () => {
     ).toBe(false);
   });
 
+  test("review note shortcut only matches unmodified c", () => {
+    expect(isCreateReviewNoteKey(createKeyEvent({ name: "c" }))).toBe(true);
+    expect(isCreateReviewNoteKey(createKeyEvent({ sequence: "c" }))).toBe(true);
+    expect(isCreateReviewNoteKey(createKeyEvent({ name: "C", shift: true }))).toBe(false);
+    expect(isCreateReviewNoteKey(createKeyEvent({ name: "c", ctrl: true }))).toBe(false);
+    expect(isCreateReviewNoteKey(createKeyEvent({ name: "c", meta: true }))).toBe(false);
+    expect(isCreateReviewNoteKey(createKeyEvent({ name: "c", option: true }))).toBe(false);
+  });
+
+  test("save-draft-note shortcut matches Ctrl-S across raw, CSI-u, and tmux encodings", () => {
+    const CTRL_S = "\u0013";
+    const CTRL_S_CSI_U = "\u001b[115;5u";
+
+    // Modifier-flagged Ctrl-S from terminals that report ctrl + the letter.
+    expect(isSaveDraftNoteKey(createKeyEvent({ ctrl: true, name: "s" }))).toBe(true);
+    expect(isSaveDraftNoteKey(createKeyEvent({ ctrl: true, sequence: "s" }))).toBe(true);
+    // Raw control byte with no modifier flag set (sequence or raw channel).
+    expect(isSaveDraftNoteKey(createKeyEvent({ sequence: CTRL_S }))).toBe(true);
+    expect(isSaveDraftNoteKey(createKeyEvent({ raw: CTRL_S }))).toBe(true);
+    // Kitty/CSI-u encoding on either channel.
+    expect(isSaveDraftNoteKey(createKeyEvent({ sequence: CTRL_S_CSI_U }))).toBe(true);
+    expect(isSaveDraftNoteKey(createKeyEvent({ raw: CTRL_S_CSI_U }))).toBe(true);
+    // Unmodified s and other ctrl chords must not save.
+    expect(isSaveDraftNoteKey(createKeyEvent({ name: "s" }))).toBe(false);
+    expect(isSaveDraftNoteKey(createKeyEvent({ ctrl: true, name: "x" }))).toBe(false);
+  });
+
   test("fitText and padText clamp using the terminal fallback marker", () => {
     expect(fitText("hello", 0)).toBe("");
     expect(fitText("hello", 1)).toBe(".");
     expect(fitText("hello", 4)).toBe("hel.");
     expect(padText("hello", 4)).toBe("hel.");
     expect(padText("ok", 4)).toBe("ok  ");
+  });
+
+  test("text helpers measure and slice wide characters by terminal cells", () => {
+    expect(measureTextWidth("日本語")).toBe(6);
+    expect(sliceTextByWidth("a日本b", 1, 4)).toEqual({ text: "日本", width: 4 });
+    expect(sliceTextByWidth("a日本b", 2, 4)).toEqual({ text: " 本b", width: 4 });
+    expect(sliceTextByWidth("日本b", 3, 3)).toEqual({ text: " b", width: 2 });
+    expect(sliceTextByWidth("日", 1, 1)).toEqual({ text: " ", width: 1 });
+    expect(fitText("日本語", 5)).toBe("日本.");
+    expect(measureTextWidth(padText("日本", 6))).toBe(6);
+  });
+
+  test("repeated single-character runs use the fast width path without losing correctness", () => {
+    // Chrome glyph separators: single-cell non-ASCII characters repeated to fill a row.
+    expect(measureTextWidth("─".repeat(240))).toBe(240);
+    expect(fitText("─".repeat(240), 240)).toBe("─".repeat(240));
+    expect(fitText("─".repeat(300), 240)).toBe(`${"─".repeat(239)}.`);
+
+    // A repeated wide (CJK) character must still count two cells per character.
+    expect(measureTextWidth("好".repeat(120))).toBe(240);
+    expect(fitText("好".repeat(4), 6)).toBe("好好.");
+
+    // Surrogate-pair runs (emoji) skip the fast path and stay correct via string-width.
+    expect(measureTextWidth("👍".repeat(3))).toBe(6);
+
+    // Zero-width combining marks defer to string-width instead of multiplying to a bogus width.
+    expect(measureTextWidth("\u0301".repeat(4))).toBe(0);
+    expect(measureTextWidth("e\u0301")).toBe(1);
   });
 
   test("agent popover helpers wrap text and right-align the card within the viewport", () => {
@@ -280,7 +351,7 @@ describe("ui helpers", () => {
 
   test("estimateDiffSectionBodyRows matches split and stack row counts from the render plan", async () => {
     const file = createDiffFile();
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
 
     expect(estimateDiffSectionBodyRows(file, "split", true, theme)).toBeGreaterThan(0);
     expect(estimateDiffSectionBodyRows(file, "stack", true, theme)).toBeGreaterThan(
@@ -322,7 +393,7 @@ describe("ui helpers", () => {
         "const line12 = 12;",
       ),
     );
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const metrics = measureDiffSectionGeometry(file, "split", false, theme);
 
     expect(metrics.bodyHeight).toBeGreaterThan(0);
@@ -337,7 +408,7 @@ describe("ui helpers", () => {
 
   test("measureDiffSectionGeometry includes visible inline note rows in split mode", () => {
     const file = createDiffFile();
-    const theme = resolveTheme("midnight", null);
+    const theme = resolveTheme("github-dark-default", null);
     const baseGeometry = measureDiffSectionGeometry(file, "split", true, theme);
     const noteGeometry = measureDiffSectionGeometry(
       file,
@@ -380,14 +451,38 @@ describe("ui helpers", () => {
     ).toBe(16);
   });
 
-  test("resolveTheme falls back by requested id to graphite while lazily exposing syntax styles", () => {
-    const midnight = resolveTheme("midnight", null);
+  test("resolveTheme falls back to GitHub defaults while lazily exposing syntax styles", () => {
+    const dracula = resolveTheme("dracula", null);
     const missingLight = resolveTheme("missing", "light");
     const missingDark = resolveTheme("missing", "dark");
+    const autoLight = resolveTheme("auto", "light");
+    const autoDark = resolveTheme("auto", "dark");
+    const custom = resolveTheme("custom", null, {
+      base: "github-light-default",
+      label: "My Theme",
+      accent: "#7755aa",
+      syntax: {
+        keyword: "#123456",
+      },
+    });
+    const missingCustom = resolveTheme("custom", null);
 
-    expect(midnight.id).toBe("midnight");
-    expect(missingLight.id).toBe("graphite");
-    expect(missingDark.id).toBe("graphite");
-    expect(resolveTheme("ember", null).syntaxStyle).toBeDefined();
+    expect(dracula.id).toBe("dracula");
+    expect(missingLight.id).toBe("github-light-default");
+    expect(missingDark.id).toBe("github-dark-default");
+    expect(autoLight.id).toBe("github-light-default");
+    expect(autoDark.id).toBe("github-dark-default");
+    expect(custom.id).toBe("custom");
+    expect(custom.label).toBe("My Theme");
+    expect(custom.appearance).toBe("light");
+    expect(custom.accent).toBe("#7755aa");
+    expect(custom.syntaxColors.keyword).toBe("#123456");
+    expect(missingCustom.id).toBe("github-dark-default");
+    expect(resolveTheme("github-dark-default", null).syntaxStyle).toBeDefined();
+    expect(custom.syntaxStyle).toBeDefined();
+    expect(resolveTheme("catppuccin-latte", null).syntaxStyle).toBeDefined();
+    expect(resolveTheme("catppuccin-frappe", null).syntaxStyle).toBeDefined();
+    expect(resolveTheme("catppuccin-macchiato", null).syntaxStyle).toBeDefined();
+    expect(resolveTheme("catppuccin-mocha", null).syntaxStyle).toBeDefined();
   });
 });

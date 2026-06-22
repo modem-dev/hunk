@@ -1,14 +1,182 @@
 # Changelog
 
-All notable user-visible changes to Hunk are documented in this file.
+## 0.16.0
 
-## [Unreleased]
+### Minor Changes
+
+- 8ffe0ba: Refresh Hunk's built-in theme system, default to `github-dark-default`, and simplify theme selection around one `theme` setting with `View -> Themes…` / `t` opening the selector. Custom themes can inherit from any built-in theme with `custom_theme.base` while keeping explicit syntax color overrides, and removed theme ids such as `graphite` and `paper` remain accepted as compatibility aliases.
+
+### Patch Changes
+
+- 4bef148: Allow session comment cleanup commands to remove human `c` notes: `comment rm` accepts `user:*` note ids, and `comment clear --include-user`/`--all` clears user notes alongside live agent comments.
+- 48b97ac: Adopt Changesets for release-note fragments so pull requests can avoid conflicting `CHANGELOG.md` edits.
+- c0cf637: Prevent standalone Hunk binaries from loading `bunfig.toml` files from the caller's working directory.
+- c28c266: Improve React review-stream responsiveness by reducing offscreen file mounting work while preserving adjacent highlight prefetching.
+- 3906f39: Honor explicit split layout mode in static pager output for captured hosts like LazyGit.
+- 8ffe0ba: Improve generated theme contrast checks for built-in themes, including diff rows, metadata, chrome, and fallback token colors.
+- 59fcdbb: Require an explicit click or keyboard action before previewing a theme from the theme selector, while keeping mouse-wheel navigation available inside the selector.
+
+## [0.15.3] - 2026-06-13
+
+### Added
+
+- Added release benchmark snapshots and a release workflow gate that blocks publishing when committed benchmark results show material performance regressions, with auditable accepted-regression records for intentional release tradeoffs.
+
+### Changed
+
+### Fixed
+
+- Fixed Windows launches from Cygwin, Git Bash, and WSL-style VCS paths by normalizing Unix-style repo roots before reusing them as subprocess working directories or filesystem roots.
+- Fixed release staging so benchmark comparison artifacts are not mistaken for platform binary artifacts.
+- Reduced hunk-navigation latency and memory growth on large reviews by keeping diff geometry memoized when the selected hunk changes.
+- Reduced scroll and hunk-navigation latency on large reviews by avoiding repeated separator measurement and preserving memoized offscreen/visible diff rows across viewport updates.
+- Reduced main diff pane rendering work on large reviews by virtualizing offscreen file sections behind exact-height spacers.
+- Reduced sidebar rendering work on many-file reviews by virtualizing offscreen file rows behind exact-height spacers.
+
+## [0.15.2] - 2026-06-13
+
+### Added
+
+### Changed
+
+- Coalesced scroll-position React updates into a single per-frame read and shifted background syntax highlighting from microtasks to timers, so rapid wheel or held-arrow scrolling no longer produces visible jank from per-delta state updates or per-file highlight work starving input and render callbacks.
+
+### Fixed
+
+- Honored `--transparent-bg` and `transparent_background` in static pager output, so captured pager hosts like LazyGit let translucent terminal backgrounds through on context lines, gutters, and hunk headers while added/removed rows keep their tinted backgrounds.
+- Kept menu dropdowns and the help dialog on the base theme in transparent-background mode so popups remain readable over translucent terminals.
+- Resolved `hunk session ... --repo <path>` selectors to the containing repo root before matching, so `--repo .` (and any path inside the tree) targets the live session from a subdirectory instead of reporting no match.
+
+## [0.15.1] - 2026-06-09
+
+### Fixed
+
+- Restored the `e` keyboard shortcut and menu hint for opening the selected file in `$EDITOR`.
+- Added timeouts to `hunk session *` daemon capability and API calls so unresponsive daemons fail instead of hanging indefinitely.
+- Updated OpenTUI so light and dark theme backgrounds render without the native renderer's color shift.
+- Prevented Git watch polling from taking optional index locks while discovering untracked files.
+
+## [0.15.0] - 2026-06-08
+
+### Added
+
+- Show the newly selected theme in the footer status bar when switching themes.
+- Added Catppuccin Frappé and Macchiato as built-in themes, completing the four official Catppuccin flavors.
+- Added a Zenburn built-in theme (`theme = "zenburn"`), a warm low-contrast dark palette inspired by Jani Nurminen's original Zenburn. It also works as a custom-theme `base`.
+- Added a `--transparent-bg` flag and `transparent_background` config option for translucent terminal setups.
+- Added Sapling VCS backend support for `hunk diff` and `hunk show`.
+
+### Changed
+
+### Fixed
+
+- Preserved split diff alignment when horizontal scrolling starts inside a wide CJK or emoji character.
+- Made diff syntax highlighting follow the active theme: keyword, function, number, and variable token colors now resolve to the configured theme's palette (including custom themes) in both light and dark, instead of passing through Pierre's built-in syntax colors.
+- Expanded the diff window during rapid scrolling bursts so large reviews keep real rows mounted instead of falling back to blank placeholder regions.
+
+## [0.14.1] - 2026-06-01
+
+### Added
+
+- Added local performance benchmarks for Hunk startup, loading, rendering, highlighting, navigation, memory, and optional competitor comparisons.
+
+### Changed
+
+### Fixed
+
+- Fixed npm installs by pinning `@pierre/diffs` to the version Hunk is tested with instead of allowing the broken `1.2.6` release.
+
+## [0.14.0] - 2026-05-26
+
+### Added
+
+- Added Catppuccin Latte and Mocha as built-in themes.
+- Added mouse-drag text selection in diff views that copies selected rows to the system clipboard via OSC 52. A `View > Copy decorations` toggle (or `copy_decorations` config) controls whether the clipboard includes diff rails, gutters, and file headers or only the changed code.
+- Added inline expansion for collapsed unchanged file content. Click an unchanged-context row (`▾ N unchanged lines` when expandable, otherwise the static `··· N unchanged lines ···` form) or press `e` while a hunk is selected to reveal surrounding and trailing file lines without leaving the review. The affordance is shown only for input modes that have reachable source content (`hunk diff`, `show`, `stash show`, file-pair `diff` and `difftool`, untracked files); raw `hunk patch` input still renders as before. Failed and in-flight loads surface a one-line status ("Loading…", "Could not load N unchanged lines") on the gap row. Expanded context rows use the same syntax highlighting as the surrounding diff.
+- Surfaced the agent author name in inline notes and the matching agent popover so multi-agent reviews are readable at a glance, with a fallback title when an annotation has no author.
+
+### Changed
+
+### Fixed
+
+- Preserved Git log ANSI colors when `hunk pager` falls back to a plain-text terminal pager for non-diff output.
+- Capped inline context expansion source reads so huge files cannot freeze or exhaust memory when expanding unchanged lines.
+- Hardened plain-text pager startup so `PAGER` and `HUNK_TEXT_PAGER` shell metacharacters are passed as arguments instead of being evaluated implicitly.
+- Hardened terminal rendering against control-sequence injection from diffs, file paths, notes, expanded context, copied selections, and pager fallback output.
+- Fixed custom theme configuration so Catppuccin Latte and Mocha can be used as base themes.
+- Fixed inline note draft shortcuts so copy chords such as Ctrl-C and Ctrl-Shift-C no longer trigger note actions.
+- Fixed split diff alignment for wide CJK and emoji characters by measuring rendered text in terminal cells.
+- Fixed Ctrl-S saving for inline notes when tmux sends CSI-u keyboard input.
+- Stabilized hover backgrounds on wrapped diff rows so add-note affordances do not shift row layout.
+- Restricted session reloads so daemon commands cannot read files outside the initial Hunk session root.
+- Fixed static pager output so captured pager hosts honor configured custom themes.
+- Made `hunk pager` pass non-diff text through in captured pager and dumb-terminal contexts instead of spawning `less`.
+- Fixed the `e` editor shortcut when Hunk is launched from a repo subdirectory.
+- Fixed VCS auto-detection so a Git repository nested under a parent Jujutsu workspace still uses Git mode by default.
+
+## [0.13.1] - 2026-05-19
+
+### Fixed
+
+- Hid the inline add-note affordance while scrolling and only show it after deliberate pointer movement, so it no longer flickers during review navigation.
+- Hardened the local session daemon against browser-originated requests by validating Host and Origin headers and requiring JSON content types for API posts.
+- Disabled the generic broker HTTP API by default so Hunk's supported session API is the only app-daemon command surface.
+- Bounded session daemon memory by capping HTTP request body and websocket message sizes and rejecting session registrations with oversized file, hunk, patch, comment, or note payloads.
+
+## [0.13.0] - 2026-05-18
+
+### Added
+
+- Added an `e` shortcut to open the selected diff file in `$EDITOR`.
+- Added `g` and `G` keyboard aliases for jump-to-top and jump-to-bottom review navigation.
+- Added session-persistent user-authored inline notes with `c` to draft/save notes.
+- Added `hunk session comment list --type <live|all|ai|agent|user>` so agents can read human-authored notes through the comment workflow.
+
+### Changed
+
+- Clarified inline note draft actions by labeling buttons as `Save (^S)` and `Cancel (Esc)`.
+
+### Fixed
+
+- Fixed draft note focus handling so app shortcuts resume after the note textarea blurs without discarding the draft.
+- Preserved the resolved auto theme across `--watch` refreshes instead of falling back to the default dark theme.
+- Fixed standalone release archive generation so staged npm package directories are not accidentally packaged as GitHub release assets.
+
+## [0.12.1] - 2026-05-14
+
+### Fixed
+
+- Included the bundled Hunk review skill in standalone prebuilt release archives so `hunk skill path` works after extracting a tarball or installing via Homebrew.
+
+## [0.12.0] - 2026-05-12
 
 ### Added
 
 - Configurable keybindings via the new `[keybindings.<scope>]` config sections (global, pager, menu, filter). Use `<disabled>` to unbind a default. See `docs/keybindings.md`.
 - Added Homebrew tap release automation and Homebrew-aware startup update notices.
 - Added lower-level `hunkdiff/opentui` primitives for embedding Hunk diff bodies, file headers, file navigation, and multi-file review streams in custom OpenTUI apps.
+- Added row windowing for large single-file reviews to keep huge diffs responsive.
+- Added Windows x64 prebuilt artifact publishing to the release workflow.
+- Added native Windows support in the README, contributor guide, and local build/install scripts.
+- Added Nix flake app outputs for `nix run`, a named `hunk` package output, and package validation.
+- Added automatic light/dark theme detection from the terminal background when `theme = "auto"` is enabled.
+
+### Changed
+
+- Ported `build:npm`, `build:bin`, and `install:bin` from bash scripts to cross-platform Bun-runnable TypeScript so native Windows contributors no longer need Git Bash to build or install Hunk locally.
+
+### Fixed
+
+- Fixed the prebuilt npm package so the `hunkdiff/opentui` export and bundled type declarations are included.
+- Fixed the npm package so `npx hunkdiff` and other package-name executable lookups resolve to the Hunk CLI.
+- Made `hunk pager` emit static highlighted diff output for captured pager contexts like LazyGit, and pass diff input through unchanged when stdout is non-interactive.
+- Fixed Ctrl-Z job-control suspend support so Hunk can suspend and resume cleanly from a terminal.
+- Fixed Windows compatibility issues across paths, packaging, and tests.
+- Fixed Ctrl-C in the live TUI so it exits through Hunk's full shutdown path instead of only destroying the renderer.
+
+## [0.11.1] - 2026-05-10
+
+### Added
 
 ### Changed
 
@@ -16,9 +184,13 @@ All notable user-visible changes to Hunk are documented in this file.
 
 ### Fixed
 
-- Made `hunk pager` emit static highlighted diff output for captured pager contexts like LazyGit, and pass diff input through unchanged when stdout is non-interactive.
-- Fixed `hunk pager` parsing for Git diffs emitted with `diff.mnemonicPrefix=true` so file paths do not keep `i/`, `w/`, `c/`, `1/`, or `2/` side prefixes.
 - Fixed large tracked and untracked file handling so very large diffs render as skipped placeholders instead of slowing startup or overflowing the JavaScript call stack.
+- Fixed Git patch parsing for `diff.noprefix=true` input so Hunk restores parser-safe `a/` and `b/` prefixes without mangling real paths.
+- Fixed `hunk pager` parsing for Git diffs emitted with `diff.mnemonicPrefix=true` so file paths do not keep `i/`, `w/`, `c/`, `1/`, or `2/` side prefixes.
+- Fixed review scrolling so viewport updates are coalesced and no longer risk a render loop.
+- Fixed agent comment hunk ranges so context lines from hunk headers remain part of the target range.
+- Fixed untracked-file reviews in repositories with external diff tools configured by passing `--no-ext-diff`.
+- Fixed diff geometry for hunks with multiple agent notes so offscreen notes no longer skew scrolling measurements.
 
 ## [0.11.0] - 2026-05-09
 
@@ -279,7 +451,18 @@ All notable user-visible changes to Hunk are documented in this file.
 
 - Stabilized diff repainting, active-hunk scrolling, syntax highlighting, pager stdin patch handling, and terminal cleanup on exit.
 
-[Unreleased]: https://github.com/modem-dev/hunk/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/modem-dev/hunk/compare/v0.15.3...HEAD
+[0.15.3]: https://github.com/modem-dev/hunk/compare/v0.15.2...v0.15.3
+[0.15.2]: https://github.com/modem-dev/hunk/compare/v0.15.1...v0.15.2
+[0.15.1]: https://github.com/modem-dev/hunk/compare/v0.15.0...v0.15.1
+[0.15.0]: https://github.com/modem-dev/hunk/compare/v0.14.1...v0.15.0
+[0.14.1]: https://github.com/modem-dev/hunk/compare/v0.14.0...v0.14.1
+[0.14.0]: https://github.com/modem-dev/hunk/compare/v0.13.1...v0.14.0
+[0.13.1]: https://github.com/modem-dev/hunk/compare/v0.13.0...v0.13.1
+[0.13.0]: https://github.com/modem-dev/hunk/compare/v0.12.1...v0.13.0
+[0.12.1]: https://github.com/modem-dev/hunk/compare/v0.12.0...v0.12.1
+[0.12.0]: https://github.com/modem-dev/hunk/compare/v0.11.1...v0.12.0
+[0.11.1]: https://github.com/modem-dev/hunk/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/modem-dev/hunk/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/modem-dev/hunk/compare/v0.9.5...v0.10.0
 [0.9.5]: https://github.com/modem-dev/hunk/compare/v0.9.4...v0.9.5

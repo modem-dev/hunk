@@ -366,6 +366,7 @@ describe("session command compatibility checks", () => {
           getSessionReview: async (input) => {
             expect(input.selector).toEqual({ sessionId: "session-1" });
             expect(input.includePatch).toBe(false);
+            expect(input.includeNotes).toBe(false);
 
             return {
               sessionId: "session-1",
@@ -425,6 +426,7 @@ describe("session command compatibility checks", () => {
       selector: { sessionId: "session-1" },
       output: "json",
       includePatch: false,
+      includeNotes: false,
     } satisfies SessionCommandInput);
 
     expect(JSON.parse(output)).toEqual({
@@ -485,6 +487,7 @@ describe("session command compatibility checks", () => {
           getSessionReview: async (input) => {
             expect(input.selector).toEqual({ sessionId: "session-1" });
             expect(input.includePatch).toBe(true);
+            expect(input.includeNotes).toBe(false);
 
             return {
               sessionId: "session-1",
@@ -546,6 +549,7 @@ describe("session command compatibility checks", () => {
       selector: { sessionId: "session-1" },
       output: "json",
       includePatch: true,
+      includeNotes: false,
     } satisfies SessionCommandInput);
 
     expect(JSON.parse(output)).toEqual({
@@ -599,6 +603,90 @@ describe("session command compatibility checks", () => {
         ],
       },
     });
+  });
+
+  test("runs review commands through the daemon with notes when requested", async () => {
+    setSessionCommandTestHooks({
+      createClient: () =>
+        createClient({
+          getSessionReview: async (input) => {
+            expect(input.selector).toEqual({ sessionId: "session-1" });
+            expect(input.includePatch).toBe(false);
+            expect(input.includeNotes).toBe(true);
+
+            return {
+              ...createTestSessionReview(false),
+              reviewNoteCount: 1,
+              reviewNotes: [
+                {
+                  noteId: "user:1",
+                  source: "user",
+                  filePath: "README.md",
+                  body: "Please simplify this.",
+                  author: "user",
+                  createdAt: "2026-05-10T00:00:00.000Z",
+                  editable: true,
+                },
+              ],
+            };
+          },
+        }),
+      resolveDaemonAvailability: async () => true,
+    });
+
+    const output = await runSessionCommand({
+      kind: "session",
+      action: "review",
+      selector: { sessionId: "session-1" },
+      output: "json",
+      includePatch: false,
+      includeNotes: true,
+    } satisfies SessionCommandInput);
+
+    expect(JSON.parse(output)).toMatchObject({
+      review: {
+        reviewNoteCount: 1,
+        reviewNotes: [{ noteId: "user:1", body: "Please simplify this." }],
+      },
+    });
+  });
+
+  test("routes typed comment listing through the comment list API", async () => {
+    setSessionCommandTestHooks({
+      createClient: () =>
+        createClient({
+          listComments: async (input) => {
+            expect(input.selector).toEqual({ sessionId: "session-1" });
+            expect(input.filePath).toBe("README.md");
+            expect(input.type).toBe("user");
+            return [
+              {
+                noteId: "user:1",
+                source: "user",
+                filePath: "README.md",
+                hunkIndex: 0,
+                body: "Human note",
+                author: "user",
+                createdAt: "2026-05-10T00:00:00.000Z",
+                editable: true,
+              },
+            ];
+          },
+        }),
+      resolveDaemonAvailability: async () => true,
+    });
+
+    const output = await runSessionCommand({
+      kind: "session",
+      action: "comment-list",
+      selector: { sessionId: "session-1" },
+      filePath: "README.md",
+      type: "user",
+      output: "text",
+    } satisfies SessionCommandInput);
+
+    expect(output).toContain("user:1  README.md [user]");
+    expect(output).toContain("body: Human note");
   });
 
   test("runs reload commands through the daemon and returns the replacement session summary", async () => {
@@ -843,6 +931,123 @@ describe("session command compatibility checks", () => {
         sessionId: "session-1",
       },
     });
+  });
+
+  // Intent: session list uses a cheap no-daemon fallback without creating a client.
+  test("list reports an empty session set when no daemon is available", async () => {
+    setSessionCommandTestHooks({
+      createClient: () => {
+        throw new Error("list should not create a client without a daemon");
+      },
+      resolveDaemonAvailability: async () => false,
+    });
+
+    const output = await runSessionCommand({
+      kind: "session",
+      action: "list",
+      output: "text",
+    } satisfies SessionCommandInput);
+
+    expect(output).toBe("No active Hunk sessions.\n");
+  });
+
+  // Intent: remaining command branches dispatch to the daemon and keep text output stable.
+  test("routes remaining session actions through the daemon and formats text output", async () => {
+    const selector: SessionSelectorInput = { sessionId: "session-1" };
+    const calls: string[] = [];
+
+    setSessionCommandTestHooks({
+      createClient: () =>
+        createClient({
+          navigateToHunk: async (input) => {
+            calls.push("navigate");
+            expect(input.selector).toEqual(selector);
+            expect(input.filePath).toBe("README.md");
+            expect(input.hunkNumber).toBe(1);
+            return { fileId: "file-1", filePath: "README.md", hunkIndex: 0 };
+          },
+          listComments: async (input) => {
+            calls.push("comment-list");
+            expect(input.selector).toEqual(selector);
+            return [
+              {
+                commentId: "comment-1",
+                filePath: "README.md",
+                hunkIndex: 0,
+                side: "new",
+                line: 2,
+                summary: "Explain this line",
+                author: "agent",
+                createdAt: "2026-05-10T00:00:00.000Z",
+              },
+            ];
+          },
+          removeComment: async (input) => {
+            calls.push("comment-rm");
+            expect(input.selector).toEqual(selector);
+            expect(input.commentId).toBe("comment-1");
+            return {
+              commentId: "comment-1",
+              removed: true,
+              remainingCommentCount: 1,
+            };
+          },
+          clearComments: async (input) => {
+            calls.push("comment-clear");
+            expect(input.selector).toEqual(selector);
+            expect(input.filePath).toBe("README.md");
+            return {
+              filePath: "README.md",
+              removedCount: 2,
+              remainingCommentCount: 0,
+            };
+          },
+        }),
+      resolveDaemonAvailability: async () => true,
+    });
+
+    expect(
+      await runSessionCommand({
+        kind: "session",
+        action: "navigate",
+        selector,
+        filePath: "README.md",
+        hunkNumber: 1,
+        output: "text",
+      } satisfies SessionCommandInput),
+    ).toBe("Focused README.md hunk 1 in session session-1.\n");
+
+    expect(
+      await runSessionCommand({
+        kind: "session",
+        action: "comment-list",
+        selector,
+        output: "text",
+      } satisfies SessionCommandInput),
+    ).toContain("comment-1  README.md:2 (new)");
+
+    expect(
+      await runSessionCommand({
+        kind: "session",
+        action: "comment-rm",
+        selector,
+        commentId: "comment-1",
+        output: "text",
+      } satisfies SessionCommandInput),
+    ).toBe("Removed live comment comment-1 from session session-1. Remaining comments: 1.\n");
+
+    expect(
+      await runSessionCommand({
+        kind: "session",
+        action: "comment-clear",
+        selector,
+        filePath: "README.md",
+        confirmed: true,
+        output: "text",
+      } satisfies SessionCommandInput),
+    ).toBe("Cleared 2 live comments from README.md in session session-1. Remaining comments: 0.\n");
+
+    expect(calls).toEqual(["navigate", "comment-list", "comment-rm", "comment-clear"]);
   });
 });
 

@@ -11,6 +11,9 @@ Requirements:
 - Bun 1.3+
 - Node.js 18+
 - Git
+- macOS, Linux, or Windows. The Windows path uses native Node/Bun on Windows 10/11 (x64); no WSL or Git Bash required.
+
+> Nix users can use `nix develop` or [direnv](https://direnv.net/) to enter a development shell.
 
 Install dependencies:
 
@@ -85,6 +88,24 @@ bun run check:prebuilt-pack
 bun run publish:prebuilt:npm -- --dry-run
 ```
 
+## Updating dependencies
+
+After changing JavaScript or Bun dependencies, regenerate the Nix dependency lockfile so CI stays green:
+
+```bash
+bun install
+bun run nix:update-lock
+git add bun.lock nix/bun.lock.nix package.json
+```
+
+The `nix:update-lock` script requires a one-time [Nix install](https://nixos.org/download/):
+
+```bash
+curl -L https://nixos.org/nix/install | sh
+```
+
+If you don't have Nix installed, CI will catch the drift and a maintainer can push the regenerated lockfile as a follow-up commit.
+
 ## Validation expectations
 
 - Rendering changes: run `bun run typecheck`, `bun test`, `bun run test:tty-smoke`, and do one real TTY smoke run on an actual diff.
@@ -133,4 +154,19 @@ Key rules:
 
 - The npm package name is `hunkdiff`.
 - The installed CLI command remains `hunk`.
+- Add a Changeset for user-visible changes instead of editing `CHANGELOG.md` directly:
+
+  ```bash
+  bun run changeset
+  ```
+
+  Select `hunkdiff`, then choose `patch` for fixes and small behavior changes, `minor` for new user-facing features, or `major` for breaking changes.
+
+- For maintenance-only PRs that should not appear in release notes, add an empty changeset:
+
+  ```bash
+  bun run changeset -- --empty
+  ```
+
+- Release prep runs `bun run release:version` to consume pending changesets, update `CHANGELOG.md`, and bump package versions.
 - The automated prebuilt publish workflow lives in `.github/workflows/release-prebuilt-npm.yml`.

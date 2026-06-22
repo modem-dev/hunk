@@ -1,15 +1,71 @@
 import fs from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { join } from "node:path";
+import { BUNDLED_SHIKI_THEME_IDS } from "../ui/lib/shikiThemes";
+import { normalizeBuiltInThemeId } from "../ui/themes";
 import { applyKeymapOverrides, loadKeymapDefaults } from "./keymap/load";
 import type { Keymap } from "./keymap/match";
 import { resolveGlobalConfigPath } from "./paths";
+import { detectVcs, findVcsRepoRootCandidate, getDefaultVcsAdapter, isVcsId } from "./vcs";
 import type {
   CliInput,
   CommonOptions,
+  CustomSyntaxColorsConfig,
+  CustomThemeConfig,
   LayoutMode,
   PersistedViewPreferences,
   VcsMode,
 } from "./types";
+
+const BUILT_IN_THEME_IDS = BUNDLED_SHIKI_THEME_IDS;
+const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
+const CUSTOM_THEME_COLOR_KEYS = [
+  "background",
+  "panel",
+  "panelAlt",
+  "border",
+  "accent",
+  "accentMuted",
+  "text",
+  "muted",
+  "addedBg",
+  "removedBg",
+  "movedAddedBg",
+  "movedRemovedBg",
+  "contextBg",
+  "addedContentBg",
+  "removedContentBg",
+  "contextContentBg",
+  "addedSignColor",
+  "removedSignColor",
+  "lineNumberBg",
+  "lineNumberFg",
+  "selectedHunk",
+  "badgeAdded",
+  "badgeRemoved",
+  "badgeNeutral",
+  "fileNew",
+  "fileDeleted",
+  "fileRenamed",
+  "fileModified",
+  "fileUntracked",
+  "noteBorder",
+  "noteBackground",
+  "noteTitleBackground",
+  "noteTitleText",
+] as const;
+const CUSTOM_SYNTAX_COLOR_KEYS = [
+  "default",
+  "keyword",
+  "string",
+  "comment",
+  "number",
+  "function",
+  "property",
+  "type",
+  "variable",
+  "operator",
+  "punctuation",
+] as const;
 
 const DEFAULT_VIEW_PREFERENCES: PersistedViewPreferences = {
   mode: "auto",
@@ -17,6 +73,7 @@ const DEFAULT_VIEW_PREFERENCES: PersistedViewPreferences = {
   wrapLines: false,
   showHunkHeaders: true,
   showAgentNotes: false,
+  copyDecorations: false,
 };
 
 interface ConfigResolutionOptions {
@@ -26,6 +83,7 @@ interface ConfigResolutionOptions {
 
 interface HunkConfigResolution {
   input: CliInput;
+  customTheme?: CustomThemeConfig;
   globalConfigPath?: string;
   repoConfigPath?: string;
 }
@@ -41,7 +99,7 @@ function normalizeLayoutMode(value: unknown): LayoutMode | undefined {
 
 /** Accept only the VCS backends Hunk can load directly. */
 function normalizeVcsMode(value: unknown): VcsMode | undefined {
-  return value === "git" || value === "jj" ? value : undefined;
+  return isVcsId(value) ? value : undefined;
 }
 
 /** Accept only plain booleans from config files. */
@@ -54,17 +112,138 @@ function normalizeString(value: unknown) {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
+/** Accept only #rrggbb theme colors and report the failing TOML key path. */
+function normalizeThemeColor(value: unknown, keyPath: string) {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value !== "string" || !HEX_COLOR_PATTERN.test(value)) {
+    throw new Error(`Expected ${keyPath} to be a hex color like #112233.`);
+  }
+
+  return value.toLowerCase();
+}
+
+/** Accept only built-in theme ids for config-defined custom themes. */
+function normalizeCustomThemeBase(value: unknown) {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value !== "string") {
+    throw new Error(
+      `Expected custom_theme.base to be a built-in theme id. Known themes: ${BUILT_IN_THEME_IDS.join(", ")}.`,
+    );
+  }
+
+  const resolvedThemeId = normalizeBuiltInThemeId(value);
+  if (!resolvedThemeId) {
+    throw new Error(
+      `Expected custom_theme.base to be a built-in theme id. Known themes: ${BUILT_IN_THEME_IDS.join(", ")}.`,
+    );
+  }
+
+  return resolvedThemeId;
+}
+
+/** Read the nested syntax color overrides from a [custom_theme.syntax] TOML table. */
+function readCustomSyntaxColors(
+  source: Record<string, unknown>,
+): CustomSyntaxColorsConfig | undefined {
+  const syntax: CustomSyntaxColorsConfig = {};
+
+  for (const key of CUSTOM_SYNTAX_COLOR_KEYS) {
+    const value = normalizeThemeColor(source[key], `custom_theme.syntax.${key}`);
+    if (value !== undefined) {
+      syntax[key] = value;
+    }
+  }
+
+  return Object.keys(syntax).length > 0 ? syntax : undefined;
+}
+
+/** Read the optional config-defined custom theme palette from one TOML object level. */
+function readCustomTheme(source: Record<string, unknown>): CustomThemeConfig | undefined {
+  const customThemeSource = source.custom_theme;
+  if (!isRecord(customThemeSource)) {
+    return undefined;
+  }
+
+  const syntaxSource = customThemeSource.syntax;
+  if (syntaxSource !== undefined && !isRecord(syntaxSource)) {
+    throw new Error("Expected custom_theme.syntax to contain a TOML table.");
+  }
+
+  const customTheme: CustomThemeConfig = {
+    base: normalizeCustomThemeBase(customThemeSource.base),
+  };
+  const label = normalizeString(customThemeSource.label);
+  if (label !== undefined) {
+    customTheme.label = label;
+  }
+
+  for (const key of CUSTOM_THEME_COLOR_KEYS) {
+    const value = normalizeThemeColor(customThemeSource[key], `custom_theme.${key}`);
+    if (value !== undefined) {
+      customTheme[key] = value;
+    }
+  }
+
+  if (isRecord(syntaxSource)) {
+    const syntax = readCustomSyntaxColors(syntaxSource);
+    if (syntax) {
+      customTheme.syntax = syntax;
+    }
+  }
+
+  return customTheme;
+}
+
+/** Merge partial custom theme layers while keeping nested syntax overrides field-based. */
+function mergeCustomTheme(
+  base: CustomThemeConfig | undefined,
+  overrides: CustomThemeConfig | undefined,
+): CustomThemeConfig | undefined {
+  if (!base) {
+    return overrides;
+  }
+  if (!overrides) {
+    return base;
+  }
+
+  return {
+    ...base,
+    ...overrides,
+    base: overrides.base ?? base.base ?? "github-dark-default",
+    label: overrides.label ?? base.label,
+    syntax:
+      base.syntax || overrides.syntax
+        ? {
+            ...base.syntax,
+            ...overrides.syntax,
+          }
+        : undefined,
+  };
+}
+
 /** Read the view preferences stored at one TOML object level. */
 function readConfigPreferences(source: Record<string, unknown>): CommonOptions {
   return {
     mode: normalizeLayoutMode(source.mode),
     vcs: normalizeVcsMode(source.vcs),
     theme: normalizeString(source.theme),
+    watch: normalizeBoolean(source.watch),
     excludeUntracked: normalizeBoolean(source.exclude_untracked),
     lineNumbers: normalizeBoolean(source.line_numbers),
     wrapLines: normalizeBoolean(source.wrap_lines),
     hunkHeaders: normalizeBoolean(source.hunk_headers),
     agentNotes: normalizeBoolean(source.agent_notes),
+    copyDecorations: normalizeBoolean(source.copy_decorations),
+    transparentBackground:
+      normalizeBoolean(source.transparentBackground) ??
+      normalizeBoolean(source.transparent_background),
+    colorMoved: normalizeBoolean(source.color_moved),
   };
 }
 
@@ -83,6 +262,9 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
     wrapLines: overrides.wrapLines ?? base.wrapLines,
     hunkHeaders: overrides.hunkHeaders ?? base.hunkHeaders,
     agentNotes: overrides.agentNotes ?? base.agentNotes,
+    copyDecorations: overrides.copyDecorations ?? base.copyDecorations,
+    transparentBackground: overrides.transparentBackground ?? base.transparentBackground,
+    colorMoved: overrides.colorMoved ?? base.colorMoved,
     keymap: overrides.keymap ?? base.keymap,
   };
 }
@@ -104,31 +286,9 @@ function resolveConfigLayer(source: Record<string, unknown>, input: CliInput): C
   return resolved;
 }
 
-/** Return the first parent that looks like a repository root. */
-function findRepoRoot(cwd = process.cwd()) {
-  let current = resolve(cwd);
-
-  for (;;) {
-    if (fs.existsSync(join(current, ".git")) || fs.existsSync(join(current, ".jj"))) {
-      return current;
-    }
-
-    const parent = dirname(current);
-    if (parent === current) {
-      return undefined;
-    }
-
-    current = parent;
-  }
-}
-
 /** Choose the VCS backend that best matches the discovered checkout. */
-function detectRepoVcsMode(repoRoot?: string): VcsMode {
-  if (repoRoot && fs.existsSync(join(repoRoot, ".jj"))) {
-    return "jj";
-  }
-
-  return "git";
+function detectRepoVcsMode(cwd: string): VcsMode {
+  return detectVcs(cwd)?.id ?? getDefaultVcsAdapter().id;
 }
 
 /**
@@ -160,16 +320,17 @@ export function resolveConfiguredCliInput(
   input: CliInput,
   { cwd = process.cwd(), env = process.env }: ConfigResolutionOptions = {},
 ): HunkConfigResolution {
-  const repoRoot = findRepoRoot(cwd);
+  const repoRoot = findVcsRepoRootCandidate(cwd);
   const repoConfigPath = repoRoot ? join(repoRoot, ".hunk", "config.toml") : undefined;
   const userConfigPath = resolveGlobalConfigPath(env);
+  let resolvedCustomTheme: CustomThemeConfig | undefined;
 
   let resolvedOptions: CommonOptions = {
     mode: DEFAULT_VIEW_PREFERENCES.mode,
-    vcs: detectRepoVcsMode(repoRoot),
+    vcs: detectRepoVcsMode(cwd),
     // Keep the built-in theme default explicit so stdin-backed startup paths do not depend on
     // renderer theme-mode detection for their initial palette.
-    theme: "graphite",
+    theme: "github-dark-default",
     agentContext: input.options.agentContext,
     pager: input.options.pager ?? false,
     watch: input.options.watch ?? false,
@@ -178,23 +339,27 @@ export function resolveConfiguredCliInput(
     wrapLines: DEFAULT_VIEW_PREFERENCES.wrapLines,
     hunkHeaders: DEFAULT_VIEW_PREFERENCES.showHunkHeaders,
     agentNotes: DEFAULT_VIEW_PREFERENCES.showAgentNotes,
+    copyDecorations: DEFAULT_VIEW_PREFERENCES.copyDecorations,
+    transparentBackground: false,
   };
 
   // Keymap is layered separately from view options. It only honors the
-  // top-level `[keybindings.<scope>]` blocks — not command-section overrides —
+  // top-level `[keybindings.<scope>]` blocks, not command-section overrides,
   // because a per-command keymap would be confusing and is unnecessary for v1.
   let keymap: Keymap = loadKeymapDefaults();
-  const userTomlRoot = userConfigPath ? readTomlRecord(userConfigPath) : undefined;
-  const repoTomlRoot = repoConfigPath ? readTomlRecord(repoConfigPath) : undefined;
 
-  if (userConfigPath && userTomlRoot) {
-    resolvedOptions = mergeOptions(resolvedOptions, resolveConfigLayer(userTomlRoot, input));
-    keymap = applyKeymapOverrides(keymap, userTomlRoot);
+  if (userConfigPath) {
+    const userConfig = readTomlRecord(userConfigPath);
+    resolvedOptions = mergeOptions(resolvedOptions, resolveConfigLayer(userConfig, input));
+    resolvedCustomTheme = mergeCustomTheme(resolvedCustomTheme, readCustomTheme(userConfig));
+    keymap = applyKeymapOverrides(keymap, userConfig);
   }
 
-  if (repoConfigPath && repoTomlRoot) {
-    resolvedOptions = mergeOptions(resolvedOptions, resolveConfigLayer(repoTomlRoot, input));
-    keymap = applyKeymapOverrides(keymap, repoTomlRoot);
+  if (repoConfigPath) {
+    const repoConfig = readTomlRecord(repoConfigPath);
+    resolvedOptions = mergeOptions(resolvedOptions, resolveConfigLayer(repoConfig, input));
+    resolvedCustomTheme = mergeCustomTheme(resolvedCustomTheme, readCustomTheme(repoConfig));
+    keymap = applyKeymapOverrides(keymap, repoConfig);
   }
 
   resolvedOptions = mergeOptions(resolvedOptions, input.options);
@@ -202,22 +367,31 @@ export function resolveConfiguredCliInput(
     ...resolvedOptions,
     agentContext: input.options.agentContext,
     pager: input.options.pager ?? false,
-    watch: input.options.watch ?? false,
+    watch: input.options.watch ?? resolvedOptions.watch ?? false,
     excludeUntracked: resolvedOptions.excludeUntracked ?? false,
-    vcs: resolvedOptions.vcs ?? "git",
+    theme: resolvedOptions.theme,
+    vcs: resolvedOptions.vcs ?? getDefaultVcsAdapter().id,
     mode: resolvedOptions.mode ?? DEFAULT_VIEW_PREFERENCES.mode,
     lineNumbers: resolvedOptions.lineNumbers ?? DEFAULT_VIEW_PREFERENCES.showLineNumbers,
     wrapLines: resolvedOptions.wrapLines ?? DEFAULT_VIEW_PREFERENCES.wrapLines,
     hunkHeaders: resolvedOptions.hunkHeaders ?? DEFAULT_VIEW_PREFERENCES.showHunkHeaders,
     agentNotes: resolvedOptions.agentNotes ?? DEFAULT_VIEW_PREFERENCES.showAgentNotes,
+    copyDecorations: resolvedOptions.copyDecorations ?? DEFAULT_VIEW_PREFERENCES.copyDecorations,
+    transparentBackground: resolvedOptions.transparentBackground ?? false,
+    colorMoved: resolvedOptions.colorMoved,
     keymap,
   };
+
+  if (resolvedOptions.theme === "custom" && !resolvedCustomTheme) {
+    throw new Error('Expected a [custom_theme] table when config selects theme = "custom".');
+  }
 
   return {
     input: {
       ...input,
       options: resolvedOptions,
     },
+    customTheme: resolvedCustomTheme,
     globalConfigPath: userConfigPath,
     repoConfigPath,
   };

@@ -1,82 +1,16 @@
-import { parsePatchFiles, type FileDiffMetadata } from "@pierre/diffs";
+import { parsePatchFiles } from "@pierre/diffs";
 import { patchLooksBinary } from "../core/binary";
 import { normalizeDiffMetadataPaths, normalizeDiffPath } from "../core/diffPaths";
+import { countDiffStats } from "../core/diffFile";
+import { splitPatchIntoFileChunks, findPatchChunk } from "../core/patch/chunks";
+import { normalizePatchText } from "../core/patch/normalize";
 import type { DiffFile } from "../core/types";
 import type { HunkDiffFile, HunkDiffFileInput } from "./types";
 
 const NORMALIZED_HUNK_DIFF_FILES = new WeakSet<HunkDiffFile>();
 
-/** Split a patch stream into per-file chunks for public OpenTUI file helpers. */
-function splitPatchIntoFileChunks(rawPatch: string) {
-  const patch = rawPatch.replaceAll("\r\n", "\n");
-  const lines = patch.split("\n");
-  const chunks: string[] = [];
-  let current: string[] = [];
-  const hasGitHeaders = lines.some((line) => line.startsWith("diff --git "));
-
-  const flush = () => {
-    if (current.length > 0) {
-      chunks.push(`${current.join("\n").trimEnd()}\n`);
-      current = [];
-    }
-  };
-
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index]!;
-
-    if (hasGitHeaders && line.startsWith("diff --git ")) {
-      flush();
-      current.push(line);
-      continue;
-    }
-
-    if (!hasGitHeaders && line.startsWith("--- ") && lines[index + 1]?.startsWith("+++ ")) {
-      flush();
-      current.push(line);
-      current.push(lines[index + 1]!);
-      index += 1;
-      continue;
-    }
-
-    if (current.length > 0) {
-      current.push(line);
-    }
-  }
-
-  flush();
-  return chunks;
-}
-
-/** Find the original per-file patch chunk for parsed metadata. */
-function findPatchChunk(metadata: FileDiffMetadata, chunks: string[], index: number) {
-  const byIndex = chunks[index];
-  if (byIndex) {
-    return byIndex;
-  }
-
-  const paths = [metadata.name, metadata.prevName]
-    .map(normalizeDiffPath)
-    .filter((value): value is string => Boolean(value));
-
-  return chunks.find((chunk) => paths.some((path) => chunk.includes(path))) ?? "";
-}
-
 /** Count visible additions and deletions from Pierre metadata. */
-export function countHunkDiffStats(metadata: FileDiffMetadata) {
-  let additions = 0;
-  let deletions = 0;
-
-  for (const hunk of metadata.hunks) {
-    for (const content of hunk.hunkContent) {
-      if (content.type === "change") {
-        additions += content.additions;
-        deletions += content.deletions;
-      }
-    }
-  }
-
-  return { additions, deletions };
-}
+export const countHunkDiffStats = countDiffStats;
 
 /** Build Hunk's public OpenTUI file model with normalized paths and default stats. */
 export function createHunkDiffFile(input: HunkDiffFileInput): HunkDiffFile {
@@ -128,9 +62,10 @@ export function toInternalDiffFile(diff: HunkDiffFileInput): DiffFile {
 
 /** Parse unified diff text into Hunk's public OpenTUI file model. */
 export function createHunkDiffFilesFromPatch(patchText: string, sourceId = "patch") {
-  const chunks = splitPatchIntoFileChunks(patchText);
+  const normalizedPatchText = normalizePatchText(patchText);
+  const chunks = splitPatchIntoFileChunks(normalizedPatchText);
 
-  return parsePatchFiles(patchText, sourceId, true)
+  return parsePatchFiles(normalizedPatchText, sourceId, true)
     .flatMap((entry) => entry.files)
     .map((metadata, index) =>
       createHunkDiffFile({

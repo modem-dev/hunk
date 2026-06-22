@@ -6,6 +6,7 @@ import type {
   SessionFileSummary,
   SessionLiveCommentSummary,
   SessionReview,
+  SessionReviewNoteSummary,
   SessionReviewFile,
 } from "./types";
 
@@ -107,7 +108,7 @@ export function buildSelectedHunkSessionContext(session: ListedSession): Selecte
 /** Project one raw broker entry into the Hunk review export used by `hunk session review`. */
 export function buildHunkSessionReview(
   entry: HunkSessionEntryLike,
-  options: { includePatch?: boolean } = {},
+  options: { includePatch?: boolean; includeNotes?: boolean } = {},
 ): SessionReview {
   const selectedFile = findSelectedReviewFile(entry);
   const includePatch = options.includePatch ?? false;
@@ -125,6 +126,9 @@ export function buildHunkSessionReview(
       : null,
     showAgentNotes: entry.snapshot.state.showAgentNotes,
     liveCommentCount: entry.snapshot.state.liveCommentCount,
+    reviewNoteCount:
+      entry.snapshot.state.reviewNoteCount ?? entry.snapshot.state.reviewNotes?.length ?? 0,
+    reviewNotes: options.includeNotes ? (entry.snapshot.state.reviewNotes ?? []) : undefined,
     files: entry.registration.info.files.map((file) => serializeReviewFile(file, includePatch)),
   };
 }
@@ -141,4 +145,22 @@ export function listHunkSessionComments(
   return session.snapshot.state.liveComments.filter(
     (comment) => comment.filePath === filter.filePath,
   );
+}
+
+/** Return review notes for one Hunk session, optionally filtered to a file and source. */
+export function listHunkSessionNotes(
+  session: ListedSession,
+  filter: { filePath?: string; source?: SessionReviewNoteSummary["source"] } = {},
+): SessionReviewNoteSummary[] {
+  return (session.snapshot.state.reviewNotes ?? []).filter((note) => {
+    if (filter.filePath && note.filePath !== filter.filePath) {
+      return false;
+    }
+
+    if (filter.source && note.source !== filter.source) {
+      return false;
+    }
+
+    return true;
+  });
 }

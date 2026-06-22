@@ -18,7 +18,7 @@ export function HunkReviewStream({
   files,
   layout = "split",
   width,
-  theme = "graphite",
+  theme = "github-dark-default",
   selection,
   showFileHeaders = true,
   showFileSeparators = true,

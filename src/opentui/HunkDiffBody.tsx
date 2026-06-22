@@ -7,14 +7,12 @@ import { resolveTheme } from "../ui/themes";
 import { toInternalDiffFile } from "./model";
 import type { HunkDiffBodyProps } from "./types";
 
-const EMPTY_ANNOTATED_HUNK_INDICES = new Set<number>();
-
 /** Render one diff file body without owning navigation, app chrome, or global shortcuts. */
 export function HunkDiffBody({
   file,
   layout = "split",
   width,
-  theme = "graphite",
+  theme = "github-dark-default",
   showLineNumbers = true,
   showHunkHeaders = true,
   wrapLines = false,
@@ -26,7 +24,7 @@ export function HunkDiffBody({
   const internalFile = useMemo(() => (file ? toInternalDiffFile(file) : undefined), [file]);
   const resolvedHighlighted = useHighlightedDiff({
     file: internalFile,
-    appearance: resolvedTheme.appearance,
+    theme: resolvedTheme,
     shouldLoadHighlight: highlight,
   });
   const rows = useMemo(
@@ -75,7 +73,6 @@ export function HunkDiffBody({
             codeHorizontalOffset={horizontalOffset}
             theme={resolvedTheme}
             selected={row.hunkIndex === selectedHunkIndex}
-            annotated={EMPTY_ANNOTATED_HUNK_INDICES.has(row.hunkIndex)}
           />
         </box>
       ))}

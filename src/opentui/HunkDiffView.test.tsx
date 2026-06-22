@@ -60,7 +60,7 @@ describe("OpenTUI public components", () => {
       <HunkDiffView
         diff={createExampleDiff()}
         layout="split"
-        theme="midnight"
+        theme="github-dark-default"
         width={88}
         scrollable={false}
       />,
@@ -79,7 +79,7 @@ describe("OpenTUI public components", () => {
       <HunkDiffBody
         file={createExampleDiff()}
         layout="stack"
-        theme="graphite"
+        theme="github-dark-default"
         width={88}
         highlight={false}
       />,
@@ -96,8 +96,8 @@ describe("OpenTUI public components", () => {
     const diff = createExampleDiff();
     const frame = await captureFrame(
       <box style={{ width: "100%", flexDirection: "column" }}>
-        <HunkDiffFileHeader file={diff} width={88} theme="paper" />
-        <HunkReviewStream files={[diff]} layout="split" width={88} theme="paper" />
+        <HunkDiffFileHeader file={diff} width={88} theme="github-light-default" />
+        <HunkReviewStream files={[diff]} layout="split" width={88} theme="github-light-default" />
       </box>,
       92,
       14,
@@ -114,7 +114,7 @@ describe("OpenTUI public components", () => {
         files={[createExampleDiff()]}
         selectedFileId="example"
         width={32}
-        theme="midnight"
+        theme="github-dark-default"
       />,
       36,
       8,
@@ -140,7 +140,24 @@ describe("OpenTUI public components", () => {
     expect(files[0]?.patch).toContain("diff --git a/example.ts b/example.ts");
   });
 
-  test("exports the documented built-in theme names", () => {
-    expect(HUNK_DIFF_THEME_NAMES).toEqual(["graphite", "midnight", "paper", "ember"]);
+  test("normalizes noprefix patch text for public file models", () => {
+    const files = createHunkDiffFilesFromPatch(`diff --git example.ts example.ts
+--- example.ts
++++ example.ts
+@@ -1 +1 @@
+-before
++after
+`);
+
+    expect(files).toHaveLength(1);
+    expect(files[0]?.path).toBe("example.ts");
+    expect(files[0]?.patch).toContain("diff --git a/example.ts b/example.ts");
+  });
+
+  test("exports the bundled theme names", () => {
+    expect(HUNK_DIFF_THEME_NAMES).toContain("github-dark-default");
+    expect(HUNK_DIFF_THEME_NAMES).toContain("github-light-default");
+    expect(HUNK_DIFF_THEME_NAMES).toContain("dracula");
+    expect(HUNK_DIFF_THEME_NAMES).toContain("catppuccin-mocha");
   });
 });

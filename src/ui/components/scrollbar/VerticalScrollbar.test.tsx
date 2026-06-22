@@ -70,7 +70,7 @@ function createScrollBootstrapWithManyFiles(fileCount: number): AppBootstrap {
       files,
     },
     initialMode: "split",
-    initialTheme: "midnight",
+    initialTheme: "github-dark-default",
   };
 }
 
@@ -209,7 +209,7 @@ describe("Vertical scrollbar", () => {
         files: [createDiffFile("scroll", "src/scroll.ts", before, after)],
       },
       initialMode: "split",
-      initialTheme: "midnight",
+      initialTheme: "github-dark-default",
     };
 
     const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
@@ -275,7 +275,7 @@ describe("Vertical scrollbar", () => {
         files: [createDiffFile("small", "src/small.ts", before, after)],
       },
       initialMode: "split",
-      initialTheme: "midnight",
+      initialTheme: "github-dark-default",
     };
 
     const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
@@ -318,7 +318,7 @@ describe("Vertical scrollbar", () => {
         files: [createDiffFile("drag", "src/drag.ts", before, after)],
       },
       initialMode: "split",
-      initialTheme: "midnight",
+      initialTheme: "github-dark-default",
     };
 
     const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
@@ -384,7 +384,7 @@ describe("Vertical scrollbar", () => {
         files: [createDiffFile("track", "src/track.ts", before, after)],
       },
       initialMode: "split",
-      initialTheme: "midnight",
+      initialTheme: "github-dark-default",
     };
 
     const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
@@ -463,7 +463,7 @@ describe("Vertical scrollbar", () => {
         files: [createDiffFile("edge", "src/edge.ts", before, after)],
       },
       initialMode: "split",
-      initialTheme: "midnight",
+      initialTheme: "github-dark-default",
     };
 
     const setup = await testRender(<AppHost bootstrap={bootstrap} />, {

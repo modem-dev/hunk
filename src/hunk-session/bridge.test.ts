@@ -116,7 +116,11 @@ describe("createHunkSessionBridge", () => {
       type: "command",
       requestId: "reload-1",
       command: "reload_session",
-      input: { sessionId: "session-1", nextInput: { kind: "vcs", staged: false, options: {} } },
+      input: {
+        sessionId: "session-1",
+        nextInput: { kind: "vcs", staged: false, options: {} },
+        sourcePath: "/repo",
+      },
     });
     await bridge.dispatchCommand({
       type: "command",
@@ -128,12 +132,19 @@ describe("createHunkSessionBridge", () => {
       type: "command",
       requestId: "clear-1",
       command: "clear_comments",
-      input: { sessionId: "session-1", filePath: "src/example.ts" },
+      input: { sessionId: "session-1", filePath: "src/example.ts", includeUser: true },
     });
 
     expect(handlers.navigateToLocation).toHaveBeenCalledTimes(1);
     expect(handlers.reloadSession).toHaveBeenCalledTimes(1);
+    expect(handlers.reloadSession).toHaveBeenCalledWith(
+      { kind: "vcs", staged: false, options: {} },
+      { resetApp: false, sourcePath: "/repo" },
+    );
     expect(handlers.removeLiveComment).toHaveBeenCalledTimes(1);
     expect(handlers.clearLiveComments).toHaveBeenCalledTimes(1);
+    expect(handlers.clearLiveComments).toHaveBeenCalledWith("src/example.ts", {
+      includeUser: true,
+    });
   });
 });

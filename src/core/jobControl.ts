@@ -25,9 +25,46 @@ export interface JobControlSuspendSupport {
   dispose: () => void;
 }
 
+export interface JobControlInterruptSupport {
+  /** Remove listeners installed for the lifetime of one app renderer. */
+  dispose: () => void;
+}
+
+/** Match the parsed Ctrl-C shortcut that should quit the app in raw mode. */
+function isCtrlC(key: KeyEvent) {
+  return key.ctrl && !key.meta && !key.shift && key.name === "c";
+}
+
 /** Match the parsed Ctrl-Z shortcut that opencode binds to its terminal suspend command. */
 function isCtrlZ(key: KeyEvent) {
   return key.ctrl && !key.meta && !key.shift && key.name === "z";
+}
+
+/** Install Ctrl-C handling that routes through the app's full shutdown path. */
+export function installJobControlInterruptSupport(
+  renderer: Pick<JobControlRenderer, "isDestroyed" | "keyInput">,
+  onInterrupt: () => void,
+): JobControlInterruptSupport {
+  let disposed = false;
+
+  const keypressListener: KeypressListener = (key) => {
+    if (disposed || renderer.isDestroyed || !isCtrlC(key)) {
+      return;
+    }
+
+    key.preventDefault();
+    key.stopPropagation();
+    onInterrupt();
+  };
+
+  renderer.keyInput.on("keypress", keypressListener);
+
+  return {
+    dispose: () => {
+      disposed = true;
+      renderer.keyInput.off("keypress", keypressListener);
+    },
+  };
 }
 
 /**

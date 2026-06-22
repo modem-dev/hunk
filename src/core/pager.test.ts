@@ -8,6 +8,29 @@ import {
   type PlainTextPagerDeps,
 } from "./pager";
 
+function createClosingPager(code = 0) {
+  const pager = new EventEmitter() as EventEmitter & { stdin: PassThrough };
+  pager.stdin = new PassThrough();
+  queueMicrotask(() => {
+    pager.emit("close", code);
+  });
+  return pager;
+}
+
+const OSC52_CLIPBOARD = "\x1b]52;c;SGVsbG8=\x07";
+const CSI_CLEAR_SCREEN = "\x1b[2J";
+const DCS_PAYLOAD = "\x1bPqpayload\x1b\\";
+
+function expectNoUnsafeTerminalControls(text: string) {
+  expect(text).not.toContain(OSC52_CLIPBOARD);
+  expect(text).not.toContain(CSI_CLEAR_SCREEN);
+  expect(text).not.toContain(DCS_PAYLOAD);
+  expect(text).not.toContain("\x07");
+  expect(text).not.toContain("\r");
+  expect(text).not.toContain("\b");
+  expect(text).not.toContain("\x1b");
+}
+
 function createPagerDeps(overrides: Partial<PlainTextPagerDeps> = {}): PlainTextPagerDeps {
   return {
     stdout: {
@@ -17,12 +40,7 @@ function createPagerDeps(overrides: Partial<PlainTextPagerDeps> = {}): PlainText
       },
     },
     spawnImpl() {
-      const pager = new EventEmitter() as EventEmitter & { stdin: PassThrough };
-      pager.stdin = new PassThrough();
-      queueMicrotask(() => {
-        pager.emit("close", 0);
-      });
-      return pager as never;
+      return createClosingPager() as never;
     },
     ...overrides,
   };
@@ -107,6 +125,9 @@ describe("plain text pager fallback", () => {
     );
     expect(resolveTextPagerCommand({ HUNK_TEXT_PAGER: "hunk pager" })).toBe("less -R");
     expect(resolveTextPagerCommand({ PAGER: "env FOO=1 hunk pager" })).toBe("less -R");
+    expect(resolveTextPagerCommand({ PAGER: String.raw`"C:\tools\hunk.exe" pager` })).toBe(
+      "less -R",
+    );
   });
 
   test("writes directly to stdout when not attached to a terminal", async () => {
@@ -135,6 +156,171 @@ describe("plain text pager fallback", () => {
     expect(spawnCalled).toBe(false);
   });
 
+  test("sanitizes terminal controls before writing plain text directly", async () => {
+    let written = "";
+
+    await pagePlainText(
+      `plain${OSC52_CLIPBOARD}${CSI_CLEAR_SCREEN}${DCS_PAYLOAD}\x07\rspoof\bhidden\x1b text`,
+      {},
+      createPagerDeps({
+        stdout: {
+          isTTY: false,
+          write(chunk) {
+            written += String(chunk);
+            return true;
+          },
+        },
+      }),
+    );
+
+    expect(written).toContain("plain");
+    expect(written).toContain("spoof");
+    expect(written).toContain("hidden");
+    expectNoUnsafeTerminalControls(written);
+  });
+
+  test("spawns pager commands without a shell", async () => {
+    const pager = new EventEmitter() as EventEmitter & { stdin: PassThrough };
+    pager.stdin = new PassThrough();
+    let written = "";
+    pager.stdin.on("data", (chunk) => {
+      written += String(chunk);
+    });
+
+    await pagePlainText(
+      "needs pager",
+      { PAGER: "less -R" },
+      createPagerDeps({
+        spawnImpl(command, args, options) {
+          expect(command).toBe("less");
+          expect(args).toEqual(["-R"]);
+          expect(options.shell).toBe(false);
+          queueMicrotask(() => {
+            pager.emit("close", 0);
+          });
+          return pager as never;
+        },
+      }),
+    );
+
+    expect(written).toBe("needs pager");
+  });
+
+  test("sanitizes terminal controls before sending text to the pager", async () => {
+    const pager = new EventEmitter() as EventEmitter & { stdin: PassThrough };
+    pager.stdin = new PassThrough();
+    let written = "";
+    pager.stdin.on("data", (chunk) => {
+      written += String(chunk);
+    });
+
+    await pagePlainText(
+      `plain${OSC52_CLIPBOARD}${CSI_CLEAR_SCREEN}${DCS_PAYLOAD}\x07\rspoof\bhidden\x1b text`,
+      { PAGER: "less -R" },
+      createPagerDeps({
+        spawnImpl() {
+          queueMicrotask(() => {
+            pager.emit("close", 0);
+          });
+          return pager as never;
+        },
+      }),
+    );
+
+    expect(written).toContain("plain");
+    expect(written).toContain("spoof");
+    expect(written).toContain("hidden");
+    expectNoUnsafeTerminalControls(written);
+  });
+
+  test("preserves Git log SGR colors when sending plain text to a terminal pager", async () => {
+    const pager = new EventEmitter() as EventEmitter & { stdin: PassThrough };
+    pager.stdin = new PassThrough();
+    let written = "";
+    pager.stdin.on("data", (chunk) => {
+      written += String(chunk);
+    });
+
+    await pagePlainText(
+      `* \x1b[1;34mabc1234\x1b[m - \x1b[1;32m(HEAD -> main)\x1b[m${CSI_CLEAR_SCREEN}`,
+      { PAGER: "less -R" },
+      createPagerDeps({
+        spawnImpl() {
+          queueMicrotask(() => {
+            pager.emit("close", 0);
+          });
+          return pager as never;
+        },
+      }),
+    );
+
+    expect(written).toContain("\x1b[1;34mabc1234\x1b[m");
+    expect(written).toContain("\x1b[1;32m(HEAD -> main)\x1b[m");
+    expect(written).not.toContain(CSI_CLEAR_SCREEN);
+  });
+
+  test("passes shell metacharacters as pager arguments instead of evaluating them", async () => {
+    await pagePlainText(
+      "plain text",
+      { HUNK_TEXT_PAGER: "cat >/tmp/hunk-owned; touch /tmp/hunk-owned" },
+      createPagerDeps({
+        spawnImpl(command, args, options) {
+          expect(command).toBe("cat");
+          expect(args).toEqual([">", "/tmp/hunk-owned", ";", "touch", "/tmp/hunk-owned"]);
+          expect(options.shell).toBe(false);
+          return createClosingPager() as never;
+        },
+      }),
+    );
+  });
+
+  test("preserves quoted pager arguments, variable references, and inline env assignments", async () => {
+    await pagePlainText(
+      "plain text",
+      { PAGER: "LESS='-R -F' \"less\" --pattern='hello world' --prompt=$LESS" },
+      createPagerDeps({
+        spawnImpl(command, args, options) {
+          expect(command).toBe("less");
+          expect(args).toEqual(["--pattern=hello world", "--prompt=$LESS"]);
+          expect(options.env?.LESS).toBe("-R -F");
+          expect(options.shell).toBe(false);
+          return createClosingPager() as never;
+        },
+      }),
+    );
+  });
+
+  test("preserves backslashes in quoted Windows-style pager commands", async () => {
+    await pagePlainText(
+      "plain text",
+      { PAGER: String.raw`"C:\Program Files\less\less.exe" -R` },
+      createPagerDeps({
+        spawnImpl(command, args) {
+          expect(command).toBe(String.raw`C:\Program Files\less\less.exe`);
+          expect(args).toEqual(["-R"]);
+          return createClosingPager() as never;
+        },
+      }),
+    );
+  });
+
+  test("supports simple env wrappers while still blocking recursive hunk pagers", async () => {
+    expect(resolveTextPagerCommand({ PAGER: "env LESS=FRX hunk pager" })).toBe("less -R");
+
+    await pagePlainText(
+      "plain text",
+      { PAGER: "env LESS=FRX less -R" },
+      createPagerDeps({
+        spawnImpl(command, args, options) {
+          expect(command).toBe("less");
+          expect(args).toEqual(["-R"]);
+          expect(options.env?.LESS).toBe("FRX");
+          return createClosingPager() as never;
+        },
+      }),
+    );
+  });
+
   test("throws when the pager exits with a non-zero status", async () => {
     const pager = new EventEmitter() as EventEmitter & { stdin: PassThrough };
     pager.stdin = new PassThrough();
@@ -147,9 +333,10 @@ describe("plain text pager fallback", () => {
       "needs pager",
       { PAGER: "less -R" },
       createPagerDeps({
-        spawnImpl(command, options) {
-          expect(command).toBe("less -R");
-          expect(options.shell).toBe(true);
+        spawnImpl(command, args, options) {
+          expect(command).toBe("less");
+          expect(args).toEqual(["-R"]);
+          expect(options.shell).toBe(false);
           queueMicrotask(() => {
             pager.emit("close", 1);
           });
@@ -160,5 +347,33 @@ describe("plain text pager fallback", () => {
 
     await expect(promise).rejects.toThrow("Pager command failed: less -R");
     expect(written).toBe("needs pager");
+  });
+
+  test("throws when the pager emits an async spawn error", async () => {
+    const pager = new EventEmitter() as EventEmitter & { stdin: PassThrough };
+    pager.stdin = new PassThrough();
+    const spawnError = new Error("spawn ENOENT");
+
+    const promise = pagePlainText(
+      "needs pager",
+      { PAGER: "missing-pager" },
+      createPagerDeps({
+        spawnImpl(command, args, options) {
+          expect(command).toBe("missing-pager");
+          expect(args).toEqual([]);
+          expect(options.shell).toBe(false);
+          queueMicrotask(() => {
+            pager.emit("error", spawnError);
+            pager.emit("close", null);
+          });
+          return pager as never;
+        },
+      }),
+    );
+
+    await expect(promise).rejects.toThrow("Pager command failed: missing-pager");
+    await promise.catch((error) => {
+      expect(error.cause).toBe(spawnError);
+    });
   });
 });

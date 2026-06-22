@@ -9,6 +9,7 @@ import {
   buildListedHunkSession,
   buildSelectedHunkSessionContext,
   listHunkSessionComments,
+  listHunkSessionNotes,
 } from "./projections";
 
 function createEntry() {
@@ -71,6 +72,31 @@ describe("hunk session projections", () => {
     expect(withPatch.files[0]).toEqual(expect.objectContaining({ patch: "@@ -1,1 +1,1 @@" }));
   });
 
+  test("buildHunkSessionReview can include live review notes on demand", () => {
+    const entry = {
+      registration: createTestSessionRegistration(),
+      snapshot: createTestSessionSnapshot({
+        reviewNoteCount: 1,
+        reviewNotes: [
+          {
+            noteId: "user:1",
+            source: "user",
+            filePath: "src/example.ts",
+            body: "Please cover this case.",
+            author: "user",
+            createdAt: "2026-05-10T00:00:00.000Z",
+            editable: true,
+          },
+        ],
+      }),
+    };
+
+    expect(buildHunkSessionReview(entry).reviewNotes).toBeUndefined();
+    expect(buildHunkSessionReview(entry, { includeNotes: true }).reviewNotes).toEqual([
+      expect.objectContaining({ noteId: "user:1", source: "user" }),
+    ]);
+  });
+
   test("listHunkSessionComments returns live comments and honors file filters", () => {
     const session = buildListedHunkSession({
       registration: createTestSessionRegistration(),
@@ -91,6 +117,40 @@ describe("hunk session projections", () => {
     expect(listHunkSessionComments(session)).toHaveLength(2);
     expect(listHunkSessionComments(session, { filePath: "src/example.ts" })).toEqual([
       expect.objectContaining({ commentId: "comment-1" }),
+    ]);
+  });
+
+  test("listHunkSessionNotes filters by file and source", () => {
+    const session = buildListedHunkSession({
+      registration: createTestSessionRegistration(),
+      snapshot: createTestSessionSnapshot({
+        reviewNoteCount: 2,
+        reviewNotes: [
+          {
+            noteId: "user:1",
+            source: "user",
+            filePath: "src/example.ts",
+            body: "Human note",
+            createdAt: "2026-05-10T00:00:00.000Z",
+            editable: true,
+          },
+          {
+            noteId: "agent:1",
+            source: "agent",
+            filePath: "src/other.ts",
+            body: "Agent note",
+            createdAt: "2026-05-10T00:00:00.000Z",
+            editable: false,
+          },
+        ],
+      }),
+    });
+
+    expect(listHunkSessionNotes(session, { source: "user" })).toEqual([
+      expect.objectContaining({ noteId: "user:1" }),
+    ]);
+    expect(listHunkSessionNotes(session, { filePath: "src/other.ts" })).toEqual([
+      expect.objectContaining({ noteId: "agent:1" }),
     ]);
   });
 });

@@ -167,6 +167,14 @@ describe("CLI entrypoint contracts", () => {
     expect(existsSync(resolvedPath)).toBe(true);
   });
 
+  test("package manifest exposes hunkdiff as an npm exec alias", () => {
+    const packageJson = require("../../package.json");
+    expect(packageJson.bin).toEqual({
+      hunk: "./bin/hunk.cjs",
+      hunkdiff: "./bin/hunk.cjs",
+    });
+  });
+
   test("bin wrapper fails clearly when the bundled skill is missing", () => {
     const tempDir = mkdtempSync(join(tmpdir(), "hunk-wrapper-skill-missing-"));
     const tempBinDir = join(tempDir, "bin");
@@ -212,7 +220,7 @@ describe("CLI entrypoint contracts", () => {
     expect(stderr).toBe("");
     expect(stdout).toContain("* main");
     expect(stdout).toContain("feature/demo");
-    expect(stdout).not.toContain("View  Navigate  Theme  Agent  Help");
+    expect(stdout).not.toContain("View  Navigate  Agent  Help");
     expect(stdout).not.toContain("\u001b[?1049h");
   });
 

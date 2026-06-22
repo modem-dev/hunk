@@ -8,6 +8,7 @@ export function ModalFrame({
   children,
   height,
   onClose,
+  onMouseScroll,
   terminalHeight,
   terminalWidth,
   theme,
@@ -17,6 +18,7 @@ export function ModalFrame({
   children: ReactNode;
   height: number;
   onClose?: () => void;
+  onMouseScroll?: (event: TuiMouseEvent) => void;
   terminalHeight: number;
   terminalWidth: number;
   theme: AppTheme;
@@ -55,6 +57,10 @@ export function ModalFrame({
           borderColor: theme.accent,
           backgroundColor: theme.panel,
           flexDirection: "column",
+        }}
+        onMouseScroll={(event: TuiMouseEvent) => {
+          event.stopPropagation();
+          onMouseScroll?.(event);
         }}
         onMouseUp={(event: TuiMouseEvent) => event.stopPropagation()}
       >

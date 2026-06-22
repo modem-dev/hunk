@@ -1,4 +1,4 @@
-import type { DiffSectionGeometry } from "../lib/diffSectionGeometry";
+import type { DiffSectionGeometry } from "./diffSectionGeometry";
 import type { PlannedReviewRow } from "./reviewRenderPlan";
 
 /** One visible slice within a file body, measured in file-local row units. */
@@ -11,6 +11,68 @@ export interface VisiblePlannedRowWindow {
   bottomSpacerHeight: number;
   plannedRows: PlannedReviewRow[];
   topSpacerHeight: number;
+}
+
+/**
+ * Find the first row whose bottom edge is after the visible top boundary.
+ * Requires row bounds to be sorted by non-decreasing row bottom.
+ */
+function findFirstRowWithBottomAfter(rowBounds: DiffSectionGeometry["rowBounds"], top: number) {
+  let low = 0;
+  let high = rowBounds.length - 1;
+  let result = rowBounds.length;
+
+  while (low <= high) {
+    const mid = (low + high) >>> 1;
+    const rowBoundsEntry = rowBounds[mid]!;
+
+    if (rowBoundsEntry.top + rowBoundsEntry.height > top) {
+      result = mid;
+      high = mid - 1;
+    } else {
+      low = mid + 1;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Find the last row whose top edge is before the visible bottom boundary.
+ * Requires row bounds to be sorted by non-decreasing row top.
+ */
+function findLastRowWithTopBefore(rowBounds: DiffSectionGeometry["rowBounds"], bottom: number) {
+  let low = 0;
+  let high = rowBounds.length - 1;
+  let result = -1;
+
+  while (low <= high) {
+    const mid = (low + high) >>> 1;
+    const rowBoundsEntry = rowBounds[mid]!;
+
+    if (rowBoundsEntry.top < bottom) {
+      result = mid;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+
+  return result;
+}
+
+/** Return whether one measured row overlaps the requested closed-open visible interval. */
+function rowOverlapsVisibleRange(
+  rowBounds: DiffSectionGeometry["rowBounds"][number],
+  minVisibleTop: number,
+  maxVisibleBottom: number,
+) {
+  if (rowBounds.height <= 0) {
+    return false;
+  }
+
+  const rowBottom = rowBounds.top + rowBounds.height;
+  return rowBottom > minVisibleTop && rowBounds.top < maxVisibleBottom;
 }
 
 /**
@@ -44,29 +106,37 @@ export function resolveVisiblePlannedRowWindow({
     visibleBodyBounds.top + Math.max(0, visibleBodyBounds.height),
   );
 
-  let firstVisibleIndex = -1;
-  let lastVisibleIndex = -1;
-
-  for (let index = 0; index < sectionGeometry.rowBounds.length; index += 1) {
-    const rowBounds = sectionGeometry.rowBounds[index]!;
-    if (rowBounds.height <= 0) {
-      continue;
-    }
-
-    const rowBottom = rowBounds.top + rowBounds.height;
-    // Treat each row as the half-open interval [row.top, row.bottom). If that interval does not
-    // overlap the visible file-body interval, the row can stay unmounted.
-    if (rowBottom <= minVisibleTop || rowBounds.top >= maxVisibleBottom) {
-      continue;
-    }
-
-    if (firstVisibleIndex < 0) {
-      firstVisibleIndex = index;
-    }
-    lastVisibleIndex = index;
+  let firstVisibleIndex = findFirstRowWithBottomAfter(sectionGeometry.rowBounds, minVisibleTop);
+  while (
+    firstVisibleIndex < sectionGeometry.rowBounds.length &&
+    !rowOverlapsVisibleRange(
+      sectionGeometry.rowBounds[firstVisibleIndex]!,
+      minVisibleTop,
+      maxVisibleBottom,
+    )
+  ) {
+    firstVisibleIndex += 1;
   }
 
-  if (firstVisibleIndex < 0 || lastVisibleIndex < 0) {
+  let lastVisibleIndex = findLastRowWithTopBefore(sectionGeometry.rowBounds, maxVisibleBottom);
+  while (
+    lastVisibleIndex >= 0 &&
+    !rowOverlapsVisibleRange(
+      sectionGeometry.rowBounds[lastVisibleIndex]!,
+      minVisibleTop,
+      maxVisibleBottom,
+    )
+  ) {
+    lastVisibleIndex -= 1;
+  }
+
+  if (firstVisibleIndex >= sectionGeometry.rowBounds.length) {
+    firstVisibleIndex = -1;
+  }
+
+  // firstVisibleIndex > lastVisibleIndex should not happen with sorted row bounds, but keep the
+  // empty-window fallback defensive in case an upstream geometry invariant is ever broken.
+  if (firstVisibleIndex < 0 || lastVisibleIndex < 0 || firstVisibleIndex > lastVisibleIndex) {
     const topSpacerHeight = Math.min(sectionGeometry.bodyHeight, minVisibleTop);
 
     return {

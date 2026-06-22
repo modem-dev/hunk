@@ -7,7 +7,7 @@ Use `HunkDiffView` when you want a batteries-included single-file diff, or compo
 ## Install
 
 ```bash
-npm i hunkdiff @opentui/core @opentui/react react
+npm i hunkdiff @opentui/core@^0.1.88 @opentui/react@^0.1.88 react
 ```
 
 `hunkdiff` declares OpenTUI and React as peer dependencies, so install them in your app.
@@ -190,19 +190,19 @@ If you need direct access to Pierre's parser, `parsePatchFiles(...)` is still re
 
 ## Common props
 
-| Prop                 | Type                                             | Default      | Notes                                                                               |
-| -------------------- | ------------------------------------------------ | ------------ | ----------------------------------------------------------------------------------- |
-| `layout`             | `"split" \| "stack"`                             | `"split"`    | Chooses side-by-side or stacked rendering.                                          |
-| `width`              | `number`                                         | —            | Required content width in terminal columns.                                         |
-| `theme`              | `"graphite" \| "midnight" \| "paper" \| "ember"` | `"graphite"` | Matches Hunk's built-in themes.                                                     |
-| `showLineNumbers`    | `boolean`                                        | `true`       | Toggles line-number columns.                                                        |
-| `showHunkHeaders`    | `boolean`                                        | `true`       | Toggles `@@ ... @@` hunk header rows.                                               |
-| `showFileSeparators` | `boolean`                                        | `true`       | Toggles separator rows between files in `HunkReviewStream`.                         |
-| `wrapLines`          | `boolean`                                        | `false`      | Wraps long lines instead of clipping horizontally.                                  |
-| `horizontalOffset`   | `number`                                         | `0`          | Scroll offset for non-wrapped code rows.                                            |
-| `highlight`          | `boolean`                                        | `true`       | Enables syntax highlighting.                                                        |
-| `selectedHunkIndex`  | `number`                                         | `0`          | Highlights one hunk as the active target for single-file components.                |
-| `scrollable`         | `boolean`                                        | `true`       | `HunkDiffView` only; primitives should be wrapped in OpenTUI scrollbox when needed. |
+| Prop                 | Type                                                                                                                                                       | Default      | Notes                                                                               |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ----------------------------------------------------------------------------------- |
+| `layout`             | `"split" \| "stack"`                                                                                                                                       | `"split"`    | Chooses side-by-side or stacked rendering.                                          |
+| `width`              | `number`                                                                                                                                                   | —            | Required content width in terminal columns.                                         |
+| `theme`              | `"graphite" \| "midnight" \| "paper" \| "ember" \| "catppuccin-latte" \| "catppuccin-frappe" \| "catppuccin-macchiato" \| "catppuccin-mocha" \| "zenburn"` | `"graphite"` | Matches Hunk's built-in themes.                                                     |
+| `showLineNumbers`    | `boolean`                                                                                                                                                  | `true`       | Toggles line-number columns.                                                        |
+| `showHunkHeaders`    | `boolean`                                                                                                                                                  | `true`       | Toggles `@@ ... @@` hunk header rows.                                               |
+| `showFileSeparators` | `boolean`                                                                                                                                                  | `true`       | Toggles separator rows between files in `HunkReviewStream`.                         |
+| `wrapLines`          | `boolean`                                                                                                                                                  | `false`      | Wraps long lines instead of clipping horizontally.                                  |
+| `horizontalOffset`   | `number`                                                                                                                                                   | `0`          | Scroll offset for non-wrapped code rows.                                            |
+| `highlight`          | `boolean`                                                                                                                                                  | `true`       | Enables syntax highlighting.                                                        |
+| `selectedHunkIndex`  | `number`                                                                                                                                                   | `0`          | Highlights one hunk as the active target for single-file components.                |
+| `scrollable`         | `boolean`                                                                                                                                                  | `true`       | `HunkDiffView` only; primitives should be wrapped in OpenTUI scrollbox when needed. |
 
 ## Other exports
 

@@ -35,8 +35,12 @@ export type GlobalActionId =
   | "hunkHeaders.toggle"
   | "hunk.prev"
   | "hunk.next"
+  | "hunk.toggleGap"
   | "annotatedHunk.prev"
   | "annotatedHunk.next"
+  | "file.prev"
+  | "file.next"
+  | "file.edit"
   | "menu.open";
 
 export type PagerActionId =
@@ -139,14 +143,14 @@ export const ACTIONS: readonly ActionDef[] = [
   {
     id: "scroll.toTop",
     scope: "global",
-    defaultKeys: ["<home>"],
+    defaultKeys: ["g", "<home>"],
     description: "jump to top",
     group: "Navigation",
   },
   {
     id: "scroll.toBottom",
     scope: "global",
-    defaultKeys: ["<end>"],
+    defaultKeys: ["G", "<end>"],
     description: "jump to bottom",
     group: "Navigation",
   },
@@ -204,6 +208,34 @@ export const ACTIONS: readonly ActionDef[] = [
     scope: "global",
     defaultKeys: ["}"],
     description: "next comment",
+    group: "Review",
+  },
+  {
+    id: "file.prev",
+    scope: "global",
+    defaultKeys: [","],
+    description: "previous file",
+    group: "Review",
+  },
+  {
+    id: "file.next",
+    scope: "global",
+    defaultKeys: ["."],
+    description: "next file",
+    group: "Review",
+  },
+  {
+    id: "hunk.toggleGap",
+    scope: "global",
+    defaultKeys: ["z"],
+    description: "toggle context gap for the selected hunk",
+    group: "Review",
+  },
+  {
+    id: "file.edit",
+    scope: "global",
+    defaultKeys: ["e"],
+    description: "edit selected file in $EDITOR",
     group: "Review",
   },
   // ---------- global: view ----------
@@ -367,14 +399,14 @@ export const ACTIONS: readonly ActionDef[] = [
   {
     id: "scroll.toTop",
     scope: "pager",
-    defaultKeys: ["<home>"],
+    defaultKeys: ["g", "<home>"],
     description: "jump to top",
     group: "Pager",
   },
   {
     id: "scroll.toBottom",
     scope: "pager",
-    defaultKeys: ["<end>"],
+    defaultKeys: ["G", "<end>"],
     description: "jump to bottom",
     group: "Pager",
   },

@@ -1,50 +1,35 @@
 import { describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
-import { parseDiffFromFile } from "@pierre/diffs";
-import { act, useEffect, useState } from "react";
+import { act, StrictMode, useEffect, useState } from "react";
+import { SourceTextTooLargeError } from "../../core/fileSource";
 import type { DiffFile } from "../../core/types";
+import {
+  createTestDeferred,
+  createTestDiffFile,
+  createTestSourceFetcher,
+  lines,
+} from "../../../test/helpers/diff-helpers";
 import { useReviewController, type ReviewController } from "./useReviewController";
 
-/** Build a minimal DiffFile with real parsed hunks and optional agent annotations. */
+/** Build a DiffFile with real parsed hunks using the controller's preferred defaults. */
 function createDiffFile(
   id: string,
   path: string,
   before: string,
   after: string,
   agent: DiffFile["agent"] = null,
+  sourceFetcher?: DiffFile["sourceFetcher"],
 ): DiffFile {
-  const metadata = parseDiffFromFile(
-    { name: path, contents: before, cacheKey: `${id}:before` },
-    { name: path, contents: after, cacheKey: `${id}:after` },
-    { context: 3 },
-    true,
-  );
-
-  let additions = 0;
-  let deletions = 0;
-  for (const hunk of metadata.hunks) {
-    for (const content of hunk.hunkContent) {
-      if (content.type === "change") {
-        additions += content.additions;
-        deletions += content.deletions;
-      }
-    }
-  }
-
-  return {
-    id,
-    path,
-    patch: "",
-    language: "typescript",
-    stats: { additions, deletions },
-    metadata,
+  return createTestDiffFile({
+    after,
     agent,
-  };
-}
-
-/** Build a stable multi-line string fixture. */
-function lines(...values: string[]) {
-  return `${values.join("\n")}\n`;
+    before,
+    context: 3,
+    id,
+    language: "typescript",
+    path,
+    sourceFetcher,
+  });
 }
 
 /** Build one file with two hunks so selection clamping can be verified across reload-like updates. */
@@ -70,6 +55,18 @@ function createSingleHunkFile() {
   afterLines[0] = "export const line1 = 100;";
 
   return createDiffFile("alpha", "alpha.ts", lines(...beforeLines), lines(...afterLines));
+}
+
+/** Build the small one-hunk alpha fixture used by source-loading tests. */
+function createAlphaFile(sourceFetcher?: DiffFile["sourceFetcher"]) {
+  return createDiffFile(
+    "alpha",
+    "alpha.ts",
+    "export const alpha = 1;\n",
+    "export const alpha = 2;\n",
+    null,
+    sourceFetcher,
+  );
 }
 
 /** Let deferred filters and follow-up effects settle before reading controller state. */
@@ -110,31 +107,43 @@ function ReviewControllerHarness({
   return null;
 }
 
+/** Render the controller hook and expose its latest state to tests. */
+async function renderReviewController(
+  initialFiles: DiffFile[],
+  { strictMode = false }: { strictMode?: boolean } = {},
+) {
+  const controllerRef: { current: ReviewController | null } = { current: null };
+  const setFilesRef: { current: ((nextFiles: DiffFile[]) => void) | null } = { current: null };
+  const harness = (
+    <ReviewControllerHarness
+      initialFiles={initialFiles}
+      onController={(nextController) => {
+        controllerRef.current = nextController;
+      }}
+      onSetFiles={(nextSetFiles) => {
+        setFilesRef.current = nextSetFiles;
+      }}
+    />
+  );
+  const setup = await testRender(strictMode ? <StrictMode>{harness}</StrictMode> : harness, {
+    width: 80,
+    height: 4,
+  });
+
+  return { controllerRef, setFilesRef, setup };
+}
+
 describe("useReviewController", () => {
   test("reselects the first visible file when filtering hides the current selection", async () => {
-    const controllerRef: { current: ReviewController | null } = { current: null };
-    const setup = await testRender(
-      <ReviewControllerHarness
-        initialFiles={[
-          createDiffFile(
-            "alpha",
-            "alpha.ts",
-            "export const alpha = 1;\n",
-            "export const alpha = 2;\n",
-          ),
-          createDiffFile(
-            "beta",
-            "beta.ts",
-            "export const beta = 1;\n",
-            "export const betaValue = 2;\n",
-          ),
-        ]}
-        onController={(nextController) => {
-          controllerRef.current = nextController;
-        }}
-      />,
-      { width: 80, height: 4 },
-    );
+    const { controllerRef, setup } = await renderReviewController([
+      createDiffFile("alpha", "alpha.ts", "export const alpha = 1;\n", "export const alpha = 2;\n"),
+      createDiffFile(
+        "beta",
+        "beta.ts",
+        "export const beta = 1;\n",
+        "export const betaValue = 2;\n",
+      ),
+    ]);
 
     try {
       await flush(setup);
@@ -159,20 +168,9 @@ describe("useReviewController", () => {
   });
 
   test("clamps the selected hunk index when files update under a soft reload", async () => {
-    const controllerRef: { current: ReviewController | null } = { current: null };
-    const setFilesRef: { current: ((nextFiles: DiffFile[]) => void) | null } = { current: null };
-    const setup = await testRender(
-      <ReviewControllerHarness
-        initialFiles={[createTwoHunkFile()]}
-        onController={(nextController) => {
-          controllerRef.current = nextController;
-        }}
-        onSetFiles={(nextSetFiles) => {
-          setFilesRef.current = nextSetFiles;
-        }}
-      />,
-      { width: 80, height: 4 },
-    );
+    const { controllerRef, setFilesRef, setup } = await renderReviewController([
+      createTwoHunkFile(),
+    ]);
 
     try {
       await flush(setup);
@@ -198,18 +196,19 @@ describe("useReviewController", () => {
     }
   });
 
-  test("live comment mutations update annotated navigation without remounting the app", async () => {
+  test("moves through visible files with clamped file-header alignment", async () => {
     const controllerRef: { current: ReviewController | null } = { current: null };
     const setup = await testRender(
       <ReviewControllerHarness
         initialFiles={[
-          createDiffFile(
-            "alpha",
-            "alpha.ts",
-            "export const alpha = 1;\n",
-            "export const alpha = 2;\n",
-          ),
+          createTwoHunkFile(),
           createDiffFile("beta", "beta.ts", "export const beta = 1;\n", "export const beta = 2;\n"),
+          createDiffFile(
+            "gamma",
+            "gamma.ts",
+            "export const gamma = 1;\n",
+            "export const gamma = 2;\n",
+          ),
         ]}
         onController={(nextController) => {
           controllerRef.current = nextController;
@@ -217,6 +216,82 @@ describe("useReviewController", () => {
       />,
       { width: 80, height: 4 },
     );
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        expectValue(controllerRef.current).selectHunk("alpha", 1);
+      });
+      await flush(setup);
+      expect(expectValue(controllerRef.current).selectedHunkIndex).toBe(1);
+
+      await act(async () => {
+        expectValue(controllerRef.current).moveToFile(1);
+      });
+      await flush(setup);
+
+      let controller = expectValue(controllerRef.current);
+      expect(controller.selectedFile?.path).toBe("beta.ts");
+      expect(controller.selectedHunkIndex).toBe(0);
+      expect(controller.selectedFileTopAlignRequestId).toBe(1);
+
+      await act(async () => {
+        expectValue(controllerRef.current).moveToFile(1);
+      });
+      await flush(setup);
+
+      controller = expectValue(controllerRef.current);
+      expect(controller.selectedFile?.path).toBe("gamma.ts");
+      expect(controller.selectedFileTopAlignRequestId).toBe(2);
+
+      await act(async () => {
+        expectValue(controllerRef.current).moveToFile(1);
+      });
+      await flush(setup);
+
+      controller = expectValue(controllerRef.current);
+      expect(controller.selectedFile?.path).toBe("gamma.ts");
+      expect(controller.selectedFileTopAlignRequestId).toBe(2);
+
+      await act(async () => {
+        expectValue(controllerRef.current).moveToFile(-1);
+      });
+      await flush(setup);
+
+      controller = expectValue(controllerRef.current);
+      expect(controller.selectedFile?.path).toBe("beta.ts");
+      expect(controller.selectedFileTopAlignRequestId).toBe(3);
+
+      await act(async () => {
+        expectValue(controllerRef.current).moveToFile(-1);
+      });
+      await flush(setup);
+
+      controller = expectValue(controllerRef.current);
+      expect(controller.selectedFile?.path).toBe("alpha.ts");
+      expect(controller.selectedFileTopAlignRequestId).toBe(4);
+
+      await act(async () => {
+        expectValue(controllerRef.current).moveToFile(-1);
+      });
+      await flush(setup);
+
+      controller = expectValue(controllerRef.current);
+      expect(controller.selectedFile?.path).toBe("alpha.ts");
+      expect(controller.selectedFileTopAlignRequestId).toBe(4);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("live comment mutations update annotated navigation without remounting the app", async () => {
+    const { controllerRef, setup } = await renderReviewController([
+      createDiffFile("alpha", "alpha.ts", "export const alpha = 1;\n", "export const alpha = 2;\n"),
+      createDiffFile("beta", "beta.ts", "export const beta = 1;\n", "export const beta = 2;\n"),
+    ]);
 
     try {
       await flush(setup);
@@ -271,16 +346,7 @@ describe("useReviewController", () => {
   });
 
   test("batch live comments validate together and reveal the first applied hunk", async () => {
-    const controllerRef: { current: ReviewController | null } = { current: null };
-    const setup = await testRender(
-      <ReviewControllerHarness
-        initialFiles={[createTwoHunkFile()]}
-        onController={(nextController) => {
-          controllerRef.current = nextController;
-        }}
-      />,
-      { width: 80, height: 4 },
-    );
+    const { controllerRef, setup } = await renderReviewController([createTwoHunkFile()]);
 
     try {
       await flush(setup);
@@ -320,16 +386,7 @@ describe("useReviewController", () => {
   });
 
   test("batch live comments do not mutate state when any target is invalid", async () => {
-    const controllerRef: { current: ReviewController | null } = { current: null };
-    const setup = await testRender(
-      <ReviewControllerHarness
-        initialFiles={[createTwoHunkFile()]}
-        onController={(nextController) => {
-          controllerRef.current = nextController;
-        }}
-      />,
-      { width: 80, height: 4 },
-    );
+    const { controllerRef, setup } = await renderReviewController([createTwoHunkFile()]);
 
     try {
       await flush(setup);
@@ -358,6 +415,668 @@ describe("useReviewController", () => {
       expect(expectValue(controllerRef.current).liveCommentCount).toBe(0);
       expect(expectValue(controllerRef.current).liveCommentSummaries).toEqual([]);
     } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("sidecar annotations are exposed as AI review notes", async () => {
+    const controllerRef: { current: ReviewController | null } = { current: null };
+    const setup = await testRender(
+      <ReviewControllerHarness
+        initialFiles={[
+          createDiffFile(
+            "alpha",
+            "alpha.ts",
+            "export const alpha = 1;\n",
+            "export const alpha = 2;\n",
+            {
+              path: "alpha.ts",
+              annotations: [
+                {
+                  id: "ai:1",
+                  source: "ai",
+                  summary: "Prefer a named constant.",
+                  rationale: "It documents the changed value.",
+                  newRange: [1, 1],
+                  author: "assistant",
+                },
+              ],
+            },
+          ),
+        ]}
+        onController={(nextController) => {
+          controllerRef.current = nextController;
+        }}
+      />,
+      { width: 80, height: 4 },
+    );
+
+    try {
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).reviewNoteSummaries).toMatchObject([
+        {
+          noteId: "ai:1",
+          source: "ai",
+          filePath: "alpha.ts",
+          newRange: [1, 1],
+          body: "Prefer a named constant.\n\nIt documents the changed value.",
+          author: "assistant",
+          editable: false,
+        },
+      ]);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("user note drafts can be saved, removed, and exposed as review notes", async () => {
+    const controllerRef: { current: ReviewController | null } = { current: null };
+    const setup = await testRender(
+      <ReviewControllerHarness
+        initialFiles={[
+          createDiffFile(
+            "alpha",
+            "alpha.ts",
+            "export const alpha = 1;\n",
+            "export const alpha = 2;\n",
+          ),
+        ]}
+        onController={(nextController) => {
+          controllerRef.current = nextController;
+        }}
+      />,
+      { width: 80, height: 4 },
+    );
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        expectValue(controllerRef.current).startUserNote();
+        expectValue(controllerRef.current).updateDraftNote("Please add a regression test.");
+      });
+      await flush(setup);
+
+      let savedNoteId = "";
+      await act(async () => {
+        const saved = expectValue(controllerRef.current).saveDraftNote();
+        savedNoteId = saved?.id ?? "";
+      });
+      await flush(setup);
+
+      expect(savedNoteId).toStartWith("user:");
+      expect(expectValue(controllerRef.current).userNotesByFileId.alpha).toHaveLength(1);
+      expect(expectValue(controllerRef.current).reviewNoteSummaries).toMatchObject([
+        {
+          noteId: savedNoteId,
+          source: "user",
+          filePath: "alpha.ts",
+          hunkIndex: 0,
+          newRange: [1, 1],
+          body: "Please add a regression test.",
+          editable: true,
+        },
+      ]);
+
+      await act(async () => {
+        const result = expectValue(controllerRef.current).removeLiveComment(savedNoteId);
+        expect(result).toMatchObject({
+          commentId: savedNoteId,
+          removed: true,
+          remainingCommentCount: 0,
+          source: "user",
+        });
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).userNotesByFileId.alpha).toBeUndefined();
+      expect(expectValue(controllerRef.current).reviewNoteSummaries).toEqual([]);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("session clear can include human user notes", async () => {
+    const { controllerRef, setup } = await renderReviewController([createTwoHunkFile()]);
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        const controller = expectValue(controllerRef.current);
+        controller.addLiveComment(
+          { filePath: "alpha.ts", hunkIndex: 0, summary: "Agent cleanup note" },
+          "comment-1",
+        );
+        controller.startUserNote("alpha", 0);
+      });
+      await flush(setup);
+
+      await act(async () => {
+        expectValue(controllerRef.current).updateDraftNote("Human cleanup note.");
+      });
+      await flush(setup);
+
+      await act(async () => {
+        expectValue(controllerRef.current).saveDraftNote();
+      });
+      await flush(setup);
+
+      await act(async () => {
+        const result = expectValue(controllerRef.current).removeLiveComment("comment-1");
+        expect(result).toMatchObject({
+          commentId: "comment-1",
+          removed: true,
+          remainingCommentCount: 1,
+          source: "agent",
+        });
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).liveCommentSummaries).toEqual([]);
+      expect(expectValue(controllerRef.current).userNotesByFileId.alpha).toHaveLength(1);
+
+      await act(async () => {
+        expectValue(controllerRef.current).addLiveComment(
+          { filePath: "alpha.ts", hunkIndex: 0, summary: "Default clear agent note" },
+          "comment-2",
+        );
+      });
+      await flush(setup);
+
+      await act(async () => {
+        const result = expectValue(controllerRef.current).clearLiveComments();
+        expect(result).toMatchObject({
+          removedCount: 1,
+          remainingCommentCount: 1,
+          removedLiveCommentCount: 1,
+          removedUserNoteCount: 0,
+          remainingUserNoteCount: 1,
+        });
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).liveCommentSummaries).toEqual([]);
+      expect(expectValue(controllerRef.current).userNotesByFileId.alpha).toHaveLength(1);
+
+      await act(async () => {
+        expectValue(controllerRef.current).addLiveComment(
+          { filePath: "alpha.ts", hunkIndex: 0, summary: "Inclusive clear agent note" },
+          "comment-3",
+        );
+      });
+      await flush(setup);
+
+      await act(async () => {
+        const result = expectValue(controllerRef.current).clearLiveComments(undefined, {
+          includeUser: true,
+        });
+        expect(result).toMatchObject({
+          removedCount: 2,
+          remainingCommentCount: 0,
+          removedLiveCommentCount: 1,
+          removedUserNoteCount: 1,
+        });
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).liveCommentSummaries).toEqual([]);
+      expect(expectValue(controllerRef.current).userNotesByFileId).toEqual({});
+      expect(expectValue(controllerRef.current).reviewNoteSummaries).toEqual([]);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("toggleGap flips per-file expansion state and lazily loads source text", async () => {
+    const fakeFetcher = createTestSourceFetcher((side) =>
+      side === "new" ? "alpha\nbeta\ngamma\n" : null,
+    );
+
+    const { controllerRef, setup } = await renderReviewController([createAlphaFile(fakeFetcher)]);
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        expectValue(controllerRef.current).toggleGap("alpha", "before:0");
+      });
+      await flush(setup);
+
+      const expanded = expectValue(controllerRef.current).expandedGapsByFileId["alpha"];
+      expect(expanded?.has("before:0")).toBe(true);
+      const status = expectValue(controllerRef.current).sourceStatusByFileId["alpha"];
+      expect(status?.kind).toBe("loaded");
+      if (status?.kind === "loaded") {
+        expect(status.text).toBe("alpha\nbeta\ngamma\n");
+      }
+      expect(fakeFetcher.calls.length).toBeGreaterThanOrEqual(1);
+
+      await act(async () => {
+        expectValue(controllerRef.current).toggleGap("alpha", "before:0");
+      });
+      await flush(setup);
+
+      const reCollapsed = expectValue(controllerRef.current).expandedGapsByFileId["alpha"];
+      expect(reCollapsed?.has("before:0")).toBe(false);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("toggleGap settles source status under React StrictMode", async () => {
+    const deferred = createTestDeferred<string | null>();
+    const fakeFetcher = createTestSourceFetcher(() => deferred.promise);
+
+    const { controllerRef, setup } = await renderReviewController([createAlphaFile(fakeFetcher)], {
+      strictMode: true,
+    });
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        expectValue(controllerRef.current).toggleGap("alpha", "before:0");
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).sourceStatusByFileId["alpha"]?.kind).toBe(
+        "loading",
+      );
+
+      deferred.resolve("strict mode source\n");
+      await flush(setup);
+
+      const status = expectValue(controllerRef.current).sourceStatusByFileId["alpha"];
+      expect(status?.kind).toBe("loaded");
+      if (status?.kind === "loaded") {
+        expect(status.text).toBe("strict mode source\n");
+      }
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("toggleGap is a no-op for files without a source fetcher", async () => {
+    const { controllerRef, setup } = await renderReviewController([createAlphaFile()]);
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        expectValue(controllerRef.current).toggleGap("alpha", "before:0");
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).expandedGapsByFileId["alpha"]).toBeUndefined();
+      expect(expectValue(controllerRef.current).sourceStatusByFileId["alpha"]).toBeUndefined();
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("toggleSelectedHunkGap expands the nearest gap for the current selection", async () => {
+    const beforeLines = Array.from({ length: 30 }, (_, index) => `line ${index + 1}`);
+    const afterLines = [...beforeLines];
+    afterLines[4] = "line 5 changed";
+    const after = lines(...afterLines);
+    const sourceFetcher = createTestSourceFetcher((side) => (side === "new" ? after : null));
+    const file = createTestDiffFile({
+      after,
+      before: lines(...beforeLines),
+      context: 3,
+      id: "alpha",
+      path: "alpha.ts",
+      sourceFetcher,
+    });
+
+    const { controllerRef, setup } = await renderReviewController([file]);
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        expectValue(controllerRef.current).toggleSelectedHunkGap();
+      });
+      await flush(setup);
+
+      const expanded = expectValue(controllerRef.current).expandedGapsByFileId["alpha"];
+      expect(expanded?.has("before:0")).toBe(true);
+      expect(sourceFetcher.calls).toEqual(["new"]);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("toggleGap surfaces an error status when the fetcher resolves null", async () => {
+    const failingFetcher = createTestSourceFetcher(() => null);
+
+    const { controllerRef, setup } = await renderReviewController([
+      createAlphaFile(failingFetcher),
+    ]);
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        expectValue(controllerRef.current).toggleGap("alpha", "before:0");
+      });
+      await flush(setup);
+
+      const status = expectValue(controllerRef.current).sourceStatusByFileId["alpha"];
+      expect(status?.kind).toBe("error");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("toggleGap surfaces an error status and logs context when the fetcher rejects", async () => {
+    const originalConsoleError = console.error;
+    const loggedErrors: unknown[][] = [];
+    console.error = (...args: unknown[]) => {
+      loggedErrors.push(args);
+    };
+
+    const failingFetcher = createTestSourceFetcher(() => {
+      throw new Error("source unavailable");
+    });
+
+    const { controllerRef, setup } = await renderReviewController([
+      createAlphaFile(failingFetcher),
+    ]);
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        expectValue(controllerRef.current).toggleGap("alpha", "before:0");
+      });
+      await flush(setup);
+
+      const status = expectValue(controllerRef.current).sourceStatusByFileId["alpha"];
+      expect(status?.kind).toBe("error");
+      expect(String(loggedErrors[0]?.[0])).toContain("alpha.ts");
+      expect(String(loggedErrors[0]?.[0])).toContain("alpha");
+    } finally {
+      console.error = originalConsoleError;
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("toggleGap marks over-limit source loads as too large", async () => {
+    const tooLargeFetcher = createTestSourceFetcher(() => {
+      throw new SourceTextTooLargeError(5);
+    });
+
+    const { controllerRef, setup } = await renderReviewController([
+      createAlphaFile(tooLargeFetcher),
+    ]);
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        expectValue(controllerRef.current).toggleGap("alpha", "before:0");
+      });
+      await flush(setup);
+
+      const status = expectValue(controllerRef.current).sourceStatusByFileId["alpha"];
+      expect(status).toEqual({ kind: "error", reason: "too-large" });
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("toggleGap caches loaded text and does not re-fetch on the second open", async () => {
+    let readCount = 0;
+    const trackedFetcher = createTestSourceFetcher((side) => {
+      readCount += 1;
+      return side === "new" ? `read-${readCount}\n` : null;
+    });
+
+    const { controllerRef, setup } = await renderReviewController([
+      createAlphaFile(trackedFetcher),
+    ]);
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        expectValue(controllerRef.current).toggleGap("alpha", "before:0");
+      });
+      await flush(setup);
+      const callsAfterFirst = trackedFetcher.calls.length;
+
+      await act(async () => {
+        expectValue(controllerRef.current).toggleGap("alpha", "before:0");
+      });
+      await flush(setup);
+
+      await act(async () => {
+        expectValue(controllerRef.current).toggleGap("alpha", "before:0");
+      });
+      await flush(setup);
+
+      const status = expectValue(controllerRef.current).sourceStatusByFileId["alpha"];
+      expect(status?.kind).toBe("loaded");
+      if (status?.kind === "loaded") {
+        // Text reflects the first read, not a later one.
+        expect(status.text).toBe("read-1\n");
+      }
+      expect(trackedFetcher.calls.length).toBe(callsAfterFirst);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("toggleGap requests old-side source for deleted files", async () => {
+    const trackedFetcher = createTestSourceFetcher((side) => (side === "old" ? "removed\n" : null));
+
+    const { controllerRef, setup } = await renderReviewController([
+      createDiffFile("removed", "removed.ts", "removed\n", "", null, trackedFetcher),
+    ]);
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        expectValue(controllerRef.current).toggleGap("removed", "trailing:0");
+      });
+      await flush(setup);
+
+      expect(trackedFetcher.calls).toEqual(["old"]);
+      const status = expectValue(controllerRef.current).sourceStatusByFileId["removed"];
+      expect(status?.kind).toBe("loaded");
+      if (status?.kind === "loaded") {
+        expect(status.text).toBe("removed\n");
+      }
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("a soft reload that replaces a file's sourceFetcher invalidates cached source and expansion", async () => {
+    const firstFetcher = createTestSourceFetcher((side) => (side === "new" ? "first\n" : null));
+    const secondFetcher = createTestSourceFetcher((side) => (side === "new" ? "second\n" : null));
+    const baseFile = createAlphaFile();
+
+    const { controllerRef, setFilesRef, setup } = await renderReviewController([
+      { ...baseFile, sourceFetcher: firstFetcher },
+    ]);
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        expectValue(controllerRef.current).toggleGap("alpha", "before:0");
+      });
+      await flush(setup);
+
+      // First fetch resolved against the original fetcher.
+      const initialStatus = expectValue(controllerRef.current).sourceStatusByFileId["alpha"];
+      expect(initialStatus?.kind).toBe("loaded");
+      if (initialStatus?.kind === "loaded") {
+        expect(initialStatus.text).toBe("first\n");
+      }
+      expect(
+        expectValue(controllerRef.current).expandedGapsByFileId["alpha"]?.has("before:0"),
+      ).toBe(true);
+
+      // Simulate a soft reload: same file id, different sourceFetcher (and patch).
+      await act(async () => {
+        expectValue(setFilesRef.current)([{ ...baseFile, sourceFetcher: secondFetcher }]);
+      });
+      await flush(setup);
+
+      // The stale loaded text and stale expansion must be cleared so the
+      // renderer doesn't combine old source with the new patch.
+      expect(expectValue(controllerRef.current).sourceStatusByFileId["alpha"]).toBeUndefined();
+      expect(expectValue(controllerRef.current).expandedGapsByFileId["alpha"]).toBeUndefined();
+
+      // Toggling again now fetches via the new fetcher and reports its text.
+      await act(async () => {
+        expectValue(controllerRef.current).toggleGap("alpha", "before:0");
+      });
+      await flush(setup);
+
+      const refreshedStatus = expectValue(controllerRef.current).sourceStatusByFileId["alpha"];
+      expect(refreshedStatus?.kind).toBe("loaded");
+      if (refreshedStatus?.kind === "loaded") {
+        expect(refreshedStatus.text).toBe("second\n");
+      }
+      expect(secondFetcher.calls.length).toBeGreaterThanOrEqual(1);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("a pending source load cannot repopulate state after a soft reload", async () => {
+    const firstLoad = createTestDeferred<string | null>();
+    const firstFetcher = createTestSourceFetcher(() => firstLoad.promise);
+    const secondFetcher = createTestSourceFetcher((side) => (side === "new" ? "second\n" : null));
+    const baseFile = createAlphaFile();
+
+    const { controllerRef, setFilesRef, setup } = await renderReviewController([
+      { ...baseFile, sourceFetcher: firstFetcher },
+    ]);
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        expectValue(controllerRef.current).toggleGap("alpha", "before:0");
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).sourceStatusByFileId["alpha"]?.kind).toBe(
+        "loading",
+      );
+
+      await act(async () => {
+        expectValue(setFilesRef.current)([{ ...baseFile, sourceFetcher: secondFetcher }]);
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).sourceStatusByFileId["alpha"]).toBeUndefined();
+      expect(expectValue(controllerRef.current).expandedGapsByFileId["alpha"]).toBeUndefined();
+
+      await act(async () => {
+        firstLoad.resolve("first\n");
+        await firstLoad.promise;
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).sourceStatusByFileId["alpha"]).toBeUndefined();
+
+      await act(async () => {
+        expectValue(controllerRef.current).toggleGap("alpha", "before:0");
+      });
+      await flush(setup);
+
+      const refreshedStatus = expectValue(controllerRef.current).sourceStatusByFileId["alpha"];
+      expect(refreshedStatus?.kind).toBe("loaded");
+      if (refreshedStatus?.kind === "loaded") {
+        expect(refreshedStatus.text).toBe("second\n");
+      }
+      expect(firstFetcher.calls).toEqual(["new"]);
+      expect(secondFetcher.calls).toEqual(["new"]);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("a stale rejected source load is logged without repopulating state", async () => {
+    const originalConsoleError = console.error;
+    const loggedErrors: unknown[][] = [];
+    console.error = (...args: unknown[]) => {
+      loggedErrors.push(args);
+    };
+
+    const firstLoad = createTestDeferred<string | null>();
+    const firstFetcher = createTestSourceFetcher(() => firstLoad.promise);
+    const secondFetcher = createTestSourceFetcher((side) => (side === "new" ? "second\n" : null));
+    const baseFile = createAlphaFile();
+
+    const { controllerRef, setFilesRef, setup } = await renderReviewController([
+      { ...baseFile, sourceFetcher: firstFetcher },
+    ]);
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        expectValue(controllerRef.current).toggleGap("alpha", "before:0");
+      });
+      await flush(setup);
+
+      await act(async () => {
+        expectValue(setFilesRef.current)([{ ...baseFile, sourceFetcher: secondFetcher }]);
+      });
+      await flush(setup);
+
+      await act(async () => {
+        firstLoad.reject(new Error("stale failure"));
+        await firstLoad.promise.catch(() => undefined);
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).sourceStatusByFileId["alpha"]).toBeUndefined();
+      expect(String(loggedErrors[0]?.[0])).toContain("ignored stale new source load failure");
+      expect(String(loggedErrors[0]?.[0])).toContain("alpha.ts");
+      expect(String(loggedErrors[0]?.[0])).toContain("alpha");
+    } finally {
+      console.error = originalConsoleError;
       await act(async () => {
         setup.renderer.destroy();
       });

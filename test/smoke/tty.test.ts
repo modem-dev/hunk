@@ -224,16 +224,16 @@ afterEach(() => {
 describe("TTY render smoke", () => {
   const ttyTest = enableTtySmokeTests ? test : test.skip;
 
-  ttyTest("split mode renders chrome, rails, and AI badges in a terminal transcript", async () => {
+  ttyTest("split mode renders chrome and rails in a terminal transcript", async () => {
     if (!ttyToolsAvailable) {
       return;
     }
 
     const output = await runTtySmoke({ mode: "split", agentContext: true });
 
-    expect(output).toContain("View  Navigate  Theme  Agent  Help");
+    expect(output).toContain("View  Navigate  Agent  Help");
     expect(output).toContain("before.ts ↔ after.ts");
-    expect(output).toContain("[AI]");
+    expect(output).not.toContain("[AI]");
     expect(output).toContain("▌@@ -1,1 +1,2 @@");
     expect(output).toContain("▌1 - export const answer = 41;");
     expect(output).toContain("▌1 + export const answer = 42;");
@@ -250,8 +250,8 @@ describe("TTY render smoke", () => {
       inputCommand: `(sleep 2; printf w; sleep 1; printf q)`,
     });
 
-    expect(output).toContain("very long wrapped line for tty s");
-    expect(output).toContain("moke coverage';");
+    expect(output).toContain("wrapped line for");
+    expect(output).toContain("tty smoke coverage';");
   });
 
   ttyTest("regular mode can toggle wrapped lines on, off, and on again", async () => {
@@ -265,8 +265,8 @@ describe("TTY render smoke", () => {
       inputCommand: `(sleep 2; printf www; sleep 1; printf q)`,
     });
 
-    expect(output).toContain("very long wrapped line for tty s");
-    expect(output).toContain("moke coverage';");
+    expect(output).toContain("wrapped line for");
+    expect(output).toContain("tty smoke coverage';");
   });
 
   ttyTest(
@@ -278,7 +278,7 @@ describe("TTY render smoke", () => {
 
       const output = await runTtySmoke({ mode: "stack" });
 
-      expect(output).toContain("View  Navigate  Theme  Agent  Help");
+      expect(output).toContain("View  Navigate  Agent  Help");
       expect(output).toContain("▌1   -  export const answer = 41;");
       expect(output).toContain("▌  1 +  export const answer = 42;");
       expect(output).not.toContain("│1 + export const answer = 42;");
@@ -292,7 +292,7 @@ describe("TTY render smoke", () => {
 
     const output = await runTtySmoke({ pager: true });
 
-    expect(output).not.toContain("View  Navigate  Theme  Agent  Help");
+    expect(output).not.toContain("View  Navigate  Agent  Help");
     expect(output).not.toContain("F10 menu");
     expect(output).toContain("before.ts -> after.ts");
     expect(output).toContain("export const answer = 42;");
@@ -310,8 +310,8 @@ describe("TTY render smoke", () => {
       inputCommand: `(sleep 2; printf w; sleep 1; printf q)`,
     });
 
-    expect(output).toContain("very long wrapped line for tty smo");
-    expect(output).toContain("ke coverage';");
+    expect(output).toContain("wrapped line for t");
+    expect(output).toContain("ty smoke coverage';");
   });
 
   ttyTest("stdin patch mode auto-enters pager mode and can quit from terminal input", async () => {
@@ -321,7 +321,7 @@ describe("TTY render smoke", () => {
 
     const output = await runStdinPagerSmoke();
 
-    expect(output).not.toContain("View  Navigate  Theme  Agent  Help");
+    expect(output).not.toContain("View  Navigate  Agent  Help");
     expect(output).not.toContain("F10 menu");
     expect(output).toContain("after.ts");
     expect(output).toContain("@@ -1 +1,2 @@");
@@ -349,7 +349,7 @@ describe("TTY render smoke", () => {
 
     const output = await runStdinPagerSmoke({ command: "pager" });
 
-    expect(output).not.toContain("View  Navigate  Theme  Agent  Help");
+    expect(output).not.toContain("View  Navigate  Agent  Help");
     expect(output).toContain("after.ts");
     expect(output).toContain("@@ -1 +1,2 @@");
     expect(output).toContain("export const answer = 42;");

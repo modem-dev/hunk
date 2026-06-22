@@ -1,8 +1,18 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
+import type { FileSourceFetcher } from "./fileSource";
 import type { Keymap } from "./keymap/match";
 
 export type LayoutMode = "auto" | "split" | "stack";
-export type VcsMode = "git" | "jj";
+export type VcsMode = string;
+export type TerminalThemeMode = "light" | "dark";
+
+export type ReviewNoteSource = "ai" | "agent" | "user";
+export type SessionCommentListType = "live" | "all" | ReviewNoteSource;
+
+export interface UserNoteLineTarget {
+  side: "old" | "new";
+  line: number;
+}
 
 export interface AgentAnnotation {
   id?: string;
@@ -13,8 +23,11 @@ export interface AgentAnnotation {
   tags?: string[];
   confidence?: "low" | "medium" | "high";
   source?: string;
+  title?: string;
   author?: string;
   createdAt?: string;
+  updatedAt?: string;
+  editable?: boolean;
 }
 
 export interface AgentFileContext {
@@ -40,11 +53,22 @@ export interface DiffFile {
     deletions: number;
   };
   metadata: FileDiffMetadata;
+  lineMoveKinds?: DiffLineMoveKinds;
   agent: AgentFileContext | null;
   isUntracked?: boolean;
   isBinary?: boolean;
   isTooLarge?: boolean;
   statsTruncated?: boolean;
+  // Optional capability for fetching the file's full text on either side.
+  // Loaders attach this when source content is reachable; absent when not.
+  sourceFetcher?: FileSourceFetcher;
+}
+
+export type DiffLineMoveKind = "moved";
+
+export interface DiffLineMoveKinds {
+  additionLines: Array<DiffLineMoveKind | undefined>;
+  deletionLines: Array<DiffLineMoveKind | undefined>;
 }
 
 export interface Changeset {
@@ -68,8 +92,64 @@ export interface CommonOptions {
   wrapLines?: boolean;
   hunkHeaders?: boolean;
   agentNotes?: boolean;
+  copyDecorations?: boolean;
+  transparentBackground?: boolean;
+  colorMoved?: boolean;
   /** Resolved keymap for this invocation; populated by config layering. */
   keymap?: Keymap;
+}
+
+export interface CustomSyntaxColorsConfig {
+  default?: string;
+  keyword?: string;
+  string?: string;
+  comment?: string;
+  number?: string;
+  function?: string;
+  property?: string;
+  type?: string;
+  variable?: string;
+  operator?: string;
+  punctuation?: string;
+}
+
+export interface CustomThemeConfig {
+  base?: string;
+  label?: string;
+  background?: string;
+  panel?: string;
+  panelAlt?: string;
+  border?: string;
+  accent?: string;
+  accentMuted?: string;
+  text?: string;
+  muted?: string;
+  addedBg?: string;
+  removedBg?: string;
+  movedAddedBg?: string;
+  movedRemovedBg?: string;
+  contextBg?: string;
+  addedContentBg?: string;
+  removedContentBg?: string;
+  contextContentBg?: string;
+  addedSignColor?: string;
+  removedSignColor?: string;
+  lineNumberBg?: string;
+  lineNumberFg?: string;
+  selectedHunk?: string;
+  badgeAdded?: string;
+  badgeRemoved?: string;
+  badgeNeutral?: string;
+  fileNew?: string;
+  fileDeleted?: string;
+  fileRenamed?: string;
+  fileModified?: string;
+  fileUntracked?: string;
+  noteBorder?: string;
+  noteBackground?: string;
+  noteTitleBackground?: string;
+  noteTitleText?: string;
+  syntax?: CustomSyntaxColorsConfig;
 }
 
 export interface PersistedViewPreferences {
@@ -79,6 +159,7 @@ export interface PersistedViewPreferences {
   wrapLines: boolean;
   showHunkHeaders: boolean;
   showAgentNotes: boolean;
+  copyDecorations: boolean;
 }
 
 export interface HelpCommandInput {
@@ -122,6 +203,7 @@ export interface SessionReviewCommandInput {
   output: SessionCommandOutput;
   selector: SessionSelectorInput;
   includePatch: boolean;
+  includeNotes?: boolean;
 }
 
 export interface SessionNavigateCommandInput {
@@ -184,6 +266,7 @@ export interface SessionCommentListCommandInput {
   output: SessionCommandOutput;
   selector: SessionSelectorInput;
   filePath?: string;
+  type?: SessionCommentListType;
 }
 
 export interface SessionCommentRemoveCommandInput {
@@ -200,6 +283,7 @@ export interface SessionCommentClearCommandInput {
   output: SessionCommandOutput;
   selector: SessionSelectorInput;
   filePath?: string;
+  includeUser?: boolean;
   confirmed: boolean;
 }
 
@@ -215,7 +299,7 @@ export type SessionCommandInput =
   | SessionCommentRemoveCommandInput
   | SessionCommentClearCommandInput;
 
-export interface VcsCommandInput {
+export interface VcsDiffCommandInput {
   kind: "vcs";
   range?: string;
   staged: boolean;
@@ -223,14 +307,14 @@ export interface VcsCommandInput {
   options: CommonOptions;
 }
 
-export interface ShowCommandInput {
+export interface VcsShowCommandInput {
   kind: "show";
   ref?: string;
   pathspecs?: string[];
   options: CommonOptions;
 }
 
-export interface StashShowCommandInput {
+export interface VcsStashShowCommandInput {
   kind: "stash-show";
   ref?: string;
   options: CommonOptions;
@@ -259,9 +343,9 @@ export interface DiffToolCommandInput {
 }
 
 export type CliInput =
-  | VcsCommandInput
-  | ShowCommandInput
-  | StashShowCommandInput
+  | VcsDiffCommandInput
+  | VcsShowCommandInput
+  | VcsStashShowCommandInput
   | FileCommandInput
   | PatchCommandInput
   | DiffToolCommandInput;
@@ -278,8 +362,11 @@ export interface AppBootstrap {
   changeset: Changeset;
   initialMode: LayoutMode;
   initialTheme?: string;
+  initialThemeMode?: TerminalThemeMode;
+  customTheme?: CustomThemeConfig;
   initialShowLineNumbers?: boolean;
   initialWrapLines?: boolean;
   initialShowHunkHeaders?: boolean;
   initialShowAgentNotes?: boolean;
+  initialCopyDecorations?: boolean;
 }

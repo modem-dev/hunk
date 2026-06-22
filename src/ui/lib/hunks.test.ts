@@ -169,4 +169,41 @@ describe("annotated hunk navigation", () => {
       hunkIndex: 1,
     });
   });
+
+  test("uses full stream position when annotated navigation starts on an unannotated hunk", () => {
+    const streamCursors: HunkCursor[] = [
+      { fileId: "alpha", hunkIndex: 0 },
+      { fileId: "alpha", hunkIndex: 1 },
+      { fileId: "beta", hunkIndex: 0 },
+      { fileId: "gamma", hunkIndex: 0 },
+      { fileId: "gamma", hunkIndex: 1 },
+      { fileId: "omega", hunkIndex: 0 },
+    ];
+    const annotatedCursors: HunkCursor[] = [
+      { fileId: "alpha", hunkIndex: 1 },
+      { fileId: "gamma", hunkIndex: 0 },
+      { fileId: "gamma", hunkIndex: 1 },
+    ];
+
+    expect(findNextHunkCursor(annotatedCursors, "beta", 0, 1, streamCursors)).toEqual({
+      fileId: "gamma",
+      hunkIndex: 0,
+    });
+    expect(findNextHunkCursor(annotatedCursors, "beta", 0, -1, streamCursors)).toEqual({
+      fileId: "alpha",
+      hunkIndex: 1,
+    });
+    expect(findNextHunkCursor(annotatedCursors, "alpha", 0, 1, streamCursors)).toEqual({
+      fileId: "alpha",
+      hunkIndex: 1,
+    });
+    expect(findNextHunkCursor(annotatedCursors, "gamma", 1, 1, streamCursors)).toEqual({
+      fileId: "gamma",
+      hunkIndex: 1,
+    });
+    expect(findNextHunkCursor(annotatedCursors, "omega", 0, 1, streamCursors)).toEqual({
+      fileId: "gamma",
+      hunkIndex: 1,
+    });
+  });
 });

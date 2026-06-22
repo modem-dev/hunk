@@ -65,6 +65,10 @@ function hostCandidates() {
     if (arch === "x64") return [{ packageName: "hunkdiff-linux-x64", binary }];
   }
 
+  if (platform === "windows") {
+    if (arch === "x64") return [{ packageName: "hunkdiff-windows-x64", binary }];
+  }
+
   return [];
 }
 
