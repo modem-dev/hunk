@@ -347,6 +347,12 @@ function normalizeHighlightedColor(color: string | undefined, theme: AppTheme) {
   }
 
   const normalized = color.trim().toLowerCase();
+  if (theme.syntaxTheme?.startsWith("pierre-")) {
+    // Pierre themes intentionally use these token colors; only remap them for other palettes.
+    cacheForTheme.set(color, normalized);
+    return normalized;
+  }
+
   const reserved =
     RESERVED_PIERRE_TOKEN_COLORS[theme.appearance][
       normalized as keyof (typeof RESERVED_PIERRE_TOKEN_COLORS)[typeof theme.appearance]

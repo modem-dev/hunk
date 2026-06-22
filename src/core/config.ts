@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import { join } from "node:path";
-import { BUNDLED_SHIKI_THEME_IDS } from "../ui/lib/shikiThemes";
+import { BUNDLED_HIGHLIGHTER_THEME_IDS } from "../ui/lib/shikiThemes";
 import { normalizeBuiltInThemeId } from "../ui/themes";
 import { resolveGlobalConfigPath } from "./paths";
 import { detectVcs, findVcsRepoRootCandidate, getDefaultVcsAdapter, isVcsId } from "./vcs";
@@ -14,7 +14,7 @@ import type {
   VcsMode,
 } from "./types";
 
-const BUILT_IN_THEME_IDS = BUNDLED_SHIKI_THEME_IDS;
+const BUILT_IN_THEME_IDS = BUNDLED_HIGHLIGHTER_THEME_IDS;
 const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
 const CUSTOM_THEME_COLOR_KEYS = [
   "background",

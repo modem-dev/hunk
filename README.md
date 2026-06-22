@@ -131,6 +131,7 @@ transparent_background = false
 ```
 
 `theme = "auto"` and `--theme auto` query the terminal background at startup, choose `github-light-default` for light backgrounds and `github-dark-default` for dark backgrounds, and fall back to `github-dark-default` if the terminal does not answer.
+The bundled theme list also includes Diffs.com's Pierre defaults as `pierre-dark` and `pierre-light`.
 Older theme ids such as `graphite` and `paper` remain accepted as compatibility aliases.
 `exclude_untracked` affects Git/Sapling working-tree `hunk diff` sessions only.
 `transparent_background` can also be written as `transparentBackground`.

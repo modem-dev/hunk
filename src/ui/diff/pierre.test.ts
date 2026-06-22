@@ -707,4 +707,40 @@ describe("Pierre diff rows", () => {
       "#eba0ac",
     );
   });
+
+  test("uses Pierre's bundled Diffs.com theme for Pierre syntax", async () => {
+    const metadata = parseDiffFromFile(
+      { name: "syntax.ts", contents: "const a = 1;\n", cacheKey: "pierre-before" },
+      {
+        name: "syntax.ts",
+        contents:
+          'const a = 1;\nexport class Greeter {\n  count = 42;\n  greet(user: User) {\n    return "hello" + user.name;\n  }\n}\n',
+        cacheKey: "pierre-after",
+      },
+      { context: 3 },
+      true,
+    );
+    const file: DiffFile = {
+      id: "pierre-syntax",
+      path: "syntax.ts",
+      patch: "",
+      language: "typescript",
+      stats: { additions: 6, deletions: 0 },
+      metadata,
+      agent: null,
+    };
+    const theme = resolveTheme("pierre-dark", null);
+    const highlighted = await loadHighlightedDiff(file, theme);
+    const spans = buildStackRows(file, highlighted, theme)
+      .filter(
+        (row): row is Extract<DiffRow, { type: "stack-line" }> =>
+          row.type === "stack-line" && row.cell.kind === "addition",
+      )
+      .flatMap((row) => row.cell.spans);
+
+    expect(theme.syntaxTheme).toBe("pierre-dark");
+    expect(spans.find((span) => span.text.includes("export"))?.fg?.toLowerCase()).toBe("#ff678d");
+    expect(spans.find((span) => span.text.includes("Greeter"))?.fg?.toLowerCase()).toBe("#d568ea");
+    expect(spans.find((span) => span.text.includes('"hello"'))?.fg?.toLowerCase()).toBe("#5ecc71");
+  });
 });

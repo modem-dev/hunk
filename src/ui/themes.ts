@@ -2,13 +2,13 @@ import type { ThemeMode } from "@opentui/core";
 import type { CustomThemeConfig } from "../core/types";
 import { blendHex, contrastRatio, relativeLuminance } from "./lib/color";
 import {
-  BUNDLED_SHIKI_THEME_IDS,
+  BUNDLED_HIGHLIGHTER_THEME_IDS,
   resolveLegacyThemeId,
   getBundledShikiThemeBackground,
   getBundledShikiThemeDiffColors,
   getBundledShikiThemeForeground,
-  type BundledShikiThemeDiffColors,
-  type BundledShikiThemeId,
+  type BundledHighlighterThemeDiffColors,
+  type BundledHighlighterThemeId,
 } from "./lib/shikiThemes";
 import { withLazySyntaxStyle } from "./themes/syntax";
 import type { AppTheme, SyntaxColors, ThemeBase } from "./themes/types";
@@ -116,8 +116,8 @@ function readableChromeColor(preferred: string, panel: string, panelAlt: string)
   return anchor;
 }
 
-/** Derive one complete Hunk theme from one bundled Shiki editor theme. */
-function buildShikiTheme(themeId: BundledShikiThemeId): AppTheme {
+/** Derive one complete Hunk theme from one bundled Shiki/Pierre editor theme. */
+function buildShikiTheme(themeId: BundledHighlighterThemeId): AppTheme {
   const editorBackground = getBundledShikiThemeBackground(themeId) ?? "#0d1117";
   const editorForeground = getBundledShikiThemeForeground(themeId);
   const diffColors = getBundledShikiThemeDiffColors(themeId);
@@ -234,7 +234,7 @@ function buildShikiTheme(themeId: BundledShikiThemeId): AppTheme {
   return withLazySyntaxStyle(themeBase, syntaxColors);
 }
 
-export const THEMES: AppTheme[] = BUNDLED_SHIKI_THEME_IDS.map((themeId) =>
+export const THEMES: AppTheme[] = BUNDLED_HIGHLIGHTER_THEME_IDS.map((themeId) =>
   buildShikiTheme(themeId),
 );
 
@@ -348,7 +348,9 @@ export function normalizeBuiltInThemeId(themeId: string) {
 }
 
 /** Return known semantic diff colors for a bundled Shiki-backed theme. */
-export function bundledThemeDiffColors(themeId: string): BundledShikiThemeDiffColors | undefined {
+export function bundledThemeDiffColors(
+  themeId: string,
+): BundledHighlighterThemeDiffColors | undefined {
   return getBundledShikiThemeDiffColors(themeId);
 }
 
