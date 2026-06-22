@@ -11,6 +11,7 @@ import {
 } from "../components/chrome/menu";
 import { buildAgentPopoverContent, resolveAgentPopoverPlacement, wrapText } from "./agentPopover";
 import { buildAppMenus } from "./appMenus";
+import { iconForFile } from "./fileIcons";
 import {
   isCreateReviewNoteKey,
   isEscapeKey,
@@ -78,6 +79,11 @@ function createDiffFile(
 }
 
 describe("ui helpers", () => {
+  test("iconForFile resolves exact basename icons imported from lazygit", () => {
+    expect(iconForFile("Gemfile").icon).toBe("\ue791");
+    expect(iconForFile("Vagrantfile").icon).toBe("\uf2b8");
+  });
+
   test("buildMenuSpecs lays out the fixed top-level order", () => {
     const specs = buildMenuSpecs();
 
@@ -145,6 +151,7 @@ describe("ui helpers", () => {
       showHelp: false,
       showHunkHeaders: false,
       showLineNumbers: true,
+      nerdFontIcons: true,
       renderSidebar: false,
       toggleCopyDecorations: () => {},
       toggleAgentNotes: () => {},
@@ -153,6 +160,7 @@ describe("ui helpers", () => {
       toggleHelp: () => {},
       toggleHunkHeaders: () => {},
       toggleLineNumbers: () => {},
+      toggleNerdFontIcons: () => {},
       toggleLineWrap: () => {},
       toggleSidebar: () => {},
       triggerEditSelectedFile: () => {},
@@ -182,7 +190,14 @@ describe("ui helpers", () => {
             entry.kind === "item" && Boolean(entry.checked),
         )
         .map((entry) => entry.label),
-    ).toEqual(["Stacked view", "Agent notes", "Line numbers", "Line wrapping", "Copy decorations"]);
+    ).toEqual([
+      "Stacked view",
+      "File icons",
+      "Agent notes",
+      "Line numbers",
+      "Line wrapping",
+      "Copy decorations",
+    ]);
     expect(
       menus.view
         .filter((entry): entry is Extract<MenuEntry, { kind: "item" }> => entry.kind === "item")

@@ -101,6 +101,7 @@ describe("parseCli", () => {
       "--wrap",
       "--no-hunk-headers",
       "--agent-notes",
+      "--file-icons",
       "--transparent-bg",
       "--watch",
     ]);
@@ -118,6 +119,7 @@ describe("parseCli", () => {
         wrapLines: true,
         hunkHeaders: false,
         agentNotes: true,
+        nerdFontIcons: true,
         transparentBackground: true,
       },
     });

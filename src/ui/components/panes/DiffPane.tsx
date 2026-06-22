@@ -188,6 +188,7 @@ export function DiffPane({
   draftNoteFocused = false,
   separatorWidth,
   pagerMode = false,
+  nerdFontIcons = false,
   copyDecorations = false,
   screenLeft = 0,
   screenTop = 0,
@@ -234,6 +235,7 @@ export function DiffPane({
   draftNoteFocused?: boolean;
   separatorWidth: number;
   pagerMode?: boolean;
+  nerdFontIcons?: boolean;
   copyDecorations?: boolean;
   screenLeft?: number;
   screenTop?: number;
@@ -1753,6 +1755,7 @@ export function DiffPane({
                 file={pinnedHeaderFile}
                 headerLabelWidth={headerLabelWidth}
                 headerStatsWidth={headerStatsWidth}
+                nerdFontIcons={nerdFontIcons}
                 theme={theme}
                 onSelect={() => onSelectFile(pinnedHeaderFile.id)}
               />
@@ -1809,6 +1812,7 @@ export function DiffPane({
                       file={file}
                       headerLabelWidth={headerLabelWidth}
                       headerStatsWidth={headerStatsWidth}
+                      nerdFontIcons={nerdFontIcons}
                       layout={layout}
                       selectedHunkIndex={file.id === selectedFileId ? selectedHunkIndex : -1}
                       copySelectedRowRanges={copySelectedRowKeysByFile.get(file.id)}

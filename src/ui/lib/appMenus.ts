@@ -17,6 +17,7 @@ export interface BuildAppMenusOptions {
   showHelp: boolean;
   showHunkHeaders: boolean;
   showLineNumbers: boolean;
+  nerdFontIcons: boolean;
   renderSidebar: boolean;
   toggleCopyDecorations: () => void;
   toggleAgentNotes: () => void;
@@ -25,6 +26,7 @@ export interface BuildAppMenusOptions {
   toggleHelp: () => void;
   toggleHunkHeaders: () => void;
   toggleLineNumbers: () => void;
+  toggleNerdFontIcons: () => void;
   toggleLineWrap: () => void;
   toggleSidebar: () => void;
   triggerEditSelectedFile: () => void;
@@ -48,6 +50,7 @@ export function buildAppMenus({
   showHelp,
   showHunkHeaders,
   showLineNumbers,
+  nerdFontIcons,
   renderSidebar,
   toggleCopyDecorations,
   toggleAgentNotes,
@@ -56,6 +59,7 @@ export function buildAppMenus({
   toggleHelp,
   toggleHunkHeaders,
   toggleLineNumbers,
+  toggleNerdFontIcons,
   toggleLineWrap,
   toggleSidebar,
   triggerEditSelectedFile,
@@ -132,6 +136,12 @@ export function buildAppMenus({
         hint: "s",
         checked: renderSidebar,
         action: toggleSidebar,
+      },
+      {
+        kind: "item",
+        label: "File icons",
+        checked: nerdFontIcons,
+        action: toggleNerdFontIcons,
       },
       { kind: "separator" },
       {

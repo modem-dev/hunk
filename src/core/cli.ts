@@ -75,6 +75,9 @@ function buildCommonOptions(
     wrapLines: resolveBooleanFlag(argv, "--wrap", "--no-wrap"),
     hunkHeaders: resolveBooleanFlag(argv, "--hunk-headers", "--no-hunk-headers"),
     agentNotes: resolveBooleanFlag(argv, "--agent-notes", "--no-agent-notes"),
+    nerdFontIcons:
+      resolveBooleanFlag(argv, "--file-icons", "--no-file-icons") ??
+      resolveBooleanFlag(argv, "--nerd-font-icons", "--no-nerd-font-icons"),
     transparentBackground: resolveBooleanFlag(argv, "--transparent-bg", "--no-transparent-bg"),
   };
 }
@@ -94,6 +97,10 @@ function applyCommonOptions(command: Command) {
     .option("--no-hunk-headers", "hide hunk metadata rows")
     .option("--agent-notes", "show agent notes by default")
     .option("--no-agent-notes", "hide agent notes by default")
+    .option("--file-icons", "show Nerd Font file and folder icons")
+    .option("--no-file-icons", "hide Nerd Font file and folder icons")
+    .option("--nerd-font-icons", "show Nerd Font file and folder icons")
+    .option("--no-nerd-font-icons", "hide Nerd Font file and folder icons")
     .option("--transparent-bg", "let terminal background show through Hunk surfaces")
     .option("--no-transparent-bg", "paint Hunk surfaces with the active theme");
 }
@@ -157,6 +164,7 @@ function renderCliHelp() {
     "  --wrap / --no-wrap                      wrap or truncate long diff lines",
     "  --hunk-headers / --no-hunk-headers      show or hide hunk metadata rows",
     "  --agent-notes / --no-agent-notes        show or hide agent notes by default",
+    "  --file-icons / --no-file-icons          show or hide Nerd Font file/folder icons",
     "  --transparent-bg / --no-transparent-bg  let terminal background show through Hunk surfaces",
     "  --theme <theme>                         named theme override",
     "",
