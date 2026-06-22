@@ -208,10 +208,18 @@ export function useReviewController({
   const [userNotesByFileId, setUserNotesByFileId] = useState<Record<string, UserReviewNote[]>>(() =>
     userNotesSidecarPath ? readUserNotes(userNotesSidecarPath) : {},
   );
+  // Lets a functional commit read the latest notes when saves batch before a re-render.
+  const userNotesRef = useRef(userNotesByFileId);
   // Write through to the sidecar at the point of each mutation so notes persist
   // without a state-mirroring effect; the seed above is the only disk read.
   const commitUserNotes = useCallback(
-    (next: Record<string, UserReviewNote[]>) => {
+    (
+      update:
+        | Record<string, UserReviewNote[]>
+        | ((prev: Record<string, UserReviewNote[]>) => Record<string, UserReviewNote[]>),
+    ) => {
+      const next = typeof update === "function" ? update(userNotesRef.current) : update;
+      userNotesRef.current = next;
       setUserNotesByFileId(next);
       if (userNotesSidecarPath) {
         writeUserNotes(userNotesSidecarPath, next);
@@ -893,13 +901,14 @@ export function useReviewController({
       editable: true,
     };
 
-    commitUserNotes({
-      ...userNotesByFileId,
-      [draftNote.fileId]: [...(userNotesByFileId[draftNote.fileId] ?? []), savedNote],
-    });
+    // Functional form: a closure snapshot would drop a save batched before re-render.
+    commitUserNotes((prev) => ({
+      ...prev,
+      [draftNote.fileId]: [...(prev[draftNote.fileId] ?? []), savedNote],
+    }));
     setDraftNote(null);
     return savedNote;
-  }, [draftNote, userNotesByFileId, commitUserNotes]);
+  }, [draftNote, commitUserNotes]);
 
   /** Remove one in-memory user note by id. */
   const removeUserNote = useCallback(

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { UserReviewNote } from "../ui/hooks/useReviewController";
@@ -45,6 +45,18 @@ describe("userNotesStore", () => {
     writeUserNotes(path, map);
 
     expect(readUserNotes(path)).toEqual(map);
+  });
+
+  test("writeUserNotes replaces existing notes atomically without leaving temp litter", () => {
+    const root = createTempDir("hunk-notes-");
+    const path = join(root, "notes.json");
+
+    writeUserNotes(path, { "repo:0:src/foo.ts": [note("user:1", "first")] });
+    writeUserNotes(path, { "repo:0:src/bar.ts": [note("user:2", "second")] });
+
+    // Full replacement, and the temp sibling used for the atomic rename is gone.
+    expect(readUserNotes(path)).toEqual({ "repo:0:src/bar.ts": [note("user:2", "second")] });
+    expect(readdirSync(root).filter((name) => name.endsWith(".tmp"))).toEqual([]);
   });
 
   test("readUserNotes tolerates a missing or malformed sidecar", () => {

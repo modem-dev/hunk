@@ -5,9 +5,20 @@
  * path so they survive closing the TUI and can be read back by an AI agent
  * directly off disk. Every disk operation is best-effort: a read failure yields
  * an empty map and a write failure is swallowed, so persistence never crashes
- * the review UI. Set `HUNK_DEBUG=1` to surface swallowed errors on stderr.
+ * the review UI. Writes go through a temp sibling + atomic rename so an
+ * interrupted write (SIGTERM, OOM, power loss) can never truncate an existing
+ * sidecar and lose prior notes. Set `HUNK_DEBUG=1` to surface swallowed errors.
  */
-import { accessSync, constants, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  accessSync,
+  constants,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname } from "node:path";
 import type { UserReviewNote } from "../ui/hooks/useReviewController";
 
@@ -85,13 +96,28 @@ export function readUserNotes(path: string): UserNotesMap {
   return map;
 }
 
-/** Persist human notes to the caller-supplied sidecar path, creating parent dirs. */
+/**
+ * Persist human notes to the caller-supplied sidecar path, creating parent dirs.
+ *
+ * The payload is written to a temp sibling and then `renameSync`d into place.
+ * `rename(2)` is atomic on POSIX, so a crash mid-write leaves the previous
+ * sidecar intact rather than a truncated file that `readUserNotes` would discard
+ * — preserving the durability the feature promises.
+ */
 export function writeUserNotes(path: string, map: UserNotesMap): void {
+  const tempPath = `${path}.${process.pid}.tmp`;
   try {
     mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, JSON.stringify(map, null, 2), { encoding: "utf8" });
+    writeFileSync(tempPath, JSON.stringify(map, null, 2), { encoding: "utf8" });
+    renameSync(tempPath, path);
   } catch (error) {
-    // Best-effort: a write failure must never crash the review UI.
+    // Best-effort: a write failure must never crash the review UI. Drop any
+    // partial temp file so a failed write can't litter the sidecar directory.
+    try {
+      rmSync(tempPath, { force: true });
+    } catch {
+      // ignore cleanup failure
+    }
     debugUserNotesError("write", path, error);
   }
 }
