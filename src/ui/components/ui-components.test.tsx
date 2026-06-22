@@ -2,6 +2,7 @@ import { describe, expect, mock, test } from "bun:test";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { testRender } from "@opentui/react/test-utils";
 import { act, createRef, useCallback, useEffect, useState, type ReactNode } from "react";
+import stringWidth from "string-width";
 import type { AppBootstrap, DiffFile } from "../../core/types";
 import { createTestVcsAppBootstrap } from "../../../test/helpers/app-bootstrap";
 import { capturedTestColorToHex } from "../../../test/helpers/test-color-helpers";
@@ -941,15 +942,19 @@ describe("UI components", () => {
       const addNoteX = affordanceLines[addNoteY]?.indexOf("[+]") ?? -1;
       expect(addNoteY).toBeGreaterThanOrEqual(0);
       expect(addNoteX).toBeGreaterThanOrEqual(0);
+      const addNoteColumn = stringWidth(affordanceLines[addNoteY]!.slice(0, addNoteX));
 
-      await act(async () => {
-        await setup.mockMouse.moveTo(addNoteX + 1, addNoteY);
-        await setup.renderOnce();
-      });
-      await act(async () => {
-        await setup.mockMouse.click(addNoteX + 1, addNoteY);
-        await setup.renderOnce();
-      });
+      for (let column = addNoteColumn; column < addNoteColumn + "[+]".length; column += 1) {
+        await act(async () => {
+          await setup.mockMouse.moveTo(32, secondHunkY);
+          await setup.renderOnce();
+          await setup.mockMouse.click(column, addNoteY);
+          await setup.renderOnce();
+        });
+        if (calls.length > 0) {
+          break;
+        }
+      }
 
       expect(calls).toEqual([
         { fileId: "target", hunkIndex: 1, target: { side: "new", line: 60 } },
