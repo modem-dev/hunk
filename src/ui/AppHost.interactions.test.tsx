@@ -3353,7 +3353,15 @@ describe("App interactions", () => {
         await setup.renderOnce();
       });
 
-      frame = await waitForFrame(setup, (currentFrame) => !currentFrame.includes("Controls help"));
+      // OpenTUI's input parser can buffer a bare `\x1b` while disambiguating
+      // it from a multi-byte CSI sequence; on slower CI runners (especially
+      // the Windows job) that buffer can take ~1s to settle, so give the
+      // post-Esc poll generous headroom.
+      frame = await waitForFrame(
+        setup,
+        (currentFrame) => !currentFrame.includes("Controls help"),
+        40,
+      );
       expect(frame).not.toContain("Controls help");
       expect(onQuit).not.toHaveBeenCalled();
     } finally {
