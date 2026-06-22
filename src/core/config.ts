@@ -2,6 +2,8 @@ import fs from "node:fs";
 import { join } from "node:path";
 import { BUNDLED_SHIKI_THEME_IDS } from "../ui/lib/shikiThemes";
 import { normalizeBuiltInThemeId } from "../ui/themes";
+import { applyKeymapOverrides, loadKeymapDefaults } from "./keymap/load";
+import type { Keymap } from "./keymap/match";
 import { resolveGlobalConfigPath } from "./paths";
 import { detectVcs, findVcsRepoRootCandidate, getDefaultVcsAdapter, isVcsId } from "./vcs";
 import type {
@@ -86,7 +88,7 @@ interface HunkConfigResolution {
   repoConfigPath?: string;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
@@ -263,6 +265,7 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
     copyDecorations: overrides.copyDecorations ?? base.copyDecorations,
     transparentBackground: overrides.transparentBackground ?? base.transparentBackground,
     colorMoved: overrides.colorMoved ?? base.colorMoved,
+    keymap: overrides.keymap ?? base.keymap,
   };
 }
 
@@ -288,18 +291,28 @@ function detectRepoVcsMode(cwd: string): VcsMode {
   return detectVcs(cwd)?.id ?? getDefaultVcsAdapter().id;
 }
 
-/** Parse one TOML config file into a plain object. */
+/**
+ * Parse one TOML config file into a plain object. Missing files yield `{}`;
+ * malformed TOML and non-object roots are reported to stderr and treated as
+ * absent so a bad config never aborts startup.
+ */
 function readTomlRecord(path: string) {
   if (!fs.existsSync(path)) {
     return {};
   }
 
-  const parsed = Bun.TOML.parse(fs.readFileSync(path, "utf8"));
-  if (!isRecord(parsed)) {
-    throw new Error(`Expected ${path} to contain a TOML object.`);
+  try {
+    const parsed = Bun.TOML.parse(fs.readFileSync(path, "utf8"));
+    if (!isRecord(parsed)) {
+      process.stderr.write(`[hunk] config: ${path} is not a TOML object — ignored.\n`);
+      return {};
+    }
+    return parsed;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`[hunk] config: parse error in ${path}: ${message} — ignored.\n`);
+    return {};
   }
-
-  return parsed;
 }
 
 /** Resolve CLI input against global and repo-local config files. */
@@ -330,16 +343,23 @@ export function resolveConfiguredCliInput(
     transparentBackground: false,
   };
 
+  // Keymap is layered separately from view options. It only honors the
+  // top-level `[keybindings.<scope>]` blocks, not command-section overrides,
+  // because a per-command keymap would be confusing and is unnecessary for v1.
+  let keymap: Keymap = loadKeymapDefaults();
+
   if (userConfigPath) {
     const userConfig = readTomlRecord(userConfigPath);
     resolvedOptions = mergeOptions(resolvedOptions, resolveConfigLayer(userConfig, input));
     resolvedCustomTheme = mergeCustomTheme(resolvedCustomTheme, readCustomTheme(userConfig));
+    keymap = applyKeymapOverrides(keymap, userConfig);
   }
 
   if (repoConfigPath) {
     const repoConfig = readTomlRecord(repoConfigPath);
     resolvedOptions = mergeOptions(resolvedOptions, resolveConfigLayer(repoConfig, input));
     resolvedCustomTheme = mergeCustomTheme(resolvedCustomTheme, readCustomTheme(repoConfig));
+    keymap = applyKeymapOverrides(keymap, repoConfig);
   }
 
   resolvedOptions = mergeOptions(resolvedOptions, input.options);
@@ -359,6 +379,7 @@ export function resolveConfiguredCliInput(
     copyDecorations: resolvedOptions.copyDecorations ?? DEFAULT_VIEW_PREFERENCES.copyDecorations,
     transparentBackground: resolvedOptions.transparentBackground ?? false,
     colorMoved: resolvedOptions.colorMoved,
+    keymap,
   };
 
   if (resolvedOptions.theme === "custom" && !resolvedCustomTheme) {

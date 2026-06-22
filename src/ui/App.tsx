@@ -5,6 +5,7 @@ import {
 } from "@opentui/core";
 import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState, useRef } from "react";
+import { loadKeymapDefaults } from "../core/keymap/load";
 import type { AppBootstrap, CliInput, LayoutMode, UserNoteLineTarget } from "../core/types";
 import { canReloadInput, computeWatchSignature } from "../core/watch";
 import type { HunkSessionBrokerClient, ReloadedSessionResult } from "../hunk-session/types";
@@ -803,6 +804,13 @@ export function App({
     toggleMenu,
   } = useMenuController(menus);
 
+  // Bootstraps prepared by tests or older callers may not include a resolved
+  // keymap on `input.options`; fall back to defaults so behavior is identical.
+  const keymap = useMemo(
+    () => bootstrap.input.options.keymap ?? loadKeymapDefaults(),
+    [bootstrap.input.options.keymap],
+  );
+
   useAppKeyboardShortcuts({
     activeMenuId,
     activateCurrentMenuItem,
@@ -815,6 +823,7 @@ export function App({
     closeThemeSelector,
     focusArea,
     focusFilter,
+    keymap,
     moveToAnnotatedHunk,
     moveToFile,
     moveToHunk: review.moveToHunk,
@@ -1088,6 +1097,7 @@ export function App({
         <Suspense fallback={null}>
           <LazyHelpDialog
             canRefresh={canRefreshCurrentInput}
+            keymap={keymap}
             terminalHeight={terminal.height}
             terminalWidth={terminal.width}
             theme={baseTheme}

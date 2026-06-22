@@ -70,7 +70,11 @@ describe("PTY chrome", () => {
       await session.click(/Controls help/);
       const helpDialog = await session.waitForText(/Navigation/, { timeout: 5_000 });
 
-      expect(helpDialog).toContain("g / G");
+      // The registry-driven help renders scroll.toTop and scroll.toBottom as
+      // separate rows, each surfacing its primary binding plus the fallback
+      // arrow/Home/End keys.
+      expect(helpDialog).toMatch(/g\s*\/\s*Home/);
+      expect(helpDialog).toMatch(/G\s*\/\s*End/);
     } finally {
       session.close();
     }
@@ -179,6 +183,72 @@ describe("PTY chrome", () => {
 
       expect(help.includes("Keyboard help") || help.includes("Controls help")).toBe(true);
       expect(help).toContain("move line-by-line");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("q quits the app while the help dialog is open", async () => {
+    const fixture = harness.createTwoFileRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split"],
+      cwd: fixture.dir,
+      cols: 220,
+      rows: 24,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      await session.press("?");
+      await session.waitForText(/Controls help|Keyboard help/, { timeout: 5_000 });
+
+      await session.press("q");
+      // Pre-keymap, the hook only matched Esc to dismiss help, so q fell
+      // through to requestQuit. The keymap rewrite briefly broke that path.
+      // Quit should clear the chrome row entirely.
+      const after = await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("View  Navigate  Agent  Help"),
+        5_000,
+      );
+      expect(after).not.toContain("View  Navigate  Agent  Help");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("Esc closes the help dialog without quitting the app", async () => {
+    const fixture = harness.createTwoFileRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split"],
+      cwd: fixture.dir,
+      cols: 220,
+      rows: 24,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      await session.press("?");
+      await session.waitForText(/Controls help|Keyboard help/, { timeout: 5_000 });
+
+      // OpenTUI's input parser can buffer a bare \x1b while it disambiguates
+      // it from a multi-byte escape sequence; on slower CI runners that
+      // buffer can take several hundred ms to settle, so allow 10s.
+      await session.press("escape");
+      const after = await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("Controls help") && !text.includes("Keyboard help"),
+        10_000,
+      );
+      expect(after).toMatch(/View\s+Navigate\s+Agent\s+Help/);
+      expect(after).not.toContain("Controls help");
+      expect(after).not.toContain("Keyboard help");
     } finally {
       session.close();
     }

@@ -157,6 +157,10 @@ variable = "#eef4ff"
 
 All custom theme colors must use `#rrggbb` hex values. Press `t` in the app, or choose `View -> Themes…`, to open the theme selector.
 
+Keybindings are configurable through the same files; see
+[`docs/keybindings.md`](docs/keybindings.md) for the action reference and
+token syntax.
+
 ### Git integration
 
 Set Hunk as your Git pager so `git diff` and `git show` open in Hunk automatically:

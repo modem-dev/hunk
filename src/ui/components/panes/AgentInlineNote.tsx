@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { AgentAnnotation, DiffFile, LayoutMode } from "../../../core/types";
 import { annotationRangeLabel, reviewNoteSource } from "../../lib/agentAnnotations";
 import { wrapText } from "../../lib/agentPopover";
-import { isEscapeKey, isSaveDraftNoteKey } from "../../lib/keyboard";
+import { isEscapeKey, isSaveDraftNoteKey } from "../../../core/keyboard";
 import { sanitizeTerminalLine } from "../../../lib/terminalText";
 import { fitText, padText } from "../../lib/text";
 import type { AppTheme } from "../../themes";

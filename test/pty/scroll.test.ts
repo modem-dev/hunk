@@ -297,4 +297,47 @@ describe("PTY scrolling", () => {
       session.close();
     }
   });
+
+  test("b pages back up after space pages down", async () => {
+    const fixture = harness.createScrollableFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      cols: 220,
+      rows: 12,
+    });
+
+    try {
+      const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      expect(initial).toContain("line01 = 101");
+      expect(initial).not.toContain("line08 = 108");
+
+      // Live coverage of the matcher's bare-character dispatch through OpenTUI
+      // for the pageDown / pageUp pair. The `<s-space>` precedence over
+      // `<space>` is pinned in match.test.ts; tuistory's PTY encoder drops the
+      // shift modifier on space, so it can't be exercised end-to-end here.
+      await session.waitIdle({ timeout: 200 });
+      await session.press("space");
+      const paged = await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("line01 = 101"),
+        5_000,
+      );
+
+      expect(paged).not.toContain("line01 = 101");
+
+      await session.press("b");
+      const restored = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("line01 = 101"),
+        5_000,
+      );
+
+      expect(restored).toContain("line01 = 101");
+    } finally {
+      session.close();
+    }
+  });
 });

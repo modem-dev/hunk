@@ -1,5 +1,6 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
 import type { FileSourceFetcher } from "./fileSource";
+import type { Keymap } from "./keymap/match";
 
 export type LayoutMode = "auto" | "split" | "stack";
 export type VcsMode = string;
@@ -94,6 +95,8 @@ export interface CommonOptions {
   copyDecorations?: boolean;
   transparentBackground?: boolean;
   colorMoved?: boolean;
+  /** Resolved keymap for this invocation; populated by config layering. */
+  keymap?: Keymap;
 }
 
 export interface CustomSyntaxColorsConfig {
