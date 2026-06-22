@@ -1734,10 +1734,11 @@ export function DiffPane({
         border: renderTopChrome ? ["top"] : [],
         borderColor: theme.border,
         backgroundColor: theme.panel,
-        paddingTop: renderTopChrome ? 1 : 0,
-        paddingBottom: pagerMode ? 0 : 1,
         paddingX: 0,
         flexDirection: "column",
+        ...(renderTopChrome
+          ? { paddingY: 1 }
+          : { paddingTop: 0, paddingBottom: pagerMode ? 0 : 1 }),
       }}
       onMouseDragEnd={endCopySelection}
       onMouseUp={endCopySelection}

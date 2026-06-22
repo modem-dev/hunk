@@ -101,10 +101,9 @@ export function SidebarPane({
         border: showTopChrome ? ["top"] : [],
         borderColor: theme.border,
         backgroundColor: theme.panel,
-        paddingTop: showTopChrome ? 1 : 0,
-        paddingBottom: 1,
         paddingX: 0,
         flexDirection: "column",
+        ...(showTopChrome ? { paddingY: 1 } : { paddingTop: 0, paddingBottom: 1 }),
       }}
     >
       <scrollbox
