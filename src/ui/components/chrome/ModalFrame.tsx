@@ -2,6 +2,7 @@ import type { MouseEvent as TuiMouseEvent } from "@opentui/core";
 import type { ReactNode } from "react";
 import { fitText, padText } from "../../lib/text";
 import type { AppTheme } from "../../themes";
+import { overlaySurfaceStyle } from "./chromeSurface";
 
 /** Render a centered framed modal container that other dialogs can reuse. */
 export function ModalFrame({
@@ -53,9 +54,7 @@ export function ModalFrame({
           width: clampedWidth,
           height: clampedHeight,
           zIndex: 60,
-          border: true,
-          borderColor: theme.accent,
-          backgroundColor: theme.panel,
+          ...overlaySurfaceStyle(theme, theme.accent),
           flexDirection: "column",
         }}
         onMouseScroll={(event: TuiMouseEvent) => {

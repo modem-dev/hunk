@@ -92,6 +92,7 @@ export interface CommonOptions {
   hunkHeaders?: boolean;
   agentNotes?: boolean;
   copyDecorations?: boolean;
+  borderless?: boolean;
   transparentBackground?: boolean;
   colorMoved?: boolean;
 }
@@ -157,6 +158,7 @@ export interface PersistedViewPreferences {
   showHunkHeaders: boolean;
   showAgentNotes: boolean;
   copyDecorations: boolean;
+  borderless: boolean;
 }
 
 export interface HelpCommandInput {
@@ -366,4 +368,5 @@ export interface AppBootstrap {
   initialShowHunkHeaders?: boolean;
   initialShowAgentNotes?: boolean;
   initialCopyDecorations?: boolean;
+  initialBorderless?: boolean;
 }

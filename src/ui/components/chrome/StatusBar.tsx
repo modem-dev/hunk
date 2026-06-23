@@ -1,5 +1,6 @@
 import { isEscapeKey } from "../../lib/keyboard";
 import type { AppTheme } from "../../themes";
+import { topChromeBg } from "./chromeSurface";
 
 /** Render the active file filter input or current filter summary. */
 export function StatusBar({
@@ -25,7 +26,7 @@ export function StatusBar({
     <box
       style={{
         height: 1,
-        backgroundColor: theme.panelAlt,
+        backgroundColor: topChromeBg(theme),
         paddingLeft: 1,
         paddingRight: 1,
         alignItems: "center",

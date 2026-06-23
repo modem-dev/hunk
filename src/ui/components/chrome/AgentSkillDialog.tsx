@@ -1,6 +1,7 @@
 import type { MouseEvent as TuiMouseEvent } from "@opentui/core";
 import { fitText, padText } from "../../lib/text";
 import type { AppTheme } from "../../themes";
+import { chromeSurfaceBg } from "./chromeSurface";
 import { ModalFrame } from "./ModalFrame";
 
 export const AGENT_SKILL_COMMAND = "hunk skill path";
@@ -61,8 +62,10 @@ export function AgentSkillDialog({
             style={{
               width: cardWidth,
               height: promptRows.length + 2,
-              border: true,
-              borderColor: theme.border,
+              // Inner prompt box: a bordered inset, or a filled note band when borderless.
+              ...(theme.chrome === "borderless"
+                ? { backgroundColor: chromeSurfaceBg(theme, "note") }
+                : { border: true, borderColor: theme.border }),
               flexDirection: "column",
               paddingLeft: 1,
               paddingRight: 1,

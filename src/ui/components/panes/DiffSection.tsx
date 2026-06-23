@@ -7,8 +7,8 @@ import type { DiffSectionGeometry } from "../../diff/diffSectionGeometry";
 import type { VisibleAgentNote } from "../../lib/agentAnnotations";
 import type { CopySelectedRowRange } from "./copySelection";
 import { diffSectionId } from "../../lib/ids";
-import { fitText } from "../../lib/text";
 import type { AppTheme } from "../../themes";
+import { ChromeSeparator } from "../chrome/ChromeSeparator";
 import { DiffFileHeaderRow } from "./DiffFileHeaderRow";
 
 interface DiffSectionProps {
@@ -85,23 +85,11 @@ function DiffSectionComponent({
       style={{
         width: "100%",
         flexDirection: "column",
-        backgroundColor: theme.panel,
+        backgroundColor: theme.chrome === "borderless" ? theme.surfaces.code : theme.panel,
         overflow: "visible",
       }}
     >
-      {showSeparator ? (
-        <box
-          style={{
-            width: "100%",
-            height: 1,
-            paddingLeft: 1,
-            paddingRight: 1,
-            backgroundColor: theme.panel,
-          }}
-        >
-          <text fg={theme.border}>{fitText("─".repeat(separatorWidth), separatorWidth)}</text>
-        </box>
-      ) : null}
+      {showSeparator ? <ChromeSeparator theme={theme} width={separatorWidth} /> : null}
 
       {showHeader ? (
         <DiffFileHeaderRow

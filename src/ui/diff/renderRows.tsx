@@ -7,6 +7,7 @@ import {
   resolveStackCellGeometry,
 } from "./codeColumns";
 import { gapKey } from "./expandCollapsedRows";
+import { chromeSurfaceBg } from "../components/chrome/chromeSurface";
 import type { DiffRow, RenderSpan, SplitLineCell, StackLineCell } from "./pierre";
 import {
   diffRailMarker,
@@ -1156,6 +1157,9 @@ function renderHeaderRow(
       : null,
   ].filter((badge): badge is { key: string; text: string; onClick: () => void } => Boolean(badge));
   const badgeWidth = badges.reduce((total, badge) => total + badge.text.length + 1, 0);
+  // Collapsed-gap and hunk-header rows are in-file context affordances; keep them
+  // on the quiet contextBand so they stay distinct from section-header bands.
+  const bandBg = chromeSurfaceBg(theme, "contextBand");
   const collapsedExpandable = row.type === "collapsed" && Boolean(onToggleGap);
   const labelText =
     row.type === "collapsed" ? collapsedRowLabel(row.text, collapsedExpandable) : row.text;
@@ -1173,7 +1177,7 @@ function renderHeaderRow(
         style={{
           width,
           height: 1,
-          backgroundColor: theme.panelAlt,
+          backgroundColor: bandBg,
         }}
         onMouseMove={() => onHoverRow?.(row.key)}
         onMouseOver={() => onHoverRow?.(row.key)}
@@ -1182,14 +1186,11 @@ function renderHeaderRow(
         <text>
           <span
             fg={selected ? neutralRailColor(theme) : dimRailColor(neutralRailColor(theme), theme)}
-            bg={theme.panelAlt}
+            bg={bandBg}
           >
             {marker()}
           </span>
-          <span
-            fg={row.type === "collapsed" ? theme.muted : theme.badgeNeutral}
-            bg={theme.panelAlt}
-          >
+          <span fg={row.type === "collapsed" ? theme.muted : theme.badgeNeutral} bg={bandBg}>
             {label}
           </span>
         </text>
@@ -1205,7 +1206,7 @@ function renderHeaderRow(
         width,
         height: 1,
         flexDirection: "row",
-        backgroundColor: theme.panelAlt,
+        backgroundColor: bandBg,
       }}
       onMouseMove={() => onHoverRow?.(row.key)}
       onMouseOver={() => onHoverRow?.(row.key)}
@@ -1217,14 +1218,11 @@ function renderHeaderRow(
         <text>
           <span
             fg={selected ? neutralRailColor(theme) : dimRailColor(neutralRailColor(theme), theme)}
-            bg={theme.panelAlt}
+            bg={bandBg}
           >
             {marker()}
           </span>
-          <span
-            fg={row.type === "collapsed" ? theme.muted : theme.badgeNeutral}
-            bg={theme.panelAlt}
-          >
+          <span fg={row.type === "collapsed" ? theme.muted : theme.badgeNeutral} bg={bandBg}>
             {label}
           </span>
         </text>

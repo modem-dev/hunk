@@ -29,6 +29,7 @@ import { openSelectedFileInEditor } from "./lib/openInEditor";
 import { resolveResponsiveLayout } from "./lib/responsive";
 import { resizeSidebarWidth } from "./lib/sidebar";
 import { availableThemes, resolveTheme, withTransparentBackground } from "./themes";
+import type { ChromeMode } from "./themes";
 
 type FocusArea = "files" | "filter" | "note";
 type ActiveAddNoteTarget = ActiveAddNoteAffordance & { fileId: string };
@@ -68,6 +69,7 @@ function withCurrentViewOptions(
     showHunkHeaders: boolean;
     showLineNumbers: boolean;
     wrapLines: boolean;
+    borderless: boolean;
   },
 ): CliInput {
   return {
@@ -80,6 +82,7 @@ function withCurrentViewOptions(
       hunkHeaders: view.showHunkHeaders,
       lineNumbers: view.showLineNumbers,
       wrapLines: view.wrapLines,
+      borderless: view.borderless,
     },
   };
 }
@@ -134,6 +137,7 @@ export function App({
   const [copyDecorations, setCopyDecorations] = useState(bootstrap.initialCopyDecorations ?? false);
   const [codeHorizontalOffset, setCodeHorizontalOffset] = useState(0);
   const [showHunkHeaders, setShowHunkHeaders] = useState(bootstrap.initialShowHunkHeaders ?? true);
+  const [borderless, setBorderless] = useState(bootstrap.initialBorderless ?? false);
   const [themeSelectorState, setThemeSelectorState] = useState<ThemeSelectorState>({
     open: false,
     selectedIndex: 0,
@@ -156,10 +160,18 @@ export function App({
     [bootstrap.customTheme],
   );
   const effectiveThemeId = themeSelectorState.previewThemeId ?? themeId;
-  const baseTheme = useMemo(
-    () => resolveTheme(effectiveThemeId, detectedThemeMode ?? null, bootstrap.customTheme),
-    [effectiveThemeId, detectedThemeMode, bootstrap.customTheme],
-  );
+  const baseTheme = useMemo(() => {
+    const resolved = resolveTheme(
+      effectiveThemeId,
+      detectedThemeMode ?? null,
+      bootstrap.customTheme,
+    );
+    const chrome: ChromeMode = borderless ? "borderless" : "bordered";
+    // Carry the chrome mode on the base theme so overlays (menus/dialogs), which
+    // use baseTheme for a solid background, render borderless too. Only clone when
+    // the mode differs so the lazy syntax-style getter stays untouched when bordered.
+    return resolved.chrome === chrome ? resolved : { ...resolved, chrome };
+  }, [effectiveThemeId, detectedThemeMode, bootstrap.customTheme, borderless]);
   const activeTheme = useMemo(
     () =>
       bootstrap.input.options.transparentBackground
@@ -238,7 +250,9 @@ export function App({
     showAgentNotes,
   });
 
-  const bodyPadding = pagerMode ? 0 : BODY_PADDING;
+  // Borderless chrome fills the width edge-to-edge; the legacy body gutter would otherwise expose
+  // the root (code) background as a 1-column band down each side, reading as a stray vertical bar.
+  const bodyPadding = pagerMode || borderless ? 0 : BODY_PADDING;
   const bodyWidth = Math.max(0, terminal.width - bodyPadding);
   const responsiveLayout = resolveResponsiveLayout(layoutMode, terminal.width);
   const canForceShowSidebar = bodyWidth >= SIDEBAR_MIN_WIDTH + DIVIDER_WIDTH + DIFF_MIN_WIDTH;
@@ -504,6 +518,11 @@ export function App({
     setShowHunkHeaders((current) => !current);
   };
 
+  /** Switch chrome between drawn borders and filled background bands. */
+  const toggleBorderless = () => {
+    setBorderless((current) => !current);
+  };
+
   const canRefreshCurrentInput = canReloadInput(bootstrap.input);
   const watchEnabled = Boolean(bootstrap.input.options.watch && canRefreshCurrentInput);
 
@@ -520,6 +539,7 @@ export function App({
       showHunkHeaders,
       showLineNumbers,
       wrapLines,
+      borderless,
     });
 
     await onReloadSession(nextInput, {
@@ -542,6 +562,7 @@ export function App({
     showLineNumbers,
     themeId,
     wrapLines,
+    borderless,
   ]);
 
   const triggerRefreshCurrentInput = useCallback(() => {
@@ -744,6 +765,8 @@ export function App({
         showHunkHeaders,
         showLineNumbers,
         renderSidebar,
+        borderless,
+        toggleBorderless,
         toggleCopyDecorations,
         toggleAgentNotes,
         toggleFocusArea,
@@ -775,6 +798,8 @@ export function App({
       showHunkHeaders,
       showLineNumbers,
       renderSidebar,
+      borderless,
+      toggleBorderless,
       toggleAgentNotes,
       toggleFocusArea,
       toggleHelp,
@@ -834,6 +859,7 @@ export function App({
     switchMenu,
     themeSelectorOpen: themeSelectorState.open,
     toggleAgentNotes,
+    toggleBorderless,
     toggleFocusArea,
     toggleGapForSelectedHunk: review.toggleSelectedHunkGap,
     toggleHelp,

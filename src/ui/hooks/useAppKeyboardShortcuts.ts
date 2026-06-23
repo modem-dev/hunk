@@ -42,6 +42,14 @@ function isUppercaseGKey(key: KeyEvent) {
   );
 }
 
+/** Detect Shift-B without stealing the lowercase page-up binding. */
+function isUppercaseBKey(key: KeyEvent) {
+  return (
+    (key.sequence === "B" && !key.option && !key.ctrl && !key.meta) ||
+    (key.name === "b" && key.shift && !key.option && !key.ctrl && !key.meta)
+  );
+}
+
 export interface UseAppKeyboardShortcutsOptions {
   activeMenuId: MenuId | null;
   activateCurrentMenuItem: () => void;
@@ -72,6 +80,7 @@ export interface UseAppKeyboardShortcutsOptions {
   startUserNote: () => void;
   switchMenu: (delta: number) => void;
   toggleAgentNotes: () => void;
+  toggleBorderless: () => void;
   toggleFocusArea: () => void;
   toggleGapForSelectedHunk: () => void;
   toggleHelp: () => void;
@@ -115,6 +124,7 @@ export function useAppKeyboardShortcuts({
   startUserNote,
   switchMenu,
   toggleAgentNotes,
+  toggleBorderless,
   toggleFocusArea,
   toggleGapForSelectedHunk,
   toggleHelp,
@@ -522,6 +532,11 @@ export function useAppKeyboardShortcuts({
 
     if (key.name === "m" || key.sequence === "m") {
       runAndCloseMenu(toggleHunkHeaders);
+      return;
+    }
+
+    if (isUppercaseBKey(key)) {
+      runAndCloseMenu(toggleBorderless);
       return;
     }
 

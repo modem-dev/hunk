@@ -460,5 +460,6 @@ export async function loadAppBootstrap(
     initialShowHunkHeaders: input.options.hunkHeaders ?? true,
     initialShowAgentNotes: input.options.agentNotes ?? false,
     initialCopyDecorations: input.options.copyDecorations ?? false,
+    initialBorderless: input.options.borderless ?? false,
   };
 }

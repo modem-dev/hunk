@@ -1,5 +1,6 @@
 import type { AppTheme } from "../../themes";
 import { fitText } from "../../lib/text";
+import { topChromeBg } from "./chromeSurface";
 import type { MenuId, MenuSpec } from "./menu";
 
 /** Render the top menu bar and the current changeset title. */
@@ -20,11 +21,12 @@ export function MenuBar({
   onHoverMenu: (menuId: MenuId) => void;
   onToggleMenu: (menuId: MenuId) => void;
 }) {
+  const chromeBg = topChromeBg(theme);
   return (
     <box
       style={{
         height: 1,
-        backgroundColor: theme.panelAlt,
+        backgroundColor: chromeBg,
         flexDirection: "row",
         alignItems: "center",
         paddingLeft: 1,
@@ -39,7 +41,7 @@ export function MenuBar({
             style={{
               width: menu.width,
               height: 1,
-              backgroundColor: active ? theme.accentMuted : theme.panelAlt,
+              backgroundColor: active ? theme.accentMuted : chromeBg,
             }}
             onMouseUp={() => onToggleMenu(menu.id)}
             onMouseOver={() => onHoverMenu(menu.id)}

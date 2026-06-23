@@ -1,5 +1,6 @@
 import type { MouseEvent as TuiMouseEvent } from "@opentui/core";
 import type { AppTheme } from "../../themes";
+import { chromeSurfaceBg } from "../chrome/chromeSurface";
 
 /** Render the visible divider plus a wider invisible drag target. */
 export function PaneDivider({
@@ -21,28 +22,43 @@ export function PaneDivider({
   onMouseDragEnd: (event: TuiMouseEvent) => void;
   onMouseUp: (event: TuiMouseEvent) => void;
 }) {
+  // Borderless chrome hides the divider line at rest and reveals an accent rule
+  // only while resizing, so the grab handle stays discoverable when dragging.
+  const borderless = theme.chrome === "borderless";
+  const revealLine = !borderless || isResizing;
+
   return (
     <>
       <box
         style={{
           width: 1,
-          border: ["top", "left"],
-          borderColor: isResizing ? theme.accent : theme.border,
-          backgroundColor: isResizing ? theme.accentMuted : theme.panel,
+          // Explicitly clear the border at rest in borderless mode; an omitted
+          // border key still renders the line from customBorderChars below.
+          border: revealLine ? ["top", "left"] : [],
+          ...(revealLine ? { borderColor: isResizing ? theme.accent : theme.border } : {}),
+          backgroundColor: isResizing
+            ? theme.accentMuted
+            : borderless
+              ? chromeSurfaceBg(theme, "sidebar")
+              : theme.panel,
         }}
-        customBorderChars={{
-          topLeft: "┬",
-          topRight: "┬",
-          bottomLeft: "┴",
-          bottomRight: "┴",
-          horizontal: "─",
-          vertical: "│",
-          topT: "┬",
-          bottomT: "┴",
-          leftT: "├",
-          rightT: "┤",
-          cross: "┼",
-        }}
+        {...(revealLine
+          ? {
+              customBorderChars: {
+                topLeft: "┬",
+                topRight: "┬",
+                bottomLeft: "┴",
+                bottomRight: "┴",
+                horizontal: "─",
+                vertical: "│",
+                topT: "┬",
+                bottomT: "┴",
+                leftT: "├",
+                rightT: "┤",
+                cross: "┼",
+              },
+            }
+          : {})}
       />
 
       <box
