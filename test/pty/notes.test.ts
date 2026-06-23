@@ -360,6 +360,49 @@ describe("PTY notes", () => {
     }
   });
 
+  test("draft note focus blocks pager shortcuts until cancelled", async () => {
+    const fixture = harness.createPagerPatchFixture();
+    const session = await harness.launchHunk({
+      args: ["patch", fixture.patchFile, "--pager"],
+      cols: 120,
+      rows: 20,
+    });
+
+    try {
+      const initial = await session.waitForText(/before_01/, { timeout: 15_000 });
+      const targetRow = lineIndexOf(initial, "before_01");
+      const sidebarRow = /\bM scroll\.ts\s+\+40 -40/;
+
+      expect(targetRow).toBeGreaterThan(0);
+      expect(initial).not.toMatch(sidebarRow);
+
+      await revealAddNoteNear(session, targetRow);
+      await session.click(/\[\+\]/);
+      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await session.type("sidebar-trigger text");
+      const whileFocused = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("Draft note") && text.includes("sidebar-trigger text"),
+        5_000,
+      );
+
+      expect(whileFocused).not.toMatch(sidebarRow);
+
+      await session.click(/Cancel \(Esc\)/);
+      await harness.waitForSnapshot(session, (text) => !text.includes("Draft note"), 5_000);
+      await session.press("s");
+      const afterCancel = await harness.waitForSnapshot(
+        session,
+        (text) => sidebarRow.test(text),
+        5_000,
+      );
+
+      expect(afterCancel).toMatch(sidebarRow);
+    } finally {
+      session.close();
+    }
+  });
+
   test("multiple add-note drafts can be saved on one hunk", async () => {
     const fixture = harness.createDeletionOnlyFilePair();
     const session = await harness.launchHunk({

@@ -570,11 +570,6 @@ export function useAppKeyboardShortcuts({
       return;
     }
 
-    if (pagerModeRef.current) {
-      handlePagerShortcut(key);
-      return;
-    }
-
     if (handleDialogShortcut(key)) {
       return;
     }
@@ -588,6 +583,11 @@ export function useAppKeyboardShortcuts({
     }
 
     if (handleFocusedInputShortcut(key)) {
+      return;
+    }
+
+    if (pagerModeRef.current) {
+      handlePagerShortcut(key);
       return;
     }
 
