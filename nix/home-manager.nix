@@ -4,10 +4,12 @@
   pkgs,
   ...
 }:
-with lib; let
+with lib;
+let
   cfg = config.programs.hunk;
-  tomlFormat = pkgs.formats.toml {};
-in {
+  tomlFormat = pkgs.formats.toml { };
+in
+{
   options.programs.hunk = {
     enable = mkEnableOption "hunk, a terminal-first diff viewer";
 
@@ -20,7 +22,7 @@ in {
 
     settings = mkOption {
       type = tomlFormat.type;
-      default = {};
+      default = { };
       example = literalExpression ''
         {
           theme = "graphite";
@@ -40,15 +42,27 @@ in {
       default = false;
       description = "Whether to set hunk as the default git pager.";
     };
+
+    enableJujutsuIntegration = mkOption {
+      type = types.bool;
+      default = false;
+      description = "Whether to set hunk as the default jujutsu pager.";
+    };
   };
 
   config = mkIf cfg.enable {
-    home.packages = [cfg.package];
+    home.packages = [ cfg.package ];
 
-    xdg.configFile."hunk/config.toml" = mkIf (cfg.settings != {}) {
+    xdg.configFile."hunk/config.toml" = mkIf (cfg.settings != { }) {
       source = tomlFormat.generate "hunk-config.toml" cfg.settings;
     };
 
     programs.git.settings.core.pager = mkIf cfg.enableGitIntegration "hunk pager";
+    programs.jujutsu.settings = mkIf cfg.enableJujutsuIntegration {
+      ui = {
+        diff-formatter = ":git";
+        pager = "hunk pager";
+      };
+    };
   };
 }
