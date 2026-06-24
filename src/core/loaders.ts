@@ -6,7 +6,7 @@ import {
 } from "@pierre/diffs";
 import { createTwoFilesPatch } from "diff";
 import { resolve as resolvePath } from "node:path";
-import { findAgentFileContext, loadAgentContext } from "./agent";
+import { agentOverviewFields, findAgentFileContext, loadAgentContext } from "./agent";
 import { createSkippedBinaryMetadata, isProbablyBinaryFile } from "./binary";
 import { buildDiffFile, type BuildDiffFileOptions, type DiffFileSourceContext } from "./diffFile";
 import { createFileSourceFetcher, type FileSourceSpec } from "./fileSource";
@@ -224,7 +224,7 @@ function normalizePatchChangeset(
       sourceLabel,
       title,
       summary: normalizedPatchText.trim() || undefined,
-      agentSummary: agentContext?.summary,
+      ...agentOverviewFields(agentContext),
       files: [],
     };
   }
@@ -241,7 +241,7 @@ function normalizePatchChangeset(
         .map((entry) => entry.patchMetadata)
         .filter(Boolean)
         .join("\n\n") || undefined,
-    agentSummary: agentContext?.summary,
+    ...agentOverviewFields(agentContext),
     files: metadataFiles.map((metadata, index) =>
       buildDiffFile(
         metadata,
@@ -287,7 +287,7 @@ function buildBinaryFileDiffChangeset(
     id: `pair:${displayPath}`,
     sourceLabel: input.kind === "difftool" ? "git difftool" : "file compare",
     title,
-    agentSummary: agentContext?.summary,
+    ...agentOverviewFields(agentContext),
     files: [
       buildDiffFile(
         createSkippedBinaryMetadata(displayPath, resolveBinaryComparisonType(leftPath, rightPath)),
@@ -354,7 +354,7 @@ async function loadFileDiffChangeset(
     id: `pair:${displayPath}`,
     sourceLabel: input.kind === "difftool" ? "git difftool" : "file compare",
     title,
-    agentSummary: agentContext?.summary,
+    ...agentOverviewFields(agentContext),
     files: [
       buildDiffFile(metadata, patch, 0, displayPath, agentContext, {
         previousPath: basename(input.left),

@@ -9,7 +9,8 @@ import {
   nextMenuItemIndex,
   type MenuEntry,
 } from "../components/chrome/menu";
-import { buildAgentPopoverContent, resolveAgentPopoverPlacement, wrapText } from "./agentPopover";
+import { buildAgentPopoverContent, resolveAgentPopoverPlacement } from "./agentPopover";
+import { wrapText } from "./text";
 import { buildAppMenus } from "./appMenus";
 import {
   isCreateReviewNoteKey,
@@ -150,7 +151,9 @@ describe("ui helpers", () => {
       toggleAgentNotes: () => {},
       toggleFocusArea: () => {},
       openAgentSkill: () => {},
+      showOverview: false,
       toggleHelp: () => {},
+      toggleOverview: () => {},
       toggleHunkHeaders: () => {},
       toggleLineNumbers: () => {},
       toggleLineWrap: () => {},
@@ -192,7 +195,13 @@ describe("ui helpers", () => {
       menus.agent
         .filter((entry): entry is Extract<MenuEntry, { kind: "item" }> => entry.kind === "item")
         .map((entry) => entry.label),
-    ).toEqual(["Agent notes", "Agent skill", "Next annotated file", "Previous annotated file"]);
+    ).toEqual([
+      "Agent notes",
+      "Agent skill",
+      "Overview",
+      "Next annotated file",
+      "Previous annotated file",
+    ]);
   });
 
   test("keyboard alias helpers normalize the shared scroll shortcut keys", () => {

@@ -213,6 +213,46 @@ describe("loadAppBootstrap", () => {
     expect(bootstrap.changeset.files[0]?.agent?.annotations).toHaveLength(1);
   });
 
+  test("carries agent title and description onto the changeset", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "hunk-diff-"));
+    tempDirs.push(dir);
+
+    const left = join(dir, "before.ts");
+    const right = join(dir, "after.ts");
+    const agent = join(dir, "agent.json");
+
+    writeFileSync(left, "export const answer = 41;\n");
+    writeFileSync(right, "export const answer = 42;\nexport const bonus = true;\n");
+    writeFileSync(
+      agent,
+      JSON.stringify({
+        version: 1,
+        title: "PR title",
+        description: "# Body",
+        summary: "Agent added the bonus export.",
+        files: [
+          {
+            path: "after.ts",
+            annotations: [{ newRange: [2, 2], summary: "Introduces the bonus flag." }],
+          },
+        ],
+      }),
+    );
+
+    const bootstrap = await loadAppBootstrap({
+      kind: "diff",
+      left,
+      right,
+      options: {
+        mode: "auto",
+        agentContext: agent,
+      },
+    });
+
+    expect(bootstrap.changeset.agentTitle).toBe("PR title");
+    expect(bootstrap.changeset.agentDescription).toBe("# Body");
+  });
+
   test("loads git changes and relative agent context from an explicit cwd override", async () => {
     const dir = createTempRepo("hunk-git-cwd-");
     const nested = join(dir, "nested");
