@@ -19,24 +19,14 @@ const HUNK_CUSTOM_EXTENSIONS: Record<string, SupportedLanguages> = {
   cts: "typescript",
 };
 
-let registered = false;
-
-/** Register Hunk's extra extension mappings with Pierre exactly once. */
-function ensureCustomExtensionsRegistered(): void {
-  if (registered) return;
-  registered = true;
-  for (const [extension, language] of Object.entries(HUNK_CUSTOM_EXTENSIONS)) {
-    setCustomExtension(extension, language);
-  }
+for (const [extension, language] of Object.entries(HUNK_CUSTOM_EXTENSIONS)) {
+  setCustomExtension(extension, language);
 }
-
-ensureCustomExtensionsRegistered();
 
 /**
  * Resolve the highlight language for a file path, applying Hunk's custom
  * extension mappings on top of Pierre's built-in detection.
  */
 export function getLanguageForFileName(fileName: string): SupportedLanguages {
-  ensureCustomExtensionsRegistered();
   return getFiletypeFromFileName(fileName);
 }
