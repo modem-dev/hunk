@@ -1,7 +1,7 @@
-import { getFiletypeFromFileName, type FileDiffMetadata } from "@pierre/diffs";
+import { type FileDiffMetadata } from "@pierre/diffs";
 import { findAgentFileContext } from "./agent";
 import { patchLooksBinary } from "./binary";
-import "./fileLanguage";
+import { getFiletypeFromFileName } from "./fileLanguage";
 import { normalizeDiffMetadataPaths, normalizeDiffPath } from "./diffPaths";
 import type { FileSourceFetcher } from "./fileSource";
 import type { AgentContext, DiffFile, DiffLineMoveKinds } from "./types";

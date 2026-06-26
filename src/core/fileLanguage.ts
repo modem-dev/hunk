@@ -1,4 +1,8 @@
-import { setCustomExtension, type SupportedLanguages } from "@pierre/diffs";
+import {
+  getFiletypeFromFileName,
+  setCustomExtension,
+  type SupportedLanguages,
+} from "@pierre/diffs";
 
 // Pierre omits these TypeScript extensions, so register them before lookups or rendering.
 const HUNK_CUSTOM_EXTENSIONS: Record<string, SupportedLanguages> = {
@@ -9,3 +13,5 @@ const HUNK_CUSTOM_EXTENSIONS: Record<string, SupportedLanguages> = {
 for (const [extension, language] of Object.entries(HUNK_CUSTOM_EXTENSIONS)) {
   setCustomExtension(extension, language);
 }
+
+export { getFiletypeFromFileName };

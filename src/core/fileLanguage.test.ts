@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { getFiletypeFromFileName } from "@pierre/diffs";
-import "./fileLanguage";
+import { getFiletypeFromFileName } from "./fileLanguage";
 
 describe("custom file language registration", () => {
   test("maps TypeScript module/commonjs extensions to typescript", () => {
