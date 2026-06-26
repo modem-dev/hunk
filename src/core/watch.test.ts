@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { computeWatchSignature } from "./watch";
+import { computeConfigSignature, computeWatchSignature } from "./watch";
 import type { CliInput } from "./types";
 
 const tempDirs: string[] = [];
@@ -151,5 +151,66 @@ describe("computeWatchSignature", () => {
     );
 
     expect(changedSignature).not.toEqual(initialSignature);
+  });
+});
+
+describe("computeConfigSignature", () => {
+  const previousXdg = process.env.XDG_CONFIG_HOME;
+
+  afterEach(() => {
+    if (previousXdg === undefined) {
+      delete process.env.XDG_CONFIG_HOME;
+    } else {
+      process.env.XDG_CONFIG_HOME = previousXdg;
+    }
+  });
+
+  test("marks a missing global config without throwing", () => {
+    const configHome = realpathSync(mkdtempSync(join(tmpdir(), "hunk-cfg-missing-")));
+    tempDirs.push(configHome);
+    process.env.XDG_CONFIG_HOME = configHome;
+
+    const nonRepo = realpathSync(mkdtempSync(join(tmpdir(), "hunk-cfg-nonrepo-")));
+    tempDirs.push(nonRepo);
+
+    const signature = computeConfigSignature(nonRepo);
+
+    expect(signature).toContain(join(configHome, "hunk", "config.toml"));
+    expect(signature).toContain(":missing");
+  });
+
+  test("changes when the global config file changes", () => {
+    const configHome = realpathSync(mkdtempSync(join(tmpdir(), "hunk-cfg-change-")));
+    tempDirs.push(configHome);
+    process.env.XDG_CONFIG_HOME = configHome;
+    mkdirSync(join(configHome, "hunk"), { recursive: true });
+    const configPath = join(configHome, "hunk", "config.toml");
+
+    const nonRepo = realpathSync(mkdtempSync(join(tmpdir(), "hunk-cfg-change-cwd-")));
+    tempDirs.push(nonRepo);
+
+    writeFileSync(configPath, 'theme = "custom"\n');
+    const initialSignature = computeConfigSignature(nonRepo);
+
+    writeFileSync(configPath, 'theme = "custom"\nborderless = true\n');
+    const changedSignature = computeConfigSignature(nonRepo);
+
+    expect(initialSignature).not.toContain(":missing");
+    expect(changedSignature).not.toEqual(initialSignature);
+  });
+
+  test("includes the repo-local .hunk/config.toml when inside a repo", () => {
+    const configHome = realpathSync(mkdtempSync(join(tmpdir(), "hunk-cfg-repo-home-")));
+    tempDirs.push(configHome);
+    process.env.XDG_CONFIG_HOME = configHome;
+
+    const repo = createTempRepo("hunk-cfg-repo-");
+    mkdirSync(join(repo, ".hunk"), { recursive: true });
+    writeFileSync(join(repo, ".hunk", "config.toml"), "menu_bar = false\n");
+
+    const signature = computeConfigSignature(repo);
+
+    expect(signature).toContain(join(repo, ".hunk", "config.toml"));
+    expect(signature).not.toContain(`${join(repo, ".hunk", "config.toml")}:missing`);
   });
 });

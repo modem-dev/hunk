@@ -6,7 +6,7 @@ import {
 import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState, useRef } from "react";
 import type { AppBootstrap, CliInput, LayoutMode, UserNoteLineTarget } from "../core/types";
-import { canReloadInput, computeWatchSignature } from "../core/watch";
+import { canReloadInput, computeConfigSignature, computeWatchSignature } from "../core/watch";
 import type { HunkSessionBrokerClient, ReloadedSessionResult } from "../hunk-session/types";
 import { MenuBar } from "./components/chrome/MenuBar";
 import { StatusBar } from "./components/chrome/StatusBar";
@@ -583,18 +583,27 @@ export function App({
     triggerRefreshCurrentInput,
   ]);
 
+  // Always live-reload when Hunk's config files (~/.config/hunk/config.toml,
+  // repo-local .hunk/config.toml) change — theme/chrome edits repaint immediately,
+  // the way VS Code / Cursor apply settings on save, no --watch required. In
+  // --watch mode this same loop ALSO tracks the diff input. Folding both into one
+  // poll keeps a single in-flight guard, so a config reload can never race a diff
+  // reload. Reusing refreshCurrentInput re-reads config — so palette edits repaint
+  // live — while preserving the active view options (and any CLI overrides).
   useEffect(() => {
-    if (!watchEnabled) {
+    if (!canRefreshCurrentInput) {
       return;
     }
 
     let cancelled = false;
     let polling = false;
     let refreshing = false;
-    let lastSignature: string;
+    let lastInputSignature: string;
+    let lastConfigSignature: string;
 
     try {
-      lastSignature = computeWatchSignature(bootstrap.input);
+      lastInputSignature = watchEnabled ? computeWatchSignature(bootstrap.input) : "";
+      lastConfigSignature = computeConfigSignature();
     } catch (error) {
       console.error("Failed to initialize watch mode.", error);
       return;
@@ -608,20 +617,25 @@ export function App({
       polling = true;
 
       try {
-        const nextSignature = computeWatchSignature(bootstrap.input);
-        if (nextSignature !== lastSignature) {
-          lastSignature = nextSignature;
+        const nextInputSignature = watchEnabled ? computeWatchSignature(bootstrap.input) : "";
+        const nextConfigSignature = computeConfigSignature();
+        if (
+          nextInputSignature !== lastInputSignature ||
+          nextConfigSignature !== lastConfigSignature
+        ) {
+          lastInputSignature = nextInputSignature;
+          lastConfigSignature = nextConfigSignature;
           refreshing = true;
           void refreshCurrentInput()
             .catch((error) => {
-              console.error("Failed to auto-reload the current diff.", error);
+              console.error("Failed to auto-reload after a watched change.", error);
             })
             .finally(() => {
               refreshing = false;
             });
         }
       } catch (error) {
-        console.error("Failed to poll watch mode input.", error);
+        console.error("Failed to poll watch mode.", error);
       } finally {
         polling = false;
       }
@@ -632,7 +646,7 @@ export function App({
       cancelled = true;
       clearInterval(interval);
     };
-  }, [bootstrap.input, refreshCurrentInput, watchEnabled]);
+  }, [bootstrap.input, canRefreshCurrentInput, refreshCurrentInput, watchEnabled]);
 
   /** Leave the app through the shared shutdown path. */
   const requestQuit = useCallback(() => {
