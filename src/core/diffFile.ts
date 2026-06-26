@@ -1,7 +1,7 @@
-import { type FileDiffMetadata } from "@pierre/diffs";
+import { getFiletypeFromFileName, type FileDiffMetadata } from "@pierre/diffs";
 import { findAgentFileContext } from "./agent";
 import { patchLooksBinary } from "./binary";
-import { getLanguageForFileName } from "./fileLanguage";
+import "./fileLanguage";
 import { normalizeDiffMetadataPaths, normalizeDiffPath } from "./diffPaths";
 import type { FileSourceFetcher } from "./fileSource";
 import type { AgentContext, DiffFile, DiffLineMoveKinds } from "./types";
@@ -77,7 +77,7 @@ export function buildDiffFile(
     path,
     previousPath: resolvedPreviousPath,
     patch,
-    language: getLanguageForFileName(path) ?? undefined,
+    language: getFiletypeFromFileName(path) ?? undefined,
     stats: stats ?? countDiffStats(normalizedMetadata),
     metadata: normalizedMetadata,
     lineMoveKinds,

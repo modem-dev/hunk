@@ -1,17 +1,18 @@
 import { describe, expect, test } from "bun:test";
-import { getLanguageForFileName } from "./fileLanguage";
+import { getFiletypeFromFileName } from "@pierre/diffs";
+import "./fileLanguage";
 
-describe("getLanguageForFileName", () => {
+describe("custom file language registration", () => {
   test("maps TypeScript module/commonjs extensions to typescript", () => {
-    expect(getLanguageForFileName("foo.mts")).toBe("typescript");
-    expect(getLanguageForFileName("foo.cts")).toBe("typescript");
-    expect(getLanguageForFileName("src/nested/foo.mts")).toBe("typescript");
+    expect(getFiletypeFromFileName("foo.mts")).toBe("typescript");
+    expect(getFiletypeFromFileName("foo.cts")).toBe("typescript");
+    expect(getFiletypeFromFileName("src/nested/foo.mts")).toBe("typescript");
   });
 
   test("preserves Pierre's built-in extension detection", () => {
-    expect(getLanguageForFileName("foo.ts")).toBe("typescript");
-    expect(getLanguageForFileName("foo.tsx")).toBe("tsx");
-    expect(getLanguageForFileName("foo.mjs")).toBe("javascript");
-    expect(getLanguageForFileName("foo.cjs")).toBe("javascript");
+    expect(getFiletypeFromFileName("foo.ts")).toBe("typescript");
+    expect(getFiletypeFromFileName("foo.tsx")).toBe("tsx");
+    expect(getFiletypeFromFileName("foo.mjs")).toBe("javascript");
+    expect(getFiletypeFromFileName("foo.cjs")).toBe("javascript");
   });
 });
