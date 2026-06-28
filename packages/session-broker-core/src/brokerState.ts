@@ -149,6 +149,7 @@ export class SessionBrokerState<
   private sessions = new Map<string, SessionBrokerEntry<Info, State>>();
   private sessionIdsBySocket = new Map<DaemonSessionSocket, string>();
   private pendingCommands = new Map<string, PendingCommand<CommandResult>>();
+  private lastPruneAt: number | null = null;
 
   constructor(
     private view: SessionBrokerViewAdapter<
@@ -281,6 +282,18 @@ export class SessionBrokerState<
   }
 
   pruneStaleSessions({ ttlMs, now = Date.now() }: { ttlMs: number; now?: number }) {
+    // Far more than a TTL of wall time since the last sweep means the daemon was
+    // almost certainly frozen (machine slept), not every session going silent at
+    // once — forgive this sweep so sessions can heartbeat before the next.
+    const wallClockJumped = this.lastPruneAt !== null && now - this.lastPruneAt > ttlMs;
+    this.lastPruneAt = now;
+    // Grace is per-sweep, not time-windowed: a live session must heartbeat again before the
+    // next sweep would reap it. Safe while the recurring sweep is the only frequent pruner;
+    // a polled /health would instead need a time-windowed grace covering the recovery gap.
+    if (wallClockJumped) {
+      return 0;
+    }
+
     let removed = 0;
     const cutoff = now - ttlMs;
 
