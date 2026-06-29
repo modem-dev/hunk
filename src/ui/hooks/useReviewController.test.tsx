@@ -84,6 +84,11 @@ function expectValue<T>(value: T): NonNullable<T> {
   return value as NonNullable<T>;
 }
 
+/** Ids of files currently rendered as collapsed placeholders, read from the observable review stream. */
+function collapsedVisibleFileIds(controller: ReviewController): string[] {
+  return controller.visibleFiles.filter((file) => file.isCollapsed).map((file) => file.id);
+}
+
 function ReviewControllerHarness({
   initialFiles,
   onController,
@@ -192,7 +197,7 @@ describe("useReviewController", () => {
           file.id === "alpha" ? file.metadata.hunks.length === 0 : true,
         ),
       ).toBe(true);
-      expect(Object.keys(expectValue(controllerRef.current).collapsedFileIds)).toEqual(["alpha"]);
+      expect(collapsedVisibleFileIds(expectValue(controllerRef.current))).toEqual(["alpha"]);
 
       // Toggling again expands it back to its real hunks.
       await act(async () => {
@@ -210,7 +215,7 @@ describe("useReviewController", () => {
         expectValue(controllerRef.current).toggleAllFilesCollapsed();
       });
       await flush(setup);
-      expect(Object.keys(expectValue(controllerRef.current).collapsedFileIds).sort()).toEqual([
+      expect(collapsedVisibleFileIds(expectValue(controllerRef.current)).sort()).toEqual([
         "alpha",
         "beta",
       ]);
@@ -219,7 +224,7 @@ describe("useReviewController", () => {
         expectValue(controllerRef.current).toggleAllFilesCollapsed();
       });
       await flush(setup);
-      expect(Object.keys(expectValue(controllerRef.current).collapsedFileIds)).toEqual([]);
+      expect(collapsedVisibleFileIds(expectValue(controllerRef.current))).toEqual([]);
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -276,15 +281,16 @@ describe("useReviewController", () => {
         expectValue(controllerRef.current).toggleFileCollapsed("alpha");
       });
       await flush(setup);
-      expect(Object.keys(expectValue(controllerRef.current).collapsedFileIds)).toEqual(["alpha"]);
+      expect(collapsedVisibleFileIds(expectValue(controllerRef.current))).toEqual(["alpha"]);
 
-      // Same id, new fetcher (and thus a new patch) marks the old collapse entry stale.
+      // Same id, new fetcher (and thus a new patch) marks the old collapse entry stale, so the
+      // reloaded file renders expanded rather than inheriting the previous patch's collapse.
       const secondFetcher = createTestSourceFetcher(() => null);
       await act(async () => {
         expectValue(setFilesRef.current)([createAlphaFile(secondFetcher)]);
       });
       await flush(setup);
-      expect(Object.keys(expectValue(controllerRef.current).collapsedFileIds)).toEqual([]);
+      expect(collapsedVisibleFileIds(expectValue(controllerRef.current))).toEqual([]);
     } finally {
       await act(async () => {
         setup.renderer.destroy();

@@ -127,7 +127,6 @@ export interface ReviewSelectionOptions {
 
 export interface ReviewController {
   allFiles: DiffFile[];
-  collapsedFileIds: Readonly<Record<string, true>>;
   expandedGapsByFileId: Record<string, ReadonlySet<string>>;
   filter: string;
   draftNote: DraftReviewNote | null;
@@ -1040,7 +1039,6 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
 
   return {
     allFiles,
-    collapsedFileIds,
     draftNote,
     expandedGapsByFileId,
     filter,
