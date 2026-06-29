@@ -1,4 +1,5 @@
 import type { SyntaxStyle } from "@opentui/core";
+import type { CustomSyntaxThemeData } from "../../core/types";
 
 export interface AppTheme {
   id: string;
@@ -39,6 +40,8 @@ export interface AppTheme {
   noteTitleText: string;
   /** Optional Shiki/Pierre theme name for source-accurate code highlighting. */
   syntaxTheme?: string;
+  /** Optional full Shiki theme JSON registered with the highlighter under `syntaxTheme`. */
+  syntaxThemeData?: CustomSyntaxThemeData;
   syntaxColors: SyntaxColors;
   syntaxStyle: SyntaxStyle;
 }
