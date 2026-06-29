@@ -130,7 +130,7 @@ For normal worktree use, prefer `--repo /path/to/worktree`. Reach for `--session
 
 ## Alternative workflow: load agent comments from a file
 
-Use `--agent-context` when you already have agent-written rationale or notes in a JSON sidecar file and want to render them beside the diff.
+Use `--agent-context` when you already have agent-written rationale or notes in a JSON file and want to render them beside the diff.
 
 ```bash
 hunk diff --agent-context notes.json
@@ -138,6 +138,43 @@ hunk patch change.patch --agent-context notes.json
 ```
 
 For a compact real example, see [`examples/3-agent-review-demo/agent-context.json`](../examples/3-agent-review-demo/agent-context.json).
+
+### agent-context JSON format
+
+The `--agent-context` file has the following top-level fields:
+
+| Field         | Type     | Description                                                                                                                                      |
+| ------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `version`     | `number` | Schema version. Use `1`.                                                                                                                         |
+| `title`       | `string` | Optional. A one-line PR-style changeset title shown in the Overview overlay header.                                                              |
+| `description` | `string` | Optional. A markdown body for the Overview overlay (headings, lists, bold/italic, inline `code`, fenced code blocks, blockquotes, rules, links). |
+| `summary`     | `string` | Optional. Legacy plain-text changeset summary. Used as the Overview body when `description` is absent (`description ?? summary`).                |
+| `files`       | `array`  | Per-file annotations. Each entry has `path`, optional `summary`, and an `annotations` array of hunk-level notes.                                 |
+
+When the agent sets a `title` or `description`, the Overview overlay auto-opens once when the session starts. A file with only a legacy `summary` does not auto-open, but its summary is still shown as the overview body when you open the overlay yourself. Press `o` to toggle the overlay or `Esc` to close it. The overlay is also accessible from the Agent menu.
+
+A minimal file with the new fields looks like:
+
+```json
+{
+  "version": 1,
+  "title": "feat(search): ranked command-palette matching",
+  "description": "## Overview\n\nThis changeset introduces a ranked scoring model.\n\n- `normalize.ts` — shared query normalization\n- `search.ts` — score-based sorting\n\nPrefix and exact matches now outrank loose substring hits.",
+  "files": [
+    {
+      "path": "src/search.ts",
+      "annotations": [
+        {
+          "newRange": [15, 35],
+          "summary": "Scores and sorts results instead of returning the first substring list.",
+          "rationale": "Ensures the most obvious intent appears at the top of the palette.",
+          "author": "sonnet"
+        }
+      ]
+    }
+  ]
+}
+```
 
 ## Practical defaults
 

@@ -3,7 +3,7 @@ import { flushSync } from "@opentui/react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { AgentAnnotation, DiffFile, LayoutMode } from "../../../core/types";
 import { annotationRangeLabel, reviewNoteSource } from "../../lib/agentAnnotations";
-import { wrapText } from "../../lib/agentPopover";
+import { wrapText } from "../../lib/text";
 import { isEscapeKey, isSaveDraftNoteKey } from "../../lib/keyboard";
 import { sanitizeTerminalLine } from "../../../lib/terminalText";
 import { fitText, padText } from "../../lib/text";

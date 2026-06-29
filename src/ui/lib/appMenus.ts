@@ -23,7 +23,9 @@ export interface BuildAppMenusOptions {
   toggleAgentNotes: () => void;
   toggleFocusArea: () => void;
   openAgentSkill: () => void;
+  showOverview: boolean;
   toggleHelp: () => void;
+  toggleOverview: () => void;
   toggleHunkHeaders: () => void;
   toggleLineNumbers: () => void;
   toggleMenuBar: () => void;
@@ -56,7 +58,9 @@ export function buildAppMenus({
   toggleAgentNotes,
   toggleFocusArea,
   openAgentSkill,
+  showOverview,
   toggleHelp,
+  toggleOverview,
   toggleHunkHeaders,
   toggleLineNumbers,
   toggleMenuBar,
@@ -233,6 +237,13 @@ export function buildAppMenus({
         kind: "item",
         label: "Agent skill",
         action: openAgentSkill,
+      },
+      {
+        kind: "item",
+        label: "Overview",
+        hint: "o",
+        checked: showOverview,
+        action: toggleOverview,
       },
       { kind: "separator" },
       {

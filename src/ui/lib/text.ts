@@ -149,3 +149,48 @@ export function padText(text: string, width: number) {
   const trimmed = fitText(text, width);
   return `${trimmed}${" ".repeat(Math.max(0, width - measureTextWidth(trimmed)))}`;
 }
+
+/** Wrap plain text to a fixed terminal width, breaking long tokens when needed. */
+export function wrapText(text: string, width: number) {
+  if (width <= 0) {
+    return [""];
+  }
+
+  const normalized = sanitizeTerminalLine(text).trim().replace(/\s+/g, " ");
+  if (normalized.length === 0) {
+    return [""];
+  }
+
+  const words = normalized.split(" ");
+  const lines: string[] = [];
+  let current = "";
+
+  const pushCurrent = () => {
+    if (current.length > 0) {
+      lines.push(current);
+      current = "";
+    }
+  };
+
+  for (const word of words) {
+    if (word.length > width) {
+      pushCurrent();
+      for (let offset = 0; offset < word.length; offset += width) {
+        lines.push(word.slice(offset, offset + width));
+      }
+      continue;
+    }
+
+    const next = current.length === 0 ? word : `${current} ${word}`;
+    if (next.length <= width) {
+      current = next;
+      continue;
+    }
+
+    pushCurrent();
+    current = word;
+  }
+
+  pushCurrent();
+  return lines.length > 0 ? lines : [""];
+}
