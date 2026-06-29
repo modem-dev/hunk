@@ -18,6 +18,67 @@ function git(cwd: string, ...args: string[]) {
   }
 }
 
+function hostBinaryCandidate() {
+  const platformMap: Record<string, string> = {
+    darwin: "darwin",
+    linux: "linux",
+    win32: "windows",
+  };
+  const archMap: Record<string, string> = {
+    x64: "x64",
+    arm64: "arm64",
+  };
+
+  const platform = platformMap[process.platform] || process.platform;
+  const arch = archMap[process.arch] || process.arch;
+  const binary = platform === "windows" ? "hunk.exe" : "hunk";
+
+  if (platform === "darwin") {
+    if (arch === "arm64") return { packageName: "hunkdiff-darwin-arm64", binary };
+    if (arch === "x64") return { packageName: "hunkdiff-darwin-x64", binary };
+  }
+
+  if (platform === "linux") {
+    if (arch === "arm64") return { packageName: "hunkdiff-linux-arm64", binary };
+    if (arch === "x64") return { packageName: "hunkdiff-linux-x64", binary };
+  }
+
+  if (platform === "windows") {
+    if (arch === "x64") return { packageName: "hunkdiff-windows-x64", binary };
+  }
+
+  return null;
+}
+
+function writeExecutable(path: string, contents: string) {
+  writeFileSync(path, contents, { mode: 0o755 });
+}
+
+function createWrapperFixture(tempDir: string, prebuiltScript: string, bunScript: string) {
+  const candidate = hostBinaryCandidate();
+  if (!candidate) {
+    throw new Error(`Unsupported host for wrapper fixture: ${process.platform} ${process.arch}`);
+  }
+
+  const tempBinDir = join(tempDir, "bin");
+  const tempWrapperPath = join(tempBinDir, "hunk.cjs");
+  mkdirSync(tempBinDir, { recursive: true });
+  copyFileSync(join(process.cwd(), "bin", "hunk.cjs"), tempWrapperPath);
+
+  const prebuiltBinDir = join(tempDir, "node_modules", candidate.packageName, "bin");
+  mkdirSync(prebuiltBinDir, { recursive: true });
+  writeExecutable(join(prebuiltBinDir, candidate.binary), prebuiltScript);
+
+  const bunBinDir = join(tempDir, "node_modules", "bun", "bin");
+  mkdirSync(bunBinDir, { recursive: true });
+  writeExecutable(join(bunBinDir, "bun.exe"), bunScript);
+
+  mkdirSync(join(tempDir, "dist", "npm"), { recursive: true });
+  writeFileSync(join(tempDir, "dist", "npm", "main.js"), "");
+
+  return tempWrapperPath;
+}
+
 describe("CLI entrypoint contracts", () => {
   test("bare hunk prints standard help without terminal takeover sequences", () => {
     const proc = Bun.spawnSync(["bun", "run", "src/main.tsx"], {
@@ -199,6 +260,107 @@ describe("CLI entrypoint contracts", () => {
       expect(stdout).toBe("");
       expect(stderr).toContain("hunk: could not locate the bundled Hunk review skill");
       expect(stderr).toContain(join("skills", "hunk-review", "SKILL.md"));
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("bin wrapper falls back to bundled Bun when the prebuilt binary exits with SIGILL", () => {
+    if (process.platform === "win32") {
+      return;
+    }
+
+    const tempDir = mkdtempSync(join(tmpdir(), "hunk-wrapper-sigill-"));
+
+    try {
+      const tempWrapperPath = createWrapperFixture(
+        tempDir,
+        "#!/bin/sh\nkill -ILL $$\n",
+        "#!/bin/sh\nshift\nprintf 'fallback:%s\\n' \"$*\"\n",
+      );
+
+      const proc = Bun.spawnSync(["node", tempWrapperPath, "--version"], {
+        cwd: tempDir,
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+        env: process.env,
+      });
+
+      const stdout = Buffer.from(proc.stdout).toString("utf8");
+      const stderr = Buffer.from(proc.stderr).toString("utf8");
+
+      expect(proc.exitCode).toBe(0);
+      expect(stdout).toBe("fallback:--version\n");
+      expect(stderr).toBe("");
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("bin wrapper preserves normal prebuilt exit status instead of falling back", () => {
+    if (process.platform === "win32") {
+      return;
+    }
+
+    const tempDir = mkdtempSync(join(tmpdir(), "hunk-wrapper-prebuilt-exit-"));
+
+    try {
+      const tempWrapperPath = createWrapperFixture(
+        tempDir,
+        "#!/bin/sh\nprintf 'native\\n'\nexit 7\n",
+        "#!/bin/sh\nprintf 'fallback\\n'\n",
+      );
+
+      const proc = Bun.spawnSync(["node", tempWrapperPath, "--version"], {
+        cwd: tempDir,
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+        env: process.env,
+      });
+
+      const stdout = Buffer.from(proc.stdout).toString("utf8");
+      const stderr = Buffer.from(proc.stderr).toString("utf8");
+
+      expect(proc.exitCode).toBe(7);
+      expect(stdout).toBe("native\n");
+      expect(stderr).toBe("");
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("bin wrapper does not fall back when the explicit override binary exits with SIGILL", () => {
+    if (process.platform === "win32") {
+      return;
+    }
+
+    const tempDir = mkdtempSync(join(tmpdir(), "hunk-wrapper-override-sigill-"));
+
+    try {
+      const tempWrapperPath = createWrapperFixture(
+        tempDir,
+        "#!/bin/sh\nprintf 'native\\n'\n",
+        "#!/bin/sh\nprintf 'fallback\\n'\n",
+      );
+      const overrideBinary = join(tempDir, "override-hunk");
+      writeExecutable(overrideBinary, "#!/bin/sh\nkill -ILL $$\n");
+
+      const proc = Bun.spawnSync(["node", tempWrapperPath, "--version"], {
+        cwd: tempDir,
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+        env: { ...process.env, HUNK_BIN_PATH: overrideBinary },
+      });
+
+      const stdout = Buffer.from(proc.stdout).toString("utf8");
+      const stderr = Buffer.from(proc.stderr).toString("utf8");
+
+      expect(proc.exitCode).toBe(1);
+      expect(stdout).toBe("");
+      expect(stderr).toBe("");
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }
