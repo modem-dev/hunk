@@ -528,6 +528,60 @@ describe("UI components", () => {
     expect(firstLine[statsIndex + "+2 -1".length + 1]).toBe(" ");
   });
 
+  test("DiffFileHeaderRow chevron toggles collapse without triggering header select", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const onSelect = mock(() => undefined);
+    const onToggleCollapse = mock(() => undefined);
+    const setup = await testRender(
+      <DiffFileHeaderRow
+        file={createTestDiffFile(
+          "hdr",
+          "hdr.ts",
+          lines("export const value = 1;"),
+          lines("export const value = 2;"),
+        )}
+        headerLabelWidth={20}
+        headerStatsWidth={8}
+        theme={theme}
+        collapsed={false}
+        onSelect={onSelect}
+        onToggleCollapse={onToggleCollapse}
+      />,
+      { width: 40, height: 2 },
+    );
+
+    try {
+      await act(async () => {
+        await setup.renderOnce();
+      });
+      const rows = setup.captureCharFrame().split("\n");
+      const rowY = rows.findIndex((line) => line.includes("▾"));
+      const chevronX = rows[rowY]?.indexOf("▾") ?? -1;
+      const filenameX = rows[rowY]?.indexOf("hdr") ?? -1;
+      expect(rowY).toBeGreaterThanOrEqual(0);
+      expect(chevronX).toBeGreaterThanOrEqual(0);
+      expect(filenameX).toBeGreaterThanOrEqual(0);
+
+      // Clicking the chevron toggles collapse and stops propagation, so the header's select never fires.
+      await act(async () => {
+        await setup.mockMouse.click(chevronX, rowY);
+      });
+      expect(onToggleCollapse).toHaveBeenCalledTimes(1);
+      expect(onSelect).not.toHaveBeenCalled();
+
+      // Clicking the filename bubbles to the header's select without toggling collapse.
+      await act(async () => {
+        await setup.mockMouse.click(filenameX, rowY);
+      });
+      expect(onSelect).toHaveBeenCalledTimes(1);
+      expect(onToggleCollapse).toHaveBeenCalledTimes(1);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("DiffRowView renders a clickable add-note affordance for a hovered diff row", async () => {
     const theme = resolveTheme("github-dark-default", null);
     const startUserNote = mock(() => undefined);
@@ -2322,13 +2376,13 @@ describe("UI components", () => {
     const frame = await captureFrame(
       <HelpDialog
         canRefresh={true}
-        terminalHeight={39}
+        terminalHeight={41}
         terminalWidth={76}
         theme={theme}
         onClose={() => {}}
       />,
       76,
-      39,
+      41,
     );
 
     const expectedRows = [
@@ -2355,6 +2409,7 @@ describe("UI components", () => {
       "a               toggle AI notes",
       "z               toggle unchanged context",
       "l / w / m / M   lines / wrap / metadata / menu",
+      "x / X           collapse file / all files",
       "e               open file in $EDITOR",
       "Review",
       "/               focus file filter",

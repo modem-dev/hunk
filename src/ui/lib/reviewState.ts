@@ -9,6 +9,7 @@
 import { findDiffFileByPath, findHunkIndexForLine, hunkLineRange } from "../../core/liveComments";
 import type { AgentAnnotation, DiffFile } from "../../core/types";
 import type { NavigateToHunkToolInput, SelectedHunkSummary } from "../../hunk-session/types";
+import { applyFileCollapse } from "./fileCollapse";
 import {
   buildSidebarEntries,
   filterReviewFiles,
@@ -22,12 +23,15 @@ import {
   type HunkCursor,
 } from "./hunks";
 
+const EMPTY_COLLAPSED_FILE_IDS: Readonly<Record<string, true>> = {};
+
 export interface BuildReviewStateOptions {
   files: DiffFile[];
   liveCommentsByFileId: Record<string, AgentAnnotation[]>;
   filterQuery: string;
   selectedFileId: string;
   selectedHunkIndex: number;
+  collapsedFileIds?: Readonly<Record<string, true>>;
 }
 
 export interface ReviewState {
@@ -53,9 +57,15 @@ export function buildReviewState({
   filterQuery,
   selectedFileId,
   selectedHunkIndex,
+  collapsedFileIds,
 }: BuildReviewStateOptions): ReviewState {
   const allFiles = mergeFileAnnotationsByFileId(files, liveCommentsByFileId);
-  const visibleFiles = filterReviewFiles(allFiles, filterQuery);
+  // Collapse swaps each collapsed file for a zero-hunk variant, so the visible
+  // stream, sidebar, and hunk cursors all derive from one already-collapsed list.
+  const visibleFiles = applyFileCollapse(
+    filterReviewFiles(allFiles, filterQuery),
+    collapsedFileIds ?? EMPTY_COLLAPSED_FILE_IDS,
+  );
   const selectedFile = resolveSelectedFile(allFiles, visibleFiles, selectedFileId);
 
   return {

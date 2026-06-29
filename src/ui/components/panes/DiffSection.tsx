@@ -42,6 +42,7 @@ interface DiffSectionProps {
   onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void;
   onSelect: () => void;
   onToggleGap: (gapKey: string) => void;
+  onToggleCollapse?: () => void;
 }
 
 /** Render one file section in the main review stream. */
@@ -76,6 +77,7 @@ function DiffSectionComponent({
   onStartUserNoteAtHunk,
   onSelect,
   onToggleGap,
+  onToggleCollapse,
 }: DiffSectionProps) {
   return (
     <box
@@ -109,7 +111,9 @@ function DiffSectionComponent({
           headerLabelWidth={headerLabelWidth}
           headerStatsWidth={headerStatsWidth}
           theme={theme}
+          collapsed={file.isCollapsed ?? false}
           onSelect={onSelect}
+          onToggleCollapse={onToggleCollapse}
         />
       ) : null}
 
@@ -173,6 +177,7 @@ export const DiffSection = memo(DiffSectionComponent, (previous, next) => {
     previous.onMouseScroll === next.onMouseScroll &&
     previous.onActiveAddNoteAffordanceChange === next.onActiveAddNoteAffordanceChange &&
     previous.onStartUserNoteAtHunk === next.onStartUserNoteAtHunk &&
+    previous.onToggleCollapse === next.onToggleCollapse &&
     previous.theme === next.theme &&
     previous.visibleAgentNotes === next.visibleAgentNotes &&
     previous.visibleBodyBounds === next.visibleBodyBounds &&

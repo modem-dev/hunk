@@ -151,6 +151,8 @@ export interface ReviewController {
   sourceStatusByFileId: Record<string, FileSourceStatus>;
   toggleGap: (fileId: string, gapKey: string) => void;
   toggleSelectedHunkGap: () => void;
+  toggleFileCollapsed: (fileId: string) => void;
+  toggleAllFilesCollapsed: () => void;
   visibleFiles: DiffFile[];
   addLiveComment: (
     input: CommentToolInput,
@@ -202,6 +204,10 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
   const [sourceStatusByFileId, setSourceStatusByFileId] = useState<
     Record<string, FileSourceStatus>
   >({});
+  // Session-only `fileId -> true` map of collapsed files. Keyed like the other
+  // per-file session maps so it reconciles through the same `removeKeys` pruning
+  // on reload, but is intentionally not persisted to disk.
+  const [collapsedFileIds, setCollapsedFileIds] = useState<Readonly<Record<string, true>>>({});
   // Mirror sourceStatusByFileId so toggleGap can dedup synchronously without
   // waiting for React's state updater to commit.
   const sourceStatusRef = useRef(sourceStatusByFileId);
@@ -236,6 +242,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
       }
       setSourceStatusByFileId((prev) => removeKeys(prev, staleFileIds));
       setExpandedGapsByFileId((prev) => removeKeys(prev, staleFileIds));
+      setCollapsedFileIds((prev) => removeKeys(prev, staleFileIds));
     }
   }
 
@@ -257,8 +264,10 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
         filterQuery: deferredFilter,
         selectedFileId,
         selectedHunkIndex,
+        collapsedFileIds,
       }),
     [
+      collapsedFileIds,
       deferredFilter,
       files,
       liveCommentsByFileId,
@@ -294,6 +303,48 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     },
     [selectHunk],
   );
+
+  // Single place that knows a collapse/expand height change must re-pin a file's
+  // header to the top, so a collapse above the fold can't scroll it out of view.
+  const anchorFileHeaderTop = useCallback(
+    (fileId: string) => {
+      if (fileId) {
+        selectFile(fileId, 0, { alignFileHeaderTop: true });
+      }
+    },
+    [selectFile],
+  );
+
+  /** Toggle one file's collapsed state, re-pinning its header so the height change stays in view. */
+  const toggleFileCollapsed = useCallback(
+    (fileId: string) => {
+      if (!fileId) {
+        return;
+      }
+      setCollapsedFileIds((prev) =>
+        prev[fileId] ? removeKeys(prev, new Set([fileId])) : { ...prev, [fileId]: true },
+      );
+      anchorFileHeaderTop(fileId);
+    },
+    [anchorFileHeaderTop],
+  );
+
+  /** Collapse every file when any is expanded, otherwise expand them all. */
+  const toggleAllFilesCollapsed = useCallback(() => {
+    setCollapsedFileIds((prev) => {
+      const anyExpanded = allFiles.some((file) => !prev[file.id]);
+      if (!anyExpanded) {
+        return {};
+      }
+      const next: Record<string, true> = {};
+      for (const file of allFiles) {
+        next[file.id] = true;
+      }
+      return next;
+    });
+    // Re-pin the selected file too, so a bulk collapse keeps it in view like the single-file toggle.
+    anchorFileHeaderTop(selectedFileId);
+  }, [allFiles, anchorFileHeaderTop, selectedFileId]);
 
   /** Reset selection to the first visible file when the current target disappears from the review stream. */
   const reselectFirstVisibleFile = useCallback(() => {
@@ -1008,6 +1059,8 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     sourceStatusByFileId,
     toggleGap,
     toggleSelectedHunkGap,
+    toggleFileCollapsed,
+    toggleAllFilesCollapsed,
     visibleFiles,
     addLiveComment,
     addLiveCommentBatch,
