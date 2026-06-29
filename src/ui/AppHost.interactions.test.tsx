@@ -532,7 +532,8 @@ function firstCrossFileHunkNavigationHeader(frame: string) {
   return (
     frame
       .split("\n")
-      .map((line) => line.trim())
+      // Strip the leading collapse chevron so header matching stays filename-first.
+      .map((line) => line.trim().replace(/^[▸▾]\s*/, ""))
       .find((line) => line.startsWith("long-file.txt") || line.startsWith("short-file.ts")) ?? ""
   );
 }

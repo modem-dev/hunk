@@ -167,6 +167,66 @@ describe("useReviewController", () => {
     }
   });
 
+  test("collapsing a file swaps in a zero-hunk variant and skips its hunk navigation", async () => {
+    const { controllerRef, setup } = await renderReviewController([
+      createDiffFile("alpha", "alpha.ts", "export const alpha = 1;\n", "export const alpha = 2;\n"),
+      createDiffFile("beta", "beta.ts", "export const beta = 1;\n", "export const beta = 2;\n"),
+    ]);
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        expectValue(controllerRef.current).toggleFileCollapsed("alpha");
+      });
+      await flush(setup);
+
+      const collapsed = expectValue(controllerRef.current).visibleFiles.find(
+        (file) => file.id === "alpha",
+      );
+      expect(collapsed?.isCollapsed).toBe(true);
+      expect(collapsed?.metadata.hunks).toEqual([]);
+      // The collapsed file contributes no hunk cursors, so [ / ] navigation skips it.
+      expect(
+        expectValue(controllerRef.current).visibleFiles.every((file) =>
+          file.id === "alpha" ? file.metadata.hunks.length === 0 : true,
+        ),
+      ).toBe(true);
+      expect([...expectValue(controllerRef.current).collapsedFileIds]).toEqual(["alpha"]);
+
+      // Toggling again expands it back to its real hunks.
+      await act(async () => {
+        expectValue(controllerRef.current).toggleFileCollapsed("alpha");
+      });
+      await flush(setup);
+      const expanded = expectValue(controllerRef.current).visibleFiles.find(
+        (file) => file.id === "alpha",
+      );
+      expect(expanded?.isCollapsed).toBeFalsy();
+      expect(expanded?.metadata.hunks.length).toBeGreaterThan(0);
+
+      // Collapse-all marks every file, expand-all clears the set.
+      await act(async () => {
+        expectValue(controllerRef.current).toggleAllFilesCollapsed();
+      });
+      await flush(setup);
+      expect([...expectValue(controllerRef.current).collapsedFileIds].sort()).toEqual([
+        "alpha",
+        "beta",
+      ]);
+
+      await act(async () => {
+        expectValue(controllerRef.current).toggleAllFilesCollapsed();
+      });
+      await flush(setup);
+      expect([...expectValue(controllerRef.current).collapsedFileIds]).toEqual([]);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("clamps the selected hunk index when files update under a soft reload", async () => {
     const { controllerRef, setFilesRef, setup } = await renderReviewController([
       createTwoHunkFile(),

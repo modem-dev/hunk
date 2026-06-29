@@ -39,6 +39,7 @@ import type {
 import type { FileSourceStatus } from "../diff/expandCollapsedRows";
 import { selectGapForKeyboardToggle } from "../diff/expandCollapsedRows";
 import { trailingCollapsedLines } from "../diff/pierre";
+import { pruneCollapsedFileIds } from "../lib/fileCollapse";
 import { findNextHunkCursor } from "../lib/hunks";
 import { reviewNoteSource } from "../lib/agentAnnotations";
 import {
@@ -127,6 +128,7 @@ export interface ReviewSelectionOptions {
 
 export interface ReviewController {
   allFiles: DiffFile[];
+  collapsedFileIds: ReadonlySet<string>;
   expandedGapsByFileId: Record<string, ReadonlySet<string>>;
   filter: string;
   draftNote: DraftReviewNote | null;
@@ -151,6 +153,8 @@ export interface ReviewController {
   sourceStatusByFileId: Record<string, FileSourceStatus>;
   toggleGap: (fileId: string, gapKey: string) => void;
   toggleSelectedHunkGap: () => void;
+  toggleFileCollapsed: (fileId: string) => void;
+  toggleAllFilesCollapsed: () => void;
   visibleFiles: DiffFile[];
   addLiveComment: (
     input: CommentToolInput,
@@ -202,6 +206,11 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
   const [sourceStatusByFileId, setSourceStatusByFileId] = useState<
     Record<string, FileSourceStatus>
   >({});
+  // Session-only set of collapsed file ids. Survives watch reloads via the same
+  // reconciliation as gap expansion, but is intentionally not persisted to disk.
+  const [collapsedFileIds, setCollapsedFileIds] = useState<ReadonlySet<string>>(
+    () => new Set<string>(),
+  );
   // Mirror sourceStatusByFileId so toggleGap can dedup synchronously without
   // waiting for React's state updater to commit.
   const sourceStatusRef = useRef(sourceStatusByFileId);
@@ -236,6 +245,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
       }
       setSourceStatusByFileId((prev) => removeKeys(prev, staleFileIds));
       setExpandedGapsByFileId((prev) => removeKeys(prev, staleFileIds));
+      setCollapsedFileIds((prev) => pruneCollapsedFileIds(prev, staleFileIds));
     }
   }
 
@@ -257,8 +267,10 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
         filterQuery: deferredFilter,
         selectedFileId,
         selectedHunkIndex,
+        collapsedFileIds,
       }),
     [
+      collapsedFileIds,
       deferredFilter,
       files,
       liveCommentsByFileId,
@@ -294,6 +306,36 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     },
     [selectHunk],
   );
+
+  /** Toggle one file's collapsed state, re-pinning its header so the height change stays in view. */
+  const toggleFileCollapsed = useCallback(
+    (fileId: string) => {
+      if (!fileId) {
+        return;
+      }
+      setCollapsedFileIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(fileId)) {
+          next.delete(fileId);
+        } else {
+          next.add(fileId);
+        }
+        return next;
+      });
+      // Anchor the toggled file's header to the top so collapsing tall files
+      // above the fold can't scroll the file out of view.
+      selectFile(fileId, 0, { alignFileHeaderTop: true });
+    },
+    [selectFile],
+  );
+
+  /** Collapse every file when any is expanded, otherwise expand them all. */
+  const toggleAllFilesCollapsed = useCallback(() => {
+    setCollapsedFileIds((prev) => {
+      const anyExpanded = allFiles.some((file) => !prev.has(file.id));
+      return anyExpanded ? new Set(allFiles.map((file) => file.id)) : new Set<string>();
+    });
+  }, [allFiles]);
 
   /** Reset selection to the first visible file when the current target disappears from the review stream. */
   const reselectFirstVisibleFile = useCallback(() => {
@@ -988,6 +1030,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
 
   return {
     allFiles,
+    collapsedFileIds,
     draftNote,
     expandedGapsByFileId,
     filter,
@@ -1008,6 +1051,8 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     sourceStatusByFileId,
     toggleGap,
     toggleSelectedHunkGap,
+    toggleFileCollapsed,
+    toggleAllFilesCollapsed,
     visibleFiles,
     addLiveComment,
     addLiveCommentBatch,
