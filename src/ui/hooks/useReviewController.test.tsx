@@ -227,6 +227,71 @@ describe("useReviewController", () => {
     }
   });
 
+  test("re-pins the selected file's header when collapsing a single file or all files", async () => {
+    const { controllerRef, setup } = await renderReviewController([
+      createDiffFile("alpha", "alpha.ts", "export const alpha = 1;\n", "export const alpha = 2;\n"),
+      createDiffFile("beta", "beta.ts", "export const beta = 1;\n", "export const beta = 2;\n"),
+    ]);
+
+    try {
+      await flush(setup);
+
+      // Collapsing one file anchors its header to the top so a tall file above the fold can't scroll it off.
+      const beforeSingle = expectValue(controllerRef.current).selectedFileTopAlignRequestId;
+      await act(async () => {
+        expectValue(controllerRef.current).toggleFileCollapsed("alpha");
+      });
+      await flush(setup);
+      expect(expectValue(controllerRef.current).selectedFileTopAlignRequestId).toBeGreaterThan(
+        beforeSingle,
+      );
+
+      // Bulk collapse re-pins the selected file too, matching the single-file toggle.
+      const beforeBulk = expectValue(controllerRef.current).selectedFileTopAlignRequestId;
+      await act(async () => {
+        expectValue(controllerRef.current).toggleAllFilesCollapsed();
+      });
+      await flush(setup);
+      expect(expectValue(controllerRef.current).selectedFileTopAlignRequestId).toBeGreaterThan(
+        beforeBulk,
+      );
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("prunes collapse state for a file whose patch is replaced on reload", async () => {
+    // A reload swaps the file's sourceFetcher; collapse state keyed by the old patch must not leak.
+    const firstFetcher = createTestSourceFetcher(() => null);
+    const { controllerRef, setFilesRef, setup } = await renderReviewController([
+      createAlphaFile(firstFetcher),
+    ]);
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        expectValue(controllerRef.current).toggleFileCollapsed("alpha");
+      });
+      await flush(setup);
+      expect(Object.keys(expectValue(controllerRef.current).collapsedFileIds)).toEqual(["alpha"]);
+
+      // Same id, new fetcher (and thus a new patch) marks the old collapse entry stale.
+      const secondFetcher = createTestSourceFetcher(() => null);
+      await act(async () => {
+        expectValue(setFilesRef.current)([createAlphaFile(secondFetcher)]);
+      });
+      await flush(setup);
+      expect(Object.keys(expectValue(controllerRef.current).collapsedFileIds)).toEqual([]);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("clamps the selected hunk index when files update under a soft reload", async () => {
     const { controllerRef, setFilesRef, setup } = await renderReviewController([
       createTwoHunkFile(),
