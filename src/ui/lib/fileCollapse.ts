@@ -34,33 +34,20 @@ export function collapsedFileVariant(file: DiffFile): DiffFile {
   return variant;
 }
 
-/** Replace collapsed files in a review list with their header-only placeholder variant. */
+/**
+ * Replace collapsed files in a review list with their header-only placeholder variant.
+ *
+ * Collapse state is a `fileId -> true` map, the same shape as the controller's
+ * other per-file session state, so it reconciles through the shared `removeKeys`
+ * stale-id pruning on reload rather than needing its own pruning helper.
+ */
 export function applyFileCollapse(
   files: DiffFile[],
-  collapsedFileIds: ReadonlySet<string>,
+  collapsedFileIds: Readonly<Record<string, true>>,
 ): DiffFile[] {
-  if (collapsedFileIds.size === 0) {
+  const anyCollapsed = files.some((file) => collapsedFileIds[file.id]);
+  if (!anyCollapsed) {
     return files;
   }
-  return files.map((file) => (collapsedFileIds.has(file.id) ? collapsedFileVariant(file) : file));
-}
-
-/** Drop ids that no longer exist in the current review so collapse state can't leak across reloads. */
-export function pruneCollapsedFileIds(
-  collapsedFileIds: ReadonlySet<string>,
-  staleFileIds: ReadonlySet<string>,
-): ReadonlySet<string> {
-  if (collapsedFileIds.size === 0 || staleFileIds.size === 0) {
-    return collapsedFileIds;
-  }
-  let changed = false;
-  const next = new Set<string>();
-  for (const id of collapsedFileIds) {
-    if (staleFileIds.has(id)) {
-      changed = true;
-    } else {
-      next.add(id);
-    }
-  }
-  return changed ? next : collapsedFileIds;
+  return files.map((file) => (collapsedFileIds[file.id] ? collapsedFileVariant(file) : file));
 }

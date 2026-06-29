@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createTestDiffFile } from "../../../test/helpers/diff-helpers";
-import { applyFileCollapse, collapsedFileVariant, pruneCollapsedFileIds } from "./fileCollapse";
+import { applyFileCollapse, collapsedFileVariant } from "./fileCollapse";
 
 describe("collapsedFileVariant", () => {
   test("empties hunks, flags collapse, and preserves stats/identity", () => {
@@ -28,20 +28,10 @@ describe("applyFileCollapse", () => {
     const b = createTestDiffFile({ id: "b", path: "b.ts" });
     const files = [a, b];
 
-    expect(applyFileCollapse(files, new Set())).toBe(files);
+    expect(applyFileCollapse(files, {})).toBe(files);
 
-    const result = applyFileCollapse(files, new Set(["a"]));
+    const result = applyFileCollapse(files, { a: true });
     expect(result[0]!.isCollapsed).toBe(true);
     expect(result[1]).toBe(b);
-  });
-});
-
-describe("pruneCollapsedFileIds", () => {
-  test("drops ids that left the changeset and is a no-op otherwise", () => {
-    const ids = new Set(["a", "b"]);
-    expect(pruneCollapsedFileIds(ids, new Set())).toBe(ids);
-
-    const pruned = pruneCollapsedFileIds(ids, new Set(["b"]));
-    expect([...pruned]).toEqual(["a"]);
   });
 });

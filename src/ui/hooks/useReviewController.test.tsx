@@ -192,7 +192,7 @@ describe("useReviewController", () => {
           file.id === "alpha" ? file.metadata.hunks.length === 0 : true,
         ),
       ).toBe(true);
-      expect([...expectValue(controllerRef.current).collapsedFileIds]).toEqual(["alpha"]);
+      expect(Object.keys(expectValue(controllerRef.current).collapsedFileIds)).toEqual(["alpha"]);
 
       // Toggling again expands it back to its real hunks.
       await act(async () => {
@@ -210,7 +210,7 @@ describe("useReviewController", () => {
         expectValue(controllerRef.current).toggleAllFilesCollapsed();
       });
       await flush(setup);
-      expect([...expectValue(controllerRef.current).collapsedFileIds].sort()).toEqual([
+      expect(Object.keys(expectValue(controllerRef.current).collapsedFileIds).sort()).toEqual([
         "alpha",
         "beta",
       ]);
@@ -219,7 +219,7 @@ describe("useReviewController", () => {
         expectValue(controllerRef.current).toggleAllFilesCollapsed();
       });
       await flush(setup);
-      expect([...expectValue(controllerRef.current).collapsedFileIds]).toEqual([]);
+      expect(Object.keys(expectValue(controllerRef.current).collapsedFileIds)).toEqual([]);
     } finally {
       await act(async () => {
         setup.renderer.destroy();

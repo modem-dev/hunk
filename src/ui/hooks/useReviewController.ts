@@ -39,7 +39,6 @@ import type {
 import type { FileSourceStatus } from "../diff/expandCollapsedRows";
 import { selectGapForKeyboardToggle } from "../diff/expandCollapsedRows";
 import { trailingCollapsedLines } from "../diff/pierre";
-import { pruneCollapsedFileIds } from "../lib/fileCollapse";
 import { findNextHunkCursor } from "../lib/hunks";
 import { reviewNoteSource } from "../lib/agentAnnotations";
 import {
@@ -128,7 +127,7 @@ export interface ReviewSelectionOptions {
 
 export interface ReviewController {
   allFiles: DiffFile[];
-  collapsedFileIds: ReadonlySet<string>;
+  collapsedFileIds: Readonly<Record<string, true>>;
   expandedGapsByFileId: Record<string, ReadonlySet<string>>;
   filter: string;
   draftNote: DraftReviewNote | null;
@@ -206,11 +205,10 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
   const [sourceStatusByFileId, setSourceStatusByFileId] = useState<
     Record<string, FileSourceStatus>
   >({});
-  // Session-only set of collapsed file ids. Survives watch reloads via the same
-  // reconciliation as gap expansion, but is intentionally not persisted to disk.
-  const [collapsedFileIds, setCollapsedFileIds] = useState<ReadonlySet<string>>(
-    () => new Set<string>(),
-  );
+  // Session-only `fileId -> true` map of collapsed files. Keyed like the other
+  // per-file session maps so it reconciles through the same `removeKeys` pruning
+  // on reload, but is intentionally not persisted to disk.
+  const [collapsedFileIds, setCollapsedFileIds] = useState<Readonly<Record<string, true>>>({});
   // Mirror sourceStatusByFileId so toggleGap can dedup synchronously without
   // waiting for React's state updater to commit.
   const sourceStatusRef = useRef(sourceStatusByFileId);
@@ -245,7 +243,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
       }
       setSourceStatusByFileId((prev) => removeKeys(prev, staleFileIds));
       setExpandedGapsByFileId((prev) => removeKeys(prev, staleFileIds));
-      setCollapsedFileIds((prev) => pruneCollapsedFileIds(prev, staleFileIds));
+      setCollapsedFileIds((prev) => removeKeys(prev, staleFileIds));
     }
   }
 
@@ -307,35 +305,47 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     [selectHunk],
   );
 
+  // Single place that knows a collapse/expand height change must re-pin a file's
+  // header to the top, so a collapse above the fold can't scroll it out of view.
+  const anchorFileHeaderTop = useCallback(
+    (fileId: string) => {
+      if (fileId) {
+        selectFile(fileId, 0, { alignFileHeaderTop: true });
+      }
+    },
+    [selectFile],
+  );
+
   /** Toggle one file's collapsed state, re-pinning its header so the height change stays in view. */
   const toggleFileCollapsed = useCallback(
     (fileId: string) => {
       if (!fileId) {
         return;
       }
-      setCollapsedFileIds((prev) => {
-        const next = new Set(prev);
-        if (next.has(fileId)) {
-          next.delete(fileId);
-        } else {
-          next.add(fileId);
-        }
-        return next;
-      });
-      // Anchor the toggled file's header to the top so collapsing tall files
-      // above the fold can't scroll the file out of view.
-      selectFile(fileId, 0, { alignFileHeaderTop: true });
+      setCollapsedFileIds((prev) =>
+        prev[fileId] ? removeKeys(prev, new Set([fileId])) : { ...prev, [fileId]: true },
+      );
+      anchorFileHeaderTop(fileId);
     },
-    [selectFile],
+    [anchorFileHeaderTop],
   );
 
   /** Collapse every file when any is expanded, otherwise expand them all. */
   const toggleAllFilesCollapsed = useCallback(() => {
     setCollapsedFileIds((prev) => {
-      const anyExpanded = allFiles.some((file) => !prev.has(file.id));
-      return anyExpanded ? new Set(allFiles.map((file) => file.id)) : new Set<string>();
+      const anyExpanded = allFiles.some((file) => !prev[file.id]);
+      if (!anyExpanded) {
+        return {};
+      }
+      const next: Record<string, true> = {};
+      for (const file of allFiles) {
+        next[file.id] = true;
+      }
+      return next;
     });
-  }, [allFiles]);
+    // Re-pin the selected file too, so a bulk collapse keeps it in view like the single-file toggle.
+    anchorFileHeaderTop(selectedFileId);
+  }, [allFiles, anchorFileHeaderTop, selectedFileId]);
 
   /** Reset selection to the first visible file when the current target disappears from the review stream. */
   const reselectFirstVisibleFile = useCallback(() => {

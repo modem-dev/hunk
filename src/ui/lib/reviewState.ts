@@ -16,8 +16,6 @@ import {
   mergeFileAnnotationsByFileId,
   type SidebarEntry,
 } from "./files";
-
-const EMPTY_COLLAPSED_FILE_IDS: ReadonlySet<string> = new Set();
 import {
   buildAnnotatedHunkCursors,
   buildHunkCursors,
@@ -25,13 +23,15 @@ import {
   type HunkCursor,
 } from "./hunks";
 
+const EMPTY_COLLAPSED_FILE_IDS: Readonly<Record<string, true>> = {};
+
 export interface BuildReviewStateOptions {
   files: DiffFile[];
   liveCommentsByFileId: Record<string, AgentAnnotation[]>;
   filterQuery: string;
   selectedFileId: string;
   selectedHunkIndex: number;
-  collapsedFileIds?: ReadonlySet<string>;
+  collapsedFileIds?: Readonly<Record<string, true>>;
 }
 
 export interface ReviewState {
