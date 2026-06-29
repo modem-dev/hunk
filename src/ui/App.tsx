@@ -181,7 +181,10 @@ export function App({
       })),
     [activeTheme.id, themeOptions],
   );
-  const review = useReviewController({ files: bootstrap.changeset.files });
+  const review = useReviewController({
+    files: bootstrap.changeset.files,
+    userNotesSidecarPath: bootstrap.userNotesSidecarPath,
+  });
   const filteredFiles = review.visibleFiles;
   const selectedFile = review.selectedFile;
   const selectedHunkIndex = review.selectedHunkIndex;

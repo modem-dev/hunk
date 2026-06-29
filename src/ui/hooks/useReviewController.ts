@@ -22,6 +22,7 @@ import {
   resolveCommentTarget,
 } from "../../core/liveComments";
 import { SourceTextTooLargeError } from "../../core/fileSource";
+import { readUserNotes, writeUserNotes } from "../../core/userNotesStore";
 import type { AgentAnnotation, DiffFile, UserNoteLineTarget } from "../../core/types";
 import type {
   AppliedCommentBatchResult,
@@ -184,7 +185,17 @@ export interface ReviewController {
 }
 
 /** Own the shared review stream state used by both the UI and session bridge. */
-export function useReviewController({ files }: { files: DiffFile[] }): ReviewController {
+export function useReviewController({
+  files,
+  userNotesSidecarPath,
+}: {
+  files: DiffFile[];
+  /**
+   * When set, human notes are seeded from and written through to this JSON
+   * sidecar so they survive closing the TUI. Omit to keep notes in-memory only.
+   */
+  userNotesSidecarPath?: string;
+}): ReviewController {
   const [filter, setFilter] = useState("");
   const [selectedFileId, setSelectedFileId] = useState(files[0]?.id ?? "");
   const [selectedHunkIndex, setSelectedHunkIndex] = useState(0);
@@ -194,7 +205,28 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
   const [liveCommentsByFileId, setLiveCommentsByFileId] = useState<Record<string, LiveComment[]>>(
     {},
   );
-  const [userNotesByFileId, setUserNotesByFileId] = useState<Record<string, UserReviewNote[]>>({});
+  const [userNotesByFileId, setUserNotesByFileId] = useState<Record<string, UserReviewNote[]>>(() =>
+    userNotesSidecarPath ? readUserNotes(userNotesSidecarPath) : {},
+  );
+  // Lets a functional commit read the latest notes when saves batch before a re-render.
+  const userNotesRef = useRef(userNotesByFileId);
+  // Write through to the sidecar at the point of each mutation so notes persist
+  // without a state-mirroring effect; the seed above is the only disk read.
+  const commitUserNotes = useCallback(
+    (
+      update:
+        | Record<string, UserReviewNote[]>
+        | ((prev: Record<string, UserReviewNote[]>) => Record<string, UserReviewNote[]>),
+    ) => {
+      const next = typeof update === "function" ? update(userNotesRef.current) : update;
+      userNotesRef.current = next;
+      setUserNotesByFileId(next);
+      if (userNotesSidecarPath) {
+        writeUserNotes(userNotesSidecarPath, next);
+      }
+    },
+    [userNotesSidecarPath],
+  );
   const [draftNote, setDraftNote] = useState<DraftReviewNote | null>(null);
   const [expandedGapsByFileId, setExpandedGapsByFileId] = useState<
     Record<string, ReadonlySet<string>>
@@ -681,7 +713,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
           throw new Error(`No user note matches id ${commentId}.`);
         }
 
-        setUserNotesByFileId(next);
+        commitUserNotes(next);
         return {
           commentId,
           removed: true,
@@ -718,7 +750,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
         source: "agent",
       };
     },
-    [liveCommentsByFileId, userNotesByFileId],
+    [liveCommentsByFileId, userNotesByFileId, commitUserNotes],
   );
 
   /** Clear live comments, optionally including human notes, globally or for one file. */
@@ -778,7 +810,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
         }
 
         if (removedUserNoteCount > 0) {
-          setUserNotesByFileId(nextUserNotesByFileId);
+          commitUserNotes(nextUserNotesByFileId);
         }
       }
 
@@ -793,7 +825,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
         remainingUserNoteCount,
       };
     },
-    [allFiles, liveCommentsByFileId, userNotesByFileId],
+    [allFiles, liveCommentsByFileId, userNotesByFileId, commitUserNotes],
   );
 
   /** Start a human-authored draft note at the selected or requested hunk. */
@@ -869,13 +901,14 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
       editable: true,
     };
 
-    setUserNotesByFileId((notesByFile) => ({
-      ...notesByFile,
-      [draftNote.fileId]: [...(notesByFile[draftNote.fileId] ?? []), savedNote],
+    // Functional form: a closure snapshot would drop a save batched before re-render.
+    commitUserNotes((prev) => ({
+      ...prev,
+      [draftNote.fileId]: [...(prev[draftNote.fileId] ?? []), savedNote],
     }));
     setDraftNote(null);
     return savedNote;
-  }, [draftNote]);
+  }, [draftNote, commitUserNotes]);
 
   /** Remove one in-memory user note by id. */
   const removeUserNote = useCallback(
@@ -897,9 +930,9 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
         throw new Error(`No user note matches id ${noteId}.`);
       }
 
-      setUserNotesByFileId(next);
+      commitUserNotes(next);
     },
-    [userNotesByFileId],
+    [userNotesByFileId, commitUserNotes],
   );
 
   /** Count all currently tracked live comments, including ones hidden by the active filter. */
