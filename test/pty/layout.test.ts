@@ -403,7 +403,9 @@ describe("PTY layout", () => {
       let shifted = initial;
       for (let index = 0; index < 96; index += 1) {
         await session.press("right");
-        shifted = await session.text();
+        // press() already waits for idle, so read the settled frame immediately rather than
+        // paying another render round-trip per column; the loop retries if a frame lags.
+        shifted = await session.text({ immediate: true });
         if (shifted.includes("ge';")) {
           break;
         }
@@ -415,7 +417,7 @@ describe("PTY layout", () => {
       let restored = shifted;
       for (let index = 0; index < 96; index += 1) {
         await session.press("left");
-        restored = await session.text();
+        restored = await session.text({ immediate: true });
         if (restored.includes("this is a very long") && !restored.includes("ge';")) {
           break;
         }
@@ -447,7 +449,8 @@ describe("PTY layout", () => {
       let shifted = initial;
       for (let index = 0; index < 96; index += 1) {
         await session.press("right");
-        shifted = await session.text();
+        // press() already waits for idle; read immediately to avoid a redundant settle per column.
+        shifted = await session.text({ immediate: true });
         if (shifted.includes("ge';")) {
           break;
         }
