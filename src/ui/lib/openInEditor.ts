@@ -68,6 +68,10 @@ export function buildEditorCommand({
     return { command, args: [...editorArgs, "--goto", `${filePath}:${line}`] };
   }
 
+  if (program == "hx") {
+    return { command, args: [...editorArgs, `${filePath}:${line}`] };
+  }
+
   return { command, args: [...editorArgs, filePath] };
 }
 
