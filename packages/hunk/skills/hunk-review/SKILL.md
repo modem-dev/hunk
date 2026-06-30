@@ -120,7 +120,7 @@ hunk session reload --session-path /path/to/live-window --source /path/to/other-
 ```bash
 hunk session comment add (<session-id> | --repo <path>) (--reply-to <note-id> | --file <path> (--old-line <n> | --new-line <n>)) --summary <text> [--rationale <text>] [--author <name>] [--markup <stml>] [--focus] [--json]
 hunk session comment apply (<session-id> | --repo <path>) --stdin [--focus] [--json]
-hunk session comment list (<session-id> | --repo <path>) [--file <path>] [--type <live|all|ai|agent|user>] [--json]
+hunk session comment list (<session-id> | --repo <path>) [--file <path>] [--type <live|all|ai|agent|user>] [--author <name> | --no-author] [--json]
 hunk session comment rm (<session-id> | --repo <path>) <comment-id> [--json]
 hunk session comment clear (<session-id> | --repo <path>) [--file <path>] [--include-user|--all] --yes [--json]
 ```

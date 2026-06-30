@@ -394,10 +394,12 @@ export const SESSION_AGENT_COMMANDS = {
       repoOption,
       { flag: "--file <path>", description: "filter comments to one diff file" },
       { flag: "--type <type>", description: "filter to live, all, ai, agent, or user comments" },
+      { flag: "--author <name>", description: "filter comments to one author" },
+      { flag: "--no-author", description: "filter to comments that have no author" },
       jsonOption,
     ],
     synopsis: [
-      `hunk session comment list ${SESSION_SELECTOR_SYNOPSIS} [--file <path>] [--type <live|all|ai|agent|user>] [--json]`,
+      `hunk session comment list ${SESSION_SELECTOR_SYNOPSIS} [--file <path>] [--type <live|all|ai|agent|user>] [--author <name> | --no-author] [--json]`,
     ],
   },
   "comment-rm": {
