@@ -36,8 +36,10 @@ npm i -g hunkdiff
 Or with Homebrew:
 
 ```bash
-brew install modem-dev/tap/hunk
+brew install hunk
 ```
+> [!NOTE]
+> If you previously installed hunk via `modem-dev/tap`, be sure to uninstall it first with `brew uninstall modem-dev/tap/hunk`.
 
 Requirements:
 
