@@ -266,6 +266,8 @@ export interface SessionCommentListCommandInput {
   selector: SessionSelectorInput;
   filePath?: string;
   type?: SessionCommentListType;
+  author?: string;
+  noAuthor?: boolean;
 }
 
 export interface SessionCommentRemoveCommandInput {
