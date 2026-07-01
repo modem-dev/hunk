@@ -79,6 +79,26 @@ describe("static diff pager", () => {
     expect(plain).not.toContain("▌  1 +  const value = 2;");
   });
 
+  test("hatches the empty side of a split row instead of a flat filler block", async () => {
+    const patchText =
+      "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1,2 @@\n const keep = 1;\n+const added = 2;\n";
+
+    const plain = stripAnsi(
+      await renderStaticDiffPager(
+        patchText,
+        { mode: "split" },
+        { terminalColumns: 80, stderr: { write: () => true } },
+      ),
+    );
+    const addedRow = plain.split("\n").find((line) => line.includes("const added"));
+
+    expect(addedRow).toBeDefined();
+    // The new line lands on the right; the absent left side is hatched, not left blank or filled.
+    expect(addedRow).toContain("╲");
+    expect(addedRow).toContain("+ const added = 2;");
+    expect(addedRow!.indexOf("╲")).toBeLessThan(addedRow!.indexOf("const added"));
+  });
+
   test("keeps auto mode stacked in static pager output", async () => {
     const patchText =
       "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-const value = 1;\n+const value = 2;\n";
