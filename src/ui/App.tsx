@@ -187,7 +187,7 @@ export function App({
   );
   const review = useReviewController({ files: bootstrap.changeset.files });
   const hasReviewWorkToLose =
-    review.reviewNoteCount > 0 || review.liveCommentCount > 0 || review.draftNote !== null;
+    review.userNoteCount > 0 || review.liveCommentCount > 0 || review.draftNote !== null;
   const filteredFiles = review.visibleFiles;
   const selectedFile = review.selectedFile;
   const selectedHunkIndex = review.selectedHunkIndex;

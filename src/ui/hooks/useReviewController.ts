@@ -135,6 +135,7 @@ export interface ReviewController {
   liveCommentsByFileId: Record<string, LiveComment[]>;
   reviewNoteCount: number;
   reviewNoteSummaries: SessionReviewNoteSummary[];
+  userNoteCount: number;
   userNotesByFileId: Record<string, UserReviewNote[]>;
   moveToAnnotatedFile: (delta: number) => void;
   moveToAnnotatedHunk: (delta: number) => void;
@@ -908,6 +909,12 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     [liveCommentsByFileId],
   );
 
+  /** Count only human-authored notes created during this in-memory review session. */
+  const userNoteCount = useMemo(
+    () => Object.values(userNotesByFileId).reduce((sum, notes) => sum + notes.length, 0),
+    [userNotesByFileId],
+  );
+
   /** Format current inline notes for daemon snapshots without exposing UI-only objects. */
   const reviewNoteSummaries = useMemo<SessionReviewNoteSummary[]>(() => {
     const noteSummaries: SessionReviewNoteSummary[] = [];
@@ -996,6 +1003,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     liveCommentsByFileId,
     reviewNoteCount,
     reviewNoteSummaries,
+    userNoteCount,
     userNotesByFileId,
     scrollToNote,
     selectedFile,

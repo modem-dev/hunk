@@ -170,6 +170,21 @@ function createNoReviewBootstrap(initialMode: LayoutMode = "split", pager = fals
   });
 }
 
+function createAgentSidecarOnlyBootstrap(): AppBootstrap {
+  return createTestVcsAppBootstrap({
+    changesetId: "changeset:app-agent-sidecar-only",
+    files: [
+      createTestDiffFile(
+        "alpha",
+        "alpha.ts",
+        "export const alpha = 1;\n",
+        "export const alpha = 2;\nexport const add = true;\n",
+        true,
+      ),
+    ],
+  });
+}
+
 function createSingleFileBootstrap(): AppBootstrap {
   return createTestVcsAppBootstrap({
     changesetId: "changeset:app-single-file",
@@ -3420,7 +3435,31 @@ describe("App interactions", () => {
     }
   });
 
-  test("quit confirmation protects saved review notes until confirmed", async () => {
+  test("quit shortcut ignores persisted agent sidecar annotations", async () => {
+    const qQuit = mock(() => undefined);
+    const qSetup = await testRender(
+      <AppHost bootstrap={createAgentSidecarOnlyBootstrap()} onQuit={qQuit} />,
+      { width: 220, height: 24 },
+    );
+
+    try {
+      await flush(qSetup);
+
+      await act(async () => {
+        await qSetup.mockInput.typeText("q");
+      });
+      await flush(qSetup);
+
+      expect(qQuit).toHaveBeenCalledTimes(1);
+      expect(qSetup.captureCharFrame()).not.toContain("Quit review?");
+    } finally {
+      await act(async () => {
+        qSetup.renderer.destroy();
+      });
+    }
+  });
+
+  test("quit confirmation protects saved user notes until confirmed", async () => {
     const onQuit = mock(() => undefined);
     const setup = await testRender(
       <AppHost bootstrap={createNoReviewBootstrap()} onQuit={onQuit} />,
