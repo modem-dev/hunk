@@ -195,6 +195,14 @@ export function createPtyHarness() {
     return dir;
   }
 
+  // Isolate every launch from the developer's ambient user config/state so PTY snapshots assert
+  // against built-in defaults instead of whatever ~/.config/hunk/config.toml happens to set.
+  let isolatedConfigHome: string | undefined;
+  function configHome() {
+    isolatedConfigHome ??= makeTempDir("hunk-tuistory-config-");
+    return isolatedConfigHome;
+  }
+
   function cleanup() {
     while (tempDirs.length > 0) {
       const dir = tempDirs.pop();
@@ -631,6 +639,7 @@ export function createPtyHarness() {
       rows: options.rows ?? 24,
       env: {
         ...process.env,
+        XDG_CONFIG_HOME: configHome(),
         HUNK_MCP_DISABLE: "1",
         HUNK_DISABLE_UPDATE_NOTICE: "1",
         ...options.env,
@@ -656,6 +665,7 @@ export function createPtyHarness() {
       rows: options.rows ?? 24,
       env: {
         ...process.env,
+        XDG_CONFIG_HOME: configHome(),
         HUNK_MCP_DISABLE: "1",
         HUNK_DISABLE_UPDATE_NOTICE: "1",
         ...options.env,
