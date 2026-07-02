@@ -247,6 +247,22 @@ describe("themes", () => {
     expect(custom.syntaxColors.keyword).toBe("#ff00ff");
   });
 
+  test("a full syntax theme JSON drives highlighting by name", () => {
+    const syntaxThemeData = { name: "Shades of Purple", type: "dark" as const, tokenColors: [] };
+    const custom = resolveTheme("custom", null, {
+      base: "catppuccin-mocha",
+      label: "My Theme",
+      syntaxThemeData,
+      // A 9-token block is present too, but the full theme JSON should take precedence.
+      syntax: { keyword: "#ff00ff" },
+    });
+
+    expect(custom.syntaxTheme).toBe("hunk-custom-syntax:Shades of Purple");
+    expect(custom.syntaxThemeData).toEqual(syntaxThemeData);
+    // The 9-token palette is still kept for collision normalization against diff backgrounds.
+    expect(custom.syntaxColors.keyword).toBe("#ff00ff");
+  });
+
   test("withTransparentBackground only swaps painted background fields", () => {
     const theme = resolveTheme("github-dark-default", null);
     const transparent = withTransparentBackground(theme);

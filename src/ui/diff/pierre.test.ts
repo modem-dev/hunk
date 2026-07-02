@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseDiffFromFile } from "@pierre/diffs";
+import { disposeHighlighter, parseDiffFromFile } from "@pierre/diffs";
 import type { DiffFile } from "../../core/types";
 import {
   buildSplitRows,
@@ -665,6 +665,59 @@ describe("Pierre diff rows", () => {
       expect(spans.find((span) => span.text.includes("compute"))?.fg).toBe("#223344");
       expect(spans.find((span) => span.text.includes('"hello"'))?.fg).toBe("#334455");
     }
+  });
+
+  test("registers custom syntax themes under a collision-safe internal name", async () => {
+    const metadata = parseDiffFromFile(
+      { name: "syntax.ts", contents: "const a = 1;\n", cacheKey: "collision-before" },
+      {
+        name: "syntax.ts",
+        contents: "export const a = 2;\n",
+        cacheKey: "collision-after",
+      },
+      { context: 3 },
+      true,
+    );
+    const file: DiffFile = {
+      id: "custom-syntax-collision",
+      path: "syntax.ts",
+      patch: "",
+      language: "typescript",
+      stats: { additions: 1, deletions: 1 },
+      metadata,
+      agent: null,
+    };
+
+    await disposeHighlighter();
+    await loadHighlightedDiff(file, resolveTheme("dracula", null));
+
+    const theme = resolveTheme("custom", null, {
+      base: "github-dark-default",
+      syntaxThemeData: {
+        name: "dracula",
+        type: "dark",
+        colors: {
+          "editor.background": "#000000",
+          "editor.foreground": "#ffffff",
+        },
+        tokenColors: [
+          {
+            scope: ["keyword", "storage", "storage.type"],
+            settings: { foreground: "#ff00ff" },
+          },
+        ],
+      },
+    });
+    const highlighted = await loadHighlightedDiff(file, theme);
+    const spans = buildStackRows(file, highlighted, theme)
+      .filter(
+        (row): row is Extract<DiffRow, { type: "stack-line" }> =>
+          row.type === "stack-line" && row.cell.kind === "addition",
+      )
+      .flatMap((row) => row.cell.spans);
+
+    expect(theme.syntaxTheme).toBe("hunk-custom-syntax:dracula");
+    expect(spans.find((span) => span.text.includes("export"))?.fg?.toLowerCase()).toBe("#ff00ff");
   });
 
   test("uses Shiki's bundled Catppuccin theme for Catppuccin syntax", async () => {
