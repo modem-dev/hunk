@@ -202,7 +202,7 @@ export function useAppKeyboardShortcuts({
       return;
     }
 
-    if (key.name === "q" || isEscapeKey(key)) {
+    if (key.name === "q") {
       requestQuit();
       return;
     }
@@ -412,11 +412,6 @@ export function useAppKeyboardShortcuts({
     if (key.name === "?" || key.sequence === "?") {
       toggleHelp();
       closeMenu();
-      return;
-    }
-
-    if (isEscapeKey(key)) {
-      requestQuit();
       return;
     }
 

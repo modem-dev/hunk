@@ -3356,7 +3356,7 @@ describe("App interactions", () => {
     }
   });
 
-  test("quit shortcuts route through the provided onQuit handler in regular and pager modes", async () => {
+  test("q routes through the provided onQuit handler in regular and pager modes", async () => {
     const regularQuit = mock(() => undefined);
     const regularSetup = await testRender(
       <AppHost bootstrap={createBootstrap()} onQuit={regularQuit} />,
@@ -3391,6 +3391,48 @@ describe("App interactions", () => {
       await flush(pagerSetup);
 
       expect(pagerQuit).toHaveBeenCalledTimes(1);
+    } finally {
+      await act(async () => {
+        pagerSetup.renderer.destroy();
+      });
+    }
+  });
+
+  test("Escape does not quit in regular or pager modes", async () => {
+    const regularQuit = mock(() => undefined);
+    const regularSetup = await testRender(
+      <AppHost bootstrap={createBootstrap()} onQuit={regularQuit} />,
+      { width: 220, height: 24 },
+    );
+
+    try {
+      await flush(regularSetup);
+      await act(async () => {
+        await regularSetup.mockInput.pressEscape();
+      });
+      await flush(regularSetup);
+
+      expect(regularQuit).toHaveBeenCalledTimes(0);
+    } finally {
+      await act(async () => {
+        regularSetup.renderer.destroy();
+      });
+    }
+
+    const pagerQuit = mock(() => undefined);
+    const pagerSetup = await testRender(
+      <AppHost bootstrap={createBootstrap("auto", true)} onQuit={pagerQuit} />,
+      { width: 180, height: 20 },
+    );
+
+    try {
+      await flush(pagerSetup);
+      await act(async () => {
+        await pagerSetup.mockInput.pressEscape();
+      });
+      await flush(pagerSetup);
+
+      expect(pagerQuit).toHaveBeenCalledTimes(0);
     } finally {
       await act(async () => {
         pagerSetup.renderer.destroy();
