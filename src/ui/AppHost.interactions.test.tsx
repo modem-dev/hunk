@@ -148,6 +148,28 @@ function createBootstrap(initialMode: LayoutMode = "split", pager = false): AppB
   });
 }
 
+function createNoReviewBootstrap(initialMode: LayoutMode = "split", pager = false): AppBootstrap {
+  return createTestVcsAppBootstrap({
+    changesetId: "changeset:app-no-review-work",
+    files: [
+      createTestDiffFile(
+        "alpha",
+        "alpha.ts",
+        "export const alpha = 1;\n",
+        "export const alpha = 2;\nexport const add = true;\n",
+      ),
+      createTestDiffFile(
+        "beta",
+        "beta.ts",
+        "export const beta = 1;\n",
+        "export const betaValue = 1;\n",
+      ),
+    ],
+    initialMode,
+    pager,
+  });
+}
+
 function createSingleFileBootstrap(): AppBootstrap {
   return createTestVcsAppBootstrap({
     changesetId: "changeset:app-single-file",
@@ -3356,10 +3378,10 @@ describe("App interactions", () => {
     }
   });
 
-  test("quit shortcuts route through the provided onQuit handler in regular and pager modes", async () => {
+  test("quit shortcuts route through the provided onQuit handler without review notes", async () => {
     const regularQuit = mock(() => undefined);
     const regularSetup = await testRender(
-      <AppHost bootstrap={createBootstrap()} onQuit={regularQuit} />,
+      <AppHost bootstrap={createNoReviewBootstrap()} onQuit={regularQuit} />,
       { width: 220, height: 24 },
     );
 
@@ -3379,7 +3401,7 @@ describe("App interactions", () => {
 
     const pagerQuit = mock(() => undefined);
     const pagerSetup = await testRender(
-      <AppHost bootstrap={createBootstrap("auto", true)} onQuit={pagerQuit} />,
+      <AppHost bootstrap={createNoReviewBootstrap("auto", true)} onQuit={pagerQuit} />,
       { width: 180, height: 20 },
     );
 
@@ -3394,6 +3416,175 @@ describe("App interactions", () => {
     } finally {
       await act(async () => {
         pagerSetup.renderer.destroy();
+      });
+    }
+  });
+
+  test("quit confirmation protects saved review notes until confirmed", async () => {
+    const onQuit = mock(() => undefined);
+    const setup = await testRender(
+      <AppHost bootstrap={createNoReviewBootstrap()} onQuit={onQuit} />,
+      { width: 220, height: 24, useKittyKeyboard: null },
+    );
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.typeText("c");
+      });
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.typeText("Keep this note.");
+      });
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.pressKeys(["\u001b[115;5u"]);
+      });
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.typeText("q");
+      });
+      let frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("Quit review?"));
+
+      expect(onQuit).toHaveBeenCalledTimes(0);
+      expect(frame).toContain("comments or notes");
+
+      await act(async () => {
+        await setup.mockInput.typeText("t");
+      });
+      await flush(setup);
+
+      frame = setup.captureCharFrame();
+      expect(frame).toContain("Quit review?");
+      expect(frame).not.toContain("Theme selector");
+
+      await act(async () => {
+        await setup.mockInput.typeText("n");
+      });
+      frame = await waitForFrame(setup, (nextFrame) => !nextFrame.includes("Quit review?"));
+
+      expect(frame).not.toContain("Quit review?");
+      expect(onQuit).toHaveBeenCalledTimes(0);
+
+      await act(async () => {
+        await setup.mockInput.typeText("q");
+      });
+      await waitForFrame(setup, (nextFrame) => nextFrame.includes("Quit review?"));
+
+      await act(async () => {
+        await setup.mockInput.typeText("y");
+      });
+      await flush(setup);
+
+      expect(onQuit).toHaveBeenCalledTimes(1);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("quit confirmation protects live comments until confirmed", async () => {
+    const onQuit = mock(() => undefined);
+    const { dispatchCommand, hostClient } = createMockHostClient();
+    const setup = await testRender(
+      <AppHost bootstrap={createNoReviewBootstrap()} hostClient={hostClient} onQuit={onQuit} />,
+      { width: 220, height: 24 },
+    );
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        await dispatchCommand({
+          type: "command",
+          requestId: "quit-comment-1",
+          command: "comment",
+          input: {
+            sessionId: "session-1",
+            filePath: "alpha.ts",
+            side: "new",
+            line: 1,
+            summary: "Do not lose this live comment.",
+            reveal: true,
+          },
+        });
+      });
+
+      await waitForFrame(setup, (frame) => frame.includes("Do not lose this live comment."));
+
+      await act(async () => {
+        await setup.mockInput.typeText("q");
+      });
+      const frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("Quit review?"));
+
+      expect(frame).toContain("Quit review?");
+      expect(onQuit).toHaveBeenCalledTimes(0);
+
+      await act(async () => {
+        await setup.mockInput.pressEnter();
+      });
+      await flush(setup);
+
+      expect(onQuit).toHaveBeenCalledTimes(1);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("quit confirmation protects draft notes and treats Escape as gated quit when closed", async () => {
+    const onQuit = mock(() => undefined);
+    const setup = await testRender(
+      <AppHost bootstrap={createNoReviewBootstrap()} onQuit={onQuit} />,
+      { width: 220, height: 24 },
+    );
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.typeText("c");
+      });
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockMouse.click(6, 4);
+      });
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.typeText("q");
+      });
+      let frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("Quit review?"));
+
+      expect(frame).toContain("Quit review?");
+      expect(onQuit).toHaveBeenCalledTimes(0);
+
+      await act(async () => {
+        await setup.mockInput.pressEscape();
+      });
+      frame = await waitForFrame(setup, (nextFrame) => !nextFrame.includes("Quit review?"));
+
+      expect(frame).not.toContain("Quit review?");
+      expect(frame).toContain("Draft note");
+      expect(onQuit).toHaveBeenCalledTimes(0);
+
+      await act(async () => {
+        await setup.mockInput.pressEscape();
+      });
+      frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("Quit review?"));
+
+      expect(frame).toContain("Quit review?");
+      expect(onQuit).toHaveBeenCalledTimes(0);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
       });
     }
   });

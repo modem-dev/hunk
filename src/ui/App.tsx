@@ -49,6 +49,9 @@ const LazyHelpDialog = lazy(async () => ({
 const LazyMenuDropdown = lazy(async () => ({
   default: (await import("./components/chrome/MenuDropdown")).MenuDropdown,
 }));
+const LazyQuitConfirmDialog = lazy(async () => ({
+  default: (await import("./components/chrome/QuitConfirmDialog")).QuitConfirmDialog,
+}));
 const LazyThemeSelectorDialog = lazy(async () => ({
   default: (await import("./components/chrome/ThemeSelectorDialog")).ThemeSelectorDialog,
 }));
@@ -146,6 +149,7 @@ export function App({
   const [forceSidebarOpen, setForceSidebarOpen] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [showAgentSkill, setShowAgentSkill] = useState(false);
+  const [quitConfirmOpen, setQuitConfirmOpen] = useState(false);
   const [focusArea, setFocusArea] = useState<FocusArea>("files");
   const [activeAddNoteTarget, setActiveAddNoteTarget] = useState<ActiveAddNoteTarget | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(34);
@@ -182,6 +186,8 @@ export function App({
     [activeTheme.id, themeOptions],
   );
   const review = useReviewController({ files: bootstrap.changeset.files });
+  const hasReviewWorkToLose =
+    review.reviewNoteCount > 0 || review.liveCommentCount > 0 || review.draftNote !== null;
   const filteredFiles = review.visibleFiles;
   const selectedFile = review.selectedFile;
   const selectedHunkIndex = review.selectedHunkIndex;
@@ -646,8 +652,24 @@ export function App({
 
   /** Leave the app through the shared shutdown path. */
   const requestQuit = useCallback(() => {
+    if (hasReviewWorkToLose) {
+      setQuitConfirmOpen(true);
+      return;
+    }
+
+    onQuit();
+  }, [hasReviewWorkToLose, onQuit]);
+
+  /** Confirm quitting after the user acknowledges review notes will be discarded. */
+  const confirmQuit = useCallback(() => {
+    setQuitConfirmOpen(false);
     onQuit();
   }, [onQuit]);
+
+  /** Keep the current review open after an accidental quit shortcut. */
+  const cancelQuit = useCallback(() => {
+    setQuitConfirmOpen(false);
+  }, []);
 
   /** Close the modal keyboard help overlay. */
   const closeHelp = useCallback(() => {
@@ -824,7 +846,9 @@ export function App({
     closeAgentSkill,
     closeHelp,
     closeMenu,
+    confirmQuit,
     acceptThemeSelector,
+    cancelQuit,
     cancelDraftNote,
     closeThemeSelector,
     focusArea,
@@ -837,6 +861,7 @@ export function App({
     openMenu,
     openThemeSelector,
     pagerMode,
+    quitConfirmOpen,
     requestQuit,
     scrollCodeHorizontally,
     saveDraftNote,
@@ -1125,6 +1150,18 @@ export function App({
             onClose={closeThemeSelector}
             onPickItem={pickThemeSelectorItem}
             onScroll={moveThemeSelector}
+          />
+        </Suspense>
+      ) : null}
+
+      {quitConfirmOpen ? (
+        <Suspense fallback={null}>
+          <LazyQuitConfirmDialog
+            terminalHeight={terminal.height}
+            terminalWidth={terminal.width}
+            theme={baseTheme}
+            onCancel={cancelQuit}
+            onConfirm={confirmQuit}
           />
         </Suspense>
       ) : null}

@@ -57,7 +57,9 @@ export interface UseAppKeyboardShortcutsOptions {
   closeAgentSkill: () => void;
   closeHelp: () => void;
   closeMenu: () => void;
+  confirmQuit: () => void;
   acceptThemeSelector: () => void;
+  cancelQuit: () => void;
   cancelDraftNote: () => void;
   closeThemeSelector: () => void;
   focusArea: FocusArea;
@@ -70,6 +72,7 @@ export interface UseAppKeyboardShortcutsOptions {
   openMenu: (menuId: MenuId) => void;
   openThemeSelector: () => void;
   pagerMode: boolean;
+  quitConfirmOpen: boolean;
   requestQuit: () => void;
   scrollCodeHorizontally: (delta: number) => void;
   scrollDiff: (delta: number, unit: ScrollUnit) => void;
@@ -101,7 +104,9 @@ export function useAppKeyboardShortcuts({
   closeAgentSkill,
   closeHelp,
   closeMenu,
+  confirmQuit,
   acceptThemeSelector,
+  cancelQuit,
   cancelDraftNote,
   closeThemeSelector,
   focusArea,
@@ -114,6 +119,7 @@ export function useAppKeyboardShortcuts({
   openMenu,
   openThemeSelector,
   pagerMode,
+  quitConfirmOpen,
   requestQuit,
   scrollCodeHorizontally,
   saveDraftNote,
@@ -139,6 +145,7 @@ export function useAppKeyboardShortcuts({
   const activeMenuIdRef = useRef(activeMenuId);
   const focusAreaRef = useRef(focusArea);
   const pagerModeRef = useRef(pagerMode);
+  const quitConfirmOpenRef = useRef(quitConfirmOpen);
   const showAgentSkillRef = useRef(showAgentSkill);
   const showHelpRef = useRef(showHelp);
   const themeSelectorOpenRef = useRef(themeSelectorOpen);
@@ -146,6 +153,7 @@ export function useAppKeyboardShortcuts({
   activeMenuIdRef.current = activeMenuId;
   focusAreaRef.current = focusArea;
   pagerModeRef.current = pagerMode;
+  quitConfirmOpenRef.current = quitConfirmOpen;
   showAgentSkillRef.current = showAgentSkill;
   showHelpRef.current = showHelp;
   themeSelectorOpenRef.current = themeSelectorOpen;
@@ -283,6 +291,26 @@ export function useAppKeyboardShortcuts({
     }
 
     return false;
+  };
+
+  const handleQuitConfirmShortcut = (key: KeyEvent) => {
+    if (!quitConfirmOpenRef.current) {
+      return false;
+    }
+
+    consumeKey(key);
+
+    if (key.name === "return" || key.name === "enter" || key.name === "y") {
+      confirmQuit();
+      return true;
+    }
+
+    if (isEscapeKey(key) || key.name === "n") {
+      cancelQuit();
+      return true;
+    }
+
+    return true;
   };
 
   const handleThemeSelectorShortcut = (key: KeyEvent) => {
@@ -581,6 +609,10 @@ export function useAppKeyboardShortcuts({
   };
 
   useKeyboard((key: KeyEvent) => {
+    if (handleQuitConfirmShortcut(key)) {
+      return;
+    }
+
     if (handleMenuToggleShortcut(key)) {
       return;
     }
