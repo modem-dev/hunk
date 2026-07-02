@@ -308,7 +308,8 @@ export function useAppKeyboardShortcuts({
       return true;
     }
 
-    if (key.name === "d" || key.sequence === "d") {
+    // "q" again quits and discards, so a double-tap of the quit key always exits.
+    if (key.name === "q" || key.sequence === "q") {
       discardViewPreferencesAndQuit();
       return true;
     }

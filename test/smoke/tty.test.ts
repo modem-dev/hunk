@@ -254,7 +254,7 @@ describe("TTY render smoke", () => {
     const output = await runTtySmoke({
       mode: "split",
       longWrapFixture: true,
-      inputCommand: `(sleep 2; printf w; sleep 1; printf q)`,
+      inputCommand: `(sleep 2; printf w; sleep 1; printf q; sleep 1; printf q)`,
     });
 
     expect(output).toContain("wrapped line for");
@@ -269,7 +269,7 @@ describe("TTY render smoke", () => {
     const output = await runTtySmoke({
       mode: "split",
       longWrapFixture: true,
-      inputCommand: `(sleep 2; printf www; sleep 1; printf q)`,
+      inputCommand: `(sleep 2; printf www; sleep 1; printf q; sleep 1; printf q)`,
     });
 
     expect(output).toContain("wrapped line for");
