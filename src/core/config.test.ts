@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CliInput } from "./types";
 import {
+  diffPersistedViewPreferences,
   resolveConfiguredCliInput,
   saveGlobalViewPreferences,
   saveViewPreferencesPromptPreference,
@@ -119,6 +120,37 @@ describe("config persistence", () => {
         "",
       ].join("\n"),
     );
+  });
+
+  test("diffs view preference snapshots as the TOML assignments a save would rewrite", () => {
+    const initial = {
+      mode: "auto",
+      theme: "github-dark-default",
+      showLineNumbers: false,
+      wrapLines: false,
+      showHunkHeaders: false,
+      showMenuBar: true,
+      showAgentNotes: true,
+      copyDecorations: false,
+    } as const;
+
+    expect(diffPersistedViewPreferences(initial, { ...initial })).toEqual([]);
+    expect(
+      diffPersistedViewPreferences(initial, {
+        ...initial,
+        mode: "split",
+        theme: "github-dark-dimmed",
+        showLineNumbers: true,
+      }),
+    ).toEqual([
+      {
+        configKey: "theme",
+        previousValue: '"github-dark-default"',
+        nextValue: '"github-dark-dimmed"',
+      },
+      { configKey: "mode", previousValue: '"auto"', nextValue: '"split"' },
+      { configKey: "line_numbers", previousValue: "false", nextValue: "true" },
+    ]);
   });
 });
 

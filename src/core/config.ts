@@ -386,6 +386,41 @@ function writeConfigSource(configPath: string, source: string) {
   fs.writeFileSync(configPath, source);
 }
 
+/** One view preference the quit prompt would rewrite, as TOML assignment text. */
+export interface ViewPreferenceChange {
+  configKey: string;
+  previousValue: string;
+  nextValue: string;
+}
+
+/**
+ * Diff two view-preference snapshots into the TOML assignments
+ * `saveGlobalViewPreferences` would rewrite, so prompt UI and persistence
+ * stay derived from the same key table.
+ */
+export function diffPersistedViewPreferences(
+  previous: PersistedViewPreferences,
+  next: PersistedViewPreferences,
+): ViewPreferenceChange[] {
+  const changes: ViewPreferenceChange[] = [];
+  for (const key of PERSISTED_VIEW_PREFERENCE_KEYS) {
+    const previousValue = key.value(previous);
+    const nextValue = key.value(next);
+    if (previousValue === nextValue) {
+      continue;
+    }
+
+    changes.push({
+      configKey: key.configKey,
+      previousValue:
+        previousValue === undefined ? "unset" : serializeTomlPreferenceValue(previousValue),
+      nextValue: nextValue === undefined ? "unset" : serializeTomlPreferenceValue(nextValue),
+    });
+  }
+
+  return changes;
+}
+
 /** Persist accepted in-app view preferences to the selected Hunk config file. */
 export function saveGlobalViewPreferences(
   preferences: PersistedViewPreferences,

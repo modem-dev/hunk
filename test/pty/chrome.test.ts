@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createPtyHarness } from "./harness";
 
 const harness = createPtyHarness();
@@ -73,6 +76,51 @@ describe("PTY chrome", () => {
       expect(helpDialog).toContain("g / G");
     } finally {
       session.close();
+    }
+  });
+
+  test("quit prompt shows the config diff and saves preferences on mouse click", async () => {
+    // Own the config home instead of the shared harness one so the test can
+    // assert what the save action wrote.
+    const configHome = mkdtempSync(join(tmpdir(), "hunk-tuistory-save-view-"));
+    const fixture = harness.createMultiHunkFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after],
+      cols: 120,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      await session.waitForText(/line60/, { timeout: 15_000 });
+
+      await session.press("t");
+      await session.waitForText(/Theme selector/, { timeout: 5_000 });
+      await session.press("down");
+      await session.waitForText(/›\s+github-dark-dimmed/, { timeout: 5_000 });
+      await session.press("enter");
+      await harness.waitForSnapshot(session, (text) => !text.includes("Theme selector"), 5_000);
+
+      await session.press("q");
+      const prompt = await session.waitForText(/Save view preferences\?/, { timeout: 5_000 });
+      expect(prompt).toContain('- theme = "github-dark-default"');
+      expect(prompt).toContain('+ theme = "github-dark-dimmed"');
+      expect(prompt).toContain("enter/s save");
+
+      await session.click(/enter\/s save/);
+
+      // The save handler writes the config and quits shortly after; poll the
+      // file instead of the (soon dead) PTY session.
+      const configPath = join(configHome, "hunk", "config.toml");
+      const deadline = Date.now() + 5_000;
+      while (Date.now() < deadline && !existsSync(configPath)) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+
+      expect(readFileSync(configPath, "utf8")).toContain('theme = "github-dark-dimmed"');
+    } finally {
+      session.close();
+      rmSync(configHome, { recursive: true, force: true });
     }
   });
 

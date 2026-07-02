@@ -46,6 +46,7 @@ CLI input
 
 - `App` should remain the orchestration shell for app state, navigation, layout mode, theme, filtering, and pane coordination.
 - Pane rendering should live in dedicated components.
+- Confirmation prompts with a small set of choices should reuse `ConfirmDialog` (body rows plus a clickable key-legend action row) instead of composing `ModalFrame` with a hand-rolled footer; keyboard handling for its actions stays in `useAppKeyboardShortcuts`.
 - New UI work should extend existing components or add new ones, not grow `App` back into a monolith.
 - Shared formatting, ids, and small derivations belong in helper modules, not repeated inline.
 - Prefer one implementation path per feature instead of separate "old" and "new" codepaths that duplicate behavior.

@@ -5,7 +5,11 @@ import {
 } from "@opentui/core";
 import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState, useRef } from "react";
-import { saveGlobalViewPreferences, saveViewPreferencesPromptPreference } from "../core/config";
+import {
+  diffPersistedViewPreferences,
+  saveGlobalViewPreferences,
+  saveViewPreferencesPromptPreference,
+} from "../core/config";
 import type {
   AppBootstrap,
   CliInput,
@@ -16,7 +20,7 @@ import type {
 import { canReloadInput, computeWatchSignature } from "../core/watch";
 import type { HunkSessionBrokerClient, ReloadedSessionResult } from "../hunk-session/types";
 import { MenuBar } from "./components/chrome/MenuBar";
-import { ModalFrame } from "./components/chrome/ModalFrame";
+import { ConfirmDialog, confirmDialogHeight } from "./components/chrome/ConfirmDialog";
 import { StatusBar } from "./components/chrome/StatusBar";
 import { DiffPane } from "./components/panes/DiffPane";
 import { SidebarPane } from "./components/panes/SidebarPane";
@@ -214,50 +218,23 @@ export function App({
     ],
   );
   const initialViewPreferencesRef = useRef(currentViewPreferences);
-  const changedViewPreferenceLines = useMemo(() => {
-    const initial = initialViewPreferencesRef.current;
-    const changes: string[] = [];
-    if (currentViewPreferences.theme !== initial.theme) {
-      changes.push(
-        `Theme: ${initial.theme ?? "default"} → ${currentViewPreferences.theme ?? "default"}`,
-      );
-    }
-    if (currentViewPreferences.mode !== initial.mode) {
-      changes.push(`Layout: ${initial.mode} → ${currentViewPreferences.mode}`);
-    }
-    if (currentViewPreferences.showLineNumbers !== initial.showLineNumbers) {
-      changes.push(
-        `Line numbers: ${initial.showLineNumbers ? "on" : "off"} → ${currentViewPreferences.showLineNumbers ? "on" : "off"}`,
-      );
-    }
-    if (currentViewPreferences.wrapLines !== initial.wrapLines) {
-      changes.push(
-        `Line wrapping: ${initial.wrapLines ? "on" : "off"} → ${currentViewPreferences.wrapLines ? "on" : "off"}`,
-      );
-    }
-    if (currentViewPreferences.showHunkHeaders !== initial.showHunkHeaders) {
-      changes.push(
-        `Hunk headers: ${initial.showHunkHeaders ? "shown" : "hidden"} → ${currentViewPreferences.showHunkHeaders ? "shown" : "hidden"}`,
-      );
-    }
-    if (currentViewPreferences.showMenuBar !== initial.showMenuBar) {
-      changes.push(
-        `Menu bar: ${initial.showMenuBar ? "shown" : "hidden"} → ${currentViewPreferences.showMenuBar ? "shown" : "hidden"}`,
-      );
-    }
-    if (currentViewPreferences.showAgentNotes !== initial.showAgentNotes) {
-      changes.push(
-        `Agent notes: ${initial.showAgentNotes ? "shown" : "hidden"} → ${currentViewPreferences.showAgentNotes ? "shown" : "hidden"}`,
-      );
-    }
-    if (currentViewPreferences.copyDecorations !== initial.copyDecorations) {
-      changes.push(
-        `Copy decorations: ${initial.copyDecorations ? "on" : "off"} → ${currentViewPreferences.copyDecorations ? "on" : "off"}`,
-      );
-    }
-    return changes;
-  }, [currentViewPreferences]);
-  const hasUnsavedViewPreferences = changedViewPreferenceLines.length > 0;
+  const changedViewPreferences = useMemo(
+    () => diffPersistedViewPreferences(initialViewPreferencesRef.current, currentViewPreferences),
+    [currentViewPreferences],
+  );
+  // Render each change as the -/+ pair of TOML assignments the save would rewrite,
+  // with the key column aligned across all changed preferences.
+  const viewPreferenceDiffLines = useMemo(() => {
+    const keyWidth = changedViewPreferences.reduce(
+      (width, change) => Math.max(width, change.configKey.length),
+      0,
+    );
+    return changedViewPreferences.flatMap((change) => [
+      { removed: true, text: `- ${change.configKey.padEnd(keyWidth)} = ${change.previousValue}` },
+      { removed: false, text: `+ ${change.configKey.padEnd(keyWidth)} = ${change.nextValue}` },
+    ]);
+  }, [changedViewPreferences]);
+  const hasUnsavedViewPreferences = changedViewPreferences.length > 0;
   const viewPreferencesConfigLabel = useMemo(() => {
     const path = bootstrap.viewPreferencesConfigPath ?? "~/.config/hunk/config.toml";
     return process.env.HOME && path.startsWith(process.env.HOME)
@@ -1274,8 +1251,14 @@ export function App({
       ) : null}
 
       {!pagerMode && saveConfigPromptOpen ? (
-        <ModalFrame
-          height={Math.min(16, Math.max(12, changedViewPreferenceLines.length + 9))}
+        <ConfirmDialog
+          actions={[
+            { keyLabel: "enter/s", label: "save", run: saveViewPreferencesAndQuit },
+            { keyLabel: "d", label: "discard", run: discardViewPreferencesAndQuit },
+            { keyLabel: "n", label: "never ask", run: neverAskToSaveViewPreferencesAndQuit },
+            { keyLabel: "esc", label: "cancel", run: closeSaveConfigPrompt },
+          ]}
+          height={confirmDialogHeight(4 + viewPreferenceDiffLines.length)}
           terminalHeight={terminal.height}
           terminalWidth={terminal.width}
           theme={baseTheme}
@@ -1284,48 +1267,29 @@ export function App({
           onClose={closeSaveConfigPrompt}
         >
           <box style={{ width: "100%", height: 1 }}>
-            <text fg={baseTheme.text}>
-              Save your local view changes to {viewPreferencesConfigLabel}?
+            <text fg={baseTheme.muted}>
+              You changed {changedViewPreferences.length} view{" "}
+              {changedViewPreferences.length === 1 ? "setting" : "settings"} during this review.
+            </text>
+          </box>
+          <box style={{ width: "100%", height: 1 }}>
+            <text fg={baseTheme.muted}>
+              Save {changedViewPreferences.length === 1 ? "it" : "them"} to your config before
+              quitting?
             </text>
           </box>
           <box style={{ width: "100%", height: 1 }} />
-          {changedViewPreferenceLines.map((line) => (
-            <box key={line} style={{ width: "100%", height: 1 }}>
-              <text fg={baseTheme.muted}>{line}</text>
+          <box style={{ width: "100%", height: 1 }}>
+            <text fg={baseTheme.badgeNeutral}>{viewPreferencesConfigLabel}</text>
+          </box>
+          {viewPreferenceDiffLines.map((line) => (
+            <box key={line.text} style={{ width: "100%", height: 1 }}>
+              <text fg={line.removed ? baseTheme.badgeRemoved : baseTheme.badgeAdded}>
+                {line.text}
+              </text>
             </box>
           ))}
-          <box style={{ width: "100%", height: 1 }} />
-          <box style={{ width: "100%", height: 1, flexDirection: "row" }}>
-            <box
-              onMouseUp={(event: TuiMouseEvent) => {
-                event.stopPropagation();
-                saveViewPreferencesAndQuit();
-              }}
-            >
-              <text fg={baseTheme.accent}>[Enter/s] Save</text>
-            </box>
-            <text fg={baseTheme.muted}> </text>
-            <box
-              onMouseUp={(event: TuiMouseEvent) => {
-                event.stopPropagation();
-                discardViewPreferencesAndQuit();
-              }}
-            >
-              <text fg={baseTheme.badgeNeutral}>[d] Discard</text>
-            </box>
-            <text fg={baseTheme.muted}> </text>
-            <box
-              onMouseUp={(event: TuiMouseEvent) => {
-                event.stopPropagation();
-                neverAskToSaveViewPreferencesAndQuit();
-              }}
-            >
-              <text fg={baseTheme.badgeRemoved}>[n] Never ask</text>
-            </box>
-            <text fg={baseTheme.muted}> </text>
-            <text fg={baseTheme.muted}>[Esc] Cancel</text>
-          </box>
-        </ModalFrame>
+        </ConfirmDialog>
       ) : null}
 
       {!pagerMode && themeSelectorState.open ? (
