@@ -499,4 +499,44 @@ describe("session broker state", () => {
     ).toBe(0);
     expect(state.listSessions()).toHaveLength(1);
   });
+
+  test("keeps a live session across a wall-clock jump instead of pruning it on the first post-wake sweep", () => {
+    const state = createState();
+    const socket = {
+      send() {},
+    };
+
+    state.registerSession(socket, createRegistration(), createSnapshot());
+    const lastSeenAt = Date.now();
+    const ttlMs = 45_000;
+    const wallClockJumpMs = 300_000; // ~5 min sleep, well past the TTL
+
+    // Seed the pre-sleep baseline: one normal-cadence sweep for the jump to be measured against.
+    state.pruneStaleSessions({ ttlMs, now: lastSeenAt + 15_000 });
+
+    // On wake the wall clock has jumped far past the TTL in a single sweep; the
+    // session had no chance to heartbeat, so it must survive this first post-wake sweep.
+    expect(state.pruneStaleSessions({ ttlMs, now: lastSeenAt + wallClockJumpMs })).toBe(0);
+    expect(state.listSessions()).toHaveLength(1);
+  });
+
+  test("still prunes a session that stays silent after the post-wake grace sweep", () => {
+    const state = createState();
+    const socket = {
+      send() {},
+    };
+
+    state.registerSession(socket, createRegistration(), createSnapshot());
+    const lastSeenAt = Date.now();
+    const ttlMs = 45_000;
+    const wallClockJumpMs = 300_000; // ~5 min sleep, well past the TTL
+
+    state.pruneStaleSessions({ ttlMs, now: lastSeenAt + 15_000 });
+    state.pruneStaleSessions({ ttlMs, now: lastSeenAt + wallClockJumpMs }); // forgiven wake sweep
+
+    // A genuinely gone session never heartbeats again, so the next normal sweep
+    // still reaps it — the wake grace is one sweep, not immortality.
+    expect(state.pruneStaleSessions({ ttlMs, now: lastSeenAt + wallClockJumpMs + 15_000 })).toBe(1);
+    expect(state.listSessions()).toHaveLength(0);
+  });
 });
