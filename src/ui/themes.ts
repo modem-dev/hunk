@@ -1,5 +1,5 @@
 import type { ThemeMode } from "@opentui/core";
-import type { CustomThemeConfig } from "../core/types";
+import type { CustomSyntaxThemeData, CustomThemeConfig } from "../core/types";
 import { blendHex, contrastRatio, relativeLuminance } from "./lib/color";
 import {
   BUNDLED_SHIKI_THEME_IDS,
@@ -250,6 +250,13 @@ function fallbackTheme(themeMode?: ThemeMode | null) {
   return builtInThemeById(fallbackId) ?? THEMES[0]!;
 }
 
+const CUSTOM_SYNTAX_THEME_PREFIX = "hunk-custom-syntax:";
+
+/** Return the collision-safe internal id used when registering a config-provided Shiki theme. */
+function customSyntaxThemeId(themeData: CustomSyntaxThemeData) {
+  return `${CUSTOM_SYNTAX_THEME_PREFIX}${themeData.name}`;
+}
+
 /** Build one config-defined custom theme by inheriting from a Shiki-backed base palette. */
 function buildCustomTheme(customTheme: CustomThemeConfig) {
   const baseTheme = builtInThemeById(customTheme.base) ?? fallbackTheme();
@@ -294,7 +301,7 @@ function buildCustomTheme(customTheme: CustomThemeConfig) {
     // Otherwise explicit 9-token overrides use Hunk's semantic remap path (so they actually
     // affect highlighted code), and a bare custom palette inherits the base theme's syntax.
     syntaxTheme: customTheme.syntaxThemeData
-      ? customTheme.syntaxThemeData.name
+      ? customSyntaxThemeId(customTheme.syntaxThemeData)
       : customTheme.syntax
         ? undefined
         : baseTheme.syntaxTheme,

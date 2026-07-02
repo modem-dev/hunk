@@ -257,7 +257,7 @@ describe("themes", () => {
       syntax: { keyword: "#ff00ff" },
     });
 
-    expect(custom.syntaxTheme).toBe("Shades of Purple");
+    expect(custom.syntaxTheme).toBe("hunk-custom-syntax:Shades of Purple");
     expect(custom.syntaxThemeData).toEqual(syntaxThemeData);
     // The 9-token palette is still kept for collision normalization against diff backgrounds.
     expect(custom.syntaxColors.keyword).toBe("#ff00ff");
