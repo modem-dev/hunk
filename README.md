@@ -38,6 +38,7 @@ Or with Homebrew:
 ```bash
 brew install hunk
 ```
+
 > [!NOTE]
 > If you previously installed hunk via `modem-dev/tap`, be sure to uninstall it first with `brew uninstall modem-dev/tap/hunk`.
 
