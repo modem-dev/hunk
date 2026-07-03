@@ -2752,6 +2752,40 @@ describe("App interactions", () => {
     }
   });
 
+  test("transparent background keeps added and removed diff row tints", async () => {
+    const bootstrap = createBootstrap();
+    bootstrap.input.options.transparentBackground = true;
+    const theme = resolveTheme(bootstrap.initialTheme, null);
+    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
+      width: 220,
+      height: 60,
+    });
+
+    try {
+      await flush(setup);
+
+      const frame = setup.captureSpans();
+      const lineIncludesBackground = (text: string, backgroundColor: string) =>
+        frame.lines.some((line) => {
+          const lineText = line.spans.map((span) => span.text).join("");
+          return (
+            lineText.includes(text) &&
+            line.spans.some(
+              (span) =>
+                capturedTestColorToHex(span.bg)?.toLowerCase() === backgroundColor.toLowerCase(),
+            )
+          );
+        });
+
+      expect(lineIncludesBackground("betaValue", theme.addedBg)).toBe(true);
+      expect(lineIncludesBackground("beta = 1", theme.removedBg)).toBe(true);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("draft note focus suppresses app shortcuts while accepting typed shortcut keys", async () => {
     const setup = await testRender(<AppHost bootstrap={createBootstrap()} />, {
       width: 240,

@@ -28,7 +28,7 @@ import { fileRowId } from "./lib/ids";
 import { openSelectedFileInEditor } from "./lib/openInEditor";
 import { resolveResponsiveLayout } from "./lib/responsive";
 import { resizeSidebarWidth } from "./lib/sidebar";
-import { availableThemes, resolveTheme, withTransparentBackground } from "./themes";
+import { availableThemes, resolveTheme, withTransparentSurfaces } from "./themes";
 
 type FocusArea = "files" | "filter" | "note";
 type ActiveAddNoteTarget = ActiveAddNoteAffordance & { fileId: string };
@@ -166,7 +166,7 @@ export function App({
   const activeTheme = useMemo(
     () =>
       bootstrap.input.options.transparentBackground
-        ? withTransparentBackground(baseTheme)
+        ? withTransparentSurfaces(baseTheme)
         : baseTheme,
     [baseTheme, bootstrap.input.options.transparentBackground],
   );
