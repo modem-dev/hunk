@@ -2,9 +2,12 @@ import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createTestConfigHome } from "../helpers/config-home";
 
 const repoRoot = process.cwd();
 const sourceEntrypoint = join(repoRoot, "src/main.tsx");
+// Spawned hunk processes must assert built-in defaults, not the developer's ambient user config.
+const testConfigHome = createTestConfigHome();
 const tempDirs: string[] = [];
 const enableTtySmokeTests = process.env.HUNK_RUN_TTY_SMOKE === "1";
 if (enableTtySmokeTests) {
@@ -169,6 +172,7 @@ async function runTtySmoke(options: {
     stderr: "pipe",
     env: {
       ...process.env,
+      XDG_CONFIG_HOME: testConfigHome,
       TERM: "xterm-256color",
       HUNK_MCP_DISABLE: "1",
       HUNK_DISABLE_UPDATE_NOTICE: "1",
@@ -203,6 +207,7 @@ async function runStdinPagerSmoke(options?: {
     stderr: "pipe",
     env: {
       ...process.env,
+      XDG_CONFIG_HOME: testConfigHome,
       TERM: "xterm-256color",
       HUNK_MCP_DISABLE: "1",
       HUNK_DISABLE_UPDATE_NOTICE: "1",

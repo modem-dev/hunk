@@ -46,7 +46,13 @@ in
     enableJujutsuIntegration = mkOption {
       type = types.bool;
       default = false;
-      description = "Whether to set hunk as the default jujutsu pager.";
+      description = "Whether to set hunk as the default jujutsu pager. Also sets ui.diff-formatter to \":git\" so jj emits git-style diffs hunk can render.";
+    };
+
+    enableClaudeIntegration = mkOption {
+      type = types.bool;
+      default = false;
+      description = "Whether to link the hunk-review skill under ~/.claude/skills.";
     };
   };
 
@@ -58,11 +64,16 @@ in
     };
 
     programs.git.settings.core.pager = mkIf cfg.enableGitIntegration "hunk pager";
+
     programs.jujutsu.settings = mkIf cfg.enableJujutsuIntegration {
       ui = {
         diff-formatter = ":git";
         pager = "hunk pager";
       };
+    };
+
+    home.file = mkIf cfg.enableClaudeIntegration {
+      ".claude/skills/hunk-review".source = "${cfg.package}/skills/hunk-review";
     };
   };
 }

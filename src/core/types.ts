@@ -90,6 +90,7 @@ export interface CommonOptions {
   lineNumbers?: boolean;
   wrapLines?: boolean;
   hunkHeaders?: boolean;
+  menuBar?: boolean;
   agentNotes?: boolean;
   copyDecorations?: boolean;
   transparentBackground?: boolean;
@@ -155,6 +156,7 @@ export interface PersistedViewPreferences {
   showLineNumbers: boolean;
   wrapLines: boolean;
   showHunkHeaders: boolean;
+  showMenuBar: boolean;
   showAgentNotes: boolean;
   copyDecorations: boolean;
 }
@@ -364,6 +366,7 @@ export interface AppBootstrap {
   initialShowLineNumbers?: boolean;
   initialWrapLines?: boolean;
   initialShowHunkHeaders?: boolean;
+  initialShowMenuBar?: boolean;
   initialShowAgentNotes?: boolean;
   initialCopyDecorations?: boolean;
 }

@@ -10,6 +10,7 @@ export function SidebarPane({
   entries,
   scrollRef,
   selectedFileId,
+  showTopChrome = true,
   textWidth,
   theme,
   width,
@@ -19,6 +20,7 @@ export function SidebarPane({
   entries: SidebarEntry[];
   scrollRef: RefObject<ScrollBoxRenderable | null>;
   selectedFileId?: string;
+  showTopChrome?: boolean;
   textWidth: number;
   theme: AppTheme;
   width: number;
@@ -96,12 +98,12 @@ export function SidebarPane({
     <box
       style={{
         width,
-        border: ["top"],
+        border: showTopChrome ? ["top"] : [],
         borderColor: theme.border,
         backgroundColor: theme.panel,
-        paddingY: 1,
         paddingX: 0,
         flexDirection: "column",
+        ...(showTopChrome ? { paddingY: 1 } : { paddingTop: 0, paddingBottom: 1 }),
       }}
     >
       <scrollbox

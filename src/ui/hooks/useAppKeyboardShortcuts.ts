@@ -42,6 +42,14 @@ function isUppercaseGKey(key: KeyEvent) {
   );
 }
 
+/** Detect Shift-M without stealing the lowercase hunk metadata toggle. */
+function isUppercaseMKey(key: KeyEvent) {
+  return (
+    (key.sequence === "M" && !key.option && !key.ctrl && !key.meta) ||
+    (key.name === "m" && key.shift && !key.option && !key.ctrl && !key.meta)
+  );
+}
+
 export interface UseAppKeyboardShortcutsOptions {
   activeMenuId: MenuId | null;
   activateCurrentMenuItem: () => void;
@@ -77,6 +85,7 @@ export interface UseAppKeyboardShortcutsOptions {
   toggleHelp: () => void;
   toggleHunkHeaders: () => void;
   toggleLineNumbers: () => void;
+  toggleMenuBar: () => void;
   toggleLineWrap: () => void;
   themeSelectorOpen: boolean;
   toggleSidebar: () => void;
@@ -120,6 +129,7 @@ export function useAppKeyboardShortcuts({
   toggleHelp,
   themeSelectorOpen,
   toggleHunkHeaders,
+  toggleMenuBar,
   triggerEditSelectedFile,
   toggleLineNumbers,
   toggleLineWrap,
@@ -520,6 +530,11 @@ export function useAppKeyboardShortcuts({
       return;
     }
 
+    if (isUppercaseMKey(key)) {
+      runAndCloseMenu(toggleMenuBar);
+      return;
+    }
+
     if (key.name === "m" || key.sequence === "m") {
       runAndCloseMenu(toggleHunkHeaders);
       return;
@@ -570,11 +585,6 @@ export function useAppKeyboardShortcuts({
       return;
     }
 
-    if (pagerModeRef.current) {
-      handlePagerShortcut(key);
-      return;
-    }
-
     if (handleDialogShortcut(key)) {
       return;
     }
@@ -588,6 +598,11 @@ export function useAppKeyboardShortcuts({
     }
 
     if (handleFocusedInputShortcut(key)) {
+      return;
+    }
+
+    if (pagerModeRef.current) {
+      handlePagerShortcut(key);
       return;
     }
 

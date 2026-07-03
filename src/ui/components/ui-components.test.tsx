@@ -11,6 +11,7 @@ import {
   lines,
 } from "../../../test/helpers/diff-helpers";
 import { hexColorDistance } from "../lib/color";
+import { RAPID_SCROLL_OVERSCAN_IDLE_MS } from "../lib/adaptiveScrollOverscan";
 import { resolveTheme } from "../themes";
 import { measureDiffSectionGeometry } from "../diff/diffSectionGeometry";
 import { buildFileSectionLayouts, buildInStreamFileHeaderHeights } from "../lib/fileSectionLayout";
@@ -1418,6 +1419,22 @@ describe("UI components", () => {
       await settleDiffPane(setup);
 
       expect(scrollRef.current?.scrollTop ?? 0).toBe(bottomScrollTop);
+
+      // Regression: once rapid-scroll overscan decays back to zero, a noted file above the
+      // viewport stays mounted only through file overscan. Its section must still render note
+      // rows, or the content height shrinks and this over-scroll clamps below the real bottom.
+      await act(async () => {
+        await Bun.sleep(RAPID_SCROLL_OVERSCAN_IDLE_MS + 50);
+        await setup.renderOnce();
+      });
+      await settleDiffPane(setup);
+
+      await act(async () => {
+        scrollRef.current?.scrollTo(bottomScrollTop + 1);
+      });
+      await settleDiffPane(setup);
+
+      expect(scrollRef.current?.scrollTop ?? 0).toBe(bottomScrollTop);
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -2354,7 +2371,7 @@ describe("UI components", () => {
       "s / t           sidebar / theme",
       "a               toggle AI notes",
       "z               toggle unchanged context",
-      "l / w / m       lines / wrap / metadata",
+      "l / w / m / M   lines / wrap / metadata / menu",
       "e               open file in $EDITOR",
       "Review",
       "/               focus file filter",

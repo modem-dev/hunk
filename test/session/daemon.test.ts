@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { Subprocess } from "bun";
 import { createServer } from "node:net";
+import { createTestConfigHome } from "../helpers/config-home";
 
 const repoRoot = process.cwd();
+// Spawned hunk processes must assert built-in defaults, not the developer's ambient user config.
+const testConfigHome = createTestConfigHome();
 const spawned: Subprocess[] = [];
 
 async function reserveLoopbackPort() {
@@ -77,6 +80,7 @@ describe("session daemon lifecycle", () => {
       stderr: "pipe",
       env: {
         ...process.env,
+        XDG_CONFIG_HOME: testConfigHome,
         HUNK_MCP_PORT: String(port),
       },
     });
