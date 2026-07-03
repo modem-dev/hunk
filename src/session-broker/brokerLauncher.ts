@@ -69,6 +69,19 @@ export interface EnsureSessionBrokerAvailableOptions {
 
 /** Detect Bun's virtual filesystem prefix used inside compiled single-file executables. */
 const BUNFS_PREFIX = "/$bunfs/";
+/** Bun's Windows equivalent mounts the compiled bundle on a virtual B: drive. */
+const BUNFS_WINDOWS_PREFIX = "b:/~bun/";
+
+/** True when argv[1] is a Bun single-file-executable virtual path on any platform. */
+function isBunfsEntrypoint(entrypoint: string) {
+  if (entrypoint.startsWith(BUNFS_PREFIX)) {
+    return true;
+  }
+
+  // Windows reports the virtual path with either separator depending on the shell, so
+  // normalize before comparing (e.g. "B:\\~BUN\\root\\hunk.exe" or "B:/~BUN/root/hunk.exe").
+  return entrypoint.replaceAll("\\", "/").toLowerCase().startsWith(BUNFS_WINDOWS_PREFIX);
+}
 
 function safeRuntimeToken(value: string) {
   return value.replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "") || "default";
@@ -246,10 +259,13 @@ export function resolveDaemonLaunchCommand(
   const entrypoint = argv[1];
 
   // Bun-compiled single-file executables report argv as
-  //   ["bun", "/$bunfs/root/<name>", ...userArgs]
+  //   ["bun", "/$bunfs/root/<name>", ...userArgs]         (Unix)
+  //   ["bun", "B:/~BUN/root/<name>.exe", ...userArgs]     (Windows)
   // with execPath pointing to the real binary on disk.
-  // Detect the virtual $bunfs path and use execPath directly.
-  if (entrypoint && entrypoint.startsWith(BUNFS_PREFIX)) {
+  // Detect the virtual path and use execPath directly; letting the Windows form fall through
+  // to the script-entrypoint branch would relaunch the binary with the virtual path as a bogus
+  // first argument and the daemon would never start (#502).
+  if (entrypoint && isBunfsEntrypoint(entrypoint)) {
     return {
       command: execPath,
       args: ["daemon", "serve"],

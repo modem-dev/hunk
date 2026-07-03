@@ -71,6 +71,27 @@ describe("session daemon launcher", () => {
     });
   });
 
+  test("uses execPath for Windows Bun-compiled binaries mounted on the virtual B: drive", () => {
+    // On Windows, Bun single-file executables report the bundle as B:\~BUN\root\<name>.exe;
+    // treating it as a script entrypoint would pass the virtual path to the relaunched
+    // binary as a bogus argument (#502). Both separators appear depending on the shell.
+    const realBinary =
+      "C:\\Users\\dev\\AppData\\Roaming\\npm\\node_modules\\hunkdiff\\node_modules\\hunkdiff-windows-x64\\bin\\hunk.exe";
+
+    expect(
+      resolveDaemonLaunchCommand(["bun", "B:/~BUN/root/hunk.exe", "diff"], realBinary),
+    ).toEqual({
+      command: realBinary,
+      args: ["daemon", "serve"],
+    });
+    expect(
+      resolveDaemonLaunchCommand(["bun", "B:\\~BUN\\root\\hunk.exe", "diff"], realBinary),
+    ).toEqual({
+      command: realBinary,
+      args: ["daemon", "serve"],
+    });
+  });
+
   test("detects whether some process is already listening on the daemon port", async () => {
     const listener = Bun.serve({
       hostname: "127.0.0.1",
