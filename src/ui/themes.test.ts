@@ -8,7 +8,6 @@ import {
   DEFAULT_LIGHT_THEME_ID,
   resolveTheme,
   TRANSPARENT_BACKGROUND,
-  withTransparentBackground,
   withTransparentSurfaces,
 } from "./themes";
 
@@ -245,35 +244,6 @@ describe("themes", () => {
     expect(custom.text).toBe("#ffffff");
     expect(custom.syntaxTheme).toBeUndefined();
     expect(custom.syntaxColors.keyword).toBe("#ff00ff");
-  });
-
-  test("withTransparentBackground only swaps painted background fields", () => {
-    const theme = resolveTheme("github-dark-default", null);
-    const transparent = withTransparentBackground(theme);
-
-    expect(transparent).toMatchObject({
-      background: TRANSPARENT_BACKGROUND,
-      panel: TRANSPARENT_BACKGROUND,
-      panelAlt: TRANSPARENT_BACKGROUND,
-      addedBg: TRANSPARENT_BACKGROUND,
-      removedBg: TRANSPARENT_BACKGROUND,
-      contextBg: TRANSPARENT_BACKGROUND,
-      addedContentBg: TRANSPARENT_BACKGROUND,
-      removedContentBg: TRANSPARENT_BACKGROUND,
-      contextContentBg: TRANSPARENT_BACKGROUND,
-      lineNumberBg: TRANSPARENT_BACKGROUND,
-      selectedHunk: TRANSPARENT_BACKGROUND,
-      noteBackground: TRANSPARENT_BACKGROUND,
-      noteTitleBackground: TRANSPARENT_BACKGROUND,
-    });
-    expect(transparent.id).toBe(theme.id);
-    expect(transparent.label).toBe(theme.label);
-    expect(transparent.text).toBe(theme.text);
-    expect(transparent.muted).toBe(theme.muted);
-    expect(transparent.addedSignColor).toBe(theme.addedSignColor);
-    expect(transparent.removedSignColor).toBe(theme.removedSignColor);
-    expect(transparent.syntaxColors).toBe(theme.syntaxColors);
-    expect(theme.background).not.toBe(TRANSPARENT_BACKGROUND);
   });
 
   test("withTransparentSurfaces keeps added/removed row tints", () => {

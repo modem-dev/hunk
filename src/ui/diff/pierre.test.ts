@@ -14,7 +14,7 @@ import { renderCodeOnlyPlannedRowText, renderDecoratedPlannedRowText } from "./r
 import { stackCellPalette } from "./rowStyle";
 import { buildReviewRenderPlan } from "./reviewRenderPlan";
 import { measureTextWidth } from "../lib/text";
-import { TRANSPARENT_BACKGROUND, resolveTheme, withTransparentBackground } from "../themes";
+import { TRANSPARENT_BACKGROUND, resolveTheme } from "../themes";
 
 function createDiffFile(): DiffFile {
   const metadata = parseDiffFromFile(
@@ -147,9 +147,17 @@ describe("Pierre diff rows", () => {
     ).toBe(true);
   });
 
-  test("keeps word-diff highlight backgrounds transparent in transparent mode", async () => {
+  test("keeps word-diff highlight backgrounds transparent when a theme uses transparent tints", async () => {
     const file = createDiffFile();
-    const theme = withTransparentBackground(resolveTheme("github-dark-default", null));
+    // Custom themes may declare "transparent" row/content tints; the renderer must not feed
+    // them into blend math and turn them into black backgrounds.
+    const theme = {
+      ...resolveTheme("github-dark-default", null),
+      addedBg: TRANSPARENT_BACKGROUND,
+      removedBg: TRANSPARENT_BACKGROUND,
+      addedContentBg: TRANSPARENT_BACKGROUND,
+      removedContentBg: TRANSPARENT_BACKGROUND,
+    };
     const highlighted = await loadHighlightedDiff(file);
     const rows = buildSplitRows(file, highlighted, theme);
     const changedRow = rows.find(
