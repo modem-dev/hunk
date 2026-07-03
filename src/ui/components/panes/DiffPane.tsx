@@ -676,42 +676,6 @@ export function DiffPane({
       wrapLines,
     ],
   );
-  const baseEstimatedBodyHeights = useMemo(
-    () => baseSectionGeometry.map((metrics) => metrics.bodyHeight),
-    [baseSectionGeometry],
-  );
-  const baseFileSectionLayouts = useMemo(
-    () => buildFileSectionLayouts(files, baseEstimatedBodyHeights, sectionHeaderHeights),
-    [baseEstimatedBodyHeights, files, sectionHeaderHeights],
-  );
-
-  const visibleViewportFileIds = useMemo(() => {
-    const overscanTerminalRows = Math.max(8, rapidScrollOverscanRows);
-    const minVisibleY = Math.max(0, scrollViewport.top - overscanTerminalRows);
-    const maxVisibleY = scrollViewport.top + scrollViewport.height + overscanTerminalRows;
-    return collectIntersectingFileSectionIds(baseFileSectionLayouts, minVisibleY, maxVisibleY);
-  }, [baseFileSectionLayouts, rapidScrollOverscanRows, scrollViewport.height, scrollViewport.top]);
-
-  const visibleAgentNotesByFile = useMemo(() => {
-    const next = new Map<string, VisibleAgentNote[]>();
-
-    const fileIdsToMeasure = new Set(visibleViewportFileIds);
-    // Always measure the selected file with its real note rows so hunk navigation can compute
-    // accurate bounds even before the file scrolls into the visible viewport.
-    if (selectedFileId) {
-      fileIdsToMeasure.add(selectedFileId);
-    }
-
-    for (const fileId of fileIdsToMeasure) {
-      const visibleNotes = allAgentNotesByFile.get(fileId);
-      if (visibleNotes && visibleNotes.length > 0) {
-        next.set(fileId, visibleNotes);
-      }
-    }
-
-    return next;
-  }, [allAgentNotesByFile, selectedFileId, showAgentNotes, visibleViewportFileIds]);
-
   // Measure with the *full* set of agent notes per file, not just the visible-viewport set.
   // The visible set is correct for rendering (skip painting cards on off-screen files), but
   // using it here makes total content height fluctuate with scroll position: as a file with
@@ -1207,6 +1171,32 @@ export function DiffPane({
   );
   const fileRenderItems = fileRenderWindow?.items ?? fullFileRenderItems;
   const mountedFileIndices = fileRenderWindow?.mountedFileIndices ?? null;
+  // Render note rows for exactly the mounted sections (all sections when windowing is off).
+  // Section layouts and spacer heights are measured with the full note set, so a mounted section
+  // that skipped its notes would paint shorter than its layout height and transiently shrink the
+  // scrollbox content height, clamping bottom-edge scrolls. A viewport-proximity set cannot be
+  // the source of truth here: it decays with rapid-scroll state on a timer, while the mounted
+  // window extends beyond it via file overscan and prefetch.
+  const visibleAgentNotesByFile = useMemo(() => {
+    const next = new Map<string, VisibleAgentNote[]>();
+
+    const mountedFileIds = mountedFileIndices
+      ? mountedFileIndices.map((index) => files[index]?.id)
+      : files.map((file) => file.id);
+
+    for (const fileId of mountedFileIds) {
+      if (!fileId) {
+        continue;
+      }
+
+      const visibleNotes = allAgentNotesByFile.get(fileId);
+      if (visibleNotes && visibleNotes.length > 0) {
+        next.set(fileId, visibleNotes);
+      }
+    }
+
+    return next;
+  }, [allAgentNotesByFile, files, mountedFileIndices]);
   // Previous snapshot used to keep VisibleBodyBounds object identity stable across scroll
   // commits; DiffSection's memo comparator checks `visibleBodyBounds` by reference, so handing
   // back the prior object when top/height are numerically unchanged lets mounted sections skip
