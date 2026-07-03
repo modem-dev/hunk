@@ -36,8 +36,11 @@ npm i -g hunkdiff
 Or with Homebrew:
 
 ```bash
-brew install modem-dev/tap/hunk
+brew install hunk
 ```
+
+> [!NOTE]
+> If you previously installed hunk via `modem-dev/tap`, be sure to uninstall it first with `brew uninstall modem-dev/tap/hunk`.
 
 Requirements:
 
@@ -65,9 +68,9 @@ hunk show                      # review the latest commit
 hunk show HEAD~1               # review an earlier commit
 ```
 
-### Working with Jujutsu
+### Working with Jujutsu and Sapling
 
-Hunk auto-detects Jujutsu checkouts, so `hunk diff [revset]` and `hunk show [revset]` use jj revsets inside a jj workspace. To override VCS detection, set `vcs = "git"` or `vcs = "jj"` in [config](#config).
+Hunk auto-detects Jujutsu and Sapling checkouts, so `hunk diff [revset]` and `hunk show [revset]` use native revsets inside jj or Sapling workspaces. To override VCS detection, set `vcs = "git"` or `vcs = "jj"` or `vcs = "sl"` in [config](#config).
 
 ### Working with raw files and patches
 
@@ -86,7 +89,7 @@ git diff --no-color | hunk patch -          # review a patch from stdin
 A good generic prompt is:
 
 ```text
-Load the Hunk skill and use it for this review.
+Load the Hunk skill and use it for this review. Run `hunk skill path` to get the skill path.
 ```
 
 For the full live-session and `--agent-context` workflow guide, see [docs/agent-workflows.md](docs/agent-workflows.md).
@@ -119,25 +122,30 @@ You can persist preferences to a config file:
 Example:
 
 ```toml
-theme = "graphite"   # graphite, midnight, paper, ember, catppuccin-latte, catppuccin-mocha, custom
+theme = "github-dark-default" # any built-in theme id, auto, or custom
 mode = "auto"        # auto, split, stack
-vcs = "git"          # git, jj
+vcs = "git"          # git, jj, sl
 watch = false
 exclude_untracked = false
 line_numbers = true
 wrap_lines = false
+menu_bar = true
 agent_notes = false
+transparent_background = false
 ```
 
-`exclude_untracked` affects Git working-tree `hunk diff` sessions only.
+`theme = "auto"` and `--theme auto` query the terminal background at startup, choose `github-light-default` for light backgrounds and `github-dark-default` for dark backgrounds, and fall back to `github-dark-default` if the terminal does not answer.
+Older theme ids such as `graphite` and `paper` remain accepted as compatibility aliases.
+`exclude_untracked` affects Git/Sapling working-tree `hunk diff` sessions only.
+`transparent_background` can also be written as `transparentBackground`.
 
-Custom themes can inherit from any built-in base theme and override only the colors you care about:
+Custom themes can inherit from any built-in theme and override only the colors you care about:
 
 ```toml
 theme = "custom"
 
 [custom_theme]
-base = "graphite"    # graphite, midnight, paper, ember, catppuccin-latte, catppuccin-mocha
+base = "catppuccin-mocha"
 label = "My Theme"
 accent = "#7fd1ff"
 panel = "#10161d"
@@ -147,9 +155,11 @@ noteBorder = "#c49bff"
 keyword = "#8ed4ff"
 string = "#c7b4ff"
 comment = "#6e85a7"
+operator = "#7fd1ff"
+variable = "#eef4ff"
 ```
 
-All custom theme colors must use `#rrggbb` hex values.
+All custom theme colors must use `#rrggbb` hex values. Press `t` in the app, or choose `View -> Themes…`, to open the theme selector.
 
 ### Git integration
 
@@ -184,6 +194,15 @@ To use Hunk as jj's pager, run `jj config edit --user` and update:
 [ui]
 pager = ["hunk", "pager"]
 diff-formatter = ":git"
+```
+
+### Sapling pager integration
+
+To use Hunk as Sapling's pager, run `sl config -u` and update:
+
+```ini
+[pager]
+pager = hunk pager
 ```
 
 ### OpenTUI component

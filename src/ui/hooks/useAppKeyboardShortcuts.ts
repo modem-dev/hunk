@@ -42,27 +42,40 @@ function isUppercaseGKey(key: KeyEvent) {
   );
 }
 
+/** Detect Shift-M without stealing the lowercase hunk metadata toggle. */
+function isUppercaseMKey(key: KeyEvent) {
+  return (
+    (key.sequence === "M" && !key.option && !key.ctrl && !key.meta) ||
+    (key.name === "m" && key.shift && !key.option && !key.ctrl && !key.meta)
+  );
+}
+
 export interface UseAppKeyboardShortcutsOptions {
   activeMenuId: MenuId | null;
   activateCurrentMenuItem: () => void;
   canRefreshCurrentInput: boolean;
+  closeAgentSkill: () => void;
   closeHelp: () => void;
   closeMenu: () => void;
-  cycleTheme: () => void;
+  acceptThemeSelector: () => void;
   cancelDraftNote: () => void;
+  closeThemeSelector: () => void;
   focusArea: FocusArea;
   focusFilter: () => void;
   moveToAnnotatedHunk: (delta: number) => void;
   moveToFile: (delta: number) => void;
   moveToHunk: (delta: number) => void;
   moveMenuItem: (delta: number) => void;
+  moveThemeSelector: (delta: number) => void;
   openMenu: (menuId: MenuId) => void;
+  openThemeSelector: () => void;
   pagerMode: boolean;
   requestQuit: () => void;
   scrollCodeHorizontally: (delta: number) => void;
   scrollDiff: (delta: number, unit: ScrollUnit) => void;
   saveDraftNote: () => void;
   selectLayoutMode: (mode: LayoutMode) => void;
+  showAgentSkill: boolean;
   showHelp: boolean;
   startUserNote: () => void;
   switchMenu: (delta: number) => void;
@@ -72,7 +85,9 @@ export interface UseAppKeyboardShortcutsOptions {
   toggleHelp: () => void;
   toggleHunkHeaders: () => void;
   toggleLineNumbers: () => void;
+  toggleMenuBar: () => void;
   toggleLineWrap: () => void;
+  themeSelectorOpen: boolean;
   toggleSidebar: () => void;
   triggerEditSelectedFile: () => void;
   triggerRefreshCurrentInput: () => void;
@@ -83,23 +98,28 @@ export function useAppKeyboardShortcuts({
   activeMenuId,
   activateCurrentMenuItem,
   canRefreshCurrentInput,
+  closeAgentSkill,
   closeHelp,
   closeMenu,
-  cycleTheme,
+  acceptThemeSelector,
   cancelDraftNote,
+  closeThemeSelector,
   focusArea,
   focusFilter,
   moveToAnnotatedHunk,
   moveToFile,
   moveToHunk,
   moveMenuItem,
+  moveThemeSelector,
   openMenu,
+  openThemeSelector,
   pagerMode,
   requestQuit,
   scrollCodeHorizontally,
   saveDraftNote,
   scrollDiff,
   selectLayoutMode,
+  showAgentSkill,
   showHelp,
   startUserNote,
   switchMenu,
@@ -107,7 +127,10 @@ export function useAppKeyboardShortcuts({
   toggleFocusArea,
   toggleGapForSelectedHunk,
   toggleHelp,
+  themeSelectorOpen,
   toggleHunkHeaders,
+  toggleMenuBar,
+  triggerEditSelectedFile,
   toggleLineNumbers,
   toggleLineWrap,
   toggleSidebar,
@@ -116,12 +139,16 @@ export function useAppKeyboardShortcuts({
   const activeMenuIdRef = useRef(activeMenuId);
   const focusAreaRef = useRef(focusArea);
   const pagerModeRef = useRef(pagerMode);
+  const showAgentSkillRef = useRef(showAgentSkill);
   const showHelpRef = useRef(showHelp);
+  const themeSelectorOpenRef = useRef(themeSelectorOpen);
 
   activeMenuIdRef.current = activeMenuId;
   focusAreaRef.current = focusArea;
   pagerModeRef.current = pagerMode;
+  showAgentSkillRef.current = showAgentSkill;
   showHelpRef.current = showHelp;
+  themeSelectorOpenRef.current = themeSelectorOpen;
 
   const resolveJumpShortcut = (key: KeyEvent): JumpShortcut | null => {
     if (isUppercaseGKey(key)) {
@@ -240,12 +267,59 @@ export function useAppKeyboardShortcuts({
     }
   };
 
-  const handleHelpShortcut = (key: KeyEvent) => {
-    if (!showHelpRef.current || !isEscapeKey(key)) {
+  const handleDialogShortcut = (key: KeyEvent) => {
+    if (!isEscapeKey(key)) {
       return false;
     }
 
-    closeHelp();
+    if (showAgentSkillRef.current) {
+      closeAgentSkill();
+      return true;
+    }
+
+    if (showHelpRef.current) {
+      closeHelp();
+      return true;
+    }
+
+    return false;
+  };
+
+  const handleThemeSelectorShortcut = (key: KeyEvent) => {
+    if (!themeSelectorOpenRef.current) {
+      return false;
+    }
+
+    if (isEscapeKey(key)) {
+      consumeKey(key);
+      closeThemeSelector();
+      return true;
+    }
+
+    if (key.name === "up") {
+      consumeKey(key);
+      moveThemeSelector(-1);
+      return true;
+    }
+
+    if (key.name === "down") {
+      consumeKey(key);
+      moveThemeSelector(1);
+      return true;
+    }
+
+    if (key.name === "tab") {
+      consumeKey(key);
+      moveThemeSelector(key.shift ? -1 : 1);
+      return true;
+    }
+
+    if (key.name === "return" || key.name === "enter") {
+      consumeKey(key);
+      acceptThemeSelector();
+      return true;
+    }
+
     return true;
   };
 
@@ -437,7 +511,7 @@ export function useAppKeyboardShortcuts({
     }
 
     if (key.name === "t") {
-      runAndCloseMenu(cycleTheme);
+      runAndCloseMenu(openThemeSelector);
       return;
     }
 
@@ -456,6 +530,11 @@ export function useAppKeyboardShortcuts({
       return;
     }
 
+    if (isUppercaseMKey(key)) {
+      runAndCloseMenu(toggleMenuBar);
+      return;
+    }
+
     if (key.name === "m" || key.sequence === "m") {
       runAndCloseMenu(toggleHunkHeaders);
       return;
@@ -463,6 +542,11 @@ export function useAppKeyboardShortcuts({
 
     if (key.name === "z" || key.sequence === "z") {
       runAndCloseMenu(toggleGapForSelectedHunk);
+      return;
+    }
+
+    if (key.name === "e" || key.sequence === "e") {
+      runAndCloseMenu(triggerEditSelectedFile);
       return;
     }
 
@@ -501,12 +585,11 @@ export function useAppKeyboardShortcuts({
       return;
     }
 
-    if (pagerModeRef.current) {
-      handlePagerShortcut(key);
+    if (handleDialogShortcut(key)) {
       return;
     }
 
-    if (handleHelpShortcut(key)) {
+    if (handleThemeSelectorShortcut(key)) {
       return;
     }
 
@@ -515,6 +598,11 @@ export function useAppKeyboardShortcuts({
     }
 
     if (handleFocusedInputShortcut(key)) {
+      return;
+    }
+
+    if (pagerModeRef.current) {
+      handlePagerShortcut(key);
       return;
     }
 

@@ -48,7 +48,7 @@ describe("PTY pager", () => {
     try {
       const initial = await session.waitForText(/scroll\.ts/, { timeout: 15_000 });
 
-      expect(initial).not.toContain("View  Navigate  Theme  Agent  Help");
+      expect(initial).not.toContain("View  Navigate  Agent  Help");
       expect(initial).toContain("before_01");
       expect(initial).not.toContain("before_23");
 
@@ -61,7 +61,7 @@ describe("PTY pager", () => {
         5_000,
       );
 
-      expect(paged).not.toContain("View  Navigate  Theme  Agent  Help");
+      expect(paged).not.toContain("View  Navigate  Agent  Help");
       expect(paged).toContain("before_23");
     } finally {
       session.close();
@@ -145,14 +145,14 @@ describe("PTY pager", () => {
   test("piped stdin still allows concrete-theme app startup to read terminal input", async () => {
     const fixture = harness.createTwoFileRepoFixture();
     const session = await harness.launchShellCommand({
-      command: `printf ignored | ${harness.buildHunkCommand(["diff", "--theme", "graphite"])}`,
+      command: `printf ignored | ${harness.buildHunkCommand(["diff", "--theme", "github-dark-default"])}`,
       cwd: fixture.dir,
       cols: 120,
       rows: 14,
     });
 
     try {
-      const initial = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+      const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
         timeout: 15_000,
       });
       expect(initial).toContain("alpha.ts");
@@ -176,7 +176,7 @@ describe("PTY pager", () => {
     try {
       const initial = await session.waitForText(/scroll\.ts/, { timeout: 15_000 });
 
-      expect(initial).not.toContain("View  Navigate  Theme  Agent  Help");
+      expect(initial).not.toContain("View  Navigate  Agent  Help");
       expect(initial).toContain("before_01");
       expect(initial).not.toContain("before_12");
 
@@ -187,7 +187,7 @@ describe("PTY pager", () => {
         (text) => !text.includes("before_01") && text.includes("before_12"),
       );
 
-      expect(scrolled).not.toContain("View  Navigate  Theme  Agent  Help");
+      expect(scrolled).not.toContain("View  Navigate  Agent  Help");
       expect(scrolled).not.toContain("before_01");
       expect(scrolled).toContain("before_12");
 
@@ -244,7 +244,7 @@ describe("PTY pager", () => {
     try {
       const initial = await session.waitForText(/scroll\.ts/, { timeout: 15_000 });
 
-      expect(initial).not.toContain("View  Navigate  Theme  Agent  Help");
+      expect(initial).not.toContain("View  Navigate  Agent  Help");
       expect(initial).toContain("before_01");
       expect(initial).not.toContain("before_12");
 
@@ -255,7 +255,7 @@ describe("PTY pager", () => {
         (text) => !text.includes("before_01") && text.includes("before_12"),
       );
 
-      expect(scrolled).not.toContain("View  Navigate  Theme  Agent  Help");
+      expect(scrolled).not.toContain("View  Navigate  Agent  Help");
       expect(scrolled).not.toContain("before_01");
       expect(scrolled).toContain("before_12");
 
@@ -284,9 +284,11 @@ describe("PTY pager", () => {
     try {
       const initial = await session.waitForText(/scroll\.ts/, { timeout: 15_000 });
 
-      expect(initial).not.toContain("View  Navigate  Theme  Agent  Help");
+      expect(initial).not.toContain("View  Navigate  Agent  Help");
       expect(harness.countMatches(initial, /scroll\.ts/g)).toBe(1);
 
+      // CI can surface the pager content before the file-backed stdin path is ready for keys.
+      await session.waitIdle({ timeout: 200 });
       await session.press("s");
       const sidebarRow = /\bM scroll\.ts\s+\+40 -40/;
       const withSidebar = await harness.waitForSnapshot(
@@ -295,7 +297,7 @@ describe("PTY pager", () => {
         5_000,
       );
 
-      expect(withSidebar).not.toContain("View  Navigate  Theme  Agent  Help");
+      expect(withSidebar).not.toContain("View  Navigate  Agent  Help");
       expect(withSidebar).toMatch(sidebarRow);
     } finally {
       session.close();
@@ -313,7 +315,7 @@ describe("PTY pager", () => {
     try {
       const initial = await session.waitForText(/scroll\.ts/, { timeout: 15_000 });
 
-      expect(initial).not.toContain("View  Navigate  Theme  Agent  Help");
+      expect(initial).not.toContain("View  Navigate  Agent  Help");
       expect(initial).toContain("before_01");
       expect(initial).not.toContain("before_12");
 
@@ -324,7 +326,7 @@ describe("PTY pager", () => {
         (text) => !text.includes("before_01") && text.includes("before_12"),
       );
 
-      expect(scrolled).not.toContain("View  Navigate  Theme  Agent  Help");
+      expect(scrolled).not.toContain("View  Navigate  Agent  Help");
       expect(scrolled).not.toContain("before_01");
       expect(scrolled).toContain("before_12");
 

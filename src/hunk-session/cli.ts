@@ -2,6 +2,10 @@ import { resolveSessionBrokerConfig } from "../session-broker/brokerConfig";
 import type { SessionTerminalLocation, SessionTerminalMetadata } from "@hunk/session-broker-core";
 import { readHunkSessionDaemonCapabilities } from "../session/capabilities";
 import {
+  HUNK_SESSION_DAEMON_HTTP_TIMEOUT_MS,
+  requestSessionDaemonHttp,
+} from "../session/daemonHttp";
+import {
   HUNK_SESSION_API_PATH,
   type SessionDaemonCapabilities,
   type SessionDaemonRequest,
@@ -65,24 +69,33 @@ async function extractResponseError(response: Response) {
 class HttpHunkSessionCliClient implements HunkSessionCliClient {
   private readonly config = resolveSessionBrokerConfig();
 
+  constructor(private readonly timeoutMs = HUNK_SESSION_DAEMON_HTTP_TIMEOUT_MS) {}
+
   private async request<ResultType>(input: SessionDaemonRequest) {
-    const response = await fetch(`${this.config.httpOrigin}${HUNK_SESSION_API_PATH}`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
+    return requestSessionDaemonHttp({
+      config: this.config,
+      path: HUNK_SESSION_API_PATH,
+      operation: `complete session ${input.action}`,
+      timeoutMs: this.timeoutMs,
+      init: {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(input),
       },
-      body: JSON.stringify(input),
+      parse: async (response) => {
+        if (!response.ok) {
+          throw new Error(await extractResponseError(response));
+        }
+
+        return (await response.json()) as ResultType;
+      },
     });
-
-    if (!response.ok) {
-      throw new Error(await extractResponseError(response));
-    }
-
-    return (await response.json()) as ResultType;
   }
 
   async getCapabilities() {
-    return readHunkSessionDaemonCapabilities(this.config);
+    return readHunkSessionDaemonCapabilities(this.config, this.timeoutMs);
   }
 
   async listSessions() {
@@ -191,14 +204,17 @@ class HttpHunkSessionCliClient implements HunkSessionCliClient {
         action: "comment-clear",
         selector: input.selector,
         filePath: input.filePath,
+        includeUser: input.includeUser,
       })
     ).result;
   }
 }
 
 /** Create the concrete Hunk session CLI client that speaks to the broker-backed HTTP API. */
-export function createHttpHunkSessionCliClient(): HunkSessionCliClient {
-  return new HttpHunkSessionCliClient();
+export function createHttpHunkSessionCliClient({
+  timeoutMs,
+}: { timeoutMs?: number } = {}): HunkSessionCliClient {
+  return new HttpHunkSessionCliClient(timeoutMs);
 }
 
 export function stringifyJson(value: unknown) {
@@ -435,7 +451,8 @@ export function formatRemoveCommentOutput(
   selector: SessionSelectorInput,
   result: RemovedCommentResult,
 ) {
-  return `Removed live comment ${result.commentId} from ${describeSessionSelector(selector)}. Remaining comments: ${result.remainingCommentCount}.\n`;
+  const label = result.source === "user" ? "user note" : "live comment";
+  return `Removed ${label} ${result.commentId} from ${describeSessionSelector(selector)}. Remaining comments: ${result.remainingCommentCount}.\n`;
 }
 
 export function formatNoteListOutput(
@@ -465,5 +482,6 @@ export function formatClearCommentsOutput(
   const scope = result.filePath
     ? `${result.filePath} in ${describeSessionSelector(selector)}`
     : describeSessionSelector(selector);
-  return `Cleared ${result.removedCount} live comments from ${scope}. Remaining comments: ${result.remainingCommentCount}.\n`;
+  const label = result.includeUser ? "comments" : "live comments";
+  return `Cleared ${result.removedCount} ${label} from ${scope}. Remaining comments: ${result.remainingCommentCount}.\n`;
 }

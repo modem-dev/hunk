@@ -233,6 +233,32 @@ describe("plain text pager fallback", () => {
     expectNoUnsafeTerminalControls(written);
   });
 
+  test("preserves Git log SGR colors when sending plain text to a terminal pager", async () => {
+    const pager = new EventEmitter() as EventEmitter & { stdin: PassThrough };
+    pager.stdin = new PassThrough();
+    let written = "";
+    pager.stdin.on("data", (chunk) => {
+      written += String(chunk);
+    });
+
+    await pagePlainText(
+      `* \x1b[1;34mabc1234\x1b[m - \x1b[1;32m(HEAD -> main)\x1b[m${CSI_CLEAR_SCREEN}`,
+      { PAGER: "less -R" },
+      createPagerDeps({
+        spawnImpl() {
+          queueMicrotask(() => {
+            pager.emit("close", 0);
+          });
+          return pager as never;
+        },
+      }),
+    );
+
+    expect(written).toContain("\x1b[1;34mabc1234\x1b[m");
+    expect(written).toContain("\x1b[1;32m(HEAD -> main)\x1b[m");
+    expect(written).not.toContain(CSI_CLEAR_SCREEN);
+  });
+
   test("passes shell metacharacters as pager arguments instead of evaluating them", async () => {
     await pagePlainText(
       "plain text",

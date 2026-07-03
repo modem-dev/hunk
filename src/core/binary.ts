@@ -6,8 +6,11 @@ const BINARY_CONTROL_BYTE_RATIO = 0.3;
 
 /** Return whether one diff patch explicitly marks the file contents as binary. */
 export function patchLooksBinary(patch: string) {
+  // Both markers anchor to the start of a line so they match the first file in a patch too,
+  // not only files preceded by an earlier block.
   return (
-    /(^|\n)Binary files .* differ(?:\n|$)/.test(patch) || patch.includes("\nGIT binary patch\n")
+    /(^|\n)Binary files .* differ(?:\n|$)/.test(patch) ||
+    /(^|\n)GIT binary patch(?:\n|$)/.test(patch)
   );
 }
 

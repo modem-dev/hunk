@@ -12,6 +12,37 @@ afterEach(() => {
 });
 
 describe("PTY layout", () => {
+  test("the first frame fills the viewport bottom with the next file section", async () => {
+    // The first review frame must fill the whole viewport: when the leading file overflows just
+    // enough, the start of the next file has to render at the bottom without any scroll input.
+    // Locks in the user-visible contract — a multi-file first paint fills to the bottom edge.
+    const fixture = harness.createPinnedHeaderRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split"],
+      cwd: fixture.dir,
+      cols: 120,
+      rows: 28,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      // first.ts overflows just enough that second.ts must peek at the bottom of the first frame.
+      const firstFrame = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("second.ts") && text.includes("line17 = 117"),
+        8_000,
+      );
+
+      expect(firstFrame).toContain("second.ts");
+      expect(firstFrame).toContain("line17 = 117");
+    } finally {
+      session.close();
+    }
+  });
+
   test("split rows keep the center separator aligned after wide characters", async () => {
     const fixture = harness.createWideCharacterFilePair();
     const session = await harness.launchHunk({
@@ -21,7 +52,7 @@ describe("PTY layout", () => {
     });
 
     try {
-      await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
         timeout: 15_000,
       });
       const snapshot = await harness.waitForSnapshot(
@@ -61,7 +92,7 @@ describe("PTY layout", () => {
     });
 
     try {
-      const initial = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+      const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
         timeout: 15_000,
       });
 
@@ -101,7 +132,7 @@ describe("PTY layout", () => {
     });
 
     try {
-      const initial = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+      const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
         timeout: 15_000,
       });
 
@@ -140,7 +171,7 @@ describe("PTY layout", () => {
     });
 
     try {
-      const wide = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+      const wide = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
         timeout: 15_000,
       });
 
@@ -169,7 +200,7 @@ describe("PTY layout", () => {
     });
 
     try {
-      const initial = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+      const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
         timeout: 15_000,
       });
       const initialMainColumn = rightmostColumnOf(initial, "alpha.ts");
@@ -200,7 +231,7 @@ describe("PTY layout", () => {
     });
 
     try {
-      const wide = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+      const wide = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
         timeout: 15_000,
       });
 
@@ -230,7 +261,7 @@ describe("PTY layout", () => {
     });
 
     try {
-      const narrow = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+      const narrow = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
         timeout: 15_000,
       });
 
@@ -260,7 +291,7 @@ describe("PTY layout", () => {
     });
 
     try {
-      const initial = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+      const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
         timeout: 15_000,
       });
 
@@ -308,7 +339,7 @@ describe("PTY layout", () => {
     });
 
     try {
-      const initial = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+      const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
         timeout: 15_000,
       });
 
@@ -362,7 +393,7 @@ describe("PTY layout", () => {
     });
 
     try {
-      const initial = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+      const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
         timeout: 15_000,
       });
 
@@ -372,7 +403,9 @@ describe("PTY layout", () => {
       let shifted = initial;
       for (let index = 0; index < 96; index += 1) {
         await session.press("right");
-        shifted = await session.text();
+        // press() already waits for idle, so read the settled frame immediately rather than
+        // paying another render round-trip per column; the loop retries if a frame lags.
+        shifted = await session.text({ immediate: true });
         if (shifted.includes("ge';")) {
           break;
         }
@@ -384,7 +417,7 @@ describe("PTY layout", () => {
       let restored = shifted;
       for (let index = 0; index < 96; index += 1) {
         await session.press("left");
-        restored = await session.text();
+        restored = await session.text({ immediate: true });
         if (restored.includes("this is a very long") && !restored.includes("ge';")) {
           break;
         }
@@ -406,7 +439,7 @@ describe("PTY layout", () => {
     });
 
     try {
-      const initial = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+      const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
         timeout: 15_000,
       });
 
@@ -416,7 +449,8 @@ describe("PTY layout", () => {
       let shifted = initial;
       for (let index = 0; index < 96; index += 1) {
         await session.press("right");
-        shifted = await session.text();
+        // press() already waits for idle; read immediately to avoid a redundant settle per column.
+        shifted = await session.text({ immediate: true });
         if (shifted.includes("ge';")) {
           break;
         }

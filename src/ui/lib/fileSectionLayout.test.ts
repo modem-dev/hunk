@@ -54,5 +54,24 @@ describe("fileSectionLayout helpers", () => {
       "gamma",
     ]);
     expect(Array.from(collectIntersectingFileSectionIds(layouts, 20, 24))).toEqual([]);
+    expect(Array.from(collectIntersectingFileSectionIds(layouts, 10, 6))).toEqual([]);
+  });
+
+  test("collectIntersectingFileSectionIds handles large ordered layout lists", () => {
+    const manyLayouts: FileSectionLayout[] = Array.from({ length: 10_000 }, (_, index) => ({
+      fileId: `file:${index}`,
+      sectionIndex: index,
+      sectionTop: index * 3,
+      headerTop: index * 3,
+      bodyTop: index * 3,
+      bodyHeight: 2,
+      sectionBottom: index * 3 + 2,
+    }));
+
+    expect(Array.from(collectIntersectingFileSectionIds(manyLayouts, 15_000, 15_006))).toEqual([
+      "file:5000",
+      "file:5001",
+      "file:5002",
+    ]);
   });
 });

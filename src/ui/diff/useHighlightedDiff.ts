@@ -1,9 +1,16 @@
 import { useLayoutEffect, useState } from "react";
 import type { DiffFile } from "../../core/types";
+import type { AppTheme } from "../themes";
 import { loadHighlightedDiff, type HighlightedDiffCode } from "./pierre";
 
-/** Maximum cached highlight results. Prevents unbounded growth during long watch sessions. */
-const MAX_CACHE_ENTRIES = 150;
+/**
+ * Maximum cached highlight results.
+ *
+ * Highlighted HAST nodes and their flattened render spans are expensive enough that a whole-review
+ * cache can dominate memory while navigating large changesets. Keep a viewport-local working set
+ * instead of retaining every file the user has visited in the current review.
+ */
+const MAX_CACHE_ENTRIES = 40;
 
 const SHARED_HIGHLIGHTED_DIFF_CACHE = new Map<string, HighlightedDiffCode>();
 const SHARED_HIGHLIGHT_PROMISES = new Map<string, Promise<HighlightedDiffCode>>();
@@ -72,8 +79,8 @@ function patchFingerprint(file: DiffFile) {
 
 /** Cache key that includes a content fingerprint so stale entries are never served
  *  after reload. Unchanged files keep their cache hit across reloads. */
-function buildCacheKey(appearance: string, file: DiffFile) {
-  return `${appearance}:${file.id}:${patchFingerprint(file)}`;
+function buildCacheKey(theme: AppTheme, file: DiffFile) {
+  return `${theme.id}:${theme.syntaxTheme ?? theme.appearance}:${file.id}:${patchFingerprint(file)}`;
 }
 
 /** Only commit a highlight result if the promise is still the active one for that key.
@@ -96,8 +103,8 @@ function commitHighlightResult(
 /** Start one shared highlight request unless the cache or an in-flight promise already has it. */
 function ensureHighlightedDiffLoaded(
   file: DiffFile,
-  appearance: "light" | "dark",
-  cacheKey = buildCacheKey(appearance, file),
+  theme: AppTheme,
+  cacheKey = buildCacheKey(theme, file),
 ) {
   const cached = SHARED_HIGHLIGHTED_DIFF_CACHE.get(cacheKey);
   if (cached) {
@@ -110,7 +117,7 @@ function ensureHighlightedDiffLoaded(
   }
 
   let pending: Promise<HighlightedDiffCode>;
-  pending = loadHighlightedDiff(file, appearance)
+  pending = loadHighlightedDiff(file, theme)
     .then((nextHighlighted) => {
       commitHighlightResult(cacheKey, pending, nextHighlighted);
       return nextHighlighted;
@@ -129,14 +136,8 @@ function ensureHighlightedDiffLoaded(
 }
 
 /** Queue syntax highlighting for one file without mounting its diff rows first. */
-export function prefetchHighlightedDiff({
-  file,
-  appearance,
-}: {
-  file: DiffFile;
-  appearance: "light" | "dark";
-}) {
-  return ensureHighlightedDiffLoaded(file, appearance);
+export function prefetchHighlightedDiff({ file, theme }: { file: DiffFile; theme: AppTheme }) {
+  return ensureHighlightedDiffLoaded(file, theme);
 }
 
 /** Read the best already-available highlight result without starting async work during render. */
@@ -163,16 +164,16 @@ function resolveHighlightedSnapshot({
 /** Resolve highlighted diff content with shared caching and background prefetch support. */
 export function useHighlightedDiff({
   file,
-  appearance,
+  theme,
   shouldLoadHighlight,
 }: {
   file: DiffFile | undefined;
-  appearance: "light" | "dark";
+  theme: AppTheme;
   shouldLoadHighlight?: boolean;
 }) {
   const [highlighted, setHighlighted] = useState<HighlightedDiffCode | null>(null);
   const [highlightedCacheKey, setHighlightedCacheKey] = useState<string | null>(null);
-  const appearanceCacheKey = file ? buildCacheKey(appearance, file) : null;
+  const appearanceCacheKey = file ? buildCacheKey(theme, file) : null;
 
   // Use a layout effect so a newly available cached result can replace the plain-text fallback
   // before the next diff paint whenever possible. That reduces flash/stutter as files enter view.
@@ -201,7 +202,7 @@ export function useHighlightedDiff({
     let cancelled = false;
     setHighlighted(null);
 
-    ensureHighlightedDiffLoaded(file, appearance, appearanceCacheKey).then((nextHighlighted) => {
+    ensureHighlightedDiffLoaded(file, theme, appearanceCacheKey).then((nextHighlighted) => {
       if (cancelled) {
         return;
       }
@@ -213,7 +214,7 @@ export function useHighlightedDiff({
     return () => {
       cancelled = true;
     };
-  }, [appearance, appearanceCacheKey, file, highlightedCacheKey, shouldLoadHighlight]);
+  }, [appearanceCacheKey, file, highlightedCacheKey, shouldLoadHighlight]);
 
   // Prefer cached highlights during render so revisiting a file can paint immediately.
   return resolveHighlightedSnapshot({

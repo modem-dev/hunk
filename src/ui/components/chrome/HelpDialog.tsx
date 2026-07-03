@@ -44,10 +44,11 @@ export function HelpDialog({
       title: "View",
       items: [
         ["1 / 2 / 0", "split / stack / auto"],
-        ["s / t", "sidebar / theme"],
+        ["s / t", "sidebar / theme selector"],
         ["a", "toggle AI notes"],
         ["z", "toggle unchanged context"],
-        ["l / w / m", "lines / wrap / metadata"],
+        ["l / w / m / M", "lines / wrap / metadata / menu"],
+        ["e", "open file in $EDITOR"],
       ],
     },
     {

@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFileSourceFetcher, SourceTextTooLargeError } from "./fileSource";
+import { createGitFileSourceFetcher } from "./vcs/gitSource";
 
 const tempDirs: string[] = [];
 
@@ -127,7 +128,7 @@ describe("createFileSourceFetcher", () => {
     git(repoRoot, "add", ".");
     git(repoRoot, "commit", "-m", "second");
 
-    const fetcher = createFileSourceFetcher({
+    const fetcher = createGitFileSourceFetcher({
       old: { kind: "git-blob", repoRoot, ref: "HEAD~1", path: filePath },
       new: { kind: "git-blob", repoRoot, ref: "HEAD", path: filePath },
     });
@@ -147,7 +148,7 @@ describe("createFileSourceFetcher", () => {
     git(repoRoot, "add", filePath);
     writeFileSync(join(repoRoot, filePath), "working tree\n");
 
-    const fetcher = createFileSourceFetcher({
+    const fetcher = createGitFileSourceFetcher({
       old: { kind: "git-index", repoRoot, path: filePath },
       new: { kind: "fs", absolutePath: join(repoRoot, filePath) },
     });
@@ -166,7 +167,7 @@ describe("createFileSourceFetcher", () => {
     writeFileSync(join(repoRoot, filePath), "staged source\n");
     git(repoRoot, "add", filePath);
 
-    const fetcher = createFileSourceFetcher(
+    const fetcher = createGitFileSourceFetcher(
       {
         old: { kind: "git-blob", repoRoot, ref: "HEAD", path: filePath },
         new: { kind: "git-index", repoRoot, path: filePath },
@@ -197,7 +198,7 @@ describe("createFileSourceFetcher", () => {
       )) as typeof Bun.spawn;
 
     try {
-      const fetcher = createFileSourceFetcher({
+      const fetcher = createGitFileSourceFetcher({
         old: { kind: "git-blob", repoRoot: process.cwd(), ref: "HEAD", path: "note.txt" },
         new: { kind: "none" },
       });
@@ -235,7 +236,7 @@ describe("createFileSourceFetcher", () => {
     }) as typeof Bun.spawn;
 
     try {
-      const fetcher = createFileSourceFetcher(
+      const fetcher = createGitFileSourceFetcher(
         {
           old: { kind: "git-blob", repoRoot: process.cwd(), ref: "HEAD", path: "note.txt" },
           new: { kind: "git-index", repoRoot: process.cwd(), path: "note.txt" },
@@ -261,7 +262,7 @@ describe("createFileSourceFetcher", () => {
     git(repoRoot, "add", ".");
     git(repoRoot, "commit", "-m", "first");
 
-    const fetcher = createFileSourceFetcher({
+    const fetcher = createGitFileSourceFetcher({
       old: { kind: "git-blob", repoRoot, ref: "HEAD", path: "missing-from-history.txt" },
       new: { kind: "none" },
     });
@@ -274,7 +275,7 @@ describe("createFileSourceFetcher", () => {
 
   test("logs unexpected git source failures with object context", async () => {
     const repoRoot = createTempDir("hunk-source-git-not-repo-");
-    const fetcher = createFileSourceFetcher({
+    const fetcher = createGitFileSourceFetcher({
       old: { kind: "git-blob", repoRoot, ref: "HEAD", path: "note.txt" },
       new: { kind: "none" },
     });

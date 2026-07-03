@@ -21,7 +21,10 @@ in
       mkdir -p .bun-tmp .bun-install
       BUN_TMPDIR=$PWD/.bun-tmp \
       BUN_INSTALL=$PWD/.bun-install \
-      ${bun}/bin/bun build --compile "./src/main.tsx" --outfile "hunk-bin"
+      ${bun}/bin/bun build --compile \
+        --no-compile-autoload-bunfig \
+        "./src/main.tsx" \
+        --outfile "hunk-bin"
       runHook postBuild
     '';
 

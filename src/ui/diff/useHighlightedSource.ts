@@ -1,5 +1,6 @@
 import { useLayoutEffect, useMemo, useState } from "react";
 import type { DiffFile } from "../../core/types";
+import type { AppTheme } from "../themes";
 import { loadHighlightedSourceLines, type HighlightedSourceCode } from "./pierre";
 
 interface HighlightedSourceState {
@@ -20,26 +21,26 @@ function sourceTextFingerprint(text: string) {
 }
 
 /** Cache key for full-source highlights used by expanded unchanged rows. */
-function buildSourceCacheKey(appearance: string, file: DiffFile, text: string) {
-  return `${appearance}:${file.id}:${file.path}:${file.language ?? ""}:${sourceTextFingerprint(text)}`;
+function buildSourceCacheKey(theme: AppTheme, file: DiffFile, text: string) {
+  return `${theme.id}:${theme.syntaxTheme ?? theme.appearance}:${file.id}:${file.path}:${file.language ?? ""}:${sourceTextFingerprint(text)}`;
 }
 
 /** Resolve highlighted full-source content for expanded unchanged rows. */
 export function useHighlightedSource({
   file,
   text,
-  appearance,
+  theme,
   shouldLoadHighlight,
 }: {
   file: DiffFile | undefined;
   text: string | undefined;
-  appearance: "light" | "dark";
+  theme: AppTheme;
   shouldLoadHighlight?: boolean;
 }) {
   const [state, setState] = useState<HighlightedSourceState | null>(null);
   const cacheKey = useMemo(
-    () => (file && text !== undefined ? buildSourceCacheKey(appearance, file, text) : null),
-    [appearance, file, text],
+    () => (file && text !== undefined ? buildSourceCacheKey(theme, file, text) : null),
+    [file, text, theme],
   );
 
   useLayoutEffect(() => {
@@ -55,7 +56,7 @@ export function useHighlightedSource({
     let cancelled = false;
     setState(null);
 
-    loadHighlightedSourceLines({ file, text, appearance })
+    loadHighlightedSourceLines({ file, text, theme })
       .then((highlighted) => {
         if (!cancelled) {
           setState({ cacheKey, highlighted });
@@ -70,7 +71,7 @@ export function useHighlightedSource({
     return () => {
       cancelled = true;
     };
-  }, [appearance, cacheKey, file, shouldLoadHighlight, state?.cacheKey, text]);
+  }, [cacheKey, file, shouldLoadHighlight, state?.cacheKey, text]);
 
   return state?.cacheKey === cacheKey ? state.highlighted : null;
 }

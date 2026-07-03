@@ -13,7 +13,10 @@ import type {
 } from "../hunk-session/types";
 import type { AppBootstrap, LayoutMode } from "../core/types";
 import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
+import { capturedTestColorToHex } from "../../test/helpers/test-color-helpers";
 import { createTestDiffFile as buildTestDiffFile, lines } from "../../test/helpers/diff-helpers";
+import { AGENT_SKILL_COMMAND, AGENT_SKILL_PROMPT } from "./components/chrome/AgentSkillDialog";
+import { resolveTheme } from "./themes";
 
 const { loadAppBootstrap } = await import("../core/loaders");
 const { AppHost } = await import("./AppHost");
@@ -57,6 +60,10 @@ function createNumberedAssignmentLines(start: number, count: number, valueOffset
     const lineNumber = start + index;
     return `export const line${String(lineNumber).padStart(2, "0")} = ${lineNumber + valueOffset};`;
   });
+}
+
+function firstNonEmptyLine(text: string) {
+  return text.split("\n").find((line) => line.trim().length > 0) ?? "";
 }
 
 function createMockHostClient({
@@ -451,8 +458,40 @@ async function waitForFrame(
   return frame;
 }
 
-/** Open the top-level Theme menu and wait for the expected active light theme marker. */
-async function openThemeMenu(setup: Awaited<ReturnType<typeof testRender>>) {
+/** Return whether rendered text has the expected inherited background color. */
+function hasLineWithBackground(
+  frame: ReturnType<Awaited<ReturnType<typeof testRender>>["captureSpans"]>,
+  text: string,
+  backgroundColor: string,
+) {
+  return frame.lines.some((line) => {
+    const lineText = line.spans.map((span) => span.text).join("");
+    const matchStart = lineText.indexOf(text);
+
+    if (matchStart < 0) {
+      return false;
+    }
+
+    const matchEnd = matchStart + text.length;
+    let spanStart = 0;
+    const matchingSpans = line.spans.filter((span) => {
+      const spanEnd = spanStart + span.text.length;
+      const overlapsMatch = spanStart < matchEnd && spanEnd > matchStart;
+      spanStart = spanEnd;
+      return overlapsMatch;
+    });
+
+    return (
+      matchingSpans.length > 0 &&
+      matchingSpans.every(
+        (span) => capturedTestColorToHex(span.bg)?.toLowerCase() === backgroundColor.toLowerCase(),
+      )
+    );
+  });
+}
+
+/** Open the theme selector modal through the View menu. */
+async function openThemesModalFromViewMenu(setup: Awaited<ReturnType<typeof testRender>>) {
   await act(async () => {
     await setup.mockInput.pressKey("F10");
   });
@@ -464,14 +503,16 @@ async function openThemeMenu(setup: Awaited<ReturnType<typeof testRender>>) {
   );
   expect(openedFrame).toContain("Toggle files/filter focus");
 
-  for (let index = 0; index < 3; index += 1) {
-    await act(async () => {
-      await setup.mockInput.pressArrow("right");
-    });
-    await flush(setup);
-  }
+  await act(async () => {
+    await setup.mockInput.pressArrow("right");
+  });
+  await flush(setup);
 
-  return waitForFrame(setup, (frame) => frame.includes("[x] Paper"), 12);
+  await act(async () => {
+    await setup.mockInput.typeText("t");
+  });
+
+  return waitForFrame(setup, (frame) => frame.includes("Theme selector"), 12);
 }
 
 async function pressHunkNavigationKey(
@@ -678,6 +719,290 @@ describe("App interactions", () => {
       frame = setup.captureCharFrame();
       expect(frame).not.toContain("@@ -1,1 +1,2 @@");
       expect(frame).toContain("- export const alpha = 1;");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("Shift-M hides the menu bar without disabling F10 menus", async () => {
+    const setup = await testRender(<AppHost bootstrap={createSingleFileBootstrap()} />, {
+      width: 240,
+      height: 24,
+    });
+
+    try {
+      await flush(setup);
+
+      let frame = setup.captureCharFrame();
+      expect(frame).toContain("File  View  Navigate  Agent  Help");
+
+      await act(async () => {
+        await setup.mockInput.pressKey("m", { shift: true });
+      });
+      await flush(setup);
+
+      frame = setup.captureCharFrame();
+      expect(frame).not.toContain("File  View  Navigate  Agent  Help");
+      expect(firstNonEmptyLine(frame)).not.toContain("─");
+
+      await act(async () => {
+        await setup.mockInput.pressKey("F10");
+      });
+      frame = await waitForFrame(setup, (nextFrame) =>
+        nextFrame.includes("Toggle files/filter focus"),
+      );
+      expect(frame).toContain("Toggle files/filter focus");
+      expect(frame).not.toContain("File  View  Navigate  Agent  Help");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("configured hidden menu bar starts hidden while menus remain keyboard-accessible", async () => {
+    const setup = await testRender(
+      <AppHost bootstrap={{ ...createSingleFileBootstrap(), initialShowMenuBar: false }} />,
+      {
+        width: 240,
+        height: 24,
+      },
+    );
+
+    try {
+      await flush(setup);
+
+      let frame = setup.captureCharFrame();
+      expect(frame).not.toContain("File  View  Navigate  Agent  Help");
+      expect(firstNonEmptyLine(frame)).not.toContain("─");
+
+      await act(async () => {
+        await setup.mockInput.pressKey("F10");
+      });
+      frame = await waitForFrame(setup, (nextFrame) =>
+        nextFrame.includes("Toggle files/filter focus"),
+      );
+      expect(frame).toContain("Toggle files/filter focus");
+      expect(frame).not.toContain("File  View  Navigate  Agent  Help");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("theme shortcut opens a selector and Enter applies the highlighted theme", async () => {
+    const setup = await testRender(<AppHost bootstrap={createSingleFileBootstrap()} />, {
+      width: 240,
+      height: 24,
+    });
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.typeText("t");
+      });
+      let frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("Theme selector"));
+      expect(frame).toContain("↑/↓/Tab preview  Enter accept  Esc cancel");
+      expect(frame).toContain("›  github-dark-default");
+      expect(frame).toContain("active");
+
+      await act(async () => {
+        await setup.mockInput.pressArrow("down");
+      });
+      frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("›  github-dark-dimmed"));
+      expect(frame).not.toContain("UI");
+      expect(frame).not.toContain("Syntax");
+
+      await act(async () => {
+        await setup.mockInput.pressEnter();
+      });
+      frame = await waitForFrame(setup, (nextFrame) =>
+        nextFrame.includes("Theme: github-dark-dimmed"),
+      );
+      expect(frame).toContain("Theme: github-dark-dimmed");
+      expect(frame).not.toContain("Theme selector");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("theme selector mouse hover does not preview and click selects without accepting", async () => {
+    const setup = await testRender(<AppHost bootstrap={createSingleFileBootstrap()} />, {
+      width: 240,
+      height: 24,
+    });
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.typeText("t");
+      });
+      let frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("Theme selector"));
+      expect(frame).toContain("›  github-dark-default");
+
+      const lines = frame.split("\n");
+      const targetY = lines.findIndex((line) => line.includes("github-dark-dimmed"));
+      expect(targetY).toBeGreaterThanOrEqual(0);
+      const targetX = Math.max(0, lines[targetY]!.indexOf("github-dark-dimmed"));
+
+      await act(async () => {
+        await setup.mockMouse.moveTo(targetX, targetY);
+      });
+      await flush(setup);
+      frame = setup.captureCharFrame();
+      expect(frame).toContain("›  github-dark-default");
+      expect(frame).not.toContain("›  github-dark-dimmed");
+
+      await act(async () => {
+        await setup.mockMouse.click(targetX, targetY);
+      });
+      frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("›  github-dark-dimmed"));
+      expect(frame).toContain("Theme selector");
+
+      await act(async () => {
+        await setup.mockInput.pressEnter();
+      });
+      frame = await waitForFrame(setup, (nextFrame) =>
+        nextFrame.includes("Theme: github-dark-dimmed"),
+      );
+      expect(frame).not.toContain("Theme selector");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("theme selector mouse wheel previews the next row", async () => {
+    const setup = await testRender(<AppHost bootstrap={createSingleFileBootstrap()} />, {
+      width: 240,
+      height: 24,
+    });
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.typeText("t");
+      });
+      const frame = await waitForFrame(setup, (nextFrame) =>
+        nextFrame.includes("›  github-dark-default"),
+      );
+      const selectedY = frame.split("\n").findIndex((line) => line.includes("github-dark-default"));
+      expect(selectedY).toBeGreaterThanOrEqual(0);
+
+      await act(async () => {
+        await setup.mockMouse.scroll(120, selectedY, "down");
+      });
+      await waitForFrame(setup, (nextFrame) => nextFrame.includes("›  github-dark-dimmed"));
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("theme selector reopens on the active theme", async () => {
+    const bootstrap = createTestVcsAppBootstrap({
+      files: [
+        createTestDiffFile(
+          "alpha",
+          "alpha.ts",
+          "export const alpha = 1;\n",
+          "export const alpha = 2;\n",
+        ),
+      ],
+      initialTheme: "dracula",
+    });
+    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
+      width: 240,
+      height: 24,
+    });
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.typeText("t");
+      });
+      let frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("Theme selector"));
+      expect(frame).toContain("›  dracula");
+      expect(frame).toContain("active");
+
+      await act(async () => {
+        await setup.mockInput.pressTab();
+      });
+      frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("›  dracula-soft"));
+      expect(frame).toContain("›  dracula-soft");
+
+      await act(async () => {
+        await setup.mockInput.pressEnter();
+      });
+      frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("Theme: dracula-soft"));
+      expect(frame).not.toContain("Theme selector");
+
+      await act(async () => {
+        await setup.mockInput.typeText("t");
+      });
+      frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("›  dracula-soft"));
+      expect(frame).toContain("active");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("theme selector Escape reverts previews", async () => {
+    const bootstrap = createTestVcsAppBootstrap({
+      files: [
+        createTestDiffFile(
+          "alpha",
+          "alpha.ts",
+          "export const alpha = 1;\n",
+          "export const alpha = 2;\n",
+        ),
+      ],
+      initialTheme: "github-dark-default",
+    });
+    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
+      width: 240,
+      height: 24,
+    });
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.typeText("t");
+      });
+      await waitForFrame(setup, (nextFrame) => nextFrame.includes("›  github-dark-default"));
+
+      await act(async () => {
+        await setup.mockInput.pressArrow("down");
+        await setup.mockInput.pressArrow("down");
+      });
+      await waitForFrame(setup, (nextFrame) => nextFrame.includes("›  github-dark-high-contrast"));
+
+      await act(async () => {
+        await setup.mockInput.pressEscape();
+      });
+      await waitForFrame(setup, (nextFrame) => !nextFrame.includes("Theme selector"));
+
+      await act(async () => {
+        await setup.mockInput.typeText("t");
+      });
+      const frame = await waitForFrame(setup, (nextFrame) =>
+        nextFrame.includes("›  github-dark-default"),
+      );
+      expect(frame).toContain("active");
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -1076,7 +1401,7 @@ describe("App interactions", () => {
             ],
           },
           initialMode: "split",
-          initialTheme: "paper",
+          initialTheme: "github-light-default",
           initialShowLineNumbers: false,
           initialWrapLines: true,
           initialShowHunkHeaders: false,
@@ -1437,9 +1762,9 @@ describe("App interactions", () => {
       );
       expect(refreshedFrame).toContain("export const added = true;");
 
-      const menuFrame = await openThemeMenu(setup);
-      expect(menuFrame).toContain("[x] Paper");
-      expect(menuFrame).toContain("[ ] Graphite");
+      const modalFrame = await openThemesModalFromViewMenu(setup);
+      expect(modalFrame).toContain("›  github-light-default");
+      expect(modalFrame).toContain("active");
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -1448,11 +1773,11 @@ describe("App interactions", () => {
     }
   });
 
-  test("custom theme stays active in the Theme menu when bootstrap provides a custom palette", async () => {
+  test("custom theme stays active in the theme selector when bootstrap provides a custom palette", async () => {
     const bootstrap = createBootstrap();
     bootstrap.initialTheme = "custom";
     bootstrap.customTheme = {
-      base: "paper",
+      base: "github-light-default",
       label: "My Theme",
       accent: "#7755aa",
     };
@@ -1465,10 +1790,29 @@ describe("App interactions", () => {
     try {
       await flush(setup);
 
+      const menuFrame = await openThemesModalFromViewMenu(setup);
+      expect(menuFrame).toContain("›  My Theme");
+      expect(menuFrame).toContain("active");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("Agent menu opens copyable agent skill guidance", async () => {
+    const bootstrap = createBootstrap();
+    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
+      width: 120,
+      height: 24,
+    });
+
+    try {
+      await flush(setup);
+
       await act(async () => {
         await setup.mockInput.pressKey("F10");
       });
-
       await waitForFrame(setup, (frame) => frame.includes("Toggle files/filter focus"), 12);
 
       for (let index = 0; index < 3; index += 1) {
@@ -1478,9 +1822,36 @@ describe("App interactions", () => {
         await flush(setup);
       }
 
-      const menuFrame = await waitForFrame(setup, (frame) => frame.includes("My Theme"), 12);
-      expect(menuFrame).toContain("[x] My Theme");
-      expect(menuFrame).toContain("[ ] Graphite");
+      let frame = await waitForFrame(
+        setup,
+        (currentFrame) =>
+          currentFrame.includes("Agent skill") && currentFrame.includes("Next annotated file"),
+        12,
+      );
+      expect(frame).toContain("Agent skill");
+      expect(frame).toContain("Next annotated file");
+
+      await act(async () => {
+        await setup.mockInput.pressArrow("down");
+      });
+      await flush(setup);
+      await act(async () => {
+        await setup.mockInput.pressEnter();
+      });
+
+      frame = await waitForFrame(
+        setup,
+        (currentFrame) => currentFrame.includes("Teach your agent"),
+        12,
+      );
+      expect(frame).toContain("Load the Hunk skill and use it for this review");
+      expect(AGENT_SKILL_PROMPT).toContain(AGENT_SKILL_COMMAND);
+      expect(frame).toContain(AGENT_SKILL_COMMAND);
+      expect(frame).toContain("Copy");
+
+      await act(async () => {
+        await setup.mockInput.pressEscape();
+      });
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -1860,7 +2231,7 @@ describe("App interactions", () => {
         files: [createTestDiffFile("space", "space.ts", before, after)],
       },
       initialMode: "split",
-      initialTheme: "midnight",
+      initialTheme: "github-dark-default",
     };
 
     const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
@@ -1913,7 +2284,7 @@ describe("App interactions", () => {
         files: [createTestDiffFile("pageup", "pageup.ts", before, after)],
       },
       initialMode: "split",
-      initialTheme: "midnight",
+      initialTheme: "github-dark-default",
     };
 
     const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
@@ -1971,7 +2342,7 @@ describe("App interactions", () => {
         files: [createTestDiffFile("half", "half.ts", before, after)],
       },
       initialMode: "split",
-      initialTheme: "midnight",
+      initialTheme: "github-dark-default",
     };
 
     const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
@@ -2044,7 +2415,7 @@ describe("App interactions", () => {
         files: [createTestDiffFile("g", "g.ts", before, after)],
       },
       initialMode: "split",
-      initialTheme: "midnight",
+      initialTheme: "github-dark-default",
     };
 
     const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
@@ -2106,7 +2477,7 @@ describe("App interactions", () => {
         files: [createTestDiffFile("pager-g", "pager-g.ts", before, after)],
       },
       initialMode: "split",
-      initialTheme: "midnight",
+      initialTheme: "github-dark-default",
     };
 
     const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
@@ -2340,6 +2711,47 @@ describe("App interactions", () => {
     }
   });
 
+  test("transparent background keeps menus and help dialog opaque", async () => {
+    const bootstrap = createBootstrap();
+    bootstrap.input.options.transparentBackground = true;
+    const theme = resolveTheme(bootstrap.initialTheme, null);
+    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
+      width: 220,
+      height: 24,
+    });
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.pressKey("F10");
+      });
+      const menuFrame = await waitForFrame(
+        setup,
+        (frame) => frame.includes("Toggle files/filter focus"),
+        12,
+      );
+      expect(menuFrame).toContain("Toggle files/filter focus");
+      expect(menuFrame).toContain("Focus filter");
+      expect(hasLineWithBackground(setup.captureSpans(), "Focus filter", theme.panel)).toBe(true);
+
+      await act(async () => {
+        await setup.mockInput.pressArrow("left");
+      });
+      await flush(setup);
+      await act(async () => {
+        await setup.mockInput.pressEnter();
+      });
+      const helpFrame = await waitForFrame(setup, (frame) => frame.includes("Navigation"), 12);
+      expect(helpFrame).toContain("Controls help");
+      expect(hasLineWithBackground(setup.captureSpans(), "Navigation", theme.panel)).toBe(true);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("draft note focus suppresses app shortcuts while accepting typed shortcut keys", async () => {
     const setup = await testRender(<AppHost bootstrap={createBootstrap()} />, {
       width: 240,
@@ -2497,7 +2909,7 @@ describe("App interactions", () => {
       await flush(setup);
 
       let frame = setup.captureCharFrame();
-      expect(frame).not.toContain("File  View  Navigate  Theme  Agent  Help");
+      expect(frame).not.toContain("File  View  Navigate  Agent  Help");
       expect((frame.match(/alpha\.ts/g) ?? []).length).toBe(1);
 
       await act(async () => {
@@ -2506,7 +2918,7 @@ describe("App interactions", () => {
       await flush(setup);
 
       frame = setup.captureCharFrame();
-      expect(frame).not.toContain("File  View  Navigate  Theme  Agent  Help");
+      expect(frame).not.toContain("File  View  Navigate  Agent  Help");
       expect((frame.match(/alpha\.ts/g) ?? []).length).toBe(2);
 
       await act(async () => {

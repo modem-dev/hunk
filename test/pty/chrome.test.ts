@@ -11,7 +11,7 @@ afterEach(() => {
 });
 
 describe("PTY chrome", () => {
-  test("top menu mouse navigation can select themes, toggle agent notes, and open help", async () => {
+  test("top menu mouse navigation can open themes, toggle agent notes, and open help", async () => {
     const fixture = harness.createAgentFilePair();
     const session = await harness.launchHunk({
       args: [
@@ -32,14 +32,19 @@ describe("PTY chrome", () => {
       const initial = await session.waitForText(/Adds bonus export\./, { timeout: 15_000 });
       expect(initial).toContain("Highlights the follow-up addition for review.");
 
-      await session.click(/Theme/);
-      const themeMenu = await session.waitForText(/Midnight/, { timeout: 5_000 });
-      expect(themeMenu).toContain("Paper");
+      await session.click(/View/);
+      const viewMenu = await session.waitForText(/Themes…/, { timeout: 5_000 });
+      expect(viewMenu).toContain("Themes…");
 
-      await session.click(/Paper/);
+      await session.click(/Themes…/);
+      const themeSelector = await session.waitForText(/github-light-default/, { timeout: 5_000 });
+      expect(themeSelector).toContain("Theme selector");
+
+      await session.click(/github-light-default/);
+      await session.press("enter");
       const themeSelected = await harness.waitForSnapshot(
         session,
-        (text) => text.includes("Adds bonus export.") && !text.includes("Midnight"),
+        (text) => text.includes("Adds bonus export.") && !text.includes("Theme selector"),
         5_000,
       );
       expect(themeSelected).toContain("Adds bonus export.");
@@ -81,7 +86,7 @@ describe("PTY chrome", () => {
     });
 
     try {
-      const initial = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+      const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
         timeout: 15_000,
       });
 
@@ -116,7 +121,7 @@ describe("PTY chrome", () => {
     });
 
     try {
-      const initial = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+      const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
         timeout: 15_000,
       });
 
@@ -159,7 +164,7 @@ describe("PTY chrome", () => {
     });
 
     try {
-      await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
         timeout: 15_000,
       });
 
@@ -189,7 +194,7 @@ describe("PTY chrome", () => {
     });
 
     try {
-      const initial = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+      const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
         timeout: 15_000,
       });
 
@@ -230,7 +235,7 @@ describe("PTY chrome", () => {
     });
 
     try {
-      const initial = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+      const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
         timeout: 15_000,
       });
 

@@ -67,7 +67,14 @@ export interface ServeSessionBrokerDaemonOptions {
 
 export type RunningSessionBrokerDaemon = RunningBunSessionBrokerDaemon;
 
-function formatDaemonServeError(error: unknown, host: string, port: number) {
+/**
+ * Exported for unit testing.
+ *
+ * The helpers below (request validation, Host/Origin parsing, and the session API dispatcher)
+ * carry the broker's DNS-rebinding defenses and action routing. They are pure functions over a
+ * `Request`/state pair, so they are tested directly rather than only through a live HTTP server.
+ */
+export function formatDaemonServeError(error: unknown, host: string, port: number) {
   const message = error instanceof Error ? error.message : String(error);
   const normalized = message.toLowerCase();
   if (
@@ -103,7 +110,7 @@ function hasJsonContentType(request: Request) {
 }
 
 /** Parse a Host-style value into hostname and optional port pieces. */
-function parseHostAndPort(value: string) {
+export function parseHostAndPort(value: string) {
   const trimmed = value.trim();
   if (!trimmed) {
     return null;
@@ -146,7 +153,7 @@ function parseHostAndPort(value: string) {
 }
 
 /** Return whether a parsed authority targets an accepted broker host and port. */
-function isAllowedHostPort(
+export function isAllowedHostPort(
   hostPort: { host: string; port?: number },
   expectedPort: number,
   options: { allowRemote: boolean },
@@ -158,7 +165,7 @@ function isAllowedHostPort(
 }
 
 /** Block DNS-rebinding style requests whose Host does not name a permitted broker endpoint. */
-function validateHostHeader(request: Request, expectedPort: number, allowRemote: boolean) {
+export function validateHostHeader(request: Request, expectedPort: number, allowRemote: boolean) {
   const hostHeader = request.headers.get("host");
   if (!hostHeader) {
     return jsonError("Expected Host header for the local session broker.", 400);
@@ -173,7 +180,7 @@ function validateHostHeader(request: Request, expectedPort: number, allowRemote:
 }
 
 /** Block browser-originated requests from non-local or wrong-port origins. */
-function validateOriginHeader(request: Request, expectedPort: number, allowRemote: boolean) {
+export function validateOriginHeader(request: Request, expectedPort: number, allowRemote: boolean) {
   const origin = request.headers.get("origin");
   if (!origin) {
     return null;
@@ -208,7 +215,7 @@ async function parseJsonRequest(request: Request) {
   }
 }
 
-async function handleSessionApiRequest(state: HunkSessionBrokerState, request: Request) {
+export async function handleSessionApiRequest(state: HunkSessionBrokerState, request: Request) {
   if (request.method !== "POST") {
     return jsonError("Session API requests must use POST.", 405);
   }
@@ -357,6 +364,7 @@ async function handleSessionApiRequest(state: HunkSessionBrokerState, request: R
             input: {
               ...input.selector,
               filePath: input.filePath,
+              includeUser: input.includeUser,
             },
             timeoutMessage: "Timed out waiting for the session to clear the requested comments.",
           }),

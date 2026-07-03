@@ -20,7 +20,10 @@ export interface HunkSessionBridgeHandlers {
     requestId: string,
     options?: { revealMode?: "none" | "first" },
   ) => AppliedCommentBatchResult;
-  clearLiveComments: (filePath?: string) => ClearedCommentsResult;
+  clearLiveComments: (
+    filePath?: string,
+    options?: { includeUser?: boolean },
+  ) => ClearedCommentsResult;
   navigateToLocation: (
     input: Extract<HunkSessionServerMessage, { command: "navigate_to_hunk" }>["input"],
   ) => NavigatedSelectionResult;
@@ -74,7 +77,9 @@ export function createHunkSessionBridge(handlers: HunkSessionBridgeHandlers) {
         case "remove_comment":
           return handlers.removeLiveComment(message.input.commentId);
         case "clear_comments":
-          return handlers.clearLiveComments(message.input.filePath);
+          return handlers.clearLiveComments(message.input.filePath, {
+            includeUser: message.input.includeUser,
+          });
       }
     },
   };

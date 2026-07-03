@@ -220,7 +220,7 @@ describe("CLI entrypoint contracts", () => {
     expect(stderr).toBe("");
     expect(stdout).toContain("* main");
     expect(stdout).toContain("feature/demo");
-    expect(stdout).not.toContain("View  Navigate  Theme  Agent  Help");
+    expect(stdout).not.toContain("View  Navigate  Agent  Help");
     expect(stdout).not.toContain("\u001b[?1049h");
   });
 

@@ -12,7 +12,7 @@ export function HunkDiffBody({
   file,
   layout = "split",
   width,
-  theme = "graphite",
+  theme = "github-dark-default",
   showLineNumbers = true,
   showHunkHeaders = true,
   wrapLines = false,
@@ -24,7 +24,7 @@ export function HunkDiffBody({
   const internalFile = useMemo(() => (file ? toInternalDiffFile(file) : undefined), [file]);
   const resolvedHighlighted = useHighlightedDiff({
     file: internalFile,
-    appearance: resolvedTheme.appearance,
+    theme: resolvedTheme,
     shouldLoadHighlight: highlight,
   });
   const rows = useMemo(

@@ -1,6 +1,6 @@
 {
   "name": "hunkdiff",
-  "version": "0.14.0",
+  "version": "0.16.0",
   "description": "Desktop-inspired terminal diff viewer for understanding agent-authored changesets.",
   "keywords": [
     "ai",
@@ -24,6 +24,7 @@
     "hunkdiff": "./bin/hunk.cjs"
   },
   "workspaces": [
+    ".",
     "packages/*"
   ],
   "files": [
@@ -58,8 +59,12 @@
     "format:check": "oxfmt --check .",
     "lint": "oxlint . --deny-warnings",
     "lint:fix": "oxlint . --fix",
+    "changeset": "bunx @changesets/cli@2.31.0",
+    "changeset:status": "bunx @changesets/cli@2.31.0 status",
+    "release:version": "bunx @changesets/cli@2.31.0 version",
     "prepare": "simple-git-hooks",
     "test": "\"${npm_execpath:-bun}\" test ./src ./packages ./scripts ./test/cli ./test/session",
+    "test:theme-contrast": "bun test src/ui/themes.test.ts --test-name-pattern contrast",
     "test:integration": "\"${npm_execpath:-bun}\" test ./test/pty",
     "test:tty-smoke": "HUNK_RUN_TTY_SMOKE=1 \"${npm_execpath:-bun}\" test ./test/smoke",
     "check:pack": "bun run ./scripts/check-pack.ts",
@@ -68,18 +73,32 @@
     "publish:prebuilt:npm": "bun run ./scripts/publish-prebuilt-npm.ts",
     "update:homebrew-formula": "bun run ./scripts/update-homebrew-formula.ts",
     "prepack": "bun run build:npm",
+    "bench": "bun run benchmarks/run.ts",
+    "bench:release": "bun run ./scripts/run-release-benchmark.ts",
+    "bench:release:compare": "bun run ./scripts/compare-release-benchmarks.ts",
     "bench:bootstrap-load": "bun run benchmarks/bootstrap-load.ts",
+    "bench:working-tree-load": "bun run benchmarks/working-tree-load.ts",
+    "bench:changeset-parse": "bun run benchmarks/changeset-parse.ts",
+    "bench:render-layout": "bun run benchmarks/render-layout.ts",
     "bench:highlight-prefetch": "bun run benchmarks/highlight-prefetch.ts",
     "bench:large-stream": "bun run benchmarks/large-stream.ts",
+    "bench:interaction-latency": "bun run benchmarks/interaction-latency.ts",
+    "bench:non-ascii-stream": "bun run benchmarks/non-ascii-stream.ts",
+    "bench:huge-stream": "bun run benchmarks/huge-stream.ts",
     "bench:large-stream-profile": "bun run benchmarks/large-stream-profile.ts",
+    "bench:memory": "bun run benchmarks/memory.ts",
+    "bench:navigation-memory": "bun run benchmarks/navigation-memory.ts",
+    "bench:resize-memory": "bun run benchmarks/resize-memory.ts",
+    "bench:daemon-memory": "bun run scripts/daemon-memory-check.ts",
+    "bench:competitors": "bun run benchmarks/competitors.ts",
     "nix:update-lock": "nix run .#update-bun-lock"
   },
   "dependencies": {
-    "@pierre/diffs": "^1.1.19",
+    "@pierre/diffs": "1.2.2",
     "bun": "^1.3.10",
     "commander": "^14.0.3",
     "diff": "^8.0.3",
-    "shell-quote": "1.8.3",
+    "shell-quote": "1.8.4",
     "string-width": "^8.2.1",
     "zod": "^4.3.6"
   },
@@ -88,8 +107,8 @@
     "@hunk/session-broker-bun": "workspace:*",
     "@hunk/session-broker-core": "workspace:*",
     "@hunk/session-broker-node": "workspace:*",
-    "@opentui/core": "^0.1.88",
-    "@opentui/react": "^0.1.88",
+    "@opentui/core": "^0.1.89",
+    "@opentui/react": "^0.1.89",
     "@types/bun": "1.3.13",
     "@types/react": "^19.2.14",
     "@types/shell-quote": "1.7.5",
@@ -103,8 +122,8 @@
     "typescript": "^5.9.3"
   },
   "peerDependencies": {
-    "@opentui/core": "^0.1.88",
-    "@opentui/react": "^0.1.88",
+    "@opentui/core": "^0.1.89",
+    "@opentui/react": "^0.1.89",
     "react": "^19.2.4"
   },
   "simple-git-hooks": {

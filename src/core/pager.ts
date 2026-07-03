@@ -150,12 +150,12 @@ export async function pagePlainText(
     spawnImpl: spawn,
   },
 ) {
-  const safeText = sanitizeTerminalText(text);
-
   if (!deps.stdout.isTTY) {
-    deps.stdout.write(safeText);
+    deps.stdout.write(sanitizeTerminalText(text));
     return;
   }
+
+  const safeText = sanitizeTerminalText(text, { preserveAnsiStyle: true });
 
   const pagerSpec = resolveTextPagerSpec(env);
   const pagerCommand = pagerSpec.displayCommand;

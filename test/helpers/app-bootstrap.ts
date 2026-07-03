@@ -1,4 +1,4 @@
-import type { AppBootstrap, DiffFile, VcsCommandInput, LayoutMode } from "../../src/core/types";
+import type { AppBootstrap, DiffFile, VcsDiffCommandInput, LayoutMode } from "../../src/core/types";
 
 export function createTestVcsAppBootstrap({
   agentSummary,
@@ -10,7 +10,7 @@ export function createTestVcsAppBootstrap({
   initialShowAgentNotes,
   initialShowHunkHeaders,
   initialShowLineNumbers,
-  initialTheme = "midnight",
+  initialTheme = "github-dark-default",
   initialWrapLines,
   inputMode = initialMode,
   pager = false,
@@ -21,7 +21,7 @@ export function createTestVcsAppBootstrap({
   agentSummary?: string;
   changesetId?: string;
   files: DiffFile[];
-  vcsOptions?: Partial<VcsCommandInput["options"]>;
+  vcsOptions?: Partial<VcsDiffCommandInput["options"]>;
   initialMode?: LayoutMode;
   initialCopyDecorations?: boolean;
   initialShowAgentNotes?: boolean;

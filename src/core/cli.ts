@@ -1,4 +1,4 @@
-import { existsSync, statSync } from "node:fs";
+import { existsSync, realpathSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { Command, Option } from "commander";
 import type {
@@ -12,6 +12,7 @@ import type {
   SessionCommentApplyItemInput,
 } from "./types";
 import { resolveBundledHunkReviewSkillPath } from "./paths";
+import { detectVcs } from "./vcs";
 import { resolveCliVersion } from "./version";
 
 /** Validate one requested layout mode from CLI input. */
@@ -59,6 +60,7 @@ function buildCommonOptions(
     agentContext?: string;
     pager?: boolean;
     watch?: boolean;
+    transparentBackground?: boolean;
   },
   argv: string[],
 ): CommonOptions {
@@ -73,6 +75,7 @@ function buildCommonOptions(
     wrapLines: resolveBooleanFlag(argv, "--wrap", "--no-wrap"),
     hunkHeaders: resolveBooleanFlag(argv, "--hunk-headers", "--no-hunk-headers"),
     agentNotes: resolveBooleanFlag(argv, "--agent-notes", "--no-agent-notes"),
+    transparentBackground: resolveBooleanFlag(argv, "--transparent-bg", "--no-transparent-bg"),
   };
 }
 
@@ -90,7 +93,9 @@ function applyCommonOptions(command: Command) {
     .option("--hunk-headers", "show hunk metadata rows")
     .option("--no-hunk-headers", "hide hunk metadata rows")
     .option("--agent-notes", "show agent notes by default")
-    .option("--no-agent-notes", "hide agent notes by default");
+    .option("--no-agent-notes", "hide agent notes by default")
+    .option("--transparent-bg", "let terminal background show through Hunk surfaces")
+    .option("--no-transparent-bg", "paint Hunk surfaces with the active theme");
 }
 
 /** Attach auto-refresh support to review commands that can reopen their source input. */
@@ -152,6 +157,7 @@ function renderCliHelp() {
     "  --wrap / --no-wrap                      wrap or truncate long diff lines",
     "  --hunk-headers / --no-hunk-headers      show or hide hunk metadata rows",
     "  --agent-notes / --no-agent-notes        show or hide agent notes by default",
+    "  --transparent-bg / --no-transparent-bg  let terminal background show through Hunk surfaces",
     "  --theme <theme>                         named theme override",
     "",
     "Git diff options:",
@@ -304,6 +310,23 @@ function parseSessionCommentApplyPayload(raw: string): SessionCommentApplyItemIn
   });
 }
 
+/**
+ * Resolve a `--repo <path>` selector to the containing VCS toplevel.
+ *
+ * Sessions register under their repo root, so the selector must walk up from the
+ * given path to that root; otherwise a query run from a subdirectory would never
+ * match. The detected root is canonicalized through symlinks to mirror the
+ * session's registered repoRoot (git's `--show-toplevel` is realpath-canonical),
+ * so matching also holds under a symlinked ancestor like macOS `/tmp`. Falls back
+ * to the resolved path when it is not inside a known checkout.
+ */
+function resolveRepoSelectorRoot(repoPath: string): string {
+  const resolved = resolve(repoPath);
+  const repoRoot = detectVcs(resolved)?.repoRoot;
+  // The detected root always exists on disk, so realpath cannot throw here.
+  return repoRoot ? realpathSync.native(repoRoot) : resolved;
+}
+
 /** Normalize one explicit session selector from either session id or repo root. */
 function resolveExplicitSessionSelector(
   sessionId: string | undefined,
@@ -317,7 +340,7 @@ function resolveExplicitSessionSelector(
     throw new Error("Specify one live Hunk session with <session-id> or --repo <path>.");
   }
 
-  return sessionId ? { sessionId } : { repoRoot: resolve(repoRoot!) };
+  return sessionId ? { sessionId } : { repoRoot: resolveRepoSelectorRoot(repoRoot!) };
 }
 
 function resolveReloadSelector(
@@ -357,7 +380,7 @@ function resolveReloadSelector(
 
   if (repoRoot) {
     return {
-      selector: { repoRoot: resolve(repoRoot) },
+      selector: { repoRoot: resolveRepoSelectorRoot(repoRoot) },
       sourcePath: resolvedSource,
     };
   }
@@ -607,7 +630,7 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
           "  hunk session comment apply (<session-id> | --repo <path>) --stdin [--focus]",
           "  hunk session comment list (<session-id> | --repo <path>) [--type <live|all|ai|agent|user>]",
           "  hunk session comment rm (<session-id> | --repo <path>) <comment-id>",
-          "  hunk session comment clear (<session-id> | --repo <path>) --yes",
+          "  hunk session comment clear (<session-id> | --repo <path>) [--include-user|--all] --yes",
         ].join("\n") + "\n",
     };
   }
@@ -881,7 +904,7 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
             "  hunk session comment apply (<session-id> | --repo <path>) --stdin [--focus]",
             "  hunk session comment list (<session-id> | --repo <path>) [--file <path>] [--type <live|all|ai|agent|user>]",
             "  hunk session comment rm (<session-id> | --repo <path>) <comment-id>",
-            "  hunk session comment clear (<session-id> | --repo <path>) [--file <path>] --yes",
+            "  hunk session comment clear (<session-id> | --repo <path>) [--file <path>] [--include-user|--all] --yes",
           ].join("\n") + "\n",
       };
     }
@@ -1089,27 +1112,18 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
 
     if (commentSubcommand === "rm") {
       const command = new Command("session comment rm")
-        .description("remove one live inline review note")
-        .argument("[sessionId]")
-        .argument("<commentId>")
+        .description("remove one inline review note")
+        .argument("[targets...]", "<session-id> <comment-id>, or <comment-id> with --repo")
         .option("--repo <path>", "target the live session whose repo root matches this path")
         .option("--json", "emit structured JSON");
 
-      let parsedSessionId: string | undefined;
-      let parsedCommentId = "";
+      let parsedTargets: string[] = [];
       let parsedOptions: { repo?: string; json?: boolean } = {};
 
-      command.action(
-        (
-          sessionId: string | undefined,
-          commentId: string,
-          options: { repo?: string; json?: boolean },
-        ) => {
-          parsedSessionId = sessionId;
-          parsedCommentId = commentId;
-          parsedOptions = options;
-        },
-      );
+      command.action((targets: string[], options: { repo?: string; json?: boolean }) => {
+        parsedTargets = targets;
+        parsedOptions = options;
+      });
 
       if (commentRest.includes("--help") || commentRest.includes("-h")) {
         return { kind: "help", text: `${command.helpInformation().trimEnd()}\n` };
@@ -1117,28 +1131,44 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
 
       await parseStandaloneCommand(command, commentRest);
 
+      const expectedTargetCount = parsedOptions.repo ? 1 : 2;
+      if (parsedTargets.length !== expectedTargetCount) {
+        throw new Error(
+          parsedOptions.repo
+            ? "Specify exactly one comment id with --repo <path>."
+            : "Specify a session id and comment id, or pass --repo <path> with one comment id.",
+        );
+      }
+
+      const parsedSessionId = parsedOptions.repo ? undefined : parsedTargets[0];
+      const parsedCommentId = parsedOptions.repo ? parsedTargets[0] : parsedTargets[1];
+
       return {
         kind: "session",
         action: "comment-rm",
         output: resolveJsonOutput(parsedOptions),
         selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
-        commentId: parsedCommentId,
+        commentId: parsedCommentId ?? "",
       };
     }
 
     if (commentSubcommand === "clear") {
       const command = new Command("session comment clear")
-        .description("clear live inline review notes")
+        .description("clear inline review notes")
         .argument("[sessionId]")
         .option("--repo <path>", "target the live session whose repo root matches this path")
         .option("--file <path>", "clear only one diff file's comments")
-        .option("--yes", "confirm destructive live comment clearing")
+        .option("--include-user", "also clear human notes created with the TUI `c` action")
+        .option("--all", "clear both live agent comments and human user notes")
+        .option("--yes", "confirm destructive comment clearing")
         .option("--json", "emit structured JSON");
 
       let parsedSessionId: string | undefined;
       let parsedOptions: {
         repo?: string;
         file?: string;
+        includeUser?: boolean;
+        all?: boolean;
         yes?: boolean;
         json?: boolean;
       } = {};
@@ -1149,6 +1179,8 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
           options: {
             repo?: string;
             file?: string;
+            includeUser?: boolean;
+            all?: boolean;
             yes?: boolean;
             json?: boolean;
           },
@@ -1164,7 +1196,7 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
 
       await parseStandaloneCommand(command, commentRest);
       if (!parsedOptions.yes) {
-        throw new Error("Pass --yes to clear live comments.");
+        throw new Error("Pass --yes to clear comments.");
       }
 
       return {
@@ -1173,6 +1205,7 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
         output: resolveJsonOutput(parsedOptions),
         selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
         filePath: parsedOptions.file,
+        ...(parsedOptions.includeUser || parsedOptions.all ? { includeUser: true } : {}),
         confirmed: true,
       };
     }

@@ -60,6 +60,41 @@ describe("static diff pager", () => {
     expect(plain).toContain("▌+ const value = 2;");
   });
 
+  test("honors explicit split mode in static pager output", async () => {
+    const patchText =
+      "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-const value = 1;\n+const value = 2;\n";
+
+    const plain = stripAnsi(
+      await renderStaticDiffPager(
+        patchText,
+        { mode: "split" },
+        { terminalColumns: 80, stderr: { write: () => true } },
+      ),
+    );
+    const changedLine = plain.split("\n").find((line) => line.includes("const value"));
+
+    expect(changedLine).toBeDefined();
+    expect(changedLine).toContain("▌1 - const value = 1;");
+    expect(changedLine).toContain("▌1 + const value = 2;");
+    expect(plain).not.toContain("▌  1 +  const value = 2;");
+  });
+
+  test("keeps auto mode stacked in static pager output", async () => {
+    const patchText =
+      "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-const value = 1;\n+const value = 2;\n";
+
+    const plain = stripAnsi(
+      await renderStaticDiffPager(
+        patchText,
+        { mode: "auto" },
+        { terminalColumns: 200, stderr: { write: () => true } },
+      ),
+    );
+
+    expect(plain).toContain("▌1   -  const value = 1;");
+    expect(plain).toContain("▌  1 +  const value = 2;");
+  });
+
   test("uses configured custom themes in static pager output", async () => {
     const patchText =
       "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-const value = 1;\n+const value = 2;\n";
@@ -67,11 +102,28 @@ describe("static diff pager", () => {
     const output = await renderStaticDiffPager(
       patchText,
       { theme: "custom" },
-      { customTheme: { base: "graphite", text: "#123456" } },
+      { customTheme: { base: "github-dark-default", text: "#123456" } },
     );
 
     expect(stripAnsi(output)).toContain("a.ts modified +1 -1");
     expect(output).toContain("\x1b[38;2;18;52;86m");
+  });
+
+  test("keeps only added/removed backgrounds when transparent background is requested", async () => {
+    const patchText =
+      "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1,3 +1,3 @@\n const a = 1;\n-const value = 1;\n+const value = 2;\n const z = 3;\n";
+
+    const output = await renderStaticDiffPager(patchText, { transparentBackground: true });
+    const lines = output.split("\n");
+    const lineWith = (text: string) => lines.find((line) => stripAnsi(line).includes(text)) ?? "";
+
+    expect(stripAnsi(output)).toContain("a.ts modified +1 -1");
+    expect(output).toContain("\x1b[38;2;");
+    expect(lineWith("@@ -1,3 +1,3 @@")).not.toContain("\x1b[48;2;");
+    expect(lineWith("const a = 1;")).not.toContain("\x1b[48;2;");
+    expect(lineWith("const z = 3;")).not.toContain("\x1b[48;2;");
+    expect(lineWith("const value = 1;")).toContain("\x1b[48;2;");
+    expect(lineWith("const value = 2;")).toContain("\x1b[48;2;");
   });
 
   test("shows semantic file metadata without raw patch headers", async () => {

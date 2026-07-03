@@ -2,8 +2,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { platform, tmpdir } from "node:os";
 import { join } from "node:path";
-import { jjAdapter } from "./jj";
-import type { ShowCommandInput, StashShowCommandInput, VcsCommandInput } from "../types";
+import { JjVcsAdapter } from "./jj";
+import type { VcsShowCommandInput, VcsDiffCommandInput } from "../types";
 
 const tempDirs: string[] = [];
 const JjAdapterIntegrationTestTimeoutMs = 20_000;
@@ -66,7 +66,7 @@ afterEach(() => {
 // Keep jj-backed adapter coverage opt-in on machines that have the external CLI installed.
 const jjTest = Bun.which("jj") ? test : test.skip;
 
-describe("jjAdapter", () => {
+describe("JjVcsAdapter", () => {
   jjTest(
     "detects Jujutsu repositories from nested directories",
     () => {
@@ -74,7 +74,7 @@ describe("jjAdapter", () => {
       const nested = join(repo, "src", "nested");
       mkdirSync(nested, { recursive: true });
 
-      expect(jjAdapter.detect(nested)).toEqual({ id: "jj", repoRoot: repo });
+      expect(JjVcsAdapter.detect(nested)).toEqual({ id: "jj", repoRoot: repo });
     },
     JjAdapterIntegrationTestTimeoutMs,
   );
@@ -91,11 +91,10 @@ describe("jjAdapter", () => {
         kind: "vcs",
         staged: false,
         options: { vcs: "jj" },
-      } satisfies VcsCommandInput;
-      const diffResult = await jjAdapter.loadReview(
-        { kind: "working-tree-diff", input: diffInput },
-        { cwd: repo },
-      );
+      } satisfies VcsDiffCommandInput;
+      const diffResult = await JjVcsAdapter.operations["working-tree-diff"]!.load(diffInput, {
+        cwd: repo,
+      });
 
       expect(normalizeComparablePath(diffResult.repoRoot)).toBe(normalizeComparablePath(repo));
       expect(diffResult.title).toContain("working copy");
@@ -107,11 +106,10 @@ describe("jjAdapter", () => {
         kind: "show",
         ref: "@",
         options: { vcs: "jj" },
-      } satisfies ShowCommandInput;
-      const showResult = await jjAdapter.loadReview(
-        { kind: "revision-show", input: showInput },
-        { cwd: repo },
-      );
+      } satisfies VcsShowCommandInput;
+      const showResult = await JjVcsAdapter.operations["revision-show"]!.load(showInput, {
+        cwd: repo,
+      });
 
       expect(showResult.title).toContain("show @");
       expect(showResult.patchText).toContain("diff --git a/file.txt b/file.txt");
@@ -127,19 +125,43 @@ describe("jjAdapter", () => {
         kind: "vcs",
         staged: true,
         options: { vcs: "jj" },
-      } satisfies VcsCommandInput;
-      const stashInput = {
-        kind: "stash-show",
-        options: { vcs: "jj" },
-      } satisfies StashShowCommandInput;
-
+      } satisfies VcsDiffCommandInput;
       await expect(
-        jjAdapter.loadReview({ kind: "working-tree-diff", input: stagedInput }, { cwd: repo }),
+        JjVcsAdapter.operations["working-tree-diff"]!.load(stagedInput, { cwd: repo }),
       ).rejects.toThrow("Jujutsu has no staging area");
-      await expect(
-        jjAdapter.loadReview({ kind: "stash-show", input: stashInput }, { cwd: repo }),
-      ).rejects.toThrow("requires Git VCS mode");
+      expect(JjVcsAdapter.operations["stash-show"]).toBeUndefined();
     },
     JjAdapterIntegrationTestTimeoutMs,
   );
+});
+
+// These branches run before any `jj` invocation, so they need no external binary.
+describe("JjVcsAdapter without the jj binary", () => {
+  test("detects a .jj workspace marker from a nested directory", () => {
+    const repo = createTempDir("hunk-jj-detect-marker-");
+    mkdirSync(join(repo, ".jj"));
+    const nested = join(repo, "src", "nested");
+    mkdirSync(nested, { recursive: true });
+
+    expect(JjVcsAdapter.detect(nested)).toEqual({ id: "jj", repoRoot: repo });
+  });
+
+  test("returns null when no .jj marker exists up to the filesystem root", () => {
+    expect(JjVcsAdapter.detect(createTempDir("hunk-jj-detect-none-"))).toBeNull();
+  });
+
+  test("rejects staged working-tree diffs before spawning jj", async () => {
+    const stagedInput = {
+      kind: "vcs",
+      staged: true,
+      options: { vcs: "jj" },
+    } satisfies VcsDiffCommandInput;
+    await expect(
+      JjVcsAdapter.operations["working-tree-diff"]!.load(stagedInput, { cwd: tmpdir() }),
+    ).rejects.toThrow("Jujutsu has no staging area");
+  });
+
+  test("does not expose a stash-show operation", () => {
+    expect(JjVcsAdapter.operations["stash-show"]).toBeUndefined();
+  });
 });

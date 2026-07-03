@@ -9,7 +9,13 @@ function isSpaceKey(key: KeyEvent) {
 
 /** Normalize the escape key aliases emitted by different terminal input paths. */
 export function isEscapeKey(key: KeyEvent) {
-  return key.name === "escape" || key.name === "esc";
+  return (
+    key.name === "escape" ||
+    key.name === "esc" ||
+    key.name === "Escape" ||
+    key.sequence === "\u001b" ||
+    key.raw === "\u001b"
+  );
 }
 
 /** Match Ctrl-S across raw, Kitty/CSI-u, and tmux control-mode encodings. */

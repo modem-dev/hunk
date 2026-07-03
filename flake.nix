@@ -6,7 +6,7 @@
     bun2nix.inputs.nixpkgs.follows = "nixpkgs";
   };
   nixConfig = {
-    extra-trusted-substituters = [
+    extra-substituters = [
       "https://nix-community.cachix.org"
     ];
     extra-trusted-public-keys = [

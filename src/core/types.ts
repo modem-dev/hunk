@@ -2,7 +2,7 @@ import type { FileDiffMetadata } from "@pierre/diffs";
 import type { FileSourceFetcher } from "./fileSource";
 
 export type LayoutMode = "auto" | "split" | "stack";
-export type VcsMode = "git" | "jj";
+export type VcsMode = string;
 export type TerminalThemeMode = "light" | "dark";
 
 export type ReviewNoteSource = "ai" | "agent" | "user";
@@ -52,6 +52,7 @@ export interface DiffFile {
     deletions: number;
   };
   metadata: FileDiffMetadata;
+  lineMoveKinds?: DiffLineMoveKinds;
   agent: AgentFileContext | null;
   isUntracked?: boolean;
   isBinary?: boolean;
@@ -60,6 +61,13 @@ export interface DiffFile {
   // Optional capability for fetching the file's full text on either side.
   // Loaders attach this when source content is reachable; absent when not.
   sourceFetcher?: FileSourceFetcher;
+}
+
+export type DiffLineMoveKind = "moved";
+
+export interface DiffLineMoveKinds {
+  additionLines: Array<DiffLineMoveKind | undefined>;
+  deletionLines: Array<DiffLineMoveKind | undefined>;
 }
 
 export interface Changeset {
@@ -82,8 +90,11 @@ export interface CommonOptions {
   lineNumbers?: boolean;
   wrapLines?: boolean;
   hunkHeaders?: boolean;
+  menuBar?: boolean;
   agentNotes?: boolean;
   copyDecorations?: boolean;
+  transparentBackground?: boolean;
+  colorMoved?: boolean;
 }
 
 export interface CustomSyntaxColorsConfig {
@@ -95,6 +106,8 @@ export interface CustomSyntaxColorsConfig {
   function?: string;
   property?: string;
   type?: string;
+  variable?: string;
+  operator?: string;
   punctuation?: string;
 }
 
@@ -111,6 +124,8 @@ export interface CustomThemeConfig {
   muted?: string;
   addedBg?: string;
   removedBg?: string;
+  movedAddedBg?: string;
+  movedRemovedBg?: string;
   contextBg?: string;
   addedContentBg?: string;
   removedContentBg?: string;
@@ -141,6 +156,7 @@ export interface PersistedViewPreferences {
   showLineNumbers: boolean;
   wrapLines: boolean;
   showHunkHeaders: boolean;
+  showMenuBar: boolean;
   showAgentNotes: boolean;
   copyDecorations: boolean;
 }
@@ -266,6 +282,7 @@ export interface SessionCommentClearCommandInput {
   output: SessionCommandOutput;
   selector: SessionSelectorInput;
   filePath?: string;
+  includeUser?: boolean;
   confirmed: boolean;
 }
 
@@ -281,7 +298,7 @@ export type SessionCommandInput =
   | SessionCommentRemoveCommandInput
   | SessionCommentClearCommandInput;
 
-export interface VcsCommandInput {
+export interface VcsDiffCommandInput {
   kind: "vcs";
   range?: string;
   staged: boolean;
@@ -289,14 +306,14 @@ export interface VcsCommandInput {
   options: CommonOptions;
 }
 
-export interface ShowCommandInput {
+export interface VcsShowCommandInput {
   kind: "show";
   ref?: string;
   pathspecs?: string[];
   options: CommonOptions;
 }
 
-export interface StashShowCommandInput {
+export interface VcsStashShowCommandInput {
   kind: "stash-show";
   ref?: string;
   options: CommonOptions;
@@ -325,9 +342,9 @@ export interface DiffToolCommandInput {
 }
 
 export type CliInput =
-  | VcsCommandInput
-  | ShowCommandInput
-  | StashShowCommandInput
+  | VcsDiffCommandInput
+  | VcsShowCommandInput
+  | VcsStashShowCommandInput
   | FileCommandInput
   | PatchCommandInput
   | DiffToolCommandInput;
@@ -349,6 +366,7 @@ export interface AppBootstrap {
   initialShowLineNumbers?: boolean;
   initialWrapLines?: boolean;
   initialShowHunkHeaders?: boolean;
+  initialShowMenuBar?: boolean;
   initialShowAgentNotes?: boolean;
   initialCopyDecorations?: boolean;
 }

@@ -28,18 +28,29 @@ import { fileRowId } from "./lib/ids";
 import { openSelectedFileInEditor } from "./lib/openInEditor";
 import { resolveResponsiveLayout } from "./lib/responsive";
 import { resizeSidebarWidth } from "./lib/sidebar";
-import { availableThemes, resolveTheme } from "./themes";
+import { availableThemes, resolveTheme, withTransparentBackground } from "./themes";
 
 type FocusArea = "files" | "filter" | "note";
 type ActiveAddNoteTarget = ActiveAddNoteAffordance & { fileId: string };
+type ThemeSelectorState = {
+  open: boolean;
+  selectedIndex: number;
+  previewThemeId: string | null;
+};
 
 const FAST_CODE_HORIZONTAL_SCROLL_COLUMNS = 8;
 
+const LazyAgentSkillDialog = lazy(async () => ({
+  default: (await import("./components/chrome/AgentSkillDialog")).AgentSkillDialog,
+}));
 const LazyHelpDialog = lazy(async () => ({
   default: (await import("./components/chrome/HelpDialog")).HelpDialog,
 }));
 const LazyMenuDropdown = lazy(async () => ({
   default: (await import("./components/chrome/MenuDropdown")).MenuDropdown,
+}));
+const LazyThemeSelectorDialog = lazy(async () => ({
+  default: (await import("./components/chrome/ThemeSelectorDialog")).ThemeSelectorDialog,
 }));
 
 /** Clamp a value into an inclusive range. */
@@ -56,6 +67,7 @@ function withCurrentViewOptions(
     showAgentNotes: boolean;
     showHunkHeaders: boolean;
     showLineNumbers: boolean;
+    showMenuBar: boolean;
     wrapLines: boolean;
   },
 ): CliInput {
@@ -68,6 +80,7 @@ function withCurrentViewOptions(
       agentNotes: view.showAgentNotes,
       hunkHeaders: view.showHunkHeaders,
       lineNumbers: view.showLineNumbers,
+      menuBar: view.showMenuBar,
       wrapLines: view.wrapLines,
     },
   };
@@ -123,9 +136,16 @@ export function App({
   const [copyDecorations, setCopyDecorations] = useState(bootstrap.initialCopyDecorations ?? false);
   const [codeHorizontalOffset, setCodeHorizontalOffset] = useState(0);
   const [showHunkHeaders, setShowHunkHeaders] = useState(bootstrap.initialShowHunkHeaders ?? true);
+  const [showMenuBar, setShowMenuBar] = useState(bootstrap.initialShowMenuBar ?? true);
+  const [themeSelectorState, setThemeSelectorState] = useState<ThemeSelectorState>({
+    open: false,
+    selectedIndex: 0,
+    previewThemeId: null,
+  });
   const [sidebarVisible, setSidebarVisible] = useState(() => !pagerMode);
   const [forceSidebarOpen, setForceSidebarOpen] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [showAgentSkill, setShowAgentSkill] = useState(false);
   const [focusArea, setFocusArea] = useState<FocusArea>("files");
   const [activeAddNoteTarget, setActiveAddNoteTarget] = useState<ActiveAddNoteTarget | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(34);
@@ -138,7 +158,29 @@ export function App({
     () => availableThemes(bootstrap.customTheme),
     [bootstrap.customTheme],
   );
-  const activeTheme = resolveTheme(themeId, detectedThemeMode ?? null, bootstrap.customTheme);
+  const effectiveThemeId = themeSelectorState.previewThemeId ?? themeId;
+  const baseTheme = useMemo(
+    () => resolveTheme(effectiveThemeId, detectedThemeMode ?? null, bootstrap.customTheme),
+    [effectiveThemeId, detectedThemeMode, bootstrap.customTheme],
+  );
+  const activeTheme = useMemo(
+    () =>
+      bootstrap.input.options.transparentBackground
+        ? withTransparentBackground(baseTheme)
+        : baseTheme,
+    [baseTheme, bootstrap.input.options.transparentBackground],
+  );
+
+  const themeSelectorItems = useMemo(
+    () =>
+      themeOptions.map((theme) => ({
+        id: theme.id,
+        label: theme.label,
+        description: theme.id === activeTheme.id ? "active" : "",
+        active: theme.id === activeTheme.id,
+      })),
+    [activeTheme.id, themeOptions],
+  );
   const review = useReviewController({ files: bootstrap.changeset.files });
   const filteredFiles = review.visibleFiles;
   const selectedFile = review.selectedFile;
@@ -373,6 +415,74 @@ export function App({
     setWrapLines((current) => !current);
   };
 
+  /** Switch the active theme. */
+  const selectTheme = useCallback(
+    (nextThemeId: string) => {
+      const nextTheme = themeOptions.find((theme) => theme.id === nextThemeId);
+      setThemeId(nextThemeId);
+      showTransientNotice(`Theme: ${nextTheme?.label ?? nextThemeId}`);
+    },
+    [showTransientNotice, themeOptions],
+  );
+
+  /** Open the keyboard-driven theme selector with the current theme highlighted. */
+  const openThemeSelector = useCallback(() => {
+    const currentIndex = themeSelectorItems.findIndex((item) => item.id === activeTheme.id);
+    setThemeSelectorState({
+      open: true,
+      selectedIndex: Math.max(0, currentIndex),
+      previewThemeId: null,
+    });
+  }, [activeTheme.id, themeSelectorItems]);
+
+  const closeThemeSelector = useCallback(() => {
+    // Dropping the preview id reverts all previewed colors in the same state transition.
+    setThemeSelectorState((current) => ({ ...current, open: false, previewThemeId: null }));
+  }, []);
+
+  const moveThemeSelector = useCallback(
+    (delta: number) => {
+      setThemeSelectorState((current) => {
+        if (themeSelectorItems.length === 0) {
+          return { ...current, selectedIndex: 0, previewThemeId: null };
+        }
+
+        const nextIndex =
+          (current.selectedIndex + delta + themeSelectorItems.length) % themeSelectorItems.length;
+        const item = themeSelectorItems[nextIndex]!;
+        return { ...current, selectedIndex: nextIndex, previewThemeId: item.id };
+      });
+    },
+    [themeSelectorItems],
+  );
+
+  const pickThemeSelectorItem = useCallback(
+    (index: number) => {
+      const item = themeSelectorItems[index];
+      if (!item) {
+        return;
+      }
+
+      setThemeSelectorState((current) => ({
+        ...current,
+        selectedIndex: index,
+        previewThemeId: item.id,
+      }));
+    },
+    [themeSelectorItems],
+  );
+
+  const acceptThemeSelector = useCallback(() => {
+    const item = themeSelectorItems[themeSelectorState.selectedIndex];
+    if (!item) {
+      return;
+    }
+
+    selectTheme(item.id);
+    // Close without a preview id; the committed theme id now supplies the same effective theme.
+    setThemeSelectorState((current) => ({ ...current, open: false, previewThemeId: null }));
+  }, [selectTheme, themeSelectorState.selectedIndex, themeSelectorItems]);
+
   /** Toggle the sidebar, forcing it open on narrower layouts when the app can still fit both panes. */
   const toggleSidebar = () => {
     if (sidebarVisible && (responsiveLayout.showSidebar || forceSidebarOpen)) {
@@ -397,6 +507,11 @@ export function App({
     setShowHunkHeaders((current) => !current);
   };
 
+  /** Toggle the top menu bar while keeping F10 menu navigation available. */
+  const toggleMenuBar = () => {
+    setShowMenuBar((current) => !current);
+  };
+
   const canRefreshCurrentInput = canReloadInput(bootstrap.input);
   const watchEnabled = Boolean(bootstrap.input.options.watch && canRefreshCurrentInput);
 
@@ -412,6 +527,7 @@ export function App({
       showAgentNotes,
       showHunkHeaders,
       showLineNumbers,
+      showMenuBar,
       wrapLines,
     });
 
@@ -433,6 +549,7 @@ export function App({
     showAgentNotes,
     showHunkHeaders,
     showLineNumbers,
+    showMenuBar,
     themeId,
     wrapLines,
   ]);
@@ -537,6 +654,28 @@ export function App({
     setShowHelp(false);
   }, []);
 
+  /** Close the agent skill setup overlay. */
+  const closeAgentSkill = useCallback(() => {
+    setShowAgentSkill(false);
+  }, []);
+
+  /** Open the agent skill setup overlay. */
+  const openAgentSkill = useCallback(() => {
+    setShowAgentSkill(true);
+  }, []);
+
+  /** Copy the agent skill prompt through the terminal clipboard integration. */
+  const copyAgentSkillPrompt = useCallback(async () => {
+    const { AGENT_SKILL_PROMPT } = await import("./components/chrome/AgentSkillDialog");
+    if (renderer.isOsc52Supported?.() && typeof renderer.copyToClipboardOSC52 === "function") {
+      renderer.copyToClipboardOSC52(AGENT_SKILL_PROMPT);
+      showTransientNotice("Copied agent skill prompt to clipboard");
+      return;
+    }
+
+    showTransientNotice("Clipboard copy unsupported in this terminal (enable OSC 52)");
+  }, [renderer, showTransientNotice]);
+
   /** Toggle the modal keyboard help overlay. */
   const toggleHelp = useCallback(() => {
     setShowHelp((current) => !current);
@@ -596,18 +735,9 @@ export function App({
     setFocusArea("files");
   }, [review.cancelDraftNote]);
 
-  /** Cycle through the available built-in themes. */
-  const cycleTheme = useCallback(() => {
-    const currentIndex = themeOptions.findIndex((theme) => theme.id === activeTheme.id);
-    const nextIndex = (currentIndex + 1) % themeOptions.length;
-    setThemeId(themeOptions[nextIndex]!.id);
-  }, [activeTheme.id, themeOptions]);
-
   const menus = useMemo(
     () =>
       buildAppMenus({
-        activeThemeId: activeTheme.id,
-        availableThemes: themeOptions,
         canRefreshCurrentInput,
         focusFilter,
         layoutMode,
@@ -617,27 +747,28 @@ export function App({
         refreshCurrentInput: triggerRefreshCurrentInput,
         requestQuit,
         selectLayoutMode,
-        selectThemeId: setThemeId,
+        openThemeSelector,
         copyDecorations,
         showAgentNotes,
         showHelp,
         showHunkHeaders,
         showLineNumbers,
+        showMenuBar,
         renderSidebar,
         toggleCopyDecorations,
         toggleAgentNotes,
         toggleFocusArea,
+        openAgentSkill,
         toggleHelp,
         toggleHunkHeaders,
         toggleLineNumbers,
+        toggleMenuBar,
         toggleLineWrap,
         toggleSidebar,
         triggerEditSelectedFile,
         wrapLines,
       }),
     [
-      activeTheme.id,
-      themeOptions,
       canRefreshCurrentInput,
       copyDecorations,
       focusFilter,
@@ -646,19 +777,23 @@ export function App({
       moveToAnnotatedHunk,
       requestQuit,
       review.moveToHunk,
+      openAgentSkill,
       selectLayoutMode,
+      openThemeSelector,
       triggerRefreshCurrentInput,
       toggleCopyDecorations,
       showAgentNotes,
       showHelp,
       showHunkHeaders,
       showLineNumbers,
+      showMenuBar,
       renderSidebar,
       toggleAgentNotes,
       toggleFocusArea,
       toggleHelp,
       toggleHunkHeaders,
       toggleLineNumbers,
+      toggleMenuBar,
       toggleLineWrap,
       toggleSidebar,
       triggerEditSelectedFile,
@@ -686,32 +821,39 @@ export function App({
     activeMenuId,
     activateCurrentMenuItem,
     canRefreshCurrentInput,
+    closeAgentSkill,
     closeHelp,
     closeMenu,
-    cycleTheme,
+    acceptThemeSelector,
     cancelDraftNote,
+    closeThemeSelector,
     focusArea,
     focusFilter,
     moveToAnnotatedHunk,
     moveToFile,
     moveToHunk: review.moveToHunk,
     moveMenuItem,
+    moveThemeSelector,
     openMenu,
+    openThemeSelector,
     pagerMode,
     requestQuit,
     scrollCodeHorizontally,
     saveDraftNote,
     scrollDiff,
     selectLayoutMode,
+    showAgentSkill,
     showHelp,
     startUserNote: () => startUserNote(),
     switchMenu,
+    themeSelectorOpen: themeSelectorState.open,
     toggleAgentNotes,
     toggleFocusArea,
     toggleGapForSelectedHunk: review.toggleSelectedHunkGap,
     toggleHelp,
     toggleHunkHeaders,
     toggleLineNumbers,
+    toggleMenuBar,
     toggleLineWrap,
     toggleSidebar,
     triggerEditSelectedFile,
@@ -779,7 +921,7 @@ export function App({
   // this in lockstep with the body container's paddingLeft and the sidebar render branch below.
   const diffPaneScreenLeft =
     bodyPadding / 2 + (renderSidebar ? clampedSidebarWidth + DIVIDER_WIDTH : 0);
-  const diffPaneScreenTop = pagerMode ? 0 : 1;
+  const diffPaneScreenTop = pagerMode || !showMenuBar ? 0 : 1;
 
   return (
     <box
@@ -790,7 +932,7 @@ export function App({
         backgroundColor: activeTheme.background,
       }}
     >
-      {!pagerMode ? (
+      {!pagerMode && showMenuBar ? (
         <MenuBar
           activeMenuId={activeMenuId}
           menuSpecs={menuSpecs}
@@ -834,9 +976,11 @@ export function App({
               entries={review.sidebarEntries}
               scrollRef={sidebarScrollRef}
               selectedFileId={selectedFile?.id}
+              showTopChrome={showMenuBar}
               textWidth={sidebarTextWidth}
               theme={activeTheme}
               width={clampedSidebarWidth}
+              estimatedViewportRows={terminal.height}
               onSelectFile={(fileId) => {
                 focusFiles();
                 jumpToFile(fileId, 0, { alignFileHeaderTop: true });
@@ -866,6 +1010,7 @@ export function App({
           pagerMode={pagerMode}
           screenLeft={diffPaneScreenLeft}
           screenTop={diffPaneScreenTop}
+          showTopChrome={showMenuBar && !pagerMode}
           headerLabelWidth={diffHeaderLabelWidth}
           headerStatsWidth={diffHeaderStatsWidth}
           layout={resolvedLayout}
@@ -932,13 +1077,27 @@ export function App({
             activeMenuItemIndex={activeMenuItemIndex}
             activeMenuSpec={activeMenuSpec}
             activeMenuWidth={activeMenuWidth}
+            top={showMenuBar ? 1 : 0}
             terminalWidth={terminal.width}
-            theme={activeTheme}
+            theme={baseTheme}
             onHoverItem={setActiveMenuItemIndex}
             onSelectItem={(entry) => {
               entry.action();
               closeMenu();
             }}
+          />
+        </Suspense>
+      ) : null}
+
+      {!pagerMode && showAgentSkill ? (
+        <Suspense fallback={null}>
+          <LazyAgentSkillDialog
+            copySupported={renderer.isOsc52Supported?.() ?? false}
+            terminalHeight={terminal.height}
+            terminalWidth={terminal.width}
+            theme={baseTheme}
+            onClose={closeAgentSkill}
+            onCopyPrompt={copyAgentSkillPrompt}
           />
         </Suspense>
       ) : null}
@@ -949,8 +1108,23 @@ export function App({
             canRefresh={canRefreshCurrentInput}
             terminalHeight={terminal.height}
             terminalWidth={terminal.width}
-            theme={activeTheme}
+            theme={baseTheme}
             onClose={closeHelp}
+          />
+        </Suspense>
+      ) : null}
+
+      {!pagerMode && themeSelectorState.open ? (
+        <Suspense fallback={null}>
+          <LazyThemeSelectorDialog
+            items={themeSelectorItems}
+            selectedIndex={themeSelectorState.selectedIndex}
+            terminalHeight={terminal.height}
+            terminalWidth={terminal.width}
+            theme={baseTheme}
+            onClose={closeThemeSelector}
+            onPickItem={pickThemeSelectorItem}
+            onScroll={moveThemeSelector}
           />
         </Suspense>
       ) : null}

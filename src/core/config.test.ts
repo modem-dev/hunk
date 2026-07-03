@@ -56,8 +56,10 @@ describe("config resolution", () => {
     writeFileSync(
       join(home, ".config", "hunk", "config.toml"),
       [
-        'theme = "graphite"',
+        'theme = "github-dark-default"',
         "line_numbers = false",
+        "transparentBackground = true",
+        "color_moved = true",
         "",
         "[patch]",
         'mode = "split"',
@@ -70,7 +72,14 @@ describe("config resolution", () => {
     mkdirSync(join(repo, ".hunk"), { recursive: true });
     writeFileSync(
       join(repo, ".hunk", "config.toml"),
-      ['theme = "paper"', "wrap_lines = true", "", "[pager]", "hunk_headers = false"].join("\n"),
+      [
+        'theme = "github-light-default"',
+        "wrap_lines = true",
+        "menu_bar = false",
+        "",
+        "[pager]",
+        "hunk_headers = false",
+      ].join("\n"),
     );
 
     const resolved = resolveConfiguredCliInput(createPatchPagerInput({ agentNotes: true }), {
@@ -82,11 +91,14 @@ describe("config resolution", () => {
     expect(resolved.input.options).toMatchObject({
       pager: true,
       mode: "stack",
-      theme: "paper",
+      theme: "github-light-default",
       lineNumbers: false,
       wrapLines: true,
+      menuBar: false,
       hunkHeaders: false,
       agentNotes: true,
+      transparentBackground: true,
+      colorMoved: true,
     });
   });
 
@@ -102,7 +114,7 @@ describe("config resolution", () => {
         'theme = "custom"',
         "",
         "[custom_theme]",
-        'base = "midnight"',
+        'base = "github-dark-default"',
         'label = "Global Custom"',
         'accent = "#123456"',
         "",
@@ -133,7 +145,7 @@ describe("config resolution", () => {
 
     expect(resolved.input.options.theme).toBe("custom");
     expect(resolved.customTheme).toEqual({
-      base: "midnight",
+      base: "github-dark-default",
       label: "Repo Custom",
       accent: "#123456",
       panel: "#654321",
@@ -144,7 +156,7 @@ describe("config resolution", () => {
     });
   });
 
-  test.each(["graphite", "midnight", "paper", "ember", "catppuccin-latte", "catppuccin-mocha"])(
+  test.each(["github-dark-default", "github-light-default", "dracula", "catppuccin-mocha"])(
     "accepts custom theme base id: %s",
     (base) => {
       const home = createTempDir("hunk-config-home-");
@@ -163,6 +175,22 @@ describe("config resolution", () => {
     },
   );
 
+  test("normalizes legacy custom theme base ids", () => {
+    const home = createTempDir("hunk-config-home-");
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(
+      join(home, ".config", "hunk", "config.toml"),
+      ["[custom_theme]", 'base = "graphite"'].join("\n"),
+    );
+
+    const resolved = resolveConfiguredCliInput(createPatchPagerInput(), {
+      cwd: createTempDir("hunk-config-cwd-"),
+      env: { HOME: home },
+    });
+
+    expect(resolved.customTheme).toEqual({ base: "github-dark-default" });
+  });
+
   test("rejects invalid custom theme base ids", () => {
     const home = createTempDir("hunk-config-home-");
     mkdirSync(join(home, ".config", "hunk"), { recursive: true });
@@ -176,9 +204,7 @@ describe("config resolution", () => {
         cwd: createTempDir("hunk-config-cwd-"),
         env: { HOME: home },
       }),
-    ).toThrow(
-      "Expected custom_theme.base to be one of: graphite, midnight, paper, ember, catppuccin-latte, catppuccin-mocha.",
-    );
+    ).toThrow("Expected custom_theme.base to be a built-in theme id.");
   });
 
   test("rejects invalid custom theme color values", () => {
@@ -210,7 +236,34 @@ describe("config resolution", () => {
     ).toThrow('Expected a [custom_theme] table when config selects theme = "custom".');
   });
 
-  test("defaults unspecified themes to graphite, including piped pager-style patch input", () => {
+  test("accepts transparent background config and CLI overrides", () => {
+    const home = createTempDir("hunk-config-home-");
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(join(home, ".config", "hunk", "config.toml"), "transparent_background = true\n");
+
+    const cwd = createTempDir("hunk-config-cwd-");
+    const configured = resolveConfiguredCliInput(
+      {
+        kind: "vcs",
+        staged: false,
+        options: {},
+      },
+      { cwd, env: { HOME: home } },
+    );
+    const overridden = resolveConfiguredCliInput(
+      {
+        kind: "vcs",
+        staged: false,
+        options: { transparentBackground: false },
+      },
+      { cwd, env: { HOME: home } },
+    );
+
+    expect(configured.input.options.transparentBackground).toBe(true);
+    expect(overridden.input.options.transparentBackground).toBe(false);
+  });
+
+  test("defaults unspecified themes to github-dark-default, including piped pager-style patch input", () => {
     const home = createTempDir("hunk-config-home-");
     const cwd = createTempDir("hunk-config-cwd-");
 
@@ -220,7 +273,7 @@ describe("config resolution", () => {
     });
 
     expect(resolved.repoConfigPath).toBeUndefined();
-    expect(resolved.input.options.theme).toBe("graphite");
+    expect(resolved.input.options.theme).toBe("github-dark-default");
   });
 
   test("command-specific config sections also apply to show mode", () => {
@@ -431,9 +484,10 @@ describe("config resolution", () => {
     writeFileSync(
       join(home, ".config", "hunk", "config.toml"),
       [
-        'theme = "paper"',
+        'theme = "github-light-default"',
         "line_numbers = false",
         "wrap_lines = true",
+        "menu_bar = false",
         "hunk_headers = false",
         "agent_notes = true",
         "copy_decorations = false",
@@ -457,9 +511,10 @@ describe("config resolution", () => {
     const bootstrap = await loadAppBootstrap(resolved.input);
 
     expect(bootstrap.initialMode).toBe("auto");
-    expect(bootstrap.initialTheme).toBe("paper");
+    expect(bootstrap.initialTheme).toBe("github-light-default");
     expect(bootstrap.initialShowLineNumbers).toBe(false);
     expect(bootstrap.initialWrapLines).toBe(true);
+    expect(bootstrap.initialShowMenuBar).toBe(false);
     expect(bootstrap.initialShowHunkHeaders).toBe(false);
     expect(bootstrap.initialShowAgentNotes).toBe(true);
     expect(bootstrap.initialCopyDecorations).toBe(false);
@@ -477,7 +532,7 @@ describe("config resolution", () => {
         'theme = "custom"',
         "",
         "[custom_theme]",
-        'base = "paper"',
+        'base = "catppuccin-mocha"',
         'accent = "#7755aa"',
         "",
         "[custom_theme.syntax]",
@@ -503,7 +558,7 @@ describe("config resolution", () => {
 
     expect(bootstrap.initialTheme).toBe("custom");
     expect(bootstrap.customTheme).toEqual({
-      base: "paper",
+      base: "catppuccin-mocha",
       accent: "#7755aa",
       syntax: {
         comment: "#998877",
@@ -511,7 +566,7 @@ describe("config resolution", () => {
     });
   });
 
-  test("loadAppBootstrap exposes graphite when no theme is configured", async () => {
+  test("loadAppBootstrap exposes github-dark-default when no theme is configured", async () => {
     const home = createTempDir("hunk-config-home-");
     const repo = createTempDir("hunk-config-repo-");
     createRepo(repo);
@@ -532,6 +587,6 @@ describe("config resolution", () => {
     );
     const bootstrap = await loadAppBootstrap(resolved.input);
 
-    expect(bootstrap.initialTheme).toBe("graphite");
+    expect(bootstrap.initialTheme).toBe("github-dark-default");
   });
 });

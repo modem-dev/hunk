@@ -2,9 +2,12 @@ import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createTestConfigHome } from "../helpers/config-home";
 
 const repoRoot = process.cwd();
 const sourceEntrypoint = join(repoRoot, "src/main.tsx");
+// Spawned hunk processes must assert built-in defaults, not the developer's ambient user config.
+const testConfigHome = createTestConfigHome();
 const tempDirs: string[] = [];
 const enableTtySmokeTests = process.env.HUNK_RUN_TTY_SMOKE === "1";
 if (enableTtySmokeTests) {
@@ -169,6 +172,7 @@ async function runTtySmoke(options: {
     stderr: "pipe",
     env: {
       ...process.env,
+      XDG_CONFIG_HOME: testConfigHome,
       TERM: "xterm-256color",
       HUNK_MCP_DISABLE: "1",
       HUNK_DISABLE_UPDATE_NOTICE: "1",
@@ -203,6 +207,7 @@ async function runStdinPagerSmoke(options?: {
     stderr: "pipe",
     env: {
       ...process.env,
+      XDG_CONFIG_HOME: testConfigHome,
       TERM: "xterm-256color",
       HUNK_MCP_DISABLE: "1",
       HUNK_DISABLE_UPDATE_NOTICE: "1",
@@ -231,7 +236,7 @@ describe("TTY render smoke", () => {
 
     const output = await runTtySmoke({ mode: "split", agentContext: true });
 
-    expect(output).toContain("View  Navigate  Theme  Agent  Help");
+    expect(output).toContain("View  Navigate  Agent  Help");
     expect(output).toContain("before.ts ↔ after.ts");
     expect(output).not.toContain("[AI]");
     expect(output).toContain("▌@@ -1,1 +1,2 @@");
@@ -278,7 +283,7 @@ describe("TTY render smoke", () => {
 
       const output = await runTtySmoke({ mode: "stack" });
 
-      expect(output).toContain("View  Navigate  Theme  Agent  Help");
+      expect(output).toContain("View  Navigate  Agent  Help");
       expect(output).toContain("▌1   -  export const answer = 41;");
       expect(output).toContain("▌  1 +  export const answer = 42;");
       expect(output).not.toContain("│1 + export const answer = 42;");
@@ -292,7 +297,7 @@ describe("TTY render smoke", () => {
 
     const output = await runTtySmoke({ pager: true });
 
-    expect(output).not.toContain("View  Navigate  Theme  Agent  Help");
+    expect(output).not.toContain("View  Navigate  Agent  Help");
     expect(output).not.toContain("F10 menu");
     expect(output).toContain("before.ts -> after.ts");
     expect(output).toContain("export const answer = 42;");
@@ -321,7 +326,7 @@ describe("TTY render smoke", () => {
 
     const output = await runStdinPagerSmoke();
 
-    expect(output).not.toContain("View  Navigate  Theme  Agent  Help");
+    expect(output).not.toContain("View  Navigate  Agent  Help");
     expect(output).not.toContain("F10 menu");
     expect(output).toContain("after.ts");
     expect(output).toContain("@@ -1 +1,2 @@");
@@ -349,7 +354,7 @@ describe("TTY render smoke", () => {
 
     const output = await runStdinPagerSmoke({ command: "pager" });
 
-    expect(output).not.toContain("View  Navigate  Theme  Agent  Help");
+    expect(output).not.toContain("View  Navigate  Agent  Help");
     expect(output).toContain("after.ts");
     expect(output).toContain("@@ -1 +1,2 @@");
     expect(output).toContain("export const answer = 42;");

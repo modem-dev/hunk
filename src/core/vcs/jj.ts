@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { HunkUserError } from "../errors";
 import {
   buildJjDiffArgs,
   buildJjShowArgs,
@@ -30,29 +29,14 @@ function detectJjRepo(cwd: string) {
   }
 }
 
-/** Return the user-facing error for Jujutsu operations that only Git supports. */
-function createJjUnsupportedStashShowError() {
-  return new HunkUserError("`hunk stash show` requires Git VCS mode.", [
-    'Set `vcs = "git"` in Hunk config, then try again.',
-  ]);
-}
-
 /** VCS adapter translating neutral review operations to Jujutsu commands. */
-export const jjAdapter: VcsAdapter = {
+export const JjVcsAdapter: VcsAdapter = {
   id: "jj",
   name: "Jujutsu",
-  capabilities: {
-    reviewOperations: new Set(["working-tree-diff", "revision-show"]),
-    stagedDiff: false,
-    watchSignatures: true,
-  },
-
   detect: detectJjRepo,
-
-  async loadReview(operation, { cwd }) {
-    switch (operation.kind) {
-      case "working-tree-diff": {
-        const input = operation.input;
+  operations: {
+    "working-tree-diff": {
+      async load(input, { cwd }) {
         if (input.staged) {
           throw createJjStagedError(input);
         }
@@ -64,9 +48,13 @@ export const jjAdapter: VcsAdapter = {
           title: input.range ? `${repoName} ${input.range}` : `${repoName} working copy`,
           patchText: runJjText({ input, args: buildJjDiffArgs(input), cwd }),
         };
-      }
-      case "revision-show": {
-        const input = operation.input;
+      },
+      watchSignature(input) {
+        return runJjText({ input, args: buildJjDiffArgs(input) });
+      },
+    },
+    "revision-show": {
+      async load(input, { cwd }) {
         const repoRoot = resolveJjRepoRoot(input, { cwd });
         const repoName = basename(repoRoot);
         const revset = input.ref ?? "@";
@@ -76,24 +64,10 @@ export const jjAdapter: VcsAdapter = {
           title: `${repoName} show ${revset}`,
           patchText: runJjText({ input, args: buildJjShowArgs(input), cwd }),
         };
-      }
-      case "stash-show":
-        throw createJjUnsupportedStashShowError();
-    }
-  },
-
-  watchSignature(operation) {
-    switch (operation.kind) {
-      case "working-tree-diff": {
-        const input = operation.input;
-        return runJjText({ input, args: buildJjDiffArgs(input) });
-      }
-      case "revision-show": {
-        const input = operation.input;
+      },
+      watchSignature(input) {
         return runJjText({ input, args: buildJjShowArgs(input) });
-      }
-      case "stash-show":
-        throw createJjUnsupportedStashShowError();
-    }
+      },
+    },
   },
 };

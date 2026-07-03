@@ -132,7 +132,7 @@ describe("createHunkSessionBridge", () => {
       type: "command",
       requestId: "clear-1",
       command: "clear_comments",
-      input: { sessionId: "session-1", filePath: "src/example.ts" },
+      input: { sessionId: "session-1", filePath: "src/example.ts", includeUser: true },
     });
 
     expect(handlers.navigateToLocation).toHaveBeenCalledTimes(1);
@@ -143,5 +143,8 @@ describe("createHunkSessionBridge", () => {
     );
     expect(handlers.removeLiveComment).toHaveBeenCalledTimes(1);
     expect(handlers.clearLiveComments).toHaveBeenCalledTimes(1);
+    expect(handlers.clearLiveComments).toHaveBeenCalledWith("src/example.ts", {
+      includeUser: true,
+    });
   });
 });

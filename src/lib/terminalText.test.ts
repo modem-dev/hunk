@@ -59,6 +59,31 @@ describe("sanitizeTerminalText", () => {
     expect(sanitizeTerminalText("alpha\n\tbeta")).toBe("alpha\n\tbeta");
   });
 
+  test("can preserve ANSI SGR styling while removing unsafe controls", () => {
+    const output = sanitizeTerminalText(
+      `plain\x1b[1;34mblue\x1b[m${OSC52_CLIPBOARD}${CSI_CLEAR_SCREEN}\x1b[2Kdone`,
+      { preserveAnsiStyle: true },
+    );
+
+    expect(output).toBe("plain\x1b[1;34mblue\x1b[mdone");
+  });
+
+  test("does not preserve non-SGR CSI sequences as ANSI styling", () => {
+    const output = sanitizeTerminalText("safe\x1b[2J\x1b[H\x1b[?25ltext", {
+      preserveAnsiStyle: true,
+    });
+
+    expect(output).toBe("safetext");
+  });
+
+  test("removes crafted style placeholder delimiters before restoring ANSI styling", () => {
+    const output = sanitizeTerminalText("safe\u{f0000}0\u{f0001}\x1b[31mred\x1b[m", {
+      preserveAnsiStyle: true,
+    });
+
+    expect(output).toBe("safe0\x1b[31mred\x1b[m");
+  });
+
   test("sanitizes span text while preserving styling metadata", () => {
     const spans = [
       { text: `before${OSC52_CLIPBOARD}`, fg: "#fff" },

@@ -114,6 +114,18 @@ export function PierreDiffView({
   const hoverIdleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const previousHoverClearSignalRef = useRef(hoverClearSignal);
 
+  // Latest-value refs for upstream handlers that DiffPane/DiffSection recreate on every render.
+  // Row-level callbacks read these at invocation time, which keeps the callbacks below
+  // referentially stable so DiffRowView's memo comparator can actually hold across re-renders.
+  const onHoverRef = useRef(onHover);
+  onHoverRef.current = onHover;
+  const onActiveAddNoteAffordanceChangeRef = useRef(onActiveAddNoteAffordanceChange);
+  onActiveAddNoteAffordanceChangeRef.current = onActiveAddNoteAffordanceChange;
+  const onStartUserNoteAtHunkRef = useRef(onStartUserNoteAtHunk);
+  onStartUserNoteAtHunkRef.current = onStartUserNoteAtHunk;
+  const onToggleGapRef = useRef(onToggleGap);
+  onToggleGapRef.current = onToggleGap;
+
   const clearHoverIdleTimeout = useCallback(() => {
     if (hoverIdleTimeoutRef.current) {
       clearTimeout(hoverIdleTimeoutRef.current);
@@ -124,21 +136,21 @@ export function PierreDiffView({
   const clearHoveredRow = useCallback(() => {
     clearHoverIdleTimeout();
     setHoveredRowKey(null);
-    onActiveAddNoteAffordanceChange?.(null);
-  }, [clearHoverIdleTimeout, onActiveAddNoteAffordanceChange]);
+    onActiveAddNoteAffordanceChangeRef.current?.(null);
+  }, [clearHoverIdleTimeout]);
 
   const activateHoveredRow = useCallback(
     (rowKey: string, affordance: ActiveAddNoteAffordance) => {
       setHoveredRowKey(rowKey);
-      onActiveAddNoteAffordanceChange?.(affordance);
+      onActiveAddNoteAffordanceChangeRef.current?.(affordance);
       clearHoverIdleTimeout();
       hoverIdleTimeoutRef.current = setTimeout(() => {
         setHoveredRowKey((current) => (current === rowKey ? null : current));
-        onActiveAddNoteAffordanceChange?.(null);
+        onActiveAddNoteAffordanceChangeRef.current?.(null);
         hoverIdleTimeoutRef.current = null;
       }, ADD_NOTE_IDLE_HIDE_DELAY_MS);
     },
-    [clearHoverIdleTimeout, onActiveAddNoteAffordanceChange],
+    [clearHoverIdleTimeout],
   );
 
   useEffect(() => {
@@ -168,7 +180,7 @@ export function PierreDiffView({
 
   const resolvedHighlighted = useHighlightedDiff({
     file,
-    appearance: theme.appearance,
+    theme,
     shouldLoadHighlight,
   });
   const sourceTextForHighlight =
@@ -176,7 +188,7 @@ export function PierreDiffView({
   const resolvedHighlightedSource = useHighlightedSource({
     file,
     text: sourceTextForHighlight,
-    appearance: theme.appearance,
+    theme,
     shouldLoadHighlight: shouldLoadHighlight && expandedGapKeys.size > 0,
   });
   const sourceLineSpans = useCallback(
@@ -217,9 +229,44 @@ export function PierreDiffView({
   const plannedRows = sectionRowPlan.plannedRows;
   const lineNumberDigits = sectionRowPlan.lineNumberDigits;
   const fileHasSourceFetcher = Boolean(file?.sourceFetcher);
-  const gapToggleHandler = useMemo(
-    () => (fileHasSourceFetcher ? onToggleGap : undefined),
-    [fileHasSourceFetcher, onToggleGap],
+
+  // Stable wrappers around the unstable upstream handlers. Presence/absence still mirrors the
+  // incoming props so rows keep hiding affordances when the handlers are not provided.
+  const stableToggleGap = useCallback((gapKey: string) => onToggleGapRef.current?.(gapKey), []);
+  const gapToggleHandler = fileHasSourceFetcher && onToggleGap ? stableToggleGap : undefined;
+  const stableStartUserNoteAtHunk = useCallback(
+    (hunkIndex: number, target?: UserNoteLineTarget) =>
+      onStartUserNoteAtHunkRef.current?.(hunkIndex, target),
+    [],
+  );
+  const startUserNoteAtHunkHandler = onStartUserNoteAtHunk ? stableStartUserNoteAtHunk : undefined;
+
+  // Precompute each hoverable row's note-insertion target so the shared hover callback can stay
+  // identity-stable and look targets up by row key instead of closing over per-row state.
+  // Keyed by the DiffRow key (not the planned-row key) because that is what DiffRowView reports
+  // back through onHoverRow.
+  const addNoteAffordanceByRowKey = useMemo(() => {
+    const next = new Map<string, ActiveAddNoteAffordance>();
+    for (const plannedRow of plannedRows) {
+      if (plannedRow.kind === "diff-row" && isAddNoteTargetRow(plannedRow.row)) {
+        next.set(plannedRow.row.key, addNoteAffordanceForRow(plannedRow.row));
+      }
+    }
+    return next;
+  }, [plannedRows]);
+
+  /** One shared hover handler for every diff row; DiffRowView passes the hovered row's key. */
+  const handleHoverRow = useCallback(
+    (rowKey: string) => {
+      onHoverRef.current?.();
+      const affordance = addNoteAffordanceByRowKey.get(rowKey);
+      if (affordance) {
+        activateHoveredRow(rowKey, affordance);
+      } else {
+        clearHoveredRow();
+      }
+    },
+    [activateHoveredRow, addNoteAffordanceByRowKey, clearHoveredRow],
   );
   const visiblePlannedRowWindow = useMemo(() => {
     // Fall back to the full row list unless all three row-windowing inputs are ready:
@@ -318,10 +365,6 @@ export function PierreDiffView({
           );
         }
 
-        const addNoteAffordance = isAddNoteTargetRow(plannedRow.row)
-          ? addNoteAffordanceForRow(plannedRow.row)
-          : null;
-
         return (
           <box key={plannedRow.key} id={rowId} style={{ width: "100%", flexDirection: "column" }}>
             <DiffRowView
@@ -339,19 +382,12 @@ export function PierreDiffView({
               anchorId={plannedRow.anchorId}
               noteGuideSide={plannedRow.noteGuideSide}
               showAddNoteBadge={
-                addNoteAffordance !== null &&
-                hoveredRowKey === plannedRow.key &&
-                Boolean(onStartUserNoteAtHunk)
+                startUserNoteAtHunkHandler !== undefined &&
+                hoveredRowKey === plannedRow.row.key &&
+                addNoteAffordanceByRowKey.has(plannedRow.row.key)
               }
-              onHoverRow={() => {
-                onHover?.();
-                if (addNoteAffordance) {
-                  activateHoveredRow(plannedRow.key, addNoteAffordance);
-                } else {
-                  clearHoveredRow();
-                }
-              }}
-              onStartUserNoteAtHunk={onStartUserNoteAtHunk}
+              onHoverRow={handleHoverRow}
+              onStartUserNoteAtHunk={startUserNoteAtHunkHandler}
               onToggleGap={gapToggleHandler}
             />
           </box>

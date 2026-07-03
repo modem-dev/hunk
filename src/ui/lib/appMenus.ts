@@ -1,10 +1,7 @@
 import type { LayoutMode } from "../../core/types";
 import type { MenuEntry, MenuId } from "../components/chrome/menu";
-import type { AppTheme } from "../themes";
 
 export interface BuildAppMenusOptions {
-  activeThemeId: string;
-  availableThemes: AppTheme[];
   canRefreshCurrentInput: boolean;
   focusFilter: () => void;
   layoutMode: LayoutMode;
@@ -14,19 +11,22 @@ export interface BuildAppMenusOptions {
   refreshCurrentInput: () => void;
   requestQuit: () => void;
   selectLayoutMode: (mode: LayoutMode) => void;
-  selectThemeId: (themeId: string) => void;
+  openThemeSelector: () => void;
   copyDecorations: boolean;
   showAgentNotes: boolean;
   showHelp: boolean;
   showHunkHeaders: boolean;
   showLineNumbers: boolean;
+  showMenuBar: boolean;
   renderSidebar: boolean;
   toggleCopyDecorations: () => void;
   toggleAgentNotes: () => void;
   toggleFocusArea: () => void;
+  openAgentSkill: () => void;
   toggleHelp: () => void;
   toggleHunkHeaders: () => void;
   toggleLineNumbers: () => void;
+  toggleMenuBar: () => void;
   toggleLineWrap: () => void;
   toggleSidebar: () => void;
   triggerEditSelectedFile: () => void;
@@ -35,8 +35,6 @@ export interface BuildAppMenusOptions {
 
 /** Build the top-level app menus from the current app state and actions. */
 export function buildAppMenus({
-  activeThemeId,
-  availableThemes,
   canRefreshCurrentInput,
   focusFilter,
   layoutMode,
@@ -46,31 +44,27 @@ export function buildAppMenus({
   refreshCurrentInput,
   requestQuit,
   selectLayoutMode,
-  selectThemeId,
+  openThemeSelector,
   copyDecorations,
   showAgentNotes,
   showHelp,
   showHunkHeaders,
   showLineNumbers,
+  showMenuBar,
   renderSidebar,
   toggleCopyDecorations,
   toggleAgentNotes,
   toggleFocusArea,
+  openAgentSkill,
   toggleHelp,
   toggleHunkHeaders,
   toggleLineNumbers,
+  toggleMenuBar,
   toggleLineWrap,
   toggleSidebar,
   triggerEditSelectedFile,
   wrapLines,
 }: BuildAppMenusOptions): Record<MenuId, MenuEntry[]> {
-  const themeMenuEntries: MenuEntry[] = availableThemes.map((theme) => ({
-    kind: "item",
-    label: theme.label,
-    checked: theme.id === activeThemeId,
-    action: () => selectThemeId(theme.id),
-  }));
-
   const fileMenuEntries: MenuEntry[] = [
     {
       kind: "item",
@@ -87,6 +81,7 @@ export function buildAppMenus({
     {
       kind: "item",
       label: "Open file in editor",
+      hint: "e",
       action: triggerEditSelectedFile,
     },
   ];
@@ -141,6 +136,20 @@ export function buildAppMenus({
         hint: "s",
         checked: renderSidebar,
         action: toggleSidebar,
+      },
+      {
+        kind: "item",
+        label: "Menu bar",
+        hint: "M",
+        checked: showMenuBar,
+        action: toggleMenuBar,
+      },
+      { kind: "separator" },
+      {
+        kind: "item",
+        label: "Themes…",
+        hint: "t",
+        action: openThemeSelector,
       },
       { kind: "separator" },
       {
@@ -212,7 +221,6 @@ export function buildAppMenus({
         action: focusFilter,
       },
     ],
-    theme: themeMenuEntries,
     agent: [
       {
         kind: "item",
@@ -221,6 +229,12 @@ export function buildAppMenus({
         checked: showAgentNotes,
         action: toggleAgentNotes,
       },
+      {
+        kind: "item",
+        label: "Agent skill",
+        action: openAgentSkill,
+      },
+      { kind: "separator" },
       {
         kind: "item",
         label: "Next annotated file",

@@ -36,7 +36,7 @@ describe("PTY notes", () => {
     });
 
     try {
-      const initial = await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+      const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
         timeout: 15_000,
       });
 
@@ -69,12 +69,17 @@ describe("PTY notes", () => {
     });
 
     try {
-      await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
         timeout: 15_000,
       });
 
       await session.press("c");
-      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      const freshDraft = await session.waitForText(/Draft note/, { timeout: 5_000 });
+      // The "c" that opened the note must not be inserted into the editor. A fresh, empty draft
+      // shows its placeholder; if the opening keystroke leaked in, the editor would hold "c" and
+      // the placeholder would be gone.
+      expect(freshDraft).toContain("Write a note");
+
       await session.type("Please cover this edge case.");
 
       const draftBeforeNewline = await session.waitForText(/Please cover this edge case\./, {
@@ -120,7 +125,7 @@ describe("PTY notes", () => {
     });
 
     try {
-      await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
         timeout: 15_000,
       });
 
@@ -158,6 +163,38 @@ describe("PTY notes", () => {
     }
   });
 
+  test("a single Escape cancels a freshly opened empty draft note", async () => {
+    const fixture = harness.createMultiHunkFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      cols: 120,
+      rows: 20,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      // Open an empty draft via the keyboard and immediately cancel it. The very first Escape must
+      // close it — a regression once required two presses because the focus area had not yet
+      // settled to the note when the first Escape arrived.
+      await session.press("c");
+      await session.waitForText(/Draft note/, { timeout: 5_000 });
+
+      await session.press("escape");
+      const cancelled = await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("Draft note"),
+        5_000,
+      );
+
+      expect(cancelled).not.toContain("Draft note");
+    } finally {
+      session.close();
+    }
+  });
+
   test("clicked add-note drafts can cancel and save with keyboard shortcuts", async () => {
     const fixture = harness.createLongWrapFilePair();
     const session = await harness.launchHunk({
@@ -167,7 +204,7 @@ describe("PTY notes", () => {
     });
 
     try {
-      await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
         timeout: 15_000,
       });
 
@@ -323,6 +360,49 @@ describe("PTY notes", () => {
     }
   });
 
+  test("draft note focus blocks pager shortcuts until cancelled", async () => {
+    const fixture = harness.createPagerPatchFixture();
+    const session = await harness.launchHunk({
+      args: ["patch", fixture.patchFile, "--pager"],
+      cols: 120,
+      rows: 20,
+    });
+
+    try {
+      const initial = await session.waitForText(/before_01/, { timeout: 15_000 });
+      const targetRow = lineIndexOf(initial, "before_01");
+      const sidebarRow = /\bM scroll\.ts\s+\+40 -40/;
+
+      expect(targetRow).toBeGreaterThan(0);
+      expect(initial).not.toMatch(sidebarRow);
+
+      await revealAddNoteNear(session, targetRow);
+      await session.click(/\[\+\]/);
+      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await session.type("sidebar-trigger text");
+      const whileFocused = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("Draft note") && text.includes("sidebar-trigger text"),
+        5_000,
+      );
+
+      expect(whileFocused).not.toMatch(sidebarRow);
+
+      await session.click(/Cancel \(Esc\)/);
+      await harness.waitForSnapshot(session, (text) => !text.includes("Draft note"), 5_000);
+      await session.press("s");
+      const afterCancel = await harness.waitForSnapshot(
+        session,
+        (text) => sidebarRow.test(text),
+        5_000,
+      );
+
+      expect(afterCancel).toMatch(sidebarRow);
+    } finally {
+      session.close();
+    }
+  });
+
   test("multiple add-note drafts can be saved on one hunk", async () => {
     const fixture = harness.createDeletionOnlyFilePair();
     const session = await harness.launchHunk({
@@ -373,7 +453,7 @@ describe("PTY notes", () => {
     });
 
     try {
-      await session.waitForText(/View\s+Navigate\s+Theme\s+Agent\s+Help/, {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
         timeout: 15_000,
       });
 

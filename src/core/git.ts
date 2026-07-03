@@ -1,9 +1,11 @@
 import fs from "node:fs";
 import { join } from "node:path";
 import { HunkUserError } from "./errors";
-import type { VcsCommandInput, ShowCommandInput, StashShowCommandInput } from "./types";
+import { escapeUntrackedPatchPath } from "./patch/normalize";
+import type { VcsDiffCommandInput, VcsShowCommandInput, VcsStashShowCommandInput } from "./types";
+import { normalizePathForOS } from "../lib/osPath";
 
-export type GitBackedInput = VcsCommandInput | ShowCommandInput | StashShowCommandInput;
+export type GitBackedInput = VcsDiffCommandInput | VcsShowCommandInput | VcsStashShowCommandInput;
 
 export interface RunGitTextOptions {
   input: GitBackedInput;
@@ -20,6 +22,11 @@ interface RunGitCommandResult {
 
 interface RunGitCommandOptions extends RunGitTextOptions {
   acceptedExitCodes?: number[];
+}
+
+export interface GitColorMovedOptions {
+  mode: string;
+  whitespaceMode?: string;
 }
 
 /** Append Git pathspec arguments only when the caller requested them. */
@@ -45,13 +52,58 @@ const DIFF_PREFIX_NORMALIZATION_ARGS = [
   "diff.dstPrefix=b/",
 ];
 
+const GIT_MOVED_LINE_COLOR_CONFIG = [
+  "-c",
+  "color.diff.oldMoved=magenta bold",
+  "-c",
+  "color.diff.oldMovedAlternative=magenta bold",
+  "-c",
+  "color.diff.oldMovedDimmed=magenta dim",
+  "-c",
+  "color.diff.oldMovedAlternativeDimmed=magenta dim",
+  "-c",
+  "color.diff.newMoved=cyan bold",
+  "-c",
+  "color.diff.newMovedAlternative=cyan bold",
+  "-c",
+  "color.diff.newMovedDimmed=cyan dim",
+  "-c",
+  "color.diff.newMovedAlternativeDimmed=cyan dim",
+];
+
 function withNormalizedDiffPrefixes(args: string[]) {
   return [...DIFF_PREFIX_NORMALIZATION_ARGS, ...args];
 }
 
+/** Return Git color flags for patch commands, enabling ANSI only when Hunk needs move classes. */
+function gitPatchColorArgs(colorMoved: GitColorMovedOptions | null) {
+  if (!colorMoved) {
+    return ["--no-color"];
+  }
+
+  return [
+    "--color=always",
+    `--color-moved=${colorMoved.mode}`,
+    ...(colorMoved.whitespaceMode ? [`--color-moved-ws=${colorMoved.whitespaceMode}`] : []),
+  ];
+}
+
+/** Add deterministic moved-line colors so the parser can classify Git's ANSI output reliably. */
+function withGitMovedLineColorConfig(args: string[], colorMoved: GitColorMovedOptions | null) {
+  if (!colorMoved) {
+    return args;
+  }
+
+  return [...GIT_MOVED_LINE_COLOR_CONFIG, ...args];
+}
+
 /** Build the exact `git diff` arguments used for the shared working-tree and range review path. */
-export function buildGitDiffArgs(input: VcsCommandInput, excludedPathspecs: string[] = []) {
-  const args = ["diff", "--no-ext-diff", "--find-renames", "--no-color"];
+export function buildGitDiffArgs(
+  input: VcsDiffCommandInput,
+  excludedPathspecs: string[] = [],
+  colorMoved: GitColorMovedOptions | null = null,
+) {
+  const args = ["diff", "--no-ext-diff", "--find-renames", ...gitPatchColorArgs(colorMoved)];
 
   if (input.staged) {
     args.push("--staged");
@@ -71,11 +123,11 @@ export function buildGitDiffArgs(input: VcsCommandInput, excludedPathspecs: stri
     appendGitPathspecs(args, input.pathspecs);
   }
 
-  return withNormalizedDiffPrefixes(args);
+  return withNormalizedDiffPrefixes(withGitMovedLineColorConfig(args, colorMoved));
 }
 
 /** Build the cheap tracked-file stats query used to skip huge file diffs before patch output. */
-export function buildGitDiffNumstatArgs(input: VcsCommandInput) {
+export function buildGitDiffNumstatArgs(input: VcsDiffCommandInput) {
   const args = ["diff", "--no-ext-diff", "--find-renames", "--no-color", "--numstat", "-z"];
 
   if (input.staged) {
@@ -91,8 +143,8 @@ export function buildGitDiffNumstatArgs(input: VcsCommandInput) {
 }
 
 /** Build the porcelain status query used to discover untracked files for working-tree review. */
-function buildGitStatusArgs(input: VcsCommandInput) {
-  const args = ["status", "--porcelain=v1", "-z", "--untracked-files=all"];
+export function buildGitStatusArgs(input: VcsDiffCommandInput) {
+  const args = ["--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=all"];
 
   appendGitPathspecs(args, input.pathspecs);
   return args;
@@ -114,26 +166,45 @@ function buildGitNewFileDiffArgs(filePath: string) {
 }
 
 /** Build the exact `git show` arguments used for commit review. */
-export function buildGitShowArgs(input: ShowCommandInput) {
-  const args = ["show", "--format=", "--no-ext-diff", "--find-renames", "--no-color"];
+export function buildGitShowArgs(
+  input: VcsShowCommandInput,
+  colorMoved: GitColorMovedOptions | null = null,
+) {
+  const args = [
+    "show",
+    "--format=",
+    "--no-ext-diff",
+    "--find-renames",
+    ...gitPatchColorArgs(colorMoved),
+  ];
 
   if (input.ref) {
     args.push(input.ref);
   }
 
   appendGitPathspecs(args, input.pathspecs);
-  return withNormalizedDiffPrefixes(args);
+  return withNormalizedDiffPrefixes(withGitMovedLineColorConfig(args, colorMoved));
 }
 
 /** Build the exact `git stash show -p` arguments used for stash review. */
-export function buildGitStashShowArgs(input: StashShowCommandInput) {
-  const args = ["stash", "show", "-p", "--no-ext-diff", "--find-renames", "--no-color"];
+export function buildGitStashShowArgs(
+  input: VcsStashShowCommandInput,
+  colorMoved: GitColorMovedOptions | null = null,
+) {
+  const args = [
+    "stash",
+    "show",
+    "-p",
+    "--no-ext-diff",
+    "--find-renames",
+    ...gitPatchColorArgs(colorMoved),
+  ];
 
   if (input.ref) {
     args.push(input.ref);
   }
 
-  return withNormalizedDiffPrefixes(args);
+  return withNormalizedDiffPrefixes(withGitMovedLineColorConfig(args, colorMoved));
 }
 
 export function formatGitCommandLabel(input: GitBackedInput) {
@@ -209,7 +280,7 @@ function createMissingRepoError(input: GitBackedInput) {
   );
 }
 
-function createInvalidRevisionError(input: VcsCommandInput | ShowCommandInput) {
+function createInvalidRevisionError(input: VcsDiffCommandInput | VcsShowCommandInput) {
   if (input.kind === "vcs") {
     return new HunkUserError(
       `\`${formatGitCommandLabel(input)}\` could not resolve Git revision or range \`${input.range}\`.`,
@@ -224,7 +295,7 @@ function createInvalidRevisionError(input: VcsCommandInput | ShowCommandInput) {
   );
 }
 
-function createMissingStashError(input: StashShowCommandInput) {
+function createMissingStashError(input: VcsStashShowCommandInput) {
   if (input.ref) {
     return new HunkUserError(
       `\`${formatGitCommandLabel(input)}\` could not resolve stash entry \`${input.ref}\`.`,
@@ -329,6 +400,72 @@ export function runGitText(options: RunGitTextOptions) {
   return runGitCommand(options).stdout;
 }
 
+const GIT_BOOLEAN_TRUE_VALUES = new Set(["true", "yes", "on", "1", "always"]);
+const GIT_BOOLEAN_FALSE_VALUES = new Set(["false", "no", "off", "0", "never"]);
+
+/** Read an optional Git config value without treating an unset key as an error. */
+function readOptionalGitConfig(
+  input: GitBackedInput,
+  key: string,
+  options: Omit<RunGitTextOptions, "input" | "args"> = {},
+) {
+  const result = runGitCommand({
+    input,
+    args: ["config", "--get", key],
+    ...options,
+    acceptedExitCodes: [0, 1],
+  });
+
+  if (result.exitCode !== 0) {
+    return undefined;
+  }
+
+  return result.stdout.trim() || undefined;
+}
+
+/** Normalize Git's diff.colorMoved config into the mode Hunk should request from Git. */
+function normalizeGitColorMovedMode(value: string | undefined) {
+  if (!value) {
+    return undefined;
+  }
+
+  const normalized = value.toLowerCase();
+  if (GIT_BOOLEAN_FALSE_VALUES.has(normalized) || normalized === "no") {
+    return null;
+  }
+
+  if (GIT_BOOLEAN_TRUE_VALUES.has(normalized)) {
+    return "zebra";
+  }
+
+  return value;
+}
+
+/** Resolve whether Hunk should ask Git to color moved lines for this patch command. */
+export function resolveGitColorMovedOptions(
+  input: GitBackedInput,
+  options: Omit<RunGitTextOptions, "input" | "args"> = {},
+): GitColorMovedOptions | null {
+  const gitMode = normalizeGitColorMovedMode(
+    readOptionalGitConfig(input, "diff.colorMoved", options),
+  );
+
+  if (gitMode === null) {
+    return null;
+  }
+
+  const mode = gitMode ?? (input.options.colorMoved ? "zebra" : undefined);
+  if (!mode) {
+    return null;
+  }
+
+  const whitespaceMode = readOptionalGitConfig(input, "diff.colorMovedWS", options);
+  return {
+    mode,
+    whitespaceMode,
+  };
+}
+
 /**
  * Return whether one `hunk diff` input still compares against the live working tree.
  *
@@ -339,7 +476,7 @@ export function runGitText(options: RunGitTextOptions) {
 const workingTreeGitDiffInputCache = new Map<string, boolean>();
 
 function isWorkingTreeGitDiffInput(
-  input: VcsCommandInput,
+  input: VcsDiffCommandInput,
   {
     cwd = process.cwd(),
     gitExecutable = "git",
@@ -380,7 +517,7 @@ function isWorkingTreeGitDiffInput(
 
 /** Return whether working-tree review should synthesize untracked files into the patch stream. */
 function shouldIncludeUntrackedFiles(
-  input: VcsCommandInput,
+  input: VcsDiffCommandInput,
   options: Pick<RunGitTextOptions, "cwd" | "gitExecutable"> & { repoRoot?: string } = {},
 ) {
   return input.options.excludeUntracked !== true && isWorkingTreeGitDiffInput(input, options);
@@ -427,7 +564,7 @@ function isReviewableUntrackedPath(repoRoot: string, filePath: string) {
 
 /** Return the repo-root-relative untracked files for a working-tree review input. */
 export function listGitUntrackedFiles(
-  input: VcsCommandInput,
+  input: VcsDiffCommandInput,
   {
     cwd = process.cwd(),
     repoRoot,
@@ -454,15 +591,6 @@ export function listGitUntrackedFiles(
   return untrackedFiles.filter((filePath) =>
     isReviewableUntrackedPath(normalizedRepoRoot, filePath),
   );
-}
-
-/** Escape only the filename characters that break unified-diff header parsing. */
-function escapeUntrackedPatchPath(path: string) {
-  return path
-    .replaceAll("\\", "\\\\")
-    .replaceAll("\t", "\\t")
-    .replaceAll("\n", "\\n")
-    .replaceAll("\r", "\\r");
 }
 
 /** Rewrite Git's quoted untracked-file headers into parser-friendly paths. */
@@ -492,7 +620,7 @@ export function normalizeUntrackedPatchHeaders(patchText: string, filePath: stri
 
 /** Return the raw Git patch text for one untracked file using `git diff --no-index`. */
 export function runGitUntrackedFileDiffText(
-  input: VcsCommandInput,
+  input: VcsDiffCommandInput,
   filePath: string,
   {
     cwd = process.cwd(),
@@ -515,11 +643,12 @@ export function resolveGitRepoRoot(
   input: GitBackedInput,
   options: Omit<RunGitTextOptions, "input" | "args"> = {},
 ) {
-  return runGitText({
+  const repoRoot = runGitText({
     input,
     args: ["rev-parse", "--show-toplevel"],
     ...options,
   }).trim();
+  return normalizePathForOS(repoRoot);
 }
 
 /** Resolve one commit-ish ref to the exact commit object used for later blob reads. */
@@ -591,7 +720,7 @@ function parseSymmetricDiffRange(range: string): { left: string; right: string }
 
 /** Resolve rev-parse output into positive and negative revisions for one diff range. */
 function resolveRangeRevisions(
-  input: VcsCommandInput,
+  input: VcsDiffCommandInput,
   range: string,
   {
     cwd = process.cwd(),
@@ -623,7 +752,7 @@ function resolveRangeRevisions(
  * source by ref" rather than silently falling back to the working tree.
  */
 export function resolveGitDiffEndpoints(
-  input: VcsCommandInput,
+  input: VcsDiffCommandInput,
   {
     cwd = process.cwd(),
     gitExecutable = "git",

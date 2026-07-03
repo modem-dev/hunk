@@ -867,7 +867,7 @@ function renderSplitCell(
   selectionColRange?: CopySelectedRowRange,
   paneOffset = 0,
 ) {
-  const basePalette = splitCellPalette(cell.kind, theme);
+  const basePalette = splitCellPalette(cell.kind, theme, cell.moveKind);
   const palette = selected ? applySelectionPalette(basePalette, theme) : basePalette;
   const resolvedPrefix = selected && prefix ? applySelectionPrefix(prefix, theme) : prefix;
   const prefixWidth = resolvedPrefix?.text.length ?? 0;
@@ -905,7 +905,7 @@ function renderSplitCell(
       {renderInlineSpans(
         cell.spans,
         contentWidth,
-        theme.text,
+        theme.syntaxColors.default,
         palette.contentBg,
         `${keyPrefix}:content`,
         contentOffset,
@@ -933,7 +933,7 @@ function renderStackCell(
   selected = false,
   selectionColRange?: CopySelectedRowRange,
 ) {
-  const basePalette = stackCellPalette(cell.kind, theme);
+  const basePalette = stackCellPalette(cell.kind, theme, cell.moveKind);
   const palette = selected ? applySelectionPalette(basePalette, theme) : basePalette;
   const resolvedPrefix = selected && prefix ? applySelectionPrefix(prefix, theme) : prefix;
   const prefixWidth = resolvedPrefix?.text.length ?? 0;
@@ -970,7 +970,7 @@ function renderStackCell(
       {renderInlineSpans(
         cell.spans,
         contentWidth,
-        theme.text,
+        theme.syntaxColors.default,
         palette.contentBg,
         `${keyPrefix}:content`,
         contentOffset,
@@ -1029,7 +1029,7 @@ function renderWrappedSplitCellLine(
       {renderInlineSpans(
         line.spans,
         contentWidth,
-        theme.text,
+        theme.syntaxColors.default,
         resolvedPalette.contentBg,
         `${keyPrefix}:content`,
         0,
@@ -1087,7 +1087,7 @@ function renderWrappedStackCellLine(
       {renderInlineSpans(
         line.spans,
         contentWidth,
-        theme.text,
+        theme.syntaxColors.default,
         resolvedPalette.contentBg,
         `${keyPrefix}:content`,
         0,
@@ -1750,7 +1750,13 @@ interface DiffRowViewProps {
   onToggleGap?: (gapKey: string) => void;
 }
 
-/** Render one diff row, memoized to avoid unnecessary rerenders. */
+/**
+ * Render one diff row, memoized to avoid unnecessary rerenders.
+ *
+ * The comparator checks every handler by reference, so callers (PierreDiffView) must pass
+ * identity-stable callbacks — e.g. one shared onHoverRow that receives the row key — or the memo
+ * silently degrades to re-rendering every visible row per parent render.
+ */
 export const DiffRowView = memo(
   function DiffRowViewComponent({
     row,

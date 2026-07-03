@@ -75,7 +75,7 @@ describe("startup planning", () => {
     const plan = await prepareStartupPlan(["bun", "hunk", "pager"], {
       parseCliImpl: async () => ({
         kind: "pager",
-        options: { theme: "paper" },
+        options: { theme: "github-light-default" },
       }),
       readStdinText: async () => "* main\n  feature/demo\n",
       looksLikePatchInputImpl: () => false,
@@ -101,7 +101,7 @@ describe("startup planning", () => {
     const plan = await prepareStartupPlan(["bun", "hunk", "pager"], {
       parseCliImpl: async () => ({
         kind: "pager",
-        options: { theme: "paper" },
+        options: { theme: "github-light-default" },
       }),
       readStdinText: async () => text,
       looksLikePatchInputImpl: () => false,
@@ -143,7 +143,7 @@ describe("startup planning", () => {
     const plan = await prepareStartupPlan(["bun", "hunk", "pager"], {
       parseCliImpl: async () => ({
         kind: "pager",
-        options: { theme: "paper" },
+        options: { theme: "github-light-default" },
       }),
       readStdinText: async () => "diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n",
       looksLikePatchInputImpl: () => true,
@@ -178,7 +178,7 @@ describe("startup planning", () => {
       file: "-",
       text: "diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n",
       options: {
-        theme: "paper",
+        theme: "github-light-default",
         pager: true,
       },
     });
@@ -227,7 +227,7 @@ describe("startup planning", () => {
   test("routes diff-like pager stdin to static output when the host advertises a captured pager", async () => {
     let loaded = false;
     const patchText = "diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n";
-    const customTheme = { base: "paper", text: "#123456" };
+    const customTheme = { base: "github-light-default", text: "#123456" };
 
     const plan = await prepareStartupPlan(["bun", "hunk", "pager"], {
       parseCliImpl: async () => ({
@@ -298,7 +298,7 @@ describe("startup planning", () => {
       },
     };
     const customTheme = {
-      base: "midnight",
+      base: "github-dark-default",
       accent: "#123456",
     };
 
@@ -341,24 +341,27 @@ describe("startup planning", () => {
       kind: "vcs",
       staged: false,
       options: {
-        theme: "graphite",
+        theme: "github-dark-default",
       },
     };
     const controllingTerminal = { stdin: {} as never, close: () => {} };
     let opened = 0;
 
-    const plan = await prepareStartupPlan(["bun", "hunk", "diff", "--theme", "graphite"], {
-      parseCliImpl: async () => cliInput as ParsedCliInput,
-      resolveRuntimeCliInputImpl: (input) => input,
-      resolveConfiguredCliInputImpl: (input) => ({ input }) as never,
-      loadAppBootstrapImpl: async (input) => createBootstrap(input),
-      openControllingTerminalImpl: () => {
-        opened += 1;
-        return controllingTerminal;
+    const plan = await prepareStartupPlan(
+      ["bun", "hunk", "diff", "--theme", "github-dark-default"],
+      {
+        parseCliImpl: async () => cliInput as ParsedCliInput,
+        resolveRuntimeCliInputImpl: (input) => input,
+        resolveConfiguredCliInputImpl: (input) => ({ input }) as never,
+        loadAppBootstrapImpl: async (input) => createBootstrap(input),
+        openControllingTerminalImpl: () => {
+          opened += 1;
+          return controllingTerminal;
+        },
+        stdinIsTTY: false,
+        stdoutIsTTY: true,
       },
-      stdinIsTTY: false,
-      stdoutIsTTY: true,
-    });
+    );
 
     expect(plan).toMatchObject({
       kind: "app",

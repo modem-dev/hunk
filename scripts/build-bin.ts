@@ -13,7 +13,15 @@ mkdirSync(distDir, { recursive: true });
 rmSync(legacyOutfile, { force: true });
 
 const proc = Bun.spawnSync(
-  ["bun", "build", "--compile", path.join(repoRoot, "src", "main.tsx"), "--outfile", outfile],
+  [
+    "bun",
+    "build",
+    "--compile",
+    "--no-compile-autoload-bunfig",
+    path.join(repoRoot, "src", "main.tsx"),
+    "--outfile",
+    outfile,
+  ],
   {
     cwd: repoRoot,
     stdin: "inherit",

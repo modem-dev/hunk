@@ -10,6 +10,8 @@ const tempDirs: string[] = [];
 
 // Jujutsu subprocess setup can exceed Bun's default 5s test timeout on Windows CI.
 const JjLoaderIntegrationTestTimeoutMs = 20_000;
+// Sapling subprocess setup can exceed Bun's default 5s test timeout on slower machines.
+const SlLoaderIntegrationTestTimeoutMs = 20_000;
 
 function cleanupTempDirs() {
   while (tempDirs.length > 0) {
@@ -76,6 +78,22 @@ function jj(cwd: string, ...cmd: string[]) {
   return Buffer.from(proc.stdout).toString("utf8");
 }
 
+function sl(cwd: string, ...cmd: string[]) {
+  const proc = Bun.spawnSync(["sl", "--noninteractive", "--color", "never", ...cmd], {
+    cwd,
+    stdout: "pipe",
+    stderr: "pipe",
+    stdin: "ignore",
+  });
+
+  if (proc.exitCode !== 0) {
+    const stderr = Buffer.from(proc.stderr).toString("utf8");
+    throw new Error(stderr.trim() || `sl ${cmd.join(" ")} failed`);
+  }
+
+  return Buffer.from(proc.stdout).toString("utf8");
+}
+
 function createTempRepo(prefix: string) {
   const dir = createTempDir(prefix);
 
@@ -95,8 +113,19 @@ function createTempJjRepo(prefix: string) {
   return dir;
 }
 
+function createTempSlRepo(prefix: string) {
+  const dir = createTempDir(prefix);
+
+  sl(dir, "init", "--git");
+  sl(dir, "config", "--local", "ui.username", "Test User <test@example.com>");
+
+  return dir;
+}
+
 // Keep jj-backed loader coverage opt-in on machines that have the external CLI installed.
 const jjTest = Bun.which("jj") ? test : test.skip;
+// Keep sl-backed loader coverage opt-in on machines that have the external CLI installed.
+const slTest = Bun.which("sl") ? test : test.skip;
 
 async function runWithHome<T>(home: string, task: () => Promise<T>) {
   const previousHome = process.env.HOME;
@@ -316,6 +345,30 @@ describe("loadAppBootstrap", () => {
     ]);
     expect(bootstrap.changeset.files[1]?.patch).toContain("new file mode");
   });
+
+  slTest(
+    "includes Sapling unknown files in working copy reviews",
+    async () => {
+      const dir = createTempSlRepo("hunk-sl-untracked-");
+
+      writeFileSync(join(dir, "tracked.ts"), "export const value = 1;\n");
+      sl(dir, "add", "tracked.ts");
+      sl(dir, "commit", "-m", "initial");
+
+      writeFileSync(join(dir, "new-file.ts"), "export const added = true;\n");
+
+      const bootstrap = await loadFromRepo(dir, {
+        kind: "vcs",
+        staged: false,
+        options: { mode: "auto", vcs: "sl" },
+      });
+
+      const file = bootstrap.changeset.files[0];
+      expect(bootstrap.changeset.files.map((entry) => entry.path)).toEqual(["new-file.ts"]);
+      expect(file?.isUntracked).toBe(true);
+    },
+    SlLoaderIntegrationTestTimeoutMs,
+  );
 
   test("keeps generated large tracked diffs as skipped placeholders", async () => {
     const dir = createTempRepo("hunk-git-large-tracked-");
@@ -651,6 +704,62 @@ describe("loadAppBootstrap", () => {
       "example.ts",
       "new-file.ts",
     ]);
+  });
+
+  test("tags moved lines from git diff.colorMoved output", async () => {
+    const dir = createTempRepo("hunk-git-color-moved-");
+
+    writeFileSync(
+      join(dir, "example.txt"),
+      [
+        "start anchor",
+        "relocated block first line has many chars",
+        "relocated block second line has many chars",
+        "relocated block third line has many chars",
+        "middle unchanged one has many chars",
+        "middle unchanged two has many chars",
+        "end anchor",
+        "",
+      ].join("\n"),
+    );
+    git(dir, "add", "example.txt");
+    git(dir, "commit", "-m", "initial");
+    git(dir, "config", "--local", "diff.colorMoved", "zebra");
+
+    writeFileSync(
+      join(dir, "example.txt"),
+      [
+        "start anchor",
+        "middle unchanged one has many chars",
+        "middle unchanged two has many chars",
+        "relocated block first line has many chars",
+        "relocated block second line has many chars",
+        "relocated block third line has many chars",
+        "end anchor",
+        "",
+      ].join("\n"),
+    );
+
+    const bootstrap = await loadFromRepo(dir, {
+      kind: "vcs",
+      staged: false,
+      options: { mode: "auto" },
+    });
+    const file = bootstrap.changeset.files[0];
+
+    expect(file?.path).toBe("example.txt");
+    expect(file?.lineMoveKinds?.additionLines.some(Boolean)).toBe(true);
+    expect(file?.lineMoveKinds?.deletionLines.some(Boolean)).toBe(true);
+
+    const movedAdditions = file?.metadata.additionLines.filter(
+      (_line, index) => file.lineMoveKinds?.additionLines[index] === "moved",
+    );
+    const movedDeletions = file?.metadata.deletionLines.filter(
+      (_line, index) => file.lineMoveKinds?.deletionLines[index] === "moved",
+    );
+
+    expect(movedAdditions).toContain("middle unchanged one has many chars\n");
+    expect(movedDeletions).toContain("middle unchanged one has many chars\n");
   });
 
   test("reports a friendly error when git review runs outside a repository", async () => {
@@ -1700,7 +1809,7 @@ describe("loadAppBootstrap source fetcher attachment", () => {
     expect(file?.sourceFetcher).toBeDefined();
     expect(await file?.sourceFetcher?.getFullText("old")).toBe("shared\nold-only\nshared\n");
     expect(await file?.sourceFetcher?.getFullText("new")).toBe("shared\nnew-only\nshared\n");
-  });
+  }, 10_000);
 
   test("raw patch input does not attach a source fetcher", async () => {
     const dir = mkdtempSync(join(tmpdir(), "hunk-source-patch-"));

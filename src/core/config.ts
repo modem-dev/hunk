@@ -1,7 +1,9 @@
 import fs from "node:fs";
 import { join } from "node:path";
+import { BUNDLED_SHIKI_THEME_IDS } from "../ui/lib/shikiThemes";
+import { normalizeBuiltInThemeId } from "../ui/themes";
 import { resolveGlobalConfigPath } from "./paths";
-import { detectVcs, findVcsRepoRootCandidate, isVcsId } from "./vcs";
+import { detectVcs, findVcsRepoRootCandidate, getDefaultVcsAdapter, isVcsId } from "./vcs";
 import type {
   CliInput,
   CommonOptions,
@@ -12,14 +14,7 @@ import type {
   VcsMode,
 } from "./types";
 
-const BUILT_IN_THEME_IDS = [
-  "graphite",
-  "midnight",
-  "paper",
-  "ember",
-  "catppuccin-latte",
-  "catppuccin-mocha",
-] as const;
+const BUILT_IN_THEME_IDS = BUNDLED_SHIKI_THEME_IDS;
 const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
 const CUSTOM_THEME_COLOR_KEYS = [
   "background",
@@ -32,6 +27,8 @@ const CUSTOM_THEME_COLOR_KEYS = [
   "muted",
   "addedBg",
   "removedBg",
+  "movedAddedBg",
+  "movedRemovedBg",
   "contextBg",
   "addedContentBg",
   "removedContentBg",
@@ -63,6 +60,8 @@ const CUSTOM_SYNTAX_COLOR_KEYS = [
   "function",
   "property",
   "type",
+  "variable",
+  "operator",
   "punctuation",
 ] as const;
 
@@ -71,6 +70,7 @@ const DEFAULT_VIEW_PREFERENCES: PersistedViewPreferences = {
   showLineNumbers: true,
   wrapLines: false,
   showHunkHeaders: true,
+  showMenuBar: true,
   showAgentNotes: false,
   copyDecorations: false,
 };
@@ -124,20 +124,26 @@ function normalizeThemeColor(value: unknown, keyPath: string) {
   return value.toLowerCase();
 }
 
-/** Accept only built-in base theme ids for config-defined custom themes. */
+/** Accept only built-in theme ids for config-defined custom themes. */
 function normalizeCustomThemeBase(value: unknown) {
   if (value === undefined) {
     return undefined;
   }
 
-  if (
-    typeof value !== "string" ||
-    !BUILT_IN_THEME_IDS.includes(value as (typeof BUILT_IN_THEME_IDS)[number])
-  ) {
-    throw new Error(`Expected custom_theme.base to be one of: ${BUILT_IN_THEME_IDS.join(", ")}.`);
+  if (typeof value !== "string") {
+    throw new Error(
+      `Expected custom_theme.base to be a built-in theme id. Known themes: ${BUILT_IN_THEME_IDS.join(", ")}.`,
+    );
   }
 
-  return value;
+  const resolvedThemeId = normalizeBuiltInThemeId(value);
+  if (!resolvedThemeId) {
+    throw new Error(
+      `Expected custom_theme.base to be a built-in theme id. Known themes: ${BUILT_IN_THEME_IDS.join(", ")}.`,
+    );
+  }
+
+  return resolvedThemeId;
 }
 
 /** Read the nested syntax color overrides from a [custom_theme.syntax] TOML table. */
@@ -208,7 +214,7 @@ function mergeCustomTheme(
   return {
     ...base,
     ...overrides,
-    base: overrides.base ?? base.base ?? "graphite",
+    base: overrides.base ?? base.base ?? "github-dark-default",
     label: overrides.label ?? base.label,
     syntax:
       base.syntax || overrides.syntax
@@ -231,8 +237,13 @@ function readConfigPreferences(source: Record<string, unknown>): CommonOptions {
     lineNumbers: normalizeBoolean(source.line_numbers),
     wrapLines: normalizeBoolean(source.wrap_lines),
     hunkHeaders: normalizeBoolean(source.hunk_headers),
+    menuBar: normalizeBoolean(source.menu_bar),
     agentNotes: normalizeBoolean(source.agent_notes),
     copyDecorations: normalizeBoolean(source.copy_decorations),
+    transparentBackground:
+      normalizeBoolean(source.transparentBackground) ??
+      normalizeBoolean(source.transparent_background),
+    colorMoved: normalizeBoolean(source.color_moved),
   };
 }
 
@@ -250,8 +261,11 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
     lineNumbers: overrides.lineNumbers ?? base.lineNumbers,
     wrapLines: overrides.wrapLines ?? base.wrapLines,
     hunkHeaders: overrides.hunkHeaders ?? base.hunkHeaders,
+    menuBar: overrides.menuBar ?? base.menuBar,
     agentNotes: overrides.agentNotes ?? base.agentNotes,
     copyDecorations: overrides.copyDecorations ?? base.copyDecorations,
+    transparentBackground: overrides.transparentBackground ?? base.transparentBackground,
+    colorMoved: overrides.colorMoved ?? base.colorMoved,
   };
 }
 
@@ -274,7 +288,7 @@ function resolveConfigLayer(source: Record<string, unknown>, input: CliInput): C
 
 /** Choose the VCS backend that best matches the discovered checkout. */
 function detectRepoVcsMode(cwd: string): VcsMode {
-  return detectVcs(cwd)?.id ?? "git";
+  return detectVcs(cwd)?.id ?? getDefaultVcsAdapter().id;
 }
 
 /** Parse one TOML config file into a plain object. */
@@ -306,7 +320,7 @@ export function resolveConfiguredCliInput(
     vcs: detectRepoVcsMode(cwd),
     // Keep the built-in theme default explicit so stdin-backed startup paths do not depend on
     // renderer theme-mode detection for their initial palette.
-    theme: "graphite",
+    theme: "github-dark-default",
     agentContext: input.options.agentContext,
     pager: input.options.pager ?? false,
     watch: input.options.watch ?? false,
@@ -314,8 +328,10 @@ export function resolveConfiguredCliInput(
     lineNumbers: DEFAULT_VIEW_PREFERENCES.showLineNumbers,
     wrapLines: DEFAULT_VIEW_PREFERENCES.wrapLines,
     hunkHeaders: DEFAULT_VIEW_PREFERENCES.showHunkHeaders,
+    menuBar: DEFAULT_VIEW_PREFERENCES.showMenuBar,
     agentNotes: DEFAULT_VIEW_PREFERENCES.showAgentNotes,
     copyDecorations: DEFAULT_VIEW_PREFERENCES.copyDecorations,
+    transparentBackground: false,
   };
 
   if (userConfigPath) {
@@ -337,13 +353,17 @@ export function resolveConfiguredCliInput(
     pager: input.options.pager ?? false,
     watch: input.options.watch ?? resolvedOptions.watch ?? false,
     excludeUntracked: resolvedOptions.excludeUntracked ?? false,
-    vcs: resolvedOptions.vcs ?? "git",
+    theme: resolvedOptions.theme,
+    vcs: resolvedOptions.vcs ?? getDefaultVcsAdapter().id,
     mode: resolvedOptions.mode ?? DEFAULT_VIEW_PREFERENCES.mode,
     lineNumbers: resolvedOptions.lineNumbers ?? DEFAULT_VIEW_PREFERENCES.showLineNumbers,
     wrapLines: resolvedOptions.wrapLines ?? DEFAULT_VIEW_PREFERENCES.wrapLines,
     hunkHeaders: resolvedOptions.hunkHeaders ?? DEFAULT_VIEW_PREFERENCES.showHunkHeaders,
+    menuBar: resolvedOptions.menuBar ?? DEFAULT_VIEW_PREFERENCES.showMenuBar,
     agentNotes: resolvedOptions.agentNotes ?? DEFAULT_VIEW_PREFERENCES.showAgentNotes,
     copyDecorations: resolvedOptions.copyDecorations ?? DEFAULT_VIEW_PREFERENCES.copyDecorations,
+    transparentBackground: resolvedOptions.transparentBackground ?? false,
+    colorMoved: resolvedOptions.colorMoved,
   };
 
   if (resolvedOptions.theme === "custom" && !resolvedCustomTheme) {
