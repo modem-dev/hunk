@@ -1,11 +1,13 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import type { Subprocess } from "bun";
 import { createServer } from "node:net";
-import { createTestConfigHome } from "../helpers/config-home";
+import { cleanupTestConfigHomes, createTestConfigHome } from "../helpers/config-home";
 
 const repoRoot = process.cwd();
 // Spawned hunk processes must assert built-in defaults, not the developer's ambient user config.
 const testConfigHome = createTestConfigHome();
+
+afterAll(cleanupTestConfigHomes);
 const spawned: Subprocess[] = [];
 
 async function reserveLoopbackPort() {
