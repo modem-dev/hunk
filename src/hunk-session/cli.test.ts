@@ -355,6 +355,7 @@ describe("Hunk session CLI formatters", () => {
         "Old range: -",
         "New range: -",
         "Agent notes visible: yes",
+        "Note markup width: -",
         "Live comments: 2",
         "",
       ].join("\n"),

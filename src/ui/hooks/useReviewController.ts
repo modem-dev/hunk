@@ -22,7 +22,7 @@ import {
   resolveCommentTarget,
 } from "../../core/liveComments";
 import { SourceTextTooLargeError } from "../../core/fileSource";
-import type { AgentAnnotation, DiffFile, UserNoteLineTarget } from "../../core/types";
+import type { AgentAnnotation, DiffFile, LayoutMode, UserNoteLineTarget } from "../../core/types";
 import type {
   AppliedCommentBatchResult,
   AppliedCommentResult,
@@ -40,8 +40,9 @@ import type { FileSourceStatus } from "../diff/expandCollapsedRows";
 import { selectGapForKeyboardToggle } from "../diff/expandCollapsedRows";
 import { trailingCollapsedLines } from "../diff/pierre";
 import { findNextHunkCursor } from "../lib/hunks";
+import { agentNoteMarkupWidth } from "../lib/agentNoteGeometry";
 import { reviewNoteSource } from "../lib/agentAnnotations";
-import { validateStmlMarkup } from "../lib/stml/layout";
+import { STML_REFERENCE_WIDTH, validateStmlMarkup } from "../lib/stml/layout";
 import {
   buildReviewState,
   buildSelectedHunkSummary,
@@ -185,7 +186,25 @@ export interface ReviewController {
 }
 
 /** Own the shared review stream state used by both the UI and session bridge. */
-export function useReviewController({ files }: { files: DiffFile[] }): ReviewController {
+/** Live note-card geometry the app publishes for markup validation. */
+export interface AgentNoteGeometrySnapshot {
+  layout: Exclude<LayoutMode, "auto">;
+  /** Diff pane content width — the width the diff view renders at. */
+  width: number;
+}
+
+export function useReviewController({
+  files,
+  noteGeometry,
+}: {
+  files: DiffFile[];
+  /**
+   * Mutable ref the app keeps pointed at the current layout and pane width.
+   * A ref (not a value) because App computes geometry after this hook runs;
+   * daemon commands arrive asynchronously, so reads always see fresh state.
+   */
+  noteGeometry?: { current: AgentNoteGeometrySnapshot | null };
+}): ReviewController {
   const [filter, setFilter] = useState("");
   const [selectedFileId, setSelectedFileId] = useState(files[0]?.id ?? "");
   const [selectedHunkIndex, setSelectedHunkIndex] = useState(0);
@@ -555,6 +574,34 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     [allFiles, selectHunk, selectedFile?.id, selectedHunkIndex, visibleFiles],
   );
 
+  /**
+   * Validate one comment's STML markup at the width the note will actually
+   * render at right now — live layout mode and pane width, falling back to
+   * the documented reference width when geometry is not published (tests,
+   * headless callers). Reports the width back so agents can preview at it.
+   */
+  const markupFeedback = useCallback(
+    (
+      markup: string | undefined,
+      anchorSide: "old" | "new",
+    ): Pick<AppliedCommentResult, "markupWidth" | "markupNotes"> => {
+      if (!markup) {
+        return {};
+      }
+
+      const geometry = noteGeometry?.current;
+      const markupWidth = geometry
+        ? agentNoteMarkupWidth({ anchorSide, layout: geometry.layout, width: geometry.width })
+        : STML_REFERENCE_WIDTH;
+      const markupNotes = validateStmlMarkup(markup, markupWidth);
+      return {
+        markupWidth,
+        ...(markupNotes.length > 0 ? { markupNotes } : {}),
+      };
+    },
+    [noteGeometry],
+  );
+
   /** Add one live comment, optionally revealing its hunk in the active review. */
   const addLiveComment = useCallback(
     (
@@ -588,7 +635,6 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
         selectHunk(file.id, target.hunkIndex);
       }
 
-      const markupNotes = input.markup ? validateStmlMarkup(input.markup) : [];
       return {
         commentId,
         fileId: file.id,
@@ -596,10 +642,10 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
         hunkIndex: target.hunkIndex,
         side: target.side,
         line: target.line,
-        ...(markupNotes.length > 0 ? { markupNotes } : {}),
+        ...markupFeedback(input.markup, target.side),
       };
     },
-    [allFiles, selectHunk],
+    [allFiles, markupFeedback, selectHunk],
   );
 
   /** Apply several live comments together after validating every target first. */
@@ -650,18 +696,15 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
       }
 
       return {
-        applied: prepared.map(({ file, target, liveComment }) => {
-          const markupNotes = liveComment.markup ? validateStmlMarkup(liveComment.markup) : [];
-          return {
-            commentId: liveComment.id,
-            fileId: file.id,
-            filePath: file.path,
-            hunkIndex: target.hunkIndex,
-            side: target.side,
-            line: target.line,
-            ...(markupNotes.length > 0 ? { markupNotes } : {}),
-          };
-        }),
+        applied: prepared.map(({ file, target, liveComment }) => ({
+          commentId: liveComment.id,
+          fileId: file.id,
+          filePath: file.path,
+          hunkIndex: target.hunkIndex,
+          side: target.side,
+          line: target.line,
+          ...markupFeedback(liveComment.markup, target.side),
+        })),
       };
     },
     [allFiles, selectHunk],

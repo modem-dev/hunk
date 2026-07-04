@@ -26,9 +26,15 @@ Preview before you publish (reads a file or stdin):
 
 ## Ground rules
 
-- Design for ~${STML_REFERENCE_WIDTH} columns. Notes are ~terminal-width in stack
-  layout but docked to roughly half the pane in split layout; text wraps and
-  code clips to fit. Preview at --width ${STML_REFERENCE_WIDTH} to match the tightest common case.
+- Note width follows the live session: stack (unified) layout gives the note
+  nearly the full pane, split layout docks it to roughly half, and a big
+  terminal gives a big note. Read the real width instead of guessing:
+  \`hunk session context --json\` reports \`noteMarkupWidth\`, and every
+  \`comment add\`/\`apply\` response echoes the \`markupWidth\` it validated
+  at — preview with \`hunk markup render - --width <that>\`. When the width
+  is unknowable, design for ~${STML_REFERENCE_WIDTH} columns: content that
+  fits ${STML_REFERENCE_WIDTH} still looks right wider, and the user can
+  resize or switch layouts at any time, so avoid designs that only work wide.
 - There is no chart tag. Gauges and bars are block characters (█ ░) inside
   color spans — see the gauge pattern below.
 - Unknown tags and bad colors never crash: they degrade and produce render

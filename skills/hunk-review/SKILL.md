@@ -119,8 +119,9 @@ hunk session comment clear --repo . --yes [--file README.md]
 Workflow for good markup:
 
 1. `hunk markup guide` — read once per session; it has copy-paste patterns for gauges, pipelines, scorecards, checklists, and key-value blocks, plus the width rules.
-2. `hunk markup render - --width 56` — preview from stdin before publishing; render notes (unknown tags, layout degradations) print to stderr, `--json` gives `{ lines, notes }`.
-3. `comment add`/`comment apply` responses include `markupNotes` when the markup degraded — treat any note as a prompt to fix and update the comment.
+2. `hunk session context --json` reports `noteMarkupWidth` — the width markup renders at in the session's current layout and terminal size (stack/unified is near full pane, split is about half).
+3. `hunk markup render - --width <noteMarkupWidth>` — preview from stdin before publishing; render notes (unknown tags, layout degradations) print to stderr, `--json` gives `{ lines, notes }`. Use `--width 56` when no session is running.
+4. `comment add`/`comment apply` responses echo `markupWidth` and include `markupNotes` when the markup degraded at that width — treat any note as a prompt to fix and update the comment. Users can resize or switch layouts afterwards, so prefer content that also survives ~56 columns.
 
 ## New files in working-tree reviews
 

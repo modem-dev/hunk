@@ -86,15 +86,17 @@ function expectValue<T>(value: T): NonNullable<T> {
 
 function ReviewControllerHarness({
   initialFiles,
+  noteGeometry,
   onController,
   onSetFiles,
 }: {
   initialFiles: DiffFile[];
+  noteGeometry?: Parameters<typeof useReviewController>[0]["noteGeometry"];
   onController: (controller: ReviewController) => void;
   onSetFiles?: (setFiles: (nextFiles: DiffFile[]) => void) => void;
 }) {
   const [files, setFiles] = useState(initialFiles);
-  const controller = useReviewController({ files });
+  const controller = useReviewController({ files, noteGeometry });
 
   useEffect(() => {
     onController(controller);
@@ -110,13 +112,20 @@ function ReviewControllerHarness({
 /** Render the controller hook and expose its latest state to tests. */
 async function renderReviewController(
   initialFiles: DiffFile[],
-  { strictMode = false }: { strictMode?: boolean } = {},
+  {
+    strictMode = false,
+    noteGeometry,
+  }: {
+    strictMode?: boolean;
+    noteGeometry?: Parameters<typeof useReviewController>[0]["noteGeometry"];
+  } = {},
 ) {
   const controllerRef: { current: ReviewController | null } = { current: null };
   const setFilesRef: { current: ((nextFiles: DiffFile[]) => void) | null } = { current: null };
   const harness = (
     <ReviewControllerHarness
       initialFiles={initialFiles}
+      noteGeometry={noteGeometry}
       onController={(nextController) => {
         controllerRef.current = nextController;
       }}
@@ -338,6 +347,67 @@ describe("useReviewController", () => {
       expect(
         expectValue(controllerRef.current).visibleFiles.find((file) => file.id === "beta")?.agent,
       ).toBeNull();
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("live comments validate markup at the published live width", async () => {
+    const noteGeometry: { current: { layout: "split" | "stack"; width: number } | null } = {
+      current: { layout: "stack", width: 120 },
+    };
+    const { controllerRef, setup } = await renderReviewController(
+      [
+        createDiffFile(
+          "alpha",
+          "alpha.ts",
+          "export const alpha = 1;\n",
+          "export const alpha = 2;\n",
+        ),
+      ],
+      { noteGeometry },
+    );
+
+    try {
+      await flush(setup);
+
+      const results: Array<{ markupWidth?: number }> = [];
+      await act(async () => {
+        results.push(
+          expectValue(controllerRef.current).addLiveComment(
+            {
+              filePath: "alpha.ts",
+              side: "new",
+              line: 1,
+              summary: "Wide note",
+              markup: "<box border>ok</box>",
+            },
+            "comment-wide",
+            { reveal: false },
+          ),
+        );
+        // Simulate the user narrowing the terminal / switching layout.
+        noteGeometry.current = { layout: "split", width: 120 };
+        results.push(
+          expectValue(controllerRef.current).addLiveComment(
+            {
+              filePath: "alpha.ts",
+              side: "new",
+              line: 1,
+              summary: "Docked note",
+              markup: "<box border>ok</box>",
+            },
+            "comment-docked",
+            { reveal: false },
+          ),
+        );
+      });
+
+      // stack at width 120 → content width 112; split dock is roughly half.
+      expect(results[0]!.markupWidth).toBe(112);
+      expect(results[1]!.markupWidth).toBeLessThan(70);
     } finally {
       await act(async () => {
         setup.renderer.destroy();

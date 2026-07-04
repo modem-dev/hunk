@@ -69,6 +69,23 @@ describe("hunk session wire parsing", () => {
     expect(snapshot?.state.liveCommentCount).toBe(1);
   });
 
+  test("snapshot carries the live note markup width and drops invalid values", () => {
+    const parse = (noteMarkupWidth: unknown) =>
+      parseSessionSnapshot({
+        updatedAt: "2026-03-22T00:00:00.000Z",
+        state: {
+          selectedHunkIndex: 0,
+          showAgentNotes: true,
+          noteMarkupWidth,
+          liveComments: [],
+        },
+      });
+
+    expect(parse(112)?.state.noteMarkupWidth).toBe(112);
+    expect(parse("wide")?.state.noteMarkupWidth).toBeUndefined();
+    expect(parse(undefined)?.state.noteMarkupWidth).toBeUndefined();
+  });
+
   test("registration parses app info from the nested broker envelope", () => {
     const registration = parseSessionRegistration({
       registrationVersion: SESSION_BROKER_REGISTRATION_VERSION,

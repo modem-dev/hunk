@@ -22,7 +22,8 @@ import type { ActiveAddNoteAffordance } from "./diff/PierreDiffView";
 import { useAppKeyboardShortcuts } from "./hooks/useAppKeyboardShortcuts";
 import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
 import { useMenuController } from "./hooks/useMenuController";
-import { useReviewController } from "./hooks/useReviewController";
+import { useReviewController, type AgentNoteGeometrySnapshot } from "./hooks/useReviewController";
+import { agentNoteMarkupWidth } from "./lib/agentNoteGeometry";
 import { buildAppMenus } from "./lib/appMenus";
 import { fileRowId } from "./lib/ids";
 import { openSelectedFileInEditor } from "./lib/openInEditor";
@@ -181,7 +182,13 @@ export function App({
       })),
     [activeTheme.id, themeOptions],
   );
-  const review = useReviewController({ files: bootstrap.changeset.files });
+  // App computes layout geometry below this hook call, so the controller reads
+  // the current values through a ref instead of a render-time parameter.
+  const noteGeometryRef = useRef<AgentNoteGeometrySnapshot | null>(null);
+  const review = useReviewController({
+    files: bootstrap.changeset.files,
+    noteGeometry: noteGeometryRef,
+  });
   const filteredFiles = review.visibleFiles;
   const selectedFile = review.selectedFile;
   const selectedHunkIndex = review.selectedHunkIndex;
@@ -222,25 +229,6 @@ export function App({
     };
   }, []);
 
-  useHunkSessionBridge({
-    addLiveComment: review.addLiveComment,
-    addLiveCommentBatch: review.addLiveCommentBatch,
-    clearLiveComments: review.clearLiveComments,
-    hostClient,
-    liveCommentCount: review.liveCommentCount,
-    liveCommentSummaries: review.liveCommentSummaries,
-    navigateToLocation: review.navigateToLocation,
-    openAgentNotes,
-    reloadSession: onReloadSession,
-    removeLiveComment: review.removeLiveComment,
-    reviewNoteCount: review.reviewNoteCount,
-    reviewNoteSummaries: review.reviewNoteSummaries,
-    selectedFile,
-    selectedHunk: review.selectedHunk,
-    selectedHunkIndex,
-    showAgentNotes,
-  });
-
   const bodyPadding = pagerMode ? 0 : BODY_PADDING;
   const bodyWidth = Math.max(0, terminal.width - bodyPadding);
   const responsiveLayout = resolveResponsiveLayout(layoutMode, terminal.width);
@@ -262,6 +250,34 @@ export function App({
     ? Math.max(DIFF_MIN_WIDTH, availableCenterWidth - clampedSidebarWidth)
     : Math.max(0, availableCenterWidth);
   const diffContentWidth = Math.max(12, diffPaneWidth - 2);
+  // Publish the live note geometry for daemon-driven markup validation; the
+  // note markup width mirrors what AgentInlineNote lays STML out at.
+  noteGeometryRef.current = { layout: resolvedLayout, width: diffContentWidth };
+  const noteMarkupWidth = agentNoteMarkupWidth({
+    anchorSide: "new",
+    layout: resolvedLayout,
+    width: diffContentWidth,
+  });
+
+  useHunkSessionBridge({
+    addLiveComment: review.addLiveComment,
+    addLiveCommentBatch: review.addLiveCommentBatch,
+    clearLiveComments: review.clearLiveComments,
+    hostClient,
+    liveCommentCount: review.liveCommentCount,
+    liveCommentSummaries: review.liveCommentSummaries,
+    navigateToLocation: review.navigateToLocation,
+    noteMarkupWidth,
+    openAgentNotes,
+    reloadSession: onReloadSession,
+    removeLiveComment: review.removeLiveComment,
+    reviewNoteCount: review.reviewNoteCount,
+    reviewNoteSummaries: review.reviewNoteSummaries,
+    selectedFile,
+    selectedHunk: review.selectedHunk,
+    selectedHunkIndex,
+    showAgentNotes,
+  });
   const maxVisibleLineNumber = useMemo(
     () =>
       filteredFiles.reduce(

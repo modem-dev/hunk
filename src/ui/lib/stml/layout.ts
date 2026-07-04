@@ -41,15 +41,16 @@ export interface StmlLayoutResult {
 export const MIN_STML_LAYOUT_WIDTH = 8;
 
 /**
- * The width agents should design notes for, and the width write-path
- * validation uses. Chosen to match the tightest common note body: a split
- * layout dock on a typical terminal. Documented in the STML guide.
+ * The width agents should design notes for when the live width is unknown,
+ * and the default preview width. Chosen to match the tightest common note
+ * body: a split layout dock on a typical terminal. Documented in the STML
+ * guide. Write-path validation prefers the session's live note width.
  */
 export const STML_REFERENCE_WIDTH = 56;
 
-/** Lay out markup at the reference width and return its render notes. */
-export function validateStmlMarkup(markup: string): string[] {
-  return layoutStmlCached(markup, STML_REFERENCE_WIDTH).errors;
+/** Lay out markup at one note width and return its render notes. */
+export function validateStmlMarkup(markup: string, width: number = STML_REFERENCE_WIDTH): string[] {
+  return layoutStmlCached(markup, width).errors;
 }
 
 const MAX_LAYOUT_ERRORS = 20;

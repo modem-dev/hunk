@@ -353,6 +353,7 @@ export function formatContextOutput(context: SelectedSessionContext) {
     `Old range: ${oldRange}`,
     `New range: ${newRange}`,
     `Agent notes visible: ${context.showAgentNotes ? "yes" : "no"}`,
+    `Note markup width: ${context.noteMarkupWidth ?? "-"}`,
     `Live comments: ${context.liveCommentCount}`,
     "",
   ].join("\n");
@@ -408,9 +409,11 @@ export function formatReloadOutput(selector: SessionSelectorInput, result: Reloa
 
 /** Format the STML render notes attached to one applied comment, if any. */
 function formatMarkupNotes(result: AppliedCommentResult, indent = "") {
-  return (result.markupNotes ?? []).map(
-    (note) => `${indent}Markup note: ${note} (preview with \`hunk markup render\`).`,
-  );
+  const widthHint =
+    result.markupWidth !== undefined
+      ? ` (preview with \`hunk markup render - --width ${result.markupWidth}\`)`
+      : " (preview with `hunk markup render`)";
+  return (result.markupNotes ?? []).map((note) => `${indent}Markup note: ${note}${widthHint}.`);
 }
 
 export function formatCommentOutput(selector: SessionSelectorInput, result: AppliedCommentResult) {
