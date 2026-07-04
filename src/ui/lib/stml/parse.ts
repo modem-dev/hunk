@@ -271,39 +271,13 @@ function limitedErrorCollector(errors: string[], maxErrors: number): (message: s
 }
 
 function utf8ByteLength(text: string): number {
-  let bytes = 0;
-  for (const ch of text) {
-    bytes += utf8CharBytes(ch);
-  }
-  return bytes;
+  return new TextEncoder().encode(text).length;
 }
 
 function truncateUtf8(text: string, maxBytes: number): string {
-  let bytes = 0;
-  let out = "";
-  for (const ch of text) {
-    const next = bytes + utf8CharBytes(ch);
-    if (next > maxBytes) {
-      break;
-    }
-    bytes = next;
-    out += ch;
-  }
-  return out;
-}
-
-function utf8CharBytes(ch: string): number {
-  const code = ch.codePointAt(0) ?? 0;
-  if (code <= 0x7f) {
-    return 1;
-  }
-  if (code <= 0x7ff) {
-    return 2;
-  }
-  if (code <= 0xffff) {
-    return 3;
-  }
-  return 4;
+  const bytes = new TextEncoder().encode(text).slice(0, maxBytes);
+  // Lossy decode, then strip the single replacement char a mid-codepoint cut leaves.
+  return new TextDecoder("utf-8", { fatal: false }).decode(bytes).replace(/�$/, "");
 }
 
 function findOpen(stack: StmlElement[], name: string): number {

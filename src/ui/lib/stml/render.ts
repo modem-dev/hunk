@@ -4,7 +4,7 @@
 
 import type { AppTheme } from "../../themes";
 import { resolveStmlColor } from "./colors";
-import { layoutStml, type StmlLine, type StmlSpan } from "./layout";
+import { layoutStml, type StmlSpan } from "./layout";
 
 export interface StmlTextRenderResult {
   /** One string per terminal row. */
@@ -13,17 +13,22 @@ export interface StmlTextRenderResult {
   errors: string[];
 }
 
-function lineToPlainText(line: StmlLine): string {
-  return line.spans
-    .map((span) => span.text)
-    .join("")
-    .replace(/\s+$/, "");
+/** Render lines to strings via one span formatter, right-trimming each row. */
+function renderLines(
+  markup: string,
+  width: number,
+  formatSpan: (span: StmlSpan) => string,
+): StmlTextRenderResult {
+  const { lines, errors } = layoutStml(markup, width);
+  return {
+    lines: lines.map((line) => line.spans.map(formatSpan).join("").replace(/\s+$/, "")),
+    errors,
+  };
 }
 
 /** Render markup to plain text rows at a given width. */
 export function renderStmlToText(markup: string, width: number): StmlTextRenderResult {
-  const { lines, errors } = layoutStml(markup, width);
-  return { lines: lines.map(lineToPlainText), errors };
+  return renderLines(markup, width, (span) => span.text);
 }
 
 function hexToRgb(color: string): [number, number, number] | null {
@@ -82,13 +87,8 @@ export function renderStmlToAnsi(
   width: number,
   theme: AppTheme,
 ): StmlTextRenderResult {
-  const { lines, errors } = layoutStml(markup, width);
-  const rendered = lines.map((line) => {
-    const parts = line.spans.map((span) => {
-      const sgr = spanSgr(span, theme);
-      return sgr ? `${sgr}${span.text}\x1b[0m` : span.text;
-    });
-    return parts.join("").replace(/\s+$/, "");
+  return renderLines(markup, width, (span) => {
+    const sgr = spanSgr(span, theme);
+    return sgr ? `${sgr}${span.text}\x1b[0m` : span.text;
   });
-  return { lines: rendered, errors };
 }

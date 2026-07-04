@@ -7,6 +7,7 @@
 // note heights and agent feedback drift from what the terminal shows.
 
 import type { LayoutMode } from "../../core/types";
+import { resolveSplitPaneWidths } from "../diff/codeColumns";
 
 export interface AgentNoteGeometryInput {
   anchorSide?: "old" | "new";
@@ -28,23 +29,14 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
-/** Column split used by side-by-side diff rows (marker + two code columns). */
-export function splitColumnWidths(width: number) {
-  const markerWidth = 1;
-  const separatorWidth = 1;
-  const usableWidth = Math.max(0, width - markerWidth - separatorWidth);
-  const leftWidth = Math.max(0, markerWidth + Math.floor(usableWidth / 2));
-  const rightWidth = Math.max(0, separatorWidth + usableWidth - Math.floor(usableWidth / 2));
-  return { leftWidth, rightWidth };
-}
-
 /** Resolve the note card's box placement for one anchor side and pane width. */
 export function agentNoteBoxLayout({
   anchorSide,
   layout,
   width,
 }: AgentNoteGeometryInput): AgentNoteBoxLayout {
-  const splitWidths = splitColumnWidths(width);
+  // Docked notes align to the same column split the side-by-side diff uses.
+  const splitWidths = resolveSplitPaneWidths(width);
   const canDockRight = layout === "split" && anchorSide === "new" && width >= 84;
   const canDockLeft = layout === "split" && anchorSide === "old" && width >= 84;
   const preferredDockWidth = canDockRight
