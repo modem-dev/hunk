@@ -114,14 +114,9 @@ hunk session comment clear --repo . --yes [--file README.md]
 
 ### Rich markup notes (STML)
 
-`--markup` (or a `markup` field on apply items) renders the note body as STML — a small HTML-like markup for terminal UI: bordered boxes, rows of shapes, gauges, badges, lists, and code blocks. Keep `--summary` a real sentence: it is the fallback and what `comment list` shows.
+`--markup` (or a `markup` field on apply items) renders the note body as STML — a small HTML-like markup for terminal UI (boxes, rows, gauges, badges, lists, code). Keep `--summary` a real sentence: it is the fallback and the `comment list` text.
 
-Workflow for good markup:
-
-1. `hunk markup guide` — read once per session; it has copy-paste patterns for gauges, pipelines, scorecards, checklists, and key-value blocks, plus the width rules.
-2. `hunk session context --json` reports `noteMarkupWidth` — the width markup renders at in the session's current layout and terminal size (stack/unified is near full pane, split is about half).
-3. `hunk markup render - --width <noteMarkupWidth>` — preview from stdin before publishing; render notes (unknown tags, layout degradations) print to stderr, `--json` gives `{ lines, notes }`. Use `--width 56` when no session is running.
-4. `comment add`/`comment apply` responses echo `markupWidth` and include `markupNotes` when the markup degraded at that width — treat any note as a prompt to fix and update the comment. Users can resize or switch layouts afterwards, so prefer content that also survives ~56 columns.
+Before writing markup, run `hunk markup guide` once — it has copy-paste patterns and the width rules. `hunk session context --json` reports `noteMarkupWidth` (the live render width); preview with `hunk markup render - --width <that>`. Comment responses echo `markupWidth` and return `markupNotes` when markup degraded — fix what they flag.
 
 ## New files in working-tree reviews
 
