@@ -16,6 +16,7 @@ Each folder tells a small review story and includes the exact command to run fro
 | `6-readme-screenshot`  | README screenshot with agent notes     | `hunk patch examples/6-readme-screenshot/change.patch --agent-context examples/6-readme-screenshot/agent-context.json --mode split --theme midnight` |
 | `7-opentui-component`  | embedding `HunkDiffView` in OpenTUI    | `bun run examples/7-opentui-component/from-files.tsx`                                                                                                |
 | `8-opentui-primitives` | composing Hunk's OpenTUI primitives    | `bun run examples/8-opentui-primitives/primitives-demo.tsx`                                                                                          |
+| `9-agent-markup-notes` | STML markup rendered inside notes      | `hunk patch examples/9-agent-markup-notes/change.patch --agent-context examples/9-agent-markup-notes/agent-context.json`                             |
 
 ## Notes
 

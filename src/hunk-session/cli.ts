@@ -158,6 +158,7 @@ class HttpHunkSessionCliClient implements HunkSessionCliClient {
         line: input.line,
         summary: input.summary,
         rationale: input.rationale,
+        markup: input.markup,
         author: input.author,
         reveal: input.reveal,
       })

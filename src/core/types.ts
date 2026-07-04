@@ -19,6 +19,8 @@ export interface AgentAnnotation {
   newRange?: [number, number];
   summary: string;
   rationale?: string;
+  /** Optional STML markup rendered as the note body in place of summary/rationale text. */
+  markup?: string;
   tags?: string[];
   confidence?: "low" | "medium" | "high";
   source?: string;
@@ -236,6 +238,7 @@ export interface SessionCommentAddCommandInput {
   line: number;
   summary: string;
   rationale?: string;
+  markup?: string;
   author?: string;
   reveal: boolean;
 }
@@ -247,6 +250,7 @@ export interface SessionCommentApplyItemInput {
   line?: number;
   summary: string;
   rationale?: string;
+  markup?: string;
   author?: string;
 }
 

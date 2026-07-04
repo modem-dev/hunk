@@ -93,6 +93,7 @@ export type SessionDaemonRequest =
       line: number;
       summary: string;
       rationale?: string;
+      markup?: string;
       author?: string;
       reveal: boolean;
     }

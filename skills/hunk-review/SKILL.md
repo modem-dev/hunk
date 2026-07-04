@@ -96,7 +96,7 @@ hunk session reload --session-path /path/to/live-window --source /path/to/other-
 ### Comments
 
 ```bash
-hunk session comment add --repo . --file README.md --new-line 103 --summary "Tighten this wording" [--rationale "..."] [--author "agent"] [--focus]
+hunk session comment add --repo . --file README.md --new-line 103 --summary "Tighten this wording" [--rationale "..."] [--markup "<stml>"] [--author "agent"] [--focus]
 printf '%s\n' '{"comments":[{"filePath":"README.md","newLine":103,"summary":"Tighten this wording"}]}' | hunk session comment apply --repo . --stdin [--focus]
 hunk session comment list --repo . [--file README.md] [--type live|all|ai|agent|user]
 hunk session comment rm --repo . <comment-id>
@@ -111,6 +111,7 @@ hunk session comment clear --repo . --yes [--file README.md]
 - Pass `--focus` when you want to jump to the new note or the first note in a batch
 - `comment list` and `comment clear` accept optional `--file`
 - Quote `--summary` and `--rationale` defensively in the shell
+- `--markup` (or a `markup` field on apply items) renders the note body as STML — a small HTML-like markup for terminal UI: `box`/`card`/`row` shapes with borders, `h1`-`h3`, `list`/`item`, `code`, `badge`, `b`/`i`/`u`/`dim`, and `color` with semantic tokens (`accent`, `success`, `warning`, `danger`, `info`, `muted`) or hex. Keep `--summary` meaningful: it is the fallback and what `comment list` shows. Example: `--markup '<row gap="1"><box border border-color="success" padding-x="1">parse</box><box border border-color="accent" padding-x="1">layout</box></row><list><item><badge color="warning">TODO</badge> add <b>jitter</b></item></list>'`
 
 ## New files in working-tree reviews
 

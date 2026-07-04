@@ -21,7 +21,7 @@ const { buildSidebarEntries } = await import("../lib/files");
 const { HelpDialog } = await import("./chrome/HelpDialog");
 const { SidebarPane } = await import("./panes/SidebarPane");
 const { AgentCard } = await import("./panes/AgentCard");
-const { AgentInlineNote } = await import("./panes/AgentInlineNote");
+const { AgentInlineNote, measureAgentInlineNoteHeight } = await import("./panes/AgentInlineNote");
 const { DiffPane } = await import("./panes/DiffPane");
 const { MenuDropdown } = await import("./chrome/MenuDropdown");
 const { StatusBar } = await import("./chrome/StatusBar");
@@ -1813,6 +1813,70 @@ describe("UI components", () => {
     expect(lines[2]).toContain("Summary line");
     expect(lines[3]).toContain("Rationale line.");
     expect(lines[4]?.trimStart().startsWith("╰")).toBe(true);
+  });
+
+  test("AgentInlineNote renders STML markup as the note body at its measured height", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const annotation = {
+      newRange: [2, 4] as [number, number],
+      summary: "Plain fallback summary",
+      markup:
+        '<h2>Refactor</h2><list><item>keep <b>hot path</b> allocation-free</item></list><box border border-style="double">shape</box>',
+    };
+    const measured = measureAgentInlineNoteHeight({
+      annotation,
+      anchorSide: "new",
+      layout: "stack",
+      width: 60,
+    });
+    const frame = await captureFrame(
+      <AgentInlineNote
+        annotation={annotation}
+        anchorSide="new"
+        layout="stack"
+        theme={theme}
+        width={60}
+        onClose={() => {}}
+      />,
+      64,
+      measured + 2,
+    );
+
+    const lines = frame.split("\n").map((line) => line.trimEnd());
+    expect(lines[0]).toContain("Agent note - R2–R4");
+    expect(lines[2]).toContain("Refactor");
+    expect(lines[3]).toContain("• keep hot path allocation-free");
+    expect(lines[4]).toContain("╔");
+    expect(lines[5]).toContain("║shape");
+    expect(lines[6]).toContain("╚");
+    // The markup body replaces the plain summary text entirely.
+    expect(frame).not.toContain("Plain fallback summary");
+    // The mounted card ends exactly where the planned measurement said it would.
+    expect(lines[measured - 1]?.trimStart().startsWith("╰")).toBe(true);
+    expect(lines.slice(measured).every((line) => line.trim() === "")).toBe(true);
+  });
+
+  test("AgentInlineNote falls back to the summary when markup renders to nothing", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const annotation = {
+      newRange: [2, 2] as [number, number],
+      summary: "Fallback summary",
+      markup: "<!-- only a comment -->",
+    };
+    const frame = await captureFrame(
+      <AgentInlineNote
+        annotation={annotation}
+        anchorSide="new"
+        layout="stack"
+        theme={theme}
+        width={60}
+        onClose={() => {}}
+      />,
+      64,
+      6,
+    );
+
+    expect(frame).toContain("Fallback summary");
   });
 
   test("AgentInlineNote renders draft notes as an editable composer", async () => {

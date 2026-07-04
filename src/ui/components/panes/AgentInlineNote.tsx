@@ -1,4 +1,4 @@
-import type { TextareaRenderable } from "@opentui/core";
+import { createTextAttributes, type TextareaRenderable } from "@opentui/core";
 import { flushSync } from "@opentui/react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { AgentAnnotation, DiffFile, LayoutMode } from "../../../core/types";
@@ -6,7 +6,9 @@ import { annotationRangeLabel, reviewNoteSource } from "../../lib/agentAnnotatio
 import { wrapText } from "../../lib/agentPopover";
 import { isEscapeKey, isSaveDraftNoteKey } from "../../lib/keyboard";
 import { sanitizeTerminalLine } from "../../../lib/terminalText";
-import { fitText, padText } from "../../lib/text";
+import { fitText, measureTextWidth, padText } from "../../lib/text";
+import { resolveStmlColor } from "../../lib/stml/colors";
+import { layoutStmlCached, type StmlLine, type StmlSpan } from "../../lib/stml/layout";
 import type { AppTheme } from "../../themes";
 
 export function inlineNoteTitle(annotation: AgentAnnotation, noteIndex: number, noteCount: number) {
@@ -23,6 +25,26 @@ export function inlineNoteTitle(annotation: AgentAnnotation, noteIndex: number, 
 interface AgentInlineNoteLine {
   kind: "summary" | "rationale";
   text: string;
+}
+
+/**
+ * Lay out an annotation's optional STML markup body for one content width.
+ *
+ * Returns null when the annotation has no markup or the markup degrades to
+ * nothing, so callers fall back to the plain summary/rationale body. Both
+ * measurement and rendering call this with the same width, which keeps the
+ * planned row height and the mounted card height in exact lockstep.
+ */
+export function agentInlineNoteMarkupLines(
+  annotation: AgentAnnotation,
+  contentWidth: number,
+): StmlLine[] | null {
+  if (!annotation.markup || annotation.source === "user-draft") {
+    return null;
+  }
+
+  const { lines } = layoutStmlCached(annotation.markup, contentWidth);
+  return lines.length > 0 ? lines : null;
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -92,6 +114,18 @@ export function measureAgentInlineNoteHeight({
   const innerWidth = Math.max(1, boxWidth - 2);
   const bodyWidth = innerWidth;
   const contentWidth = Math.max(1, bodyWidth - 2);
+
+  if (annotation.source === "user-draft") {
+    // Keep geometry aligned with the rendered textarea rows, including soft wraps.
+    return draftVisualLineCount(annotation.summary, contentWidth) + 6;
+  }
+
+  const markupLines = agentInlineNoteMarkupLines(annotation, contentWidth);
+  if (markupLines) {
+    // top border + top padding + markup lines + bottom border
+    return 3 + markupLines.length;
+  }
+
   const lines: AgentInlineNoteLine[] = [
     ...wrapNoteText(annotation.summary, contentWidth).map((text) => ({
       kind: "summary" as const,
@@ -104,11 +138,6 @@ export function measureAgentInlineNoteHeight({
         }))
       : []),
   ];
-
-  if (annotation.source === "user-draft") {
-    // Keep geometry aligned with the rendered textarea rows, including soft wraps.
-    return draftVisualLineCount(annotation.summary, contentWidth) + 6;
-  }
 
   // top border + title row + body lines + bottom border
   return 3 + lines.length;
@@ -495,6 +524,59 @@ export function AgentInlineNote({
     );
   }
 
+  const markupLines = agentInlineNoteMarkupLines(annotation, contentWidth);
+
+  /** Resolve one STML span into concrete OpenTUI text props for this theme. */
+  const markupSpanProps = (span: StmlSpan) => ({
+    fg: resolveStmlColor(span.fg, theme) ?? theme.text,
+    bg: resolveStmlColor(span.bg, theme) ?? theme.panel,
+    attributes: createTextAttributes({
+      bold: span.bold,
+      italic: span.italic,
+      underline: span.underline,
+      dim: span.dim,
+      strikethrough: span.strike,
+    }),
+  });
+
+  const renderMarkupBodyRow = (key: string, line: StmlLine) => {
+    const usedWidth = line.spans.reduce((total, span) => total + measureTextWidth(span.text), 0);
+    return (
+      <box
+        key={key}
+        style={{ width: "100%", height: 1, flexDirection: "row", backgroundColor: theme.panel }}
+      >
+        <box style={{ width: boxLeft, height: 1, backgroundColor: theme.panel }}>
+          <text>{" ".repeat(boxLeft)}</text>
+        </box>
+        <box style={{ width: 1, height: 1, backgroundColor: theme.panel }}>
+          <text fg={theme.noteBorder} bg={theme.panel}>
+            │
+          </text>
+        </box>
+        <box style={{ width: 1, height: 1, backgroundColor: theme.panel }} />
+        <box style={{ width: contentWidth, height: 1, backgroundColor: theme.panel }}>
+          <text bg={theme.panel}>
+            {line.spans.map((span, spanIndex) => (
+              <span key={`${key}:span:${spanIndex}`} {...markupSpanProps(span)}>
+                {span.text}
+              </span>
+            ))}
+            {usedWidth < contentWidth ? (
+              <span bg={theme.panel}>{" ".repeat(contentWidth - usedWidth)}</span>
+            ) : null}
+          </text>
+        </box>
+        <box style={{ width: 1, height: 1, backgroundColor: theme.panel }} />
+        <box style={{ width: 1, height: 1, backgroundColor: theme.panel }}>
+          <text fg={theme.noteBorder} bg={theme.panel}>
+            │
+          </text>
+        </box>
+      </box>
+    );
+  };
+
   const renderSavedBodyRow = (key: string, text: string, kind: AgentInlineNoteLine["kind"]) => (
     <box
       key={key}
@@ -566,9 +648,11 @@ export function AgentInlineNote({
 
       {renderSavedBodyRow("saved-note-top-padding", "", "summary")}
 
-      {lines.map((line, index) =>
-        renderSavedBodyRow(`${line.kind}:${index}`, line.text, line.kind),
-      )}
+      {markupLines
+        ? markupLines.map((line, index) => renderMarkupBodyRow(`markup:${index}`, line))
+        : lines.map((line, index) =>
+            renderSavedBodyRow(`${line.kind}:${index}`, line.text, line.kind),
+          )}
 
       <box style={{ width: "100%", height: 1, flexDirection: "row", backgroundColor: theme.panel }}>
         <box style={{ width: boxLeft, height: 1, backgroundColor: theme.panel }}>

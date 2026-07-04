@@ -67,6 +67,7 @@ function normalizeAnnotationFile(file: unknown): AgentFileContext {
         newRange: normalizeRange(item.newRange),
         summary: item.summary,
         rationale: typeof item.rationale === "string" ? item.rationale : undefined,
+        markup: typeof item.markup === "string" && item.markup.length > 0 ? item.markup : undefined,
         tags: Array.isArray(item.tags)
           ? item.tags.filter((tag): tag is string => typeof tag === "string")
           : undefined,

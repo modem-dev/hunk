@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "summary": "Replaces the single-shot fetch with bounded exponential-backoff retries.",
+  "files": [
+    {
+      "path": "src/retry.ts",
+      "summary": "fetchOnce becomes fetchWithRetry with doubling delays between attempts.",
+      "annotations": [
+        {
+          "newRange": [1, 13],
+          "summary": "Adds a bounded retry loop with exponential backoff.",
+          "author": "sonnet",
+          "markup": "<h2>Retry flow</h2><row gap=\"1\"><box border border-color=\"accent\" padding-x=\"1\">fetch</box><box border border-color=\"warning\" padding-x=\"1\">fail?</box><box border border-color=\"success\" padding-x=\"1\">backoff ×2</box></row><spacer/><list><item><badge color=\"success\">OK</badge> caps at <b>3 attempts</b> before rethrowing</item><item><badge color=\"warning\">TODO</badge> add <i>jitter</i> before shipping this</item></list>"
+        },
+        {
+          "newRange": [10, 11],
+          "summary": "Backoff policy could be extracted for reuse and testing.",
+          "author": "sonnet",
+          "markup": "<text>The doubling is inline; consider extracting the policy:</text><code>const backoff = (attempt: number) =>\n  100 * 2 ** (attempt - 1);</code><text><dim>Keeps the loop readable and lets tests pin delays.</dim></text>"
+        }
+      ]
+    }
+  ]
+}

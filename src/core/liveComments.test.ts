@@ -76,6 +76,23 @@ describe("live comment helpers", () => {
     });
   });
 
+  test("carries STML markup through to the live annotation", () => {
+    const comment = buildLiveComment(
+      {
+        filePath: "src/example.ts",
+        side: "new",
+        line: 4,
+        summary: "Rendered note",
+        markup: "<box border>shape</box>",
+      },
+      "comment-2",
+      "2026-03-22T00:00:00.000Z",
+      0,
+    );
+
+    expect(comment.markup).toBe("<box border>shape</box>");
+  });
+
   test("builds a live MCP comment annotation", () => {
     const comment = buildLiveComment(
       {

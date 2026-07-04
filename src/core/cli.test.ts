@@ -542,6 +542,36 @@ describe("parseCli", () => {
     });
   });
 
+  test("parses session comment add with --markup", async () => {
+    const parsed = await parseCli([
+      "bun",
+      "hunk",
+      "session",
+      "comment",
+      "add",
+      "session-1",
+      "--file",
+      "README.md",
+      "--new-line",
+      "7",
+      "--summary",
+      "Rendered note",
+      "--markup",
+      "<box border><b>hot path</b></box>",
+    ]);
+
+    expect(parsed).toMatchObject({
+      kind: "session",
+      action: "comment-add",
+      selector: { sessionId: "session-1" },
+      filePath: "README.md",
+      side: "new",
+      line: 7,
+      summary: "Rendered note",
+      markup: "<box border><b>hot path</b></box>",
+    });
+  });
+
   test("parses session comment add with --focus", async () => {
     const parsed = await parseCli([
       "bun",
