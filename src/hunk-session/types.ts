@@ -135,6 +135,8 @@ export interface AppliedCommentResult {
   hunkIndex: number;
   side: DiffSide;
   line: number;
+  /** STML render notes for the comment's markup, present only when non-empty. */
+  markupNotes?: string[];
 }
 
 export interface AppliedCommentBatchResult {

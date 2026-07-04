@@ -353,12 +353,28 @@ export type CliInput =
   | PatchCommandInput
   | DiffToolCommandInput;
 
+export interface MarkupRenderCommandInput {
+  kind: "markup-render";
+  /** Markup source path, or "-" for stdin. */
+  file: string;
+  width: number;
+  color: "auto" | "always" | "never";
+  theme?: string;
+  json: boolean;
+}
+
+export interface MarkupGuideCommandInput {
+  kind: "markup-guide";
+}
+
 export type ParsedCliInput =
   | CliInput
   | HelpCommandInput
   | PagerCommandInput
   | DaemonServeCommandInput
-  | SessionCommandInput;
+  | SessionCommandInput
+  | MarkupRenderCommandInput
+  | MarkupGuideCommandInput;
 
 export interface AppBootstrap {
   input: CliInput;

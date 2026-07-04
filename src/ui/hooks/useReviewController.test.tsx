@@ -345,6 +345,51 @@ describe("useReviewController", () => {
     }
   });
 
+  test("live comments with degraded markup return render notes for the agent", async () => {
+    const { controllerRef, setup } = await renderReviewController([
+      createDiffFile("alpha", "alpha.ts", "export const alpha = 1;\n", "export const alpha = 2;\n"),
+    ]);
+
+    try {
+      await flush(setup);
+
+      const results: Array<{ markupNotes?: string[] }> = [];
+      await act(async () => {
+        results.push(
+          expectValue(controllerRef.current).addLiveComment(
+            {
+              filePath: "alpha.ts",
+              side: "new",
+              line: 1,
+              summary: "Degraded markup",
+              markup: "<sparkline>1 2 3</sparkline>",
+            },
+            "comment-degraded",
+            { reveal: false },
+          ),
+          expectValue(controllerRef.current).addLiveComment(
+            {
+              filePath: "alpha.ts",
+              side: "new",
+              line: 1,
+              summary: "Clean markup",
+              markup: "<box border>ok</box>",
+            },
+            "comment-clean",
+            { reveal: false },
+          ),
+        );
+      });
+
+      expect(results[0]!.markupNotes?.some((note) => note.includes("unknown tag"))).toBe(true);
+      expect(results[1]!.markupNotes).toBeUndefined();
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("batch live comments validate together and reveal the first applied hunk", async () => {
     const { controllerRef, setup } = await renderReviewController([createTwoHunkFile()]);
 

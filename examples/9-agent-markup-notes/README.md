@@ -22,8 +22,15 @@ hunk session comment add --repo . --file src/retry.ts --new-line 3 \
   --focus
 ```
 
-See `src/ui/lib/stml/` for the supported tags: block (`box`, `card`, `row`,
-`text`, `h1`–`h3`, `list`/`item`, `hr`, `spacer`, `code`) and inline (`b`,
-`i`, `u`, `s`, `dim`, `color`, `kbd`, `badge`, `a`, `br`). Colors accept
-semantic tokens (`accent`, `success`, `warning`, `danger`, `info`, `muted`),
-ANSI-style names, or hex.
+Learn and iterate from the CLI:
+
+```sh
+hunk markup guide                                  # authoring guide with copy-paste patterns
+echo '<badge color="success">OK</badge> ready' | \
+  hunk markup render - --width 56                  # preview before publishing
+```
+
+Tags: block (`box`, `card`, `row`, `text`, `h1`–`h3`, `list`/`item`, `hr`,
+`spacer`, `code`) and inline (`b`, `i`, `u`, `s`, `dim`, `color`, `kbd`,
+`badge`, `a`, `br`). Colors accept semantic tokens (`accent`, `success`,
+`warning`, `danger`, `info`, `muted`), ANSI-style names, or hex.

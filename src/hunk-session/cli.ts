@@ -406,8 +406,18 @@ export function formatReloadOutput(selector: SessionSelectorInput, result: Reloa
   return `Reloaded ${describeSessionSelector(selector)} with ${result.title} (${result.fileCount} files). Selected: ${selected}.\n`;
 }
 
+/** Format the STML render notes attached to one applied comment, if any. */
+function formatMarkupNotes(result: AppliedCommentResult, indent = "") {
+  return (result.markupNotes ?? []).map(
+    (note) => `${indent}Markup note: ${note} (preview with \`hunk markup render\`).`,
+  );
+}
+
 export function formatCommentOutput(selector: SessionSelectorInput, result: AppliedCommentResult) {
-  return `Added live comment ${result.commentId} on ${result.filePath}:${result.line} (${result.side}) in hunk ${result.hunkIndex + 1} for ${describeSessionSelector(selector)}.\n`;
+  return `${[
+    `Added live comment ${result.commentId} on ${result.filePath}:${result.line} (${result.side}) in hunk ${result.hunkIndex + 1} for ${describeSessionSelector(selector)}.`,
+    ...formatMarkupNotes(result),
+  ].join("\n")}\n`;
 }
 
 export function formatCommentApplyOutput(
@@ -420,10 +430,10 @@ export function formatCommentApplyOutput(
 
   return `${[
     `Applied ${result.applied.length} live comments to ${describeSessionSelector(selector)}:`,
-    ...result.applied.map(
-      (comment) =>
-        `  - ${comment.commentId} on ${comment.filePath}:${comment.line} (${comment.side}) hunk ${comment.hunkIndex + 1}`,
-    ),
+    ...result.applied.flatMap((comment) => [
+      `  - ${comment.commentId} on ${comment.filePath}:${comment.line} (${comment.side}) hunk ${comment.hunkIndex + 1}`,
+      ...formatMarkupNotes(comment, "    "),
+    ]),
     "",
   ].join("\n")}`;
 }

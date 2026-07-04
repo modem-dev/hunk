@@ -450,6 +450,21 @@ describe("Hunk session CLI formatters", () => {
       "Added live comment comment-1 on src/app.ts:12 (new) in hunk 1 for session session-1.\n",
     );
 
+    expect(
+      formatCommentOutput(selector, {
+        commentId: "comment-1",
+        fileId: "file-1",
+        filePath: "src/app.ts",
+        hunkIndex: 0,
+        side: "new",
+        line: 12,
+        markupNotes: ["unknown tag <sparkline>"],
+      }),
+    ).toBe(
+      "Added live comment comment-1 on src/app.ts:12 (new) in hunk 1 for session session-1.\n" +
+        "Markup note: unknown tag <sparkline> (preview with `hunk markup render`).\n",
+    );
+
     expect(formatCommentApplyOutput(selector, { applied: [] })).toBe(
       "Applied 0 live comments to session session-1.\n",
     );

@@ -41,6 +41,7 @@ import { selectGapForKeyboardToggle } from "../diff/expandCollapsedRows";
 import { trailingCollapsedLines } from "../diff/pierre";
 import { findNextHunkCursor } from "../lib/hunks";
 import { reviewNoteSource } from "../lib/agentAnnotations";
+import { validateStmlMarkup } from "../lib/stml/layout";
 import {
   buildReviewState,
   buildSelectedHunkSummary,
@@ -587,6 +588,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
         selectHunk(file.id, target.hunkIndex);
       }
 
+      const markupNotes = input.markup ? validateStmlMarkup(input.markup) : [];
       return {
         commentId,
         fileId: file.id,
@@ -594,6 +596,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
         hunkIndex: target.hunkIndex,
         side: target.side,
         line: target.line,
+        ...(markupNotes.length > 0 ? { markupNotes } : {}),
       };
     },
     [allFiles, selectHunk],
@@ -647,14 +650,18 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
       }
 
       return {
-        applied: prepared.map(({ file, target, liveComment }) => ({
-          commentId: liveComment.id,
-          fileId: file.id,
-          filePath: file.path,
-          hunkIndex: target.hunkIndex,
-          side: target.side,
-          line: target.line,
-        })),
+        applied: prepared.map(({ file, target, liveComment }) => {
+          const markupNotes = liveComment.markup ? validateStmlMarkup(liveComment.markup) : [];
+          return {
+            commentId: liveComment.id,
+            fileId: file.id,
+            filePath: file.path,
+            hunkIndex: target.hunkIndex,
+            side: target.side,
+            line: target.line,
+            ...(markupNotes.length > 0 ? { markupNotes } : {}),
+          };
+        }),
       };
     },
     [allFiles, selectHunk],

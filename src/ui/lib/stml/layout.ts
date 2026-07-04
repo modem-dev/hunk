@@ -40,6 +40,18 @@ export interface StmlLayoutResult {
 /** Minimum content width the layout engine will attempt to fill. */
 export const MIN_STML_LAYOUT_WIDTH = 8;
 
+/**
+ * The width agents should design notes for, and the width write-path
+ * validation uses. Chosen to match the tightest common note body: a split
+ * layout dock on a typical terminal. Documented in the STML guide.
+ */
+export const STML_REFERENCE_WIDTH = 56;
+
+/** Lay out markup at the reference width and return its render notes. */
+export function validateStmlMarkup(markup: string): string[] {
+  return layoutStmlCached(markup, STML_REFERENCE_WIDTH).errors;
+}
+
 const MAX_LAYOUT_ERRORS = 20;
 
 const INLINE_TAGS = new Set([
