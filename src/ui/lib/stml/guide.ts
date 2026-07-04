@@ -11,6 +11,9 @@ import { STML_REFERENCE_WIDTH } from "./layout";
 
 export const STML_GUIDE = `# STML — terminal markup for Hunk agent notes
 
+Experimental: the tag and color vocabulary may change between releases.
+Markup degrades to plain text, so worst case a note loses polish, not content.
+
 Small HTML-like markup rendered as real terminal UI inside note cards:
 boxes, rows, badges, gauges, lists, code blocks. Sources (--summary stays
 as the plain-text fallback):

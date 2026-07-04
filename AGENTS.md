@@ -91,6 +91,7 @@ CLI input
 - Agent context belongs beside the code, not hidden in a separate mode or workflow.
 - Agent notes are hunk-specific: show notes for the selected hunk, render them in the diff flow near the annotated row, and keep a clear spatial relationship to the code they explain.
 - Keep note behavior explicit. If the UI intentionally prioritizes one note, one selection, or one active target, encode that as a named policy rather than scattering array-index assumptions through the codebase.
+- STML markup notes (experimental) live in `src/ui/lib/stml/`. The layout engine is deliberately a deterministic line layout, not OpenTUI flexbox: the row-windowed review stream needs exact note heights before mount, so `(markup, width)` must always produce the same lines. Colors stay symbolic until render time so measurement never needs a theme. Do not "simplify" this into flexbox renderables, and keep note-card geometry in `agentNoteGeometry` as the single source for rendering, measurement, and agent-facing width reporting.
 - If you choose to use a local sidecar for temporary review context, keep it concise and review-oriented: one changeset summary, file summaries in narrative order, and a few hunk-level annotations with real rationale.
 - If a local sidecar is present, its file order is intentional, but the visible note UI should stay hunk-note driven rather than showing generic file or changeset explainer cards.
 - `hunk diff` working-tree reviews include untracked files by default. Use `--exclude-untracked` if you explicitly want tracked changes only.
