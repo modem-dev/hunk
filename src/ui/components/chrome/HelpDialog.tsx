@@ -54,7 +54,7 @@ export function HelpDialog({
     {
       title: "Review",
       items: [
-        ["/", "focus file filter"],
+        ["/, n / N", "search / next / previous match"],
         ["c", "create review note"],
         ["Tab", "toggle files/filter focus"],
         ["F10", "open menus"],

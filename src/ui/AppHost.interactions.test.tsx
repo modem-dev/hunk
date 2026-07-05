@@ -2661,8 +2661,10 @@ describe("App interactions", () => {
         12,
       );
       expect(menuFrame).toContain("Toggle files/filter focus");
-      expect(menuFrame).toContain("Focus filter");
-      expect(hasLineWithBackground(setup.captureSpans(), "Focus filter", theme.panel)).toBe(true);
+      expect(menuFrame).toContain("Search diff content");
+      expect(hasLineWithBackground(setup.captureSpans(), "Search diff content", theme.panel)).toBe(
+        true,
+      );
 
       await act(async () => {
         await setup.mockInput.pressArrow("left");

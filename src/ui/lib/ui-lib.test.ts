@@ -132,6 +132,8 @@ describe("ui helpers", () => {
     const menus = buildAppMenus({
       canRefreshCurrentInput: true,
       focusFilter: () => {},
+      focusSearch: () => {},
+      advanceSearchCursor: () => {},
       layoutMode: "stack",
       moveToAnnotatedFile: () => {},
       moveToAnnotatedHunk: () => {},
@@ -165,7 +167,8 @@ describe("ui helpers", () => {
         .map((entry) => entry.label),
     ).toEqual([
       "Toggle files/filter focus",
-      "Focus filter",
+      "Search diff content",
+      "Focus file filter",
       "Open file in editor",
       "Reload",
       "Quit",

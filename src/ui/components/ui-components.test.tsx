@@ -2377,7 +2377,7 @@ describe("UI components", () => {
       "l / w / m       lines / wrap / metadata",
       "e               open file in $EDITOR",
       "Review",
-      "/               focus file filter",
+      "/, n / N        search / next / previous match",
       "c               create review note",
       "Tab             toggle files/filter focus",
       "F10             open menus",

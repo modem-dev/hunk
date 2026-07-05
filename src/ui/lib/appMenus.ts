@@ -4,6 +4,8 @@ import type { MenuEntry, MenuId } from "../components/chrome/menu";
 export interface BuildAppMenusOptions {
   canRefreshCurrentInput: boolean;
   focusFilter: () => void;
+  focusSearch: () => void;
+  advanceSearchCursor: (delta: 1 | -1) => void;
   layoutMode: LayoutMode;
   moveToAnnotatedFile: (delta: number) => void;
   moveToAnnotatedHunk: (delta: number) => void;
@@ -35,6 +37,8 @@ export interface BuildAppMenusOptions {
 export function buildAppMenus({
   canRefreshCurrentInput,
   focusFilter,
+  focusSearch,
+  advanceSearchCursor,
   layoutMode,
   moveToAnnotatedFile,
   moveToAnnotatedHunk,
@@ -70,8 +74,13 @@ export function buildAppMenus({
     },
     {
       kind: "item",
-      label: "Focus filter",
+      label: "Search diff content",
       hint: "/",
+      action: focusSearch,
+    },
+    {
+      kind: "item",
+      label: "Focus file filter",
       action: focusFilter,
     },
     {
@@ -205,8 +214,25 @@ export function buildAppMenus({
       { kind: "separator" },
       {
         kind: "item",
-        label: "Focus filter",
+        label: "Search diff content",
         hint: "/",
+        action: focusSearch,
+      },
+      {
+        kind: "item",
+        label: "Next search match",
+        hint: "n",
+        action: () => advanceSearchCursor(1),
+      },
+      {
+        kind: "item",
+        label: "Previous search match",
+        hint: "N",
+        action: () => advanceSearchCursor(-1),
+      },
+      {
+        kind: "item",
+        label: "Focus file filter",
         action: focusFilter,
       },
     ],
