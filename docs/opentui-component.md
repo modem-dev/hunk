@@ -7,7 +7,7 @@ Use `HunkDiffView` when you want a batteries-included single-file diff, or compo
 ## Install
 
 ```bash
-npm i hunkdiff @opentui/core@^0.1.88 @opentui/react@^0.1.88 react
+npm i hunkdiff @opentui/core@^0.4.2 @opentui/react@^0.4.2 react
 ```
 
 `hunkdiff` declares OpenTUI and React as peer dependencies, so install them in your app.

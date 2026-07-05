@@ -33,6 +33,17 @@ rmSync(outdir, { recursive: true, force: true });
 rmSync(typesOutdir, { recursive: true, force: true });
 mkdirSync(opentuiOutdir, { recursive: true });
 
+const opentuiNativePackages = [
+  "@opentui/core-darwin-arm64",
+  "@opentui/core-darwin-x64",
+  "@opentui/core-linux-arm64",
+  "@opentui/core-linux-arm64-musl",
+  "@opentui/core-linux-x64",
+  "@opentui/core-linux-x64-musl",
+  "@opentui/core-win32-arm64",
+  "@opentui/core-win32-x64",
+];
+
 runBun([
   "build",
   path.join(repoRoot, "src", "main.tsx"),
@@ -40,6 +51,7 @@ runBun([
   "bun",
   "--format",
   "esm",
+  ...opentuiNativePackages.flatMap((packageName) => ["--external", packageName]),
   "--outdir",
   outdir,
   "--entry-naming",
