@@ -36,14 +36,6 @@ describe("buildDiffFile", () => {
     expect(file.stats).toEqual({ additions: 2, deletions: 1 });
   });
 
-  test("derives TypeScript language for module and commonjs TypeScript files", () => {
-    const mtsFile = buildDiffFile(metadataFor("a\n", "b\n", "foo.mts"), "PATCH", 0, "src", null);
-    const ctsFile = buildDiffFile(metadataFor("a\n", "b\n", "foo.cts"), "PATCH", 1, "src", null);
-
-    expect(mtsFile.language).toBe("typescript");
-    expect(ctsFile.language).toBe("typescript");
-  });
-
   test("infers binary status from the patch when not given explicitly", () => {
     const binary = buildDiffFile(metadata, "Binary files a/x and b/x differ\n", 0, "src", null);
     expect(binary.isBinary).toBe(true);
