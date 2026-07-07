@@ -127,6 +127,36 @@ function uniqueSortedLocations(finding: SlopFinding): SlopFindingLocation[] {
   });
 }
 
+/** Builds stable identity fields for matching findings across base/head reports. */
+function signaturePayloadForFinding(
+  finding: SlopFinding,
+  path: string,
+  locations: SlopFindingLocation[],
+) {
+  const basePayload = {
+    ruleId: finding.ruleId,
+    family: finding.family,
+    severity: finding.severity,
+    scope: finding.scope,
+    path,
+    locations: locations.map((location) => ({
+      line: location.line,
+      column: location.column ?? 1,
+    })),
+  };
+
+  if (finding.ruleId === "structure.directory-fanout-hotspot") {
+    // The analyzer embeds repo-wide baseline/threshold values in this rule's text.
+    return basePayload;
+  }
+
+  return {
+    ...basePayload,
+    message: finding.message,
+    evidence: finding.evidence,
+  };
+}
+
 export function buildFileFindingOccurrences(report: SlopReport | null | undefined) {
   const occurrences: FileFindingOccurrence[] = [];
 
@@ -147,19 +177,7 @@ export function buildFileFindingOccurrences(report: SlopReport | null | undefine
         continue;
       }
 
-      const signature = JSON.stringify({
-        ruleId: finding.ruleId,
-        family: finding.family,
-        severity: finding.severity,
-        scope: finding.scope,
-        message: finding.message,
-        path,
-        evidence: finding.evidence,
-        locations: locations.map((location) => ({
-          line: location.line,
-          column: location.column ?? 1,
-        })),
-      });
+      const signature = JSON.stringify(signaturePayloadForFinding(finding, path, locations));
 
       occurrences.push({
         signature,

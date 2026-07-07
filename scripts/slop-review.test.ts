@@ -91,6 +91,43 @@ describe("slop review helpers", () => {
     ]);
   });
 
+  test("delta comparison treats existing directory fan-out hotspots as existing findings", () => {
+    const baseHotspot: SlopReport = {
+      summary: { findingCount: 1 },
+      findings: [
+        {
+          ruleId: "structure.directory-fanout-hotspot",
+          family: "structure",
+          severity: "medium",
+          scope: "directory",
+          message: "Directory fan-out is a repo hotspot (9 files vs baseline 3.0)",
+          evidence: ["baseline=3.00", "threshold=7", "fileCount=9"],
+          score: 9,
+          path: "scripts",
+          locations: [{ path: "scripts", line: 1, column: 1 }],
+        },
+      ],
+    };
+    const headHotspot: SlopReport = {
+      summary: { findingCount: 1 },
+      findings: [
+        {
+          ruleId: "structure.directory-fanout-hotspot",
+          family: "structure",
+          severity: "medium",
+          scope: "directory",
+          message: "Directory fan-out is a repo hotspot (11 files vs baseline 3.0)",
+          evidence: ["baseline=3.00", "threshold=7", "fileCount=11"],
+          score: 11,
+          path: "scripts",
+          locations: [{ path: "scripts", line: 1, column: 1 }],
+        },
+      ],
+    };
+
+    expect(buildDeltaOccurrences(baseHotspot, headHotspot)).toHaveLength(0);
+  });
+
   test("agent context groups new findings by file and emits hunk-friendly annotations", () => {
     const context = buildAgentContext(baseReport, headReport);
 
