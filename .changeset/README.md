@@ -29,3 +29,5 @@ bun run release:version
 ```
 
 That consumes the pending `.changeset/*.md` files, updates `CHANGELOG.md`, and bumps package versions for the release commit.
+
+After the tag release publishes npm packages and GitHub release assets, verify Homebrew through `Homebrew/homebrew-core`. Hunk is on Homebrew's Autobump list, so do not open manual simple version-bump PRs. Wait for the automated `hunk <version>` PR, confirm it merges, then verify `brew install hunk` resolves to the released version. Use `brew bump-formula-pr hunk --version <version>` only if Homebrew maintainers ask for a manual bump or Autobump stalls unexpectedly.
