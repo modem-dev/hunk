@@ -18,6 +18,9 @@ concurrency:
   group: slop-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  SKIP_INSTALL_SIMPLE_GIT_HOOKS: "1"
+
 jobs:
   slop:
     name: Slop analyzer delta
