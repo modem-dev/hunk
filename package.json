@@ -71,7 +71,6 @@
     "check:prebuilt-pack": "bun run ./scripts/check-prebuilt-pack.ts",
     "smoke:prebuilt-install": "bun run ./scripts/smoke-prebuilt-install.ts",
     "publish:prebuilt:npm": "bun run ./scripts/publish-prebuilt-npm.ts",
-    "update:homebrew-formula": "bun run ./scripts/update-homebrew-formula.ts",
     "prepack": "bun run build:npm",
     "bench": "bun run benchmarks/run.ts",
     "bench:release": "bun run ./scripts/run-release-benchmark.ts",
