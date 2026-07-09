@@ -119,6 +119,17 @@ export function filterReviewFiles(files: DiffFile[], query: string): DiffFile[] 
   });
 }
 
+/** Move repo-root files ahead of folder-nested files, keeping each group's original order. */
+export function hoistRootFilesFirst(files: DiffFile[]): DiffFile[] {
+  const isRootFile = (file: DiffFile) => {
+    const path = sanitizeTerminalLine(normalizeDiffPath(file.path) ?? file.path);
+    return dirname(path) === ".";
+  };
+  const rootFiles = files.filter(isRootFile);
+  const folderFiles = files.filter((file) => !isRootFile(file));
+  return [...rootFiles, ...folderFiles];
+}
+
 /** Build the grouped sidebar entries while preserving the review stream order. */
 export function buildSidebarEntries(files: DiffFile[]): SidebarEntry[] {
   const entries: SidebarEntry[] = [];

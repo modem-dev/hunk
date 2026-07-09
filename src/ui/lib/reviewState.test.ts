@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createTestAgentFileContext, createTestDiffFile } from "../../../test/helpers/diff-helpers";
 import {
+  buildReviewState,
   buildSelectedHunkSummary,
   findNextAnnotatedFile,
   resolveReviewNavigationTarget,
@@ -113,5 +114,24 @@ describe("review state helpers", () => {
         input: { filePath: "src/alpha.ts", hunkIndex: 20 },
       }),
     ).toThrow("No diff hunk");
+  });
+
+  // Intent: guard that buildReviewState applies the hoist itself. Dropping the
+  // wrapper would regress sidebar and nav order while the helper test stays green.
+  test("buildReviewState hoists repo-root files above folder groups", () => {
+    const files = [
+      createTestDiffFile({ id: "nested", path: "src/a.ts" }),
+      createTestDiffFile({ id: "root", path: "readme.ts" }),
+    ];
+
+    const state = buildReviewState({
+      files,
+      liveCommentsByFileId: {},
+      filterQuery: "",
+      selectedFileId: "",
+      selectedHunkIndex: 0,
+    });
+
+    expect(state.visibleFiles.map((file) => file.id)).toEqual(["root", "nested"]);
   });
 });

@@ -410,7 +410,7 @@ function createCollapsedTopBootstrap(): AppBootstrap {
       ),
       createTestDiffFile(
         "second",
-        "other.ts",
+        "zzz/other.ts",
         lines("export const other = 1;"),
         lines("export const other = 2;"),
       ),

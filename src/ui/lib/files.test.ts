@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createTestDiffFile, lines } from "../../../test/helpers/diff-helpers";
-import { buildSidebarEntries, fileLabelParts } from "./files";
+import { buildSidebarEntries, fileLabelParts, hoistRootFilesFirst } from "./files";
 
 describe("files helpers", () => {
   test("buildSidebarEntries hides zero-value sidebar stats", () => {
@@ -133,5 +133,27 @@ describe("files helpers", () => {
       filename: "pi/extensions/loop.ts -> agents/pi/extensions/notify.ts",
       stateLabel: null,
     });
+  });
+
+  test("hoistRootFilesFirst moves repo-root files to the top, preserving relative order", () => {
+    const make = (id: string, path: string) =>
+      createTestDiffFile({
+        id,
+        path,
+        before: lines("export const stable = true;"),
+        after: lines("export const stable = true;", `export const ${id} = 1;`),
+      });
+    const files = [
+      make("mid", "internal/mod.ts"),
+      make("rootB", "readme.ts"),
+      make("deep", "internal/sub/x.ts"),
+      make("rootA", "main.ts"),
+    ];
+
+    const ordered = hoistRootFilesFirst(files).map((file) => file.path);
+
+    // readme.ts stays before main.ts, proving root files are hoisted in their
+    // original order rather than alphabetically re-sorted.
+    expect(ordered).toEqual(["readme.ts", "main.ts", "internal/mod.ts", "internal/sub/x.ts"]);
   });
 });
