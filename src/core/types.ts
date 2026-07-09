@@ -84,6 +84,13 @@ export interface CommonOptions {
   vcs?: VcsMode;
   theme?: string;
   agentContext?: string;
+  /** Explicit opt-out (`--no-agent-context`): disables sidecar loading and auto-discovery. */
+  noAgentContext?: boolean;
+  /**
+   * Internal marker: the resolved `agentContext` is the best-effort conventional
+   * `.hunk/agent-context.json` default, not an explicit user path.
+   */
+  agentContextOptional?: boolean;
   pager?: boolean;
   watch?: boolean;
   excludeUntracked?: boolean;

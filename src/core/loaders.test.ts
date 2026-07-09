@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { platform, tmpdir } from "node:os";
 import { join } from "node:path";
+import { resolveConfiguredCliInput } from "./config";
 import { SourceTextTooLargeError } from "./fileSource";
 import { loadAppBootstrap } from "./loaders";
 import type { CliInput } from "./types";
@@ -211,6 +212,92 @@ describe("loadAppBootstrap", () => {
     expect(bootstrap.changeset.agentSummary).toBe("Agent added the bonus export.");
     expect(bootstrap.changeset.files[0]?.stats.additions).toBeGreaterThan(0);
     expect(bootstrap.changeset.files[0]?.agent?.annotations).toHaveLength(1);
+    expect(bootstrap.initialShowAgentNotes).toBe(true);
+  });
+
+  test("keeps agent notes hidden when no agent context loads", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "hunk-diff-no-agent-"));
+    tempDirs.push(dir);
+
+    const left = join(dir, "before.ts");
+    const right = join(dir, "after.ts");
+
+    writeFileSync(left, "export const answer = 41;\n");
+    writeFileSync(right, "export const answer = 42;\n");
+
+    const bootstrap = await loadAppBootstrap({
+      kind: "diff",
+      left,
+      right,
+      options: {
+        mode: "auto",
+      },
+    });
+
+    expect(bootstrap.initialShowAgentNotes).toBe(false);
+  });
+
+  test("keeps explicitly hidden agent notes hidden when agent context loads", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "hunk-diff-agent-notes-off-"));
+    tempDirs.push(dir);
+
+    const left = join(dir, "before.ts");
+    const right = join(dir, "after.ts");
+    const agent = join(dir, "agent.json");
+
+    writeFileSync(left, "export const answer = 41;\n");
+    writeFileSync(right, "export const answer = 42;\nexport const bonus = true;\n");
+    writeFileSync(
+      agent,
+      JSON.stringify({
+        version: 1,
+        files: [
+          {
+            path: "after.ts",
+            annotations: [{ newRange: [2, 2], summary: "Introduces the bonus flag." }],
+          },
+        ],
+      }),
+    );
+
+    const bootstrap = await loadAppBootstrap({
+      kind: "diff",
+      left,
+      right,
+      options: {
+        mode: "auto",
+        agentContext: agent,
+        agentNotes: false,
+      },
+    });
+
+    expect(bootstrap.changeset.files[0]?.agent?.annotations).toHaveLength(1);
+    expect(bootstrap.initialShowAgentNotes).toBe(false);
+  });
+
+  test("continues when optional agent context is absent", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "hunk-diff-optional-agent-"));
+    tempDirs.push(dir);
+
+    const left = join(dir, "before.ts");
+    const right = join(dir, "after.ts");
+
+    writeFileSync(left, "export const answer = 41;\n");
+    writeFileSync(right, "export const answer = 42;\n");
+
+    const bootstrap = await loadAppBootstrap({
+      kind: "diff",
+      left,
+      right,
+      options: {
+        mode: "auto",
+        agentContext: join(dir, "missing-agent.json"),
+        agentContextOptional: true,
+      },
+    });
+
+    expect(bootstrap.changeset.files).toHaveLength(1);
+    expect(bootstrap.initialShowAgentNotes).toBe(false);
   });
 
   test("loads git changes and relative agent context from an explicit cwd override", async () => {
@@ -321,6 +408,64 @@ describe("loadAppBootstrap", () => {
     expect(bootstrap.changeset.files).toHaveLength(1);
     expect(bootstrap.changeset.files[0]?.path).toBe("example.ts");
     expect(bootstrap.changeset.files[0]?.stats.additions).toBeGreaterThan(0);
+  });
+
+  test("shows auto-discovered agent notes by default through config resolution", async () => {
+    const dir = createTempRepo("hunk-git-agent-notes-default-");
+
+    writeFileSync(join(dir, "example.ts"), "export const value = 1;\n");
+    git(dir, "add", "example.ts");
+    git(dir, "commit", "-m", "initial");
+
+    writeFileSync(join(dir, "example.ts"), "export const value = 2;\n");
+    mkdirSync(join(dir, ".hunk"), { recursive: true });
+    writeFileSync(
+      join(dir, ".hunk", "agent-context.json"),
+      JSON.stringify({
+        version: 1,
+        files: [
+          {
+            path: "example.ts",
+            annotations: [{ newRange: [1, 1], summary: "Explains the edit." }],
+          },
+        ],
+      }),
+    );
+
+    const configured = resolveConfiguredCliInput(
+      {
+        kind: "vcs",
+        staged: false,
+        options: {},
+      },
+      { cwd: dir },
+    );
+    const bootstrap = await loadAppBootstrap(configured.input, { cwd: dir });
+
+    expect(bootstrap.initialShowAgentNotes).toBe(true);
+    expect(bootstrap.changeset.files[0]?.path).toBe("example.ts");
+    expect(bootstrap.changeset.files[0]?.agent?.annotations).toHaveLength(1);
+  });
+
+  test("keeps agent notes hidden through config resolution when no sidecar loads", async () => {
+    const dir = createTempRepo("hunk-git-agent-notes-no-sidecar-");
+
+    writeFileSync(join(dir, "example.ts"), "export const value = 1;\n");
+    git(dir, "add", "example.ts");
+    git(dir, "commit", "-m", "initial");
+    writeFileSync(join(dir, "example.ts"), "export const value = 2;\n");
+
+    const configured = resolveConfiguredCliInput(
+      {
+        kind: "vcs",
+        staged: false,
+        options: {},
+      },
+      { cwd: dir },
+    );
+    const bootstrap = await loadAppBootstrap(configured.input, { cwd: dir });
+
+    expect(bootstrap.initialShowAgentNotes).toBe(false);
   });
 
   test("includes untracked files in working tree reviews by default", async () => {

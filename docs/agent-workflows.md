@@ -132,6 +132,14 @@ For normal worktree use, prefer `--repo /path/to/worktree`. Reach for `--session
 
 Use `--agent-context` when you already have agent-written rationale or notes in a JSON sidecar file and want to render them beside the diff.
 
+### Auto-discovery
+
+At the end of a meaningful changeset, agents can write or refresh `<repoRoot>/.hunk/agent-context.json`. The next `hunk diff`, `hunk show`, `hunk stash show`, `hunk patch`, or `hunk difftool` auto-loads that file with no flags when it exists; `hunk diff --watch` also refreshes notes when the file is rewritten.
+
+Precedence is `--no-agent-context` > `--agent-context <path>` > config `agent_context` > conventional `.hunk/agent-context.json`. `agent_context = "<path>"` resolves against the repo root, and `--no-agent-context` disables sidecar loading and auto-discovery entirely. The conventional sidecar is best-effort and silently skipped when absent or malformed; explicit or configured paths still fail loudly.
+
+The sidecar schema is range-based: annotations use 1-based inclusive `oldRange` / `newRange` tuples, not single `oldLine` / `newLine` fields.
+
 ```bash
 hunk diff --agent-context notes.json
 hunk patch change.patch --agent-context notes.json

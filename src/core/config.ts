@@ -1,8 +1,8 @@
 import fs from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { BUNDLED_SHIKI_THEME_IDS } from "../ui/lib/shikiThemes";
 import { normalizeBuiltInThemeId } from "../ui/themes";
-import { resolveGlobalConfigPath } from "./paths";
+import { AGENT_CONTEXT_FILENAME, HUNK_DIR_NAME, resolveGlobalConfigPath } from "./paths";
 import { detectVcs, findVcsRepoRootCandidate, getDefaultVcsAdapter, isVcsId } from "./vcs";
 import type {
   CliInput,
@@ -232,6 +232,7 @@ function readConfigPreferences(source: Record<string, unknown>): CommonOptions {
     mode: normalizeLayoutMode(source.mode),
     vcs: normalizeVcsMode(source.vcs),
     theme: normalizeString(source.theme),
+    agentContext: normalizeString(source.agent_context),
     watch: normalizeBoolean(source.watch),
     excludeUntracked: normalizeBoolean(source.exclude_untracked),
     lineNumbers: normalizeBoolean(source.line_numbers),
@@ -255,6 +256,8 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
     vcs: overrides.vcs ?? base.vcs,
     theme: overrides.theme ?? base.theme,
     agentContext: overrides.agentContext ?? base.agentContext,
+    noAgentContext: overrides.noAgentContext ?? base.noAgentContext,
+    agentContextOptional: overrides.agentContextOptional ?? base.agentContextOptional,
     pager: overrides.pager ?? base.pager,
     watch: overrides.watch ?? base.watch,
     excludeUntracked: overrides.excludeUntracked ?? base.excludeUntracked,
@@ -311,7 +314,7 @@ export function resolveConfiguredCliInput(
   { cwd = process.cwd(), env = process.env }: ConfigResolutionOptions = {},
 ): HunkConfigResolution {
   const repoRoot = findVcsRepoRootCandidate(cwd);
-  const repoConfigPath = repoRoot ? join(repoRoot, ".hunk", "config.toml") : undefined;
+  const repoConfigPath = repoRoot ? join(repoRoot, HUNK_DIR_NAME, "config.toml") : undefined;
   const userConfigPath = resolveGlobalConfigPath(env);
   let resolvedCustomTheme: CustomThemeConfig | undefined;
 
@@ -321,7 +324,7 @@ export function resolveConfiguredCliInput(
     // Keep the built-in theme default explicit so stdin-backed startup paths do not depend on
     // renderer theme-mode detection for their initial palette.
     theme: "github-dark-default",
-    agentContext: input.options.agentContext,
+    agentContext: undefined,
     pager: input.options.pager ?? false,
     watch: input.options.watch ?? false,
     excludeUntracked: false,
@@ -329,7 +332,6 @@ export function resolveConfiguredCliInput(
     wrapLines: DEFAULT_VIEW_PREFERENCES.wrapLines,
     hunkHeaders: DEFAULT_VIEW_PREFERENCES.showHunkHeaders,
     menuBar: DEFAULT_VIEW_PREFERENCES.showMenuBar,
-    agentNotes: DEFAULT_VIEW_PREFERENCES.showAgentNotes,
     copyDecorations: DEFAULT_VIEW_PREFERENCES.copyDecorations,
     transparentBackground: false,
   };
@@ -346,10 +348,37 @@ export function resolveConfiguredCliInput(
     resolvedCustomTheme = mergeCustomTheme(resolvedCustomTheme, readCustomTheme(repoConfig));
   }
 
+  // Config-provided sidecar path (repo over user, including command/pager sections),
+  // captured before the CLI merge so it is not conflated with explicit CLI input.
+  const configAgentContext = resolvedOptions.agentContext;
+  let resolvedAgentContext: string | undefined;
+  let resolvedAgentContextOptional = false;
+
+  if (input.options.noAgentContext === true) {
+    // Opt-out beats explicit, configured, and conventional sidecar paths.
+    resolvedAgentContext = undefined;
+  } else if (
+    typeof input.options.agentContext === "string" &&
+    input.options.agentContext.length > 0 &&
+    input.options.agentContextOptional !== true
+  ) {
+    // Watch re-resolution feeds the already-resolved input back through this seam; the
+    // optional marker prevents the conventional default from becoming strict by accident.
+    resolvedAgentContext = input.options.agentContext;
+  } else if (configAgentContext) {
+    // Configured paths are strict opt-ins and resolve against the repo root when present.
+    resolvedAgentContext = resolve(repoRoot ?? cwd, configAgentContext);
+  } else if (repoRoot) {
+    // Always inject the conventional path in repos so watch can track create/rewrite/delete.
+    resolvedAgentContext = join(repoRoot, HUNK_DIR_NAME, AGENT_CONTEXT_FILENAME);
+    resolvedAgentContextOptional = true;
+  }
+
   resolvedOptions = mergeOptions(resolvedOptions, input.options);
   resolvedOptions = {
     ...resolvedOptions,
-    agentContext: input.options.agentContext,
+    agentContext: resolvedAgentContext,
+    agentContextOptional: resolvedAgentContextOptional,
     pager: input.options.pager ?? false,
     watch: input.options.watch ?? resolvedOptions.watch ?? false,
     excludeUntracked: resolvedOptions.excludeUntracked ?? false,
@@ -360,7 +389,9 @@ export function resolveConfiguredCliInput(
     wrapLines: resolvedOptions.wrapLines ?? DEFAULT_VIEW_PREFERENCES.wrapLines,
     hunkHeaders: resolvedOptions.hunkHeaders ?? DEFAULT_VIEW_PREFERENCES.showHunkHeaders,
     menuBar: resolvedOptions.menuBar ?? DEFAULT_VIEW_PREFERENCES.showMenuBar,
-    agentNotes: resolvedOptions.agentNotes ?? DEFAULT_VIEW_PREFERENCES.showAgentNotes,
+    // `agentNotes` is intentionally left unresolved here: loadAppBootstrap defaults it ON when
+    // a sidecar actually loads (agentContext !== null) and OFF otherwise. Collapsing it to a
+    // concrete default here would kill that behavior. Explicit CLI/config values still win.
     copyDecorations: resolvedOptions.copyDecorations ?? DEFAULT_VIEW_PREFERENCES.copyDecorations,
     transparentBackground: resolvedOptions.transparentBackground ?? false,
     colorMoved: resolvedOptions.colorMoved,

@@ -120,6 +120,10 @@ hunk session comment clear --repo . --yes [--file README.md]
 hunk session reload --repo . -- diff --exclude-untracked
 ```
 
+## Agent context sidecars
+
+At the end of a meaningful changeset, write or refresh `.hunk/agent-context.json` in the repo root so Hunk can auto-load it with zero flags. Use range-based annotations with `oldRange` / `newRange`; the file order in the sidecar drives sidebar and review order.
+
 ## Guiding a review
 
 The user may ask you to walk them through a changeset or review code using Hunk. Start with `hunk session review --json` to understand the file/hunk structure without inflating agent context, then use `--include-patch` only for the files you truly need to read in raw diff form. Use `context` and `navigate` to line up the user's current view before adding comments.

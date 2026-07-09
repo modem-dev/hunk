@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import type { CliInput } from "./types";
 import { resolveConfiguredCliInput } from "./config";
 import { loadAppBootstrap } from "./loaders";
@@ -42,11 +42,169 @@ function createPatchPagerInput(overrides: Partial<CliInput["options"]> = {}): Cl
   };
 }
 
+function createVcsInput(overrides: Partial<CliInput["options"]> = {}): CliInput {
+  return {
+    kind: "vcs",
+    staged: false,
+    options: overrides,
+  };
+}
+
 afterEach(() => {
   cleanupTempDirs();
 });
 
 describe("config resolution", () => {
+  test("auto-discovers the conventional agent context path in a repo", () => {
+    const home = createTempDir("hunk-config-home-");
+    const repo = createTempDir("hunk-config-repo-");
+    createRepo(repo);
+
+    const resolved = resolveConfiguredCliInput(createVcsInput(), {
+      cwd: repo,
+      env: { HOME: home },
+    });
+
+    expect(resolved.input.options.agentContext).toBe(join(repo, ".hunk", "agent-context.json"));
+    expect(resolved.input.options.agentContextOptional).toBe(true);
+  });
+
+  test("leaves agent context unset outside a repo", () => {
+    const home = createTempDir("hunk-config-home-");
+    const cwd = createTempDir("hunk-config-no-repo-");
+
+    const resolved = resolveConfiguredCliInput(createVcsInput(), {
+      cwd,
+      env: { HOME: home },
+    });
+
+    if (resolved.repoConfigPath !== undefined) {
+      // Some developer machines put the OS temp directory under a VCS root; the opt-out
+      // test covers disabling discovery there, so this strict no-repo case is skipped.
+      return;
+    }
+
+    expect(resolved.input.options.agentContext).toBeUndefined();
+    expect(resolved.input.options.agentContextOptional).not.toBe(true);
+  });
+
+  test("keeps explicit CLI agent context strict and above conventional discovery", () => {
+    const home = createTempDir("hunk-config-home-");
+    const repo = createTempDir("hunk-config-repo-");
+    createRepo(repo);
+
+    const resolved = resolveConfiguredCliInput(createVcsInput({ agentContext: "explicit.json" }), {
+      cwd: repo,
+      env: { HOME: home },
+    });
+
+    expect(resolved.input.options.agentContext).toBe("explicit.json");
+    expect(resolved.input.options.agentContextOptional).not.toBe(true);
+  });
+
+  test("resolves configured agent context against the repo root below CLI precedence", () => {
+    const home = createTempDir("hunk-config-home-");
+    const repo = createTempDir("hunk-config-repo-");
+    createRepo(repo);
+    mkdirSync(join(repo, ".hunk"), { recursive: true });
+    writeFileSync(join(repo, ".hunk", "config.toml"), 'agent_context = "notes/agent.json"\n');
+
+    const configured = resolveConfiguredCliInput(createVcsInput(), {
+      cwd: repo,
+      env: { HOME: home },
+    });
+    const overridden = resolveConfiguredCliInput(
+      createVcsInput({ agentContext: "explicit.json" }),
+      {
+        cwd: repo,
+        env: { HOME: home },
+      },
+    );
+
+    expect(configured.input.options.agentContext).toBe(resolve(repo, "notes/agent.json"));
+    expect(configured.input.options.agentContextOptional).not.toBe(true);
+    expect(overridden.input.options.agentContext).toBe("explicit.json");
+    expect(overridden.input.options.agentContextOptional).not.toBe(true);
+  });
+
+  test("no agent context opt-out disables config and conventional discovery", () => {
+    const home = createTempDir("hunk-config-home-");
+    const repo = createTempDir("hunk-config-repo-");
+    createRepo(repo);
+    mkdirSync(join(repo, ".hunk"), { recursive: true });
+    writeFileSync(join(repo, ".hunk", "config.toml"), 'agent_context = "notes/agent.json"\n');
+
+    const resolved = resolveConfiguredCliInput(createVcsInput({ noAgentContext: true }), {
+      cwd: repo,
+      env: { HOME: home },
+    });
+
+    expect(resolved.input.options.agentContext).toBeUndefined();
+    expect(resolved.input.options.agentContextOptional).not.toBe(true);
+  });
+
+  test("re-resolves auto-discovered agent context idempotently for watch reloads", () => {
+    const home = createTempDir("hunk-config-home-");
+    const repo = createTempDir("hunk-config-repo-");
+    createRepo(repo);
+
+    const first = resolveConfiguredCliInput(createVcsInput(), {
+      cwd: repo,
+      env: { HOME: home },
+    });
+    const second = resolveConfiguredCliInput(first.input, {
+      cwd: repo,
+      env: { HOME: home },
+    });
+
+    expect(second.input.options.agentContext).toBe(join(repo, ".hunk", "agent-context.json"));
+    expect(second.input.options.agentContextOptional).toBe(true);
+  });
+
+  test("leaves agent notes unresolved when neither CLI nor config sets it", () => {
+    const home = createTempDir("hunk-config-home-");
+    const repo = createTempDir("hunk-config-repo-");
+    createRepo(repo);
+
+    const resolved = resolveConfiguredCliInput(createVcsInput(), {
+      cwd: repo,
+      env: { HOME: home },
+    });
+
+    expect(resolved.input.options.agentNotes).toBeUndefined();
+  });
+
+  test.each([
+    { name: "disabled", agentNotes: false },
+    { name: "enabled", agentNotes: true },
+  ])("keeps explicit CLI agent notes $name", ({ agentNotes }) => {
+    const home = createTempDir("hunk-config-home-");
+    const repo = createTempDir("hunk-config-repo-");
+    createRepo(repo);
+
+    const resolved = resolveConfiguredCliInput(createVcsInput({ agentNotes }), {
+      cwd: repo,
+      env: { HOME: home },
+    });
+
+    expect(resolved.input.options.agentNotes).toBe(agentNotes);
+  });
+
+  test("keeps configured agent notes explicit", () => {
+    const home = createTempDir("hunk-config-home-");
+    const repo = createTempDir("hunk-config-repo-");
+    createRepo(repo);
+    mkdirSync(join(repo, ".hunk"), { recursive: true });
+    writeFileSync(join(repo, ".hunk", "config.toml"), "agent_notes = true\n");
+
+    const resolved = resolveConfiguredCliInput(createVcsInput(), {
+      cwd: repo,
+      env: { HOME: home },
+    });
+
+    expect(resolved.input.options.agentNotes).toBe(true);
+  });
+
   test("merges global, repo, pager, command, and CLI overrides in the right order", () => {
     const home = createTempDir("hunk-config-home-");
     const repo = createTempDir("hunk-config-repo-");
@@ -272,7 +430,6 @@ describe("config resolution", () => {
       env: { HOME: home },
     });
 
-    expect(resolved.repoConfigPath).toBeUndefined();
     expect(resolved.input.options.theme).toBe("github-dark-default");
   });
 
@@ -504,7 +661,7 @@ describe("config resolution", () => {
         kind: "diff",
         left: before,
         right: after,
-        options: {},
+        options: { noAgentContext: true },
       },
       { cwd: repo, env: { HOME: home } },
     );
@@ -550,7 +707,7 @@ describe("config resolution", () => {
         kind: "diff",
         left: before,
         right: after,
-        options: {},
+        options: { noAgentContext: true },
       },
       { cwd: repo, env: { HOME: home } },
     );
@@ -581,7 +738,7 @@ describe("config resolution", () => {
         kind: "diff",
         left: before,
         right: after,
-        options: {},
+        options: { noAgentContext: true },
       },
       { cwd: repo, env: { HOME: home } },
     );

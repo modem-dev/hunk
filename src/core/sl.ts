@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import { join } from "node:path";
 import { HunkUserError } from "./errors";
+import { isHunkMetadataRelativePath } from "./paths";
 import type { VcsDiffCommandInput, VcsShowCommandInput } from "./types";
 import { normalizePathForOS } from "../lib/osPath";
 
@@ -256,8 +257,11 @@ export function listSlUntrackedFiles(
   }
 
   const normalizedRepoRoot = repoRoot ?? resolveSlRepoRoot(input, { cwd, slExecutable });
-  return untrackedFiles.filter((filePath) =>
-    isReviewableUntrackedPath(normalizedRepoRoot, filePath),
+  return untrackedFiles.filter(
+    (filePath) =>
+      // Hunk's own `.hunk/` metadata is review context, never review content.
+      !isHunkMetadataRelativePath(filePath) &&
+      isReviewableUntrackedPath(normalizedRepoRoot, filePath),
   );
 }
 
