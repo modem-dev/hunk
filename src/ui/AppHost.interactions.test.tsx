@@ -19,6 +19,7 @@ import { AGENT_SKILL_COMMAND, AGENT_SKILL_PROMPT } from "./components/chrome/Age
 import { resolveTheme } from "./themes";
 
 const { loadAppBootstrap } = await import("../core/loaders");
+const { App } = await import("./App");
 const { AppHost } = await import("./AppHost");
 
 const TEST_KEY_PAGE_UP = "\x1B[5~";
@@ -1782,6 +1783,79 @@ describe("App interactions", () => {
       expect(refreshedFrame).toContain("idleChange");
     } finally {
       await act(async () => {
+        setup.renderer.destroy();
+      });
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
+  test("watch mode does not overlap wake-up refreshes with resumed polling", async () => {
+    const dir = mkdtempSync(join(process.cwd(), ".hunk-watch-idle-race-"));
+    const left = join(dir, "before.ts");
+    const right = join(dir, "after.ts");
+
+    writeFileSync(left, "export const answer = 41;\n");
+    writeFileSync(right, "export const answer = 42;\n");
+
+    const bootstrap = await loadAppBootstrap({
+      kind: "diff",
+      left,
+      right,
+      options: {
+        mode: "split",
+        watch: true,
+        watchIdleAfterMs: 40,
+      },
+    });
+
+    let resolveReload: (() => void) | undefined;
+    const onReloadSession = mock(async () => {
+      await new Promise<void>((resolve) => {
+        resolveReload = resolve;
+      });
+
+      return {
+        sessionId: "local-session",
+        inputKind: bootstrap.input.kind,
+        title: bootstrap.changeset.title,
+        sourceLabel: bootstrap.changeset.sourceLabel,
+        fileCount: bootstrap.changeset.files.length,
+        selectedFilePath: bootstrap.changeset.files[0]?.path,
+        selectedHunkIndex: 0,
+      };
+    });
+
+    const setup = await testRender(
+      <App bootstrap={bootstrap} onReloadSession={onReloadSession} onQuit={() => undefined} />,
+      {
+        width: 220,
+        height: 20,
+      },
+    );
+
+    try {
+      await flush(setup);
+      await act(async () => {
+        await Bun.sleep(120);
+        await setup.renderOnce();
+      });
+
+      writeFileSync(right, "export const answer = 42;\nexport const idleChange = true;\n");
+
+      await act(async () => {
+        await setup.mockInput.pressArrow("right");
+      });
+      expect(onReloadSession).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        await Bun.sleep(320);
+        await setup.renderOnce();
+      });
+      expect(onReloadSession).toHaveBeenCalledTimes(1);
+    } finally {
+      resolveReload?.();
+      await act(async () => {
+        await Bun.sleep(0);
         setup.renderer.destroy();
       });
       rmSync(dir, { force: true, recursive: true });

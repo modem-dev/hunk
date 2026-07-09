@@ -158,6 +158,7 @@ export function App({
   const watchUsesIdleLifecycle = typeof watchIdleAfterMs === "number";
   const watchActivityRef = useRef<WatchSessionActivity>("active");
   const watchLastActivityAtRef = useRef(Date.now());
+  const watchRefreshInFlightRef = useRef(false);
   const [watchActivity, setWatchActivity] = useState<WatchSessionActivity>("active");
   const [watchActivityRevision, setWatchActivityRevision] = useState(0);
 
@@ -573,6 +574,27 @@ export function App({
     });
   }, [refreshCurrentInput]);
 
+  /** Refresh a watched input once while sharing one in-flight guard across watch triggers. */
+  const refreshWatchedInput = useCallback(
+    (failureMessage: string) => {
+      if (watchRefreshInFlightRef.current) {
+        return false;
+      }
+
+      watchRefreshInFlightRef.current = true;
+      void refreshCurrentInput()
+        .catch((error) => {
+          console.error(failureMessage, error);
+        })
+        .finally(() => {
+          watchRefreshInFlightRef.current = false;
+        });
+
+      return true;
+    },
+    [refreshCurrentInput],
+  );
+
   /** Record keyboard or mouse use, and refresh once when an idle watch session wakes up. */
   const markWatchSessionActivity = useCallback(() => {
     if (!watchEnabled || !watchUsesIdleLifecycle) {
@@ -585,11 +607,9 @@ export function App({
     setWatchActivityRevision((current) => current + 1);
 
     if (wasIdle) {
-      void refreshCurrentInput().catch((error) => {
-        console.error("Failed to refresh idle watch session after activity.", error);
-      });
+      refreshWatchedInput("Failed to refresh idle watch session after activity.");
     }
-  }, [refreshCurrentInput, setWatchSessionActivity, watchEnabled, watchUsesIdleLifecycle]);
+  }, [refreshWatchedInput, setWatchSessionActivity, watchEnabled, watchUsesIdleLifecycle]);
 
   const triggerEditSelectedFile = useCallback(() => {
     const basePath =
@@ -665,7 +685,6 @@ export function App({
 
     let cancelled = false;
     let polling = false;
-    let refreshing = false;
     let lastSignature: string;
 
     try {
@@ -676,7 +695,7 @@ export function App({
     }
 
     const pollForChanges = () => {
-      if (cancelled || polling || refreshing) {
+      if (cancelled || polling) {
         return;
       }
 
@@ -685,15 +704,10 @@ export function App({
       try {
         const nextSignature = computeWatchSignature(bootstrap.input);
         if (nextSignature !== lastSignature) {
-          lastSignature = nextSignature;
-          refreshing = true;
-          void refreshCurrentInput()
-            .catch((error) => {
-              console.error("Failed to auto-reload the current diff.", error);
-            })
-            .finally(() => {
-              refreshing = false;
-            });
+          const refreshStarted = refreshWatchedInput("Failed to auto-reload the current diff.");
+          if (refreshStarted) {
+            lastSignature = nextSignature;
+          }
         }
       } catch (error) {
         console.error("Failed to poll watch mode input.", error);
@@ -707,7 +721,7 @@ export function App({
       cancelled = true;
       clearInterval(interval);
     };
-  }, [bootstrap.input, refreshCurrentInput, watchShouldPoll]);
+  }, [bootstrap.input, refreshWatchedInput, watchShouldPoll]);
 
   /** Leave the app through the shared shutdown path. */
   const requestQuit = useCallback(() => {

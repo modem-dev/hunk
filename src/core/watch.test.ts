@@ -80,12 +80,12 @@ describe("parseWatchIdleAfterSeconds", () => {
   test("parses watch idle seconds into milliseconds", () => {
     expect(parseWatchIdleAfterSeconds("30")).toBe(30_000);
     expect(parseWatchIdleAfterSeconds("120")).toBe(120_000);
-    expect(parseWatchIdleAfterSeconds("0")).toBe(0);
   });
 
   test("rejects invalid watch idle seconds", () => {
     expect(() => parseWatchIdleAfterSeconds("soon")).toThrow("Invalid watch idle timeout");
     expect(() => parseWatchIdleAfterSeconds("-1")).toThrow("Invalid watch idle timeout");
+    expect(() => parseWatchIdleAfterSeconds("0")).toThrow("Invalid watch idle timeout");
     expect(() => parseWatchIdleAfterSeconds("30s")).toThrow("Invalid watch idle timeout");
   });
 });

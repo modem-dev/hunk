@@ -398,6 +398,7 @@ describe("config resolution", () => {
         kind: "vcs",
         staged: false,
         options: {
+          watch: true,
           watchIdleAfterMs: 5_000,
         },
       },
@@ -429,6 +430,44 @@ describe("config resolution", () => {
     expect(cliResolved.input.options.watchIdleAfterMs).toBe(5_000);
     expect(configResolved.input.options.watchIdleAfterMs).toBe(120_000);
     expect(envResolved.input.options.watchIdleAfterMs).toBe(300_000);
+  });
+
+  test("rejects explicit CLI watch idle timeout when resolved watch mode is disabled", () => {
+    expect(() =>
+      resolveConfiguredCliInput(
+        {
+          kind: "vcs",
+          staged: false,
+          options: {
+            watchIdleAfterMs: 5_000,
+          },
+        },
+        {
+          cwd: createTempDir("hunk-config-cwd-"),
+          env: { HOME: createTempDir("hunk-config-home-") },
+        },
+      ),
+    ).toThrow("Use --idle-after with --watch.");
+  });
+
+  test("allows explicit CLI watch idle timeout when config enables watch mode", () => {
+    const home = createTempDir("hunk-config-home-");
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(join(home, ".config", "hunk", "config.toml"), "watch = true\n");
+
+    const resolved = resolveConfiguredCliInput(
+      {
+        kind: "vcs",
+        staged: false,
+        options: {
+          watchIdleAfterMs: 5_000,
+        },
+      },
+      { cwd: createTempDir("hunk-config-cwd-"), env: { HOME: home } },
+    );
+
+    expect(resolved.input.options.watch).toBe(true);
+    expect(resolved.input.options.watchIdleAfterMs).toBe(5_000);
   });
 
   test("defaults to git VCS mode and accepts registered VCS modes from config", () => {

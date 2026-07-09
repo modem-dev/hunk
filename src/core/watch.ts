@@ -16,6 +16,12 @@ export function parseWatchIdleAfterSeconds(value: string) {
   }
 
   const seconds = Number(trimmed);
+  if (seconds < 1) {
+    throw new Error(
+      `Invalid watch idle timeout: ${value}. Use a whole number of seconds like 120.`,
+    );
+  }
+
   const milliseconds = seconds * 1000;
   if (!Number.isSafeInteger(milliseconds)) {
     throw new Error(`Invalid watch idle timeout: ${value}.`);

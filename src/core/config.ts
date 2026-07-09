@@ -390,6 +390,10 @@ export function resolveConfiguredCliInput(
     colorMoved: resolvedOptions.colorMoved,
   };
 
+  if (input.options.watchIdleAfterMs !== undefined && !resolvedOptions.watch) {
+    throw new Error("Use --idle-after with --watch.");
+  }
+
   if (resolvedOptions.theme === "custom" && !resolvedCustomTheme) {
     throw new Error('Expected a [custom_theme] table when config selects theme = "custom".');
   }
