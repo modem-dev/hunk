@@ -1724,6 +1724,70 @@ describe("App interactions", () => {
     }
   });
 
+  test("watch mode pauses polling while idle and refreshes once when activity resumes", async () => {
+    const dir = mkdtempSync(join(process.cwd(), ".hunk-watch-idle-"));
+    const left = join(dir, "before.ts");
+    const right = join(dir, "after.ts");
+
+    writeFileSync(left, "export const answer = 41;\n");
+    writeFileSync(right, "export const answer = 42;\n");
+
+    const bootstrap = await loadAppBootstrap({
+      kind: "diff",
+      left,
+      right,
+      options: {
+        mode: "split",
+        watch: true,
+        watchIdleAfterMs: 40,
+      },
+    });
+
+    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
+      width: 220,
+      height: 20,
+    });
+
+    try {
+      await flush(setup);
+      await act(async () => {
+        await Bun.sleep(120);
+        await setup.renderOnce();
+      });
+
+      writeFileSync(right, "export const answer = 42;\nexport const idleChange = true;\n");
+
+      let frame = setup.captureCharFrame();
+      expect(frame).not.toContain("idleChange");
+
+      for (let attempt = 0; attempt < 10; attempt += 1) {
+        await flush(setup);
+        frame = setup.captureCharFrame();
+        expect(frame).not.toContain("idleChange");
+        await act(async () => {
+          await Bun.sleep(40);
+          await setup.renderOnce();
+        });
+      }
+
+      await act(async () => {
+        await setup.mockInput.pressArrow("right");
+      });
+
+      const refreshedFrame = await waitForFrame(
+        setup,
+        (currentFrame) => currentFrame.includes("idleChange"),
+        30,
+      );
+      expect(refreshedFrame).toContain("idleChange");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
   test("watch mode preserves the resolved auto theme after refreshing the file diff", async () => {
     const dir = mkdtempSync(join(process.cwd(), ".hunk-watch-theme-"));
     const left = join(dir, "before.ts");

@@ -216,6 +216,7 @@ export function DiffPane({
   onCopyFeedback,
   onCopySelectionText,
   onScrollCodeHorizontally = () => {},
+  onUserActivity = () => {},
   onSelectFile,
   onToggleGap = NOOP_TOGGLE_GAP,
   onViewportCenteredHunkChange,
@@ -265,6 +266,7 @@ export function DiffPane({
   onCopyFeedback?: (text: string) => void;
   onCopySelectionText?: (text: string) => void | boolean;
   onScrollCodeHorizontally?: (delta: number) => void;
+  onUserActivity?: () => void;
   onSelectFile: (fileId: string) => void;
   onToggleGap?: (fileId: string, gapKey: string) => void;
   onViewportCenteredHunkChange?: (fileId: string, hunkIndex: number) => void;
@@ -349,6 +351,7 @@ export function DiffPane({
   /** Route shifted wheel input into horizontal code-column scrolling without disturbing vertical review scroll. */
   const handleMouseScroll = useCallback(
     (event: TuiMouseEvent) => {
+      onUserActivity();
       const scrollBox = scrollRef.current;
       const direction = event.scroll?.direction;
       if (!direction) {
@@ -401,7 +404,7 @@ export function DiffPane({
       event.preventDefault();
       event.stopPropagation();
     },
-    [clearAddNoteHoverForScroll, onScrollCodeHorizontally, scrollRef, wrapLines],
+    [clearAddNoteHoverForScroll, onScrollCodeHorizontally, onUserActivity, scrollRef, wrapLines],
   );
 
   const allAgentNotesByFile = useMemo(() => {

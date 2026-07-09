@@ -67,6 +67,7 @@ export interface UseAppKeyboardShortcutsOptions {
   moveToHunk: (delta: number) => void;
   moveMenuItem: (delta: number) => void;
   moveThemeSelector: (delta: number) => void;
+  onActivity?: () => void;
   openMenu: (menuId: MenuId) => void;
   openThemeSelector: () => void;
   pagerMode: boolean;
@@ -111,6 +112,7 @@ export function useAppKeyboardShortcuts({
   moveToHunk,
   moveMenuItem,
   moveThemeSelector,
+  onActivity,
   openMenu,
   openThemeSelector,
   pagerMode,
@@ -576,6 +578,8 @@ export function useAppKeyboardShortcuts({
   };
 
   useKeyboard((key: KeyEvent) => {
+    onActivity?.();
+
     if (handleMenuToggleShortcut(key)) {
       return;
     }

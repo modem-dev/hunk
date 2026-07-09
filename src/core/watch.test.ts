@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { computeWatchSignature } from "./watch";
+import { computeWatchSignature, parseWatchIdleAfterSeconds } from "./watch";
 import type { CliInput } from "./types";
 
 const tempDirs: string[] = [];
@@ -74,6 +74,20 @@ function createGitInput({
 
 afterEach(() => {
   cleanupTempDirs();
+});
+
+describe("parseWatchIdleAfterSeconds", () => {
+  test("parses watch idle seconds into milliseconds", () => {
+    expect(parseWatchIdleAfterSeconds("30")).toBe(30_000);
+    expect(parseWatchIdleAfterSeconds("120")).toBe(120_000);
+    expect(parseWatchIdleAfterSeconds("0")).toBe(0);
+  });
+
+  test("rejects invalid watch idle seconds", () => {
+    expect(() => parseWatchIdleAfterSeconds("soon")).toThrow("Invalid watch idle timeout");
+    expect(() => parseWatchIdleAfterSeconds("-1")).toThrow("Invalid watch idle timeout");
+    expect(() => parseWatchIdleAfterSeconds("30s")).toThrow("Invalid watch idle timeout");
+  });
 });
 
 describe("computeWatchSignature", () => {

@@ -56,6 +56,7 @@ describe("parseCli", () => {
     expect(parsed.text).toContain("Global options:");
     expect(parsed.text).toContain("Common review options:");
     expect(parsed.text).toContain("auto-reload when the current diff input changes");
+    expect(parsed.text).toContain("pause --watch refreshes after no activity");
     expect(parsed.text).toContain("Git diff options:");
     expect(parsed.text).toContain("Notes:");
     expect(parsed.text).toContain(
@@ -103,6 +104,8 @@ describe("parseCli", () => {
       "--agent-notes",
       "--transparent-bg",
       "--watch",
+      "--idle-after",
+      "120",
     ]);
 
     expect(parsed).toMatchObject({
@@ -119,6 +122,7 @@ describe("parseCli", () => {
         hunkHeaders: false,
         agentNotes: true,
         transparentBackground: true,
+        watchIdleAfterMs: 120_000,
       },
     });
   });

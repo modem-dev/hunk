@@ -6,6 +6,7 @@ import {
 import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState, useRef } from "react";
 import type { AppBootstrap, CliInput, LayoutMode, UserNoteLineTarget } from "../core/types";
+import type { WatchSessionActivity } from "../core/watch";
 import { canReloadInput, computeWatchSignature } from "../core/watch";
 import type { HunkSessionBrokerClient, ReloadedSessionResult } from "../hunk-session/types";
 import { MenuBar } from "./components/chrome/MenuBar";
@@ -153,6 +154,12 @@ export function App({
   const [resizeStartWidth, setResizeStartWidth] = useState<number | null>(null);
   const [sessionNoticeText, setSessionNoticeText] = useState<string | null>(null);
   const sessionNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const watchIdleAfterMs = bootstrap.input.options.watchIdleAfterMs;
+  const watchUsesIdleLifecycle = typeof watchIdleAfterMs === "number";
+  const watchActivityRef = useRef<WatchSessionActivity>("active");
+  const watchLastActivityAtRef = useRef(Date.now());
+  const [watchActivity, setWatchActivity] = useState<WatchSessionActivity>("active");
+  const [watchActivityRevision, setWatchActivityRevision] = useState(0);
 
   const themeOptions = useMemo(
     () => availableThemes(bootstrap.customTheme),
@@ -514,6 +521,12 @@ export function App({
 
   const canRefreshCurrentInput = canReloadInput(bootstrap.input);
   const watchEnabled = Boolean(bootstrap.input.options.watch && canRefreshCurrentInput);
+  const watchShouldPoll = watchEnabled && (!watchUsesIdleLifecycle || watchActivity === "active");
+
+  const setWatchSessionActivity = useCallback((activity: WatchSessionActivity) => {
+    watchActivityRef.current = activity;
+    setWatchActivity(activity);
+  }, []);
 
   /** Rebuild the current diff source while preserving the active app view options. */
   const refreshCurrentInput = useCallback(async () => {
@@ -560,6 +573,24 @@ export function App({
     });
   }, [refreshCurrentInput]);
 
+  /** Record keyboard or mouse use, and refresh once when an idle watch session wakes up. */
+  const markWatchSessionActivity = useCallback(() => {
+    if (!watchEnabled || !watchUsesIdleLifecycle) {
+      return;
+    }
+
+    const wasIdle = watchActivityRef.current === "idle";
+    watchLastActivityAtRef.current = Date.now();
+    setWatchSessionActivity("active");
+    setWatchActivityRevision((current) => current + 1);
+
+    if (wasIdle) {
+      void refreshCurrentInput().catch((error) => {
+        console.error("Failed to refresh idle watch session after activity.", error);
+      });
+    }
+  }, [refreshCurrentInput, setWatchSessionActivity, watchEnabled, watchUsesIdleLifecycle]);
+
   const triggerEditSelectedFile = useCallback(() => {
     const basePath =
       bootstrap.input.kind === "vcs" ||
@@ -594,7 +625,41 @@ export function App({
   ]);
 
   useEffect(() => {
-    if (!watchEnabled) {
+    if (!watchEnabled || !watchUsesIdleLifecycle || watchIdleAfterMs === undefined) {
+      setWatchSessionActivity("active");
+      return;
+    }
+
+    const elapsedMs = Date.now() - watchLastActivityAtRef.current;
+    const remainingMs = watchIdleAfterMs - elapsedMs;
+    if (remainingMs <= 0) {
+      setWatchSessionActivity("idle");
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      setWatchSessionActivity("idle");
+    }, remainingMs);
+
+    return () => {
+      clearTimeout(timeout);
+    };
+  }, [
+    setWatchSessionActivity,
+    watchActivityRevision,
+    watchEnabled,
+    watchIdleAfterMs,
+    watchUsesIdleLifecycle,
+  ]);
+
+  useEffect(() => {
+    watchLastActivityAtRef.current = Date.now();
+    setWatchSessionActivity("active");
+    setWatchActivityRevision((current) => current + 1);
+  }, [bootstrap.input, setWatchSessionActivity]);
+
+  useEffect(() => {
+    if (!watchShouldPoll) {
       return;
     }
 
@@ -642,7 +707,7 @@ export function App({
       cancelled = true;
       clearInterval(interval);
     };
-  }, [bootstrap.input, refreshCurrentInput, watchEnabled]);
+  }, [bootstrap.input, refreshCurrentInput, watchShouldPoll]);
 
   /** Leave the app through the shared shutdown path. */
   const requestQuit = useCallback(() => {
@@ -834,6 +899,7 @@ export function App({
     moveToHunk: review.moveToHunk,
     moveMenuItem,
     moveThemeSelector,
+    onActivity: markWatchSessionActivity,
     openMenu,
     openThemeSelector,
     pagerMode,
@@ -862,6 +928,7 @@ export function App({
 
   /** Start a mouse drag resize for the optional sidebar. */
   const beginSidebarResize = (event: TuiMouseEvent) => {
+    markWatchSessionActivity();
     if (event.button !== MouseButton.LEFT) {
       return;
     }
@@ -875,6 +942,7 @@ export function App({
 
   /** Update the sidebar width while a drag resize is active. */
   const updateSidebarResize = (event: TuiMouseEvent) => {
+    markWatchSessionActivity();
     if (!isResizingSidebar || resizeDragOriginX === null || resizeStartWidth === null) {
       return;
     }
@@ -894,6 +962,7 @@ export function App({
 
   /** End the current sidebar resize interaction. */
   const endSidebarResize = (event?: TuiMouseEvent) => {
+    markWatchSessionActivity();
     if (!isResizingSidebar) {
       return;
     }
@@ -961,10 +1030,12 @@ export function App({
         }}
         onMouseDrag={updateSidebarResize}
         onMouseDragEnd={(event) => {
+          markWatchSessionActivity();
           endSidebarResize(event);
           cancelCopySelectionRef.current?.();
         }}
         onMouseUp={(event) => {
+          markWatchSessionActivity();
           endSidebarResize(event);
           closeMenu();
           cancelCopySelectionRef.current?.();
@@ -1042,8 +1113,10 @@ export function App({
           onCancelDraftNote={cancelDraftNote}
           onFocusDraftNote={focusDraftNote}
           onScrollCodeHorizontally={(delta) => {
+            markWatchSessionActivity();
             scrollCodeHorizontally(delta * FAST_CODE_HORIZONTAL_SCROLL_COLUMNS);
           }}
+          onUserActivity={markWatchSessionActivity}
           onCopyFeedback={showTransientNotice}
           onSelectFile={jumpToFile}
           onToggleGap={review.toggleGap}

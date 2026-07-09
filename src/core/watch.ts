@@ -2,6 +2,28 @@ import fs from "node:fs";
 import { createVcsWatchSignature, getConfiguredVcsAdapter, operationFromInput } from "./vcs";
 import type { CliInput } from "./types";
 
+export type WatchSessionActivity = "active" | "idle";
+
+const WATCH_IDLE_SECONDS_PATTERN = /^\d+$/;
+
+/** Parse a watch idle timeout in whole seconds into milliseconds for timer use. */
+export function parseWatchIdleAfterSeconds(value: string) {
+  const trimmed = value.trim();
+  if (!WATCH_IDLE_SECONDS_PATTERN.test(trimmed)) {
+    throw new Error(
+      `Invalid watch idle timeout: ${value}. Use a whole number of seconds like 120.`,
+    );
+  }
+
+  const seconds = Number(trimmed);
+  const milliseconds = seconds * 1000;
+  if (!Number.isSafeInteger(milliseconds)) {
+    throw new Error(`Invalid watch idle timeout: ${value}.`);
+  }
+
+  return milliseconds;
+}
+
 /** Return whether the current input can be rebuilt from files or VCS state without rereading stdin. */
 export function canReloadInput(input: CliInput) {
   if (input.options.agentContext === "-") {
