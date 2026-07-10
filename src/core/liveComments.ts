@@ -113,6 +113,39 @@ export function firstCommentTargetForHunk(hunk: Hunk): Omit<ResolvedCommentTarge
   };
 }
 
+/**
+ * Enumerate every changed (added/deleted) line in a hunk as an ordered comment
+ * target list, top-to-bottom. Deletions precede additions within each change
+ * block (stack-view order). Context lines are skipped because comments anchor on
+ * changed lines. Used to drive the keyboard comment-line cursor so a reviewer can
+ * pick a specific line to annotate without the mouse.
+ */
+export function commentTargetsForHunk(hunk: Hunk): Array<Omit<ResolvedCommentTarget, "hunkIndex">> {
+  const targets: Array<Omit<ResolvedCommentTarget, "hunkIndex">> = [];
+  let deletionLineNumber = hunk.deletionStart;
+  let additionLineNumber = hunk.additionStart;
+
+  for (const content of hunk.hunkContent) {
+    if (content.type === "context") {
+      deletionLineNumber += content.lines;
+      additionLineNumber += content.lines;
+      continue;
+    }
+
+    for (let offset = 0; offset < content.deletions; offset += 1) {
+      targets.push({ side: "old", line: deletionLineNumber + offset });
+    }
+    for (let offset = 0; offset < content.additions; offset += 1) {
+      targets.push({ side: "new", line: additionLineNumber + offset });
+    }
+
+    deletionLineNumber += content.deletions;
+    additionLineNumber += content.additions;
+  }
+
+  return targets;
+}
+
 /** Resolve either a hunk-wide or line-specific target against one visible diff file. */
 export function resolveCommentTarget(
   file: DiffFile,

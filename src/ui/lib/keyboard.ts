@@ -69,6 +69,26 @@ export function isStepUpKey(key: KeyEvent) {
   return key.name === "up" || key.name === "k" || key.sequence === "k";
 }
 
+/** Match Shift+J: advance the comment-line cursor to the next changed line. */
+export function isCommentLineDownKey(key: KeyEvent) {
+  return (
+    (key.sequence === "J" || (key.name === "j" && key.shift)) &&
+    !key.ctrl &&
+    !key.meta &&
+    !key.option
+  );
+}
+
+/** Match Shift+K: move the comment-line cursor to the previous changed line. */
+export function isCommentLineUpKey(key: KeyEvent) {
+  return (
+    (key.sequence === "K" || (key.name === "k" && key.shift)) &&
+    !key.ctrl &&
+    !key.meta &&
+    !key.option
+  );
+}
+
 /** Match any key alias that should scroll forward by half a viewport. */
 export function isHalfPageDownKey(key: KeyEvent) {
   return key.name === "d" || key.sequence === "d";

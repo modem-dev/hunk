@@ -832,6 +832,7 @@ export function App({
     moveToAnnotatedHunk,
     moveToFile,
     moveToHunk: review.moveToHunk,
+    moveCommentLineCursor: review.moveCommentLineCursor,
     moveMenuItem,
     moveThemeSelector,
     openMenu,
@@ -1017,6 +1018,7 @@ export function App({
           scrollRef={diffScrollRef}
           selectedFileId={selectedFile?.id}
           selectedHunkIndex={selectedHunkIndex}
+          activeCommentLineTarget={review.activeCommentLineTarget}
           scrollToNote={review.scrollToNote}
           draftNote={review.draftNote}
           draftNoteFocused={focusArea === "note"}

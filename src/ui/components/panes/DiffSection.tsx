@@ -2,6 +2,7 @@ import { memo } from "react";
 import type { DiffFile, LayoutMode, UserNoteLineTarget } from "../../../core/types";
 import type { FileSourceStatus } from "../../diff/expandCollapsedRows";
 import { PierreDiffView, type ActiveAddNoteAffordance } from "../../diff/PierreDiffView";
+import type { ActiveCommentLineTarget } from "../../hooks/useReviewController";
 import type { VisibleBodyBounds } from "../../diff/rowWindowing";
 import type { DiffSectionGeometry } from "../../diff/diffSectionGeometry";
 import type { VisibleAgentNote } from "../../lib/agentAnnotations";
@@ -19,6 +20,7 @@ interface DiffSectionProps {
   headerStatsWidth: number;
   layout: Exclude<LayoutMode, "auto">;
   selectedHunkIndex: number;
+  activeCommentLineTarget?: ActiveCommentLineTarget | null;
   copySelectedRowRanges?: Map<string, CopySelectedRowRange>;
   copySelectedSide?: "left" | "right";
   shouldLoadHighlight: boolean;
@@ -53,6 +55,7 @@ function DiffSectionComponent({
   headerStatsWidth,
   layout,
   selectedHunkIndex,
+  activeCommentLineTarget = null,
   copySelectedRowRanges,
   copySelectedSide,
   shouldLoadHighlight,
@@ -134,6 +137,7 @@ function DiffSectionComponent({
         onStartUserNoteAtHunk={onStartUserNoteAtHunk}
         onToggleGap={onToggleGap}
         selectedHunkIndex={selectedHunkIndex}
+        activeCommentLineTarget={activeCommentLineTarget}
         sectionGeometry={sectionGeometry}
         shouldLoadHighlight={shouldLoadHighlight}
         // The parent review stream owns scrolling across files.
@@ -157,6 +161,7 @@ export const DiffSection = memo(DiffSectionComponent, (previous, next) => {
     previous.headerStatsWidth === next.headerStatsWidth &&
     previous.layout === next.layout &&
     previous.selectedHunkIndex === next.selectedHunkIndex &&
+    previous.activeCommentLineTarget === next.activeCommentLineTarget &&
     previous.copySelectedRowRanges === next.copySelectedRowRanges &&
     previous.copySelectedSide === next.copySelectedSide &&
     previous.shouldLoadHighlight === next.shouldLoadHighlight &&

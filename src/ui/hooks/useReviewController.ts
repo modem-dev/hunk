@@ -17,6 +17,7 @@ import {
 } from "react";
 import {
   buildLiveComment,
+  commentTargetsForHunk,
   findDiffFileByPath,
   firstCommentTargetForHunk,
   resolveCommentTarget,
@@ -125,6 +126,11 @@ export interface ReviewSelectionOptions {
   scrollToNote?: boolean;
 }
 
+/** A keyboard-selected comment line within the currently selected hunk. */
+export interface ActiveCommentLineTarget extends UserNoteLineTarget {
+  hunkIndex: number;
+}
+
 export interface ReviewController {
   allFiles: DiffFile[];
   expandedGapsByFileId: Record<string, ReadonlySet<string>>;
@@ -140,6 +146,9 @@ export interface ReviewController {
   moveToAnnotatedHunk: (delta: number) => void;
   moveToFile: (delta: number) => void;
   moveToHunk: (delta: number) => void;
+  moveCommentLineCursor: (delta: number) => void;
+  clearCommentLineCursor: () => void;
+  activeCommentLineTarget: ActiveCommentLineTarget | null;
   scrollToNote: boolean;
   selectedFile: DiffFile | undefined;
   selectedFileId: string;
@@ -188,6 +197,11 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
   const [filter, setFilter] = useState("");
   const [selectedFileId, setSelectedFileId] = useState(files[0]?.id ?? "");
   const [selectedHunkIndex, setSelectedHunkIndex] = useState(0);
+  const [commentLineCursor, setCommentLineCursor] = useState<{
+    fileId: string;
+    hunkIndex: number;
+    index: number;
+  } | null>(null);
   const [selectedFileTopAlignRequestId, setSelectedFileTopAlignRequestId] = useState(0);
   const [selectedHunkRevealRequestId, setSelectedHunkRevealRequestId] = useState(0);
   const [scrollToNote, setScrollToNote] = useState(false);
@@ -361,6 +375,102 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     },
     [hunkCursors, selectHunk, selectedFile?.id, selectedHunkIndex],
   );
+
+  /**
+   * Move a keyboard comment-line cursor over the changed lines of the selected
+   * file so a reviewer can target a specific line for a note without the mouse.
+   * Rolls into adjacent hunks (same file) and clamps at the file edges.
+   */
+  const moveCommentLineCursor = useCallback(
+    (delta: number) => {
+      const file = selectedFile;
+      if (!file || delta === 0) {
+        return;
+      }
+      const hunks = file.metadata.hunks;
+      const targetsAt = (hunkPosition: number) => {
+        const hunk = hunks[hunkPosition];
+        return hunk ? commentTargetsForHunk(hunk) : [];
+      };
+
+      const cursorMatchesSelection =
+        commentLineCursor?.fileId === file.id &&
+        commentLineCursor?.hunkIndex === selectedHunkIndex;
+
+      // Fresh cursor (none yet, or selection moved elsewhere via [ ] / navigation):
+      // land on the first or last changed line of the selected hunk without leaving it.
+      if (!cursorMatchesSelection) {
+        const targets = targetsAt(selectedHunkIndex);
+        if (targets.length === 0) {
+          return;
+        }
+        setCommentLineCursor({
+          fileId: file.id,
+          hunkIndex: selectedHunkIndex,
+          index: delta > 0 ? 0 : targets.length - 1,
+        });
+        return;
+      }
+
+      const step = delta > 0 ? 1 : -1;
+      let hunkIndex = commentLineCursor.hunkIndex;
+      let index = commentLineCursor.index + delta;
+
+      while (true) {
+        const targets = targetsAt(hunkIndex);
+        if (index >= 0 && index < targets.length) {
+          break;
+        }
+
+        const nextHunkIndex = hunkIndex + step;
+        if (nextHunkIndex < 0 || nextHunkIndex >= hunks.length) {
+          // No further hunk: clamp to the nearest edge of the current hunk.
+          if (targets.length === 0) {
+            return;
+          }
+          index = step > 0 ? targets.length - 1 : 0;
+          break;
+        }
+
+        hunkIndex = nextHunkIndex;
+        const nextTargets = targetsAt(hunkIndex);
+        // Skip hunks without changed lines; keep scanning in the same direction.
+        index =
+          nextTargets.length === 0 ? (step > 0 ? 0 : -1) : step > 0 ? 0 : nextTargets.length - 1;
+      }
+
+      if (hunkIndex !== selectedHunkIndex) {
+        selectHunk(file.id, hunkIndex);
+      }
+      setCommentLineCursor({ fileId: file.id, hunkIndex, index });
+    },
+    [commentLineCursor, selectHunk, selectedFile, selectedHunkIndex],
+  );
+
+  /** Drop the keyboard comment-line cursor (comments fall back to whole-hunk targeting). */
+  const clearCommentLineCursor = useCallback(() => {
+    setCommentLineCursor(null);
+  }, []);
+
+  /** The concrete line the comment-line cursor points at, when it is on the selected hunk. */
+  const activeCommentLineTarget = useMemo<ActiveCommentLineTarget | null>(() => {
+    if (
+      !commentLineCursor ||
+      commentLineCursor.fileId !== selectedFileId ||
+      commentLineCursor.hunkIndex !== selectedHunkIndex
+    ) {
+      return null;
+    }
+    const hunk = selectedFile?.metadata.hunks[commentLineCursor.hunkIndex];
+    if (!hunk) {
+      return null;
+    }
+    const target = commentTargetsForHunk(hunk)[commentLineCursor.index];
+    if (!target) {
+      return null;
+    }
+    return { hunkIndex: commentLineCursor.hunkIndex, side: target.side, line: target.line };
+  }, [commentLineCursor, selectedFile, selectedFileId, selectedHunkIndex]);
 
   /** Move through only hunks that currently have agent notes or live comments. */
   const moveToAnnotatedHunk = useCallback(
@@ -809,7 +919,14 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
         return null;
       }
 
-      const target = requestedTarget ?? firstCommentTargetForHunk(hunk);
+      // Prefer an explicit target, then the keyboard comment-line cursor when it is
+      // pointed at this hunk, then fall back to the stable whole-hunk anchor.
+      const cursorTarget =
+        commentLineCursor?.fileId === file.id && commentLineCursor?.hunkIndex === hunkIndex
+          ? commentTargetsForHunk(hunk)[commentLineCursor.index]
+          : undefined;
+      const target = requestedTarget ?? cursorTarget ?? firstCommentTargetForHunk(hunk);
+      const usedExplicitTarget = Boolean(requestedTarget ?? cursorTarget);
       const draft: DraftReviewNote = {
         id: `draft:${file.id}:${hunkIndex}:${Date.now()}`,
         fileId: file.id,
@@ -825,11 +942,11 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
       selectHunk(
         file.id,
         hunkIndex,
-        requestedTarget ? { preserveViewport: true } : { scrollToNote: true },
+        usedExplicitTarget ? { preserveViewport: true } : { scrollToNote: true },
       );
       return draft;
     },
-    [allFiles, selectHunk, selectedFile?.id, selectedHunkIndex],
+    [allFiles, commentLineCursor, selectHunk, selectedFile?.id, selectedHunkIndex],
   );
 
   /** Update the body of the active draft note. */
@@ -1018,6 +1135,9 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     moveToAnnotatedHunk,
     moveToFile,
     moveToHunk,
+    moveCommentLineCursor,
+    clearCommentLineCursor,
+    activeCommentLineTarget,
     navigateToLocation,
     removeLiveComment,
     removeUserNote,

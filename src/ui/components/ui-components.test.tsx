@@ -2339,7 +2339,7 @@ describe("UI components", () => {
     const frame = await captureFrame(
       <HelpDialog
         canRefresh={true}
-        terminalHeight={39}
+        terminalHeight={40}
         terminalWidth={76}
         theme={theme}
         onClose={() => {}}
@@ -2358,6 +2358,7 @@ describe("UI components", () => {
       "Shift+Space     page up (alt)",
       "d / u           half page down / up",
       "[ / ]           previous / next hunk",
+      "J / K           next / prev changed line",
       ", / .           previous / next file",
       "{ / }           previous / next comment",
       "← / →           scroll code left / right (Shift = faster)",

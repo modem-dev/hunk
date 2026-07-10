@@ -4,6 +4,8 @@ import { useRef } from "react";
 import type { LayoutMode } from "../../core/types";
 import type { MenuId } from "../components/chrome/menu";
 import {
+  isCommentLineDownKey,
+  isCommentLineUpKey,
   isCreateReviewNoteKey,
   isEscapeKey,
   isHalfPageDownKey,
@@ -63,6 +65,7 @@ export interface UseAppKeyboardShortcutsOptions {
   focusArea: FocusArea;
   focusFilter: () => void;
   moveToAnnotatedHunk: (delta: number) => void;
+  moveCommentLineCursor: (delta: number) => void;
   moveToFile: (delta: number) => void;
   moveToHunk: (delta: number) => void;
   moveMenuItem: (delta: number) => void;
@@ -107,6 +110,7 @@ export function useAppKeyboardShortcuts({
   focusArea,
   focusFilter,
   moveToAnnotatedHunk,
+  moveCommentLineCursor,
   moveToFile,
   moveToHunk,
   moveMenuItem,
@@ -427,6 +431,18 @@ export function useAppKeyboardShortcuts({
 
     if (isCreateReviewNoteKey(key)) {
       runAndCloseMenu(startUserNote);
+      return;
+    }
+
+    // Shift+J / Shift+K move a comment-line cursor over changed lines so `c` can
+    // target a specific line. Checked before the plain j/k row-scroll handlers.
+    if (isCommentLineDownKey(key)) {
+      runAndCloseMenu(() => moveCommentLineCursor(1));
+      return;
+    }
+
+    if (isCommentLineUpKey(key)) {
+      runAndCloseMenu(() => moveCommentLineCursor(-1));
       return;
     }
 

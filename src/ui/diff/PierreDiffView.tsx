@@ -1,6 +1,7 @@
 import { useRenderer } from "@opentui/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DiffFile, LayoutMode, UserNoteLineTarget } from "../../core/types";
+import type { ActiveCommentLineTarget } from "../hooks/useReviewController";
 import { AgentInlineNote } from "../components/panes/AgentInlineNote";
 import type { VisibleAgentNote } from "../lib/agentAnnotations";
 import type { CopySelectedRowRange } from "../components/panes/copySelection";
@@ -79,6 +80,7 @@ export function PierreDiffView({
   hoverClearSignal = 0,
   width,
   selectedHunkIndex,
+  activeCommentLineTarget = null,
   sectionGeometry,
   shouldLoadHighlight = true,
   scrollable = true,
@@ -104,6 +106,7 @@ export function PierreDiffView({
   hoverClearSignal?: number;
   width: number;
   selectedHunkIndex: number;
+  activeCommentLineTarget?: ActiveCommentLineTarget | null;
   sectionGeometry?: DiffSectionGeometry;
   shouldLoadHighlight?: boolean;
   scrollable?: boolean;
@@ -255,6 +258,26 @@ export function PierreDiffView({
     return next;
   }, [plannedRows]);
 
+  // Resolve the diff row that the keyboard comment-line cursor is pointing at so it can show
+  // the same add-note affordance the mouse hover uses, but persistently. Matching is by
+  // hunk/side/line; in split view an "old"-side target may share a row whose affordance reports
+  // the "new" side, so the badge can be absent there even though `c` still targets the line.
+  const commentCursorRowKey = useMemo(() => {
+    if (!activeCommentLineTarget) {
+      return null;
+    }
+    for (const [rowKey, affordance] of addNoteAffordanceByRowKey) {
+      if (
+        affordance.hunkIndex === activeCommentLineTarget.hunkIndex &&
+        affordance.target?.side === activeCommentLineTarget.side &&
+        affordance.target?.line === activeCommentLineTarget.line
+      ) {
+        return rowKey;
+      }
+    }
+    return null;
+  }, [activeCommentLineTarget, addNoteAffordanceByRowKey]);
+
   /** One shared hover handler for every diff row; DiffRowView passes the hovered row's key. */
   const handleHoverRow = useCallback(
     (rowKey: string) => {
@@ -383,7 +406,8 @@ export function PierreDiffView({
               noteGuideSide={plannedRow.noteGuideSide}
               showAddNoteBadge={
                 startUserNoteAtHunkHandler !== undefined &&
-                hoveredRowKey === plannedRow.row.key &&
+                (hoveredRowKey === plannedRow.row.key ||
+                  commentCursorRowKey === plannedRow.row.key) &&
                 addNoteAffordanceByRowKey.has(plannedRow.row.key)
               }
               onHoverRow={handleHoverRow}

@@ -21,7 +21,7 @@ import type {
 } from "../../../core/types";
 import type { FileSourceStatus } from "../../diff/expandCollapsedRows";
 import type { ActiveAddNoteAffordance } from "../../diff/PierreDiffView";
-import type { DraftReviewNote } from "../../hooks/useReviewController";
+import type { ActiveCommentLineTarget, DraftReviewNote } from "../../hooks/useReviewController";
 import {
   alwaysShowReviewNote,
   reviewNoteSource,
@@ -183,6 +183,7 @@ export function DiffPane({
   scrollRef,
   selectedFileId,
   selectedHunkIndex,
+  activeCommentLineTarget = null,
   scrollToNote = false,
   draftNote = null,
   draftNoteFocused = false,
@@ -230,6 +231,7 @@ export function DiffPane({
   scrollRef: RefObject<ScrollBoxRenderable | null>;
   selectedFileId?: string;
   selectedHunkIndex: number;
+  activeCommentLineTarget?: ActiveCommentLineTarget | null;
   scrollToNote?: boolean;
   draftNote?: DraftReviewNote | null;
   draftNoteFocused?: boolean;
@@ -1806,6 +1808,9 @@ export function DiffPane({
                       headerStatsWidth={headerStatsWidth}
                       layout={layout}
                       selectedHunkIndex={file.id === selectedFileId ? selectedHunkIndex : -1}
+                      activeCommentLineTarget={
+                        file.id === selectedFileId ? activeCommentLineTarget : null
+                      }
                       copySelectedRowRanges={copySelectedRowKeysByFile.get(file.id)}
                       copySelectedSide={copySelectionSide}
                       shouldLoadHighlight={highlightPrefetchFileIds.has(file.id)}

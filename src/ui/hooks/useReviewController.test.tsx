@@ -1082,4 +1082,63 @@ describe("useReviewController", () => {
       });
     }
   });
+
+  test("keyboard comment-line cursor targets changed lines and rolls across hunks", async () => {
+    const { controllerRef, setup } = await renderReviewController([createTwoHunkFile()]);
+
+    try {
+      // A fresh cursor lands on the first changed line of the selected hunk (deletion side).
+      await act(async () => {
+        expectValue(controllerRef.current).moveCommentLineCursor(1);
+      });
+      expect(expectValue(controllerRef.current).activeCommentLineTarget).toEqual({
+        hunkIndex: 0,
+        side: "old",
+        line: 1,
+      });
+
+      // A note started with no explicit target adopts the cursor line, overriding the
+      // whole-hunk anchor (which would otherwise prefer the addition side).
+      let draftSide: string | undefined;
+      let draftLine: number | undefined;
+      await act(async () => {
+        const draft = expectValue(controllerRef.current).startUserNote();
+        draftSide = draft?.side;
+        draftLine = draft?.line;
+      });
+      expect(draftSide).toBe("old");
+      expect(draftLine).toBe(1);
+
+      // Advancing steps onto the addition of the same changed line.
+      await act(async () => {
+        expectValue(controllerRef.current).moveCommentLineCursor(1);
+      });
+      expect(expectValue(controllerRef.current).activeCommentLineTarget).toEqual({
+        hunkIndex: 0,
+        side: "new",
+        line: 1,
+      });
+
+      // Past the end of hunk 0 the cursor rolls into hunk 1 and drags the selection with it.
+      await act(async () => {
+        expectValue(controllerRef.current).moveCommentLineCursor(1);
+      });
+      expect(expectValue(controllerRef.current).selectedHunkIndex).toBe(1);
+      expect(expectValue(controllerRef.current).activeCommentLineTarget).toEqual({
+        hunkIndex: 1,
+        side: "old",
+        line: 12,
+      });
+
+      // Clearing drops the cursor so notes fall back to the whole-hunk anchor.
+      await act(async () => {
+        expectValue(controllerRef.current).clearCommentLineCursor();
+      });
+      expect(expectValue(controllerRef.current).activeCommentLineTarget).toBeNull();
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
 });

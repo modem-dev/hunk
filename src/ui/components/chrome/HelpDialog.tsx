@@ -26,6 +26,7 @@ export function HelpDialog({
         ["Shift+Space", "page up (alt)"],
         ["d / u", "half page down / up"],
         ["[ / ]", "previous / next hunk"],
+        ["J / K", "next / prev changed line (comment cursor)"],
         [", / .", "previous / next file"],
         ["{ / }", "previous / next comment"],
         ["← / →", "scroll code left / right (Shift = faster)"],
@@ -55,7 +56,7 @@ export function HelpDialog({
       title: "Review",
       items: [
         ["/", "focus file filter"],
-        ["c", "create review note"],
+        ["c", "create review note (cursor line or hunk)"],
         ["Tab", "toggle files/filter focus"],
         ["F10", "open menus"],
         [canRefresh ? "r / q" : "q", canRefresh ? "reload / quit" : "quit"],

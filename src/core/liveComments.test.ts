@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { createTestDiffFile, lines } from "../../test/helpers/diff-helpers";
 import {
   buildLiveComment,
+  commentTargetsForHunk,
   findDiffFileByPath,
   findHunkIndexForLine,
   firstCommentTargetForHunk,
@@ -59,6 +60,32 @@ describe("live comment helpers", () => {
       side: "new",
       line: 22,
     });
+  });
+
+  test("enumerates every changed line as an ordered comment target list", () => {
+    const targets = commentTargetsForHunk({
+      additionStart: 20,
+      additionLines: 2,
+      deletionStart: 20,
+      deletionLines: 1,
+      hunkContent: [
+        { type: "context", lines: 2 },
+        { type: "change", deletions: 1, additions: 2 },
+        { type: "context", lines: 1 },
+        { type: "change", deletions: 0, additions: 1 },
+      ],
+    } as Parameters<typeof commentTargetsForHunk>[0]);
+
+    // Context (2 lines) advances both sides to line 22. The change block yields its
+    // deletion first (old 22) then both additions (new 22, 23), leaving old at 23 and
+    // new at 24. One more context line advances to old 24 / new 25, then a lone
+    // addition lands on new 25.
+    expect(targets).toEqual([
+      { side: "old", line: 22 },
+      { side: "new", line: 22 },
+      { side: "new", line: 23 },
+      { side: "new", line: 25 },
+    ]);
   });
 
   test("resolves hunk-wide comment targets to one stable line", () => {
