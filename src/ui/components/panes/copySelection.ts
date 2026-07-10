@@ -320,7 +320,7 @@ export function renderCopySelectionText({
 
     for (let rowIndex = 0; rowIndex < geometry.rowBounds.length; rowIndex += 1) {
       const rowBounds = geometry.rowBounds[rowIndex]!;
-      const row = geometry.plannedRows[rowIndex];
+      const row = geometry.getPlannedRow(rowIndex);
       if (!row || rowBounds.height <= 0) {
         continue;
       }
@@ -466,7 +466,7 @@ export function expandSelectionPoint(
       return null;
     }
 
-    const row = geometry.plannedRows[rowIndex];
+    const row = geometry.getPlannedRow(rowIndex);
     if (!row) {
       return null;
     }

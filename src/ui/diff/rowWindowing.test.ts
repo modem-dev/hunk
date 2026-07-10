@@ -26,6 +26,7 @@ function createTestSectionGeometry(
   rowBounds: Array<{ key: string; top: number; height: number }>,
   bodyHeight: number,
 ): DiffSectionGeometry {
+  const plannedRows = rowBounds.map((row) => createTestPlannedRow(row.key));
   const normalizedRowBounds = rowBounds.map((row) => ({
     ...row,
     stableKey: row.key,
@@ -34,10 +35,10 @@ function createTestSectionGeometry(
 
   return {
     bodyHeight,
+    getPlannedRow: (rowIndex) => plannedRows[rowIndex],
     hunkAnchorRows: new Map(),
     hunkBounds: new Map(),
     lineNumberDigits: 1,
-    plannedRows: rowBounds.map((row) => createTestPlannedRow(row.key)),
     rowBounds: normalizedRowBounds,
     rowBoundsByKey: new Map(normalizedRowBounds.map((row) => [row.key, row])),
     rowBoundsByStableKey: new Map(normalizedRowBounds.map((row) => [row.stableKey, row])),
