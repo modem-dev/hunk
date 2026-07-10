@@ -86,7 +86,6 @@ export interface CommonOptions {
   agentContext?: string;
   pager?: boolean;
   watch?: boolean;
-  watchIdleAfterMs?: number;
   excludeUntracked?: boolean;
   lineNumbers?: boolean;
   wrapLines?: boolean;

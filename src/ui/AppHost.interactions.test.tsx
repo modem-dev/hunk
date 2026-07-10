@@ -1740,11 +1740,10 @@ describe("App interactions", () => {
       options: {
         mode: "split",
         watch: true,
-        watchIdleAfterMs: 40,
       },
     });
 
-    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
+    const setup = await testRender(<AppHost bootstrap={bootstrap} watchInactivitySleepMs={40} />, {
       width: 220,
       height: 20,
     });
@@ -1789,6 +1788,65 @@ describe("App interactions", () => {
     }
   });
 
+  test("automatic watch sleep is based on user activity instead of background reloads", async () => {
+    const dir = mkdtempSync(join(process.cwd(), ".hunk-watch-inactivity-"));
+    const left = join(dir, "before.ts");
+    const right = join(dir, "after.ts");
+
+    writeFileSync(left, "export const answer = 41;\n");
+    writeFileSync(right, "export const answer = 42;\n");
+
+    const bootstrap = await loadAppBootstrap({
+      kind: "diff",
+      left,
+      right,
+      options: {
+        mode: "split",
+        watch: true,
+      },
+    });
+
+    const setup = await testRender(<AppHost bootstrap={bootstrap} watchInactivitySleepMs={600} />, {
+      width: 220,
+      height: 20,
+    });
+    const mountedAt = Date.now();
+
+    try {
+      await flush(setup);
+      writeFileSync(right, "export const answer = 42;\nexport const activeChange = true;\n");
+
+      const activeFrame = await waitForFrame(
+        setup,
+        (currentFrame) => currentFrame.includes("activeChange"),
+        30,
+      );
+      expect(activeFrame).toContain("activeChange");
+
+      const waitUntilIdleProbeMs = Math.max(0, mountedAt + 700 - Date.now());
+      await act(async () => {
+        await Bun.sleep(waitUntilIdleProbeMs);
+        await setup.renderOnce();
+      });
+
+      writeFileSync(
+        right,
+        "export const answer = 42;\nexport const activeChange = true;\nexport const idleChange = true;\n",
+      );
+
+      await act(async () => {
+        await Bun.sleep(350);
+        await setup.renderOnce();
+      });
+      expect(setup.captureCharFrame()).not.toContain("idleChange");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
   test("watch mode does not overlap wake-up refreshes with resumed polling", async () => {
     const dir = mkdtempSync(join(process.cwd(), ".hunk-watch-idle-race-"));
     const left = join(dir, "before.ts");
@@ -1804,7 +1862,6 @@ describe("App interactions", () => {
       options: {
         mode: "split",
         watch: true,
-        watchIdleAfterMs: 40,
       },
     });
 
@@ -1826,7 +1883,12 @@ describe("App interactions", () => {
     });
 
     const setup = await testRender(
-      <App bootstrap={bootstrap} onReloadSession={onReloadSession} onQuit={() => undefined} />,
+      <App
+        bootstrap={bootstrap}
+        onReloadSession={onReloadSession}
+        onQuit={() => undefined}
+        watchInactivitySleepMs={40}
+      />,
       {
         width: 220,
         height: 20,

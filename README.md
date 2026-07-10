@@ -64,7 +64,6 @@ Hunk mirrors Git's diff-style commands, but opens the changeset in a review UI i
 ```bash
 hunk diff                      # review current repo changes, including untracked files
 hunk diff --watch              # auto-reload as the working tree changes
-hunk diff --watch --idle-after 120  # pause watch refreshes after 2 minutes idle
 hunk show                      # review the latest commit
 hunk show HEAD~1               # review an earlier commit
 ```
@@ -127,7 +126,6 @@ theme = "github-dark-default" # any built-in theme id, auto, or custom
 mode = "auto"        # auto, split, stack
 vcs = "git"          # git, jj, sl
 watch = false
-# watch_idle_after_seconds = 120
 exclude_untracked = false
 line_numbers = true
 wrap_lines = false
@@ -139,7 +137,7 @@ transparent_background = false
 `theme = "auto"` and `--theme auto` query the terminal background at startup, choose `github-light-default` for light backgrounds and `github-dark-default` for dark backgrounds, and fall back to `github-dark-default` if the terminal does not answer.
 Older theme ids such as `graphite` and `paper` remain accepted as compatibility aliases.
 `exclude_untracked` affects Git/Sapling working-tree `hunk diff` sessions only.
-`watch_idle_after_seconds` pauses `--watch` refresh polling after no keyboard or mouse activity; it has no default, so watch mode keeps its current behavior unless you set this value. Set `HUNK_WATCH_IDLE_AFTER_SECONDS` or pass `--idle-after` for a one-off override.
+Watch mode automatically pauses its refresh polling after one minute without keyboard or mouse activity. The next interaction refreshes the diff once and resumes polling.
 `transparent_background` can also be written as `transparentBackground`.
 
 Custom themes can inherit from any built-in theme and override only the colors you care about:

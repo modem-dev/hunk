@@ -13,7 +13,6 @@ import type {
   PersistedViewPreferences,
   VcsMode,
 } from "./types";
-import { parseWatchIdleAfterSeconds } from "./watch";
 
 const BUILT_IN_THEME_IDS = BUNDLED_SHIKI_THEME_IDS;
 const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
@@ -110,19 +109,6 @@ function normalizeBoolean(value: unknown) {
 /** Accept only plain strings from config files. */
 function normalizeString(value: unknown) {
   return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
-/** Accept one watch idle timeout in seconds from config or environment. */
-function normalizeWatchIdleAfterSeconds(value: unknown, keyPath: string) {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (typeof value !== "number" && typeof value !== "string") {
-    throw new Error(`Expected ${keyPath} to be a whole number of seconds like 120.`);
-  }
-
-  return parseWatchIdleAfterSeconds(String(value));
 }
 
 /** Accept only #rrggbb theme colors and report the failing TOML key path. */
@@ -247,10 +233,6 @@ function readConfigPreferences(source: Record<string, unknown>): CommonOptions {
     vcs: normalizeVcsMode(source.vcs),
     theme: normalizeString(source.theme),
     watch: normalizeBoolean(source.watch),
-    watchIdleAfterMs: normalizeWatchIdleAfterSeconds(
-      source.watch_idle_after_seconds,
-      "watch_idle_after_seconds",
-    ),
     excludeUntracked: normalizeBoolean(source.exclude_untracked),
     lineNumbers: normalizeBoolean(source.line_numbers),
     wrapLines: normalizeBoolean(source.wrap_lines),
@@ -275,7 +257,6 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
     agentContext: overrides.agentContext ?? base.agentContext,
     pager: overrides.pager ?? base.pager,
     watch: overrides.watch ?? base.watch,
-    watchIdleAfterMs: overrides.watchIdleAfterMs ?? base.watchIdleAfterMs,
     excludeUntracked: overrides.excludeUntracked ?? base.excludeUntracked,
     lineNumbers: overrides.lineNumbers ?? base.lineNumbers,
     wrapLines: overrides.wrapLines ?? base.wrapLines,
@@ -343,10 +324,6 @@ export function resolveConfiguredCliInput(
     agentContext: input.options.agentContext,
     pager: input.options.pager ?? false,
     watch: input.options.watch ?? false,
-    watchIdleAfterMs: normalizeWatchIdleAfterSeconds(
-      env.HUNK_WATCH_IDLE_AFTER_SECONDS,
-      "HUNK_WATCH_IDLE_AFTER_SECONDS",
-    ),
     excludeUntracked: false,
     lineNumbers: DEFAULT_VIEW_PREFERENCES.showLineNumbers,
     wrapLines: DEFAULT_VIEW_PREFERENCES.wrapLines,
@@ -375,7 +352,6 @@ export function resolveConfiguredCliInput(
     agentContext: input.options.agentContext,
     pager: input.options.pager ?? false,
     watch: input.options.watch ?? resolvedOptions.watch ?? false,
-    watchIdleAfterMs: input.options.watchIdleAfterMs ?? resolvedOptions.watchIdleAfterMs,
     excludeUntracked: resolvedOptions.excludeUntracked ?? false,
     theme: resolvedOptions.theme,
     vcs: resolvedOptions.vcs ?? getDefaultVcsAdapter().id,
@@ -389,10 +365,6 @@ export function resolveConfiguredCliInput(
     transparentBackground: resolvedOptions.transparentBackground ?? false,
     colorMoved: resolvedOptions.colorMoved,
   };
-
-  if (input.options.watchIdleAfterMs !== undefined && !resolvedOptions.watch) {
-    throw new Error("Use --idle-after with --watch.");
-  }
 
   if (resolvedOptions.theme === "custom" && !resolvedCustomTheme) {
     throw new Error('Expected a [custom_theme] table when config selects theme = "custom".');

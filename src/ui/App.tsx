@@ -7,7 +7,11 @@ import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState, useRef } from "react";
 import type { AppBootstrap, CliInput, LayoutMode, UserNoteLineTarget } from "../core/types";
 import type { WatchSessionActivity } from "../core/watch";
-import { canReloadInput, computeWatchSignature } from "../core/watch";
+import {
+  canReloadInput,
+  computeWatchSignature,
+  DEFAULT_WATCH_INACTIVITY_SLEEP_MS,
+} from "../core/watch";
 import type { HunkSessionBrokerClient, ReloadedSessionResult } from "../hunk-session/types";
 import { MenuBar } from "./components/chrome/MenuBar";
 import { StatusBar } from "./components/chrome/StatusBar";
@@ -94,6 +98,7 @@ export function App({
   noticeText,
   onQuit = () => process.exit(0),
   onReloadSession,
+  watchInactivitySleepMs = DEFAULT_WATCH_INACTIVITY_SLEEP_MS,
 }: {
   bootstrap: AppBootstrap;
   hostClient?: HunkSessionBrokerClient;
@@ -103,6 +108,7 @@ export function App({
     nextInput: CliInput,
     options?: { resetApp?: boolean; sourcePath?: string },
   ) => Promise<ReloadedSessionResult>;
+  watchInactivitySleepMs?: number;
 }) {
   const SIDEBAR_MIN_WIDTH = 22;
   const DIFF_MIN_WIDTH = 48;
@@ -154,8 +160,6 @@ export function App({
   const [resizeStartWidth, setResizeStartWidth] = useState<number | null>(null);
   const [sessionNoticeText, setSessionNoticeText] = useState<string | null>(null);
   const sessionNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const watchIdleAfterMs = bootstrap.input.options.watchIdleAfterMs;
-  const watchUsesIdleLifecycle = typeof watchIdleAfterMs === "number";
   const watchActivityRef = useRef<WatchSessionActivity>("active");
   const watchLastActivityAtRef = useRef(Date.now());
   const watchRefreshInFlightRef = useRef(false);
@@ -522,7 +526,7 @@ export function App({
 
   const canRefreshCurrentInput = canReloadInput(bootstrap.input);
   const watchEnabled = Boolean(bootstrap.input.options.watch && canRefreshCurrentInput);
-  const watchShouldPoll = watchEnabled && (!watchUsesIdleLifecycle || watchActivity === "active");
+  const watchShouldPoll = watchEnabled && watchActivity === "active";
 
   const setWatchSessionActivity = useCallback((activity: WatchSessionActivity) => {
     watchActivityRef.current = activity;
@@ -597,7 +601,7 @@ export function App({
 
   /** Record keyboard or mouse use, and refresh once when an idle watch session wakes up. */
   const markWatchSessionActivity = useCallback(() => {
-    if (!watchEnabled || !watchUsesIdleLifecycle) {
+    if (!watchEnabled) {
       return;
     }
 
@@ -609,7 +613,7 @@ export function App({
     if (wasIdle) {
       refreshWatchedInput("Failed to refresh idle watch session after activity.");
     }
-  }, [refreshWatchedInput, setWatchSessionActivity, watchEnabled, watchUsesIdleLifecycle]);
+  }, [refreshWatchedInput, setWatchSessionActivity, watchEnabled]);
 
   const triggerEditSelectedFile = useCallback(() => {
     const basePath =
@@ -645,13 +649,19 @@ export function App({
   ]);
 
   useEffect(() => {
-    if (!watchEnabled || !watchUsesIdleLifecycle || watchIdleAfterMs === undefined) {
+    watchLastActivityAtRef.current = Date.now();
+    setWatchSessionActivity("active");
+    setWatchActivityRevision((current) => current + 1);
+  }, [setWatchSessionActivity, watchEnabled]);
+
+  useEffect(() => {
+    if (!watchEnabled) {
       setWatchSessionActivity("active");
       return;
     }
 
     const elapsedMs = Date.now() - watchLastActivityAtRef.current;
-    const remainingMs = watchIdleAfterMs - elapsedMs;
+    const remainingMs = watchInactivitySleepMs - elapsedMs;
     if (remainingMs <= 0) {
       setWatchSessionActivity("idle");
       return;
@@ -664,19 +674,7 @@ export function App({
     return () => {
       clearTimeout(timeout);
     };
-  }, [
-    setWatchSessionActivity,
-    watchActivityRevision,
-    watchEnabled,
-    watchIdleAfterMs,
-    watchUsesIdleLifecycle,
-  ]);
-
-  useEffect(() => {
-    watchLastActivityAtRef.current = Date.now();
-    setWatchSessionActivity("active");
-    setWatchActivityRevision((current) => current + 1);
-  }, [bootstrap.input, setWatchSessionActivity]);
+  }, [setWatchSessionActivity, watchActivityRevision, watchEnabled, watchInactivitySleepMs]);
 
   useEffect(() => {
     if (!watchShouldPoll) {

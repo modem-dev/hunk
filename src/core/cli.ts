@@ -12,7 +12,6 @@ import type {
   SessionCommentApplyItemInput,
 } from "./types";
 import { resolveBundledHunkReviewSkillPath } from "./paths";
-import { parseWatchIdleAfterSeconds } from "./watch";
 import { detectVcs } from "./vcs";
 import { resolveCliVersion } from "./version";
 
@@ -61,7 +60,6 @@ function buildCommonOptions(
     agentContext?: string;
     pager?: boolean;
     watch?: boolean;
-    idleAfter?: string;
     transparentBackground?: boolean;
   },
   argv: string[],
@@ -72,8 +70,6 @@ function buildCommonOptions(
     agentContext: options.agentContext,
     pager: options.pager ? true : undefined,
     watch: options.watch ? true : undefined,
-    watchIdleAfterMs:
-      options.idleAfter !== undefined ? parseWatchIdleAfterSeconds(options.idleAfter) : undefined,
     excludeUntracked: resolveBooleanFlag(argv, "--exclude-untracked", "--no-exclude-untracked"),
     lineNumbers: resolveBooleanFlag(argv, "--line-numbers", "--no-line-numbers"),
     wrapLines: resolveBooleanFlag(argv, "--wrap", "--no-wrap"),
@@ -104,12 +100,7 @@ function applyCommonOptions(command: Command) {
 
 /** Attach auto-refresh support to review commands that can reopen their source input. */
 function applyWatchOption(command: Command) {
-  return command
-    .option("--watch", "auto-reload when the current diff input changes")
-    .option(
-      "--idle-after <seconds>",
-      "pause --watch refreshes after this many seconds without keyboard or mouse activity",
-    );
+  return command.option("--watch", "auto-reload when the current diff input changes");
 }
 
 /** Render plain-text version output for `hunk --version`. */
@@ -160,7 +151,6 @@ function renderCliHelp() {
     "Common review options:",
     "  --mode <mode>                           layout mode: auto, split, stack",
     "  --watch                                 auto-reload when the current diff input changes",
-    "  --idle-after <seconds>                  pause --watch refreshes after no activity",
     "  --agent-context <path>                  JSON sidecar with agent rationale",
     "  --pager                                 use pager-style chrome and controls",
     "  --line-numbers / --no-line-numbers      show or hide line numbers",

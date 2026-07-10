@@ -2,4 +2,4 @@
 "hunkdiff": patch
 ---
 
-Pause watch refresh polling after an opt-in idle timeout in seconds and refresh once when activity resumes.
+Automatically pause watch refresh polling after one minute without user activity and refresh once when activity resumes.
