@@ -143,11 +143,7 @@ printMemory("after_geometry", afterGeometry);
 // consumers. Normal review scrolling/navigation should not pay this retained-memory cost.
 const materializeStart = performance.now();
 for (const geometry of geometries) {
-  for (let index = 0; index < geometry.rowBounds.length; index += 1) {
-    if (geometry.getPlannedRow(index)) {
-      materializedPlannedRows += 1;
-    }
-  }
+  materializedPlannedRows += geometry.plannedRows.length;
 }
 const materializeMs = performance.now() - materializeStart;
 const afterMaterializedRows = sampleMemory(options);

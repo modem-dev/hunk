@@ -25,12 +25,12 @@ export interface DiffSectionRowBounds extends VerticalBounds {
 /**
  * Cached placeholder sizing and hunk navigation geometry for one file section.
  *
- * Copy selection occasionally needs the planned row behind a measured row. Keep that row stream
- * lazy so ordinary large-review scrolling/navigation retain bounds instead of every render row.
+ * Copy selection occasionally needs the planned rows behind the measured bounds. The geometry
+ * implementations keep that row stream lazy so ordinary scrolling/navigation retain only bounds.
  */
 export interface DiffSectionGeometry extends SectionGeometry<PlannedHunkBounds> {
-  getPlannedRow: (rowIndex: number) => PlannedReviewRow | undefined;
   lineNumberDigits: number;
+  plannedRows: PlannedReviewRow[];
   rowBounds: DiffSectionRowBounds[];
   rowBoundsByKey: Map<string, DiffSectionRowBounds>;
   rowBoundsByStableKey: Map<string, DiffSectionRowBounds>;
@@ -133,8 +133,8 @@ function setCachedSectionGeometry(
   SECTION_GEOMETRY_CACHE.set(file, cachedByFile);
 }
 
-/** Build planned rows only for uncommon consumers that need row content after geometry exists. */
-function createLazyPlannedRowAccessor({
+/** Resolve planned rows only for uncommon consumers that need row content after geometry exists. */
+function createLazyPlannedRowsResolver({
   expandedKeys,
   file,
   layout,
@@ -153,7 +153,7 @@ function createLazyPlannedRowAccessor({
 }) {
   let plannedRows: PlannedReviewRow[] | null = null;
 
-  return (rowIndex: number) => {
+  return () => {
     plannedRows ??= buildDiffSectionRowPlan({
       expandedKeys,
       file,
@@ -164,7 +164,7 @@ function createLazyPlannedRowAccessor({
       visibleAgentNotes,
     }).plannedRows;
 
-    return plannedRows[rowIndex];
+    return plannedRows;
   };
 }
 
@@ -256,10 +256,10 @@ export function measureDiffSectionGeometry(
   if (file.metadata.hunks.length === 0) {
     return {
       bodyHeight: 1,
-      getPlannedRow: () => undefined,
       hunkAnchorRows: new Map(),
       hunkBounds: new Map(),
       lineNumberDigits: String(findMaxLineNumber(file)).length,
+      plannedRows: [],
       rowBounds: [],
       rowBoundsByKey: new Map(),
       rowBoundsByStableKey: new Map(),
@@ -361,20 +361,23 @@ export function measureDiffSectionGeometry(
     bodyHeight += height;
   }
 
+  const resolvePlannedRows = createLazyPlannedRowsResolver({
+    expandedKeys,
+    file,
+    layout,
+    showHunkHeaders,
+    sourceStatus,
+    theme,
+    visibleAgentNotes,
+  });
   const geometry: DiffSectionGeometry = {
     bodyHeight,
-    getPlannedRow: createLazyPlannedRowAccessor({
-      expandedKeys,
-      file,
-      layout,
-      showHunkHeaders,
-      sourceStatus,
-      theme,
-      visibleAgentNotes,
-    }),
     hunkAnchorRows,
     hunkBounds,
     lineNumberDigits,
+    get plannedRows() {
+      return resolvePlannedRows();
+    },
     rowBounds,
     rowBoundsByKey,
     rowBoundsByStableKey,

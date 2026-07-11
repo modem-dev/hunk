@@ -57,6 +57,24 @@ describe("measureDiffSectionGeometry", () => {
     expect(differentAddNotePolicy).not.toBe(first);
   });
 
+  test("caches planned rows after the lazy geometry property is first read", () => {
+    const geometry = measureDiffSectionGeometry(
+      createTestDiffFile(),
+      "split",
+      true,
+      theme,
+      [],
+      120,
+      true,
+      false,
+    );
+
+    const plannedRows = geometry.plannedRows;
+
+    expect(plannedRows).toHaveLength(geometry.rowBounds.length);
+    expect(geometry.plannedRows).toBe(plannedRows);
+  });
+
   test("replaces stale width variants while retaining separate base and note slots", () => {
     const file = createTestDiffFile();
     const visibleAgentNotes: VisibleAgentNote[] = [

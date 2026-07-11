@@ -309,10 +309,9 @@ describe("renderCopySelectionText", () => {
     const { context, fileSectionLayouts, sectionGeometry } = buildContext("stack");
     const section = fileSectionLayouts[0]!;
     const geometry = sectionGeometry[0]!;
-    const rowIndex = geometry.rowBounds.findIndex((_, index) => {
-      const row = geometry.getPlannedRow(index);
-      return row?.kind === "diff-row" && row.row.type === "stack-line";
-    });
+    const rowIndex = geometry.plannedRows.findIndex(
+      (row) => row.kind === "diff-row" && row.row.type === "stack-line",
+    );
     const visualRow = section.bodyTop + geometry.rowBounds[rowIndex]!.top;
     const { gutterWidth } = resolveStackCellGeometry(
       context.width,
