@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { parseDiffFromFile } from "@pierre/diffs";
+import "../../core/fileLanguage";
 import type { DiffFile } from "../../core/types";
 import {
   buildSplitRows,
@@ -740,6 +741,43 @@ describe("Pierre diff rows", () => {
     expect(
       customSpans.some((span) => span.text.includes("=") && span.fg?.toLowerCase() === "#123456"),
     ).toBe(true);
+  });
+
+  test("highlights Odin source with the registered custom grammar", async () => {
+    const metadata = parseDiffFromFile(
+      {
+        name: "main.odin",
+        contents: "package main\nmain :: proc() {}\n",
+        cacheKey: "odin-before",
+      },
+      {
+        name: "main.odin",
+        contents: 'package main\nmain :: proc() {\n  message := "hello"\n}\n',
+        cacheKey: "odin-after",
+      },
+      { context: 3 },
+      true,
+    );
+    const file: DiffFile = {
+      id: "odin-syntax",
+      path: "main.odin",
+      patch: "",
+      language: "odin",
+      stats: { additions: 2, deletions: 1 },
+      metadata,
+      agent: null,
+    };
+    const theme = resolveTheme("github-dark-default", null);
+    const highlighted = await loadHighlightedDiff(file, theme);
+    const spans = buildStackRows(file, highlighted, theme)
+      .filter(
+        (row): row is Extract<DiffRow, { type: "stack-line" }> =>
+          row.type === "stack-line" && row.cell.kind === "addition",
+      )
+      .flatMap((row) => row.cell.spans);
+
+    expect(spans.find((span) => span.text === " :: proc")?.fg).toBeDefined();
+    expect(spans.find((span) => span.text.includes('"hello"'))?.fg).toBeDefined();
   });
 
   test("uses Shiki's bundled Catppuccin theme for Catppuccin syntax", async () => {
