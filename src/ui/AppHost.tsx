@@ -31,9 +31,7 @@ export function AppHost({
   const [activeBootstrap, setActiveBootstrap] = useState(bootstrap);
   const [appVersion, setAppVersion] = useState(0);
   const [sessionFileBounds] = useState(() =>
-    createSessionReloadBounds(bootstrap, {
-      cwd: hostClient?.getRegistration().cwd,
-    }),
+    createSessionReloadBounds(bootstrap, { cwd: bootstrap.reloadContext.cwd }),
   );
   const startupNoticeText = useStartupUpdateNotice({
     enabled: !bootstrap.input.options.pager,

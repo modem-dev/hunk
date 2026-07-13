@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { SourceTextTooLargeError } from "./fileSource";
 import { loadAppBootstrap } from "./loaders";
 import type { CliInput } from "./types";
+import { computeWatchSignature } from "./watch";
 
 const tempDirs: string[] = [];
 
@@ -173,6 +174,54 @@ afterEach(() => {
 });
 
 describe("loadAppBootstrap", () => {
+  test("captures a watched signature before content loading", async () => {
+    const dir = createTempDir("hunk-watch-bootstrap-");
+    const left = join(dir, "before.ts");
+    const right = join(dir, "after.ts");
+    writeFileSync(left, "export const value = 1;\n");
+    writeFileSync(right, "export const value = 2;\n");
+
+    const originalBunFile = Bun.file;
+    Bun.file = ((path: string | URL | number, options?: BlobPropertyBag) => {
+      const file =
+        typeof path === "number" ? originalBunFile(path, options) : originalBunFile(path, options);
+      if (String(path) === right) {
+        file.text = async () => {
+          writeFileSync(right, "export const value = 3;\n");
+          return "export const value = 3;\n";
+        };
+      }
+      return file;
+    }) as typeof Bun.file;
+
+    try {
+      const bootstrap = await loadAppBootstrap(
+        { kind: "diff", left: "before.ts", right: "after.ts", options: { watch: true } },
+        { cwd: dir },
+      );
+
+      expect(bootstrap.reloadContext.cwd).toBe(dir);
+      expect(bootstrap.reloadContext.initialWatchSignature).toBeDefined();
+      expect(computeWatchSignature(bootstrap.input, bootstrap.reloadContext)).not.toBe(
+        bootstrap.reloadContext.initialWatchSignature,
+      );
+    } finally {
+      Bun.file = originalBunFile;
+    }
+  });
+
+  test("does not fail a valid initial load when best-effort watch signing fails", async () => {
+    const bootstrap = await loadAppBootstrap({
+      kind: "patch",
+      file: "-",
+      text: "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-one\n+two\n",
+      options: { watch: true },
+    });
+
+    expect(bootstrap.changeset.files).toHaveLength(1);
+    expect(bootstrap.reloadContext.initialWatchSignature).toBeUndefined();
+  });
+
   test("loads file-pair diffs and agent context", async () => {
     const dir = mkdtempSync(join(tmpdir(), "hunk-diff-"));
     tempDirs.push(dir);
@@ -242,6 +291,7 @@ describe("loadAppBootstrap", () => {
           options: {
             mode: "auto",
             agentContext: "agent.json",
+            watch: true,
           },
         },
         { cwd: nested },
@@ -251,8 +301,17 @@ describe("loadAppBootstrap", () => {
     expect(normalizeComparablePath(bootstrap.changeset.sourceLabel)).toBe(
       normalizeComparablePath(dir),
     );
+    expect(normalizeComparablePath(bootstrap.reloadContext.cwd)).toBe(
+      normalizeComparablePath(nested),
+    );
+    expect(normalizeComparablePath(bootstrap.reloadContext.repoRoot!)).toBe(
+      normalizeComparablePath(dir),
+    );
     expect(bootstrap.changeset.files[0]?.path).toBe("example.ts");
     expect(bootstrap.changeset.files[0]?.agent?.annotations).toHaveLength(1);
+    expect(computeWatchSignature(bootstrap.input, bootstrap.reloadContext)).toBe(
+      bootstrap.reloadContext.initialWatchSignature!,
+    );
   });
 
   test("skips binary file-pair diffs instead of reading their contents", async () => {

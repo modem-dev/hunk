@@ -1379,6 +1379,7 @@ describe("App interactions", () => {
     const setup = await testRender(
       <AppHost
         bootstrap={{
+          reloadContext: { cwd: process.cwd() },
           input: {
             kind: "vcs",
             staged: false,
@@ -2217,6 +2218,7 @@ describe("App interactions", () => {
       ).join("\n") + "\n";
 
     const bootstrap: AppBootstrap = {
+      reloadContext: { cwd: process.cwd() },
       input: {
         kind: "vcs",
         staged: false,
@@ -2270,6 +2272,7 @@ describe("App interactions", () => {
       ).join("\n") + "\n";
 
     const bootstrap: AppBootstrap = {
+      reloadContext: { cwd: process.cwd() },
       input: {
         kind: "vcs",
         staged: false,
@@ -2328,6 +2331,7 @@ describe("App interactions", () => {
       ).join("\n") + "\n";
 
     const bootstrap: AppBootstrap = {
+      reloadContext: { cwd: process.cwd() },
       input: {
         kind: "vcs",
         staged: false,
@@ -2401,6 +2405,7 @@ describe("App interactions", () => {
       ).join("\n") + "\n";
 
     const bootstrap: AppBootstrap = {
+      reloadContext: { cwd: process.cwd() },
       input: {
         kind: "vcs",
         staged: false,
@@ -2462,6 +2467,7 @@ describe("App interactions", () => {
       ).join("\n") + "\n";
 
     const bootstrap: AppBootstrap = {
+      reloadContext: { cwd: process.cwd() },
       input: {
         kind: "vcs",
         staged: false,

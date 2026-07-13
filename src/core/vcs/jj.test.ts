@@ -113,6 +113,12 @@ describe("JjVcsAdapter", () => {
 
       expect(showResult.title).toContain("show @");
       expect(showResult.patchText).toContain("diff --git a/file.txt b/file.txt");
+      expect(
+        JjVcsAdapter.operations["working-tree-diff"]!.watchSignature!(diffInput, { cwd: repo }),
+      ).toContain("+two");
+      expect(
+        JjVcsAdapter.operations["revision-show"]!.watchSignature!(showInput, { cwd: repo }),
+      ).toContain("diff --git");
     },
     JjAdapterIntegrationTestTimeoutMs,
   );

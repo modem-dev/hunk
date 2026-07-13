@@ -158,35 +158,28 @@ describe("GitVcsAdapter", () => {
     writeFileSync(join(repo, "file.txt"), "two\n");
     writeFileSync(join(repo, "untracked.txt"), "fresh\n");
 
-    // watchSignature reads process.cwd(), so run it from inside the temp repo.
-    const previousCwd = process.cwd();
-    process.chdir(repo);
-    try {
-      // Measure the working-tree signature while the tree is actually dirty, so the assertion is
-      // meaningful: it must carry the tracked diff and an untracked-file stat signature.
-      const diffSignature = GitVcsAdapter.operations["working-tree-diff"]!.watchSignature!(
-        { kind: "vcs", staged: false, options: { vcs: "git" } },
-        { cwd: repo },
-      );
-      expect(diffSignature).toContain("diff --git a/file.txt b/file.txt");
-      expect(diffSignature).toContain("untracked:");
+    // Measure the working-tree signature while the tree is actually dirty, so the assertion is
+    // meaningful: it must carry the tracked diff and an untracked-file stat signature.
+    const diffSignature = GitVcsAdapter.operations["working-tree-diff"]!.watchSignature!(
+      { kind: "vcs", staged: false, options: { vcs: "git" } },
+      { cwd: repo },
+    );
+    expect(diffSignature).toContain("diff --git a/file.txt b/file.txt");
+    expect(diffSignature).toContain("untracked:");
 
-      const showSignature = GitVcsAdapter.operations["revision-show"]!.watchSignature!(
-        { kind: "show", ref: "HEAD", options: { vcs: "git" } },
-        { cwd: repo },
-      );
-      expect(showSignature).toContain("diff --git");
+    const showSignature = GitVcsAdapter.operations["revision-show"]!.watchSignature!(
+      { kind: "show", ref: "HEAD", options: { vcs: "git" } },
+      { cwd: repo },
+    );
+    expect(showSignature).toContain("diff --git");
 
-      // Stash the dirty state so a stash entry exists for the stash-show signature.
-      git(repo, "stash", "push", "--include-untracked", "-m", "watch stash");
-      const stashSignature = GitVcsAdapter.operations["stash-show"]!.watchSignature!(
-        { kind: "stash-show", options: { vcs: "git" } },
-        { cwd: repo },
-      );
-      expect(stashSignature).toContain("diff --git");
-    } finally {
-      process.chdir(previousCwd);
-    }
+    // Stash the dirty state so a stash entry exists for the stash-show signature.
+    git(repo, "stash", "push", "--include-untracked", "-m", "watch stash");
+    const stashSignature = GitVcsAdapter.operations["stash-show"]!.watchSignature!(
+      { kind: "stash-show", options: { vcs: "git" } },
+      { cwd: repo },
+    );
+    expect(stashSignature).toContain("diff --git");
   });
 });
 

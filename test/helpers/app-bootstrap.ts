@@ -36,6 +36,7 @@ export function createTestVcsAppBootstrap({
   title?: string;
 }): AppBootstrap {
   return {
+    reloadContext: { cwd: sourceLabel },
     input: {
       kind: "vcs",
       staged: false,

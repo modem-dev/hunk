@@ -13,6 +13,7 @@ function realPath(path: string) {
 function bootstrapFor(input: CliInput, sourceLabel: string): AppBootstrap {
   return {
     input,
+    reloadContext: { cwd: sourceLabel },
     changeset: {
       id: "changeset:test",
       sourceLabel,

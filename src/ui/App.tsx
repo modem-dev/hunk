@@ -620,7 +620,9 @@ export function App({
     let lastSignature: string;
 
     try {
-      lastSignature = computeWatchSignature(bootstrap.input);
+      lastSignature =
+        bootstrap.reloadContext.initialWatchSignature ??
+        computeWatchSignature(bootstrap.input, bootstrap.reloadContext);
     } catch (error) {
       console.error("Failed to initialize watch mode.", error);
       return;
@@ -634,7 +636,7 @@ export function App({
       polling = true;
 
       try {
-        const nextSignature = computeWatchSignature(bootstrap.input);
+        const nextSignature = computeWatchSignature(bootstrap.input, bootstrap.reloadContext);
         if (nextSignature !== lastSignature) {
           lastSignature = nextSignature;
           refreshing = true;
