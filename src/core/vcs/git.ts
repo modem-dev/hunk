@@ -5,6 +5,7 @@ import {
   buildGitDiffNumstatArgs,
   buildGitShowArgs,
   buildGitStashShowArgs,
+  listGitIgnoredDirectoryRoots,
   listGitUntrackedFiles,
   normalizeUntrackedPatchHeaders,
   resolveGitColorMovedOptions,
@@ -286,7 +287,16 @@ function buildGitWatchPlan(
     targets.push({
       kind: "directory-tree",
       directory: metadata.repoRoot,
-      ignoredRoots: [join(metadata.repoRoot, ".git")],
+      ignoredRoots: [
+        ...new Set([
+          join(metadata.repoRoot, ".git"),
+          ...listGitIgnoredDirectoryRoots(operation.input, {
+            cwd: metadata.repoRoot,
+            repoRoot: metadata.repoRoot,
+            gitExecutable,
+          }),
+        ]),
+      ],
       sources: ["worktree"],
     });
   }

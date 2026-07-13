@@ -1,11 +1,14 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve, sep } from "node:path";
 import {
   buildGitDiffArgs,
+  buildGitIgnoredDirectoryArgs,
   buildGitStashShowArgs,
   buildGitStatusArgs,
+  listGitIgnoredDirectoryRoots,
+  parseGitIgnoredDirectoryRoots,
   resolveGitDiffEndpoints,
   resolveGitMetadata,
   runGitText,
@@ -96,6 +99,29 @@ describe("git command helpers", () => {
     ]);
   });
 
+  test("builds the collapsed ignored-directory query", () => {
+    expect(buildGitIgnoredDirectoryArgs()).toEqual([
+      "ls-files",
+      "--full-name",
+      "--others",
+      "--ignored",
+      "--exclude-standard",
+      "--directory",
+      "-z",
+    ]);
+  });
+
+  test("parses only NUL-delimited collapsed directories into unique absolute roots", () => {
+    const repoRoot = resolve(tmpdir(), "hunk-ignored-parser");
+
+    expect(
+      parseGitIgnoredDirectoryRoots(
+        ["dependencies/", "ignored.log", "build/nested/", "dependencies/", ""].join("\0"),
+        repoRoot,
+      ),
+    ).toEqual([resolve(repoRoot, "dependencies"), resolve(repoRoot, "build/nested")]);
+  });
+
   test("reports a friendly error when git is not installed or not on PATH", () => {
     expect(() =>
       runGitText({
@@ -110,6 +136,85 @@ describe("git command helpers", () => {
     ).toThrow(
       "Git is required for `hunk diff`, but `definitely-not-a-real-git-binary` was not found in PATH.",
     );
+  });
+});
+
+describe("listGitIgnoredDirectoryRoots", () => {
+  test("collapses a dependency-heavy ignored tree without pruning nonignored paths", () => {
+    const repoRoot = createTempRepo("hunk-git-ignored-dependencies-");
+    writeFileSync(join(repoRoot, ".gitignore"), "node_modules/\nignored.log\n");
+    for (let index = 0; index < 25; index += 1) {
+      const packageRoot = join(repoRoot, "node_modules", `package-${index}`, "cache");
+      mkdirSync(packageRoot, { recursive: true });
+      writeFileSync(join(packageRoot, "index.js"), `${index}\n`);
+    }
+    writeFileSync(join(repoRoot, "ignored.log"), "ignored file\n");
+    mkdirSync(join(repoRoot, "src"), { recursive: true });
+    writeFileSync(join(repoRoot, "src", "untracked.ts"), "export {};\n");
+
+    const roots = listGitIgnoredDirectoryRoots(makeGitInput(), { cwd: join(repoRoot, "src") });
+
+    expect(roots).toEqual([join(realpathSync(repoRoot), "node_modules")]);
+    expect(roots).not.toContain(join(realpathSync(repoRoot), "src"));
+  });
+
+  test("honors nested ignore negation instead of pruning its visible ancestor", () => {
+    const repoRoot = createTempRepo("hunk-git-ignored-negation-");
+    writeFileSync(
+      join(repoRoot, ".gitignore"),
+      ["generated/*", "!generated/.gitignore", "!generated/keep/", ""].join("\n"),
+    );
+    mkdirSync(join(repoRoot, "generated", "discard"), { recursive: true });
+    mkdirSync(join(repoRoot, "generated", "keep"), { recursive: true });
+    writeFileSync(
+      join(repoRoot, "generated", ".gitignore"),
+      ["keep/*", "!keep/visible.txt", ""].join("\n"),
+    );
+    writeFileSync(join(repoRoot, "generated", "discard", "output.js"), "ignored\n");
+    writeFileSync(join(repoRoot, "generated", "keep", "hidden.txt"), "ignored file\n");
+    writeFileSync(join(repoRoot, "generated", "keep", "visible.txt"), "visible\n");
+
+    expect(listGitIgnoredDirectoryRoots(makeGitInput(), { cwd: repoRoot })).toEqual([
+      join(realpathSync(repoRoot), "generated", "discard"),
+    ]);
+  });
+
+  test("honors repository-local excludes", () => {
+    const repoRoot = createTempRepo("hunk-git-ignored-info-exclude-");
+    writeFileSync(join(repoRoot, ".git", "info", "exclude"), "local-cache/\n");
+    mkdirSync(join(repoRoot, "local-cache", "nested"), { recursive: true });
+    writeFileSync(join(repoRoot, "local-cache", "nested", "data"), "ignored\n");
+
+    expect(listGitIgnoredDirectoryRoots(makeGitInput(), { cwd: repoRoot })).toEqual([
+      join(realpathSync(repoRoot), "local-cache"),
+    ]);
+  });
+
+  test("does not prune an ignored parent containing a forced tracked file", () => {
+    const repoRoot = createTempRepo("hunk-git-ignored-tracked-");
+    writeFileSync(join(repoRoot, ".gitignore"), "vendor/\n");
+    mkdirSync(join(repoRoot, "vendor", "generated"), { recursive: true });
+    writeFileSync(join(repoRoot, "vendor", "tracked.txt"), "tracked\n");
+    writeFileSync(join(repoRoot, "vendor", "generated", "output.txt"), "ignored\n");
+    git(repoRoot, "add", ".gitignore");
+    git(repoRoot, "add", "-f", "vendor/tracked.txt");
+    git(repoRoot, "commit", "-m", "track forced file");
+
+    const roots = listGitIgnoredDirectoryRoots(makeGitInput(), { cwd: repoRoot });
+    const trackedPath = join(realpathSync(repoRoot), "vendor", "tracked.txt");
+
+    expect(roots).toEqual([join(realpathSync(repoRoot), "vendor", "generated")]);
+    expect(roots.some((root) => trackedPath.startsWith(`${root}${sep}`))).toBe(false);
+  });
+
+  test("falls back to no pruning when best-effort discovery fails", () => {
+    expect(
+      listGitIgnoredDirectoryRoots(makeGitInput(), {
+        cwd: tmpdir(),
+        repoRoot: tmpdir(),
+        gitExecutable: "definitely-not-a-real-git-binary",
+      }),
+    ).toEqual([]);
   });
 });
 
