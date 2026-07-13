@@ -19,6 +19,7 @@ export interface WatchEventSource {
 export interface WatchEventSourceCallbacks {
   onEvent(): void;
   onError(error: unknown): void;
+  onReady?(): void;
 }
 
 export interface WatchControllerOptions {
@@ -213,6 +214,16 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     schedule();
   };
 
+  /** Close the startup scan race with an immediate signature check after watcher readiness. */
+  const onSourceReady = () => {
+    if (state.phase === "closed") return;
+    if (state.phase === "checking" || state.phase === "refreshing") {
+      state.dirty = true;
+      return;
+    }
+    void beginCheck();
+  };
+
   /** Degrade only for watcher resource exhaustion; other source errors stay nonfatal. */
   const onSourceError = (error: unknown) => {
     if (state.phase === "closed") return;
@@ -232,7 +243,11 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
   safetyDeadline = clock.now() + safetyInterval();
   if (options.createEventSource && !options.pollOnly) {
     try {
-      eventSource = options.createEventSource({ onEvent, onError: onSourceError });
+      eventSource = options.createEventSource({
+        onEvent,
+        onError: onSourceError,
+        onReady: onSourceReady,
+      });
     } catch (error) {
       state.degraded = true;
       safetyDeadline = clock.now() + degradedCheckMs;
