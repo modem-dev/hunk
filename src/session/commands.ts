@@ -10,6 +10,7 @@ import {
   isSessionBrokerHealthy,
   isLoopbackPortReachable,
   nonHunkProcessPortConflictError,
+  unauthenticatedHunkDaemonPortConflictError,
   waitForSessionBrokerShutdown,
 } from "../session-broker/brokerLauncher";
 import { resolveSessionBrokerConfig } from "../session-broker/brokerConfig";
@@ -99,6 +100,16 @@ async function restartDaemonForMissingAction(
     throw nonHunkProcessPortConflictError(resolveSessionBrokerConfig());
   }
 
+  if (portState.kind === "legacy") {
+    throw unauthenticatedHunkDaemonPortConflictError(resolveSessionBrokerConfig());
+  }
+
+  if (portState.kind === "starting") {
+    throw new Error(
+      "The Hunk session daemon is still starting. Wait a moment for it to finish publishing runtime metadata, then retry.",
+    );
+  }
+
   const health = portState.kind === "daemon" ? portState.health : null;
   const pid = health?.pid;
   const hadSessions = (health?.sessions ?? 0) > 0;
@@ -109,9 +120,10 @@ async function restartDaemonForMissingAction(
     );
   }
 
+  reportHunkDaemonUpgradeRestart();
   process.kill(pid, "SIGTERM");
 
-  const shutDown = await waitForSessionBrokerShutdown();
+  const shutDown = await waitForSessionBrokerShutdown({ identity: health });
   if (!shutDown) {
     throw new Error(
       `Stopped waiting for the old Hunk session daemon to exit after it was found missing ${action}.`,
@@ -145,7 +157,6 @@ async function ensureRequiredAction(action: SessionDaemonAction, selector?: Sess
     return;
   }
 
-  reportHunkDaemonUpgradeRestart();
   await (sessionCommandTestHooks?.restartDaemonForMissingAction?.(action, selector) ??
     restartDaemonForMissingAction(action, selector));
 }
@@ -158,6 +169,22 @@ async function resolveDaemonAvailability(action: SessionCommandInput["action"]) 
   }
 
   const portState = await inspectSessionBrokerPort({ config });
+  if (portState.kind === "daemon") {
+    return true;
+  }
+
+  if (portState.kind === "legacy") {
+    throw unauthenticatedHunkDaemonPortConflictError(config);
+  }
+
+  if (portState.kind === "starting") {
+    await ensureSessionBrokerAvailable({
+      config,
+      timeoutMs: 3_000,
+    });
+    return true;
+  }
+
   if (portState.kind === "foreign") {
     throw nonHunkProcessPortConflictError(config);
   }

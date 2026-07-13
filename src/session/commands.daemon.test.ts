@@ -1,8 +1,15 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createServer } from "node:net";
-import { platform } from "node:os";
+import { mkdtempSync, rmSync } from "node:fs";
+import { platform, tmpdir } from "node:os";
+import { join } from "node:path";
 import type { SessionCommandInput } from "../core/types";
 import { createTestListedSession } from "../../test/helpers/session-daemon-fixtures";
+import {
+  buildSessionBrokerRuntimeMetadata,
+  resolveSessionBrokerRuntimePaths,
+  writeSessionBrokerRuntimeMetadata,
+} from "../session-broker/brokerLauncher";
 import {
   runSessionCommand,
   setSessionCommandTestHooks,
@@ -17,6 +24,8 @@ const testNonce = "test-session-command-daemon-nonce";
 // port via HUNK_MCP_PORT. No daemon is listening there, so the health and reachability probes
 // resolve naturally — no module mocking, so nothing leaks into sibling suites.
 const originalPort = process.env.HUNK_MCP_PORT;
+const originalRuntimeDir = process.env.XDG_RUNTIME_DIR;
+const runtimeDirs: string[] = [];
 
 // These cases drive the real availability probe against a loopback port with no daemon. Bun's
 // Windows networking does not reliably surface a connection refusal for a closed loopback port
@@ -37,6 +46,13 @@ async function reserveFreePort() {
   return port;
 }
 
+function createRuntimeDir() {
+  const dir = mkdtempSync(join(tmpdir(), "hunk-session-command-daemon-test-"));
+  runtimeDirs.push(dir);
+  process.env.XDG_RUNTIME_DIR = dir;
+  return dir;
+}
+
 beforeEach(() => {
   setSessionCommandTestHooks(null);
 });
@@ -47,6 +63,19 @@ afterEach(() => {
     delete process.env.HUNK_MCP_PORT;
   } else {
     process.env.HUNK_MCP_PORT = originalPort;
+  }
+
+  if (originalRuntimeDir === undefined) {
+    delete process.env.XDG_RUNTIME_DIR;
+  } else {
+    process.env.XDG_RUNTIME_DIR = originalRuntimeDir;
+  }
+
+  while (runtimeDirs.length > 0) {
+    const dir = runtimeDirs.pop();
+    if (dir) {
+      rmSync(dir, { recursive: true, force: true });
+    }
   }
 });
 
@@ -116,6 +145,72 @@ describe("resolveDaemonAvailability with a foreign process on the port", () => {
           output: "json",
         } satisfies SessionCommandInput),
       ).rejects.toThrow(/occupied by a non-Hunk process/);
+    } finally {
+      server.stop(true);
+    }
+  });
+});
+
+describe("resolveDaemonAvailability with a daemon that appears between probes", () => {
+  probeTest("returns sessions instead of reporting a port conflict", async () => {
+    createRuntimeDir();
+    let healthRequests = 0;
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: (request) => {
+        const url = new URL(request.url);
+        if (url.pathname === "/health") {
+          healthRequests += 1;
+          if (healthRequests === 1) {
+            return new Response("not ready", { status: 404 });
+          }
+
+          return Response.json({
+            ok: true,
+            pid: process.pid,
+            nonce: testNonce,
+            sessions: 1,
+            pendingCommands: 0,
+          });
+        }
+
+        return new Response("nope", { status: 404 });
+      },
+    });
+    process.env.HUNK_MCP_PORT = String(server.port);
+    const config = {
+      host: "127.0.0.1",
+      port: server.port!,
+      httpOrigin: `http://127.0.0.1:${server.port}`,
+      wsOrigin: `ws://127.0.0.1:${server.port}`,
+    };
+    writeSessionBrokerRuntimeMetadata(
+      resolveSessionBrokerRuntimePaths(config),
+      buildSessionBrokerRuntimeMetadata({ config, nonce: testNonce, pid: process.pid }),
+    );
+    setSessionCommandTestHooks({
+      createClient: () =>
+        ({
+          getCapabilities: async () => ({
+            version: HUNK_SESSION_API_VERSION,
+            daemonVersion: HUNK_SESSION_DAEMON_VERSION,
+            nonce: testNonce,
+            actions: ["list"],
+          }),
+          listSessions: async () => [createTestListedSession({ sessionId: "session-1" })],
+        }) as HunkDaemonCliClient,
+    });
+
+    try {
+      const output = await runSessionCommand({
+        kind: "session",
+        action: "list",
+        output: "json",
+      } satisfies SessionCommandInput);
+
+      expect(JSON.parse(output).sessions).toHaveLength(1);
+      expect(healthRequests).toBeGreaterThanOrEqual(2);
     } finally {
       server.stop(true);
     }

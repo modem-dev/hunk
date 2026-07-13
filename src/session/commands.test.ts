@@ -13,7 +13,6 @@ import {
   setSessionCommandTestHooks,
   type HunkDaemonCliClient,
 } from "./commands";
-import { HUNK_DAEMON_UPGRADE_RESTART_NOTICE } from "./capabilities";
 import { HUNK_SESSION_API_VERSION, HUNK_SESSION_DAEMON_VERSION } from "./protocol";
 
 const testNonce = "test-session-command-nonce";
@@ -200,7 +199,7 @@ describe("session command compatibility checks", () => {
         },
       ]);
       expect(createdClients).toEqual(["stale-capabilities", "fresh-context"]);
-      expect(notices).toContain(HUNK_DAEMON_UPGRADE_RESTART_NOTICE);
+      expect(notices).toEqual([]);
     } finally {
       console.error = originalConsoleError;
     }
@@ -271,7 +270,7 @@ describe("session command compatibility checks", () => {
         },
       ]);
       expect(createdClients).toEqual(["stale-capabilities", "fresh-list"]);
-      expect(notices).toContain(HUNK_DAEMON_UPGRADE_RESTART_NOTICE);
+      expect(notices).toEqual([]);
     } finally {
       console.error = originalConsoleError;
     }
@@ -357,7 +356,7 @@ describe("session command compatibility checks", () => {
         },
       ]);
       expect(createdClients).toEqual(["stale-capabilities", "fresh-comment-add"]);
-      expect(notices).toContain(HUNK_DAEMON_UPGRADE_RESTART_NOTICE);
+      expect(notices).toEqual([]);
     } finally {
       console.error = originalConsoleError;
     }

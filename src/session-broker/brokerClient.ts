@@ -17,11 +17,14 @@ import {
 import {
   ensureSessionBrokerAvailable,
   inspectSessionBrokerPort,
+  isSameSessionBrokerDaemonIdentity,
   nonHunkProcessPortConflictError,
+  type SessionBrokerDaemonIdentity,
+  unauthenticatedHunkDaemonPortConflictError,
   waitForSessionBrokerShutdown,
 } from "./brokerLauncher";
 import {
-  readHunkSessionDaemonCapabilities,
+  readHunkSessionDaemonCapabilitiesForIdentity,
   reportHunkDaemonUpgradeRestart,
 } from "../session/capabilities";
 
@@ -118,38 +121,89 @@ export class SessionBrokerClient<
   }
 
   private async ensureDaemonAvailable(config: ResolvedSessionBrokerConfig) {
-    await ensureSessionBrokerAvailable({
-      config,
-      timeoutMs: DAEMON_STARTUP_TIMEOUT_MS,
-    });
-
-    const capabilities = await readHunkSessionDaemonCapabilities(config);
-    if (!capabilities) {
-      await this.restartIncompatibleDaemon(config);
+    for (let attempt = 0; attempt < 3; attempt += 1) {
       await ensureSessionBrokerAvailable({
         config,
         timeoutMs: DAEMON_STARTUP_TIMEOUT_MS,
       });
 
-      if (!(await readHunkSessionDaemonCapabilities(config))) {
-        throw new Error(
-          "The running session broker daemon is incompatible with this build. " +
-            "Restart the app so it can launch a fresh daemon from the current source tree.",
+      const portState = await inspectSessionBrokerPort({ config });
+      if (portState.kind === "foreign") {
+        throw nonHunkProcessPortConflictError(config);
+      }
+
+      if (portState.kind === "legacy") {
+        throw unauthenticatedHunkDaemonPortConflictError(config);
+      }
+
+      if (portState.kind !== "daemon") {
+        continue;
+      }
+
+      const capabilities = await readHunkSessionDaemonCapabilitiesForIdentity(
+        config,
+        portState.health,
+      );
+      if (capabilities) {
+        this.lastConnectionWarning = null;
+        return;
+      }
+
+      const restartResult = await this.restartIncompatibleDaemon(config, portState.health);
+      if (restartResult === "identity-changed") {
+        continue;
+      }
+
+      await ensureSessionBrokerAvailable({
+        config,
+        timeoutMs: DAEMON_STARTUP_TIMEOUT_MS,
+      });
+
+      const refreshedState = await inspectSessionBrokerPort({ config });
+      if (refreshedState.kind === "daemon") {
+        const refreshedCapabilities = await readHunkSessionDaemonCapabilitiesForIdentity(
+          config,
+          refreshedState.health,
         );
+        if (refreshedCapabilities) {
+          this.lastConnectionWarning = null;
+          return;
+        }
       }
     }
 
-    this.lastConnectionWarning = null;
+    throw new Error(
+      "The running session broker daemon is incompatible with this build. " +
+        "Restart the app so it can launch a fresh daemon from the current source tree.",
+    );
   }
 
-  private async restartIncompatibleDaemon(config: ResolvedSessionBrokerConfig) {
-    reportHunkDaemonUpgradeRestart();
+  private async restartIncompatibleDaemon(
+    config: ResolvedSessionBrokerConfig,
+    expectedIdentity?: SessionBrokerDaemonIdentity,
+  ) {
     const portState = await inspectSessionBrokerPort({ config });
     if (portState.kind === "foreign") {
       throw nonHunkProcessPortConflictError(config);
     }
 
+    if (portState.kind === "legacy") {
+      throw unauthenticatedHunkDaemonPortConflictError(config);
+    }
+
+    if (portState.kind === "starting") {
+      return "identity-changed" as const;
+    }
+
     const health = portState.kind === "daemon" ? portState.health : null;
+    if (
+      health &&
+      expectedIdentity &&
+      !isSameSessionBrokerDaemonIdentity(health, expectedIdentity)
+    ) {
+      return "identity-changed" as const;
+    }
+
     const pid = health?.pid;
     if (pid === process.pid) {
       throw new Error(
@@ -164,6 +218,7 @@ export class SessionBrokerClient<
       return;
     }
 
+    reportHunkDaemonUpgradeRestart();
     try {
       process.kill(pid, "SIGTERM");
     } catch (error) {
@@ -175,6 +230,7 @@ export class SessionBrokerClient<
     const shutDown = await waitForSessionBrokerShutdown({
       config,
       timeoutMs: DAEMON_STARTUP_TIMEOUT_MS,
+      identity: health,
     });
     if (!shutDown) {
       throw new Error(

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -213,6 +213,71 @@ describe("Hunk session daemon client", () => {
     }
   });
 
+  test("restartIncompatibleDaemon refuses to signal a pre-authentication Hunk daemon", async () => {
+    createRuntimeDir();
+    const server = createServer((_request, response) => {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(
+        JSON.stringify({
+          ok: true,
+          pid: 54321,
+          sessions: 0,
+          pendingCommands: 0,
+          sessionApi: "http://127.0.0.1/session-api",
+          sessionCapabilities: "http://127.0.0.1/session-api/capabilities",
+          sessionSocket: "ws://127.0.0.1/session",
+        }),
+      );
+    });
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", () => resolve());
+    });
+
+    const address = server.address();
+    const port = typeof address === "object" && address ? address.port : 0;
+    const config = {
+      host: "127.0.0.1",
+      port,
+      httpOrigin: `http://127.0.0.1:${port}`,
+      wsOrigin: `ws://127.0.0.1:${port}`,
+    };
+    const paths = resolveSessionBrokerRuntimePaths(config);
+    mkdirSync(paths.runtimeDir, { recursive: true });
+    writeFileSync(
+      paths.metadataPath,
+      JSON.stringify({
+        pid: 54321,
+        host: config.host,
+        port: config.port,
+        command: process.execPath,
+        args: ["daemon", "serve"],
+        launchedAt: new Date().toISOString(),
+        launchedByPid: process.ppid,
+        launchCwd: process.cwd(),
+      }),
+    );
+
+    const client = new SessionBrokerClient(createRegistration(), createSnapshot());
+    const originalKill = process.kill;
+    const killCalls: Array<{ pid: number; signal?: string | number }> = [];
+    process.kill = ((pid: number, signal?: string | number) => {
+      killCalls.push({ pid, signal });
+      return true;
+    }) as typeof process.kill;
+
+    try {
+      await expect((client as any).restartIncompatibleDaemon(config)).rejects.toThrow(
+        /older Hunk session daemon/,
+      );
+      expect(killCalls.filter((call) => call.signal !== 0)).toEqual([]);
+    } finally {
+      process.kill = originalKill;
+      client.stop();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
   test("restartIncompatibleDaemon refuses to signal when runtime metadata and health disagree on pid", async () => {
     createRuntimeDir();
     const server = createServer((_request, response) => {
@@ -254,6 +319,60 @@ describe("Hunk session daemon client", () => {
       await expect((client as any).restartIncompatibleDaemon(config)).rejects.toThrow(
         /occupied by a non-Hunk process/,
       );
+      expect(killCalls.filter((call) => call.signal !== 0)).toEqual([]);
+    } finally {
+      process.kill = originalKill;
+      client.stop();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  test("restartIncompatibleDaemon retries instead of signaling when the daemon identity changed", async () => {
+    createRuntimeDir();
+    const daemonPid = 67890;
+    const daemonNonce = "fresh-session-broker-client-nonce";
+    const server = createServer((_request, response) => {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(
+        JSON.stringify({
+          ok: true,
+          pid: daemonPid,
+          nonce: daemonNonce,
+          sessions: 0,
+          pendingCommands: 0,
+        }),
+      );
+    });
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", () => resolve());
+    });
+
+    const address = server.address();
+    const port = typeof address === "object" && address ? address.port : 0;
+    const config = {
+      host: "127.0.0.1",
+      port,
+      httpOrigin: `http://127.0.0.1:${port}`,
+      wsOrigin: `ws://127.0.0.1:${port}`,
+    };
+    writeMetadata(config, daemonNonce, daemonPid);
+
+    const client = new SessionBrokerClient(createRegistration(), createSnapshot());
+    const originalKill = process.kill;
+    const killCalls: Array<{ pid: number; signal?: string | number }> = [];
+    process.kill = ((pid: number, signal?: string | number) => {
+      killCalls.push({ pid, signal });
+      return true;
+    }) as typeof process.kill;
+
+    try {
+      await expect(
+        (client as any).restartIncompatibleDaemon(config, {
+          pid: 12345,
+          nonce: "stale-session-broker-client-nonce",
+        }),
+      ).resolves.toBe("identity-changed");
       expect(killCalls.filter((call) => call.signal !== 0)).toEqual([]);
     } finally {
       process.kill = originalKill;

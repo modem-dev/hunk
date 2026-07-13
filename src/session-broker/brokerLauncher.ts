@@ -59,11 +59,22 @@ export interface SessionBrokerHealth {
   staleSessionTtlMs?: number;
 }
 
+export interface SessionBrokerDaemonIdentity {
+  pid: number;
+  nonce: string;
+}
+
 export type SessionBrokerPortState =
   | {
       kind: "daemon";
       health: SessionBrokerHealth;
       metadata: SessionBrokerRuntimeMetadata;
+    }
+  | {
+      kind: "legacy";
+    }
+  | {
+      kind: "starting";
     }
   | {
       kind: "foreign";
@@ -194,9 +205,44 @@ function isValidSessionBrokerHealth(value: unknown): value is SessionBrokerHealt
   );
 }
 
+function isLikelyLegacySessionBrokerHealth(value: unknown) {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const health = value as Record<string, unknown>;
+  return (
+    health.ok === true &&
+    Number.isInteger(health.pid) &&
+    (health.pid as number) > 0 &&
+    !isNonEmptyString(health.nonce) &&
+    (isNonEmptyString(health.sessionApi) ||
+      isNonEmptyString(health.sessionCapabilities) ||
+      isNonEmptyString(health.sessionSocket))
+  );
+}
+
 function readSessionBrokerRuntimeMetadataFile(path: string) {
   const metadata = readJsonFile<unknown>(path);
   return isValidSessionBrokerRuntimeMetadata(metadata) ? metadata : null;
+}
+
+function hasLiveDaemonLaunchLock(
+  paths: SessionBrokerRuntimePaths,
+  config: Pick<ResolvedSessionBrokerConfig, "host" | "port">,
+) {
+  const lock = readJsonFile<SessionBrokerLaunchLockFile>(paths.lockPath);
+  if (
+    !lock ||
+    lock.host !== config.host ||
+    lock.port !== config.port ||
+    !Number.isInteger(lock.ownerPid) ||
+    lock.ownerPid <= 0
+  ) {
+    return false;
+  }
+
+  return isRunningPid(lock.ownerPid);
 }
 
 function cleanStaleDaemonMetadata(paths: SessionBrokerRuntimePaths) {
@@ -359,6 +405,22 @@ export function nonHunkProcessPortConflictError(
   );
 }
 
+export function unauthenticatedHunkDaemonPortConflictError(
+  config: Pick<ResolvedSessionBrokerConfig, "host" | "port">,
+) {
+  return new Error(
+    `An older Hunk session daemon is using ${config.host}:${config.port} and cannot be authenticated by this build. ` +
+      `Close older Hunk windows, then retry.`,
+  );
+}
+
+export function isSameSessionBrokerDaemonIdentity(
+  left: SessionBrokerDaemonIdentity,
+  right: SessionBrokerDaemonIdentity,
+) {
+  return left.pid === right.pid && left.nonce === right.nonce;
+}
+
 function daemonStartupTimeoutError(
   config: Pick<ResolvedSessionBrokerConfig, "host" | "port">,
   timeoutMessage?: string,
@@ -505,12 +567,21 @@ export async function inspectSessionBrokerPort({
     return { kind: "none" };
   }
 
+  if (payload !== INVALID_SESSION_BROKER_HEALTH && isLikelyLegacySessionBrokerHealth(payload)) {
+    return { kind: "legacy" };
+  }
+
   if (payload === INVALID_SESSION_BROKER_HEALTH || !isValidSessionBrokerHealth(payload)) {
     return { kind: "foreign" };
   }
 
+  const paths = resolveSessionBrokerRuntimePaths(config, env);
   const metadata = readSessionBrokerRuntimeMetadata(config, env);
-  if (!metadata || metadata.pid !== payload.pid || metadata.nonce !== payload.nonce) {
+  if (!metadata) {
+    return hasLiveDaemonLaunchLock(paths, config) ? { kind: "starting" } : { kind: "foreign" };
+  }
+
+  if (metadata.pid !== payload.pid || metadata.nonce !== payload.nonce) {
     return { kind: "foreign" };
   }
 
@@ -573,14 +644,42 @@ export async function waitForSessionBrokerShutdown({
   config = resolveSessionBrokerConfig(),
   timeoutMs = 3_000,
   intervalMs = 100,
+  identity,
 }: {
   config?: ResolvedSessionBrokerConfig;
   timeoutMs?: number;
   intervalMs?: number;
+  identity?: SessionBrokerDaemonIdentity;
 } = {}) {
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
+    if (identity && !isRunningPid(identity.pid)) {
+      return true;
+    }
+
+    if (identity) {
+      const portState = await inspectSessionBrokerPort({ config, timeoutMs: intervalMs });
+      if (
+        portState.kind === "daemon" &&
+        isSameSessionBrokerDaemonIdentity(portState.health, identity)
+      ) {
+        await Bun.sleep(intervalMs);
+        continue;
+      }
+
+      if (!(await isLoopbackPortReachable(config, intervalMs))) {
+        return true;
+      }
+
+      if (portState.kind === "daemon") {
+        return true;
+      }
+
+      await Bun.sleep(intervalMs);
+      continue;
+    }
+
     if (!(await isSessionBrokerHealthy(config))) {
       return true;
     }
@@ -655,6 +754,19 @@ export async function ensureSessionBrokerAvailable({
     return;
   }
 
+  const initialPortState = await inspectSessionBrokerPort({ config, timeoutMs: intervalMs, env });
+  if (initialPortState.kind === "daemon") {
+    return;
+  }
+
+  if (initialPortState.kind === "legacy") {
+    throw unauthenticatedHunkDaemonPortConflictError(config);
+  }
+
+  if (initialPortState.kind === "foreign") {
+    throw nonHunkProcessPortConflictError(config);
+  }
+
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
@@ -708,6 +820,14 @@ export async function ensureSessionBrokerAvailable({
   const portState = await inspectSessionBrokerPort({ config, timeoutMs: intervalMs, env });
   if (portState.kind === "daemon") {
     return;
+  }
+
+  if (portState.kind === "starting") {
+    throw daemonStartupTimeoutError(config, timeoutMessage);
+  }
+
+  if (portState.kind === "legacy") {
+    throw unauthenticatedHunkDaemonPortConflictError(config);
   }
 
   if (portState.kind === "foreign") {

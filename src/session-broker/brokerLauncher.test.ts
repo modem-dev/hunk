@@ -261,6 +261,155 @@ describe("session daemon launcher", () => {
     }
   });
 
+  test("classifies a pre-authentication Hunk daemon as legacy", async () => {
+    const runtimeDir = createRuntimeDir();
+    const env = { ...process.env, XDG_RUNTIME_DIR: runtimeDir };
+    const listener = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: () =>
+        Response.json({
+          ok: true,
+          pid: process.pid,
+          sessions: 0,
+          pendingCommands: 0,
+          sessionApi: "http://127.0.0.1/session-api",
+          sessionCapabilities: "http://127.0.0.1/session-api/capabilities",
+          sessionSocket: "ws://127.0.0.1/session",
+        }),
+    });
+    const config = {
+      host: "127.0.0.1",
+      port: listener.port!,
+      httpOrigin: `http://127.0.0.1:${listener.port}`,
+      wsOrigin: `ws://127.0.0.1:${listener.port}`,
+    };
+    const paths = resolveSessionBrokerRuntimePaths(config, env);
+    mkdirSync(paths.runtimeDir, { recursive: true });
+    writeFileSync(
+      paths.metadataPath,
+      JSON.stringify({
+        pid: process.pid,
+        host: config.host,
+        port: config.port,
+        command: process.execPath,
+        args: ["daemon", "serve"],
+        launchedAt: new Date().toISOString(),
+        launchedByPid: process.ppid,
+        launchCwd: process.cwd(),
+      }),
+    );
+
+    try {
+      await expect(inspectSessionBrokerPort({ config, env })).resolves.toEqual({ kind: "legacy" });
+    } finally {
+      listener.stop(true);
+    }
+  });
+
+  test("does not launch a replacement over a pre-authentication Hunk daemon", async () => {
+    const runtimeDir = createRuntimeDir();
+    const env = { ...process.env, XDG_RUNTIME_DIR: runtimeDir };
+    const listener = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: () =>
+        Response.json({
+          ok: true,
+          pid: process.pid,
+          sessions: 0,
+          pendingCommands: 0,
+          sessionApi: "http://127.0.0.1/session-api",
+          sessionCapabilities: "http://127.0.0.1/session-api/capabilities",
+          sessionSocket: "ws://127.0.0.1/session",
+        }),
+    });
+    const config = {
+      host: "127.0.0.1",
+      port: listener.port!,
+      httpOrigin: `http://127.0.0.1:${listener.port}`,
+      wsOrigin: `ws://127.0.0.1:${listener.port}`,
+    };
+    const paths = resolveSessionBrokerRuntimePaths(config, env);
+    mkdirSync(paths.runtimeDir, { recursive: true });
+    writeFileSync(
+      paths.metadataPath,
+      JSON.stringify({
+        pid: process.pid,
+        host: config.host,
+        port: config.port,
+        command: process.execPath,
+        args: ["daemon", "serve"],
+        launchedAt: new Date().toISOString(),
+        launchedByPid: process.ppid,
+        launchCwd: process.cwd(),
+      }),
+    );
+    let launchAttempts = 0;
+
+    try {
+      await expect(
+        ensureSessionBrokerAvailable({
+          config,
+          env,
+          timeoutMs: 50,
+          intervalMs: 10,
+          launchDaemon: () => {
+            launchAttempts += 1;
+            return { pid: process.pid } as ChildProcess;
+          },
+        }),
+      ).rejects.toThrow(/older Hunk session daemon/);
+      expect(launchAttempts).toBe(0);
+    } finally {
+      listener.stop(true);
+    }
+  });
+
+  test("classifies authenticated health without metadata as starting while launch lock is live", async () => {
+    const runtimeDir = createRuntimeDir();
+    const env = { ...process.env, XDG_RUNTIME_DIR: runtimeDir };
+    const nonce = "starting-runtime-nonce";
+    const listener = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: () =>
+        Response.json({
+          ok: true,
+          pid: process.pid,
+          nonce,
+          sessions: 0,
+          pendingCommands: 0,
+        }),
+    });
+    const config = {
+      host: "127.0.0.1",
+      port: listener.port!,
+      httpOrigin: `http://127.0.0.1:${listener.port}`,
+      wsOrigin: `ws://127.0.0.1:${listener.port}`,
+    };
+    const paths = resolveSessionBrokerRuntimePaths(config, env);
+    mkdirSync(paths.runtimeDir, { recursive: true, mode: 0o700 });
+    writeFileSync(
+      paths.lockPath,
+      JSON.stringify({
+        ownerPid: process.pid,
+        host: config.host,
+        port: config.port,
+        acquiredAt: new Date().toISOString(),
+      }),
+      { mode: 0o600 },
+    );
+
+    try {
+      await expect(inspectSessionBrokerPort({ config, env })).resolves.toEqual({
+        kind: "starting",
+      });
+    } finally {
+      listener.stop(true);
+    }
+  });
+
   test("classifies matching health and runtime metadata as the active daemon", async () => {
     const runtimeDir = createRuntimeDir();
     const env = { ...process.env, XDG_RUNTIME_DIR: runtimeDir };
