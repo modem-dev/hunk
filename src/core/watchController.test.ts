@@ -401,6 +401,7 @@ describe("createWatchController", () => {
       source.error(Object.assign(new Error("resource limit"), { code }));
       source.error(Object.assign(new Error("resource limit again"), { code }));
       expect(controller.getState().degraded).toBe(true);
+      expect(source.closes).toBe(1);
       expect(errors).toHaveLength(1);
     }
   });

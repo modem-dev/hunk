@@ -230,6 +230,8 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     const code = getErrorCode(error);
     if (code === "ENOSPC" || code === "EMFILE") {
       state.degraded = true;
+      eventSource?.close();
+      eventSource = undefined;
       safetyDeadline = Math.min(
         safetyDeadline ?? Number.POSITIVE_INFINITY,
         clock.now() + degradedCheckMs,
