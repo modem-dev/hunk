@@ -153,8 +153,11 @@ describe("GitVcsAdapter", () => {
   test("builds operation-sensitive watch plans for working tree and metadata reviews", () => {
     const repo = createTempRepo("hunk-git-adapter-plan-");
     writeFileSync(join(repo, "file.txt"), "one\n");
-    git(repo, "add", "file.txt");
+    writeFileSync(join(repo, ".gitignore"), "generated/\n");
+    git(repo, "add", "file.txt", ".gitignore");
     git(repo, "commit", "-m", "initial");
+    mkdirSync(join(repo, "generated", "nested"), { recursive: true });
+    writeFileSync(join(repo, "generated", "nested", "output.js"), "ignored\n");
 
     const operation = GitVcsAdapter.operations["working-tree-diff"]!;
     const unstaged = operation.watchPlan!(
@@ -165,9 +168,21 @@ describe("GitVcsAdapter", () => {
     const worktreeTarget = unstaged.targets.find(
       (target) => target.kind === "directory-tree" && target.directory === repo,
     );
-    expect(worktreeTarget?.kind === "directory-tree" ? worktreeTarget.ignoredRoots : []).toContain(
+    expect(worktreeTarget?.kind === "directory-tree" ? worktreeTarget.ignoredRoots : []).toEqual([
       join(repo, ".git"),
+      join(repo, "generated"),
+    ]);
+    const metadataTargets = unstaged.targets.filter((target) =>
+      target.sources.includes("vcs-metadata"),
     );
+    expect(metadataTargets).toEqual([
+      {
+        kind: "directory-tree",
+        directory: join(repo, ".git"),
+        ignoredRoots: [join(repo, ".git", "objects")],
+        sources: ["vcs-metadata"],
+      },
+    ]);
     const refPlan = operation.watchPlan!(
       {
         kind: "vcs",

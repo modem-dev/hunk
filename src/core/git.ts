@@ -151,6 +151,19 @@ export function buildGitStatusArgs(input: VcsDiffCommandInput) {
   return args;
 }
 
+/** Build the read-only query that asks Git for collapsed ignored directory entries. */
+export function buildGitIgnoredDirectoryArgs() {
+  return [
+    "ls-files",
+    "--full-name",
+    "--others",
+    "--ignored",
+    "--exclude-standard",
+    "--directory",
+    "-z",
+  ];
+}
+
 /** Build the synthetic patch used to render one untracked file as a new-file diff. */
 function buildGitNewFileDiffArgs(filePath: string) {
   // `--no-ext-diff` keeps user-configured `diff.external` tools (difftastic, delta, etc.)
@@ -538,6 +551,43 @@ function parseUntrackedFilePaths(statusText: string) {
     .split("\0")
     .filter(Boolean)
     .flatMap((entry) => (entry.startsWith("?? ") ? [entry.slice(3)] : []));
+}
+
+/** Parse Git's NUL output into absolute roots only for collapsed directory entries. */
+export function parseGitIgnoredDirectoryRoots(output: string, repoRoot: string) {
+  const roots = output
+    .split("\0")
+    .filter((entry) => entry.endsWith("/"))
+    .map((entry) => normalizePathForOS(resolve(repoRoot, entry.slice(0, -1))));
+  return [...new Set(roots)];
+}
+
+/** Discover Git-ignored directory roots, falling back to no pruning when optimization fails. */
+export function listGitIgnoredDirectoryRoots(
+  input: GitBackedInput,
+  {
+    cwd = process.cwd(),
+    repoRoot,
+    gitExecutable = "git",
+  }: Omit<RunGitTextOptions, "input" | "args" | "preventOptionalLocks"> & {
+    repoRoot?: string;
+  } = {},
+) {
+  try {
+    const normalizedRepoRoot =
+      repoRoot ?? resolveGitRepoRoot(input, { cwd, gitExecutable, preventOptionalLocks: true });
+    const output = runGitText({
+      input,
+      args: buildGitIgnoredDirectoryArgs(),
+      cwd: normalizedRepoRoot,
+      gitExecutable,
+      preventOptionalLocks: true,
+    });
+    return parseGitIgnoredDirectoryRoots(output, normalizedRepoRoot);
+  } catch {
+    // Ignore discovery only reduces observer work; it must never make watch mode unavailable.
+    return [];
+  }
 }
 
 /** Return whether one untracked path can be synthesized into a file diff. */
