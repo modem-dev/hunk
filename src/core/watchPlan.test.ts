@@ -192,11 +192,11 @@ describe("resolveWatchPlan", () => {
     expect(resolveWatchPlan(input, { cwd, platform: "linux" })).toBeNull();
   });
 
-  test("uses poll-only adapter placeholders for VCS inputs and adds file sidecars", () => {
-    const vcsInput = { kind: "vcs", staged: false, options: {} } satisfies CliInput;
+  test("uses poll-only plans for adapters without event targets and adds file sidecars", () => {
+    const vcsInput = { kind: "vcs", staged: false, options: { vcs: "jj" } } satisfies CliInput;
     const showInput = {
       kind: "show",
-      options: { agentContext: "agent.json" },
+      options: { vcs: "jj", agentContext: "agent.json" },
     } satisfies CliInput;
 
     expect(resolveWatchPlan(vcsInput, { cwd, platform: "linux" })).toEqual({

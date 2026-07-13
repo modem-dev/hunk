@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -7,6 +7,7 @@ import {
   buildGitStashShowArgs,
   buildGitStatusArgs,
   resolveGitDiffEndpoints,
+  resolveGitMetadata,
   runGitText,
 } from "./git";
 import type { VcsDiffCommandInput } from "./types";
@@ -109,6 +110,28 @@ describe("git command helpers", () => {
     ).toThrow(
       "Git is required for `hunk diff`, but `definitely-not-a-real-git-binary` was not found in PATH.",
     );
+  });
+});
+
+describe("resolveGitMetadata", () => {
+  test("resolves normal and linked-worktree metadata directories", () => {
+    const repoRoot = createTempRepo("hunk-git-metadata-");
+    writeFileSync(join(repoRoot, "x.txt"), "x\n");
+    git(repoRoot, "add", "x.txt");
+    git(repoRoot, "commit", "-m", "initial");
+
+    const normal = resolveGitMetadata(makeGitInput(), { cwd: repoRoot });
+    expect(normal.repoRoot).toBe(realpathSync(repoRoot));
+    expect(normal.gitDir).toBe(normal.commonDir);
+
+    const linkedRoot = mkdtempSync(join(tmpdir(), "hunk-git-linked-"));
+    tempDirs.push(linkedRoot);
+    git(repoRoot, "worktree", "add", linkedRoot, "-b", "linked-test");
+    const linked = resolveGitMetadata(makeGitInput(), { cwd: linkedRoot });
+    expect(linked.repoRoot).toBe(realpathSync(linkedRoot));
+    expect(linked.gitDir).not.toBe(linked.commonDir);
+    expect(linked.gitDir).toContain(join("worktrees", "hunk-git-linked-"));
+    expect(linked.commonDir).toBe(normal.commonDir);
   });
 });
 

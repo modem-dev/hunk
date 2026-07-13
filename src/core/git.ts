@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import { HunkUserError } from "./errors";
 import { escapeUntrackedPatchPath } from "./patch/normalize";
 import type { VcsDiffCommandInput, VcsShowCommandInput, VcsStashShowCommandInput } from "./types";
@@ -12,6 +12,7 @@ export interface RunGitTextOptions {
   args: string[];
   cwd?: string;
   gitExecutable?: string;
+  preventOptionalLocks?: boolean;
 }
 
 interface RunGitCommandResult {
@@ -363,6 +364,7 @@ function runGitCommand({
   args,
   cwd = process.cwd(),
   gitExecutable = "git",
+  preventOptionalLocks = false,
   acceptedExitCodes = [0],
 }: RunGitCommandOptions): RunGitCommandResult {
   let proc: ReturnType<typeof Bun.spawnSync>;
@@ -373,6 +375,7 @@ function runGitCommand({
       stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",
+      env: preventOptionalLocks ? { ...process.env, GIT_OPTIONAL_LOCKS: "0" } : undefined,
     });
   } catch (error) {
     throw translateGitSpawnFailure(input, error, gitExecutable);
@@ -481,7 +484,10 @@ function isWorkingTreeGitDiffInput(
     cwd = process.cwd(),
     gitExecutable = "git",
     repoRoot,
-  }: Pick<RunGitTextOptions, "cwd" | "gitExecutable"> & { repoRoot?: string } = {},
+    preventOptionalLocks = false,
+  }: Pick<RunGitTextOptions, "cwd" | "gitExecutable" | "preventOptionalLocks"> & {
+    repoRoot?: string;
+  } = {},
 ) {
   if (input.staged) {
     return false;
@@ -502,6 +508,7 @@ function isWorkingTreeGitDiffInput(
     args: ["rev-parse", "--revs-only", input.range],
     cwd,
     gitExecutable,
+    preventOptionalLocks,
   })
     .split("\n")
     .map((line) => line.trim())
@@ -518,7 +525,9 @@ function isWorkingTreeGitDiffInput(
 /** Return whether working-tree review should synthesize untracked files into the patch stream. */
 function shouldIncludeUntrackedFiles(
   input: VcsDiffCommandInput,
-  options: Pick<RunGitTextOptions, "cwd" | "gitExecutable"> & { repoRoot?: string } = {},
+  options: Pick<RunGitTextOptions, "cwd" | "gitExecutable" | "preventOptionalLocks"> & {
+    repoRoot?: string;
+  } = {},
 ) {
   return input.options.excludeUntracked !== true && isWorkingTreeGitDiffInput(input, options);
 }
@@ -569,9 +578,10 @@ export function listGitUntrackedFiles(
     cwd = process.cwd(),
     repoRoot,
     gitExecutable = "git",
+    preventOptionalLocks = false,
   }: Omit<RunGitTextOptions, "input" | "args"> & { repoRoot?: string } = {},
 ) {
-  if (!shouldIncludeUntrackedFiles(input, { cwd, gitExecutable })) {
+  if (!shouldIncludeUntrackedFiles(input, { cwd, gitExecutable, preventOptionalLocks })) {
     return [];
   }
 
@@ -580,6 +590,7 @@ export function listGitUntrackedFiles(
     args: buildGitStatusArgs(input),
     cwd,
     gitExecutable,
+    preventOptionalLocks,
   });
 
   const untrackedFiles = parseUntrackedFilePaths(statusText);
@@ -587,7 +598,8 @@ export function listGitUntrackedFiles(
     return [];
   }
 
-  const normalizedRepoRoot = repoRoot ?? resolveGitRepoRoot(input, { cwd, gitExecutable });
+  const normalizedRepoRoot =
+    repoRoot ?? resolveGitRepoRoot(input, { cwd, gitExecutable, preventOptionalLocks });
   return untrackedFiles.filter((filePath) =>
     isReviewableUntrackedPath(normalizedRepoRoot, filePath),
   );
@@ -637,6 +649,39 @@ export function runGitUntrackedFileDiffText(
     gitExecutable,
     acceptedExitCodes: [0, 1],
   }).stdout;
+}
+
+export interface GitMetadata {
+  repoRoot: string;
+  gitDir: string;
+  commonDir: string;
+}
+
+/** Resolve repository, per-worktree, and shared Git metadata directories. */
+export function resolveGitMetadata(
+  input: GitBackedInput,
+  options: Omit<RunGitTextOptions, "input" | "args"> = {},
+): GitMetadata {
+  const cwd = options.cwd ?? process.cwd();
+  const repoRoot = resolveGitRepoRoot(input, options);
+  const gitDir = normalizePathForOS(
+    runGitText({ input, args: ["rev-parse", "--absolute-git-dir"], ...options }).trim(),
+  );
+  const absoluteCommon = runGitCommand({
+    input,
+    args: ["rev-parse", "--path-format=absolute", "--git-common-dir"],
+    ...options,
+    acceptedExitCodes: [0, 128, 129],
+  });
+  const commonOutput =
+    absoluteCommon.exitCode === 0
+      ? absoluteCommon.stdout.trim()
+      : runGitText({ input, args: ["rev-parse", "--git-common-dir"], ...options }).trim();
+  const commonDir = normalizePathForOS(
+    isAbsolute(commonOutput) ? commonOutput : resolve(cwd, commonOutput),
+  );
+
+  return { repoRoot, gitDir, commonDir };
 }
 
 export function resolveGitRepoRoot(

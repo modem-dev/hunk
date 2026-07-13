@@ -1,6 +1,7 @@
 import { posix, win32 } from "node:path";
 import { normalizePathForOS } from "../lib/osPath";
 import type { CliInput } from "./types";
+import { createVcsWatchPlan, getConfiguredVcsAdapter, operationFromInput } from "./vcs";
 
 export type WatchTargetSource = "content" | "sidecar" | "worktree" | "vcs-metadata";
 
@@ -28,6 +29,7 @@ export interface WatchPlan {
 export interface WatchPlanContext {
   cwd: string;
   platform?: NodeJS.Platform;
+  gitExecutable?: string;
 }
 
 interface FileTarget {
@@ -99,6 +101,7 @@ export function resolveWatchPlan(input: CliInput, context: WatchPlanContext): Wa
 
   const fileTargets: FileTarget[] = [];
   let coverage: WatchPlan["coverage"] = "hybrid";
+  let adapterTargets: WatchTarget[] = [];
 
   switch (input.kind) {
     case "diff":
@@ -116,10 +119,16 @@ export function resolveWatchPlan(input: CliInput, context: WatchPlanContext): Wa
       break;
     case "vcs":
     case "show":
-    case "stash-show":
-      // Adapter-specific directory trees will replace this polling placeholder.
-      coverage = "poll-only";
+    case "stash-show": {
+      const adapter = getConfiguredVcsAdapter(input.options.vcs);
+      const adapterPlan = createVcsWatchPlan(adapter, operationFromInput(input), {
+        cwd: context.cwd,
+        gitExecutable: context.gitExecutable,
+      });
+      coverage = adapterPlan.coverage;
+      adapterTargets = adapterPlan.targets;
       break;
+    }
   }
 
   if (input.options.agentContext) {
@@ -129,6 +138,6 @@ export function resolveWatchPlan(input: CliInput, context: WatchPlanContext): Wa
 
   return {
     coverage,
-    targets: groupFileTargets(fileTargets, context),
+    targets: [...adapterTargets, ...groupFileTargets(fileTargets, context)],
   };
 }

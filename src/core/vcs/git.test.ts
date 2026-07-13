@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { platform, tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import {
   GitVcsAdapter,
   gitEndpointSourceSpec,
@@ -148,6 +148,88 @@ describe("GitVcsAdapter", () => {
   test("returns null when no Git marker exists up to the filesystem root", () => {
     // A bare temp dir has no .git in any ancestor, exercising the walk-to-root null return.
     expect(GitVcsAdapter.detect(createTempDir("hunk-git-adapter-none-"))).toBeNull();
+  });
+
+  test("builds operation-sensitive watch plans for working tree and metadata reviews", () => {
+    const repo = createTempRepo("hunk-git-adapter-plan-");
+    writeFileSync(join(repo, "file.txt"), "one\n");
+    git(repo, "add", "file.txt");
+    git(repo, "commit", "-m", "initial");
+
+    const operation = GitVcsAdapter.operations["working-tree-diff"]!;
+    const unstaged = operation.watchPlan!(
+      { kind: "vcs", staged: false, options: { vcs: "git" } },
+      { cwd: repo },
+    );
+    expect(unstaged.targets.some((target) => target.directory === repo)).toBe(true);
+    const worktreeTarget = unstaged.targets.find(
+      (target) => target.kind === "directory-tree" && target.directory === repo,
+    );
+    expect(worktreeTarget?.kind === "directory-tree" ? worktreeTarget.ignoredRoots : []).toContain(
+      join(repo, ".git"),
+    );
+    const refPlan = operation.watchPlan!(
+      {
+        kind: "vcs",
+        staged: false,
+        range: "HEAD",
+        pathspecs: ["file.txt"],
+        options: { vcs: "git" },
+      },
+      { cwd: repo },
+    );
+    expect(refPlan.targets.some((target) => target.directory === repo)).toBe(true);
+
+    for (const input of [
+      { kind: "vcs", staged: true, options: { vcs: "git" } },
+      { kind: "vcs", staged: false, range: "HEAD^..HEAD", options: { vcs: "git" } },
+    ] satisfies VcsDiffCommandInput[]) {
+      const plan = operation.watchPlan!(input, { cwd: repo });
+      expect(plan.targets.some((target) => target.directory === repo)).toBe(false);
+      expect(plan.targets.some((target) => target.sources.includes("vcs-metadata"))).toBe(true);
+    }
+  });
+
+  test("keeps stash reflogs observable for ordinal selectors", () => {
+    const repo = createTempRepo("hunk-git-adapter-stash-plan-");
+    const plan = GitVcsAdapter.operations["stash-show"]!.watchPlan!(
+      { kind: "stash-show", ref: "stash@{1}", options: { vcs: "git" } },
+      { cwd: repo },
+    );
+    const metadataTarget = plan.targets.find((target) => target.sources.includes("vcs-metadata"));
+    expect(metadataTarget?.directory).toBe(join(repo, ".git"));
+    expect(metadataTarget?.kind === "directory-tree" ? metadataTarget.ignoredRoots : []).toEqual([
+      join(repo, ".git", "objects"),
+    ]);
+  });
+
+  test("deduplicates common metadata while covering linked-worktree state", () => {
+    const repo = createTempRepo("hunk-git-adapter-linked-plan-");
+    writeFileSync(join(repo, "file.txt"), "one\n");
+    git(repo, "add", "file.txt");
+    git(repo, "commit", "-m", "initial");
+    const linked = createTempDir("hunk-git-adapter-worktree-");
+    git(repo, "worktree", "add", linked, "-b", "linked-plan");
+
+    const plan = GitVcsAdapter.operations["revision-show"]!.watchPlan!(
+      { kind: "show", ref: "HEAD", options: { vcs: "git" } },
+      { cwd: linked },
+    );
+    const metadataTargets = plan.targets.filter(
+      (target) => target.kind === "directory-tree" && target.sources.includes("vcs-metadata"),
+    );
+    expect(metadataTargets).toHaveLength(1);
+    const commonDirOutput = git(linked, "rev-parse", "--git-common-dir").trim();
+    const commonDir = isAbsolute(commonDirOutput)
+      ? commonDirOutput
+      : resolve(linked, commonDirOutput);
+    expect(normalizeComparablePath(metadataTargets[0]!.directory)).toBe(
+      normalizeComparablePath(commonDir),
+    );
+    const metadataTarget = metadataTargets[0]!;
+    expect(metadataTarget.kind === "directory-tree" ? metadataTarget.ignoredRoots : []).toEqual([
+      join(metadataTarget.directory, "objects"),
+    ]);
   });
 
   test("computes watch signatures for each review operation", () => {
