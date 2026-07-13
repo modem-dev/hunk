@@ -83,6 +83,9 @@ function fakeSource() {
     error(error: unknown) {
       callbacks.onError(error);
     },
+    ready() {
+      callbacks.onReady?.();
+    },
     get closes() {
       return closes;
     },
@@ -304,6 +307,23 @@ describe("createWatchController", () => {
     await settle();
     expect(checks).toBe(2);
     expect(refreshes).toBe(1);
+  });
+
+  test("checks the bootstrap signature immediately after source readiness", async () => {
+    const clock = new FakeWatchClock();
+    const source = fakeSource();
+    let checks = 0;
+    createWatchController({
+      initialSignature: "same",
+      clock,
+      createEventSource: source.create,
+      getSignature: () => (++checks, "same"),
+      refresh: () => {},
+    });
+
+    source.ready();
+    await settle();
+    expect(checks).toBe(1);
   });
 
   test("runs a healthy safety check without an event", async () => {
