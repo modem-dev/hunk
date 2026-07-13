@@ -22,6 +22,9 @@ export interface WatchEventSourceCallbacks {
   onReady?(): void;
 }
 
+export const DEFAULT_WATCH_EVENT_SOURCE_STARTUP_TIMEOUT_MS = 2_000;
+export const WATCH_EVENT_SOURCE_STARTUP_TIMEOUT_CODE = "HUNK_WATCH_EVENT_SOURCE_STARTUP_TIMEOUT";
+
 export interface WatchControllerOptions {
   initialSignature: string;
   getSignature: () => string | Promise<string>;
@@ -35,6 +38,7 @@ export interface WatchControllerOptions {
   healthyCheckMs?: number;
   degradedCheckMs?: number;
   duplicateErrorIntervalMs?: number;
+  startupTimeoutMs?: number;
 }
 
 export interface WatchControllerState {
@@ -69,6 +73,17 @@ function getErrorKey(error: unknown) {
   return String(error);
 }
 
+/** Build the stable diagnostic reported when an event source cannot establish readiness. */
+function createEventSourceStartupTimeoutError(timeoutMs: number) {
+  return Object.assign(
+    new Error(`The watch event source did not become ready within ${timeoutMs} ms.`),
+    {
+      code: WATCH_EVENT_SOURCE_STARTUP_TIMEOUT_CODE,
+      name: "WatchEventSourceStartupTimeoutError",
+    },
+  );
+}
+
 /** Coordinate event hints and periodic checks without coupling to a watcher backend. */
 export function createWatchController(options: WatchControllerOptions): WatchController {
   const clock = options.clock ?? defaultClock;
@@ -77,6 +92,8 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
   const healthyCheckMs = options.healthyCheckMs ?? 10_000;
   const degradedCheckMs = options.degradedCheckMs ?? 2_000;
   const duplicateErrorIntervalMs = options.duplicateErrorIntervalMs ?? 10_000;
+  const startupTimeoutMs =
+    options.startupTimeoutMs ?? DEFAULT_WATCH_EVENT_SOURCE_STARTUP_TIMEOUT_MS;
 
   const state: WatchControllerState = {
     phase: "starting",
@@ -85,8 +102,10 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     appliedSignature: options.initialSignature,
   };
   let eventSource: WatchEventSource | undefined;
+  let sourceStatus: "none" | "starting" | "ready" | "closed" = "none";
   let timer: unknown;
   let timerDeadline: number | undefined;
+  let startupDeadline: number | undefined;
   let quietDeadline: number | undefined;
   let maximumDeadline: number | undefined;
   let safetyDeadline: number | undefined;
@@ -116,7 +135,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     if (state.phase === "closed" || state.phase === "checking" || state.phase === "refreshing") {
       return;
     }
-    const deadlines = [quietDeadline, maximumDeadline, safetyDeadline].filter(
+    const deadlines = [startupDeadline, quietDeadline, maximumDeadline, safetyDeadline].filter(
       (deadline): deadline is number => deadline !== undefined,
     );
     if (deadlines.length === 0) return;
@@ -129,6 +148,19 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
 
   /** Test closure across async boundaries without relying on narrowed phase state. */
   const isClosed = () => state.phase === "closed";
+
+  /** Test source closure after construction callbacks that TypeScript cannot observe. */
+  const isSourceClosed = () => sourceStatus === "closed";
+
+  /** Close the current source once and invalidate all of its later callbacks. */
+  const closeEventSource = () => {
+    if (sourceStatus === "none" || sourceStatus === "closed") return;
+    sourceStatus = "closed";
+    startupDeadline = undefined;
+    const source = eventSource;
+    eventSource = undefined;
+    source?.close();
+  };
 
   /** Finish work and honor all in-flight hints as one trailing check. */
   const finishCheck = () => {
@@ -183,12 +215,29 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     finishCheck();
   };
 
-  /** Consume a due debounce, maximum-delay, or safety deadline as one check. */
+  /** Degrade one source that failed to establish readiness before its deadline. */
+  const degradeStalledSource = () => {
+    if (sourceStatus !== "starting") return;
+    closeEventSource();
+    state.degraded = true;
+    state.phase = "idle";
+    quietDeadline = undefined;
+    maximumDeadline = undefined;
+    safetyDeadline = clock.now() + degradedCheckMs;
+    reportError(createEventSourceStartupTimeoutError(startupTimeoutMs));
+    schedule();
+  };
+
+  /** Consume a due startup, debounce, maximum-delay, or safety deadline as one check. */
   function onTimer() {
     timer = undefined;
     timerDeadline = undefined;
     if (state.phase === "closed") return;
     const now = clock.now();
+    if (startupDeadline !== undefined && startupDeadline <= now) {
+      degradeStalledSource();
+      return;
+    }
     const eventDue =
       (quietDeadline !== undefined && quietDeadline <= now) ||
       (maximumDeadline !== undefined && maximumDeadline <= now);
@@ -202,7 +251,9 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
 
   /** Treat an event as a hint and retain the first event's maximum deadline. */
   const onEvent = () => {
-    if (state.phase === "closed") return;
+    if (state.phase === "closed" || (sourceStatus !== "starting" && sourceStatus !== "ready")) {
+      return;
+    }
     if (state.phase === "checking" || state.phase === "refreshing") {
       state.dirty = true;
       return;
@@ -216,7 +267,9 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
 
   /** Close the startup scan race with an immediate signature check after watcher readiness. */
   const onSourceReady = () => {
-    if (state.phase === "closed") return;
+    if (state.phase === "closed" || sourceStatus !== "starting") return;
+    sourceStatus = "ready";
+    startupDeadline = undefined;
     if (state.phase === "checking" || state.phase === "refreshing") {
       state.dirty = true;
       return;
@@ -226,12 +279,11 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
 
   /** Degrade only for watcher resource exhaustion; other source errors stay nonfatal. */
   const onSourceError = (error: unknown) => {
-    if (state.phase === "closed") return;
+    if (state.phase === "closed" || sourceStatus === "closed") return;
     const code = getErrorCode(error);
     if (code === "ENOSPC" || code === "EMFILE") {
       state.degraded = true;
-      eventSource?.close();
-      eventSource = undefined;
+      closeEventSource();
       safetyDeadline = Math.min(
         safetyDeadline ?? Number.POSITIVE_INFINITY,
         clock.now() + degradedCheckMs,
@@ -244,13 +296,22 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
   state.phase = "idle";
   safetyDeadline = clock.now() + safetyInterval();
   if (options.createEventSource && !options.pollOnly) {
+    sourceStatus = "starting";
+    startupDeadline = clock.now() + startupTimeoutMs;
+    // This JS timer is a secondary guard: FSEvents lock contention can also delay timers, so
+    // bounded native registration remains the primary macOS protection.
+    schedule();
     try {
-      eventSource = options.createEventSource({
+      const createdSource = options.createEventSource({
         onEvent,
         onError: onSourceError,
         onReady: onSourceReady,
       });
+      if (isSourceClosed()) createdSource.close();
+      else eventSource = createdSource;
     } catch (error) {
+      sourceStatus = "closed";
+      startupDeadline = undefined;
       state.degraded = true;
       safetyDeadline = clock.now() + degradedCheckMs;
       reportError(error);
@@ -268,8 +329,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       maximumDeadline = undefined;
       safetyDeadline = undefined;
       clearTimer();
-      eventSource?.close();
-      eventSource = undefined;
+      closeEventSource();
     },
     /** Expose a snapshot for diagnostics without allowing state mutation. */
     getState() {
