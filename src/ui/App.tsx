@@ -6,7 +6,7 @@ import {
 import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState, useRef } from "react";
 import type { AppBootstrap, CliInput, LayoutMode, UserNoteLineTarget } from "../core/types";
-import { canReloadInput, computeWatchSignature } from "../core/watch";
+import { canReloadInput } from "../core/watch";
 import type { HunkSessionBrokerClient, ReloadedSessionResult } from "../hunk-session/types";
 import { MenuBar } from "./components/chrome/MenuBar";
 import { StatusBar } from "./components/chrome/StatusBar";
@@ -23,6 +23,7 @@ import { useAppKeyboardShortcuts } from "./hooks/useAppKeyboardShortcuts";
 import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
 import { useMenuController } from "./hooks/useMenuController";
 import { useReviewController, type AgentNoteGeometrySnapshot } from "./hooks/useReviewController";
+import { useWatchedInput, type WatchedInputRuntime } from "./hooks/useWatchedInput";
 import { agentNoteMarkupWidth } from "./lib/agentNoteGeometry";
 import { buildAppMenus } from "./lib/appMenus";
 import { fileRowId } from "./lib/ids";
@@ -94,6 +95,7 @@ export function App({
   noticeText,
   onQuit = () => process.exit(0),
   onReloadSession,
+  watchRuntime,
 }: {
   bootstrap: AppBootstrap;
   hostClient?: HunkSessionBrokerClient;
@@ -103,6 +105,7 @@ export function App({
     nextInput: CliInput,
     options?: { resetApp?: boolean; sourcePath?: string },
   ) => Promise<ReloadedSessionResult>;
+  watchRuntime?: WatchedInputRuntime;
 }) {
   const SIDEBAR_MIN_WIDTH = 22;
   const DIFF_MIN_WIDTH = 48;
@@ -609,58 +612,13 @@ export function App({
     triggerRefreshCurrentInput,
   ]);
 
-  useEffect(() => {
-    if (!watchEnabled) {
-      return;
-    }
-
-    let cancelled = false;
-    let polling = false;
-    let refreshing = false;
-    let lastSignature: string;
-
-    try {
-      lastSignature =
-        bootstrap.reloadContext.initialWatchSignature ??
-        computeWatchSignature(bootstrap.input, bootstrap.reloadContext);
-    } catch (error) {
-      console.error("Failed to initialize watch mode.", error);
-      return;
-    }
-
-    const pollForChanges = () => {
-      if (cancelled || polling || refreshing) {
-        return;
-      }
-
-      polling = true;
-
-      try {
-        const nextSignature = computeWatchSignature(bootstrap.input, bootstrap.reloadContext);
-        if (nextSignature !== lastSignature) {
-          lastSignature = nextSignature;
-          refreshing = true;
-          void refreshCurrentInput()
-            .catch((error) => {
-              console.error("Failed to auto-reload the current diff.", error);
-            })
-            .finally(() => {
-              refreshing = false;
-            });
-        }
-      } catch (error) {
-        console.error("Failed to poll watch mode input.", error);
-      } finally {
-        polling = false;
-      }
-    };
-
-    const interval = setInterval(pollForChanges, 250);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [bootstrap.input, refreshCurrentInput, watchEnabled]);
+  useWatchedInput({
+    enabled: watchEnabled,
+    input: bootstrap.input,
+    refresh: refreshCurrentInput,
+    reloadContext: bootstrap.reloadContext,
+    runtime: watchRuntime,
+  });
 
   /** Leave the app through the shared shutdown path. */
   const requestQuit = useCallback(() => {
