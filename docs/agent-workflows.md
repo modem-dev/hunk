@@ -139,6 +139,19 @@ hunk patch change.patch --agent-context notes.json
 
 For a compact real example, see [`examples/3-agent-review-demo/agent-context.json`](../examples/3-agent-review-demo/agent-context.json).
 
+## Reverse workflow: persist human review notes for an agent
+
+`--agent-context` loads agent → human notes into the diff. `--store-notes` does the reverse: it persists the **human** notes you write in the TUI (the `c` notes) to a JSON sidecar so an agent can pick them up after you close the review.
+
+```bash
+hunk diff <merge-base> --store-notes .hunk/notes.json
+```
+
+- The path is resolved relative to the current working directory. Omit the flag to keep notes in-memory only (the default).
+- Notes are written through on every change and seeded back on the next run with the same path, so a review resumes where you left off.
+- The sidecar is a JSON object keyed by file id, each value an array of notes (`id`, `filePath`, `side`, `line`, `summary`, …) that an agent can read directly off disk — no daemon or live session required.
+- The file is **not** auto-ignored by git; point `--store-notes` at an already-ignored location (for example a `.hunk/` directory you gitignore) if you don't want the notes tracked.
+
 ## Practical defaults
 
 - start with `hunk session review --repo . --json`

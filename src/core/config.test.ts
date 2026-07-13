@@ -543,6 +543,34 @@ describe("config resolution", () => {
     expect(bootstrap.initialCopyDecorations).toBe(false);
   });
 
+  test("--store-notes resolves the sidecar path against cwd; omitting it disables persistence", async () => {
+    const repo = createTempDir("hunk-store-notes-");
+    createRepo(repo);
+
+    const before = join(repo, "before.ts");
+    const after = join(repo, "after.ts");
+    writeFileSync(before, "export const alpha = 1;\n");
+    writeFileSync(after, "export const alpha = 2;\n");
+
+    const withFlag = await loadAppBootstrap(
+      resolveConfiguredCliInput(
+        { kind: "diff", left: before, right: after, options: { storeNotes: ".hunk/notes.json" } },
+        { cwd: repo, env: { HOME: repo } },
+      ).input,
+      { cwd: repo },
+    );
+    expect(withFlag.userNotesSidecarPath).toBe(join(repo, ".hunk", "notes.json"));
+
+    const withoutFlag = await loadAppBootstrap(
+      resolveConfiguredCliInput(
+        { kind: "diff", left: before, right: after, options: {} },
+        { cwd: repo, env: { HOME: repo } },
+      ).input,
+      { cwd: repo },
+    );
+    expect(withoutFlag.userNotesSidecarPath).toBeUndefined();
+  });
+
   test("loadAppBootstrap carries the configured custom theme into the UI bootstrap", async () => {
     const home = createTempDir("hunk-config-home-");
     const repo = createTempDir("hunk-config-repo-");

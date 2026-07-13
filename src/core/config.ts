@@ -322,6 +322,7 @@ export function resolveConfiguredCliInput(
     // renderer theme-mode detection for their initial palette.
     theme: "github-dark-default",
     agentContext: input.options.agentContext,
+    storeNotes: input.options.storeNotes,
     pager: input.options.pager ?? false,
     watch: input.options.watch ?? false,
     excludeUntracked: false,
@@ -350,6 +351,7 @@ export function resolveConfiguredCliInput(
   resolvedOptions = {
     ...resolvedOptions,
     agentContext: input.options.agentContext,
+    storeNotes: input.options.storeNotes,
     pager: input.options.pager ?? false,
     watch: input.options.watch ?? resolvedOptions.watch ?? false,
     excludeUntracked: resolvedOptions.excludeUntracked ?? false,

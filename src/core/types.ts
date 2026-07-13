@@ -92,6 +92,8 @@ export interface CommonOptions {
   hunkHeaders?: boolean;
   menuBar?: boolean;
   agentNotes?: boolean;
+  /** Path for the human-notes JSON sidecar; when set, notes persist there. */
+  storeNotes?: string;
   copyDecorations?: boolean;
   transparentBackground?: boolean;
   colorMoved?: boolean;
@@ -359,6 +361,8 @@ export type ParsedCliInput =
 export interface AppBootstrap {
   input: CliInput;
   changeset: Changeset;
+  /** Absolute path to the human-notes JSON sidecar, when --store-notes was passed. */
+  userNotesSidecarPath?: string;
   initialMode: LayoutMode;
   initialTheme?: string;
   initialThemeMode?: TerminalThemeMode;
