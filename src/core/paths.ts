@@ -9,8 +9,9 @@ export function resolveUserConfigDir(env: NodeJS.ProcessEnv = process.env) {
     return env.XDG_CONFIG_HOME;
   }
 
-  if (env.HOME) {
-    return join(env.HOME, ".config");
+  const home = env.HOME || env.USERPROFILE;
+  if (home) {
+    return join(home, ".config");
   }
 
   return undefined;

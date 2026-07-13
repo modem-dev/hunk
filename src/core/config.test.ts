@@ -263,6 +263,29 @@ describe("config resolution", () => {
     expect(overridden.input.options.transparentBackground).toBe(false);
   });
 
+  test("loads global config from USERPROFILE when HOME is unavailable", () => {
+    const profile = createTempDir("hunk-config-profile-");
+    mkdirSync(join(profile, ".config", "hunk"), { recursive: true });
+    writeFileSync(
+      join(profile, ".config", "hunk", "config.toml"),
+      "transparent_background = true\n",
+    );
+
+    const configured = resolveConfiguredCliInput(
+      {
+        kind: "vcs",
+        staged: false,
+        options: {},
+      },
+      {
+        cwd: createTempDir("hunk-config-cwd-"),
+        env: { USERPROFILE: profile },
+      },
+    );
+
+    expect(configured.input.options.transparentBackground).toBe(true);
+  });
+
   test("defaults unspecified themes to github-dark-default, including piped pager-style patch input", () => {
     const home = createTempDir("hunk-config-home-");
     const cwd = createTempDir("hunk-config-cwd-");
