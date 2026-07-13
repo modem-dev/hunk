@@ -15,6 +15,7 @@ import {
 import type { HunkSessionBrokerClient } from "../hunk-session/types";
 import { App } from "./App";
 import { useStartupUpdateNotice } from "./hooks/useStartupUpdateNotice";
+import type { WatchedInputRuntime } from "./hooks/useWatchedInput";
 
 /** Keep one live Hunk app mounted while allowing daemon-driven session reloads. */
 export function AppHost({
@@ -22,11 +23,13 @@ export function AppHost({
   hostClient,
   onQuit = () => process.exit(0),
   startupNoticeResolver,
+  watchRuntime,
 }: {
   bootstrap: AppBootstrap;
   hostClient?: HunkSessionBrokerClient;
   onQuit?: () => void;
   startupNoticeResolver?: () => Promise<UpdateNotice | null>;
+  watchRuntime?: WatchedInputRuntime;
 }) {
   const [activeBootstrap, setActiveBootstrap] = useState(bootstrap);
   const [appVersion, setAppVersion] = useState(0);
@@ -97,6 +100,7 @@ export function AppHost({
       noticeText={startupNoticeText}
       onQuit={onQuit}
       onReloadSession={reloadSession}
+      watchRuntime={watchRuntime}
     />
   );
 }
