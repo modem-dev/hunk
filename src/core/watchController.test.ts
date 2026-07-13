@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   createWatchController,
+  WATCH_EVENT_SOURCE_STARTUP_TIMEOUT_CODE,
   type WatchControllerClock,
   type WatchEventSourceCallbacks,
 } from "./watchController";
@@ -326,6 +327,118 @@ describe("createWatchController", () => {
     expect(checks).toBe(1);
   });
 
+  test("degrades a stalled source after the default startup deadline", async () => {
+    const clock = new FakeWatchClock();
+    const source = fakeSource();
+    const errors: unknown[] = [];
+    let checks = 0;
+    const controller = createWatchController({
+      initialSignature: "same",
+      clock,
+      createEventSource: source.create,
+      getSignature: () => (++checks, "same"),
+      refresh: () => {},
+      reportError: (error) => errors.push(error),
+    });
+
+    clock.advance(1_999);
+    expect(controller.getState().degraded).toBe(false);
+    expect(source.closes).toBe(0);
+    clock.advance(1);
+    expect(controller.getState().degraded).toBe(true);
+    expect(source.closes).toBe(1);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({ code: WATCH_EVENT_SOURCE_STARTUP_TIMEOUT_CODE });
+
+    clock.advance(1_999);
+    expect(checks).toBe(0);
+    clock.advance(1);
+    await settle();
+    expect(checks).toBe(1);
+    clock.advance(2_000);
+    await settle();
+    expect(checks).toBe(2);
+  });
+
+  test("accepts readiness just before an injected startup deadline", async () => {
+    const clock = new FakeWatchClock();
+    const source = fakeSource();
+    let checks = 0;
+    const controller = createWatchController({
+      initialSignature: "same",
+      clock,
+      createEventSource: source.create,
+      getSignature: () => (++checks, "same"),
+      refresh: () => {},
+      startupTimeoutMs: 500,
+    });
+
+    clock.advance(499);
+    source.ready();
+    await settle();
+    clock.advance(1);
+    expect(checks).toBe(1);
+    expect(source.closes).toBe(0);
+    expect(controller.getState().degraded).toBe(false);
+  });
+
+  test("ignores readiness, events, and duplicate errors after startup degradation", async () => {
+    const clock = new FakeWatchClock();
+    const source = fakeSource();
+    const errors: unknown[] = [];
+    let checks = 0;
+    const controller = createWatchController({
+      initialSignature: "same",
+      clock,
+      createEventSource: source.create,
+      getSignature: () => (++checks, "same"),
+      refresh: () => {},
+      reportError: (error) => errors.push(error),
+      startupTimeoutMs: 500,
+    });
+
+    clock.advance(500);
+    source.ready();
+    source.event();
+    source.error(Object.assign(new Error("late resource error"), { code: "ENOSPC" }));
+    source.error(Object.assign(new Error("duplicate late error"), { code: "ENOSPC" }));
+    clock.advance(1_999);
+    await settle();
+    expect(checks).toBe(0);
+    expect(source.closes).toBe(1);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({ code: WATCH_EVENT_SOURCE_STARTUP_TIMEOUT_CODE });
+    expect(controller.getState().degraded).toBe(true);
+
+    clock.advance(1);
+    await settle();
+    expect(checks).toBe(1);
+  });
+
+  test("closing during startup cancels the deadline and closes the source once", () => {
+    const clock = new FakeWatchClock();
+    const source = fakeSource();
+    const errors: unknown[] = [];
+    const controller = createWatchController({
+      initialSignature: "same",
+      clock,
+      createEventSource: source.create,
+      getSignature: () => "same",
+      refresh: () => {},
+      reportError: (error) => errors.push(error),
+      startupTimeoutMs: 500,
+    });
+
+    controller.close();
+    source.ready();
+    source.event();
+    source.error(new Error("late"));
+    clock.advance(10_000);
+    expect(source.closes).toBe(1);
+    expect(errors).toEqual([]);
+    expect(clock.timers.size).toBe(0);
+  });
+
   test("runs a healthy safety check without an event", async () => {
     const clock = new FakeWatchClock();
     let checks = 0;
@@ -472,6 +585,7 @@ describe("createWatchController", () => {
     const clock = new FakeWatchClock();
     const oldSource = fakeSource();
     const newSource = fakeSource();
+    const errors: unknown[] = [];
     let oldChecks = 0;
     let newChecks = 0;
     const oldController = createWatchController({
@@ -480,6 +594,8 @@ describe("createWatchController", () => {
       createEventSource: oldSource.create,
       getSignature: () => (++oldChecks, "old"),
       refresh: () => {},
+      reportError: (error) => errors.push(error),
+      startupTimeoutMs: 500,
     });
     oldController.close();
     createWatchController({
@@ -488,13 +604,19 @@ describe("createWatchController", () => {
       createEventSource: newSource.create,
       getSignature: () => (++newChecks, "new"),
       refresh: () => {},
+      startupTimeoutMs: 500,
     });
 
+    oldSource.ready();
     oldSource.event();
-    newSource.event();
-    clock.advance(200);
+    newSource.ready();
+    await settle();
+    clock.advance(500);
     await settle();
     expect(oldChecks).toBe(0);
     expect(newChecks).toBe(1);
+    expect(oldSource.closes).toBe(1);
+    expect(newSource.closes).toBe(0);
+    expect(errors).toEqual([]);
   });
 });

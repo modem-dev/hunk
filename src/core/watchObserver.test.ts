@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 
+import { createWatchTestClock } from "../../test/helpers/watchTest";
+import { createWatchController, WATCH_EVENT_SOURCE_STARTUP_TIMEOUT_CODE } from "./watchController";
 import {
   createNativeTreeWatcher,
   createWatchObserver,
@@ -57,6 +59,45 @@ async function selectedBackend(platform: NodeJS.Platform) {
 }
 
 describe("watch tree backend selection", () => {
+  test("degrades and closes an observer whose injected backend stalls during startup", async () => {
+    const testClock = createWatchTestClock();
+    const plan: WatchPlan = { coverage: "hybrid", targets: [treeTarget()] };
+    const errors: unknown[] = [];
+    let closes = 0;
+    let observer!: ReturnType<typeof createWatchObserver>;
+    const stalledBackend: WatchTreeBackend = () => ({
+      close() {
+        closes++;
+      },
+      onError() {},
+      whenReady() {},
+    });
+    const controller = createWatchController({
+      initialSignature: "same",
+      clock: testClock.clock,
+      createEventSource(callbacks) {
+        observer = createWatchObserver(plan, callbacks, {
+          platform: "linux",
+          treeBackends: { native: stalledBackend, portable: stalledBackend },
+        });
+        return observer;
+      },
+      getSignature: () => "same",
+      refresh: () => {},
+      reportError: (error) => errors.push(error),
+      startupTimeoutMs: 25,
+    });
+
+    testClock.advanceBy(25);
+    await observer.closed;
+    expect(controller.getState().degraded).toBe(true);
+    expect(closes).toBe(1);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({ code: WATCH_EVENT_SOURCE_STARTUP_TIMEOUT_CODE });
+    controller.close();
+    expect(closes).toBe(1);
+  });
+
   test.each(["darwin", "win32"] as const)("uses native recursion on %s", async (platform) => {
     expect(await selectedBackend(platform)).toEqual(["native", "native:close"]);
   });
