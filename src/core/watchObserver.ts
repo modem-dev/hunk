@@ -1,12 +1,42 @@
-import { resolve } from "node:path";
-import { watch, type FSWatcher } from "chokidar";
+import { watch as nativeFsWatch } from "node:fs";
+import { dirname, isAbsolute, resolve } from "node:path";
+import { watch as chokidarWatch, type ChokidarOptions, type FSWatcher } from "chokidar";
 
 import type { WatchEventSource, WatchEventSourceCallbacks } from "./watchController";
-import type { WatchPlan, WatchTarget } from "./watchPlan";
+import type { DirectoryTreeWatchTarget, WatchPlan, WatchTarget } from "./watchPlan";
 
 export interface WatchObserver extends WatchEventSource {
   ready: Promise<void>;
   closed: Promise<void>;
+}
+
+export interface WatchRegistration {
+  close(): void | Promise<void>;
+  onError(callback: (error: unknown) => void): void;
+  whenReady(callback: () => void): void;
+}
+
+export type WatchTreeBackend = (
+  target: DirectoryTreeWatchTarget,
+  onEvent: () => void,
+) => WatchRegistration;
+
+export interface NativeRecursiveWatchHandle {
+  close(): void;
+  onError(callback: (error: unknown) => void): void;
+}
+
+export type NativeRecursiveWatchFactory = (
+  directory: string,
+  onChange: (filename: string | Buffer | null) => void,
+) => NativeRecursiveWatchHandle;
+
+export interface WatchObserverOptions {
+  platform?: NodeJS.Platform;
+  treeBackends?: {
+    native: WatchTreeBackend;
+    portable: WatchTreeBackend;
+  };
 }
 
 const WATCH_OPTIONS = {
@@ -23,43 +53,134 @@ function normalizedPath(path: string) {
   return process.platform === "win32" ? absolute.toLowerCase() : absolute;
 }
 
-/** Return whether a path is one ignored root or one of its descendants. */
-function isWithinRoot(path: string, root: string) {
-  if (path === root) return true;
-  const separator = process.platform === "win32" ? "\\" : "/";
-  return path.startsWith(`${root}${separator}`);
+/** Build an ancestor-set matcher whose cost depends on path depth, not ignored-root count. */
+function createIgnoredRootMatcher(ignoredRoots: string[]) {
+  const roots = new Set(ignoredRoots.map(normalizedPath));
+  return (path: string) => {
+    let current = normalizedPath(path);
+    for (;;) {
+      if (roots.has(current)) return true;
+      const parent = dirname(current);
+      if (parent === current) return false;
+      current = parent;
+    }
+  };
 }
 
-/** Create the Chokidar watcher for one neutral target and its event filter. */
-function watchTarget(target: WatchTarget, onEvent: () => void) {
+/** Adapt one Chokidar handle to the observer's backend-neutral lifecycle. */
+function chokidarRegistration(watcher: FSWatcher): WatchRegistration {
+  return {
+    close: () => watcher.close(),
+    onError: (callback) => watcher.on("error", callback),
+    whenReady: (callback) => watcher.once("ready", callback),
+  };
+}
+
+/** Construct one Bun/Node native recursive handle behind a small test seam. */
+const defaultNativeRecursiveWatch: NativeRecursiveWatchFactory = (directory, onChange) => {
+  const watcher = nativeFsWatch(directory, { recursive: true }, (_event, filename) => {
+    onChange(filename);
+  });
+  return {
+    close: () => watcher.close(),
+    onError: (callback) => watcher.on("error", callback),
+  };
+};
+
+/** Return whether a native callback supplied enough path context for ignored-root filtering. */
+function isTrustworthyNativeFilename(filename: string) {
+  return filename.length > 0 && (isAbsolute(filename) || /[\\/]/.test(filename));
+}
+
+/** Observe one tree with Bun's bounded native recursion and in-process ignore filtering. */
+export function createNativeTreeWatcher(
+  target: DirectoryTreeWatchTarget,
+  onEvent: () => void,
+  watchNative: NativeRecursiveWatchFactory = defaultNativeRecursiveWatch,
+): WatchRegistration {
+  const isIgnored = createIgnoredRootMatcher(target.ignoredRoots);
+  const watcher = watchNative(target.directory, (rawFilename) => {
+    const filename = Buffer.isBuffer(rawFilename) ? rawFilename.toString() : rawFilename;
+    if (!filename || !isTrustworthyNativeFilename(filename)) {
+      onEvent();
+      return;
+    }
+
+    if (!isIgnored(resolve(target.directory, filename))) onEvent();
+  });
+
+  return {
+    close: () => watcher.close(),
+    onError: (callback) => watcher.onError(callback),
+    // Native registration has no scan-ready event; construction itself establishes the watch.
+    whenReady: (callback) => queueMicrotask(callback),
+  };
+}
+
+/** Observe one tree with Git-pruned Chokidar recursion on portable platforms. */
+function createPortableTreeWatcher(
+  target: DirectoryTreeWatchTarget,
+  onEvent: () => void,
+): WatchRegistration {
+  const isIgnored = createIgnoredRootMatcher(target.ignoredRoots);
+  const watcher = chokidarWatch(target.directory, {
+    ...WATCH_OPTIONS,
+    ignored: (path) => isIgnored(path),
+  });
+  watcher.on("all", onEvent);
+  return chokidarRegistration(watcher);
+}
+
+const DEFAULT_TREE_BACKENDS = {
+  native: createNativeTreeWatcher,
+  portable: createPortableTreeWatcher,
+} satisfies WatchObserverOptions["treeBackends"];
+
+/** Create a depth-zero Chokidar watcher for one exact parent-directory target. */
+function createDirectoryEntriesWatcher(
+  target: Extract<WatchTarget, { kind: "directory-entries" }>,
+  onEvent: () => void,
+) {
+  const entries = new Set(target.entries.map(normalizedPath));
+  const options: ChokidarOptions = { ...WATCH_OPTIONS, depth: 0 };
+  const watcher = chokidarWatch(target.directory, options);
+  watcher.on("all", (_event, path) => {
+    if (entries.has(normalizedPath(path))) onEvent();
+  });
+  return chokidarRegistration(watcher);
+}
+
+/** Select and construct the watcher for one neutral target. */
+function watchTarget(
+  target: WatchTarget,
+  onEvent: () => void,
+  platform: NodeJS.Platform,
+  treeBackends: NonNullable<WatchObserverOptions["treeBackends"]>,
+) {
   if (target.kind === "directory-entries") {
-    const entries = new Set(target.entries.map(normalizedPath));
-    const watcher = watch(target.directory, { ...WATCH_OPTIONS, depth: 0 });
-    watcher.on("all", (_event, path) => {
-      if (entries.has(normalizedPath(path))) onEvent();
-    });
-    return watcher;
+    return createDirectoryEntriesWatcher(target, onEvent);
   }
 
-  const ignoredRoots = target.ignoredRoots.map(normalizedPath);
-  const watcher = watch(target.directory, {
-    ...WATCH_OPTIONS,
-    ignored: (path) => {
-      const normalized = normalizedPath(path);
-      return ignoredRoots.some((root) => isWithinRoot(normalized, root));
-    },
-  });
-  watcher.on("all", () => onEvent());
-  return watcher;
+  return platform === "darwin" || platform === "win32"
+    ? treeBackends.native(target, onEvent)
+    : treeBackends.portable(target, onEvent);
 }
 
-/** Observe a hybrid watch plan with Chokidar and expose bounded lifecycle promises for callers. */
+/** Close every constructed watcher, including handles whose close method throws. */
+function closeRegistrations(registrations: WatchRegistration[]) {
+  return Promise.all(
+    registrations.map((registration) => Promise.resolve().then(() => registration.close())),
+  );
+}
+
+/** Observe a hybrid watch plan and expose bounded lifecycle promises for callers. */
 export function createWatchObserver(
   plan: WatchPlan,
   callbacks: WatchEventSourceCallbacks,
+  options: WatchObserverOptions = {},
 ): WatchObserver {
   let isClosed = false;
-  const watchers: FSWatcher[] = [];
+  const registrations: WatchRegistration[] = [];
   let resolveReady!: () => void;
   let resolveClosed!: () => void;
   const ready = new Promise<void>((resolvePromise) => {
@@ -69,6 +190,8 @@ export function createWatchObserver(
     resolveClosed = resolvePromise;
   });
   let remainingReady = plan.targets.length;
+  const platform = options.platform ?? process.platform;
+  const treeBackends = options.treeBackends ?? DEFAULT_TREE_BACKENDS;
 
   const onEvent = () => {
     if (!isClosed) callbacks.onEvent();
@@ -84,17 +207,17 @@ export function createWatchObserver(
 
   try {
     for (const target of plan.targets) {
-      const watcher = watchTarget(target, onEvent);
-      watchers.push(watcher);
-      watcher.once("ready", markReady);
-      watcher.on("error", (error) => {
+      const registration = watchTarget(target, onEvent, platform, treeBackends);
+      registrations.push(registration);
+      registration.onError((error) => {
         if (!isClosed) callbacks.onError(error);
       });
+      registration.whenReady(markReady);
     }
   } catch (error) {
     isClosed = true;
     resolveReady();
-    void Promise.all(watchers.map((watcher) => watcher.close())).then(resolveClosed, resolveClosed);
+    void closeRegistrations(registrations).then(resolveClosed, resolveClosed);
     throw error;
   }
 
@@ -114,10 +237,7 @@ export function createWatchObserver(
       if (isClosed) return;
       isClosed = true;
       resolveReady();
-      void Promise.all(watchers.map((watcher) => watcher.close())).then(
-        resolveClosed,
-        resolveClosed,
-      );
+      void closeRegistrations(registrations).then(resolveClosed, resolveClosed);
     },
   };
 }
