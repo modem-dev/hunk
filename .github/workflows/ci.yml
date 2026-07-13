@@ -207,6 +207,11 @@ jobs:
       - name: Build binary
         run: bun run build:bin
 
+      - name: Verify compiled binary watch mode
+        run: bun test ./test/pty/watch.test.ts
+        env:
+          HUNK_TEST_EXECUTABLE: ${{ github.workspace }}/dist/hunk
+
       - name: Upload binary artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

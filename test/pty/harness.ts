@@ -38,6 +38,9 @@ function resolveBunExecutable() {
 }
 
 const bunExecutable = resolveBunExecutable();
+const explicitHunkExecutable = process.env.HUNK_TEST_EXECUTABLE
+  ? resolve(repoRoot, process.env.HUNK_TEST_EXECUTABLE)
+  : undefined;
 
 async function loadTuistory() {
   if (!process.versions.bun) {
@@ -410,6 +413,39 @@ export function createPtyHarness() {
     return { dir, before, after };
   }
 
+  /** Build direct files whose watched side can be replaced atomically during a PTY test. */
+  function createWatchFilePair() {
+    const dir = makeTempDir("hunk-tuistory-watch-files-");
+    const before = join(dir, "before.ts");
+    const after = join(dir, "after.ts");
+
+    runGit(["init"], dir);
+    writeText(before, "export const watchedValue = 'before';\n");
+    writeText(after, "export const watchedValue = 'initial change';\n");
+
+    return { dir, before, after };
+  }
+
+  /** Build a linked worktree with an existing tracked change ready for watch-mode startup. */
+  function createLinkedWorktreeWatchFixture() {
+    const mainDir = makeTempDir("hunk-tuistory-watch-main-");
+    const worktreeParent = makeTempDir("hunk-tuistory-watch-linked-");
+    const worktreeDir = join(worktreeParent, "worktree");
+    const relativeFile = "watched.ts";
+
+    runGit(["init"], mainDir);
+    runGit(["config", "user.name", "Pi"], mainDir);
+    runGit(["config", "user.email", "pi@example.com"], mainDir);
+    writeText(join(mainDir, relativeFile), "export const linkedValue = 'committed';\n");
+    runGit(["add", relativeFile], mainDir);
+    runGit(["commit", "-m", "initial"], mainDir);
+    runGit(["worktree", "add", "--detach", worktreeDir, "HEAD"], mainDir);
+
+    const trackedFile = join(worktreeDir, relativeFile);
+    writeText(trackedFile, "export const linkedValue = 'initial change';\n");
+    return { mainDir, worktreeDir, trackedFile };
+  }
+
   function createGitRepoFixture(files: ChangedFileSpec[]) {
     const dir = makeTempDir("hunk-tuistory-repo-");
 
@@ -611,8 +647,12 @@ export function createPtyHarness() {
     return { dir, patchFile };
   }
 
-  /** Build the source-run Hunk command so PTY tests can reuse it inside shell pipelines. */
+  /** Build the configured Hunk command so PTY tests can reuse it inside shell pipelines. */
   function buildHunkCommand(args: string[]) {
+    if (explicitHunkExecutable) {
+      return [shellQuote(explicitHunkExecutable), ...args.map(shellQuote)].join(" ");
+    }
+
     return [
       shellQuote(bunExecutable),
       "run",
@@ -632,8 +672,10 @@ export function createPtyHarness() {
     const { launchTerminal } = await loadTuistory();
 
     return launchTerminal({
-      command: bunExecutable,
-      args: ["run", sourceEntrypoint, "--", ...options.args],
+      command: explicitHunkExecutable ?? bunExecutable,
+      args: explicitHunkExecutable
+        ? options.args
+        : ["run", sourceEntrypoint, "--", ...options.args],
       cwd: options.cwd ?? repoRoot,
       cols: options.cols ?? 140,
       rows: options.rows ?? 24,
@@ -732,6 +774,7 @@ export function createPtyHarness() {
     createExpandableContextFilePair,
     createCrossFileHunkNavigationRepoFixture,
     createDeletionOnlyFilePair,
+    createLinkedWorktreeWatchFixture,
     createLongWrapFilePair,
     createMultiHunkFilePair,
     createPagerPatchFixture,
@@ -739,6 +782,7 @@ export function createPtyHarness() {
     createScrollableFilePair,
     createSidebarJumpRepoFixture,
     createTwoFileRepoFixture,
+    createWatchFilePair,
     createWideCharacterFilePair,
     launchHunk,
     launchHunkWithFileBackedStdin,
