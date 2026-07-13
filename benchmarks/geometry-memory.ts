@@ -1,19 +1,21 @@
 // Track retained memory for the all-files geometry cache used by review scrolling/navigation.
+import { heapStats } from "bun:jsc";
 import { performance } from "node:perf_hooks";
 import { measureDiffSectionGeometry } from "../src/ui/diff/diffSectionGeometry";
 import { resolveTheme } from "../src/ui/themes";
 import {
+  createGiantSingleDiffFile,
   createLargeSplitStreamBootstrap,
   DEFAULT_FILE_COUNT,
   DEFAULT_LINES_PER_FILE,
+  GIANT_SINGLE_FILE_LINES,
 } from "./large-stream-fixture";
 
 type MemorySample = {
   rssBytes: number;
-  heapUsedBytes: number;
-  heapTotalBytes: number;
-  externalBytes: number;
-  arrayBuffersBytes: number;
+  jscHeapSizeBytes: number;
+  jscExtraMemorySizeBytes: number;
+  jscObjectCount: number;
 };
 
 type CliOptions = {
@@ -89,22 +91,20 @@ function maybeGc(enabled: boolean) {
 
 function sampleMemory(options: CliOptions): MemorySample {
   maybeGc(options.gc);
-  const usage = process.memoryUsage();
+  const jscHeap = heapStats();
   return {
-    rssBytes: usage.rss,
-    heapUsedBytes: usage.heapUsed,
-    heapTotalBytes: usage.heapTotal,
-    externalBytes: usage.external,
-    arrayBuffersBytes: usage.arrayBuffers,
+    rssBytes: process.memoryUsage.rss(),
+    jscHeapSizeBytes: jscHeap.heapSize,
+    jscExtraMemorySizeBytes: jscHeap.extraMemorySize,
+    jscObjectCount: jscHeap.objectCount,
   };
 }
 
 function printMemory(prefix: string, sample: MemorySample) {
   console.log(`METRIC ${prefix}_rss_bytes=${sample.rssBytes}`);
-  console.log(`METRIC ${prefix}_heap_used_bytes=${sample.heapUsedBytes}`);
-  console.log(`METRIC ${prefix}_heap_total_bytes=${sample.heapTotalBytes}`);
-  console.log(`METRIC ${prefix}_external_bytes=${sample.externalBytes}`);
-  console.log(`METRIC ${prefix}_array_buffers_bytes=${sample.arrayBuffersBytes}`);
+  console.log(`METRIC ${prefix}_jsc_heap_size_bytes=${sample.jscHeapSizeBytes}`);
+  console.log(`METRIC ${prefix}_jsc_extra_memory_size_bytes=${sample.jscExtraMemorySizeBytes}`);
+  console.log(`METRIC ${prefix}_jsc_object_count=${sample.jscObjectCount}`);
 }
 
 const options = parseArgs(process.argv.slice(2));
@@ -153,14 +153,16 @@ console.log(`METRIC geometry_ms=${geometryMs.toFixed(2)}`);
 console.log(`METRIC geometry_body_rows=${bodyRows}`);
 console.log(`METRIC geometry_row_bounds=${rowBounds}`);
 console.log(
-  `METRIC geometry_heap_growth_bytes=${afterGeometry.heapUsedBytes - afterBootstrap.heapUsedBytes}`,
+  `METRIC geometry_jsc_heap_size_growth_bytes=${
+    afterGeometry.jscHeapSizeBytes - afterBootstrap.jscHeapSizeBytes
+  }`,
 );
 console.log(`METRIC geometry_rss_growth_bytes=${afterGeometry.rssBytes - afterBootstrap.rssBytes}`);
 console.log(`METRIC materialize_planned_rows_ms=${materializeMs.toFixed(2)}`);
 console.log(`METRIC materialized_planned_rows=${materializedPlannedRows}`);
 console.log(
-  `METRIC materialized_planned_rows_heap_growth_bytes=${
-    afterMaterializedRows.heapUsedBytes - afterGeometry.heapUsedBytes
+  `METRIC materialized_planned_rows_jsc_heap_size_growth_bytes=${
+    afterMaterializedRows.jscHeapSizeBytes - afterGeometry.jscHeapSizeBytes
   }`,
 );
 console.log(
@@ -170,3 +172,23 @@ console.log(
 );
 console.log(`METRIC files=${options.fileCount}`);
 console.log(`METRIC lines_per_file=${options.linesPerFile}`);
+
+// Measure the deferred first-copy path at the giant-file scale where rebuilding the complete plan
+// can become interaction-visible. Keep this after retained-memory samples so fixture construction
+// does not contaminate the moderate all-files geometry deltas above.
+const giantFile = createGiantSingleDiffFile(options.fileCount + 1);
+const giantGeometry = measureDiffSectionGeometry(
+  giantFile,
+  "split",
+  true,
+  theme,
+  [],
+  options.width,
+);
+const giantMaterializeStart = performance.now();
+const giantMaterializedRows = giantGeometry.plannedRows.length;
+console.log(
+  `METRIC giant_first_copy_plan_ms=${(performance.now() - giantMaterializeStart).toFixed(2)}`,
+);
+console.log(`METRIC giant_materialized_planned_rows=${giantMaterializedRows}`);
+console.log(`METRIC giant_file_lines=${GIANT_SINGLE_FILE_LINES}`);

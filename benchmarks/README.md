@@ -62,7 +62,7 @@ bun run bench:competitors
 - `huge-stream.ts` — opt-in huge tier (`--include-huge` or `HUNK_BENCH_INCLUDE_HUGE=1`): cold first frame, scroll-tick and hunk-navigation latency, and memory ceilings on ~1k files / 300k+ diff lines plus one giant ~50k-line file.
 - `large-stream-profile.ts` — optional local profiler for the main pure planning stages behind the large split-stream benchmark.
 - `memory.ts` — optional local RSS/heap profiler after fixture loading, planning, first frame, and next-hunk navigation.
-- `geometry-memory.ts` — optional local retained-memory profiler for all-files section geometry, including the lazy planned-row materialization path used by copy selection.
+- `geometry-memory.ts` — optional local retained-memory profiler for all-files section geometry, including JSC-native heap metrics and giant-file lazy planned-row materialization latency used by first copy selection.
 - `navigation-memory.ts` — optional local retained-memory profiler for repeated hunk navigation through a mounted review stream.
 - `resize-memory.ts` — optional local retained-memory profiler for repeated terminal-width changes through a mounted review stream; this targets geometry-cache retention across resize variants.
 - `competitors.ts` — optional local informational comparisons against `git diff --no-ext-diff`, `delta`, `difftastic`, and `diff-so-fancy` when installed.

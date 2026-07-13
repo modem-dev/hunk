@@ -905,9 +905,16 @@ describe("UI components", () => {
         await setup.mockMouse.moveTo(32, secondHunkY);
         await setup.renderOnce();
       });
-      const affordanceFrame = await waitForFrame(setup, (frame) => frame.includes("[+]"), 12);
+      const affordanceFrame = await waitForFrame(
+        setup,
+        (frame) =>
+          frame.split("\n").some((line) => line.includes("line60") && line.includes("[+]")),
+        12,
+      );
       const affordanceLines = affordanceFrame.split("\n");
-      const addNoteY = affordanceLines.findIndex((line) => line.includes("[+]"));
+      const addNoteY = affordanceLines.findIndex(
+        (line) => line.includes("line60") && line.includes("[+]"),
+      );
       const addNoteX = affordanceLines[addNoteY]?.indexOf("[+]") ?? -1;
       expect(addNoteY).toBeGreaterThanOrEqual(0);
       expect(addNoteX).toBeGreaterThanOrEqual(0);
@@ -916,6 +923,15 @@ describe("UI components", () => {
         await setup.mockMouse.moveTo(addNoteX + 1, addNoteY);
         await setup.renderOnce();
       });
+      const stableAffordanceFrame = await waitForFrame(
+        setup,
+        (frame) => {
+          const targetLine = frame.split("\n")[addNoteY];
+          return Boolean(targetLine?.includes("line60") && targetLine.includes("[+]"));
+        },
+        12,
+      );
+      expect(stableAffordanceFrame.split("\n")[addNoteY]).toContain("[+]");
       await act(async () => {
         await setup.mockMouse.click(addNoteX + 1, addNoteY);
         await setup.renderOnce();

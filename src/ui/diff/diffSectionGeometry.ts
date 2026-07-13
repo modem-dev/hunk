@@ -15,6 +15,7 @@ import type { PlannedReviewRow } from "./reviewRenderPlan";
 import { measureRenderedRowHeight } from "./renderRows";
 
 const EMPTY_EXPANDED_GAP_KEYS: ReadonlySet<string> = new Set();
+const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
 
 export interface DiffSectionRowBounds extends VerticalBounds {
   key: string;
@@ -152,17 +153,27 @@ function createLazyPlannedRowsResolver({
   visibleAgentNotes: VisibleAgentNote[];
 }) {
   let plannedRows: PlannedReviewRow[] | null = null;
+  // Geometry bounds and deferred rows must describe the same immutable input snapshot. Callers
+  // normally replace these collections; clone only the serializable planning data while preserving
+  // note callbacks so later model additions cannot silently fall outside the snapshot boundary.
+  const rowPlanInputs = {
+    expandedKeys: expandedKeys.size === 0 ? EMPTY_EXPANDED_GAP_KEYS : new Set(expandedKeys),
+    file,
+    layout,
+    showHunkHeaders,
+    sourceStatus: sourceStatus ? structuredClone(sourceStatus) : undefined,
+    theme,
+    visibleAgentNotes:
+      visibleAgentNotes.length === 0
+        ? EMPTY_VISIBLE_AGENT_NOTES
+        : visibleAgentNotes.map((note) => ({
+            ...note,
+            annotation: structuredClone(note.annotation),
+          })),
+  };
 
   return () => {
-    plannedRows ??= buildDiffSectionRowPlan({
-      expandedKeys,
-      file,
-      layout,
-      showHunkHeaders,
-      sourceStatus,
-      theme,
-      visibleAgentNotes,
-    }).plannedRows;
+    plannedRows ??= buildDiffSectionRowPlan(rowPlanInputs).plannedRows;
 
     return plannedRows;
   };
