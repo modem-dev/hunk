@@ -48,10 +48,12 @@ function entriesPlan(directory: string, entries: string[]): WatchPlan {
 
 /** Start an observer and expose queued events so mutations cannot race test listeners. */
 async function startObserver(plan: WatchPlan) {
+  let eventCount = 0;
   let pendingEvents = 0;
   const waiters: Array<() => void> = [];
   const observer = createWatchObserver(plan, {
     onEvent() {
+      eventCount++;
       const waiter = waiters.shift();
       if (waiter) waiter();
       else pendingEvents++;
@@ -68,6 +70,9 @@ async function startObserver(plan: WatchPlan) {
 
   return {
     observer,
+    get eventCount() {
+      return eventCount;
+    },
     nextEvent() {
       if (pendingEvents > 0) {
         pendingEvents--;
@@ -126,7 +131,7 @@ async function expectNoRefresh(
   expect(refreshes).toBe(0);
 }
 
-describe("Chokidar watch observer", () => {
+describe("filesystem watch observer", () => {
   test("does not create an event-source factory for poll-only plans", () => {
     expect(createWatchEventSource({ coverage: "poll-only", targets: [] })).toBeUndefined();
   });
@@ -195,6 +200,45 @@ describe("Chokidar watch observer", () => {
     await bounded(source.nextEvent());
   });
 
+  test("observes atomic replacement in a recursive tree", async () => {
+    const directory = await temporaryDirectory();
+    const nestedDirectory = join(directory, "src", "nested");
+    await mkdir(nestedDirectory, { recursive: true });
+    const file = join(nestedDirectory, "file.ts");
+    const temporary = join(nestedDirectory, ".file.ts.tmp");
+    await writeFile(file, "before");
+    const source = await startObserver({
+      coverage: "hybrid",
+      targets: [{ kind: "directory-tree", directory, ignoredRoots: [], sources: ["worktree"] }],
+    });
+
+    await writeFile(temporary, "after");
+    await rename(temporary, file);
+    await bounded(source.nextEvent());
+  });
+
+  test("observes files written into a newly created directory", async () => {
+    const directory = await temporaryDirectory();
+    const source = await startObserver({
+      coverage: "hybrid",
+      targets: [{ kind: "directory-tree", directory, ignoredRoots: [], sources: ["worktree"] }],
+    });
+    const nestedDirectory = join(directory, "new", "nested");
+
+    await mkdir(nestedDirectory, { recursive: true });
+    await bounded(source.nextEvent());
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const eventsAfterCreation = source.eventCount;
+    await writeFile(join(nestedDirectory, "file.ts"), "content");
+    await bounded(
+      (async () => {
+        while (source.eventCount === eventsAfterCreation) {
+          await new Promise((resolve) => setTimeout(resolve, 5));
+        }
+      })(),
+    );
+  });
+
   test("excludes a worktree .git subtree when metadata is observed separately", async () => {
     const directory = await temporaryDirectory();
     const metadataDirectory = join(directory, ".git");
@@ -215,11 +259,9 @@ describe("Chokidar watch observer", () => {
       ],
     };
 
-    await expectNoRefresh(
-      plan,
-      () => readFileSync(worktreeFile, "utf8"),
-      () => writeFile(metadata, "after"),
-    );
+    const source = await startObserver(plan);
+    await writeFile(metadata, "after");
+    await expectNoEvent(source.nextEvent());
   });
 
   test("close releases handles and suppresses later events", async () => {
