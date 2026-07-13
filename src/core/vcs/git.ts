@@ -306,12 +306,19 @@ export const GitVcsAdapter: VcsAdapter = {
           ],
         };
       },
-      watchSignature(input) {
-        const trackedPatch = runGitText({ input, args: buildGitDiffArgs(input) });
-        const repoRoot = resolveGitRepoRoot(input);
-        const untrackedSignatures = listGitUntrackedFiles(input, { repoRoot }).map(
-          (filePath) => `untracked:${statSignature(join(repoRoot, filePath))}`,
-        );
+      watchSignature(input, { cwd, gitExecutable = "git" }) {
+        const trackedPatch = runGitText({
+          input,
+          args: buildGitDiffArgs(input),
+          cwd,
+          gitExecutable,
+        });
+        const repoRoot = resolveGitRepoRoot(input, { cwd, gitExecutable });
+        const untrackedSignatures = listGitUntrackedFiles(input, {
+          cwd,
+          repoRoot,
+          gitExecutable,
+        }).map((filePath) => `untracked:${statSignature(join(repoRoot, filePath))}`);
         return [trackedPatch, ...untrackedSignatures].join("\n---\n");
       },
     },
@@ -341,8 +348,8 @@ export const GitVcsAdapter: VcsAdapter = {
           ),
         };
       },
-      watchSignature(input) {
-        return runGitText({ input, args: buildGitShowArgs(input) });
+      watchSignature(input, { cwd, gitExecutable = "git" }) {
+        return runGitText({ input, args: buildGitShowArgs(input), cwd, gitExecutable });
       },
     },
     "stash-show": {
@@ -371,8 +378,8 @@ export const GitVcsAdapter: VcsAdapter = {
           ),
         };
       },
-      watchSignature(input) {
-        return runGitText({ input, args: buildGitStashShowArgs(input) });
+      watchSignature(input, { cwd, gitExecutable = "git" }) {
+        return runGitText({ input, args: buildGitStashShowArgs(input), cwd, gitExecutable });
       },
     },
   },

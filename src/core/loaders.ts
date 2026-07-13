@@ -13,6 +13,7 @@ import { createFileSourceFetcher, type FileSourceSpec } from "./fileSource";
 import { splitPatchIntoFileChunks, findPatchChunk } from "./patch/chunks";
 import { normalizePatchText, stripTerminalControl } from "./patch/normalize";
 import { getConfiguredVcsAdapter, loadVcsReview, operationFromInput } from "./vcs";
+import { computeWatchSignature } from "./watch";
 import type {
   AppBootstrap,
   AgentContext,
@@ -390,9 +391,12 @@ async function loadVcsChangeset(
     agent: findAgentFileContext(agentContext, file.path, file.previousPath),
   }));
   return {
-    ...parsedChangeset,
-    files: [...parsedChangeset.files, ...adapterFiles],
-  } satisfies Changeset;
+    changeset: {
+      ...parsedChangeset,
+      files: [...parsedChangeset.files, ...adapterFiles],
+    } satisfies Changeset,
+    repoRoot: result.repoRoot,
+  };
 }
 
 /** Build a changeset from patch text supplied by file or stdin. */
@@ -421,17 +425,30 @@ export async function loadAppBootstrap(
   input: CliInput,
   { cwd = process.cwd(), customTheme, gitExecutable = "git" }: LoadAppBootstrapOptions = {},
 ): Promise<AppBootstrap> {
-  const agentContext = await loadAgentContext(input.options.agentContext, {
-    cwd,
-  });
+  // Capture before loading content so watch mode can detect mutations that race initial loading.
+  let initialWatchSignature: string | undefined;
+  if (input.options.watch) {
+    try {
+      initialWatchSignature = computeWatchSignature(input, { cwd, gitExecutable });
+    } catch {
+      // A transient signature failure must not prevent an otherwise valid initial review.
+    }
+  }
+
+  const agentContext = await loadAgentContext(input.options.agentContext, { cwd });
 
   let changeset: Changeset;
+  let repoRoot: string | undefined;
 
   switch (input.kind) {
     case "vcs":
     case "show":
     case "stash-show":
-      changeset = await loadVcsChangeset(input, agentContext, cwd, gitExecutable);
+      {
+        const result = await loadVcsChangeset(input, agentContext, cwd, gitExecutable);
+        changeset = result.changeset;
+        repoRoot = result.repoRoot;
+      }
       break;
     case "diff":
       changeset = await loadFileDiffChangeset(input, agentContext, cwd);
@@ -451,6 +468,7 @@ export async function loadAppBootstrap(
 
   return {
     input,
+    reloadContext: { cwd, repoRoot, initialWatchSignature },
     changeset,
     initialMode: input.options.mode ?? "auto",
     initialTheme: input.options.theme,

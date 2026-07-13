@@ -130,6 +130,7 @@ export function createLargeSplitStreamBootstrap({
   contentVariant = "ascii",
 }: LargeSplitStreamFixtureOptions = {}): AppBootstrap {
   return {
+    reloadContext: { cwd: process.cwd() },
     input: {
       kind: "vcs",
       staged: false,
@@ -230,6 +231,7 @@ export function createHugeStreamBootstrap(): AppBootstrap {
   files.push(createGiantSingleDiffFile(HUGE_FILE_COUNT + 1));
 
   return {
+    reloadContext: { cwd: process.cwd() },
     input: {
       kind: "vcs",
       staged: false,

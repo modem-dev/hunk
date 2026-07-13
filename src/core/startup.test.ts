@@ -6,6 +6,7 @@ import type { AppBootstrap, CliInput, ParsedCliInput } from "./types";
 function createBootstrap(input: CliInput): AppBootstrap {
   return {
     input,
+    reloadContext: { cwd: process.cwd() },
     changeset: {
       id: "changeset:startup",
       sourceLabel: "repo",

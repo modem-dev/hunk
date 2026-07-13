@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { resolve } from "node:path";
 import { createVcsWatchSignature, getConfiguredVcsAdapter, operationFromInput } from "./vcs";
 import type { CliInput } from "./types";
 
@@ -22,35 +23,48 @@ function statSignature(path: string) {
 }
 
 /** Build one exact patch signature for adapter-backed review inputs. */
-function vcsPatchSignature(input: Extract<CliInput, { kind: "vcs" | "show" | "stash-show" }>) {
+function vcsPatchSignature(
+  input: Extract<CliInput, { kind: "vcs" | "show" | "stash-show" }>,
+  context: WatchSignatureContext,
+) {
   const adapter = getConfiguredVcsAdapter(input.options.vcs);
   const operation = operationFromInput(input);
-  return createVcsWatchSignature(adapter, operation, { cwd: process.cwd() });
+  return createVcsWatchSignature(adapter, operation, context);
 }
-/** Compute a change-detection signature for one watchable input. */
-export function computeWatchSignature(input: CliInput) {
+
+export interface WatchSignatureContext {
+  cwd: string;
+  gitExecutable?: string;
+}
+
+/** Compute a change-detection signature relative to the source's stable load context. */
+export function computeWatchSignature(input: CliInput, context: WatchSignatureContext) {
   const parts: string[] = [input.kind];
+  const resolveInputPath = (path: string) => resolve(context.cwd, path);
 
   switch (input.kind) {
     case "vcs":
     case "show":
     case "stash-show":
-      parts.push(vcsPatchSignature(input));
+      parts.push(vcsPatchSignature(input, context));
       break;
     case "diff":
     case "difftool":
-      parts.push(statSignature(input.left), statSignature(input.right));
+      parts.push(
+        statSignature(resolveInputPath(input.left)),
+        statSignature(resolveInputPath(input.right)),
+      );
       break;
     case "patch":
       if (!input.file || input.file === "-") {
         throw new Error("Watch mode requires a patch file path instead of stdin.");
       }
-      parts.push(statSignature(input.file));
+      parts.push(statSignature(resolveInputPath(input.file)));
       break;
   }
 
   if (input.options.agentContext && input.options.agentContext !== "-") {
-    parts.push(`agent:${statSignature(input.options.agentContext)}`);
+    parts.push(`agent:${statSignature(resolveInputPath(input.options.agentContext))}`);
   }
 
   return parts.join("\n---\n");
