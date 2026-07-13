@@ -1,10 +1,18 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   createTestSessionRegistration,
   createTestSessionReviewFile,
   createTestSessionSnapshot,
 } from "../../test/helpers/session-daemon-fixtures";
+import {
+  buildSessionBrokerRuntimeMetadata,
+  resolveSessionBrokerRuntimePaths,
+  writeSessionBrokerRuntimeMetadata,
+} from "./brokerLauncher";
 import { HUNK_SESSION_API_VERSION, HUNK_SESSION_DAEMON_VERSION } from "../session/protocol";
 import { SessionBrokerClient } from "./brokerClient";
 
@@ -12,7 +20,10 @@ const originalHost = process.env.HUNK_MCP_HOST;
 const originalPort = process.env.HUNK_MCP_PORT;
 const originalDisable = process.env.HUNK_MCP_DISABLE;
 const originalUnsafeRemote = process.env.HUNK_MCP_UNSAFE_ALLOW_REMOTE;
+const originalRuntimeDir = process.env.XDG_RUNTIME_DIR;
 const originalConsoleError = console.error;
+const runtimeDirs: string[] = [];
+const testNonce = "test-session-broker-client-nonce";
 
 function createRegistration() {
   return createTestSessionRegistration({
@@ -47,6 +58,24 @@ async function waitUntil(label: string, fn: () => boolean, timeoutMs = 5_000, in
   throw new Error(`Timed out waiting for ${label}.`);
 }
 
+function createRuntimeDir() {
+  const dir = mkdtempSync(join(tmpdir(), "hunk-session-broker-client-test-"));
+  runtimeDirs.push(dir);
+  process.env.XDG_RUNTIME_DIR = dir;
+  return dir;
+}
+
+function writeMetadata(
+  config: { host: string; port: number; httpOrigin: string; wsOrigin: string },
+  nonce = testNonce,
+  pid = process.pid,
+) {
+  writeSessionBrokerRuntimeMetadata(
+    resolveSessionBrokerRuntimePaths(config),
+    buildSessionBrokerRuntimeMetadata({ config, nonce, pid }),
+  );
+}
+
 afterEach(() => {
   if (originalHost === undefined) {
     delete process.env.HUNK_MCP_HOST;
@@ -70,6 +99,19 @@ afterEach(() => {
     delete process.env.HUNK_MCP_UNSAFE_ALLOW_REMOTE;
   } else {
     process.env.HUNK_MCP_UNSAFE_ALLOW_REMOTE = originalUnsafeRemote;
+  }
+
+  if (originalRuntimeDir === undefined) {
+    delete process.env.XDG_RUNTIME_DIR;
+  } else {
+    process.env.XDG_RUNTIME_DIR = originalRuntimeDir;
+  }
+
+  while (runtimeDirs.length > 0) {
+    const dir = runtimeDirs.pop();
+    if (dir) {
+      rmSync(dir, { recursive: true, force: true });
+    }
   }
 
   console.error = originalConsoleError;
@@ -131,6 +173,149 @@ describe("Hunk session daemon client", () => {
     }
   });
 
+  test("restartIncompatibleDaemon refuses to signal an unauthenticated health listener", async () => {
+    createRuntimeDir();
+    const server = createServer((_request, response) => {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ ok: true, pid: 54321, sessions: 0, pendingCommands: 0 }));
+    });
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", () => resolve());
+    });
+
+    const address = server.address();
+    const port = typeof address === "object" && address ? address.port : 0;
+    const config = {
+      host: "127.0.0.1",
+      port,
+      httpOrigin: `http://127.0.0.1:${port}`,
+      wsOrigin: `ws://127.0.0.1:${port}`,
+    };
+
+    const client = new SessionBrokerClient(createRegistration(), createSnapshot());
+    const originalKill = process.kill;
+    const killCalls: Array<{ pid: number; signal?: string | number }> = [];
+    process.kill = ((pid: number, signal?: string | number) => {
+      killCalls.push({ pid, signal });
+      return true;
+    }) as typeof process.kill;
+
+    try {
+      await expect((client as any).restartIncompatibleDaemon(config)).rejects.toThrow(
+        /occupied by a non-Hunk process/,
+      );
+      expect(killCalls.filter((call) => call.signal !== 0)).toEqual([]);
+    } finally {
+      process.kill = originalKill;
+      client.stop();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  test("restartIncompatibleDaemon refuses to signal when runtime metadata and health disagree on pid", async () => {
+    createRuntimeDir();
+    const server = createServer((_request, response) => {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(
+        JSON.stringify({
+          ok: true,
+          pid: 54321,
+          nonce: testNonce,
+          sessions: 0,
+          pendingCommands: 0,
+        }),
+      );
+    });
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", () => resolve());
+    });
+
+    const address = server.address();
+    const port = typeof address === "object" && address ? address.port : 0;
+    const config = {
+      host: "127.0.0.1",
+      port,
+      httpOrigin: `http://127.0.0.1:${port}`,
+      wsOrigin: `ws://127.0.0.1:${port}`,
+    };
+    writeMetadata(config, testNonce, 12345);
+
+    const client = new SessionBrokerClient(createRegistration(), createSnapshot());
+    const originalKill = process.kill;
+    const killCalls: Array<{ pid: number; signal?: string | number }> = [];
+    process.kill = ((pid: number, signal?: string | number) => {
+      killCalls.push({ pid, signal });
+      return true;
+    }) as typeof process.kill;
+
+    try {
+      await expect((client as any).restartIncompatibleDaemon(config)).rejects.toThrow(
+        /occupied by a non-Hunk process/,
+      );
+      expect(killCalls.filter((call) => call.signal !== 0)).toEqual([]);
+    } finally {
+      process.kill = originalKill;
+      client.stop();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  test("restartIncompatibleDaemon still signals a matching authenticated daemon", async () => {
+    createRuntimeDir();
+    const daemonPid = 54321;
+    const server = createServer((_request, response) => {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(
+        JSON.stringify({
+          ok: true,
+          pid: daemonPid,
+          nonce: testNonce,
+          sessions: 0,
+          pendingCommands: 0,
+        }),
+      );
+    });
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", () => resolve());
+    });
+
+    const address = server.address();
+    const port = typeof address === "object" && address ? address.port : 0;
+    const config = {
+      host: "127.0.0.1",
+      port,
+      httpOrigin: `http://127.0.0.1:${port}`,
+      wsOrigin: `ws://127.0.0.1:${port}`,
+    };
+    writeMetadata(config, testNonce, daemonPid);
+
+    const client = new SessionBrokerClient(createRegistration(), createSnapshot());
+    const originalKill = process.kill;
+    const killCalls: Array<{ pid: number; signal?: string | number }> = [];
+    process.kill = ((pid: number, signal?: string | number) => {
+      killCalls.push({ pid, signal });
+      if (signal === "SIGTERM") {
+        void new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+
+      return true;
+    }) as typeof process.kill;
+
+    try {
+      await expect((client as any).restartIncompatibleDaemon(config)).resolves.toBeUndefined();
+      expect(killCalls.filter((call) => call.signal !== 0)).toEqual([
+        { pid: daemonPid, signal: "SIGTERM" },
+      ]);
+    } finally {
+      process.kill = originalKill;
+      client.stop();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
   test("logs one actionable warning when a refreshed daemon rejects an older Hunk window", async () => {
     const listener = createServer((_request, response) => {
       response.writeHead(200, { "content-type": "application/json" });
@@ -152,13 +337,20 @@ describe("Hunk session daemon client", () => {
       fetch(request, bunServer) {
         const url = new URL(request.url);
         if (url.pathname === "/health") {
-          return Response.json({ ok: true, pid: process.pid, sessions: 0, pendingCommands: 0 });
+          return Response.json({
+            ok: true,
+            pid: process.pid,
+            nonce: testNonce,
+            sessions: 0,
+            pendingCommands: 0,
+          });
         }
 
         if (url.pathname === "/session-api/capabilities") {
           return Response.json({
             version: HUNK_SESSION_API_VERSION,
             daemonVersion: HUNK_SESSION_DAEMON_VERSION,
+            nonce: testNonce,
             actions: ["list"],
           });
         }

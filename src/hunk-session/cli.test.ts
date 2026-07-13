@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   createTestListedSession,
   createTestSelectedSessionContext,
@@ -16,6 +19,11 @@ import {
   HUNK_SESSION_DAEMON_VERSION,
 } from "../session/protocol";
 import {
+  buildSessionBrokerRuntimeMetadata,
+  resolveSessionBrokerRuntimePaths,
+  writeSessionBrokerRuntimeMetadata,
+} from "../session-broker/brokerLauncher";
+import {
   createHttpHunkSessionCliClient,
   formatClearCommentsOutput,
   formatCommentApplyOutput,
@@ -32,13 +40,52 @@ import {
 
 const selector = { sessionId: "session-1" } satisfies SessionSelectorInput;
 const originalFetch = globalThis.fetch;
+const originalRuntimeDir = process.env.XDG_RUNTIME_DIR;
+const runtimeDirs: string[] = [];
+const testNonce = "test-session-cli-nonce";
+
+function createRuntimeDir() {
+  const dir = mkdtempSync(join(tmpdir(), "hunk-session-cli-test-"));
+  runtimeDirs.push(dir);
+  process.env.XDG_RUNTIME_DIR = dir;
+  return dir;
+}
+
+function writeMetadata(port = 47657, nonce = testNonce) {
+  writeSessionBrokerRuntimeMetadata(
+    resolveSessionBrokerRuntimePaths({
+      host: "127.0.0.1",
+      port,
+    }),
+    buildSessionBrokerRuntimeMetadata({
+      config: {
+        host: "127.0.0.1",
+        port,
+      },
+      nonce,
+    }),
+  );
+}
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  if (originalRuntimeDir === undefined) {
+    delete process.env.XDG_RUNTIME_DIR;
+  } else {
+    process.env.XDG_RUNTIME_DIR = originalRuntimeDir;
+  }
+  while (runtimeDirs.length > 0) {
+    const dir = runtimeDirs.pop();
+    if (dir) {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
 });
 
 describe("HTTP Hunk session CLI client", () => {
   test("maps CLI methods onto the daemon session API envelope", async () => {
+    createRuntimeDir();
+    writeMetadata();
     const requests: unknown[] = [];
     const session = createTestListedSession();
     const context = createTestSelectedSessionContext();
@@ -100,6 +147,7 @@ describe("HTTP Hunk session CLI client", () => {
         return Response.json({
           version: HUNK_SESSION_API_VERSION,
           daemonVersion: HUNK_SESSION_DAEMON_VERSION,
+          nonce: testNonce,
           actions: Object.keys(responses),
         });
       }

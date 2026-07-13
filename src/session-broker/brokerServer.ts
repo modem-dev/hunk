@@ -3,6 +3,7 @@ import {
   serveSessionBrokerDaemon as serveSessionBrokerDaemonWithBun,
   type RunningSessionBrokerDaemon as RunningBunSessionBrokerDaemon,
 } from "@hunk/session-broker-bun";
+import { randomBytes } from "node:crypto";
 import {
   LEGACY_MCP_PATH,
   SESSION_BROKER_SOCKET_PATH,
@@ -40,6 +41,12 @@ import {
   type SessionDaemonRequest,
   type SessionDaemonResponse,
 } from "../session/protocol";
+import {
+  buildSessionBrokerRuntimeMetadata,
+  removeSessionBrokerRuntimeMetadata,
+  resolveSessionBrokerRuntimePaths,
+  writeSessionBrokerRuntimeMetadata,
+} from "./brokerLauncher";
 
 const DEFAULT_STALE_SESSION_TTL_MS = 45_000;
 const DEFAULT_STALE_SESSION_SWEEP_INTERVAL_MS = 15_000;
@@ -91,10 +98,11 @@ export function formatDaemonServeError(error: unknown, host: string, port: numbe
   return new Error(`Failed to start the session broker daemon on ${host}:${port}: ${message}`);
 }
 
-function sessionCapabilities(): SessionDaemonCapabilities {
+function sessionCapabilities(nonce: string): SessionDaemonCapabilities {
   return {
     version: HUNK_SESSION_API_VERSION,
     daemonVersion: HUNK_SESSION_DAEMON_VERSION,
+    nonce,
     actions: SUPPORTED_SESSION_ACTIONS,
   };
 }
@@ -419,6 +427,12 @@ export function serveSessionBrokerDaemon(
 ): RunningSessionBrokerDaemon {
   const config = resolveSessionBrokerConfig();
   const allowRemote = allowsUnsafeRemoteSessionBroker();
+  const daemonNonce = randomBytes(16).toString("hex");
+  const runtimePaths = resolveSessionBrokerRuntimePaths(config);
+  const runtimeMetadata = buildSessionBrokerRuntimeMetadata({
+    config,
+    nonce: daemonNonce,
+  });
   const idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
   const staleSessionTtlMs = options.staleSessionTtlMs ?? DEFAULT_STALE_SESSION_TTL_MS;
   const staleSessionSweepIntervalMs =
@@ -427,9 +441,8 @@ export function serveSessionBrokerDaemon(
   const daemon = createSessionBrokerDaemon({
     broker: createHunkBrokerController(state),
     capabilities: {
-      version: HUNK_SESSION_DAEMON_VERSION,
+      ...sessionCapabilities(daemonNonce),
       name: "hunk-session-broker",
-      actions: SUPPORTED_SESSION_ACTIONS,
     },
     idleTimeoutMs,
     staleSessionTtlMs,
@@ -462,6 +475,7 @@ export function serveSessionBrokerDaemon(
         // CLI clients and debugging workflows still expect to discover from one place.
         return Response.json({
           ...daemon.getHealth(),
+          nonce: daemonNonce,
           sessionApi: `${config.httpOrigin}${HUNK_SESSION_API_PATH}`,
           sessionCapabilities: `${config.httpOrigin}${HUNK_SESSION_CAPABILITIES_PATH}`,
           sessionSocket: `${config.wsOrigin}${SESSION_BROKER_SOCKET_PATH}`,
@@ -469,7 +483,7 @@ export function serveSessionBrokerDaemon(
       }
 
       if (url.pathname === HUNK_SESSION_CAPABILITIES_PATH) {
-        return Response.json(sessionCapabilities());
+        return Response.json(sessionCapabilities(daemonNonce));
       }
 
       // Keep the richer Hunk session API here rather than in the shared package so commands like
@@ -491,6 +505,14 @@ export function serveSessionBrokerDaemon(
     },
   });
 
+  try {
+    writeSessionBrokerRuntimeMetadata(runtimePaths, runtimeMetadata);
+  } catch (error) {
+    server.stop(true);
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to write session broker runtime metadata: ${message}`);
+  }
+
   const shutdown = () => {
     process.off("SIGINT", shutdown);
     process.off("SIGTERM", shutdown);
@@ -500,6 +522,7 @@ export function serveSessionBrokerDaemon(
   process.once("SIGINT", shutdown);
   process.once("SIGTERM", shutdown);
   void server.stopped.finally(() => {
+    removeSessionBrokerRuntimeMetadata(runtimePaths, runtimeMetadata);
     process.off("SIGINT", shutdown);
     process.off("SIGTERM", shutdown);
   });

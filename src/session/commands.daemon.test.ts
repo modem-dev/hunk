@@ -10,6 +10,8 @@ import {
 } from "./commands";
 import { HUNK_SESSION_API_VERSION, HUNK_SESSION_DAEMON_VERSION } from "./protocol";
 
+const testNonce = "test-session-command-daemon-nonce";
+
 // These tests exercise the REAL resolveDaemonAvailability path (which the hook-based suite in
 // commands.test.ts deliberately bypasses) by pointing the broker config at a known-free loopback
 // port via HUNK_MCP_PORT. No daemon is listening there, so the health and reachability probes
@@ -92,6 +94,32 @@ describe("resolveDaemonAvailability with a foreign process on the port", () => {
       server.stop(true);
     }
   });
+
+  probeTest("rejects an unauthenticated health response as a non-Hunk process", async () => {
+    const server = Bun.serve({
+      port: 0,
+      fetch: (request) => {
+        const url = new URL(request.url);
+        if (url.pathname === "/health") {
+          return Response.json({ ok: true, pid: process.pid });
+        }
+
+        return new Response("nope", { status: 404 });
+      },
+    });
+    process.env.HUNK_MCP_PORT = String(server.port);
+    try {
+      await expect(
+        runSessionCommand({
+          kind: "session",
+          action: "list",
+          output: "json",
+        } satisfies SessionCommandInput),
+      ).rejects.toThrow(/occupied by a non-Hunk process/);
+    } finally {
+      server.stop(true);
+    }
+  });
 });
 
 describe("text output formatting", () => {
@@ -101,6 +129,7 @@ describe("text output formatting", () => {
       getCapabilities: async () => ({
         version: HUNK_SESSION_API_VERSION,
         daemonVersion: HUNK_SESSION_DAEMON_VERSION,
+        nonce: testNonce,
         actions: [
           "list",
           "get",

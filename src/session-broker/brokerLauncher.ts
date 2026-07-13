@@ -29,13 +29,14 @@ interface SessionBrokerLaunchLockFile {
   acquiredAt: string;
 }
 
-interface SessionBrokerLaunchMetadata {
+export interface SessionBrokerRuntimeMetadata {
   pid: number;
   host: string;
   port: number;
+  nonce: string;
   command: string;
   args: string[];
-  launchedAt: string;
+  startedAt: string;
   launchedByPid: number;
   launchCwd: string;
 }
@@ -43,6 +44,33 @@ interface SessionBrokerLaunchMetadata {
 interface SessionBrokerLaunchLock {
   release: () => void;
 }
+
+export interface SessionBrokerHealth {
+  ok: boolean;
+  pid: number;
+  nonce: string;
+  sessions?: number;
+  pendingCommands?: number;
+  startedAt?: string;
+  uptimeMs?: number;
+  sessionApi?: string;
+  sessionCapabilities?: string;
+  sessionSocket?: string;
+  staleSessionTtlMs?: number;
+}
+
+export type SessionBrokerPortState =
+  | {
+      kind: "daemon";
+      health: SessionBrokerHealth;
+      metadata: SessionBrokerRuntimeMetadata;
+    }
+  | {
+      kind: "foreign";
+    }
+  | {
+      kind: "none";
+    };
 
 export interface EnsureSessionBrokerAvailableOptions {
   config?: ResolvedSessionBrokerConfig;
@@ -91,6 +119,14 @@ function resolveRuntimeBaseDir(env: NodeJS.ProcessEnv = process.env) {
   return env.XDG_RUNTIME_DIR?.trim() || tmpdir();
 }
 
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0;
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+
 function isRunningPid(pid: number) {
   if (!Number.isInteger(pid) || pid <= 0) {
     return false;
@@ -120,9 +156,62 @@ function removeFileIfPresent(path: string) {
   }
 }
 
+function isValidSessionBrokerRuntimeMetadata(
+  value: unknown,
+): value is SessionBrokerRuntimeMetadata {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const metadata = value as Record<string, unknown>;
+  return (
+    Number.isInteger(metadata.pid) &&
+    (metadata.pid as number) > 0 &&
+    isNonEmptyString(metadata.host) &&
+    Number.isInteger(metadata.port) &&
+    (metadata.port as number) > 0 &&
+    isNonEmptyString(metadata.nonce) &&
+    isNonEmptyString(metadata.command) &&
+    isStringArray(metadata.args) &&
+    isNonEmptyString(metadata.startedAt) &&
+    Number.isInteger(metadata.launchedByPid) &&
+    (metadata.launchedByPid as number) >= 0 &&
+    isNonEmptyString(metadata.launchCwd)
+  );
+}
+
+function isValidSessionBrokerHealth(value: unknown): value is SessionBrokerHealth {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const health = value as Record<string, unknown>;
+  return (
+    health.ok === true &&
+    Number.isInteger(health.pid) &&
+    (health.pid as number) > 0 &&
+    isNonEmptyString(health.nonce)
+  );
+}
+
+function readSessionBrokerRuntimeMetadataFile(path: string) {
+  const metadata = readJsonFile<unknown>(path);
+  return isValidSessionBrokerRuntimeMetadata(metadata) ? metadata : null;
+}
+
 function cleanStaleDaemonMetadata(paths: SessionBrokerRuntimePaths) {
-  const metadata = readJsonFile<SessionBrokerLaunchMetadata>(paths.metadataPath);
+  const rawMetadata = readJsonFile<{ pid?: unknown }>(paths.metadataPath);
+  const pid = typeof rawMetadata?.pid === "number" ? rawMetadata.pid : null;
+  if (pid === null) {
+    return;
+  }
+
+  const metadata = readSessionBrokerRuntimeMetadataFile(paths.metadataPath);
   if (!metadata) {
+    if (!isRunningPid(pid)) {
+      removeFileIfPresent(paths.metadataPath);
+    }
+
     return;
   }
 
@@ -141,7 +230,7 @@ function tryAcquireDaemonLaunchLock({
   staleAfterMs: number;
 }): SessionBrokerLaunchLock | null {
   const paths = resolveSessionBrokerRuntimePaths(config, env);
-  mkdirSync(paths.runtimeDir, { recursive: true });
+  mkdirSync(paths.runtimeDir, { recursive: true, mode: 0o700 });
 
   const payload: SessionBrokerLaunchLockFile = {
     ownerPid: process.pid,
@@ -199,19 +288,73 @@ function tryAcquireDaemonLaunchLock({
   return null;
 }
 
-function writeDaemonLaunchMetadata(
+export function buildSessionBrokerRuntimeMetadata({
+  config = resolveSessionBrokerConfig(),
+  nonce,
+  cwd = process.cwd(),
+  argv = process.argv,
+  execPath = process.execPath,
+  pid = process.pid,
+  launchedByPid = process.ppid,
+}: {
+  config?: Pick<ResolvedSessionBrokerConfig, "host" | "port">;
+  nonce: string;
+  cwd?: string;
+  argv?: string[];
+  execPath?: string;
+  pid?: number;
+  launchedByPid?: number;
+}): SessionBrokerRuntimeMetadata {
+  return {
+    pid,
+    host: config.host,
+    port: config.port,
+    nonce,
+    command: execPath,
+    args: argv.slice(1),
+    startedAt: new Date().toISOString(),
+    launchedByPid,
+    launchCwd: cwd,
+  };
+}
+
+export function writeSessionBrokerRuntimeMetadata(
   paths: SessionBrokerRuntimePaths,
-  metadata: SessionBrokerLaunchMetadata,
+  metadata: SessionBrokerRuntimeMetadata,
 ) {
+  mkdirSync(paths.runtimeDir, { recursive: true, mode: 0o700 });
   writeFileSync(paths.metadataPath, JSON.stringify(metadata, null, 2), {
     encoding: "utf8",
     mode: 0o600,
   });
 }
 
+export function removeSessionBrokerRuntimeMetadata(
+  paths: SessionBrokerRuntimePaths,
+  ownedBy?: Pick<SessionBrokerRuntimeMetadata, "pid" | "nonce">,
+) {
+  if (ownedBy) {
+    const current = readSessionBrokerRuntimeMetadataFile(paths.metadataPath);
+    if (!current || current.pid !== ownedBy.pid || current.nonce !== ownedBy.nonce) {
+      return;
+    }
+  }
+
+  removeFileIfPresent(paths.metadataPath);
+}
+
 function daemonPortConflictError(config: Pick<ResolvedSessionBrokerConfig, "host" | "port">) {
   return new Error(
     `Session broker port ${config.host}:${config.port} is already in use by another process. ` +
+      `Stop the conflicting process or set HUNK_MCP_PORT to a different loopback port.`,
+  );
+}
+
+export function nonHunkProcessPortConflictError(
+  config: Pick<ResolvedSessionBrokerConfig, "host" | "port">,
+) {
+  return new Error(
+    `The configured Hunk session daemon port ${config.host}:${config.port} is occupied by a non-Hunk process. ` +
       `Stop the conflicting process or set HUNK_MCP_PORT to a different loopback port.`,
   );
 }
@@ -304,24 +447,26 @@ export function resolveSessionBrokerRuntimePaths(
   };
 }
 
-export interface SessionBrokerHealth {
-  ok: boolean;
-  pid?: number;
-  sessions?: number;
-  pendingCommands?: number;
-  startedAt?: string;
-  uptimeMs?: number;
-  sessionApi?: string;
-  sessionCapabilities?: string;
-  sessionSocket?: string;
-  staleSessionTtlMs?: number;
+export function readSessionBrokerRuntimeMetadata(
+  config: Pick<ResolvedSessionBrokerConfig, "host" | "port"> = resolveSessionBrokerConfig(),
+  env: NodeJS.ProcessEnv = process.env,
+) {
+  const paths = resolveSessionBrokerRuntimePaths(config, env);
+  cleanStaleDaemonMetadata(paths);
+  const metadata = readSessionBrokerRuntimeMetadataFile(paths.metadataPath);
+  if (!metadata) {
+    return null;
+  }
+
+  return metadata.host === config.host && metadata.port === config.port ? metadata : null;
 }
 
-/** Read the daemon's health payload when one is reachable on the configured loopback port. */
-export async function readSessionBrokerHealth(
-  config: ResolvedSessionBrokerConfig = resolveSessionBrokerConfig(),
-  timeoutMs = 500,
-) {
+const INVALID_SESSION_BROKER_HEALTH = Symbol("invalid-session-broker-health");
+
+async function fetchSessionBrokerHealthPayload(
+  config: ResolvedSessionBrokerConfig,
+  timeoutMs: number,
+): Promise<typeof INVALID_SESSION_BROKER_HEALTH | unknown | null> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   timeout.unref?.();
@@ -334,12 +479,55 @@ export async function readSessionBrokerHealth(
       return null;
     }
 
-    return (await response.json()) as SessionBrokerHealth;
+    try {
+      return await response.json();
+    } catch {
+      return INVALID_SESSION_BROKER_HEALTH;
+    }
   } catch {
     return null;
   } finally {
     clearTimeout(timeout);
   }
+}
+
+export async function inspectSessionBrokerPort({
+  config = resolveSessionBrokerConfig(),
+  timeoutMs = 500,
+  env = process.env,
+}: {
+  config?: ResolvedSessionBrokerConfig;
+  timeoutMs?: number;
+  env?: NodeJS.ProcessEnv;
+} = {}): Promise<SessionBrokerPortState> {
+  const payload = await fetchSessionBrokerHealthPayload(config, timeoutMs);
+  if (payload === null) {
+    return { kind: "none" };
+  }
+
+  if (payload === INVALID_SESSION_BROKER_HEALTH || !isValidSessionBrokerHealth(payload)) {
+    return { kind: "foreign" };
+  }
+
+  const metadata = readSessionBrokerRuntimeMetadata(config, env);
+  if (!metadata || metadata.pid !== payload.pid || metadata.nonce !== payload.nonce) {
+    return { kind: "foreign" };
+  }
+
+  return {
+    kind: "daemon",
+    health: payload,
+    metadata,
+  };
+}
+
+/** Read the daemon's health payload when one is reachable on the configured loopback port. */
+export async function readSessionBrokerHealth(
+  config: ResolvedSessionBrokerConfig = resolveSessionBrokerConfig(),
+  timeoutMs = 500,
+) {
+  const portState = await inspectSessionBrokerPort({ config, timeoutMs });
+  return portState.kind === "daemon" ? portState.health : null;
 }
 
 /** Check whether the loopback session broker already answers health probes. */
@@ -483,18 +671,7 @@ export async function ensureSessionBrokerAvailable({
           return;
         }
 
-        const launchCommand = resolveDaemonLaunchCommand(argv, execPath);
-        const child = launchDaemon({ cwd, env, argv, execPath });
-        writeDaemonLaunchMetadata(paths, {
-          pid: child.pid ?? 0,
-          host: config.host,
-          port: config.port,
-          command: launchCommand.command,
-          args: launchCommand.args,
-          launchedAt: new Date().toISOString(),
-          launchedByPid: process.pid,
-          launchCwd: cwd,
-        });
+        launchDaemon({ cwd, env, argv, execPath });
 
         const ready = await waitForDaemonHealthWithCheck({
           config,
@@ -526,6 +703,15 @@ export async function ensureSessionBrokerAvailable({
     }
 
     cleanStaleDaemonMetadata(paths);
+  }
+
+  const portState = await inspectSessionBrokerPort({ config, timeoutMs: intervalMs, env });
+  if (portState.kind === "daemon") {
+    return;
+  }
+
+  if (portState.kind === "foreign") {
+    throw nonHunkProcessPortConflictError(config);
   }
 
   if (await isPortReachable(config)) {

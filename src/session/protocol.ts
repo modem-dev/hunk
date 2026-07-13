@@ -31,7 +31,7 @@ export const HUNK_SESSION_API_VERSION = 1;
  * Version daemon/session compatibility separately from the HTTP action surface so newer Hunk
  * builds can refresh an older daemon even when it still exposes the same API endpoints.
  */
-export const HUNK_SESSION_DAEMON_VERSION = 4;
+export const HUNK_SESSION_DAEMON_VERSION = 5;
 
 export type SessionDaemonAction =
   | "list"
@@ -49,6 +49,7 @@ export type SessionDaemonAction =
 export interface SessionDaemonCapabilities {
   version: number;
   daemonVersion: number;
+  nonce: string;
   actions: SessionDaemonAction[];
 }
 

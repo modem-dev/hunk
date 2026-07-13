@@ -16,7 +16,8 @@ import {
 } from "./brokerConfig";
 import {
   ensureSessionBrokerAvailable,
-  readSessionBrokerHealth,
+  inspectSessionBrokerPort,
+  nonHunkProcessPortConflictError,
   waitForSessionBrokerShutdown,
 } from "./brokerLauncher";
 import {
@@ -143,7 +144,12 @@ export class SessionBrokerClient<
 
   private async restartIncompatibleDaemon(config: ResolvedSessionBrokerConfig) {
     reportHunkDaemonUpgradeRestart();
-    const health = await readSessionBrokerHealth(config);
+    const portState = await inspectSessionBrokerPort({ config });
+    if (portState.kind === "foreign") {
+      throw nonHunkProcessPortConflictError(config);
+    }
+
+    const health = portState.kind === "daemon" ? portState.health : null;
     const pid = health?.pid;
     if (pid === process.pid) {
       throw new Error(

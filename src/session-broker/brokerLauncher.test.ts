@@ -1,13 +1,17 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  buildSessionBrokerRuntimeMetadata,
   ensureSessionBrokerAvailable,
+  inspectSessionBrokerPort,
   isLoopbackPortReachable,
+  readSessionBrokerRuntimeMetadata,
   resolveDaemonLaunchCommand,
   resolveSessionBrokerRuntimePaths,
+  writeSessionBrokerRuntimeMetadata,
 } from "./brokerLauncher";
 
 const tempDirs: string[] = [];
@@ -143,16 +147,10 @@ describe("session daemon launcher", () => {
 
     const paths = resolveSessionBrokerRuntimePaths(testConfig, env);
     expect(existsSync(paths.lockPath)).toBe(false);
-    expect(JSON.parse(readFileSync(paths.metadataPath, "utf8"))).toMatchObject({
-      pid: process.pid,
-      host: "127.0.0.1",
-      port: 47657,
-      command: "/usr/bin/bun",
-      args: ["src/main.tsx", "daemon", "serve"],
-    });
+    expect(existsSync(paths.metadataPath)).toBe(false);
   });
 
-  test("recovers a stale launch lock from a dead launcher and overwrites stale metadata", async () => {
+  test("recovers a stale launch lock from a dead launcher and removes stale metadata", async () => {
     const runtimeDir = createRuntimeDir();
     const env = { ...process.env, XDG_RUNTIME_DIR: runtimeDir };
     const paths = resolveSessionBrokerRuntimePaths(testConfig, env);
@@ -178,9 +176,10 @@ describe("session daemon launcher", () => {
           pid: 999999,
           host: testConfig.host,
           port: testConfig.port,
+          nonce: "stale-nonce",
           command: "/usr/bin/bun",
           args: ["src/main.tsx", "daemon", "serve"],
-          launchedAt: new Date(0).toISOString(),
+          startedAt: new Date(0).toISOString(),
           launchedByPid: 999999,
           launchCwd: "/stale",
         },
@@ -211,10 +210,102 @@ describe("session daemon launcher", () => {
 
     expect(launchCount).toBe(1);
     expect(existsSync(paths.lockPath)).toBe(false);
-    expect(JSON.parse(readFileSync(paths.metadataPath, "utf8"))).toMatchObject({
-      pid: 54321,
-      launchedByPid: process.pid,
-      launchCwd: "/repo",
+    expect(existsSync(paths.metadataPath)).toBe(false);
+  });
+
+  test("reads runtime metadata only when it matches the configured port", () => {
+    const runtimeDir = createRuntimeDir();
+    const env = { ...process.env, XDG_RUNTIME_DIR: runtimeDir };
+    const paths = resolveSessionBrokerRuntimePaths(testConfig, env);
+    const metadata = buildSessionBrokerRuntimeMetadata({
+      config: testConfig,
+      nonce: "runtime-nonce",
+      pid: process.pid,
     });
+    writeSessionBrokerRuntimeMetadata(paths, metadata);
+
+    expect(readSessionBrokerRuntimeMetadata(testConfig, env)).toMatchObject({
+      pid: process.pid,
+      nonce: "runtime-nonce",
+    });
+    expect(
+      readSessionBrokerRuntimeMetadata(
+        {
+          host: testConfig.host,
+          port: testConfig.port + 1,
+        },
+        env,
+      ),
+    ).toBeNull();
+  });
+
+  test("classifies an unauthenticated health response as foreign", async () => {
+    const runtimeDir = createRuntimeDir();
+    const env = { ...process.env, XDG_RUNTIME_DIR: runtimeDir };
+    const listener = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: () => Response.json({ ok: true, pid: 54321 }),
+    });
+    const config = {
+      host: "127.0.0.1",
+      port: listener.port!,
+      httpOrigin: `http://127.0.0.1:${listener.port}`,
+      wsOrigin: `ws://127.0.0.1:${listener.port}`,
+    };
+
+    try {
+      await expect(inspectSessionBrokerPort({ config, env })).resolves.toEqual({ kind: "foreign" });
+    } finally {
+      listener.stop(true);
+    }
+  });
+
+  test("classifies matching health and runtime metadata as the active daemon", async () => {
+    const runtimeDir = createRuntimeDir();
+    const env = { ...process.env, XDG_RUNTIME_DIR: runtimeDir };
+    const nonce = "verified-runtime-nonce";
+    const listener = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: () =>
+        Response.json({
+          ok: true,
+          pid: process.pid,
+          nonce,
+          sessions: 0,
+          pendingCommands: 0,
+        }),
+    });
+    const config = {
+      host: "127.0.0.1",
+      port: listener.port!,
+      httpOrigin: `http://127.0.0.1:${listener.port}`,
+      wsOrigin: `ws://127.0.0.1:${listener.port}`,
+    };
+    writeSessionBrokerRuntimeMetadata(
+      resolveSessionBrokerRuntimePaths(config, env),
+      buildSessionBrokerRuntimeMetadata({
+        config,
+        nonce,
+        pid: process.pid,
+      }),
+    );
+
+    try {
+      await expect(inspectSessionBrokerPort({ config, env })).resolves.toMatchObject({
+        kind: "daemon",
+        health: {
+          pid: process.pid,
+          nonce,
+        },
+        metadata: {
+          pid: process.pid,
+          nonce,
+        },
+      });
+    } finally {
+      listener.stop(true);
+    }
   });
 });

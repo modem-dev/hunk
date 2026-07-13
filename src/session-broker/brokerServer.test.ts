@@ -1,21 +1,27 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { randomBytes } from "node:crypto";
+import { mkdtempSync, rmSync } from "node:fs";
 import { connect, createServer } from "node:net";
-import { platform } from "node:os";
+import { platform, tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   createTestSessionRegistration,
   createTestSessionSnapshot,
 } from "../../test/helpers/session-daemon-fixtures";
 import { SessionBrokerState } from "@hunk/session-broker-core";
+import { readSessionBrokerRuntimeMetadata } from "./brokerLauncher";
 import { serveSessionBrokerDaemon } from "./brokerServer";
 
 const originalHost = process.env.HUNK_MCP_HOST;
 const originalPort = process.env.HUNK_MCP_PORT;
 const originalUnsafeRemote = process.env.HUNK_MCP_UNSAFE_ALLOW_REMOTE;
+const originalRuntimeDir = process.env.XDG_RUNTIME_DIR;
+const runtimeDirs: string[] = [];
 
 interface HealthResponse {
   ok: boolean;
   pid: number;
+  nonce: string;
   sessions: number;
   pendingCommands: number;
   paths?: Record<string, string>;
@@ -89,6 +95,13 @@ async function waitForSessionCount(port: number, count: number) {
     const health = await readHealth(port);
     return health?.sessions === count ? health : null;
   });
+}
+
+function createRuntimeDir() {
+  const dir = mkdtempSync(join(tmpdir(), "hunk-session-broker-server-test-"));
+  runtimeDirs.push(dir);
+  process.env.XDG_RUNTIME_DIR = dir;
+  return dir;
 }
 
 async function openSessionSocket(port: number) {
@@ -224,6 +237,19 @@ afterEach(() => {
   } else {
     process.env.HUNK_MCP_UNSAFE_ALLOW_REMOTE = originalUnsafeRemote;
   }
+
+  if (originalRuntimeDir === undefined) {
+    delete process.env.XDG_RUNTIME_DIR;
+  } else {
+    process.env.XDG_RUNTIME_DIR = originalRuntimeDir;
+  }
+
+  while (runtimeDirs.length > 0) {
+    const dir = runtimeDirs.pop();
+    if (dir) {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
 });
 
 describe("Hunk session daemon server", () => {
@@ -255,6 +281,7 @@ describe("Hunk session daemon server", () => {
   });
 
   test("exposes only Hunk session endpoints and rejects the old MCP tool endpoint", async () => {
+    createRuntimeDir();
     const port = await reserveLoopbackPort();
     process.env.HUNK_MCP_HOST = "127.0.0.1";
     process.env.HUNK_MCP_PORT = String(port);
@@ -274,6 +301,7 @@ describe("Hunk session daemon server", () => {
         sessionCapabilities: `http://127.0.0.1:${port}/session-api/capabilities`,
         sessionSocket: `ws://127.0.0.1:${port}/session`,
       });
+      expect(healthPayload.nonce).toBeString();
 
       const genericCapabilities = await fetch(`http://127.0.0.1:${port}/broker/capabilities`);
       expect(genericCapabilities.status).toBe(404);
@@ -291,7 +319,8 @@ describe("Hunk session daemon server", () => {
       expect(capabilities.status).toBe(200);
       await expect(capabilities.json()).resolves.toMatchObject({
         version: 1,
-        daemonVersion: 4,
+        daemonVersion: 5,
+        nonce: healthPayload.nonce,
         actions: [
           "list",
           "get",
@@ -318,9 +347,38 @@ describe("Hunk session daemon server", () => {
       await expect(legacyMcp.json()).resolves.toMatchObject({
         error: "This app no longer exposes agent-facing MCP tools. Use the session CLI instead.",
       });
+
+      expect(readSessionBrokerRuntimeMetadata()).toMatchObject({
+        pid: process.pid,
+        port,
+        nonce: healthPayload.nonce,
+      });
     } finally {
       server.stop(true);
     }
+  });
+
+  test("writes runtime metadata while serving and removes it on shutdown", async () => {
+    createRuntimeDir();
+    const port = await reserveLoopbackPort();
+    process.env.HUNK_MCP_HOST = "127.0.0.1";
+    process.env.HUNK_MCP_PORT = String(port);
+
+    const server = serveSessionBrokerDaemon();
+
+    try {
+      const health = await waitForHealth(port);
+      expect(readSessionBrokerRuntimeMetadata()).toMatchObject({
+        pid: process.pid,
+        port,
+        nonce: health.nonce,
+      });
+    } finally {
+      server.stop(true);
+    }
+
+    await waitForShutdown(port);
+    expect(readSessionBrokerRuntimeMetadata()).toBeNull();
   });
 
   test("rejects HTTP requests with non-loopback or wrong-port Host headers", async () => {

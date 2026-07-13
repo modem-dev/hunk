@@ -16,6 +16,8 @@ import {
 import { HUNK_DAEMON_UPGRADE_RESTART_NOTICE } from "./capabilities";
 import { HUNK_SESSION_API_VERSION, HUNK_SESSION_DAEMON_VERSION } from "./protocol";
 
+const testNonce = "test-session-command-nonce";
+
 function createTestListedSession(sessionId: string) {
   return buildTestListedSession({
     files: [createTestSessionFileSummary({ additions: 1, deletions: 0, path: "README.md" })],
@@ -59,6 +61,7 @@ function createClient(overrides: Partial<HunkDaemonCliClient>): HunkDaemonCliCli
     getCapabilities: async () => ({
       version: HUNK_SESSION_API_VERSION,
       daemonVersion: HUNK_SESSION_DAEMON_VERSION,
+      nonce: testNonce,
       actions: [
         "list",
         "get",
@@ -219,6 +222,7 @@ describe("session command compatibility checks", () => {
           return {
             version: HUNK_SESSION_API_VERSION - 1,
             daemonVersion: HUNK_SESSION_DAEMON_VERSION,
+            nonce: testNonce,
             actions: ["list"],
           };
         },
@@ -857,6 +861,7 @@ describe("session command compatibility checks", () => {
           getCapabilities: async () => ({
             version: HUNK_SESSION_API_VERSION,
             daemonVersion: HUNK_SESSION_DAEMON_VERSION,
+            nonce: testNonce,
             actions: [
               "list",
               "get",

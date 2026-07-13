@@ -2,6 +2,7 @@ import {
   resolveSessionBrokerConfig,
   type ResolvedSessionBrokerConfig,
 } from "../session-broker/brokerConfig";
+import { readSessionBrokerRuntimeMetadata } from "../session-broker/brokerLauncher";
 import {
   HUNK_SESSION_API_VERSION,
   HUNK_SESSION_CAPABILITIES_PATH,
@@ -26,6 +27,11 @@ export async function readHunkSessionDaemonCapabilities(
   config: ResolvedSessionBrokerConfig = resolveSessionBrokerConfig(),
   timeoutMs = HUNK_SESSION_DAEMON_HTTP_TIMEOUT_MS,
 ): Promise<SessionDaemonCapabilities | null> {
+  const metadata = readSessionBrokerRuntimeMetadata(config);
+  if (!metadata) {
+    return null;
+  }
+
   return requestSessionDaemonHttp({
     config,
     path: HUNK_SESSION_CAPABILITIES_PATH,
@@ -53,6 +59,7 @@ export async function readHunkSessionDaemonCapabilities(
         (capabilities as { version?: unknown }).version !== HUNK_SESSION_API_VERSION ||
         (capabilities as { daemonVersion?: unknown }).daemonVersion !==
           HUNK_SESSION_DAEMON_VERSION ||
+        (capabilities as { nonce?: unknown }).nonce !== metadata.nonce ||
         !Array.isArray((capabilities as { actions?: unknown }).actions)
       ) {
         return null;

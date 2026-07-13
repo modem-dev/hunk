@@ -6,9 +6,10 @@ import type {
 import type { SessionLiveCommentSummary, SessionReviewNoteSummary } from "../hunk-session/types";
 import {
   ensureSessionBrokerAvailable,
+  inspectSessionBrokerPort,
   isSessionBrokerHealthy,
   isLoopbackPortReachable,
-  readSessionBrokerHealth,
+  nonHunkProcessPortConflictError,
   waitForSessionBrokerShutdown,
 } from "../session-broker/brokerLauncher";
 import { resolveSessionBrokerConfig } from "../session-broker/brokerConfig";
@@ -93,7 +94,12 @@ async function restartDaemonForMissingAction(
   action: SessionDaemonAction,
   selector?: SessionSelectorInput,
 ) {
-  const health = await readSessionBrokerHealth();
+  const portState = await inspectSessionBrokerPort();
+  if (portState.kind === "foreign") {
+    throw nonHunkProcessPortConflictError(resolveSessionBrokerConfig());
+  }
+
+  const health = portState.kind === "daemon" ? portState.health : null;
   const pid = health?.pid;
   const hadSessions = (health?.sessions ?? 0) > 0;
   if (!pid || pid === process.pid) {
@@ -149,6 +155,11 @@ async function resolveDaemonAvailability(action: SessionCommandInput["action"]) 
   const healthy = await isSessionBrokerHealthy(config);
   if (healthy) {
     return true;
+  }
+
+  const portState = await inspectSessionBrokerPort({ config });
+  if (portState.kind === "foreign") {
+    throw nonHunkProcessPortConflictError(config);
   }
 
   const portReachable = await isLoopbackPortReachable(config);
