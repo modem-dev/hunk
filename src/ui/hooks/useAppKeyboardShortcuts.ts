@@ -82,6 +82,7 @@ export interface UseAppKeyboardShortcutsOptions {
   toggleAgentNotes: () => void;
   toggleFocusArea: () => void;
   toggleGapForSelectedHunk: () => void;
+  toggleSelectedFileCollapsed: () => void;
   toggleHelp: () => void;
   toggleHunkHeaders: () => void;
   toggleLineNumbers: () => void;
@@ -126,6 +127,7 @@ export function useAppKeyboardShortcuts({
   toggleAgentNotes,
   toggleFocusArea,
   toggleGapForSelectedHunk,
+  toggleSelectedFileCollapsed,
   toggleHelp,
   themeSelectorOpen,
   toggleHunkHeaders,
@@ -542,6 +544,11 @@ export function useAppKeyboardShortcuts({
 
     if (key.name === "e" || key.sequence === "e") {
       runAndCloseMenu(triggerEditSelectedFile);
+      return;
+    }
+
+    if (key.name === "x" || key.sequence === "x") {
+      runAndCloseMenu(toggleSelectedFileCollapsed);
       return;
     }
 

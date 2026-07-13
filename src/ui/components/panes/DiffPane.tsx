@@ -218,6 +218,7 @@ export function DiffPane({
   onScrollCodeHorizontally = () => {},
   onSelectFile,
   onToggleGap = NOOP_TOGGLE_GAP,
+  onToggleFileCollapsed,
   onViewportCenteredHunkChange,
 }: {
   codeHorizontalOffset?: number;
@@ -267,6 +268,7 @@ export function DiffPane({
   onScrollCodeHorizontally?: (delta: number) => void;
   onSelectFile: (fileId: string) => void;
   onToggleGap?: (fileId: string, gapKey: string) => void;
+  onToggleFileCollapsed?: (fileId: string) => void;
   onViewportCenteredHunkChange?: (fileId: string, hunkIndex: number) => void;
 }) {
   const renderTopChrome = showTopChrome ?? !pagerMode;
@@ -1839,6 +1841,9 @@ export function DiffPane({
                       }
                       onSelect={selectFileCallback(file.id)}
                       onToggleGap={(gapKey) => onToggleGap(file.id, gapKey)}
+                      onExpandCollapsed={
+                        onToggleFileCollapsed ? () => onToggleFileCollapsed(file.id) : undefined
+                      }
                     />
                   );
                 })}

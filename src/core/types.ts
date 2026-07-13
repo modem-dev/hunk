@@ -8,6 +8,9 @@ export type TerminalThemeMode = "light" | "dark";
 export type ReviewNoteSource = "ai" | "agent" | "user";
 export type SessionCommentListType = "live" | "all" | ReviewNoteSource;
 
+/** Low-signal file categories the review UI can collapse by default. */
+export type NoiseKind = "lockfile" | "minified" | "generated";
+
 export interface UserNoteLineTarget {
   side: "old" | "new";
   line: number;
@@ -57,6 +60,12 @@ export interface DiffFile {
   isUntracked?: boolean;
   isBinary?: boolean;
   isTooLarge?: boolean;
+  // Set when the file looks like review noise (lockfile/minified/generated); drives
+  // default collapse in the interactive review stream.
+  noiseKind?: NoiseKind;
+  // Marks a presentation-only variant whose hunks were swapped for a collapse
+  // placeholder. Never set on the canonical model built by loaders.
+  isCollapsedPlaceholder?: boolean;
   statsTruncated?: boolean;
   // Optional capability for fetching the file's full text on either side.
   // Loaders attach this when source content is reachable; absent when not.
@@ -95,6 +104,7 @@ export interface CommonOptions {
   copyDecorations?: boolean;
   transparentBackground?: boolean;
   colorMoved?: boolean;
+  collapseGenerated?: boolean;
 }
 
 export interface CustomSyntaxColorsConfig {
