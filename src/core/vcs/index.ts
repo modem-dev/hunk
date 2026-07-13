@@ -113,6 +113,20 @@ export async function loadVcsReview(
   return await handler.load(operation.input, context);
 }
 
+/** Build an adapter-backed event plan, falling back to signature polling when unsupported. */
+export function createVcsWatchPlan(
+  adapter: VcsAdapter,
+  operation: VcsReviewOperation,
+  context: VcsLoadContext,
+) {
+  const handler = getVcsOperation(adapter, operation);
+  if (!handler) {
+    throw createUnsupportedVcsOperationError(adapter, operation.kind);
+  }
+
+  return handler.watchPlan?.(operation.input, context) ?? { coverage: "poll-only", targets: [] };
+}
+
 /** Build an adapter-backed watch signature when the selected operation supports it. */
 export function createVcsWatchSignature(
   adapter: VcsAdapter,
