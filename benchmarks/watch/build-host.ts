@@ -13,7 +13,7 @@ import {
   constants as fsConstants,
 } from "node:fs";
 import { arch, hostname, platform, release } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import {
   WATCH_HOST_IDS,
   verifyCampaignInputs,
@@ -67,16 +67,16 @@ export function exactBuildCommands(bunPath: string): {
 }
 
 /** Build the PowerShell checksum invocation without interpolating a possibly spaced path. */
-export function windowsChecksumCommand(path: string, outputPath: string): string[] {
+export function windowsChecksumCommand(path: string, expectedSha256: string): string[] {
   return [
     "powershell.exe",
     "-NoLogo",
     "-NoProfile",
     "-NonInteractive",
     "-Command",
-    "& { param($Path,$OutputPath) $Hash=(Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash.ToLowerInvariant(); [IO.File]::WriteAllText($OutputPath,$Hash,[Text.Encoding]::ASCII) }",
+    '& { param($Path,$Expected) $Actual=(Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash.ToLowerInvariant(); if ($Actual -cne $Expected) { throw "SHA256 mismatch" } }',
     path,
-    outputPath,
+    expectedSha256,
   ];
 }
 
@@ -102,21 +102,12 @@ function platformChecksum(path: string): {
   tool: BinaryProvenanceFile["checksumTool"];
 } {
   if (process.platform === "win32") {
-    const outputPath = join(dirname(path), `.${basename(path)}.sha256-${process.pid}`);
-    rmSync(outputPath, { force: true });
-    try {
-      const result = run(windowsChecksumCommand(path, outputPath));
-      if (result.exitCode !== 0) {
-        throw new Error(`Binary checksum command failed: ${text(result.stderr)}`);
-      }
-      const sha256 = readFileSync(outputPath, "ascii").trim().toLowerCase();
-      if (!/^[a-f0-9]{64}$/.test(sha256)) {
-        throw new Error("Checksum tool returned invalid SHA256");
-      }
-      return { sha256, tool: "Get-FileHash SHA256" };
-    } finally {
-      rmSync(outputPath, { force: true });
+    const sha256 = createHash("sha256").update(readFileSync(path)).digest("hex");
+    const result = run(windowsChecksumCommand(path, sha256));
+    if (result.exitCode !== 0) {
+      throw new Error(`Get-FileHash verification failed: ${text(result.stderr)}`);
     }
+    return { sha256, tool: "Get-FileHash SHA256" };
   }
 
   const command =

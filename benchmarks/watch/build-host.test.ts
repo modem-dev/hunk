@@ -107,11 +107,11 @@ describe("watch host build policy", () => {
     expect(parsePeArchitecture(peBytes(0x8664))).toBe("x64");
     expect(() => parsePeArchitecture(peBytes(0x014c))).toThrow("Unsupported PE machine");
     const path = "C:\\DEV\\Watch Campaign\\candidate hunk.exe";
-    const outputPath = "C:\\DEV\\Watch Campaign\\checksum.txt";
-    const command = windowsChecksumCommand(path, outputPath);
+    const expectedSha256 = "a".repeat(64);
+    const command = windowsChecksumCommand(path, expectedSha256);
     expect(command.at(-2)).toBe(path);
-    expect(command.at(-1)).toBe(outputPath);
+    expect(command.at(-1)).toBe(expectedSha256);
     expect(command.at(-3)).not.toContain(path);
-    expect(command.at(-3)).toContain("[IO.File]::WriteAllText");
+    expect(command.at(-3)).toContain("Get-FileHash");
   });
 });
