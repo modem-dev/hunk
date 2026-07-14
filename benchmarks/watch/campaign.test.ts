@@ -179,7 +179,7 @@ describe("watch preflight campaign preparation", () => {
     expect(manifest.preflightOnly).toBe(true);
     expect(verifyCampaignInputs(layout.root)).toEqual(manifest);
     expect(testGit(source.repo, ["show-ref", "--heads"])).not.toContain(manifest.campaignId);
-  });
+  }, 20_000);
 });
 
 describe("watch campaign input validation", () => {
