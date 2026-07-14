@@ -10,10 +10,11 @@ import {
   type CampaignManifest,
 } from "./campaign";
 import { createFrozenRef, freezeCampaign, verifyFrozenBundle } from "./freeze";
+import { preparePreflightCampaign } from "./prepare-preflight";
 
 const GIT_ENV = {
   ...process.env,
-  GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : "/dev/null",
+  GIT_CONFIG_GLOBAL: "/dev/null",
   GIT_CONFIG_NOSYSTEM: "1",
   GIT_AUTHOR_NAME: "Campaign Test",
   GIT_AUTHOR_EMAIL: "campaign@example.invalid",
@@ -117,6 +118,7 @@ describe("watch campaign freeze", () => {
     });
     const layout = campaignLayout(join(source.root, "campaigns"), campaignId);
     expect(verifyCampaignInputs(layout.root)).toEqual(manifest);
+    expect(manifest.preflightOnly).toBe(false);
     expect(manifest.revisions.harness.sourceSha).toBe(source.harnessSha);
     expect(manifest.untrackedPathsExcluded).toEqual(["untracked-local.txt"]);
     expect(existsSync(join(layout.fixtures["little-repo"], "fixture.bundle"))).toBe(true);
@@ -160,6 +162,23 @@ describe("watch campaign freeze", () => {
     expect(() =>
       createFrozenRef(source.repo, "refs/hunk-benchmark/test/base", source.candidateSha),
     ).toThrow("mismatch");
+  });
+});
+
+describe("watch preflight campaign preparation", () => {
+  test("creates checksum-valid preflight-only inputs from explicit refs", () => {
+    const source = createSourceRepository();
+    const manifest = preparePreflightCampaign({
+      repoDir: source.repo,
+      campaignsDir: join(source.root, "preflights"),
+      baseRef: source.baseSha,
+      candidateRef: source.candidateSha,
+      now: new Date("2026-07-14T18:00:00Z"),
+    });
+    const layout = campaignLayout(join(source.root, "preflights"), manifest.campaignId);
+    expect(manifest.preflightOnly).toBe(true);
+    expect(verifyCampaignInputs(layout.root)).toEqual(manifest);
+    expect(testGit(source.repo, ["show-ref", "--heads"])).not.toContain(manifest.campaignId);
   });
 });
 

@@ -169,7 +169,7 @@ function git(cwd: string, args: string[]): string {
       ...Object.fromEntries(
         Object.entries(process.env).flatMap(([key, value]) => (value ? [[key, value]] : [])),
       ),
-      GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : "/dev/null",
+      GIT_CONFIG_GLOBAL: "/dev/null",
       GIT_CONFIG_NOSYSTEM: "1",
       GIT_TERMINAL_PROMPT: "0",
     },
@@ -457,6 +457,7 @@ export function buildHostCampaign(options: HostBuildOptions): BinaryProvenanceFi
     expectedHarnessSha: manifest.revisions.harness.sourceSha,
     protocolVersion: manifest.protocolVersion,
     orderSeed: manifest.orderSeed,
+    preflightOnly: manifest.preflightOnly,
     outputDir: campaignRoot,
     binaries: Object.fromEntries(
       (["base", "candidate"] as const).map((revision) => [

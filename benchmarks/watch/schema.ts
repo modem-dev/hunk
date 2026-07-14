@@ -98,6 +98,7 @@ export const campaignConfigSchema = z.object({
   expectedHarnessSha: gitShaSchema,
   protocolVersion: z.literal(WATCH_PROTOCOL_VERSION),
   orderSeed: z.string().min(1),
+  preflightOnly: z.boolean().default(false),
   outputDir: z.string().min(1),
   binaries: z.object({
     base: z.object({
@@ -236,6 +237,7 @@ export const watchRunRecordSchema = z
     schemaVersion: z.literal(WATCH_CAMPAIGN_SCHEMA_VERSION),
     protocolVersion: z.literal(WATCH_PROTOCOL_VERSION),
     measurement: z.literal("measured"),
+    executionMode: z.enum(["preflight", "final"]),
     campaignId: z.string().min(1),
     orderSeed: z.string().min(1),
     harnessSha: gitShaSchema,

@@ -558,6 +558,7 @@ function makeRecord(options: {
     schemaVersion: 1,
     protocolVersion: WATCH_PROTOCOL_VERSION,
     measurement: "measured",
+    executionMode: options.config.preflightOnly ? "preflight" : "final",
     campaignId: options.config.campaignId,
     orderSeed: options.config.orderSeed,
     harnessSha: options.harnessSha,
@@ -808,11 +809,16 @@ export async function runCampaign(
 ): Promise<WatchRunRecord[]> {
   assertCampaignBunVersion();
   if (!preflight) {
+    if (config.preflightOnly) {
+      throw new Error("A preflight-only campaign cannot execute final measurement cells");
+    }
     if (config.idleDurationMs !== 120_000 || config.idleSampleIntervalMs !== 10_000) {
       throw new Error("Final campaign idle policy must be 120 seconds sampled every 10 seconds");
     }
     if (config.refreshTrials !== 5) throw new Error("Final campaign requires five refresh trials");
   }
+  // Mark every record from the bounded CLI mode as preflight, including frozen-input dry runs.
+  config = { ...config, preflightOnly: preflight || config.preflightOnly };
   const harnessSha = readHarnessSha(config.expectedHarnessSha);
   assertWatchHostIdentity(config.hostId);
   const host = collectHostMetadata(config.hostId);
@@ -842,8 +848,8 @@ export async function runCampaign(
     runCounts.set(key, next);
     return next;
   };
-  const preflightDurationMs = Math.min(config.idleDurationMs, 2_000);
-  const preflightIntervalMs = Math.min(config.idleSampleIntervalMs, 1_000);
+  const preflightDurationMs = Math.min(config.idleDurationMs, 20_000);
+  const preflightIntervalMs = Math.min(config.idleSampleIntervalMs, 10_000);
   const idleDurationMs = preflight ? preflightDurationMs : config.idleDurationMs;
   const idleIntervalMs = preflight ? preflightIntervalMs : config.idleSampleIntervalMs;
   const refreshTrials = preflight ? 1 : config.refreshTrials;
@@ -1022,7 +1028,8 @@ export async function runCampaign(
       });
     }
 
-    for (const scenario of REFRESH_SCENARIOS) {
+    const refreshScenarios = preflight ? REFRESH_SCENARIOS.slice(0, 1) : REFRESH_SCENARIOS;
+    for (const scenario of refreshScenarios) {
       for (const revision of ["base", "candidate"] as const) {
         for (let trial = 1; trial <= refreshTrials; trial += 1) {
           const descriptor: RunDescriptor = {

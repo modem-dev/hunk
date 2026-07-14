@@ -29,14 +29,12 @@ export const campaignManifestSchema = z.object({
   schemaVersion: z.literal(1),
   protocolVersion: z.literal(WATCH_PROTOCOL_VERSION),
   campaignId: campaignIdSchema,
+  preflightOnly: z.boolean(),
   frozenAt: z.string().datetime(),
   orderSeed: z.string().min(1),
   revisions: z.object({
-    base: z.object({ sourceSha: gitShaSchema, sourceRef: z.literal("origin/main") }),
-    candidate: z.object({
-      sourceSha: gitShaSchema,
-      sourceRef: z.literal("origin/elucid/file-watch"),
-    }),
+    base: z.object({ sourceSha: gitShaSchema, sourceRef: z.string().min(1) }),
+    candidate: z.object({ sourceSha: gitShaSchema, sourceRef: z.string().min(1) }),
     harness: z.object({ sourceSha: gitShaSchema }),
   }),
   bundleRefs: z.object({
@@ -152,11 +150,19 @@ export function writeCampaignChecksums(inputsDir: string): void {
   writeFileSync(join(inputsDir, "SHA256SUMS"), `${lines.join("\n")}\n`);
 }
 
-/** Read and validate the frozen campaign manifest. */
+/** Read and validate a final or explicitly preflight-only campaign manifest. */
 export function readCampaignManifest(campaignRoot: string): CampaignManifest {
-  return campaignManifestSchema.parse(
+  const manifest = campaignManifestSchema.parse(
     JSON.parse(readFileSync(join(campaignRoot, "campaign-manifest.json"), "utf8")),
   );
+  if (
+    !manifest.preflightOnly &&
+    (manifest.revisions.base.sourceRef !== "origin/main" ||
+      manifest.revisions.candidate.sourceRef !== "origin/elucid/file-watch")
+  ) {
+    throw new Error("Final campaign revisions must use the frozen protocol refs");
+  }
+  return manifest;
 }
 
 /** Reject missing, extra, traversing, or modified campaign input files. */

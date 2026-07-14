@@ -31,8 +31,12 @@ export type NativeRecursiveWatchFactory = (
   onChange: (filename: string | Buffer | null) => void,
 ) => NativeRecursiveWatchHandle;
 
+export type WatchTreeBackendMode = "auto" | "native" | "chokidar";
+
 export interface WatchObserverOptions {
   platform?: NodeJS.Platform;
+  /** Test/benchmark-only injection; production callers retain platform-based auto selection. */
+  treeBackend?: WatchTreeBackendMode;
   treeBackends?: {
     native: WatchTreeBackend;
     portable: WatchTreeBackend;
@@ -155,15 +159,17 @@ function watchTarget(
   target: WatchTarget,
   onEvent: () => void,
   platform: NodeJS.Platform,
+  treeBackend: WatchTreeBackendMode,
   treeBackends: NonNullable<WatchObserverOptions["treeBackends"]>,
 ) {
   if (target.kind === "directory-entries") {
     return createDirectoryEntriesWatcher(target, onEvent);
   }
 
-  return platform === "darwin" || platform === "win32"
-    ? treeBackends.native(target, onEvent)
-    : treeBackends.portable(target, onEvent);
+  const useNative =
+    treeBackend === "native" ||
+    (treeBackend === "auto" && (platform === "darwin" || platform === "win32"));
+  return useNative ? treeBackends.native(target, onEvent) : treeBackends.portable(target, onEvent);
 }
 
 /** Close every constructed watcher, including handles whose close method throws. */
@@ -191,6 +197,7 @@ export function createWatchObserver(
   });
   let remainingReady = plan.targets.length;
   const platform = options.platform ?? process.platform;
+  const treeBackend = options.treeBackend ?? "auto";
   const treeBackends = options.treeBackends ?? DEFAULT_TREE_BACKENDS;
 
   const onEvent = () => {
@@ -207,7 +214,7 @@ export function createWatchObserver(
 
   try {
     for (const target of plan.targets) {
-      const registration = watchTarget(target, onEvent, platform, treeBackends);
+      const registration = watchTarget(target, onEvent, platform, treeBackend, treeBackends);
       registrations.push(registration);
       registration.onError((error) => {
         if (!isClosed) callbacks.onError(error);

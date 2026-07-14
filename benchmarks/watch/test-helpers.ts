@@ -10,6 +10,7 @@ export function createTestWatchRunRecord(overrides: Partial<WatchRunRecord> = {}
     schemaVersion: 1,
     protocolVersion: "watch-v1",
     measurement: "measured",
+    executionMode: "final",
     campaignId: "test-campaign",
     orderSeed: "test-order-seed",
     harnessSha: SHA,

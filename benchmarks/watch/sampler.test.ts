@@ -35,6 +35,32 @@ describe("watch process samplers", () => {
     });
   });
 
+  test("reads Windows cumulative CPU and working set through Get-Process", () => {
+    let command: string[] = [];
+    const system: SamplerSystem = {
+      platform: "win32",
+      fileExists: () => false,
+      readFile: () => "",
+      run(nextCommand) {
+        command = nextCommand;
+        return '{"rss":8388608,"cpuMs":125.5}';
+      },
+      isAlive: () => true,
+    };
+    expect(createProcessSampler(system).sample(42)).toEqual({
+      cpuTimeMs: 125.5,
+      rssBytes: 8_388_608,
+      alive: true,
+    });
+    expect(command.slice(0, 4)).toEqual([
+      "powershell.exe",
+      "-NoLogo",
+      "-NoProfile",
+      "-NonInteractive",
+    ]);
+    expect(command.at(-1)).toContain("Get-Process -Id 42");
+  });
+
   test("samples absolute deadlines with a fake clock and preserves errors", async () => {
     let now = 0;
     let calls = 0;

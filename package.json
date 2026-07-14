@@ -75,6 +75,7 @@
     "bench": "bun run benchmarks/run.ts",
     "bench:watch": "bun run benchmarks/watch/run.ts",
     "bench:watch:freeze": "bun run benchmarks/watch/freeze.ts",
+    "bench:watch:prepare-preflight": "bun run benchmarks/watch/prepare-preflight.ts",
     "bench:watch:preflight": "bun run benchmarks/watch/host-preflight.ts",
     "bench:watch:stage": "bun run benchmarks/watch/stage.ts",
     "bench:watch:build-host": "bun run benchmarks/watch/build-host.ts",

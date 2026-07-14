@@ -3,7 +3,11 @@
 import { fileURLToPath } from "node:url";
 import { computeWatchSignature } from "../../src/core/watch";
 import { createWatchController } from "../../src/core/watchController";
-import { createWatchObserver, type WatchObserver } from "../../src/core/watchObserver";
+import {
+  createWatchObserver,
+  type WatchObserver,
+  type WatchTreeBackendMode,
+} from "../../src/core/watchObserver";
 import { resolveWatchPlan, type WatchPlan } from "../../src/core/watchPlan";
 import type { ObserverBackend } from "./schema";
 
@@ -16,14 +20,18 @@ export interface ObserverProbeChildResult {
   errors: string[];
 }
 
-/** Describe the tree backend selected by production observer dispatch for this host. */
-export function selectedObserverBackend(plan: WatchPlan): ObserverBackend {
+/** Describe the selected tree backend for production auto mode or an injected probe mode. */
+export function selectedObserverBackend(
+  plan: WatchPlan,
+  backend: WatchTreeBackendMode = "auto",
+): ObserverBackend {
   if (plan.coverage === "poll-only") return "poll-only";
   const hasTreeTarget = plan.targets.some((target) => target.kind === "directory-tree");
   if (!hasTreeTarget) return "chokidar-portable";
-  return process.platform === "darwin" || process.platform === "win32"
-    ? "native-recursive"
-    : "chokidar-portable";
+  const native =
+    backend === "native" ||
+    (backend === "auto" && (process.platform === "darwin" || process.platform === "win32"));
+  return native ? "native-recursive" : "chokidar-portable";
 }
 
 /** Exercise the production plan, observer, and controller seams without starting the TUI. */
@@ -31,6 +39,7 @@ export async function executeObserverProbe(
   repoDir: string,
   timeoutMs = 30_000,
   onResult?: (result: ObserverProbeChildResult) => void,
+  backend: WatchTreeBackendMode = "auto",
 ): Promise<ObserverProbeChildResult> {
   const input = {
     kind: "vcs" as const,
@@ -56,13 +65,17 @@ export async function executeObserverProbe(
       errors.push(error instanceof Error ? error.message : String(error));
     },
     createEventSource(callbacks) {
-      observer = createWatchObserver(plan, {
-        ...callbacks,
-        onReady() {
-          sourceReady = true;
-          callbacks.onReady?.();
+      observer = createWatchObserver(
+        plan,
+        {
+          ...callbacks,
+          onReady() {
+            sourceReady = true;
+            callbacks.onReady?.();
+          },
         },
-      });
+        { treeBackend: backend },
+      );
       return observer;
     },
   });
@@ -83,7 +96,7 @@ export async function executeObserverProbe(
       status: timedOut || !sourceReady ? "timeout" : errors.length ? "error" : "ready",
       planDerivationMs,
       constructionToReadyMs: sourceReady ? performance.now() - constructionStartedAt : null,
-      selectedBackend: selectedObserverBackend(plan),
+      selectedBackend: selectedObserverBackend(plan, backend),
       degraded: state.degraded,
       errors,
     };
@@ -109,12 +122,22 @@ export async function executeObserverProbe(
 export async function launchObserverProbe(options: {
   repoDir: string;
   timeoutMs?: number;
+  backend?: WatchTreeBackendMode;
 }): Promise<ObserverProbeChildResult & { processLaunchToReadyMs: number }> {
   const timeoutMs = options.timeoutMs ?? 30_000;
   const scriptPath = fileURLToPath(import.meta.url);
   const launchedAt = performance.now();
   const child = Bun.spawn(
-    [process.execPath, scriptPath, "--repo", options.repoDir, "--timeout-ms", String(timeoutMs)],
+    [
+      process.execPath,
+      scriptPath,
+      "--repo",
+      options.repoDir,
+      "--timeout-ms",
+      String(timeoutMs),
+      "--backend",
+      options.backend ?? "auto",
+    ],
     { stdout: "pipe", stderr: "pipe", env: process.env },
   );
   const stderrPromise = new Response(child.stderr).text();
@@ -148,6 +171,10 @@ function option(args: string[], name: string): string {
 }
 
 async function main(args: string[]): Promise<void> {
+  const backend = option(args, "--backend") as WatchTreeBackendMode;
+  if (!["auto", "native", "chokidar"].includes(backend)) {
+    throw new Error(`Invalid --backend: ${backend}`);
+  }
   let emitted = false;
   const result = await executeObserverProbe(
     option(args, "--repo"),
@@ -156,6 +183,7 @@ async function main(args: string[]): Promise<void> {
       emitted = true;
       process.stdout.write(`${JSON.stringify(readyResult)}\n`);
     },
+    backend,
   );
   if (!emitted) process.stdout.write(`${JSON.stringify(result)}\n`);
 }

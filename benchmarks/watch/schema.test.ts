@@ -35,9 +35,13 @@ describe("watch campaign raw schema", () => {
     const record = createTestWatchRunRecord();
     const markdown = renderWatchMarkdown([record]);
     expect(markdown).toContain("# Watch benchmark — test-host");
+    expect(markdown).toContain("Execution mode: **final**");
     expect(markdown).toContain("Startup mean");
     expect(markdown).toContain("projected");
     expect(markdown).toContain("Valid records: 1/1");
+
+    const preflight = renderWatchMarkdown([{ ...record, executionMode: "preflight" }]);
+    expect(preflight).toContain("PRELIMINARY PREFLIGHT ONLY");
   });
 });
 

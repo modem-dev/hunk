@@ -38,7 +38,10 @@ function fakeTreeBackend(calls: string[], name: string): WatchTreeBackend {
 }
 
 /** Start a tree observer with synthetic platform and injected backend choices. */
-async function selectedBackend(platform: NodeJS.Platform) {
+async function selectedBackend(
+  platform: NodeJS.Platform,
+  treeBackend: "auto" | "native" | "chokidar" = "auto",
+) {
   const calls: string[] = [];
   const plan: WatchPlan = { coverage: "hybrid", targets: [treeTarget()] };
   const observer = createWatchObserver(
@@ -46,6 +49,7 @@ async function selectedBackend(platform: NodeJS.Platform) {
     { onEvent() {}, onError() {} },
     {
       platform,
+      treeBackend,
       treeBackends: {
         native: fakeTreeBackend(calls, "native"),
         portable: fakeTreeBackend(calls, "portable"),
@@ -108,6 +112,11 @@ describe("watch tree backend selection", () => {
       expect(await selectedBackend(platform)).toEqual(["portable", "portable:close"]);
     },
   );
+
+  test("allows benchmark probes to force either tree backend", async () => {
+    expect(await selectedBackend("win32", "chokidar")).toEqual(["portable", "portable:close"]);
+    expect(await selectedBackend("linux", "native")).toEqual(["native", "native:close"]);
+  });
 
   test("does not fall back to portable recursion when native construction fails", () => {
     const calls: string[] = [];

@@ -37,7 +37,7 @@ Non-dry-run staging first verifies an existing destination manifest checksum. It
 
 The host builder verifies all checksums and bundle refs, creates separate `build/base` and `build/candidate` checkouts with `core.autocrlf=false`, and runs `SKIP_INSTALL_SIMPLE_GIT_HOOKS=1 <absolute-bun> install --frozen-lockfile` followed by the package command’s exact implementation, `<absolute-bun> run ./scripts/build-bin.ts`, without an intermediate PATH-resolved `bun`. The exact Bun directory is prepended to `PATH` for `scripts/build-bin.ts`'s inner process. Build order alternates by campaign/host seed. Immutable binaries, stream logs, and rich provenance are written under `hosts/<host-id>/`; reviewed fixture checkouts remain separate under `work/fixtures/`.
 
-`windows-x64-gha` uses the manually dispatched `.github/workflows/watch-benchmark-host.yml`, pinned setup-bun 1.3.14, and artifact upload. The workflow only builds and records provenance; it does not run final benchmark cells.
+`windows-x64-gha` uses the manually dispatched `.github/workflows/watch-benchmark-host.yml`, pinned setup-bun 1.3.14, and artifact upload. Its default `ref` input creates explicitly `preflightOnly` provisional fixtures, builds both selected revisions locally, runs the common campaign command with `--preflight`, and uploads raw terminal bytes, JSON, provenance, build logs, observer probes, and Markdown. Artifact mode accepts a previously uploaded campaign; `final` mode rejects provisional inputs.
 
 ## Portable fixtures
 
@@ -136,7 +136,23 @@ bun run bench:watch:render -- \
   --output /absolute/path/to/results/summaries/<host-id>.md
 ```
 
-The preflight uses only the first fixture, one base/candidate startup launch, one idle run per revision capped at two seconds, one Git-activity run per revision, and one refresh trial per scenario. It verifies the real PTY/ConPTY, daemon, observer, sampler, mutation, cleanup, raw-schema, and report paths without producing final campaign measurements.
+The preflight uses only the first fixture, one base/candidate startup launch, one 20-second idle run per revision sampled every 10 seconds, one separate Git-activity run per revision, and one tracked-write refresh trial per revision. Every raw record and report is labeled `preflight`; provisional campaign configs are `preflightOnly` and cannot execute final cells. It verifies the real PTY/ConPTY, daemon, observer, sampler, mutation, cleanup, raw-schema, and report paths without producing final campaign measurements.
+
+Run the opt-in Windows x64 provisional preflight and download its complete evidence artifact:
+
+```sh
+gh workflow run watch-benchmark-host.yml \
+  --ref elucid/watch-benchmark-harness \
+  -f input-source=ref \
+  -f base-ref=origin/main \
+  -f candidate-ref=HEAD \
+  -f measurement-mode=preflight \
+  -f probe-backend=both
+gh run watch --exit-status
+gh run download <run-id> -n windows-x64-watch-results-<run-id>
+```
+
+The forced `native` and `chokidar` probes inject the backend through the production observer seam; they do not expose a user-facing environment variable. The workflow contains no remote-desktop or tunneling actions.
 
 Primary startup and CPU/RSS runs are direct and uninstrumented. Git activity uses inherited `GIT_TRACE2_EVENT` in a separate cohort, truncates startup activity after the menu becomes visible, sanitizes command arguments, and removes the path-bearing raw Trace2 file. Raw measured records use:
 

@@ -32,6 +32,7 @@ function createTestCampaign(): string {
     schemaVersion: 1,
     protocolVersion: "watch-v1",
     campaignId: id,
+    preflightOnly: false,
     frozenAt: "2026-07-14T18:00:00.000Z",
     orderSeed: id,
     revisions: {

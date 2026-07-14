@@ -49,7 +49,8 @@ function runGit(repoDir: string, args: string[]): GitResult {
     cwd: repoDir,
     env: {
       ...process.env,
-      GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : "/dev/null",
+      // Git for Windows accepts its MSYS null device here; Win32 NUL fails in recent ARM64 Git.
+      GIT_CONFIG_GLOBAL: "/dev/null",
       GIT_CONFIG_NOSYSTEM: "1",
       GIT_TERMINAL_PROMPT: "0",
     },
@@ -210,6 +211,7 @@ export function freezeCampaign(options: FreezeCampaignOptions): CampaignManifest
       schemaVersion: 1,
       protocolVersion: WATCH_PROTOCOL_VERSION,
       campaignId,
+      preflightOnly: false,
       frozenAt: now.toISOString(),
       orderSeed: campaignId,
       revisions: {

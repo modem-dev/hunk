@@ -38,14 +38,21 @@ export function renderWatchMarkdown(records: readonly WatchRunRecord[]): string 
   if (records.some((record) => record.host.hostId !== first.host.hostId)) {
     throw new Error("A per-host report cannot mix host IDs");
   }
+  if (records.some((record) => record.executionMode !== first.executionMode)) {
+    throw new Error("A report cannot mix preflight and final records");
+  }
   const lines = [
     `# Watch benchmark — ${first.host.hostId}`,
     "",
     `Campaign: \`${first.campaignId}\` · Protocol: \`${first.protocolVersion}\` · Harness: \`${first.harnessSha}\``,
     "",
+    `Execution mode: **${first.executionMode}**.`,
+    "",
     `Host: ${first.host.platform}/${first.host.arch} (${first.host.release}), Bun ${first.host.bunVersion}, ${first.host.cpuModel}`,
     "",
-    "> This report is descriptive. Raw records are measured; session-count projections below are explicitly derived and are not raw samples.",
+    first.executionMode === "preflight"
+      ? "> PRELIMINARY PREFLIGHT ONLY — shortened plumbing measurements must not be published as final benchmark evidence."
+      : "> This report is descriptive. Raw records are measured; session-count projections below are explicitly derived and are not raw samples.",
     "",
   ];
 

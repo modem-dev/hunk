@@ -221,8 +221,12 @@ export class WatchTerminalSession {
         this.screen.close();
         return this.process.exitCode !== null;
       } catch {
-        if (this.process.exitCode === null) this.process.kill();
-        if (!this.terminal.closed) this.terminal.close();
+        if (this.process.exitCode === null) {
+          this.process.kill();
+          await Promise.race([this.process.exited, Bun.sleep(timeoutMs)]);
+        }
+        // Never close a ConPTY handle around a live child; Bun can block indefinitely there.
+        if (this.process.exitCode !== null && !this.terminal.closed) this.terminal.close();
         this.screen.close();
         return false;
       }
