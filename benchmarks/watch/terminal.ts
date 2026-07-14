@@ -153,6 +153,11 @@ export function waitForTerminalCondition(options: {
   });
 }
 
+/** Build the Windows process-tree termination command used before closing ConPTY. */
+export function windowsTaskkillCommand(pid: number): string[] {
+  return ["taskkill.exe", "/PID", String(pid), "/T", "/F"];
+}
+
 /** Own one compiled Hunk process, its Bun.Terminal, emulated screen, and deterministic cleanup. */
 export class WatchTerminalSession {
   private readonly listeners = new Set<() => void>();
@@ -214,6 +219,21 @@ export class WatchTerminalSession {
     return createHash("sha256").update(this.screen.getText()).digest("hex");
   }
 
+  /** Force the whole Windows ConPTY process tree, or the direct Unix child, to exit. */
+  private async forceTerminate(timeoutMs: number): Promise<void> {
+    if (this.process.exitCode !== null) return;
+    if (process.platform === "win32") {
+      Bun.spawnSync(windowsTaskkillCommand(this.process.pid), {
+        stdin: "ignore",
+        stdout: "ignore",
+        stderr: "ignore",
+      });
+    } else {
+      this.process.kill();
+    }
+    await Promise.race([this.process.exited, Bun.sleep(timeoutMs)]);
+  }
+
   /** Quit through the UI, then force termination before closing ConPTY or PTY handles. */
   cleanup(timeoutMs = 2_000): Promise<boolean> {
     if (this.cleanupPromise) return this.cleanupPromise;
@@ -221,19 +241,17 @@ export class WatchTerminalSession {
       try {
         if (this.process.exitCode === null) this.terminal.write("q");
         await Promise.race([this.process.exited, Bun.sleep(timeoutMs)]);
+        await this.forceTerminate(timeoutMs);
+        // Never close a ConPTY handle around a live child; Bun can block indefinitely there.
         if (this.process.exitCode === null) {
-          this.process.kill();
-          await Promise.race([this.process.exited, Bun.sleep(timeoutMs)]);
+          this.screen.close();
+          return false;
         }
-        // Bun's ConPTY implementation requires the child to be killed before close on Windows.
         if (!this.terminal.closed) this.terminal.close();
         this.screen.close();
-        return this.process.exitCode !== null;
+        return true;
       } catch {
-        if (this.process.exitCode === null) {
-          this.process.kill();
-          await Promise.race([this.process.exited, Bun.sleep(timeoutMs)]);
-        }
+        await this.forceTerminate(timeoutMs);
         // Never close a ConPTY handle around a live child; Bun can block indefinitely there.
         if (this.process.exitCode !== null && !this.terminal.closed) this.terminal.close();
         this.screen.close();

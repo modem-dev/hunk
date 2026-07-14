@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { EmulatedTerminalScreen, WatchTerminalSession, waitForTerminalCondition } from "./terminal";
+import {
+  EmulatedTerminalScreen,
+  WatchTerminalSession,
+  waitForTerminalCondition,
+  windowsTaskkillCommand,
+} from "./terminal";
 
 const marker = { menu: "File  View" as const, requiredText: ["fixture-title", "standard dirty"] };
 
@@ -105,6 +110,10 @@ describe("watch campaign terminal screen detection", () => {
     timeoutCallback();
     await expect(waiting).rejects.toThrow("timed out");
     expect(unsubscribed).toBe(true);
+  });
+
+  test("builds an explicit Windows process-tree termination command", () => {
+    expect(windowsTaskkillCommand(42)).toEqual(["taskkill.exe", "/PID", "42", "/T", "/F"]);
   });
 
   test("quits before closing the terminal handle", async () => {
