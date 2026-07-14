@@ -108,7 +108,8 @@ describe("watch host build policy", () => {
     expect(() => parsePeArchitecture(peBytes(0x014c))).toThrow("Unsupported PE machine");
     const path = "C:\\DEV\\Watch Campaign\\candidate hunk.exe";
     const expectedSha256 = "a".repeat(64);
-    const command = windowsChecksumCommand(path, expectedSha256);
+    const command = windowsChecksumCommand(path, expectedSha256, "pwsh.exe");
+    expect(command[0]).toBe("pwsh.exe");
     expect(command.at(-2)).toBe(path);
     expect(command.at(-1)).toBe(expectedSha256);
     expect(command.at(-3)).not.toContain(path);

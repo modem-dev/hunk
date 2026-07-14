@@ -67,9 +67,13 @@ export function exactBuildCommands(bunPath: string): {
 }
 
 /** Build the PowerShell checksum invocation without interpolating a possibly spaced path. */
-export function windowsChecksumCommand(path: string, expectedSha256: string): string[] {
+export function windowsChecksumCommand(
+  path: string,
+  expectedSha256: string,
+  executable = process.env.GITHUB_ACTIONS === "true" ? "pwsh.exe" : "powershell.exe",
+): string[] {
   return [
-    "powershell.exe",
+    executable,
     "-NoLogo",
     "-NoProfile",
     "-NonInteractive",
