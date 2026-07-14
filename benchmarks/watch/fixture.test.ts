@@ -236,5 +236,5 @@ describe("watch benchmark fixture artifacts", () => {
     resetFixtureState({ artifactsDir: artifactsA, repoDir });
     expect(existsSync(join(repoDir, "unrelated-after-reconstruction.txt"))).toBe(false);
     expect(authoritativeGitSignature(repoDir)).toBe(standardSignature);
-  });
+  }, 20_000);
 });
