@@ -13,7 +13,7 @@ import {
   constants as fsConstants,
 } from "node:fs";
 import { arch, hostname, platform, release } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import {
   WATCH_HOST_IDS,
   verifyCampaignInputs,
@@ -67,15 +67,16 @@ export function exactBuildCommands(bunPath: string): {
 }
 
 /** Build the PowerShell checksum invocation without interpolating a possibly spaced path. */
-export function windowsChecksumCommand(path: string): string[] {
+export function windowsChecksumCommand(path: string, outputPath: string): string[] {
   return [
     "powershell.exe",
     "-NoLogo",
     "-NoProfile",
     "-NonInteractive",
     "-Command",
-    "& { param($Path) [Console]::Write((Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash.ToLowerInvariant()) }",
+    "& { param($Path,$OutputPath) $Hash=(Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash.ToLowerInvariant(); [IO.File]::WriteAllText($OutputPath,$Hash,[Text.Encoding]::ASCII) }",
     path,
+    outputPath,
   ];
 }
 
@@ -100,12 +101,26 @@ function platformChecksum(path: string): {
   sha256: string;
   tool: BinaryProvenanceFile["checksumTool"];
 } {
+  if (process.platform === "win32") {
+    const outputPath = join(dirname(path), `.${basename(path)}.sha256-${process.pid}`);
+    rmSync(outputPath, { force: true });
+    try {
+      const result = run(windowsChecksumCommand(path, outputPath));
+      if (result.exitCode !== 0) {
+        throw new Error(`Binary checksum command failed: ${text(result.stderr)}`);
+      }
+      const sha256 = readFileSync(outputPath, "ascii").trim().toLowerCase();
+      if (!/^[a-f0-9]{64}$/.test(sha256)) {
+        throw new Error("Checksum tool returned invalid SHA256");
+      }
+      return { sha256, tool: "Get-FileHash SHA256" };
+    } finally {
+      rmSync(outputPath, { force: true });
+    }
+  }
+
   const command =
-    process.platform === "darwin"
-      ? ["shasum", "-a", "256", path]
-      : process.platform === "linux"
-        ? ["sha256sum", path]
-        : windowsChecksumCommand(path);
+    process.platform === "darwin" ? ["shasum", "-a", "256", path] : ["sha256sum", path];
   const result = run(command);
   if (result.exitCode !== 0)
     throw new Error(`Binary checksum command failed: ${text(result.stderr)}`);
@@ -114,12 +129,7 @@ function platformChecksum(path: string): {
     throw new Error("Checksum tool returned invalid SHA256");
   return {
     sha256,
-    tool:
-      process.platform === "darwin"
-        ? "shasum -a 256"
-        : process.platform === "linux"
-          ? "sha256sum"
-          : "Get-FileHash SHA256",
+    tool: process.platform === "darwin" ? "shasum -a 256" : "sha256sum",
   };
 }
 
