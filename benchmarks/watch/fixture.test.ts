@@ -224,6 +224,14 @@ describe("watch benchmark fixture artifacts", () => {
       expect(authoritativeGitSignature(repoDir)).toBe(standardSignature);
     }
 
+    const prearmedEvidence = await ordinaryTrackedWrite(
+      { artifactsDir: artifactsA, repoDir, resetBeforeMutation: false },
+      async (observed) => {
+        expect(authoritativeGitSignature(repoDir)).toBe(observed.mutatedSignature);
+      },
+    );
+    expect(prearmedEvidence.restoredSignature).toBe(standardSignature);
+
     writeFileSync(join(repoDir, "unrelated-after-reconstruction.txt"), "remove me\n");
     resetFixtureState({ artifactsDir: artifactsA, repoDir });
     expect(existsSync(join(repoDir, "unrelated-after-reconstruction.txt"))).toBe(false);

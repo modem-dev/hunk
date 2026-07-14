@@ -43,3 +43,76 @@ For each binary/fixture pair:
 5. Capture five warm-cache refresh-latency trials per mutation scenario when practical: ordinary tracked write, atomic rename over tracked content, and relevant untracked creation. If five are not practical, record the reason and the completed count rather than silently reducing it.
 
 The primary comparison uses warm-cache measurements after the explicit warmup. Ordering is deterministic rather than concurrent so the two binaries do not contend for CPU, filesystem, or Git resources. The campaign is descriptive: it defines no performance pass/fail thresholds. Report raw samples and summary statistics without converting noise into a gate.
+
+## Campaign runner
+
+The committed runner requires Bun 1.3.14 or newer, invokes each compiled binary only by its absolute path, and detects readiness on a 120×30 terminal-emulated screen (Ghostty where supported, with a headless xterm fallback for ConPTY). Each binary has a separate provenance JSON file:
+
+```json
+{
+  "schemaVersion": 1,
+  "sha256": "<compiled-binary-sha256>",
+  "sourceSha": "<full-source-sha>",
+  "platform": "darwin",
+  "arch": "arm64"
+}
+```
+
+Create a host-local campaign config without committing final campaign SHAs into the harness:
+
+```json
+{
+  "schemaVersion": 1,
+  "campaignId": "watch-campaign-host-01",
+  "protocolVersion": "watch-v1",
+  "orderSeed": "<stored-campaign-order-seed>",
+  "outputDir": "/absolute/path/to/results",
+  "binaries": {
+    "base": {
+      "executablePath": "/absolute/path/to/base/hunk",
+      "provenancePath": "/absolute/path/to/base-provenance.json",
+      "expectedSourceSha": "<full-base-sha>"
+    },
+    "candidate": {
+      "executablePath": "/absolute/path/to/candidate/hunk",
+      "provenancePath": "/absolute/path/to/candidate-provenance.json",
+      "expectedSourceSha": "<full-candidate-sha>"
+    }
+  },
+  "fixtures": [
+    {
+      "id": "little-repo",
+      "label": "little repo",
+      "artifactsDir": "/absolute/path/to/little-repo-artifacts",
+      "repoDir": "/absolute/path/to/shared-fixture-checkout",
+      "manifestSha256": "<fixture-manifest-sha256>",
+      "requiredScreenText": [".hunk-benchmark/tracked.txt", "standard dirty"]
+    }
+  ],
+  "startupTimeoutMs": 30000,
+  "refreshTimeoutMs": 10000,
+  "idleDurationMs": 120000,
+  "idleSampleIntervalMs": 10000,
+  "refreshTrials": 5
+}
+```
+
+Run the final protocol or the bounded non-final preflight:
+
+```sh
+bun run bench:watch -- --config /absolute/path/to/campaign.json
+bun run bench:watch -- --config /absolute/path/to/campaign.json --preflight
+bun run bench:watch:render -- \
+  --raw /absolute/path/to/results/raw/<host-id> \
+  --output /absolute/path/to/results/reports/<host-id>.md
+```
+
+The preflight uses only the first fixture, one base/candidate startup launch, one idle run per revision capped at two seconds, one Git-activity run per revision, and one refresh trial per scenario. It verifies the real PTY/ConPTY, daemon, observer, sampler, mutation, cleanup, raw-schema, and report paths without producing final campaign measurements.
+
+Primary startup and CPU/RSS runs are direct and uninstrumented. Git activity uses inherited `GIT_TRACE2_EVENT` in a separate cohort, truncates startup activity after the menu becomes visible, sanitizes command arguments, and removes the path-bearing raw Trace2 file. Raw measured records use:
+
+```text
+raw/<host-id>/<fixture-id>/<revision>/<run-kind>/run-<NN>.json
+```
+
+A failed first attempt is retained beside `run-<NN>-retry-1.json`; terminal bytes and sanitized Git JSONL are stored beside their raw record. Markdown projections for 1/3/5 continuous sessions are derived during rendering and explicitly labeled projected. Aggregate child Git CPU remains `not-available` in the low-distortion Trace2 cohort (and is never fabricated on Windows); exact command counts accompany main-process CPU/RSS instead.

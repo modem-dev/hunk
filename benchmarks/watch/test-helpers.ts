@@ -1,0 +1,92 @@
+import { createHash } from "node:crypto";
+import type { WatchRunRecord } from "./schema";
+
+const SHA = "a".repeat(40);
+const SHA256 = createHash("sha256").update("watch-test").digest("hex");
+
+/** Build one minimal valid measured record for benchmark serializer tests. */
+export function createTestWatchRunRecord(overrides: Partial<WatchRunRecord> = {}): WatchRunRecord {
+  return {
+    schemaVersion: 1,
+    protocolVersion: "watch-v1",
+    measurement: "measured",
+    campaignId: "test-campaign",
+    orderSeed: "test-order-seed",
+    harnessSha: SHA,
+    campaignShas: { base: SHA, candidate: SHA, harness: SHA },
+    host: {
+      hostId: "test-host",
+      hostname: "test-hostname",
+      platform: "linux",
+      release: "test-release",
+      arch: "x64",
+      cpuModel: "test-cpu",
+      bunVersion: "1.3.14",
+    },
+    binary: {
+      schemaVersion: 1,
+      revision: "base",
+      executablePath: "/absolute/hunk",
+      sha256: SHA256,
+      sourceSha: SHA,
+      platform: "linux",
+      arch: "x64",
+    },
+    fixture: {
+      id: "little-repo",
+      label: "little repo",
+      sourceSha: SHA,
+      baselineCommit: SHA,
+      manifestSha256: SHA256,
+      counts: {
+        totalSubdirectoryCount: 2,
+        ignoredSubdirectoryCount: 1,
+        relevantSubdirectoryCount: 1,
+        trackedFileCount: 2,
+        untrackedFileCount: 1,
+        symlinkCount: 0,
+        symlinkPolicy: "materialize-as-plain-files",
+        maximumDepth: 2,
+      },
+    },
+    runId: "little-repo-base-startup-01-attempt-1",
+    runKind: "startup",
+    trial: 1,
+    orderIndex: 0,
+    startupLaunchIndex: 0,
+    cacheLabel: "warm",
+    warmup: false,
+    retryAttempt: 0,
+    startedAt: "2026-07-14T00:00:00.000Z",
+    finishedAt: "2026-07-14T00:00:01.000Z",
+    terminal: {
+      columns: 120,
+      rows: 30,
+      menuMarker: "File  View",
+      requiredScreenText: ["fixture-title"],
+      parser: "ghostty-opentui",
+      rawLogPath: "raw/test-host/little-repo/base/startup/run-01.terminal.bin",
+    },
+    startup: {
+      launchToFirstMarkerMs: 100,
+      markerVisible: true,
+      screenTextSha256: SHA256,
+    },
+    observer: {
+      metricLabel: "probe process launch -> observer ready",
+      observerReadyStatus: "not-applicable-legacy-polling",
+      observerReadyMs: null,
+      planDerivationMs: null,
+      constructionToReadyMs: null,
+      selectedBackend: "not-applicable-legacy-polling",
+      degraded: false,
+    },
+    idle: null,
+    gitActivity: null,
+    refresh: null,
+    valid: true,
+    errors: [],
+    cleanupComplete: true,
+    ...overrides,
+  };
+}

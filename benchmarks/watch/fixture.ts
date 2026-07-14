@@ -102,8 +102,13 @@ export interface MutationEvidence {
   restoredSignature: string;
 }
 
+export interface MutationFixtureOptions extends ReconstructFixtureOptions {
+  /** The campaign runner resets before launch, avoiding a watcher-visible reset after readiness. */
+  resetBeforeMutation?: boolean;
+}
+
 export type MutationObserver = (
-  evidence: Omit<MutationEvidence, "restoredSignature">,
+  evidence: Omit<MutationEvidence, "restoredSignature"> & { mutationStartedAtMs: number },
 ) => void | Promise<void>;
 
 interface IgnoredTreeEntry {
@@ -636,20 +641,21 @@ export function authoritativeGitSignature(repoDir: string): string {
 
 /** Execute one mutation, prove its Git signature changed, then restore after observation. */
 async function mutateAndRestore(
-  options: ReconstructFixtureOptions,
+  options: MutationFixtureOptions,
   mutate: () => void,
   observe?: MutationObserver,
 ): Promise<MutationEvidence> {
-  resetFixtureState(options);
+  if (options.resetBeforeMutation !== false) resetFixtureState(options);
   const beforeSignature = authoritativeGitSignature(options.repoDir);
   let mutatedSignature = beforeSignature;
   try {
+    const mutationStartedAtMs = performance.now();
     mutate();
     mutatedSignature = authoritativeGitSignature(options.repoDir);
     if (mutatedSignature === beforeSignature) {
       throw new Error("Mutation did not change the authoritative Git signature");
     }
-    await observe?.({ beforeSignature, mutatedSignature });
+    await observe?.({ beforeSignature, mutatedSignature, mutationStartedAtMs });
   } finally {
     resetFixtureState(options);
   }
@@ -661,7 +667,7 @@ async function mutateAndRestore(
 
 /** Benchmark an ordinary in-place tracked-file write and restore after observation. */
 export function ordinaryTrackedWrite(
-  options: ReconstructFixtureOptions,
+  options: MutationFixtureOptions,
   observe?: MutationObserver,
 ): Promise<MutationEvidence> {
   return mutateAndRestore(
@@ -676,7 +682,7 @@ export function ordinaryTrackedWrite(
 
 /** Benchmark a temp-file plus atomic rename over the tracked benchmark file. */
 export function atomicRenameTrackedWrite(
-  options: ReconstructFixtureOptions,
+  options: MutationFixtureOptions,
   observe?: MutationObserver,
 ): Promise<MutationEvidence> {
   return mutateAndRestore(
@@ -693,7 +699,7 @@ export function atomicRenameTrackedWrite(
 
 /** Benchmark creation of a relevant, non-ignored untracked file. */
 export function relevantUntrackedCreation(
-  options: ReconstructFixtureOptions,
+  options: MutationFixtureOptions,
   observe?: MutationObserver,
 ): Promise<MutationEvidence> {
   return mutateAndRestore(
