@@ -220,18 +220,21 @@ export class WatchTerminalSession {
   }
 
   /** Force the whole Windows ConPTY process tree, or the direct Unix child, to exit. */
-  private async forceTerminate(timeoutMs: number): Promise<void> {
-    if (this.process.exitCode !== null) return;
+  private async forceTerminate(timeoutMs: number): Promise<boolean> {
+    if (this.process.exitCode !== null) return true;
+    let terminationRequested = true;
     if (process.platform === "win32") {
-      Bun.spawnSync(windowsTaskkillCommand(this.process.pid), {
+      const result = Bun.spawnSync(windowsTaskkillCommand(this.process.pid), {
         stdin: "ignore",
         stdout: "ignore",
         stderr: "ignore",
       });
+      terminationRequested = result.exitCode === 0;
     } else {
       this.process.kill();
     }
     await Promise.race([this.process.exited, Bun.sleep(timeoutMs)]);
+    return this.process.exitCode !== null || terminationRequested;
   }
 
   /** Quit through the UI, then force termination before closing ConPTY or PTY handles. */
@@ -241,19 +244,20 @@ export class WatchTerminalSession {
       try {
         if (this.process.exitCode === null) this.terminal.write("q");
         await Promise.race([this.process.exited, Bun.sleep(timeoutMs)]);
-        await this.forceTerminate(timeoutMs);
-        // Never close a ConPTY handle around a live child; Bun can block indefinitely there.
-        if (this.process.exitCode === null) {
+        const terminated = await this.forceTerminate(timeoutMs);
+        // taskkill success proves the child tree is dead even if Bun waits for ConPTY close before
+        // updating Subprocess.exitCode. Only then is it safe to close the terminal handle.
+        if (!terminated) {
           this.screen.close();
           return false;
         }
         if (!this.terminal.closed) this.terminal.close();
+        await Promise.race([this.process.exited, Bun.sleep(timeoutMs)]);
         this.screen.close();
         return true;
       } catch {
-        await this.forceTerminate(timeoutMs);
-        // Never close a ConPTY handle around a live child; Bun can block indefinitely there.
-        if (this.process.exitCode !== null && !this.terminal.closed) this.terminal.close();
+        const terminated = await this.forceTerminate(timeoutMs);
+        if (terminated && !this.terminal.closed) this.terminal.close();
         this.screen.close();
         return false;
       }
