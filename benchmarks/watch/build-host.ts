@@ -74,7 +74,7 @@ export function windowsChecksumCommand(path: string): string[] {
     "-NoProfile",
     "-NonInteractive",
     "-Command",
-    "& { param($Path) (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash.ToLowerInvariant() }",
+    "& { param($Path) [Console]::Write((Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash.ToLowerInvariant()) }",
     path,
   ];
 }

@@ -110,5 +110,6 @@ describe("watch host build policy", () => {
     const command = windowsChecksumCommand(path);
     expect(command.at(-1)).toBe(path);
     expect(command.at(-2)).not.toContain(path);
+    expect(command.at(-2)).toContain("[Console]::Write");
   });
 });
