@@ -151,7 +151,7 @@ async function startDaemon(options: {
   env: Record<string, string | undefined>;
   port: number;
 }): Promise<Bun.Subprocess> {
-  const process = Bun.spawn([options.binary.executablePath, "daemon", "serve"], {
+  const process = Bun.spawn([...options.binary.invocation.command, "daemon", "serve"], {
     cwd: options.cwd,
     env: options.env,
     stdin: "ignore",
@@ -310,7 +310,7 @@ async function startWatchSession(options: {
   });
   try {
     const launched = await launchWatchTerminal({
-      executablePath: options.binary.executablePath,
+      command: options.binary.invocation.command,
       cwd: options.fixture.config.repoDir,
       env,
       marker: {

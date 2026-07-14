@@ -93,6 +93,7 @@ describe("watch campaign binary provenance", () => {
           : process.platform === "linux"
             ? "sha256sum"
             : "Get-FileHash SHA256",
+      invocation: { mode: "compiled", command: [executablePath], sourceEntrySha256: null },
       smoke: {
         command: [executablePath, "--help"],
         exitCode: 0,

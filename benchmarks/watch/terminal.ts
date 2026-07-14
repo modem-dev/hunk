@@ -21,7 +21,7 @@ export interface VisibleScreenMarker {
 }
 
 export interface WatchTerminalLaunchOptions {
-  executablePath: string;
+  command: string[];
   cwd: string;
   env: Record<string, string | undefined>;
   marker: VisibleScreenMarker;
@@ -253,15 +253,7 @@ export async function launchWatchTerminal(
 
   const launchedAt = clock.now();
   const process = Bun.spawn(
-    [
-      options.executablePath,
-      "diff",
-      "--watch",
-      "--mode",
-      "stack",
-      "--theme",
-      "github-dark-default",
-    ],
+    [...options.command, "diff", "--watch", "--mode", "stack", "--theme", "github-dark-default"],
     {
       cwd: options.cwd,
       env: options.env,

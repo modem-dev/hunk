@@ -434,6 +434,23 @@ export function buildHostCampaign(options: HostBuildOptions): BinaryProvenanceFi
         stderrLogPath,
       },
       checksumTool: checksum.tool,
+      invocation:
+        process.platform === "win32" && process.arch === "arm64"
+          ? {
+              // Bun 1.3.14 standalone ARM64 executables cannot dlopen OpenTUI's FFI library.
+              // Keep the compiled PE as build evidence, but use the exact native Bun source command
+              // for this preflight adapter until compiled ARM64 FFI is available.
+              mode: "bun-source-windows-arm64",
+              command: [bun.path, resolve(checkout, "src", "main.tsx")],
+              sourceEntrySha256: createHash("sha256")
+                .update(readFileSync(resolve(checkout, "src", "main.tsx")))
+                .digest("hex"),
+            }
+          : {
+              mode: "compiled",
+              command: [executablePath],
+              sourceEntrySha256: null,
+            },
       smoke: {
         command: smokeCommand,
         exitCode: 0,

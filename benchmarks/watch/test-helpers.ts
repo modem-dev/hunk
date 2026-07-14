@@ -54,6 +54,11 @@ export function createTestWatchRunRecord(overrides: Partial<WatchRunRecord> = {}
         stderrLogPath: "/absolute/base.stderr.log",
       },
       checksumTool: "sha256sum",
+      invocation: {
+        mode: "compiled",
+        command: ["/absolute/hunk"],
+        sourceEntrySha256: null,
+      },
       smoke: {
         command: ["/absolute/hunk", "--help"],
         exitCode: 0,

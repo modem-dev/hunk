@@ -82,6 +82,11 @@ export const binaryProvenanceFileSchema = z.object({
     stderrLogPath: z.string().min(1),
   }),
   checksumTool: z.enum(["shasum -a 256", "sha256sum", "Get-FileHash SHA256"]),
+  invocation: z.object({
+    mode: z.enum(["compiled", "bun-source-windows-arm64"]),
+    command: z.array(z.string().min(1)).min(1),
+    sourceEntrySha256: sha256Schema.nullable(),
+  }),
   smoke: z.object({
     command: z.array(z.string().min(1)).min(1),
     exitCode: z.literal(0),
@@ -356,6 +361,29 @@ export function verifyBinaryProvenance(
     throw new Error(
       `${revision} executable architecture ${provenance.arch} does not match host ${arch()}`,
     );
+  }
+  if (provenance.invocation.mode === "compiled") {
+    if (
+      provenance.invocation.command.length !== 1 ||
+      provenance.invocation.command[0] !== executablePath ||
+      provenance.invocation.sourceEntrySha256 !== null
+    ) {
+      throw new Error(`${revision} compiled invocation does not match its executable`);
+    }
+  } else {
+    const [bunPath, sourcePath] = provenance.invocation.command;
+    if (
+      provenance.platform !== "win32" ||
+      provenance.arch !== "arm64" ||
+      provenance.invocation.command.length !== 2 ||
+      bunPath !== provenance.bun.path ||
+      !sourcePath ||
+      !isAbsolute(sourcePath) ||
+      !existsSync(sourcePath) ||
+      fileSha256(sourcePath) !== provenance.invocation.sourceEntrySha256
+    ) {
+      throw new Error(`${revision} ARM64 source invocation provenance mismatch`);
+    }
   }
   return provenance;
 }
