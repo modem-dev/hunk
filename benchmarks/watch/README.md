@@ -39,7 +39,7 @@ The host builder verifies all checksums and bundle refs, creates separate `build
 
 Bun 1.3.14's Windows ARM64 standalone runtime cannot `dlopen` OpenTUI's FFI library (`TinyCC is disabled`). The VM adapter therefore records both the native ARM64 compiled PE and its checksum/smoke result, but its explicit `bun-source-windows-arm64` invocation runs the same frozen checkout through the absolute native ARM64 Bun path for ConPTY behavior preflights. Windows x64 and every final performance-capable host invoke the compiled executable directly. Never mix source-adapter preflight values with compiled performance rows.
 
-`windows-x64-gha` uses the manually dispatched `.github/workflows/watch-benchmark-host.yml`, pinned setup-bun 1.3.14, and artifact upload. Its default `ref` input creates explicitly `preflightOnly` provisional fixtures, builds both selected revisions locally, runs the common campaign command with `--preflight`, and uploads raw terminal bytes, JSON, provenance, build logs, observer probes, and Markdown. Artifact mode accepts a previously uploaded campaign; `final` mode rejects provisional inputs.
+`windows-x64-gha` is dispatched through the existing default-branch `.github/workflows/benchmarks.yml` entrypoint. Its opt-in `windows-watch` job calls `.github/workflows/watch-benchmark-host.yml` as a reusable workflow, so normal push and benchmark-dispatch behavior is unchanged unless `run-windows-watch=true`. The reusable workflow pins setup-bun 1.3.14, creates explicitly `preflightOnly` provisional fixtures for `ref` inputs, builds both selected revisions locally, runs the common campaign command with `--preflight`, and uploads raw terminal bytes, JSON, provenance, build logs, observer probes, and Markdown. Artifact mode accepts a previously uploaded campaign; `final` mode rejects provisional inputs. The standalone workflow retains direct `workflow_dispatch` for use after it reaches the default branch, but the established `benchmarks.yml` path is the branch-testing entrypoint.
 
 ## Portable fixtures
 
@@ -143,8 +143,9 @@ The preflight uses only the first fixture, one base/candidate startup launch, on
 Run the opt-in Windows x64 provisional preflight and download its complete evidence artifact:
 
 ```sh
-gh workflow run watch-benchmark-host.yml \
+gh workflow run benchmarks.yml \
   --ref elucid/watch-benchmark-harness \
+  -f run-windows-watch=true \
   -f input-source=ref \
   -f base-ref=origin/main \
   -f candidate-ref=HEAD \

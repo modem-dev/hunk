@@ -1,6 +1,37 @@
 name: Windows watch benchmark host
 
 on:
+  workflow_call:
+    inputs:
+      input-source:
+        required: true
+        type: string
+      base-ref:
+        required: false
+        default: origin/main
+        type: string
+      candidate-ref:
+        required: false
+        default: HEAD
+        type: string
+      artifact-run-id:
+        required: false
+        default: ""
+        type: string
+      artifact-name:
+        required: false
+        default: ""
+        type: string
+      campaign-id:
+        required: false
+        default: ""
+        type: string
+      measurement-mode:
+        required: true
+        type: string
+      probe-backend:
+        required: true
+        type: string
   workflow_dispatch:
     inputs:
       input-source:

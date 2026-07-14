@@ -10,6 +10,60 @@ on:
       - "assets/**"
       - "LICENSE"
   workflow_dispatch:
+    inputs:
+      run-windows-watch:
+        description: Run the bounded Windows watch preflight
+        required: true
+        default: false
+        type: boolean
+      input-source:
+        description: Use provisional refs or a previously uploaded campaign artifact
+        required: true
+        default: ref
+        type: choice
+        options:
+          - ref
+          - artifact
+      base-ref:
+        description: Base ref for provisional Windows watch inputs
+        required: false
+        default: origin/main
+        type: string
+      candidate-ref:
+        description: Candidate ref for provisional Windows watch inputs
+        required: false
+        default: HEAD
+        type: string
+      artifact-run-id:
+        description: Run containing a frozen campaign artifact
+        required: false
+        type: string
+      artifact-name:
+        description: Frozen campaign artifact name
+        required: false
+        type: string
+      campaign-id:
+        description: Frozen watch campaign ID
+        required: false
+        type: string
+      measurement-mode:
+        description: Preflight by default; final rejects provisional inputs
+        required: true
+        default: preflight
+        type: choice
+        options:
+          - preflight
+          - final
+      probe-backend:
+        description: Candidate observer backend probe
+        required: true
+        default: both
+        type: choice
+        options:
+          - auto
+          - native
+          - chokidar
+          - both
 
 env:
   SKIP_INSTALL_SIMPLE_GIT_HOOKS: "1"
@@ -67,3 +121,17 @@ jobs:
           name: benchmark-results
           path: benchmark-results/*.txt
           if-no-files-found: error
+
+  windows-watch:
+    name: Windows watch preflight
+    if: github.event_name == 'workflow_dispatch' && inputs.run-windows-watch
+    uses: ./.github/workflows/watch-benchmark-host.yml
+    with:
+      input-source: ${{ inputs['input-source'] }}
+      base-ref: ${{ inputs['base-ref'] }}
+      candidate-ref: ${{ inputs['candidate-ref'] }}
+      artifact-run-id: ${{ inputs['artifact-run-id'] }}
+      artifact-name: ${{ inputs['artifact-name'] }}
+      campaign-id: ${{ inputs['campaign-id'] }}
+      measurement-mode: ${{ inputs['measurement-mode'] }}
+      probe-backend: ${{ inputs['probe-backend'] }}
