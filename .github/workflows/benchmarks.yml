@@ -253,9 +253,11 @@ jobs:
       - name: Read-only host preflight
         shell: pwsh
         run: |
+          $hostDir = "$env:CAMPAIGN_ROOT/hosts/windows-x64-gha"
+          New-Item -ItemType Directory -Force -Path $hostDir | Out-Null
           & bun "$env:HARNESS_ROOT/benchmarks/watch/host-preflight.ts" `
             --host-id windows-x64-gha --bun (Get-Command bun).Source | `
-            Set-Content -Encoding utf8 "$env:CAMPAIGN_ROOT/hosts/windows-x64-gha/host-preflight.json"
+            Set-Content -Encoding utf8 "$hostDir/host-preflight.json"
 
       - name: Build exact revisions and provenance
         shell: pwsh
