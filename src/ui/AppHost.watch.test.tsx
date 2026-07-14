@@ -18,6 +18,14 @@ async function flush(setup: Awaited<ReturnType<typeof testRender>>) {
   });
 }
 
+/** Yield across render and filesystem turns until an asynchronous view update is visible. */
+async function flushUntil(setup: Awaited<ReturnType<typeof testRender>>, predicate: () => boolean) {
+  for (let attempt = 0; attempt < 50 && !predicate(); attempt++) {
+    await flush(setup);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+}
+
 /** Advance the injected watch debounce and settle its asynchronous soft reload. */
 async function advanceWatch(
   setup: Awaited<ReturnType<typeof testRender>>,
@@ -135,6 +143,7 @@ describe("watched input lifecycle", () => {
       watch.setSignature("signature:sidecar");
       watch.emit();
       await advanceWatch(setup, watch, 200);
+      await flushUntil(setup, () => setup.captureCharFrame().includes("Watch rationale updated"));
       expect(setup.captureCharFrame()).toContain("Watch rationale updated");
     } finally {
       await act(async () => setup.renderer.destroy());
