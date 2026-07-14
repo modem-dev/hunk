@@ -236,8 +236,19 @@ jobs:
         shell: pwsh
         run: |
           Set-Location -LiteralPath $env:HARNESS_ROOT
-          & bun test benchmarks/watch src/core/watch.test.ts src/core/watchController.test.ts `
-            src/core/watchObserver.test.ts src/core/watchObserver.fs.test.ts src/core/watchPlan.test.ts
+          $tests = @(
+            Get-ChildItem -LiteralPath benchmarks/watch -Filter *.test.ts | Sort-Object FullName
+            Get-Item src/core/watch.test.ts
+            Get-Item src/core/watchController.test.ts
+            Get-Item src/core/watchObserver.test.ts
+            Get-Item src/core/watchObserver.fs.test.ts
+            Get-Item src/core/watchPlan.test.ts
+          )
+          foreach ($test in $tests) {
+            Write-Output "=== $($test.FullName) ==="
+            & bun test $test.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Windows test failed or crashed: $($test.FullName)" }
+          }
 
       - name: Read-only host preflight
         shell: pwsh
