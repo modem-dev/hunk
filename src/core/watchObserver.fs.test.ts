@@ -239,7 +239,7 @@ describe("filesystem watch observer", () => {
     );
   });
 
-  test("excludes a worktree .git subtree when metadata is observed separately", async () => {
+  test("does not refresh for excluded worktree metadata churn", async () => {
     const directory = await temporaryDirectory();
     const metadataDirectory = join(directory, ".git");
     await mkdir(metadataDirectory);
@@ -259,9 +259,13 @@ describe("filesystem watch observer", () => {
       ],
     };
 
-    const source = await startObserver(plan);
-    await writeFile(metadata, "after");
-    await expectNoEvent(source.nextEvent());
+    // Windows may report only the basename from a recursive callback. That ambiguous hint is
+    // intentionally conservative, so assert the user-visible signature/refresh policy instead.
+    await expectNoRefresh(
+      plan,
+      () => readFileSync(worktreeFile, "utf8"),
+      () => writeFile(metadata, "after"),
+    );
   });
 
   test("close releases handles and suppresses later events", async () => {

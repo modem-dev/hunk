@@ -164,25 +164,36 @@ describe("GitVcsAdapter", () => {
       { kind: "vcs", staged: false, options: { vcs: "git" } },
       { cwd: repo },
     );
-    expect(unstaged.targets.some((target) => target.directory === repo)).toBe(true);
+    expect(
+      unstaged.targets.some(
+        (target) => normalizeComparablePath(target.directory) === normalizeComparablePath(repo),
+      ),
+    ).toBe(true);
     const worktreeTarget = unstaged.targets.find(
-      (target) => target.kind === "directory-tree" && target.directory === repo,
+      (target) =>
+        target.kind === "directory-tree" &&
+        normalizeComparablePath(target.directory) === normalizeComparablePath(repo),
     );
-    expect(worktreeTarget?.kind === "directory-tree" ? worktreeTarget.ignoredRoots : []).toEqual([
-      join(repo, ".git"),
-      join(repo, "generated"),
+    expect(
+      worktreeTarget?.kind === "directory-tree"
+        ? worktreeTarget.ignoredRoots.map(normalizeComparablePath)
+        : [],
+    ).toEqual([
+      normalizeComparablePath(join(repo, ".git")),
+      normalizeComparablePath(join(repo, "generated")),
     ]);
     const metadataTargets = unstaged.targets.filter((target) =>
       target.sources.includes("vcs-metadata"),
     );
-    expect(metadataTargets).toEqual([
-      {
-        kind: "directory-tree",
-        directory: join(repo, ".git"),
-        ignoredRoots: [join(repo, ".git", "objects")],
-        sources: ["vcs-metadata"],
-      },
-    ]);
+    expect(metadataTargets).toHaveLength(1);
+    expect(normalizeComparablePath(metadataTargets[0]!.directory)).toBe(
+      normalizeComparablePath(join(repo, ".git")),
+    );
+    expect(
+      metadataTargets[0]!.kind === "directory-tree"
+        ? metadataTargets[0]!.ignoredRoots.map(normalizeComparablePath)
+        : [],
+    ).toEqual([normalizeComparablePath(join(repo, ".git", "objects"))]);
     const refPlan = operation.watchPlan!(
       {
         kind: "vcs",
@@ -193,14 +204,22 @@ describe("GitVcsAdapter", () => {
       },
       { cwd: repo },
     );
-    expect(refPlan.targets.some((target) => target.directory === repo)).toBe(true);
+    expect(
+      refPlan.targets.some(
+        (target) => normalizeComparablePath(target.directory) === normalizeComparablePath(repo),
+      ),
+    ).toBe(true);
 
     for (const input of [
       { kind: "vcs", staged: true, options: { vcs: "git" } },
       { kind: "vcs", staged: false, range: "HEAD^..HEAD", options: { vcs: "git" } },
     ] satisfies VcsDiffCommandInput[]) {
       const plan = operation.watchPlan!(input, { cwd: repo });
-      expect(plan.targets.some((target) => target.directory === repo)).toBe(false);
+      expect(
+        plan.targets.some(
+          (target) => normalizeComparablePath(target.directory) === normalizeComparablePath(repo),
+        ),
+      ).toBe(false);
       expect(plan.targets.some((target) => target.sources.includes("vcs-metadata"))).toBe(true);
     }
   });
@@ -212,10 +231,14 @@ describe("GitVcsAdapter", () => {
       { cwd: repo },
     );
     const metadataTarget = plan.targets.find((target) => target.sources.includes("vcs-metadata"));
-    expect(metadataTarget?.directory).toBe(join(repo, ".git"));
-    expect(metadataTarget?.kind === "directory-tree" ? metadataTarget.ignoredRoots : []).toEqual([
-      join(repo, ".git", "objects"),
-    ]);
+    expect(normalizeComparablePath(metadataTarget!.directory)).toBe(
+      normalizeComparablePath(join(repo, ".git")),
+    );
+    expect(
+      metadataTarget?.kind === "directory-tree"
+        ? metadataTarget.ignoredRoots.map(normalizeComparablePath)
+        : [],
+    ).toEqual([normalizeComparablePath(join(repo, ".git", "objects"))]);
   });
 
   test("deduplicates common metadata while covering linked-worktree state", () => {
