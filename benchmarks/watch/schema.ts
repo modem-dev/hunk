@@ -93,7 +93,7 @@ export const binaryProvenanceFileSchema = z.object({
 
 export const campaignConfigSchema = z.object({
   schemaVersion: z.literal(1),
-  campaignId: z.string().regex(/^[a-z0-9][a-z0-9._-]*$/),
+  campaignId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/),
   hostId: watchHostIdSchema,
   expectedHarnessSha: gitShaSchema,
   protocolVersion: z.literal(WATCH_PROTOCOL_VERSION),

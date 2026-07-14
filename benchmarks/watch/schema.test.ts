@@ -4,7 +4,7 @@ import { arch, platform, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 import { renderWatchMarkdown } from "./report";
-import { parseWatchRunRecord, verifyBinaryProvenance } from "./schema";
+import { campaignConfigSchema, parseWatchRunRecord, verifyBinaryProvenance } from "./schema";
 import { createTestWatchRunRecord } from "./test-helpers";
 
 let tempRoots: string[] = [];
@@ -12,6 +12,14 @@ let tempRoots: string[] = [];
 afterEach(() => {
   for (const root of tempRoots) rmSync(root, { recursive: true, force: true });
   tempRoots = [];
+});
+
+describe("watch campaign configuration schema", () => {
+  test("accepts canonical UTC campaign IDs", () => {
+    expect(
+      campaignConfigSchema.shape.campaignId.parse("watch-20260714T172412Z-bb653b705-he36fce99"),
+    ).toBe("watch-20260714T172412Z-bb653b705-he36fce99");
+  });
 });
 
 describe("watch campaign raw schema", () => {
