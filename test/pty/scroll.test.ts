@@ -228,6 +228,49 @@ describe("PTY scrolling", () => {
     }
   });
 
+  test("repeated mouse-wheel input remains stable at the end of the review stream", async () => {
+    const fixture = harness.createScrollableFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      cols: 220,
+      rows: 12,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      await session.scrollDown(30);
+      const bottom = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("line18 = 118"),
+        5_000,
+      );
+      expect(bottom).not.toContain("line01 = 101");
+
+      // Keep sending wheel events after the scrollbox has clamped at EOF. This exercises the
+      // culling/unmount path that previously crashed OpenTUI's Windows native renderer.
+      await session.scrollDown(12);
+      const overscrolled = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("line18 = 118"),
+        5_000,
+      );
+      expect(overscrolled).toContain("line18 = 118");
+
+      await session.scrollUp(30);
+      const restored = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("line01 = 101"),
+        5_000,
+      );
+      expect(restored).toContain("line01 = 101");
+    } finally {
+      session.close();
+    }
+  });
+
   test("the first mouse-wheel step still advances content under the always-pinned file header above a collapsed gap", async () => {
     const fixture = harness.createCollapsedTopRepoFixture();
     const session = await harness.launchHunk({
