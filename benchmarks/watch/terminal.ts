@@ -1,7 +1,16 @@
 import { createHash } from "node:crypto";
 import { Terminal as XtermHeadless } from "@xterm/headless";
-import { PersistentTerminal, hasPersistentTerminalSupport } from "ghostty-opentui";
+import type { PersistentTerminal as PersistentTerminalType } from "ghostty-opentui";
 import { WATCH_TERMINAL_GEOMETRY } from "./schema";
+
+// ghostty-opentui's Windows native addon crashes Bun 1.3.14 during process teardown even when
+// unsupported. Windows always uses xterm for ConPTY, so do not load that addon there at all.
+const ghostty = process.platform === "win32" ? null : await import("ghostty-opentui");
+
+/** Return whether the native Ghostty parser can be constructed on this host. */
+function hasGhosttyParserSupport(): boolean {
+  return ghostty?.hasPersistentTerminalSupport() ?? false;
+}
 
 export interface TerminalClock {
   now(): number;
@@ -37,20 +46,20 @@ export interface WatchTerminalLaunchResult {
 
 /** Report the emulator selected on this host for raw provenance. */
 export function terminalScreenParser(): "ghostty-opentui" | "xterm-headless-fallback" {
-  return hasPersistentTerminalSupport() ? "ghostty-opentui" : "xterm-headless-fallback";
+  return hasGhosttyParserSupport() ? "ghostty-opentui" : "xterm-headless-fallback";
 }
 
 /** Hold PTY bytes in one terminal-emulated screen on every supported host. */
 export class EmulatedTerminalScreen {
-  private readonly persistent: PersistentTerminal | null;
+  private readonly persistent: PersistentTerminalType | null;
   private readonly xterm: XtermHeadless | null;
   private readonly chunks: Uint8Array[] = [];
   readonly parser: "ghostty-opentui" | "xterm-headless-fallback";
 
   constructor(options: { forceFallback?: boolean } = {}) {
     this.persistent =
-      hasPersistentTerminalSupport() && !options.forceFallback
-        ? new PersistentTerminal({
+      hasGhosttyParserSupport() && !options.forceFallback
+        ? new ghostty!.PersistentTerminal({
             cols: WATCH_TERMINAL_GEOMETRY.columns,
             rows: WATCH_TERMINAL_GEOMETRY.rows,
           })
