@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve, sep } from "node:path";
+import { join, resolve } from "node:path";
 import {
   buildGitDiffArgs,
   buildGitIgnoredDirectoryArgs,
@@ -41,6 +41,11 @@ function createTempRepo(prefix: string) {
   git(dir, "config", "user.email", "test@example.com");
   git(dir, "config", "commit.gpgSign", "false");
   return dir;
+}
+
+/** Normalize symlinked and Windows short/long temp path spellings before path comparisons. */
+function normalizeComparablePath(path: string) {
+  return realpathSync.native(path).replace(/\\/g, "/");
 }
 
 function makeGitInput(overrides: Partial<VcsDiffCommandInput> = {}): VcsDiffCommandInput {
@@ -154,8 +159,12 @@ describe("listGitIgnoredDirectoryRoots", () => {
 
     const roots = listGitIgnoredDirectoryRoots(makeGitInput(), { cwd: join(repoRoot, "src") });
 
-    expect(roots).toEqual([join(realpathSync(repoRoot), "node_modules")]);
-    expect(roots).not.toContain(join(realpathSync(repoRoot), "src"));
+    expect(roots.map(normalizeComparablePath)).toEqual([
+      normalizeComparablePath(join(repoRoot, "node_modules")),
+    ]);
+    expect(roots.map(normalizeComparablePath)).not.toContain(
+      normalizeComparablePath(join(repoRoot, "src")),
+    );
   });
 
   test("honors nested ignore negation instead of pruning its visible ancestor", () => {
@@ -174,9 +183,9 @@ describe("listGitIgnoredDirectoryRoots", () => {
     writeFileSync(join(repoRoot, "generated", "keep", "hidden.txt"), "ignored file\n");
     writeFileSync(join(repoRoot, "generated", "keep", "visible.txt"), "visible\n");
 
-    expect(listGitIgnoredDirectoryRoots(makeGitInput(), { cwd: repoRoot })).toEqual([
-      join(realpathSync(repoRoot), "generated", "discard"),
-    ]);
+    expect(
+      listGitIgnoredDirectoryRoots(makeGitInput(), { cwd: repoRoot }).map(normalizeComparablePath),
+    ).toEqual([normalizeComparablePath(join(repoRoot, "generated", "discard"))]);
   });
 
   test("honors repository-local excludes", () => {
@@ -185,9 +194,9 @@ describe("listGitIgnoredDirectoryRoots", () => {
     mkdirSync(join(repoRoot, "local-cache", "nested"), { recursive: true });
     writeFileSync(join(repoRoot, "local-cache", "nested", "data"), "ignored\n");
 
-    expect(listGitIgnoredDirectoryRoots(makeGitInput(), { cwd: repoRoot })).toEqual([
-      join(realpathSync(repoRoot), "local-cache"),
-    ]);
+    expect(
+      listGitIgnoredDirectoryRoots(makeGitInput(), { cwd: repoRoot }).map(normalizeComparablePath),
+    ).toEqual([normalizeComparablePath(join(repoRoot, "local-cache"))]);
   });
 
   test("does not prune an ignored parent containing a forced tracked file", () => {
@@ -201,10 +210,13 @@ describe("listGitIgnoredDirectoryRoots", () => {
     git(repoRoot, "commit", "-m", "track forced file");
 
     const roots = listGitIgnoredDirectoryRoots(makeGitInput(), { cwd: repoRoot });
-    const trackedPath = join(realpathSync(repoRoot), "vendor", "tracked.txt");
+    const comparableRoots = roots.map(normalizeComparablePath);
+    const trackedPath = normalizeComparablePath(join(repoRoot, "vendor", "tracked.txt"));
 
-    expect(roots).toEqual([join(realpathSync(repoRoot), "vendor", "generated")]);
-    expect(roots.some((root) => trackedPath.startsWith(`${root}${sep}`))).toBe(false);
+    expect(comparableRoots).toEqual([
+      normalizeComparablePath(join(repoRoot, "vendor", "generated")),
+    ]);
+    expect(comparableRoots.some((root) => trackedPath.startsWith(`${root}/`))).toBe(false);
   });
 
   test("falls back to no pruning when best-effort discovery fails", () => {
@@ -226,16 +238,16 @@ describe("resolveGitMetadata", () => {
     git(repoRoot, "commit", "-m", "initial");
 
     const normal = resolveGitMetadata(makeGitInput(), { cwd: repoRoot });
-    expect(normal.repoRoot).toBe(realpathSync(repoRoot));
+    expect(normalizeComparablePath(normal.repoRoot)).toBe(normalizeComparablePath(repoRoot));
     expect(normal.gitDir).toBe(normal.commonDir);
 
     const linkedRoot = mkdtempSync(join(tmpdir(), "hunk-git-linked-"));
     tempDirs.push(linkedRoot);
     git(repoRoot, "worktree", "add", linkedRoot, "-b", "linked-test");
     const linked = resolveGitMetadata(makeGitInput(), { cwd: linkedRoot });
-    expect(linked.repoRoot).toBe(realpathSync(linkedRoot));
+    expect(normalizeComparablePath(linked.repoRoot)).toBe(normalizeComparablePath(linkedRoot));
     expect(linked.gitDir).not.toBe(linked.commonDir);
-    expect(linked.gitDir).toContain(join("worktrees", "hunk-git-linked-"));
+    expect(normalizeComparablePath(linked.gitDir)).toContain("/worktrees/hunk-git-linked-");
     expect(linked.commonDir).toBe(normal.commonDir);
   });
 });
