@@ -12,6 +12,13 @@ const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
 const gitShaSchema = z.string().regex(/^[a-f0-9]{40,64}$/);
 const timestampSchema = z.string().datetime();
 const revisionSchema = z.enum(["base", "candidate"]);
+export const watchHostIdSchema = z.enum([
+  "macos-arm64-aarmstrong",
+  "linux-x64-sentry-agent",
+  "windows-arm64-hunk-windows",
+  "windows-x64-gha",
+  "macos-arm64-currie",
+]);
 const fixtureLabelSchema = z.enum(["little repo", "big repo"]);
 const runKindSchema = z.enum([
   "cold-startup",
@@ -43,17 +50,52 @@ export const fixtureCountsSchema = z.object({
 
 export const binaryProvenanceFileSchema = z.object({
   schemaVersion: z.literal(1),
-  sha256: sha256Schema,
+  revision: revisionSchema,
   sourceSha: gitShaSchema,
+  executablePath: z.string().min(1),
+  sha256: sha256Schema,
+  sizeBytes: z.number().int().positive(),
   platform: z.enum(["darwin", "linux", "win32"]),
   arch: z.enum(["arm64", "x64"]),
-  builtAt: timestampSchema.optional(),
-  buildLabel: z.string().min(1).optional(),
+  fileArchitecture: z.string().min(1),
+  processArchitecture: z.enum(["arm64", "x64"]),
+  host: z.object({
+    hostname: z.string().min(1),
+    platform: z.enum(["darwin", "linux", "win32"]),
+    release: z.string().min(1),
+    arch: z.enum(["arm64", "x64"]),
+  }),
+  bun: z.object({
+    path: z.string().min(1),
+    version: z.literal("1.3.14"),
+    arch: z.enum(["arm64", "x64"]),
+  }),
+  build: z.object({
+    installCommand: z.array(z.string().min(1)).min(1),
+    command: z.array(z.string().min(1)).min(1),
+    environment: z.record(z.string(), z.string()),
+    startedAt: timestampSchema,
+    finishedAt: timestampSchema,
+    durationMs: z.number().nonnegative(),
+    order: z.number().int().min(1).max(2),
+    stdoutLogPath: z.string().min(1),
+    stderrLogPath: z.string().min(1),
+  }),
+  checksumTool: z.enum(["shasum -a 256", "sha256sum", "Get-FileHash SHA256"]),
+  smoke: z.object({
+    command: z.array(z.string().min(1)).min(1),
+    exitCode: z.literal(0),
+    stdoutSha256: sha256Schema,
+    stderrSha256: sha256Schema,
+    succeeded: z.literal(true),
+  }),
 });
 
 export const campaignConfigSchema = z.object({
   schemaVersion: z.literal(1),
   campaignId: z.string().regex(/^[a-z0-9][a-z0-9._-]*$/),
+  hostId: watchHostIdSchema,
+  expectedHarnessSha: gitShaSchema,
   protocolVersion: z.literal(WATCH_PROTOCOL_VERSION),
   orderSeed: z.string().min(1),
   outputDir: z.string().min(1),
@@ -94,10 +136,7 @@ export type BenchmarkRevision = z.infer<typeof revisionSchema>;
 export type WatchRunKind = z.infer<typeof runKindSchema>;
 export type ObserverBackend = z.infer<typeof observerBackendSchema>;
 
-const binaryProvenanceSchema = binaryProvenanceFileSchema.extend({
-  revision: revisionSchema,
-  executablePath: z.string().min(1),
-});
+const binaryProvenanceSchema = binaryProvenanceFileSchema;
 
 const fixtureSchema = z.object({
   id: z.string().min(1),
@@ -293,6 +332,12 @@ export function verifyBinaryProvenance(
   const provenance = binaryProvenanceFileSchema.parse(
     JSON.parse(readFileSync(provenancePath, "utf8")),
   );
+  if (provenance.revision !== revision) {
+    throw new Error(`${revision} provenance revision mismatch`);
+  }
+  if (!isAbsolute(provenance.executablePath) || provenance.executablePath !== executablePath) {
+    throw new Error(`${revision} provenance executable path mismatch`);
+  }
   if (expectedSourceSha && provenance.sourceSha !== expectedSourceSha.toLowerCase()) {
     throw new Error(`${revision} source SHA does not match campaign configuration`);
   }
@@ -310,7 +355,7 @@ export function verifyBinaryProvenance(
       `${revision} executable architecture ${provenance.arch} does not match host ${arch()}`,
     );
   }
-  return { ...provenance, revision, executablePath };
+  return provenance;
 }
 
 /** Capture stable host metadata repeated in every raw result. */

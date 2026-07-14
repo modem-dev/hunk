@@ -39,7 +39,7 @@ describe("watch campaign execution policy", () => {
   test("requires the protocol Bun version", () => {
     expect(() => assertCampaignBunVersion("1.3.13")).toThrow("1.3.14");
     expect(() => assertCampaignBunVersion("1.3.14")).not.toThrow();
-    expect(() => assertCampaignBunVersion("1.4.0")).not.toThrow();
+    expect(() => assertCampaignBunVersion("1.4.0")).toThrow("exact Bun 1.3.14");
   });
 });
 

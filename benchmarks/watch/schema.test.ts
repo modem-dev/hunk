@@ -51,10 +51,45 @@ describe("watch campaign binary provenance", () => {
     chmodSync(executablePath, 0o755);
     const sourceSha = "b".repeat(40);
     const sha256 = createHash("sha256").update("test executable\n").digest("hex");
-    writeFileSync(
-      provenancePath,
-      JSON.stringify({ schemaVersion: 1, sha256, sourceSha, platform: platform(), arch: arch() }),
-    );
+    const provenance = {
+      schemaVersion: 1,
+      revision: "candidate",
+      sourceSha,
+      executablePath,
+      sha256,
+      sizeBytes: 16,
+      platform: platform(),
+      arch: arch(),
+      fileArchitecture: "test native executable",
+      processArchitecture: arch(),
+      host: { hostname: "test", platform: platform(), release: "test", arch: arch() },
+      bun: { path: join(root, "bun"), version: "1.3.14", arch: arch() },
+      build: {
+        installCommand: [join(root, "bun"), "install", "--frozen-lockfile"],
+        command: [join(root, "bun"), "run", "./scripts/build-bin.ts"],
+        environment: { PATH: root, SKIP_INSTALL_SIMPLE_GIT_HOOKS: "1" },
+        startedAt: "2026-07-14T00:00:00.000Z",
+        finishedAt: "2026-07-14T00:00:01.000Z",
+        durationMs: 1_000,
+        order: 1,
+        stdoutLogPath: join(root, "stdout.log"),
+        stderrLogPath: join(root, "stderr.log"),
+      },
+      checksumTool:
+        process.platform === "darwin"
+          ? "shasum -a 256"
+          : process.platform === "linux"
+            ? "sha256sum"
+            : "Get-FileHash SHA256",
+      smoke: {
+        command: [executablePath, "--help"],
+        exitCode: 0,
+        stdoutSha256: sha256,
+        stderrSha256: sha256,
+        succeeded: true,
+      },
+    };
+    writeFileSync(provenancePath, JSON.stringify(provenance));
 
     expect(
       verifyBinaryProvenance("candidate", executablePath, provenancePath, sourceSha).sha256,
@@ -64,21 +99,12 @@ describe("watch campaign binary provenance", () => {
     ).toThrow("source SHA");
     writeFileSync(
       provenancePath,
-      JSON.stringify({
-        schemaVersion: 1,
-        sha256,
-        sourceSha,
-        platform: platform(),
-        arch: arch() === "arm64" ? "x64" : "arm64",
-      }),
+      JSON.stringify({ ...provenance, arch: arch() === "arm64" ? "x64" : "arm64" }),
     );
     expect(() =>
       verifyBinaryProvenance("candidate", executablePath, provenancePath, sourceSha),
     ).toThrow("architecture");
-    writeFileSync(
-      provenancePath,
-      JSON.stringify({ schemaVersion: 1, sha256, sourceSha, platform: platform(), arch: arch() }),
-    );
+    writeFileSync(provenancePath, JSON.stringify(provenance));
     writeFileSync(executablePath, "changed\n");
     expect(() =>
       verifyBinaryProvenance("candidate", executablePath, provenancePath, sourceSha),
@@ -86,5 +112,13 @@ describe("watch campaign binary provenance", () => {
     expect(() =>
       verifyBinaryProvenance("candidate", "relative-hunk", provenancePath, sourceSha),
     ).toThrow("absolute");
+    const alternateExecutablePath = join(
+      root,
+      process.platform === "win32" ? "other.exe" : "other",
+    );
+    writeFileSync(alternateExecutablePath, "changed\n");
+    expect(() =>
+      verifyBinaryProvenance("candidate", alternateExecutablePath, provenancePath, sourceSha),
+    ).toThrow("provenance executable path mismatch");
   });
 });

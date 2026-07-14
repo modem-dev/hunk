@@ -17,6 +17,7 @@ import {
   type MutationObserver,
 } from "./fixture";
 import { createGitTrace2Environment, finalizeGitTrace2Activity } from "./git-log";
+import { assertWatchHostIdentity } from "./host-identity";
 import { launchObserverProbe } from "./observer-probe";
 import { renderWatchMarkdown } from "./report";
 import { collectIdleSamples } from "./sampler";
@@ -94,23 +95,35 @@ const REFRESH_SCENARIOS = [
   },
 ];
 
-/** Require the campaign runtime pinned by the protocol, while allowing newer patch releases. */
+/** Require the exact campaign runtime pinned by the frozen build protocol. */
 export function assertCampaignBunVersion(version = Bun.version): void {
-  const [major = 0, minor = 0, patch = 0] = version.split(".").map(Number);
-  if (major !== 1 || minor < 3 || (minor === 3 && patch < 14)) {
-    throw new Error(`Watch campaigns require Bun 1.3.14 or newer; found ${version}`);
+  if (version !== "1.3.14") {
+    throw new Error(`Watch campaigns require exact Bun 1.3.14; found ${version}`);
   }
 }
 
-/** Resolve the current harness commit without freezing a campaign SHA in tooling. */
-function readHarnessSha(): string {
+/** Prove the runner is the clean, separately frozen harness commit. */
+function readHarnessSha(expectedHarnessSha: string): string {
+  const harnessRoot = dirname(dirname(import.meta.dir));
+  const status = Bun.spawnSync(["git", "status", "--porcelain", "--untracked-files=no"], {
+    cwd: harnessRoot,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  if (status.exitCode !== 0 || Buffer.from(status.stdout).toString("utf8").trim()) {
+    throw new Error("Benchmark harness tracked state must be clean");
+  }
   const result = Bun.spawnSync(["git", "rev-parse", "HEAD"], {
-    cwd: dirname(dirname(import.meta.dir)),
+    cwd: harnessRoot,
     stdout: "pipe",
     stderr: "pipe",
   });
   if (result.exitCode !== 0) throw new Error("Unable to resolve benchmark harness SHA");
-  return Buffer.from(result.stdout).toString("utf8").trim();
+  const actual = Buffer.from(result.stdout).toString("utf8").trim().toLowerCase();
+  if (actual !== expectedHarnessSha.toLowerCase()) {
+    throw new Error(`Benchmark harness SHA mismatch: ${actual} != ${expectedHarnessSha}`);
+  }
+  return actual;
 }
 
 /** Reserve a loopback port briefly, then release it for one isolated daemon. */
@@ -800,8 +813,9 @@ export async function runCampaign(
     }
     if (config.refreshTrials !== 5) throw new Error("Final campaign requires five refresh trials");
   }
-  const harnessSha = readHarnessSha();
-  const host = collectHostMetadata();
+  const harnessSha = readHarnessSha(config.expectedHarnessSha);
+  assertWatchHostIdentity(config.hostId);
+  const host = collectHostMetadata(config.hostId);
   const binaries = {
     base: verifyBinaryProvenance(
       "base",
@@ -1039,7 +1053,7 @@ export async function runCampaign(
     }
   }
 
-  const reportPath = join(config.outputDir, "reports", `${host.hostId}.md`);
+  const reportPath = join(config.outputDir, "summaries", `${host.hostId}.md`);
   mkdirSync(dirname(reportPath), { recursive: true });
   writeFileSync(reportPath, renderWatchMarkdown(records));
   return records;

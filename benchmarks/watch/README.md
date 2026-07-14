@@ -2,6 +2,43 @@
 
 This campaign compares the polling base binary with the evented candidate binary. The portable fixtures are sanitized snapshots of Hunk (`little repo`) and modem (`big repo`); reports use only those two labels after this explanation. Campaign SHAs belong in the separately frozen campaign manifest, never in this tooling.
 
+## Frozen campaign inputs
+
+Only Curie (`curie`, with the documented `currie` alias) freezes a campaign. Wait for the harness and fixture work to be committed and for explicit execution approval before running this command; it fetches `origin`, requires a clean tracked tree, and freezes exact `origin/main`, `origin/elucid/file-watch`, fixture, and harness SHAs. Untracked paths are recorded but never copied. Existing campaign directories or `refs/hunk-benchmark/<campaign-id>/*` refs are never replaced.
+
+```sh
+bun run bench:watch:freeze -- \
+  --repo /absolute/path/to/hunk \
+  --campaigns-dir /absolute/path/to/campaigns \
+  --little-fixture /absolute/path/to/little-repo-artifacts \
+  --big-fixture /absolute/path/to/big-repo-artifacts \
+  --modem-source-sha <exact-modem-fixture-source-sha>
+```
+
+The result is `watch-<UTC compact>-b<base8>-h<head8>`. Its `inputs/hunk.bundle` advertises stable base, candidate, harness, and little-fixture-source refs; fixture directories retain their own source bundles. `inputs/SHA256SUMS` is a complete inventory. No remote needs GitHub credentials.
+
+Inspect host requirements without contacting or changing hosts, then stage only after a campaign is frozen:
+
+```sh
+bun run bench:watch:preflight -- --host-id macos-arm64-aarmstrong --dry-run
+# Explicit preparation on aarmstrong only; creates a new version-owned path and never replaces one:
+bun run bench:watch:preflight -- --host-id macos-arm64-aarmstrong --install-isolated-bun
+bun run bench:watch:stage -- --campaign-root /absolute/path/to/campaign --host-id linux-x64-sentry-agent --dry-run
+```
+
+Non-dry-run staging first verifies an existing destination manifest checksum. It treats an exact match as already staged, resumes only an incoming path whose initialization marker matches the campaign ID and manifest checksum, and refuses every other existing final or incoming path. It transfers only the manifest, checksummed inputs, and report shell. On the host, materialize the frozen harness ref from `inputs/hunk.bundle`, install its dependencies with `SKIP_INSTALL_SIMPLE_GIT_HOOKS=1 <absolute-bun> install --frozen-lockfile`, run the read-only preflight, then invoke the host build from that exact harness checkout:
+
+```sh
+/absolute/bun-1.3.14 benchmarks/watch/build-host.ts \
+  --campaign-root /absolute/campaigns/<id> \
+  --host-id <host-id> \
+  --bun /absolute/bun-1.3.14
+```
+
+The host builder verifies all checksums and bundle refs, creates separate `build/base` and `build/candidate` checkouts with `core.autocrlf=false`, and runs `SKIP_INSTALL_SIMPLE_GIT_HOOKS=1 <absolute-bun> install --frozen-lockfile` followed by the package command’s exact implementation, `<absolute-bun> run ./scripts/build-bin.ts`, without an intermediate PATH-resolved `bun`. The exact Bun directory is prepended to `PATH` for `scripts/build-bin.ts`'s inner process. Build order alternates by campaign/host seed. Immutable binaries, stream logs, and rich provenance are written under `hosts/<host-id>/`; reviewed fixture checkouts remain separate under `work/fixtures/`.
+
+`windows-x64-gha` uses the manually dispatched `.github/workflows/watch-benchmark-host.yml`, pinned setup-bun 1.3.14, and artifact upload. The workflow only builds and records provenance; it does not run final benchmark cells.
+
 ## Portable fixtures
 
 Create each fixture from a local Git repository or bundle containing the exact frozen source commit and a currie-produced JSONL directory manifest. Each JSONL line is either a path string or `{ "path": "..." }`. The builder copies only committed Git objects from the selected snapshot. It does not copy remotes, credentials, ignored contents, or unrelated untracked files.
@@ -46,17 +83,7 @@ The primary comparison uses warm-cache measurements after the explicit warmup. O
 
 ## Campaign runner
 
-The committed runner requires Bun 1.3.14 or newer, invokes each compiled binary only by its absolute path, and detects readiness on a 120×30 terminal-emulated screen (Ghostty where supported, with a headless xterm fallback for ConPTY). Each binary has a separate provenance JSON file:
-
-```json
-{
-  "schemaVersion": 1,
-  "sha256": "<compiled-binary-sha256>",
-  "sourceSha": "<full-source-sha>",
-  "platform": "darwin",
-  "arch": "arm64"
-}
-```
+The committed runner requires exact Bun 1.3.14, invokes each compiled binary only by the absolute path repeated in its provenance, and detects readiness on a 120×30 terminal-emulated screen (Ghostty where supported, with a headless xterm fallback for ConPTY). Host-generated provenance records the revision/source SHA, executable absolute path/checksum/size, native file or PE architecture, process and host architecture, exact Bun path/version/architecture, install/build commands and environment, timestamps/duration/order, stream log paths, and a successful absolute-path `--help` smoke invocation.
 
 Create a host-local campaign config without committing final campaign SHAs into the harness:
 
@@ -64,6 +91,8 @@ Create a host-local campaign config without committing final campaign SHAs into 
 {
   "schemaVersion": 1,
   "campaignId": "watch-campaign-host-01",
+  "hostId": "linux-x64-sentry-agent",
+  "expectedHarnessSha": "<full-harness-sha>",
   "protocolVersion": "watch-v1",
   "orderSeed": "<stored-campaign-order-seed>",
   "outputDir": "/absolute/path/to/results",
@@ -104,7 +133,7 @@ bun run bench:watch -- --config /absolute/path/to/campaign.json
 bun run bench:watch -- --config /absolute/path/to/campaign.json --preflight
 bun run bench:watch:render -- \
   --raw /absolute/path/to/results/raw/<host-id> \
-  --output /absolute/path/to/results/reports/<host-id>.md
+  --output /absolute/path/to/results/summaries/<host-id>.md
 ```
 
 The preflight uses only the first fixture, one base/candidate startup launch, one idle run per revision capped at two seconds, one Git-activity run per revision, and one refresh trial per scenario. It verifies the real PTY/ConPTY, daemon, observer, sampler, mutation, cleanup, raw-schema, and report paths without producing final campaign measurements.

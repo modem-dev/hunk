@@ -12,9 +12,10 @@ const legacyOutfile = path.join(distDir, process.platform === "win32" ? "otdiff.
 mkdirSync(distDir, { recursive: true });
 rmSync(legacyOutfile, { force: true });
 
+// The script is launched by Bun; reuse that exact executable instead of resolving an ambient PATH entry.
 const proc = Bun.spawnSync(
   [
-    "bun",
+    process.execPath,
     "build",
     "--compile",
     "--no-compile-autoload-bunfig",
