@@ -29,6 +29,17 @@ describe("paths", () => {
     expect(resolveHunkStatePath(env)).toBe(join("/tmp", "home", ".config", "hunk", "state.json"));
   });
 
+  test("falls back to USERPROFILE when HOME is unavailable", () => {
+    const env = { USERPROFILE: join("/tmp", "windows-profile") } as NodeJS.ProcessEnv;
+
+    expect(resolveGlobalConfigPath(env)).toBe(
+      join("/tmp", "windows-profile", ".config", "hunk", "config.toml"),
+    );
+    expect(resolveHunkStatePath(env)).toBe(
+      join("/tmp", "windows-profile", ".config", "hunk", "state.json"),
+    );
+  });
+
   test("locates the bundled Hunk review skill from source", () => {
     const resolvedPath = resolveBundledHunkReviewSkillPath([import.meta.dir]);
 

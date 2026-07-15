@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.17.1
+
+### Patch Changes
+
+- cb8d626: Prevent Windows crashes when scrolling to the end of a diff and suppress Yoga NaN warning spam in Apple Silicon npm installs by upgrading OpenTUI to 0.4.3.
+- 45f6402: Reduced retained memory for large reviews by lazily materializing cached geometry row plans only when copy selection needs them.
+- 7ae443d: Fix global config discovery on Windows when `HOME` is unavailable.
+
 ## 0.17.0
 
 ### Minor Changes
