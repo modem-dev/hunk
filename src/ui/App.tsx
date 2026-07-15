@@ -47,6 +47,9 @@ const LazyAgentSkillDialog = lazy(async () => ({
 const LazyHelpDialog = lazy(async () => ({
   default: (await import("./components/chrome/HelpDialog")).HelpDialog,
 }));
+const LazyFeedbackDialog = lazy(async () => ({
+  default: (await import("./components/chrome/FeedbackDialog")).FeedbackDialog,
+}));
 const LazyMenuDropdown = lazy(async () => ({
   default: (await import("./components/chrome/MenuDropdown")).MenuDropdown,
 }));
@@ -147,6 +150,7 @@ export function App({
   const [forceSidebarOpen, setForceSidebarOpen] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [showAgentSkill, setShowAgentSkill] = useState(false);
+  const [showFeedback, setShowFeedback] = useState(false);
   const [focusArea, setFocusArea] = useState<FocusArea>("files");
   const [activeAddNoteTarget, setActiveAddNoteTarget] = useState<ActiveAddNoteTarget | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(34);
@@ -697,6 +701,16 @@ export function App({
     setShowHelp((current) => !current);
   }, []);
 
+  /** Close the feedback dialog. */
+  const closeFeedback = useCallback(() => {
+    setShowFeedback(false);
+  }, []);
+
+  /** Toggle the feedback dialog. */
+  const toggleFeedback = useCallback(() => {
+    setShowFeedback((current) => !current);
+  }, []);
+
   /** Focus the file list/sidebar navigation area. */
   const focusFiles = useCallback(() => {
     setFocusArea("files");
@@ -766,6 +780,7 @@ export function App({
         openThemeSelector,
         copyDecorations,
         showAgentNotes,
+        showFeedback,
         showHelp,
         showHunkHeaders,
         showLineNumbers,
@@ -773,6 +788,7 @@ export function App({
         renderSidebar,
         toggleCopyDecorations,
         toggleAgentNotes,
+        toggleFeedback,
         toggleFocusArea,
         openAgentSkill,
         toggleHelp,
@@ -799,12 +815,14 @@ export function App({
       triggerRefreshCurrentInput,
       toggleCopyDecorations,
       showAgentNotes,
+      showFeedback,
       showHelp,
       showHunkHeaders,
       showLineNumbers,
       showMenuBar,
       renderSidebar,
       toggleAgentNotes,
+      toggleFeedback,
       toggleFocusArea,
       toggleHelp,
       toggleHunkHeaders,
@@ -838,6 +856,7 @@ export function App({
     activateCurrentMenuItem,
     canRefreshCurrentInput,
     closeAgentSkill,
+    closeFeedback,
     closeHelp,
     closeMenu,
     acceptThemeSelector,
@@ -859,11 +878,13 @@ export function App({
     scrollDiff,
     selectLayoutMode,
     showAgentSkill,
+    showFeedback,
     showHelp,
     startUserNote: () => startUserNote(),
     switchMenu,
     themeSelectorOpen: themeSelectorState.open,
     toggleAgentNotes,
+    toggleFeedback,
     toggleFocusArea,
     toggleGapForSelectedHunk: review.toggleSelectedHunkGap,
     toggleHelp,
@@ -1141,6 +1162,17 @@ export function App({
             onClose={closeThemeSelector}
             onPickItem={pickThemeSelectorItem}
             onScroll={moveThemeSelector}
+          />
+        </Suspense>
+      ) : null}
+
+      {!pagerMode && showFeedback ? (
+        <Suspense fallback={null}>
+          <LazyFeedbackDialog
+            terminalHeight={terminal.height}
+            terminalWidth={terminal.width}
+            theme={activeTheme}
+            onClose={closeFeedback}
           />
         </Suspense>
       ) : null}
