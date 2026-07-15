@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { blendHex, contrastRatio, hexColorDistance } from "./lib/color";
-import { BUNDLED_SHIKI_THEME_IDS } from "./lib/shikiThemes";
+import { BUNDLED_HIGHLIGHTER_THEME_IDS } from "./lib/shikiThemes";
 import {
   availableThemeIds,
   availableThemes,
@@ -57,10 +57,10 @@ describe("themes", () => {
   });
 
   test("exposes every bundled theme as a selectable theme", () => {
-    expect(availableThemeIds()).toEqual([...BUNDLED_SHIKI_THEME_IDS]);
-    expect(availableThemes().map((theme) => theme.id)).toEqual([...BUNDLED_SHIKI_THEME_IDS]);
+    expect(availableThemeIds()).toEqual([...BUNDLED_HIGHLIGHTER_THEME_IDS]);
+    expect(availableThemes().map((theme) => theme.id)).toEqual([...BUNDLED_HIGHLIGHTER_THEME_IDS]);
 
-    for (const themeId of BUNDLED_SHIKI_THEME_IDS) {
+    for (const themeId of BUNDLED_HIGHLIGHTER_THEME_IDS) {
       const theme = resolveTheme(themeId, null);
       expect(theme.id).toBe(themeId);
       expect(theme.label).toBe(themeId);
@@ -88,8 +88,33 @@ describe("themes", () => {
     expect(light.removedBg).toBe(blendHex("#cf222e", "#ffffff", 0.12));
   });
 
+  test("exposes Pierre's Diffs.com default themes", () => {
+    const dark = resolveTheme("pierre-dark", null);
+    const light = resolveTheme("pierre-light", null);
+
+    expect(dark).toMatchObject({
+      id: "pierre-dark",
+      appearance: "dark",
+      background: "#0a0a0a",
+      syntaxTheme: "pierre-dark",
+      addedSignColor: "#07c480",
+      removedSignColor: "#ff2e3f",
+    });
+    expect(dark.syntaxColors.default).toBe("#fafafa");
+
+    expect(light).toMatchObject({
+      id: "pierre-light",
+      appearance: "light",
+      background: "#ffffff",
+      syntaxTheme: "pierre-light",
+      addedSignColor: "#18a46c",
+      removedSignColor: "#d52c36",
+    });
+    expect(light.syntaxColors.default).toBe("#0a0a0a");
+  });
+
   test("contrast keeps every bundled theme diff row text and gutters readable", () => {
-    const failures = BUNDLED_SHIKI_THEME_IDS.flatMap((themeId) => {
+    const failures = BUNDLED_HIGHLIGHTER_THEME_IDS.flatMap((themeId) => {
       const theme = resolveTheme(themeId, null);
       return [
         ...themeContrastFailures([
@@ -146,7 +171,7 @@ describe("themes", () => {
   });
 
   test("contrast keeps fallback syntax colors readable on every bundled theme", () => {
-    const failures = BUNDLED_SHIKI_THEME_IDS.flatMap((themeId) => {
+    const failures = BUNDLED_HIGHLIGHTER_THEME_IDS.flatMap((themeId) => {
       const theme = resolveTheme(themeId, null);
       return themeContrastFailures(
         SYNTAX_ROLES.flatMap((role) => [
@@ -173,7 +198,7 @@ describe("themes", () => {
   });
 
   test("contrast keeps every bundled theme chrome colors readable", () => {
-    const failures = BUNDLED_SHIKI_THEME_IDS.flatMap((themeId) => {
+    const failures = BUNDLED_HIGHLIGHTER_THEME_IDS.flatMap((themeId) => {
       const theme = resolveTheme(themeId, null);
       const sidebarForegrounds = [
         ["badgeAdded", theme.badgeAdded],

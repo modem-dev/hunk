@@ -1,3 +1,5 @@
+export const BUNDLED_PIERRE_THEME_IDS = ["pierre-dark", "pierre-light"] as const;
+
 export const BUNDLED_SHIKI_THEME_IDS = [
   "andromeeda",
   "aurora-x",
@@ -66,7 +68,18 @@ export const BUNDLED_SHIKI_THEME_IDS = [
   "vitesse-light",
 ] as const;
 
+export type BundledPierreThemeId = (typeof BUNDLED_PIERRE_THEME_IDS)[number];
 export type BundledShikiThemeId = (typeof BUNDLED_SHIKI_THEME_IDS)[number];
+export type BundledHighlighterThemeId = BundledPierreThemeId | BundledShikiThemeId;
+
+// Keep Pierre's Diffs.com themes in the same alphabetical selector order as Shiki ids.
+const PIERRE_THEME_INSERTION_INDEX = BUNDLED_SHIKI_THEME_IDS.indexOf("plastic");
+
+export const BUNDLED_HIGHLIGHTER_THEME_IDS: readonly BundledHighlighterThemeId[] = [
+  ...BUNDLED_SHIKI_THEME_IDS.slice(0, PIERRE_THEME_INSERTION_INDEX),
+  ...BUNDLED_PIERRE_THEME_IDS,
+  ...BUNDLED_SHIKI_THEME_IDS.slice(PIERRE_THEME_INSERTION_INDEX),
+];
 
 export const LEGACY_THEME_ID_ALIASES = {
   graphite: "github-dark-default",
@@ -83,13 +96,17 @@ export function resolveLegacyThemeId(themeId: string | undefined) {
     : undefined;
 }
 
-export interface BundledShikiThemeDiffColors {
+export interface BundledHighlighterThemeDiffColors {
   added?: string;
   removed?: string;
   modified?: string;
 }
 
-export const BUNDLED_SHIKI_THEME_BACKGROUNDS: Record<BundledShikiThemeId, string> = {
+export type BundledShikiThemeDiffColors = BundledHighlighterThemeDiffColors;
+
+export const BUNDLED_SHIKI_THEME_BACKGROUNDS: Record<BundledHighlighterThemeId, string> = {
+  "pierre-dark": "#0a0a0a",
+  "pierre-light": "#ffffff",
   andromeeda: "#23262e",
   "aurora-x": "#07090f",
   "ayu-dark": "#10141c",
@@ -157,7 +174,9 @@ export const BUNDLED_SHIKI_THEME_BACKGROUNDS: Record<BundledShikiThemeId, string
   "vitesse-light": "#ffffff",
 };
 
-export const BUNDLED_SHIKI_THEME_FOREGROUNDS: Partial<Record<BundledShikiThemeId, string>> = {
+export const BUNDLED_SHIKI_THEME_FOREGROUNDS: Partial<Record<BundledHighlighterThemeId, string>> = {
+  "pierre-dark": "#fafafa",
+  "pierre-light": "#0a0a0a",
   andromeeda: "#d5ced9",
   "ayu-dark": "#bfbdb6",
   "ayu-light": "#5c6166",
@@ -221,8 +240,10 @@ export const BUNDLED_SHIKI_THEME_FOREGROUNDS: Partial<Record<BundledShikiThemeId
 };
 
 export const BUNDLED_SHIKI_THEME_DIFF_COLORS: Partial<
-  Record<BundledShikiThemeId, BundledShikiThemeDiffColors>
+  Record<BundledHighlighterThemeId, BundledHighlighterThemeDiffColors>
 > = {
+  "pierre-dark": { added: "#07c480", removed: "#ff2e3f", modified: "#009fff" },
+  "pierre-light": { added: "#18a46c", removed: "#d52c36", modified: "#009fff" },
   andromeeda: { added: "#96e072", removed: "#ee5d43", modified: "#7cb7ff" },
   "aurora-x": { added: "#63d188", removed: "#dd5074", modified: "#c778db" },
   "ayu-dark": { added: "#70bf56", removed: "#f26d78", modified: "#73b8ff" },
@@ -284,23 +305,23 @@ export const BUNDLED_SHIKI_THEME_DIFF_COLORS: Partial<
   "vitesse-light": { added: "#1e754f", removed: "#ab5959", modified: "#296aa3" },
 };
 
-/** Return the editor surface declared by a bundled Shiki theme, when Hunk knows it. */
+/** Return the editor surface declared by a bundled Shiki/Pierre theme, when Hunk knows it. */
 export function getBundledShikiThemeBackground(themeId: string | undefined) {
   return themeId && themeId in BUNDLED_SHIKI_THEME_BACKGROUNDS
-    ? BUNDLED_SHIKI_THEME_BACKGROUNDS[themeId as BundledShikiThemeId]
+    ? BUNDLED_SHIKI_THEME_BACKGROUNDS[themeId as BundledHighlighterThemeId]
     : undefined;
 }
 
-/** Return the editor foreground declared by a bundled Shiki theme, when Hunk knows it. */
+/** Return the editor foreground declared by a bundled Shiki/Pierre theme, when Hunk knows it. */
 export function getBundledShikiThemeForeground(themeId: string | undefined) {
   return themeId && themeId in BUNDLED_SHIKI_THEME_FOREGROUNDS
-    ? BUNDLED_SHIKI_THEME_FOREGROUNDS[themeId as BundledShikiThemeId]
+    ? BUNDLED_SHIKI_THEME_FOREGROUNDS[themeId as BundledHighlighterThemeId]
     : undefined;
 }
 
-/** Return semantic diff colors declared by a bundled Shiki theme, when Hunk knows them. */
+/** Return semantic diff colors declared by a bundled Shiki/Pierre theme, when Hunk knows them. */
 export function getBundledShikiThemeDiffColors(themeId: string | undefined) {
   return themeId && themeId in BUNDLED_SHIKI_THEME_DIFF_COLORS
-    ? BUNDLED_SHIKI_THEME_DIFF_COLORS[themeId as BundledShikiThemeId]
+    ? BUNDLED_SHIKI_THEME_DIFF_COLORS[themeId as BundledHighlighterThemeId]
     : undefined;
 }

@@ -156,24 +156,27 @@ describe("config resolution", () => {
     });
   });
 
-  test.each(["github-dark-default", "github-light-default", "dracula", "catppuccin-mocha"])(
-    "accepts custom theme base id: %s",
-    (base) => {
-      const home = createTempDir("hunk-config-home-");
-      mkdirSync(join(home, ".config", "hunk"), { recursive: true });
-      writeFileSync(
-        join(home, ".config", "hunk", "config.toml"),
-        ["[custom_theme]", `base = "${base}"`].join("\n"),
-      );
+  test.each([
+    "github-dark-default",
+    "github-light-default",
+    "dracula",
+    "catppuccin-mocha",
+    "pierre-dark",
+  ])("accepts custom theme base id: %s", (base) => {
+    const home = createTempDir("hunk-config-home-");
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(
+      join(home, ".config", "hunk", "config.toml"),
+      ["[custom_theme]", `base = "${base}"`].join("\n"),
+    );
 
-      const resolved = resolveConfiguredCliInput(createPatchPagerInput(), {
-        cwd: createTempDir("hunk-config-cwd-"),
-        env: { HOME: home },
-      });
+    const resolved = resolveConfiguredCliInput(createPatchPagerInput(), {
+      cwd: createTempDir("hunk-config-cwd-"),
+      env: { HOME: home },
+    });
 
-      expect(resolved.customTheme).toEqual({ base });
-    },
-  );
+    expect(resolved.customTheme).toEqual({ base });
+  });
 
   test("normalizes legacy custom theme base ids", () => {
     const home = createTempDir("hunk-config-home-");
