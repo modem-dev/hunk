@@ -57,6 +57,65 @@ describe("measureDiffSectionGeometry", () => {
     expect(differentAddNotePolicy).not.toBe(first);
   });
 
+  test("caches planned rows after the lazy geometry property is first read", () => {
+    const geometry = measureDiffSectionGeometry(
+      createTestDiffFile(),
+      "split",
+      true,
+      theme,
+      [],
+      120,
+      true,
+      false,
+    );
+
+    const plannedRows = geometry.plannedRows;
+
+    expect(plannedRows).toHaveLength(geometry.rowBounds.length);
+    expect(geometry.plannedRows).toBe(plannedRows);
+  });
+
+  test("keeps lazy planned rows aligned with bounds after caller-owned inputs mutate", () => {
+    const before = Array.from({ length: 30 }, (_, index) => `line ${index + 1}\n`).join("");
+    const after = before.replace("line 5\n", "line 5 modified\n");
+    const file = createTestDiffFile({ after, before, id: "snapshot", path: "snapshot.txt" });
+    const expandedKeys = new Set(["trailing:0"]);
+    const visibleAgentNotes: VisibleAgentNote[] = [
+      {
+        id: "original-note",
+        annotation: { newRange: [5, 5], summary: "Original note." },
+      },
+    ];
+    const geometry = measureDiffSectionGeometry(
+      file,
+      "split",
+      true,
+      theme,
+      visibleAgentNotes,
+      120,
+      true,
+      false,
+      expandedKeys,
+      { kind: "loaded", text: after },
+    );
+
+    expandedKeys.clear();
+    visibleAgentNotes[0]!.annotation.newRange = [1, 1];
+    visibleAgentNotes[0]!.annotation.summary = "Mutated after geometry measurement.";
+    visibleAgentNotes.push({
+      id: "late-note",
+      annotation: { newRange: [1, 1], summary: "Added after geometry measurement." },
+    });
+
+    const plannedRows = geometry.plannedRows;
+    expect(plannedRows.map((row) => row.key)).toEqual(
+      geometry.rowBounds.map((bounds) => bounds.key),
+    );
+    expect(plannedRows.find((row) => row.kind === "inline-note")?.annotation.summary).toBe(
+      "Original note.",
+    );
+  });
+
   test("replaces stale width variants while retaining separate base and note slots", () => {
     const file = createTestDiffFile();
     const visibleAgentNotes: VisibleAgentNote[] = [

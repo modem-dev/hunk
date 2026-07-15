@@ -317,10 +317,11 @@ export function renderCopySelectionText({
       (context.layout === "split" && start.kind === "review-row"
         ? resolveCopySelectionSide(start.column, context.layout, context.width)
         : undefined);
+    const plannedRows = geometry.plannedRows;
 
     for (let rowIndex = 0; rowIndex < geometry.rowBounds.length; rowIndex += 1) {
       const rowBounds = geometry.rowBounds[rowIndex]!;
-      const row = geometry.plannedRows[rowIndex];
+      const row = plannedRows[rowIndex];
       if (!row || rowBounds.height <= 0) {
         continue;
       }
