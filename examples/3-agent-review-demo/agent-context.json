@@ -1,5 +1,7 @@
 {
   "version": 1,
+  "title": "feat(search): ranked command-palette matching with query normalization",
+  "description": "## Overview\n\nThis changeset improves the command-palette search experience by introducing a shared normalization step and a ranked scoring model.\n\n### What changed\n\n- `normalize.ts` adds a single `normalizeQuery` helper that strips extra whitespace, lowercases the input, and expands dashed shortcut terms (e.g. `short-cuts` → `shortcuts`) before any matching happens.\n- `search.ts` now scores each candidate and sorts by score so that prefix and exact keyword matches outrank weaker substring hits. The scoring tiers are `4` (exact), `3` (prefix), `2` (keyword), `1` (substring), with zero-score items filtered out.\n- `index.ts` caps the preview at the top three results — once ranking is reliable, flooding the UI with weaker matches adds noise rather than value.\n\n### Why it matters\n\nBefore this change the palette returned the first loose substring list, making every match look equally good. A user typing `\"git\"` would see unrelated commands ranked alongside `git commit`. The new scorer consistently surfaces the most obvious intent at the top.",
   "summary": "Improves command-palette matching by normalizing query text and ranking stronger matches ahead of loose substring hits.",
   "files": [
     {

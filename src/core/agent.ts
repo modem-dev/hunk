@@ -107,8 +107,30 @@ export async function loadAgentContext(
 
   return {
     version: typeof parsed.version === "number" ? parsed.version : 1,
+    title: typeof parsed.title === "string" ? parsed.title : undefined,
     summary: typeof parsed.summary === "string" ? parsed.summary : undefined,
+    description: typeof parsed.description === "string" ? parsed.description : undefined,
     files,
+  };
+}
+
+/**
+ * Resolve the changeset-level overview fields. These carry only what the agent
+ * set explicitly: `agentTitle`/`agentDescription` reflect the new PR-style
+ * fields, and `agentSummary` keeps the legacy summary. The overview body falls
+ * back to the summary at render time (`description ?? summary`); keeping the
+ * fallback out of here means auto-open can key off the explicit fields alone
+ * and a legacy summary-only sidecar does not pop the overlay on load.
+ */
+export function agentOverviewFields(agentContext: AgentContext | null): {
+  agentTitle?: string;
+  agentSummary?: string;
+  agentDescription?: string;
+} {
+  return {
+    agentTitle: agentContext?.title,
+    agentSummary: agentContext?.summary,
+    agentDescription: agentContext?.description,
   };
 }
 

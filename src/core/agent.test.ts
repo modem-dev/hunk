@@ -1,8 +1,8 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, it, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { findAgentFileContext, loadAgentContext } from "./agent";
+import { agentOverviewFields, findAgentFileContext, loadAgentContext } from "./agent";
 
 const tempDirs: string[] = [];
 
@@ -13,6 +13,30 @@ afterEach(() => {
       rmSync(dir, { recursive: true, force: true });
     }
   }
+});
+
+it("agentOverviewFields exposes title, description, and summary independently", () => {
+  expect(
+    agentOverviewFields({ version: 1, title: "T", description: "D", summary: "S", files: [] }),
+  ).toEqual({ agentTitle: "T", agentSummary: "S", agentDescription: "D" });
+});
+
+it("agentOverviewFields keeps a legacy summary without promoting it to description", () => {
+  // The summary stays available for the overview body fallback, but it must not
+  // become the description — otherwise a summary-only sidecar would auto-open.
+  expect(agentOverviewFields({ version: 1, summary: "S", files: [] })).toEqual({
+    agentTitle: undefined,
+    agentSummary: "S",
+    agentDescription: undefined,
+  });
+});
+
+it("agentOverviewFields handles a null context", () => {
+  expect(agentOverviewFields(null)).toEqual({
+    agentTitle: undefined,
+    agentSummary: undefined,
+    agentDescription: undefined,
+  });
 });
 
 describe("agent context", () => {

@@ -1,53 +1,8 @@
 import { sanitizeTerminalLine } from "../../lib/terminalText";
-import { fitText } from "./text";
+import { fitText, wrapText } from "./text";
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
-}
-
-/** Wrap plain text to a fixed terminal width, breaking long tokens when needed. */
-export function wrapText(text: string, width: number) {
-  if (width <= 0) {
-    return [""];
-  }
-
-  const normalized = sanitizeTerminalLine(text).trim().replace(/\s+/g, " ");
-  if (normalized.length === 0) {
-    return [""];
-  }
-
-  const words = normalized.split(" ");
-  const lines: string[] = [];
-  let current = "";
-
-  const pushCurrent = () => {
-    if (current.length > 0) {
-      lines.push(current);
-      current = "";
-    }
-  };
-
-  for (const word of words) {
-    if (word.length > width) {
-      pushCurrent();
-      for (let offset = 0; offset < word.length; offset += width) {
-        lines.push(word.slice(offset, offset + width));
-      }
-      continue;
-    }
-
-    const next = current.length === 0 ? word : `${current} ${word}`;
-    if (next.length <= width) {
-      current = next;
-      continue;
-    }
-
-    pushCurrent();
-    current = word;
-  }
-
-  pushCurrent();
-  return lines.length > 0 ? lines : [""];
 }
 
 /** Title shown above an agent note — author name if present, otherwise "AI note", with optional "i/n" suffix. */

@@ -77,6 +77,9 @@ export interface UseAppKeyboardShortcutsOptions {
   selectLayoutMode: (mode: LayoutMode) => void;
   showAgentSkill: boolean;
   showHelp: boolean;
+  showOverview: boolean;
+  closeOverview: () => void;
+  toggleOverview: () => void;
   startUserNote: () => void;
   switchMenu: (delta: number) => void;
   toggleAgentNotes: () => void;
@@ -121,6 +124,9 @@ export function useAppKeyboardShortcuts({
   selectLayoutMode,
   showAgentSkill,
   showHelp,
+  showOverview,
+  closeOverview,
+  toggleOverview,
   startUserNote,
   switchMenu,
   toggleAgentNotes,
@@ -141,6 +147,7 @@ export function useAppKeyboardShortcuts({
   const pagerModeRef = useRef(pagerMode);
   const showAgentSkillRef = useRef(showAgentSkill);
   const showHelpRef = useRef(showHelp);
+  const showOverviewRef = useRef(showOverview);
   const themeSelectorOpenRef = useRef(themeSelectorOpen);
 
   activeMenuIdRef.current = activeMenuId;
@@ -148,6 +155,7 @@ export function useAppKeyboardShortcuts({
   pagerModeRef.current = pagerMode;
   showAgentSkillRef.current = showAgentSkill;
   showHelpRef.current = showHelp;
+  showOverviewRef.current = showOverview;
   themeSelectorOpenRef.current = themeSelectorOpen;
 
   const resolveJumpShortcut = (key: KeyEvent): JumpShortcut | null => {
@@ -279,6 +287,11 @@ export function useAppKeyboardShortcuts({
 
     if (showHelpRef.current) {
       closeHelp();
+      return true;
+    }
+
+    if (showOverviewRef.current) {
+      closeOverview();
       return true;
     }
 
@@ -542,6 +555,11 @@ export function useAppKeyboardShortcuts({
 
     if (key.name === "e" || key.sequence === "e") {
       runAndCloseMenu(triggerEditSelectedFile);
+      return;
+    }
+
+    if (key.name === "o" || key.sequence === "o") {
+      toggleOverview();
       return;
     }
 

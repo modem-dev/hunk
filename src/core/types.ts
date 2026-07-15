@@ -39,7 +39,9 @@ export interface AgentFileContext {
 
 export interface AgentContext {
   version: number;
+  title?: string;
   summary?: string;
+  description?: string;
   files: AgentFileContext[];
 }
 
@@ -77,7 +79,9 @@ export interface Changeset {
   sourceLabel: string;
   title: string;
   summary?: string;
+  agentTitle?: string;
   agentSummary?: string;
+  agentDescription?: string;
   files: DiffFile[];
 }
 

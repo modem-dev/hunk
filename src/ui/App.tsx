@@ -47,6 +47,9 @@ const LazyAgentSkillDialog = lazy(async () => ({
 const LazyHelpDialog = lazy(async () => ({
   default: (await import("./components/chrome/HelpDialog")).HelpDialog,
 }));
+const LazyOverviewDialog = lazy(async () => ({
+  default: (await import("./components/chrome/OverviewDialog")).OverviewDialog,
+}));
 const LazyMenuDropdown = lazy(async () => ({
   default: (await import("./components/chrome/MenuDropdown")).MenuDropdown,
 }));
@@ -147,6 +150,7 @@ export function App({
   const [forceSidebarOpen, setForceSidebarOpen] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [showAgentSkill, setShowAgentSkill] = useState(false);
+  const [showOverview, setShowOverview] = useState(false);
   const [focusArea, setFocusArea] = useState<FocusArea>("files");
   const [activeAddNoteTarget, setActiveAddNoteTarget] = useState<ActiveAddNoteTarget | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(34);
@@ -697,6 +701,31 @@ export function App({
     setShowHelp((current) => !current);
   }, []);
 
+  /** Close the changeset overview overlay. */
+  const closeOverview = useCallback(() => {
+    setShowOverview(false);
+  }, []);
+
+  /** Toggle the changeset overview overlay. */
+  const toggleOverview = useCallback(() => {
+    setShowOverview((current) => !current);
+  }, []);
+
+  /**
+   * Auto-open the overview once on initial mount when the changeset has a title or description.
+   * The ref guard prevents reopening after the user dismisses it.
+   */
+  const autoOpenedOverviewRef = useRef(false);
+  useEffect(() => {
+    if (pagerMode || autoOpenedOverviewRef.current) {
+      return;
+    }
+    if (bootstrap.changeset.agentDescription || bootstrap.changeset.agentTitle) {
+      autoOpenedOverviewRef.current = true;
+      setShowOverview(true);
+    }
+  }, [pagerMode, bootstrap.changeset.agentDescription, bootstrap.changeset.agentTitle]);
+
   /** Focus the file list/sidebar navigation area. */
   const focusFiles = useCallback(() => {
     setFocusArea("files");
@@ -783,6 +812,8 @@ export function App({
         toggleSidebar,
         triggerEditSelectedFile,
         wrapLines,
+        showOverview,
+        toggleOverview,
       }),
     [
       canRefreshCurrentInput,
@@ -814,6 +845,8 @@ export function App({
       toggleSidebar,
       triggerEditSelectedFile,
       wrapLines,
+      showOverview,
+      toggleOverview,
     ],
   );
 
@@ -860,6 +893,7 @@ export function App({
     selectLayoutMode,
     showAgentSkill,
     showHelp,
+    showOverview,
     startUserNote: () => startUserNote(),
     switchMenu,
     themeSelectorOpen: themeSelectorState.open,
@@ -871,9 +905,11 @@ export function App({
     toggleLineNumbers,
     toggleMenuBar,
     toggleLineWrap,
+    toggleOverview,
     toggleSidebar,
     triggerEditSelectedFile,
     triggerRefreshCurrentInput,
+    closeOverview,
   });
 
   /** Start a mouse drag resize for the optional sidebar. */
@@ -1126,6 +1162,20 @@ export function App({
             terminalWidth={terminal.width}
             theme={baseTheme}
             onClose={closeHelp}
+          />
+        </Suspense>
+      ) : null}
+
+      {!pagerMode && showOverview ? (
+        <Suspense fallback={null}>
+          <LazyOverviewDialog
+            title={bootstrap.changeset.agentTitle}
+            description={bootstrap.changeset.agentDescription}
+            summary={bootstrap.changeset.agentSummary}
+            terminalHeight={terminal.height}
+            terminalWidth={terminal.width}
+            theme={baseTheme}
+            onClose={closeOverview}
           />
         </Suspense>
       ) : null}
