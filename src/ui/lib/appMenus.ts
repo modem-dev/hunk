@@ -14,6 +14,7 @@ export interface BuildAppMenusOptions {
   openThemeSelector: () => void;
   copyDecorations: boolean;
   showAgentNotes: boolean;
+  showFeedback: boolean;
   showHelp: boolean;
   showHunkHeaders: boolean;
   showLineNumbers: boolean;
@@ -21,6 +22,7 @@ export interface BuildAppMenusOptions {
   renderSidebar: boolean;
   toggleCopyDecorations: () => void;
   toggleAgentNotes: () => void;
+  toggleFeedback: () => void;
   toggleFocusArea: () => void;
   openAgentSkill: () => void;
   toggleHelp: () => void;
@@ -47,6 +49,7 @@ export function buildAppMenus({
   openThemeSelector,
   copyDecorations,
   showAgentNotes,
+  showFeedback,
   showHelp,
   showHunkHeaders,
   showLineNumbers,
@@ -54,6 +57,7 @@ export function buildAppMenus({
   renderSidebar,
   toggleCopyDecorations,
   toggleAgentNotes,
+  toggleFeedback,
   toggleFocusArea,
   openAgentSkill,
   toggleHelp,
@@ -253,6 +257,13 @@ export function buildAppMenus({
         hint: "?",
         checked: showHelp,
         action: toggleHelp,
+      },
+      {
+        kind: "item",
+        label: "Send feedback",
+        hint: "F2",
+        checked: showFeedback,
+        action: toggleFeedback,
       },
     ],
   };

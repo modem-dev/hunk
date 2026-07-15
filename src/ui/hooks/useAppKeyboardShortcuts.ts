@@ -55,6 +55,7 @@ export interface UseAppKeyboardShortcutsOptions {
   activateCurrentMenuItem: () => void;
   canRefreshCurrentInput: boolean;
   closeAgentSkill: () => void;
+  closeFeedback: () => void;
   closeHelp: () => void;
   closeMenu: () => void;
   acceptThemeSelector: () => void;
@@ -76,10 +77,12 @@ export interface UseAppKeyboardShortcutsOptions {
   saveDraftNote: () => void;
   selectLayoutMode: (mode: LayoutMode) => void;
   showAgentSkill: boolean;
+  showFeedback: boolean;
   showHelp: boolean;
   startUserNote: () => void;
   switchMenu: (delta: number) => void;
   toggleAgentNotes: () => void;
+  toggleFeedback: () => void;
   toggleFocusArea: () => void;
   toggleGapForSelectedHunk: () => void;
   toggleHelp: () => void;
@@ -99,6 +102,7 @@ export function useAppKeyboardShortcuts({
   activateCurrentMenuItem,
   canRefreshCurrentInput,
   closeAgentSkill,
+  closeFeedback,
   closeHelp,
   closeMenu,
   acceptThemeSelector,
@@ -120,10 +124,12 @@ export function useAppKeyboardShortcuts({
   scrollDiff,
   selectLayoutMode,
   showAgentSkill,
+  showFeedback,
   showHelp,
   startUserNote,
   switchMenu,
   toggleAgentNotes,
+  toggleFeedback,
   toggleFocusArea,
   toggleGapForSelectedHunk,
   toggleHelp,
@@ -140,6 +146,7 @@ export function useAppKeyboardShortcuts({
   const focusAreaRef = useRef(focusArea);
   const pagerModeRef = useRef(pagerMode);
   const showAgentSkillRef = useRef(showAgentSkill);
+  const showFeedbackRef = useRef(showFeedback);
   const showHelpRef = useRef(showHelp);
   const themeSelectorOpenRef = useRef(themeSelectorOpen);
 
@@ -147,6 +154,7 @@ export function useAppKeyboardShortcuts({
   focusAreaRef.current = focusArea;
   pagerModeRef.current = pagerMode;
   showAgentSkillRef.current = showAgentSkill;
+  showFeedbackRef.current = showFeedback;
   showHelpRef.current = showHelp;
   themeSelectorOpenRef.current = themeSelectorOpen;
 
@@ -187,6 +195,20 @@ export function useAppKeyboardShortcuts({
       openMenu("file");
     }
 
+    return true;
+  };
+
+  const handleFeedbackToggleShortcut = (key: KeyEvent) => {
+    if (key.name !== "f2") {
+      return false;
+    }
+
+    if (pagerModeRef.current) {
+      return true;
+    }
+
+    toggleFeedback();
+    closeMenu();
     return true;
   };
 
@@ -318,6 +340,20 @@ export function useAppKeyboardShortcuts({
       consumeKey(key);
       acceptThemeSelector();
       return true;
+    }
+
+    return true;
+  };
+
+  const handleFeedbackShortcut = (key: KeyEvent) => {
+    if (!showFeedbackRef.current) {
+      return false;
+    }
+
+    // The feedback dialog owns all keyboard input while open (text fields, Esc-to-close,
+    // press-any-key-to-dismiss after success/failure) — never let app shortcuts leak through.
+    if (isEscapeKey(key)) {
+      closeFeedback();
     }
 
     return true;
@@ -580,11 +616,19 @@ export function useAppKeyboardShortcuts({
       return;
     }
 
+    if (handleFeedbackToggleShortcut(key)) {
+      return;
+    }
+
     if (handleDialogShortcut(key)) {
       return;
     }
 
     if (handleThemeSelectorShortcut(key)) {
+      return;
+    }
+
+    if (handleFeedbackShortcut(key)) {
       return;
     }
 

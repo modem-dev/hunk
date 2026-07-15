@@ -3473,4 +3473,96 @@ describe("App interactions", () => {
       });
     }
   });
+
+  test("F2 opens and Escape closes the feedback dialog", async () => {
+    const setup = await testRender(<AppHost bootstrap={createBootstrap()} />, {
+      width: 200,
+      height: 24,
+    });
+
+    try {
+      await flush(setup);
+
+      let frame = setup.captureCharFrame();
+      expect(frame).not.toContain("Send feedback");
+
+      await act(async () => {
+        await setup.mockInput.pressKey("F2");
+      });
+      frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("Send feedback"));
+      expect(frame).toContain("Send feedback");
+      expect(frame).toContain("Description");
+
+      await act(async () => {
+        await setup.mockInput.pressEscape();
+      });
+      frame = await waitForFrame(setup, (nextFrame) => !nextFrame.includes("Send feedback"));
+      expect(frame).not.toContain("Send feedback");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("submitting feedback posts to the configured ingest endpoint and shows a success message", async () => {
+    const previousKey = process.env.HUNK_MODEM_FEEDBACK_KEY;
+    const previousIngestUrl = process.env.HUNK_MODEM_INGEST_URL;
+    const originalFetch = globalThis.fetch;
+    const requests: Array<{ url: string; init?: RequestInit }> = [];
+
+    process.env.HUNK_MODEM_FEEDBACK_KEY = "modem_test_key";
+    process.env.HUNK_MODEM_INGEST_URL = "https://ingest.example.test";
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      requests.push({ url: String(input), init });
+      return new Response(null, { status: 202 });
+    }) as typeof fetch;
+
+    const setup = await testRender(<AppHost bootstrap={createBootstrap()} />, {
+      width: 200,
+      height: 24,
+    });
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.pressKey("F2");
+      });
+      await waitForFrame(setup, (nextFrame) => nextFrame.includes("Send feedback"));
+
+      await act(async () => {
+        await setup.mockInput.typeText("Hunk is great.");
+      });
+      await act(async () => {
+        setup.mockInput.pressKey("s", { ctrl: true });
+      });
+
+      const frame = await waitForFrame(setup, (nextFrame) =>
+        nextFrame.includes("Thanks — feedback sent."),
+      );
+      expect(frame).toContain("Thanks — feedback sent.");
+      expect(requests).toHaveLength(1);
+      expect(requests[0]?.url).toBe("https://ingest.example.test/ingest");
+
+      const body = JSON.parse(String(requests[0]?.init?.body));
+      expect(body.body.data.content).toBe("Hunk is great.");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+
+      globalThis.fetch = originalFetch;
+      if (previousKey === undefined) {
+        delete process.env.HUNK_MODEM_FEEDBACK_KEY;
+      } else {
+        process.env.HUNK_MODEM_FEEDBACK_KEY = previousKey;
+      }
+      if (previousIngestUrl === undefined) {
+        delete process.env.HUNK_MODEM_INGEST_URL;
+      } else {
+        process.env.HUNK_MODEM_INGEST_URL = previousIngestUrl;
+      }
+    }
+  });
 });
