@@ -6,7 +6,12 @@ import {
 import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState, useRef } from "react";
 import type { AppBootstrap, CliInput, LayoutMode, UserNoteLineTarget } from "../core/types";
-import { canReloadInput, computeWatchSignature } from "../core/watch";
+import type { WatchSessionActivity } from "../core/watch";
+import {
+  canReloadInput,
+  computeWatchSignature,
+  DEFAULT_WATCH_INACTIVITY_SLEEP_MS,
+} from "../core/watch";
 import type { HunkSessionBrokerClient, ReloadedSessionResult } from "../hunk-session/types";
 import { MenuBar } from "./components/chrome/MenuBar";
 import { StatusBar } from "./components/chrome/StatusBar";
@@ -94,6 +99,7 @@ export function App({
   noticeText,
   onQuit = () => process.exit(0),
   onReloadSession,
+  watchInactivitySleepMs = DEFAULT_WATCH_INACTIVITY_SLEEP_MS,
 }: {
   bootstrap: AppBootstrap;
   hostClient?: HunkSessionBrokerClient;
@@ -103,6 +109,7 @@ export function App({
     nextInput: CliInput,
     options?: { resetApp?: boolean; sourcePath?: string },
   ) => Promise<ReloadedSessionResult>;
+  watchInactivitySleepMs?: number;
 }) {
   const SIDEBAR_MIN_WIDTH = 22;
   const DIFF_MIN_WIDTH = 48;
@@ -154,6 +161,11 @@ export function App({
   const [resizeStartWidth, setResizeStartWidth] = useState<number | null>(null);
   const [sessionNoticeText, setSessionNoticeText] = useState<string | null>(null);
   const sessionNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const watchActivityRef = useRef<WatchSessionActivity>("active");
+  const watchLastActivityAtRef = useRef(Date.now());
+  const watchRefreshInFlightRef = useRef(false);
+  const [watchActivity, setWatchActivity] = useState<WatchSessionActivity>("active");
+  const [watchActivityRevision, setWatchActivityRevision] = useState(0);
 
   const themeOptions = useMemo(
     () => availableThemes(bootstrap.customTheme),
@@ -530,6 +542,12 @@ export function App({
 
   const canRefreshCurrentInput = canReloadInput(bootstrap.input);
   const watchEnabled = Boolean(bootstrap.input.options.watch && canRefreshCurrentInput);
+  const watchShouldPoll = watchEnabled && watchActivity === "active";
+
+  const setWatchSessionActivity = useCallback((activity: WatchSessionActivity) => {
+    watchActivityRef.current = activity;
+    setWatchActivity(activity);
+  }, []);
 
   /** Rebuild the current diff source while preserving the active app view options. */
   const refreshCurrentInput = useCallback(async () => {
@@ -576,6 +594,43 @@ export function App({
     });
   }, [refreshCurrentInput]);
 
+  /** Refresh a watched input once while sharing one in-flight guard across watch triggers. */
+  const refreshWatchedInput = useCallback(
+    (failureMessage: string) => {
+      if (watchRefreshInFlightRef.current) {
+        return false;
+      }
+
+      watchRefreshInFlightRef.current = true;
+      void refreshCurrentInput()
+        .catch((error) => {
+          console.error(failureMessage, error);
+        })
+        .finally(() => {
+          watchRefreshInFlightRef.current = false;
+        });
+
+      return true;
+    },
+    [refreshCurrentInput],
+  );
+
+  /** Record keyboard or mouse use, and refresh once when an idle watch session wakes up. */
+  const markWatchSessionActivity = useCallback(() => {
+    if (!watchEnabled) {
+      return;
+    }
+
+    const wasIdle = watchActivityRef.current === "idle";
+    watchLastActivityAtRef.current = Date.now();
+    setWatchSessionActivity("active");
+    setWatchActivityRevision((current) => current + 1);
+
+    if (wasIdle) {
+      refreshWatchedInput("Failed to refresh idle watch session after activity.");
+    }
+  }, [refreshWatchedInput, setWatchSessionActivity, watchEnabled]);
+
   const triggerEditSelectedFile = useCallback(() => {
     const basePath =
       bootstrap.input.kind === "vcs" ||
@@ -610,13 +665,40 @@ export function App({
   ]);
 
   useEffect(() => {
+    watchLastActivityAtRef.current = Date.now();
+    setWatchSessionActivity("active");
+    setWatchActivityRevision((current) => current + 1);
+  }, [setWatchSessionActivity, watchEnabled]);
+
+  useEffect(() => {
     if (!watchEnabled) {
+      setWatchSessionActivity("active");
+      return;
+    }
+
+    const elapsedMs = Date.now() - watchLastActivityAtRef.current;
+    const remainingMs = watchInactivitySleepMs - elapsedMs;
+    if (remainingMs <= 0) {
+      setWatchSessionActivity("idle");
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      setWatchSessionActivity("idle");
+    }, remainingMs);
+
+    return () => {
+      clearTimeout(timeout);
+    };
+  }, [setWatchSessionActivity, watchActivityRevision, watchEnabled, watchInactivitySleepMs]);
+
+  useEffect(() => {
+    if (!watchShouldPoll) {
       return;
     }
 
     let cancelled = false;
     let polling = false;
-    let refreshing = false;
     let lastSignature: string;
 
     try {
@@ -627,7 +709,7 @@ export function App({
     }
 
     const pollForChanges = () => {
-      if (cancelled || polling || refreshing) {
+      if (cancelled || polling) {
         return;
       }
 
@@ -636,15 +718,10 @@ export function App({
       try {
         const nextSignature = computeWatchSignature(bootstrap.input);
         if (nextSignature !== lastSignature) {
-          lastSignature = nextSignature;
-          refreshing = true;
-          void refreshCurrentInput()
-            .catch((error) => {
-              console.error("Failed to auto-reload the current diff.", error);
-            })
-            .finally(() => {
-              refreshing = false;
-            });
+          const refreshStarted = refreshWatchedInput("Failed to auto-reload the current diff.");
+          if (refreshStarted) {
+            lastSignature = nextSignature;
+          }
         }
       } catch (error) {
         console.error("Failed to poll watch mode input.", error);
@@ -658,7 +735,7 @@ export function App({
       cancelled = true;
       clearInterval(interval);
     };
-  }, [bootstrap.input, refreshCurrentInput, watchEnabled]);
+  }, [bootstrap.input, refreshWatchedInput, watchShouldPoll]);
 
   /** Leave the app through the shared shutdown path. */
   const requestQuit = useCallback(() => {
@@ -850,6 +927,7 @@ export function App({
     moveToHunk: review.moveToHunk,
     moveMenuItem,
     moveThemeSelector,
+    onActivity: markWatchSessionActivity,
     openMenu,
     openThemeSelector,
     pagerMode,
@@ -878,6 +956,7 @@ export function App({
 
   /** Start a mouse drag resize for the optional sidebar. */
   const beginSidebarResize = (event: TuiMouseEvent) => {
+    markWatchSessionActivity();
     if (event.button !== MouseButton.LEFT) {
       return;
     }
@@ -891,6 +970,7 @@ export function App({
 
   /** Update the sidebar width while a drag resize is active. */
   const updateSidebarResize = (event: TuiMouseEvent) => {
+    markWatchSessionActivity();
     if (!isResizingSidebar || resizeDragOriginX === null || resizeStartWidth === null) {
       return;
     }
@@ -910,6 +990,7 @@ export function App({
 
   /** End the current sidebar resize interaction. */
   const endSidebarResize = (event?: TuiMouseEvent) => {
+    markWatchSessionActivity();
     if (!isResizingSidebar) {
       return;
     }
@@ -977,10 +1058,12 @@ export function App({
         }}
         onMouseDrag={updateSidebarResize}
         onMouseDragEnd={(event) => {
+          markWatchSessionActivity();
           endSidebarResize(event);
           cancelCopySelectionRef.current?.();
         }}
         onMouseUp={(event) => {
+          markWatchSessionActivity();
           endSidebarResize(event);
           closeMenu();
           cancelCopySelectionRef.current?.();
@@ -1058,8 +1141,10 @@ export function App({
           onCancelDraftNote={cancelDraftNote}
           onFocusDraftNote={focusDraftNote}
           onScrollCodeHorizontally={(delta) => {
+            markWatchSessionActivity();
             scrollCodeHorizontally(delta * FAST_CODE_HORIZONTAL_SCROLL_COLUMNS);
           }}
+          onUserActivity={markWatchSessionActivity}
           onCopyFeedback={showTransientNotice}
           onSelectFile={jumpToFile}
           onToggleGap={review.toggleGap}

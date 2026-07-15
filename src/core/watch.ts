@@ -2,6 +2,12 @@ import fs from "node:fs";
 import { createVcsWatchSignature, getConfiguredVcsAdapter, operationFromInput } from "./vcs";
 import type { CliInput } from "./types";
 
+/** Activity state that controls whether a watch session schedules expensive polling. */
+export type WatchSessionActivity = "active" | "idle";
+
+/** Stop watch polling after one minute without keyboard or mouse activity. */
+export const DEFAULT_WATCH_INACTIVITY_SLEEP_MS = 60_000;
+
 /** Return whether the current input can be rebuilt from files or VCS state without rereading stdin. */
 export function canReloadInput(input: CliInput) {
   if (input.options.agentContext === "-") {

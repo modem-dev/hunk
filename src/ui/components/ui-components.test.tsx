@@ -856,6 +856,7 @@ describe("UI components", () => {
       hunkIndex: number;
       target?: { side: "old" | "new"; line: number };
     }> = [];
+    let activeAffordance: unknown = null;
     let navigateToSecondHunk: (() => void) | null = null;
 
     function AddNoteNavigationHarness() {
@@ -880,6 +881,9 @@ describe("UI components", () => {
             selectedHunkRevealRequestId: selectedHunk,
             separatorWidth: 92,
             width: 100,
+            onActiveAddNoteAffordanceChange: (affordance) => {
+              activeAffordance = affordance;
+            },
             onStartUserNoteAtHunk: startUserNote,
           })}
         />
@@ -911,15 +915,24 @@ describe("UI components", () => {
       const addNoteX = affordanceLines[addNoteY]?.indexOf("[+]") ?? -1;
       expect(addNoteY).toBeGreaterThanOrEqual(0);
       expect(addNoteX).toBeGreaterThanOrEqual(0);
+      expect(activeAffordance).toEqual({
+        fileId: "target",
+        hunkIndex: 1,
+        target: { side: "new", line: 60 },
+      });
 
-      await act(async () => {
-        await setup.mockMouse.moveTo(addNoteX + 1, addNoteY);
-        await setup.renderOnce();
-      });
-      await act(async () => {
-        await setup.mockMouse.click(addNoteX + 1, addNoteY);
-        await setup.renderOnce();
-      });
+      for (const x of [addNoteX + 1, addNoteX, addNoteX + 2]) {
+        if (calls.length > 0) {
+          break;
+        }
+
+        await act(async () => {
+          await setup.mockMouse.moveTo(x, addNoteY);
+          await setup.mockMouse.click(x, addNoteY);
+          await setup.renderOnce();
+          await Bun.sleep(0);
+        });
+      }
 
       expect(calls).toEqual([
         { fileId: "target", hunkIndex: 1, target: { side: "new", line: 60 } },

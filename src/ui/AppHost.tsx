@@ -3,6 +3,7 @@ import { resolveConfiguredCliInput } from "../core/config";
 import { loadAppBootstrap } from "../core/loaders";
 import { resolveRuntimeCliInput } from "../core/terminal";
 import type { AppBootstrap, CliInput } from "../core/types";
+import { DEFAULT_WATCH_INACTIVITY_SLEEP_MS } from "../core/watch";
 import type { UpdateNotice } from "../core/updateNotice";
 import {
   createInitialSessionSnapshot,
@@ -22,11 +23,13 @@ export function AppHost({
   hostClient,
   onQuit = () => process.exit(0),
   startupNoticeResolver,
+  watchInactivitySleepMs = DEFAULT_WATCH_INACTIVITY_SLEEP_MS,
 }: {
   bootstrap: AppBootstrap;
   hostClient?: HunkSessionBrokerClient;
   onQuit?: () => void;
   startupNoticeResolver?: () => Promise<UpdateNotice | null>;
+  watchInactivitySleepMs?: number;
 }) {
   const [activeBootstrap, setActiveBootstrap] = useState(bootstrap);
   const [appVersion, setAppVersion] = useState(0);
@@ -98,6 +101,7 @@ export function AppHost({
       noticeText={startupNoticeText}
       onQuit={onQuit}
       onReloadSession={reloadSession}
+      watchInactivitySleepMs={watchInactivitySleepMs}
     />
   );
 }

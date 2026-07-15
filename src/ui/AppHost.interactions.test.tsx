@@ -19,6 +19,7 @@ import { AGENT_SKILL_COMMAND, AGENT_SKILL_PROMPT } from "./components/chrome/Age
 import { resolveTheme } from "./themes";
 
 const { loadAppBootstrap } = await import("../core/loaders");
+const { App } = await import("./App");
 const { AppHost } = await import("./AppHost");
 
 const TEST_KEY_PAGE_UP = "\x1B[5~";
@@ -1718,6 +1719,205 @@ describe("App interactions", () => {
       expect(refreshed).toBe(true);
     } finally {
       await act(async () => {
+        setup.renderer.destroy();
+      });
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
+  test("watch mode pauses polling while idle and refreshes once when activity resumes", async () => {
+    const dir = mkdtempSync(join(process.cwd(), ".hunk-watch-idle-"));
+    const left = join(dir, "before.ts");
+    const right = join(dir, "after.ts");
+
+    writeFileSync(left, "export const answer = 41;\n");
+    writeFileSync(right, "export const answer = 42;\n");
+
+    const bootstrap = await loadAppBootstrap({
+      kind: "diff",
+      left,
+      right,
+      options: {
+        mode: "split",
+        watch: true,
+      },
+    });
+
+    const setup = await testRender(<AppHost bootstrap={bootstrap} watchInactivitySleepMs={40} />, {
+      width: 220,
+      height: 20,
+    });
+
+    try {
+      await flush(setup);
+      await act(async () => {
+        await Bun.sleep(120);
+        await setup.renderOnce();
+      });
+
+      writeFileSync(right, "export const answer = 42;\nexport const idleChange = true;\n");
+
+      let frame = setup.captureCharFrame();
+      expect(frame).not.toContain("idleChange");
+
+      for (let attempt = 0; attempt < 10; attempt += 1) {
+        await flush(setup);
+        frame = setup.captureCharFrame();
+        expect(frame).not.toContain("idleChange");
+        await act(async () => {
+          await Bun.sleep(40);
+          await setup.renderOnce();
+        });
+      }
+
+      await act(async () => {
+        await setup.mockInput.pressArrow("right");
+      });
+
+      const refreshedFrame = await waitForFrame(
+        setup,
+        (currentFrame) => currentFrame.includes("idleChange"),
+        30,
+      );
+      expect(refreshedFrame).toContain("idleChange");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
+  test("automatic watch sleep is based on user activity instead of background reloads", async () => {
+    const dir = mkdtempSync(join(process.cwd(), ".hunk-watch-inactivity-"));
+    const left = join(dir, "before.ts");
+    const right = join(dir, "after.ts");
+
+    writeFileSync(left, "export const answer = 41;\n");
+    writeFileSync(right, "export const answer = 42;\n");
+
+    const bootstrap = await loadAppBootstrap({
+      kind: "diff",
+      left,
+      right,
+      options: {
+        mode: "split",
+        watch: true,
+      },
+    });
+
+    const setup = await testRender(<AppHost bootstrap={bootstrap} watchInactivitySleepMs={600} />, {
+      width: 220,
+      height: 20,
+    });
+    const mountedAt = Date.now();
+
+    try {
+      await flush(setup);
+      writeFileSync(right, "export const answer = 42;\nexport const activeChange = true;\n");
+
+      const activeFrame = await waitForFrame(
+        setup,
+        (currentFrame) => currentFrame.includes("activeChange"),
+        30,
+      );
+      expect(activeFrame).toContain("activeChange");
+
+      const waitUntilIdleProbeMs = Math.max(0, mountedAt + 700 - Date.now());
+      await act(async () => {
+        await Bun.sleep(waitUntilIdleProbeMs);
+        await setup.renderOnce();
+      });
+
+      writeFileSync(
+        right,
+        "export const answer = 42;\nexport const activeChange = true;\nexport const idleChange = true;\n",
+      );
+
+      await act(async () => {
+        await Bun.sleep(350);
+        await setup.renderOnce();
+      });
+      expect(setup.captureCharFrame()).not.toContain("idleChange");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
+  test("watch mode does not overlap wake-up refreshes with resumed polling", async () => {
+    const dir = mkdtempSync(join(process.cwd(), ".hunk-watch-idle-race-"));
+    const left = join(dir, "before.ts");
+    const right = join(dir, "after.ts");
+
+    writeFileSync(left, "export const answer = 41;\n");
+    writeFileSync(right, "export const answer = 42;\n");
+
+    const bootstrap = await loadAppBootstrap({
+      kind: "diff",
+      left,
+      right,
+      options: {
+        mode: "split",
+        watch: true,
+      },
+    });
+
+    let resolveReload: (() => void) | undefined;
+    const onReloadSession = mock(async () => {
+      await new Promise<void>((resolve) => {
+        resolveReload = resolve;
+      });
+
+      return {
+        sessionId: "local-session",
+        inputKind: bootstrap.input.kind,
+        title: bootstrap.changeset.title,
+        sourceLabel: bootstrap.changeset.sourceLabel,
+        fileCount: bootstrap.changeset.files.length,
+        selectedFilePath: bootstrap.changeset.files[0]?.path,
+        selectedHunkIndex: 0,
+      };
+    });
+
+    const setup = await testRender(
+      <App
+        bootstrap={bootstrap}
+        onReloadSession={onReloadSession}
+        onQuit={() => undefined}
+        watchInactivitySleepMs={40}
+      />,
+      {
+        width: 220,
+        height: 20,
+      },
+    );
+
+    try {
+      await flush(setup);
+      await act(async () => {
+        await Bun.sleep(120);
+        await setup.renderOnce();
+      });
+
+      writeFileSync(right, "export const answer = 42;\nexport const idleChange = true;\n");
+
+      await act(async () => {
+        await setup.mockInput.pressArrow("right");
+      });
+      expect(onReloadSession).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        await Bun.sleep(320);
+        await setup.renderOnce();
+      });
+      expect(onReloadSession).toHaveBeenCalledTimes(1);
+    } finally {
+      resolveReload?.();
+      await act(async () => {
+        await Bun.sleep(0);
         setup.renderer.destroy();
       });
       rmSync(dir, { force: true, recursive: true });
