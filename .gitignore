@@ -40,6 +40,7 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 tmp
 .hunk/latest.json
 .hunk/config.toml
+.hunk/agent-context.json
 .pi/
 autoresearch.jsonl
 autoresearch.ideas.md

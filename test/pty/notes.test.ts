@@ -36,25 +36,24 @@ describe("PTY notes", () => {
     });
 
     try {
-      const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
         timeout: 15_000,
       });
 
-      expect(initial).not.toContain("Adds bonus export.");
+      const shownByDefault = await session.waitForText(/Adds bonus export\./, { timeout: 5_000 });
+      expect(shownByDefault).toContain("Highlights the follow-up addition for review.");
 
       await session.press("a");
-      const withNotes = await session.waitForText(/Adds bonus export\./, { timeout: 5_000 });
-
-      expect(withNotes).toContain("Highlights the follow-up addition for review.");
-
-      await session.press("a");
-      const withoutNotes = await harness.waitForSnapshot(
+      const hidden = await harness.waitForSnapshot(
         session,
         (text) => !text.includes("Adds bonus export."),
         5_000,
       );
+      expect(hidden).not.toContain("Adds bonus export.");
 
-      expect(withoutNotes).not.toContain("Adds bonus export.");
+      await session.press("a");
+      const shownAgain = await session.waitForText(/Adds bonus export\./, { timeout: 5_000 });
+      expect(shownAgain).toContain("Adds bonus export.");
     } finally {
       session.close();
     }

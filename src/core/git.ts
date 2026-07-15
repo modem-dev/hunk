@@ -2,6 +2,7 @@ import fs from "node:fs";
 import { join } from "node:path";
 import { HunkUserError } from "./errors";
 import { escapeUntrackedPatchPath } from "./patch/normalize";
+import { isHunkMetadataRelativePath } from "./paths";
 import type { VcsDiffCommandInput, VcsShowCommandInput, VcsStashShowCommandInput } from "./types";
 import { normalizePathForOS } from "../lib/osPath";
 
@@ -588,8 +589,11 @@ export function listGitUntrackedFiles(
   }
 
   const normalizedRepoRoot = repoRoot ?? resolveGitRepoRoot(input, { cwd, gitExecutable });
-  return untrackedFiles.filter((filePath) =>
-    isReviewableUntrackedPath(normalizedRepoRoot, filePath),
+  return untrackedFiles.filter(
+    (filePath) =>
+      // Hunk's own `.hunk/` metadata is review context, never review content.
+      !isHunkMetadataRelativePath(filePath) &&
+      isReviewableUntrackedPath(normalizedRepoRoot, filePath),
   );
 }
 

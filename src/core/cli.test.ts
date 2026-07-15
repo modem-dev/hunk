@@ -56,6 +56,7 @@ describe("parseCli", () => {
     expect(parsed.text).toContain("Global options:");
     expect(parsed.text).toContain("Common review options:");
     expect(parsed.text).toContain("auto-reload when the current diff input changes");
+    expect(parsed.text).toContain("ignore any agent-context sidecar");
     expect(parsed.text).toContain("Git diff options:");
     expect(parsed.text).toContain("Notes:");
     expect(parsed.text).toContain(
@@ -139,6 +140,29 @@ describe("parseCli", () => {
         transparentBackground: false,
       },
     });
+  });
+
+  test("parses agent-context opt-out without leaking commander's boolean sentinel", async () => {
+    const parsed = await parseCli(["bun", "hunk", "diff", "--no-agent-context"]);
+
+    expect(parsed.kind).toBe("vcs");
+    if (parsed.kind !== "vcs") {
+      throw new Error("Expected vcs diff input.");
+    }
+
+    expect(parsed.options.noAgentContext).toBe(true);
+    expect(parsed.options.agentContext).toBeUndefined();
+  });
+
+  test("leaves agent-context opt-out unset without the flag", async () => {
+    const parsed = await parseCli(["bun", "hunk", "diff"]);
+
+    expect(parsed.kind).toBe("vcs");
+    if (parsed.kind !== "vcs") {
+      throw new Error("Expected vcs diff input.");
+    }
+
+    expect(parsed.options.noAgentContext).toBeUndefined();
   });
 
   test("parses staged git-style diff aliases", async () => {
@@ -888,20 +912,23 @@ describe("parseCli", () => {
   });
 
   test("parses session navigate with --next-comment", async () => {
+    const repoRoot = realpathSync.native(createTempDir("hunk-cli-navigate-repo-"));
+    mkdirSync(join(repoRoot, ".git"));
+
     const parsed = await parseCli([
       "bun",
       "hunk",
       "session",
       "navigate",
       "--repo",
-      "/tmp/repo",
+      repoRoot,
       "--next-comment",
     ]);
 
     expect(parsed).toEqual({
       kind: "session",
       action: "navigate",
-      selector: { repoRoot: resolve("/tmp/repo") },
+      selector: { repoRoot },
       commentDirection: "next",
       output: "text",
     });

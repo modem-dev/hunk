@@ -57,7 +57,7 @@ function buildCommonOptions(
   options: {
     mode?: LayoutMode;
     theme?: string;
-    agentContext?: string;
+    agentContext?: unknown;
     pager?: boolean;
     watch?: boolean;
     transparentBackground?: boolean;
@@ -67,7 +67,8 @@ function buildCommonOptions(
   return {
     mode: options.mode,
     theme: options.theme,
-    agentContext: options.agentContext,
+    agentContext: typeof options.agentContext === "string" ? options.agentContext : undefined,
+    noAgentContext: argv.includes("--no-agent-context") ? true : undefined,
     pager: options.pager ? true : undefined,
     watch: options.watch ? true : undefined,
     excludeUntracked: resolveBooleanFlag(argv, "--exclude-untracked", "--no-exclude-untracked"),
@@ -85,6 +86,7 @@ function applyCommonOptions(command: Command) {
     .option("--mode <mode>", "layout mode: auto, split, stack", parseLayoutMode)
     .option("--theme <theme>", "named theme override")
     .option("--agent-context <path>", "JSON sidecar with agent rationale")
+    .option("--no-agent-context", "ignore any agent-context sidecar (disable auto-discovery)")
     .option("--pager", "use pager-style chrome and controls")
     .option("--line-numbers", "show line numbers")
     .option("--no-line-numbers", "hide line numbers")
@@ -154,6 +156,7 @@ function renderCliHelp() {
     "  --mode <mode>                           layout mode: auto, split, stack",
     "  --watch                                 auto-reload when the current diff input changes",
     "  --agent-context <path>                  JSON sidecar with agent rationale",
+    "  --no-agent-context                      ignore any agent-context sidecar (disable auto-discovery)",
     "  --pager                                 use pager-style chrome and controls",
     "  --line-numbers / --no-line-numbers      show or hide line numbers",
     "  --wrap / --no-wrap                      wrap or truncate long diff lines",

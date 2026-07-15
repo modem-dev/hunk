@@ -20,6 +20,41 @@ describe("agent context", () => {
     await expect(loadAgentContext()).resolves.toBeNull();
   });
 
+  test("returns null for optional missing or invalid sidecars", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "hunk-agent-optional-"));
+    tempDirs.push(dir);
+
+    await expect(loadAgentContext(join(dir, "nope.json"), { optional: true })).resolves.toBeNull();
+
+    const malformedPath = join(dir, "malformed.json");
+    writeFileSync(malformedPath, "{ not json");
+
+    await expect(loadAgentContext(malformedPath, { optional: true })).resolves.toBeNull();
+
+    const invalidSchemaPath = join(dir, "invalid-schema.json");
+    writeFileSync(
+      invalidSchemaPath,
+      JSON.stringify({
+        version: 1,
+        files: [{ summary: "Missing path", annotations: [] }],
+      }),
+    );
+
+    await expect(loadAgentContext(invalidSchemaPath, { optional: true })).resolves.toBeNull();
+  });
+
+  test("rejects missing and malformed sidecars in strict mode", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "hunk-agent-strict-"));
+    tempDirs.push(dir);
+
+    await expect(loadAgentContext(join(dir, "missing.json"))).rejects.toThrow();
+
+    const malformedPath = join(dir, "malformed.json");
+    writeFileSync(malformedPath, "{ not json");
+
+    await expect(loadAgentContext(malformedPath)).rejects.toThrow();
+  });
+
   test("loads and matches annotations by current or previous path", async () => {
     const dir = mkdtempSync(join(tmpdir(), "hunk-agent-"));
     tempDirs.push(dir);

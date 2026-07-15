@@ -131,8 +131,11 @@ line_numbers = true
 wrap_lines = false
 menu_bar = true
 agent_notes = false
+agent_context = ".hunk/agent-context.json" # resolves against the repo root
 transparent_background = false
 ```
+
+Bare `hunk diff` auto-loads `<repoRoot>/.hunk/agent-context.json` when it exists. This conventional sidecar is best-effort and silently skipped when absent or malformed; when it loads, agent notes are shown by default. Use `--no-agent-context` to disable sidecar loading, and Hunk keeps its own `.hunk/` metadata out of untracked review noise.
 
 `theme = "auto"` and `--theme auto` query the terminal background at startup, choose `github-light-default` for light backgrounds and `github-dark-default` for dark backgrounds, and fall back to `github-dark-default` if the terminal does not answer.
 Older theme ids such as `graphite` and `paper` remain accepted as compatibility aliases.

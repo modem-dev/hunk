@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   buildGitDiffArgs,
   buildGitStashShowArgs,
   buildGitStatusArgs,
+  listGitUntrackedFiles,
   resolveGitDiffEndpoints,
   runGitText,
 } from "./git";
@@ -93,6 +94,28 @@ describe("git command helpers", () => {
       "-z",
       "--untracked-files=all",
     ]);
+  });
+
+  test("excludes hunk metadata from working-tree untracked files", () => {
+    const repoRoot = createTempRepo("hunk-untracked-metadata-");
+    const sourceDir = join(repoRoot, "src");
+    const hunkDir = join(repoRoot, ".hunk");
+    mkdirSync(sourceDir);
+    mkdirSync(hunkDir);
+    writeFileSync(join(sourceDir, "added.ts"), "export const added = true;\n");
+    writeFileSync(join(hunkDir, "agent-context.json"), '{"version":1,"files":[]}\n');
+
+    const untrackedFiles = listGitUntrackedFiles(
+      {
+        kind: "vcs",
+        staged: false,
+        options: {},
+      },
+      { cwd: repoRoot, repoRoot },
+    );
+
+    expect(untrackedFiles).toContain(join("src", "added.ts"));
+    expect(untrackedFiles).not.toContain(join(".hunk", "agent-context.json"));
   });
 
   test("reports a friendly error when git is not installed or not on PATH", () => {
