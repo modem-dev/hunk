@@ -1,5 +1,12 @@
 import fs from "node:fs";
-import { createVcsWatchSignature, getConfiguredVcsAdapter, operationFromInput } from "./vcs";
+import path from "node:path";
+import { resolveGlobalConfigPath } from "./paths";
+import {
+  createVcsWatchSignature,
+  findVcsRepoRootCandidate,
+  getConfiguredVcsAdapter,
+  operationFromInput,
+} from "./vcs";
 import type { CliInput } from "./types";
 
 /** Return whether the current input can be rebuilt from files or VCS state without rereading stdin. */
@@ -51,6 +58,25 @@ export function computeWatchSignature(input: CliInput) {
 
   if (input.options.agentContext && input.options.agentContext !== "-") {
     parts.push(`agent:${statSignature(input.options.agentContext)}`);
+  }
+
+  return parts.join("\n---\n");
+}
+
+/** Compute a change-detection signature over Hunk's config files (global +
+ *  repo-local), so a viewer in --watch mode can notice theme/chrome edits and
+ *  live-reload — mirrors the diff-input watcher but for configuration. */
+export function computeConfigSignature(cwd: string = process.cwd()) {
+  const parts: string[] = [];
+
+  const globalConfigPath = resolveGlobalConfigPath();
+  if (globalConfigPath) {
+    parts.push(statSignature(globalConfigPath));
+  }
+
+  const repoRoot = findVcsRepoRootCandidate(cwd);
+  if (repoRoot) {
+    parts.push(statSignature(path.join(repoRoot, ".hunk", "config.toml")));
   }
 
   return parts.join("\n---\n");
