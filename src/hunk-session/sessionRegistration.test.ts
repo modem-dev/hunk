@@ -33,6 +33,7 @@ function createBootstrap(overrides: Partial<AppBootstrap> = {}): AppBootstrap {
     initialMode: "split",
     initialShowAgentNotes: true,
     ...overrides,
+    reloadContext: overrides.reloadContext ?? { cwd: "/repo" },
   };
 }
 

@@ -377,8 +377,15 @@ export type ParsedCliInput =
   | MarkupRenderCommandInput
   | MarkupGuideCommandInput;
 
+export interface ReloadContext {
+  cwd: string;
+  repoRoot?: string;
+  initialWatchSignature?: string;
+}
+
 export interface AppBootstrap {
   input: CliInput;
+  reloadContext: ReloadContext;
   changeset: Changeset;
   initialMode: LayoutMode;
   initialTheme?: string;

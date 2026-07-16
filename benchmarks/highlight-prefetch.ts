@@ -52,6 +52,7 @@ function createDiffFile(index: number, marker: string): DiffFile {
 
 function createBootstrap(): AppBootstrap {
   return {
+    reloadContext: { cwd: process.cwd() },
     input: {
       kind: "vcs",
       staged: false,

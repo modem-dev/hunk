@@ -49,8 +49,8 @@ export const JjVcsAdapter: VcsAdapter = {
           patchText: runJjText({ input, args: buildJjDiffArgs(input), cwd }),
         };
       },
-      watchSignature(input) {
-        return runJjText({ input, args: buildJjDiffArgs(input) });
+      watchSignature(input, { cwd }) {
+        return runJjText({ input, args: buildJjDiffArgs(input), cwd });
       },
     },
     "revision-show": {
@@ -65,8 +65,8 @@ export const JjVcsAdapter: VcsAdapter = {
           patchText: runJjText({ input, args: buildJjShowArgs(input), cwd }),
         };
       },
-      watchSignature(input) {
-        return runJjText({ input, args: buildJjShowArgs(input) });
+      watchSignature(input, { cwd }) {
+        return runJjText({ input, args: buildJjShowArgs(input), cwd });
       },
     },
   },

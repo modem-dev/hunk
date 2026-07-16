@@ -80,6 +80,8 @@ hunk diff before.ts after.ts --watch        # auto-reload when either file chang
 git diff --no-color | hunk patch -          # review a patch from stdin
 ```
 
+Watch mode remains continuous. Direct-file and Git-backed reviews normally use filesystem observation to refresh promptly, with periodic polling retained as a fallback for missed events or unavailable watchers. Jujutsu and Sapling reviews currently use polling rather than filesystem observation.
+
 ### Working with agents
 
 1. Open Hunk in another terminal with `hunk diff` or `hunk show`.

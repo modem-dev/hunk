@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   createUnsupportedVcsOperationError,
+  createVcsWatchPlan,
   detectVcs,
   findVcsRepoRootCandidate,
   getVcsAdapter,
@@ -136,6 +137,50 @@ describe("VCS adapter registry", () => {
     await expect(
       loadVcsReview(adapter, operationFromInput(input), { cwd: process.cwd() }),
     ).rejects.toThrow("`hunk stash show` requires Git VCS mode.");
+  });
+
+  test("dispatches watch plans and leaves adapters without one poll-only", () => {
+    const input = {
+      kind: "vcs",
+      staged: false,
+      options: { vcs: "custom" },
+    } satisfies VcsDiffCommandInput;
+    const target = {
+      kind: "directory-tree" as const,
+      directory: "/repo",
+      ignoredRoots: [],
+      sources: ["worktree" as const],
+    };
+    const adapter = {
+      id: "custom",
+      name: "Custom VCS",
+      detect: () => null,
+      operations: {
+        "working-tree-diff": {
+          load: async () => ({
+            repoRoot: "/repo",
+            sourceLabel: "/repo",
+            title: "x",
+            patchText: "",
+          }),
+          watchPlan: () => ({ coverage: "hybrid" as const, targets: [target] }),
+        },
+      },
+    } satisfies VcsAdapter;
+
+    expect(createVcsWatchPlan(adapter, operationFromInput(input), { cwd: "/repo" })).toEqual({
+      coverage: "hybrid",
+      targets: [target],
+    });
+    expect(
+      createVcsWatchPlan(
+        getVcsAdapter("jj"),
+        operationFromInput({ ...input, options: { vcs: "jj" } }),
+        {
+          cwd: "/repo",
+        },
+      ),
+    ).toEqual({ coverage: "poll-only", targets: [] });
   });
 
   test("names the adapter and operation for non-stash unsupported operations", () => {

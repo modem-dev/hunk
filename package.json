@@ -96,6 +96,7 @@
   "dependencies": {
     "@pierre/diffs": "1.2.2",
     "bun": "^1.3.14",
+    "chokidar": "^4.0.3",
     "commander": "^14.0.3",
     "diff": "^8.0.3",
     "shell-quote": "1.8.4",

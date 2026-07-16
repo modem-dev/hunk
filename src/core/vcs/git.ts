@@ -1,15 +1,17 @@
 import fs from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import {
   buildGitDiffArgs,
   buildGitDiffNumstatArgs,
   buildGitShowArgs,
   buildGitStashShowArgs,
+  listGitIgnoredDirectoryRoots,
   listGitUntrackedFiles,
   normalizeUntrackedPatchHeaders,
   resolveGitColorMovedOptions,
   resolveGitCommitRef,
   resolveGitDiffEndpoints,
+  resolveGitMetadata,
   resolveGitRepoRoot,
   runGitText,
   runGitUntrackedFileDiffText,
@@ -28,6 +30,7 @@ import {
   type GitFileSourceSpec,
 } from "./gitSource";
 import type { DiffFile, VcsDiffCommandInput } from "../types";
+import type { DirectoryTreeWatchTarget, WatchPlan } from "../watchPlan";
 import type { VcsAdapter, VcsReviewOperation } from "./types";
 import {
   buildSkippedLargeUntrackedDiffFile,
@@ -248,6 +251,59 @@ function buildGitReviewSourceFetcherBuilder(
   }
 }
 
+/** Return whether a recursive directory target safely covers another directory. */
+function directoryContains(parent: string, child: string) {
+  const path = relative(parent, child);
+  return path === "" || (!path.startsWith("..") && !isAbsolute(path));
+}
+
+/** Build metadata targets, collapsing linked-worktree state under its common Git directory. */
+function buildGitMetadataTargets(gitDir: string, commonDir: string): DirectoryTreeWatchTarget[] {
+  const directories = directoryContains(commonDir, gitDir) ? [commonDir] : [gitDir, commonDir];
+  return directories.map((directory) => ({
+    kind: "directory-tree",
+    directory,
+    ignoredRoots: [join(directory, "objects")],
+    sources: ["vcs-metadata"],
+  }));
+}
+
+/** Build a Git watch plan whose worktree recursion matches the reviewed operation. */
+function buildGitWatchPlan(
+  operation: VcsReviewOperation,
+  cwd: string,
+  gitExecutable = "git",
+): WatchPlan {
+  const metadata = resolveGitMetadata(operation.input, { cwd, gitExecutable });
+  const targets: DirectoryTreeWatchTarget[] = [];
+  if (
+    operation.kind === "working-tree-diff" &&
+    resolveGitDiffEndpoints(operation.input, {
+      cwd,
+      repoRoot: metadata.repoRoot,
+      gitExecutable,
+    })?.new.kind === "worktree"
+  ) {
+    targets.push({
+      kind: "directory-tree",
+      directory: metadata.repoRoot,
+      ignoredRoots: [
+        ...new Set([
+          join(metadata.repoRoot, ".git"),
+          ...listGitIgnoredDirectoryRoots(operation.input, {
+            cwd: metadata.repoRoot,
+            repoRoot: metadata.repoRoot,
+            gitExecutable,
+          }),
+        ]),
+      ],
+      sources: ["worktree"],
+    });
+  }
+  targets.push(...buildGitMetadataTargets(metadata.gitDir, metadata.commonDir));
+  return { coverage: "hybrid", targets };
+}
+
 /** VCS adapter translating neutral review operations to Git commands. */
 export const GitVcsAdapter: VcsAdapter = {
   id: "git",
@@ -306,12 +362,28 @@ export const GitVcsAdapter: VcsAdapter = {
           ],
         };
       },
-      watchSignature(input) {
-        const trackedPatch = runGitText({ input, args: buildGitDiffArgs(input) });
-        const repoRoot = resolveGitRepoRoot(input);
-        const untrackedSignatures = listGitUntrackedFiles(input, { repoRoot }).map(
-          (filePath) => `untracked:${statSignature(join(repoRoot, filePath))}`,
-        );
+      watchPlan(input, { cwd, gitExecutable = "git" }) {
+        return buildGitWatchPlan({ kind: "working-tree-diff", input }, cwd, gitExecutable);
+      },
+      watchSignature(input, { cwd, gitExecutable = "git" }) {
+        const trackedPatch = runGitText({
+          input,
+          args: buildGitDiffArgs(input),
+          cwd,
+          gitExecutable,
+          preventOptionalLocks: true,
+        });
+        const repoRoot = resolveGitRepoRoot(input, {
+          cwd,
+          gitExecutable,
+          preventOptionalLocks: true,
+        });
+        const untrackedSignatures = listGitUntrackedFiles(input, {
+          cwd,
+          repoRoot,
+          gitExecutable,
+          preventOptionalLocks: true,
+        }).map((filePath) => `untracked:${statSignature(join(repoRoot, filePath))}`);
         return [trackedPatch, ...untrackedSignatures].join("\n---\n");
       },
     },
@@ -341,8 +413,17 @@ export const GitVcsAdapter: VcsAdapter = {
           ),
         };
       },
-      watchSignature(input) {
-        return runGitText({ input, args: buildGitShowArgs(input) });
+      watchPlan(input, { cwd, gitExecutable = "git" }) {
+        return buildGitWatchPlan({ kind: "revision-show", input }, cwd, gitExecutable);
+      },
+      watchSignature(input, { cwd, gitExecutable = "git" }) {
+        return runGitText({
+          input,
+          args: buildGitShowArgs(input),
+          cwd,
+          gitExecutable,
+          preventOptionalLocks: true,
+        });
       },
     },
     "stash-show": {
@@ -371,8 +452,17 @@ export const GitVcsAdapter: VcsAdapter = {
           ),
         };
       },
-      watchSignature(input) {
-        return runGitText({ input, args: buildGitStashShowArgs(input) });
+      watchPlan(input, { cwd, gitExecutable = "git" }) {
+        return buildGitWatchPlan({ kind: "stash-show", input }, cwd, gitExecutable);
+      },
+      watchSignature(input, { cwd, gitExecutable = "git" }) {
+        return runGitText({
+          input,
+          args: buildGitStashShowArgs(input),
+          cwd,
+          gitExecutable,
+          preventOptionalLocks: true,
+        });
       },
     },
   },

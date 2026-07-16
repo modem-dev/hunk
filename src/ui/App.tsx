@@ -17,7 +17,7 @@ import type {
   PersistedViewPreferences,
   UserNoteLineTarget,
 } from "../core/types";
-import { canReloadInput, computeWatchSignature } from "../core/watch";
+import { canReloadInput } from "../core/watch";
 import type { HunkSessionBrokerClient, ReloadedSessionResult } from "../hunk-session/types";
 import { MenuBar } from "./components/chrome/MenuBar";
 import { ConfirmDialog, confirmDialogHeight } from "./components/chrome/ConfirmDialog";
@@ -35,6 +35,7 @@ import { useAppKeyboardShortcuts } from "./hooks/useAppKeyboardShortcuts";
 import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
 import { useMenuController } from "./hooks/useMenuController";
 import { useReviewController, type AgentNoteGeometrySnapshot } from "./hooks/useReviewController";
+import { useWatchedInput, type WatchedInputRuntime } from "./hooks/useWatchedInput";
 import { agentNoteMarkupWidth } from "./lib/agentNoteGeometry";
 import { buildAppMenus } from "./lib/appMenus";
 import { fileRowId } from "./lib/ids";
@@ -106,6 +107,7 @@ export function App({
   noticeText,
   onQuit = () => process.exit(0),
   onReloadSession,
+  watchRuntime,
 }: {
   bootstrap: AppBootstrap;
   hostClient?: HunkSessionBrokerClient;
@@ -115,6 +117,7 @@ export function App({
     nextInput: CliInput,
     options?: { resetApp?: boolean; sourcePath?: string },
   ) => Promise<ReloadedSessionResult>;
+  watchRuntime?: WatchedInputRuntime;
 }) {
   const SIDEBAR_MIN_WIDTH = 22;
   const DIFF_MIN_WIDTH = 48;
@@ -668,56 +671,13 @@ export function App({
     triggerRefreshCurrentInput,
   ]);
 
-  useEffect(() => {
-    if (!watchEnabled) {
-      return;
-    }
-
-    let cancelled = false;
-    let polling = false;
-    let refreshing = false;
-    let lastSignature: string;
-
-    try {
-      lastSignature = computeWatchSignature(bootstrap.input);
-    } catch (error) {
-      console.error("Failed to initialize watch mode.", error);
-      return;
-    }
-
-    const pollForChanges = () => {
-      if (cancelled || polling || refreshing) {
-        return;
-      }
-
-      polling = true;
-
-      try {
-        const nextSignature = computeWatchSignature(bootstrap.input);
-        if (nextSignature !== lastSignature) {
-          lastSignature = nextSignature;
-          refreshing = true;
-          void refreshCurrentInput()
-            .catch((error) => {
-              console.error("Failed to auto-reload the current diff.", error);
-            })
-            .finally(() => {
-              refreshing = false;
-            });
-        }
-      } catch (error) {
-        console.error("Failed to poll watch mode input.", error);
-      } finally {
-        polling = false;
-      }
-    };
-
-    const interval = setInterval(pollForChanges, 250);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [bootstrap.input, refreshCurrentInput, watchEnabled]);
+  useWatchedInput({
+    enabled: watchEnabled,
+    input: bootstrap.input,
+    refresh: refreshCurrentInput,
+    reloadContext: bootstrap.reloadContext,
+    runtime: watchRuntime,
+  });
 
   /** Save current view preferences to user config and then leave the app. */
   const saveViewPreferencesAndQuit = useCallback(() => {

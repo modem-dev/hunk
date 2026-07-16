@@ -108,7 +108,7 @@ export function createSessionReloadBounds(
     case "vcs":
     case "show":
     case "stash-show":
-      roots = [bootstrap.changeset.sourceLabel || initialCwd];
+      roots = [bootstrap.reloadContext.repoRoot ?? bootstrap.reloadContext.cwd];
       break;
     case "diff":
     case "difftool":
