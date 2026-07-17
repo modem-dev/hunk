@@ -126,6 +126,63 @@ export function sliceTextByWidth(text: string, offset: number, width: number) {
   return { text: visibleText, width: usedWidth };
 }
 
+/**
+ * Convert an inclusive terminal-cell range into string slice bounds (`endIndex` exclusive).
+ *
+ * Mouse selection coordinates are terminal cells while `String#slice` counts UTF-16 code units,
+ * and the two drift apart on non-ASCII lines: a full-width CJK character is one code unit but
+ * two cells, and an emoji cluster can be many code units but two cells. Clusters only partially
+ * covered by the cell range are included in full so a selection can never split a wide
+ * character, and zero-width clusters at the range start are kept so invisible characters
+ * round-trip through the clipboard. Indices refer to `text` as given; callers pass rendered
+ * lines that are already sanitized (sanitizing here could shift the returned indices off the
+ * caller's string). Callers must pass a normalized range (`startCell <= endCell`); inverted
+ * ranges are unspecified.
+ */
+export function cellRangeToCharRange(text: string, startCell: number, endCell: number) {
+  const safeStartCell = Math.max(0, startCell);
+
+  if (printableAsciiRegex.test(text)) {
+    const startIndex = Math.min(text.length, safeStartCell);
+    return {
+      startIndex,
+      endIndex: Math.min(text.length, Math.max(startIndex, endCell + 1)),
+    };
+  }
+
+  let cellCursor = 0;
+  let unitCursor = 0;
+  let startIndex = -1;
+  let endIndex = text.length;
+
+  for (const cluster of textClusters(text)) {
+    // The current cluster starts past the end cell, so everything before it is the slice end.
+    if (cellCursor > endCell) {
+      endIndex = unitCursor;
+      break;
+    }
+
+    const clusterWidth = measureSanitizedTextWidth(cluster);
+    // Zero-width clusters (e.g. U+200B) occupy no cell, so they never satisfy the covering
+    // check; attach them to a range that starts at their position instead of dropping them.
+    const coversStart =
+      clusterWidth > 0 ? cellCursor + clusterWidth > safeStartCell : cellCursor >= safeStartCell;
+    if (startIndex < 0 && coversStart) {
+      startIndex = unitCursor;
+    }
+
+    cellCursor += clusterWidth;
+    unitCursor += cluster.length;
+  }
+
+  // A range starting past the end of the line resolves to an empty slice at the text end.
+  if (startIndex < 0) {
+    startIndex = text.length;
+  }
+
+  return { startIndex, endIndex: Math.max(startIndex, endIndex) };
+}
+
 /** Clamp text to a fixed width using a plain-dot terminal fallback marker. */
 export function fitText(text: string, width: number) {
   const safeText = sanitizeTerminalLine(text);
