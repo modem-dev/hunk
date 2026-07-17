@@ -23,6 +23,7 @@ import {
   resolveStackCellGeometry,
   resolveSplitPaneWidths,
 } from "../../diff/codeColumns";
+import { measureTextWidth } from "../../lib/text";
 
 const OSC52_CLIPBOARD = "\x1b]52;c;SGVsbG8=\x07";
 const CSI_CLEAR_SCREEN = "\x1b[2J";
@@ -89,6 +90,36 @@ function createMaliciousDiffFile(): DiffFile {
   return {
     id: "malicious",
     path: `evil${payload}.ts`,
+    patch: "",
+    language: "typescript",
+    stats: {
+      additions: 1,
+      deletions: 1,
+    },
+    metadata,
+    agent: null,
+  };
+}
+
+function createCjkDiffFile(): DiffFile {
+  const metadata = parseDiffFromFile(
+    {
+      name: "i18n.ts",
+      contents: "export const message = 'hello'; // greeting\n",
+      cacheKey: "cjk-before",
+    },
+    {
+      name: "i18n.ts",
+      contents: "export const message = 'こんにちは'; // greeting\n",
+      cacheKey: "cjk-after",
+    },
+    { context: 3 },
+    true,
+  );
+
+  return {
+    id: "i18n",
+    path: "i18n.ts",
     patch: "",
     language: "typescript",
     stats: {
@@ -711,5 +742,243 @@ describe("renderCopySelectionText in split with side", () => {
     expect(text.length).toBeGreaterThan(0);
     // First line should be included
     expect(text).toContain("export const answer = 42;");
+  });
+});
+
+describe("copy selection with wide (CJK) characters", () => {
+  // "export const message = 'こんにちは" is 29 code units but 34 terminal cells: each full-width
+  // character covers two cells, so cell columns and code-unit indices drift apart on this line.
+  const cjkLine = "export const message = 'こんにちは'; // greeting";
+  const throughWide = "export const message = 'こんにちは";
+
+  function buildCjkContext() {
+    const { context, fileSectionLayouts, sectionGeometry } = buildContext(
+      "stack",
+      120,
+      createCjkDiffFile(),
+    );
+    const section = fileSectionLayouts[0]!;
+    const geometry = sectionGeometry[0]!;
+    const { gutterWidth } = resolveStackCellGeometry(
+      context.width,
+      geometry.lineNumberDigits,
+      context.showLineNumbers,
+      DIFF_RAIL_PREFIX_WIDTH,
+    );
+    const codeStart = DIFF_RAIL_PREFIX_WIDTH + gutterWidth;
+    const codeOnlyContext: CopySelectionContext = { ...context, copyDecorations: false };
+
+    // Locate the CJK addition row through full-width row copies so the tests do not
+    // hard-code the planned-row layout.
+    let visualRow = -1;
+    for (let row = section.bodyTop; row < section.bodyTop + section.bodyHeight; row += 1) {
+      const text = renderCopySelectionText({
+        context: codeOnlyContext,
+        start: { kind: "review-row", column: 0, visualRow: row },
+        end: { kind: "review-row", column: context.width - 1, visualRow: row },
+      });
+      if (text.includes("こんにちは")) {
+        visualRow = row;
+        break;
+      }
+    }
+    expect(visualRow).toBeGreaterThanOrEqual(0);
+
+    return { context, codeOnlyContext, codeStart, visualRow };
+  }
+
+  test("code-only selection ending after the wide run copies exactly the selected cells", () => {
+    const { codeOnlyContext, codeStart, visualRow } = buildCjkContext();
+
+    const text = renderCopySelectionText({
+      context: codeOnlyContext,
+      start: { kind: "review-row", column: codeStart, visualRow },
+      end: {
+        kind: "review-row",
+        column: codeStart + measureTextWidth(throughWide) - 1,
+        visualRow,
+      },
+    });
+
+    expect(text).toBe(throughWide);
+  });
+
+  test("code-only selection starting after the wide run copies exactly the selected cells", () => {
+    const { codeOnlyContext, codeStart, visualRow } = buildCjkContext();
+
+    const text = renderCopySelectionText({
+      context: codeOnlyContext,
+      start: {
+        kind: "review-row",
+        column: codeStart + measureTextWidth(throughWide),
+        visualRow,
+      },
+      end: { kind: "review-row", column: codeOnlyContext.width - 1, visualRow },
+    });
+
+    expect(text).toBe("'; // greeting");
+  });
+
+  test("decorated selection ending after the wide run copies exactly the selected cells", () => {
+    const { context, codeStart, visualRow } = buildCjkContext();
+
+    const text = renderCopySelectionText({
+      context,
+      start: { kind: "review-row", column: codeStart, visualRow },
+      end: {
+        kind: "review-row",
+        column: codeStart + measureTextWidth(throughWide) - 1,
+        visualRow,
+      },
+    });
+
+    expect(text).toBe(throughWide);
+  });
+
+  test("double-click on a word after the wide run selects the word measured in cells", () => {
+    const { context, codeStart, visualRow } = buildCjkContext();
+    const wordStartCell = measureTextWidth("export const message = 'こんにちは'; // ");
+    const point: CopySelectionPoint = {
+      kind: "review-row",
+      // Click inside "greeting".
+      column: codeStart + wordStartCell + 2,
+      visualRow,
+    };
+
+    const result = expandSelectionPoint(point, 2, context);
+
+    expect(result).toEqual({
+      startCol: codeStart + wordStartCell,
+      endCol: codeStart + wordStartCell + "greeting".length - 1,
+    });
+  });
+
+  test("double-click on a wide character selects both of its terminal cells", () => {
+    const { context, codeStart, visualRow } = buildCjkContext();
+    // "ん" covers two cells; clicking the second cell must still select the whole character.
+    const wideCharStartCell = measureTextWidth("export const message = 'こ");
+    const point: CopySelectionPoint = {
+      kind: "review-row",
+      column: codeStart + wideCharStartCell + 1,
+      visualRow,
+    };
+
+    const result = expandSelectionPoint(point, 2, context);
+
+    expect(result).toEqual({
+      startCol: codeStart + wideCharStartCell,
+      endCol: codeStart + wideCharStartCell + 1,
+    });
+  });
+
+  test("code-only triple-click covers the full cell width of the line", () => {
+    const { codeOnlyContext, codeStart, visualRow } = buildCjkContext();
+    const point: CopySelectionPoint = {
+      kind: "review-row",
+      column: codeStart + 2,
+      visualRow,
+    };
+
+    const result = expandSelectionPoint(point, 3, codeOnlyContext);
+
+    expect(result).toEqual({
+      startCol: codeStart,
+      endCol: codeStart + measureTextWidth(cjkLine) - 1,
+    });
+  });
+
+  test("pinned-header selection stays cell-aligned for wide-character filenames", () => {
+    const metadata = parseDiffFromFile(
+      { name: "日本語.ts", contents: "export const a = 1;\n", cacheKey: "cjk-path-before" },
+      { name: "日本語.ts", contents: "export const a = 2;\n", cacheKey: "cjk-path-after" },
+      { context: 3 },
+      true,
+    );
+    const file: DiffFile = {
+      id: "cjk-path",
+      path: "日本語.ts",
+      patch: "",
+      language: "typescript",
+      stats: { additions: 1, deletions: 1 },
+      metadata,
+      agent: null,
+    };
+    const { context, fileSectionLayouts } = buildContext("stack", 120, file);
+    const nextVisualRow = fileSectionLayouts[0]!.bodyTop;
+
+    const headerCells = (startColumn: number, endColumn: number) =>
+      renderCopySelectionText({
+        context,
+        start: { kind: "pinned-header", column: startColumn, fileId: "cjk-path", nextVisualRow },
+        end: { kind: "pinned-header", column: endColumn, fileId: "cjk-path", nextVisualRow },
+      });
+
+    // The label starts after one padding cell: "日本語.ts" spans cells 1..9.
+    expect(headerCells(1, 9)).toBe("日本語.ts");
+
+    // DiffFileHeaderRow right-aligns the stats, so "-1" ends at cell width - 3 (one trailing
+    // stats space plus one padding cell). A code-unit gap would shift these cells onto "+1".
+    expect(headerCells(context.width - 4, context.width - 3)).toBe("-1");
+  });
+});
+
+describe("copy selection with zero-width characters", () => {
+  test("selection starting at a zero-width boundary keeps the invisible character", () => {
+    // A mid-line U+200B survives rendering (only leading zero-width clusters are dropped by
+    // sliceTextByWidth), so copying must round-trip it for the invisible bug to stay visible
+    // in the pasted text.
+    const metadata = parseDiffFromFile(
+      { name: "zero.ts", contents: "const x = 1;\n", cacheKey: "zero-before" },
+      {
+        name: "zero.ts",
+        contents: "const x = 1;\nconst zw = 'a\u200bb';\n",
+        cacheKey: "zero-after",
+      },
+      { context: 3 },
+      true,
+    );
+    const file: DiffFile = {
+      id: "zero",
+      path: "zero.ts",
+      patch: "",
+      language: "typescript",
+      stats: { additions: 1, deletions: 0 },
+      metadata,
+      agent: null,
+    };
+    const { context, fileSectionLayouts, sectionGeometry } = buildContext("stack", 120, file);
+    const section = fileSectionLayouts[0]!;
+    const geometry = sectionGeometry[0]!;
+    const { gutterWidth } = resolveStackCellGeometry(
+      context.width,
+      geometry.lineNumberDigits,
+      context.showLineNumbers,
+      DIFF_RAIL_PREFIX_WIDTH,
+    );
+    const codeStart = DIFF_RAIL_PREFIX_WIDTH + gutterWidth;
+    const codeOnlyContext: CopySelectionContext = { ...context, copyDecorations: false };
+
+    let visualRow = -1;
+    for (let row = section.bodyTop; row < section.bodyTop + section.bodyHeight; row += 1) {
+      const text = renderCopySelectionText({
+        context: codeOnlyContext,
+        start: { kind: "review-row", column: 0, visualRow: row },
+        end: { kind: "review-row", column: context.width - 1, visualRow: row },
+      });
+      if (text.includes("zw")) {
+        visualRow = row;
+        break;
+      }
+    }
+    expect(visualRow).toBeGreaterThanOrEqual(0);
+
+    // "const zw = 'a" is 13 cells; the zero-width character sits at that boundary before "b".
+    const text = renderCopySelectionText({
+      context: codeOnlyContext,
+      start: { kind: "review-row", column: codeStart + 13, visualRow },
+      end: { kind: "review-row", column: codeOnlyContext.width - 1, visualRow },
+    });
+
+    expect(text).toBe("\u200bb';");
   });
 });

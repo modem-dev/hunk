@@ -5,6 +5,7 @@ import { act } from "react";
 import type { AppBootstrap } from "../core/types";
 import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
 import { createTestDiffFile, lines } from "../../test/helpers/diff-helpers";
+import { measureTextWidth } from "./lib/text";
 
 // These tests drive the DiffPane mouse-drag text-selection path end to end: begin/update/end
 // copy-selection, double/triple-click word and line expansion, and the OSC 52 clipboard copy.
@@ -40,6 +41,24 @@ function createSelectionBootstrap(): AppBootstrap {
 function createSplitSelectionBootstrap(): AppBootstrap {
   const bootstrap = createSelectionBootstrap();
   return { ...bootstrap, initialMode: "split", input: { ...bootstrap.input } };
+}
+
+/** Build a diff whose changed line mixes full-width (CJK) and ASCII characters. */
+function createWideCharSelectionBootstrap(): AppBootstrap {
+  return createTestVcsAppBootstrap({
+    changesetId: "changeset:copy-selection-cjk",
+    files: [
+      createTestDiffFile({
+        id: "i18n",
+        path: "i18n.ts",
+        before: lines("export const message = 'hello'; // greeting"),
+        after: lines("export const message = 'こんにちは'; // greeting"),
+        context: 1,
+      }),
+    ],
+    initialMode: "stack",
+    initialCopyDecorations: true,
+  });
 }
 
 type Harness = Awaited<ReturnType<typeof testRender>>;
@@ -151,6 +170,43 @@ describe("DiffPane copy selection", () => {
         "copied-selection notice",
       );
       expect(noticeFrame).toContain("Copied selection to clipboard");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("dragging across wide (CJK) characters copies exactly the selected cells", async () => {
+    const { setup, copied } = await renderSelectionApp(createWideCharSelectionBootstrap());
+
+    try {
+      const frame = setup.captureCharFrame();
+      const wide = locateText(frame, "こんにちは");
+      expect(wide).not.toBeNull();
+
+      // Everything left of the code is single-cell glyphs, so the string index of the code
+      // start is also its screen column; the drag end is then measured in terminal cells.
+      const row = frame.split("\n")[wide!.y]!;
+      const startX = row.indexOf("export const message");
+      expect(startX).toBeGreaterThanOrEqual(0);
+      const throughWide = "export const message = 'こんにちは";
+
+      await act(async () => {
+        await setup.mockMouse.drag(
+          startX,
+          wide!.y,
+          startX + measureTextWidth(throughWide) - 1,
+          wide!.y,
+          MouseButtons.LEFT,
+        );
+      });
+      await flush(setup);
+
+      // Cell-aware slicing keeps the copy aligned with the drag: without it, each full-width
+      // character shifted the endpoint and the clipboard over-included "'; //".
+      expect(copied.length).toBeGreaterThan(0);
+      expect(copied[copied.length - 1]).toBe(throughWide);
     } finally {
       await act(async () => {
         setup.renderer.destroy();
