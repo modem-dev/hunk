@@ -636,7 +636,7 @@ describe("Pierre diff rows", () => {
       {
         name: "syntax.ts",
         contents:
-          'const a = 1;\nexport function compute(): number {\n  return 42;\n}\nconst greeting = "hello";\n',
+          'const a = 1;\nexport function compute(): number {\n  return 42;\n}\nconst greeting = "hello";\n// visible comment\n',
         cacheKey: "syntax-after",
       },
       { context: 3 },
@@ -647,7 +647,7 @@ describe("Pierre diff rows", () => {
       path: "syntax.ts",
       patch: "",
       language: "typescript",
-      stats: { additions: 4, deletions: 0 },
+      stats: { additions: 5, deletions: 0 },
       metadata,
       agent: null,
     };
@@ -659,6 +659,7 @@ describe("Pierre diff rows", () => {
           keyword: "#112233",
           function: "#223344",
           string: "#334455",
+          comment: "#445566",
         },
       });
       const highlighted = await loadHighlightedDiff(file, theme.appearance);
@@ -672,6 +673,7 @@ describe("Pierre diff rows", () => {
       expect(spans.find((span) => span.text.includes("function"))?.fg).toBe("#112233");
       expect(spans.find((span) => span.text.includes("compute"))?.fg).toBe("#223344");
       expect(spans.find((span) => span.text.includes('"hello"'))?.fg).toBe("#334455");
+      expect(spans.find((span) => span.text.includes("visible comment"))?.fg).toBe("#445566");
     }
   });
 
