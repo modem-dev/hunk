@@ -23,7 +23,7 @@ import {
   isStepDownKey,
   isStepUpKey,
 } from "./keyboard";
-import { fitText, measureTextWidth, padText, sliceTextByWidth } from "./text";
+import { cellRangeToCharRange, fitText, measureTextWidth, padText, sliceTextByWidth } from "./text";
 import { computeHunkRevealScrollTop } from "./hunkScroll";
 import {
   estimateDiffSectionBodyRows,
@@ -270,6 +270,33 @@ describe("ui helpers", () => {
     expect(sliceTextByWidth("日", 1, 1)).toEqual({ text: " ", width: 1 });
     expect(fitText("日本語", 5)).toBe("日本.");
     expect(measureTextWidth(padText("日本", 6))).toBe(6);
+  });
+
+  test("cellRangeToCharRange maps inclusive cell ranges onto code-unit slice bounds", () => {
+    // ASCII: cells and code units are identical, and out-of-range cells clamp to the text.
+    expect(cellRangeToCharRange("hello", 1, 3)).toEqual({ startIndex: 1, endIndex: 4 });
+    expect(cellRangeToCharRange("hello", 0, 99)).toEqual({ startIndex: 0, endIndex: 5 });
+
+    // "a日本b" layout: a=cell 0, 日=cells 1-2, 本=cells 3-4, b=cell 5.
+    expect(cellRangeToCharRange("a日本b", 1, 2)).toEqual({ startIndex: 1, endIndex: 2 });
+    expect(cellRangeToCharRange("a日本b", 3, 5)).toEqual({ startIndex: 2, endIndex: 4 });
+    expect(cellRangeToCharRange("a日本b", 6, 9)).toEqual({ startIndex: 4, endIndex: 4 });
+
+    // Clusters partially covered by the cell range are included in full on both edges.
+    expect(cellRangeToCharRange("a日本b", 2, 3)).toEqual({ startIndex: 1, endIndex: 3 });
+
+    // Surrogate-pair emoji (👍 = two code units, two cells) never split mid-pair.
+    expect(cellRangeToCharRange("👍a", 1, 2)).toEqual({ startIndex: 0, endIndex: 3 });
+    expect(cellRangeToCharRange("👍a", 2, 2)).toEqual({ startIndex: 2, endIndex: 3 });
+
+    // ZWJ emoji sequences stay one cluster (🧑‍💻 = five code units, two cells).
+    expect(cellRangeToCharRange("🧑‍💻x", 1, 1)).toEqual({ startIndex: 0, endIndex: 5 });
+    expect(cellRangeToCharRange("🧑‍💻x", 2, 2)).toEqual({ startIndex: 5, endIndex: 6 });
+
+    // Zero-width characters at the range start are kept so invisible characters round-trip,
+    // while zero-width characters strictly before the range stay excluded.
+    expect(cellRangeToCharRange("\u200bab", 0, 0)).toEqual({ startIndex: 0, endIndex: 2 });
+    expect(cellRangeToCharRange("\u200bab", 1, 1)).toEqual({ startIndex: 2, endIndex: 3 });
   });
 
   test("repeated single-character runs use the fast width path without losing correctness", () => {
