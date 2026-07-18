@@ -294,6 +294,7 @@ function buildCustomTheme(customTheme: CustomThemeConfig) {
     // Keep the source-accurate base theme and pass exact TextMate selectors through unchanged.
     // The diff highlighter registers that derived palette with Pierre by content hash.
     syntaxTheme: baseTheme.syntaxTheme,
+    // TOML config is normalized at parse time; repeat the adapter here for direct API callers.
     syntaxScopeOverrides: resolveSyntaxScopeOverrides(customTheme.syntax, customTheme.syntaxScopes),
   };
 

@@ -41,35 +41,6 @@ type HighlightOptions = ReturnType<typeof getHighlighterOptions>;
 const highlighterOptionsByKey = new Map<string, HighlightOptions>();
 let queuedHighlightWork = Promise.resolve();
 
-/** Build a cache key for theme-dependent terminal colors, not just the stable UI theme id. */
-function themeRenderCacheKey(theme: AppTheme) {
-  return [
-    theme.id,
-    theme.syntaxTheme ?? "",
-    theme.appearance,
-    theme.background,
-    theme.panelAlt,
-    theme.contextBg,
-    theme.addedBg,
-    theme.removedBg,
-    theme.addedContentBg,
-    theme.removedContentBg,
-    theme.addedSignColor,
-    theme.removedSignColor,
-    theme.syntaxColors.default,
-    theme.syntaxColors.keyword,
-    theme.syntaxColors.string,
-    theme.syntaxColors.comment,
-    theme.syntaxColors.number,
-    theme.syntaxColors.function,
-    theme.syntaxColors.property,
-    theme.syntaxColors.type,
-    theme.syntaxColors.variable ?? "",
-    theme.syntaxColors.operator ?? "",
-    theme.syntaxColors.punctuation,
-  ].join(":");
-}
-
 type HastNode = HastTextNode | HastElementNode;
 
 interface HastTextNode {
@@ -250,7 +221,16 @@ function resolveWordDiffHighlightBg(contentBg: string, lineBg: string, signColor
 
 /** Resolve the inline word-diff background, strengthening theme colors that are too subtle to see. */
 function wordDiffHighlightBg(kind: SplitLineCell["kind"], theme: AppTheme) {
-  const cacheKey = [themeRenderCacheKey(theme), theme.contextContentBg, theme.panelAlt].join(":");
+  const cacheKey = [
+    theme.addedContentBg,
+    theme.addedBg,
+    theme.addedSignColor,
+    theme.removedContentBg,
+    theme.removedBg,
+    theme.removedSignColor,
+    theme.contextContentBg,
+    theme.panelAlt,
+  ].join(":");
   let cached = wordDiffBackgroundCache.get(cacheKey);
   if (!cached) {
     const addition = resolveWordDiffHighlightBg(
@@ -297,7 +277,9 @@ function flattenHighlightedLine(node: HastNode | undefined, theme: AppTheme, emp
     return [];
   }
 
-  const cacheKey = `${themeRenderCacheKey(theme)}:${emphasisBg}`;
+  // The highlighted HAST node is already unique to the content-addressed Shiki theme. Only
+  // post-highlight choices belong in the inner key; syntax identity comes from the WeakMap key.
+  const cacheKey = `${theme.appearance}:${emphasisBg}`;
   const cachedByTheme = flattenedHighlightedLineCache.get(node);
   const cached = cachedByTheme?.get(cacheKey);
   if (cached) {

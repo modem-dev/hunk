@@ -162,7 +162,7 @@ noteBorder = "#c49bff"
 "entity.name.function" = "#8ed4ff"
 ```
 
-`syntax_scopes` uses [Shiki/TextMate scope selectors](https://shiki.style/guide/themes#token-colors) directly, so matching and precedence follow Shiki's theme rules without a Hunk-specific translation layer. Quote selectors containing dots. Declaration order is preserved; later rules win when matching selectors have equal specificity. All custom theme colors must use `#rrggbb` hex values.
+`syntax_scopes` uses [Shiki/TextMate scope selectors](https://shiki.style/guide/themes#token-colors) directly, so matching and precedence follow Shiki's theme rules without a Hunk-specific translation layer. Quote selectors containing dots. Declaration order is preserved; later rules win when matching selectors have equal specificity, while a more-specific base-theme selector beats a broader override. Add the grammar-specific selector when that happens. All custom theme colors must use `#rrggbb` hex values.
 
 The former `[custom_theme.syntax]` role table is deprecated but temporarily translated into approximate scopes for compatibility. Both tables can coexist while migrating, and an exact `syntax_scopes` entry overrides a translated entry with the same selector. Because semantic roles have no one-to-one TextMate mapping, migrate when practical: for example, replace `comment = "#ffffff"` with both `"comment" = "#ffffff"` and `"punctuation.definition.comment" = "#ffffff"` under `[custom_theme.syntax_scopes]`, adding language-specific selectors when a grammar uses more specific scopes. The compatibility table will be removed in the next major release.
 
