@@ -26,8 +26,12 @@ function parseLayoutMode(value: string): LayoutMode {
 
 /** Parse one required positive integer CLI value. */
 function parsePositiveInt(value: string) {
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isInteger(parsed) || parsed <= 0) {
+  if (!/^[1-9]\d*$/.test(value)) {
+    throw new Error(`Invalid positive integer: ${value}`);
+  }
+
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed)) {
     throw new Error(`Invalid positive integer: ${value}`);
   }
 
