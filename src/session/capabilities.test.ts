@@ -83,6 +83,21 @@ describe("readHunkSessionDaemonCapabilities", () => {
     await expect(readHunkSessionDaemonCapabilities(config)).resolves.toBeNull();
   });
 
+  test("rejects version 4 daemons that drop STML fields from comment payloads", async () => {
+    const { config } = await listen((_request: IncomingMessage, response: ServerResponse) => {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(
+        JSON.stringify({
+          version: HUNK_SESSION_API_VERSION,
+          daemonVersion: 4,
+          actions: ["comment-add", "comment-apply"],
+        }),
+      );
+    });
+
+    await expect(readHunkSessionDaemonCapabilities(config)).resolves.toBeNull();
+  });
+
   test("accepts capabilities only when both API and daemon compatibility versions match", async () => {
     const { config } = await listen((_request: IncomingMessage, response: ServerResponse) => {
       response.writeHead(200, { "content-type": "application/json" });
