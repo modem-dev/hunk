@@ -1044,6 +1044,21 @@ describe("parseCli command help text", () => {
 });
 
 describe("parseCli argument validation", () => {
+  /** Parse one numeric session-navigation flag through the public CLI parser. */
+  function parseTestNavigationTarget(flag: "--hunk" | "--old-line" | "--new-line", value: string) {
+    return parseCli([
+      "bun",
+      "hunk",
+      "session",
+      "navigate",
+      "session-1",
+      "--file",
+      "README.md",
+      flag,
+      value,
+    ]);
+  }
+
   test("rejects an invalid layout mode and rethrows the parser error", async () => {
     await expect(parseCli(["bun", "hunk", "diff", "--mode", "bogus"])).rejects.toThrow(
       "Invalid layout mode: bogus",
@@ -1056,21 +1071,32 @@ describe("parseCli argument validation", () => {
     );
   });
 
-  test("rejects a non-positive integer navigation target", async () => {
-    await expect(
-      parseCli([
-        "bun",
-        "hunk",
-        "session",
-        "navigate",
-        "session-1",
-        "--file",
-        "README.md",
-        "--hunk",
-        "0",
-      ]),
-    ).rejects.toThrow("Invalid positive integer: 0");
-  });
+  test.each(["1", "42", "9007199254740991"])(
+    "accepts positive integer navigation target %s",
+    async (value) => {
+      await expect(parseTestNavigationTarget("--hunk", value)).resolves.toMatchObject({
+        hunkNumber: Number(value),
+      });
+    },
+  );
+
+  test.each(["0", "-1", "1.5", "1e3", "12abc", "9007199254740992"])(
+    "rejects malformed positive integer navigation target %s",
+    async (value) => {
+      await expect(parseTestNavigationTarget("--hunk", value)).rejects.toThrow(
+        `Invalid positive integer: ${value}`,
+      );
+    },
+  );
+
+  test.each(["--hunk", "--old-line", "--new-line"])(
+    "rejects a partially numeric value for %s",
+    async (flag) => {
+      await expect(parseTestNavigationTarget(flag, "12abc")).rejects.toThrow(
+        "Invalid positive integer: 12abc",
+      );
+    },
+  );
 
   test("rejects ambiguous diff input that is neither a single target nor a file pair", async () => {
     await expect(parseCli(["bun", "hunk", "diff", "--staged", "left", "right"])).rejects.toThrow(
