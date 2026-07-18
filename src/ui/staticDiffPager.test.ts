@@ -5,9 +5,9 @@ function stripAnsi(text: string) {
   return text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
 }
 
-/** Remove Hunk's intentional SGR color codes while leaving unsafe controls visible. */
-function stripColorSgr(text: string) {
-  return text.replace(/\x1b\[[0-9;]*m/g, "");
+/** Remove Hunk's intentional color and line-fill codes while leaving unsafe controls visible. */
+function stripIntentionalAnsi(text: string) {
+  return text.replace(/\x1b(?:\[[0-9;]*m|\[K)/g, "");
 }
 
 const OSC52_CLIPBOARD = "\x1b]52;c;SGVsbG8=\x07";
@@ -95,6 +95,18 @@ describe("static diff pager", () => {
     expect(plain).toContain("▌  1 +  const value = 2;");
   });
 
+  test("extends stacked row backgrounds to the host panel edge", async () => {
+    const patchText =
+      "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-short\n+also short\n";
+
+    const output = await renderStaticDiffPager(patchText);
+    const changedLines = output.split("\n").filter((line) => stripAnsi(line).includes("short"));
+    const backgroundFill = /\x1b\[48;2;\d+;\d+;\d+m\x1b\[K\x1b\[0m$/;
+
+    expect(changedLines).toHaveLength(2);
+    expect(changedLines.every((line) => backgroundFill.test(line))).toBe(true);
+  });
+
   test("uses configured custom themes in static pager output", async () => {
     const patchText =
       "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-const value = 1;\n+const value = 2;\n";
@@ -180,7 +192,7 @@ describe("static diff pager", () => {
       "",
     ].join("\n");
 
-    const output = stripColorSgr(
+    const output = stripIntentionalAnsi(
       await renderStaticDiffPager(text, {}, { stderr: { write: () => true } }),
     );
 
@@ -199,7 +211,7 @@ describe("static diff pager", () => {
       "",
     ].join("\n");
 
-    const output = stripColorSgr(await renderStaticDiffPager(patchText));
+    const output = stripIntentionalAnsi(await renderStaticDiffPager(patchText));
 
     expect(output).toContain("evil");
     expect(output).toContain("@@ -1 +1 @@");
@@ -217,7 +229,7 @@ describe("static diff pager", () => {
       "",
     ].join("\n");
 
-    const output = stripColorSgr(await renderStaticDiffPager(patchText));
+    const output = stripIntentionalAnsi(await renderStaticDiffPager(patchText));
 
     expectNoUnsafeTerminalControls(output);
   });
