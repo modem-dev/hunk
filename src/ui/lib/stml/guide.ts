@@ -14,11 +14,11 @@ export const STML_GUIDE = `# STML — terminal markup for Hunk agent notes
 Experimental: the tag and color vocabulary may change between releases.
 Markup degrades to plain text, so worst case a note loses polish, not content.
 
-Small HTML-like markup rendered as real terminal UI inside note cards:
+Small HTML-like markup rendered as real terminal UI inside agent notes:
 boxes, rows, badges, gauges, lists, code blocks. Sources (--summary stays
 as the plain-text fallback):
 
-    hunk session comment add ... --markup '<box border>...</box>'
+    hunk session comment add ... --markup '<text>formatted note body</text>'
     comment apply items:    { "markup": "...", ... }
     agent-context sidecar:  annotations[].markup
 
@@ -28,12 +28,15 @@ Preview from a file or stdin:
 
 ## Ground rules
 
+- Hunk supplies the note's outer frame, author, and source location. STML is
+  the note body; use borders for useful inner hierarchy rather than duplicating
+  that frame around the whole body. Sibling and nested boxes are supported.
 - Width follows the live session: stack ≈ full pane, split ≈ half, big
   terminal = big note. \`hunk session context --json\` reports
   \`noteMarkupWidth\`; comment responses echo \`markupWidth\`. Preview with
   \`hunk markup render - --width <that>\`. Unknown? Design for ~${STML_REFERENCE_WIDTH} cols —
   it holds up wider, and users resize/switch layouts anytime.
-- No chart tag: gauges are block chars (█ ░) in color spans (pattern below).
+- No chart tag: gauges are block chars (█ ░) in color spans (glyph-run example below).
 - Bad markup degrades instead of crashing and produces render notes
   (in comment responses and on \`markup render\` stderr) — fix what they flag.
 - Entities work: &rarr; → &check; ✓ &amp; &.
@@ -49,88 +52,85 @@ row: gap. list: marker. spacer: size. code: title.
 Colors: theme tokens accent success warning danger info muted subtle heading
 (preferred — they follow the user's theme), ANSI names, or #hex.
 
-## Patterns
+## Syntax examples
 
-Status line:
+These fragments demonstrate mechanics, not preferred layouts. STML is an
+open composition grammar: combine, omit, repeat, and nest elements as the
+explanation requires.
 
-\`\`\`stml
-<text><badge color="success">PASS</badge> 34 tests · <badge color="warning">TODO</badge> add jitter · <dim>reviewed by fable</dim></text>
-\`\`\`
-
-Titled card:
+Inline styles:
 
 \`\`\`stml
-<card title="Why this is safe" border-color="success">
-  Retries cap at <b>3 attempts</b>; the last error is rethrown.
-</card>
+<text><badge color="success">label</badge> <b>bold</b> <i>italic</i> <dim>dim</dim></text>
 \`\`\`
 
-Scorecard row:
+Bordered grouping:
+
+\`\`\`stml
+<box border border-color="accent" padding-x="1" title="group">
+  grouped detail
+</box>
+\`\`\`
+
+Responsive siblings:
 
 \`\`\`stml
 <row gap="2">
-  <box border border-color="success" padding-x="1" title="tests">
-    <c fg="success">✓</c> 34 pass
-  </box>
-  <box border border-color="warning" padding-x="1" title="risks">
-    <badge color="danger">RISK</badge> unbounded delay
-  </box>
+  <box border title="left">first region</box>
+  <box border title="right">second region</box>
 </row>
 \`\`\`
 
-Gauges (fixed bar budget ~20 cells, filled/empty split, label at the end):
+Colored glyph runs:
 
 \`\`\`stml
-<text>coverage <c fg="success">████████████████</c><c fg="subtle">░░░░</c> 80%</text>
-<text>p95      <c fg="accent">███████</c><c fg="subtle">░░░░░░░░░░░░░</c> 340ms</text>
+<text><c fg="success">████████████</c><c fg="subtle">░░░░░░░░</c> 60%</text>
 \`\`\`
 
-Pipeline (the <br/> drops each arrow to the boxes' middle row):
+Rows with connectors (the <br/> vertically centers each arrow):
 
 \`\`\`stml
 <row gap="1">
-  <box border border-color="accent" padding-x="1">parse</box>
+  <box border>first<br/><dim>detail</dim></box>
   <text width="3"><br/> &rarr;</text>
-  <box border border-color="success" padding-x="1">render</box>
+  <box border>second<br/><dim>detail</dim></box>
 </row>
 \`\`\`
 
-Checklist:
+List structure:
 
 \`\`\`stml
 <list>
-  <item><badge color="success">DONE</badge> bounded retry loop</item>
-  <item><badge color="warning">TODO</badge> add <i>jitter</i></item>
-  <item><badge color="danger">RISK</badge> <b>delayMs</b> grows unbounded</item>
+  <item>first item</item>
+  <item>second item</item>
 </list>
 \`\`\`
 
-Key-value block:
+Fixed-width columns:
 
 \`\`\`stml
 <row gap="1">
-  <box width="12"><dim>attempts</dim><br/><dim>base delay</dim></box>
-  <box>3 max<br/>100ms</box>
+  <box width="12"><dim>label</dim><br/><dim>status</dim></box>
+  <box>value<br/>ready</box>
 </row>
 \`\`\`
 
-Code suggestion (verbatim; clips, never wraps):
+Verbatim block (clips, never wraps):
 
 \`\`\`stml
-<code title="suggestion">
-const backoff = (attempt: number) =>
-  100 * 2 ** (attempt - 1);
+<code title="output">
+const value = compute();
 </code>
 \`\`\`
 
-Keyboard hints:
+Keyboard token:
 
 \`\`\`stml
-<text>press <kbd> a </kbd> to toggle notes</text>
+<text><kbd> key </kbd></text>
 \`\`\`
 
-A note reads best as a callout, not a page: verdict first, a couple of
-blocks of evidence, semantic colors used for meaning.
+Use STML when its layout makes the note clearer than plain text, and add
+structure where it helps communicate the note.
 `;
 
 /** Extract the fenced \`\`\`stml snippets from the guide, in order. */
