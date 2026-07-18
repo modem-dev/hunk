@@ -321,6 +321,38 @@ describe("ui helpers", () => {
     expect(wrapText("alpha beta gamma", 8)).toEqual(["alpha", "beta", "gamma"]);
     expect(wrapText("supercalifragilistic", 6)).toEqual(["superc", "alifra", "gilist", "ic"]);
 
+    // Wide text wraps by terminal cells, not UTF-16 code units, so CJK lines
+    // never overflow the box and get clipped by fitText/padText downstream.
+    expect(wrapText("こんにちは世界", 8)).toEqual(["こんにち", "は世界"]);
+    expect(wrapText("これは全角文字の長い注釈です", 10)).toEqual([
+      "これは全角",
+      "文字の長い",
+      "注釈です",
+    ]);
+    expect(wrapText("fix 説明が長い日本語のまま続く", 10)).toEqual([
+      "fix",
+      "説明が長い",
+      "日本語のま",
+      "ま続く",
+    ]);
+
+    // Emoji clusters (surrogate pairs) are never split into lone surrogates.
+    expect(wrapText("🎉🎉🎉", 4)).toEqual(["🎉🎉", "🎉"]);
+
+    // Odd width: a 2-cell character cannot straddle the boundary, so each
+    // line carries one character even though a cell stays unused.
+    expect(wrapText("日本語", 3)).toEqual(["日", "本", "語"]);
+
+    // Multiple ASCII words still pack into one line when they fit.
+    expect(wrapText("ab cd", 5)).toEqual(["ab cd"]);
+
+    // Width narrower than one cluster keeps the text for fitText to clamp
+    // at render time instead of silently dropping it.
+    expect(wrapText("日日", 1)).toEqual(["日日"]);
+
+    // ZWJ emoji clusters stay whole when hard-splitting.
+    expect(wrapText("🧑‍💻🧑‍💻", 2)).toEqual(["🧑‍💻", "🧑‍💻"]);
+
     const content = buildAgentPopoverContent({
       summary: "Guard missing socket path",
       rationale: "Prevents noisy reconnect errors during first launch.",
