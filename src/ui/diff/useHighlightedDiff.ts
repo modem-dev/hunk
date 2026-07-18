@@ -2,6 +2,7 @@ import { useLayoutEffect, useState } from "react";
 import type { DiffFile } from "../../core/types";
 import type { AppTheme } from "../themes";
 import { loadHighlightedDiff, type HighlightedDiffCode } from "./pierre";
+import { syntaxHighlightThemeName } from "./syntaxHighlightTheme";
 
 /**
  * Maximum cached highlight results.
@@ -80,7 +81,7 @@ function patchFingerprint(file: DiffFile) {
 /** Cache key that includes a content fingerprint so stale entries are never served
  *  after reload. Unchanged files keep their cache hit across reloads. */
 function buildCacheKey(theme: AppTheme, file: DiffFile) {
-  return `${theme.id}:${theme.syntaxTheme ?? theme.appearance}:${file.id}:${patchFingerprint(file)}`;
+  return `${theme.id}:${syntaxHighlightThemeName(theme)}:${file.id}:${patchFingerprint(file)}`;
 }
 
 /** Only commit a highlight result if the promise is still the active one for that key.

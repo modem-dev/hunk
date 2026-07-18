@@ -77,36 +77,6 @@ function createEmptyLineDiffFile(): DiffFile {
   };
 }
 
-function createMarkdownDiffFile(): DiffFile {
-  const metadata = parseDiffFromFile(
-    {
-      name: "notes.md",
-      contents: "plain\n",
-      cacheKey: "before-md",
-    },
-    {
-      name: "notes.md",
-      contents: "# Heading\n`inline code`\nplain\n",
-      cacheKey: "after-md",
-    },
-    { context: 3 },
-    true,
-  );
-
-  return {
-    id: "notes-md",
-    path: "notes.md",
-    patch: "",
-    language: "markdown",
-    stats: {
-      additions: 2,
-      deletions: 0,
-    },
-    metadata,
-    agent: null,
-  };
-}
-
 describe("Pierre diff rows", () => {
   test("builds split rows with Pierre-highlighted emphasis spans", async () => {
     const file = createDiffFile();
@@ -453,55 +423,40 @@ describe("Pierre diff rows", () => {
     );
   });
 
-  test("remaps Pierre markdown reds and greens away from diff-semantic hues", async () => {
-    const file = createMarkdownDiffFile();
+  test("applies distinct custom palettes to expanded-source highlighting", async () => {
+    const file = createDiffFile();
+    const text = "// expanded comment\nexport const hiddenMarker = true;\n";
+    const firstTheme = resolveTheme("custom", null, {
+      base: "nord",
+      syntaxScopes: {
+        "comment.line.double-slash.ts": "#abcdef",
+        "punctuation.definition.comment.ts": "#abcdef",
+      },
+    });
+    const secondTheme = resolveTheme("custom", null, {
+      base: "nord",
+      syntaxScopes: {
+        "comment.line.double-slash.ts": "#fedcba",
+        "punctuation.definition.comment.ts": "#fedcba",
+      },
+    });
+    const [firstHighlighted, secondHighlighted] = await Promise.all([
+      loadHighlightedSourceLines({ file, text, theme: firstTheme }),
+      loadHighlightedSourceLines({ file, text, theme: secondTheme }),
+    ]);
+    const firstSpans = spansForHighlightedSourceLine(
+      "// expanded comment",
+      firstHighlighted.lines[0],
+      firstTheme,
+    );
+    const secondSpans = spansForHighlightedSourceLine(
+      "// expanded comment",
+      secondHighlighted.lines[0],
+      secondTheme,
+    );
 
-    for (const themeId of [
-      "github-dark-default",
-      "github-light-default",
-      "catppuccin-latte",
-      "catppuccin-frappe",
-      "catppuccin-macchiato",
-      "catppuccin-mocha",
-    ] as const) {
-      const theme = resolveTheme(themeId, null);
-      const highlighted = await loadHighlightedDiff(file, theme.appearance);
-      const rows = buildStackRows(file, highlighted, theme).filter(
-        (row): row is Extract<DiffRow, { type: "stack-line" }> =>
-          row.type === "stack-line" && row.cell.kind === "addition",
-      );
-
-      const headingRow = rows.find((row) =>
-        row.cell.spans.some((span) => span.text.includes("Heading")),
-      );
-      const inlineCodeRow = rows.find((row) =>
-        row.cell.spans.some((span) => span.text.includes("inline code")),
-      );
-
-      expect(headingRow).toBeDefined();
-      expect(inlineCodeRow).toBeDefined();
-
-      if (!headingRow || !inlineCodeRow) {
-        throw new Error("Expected highlighted markdown rows");
-      }
-
-      expect(
-        headingRow.cell.spans.some(
-          (span) => span.text.includes("Heading") && span.fg === theme.syntaxColors.keyword,
-        ),
-      ).toBe(true);
-      expect(
-        inlineCodeRow.cell.spans.some(
-          (span) => span.text.includes("inline code") && span.fg === theme.syntaxColors.string,
-        ),
-      ).toBe(true);
-      expect(
-        headingRow.cell.spans.some((span) => span.fg === "#ff6762" || span.fg === "#d52c36"),
-      ).toBe(false);
-      expect(
-        inlineCodeRow.cell.spans.some((span) => span.fg === "#5ecc71" || span.fg === "#199f43"),
-      ).toBe(false);
-    }
+    expect(firstSpans[0]?.fg?.toLowerCase()).toBe("#abcdef");
+    expect(secondSpans[0]?.fg?.toLowerCase()).toBe("#fedcba");
   });
 
   test("collapsed rows carry line ranges and position on both layouts", () => {
@@ -585,58 +540,13 @@ describe("Pierre diff rows", () => {
     expect(between?.newRange).toEqual([9, 21]);
   });
 
-  test("keeps reserved-color remaps isolated across dark themes", async () => {
-    const file = createMarkdownDiffFile();
-    const highlighted = await loadHighlightedDiff(file, "dark");
-
-    for (const themeId of [
-      "github-dark-default",
-      "github-dark-default",
-      "dracula",
-      "catppuccin-frappe",
-      "catppuccin-macchiato",
-      "catppuccin-mocha",
-    ] as const) {
-      const theme = resolveTheme(themeId, null);
-      const rows = buildStackRows(file, highlighted, theme).filter(
-        (row): row is Extract<DiffRow, { type: "stack-line" }> =>
-          row.type === "stack-line" && row.cell.kind === "addition",
-      );
-
-      const headingRow = rows.find((row) =>
-        row.cell.spans.some((span) => span.text.includes("Heading")),
-      );
-      const inlineCodeRow = rows.find((row) =>
-        row.cell.spans.some((span) => span.text.includes("inline code")),
-      );
-
-      expect(headingRow).toBeDefined();
-      expect(inlineCodeRow).toBeDefined();
-
-      if (!headingRow || !inlineCodeRow) {
-        throw new Error("Expected highlighted markdown rows");
-      }
-
-      expect(
-        headingRow.cell.spans.some(
-          (span) => span.text.includes("Heading") && span.fg === theme.syntaxColors.keyword,
-        ),
-      ).toBe(true);
-      expect(
-        inlineCodeRow.cell.spans.some(
-          (span) => span.text.includes("inline code") && span.fg === theme.syntaxColors.string,
-        ),
-      ).toBe(true);
-    }
-  });
-
-  test("maps Pierre TypeScript syntax hues onto theme syntax colors in dark and light", async () => {
+  test("passes exact Shiki scope colors through in dark and light", async () => {
     const metadata = parseDiffFromFile(
-      { name: "syntax.ts", contents: "const a = 1;\n", cacheKey: "syntax-before" },
+      { name: "syntax.ts", contents: "", cacheKey: "syntax-before" },
       {
         name: "syntax.ts",
         contents:
-          'const a = 1;\nexport function compute(): number {\n  return 42;\n}\nconst greeting = "hello";\n',
+          '// visible comment\nexport class Greeter {\n  count = 42;\n  greet(user: User) {\n    const message = "hello" + user.name;\n    return message;\n  }\n}\n',
         cacheKey: "syntax-after",
       },
       { context: 3 },
@@ -647,7 +557,7 @@ describe("Pierre diff rows", () => {
       path: "syntax.ts",
       patch: "",
       language: "typescript",
-      stats: { additions: 4, deletions: 0 },
+      stats: { additions: 8, deletions: 0 },
       metadata,
       agent: null,
     };
@@ -655,13 +565,20 @@ describe("Pierre diff rows", () => {
     for (const themeId of ["github-dark-default", "github-light-default"] as const) {
       const theme = resolveTheme("custom", null, {
         base: themeId,
-        syntax: {
-          keyword: "#112233",
-          function: "#223344",
-          string: "#334455",
+        syntaxScopes: {
+          "storage.type.class.ts": "#112233",
+          "entity.name.function.ts": "#223344",
+          "string.quoted.double.ts": "#334455",
+          comment: "#445566",
+          "constant.numeric.decimal.ts": "#556677",
+          "variable.other.property.ts": "#667788",
+          "entity.name.type.class.ts": "#778899",
+          "variable.other.constant.ts": "#8899aa",
+          "keyword.operator.assignment.ts": "#99aabb",
+          "punctuation.terminator.statement.ts": "#aabbcc",
         },
       });
-      const highlighted = await loadHighlightedDiff(file, theme.appearance);
+      const highlighted = await loadHighlightedDiff(file, theme);
       const spans = buildStackRows(file, highlighted, theme)
         .filter(
           (row): row is Extract<DiffRow, { type: "stack-line" }> =>
@@ -669,10 +586,160 @@ describe("Pierre diff rows", () => {
         )
         .flatMap((row) => row.cell.spans);
 
-      expect(spans.find((span) => span.text.includes("function"))?.fg).toBe("#112233");
-      expect(spans.find((span) => span.text.includes("compute"))?.fg).toBe("#223344");
-      expect(spans.find((span) => span.text.includes('"hello"'))?.fg).toBe("#334455");
+      expect(spans.find((span) => span.text.includes("class"))?.fg).toBe("#112233");
+      expect(spans.find((span) => span.text.includes("greet"))?.fg).toBe("#223344");
+      expect(spans.find((span) => span.text.includes("hello"))?.fg).toBe("#334455");
+      expect(spans.find((span) => span.text.includes("visible comment"))?.fg).toBe("#445566");
+      expect(spans.find((span) => span.text.includes("42"))?.fg).toBe("#556677");
+      expect(spans.find((span) => span.text.includes("name"))?.fg).toBe("#667788");
+      expect(spans.find((span) => span.text.includes("Greeter"))?.fg).toBe("#778899");
+      expect(spans.find((span) => span.text.includes("message"))?.fg?.toLowerCase()).toBe(
+        "#8899aa",
+      );
+      expect(spans.find((span) => span.text.includes("="))?.fg?.toLowerCase()).toBe("#99aabb");
+      expect(spans.find((span) => span.text === ";")?.fg?.toLowerCase()).toBe("#aabbcc");
     }
+  });
+
+  test("preserves base Shiki colors outside partial custom syntax overrides", async () => {
+    const metadata = parseDiffFromFile(
+      { name: "partial.ts", contents: "const stable = 1;\n", cacheKey: "partial-before" },
+      {
+        name: "partial.ts",
+        contents:
+          '// customized comment\nconst stable = 1;\nconst object = { property: "text" };\nobject.property;\n',
+        cacheKey: "partial-after",
+      },
+      { context: 3 },
+      true,
+    );
+    const file: DiffFile = {
+      id: "partial-syntax",
+      path: "partial.ts",
+      patch: "",
+      language: "typescript",
+      stats: { additions: 3, deletions: 0 },
+      metadata,
+      agent: null,
+    };
+    const baseTheme = resolveTheme("nord", null);
+    const customTheme = resolveTheme("custom", null, {
+      base: "nord",
+      syntaxScopes: {
+        "comment.line.double-slash.ts": "#abcdef",
+        "punctuation.definition.comment.ts": "#abcdef",
+      },
+    });
+    const nextCustomTheme = resolveTheme("custom", null, {
+      base: "nord",
+      syntaxScopes: {
+        "comment.line.double-slash.ts": "#fedcba",
+        "punctuation.definition.comment.ts": "#fedcba",
+      },
+    });
+    const variableTheme = resolveTheme("custom", null, {
+      base: "nord",
+      syntaxScopes: { "variable.other.object.ts": "#030303" },
+    });
+    const [baseHighlighted, customHighlighted, nextCustomHighlighted, variableHighlighted] =
+      await Promise.all([
+        loadHighlightedDiff(file, baseTheme),
+        loadHighlightedDiff(file, customTheme),
+        loadHighlightedDiff(file, nextCustomTheme),
+        loadHighlightedDiff(file, variableTheme),
+      ]);
+    const baseSpans = buildStackRows(file, baseHighlighted, baseTheme)
+      .filter(
+        (row): row is Extract<DiffRow, { type: "stack-line" }> =>
+          row.type === "stack-line" && row.cell.kind === "addition",
+      )
+      .flatMap((row) => row.cell.spans);
+    const customSpans = buildStackRows(file, customHighlighted, customTheme)
+      .filter(
+        (row): row is Extract<DiffRow, { type: "stack-line" }> =>
+          row.type === "stack-line" && row.cell.kind === "addition",
+      )
+      .flatMap((row) => row.cell.spans);
+    const nextCustomSpans = buildStackRows(file, nextCustomHighlighted, nextCustomTheme)
+      .filter(
+        (row): row is Extract<DiffRow, { type: "stack-line" }> =>
+          row.type === "stack-line" && row.cell.kind === "addition",
+      )
+      .flatMap((row) => row.cell.spans);
+    const variableSpans = buildStackRows(file, variableHighlighted, variableTheme)
+      .filter(
+        (row): row is Extract<DiffRow, { type: "stack-line" }> =>
+          row.type === "stack-line" && row.cell.kind === "addition",
+      )
+      .flatMap((row) => row.cell.spans);
+
+    expect(customSpans.find((span) => span.text.includes("const"))?.fg).toBe(
+      baseSpans.find((span) => span.text.includes("const"))?.fg,
+    );
+    expect(
+      customSpans.find((span) => span.text.includes("customized comment"))?.fg?.toLowerCase(),
+    ).toBe("#abcdef");
+    expect(
+      nextCustomSpans.find((span) => span.text.includes("customized comment"))?.fg?.toLowerCase(),
+    ).toBe("#fedcba");
+    expect(
+      variableSpans.some(
+        (span) => span.text.includes("object") && span.fg?.toLowerCase() === "#030303",
+      ),
+    ).toBe(true);
+    expect(variableSpans.filter((span) => span.text.includes("property")).at(-1)?.fg).toBe(
+      baseSpans.filter((span) => span.text.includes("property")).at(-1)?.fg,
+    );
+  });
+
+  test("leaves unrelated tokens unchanged when a raw operator scope is overridden", async () => {
+    const metadata = parseDiffFromFile(
+      { name: "operator.ts", contents: "", cacheKey: "operator-before" },
+      {
+        name: "operator.ts",
+        contents: "class Example {}\nconst result = 1 + 2;\n",
+        cacheKey: "operator-after",
+      },
+      { context: 3 },
+      true,
+    );
+    const file: DiffFile = {
+      id: "operator-scope",
+      path: "operator.ts",
+      patch: "",
+      language: "typescript",
+      stats: { additions: 2, deletions: 0 },
+      metadata,
+      agent: null,
+    };
+    const baseTheme = resolveTheme("everforest-dark", null);
+    const customTheme = resolveTheme("custom", null, {
+      base: "everforest-dark",
+      syntaxScopes: { "keyword.operator": "#123456" },
+    });
+    const [baseHighlighted, customHighlighted] = await Promise.all([
+      loadHighlightedDiff(file, baseTheme),
+      loadHighlightedDiff(file, customTheme),
+    ]);
+    const baseSpans = buildStackRows(file, baseHighlighted, baseTheme)
+      .filter(
+        (row): row is Extract<DiffRow, { type: "stack-line" }> =>
+          row.type === "stack-line" && row.cell.kind === "addition",
+      )
+      .flatMap((row) => row.cell.spans);
+    const customSpans = buildStackRows(file, customHighlighted, customTheme)
+      .filter(
+        (row): row is Extract<DiffRow, { type: "stack-line" }> =>
+          row.type === "stack-line" && row.cell.kind === "addition",
+      )
+      .flatMap((row) => row.cell.spans);
+
+    expect(customSpans.find((span) => span.text.includes("class"))?.fg).toBe(
+      baseSpans.find((span) => span.text.includes("class"))?.fg,
+    );
+    expect(
+      customSpans.some((span) => span.text.includes("=") && span.fg?.toLowerCase() === "#123456"),
+    ).toBe(true);
   });
 
   test("uses Shiki's bundled Catppuccin theme for Catppuccin syntax", async () => {

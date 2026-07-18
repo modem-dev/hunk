@@ -2,12 +2,14 @@ import fs from "node:fs";
 import { dirname, join } from "node:path";
 import { BUNDLED_SHIKI_THEME_IDS } from "../ui/lib/shikiThemes";
 import { normalizeBuiltInThemeId } from "../ui/themes";
+import { LEGACY_CUSTOM_SYNTAX_COLOR_KEYS, resolveSyntaxScopeOverrides } from "./legacySyntaxScopes";
 import { resolveGlobalConfigPath } from "./paths";
 import { detectVcs, findVcsRepoRootCandidate, getDefaultVcsAdapter, isVcsId } from "./vcs";
 import type {
   CliInput,
   CommonOptions,
   CustomSyntaxColorsConfig,
+  CustomSyntaxScopesConfig,
   CustomThemeConfig,
   LayoutMode,
   PersistedViewPreferences,
@@ -51,20 +53,6 @@ const CUSTOM_THEME_COLOR_KEYS = [
   "noteTitleBackground",
   "noteTitleText",
 ] as const;
-const CUSTOM_SYNTAX_COLOR_KEYS = [
-  "default",
-  "keyword",
-  "string",
-  "comment",
-  "number",
-  "function",
-  "property",
-  "type",
-  "variable",
-  "operator",
-  "punctuation",
-] as const;
-
 const DEFAULT_VIEW_PREFERENCES: PersistedViewPreferences = {
   mode: "auto",
   showLineNumbers: true,
@@ -203,13 +191,13 @@ function normalizeCustomThemeBase(value: unknown) {
   return resolvedThemeId;
 }
 
-/** Read the nested syntax color overrides from a [custom_theme.syntax] TOML table. */
-function readCustomSyntaxColors(
+/** Read the deprecated semantic colors retained for one compatibility release window. */
+function readLegacyCustomSyntaxColors(
   source: Record<string, unknown>,
 ): CustomSyntaxColorsConfig | undefined {
   const syntax: CustomSyntaxColorsConfig = {};
 
-  for (const key of CUSTOM_SYNTAX_COLOR_KEYS) {
+  for (const key of LEGACY_CUSTOM_SYNTAX_COLOR_KEYS) {
     const value = normalizeThemeColor(source[key], `custom_theme.syntax.${key}`);
     if (value !== undefined) {
       syntax[key] = value;
@@ -219,6 +207,26 @@ function readCustomSyntaxColors(
   return Object.keys(syntax).length > 0 ? syntax : undefined;
 }
 
+/** Read exact Shiki/TextMate scope colors from a [custom_theme.syntax_scopes] TOML table. */
+function readCustomSyntaxScopes(
+  source: Record<string, unknown>,
+): CustomSyntaxScopesConfig | undefined {
+  const syntaxScopes: CustomSyntaxScopesConfig = {};
+
+  for (const [scope, rawColor] of Object.entries(source)) {
+    if (scope.trim().length === 0) {
+      throw new Error("Expected custom_theme.syntax_scopes keys to be non-empty Shiki scopes.");
+    }
+
+    const color = normalizeThemeColor(rawColor, `custom_theme.syntax_scopes.${scope}`);
+    if (color !== undefined) {
+      syntaxScopes[scope] = color;
+    }
+  }
+
+  return Object.keys(syntaxScopes).length > 0 ? syntaxScopes : undefined;
+}
+
 /** Read the optional config-defined custom theme palette from one TOML object level. */
 function readCustomTheme(source: Record<string, unknown>): CustomThemeConfig | undefined {
   const customThemeSource = source.custom_theme;
@@ -226,9 +234,14 @@ function readCustomTheme(source: Record<string, unknown>): CustomThemeConfig | u
     return undefined;
   }
 
-  const syntaxSource = customThemeSource.syntax;
-  if (syntaxSource !== undefined && !isRecord(syntaxSource)) {
+  const legacySyntaxSource = customThemeSource.syntax;
+  if (legacySyntaxSource !== undefined && !isRecord(legacySyntaxSource)) {
     throw new Error("Expected custom_theme.syntax to contain a TOML table.");
+  }
+
+  const syntaxScopesSource = customThemeSource.syntax_scopes;
+  if (syntaxScopesSource !== undefined && !isRecord(syntaxScopesSource)) {
+    throw new Error("Expected custom_theme.syntax_scopes to contain a TOML table.");
   }
 
   const customTheme: CustomThemeConfig = {
@@ -246,17 +259,22 @@ function readCustomTheme(source: Record<string, unknown>): CustomThemeConfig | u
     }
   }
 
-  if (isRecord(syntaxSource)) {
-    const syntax = readCustomSyntaxColors(syntaxSource);
-    if (syntax) {
-      customTheme.syntax = syntax;
-    }
+  const legacySyntax = isRecord(legacySyntaxSource)
+    ? readLegacyCustomSyntaxColors(legacySyntaxSource)
+    : undefined;
+  const exactSyntaxScopes = isRecord(syntaxScopesSource)
+    ? readCustomSyntaxScopes(syntaxScopesSource)
+    : undefined;
+  const syntaxScopes = resolveSyntaxScopeOverrides(legacySyntax, exactSyntaxScopes);
+  if (syntaxScopes) {
+    // Normalize legacy config at the boundary so every runtime highlighter uses raw scopes only.
+    customTheme.syntaxScopes = syntaxScopes;
   }
 
   return customTheme;
 }
 
-/** Merge partial custom theme layers while keeping nested syntax overrides field-based. */
+/** Merge partial custom theme layers while keeping exact syntax scope overrides field-based. */
 function mergeCustomTheme(
   base: CustomThemeConfig | undefined,
   overrides: CustomThemeConfig | undefined,
@@ -273,11 +291,11 @@ function mergeCustomTheme(
     ...overrides,
     base: overrides.base ?? base.base ?? "github-dark-default",
     label: overrides.label ?? base.label,
-    syntax:
-      base.syntax || overrides.syntax
+    syntaxScopes:
+      base.syntaxScopes || overrides.syntaxScopes
         ? {
-            ...base.syntax,
-            ...overrides.syntax,
+            ...base.syntaxScopes,
+            ...overrides.syntaxScopes,
           }
         : undefined,
   };

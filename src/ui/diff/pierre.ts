@@ -13,35 +13,22 @@ import { blendHex, hexColorDistance } from "../lib/color";
 import { sanitizeTerminalLine } from "../../lib/terminalText";
 import { TRANSPARENT_BACKGROUND, type AppTheme } from "../themes";
 import { expandDiffTabs } from "./codeColumns";
-
-const PIERRE_THEME = {
-  light: "pierre-light",
-  dark: "pierre-dark",
-} as const;
+import {
+  ensureSyntaxHighlightThemeRegistered,
+  syntaxHighlightThemeName,
+} from "./syntaxHighlightTheme";
 
 type HighlightThemeInput = AppTheme | AppTheme["appearance"];
-
-/** Resolve the default Pierre theme name needed for one light/dark appearance. */
-function pierreThemeName(appearance: AppTheme["appearance"]) {
-  return PIERRE_THEME[appearance];
-}
 
 /** Return the light/dark mode for a theme object or legacy appearance argument. */
 function highlightThemeAppearance(theme: HighlightThemeInput) {
   return typeof theme === "string" ? theme : theme.appearance;
 }
 
-/** Resolve the Shiki/Pierre syntax theme that should color highlighted code. */
-function highlighterThemeName(theme: HighlightThemeInput) {
-  return typeof theme === "string"
-    ? pierreThemeName(theme)
-    : (theme.syntaxTheme ?? pierreThemeName(theme.appearance));
-}
-
 /** Build render options for the active syntax theme. */
 function pierreRenderOptions(theme: HighlightThemeInput) {
   return {
-    theme: highlighterThemeName(theme),
+    theme: syntaxHighlightThemeName(theme),
     useTokenTransformer: false,
     tokenizeMaxLineLength: 1_000,
     lineDiffType: "word-alt" as const,
@@ -214,45 +201,6 @@ function parseStyleValue(styleValue: unknown) {
   return styles;
 }
 
-const RESERVED_PIERRE_TOKEN_COLORS = {
-  dark: {
-    "#ff6762": "keyword",
-    "#ff855e": "keyword",
-    "#ff678d": "keyword",
-    "#d568ea": "keyword",
-    "#9d6afb": "function",
-    "#ffab16": "default",
-    "#ffca00": "default",
-    "#68cdf2": "number",
-    "#5ecc71": "string",
-    "#ffa359": "property",
-    "#a3a3a3": "variable",
-    "#08c0ef": "operator",
-    "#636363": "punctuation",
-  },
-  light: {
-    "#d52c36": "keyword",
-    "#d5512f": "keyword",
-    "#d32a61": "keyword",
-    "#fc2b73": "keyword",
-    "#a631be": "keyword",
-    "#c635e4": "keyword",
-    "#693acf": "function",
-    "#7b43f8": "function",
-    "#d5901c": "default",
-    "#d5a910": "default",
-    "#1ca1c7": "number",
-    "#199f43": "string",
-    "#d47628": "property",
-    "#a3a3a3": "variable",
-    "#08c0ef": "operator",
-    "#636363": "punctuation",
-  },
-} as const;
-// After style parsing, token colors still need one normalization step so syntax hues never
-// collide with diff-semantic add/remove colors. Cache that remap per theme because themes that
-// share an appearance can still use different syntax palettes.
-const normalizedColorCache = new Map<string, Map<string, string>>();
 // The expensive part after highlighting is walking Pierre's HAST line tree and flattening it
 // into terminal spans. The same highlighted line objects are reused when files remount or when
 // we build both split and stack rows, so memoize flattened spans by line node + theme/background.
@@ -328,37 +276,6 @@ function wordDiffHighlightBg(kind: SplitLineCell["kind"], theme: AppTheme) {
   return cached[kind];
 }
 
-/** Remap Pierre token hues that collide with diff add/remove semantics into theme-safe syntax colors. */
-function normalizeHighlightedColor(color: string | undefined, theme: AppTheme) {
-  if (!color) {
-    return color;
-  }
-
-  const themeKey = themeRenderCacheKey(theme);
-  let cacheForTheme = normalizedColorCache.get(themeKey);
-  if (!cacheForTheme) {
-    cacheForTheme = new Map<string, string>();
-    normalizedColorCache.set(themeKey, cacheForTheme);
-  }
-
-  const cached = cacheForTheme.get(color);
-  if (cached) {
-    return cached;
-  }
-
-  const normalized = color.trim().toLowerCase();
-  const reserved =
-    RESERVED_PIERRE_TOKEN_COLORS[theme.appearance][
-      normalized as keyof (typeof RESERVED_PIERRE_TOKEN_COLORS)[typeof theme.appearance]
-    ];
-  const resolvedColor = reserved
-    ? (theme.syntaxColors[reserved] ??
-      (reserved === "operator" ? theme.syntaxColors.punctuation : theme.syntaxColors.default))
-    : color;
-  cacheForTheme.set(color, resolvedColor);
-  return resolvedColor;
-}
-
 /** Append a span while coalescing adjacent runs with identical colors. */
 function mergeSpan(target: RenderSpan[], next: RenderSpan) {
   if (next.text.length === 0) {
@@ -413,11 +330,8 @@ function flattenHighlightedLine(node: HastNode | undefined, theme: AppTheme, emp
     const properties = current.properties ?? {};
     const styles = parseStyleValue(properties.style);
     const nextStyle: Pick<RenderSpan, "fg" | "bg"> = {
-      // Newer Pierre output can emit direct `color:#...` styles instead of theme CSS variables.
-      fg: normalizeHighlightedColor(
-        styles.get(colorVariable) ?? styles.get("color") ?? inherited.fg,
-        theme,
-      ),
+      // The registered Shiki theme has already applied any user-authored scope colors.
+      fg: styles.get(colorVariable) ?? styles.get("color") ?? inherited.fg,
       // Pierre marks inline word-diff emphasis spans with a data attribute rather than a separate row kind.
       bg: Object.hasOwn(properties, "data-diff-span") ? emphasisBg : inherited.bg,
     };
@@ -574,7 +488,7 @@ export function trailingCollapsedLines(metadata: FileDiffMetadata) {
 /** Prepare syntax highlighting for one language/theme pair using Pierre's shared highlighter. */
 async function prepareHighlighter(language: string | undefined, theme: HighlightThemeInput) {
   const resolvedLanguage = language ?? "text";
-  const syntaxTheme = highlighterThemeName(theme);
+  const syntaxTheme = ensureSyntaxHighlightThemeRegistered(theme);
   const cacheKey = `${syntaxTheme}:${resolvedLanguage}`;
   const options =
     highlighterOptionsByKey.get(cacheKey) ??

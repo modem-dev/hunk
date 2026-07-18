@@ -451,8 +451,8 @@ describe("ui helpers", () => {
       base: "github-light-default",
       label: "My Theme",
       accent: "#7755aa",
-      syntax: {
-        keyword: "#123456",
+      syntaxScopes: {
+        "keyword.control": "#123456",
       },
     });
     const missingCustom = resolveTheme("custom", null);
@@ -466,7 +466,7 @@ describe("ui helpers", () => {
     expect(custom.label).toBe("My Theme");
     expect(custom.appearance).toBe("light");
     expect(custom.accent).toBe("#7755aa");
-    expect(custom.syntaxColors.keyword).toBe("#123456");
+    expect(custom.syntaxScopeOverrides).toEqual({ "keyword.control": "#123456" });
     expect(missingCustom.id).toBe("github-dark-default");
     expect(resolveTheme("github-dark-default", null).syntaxStyle).toBeDefined();
     expect(custom.syntaxStyle).toBeDefined();
