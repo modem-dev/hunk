@@ -11,6 +11,7 @@ import type {
   HunkSessionServerMessage,
   HunkSessionSnapshot,
 } from "../hunk-session/types";
+import { LEGACY_CUSTOM_SYNTAX_NOTICE } from "../core/startupNotice";
 import type { AppBootstrap, LayoutMode } from "../core/types";
 import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
 import { capturedTestColorToHex } from "../../test/helpers/test-color-helpers";
@@ -719,6 +720,27 @@ describe("App interactions", () => {
       frame = setup.captureCharFrame();
       expect(frame).not.toContain("@@ -1,1 +1,2 @@");
       expect(frame).toContain("- export const alpha = 1;");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("shows configured deprecation notices in the startup footer", async () => {
+    const setup = await testRender(
+      <AppHost
+        bootstrap={{
+          ...createSingleFileBootstrap(),
+          startupNotices: [LEGACY_CUSTOM_SYNTAX_NOTICE],
+        }}
+      />,
+      { width: 240, height: 24 },
+    );
+
+    try {
+      await flush(setup);
+      expect(setup.captureCharFrame()).toContain(LEGACY_CUSTOM_SYNTAX_NOTICE.message);
     } finally {
       await act(async () => {
         setup.renderer.destroy();

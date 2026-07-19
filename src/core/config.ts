@@ -4,6 +4,7 @@ import { BUNDLED_SHIKI_THEME_IDS } from "../ui/lib/shikiThemes";
 import { normalizeBuiltInThemeId } from "../ui/themes";
 import { LEGACY_CUSTOM_SYNTAX_COLOR_KEYS, resolveSyntaxScopeOverrides } from "./legacySyntaxScopes";
 import { resolveGlobalConfigPath } from "./paths";
+import { LEGACY_CUSTOM_SYNTAX_NOTICES, type StartupNotice } from "./startupNotice";
 import { detectVcs, findVcsRepoRootCandidate, getDefaultVcsAdapter, isVcsId } from "./vcs";
 import type {
   CliInput,
@@ -86,6 +87,7 @@ interface ConfigResolutionOptions {
 interface HunkConfigResolution {
   input: CliInput;
   customTheme?: CustomThemeConfig;
+  startupNotices?: readonly StartupNotice[];
   globalConfigPath?: string;
   repoConfigPath?: string;
   viewPreferencesConfigPath?: string;
@@ -227,11 +229,16 @@ function readCustomSyntaxScopes(
   return Object.keys(syntaxScopes).length > 0 ? syntaxScopes : undefined;
 }
 
-/** Read the optional config-defined custom theme palette from one TOML object level. */
-function readCustomTheme(source: Record<string, unknown>): CustomThemeConfig | undefined {
+interface CustomThemeLayer {
+  customTheme?: CustomThemeConfig;
+  usesLegacySyntax: boolean;
+}
+
+/** Read one config layer's optional custom theme and compatibility metadata. */
+function readCustomTheme(source: Record<string, unknown>): CustomThemeLayer {
   const customThemeSource = source.custom_theme;
   if (!isRecord(customThemeSource)) {
-    return undefined;
+    return { usesLegacySyntax: false };
   }
 
   const legacySyntaxSource = customThemeSource.syntax;
@@ -271,7 +278,10 @@ function readCustomTheme(source: Record<string, unknown>): CustomThemeConfig | u
     customTheme.syntaxScopes = syntaxScopes;
   }
 
-  return customTheme;
+  return {
+    customTheme,
+    usesLegacySyntax: Boolean(legacySyntax),
+  };
 }
 
 /** Merge partial custom theme layers while keeping exact syntax scope overrides field-based. */
@@ -488,6 +498,7 @@ export function resolveConfiguredCliInput(
   const repoConfigPath = repoRoot ? join(repoRoot, ".hunk", "config.toml") : undefined;
   const userConfigPath = resolveGlobalConfigPath(env);
   let resolvedCustomTheme: CustomThemeConfig | undefined;
+  let usesLegacyCustomSyntax = false;
 
   let resolvedOptions: CommonOptions = {
     mode: DEFAULT_VIEW_PREFERENCES.mode,
@@ -511,14 +522,18 @@ export function resolveConfiguredCliInput(
 
   if (userConfigPath) {
     const userConfig = readTomlRecord(userConfigPath);
+    const themeLayer = readCustomTheme(userConfig);
     resolvedOptions = mergeOptions(resolvedOptions, resolveConfigLayer(userConfig, input));
-    resolvedCustomTheme = mergeCustomTheme(resolvedCustomTheme, readCustomTheme(userConfig));
+    resolvedCustomTheme = mergeCustomTheme(resolvedCustomTheme, themeLayer.customTheme);
+    usesLegacyCustomSyntax ||= themeLayer.usesLegacySyntax;
   }
 
   if (repoConfigPath) {
     const repoConfig = readTomlRecord(repoConfigPath);
+    const themeLayer = readCustomTheme(repoConfig);
     resolvedOptions = mergeOptions(resolvedOptions, resolveConfigLayer(repoConfig, input));
-    resolvedCustomTheme = mergeCustomTheme(resolvedCustomTheme, readCustomTheme(repoConfig));
+    resolvedCustomTheme = mergeCustomTheme(resolvedCustomTheme, themeLayer.customTheme);
+    usesLegacyCustomSyntax ||= themeLayer.usesLegacySyntax;
   }
 
   resolvedOptions = mergeOptions(resolvedOptions, input.options);
@@ -552,6 +567,7 @@ export function resolveConfiguredCliInput(
       options: resolvedOptions,
     },
     customTheme: resolvedCustomTheme,
+    startupNotices: usesLegacyCustomSyntax ? LEGACY_CUSTOM_SYNTAX_NOTICES : undefined,
     globalConfigPath: userConfigPath,
     repoConfigPath,
     // Persist in the repo config only when the repo already has one; otherwise keep personal view

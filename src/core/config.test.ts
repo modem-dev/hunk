@@ -10,6 +10,7 @@ import {
   saveViewPreferencesPromptPreference,
 } from "./config";
 import { loadAppBootstrap } from "./loaders";
+import { LEGACY_CUSTOM_SYNTAX_NOTICE, LEGACY_CUSTOM_SYNTAX_NOTICES } from "./startupNotice";
 
 const tempDirs: string[] = [];
 
@@ -265,6 +266,7 @@ describe("config resolution", () => {
         "string.quoted": "#fedcba",
       },
     });
+    expect(resolved.startupNotices).toBeUndefined();
   });
 
   test.each(["github-dark-default", "github-light-default", "dracula", "catppuccin-mocha"])(
@@ -373,6 +375,8 @@ describe("config resolution", () => {
       comment: "#eeeeee",
       "punctuation.definition.comment": "#ffffff",
     });
+    expect(resolved.startupNotices).toBe(LEGACY_CUSTOM_SYNTAX_NOTICES);
+    expect(resolved.startupNotices).toEqual([LEGACY_CUSTOM_SYNTAX_NOTICE]);
   });
 
   test("rejects theme = custom when no [custom_theme] table is configured", () => {
