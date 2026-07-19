@@ -229,8 +229,8 @@ describe("config resolution", () => {
         'label = "Global Custom"',
         'accent = "#123456"',
         "",
-        "[custom_theme.syntax]",
-        'keyword = "#abcdef"',
+        "[custom_theme.syntax_scopes]",
+        '"keyword.control" = "#abcdef"',
       ].join("\n"),
     );
 
@@ -244,8 +244,8 @@ describe("config resolution", () => {
         'label = "Repo Custom"',
         'panel = "#654321"',
         "",
-        "[custom_theme.syntax]",
-        'string = "#fedcba"',
+        "[custom_theme.syntax_scopes]",
+        '"string.quoted" = "#fedcba"',
       ].join("\n"),
     );
 
@@ -260,9 +260,9 @@ describe("config resolution", () => {
       label: "Repo Custom",
       accent: "#123456",
       panel: "#654321",
-      syntax: {
-        keyword: "#abcdef",
-        string: "#fedcba",
+      syntaxScopes: {
+        "keyword.control": "#abcdef",
+        "string.quoted": "#fedcba",
       },
     });
   });
@@ -332,6 +332,47 @@ describe("config resolution", () => {
         env: { HOME: home },
       }),
     ).toThrow("Expected custom_theme.accent to be a hex color like #112233.");
+  });
+
+  test("rejects invalid Shiki scope colors", () => {
+    const home = createTempDir("hunk-config-home-");
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(
+      join(home, ".config", "hunk", "config.toml"),
+      ["[custom_theme.syntax_scopes]", '"comment.line" = "white"'].join("\n"),
+    );
+
+    expect(() =>
+      resolveConfiguredCliInput(createPatchPagerInput(), {
+        cwd: createTempDir("hunk-config-cwd-"),
+        env: { HOME: home },
+      }),
+    ).toThrow("Expected custom_theme.syntax_scopes.comment.line to be a hex color like #112233.");
+  });
+
+  test("temporarily translates the deprecated semantic syntax table into exact scopes", () => {
+    const home = createTempDir("hunk-config-home-");
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(
+      join(home, ".config", "hunk", "config.toml"),
+      [
+        "[custom_theme.syntax]",
+        'comment = "#ffffff"',
+        "",
+        "[custom_theme.syntax_scopes]",
+        '"comment" = "#eeeeee"',
+      ].join("\n"),
+    );
+
+    const resolved = resolveConfiguredCliInput(createPatchPagerInput(), {
+      cwd: createTempDir("hunk-config-cwd-"),
+      env: { HOME: home },
+    });
+
+    expect(resolved.customTheme?.syntaxScopes).toEqual({
+      comment: "#eeeeee",
+      "punctuation.definition.comment": "#ffffff",
+    });
   });
 
   test("rejects theme = custom when no [custom_theme] table is configured", () => {
@@ -670,8 +711,8 @@ describe("config resolution", () => {
         'base = "catppuccin-mocha"',
         'accent = "#7755aa"',
         "",
-        "[custom_theme.syntax]",
-        'comment = "#998877"',
+        "[custom_theme.syntax_scopes]",
+        '"comment" = "#998877"',
       ].join("\n"),
     );
 
@@ -695,7 +736,7 @@ describe("config resolution", () => {
     expect(bootstrap.customTheme).toEqual({
       base: "catppuccin-mocha",
       accent: "#7755aa",
-      syntax: {
+      syntaxScopes: {
         comment: "#998877",
       },
     });

@@ -235,15 +235,16 @@ describe("themes", () => {
       base: "catppuccin-mocha",
       label: "My Theme",
       text: "#ffffff",
-      syntax: { keyword: "#ff00ff" },
+      syntaxScopes: { "keyword.control": "#ff00ff" },
     });
 
     expect(custom.id).toBe("custom");
     expect(custom.label).toBe("My Theme");
     expect(custom.background).toBe(resolveTheme("catppuccin-mocha", null).background);
     expect(custom.text).toBe("#ffffff");
-    expect(custom.syntaxTheme).toBeUndefined();
-    expect(custom.syntaxColors.keyword).toBe("#ff00ff");
+    expect(custom.syntaxTheme).toBe("catppuccin-mocha");
+    expect(custom.syntaxScopeOverrides).toEqual({ "keyword.control": "#ff00ff" });
+    expect(custom.syntaxColors).toBe(resolveTheme("catppuccin-mocha", null).syntaxColors);
   });
 
   test("withTransparentSurfaces keeps added/removed row tints", () => {

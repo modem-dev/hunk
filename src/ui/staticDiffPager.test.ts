@@ -121,6 +121,47 @@ describe("static diff pager", () => {
     expect(output).toContain("\x1b[38;2;18;52;86m");
   });
 
+  test("translates deprecated semantic comment colors in static pager output", async () => {
+    const patchText =
+      "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1,2 @@\n+// visible comment\n const value = 1;\n";
+
+    const output = await renderStaticDiffPager(
+      patchText,
+      { theme: "custom" },
+      {
+        customTheme: {
+          base: "nord",
+          syntax: { comment: "#ff00ff" },
+        },
+      },
+    );
+
+    expect(stripAnsi(output)).toContain("// visible comment");
+    expect(output).toContain("\x1b[38;2;255;0;255m");
+  });
+
+  test("applies raw Shiki comment scopes in static pager output", async () => {
+    const patchText =
+      "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1,2 @@\n+// visible comment\n const value = 1;\n";
+
+    const output = await renderStaticDiffPager(
+      patchText,
+      { theme: "custom" },
+      {
+        customTheme: {
+          base: "nord",
+          syntaxScopes: {
+            comment: "#ff00ff",
+            "punctuation.definition.comment": "#ff00ff",
+          },
+        },
+      },
+    );
+
+    expect(stripAnsi(output)).toContain("// visible comment");
+    expect(output).toContain("\x1b[38;2;255;0;255m");
+  });
+
   test("keeps only added/removed backgrounds when transparent background is requested", async () => {
     const patchText =
       "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1,3 +1,3 @@\n const a = 1;\n-const value = 1;\n+const value = 2;\n const z = 3;\n";

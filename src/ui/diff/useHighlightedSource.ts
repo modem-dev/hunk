@@ -2,6 +2,7 @@ import { useLayoutEffect, useMemo, useState } from "react";
 import type { DiffFile } from "../../core/types";
 import type { AppTheme } from "../themes";
 import { loadHighlightedSourceLines, type HighlightedSourceCode } from "./pierre";
+import { syntaxHighlightThemeName } from "./syntaxHighlightTheme";
 
 interface HighlightedSourceState {
   cacheKey: string;
@@ -22,7 +23,7 @@ function sourceTextFingerprint(text: string) {
 
 /** Cache key for full-source highlights used by expanded unchanged rows. */
 function buildSourceCacheKey(theme: AppTheme, file: DiffFile, text: string) {
-  return `${theme.id}:${theme.syntaxTheme ?? theme.appearance}:${file.id}:${file.path}:${file.language ?? ""}:${sourceTextFingerprint(text)}`;
+  return `${theme.id}:${syntaxHighlightThemeName(theme)}:${file.id}:${file.path}:${file.language ?? ""}:${sourceTextFingerprint(text)}`;
 }
 
 /** Resolve highlighted full-source content for expanded unchanged rows. */

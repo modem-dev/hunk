@@ -100,6 +100,7 @@ export interface CommonOptions {
   colorMoved?: boolean;
 }
 
+/** @deprecated Use exact TextMate selectors through CustomSyntaxScopesConfig instead. */
 export interface CustomSyntaxColorsConfig {
   default?: string;
   keyword?: string;
@@ -113,6 +114,9 @@ export interface CustomSyntaxColorsConfig {
   operator?: string;
   punctuation?: string;
 }
+
+/** Exact Shiki/TextMate selector-to-hex-color overrides, preserved in declaration order. */
+export type CustomSyntaxScopesConfig = Record<string, string>;
 
 export interface CustomThemeConfig {
   base?: string;
@@ -150,7 +154,9 @@ export interface CustomThemeConfig {
   noteBackground?: string;
   noteTitleBackground?: string;
   noteTitleText?: string;
+  /** @deprecated Use syntaxScopes. This compatibility field will be removed next major. */
   syntax?: CustomSyntaxColorsConfig;
+  syntaxScopes?: CustomSyntaxScopesConfig;
 }
 
 export interface PersistedViewPreferences {
