@@ -2,8 +2,8 @@ import { useCallback, useState } from "react";
 import { resolveConfiguredCliInput } from "../core/config";
 import { loadAppBootstrap } from "../core/loaders";
 import { resolveRuntimeCliInput } from "../core/terminal";
+import type { StartupNotice } from "../core/startupNotice";
 import type { AppBootstrap, CliInput } from "../core/types";
-import type { UpdateNotice } from "../core/updateNotice";
 import {
   createInitialSessionSnapshot,
   updateSessionRegistration,
@@ -14,7 +14,7 @@ import {
 } from "../hunk-session/sessionFileBounds";
 import type { HunkSessionBrokerClient } from "../hunk-session/types";
 import { App } from "./App";
-import { useStartupUpdateNotice } from "./hooks/useStartupUpdateNotice";
+import { useStartupNotices } from "./hooks/useStartupNotices";
 import type { WatchedInputRuntime } from "./hooks/useWatchedInput";
 
 /** Keep one live Hunk app mounted while allowing daemon-driven session reloads. */
@@ -28,7 +28,7 @@ export function AppHost({
   bootstrap: AppBootstrap;
   hostClient?: HunkSessionBrokerClient;
   onQuit?: () => void;
-  startupNoticeResolver?: () => Promise<UpdateNotice | null>;
+  startupNoticeResolver?: () => Promise<StartupNotice | null>;
   watchRuntime?: WatchedInputRuntime;
 }) {
   const [activeBootstrap, setActiveBootstrap] = useState(bootstrap);
@@ -36,8 +36,9 @@ export function AppHost({
   const [sessionFileBounds] = useState(() =>
     createSessionReloadBounds(bootstrap, { cwd: bootstrap.reloadContext.cwd }),
   );
-  const startupNoticeText = useStartupUpdateNotice({
-    enabled: !bootstrap.input.options.pager,
+  const startupNoticeText = useStartupNotices({
+    enabled: !activeBootstrap.input.options.pager,
+    notices: activeBootstrap.startupNotices,
     resolver: startupNoticeResolver,
   });
 
@@ -56,6 +57,7 @@ export function AppHost({
         cwd,
         customTheme: configured.customTheme,
       });
+      nextBootstrap.startupNotices = configured.startupNotices;
       nextBootstrap.viewPreferencesConfigPath = configured.viewPreferencesConfigPath;
       const nextSnapshot = createInitialSessionSnapshot(nextBootstrap);
 

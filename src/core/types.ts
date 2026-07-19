@@ -1,5 +1,6 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
 import type { FileSourceFetcher } from "./fileSource";
+import type { StartupNotice } from "./startupNotice";
 
 export type LayoutMode = "auto" | "split" | "stack";
 export type VcsMode = string;
@@ -403,5 +404,6 @@ export interface AppBootstrap {
   initialShowMenuBar?: boolean;
   initialShowAgentNotes?: boolean;
   initialCopyDecorations?: boolean;
+  startupNotices?: readonly StartupNotice[];
   viewPreferencesConfigPath?: string;
 }
