@@ -68,6 +68,12 @@ function colorText(text: string, fg?: string, bg?: string) {
   return prefix ? `${prefix}${safeText}${RESET}` : safeText;
 }
 
+/** Extend one row background to the host panel edge without assuming the panel width. */
+function fillRemainingLine(bg: string) {
+  const background = ansiColor("bg", bg);
+  return background ? `${background}\x1b[K${RESET}` : "";
+}
+
 /** Serialize highlighted code spans into ANSI text, preserving a row background when present. */
 function serializeSpans(spans: RenderSpan[], rowBg: string) {
   return spans.map((span) => colorText(span.text, span.fg, span.bg ?? rowBg)).join("");
@@ -157,7 +163,7 @@ function renderStaticStackRow(
     staticStackGutterText(cell, lineNumberWidth, options.lineNumbers !== false),
     palette.numberColor,
     palette.gutterBg,
-  )}${serializeSpans(cell.spans, palette.contentBg)}`;
+  )}${serializeSpans(cell.spans, palette.contentBg)}${fillRemainingLine(palette.contentBg)}`;
 }
 
 function renderStaticSplitCell(

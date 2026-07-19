@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.17.3
+
+### Patch Changes
+
+- 9d1c346: Extend static pager diff-row backgrounds to the edge of host panels such as Lazygit.
+- 05d6c17: Wrap plain-text agent notes by terminal cells instead of UTF-16 code
+  units, so CJK and emoji text wraps correctly instead of being truncated
+  with silent content loss. Long unbroken words split on grapheme
+  boundaries, so wide characters and surrogate pairs are never cut apart.
+
 ## 0.17.2
 
 ### Patch Changes
