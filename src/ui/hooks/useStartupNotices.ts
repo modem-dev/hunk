@@ -25,6 +25,7 @@ export function useStartupNotices({
   resolver,
 }: StartupNoticeOptions) {
   const [noticeText, setNoticeText] = useState<string | null>(null);
+  // Startup notices are AppHost-scoped: config reloads must not replay a notice the user saw.
   const shownKeysRef = useRef(new Set<string>());
 
   useEffect(() => {

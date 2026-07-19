@@ -4,7 +4,7 @@ import { BUNDLED_SHIKI_THEME_IDS } from "../ui/lib/shikiThemes";
 import { normalizeBuiltInThemeId } from "../ui/themes";
 import { LEGACY_CUSTOM_SYNTAX_COLOR_KEYS, resolveSyntaxScopeOverrides } from "./legacySyntaxScopes";
 import { resolveGlobalConfigPath } from "./paths";
-import { LEGACY_CUSTOM_SYNTAX_NOTICE, type StartupNotice } from "./startupNotice";
+import { LEGACY_CUSTOM_SYNTAX_NOTICES, type StartupNotice } from "./startupNotice";
 import { detectVcs, findVcsRepoRootCandidate, getDefaultVcsAdapter, isVcsId } from "./vcs";
 import type {
   CliInput,
@@ -87,7 +87,7 @@ interface ConfigResolutionOptions {
 interface HunkConfigResolution {
   input: CliInput;
   customTheme?: CustomThemeConfig;
-  startupNotices: StartupNotice[];
+  startupNotices?: readonly StartupNotice[];
   globalConfigPath?: string;
   repoConfigPath?: string;
   viewPreferencesConfigPath?: string;
@@ -567,7 +567,7 @@ export function resolveConfiguredCliInput(
       options: resolvedOptions,
     },
     customTheme: resolvedCustomTheme,
-    startupNotices: usesLegacyCustomSyntax ? [LEGACY_CUSTOM_SYNTAX_NOTICE] : [],
+    startupNotices: usesLegacyCustomSyntax ? LEGACY_CUSTOM_SYNTAX_NOTICES : undefined,
     globalConfigPath: userConfigPath,
     repoConfigPath,
     // Persist in the repo config only when the repo already has one; otherwise keep personal view

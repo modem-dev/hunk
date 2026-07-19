@@ -10,3 +10,6 @@ export const LEGACY_CUSTOM_SYNTAX_NOTICE: StartupNotice = {
   message:
     "Deprecated [custom_theme.syntax] translated approximately • migrate to [custom_theme.syntax_scopes]",
 };
+
+/** Reuse one array identity so unchanged config reloads do not restart the notice queue. */
+export const LEGACY_CUSTOM_SYNTAX_NOTICES: readonly StartupNotice[] = [LEGACY_CUSTOM_SYNTAX_NOTICE];

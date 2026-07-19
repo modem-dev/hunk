@@ -150,7 +150,7 @@ describe("useStartupNotices", () => {
       await advance(setup, 10);
       await advance(setup, 5);
 
-      expect(seen).toContain("Legacy config detected");
+      expect(seen.filter((value) => value === "Legacy config detected")).toHaveLength(1);
       expect(seen).toContain("Update available: 2.0.0");
     } finally {
       await act(async () => {
