@@ -658,6 +658,59 @@ describe("useReviewController", () => {
     }
   });
 
+  test("rapid duplicate saves persist exactly one user note with a unique id", async () => {
+    const { controllerRef, setup } = await renderReviewController([createAlphaFile()]);
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        expectValue(controllerRef.current).startUserNote();
+        expectValue(controllerRef.current).updateDraftNote("Save me once.");
+      });
+      await flush(setup);
+
+      // Coalesced Ctrl+S key events invoke save twice before the draft-clearing
+      // state update commits; only the first call may persist a note.
+      let firstSavedId: string | null = null;
+      let secondSavedId: string | null = null;
+      await act(async () => {
+        const controller = expectValue(controllerRef.current);
+        firstSavedId = controller.saveDraftNote()?.id ?? null;
+        secondSavedId = controller.saveDraftNote()?.id ?? null;
+      });
+      await flush(setup);
+
+      expect(firstSavedId).toStartWith("user:");
+      expect(secondSavedId).toBeNull();
+      expect(expectValue(controllerRef.current).userNotesByFileId.alpha).toHaveLength(1);
+
+      // A follow-up draft saved within the same millisecond still gets a unique id.
+      await act(async () => {
+        expectValue(controllerRef.current).startUserNote();
+      });
+      await flush(setup);
+      await act(async () => {
+        expectValue(controllerRef.current).updateDraftNote("Save me too.");
+      });
+      await flush(setup);
+
+      let followUpSavedId: string | null = null;
+      await act(async () => {
+        followUpSavedId = expectValue(controllerRef.current).saveDraftNote()?.id ?? null;
+      });
+      await flush(setup);
+
+      expect(followUpSavedId).toStartWith("user:");
+      expect(followUpSavedId).not.toBe(firstSavedId);
+      expect(expectValue(controllerRef.current).userNotesByFileId.alpha).toHaveLength(2);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("session clear can include human user notes", async () => {
     const { controllerRef, setup } = await renderReviewController([createTwoHunkFile()]);
 
