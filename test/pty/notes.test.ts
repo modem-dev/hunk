@@ -116,6 +116,40 @@ describe("PTY notes", () => {
     }
   });
 
+  test("rapid Ctrl+S presses save a draft note exactly once", async () => {
+    const fixture = harness.createLongWrapFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      cols: 120,
+      rows: 24,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+
+      await session.press("c");
+      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await session.type("Save exactly one note.");
+      await session.waitForText(/Save exactly one note\./, { timeout: 5_000 });
+
+      // Send both Ctrl+S bytes in one PTY write so the second save request runs
+      // before the draft-clearing state update commits.
+      session.writeRaw("\x13\x13");
+      await session.waitIdle();
+
+      const saved = await session.waitForText(/Your note/, { timeout: 5_000 });
+      expect(saved).toContain("Save exactly one note.");
+
+      // A duplicated save renders numbered "Your note 1/2" cards; a single save must not.
+      await sleep(250);
+      const settled = await session.text({ immediate: true });
+      expect(settled).not.toContain("Your note 1/");
+      expect((settled.match(/Your note/g) ?? []).length).toBe(1);
+    } finally {
+      session.close();
+    }
+  });
+
   test("add-note affordance appears only after mouse movement in a real PTY", async () => {
     const fixture = harness.createScrollableFilePair();
     const session = await harness.launchHunk({
