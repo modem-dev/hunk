@@ -132,9 +132,10 @@ describe("PTY notes", () => {
       await session.type("Save exactly one note.");
       await session.waitForText(/Save exactly one note\./, { timeout: 5_000 });
 
-      // Rapid double-press: both Ctrl+S bytes arrive in one stdin chunk, so the
-      // second save request runs before the draft-clearing state update commits.
-      await session.type("\x13\x13");
+      // Send both Ctrl+S bytes in one PTY write so the second save request runs
+      // before the draft-clearing state update commits.
+      session.writeRaw("\x13\x13");
+      await session.waitIdle();
 
       const saved = await session.waitForText(/Your note/, { timeout: 5_000 });
       expect(saved).toContain("Save exactly one note.");

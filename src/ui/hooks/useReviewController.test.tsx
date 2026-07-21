@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act, StrictMode, useEffect, useState } from "react";
 import { SourceTextTooLargeError } from "../../core/fileSource";
@@ -660,6 +660,8 @@ describe("useReviewController", () => {
 
   test("rapid duplicate saves persist exactly one user note with a unique id", async () => {
     const { controllerRef, setup } = await renderReviewController([createAlphaFile()]);
+    const fixedNow = 1_700_000_000_000;
+    const dateNowSpy = spyOn(Date, "now").mockReturnValue(fixedNow);
 
     try {
       await flush(setup);
@@ -672,17 +674,16 @@ describe("useReviewController", () => {
 
       // Coalesced Ctrl+S key events invoke save twice before the draft-clearing
       // state update commits; only the first call may persist a note.
-      let firstSavedId: string | null = null;
-      let secondSavedId: string | null = null;
+      const savedIds: { first?: string; second?: string; followUp?: string } = {};
       await act(async () => {
         const controller = expectValue(controllerRef.current);
-        firstSavedId = controller.saveDraftNote()?.id ?? null;
-        secondSavedId = controller.saveDraftNote()?.id ?? null;
+        savedIds.first = controller.saveDraftNote()?.id;
+        savedIds.second = controller.saveDraftNote()?.id;
       });
       await flush(setup);
 
-      expect(firstSavedId).toStartWith("user:");
-      expect(secondSavedId).toBeNull();
+      expect(savedIds.first).toBe(`user:${fixedNow}-1`);
+      expect(savedIds.second).toBeUndefined();
       expect(expectValue(controllerRef.current).userNotesByFileId.alpha).toHaveLength(1);
 
       // A follow-up draft saved within the same millisecond still gets a unique id.
@@ -695,16 +696,16 @@ describe("useReviewController", () => {
       });
       await flush(setup);
 
-      let followUpSavedId: string | null = null;
       await act(async () => {
-        followUpSavedId = expectValue(controllerRef.current).saveDraftNote()?.id ?? null;
+        savedIds.followUp = expectValue(controllerRef.current).saveDraftNote()?.id;
       });
       await flush(setup);
 
-      expect(followUpSavedId).toStartWith("user:");
-      expect(followUpSavedId).not.toBe(firstSavedId);
+      expect(savedIds.followUp).toBe(`user:${fixedNow}-2`);
+      expect(savedIds.followUp).not.toBe(savedIds.first);
       expect(expectValue(controllerRef.current).userNotesByFileId.alpha).toHaveLength(2);
     } finally {
+      dateNowSpy.mockRestore();
       await act(async () => {
         setup.renderer.destroy();
       });
