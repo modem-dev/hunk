@@ -69,7 +69,7 @@ describe("resolveNativeCacheRoot", () => {
         () => "linux",
         () => "/home/u",
       ),
-    ).toBe("/home/u/.cache");
+    ).toBe(join("/home/u", ".cache"));
   });
 
   test("uses ~/Library/Caches on macOS", () => {
@@ -79,7 +79,7 @@ describe("resolveNativeCacheRoot", () => {
         () => "darwin",
         () => "/Users/u",
       ),
-    ).toBe("/Users/u/Library/Caches");
+    ).toBe(join("/Users/u", "Library", "Caches"));
   });
 
   test("prefers LOCALAPPDATA on Windows", () => {
@@ -116,7 +116,10 @@ describe("materializeStableNativeLibPath", () => {
     const expected = join(cacheRoot, "hunk", "native", expectedName(LIB_BYTES));
     expect(result).toBe(expected);
     expect(readFileSync(result)).toEqual(Buffer.from(LIB_BYTES));
-    expect(statSync(result).mode & 0o111).not.toBe(0);
+    // The exec bit only exists on POSIX filesystems.
+    if (process.platform !== "win32") {
+      expect(statSync(result).mode & 0o111).not.toBe(0);
+    }
   });
 
   test("reuses the existing file without rewriting it", async () => {
