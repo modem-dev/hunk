@@ -33,10 +33,16 @@ export function createOpentuiStableNativeLibPlugin(repoRoot: string): Bun.BunPlu
       });
       build.onLoad({ filter: /.*/, namespace: SHIM_NAMESPACE }, (args) => {
         const pkgDir = path.dirname(args.path);
-        const libFile = readdirSync(pkgDir).find((name) => NATIVE_LIB_FILE_PATTERN.test(name));
-        if (!libFile) {
-          throw new Error(`No native library (.so/.dylib/.dll) found in ${pkgDir}`);
+        // Exactly one native library per platform package is the contract this
+        // shim relies on; ambiguity must fail the build loudly rather than
+        // silently dlopen the wrong file.
+        const libFiles = readdirSync(pkgDir).filter((name) => NATIVE_LIB_FILE_PATTERN.test(name));
+        if (libFiles.length !== 1) {
+          throw new Error(
+            `Expected exactly one native library (.so/.dylib/.dll) in ${pkgDir}, found ${libFiles.length}: ${libFiles.join(", ")}`,
+          );
         }
+        const libFile = libFiles[0];
         const helperPath = path.join(repoRoot, "src", "core", "nativeLibMaterialize.ts");
         return {
           resolveDir: pkgDir,

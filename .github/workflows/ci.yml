@@ -207,6 +207,20 @@ jobs:
       - name: Build binary
         run: bun run build:bin
 
+      # Tripwire for the native-lib leak (oven-sh/bun#30962): if the build
+      # plugin ever stops matching OpenTUI's platform packages, the binary
+      # silently goes back to leaking one extracted library per launch.
+      - name: Verify binary leaves no native-lib artifacts in tmp
+        run: |
+          TMP_TEST="$(mktemp -d)"
+          TMPDIR="$TMP_TEST" ./dist/hunk --help > /dev/null
+          TMPDIR="$TMP_TEST" ./dist/hunk --help > /dev/null
+          if [ -n "$(find "$TMP_TEST" -mindepth 1 -print -quit)" ]; then
+            echo "Binary leaked artifacts into TMPDIR:"
+            ls -la "$TMP_TEST"
+            exit 1
+          fi
+
       - name: Verify compiled binary watch mode
         run: bun test ./test/pty/watch.test.ts
         env:
