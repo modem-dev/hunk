@@ -3299,8 +3299,8 @@ describe("App interactions", () => {
       }
 
       await act(async () => {
-        // Click inside the second file row in the left sidebar.
-        await setup.mockMouse.click(6, 4);
+        // Click inside the second file row below the repo-root group header.
+        await setup.mockMouse.click(6, 5);
       });
       await flush(setup);
 
