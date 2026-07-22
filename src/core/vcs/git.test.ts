@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { platform, tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import {
   GitVcsAdapter,
   gitEndpointSourceSpec,
@@ -150,6 +150,126 @@ describe("GitVcsAdapter", () => {
     expect(GitVcsAdapter.detect(createTempDir("hunk-git-adapter-none-"))).toBeNull();
   });
 
+  test("builds operation-sensitive watch plans for working tree and metadata reviews", () => {
+    const repo = createTempRepo("hunk-git-adapter-plan-");
+    writeFileSync(join(repo, "file.txt"), "one\n");
+    writeFileSync(join(repo, ".gitignore"), "generated/\n");
+    git(repo, "add", "file.txt", ".gitignore");
+    git(repo, "commit", "-m", "initial");
+    mkdirSync(join(repo, "generated", "nested"), { recursive: true });
+    writeFileSync(join(repo, "generated", "nested", "output.js"), "ignored\n");
+
+    const operation = GitVcsAdapter.operations["working-tree-diff"]!;
+    const unstaged = operation.watchPlan!(
+      { kind: "vcs", staged: false, options: { vcs: "git" } },
+      { cwd: repo },
+    );
+    expect(
+      unstaged.targets.some(
+        (target) => normalizeComparablePath(target.directory) === normalizeComparablePath(repo),
+      ),
+    ).toBe(true);
+    const worktreeTarget = unstaged.targets.find(
+      (target) =>
+        target.kind === "directory-tree" &&
+        normalizeComparablePath(target.directory) === normalizeComparablePath(repo),
+    );
+    expect(
+      worktreeTarget?.kind === "directory-tree"
+        ? worktreeTarget.ignoredRoots.map(normalizeComparablePath)
+        : [],
+    ).toEqual([
+      normalizeComparablePath(join(repo, ".git")),
+      normalizeComparablePath(join(repo, "generated")),
+    ]);
+    const metadataTargets = unstaged.targets.filter((target) =>
+      target.sources.includes("vcs-metadata"),
+    );
+    expect(metadataTargets).toHaveLength(1);
+    expect(normalizeComparablePath(metadataTargets[0]!.directory)).toBe(
+      normalizeComparablePath(join(repo, ".git")),
+    );
+    expect(
+      metadataTargets[0]!.kind === "directory-tree"
+        ? metadataTargets[0]!.ignoredRoots.map(normalizeComparablePath)
+        : [],
+    ).toEqual([normalizeComparablePath(join(repo, ".git", "objects"))]);
+    const refPlan = operation.watchPlan!(
+      {
+        kind: "vcs",
+        staged: false,
+        range: "HEAD",
+        pathspecs: ["file.txt"],
+        options: { vcs: "git" },
+      },
+      { cwd: repo },
+    );
+    expect(
+      refPlan.targets.some(
+        (target) => normalizeComparablePath(target.directory) === normalizeComparablePath(repo),
+      ),
+    ).toBe(true);
+
+    for (const input of [
+      { kind: "vcs", staged: true, options: { vcs: "git" } },
+      { kind: "vcs", staged: false, range: "HEAD^..HEAD", options: { vcs: "git" } },
+    ] satisfies VcsDiffCommandInput[]) {
+      const plan = operation.watchPlan!(input, { cwd: repo });
+      expect(
+        plan.targets.some(
+          (target) => normalizeComparablePath(target.directory) === normalizeComparablePath(repo),
+        ),
+      ).toBe(false);
+      expect(plan.targets.some((target) => target.sources.includes("vcs-metadata"))).toBe(true);
+    }
+  });
+
+  test("keeps stash reflogs observable for ordinal selectors", () => {
+    const repo = createTempRepo("hunk-git-adapter-stash-plan-");
+    const plan = GitVcsAdapter.operations["stash-show"]!.watchPlan!(
+      { kind: "stash-show", ref: "stash@{1}", options: { vcs: "git" } },
+      { cwd: repo },
+    );
+    const metadataTarget = plan.targets.find((target) => target.sources.includes("vcs-metadata"));
+    expect(normalizeComparablePath(metadataTarget!.directory)).toBe(
+      normalizeComparablePath(join(repo, ".git")),
+    );
+    expect(
+      metadataTarget?.kind === "directory-tree"
+        ? metadataTarget.ignoredRoots.map(normalizeComparablePath)
+        : [],
+    ).toEqual([normalizeComparablePath(join(repo, ".git", "objects"))]);
+  });
+
+  test("deduplicates common metadata while covering linked-worktree state", () => {
+    const repo = createTempRepo("hunk-git-adapter-linked-plan-");
+    writeFileSync(join(repo, "file.txt"), "one\n");
+    git(repo, "add", "file.txt");
+    git(repo, "commit", "-m", "initial");
+    const linked = createTempDir("hunk-git-adapter-worktree-");
+    git(repo, "worktree", "add", linked, "-b", "linked-plan");
+
+    const plan = GitVcsAdapter.operations["revision-show"]!.watchPlan!(
+      { kind: "show", ref: "HEAD", options: { vcs: "git" } },
+      { cwd: linked },
+    );
+    const metadataTargets = plan.targets.filter(
+      (target) => target.kind === "directory-tree" && target.sources.includes("vcs-metadata"),
+    );
+    expect(metadataTargets).toHaveLength(1);
+    const commonDirOutput = git(linked, "rev-parse", "--git-common-dir").trim();
+    const commonDir = isAbsolute(commonDirOutput)
+      ? commonDirOutput
+      : resolve(linked, commonDirOutput);
+    expect(normalizeComparablePath(metadataTargets[0]!.directory)).toBe(
+      normalizeComparablePath(commonDir),
+    );
+    const metadataTarget = metadataTargets[0]!;
+    expect(metadataTarget.kind === "directory-tree" ? metadataTarget.ignoredRoots : []).toEqual([
+      join(metadataTarget.directory, "objects"),
+    ]);
+  });
+
   test("computes watch signatures for each review operation", () => {
     const repo = createTempRepo("hunk-git-adapter-watch-");
     writeFileSync(join(repo, "file.txt"), "one\n");
@@ -158,35 +278,28 @@ describe("GitVcsAdapter", () => {
     writeFileSync(join(repo, "file.txt"), "two\n");
     writeFileSync(join(repo, "untracked.txt"), "fresh\n");
 
-    // watchSignature reads process.cwd(), so run it from inside the temp repo.
-    const previousCwd = process.cwd();
-    process.chdir(repo);
-    try {
-      // Measure the working-tree signature while the tree is actually dirty, so the assertion is
-      // meaningful: it must carry the tracked diff and an untracked-file stat signature.
-      const diffSignature = GitVcsAdapter.operations["working-tree-diff"]!.watchSignature!(
-        { kind: "vcs", staged: false, options: { vcs: "git" } },
-        { cwd: repo },
-      );
-      expect(diffSignature).toContain("diff --git a/file.txt b/file.txt");
-      expect(diffSignature).toContain("untracked:");
+    // Measure the working-tree signature while the tree is actually dirty, so the assertion is
+    // meaningful: it must carry the tracked diff and an untracked-file stat signature.
+    const diffSignature = GitVcsAdapter.operations["working-tree-diff"]!.watchSignature!(
+      { kind: "vcs", staged: false, options: { vcs: "git" } },
+      { cwd: repo },
+    );
+    expect(diffSignature).toContain("diff --git a/file.txt b/file.txt");
+    expect(diffSignature).toContain("untracked:");
 
-      const showSignature = GitVcsAdapter.operations["revision-show"]!.watchSignature!(
-        { kind: "show", ref: "HEAD", options: { vcs: "git" } },
-        { cwd: repo },
-      );
-      expect(showSignature).toContain("diff --git");
+    const showSignature = GitVcsAdapter.operations["revision-show"]!.watchSignature!(
+      { kind: "show", ref: "HEAD", options: { vcs: "git" } },
+      { cwd: repo },
+    );
+    expect(showSignature).toContain("diff --git");
 
-      // Stash the dirty state so a stash entry exists for the stash-show signature.
-      git(repo, "stash", "push", "--include-untracked", "-m", "watch stash");
-      const stashSignature = GitVcsAdapter.operations["stash-show"]!.watchSignature!(
-        { kind: "stash-show", options: { vcs: "git" } },
-        { cwd: repo },
-      );
-      expect(stashSignature).toContain("diff --git");
-    } finally {
-      process.chdir(previousCwd);
-    }
+    // Stash the dirty state so a stash entry exists for the stash-show signature.
+    git(repo, "stash", "push", "--include-untracked", "-m", "watch stash");
+    const stashSignature = GitVcsAdapter.operations["stash-show"]!.watchSignature!(
+      { kind: "stash-show", options: { vcs: "git" } },
+      { cwd: repo },
+    );
+    expect(stashSignature).toContain("diff --git");
   });
 });
 

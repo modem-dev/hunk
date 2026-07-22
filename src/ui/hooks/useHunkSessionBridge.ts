@@ -19,6 +19,7 @@ export function useHunkSessionBridge({
   liveCommentCount,
   liveCommentSummaries,
   navigateToLocation,
+  noteMarkupWidth,
   openAgentNotes,
   reloadSession,
   removeLiveComment,
@@ -36,6 +37,8 @@ export function useHunkSessionBridge({
   liveCommentCount: number;
   liveCommentSummaries: SessionLiveCommentSummary[];
   navigateToLocation: ReviewController["navigateToLocation"];
+  /** Width STML note markup currently renders at (see agentNoteMarkupWidth). */
+  noteMarkupWidth?: number;
   openAgentNotes: () => void;
   reloadSession: (
     nextInput: CliInput,
@@ -95,6 +98,7 @@ export function useHunkSessionBridge({
         selectedHunkOldRange: selectedRange?.oldRange,
         selectedHunkNewRange: selectedRange?.newRange,
         showAgentNotes,
+        noteMarkupWidth,
         liveCommentCount,
         liveComments: liveCommentSummaries,
         reviewNoteCount,
@@ -105,6 +109,7 @@ export function useHunkSessionBridge({
     hostClient,
     liveCommentCount,
     liveCommentSummaries,
+    noteMarkupWidth,
     reviewNoteCount,
     reviewNoteSummaries,
     selectedFile?.id,

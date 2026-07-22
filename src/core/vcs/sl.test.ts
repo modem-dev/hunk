@@ -122,6 +122,14 @@ describe("SaplingVcsAdapter", () => {
 
       expect(showResult.title).toContain("show .");
       expect(showResult.patchText).toContain("diff --git a/file.txt b/file.txt");
+      expect(
+        SaplingVcsAdapter.operations["working-tree-diff"]!.watchSignature!(diffInput, {
+          cwd: repo,
+        }),
+      ).toContain("+two");
+      expect(
+        SaplingVcsAdapter.operations["revision-show"]!.watchSignature!(showInput, { cwd: repo }),
+      ).toContain("diff --git");
     },
     SlAdapterIntegrationTestTimeoutMs,
   );

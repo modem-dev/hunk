@@ -6,6 +6,7 @@ import type { AppBootstrap, CliInput, ParsedCliInput } from "./types";
 function createBootstrap(input: CliInput): AppBootstrap {
   return {
     input,
+    reloadContext: { cwd: process.cwd() },
     changeset: {
       id: "changeset:startup",
       sourceLabel: "repo",
@@ -316,6 +317,35 @@ describe("startup planning", () => {
       },
       usesPipedPatchInputImpl: () => false,
     });
+  });
+
+  test("carries configured startup notices into the app bootstrap", async () => {
+    const cliInput: CliInput = {
+      kind: "patch",
+      file: "-",
+      options: {},
+    };
+    const startupNotice = {
+      key: "deprecated:custom-theme-syntax",
+      message: "Legacy custom theme syntax detected",
+    };
+
+    const plan = await prepareStartupPlan(["bun", "hunk", "patch", "-"], {
+      parseCliImpl: async () => cliInput as ParsedCliInput,
+      resolveRuntimeCliInputImpl: (input) => input,
+      resolveConfiguredCliInputImpl: (input) =>
+        ({
+          input,
+          startupNotices: [startupNotice],
+        }) as never,
+      loadAppBootstrapImpl: async (input) => createBootstrap(input),
+      usesPipedPatchInputImpl: () => false,
+    });
+
+    expect(plan.kind).toBe("app");
+    if (plan.kind === "app") {
+      expect(plan.bootstrap.startupNotices).toEqual([startupNotice]);
+    }
   });
 
   test("rejects watch mode for stdin-backed patch inputs", async () => {

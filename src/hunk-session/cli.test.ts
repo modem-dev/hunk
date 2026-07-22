@@ -355,6 +355,7 @@ describe("Hunk session CLI formatters", () => {
         "Old range: -",
         "New range: -",
         "Agent notes visible: yes",
+        "Note markup width: -",
         "Live comments: 2",
         "",
       ].join("\n"),
@@ -448,6 +449,21 @@ describe("Hunk session CLI formatters", () => {
       }),
     ).toBe(
       "Added live comment comment-1 on src/app.ts:12 (new) in hunk 1 for session session-1.\n",
+    );
+
+    expect(
+      formatCommentOutput(selector, {
+        commentId: "comment-1",
+        fileId: "file-1",
+        filePath: "src/app.ts",
+        hunkIndex: 0,
+        side: "new",
+        line: 12,
+        markupNotes: ["unknown tag <sparkline>"],
+      }),
+    ).toBe(
+      "Added live comment comment-1 on src/app.ts:12 (new) in hunk 1 for session session-1.\n" +
+        "Markup note: unknown tag <sparkline> (preview with `hunk markup render`).\n",
     );
 
     expect(formatCommentApplyOutput(selector, { applied: [] })).toBe(

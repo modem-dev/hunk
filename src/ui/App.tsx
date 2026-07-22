@@ -5,10 +5,22 @@ import {
 } from "@opentui/core";
 import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState, useRef } from "react";
-import type { AppBootstrap, CliInput, LayoutMode, UserNoteLineTarget } from "../core/types";
-import { canReloadInput, computeWatchSignature } from "../core/watch";
+import {
+  diffPersistedViewPreferences,
+  saveGlobalViewPreferences,
+  saveViewPreferencesPromptPreference,
+} from "../core/config";
+import type {
+  AppBootstrap,
+  CliInput,
+  LayoutMode,
+  PersistedViewPreferences,
+  UserNoteLineTarget,
+} from "../core/types";
+import { canReloadInput } from "../core/watch";
 import type { HunkSessionBrokerClient, ReloadedSessionResult } from "../hunk-session/types";
 import { MenuBar } from "./components/chrome/MenuBar";
+import { ConfirmDialog, confirmDialogHeight } from "./components/chrome/ConfirmDialog";
 import { StatusBar } from "./components/chrome/StatusBar";
 import { DiffPane } from "./components/panes/DiffPane";
 import { SidebarPane } from "./components/panes/SidebarPane";
@@ -22,7 +34,9 @@ import type { ActiveAddNoteAffordance } from "./diff/PierreDiffView";
 import { useAppKeyboardShortcuts } from "./hooks/useAppKeyboardShortcuts";
 import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
 import { useMenuController } from "./hooks/useMenuController";
-import { useReviewController } from "./hooks/useReviewController";
+import { useReviewController, type AgentNoteGeometrySnapshot } from "./hooks/useReviewController";
+import { useWatchedInput, type WatchedInputRuntime } from "./hooks/useWatchedInput";
+import { agentNoteMarkupWidth } from "./lib/agentNoteGeometry";
 import { buildAppMenus } from "./lib/appMenus";
 import { fileRowId } from "./lib/ids";
 import { openSelectedFileInEditor } from "./lib/openInEditor";
@@ -93,6 +107,7 @@ export function App({
   noticeText,
   onQuit = () => process.exit(0),
   onReloadSession,
+  watchRuntime,
 }: {
   bootstrap: AppBootstrap;
   hostClient?: HunkSessionBrokerClient;
@@ -102,6 +117,7 @@ export function App({
     nextInput: CliInput,
     options?: { resetApp?: boolean; sourcePath?: string },
   ) => Promise<ReloadedSessionResult>;
+  watchRuntime?: WatchedInputRuntime;
 }) {
   const SIDEBAR_MIN_WIDTH = 22;
   const DIFF_MIN_WIDTH = 48;
@@ -146,6 +162,7 @@ export function App({
   const [forceSidebarOpen, setForceSidebarOpen] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [showAgentSkill, setShowAgentSkill] = useState(false);
+  const [saveConfigPromptOpen, setSaveConfigPromptOpen] = useState(false);
   const [focusArea, setFocusArea] = useState<FocusArea>("files");
   const [activeAddNoteTarget, setActiveAddNoteTarget] = useState<ActiveAddNoteTarget | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(34);
@@ -181,7 +198,59 @@ export function App({
       })),
     [activeTheme.id, themeOptions],
   );
-  const review = useReviewController({ files: bootstrap.changeset.files });
+  const currentViewPreferences = useMemo<PersistedViewPreferences>(
+    () => ({
+      mode: layoutMode,
+      theme: themeId,
+      showLineNumbers,
+      wrapLines,
+      showHunkHeaders,
+      showMenuBar,
+      showAgentNotes,
+      copyDecorations,
+    }),
+    [
+      copyDecorations,
+      layoutMode,
+      showAgentNotes,
+      showHunkHeaders,
+      showLineNumbers,
+      showMenuBar,
+      themeId,
+      wrapLines,
+    ],
+  );
+  const initialViewPreferencesRef = useRef(currentViewPreferences);
+  const changedViewPreferences = useMemo(
+    () => diffPersistedViewPreferences(initialViewPreferencesRef.current, currentViewPreferences),
+    [currentViewPreferences],
+  );
+  // Render each change as the -/+ pair of TOML assignments the save would rewrite,
+  // with the key column aligned across all changed preferences.
+  const viewPreferenceDiffLines = useMemo(() => {
+    const keyWidth = changedViewPreferences.reduce(
+      (width, change) => Math.max(width, change.configKey.length),
+      0,
+    );
+    return changedViewPreferences.flatMap((change) => [
+      { removed: true, text: `- ${change.configKey.padEnd(keyWidth)} = ${change.previousValue}` },
+      { removed: false, text: `+ ${change.configKey.padEnd(keyWidth)} = ${change.nextValue}` },
+    ]);
+  }, [changedViewPreferences]);
+  const hasUnsavedViewPreferences = changedViewPreferences.length > 0;
+  const viewPreferencesConfigLabel = useMemo(() => {
+    const path = bootstrap.viewPreferencesConfigPath ?? "~/.config/hunk/config.toml";
+    return process.env.HOME && path.startsWith(process.env.HOME)
+      ? `~${path.slice(process.env.HOME.length)}`
+      : path;
+  }, [bootstrap.viewPreferencesConfigPath]);
+  // App computes layout geometry below this hook call, so the controller reads
+  // the current values through a ref instead of a render-time parameter.
+  const noteGeometryRef = useRef<AgentNoteGeometrySnapshot | null>(null);
+  const review = useReviewController({
+    files: bootstrap.changeset.files,
+    noteGeometry: noteGeometryRef,
+  });
   const filteredFiles = review.visibleFiles;
   const selectedFile = review.selectedFile;
   const selectedHunkIndex = review.selectedHunkIndex;
@@ -222,25 +291,6 @@ export function App({
     };
   }, []);
 
-  useHunkSessionBridge({
-    addLiveComment: review.addLiveComment,
-    addLiveCommentBatch: review.addLiveCommentBatch,
-    clearLiveComments: review.clearLiveComments,
-    hostClient,
-    liveCommentCount: review.liveCommentCount,
-    liveCommentSummaries: review.liveCommentSummaries,
-    navigateToLocation: review.navigateToLocation,
-    openAgentNotes,
-    reloadSession: onReloadSession,
-    removeLiveComment: review.removeLiveComment,
-    reviewNoteCount: review.reviewNoteCount,
-    reviewNoteSummaries: review.reviewNoteSummaries,
-    selectedFile,
-    selectedHunk: review.selectedHunk,
-    selectedHunkIndex,
-    showAgentNotes,
-  });
-
   const bodyPadding = pagerMode ? 0 : BODY_PADDING;
   const bodyWidth = Math.max(0, terminal.width - bodyPadding);
   const responsiveLayout = resolveResponsiveLayout(layoutMode, terminal.width);
@@ -262,6 +312,34 @@ export function App({
     ? Math.max(DIFF_MIN_WIDTH, availableCenterWidth - clampedSidebarWidth)
     : Math.max(0, availableCenterWidth);
   const diffContentWidth = Math.max(12, diffPaneWidth - 2);
+  // Publish the live note geometry for daemon-driven markup validation; the
+  // note markup width mirrors what AgentInlineNote lays STML out at.
+  noteGeometryRef.current = { layout: resolvedLayout, width: diffContentWidth };
+  const noteMarkupWidth = agentNoteMarkupWidth({
+    anchorSide: "new",
+    layout: resolvedLayout,
+    width: diffContentWidth,
+  });
+
+  useHunkSessionBridge({
+    addLiveComment: review.addLiveComment,
+    addLiveCommentBatch: review.addLiveCommentBatch,
+    clearLiveComments: review.clearLiveComments,
+    hostClient,
+    liveCommentCount: review.liveCommentCount,
+    liveCommentSummaries: review.liveCommentSummaries,
+    navigateToLocation: review.navigateToLocation,
+    noteMarkupWidth,
+    openAgentNotes,
+    reloadSession: onReloadSession,
+    removeLiveComment: review.removeLiveComment,
+    reviewNoteCount: review.reviewNoteCount,
+    reviewNoteSummaries: review.reviewNoteSummaries,
+    selectedFile,
+    selectedHunk: review.selectedHunk,
+    selectedHunkIndex,
+    showAgentNotes,
+  });
   const maxVisibleLineNumber = useMemo(
     () =>
       filteredFiles.reduce(
@@ -593,61 +671,74 @@ export function App({
     triggerRefreshCurrentInput,
   ]);
 
-  useEffect(() => {
-    if (!watchEnabled) {
-      return;
-    }
+  useWatchedInput({
+    enabled: watchEnabled,
+    input: bootstrap.input,
+    refresh: refreshCurrentInput,
+    reloadContext: bootstrap.reloadContext,
+    runtime: watchRuntime,
+  });
 
-    let cancelled = false;
-    let polling = false;
-    let refreshing = false;
-    let lastSignature: string;
-
+  /** Save current view preferences to user config and then leave the app. */
+  const saveViewPreferencesAndQuit = useCallback(() => {
     try {
-      lastSignature = computeWatchSignature(bootstrap.input);
+      const configPath = saveGlobalViewPreferences(currentViewPreferences, {
+        configPath: bootstrap.viewPreferencesConfigPath,
+      });
+      initialViewPreferencesRef.current = currentViewPreferences;
+      showSessionNotice(`Saved view preferences to ${configPath}`);
+      setTimeout(onQuit, 120);
     } catch (error) {
-      console.error("Failed to initialize watch mode.", error);
-      return;
+      showSessionNotice(
+        error instanceof Error ? error.message : "Failed to save view preferences.",
+      );
     }
+  }, [bootstrap.viewPreferencesConfigPath, currentViewPreferences, onQuit, showSessionNotice]);
 
-    const pollForChanges = () => {
-      if (cancelled || polling || refreshing) {
-        return;
-      }
-
-      polling = true;
-
-      try {
-        const nextSignature = computeWatchSignature(bootstrap.input);
-        if (nextSignature !== lastSignature) {
-          lastSignature = nextSignature;
-          refreshing = true;
-          void refreshCurrentInput()
-            .catch((error) => {
-              console.error("Failed to auto-reload the current diff.", error);
-            })
-            .finally(() => {
-              refreshing = false;
-            });
-        }
-      } catch (error) {
-        console.error("Failed to poll watch mode input.", error);
-      } finally {
-        polling = false;
-      }
-    };
-
-    const interval = setInterval(pollForChanges, 250);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [bootstrap.input, refreshCurrentInput, watchEnabled]);
-
-  /** Leave the app through the shared shutdown path. */
-  const requestQuit = useCallback(() => {
+  /** Leave the app without writing view preference changes. */
+  const discardViewPreferencesAndQuit = useCallback(() => {
+    setSaveConfigPromptOpen(false);
     onQuit();
   }, [onQuit]);
+
+  /** Persist the user's choice to stop prompting about view preference changes. */
+  const neverAskToSaveViewPreferencesAndQuit = useCallback(() => {
+    try {
+      const configPath = saveViewPreferencesPromptPreference(false, {
+        configPath: bootstrap.viewPreferencesConfigPath,
+      });
+      showSessionNotice(`Won't ask to save view preferences again (${configPath})`);
+      setTimeout(onQuit, 120);
+    } catch (error) {
+      showSessionNotice(
+        error instanceof Error ? error.message : "Failed to save prompt preference.",
+      );
+    }
+  }, [bootstrap.viewPreferencesConfigPath, onQuit, showSessionNotice]);
+
+  /** Leave the app through the shared shutdown path, prompting before discarding view changes. */
+  const requestQuit = useCallback(() => {
+    if (
+      !pagerMode &&
+      bootstrap.input.options.promptSaveViewPreferences !== false &&
+      hasUnsavedViewPreferences
+    ) {
+      setShowHelp(false);
+      setSaveConfigPromptOpen(true);
+      return;
+    }
+
+    onQuit();
+  }, [
+    bootstrap.input.options.promptSaveViewPreferences,
+    hasUnsavedViewPreferences,
+    onQuit,
+    pagerMode,
+  ]);
+
+  const closeSaveConfigPrompt = useCallback(() => {
+    setSaveConfigPromptOpen(false);
+  }, []);
 
   /** Close the modal keyboard help overlay. */
   const closeHelp = useCallback(() => {
@@ -838,6 +929,11 @@ export function App({
     openThemeSelector,
     pagerMode,
     requestQuit,
+    saveConfigPromptOpen,
+    saveViewPreferencesAndQuit,
+    discardViewPreferencesAndQuit,
+    neverAskToSaveViewPreferencesAndQuit,
+    closeSaveConfigPrompt,
     scrollCodeHorizontally,
     saveDraftNote,
     scrollDiff,
@@ -1112,6 +1208,48 @@ export function App({
             onClose={closeHelp}
           />
         </Suspense>
+      ) : null}
+
+      {!pagerMode && saveConfigPromptOpen ? (
+        <ConfirmDialog
+          actions={[
+            { keyLabel: "enter/s", label: "save", run: saveViewPreferencesAndQuit },
+            { keyLabel: "q", label: "discard", run: discardViewPreferencesAndQuit },
+            { keyLabel: "n", label: "never ask", run: neverAskToSaveViewPreferencesAndQuit },
+            { keyLabel: "esc", label: "cancel", run: closeSaveConfigPrompt },
+          ]}
+          height={confirmDialogHeight(4 + viewPreferenceDiffLines.length)}
+          terminalHeight={terminal.height}
+          terminalWidth={terminal.width}
+          theme={baseTheme}
+          title="Save view preferences?"
+          width={68}
+          onClose={closeSaveConfigPrompt}
+        >
+          <box style={{ width: "100%", height: 1 }}>
+            <text fg={baseTheme.muted}>
+              You changed {changedViewPreferences.length} view{" "}
+              {changedViewPreferences.length === 1 ? "setting" : "settings"} during this review.
+            </text>
+          </box>
+          <box style={{ width: "100%", height: 1 }}>
+            <text fg={baseTheme.muted}>
+              Save {changedViewPreferences.length === 1 ? "it" : "them"} to your config before
+              quitting?
+            </text>
+          </box>
+          <box style={{ width: "100%", height: 1 }} />
+          <box style={{ width: "100%", height: 1 }}>
+            <text fg={baseTheme.badgeNeutral}>{viewPreferencesConfigLabel}</text>
+          </box>
+          {viewPreferenceDiffLines.map((line) => (
+            <box key={line.text} style={{ width: "100%", height: 1 }}>
+              <text fg={line.removed ? baseTheme.badgeRemoved : baseTheme.badgeAdded}>
+                {line.text}
+              </text>
+            </box>
+          ))}
+        </ConfirmDialog>
       ) : null}
 
       {!pagerMode && themeSelectorState.open ? (

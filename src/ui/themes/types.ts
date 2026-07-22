@@ -37,8 +37,10 @@ export interface AppTheme {
   noteBackground: string;
   noteTitleBackground: string;
   noteTitleText: string;
-  /** Optional Shiki/Pierre theme name for source-accurate code highlighting. */
+  /** Optional Shiki/Pierre base theme name for source-accurate code highlighting. */
   syntaxTheme?: string;
+  /** Exact Shiki/TextMate scope colors layered onto the base syntax theme. */
+  syntaxScopeOverrides?: Record<string, string>;
   syntaxColors: SyntaxColors;
   syntaxStyle: SyntaxStyle;
 }

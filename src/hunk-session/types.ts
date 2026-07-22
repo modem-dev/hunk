@@ -55,6 +55,8 @@ export interface HunkSessionState {
   selectedHunkOldRange?: [number, number];
   selectedHunkNewRange?: [number, number];
   showAgentNotes: boolean;
+  /** Width STML note markup renders at in the session's current layout ("new"-side anchor). */
+  noteMarkupWidth?: number;
   liveCommentCount: number;
   liveComments: SessionLiveCommentSummary[];
   reviewNoteCount?: number;
@@ -135,6 +137,10 @@ export interface AppliedCommentResult {
   hunkIndex: number;
   side: DiffSide;
   line: number;
+  /** Width the comment's STML markup was validated at, present when markup was given. */
+  markupWidth?: number;
+  /** STML render notes for the comment's markup, present only when non-empty. */
+  markupNotes?: string[];
 }
 
 export interface AppliedCommentBatchResult {
@@ -201,6 +207,8 @@ export interface SelectedSessionContext {
   selectedFile: SessionFileSummary | null;
   selectedHunk: SelectedHunkSummary | null;
   showAgentNotes: boolean;
+  /** Width STML note markup renders at in the session's current layout. */
+  noteMarkupWidth?: number;
   liveCommentCount: number;
 }
 

@@ -12,7 +12,7 @@ import {
 } from "../../diff/diffSectionGeometry";
 import type { FileSectionLayout } from "../../lib/fileSectionLayout";
 import { fileLabelParts } from "../../lib/files";
-import { fitText } from "../../lib/text";
+import { cellRangeToCharRange, fitText, measureTextWidth, sliceTextByWidth } from "../../lib/text";
 import type { AppTheme } from "../../themes";
 
 export type CopySelectionPoint =
@@ -139,6 +139,12 @@ function trimCopiedLine(line: string) {
   return line.replace(/[ \t]+$/g, "");
 }
 
+/** Slice one rendered line by an inclusive terminal-cell range (see cellRangeToCharRange). */
+function sliceLineByCells(line: string, startCell: number, endCell: number) {
+  const { startIndex, endIndex } = cellRangeToCharRange(line, startCell, endCell);
+  return line.slice(startIndex, endIndex);
+}
+
 /** Return whether a character should be part of a double-click word selection. */
 function isCopyWordChar(char: string | undefined) {
   return char !== undefined && /[A-Za-z0-9_$]/.test(char);
@@ -164,9 +170,13 @@ function renderFileHeaderCopyText({
     filename,
     Math.max(1, headerLabelWidth - (stateLabel?.length ?? 0)),
   )}${stateLabel ?? ""}`;
-  const availableGap = Math.max(1, width - 2 - label.length - statsText.length);
+  // The gap and clamp are measured in cells to mirror DiffFileHeaderRow's space-between flex
+  // layout, so wide-character filenames keep the stats columns aligned with the screen.
+  const availableGap = Math.max(1, width - 2 - measureTextWidth(label) - statsText.length);
+  const headerLine = ` ${label}${" ".repeat(availableGap)}${statsText} `;
+  const clamped = sliceTextByWidth(headerLine, 0, width);
 
-  return ` ${label}${" ".repeat(availableGap)}${statsText} `.slice(0, width).padEnd(width);
+  return `${clamped.text}${" ".repeat(Math.max(0, width - clamped.width))}`;
 }
 
 // The "pinned-header" point variant is constructed inline by callers that observe a click on the
@@ -272,8 +282,8 @@ export function renderCopySelectionText({
     const endColumn =
       end.kind === "pinned-header" && end.fileId === start.fileId
         ? end.column
-        : Math.max(0, line.length - 1);
-    lines.push(trimCopiedLine(line.slice(start.column, endColumn + 1)));
+        : Number.MAX_SAFE_INTEGER;
+    lines.push(trimCopiedLine(sliceLineByCells(line, start.column, endColumn)));
   }
 
   const { startRow, endRow } = copySelectionBodyRange(start, end);
@@ -302,8 +312,8 @@ export function renderCopySelectionText({
         const endColumn =
           end.kind === "review-row" && section.headerTop === end.visualRow
             ? end.column
-            : Math.max(0, line.length - 1);
-        lines.push(trimCopiedLine(line.slice(startColumn, endColumn + 1)));
+            : Number.MAX_SAFE_INTEGER;
+        lines.push(trimCopiedLine(sliceLineByCells(line, startColumn, endColumn)));
       }
     }
 
@@ -317,10 +327,11 @@ export function renderCopySelectionText({
       (context.layout === "split" && start.kind === "review-row"
         ? resolveCopySelectionSide(start.column, context.layout, context.width)
         : undefined);
+    const plannedRows = geometry.plannedRows;
 
     for (let rowIndex = 0; rowIndex < geometry.rowBounds.length; rowIndex += 1) {
       const rowBounds = geometry.rowBounds[rowIndex]!;
-      const row = geometry.plannedRows[rowIndex];
+      const row = plannedRows[rowIndex];
       if (!row || rowBounds.height <= 0) {
         continue;
       }
@@ -381,9 +392,9 @@ export function renderCopySelectionText({
               : 0;
           const endColumn =
             end.kind === "review-row" && lineVisualRow === end.visualRow
-              ? Math.min(Math.max(0, line.length - 1), Math.max(0, end.column - codeColumnOffset))
-              : Math.max(0, line.length - 1);
-          const copiedLine = trimCopiedLine(line.slice(startColumn, endColumn + 1));
+              ? Math.max(0, end.column - codeColumnOffset)
+              : Number.MAX_SAFE_INTEGER;
+          const copiedLine = trimCopiedLine(sliceLineByCells(line, startColumn, endColumn));
           if (copiedLine) {
             lines.push(copiedLine);
           }
@@ -414,9 +425,9 @@ export function renderCopySelectionText({
             : 0;
         const endColumn =
           end.kind === "review-row" && lineVisualRow === end.visualRow
-            ? Math.min(Math.max(0, line.length - 1), Math.max(0, end.column - paneOffset))
-            : Math.max(0, line.length - 1);
-        lines.push(trimCopiedLine(line.slice(startColumn, endColumn + 1)));
+            ? Math.max(0, end.column - paneOffset)
+            : Number.MAX_SAFE_INTEGER;
+        lines.push(trimCopiedLine(sliceLineByCells(line, startColumn, endColumn)));
       }
     }
   }
@@ -532,27 +543,38 @@ export function expandSelectionPoint(
       return null;
     }
 
+    // Column math stays in terminal cells; word detection below walks code units and converts
+    // back through cellRangeToCharRange / measureTextWidth.
+    const lineWidth = measureTextWidth(lineText);
+
     if (clickCount === 3) {
       return {
         startCol: globalContentStart,
-        endCol: globalContentStart + lineText.length - 1,
+        // A line of only zero-width characters measures 0 cells; clamp so the range never inverts.
+        endCol: globalContentStart + Math.max(0, lineWidth - 1),
       };
     }
 
-    // Convert the global click column to a code-local column.
-    const localCol = Math.max(0, Math.min(lineText.length - 1, point.column - globalContentStart));
+    // Convert the global click column to a code-local cell, then resolve the covering cluster.
+    const localCell = Math.max(0, Math.min(lineWidth - 1, point.column - globalContentStart));
+    const cluster = cellRangeToCharRange(lineText, localCell, localCell);
 
     // Punctuation and whitespace are separators for word selection; selecting just the clicked
     // separator matches terminal/editor double-click behavior without swallowing code punctuation.
-    if (!isCopyWordChar(lineText[localCol])) {
+    if (!isCopyWordChar(lineText[cluster.startIndex])) {
+      const clusterStartCell = measureTextWidth(lineText.slice(0, cluster.startIndex));
+      const clusterWidth = Math.max(
+        1,
+        measureTextWidth(lineText.slice(cluster.startIndex, cluster.endIndex)),
+      );
       return {
-        startCol: localCol + globalContentStart,
-        endCol: localCol + globalContentStart,
+        startCol: clusterStartCell + globalContentStart,
+        endCol: clusterStartCell + clusterWidth - 1 + globalContentStart,
       };
     }
 
-    let wordStart = localCol;
-    let wordEnd = localCol;
+    let wordStart = cluster.startIndex;
+    let wordEnd = cluster.startIndex;
 
     // Expand left to word start.
     while (wordStart > 0 && isCopyWordChar(lineText[wordStart - 1])) {
@@ -563,11 +585,11 @@ export function expandSelectionPoint(
       wordEnd += 1;
     }
 
-    // Convert back to global columns. wordEnd is exclusive (one past last char),
-    // so endCol = wordEnd - 1 is inclusive.
+    // Convert the code-unit word bounds back to cell columns. wordEnd is exclusive (one past
+    // the last char), so the inclusive endCol is the width through wordEnd minus one.
     return {
-      startCol: wordStart + globalContentStart,
-      endCol: wordEnd - 1 + globalContentStart,
+      startCol: globalContentStart + measureTextWidth(lineText.slice(0, wordStart)),
+      endCol: globalContentStart + measureTextWidth(lineText.slice(0, wordEnd)) - 1,
     };
   }
 

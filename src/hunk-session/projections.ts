@@ -101,6 +101,7 @@ export function buildSelectedHunkSessionContext(session: ListedSession): Selecte
         }
       : null,
     showAgentNotes: session.snapshot.state.showAgentNotes,
+    noteMarkupWidth: session.snapshot.state.noteMarkupWidth,
     liveCommentCount: session.snapshot.state.liveCommentCount,
   };
 }

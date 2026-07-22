@@ -1,12 +1,15 @@
-import type { TextareaRenderable } from "@opentui/core";
+import { createTextAttributes, type TextareaRenderable } from "@opentui/core";
 import { flushSync } from "@opentui/react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { AgentAnnotation, DiffFile, LayoutMode } from "../../../core/types";
+import { agentNoteBoxLayout } from "../../lib/agentNoteGeometry";
 import { annotationRangeLabel, reviewNoteSource } from "../../lib/agentAnnotations";
 import { wrapText } from "../../lib/agentPopover";
 import { isEscapeKey, isSaveDraftNoteKey } from "../../lib/keyboard";
 import { sanitizeTerminalLine } from "../../../lib/terminalText";
-import { fitText, padText } from "../../lib/text";
+import { fitText, measureTextWidth, padText } from "../../lib/text";
+import { resolveStmlColor } from "../../lib/stml/colors";
+import { layoutStmlCached, type StmlLine, type StmlSpan } from "../../lib/stml/layout";
 import type { AppTheme } from "../../themes";
 
 export function inlineNoteTitle(annotation: AgentAnnotation, noteIndex: number, noteCount: number) {
@@ -25,8 +28,24 @@ interface AgentInlineNoteLine {
   text: string;
 }
 
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max);
+/**
+ * Lay out an annotation's optional STML markup body for one content width.
+ *
+ * Returns null when the annotation has no markup or the markup degrades to
+ * nothing, so callers fall back to the plain summary/rationale body. Both
+ * measurement and rendering call this with the same width, which keeps the
+ * planned row height and the mounted card height in exact lockstep.
+ */
+export function agentInlineNoteMarkupLines(
+  annotation: AgentAnnotation,
+  contentWidth: number,
+): StmlLine[] | null {
+  if (!annotation.markup || annotation.source === "user-draft") {
+    return null;
+  }
+
+  const { lines } = layoutStmlCached(annotation.markup, contentWidth);
+  return lines.length > 0 ? lines : null;
 }
 
 function draftLineCount(text: string) {
@@ -60,13 +79,23 @@ function wrapNoteText(text: string, width: number) {
   return text.split("\n").flatMap((line) => wrapText(sanitizeTerminalLine(line), width));
 }
 
-function splitColumnWidths(width: number) {
-  const markerWidth = 1;
-  const separatorWidth = 1;
-  const usableWidth = Math.max(0, width - markerWidth - separatorWidth);
-  const leftWidth = Math.max(0, markerWidth + Math.floor(usableWidth / 2));
-  const rightWidth = Math.max(0, separatorWidth + usableWidth - Math.floor(usableWidth / 2));
-  return { leftWidth, rightWidth };
+/** Build the plain summary/rationale body used when a note has no markup. */
+function agentInlineNoteBodyLines(
+  annotation: AgentAnnotation,
+  contentWidth: number,
+): AgentInlineNoteLine[] {
+  return [
+    ...wrapNoteText(annotation.summary, contentWidth).map((text) => ({
+      kind: "summary" as const,
+      text,
+    })),
+    ...(annotation.rationale
+      ? wrapNoteText(annotation.rationale, contentWidth).map((text) => ({
+          kind: "rationale" as const,
+          text,
+        }))
+      : []),
+  ];
 }
 
 export function measureAgentInlineNoteHeight({
@@ -80,38 +109,20 @@ export function measureAgentInlineNoteHeight({
   layout: Exclude<LayoutMode, "auto">;
   width: number;
 }) {
-  const splitWidths = splitColumnWidths(width);
-  const canDockRight = layout === "split" && anchorSide === "new" && width >= 84;
-  const canDockLeft = layout === "split" && anchorSide === "old" && width >= 84;
-  const preferredDockWidth = canDockRight
-    ? splitWidths.rightWidth
-    : canDockLeft
-      ? splitWidths.leftWidth
-      : Math.max(34, width - 4);
-  const boxWidth = clamp(preferredDockWidth, 28, Math.max(28, width - 4));
-  const innerWidth = Math.max(1, boxWidth - 2);
-  const bodyWidth = innerWidth;
-  const contentWidth = Math.max(1, bodyWidth - 2);
-  const lines: AgentInlineNoteLine[] = [
-    ...wrapNoteText(annotation.summary, contentWidth).map((text) => ({
-      kind: "summary" as const,
-      text,
-    })),
-    ...(annotation.rationale
-      ? wrapNoteText(annotation.rationale, contentWidth).map((text) => ({
-          kind: "rationale" as const,
-          text,
-        }))
-      : []),
-  ];
+  const { contentWidth } = agentNoteBoxLayout({ anchorSide, layout, width });
 
   if (annotation.source === "user-draft") {
     // Keep geometry aligned with the rendered textarea rows, including soft wraps.
     return draftVisualLineCount(annotation.summary, contentWidth) + 6;
   }
 
-  // top border + title row + body lines + bottom border
-  return 3 + lines.length;
+  const markupLines = agentInlineNoteMarkupLines(annotation, contentWidth);
+  const bodyLineCount = markupLines
+    ? markupLines.length
+    : agentInlineNoteBodyLines(annotation, contentWidth).length;
+
+  // top border + top padding row + body lines + bottom border
+  return 3 + bodyLineCount;
 }
 
 /** Render the note card itself before the start of an annotated range. */
@@ -192,25 +203,9 @@ export function AgentInlineNote({
 
   const closeText = onClose ? "[x]" : "";
   const titleText = `${inlineNoteTitle(annotation, noteIndex, noteCount)} - ${annotationRangeLabel(annotation, file)}`;
-  const splitWidths = splitColumnWidths(width);
-  const canDockRight = layout === "split" && anchorSide === "new" && width >= 84;
-  const canDockLeft = layout === "split" && anchorSide === "old" && width >= 84;
-  const preferredDockWidth = canDockRight
-    ? splitWidths.rightWidth
-    : canDockLeft
-      ? splitWidths.leftWidth
-      : Math.max(34, width - 4);
-  const boxWidth = clamp(preferredDockWidth, 28, Math.max(28, width - 4));
-  const boxLeft = canDockRight
-    ? Math.max(0, width - boxWidth)
-    : canDockLeft
-      ? 0
-      : Math.min(4, Math.max(0, width - boxWidth));
-  const innerWidth = Math.max(1, boxWidth - 2);
+  const { boxWidth, boxLeft, contentWidth } = agentNoteBoxLayout({ anchorSide, layout, width });
   const closeGapWidth = closeText ? 1 : 0;
   const closeWidth = closeText.length;
-  const bodyWidth = innerWidth;
-  const contentWidth = Math.max(1, bodyWidth - 2);
   const draftInnerWidth = Math.max(1, boxWidth - 2);
   const draftContentWidth = Math.max(1, draftInnerWidth - 2);
   const draftVisibleRows = draft
@@ -244,18 +239,7 @@ export function AgentInlineNote({
     });
   };
 
-  const lines: AgentInlineNoteLine[] = [
-    ...wrapNoteText(annotation.summary, contentWidth).map((text) => ({
-      kind: "summary" as const,
-      text,
-    })),
-    ...(annotation.rationale
-      ? wrapNoteText(annotation.rationale, contentWidth).map((text) => ({
-          kind: "rationale" as const,
-          text,
-        }))
-      : []),
-  ];
+  const lines = agentInlineNoteBodyLines(annotation, contentWidth);
   const savedTitleText = fitText(
     ` ${titleText} `,
     Math.max(0, boxWidth - 4 - closeGapWidth - closeWidth),
@@ -495,7 +479,23 @@ export function AgentInlineNote({
     );
   }
 
-  const renderSavedBodyRow = (key: string, text: string, kind: AgentInlineNoteLine["kind"]) => (
+  const markupLines = agentInlineNoteMarkupLines(annotation, contentWidth);
+
+  /** Resolve one STML span into concrete OpenTUI text props for this theme. */
+  const markupSpanProps = (span: StmlSpan) => ({
+    fg: resolveStmlColor(span.fg, theme) ?? theme.text,
+    bg: resolveStmlColor(span.bg, theme) ?? theme.panel,
+    attributes: createTextAttributes({
+      bold: span.bold,
+      italic: span.italic,
+      underline: span.underline,
+      dim: span.dim,
+      strikethrough: span.strike,
+    }),
+  });
+
+  /** One card body row: left offset, side borders, and a one-line content cell. */
+  const renderBodyRow = (key: string, content: ReactNode) => (
     <box
       key={key}
       style={{ width: "100%", height: 1, flexDirection: "row", backgroundColor: theme.panel }}
@@ -509,11 +509,7 @@ export function AgentInlineNote({
         </text>
       </box>
       <box style={{ width: 1, height: 1, backgroundColor: theme.panel }} />
-      <box style={{ width: contentWidth, height: 1, backgroundColor: theme.panel }}>
-        <text fg={kind === "summary" ? theme.text : theme.muted} bg={theme.panel}>
-          {padText(text, contentWidth)}
-        </text>
-      </box>
+      <box style={{ width: contentWidth, height: 1, backgroundColor: theme.panel }}>{content}</box>
       <box style={{ width: 1, height: 1, backgroundColor: theme.panel }} />
       <box style={{ width: 1, height: 1, backgroundColor: theme.panel }}>
         <text fg={theme.noteBorder} bg={theme.panel}>
@@ -522,6 +518,31 @@ export function AgentInlineNote({
       </box>
     </box>
   );
+
+  const renderMarkupBodyRow = (key: string, line: StmlLine) => {
+    const usedWidth = line.spans.reduce((total, span) => total + measureTextWidth(span.text), 0);
+    return renderBodyRow(
+      key,
+      <text bg={theme.panel}>
+        {line.spans.map((span, spanIndex) => (
+          <span key={`${key}:span:${spanIndex}`} {...markupSpanProps(span)}>
+            {span.text}
+          </span>
+        ))}
+        {usedWidth < contentWidth ? (
+          <span bg={theme.panel}>{" ".repeat(contentWidth - usedWidth)}</span>
+        ) : null}
+      </text>,
+    );
+  };
+
+  const renderSavedBodyRow = (key: string, text: string, kind: AgentInlineNoteLine["kind"]) =>
+    renderBodyRow(
+      key,
+      <text fg={kind === "summary" ? theme.text : theme.muted} bg={theme.panel}>
+        {padText(text, contentWidth)}
+      </text>,
+    );
 
   return (
     <box style={{ width: "100%", flexDirection: "column", backgroundColor: theme.panel }}>
@@ -566,9 +587,11 @@ export function AgentInlineNote({
 
       {renderSavedBodyRow("saved-note-top-padding", "", "summary")}
 
-      {lines.map((line, index) =>
-        renderSavedBodyRow(`${line.kind}:${index}`, line.text, line.kind),
-      )}
+      {markupLines
+        ? markupLines.map((line, index) => renderMarkupBodyRow(`markup:${index}`, line))
+        : lines.map((line, index) =>
+            renderSavedBodyRow(`${line.kind}:${index}`, line.text, line.kind),
+          )}
 
       <box style={{ width: "100%", height: 1, flexDirection: "row", backgroundColor: theme.panel }}>
         <box style={{ width: boxLeft, height: 1, backgroundColor: theme.panel }}>

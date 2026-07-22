@@ -9,7 +9,13 @@ import {
   usesPipedPatchInput,
   type ControllingTerminal,
 } from "./terminal";
-import type { AppBootstrap, CliInput, ParsedCliInput, SessionCommandInput } from "./types";
+import type {
+  AppBootstrap,
+  CliInput,
+  MarkupRenderCommandInput,
+  ParsedCliInput,
+  SessionCommandInput,
+} from "./types";
 import { canReloadInput } from "./watch";
 import { parseCli } from "./cli";
 
@@ -38,6 +44,13 @@ export type StartupPlan =
       text: string;
       options: CliInput["options"];
       customTheme?: AppBootstrap["customTheme"];
+    }
+  | {
+      kind: "markup-render";
+      input: MarkupRenderCommandInput;
+    }
+  | {
+      kind: "markup-guide";
     }
   | {
       kind: "app";
@@ -112,6 +125,19 @@ export async function prepareStartupPlan(
     return {
       kind: "session-command",
       input: parsedCliInput,
+    };
+  }
+
+  if (parsedCliInput.kind === "markup-render") {
+    return {
+      kind: "markup-render",
+      input: parsedCliInput,
+    };
+  }
+
+  if (parsedCliInput.kind === "markup-guide") {
+    return {
+      kind: "markup-guide",
     };
   }
 
@@ -232,6 +258,8 @@ export async function prepareStartupPlan(
   }
 
   bootstrap.initialThemeMode = initialThemeMode ?? bootstrap.initialThemeMode;
+  bootstrap.startupNotices = configured.startupNotices;
+  bootstrap.viewPreferencesConfigPath = configured.viewPreferencesConfigPath;
 
   controllingTerminal ??= usesPipedPatchInputImpl(cliInput) ? openControllingTerminalImpl() : null;
 

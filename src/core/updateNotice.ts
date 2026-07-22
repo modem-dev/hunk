@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { resolveHunkStatePath } from "./paths";
+import type { StartupNotice } from "./startupNotice";
 import { resolveCliVersion, UNKNOWN_CLI_VERSION } from "./version";
 
 const DIST_TAGS_URL = "https://registry.npmjs.org/-/package/hunkdiff/dist-tags";
@@ -18,11 +19,6 @@ interface PersistedStartupState {
 
 export type UpdateChannel = "latest" | "beta";
 export type InstallSource = "npm" | "homebrew";
-
-export interface UpdateNotice {
-  key: string;
-  message: string;
-}
 
 type FetchImpl = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -91,7 +87,7 @@ function createUpdateNotice(
   version: string,
   channel: UpdateChannel,
   installSource: InstallSource,
-): UpdateNotice {
+): StartupNotice {
   const command = commandForChannel(channel, installSource);
   return {
     key: `${channel}:${version}`,
@@ -113,7 +109,7 @@ function selectUpdateNotice(
   installedVersion: string,
   distTags: ParsedDistTags,
   installSource: InstallSource,
-): UpdateNotice | null {
+): StartupNotice | null {
   if (!isComparableInstalledVersion(installedVersion)) {
     return null;
   }
@@ -221,7 +217,7 @@ function startupUpdateNoticeDisabled(env: NodeJS.ProcessEnv = process.env) {
 }
 
 /** Resolve the one-time copied-skill refresh notice shown after a version change. */
-function resolveStartupSkillRefreshNotice(deps: UpdateNoticeDeps = {}): UpdateNotice | null {
+function resolveStartupSkillRefreshNotice(deps: UpdateNoticeDeps = {}): StartupNotice | null {
   const resolveInstalledVersion = deps.resolveInstalledVersion ?? resolveCliVersion;
   const installedVersion = resolveInstalledVersion();
   if (installedVersion === UNKNOWN_CLI_VERSION) {
@@ -254,7 +250,7 @@ function resolveStartupSkillRefreshNotice(deps: UpdateNoticeDeps = {}): UpdateNo
 /** Resolve the transient startup notice directly from local state or npm dist-tags. */
 export async function resolveStartupUpdateNotice(
   deps: UpdateNoticeDeps = {},
-): Promise<UpdateNotice | null> {
+): Promise<StartupNotice | null> {
   const env = deps.env ?? process.env;
   if (startupUpdateNoticeDisabled(env)) {
     return null;

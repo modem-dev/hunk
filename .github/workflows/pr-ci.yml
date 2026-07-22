@@ -180,6 +180,11 @@ jobs:
       - name: Stage prebuilt npm packages
         run: bun run build:prebuilt:npm
 
+      - name: Verify compiled binary watch mode
+        run: bun test ./test/pty/watch.test.ts
+        env:
+          HUNK_TEST_EXECUTABLE: ${{ github.workspace }}/dist/hunk
+
       - name: Verify staged prebuilt packs
         run: bun run check:prebuilt-pack
 

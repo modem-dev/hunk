@@ -2,27 +2,30 @@ import { describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
 import { useEffect, useMemo, useState } from "react";
-import { useStartupUpdateNotice } from "./useStartupUpdateNotice";
+import { useStartupNotices } from "./useStartupNotices";
 
 function NoticeHarness({
   delayMs = 1,
   durationMs = 5,
   enabled = true,
   repeatMs = 10,
+  notices,
   resolver,
   onNoticeText,
 }: {
   delayMs?: number;
   durationMs?: number;
   enabled?: boolean;
+  notices?: ReadonlyArray<{ key: string; message: string }>;
   repeatMs?: number;
   resolver?: () => Promise<{ key: string; message: string } | null>;
   onNoticeText?: (value: string | null) => void;
 }) {
-  const noticeText = useStartupUpdateNotice({
+  const noticeText = useStartupNotices({
     delayMs,
     durationMs,
     enabled,
+    notices,
     repeatMs,
     resolver,
   });
@@ -35,6 +38,35 @@ function NoticeHarness({
     <box>
       <text>{noticeText ?? ""}</text>
     </box>
+  );
+}
+
+function QueueRestartHarness({ onNoticeText }: { onNoticeText?: (value: string | null) => void }) {
+  const [generation, setGeneration] = useState(0);
+  const notices = useMemo(
+    () => [{ key: "legacy", message: "Legacy config detected" }],
+    [generation],
+  );
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setGeneration(1);
+    }, 5);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, []);
+
+  return (
+    <NoticeHarness
+      delayMs={1}
+      durationMs={30}
+      notices={notices}
+      repeatMs={1_000}
+      resolver={async () => ({ key: "latest:2.0.0", message: "Update available: 2.0.0" })}
+      onNoticeText={onNoticeText}
+    />
   );
 }
 
@@ -77,7 +109,56 @@ async function advance(setup: Awaited<ReturnType<typeof testRender>>, ms: number
   });
 }
 
-describe("useStartupUpdateNotice", () => {
+describe("useStartupNotices", () => {
+  test("queues an asynchronously resolved notice after an immediate local notice", async () => {
+    const seen: Array<string | null> = [];
+    const setup = await testRender(
+      <NoticeHarness
+        delayMs={1}
+        durationMs={50}
+        notices={[{ key: "legacy", message: "Legacy config detected" }]}
+        repeatMs={1_000}
+        resolver={async () => ({ key: "latest:9.9.9", message: "Update available: 9.9.9" })}
+        onNoticeText={(value) => seen.push(value)}
+      />,
+      { width: 80, height: 2 },
+    );
+
+    try {
+      await advance(setup, 0);
+      expect(setup.captureCharFrame()).toContain("Legacy config detected");
+
+      await advance(setup, 5);
+      await advance(setup, 60);
+      expect(seen).toContain("Update available: 9.9.9");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("requeues a pending notice when local notices change before it is displayed", async () => {
+    const seen: Array<string | null> = [];
+    const setup = await testRender(
+      <QueueRestartHarness onNoticeText={(value) => seen.push(value)} />,
+      { width: 80, height: 2 },
+    );
+
+    try {
+      await advance(setup, 0);
+      await advance(setup, 10);
+      await advance(setup, 5);
+
+      expect(seen.filter((value) => value === "Legacy config detected")).toHaveLength(1);
+      expect(seen).toContain("Update available: 2.0.0");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("dedupes the same notice across repeated checks in one session", async () => {
     const seen: Array<string | null> = [];
     let resolveCalls = 0;

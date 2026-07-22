@@ -80,6 +80,8 @@ hunk diff before.ts after.ts --watch        # auto-reload when either file chang
 git diff --no-color | hunk patch -          # review a patch from stdin
 ```
 
+Watch mode remains continuous. Direct-file and Git-backed reviews normally use filesystem observation to refresh promptly, with periodic polling retained as a fallback for missed events or unavailable watchers. Jujutsu and Sapling reviews currently use polling rather than filesystem observation.
+
 ### Working with agents
 
 1. Open Hunk in another terminal with `hunk diff` or `hunk show`.
@@ -131,12 +133,14 @@ line_numbers = true
 wrap_lines = false
 menu_bar = true
 agent_notes = false
+prompt_save_view_preferences = true
 transparent_background = false
 ```
 
 `theme = "auto"` and `--theme auto` query the terminal background at startup, choose `github-light-default` for light backgrounds and `github-dark-default` for dark backgrounds, and fall back to `github-dark-default` if the terminal does not answer.
 Older theme ids such as `graphite` and `paper` remain accepted as compatibility aliases.
 `exclude_untracked` affects Git/Sapling working-tree `hunk diff` sessions only.
+`prompt_save_view_preferences = false` disables the quit prompt for saving changed view preferences.
 `transparent_background` can also be written as `transparentBackground`.
 
 Custom themes can inherit from any built-in theme and override only the colors you care about:
@@ -151,15 +155,18 @@ accent = "#7fd1ff"
 panel = "#10161d"
 noteBorder = "#c49bff"
 
-[custom_theme.syntax]
-keyword = "#8ed4ff"
-string = "#c7b4ff"
-comment = "#6e85a7"
-operator = "#7fd1ff"
-variable = "#eef4ff"
+[custom_theme.syntax_scopes]
+"comment" = "#6e85a7"
+"punctuation.definition.comment" = "#6e85a7"
+"keyword.operator" = "#7fd1ff"
+"entity.name.function" = "#8ed4ff"
 ```
 
-All custom theme colors must use `#rrggbb` hex values. Press `t` in the app, or choose `View -> Themes…`, to open the theme selector.
+`syntax_scopes` uses [Shiki/TextMate scope selectors](https://shiki.style/guide/themes#token-colors) directly, so matching and precedence follow Shiki's theme rules without a Hunk-specific translation layer. Quote selectors containing dots. Declaration order is preserved; later rules win when matching selectors have equal specificity, while a more-specific base-theme selector beats a broader override. Add the grammar-specific selector when that happens. All custom theme colors must use `#rrggbb` hex values.
+
+The former `[custom_theme.syntax]` role table is deprecated but temporarily translated into approximate scopes for compatibility. Both tables can coexist while migrating, and an exact `syntax_scopes` entry overrides a translated entry with the same selector. Because semantic roles have no one-to-one TextMate mapping, migrate when practical: for example, replace `comment = "#ffffff"` with both `"comment" = "#ffffff"` and `"punctuation.definition.comment" = "#ffffff"` under `[custom_theme.syntax_scopes]`, adding language-specific selectors when a grammar uses more specific scopes. The compatibility table will be removed in the next major release.
+
+Press `t` in the app, or choose `View -> Themes…`, to open the theme selector.
 
 ### Git integration
 

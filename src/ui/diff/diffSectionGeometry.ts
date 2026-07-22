@@ -15,6 +15,7 @@ import type { PlannedReviewRow } from "./reviewRenderPlan";
 import { measureRenderedRowHeight } from "./renderRows";
 
 const EMPTY_EXPANDED_GAP_KEYS: ReadonlySet<string> = new Set();
+const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
 
 export interface DiffSectionRowBounds extends VerticalBounds {
   key: string;
@@ -25,10 +26,8 @@ export interface DiffSectionRowBounds extends VerticalBounds {
 /**
  * Cached placeholder sizing and hunk navigation geometry for one file section.
  *
- * `plannedRows` is retained alongside the row-bounds map so downstream features (notably
- * clipboard rendering of mouse selections) can re-render the exact same rows the layout was
- * measured against, without rebuilding the plan. The cache is owned by the immutable DiffFile
- * object and includes note content in its key, so memory grows with visible diff lifetimes.
+ * Copy selection occasionally needs the planned rows behind the measured bounds. The geometry
+ * implementations keep that row stream lazy so ordinary scrolling/navigation retain only bounds.
  */
 export interface DiffSectionGeometry extends SectionGeometry<PlannedHunkBounds> {
   lineNumberDigits: number;
@@ -133,6 +132,51 @@ function setCachedSectionGeometry(
   const cachedByFile = SECTION_GEOMETRY_CACHE.get(file) ?? {};
   cachedByFile[slot] = { key: cacheKey, geometry };
   SECTION_GEOMETRY_CACHE.set(file, cachedByFile);
+}
+
+/** Resolve planned rows only for uncommon consumers that need row content after geometry exists. */
+function createLazyPlannedRowsResolver({
+  expandedKeys,
+  file,
+  layout,
+  showHunkHeaders,
+  sourceStatus,
+  theme,
+  visibleAgentNotes,
+}: {
+  expandedKeys: ReadonlySet<string>;
+  file: DiffFile;
+  layout: Exclude<LayoutMode, "auto">;
+  showHunkHeaders: boolean;
+  sourceStatus: FileSourceStatus | undefined;
+  theme: AppTheme;
+  visibleAgentNotes: VisibleAgentNote[];
+}) {
+  let plannedRows: PlannedReviewRow[] | null = null;
+  // Geometry bounds and deferred rows must describe the same immutable input snapshot. Callers
+  // normally replace these collections; clone only the serializable planning data while preserving
+  // note callbacks so later model additions cannot silently fall outside the snapshot boundary.
+  const rowPlanInputs = {
+    expandedKeys: expandedKeys.size === 0 ? EMPTY_EXPANDED_GAP_KEYS : new Set(expandedKeys),
+    file,
+    layout,
+    showHunkHeaders,
+    sourceStatus: sourceStatus ? structuredClone(sourceStatus) : undefined,
+    theme,
+    visibleAgentNotes:
+      visibleAgentNotes.length === 0
+        ? EMPTY_VISIBLE_AGENT_NOTES
+        : visibleAgentNotes.map((note) => ({
+            ...note,
+            annotation: structuredClone(note.annotation),
+          })),
+  };
+
+  return () => {
+    plannedRows ??= buildDiffSectionRowPlan(rowPlanInputs).plannedRows;
+
+    return plannedRows;
+  };
 }
 
 interface DiffSectionRowHeightOptions {
@@ -328,12 +372,23 @@ export function measureDiffSectionGeometry(
     bodyHeight += height;
   }
 
+  const resolvePlannedRows = createLazyPlannedRowsResolver({
+    expandedKeys,
+    file,
+    layout,
+    showHunkHeaders,
+    sourceStatus,
+    theme,
+    visibleAgentNotes,
+  });
   const geometry: DiffSectionGeometry = {
     bodyHeight,
     hunkAnchorRows,
     hunkBounds,
     lineNumberDigits,
-    plannedRows,
+    get plannedRows() {
+      return resolvePlannedRows();
+    },
     rowBounds,
     rowBoundsByKey,
     rowBoundsByStableKey,

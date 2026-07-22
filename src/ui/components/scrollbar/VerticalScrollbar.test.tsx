@@ -56,6 +56,7 @@ function createScrollBootstrapWithManyFiles(fileCount: number): AppBootstrap {
   }
 
   return {
+    reloadContext: { cwd: process.cwd() },
     input: {
       kind: "vcs",
       staged: false,
@@ -197,6 +198,7 @@ describe("Vertical scrollbar", () => {
     const after = before.replace("line15 = 15", "line15 = 115 // modified");
 
     const bootstrap: AppBootstrap = {
+      reloadContext: { cwd: process.cwd() },
       input: {
         kind: "vcs",
         staged: false,
@@ -261,6 +263,7 @@ describe("Vertical scrollbar", () => {
     const before = "export const a = 1;\n";
     const after = "export const a = 2;\n";
     const bootstrap: AppBootstrap = {
+      reloadContext: { cwd: process.cwd() },
       input: {
         kind: "vcs",
         staged: false,
@@ -306,6 +309,7 @@ describe("Vertical scrollbar", () => {
     const after = before.replace("line50", "line50modified");
 
     const bootstrap: AppBootstrap = {
+      reloadContext: { cwd: process.cwd() },
       input: {
         kind: "vcs",
         staged: false,
@@ -372,6 +376,7 @@ describe("Vertical scrollbar", () => {
     const after = before.replace("line040", "line040modified");
 
     const bootstrap: AppBootstrap = {
+      reloadContext: { cwd: process.cwd() },
       input: {
         kind: "vcs",
         staged: false,
@@ -451,6 +456,7 @@ describe("Vertical scrollbar", () => {
     const after = before.replace("line08 = 8;", "line08 = 999; // modified");
 
     const bootstrap: AppBootstrap = {
+      reloadContext: { cwd: process.cwd() },
       input: {
         kind: "vcs",
         staged: false,

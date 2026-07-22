@@ -542,6 +542,84 @@ describe("parseCli", () => {
     });
   });
 
+  test("parses markup render with defaults and options", async () => {
+    expect(await parseCli(["bun", "hunk", "markup", "render"])).toEqual({
+      kind: "markup-render",
+      file: "-",
+      width: 56,
+      color: "auto",
+      theme: undefined,
+      json: false,
+    });
+
+    expect(
+      await parseCli([
+        "bun",
+        "hunk",
+        "markup",
+        "render",
+        "note.stml",
+        "--width",
+        "72",
+        "--color",
+        "never",
+        "--theme",
+        "midnight",
+        "--json",
+      ]),
+    ).toEqual({
+      kind: "markup-render",
+      file: "note.stml",
+      width: 72,
+      color: "never",
+      theme: "midnight",
+      json: true,
+    });
+  });
+
+  test("rejects invalid markup render color modes and unknown markup subcommands", async () => {
+    await expect(
+      parseCli(["bun", "hunk", "markup", "render", "-", "--color", "sometimes"]),
+    ).rejects.toThrow("--color must be auto, always, or never.");
+    await expect(parseCli(["bun", "hunk", "markup", "bogus"])).rejects.toThrow(
+      "Supported markup subcommands are render and guide.",
+    );
+  });
+
+  test("parses markup guide", async () => {
+    expect(await parseCli(["bun", "hunk", "markup", "guide"])).toEqual({ kind: "markup-guide" });
+  });
+
+  test("parses session comment add with --markup", async () => {
+    const parsed = await parseCli([
+      "bun",
+      "hunk",
+      "session",
+      "comment",
+      "add",
+      "session-1",
+      "--file",
+      "README.md",
+      "--new-line",
+      "7",
+      "--summary",
+      "Rendered note",
+      "--markup",
+      "<box border><b>hot path</b></box>",
+    ]);
+
+    expect(parsed).toMatchObject({
+      kind: "session",
+      action: "comment-add",
+      selector: { sessionId: "session-1" },
+      filePath: "README.md",
+      side: "new",
+      line: 7,
+      summary: "Rendered note",
+      markup: "<box border><b>hot path</b></box>",
+    });
+  });
+
   test("parses session comment add with --focus", async () => {
     const parsed = await parseCli([
       "bun",
@@ -1044,6 +1122,21 @@ describe("parseCli command help text", () => {
 });
 
 describe("parseCli argument validation", () => {
+  /** Parse one numeric session-navigation flag through the public CLI parser. */
+  function parseTestNavigationTarget(flag: "--hunk" | "--old-line" | "--new-line", value: string) {
+    return parseCli([
+      "bun",
+      "hunk",
+      "session",
+      "navigate",
+      "session-1",
+      "--file",
+      "README.md",
+      flag,
+      value,
+    ]);
+  }
+
   test("rejects an invalid layout mode and rethrows the parser error", async () => {
     await expect(parseCli(["bun", "hunk", "diff", "--mode", "bogus"])).rejects.toThrow(
       "Invalid layout mode: bogus",
@@ -1056,21 +1149,32 @@ describe("parseCli argument validation", () => {
     );
   });
 
-  test("rejects a non-positive integer navigation target", async () => {
-    await expect(
-      parseCli([
-        "bun",
-        "hunk",
-        "session",
-        "navigate",
-        "session-1",
-        "--file",
-        "README.md",
-        "--hunk",
-        "0",
-      ]),
-    ).rejects.toThrow("Invalid positive integer: 0");
-  });
+  test.each(["1", "42", "9007199254740991"])(
+    "accepts positive integer navigation target %s",
+    async (value) => {
+      await expect(parseTestNavigationTarget("--hunk", value)).resolves.toMatchObject({
+        hunkNumber: Number(value),
+      });
+    },
+  );
+
+  test.each(["0", "-1", "1.5", "1e3", "12abc", "9007199254740992"])(
+    "rejects malformed positive integer navigation target %s",
+    async (value) => {
+      await expect(parseTestNavigationTarget("--hunk", value)).rejects.toThrow(
+        `Invalid positive integer: ${value}`,
+      );
+    },
+  );
+
+  test.each(["--hunk", "--old-line", "--new-line"])(
+    "rejects a partially numeric value for %s",
+    async (flag) => {
+      await expect(parseTestNavigationTarget(flag, "12abc")).rejects.toThrow(
+        "Invalid positive integer: 12abc",
+      );
+    },
+  );
 
   test("rejects ambiguous diff input that is neither a single target nor a file pair", async () => {
     await expect(parseCli(["bun", "hunk", "diff", "--staged", "left", "right"])).rejects.toThrow(

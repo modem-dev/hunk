@@ -1,4 +1,5 @@
 import type { BuildDiffFileOptions } from "../diffFile";
+import type { WatchPlan } from "../watchPlan";
 import type {
   DiffFile,
   VcsShowCommandInput,
@@ -30,6 +31,7 @@ export type VcsReviewOperationKind = VcsReviewOperation["kind"];
 export interface VcsOperation<Input extends VcsReviewInput> {
   load(input: Input, context: VcsLoadContext): Promise<VcsPatchResult>;
   watchSignature?: (input: Input, context: VcsLoadContext) => string;
+  watchPlan?: (input: Input, context: VcsLoadContext) => WatchPlan;
 }
 
 export interface VcsOperations {

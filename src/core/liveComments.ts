@@ -10,6 +10,8 @@ export interface CommentTargetInput {
   line?: number;
   summary: string;
   rationale?: string;
+  /** Optional STML markup rendered as the note body (see src/ui/lib/stml). */
+  markup?: string;
   author?: string;
 }
 
@@ -164,6 +166,7 @@ export function buildLiveComment(
     line: input.line,
     summary: input.summary,
     rationale: input.rationale,
+    markup: input.markup,
     oldRange: input.side === "old" ? [input.line, input.line] : undefined,
     newRange: input.side === "new" ? [input.line, input.line] : undefined,
     tags: ["mcp"],

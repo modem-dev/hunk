@@ -1,5 +1,6 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
 import type { FileSourceFetcher } from "./fileSource";
+import type { StartupNotice } from "./startupNotice";
 
 export type LayoutMode = "auto" | "split" | "stack";
 export type VcsMode = string;
@@ -19,6 +20,8 @@ export interface AgentAnnotation {
   newRange?: [number, number];
   summary: string;
   rationale?: string;
+  /** Optional STML markup rendered as the note body in place of summary/rationale text. */
+  markup?: string;
   tags?: string[];
   confidence?: "low" | "medium" | "high";
   source?: string;
@@ -93,10 +96,12 @@ export interface CommonOptions {
   menuBar?: boolean;
   agentNotes?: boolean;
   copyDecorations?: boolean;
+  promptSaveViewPreferences?: boolean;
   transparentBackground?: boolean;
   colorMoved?: boolean;
 }
 
+/** @deprecated Use exact TextMate selectors through CustomSyntaxScopesConfig instead. */
 export interface CustomSyntaxColorsConfig {
   default?: string;
   keyword?: string;
@@ -110,6 +115,9 @@ export interface CustomSyntaxColorsConfig {
   operator?: string;
   punctuation?: string;
 }
+
+/** Exact Shiki/TextMate selector-to-hex-color overrides, preserved in declaration order. */
+export type CustomSyntaxScopesConfig = Record<string, string>;
 
 export interface CustomThemeConfig {
   base?: string;
@@ -147,7 +155,9 @@ export interface CustomThemeConfig {
   noteBackground?: string;
   noteTitleBackground?: string;
   noteTitleText?: string;
+  /** @deprecated Use syntaxScopes. This compatibility field will be removed next major. */
   syntax?: CustomSyntaxColorsConfig;
+  syntaxScopes?: CustomSyntaxScopesConfig;
 }
 
 export interface PersistedViewPreferences {
@@ -236,6 +246,7 @@ export interface SessionCommentAddCommandInput {
   line: number;
   summary: string;
   rationale?: string;
+  markup?: string;
   author?: string;
   reveal: boolean;
 }
@@ -247,6 +258,7 @@ export interface SessionCommentApplyItemInput {
   line?: number;
   summary: string;
   rationale?: string;
+  markup?: string;
   author?: string;
 }
 
@@ -349,15 +361,38 @@ export type CliInput =
   | PatchCommandInput
   | DiffToolCommandInput;
 
+export interface MarkupRenderCommandInput {
+  kind: "markup-render";
+  /** Markup source path, or "-" for stdin. */
+  file: string;
+  width: number;
+  color: "auto" | "always" | "never";
+  theme?: string;
+  json: boolean;
+}
+
+export interface MarkupGuideCommandInput {
+  kind: "markup-guide";
+}
+
 export type ParsedCliInput =
   | CliInput
   | HelpCommandInput
   | PagerCommandInput
   | DaemonServeCommandInput
-  | SessionCommandInput;
+  | SessionCommandInput
+  | MarkupRenderCommandInput
+  | MarkupGuideCommandInput;
+
+export interface ReloadContext {
+  cwd: string;
+  repoRoot?: string;
+  initialWatchSignature?: string;
+}
 
 export interface AppBootstrap {
   input: CliInput;
+  reloadContext: ReloadContext;
   changeset: Changeset;
   initialMode: LayoutMode;
   initialTheme?: string;
@@ -369,4 +404,6 @@ export interface AppBootstrap {
   initialShowMenuBar?: boolean;
   initialShowAgentNotes?: boolean;
   initialCopyDecorations?: boolean;
+  startupNotices?: readonly StartupNotice[];
+  viewPreferencesConfigPath?: string;
 }

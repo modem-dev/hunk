@@ -71,6 +71,11 @@ export interface UseAppKeyboardShortcutsOptions {
   openThemeSelector: () => void;
   pagerMode: boolean;
   requestQuit: () => void;
+  saveConfigPromptOpen: boolean;
+  saveViewPreferencesAndQuit: () => void;
+  discardViewPreferencesAndQuit: () => void;
+  neverAskToSaveViewPreferencesAndQuit: () => void;
+  closeSaveConfigPrompt: () => void;
   scrollCodeHorizontally: (delta: number) => void;
   scrollDiff: (delta: number, unit: ScrollUnit) => void;
   saveDraftNote: () => void;
@@ -115,6 +120,11 @@ export function useAppKeyboardShortcuts({
   openThemeSelector,
   pagerMode,
   requestQuit,
+  saveConfigPromptOpen,
+  saveViewPreferencesAndQuit,
+  discardViewPreferencesAndQuit,
+  neverAskToSaveViewPreferencesAndQuit,
+  closeSaveConfigPrompt,
   scrollCodeHorizontally,
   saveDraftNote,
   scrollDiff,
@@ -141,6 +151,7 @@ export function useAppKeyboardShortcuts({
   const pagerModeRef = useRef(pagerMode);
   const showAgentSkillRef = useRef(showAgentSkill);
   const showHelpRef = useRef(showHelp);
+  const saveConfigPromptOpenRef = useRef(saveConfigPromptOpen);
   const themeSelectorOpenRef = useRef(themeSelectorOpen);
 
   activeMenuIdRef.current = activeMenuId;
@@ -148,6 +159,7 @@ export function useAppKeyboardShortcuts({
   pagerModeRef.current = pagerMode;
   showAgentSkillRef.current = showAgentSkill;
   showHelpRef.current = showHelp;
+  saveConfigPromptOpenRef.current = saveConfigPromptOpen;
   themeSelectorOpenRef.current = themeSelectorOpen;
 
   const resolveJumpShortcut = (key: KeyEvent): JumpShortcut | null => {
@@ -283,6 +295,36 @@ export function useAppKeyboardShortcuts({
     }
 
     return false;
+  };
+
+  const handleSaveConfigPromptShortcut = (key: KeyEvent) => {
+    if (!saveConfigPromptOpenRef.current) {
+      return false;
+    }
+
+    consumeKey(key);
+    if (key.name === "return" || key.name === "enter" || key.name === "s" || key.sequence === "s") {
+      saveViewPreferencesAndQuit();
+      return true;
+    }
+
+    // "q" again quits and discards, so a double-tap of the quit key always exits.
+    if (key.name === "q" || key.sequence === "q") {
+      discardViewPreferencesAndQuit();
+      return true;
+    }
+
+    if (key.name === "n" || key.sequence === "n") {
+      neverAskToSaveViewPreferencesAndQuit();
+      return true;
+    }
+
+    if (isEscapeKey(key)) {
+      closeSaveConfigPrompt();
+      return true;
+    }
+
+    return true;
   };
 
   const handleThemeSelectorShortcut = (key: KeyEvent) => {
@@ -576,6 +618,10 @@ export function useAppKeyboardShortcuts({
   };
 
   useKeyboard((key: KeyEvent) => {
+    if (handleSaveConfigPromptShortcut(key)) {
+      return;
+    }
+
     if (handleMenuToggleShortcut(key)) {
       return;
     }

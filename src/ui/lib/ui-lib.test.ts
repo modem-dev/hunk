@@ -23,7 +23,7 @@ import {
   isStepDownKey,
   isStepUpKey,
 } from "./keyboard";
-import { fitText, measureTextWidth, padText, sliceTextByWidth } from "./text";
+import { cellRangeToCharRange, fitText, measureTextWidth, padText, sliceTextByWidth } from "./text";
 import { computeHunkRevealScrollTop } from "./hunkScroll";
 import {
   estimateDiffSectionBodyRows,
@@ -272,6 +272,33 @@ describe("ui helpers", () => {
     expect(measureTextWidth(padText("日本", 6))).toBe(6);
   });
 
+  test("cellRangeToCharRange maps inclusive cell ranges onto code-unit slice bounds", () => {
+    // ASCII: cells and code units are identical, and out-of-range cells clamp to the text.
+    expect(cellRangeToCharRange("hello", 1, 3)).toEqual({ startIndex: 1, endIndex: 4 });
+    expect(cellRangeToCharRange("hello", 0, 99)).toEqual({ startIndex: 0, endIndex: 5 });
+
+    // "a日本b" layout: a=cell 0, 日=cells 1-2, 本=cells 3-4, b=cell 5.
+    expect(cellRangeToCharRange("a日本b", 1, 2)).toEqual({ startIndex: 1, endIndex: 2 });
+    expect(cellRangeToCharRange("a日本b", 3, 5)).toEqual({ startIndex: 2, endIndex: 4 });
+    expect(cellRangeToCharRange("a日本b", 6, 9)).toEqual({ startIndex: 4, endIndex: 4 });
+
+    // Clusters partially covered by the cell range are included in full on both edges.
+    expect(cellRangeToCharRange("a日本b", 2, 3)).toEqual({ startIndex: 1, endIndex: 3 });
+
+    // Surrogate-pair emoji (👍 = two code units, two cells) never split mid-pair.
+    expect(cellRangeToCharRange("👍a", 1, 2)).toEqual({ startIndex: 0, endIndex: 3 });
+    expect(cellRangeToCharRange("👍a", 2, 2)).toEqual({ startIndex: 2, endIndex: 3 });
+
+    // ZWJ emoji sequences stay one cluster (🧑‍💻 = five code units, two cells).
+    expect(cellRangeToCharRange("🧑‍💻x", 1, 1)).toEqual({ startIndex: 0, endIndex: 5 });
+    expect(cellRangeToCharRange("🧑‍💻x", 2, 2)).toEqual({ startIndex: 5, endIndex: 6 });
+
+    // Zero-width characters at the range start are kept so invisible characters round-trip,
+    // while zero-width characters strictly before the range stay excluded.
+    expect(cellRangeToCharRange("\u200bab", 0, 0)).toEqual({ startIndex: 0, endIndex: 2 });
+    expect(cellRangeToCharRange("\u200bab", 1, 1)).toEqual({ startIndex: 2, endIndex: 3 });
+  });
+
   test("repeated single-character runs use the fast width path without losing correctness", () => {
     // Chrome glyph separators: single-cell non-ASCII characters repeated to fill a row.
     expect(measureTextWidth("─".repeat(240))).toBe(240);
@@ -293,6 +320,38 @@ describe("ui helpers", () => {
   test("agent popover helpers wrap text and right-align the card within the viewport", () => {
     expect(wrapText("alpha beta gamma", 8)).toEqual(["alpha", "beta", "gamma"]);
     expect(wrapText("supercalifragilistic", 6)).toEqual(["superc", "alifra", "gilist", "ic"]);
+
+    // Wide text wraps by terminal cells, not UTF-16 code units, so CJK lines
+    // never overflow the box and get clipped by fitText/padText downstream.
+    expect(wrapText("こんにちは世界", 8)).toEqual(["こんにち", "は世界"]);
+    expect(wrapText("これは全角文字の長い注釈です", 10)).toEqual([
+      "これは全角",
+      "文字の長い",
+      "注釈です",
+    ]);
+    expect(wrapText("fix 説明が長い日本語のまま続く", 10)).toEqual([
+      "fix",
+      "説明が長い",
+      "日本語のま",
+      "ま続く",
+    ]);
+
+    // Emoji clusters (surrogate pairs) are never split into lone surrogates.
+    expect(wrapText("🎉🎉🎉", 4)).toEqual(["🎉🎉", "🎉"]);
+
+    // Odd width: a 2-cell character cannot straddle the boundary, so each
+    // line carries one character even though a cell stays unused.
+    expect(wrapText("日本語", 3)).toEqual(["日", "本", "語"]);
+
+    // Multiple ASCII words still pack into one line when they fit.
+    expect(wrapText("ab cd", 5)).toEqual(["ab cd"]);
+
+    // Width narrower than one cluster keeps the text for fitText to clamp
+    // at render time instead of silently dropping it.
+    expect(wrapText("日日", 1)).toEqual(["日日"]);
+
+    // ZWJ emoji clusters stay whole when hard-splitting.
+    expect(wrapText("🧑‍💻🧑‍💻", 2)).toEqual(["🧑‍💻", "🧑‍💻"]);
 
     const content = buildAgentPopoverContent({
       summary: "Guard missing socket path",
@@ -451,8 +510,8 @@ describe("ui helpers", () => {
       base: "github-light-default",
       label: "My Theme",
       accent: "#7755aa",
-      syntax: {
-        keyword: "#123456",
+      syntaxScopes: {
+        "keyword.control": "#123456",
       },
     });
     const missingCustom = resolveTheme("custom", null);
@@ -466,7 +525,7 @@ describe("ui helpers", () => {
     expect(custom.label).toBe("My Theme");
     expect(custom.appearance).toBe("light");
     expect(custom.accent).toBe("#7755aa");
-    expect(custom.syntaxColors.keyword).toBe("#123456");
+    expect(custom.syntaxScopeOverrides).toEqual({ "keyword.control": "#123456" });
     expect(missingCustom.id).toBe("github-dark-default");
     expect(resolveTheme("github-dark-default", null).syntaxStyle).toBeDefined();
     expect(custom.syntaxStyle).toBeDefined();

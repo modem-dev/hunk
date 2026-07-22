@@ -252,6 +252,7 @@ function parseHunkSessionState(value: unknown): HunkSessionState | null {
     selectedHunkOldRange: parseOptionalRange(record.selectedHunkOldRange),
     selectedHunkNewRange: parseOptionalRange(record.selectedHunkNewRange),
     showAgentNotes,
+    noteMarkupWidth: brokerWireParsers.parseNonNegativeInt(record.noteMarkupWidth) ?? undefined,
     liveCommentCount: liveComments.length,
     liveComments,
     reviewNoteCount: reviewNotes.length,

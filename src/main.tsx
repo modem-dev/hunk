@@ -50,6 +50,23 @@ async function main() {
     process.exit(0);
   }
 
+  if (startupPlan.kind === "markup-guide") {
+    const { runMarkupGuideCommand } = await import("./ui/lib/stml/cli");
+    process.exit(runMarkupGuideCommand({ stdout: (text) => process.stdout.write(text) }));
+  }
+
+  if (startupPlan.kind === "markup-render") {
+    const { runMarkupRenderCommand } = await import("./ui/lib/stml/cli");
+    process.exit(
+      await runMarkupRenderCommand(startupPlan.input, {
+        stdout: (text) => process.stdout.write(text),
+        stderr: (text) => process.stderr.write(text),
+        stdoutIsTTY: Boolean(process.stdout.isTTY),
+        readStdinText: () => new Response(Bun.stdin.stream()).text(),
+      }),
+    );
+  }
+
   if (startupPlan.kind === "plain-text-pager") {
     await pagePlainText(startupPlan.text);
     process.exit(0);

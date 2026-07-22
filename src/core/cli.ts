@@ -26,8 +26,12 @@ function parseLayoutMode(value: string): LayoutMode {
 
 /** Parse one required positive integer CLI value. */
 function parsePositiveInt(value: string) {
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isInteger(parsed) || parsed <= 0) {
+  if (!/^[1-9]\d*$/.test(value)) {
+    throw new Error(`Invalid positive integer: ${value}`);
+  }
+
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed)) {
     throw new Error(`Invalid positive integer: ${value}`);
   }
 
@@ -141,6 +145,8 @@ function renderCliHelp() {
     "  hunk pager                              general Git pager wrapper with diff detection",
     "  hunk difftool <left> <right> [path]     review Git difftool file pairs",
     "  hunk session <subcommand>               inspect or control a live Hunk session",
+    "  hunk markup render (<file> | -)         preview STML note markup as terminal text",
+    "  hunk markup guide                       print the STML authoring guide for agents",
     "  hunk skill path                         print the bundled Hunk review skill path",
     "  hunk daemon serve                       run the local Hunk session daemon",
     "",
@@ -305,6 +311,7 @@ function parseSessionCommentApplyPayload(raw: string): SessionCommentApplyItemIn
       line: oldLine ?? newLine,
       summary,
       rationale: typeof item.rationale === "string" ? item.rationale : undefined,
+      markup: typeof item.markup === "string" && item.markup.length > 0 ? item.markup : undefined,
       author: typeof item.author === "string" ? item.author : undefined,
     };
   });
@@ -585,7 +592,13 @@ async function parseDifftoolCommand(tokens: string[], argv: string[]): Promise<P
 }
 
 function requireReloadableCliInput(input: ParsedCliInput): CliInput {
-  if (input.kind === "help" || input.kind === "pager" || input.kind === "daemon-serve") {
+  if (
+    input.kind === "help" ||
+    input.kind === "pager" ||
+    input.kind === "daemon-serve" ||
+    input.kind === "markup-render" ||
+    input.kind === "markup-guide"
+  ) {
     throw new Error(
       "Session reload requires a Hunk review command after --, such as `diff` or `show`.",
     );
@@ -919,6 +932,7 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
         .option("--old-line <n>", "1-based line number on the old side", parsePositiveInt)
         .option("--new-line <n>", "1-based line number on the new side", parsePositiveInt)
         .option("--rationale <text>", "optional longer explanation")
+        .option("--markup <stml>", "optional STML markup rendered as the note body")
         .option("--author <name>", "optional author label")
         .option("--focus", "add the note and focus the viewport on it")
         .option("--json", "emit structured JSON");
@@ -931,6 +945,7 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
         oldLine?: number;
         newLine?: number;
         rationale?: string;
+        markup?: string;
         author?: string;
         focus?: boolean;
         json?: boolean;
@@ -949,6 +964,7 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
             oldLine?: number;
             newLine?: number;
             rationale?: string;
+            markup?: string;
             author?: string;
             focus?: boolean;
             json?: boolean;
@@ -983,6 +999,7 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
         line: parsedOptions.oldLine ?? parsedOptions.newLine ?? 0,
         summary: parsedOptions.summary,
         rationale: parsedOptions.rationale,
+        markup: parsedOptions.markup,
         author: parsedOptions.author,
         reveal: parsedOptions.focus ?? false,
       };
@@ -1216,6 +1233,84 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
   throw new Error(`Unknown session command: ${subcommand}`);
 }
 
+const MARKUP_HELP = [
+  "Usage:",
+  "  hunk markup render (<file> | -) [--width <n>] [--color <auto|always|never>] [--theme <id>] [--json]",
+  "  hunk markup guide",
+  "",
+  "render   preview STML markup as terminal text without launching the TUI;",
+  "         render notes (unknown tags, layout degradations) go to stderr",
+  "  --width <n>   layout width in columns (default 56, the note reference width)",
+  "  --color       auto (default: color when stdout is a TTY), always, or never",
+  "  --theme <id>  hunk theme used to resolve colors (default github-dark-default)",
+  "  --json        emit { width, lines, notes } instead of text",
+  "guide    print the STML authoring guide with copy-paste patterns",
+  "",
+].join("\n");
+
+/** Parse `hunk markup ...` for STML preview and guide commands. */
+async function parseMarkupCommand(tokens: string[]): Promise<ParsedCliInput> {
+  const [subcommand, ...rest] = tokens;
+  if (!subcommand || subcommand === "--help" || subcommand === "-h") {
+    return { kind: "help", text: MARKUP_HELP };
+  }
+
+  if (subcommand === "guide") {
+    if (rest.includes("--help") || rest.includes("-h")) {
+      return { kind: "help", text: MARKUP_HELP };
+    }
+    if (rest.length > 0) {
+      throw new Error("`hunk markup guide` does not accept additional arguments.");
+    }
+    return { kind: "markup-guide" };
+  }
+
+  if (subcommand === "render") {
+    const command = new Command("markup render")
+      .description("preview STML markup as terminal text")
+      .argument("[file]", "markup file path, or - for stdin", "-")
+      .option("--width <n>", "layout width in columns", parsePositiveInt)
+      .option("--color <mode>", "auto, always, or never", "auto")
+      .option("--theme <id>", "hunk theme used to resolve colors")
+      .option("--json", "emit structured JSON");
+
+    let parsedFile = "-";
+    let parsedOptions: { width?: number; color: string; theme?: string; json?: boolean } = {
+      color: "auto",
+    };
+    command.action(
+      (
+        file: string,
+        options: { width?: number; color: string; theme?: string; json?: boolean },
+      ) => {
+        parsedFile = file;
+        parsedOptions = options;
+      },
+    );
+
+    if (rest.includes("--help") || rest.includes("-h")) {
+      return { kind: "help", text: `${command.helpInformation().trimEnd()}\n` };
+    }
+
+    await parseStandaloneCommand(command, rest);
+
+    if (!["auto", "always", "never"].includes(parsedOptions.color)) {
+      throw new Error("--color must be auto, always, or never.");
+    }
+
+    return {
+      kind: "markup-render",
+      file: parsedFile,
+      width: parsedOptions.width ?? 56,
+      color: parsedOptions.color as "auto" | "always" | "never",
+      theme: parsedOptions.theme,
+      json: parsedOptions.json ?? false,
+    };
+  }
+
+  throw new Error("Supported markup subcommands are render and guide.");
+}
+
 /** Parse `hunk skill ...` for bundled skill discovery commands. */
 async function parseSkillCommand(tokens: string[]): Promise<HelpCommandInput> {
   const [subcommand, ...rest] = tokens;
@@ -1364,6 +1459,8 @@ export async function parseCli(argv: string[]): Promise<ParsedCliInput> {
       return parseStashCommand(rest, argv);
     case "session":
       return parseSessionCommand(rest);
+    case "markup":
+      return parseMarkupCommand(rest);
     case "skill":
       return parseSkillCommand(rest);
     case "daemon":

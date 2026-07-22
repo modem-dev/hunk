@@ -1,4 +1,5 @@
 import type { ThemeMode } from "@opentui/core";
+import { resolveSyntaxScopeOverrides } from "../core/legacySyntaxScopes";
 import type { CustomThemeConfig } from "../core/types";
 import { blendHex, contrastRatio, relativeLuminance } from "./lib/color";
 import {
@@ -290,15 +291,14 @@ function buildCustomTheme(customTheme: CustomThemeConfig) {
     noteBackground: customTheme.noteBackground ?? baseTheme.noteBackground,
     noteTitleBackground: customTheme.noteTitleBackground ?? baseTheme.noteTitleBackground,
     noteTitleText: customTheme.noteTitleText ?? baseTheme.noteTitleText,
-    // Explicit syntax color overrides should use Hunk's semantic remap path rather than the
-    // inherited Shiki theme, otherwise the overrides would never affect highlighted code.
-    syntaxTheme: customTheme.syntax ? undefined : baseTheme.syntaxTheme,
+    // Keep the source-accurate base theme and pass exact TextMate selectors through unchanged.
+    // The diff highlighter registers that derived palette with Pierre by content hash.
+    syntaxTheme: baseTheme.syntaxTheme,
+    // TOML config is normalized at parse time; repeat the adapter here for direct API callers.
+    syntaxScopeOverrides: resolveSyntaxScopeOverrides(customTheme.syntax, customTheme.syntaxScopes),
   };
 
-  return withLazySyntaxStyle(themeBase, {
-    ...baseTheme.syntaxColors,
-    ...customTheme.syntax,
-  });
+  return withLazySyntaxStyle(themeBase, baseTheme.syntaxColors);
 }
 
 /** Return the theme ids the app should expose based on whether config defines a custom palette. */

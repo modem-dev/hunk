@@ -1,10 +1,16 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CliInput } from "./types";
-import { resolveConfiguredCliInput } from "./config";
+import {
+  diffPersistedViewPreferences,
+  resolveConfiguredCliInput,
+  saveGlobalViewPreferences,
+  saveViewPreferencesPromptPreference,
+} from "./config";
 import { loadAppBootstrap } from "./loaders";
+import { LEGACY_CUSTOM_SYNTAX_NOTICE, LEGACY_CUSTOM_SYNTAX_NOTICES } from "./startupNotice";
 
 const tempDirs: string[] = [];
 
@@ -46,6 +52,109 @@ afterEach(() => {
   cleanupTempDirs();
 });
 
+describe("config persistence", () => {
+  test("writes accepted view preferences to user config without disturbing tables", () => {
+    const home = createTempDir("hunk-save-config-home-");
+    const configPath = join(home, ".config", "hunk", "config.toml");
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(
+      configPath,
+      [
+        "# personal defaults",
+        'theme = "github-dark-default"',
+        "wrap_lines = false",
+        "",
+        "[custom_theme]",
+        'label = "Keep me"',
+      ].join("\n"),
+    );
+
+    const savedPath = saveGlobalViewPreferences(
+      {
+        mode: "split",
+        theme: "dracula",
+        showLineNumbers: false,
+        wrapLines: true,
+        showHunkHeaders: false,
+        showMenuBar: false,
+        showAgentNotes: true,
+        copyDecorations: true,
+      },
+      { env: { HOME: home } },
+    );
+
+    expect(savedPath).toBe(configPath);
+    expect(readFileSync(configPath, "utf8")).toBe(
+      [
+        "# personal defaults",
+        'theme = "dracula"',
+        "wrap_lines = true",
+        'mode = "split"',
+        "line_numbers = false",
+        "hunk_headers = false",
+        "menu_bar = false",
+        "agent_notes = true",
+        "copy_decorations = true",
+        "",
+        "[custom_theme]",
+        'label = "Keep me"',
+        "",
+      ].join("\n"),
+    );
+  });
+
+  test("writes the view preferences prompt setting without disturbing tables", () => {
+    const home = createTempDir("hunk-save-config-home-");
+    const configPath = join(home, ".config", "hunk", "config.toml");
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(configPath, ["# personal defaults", "", "[custom_theme]"].join("\n"));
+
+    const savedPath = saveViewPreferencesPromptPreference(false, { env: { HOME: home } });
+
+    expect(savedPath).toBe(configPath);
+    expect(readFileSync(configPath, "utf8")).toBe(
+      [
+        "# personal defaults",
+        "prompt_save_view_preferences = false",
+        "",
+        "[custom_theme]",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  test("diffs view preference snapshots as the TOML assignments a save would rewrite", () => {
+    const initial = {
+      mode: "auto",
+      theme: "github-dark-default",
+      showLineNumbers: false,
+      wrapLines: false,
+      showHunkHeaders: false,
+      showMenuBar: true,
+      showAgentNotes: true,
+      copyDecorations: false,
+    } as const;
+
+    expect(diffPersistedViewPreferences(initial, { ...initial })).toEqual([]);
+    expect(
+      diffPersistedViewPreferences(initial, {
+        ...initial,
+        mode: "split",
+        theme: "github-dark-dimmed",
+        showLineNumbers: true,
+      }),
+    ).toEqual([
+      {
+        configKey: "theme",
+        previousValue: '"github-dark-default"',
+        nextValue: '"github-dark-dimmed"',
+      },
+      { configKey: "mode", previousValue: '"auto"', nextValue: '"split"' },
+      { configKey: "line_numbers", previousValue: "false", nextValue: "true" },
+    ]);
+  });
+});
+
 describe("config resolution", () => {
   test("merges global, repo, pager, command, and CLI overrides in the right order", () => {
     const home = createTempDir("hunk-config-home-");
@@ -60,6 +169,7 @@ describe("config resolution", () => {
         "line_numbers = false",
         "transparentBackground = true",
         "color_moved = true",
+        "prompt_save_view_preferences = false",
         "",
         "[patch]",
         'mode = "split"',
@@ -88,6 +198,7 @@ describe("config resolution", () => {
     });
 
     expect(resolved.repoConfigPath).toBe(join(repo, ".hunk", "config.toml"));
+    expect(resolved.viewPreferencesConfigPath).toBe(join(repo, ".hunk", "config.toml"));
     expect(resolved.input.options).toMatchObject({
       pager: true,
       mode: "stack",
@@ -97,6 +208,7 @@ describe("config resolution", () => {
       menuBar: false,
       hunkHeaders: false,
       agentNotes: true,
+      promptSaveViewPreferences: false,
       transparentBackground: true,
       colorMoved: true,
     });
@@ -118,8 +230,8 @@ describe("config resolution", () => {
         'label = "Global Custom"',
         'accent = "#123456"',
         "",
-        "[custom_theme.syntax]",
-        'keyword = "#abcdef"',
+        "[custom_theme.syntax_scopes]",
+        '"keyword.control" = "#abcdef"',
       ].join("\n"),
     );
 
@@ -133,8 +245,8 @@ describe("config resolution", () => {
         'label = "Repo Custom"',
         'panel = "#654321"',
         "",
-        "[custom_theme.syntax]",
-        'string = "#fedcba"',
+        "[custom_theme.syntax_scopes]",
+        '"string.quoted" = "#fedcba"',
       ].join("\n"),
     );
 
@@ -149,11 +261,12 @@ describe("config resolution", () => {
       label: "Repo Custom",
       accent: "#123456",
       panel: "#654321",
-      syntax: {
-        keyword: "#abcdef",
-        string: "#fedcba",
+      syntaxScopes: {
+        "keyword.control": "#abcdef",
+        "string.quoted": "#fedcba",
       },
     });
+    expect(resolved.startupNotices).toBeUndefined();
   });
 
   test.each(["github-dark-default", "github-light-default", "dracula", "catppuccin-mocha"])(
@@ -223,6 +336,49 @@ describe("config resolution", () => {
     ).toThrow("Expected custom_theme.accent to be a hex color like #112233.");
   });
 
+  test("rejects invalid Shiki scope colors", () => {
+    const home = createTempDir("hunk-config-home-");
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(
+      join(home, ".config", "hunk", "config.toml"),
+      ["[custom_theme.syntax_scopes]", '"comment.line" = "white"'].join("\n"),
+    );
+
+    expect(() =>
+      resolveConfiguredCliInput(createPatchPagerInput(), {
+        cwd: createTempDir("hunk-config-cwd-"),
+        env: { HOME: home },
+      }),
+    ).toThrow("Expected custom_theme.syntax_scopes.comment.line to be a hex color like #112233.");
+  });
+
+  test("temporarily translates the deprecated semantic syntax table into exact scopes", () => {
+    const home = createTempDir("hunk-config-home-");
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(
+      join(home, ".config", "hunk", "config.toml"),
+      [
+        "[custom_theme.syntax]",
+        'comment = "#ffffff"',
+        "",
+        "[custom_theme.syntax_scopes]",
+        '"comment" = "#eeeeee"',
+      ].join("\n"),
+    );
+
+    const resolved = resolveConfiguredCliInput(createPatchPagerInput(), {
+      cwd: createTempDir("hunk-config-cwd-"),
+      env: { HOME: home },
+    });
+
+    expect(resolved.customTheme?.syntaxScopes).toEqual({
+      comment: "#eeeeee",
+      "punctuation.definition.comment": "#ffffff",
+    });
+    expect(resolved.startupNotices).toBe(LEGACY_CUSTOM_SYNTAX_NOTICES);
+    expect(resolved.startupNotices).toEqual([LEGACY_CUSTOM_SYNTAX_NOTICE]);
+  });
+
   test("rejects theme = custom when no [custom_theme] table is configured", () => {
     const home = createTempDir("hunk-config-home-");
     mkdirSync(join(home, ".config", "hunk"), { recursive: true });
@@ -263,6 +419,29 @@ describe("config resolution", () => {
     expect(overridden.input.options.transparentBackground).toBe(false);
   });
 
+  test("loads global config from USERPROFILE when HOME is unavailable", () => {
+    const profile = createTempDir("hunk-config-profile-");
+    mkdirSync(join(profile, ".config", "hunk"), { recursive: true });
+    writeFileSync(
+      join(profile, ".config", "hunk", "config.toml"),
+      "transparent_background = true\n",
+    );
+
+    const configured = resolveConfiguredCliInput(
+      {
+        kind: "vcs",
+        staged: false,
+        options: {},
+      },
+      {
+        cwd: createTempDir("hunk-config-cwd-"),
+        env: { USERPROFILE: profile },
+      },
+    );
+
+    expect(configured.input.options.transparentBackground).toBe(true);
+  });
+
   test("defaults unspecified themes to github-dark-default, including piped pager-style patch input", () => {
     const home = createTempDir("hunk-config-home-");
     const cwd = createTempDir("hunk-config-cwd-");
@@ -273,6 +452,7 @@ describe("config resolution", () => {
     });
 
     expect(resolved.repoConfigPath).toBeUndefined();
+    expect(resolved.viewPreferencesConfigPath).toBe(join(home, ".config", "hunk", "config.toml"));
     expect(resolved.input.options.theme).toBe("github-dark-default");
   });
 
@@ -535,8 +715,8 @@ describe("config resolution", () => {
         'base = "catppuccin-mocha"',
         'accent = "#7755aa"',
         "",
-        "[custom_theme.syntax]",
-        'comment = "#998877"',
+        "[custom_theme.syntax_scopes]",
+        '"comment" = "#998877"',
       ].join("\n"),
     );
 
@@ -560,7 +740,7 @@ describe("config resolution", () => {
     expect(bootstrap.customTheme).toEqual({
       base: "catppuccin-mocha",
       accent: "#7755aa",
-      syntax: {
+      syntaxScopes: {
         comment: "#998877",
       },
     });
