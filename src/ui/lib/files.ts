@@ -119,36 +119,22 @@ export function filterReviewFiles(files: DiffFile[], query: string): DiffFile[] 
   });
 }
 
-/** Move repo-root files ahead of folder-nested files, keeping each group's original order. */
-export function hoistRootFilesFirst(files: DiffFile[]): DiffFile[] {
-  const isRootFile = (file: DiffFile) => {
-    const path = sanitizeTerminalLine(normalizeDiffPath(file.path) ?? file.path);
-    return dirname(path) === ".";
-  };
-  const rootFiles = files.filter(isRootFile);
-  const folderFiles = files.filter((file) => !isRootFile(file));
-  return [...rootFiles, ...folderFiles];
-}
-
 /** Build the grouped sidebar entries while preserving the review stream order. */
 export function buildSidebarEntries(files: DiffFile[]): SidebarEntry[] {
   const entries: SidebarEntry[] = [];
-  let activeGroup: string | null = null;
+  let activeGroup: string | undefined;
 
   files.forEach((file, index) => {
     const path = sanitizeTerminalLine(normalizeDiffPath(file.path) ?? file.path);
     const group = dirname(path);
-    const nextGroup = group === "." ? null : group;
 
-    if (nextGroup !== activeGroup) {
-      activeGroup = nextGroup;
-      if (activeGroup) {
-        entries.push({
-          kind: "group",
-          id: `group:${activeGroup}:${index}`,
-          label: `${activeGroup}/`,
-        });
-      }
+    if (group !== activeGroup) {
+      activeGroup = group;
+      entries.push({
+        kind: "group",
+        id: `group:${group}:${index}`,
+        label: group === "." ? "./" : `${group}/`,
+      });
     }
 
     const agentCommentCount = file.agent?.annotations.length ?? 0;

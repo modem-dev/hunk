@@ -411,7 +411,7 @@ function createCollapsedTopBootstrap(): AppBootstrap {
       ),
       createTestDiffFile(
         "second",
-        "zzz/other.ts",
+        "other.ts",
         lines("export const other = 1;"),
         lines("export const other = 2;"),
       ),
@@ -3299,8 +3299,8 @@ describe("App interactions", () => {
       }
 
       await act(async () => {
-        // Click inside the second file row in the left sidebar.
-        await setup.mockMouse.click(6, 4);
+        // Click inside the second file row below the repo-root group header.
+        await setup.mockMouse.click(6, 5);
       });
       await flush(setup);
 

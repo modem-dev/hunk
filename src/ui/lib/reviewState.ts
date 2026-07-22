@@ -12,7 +12,6 @@ import type { NavigateToHunkToolInput, SelectedHunkSummary } from "../../hunk-se
 import {
   buildSidebarEntries,
   filterReviewFiles,
-  hoistRootFilesFirst,
   mergeFileAnnotationsByFileId,
   type SidebarEntry,
 } from "./files";
@@ -56,7 +55,7 @@ export function buildReviewState({
   selectedHunkIndex,
 }: BuildReviewStateOptions): ReviewState {
   const allFiles = mergeFileAnnotationsByFileId(files, liveCommentsByFileId);
-  const visibleFiles = hoistRootFilesFirst(filterReviewFiles(allFiles, filterQuery));
+  const visibleFiles = filterReviewFiles(allFiles, filterQuery);
   const selectedFile = resolveSelectedFile(allFiles, visibleFiles, selectedFileId);
 
   return {

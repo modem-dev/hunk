@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createTestDiffFile, lines } from "../../../test/helpers/diff-helpers";
-import { buildSidebarEntries, fileLabelParts, hoistRootFilesFirst } from "./files";
+import { buildSidebarEntries, fileLabelParts } from "./files";
 
 describe("files helpers", () => {
   test("buildSidebarEntries hides zero-value sidebar stats", () => {
@@ -117,6 +117,32 @@ describe("files helpers", () => {
     });
   });
 
+  test("buildSidebarEntries marks each root-file run with an in-place ./ group", () => {
+    const files = [
+      createTestDiffFile({ id: "nested-a", path: "src/a.ts" }),
+      createTestDiffFile({ id: "root-a", path: "README.md" }),
+      createTestDiffFile({ id: "root-b", path: "package.json" }),
+      createTestDiffFile({ id: "nested-b", path: "test/b.ts" }),
+      createTestDiffFile({ id: "root-c", path: "LICENSE" }),
+    ];
+
+    const labels = buildSidebarEntries(files).map((entry) =>
+      entry.kind === "group" ? entry.label : entry.name,
+    );
+
+    expect(labels).toEqual([
+      "src/",
+      "a.ts",
+      "./",
+      "README.md",
+      "package.json",
+      "test/",
+      "b.ts",
+      "./",
+      "LICENSE",
+    ]);
+  });
+
   test("fileLabelParts strips parser-added line endings from rename labels", () => {
     const renamedAcrossDirectories = {
       ...createTestDiffFile({
@@ -133,27 +159,5 @@ describe("files helpers", () => {
       filename: "pi/extensions/loop.ts -> agents/pi/extensions/notify.ts",
       stateLabel: null,
     });
-  });
-
-  test("hoistRootFilesFirst moves repo-root files to the top, preserving relative order", () => {
-    const make = (id: string, path: string) =>
-      createTestDiffFile({
-        id,
-        path,
-        before: lines("export const stable = true;"),
-        after: lines("export const stable = true;", `export const ${id} = 1;`),
-      });
-    const files = [
-      make("mid", "internal/mod.ts"),
-      make("rootB", "readme.ts"),
-      make("deep", "internal/sub/x.ts"),
-      make("rootA", "main.ts"),
-    ];
-
-    const ordered = hoistRootFilesFirst(files).map((file) => file.path);
-
-    // readme.ts stays before main.ts, proving root files are hoisted in their
-    // original order rather than alphabetically re-sorted.
-    expect(ordered).toEqual(["readme.ts", "main.ts", "internal/mod.ts", "internal/sub/x.ts"]);
   });
 });
