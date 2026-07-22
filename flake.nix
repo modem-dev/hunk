@@ -4,6 +4,13 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     bun2nix.url = "github:nix-community/bun2nix";
     bun2nix.inputs.nixpkgs.follows = "nixpkgs";
+    # nixpkgs-unstable has dropped x86_64-darwin and now hard-errors when
+    # instantiated for it. bun2nix's default systems list (nix-systems/default)
+    # still includes x86_64-darwin, which breaks any downstream evaluation that
+    # touches bun2nix's per-system outputs. The vendored list in ./nix/systems
+    # is nix-systems/default minus x86_64-darwin.
+    systems.url = "path:./nix/systems";
+    bun2nix.inputs.systems.follows = "systems";
   };
   nixConfig = {
     extra-substituters = [
