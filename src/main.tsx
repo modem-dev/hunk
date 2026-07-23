@@ -100,6 +100,7 @@ async function main() {
   >(createSessionRegistration(bootstrap), createInitialSessionSnapshot(bootstrap));
   hostClient.start();
 
+  // Keep OpenTUI's platform-safe threading default (enabled on macOS, disabled on Linux).
   const renderer = await createCliRenderer({
     stdin: controllingTerminal?.stdin,
     stdout: process.stdout,
@@ -107,7 +108,6 @@ async function main() {
       hasControllingTerminal: Boolean(controllingTerminal),
     }),
     screenMode: "alternate-screen",
-    useThread: false,
     exitOnCtrlC: false,
     openConsoleOnError: true,
     onDestroy: () => controllingTerminal?.close(),
