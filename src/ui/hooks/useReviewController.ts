@@ -196,6 +196,11 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
   );
   const [userNotesByFileId, setUserNotesByFileId] = useState<Record<string, UserReviewNote[]>>({});
   const [draftNote, setDraftNote] = useState<DraftReviewNote | null>(null);
+  // Track the last saved draft id so coalesced save key events dedup synchronously
+  // without waiting for the draft-clearing state update to commit.
+  const savedDraftIdRef = useRef<string | null>(null);
+  // Monotonic suffix that keeps `user:*` note ids unique within one millisecond.
+  const userNoteSequenceRef = useRef(0);
   const [expandedGapsByFileId, setExpandedGapsByFileId] = useState<
     Record<string, ReadonlySet<string>>
   >({});
@@ -821,6 +826,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
         newRange: target.side === "new" ? [target.line, target.line] : undefined,
         body: "",
       };
+      savedDraftIdRef.current = null;
       setDraftNote(draft);
       selectHunk(
         file.id,
@@ -842,9 +848,9 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     setDraftNote(null);
   }, []);
 
-  /** Persist the active draft into the in-memory user note collection. */
+  /** Persist the active draft into the in-memory user note collection exactly once. */
   const saveDraftNote = useCallback((): UserReviewNote | null => {
-    if (!draftNote) {
+    if (!draftNote || savedDraftIdRef.current === draftNote.id) {
       return null;
     }
 
@@ -854,8 +860,10 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
       return null;
     }
 
+    savedDraftIdRef.current = draftNote.id;
+
     const savedNote: UserReviewNote = {
-      id: `user:${Date.now()}`,
+      id: `user:${Date.now()}-${++userNoteSequenceRef.current}`,
       source: "user",
       filePath: draftNote.filePath,
       hunkIndex: draftNote.hunkIndex,

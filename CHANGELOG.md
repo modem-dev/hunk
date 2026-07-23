@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.17.4
+
+### Patch Changes
+
+- a9b8694: Restore OpenTUI's platform-default renderer threading to improve interactive startup on macOS.
+- 67674fa: Rapidly pressing Ctrl+S (or double-clicking Save) while saving a draft note no longer saves the same note twice, and saved note ids stay unique even within one millisecond.
+
 ## 0.17.3
 
 ### Patch Changes
