@@ -1,3 +1,4 @@
+import { eastAsianWidth } from "get-east-asian-width";
 import stringWidth from "string-width";
 import { sanitizeTerminalLine } from "../../lib/terminalText";
 
@@ -16,10 +17,32 @@ function textClusters(text: string) {
   return Array.from(graphemeSegmenter.segment(text), (segment) => segment.segment);
 }
 
-// Measured terminal-cell widths for single non-ASCII characters. Hunk re-measures the same
-// chrome glyphs ("─", "▌", "│", ...) constantly, and string-width's grapheme/emoji regexes make
-// each cold measure expensive, so cache per-character widths once.
-const singleCharWidthCache = new Map<string, number>();
+// Zero-width cluster classes restricted to a single code point. A plain u-flag character
+// class stays fast per call, unlike string-width's \p{RGI_Emoji} property-of-strings regex.
+const zeroWidthScalarRegex =
+  /^[\p{Default_Ignorable_Code_Point}\p{Control}\p{Format}\p{Mark}\p{Surrogate}]$/u;
+
+/**
+ * Measure one grapheme cluster in terminal cells, matching string-width on every input.
+ *
+ * A single-scalar cluster can never be an emoji sequence, and every single-scalar emoji is East
+ * Asian Wide, so a zero-width check plus the EAW table reproduces string-width exactly.
+ * Multi-scalar clusters delegate to string-width itself.
+ */
+export function measureClusterWidth(cluster: string): number {
+  const codePoint = cluster.codePointAt(0);
+  if (codePoint === undefined) {
+    return 0;
+  }
+
+  const scalarUnitLength = codePoint > 0xffff ? 2 : 1;
+
+  if (cluster.length === scalarUnitLength) {
+    return zeroWidthScalarRegex.test(cluster) ? 0 : eastAsianWidth(codePoint);
+  }
+
+  return stringWidth(cluster);
+}
 
 /**
  * Return the single UTF-16 code unit repeated across `text`, or null when text mixes characters.
@@ -44,35 +67,29 @@ function repeatedSingleUnitChar(text: string): string | null {
   return text[0] ?? null;
 }
 
-/** Measure one character through string-width, memoized for repeat lookups. */
-function cachedSingleCharWidth(char: string): number {
-  let width = singleCharWidthCache.get(char);
-  if (width === undefined) {
-    width = stringWidth(char);
-    singleCharWidthCache.set(char, width);
-  }
-  return width;
-}
-
 function measureSanitizedTextWidth(text: string) {
   if (printableAsciiRegex.test(text)) {
     return text.length;
   }
 
-  // Fast path for chrome glyph runs like "─".repeat(separatorWidth): string-width costs
-  // milliseconds for long non-ASCII runs, but a run of one repeated non-combining character is
-  // always run-length × single-character width. Each repeated unit with a non-zero width is its
-  // own grapheme cluster, so the multiplication is exact.
+  // Fast path for chrome glyph runs like "─".repeat(separatorWidth): a run of one repeated
+  // non-combining character is always run-length × single-character width. Each repeated unit
+  // with a non-zero width is its own grapheme cluster, so the multiplication is exact.
   const repeatedChar = repeatedSingleUnitChar(text);
   if (repeatedChar !== null) {
-    const charWidth = cachedSingleCharWidth(repeatedChar);
-    // Zero-width units (combining marks) can merge with neighbors; defer to string-width.
+    const charWidth = measureClusterWidth(repeatedChar);
+    // Zero-width units (combining marks) can merge with neighbors; fall through to the
+    // cluster loop, which segments them correctly.
     if (charWidth > 0) {
       return charWidth * text.length;
     }
   }
 
-  return stringWidth(text);
+  let width = 0;
+  for (const cluster of textClusters(text)) {
+    width += measureClusterWidth(cluster);
+  }
+  return width;
 }
 
 /** Measure text in terminal cells, treating CJK and emoji clusters as wide. */
@@ -99,7 +116,7 @@ export function sliceTextByWidth(text: string, offset: number, width: number) {
   let visibleText = "";
 
   for (const cluster of textClusters(safeText)) {
-    const clusterWidth = measureSanitizedTextWidth(cluster);
+    const clusterWidth = measureClusterWidth(cluster);
     const clusterStart = cursor;
     const clusterEnd = cursor + clusterWidth;
     cursor = clusterEnd;
@@ -162,7 +179,7 @@ export function cellRangeToCharRange(text: string, startCell: number, endCell: n
       break;
     }
 
-    const clusterWidth = measureSanitizedTextWidth(cluster);
+    const clusterWidth = measureClusterWidth(cluster);
     // Zero-width clusters (e.g. U+200B) occupy no cell, so they never satisfy the covering
     // check; attach them to a range that starts at their position instead of dropping them.
     const coversStart =
