@@ -46,6 +46,7 @@ describe("PTY notes", () => {
       const withNotes = await session.waitForText(/Adds bonus export\./, { timeout: 5_000 });
 
       expect(withNotes).toContain("Highlights the follow-up addition for review.");
+      expect(withNotes).not.toContain("STML ACTIVE");
 
       await session.press("a");
       const withoutNotes = await harness.waitForSnapshot(
@@ -55,6 +56,34 @@ describe("PTY notes", () => {
       );
 
       expect(withoutNotes).not.toContain("Adds bonus export.");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("experimental launches render STML note bodies", async () => {
+    const fixture = harness.createAgentFilePair();
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        fixture.before,
+        fixture.after,
+        "--mode",
+        "split",
+        "--agent-context",
+        fixture.agentContext,
+        "--experimental",
+      ],
+      cols: 140,
+      rows: 20,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+      await session.press("a");
+      const withMarkup = await session.waitForText(/STML ACTIVE/, { timeout: 5_000 });
+
+      expect(withMarkup).not.toContain("Highlights the follow-up addition for review.");
     } finally {
       session.close();
     }

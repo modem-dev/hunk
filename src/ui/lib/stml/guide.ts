@@ -12,7 +12,8 @@ import { STML_REFERENCE_WIDTH } from "./layout";
 export const STML_GUIDE = `# STML — terminal markup for Hunk agent notes
 
 Experimental: the tag and color vocabulary may change between releases.
-Markup degrades to plain text, so worst case a note loses polish, not content.
+The review must be launched with \`--experimental\`; otherwise Hunk uses the
+required plain-text summary fallback and rejects live markup comments.
 
 Small HTML-like markup rendered as real terminal UI inside agent notes:
 boxes, rows, badges, gauges, lists, code blocks. Sources (--summary stays
@@ -31,8 +32,9 @@ Preview from a file or stdin:
 - Hunk supplies the note's outer frame, author, and source location. STML is
   the note body; use borders for useful inner hierarchy rather than duplicating
   that frame around the whole body. Sibling and nested boxes are supported.
-- Width follows the live session: stack ≈ full pane, split ≈ half, big
-  terminal = big note. \`hunk session context --json\` reports
+- Confirm \`hunk session context --json\` lists \`stml\` in
+  \`experimentalFeatures\` before authoring markup. Width follows the live
+  session: stack ≈ full pane, split ≈ half. The context reports
   \`noteMarkupWidth\`; comment responses echo \`markupWidth\`. Preview with
   \`hunk markup render - --width <that>\`. Unknown? Design for ~${STML_REFERENCE_WIDTH} cols —
   it holds up wider, and users resize/switch layouts anytime.

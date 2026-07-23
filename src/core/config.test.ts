@@ -416,6 +416,22 @@ describe("config resolution", () => {
     ).toThrow('Expected a [custom_theme] table when config selects theme = "custom".');
   });
 
+  test("requires experimental features to be enabled by the launch CLI", () => {
+    const home = createTempDir("hunk-config-experimental-");
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(join(home, ".config", "hunk", "config.toml"), "experimental = true\n");
+
+    const normal = resolveConfiguredCliInput(createPatchPagerInput(), {
+      env: { HOME: home },
+    });
+    const optedIn = resolveConfiguredCliInput(createPatchPagerInput({ experimental: true }), {
+      env: { HOME: home },
+    });
+
+    expect(normal.input.options.experimental).toBe(false);
+    expect(optedIn.input.options.experimental).toBe(true);
+  });
+
   test("accepts transparent background config and CLI overrides", () => {
     const home = createTempDir("hunk-config-home-");
     mkdirSync(join(home, ".config", "hunk"), { recursive: true });

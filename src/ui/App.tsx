@@ -10,6 +10,7 @@ import {
   saveGlobalViewPreferences,
   saveViewPreferencesPromptPreference,
 } from "../core/config";
+import { experimentalFeatureEnabled, resolveExperimentalDiffFiles } from "../core/experimental";
 import { DEFAULT_TAB_WIDTH } from "../core/tabWidth";
 import type {
   AppBootstrap,
@@ -128,6 +129,11 @@ export function App({
 
   const pagerMode = Boolean(bootstrap.input.options.pager);
   const tabWidth = bootstrap.initialTabWidth ?? DEFAULT_TAB_WIDTH;
+  const stmlEnabled = experimentalFeatureEnabled(bootstrap.input.options, "stml");
+  const reviewFiles = useMemo(
+    () => resolveExperimentalDiffFiles(bootstrap.changeset.files, bootstrap.input.options),
+    [bootstrap.changeset.files, bootstrap.input.options.experimental],
+  );
   const renderer = useRenderer();
   const terminal = useTerminalDimensions();
   const sidebarScrollRef = useRef<ScrollBoxRenderable | null>(null);
@@ -250,8 +256,9 @@ export function App({
   // the current values through a ref instead of a render-time parameter.
   const noteGeometryRef = useRef<AgentNoteGeometrySnapshot | null>(null);
   const review = useReviewController({
-    files: bootstrap.changeset.files,
+    files: reviewFiles,
     noteGeometry: noteGeometryRef,
+    stmlEnabled,
   });
   const filteredFiles = review.visibleFiles;
   const selectedFile = review.selectedFile;
@@ -331,7 +338,7 @@ export function App({
     liveCommentCount: review.liveCommentCount,
     liveCommentSummaries: review.liveCommentSummaries,
     navigateToLocation: review.navigateToLocation,
-    noteMarkupWidth,
+    noteMarkupWidth: stmlEnabled ? noteMarkupWidth : undefined,
     openAgentNotes,
     reloadSession: onReloadSession,
     removeLiveComment: review.removeLiveComment,

@@ -87,16 +87,18 @@ function expectValue<T>(value: T): NonNullable<T> {
 function ReviewControllerHarness({
   initialFiles,
   noteGeometry,
+  stmlEnabled,
   onController,
   onSetFiles,
 }: {
   initialFiles: DiffFile[];
   noteGeometry?: Parameters<typeof useReviewController>[0]["noteGeometry"];
+  stmlEnabled?: boolean;
   onController: (controller: ReviewController) => void;
   onSetFiles?: (setFiles: (nextFiles: DiffFile[]) => void) => void;
 }) {
   const [files, setFiles] = useState(initialFiles);
-  const controller = useReviewController({ files, noteGeometry });
+  const controller = useReviewController({ files, noteGeometry, stmlEnabled });
 
   useEffect(() => {
     onController(controller);
@@ -115,9 +117,11 @@ async function renderReviewController(
   {
     strictMode = false,
     noteGeometry,
+    stmlEnabled,
   }: {
     strictMode?: boolean;
     noteGeometry?: Parameters<typeof useReviewController>[0]["noteGeometry"];
+    stmlEnabled?: boolean;
   } = {},
 ) {
   const controllerRef: { current: ReviewController | null } = { current: null };
@@ -126,6 +130,7 @@ async function renderReviewController(
     <ReviewControllerHarness
       initialFiles={initialFiles}
       noteGeometry={noteGeometry}
+      stmlEnabled={stmlEnabled}
       onController={(nextController) => {
         controllerRef.current = nextController;
       }}
@@ -367,7 +372,7 @@ describe("useReviewController", () => {
           "export const alpha = 2;\n",
         ),
       ],
-      { noteGeometry },
+      { noteGeometry, stmlEnabled: true },
     );
 
     try {
@@ -416,9 +421,17 @@ describe("useReviewController", () => {
   });
 
   test("live comments with degraded markup return render notes for the agent", async () => {
-    const { controllerRef, setup } = await renderReviewController([
-      createDiffFile("alpha", "alpha.ts", "export const alpha = 1;\n", "export const alpha = 2;\n"),
-    ]);
+    const { controllerRef, setup } = await renderReviewController(
+      [
+        createDiffFile(
+          "alpha",
+          "alpha.ts",
+          "export const alpha = 1;\n",
+          "export const alpha = 2;\n",
+        ),
+      ],
+      { stmlEnabled: true },
+    );
 
     try {
       await flush(setup);
@@ -453,6 +466,46 @@ describe("useReviewController", () => {
 
       expect(results[0]!.markupNotes?.some((note) => note.includes("unknown tag"))).toBe(true);
       expect(results[1]!.markupNotes).toBeUndefined();
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("normal sessions reject STML live comments without mutating review state", async () => {
+    const { controllerRef, setup } = await renderReviewController([createAlphaFile()]);
+
+    try {
+      await flush(setup);
+
+      expect(() =>
+        expectValue(controllerRef.current).addLiveComment(
+          {
+            filePath: "alpha.ts",
+            side: "new",
+            line: 1,
+            summary: "Plain fallback",
+            markup: "<badge>hidden</badge>",
+          },
+          "comment-disabled",
+        ),
+      ).toThrow("Relaunch Hunk with --experimental");
+      expect(() =>
+        expectValue(controllerRef.current).addLiveCommentBatch(
+          [
+            {
+              filePath: "alpha.ts",
+              hunkIndex: 0,
+              summary: "Plain fallback",
+              markup: "<badge>hidden</badge>",
+            },
+          ],
+          "batch-disabled",
+        ),
+      ).toThrow("Relaunch Hunk with --experimental");
+
+      expect(expectValue(controllerRef.current).liveCommentCount).toBe(0);
     } finally {
       await act(async () => {
         setup.renderer.destroy();

@@ -105,8 +105,28 @@ describe("hunk session wire parsing", () => {
       inputKind: "vcs",
       title: "repo working tree",
       sourceLabel: "/repo",
+      experimentalFeatures: [],
       files: [],
     });
+  });
+
+  test("registration preserves only recognized experimental feature ids", () => {
+    const registration = parseSessionRegistration({
+      registrationVersion: SESSION_BROKER_REGISTRATION_VERSION,
+      sessionId: "session-1",
+      pid: 123,
+      cwd: "/repo",
+      launchedAt: "2026-03-22T00:00:00.000Z",
+      info: {
+        inputKind: "vcs",
+        title: "repo working tree",
+        sourceLabel: "/repo",
+        experimentalFeatures: ["stml", "future-feature", "stml", 42],
+        files: [],
+      },
+    });
+
+    expect(registration?.info.experimentalFeatures).toEqual(["stml"]);
   });
 
   test("rejects registrations with more files than the cap", () => {

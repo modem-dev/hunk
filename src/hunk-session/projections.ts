@@ -75,6 +75,7 @@ export function buildListedHunkSession(entry: HunkSessionEntryLike): ListedSessi
     inputKind: entry.registration.info.inputKind,
     title: entry.registration.info.title,
     sourceLabel: entry.registration.info.sourceLabel,
+    experimentalFeatures: entry.registration.info.experimentalFeatures ?? [],
     fileCount: entry.registration.info.files.length,
     files: entry.registration.info.files.map(summarizeReviewFile),
     snapshot: entry.snapshot,
@@ -92,6 +93,7 @@ export function buildSelectedHunkSessionContext(session: ListedSession): Selecte
     cwd: session.cwd,
     repoRoot: session.repoRoot,
     inputKind: session.inputKind,
+    experimentalFeatures: session.experimentalFeatures,
     selectedFile,
     selectedHunk: selectedFile
       ? {
@@ -121,6 +123,7 @@ export function buildHunkSessionReview(
     cwd: entry.registration.cwd,
     repoRoot: entry.registration.repoRoot,
     inputKind: entry.registration.info.inputKind,
+    experimentalFeatures: entry.registration.info.experimentalFeatures ?? [],
     selectedFile: selectedFile ? serializeReviewFile(selectedFile, includePatch) : null,
     selectedHunk: selectedFile
       ? (selectedFile.hunks[entry.snapshot.state.selectedHunkIndex] ?? null)

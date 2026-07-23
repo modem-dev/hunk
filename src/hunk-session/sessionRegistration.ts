@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
+import { resolveExperimentalFeatures } from "../core/experimental";
 import { formatHunkHeader } from "../core/hunkHeader";
 import { hunkLineRange } from "../core/liveComments";
 import type { AppBootstrap } from "../core/types";
@@ -67,6 +68,7 @@ export function createSessionRegistration(bootstrap: AppBootstrap): HunkSessionR
       inputKind: bootstrap.input.kind,
       title: bootstrap.changeset.title,
       sourceLabel: bootstrap.changeset.sourceLabel,
+      experimentalFeatures: resolveExperimentalFeatures(bootstrap.input.options),
       files: buildSessionFiles(bootstrap),
     },
   };
@@ -85,6 +87,7 @@ export function updateSessionRegistration(
       inputKind: bootstrap.input.kind,
       title: bootstrap.changeset.title,
       sourceLabel: bootstrap.changeset.sourceLabel,
+      experimentalFeatures: resolveExperimentalFeatures(bootstrap.input.options),
       files: buildSessionFiles(bootstrap),
     },
   };

@@ -355,11 +355,26 @@ describe("Hunk session CLI formatters", () => {
         "Old range: -",
         "New range: -",
         "Agent notes visible: yes",
-        "Note markup width: -",
         "Live comments: 2",
         "",
       ].join("\n"),
     );
+  });
+
+  test("context output exposes STML geometry only for opted-in sessions", () => {
+    const normal = createTestSelectedSessionContext({
+      experimentalFeatures: [],
+      noteMarkupWidth: undefined,
+    });
+    const experimental = createTestSelectedSessionContext({
+      experimentalFeatures: ["stml"],
+      noteMarkupWidth: 72,
+    });
+
+    expect(formatContextOutput(normal)).not.toContain("markup");
+    expect(formatContextOutput(normal)).not.toContain("Experimental features");
+    expect(formatContextOutput(experimental)).toContain("Experimental features: stml\n");
+    expect(formatContextOutput(experimental)).toContain("Note markup width: 72\n");
   });
 
   test("review output keeps file order, hunk headers, and no-selection fallbacks", () => {

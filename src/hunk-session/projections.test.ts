@@ -23,6 +23,7 @@ describe("hunk session projections", () => {
   test("buildListedHunkSession keeps terminal metadata and file summaries", () => {
     const entry = {
       registration: createTestSessionRegistration({
+        experimentalFeatures: ["stml"],
         terminal: {
           program: "iTerm.app",
           locations: [{ source: "tty", tty: "/dev/ttys003" }],
@@ -34,6 +35,7 @@ describe("hunk session projections", () => {
     expect(buildListedHunkSession(entry)).toEqual(
       expect.objectContaining({
         terminal: entry.registration.terminal,
+        experimentalFeatures: ["stml"],
         fileCount: 1,
         files: [expect.objectContaining({ path: "src/example.ts", hunkCount: 1 })],
       }),
@@ -42,7 +44,7 @@ describe("hunk session projections", () => {
 
   test("buildSelectedHunkSessionContext projects the current file and selected ranges", () => {
     const session = buildListedHunkSession({
-      registration: createTestSessionRegistration(),
+      registration: createTestSessionRegistration({ experimentalFeatures: ["stml"] }),
       snapshot: createTestSessionSnapshot({
         selectedHunkIndex: 1,
         selectedHunkOldRange: [8, 8],
@@ -52,6 +54,7 @@ describe("hunk session projections", () => {
 
     expect(buildSelectedHunkSessionContext(session)).toEqual(
       expect.objectContaining({
+        experimentalFeatures: ["stml"],
         selectedFile: expect.objectContaining({ path: "src/example.ts" }),
         selectedHunk: {
           index: 1,

@@ -11,6 +11,8 @@ describe("STML guide", () => {
     expect(STML_GUIDE).toContain("█");
     expect(STML_GUIDE).toContain("&rarr;");
     expect(STML_GUIDE).toContain("--width");
+    expect(STML_GUIDE).toContain("--experimental");
+    expect(STML_GUIDE).toContain("experimentalFeatures");
     expect(STML_GUIDE).toContain(`${STML_REFERENCE_WIDTH}`);
   });
 

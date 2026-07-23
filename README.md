@@ -94,7 +94,7 @@ A good generic prompt is:
 Load the Hunk skill and use it for this review. Run `hunk skill path` to get the skill path.
 ```
 
-For the full live-session and `--agent-context` workflow guide, see [docs/agent-workflows.md](docs/agent-workflows.md).
+For the full live-session and `--agent-context` workflow guide, see [docs/agent-workflows.md](docs/agent-workflows.md). Experimental rich STML note bodies require starting the review with `--experimental`; plain agent notes remain the default.
 
 ## Feature comparison
 

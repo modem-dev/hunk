@@ -316,6 +316,9 @@ export function formatSessionOutput(session: ListedSession) {
     `Path: ${session.cwd}`,
     `Repo: ${session.repoRoot ?? "-"}`,
     `Input: ${session.inputKind}`,
+    ...((session.experimentalFeatures?.length ?? 0) > 0
+      ? [`Experimental features: ${session.experimentalFeatures!.join(", ")}`]
+      : []),
     `Launched: ${session.launchedAt}`,
     ...formatTerminalLines(terminal, {
       headerLabel: "Terminal",
@@ -353,7 +356,12 @@ export function formatContextOutput(context: SelectedSessionContext) {
     `Old range: ${oldRange}`,
     `New range: ${newRange}`,
     `Agent notes visible: ${context.showAgentNotes ? "yes" : "no"}`,
-    `Note markup width: ${context.noteMarkupWidth ?? "-"}`,
+    ...(context.experimentalFeatures?.includes("stml")
+      ? [
+          `Experimental features: ${context.experimentalFeatures.join(", ")}`,
+          `Note markup width: ${context.noteMarkupWidth ?? "-"}`,
+        ]
+      : []),
     `Live comments: ${context.liveCommentCount}`,
     "",
   ].join("\n");
@@ -371,6 +379,9 @@ export function formatReviewOutput(review: SessionReview) {
     `Path: ${review.cwd ?? "-"}`,
     `Repo: ${review.repoRoot ?? "-"}`,
     `Input: ${review.inputKind}`,
+    ...((review.experimentalFeatures?.length ?? 0) > 0
+      ? [`Experimental features: ${review.experimentalFeatures!.join(", ")}`]
+      : []),
     `Selected file: ${selectedFile}`,
     `Selected hunk: ${hunkNumber}`,
     `Agent notes visible: ${review.showAgentNotes ? "yes" : "no"}`,

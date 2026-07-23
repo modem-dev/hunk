@@ -51,6 +51,7 @@ describe("session registration", () => {
         inputKind: "vcs",
         title: "working tree",
         sourceLabel: "/repo",
+        experimentalFeatures: [],
         files: [
           {
             id: "file-1",
@@ -95,8 +96,19 @@ describe("session registration", () => {
       inputKind: "patch",
       title: "patch file",
       sourceLabel: "change.patch",
+      experimentalFeatures: [],
       files: [],
     });
+  });
+
+  test("registration advertises STML only for opted-in launches", () => {
+    const registration = createSessionRegistration(
+      createBootstrap({
+        input: { kind: "vcs", staged: false, options: { experimental: true } },
+      }),
+    );
+
+    expect(registration.info.experimentalFeatures).toEqual(["stml"]);
   });
 
   // Intent: initial snapshots expose first-hunk focus and configured note visibility.
