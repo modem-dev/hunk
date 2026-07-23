@@ -56,6 +56,7 @@ Hunk provides a Home Manager module to manage both the package and its configura
       theme = "graphite";
       mode = "split";
       line_numbers = true;
+      tab_width = 4;
     };
   };
 }

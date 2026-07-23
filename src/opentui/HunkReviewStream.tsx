@@ -24,6 +24,7 @@ export function HunkReviewStream({
   showFileSeparators = true,
   showLineNumbers = true,
   showHunkHeaders = true,
+  tabWidth,
   wrapLines = false,
   horizontalOffset = 0,
   highlight = true,
@@ -75,6 +76,7 @@ export function HunkReviewStream({
               theme={theme}
               showLineNumbers={showLineNumbers}
               showHunkHeaders={showHunkHeaders}
+              tabWidth={tabWidth}
               wrapLines={wrapLines}
               horizontalOffset={horizontalOffset}
               highlight={highlight}

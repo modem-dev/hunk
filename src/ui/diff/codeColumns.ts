@@ -1,26 +1,50 @@
+import { DEFAULT_TAB_WIDTH, validateTabWidth } from "../../core/tabWidth";
 import type { DiffFile, LayoutMode } from "../../core/types";
 import { measureTextWidth } from "../lib/text";
 import type { DiffRow } from "./pierre";
 
-export const DIFF_CODE_TAB_WIDTH = 2;
 export const DIFF_RAIL_PREFIX_WIDTH = 1;
 export const DIFF_SPLIT_SEPARATOR_WIDTH = 1;
 
-const maxFileCodeLineWidthCache = new WeakMap<DiffFile["metadata"], number>();
+const maxFileCodeLineWidthCache = new WeakMap<DiffFile["metadata"], Map<number, number>>();
 
-/** Expand tabs the same way the diff renderer does before measuring visible columns. */
-export function expandDiffTabs(text: string) {
-  return text.replaceAll("\t", " ".repeat(DIFF_CODE_TAB_WIDTH));
+/** Expand tabs to the next source-column stop using terminal-cell widths. */
+export function expandDiffTabs(text: string, tabWidth = DEFAULT_TAB_WIDTH, initialColumn = 0) {
+  if (!text.includes("\t")) {
+    return text;
+  }
+
+  const resolvedTabWidth = validateTabWidth(tabWidth);
+  const segments = text.split("\t");
+  let column = Math.max(0, initialColumn);
+  let expanded = "";
+
+  for (const [index, segment] of segments.entries()) {
+    expanded += segment;
+    column += measureTextWidth(segment);
+
+    if (index < segments.length - 1) {
+      const spaces = resolvedTabWidth - (column % resolvedTabWidth);
+      expanded += " ".repeat(spaces);
+      column += spaces;
+    }
+  }
+
+  return expanded;
 }
 
 /** Measure one rendered code line after tab expansion and newline trimming. */
-export function measureRenderedCodeLineWidth(line: string | undefined) {
-  return measureTextWidth(expandDiffTabs((line ?? "").replace(/\n$/, "")));
+export function measureRenderedCodeLineWidth(
+  line: string | undefined,
+  tabWidth = DEFAULT_TAB_WIDTH,
+) {
+  return measureTextWidth(expandDiffTabs((line ?? "").replace(/\n$/, ""), tabWidth));
 }
 
-/** Track the widest rendered code line for one file. */
-export function maxFileCodeLineWidth(file: DiffFile) {
-  const cachedWidth = maxFileCodeLineWidthCache.get(file.metadata);
+/** Track the widest rendered code line for one file and tab width. */
+export function maxFileCodeLineWidth(file: DiffFile, tabWidth = DEFAULT_TAB_WIDTH) {
+  const cachedByTabWidth = maxFileCodeLineWidthCache.get(file.metadata);
+  const cachedWidth = cachedByTabWidth?.get(tabWidth);
   if (cachedWidth !== undefined) {
     return cachedWidth;
   }
@@ -31,14 +55,18 @@ export function maxFileCodeLineWidth(file: DiffFile) {
   let maxWidth = 0;
 
   for (const line of deletionLines) {
-    maxWidth = Math.max(maxWidth, measureRenderedCodeLineWidth(line));
+    maxWidth = Math.max(maxWidth, measureRenderedCodeLineWidth(line, tabWidth));
   }
 
   for (const line of additionLines) {
-    maxWidth = Math.max(maxWidth, measureRenderedCodeLineWidth(line));
+    maxWidth = Math.max(maxWidth, measureRenderedCodeLineWidth(line, tabWidth));
   }
 
-  maxFileCodeLineWidthCache.set(file.metadata, maxWidth);
+  const nextCachedByTabWidth = cachedByTabWidth ?? new Map<number, number>();
+  nextCachedByTabWidth.set(tabWidth, maxWidth);
+  if (!cachedByTabWidth) {
+    maxFileCodeLineWidthCache.set(file.metadata, nextCachedByTabWidth);
+  }
   return maxWidth;
 }
 

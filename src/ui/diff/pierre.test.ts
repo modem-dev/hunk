@@ -147,6 +147,38 @@ describe("Pierre diff rows", () => {
     expect(addedWordSpan?.bg).toBe(TRANSPARENT_BACKGROUND);
   });
 
+  test("expands highlighted tabs across syntax span boundaries for each configured width", async () => {
+    const metadata = parseDiffFromFile(
+      { name: "tabs.ts", contents: "let a\t= 1;\n", cacheKey: "tabs-before" },
+      { name: "tabs.ts", contents: "let a\t= 2;\n", cacheKey: "tabs-after" },
+      { context: 3 },
+      true,
+    );
+    const file: DiffFile = {
+      id: "tabs",
+      path: "tabs.ts",
+      patch: "",
+      language: "typescript",
+      stats: { additions: 1, deletions: 1 },
+      metadata,
+      agent: null,
+    };
+    const theme = resolveTheme("github-dark-default", null);
+    const highlighted = await loadHighlightedDiff(file, theme);
+    const addedText = (tabWidth: number) => {
+      const row = buildStackRows(file, highlighted, theme, tabWidth).find(
+        (candidate) => candidate.type === "stack-line" && candidate.cell.kind === "addition",
+      );
+      if (!row || row.type !== "stack-line") {
+        throw new Error("expected one highlighted addition row");
+      }
+      return row.cell.spans.map((span) => span.text).join("");
+    };
+
+    expect(addedText(2)).toBe("let a = 2;");
+    expect(addedText(4)).toBe("let a   = 2;");
+  });
+
   test("builds stacked rows with separate deletion and addition lines", () => {
     const file = createDiffFile();
     const theme = resolveTheme("github-light-default", null);

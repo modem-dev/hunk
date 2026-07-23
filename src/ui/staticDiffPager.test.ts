@@ -60,6 +60,17 @@ describe("static diff pager", () => {
     expect(plain).toContain("▌+ const value = 2;");
   });
 
+  test("honors configured tab stops", async () => {
+    const patchText =
+      "diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-a\tb\n+a\tc\n";
+
+    const width4 = stripAnsi(await renderStaticDiffPager(patchText, { tabWidth: 4 }));
+    const width8 = stripAnsi(await renderStaticDiffPager(patchText, { tabWidth: 8 }));
+
+    expect(width4).toContain("a   c");
+    expect(width8).toContain("a       c");
+  });
+
   test("honors explicit split mode in static pager output", async () => {
     const patchText =
       "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-const value = 1;\n+const value = 2;\n";

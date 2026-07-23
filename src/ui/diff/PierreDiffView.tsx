@@ -1,5 +1,6 @@
 import { useRenderer } from "@opentui/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { DEFAULT_TAB_WIDTH } from "../../core/tabWidth";
 import type { DiffFile, LayoutMode, UserNoteLineTarget } from "../../core/types";
 import { AgentInlineNote } from "../components/panes/AgentInlineNote";
 import type { VisibleAgentNote } from "../lib/agentAnnotations";
@@ -72,6 +73,7 @@ export function PierreDiffView({
   showLineNumbers = true,
   showHunkHeaders = true,
   sourceStatus,
+  tabWidth = DEFAULT_TAB_WIDTH,
   wrapLines = false,
   theme,
   visibleAgentNotes = EMPTY_VISIBLE_AGENT_NOTES,
@@ -97,6 +99,7 @@ export function PierreDiffView({
   showLineNumbers?: boolean;
   showHunkHeaders?: boolean;
   sourceStatus?: FileSourceStatus | undefined;
+  tabWidth?: number;
   wrapLines?: boolean;
   theme: AppTheme;
   visibleAgentNotes?: VisibleAgentNote[];
@@ -197,8 +200,9 @@ export function PierreDiffView({
         line,
         resolvedHighlightedSource?.lines[sourceLineNumber],
         theme,
+        tabWidth,
       ),
-    [resolvedHighlightedSource, theme],
+    [resolvedHighlightedSource, tabWidth, theme],
   );
 
   const sectionRowPlan = useMemo(
@@ -211,6 +215,7 @@ export function PierreDiffView({
         showHunkHeaders,
         sourceLineSpans,
         sourceStatus,
+        tabWidth,
         theme,
         visibleAgentNotes,
       }),
@@ -222,6 +227,7 @@ export function PierreDiffView({
       showHunkHeaders,
       sourceLineSpans,
       sourceStatus,
+      tabWidth,
       theme,
       visibleAgentNotes,
     ],

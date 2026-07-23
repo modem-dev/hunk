@@ -5,6 +5,7 @@ import { normalizeBuiltInThemeId } from "../ui/themes";
 import { LEGACY_CUSTOM_SYNTAX_COLOR_KEYS, resolveSyntaxScopeOverrides } from "./legacySyntaxScopes";
 import { resolveGlobalConfigPath } from "./paths";
 import { LEGACY_CUSTOM_SYNTAX_NOTICES, type StartupNotice } from "./startupNotice";
+import { DEFAULT_TAB_WIDTH, validateTabWidth } from "./tabWidth";
 import { detectVcs, findVcsRepoRootCandidate, getDefaultVcsAdapter, isVcsId } from "./vcs";
 import type {
   CliInput,
@@ -156,6 +157,19 @@ function normalizeBoolean(value: unknown) {
 /** Accept only plain strings from config files. */
 function normalizeString(value: unknown) {
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+/** Accept a bounded integer tab width from TOML configuration. */
+function normalizeTabWidth(value: unknown) {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    throw new Error("Expected tab_width to be an integer from 1 to 16.");
+  }
+
+  return validateTabWidth(value, "tab_width");
 }
 
 /** Accept only #rrggbb theme colors and report the failing TOML key path. */
@@ -320,6 +334,7 @@ function readConfigPreferences(source: Record<string, unknown>): CommonOptions {
     watch: normalizeBoolean(source.watch),
     excludeUntracked: normalizeBoolean(source.exclude_untracked),
     lineNumbers: normalizeBoolean(source.line_numbers),
+    tabWidth: normalizeTabWidth(source.tab_width),
     wrapLines: normalizeBoolean(source.wrap_lines),
     hunkHeaders: normalizeBoolean(source.hunk_headers),
     menuBar: normalizeBoolean(source.menu_bar),
@@ -345,6 +360,7 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
     watch: overrides.watch ?? base.watch,
     excludeUntracked: overrides.excludeUntracked ?? base.excludeUntracked,
     lineNumbers: overrides.lineNumbers ?? base.lineNumbers,
+    tabWidth: overrides.tabWidth ?? base.tabWidth,
     wrapLines: overrides.wrapLines ?? base.wrapLines,
     hunkHeaders: overrides.hunkHeaders ?? base.hunkHeaders,
     menuBar: overrides.menuBar ?? base.menuBar,
@@ -511,6 +527,7 @@ export function resolveConfiguredCliInput(
     watch: input.options.watch ?? false,
     excludeUntracked: false,
     lineNumbers: DEFAULT_VIEW_PREFERENCES.showLineNumbers,
+    tabWidth: DEFAULT_TAB_WIDTH,
     wrapLines: DEFAULT_VIEW_PREFERENCES.wrapLines,
     hunkHeaders: DEFAULT_VIEW_PREFERENCES.showHunkHeaders,
     menuBar: DEFAULT_VIEW_PREFERENCES.showMenuBar,
@@ -547,6 +564,7 @@ export function resolveConfiguredCliInput(
     vcs: resolvedOptions.vcs ?? getDefaultVcsAdapter().id,
     mode: resolvedOptions.mode ?? DEFAULT_VIEW_PREFERENCES.mode,
     lineNumbers: resolvedOptions.lineNumbers ?? DEFAULT_VIEW_PREFERENCES.showLineNumbers,
+    tabWidth: resolvedOptions.tabWidth ?? DEFAULT_TAB_WIDTH,
     wrapLines: resolvedOptions.wrapLines ?? DEFAULT_VIEW_PREFERENCES.wrapLines,
     hunkHeaders: resolvedOptions.hunkHeaders ?? DEFAULT_VIEW_PREFERENCES.showHunkHeaders,
     menuBar: resolvedOptions.menuBar ?? DEFAULT_VIEW_PREFERENCES.showMenuBar,

@@ -15,6 +15,7 @@
  * text so pager pipelines keep working.
  */
 import { loadAppBootstrap } from "../core/loaders";
+import { DEFAULT_TAB_WIDTH } from "../core/tabWidth";
 import type { CommonOptions, CustomThemeConfig, DiffFile } from "../core/types";
 import {
   buildSplitRows,
@@ -321,10 +322,11 @@ async function renderStaticFile(
   const highlighted =
     file.isBinary || file.isTooLarge ? null : await loadHighlightedDiff(file, theme);
   const layout = resolveStaticLayout(options);
+  const tabWidth = options.tabWidth ?? DEFAULT_TAB_WIDTH;
   const rows =
     layout === "split"
-      ? buildSplitRows(file, highlighted, theme)
-      : buildStackRows(file, highlighted, theme);
+      ? buildSplitRows(file, highlighted, theme, tabWidth)
+      : buildStackRows(file, highlighted, theme, tabWidth);
   const lineNumberWidth = maxLineNumberWidth(file, rows);
   const stats = `${colorText(`+${file.stats.additions}${file.statsTruncated ? "+" : ""}`, theme.badgeAdded)} ${colorText(`-${file.stats.deletions}`, theme.badgeRemoved)}`;
   const status = colorText(`${fileStatusLabel(file)}${fileModeText(file)}`, theme.muted);

@@ -240,6 +240,17 @@ export function createPtyHarness() {
     return { dir, before, after };
   }
 
+  function createTabbedFilePair() {
+    const dir = makeTempDir("hunk-tuistory-tabs-");
+    const before = join(dir, "before.txt");
+    const after = join(dir, "after.txt");
+
+    writeText(before, "a\tbefore\n");
+    writeText(after, "a\tafter\n");
+
+    return { dir, before, after };
+  }
+
   function createDeletionOnlyFilePair() {
     const dir = makeTempDir("hunk-tuistory-deletion-");
     const before = join(dir, "before.ts");
@@ -781,6 +792,7 @@ export function createPtyHarness() {
     createPinnedHeaderRepoFixture,
     createScrollableFilePair,
     createSidebarJumpRepoFixture,
+    createTabbedFilePair,
     createTwoFileRepoFixture,
     createWatchFilePair,
     createWideCharacterFilePair,

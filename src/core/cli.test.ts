@@ -98,6 +98,7 @@ describe("parseCli", () => {
       "--agent-context",
       "notes.json",
       "--no-line-numbers",
+      "-x4",
       "--wrap",
       "--no-hunk-headers",
       "--agent-notes",
@@ -115,6 +116,7 @@ describe("parseCli", () => {
         agentContext: "notes.json",
         watch: true,
         lineNumbers: false,
+        tabWidth: 4,
         wrapLines: true,
         hunkHeaders: false,
         agentNotes: true,
@@ -1136,6 +1138,14 @@ describe("parseCli argument validation", () => {
       value,
     ]);
   }
+
+  test("rejects invalid tab widths", async () => {
+    for (const value of ["0", "17", "4x"]) {
+      await expect(parseCli(["bun", "hunk", "diff", "--tab-width", value])).rejects.toThrow(
+        "Invalid tab width",
+      );
+    }
+  });
 
   test("rejects an invalid layout mode and rethrows the parser error", async () => {
     await expect(parseCli(["bun", "hunk", "diff", "--mode", "bogus"])).rejects.toThrow(

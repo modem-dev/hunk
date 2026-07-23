@@ -296,6 +296,7 @@ describe("expandCollapsedRows", () => {
       layout: "stack",
       expandedKeys: new Set([gapKey("before", 0)]),
       sourceStatus: { kind: "loaded", text: sourceWithTab },
+      tabWidth: 4,
       side: "new",
     });
 
@@ -303,7 +304,7 @@ describe("expandCollapsedRows", () => {
     if (!inserted || inserted.type !== "stack-line") {
       throw new Error("expected one stack-line row");
     }
-    expect(inserted.cell.spans[0]?.text.includes("\t")).toBe(false);
+    expect(inserted.cell.spans[0]?.text).toBe("a   b");
   });
 
   test("uses caller-provided spans for expanded source lines", () => {

@@ -13,6 +13,7 @@ import {
   useState,
   type RefObject,
 } from "react";
+import { DEFAULT_TAB_WIDTH } from "../../../core/tabWidth";
 import type {
   AgentAnnotation,
   DiffFile,
@@ -196,6 +197,7 @@ export function DiffPane({
   showLineNumbers,
   showHunkHeaders,
   sourceStatusByFileId = EMPTY_SOURCE_STATUS_BY_FILE_ID,
+  tabWidth = DEFAULT_TAB_WIDTH,
   wrapLines,
   wrapToggleScrollTop,
   layoutToggleScrollTop = null,
@@ -243,6 +245,7 @@ export function DiffPane({
   showLineNumbers: boolean;
   showHunkHeaders: boolean;
   sourceStatusByFileId?: Record<string, FileSourceStatus>;
+  tabWidth?: number;
   wrapLines: boolean;
   wrapToggleScrollTop: number | null;
   layoutToggleScrollTop?: number | null;
@@ -661,6 +664,7 @@ export function DiffPane({
           expandedGapsByFileId[file.id] ?? EMPTY_EXPANDED_GAP_KEYS,
           sourceStatusByFileId[file.id],
           reserveAddNoteColumn,
+          tabWidth,
         ),
       ),
     [
@@ -672,6 +676,7 @@ export function DiffPane({
       showHunkHeaders,
       showLineNumbers,
       sourceStatusByFileId,
+      tabWidth,
       theme,
       wrapLines,
     ],
@@ -703,6 +708,7 @@ export function DiffPane({
           expandedGapsByFileId[file.id] ?? EMPTY_EXPANDED_GAP_KEYS,
           sourceStatusByFileId[file.id],
           reserveAddNoteColumn,
+          tabWidth,
         );
       }),
     [
@@ -716,6 +722,7 @@ export function DiffPane({
       showHunkHeaders,
       showLineNumbers,
       sourceStatusByFileId,
+      tabWidth,
       theme,
       wrapLines,
     ],
@@ -1777,7 +1784,7 @@ export function DiffPane({
               <box
                 // Remount the diff content when width/layout/wrap mode changes so viewport culling
                 // recomputes against the new row geometry, while the outer scrollbox keeps its state.
-                key={`diff-content:${layout}:${wrapLines ? "wrap" : "nowrap"}:${width}`}
+                key={`diff-content:${layout}:${wrapLines ? "wrap" : "nowrap"}:tabs-${tabWidth}:${width}`}
                 style={{ width: "100%", flexDirection: "column", overflow: "visible" }}
               >
                 {fileRenderItems.map((item) => {
@@ -1816,6 +1823,7 @@ export function DiffPane({
                       showLineNumbers={showLineNumbers}
                       showHunkHeaders={showHunkHeaders}
                       sourceStatus={sourceStatusByFileId[file.id]}
+                      tabWidth={tabWidth}
                       wrapLines={wrapLines}
                       theme={theme}
                       hoverActive={hoveredFileId === null || hoveredFileId === file.id}

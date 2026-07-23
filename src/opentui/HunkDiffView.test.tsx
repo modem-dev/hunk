@@ -92,6 +92,23 @@ describe("OpenTUI public components", () => {
     expect(frame).toContain("  1 +  export const value = 2;");
   });
 
+  test("accepts a custom tab width through the public body primitive", async () => {
+    const metadata = parseDiffFromFile(
+      { cacheKey: "tabs-before", contents: "a\tb\n", name: "tabs.txt" },
+      { cacheKey: "tabs-after", contents: "a\tc\n", name: "tabs.txt" },
+      { context: 3 },
+      true,
+    );
+    const file = createHunkDiffFile({ id: "tabs", metadata, path: "tabs.txt" });
+    const frame = await captureFrame(
+      <HunkDiffBody file={file} layout="stack" width={88} tabWidth={8} highlight={false} />,
+      92,
+      8,
+    );
+
+    expect(frame).toContain("a       c");
+  });
+
   test("renders reusable file header and multi-file review stream primitives", async () => {
     const diff = createExampleDiff();
     const frame = await captureFrame(

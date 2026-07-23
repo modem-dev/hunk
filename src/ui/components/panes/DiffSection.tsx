@@ -27,6 +27,7 @@ interface DiffSectionProps {
   showLineNumbers: boolean;
   showHunkHeaders: boolean;
   sourceStatus: FileSourceStatus | undefined;
+  tabWidth: number;
   wrapLines: boolean;
   showHeader: boolean;
   showSeparator: boolean;
@@ -61,6 +62,7 @@ function DiffSectionComponent({
   showLineNumbers,
   showHunkHeaders,
   sourceStatus,
+  tabWidth,
   wrapLines,
   showHeader,
   showSeparator,
@@ -120,6 +122,7 @@ function DiffSectionComponent({
         showLineNumbers={showLineNumbers}
         showHunkHeaders={showHunkHeaders}
         sourceStatus={sourceStatus}
+        tabWidth={tabWidth}
         wrapLines={wrapLines}
         codeHorizontalOffset={codeHorizontalOffset}
         copySelectedRowRanges={copySelectedRowRanges}
@@ -165,6 +168,7 @@ export const DiffSection = memo(DiffSectionComponent, (previous, next) => {
     previous.showLineNumbers === next.showLineNumbers &&
     previous.showHunkHeaders === next.showHunkHeaders &&
     previous.sourceStatus === next.sourceStatus &&
+    previous.tabWidth === next.tabWidth &&
     previous.wrapLines === next.wrapLines &&
     previous.showHeader === next.showHeader &&
     previous.showSeparator === next.showSeparator &&

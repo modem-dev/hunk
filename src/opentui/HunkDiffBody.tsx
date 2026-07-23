@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { DEFAULT_TAB_WIDTH } from "../core/tabWidth";
 import { findMaxLineNumber } from "../ui/diff/codeColumns";
 import { buildSplitRows, buildStackRows } from "../ui/diff/pierre";
 import { diffMessage, DiffRowView, fitText } from "../ui/diff/renderRows";
@@ -15,6 +16,7 @@ export function HunkDiffBody({
   theme = "github-dark-default",
   showLineNumbers = true,
   showHunkHeaders = true,
+  tabWidth = DEFAULT_TAB_WIDTH,
   wrapLines = false,
   horizontalOffset = 0,
   highlight = true,
@@ -31,10 +33,10 @@ export function HunkDiffBody({
     () =>
       internalFile
         ? layout === "split"
-          ? buildSplitRows(internalFile, resolvedHighlighted, resolvedTheme)
-          : buildStackRows(internalFile, resolvedHighlighted, resolvedTheme)
+          ? buildSplitRows(internalFile, resolvedHighlighted, resolvedTheme, tabWidth)
+          : buildStackRows(internalFile, resolvedHighlighted, resolvedTheme, tabWidth)
         : [],
-    [internalFile, layout, resolvedHighlighted, resolvedTheme],
+    [internalFile, layout, resolvedHighlighted, resolvedTheme, tabWidth],
   );
   const lineNumberDigits = useMemo(
     () => String(internalFile ? findMaxLineNumber(internalFile) : 1).length,

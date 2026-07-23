@@ -12,6 +12,7 @@ import { buildDiffFile, type BuildDiffFileOptions, type DiffFileSourceContext } 
 import { createFileSourceFetcher, type FileSourceSpec } from "./fileSource";
 import { splitPatchIntoFileChunks, findPatchChunk } from "./patch/chunks";
 import { normalizePatchText, stripTerminalControl } from "./patch/normalize";
+import { DEFAULT_TAB_WIDTH } from "./tabWidth";
 import { getConfiguredVcsAdapter, loadVcsReview, operationFromInput } from "./vcs";
 import { computeWatchSignature } from "./watch";
 import type {
@@ -474,6 +475,7 @@ export async function loadAppBootstrap(
     initialTheme: input.options.theme,
     customTheme,
     initialShowLineNumbers: input.options.lineNumbers ?? true,
+    initialTabWidth: input.options.tabWidth ?? DEFAULT_TAB_WIDTH,
     initialWrapLines: input.options.wrapLines ?? false,
     initialShowHunkHeaders: input.options.hunkHeaders ?? true,
     initialShowMenuBar: input.options.menuBar ?? true,

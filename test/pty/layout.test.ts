@@ -83,6 +83,31 @@ describe("PTY layout", () => {
     }
   });
 
+  test("the CLI tab width reaches interactive app rendering", async () => {
+    const fixture = harness.createTabbedFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "stack", "-x8"],
+      cols: 100,
+      rows: 12,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+      const snapshot = await harness.waitForSnapshot(
+        session,
+        (text) => /a {7}after/.test(text),
+        5_000,
+      );
+      const addedLine = snapshot.split("\n").find((line) => /a {7}after/.test(line));
+
+      expect(addedLine).toMatch(/a {7}after/);
+    } finally {
+      session.close();
+    }
+  });
+
   test("real PTY sessions can toggle wrapped lines on and off", async () => {
     const fixture = harness.createLongWrapFilePair();
     const session = await harness.launchHunk({
