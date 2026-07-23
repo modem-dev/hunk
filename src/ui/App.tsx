@@ -450,6 +450,11 @@ export function App({
     setShowAgentNotes((current) => !current);
   };
 
+  /** Collapse or expand the currently selected file in the review stream. */
+  const toggleSelectedFileCollapsed = () => {
+    review.toggleFileCollapsed(review.selectedFileId);
+  };
+
   /** Toggle line-number gutters without changing the diff content itself. */
   const toggleLineNumbers = () => {
     setShowLineNumbers((current) => !current);
@@ -849,6 +854,8 @@ export function App({
         toggleCopyDecorations,
         toggleAgentNotes,
         toggleFocusArea,
+        toggleSelectedFileCollapsed,
+        toggleAllFilesCollapsed: review.toggleAllFilesCollapsed,
         openAgentSkill,
         toggleHelp,
         toggleHunkHeaders,
@@ -881,6 +888,8 @@ export function App({
       renderSidebar,
       toggleAgentNotes,
       toggleFocusArea,
+      toggleSelectedFileCollapsed,
+      review.toggleAllFilesCollapsed,
       toggleHelp,
       toggleHunkHeaders,
       toggleLineNumbers,
@@ -946,6 +955,8 @@ export function App({
     toggleAgentNotes,
     toggleFocusArea,
     toggleGapForSelectedHunk: review.toggleSelectedHunkGap,
+    toggleSelectedFileCollapsed,
+    toggleAllFilesCollapsed: review.toggleAllFilesCollapsed,
     toggleHelp,
     toggleHunkHeaders,
     toggleLineNumbers,
@@ -1143,6 +1154,7 @@ export function App({
           onCopyFeedback={showTransientNotice}
           onSelectFile={jumpToFile}
           onToggleGap={review.toggleGap}
+          onToggleCollapse={review.toggleFileCollapsed}
           onViewportCenteredHunkChange={(fileId, hunkIndex) =>
             review.selectHunk(fileId, hunkIndex, { preserveViewport: true })
           }

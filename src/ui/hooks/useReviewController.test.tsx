@@ -84,6 +84,11 @@ function expectValue<T>(value: T): NonNullable<T> {
   return value as NonNullable<T>;
 }
 
+/** Ids of files currently rendered as collapsed placeholders, read from the observable review stream. */
+function collapsedVisibleFileIds(controller: ReviewController): string[] {
+  return controller.visibleFiles.filter((file) => file.isCollapsed).map((file) => file.id);
+}
+
 function ReviewControllerHarness({
   initialFiles,
   noteGeometry,
@@ -169,6 +174,132 @@ describe("useReviewController", () => {
       expect(expectValue(controllerRef.current).selectedFileId).toBe("beta");
       expect(expectValue(controllerRef.current).selectedFile?.path).toBe("beta.ts");
       expect(expectValue(controllerRef.current).selectedHunkIndex).toBe(0);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("collapsing a file swaps in a zero-hunk variant and skips its hunk navigation", async () => {
+    const { controllerRef, setup } = await renderReviewController([
+      createDiffFile("alpha", "alpha.ts", "export const alpha = 1;\n", "export const alpha = 2;\n"),
+      createDiffFile("beta", "beta.ts", "export const beta = 1;\n", "export const beta = 2;\n"),
+    ]);
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        expectValue(controllerRef.current).toggleFileCollapsed("alpha");
+      });
+      await flush(setup);
+
+      const collapsed = expectValue(controllerRef.current).visibleFiles.find(
+        (file) => file.id === "alpha",
+      );
+      expect(collapsed?.isCollapsed).toBe(true);
+      expect(collapsed?.metadata.hunks).toEqual([]);
+      // The collapsed file contributes no hunk cursors, so [ / ] navigation skips it.
+      expect(
+        expectValue(controllerRef.current).visibleFiles.every((file) =>
+          file.id === "alpha" ? file.metadata.hunks.length === 0 : true,
+        ),
+      ).toBe(true);
+      expect(collapsedVisibleFileIds(expectValue(controllerRef.current))).toEqual(["alpha"]);
+
+      // Toggling again expands it back to its real hunks.
+      await act(async () => {
+        expectValue(controllerRef.current).toggleFileCollapsed("alpha");
+      });
+      await flush(setup);
+      const expanded = expectValue(controllerRef.current).visibleFiles.find(
+        (file) => file.id === "alpha",
+      );
+      expect(expanded?.isCollapsed).toBeFalsy();
+      expect(expanded?.metadata.hunks.length).toBeGreaterThan(0);
+
+      // Collapse-all marks every file, expand-all clears the set.
+      await act(async () => {
+        expectValue(controllerRef.current).toggleAllFilesCollapsed();
+      });
+      await flush(setup);
+      expect(collapsedVisibleFileIds(expectValue(controllerRef.current)).sort()).toEqual([
+        "alpha",
+        "beta",
+      ]);
+
+      await act(async () => {
+        expectValue(controllerRef.current).toggleAllFilesCollapsed();
+      });
+      await flush(setup);
+      expect(collapsedVisibleFileIds(expectValue(controllerRef.current))).toEqual([]);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("re-pins the selected file's header when collapsing a single file or all files", async () => {
+    const { controllerRef, setup } = await renderReviewController([
+      createDiffFile("alpha", "alpha.ts", "export const alpha = 1;\n", "export const alpha = 2;\n"),
+      createDiffFile("beta", "beta.ts", "export const beta = 1;\n", "export const beta = 2;\n"),
+    ]);
+
+    try {
+      await flush(setup);
+
+      // Collapsing one file anchors its header to the top so a tall file above the fold can't scroll it off.
+      const beforeSingle = expectValue(controllerRef.current).selectedFileTopAlignRequestId;
+      await act(async () => {
+        expectValue(controllerRef.current).toggleFileCollapsed("alpha");
+      });
+      await flush(setup);
+      expect(expectValue(controllerRef.current).selectedFileTopAlignRequestId).toBeGreaterThan(
+        beforeSingle,
+      );
+
+      // Bulk collapse re-pins the selected file too, matching the single-file toggle.
+      const beforeBulk = expectValue(controllerRef.current).selectedFileTopAlignRequestId;
+      await act(async () => {
+        expectValue(controllerRef.current).toggleAllFilesCollapsed();
+      });
+      await flush(setup);
+      expect(expectValue(controllerRef.current).selectedFileTopAlignRequestId).toBeGreaterThan(
+        beforeBulk,
+      );
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("prunes collapse state for a file whose patch is replaced on reload", async () => {
+    // A reload swaps the file's sourceFetcher; collapse state keyed by the old patch must not leak.
+    const firstFetcher = createTestSourceFetcher(() => null);
+    const { controllerRef, setFilesRef, setup } = await renderReviewController([
+      createAlphaFile(firstFetcher),
+    ]);
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        expectValue(controllerRef.current).toggleFileCollapsed("alpha");
+      });
+      await flush(setup);
+      expect(collapsedVisibleFileIds(expectValue(controllerRef.current))).toEqual(["alpha"]);
+
+      // Same id, new fetcher (and thus a new patch) marks the old collapse entry stale, so the
+      // reloaded file renders expanded rather than inheriting the previous patch's collapse.
+      const secondFetcher = createTestSourceFetcher(() => null);
+      await act(async () => {
+        expectValue(setFilesRef.current)([createAlphaFile(secondFetcher)]);
+      });
+      await flush(setup);
+      expect(collapsedVisibleFileIds(expectValue(controllerRef.current))).toEqual([]);
     } finally {
       await act(async () => {
         setup.renderer.destroy();

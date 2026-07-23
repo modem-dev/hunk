@@ -533,7 +533,8 @@ function firstCrossFileHunkNavigationHeader(frame: string) {
   return (
     frame
       .split("\n")
-      .map((line) => line.trim())
+      // Strip the leading collapse chevron so header matching stays filename-first.
+      .map((line) => line.trim().replace(/^[▸▾]\s*/, ""))
       .find((line) => line.startsWith("long-file.txt") || line.startsWith("short-file.ts")) ?? ""
   );
 }
@@ -777,6 +778,49 @@ describe("App interactions", () => {
       );
       expect(frame).toContain("Toggle files/filter focus");
       expect(frame).not.toContain("File  View  Navigate  Agent  Help");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("Shift-X collapses and expands every file, not just the selected one", async () => {
+    // Two files so the all-files binding is distinguishable from the single-file x binding:
+    // a single-file toggle would leave beta expanded, whereas Shift-X must collapse it too.
+    const setup = await testRender(<AppHost bootstrap={createBootstrap()} />, {
+      width: 240,
+      height: 24,
+    });
+
+    try {
+      await flush(setup);
+
+      let frame = setup.captureCharFrame();
+      expect(frame).toContain("add = true");
+      expect(frame).toContain("betaValue");
+
+      await act(async () => {
+        await setup.mockInput.pressKey("x", { shift: true });
+      });
+      await flush(setup);
+
+      // Both files collapse to placeholders; if Shift-X routed to the single-file
+      // toggle instead, beta's "betaValue" line would still be on screen.
+      frame = setup.captureCharFrame();
+      expect(frame).toContain("Collapsed");
+      expect(frame).not.toContain("add = true");
+      expect(frame).not.toContain("betaValue");
+
+      await act(async () => {
+        await setup.mockInput.pressKey("x", { shift: true });
+      });
+      await flush(setup);
+
+      frame = setup.captureCharFrame();
+      expect(frame).not.toContain("Collapsed");
+      expect(frame).toContain("add = true");
+      expect(frame).toContain("betaValue");
     } finally {
       await act(async () => {
         setup.renderer.destroy();

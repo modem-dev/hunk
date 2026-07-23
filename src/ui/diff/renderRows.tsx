@@ -1100,6 +1100,10 @@ function renderWrappedStackCellLine(
 
 /** Explain why a file still appears in the review stream even when it has no textual hunks. */
 export function diffMessage(file: DiffFile) {
+  if (file.isCollapsed) {
+    return "Collapsed. Press x or click the chevron to expand.";
+  }
+
   if (file.metadata.type === "rename-pure") {
     return "No textual hunks. This change only renames the file.";
   }

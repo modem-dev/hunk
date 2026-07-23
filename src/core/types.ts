@@ -61,6 +61,9 @@ export interface DiffFile {
   isBinary?: boolean;
   isTooLarge?: boolean;
   statsTruncated?: boolean;
+  // Set on the placeholder variant when the user has collapsed this file in the
+  // review stream. Drives the collapsed-body message and the header chevron.
+  isCollapsed?: boolean;
   // Optional capability for fetching the file's full text on either side.
   // Loaders attach this when source content is reachable; absent when not.
   sourceFetcher?: FileSourceFetcher;

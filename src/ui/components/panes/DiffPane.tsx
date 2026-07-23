@@ -218,6 +218,7 @@ export function DiffPane({
   onScrollCodeHorizontally = () => {},
   onSelectFile,
   onToggleGap = NOOP_TOGGLE_GAP,
+  onToggleCollapse,
   onViewportCenteredHunkChange,
 }: {
   codeHorizontalOffset?: number;
@@ -267,6 +268,7 @@ export function DiffPane({
   onScrollCodeHorizontally?: (delta: number) => void;
   onSelectFile: (fileId: string) => void;
   onToggleGap?: (fileId: string, gapKey: string) => void;
+  onToggleCollapse?: (fileId: string) => void;
   onViewportCenteredHunkChange?: (fileId: string, hunkIndex: number) => void;
 }) {
   const renderTopChrome = showTopChrome ?? !pagerMode;
@@ -311,6 +313,20 @@ export function DiffPane({
     if (!callback) {
       callback = () => onSelectFileRef.current(fileId);
       selectFileCallbacksRef.current.set(fileId, callback);
+    }
+    return callback;
+  }, []);
+
+  // Same latest-ref + cached-closure pattern as selectFileCallback so collapsing
+  // a file from its header chevron never invalidates memoized sections.
+  const onToggleCollapseRef = useRef(onToggleCollapse);
+  onToggleCollapseRef.current = onToggleCollapse;
+  const toggleCollapseCallbacksRef = useRef(new Map<string, () => void>());
+  const toggleCollapseCallback = useCallback((fileId: string) => {
+    let callback = toggleCollapseCallbacksRef.current.get(fileId);
+    if (!callback) {
+      callback = () => onToggleCollapseRef.current?.(fileId);
+      toggleCollapseCallbacksRef.current.set(fileId, callback);
     }
     return callback;
   }, []);
@@ -1749,7 +1765,9 @@ export function DiffPane({
                 headerLabelWidth={headerLabelWidth}
                 headerStatsWidth={headerStatsWidth}
                 theme={theme}
+                collapsed={pinnedHeaderFile.isCollapsed ?? false}
                 onSelect={() => onSelectFile(pinnedHeaderFile.id)}
+                onToggleCollapse={toggleCollapseCallback(pinnedHeaderFile.id)}
               />
             </box>
           ) : null}
@@ -1839,6 +1857,7 @@ export function DiffPane({
                       }
                       onSelect={selectFileCallback(file.id)}
                       onToggleGap={(gapKey) => onToggleGap(file.id, gapKey)}
+                      onToggleCollapse={toggleCollapseCallback(file.id)}
                     />
                   );
                 })}
