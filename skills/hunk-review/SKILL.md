@@ -72,6 +72,8 @@ hunk session navigate --repo . --prev-comment
 
 - `--hunk <n>` is 1-based
 - `--new-line` / `--old-line` are 1-based line numbers on that diff side
+- `--new-line` / `--old-line` select the containing hunk; they do not guarantee scrolling to that exact line inside a large hunk
+- To focus an exact slice inside one large hunk, add an inline agent note at the target line. If earlier temporary agent notes in that hunk would become the first note, remove only those completed agent notes, preserve user-authored notes, then use `--next-comment` to scroll to the remaining target note.
 - Use either `--next-comment` or `--prev-comment`, not both
 
 ### Reload
@@ -143,6 +145,8 @@ Typical flow:
 Guidelines:
 
 - Work in the order that tells the clearest story, not necessarily file order
+- Keep each narrated tour step within one terminal viewport when practical. Split the narration for a large hunk into semantic slices of roughly 20-40 lines instead of explaining the whole hunk at once. Use the inline-note focus technique above when safe; otherwise give the exact line range and ask the user to scroll.
+- After narrating one tour step, pause for the user to continue unless they explicitly ask for a continuous walkthrough.
 - Navigate before commenting so the user sees the code you're discussing
 - Use `comment apply` for agent-generated batches and `comment add` for one-off notes
 - Use `--focus` sparingly when the note itself should actively steer the review
