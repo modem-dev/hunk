@@ -117,6 +117,32 @@ describe("files helpers", () => {
     });
   });
 
+  test("buildSidebarEntries marks each root-file run with an in-place ./ group", () => {
+    const files = [
+      createTestDiffFile({ id: "nested-a", path: "src/a.ts" }),
+      createTestDiffFile({ id: "root-a", path: "README.md" }),
+      createTestDiffFile({ id: "root-b", path: "package.json" }),
+      createTestDiffFile({ id: "nested-b", path: "test/b.ts" }),
+      createTestDiffFile({ id: "root-c", path: "LICENSE" }),
+    ];
+
+    const labels = buildSidebarEntries(files).map((entry) =>
+      entry.kind === "group" ? entry.label : entry.name,
+    );
+
+    expect(labels).toEqual([
+      "src/",
+      "a.ts",
+      "./",
+      "README.md",
+      "package.json",
+      "test/",
+      "b.ts",
+      "./",
+      "LICENSE",
+    ]);
+  });
+
   test("fileLabelParts strips parser-added line endings from rename labels", () => {
     const renamedAcrossDirectories = {
       ...createTestDiffFile({

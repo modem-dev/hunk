@@ -441,6 +441,12 @@ describe("UI components", () => {
         previousPath: "src/ui/Legacy.tsx",
         stats: { additions: 0, deletions: 0 },
       },
+      createTestDiffFile(
+        "root",
+        "zzz-root.ts",
+        "export const root = 1;\n",
+        "export const root = 2;\n",
+      ),
     ];
     const frame = await captureFrame(
       <SidebarPane
@@ -453,11 +459,14 @@ describe("UI components", () => {
         onSelectFile={() => {}}
       />,
       36,
-      10,
+      12,
     );
 
     expect(frame).toContain("src/ui/");
     expect(frame).toContain("src/core/");
+    expect(frame).toContain("./");
+    expect(frame).toContain(" zzz-root.ts");
+    expect(frame.indexOf("src/ui/")).toBeLessThan(frame.indexOf("./"));
     expect(frame).toContain(" App.tsx");
     expect(frame).toContain(" MenuDropdown.tsx");
     expect(frame).toContain(" watch.ts");
