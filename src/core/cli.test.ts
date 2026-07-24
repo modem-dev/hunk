@@ -793,6 +793,47 @@ describe("parseCli", () => {
     ).rejects.toThrow("Comment type must be one of live, all, ai, agent, or user.");
   });
 
+  test("parses session comment list with an author filter", async () => {
+    const parsed = await parseCli([
+      "bun",
+      "hunk",
+      "session",
+      "comment",
+      "list",
+      "session-1",
+      "--author",
+      "pi",
+    ]);
+
+    expect(parsed).toEqual({
+      kind: "session",
+      action: "comment-list",
+      selector: { sessionId: "session-1" },
+      author: "pi",
+      output: "text",
+    });
+  });
+
+  test("parses session comment list with the no-author filter", async () => {
+    const parsed = await parseCli([
+      "bun",
+      "hunk",
+      "session",
+      "comment",
+      "list",
+      "session-1",
+      "--no-author",
+    ]);
+
+    expect(parsed).toEqual({
+      kind: "session",
+      action: "comment-list",
+      selector: { sessionId: "session-1" },
+      noAuthor: true,
+      output: "text",
+    });
+  });
+
   test("parses session comment rm", async () => {
     const parsed = await parseCli([
       "bun",

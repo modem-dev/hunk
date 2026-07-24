@@ -915,7 +915,7 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
             "Usage:",
             "  hunk session comment add (<session-id> | --repo <path>) --file <path> (--old-line <n> | --new-line <n>) --summary <text> [--focus]",
             "  hunk session comment apply (<session-id> | --repo <path>) --stdin [--focus]",
-            "  hunk session comment list (<session-id> | --repo <path>) [--file <path>] [--type <live|all|ai|agent|user>]",
+            "  hunk session comment list (<session-id> | --repo <path>) [--file <path>] [--type <live|all|ai|agent|user>] [--author <name>] [--no-author]",
             "  hunk session comment rm (<session-id> | --repo <path>) <comment-id>",
             "  hunk session comment clear (<session-id> | --repo <path>) [--file <path>] [--include-user|--all] --yes",
           ].join("\n") + "\n",
@@ -1086,15 +1086,29 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
         .option("--repo <path>", "target the live session whose repo root matches this path")
         .option("--file <path>", "filter comments to one diff file")
         .option("--type <type>", "filter to live, all, ai, agent, or user comments")
+        .option("--author <name>", "filter comments to one author")
+        .option("--no-author", "filter to comments that have no author")
         .option("--json", "emit structured JSON");
 
       let parsedSessionId: string | undefined;
-      let parsedOptions: { repo?: string; file?: string; type?: string; json?: boolean } = {};
+      let parsedOptions: {
+        repo?: string;
+        file?: string;
+        type?: string;
+        author?: string | boolean;
+        json?: boolean;
+      } = {};
 
       command.action(
         (
           sessionId: string | undefined,
-          options: { repo?: string; file?: string; type?: string; json?: boolean },
+          options: {
+            repo?: string;
+            file?: string;
+            type?: string;
+            author?: string | boolean;
+            json?: boolean;
+          },
         ) => {
           parsedSessionId = sessionId;
           parsedOptions = options;
@@ -1124,6 +1138,8 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
         selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
         filePath: parsedOptions.file,
         ...(parsedOptions.type ? { type: parsedOptions.type as SessionCommentListType } : {}),
+        ...(typeof parsedOptions.author === "string" ? { author: parsedOptions.author } : {}),
+        ...(parsedOptions.author === false ? { noAuthor: true } : {}),
       };
     }
 
