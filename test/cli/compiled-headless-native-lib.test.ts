@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { createServer } from "node:net";
 import { mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -10,8 +10,52 @@ const executable = process.env.HUNK_TEST_EXECUTABLE
 const compiledTest = executable ? test : test.skip;
 const compiledLinuxTest = executable && process.platform === "linux" ? test : test.skip;
 const BUN_NATIVE_ARTIFACT_PATTERN = /^\.[0-9a-f]{16}-[0-9a-f]{8}\.(?:so|dylib|dll)$/;
+const positiveControlBuildRoot = executable
+  ? mkdtempSync(resolve(tmpdir(), "hunk-compiled-opentui-control-"))
+  : undefined;
+const positiveControlExecutable = positiveControlBuildRoot
+  ? resolve(
+      positiveControlBuildRoot,
+      process.platform === "win32" ? "opentui-control.exe" : "opentui-control",
+    )
+  : undefined;
 
 let rootsToClean: string[] = [];
+
+beforeAll(() => {
+  if (!positiveControlExecutable) {
+    return;
+  }
+
+  const source = resolve(import.meta.dir, "fixtures", "compiled-opentui-positive-control.ts");
+  const build = Bun.spawnSync(
+    [
+      process.execPath,
+      "build",
+      "--compile",
+      "--no-compile-autoload-bunfig",
+      source,
+      "--outfile",
+      positiveControlExecutable,
+    ],
+    {
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  );
+  if (build.exitCode !== 0) {
+    throw new Error(
+      `Failed to build the OpenTUI positive control: ${Buffer.from(build.stderr).toString("utf8")}`,
+    );
+  }
+});
+
+afterAll(() => {
+  if (positiveControlBuildRoot) {
+    rmSync(positiveControlBuildRoot, { recursive: true, force: true });
+  }
+});
 
 afterEach(() => {
   for (const root of rootsToClean) {
@@ -90,6 +134,20 @@ async function waitForDaemon(port: number) {
 }
 
 describe("compiled headless native-library loading", () => {
+  // Calibrate the platform temp path and filename matcher before trusting negative assertions.
+  compiledTest("detects extraction from an eager OpenTUI positive control", () => {
+    const { env, temp } = createTestEnvironment();
+    const proc = Bun.spawnSync([positiveControlExecutable!], {
+      env,
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    expect(proc.exitCode).toBe(0);
+    expect(nativeArtifacts(temp).length).toBeGreaterThan(0);
+  });
+
   compiledTest("does not extract OpenTUI for short-lived headless commands", () => {
     const { env, temp } = createTestEnvironment();
     const commands: Array<{ args: string[]; stdin?: string }> = [
