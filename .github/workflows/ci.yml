@@ -157,10 +157,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - ubuntu-latest
-          - macos-latest
-          - windows-latest
+        include:
+          - os: ubuntu-latest
+            executable: dist/hunk
+          - os: macos-latest
+            executable: dist/hunk
+          - os: windows-latest
+            executable: dist/hunk.exe
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -180,6 +183,11 @@ jobs:
 
       - name: Stage prebuilt npm packages
         run: bun run build:prebuilt:npm
+
+      - name: Verify compiled headless commands skip OpenTUI
+        run: bun test ./test/cli/compiled-headless-native-lib.test.ts
+        env:
+          HUNK_TEST_EXECUTABLE: ${{ github.workspace }}/${{ matrix.executable }}
 
       - name: Verify staged prebuilt packs
         run: bun run check:prebuilt-pack

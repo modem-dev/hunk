@@ -1,5 +1,3 @@
-import type { SyntaxStyle } from "@opentui/core";
-
 export interface AppTheme {
   id: string;
   label: string;
@@ -42,7 +40,6 @@ export interface AppTheme {
   /** Exact Shiki/TextMate scope colors layered onto the base syntax theme. */
   syntaxScopeOverrides?: Record<string, string>;
   syntaxColors: SyntaxColors;
-  syntaxStyle: SyntaxStyle;
 }
 
 export type SyntaxColors = {
@@ -59,4 +56,4 @@ export type SyntaxColors = {
   punctuation: string;
 };
 
-export type ThemeBase = Omit<AppTheme, "syntaxColors" | "syntaxStyle">;
+export type ThemeBase = Omit<AppTheme, "syntaxColors">;

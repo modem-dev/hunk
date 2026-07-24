@@ -500,7 +500,7 @@ describe("ui helpers", () => {
     ).toBe(16);
   });
 
-  test("resolveTheme falls back to GitHub defaults while lazily exposing syntax styles", () => {
+  test("resolveTheme falls back to GitHub defaults while exposing semantic syntax colors", () => {
     const dracula = resolveTheme("dracula", null);
     const missingLight = resolveTheme("missing", "light");
     const missingDark = resolveTheme("missing", "dark");
@@ -527,11 +527,6 @@ describe("ui helpers", () => {
     expect(custom.accent).toBe("#7755aa");
     expect(custom.syntaxScopeOverrides).toEqual({ "keyword.control": "#123456" });
     expect(missingCustom.id).toBe("github-dark-default");
-    expect(resolveTheme("github-dark-default", null).syntaxStyle).toBeDefined();
-    expect(custom.syntaxStyle).toBeDefined();
-    expect(resolveTheme("catppuccin-latte", null).syntaxStyle).toBeDefined();
-    expect(resolveTheme("catppuccin-frappe", null).syntaxStyle).toBeDefined();
-    expect(resolveTheme("catppuccin-macchiato", null).syntaxStyle).toBeDefined();
-    expect(resolveTheme("catppuccin-mocha", null).syntaxStyle).toBeDefined();
+    expect(custom.syntaxColors.default).toBe("#1f2328");
   });
 });

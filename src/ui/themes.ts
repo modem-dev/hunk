@@ -4,14 +4,13 @@ import type { CustomThemeConfig } from "../core/types";
 import { blendHex, contrastRatio, relativeLuminance } from "./lib/color";
 import {
   BUNDLED_SHIKI_THEME_IDS,
-  resolveLegacyThemeId,
+  resolveBundledShikiThemeId,
   getBundledShikiThemeBackground,
   getBundledShikiThemeDiffColors,
   getBundledShikiThemeForeground,
   type BundledShikiThemeDiffColors,
   type BundledShikiThemeId,
 } from "./lib/shikiThemes";
-import { withLazySyntaxStyle } from "./themes/syntax";
 import type { AppTheme, SyntaxColors, ThemeBase } from "./themes/types";
 
 export type { AppTheme, SyntaxColors, ThemeBase } from "./themes/types";
@@ -232,7 +231,7 @@ function buildShikiTheme(themeId: BundledShikiThemeId): AppTheme {
     syntaxTheme: themeId,
   };
 
-  return withLazySyntaxStyle(themeBase, syntaxColors);
+  return { ...themeBase, syntaxColors };
 }
 
 export const THEMES: AppTheme[] = BUNDLED_SHIKI_THEME_IDS.map((themeId) =>
@@ -241,7 +240,7 @@ export const THEMES: AppTheme[] = BUNDLED_SHIKI_THEME_IDS.map((themeId) =>
 
 /** Return the built-in theme by id so config-defined themes can inherit from it. */
 function builtInThemeById(themeId: string | undefined) {
-  const resolvedThemeId = resolveLegacyThemeId(themeId);
+  const resolvedThemeId = resolveBundledShikiThemeId(themeId);
   return THEMES.find((theme) => theme.id === resolvedThemeId);
 }
 
@@ -298,7 +297,7 @@ function buildCustomTheme(customTheme: CustomThemeConfig) {
     syntaxScopeOverrides: resolveSyntaxScopeOverrides(customTheme.syntax, customTheme.syntaxScopes),
   };
 
-  return withLazySyntaxStyle(themeBase, baseTheme.syntaxColors);
+  return { ...themeBase, syntaxColors: baseTheme.syntaxColors };
 }
 
 /** Return the theme ids the app should expose based on whether config defines a custom palette. */
@@ -335,16 +334,6 @@ export function resolveTheme(
   }
 
   return fallbackTheme(themeMode);
-}
-
-/** Return whether a custom theme base id can inherit from a built-in theme. */
-export function isBuiltInThemeId(themeId: string) {
-  return builtInThemeById(themeId) !== undefined;
-}
-
-/** Return the canonical built-in theme id, preserving legacy config compatibility. */
-export function normalizeBuiltInThemeId(themeId: string) {
-  return isBuiltInThemeId(themeId) ? resolveLegacyThemeId(themeId) : undefined;
 }
 
 /** Return known semantic diff colors for a bundled Shiki-backed theme. */
