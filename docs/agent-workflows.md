@@ -106,6 +106,8 @@ For comment cleanup and inspection, use:
 
 ```bash
 hunk session comment list --repo .
+hunk session comment list --repo . --author pi --json # only comments authored by "pi"
+hunk session comment list --repo . --no-author --json # only comments with no author tag
 hunk session comment rm --repo . <comment-id>
 hunk session comment clear --repo . --file README.md --yes
 hunk session comment clear --repo . --all --yes # also clears human `c` notes

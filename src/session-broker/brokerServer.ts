@@ -332,19 +332,30 @@ export async function handleSessionApiRequest(state: HunkSessionBrokerState, req
           }),
         };
         break;
-      case "comment-list":
+      case "comment-list": {
+        const matchesAuthor = <T extends { author?: string }>(items: T[]): T[] =>
+          input.author !== undefined
+            ? items.filter((comment) => comment.author === input.author)
+            : input.noAuthor
+              ? items.filter((comment) => !comment.author)
+              : items;
         response =
           input.type && input.type !== "live"
             ? {
-                comments: listHunkSessionNotes(state.getSession(input.selector), {
-                  filePath: input.filePath,
-                  source: input.type === "all" ? undefined : input.type,
-                }),
+                comments: matchesAuthor(
+                  listHunkSessionNotes(state.getSession(input.selector), {
+                    filePath: input.filePath,
+                    source: input.type === "all" ? undefined : input.type,
+                  }),
+                ),
               }
             : {
-                comments: state.listComments(input.selector, { filePath: input.filePath }),
+                comments: matchesAuthor(
+                  state.listComments(input.selector, { filePath: input.filePath }),
+                ),
               };
         break;
+      }
       case "comment-rm":
         response = {
           result: await state.dispatchCommand<RemovedCommentResult, "remove_comment">({

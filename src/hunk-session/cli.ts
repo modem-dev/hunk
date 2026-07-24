@@ -184,6 +184,8 @@ class HttpHunkSessionCliClient implements HunkSessionCliClient {
           selector: input.selector,
           filePath: input.filePath,
           type: input.type,
+          author: input.author,
+          noAuthor: input.noAuthor,
         },
       )
     ).comments;

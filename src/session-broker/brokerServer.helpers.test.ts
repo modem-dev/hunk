@@ -314,6 +314,56 @@ describe("handleSessionApiRequest", () => {
     expect(await response.json()).toHaveProperty("comments");
   });
 
+  test("filters the comment-list to one author with --author", async () => {
+    const comments = [
+      { commentId: "c1", author: "pi" },
+      { commentId: "c2", author: "claude" },
+      { commentId: "c3" },
+    ];
+    const { state } = createFakeState({ listComments: () => comments });
+    const response = await handleSessionApiRequest(
+      state,
+      apiRequest({
+        action: "comment-list",
+        selector: { sessionId: "s-1" },
+        author: "pi",
+      } as SessionDaemonRequest),
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ comments: [{ commentId: "c1", author: "pi" }] });
+  });
+
+  test("filters the comment-list to author-less comments with --no-author", async () => {
+    const comments = [{ commentId: "c1", author: "pi" }, { commentId: "c2" }, { commentId: "c3" }];
+    const { state } = createFakeState({ listComments: () => comments });
+    const response = await handleSessionApiRequest(
+      state,
+      apiRequest({
+        action: "comment-list",
+        selector: { sessionId: "s-1" },
+        noAuthor: true,
+      } as SessionDaemonRequest),
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      comments: [{ commentId: "c2" }, { commentId: "c3" }],
+    });
+  });
+
+  test("returns every comment when no author filter is set", async () => {
+    const comments = [{ commentId: "c1", author: "pi" }, { commentId: "c2" }];
+    const { state } = createFakeState({ listComments: () => comments });
+    const response = await handleSessionApiRequest(
+      state,
+      apiRequest({
+        action: "comment-list",
+        selector: { sessionId: "s-1" },
+      } as SessionDaemonRequest),
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ comments });
+  });
+
   test("returns 400 when a dispatched command rejects", async () => {
     const { state } = createFakeState({
       dispatchCommand: () => {
