@@ -65,6 +65,7 @@ function buildCommonOptions(
     agentContext?: string;
     pager?: boolean;
     watch?: boolean;
+    experimental?: boolean;
     transparentBackground?: boolean;
     tabWidth?: number;
   },
@@ -76,6 +77,7 @@ function buildCommonOptions(
     agentContext: options.agentContext,
     pager: options.pager ? true : undefined,
     watch: options.watch ? true : undefined,
+    experimental: options.experimental || argv[2] === "--experimental" ? true : undefined,
     excludeUntracked: resolveBooleanFlag(argv, "--exclude-untracked", "--no-exclude-untracked"),
     lineNumbers: resolveBooleanFlag(argv, "--line-numbers", "--no-line-numbers"),
     tabWidth: options.tabWidth,
@@ -93,6 +95,7 @@ function applyCommonOptions(command: Command) {
     .option("--theme <theme>", "named theme override")
     .option("--agent-context <path>", "JSON sidecar with agent rationale")
     .option("--pager", "use pager-style chrome and controls")
+    .option("--experimental", "enable experimental features (currently STML agent-note markup)")
     .option("--line-numbers", "show line numbers")
     .option("--no-line-numbers", "hide line numbers")
     .option("-x, --tab-width <columns>", "tab stop width: 1-16", parseTabWidth)
@@ -149,14 +152,15 @@ function renderCliHelp() {
     "  hunk pager                              general Git pager wrapper with diff detection",
     "  hunk difftool <left> <right> [path]     review Git difftool file pairs",
     "  hunk session <subcommand>               inspect or control a live Hunk session",
-    "  hunk markup render (<file> | -)         preview STML note markup as terminal text",
-    "  hunk markup guide                       print the STML authoring guide for agents",
+    "  hunk markup render (<file> | -)         preview experimental STML note markup",
+    "  hunk markup guide                       print the experimental STML authoring guide",
     "  hunk skill path                         print the bundled Hunk review skill path",
     "  hunk daemon serve                       run the local Hunk session daemon",
     "",
     "Global options:",
     "  -h, --help                              show help",
     "  -v, --version                           show version",
+    "  --experimental                          enable experimental review features (currently STML)",
     "",
     "Common review options:",
     "  --mode <mode>                           layout mode: auto, split, stack",
@@ -937,7 +941,7 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
         .option("--old-line <n>", "1-based line number on the old side", parsePositiveInt)
         .option("--new-line <n>", "1-based line number on the new side", parsePositiveInt)
         .option("--rationale <text>", "optional longer explanation")
-        .option("--markup <stml>", "optional STML markup rendered as the note body")
+        .option("--markup <stml>", "experimental STML body (target session must opt in)")
         .option("--author <name>", "optional author label")
         .option("--focus", "add the note and focus the viewport on it")
         .option("--json", "emit structured JSON");
@@ -1243,6 +1247,8 @@ const MARKUP_HELP = [
   "  hunk markup render (<file> | -) [--width <n>] [--color <auto|always|never>] [--theme <id>] [--json]",
   "  hunk markup guide",
   "",
+  "Experimental STML authoring tools.",
+  "",
   "render   preview STML markup as terminal text without launching the TUI;",
   "         render notes (unknown tags, layout degradations) go to stderr",
   "  --width <n>   layout width in columns (default 56, the note reference width)",
@@ -1272,7 +1278,7 @@ async function parseMarkupCommand(tokens: string[]): Promise<ParsedCliInput> {
 
   if (subcommand === "render") {
     const command = new Command("markup render")
-      .description("preview STML markup as terminal text")
+      .description("preview experimental STML markup as terminal text")
       .argument("[file]", "markup file path, or - for stdin", "-")
       .option("--width <n>", "layout width in columns", parsePositiveInt)
       .option("--color <mode>", "auto, always, or never", "auto")
@@ -1438,7 +1444,9 @@ async function parseStashCommand(tokens: string[], argv: string[]): Promise<Pars
 
 /** Parse CLI arguments into one normalized input shape for the app loader layer. */
 export async function parseCli(argv: string[]): Promise<ParsedCliInput> {
-  const args = argv.slice(2);
+  const rawArgs = argv.slice(2);
+  const prefixedExperimental = rawArgs[0] === "--experimental";
+  const args = prefixedExperimental ? rawArgs.slice(1) : rawArgs;
   const [commandName, ...rest] = args;
 
   if (!commandName || commandName === "help" || commandName === "--help" || commandName === "-h") {
@@ -1447,6 +1455,13 @@ export async function parseCli(argv: string[]): Promise<ParsedCliInput> {
 
   if (commandName === "--version" || commandName === "-v" || commandName === "version") {
     return { kind: "help", text: renderCliVersion() };
+  }
+
+  if (
+    prefixedExperimental &&
+    !["diff", "show", "patch", "pager", "difftool", "stash"].includes(commandName)
+  ) {
+    throw new Error("`--experimental` must be used with a Hunk review command.");
   }
 
   switch (commandName) {

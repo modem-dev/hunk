@@ -1,3 +1,4 @@
+import type { ExperimentalFeature } from "../core/experimental";
 import type { CommentTargetInput, DiffSide } from "../core/liveComments";
 import type { CliInput, ReviewNoteSource } from "../core/types";
 import type { SessionBrokerClient } from "../session-broker/brokerClient";
@@ -44,6 +45,7 @@ export interface HunkSessionInfo {
   inputKind: CliInput["kind"];
   title: string;
   sourceLabel: string;
+  experimentalFeatures?: ExperimentalFeature[];
   files: SessionReviewFile[];
 }
 
@@ -192,6 +194,7 @@ export interface ListedSession {
   inputKind: CliInput["kind"];
   title: string;
   sourceLabel: string;
+  experimentalFeatures?: ExperimentalFeature[];
   fileCount: number;
   files: SessionFileSummary[];
   snapshot: HunkSessionSnapshot;
@@ -204,6 +207,7 @@ export interface SelectedSessionContext {
   cwd?: string;
   repoRoot?: string;
   inputKind: CliInput["kind"];
+  experimentalFeatures?: ExperimentalFeature[];
   selectedFile: SessionFileSummary | null;
   selectedHunk: SelectedHunkSummary | null;
   showAgentNotes: boolean;
@@ -219,6 +223,7 @@ export interface SessionReview {
   cwd?: string;
   repoRoot?: string;
   inputKind: CliInput["kind"];
+  experimentalFeatures?: ExperimentalFeature[];
   selectedFile: SessionReviewFile | null;
   selectedHunk: SessionReviewHunk | null;
   showAgentNotes: boolean;

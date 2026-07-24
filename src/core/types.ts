@@ -89,6 +89,8 @@ export interface CommonOptions {
   agentContext?: string;
   pager?: boolean;
   watch?: boolean;
+  /** Enable launch-scoped experimental review features. */
+  experimental?: boolean;
   excludeUntracked?: boolean;
   lineNumbers?: boolean;
   tabWidth?: number;

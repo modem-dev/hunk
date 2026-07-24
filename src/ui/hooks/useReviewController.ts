@@ -196,8 +196,11 @@ export interface AgentNoteGeometrySnapshot {
 export function useReviewController({
   files,
   noteGeometry,
+  stmlEnabled = false,
 }: {
   files: DiffFile[];
+  /** Allow STML bodies for live comments in this explicitly opted-in session. */
+  stmlEnabled?: boolean;
   /**
    * Mutable ref the app keeps pointed at the current layout and pane width.
    * A ref (not a value) because App computes geometry after this hook runs;
@@ -594,6 +597,12 @@ export function useReviewController({
         return {};
       }
 
+      if (!stmlEnabled) {
+        throw new Error(
+          "STML markup is disabled for this session. Relaunch Hunk with --experimental, or omit markup.",
+        );
+      }
+
       const geometry = noteGeometry?.current;
       const markupWidth = geometry
         ? agentNoteMarkupWidth({ anchorSide, layout: geometry.layout, width: geometry.width })
@@ -604,7 +613,7 @@ export function useReviewController({
         ...(markupNotes.length > 0 ? { markupNotes } : {}),
       };
     },
-    [noteGeometry],
+    [noteGeometry, stmlEnabled],
   );
 
   /** Add one live comment, optionally revealing its hunk in the active review. */
@@ -620,6 +629,7 @@ export function useReviewController({
       }
 
       const target = resolveCommentTarget(file, input);
+      const feedback = markupFeedback(input.markup, target.side);
 
       const liveComment = buildLiveComment(
         {
@@ -647,7 +657,7 @@ export function useReviewController({
         hunkIndex: target.hunkIndex,
         side: target.side,
         line: target.line,
-        ...markupFeedback(input.markup, target.side),
+        ...feedback,
       };
     },
     [allFiles, markupFeedback, selectHunk],
@@ -668,9 +678,11 @@ export function useReviewController({
         }
 
         const target = resolveCommentTarget(file, input);
+        const feedback = markupFeedback(input.markup, target.side);
         return {
           file,
           target,
+          feedback,
           liveComment: buildLiveComment(
             {
               ...input,
@@ -701,18 +713,18 @@ export function useReviewController({
       }
 
       return {
-        applied: prepared.map(({ file, target, liveComment }) => ({
+        applied: prepared.map(({ feedback, file, target, liveComment }) => ({
           commentId: liveComment.id,
           fileId: file.id,
           filePath: file.path,
           hunkIndex: target.hunkIndex,
           side: target.side,
           line: target.line,
-          ...markupFeedback(liveComment.markup, target.side),
+          ...feedback,
         })),
       };
     },
-    [allFiles, selectHunk],
+    [allFiles, markupFeedback, selectHunk],
   );
 
   /** Remove one daemon-addressable comment, including human notes by stable `user:*` id. */

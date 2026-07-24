@@ -282,6 +282,7 @@ export function createPtyHarness() {
                 newRange: [2, 2],
                 summary: "Adds bonus export.",
                 rationale: "Highlights the follow-up addition for review.",
+                markup: '<badge color="success">STML ACTIVE</badge>',
               },
             ],
           },

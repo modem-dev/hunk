@@ -33,6 +33,9 @@ export function AppHost({
 }) {
   const [activeBootstrap, setActiveBootstrap] = useState(bootstrap);
   const [appVersion, setAppVersion] = useState(0);
+  // Experimental capabilities are launch authority: remote/watch reloads may replace content,
+  // but opting in or out requires starting a new Hunk process.
+  const launchExperimental = bootstrap.input.options.experimental === true;
   const [sessionFileBounds] = useState(() =>
     createSessionReloadBounds(bootstrap, { cwd: bootstrap.reloadContext.cwd }),
   );
@@ -48,7 +51,13 @@ export function AppHost({
       // runtime defaults and config layering instead of assuming `nextInput` is already final.
       // `sourcePath` matters for daemon-driven reloads that ask Hunk to reopen content from a
       // different working directory than the process originally started in.
-      const runtimeInput = resolveRuntimeCliInput(nextInput);
+      const runtimeInput = resolveRuntimeCliInput({
+        ...nextInput,
+        options: {
+          ...nextInput.options,
+          experimental: launchExperimental,
+        },
+      });
       const { cwd } = validateSessionReloadWithinBounds(sessionFileBounds, runtimeInput, {
         sourcePath: options?.sourcePath,
       });
@@ -91,7 +100,7 @@ export function AppHost({
         selectedHunkIndex: nextSnapshot.state.selectedHunkIndex,
       };
     },
-    [hostClient, sessionFileBounds],
+    [hostClient, launchExperimental, sessionFileBounds],
   );
 
   return (

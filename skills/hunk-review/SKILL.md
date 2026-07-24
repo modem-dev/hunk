@@ -96,7 +96,7 @@ hunk session reload --session-path /path/to/live-window --source /path/to/other-
 ### Comments
 
 ```bash
-hunk session comment add --repo . --file README.md --new-line 103 --summary "Tighten this wording" [--rationale "..."] [--markup "<stml>"] [--author "agent"] [--focus]
+hunk session comment add --repo . --file README.md --new-line 103 --summary "Tighten this wording" [--rationale "..."] [--author "agent"] [--focus]
 printf '%s\n' '{"comments":[{"filePath":"README.md","newLine":103,"summary":"Tighten this wording"}]}' | hunk session comment apply --repo . --stdin [--focus]
 hunk session comment list --repo . [--file README.md] [--type live|all|ai|agent|user]
 hunk session comment rm --repo . <comment-id>
@@ -112,11 +112,13 @@ hunk session comment clear --repo . --yes [--file README.md]
 - `comment list` and `comment clear` accept optional `--file`
 - Quote `--summary` and `--rationale` defensively in the shell
 
-### Rich markup notes (STML)
+### Experimental rich markup notes (STML)
 
-`--markup` (or a `markup` field on apply items) renders the note body as STML — a small HTML-like markup for terminal UI (boxes, rows, gauges, badges, lists, code). Keep `--summary` a real sentence: it is the fallback and the `comment list` text.
+Only use STML when `hunk session context --json` lists `stml` in `experimentalFeatures`. The user opts into that experience by launching the review with `--experimental`; do not ask a normal session to render markup.
 
-Before writing markup, run `hunk markup guide` once — it has copy-paste patterns and the width rules. `hunk session context --json` reports `noteMarkupWidth` (the live render width); preview with `hunk markup render - --width <that>`. Comment responses echo `markupWidth` and return `markupNotes` when markup degraded — fix what they flag.
+For an opted-in session, `--markup` (or a `markup` field on apply items) renders the note body as STML — a small HTML-like markup for terminal UI (boxes, rows, gauges, badges, lists, code). Keep `--summary` a real sentence: it is the fallback and the `comment list` text.
+
+Before writing markup, run `hunk markup guide` once — it has copy-paste patterns and the width rules. The session context also reports `noteMarkupWidth` (the live render width); preview with `hunk markup render - --width <that>`. Comment responses echo `markupWidth` and return `markupNotes` when markup degraded — fix what they flag.
 
 ## New files in working-tree reviews
 

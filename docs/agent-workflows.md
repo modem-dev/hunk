@@ -139,6 +139,17 @@ hunk patch change.patch --agent-context notes.json
 
 For a compact real example, see [`examples/3-agent-review-demo/agent-context.json`](../examples/3-agent-review-demo/agent-context.json).
 
+## Opt into experimental rich notes
+
+STML note bodies are experimental and disabled by default. Start a new review with `--experimental` to render sidecar `markup` fields and accept live comments that carry markup:
+
+```bash
+hunk --experimental diff --agent-context notes.json
+# Equivalent: hunk diff --experimental --agent-context notes.json
+```
+
+Normal reviews keep using each annotation's required plain-text `summary` fallback. Opted-in live sessions list `stml` in `hunk session context --json` under `experimentalFeatures`; reload commands cannot change the launch opt-in.
+
 ## Practical defaults
 
 - start with `hunk session review --repo . --json`

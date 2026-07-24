@@ -56,6 +56,8 @@ describe("parseCli", () => {
     expect(parsed.text).toContain("Global options:");
     expect(parsed.text).toContain("Common review options:");
     expect(parsed.text).toContain("auto-reload when the current diff input changes");
+    expect(parsed.text).toContain("--experimental");
+    expect(parsed.text).toContain("experimental STML");
     expect(parsed.text).toContain("Git diff options:");
     expect(parsed.text).toContain("Notes:");
     expect(parsed.text).toContain(
@@ -104,6 +106,7 @@ describe("parseCli", () => {
       "--agent-notes",
       "--transparent-bg",
       "--watch",
+      "--experimental",
     ]);
 
     expect(parsed).toMatchObject({
@@ -115,6 +118,7 @@ describe("parseCli", () => {
         theme: "github-light-default",
         agentContext: "notes.json",
         watch: true,
+        experimental: true,
         lineNumbers: false,
         tabWidth: 4,
         wrapLines: true,
@@ -122,6 +126,15 @@ describe("parseCli", () => {
         agentNotes: true,
         transparentBackground: true,
       },
+    });
+  });
+
+  test("accepts --experimental before the review command", async () => {
+    const parsed = await parseCli(["bun", "hunk", "--experimental", "diff"]);
+
+    expect(parsed).toMatchObject({
+      kind: "vcs",
+      options: { experimental: true },
     });
   });
 
@@ -1196,6 +1209,12 @@ describe("parseCli argument validation", () => {
     await expect(
       parseCli(["bun", "hunk", "session", "get", "session-1", "--repo", "."]),
     ).rejects.toThrow("Specify either <session-id> or --repo <path>, not both.");
+  });
+
+  test("rejects --experimental for non-review commands", async () => {
+    await expect(parseCli(["bun", "hunk", "--experimental", "session", "list"])).rejects.toThrow(
+      "must be used with a Hunk review command",
+    );
   });
 
   test("rejects unknown top-level, skill, daemon, stash, and comment subcommands", async () => {

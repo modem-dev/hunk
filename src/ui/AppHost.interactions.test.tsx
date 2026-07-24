@@ -75,7 +75,7 @@ function createMockHostClient({
 
   let bridge: Bridge = null;
   let latestSnapshot: HunkSessionSnapshot["state"] | null = null;
-  const registration: HunkSessionRegistration = {
+  let registration: HunkSessionRegistration = {
     registrationVersion: SESSION_BROKER_REGISTRATION_VERSION,
     sessionId: "session-1",
     pid: process.pid,
@@ -92,7 +92,9 @@ function createMockHostClient({
   return {
     hostClient: {
       getRegistration: () => registration,
-      replaceSession: () => {},
+      replaceSession: (nextRegistration: HunkSessionRegistration) => {
+        registration = nextRegistration;
+      },
       setBridge: (nextBridge: Bridge) => {
         bridge = nextBridge;
       },
@@ -108,6 +110,7 @@ function createMockHostClient({
       return bridge.dispatchCommand(message);
     },
     getBridge: () => bridge,
+    getLatestRegistration: () => registration,
     getLatestSnapshot: () => latestSnapshot,
     navigateToHunk: async (
       input: Extract<HunkSessionServerMessage, { command: "navigate_to_hunk" }>["input"],
@@ -1633,6 +1636,70 @@ describe("App interactions", () => {
 
       expect(frame).toContain("export const added = true;");
       expect(frame).toContain(reviewNote);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
+  test("session reload cannot opt a normal launch into experimental STML", async () => {
+    const dir = mkdtempSync(join(process.cwd(), ".hunk-session-experimental-reload-"));
+    const left = join(dir, "before.ts");
+    const right = join(dir, "after.ts");
+    writeFileSync(left, "export const answer = 41;\n");
+    writeFileSync(right, "export const answer = 42;\n");
+
+    const bootstrap = await loadAppBootstrap({
+      kind: "diff",
+      left,
+      right,
+      options: { mode: "split" },
+    });
+    const { dispatchCommand, getLatestRegistration, hostClient } = createMockHostClient();
+    const setup = await testRender(<AppHost bootstrap={bootstrap} hostClient={hostClient} />, {
+      width: 220,
+      height: 20,
+    });
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        await dispatchCommand({
+          type: "command",
+          requestId: "reload-experimental",
+          command: "reload_session",
+          input: {
+            sessionId: "session-1",
+            nextInput: {
+              kind: "diff",
+              left,
+              right,
+              options: { mode: "split", experimental: true },
+            },
+          },
+        });
+      });
+      await flush(setup);
+
+      expect(getLatestRegistration().info.experimentalFeatures).toEqual([]);
+      await expect(
+        dispatchCommand({
+          type: "command",
+          requestId: "comment-experimental",
+          command: "comment",
+          input: {
+            sessionId: "session-1",
+            filePath: "after.ts",
+            side: "new",
+            line: 1,
+            summary: "Plain fallback",
+            markup: "<badge>disabled</badge>",
+          },
+        }),
+      ).rejects.toThrow("Relaunch Hunk with --experimental");
     } finally {
       await act(async () => {
         setup.renderer.destroy();

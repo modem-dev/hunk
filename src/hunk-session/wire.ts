@@ -1,3 +1,4 @@
+import { EXPERIMENTAL_FEATURES, type ExperimentalFeature } from "../core/experimental";
 import type { CliInput } from "../core/types";
 import {
   MAX_REGISTRATION_FILES,
@@ -28,6 +29,19 @@ const REVIEW_INPUT_KINDS = new Set<CliInput["kind"]>([
   "patch",
   "difftool",
 ]);
+const EXPERIMENTAL_FEATURE_SET = new Set<string>(EXPERIMENTAL_FEATURES);
+
+/** Preserve only recognized experimental feature ids from a session registration. */
+function parseExperimentalFeatures(value: unknown): ExperimentalFeature[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return [...new Set(value)].filter(
+    (feature): feature is ExperimentalFeature =>
+      typeof feature === "string" && EXPERIMENTAL_FEATURE_SET.has(feature),
+  );
+}
 
 /** Parse one optional diff-side line range tuple when the payload shape matches. */
 function parseOptionalRange(value: unknown): [number, number] | undefined {
@@ -216,6 +230,7 @@ function parseHunkSessionInfo(value: unknown): HunkSessionInfo | null {
     inputKind,
     title,
     sourceLabel,
+    experimentalFeatures: parseExperimentalFeatures(record.experimentalFeatures),
     files: files as SessionReviewFile[],
   };
 }

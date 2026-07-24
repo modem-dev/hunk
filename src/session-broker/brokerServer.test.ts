@@ -7,6 +7,7 @@ import {
   createTestSessionSnapshot,
 } from "../../test/helpers/session-daemon-fixtures";
 import { SessionBrokerState } from "@hunk/session-broker-core";
+import { HUNK_SESSION_API_VERSION, HUNK_SESSION_DAEMON_VERSION } from "../session/protocol";
 import { serveSessionBrokerDaemon } from "./brokerServer";
 
 const originalHost = process.env.HUNK_MCP_HOST;
@@ -290,8 +291,8 @@ describe("Hunk session daemon server", () => {
       const capabilities = await fetch(`http://127.0.0.1:${port}/session-api/capabilities`);
       expect(capabilities.status).toBe(200);
       await expect(capabilities.json()).resolves.toMatchObject({
-        version: 1,
-        daemonVersion: 5,
+        version: HUNK_SESSION_API_VERSION,
+        daemonVersion: HUNK_SESSION_DAEMON_VERSION,
         actions: [
           "list",
           "get",
