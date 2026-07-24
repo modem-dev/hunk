@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { parseDiffFromFile } from "@pierre/diffs";
 import type { KeyEvent } from "@opentui/core";
+import stringWidth from "string-width";
 import type { DiffFile } from "../../core/types";
 import {
   buildMenuSpecs,
@@ -23,7 +24,14 @@ import {
   isStepDownKey,
   isStepUpKey,
 } from "./keyboard";
-import { cellRangeToCharRange, fitText, measureTextWidth, padText, sliceTextByWidth } from "./text";
+import {
+  cellRangeToCharRange,
+  fitText,
+  measureClusterWidth,
+  measureTextWidth,
+  padText,
+  sliceTextByWidth,
+} from "./text";
 import { computeHunkRevealScrollTop } from "./hunkScroll";
 import {
   estimateDiffSectionBodyRows,
@@ -297,6 +305,33 @@ describe("ui helpers", () => {
     // while zero-width characters strictly before the range stay excluded.
     expect(cellRangeToCharRange("\u200bab", 0, 0)).toEqual({ startIndex: 0, endIndex: 2 });
     expect(cellRangeToCharRange("\u200bab", 1, 1)).toEqual({ startIndex: 2, endIndex: 3 });
+  });
+
+  test("cluster width measurement matches string-width across terminal text shapes", () => {
+    const clusters = [
+      "",
+      "\0",
+      "\u200b",
+      "\u0301",
+      "\ud800",
+      "─",
+      "·",
+      "日",
+      "👍",
+      "e\u0301",
+      "1\u20e3",
+      "🧑‍💻",
+      "\u1100\u1161\u11a8",
+    ];
+
+    for (const cluster of clusters) {
+      expect(measureClusterWidth(cluster)).toBe(stringWidth(cluster));
+    }
+
+    const complexLines = ["🧑‍💻 👩‍🔬 terminal tools", "e\u0301 a\u0308 combining text"];
+    for (const line of complexLines) {
+      expect(measureTextWidth(line)).toBe(stringWidth(line));
+    }
   });
 
   test("repeated single-character runs use the fast width path without losing correctness", () => {

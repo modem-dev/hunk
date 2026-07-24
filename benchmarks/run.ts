@@ -13,6 +13,7 @@ const defaultScripts = [
   "large-stream.ts",
   "interaction-latency.ts",
   "non-ascii-stream.ts",
+  "terminal-width.ts",
 ];
 
 interface RunOptions {

@@ -87,6 +87,13 @@ function measureSanitizedTextWidth(text: string) {
 
   let width = 0;
   for (const cluster of textClusters(text)) {
+    const codePoint = cluster.codePointAt(0)!;
+    const scalarUnitLength = codePoint > 0xffff ? 2 : 1;
+    if (cluster.length !== scalarUnitLength) {
+      // Use one whole-text fallback instead of re-segmenting every complex cluster separately.
+      // This preserves the previous path for ZWJ emoji and combining-heavy text.
+      return stringWidth(text);
+    }
     width += measureClusterWidth(cluster);
   }
   return width;
