@@ -99,6 +99,7 @@
     "chokidar": "^4.0.3",
     "commander": "^14.0.3",
     "diff": "^8.0.3",
+    "get-east-asian-width": "^1.5.0",
     "shell-quote": "1.8.4",
     "string-width": "^8.2.1",
     "zod": "^4.3.6"
