@@ -1,34 +1,10 @@
 #!/usr/bin/env bun
 
-import { createCliRenderer } from "@opentui/core";
-import { createRoot } from "@opentui/react";
 import { formatCliError } from "./core/errors";
-import {
-  installJobControlInterruptSupport,
-  installJobControlSuspendSupport,
-  type JobControlInterruptSupport,
-  type JobControlSuspendSupport,
-} from "./core/jobControl";
 import { pagePlainText } from "./core/pager";
-import { sanitizeTerminalText } from "./lib/terminalText";
-import { shutdownSession } from "./core/shutdown";
-import { renderStaticDiffPager } from "./ui/staticDiffPager";
 import { prepareStartupPlan } from "./core/startup";
-import { shouldUseMouseForApp } from "./core/terminal";
-import { resolveStartupUpdateNotice } from "./core/updateNotice";
-import { AppHost } from "./ui/AppHost";
-import { SessionBrokerClient } from "./session-broker/brokerClient";
+import { sanitizeTerminalText } from "./lib/terminalText";
 import { serveSessionBrokerDaemon } from "./session-broker/brokerServer";
-import {
-  createInitialSessionSnapshot,
-  createSessionRegistration,
-} from "./hunk-session/sessionRegistration";
-import type {
-  HunkSessionCommandResult,
-  HunkSessionInfo,
-  HunkSessionServerMessage,
-  HunkSessionState,
-} from "./hunk-session/types";
 import { runSessionCommand } from "./session/commands";
 
 async function main() {
@@ -78,6 +54,7 @@ async function main() {
   }
 
   if (startupPlan.kind === "static-diff-pager") {
+    const { renderStaticDiffPager } = await import("./ui/staticDiffPager");
     process.stdout.write(
       await renderStaticDiffPager(startupPlan.text, startupPlan.options, {
         customTheme: startupPlan.customTheme,
@@ -91,66 +68,10 @@ async function main() {
     throw new Error("Unreachable startup plan.");
   }
 
-  const { bootstrap, controllingTerminal } = startupPlan;
-  const hostClient = new SessionBrokerClient<
-    HunkSessionInfo,
-    HunkSessionState,
-    HunkSessionServerMessage,
-    HunkSessionCommandResult
-  >(createSessionRegistration(bootstrap), createInitialSessionSnapshot(bootstrap));
-  hostClient.start();
-
-  // Keep OpenTUI's platform-safe threading default (enabled on macOS, disabled on Linux).
-  const renderer = await createCliRenderer({
-    stdin: controllingTerminal?.stdin,
-    stdout: process.stdout,
-    useMouse: shouldUseMouseForApp({
-      hasControllingTerminal: Boolean(controllingTerminal),
-    }),
-    screenMode: "alternate-screen",
-    exitOnCtrlC: false,
-    openConsoleOnError: true,
-    onDestroy: () => controllingTerminal?.close(),
-  });
-
-  const appRenderer = renderer;
-  const root = createRoot(appRenderer);
-  const shutdownSignals: NodeJS.Signals[] = ["SIGINT", "SIGTERM"];
-  let shuttingDown = false;
-  let jobControlSuspendSupport: JobControlSuspendSupport = { dispose: () => undefined };
-  let jobControlInterruptSupport: JobControlInterruptSupport = { dispose: () => undefined };
-
-  /** Tear down the renderer before exit so the primary terminal screen comes back cleanly. */
-  function shutdown() {
-    if (shuttingDown) {
-      return;
-    }
-
-    shuttingDown = true;
-    for (const signal of shutdownSignals) {
-      process.off(signal, shutdown);
-    }
-    jobControlInterruptSupport.dispose();
-    jobControlSuspendSupport.dispose();
-    hostClient.stop();
-    shutdownSession({ root, renderer: appRenderer });
-  }
-
-  for (const signal of shutdownSignals) {
-    process.once(signal, shutdown);
-  }
-  jobControlInterruptSupport = installJobControlInterruptSupport(appRenderer, shutdown);
-  jobControlSuspendSupport = installJobControlSuspendSupport(appRenderer);
-
-  // The app owns the full alternate screen session from this point on.
-  root.render(
-    <AppHost
-      bootstrap={bootstrap}
-      hostClient={hostClient}
-      onQuit={shutdown}
-      startupNoticeResolver={resolveStartupUpdateNotice}
-    />,
-  );
+  // OpenTUI stays behind the interactive plan so headless commands never
+  // materialize its embedded native library.
+  const { runInteractiveApp } = await import("./ui/runInteractiveApp");
+  await runInteractiveApp(startupPlan);
 }
 
 await main().catch((error) => {

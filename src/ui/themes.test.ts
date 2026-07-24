@@ -65,7 +65,7 @@ describe("themes", () => {
       expect(theme.id).toBe(themeId);
       expect(theme.label).toBe(themeId);
       expect(theme.syntaxTheme).toBe(themeId);
-      expect(theme.syntaxStyle).toBeDefined();
+      expect(theme.syntaxColors.default).toBeTruthy();
     }
   });
 

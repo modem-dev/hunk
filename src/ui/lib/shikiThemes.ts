@@ -83,6 +83,16 @@ export function resolveLegacyThemeId(themeId: string | undefined) {
     : undefined;
 }
 
+/** Resolve a current or legacy id when it names one bundled theme. */
+export function resolveBundledShikiThemeId(
+  themeId: string | undefined,
+): BundledShikiThemeId | undefined {
+  const resolvedThemeId = resolveLegacyThemeId(themeId);
+  return BUNDLED_SHIKI_THEME_IDS.includes(resolvedThemeId as BundledShikiThemeId)
+    ? (resolvedThemeId as BundledShikiThemeId)
+    : undefined;
+}
+
 export interface BundledShikiThemeDiffColors {
   added?: string;
   removed?: string;

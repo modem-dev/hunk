@@ -207,6 +207,11 @@ jobs:
       - name: Build binary
         run: bun run build:bin
 
+      - name: Verify compiled headless commands skip OpenTUI
+        run: bun test ./test/cli/compiled-headless-native-lib.test.ts
+        env:
+          HUNK_TEST_EXECUTABLE: ${{ github.workspace }}/dist/hunk
+
       - name: Verify compiled binary watch mode
         run: bun test ./test/pty/watch.test.ts
         env:
