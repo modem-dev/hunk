@@ -167,6 +167,7 @@ describe("config resolution", () => {
       [
         'theme = "github-dark-default"',
         "line_numbers = false",
+        "tab_width = 8",
         "transparentBackground = true",
         "color_moved = true",
         "prompt_save_view_preferences = false",
@@ -192,10 +193,13 @@ describe("config resolution", () => {
       ].join("\n"),
     );
 
-    const resolved = resolveConfiguredCliInput(createPatchPagerInput({ agentNotes: true }), {
-      cwd: repo,
-      env: { HOME: home },
-    });
+    const resolved = resolveConfiguredCliInput(
+      createPatchPagerInput({ agentNotes: true, tabWidth: 6 }),
+      {
+        cwd: repo,
+        env: { HOME: home },
+      },
+    );
 
     expect(resolved.repoConfigPath).toBe(join(repo, ".hunk", "config.toml"));
     expect(resolved.viewPreferencesConfigPath).toBe(join(repo, ".hunk", "config.toml"));
@@ -204,6 +208,7 @@ describe("config resolution", () => {
       mode: "stack",
       theme: "github-light-default",
       lineNumbers: false,
+      tabWidth: 6,
       wrapLines: true,
       menuBar: false,
       hunkHeaders: false,
@@ -212,6 +217,25 @@ describe("config resolution", () => {
       transparentBackground: true,
       colorMoved: true,
     });
+  });
+
+  test("defaults tab width to 4 and rejects invalid configured widths", () => {
+    const home = createTempDir("hunk-config-home-");
+    const repo = createTempDir("hunk-config-repo-");
+    createRepo(repo);
+
+    const input = createPatchPagerInput();
+    expect(
+      resolveConfiguredCliInput(input, { cwd: repo, env: { HOME: home } }).input.options.tabWidth,
+    ).toBe(4);
+
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    for (const invalid of ["0", "17", '"4"']) {
+      writeFileSync(join(home, ".config", "hunk", "config.toml"), `tab_width = ${invalid}\n`);
+      expect(() => resolveConfiguredCliInput(input, { cwd: repo, env: { HOME: home } })).toThrow(
+        /tab_width/,
+      );
+    }
   });
 
   test("merges custom theme overrides from global and repo config", () => {
@@ -666,6 +690,7 @@ describe("config resolution", () => {
       [
         'theme = "github-light-default"',
         "line_numbers = false",
+        "tab_width = 8",
         "wrap_lines = true",
         "menu_bar = false",
         "hunk_headers = false",
@@ -693,6 +718,7 @@ describe("config resolution", () => {
     expect(bootstrap.initialMode).toBe("auto");
     expect(bootstrap.initialTheme).toBe("github-light-default");
     expect(bootstrap.initialShowLineNumbers).toBe(false);
+    expect(bootstrap.initialTabWidth).toBe(8);
     expect(bootstrap.initialWrapLines).toBe(true);
     expect(bootstrap.initialShowMenuBar).toBe(false);
     expect(bootstrap.initialShowHunkHeaders).toBe(false);

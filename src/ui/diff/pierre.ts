@@ -8,8 +8,10 @@ import {
   type FileDiffMetadata,
 } from "@pierre/diffs";
 import { formatHunkHeader } from "../../core/hunkHeader";
+import { DEFAULT_TAB_WIDTH } from "../../core/tabWidth";
 import type { DiffFile, DiffLineMoveKind } from "../../core/types";
 import { blendHex, hexColorDistance } from "../lib/color";
+import { measureTextWidth } from "../lib/text";
 import { sanitizeTerminalLine } from "../../lib/terminalText";
 import { TRANSPARENT_BACKGROUND, type AppTheme } from "../themes";
 import { expandDiffTabs } from "./codeColumns";
@@ -132,9 +134,9 @@ export type DiffRow =
       isExpansionRow?: true;
     };
 
-/** Replace tabs with fixed spaces so terminal cell widths stay predictable. */
-function tabify(text: string) {
-  return expandDiffTabs(sanitizeTerminalLine(text));
+/** Expand source tabs before terminal rendering so downstream geometry stays predictable. */
+function tabify(text: string, tabWidth: number, initialColumn = 0) {
+  return expandDiffTabs(sanitizeTerminalLine(text), tabWidth, initialColumn);
 }
 
 const EMPTY_STYLE_VALUES = new Map<string, string>();
@@ -272,14 +274,19 @@ function mergeSpan(target: RenderSpan[], next: RenderSpan) {
 }
 
 /** Flatten one highlighted HAST line into terminal-friendly styled text spans. */
-function flattenHighlightedLine(node: HastNode | undefined, theme: AppTheme, emphasisBg: string) {
+function flattenHighlightedLine(
+  node: HastNode | undefined,
+  theme: AppTheme,
+  emphasisBg: string,
+  tabWidth: number,
+) {
   if (!node) {
     return [];
   }
 
   // The highlighted HAST node is already unique to the content-addressed Shiki theme. Only
   // post-highlight choices belong in the inner key; syntax identity comes from the WeakMap key.
-  const cacheKey = `${theme.appearance}:${emphasisBg}`;
+  const cacheKey = `${theme.appearance}:${emphasisBg}:${tabWidth}`;
   const cachedByTheme = flattenedHighlightedLineCache.get(node);
   const cached = cachedByTheme?.get(cacheKey);
   if (cached) {
@@ -290,6 +297,7 @@ function flattenHighlightedLine(node: HastNode | undefined, theme: AppTheme, emp
   // we skip the full recursive walk and return the already-flattened terminal spans.
 
   const spans: RenderSpan[] = [];
+  let codeColumn = 0;
   const colorVariable = theme.appearance === "light" ? "--diffs-token-light" : "--diffs-token-dark";
 
   const visit = (current: HastNode | undefined, inherited: Pick<RenderSpan, "fg" | "bg">) => {
@@ -301,11 +309,13 @@ function flattenHighlightedLine(node: HastNode | undefined, theme: AppTheme, emp
       // Pierre injects a "\n" placeholder into empty line nodes so they aren't childless.
       // Strip it the same way cleanDiffLine does for the unhighlighted path, or the literal
       // newline ends up in the span text and breaks terminal row rendering.
+      const text = tabify(cleanLastNewline(current.value), tabWidth, codeColumn);
       mergeSpan(spans, {
-        text: tabify(cleanLastNewline(current.value)),
+        text,
         fg: inherited.fg,
         bg: inherited.bg,
       });
+      codeColumn += measureTextWidth(text);
       return;
     }
 
@@ -335,8 +345,8 @@ function flattenHighlightedLine(node: HastNode | undefined, theme: AppTheme, emp
 }
 
 /** Normalize one raw diff line before rendering. */
-function cleanDiffLine(line: string | undefined) {
-  return tabify(cleanLastNewline(line ?? ""));
+function cleanDiffLine(line: string | undefined, tabWidth: number) {
+  return tabify(cleanLastNewline(line ?? ""), tabWidth);
 }
 
 /** Build the normalized render model for one split-view cell. */
@@ -346,6 +356,7 @@ function makeSplitCell(
   rawLine: string | undefined,
   highlightedLine: HastNode | undefined,
   theme: AppTheme,
+  tabWidth: number,
   moveKind?: DiffLineMoveKind,
 ) {
   if (kind === "empty") {
@@ -361,13 +372,18 @@ function makeSplitCell(
   // produced nothing. That keeps newline stripping + tab expansion off the hot path.
   let spans: RenderSpan[];
   if (highlightedLine === undefined) {
-    const fallbackText = cleanDiffLine(rawLine);
+    const fallbackText = cleanDiffLine(rawLine, tabWidth);
     spans = fallbackText.length > 0 ? [{ text: fallbackText }] : [];
   } else {
-    spans = flattenHighlightedLine(highlightedLine, theme, wordDiffHighlightBg(kind, theme));
+    spans = flattenHighlightedLine(
+      highlightedLine,
+      theme,
+      wordDiffHighlightBg(kind, theme),
+      tabWidth,
+    );
 
     if (spans.length === 0) {
-      const fallbackText = cleanDiffLine(rawLine);
+      const fallbackText = cleanDiffLine(rawLine, tabWidth);
       spans = fallbackText.length > 0 ? [{ text: fallbackText }] : [];
     }
   }
@@ -389,19 +405,25 @@ function makeStackCell(
   rawLine: string | undefined,
   highlightedLine: HastNode | undefined,
   theme: AppTheme,
+  tabWidth: number,
   moveKind?: DiffLineMoveKind,
 ) {
   // Same lazy-fallback strategy as split cells: only normalize the raw source line when we really
   // need the plain-text fallback, not when highlighted spans are already ready to reuse.
   let spans: RenderSpan[];
   if (highlightedLine === undefined) {
-    const fallbackText = cleanDiffLine(rawLine);
+    const fallbackText = cleanDiffLine(rawLine, tabWidth);
     spans = fallbackText.length > 0 ? [{ text: fallbackText }] : [];
   } else {
-    spans = flattenHighlightedLine(highlightedLine, theme, wordDiffHighlightBg(kind, theme));
+    spans = flattenHighlightedLine(
+      highlightedLine,
+      theme,
+      wordDiffHighlightBg(kind, theme),
+      tabWidth,
+    );
 
     if (spans.length === 0) {
-      const fallbackText = cleanDiffLine(rawLine);
+      const fallbackText = cleanDiffLine(rawLine, tabWidth);
       spans = fallbackText.length > 0 ? [{ text: fallbackText }] : [];
     }
   }
@@ -649,18 +671,19 @@ export function spansForHighlightedSourceLine(
   rawLine: string | undefined,
   highlightedLine: HastNode | undefined,
   theme: AppTheme,
+  tabWidth = DEFAULT_TAB_WIDTH,
 ): RenderSpan[] {
   if (highlightedLine === undefined) {
-    const fallbackText = cleanDiffLine(rawLine);
+    const fallbackText = cleanDiffLine(rawLine, tabWidth);
     return fallbackText.length > 0 ? [{ text: fallbackText }] : [];
   }
 
-  const spans = flattenHighlightedLine(highlightedLine, theme, theme.contextContentBg);
+  const spans = flattenHighlightedLine(highlightedLine, theme, theme.contextContentBg, tabWidth);
   if (spans.length > 0) {
     return spans;
   }
 
-  const fallbackText = cleanDiffLine(rawLine);
+  const fallbackText = cleanDiffLine(rawLine, tabWidth);
   return fallbackText.length > 0 ? [{ text: fallbackText }] : [];
 }
 
@@ -669,6 +692,7 @@ export function buildSplitRows(
   file: DiffFile,
   highlighted: HighlightedDiffCode | null,
   theme: AppTheme,
+  tabWidth = DEFAULT_TAB_WIDTH,
 ): DiffRow[] {
   const rows: DiffRow[] = [];
   const deletionLines = highlighted?.deletionLines ?? [];
@@ -714,6 +738,7 @@ export function buildSplitRows(
               file.metadata.deletionLines[deletionLineIndex + offset],
               deletionLines[deletionLineIndex + offset],
               theme,
+              tabWidth,
             ),
             right: makeSplitCell(
               "context",
@@ -721,6 +746,7 @@ export function buildSplitRows(
               file.metadata.additionLines[additionLineIndex + offset],
               additionLines[additionLineIndex + offset],
               theme,
+              tabWidth,
             ),
           });
         }
@@ -750,9 +776,10 @@ export function buildSplitRows(
                 file.metadata.deletionLines[deletionLineIndex + offset],
                 deletionLines[deletionLineIndex + offset],
                 theme,
+                tabWidth,
                 file.lineMoveKinds?.deletionLines[deletionLineIndex + offset],
               )
-            : makeSplitCell("empty", undefined, undefined, undefined, theme),
+            : makeSplitCell("empty", undefined, undefined, undefined, theme, tabWidth),
           right: hasAddition
             ? makeSplitCell(
                 "addition",
@@ -760,9 +787,10 @@ export function buildSplitRows(
                 file.metadata.additionLines[additionLineIndex + offset],
                 additionLines[additionLineIndex + offset],
                 theme,
+                tabWidth,
                 file.lineMoveKinds?.additionLines[additionLineIndex + offset],
               )
-            : makeSplitCell("empty", undefined, undefined, undefined, theme),
+            : makeSplitCell("empty", undefined, undefined, undefined, theme, tabWidth),
         });
       }
 
@@ -795,6 +823,7 @@ export function buildStackRows(
   file: DiffFile,
   highlighted: HighlightedDiffCode | null,
   theme: AppTheme,
+  tabWidth = DEFAULT_TAB_WIDTH,
 ): DiffRow[] {
   const rows: DiffRow[] = [];
   const deletionLines = highlighted?.deletionLines ?? [];
@@ -841,6 +870,7 @@ export function buildStackRows(
               file.metadata.additionLines[additionLineIndex + offset],
               additionLines[additionLineIndex + offset],
               theme,
+              tabWidth,
             ),
           });
         }
@@ -865,6 +895,7 @@ export function buildStackRows(
             file.metadata.deletionLines[deletionLineIndex + offset],
             deletionLines[deletionLineIndex + offset],
             theme,
+            tabWidth,
             file.lineMoveKinds?.deletionLines[deletionLineIndex + offset],
           ),
         });
@@ -883,6 +914,7 @@ export function buildStackRows(
             file.metadata.additionLines[additionLineIndex + offset],
             additionLines[additionLineIndex + offset],
             theme,
+            tabWidth,
             file.lineMoveKinds?.additionLines[additionLineIndex + offset],
           ),
         });

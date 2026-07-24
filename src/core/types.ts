@@ -91,6 +91,7 @@ export interface CommonOptions {
   watch?: boolean;
   excludeUntracked?: boolean;
   lineNumbers?: boolean;
+  tabWidth?: number;
   wrapLines?: boolean;
   hunkHeaders?: boolean;
   menuBar?: boolean;
@@ -399,6 +400,7 @@ export interface AppBootstrap {
   initialThemeMode?: TerminalThemeMode;
   customTheme?: CustomThemeConfig;
   initialShowLineNumbers?: boolean;
+  initialTabWidth?: number;
   initialWrapLines?: boolean;
   initialShowHunkHeaders?: boolean;
   initialShowMenuBar?: boolean;

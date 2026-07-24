@@ -10,6 +10,7 @@ import {
   saveGlobalViewPreferences,
   saveViewPreferencesPromptPreference,
 } from "../core/config";
+import { DEFAULT_TAB_WIDTH } from "../core/tabWidth";
 import type {
   AppBootstrap,
   CliInput,
@@ -126,6 +127,7 @@ export function App({
   const DIVIDER_HIT_WIDTH = 5;
 
   const pagerMode = Boolean(bootstrap.input.options.pager);
+  const tabWidth = bootstrap.initialTabWidth ?? DEFAULT_TAB_WIDTH;
   const renderer = useRenderer();
   const terminal = useTerminalDimensions();
   const sidebarScrollRef = useRef<ScrollBoxRenderable | null>(null);
@@ -415,11 +417,11 @@ export function App({
       Math.max(
         0,
         filteredFiles.reduce(
-          (maxWidth, file) => Math.max(maxWidth, maxFileCodeLineWidth(file)),
+          (maxWidth, file) => Math.max(maxWidth, maxFileCodeLineWidth(file, tabWidth)),
           0,
         ) - codeViewportWidth,
       ),
-    [codeViewportWidth, filteredFiles],
+    [codeViewportWidth, filteredFiles, tabWidth],
   );
 
   useEffect(() => {
@@ -1121,6 +1123,7 @@ export function App({
           showLineNumbers={showLineNumbers}
           showHunkHeaders={showHunkHeaders}
           sourceStatusByFileId={review.sourceStatusByFileId}
+          tabWidth={tabWidth}
           wrapLines={wrapLines}
           wrapToggleScrollTop={wrapToggleScrollTopRef.current}
           layoutToggleScrollTop={layoutToggleScrollTopRef.current}

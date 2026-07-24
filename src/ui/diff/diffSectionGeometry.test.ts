@@ -51,10 +51,25 @@ describe("measureDiffSectionGeometry", () => {
       undefined,
       true,
     );
+    const differentTabWidth = measureDiffSectionGeometry(
+      file,
+      "split",
+      true,
+      theme,
+      [],
+      120,
+      true,
+      false,
+      undefined,
+      undefined,
+      false,
+      8,
+    );
 
     expect(second).toBe(first);
     expect(differentWidth).not.toBe(first);
     expect(differentAddNotePolicy).not.toBe(first);
+    expect(differentTabWidth).not.toBe(first);
   });
 
   test("caches planned rows after the lazy geometry property is first read", () => {

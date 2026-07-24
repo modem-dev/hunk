@@ -1,3 +1,4 @@
+import { DEFAULT_TAB_WIDTH } from "../../core/tabWidth";
 import type { DiffFile, LayoutMode } from "../../core/types";
 import { measureAgentInlineNoteHeight } from "../components/panes/AgentInlineNote";
 import type { VisibleAgentNote } from "../lib/agentAnnotations";
@@ -141,6 +142,7 @@ function createLazyPlannedRowsResolver({
   layout,
   showHunkHeaders,
   sourceStatus,
+  tabWidth,
   theme,
   visibleAgentNotes,
 }: {
@@ -149,6 +151,7 @@ function createLazyPlannedRowsResolver({
   layout: Exclude<LayoutMode, "auto">;
   showHunkHeaders: boolean;
   sourceStatus: FileSourceStatus | undefined;
+  tabWidth: number;
   theme: AppTheme;
   visibleAgentNotes: VisibleAgentNote[];
 }) {
@@ -162,6 +165,7 @@ function createLazyPlannedRowsResolver({
     layout,
     showHunkHeaders,
     sourceStatus: sourceStatus ? structuredClone(sourceStatus) : undefined,
+    tabWidth,
     theme,
     visibleAgentNotes:
       visibleAgentNotes.length === 0
@@ -263,6 +267,7 @@ export function measureDiffSectionGeometry(
   expandedKeys: ReadonlySet<string> = EMPTY_EXPANDED_GAP_KEYS,
   sourceStatus: FileSourceStatus | undefined = undefined,
   reserveAddNoteColumn = false,
+  tabWidth = DEFAULT_TAB_WIDTH,
 ): DiffSectionGeometry {
   if (file.metadata.hunks.length === 0) {
     return {
@@ -291,7 +296,7 @@ export function measureDiffSectionGeometry(
     theme.lineNumberBg,
     theme.lineNumberFg,
   ].join(":");
-  const cacheKey = `${file.id}:${layout}:${showHunkHeaders ? 1 : 0}:${themeCacheKey}:${width}:${showLineNumbers ? 1 : 0}:${wrapLines ? 1 : 0}:${reserveAddNoteColumn ? 1 : 0}${expansionCacheKey(expandedKeys, sourceStatus)}${notesCacheKey(visibleAgentNotes)}`;
+  const cacheKey = `${file.id}:${layout}:${showHunkHeaders ? 1 : 0}:${themeCacheKey}:${width}:${showLineNumbers ? 1 : 0}:${wrapLines ? 1 : 0}:${reserveAddNoteColumn ? 1 : 0}:tabs:${tabWidth}${expansionCacheKey(expandedKeys, sourceStatus)}${notesCacheKey(visibleAgentNotes)}`;
   const cacheSlot = sectionGeometryCacheSlot(visibleAgentNotes);
   const cached = getCachedSectionGeometry(file, cacheSlot, cacheKey);
   if (cached) {
@@ -304,6 +309,7 @@ export function measureDiffSectionGeometry(
     layout,
     showHunkHeaders,
     sourceStatus,
+    tabWidth,
     theme,
     visibleAgentNotes,
   });
@@ -378,6 +384,7 @@ export function measureDiffSectionGeometry(
     layout,
     showHunkHeaders,
     sourceStatus,
+    tabWidth,
     theme,
     visibleAgentNotes,
   });

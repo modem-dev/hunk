@@ -42,6 +42,7 @@ export interface HunkDiffBodyProps {
   theme?: HunkDiffThemeName;
   showLineNumbers?: boolean;
   showHunkHeaders?: boolean;
+  tabWidth?: number;
   wrapLines?: boolean;
   horizontalOffset?: number;
   highlight?: boolean;
@@ -71,6 +72,7 @@ export interface HunkReviewStreamProps {
   showFileSeparators?: boolean;
   showLineNumbers?: boolean;
   showHunkHeaders?: boolean;
+  tabWidth?: number;
   wrapLines?: boolean;
   horizontalOffset?: number;
   highlight?: boolean;

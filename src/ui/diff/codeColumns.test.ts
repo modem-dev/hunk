@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import type { DiffFile } from "../../core/types";
-import { findMaxLineNumberInRows, maxFileCodeLineWidth } from "./codeColumns";
+import {
+  expandDiffTabs,
+  findMaxLineNumberInRows,
+  maxFileCodeLineWidth,
+  measureRenderedCodeLineWidth,
+} from "./codeColumns";
 import type { DiffRow } from "./pierre";
 
 /** Generate a large diff metadata fixture without checking a huge file into the repo. */
@@ -24,6 +29,22 @@ function createLargeLineFixture(lineCount: number, widestLine: string): DiffFile
 }
 
 describe("code column measurement", () => {
+  test("expands tabs to configurable terminal-cell stops", () => {
+    expect(expandDiffTabs("\tvalue")).toBe("    value");
+    expect(expandDiffTabs("a\tb", 4)).toBe("a   b");
+    expect(expandDiffTabs("abc\td", 4)).toBe("abc d");
+    expect(expandDiffTabs("日本\tx", 4)).toBe("日本    x");
+    expect(expandDiffTabs("a\tb", 4, 2)).toBe("a b");
+    expect(measureRenderedCodeLineWidth("a\tb", 8)).toBe(9);
+  });
+
+  test("caches widest lines separately for each tab width", () => {
+    const file = createLargeLineFixture(2, "\twide");
+
+    expect(maxFileCodeLineWidth(file, 2)).toBe(6);
+    expect(maxFileCodeLineWidth(file, 8)).toBe(12);
+  });
+
   test("measures large generated fixtures without overflowing the call stack", () => {
     const file = createLargeLineFixture(100_000, "the widest generated line");
 

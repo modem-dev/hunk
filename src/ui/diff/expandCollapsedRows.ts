@@ -1,3 +1,4 @@
+import { DEFAULT_TAB_WIDTH } from "../../core/tabWidth";
 import { sanitizeTerminalLine, sanitizeTerminalSpans } from "../../lib/terminalText";
 import { expandDiffTabs } from "./codeColumns";
 import type {
@@ -20,6 +21,7 @@ export interface ExpandCollapsedRowsOptions {
   layout: ExpansionLayout;
   expandedKeys: ReadonlySet<string>;
   sourceStatus: FileSourceStatus | undefined;
+  tabWidth?: number;
   /** Optional syntax-aware span resolver for a zero-based source line. */
   sourceLineSpans?: (line: string | undefined, sourceLineNumber: number) => RenderSpan[];
   // Whose side's line indices in the source text. Defaults to "new".
@@ -84,8 +86,8 @@ function sliceLines(sourceText: string) {
   return trimmed.length === 0 ? [] : trimmed.split("\n");
 }
 
-function spansFor(line: string | undefined): RenderSpan[] {
-  const text = expandDiffTabs(sanitizeTerminalLine(line ?? ""));
+function spansFor(line: string | undefined, tabWidth: number): RenderSpan[] {
+  const text = expandDiffTabs(sanitizeTerminalLine(line ?? ""), tabWidth);
   return text.length > 0 ? [{ text }] : [];
 }
 
@@ -154,7 +156,14 @@ export function expandCollapsedRows(
   rows: DiffRow[],
   options: ExpandCollapsedRowsOptions,
 ): DiffRow[] {
-  const { layout, expandedKeys, sourceLineSpans, sourceStatus, side = "new" } = options;
+  const {
+    layout,
+    expandedKeys,
+    sourceLineSpans,
+    sourceStatus,
+    tabWidth = DEFAULT_TAB_WIDTH,
+    side = "new",
+  } = options;
 
   if (expandedKeys.size === 0) {
     return rows;
@@ -223,7 +232,7 @@ export function expandCollapsedRows(
       const text = sourceLines[sourceLineNumber];
       const spans = sourceLineSpans
         ? sanitizeTerminalSpans(sourceLineSpans(text, sourceLineNumber))
-        : spansFor(text);
+        : spansFor(text, tabWidth);
 
       result.push(
         layout === "split"

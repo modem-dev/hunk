@@ -13,6 +13,7 @@ import type {
 } from "./types";
 import { resolveBundledHunkReviewSkillPath } from "./paths";
 import { detectVcs } from "./vcs";
+import { parseTabWidth } from "./tabWidth";
 import { resolveCliVersion } from "./version";
 
 /** Validate one requested layout mode from CLI input. */
@@ -65,6 +66,7 @@ function buildCommonOptions(
     pager?: boolean;
     watch?: boolean;
     transparentBackground?: boolean;
+    tabWidth?: number;
   },
   argv: string[],
 ): CommonOptions {
@@ -76,6 +78,7 @@ function buildCommonOptions(
     watch: options.watch ? true : undefined,
     excludeUntracked: resolveBooleanFlag(argv, "--exclude-untracked", "--no-exclude-untracked"),
     lineNumbers: resolveBooleanFlag(argv, "--line-numbers", "--no-line-numbers"),
+    tabWidth: options.tabWidth,
     wrapLines: resolveBooleanFlag(argv, "--wrap", "--no-wrap"),
     hunkHeaders: resolveBooleanFlag(argv, "--hunk-headers", "--no-hunk-headers"),
     agentNotes: resolveBooleanFlag(argv, "--agent-notes", "--no-agent-notes"),
@@ -92,6 +95,7 @@ function applyCommonOptions(command: Command) {
     .option("--pager", "use pager-style chrome and controls")
     .option("--line-numbers", "show line numbers")
     .option("--no-line-numbers", "hide line numbers")
+    .option("-x, --tab-width <columns>", "tab stop width: 1-16", parseTabWidth)
     .option("--wrap", "wrap long diff lines")
     .option("--no-wrap", "truncate long diff lines to one row")
     .option("--hunk-headers", "show hunk metadata rows")
@@ -160,6 +164,7 @@ function renderCliHelp() {
     "  --agent-context <path>                  JSON sidecar with agent rationale",
     "  --pager                                 use pager-style chrome and controls",
     "  --line-numbers / --no-line-numbers      show or hide line numbers",
+    "  -x, --tab-width <columns>                tab stop width: 1-16 (default: 4)",
     "  --wrap / --no-wrap                      wrap or truncate long diff lines",
     "  --hunk-headers / --no-hunk-headers      show or hide hunk metadata rows",
     "  --agent-notes / --no-agent-notes        show or hide agent notes by default",

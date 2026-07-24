@@ -130,6 +130,7 @@ vcs = "git"          # git, jj, sl
 watch = false
 exclude_untracked = false
 line_numbers = true
+tab_width = 4       # tab stops, 1-16
 wrap_lines = false
 menu_bar = true
 agent_notes = false
@@ -140,6 +141,7 @@ transparent_background = false
 `theme = "auto"` and `--theme auto` query the terminal background at startup, choose `github-light-default` for light backgrounds and `github-dark-default` for dark backgrounds, and fall back to `github-dark-default` if the terminal does not answer.
 Older theme ids such as `graphite` and `paper` remain accepted as compatibility aliases.
 `exclude_untracked` affects Git/Sapling working-tree `hunk diff` sessions only.
+`tab_width` controls source-code tab stops and can be overridden with `-x4` or `--tab-width 4`.
 `prompt_save_view_preferences = false` disables the quit prompt for saving changed view preferences.
 `transparent_background` can also be written as `transparentBackground`.
 

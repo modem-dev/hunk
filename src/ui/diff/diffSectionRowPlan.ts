@@ -1,3 +1,4 @@
+import { DEFAULT_TAB_WIDTH } from "../../core/tabWidth";
 import type { DiffFile, LayoutMode } from "../../core/types";
 import type { VisibleAgentNote } from "../lib/agentAnnotations";
 import type { AppTheme } from "../themes";
@@ -27,6 +28,7 @@ export interface BuildDiffSectionRowPlanOptions {
   showHunkHeaders: boolean;
   sourceLineSpans?: (line: string | undefined, sourceLineNumber: number) => RenderSpan[];
   sourceStatus?: FileSourceStatus | undefined;
+  tabWidth?: number;
   theme: AppTheme;
   visibleAgentNotes?: VisibleAgentNote[];
 }
@@ -37,10 +39,11 @@ function buildBaseRows(
   layout: Exclude<LayoutMode, "auto">,
   highlightedDiff: HighlightedDiffCode | null | undefined,
   theme: AppTheme,
+  tabWidth: number,
 ) {
   return layout === "split"
-    ? buildSplitRows(file, highlightedDiff ?? null, theme)
-    : buildStackRows(file, highlightedDiff ?? null, theme);
+    ? buildSplitRows(file, highlightedDiff ?? null, theme, tabWidth)
+    : buildStackRows(file, highlightedDiff ?? null, theme, tabWidth);
 }
 
 /** Build the shared file-level diff plan consumed by rendering and geometry measurement. */
@@ -52,6 +55,7 @@ export function buildDiffSectionRowPlan({
   showHunkHeaders,
   sourceLineSpans,
   sourceStatus,
+  tabWidth = DEFAULT_TAB_WIDTH,
   theme,
   visibleAgentNotes = EMPTY_VISIBLE_AGENT_NOTES,
 }: BuildDiffSectionRowPlanOptions): DiffSectionRowPlan {
@@ -62,13 +66,14 @@ export function buildDiffSectionRowPlan({
     };
   }
 
-  const baseRows = buildBaseRows(file, layout, highlightedDiff, theme);
+  const baseRows = buildBaseRows(file, layout, highlightedDiff, theme, tabWidth);
   const expansionSide = file.metadata.type === "deleted" ? "old" : "new";
   const rows = expandCollapsedRows(baseRows, {
     layout,
     expandedKeys,
     sourceLineSpans,
     sourceStatus,
+    tabWidth,
     side: expansionSide,
   });
 
