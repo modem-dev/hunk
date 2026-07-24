@@ -27,6 +27,9 @@ import {
 import { resolveSplitPaneWidths, resolveSplitCellGeometry } from "./diff/codeColumns";
 import {
   diffRailMarker,
+  EMPTY_CELL_HATCH_GLYPH,
+  emptyHatchBg,
+  emptyHatchColor,
   neutralRailColor,
   splitCellPalette,
   splitGutterText,
@@ -190,11 +193,22 @@ function renderStaticSplitCell(
     gutterWidth,
   );
 
+  // Absent side: tile a diagonal hatch over the neutral surface instead of a flat filler block,
+  // matching the interactive renderer's "nothing here" cue.
+  const content =
+    cell.kind === "empty"
+      ? colorText(
+          EMPTY_CELL_HATCH_GLYPH.repeat(Math.max(0, contentWidth)),
+          emptyHatchColor(theme),
+          emptyHatchBg(theme),
+        )
+      : serializeSpansFixedWidth(cell.spans, palette.contentBg, contentWidth);
+
   return `${colorText(marker(), railColor, theme.panel)}${colorText(
     gutterText,
     palette.numberColor,
     palette.gutterBg,
-  )}${serializeSpansFixedWidth(cell.spans, palette.contentBg, contentWidth)}`;
+  )}${content}`;
 }
 
 /** Render one non-interactive split diff row as ANSI text. */
