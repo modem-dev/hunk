@@ -11,6 +11,9 @@ import type { DiffRow, RenderSpan, SplitLineCell, StackLineCell } from "./pierre
 import {
   diffRailMarker,
   dimRailColor,
+  EMPTY_CELL_HATCH_GLYPH,
+  emptyHatchBg,
+  emptyHatchColor,
   neutralRailColor,
   selectionHighlightBg,
   splitCellPalette,
@@ -849,6 +852,23 @@ function applySelectionPrefix<P extends { bg: string }>(prefix: P, theme: AppThe
   };
 }
 
+/**
+ * Render the diagonal-hatch content for a split cell that has no line on this side.
+ *
+ * Returns a single fixed-width span of {@link EMPTY_CELL_HATCH_GLYPH} so an absent region reads as
+ * "nothing here" without painting a flat filler background.
+ */
+function renderEmptyHatch(width: number, theme: AppTheme, keyPrefix: string) {
+  if (width <= 0) {
+    return null;
+  }
+  return (
+    <span key={`${keyPrefix}:hatch`} fg={emptyHatchColor(theme)} bg={emptyHatchBg(theme)}>
+      {EMPTY_CELL_HATCH_GLYPH.repeat(width)}
+    </span>
+  );
+}
+
 /** Render one split-view cell as prefix + gutter + content spans. */
 function renderSplitCell(
   cell: SplitLineCell,
@@ -902,16 +922,18 @@ function renderSplitCell(
       <span key={`${keyPrefix}:gutter`} fg={palette.numberColor} bg={palette.gutterBg}>
         {gutterText}
       </span>
-      {renderInlineSpans(
-        cell.spans,
-        contentWidth,
-        theme.syntaxColors.default,
-        palette.contentBg,
-        `${keyPrefix}:content`,
-        contentOffset,
-        selected ? theme : undefined,
-        localColRange,
-      )}
+      {cell.kind === "empty"
+        ? renderEmptyHatch(contentWidth, theme, `${keyPrefix}:content`)
+        : renderInlineSpans(
+            cell.spans,
+            contentWidth,
+            theme.syntaxColors.default,
+            palette.contentBg,
+            `${keyPrefix}:content`,
+            contentOffset,
+            selected ? theme : undefined,
+            localColRange,
+          )}
     </>
   );
 }
@@ -996,6 +1018,7 @@ function renderWrappedSplitCellLine(
   selected = false,
   selectionColRange?: CopySelectedRowRange,
   paneOffset = 0,
+  isEmptyCell = false,
 ) {
   const resolvedPalette = selected ? applySelectionPalette(palette, theme) : palette;
   const resolvedPrefix = selected ? applySelectionPrefix(prefix, theme) : prefix;
@@ -1026,16 +1049,18 @@ function renderWrappedSplitCellLine(
       >
         {line.gutterText}
       </span>
-      {renderInlineSpans(
-        line.spans,
-        contentWidth,
-        theme.syntaxColors.default,
-        resolvedPalette.contentBg,
-        `${keyPrefix}:content`,
-        0,
-        selected ? theme : undefined,
-        localColRange,
-      )}
+      {isEmptyCell
+        ? renderEmptyHatch(contentWidth, theme, `${keyPrefix}:content`)
+        : renderInlineSpans(
+            line.spans,
+            contentWidth,
+            theme.syntaxColors.default,
+            resolvedPalette.contentBg,
+            `${keyPrefix}:content`,
+            0,
+            selected ? theme : undefined,
+            localColRange,
+          )}
     </>
   );
 }
@@ -1549,6 +1574,7 @@ function renderRow(
                       hasLeftSelection,
                       hasLeftSelection ? copySelectedRowRange : undefined,
                       0,
+                      row.left.kind === "empty",
                     )}
                     {renderWrappedSplitCellLine(
                       rightLine,
@@ -1560,6 +1586,7 @@ function renderRow(
                       hasRightSelection,
                       hasRightSelection ? copySelectedRowRange : undefined,
                       leftWidth,
+                      row.right.kind === "empty",
                     )}
                     {guideOnNewSide ? (
                       <span key={`${row.key}:note-guide:${index}`} fg={theme.noteBorder}>
