@@ -1,10 +1,17 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { resolveConfiguredCliInput } from "../core/config";
 import { collectSessionCustomThemes } from "../core/customThemes";
 import { loadAppBootstrap } from "../core/loaders";
 import { resolveRuntimeCliInput } from "../core/terminal";
 import type { StartupNotice } from "../core/startupNotice";
 import type { AppBootstrap, CliInput } from "../core/types";
+import {
+  applyExtensionChangesetTransforms,
+  applyExtensionRegistrations,
+  reportExtensionApplyIssues,
+} from "../extensions/apply";
+import { emitExtensionEvent, emitExtensionEventBounded } from "../extensions/events";
+import { loadStartupExtensions } from "../extensions/startup";
 import {
   createInitialSessionSnapshot,
   updateSessionRegistration,
@@ -13,7 +20,7 @@ import {
   createSessionReloadBounds,
   validateSessionReloadWithinBounds,
 } from "../hunk-session/sessionFileBounds";
-import type { HunkSessionBrokerClient } from "../hunk-session/types";
+import type { HunkSessionBrokerClient, ReloadSessionOptions } from "../hunk-session/types";
 import { App } from "./App";
 import { useStartupNotices } from "./hooks/useStartupNotices";
 import type { WatchedInputRuntime } from "./hooks/useWatchedInput";
@@ -34,6 +41,9 @@ export function AppHost({
 }) {
   const [activeBootstrap, setActiveBootstrap] = useState(bootstrap);
   const [appVersion, setAppVersion] = useState(0);
+  // Extensions outlive App remounts, and a trust grant can replace the whole
+  // load result mid-session, so the host owns them rather than the bootstrap.
+  const extensionsRef = useRef(bootstrap.extensions);
   // Experimental capabilities are launch authority: remote/watch reloads may replace content,
   // but opting in or out requires starting a new Hunk process.
   const launchExperimental = bootstrap.input.options.experimental === true;
@@ -46,8 +56,16 @@ export function AppHost({
     resolver: startupNoticeResolver,
   });
 
+  useEffect(() => {
+    // Child effects run before the parent's, so by the time this fires the review
+    // UI is mounted with its first changeset — which is what `startup` promises.
+    emitExtensionEvent(extensionsRef.current, "startup", {
+      cwd: bootstrap.reloadContext.cwd,
+    });
+  }, [bootstrap.reloadContext.cwd]);
+
   const reloadSession = useCallback(
-    async (nextInput: CliInput, options?: { resetApp?: boolean; sourcePath?: string }) => {
+    async (nextInput: CliInput, options?: ReloadSessionOptions) => {
       // Re-run the same startup normalization pipeline used on first launch so reloads honor
       // runtime defaults and config layering instead of assuming `nextInput` is already final.
       // `sourcePath` matters for daemon-driven reloads that ask Hunk to reopen content from a
@@ -63,17 +81,42 @@ export function AppHost({
         sourcePath: options?.sourcePath,
       });
       const configured = resolveConfiguredCliInput(runtimeInput, { cwd });
+
+      if (options?.reloadExtensions) {
+        // Reuse the session's notification hub so the mounted toast surface keeps
+        // receiving `ctx.notify` from the extensions this pass loads.
+        extensionsRef.current = await loadStartupExtensions({
+          extensions: configured.extensions,
+          cwd,
+          cliExtensionPaths: configured.input.options.extensionPaths,
+          notifications: extensionsRef.current?.notifications,
+        });
+      }
+
+      const extensions = extensionsRef.current;
+      // Registrations are reapplied every reload so a pass that added extensions
+      // contributes exactly what a fresh launch would have.
+      const applied = applyExtensionRegistrations(extensions);
+      if (extensions) {
+        reportExtensionApplyIssues(applied.issues, extensions.context);
+      }
+
       // Extensions are loaded once per process, so a reload re-merges the same registry themes
       // instead of dropping them from the selector.
       const sessionThemes = collectSessionCustomThemes(
         configured.customThemes,
-        bootstrap.extensions?.registry.themes,
+        extensions?.registry.themes,
       );
       const nextBootstrap = await loadAppBootstrap(configured.input, {
         cwd,
         customThemes: sessionThemes.themes,
+        vcsAdapters: applied.vcsAdapters,
       });
-      nextBootstrap.extensions = bootstrap.extensions;
+      nextBootstrap.changeset = await applyExtensionChangesetTransforms(
+        extensions,
+        nextBootstrap.changeset,
+      );
+      nextBootstrap.extensions = extensions;
       nextBootstrap.startupNotices = configured.startupNotices;
       nextBootstrap.viewPreferencesConfigPath = configured.viewPreferencesConfigPath;
       const nextSnapshot = createInitialSessionSnapshot(nextBootstrap);
@@ -98,6 +141,11 @@ export function AppHost({
         setAppVersion((current) => current + 1);
       }
 
+      emitExtensionEvent(extensions, "session_reload", {
+        changeset: nextBootstrap.changeset,
+        reason: options?.reason ?? "daemon",
+      });
+
       return {
         sessionId,
         inputKind: nextBootstrap.input.kind,
@@ -111,13 +159,18 @@ export function AppHost({
     [hostClient, launchExperimental, sessionFileBounds],
   );
 
+  /** Give `shutdown` handlers a bounded window, then leave regardless. */
+  const quitAfterShutdownEvent = useCallback(() => {
+    void emitExtensionEventBounded(extensionsRef.current, "shutdown", {}).finally(onQuit);
+  }, [onQuit]);
+
   return (
     <App
       key={appVersion}
       bootstrap={activeBootstrap}
       hostClient={hostClient}
       noticeText={startupNoticeText}
-      onQuit={onQuit}
+      onQuit={quitAfterShutdownEvent}
       onReloadSession={reloadSession}
       watchRuntime={watchRuntime}
     />

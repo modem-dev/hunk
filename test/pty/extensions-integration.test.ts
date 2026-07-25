@@ -1,0 +1,153 @@
+import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { createPtyHarness } from "./harness";
+
+const harness = createPtyHarness();
+
+/** Give PTY-backed startup, reloads, and redraws headroom on slower CI machines. */
+setDefaultTimeout(30_000);
+
+afterEach(() => {
+  harness.cleanup();
+});
+
+/** Read the persisted repo-trust decisions from one isolated config home. */
+function readTrustState(configHome: string): Record<string, string> {
+  const statePath = join(configHome, "hunk", "state.json");
+  if (!existsSync(statePath)) {
+    return {};
+  }
+
+  const parsed = JSON.parse(readFileSync(statePath, "utf8")) as {
+    extensionTrust?: Record<string, string>;
+  };
+  return parsed.extensionTrust ?? {};
+}
+
+/**
+ * A repo-local extension whose effect is unmistakable in a snapshot: it renames
+ * the changeset and drops one of the two reviewed files.
+ */
+const TRANSFORM_EXTENSION_SOURCE = `export default function (hunk) {
+  hunk.transformChangeset((changeset) => ({
+    ...changeset,
+    title: "REPO EXTENSION ACTIVE",
+    files: changeset.files.filter((file) => !file.path.includes("beta")),
+  }));
+}
+`;
+
+/** A repo-local extension that only speaks through ctx.notify on startup. */
+const NOTIFY_EXTENSION_SOURCE = `export default function (hunk) {
+  hunk.on("startup", (_payload, ctx) => {
+    ctx.notify("hello from the fixture extension");
+  });
+}
+`;
+
+describe("PTY extensions", () => {
+  test("trust prompt runs repo extensions after the user trusts the repository", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(TRANSFORM_EXTENSION_SOURCE);
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "stack"],
+      cwd: fixture.dir,
+      cols: 140,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      const prompt = await session.waitForText(/Run this repository's extensions\?/, {
+        timeout: 20_000,
+      });
+      expect(prompt).toContain(".hunk/extensions");
+      expect(prompt).toContain("Extensions run with your user permissions.");
+      // The extension has not run yet, so both files are still under review.
+      expect(prompt).toContain("beta.ts");
+
+      await session.press("t");
+
+      const reloaded = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("REPO EXTENSION ACTIVE"),
+        20_000,
+      );
+      expect(reloaded).not.toContain("Run this repository's extensions?");
+      // The transform filtered beta.ts out of the review stream and the sidebar.
+      expect(reloaded).not.toContain("beta.ts");
+      expect(reloaded).toContain("alpha.ts");
+
+      expect(readTrustState(configHome)[fixture.dir]).toBe("trusted");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("escape dismisses the trust prompt without persisting a decision", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(TRANSFORM_EXTENSION_SOURCE);
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "stack"],
+      cwd: fixture.dir,
+      cols: 140,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      await session.waitForText(/Run this repository's extensions\?/, { timeout: 20_000 });
+      await session.press("escape");
+
+      const dismissed = await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("Run this repository's extensions?"),
+        10_000,
+      );
+      // Review continues untransformed, because the extension never ran.
+      expect(dismissed).toContain("beta.ts");
+      expect(dismissed).not.toContain("REPO EXTENSION ACTIVE");
+
+      expect(readTrustState(configHome)[fixture.dir]).toBeUndefined();
+    } finally {
+      session.close();
+    }
+  });
+
+  test("a startup handler's notify renders as a toast and clears itself", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(NOTIFY_EXTENSION_SOURCE);
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        "--mode",
+        "stack",
+        // Load the fixture through the dev flag so it is trusted without a prompt.
+        "--extension",
+        join(fixture.dir, ".hunk", "extensions", "fixture.ts"),
+      ],
+      cwd: fixture.dir,
+      cols: 140,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      const toast = await session.waitForText(/hello from the fixture extension/, {
+        timeout: 20_000,
+      });
+      expect(toast).toContain("ext hello from the fixture extension");
+
+      const cleared = await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("hello from the fixture extension"),
+        15_000,
+      );
+      // The review itself is untouched once the transient toast retires.
+      expect(cleared).toContain("alpha.ts");
+    } finally {
+      session.close();
+    }
+  });
+});

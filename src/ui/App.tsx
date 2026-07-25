@@ -20,9 +20,16 @@ import type {
   UserNoteLineTarget,
 } from "../core/types";
 import { canReloadInput } from "../core/watch";
-import type { HunkSessionBrokerClient, ReloadedSessionResult } from "../hunk-session/types";
+import { emitExtensionEvent } from "../extensions/events";
+import { writeExtensionTrust } from "../extensions/trust";
+import type {
+  HunkSessionBrokerClient,
+  ReloadedSessionResult,
+  ReloadSessionOptions,
+} from "../hunk-session/types";
 import { MenuBar } from "./components/chrome/MenuBar";
 import { ConfirmDialog, confirmDialogHeight } from "./components/chrome/ConfirmDialog";
+import { ExtensionToast } from "./components/chrome/ExtensionToast";
 import { StatusBar } from "./components/chrome/StatusBar";
 import { DiffPane } from "./components/panes/DiffPane";
 import { SidebarPane } from "./components/panes/SidebarPane";
@@ -34,6 +41,7 @@ import {
 } from "./diff/codeColumns";
 import type { ActiveAddNoteAffordance } from "./diff/PierreDiffView";
 import { useAppKeyboardShortcuts } from "./hooks/useAppKeyboardShortcuts";
+import { useExtensionNotifications } from "./hooks/useExtensionNotifications";
 import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
 import { useMenuController } from "./hooks/useMenuController";
 import { useReviewController, type AgentNoteGeometrySnapshot } from "./hooks/useReviewController";
@@ -55,6 +63,15 @@ type ThemeSelectorState = {
 };
 
 const FAST_CODE_HORIZONTAL_SCROLL_COLUMNS = 8;
+
+/**
+ * Trailing debounce before one `selection_changed` event is emitted.
+ *
+ * Holding `[`/`]` or scrolling the review stream retargets the selection many
+ * times a second; extension handlers only care where the user came to rest, so
+ * intermediate selections are collapsed instead of dispatched.
+ */
+const SELECTION_CHANGED_DEBOUNCE_MS = 150;
 
 const LazyAgentSkillDialog = lazy(async () => ({
   default: (await import("./components/chrome/AgentSkillDialog")).AgentSkillDialog,
@@ -117,7 +134,7 @@ export function App({
   onQuit?: () => void;
   onReloadSession: (
     nextInput: CliInput,
-    options?: { resetApp?: boolean; sourcePath?: string },
+    options?: ReloadSessionOptions,
   ) => Promise<ReloadedSessionResult>;
   watchRuntime?: WatchedInputRuntime;
 }) {
@@ -178,6 +195,14 @@ export function App({
   const [resizeStartWidth, setResizeStartWidth] = useState<number | null>(null);
   const [sessionNoticeText, setSessionNoticeText] = useState<string | null>(null);
   const sessionNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const extensions = bootstrap.extensions;
+  const pendingTrustRepoRoot = extensions?.pendingTrustRepoRoot;
+  const extensionToast = useExtensionNotifications(extensions?.notifications);
+  // Repo-local extensions were discovered but skipped for want of a trust
+  // decision, so ask once per mounted review rather than on every reload.
+  const [extensionTrustPromptOpen, setExtensionTrustPromptOpen] = useState(
+    () => !pagerMode && Boolean(pendingTrustRepoRoot),
+  );
 
   const themeOptions = useMemo(
     () => availableThemes(bootstrap.customThemes),
@@ -299,6 +324,24 @@ export function App({
       }
     };
   }, []);
+
+  useEffect(() => {
+    // Every load produces a fresh changeset object, so this covers the first
+    // review plus soft reloads; hard reloads remount App and land here again.
+    emitExtensionEvent(extensions, "changeset_loaded", { changeset: bootstrap.changeset });
+  }, [bootstrap.changeset, extensions]);
+
+  const selectedFileId = selectedFile?.id ?? null;
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      emitExtensionEvent(extensions, "selection_changed", {
+        fileId: selectedFileId,
+        hunkIndex: selectedFileId === null ? null : selectedHunkIndex,
+      });
+    }, SELECTION_CHANGED_DEBOUNCE_MS);
+
+    return () => clearTimeout(timer);
+  }, [extensions, selectedFileId, selectedHunkIndex]);
 
   const bodyPadding = pagerMode ? 0 : BODY_PADDING;
   const bodyWidth = Math.max(0, terminal.width - bodyPadding);
@@ -603,49 +646,114 @@ export function App({
   const watchEnabled = Boolean(bootstrap.input.options.watch && canRefreshCurrentInput);
 
   /** Rebuild the current diff source while preserving the active app view options. */
-  const refreshCurrentInput = useCallback(async () => {
-    if (!canRefreshCurrentInput) {
-      return;
-    }
+  const refreshCurrentInput = useCallback(
+    async (options?: Pick<ReloadSessionOptions, "reason" | "reloadExtensions">) => {
+      if (!canRefreshCurrentInput) {
+        return;
+      }
 
-    const nextInput = withCurrentViewOptions(bootstrap.input, {
+      const nextInput = withCurrentViewOptions(bootstrap.input, {
+        layoutMode,
+        themeId,
+        showAgentNotes,
+        showHunkHeaders,
+        showLineNumbers,
+        showMenuBar,
+        wrapLines,
+      });
+
+      await onReloadSession(nextInput, {
+        ...options,
+        resetApp: false,
+        sourcePath:
+          bootstrap.input.kind === "vcs" ||
+          bootstrap.input.kind === "show" ||
+          bootstrap.input.kind === "stash-show"
+            ? bootstrap.changeset.sourceLabel
+            : undefined,
+      });
+    },
+    [
+      bootstrap.changeset.sourceLabel,
+      bootstrap.input,
+      canRefreshCurrentInput,
       layoutMode,
-      themeId,
+      onReloadSession,
       showAgentNotes,
       showHunkHeaders,
       showLineNumbers,
       showMenuBar,
+      themeId,
       wrapLines,
-    });
-
-    await onReloadSession(nextInput, {
-      resetApp: false,
-      sourcePath:
-        bootstrap.input.kind === "vcs" ||
-        bootstrap.input.kind === "show" ||
-        bootstrap.input.kind === "stash-show"
-          ? bootstrap.changeset.sourceLabel
-          : undefined,
-    });
-  }, [
-    bootstrap.changeset.sourceLabel,
-    bootstrap.input,
-    canRefreshCurrentInput,
-    layoutMode,
-    onReloadSession,
-    showAgentNotes,
-    showHunkHeaders,
-    showLineNumbers,
-    showMenuBar,
-    themeId,
-    wrapLines,
-  ]);
+    ],
+  );
 
   const triggerRefreshCurrentInput = useCallback(() => {
-    void refreshCurrentInput().catch((error) => {
+    void refreshCurrentInput({ reason: "manual" }).catch((error) => {
       console.error("Failed to reload the current diff.", error);
     });
   }, [refreshCurrentInput]);
+
+  /** Reload because the watcher saw the reviewed source change on disk. */
+  const refreshWatchedInput = useCallback(
+    () => refreshCurrentInput({ reason: "watch" }),
+    [refreshCurrentInput],
+  );
+
+  /** Dismiss the repo-extension trust prompt without recording a decision. */
+  const closeExtensionTrustPrompt = useCallback(() => {
+    setExtensionTrustPromptOpen(false);
+  }, []);
+
+  /**
+   * Record this repo as trusted, then reload so its extensions actually load.
+   *
+   * The reload goes through the normal session-reload path with extension
+   * loading re-run, which is what makes a freshly trusted transform or theme
+   * apply without restarting Hunk.
+   */
+  const trustRepoExtensions = useCallback(() => {
+    setExtensionTrustPromptOpen(false);
+    if (!pendingTrustRepoRoot) {
+      return;
+    }
+
+    try {
+      writeExtensionTrust(pendingTrustRepoRoot, "trusted");
+    } catch (error) {
+      showSessionNotice(
+        error instanceof Error ? error.message : "Failed to record the trust decision.",
+      );
+      return;
+    }
+
+    if (!canRefreshCurrentInput) {
+      // Stdin-backed reviews cannot be reopened, so trust applies next launch.
+      showSessionNotice("Trusted this repository • restart Hunk to load its extensions");
+      return;
+    }
+
+    void refreshCurrentInput({ reason: "manual", reloadExtensions: true }).catch(() => {
+      showSessionNotice("Failed to reload after trusting this repository's extensions.");
+    });
+  }, [canRefreshCurrentInput, pendingTrustRepoRoot, refreshCurrentInput, showSessionNotice]);
+
+  /** Record this repo as denied so Hunk stops offering to run its extensions. */
+  const denyRepoExtensions = useCallback(() => {
+    setExtensionTrustPromptOpen(false);
+    if (!pendingTrustRepoRoot) {
+      return;
+    }
+
+    try {
+      writeExtensionTrust(pendingTrustRepoRoot, "denied");
+      showSessionNotice("Won't run this repository's extensions");
+    } catch (error) {
+      showSessionNotice(
+        error instanceof Error ? error.message : "Failed to record the trust decision.",
+      );
+    }
+  }, [pendingTrustRepoRoot, showSessionNotice]);
 
   const triggerEditSelectedFile = useCallback(() => {
     const basePath =
@@ -683,7 +791,7 @@ export function App({
   useWatchedInput({
     enabled: watchEnabled,
     input: bootstrap.input,
-    refresh: refreshCurrentInput,
+    refresh: refreshWatchedInput,
     reloadContext: bootstrap.reloadContext,
     runtime: watchRuntime,
   });
@@ -927,6 +1035,10 @@ export function App({
     acceptThemeSelector,
     cancelDraftNote,
     closeThemeSelector,
+    closeExtensionTrustPrompt,
+    denyRepoExtensions,
+    extensionTrustPromptOpen,
+    trustRepoExtensions,
     focusArea,
     focusFilter,
     moveToAnnotatedHunk,
@@ -1159,6 +1271,14 @@ export function App({
         />
       </box>
 
+      {!pagerMode && extensionToast ? (
+        <ExtensionToast
+          notification={extensionToast}
+          terminalWidth={terminal.width}
+          theme={activeTheme}
+        />
+      ) : null}
+
       {!pagerMode &&
       (focusArea === "filter" ||
         Boolean(review.filter) ||
@@ -1259,6 +1379,41 @@ export function App({
               </text>
             </box>
           ))}
+        </ConfirmDialog>
+      ) : null}
+
+      {!pagerMode && extensionTrustPromptOpen && pendingTrustRepoRoot ? (
+        <ConfirmDialog
+          actions={[
+            { keyLabel: "enter/t", label: "trust", run: trustRepoExtensions },
+            { keyLabel: "esc", label: "not now", run: closeExtensionTrustPrompt },
+            { keyLabel: "n", label: "never", run: denyRepoExtensions },
+          ]}
+          height={confirmDialogHeight(5)}
+          terminalHeight={terminal.height}
+          terminalWidth={terminal.width}
+          theme={baseTheme}
+          title="Run this repository's extensions?"
+          width={72}
+          onClose={closeExtensionTrustPrompt}
+        >
+          <box style={{ width: "100%", height: 1 }}>
+            <text fg={baseTheme.muted}>
+              This repository contains extensions in .hunk/extensions.
+            </text>
+          </box>
+          <box style={{ width: "100%", height: 1 }}>
+            <text fg={baseTheme.muted}>Extensions run with your user permissions.</text>
+          </box>
+          <box style={{ width: "100%", height: 1 }} />
+          <box style={{ width: "100%", height: 1 }}>
+            <text fg={baseTheme.badgeNeutral}>{pendingTrustRepoRoot}</text>
+          </box>
+          <box style={{ width: "100%", height: 1 }}>
+            <text fg={baseTheme.muted}>
+              Trust runs them now and remembers this repo; never won't ask again.
+            </text>
+          </box>
         </ConfirmDialog>
       ) : null}
 

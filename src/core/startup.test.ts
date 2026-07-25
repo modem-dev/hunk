@@ -332,7 +332,7 @@ describe("startup planning", () => {
       resolveConfiguredCliInputImpl: (input) => createTestConfigResolution(input, { customThemes }),
       loadAppBootstrapImpl: async (input, options) => {
         expect(input).toBe(cliInput);
-        expect(options).toEqual({ customThemes });
+        expect(options).toEqual({ customThemes, vcsAdapters: [] });
         return {
           ...createBootstrap(input),
           customThemes,

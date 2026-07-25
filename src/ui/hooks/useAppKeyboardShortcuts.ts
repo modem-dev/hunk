@@ -60,6 +60,10 @@ export interface UseAppKeyboardShortcutsOptions {
   acceptThemeSelector: () => void;
   cancelDraftNote: () => void;
   closeThemeSelector: () => void;
+  closeExtensionTrustPrompt: () => void;
+  denyRepoExtensions: () => void;
+  extensionTrustPromptOpen: boolean;
+  trustRepoExtensions: () => void;
   focusArea: FocusArea;
   focusFilter: () => void;
   moveToAnnotatedHunk: (delta: number) => void;
@@ -109,6 +113,10 @@ export function useAppKeyboardShortcuts({
   acceptThemeSelector,
   cancelDraftNote,
   closeThemeSelector,
+  closeExtensionTrustPrompt,
+  denyRepoExtensions,
+  extensionTrustPromptOpen,
+  trustRepoExtensions,
   focusArea,
   focusFilter,
   moveToAnnotatedHunk,
@@ -153,6 +161,7 @@ export function useAppKeyboardShortcuts({
   const showHelpRef = useRef(showHelp);
   const saveConfigPromptOpenRef = useRef(saveConfigPromptOpen);
   const themeSelectorOpenRef = useRef(themeSelectorOpen);
+  const extensionTrustPromptOpenRef = useRef(extensionTrustPromptOpen);
 
   activeMenuIdRef.current = activeMenuId;
   focusAreaRef.current = focusArea;
@@ -161,6 +170,7 @@ export function useAppKeyboardShortcuts({
   showHelpRef.current = showHelp;
   saveConfigPromptOpenRef.current = saveConfigPromptOpen;
   themeSelectorOpenRef.current = themeSelectorOpen;
+  extensionTrustPromptOpenRef.current = extensionTrustPromptOpen;
 
   const resolveJumpShortcut = (key: KeyEvent): JumpShortcut | null => {
     if (isUppercaseGKey(key)) {
@@ -321,6 +331,37 @@ export function useAppKeyboardShortcuts({
 
     if (isEscapeKey(key)) {
       closeSaveConfigPrompt();
+      return true;
+    }
+
+    return true;
+  };
+
+  /**
+   * Own every key while the repo-extension trust prompt is up.
+   *
+   * The prompt is a security decision, so no key may fall through to review
+   * navigation and leave it ambiguous which choice the user just made. Escape
+   * is deliberately the same as "not now": dismiss, persist nothing.
+   */
+  const handleExtensionTrustPromptShortcut = (key: KeyEvent) => {
+    if (!extensionTrustPromptOpenRef.current) {
+      return false;
+    }
+
+    consumeKey(key);
+    if (key.name === "return" || key.name === "enter" || key.name === "t" || key.sequence === "t") {
+      trustRepoExtensions();
+      return true;
+    }
+
+    if (key.name === "n" || key.sequence === "n") {
+      denyRepoExtensions();
+      return true;
+    }
+
+    if (isEscapeKey(key)) {
+      closeExtensionTrustPrompt();
       return true;
     }
 
@@ -618,6 +659,10 @@ export function useAppKeyboardShortcuts({
   };
 
   useKeyboard((key: KeyEvent) => {
+    if (handleExtensionTrustPromptShortcut(key)) {
+      return;
+    }
+
     if (handleSaveConfigPromptShortcut(key)) {
       return;
     }

@@ -5,6 +5,7 @@ import { createHunkSessionBridge } from "../../hunk-session/bridge";
 import type {
   HunkSessionBrokerClient,
   ReloadedSessionResult,
+  ReloadSessionOptions,
   SessionLiveCommentSummary,
   SessionReviewNoteSummary,
 } from "../../hunk-session/types";
@@ -42,7 +43,7 @@ export function useHunkSessionBridge({
   openAgentNotes: () => void;
   reloadSession: (
     nextInput: CliInput,
-    options?: { resetApp?: boolean; sourcePath?: string },
+    options?: ReloadSessionOptions,
   ) => Promise<ReloadedSessionResult>;
   removeLiveComment: ReviewController["removeLiveComment"];
   reviewNoteCount: number;

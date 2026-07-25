@@ -234,6 +234,34 @@ To use Hunk as Sapling's pager, run `sl config -u` and update:
 pager = hunk pager
 ```
 
+### Extensions
+
+Hunk loads plain TypeScript extensions from `~/.config/hunk/extensions/`, from a
+repository's `.hunk/extensions/` (after you explicitly trust that repository),
+and from `--extension <path>` for development. `--no-extensions` turns them all
+off for one run.
+
+A Phase 1 extension can contribute themes and file-extension → language
+mappings, add a VCS backend, rewrite the changeset before review (collapse
+lockfiles, reorder files by review priority), react to lifecycle events, and
+show transient messages:
+
+```ts
+// ~/.config/hunk/extensions/collapse-lockfiles.ts
+import type { HunkExtensionAPI } from "hunkdiff/extension";
+
+export default function (hunk: HunkExtensionAPI) {
+  hunk.transformChangeset((changeset, ctx) => {
+    const files = changeset.files.filter((file) => !file.path.endsWith(".lock"));
+    ctx.notify(`Collapsed ${changeset.files.length - files.length} lockfiles`);
+    return { ...changeset, files };
+  });
+}
+```
+
+See [docs/extensions.md](docs/extensions.md) for the full API, the trust model,
+and the `[extensions]` / `[extension.<id>]` config reference.
+
 ### OpenTUI component
 
 Hunk also publishes `HunkDiffView` and lower-level primitives from `hunkdiff/opentui` for embedding the same diff renderer in your own OpenTUI app.

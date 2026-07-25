@@ -14,6 +14,7 @@ import { splitPatchIntoFileChunks, findPatchChunk } from "./patch/chunks";
 import { normalizePatchText, stripTerminalControl } from "./patch/normalize";
 import { DEFAULT_TAB_WIDTH } from "./tabWidth";
 import { getConfiguredVcsAdapter, loadVcsReview, operationFromInput } from "./vcs";
+import type { VcsAdapter } from "./vcs/types";
 import { computeWatchSignature } from "./watch";
 import type {
   AppBootstrap,
@@ -36,6 +37,8 @@ interface LoadAppBootstrapOptions {
   cwd?: string;
   /** Selectable custom themes for this session, already merged into menu order. */
   customThemes?: readonly NamedCustomThemeConfig[];
+  /** Extension-contributed VCS backends this session may load reviews through. */
+  vcsAdapters?: readonly VcsAdapter[];
   gitExecutable?: string;
 }
 
@@ -376,8 +379,9 @@ async function loadVcsChangeset(
   agentContext: AgentContext | null,
   cwd = process.cwd(),
   gitExecutable = "git",
+  extensionVcsAdapters: readonly VcsAdapter[] = [],
 ) {
-  const adapter = getConfiguredVcsAdapter(input.options.vcs);
+  const adapter = getConfiguredVcsAdapter(input.options.vcs, extensionVcsAdapters);
   const operation = operationFromInput(input);
   const result = await loadVcsReview(adapter, operation, { cwd, gitExecutable });
   const parsedChangeset = normalizePatchChangeset(
@@ -425,7 +429,12 @@ async function loadPatchChangeset(
 /** Resolve CLI input into the fully loaded app bootstrap state. */
 export async function loadAppBootstrap(
   input: CliInput,
-  { cwd = process.cwd(), customThemes, gitExecutable = "git" }: LoadAppBootstrapOptions = {},
+  {
+    cwd = process.cwd(),
+    customThemes,
+    vcsAdapters,
+    gitExecutable = "git",
+  }: LoadAppBootstrapOptions = {},
 ): Promise<AppBootstrap> {
   // Capture before loading content so watch mode can detect mutations that race initial loading.
   let initialWatchSignature: string | undefined;
@@ -447,7 +456,7 @@ export async function loadAppBootstrap(
     case "show":
     case "stash-show":
       {
-        const result = await loadVcsChangeset(input, agentContext, cwd, gitExecutable);
+        const result = await loadVcsChangeset(input, agentContext, cwd, gitExecutable, vcsAdapters);
         changeset = result.changeset;
         repoRoot = result.repoRoot;
       }

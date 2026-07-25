@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Changeset } from "../core/types";
 import { loadExtensions } from "./host";
+import { createExtensionNotificationHub } from "./notifications";
 import { deriveExtensionId, type ExtensionCandidate, type ExtensionOrigin } from "./types";
 
 const tempDirs: string[] = [];
@@ -228,23 +229,32 @@ export default function (hunk: HunkExtensionAPI) {
     );
 
     const notices: Array<[string, string]> = [];
+    const notifications = createExtensionNotificationHub();
+    notifications.subscribe((notification) =>
+      notices.push([notification.message, notification.type]),
+    );
     const result = await loadExtensions({
       candidates: [candidate],
       cwd: dir,
-      notify: (message, type) => notices.push([message, type]),
+      notifications,
     });
 
     // The load pass owns one context, so every extension notifies the same sink.
     expect(result.context.cwd).toBe(dir);
+    expect(result.notifications).toBe(notifications);
     await result.registry.changesetTransforms[0]?.transform(createTestChangeset(), result.context);
 
     expect(notices).toEqual([["hello", "warning"]]);
   });
 
-  test("defaults ctx.notify to a no-op when no sink is supplied", async () => {
+  test("gives every load pass a notification hub when none is supplied", async () => {
     const dir = createTempDir("hunk-host-no-sink-");
     const result = await loadExtensions({ candidates: [], cwd: dir });
 
     expect(() => result.context.notify("ignored")).not.toThrow();
+    // The buffered notification is still delivered once a listener attaches.
+    const seen: string[] = [];
+    result.notifications.subscribe((notification) => seen.push(notification.message));
+    expect(seen).toEqual(["ignored"]);
   });
 });

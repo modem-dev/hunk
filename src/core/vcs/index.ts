@@ -18,36 +18,66 @@ import type {
 export const DEFAULT_VCS_ADAPTER = GitVcsAdapter;
 export const vcsAdapters: VcsAdapter[] = [JjVcsAdapter, SaplingVcsAdapter, DEFAULT_VCS_ADAPTER];
 
+/**
+ * Combine built-in adapters with the session's extension-contributed ones.
+ *
+ * Built-ins stay first so they keep priority in both detection tie-breaks and
+ * id lookup; an extension adapter that reuses a built-in id is dropped here
+ * (callers report the skip once, at registration time).
+ */
+export function resolveVcsAdapters(extraAdapters: readonly VcsAdapter[] = []): VcsAdapter[] {
+  if (extraAdapters.length === 0) {
+    return vcsAdapters;
+  }
+
+  return [...vcsAdapters, ...extraAdapters.filter((adapter) => !isVcsId(adapter.id))];
+}
+
 /** Return the fallback adapter used when config has not selected a provider explicitly. */
 export function getDefaultVcsAdapter() {
   return DEFAULT_VCS_ADAPTER;
 }
 
 /** Return the configured adapter, or the default adapter when no VCS id was supplied. */
-export function getConfiguredVcsAdapter(id: VcsId | undefined): VcsAdapter {
-  return id ? getVcsAdapter(id) : getDefaultVcsAdapter();
+export function getConfiguredVcsAdapter(
+  id: VcsId | undefined,
+  extraAdapters: readonly VcsAdapter[] = [],
+): VcsAdapter {
+  return id ? getVcsAdapter(id, extraAdapters) : getDefaultVcsAdapter();
 }
 
-export function getVcsAdapter(id: VcsId): VcsAdapter {
-  const adapter = vcsAdapters.find((candidate) => candidate.id === id);
+export function getVcsAdapter(id: VcsId, extraAdapters: readonly VcsAdapter[] = []): VcsAdapter {
+  const adapter = resolveVcsAdapters(extraAdapters).find((candidate) => candidate.id === id);
   if (!adapter) {
     throw new Error(`Unsupported VCS: ${id}`);
   }
   return adapter;
 }
 
+/** Report whether one value names a built-in VCS backend. */
 export function isVcsId(value: unknown): value is VcsId {
   return vcsAdapters.some((adapter) => adapter.id === value);
 }
 
 /** Detect the nearest containing VCS checkout, using adapter order only to break same-root ties. */
-export function detectVcs(cwd: string): VcsDetection | null {
+export function detectVcs(
+  cwd: string,
+  extraAdapters: readonly VcsAdapter[] = [],
+): VcsDetection | null {
   const start = resolve(cwd);
   let bestDetection: VcsDetection | null = null;
   let bestDistance = Number.POSITIVE_INFINITY;
 
-  for (const adapter of vcsAdapters) {
-    const detected = adapter.detect(start);
+  for (const adapter of resolveVcsAdapters(extraAdapters)) {
+    // Extension adapters run third-party detection code here; a throwing
+    // adapter must not stop the remaining adapters from being consulted.
+    let detected: VcsDetection | null;
+    try {
+      detected = adapter.detect(start);
+    } catch {
+      continue;
+    }
+
     if (!detected) {
       continue;
     }

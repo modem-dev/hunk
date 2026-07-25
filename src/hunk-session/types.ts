@@ -1,6 +1,7 @@
 import type { ExperimentalFeature } from "../core/experimental";
 import type { CommentTargetInput, DiffSide } from "../core/liveComments";
 import type { CliInput, ReviewNoteSource } from "../core/types";
+import type { SessionReloadReason } from "../extensions/types";
 import type { SessionBrokerClient } from "../session-broker/brokerClient";
 import type {
   SessionClientMessage,
@@ -172,6 +173,20 @@ export interface ClearedCommentsResult {
   removedUserNoteCount?: number;
   remainingLiveCommentCount?: number;
   remainingUserNoteCount?: number;
+}
+
+/** Options one session reload accepts, shared by the host, the UI, and the daemon bridge. */
+export interface ReloadSessionOptions {
+  /** False keeps the mounted App and its in-memory review state. */
+  resetApp?: boolean;
+  sourcePath?: string;
+  /** What triggered the reload; forwarded to extension `session_reload` handlers. */
+  reason?: SessionReloadReason;
+  /**
+   * Re-run extension discovery and loading before reloading content, so repo
+   * extensions trusted mid-session take effect without restarting Hunk.
+   */
+  reloadExtensions?: boolean;
 }
 
 export interface ReloadedSessionResult {

@@ -1,5 +1,6 @@
 import { pathToFileURL } from "node:url";
 import { findVcsRepoRootCandidate } from "../core/vcs";
+import { createExtensionNotificationHub, type ExtensionNotificationHub } from "./notifications";
 import { resolveRepoTrust, type ExtensionTrustOptions, type ExtensionTrustState } from "./trust";
 import {
   createEmptyExtensionRegistry,
@@ -12,7 +13,6 @@ import {
   type ExtensionLoadIssue,
   type ExtensionLoadResult,
   type ExtensionMetadata,
-  type ExtensionNotifySink,
   type ExtensionRegistry,
   type ExtensionThemeConfig,
   type HunkExtensionAPI,
@@ -24,8 +24,11 @@ export interface LoadExtensionsOptions {
   cwd: string;
   /** Per-extension `[extension.<id>]` config tables, keyed by extension id. */
   extensionConfigs?: Record<string, Record<string, unknown>>;
-  /** Where `ctx.notify` messages go; no-ops until the UI owns a toast surface. */
-  notify?: ExtensionNotifySink;
+  /**
+   * Sink `ctx.notify` writes into. Defaults to a fresh hub; pass the existing
+   * one when reloading extensions mid-session so the UI keeps receiving them.
+   */
+  notifications?: ExtensionNotificationHub;
   /** Repo root repo-local candidates belong to; discovered from `cwd` when omitted. */
   repoRoot?: string;
   env?: NodeJS.ProcessEnv;
@@ -284,8 +287,9 @@ export async function loadExtensions(options: LoadExtensionsOptions): Promise<Ex
     }
   }
 
-  const context = createExtensionContext(options.cwd, options.notify);
+  const notifications = options.notifications ?? createExtensionNotificationHub();
+  const context = createExtensionContext(options.cwd, notifications.notify);
   return pendingTrustRepoRoot
-    ? { registry, issues, loaded, context, pendingTrustRepoRoot }
-    : { registry, issues, loaded, context };
+    ? { registry, issues, loaded, context, notifications, pendingTrustRepoRoot }
+    : { registry, issues, loaded, context, notifications };
 }

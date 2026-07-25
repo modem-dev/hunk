@@ -2,11 +2,11 @@ import type { StartupNotice } from "../core/startupNotice";
 import type { ExtensionsConfig } from "../core/types";
 import { discoverExtensions } from "./discovery";
 import { loadExtensions, type LoadExtensionsOptions } from "./host";
+import { createExtensionNotificationHub, type ExtensionNotificationHub } from "./notifications";
 import {
   createEmptyExtensionLoadResult,
   type ExtensionLoadIssue,
   type ExtensionLoadResult,
-  type ExtensionNotifySink,
 } from "./types";
 
 /** Keep one failure notice on a single footer row. */
@@ -19,8 +19,11 @@ export interface LoadStartupExtensionsOptions {
   env?: NodeJS.ProcessEnv;
   /** Entry paths from repeated `--extension` flags. */
   cliExtensionPaths?: readonly string[];
-  /** Where extension `ctx.notify` calls go once the UI owns a toast surface. */
-  notify?: ExtensionNotifySink;
+  /**
+   * Sink extension `ctx.notify` calls land in. Pass the hub from an earlier
+   * pass when reloading extensions so the mounted UI keeps receiving them.
+   */
+  notifications?: ExtensionNotificationHub;
   /** Test seams forwarded to the host loader. */
   hostOverrides?: Pick<
     LoadExtensionsOptions,
@@ -39,8 +42,11 @@ export async function loadStartupExtensions(
 ): Promise<ExtensionLoadResult> {
   const cwd = options.cwd ?? process.cwd();
   const env = options.env ?? process.env;
+  // One hub per pass unless the caller supplies the session's existing one, so
+  // `ctx.notify` always has somewhere to go even before the UI subscribes.
+  const notifications = options.notifications ?? createExtensionNotificationHub();
   if (!options.extensions.enabled) {
-    return createEmptyExtensionLoadResult(cwd, options.notify);
+    return createEmptyExtensionLoadResult(cwd, notifications);
   }
 
   const candidates = discoverExtensions({
@@ -53,7 +59,7 @@ export async function loadStartupExtensions(
   });
 
   if (candidates.length === 0) {
-    return createEmptyExtensionLoadResult(cwd, options.notify);
+    return createEmptyExtensionLoadResult(cwd, notifications);
   }
 
   return await loadExtensions({
@@ -61,7 +67,7 @@ export async function loadStartupExtensions(
     cwd,
     env,
     extensionConfigs: options.extensions.extensionConfigs,
-    notify: options.notify,
+    notifications,
     ...options.hostOverrides,
   });
 }

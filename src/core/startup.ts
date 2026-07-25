@@ -1,3 +1,9 @@
+import {
+  applyExtensionChangesetTransforms,
+  applyExtensionRegistrations,
+  createExtensionApplyNotices,
+  resolveExtensionDetectedVcsId,
+} from "../extensions/apply";
 import { loadStartupExtensions, mergeStartupNotices } from "../extensions/startup";
 import { resolveConfiguredCliInput } from "./config";
 import { collectSessionCustomThemes } from "./customThemes";
@@ -226,7 +232,8 @@ export async function prepareStartupPlan(
 
   const runtimeCliInput = resolveRuntimeCliInputImpl(parsedCliInput);
   const configured = resolveConfiguredCliInputImpl(runtimeCliInput);
-  const cliInput = configured.input;
+  // Reassigned once below if an extension VCS backend claims this checkout.
+  let cliInput = configured.input;
 
   // Any app session launched with piped stdin still needs a real terminal input stream for
   // keyboard, mouse, and terminal query responses. Auto-theme happened to open this path during
@@ -257,9 +264,10 @@ export async function prepareStartupPlan(
   // Extensions load before the changeset so later stages can hand their VCS adapters and
   // changeset transforms to the loading pipeline. Failures never reach here: the host
   // isolates them into issues that become startup notices below.
+  const startupCwd = process.cwd();
   const extensionResult = await loadStartupExtensionsImpl({
     extensions: configured.extensions,
-    cwd: process.cwd(),
+    cwd: startupCwd,
     env,
     cliExtensionPaths: cliInput.options.extensionPaths,
   });
@@ -271,19 +279,42 @@ export async function prepareStartupPlan(
     extensionResult.registry.themes,
   );
 
+  // File languages register globally; VCS adapters are threaded into loading below.
+  const applied = applyExtensionRegistrations(extensionResult);
+  // Config picked the VCS before extensions existed, so give an extension backend
+  // the chance to claim a checkout no built-in adapter recognized.
+  const detectedExtensionVcsId = resolveExtensionDetectedVcsId(startupCwd, applied.vcsAdapters);
+  if (detectedExtensionVcsId) {
+    cliInput = { ...cliInput, options: { ...cliInput.options, vcs: detectedExtensionVcsId } };
+  }
+
   let bootstrap: AppBootstrap;
   try {
-    bootstrap = await loadAppBootstrapImpl(cliInput, { customThemes: sessionThemes.themes });
+    bootstrap = await loadAppBootstrapImpl(cliInput, {
+      customThemes: sessionThemes.themes,
+      vcsAdapters: applied.vcsAdapters,
+    });
   } catch (error) {
     controllingTerminal?.close();
     throw error;
   }
 
+  // Transforms run on the loaded changeset so the sidebar and review stream both
+  // follow whatever the extensions produced, with no separate pre-transform copy.
+  bootstrap.changeset = await applyExtensionChangesetTransforms(
+    extensionResult,
+    bootstrap.changeset,
+  );
+
   bootstrap.initialThemeMode = initialThemeMode ?? bootstrap.initialThemeMode;
   bootstrap.startupNotices = mergeStartupNotices(
     // Keep the resolved array identity when extensions contributed no theme notices.
-    sessionThemes.notices.length > 0
-      ? [...(configured.startupNotices ?? []), ...sessionThemes.notices]
+    sessionThemes.notices.length > 0 || applied.issues.length > 0
+      ? [
+          ...(configured.startupNotices ?? []),
+          ...sessionThemes.notices,
+          ...createExtensionApplyNotices(applied.issues),
+        ]
       : configured.startupNotices,
     extensionResult,
   );

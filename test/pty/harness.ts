@@ -458,6 +458,39 @@ export function createPtyHarness() {
     return { mainDir, worktreeDir, trackedFile };
   }
 
+  /**
+   * Build a private config home so one test can assert on persisted Hunk state
+   * without seeing decisions another test in the same file recorded.
+   */
+  function createIsolatedConfigHome() {
+    return makeTempDir("hunk-tuistory-state-");
+  }
+
+  /**
+   * Build a repo whose committed `.hunk/extensions` entry starts untrusted.
+   *
+   * The entry file is committed rather than left untracked so the review under
+   * test shows only the two changed source files, keeping snapshot assertions
+   * about the extension's effect unambiguous.
+   */
+  function createRepoExtensionFixture(source: string, entryName = "fixture.ts") {
+    const dir = makeTempDir("hunk-tuistory-extension-");
+
+    runGit(["init"], dir);
+    runGit(["config", "user.name", "Pi"], dir);
+    runGit(["config", "user.email", "pi@example.com"], dir);
+    writeText(join(dir, "alpha.ts"), "export const alpha = 1;\n");
+    writeText(join(dir, "beta.ts"), "export const beta = 1;\n");
+    writeText(join(dir, ".hunk", "extensions", entryName), source);
+    runGit(["add", "."], dir);
+    runGit(["commit", "-m", "initial"], dir);
+
+    writeText(join(dir, "alpha.ts"), "export const alphaValue = 2;\n");
+    writeText(join(dir, "beta.ts"), "export const betaValue = 2;\n");
+
+    return { dir };
+  }
+
   function createGitRepoFixture(files: ChangedFileSpec[]) {
     const dir = makeTempDir("hunk-tuistory-repo-");
 
@@ -786,6 +819,8 @@ export function createPtyHarness() {
     createExpandableContextFilePair,
     createCrossFileHunkNavigationRepoFixture,
     createDeletionOnlyFilePair,
+    createIsolatedConfigHome,
+    createRepoExtensionFixture,
     createLinkedWorktreeWatchFixture,
     createLongWrapFilePair,
     createMultiHunkFilePair,

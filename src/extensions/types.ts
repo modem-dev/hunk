@@ -1,6 +1,7 @@
 import { basename, dirname, extname } from "node:path";
 import type { Changeset, NamedCustomThemeConfig } from "../core/types";
 import type { VcsAdapter } from "../core/vcs/types";
+import { createExtensionNotificationHub, type ExtensionNotificationHub } from "./notifications";
 
 /**
  * Version of the extension API surface handed to extension factories.
@@ -39,12 +40,21 @@ export type ChangesetTransform = (
   ctx: ExtensionContext,
 ) => Changeset | Promise<Changeset>;
 
+/**
+ * Why a session reload happened.
+ *
+ * `watch` is a file/VCS change Hunk noticed itself, `daemon` is an agent
+ * command routed through the session broker, and `manual` is a user action
+ * (the refresh key, or reloading after granting repo-extension trust).
+ */
+export type SessionReloadReason = "watch" | "daemon" | "manual";
+
 /** Payload delivered with each lifecycle event, keyed by event name. */
 export interface ExtensionEventPayloads {
   startup: { cwd: string };
   changeset_loaded: { changeset: Changeset };
   selection_changed: { fileId: string | null; hunkIndex: number | null };
-  session_reload: { changeset: Changeset };
+  session_reload: { changeset: Changeset; reason: SessionReloadReason };
   shutdown: Record<string, never>;
 }
 
@@ -164,6 +174,12 @@ export interface ExtensionLoadResult {
    */
   context: ExtensionContext;
   /**
+   * The sink behind `context.notify`, kept on the result so the UI can attach
+   * its toast surface and so a later load pass (after a trust grant) can reuse
+   * the same hub instead of orphaning the UI's subscription.
+   */
+  notifications: ExtensionNotificationHub;
+  /**
    * Repo root holding repo-local extensions that have no trust decision yet.
    * Set only when such extensions exist and were therefore skipped, so the UI
    * can prompt and reload.
@@ -222,12 +238,13 @@ export function createExtensionContext(
 /** Build the result used when extensions are disabled or nothing was discovered. */
 export function createEmptyExtensionLoadResult(
   cwd: string = process.cwd(),
-  notify?: ExtensionNotifySink,
+  notifications: ExtensionNotificationHub = createExtensionNotificationHub(),
 ): ExtensionLoadResult {
   return {
     registry: createEmptyExtensionRegistry(),
     issues: [],
     loaded: [],
-    context: createExtensionContext(cwd, notify),
+    context: createExtensionContext(cwd, notifications.notify),
+    notifications,
   };
 }

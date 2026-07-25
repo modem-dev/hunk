@@ -1,5 +1,27 @@
+export {
+  applyExtensionChangesetTransforms,
+  applyExtensionFileLanguages,
+  applyExtensionRegistrations,
+  createExtensionApplyNotices,
+  reportExtensionApplyIssues,
+  resolveExtensionDetectedVcsId,
+  resolveExtensionVcsAdapters,
+  type AppliedExtensionRegistrations,
+  type ExtensionApplyIssue,
+} from "./apply";
 export { discoverExtensions, type DiscoverExtensionsOptions } from "./discovery";
+export {
+  emitExtensionEvent,
+  emitExtensionEventBounded,
+  EXTENSION_SHUTDOWN_TIMEOUT_MS,
+} from "./events";
 export { loadExtensions, type LoadExtensionsOptions } from "./host";
+export {
+  createExtensionNotificationHub,
+  type ExtensionNotification,
+  type ExtensionNotificationHub,
+  type ExtensionNotificationListener,
+} from "./notifications";
 export {
   createExtensionLoadNotices,
   loadStartupExtensions,
@@ -47,4 +69,5 @@ export type {
   RegisteredFileLanguage,
   RegisteredTheme,
   RegisteredVcsAdapter,
+  SessionReloadReason,
 } from "./types";

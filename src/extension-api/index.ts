@@ -26,6 +26,7 @@ export type {
   ExtensionThemeConfig,
   HunkExtensionAPI,
   HunkExtensionApiVersion,
+  SessionReloadReason,
 } from "../extensions/types";
 export type { AgentAnnotation, AgentFileContext, Changeset, DiffFile } from "../core/types";
 export type {
