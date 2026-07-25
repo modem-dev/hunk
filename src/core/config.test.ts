@@ -812,3 +812,145 @@ describe("config resolution", () => {
     expect(bootstrap.initialTheme).toBe("github-dark-default");
   });
 });
+
+describe("extension configuration", () => {
+  test("defaults to enabled with no configured paths or per-extension tables", () => {
+    const home = createTempDir("hunk-config-home-");
+    const repo = createTempDir("hunk-config-repo-");
+    createRepo(repo);
+
+    const resolved = resolveConfiguredCliInput(createPatchPagerInput(), {
+      cwd: repo,
+      env: { HOME: home },
+    });
+
+    expect(resolved.extensions).toEqual({
+      enabled: true,
+      paths: [],
+      repoPaths: [],
+      extensionConfigs: {},
+    });
+  });
+
+  test("reads [extensions] and keeps repo paths separate from user paths", () => {
+    const home = createTempDir("hunk-config-home-");
+    const repo = createTempDir("hunk-config-repo-");
+    createRepo(repo);
+
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(
+      join(home, ".config", "hunk", "config.toml"),
+      ["[extensions]", 'paths = ["~/dev/copy-as.ts", 7, ""]', "unknown_key = true"].join("\n"),
+    );
+
+    mkdirSync(join(repo, ".hunk"), { recursive: true });
+    writeFileSync(
+      join(repo, ".hunk", "config.toml"),
+      ["[extensions]", 'paths = ["./tools/policy.ts"]'].join("\n"),
+    );
+
+    const resolved = resolveConfiguredCliInput(createPatchPagerInput(), {
+      cwd: repo,
+      env: { HOME: home },
+    });
+
+    expect(resolved.extensions.enabled).toBe(true);
+    expect(resolved.extensions.paths).toEqual(["~/dev/copy-as.ts"]);
+    expect(resolved.extensions.repoPaths).toEqual(["./tools/policy.ts"]);
+  });
+
+  test("lets repo config disable extensions and --no-extensions win over both layers", () => {
+    const home = createTempDir("hunk-config-home-");
+    const repo = createTempDir("hunk-config-repo-");
+    createRepo(repo);
+
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(
+      join(home, ".config", "hunk", "config.toml"),
+      ["[extensions]", "enabled = true"].join("\n"),
+    );
+    mkdirSync(join(repo, ".hunk"), { recursive: true });
+    writeFileSync(
+      join(repo, ".hunk", "config.toml"),
+      ["[extensions]", "enabled = false"].join("\n"),
+    );
+
+    expect(
+      resolveConfiguredCliInput(createPatchPagerInput(), { cwd: repo, env: { HOME: home } })
+        .extensions.enabled,
+    ).toBe(false);
+
+    writeFileSync(
+      join(repo, ".hunk", "config.toml"),
+      ["[extensions]", "enabled = true"].join("\n"),
+    );
+
+    expect(
+      resolveConfiguredCliInput(createPatchPagerInput(), { cwd: repo, env: { HOME: home } })
+        .extensions.enabled,
+    ).toBe(true);
+    expect(
+      resolveConfiguredCliInput(createPatchPagerInput({ extensions: false }), {
+        cwd: repo,
+        env: { HOME: home },
+      }).extensions.enabled,
+    ).toBe(false);
+  });
+
+  test("passes [extension.<id>] tables through with repo keys overriding user keys", () => {
+    const home = createTempDir("hunk-config-home-");
+    const repo = createTempDir("hunk-config-repo-");
+    createRepo(repo);
+
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(
+      join(home, ".config", "hunk", "config.toml"),
+      [
+        "[extension.copy-as]",
+        'severity = "nit"',
+        "wrap = true",
+        "",
+        "[extension.blame]",
+        "max_age_days = 30",
+      ].join("\n"),
+    );
+
+    mkdirSync(join(repo, ".hunk"), { recursive: true });
+    writeFileSync(
+      join(repo, ".hunk", "config.toml"),
+      ["[extension.copy-as]", 'severity = "blocking"'].join("\n"),
+    );
+
+    const resolved = resolveConfiguredCliInput(createPatchPagerInput(), {
+      cwd: repo,
+      env: { HOME: home },
+    });
+
+    expect(resolved.extensions.extensionConfigs).toEqual({
+      "copy-as": { severity: "blocking", wrap: true },
+      blame: { max_age_days: 30 },
+    });
+  });
+
+  test("rejects malformed extension sections", () => {
+    const home = createTempDir("hunk-config-home-");
+    const repo = createTempDir("hunk-config-repo-");
+    createRepo(repo);
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+
+    writeFileSync(join(home, ".config", "hunk", "config.toml"), "extensions = true\n");
+    expect(() =>
+      resolveConfiguredCliInput(createPatchPagerInput(), { cwd: repo, env: { HOME: home } }),
+    ).toThrow(/extensions to contain a TOML table/);
+
+    writeFileSync(join(home, ".config", "hunk", "config.toml"), 'extension = "copy-as"\n');
+    expect(() =>
+      resolveConfiguredCliInput(createPatchPagerInput(), { cwd: repo, env: { HOME: home } }),
+    ).toThrow(/per-extension TOML tables/);
+
+    writeFileSync(join(home, ".config", "hunk", "config.toml"), "[extension]\ncopy-as = 1\n");
+    expect(() =>
+      resolveConfiguredCliInput(createPatchPagerInput(), { cwd: repo, env: { HOME: home } }),
+    ).toThrow(/\[extension.copy-as\] to contain a TOML table/);
+  });
+});

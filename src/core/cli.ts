@@ -57,6 +57,11 @@ function resolveBooleanFlag(argv: string[], enabledFlag: string, disabledFlag: s
   return resolved;
 }
 
+/** Collect one repeatable CLI value into an array. */
+function collectRepeatedValue(value: string, previous: string[] = []) {
+  return [...previous, value];
+}
+
 /** Normalize the flags shared by every input mode. */
 function buildCommonOptions(
   options: {
@@ -68,6 +73,7 @@ function buildCommonOptions(
     experimental?: boolean;
     transparentBackground?: boolean;
     tabWidth?: number;
+    extension?: string[];
   },
   argv: string[],
 ): CommonOptions {
@@ -85,6 +91,11 @@ function buildCommonOptions(
     hunkHeaders: resolveBooleanFlag(argv, "--hunk-headers", "--no-hunk-headers"),
     agentNotes: resolveBooleanFlag(argv, "--agent-notes", "--no-agent-notes"),
     transparentBackground: resolveBooleanFlag(argv, "--transparent-bg", "--no-transparent-bg"),
+    // Read straight from argv so the absence of the flag stays undefined rather than
+    // becoming Commander's implicit `true` default for a negatable option.
+    extensions: resolveBooleanFlag(argv, "--extensions", "--no-extensions"),
+    extensionPaths:
+      options.extension && options.extension.length > 0 ? options.extension : undefined,
   };
 }
 
@@ -106,7 +117,13 @@ function applyCommonOptions(command: Command) {
     .option("--agent-notes", "show agent notes by default")
     .option("--no-agent-notes", "hide agent notes by default")
     .option("--transparent-bg", "let terminal background show through Hunk surfaces")
-    .option("--no-transparent-bg", "paint Hunk surfaces with the active theme");
+    .option("--no-transparent-bg", "paint Hunk surfaces with the active theme")
+    .option(
+      "--extension <path>",
+      "load an extension entry file or directory (repeatable)",
+      collectRepeatedValue,
+    )
+    .option("--no-extensions", "disable all extensions for this run");
 }
 
 /** Attach auto-refresh support to review commands that can reopen their source input. */
@@ -174,6 +191,8 @@ function renderCliHelp() {
     "  --agent-notes / --no-agent-notes        show or hide agent notes by default",
     "  --transparent-bg / --no-transparent-bg  let terminal background show through Hunk surfaces",
     "  --theme <theme>                         named theme override",
+    "  --extension <path>                      load an extension entry file or directory (repeatable)",
+    "  --no-extensions                         disable all extensions for this run",
     "",
     "Git diff options:",
     "  --staged, --cached                      review staged changes",

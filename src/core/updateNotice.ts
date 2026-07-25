@@ -1,5 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { readHunkStateRecord, updateHunkStateRecord } from "./hunkState";
 import { resolveHunkStatePath } from "./paths";
 import type { StartupNotice } from "./startupNotice";
 import { resolveCliVersion, UNKNOWN_CLI_VERSION } from "./version";
@@ -174,41 +173,21 @@ function createFetchTimeoutSignal(timeoutMs: number) {
 }
 
 /** Read the persisted startup state from disk, falling back cleanly on missing or invalid files. */
-function readPersistedStartupState(path: string): PersistedStartupState | null {
-  try {
-    const parsed = JSON.parse(readFileSync(path, "utf8")) as Partial<PersistedStartupState>;
-    if (typeof parsed !== "object" || parsed === null) {
-      return null;
-    }
-
-    return {
-      version: typeof parsed.version === "number" ? parsed.version : STARTUP_STATE_VERSION,
-      lastSeenCliVersion:
-        typeof parsed.lastSeenCliVersion === "string" ? parsed.lastSeenCliVersion : undefined,
-    };
-  } catch {
-    return null;
-  }
+function readPersistedStartupState(path: string): PersistedStartupState {
+  const record = readHunkStateRecord(path);
+  return {
+    version: typeof record.version === "number" ? record.version : STARTUP_STATE_VERSION,
+    lastSeenCliVersion:
+      typeof record.lastSeenCliVersion === "string" ? record.lastSeenCliVersion : undefined,
+  };
 }
 
-/** Persist the current installed CLI version for future upgrade detection. */
+/** Persist the current installed CLI version without discarding unrelated state keys. */
 function writePersistedStartupState(path: string, installedVersion: string) {
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(
-    path,
-    JSON.stringify(
-      {
-        version: STARTUP_STATE_VERSION,
-        lastSeenCliVersion: installedVersion,
-      } satisfies PersistedStartupState,
-      null,
-      2,
-    ),
-    {
-      encoding: "utf8",
-      mode: 0o600,
-    },
-  );
+  updateHunkStateRecord(path, {
+    version: STARTUP_STATE_VERSION,
+    lastSeenCliVersion: installedVersion,
+  } satisfies PersistedStartupState);
 }
 
 /** Return whether the transient startup notice should stay disabled for deterministic sessions like CI. */
@@ -229,7 +208,7 @@ function resolveStartupSkillRefreshNotice(deps: UpdateNoticeDeps = {}): StartupN
     return null;
   }
 
-  const previousVersion = readPersistedStartupState(statePath)?.lastSeenCliVersion;
+  const previousVersion = readPersistedStartupState(statePath).lastSeenCliVersion;
 
   try {
     writePersistedStartupState(statePath, installedVersion);

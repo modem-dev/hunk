@@ -1,4 +1,7 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
+// Type-only import; the extension types depend on this module in turn, and
+// `import type` keeps that relationship out of the runtime module graph.
+import type { ExtensionLoadResult } from "../extensions/types";
 import type { FileSourceFetcher } from "./fileSource";
 import type { StartupNotice } from "./startupNotice";
 
@@ -102,6 +105,10 @@ export interface CommonOptions {
   promptSaveViewPreferences?: boolean;
   transparentBackground?: boolean;
   colorMoved?: boolean;
+  /** False only when `--no-extensions` disables extension loading for this run. */
+  extensions?: boolean;
+  /** Entry paths from repeated `--extension` flags, for development and testing. */
+  extensionPaths?: string[];
 }
 
 /** @deprecated Use exact TextMate selectors through CustomSyntaxScopesConfig instead. */
@@ -161,6 +168,18 @@ export interface CustomThemeConfig {
   /** @deprecated Use syntaxScopes. This compatibility field will be removed next major. */
   syntax?: CustomSyntaxColorsConfig;
   syntaxScopes?: CustomSyntaxScopesConfig;
+}
+
+/** Resolved `[extensions]` and `[extension.<id>]` configuration for one invocation. */
+export interface ExtensionsConfig {
+  /** False when `--no-extensions` or `[extensions] enabled = false` disables loading. */
+  enabled: boolean;
+  /** Explicit entry paths from the user config layer. */
+  paths: string[];
+  /** Explicit entry paths contributed by the repo config layer; trust-gated like `.hunk/extensions`. */
+  repoPaths: string[];
+  /** Per-extension config tables, keyed by extension id. */
+  extensionConfigs: Record<string, Record<string, unknown>>;
 }
 
 export interface PersistedViewPreferences {
@@ -410,4 +429,6 @@ export interface AppBootstrap {
   initialCopyDecorations?: boolean;
   startupNotices?: readonly StartupNotice[];
   viewPreferencesConfigPath?: string;
+  /** Extensions loaded for this session, and any load failures worth surfacing. */
+  extensions?: ExtensionLoadResult;
 }

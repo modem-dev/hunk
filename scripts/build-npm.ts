@@ -1,6 +1,14 @@
 #!/usr/bin/env bun
 
-import { chmodSync, copyFileSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import {
+  chmodSync,
+  copyFileSync,
+  cpSync,
+  mkdirSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 
 const repoRoot = path.resolve(import.meta.dir, "..");
@@ -8,6 +16,8 @@ const outdir = path.join(repoRoot, "dist", "npm");
 const typesOutdir = path.join(repoRoot, "dist", "npm-types");
 const opentuiOutdir = path.join(outdir, "opentui");
 const opentuiTypesDir = path.join(typesOutdir, "opentui");
+const extensionOutdir = path.join(outdir, "extension");
+const extensionTypesOutdir = path.join(repoRoot, "dist", "npm-extension-types");
 
 const bunEnv = {
   ...process.env,
@@ -31,7 +41,9 @@ function runBun(args: string[]) {
 
 rmSync(outdir, { recursive: true, force: true });
 rmSync(typesOutdir, { recursive: true, force: true });
+rmSync(extensionTypesOutdir, { recursive: true, force: true });
 mkdirSync(opentuiOutdir, { recursive: true });
+mkdirSync(extensionOutdir, { recursive: true });
 
 const opentuiNativePackages = [
   "@opentui/core-darwin-arm64",
@@ -103,5 +115,30 @@ for (const entry of readdirSync(opentuiTypesDir)) {
 
 rmSync(typesOutdir, { recursive: true, force: true });
 
+runBun([
+  "build",
+  path.join(repoRoot, "src", "extension-api", "index.ts"),
+  "--target",
+  "node",
+  "--format",
+  "esm",
+  "--external",
+  "@pierre/diffs",
+  "--outdir",
+  extensionOutdir,
+  "--entry-naming",
+  "index.js",
+]);
+
+runBun(["x", "tsc", "-p", path.join(repoRoot, "tsconfig.extension.json")]);
+
+// The extension entry re-exports core façade types, so its declarations span several
+// source directories. Ship the emitted tree as-is and point the subpath export at a
+// one-line barrel so consumers still resolve `hunkdiff/extension` from a single file.
+cpSync(extensionTypesOutdir, extensionOutdir, { recursive: true });
+writeFileSync(path.join(extensionOutdir, "index.d.ts"), 'export * from "./extension-api/index";\n');
+rmSync(extensionTypesOutdir, { recursive: true, force: true });
+
 console.log(`Built ${mainJs}`);
 console.log(`Built ${path.join(opentuiOutdir, "index.js")}`);
+console.log(`Built ${path.join(extensionOutdir, "index.js")}`);

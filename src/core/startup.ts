@@ -1,3 +1,4 @@
+import { loadStartupExtensions, mergeStartupNotices } from "../extensions/startup";
 import { resolveConfiguredCliInput } from "./config";
 import { HunkUserError } from "./errors";
 import { loadAppBootstrap } from "./loaders";
@@ -75,6 +76,7 @@ export interface StartupDeps {
   resolveRuntimeCliInputImpl?: typeof resolveRuntimeCliInput;
   resolveConfiguredCliInputImpl?: typeof resolveConfiguredCliInput;
   loadAppBootstrapImpl?: typeof loadAppBootstrap;
+  loadStartupExtensionsImpl?: typeof loadStartupExtensions;
   usesPipedPatchInputImpl?: typeof usesPipedPatchInput;
   openControllingTerminalImpl?: typeof openControllingTerminal;
   detectTerminalThemeModeFromBackgroundImpl?: typeof detectTerminalThemeModeFromBackground;
@@ -96,6 +98,7 @@ export async function prepareStartupPlan(
   const resolveConfiguredCliInputImpl =
     deps.resolveConfiguredCliInputImpl ?? resolveConfiguredCliInput;
   const loadAppBootstrapImpl = deps.loadAppBootstrapImpl ?? loadAppBootstrap;
+  const loadStartupExtensionsImpl = deps.loadStartupExtensionsImpl ?? loadStartupExtensions;
   const usesPipedPatchInputImpl = deps.usesPipedPatchInputImpl ?? usesPipedPatchInput;
   const openControllingTerminalImpl = deps.openControllingTerminalImpl ?? openControllingTerminal;
   const detectTerminalThemeModeFromBackgroundImpl =
@@ -249,6 +252,16 @@ export async function prepareStartupPlan(
     );
   }
 
+  // Extensions load before the changeset so later stages can hand their VCS adapters and
+  // changeset transforms to the loading pipeline. Failures never reach here: the host
+  // isolates them into issues that become startup notices below.
+  const extensionResult = await loadStartupExtensionsImpl({
+    extensions: configured.extensions,
+    cwd: process.cwd(),
+    env,
+    cliExtensionPaths: cliInput.options.extensionPaths,
+  });
+
   let bootstrap: AppBootstrap;
   try {
     bootstrap = await loadAppBootstrapImpl(cliInput, { customTheme: configured.customTheme });
@@ -258,8 +271,9 @@ export async function prepareStartupPlan(
   }
 
   bootstrap.initialThemeMode = initialThemeMode ?? bootstrap.initialThemeMode;
-  bootstrap.startupNotices = configured.startupNotices;
+  bootstrap.startupNotices = mergeStartupNotices(configured.startupNotices, extensionResult);
   bootstrap.viewPreferencesConfigPath = configured.viewPreferencesConfigPath;
+  bootstrap.extensions = extensionResult;
 
   controllingTerminal ??= usesPipedPatchInputImpl(cliInput) ? openControllingTerminalImpl() : null;
 

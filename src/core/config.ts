@@ -12,6 +12,7 @@ import type {
   CustomSyntaxColorsConfig,
   CustomSyntaxScopesConfig,
   CustomThemeConfig,
+  ExtensionsConfig,
   LayoutMode,
   PersistedViewPreferences,
   VcsMode,
@@ -84,9 +85,10 @@ interface ConfigResolutionOptions {
   env?: NodeJS.ProcessEnv;
 }
 
-interface HunkConfigResolution {
+export interface HunkConfigResolution {
   input: CliInput;
   customTheme?: CustomThemeConfig;
+  extensions: ExtensionsConfig;
   startupNotices?: readonly StartupNotice[];
   globalConfigPath?: string;
   repoConfigPath?: string;
@@ -324,6 +326,70 @@ function mergeCustomTheme(
   };
 }
 
+/** One config layer's extension settings, before user/repo layers are merged. */
+interface ExtensionsLayer {
+  enabled?: boolean;
+  paths: string[];
+  extensionConfigs: Record<string, Record<string, unknown>>;
+}
+
+/** Accept only non-empty strings from a TOML string array, ignoring other entries. */
+function normalizeStringArray(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter((entry): entry is string => typeof entry === "string" && entry.length > 0);
+}
+
+/**
+ * Read one config layer's `[extensions]` section and its `[extension.<id>]` tables.
+ *
+ * Per-extension tables stay opaque `Record<string, unknown>` payloads: they
+ * belong to the extension, not to Hunk, so unknown keys pass straight through.
+ */
+function readExtensionsLayer(source: Record<string, unknown>): ExtensionsLayer {
+  const extensionsSource = source.extensions;
+  if (extensionsSource !== undefined && !isRecord(extensionsSource)) {
+    throw new Error("Expected extensions to contain a TOML table.");
+  }
+
+  const perExtensionSource = source.extension;
+  if (perExtensionSource !== undefined && !isRecord(perExtensionSource)) {
+    throw new Error("Expected extension to contain per-extension TOML tables.");
+  }
+
+  const extensionConfigs: Record<string, Record<string, unknown>> = {};
+  if (isRecord(perExtensionSource)) {
+    for (const [extensionId, table] of Object.entries(perExtensionSource)) {
+      if (!isRecord(table)) {
+        throw new Error(`Expected [extension.${extensionId}] to contain a TOML table.`);
+      }
+
+      extensionConfigs[extensionId] = table;
+    }
+  }
+
+  return {
+    enabled: isRecord(extensionsSource) ? normalizeBoolean(extensionsSource.enabled) : undefined,
+    paths: isRecord(extensionsSource) ? normalizeStringArray(extensionsSource.paths) : [],
+    extensionConfigs,
+  };
+}
+
+/** Merge two per-extension config maps so repo tables override user tables key by key. */
+function mergeExtensionConfigs(
+  base: Record<string, Record<string, unknown>>,
+  overrides: Record<string, Record<string, unknown>>,
+) {
+  const merged: Record<string, Record<string, unknown>> = { ...base };
+  for (const [extensionId, table] of Object.entries(overrides)) {
+    merged[extensionId] = { ...merged[extensionId], ...table };
+  }
+
+  return merged;
+}
+
 /** Read the view preferences stored at one TOML object level. */
 function readConfigPreferences(source: Record<string, unknown>): CommonOptions {
   return {
@@ -370,6 +436,8 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
       overrides.promptSaveViewPreferences ?? base.promptSaveViewPreferences,
     transparentBackground: overrides.transparentBackground ?? base.transparentBackground,
     colorMoved: overrides.colorMoved ?? base.colorMoved,
+    extensions: overrides.extensions ?? base.extensions,
+    extensionPaths: overrides.extensionPaths ?? base.extensionPaths,
   };
 }
 
@@ -515,6 +583,8 @@ export function resolveConfiguredCliInput(
   const userConfigPath = resolveGlobalConfigPath(env);
   let resolvedCustomTheme: CustomThemeConfig | undefined;
   let usesLegacyCustomSyntax = false;
+  let userExtensionsLayer: ExtensionsLayer = { paths: [], extensionConfigs: {} };
+  let repoExtensionsLayer: ExtensionsLayer = { paths: [], extensionConfigs: {} };
 
   let resolvedOptions: CommonOptions = {
     mode: DEFAULT_VIEW_PREFERENCES.mode,
@@ -544,6 +614,7 @@ export function resolveConfiguredCliInput(
     resolvedOptions = mergeOptions(resolvedOptions, resolveConfigLayer(userConfig, input));
     resolvedCustomTheme = mergeCustomTheme(resolvedCustomTheme, themeLayer.customTheme);
     usesLegacyCustomSyntax ||= themeLayer.usesLegacySyntax;
+    userExtensionsLayer = readExtensionsLayer(userConfig);
   }
 
   if (repoConfigPath) {
@@ -552,6 +623,7 @@ export function resolveConfiguredCliInput(
     resolvedOptions = mergeOptions(resolvedOptions, resolveConfigLayer(repoConfig, input));
     resolvedCustomTheme = mergeCustomTheme(resolvedCustomTheme, themeLayer.customTheme);
     usesLegacyCustomSyntax ||= themeLayer.usesLegacySyntax;
+    repoExtensionsLayer = readExtensionsLayer(repoConfig);
   }
 
   resolvedOptions = mergeOptions(resolvedOptions, input.options);
@@ -581,12 +653,28 @@ export function resolveConfiguredCliInput(
     throw new Error('Expected a [custom_theme] table when config selects theme = "custom".');
   }
 
+  const extensions: ExtensionsConfig = {
+    // `--no-extensions` is a hard off switch; otherwise repo config overrides user config
+    // exactly like every other layered option.
+    enabled:
+      input.options.extensions === false
+        ? false
+        : (repoExtensionsLayer.enabled ?? userExtensionsLayer.enabled ?? true),
+    paths: userExtensionsLayer.paths,
+    repoPaths: repoExtensionsLayer.paths,
+    extensionConfigs: mergeExtensionConfigs(
+      userExtensionsLayer.extensionConfigs,
+      repoExtensionsLayer.extensionConfigs,
+    ),
+  };
+
   return {
     input: {
       ...input,
       options: resolvedOptions,
     },
     customTheme: resolvedCustomTheme,
+    extensions,
     startupNotices: usesLegacyCustomSyntax ? LEGACY_CUSTOM_SYNTAX_NOTICES : undefined,
     globalConfigPath: userConfigPath,
     repoConfigPath,

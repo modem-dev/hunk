@@ -44,7 +44,7 @@ The mechanics that matter for us:
 - **Events are interception points, not just notifications.** `tool_call` can
   block or rewrite a tool invocation; `message_end` can replace a message;
   `input` can consume user input entirely. This is what lets extensions change
-  *behavior*, not just decorate it.
+  _behavior_, not just decorate it.
 
 - **Packages bundle extensions + skills + prompts + themes** and are installed
   with `pi install`. Notably, Hunk already participates in this ecosystem from
@@ -55,14 +55,14 @@ The mechanics that matter for us:
 
 Hunk's positioning — "modern desktop diff tool in a terminal", review-first,
 agent-adjacent — means users live in it during review and want it wired into
-*their* workflow: their editor, their forge, their VCS, their team's review
+_their_ workflow: their editor, their forge, their VCS, their team's review
 conventions, their agent. We cannot build all of that in core, and shouldn't.
 The pi lesson is that a small, well-chosen API surface plus "coding agents make
 writing plugins cheap" yields an ecosystem: most pi extensions are clearly
 agent-written from a README and an afternoon.
 
 The same force works for us twice over: agents can write Hunk extensions, and
-Hunk is *used to review agent changesets*, so extensions that connect review to
+Hunk is _used to review agent changesets_, so extensions that connect review to
 agent workflows (post a comment back to the agent session, re-run the agent on
 a rejected hunk) are the most natural third-party contributions imaginable.
 
@@ -130,7 +130,7 @@ seams in very different states of readiness:
   `key.name` (`useAppKeyboardShortcuts.ts`); the same ~30 actions are
   re-enumerated as callback props there, in `buildAppMenus`, and in a
   hardcoded `HelpDialog` sections array. Extensions can't contribute a command
-  or a keybinding because *core* has no named-command concept to contribute to.
+  or a keybinding because _core_ has no named-command concept to contribute to.
 - **CLI dispatch is a closed switch.** `parseCli` ends in a hardcoded
   `switch (commandName)` and help text is a hand-maintained string array, so
   extension CLI subcommands need a command-table refactor first.
@@ -138,7 +138,7 @@ seams in very different states of readiness:
   version bump, `brokerServer.ts` switch + supported-actions list, `bridge.ts`,
   session `cli.ts`, `core/cli.ts` parser). A registry keyed by action name
   would collapse that — and is a prerequisite for extension session commands.
-- **`MenuId` is a closed union**, though menu *entries* are already data-shaped
+- **`MenuId` is a closed union**, though menu _entries_ are already data-shaped
   (`{label, hint, checked, action}`), so contribution points are cheap once
   actions exist.
 - **No dynamic user-code loading anywhere**, and Hunk ships as a compiled Bun
@@ -150,7 +150,7 @@ Mirror pi's model closely; it is proven and our users overlap with pi's.
 
 ### Extension form and discovery
 
-```ts
+````ts
 // ~/.config/hunk/extensions/copy-as-suggestion.ts
 import type { HunkExtensionAPI } from "hunkdiff/extension";
 
@@ -168,7 +168,7 @@ export default function (hunk: HunkExtensionAPI) {
     },
   });
 }
-```
+````
 
 - Discovery: `~/.config/hunk/extensions/*.ts` and `*/index.ts` (global, follows
   our existing XDG path logic in `src/core/paths.ts`), `.hunk/extensions/`
@@ -181,19 +181,19 @@ export default function (hunk: HunkExtensionAPI) {
 
 ### API surface, grouped by the seam it rides on
 
-| Capability | Backed by | Refactor needed |
-| --- | --- | --- |
-| `registerAction({id, label, keys, menu, when, run})` | new action registry feeding keyboard hook, `buildAppMenus`, `HelpDialog` | the big one — see below |
-| `on(event, handler)` — `startup`, `changeset_loaded`, `selection_changed`, `note_added`, `note_saved`, `session_reload`, `shutdown` | emit from `AppHost` / `useReviewController` mutators | small |
-| `transformChangeset(fn)` | run after `loadAppBootstrap`, before first render, in `AppHost.reloadSession` too | small; must preserve sidecar ordering contract |
-| `registerVcsAdapter(adapter)` | `vcsAdapters` array | trivial |
-| `registerTheme(theme)` | generalize the single `"custom"` slot to N; Shiki side already dynamic | small |
-| `registerFileLanguage(ext, lang)` | Pierre `setCustomExtension` | trivial |
-| `registerSessionCommand(name, parse, handler)` | bridge dispatcher + broker action registry | medium; collapses the 5-file lockstep first |
-| `registerCliCommand(...)` | command table replacing `parseCli` switch + help generation | medium; defer |
-| `ctx.review` (read + navigate: files, selection, notes, `navigateTo`) | thin façade over `ReviewController` | small, but must stay a façade — never hand out the raw controller |
-| `ctx.ui.confirm/select/input/notify` | reuse `ConfirmDialog` + a toast/status line | small |
-| `ctx.exec`, `ctx.clipboard`, `ctx.cwd`, `ctx.changeset` | plumbing | small |
+| Capability                                                                                                                          | Backed by                                                                         | Refactor needed                                                   |
+| ----------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `registerAction({id, label, keys, menu, when, run})`                                                                                | new action registry feeding keyboard hook, `buildAppMenus`, `HelpDialog`          | the big one — see below                                           |
+| `on(event, handler)` — `startup`, `changeset_loaded`, `selection_changed`, `note_added`, `note_saved`, `session_reload`, `shutdown` | emit from `AppHost` / `useReviewController` mutators                              | small                                                             |
+| `transformChangeset(fn)`                                                                                                            | run after `loadAppBootstrap`, before first render, in `AppHost.reloadSession` too | small; must preserve sidecar ordering contract                    |
+| `registerVcsAdapter(adapter)`                                                                                                       | `vcsAdapters` array                                                               | trivial                                                           |
+| `registerTheme(theme)`                                                                                                              | generalize the single `"custom"` slot to N; Shiki side already dynamic            | small                                                             |
+| `registerFileLanguage(ext, lang)`                                                                                                   | Pierre `setCustomExtension`                                                       | trivial                                                           |
+| `registerSessionCommand(name, parse, handler)`                                                                                      | bridge dispatcher + broker action registry                                        | medium; collapses the 5-file lockstep first                       |
+| `registerCliCommand(...)`                                                                                                           | command table replacing `parseCli` switch + help generation                       | medium; defer                                                     |
+| `ctx.review` (read + navigate: files, selection, notes, `navigateTo`)                                                               | thin façade over `ReviewController`                                               | small, but must stay a façade — never hand out the raw controller |
+| `ctx.ui.confirm/select/input/notify`                                                                                                | reuse `ConfirmDialog` + a toast/status line                                       | small                                                             |
+| `ctx.exec`, `ctx.clipboard`, `ctx.cwd`, `ctx.changeset`                                                                             | plumbing                                                                          | small                                                             |
 
 Two pi ideas worth copying verbatim: the **`ctx` object passed to every
 handler** (capability access is explicit and testable, and there's no global to
@@ -201,7 +201,7 @@ monkey-patch), and **events that can intercept, not just observe** — e.g. a
 `note_saving` event that can rewrite a note body is what makes conventional-
 comment templates possible without core knowing about them.
 
-Two pi ideas to *skip* for now: provider/model registration (not our domain)
+Two pi ideas to _skip_ for now: provider/model registration (not our domain)
 and custom message renderers (our equivalent — custom note renderables — fights
 the STML deterministic-layout rule; extensions should emit STML markup instead,
 which keeps measurement exact and theme-independent by construction).
@@ -254,7 +254,7 @@ of the same structure for free.
 - **Security posture.** Extensions run with full user permissions (same as pi;
   same as any dotfile). The trust gate for repo-local extensions is the
   critical piece — reviewing a hostile repo's changeset must never execute
-  that repo's code without an explicit prompt. This matters *more* for Hunk
+  that repo's code without an explicit prompt. This matters _more_ for Hunk
   than for pi: pointing a diff tool at untrusted code is a core use case.
 - **API stability.** pi treats extension API churn as acceptable pre-1.0. We
   should version the API (`hunk.apiVersion`) from day one, and keep the
@@ -265,8 +265,8 @@ of the same structure for free.
   cross-platform rules; nothing here is inherently Unix-only.
 - **Does the OpenTUI embedding API make some of this moot?** `hunkdiff/opentui`
   already offers "extension by embedding" for people building their own review
-  UIs. The answer is no — embedding serves builders of *other tools*;
-  extensions serve users of *Hunk*. But the two should share the same façade
+  UIs. The answer is no — embedding serves builders of _other tools_;
+  extensions serve users of _Hunk_. But the two should share the same façade
   types where they overlap.
 
 ## 8. Bottom line

@@ -36,6 +36,10 @@
   ],
   "type": "module",
   "exports": {
+    "./extension": {
+      "types": "./dist/npm/extension/index.d.ts",
+      "import": "./dist/npm/extension/index.js"
+    },
     "./opentui": {
       "types": "./dist/npm/opentui/index.d.ts",
       "import": "./dist/npm/opentui/index.js"

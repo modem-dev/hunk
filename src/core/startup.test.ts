@@ -1,7 +1,26 @@
 import { describe, expect, test } from "bun:test";
+import { createEmptyExtensionLoadResult } from "../extensions/types";
+import type { HunkConfigResolution } from "./config";
 import { HunkUserError } from "./errors";
 import { prepareStartupPlan } from "./startup";
 import type { AppBootstrap, CliInput, ParsedCliInput } from "./types";
+
+/**
+ * Build a config resolution for tests that are not exercising config layering.
+ *
+ * Extensions are disabled so startup planning never reaches the user's real
+ * extensions directory during unit tests.
+ */
+function createTestConfigResolution(
+  input: CliInput,
+  overrides: Partial<HunkConfigResolution> = {},
+): HunkConfigResolution {
+  return {
+    input,
+    extensions: { enabled: false, paths: [], repoPaths: [], extensionConfigs: {} },
+    ...overrides,
+  };
+}
 
 function createBootstrap(input: CliInput): AppBootstrap {
   return {
@@ -160,7 +179,7 @@ describe("startup planning", () => {
       },
       resolveConfiguredCliInputImpl(input) {
         seenInputs.push(input);
-        return { input } as never;
+        return createTestConfigResolution(input);
       },
       loadAppBootstrapImpl: async (input) => {
         seenInputs.push(input);
@@ -241,13 +260,13 @@ describe("startup planning", () => {
       env: { TERM: "dumb", LV: "-c" },
       resolveRuntimeCliInputImpl: (input) => input,
       resolveConfiguredCliInputImpl: (input) =>
-        ({
-          input: {
+        createTestConfigResolution(
+          {
             ...input,
             options: { ...input.options, lineNumbers: false, theme: "custom" },
           },
-          customTheme,
-        }) as never,
+          { customTheme },
+        ),
       loadAppBootstrapImpl: async () => {
         loaded = true;
         throw new Error("unreachable");
@@ -274,7 +293,7 @@ describe("startup planning", () => {
       stdoutIsTTY: true,
       env: { TERM: "xterm-256color" },
       resolveRuntimeCliInputImpl: (input) => input,
-      resolveConfiguredCliInputImpl: (input) => ({ input }) as never,
+      resolveConfiguredCliInputImpl: (input) => createTestConfigResolution(input),
       openControllingTerminalImpl: () => null,
       loadAppBootstrapImpl: async () => {
         loaded = true;
@@ -306,7 +325,7 @@ describe("startup planning", () => {
     await prepareStartupPlan(["bun", "hunk", "patch", "-"], {
       parseCliImpl: async () => cliInput as ParsedCliInput,
       resolveRuntimeCliInputImpl: (input) => input,
-      resolveConfiguredCliInputImpl: (input) => ({ input, customTheme }) as never,
+      resolveConfiguredCliInputImpl: (input) => createTestConfigResolution(input, { customTheme }),
       loadAppBootstrapImpl: async (input, options) => {
         expect(input).toBe(cliInput);
         expect(options).toEqual({ customTheme });
@@ -334,10 +353,7 @@ describe("startup planning", () => {
       parseCliImpl: async () => cliInput as ParsedCliInput,
       resolveRuntimeCliInputImpl: (input) => input,
       resolveConfiguredCliInputImpl: (input) =>
-        ({
-          input,
-          startupNotices: [startupNotice],
-        }) as never,
+        createTestConfigResolution(input, { startupNotices: [startupNotice] }),
       loadAppBootstrapImpl: async (input) => createBootstrap(input),
       usesPipedPatchInputImpl: () => false,
     });
@@ -361,7 +377,7 @@ describe("startup planning", () => {
       prepareStartupPlan(["bun", "hunk", "patch", "-", "--watch"], {
         parseCliImpl: async () => cliInput as ParsedCliInput,
         resolveRuntimeCliInputImpl: (input) => input,
-        resolveConfiguredCliInputImpl: (input) => ({ input }) as never,
+        resolveConfiguredCliInputImpl: (input) => createTestConfigResolution(input),
       }),
     ).rejects.toBeInstanceOf(HunkUserError);
   });
@@ -382,7 +398,7 @@ describe("startup planning", () => {
       {
         parseCliImpl: async () => cliInput as ParsedCliInput,
         resolveRuntimeCliInputImpl: (input) => input,
-        resolveConfiguredCliInputImpl: (input) => ({ input }) as never,
+        resolveConfiguredCliInputImpl: (input) => createTestConfigResolution(input),
         loadAppBootstrapImpl: async (input) => createBootstrap(input),
         openControllingTerminalImpl: () => {
           opened += 1;
@@ -416,7 +432,7 @@ describe("startup planning", () => {
     const plan = await prepareStartupPlan(["bun", "hunk", "patch", "-", "--theme", "auto"], {
       parseCliImpl: async () => cliInput as ParsedCliInput,
       resolveRuntimeCliInputImpl: (input) => input,
-      resolveConfiguredCliInputImpl: (input) => ({ input }) as never,
+      resolveConfiguredCliInputImpl: (input) => createTestConfigResolution(input),
       loadAppBootstrapImpl: async (input) => createBootstrap(input),
       openControllingTerminalImpl: () => {
         opened += 1;
@@ -458,7 +474,7 @@ describe("startup planning", () => {
     const plan = await prepareStartupPlan(["bun", "hunk", "patch", "-"], {
       parseCliImpl: async () => cliInput as ParsedCliInput,
       resolveRuntimeCliInputImpl: (input) => input,
-      resolveConfiguredCliInputImpl: (input) => ({ input }) as never,
+      resolveConfiguredCliInputImpl: (input) => createTestConfigResolution(input),
       loadAppBootstrapImpl: async (input) => createBootstrap(input),
       usesPipedPatchInputImpl: (input) => {
         expect(input).toBe(cliInput);
@@ -476,5 +492,76 @@ describe("startup planning", () => {
       controllingTerminal,
     });
     expect(opened).toBe(1);
+  });
+
+  test("loads extensions before the changeset and attaches them to the bootstrap", async () => {
+    const cliInput: CliInput = {
+      kind: "patch",
+      file: "-",
+      options: { extensionPaths: ["./dev-extension.ts"] },
+    };
+    const extensionResult = {
+      ...createEmptyExtensionLoadResult(),
+      issues: [
+        {
+          extensionId: "broken",
+          path: "/tmp/broken.ts",
+          origin: "flag" as const,
+          message: "boom",
+        },
+      ],
+    };
+    const order: string[] = [];
+
+    const plan = await prepareStartupPlan(["bun", "hunk", "patch", "-"], {
+      parseCliImpl: async () => cliInput as ParsedCliInput,
+      resolveRuntimeCliInputImpl: (input) => input,
+      resolveConfiguredCliInputImpl: (input) =>
+        createTestConfigResolution(input, {
+          extensions: { enabled: true, paths: [], repoPaths: [], extensionConfigs: {} },
+        }),
+      loadStartupExtensionsImpl: async (options) => {
+        order.push("extensions");
+        expect(options.cliExtensionPaths).toEqual(["./dev-extension.ts"]);
+        expect(options.extensions.enabled).toBe(true);
+        return extensionResult;
+      },
+      loadAppBootstrapImpl: async (input) => {
+        order.push("bootstrap");
+        return createBootstrap(input);
+      },
+      usesPipedPatchInputImpl: () => false,
+    });
+
+    expect(order).toEqual(["extensions", "bootstrap"]);
+    expect(plan.kind).toBe("app");
+    if (plan.kind !== "app") {
+      throw new Error("Expected app startup plan.");
+    }
+
+    expect(plan.bootstrap.extensions).toBe(extensionResult);
+    // Load failures reach the user through the existing startup notice channel.
+    expect(plan.bootstrap.startupNotices).toEqual([
+      { key: "extension:/tmp/broken.ts", message: "Extension broken failed to load • boom" },
+    ]);
+  });
+
+  test("skips extension loading entirely when config disables it", async () => {
+    const cliInput: CliInput = { kind: "patch", file: "-", options: { extensions: false } };
+    let requestedExtensions: boolean | undefined;
+
+    await prepareStartupPlan(["bun", "hunk", "patch", "-", "--no-extensions"], {
+      parseCliImpl: async () => cliInput as ParsedCliInput,
+      resolveRuntimeCliInputImpl: (input) => input,
+      resolveConfiguredCliInputImpl: (input) => createTestConfigResolution(input),
+      loadStartupExtensionsImpl: async (options) => {
+        requestedExtensions = options.extensions.enabled;
+        return createEmptyExtensionLoadResult();
+      },
+      loadAppBootstrapImpl: async (input) => createBootstrap(input),
+      usesPipedPatchInputImpl: () => false,
+    });
+
+    expect(requestedExtensions).toBe(false);
   });
 });

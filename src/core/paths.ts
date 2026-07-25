@@ -29,6 +29,12 @@ export function resolveHunkStatePath(env: NodeJS.ProcessEnv = process.env) {
   return configDir ? join(configDir, "hunk", "state.json") : undefined;
 }
 
+/** Resolve the user-scoped directory Hunk scans for globally installed extensions. */
+export function resolveGlobalExtensionsDir(env: NodeJS.ProcessEnv = process.env) {
+  const configDir = resolveUserConfigDir(env);
+  return configDir ? join(configDir, "hunk", "extensions") : undefined;
+}
+
 /** Search one path and its parents for one relative child path. */
 function findRelativePathFromAncestors(startPath: string, relativePath: string) {
   let current = resolve(startPath);

@@ -1450,3 +1450,58 @@ describe("parseCli session comment apply payload", () => {
     );
   });
 });
+
+describe("parseCli extension flags", () => {
+  test("defaults to leaving extension options unset", async () => {
+    const parsed = await parseCli(["bun", "hunk", "show", "HEAD"]);
+
+    if (parsed.kind !== "show") {
+      throw new Error("Expected a show command.");
+    }
+
+    expect(parsed.options.extensions).toBeUndefined();
+    expect(parsed.options.extensionPaths).toBeUndefined();
+  });
+
+  test("parses --no-extensions into a disabled extension option", async () => {
+    const parsed = await parseCli(["bun", "hunk", "show", "HEAD", "--no-extensions"]);
+
+    if (parsed.kind !== "show") {
+      throw new Error("Expected a show command.");
+    }
+
+    expect(parsed.options.extensions).toBe(false);
+  });
+
+  test("collects repeated --extension paths in order", async () => {
+    const first = join("dev", "copy-as.ts");
+    const second = join("dev", "blame.ts");
+    const parsed = await parseCli([
+      "bun",
+      "hunk",
+      "patch",
+      "-",
+      "--extension",
+      first,
+      "--extension",
+      second,
+    ]);
+
+    if (parsed.kind !== "patch") {
+      throw new Error("Expected a patch command.");
+    }
+
+    expect(parsed.options.extensionPaths).toEqual([first, second]);
+  });
+
+  test("documents the extension flags in top-level help", async () => {
+    const parsed = await parseCli(["bun", "hunk"]);
+
+    if (parsed.kind !== "help") {
+      throw new Error("Expected top-level help output.");
+    }
+
+    expect(parsed.text).toContain("--extension <path>");
+    expect(parsed.text).toContain("--no-extensions");
+  });
+});
