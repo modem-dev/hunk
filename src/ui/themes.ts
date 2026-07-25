@@ -1,6 +1,7 @@
 import type { ThemeMode } from "@opentui/core";
+import { LEGACY_CUSTOM_THEME_ID } from "../core/customThemes";
 import { resolveSyntaxScopeOverrides } from "../core/legacySyntaxScopes";
-import type { CustomThemeConfig } from "../core/types";
+import type { NamedCustomThemeConfig } from "../core/types";
 import { blendHex, contrastRatio, relativeLuminance } from "./lib/color";
 import {
   BUNDLED_SHIKI_THEME_IDS,
@@ -250,13 +251,16 @@ function fallbackTheme(themeMode?: ThemeMode | null) {
   return builtInThemeById(fallbackId) ?? THEMES[0]!;
 }
 
-/** Build one config-defined custom theme by inheriting from a Shiki-backed base palette. */
-function buildCustomTheme(customTheme: CustomThemeConfig) {
+/** Build one named custom theme by inheriting from a Shiki-backed base palette. */
+function buildCustomTheme(customTheme: NamedCustomThemeConfig) {
   const baseTheme = builtInThemeById(customTheme.base) ?? fallbackTheme();
   const themeBase: ThemeBase = {
     ...baseTheme,
-    id: "custom",
-    label: customTheme.label ?? "Custom",
+    id: customTheme.id,
+    // The original single-slot `[custom_theme]` theme keeps the label it has always shown;
+    // named themes fall back to their own id, exactly like the bundled themes do.
+    label:
+      customTheme.label ?? (customTheme.id === LEGACY_CUSTOM_THEME_ID ? "Custom" : customTheme.id),
     background: customTheme.background ?? baseTheme.background,
     panel: customTheme.panel ?? baseTheme.panel,
     panelAlt: customTheme.panelAlt ?? baseTheme.panelAlt,
@@ -300,31 +304,43 @@ function buildCustomTheme(customTheme: CustomThemeConfig) {
   return { ...themeBase, syntaxColors: baseTheme.syntaxColors };
 }
 
-/** Return the theme ids the app should expose based on whether config defines a custom palette. */
-export function availableThemeIds(customTheme?: CustomThemeConfig): string[] {
-  const themeIds = THEMES.map((theme) => theme.id);
-  if (customTheme) {
-    themeIds.push("custom");
-  }
-  return themeIds;
+/**
+ * Return every selectable theme id: bundled themes first, then custom themes in
+ * the order the session resolved them.
+ */
+export function availableThemeIds(customThemes: readonly NamedCustomThemeConfig[] = []): string[] {
+  return [...THEMES.map((theme) => theme.id), ...customThemes.map((theme) => theme.id)];
 }
 
-/** Return selectable themes, adding the config-defined custom theme only when available. */
-export function availableThemes(customTheme?: CustomThemeConfig): AppTheme[] {
-  return customTheme ? [...THEMES, buildCustomTheme(customTheme)] : THEMES;
+/**
+ * Return selectable themes in menu and cycle order.
+ *
+ * The custom themes are expected to be one already-merged list (config themes
+ * before extension themes, ids deduped) so this stays a pure projection.
+ */
+export function availableThemes(customThemes: readonly NamedCustomThemeConfig[] = []): AppTheme[] {
+  return customThemes.length > 0
+    ? [...THEMES, ...customThemes.map((customTheme) => buildCustomTheme(customTheme))]
+    : THEMES;
 }
 
-/** Resolve a named theme, including terminal-background auto mode and custom themes. */
+/**
+ * Resolve a named theme, including terminal-background auto mode and custom themes.
+ *
+ * Custom themes are matched before bundled ids so a custom theme that reuses a
+ * deprecated built-in alias still resolves to what the user actually defined.
+ */
 export function resolveTheme(
   requested: string | undefined,
   themeMode: ThemeMode | null,
-  customTheme?: CustomThemeConfig,
+  customThemes: readonly NamedCustomThemeConfig[] = [],
 ) {
   if (requested === "auto") {
     return fallbackTheme(themeMode);
   }
 
-  if (requested === "custom" && customTheme) {
+  const customTheme = requested ? customThemes.find((theme) => theme.id === requested) : undefined;
+  if (customTheme) {
     return buildCustomTheme(customTheme);
   }
 

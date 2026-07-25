@@ -1,0 +1,12 @@
+import type { CustomThemeConfig, NamedCustomThemeConfig } from "../../src/core/types";
+
+/**
+ * Name one custom palette so it can be passed to the theme APIs, which take the
+ * full list of custom themes a session resolved.
+ */
+export function createTestCustomThemes(
+  theme: CustomThemeConfig,
+  id = "custom",
+): NamedCustomThemeConfig[] {
+  return [{ id, ...theme }];
+}

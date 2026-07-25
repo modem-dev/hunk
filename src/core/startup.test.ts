@@ -3,7 +3,7 @@ import { createEmptyExtensionLoadResult } from "../extensions/types";
 import type { HunkConfigResolution } from "./config";
 import { HunkUserError } from "./errors";
 import { prepareStartupPlan } from "./startup";
-import type { AppBootstrap, CliInput, ParsedCliInput } from "./types";
+import type { AppBootstrap, CliInput, NamedCustomThemeConfig, ParsedCliInput } from "./types";
 
 /**
  * Build a config resolution for tests that are not exercising config layering.
@@ -17,6 +17,7 @@ function createTestConfigResolution(
 ): HunkConfigResolution {
   return {
     input,
+    customThemes: [],
     extensions: { enabled: false, paths: [], repoPaths: [], extensionConfigs: {} },
     ...overrides,
   };
@@ -247,7 +248,7 @@ describe("startup planning", () => {
   test("routes diff-like pager stdin to static output when the host advertises a captured pager", async () => {
     let loaded = false;
     const patchText = "diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n";
-    const customTheme = { base: "github-light-default", text: "#123456" };
+    const customThemes = [{ id: "custom", base: "github-light-default", text: "#123456" }];
 
     const plan = await prepareStartupPlan(["bun", "hunk", "pager"], {
       parseCliImpl: async () => ({
@@ -265,7 +266,7 @@ describe("startup planning", () => {
             ...input,
             options: { ...input.options, lineNumbers: false, theme: "custom" },
           },
-          { customTheme },
+          { customThemes },
         ),
       loadAppBootstrapImpl: async () => {
         loaded = true;
@@ -277,7 +278,7 @@ describe("startup planning", () => {
       kind: "static-diff-pager",
       text: patchText,
       options: { theme: "custom", pager: true, lineNumbers: false },
-      customTheme,
+      customThemes,
     });
     expect(loaded).toBe(false);
   });
@@ -317,21 +318,24 @@ describe("startup planning", () => {
         theme: "custom",
       },
     };
-    const customTheme = {
-      base: "github-dark-default",
-      accent: "#123456",
-    };
+    const customThemes = [
+      {
+        id: "custom",
+        base: "github-dark-default",
+        accent: "#123456",
+      },
+    ];
 
     await prepareStartupPlan(["bun", "hunk", "patch", "-"], {
       parseCliImpl: async () => cliInput as ParsedCliInput,
       resolveRuntimeCliInputImpl: (input) => input,
-      resolveConfiguredCliInputImpl: (input) => createTestConfigResolution(input, { customTheme }),
+      resolveConfiguredCliInputImpl: (input) => createTestConfigResolution(input, { customThemes }),
       loadAppBootstrapImpl: async (input, options) => {
         expect(input).toBe(cliInput);
-        expect(options).toEqual({ customTheme });
+        expect(options).toEqual({ customThemes });
         return {
           ...createBootstrap(input),
-          customTheme,
+          customThemes,
         };
       },
       usesPipedPatchInputImpl: () => false,
@@ -543,6 +547,48 @@ describe("startup planning", () => {
     // Load failures reach the user through the existing startup notice channel.
     expect(plan.bootstrap.startupNotices).toEqual([
       { key: "extension:/tmp/broken.ts", message: "Extension broken failed to load • boom" },
+    ]);
+  });
+
+  test("merges extension themes behind config themes and reports the collisions", async () => {
+    const cliInput: CliInput = { kind: "patch", file: "-", options: { theme: "ocean" } };
+    const extensionResult = createEmptyExtensionLoadResult();
+    extensionResult.registry.themes.push(
+      { extensionId: "pack", theme: { id: "ocean", accent: "#654321" } },
+      { extensionId: "pack", theme: { id: "sunset", accent: "#abcdef" } },
+      { extensionId: "pack", theme: { id: "Bad Id" } },
+    );
+    let bootstrapOptions: { customThemes?: readonly NamedCustomThemeConfig[] } | undefined;
+
+    const plan = await prepareStartupPlan(["bun", "hunk", "patch", "-"], {
+      parseCliImpl: async () => cliInput as ParsedCliInput,
+      resolveRuntimeCliInputImpl: (input) => input,
+      resolveConfiguredCliInputImpl: (input) =>
+        createTestConfigResolution(input, {
+          customThemes: [{ id: "ocean", accent: "#123456" }],
+          extensions: { enabled: true, paths: [], repoPaths: [], extensionConfigs: {} },
+        }),
+      loadStartupExtensionsImpl: async () => extensionResult,
+      loadAppBootstrapImpl: async (input, options) => {
+        bootstrapOptions = options;
+        return createBootstrap(input);
+      },
+      usesPipedPatchInputImpl: () => false,
+    });
+
+    // Config themes keep their id; extension themes fill the ids that are still free.
+    expect(bootstrapOptions?.customThemes).toEqual([
+      { id: "ocean", accent: "#123456" },
+      { id: "sunset", accent: "#abcdef" },
+    ]);
+    expect(plan.kind).toBe("app");
+    if (plan.kind !== "app") {
+      throw new Error("Expected app startup plan.");
+    }
+
+    expect(plan.bootstrap.startupNotices?.map((notice) => notice.message)).toEqual([
+      'Skipped theme "ocean" from extension pack • config already defines it',
+      'Skipped theme "Bad Id" from extension pack • theme ids must be lowercase words separated by - or _',
     ]);
   });
 

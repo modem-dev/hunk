@@ -170,6 +170,17 @@ export interface CustomThemeConfig {
   syntaxScopes?: CustomSyntaxScopesConfig;
 }
 
+/**
+ * One custom theme together with the id it is selected by.
+ *
+ * Config tables (`[custom_theme]`, `[themes.<id>]`) and extension
+ * `registerTheme` calls all normalize into this one shape, so the theme model
+ * downstream never has to know where a theme came from.
+ */
+export interface NamedCustomThemeConfig extends CustomThemeConfig {
+  id: string;
+}
+
 /** Resolved `[extensions]` and `[extension.<id>]` configuration for one invocation. */
 export interface ExtensionsConfig {
   /** False when `--no-extensions` or `[extensions] enabled = false` disables loading. */
@@ -419,7 +430,8 @@ export interface AppBootstrap {
   initialMode: LayoutMode;
   initialTheme?: string;
   initialThemeMode?: TerminalThemeMode;
-  customTheme?: CustomThemeConfig;
+  /** Selectable custom themes for this session, in menu order. */
+  customThemes?: readonly NamedCustomThemeConfig[];
   initialShowLineNumbers?: boolean;
   initialTabWidth?: number;
   initialWrapLines?: boolean;

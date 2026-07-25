@@ -15,6 +15,7 @@ import { stackCellPalette } from "./rowStyle";
 import { buildReviewRenderPlan } from "./reviewRenderPlan";
 import { measureTextWidth } from "../lib/text";
 import { TRANSPARENT_BACKGROUND, resolveTheme } from "../themes";
+import { createTestCustomThemes } from "../../../test/helpers/theme-helpers";
 
 function createDiffFile(): DiffFile {
   const metadata = parseDiffFromFile(
@@ -458,20 +459,28 @@ describe("Pierre diff rows", () => {
   test("applies distinct custom palettes to expanded-source highlighting", async () => {
     const file = createDiffFile();
     const text = "// expanded comment\nexport const hiddenMarker = true;\n";
-    const firstTheme = resolveTheme("custom", null, {
-      base: "nord",
-      syntaxScopes: {
-        "comment.line.double-slash.ts": "#abcdef",
-        "punctuation.definition.comment.ts": "#abcdef",
-      },
-    });
-    const secondTheme = resolveTheme("custom", null, {
-      base: "nord",
-      syntaxScopes: {
-        "comment.line.double-slash.ts": "#fedcba",
-        "punctuation.definition.comment.ts": "#fedcba",
-      },
-    });
+    const firstTheme = resolveTheme(
+      "custom",
+      null,
+      createTestCustomThemes({
+        base: "nord",
+        syntaxScopes: {
+          "comment.line.double-slash.ts": "#abcdef",
+          "punctuation.definition.comment.ts": "#abcdef",
+        },
+      }),
+    );
+    const secondTheme = resolveTheme(
+      "custom",
+      null,
+      createTestCustomThemes({
+        base: "nord",
+        syntaxScopes: {
+          "comment.line.double-slash.ts": "#fedcba",
+          "punctuation.definition.comment.ts": "#fedcba",
+        },
+      }),
+    );
     const [firstHighlighted, secondHighlighted] = await Promise.all([
       loadHighlightedSourceLines({ file, text, theme: firstTheme }),
       loadHighlightedSourceLines({ file, text, theme: secondTheme }),
@@ -595,21 +604,25 @@ describe("Pierre diff rows", () => {
     };
 
     for (const themeId of ["github-dark-default", "github-light-default"] as const) {
-      const theme = resolveTheme("custom", null, {
-        base: themeId,
-        syntaxScopes: {
-          "storage.type.class.ts": "#112233",
-          "entity.name.function.ts": "#223344",
-          "string.quoted.double.ts": "#334455",
-          comment: "#445566",
-          "constant.numeric.decimal.ts": "#556677",
-          "variable.other.property.ts": "#667788",
-          "entity.name.type.class.ts": "#778899",
-          "variable.other.constant.ts": "#8899aa",
-          "keyword.operator.assignment.ts": "#99aabb",
-          "punctuation.terminator.statement.ts": "#aabbcc",
-        },
-      });
+      const theme = resolveTheme(
+        "custom",
+        null,
+        createTestCustomThemes({
+          base: themeId,
+          syntaxScopes: {
+            "storage.type.class.ts": "#112233",
+            "entity.name.function.ts": "#223344",
+            "string.quoted.double.ts": "#334455",
+            comment: "#445566",
+            "constant.numeric.decimal.ts": "#556677",
+            "variable.other.property.ts": "#667788",
+            "entity.name.type.class.ts": "#778899",
+            "variable.other.constant.ts": "#8899aa",
+            "keyword.operator.assignment.ts": "#99aabb",
+            "punctuation.terminator.statement.ts": "#aabbcc",
+          },
+        }),
+      );
       const highlighted = await loadHighlightedDiff(file, theme);
       const spans = buildStackRows(file, highlighted, theme)
         .filter(
@@ -655,24 +668,36 @@ describe("Pierre diff rows", () => {
       agent: null,
     };
     const baseTheme = resolveTheme("nord", null);
-    const customTheme = resolveTheme("custom", null, {
-      base: "nord",
-      syntaxScopes: {
-        "comment.line.double-slash.ts": "#abcdef",
-        "punctuation.definition.comment.ts": "#abcdef",
-      },
-    });
-    const nextCustomTheme = resolveTheme("custom", null, {
-      base: "nord",
-      syntaxScopes: {
-        "comment.line.double-slash.ts": "#fedcba",
-        "punctuation.definition.comment.ts": "#fedcba",
-      },
-    });
-    const variableTheme = resolveTheme("custom", null, {
-      base: "nord",
-      syntaxScopes: { "variable.other.object.ts": "#030303" },
-    });
+    const customTheme = resolveTheme(
+      "custom",
+      null,
+      createTestCustomThemes({
+        base: "nord",
+        syntaxScopes: {
+          "comment.line.double-slash.ts": "#abcdef",
+          "punctuation.definition.comment.ts": "#abcdef",
+        },
+      }),
+    );
+    const nextCustomTheme = resolveTheme(
+      "custom",
+      null,
+      createTestCustomThemes({
+        base: "nord",
+        syntaxScopes: {
+          "comment.line.double-slash.ts": "#fedcba",
+          "punctuation.definition.comment.ts": "#fedcba",
+        },
+      }),
+    );
+    const variableTheme = resolveTheme(
+      "custom",
+      null,
+      createTestCustomThemes({
+        base: "nord",
+        syntaxScopes: { "variable.other.object.ts": "#030303" },
+      }),
+    );
     const [baseHighlighted, customHighlighted, nextCustomHighlighted, variableHighlighted] =
       await Promise.all([
         loadHighlightedDiff(file, baseTheme),
@@ -745,10 +770,14 @@ describe("Pierre diff rows", () => {
       agent: null,
     };
     const baseTheme = resolveTheme("everforest-dark", null);
-    const customTheme = resolveTheme("custom", null, {
-      base: "everforest-dark",
-      syntaxScopes: { "keyword.operator": "#123456" },
-    });
+    const customTheme = resolveTheme(
+      "custom",
+      null,
+      createTestCustomThemes({
+        base: "everforest-dark",
+        syntaxScopes: { "keyword.operator": "#123456" },
+      }),
+    );
     const [baseHighlighted, customHighlighted] = await Promise.all([
       loadHighlightedDiff(file, baseTheme),
       loadHighlightedDiff(file, customTheme),

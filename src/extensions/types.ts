@@ -1,5 +1,5 @@
 import { basename, dirname, extname } from "node:path";
-import type { Changeset, CustomThemeConfig } from "../core/types";
+import type { Changeset, NamedCustomThemeConfig } from "../core/types";
 import type { VcsAdapter } from "../core/vcs/types";
 
 /**
@@ -17,13 +17,10 @@ export type ExtensionOrigin = "global" | "repo" | "config" | "flag";
 /**
  * A theme contributed by an extension.
  *
- * Same shape as the `[custom_theme]` config table, plus the id the theme is
- * selected by, so one extension can ship several named themes.
+ * Identical to a `[themes.<id>]` config table, so config-defined and
+ * extension-contributed themes share one validation and merge path.
  */
-export interface ExtensionThemeConfig extends CustomThemeConfig {
-  id: string;
-  label?: string;
-}
+export type ExtensionThemeConfig = NamedCustomThemeConfig;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
 

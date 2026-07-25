@@ -1,6 +1,12 @@
 import fs from "node:fs";
 import { dirname, join } from "node:path";
 import { BUNDLED_SHIKI_THEME_IDS, resolveBundledShikiThemeId } from "../ui/lib/shikiThemes";
+import {
+  createInvalidThemeIdNotice,
+  createThemeCollisionNotice,
+  describeCustomThemeIdIssue,
+  LEGACY_CUSTOM_THEME_ID,
+} from "./customThemes";
 import { LEGACY_CUSTOM_SYNTAX_COLOR_KEYS, resolveSyntaxScopeOverrides } from "./legacySyntaxScopes";
 import { resolveGlobalConfigPath } from "./paths";
 import { LEGACY_CUSTOM_SYNTAX_NOTICES, type StartupNotice } from "./startupNotice";
@@ -11,9 +17,9 @@ import type {
   CommonOptions,
   CustomSyntaxColorsConfig,
   CustomSyntaxScopesConfig,
-  CustomThemeConfig,
   ExtensionsConfig,
   LayoutMode,
+  NamedCustomThemeConfig,
   PersistedViewPreferences,
   VcsMode,
 } from "./types";
@@ -87,7 +93,8 @@ interface ConfigResolutionOptions {
 
 export interface HunkConfigResolution {
   input: CliInput;
-  customTheme?: CustomThemeConfig;
+  /** Config-defined custom themes in declaration order, user layer before repo layer. */
+  customThemes: NamedCustomThemeConfig[];
   extensions: ExtensionsConfig;
   startupNotices?: readonly StartupNotice[];
   globalConfigPath?: string;
@@ -186,22 +193,16 @@ function normalizeThemeColor(value: unknown, keyPath: string) {
   return value.toLowerCase();
 }
 
-/** Accept only built-in theme ids for config-defined custom themes. */
-function normalizeCustomThemeBase(value: unknown) {
+/** Accept only built-in theme ids as the base one config-defined theme inherits from. */
+function normalizeCustomThemeBase(value: unknown, keyPath: string) {
   if (value === undefined) {
     return undefined;
   }
 
-  if (typeof value !== "string") {
-    throw new Error(
-      `Expected custom_theme.base to be a built-in theme id. Known themes: ${BUILT_IN_THEME_IDS.join(", ")}.`,
-    );
-  }
-
-  const resolvedThemeId = resolveBundledShikiThemeId(value);
+  const resolvedThemeId = typeof value === "string" ? resolveBundledShikiThemeId(value) : undefined;
   if (!resolvedThemeId) {
     throw new Error(
-      `Expected custom_theme.base to be a built-in theme id. Known themes: ${BUILT_IN_THEME_IDS.join(", ")}.`,
+      `Expected ${keyPath}.base to be a built-in theme id. Known themes: ${BUILT_IN_THEME_IDS.join(", ")}.`,
     );
   }
 
@@ -211,11 +212,12 @@ function normalizeCustomThemeBase(value: unknown) {
 /** Read the deprecated semantic colors retained for one compatibility release window. */
 function readLegacyCustomSyntaxColors(
   source: Record<string, unknown>,
+  keyPath: string,
 ): CustomSyntaxColorsConfig | undefined {
   const syntax: CustomSyntaxColorsConfig = {};
 
   for (const key of LEGACY_CUSTOM_SYNTAX_COLOR_KEYS) {
-    const value = normalizeThemeColor(source[key], `custom_theme.syntax.${key}`);
+    const value = normalizeThemeColor(source[key], `${keyPath}.syntax.${key}`);
     if (value !== undefined) {
       syntax[key] = value;
     }
@@ -224,18 +226,19 @@ function readLegacyCustomSyntaxColors(
   return Object.keys(syntax).length > 0 ? syntax : undefined;
 }
 
-/** Read exact Shiki/TextMate scope colors from a [custom_theme.syntax_scopes] TOML table. */
+/** Read exact Shiki/TextMate scope colors from a theme's `syntax_scopes` TOML table. */
 function readCustomSyntaxScopes(
   source: Record<string, unknown>,
+  keyPath: string,
 ): CustomSyntaxScopesConfig | undefined {
   const syntaxScopes: CustomSyntaxScopesConfig = {};
 
   for (const [scope, rawColor] of Object.entries(source)) {
     if (scope.trim().length === 0) {
-      throw new Error("Expected custom_theme.syntax_scopes keys to be non-empty Shiki scopes.");
+      throw new Error(`Expected ${keyPath}.syntax_scopes keys to be non-empty Shiki scopes.`);
     }
 
-    const color = normalizeThemeColor(rawColor, `custom_theme.syntax_scopes.${scope}`);
+    const color = normalizeThemeColor(rawColor, `${keyPath}.syntax_scopes.${scope}`);
     if (color !== undefined) {
       syntaxScopes[scope] = color;
     }
@@ -244,76 +247,131 @@ function readCustomSyntaxScopes(
   return Object.keys(syntaxScopes).length > 0 ? syntaxScopes : undefined;
 }
 
-interface CustomThemeLayer {
-  customTheme?: CustomThemeConfig;
+interface CustomThemeTable {
+  theme: NamedCustomThemeConfig;
   usesLegacySyntax: boolean;
 }
 
-/** Read one config layer's optional custom theme and compatibility metadata. */
-function readCustomTheme(source: Record<string, unknown>): CustomThemeLayer {
-  const customThemeSource = source.custom_theme;
-  if (!isRecord(customThemeSource)) {
-    return { usesLegacySyntax: false };
-  }
-
-  const legacySyntaxSource = customThemeSource.syntax;
+/**
+ * Read one custom theme TOML table into a named theme.
+ *
+ * `keyPath` is the table's own path (`custom_theme` or `themes.<id>`) so every
+ * validation error names the key the user actually wrote.
+ */
+function readCustomThemeTable(
+  source: Record<string, unknown>,
+  id: string,
+  keyPath: string,
+): CustomThemeTable {
+  const legacySyntaxSource = source.syntax;
   if (legacySyntaxSource !== undefined && !isRecord(legacySyntaxSource)) {
-    throw new Error("Expected custom_theme.syntax to contain a TOML table.");
+    throw new Error(`Expected ${keyPath}.syntax to contain a TOML table.`);
   }
 
-  const syntaxScopesSource = customThemeSource.syntax_scopes;
+  const syntaxScopesSource = source.syntax_scopes;
   if (syntaxScopesSource !== undefined && !isRecord(syntaxScopesSource)) {
-    throw new Error("Expected custom_theme.syntax_scopes to contain a TOML table.");
+    throw new Error(`Expected ${keyPath}.syntax_scopes to contain a TOML table.`);
   }
 
-  const customTheme: CustomThemeConfig = {
-    base: normalizeCustomThemeBase(customThemeSource.base),
+  const theme: NamedCustomThemeConfig = {
+    id,
+    base: normalizeCustomThemeBase(source.base, keyPath),
   };
-  const label = normalizeString(customThemeSource.label);
+  const label = normalizeString(source.label);
   if (label !== undefined) {
-    customTheme.label = label;
+    theme.label = label;
   }
 
   for (const key of CUSTOM_THEME_COLOR_KEYS) {
-    const value = normalizeThemeColor(customThemeSource[key], `custom_theme.${key}`);
+    const value = normalizeThemeColor(source[key], `${keyPath}.${key}`);
     if (value !== undefined) {
-      customTheme[key] = value;
+      theme[key] = value;
     }
   }
 
   const legacySyntax = isRecord(legacySyntaxSource)
-    ? readLegacyCustomSyntaxColors(legacySyntaxSource)
+    ? readLegacyCustomSyntaxColors(legacySyntaxSource, keyPath)
     : undefined;
   const exactSyntaxScopes = isRecord(syntaxScopesSource)
-    ? readCustomSyntaxScopes(syntaxScopesSource)
+    ? readCustomSyntaxScopes(syntaxScopesSource, keyPath)
     : undefined;
   const syntaxScopes = resolveSyntaxScopeOverrides(legacySyntax, exactSyntaxScopes);
   if (syntaxScopes) {
     // Normalize legacy config at the boundary so every runtime highlighter uses raw scopes only.
-    customTheme.syntaxScopes = syntaxScopes;
+    theme.syntaxScopes = syntaxScopes;
   }
 
   return {
-    customTheme,
+    theme,
     usesLegacySyntax: Boolean(legacySyntax),
   };
 }
 
-/** Merge partial custom theme layers while keeping exact syntax scope overrides field-based. */
-function mergeCustomTheme(
-  base: CustomThemeConfig | undefined,
-  overrides: CustomThemeConfig | undefined,
-): CustomThemeConfig | undefined {
-  if (!base) {
-    return overrides;
-  }
-  if (!overrides) {
-    return base;
+interface CustomThemeLayer {
+  /** `[custom_theme]` first, then `[themes.<id>]` tables in file order. */
+  themes: NamedCustomThemeConfig[];
+  usesLegacySyntax: boolean;
+  notices: StartupNotice[];
+}
+
+/** Read every custom theme one config layer declares, skipping unusable ids with a notice. */
+function readCustomThemes(source: Record<string, unknown>): CustomThemeLayer {
+  const themes: NamedCustomThemeConfig[] = [];
+  const notices: StartupNotice[] = [];
+  let usesLegacySyntax = false;
+
+  const legacyThemeSource = source.custom_theme;
+  if (legacyThemeSource !== undefined && !isRecord(legacyThemeSource)) {
+    throw new Error("Expected custom_theme to contain a TOML table.");
   }
 
+  if (isRecord(legacyThemeSource)) {
+    const read = readCustomThemeTable(legacyThemeSource, LEGACY_CUSTOM_THEME_ID, "custom_theme");
+    themes.push(read.theme);
+    usesLegacySyntax ||= read.usesLegacySyntax;
+  }
+
+  const namedThemeSource = source.themes;
+  if (namedThemeSource !== undefined && !isRecord(namedThemeSource)) {
+    throw new Error("Expected themes to contain named TOML tables.");
+  }
+
+  if (isRecord(namedThemeSource)) {
+    for (const [id, table] of Object.entries(namedThemeSource)) {
+      if (!isRecord(table)) {
+        throw new Error(`Expected [themes.${id}] to contain a TOML table.`);
+      }
+
+      const issue = describeCustomThemeIdIssue(id);
+      if (issue) {
+        notices.push(createInvalidThemeIdNotice("config", id, issue));
+        continue;
+      }
+
+      // The original single-slot table keeps the `custom` id it has always owned.
+      if (themes.some((theme) => theme.id === id)) {
+        notices.push(createThemeCollisionNotice("config", id, "[custom_theme]"));
+        continue;
+      }
+
+      const read = readCustomThemeTable(table, id, `themes.${id}`);
+      themes.push(read.theme);
+      usesLegacySyntax ||= read.usesLegacySyntax;
+    }
+  }
+
+  return { themes, usesLegacySyntax, notices };
+}
+
+/** Merge two layers of one theme while keeping exact syntax scope overrides field-based. */
+function mergeCustomTheme(
+  base: NamedCustomThemeConfig,
+  overrides: NamedCustomThemeConfig,
+): NamedCustomThemeConfig {
   return {
     ...base,
     ...overrides,
+    id: base.id,
     base: overrides.base ?? base.base ?? "github-dark-default",
     label: overrides.label ?? base.label,
     syntaxScopes:
@@ -324,6 +382,50 @@ function mergeCustomTheme(
           }
         : undefined,
   };
+}
+
+/**
+ * Layer one config layer's themes over the themes resolved so far.
+ *
+ * Same-id themes merge field by field with the later layer winning, exactly
+ * like every other layered option; new ids keep their declaration order.
+ */
+function mergeCustomThemeLayer(
+  base: NamedCustomThemeConfig[],
+  overrides: readonly NamedCustomThemeConfig[],
+): NamedCustomThemeConfig[] {
+  const merged = [...base];
+
+  for (const override of overrides) {
+    const index = merged.findIndex((theme) => theme.id === override.id);
+    if (index < 0) {
+      merged.push(override);
+      continue;
+    }
+
+    merged[index] = mergeCustomTheme(merged[index]!, override);
+  }
+
+  return merged;
+}
+
+/**
+ * Combine config-sourced startup notices.
+ *
+ * Returns the shared legacy-notice array identity when nothing else needs
+ * reporting, so unchanged config reloads do not restart the notice queue.
+ */
+function buildConfigStartupNotices(
+  usesLegacyCustomSyntax: boolean,
+  themeNotices: readonly StartupNotice[],
+): readonly StartupNotice[] | undefined {
+  if (themeNotices.length === 0) {
+    return usesLegacyCustomSyntax ? LEGACY_CUSTOM_SYNTAX_NOTICES : undefined;
+  }
+
+  return usesLegacyCustomSyntax
+    ? [...LEGACY_CUSTOM_SYNTAX_NOTICES, ...themeNotices]
+    : [...themeNotices];
 }
 
 /** One config layer's extension settings, before user/repo layers are merged. */
@@ -581,8 +683,9 @@ export function resolveConfiguredCliInput(
   const repoRoot = findVcsRepoRootCandidate(cwd);
   const repoConfigPath = repoRoot ? join(repoRoot, ".hunk", "config.toml") : undefined;
   const userConfigPath = resolveGlobalConfigPath(env);
-  let resolvedCustomTheme: CustomThemeConfig | undefined;
+  let resolvedCustomThemes: NamedCustomThemeConfig[] = [];
   let usesLegacyCustomSyntax = false;
+  const themeNotices = new Map<string, StartupNotice>();
   let userExtensionsLayer: ExtensionsLayer = { paths: [], extensionConfigs: {} };
   let repoExtensionsLayer: ExtensionsLayer = { paths: [], extensionConfigs: {} };
 
@@ -608,21 +711,26 @@ export function resolveConfiguredCliInput(
     transparentBackground: false,
   };
 
+  /** Fold one parsed config layer's themes into the resolved list and notice set. */
+  const applyCustomThemeLayer = (layer: CustomThemeLayer) => {
+    resolvedCustomThemes = mergeCustomThemeLayer(resolvedCustomThemes, layer.themes);
+    usesLegacyCustomSyntax ||= layer.usesLegacySyntax;
+    for (const notice of layer.notices) {
+      themeNotices.set(notice.key, notice);
+    }
+  };
+
   if (userConfigPath) {
     const userConfig = readTomlRecord(userConfigPath);
-    const themeLayer = readCustomTheme(userConfig);
     resolvedOptions = mergeOptions(resolvedOptions, resolveConfigLayer(userConfig, input));
-    resolvedCustomTheme = mergeCustomTheme(resolvedCustomTheme, themeLayer.customTheme);
-    usesLegacyCustomSyntax ||= themeLayer.usesLegacySyntax;
+    applyCustomThemeLayer(readCustomThemes(userConfig));
     userExtensionsLayer = readExtensionsLayer(userConfig);
   }
 
   if (repoConfigPath) {
     const repoConfig = readTomlRecord(repoConfigPath);
-    const themeLayer = readCustomTheme(repoConfig);
     resolvedOptions = mergeOptions(resolvedOptions, resolveConfigLayer(repoConfig, input));
-    resolvedCustomTheme = mergeCustomTheme(resolvedCustomTheme, themeLayer.customTheme);
-    usesLegacyCustomSyntax ||= themeLayer.usesLegacySyntax;
+    applyCustomThemeLayer(readCustomThemes(repoConfig));
     repoExtensionsLayer = readExtensionsLayer(repoConfig);
   }
 
@@ -649,7 +757,12 @@ export function resolveConfiguredCliInput(
     colorMoved: resolvedOptions.colorMoved,
   };
 
-  if (resolvedOptions.theme === "custom" && !resolvedCustomTheme) {
+  // Only the legacy `custom` id is a hard error: every other unknown id may still name a theme an
+  // extension contributes later, so those fall back to the default theme instead of failing startup.
+  if (
+    resolvedOptions.theme === LEGACY_CUSTOM_THEME_ID &&
+    !resolvedCustomThemes.some((theme) => theme.id === LEGACY_CUSTOM_THEME_ID)
+  ) {
     throw new Error('Expected a [custom_theme] table when config selects theme = "custom".');
   }
 
@@ -673,9 +786,9 @@ export function resolveConfiguredCliInput(
       ...input,
       options: resolvedOptions,
     },
-    customTheme: resolvedCustomTheme,
+    customThemes: resolvedCustomThemes,
     extensions,
-    startupNotices: usesLegacyCustomSyntax ? LEGACY_CUSTOM_SYNTAX_NOTICES : undefined,
+    startupNotices: buildConfigStartupNotices(usesLegacyCustomSyntax, [...themeNotices.values()]),
     globalConfigPath: userConfigPath,
     repoConfigPath,
     // Persist in the repo config only when the repo already has one; otherwise keep personal view

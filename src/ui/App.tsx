@@ -149,7 +149,7 @@ export function App({
       resolveTheme(
         bootstrap.initialTheme,
         bootstrap.initialThemeMode ?? renderer.themeMode,
-        bootstrap.customTheme,
+        bootstrap.customThemes,
       ).id,
   );
   // Soft reloads replace bootstrap without re-running startup terminal theme detection.
@@ -180,13 +180,13 @@ export function App({
   const sessionNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const themeOptions = useMemo(
-    () => availableThemes(bootstrap.customTheme),
-    [bootstrap.customTheme],
+    () => availableThemes(bootstrap.customThemes),
+    [bootstrap.customThemes],
   );
   const effectiveThemeId = themeSelectorState.previewThemeId ?? themeId;
   const baseTheme = useMemo(
-    () => resolveTheme(effectiveThemeId, detectedThemeMode ?? null, bootstrap.customTheme),
-    [effectiveThemeId, detectedThemeMode, bootstrap.customTheme],
+    () => resolveTheme(effectiveThemeId, detectedThemeMode ?? null, bootstrap.customThemes),
+    [effectiveThemeId, detectedThemeMode, bootstrap.customThemes],
   );
   const activeTheme = useMemo(
     () =>

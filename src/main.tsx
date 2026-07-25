@@ -57,7 +57,7 @@ async function main() {
     const { renderStaticDiffPager } = await import("./ui/staticDiffPager");
     process.stdout.write(
       await renderStaticDiffPager(startupPlan.text, startupPlan.options, {
-        customTheme: startupPlan.customTheme,
+        customThemes: startupPlan.customThemes,
         stderr: process.stderr,
       }),
     );

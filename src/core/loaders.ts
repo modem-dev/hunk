@@ -20,7 +20,7 @@ import type {
   AgentContext,
   Changeset,
   CliInput,
-  CustomThemeConfig,
+  NamedCustomThemeConfig,
   DiffFile,
   DiffLineMoveKind,
   DiffLineMoveKinds,
@@ -34,7 +34,8 @@ import type {
 
 interface LoadAppBootstrapOptions {
   cwd?: string;
-  customTheme?: CustomThemeConfig;
+  /** Selectable custom themes for this session, already merged into menu order. */
+  customThemes?: readonly NamedCustomThemeConfig[];
   gitExecutable?: string;
 }
 
@@ -424,7 +425,7 @@ async function loadPatchChangeset(
 /** Resolve CLI input into the fully loaded app bootstrap state. */
 export async function loadAppBootstrap(
   input: CliInput,
-  { cwd = process.cwd(), customTheme, gitExecutable = "git" }: LoadAppBootstrapOptions = {},
+  { cwd = process.cwd(), customThemes, gitExecutable = "git" }: LoadAppBootstrapOptions = {},
 ): Promise<AppBootstrap> {
   // Capture before loading content so watch mode can detect mutations that race initial loading.
   let initialWatchSignature: string | undefined;
@@ -473,7 +474,7 @@ export async function loadAppBootstrap(
     changeset,
     initialMode: input.options.mode ?? "auto",
     initialTheme: input.options.theme,
-    customTheme,
+    customThemes,
     initialShowLineNumbers: input.options.lineNumbers ?? true,
     initialTabWidth: input.options.tabWidth ?? DEFAULT_TAB_WIDTH,
     initialWrapLines: input.options.wrapLines ?? false,

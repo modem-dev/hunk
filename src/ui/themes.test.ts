@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { createTestCustomThemes } from "../../test/helpers/theme-helpers";
 import { blendHex, contrastRatio, hexColorDistance } from "./lib/color";
 import { BUNDLED_SHIKI_THEME_IDS } from "./lib/shikiThemes";
 import {
@@ -231,12 +232,16 @@ describe("themes", () => {
   });
 
   test("layers custom theme overrides on a bundled base", () => {
-    const custom = resolveTheme("custom", null, {
-      base: "catppuccin-mocha",
-      label: "My Theme",
-      text: "#ffffff",
-      syntaxScopes: { "keyword.control": "#ff00ff" },
-    });
+    const custom = resolveTheme(
+      "custom",
+      null,
+      createTestCustomThemes({
+        base: "catppuccin-mocha",
+        label: "My Theme",
+        text: "#ffffff",
+        syntaxScopes: { "keyword.control": "#ff00ff" },
+      }),
+    );
 
     expect(custom.id).toBe("custom");
     expect(custom.label).toBe("My Theme");
@@ -245,6 +250,51 @@ describe("themes", () => {
     expect(custom.syntaxTheme).toBe("catppuccin-mocha");
     expect(custom.syntaxScopeOverrides).toEqual({ "keyword.control": "#ff00ff" });
     expect(custom.syntaxColors).toBe(resolveTheme("catppuccin-mocha", null).syntaxColors);
+  });
+
+  test("lists custom themes after the bundled themes in declaration order", () => {
+    const customThemes = [
+      { id: "custom", base: "nord" },
+      { id: "ocean", base: "nord", label: "Ocean" },
+      { id: "sunset", base: "github-light-default" },
+    ];
+
+    expect(availableThemeIds(customThemes)).toEqual([
+      ...BUNDLED_SHIKI_THEME_IDS,
+      "custom",
+      "ocean",
+      "sunset",
+    ]);
+    expect(availableThemes(customThemes).map((theme) => [theme.id, theme.label])).toEqual([
+      ...BUNDLED_SHIKI_THEME_IDS.map((themeId) => [themeId, themeId]),
+      // Named themes label themselves by id; the original single-slot theme keeps "Custom".
+      ["custom", "Custom"],
+      ["ocean", "Ocean"],
+      ["sunset", "sunset"],
+    ]);
+  });
+
+  test("resolves each custom theme by its own id", () => {
+    const customThemes = [
+      { id: "ocean", base: "nord", accent: "#123456" },
+      { id: "sunset", base: "github-light-default", accent: "#654321" },
+    ];
+
+    expect(resolveTheme("ocean", null, customThemes).accent).toBe("#123456");
+    expect(resolveTheme("ocean", null, customThemes).background).toBe(
+      resolveTheme("nord", null).background,
+    );
+    expect(resolveTheme("sunset", null, customThemes).accent).toBe("#654321");
+    // Unknown ids stay on the built-in fallback instead of picking an unrelated custom theme.
+    expect(resolveTheme("missing", null, customThemes).id).toBe(DEFAULT_DARK_THEME_ID);
+    expect(resolveTheme("auto", "light", customThemes).id).toBe(DEFAULT_LIGHT_THEME_ID);
+  });
+
+  test("prefers a custom theme over a deprecated built-in alias of the same id", () => {
+    const customThemes = [{ id: "midnight", base: "nord", accent: "#123456" }];
+
+    expect(resolveTheme("midnight", null, customThemes).id).toBe("midnight");
+    expect(resolveTheme("midnight", null).id).toBe("github-dark-dimmed");
   });
 
   test("withTransparentSurfaces keeps added/removed row tints", () => {

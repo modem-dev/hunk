@@ -280,17 +280,189 @@ describe("config resolution", () => {
     });
 
     expect(resolved.input.options.theme).toBe("custom");
-    expect(resolved.customTheme).toEqual({
-      base: "github-dark-default",
-      label: "Repo Custom",
-      accent: "#123456",
-      panel: "#654321",
-      syntaxScopes: {
-        "keyword.control": "#abcdef",
-        "string.quoted": "#fedcba",
+    expect(resolved.customThemes).toEqual([
+      {
+        id: "custom",
+        base: "github-dark-default",
+        label: "Repo Custom",
+        accent: "#123456",
+        panel: "#654321",
+        syntaxScopes: {
+          "keyword.control": "#abcdef",
+          "string.quoted": "#fedcba",
+        },
       },
-    });
+    ]);
     expect(resolved.startupNotices).toBeUndefined();
+  });
+
+  test("reads named [themes.<id>] tables in declaration order after [custom_theme]", () => {
+    const home = createTempDir("hunk-config-home-");
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(
+      join(home, ".config", "hunk", "config.toml"),
+      [
+        'theme = "ocean"',
+        "",
+        "[custom_theme]",
+        'base = "github-dark-default"',
+        "",
+        "[themes.ocean]",
+        'base = "nord"',
+        'label = "Ocean"',
+        'accent = "#123456"',
+        "",
+        "[themes.ocean.syntax_scopes]",
+        '"keyword.control" = "#abcdef"',
+        "",
+        "[themes.team_theme]",
+        'base = "dracula"',
+      ].join("\n"),
+    );
+
+    const resolved = resolveConfiguredCliInput(createPatchPagerInput(), {
+      cwd: createTempDir("hunk-config-cwd-"),
+      env: { HOME: home },
+    });
+
+    expect(resolved.input.options.theme).toBe("ocean");
+    expect(resolved.customThemes).toEqual([
+      { id: "custom", base: "github-dark-default" },
+      {
+        id: "ocean",
+        base: "nord",
+        label: "Ocean",
+        accent: "#123456",
+        syntaxScopes: { "keyword.control": "#abcdef" },
+      },
+      { id: "team_theme", base: "dracula" },
+    ]);
+    expect(resolved.startupNotices).toBeUndefined();
+  });
+
+  test("layers named themes so repo config overrides the user layer per theme id", () => {
+    const home = createTempDir("hunk-config-home-");
+    const repo = createTempDir("hunk-config-repo-");
+    createRepo(repo);
+
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(
+      join(home, ".config", "hunk", "config.toml"),
+      [
+        "[themes.ocean]",
+        'base = "nord"',
+        'label = "Ocean"',
+        'accent = "#123456"',
+        "",
+        "[themes.ocean.syntax_scopes]",
+        '"keyword.control" = "#abcdef"',
+      ].join("\n"),
+    );
+
+    mkdirSync(join(repo, ".hunk"), { recursive: true });
+    writeFileSync(
+      join(repo, ".hunk", "config.toml"),
+      [
+        "[themes.ocean]",
+        'label = "Repo Ocean"',
+        'panel = "#654321"',
+        "",
+        "[themes.ocean.syntax_scopes]",
+        '"string.quoted" = "#fedcba"',
+        "",
+        "[themes.repo-only]",
+        'base = "dracula"',
+      ].join("\n"),
+    );
+
+    const resolved = resolveConfiguredCliInput(createPatchPagerInput(), {
+      cwd: repo,
+      env: { HOME: home },
+    });
+
+    expect(resolved.customThemes).toEqual([
+      {
+        id: "ocean",
+        base: "nord",
+        label: "Repo Ocean",
+        accent: "#123456",
+        panel: "#654321",
+        syntaxScopes: {
+          "keyword.control": "#abcdef",
+          "string.quoted": "#fedcba",
+        },
+      },
+      { id: "repo-only", base: "dracula" },
+    ]);
+  });
+
+  test("keeps [custom_theme] as the custom id and reports the shadowed [themes.custom] table", () => {
+    const home = createTempDir("hunk-config-home-");
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(
+      join(home, ".config", "hunk", "config.toml"),
+      ["[custom_theme]", 'accent = "#123456"', "", "[themes.custom]", 'accent = "#654321"'].join(
+        "\n",
+      ),
+    );
+
+    const resolved = resolveConfiguredCliInput(createPatchPagerInput(), {
+      cwd: createTempDir("hunk-config-cwd-"),
+      env: { HOME: home },
+    });
+
+    expect(resolved.customThemes).toEqual([{ id: "custom", accent: "#123456" }]);
+    expect(resolved.startupNotices).toEqual([
+      {
+        key: "theme:collision:config:custom",
+        message: 'Skipped theme "custom" from config • [custom_theme] already defines it',
+      },
+    ]);
+  });
+
+  test("skips named themes with unusable ids instead of failing startup", () => {
+    const home = createTempDir("hunk-config-home-");
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(
+      join(home, ".config", "hunk", "config.toml"),
+      [
+        '[themes."Ocean Dark"]',
+        'base = "nord"',
+        "",
+        "[themes.dracula]",
+        'base = "nord"',
+        "",
+        "[themes.ocean]",
+        'base = "nord"',
+      ].join("\n"),
+    );
+
+    const resolved = resolveConfiguredCliInput(createPatchPagerInput(), {
+      cwd: createTempDir("hunk-config-cwd-"),
+      env: { HOME: home },
+    });
+
+    expect(resolved.customThemes).toEqual([{ id: "ocean", base: "nord" }]);
+    expect(resolved.startupNotices?.map((notice) => notice.message)).toEqual([
+      'Skipped theme "Ocean Dark" from config • theme ids must be lowercase words separated by - or _',
+      'Skipped theme "dracula" from config • that id belongs to a built-in theme',
+    ]);
+  });
+
+  test("reports named theme validation errors against the key the user wrote", () => {
+    const home = createTempDir("hunk-config-home-");
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(
+      join(home, ".config", "hunk", "config.toml"),
+      ["[themes.ocean]", 'accent = "blue"'].join("\n"),
+    );
+
+    expect(() =>
+      resolveConfiguredCliInput(createPatchPagerInput(), {
+        cwd: createTempDir("hunk-config-cwd-"),
+        env: { HOME: home },
+      }),
+    ).toThrow("Expected themes.ocean.accent to be a hex color like #112233.");
   });
 
   test.each(["github-dark-default", "github-light-default", "dracula", "catppuccin-mocha"])(
@@ -308,7 +480,7 @@ describe("config resolution", () => {
         env: { HOME: home },
       });
 
-      expect(resolved.customTheme).toEqual({ base });
+      expect(resolved.customThemes).toEqual([{ id: "custom", base }]);
     },
   );
 
@@ -325,7 +497,7 @@ describe("config resolution", () => {
       env: { HOME: home },
     });
 
-    expect(resolved.customTheme).toEqual({ base: "github-dark-default" });
+    expect(resolved.customThemes).toEqual([{ id: "custom", base: "github-dark-default" }]);
   });
 
   test("rejects invalid custom theme base ids", () => {
@@ -395,7 +567,7 @@ describe("config resolution", () => {
       env: { HOME: home },
     });
 
-    expect(resolved.customTheme?.syntaxScopes).toEqual({
+    expect(resolved.customThemes[0]?.syntaxScopes).toEqual({
       comment: "#eeeeee",
       "punctuation.definition.comment": "#ffffff",
     });
@@ -776,16 +948,21 @@ describe("config resolution", () => {
       },
       { cwd: repo, env: { HOME: home } },
     );
-    const bootstrap = await loadAppBootstrap(resolved.input, { customTheme: resolved.customTheme });
+    const bootstrap = await loadAppBootstrap(resolved.input, {
+      customThemes: resolved.customThemes,
+    });
 
     expect(bootstrap.initialTheme).toBe("custom");
-    expect(bootstrap.customTheme).toEqual({
-      base: "catppuccin-mocha",
-      accent: "#7755aa",
-      syntaxScopes: {
-        comment: "#998877",
+    expect(bootstrap.customThemes).toEqual([
+      {
+        id: "custom",
+        base: "catppuccin-mocha",
+        accent: "#7755aa",
+        syntaxScopes: {
+          comment: "#998877",
+        },
       },
-    });
+    ]);
   });
 
   test("loadAppBootstrap exposes github-dark-default when no theme is configured", async () => {

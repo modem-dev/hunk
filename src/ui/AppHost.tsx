@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import { resolveConfiguredCliInput } from "../core/config";
+import { collectSessionCustomThemes } from "../core/customThemes";
 import { loadAppBootstrap } from "../core/loaders";
 import { resolveRuntimeCliInput } from "../core/terminal";
 import type { StartupNotice } from "../core/startupNotice";
@@ -62,10 +63,17 @@ export function AppHost({
         sourcePath: options?.sourcePath,
       });
       const configured = resolveConfiguredCliInput(runtimeInput, { cwd });
+      // Extensions are loaded once per process, so a reload re-merges the same registry themes
+      // instead of dropping them from the selector.
+      const sessionThemes = collectSessionCustomThemes(
+        configured.customThemes,
+        bootstrap.extensions?.registry.themes,
+      );
       const nextBootstrap = await loadAppBootstrap(configured.input, {
         cwd,
-        customTheme: configured.customTheme,
+        customThemes: sessionThemes.themes,
       });
+      nextBootstrap.extensions = bootstrap.extensions;
       nextBootstrap.startupNotices = configured.startupNotices;
       nextBootstrap.viewPreferencesConfigPath = configured.viewPreferencesConfigPath;
       const nextSnapshot = createInitialSessionSnapshot(nextBootstrap);

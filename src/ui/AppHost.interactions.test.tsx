@@ -1766,11 +1766,14 @@ describe("App interactions", () => {
   test("custom theme stays active in the theme selector when bootstrap provides a custom palette", async () => {
     const bootstrap = createBootstrap();
     bootstrap.initialTheme = "custom";
-    bootstrap.customTheme = {
-      base: "github-light-default",
-      label: "My Theme",
-      accent: "#7755aa",
-    };
+    bootstrap.customThemes = [
+      {
+        id: "custom",
+        base: "github-light-default",
+        label: "My Theme",
+        accent: "#7755aa",
+      },
+    ];
 
     const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
       width: 220,

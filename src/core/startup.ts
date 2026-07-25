@@ -1,5 +1,6 @@
 import { loadStartupExtensions, mergeStartupNotices } from "../extensions/startup";
 import { resolveConfiguredCliInput } from "./config";
+import { collectSessionCustomThemes } from "./customThemes";
 import { HunkUserError } from "./errors";
 import { loadAppBootstrap } from "./loaders";
 import { looksLikePatchInput } from "./pager";
@@ -44,7 +45,7 @@ export type StartupPlan =
       kind: "static-diff-pager";
       text: string;
       options: CliInput["options"];
-      customTheme?: AppBootstrap["customTheme"];
+      customThemes?: AppBootstrap["customThemes"];
     }
   | {
       kind: "markup-render";
@@ -166,8 +167,9 @@ export async function prepareStartupPlan(
         options: configuredStatic.input.options,
       };
 
-      return configuredStatic.customTheme
-        ? { ...staticPlan, customTheme: configuredStatic.customTheme }
+      // Extensions never load on the static pager path, so config themes are the whole set here.
+      return configuredStatic.customThemes.length > 0
+        ? { ...staticPlan, customThemes: configuredStatic.customThemes }
         : staticPlan;
     };
 
@@ -262,16 +264,29 @@ export async function prepareStartupPlan(
     cliExtensionPaths: cliInput.options.extensionPaths,
   });
 
+  // Extension themes join the config-defined ones here, so the rest of the app sees one
+  // ordered theme list instead of two sources it would have to reconcile itself.
+  const sessionThemes = collectSessionCustomThemes(
+    configured.customThemes,
+    extensionResult.registry.themes,
+  );
+
   let bootstrap: AppBootstrap;
   try {
-    bootstrap = await loadAppBootstrapImpl(cliInput, { customTheme: configured.customTheme });
+    bootstrap = await loadAppBootstrapImpl(cliInput, { customThemes: sessionThemes.themes });
   } catch (error) {
     controllingTerminal?.close();
     throw error;
   }
 
   bootstrap.initialThemeMode = initialThemeMode ?? bootstrap.initialThemeMode;
-  bootstrap.startupNotices = mergeStartupNotices(configured.startupNotices, extensionResult);
+  bootstrap.startupNotices = mergeStartupNotices(
+    // Keep the resolved array identity when extensions contributed no theme notices.
+    sessionThemes.notices.length > 0
+      ? [...(configured.startupNotices ?? []), ...sessionThemes.notices]
+      : configured.startupNotices,
+    extensionResult,
+  );
   bootstrap.viewPreferencesConfigPath = configured.viewPreferencesConfigPath;
   bootstrap.extensions = extensionResult;
 

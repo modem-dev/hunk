@@ -125,7 +125,7 @@ describe("static diff pager", () => {
     const output = await renderStaticDiffPager(
       patchText,
       { theme: "custom" },
-      { customTheme: { base: "github-dark-default", text: "#123456" } },
+      { customThemes: [{ id: "custom", base: "github-dark-default", text: "#123456" }] },
     );
 
     expect(stripAnsi(output)).toContain("a.ts modified +1 -1");
@@ -140,10 +140,13 @@ describe("static diff pager", () => {
       patchText,
       { theme: "custom" },
       {
-        customTheme: {
-          base: "nord",
-          syntax: { comment: "#ff00ff" },
-        },
+        customThemes: [
+          {
+            id: "custom",
+            base: "nord",
+            syntax: { comment: "#ff00ff" },
+          },
+        ],
       },
     );
 
@@ -159,13 +162,16 @@ describe("static diff pager", () => {
       patchText,
       { theme: "custom" },
       {
-        customTheme: {
-          base: "nord",
-          syntaxScopes: {
-            comment: "#ff00ff",
-            "punctuation.definition.comment": "#ff00ff",
+        customThemes: [
+          {
+            id: "custom",
+            base: "nord",
+            syntaxScopes: {
+              comment: "#ff00ff",
+              "punctuation.definition.comment": "#ff00ff",
+            },
           },
-        },
+        ],
       },
     );
 

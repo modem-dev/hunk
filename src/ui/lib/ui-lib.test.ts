@@ -39,6 +39,7 @@ import {
 } from "../diff/diffSectionGeometry";
 import { resizeSidebarWidth } from "./sidebar";
 import { resolveTheme } from "../themes";
+import { createTestCustomThemes } from "../../../test/helpers/theme-helpers";
 
 function lines(...values: string[]) {
   return `${values.join("\n")}\n`;
@@ -541,14 +542,18 @@ describe("ui helpers", () => {
     const missingDark = resolveTheme("missing", "dark");
     const autoLight = resolveTheme("auto", "light");
     const autoDark = resolveTheme("auto", "dark");
-    const custom = resolveTheme("custom", null, {
-      base: "github-light-default",
-      label: "My Theme",
-      accent: "#7755aa",
-      syntaxScopes: {
-        "keyword.control": "#123456",
-      },
-    });
+    const custom = resolveTheme(
+      "custom",
+      null,
+      createTestCustomThemes({
+        base: "github-light-default",
+        label: "My Theme",
+        accent: "#7755aa",
+        syntaxScopes: {
+          "keyword.control": "#123456",
+        },
+      }),
+    );
     const missingCustom = resolveTheme("custom", null);
 
     expect(dracula.id).toBe("dracula");
