@@ -9,12 +9,12 @@ export default defineConfig({
   integrations: [
     sitemap(),
     starlight({
-      title: "Hunk",
+      title: "hunk",
       description:
         "Review code changes and collaborate with coding agents in a desktop-inspired terminal diff viewer.",
       logo: {
         src: "./src/assets/hunk-mark.svg",
-        alt: "Hunk",
+        alt: "hunk",
       },
       social: [{ icon: "github", label: "GitHub", href: "https://github.com/modem-dev/hunk" }],
       head: [
