@@ -60,6 +60,8 @@
     "website:dev": "bun run --cwd website dev",
     "website:build": "bun run check:docs && bun run --cwd website build",
     "website:check": "bun run check:docs && bun run --cwd website check",
+    "website:links": "bun run ./scripts/check-website-links.ts",
+    "website:test:browser": "bun run --cwd website test:browser",
     "typecheck": "tsc --noEmit",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",

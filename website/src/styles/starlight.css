@@ -80,6 +80,21 @@
   .hero .tagline {
     max-width: 42rem;
   }
+
+  .sl-markdown-content img {
+    display: block;
+    width: 100%;
+    height: auto;
+    margin-block: 1.5rem 0.75rem;
+    border: 1px solid var(--sl-color-hairline-light);
+    border-radius: 0.65rem;
+    box-shadow: 0 1rem 2.5rem color-mix(in srgb, var(--sl-color-black) 14%, transparent);
+  }
+
+  ::selection {
+    color: var(--sl-color-black);
+    background: var(--sl-color-accent-high);
+  }
 }
 
 @media (max-width: 50rem) {

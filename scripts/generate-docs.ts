@@ -13,6 +13,7 @@ import {
   CONFIG_REFERENCE_CUSTOM_THEME,
   CONFIG_REFERENCE_OPTIONS,
 } from "../src/core/config";
+import { renderHunkReviewSkill } from "../src/hunk-review/skillDocument";
 import {
   type AgentCommandOption,
   SESSION_AGENT_COMMAND_LIST,
@@ -32,6 +33,7 @@ const GENERATED_NOTICE =
 export const GENERATED_DOC_PATHS = {
   cli: resolve(REPO_ROOT, "website", "src", "content", "docs", "reference", "cli.md"),
   config: resolve(REPO_ROOT, "website", "src", "content", "docs", "reference", "config.md"),
+  agentSkill: resolve(REPO_ROOT, "website", "public", "hunk-review-skill.md"),
 } as const;
 
 /** Escape Markdown table delimiters while preserving inline code. */
@@ -322,6 +324,7 @@ export function generateDocsArtifacts() {
   return {
     [GENERATED_DOC_PATHS.cli]: renderCliReference(),
     [GENERATED_DOC_PATHS.config]: renderConfigReference(),
+    [GENERATED_DOC_PATHS.agentSkill]: renderHunkReviewSkill(),
   };
 }
 

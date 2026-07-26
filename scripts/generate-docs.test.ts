@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { CONFIG_REFERENCE_OPTIONS } from "../src/core/config";
+import { renderHunkReviewSkill } from "../src/hunk-review/skillDocument";
 import { SESSION_AGENT_COMMAND_LIST } from "../src/hunk-session/agentSurface";
 import {
   DEFAULT_SESSION_BROKER_HOST,
@@ -12,7 +13,13 @@ import {
   UNSAFE_ALLOW_REMOTE_SESSION_BROKER_ENV,
 } from "../src/session-broker/brokerConfig";
 import { LEGACY_THEME_ID_ALIASES } from "../src/ui/lib/shikiThemes";
-import { renderCliReference, renderConfigReference, updateGeneratedDocs } from "./generate-docs";
+import {
+  generateDocsArtifacts,
+  GENERATED_DOC_PATHS,
+  renderCliReference,
+  renderConfigReference,
+  updateGeneratedDocs,
+} from "./generate-docs";
 
 const tempDirectories: string[] = [];
 
@@ -65,6 +72,15 @@ describe("generated website references", () => {
         new RegExp(`\\| \\x60${alias}\\x60\\s+\\| \\x60${replacement}\\x60\\s+\\|`),
       );
     }
+  });
+
+  test("publishes the agent skill directly from its authoritative renderer", () => {
+    const artifacts = generateDocsArtifacts();
+
+    expect(artifacts[GENERATED_DOC_PATHS.agentSkill]).toBe(renderHunkReviewSkill());
+    expect(artifacts[GENERATED_DOC_PATHS.agentSkill]).toContain(
+      "hunk session review --repo . --json",
+    );
   });
 
   test("check mode detects stale output without modifying it", () => {

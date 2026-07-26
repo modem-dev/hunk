@@ -1,5 +1,8 @@
 name: Website
 
+env:
+  SKIP_INSTALL_SIMPLE_GIT_HOOKS: "1"
+
 on:
   pull_request:
     paths:
@@ -8,11 +11,15 @@ on:
       - "bun.lock"
       - "scripts/generate-docs.ts"
       - "scripts/generate-docs.test.ts"
+      - "scripts/check-website-links.ts"
+      - "scripts/check-website-links.test.ts"
       - "src/core/cli.ts"
       - "src/core/config.ts"
       - "src/core/legacySyntaxScopes.ts"
       - "src/core/tabWidth.ts"
       - "src/hunk-session/agentSurface.ts"
+      - "src/hunk-session/agentErrors.ts"
+      - "src/hunk-review/skillDocument.ts"
       - "src/session-broker/brokerConfig.ts"
       - "src/ui/lib/shikiThemes.ts"
       - ".github/workflows/website.yml"
@@ -26,11 +33,15 @@ on:
       - "bun.lock"
       - "scripts/generate-docs.ts"
       - "scripts/generate-docs.test.ts"
+      - "scripts/check-website-links.ts"
+      - "scripts/check-website-links.test.ts"
       - "src/core/cli.ts"
       - "src/core/config.ts"
       - "src/core/legacySyntaxScopes.ts"
       - "src/core/tabWidth.ts"
       - "src/hunk-session/agentSurface.ts"
+      - "src/hunk-session/agentErrors.ts"
+      - "src/hunk-review/skillDocument.ts"
       - "src/session-broker/brokerConfig.ts"
       - "src/ui/lib/shikiThemes.ts"
       - ".github/workflows/website.yml"
@@ -58,8 +69,8 @@ jobs:
       - name: Install website dependencies
         run: bun install --cwd website --frozen-lockfile
 
-      - name: Test generated reference docs
-        run: bun test scripts/generate-docs.test.ts
+      - name: Test website tooling
+        run: bun test scripts/generate-docs.test.ts scripts/check-website-links.test.ts
 
       - name: Check generated reference docs
         run: bun run check:docs
@@ -69,3 +80,12 @@ jobs:
 
       - name: Build website
         run: bun run website:build
+
+      - name: Check static links and metadata
+        run: bun run website:links
+
+      - name: Install Chromium
+        run: cd website && bunx playwright install --with-deps chromium
+
+      - name: Run browser smoke tests
+        run: bun run website:test:browser

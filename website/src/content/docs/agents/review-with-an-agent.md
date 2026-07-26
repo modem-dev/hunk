@@ -43,6 +43,10 @@ hunk session comment add --repo . --file src/App.tsx --new-line 42 --summary "Ch
 
 `review --json` exposes structure without forcing the full patch into agent context. The agent should request `--include-patch` only when it actually needs raw unified diff text.
 
+![A Hunk review with agent rationale rendered directly beside the annotated diff hunk](/docs/images/agent-comments.webp)
+
+Agent notes remain spatially attached to the code they explain. Use `{` and `}` to move between annotated hunks while keeping the full changeset visible.
+
 ## Keep control
 
 The agent can guide the visible selection and add agent-authored notes, but you remain in the review stream and can navigate normally. Ask it to summarize when finished, then use `{` and `}` to walk annotated hunks.

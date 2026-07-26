@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
-    "check": "astro check"
+    "preview": "astro preview",
+    "check": "astro check",
+    "test:browser": "playwright test"
   },
   "dependencies": {
     "@astrojs/sitemap": "^3.6.0",
@@ -14,6 +16,8 @@
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.5",
+    "@axe-core/playwright": "^4.10.2",
+    "@playwright/test": "^1.56.1",
     "typescript": "^5.9.3"
   }
 }

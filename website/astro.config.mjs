@@ -17,6 +17,26 @@ export default defineConfig({
         alt: "Hunk",
       },
       social: [{ icon: "github", label: "GitHub", href: "https://github.com/modem-dev/hunk" }],
+      head: [
+        { tag: "link", attrs: { rel: "icon", href: "/docs/favicon.svg", type: "image/svg+xml" } },
+        { tag: "meta", attrs: { property: "og:type", content: "website" } },
+        { tag: "meta", attrs: { property: "og:site_name", content: "Hunk documentation" } },
+        { tag: "meta", attrs: { property: "og:image", content: "https://hunk.dev/docs/og.png" } },
+        {
+          tag: "meta",
+          attrs: {
+            property: "og:image:alt",
+            content: "Hunk terminal diff review documentation",
+          },
+        },
+        { tag: "meta", attrs: { name: "twitter:card", content: "summary_large_image" } },
+        { tag: "meta", attrs: { name: "twitter:image", content: "https://hunk.dev/docs/og.png" } },
+        {
+          tag: "script",
+          content:
+            'document.addEventListener("DOMContentLoaded",()=>document.querySelectorAll("pre").forEach((block)=>{if(block.scrollWidth>block.clientWidth||block.scrollHeight>block.clientHeight)block.setAttribute("tabindex","0")}));',
+        },
+      ],
       editLink: {
         baseUrl: "https://github.com/modem-dev/hunk/edit/main/website/",
       },
@@ -74,6 +94,7 @@ export default defineConfig({
           items: [
             { label: "Troubleshooting", slug: "help/troubleshooting" },
             { label: "Terminal and platform compatibility", slug: "help/compatibility" },
+            { label: "Deployment integration", slug: "help/deployment" },
           ],
         },
       ],
