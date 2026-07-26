@@ -20,6 +20,10 @@ git config --global alias.hdiff '-c core.pager="hunk pager" diff'
 git config --global alias.hshow '-c core.pager="hunk pager" show'
 ```
 
+## Plain-text fallback
+
+Output that is not a unified diff never opens the review UI; Hunk streams it to a plain-text pager instead. The pager command comes from `HUNK_TEXT_PAGER`, then `PAGER`, then falls back to `less -R`. A value that resolves back to `hunk` is ignored so Git can never recurse into `hunk pager` itself.
+
 ## Configure Git difftool
 
 Tell Git how to invoke Hunk for each temporary file pair:

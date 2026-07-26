@@ -23,7 +23,7 @@ hunk session list
 hunk session get --repo .
 ```
 
-Use the repository root that the live review loaded. If an agent sandbox blocks loopback networking, grant local network access and retry. Do not expose the local daemon publicly.
+Use the repository root that the live review loaded. If an agent sandbox blocks loopback networking, grant local network access and retry. Do not expose the local daemon publicly. If the daemon itself prevents startup, set `HUNK_MCP_DISABLE=1` to run the TUI without session registration, then report the failure.
 
 ## Watch mode is rejected
 
@@ -43,6 +43,15 @@ hunk diff --mode stack --wrap
 
 Press `?` for shortcuts, `t` for themes, and `l` for line numbers. See [terminal compatibility](/docs/help/compatibility/) for mouse, color, and clipboard limits.
 
+## Useful environment variables
+
+| Variable           | Purpose                                                                                                                      |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| `HUNK_DEBUG=1`     | Print stack traces for failures; include the output in bug reports.                                                          |
+| `HUNK_MCP_DISABLE` | Set to `1` to start the TUI without registering a live session (escape hatch for daemon trouble).                            |
+| `HUNK_BIN_PATH`    | Override which binary the npm launcher runs.                                                                                 |
+| `HUNK_TEXT_PAGER`  | Choose the plain-text pager used for non-diff output; see [Git pager and difftool](/docs/workflows/git-pager-and-difftool/). |
+
 ## Get command-specific help
 
 ```bash
@@ -51,4 +60,4 @@ hunk diff --help
 hunk session --help
 ```
 
-When reporting a bug, include Hunk version, OS, terminal name/version, shell, command shape, and a minimal safe patch when possible.
+When reporting a bug, include Hunk version, OS, terminal name/version, shell, command shape, `HUNK_DEBUG=1` output, and a minimal safe patch when possible.

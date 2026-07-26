@@ -9,11 +9,10 @@ This reference is generated from the command metadata used by Hunk itself. Run `
 
 ## Global options
 
-| Option           | Description                                                                             |
-| ---------------- | --------------------------------------------------------------------------------------- |
-| `-h, --help`     | Show top-level or command-specific help.                                                |
-| `-v, --version`  | Print the installed Hunk version.                                                       |
-| `--experimental` | Enable experimental review features (currently STML); place it before a review command. |
+| Option          | Description                              |
+| --------------- | ---------------------------------------- |
+| `-h, --help`    | Show top-level or command-specific help. |
+| `-v, --version` | Print the installed Hunk version.        |
 
 ## Common review options
 
@@ -35,6 +34,8 @@ This reference is generated from the command metadata used by Hunk itself. Run `
 | `--no-agent-notes`          | hide agent notes by default                                     |
 | `--transparent-bg`          | let terminal background show through Hunk surfaces              |
 | `--no-transparent-bg`       | paint Hunk surfaces with the active theme                       |
+
+`--experimental` may also be placed before the review command, as in `hunk --experimental diff`.
 
 ## `hunk diff`
 
@@ -415,7 +416,7 @@ hunk session comment rm (<session-id> | --repo <path>) <comment-id> [--json]
 | `--repo <path>` | target the live session whose repo root matches this path |
 | `--json`        | emit structured JSON                                      |
 
-**Positionals:** `[targets...]` — <session-id> <comment-id>, or <comment-id> with --repo.
+**Positionals:** `[targets...]` — &lt;session-id&gt; &lt;comment-id&gt;, or &lt;comment-id&gt; with --repo.
 
 ### `hunk session comment clear`
 

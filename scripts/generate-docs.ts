@@ -36,6 +36,11 @@ export const GENERATED_DOC_PATHS = {
   agentSkill: resolve(REPO_ROOT, "website", "public", "hunk-review-skill.md"),
 } as const;
 
+/** Escape prose that Markdown would otherwise parse as inline HTML tags. */
+function proseSafe(value: string) {
+  return value.replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+}
+
 /** Escape Markdown table delimiters while preserving inline code. */
 function tableCell(value: string) {
   return value.replaceAll("|", "\\|").replaceAll("\n", "<br />");
@@ -57,7 +62,7 @@ function renderOptionTable(options: readonly (CliReferenceOption | AgentCommandO
     ]
       .filter(Boolean)
       .join(" ");
-    return `| \`${tableCell(option.flag)}\` | ${tableCell(details)} |`;
+    return `| \`${tableCell(option.flag)}\` | ${tableCell(proseSafe(details))} |`;
   });
 
   return ["| Option | Description |", "| --- | --- |", ...rows].join("\n");
@@ -174,7 +179,7 @@ export function renderCliReference() {
         "**Positionals:** " +
           command.positionals
             .map(({ token, description }) =>
-              description ? `\`${token}\` — ${description}` : `\`${token}\``,
+              description ? `\`${token}\` — ${proseSafe(description)}` : `\`${token}\``,
             )
             .join("; ") +
           ".",
@@ -218,11 +223,12 @@ This reference is generated from the command metadata used by Hunk itself. Run \
 | --- | --- |
 | \`-h, --help\` | Show top-level or command-specific help. |
 | \`-v, --version\` | Print the installed Hunk version. |
-| \`--experimental\` | Enable experimental review features (currently STML); place it before a review command. |
 
 ## Common review options
 
 ${renderOptionTable(COMMON_REVIEW_OPTIONS)}
+
+\`--experimental\` may also be placed before the review command, as in \`hunk --experimental diff\`.
 
 ${commandSections.join("\n\n")}
 

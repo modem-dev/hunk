@@ -3,7 +3,7 @@ title: Install
 description: Install Hunk with npm, Homebrew, or Nix and verify the CLI.
 ---
 
-Hunk requires Node.js 18 or newer and runs on macOS, Linux, and Windows. Git is recommended for the most common review workflows.
+Hunk runs on macOS, Linux, and Windows. npm installs require Node.js 18 or newer; Homebrew and Nix installs are self-contained binaries. Git is recommended for the most common review workflows.
 
 ## npm
 

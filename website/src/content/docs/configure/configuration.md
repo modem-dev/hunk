@@ -34,7 +34,7 @@ Use only the keys you want to change; built-in defaults fill the rest.
 ```toml
 mode = "auto"
 
-[diff]
+[vcs]
 watch = true
 
 [pager]
@@ -42,10 +42,21 @@ menu_bar = false
 wrap_lines = true
 ```
 
-A command-specific section such as `[diff]`, `[show]`, or `[patch]` changes only that input mode. `[pager]` applies when the invocation uses pager-style behavior.
+Command sections are named after the input Hunk parses, which is not always the command you type. In particular, `hunk diff` on a repository reads `[vcs]`, not `[diff]`:
+
+| Section        | Applies to                                        |
+| -------------- | ------------------------------------------------- |
+| `[vcs]`        | `hunk diff` working-tree and target reviews       |
+| `[show]`       | `hunk show` commit reviews                        |
+| `[stash-show]` | `hunk stash show` reviews                         |
+| `[diff]`       | two-file comparisons (`hunk diff <left> <right>`) |
+| `[patch]`      | `hunk patch` reviews                              |
+| `[difftool]`   | `hunk difftool` pair reviews                      |
+
+`[pager]` is an overlay applied after the matching command section whenever the invocation uses pager-style behavior.
 
 ## Save interactive changes
 
 When you change view preferences and quit, Hunk can offer to persist them. It writes to an existing repository config when one exists; otherwise it keeps personal view choices in the user config. Set `prompt_save_view_preferences = false` to disable that prompt.
 
-The [config reference](/docs/reference/config/) is curated in this phase; exhaustive generated key metadata arrives in the generated reference phase.
+The [config reference](/docs/reference/config/) lists every key, default, and alias.

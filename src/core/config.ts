@@ -322,12 +322,12 @@ export const CONFIG_REFERENCE_OPTIONS: readonly ConfigReferenceOption[] = [
 
 /** Command-specific TOML tables accepted by the runtime resolver. */
 export const CONFIG_COMMAND_SECTIONS = {
-  vcs: "working-tree and target-based diff reviews",
-  show: "commit and target display reviews",
-  "stash-show": "stash reviews",
-  diff: "two-file comparisons",
-  patch: "patch-file reviews",
-  difftool: "Git difftool pair reviews",
+  vcs: "working-tree and target reviews (`hunk diff`)",
+  show: "commit and target display reviews (`hunk show`)",
+  "stash-show": "stash reviews (`hunk stash show`)",
+  diff: "two-file comparisons (`hunk diff <left> <right>`)",
+  patch: "patch-file reviews (`hunk patch`)",
+  difftool: "Git difftool pair reviews (`hunk difftool`)",
 } as const satisfies Record<CliInput["kind"], string>;
 
 /** Reference metadata for the root-only custom-theme tables. */

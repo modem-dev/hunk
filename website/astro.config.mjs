@@ -97,6 +97,8 @@ export default defineConfig({
     }),
   ],
   markdown: {
+    // CLI prose is full of `--flags`; smart typography would corrupt them into en/em dashes.
+    smartypants: false,
     shikiConfig: {
       themes: {
         light: "github-light-default",
