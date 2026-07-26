@@ -236,23 +236,23 @@ ${sessionSections.join("\n\n")}
 
 /** Render the deterministic exhaustive config reference. */
 export function renderConfigReference() {
-  const optionRows = CONFIG_REFERENCE_OPTIONS.map((option) => {
-    const aliases = option.aliases?.length
-      ? option.aliases
+  const optionBlocks = CONFIG_REFERENCE_OPTIONS.map((option) => {
+    const aliasDetails = option.aliases?.length
+      ? `\n- **Aliases:** ${option.aliases
           .map(({ key, deprecated }) => `\`${key}\`${deprecated ? " (deprecated)" : ""}`)
-          .join(", ")
-      : "—";
+          .join(", ")}`
+      : "";
     const defaultValue =
       option.runtimeDefault !== undefined
         ? `\`${String(option.runtimeDefault)}\``
         : (option.defaultValue ?? "—");
-    return `| \`${option.key}\` | ${option.type} | ${tableCell(option.accepted)} | ${defaultValue} | ${aliases} | ${option.description} |`;
+    return `**\`${option.key}\`**\n\n${option.description}\n\n- **Type:** ${option.type}\n- **Accepted:** ${option.accepted}\n- **Built-in default:** ${defaultValue}${aliasDetails}`;
   });
   const sectionRows = Object.entries(CONFIG_COMMAND_SECTIONS).map(
     ([section, description]) => `| \`[${section}]\` | ${description} |`,
   );
   const colorRows = CONFIG_REFERENCE_CUSTOM_THEME.colorKeys.map(
-    (key) => `| \`custom_theme.${key}\` | \`#rrggbb\` | Override the ${key} semantic color. |`,
+    (key) => `| \`custom_theme.${key}\` | Override the ${key} semantic color. |`,
   );
   const legacyRows = CONFIG_REFERENCE_CUSTOM_THEME.legacySyntaxColorKeys.map(
     (key) => `\`custom_theme.syntax.${key}\``,
@@ -283,9 +283,7 @@ The user path is \`$XDG_CONFIG_HOME/hunk/config.toml\` when configured. Otherwis
 
 ## Preference keys
 
-| Key | Type | Accepted values | Built-in default | Aliases | Description |
-| --- | --- | --- | --- | --- | --- |
-${optionRows.join("\n")}
+${optionBlocks.join("\n\n---\n\n")}
 
 ## Command tables
 
@@ -307,8 +305,8 @@ ${legacyThemeRows.join("\n")}
 
 \`custom_theme.label\` accepts a non-empty string. Every semantic color below accepts a six-digit \`#rrggbb\` value:
 
-| Key | Value | Description |
-| --- | --- | --- |
+| Key | Description |
+| --- | --- |
 ${colorRows.join("\n")}
 
 ### Syntax scopes

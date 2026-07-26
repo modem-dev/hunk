@@ -20,23 +20,154 @@ The user path is `$XDG_CONFIG_HOME/hunk/config.toml` when configured. Otherwise 
 
 ## Preference keys
 
-| Key                            | Type    | Accepted values                 | Built-in default                          | Aliases                              | Description                                                |
-| ------------------------------ | ------- | ------------------------------- | ----------------------------------------- | ------------------------------------ | ---------------------------------------------------------- |
-| `mode`                         | string  | `auto`, `split`, or `stack`     | `auto`                                    | —                                    | Choose responsive, side-by-side, or stacked diff layout.   |
-| `vcs`                          | string  | `git`, `jj`, or `sl`            | detected from the checkout (Git fallback) | —                                    | Select the version-control adapter explicitly.             |
-| `theme`                        | string  | a built-in theme id or `custom` | `github-dark-default`                     | —                                    | Select the active color theme.                             |
-| `watch`                        | boolean | `true` or `false`               | `false`                                   | —                                    | Reload supported review inputs when their source changes.  |
-| `exclude_untracked`            | boolean | `true` or `false`               | `false`                                   | —                                    | Hide untracked files from working-tree reviews.            |
-| `line_numbers`                 | boolean | `true` or `false`               | `true`                                    | —                                    | Show old and new line-number columns.                      |
-| `tab_width`                    | integer | 1 through 16                    | `4`                                       | —                                    | Set terminal-cell tab stops used for display and wrapping. |
-| `wrap_lines`                   | boolean | `true` or `false`               | `false`                                   | —                                    | Wrap long diff lines instead of keeping one visual row.    |
-| `hunk_headers`                 | boolean | `true` or `false`               | `true`                                    | —                                    | Show hunk metadata rows in the review stream.              |
-| `menu_bar`                     | boolean | `true` or `false`               | `true`                                    | —                                    | Show the top application menu bar.                         |
-| `agent_notes`                  | boolean | `true` or `false`               | `false`                                   | —                                    | Show agent notes when a review opens.                      |
-| `copy_decorations`             | boolean | `true` or `false`               | `false`                                   | —                                    | Include diff signs and line numbers in copied selections.  |
-| `prompt_save_view_preferences` | boolean | `true` or `false`               | `true`                                    | —                                    | Ask before discarding view changes that can be persisted.  |
-| `transparent_background`       | boolean | `true` or `false`               | `false`                                   | `transparentBackground` (deprecated) | Let the terminal background show through Hunk surfaces.    |
-| `color_moved`                  | boolean | `true` or `false`               | —                                         | —                                    | Enable moved-line coloring when the renderer supports it.  |
+**`mode`**
+
+Choose responsive, side-by-side, or stacked diff layout.
+
+- **Type:** string
+- **Accepted:** `auto`, `split`, or `stack`
+- **Built-in default:** `auto`
+
+---
+
+**`vcs`**
+
+Select the version-control adapter explicitly.
+
+- **Type:** string
+- **Accepted:** `git`, `jj`, or `sl`
+- **Built-in default:** detected from the checkout (Git fallback)
+
+---
+
+**`theme`**
+
+Select the active color theme.
+
+- **Type:** string
+- **Accepted:** a built-in theme id or `custom`
+- **Built-in default:** `github-dark-default`
+
+---
+
+**`watch`**
+
+Reload supported review inputs when their source changes.
+
+- **Type:** boolean
+- **Accepted:** `true` or `false`
+- **Built-in default:** `false`
+
+---
+
+**`exclude_untracked`**
+
+Hide untracked files from working-tree reviews.
+
+- **Type:** boolean
+- **Accepted:** `true` or `false`
+- **Built-in default:** `false`
+
+---
+
+**`line_numbers`**
+
+Show old and new line-number columns.
+
+- **Type:** boolean
+- **Accepted:** `true` or `false`
+- **Built-in default:** `true`
+
+---
+
+**`tab_width`**
+
+Set terminal-cell tab stops used for display and wrapping.
+
+- **Type:** integer
+- **Accepted:** 1 through 16
+- **Built-in default:** `4`
+
+---
+
+**`wrap_lines`**
+
+Wrap long diff lines instead of keeping one visual row.
+
+- **Type:** boolean
+- **Accepted:** `true` or `false`
+- **Built-in default:** `false`
+
+---
+
+**`hunk_headers`**
+
+Show hunk metadata rows in the review stream.
+
+- **Type:** boolean
+- **Accepted:** `true` or `false`
+- **Built-in default:** `true`
+
+---
+
+**`menu_bar`**
+
+Show the top application menu bar.
+
+- **Type:** boolean
+- **Accepted:** `true` or `false`
+- **Built-in default:** `true`
+
+---
+
+**`agent_notes`**
+
+Show agent notes when a review opens.
+
+- **Type:** boolean
+- **Accepted:** `true` or `false`
+- **Built-in default:** `false`
+
+---
+
+**`copy_decorations`**
+
+Include diff signs and line numbers in copied selections.
+
+- **Type:** boolean
+- **Accepted:** `true` or `false`
+- **Built-in default:** `false`
+
+---
+
+**`prompt_save_view_preferences`**
+
+Ask before discarding view changes that can be persisted.
+
+- **Type:** boolean
+- **Accepted:** `true` or `false`
+- **Built-in default:** `true`
+
+---
+
+**`transparent_background`**
+
+Let the terminal background show through Hunk surfaces.
+
+- **Type:** boolean
+- **Accepted:** `true` or `false`
+- **Built-in default:** `false`
+- **Aliases:** `transparentBackground` (deprecated)
+
+---
+
+**`color_moved`**
+
+Enable moved-line coloring when the renderer supports it.
+
+- **Type:** boolean
+- **Accepted:** `true` or `false`
+- **Built-in default:** —
 
 ## Command tables
 
@@ -133,41 +264,41 @@ These deprecated IDs remain accepted by `theme` and `custom_theme.base`, then no
 
 `custom_theme.label` accepts a non-empty string. Every semantic color below accepts a six-digit `#rrggbb` value:
 
-| Key                                | Value     | Description                                      |
-| ---------------------------------- | --------- | ------------------------------------------------ |
-| `custom_theme.background`          | `#rrggbb` | Override the background semantic color.          |
-| `custom_theme.panel`               | `#rrggbb` | Override the panel semantic color.               |
-| `custom_theme.panelAlt`            | `#rrggbb` | Override the panelAlt semantic color.            |
-| `custom_theme.border`              | `#rrggbb` | Override the border semantic color.              |
-| `custom_theme.accent`              | `#rrggbb` | Override the accent semantic color.              |
-| `custom_theme.accentMuted`         | `#rrggbb` | Override the accentMuted semantic color.         |
-| `custom_theme.text`                | `#rrggbb` | Override the text semantic color.                |
-| `custom_theme.muted`               | `#rrggbb` | Override the muted semantic color.               |
-| `custom_theme.addedBg`             | `#rrggbb` | Override the addedBg semantic color.             |
-| `custom_theme.removedBg`           | `#rrggbb` | Override the removedBg semantic color.           |
-| `custom_theme.movedAddedBg`        | `#rrggbb` | Override the movedAddedBg semantic color.        |
-| `custom_theme.movedRemovedBg`      | `#rrggbb` | Override the movedRemovedBg semantic color.      |
-| `custom_theme.contextBg`           | `#rrggbb` | Override the contextBg semantic color.           |
-| `custom_theme.addedContentBg`      | `#rrggbb` | Override the addedContentBg semantic color.      |
-| `custom_theme.removedContentBg`    | `#rrggbb` | Override the removedContentBg semantic color.    |
-| `custom_theme.contextContentBg`    | `#rrggbb` | Override the contextContentBg semantic color.    |
-| `custom_theme.addedSignColor`      | `#rrggbb` | Override the addedSignColor semantic color.      |
-| `custom_theme.removedSignColor`    | `#rrggbb` | Override the removedSignColor semantic color.    |
-| `custom_theme.lineNumberBg`        | `#rrggbb` | Override the lineNumberBg semantic color.        |
-| `custom_theme.lineNumberFg`        | `#rrggbb` | Override the lineNumberFg semantic color.        |
-| `custom_theme.selectedHunk`        | `#rrggbb` | Override the selectedHunk semantic color.        |
-| `custom_theme.badgeAdded`          | `#rrggbb` | Override the badgeAdded semantic color.          |
-| `custom_theme.badgeRemoved`        | `#rrggbb` | Override the badgeRemoved semantic color.        |
-| `custom_theme.badgeNeutral`        | `#rrggbb` | Override the badgeNeutral semantic color.        |
-| `custom_theme.fileNew`             | `#rrggbb` | Override the fileNew semantic color.             |
-| `custom_theme.fileDeleted`         | `#rrggbb` | Override the fileDeleted semantic color.         |
-| `custom_theme.fileRenamed`         | `#rrggbb` | Override the fileRenamed semantic color.         |
-| `custom_theme.fileModified`        | `#rrggbb` | Override the fileModified semantic color.        |
-| `custom_theme.fileUntracked`       | `#rrggbb` | Override the fileUntracked semantic color.       |
-| `custom_theme.noteBorder`          | `#rrggbb` | Override the noteBorder semantic color.          |
-| `custom_theme.noteBackground`      | `#rrggbb` | Override the noteBackground semantic color.      |
-| `custom_theme.noteTitleBackground` | `#rrggbb` | Override the noteTitleBackground semantic color. |
-| `custom_theme.noteTitleText`       | `#rrggbb` | Override the noteTitleText semantic color.       |
+| Key                                | Description                                      |
+| ---------------------------------- | ------------------------------------------------ |
+| `custom_theme.background`          | Override the background semantic color.          |
+| `custom_theme.panel`               | Override the panel semantic color.               |
+| `custom_theme.panelAlt`            | Override the panelAlt semantic color.            |
+| `custom_theme.border`              | Override the border semantic color.              |
+| `custom_theme.accent`              | Override the accent semantic color.              |
+| `custom_theme.accentMuted`         | Override the accentMuted semantic color.         |
+| `custom_theme.text`                | Override the text semantic color.                |
+| `custom_theme.muted`               | Override the muted semantic color.               |
+| `custom_theme.addedBg`             | Override the addedBg semantic color.             |
+| `custom_theme.removedBg`           | Override the removedBg semantic color.           |
+| `custom_theme.movedAddedBg`        | Override the movedAddedBg semantic color.        |
+| `custom_theme.movedRemovedBg`      | Override the movedRemovedBg semantic color.      |
+| `custom_theme.contextBg`           | Override the contextBg semantic color.           |
+| `custom_theme.addedContentBg`      | Override the addedContentBg semantic color.      |
+| `custom_theme.removedContentBg`    | Override the removedContentBg semantic color.    |
+| `custom_theme.contextContentBg`    | Override the contextContentBg semantic color.    |
+| `custom_theme.addedSignColor`      | Override the addedSignColor semantic color.      |
+| `custom_theme.removedSignColor`    | Override the removedSignColor semantic color.    |
+| `custom_theme.lineNumberBg`        | Override the lineNumberBg semantic color.        |
+| `custom_theme.lineNumberFg`        | Override the lineNumberFg semantic color.        |
+| `custom_theme.selectedHunk`        | Override the selectedHunk semantic color.        |
+| `custom_theme.badgeAdded`          | Override the badgeAdded semantic color.          |
+| `custom_theme.badgeRemoved`        | Override the badgeRemoved semantic color.        |
+| `custom_theme.badgeNeutral`        | Override the badgeNeutral semantic color.        |
+| `custom_theme.fileNew`             | Override the fileNew semantic color.             |
+| `custom_theme.fileDeleted`         | Override the fileDeleted semantic color.         |
+| `custom_theme.fileRenamed`         | Override the fileRenamed semantic color.         |
+| `custom_theme.fileModified`        | Override the fileModified semantic color.        |
+| `custom_theme.fileUntracked`       | Override the fileUntracked semantic color.       |
+| `custom_theme.noteBorder`          | Override the noteBorder semantic color.          |
+| `custom_theme.noteBackground`      | Override the noteBackground semantic color.      |
+| `custom_theme.noteTitleBackground` | Override the noteTitleBackground semantic color. |
+| `custom_theme.noteTitleText`       | Override the noteTitleText semantic color.       |
 
 ### Syntax scopes
 

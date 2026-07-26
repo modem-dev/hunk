@@ -241,6 +241,33 @@ starlight-theme-select select {
   box-shadow: 6px 6px 0 var(--hunk-shadow);
 }
 
+.sl-markdown-content table {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+
+.sl-markdown-content th,
+.sl-markdown-content td {
+  min-width: 8rem;
+  vertical-align: top;
+}
+
+.sl-markdown-content th:first-child,
+.sl-markdown-content td:first-child {
+  min-width: 10rem;
+}
+
+.sl-markdown-content th:last-child,
+.sl-markdown-content td:last-child {
+  min-width: 18rem;
+}
+
+.sl-markdown-content td:first-child code {
+  white-space: nowrap;
+}
+
 @media (hover: hover) {
   .sl-link-button:hover,
   .sl-link-card:hover,
