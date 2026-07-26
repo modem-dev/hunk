@@ -12,10 +12,6 @@ export default defineConfig({
       title: "hunk",
       description:
         "Review code changes and collaborate with coding agents in a desktop-inspired terminal diff viewer.",
-      logo: {
-        src: "./src/assets/hunk-mark.svg",
-        alt: "hunk",
-      },
       social: [{ icon: "github", label: "GitHub", href: "https://github.com/modem-dev/hunk" }],
       head: [
         { tag: "link", attrs: { rel: "icon", href: "/docs/favicon.svg", type: "image/svg+xml" } },
