@@ -8,7 +8,10 @@ import { act } from "react";
 import { loadAppBootstrap } from "../core/loaders";
 import type { AppBootstrap, CliInput } from "../core/types";
 import type { HunkSessionBrokerClient } from "../hunk-session/types";
-import { applyExtensionRegistrations, resolveExtensionDetectedVcsId } from "../extensions/apply";
+import {
+  applyExtensionRegistrations,
+  resolveDetectedVcsIdWithExtensions,
+} from "../extensions/apply";
 import { loadStartupExtensions } from "../extensions/startup";
 import { AppHost } from "./AppHost";
 
@@ -332,6 +335,51 @@ describe("startup for extensions loaded mid-session", () => {
   });
 });
 
+/**
+ * Write a Mercurial-shaped extension backend that walks upward for `.hg`.
+ *
+ * Detection distance is what these tests are about, so the fixture reports a
+ * real repo root rather than claiming whatever directory it is handed.
+ */
+function writeHgExtension(extPath: string) {
+  writeFileSync(
+    extPath,
+    `import { existsSync } from "node:fs";\n` +
+      `import { dirname, join, resolve } from "node:path";\n` +
+      `function findHgRoot(cwd) {\n` +
+      `  let current = resolve(cwd);\n` +
+      `  for (;;) {\n` +
+      `    if (existsSync(join(current, ".hg"))) return current;\n` +
+      `    const parent = dirname(current);\n` +
+      `    if (parent === current) return undefined;\n` +
+      `    current = parent;\n` +
+      `  }\n` +
+      `}\n` +
+      `export default function (hunk) {\n` +
+      `  hunk.registerVcsAdapter({\n` +
+      `    id: "hg",\n` +
+      `    name: "Mercurial",\n` +
+      `    detect: (cwd) => {\n` +
+      `      const root = findHgRoot(cwd);\n` +
+      `      return root ? { id: "hg", repoRoot: root } : null;\n` +
+      `    },\n` +
+      `    operations: {\n` +
+      `      "working-tree-diff": {\n` +
+      `        async load(input, ctx) {\n` +
+      `          return {\n` +
+      `            repoRoot: ctx.cwd,\n` +
+      `            sourceLabel: ctx.cwd,\n` +
+      `            title: "Mercurial working copy",\n` +
+      `            patchText: "",\n` +
+      `          };\n` +
+      `        },\n` +
+      `      },\n` +
+      `    },\n` +
+      `  });\n` +
+      `}\n`,
+  );
+}
+
 describe("reload re-runs extension VCS detection", () => {
   test("an extension backend keeps a checkout no built-in recognizes", async () => {
     // A directory with only an `.hg` marker. No built-in backend detects it, so
@@ -344,30 +392,7 @@ describe("reload re-runs extension VCS detection", () => {
     useTempConfigHome();
 
     const extPath = join(outer, "hg-ext.ts");
-    writeFileSync(
-      extPath,
-      `import { existsSync } from "node:fs";\n` +
-        `import { join } from "node:path";\n` +
-        `export default function (hunk) {\n` +
-        `  hunk.registerVcsAdapter({\n` +
-        `    id: "hg",\n` +
-        `    name: "Mercurial",\n` +
-        `    detect: (cwd) => (existsSync(join(cwd, ".hg")) ? { id: "hg", repoRoot: cwd } : null),\n` +
-        `    operations: {\n` +
-        `      "working-tree-diff": {\n` +
-        `        async load(input, ctx) {\n` +
-        `          return {\n` +
-        `            repoRoot: ctx.cwd,\n` +
-        `            sourceLabel: ctx.cwd,\n` +
-        `            title: "Mercurial working copy",\n` +
-        `            patchText: "",\n` +
-        `          };\n` +
-        `        },\n` +
-        `      },\n` +
-        `    },\n` +
-        `  });\n` +
-        `}\n`,
-    );
+    writeHgExtension(extPath);
 
     const extensions = await loadStartupExtensions({
       extensions: { enabled: true, paths: [], repoPaths: [], extensionConfigs: {} },
@@ -386,7 +411,7 @@ describe("reload re-runs extension VCS detection", () => {
         options: {
           mode: "stack",
           extensionPaths: [extPath],
-          vcs: resolveExtensionDetectedVcsId(repo, vcsAdapters),
+          vcs: resolveDetectedVcsIdWithExtensions(repo, vcsAdapters),
         },
       },
       { cwd: repo, vcsAdapters },
@@ -402,6 +427,67 @@ describe("reload re-runs extension VCS detection", () => {
         // Git default for this directory, so only re-running extension detection
         // keeps the session on the backend that actually understands it.
         const result = (await broker.reload({ kind: "vcs", staged: false, options: {} }, repo)) as {
+          title: string;
+        };
+        await flushUntil(setup, () => false, 10);
+
+        expect(result.title).toBe("Mercurial working copy");
+      },
+      broker.client,
+    );
+  });
+
+  test("a nearer extension checkout inside a Git repository survives reload", async () => {
+    // The nested shape: `.hg` one level inside a Git repository. Built-in-only
+    // detection finds the outer Git root, so a reload that did not re-run
+    // detection over the full adapter list would review the wrong repository —
+    // and it has to reach the same answer first launch does.
+    const repo = createTempDir("hunk-apphost-nested-vcs-");
+    execSync("git init && git config user.email test@test && git config user.name test", {
+      cwd: repo,
+      stdio: "ignore",
+    });
+    const inner = join(repo, "inner-hg");
+    mkdirSync(join(inner, ".hg"), { recursive: true });
+    writeFileSync(join(inner, "f.txt"), "one\n");
+    useTempConfigHome();
+
+    const extPath = join(repo, "hg-ext.ts");
+    writeHgExtension(extPath);
+
+    const extensions = await loadStartupExtensions({
+      extensions: { enabled: true, paths: [], repoPaths: [], extensionConfigs: {} },
+      cwd: inner,
+      cliExtensionPaths: [extPath],
+    });
+    expect(extensions.issues).toEqual([]);
+    const { vcsAdapters } = applyExtensionRegistrations(extensions);
+
+    // First launch: the nearer `.hg` root wins over the outer Git root.
+    expect(resolveDetectedVcsIdWithExtensions(inner, vcsAdapters)).toBe("hg");
+    const bootstrap = await loadAppBootstrap(
+      {
+        kind: "vcs",
+        staged: false,
+        options: {
+          mode: "stack",
+          extensionPaths: [extPath],
+          vcs: resolveDetectedVcsIdWithExtensions(inner, vcsAdapters),
+        },
+      },
+      { cwd: inner, vcsAdapters },
+    );
+    bootstrap.extensions = extensions;
+    expect(bootstrap.changeset.title).toBe("Mercurial working copy");
+
+    const broker = createTestBrokerClient();
+    await withAppHost(
+      bootstrap,
+      async (setup) => {
+        const result = (await broker.reload(
+          { kind: "vcs", staged: false, options: {} },
+          inner,
+        )) as {
           title: string;
         };
         await flushUntil(setup, () => false, 10);

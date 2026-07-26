@@ -795,6 +795,30 @@ describe("config resolution", () => {
     expect(resolved.input.options.vcs).toBe("hg");
   });
 
+  test("reports whether the resolved vcs id was chosen or detected", () => {
+    // The merged value cannot answer this: an explicit `vcs = "git"` and a
+    // detected Git checkout both resolve to "git", and only the explicit one
+    // outranks the detection that runs again once extension backends load.
+    const home = createTempDir("hunk-config-home-");
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(join(home, ".config", "hunk", "config.toml"), 'vcs = "git"\n');
+    const cwd = createTempDir("hunk-config-cwd-");
+
+    const configured = resolveConfiguredCliInput(
+      { kind: "vcs", staged: false, options: {} },
+      { cwd, env: { HOME: home } },
+    );
+    const detected = resolveConfiguredCliInput(
+      { kind: "vcs", staged: false, options: {} },
+      { cwd, env: { HOME: createTempDir("hunk-config-empty-home-") } },
+    );
+
+    expect(configured.input.options.vcs).toBe("git");
+    expect(configured.explicitVcsId).toBe("git");
+    expect(detected.input.options.vcs).toBe("git");
+    expect(detected.explicitVcsId).toBeUndefined();
+  });
+
   test("ignores a non-string vcs value", () => {
     const home = createTempDir("hunk-config-home-");
     mkdirSync(join(home, ".config", "hunk"), { recursive: true });

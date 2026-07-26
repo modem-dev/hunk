@@ -217,9 +217,11 @@ are covered below.
 #### Detection order
 
 Detection prefers the **nearest** checkout: a Git repository nested inside a jj
-workspace is reviewed as Git, whatever the priorities say. `detectionPriority`
-only decides which backend wins when several recognize the _same_ directory —
-the colocated case, where one working copy carries two sets of markers.
+workspace is reviewed as Git, whatever the priorities say. The same rule covers
+your adapter — a Mercurial checkout inside a Git repository is reviewed as
+Mercurial. `detectionPriority` only decides which backend wins when several
+recognize the _same_ directory — the colocated case, where one working copy
+carries two sets of markers.
 
 | Adapter                  | Priority                                     |
 | ------------------------ | -------------------------------------------- |
@@ -248,11 +250,16 @@ hunk.registerVcsAdapter({
 });
 ```
 
-One more rule applies only to extensions you install: config resolves the
-session's VCS before your extension has been imported, so a user adapter may
-claim a directory nothing shipped recognized, but never overrides one that was
-recognized. Bundled adapters have no such restriction — they load with core
-adapter resolution and take part in detection from the start.
+Detection runs the same way for every adapter, whichever tier registered it:
+the nearest checkout wins, `detectionPriority` breaks ties between adapters
+that recognize the same root, and equal priorities fall back to registration
+order. Config resolves the session's VCS before your extension has been
+imported, so detection runs again once extensions are loaded — with the full
+adapter list — and that second answer is the one the session uses.
+
+What detection never overrides is an explicit choice: a `vcs = "<id>"` in Hunk
+config naming a backend this session loaded is honored as-is, however near a
+checkout some other adapter finds.
 
 #### Watch support
 

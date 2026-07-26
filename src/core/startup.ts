@@ -3,7 +3,7 @@ import {
   applyExtensionRegistrations,
   createExtensionApplyNotices,
   createUnknownVcsNotice,
-  resolveExtensionDetectedVcsId,
+  resolveDetectedVcsIdWithExtensions,
   resolveSessionVcsId,
 } from "../extensions/apply";
 import { loadBundledExtensions } from "../extensions/bundled";
@@ -292,20 +292,28 @@ export async function prepareStartupPlan(
   // that choice now: honor it when a loaded backend owns it, otherwise fall back
   // to detection and tell the user, instead of dropping it in silence.
   const sessionVcs = resolveSessionVcsId(cliInput.options.vcs, startupCwd, applied.vcsAdapters);
-  const unknownVcsNotices =
-    sessionVcs.unknownVcsId !== undefined
-      ? [createUnknownVcsNotice(sessionVcs.unknownVcsId, String(sessionVcs.vcsId))]
-      : [];
   if (sessionVcs.vcsId !== cliInput.options.vcs) {
     cliInput = { ...cliInput, options: { ...cliInput.options, vcs: sessionVcs.vcsId } };
   }
 
-  // Config picked the VCS before extensions existed, so give an extension backend
-  // the chance to claim a checkout no built-in adapter recognized.
-  const detectedExtensionVcsId = resolveExtensionDetectedVcsId(startupCwd, applied.vcsAdapters);
-  if (detectedExtensionVcsId) {
-    cliInput = { ...cliInput, options: { ...cliInput.options, vcs: detectedExtensionVcsId } };
+  // Config detected the checkout before extension backends existed, so detection
+  // runs again over the full adapter list: the nearest checkout wins whoever
+  // registered it. An explicit `vcs` this session owns is left alone.
+  const detectedVcsId = resolveDetectedVcsIdWithExtensions(
+    startupCwd,
+    applied.vcsAdapters,
+    configured.explicitVcsId,
+  );
+  if (detectedVcsId !== undefined && detectedVcsId !== cliInput.options.vcs) {
+    cliInput = { ...cliInput, options: { ...cliInput.options, vcs: detectedVcsId } };
   }
+
+  // Built after both steps so the notice names the backend the session really
+  // loads with, not the intermediate fallback detection first proposed.
+  const unknownVcsNotices =
+    sessionVcs.unknownVcsId !== undefined
+      ? [createUnknownVcsNotice(sessionVcs.unknownVcsId, String(cliInput.options.vcs))]
+      : [];
 
   let bootstrap: AppBootstrap;
   try {

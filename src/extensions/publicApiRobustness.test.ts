@@ -6,7 +6,7 @@ import { createTestDiffFile } from "../../test/helpers/diff-helpers";
 import {
   applyExtensionChangesetTransforms,
   applyExtensionRegistrations,
-  resolveExtensionDetectedVcsId,
+  resolveDetectedVcsIdWithExtensions,
   resolveSessionVcsId,
 } from "./apply";
 import { emitExtensionEvent, emitExtensionEventBounded } from "./events";
@@ -238,7 +238,7 @@ describe("registerVcsAdapter with junk", () => {
       // Detection over the full adapter list never throws either.
       expect(() => detectVcs("/repo", [adapter!])).not.toThrow();
       expect(() => resolveVcsAdapters([adapter!])).not.toThrow();
-      expect(() => resolveExtensionDetectedVcsId("/repo", [adapter!])).not.toThrow();
+      expect(() => resolveDetectedVcsIdWithExtensions("/repo", [adapter!])).not.toThrow();
       expect(() => resolveSessionVcsId("hg", "/repo", [adapter!])).not.toThrow();
     }
   });

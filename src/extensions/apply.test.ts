@@ -1,5 +1,12 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { createTestDiffFile } from "../../test/helpers/diff-helpers";
+import {
+  HUNK_CORE_VCS_DETECTION_PRIORITY,
+  HUNK_DEFAULT_VCS_DETECTION_PRIORITY,
+} from "../extension-api/types";
 import type { Changeset, DiffFile } from "../core/types";
 import type { VcsAdapter } from "../core/vcs/types";
 import {
@@ -8,7 +15,7 @@ import {
   createExtensionApplyNotices,
   reportExtensionApplyIssues,
   createUnknownVcsNotice,
-  resolveExtensionDetectedVcsId,
+  resolveDetectedVcsIdWithExtensions,
   resolveExtensionVcsAdapters,
   resolveSessionVcsId,
 } from "./apply";
@@ -18,6 +25,21 @@ import {
   type ChangesetTransform,
   type ExtensionLoadResult,
 } from "./types";
+
+const tempDirs: string[] = [];
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+/** Create a throwaway directory that is removed after the test. */
+function createTempDir(prefix: string) {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  tempDirs.push(dir);
+  return dir;
+}
 
 /** Build a load result with a captured notification sink for assertions. */
 function createTestLoadResult(): { result: ExtensionLoadResult; notices: string[] } {
@@ -114,20 +136,120 @@ describe("extension VCS adapters", () => {
     expect(adapters.length).toBe(1);
     expect(issues[0]?.extensionId).toBe("second");
   });
+});
 
-  test("only detects through extension adapters where no built-in claims the directory", () => {
-    const claimsEverything: VcsAdapter = {
+describe("resolveDetectedVcsIdWithExtensions", () => {
+  /**
+   * A Mercurial-shaped extension adapter that walks upward for a `.hg` marker.
+   *
+   * Detection distance is the whole subject here, so a fixture that claims
+   * whatever directory it is handed would prove nothing: it has to report a real
+   * repo root the way a backend does.
+   */
+  function createTestHgAdapter(detectionPriority?: number): VcsAdapter {
+    return {
       id: "hg",
       name: "Mercurial",
-      detect: (cwd) => ({ id: "hg", repoRoot: cwd }),
+      detectionPriority,
+      detect: (cwd) => {
+        let current = resolve(cwd);
+        for (;;) {
+          if (existsSync(join(current, ".hg"))) {
+            return { id: "hg", repoRoot: current };
+          }
+
+          const parent = dirname(current);
+          if (parent === current) {
+            return null;
+          }
+          current = parent;
+        }
+      },
       operations: {},
     };
+  }
 
-    // The repo Hunk itself lives in is a Git checkout, so built-ins win there.
-    expect(resolveExtensionDetectedVcsId(process.cwd(), [claimsEverything])).toBeUndefined();
-    // A directory no built-in recognizes is available to extension adapters.
-    expect(resolveExtensionDetectedVcsId("/", [claimsEverything])).toBe("hg");
-    expect(resolveExtensionDetectedVcsId("/", [])).toBeUndefined();
+  test("prefers a nearer extension checkout over an outer built-in repository", () => {
+    // The verified-broken shape: `.hg` one level inside a Git repository. The
+    // extension root is nearer, so it is the repository the user is standing in.
+    const repo = createTempDir("hunk-apply-nested-hg-");
+    const inner = join(repo, "inner-hg");
+    mkdirSync(join(repo, ".git"));
+    mkdirSync(join(inner, ".hg"), { recursive: true });
+
+    expect(resolveDetectedVcsIdWithExtensions(inner, [createTestHgAdapter()])).toBe("hg");
+    // Without the adapter, the outer Git root is still all there is to find.
+    expect(resolveDetectedVcsIdWithExtensions(inner, [])).toBeUndefined();
+  });
+
+  test("prefers a deeply nested extension checkout, dotfiles-home style", () => {
+    // A `.hg`-managed dotfiles directory several levels below a Git root — the
+    // farther root used to win purely because a built-in adapter owned it.
+    const repo = createTempDir("hunk-apply-dotfiles-");
+    const dotfiles = join(repo, "home", "user", "dotfiles");
+    mkdirSync(join(repo, ".git"));
+    mkdirSync(join(dotfiles, ".hg"), { recursive: true });
+
+    expect(resolveDetectedVcsIdWithExtensions(dotfiles, [createTestHgAdapter()])).toBe("hg");
+    // One directory below the marker still resolves to the same nearest root.
+    expect(
+      resolveDetectedVcsIdWithExtensions(join(dotfiles, "nvim"), [createTestHgAdapter()]),
+    ).toBe("hg");
+  });
+
+  test("keeps Git for a same-root tie with a default-priority extension adapter", () => {
+    // Colocated markers: only priority separates them, and the default puts a
+    // user adapter below Git so installing an extension changes nothing here.
+    const repo = createTempDir("hunk-apply-colocated-default-");
+    mkdirSync(join(repo, ".git"));
+    mkdirSync(join(repo, ".hg"));
+
+    expect(resolveDetectedVcsIdWithExtensions(repo, [createTestHgAdapter()])).toBe("git");
+    expect(
+      resolveDetectedVcsIdWithExtensions(repo, [
+        createTestHgAdapter(HUNK_DEFAULT_VCS_DETECTION_PRIORITY),
+      ]),
+    ).toBe("git");
+  });
+
+  test("lets an extension adapter outrank Git on a same-root tie when it asks to", () => {
+    const repo = createTempDir("hunk-apply-colocated-priority-");
+    mkdirSync(join(repo, ".git"));
+    mkdirSync(join(repo, ".hg"));
+
+    expect(
+      resolveDetectedVcsIdWithExtensions(repo, [
+        createTestHgAdapter(HUNK_CORE_VCS_DETECTION_PRIORITY + 1),
+      ]),
+    ).toBe("hg");
+  });
+
+  test("still resolves a colocated jj checkout as jj", () => {
+    const repo = createTempDir("hunk-apply-colocated-jj-");
+    mkdirSync(join(repo, ".jj"));
+    mkdirSync(join(repo, ".git"));
+    mkdirSync(join(repo, ".hg"));
+
+    expect(
+      resolveDetectedVcsIdWithExtensions(repo, [
+        createTestHgAdapter(HUNK_CORE_VCS_DETECTION_PRIORITY + 1),
+      ]),
+    ).toBe("jj");
+  });
+
+  test("never overrides an explicit vcs a loaded backend owns", () => {
+    const repo = createTempDir("hunk-apply-explicit-");
+    const inner = join(repo, "inner-hg");
+    mkdirSync(join(repo, ".git"));
+    mkdirSync(join(inner, ".hg"), { recursive: true });
+    const adapters = [createTestHgAdapter()];
+
+    // `vcs = "git"` in config beats the nearer extension checkout.
+    expect(resolveDetectedVcsIdWithExtensions(inner, adapters, "git")).toBeUndefined();
+    // So does naming the extension backend itself.
+    expect(resolveDetectedVcsIdWithExtensions(inner, adapters, "hg")).toBeUndefined();
+    // An id nothing owns already fell back to detection, so detection decides.
+    expect(resolveDetectedVcsIdWithExtensions(inner, adapters, "bzr")).toBe("hg");
   });
 });
 

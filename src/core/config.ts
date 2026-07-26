@@ -65,6 +65,15 @@ export interface HunkConfigResolution {
   /** Config-defined custom themes in declaration order, user layer before repo layer. */
   customThemes: NamedCustomThemeConfig[];
   extensions: ExtensionsConfig;
+  /**
+   * The `vcs` id a config layer or CLI flag named, when one did.
+   *
+   * `input.options.vcs` cannot answer this on its own: an explicit
+   * `vcs = "git"` and a detected Git checkout resolve to the same string. Later
+   * stages need the difference, because an explicit choice outranks detection
+   * while a detected one may be revised once extension backends load.
+   */
+  explicitVcsId?: string;
   startupNotices?: readonly StartupNotice[];
   globalConfigPath?: string;
   repoConfigPath?: string;
@@ -736,20 +745,29 @@ export function resolveConfiguredCliInput(
     }
   };
 
+  // The merged `vcs` value loses track of who chose it, so record every layer
+  // that names one explicitly, in the same last-layer-wins order options merge.
+  let explicitVcsId: string | undefined;
+
   if (userConfigPath) {
     const userConfig = readTomlRecord(userConfigPath);
-    resolvedOptions = mergeOptions(resolvedOptions, resolveConfigLayer(userConfig, input));
+    const userLayer = resolveConfigLayer(userConfig, input);
+    explicitVcsId = userLayer.vcs ?? explicitVcsId;
+    resolvedOptions = mergeOptions(resolvedOptions, userLayer);
     applyCustomThemeLayer(readCustomThemes(userConfig));
     userExtensionsLayer = readExtensionsLayer(userConfig);
   }
 
   if (repoConfigPath) {
     const repoConfig = readTomlRecord(repoConfigPath);
-    resolvedOptions = mergeOptions(resolvedOptions, resolveConfigLayer(repoConfig, input));
+    const repoLayer = resolveConfigLayer(repoConfig, input);
+    explicitVcsId = repoLayer.vcs ?? explicitVcsId;
+    resolvedOptions = mergeOptions(resolvedOptions, repoLayer);
     applyCustomThemeLayer(readCustomThemes(repoConfig));
     repoExtensionsLayer = readExtensionsLayer(repoConfig);
   }
 
+  explicitVcsId = input.options.vcs ?? explicitVcsId;
   resolvedOptions = mergeOptions(resolvedOptions, input.options);
   resolvedOptions = {
     ...resolvedOptions,
@@ -808,6 +826,7 @@ export function resolveConfiguredCliInput(
     },
     customThemes: resolvedCustomThemes,
     extensions,
+    explicitVcsId,
     startupNotices: buildConfigStartupNotices(usesLegacyCustomSyntax, [
       ...themeNotices.values(),
       ...repoExtensionConfigNotices,

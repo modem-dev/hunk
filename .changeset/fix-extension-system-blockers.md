@@ -11,4 +11,5 @@ Fix extension-system issues found reviewing the published surface:
 - `startup` now fires for extensions loaded after granting repository trust.
 - `--no-extensions` and `--extension` paths survive daemon-driven session reloads, and reloads re-run extension VCS detection the way first launch does.
 - An unknown `vcs` id in config is resolved against loaded extension backends, and reported instead of silently discarded when nothing owns it.
+- Extension VCS adapters take part in checkout detection on the same terms as bundled ones: the nearest checkout wins, so a Mercurial checkout nested inside a Git repository is reviewed as Mercurial, while `detectionPriority` still decides colocated ties and an explicit `vcs` in config still wins outright.
 - `[extensions] paths` now expands a leading `~`, matching the documented examples.

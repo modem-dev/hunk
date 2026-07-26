@@ -4,7 +4,7 @@ export {
   applyExtensionRegistrations,
   createExtensionApplyNotices,
   reportExtensionApplyIssues,
-  resolveExtensionDetectedVcsId,
+  resolveDetectedVcsIdWithExtensions,
   resolveExtensionVcsAdapters,
   type AppliedExtensionRegistrations,
   type ExtensionApplyIssue,

@@ -125,25 +125,43 @@ export function applyExtensionRegistrations(
   return { vcsAdapters: vcs.adapters, issues: [...languageIssues, ...vcs.issues] };
 }
 
+/** Report whether one id names a backend this session actually loaded. */
+function ownsVcsId(adapters: readonly VcsAdapter[], vcsId: string) {
+  return resolveVcsAdapters(adapters).some((adapter) => adapter.id === vcsId);
+}
+
 /**
- * Pick the VCS id a user-extension adapter detects, when no shipped backend does.
+ * Re-run checkout detection with the session's full adapter list in hand.
  *
- * Origin decides how much authority an adapter has over detection. Bundled
- * adapters are product behavior, so they take part in first-class detection
- * through `detectVcs` — a pure jj checkout resolves to `jj` during config
- * resolution, before any user extension has been imported. User adapters get
- * this conservative rule instead: config has already chosen the session's VCS
- * by the time they load, so they may claim a directory nothing shipped
- * recognized, but never override one that was.
+ * Config resolution picks the session's VCS before user extensions have been
+ * imported, so its answer only ever saw the bundled backends. This is where
+ * that provisional answer is revisited, under one rule for every adapter
+ * whatever its origin: the nearest checkout wins, and `detectionPriority` only
+ * breaks ties between adapters that recognize the same root. A Mercurial
+ * extension's checkout nested inside an outer Git repository is the repository
+ * the user is standing in, and which tier registered the backend does not
+ * change that. Priority is still what keeps colocated cases sane — a
+ * default-priority user adapter loses a same-root tie with Git, so installing
+ * an extension does not quietly change how an existing repo is reviewed.
  *
- * Both paths run through the same `detectVcs` ordering, so there is still one
- * definition of detection order.
+ * Detection itself stays in `detectVcs`, so nearest-root-wins is defined once.
+ *
+ * An explicit `vcs` a loaded backend owns is not detection and is never
+ * overridden: `resolveSessionVcsId` has already honored it, so this returns
+ * undefined and the caller keeps that choice. An explicit id nothing owns has
+ * already fallen back to detection, so detection is what decides it here too.
  */
-export function resolveExtensionDetectedVcsId(
+export function resolveDetectedVcsIdWithExtensions(
   cwd: string,
   adapters: readonly VcsAdapter[],
+  explicitVcsId?: string,
 ): string | undefined {
-  if (adapters.length === 0 || detectVcs(cwd)) {
+  if (adapters.length === 0) {
+    // Config already detected across exactly this adapter list.
+    return undefined;
+  }
+
+  if (explicitVcsId !== undefined && ownsVcsId(adapters, explicitVcsId)) {
     return undefined;
   }
 
@@ -173,7 +191,7 @@ export interface ResolvedSessionVcsId {
  *
  * This deliberately does not consult detection *order* — it only asks whether a
  * backend with that id exists, so it composes with, rather than duplicates,
- * `resolveExtensionDetectedVcsId`.
+ * `resolveDetectedVcsIdWithExtensions`.
  */
 export function resolveSessionVcsId(
   configuredVcsId: string | undefined,
@@ -184,8 +202,7 @@ export function resolveSessionVcsId(
     return { vcsId: configuredVcsId };
   }
 
-  const owned = resolveVcsAdapters(adapters).some((adapter) => adapter.id === configuredVcsId);
-  if (owned) {
+  if (ownsVcsId(adapters, configuredVcsId)) {
     return { vcsId: configuredVcsId };
   }
 

@@ -10,7 +10,7 @@ import {
   applyExtensionRegistrations,
   createUnknownVcsNotice,
   reportExtensionApplyIssues,
-  resolveExtensionDetectedVcsId,
+  resolveDetectedVcsIdWithExtensions,
   resolveSessionVcsId,
 } from "../extensions/apply";
 import {
@@ -155,17 +155,21 @@ export function AppHost({
 
       // Config resolution above ran before extension adapters were in hand, exactly
       // as it does on first launch — so repeat both VCS steps `prepareStartupPlan`
-      // performs, in the same order. Without them, a reload into an extension-only
-      // repository (a daemon cross-directory reload, say) resolves to the default
-      // backend and reviews the wrong thing, while first launch in that same
-      // directory works.
+      // performs, in the same order. Without them, a reload into an
+      // extension-backed repository (a daemon cross-directory reload, say)
+      // resolves to the backend config guessed without extensions and reviews the
+      // wrong thing, while first launch in that same directory works.
       const sessionVcs = resolveSessionVcsId(
         configured.input.options.vcs,
         cwd,
         applied.vcsAdapters,
       );
-      const detectedExtensionVcsId = resolveExtensionDetectedVcsId(cwd, applied.vcsAdapters);
-      const reloadVcsId = detectedExtensionVcsId ?? sessionVcs.vcsId;
+      const detectedVcsId = resolveDetectedVcsIdWithExtensions(
+        cwd,
+        applied.vcsAdapters,
+        configured.explicitVcsId,
+      );
+      const reloadVcsId = detectedVcsId ?? sessionVcs.vcsId;
       const reloadInput =
         reloadVcsId === configured.input.options.vcs
           ? configured.input
@@ -185,7 +189,8 @@ export function AppHost({
         sessionVcs.unknownVcsId !== undefined
           ? [
               ...(configured.startupNotices ?? []),
-              createUnknownVcsNotice(sessionVcs.unknownVcsId, String(sessionVcs.vcsId)),
+              // Names the backend the reload really used, detection override included.
+              createUnknownVcsNotice(sessionVcs.unknownVcsId, String(reloadVcsId)),
             ]
           : configured.startupNotices;
       nextBootstrap.viewPreferencesConfigPath = configured.viewPreferencesConfigPath;
