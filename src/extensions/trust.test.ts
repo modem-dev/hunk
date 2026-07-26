@@ -1,7 +1,15 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { loadExtensions } from "./host";
 import { readExtensionTrust, resolveRepoTrust, writeExtensionTrust } from "./trust";
 import { deriveExtensionId, type ExtensionCandidate } from "./types";
@@ -54,6 +62,64 @@ describe("extension trust", () => {
     expect(resolveRepoTrust(trustedRepo, { statePath })).toBe("trusted");
     expect(resolveRepoTrust(deniedRepo, { statePath })).toBe("denied");
     expect(Object.keys(readExtensionTrust({ statePath }))).toHaveLength(2);
+  });
+
+  /**
+   * Create a directory reachable under two different spellings.
+   *
+   * Returns `undefined` where symlinks need privileges the environment lacks.
+   * The pair stands in for every way one directory gets two names: a symlinked
+   * ancestor, or the Windows 8.3 short path (`C:\Users\RUNNER~1\...`) that
+   * `realpathSync.native` expands to its long form.
+   */
+  function createAliasedRepo(prefix: string) {
+    const root = realpathSync(createTempDir(prefix));
+    const canonical = join(root, "repo");
+    const alias = join(root, "alias");
+    mkdirSync(canonical, { recursive: true });
+
+    try {
+      symlinkSync(canonical, alias, "dir");
+    } catch {
+      // Some Windows environments cannot create symlinks without elevated privileges.
+      return undefined;
+    }
+
+    return { canonical, alias };
+  }
+
+  test("resolves a decision recorded under another spelling of the same repo root", () => {
+    const stateDir = createTempDir("hunk-trust-alias-state-");
+    const statePath = join(stateDir, "state.json");
+    const repo = createAliasedRepo("hunk-trust-alias-repo-");
+    if (!repo) {
+      return;
+    }
+
+    // The live sequence: the trust prompt records the root discovery handed it,
+    // then the reload canonicalizes its cwd before asking again. Both spellings
+    // have to name one repository, or a freshly trusted repo never loads.
+    writeExtensionTrust(repo.alias, "trusted", { statePath });
+
+    expect(resolveRepoTrust(repo.canonical, { statePath })).toBe("trusted");
+    expect(resolveRepoTrust(repo.alias, { statePath })).toBe("trusted");
+    expect(Object.keys(readExtensionTrust({ statePath }))).toEqual([repo.canonical]);
+  });
+
+  test("honors decisions recorded before trust keys were canonicalized", () => {
+    const stateDir = createTempDir("hunk-trust-legacy-state-");
+    const statePath = join(stateDir, "state.json");
+    const repo = createAliasedRepo("hunk-trust-legacy-repo-");
+    if (!repo) {
+      return;
+    }
+
+    writeFileSync(
+      statePath,
+      JSON.stringify({ extensionTrust: { [resolve(repo.alias)]: "denied" } }),
+    );
+
+    expect(resolveRepoTrust(repo.alias, { statePath })).toBe("denied");
   });
 
   test("preserves unrelated state keys when recording a decision", () => {

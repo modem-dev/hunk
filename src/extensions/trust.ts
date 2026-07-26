@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import { readHunkStateRecord, updateHunkStateRecord } from "../core/hunkState";
-import { resolveHunkStatePath } from "../core/paths";
+import { resolveCanonicalPath, resolveHunkStatePath } from "../core/paths";
 
 /**
  * Repo-local extensions run arbitrary code from the repository under review,
@@ -26,9 +26,22 @@ function resolveStatePath(options: ExtensionTrustOptions) {
   return options.statePath ?? resolveHunkStatePath(options.env ?? process.env);
 }
 
-/** Normalize one repo root into the stable key used in persisted state. */
+/**
+ * Normalize one repo root into the stable key used in persisted state.
+ *
+ * A trust decision is written from whatever spelling of the repo root the pass
+ * that raised the question happened to hold, and read back from whatever
+ * spelling a later pass holds — and those are not the same string. Session
+ * reloads canonicalize their cwd through `realpathSync.native` before extension
+ * discovery re-runs, so the grant is recorded under the launch spelling while
+ * the very next lookup asks about the canonical one. Anywhere the two forms
+ * differ — a symlinked ancestor, or a Windows 8.3 short path such as the
+ * `C:\Users\RUNNER~1\...` temp directory — a freshly trusted repository's
+ * extensions would never load and the prompt would come straight back.
+ * Canonicalizing the key is what makes both sides name the same repository.
+ */
 function toTrustKey(repoRoot: string) {
-  return resolve(repoRoot);
+  return resolveCanonicalPath(repoRoot);
 }
 
 /** Accept only the recorded decisions Hunk understands. */
@@ -59,12 +72,19 @@ export function readExtensionTrust(options: ExtensionTrustOptions = {}): Extensi
   return trust;
 }
 
-/** Resolve the trust state for one repo root, defaulting to `unknown`. */
+/**
+ * Resolve the trust state for one repo root, defaulting to `unknown`.
+ *
+ * Decisions recorded before keys were canonicalized are still honored under
+ * their plain resolved spelling, so upgrading Hunk does not silently re-ask
+ * about a repository the user already answered for.
+ */
 export function resolveRepoTrust(
   repoRoot: string,
   options: ExtensionTrustOptions = {},
 ): ExtensionTrustState {
-  return readExtensionTrust(options)[toTrustKey(repoRoot)] ?? "unknown";
+  const trust = readExtensionTrust(options);
+  return trust[toTrustKey(repoRoot)] ?? trust[resolve(repoRoot)] ?? "unknown";
 }
 
 /** Persist one repo-root trust decision without disturbing other state keys. */

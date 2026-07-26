@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
@@ -51,9 +51,8 @@ function createTempDir(prefix: string) {
   return dir;
 }
 
-/** Create a Git checkout with a committed file, a working-tree change, and a subdirectory. */
-function createTestRepo(prefix: string) {
-  const repo = createTempDir(prefix);
+/** Turn one existing directory into a Git checkout with a committed file, a working-tree change, and a subdirectory. */
+function initTestRepo(repo: string) {
   execSync("git init && git config user.email test@test && git config user.name test", {
     cwd: repo,
     stdio: "ignore",
@@ -63,6 +62,36 @@ function createTestRepo(prefix: string) {
   execSync("git add . && git commit -m init", { cwd: repo, stdio: "ignore" });
   writeFileSync(join(repo, "sub", "a.txt"), "one\ntwo\n");
   return repo;
+}
+
+/** Create a Git checkout with a committed file, a working-tree change, and a subdirectory. */
+function createTestRepo(prefix: string) {
+  return initTestRepo(createTempDir(prefix));
+}
+
+/**
+ * Create a Git checkout reachable under a second, non-canonical path.
+ *
+ * Returns `undefined` where symlinks need privileges the environment lacks. The
+ * alias stands in for every way a session is launched with a spelling of its
+ * repo root that `realpathSync.native` would rewrite — a symlinked ancestor, or
+ * a Windows 8.3 short path such as the `C:\Users\RUNNER~1\...` temp directory.
+ */
+function createAliasedTestRepo(prefix: string) {
+  const outer = createTempDir(prefix);
+  const canonicalRepo = join(outer, "repo");
+  const aliasRepo = join(outer, "alias");
+  mkdirSync(canonicalRepo, { recursive: true });
+
+  try {
+    symlinkSync(canonicalRepo, aliasRepo, "dir");
+  } catch {
+    // Some Windows environments cannot create symlinks without elevated privileges.
+    return undefined;
+  }
+
+  initTestRepo(canonicalRepo);
+  return aliasRepo;
 }
 
 /** Point global config resolution at a throwaway directory for one test. */
@@ -110,13 +139,40 @@ async function flush(setup: Awaited<ReturnType<typeof testRender>>) {
   });
 }
 
-/** Render frames until a condition holds, or the attempts run out. */
+/** Render a fixed number of frames to let pending work settle. */
+async function pumpFrames(setup: Awaited<ReturnType<typeof testRender>>, frames: number) {
+  for (let frame = 0; frame < frames; frame++) {
+    await flush(setup);
+    await act(async () => {
+      await Bun.sleep(20);
+    });
+  }
+}
+
+/**
+ * Render frames until a condition holds, and fail loudly when it never does.
+ *
+ * Giving up quietly turns "the thing never happened" into a confusing assertion
+ * about whatever the test looked at next — an empty log, a blank frame — with
+ * no hint that the wait itself expired. The budget is wall-clock rather than a
+ * frame count because the work being waited on (a reload's directory scans,
+ * dynamic import, and TypeScript transpile) is far slower on a cold CI runner
+ * than locally — and it stays under Bun's 5s per-test timeout so the failure is
+ * this message rather than a killed test.
+ */
 async function flushUntil(
   setup: Awaited<ReturnType<typeof testRender>>,
   predicate: () => boolean,
-  attempts = 40,
+  description: string,
+  timeoutMs = 4_000,
 ) {
-  for (let attempt = 0; attempt < attempts && !predicate(); attempt++) {
+  const deadline = Date.now() + timeoutMs;
+
+  while (!predicate()) {
+    if (Date.now() > deadline) {
+      throw new Error(`Timed out after ${timeoutMs}ms waiting for ${description}.`);
+    }
+
     await flush(setup);
     await act(async () => {
       await Bun.sleep(20);
@@ -221,7 +277,7 @@ describe("reload keeps launch extension authority", () => {
 
         // A daemon reload command, parsed fresh: it carries no extension flags.
         await broker.reload({ kind: "vcs", staged: false, options: {} }, repo);
-        await flushUntil(setup, () => false, 10);
+        await pumpFrames(setup, 10);
 
         // The reload moved cwd and re-ran discovery; the hard off switch held.
         expect(readProbeLog(logPath)).toEqual([]);
@@ -251,7 +307,11 @@ describe("reload keeps launch extension authority", () => {
         const beforeReload = readProbeLog(logPath).length;
 
         await broker.reload({ kind: "vcs", staged: false, options: {} }, repo);
-        await flushUntil(setup, () => readProbeLog(logPath).length > beforeReload);
+        await flushUntil(
+          setup,
+          () => readProbeLog(logPath).length > beforeReload,
+          "the reload to run the extension factory again",
+        );
 
         // The reload command carries no `--extension` flags of its own, so the
         // factory only runs again if the launch paths were re-threaded.
@@ -262,45 +322,82 @@ describe("reload keeps launch extension authority", () => {
   });
 });
 
+/**
+ * Answer a repo-extension trust prompt with `t` and return what the extension logged.
+ *
+ * Launching with a repo-local extension and no recorded decision is the only way
+ * to reach the mid-session load path: nothing runs until the prompt is answered,
+ * and answering it records the decision and reloads with `reloadExtensions`.
+ */
+async function grantTrustAndCollectProbeEvents(repo: string) {
+  const logPath = join(repo, "probe.log");
+  writeProbeExtension(join(repo, ".hunk", "extensions", "probe.ts"), logPath);
+  // Trust decisions live in the global state file; keep this test off the
+  // developer's real one.
+  useTempConfigHome();
+
+  const bootstrap = await loadAppBootstrap(
+    { kind: "vcs", staged: false, options: { mode: "stack" } },
+    { cwd: repo },
+  );
+  bootstrap.extensions = await loadStartupExtensions({
+    extensions: { enabled: true, paths: [], repoPaths: [], extensionConfigs: {} },
+    cwd: repo,
+  });
+  // The repo extension is skipped pending a trust decision, so nothing ran.
+  expect(bootstrap.extensions.pendingTrustRepoRoot).toBeDefined();
+  expect(readProbeLog(logPath)).toEqual([]);
+
+  let events: string[] = [];
+  await withAppHost(bootstrap, async (setup) => {
+    // The prompt has to be on screen before `t` is typed, or the key reaches
+    // the normal app handler and the trust question is never answered.
+    await flushUntil(
+      setup,
+      () => setup.captureCharFrame().includes("Run this repository's extensions?"),
+      "the repo-extension trust prompt to open",
+    );
+
+    // Grant trust: records the decision and reloads with `reloadExtensions`.
+    await act(async () => {
+      await setup.mockInput.typeText("t");
+    });
+    await flushUntil(
+      setup,
+      () => readProbeLog(logPath).includes("session_reload"),
+      "the trusted repo extension to load and see the reload",
+    );
+
+    events = readProbeLog(logPath);
+  });
+
+  return events;
+}
+
 describe("startup for extensions loaded mid-session", () => {
   test("fires when granting trust loads a repo extension for the first time", async () => {
-    const repo = createTestRepo("hunk-apphost-trust-");
-    const logPath = join(repo, "probe.log");
-    writeProbeExtension(join(repo, ".hunk", "extensions", "probe.ts"), logPath);
-    // Trust decisions live in the global state file; keep this test off the
-    // developer's real one.
-    useTempConfigHome();
+    const events = await grantTrustAndCollectProbeEvents(createTestRepo("hunk-apphost-trust-"));
 
-    const bootstrap = await loadAppBootstrap(
-      { kind: "vcs", staged: false, options: { mode: "stack" } },
-      { cwd: repo },
-    );
-    bootstrap.extensions = await loadStartupExtensions({
-      extensions: { enabled: true, paths: [], repoPaths: [], extensionConfigs: {} },
-      cwd: repo,
-    });
-    // The repo extension is skipped pending a trust decision, so nothing ran.
-    expect(bootstrap.extensions.pendingTrustRepoRoot).toBeDefined();
-    expect(readProbeLog(logPath)).toEqual([]);
+    expect(events).toContain("factory");
+    // The whole point: an extension loaded after mount still gets `startup`.
+    expect(events).toContain("startup");
+    // Ordered before session_reload, so its lifecycle stays in sequence.
+    expect(events.indexOf("startup")).toBeLessThan(events.indexOf("session_reload"));
+  });
 
-    await withAppHost(bootstrap, async (setup) => {
-      await flushUntil(setup, () =>
-        setup.captureCharFrame().includes("Run this repository's extensions?"),
-      );
+  test("fires when the session was launched through a non-canonical repo path", async () => {
+    const repo = createAliasedTestRepo("hunk-apphost-trust-alias-");
+    if (!repo) {
+      return;
+    }
 
-      // Grant trust: records the decision and reloads with `reloadExtensions`.
-      await act(async () => {
-        await setup.mockInput.typeText("t");
-      });
-      await flushUntil(setup, () => readProbeLog(logPath).includes("session_reload"));
+    // The grant records the root discovery reported, while the reload asks about
+    // the canonicalized cwd. Unless those name one repository, the freshly
+    // trusted extension is skipped all over again and nothing is ever logged.
+    const events = await grantTrustAndCollectProbeEvents(repo);
 
-      const events = readProbeLog(logPath);
-      expect(events).toContain("factory");
-      // The whole point: an extension loaded after mount still gets `startup`.
-      expect(events).toContain("startup");
-      // Ordered before session_reload, so its lifecycle stays in sequence.
-      expect(events.indexOf("startup")).toBeLessThan(events.indexOf("session_reload"));
-    });
+    expect(events).toContain("factory");
+    expect(events).toContain("startup");
   });
 
   test("does not fire a second time for an extension that already had it", async () => {
@@ -318,13 +415,21 @@ describe("startup for extensions loaded mid-session", () => {
     });
 
     await withAppHost(bootstrap, async (setup) => {
-      await flushUntil(setup, () => readProbeLog(logPath).includes("startup"));
+      await flushUntil(
+        setup,
+        () => readProbeLog(logPath).includes("startup"),
+        "the launch extension to receive startup",
+      );
       expect(readProbeLog(logPath).filter((line) => line === "startup")).toHaveLength(1);
 
       await act(async () => {
         await setup.mockInput.typeText("r");
       });
-      await flushUntil(setup, () => readProbeLog(logPath).includes("session_reload"));
+      await flushUntil(
+        setup,
+        () => readProbeLog(logPath).includes("session_reload"),
+        "the refresh key to reload the session",
+      );
 
       // The reload re-ran the factory, but `startup` is a once-per-extension
       // promise: this id already had it, so it is not delivered again.
@@ -429,7 +534,7 @@ describe("reload re-runs extension VCS detection", () => {
         const result = (await broker.reload({ kind: "vcs", staged: false, options: {} }, repo)) as {
           title: string;
         };
-        await flushUntil(setup, () => false, 10);
+        await pumpFrames(setup, 10);
 
         expect(result.title).toBe("Mercurial working copy");
       },
@@ -490,7 +595,7 @@ describe("reload re-runs extension VCS detection", () => {
         )) as {
           title: string;
         };
-        await flushUntil(setup, () => false, 10);
+        await pumpFrames(setup, 10);
 
         expect(result.title).toBe("Mercurial working copy");
       },

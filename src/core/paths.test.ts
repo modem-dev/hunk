@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
   resolveBundledHunkReviewSkillPath,
+  resolveCanonicalPath,
   resolveGlobalConfigPath,
   resolveHunkStatePath,
 } from "./paths";
@@ -60,6 +61,32 @@ describe("paths", () => {
       writeFileSync(fakeBinary, "binary\n");
 
       expect(resolveBundledHunkReviewSkillPath([fakeBinary])).toBe(skillPath);
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  test("canonicalizes two spellings of one directory to the same path", () => {
+    const tempRoot = realpathSync(createTempRoot("hunk-canonical-path-"));
+
+    try {
+      const target = join(tempRoot, "target");
+      const link = join(tempRoot, "link");
+      mkdirSync(target, { recursive: true });
+
+      try {
+        symlinkSync(target, link, "dir");
+      } catch {
+        // Some Windows environments cannot create symlinks without elevated privileges.
+        return;
+      }
+
+      // The mismatch this guards against: `resolve` keeps whichever spelling it
+      // was handed, so two layers can "resolve" the same directory and disagree.
+      expect(resolveCanonicalPath(link)).toBe(target);
+      expect(resolveCanonicalPath(join(link, "nested", "missing.txt"))).toBe(
+        join(target, "nested", "missing.txt"),
+      );
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }

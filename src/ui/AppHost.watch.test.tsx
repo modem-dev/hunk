@@ -18,11 +18,25 @@ async function flush(setup: Awaited<ReturnType<typeof testRender>>) {
   });
 }
 
-/** Yield across render and filesystem turns until an asynchronous view update is visible. */
-async function flushUntil(setup: Awaited<ReturnType<typeof testRender>>, predicate: () => boolean) {
-  for (let attempt = 0; attempt < 50 && !predicate(); attempt++) {
+/**
+ * Yield across render and filesystem turns until an asynchronous view update is visible.
+ *
+ * An expired wait throws rather than letting the test proceed against a stale
+ * frame, so "the update never arrived" reads as exactly that.
+ */
+async function flushUntil(
+  setup: Awaited<ReturnType<typeof testRender>>,
+  predicate: () => boolean,
+  description: string,
+  attempts = 50,
+) {
+  for (let attempt = 0; attempt < attempts && !predicate(); attempt++) {
     await flush(setup);
     await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  if (!predicate()) {
+    throw new Error(`Timed out after ${attempts} render passes waiting for ${description}.`);
   }
 }
 
@@ -143,7 +157,11 @@ describe("watched input lifecycle", () => {
       watch.setSignature("signature:sidecar");
       watch.emit();
       await advanceWatch(setup, watch, 200);
-      await flushUntil(setup, () => setup.captureCharFrame().includes("Watch rationale updated"));
+      await flushUntil(
+        setup,
+        () => setup.captureCharFrame().includes("Watch rationale updated"),
+        "the watched reload to show the updated rationale",
+      );
       expect(setup.captureCharFrame()).toContain("Watch rationale updated");
     } finally {
       await act(async () => setup.renderer.destroy());

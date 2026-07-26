@@ -1,5 +1,5 @@
-import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
-import { realpathSync } from "node:fs";
+import { isAbsolute, relative, resolve } from "node:path";
+import { resolveCanonicalPath } from "../core/paths";
 import { findVcsRepoRootCandidate } from "../core/vcs";
 import type { AppBootstrap, CliInput, CommonOptions } from "../core/types";
 
@@ -27,35 +27,6 @@ export interface SessionReloadBounds {
   defaultCwd: string;
 }
 
-/** Resolve a path through existing ancestor symlinks, even when the final file is absent. */
-function resolveMaybeRealPath(path: string) {
-  const absolutePath = resolve(path);
-  try {
-    return realpathSync.native(absolutePath);
-  } catch {
-    // Continue below so non-existent leaves still cannot hide behind an intermediate symlink.
-  }
-
-  const missingSegments: string[] = [];
-  let current = absolutePath;
-
-  for (;;) {
-    const parent = dirname(current);
-    if (parent === current) {
-      return absolutePath;
-    }
-
-    missingSegments.unshift(basename(current));
-    current = parent;
-
-    try {
-      return resolve(realpathSync.native(current), ...missingSegments);
-    } catch {
-      // Keep walking until we find an existing ancestor or hit the filesystem root.
-    }
-  }
-}
-
 /** Return whether the candidate path is the root itself or contained by it. */
 function isWithinRoot(root: string, candidate: string) {
   const offset = relative(root, candidate);
@@ -64,7 +35,7 @@ function isWithinRoot(root: string, candidate: string) {
 
 /** Deduplicate roots and drop sub-roots already covered by an earlier broader root. */
 function normalizeRoots(roots: string[]) {
-  const normalized = roots.map(resolveMaybeRealPath);
+  const normalized = roots.map(resolveCanonicalPath);
   const unique: string[] = [];
 
   for (const root of normalized) {
@@ -91,8 +62,8 @@ function resolveRepoReloadRoots(initialCwd: string, paths: string[]) {
     return [];
   }
 
-  const resolvedRepoRoot = resolveMaybeRealPath(repoRoot);
-  const filePaths = paths.map((path) => resolveMaybeRealPath(resolve(initialCwd, path)));
+  const resolvedRepoRoot = resolveCanonicalPath(repoRoot);
+  const filePaths = paths.map((path) => resolveCanonicalPath(resolve(initialCwd, path)));
   return filePaths.every((path) => isWithinRoot(resolvedRepoRoot, path)) ? [resolvedRepoRoot] : [];
 }
 
@@ -101,7 +72,7 @@ export function createSessionReloadBounds(
   bootstrap: AppBootstrap,
   { cwd = process.cwd() }: { cwd?: string } = {},
 ): SessionReloadBounds {
-  const initialCwd = resolveMaybeRealPath(cwd);
+  const initialCwd = resolveCanonicalPath(cwd);
   let roots: string[] = [];
 
   switch (bootstrap.input.kind) {
@@ -144,7 +115,7 @@ function assertReloadFileWithinBounds(
   path: string,
   description: string,
 ) {
-  const candidate = resolveMaybeRealPath(resolve(cwd, path));
+  const candidate = resolveCanonicalPath(resolve(cwd, path));
   if (!bounds.roots.some((root) => isWithinRoot(root, candidate))) {
     throw new Error(
       `Session reload refused ${description} outside the initial Hunk root: ${candidate}`,
@@ -156,7 +127,7 @@ function assertReloadFileWithinBounds(
 
 /** Resolve a reload cwd and reject it when it escapes the initial session root. */
 function assertReloadSourceWithinBounds(bounds: SessionReloadBounds, cwd: string, path: string) {
-  const candidate = resolveMaybeRealPath(resolve(cwd, path));
+  const candidate = resolveCanonicalPath(resolve(cwd, path));
   const allowed = bounds.roots.some((root) => isWithinRoot(root, candidate));
   if (!allowed) {
     throw new Error(
