@@ -52,6 +52,11 @@ working.
 `--no-extensions` disables user extensions for one run — nothing on disk is
 read, let alone executed. Use it when triaging a bug.
 
+`--extension` is explicit user intent: the file loads immediately, with no
+trust prompt, even when the path points inside the repository under review.
+Never pass a path you have not read — including one copy-pasted from a
+repository's own README.
+
 ## Bundled extensions
 
 Every VCS backend Hunk ships — **Git, Jujutsu, and Sapling** — is an extension.
@@ -115,11 +120,19 @@ Clear the entry from `state.json` if that matters for a path you reuse.
 
 ## Failure isolation
 
-A broken extension never breaks review. An extension that fails to import, has
-no default export, or throws from its factory is skipped, its partial
+A broken extension should not break review. An extension that fails to import,
+has no default export, or throws from its factory is skipped, its partial
 registrations are rolled back, and it becomes a startup notice in the footer.
 A handler or transform that throws later is reported as a warning naming the
-extension, and everything else keeps running.
+extension, and everything else keeps running. Event handlers receive frozen
+copies of the changeset, so accidental mutation throws inside the handler
+instead of corrupting the review.
+
+This is crash containment, not a sandbox. Per-file `metadata` inside event
+payloads is shared with the renderer for performance and is not frozen, and an
+extension runs with your full user permissions — it can do anything your shell
+can. The containment protects you from bugs, not from code you should not have
+loaded in the first place.
 
 ## The API
 
