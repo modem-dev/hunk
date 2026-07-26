@@ -22,6 +22,10 @@ Inside Hunk:
 3. Press `1`, `2`, or `0` for split, stack, or responsive auto layout.
 4. Press `q` to quit.
 
+![Hunk showing a multi-file review stream with a file sidebar, split diff rows, and restrained terminal chrome](/docs/images/review-stream.webp)
+
+The sidebar indexes the same continuous stream shown in the main pane. Selecting a file jumps to it without hiding the rest of the changeset.
+
 ## Review a commit
 
 ```bash

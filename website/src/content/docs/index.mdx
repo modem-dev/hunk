@@ -1,59 +1,58 @@
 ---
 title: Hunk documentation
-description: Review complete changesets in a desktop-inspired terminal diff viewer built for people and coding agents.
-template: splash
-hero:
-  tagline: Understand a changeset as one review stream, navigate it like a desktop diff tool, and keep agent rationale beside the code it explains.
-  actions:
-    - text: Install Hunk
-      link: /docs/start/install/
-      icon: right-arrow
-      variant: primary
-    - text: Review with an agent
-      link: /docs/agents/review-with-an-agent/
-      icon: external
+description: Find the Hunk guide, workflow, configuration, or reference you need.
 ---
 
-import { Card, CardGrid } from "@astrojs/starlight/components";
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 
-## A review UI, not another pager
+Hunk is a terminal diff viewer for reviewing complete changesets and keeping agent rationale beside the code it explains. Use this page to jump directly to the guide or reference you need.
 
-Hunk normalizes working trees, commits, file pairs, and patches into one top-to-bottom review stream. The sidebar navigates that stream; selecting a file jumps to it instead of hiding the rest of the changeset.
+## New to Hunk?
+
+1. [Install Hunk](/docs/start/install/).
+2. Open your working tree with `hunk diff`.
+3. Follow the [quick start](/docs/start/quick-start/) to learn the review stream and navigation model.
+
+## Browse the docs
 
 <CardGrid>
-  <Card title="Review the whole change" icon="seti:diff">
-    Start with `hunk diff`, move through files and hunks, and switch between responsive split and
-    stack layouts without rebuilding the review.
-  </Card>
-  <Card title="Keep rationale beside code" icon="comment">
-    Let an agent steer a live Hunk session and attach focused notes to the exact lines or hunks they
-    explain.
-  </Card>
-  <Card title="Fit existing tools" icon="puzzle">
-    Open Git commits, raw patches, difftool pairs, Jujutsu or Sapling revsets, or use Hunk as a Git
-    pager.
-  </Card>
-  <Card title="Stay in the terminal" icon="approve-check-circle">
-    Use keyboard and mouse controls, syntax highlighting, themes, filtering, watch mode, and
-    terminal-native scrolling.
-  </Card>
+  <LinkCard
+    title="Start here"
+    href="/docs/start/install/"
+    description="Install Hunk, open your first review, and learn the keyboard and mouse controls."
+  />
+  <LinkCard
+    title="Review workflows"
+    href="/docs/workflows/working-trees-and-commits/"
+    description="Review working trees, commits, files, patches, pager input, difftool pairs, and other VCS backends."
+  />
+  <LinkCard
+    title="Working with agents"
+    href="/docs/agents/review-with-an-agent/"
+    description="Let an agent inspect a live review, navigate hunks, and leave inline comments and annotations."
+  />
+  <LinkCard
+    title="Configure"
+    href="/docs/configure/configuration/"
+    description="Set layered preferences, choose themes, and control layout and display behavior."
+  />
+  <LinkCard
+    title="Reference"
+    href="/docs/reference/cli/"
+    description="Look up generated CLI and config references or embed Hunk's OpenTUI components."
+  />
+  <LinkCard
+    title="Help"
+    href="/docs/help/troubleshooting/"
+    description="Troubleshoot startup and rendering, check platform support, or plan a docs deployment."
+  />
 </CardGrid>
 
-## Smallest useful review
+## Common tasks
 
-```bash
-hunk diff
-```
-
-Hunk opens the current repository changes, including untracked files by default. Press `?` inside the app for the current key map, `]` for the next hunk, and `q` to quit.
-
-![Hunk showing a multi-file review stream with a file sidebar, split diff rows, and restrained terminal chrome](/docs/images/review-stream.webp)
-
-The sidebar indexes the same continuous stream shown in the main pane. Choose a file to jump there without hiding the rest of the changeset.
-
-## Choose your next step
-
-- [Install Hunk](/docs/start/install/) on macOS, Linux, or Windows.
-- Follow the [quick start](/docs/start/quick-start/) for working trees and commits.
-- Put agent workflows first with [Review with an agent](/docs/agents/review-with-an-agent/).
-- Embed the renderer in your own terminal app with [OpenTUI components](/docs/reference/opentui-components/).
+- [Review current work or a commit](/docs/workflows/working-trees-and-commits/)
+- [Configure Hunk as a Git pager or difftool](/docs/workflows/git-pager-and-difftool/)
+- [Review a live session with a coding agent](/docs/agents/review-with-an-agent/)
+- [Choose a theme and layout](/docs/configure/themes/)
+- [Look up a command](/docs/reference/cli/)
+- [Troubleshoot terminal behavior](/docs/help/troubleshooting/)
