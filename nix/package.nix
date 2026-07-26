@@ -2,6 +2,7 @@
   bun,
   bun2nix,
   lib,
+  makeWrapper,
   ...
 }: let
   packageJson = lib.importJSON ../package.json;
@@ -15,6 +16,8 @@ in
     bunDeps = bun2nix.fetchBunDeps {
       bunNix = ./bun.lock.nix;
     };
+
+    nativeBuildInputs = [makeWrapper];
 
     buildPhase = ''
       runHook preBuild
@@ -33,6 +36,7 @@ in
       mkdir -p $out/bin
       cp -p ./hunk-bin $out/bin/hunk
       cp -r ./skills $out/
+      wrapProgram $out/bin/hunk --set HUNK_INSTALL_SOURCE nix
       runHook postInstall
     '';
 

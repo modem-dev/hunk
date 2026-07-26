@@ -18,7 +18,7 @@ interface PersistedStartupState {
 }
 
 export type UpdateChannel = "latest" | "beta";
-export type InstallSource = "npm" | "homebrew";
+export type InstallSource = "npm" | "homebrew" | "nix";
 
 type FetchImpl = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -33,6 +33,7 @@ export interface UpdateNoticeDeps {
   fetchTimeoutMs?: number;
   resolveInstalledVersion?: () => string;
   resolveInstallSource?: () => InstallSource;
+  resolveExecutablePath?: () => string;
   statePath?: string;
 }
 
@@ -69,14 +70,26 @@ function isNewerVersion(current: string, candidate: string) {
 }
 
 /** Resolve which package manager installed this binary, defaulting to the npm package path. */
-function resolveInstallSourceFromEnv(env: NodeJS.ProcessEnv = process.env): InstallSource {
-  return env[INSTALL_SOURCE_ENV] === "homebrew" ? "homebrew" : "npm";
+function resolveInstallSourceFromRuntime(
+  env: NodeJS.ProcessEnv = process.env,
+  executablePath = process.execPath,
+): InstallSource {
+  const installSource = env[INSTALL_SOURCE_ENV];
+  if (installSource === "homebrew" || installSource === "nix") {
+    return installSource;
+  }
+
+  return executablePath.startsWith("/nix/store/") ? "nix" : "npm";
 }
 
-/** Build the install command shown in the transient notice for one channel. */
-function commandForChannel(channel: UpdateChannel, installSource: InstallSource) {
+/** Build the install-aware update instruction shown for one release channel. */
+function updateInstructionForChannel(channel: UpdateChannel, installSource: InstallSource) {
   if (installSource === "homebrew") {
     return "brew update && brew upgrade hunk";
+  }
+
+  if (installSource === "nix") {
+    return "update Hunk through your Nix configuration";
   }
 
   return channel === "latest" ? "npm i -g hunkdiff" : "npm i -g hunkdiff@beta";
@@ -88,10 +101,10 @@ function createUpdateNotice(
   channel: UpdateChannel,
   installSource: InstallSource,
 ): StartupNotice {
-  const command = commandForChannel(channel, installSource);
+  const instruction = updateInstructionForChannel(channel, installSource);
   return {
     key: `${channel}:${version}`,
-    message: `Update available: ${version} (${channel}) • ${command}`,
+    message: `Update available: ${version} (${channel}) • ${instruction}`,
   };
 }
 
@@ -265,7 +278,8 @@ export async function resolveStartupUpdateNotice(
   const fetchTimeoutMs = deps.fetchTimeoutMs ?? DEFAULT_UPDATE_NOTICE_FETCH_TIMEOUT_MS;
   const resolveInstalledVersion = deps.resolveInstalledVersion ?? resolveCliVersion;
   const resolveInstallSource =
-    deps.resolveInstallSource ?? (() => resolveInstallSourceFromEnv(env));
+    deps.resolveInstallSource ??
+    (() => resolveInstallSourceFromRuntime(env, deps.resolveExecutablePath?.()));
   const { signal, dispose } = createFetchTimeoutSignal(fetchTimeoutMs);
 
   try {
