@@ -125,7 +125,8 @@ export async function readStreamTextWithLimit(
   return new TextDecoder().decode(combined);
 }
 
-async function readSpec(
+/** Read the text one filesystem-backed source spec names, or null when there is none. */
+export async function readFileSourceSpec(
   spec: FileSourceSpec,
   { maxSourceBytes = DEFAULT_SOURCE_TEXT_MAX_BYTES }: FileSourceFetcherOptions = {},
 ): Promise<string | null> {
@@ -149,7 +150,7 @@ export function createFileSourceFetcher(
         return cache.get(side) ?? null;
       }
 
-      const text = await readSpec(specs[side], { maxSourceBytes });
+      const text = await readFileSourceSpec(specs[side], { maxSourceBytes });
       cache.set(side, text);
       return text;
     },

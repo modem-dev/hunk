@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFileSourceFetcher, SourceTextTooLargeError } from "./fileSource";
-import { createGitFileSourceFetcher } from "./vcs/gitSource";
+import { readGitFileSource } from "./gitSource";
 
 const tempDirs: string[] = [];
 
@@ -128,13 +128,12 @@ describe("createFileSourceFetcher", () => {
     git(repoRoot, "add", ".");
     git(repoRoot, "commit", "-m", "second");
 
-    const fetcher = createGitFileSourceFetcher({
-      old: { kind: "git-blob", repoRoot, ref: "HEAD~1", path: filePath },
-      new: { kind: "git-blob", repoRoot, ref: "HEAD", path: filePath },
-    });
-
-    expect(await fetcher.getFullText("old")).toBe("first revision\n");
-    expect(await fetcher.getFullText("new")).toBe("second revision\n");
+    expect(
+      await readGitFileSource({ kind: "git-blob", repoRoot, ref: "HEAD~1", path: filePath }),
+    ).toBe("first revision\n");
+    expect(
+      await readGitFileSource({ kind: "git-blob", repoRoot, ref: "HEAD", path: filePath }),
+    ).toBe("second revision\n");
   });
 
   test("reads git index contents through an explicit index spec", async () => {
@@ -148,13 +147,12 @@ describe("createFileSourceFetcher", () => {
     git(repoRoot, "add", filePath);
     writeFileSync(join(repoRoot, filePath), "working tree\n");
 
-    const fetcher = createGitFileSourceFetcher({
-      old: { kind: "git-index", repoRoot, path: filePath },
-      new: { kind: "fs", absolutePath: join(repoRoot, filePath) },
-    });
-
-    expect(await fetcher.getFullText("old")).toBe("staged\n");
-    expect(await fetcher.getFullText("new")).toBe("working tree\n");
+    expect(await readGitFileSource({ kind: "git-index", repoRoot, path: filePath })).toBe(
+      "staged\n",
+    );
+    expect(await readGitFileSource({ kind: "fs", absolutePath: join(repoRoot, filePath) })).toBe(
+      "working tree\n",
+    );
   });
 
   test("rejects git blob and index source reads that exceed the configured byte cap", async () => {
@@ -167,16 +165,15 @@ describe("createFileSourceFetcher", () => {
     writeFileSync(join(repoRoot, filePath), "staged source\n");
     git(repoRoot, "add", filePath);
 
-    const fetcher = createGitFileSourceFetcher(
-      {
-        old: { kind: "git-blob", repoRoot, ref: "HEAD", path: filePath },
-        new: { kind: "git-index", repoRoot, path: filePath },
-      },
-      { maxSourceBytes: 5 },
-    );
-
-    await expect(fetcher.getFullText("old")).rejects.toBeInstanceOf(SourceTextTooLargeError);
-    await expect(fetcher.getFullText("new")).rejects.toBeInstanceOf(SourceTextTooLargeError);
+    await expect(
+      readGitFileSource(
+        { kind: "git-blob", repoRoot, ref: "HEAD", path: filePath },
+        { maxSourceBytes: 5 },
+      ),
+    ).rejects.toBeInstanceOf(SourceTextTooLargeError);
+    await expect(
+      readGitFileSource({ kind: "git-index", repoRoot, path: filePath }, { maxSourceBytes: 5 }),
+    ).rejects.toBeInstanceOf(SourceTextTooLargeError);
   });
 
   test("treats oversized git stderr as a generic source failure", async () => {
@@ -198,13 +195,15 @@ describe("createFileSourceFetcher", () => {
       )) as typeof Bun.spawn;
 
     try {
-      const fetcher = createGitFileSourceFetcher({
-        old: { kind: "git-blob", repoRoot: process.cwd(), ref: "HEAD", path: "note.txt" },
-        new: { kind: "none" },
-      });
-
       const loggedErrors = await captureConsoleErrors(async () => {
-        await expect(fetcher.getFullText("old")).resolves.toBeNull();
+        await expect(
+          readGitFileSource({
+            kind: "git-blob",
+            repoRoot: process.cwd(),
+            ref: "HEAD",
+            path: "note.txt",
+          }),
+        ).resolves.toBeNull();
       });
 
       expect(String(loggedErrors[0]?.[0])).toContain("failed to collect Git source");
@@ -236,16 +235,18 @@ describe("createFileSourceFetcher", () => {
     }) as typeof Bun.spawn;
 
     try {
-      const fetcher = createGitFileSourceFetcher(
-        {
-          old: { kind: "git-blob", repoRoot: process.cwd(), ref: "HEAD", path: "note.txt" },
-          new: { kind: "git-index", repoRoot: process.cwd(), path: "note.txt" },
-        },
-        { gitExecutable: "custom-git" },
-      );
-
-      expect(await fetcher.getFullText("old")).toBe("read:HEAD:note.txt\n");
-      expect(await fetcher.getFullText("new")).toBe("read::note.txt\n");
+      expect(
+        await readGitFileSource(
+          { kind: "git-blob", repoRoot: process.cwd(), ref: "HEAD", path: "note.txt" },
+          { gitExecutable: "custom-git" },
+        ),
+      ).toBe("read:HEAD:note.txt\n");
+      expect(
+        await readGitFileSource(
+          { kind: "git-index", repoRoot: process.cwd(), path: "note.txt" },
+          { gitExecutable: "custom-git" },
+        ),
+      ).toBe("read::note.txt\n");
     } finally {
       mutableBun.spawn = originalSpawn;
     }
@@ -262,26 +263,26 @@ describe("createFileSourceFetcher", () => {
     git(repoRoot, "add", ".");
     git(repoRoot, "commit", "-m", "first");
 
-    const fetcher = createGitFileSourceFetcher({
-      old: { kind: "git-blob", repoRoot, ref: "HEAD", path: "missing-from-history.txt" },
-      new: { kind: "none" },
-    });
-
     const loggedErrors = await captureConsoleErrors(async () => {
-      expect(await fetcher.getFullText("old")).toBeNull();
+      expect(
+        await readGitFileSource({
+          kind: "git-blob",
+          repoRoot,
+          ref: "HEAD",
+          path: "missing-from-history.txt",
+        }),
+      ).toBeNull();
     });
     expect(loggedErrors).toHaveLength(0);
   });
 
   test("logs unexpected git source failures with object context", async () => {
     const repoRoot = createTempDir("hunk-source-git-not-repo-");
-    const fetcher = createGitFileSourceFetcher({
-      old: { kind: "git-blob", repoRoot, ref: "HEAD", path: "note.txt" },
-      new: { kind: "none" },
-    });
 
     const loggedErrors = await captureConsoleErrors(async () => {
-      expect(await fetcher.getFullText("old")).toBeNull();
+      expect(
+        await readGitFileSource({ kind: "git-blob", repoRoot, ref: "HEAD", path: "note.txt" }),
+      ).toBeNull();
     });
 
     expect(loggedErrors).toHaveLength(1);

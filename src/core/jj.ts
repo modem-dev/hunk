@@ -1,5 +1,8 @@
-import { HunkUserError } from "./errors";
-import type { ExtensionVcsDiffInput, ExtensionVcsShowInput } from "../extension-api/types";
+import {
+  HunkExtensionUserError,
+  type ExtensionVcsDiffInput,
+  type ExtensionVcsShowInput,
+} from "../extension-api/types";
 import { normalizePathForOS } from "../lib/osPath";
 
 export type JjBackedInput = ExtensionVcsDiffInput | ExtensionVcsShowInput;
@@ -83,38 +86,42 @@ function isInvalidRevsetMessage(stderr: string) {
 }
 
 function createMissingJjExecutableError(input: JjBackedInput, jjExecutable: string) {
-  return new HunkUserError(
+  return new HunkExtensionUserError(
     `Jujutsu is required for \`${formatJjCommandLabel(input)}\` when \`vcs = "jj"\`, but \`${jjExecutable}\` was not found in PATH.`,
-    ['Install Jujutsu or set `vcs = "git"` in Hunk config, then try again.'],
+    { suggestions: ['Install Jujutsu or set `vcs = "git"` in Hunk config, then try again.'] },
   );
 }
 
 function createMissingJjRepoError(input: JjBackedInput) {
-  return new HunkUserError(
+  return new HunkExtensionUserError(
     `\`${formatJjCommandLabel(input)}\` must be run inside a Jujutsu repository when \`vcs = "jj"\`.`,
-    ['Run the command from a Jujutsu checkout, or set `vcs = "git"` in Hunk config.'],
+    {
+      suggestions: [
+        'Run the command from a Jujutsu checkout, or set `vcs = "git"` in Hunk config.',
+      ],
+    },
   );
 }
 
 export function createJjStagedError(input: ExtensionVcsDiffInput) {
-  return new HunkUserError(
+  return new HunkExtensionUserError(
     `\`${formatJjCommandLabel(input)}\` requires Git VCS mode because Jujutsu has no staging area.`,
-    ['Remove `--staged`, or set `vcs = "git"` in Hunk config.'],
+    { suggestions: ['Remove `--staged`, or set `vcs = "git"` in Hunk config.'] },
   );
 }
 
 function createInvalidRevsetError(input: JjBackedInput) {
   const revset = input.kind === "vcs" ? input.range : (input.ref ?? "@");
-  return new HunkUserError(
+  return new HunkExtensionUserError(
     `\`${formatJjCommandLabel(input)}\` could not resolve Jujutsu revset \`${revset}\`.`,
-    ["Check the revset and try again."],
+    { suggestions: ["Check the revset and try again."] },
   );
 }
 
 function createGenericJjError(input: JjBackedInput, stderr: string) {
-  return new HunkUserError(`\`${formatJjCommandLabel(input)}\` failed.`, [
-    firstJjErrorLine(stderr),
-  ]);
+  return new HunkExtensionUserError(`\`${formatJjCommandLabel(input)}\` failed.`, {
+    suggestions: [firstJjErrorLine(stderr)],
+  });
 }
 
 function translateJjSpawnFailure(
@@ -122,7 +129,7 @@ function translateJjSpawnFailure(
   error: unknown,
   jjExecutable: string,
 ): Error {
-  if (error instanceof HunkUserError) {
+  if (error instanceof HunkExtensionUserError) {
     return error;
   }
 

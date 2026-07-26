@@ -392,9 +392,12 @@ async function loadVcsChangeset(
     agentContext,
     result.sourceFetcherBuilder ? { sourceFetcherBuilder: result.sourceFetcherBuilder } : undefined,
   );
-  // Untracked paths are the portable half of the contract: an adapter reports
-  // what its VCS considers unknown, and Hunk synthesizes the added-file diffs.
-  // `extraFiles` is the core-only half, for files an adapter built itself.
+  // Two published ways to review a file the patch does not contain, and both
+  // land here: `untrackedPaths`, where an adapter names what its VCS considers
+  // unknown and Hunk synthesizes the added-file diffs, and `extraFiles`, where
+  // the adapter described the file itself and the conversion boundary already
+  // turned each entry into a diff file. Adapter-described files come first, so
+  // an adapter that uses both keeps its own ordering.
   const untrackedFiles = (result.untrackedPaths ?? []).map((filePath, index) =>
     buildFilesystemUntrackedDiffFile(
       result.repoRoot,

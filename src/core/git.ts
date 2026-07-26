@@ -1,11 +1,29 @@
 import fs from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
-import { HunkUserError } from "./errors";
+import {
+  HunkExtensionUserError,
+  type ExtensionVcsDiffInput,
+  type ExtensionVcsShowInput,
+  type ExtensionVcsStashShowInput,
+} from "../extension-api/types";
+import { LARGE_DIFF_FILE_MAX_BYTES, LARGE_DIFF_FILE_MAX_LINES } from "./largeFile";
 import { escapeUntrackedPatchPath } from "./patch/normalize";
-import type { VcsDiffCommandInput, VcsShowCommandInput, VcsStashShowCommandInput } from "./types";
 import { normalizePathForOS } from "../lib/osPath";
 
-export type GitBackedInput = VcsDiffCommandInput | VcsShowCommandInput | VcsStashShowCommandInput;
+/**
+ * Every Git command Hunk runs, and the failures they translate into.
+ *
+ * This is the implementation layer behind the bundled Git backend
+ * (`src/extensions/bundled/git.ts`), so nothing here reaches into the diff
+ * engine or the adapter registry — user-facing failures are raised as the
+ * published `HunkExtensionUserError`, which is exactly what a third-party
+ * backend would throw.
+ */
+
+export type GitBackedInput =
+  | ExtensionVcsDiffInput
+  | ExtensionVcsShowInput
+  | ExtensionVcsStashShowInput;
 
 export interface RunGitTextOptions {
   input: GitBackedInput;
@@ -100,7 +118,7 @@ function withGitMovedLineColorConfig(args: string[], colorMoved: GitColorMovedOp
 
 /** Build the exact `git diff` arguments used for the shared working-tree and range review path. */
 export function buildGitDiffArgs(
-  input: VcsDiffCommandInput,
+  input: ExtensionVcsDiffInput,
   excludedPathspecs: string[] = [],
   colorMoved: GitColorMovedOptions | null = null,
 ) {
@@ -128,7 +146,7 @@ export function buildGitDiffArgs(
 }
 
 /** Build the cheap tracked-file stats query used to skip huge file diffs before patch output. */
-export function buildGitDiffNumstatArgs(input: VcsDiffCommandInput) {
+export function buildGitDiffNumstatArgs(input: ExtensionVcsDiffInput) {
   const args = ["diff", "--no-ext-diff", "--find-renames", "--no-color", "--numstat", "-z"];
 
   if (input.staged) {
@@ -143,8 +161,48 @@ export function buildGitDiffNumstatArgs(input: VcsDiffCommandInput) {
   return withNormalizedDiffPrefixes(args);
 }
 
+export interface GitNumstatFile {
+  path: string;
+  additions: number;
+  deletions: number;
+}
+
+/** Parse `git diff --numstat -z` output for normal path entries. */
+export function parseGitNumstat(text: string): GitNumstatFile[] {
+  return text
+    .split("\0")
+    .filter(Boolean)
+    .flatMap((entry) => {
+      const [additionsText, deletionsText, path] = entry.split("\t");
+      if (!additionsText || !deletionsText || !path) {
+        return [];
+      }
+
+      const additions = Number.parseInt(additionsText, 10);
+      const deletions = Number.parseInt(deletionsText, 10);
+      if (!Number.isFinite(additions) || !Number.isFinite(deletions)) {
+        return [];
+      }
+
+      return [{ path, additions, deletions }];
+    });
+}
+
+/** Return whether tracked diff stats are too large to render by default. */
+export function shouldSkipLargeTrackedDiff(file: GitNumstatFile, repoRoot: string) {
+  if (file.additions + file.deletions > LARGE_DIFF_FILE_MAX_LINES) {
+    return true;
+  }
+
+  try {
+    return fs.statSync(join(repoRoot, file.path)).size > LARGE_DIFF_FILE_MAX_BYTES;
+  } catch {
+    return false;
+  }
+}
+
 /** Build the porcelain status query used to discover untracked files for working-tree review. */
-export function buildGitStatusArgs(input: VcsDiffCommandInput) {
+export function buildGitStatusArgs(input: ExtensionVcsDiffInput) {
   const args = ["--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=all"];
 
   appendGitPathspecs(args, input.pathspecs);
@@ -181,7 +239,7 @@ function buildGitNewFileDiffArgs(filePath: string) {
 
 /** Build the exact `git show` arguments used for commit review. */
 export function buildGitShowArgs(
-  input: VcsShowCommandInput,
+  input: ExtensionVcsShowInput,
   colorMoved: GitColorMovedOptions | null = null,
 ) {
   const args = [
@@ -202,7 +260,7 @@ export function buildGitShowArgs(
 
 /** Build the exact `git stash show -p` arguments used for stash review. */
 export function buildGitStashShowArgs(
-  input: VcsStashShowCommandInput,
+  input: ExtensionVcsStashShowInput,
   colorMoved: GitColorMovedOptions | null = null,
 ) {
   const args = [
@@ -281,51 +339,53 @@ function isNoStashEntriesMessage(stderr: string) {
 }
 
 function createMissingGitExecutableError(input: GitBackedInput, gitExecutable: string) {
-  return new HunkUserError(
+  return new HunkExtensionUserError(
     `Git is required for \`${formatGitCommandLabel(input)}\`, but \`${gitExecutable}\` was not found in PATH.`,
-    ["Install Git or make it available on PATH, then try again."],
+    { suggestions: ["Install Git or make it available on PATH, then try again."] },
   );
 }
 
 function createMissingRepoError(input: GitBackedInput) {
-  return new HunkUserError(
+  return new HunkExtensionUserError(
     `\`${formatGitCommandLabel(input)}\` must be run inside a Git repository.`,
-    getMissingRepoHelp(input),
+    { suggestions: getMissingRepoHelp(input) },
   );
 }
 
-function createInvalidRevisionError(input: VcsDiffCommandInput | VcsShowCommandInput) {
+function createInvalidRevisionError(input: ExtensionVcsDiffInput | ExtensionVcsShowInput) {
   if (input.kind === "vcs") {
-    return new HunkUserError(
+    return new HunkExtensionUserError(
       `\`${formatGitCommandLabel(input)}\` could not resolve Git revision or range \`${input.range}\`.`,
-      ["Check the revision or range and try again."],
+      { suggestions: ["Check the revision or range and try again."] },
     );
   }
 
   const ref = input.ref ?? "HEAD";
-  return new HunkUserError(
+  return new HunkExtensionUserError(
     `\`${formatGitCommandLabel(input)}\` could not resolve Git ref \`${ref}\`.`,
-    ["Check the ref name and try again."],
+    { suggestions: ["Check the ref name and try again."] },
   );
 }
 
-function createMissingStashError(input: VcsStashShowCommandInput) {
+function createMissingStashError(input: ExtensionVcsStashShowInput) {
   if (input.ref) {
-    return new HunkUserError(
+    return new HunkExtensionUserError(
       `\`${formatGitCommandLabel(input)}\` could not resolve stash entry \`${input.ref}\`.`,
-      ["List available stashes with `git stash list`, then try again."],
+      { suggestions: ["List available stashes with `git stash list`, then try again."] },
     );
   }
 
-  return new HunkUserError("`hunk stash show` could not find a stash entry to show.", [
-    "Create one with `git stash push`, or pass an explicit stash ref like `hunk stash show stash@{0}`.",
-  ]);
+  return new HunkExtensionUserError("`hunk stash show` could not find a stash entry to show.", {
+    suggestions: [
+      "Create one with `git stash push`, or pass an explicit stash ref like `hunk stash show stash@{0}`.",
+    ],
+  });
 }
 
 function createGenericGitError(input: GitBackedInput, stderr: string) {
-  return new HunkUserError(`\`${formatGitCommandLabel(input)}\` failed.`, [
-    firstGitErrorLine(stderr),
-  ]);
+  return new HunkExtensionUserError(`\`${formatGitCommandLabel(input)}\` failed.`, {
+    suggestions: [firstGitErrorLine(stderr)],
+  });
 }
 
 function translateGitSpawnFailure(
@@ -333,7 +393,7 @@ function translateGitSpawnFailure(
   error: unknown,
   gitExecutable: string,
 ): Error {
-  if (error instanceof HunkUserError) {
+  if (error instanceof HunkExtensionUserError) {
     return error;
   }
 
@@ -492,7 +552,7 @@ export function resolveGitColorMovedOptions(
 const workingTreeGitDiffInputCache = new Map<string, boolean>();
 
 function isWorkingTreeGitDiffInput(
-  input: VcsDiffCommandInput,
+  input: ExtensionVcsDiffInput,
   {
     cwd = process.cwd(),
     gitExecutable = "git",
@@ -537,7 +597,7 @@ function isWorkingTreeGitDiffInput(
 
 /** Return whether working-tree review should synthesize untracked files into the patch stream. */
 function shouldIncludeUntrackedFiles(
-  input: VcsDiffCommandInput,
+  input: ExtensionVcsDiffInput,
   options: Pick<RunGitTextOptions, "cwd" | "gitExecutable" | "preventOptionalLocks"> & {
     repoRoot?: string;
   } = {},
@@ -623,7 +683,7 @@ function isReviewableUntrackedPath(repoRoot: string, filePath: string) {
 
 /** Return the repo-root-relative untracked files for a working-tree review input. */
 export function listGitUntrackedFiles(
-  input: VcsDiffCommandInput,
+  input: ExtensionVcsDiffInput,
   {
     cwd = process.cwd(),
     repoRoot,
@@ -682,7 +742,7 @@ export function normalizeUntrackedPatchHeaders(patchText: string, filePath: stri
 
 /** Return the raw Git patch text for one untracked file using `git diff --no-index`. */
 export function runGitUntrackedFileDiffText(
-  input: VcsDiffCommandInput,
+  input: ExtensionVcsDiffInput,
   filePath: string,
   {
     cwd = process.cwd(),
@@ -815,7 +875,7 @@ function parseSymmetricDiffRange(range: string): { left: string; right: string }
 
 /** Resolve rev-parse output into positive and negative revisions for one diff range. */
 function resolveRangeRevisions(
-  input: VcsDiffCommandInput,
+  input: ExtensionVcsDiffInput,
   range: string,
   {
     cwd = process.cwd(),
@@ -847,7 +907,7 @@ function resolveRangeRevisions(
  * source by ref" rather than silently falling back to the working tree.
  */
 export function resolveGitDiffEndpoints(
-  input: VcsDiffCommandInput,
+  input: ExtensionVcsDiffInput,
   {
     cwd = process.cwd(),
     gitExecutable = "git",

@@ -2,14 +2,28 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { platform, tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
-import {
-  GitVcsAdapter,
-  gitEndpointSourceSpec,
-  parseGitNumstat,
-  shouldSkipLargeTrackedDiff,
-  statSignature,
-} from "./git";
-import type { VcsShowCommandInput, VcsStashShowCommandInput, VcsDiffCommandInput } from "../types";
+import { GitVcsAdapter, statSignature } from "./git";
+import type {
+  ExtensionVcsDiffInput,
+  ExtensionVcsOperations,
+  ExtensionVcsShowInput,
+  ExtensionVcsStashShowInput,
+} from "../../extension-api/types";
+
+// The adapter is written against the published contract, so the tests read it
+// through that contract too — including the capabilities Git is the only
+// bundled backend to use.
+const gitOperations: ExtensionVcsOperations = GitVcsAdapter.operations;
+
+describe("GitVcsAdapter published surface", () => {
+  test("implements every review operation the contract defines", () => {
+    expect(gitOperations["working-tree-diff"]).toBeDefined();
+    expect(gitOperations["revision-show"]).toBeDefined();
+    expect(gitOperations["stash-show"]).toBeDefined();
+    // Git is the detection baseline every other backend positions against.
+    expect(GitVcsAdapter.detectionPriority).toBe(0);
+  });
+});
 
 const tempDirs: string[] = [];
 
@@ -79,8 +93,8 @@ describe("GitVcsAdapter", () => {
     const input = {
       kind: "vcs",
       staged: false,
-      options: { vcs: "git" },
-    } satisfies VcsDiffCommandInput;
+      options: {},
+    } satisfies ExtensionVcsDiffInput;
     const result = await GitVcsAdapter.operations["working-tree-diff"]!.load(input, { cwd: repo });
 
     expect(normalizeComparablePath(result.repoRoot)).toBe(normalizeComparablePath(repo));
@@ -89,14 +103,18 @@ describe("GitVcsAdapter", () => {
     expect(result.patchText).toContain("+new");
     expect(result.extraFiles?.map((file) => file.path)).toContain("untracked.txt");
 
-    const sourceFetcher = result.sourceFetcherBuilder?.({
-      path: "tracked.txt",
-      type: "change",
-      isUntracked: false,
-      isBinary: false,
-    });
-    expect(await sourceFetcher?.getFullText("old")).toBe("old\n");
-    expect(await sourceFetcher?.getFullText("new")).toBe("new\n");
+    const readSource = result.readFileSource;
+    expect(readSource).toBeDefined();
+    const trackedFile = { path: "tracked.txt", changeType: "change", isUntracked: false } as const;
+    expect(await readSource?.({ ...trackedFile, side: "old" })).toBe("old\n");
+    expect(await readSource?.({ ...trackedFile, side: "new" })).toBe("new\n");
+
+    // The untracked file is reported as its own one-file patch rather than as a
+    // path Hunk reads back, so Git's own binary detection and quoting decide
+    // what it says.
+    const untracked = result.extraFiles?.find((file) => file.path === "untracked.txt");
+    expect(untracked?.kind).toBe("patch");
+    expect(untracked?.isUntracked).toBe(true);
   });
 
   test("loads revision and stash patches through adapter operations", async () => {
@@ -110,8 +128,8 @@ describe("GitVcsAdapter", () => {
     const showInput = {
       kind: "show",
       ref: "HEAD",
-      options: { vcs: "git" },
-    } satisfies VcsShowCommandInput;
+      options: {},
+    } satisfies ExtensionVcsShowInput;
     const showResult = await GitVcsAdapter.operations["revision-show"]!.load(showInput, {
       cwd: repo,
     });
@@ -120,22 +138,17 @@ describe("GitVcsAdapter", () => {
     expect(showResult.patchText).toContain("diff --git a/file.txt b/file.txt");
     expect(showResult.patchText).toContain("+two");
 
-    const showSourceFetcher = showResult.sourceFetcherBuilder?.({
-      path: "file.txt",
-      type: "change",
-      isUntracked: false,
-      isBinary: false,
-    });
-    expect(await showSourceFetcher?.getFullText("old")).toBe("one\n");
-    expect(await showSourceFetcher?.getFullText("new")).toBe("two\n");
+    const showFile = { path: "file.txt", changeType: "change", isUntracked: false } as const;
+    expect(await showResult.readFileSource?.({ ...showFile, side: "old" })).toBe("one\n");
+    expect(await showResult.readFileSource?.({ ...showFile, side: "new" })).toBe("two\n");
 
     writeFileSync(join(repo, "file.txt"), "three\n");
     git(repo, "stash", "push", "-m", "adapter stash");
 
     const stashInput = {
       kind: "stash-show",
-      options: { vcs: "git" },
-    } satisfies VcsStashShowCommandInput;
+      options: {},
+    } satisfies ExtensionVcsStashShowInput;
     const stashResult = await GitVcsAdapter.operations["stash-show"]!.load(stashInput, {
       cwd: repo,
     });
@@ -161,7 +174,7 @@ describe("GitVcsAdapter", () => {
 
     const operation = GitVcsAdapter.operations["working-tree-diff"]!;
     const unstaged = operation.watchPlan!(
-      { kind: "vcs", staged: false, options: { vcs: "git" } },
+      { kind: "vcs", staged: false, options: {} },
       { cwd: repo },
     );
     expect(
@@ -200,7 +213,7 @@ describe("GitVcsAdapter", () => {
         staged: false,
         range: "HEAD",
         pathspecs: ["file.txt"],
-        options: { vcs: "git" },
+        options: {},
       },
       { cwd: repo },
     );
@@ -211,9 +224,9 @@ describe("GitVcsAdapter", () => {
     ).toBe(true);
 
     for (const input of [
-      { kind: "vcs", staged: true, options: { vcs: "git" } },
-      { kind: "vcs", staged: false, range: "HEAD^..HEAD", options: { vcs: "git" } },
-    ] satisfies VcsDiffCommandInput[]) {
+      { kind: "vcs", staged: true, options: {} },
+      { kind: "vcs", staged: false, range: "HEAD^..HEAD", options: {} },
+    ] as ExtensionVcsDiffInput[]) {
       const plan = operation.watchPlan!(input, { cwd: repo });
       expect(
         plan.targets.some(
@@ -227,7 +240,7 @@ describe("GitVcsAdapter", () => {
   test("keeps stash reflogs observable for ordinal selectors", () => {
     const repo = createTempRepo("hunk-git-adapter-stash-plan-");
     const plan = GitVcsAdapter.operations["stash-show"]!.watchPlan!(
-      { kind: "stash-show", ref: "stash@{1}", options: { vcs: "git" } },
+      { kind: "stash-show", ref: "stash@{1}", options: {} },
       { cwd: repo },
     );
     const metadataTarget = plan.targets.find((target) => target.sources.includes("vcs-metadata"));
@@ -250,7 +263,7 @@ describe("GitVcsAdapter", () => {
     git(repo, "worktree", "add", linked, "-b", "linked-plan");
 
     const plan = GitVcsAdapter.operations["revision-show"]!.watchPlan!(
-      { kind: "show", ref: "HEAD", options: { vcs: "git" } },
+      { kind: "show", ref: "HEAD", options: {} },
       { cwd: linked },
     );
     const metadataTargets = plan.targets.filter(
@@ -281,14 +294,14 @@ describe("GitVcsAdapter", () => {
     // Measure the working-tree signature while the tree is actually dirty, so the assertion is
     // meaningful: it must carry the tracked diff and an untracked-file stat signature.
     const diffSignature = GitVcsAdapter.operations["working-tree-diff"]!.watchSignature!(
-      { kind: "vcs", staged: false, options: { vcs: "git" } },
+      { kind: "vcs", staged: false, options: {} },
       { cwd: repo },
     );
     expect(diffSignature).toContain("diff --git a/file.txt b/file.txt");
     expect(diffSignature).toContain("untracked:");
 
     const showSignature = GitVcsAdapter.operations["revision-show"]!.watchSignature!(
-      { kind: "show", ref: "HEAD", options: { vcs: "git" } },
+      { kind: "show", ref: "HEAD", options: {} },
       { cwd: repo },
     );
     expect(showSignature).toContain("diff --git");
@@ -296,77 +309,14 @@ describe("GitVcsAdapter", () => {
     // Stash the dirty state so a stash entry exists for the stash-show signature.
     git(repo, "stash", "push", "--include-untracked", "-m", "watch stash");
     const stashSignature = GitVcsAdapter.operations["stash-show"]!.watchSignature!(
-      { kind: "stash-show", options: { vcs: "git" } },
+      { kind: "stash-show", options: {} },
       { cwd: repo },
     );
     expect(stashSignature).toContain("diff --git");
   });
 });
 
-describe("git numstat and source-spec helpers", () => {
-  test("parseGitNumstat keeps well-formed entries and drops malformed ones", () => {
-    const text = ["3\t1\tsrc/a.ts", "bad-entry", "x\ty\tsrc/b.ts", "2\t0\tsrc/c.ts"].join("\0");
-    expect(parseGitNumstat(text)).toEqual([
-      { path: "src/a.ts", additions: 3, deletions: 1 },
-      { path: "src/c.ts", additions: 2, deletions: 0 },
-    ]);
-  });
-
-  test("parseGitNumstat drops binary-file entries that report '-' counts", () => {
-    // Git emits `-\t-\t<path>` for binary files; the non-numeric counts fail the finite guard.
-    const text = ["-\t-\tsrc/logo.png", "3\t1\tsrc/a.ts"].join("\0");
-    expect(parseGitNumstat(text)).toEqual([{ path: "src/a.ts", additions: 3, deletions: 1 }]);
-  });
-
-  test("parseGitNumstat returns nothing for empty output", () => {
-    expect(parseGitNumstat("")).toEqual([]);
-  });
-
-  test("shouldSkipLargeTrackedDiff flags diffs over the line budget", () => {
-    expect(
-      shouldSkipLargeTrackedDiff({ path: "x", additions: 19_000, deletions: 2_000 }, "/repo"),
-    ).toBe(true);
-  });
-
-  test("shouldSkipLargeTrackedDiff flags small diffs of very large files", () => {
-    const repo = createTempDir("hunk-git-large-file-");
-    writeFileSync(join(repo, "big.bin"), "a".repeat(1_100_000));
-    expect(shouldSkipLargeTrackedDiff({ path: "big.bin", additions: 1, deletions: 0 }, repo)).toBe(
-      true,
-    );
-  });
-
-  test("shouldSkipLargeTrackedDiff keeps small diffs and tolerates missing files", () => {
-    const repo = createTempDir("hunk-git-small-file-");
-    writeFileSync(join(repo, "small.txt"), "hello\n");
-    expect(
-      shouldSkipLargeTrackedDiff({ path: "small.txt", additions: 1, deletions: 1 }, repo),
-    ).toBe(false);
-    // A path that does not exist on disk must not throw.
-    expect(shouldSkipLargeTrackedDiff({ path: "gone.txt", additions: 1, deletions: 1 }, repo)).toBe(
-      false,
-    );
-  });
-
-  test("gitEndpointSourceSpec maps every endpoint kind to a source spec", () => {
-    expect(gitEndpointSourceSpec({ kind: "none" }, "/repo", "a.ts")).toEqual({ kind: "none" });
-    expect(gitEndpointSourceSpec({ kind: "git-ref", ref: "HEAD" }, "/repo", "a.ts")).toEqual({
-      kind: "git-blob",
-      repoRoot: "/repo",
-      ref: "HEAD",
-      path: "a.ts",
-    });
-    expect(gitEndpointSourceSpec({ kind: "index" }, "/repo", "a.ts")).toEqual({
-      kind: "git-index",
-      repoRoot: "/repo",
-      path: "a.ts",
-    });
-    expect(gitEndpointSourceSpec({ kind: "worktree" }, "/repo", "a.ts")).toEqual({
-      kind: "fs",
-      absolutePath: join("/repo", "a.ts"),
-    });
-  });
-
+describe("bundled Git adapter helpers", () => {
   test("statSignature distinguishes present from missing paths", () => {
     const repo = createTempDir("hunk-git-statsig-");
     const present = join(repo, "present.txt");

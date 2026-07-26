@@ -2,7 +2,6 @@ import { dirname, relative, resolve } from "node:path";
 import { HUNK_DEFAULT_VCS_DETECTION_PRIORITY } from "../../extension-api/types";
 import { getBundledVcsAdapters } from "../../extensions/bundled";
 import { HunkUserError } from "../errors";
-import { GitVcsAdapter } from "./git";
 import type {
   VcsAdapter,
   VcsDetection,
@@ -15,14 +14,15 @@ import type {
   VcsReviewOperationKind,
 } from "./types";
 
-export const DEFAULT_VCS_ADAPTER = GitVcsAdapter;
+/** The backend a session falls back to when config names none. */
+const DEFAULT_VCS_ID = "git";
 
 /**
  * Order adapters the way detection consults them: highest priority first.
  *
  * The sort is stable, so adapters that declare the same priority keep the order
- * they were assembled in — core Git, then bundled extensions in load order,
- * then user extensions in registration order.
+ * they were assembled in — bundled extensions in load order, then user
+ * extensions in registration order.
  */
 function orderByDetectionPriority(adapters: readonly VcsAdapter[]): VcsAdapter[] {
   return [...adapters].sort(
@@ -32,20 +32,21 @@ function orderByDetectionPriority(adapters: readonly VcsAdapter[]): VcsAdapter[]
   );
 }
 
-/** Adapters that are part of the product: core Git plus the bundled extension tier. */
+/** Adapters that are part of the product, in detection order. */
 let builtInAdapters: VcsAdapter[] | undefined;
 
 /**
  * Return the adapters Hunk ships with, assembled once per process.
  *
- * Core Git and the bundled Jujutsu and Sapling extensions are one list from
- * here on: they are all product behavior, they all take part in first-class
- * detection, and they all reserve their id against user extensions. Bundled
- * loading is resolved lazily so this module can be imported from anywhere in
- * the graph without depending on module evaluation order.
+ * Every one of them — Git included — comes from the bundled extension tier, so
+ * this is a pure ordering step over what those factories registered. They are
+ * all product behavior, they all take part in first-class detection, and they
+ * all reserve their id against user extensions. Bundled loading is resolved
+ * lazily so this module can be imported from anywhere in the graph without
+ * depending on module evaluation order.
  */
 export function getBuiltInVcsAdapters(): readonly VcsAdapter[] {
-  builtInAdapters ??= orderByDetectionPriority([DEFAULT_VCS_ADAPTER, ...getBundledVcsAdapters()]);
+  builtInAdapters ??= orderByDetectionPriority(getBundledVcsAdapters());
   return builtInAdapters;
 }
 
@@ -70,8 +71,17 @@ export function resolveVcsAdapters(extraAdapters: readonly VcsAdapter[] = []): V
 }
 
 /** Return the fallback adapter used when config has not selected a provider explicitly. */
-export function getDefaultVcsAdapter() {
-  return DEFAULT_VCS_ADAPTER;
+export function getDefaultVcsAdapter(): VcsAdapter {
+  const adapter = getBuiltInVcsAdapters().find((candidate) => candidate.id === DEFAULT_VCS_ID);
+  if (!adapter) {
+    // Only reachable if the bundled Git factory itself failed to load, which
+    // would leave Hunk with no default backend at all.
+    throw new HunkUserError("Hunk's bundled Git backend failed to load.", [
+      "Reinstall Hunk, or report this at https://github.com/modem-dev/hunk/issues.",
+    ]);
+  }
+
+  return adapter;
 }
 
 /** Return the configured adapter, or the default adapter when no VCS id was supplied. */
@@ -140,8 +150,8 @@ export function detectVcs(
  * Walk upward for the nearest directory a shipped backend calls a repo root.
  *
  * Config resolution and extension discovery both run before user extensions
- * exist, so this deliberately consults built-ins only — which, since jj and
- * Sapling are bundled, still covers every backend Hunk ships with.
+ * exist, so this deliberately consults built-ins only — which, since the whole
+ * bundled tier is loaded by then, still covers every backend Hunk ships with.
  */
 export function findVcsRepoRootCandidate(cwd = process.cwd()) {
   let current = resolve(cwd);

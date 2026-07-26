@@ -1,27 +1,49 @@
+import { join } from "node:path";
 import {
   DEFAULT_SOURCE_TEXT_MAX_BYTES,
   SourceTextTooLargeError,
-  createFileSourceFetcher,
   logSourceDiagnostic,
+  readFileSourceSpec,
   readStreamTextWithLimit,
-  type FileSourceFetcher,
-  type FileSourceSide,
   type FileSourceSpec,
-} from "../fileSource";
+} from "./fileSource";
+import type { GitDiffEndpoint } from "./git";
+
+/**
+ * Reading a reviewed file's full contents out of Git.
+ *
+ * Git can name the exact bytes on each side of a diff — a blob at a commit, the
+ * staged entry, the file on disk — which is what lets Hunk expand context and
+ * highlight against the real file instead of against the patch. Everything here
+ * answers one question: given a resolved source spec, what is that text?
+ */
 
 export type GitFileSourceSpec =
   | FileSourceSpec
   | { kind: "git-blob"; repoRoot: string; ref: string; path: string }
   | { kind: "git-index"; repoRoot: string; path: string };
 
-export interface GitFileSourceFetcherOptions {
+export interface GitFileSourceOptions {
   gitExecutable?: string;
   maxSourceBytes?: number;
 }
 
-interface GitResolvedSpecs {
-  old: GitFileSourceSpec;
-  new: GitFileSourceSpec;
+/** Convert one Git diff endpoint into the corresponding source lookup. */
+export function gitEndpointSourceSpec(
+  endpoint: GitDiffEndpoint,
+  repoRoot: string,
+  filePath: string,
+): GitFileSourceSpec {
+  switch (endpoint.kind) {
+    case "none":
+      return { kind: "none" };
+    case "git-ref":
+      return { kind: "git-blob", repoRoot, ref: endpoint.ref, path: filePath };
+    case "index":
+      return { kind: "git-index", repoRoot, path: filePath };
+    case "worktree":
+      return { kind: "fs", absolutePath: join(repoRoot, filePath) };
+  }
 }
 
 /** Return whether a Git failure is an expected missing source side/path. */
@@ -34,27 +56,6 @@ function isExpectedMissingGitSource(stderr: string) {
     "needed a single revision",
     "unknown revision or path not in the working tree",
   ].some((fragment) => normalized.includes(fragment));
-}
-
-function readGitBlobSpec(
-  spec: Extract<GitFileSourceSpec, { kind: "git-blob" }>,
-  gitExecutable = "git",
-  maxSourceBytes: number,
-): Promise<string | null> {
-  return readGitObjectSpec(
-    spec.repoRoot,
-    `${spec.ref}:${spec.path}`,
-    gitExecutable,
-    maxSourceBytes,
-  );
-}
-
-function readGitIndexSpec(
-  spec: Extract<GitFileSourceSpec, { kind: "git-index" }>,
-  gitExecutable = "git",
-  maxSourceBytes: number,
-): Promise<string | null> {
-  return readGitObjectSpec(spec.repoRoot, `:${spec.path}`, gitExecutable, maxSourceBytes);
 }
 
 /** Read a blob-like Git object spec such as `HEAD:path` or `:path`. */
@@ -113,44 +114,32 @@ async function readGitObjectSpec(
   return stdout;
 }
 
-async function readGitSpec(
+/**
+ * Read the full text one resolved Git source spec names.
+ *
+ * Resolves to `null` rather than rejecting whenever a side simply is not there
+ * — the old side of an added file, a path the ref never contained — so callers
+ * can treat "no source" as an ordinary answer. Only a source too large to read
+ * safely rejects.
+ */
+export function readGitFileSource(
   spec: GitFileSourceSpec,
-  options: GitFileSourceFetcherOptions,
-): Promise<string | null> {
-  const { gitExecutable = "git", maxSourceBytes = DEFAULT_SOURCE_TEXT_MAX_BYTES } = options;
-  if (spec.kind === "git-index") {
-    return readGitIndexSpec(spec, gitExecutable, maxSourceBytes);
-  }
-
-  if (spec.kind === "git-blob") {
-    return readGitBlobSpec(spec, gitExecutable, maxSourceBytes);
-  }
-
-  return createFileSourceFetcher(
-    { old: spec, new: { kind: "none" } },
-    { maxSourceBytes },
-  ).getFullText("old");
-}
-
-/** Build a Git-aware per-file source fetcher that caches each side's resolved text. */
-export function createGitFileSourceFetcher(
-  specs: GitResolvedSpecs,
   {
     gitExecutable = "git",
     maxSourceBytes = DEFAULT_SOURCE_TEXT_MAX_BYTES,
-  }: Readonly<GitFileSourceFetcherOptions> = {},
-): FileSourceFetcher {
-  const cache = new Map<FileSourceSide, string | null>();
-
-  return {
-    async getFullText(side) {
-      if (cache.has(side)) {
-        return cache.get(side) ?? null;
-      }
-
-      const text = await readGitSpec(specs[side], { gitExecutable, maxSourceBytes });
-      cache.set(side, text);
-      return text;
-    },
-  };
+  }: Readonly<GitFileSourceOptions> = {},
+): Promise<string | null> {
+  switch (spec.kind) {
+    case "git-index":
+      return readGitObjectSpec(spec.repoRoot, `:${spec.path}`, gitExecutable, maxSourceBytes);
+    case "git-blob":
+      return readGitObjectSpec(
+        spec.repoRoot,
+        `${spec.ref}:${spec.path}`,
+        gitExecutable,
+        maxSourceBytes,
+      );
+    default:
+      return readFileSourceSpec(spec, { maxSourceBytes });
+  }
 }

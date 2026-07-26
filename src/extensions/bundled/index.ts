@@ -1,3 +1,4 @@
+import gitExtension from "./git";
 import jjExtension from "./jj";
 import slExtension from "./sl";
 import { runExtensionFactory } from "../runExtension";
@@ -13,21 +14,23 @@ import type { VcsAdapter } from "../../core/vcs/types";
 /**
  * The bundled extension tier.
  *
- * Hunk's Jujutsu and Sapling backends are extensions, registered through the
- * same `registerVcsAdapter` a third-party author calls — which is the point:
- * a capability Hunk ships on cannot quietly outgrow the API it publishes.
+ * Every VCS backend Hunk ships — Git, Jujutsu, Sapling — is an extension,
+ * registered through the same `registerVcsAdapter` a third-party author calls.
+ * There are no core-registered adapters left, which is the point: a capability
+ * Hunk ships on cannot quietly outgrow the API it publishes, and Git is the
+ * backend that exercises every integration point there is.
  *
  * Three things separate this tier from user extensions:
  *
  * - The factories are **statically imported**, so they compile into the binary
  *   and load synchronously. Adapter resolution happens during config
- *   resolution, long before the async user-extension pass, and jj support has
- *   to be there for it.
+ *   resolution, long before the async user-extension pass, and the session's
+ *   backend has to be there for it.
  * - They are **implicitly trusted**: they are Hunk's own code, so there is no
  *   discovery, no trust prompt, and no `[extension.<id>]` config table.
  * - They stay loaded under `--no-extensions` and `[extensions] enabled =
- *   false`. Those switches exist to triage *user* extensions; losing jj or
- *   Sapling support from a debugging flag would break real workflows.
+ *   false`. Those switches exist to triage *user* extensions; losing VCS
+ *   support from a debugging flag would break every workflow there is.
  *
  * Failure isolation still applies — a throwing factory becomes a load issue
  * rather than a crash — even though these factories are Hunk's own and that
@@ -54,6 +57,7 @@ interface BundledExtensionDefinition {
 const BUNDLED_EXTENSIONS: readonly BundledExtensionDefinition[] = [
   { id: "jj", factory: jjExtension },
   { id: "sl", factory: slExtension },
+  { id: "git", factory: gitExtension },
 ];
 
 /** Everything the bundled tier contributed, plus any factory that failed. */

@@ -33,6 +33,48 @@ export interface ExtensionContext {
 }
 
 /* -------------------------------------------------------------------------- */
+/* User-facing errors                                                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The `name` Hunk recognizes as "this failure is meant for the user".
+ *
+ * Detection is structural rather than `instanceof`, so an extension bundled
+ * with its own copy of this class — or one written in plain JavaScript that
+ * just sets `name` and `suggestions` — still gets the same treatment.
+ */
+export const HUNK_EXTENSION_USER_ERROR_NAME = "HunkExtensionUserError";
+
+export interface HunkExtensionUserErrorOptions {
+  /** Concrete next steps shown under the message, one per line. */
+  suggestions?: string[];
+}
+
+/**
+ * A failure caused by how Hunk was invoked rather than by a bug.
+ *
+ * Throw this from an adapter operation when the user can fix the problem
+ * themselves — no repository here, an unresolvable ref, a missing binary. Hunk
+ * prints the message without a stack trace and lists the suggestions beneath
+ * it; anything else is reported as an unexpected error.
+ *
+ * ```ts
+ * throw new HunkExtensionUserError("`hunk stash show` is not supported by Mercurial.", {
+ *   suggestions: ["Use `hunk show <rev>` to review a commit instead."],
+ * });
+ * ```
+ */
+export class HunkExtensionUserError extends Error {
+  readonly suggestions: string[];
+
+  constructor(message: string, { suggestions = [] }: HunkExtensionUserErrorOptions = {}) {
+    super(message);
+    this.name = HUNK_EXTENSION_USER_ERROR_NAME;
+    this.suggestions = [...suggestions];
+  }
+}
+
+/* -------------------------------------------------------------------------- */
 /* Agent sidecar records                                                       */
 /* -------------------------------------------------------------------------- */
 
@@ -202,7 +244,7 @@ export type ExtensionThemeConfig = NamedCustomThemeConfig;
 /* -------------------------------------------------------------------------- */
 
 /**
- * Detection priority of Hunk's core Git backend.
+ * Detection priority of Hunk's Git backend.
  *
  * Adapters are consulted highest priority first, so this is the baseline every
  * other backend positions itself around. Hunk's bundled Jujutsu and Sapling
@@ -242,6 +284,15 @@ export interface ExtensionVcsLoadContext {
 export interface ExtensionVcsReviewOptions {
   /** True when the user asked for tracked changes only (`--exclude-untracked`). */
   excludeUntracked?: boolean;
+  /**
+   * True when the user asked for moved lines to be detected (`--color-moved`).
+   *
+   * Hunk reads move classes back out of the patch itself: emit ANSI-colored
+   * diff text that paints moved additions cyan and moved deletions magenta —
+   * what `git diff --color-moved` produces — and those lines render as moved.
+   * A backend with no notion of moved lines can ignore this.
+   */
+  colorMoved?: boolean;
 }
 
 /** Working-tree review request, as extension adapters receive it. */
@@ -268,6 +319,110 @@ export interface ExtensionVcsStashShowInput {
   options: ExtensionVcsReviewOptions;
 }
 
+/* -------------------------------------------------------------------------- */
+/* Exact file sources                                                          */
+/* -------------------------------------------------------------------------- */
+
+/** How one reviewed file changed. */
+export type ExtensionVcsFileChangeType =
+  | "change"
+  | "rename-pure"
+  | "rename-changed"
+  | "new"
+  | "deleted";
+
+/** Which side of a change a source read asks for. */
+export type ExtensionVcsFileSide = "old" | "new";
+
+/** The one file and side Hunk wants full source text for. */
+export interface ExtensionVcsFileSourceRequest {
+  /** Repo-root-relative path of the file under review. */
+  path: string;
+  /** The file's former path, when this change renamed it. */
+  previousPath?: string;
+  changeType: ExtensionVcsFileChangeType;
+  isUntracked: boolean;
+  /**
+   * The side being read.
+   *
+   * `old` is the file before the change and `new` after it, so a `new` file has
+   * no old side and a `deleted` one has no new side.
+   */
+  side: ExtensionVcsFileSide;
+}
+
+/**
+ * Read one reviewed file's full text on one side.
+ *
+ * A patch only carries the lines that changed plus a little context, so this is
+ * what lets Hunk expand context beyond the hunk, highlight against the real
+ * file, and word-diff accurately. Return `null` when the side has no content —
+ * a missing path, or the absent side of an added or deleted file — rather than
+ * throwing.
+ *
+ * Hunk calls this at most once per file and side and caches what it resolves,
+ * so the reader does not need its own cache. It is never called for a file the
+ * diff reports as binary. Resolve the revisions the read needs while your
+ * operation is loading and close over them: the request describes the file, not
+ * the commits, because only the adapter knows how to name them.
+ */
+export type ExtensionVcsFileSourceReader = (
+  request: ExtensionVcsFileSourceRequest,
+) => Promise<string | null>;
+
+/* -------------------------------------------------------------------------- */
+/* Extra reviewed files                                                        */
+/* -------------------------------------------------------------------------- */
+
+/** Line counts for one reviewed file. */
+export interface ExtensionVcsFileStats {
+  additions: number;
+  deletions: number;
+}
+
+/** One file whose own patch text an adapter produced separately. */
+export interface ExtensionVcsExtraPatchFile {
+  kind: "patch";
+  /** Repo-root-relative path. Hunk labels the file with this, not the patch header. */
+  path: string;
+  previousPath?: string;
+  /** Unified diff text covering exactly this one file. */
+  patchText: string;
+  isUntracked?: boolean;
+}
+
+/** Why a file is listed without a rendered diff. */
+export type ExtensionVcsSkippedFileReason = "too-large";
+
+/**
+ * One file Hunk should list but not render.
+ *
+ * Reviewing a multi-hundred-megabyte generated file costs more than it is
+ * worth, so an adapter can report the file, its size, and why it was skipped
+ * instead of producing a patch nothing will read.
+ */
+export interface ExtensionVcsSkippedFile {
+  kind: "skipped";
+  path: string;
+  previousPath?: string;
+  reason: ExtensionVcsSkippedFileReason;
+  /** Defaults to `"change"`. */
+  changeType?: ExtensionVcsFileChangeType;
+  /** Line counts to show in the sidebar; derived as zero when omitted. */
+  stats?: ExtensionVcsFileStats;
+  /** True when `stats` were counted from a partial read and undercount the file. */
+  statsTruncated?: boolean;
+  isUntracked?: boolean;
+}
+
+/**
+ * One reviewed file that is not part of the operation's main patch text.
+ *
+ * Hunk builds the diff model for each entry itself, so an adapter describes the
+ * file rather than assembling one.
+ */
+export type ExtensionVcsExtraFile = ExtensionVcsExtraPatchFile | ExtensionVcsSkippedFile;
+
 /** The patch text one operation produced, plus how to label it in the UI. */
 export interface ExtensionVcsPatchResult {
   repoRoot: string;
@@ -281,8 +436,26 @@ export interface ExtensionVcsPatchResult {
    * contents, skipping binaries and files too large to render, so an adapter
    * only has to list the paths its VCS reports as untracked instead of
    * fabricating patch text that VCS would never produce.
+   *
+   * Use `extraFiles` instead when your VCS produces better patch text for an
+   * unknown file than a plain read of the working copy would.
    */
   untrackedPaths?: string[];
+  /**
+   * Exact old/new file contents for the files in this result.
+   *
+   * Optional: without it Hunk falls back to the content the patch itself
+   * carries, which renders the same diff with less context available.
+   */
+  readFileSource?: ExtensionVcsFileSourceReader;
+  /**
+   * Files to review beside `patchText`, in the order they should appear.
+   *
+   * Each entry is either its own one-file patch or a skipped placeholder.
+   * `readFileSource` covers the patch entries too; skipped entries have no
+   * content to read.
+   */
+  extraFiles?: ExtensionVcsExtraFile[];
 }
 
 /* -------------------------------------------------------------------------- */

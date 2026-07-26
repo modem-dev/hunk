@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { getBundledVcsAdapters } from "../../extensions/bundled";
 import {
   createUnsupportedVcsOperationError,
   createVcsWatchPlan,
@@ -9,6 +10,7 @@ import {
   findVcsRepoRootCandidate,
   getBuiltInVcsAdapters,
   getVcsAdapter,
+  getDefaultVcsAdapter,
   getVcsOperation,
   isVcsId,
   loadVcsReview,
@@ -37,7 +39,15 @@ afterEach(() => {
 
 describe("VCS adapter registry", () => {
   test("registers Git, Jujutsu, and Sapling operation maps", () => {
+    // Every one of these comes from the bundled extension tier: there are no
+    // core-registered adapters, so this list is purely an ordering of what the
+    // bundled factories registered through `hunk.registerVcsAdapter`.
     expect(getBuiltInVcsAdapters().map((adapter) => adapter.id)).toEqual(["jj", "sl", "git"]);
+    expect(getBuiltInVcsAdapters()).toEqual(
+      [...getBundledVcsAdapters()].sort(
+        (left, right) => (right.detectionPriority ?? 0) - (left.detectionPriority ?? 0),
+      ),
+    );
     expect(getVcsAdapter("git").operations["working-tree-diff"]).toBeDefined();
     expect(getVcsAdapter("git").operations["revision-show"]).toBeDefined();
     expect(getVcsAdapter("git").operations["stash-show"]).toBeDefined();
@@ -47,6 +57,11 @@ describe("VCS adapter registry", () => {
     expect(getVcsAdapter("sl").operations["working-tree-diff"]).toBeDefined();
     expect(getVcsAdapter("sl").operations["revision-show"]).toBeDefined();
     expect(getVcsAdapter("sl").operations["stash-show"]).toBeUndefined();
+  });
+
+  test("falls back to the bundled Git backend when config names none", () => {
+    expect(getDefaultVcsAdapter().id).toBe("git");
+    expect(getDefaultVcsAdapter()).toBe(getVcsAdapter("git"));
   });
 
   test("validates VCS ids from the registered adapter list", () => {
@@ -60,7 +75,7 @@ describe("VCS adapter registry", () => {
     expect(() => getVcsAdapter("hg" as VcsAdapter["id"])).toThrow("Unsupported VCS: hg");
   });
 
-  test("orders built-ins by detection priority, bundled backends above core Git", () => {
+  test("orders built-ins by detection priority, jj and Sapling above the Git baseline", () => {
     const priorities = getBuiltInVcsAdapters().map((adapter) => adapter.detectionPriority ?? 0);
     expect(priorities).toEqual([...priorities].sort((left, right) => right - left));
     expect(getVcsAdapter("jj").detectionPriority).toBeGreaterThan(

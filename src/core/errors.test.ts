@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { formatCliError, HunkUserError } from "./errors";
+import { formatCliError, HunkUserError, isUserFacingError } from "./errors";
+import { HunkExtensionUserError } from "../extension-api/types";
 
 const originalDebug = process.env.HUNK_DEBUG;
 
@@ -32,5 +33,23 @@ describe("formatCliError", () => {
 
   test("stringifies non-error thrown values", () => {
     expect(formatCliError("plain failure")).toBe("hunk: plain failure\n");
+  });
+
+  test("formats a published extension user error the same way", () => {
+    // An extension backend raises the same failure through the published class,
+    // and it must reach the user identically — message, blank line, suggestions.
+    expect(
+      formatCliError(new HunkExtensionUserError("Invalid ref", { suggestions: ["Try `HEAD~1`."] })),
+    ).toBe("hunk: Invalid ref\n\nTry `HEAD~1`.\n");
+  });
+
+  test("recognizes the published shape without an instanceof relationship", () => {
+    // A JavaScript extension, or one bundling its own copy of the class, only
+    // has the name and the field to go on.
+    expect(
+      formatCliError({ name: "HunkExtensionUserError", message: "No backend", suggestions: [] }),
+    ).toBe("hunk: No backend\n");
+    expect(isUserFacingError(new HunkUserError("x"))).toBe(true);
+    expect(isUserFacingError(new Error("x"))).toBe(false);
   });
 });

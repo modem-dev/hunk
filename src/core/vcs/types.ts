@@ -40,6 +40,14 @@ export interface VcsOperations {
   "stash-show"?: VcsOperation<VcsStashShowCommandInput>;
 }
 
+/**
+ * One adapter operation's result, after the conversion boundary.
+ *
+ * Adapters return the published `ExtensionVcsPatchResult`; this is what
+ * `toInternalVcsPatchResult` turns it into. The two extra fields here are the
+ * diff-engine side of published capabilities rather than privileges: every
+ * backend Hunk ships crosses the same boundary to reach them.
+ */
 export interface VcsPatchResult {
   repoRoot: string;
   sourceLabel: string;
@@ -47,13 +55,9 @@ export interface VcsPatchResult {
   patchText: string;
   /** Repo-root-relative untracked paths Hunk synthesizes into added-file diffs. */
   untrackedPaths?: string[];
-  /**
-   * Core-only: exact old/new content lookups for syntax highlighting and word
-   * diffing. Reaching into the diff engine's file model, so it stays off the
-   * published contract; adapters without it fall back to patch-derived content.
-   */
+  /** Exact old/new content lookups, built from the result's `readFileSource`. */
   sourceFetcherBuilder?: BuildDiffFileOptions["sourceFetcherBuilder"];
-  /** Core-only: fully built diff files an adapter assembled itself. */
+  /** Diff files built from the result's declarative `extraFiles` entries. */
   extraFiles?: DiffFile[];
 }
 

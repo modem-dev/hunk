@@ -11,15 +11,18 @@ import {
   type ExtensionVcsAdapter,
   type HunkExtensionAPI,
 } from "./types";
-import type { VcsAdapter } from "../core/vcs/types";
+import { toUserFacingError } from "../core/errors";
+import { toInternalVcsPatchResult } from "./vcsPatchResult";
+import type { ExtensionVcsOperation } from "../extension-api/types";
+import type { VcsAdapter, VcsOperation, VcsReviewInput } from "../core/vcs/types";
 
 /**
  * Running one extension factory into the shared registry.
  *
- * This module deliberately imports nothing from `src/core/vcs`: it is what the
- * bundled tier (`./bundled`) uses, and that tier is loaded *from* VCS adapter
- * resolution. Keeping the dependency one-way means bundled loading cannot
- * deadlock on a half-initialized module.
+ * This module deliberately imports nothing from `src/core/vcs` beyond its
+ * types: it is what the bundled tier (`./bundled`) uses, and that tier is
+ * loaded *from* VCS adapter resolution. Keeping the dependency one-way means
+ * bundled loading cannot deadlock on a half-initialized module.
  */
 
 /** Read an error's message without assuming extensions throw `Error` instances. */
@@ -61,6 +64,51 @@ function isThenable(value: unknown): value is Promise<void> {
 }
 
 /**
+ * Wrap one published operation so everything it produces arrives internal.
+ *
+ * Two translations happen here and nowhere else. The published patch result is
+ * converted into the diff model Hunk reviews, so an adapter describes files
+ * instead of assembling them. And whatever the operation threw is normalized,
+ * so an adapter that raises the published user-facing error reaches the user as
+ * a clean message with suggestions rather than a stack trace.
+ */
+function toInternalVcsOperation(
+  operation: ExtensionVcsOperation<VcsReviewInput>,
+): VcsOperation<VcsReviewInput> {
+  const { watchSignature, watchPlan } = operation;
+
+  return {
+    async load(input, context) {
+      try {
+        return toInternalVcsPatchResult(await operation.load(input, context));
+      } catch (error) {
+        throw toUserFacingError(error);
+      }
+    },
+    // Watch support stays optional inward as well as outward: an absent hook is
+    // what tells planning to fall back to signature polling.
+    ...(watchSignature && {
+      watchSignature(input, context) {
+        try {
+          return watchSignature(input, context);
+        } catch (error) {
+          throw toUserFacingError(error);
+        }
+      },
+    }),
+    ...(watchPlan && {
+      watchPlan(input, context) {
+        try {
+          return watchPlan(input, context);
+        } catch (error) {
+          throw toUserFacingError(error);
+        }
+      },
+    }),
+  };
+}
+
+/**
  * Accept the public adapter shape as the internal one.
  *
  * The published surface leaves `operations` optional, and Hunk's internal
@@ -69,9 +117,12 @@ function isThenable(value: unknown): value is Promise<void> {
  * detection, operation lookup, the unsupported-operation error — can then rely
  * on the map existing instead of guarding a value only a JS extension can omit.
  *
- * `detectionPriority` needs no conversion: the published watch-plan and patch
- * result shapes are the same declarations core planning consumes, so an adapter
- * flows inward whole.
+ * An entry whose `load` is not callable is dropped rather than wrapped: only an
+ * untyped extension can produce one, and leaving it out makes the command
+ * report "not supported" instead of failing with a TypeError mid-review.
+ *
+ * `detectionPriority` needs no conversion: the published watch-plan shape is
+ * the same declaration core planning consumes, so it flows inward whole.
  */
 export function toInternalVcsAdapter(adapter: ExtensionVcsAdapter): VcsAdapter {
   const operations = adapter.operations;
@@ -79,7 +130,16 @@ export function toInternalVcsAdapter(adapter: ExtensionVcsAdapter): VcsAdapter {
     throw new Error("registerVcsAdapter requires operations to be an object of review operations.");
   }
 
-  return { ...adapter, operations: operations ?? {} };
+  const internalOperations: Record<string, VcsOperation<VcsReviewInput>> = {};
+  for (const [kind, operation] of Object.entries(operations ?? {})) {
+    if (isPlainObject(operation) && typeof operation.load === "function") {
+      internalOperations[kind] = toInternalVcsOperation(
+        operation as unknown as ExtensionVcsOperation<VcsReviewInput>,
+      );
+    }
+  }
+
+  return { ...adapter, operations: internalOperations };
 }
 
 /** Pull the default export factory out of an imported extension module. */

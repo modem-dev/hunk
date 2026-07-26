@@ -1,7 +1,10 @@
 import fs from "node:fs";
 import { join } from "node:path";
-import { HunkUserError } from "./errors";
-import type { ExtensionVcsDiffInput, ExtensionVcsShowInput } from "../extension-api/types";
+import {
+  HunkExtensionUserError,
+  type ExtensionVcsDiffInput,
+  type ExtensionVcsShowInput,
+} from "../extension-api/types";
 import { normalizePathForOS } from "../lib/osPath";
 
 export type SlBackedInput = ExtensionVcsDiffInput | ExtensionVcsShowInput;
@@ -94,39 +97,43 @@ function isInvalidRevsetMessage(stderr: string) {
 }
 
 function createMissingSlExecutableError(input: SlBackedInput, slExecutable: string) {
-  return new HunkUserError(
+  return new HunkExtensionUserError(
     `Sapling is required for \`${formatSlCommandLabel(input)}\` when \`vcs = "sl"\`, but \`${slExecutable}\` was not found in PATH.`,
-    ['Install Sapling or set `vcs = "git"` in Hunk config, then try again.'],
+    { suggestions: ['Install Sapling or set `vcs = "git"` in Hunk config, then try again.'] },
   );
 }
 
 function createMissingSlRepoError(input: SlBackedInput) {
-  return new HunkUserError(
+  return new HunkExtensionUserError(
     `\`${formatSlCommandLabel(input)}\` must be run inside a Sapling repository when \`vcs = "sl"\`.`,
-    ['Run the command from a Sapling checkout, or set `vcs = "git"` in Hunk config.'],
+    {
+      suggestions: [
+        'Run the command from a Sapling checkout, or set `vcs = "git"` in Hunk config.',
+      ],
+    },
   );
 }
 
 /** Return the user-facing error when `--staged` is used with Sapling. */
 export function createSlStagedError(input: ExtensionVcsDiffInput) {
-  return new HunkUserError(
+  return new HunkExtensionUserError(
     `\`${formatSlCommandLabel(input)}\` requires Git VCS mode because Sapling has no staging area.`,
-    ['Remove `--staged`, or set `vcs = "git"` in Hunk config.'],
+    { suggestions: ['Remove `--staged`, or set `vcs = "git"` in Hunk config.'] },
   );
 }
 
 function createInvalidRevsetError(input: SlBackedInput) {
   const revset = input.kind === "vcs" ? input.range : (input.ref ?? ".");
-  return new HunkUserError(
+  return new HunkExtensionUserError(
     `\`${formatSlCommandLabel(input)}\` could not resolve Sapling revset \`${revset}\`.`,
-    ["Check the revset and try again."],
+    { suggestions: ["Check the revset and try again."] },
   );
 }
 
 function createGenericSlError(input: SlBackedInput, stderr: string) {
-  return new HunkUserError(`\`${formatSlCommandLabel(input)}\` failed.`, [
-    firstSlErrorLine(stderr),
-  ]);
+  return new HunkExtensionUserError(`\`${formatSlCommandLabel(input)}\` failed.`, {
+    suggestions: [firstSlErrorLine(stderr)],
+  });
 }
 
 function translateSlSpawnFailure(
@@ -134,7 +141,7 @@ function translateSlSpawnFailure(
   error: unknown,
   slExecutable: string,
 ): Error {
-  if (error instanceof HunkUserError) {
+  if (error instanceof HunkExtensionUserError) {
     return error;
   }
 

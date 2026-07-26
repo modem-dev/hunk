@@ -10,8 +10,10 @@ import {
   listGitIgnoredDirectoryRoots,
   parseGitIgnoredDirectoryRoots,
   resolveGitDiffEndpoints,
+  parseGitNumstat,
   resolveGitMetadata,
   runGitText,
+  shouldSkipLargeTrackedDiff,
 } from "./git";
 import type { VcsDiffCommandInput } from "./types";
 
@@ -33,6 +35,12 @@ function git(cwd: string, ...cmd: string[]) {
   return Buffer.from(proc.stdout).toString("utf8");
 }
 
+function createTempDir(prefix: string) {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  tempDirs.push(dir);
+  return dir;
+}
+
 function createTempRepo(prefix: string) {
   const dir = mkdtempSync(join(tmpdir(), prefix));
   tempDirs.push(dir);
@@ -52,7 +60,7 @@ function makeGitInput(overrides: Partial<VcsDiffCommandInput> = {}): VcsDiffComm
   return {
     kind: "vcs",
     staged: false,
-    options: { mode: "auto" },
+    options: {},
     ...overrides,
   };
 }
@@ -71,7 +79,7 @@ describe("git command helpers", () => {
       {
         kind: "vcs",
         staged: false,
-        options: { mode: "auto" },
+        options: {},
       },
       [],
       { mode: "zebra", whitespaceMode: "allow-indentation-change" },
@@ -88,7 +96,7 @@ describe("git command helpers", () => {
   test("disables external diff tools for stash patches", () => {
     const args = buildGitStashShowArgs({
       kind: "stash-show",
-      options: { mode: "auto" },
+      options: {},
     });
 
     expect(args).toContain("--no-ext-diff");
@@ -133,7 +141,7 @@ describe("git command helpers", () => {
         input: {
           kind: "vcs",
           staged: false,
-          options: { mode: "auto" },
+          options: {},
         },
         args: ["status"],
         gitExecutable: "definitely-not-a-real-git-binary",
@@ -425,5 +433,51 @@ describe("resolveGitDiffEndpoints", () => {
         repoRoot,
       }),
     ).toBeNull();
+  });
+});
+
+describe("git diff stats helpers", () => {
+  test("parseGitNumstat keeps well-formed entries and drops malformed ones", () => {
+    const text = ["3\t1\tsrc/a.ts", "bad-entry", "x\ty\tsrc/b.ts", "2\t0\tsrc/c.ts"].join("\0");
+    expect(parseGitNumstat(text)).toEqual([
+      { path: "src/a.ts", additions: 3, deletions: 1 },
+      { path: "src/c.ts", additions: 2, deletions: 0 },
+    ]);
+  });
+
+  test("parseGitNumstat drops binary-file entries that report '-' counts", () => {
+    // Git emits `-\t-\t<path>` for binary files; the non-numeric counts fail the finite guard.
+    const text = ["-\t-\tsrc/logo.png", "3\t1\tsrc/a.ts"].join("\0");
+    expect(parseGitNumstat(text)).toEqual([{ path: "src/a.ts", additions: 3, deletions: 1 }]);
+  });
+
+  test("parseGitNumstat returns nothing for empty output", () => {
+    expect(parseGitNumstat("")).toEqual([]);
+  });
+
+  test("shouldSkipLargeTrackedDiff flags diffs over the line budget", () => {
+    expect(
+      shouldSkipLargeTrackedDiff({ path: "x", additions: 19_000, deletions: 2_000 }, "/repo"),
+    ).toBe(true);
+  });
+
+  test("shouldSkipLargeTrackedDiff flags small diffs of very large files", () => {
+    const repo = createTempDir("hunk-git-large-file-");
+    writeFileSync(join(repo, "big.bin"), "a".repeat(1_100_000));
+    expect(shouldSkipLargeTrackedDiff({ path: "big.bin", additions: 1, deletions: 0 }, repo)).toBe(
+      true,
+    );
+  });
+
+  test("shouldSkipLargeTrackedDiff keeps small diffs and tolerates missing files", () => {
+    const repo = createTempDir("hunk-git-small-file-");
+    writeFileSync(join(repo, "small.txt"), "hello\n");
+    expect(
+      shouldSkipLargeTrackedDiff({ path: "small.txt", additions: 1, deletions: 1 }, repo),
+    ).toBe(false);
+    // A path that does not exist on disk must not throw.
+    expect(shouldSkipLargeTrackedDiff({ path: "gone.txt", additions: 1, deletions: 1 }, repo)).toBe(
+      false,
+    );
   });
 });
