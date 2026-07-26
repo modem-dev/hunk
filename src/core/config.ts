@@ -1,6 +1,10 @@
 import fs from "node:fs";
 import { dirname, join } from "node:path";
-import { BUNDLED_SHIKI_THEME_IDS, resolveBundledShikiThemeId } from "../ui/lib/shikiThemes";
+import {
+  BUNDLED_SHIKI_THEME_IDS,
+  LEGACY_THEME_ID_ALIASES,
+  resolveBundledShikiThemeId,
+} from "../ui/lib/shikiThemes";
 import { LEGACY_CUSTOM_SYNTAX_COLOR_KEYS, resolveSyntaxScopeOverrides } from "./legacySyntaxScopes";
 import { resolveGlobalConfigPath } from "./paths";
 import { LEGACY_CUSTOM_SYNTAX_NOTICES, type StartupNotice } from "./startupNotice";
@@ -17,9 +21,10 @@ import type {
   VcsMode,
 } from "./types";
 
-const BUILT_IN_THEME_IDS = BUNDLED_SHIKI_THEME_IDS;
+export const BUILT_IN_THEME_IDS = BUNDLED_SHIKI_THEME_IDS;
+const DEFAULT_THEME_ID = "github-dark-default";
 const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
-const CUSTOM_THEME_COLOR_KEYS = [
+export const CUSTOM_THEME_COLOR_KEYS = [
   "background",
   "panel",
   "panelAlt",
@@ -171,6 +176,172 @@ function normalizeTabWidth(value: unknown) {
   return validateTabWidth(value, "tab_width");
 }
 
+/** One top-level configuration key shared by runtime parsing and generated reference docs. */
+export interface ConfigReferenceOption {
+  readonly key: string;
+  readonly property: keyof CommonOptions;
+  readonly type: string;
+  readonly accepted: string;
+  /** Concrete built-in value consumed by runtime resolution and rendered by generated docs. */
+  readonly runtimeDefault?: string | number | boolean;
+  /** Human-readable default for dynamic behavior such as VCS detection. */
+  readonly defaultValue?: string;
+  readonly description: string;
+  readonly aliases?: readonly { key: string; deprecated?: boolean }[];
+  /** Ordered source keys preserve compatibility precedence where an old alias historically won. */
+  readonly runtimeKeys?: readonly string[];
+}
+
+/**
+ * Authoritative top-level preference catalog. Runtime parsing iterates this table, while the docs
+ * generator renders the same keys, accepted values, defaults, aliases, and descriptions.
+ */
+export const CONFIG_REFERENCE_OPTIONS: readonly ConfigReferenceOption[] = [
+  {
+    key: "mode",
+    property: "mode",
+    type: "string",
+    accepted: "`auto`, `split`, or `stack`",
+    runtimeDefault: DEFAULT_VIEW_PREFERENCES.mode,
+    description: "Choose responsive, side-by-side, or stacked diff layout.",
+  },
+  {
+    key: "vcs",
+    property: "vcs",
+    type: "string",
+    accepted: "`git`, `jj`, or `sl`",
+    defaultValue: "detected from the checkout (Git fallback)",
+    description: "Select the version-control adapter explicitly.",
+  },
+  {
+    key: "theme",
+    property: "theme",
+    type: "string",
+    accepted: "a built-in theme id or `custom`",
+    runtimeDefault: DEFAULT_THEME_ID,
+    description: "Select the active color theme.",
+  },
+  {
+    key: "watch",
+    property: "watch",
+    type: "boolean",
+    accepted: "`true` or `false`",
+    runtimeDefault: false,
+    description: "Reload supported review inputs when their source changes.",
+  },
+  {
+    key: "exclude_untracked",
+    property: "excludeUntracked",
+    type: "boolean",
+    accepted: "`true` or `false`",
+    runtimeDefault: false,
+    description: "Hide untracked files from working-tree reviews.",
+  },
+  {
+    key: "line_numbers",
+    property: "lineNumbers",
+    type: "boolean",
+    accepted: "`true` or `false`",
+    runtimeDefault: DEFAULT_VIEW_PREFERENCES.showLineNumbers,
+    description: "Show old and new line-number columns.",
+  },
+  {
+    key: "tab_width",
+    property: "tabWidth",
+    type: "integer",
+    accepted: "1 through 16",
+    runtimeDefault: DEFAULT_TAB_WIDTH,
+    description: "Set terminal-cell tab stops used for display and wrapping.",
+  },
+  {
+    key: "wrap_lines",
+    property: "wrapLines",
+    type: "boolean",
+    accepted: "`true` or `false`",
+    runtimeDefault: DEFAULT_VIEW_PREFERENCES.wrapLines,
+    description: "Wrap long diff lines instead of keeping one visual row.",
+  },
+  {
+    key: "hunk_headers",
+    property: "hunkHeaders",
+    type: "boolean",
+    accepted: "`true` or `false`",
+    runtimeDefault: DEFAULT_VIEW_PREFERENCES.showHunkHeaders,
+    description: "Show hunk metadata rows in the review stream.",
+  },
+  {
+    key: "menu_bar",
+    property: "menuBar",
+    type: "boolean",
+    accepted: "`true` or `false`",
+    runtimeDefault: DEFAULT_VIEW_PREFERENCES.showMenuBar,
+    description: "Show the top application menu bar.",
+  },
+  {
+    key: "agent_notes",
+    property: "agentNotes",
+    type: "boolean",
+    accepted: "`true` or `false`",
+    runtimeDefault: DEFAULT_VIEW_PREFERENCES.showAgentNotes,
+    description: "Show agent notes when a review opens.",
+  },
+  {
+    key: "copy_decorations",
+    property: "copyDecorations",
+    type: "boolean",
+    accepted: "`true` or `false`",
+    runtimeDefault: DEFAULT_VIEW_PREFERENCES.copyDecorations,
+    description: "Include diff signs and line numbers in copied selections.",
+  },
+  {
+    key: VIEW_PREFERENCES_PROMPT_CONFIG_KEY,
+    property: "promptSaveViewPreferences",
+    type: "boolean",
+    accepted: "`true` or `false`",
+    runtimeDefault: true,
+    description: "Ask before discarding view changes that can be persisted.",
+  },
+  {
+    key: "transparent_background",
+    property: "transparentBackground",
+    type: "boolean",
+    accepted: "`true` or `false`",
+    runtimeDefault: false,
+    description: "Let the terminal background show through Hunk surfaces.",
+    aliases: [{ key: "transparentBackground", deprecated: true }],
+    runtimeKeys: ["transparentBackground", "transparent_background"],
+  },
+  {
+    key: "color_moved",
+    property: "colorMoved",
+    type: "boolean",
+    accepted: "`true` or `false`",
+    description: "Enable moved-line coloring when the renderer supports it.",
+  },
+] as const;
+
+/** Command-specific TOML tables accepted by the runtime resolver. */
+export const CONFIG_COMMAND_SECTIONS = {
+  vcs: "working-tree and target-based diff reviews",
+  show: "commit and target display reviews",
+  "stash-show": "stash reviews",
+  diff: "two-file comparisons",
+  patch: "patch-file reviews",
+  difftool: "Git difftool pair reviews",
+} as const satisfies Record<CliInput["kind"], string>;
+
+/** Reference metadata for the root-only custom-theme tables. */
+export const CONFIG_REFERENCE_CUSTOM_THEME = {
+  table: "custom_theme",
+  baseValues: BUILT_IN_THEME_IDS,
+  defaultBase: DEFAULT_THEME_ID,
+  legacyBaseAliases: LEGACY_THEME_ID_ALIASES,
+  colorKeys: CUSTOM_THEME_COLOR_KEYS,
+  legacySyntaxColorKeys: LEGACY_CUSTOM_SYNTAX_COLOR_KEYS,
+  syntaxScopesTable: "custom_theme.syntax_scopes",
+  legacySyntaxTable: "custom_theme.syntax",
+} as const;
+
 /** Accept only #rrggbb theme colors and report the failing TOML key path. */
 function normalizeThemeColor(value: unknown, keyPath: string) {
   if (value === undefined) {
@@ -312,7 +483,7 @@ function mergeCustomTheme(
   return {
     ...base,
     ...overrides,
-    base: overrides.base ?? base.base ?? "github-dark-default",
+    base: overrides.base ?? base.base ?? DEFAULT_THEME_ID,
     label: overrides.label ?? base.label,
     syntaxScopes:
       base.syntaxScopes || overrides.syntaxScopes
@@ -324,27 +495,55 @@ function mergeCustomTheme(
   };
 }
 
+/** Normalize one cataloged config value according to its runtime property. */
+function normalizeConfigReferenceValue(property: keyof CommonOptions, value: unknown) {
+  switch (property) {
+    case "mode":
+      return normalizeLayoutMode(value);
+    case "vcs":
+      return normalizeVcsMode(value);
+    case "theme":
+      return normalizeString(value);
+    case "tabWidth":
+      return normalizeTabWidth(value);
+    default:
+      return normalizeBoolean(value);
+  }
+}
+
 /** Read the view preferences stored at one TOML object level. */
 function readConfigPreferences(source: Record<string, unknown>): CommonOptions {
-  return {
-    mode: normalizeLayoutMode(source.mode),
-    vcs: normalizeVcsMode(source.vcs),
-    theme: normalizeString(source.theme),
-    watch: normalizeBoolean(source.watch),
-    excludeUntracked: normalizeBoolean(source.exclude_untracked),
-    lineNumbers: normalizeBoolean(source.line_numbers),
-    tabWidth: normalizeTabWidth(source.tab_width),
-    wrapLines: normalizeBoolean(source.wrap_lines),
-    hunkHeaders: normalizeBoolean(source.hunk_headers),
-    menuBar: normalizeBoolean(source.menu_bar),
-    agentNotes: normalizeBoolean(source.agent_notes),
-    copyDecorations: normalizeBoolean(source.copy_decorations),
-    promptSaveViewPreferences: normalizeBoolean(source[VIEW_PREFERENCES_PROMPT_CONFIG_KEY]),
-    transparentBackground:
-      normalizeBoolean(source.transparentBackground) ??
-      normalizeBoolean(source.transparent_background),
-    colorMoved: normalizeBoolean(source.color_moved),
-  };
+  const preferences: CommonOptions = {};
+  const mutable = preferences as Record<string, unknown>;
+
+  for (const option of CONFIG_REFERENCE_OPTIONS) {
+    const runtimeKeys = option.runtimeKeys ?? [
+      option.key,
+      ...(option.aliases?.map(({ key }) => key) ?? []),
+    ];
+    let normalized: unknown;
+    for (const key of runtimeKeys) {
+      normalized = normalizeConfigReferenceValue(option.property, source[key]);
+      if (normalized !== undefined) {
+        break;
+      }
+    }
+    mutable[option.property] = normalized;
+  }
+
+  return preferences;
+}
+
+/** Build concrete preference defaults from the same catalog rendered by generated docs. */
+function buildDefaultConfigPreferences(cwd: string): CommonOptions {
+  const defaults: CommonOptions = { vcs: detectRepoVcsMode(cwd) };
+  const mutable = defaults as Record<string, unknown>;
+  for (const option of CONFIG_REFERENCE_OPTIONS) {
+    if (option.runtimeDefault !== undefined) {
+      mutable[option.property] = option.runtimeDefault;
+    }
+  }
+  return defaults;
 }
 
 /** Merge partial preference layers with right-hand overrides taking precedence. */
@@ -377,7 +576,7 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
 function resolveConfigLayer(source: Record<string, unknown>, input: CliInput): CommonOptions {
   let resolved = readConfigPreferences(source);
 
-  const commandSection = source[input.kind];
+  const commandSection = CONFIG_COMMAND_SECTIONS[input.kind] ? source[input.kind] : undefined;
   if (isRecord(commandSection)) {
     resolved = mergeOptions(resolved, readConfigPreferences(commandSection));
   }
@@ -517,25 +716,10 @@ export function resolveConfiguredCliInput(
   let usesLegacyCustomSyntax = false;
 
   let resolvedOptions: CommonOptions = {
-    mode: DEFAULT_VIEW_PREFERENCES.mode,
-    vcs: detectRepoVcsMode(cwd),
-    // Keep the built-in theme default explicit so stdin-backed startup paths do not depend on
-    // renderer theme-mode detection for their initial palette.
-    theme: "github-dark-default",
+    ...buildDefaultConfigPreferences(cwd),
     agentContext: input.options.agentContext,
     pager: input.options.pager ?? false,
-    watch: input.options.watch ?? false,
     experimental: false,
-    excludeUntracked: false,
-    lineNumbers: DEFAULT_VIEW_PREFERENCES.showLineNumbers,
-    tabWidth: DEFAULT_TAB_WIDTH,
-    wrapLines: DEFAULT_VIEW_PREFERENCES.wrapLines,
-    hunkHeaders: DEFAULT_VIEW_PREFERENCES.showHunkHeaders,
-    menuBar: DEFAULT_VIEW_PREFERENCES.showMenuBar,
-    agentNotes: DEFAULT_VIEW_PREFERENCES.showAgentNotes,
-    copyDecorations: DEFAULT_VIEW_PREFERENCES.copyDecorations,
-    promptSaveViewPreferences: true,
-    transparentBackground: false,
   };
 
   if (userConfigPath) {

@@ -31,8 +31,154 @@ import {
   RELOAD_SEPARATOR_MESSAGE,
 } from "../hunk-session/agentErrors";
 import { detectVcs } from "./vcs";
-import { parseTabWidth } from "./tabWidth";
+import { DEFAULT_TAB_WIDTH, parseTabWidth } from "./tabWidth";
 import { resolveCliVersion } from "./version";
+
+/** Structured option metadata shared by Commander registration and generated CLI docs. */
+export interface CliReferenceOption {
+  readonly flag: string;
+  readonly description: string;
+  readonly parse?: "layout" | "positiveInt" | "tabWidth";
+  readonly defaultValue?: string;
+  /** Default applied directly by Commander (as opposed to a config-resolved default). */
+  readonly commanderDefault?: string;
+  readonly hidden?: boolean;
+}
+
+/** Structured command metadata used by runtime parsers and generated CLI docs. */
+export interface CliReferenceCommand {
+  readonly path: string;
+  readonly summary: string;
+  readonly synopsis: readonly string[];
+  readonly aliases?: readonly string[];
+  readonly options?: readonly CliReferenceOption[];
+  readonly commonReviewOptions?: boolean;
+  readonly watch?: boolean;
+}
+
+/** Review flags registered on every full-screen review command. */
+export const COMMON_REVIEW_OPTIONS = [
+  { flag: "--mode <mode>", description: "layout mode: auto, split, stack", parse: "layout" },
+  { flag: "--theme <theme>", description: "named theme override" },
+  AUXILIARY_AGENT_OPTIONS.agentContext,
+  { flag: "--pager", description: "use pager-style chrome and controls" },
+  AUXILIARY_AGENT_OPTIONS.experimental,
+  { flag: "--line-numbers", description: "show line numbers" },
+  { flag: "--no-line-numbers", description: "hide line numbers" },
+  {
+    flag: "-x, --tab-width <columns>",
+    description: "tab stop width: 1-16",
+    parse: "tabWidth",
+    defaultValue: String(DEFAULT_TAB_WIDTH),
+  },
+  { flag: "--wrap", description: "wrap long diff lines" },
+  { flag: "--no-wrap", description: "truncate long diff lines to one row" },
+  { flag: "--hunk-headers", description: "show hunk metadata rows" },
+  { flag: "--no-hunk-headers", description: "hide hunk metadata rows" },
+  { flag: "--agent-notes", description: "show agent notes by default" },
+  { flag: "--no-agent-notes", description: "hide agent notes by default" },
+  { flag: "--transparent-bg", description: "let terminal background show through Hunk surfaces" },
+  { flag: "--no-transparent-bg", description: "paint Hunk surfaces with the active theme" },
+] as const satisfies readonly CliReferenceOption[];
+
+/** Auto-refresh flag shared by review commands whose inputs can be reopened. */
+export const WATCH_OPTION = {
+  flag: "--watch",
+  description: "auto-reload when the current diff input changes",
+} as const satisfies CliReferenceOption;
+
+const DIFF_OPTIONS = [
+  { flag: "--staged", description: "show staged changes instead of the working tree" },
+  { flag: "--cached", description: "alias for --staged" },
+  AUXILIARY_AGENT_OPTIONS.excludeUntracked,
+  {
+    flag: `--no-${AUXILIARY_AGENT_OPTIONS.excludeUntracked.flag.slice(2)}`,
+    description: "include untracked files in working tree reviews",
+    hidden: true,
+  },
+] as const satisfies readonly CliReferenceOption[];
+
+/** Non-session command tree consumed by the parser and generated reference. */
+export const CLI_REFERENCE_COMMANDS = {
+  diff: {
+    path: "diff",
+    summary: "review diffs or compare two concrete files",
+    synopsis: [
+      "hunk diff [target] [-- <pathspec...>]",
+      "hunk diff --staged [-- <pathspec...>]",
+      "hunk diff <left> <right>",
+    ],
+    options: DIFF_OPTIONS,
+    commonReviewOptions: true,
+    watch: true,
+  },
+  show: {
+    path: "show",
+    summary: "review the last commit or a given ref",
+    synopsis: ["hunk show [target] [-- <pathspec...>]"],
+    commonReviewOptions: true,
+    watch: true,
+  },
+  "stash-show": {
+    path: "stash show",
+    summary: "review a stash entry as a full Hunk changeset",
+    synopsis: ["hunk stash show [ref]"],
+    commonReviewOptions: true,
+    watch: true,
+  },
+  patch: {
+    path: "patch",
+    summary: "review a patch file, or read a patch from stdin",
+    synopsis: ["hunk patch [file]"],
+    commonReviewOptions: true,
+    watch: true,
+  },
+  pager: {
+    path: "pager",
+    summary: "general Git pager wrapper with diff detection",
+    synopsis: ["hunk pager"],
+    commonReviewOptions: true,
+  },
+  difftool: {
+    path: "difftool",
+    summary: "review Git difftool file pairs",
+    synopsis: ["hunk difftool <left> <right> [path]"],
+    commonReviewOptions: true,
+    watch: true,
+  },
+  "markup-render": {
+    path: "markup render",
+    summary: "preview experimental STML markup as terminal text",
+    synopsis: ["hunk markup render (<file> | -) [options]"],
+    options: [
+      { ...AUXILIARY_AGENT_OPTIONS.markupWidth, parse: "positiveInt", defaultValue: "56" },
+      {
+        flag: "--color <mode>",
+        description: "auto, always, or never",
+        defaultValue: "auto",
+        commanderDefault: "auto",
+      },
+      { flag: "--theme <id>", description: "hunk theme used to resolve colors" },
+      { flag: "--json", description: "emit structured JSON" },
+    ],
+  },
+  "markup-guide": {
+    path: "markup guide",
+    summary: "print the experimental STML authoring guide",
+    synopsis: ["hunk markup guide"],
+  },
+  "skill-path": {
+    path: "skill path",
+    summary: "print the bundled Hunk review skill path",
+    synopsis: ["hunk skill path"],
+  },
+  "daemon-serve": {
+    path: "daemon serve",
+    summary: "run the local Hunk session daemon and websocket session broker",
+    synopsis: ["hunk daemon serve"],
+    aliases: ["hunk mcp serve"],
+  },
+} as const satisfies Record<string, CliReferenceCommand>;
 
 /** Validate one requested layout mode from CLI input. */
 function parseLayoutMode(value: string): LayoutMode {
@@ -113,36 +259,44 @@ function buildCommonOptions(
   };
 }
 
-/** Attach the shared view flags to a subcommand parser. */
-function applyCommonOptions(command: Command) {
-  return command
-    .option("--mode <mode>", "layout mode: auto, split, stack", parseLayoutMode)
-    .option("--theme <theme>", "named theme override")
-    .option(
-      AUXILIARY_AGENT_OPTIONS.agentContext.flag,
-      AUXILIARY_AGENT_OPTIONS.agentContext.description,
-    )
-    .option("--pager", "use pager-style chrome and controls")
-    .option(
-      AUXILIARY_AGENT_OPTIONS.experimental.flag,
-      AUXILIARY_AGENT_OPTIONS.experimental.description,
-    )
-    .option("--line-numbers", "show line numbers")
-    .option("--no-line-numbers", "hide line numbers")
-    .option("-x, --tab-width <columns>", "tab stop width: 1-16", parseTabWidth)
-    .option("--wrap", "wrap long diff lines")
-    .option("--no-wrap", "truncate long diff lines to one row")
-    .option("--hunk-headers", "show hunk metadata rows")
-    .option("--no-hunk-headers", "hide hunk metadata rows")
-    .option("--agent-notes", "show agent notes by default")
-    .option("--no-agent-notes", "hide agent notes by default")
-    .option("--transparent-bg", "let terminal background show through Hunk surfaces")
-    .option("--no-transparent-bg", "paint Hunk surfaces with the active theme");
+/** Register one structured option with Commander. */
+function applyReferenceOption(command: Command, option: CliReferenceOption) {
+  const commanderOption = new Option(option.flag, option.description);
+  if (option.parse === "layout") {
+    commanderOption.argParser(parseLayoutMode);
+  } else if (option.parse === "positiveInt") {
+    commanderOption.argParser(parsePositiveInt);
+  } else if (option.parse === "tabWidth") {
+    commanderOption.argParser(parseTabWidth);
+  }
+  if (option.commanderDefault !== undefined) {
+    commanderOption.default(option.commanderDefault);
+  }
+  if (option.hidden) {
+    commanderOption.hideHelp();
+  }
+  command.addOption(commanderOption);
+  return command;
 }
 
-/** Attach auto-refresh support to review commands that can reopen their source input. */
-function applyWatchOption(command: Command) {
-  return command.option("--watch", "auto-reload when the current diff input changes");
+/** Build one Commander parser directly from the shared command reference metadata. */
+export function createCliReferenceCommand(key: keyof typeof CLI_REFERENCE_COMMANDS): Command {
+  const spec: CliReferenceCommand = CLI_REFERENCE_COMMANDS[key];
+  const command = new Command(spec.path).description(spec.summary);
+
+  if (spec.commonReviewOptions) {
+    for (const option of COMMON_REVIEW_OPTIONS) {
+      applyReferenceOption(command, option);
+    }
+  }
+  if (spec.watch) {
+    applyReferenceOption(command, WATCH_OPTION);
+  }
+  for (const option of spec.options ?? []) {
+    applyReferenceOption(command, option);
+  }
+
+  return command;
 }
 
 /** Render plain-text version output for `hunk --version`. */
@@ -253,11 +407,6 @@ async function parseStandaloneCommand(command: Command, tokens: string[]) {
 
     throw error;
   }
-}
-
-/** Build one command parser with the shared Hunk options attached. */
-function createCommand(name: string, description: string) {
-  return applyCommonOptions(new Command(name).description(description));
 }
 
 /** Resolve whether one nested CLI command requested JSON output. */
@@ -440,22 +589,7 @@ function resolveReloadSelector(
 /** Parse the overloaded `hunk diff` command. */
 async function parseDiffCommand(tokens: string[], argv: string[]): Promise<ParsedCliInput> {
   const { commandTokens, pathspecs } = splitPathspecArgs(tokens);
-  const command = applyWatchOption(
-    createCommand("diff", "review diffs or compare two concrete files"),
-  )
-    .option("--staged", "show staged changes instead of the working tree")
-    .option("--cached", "alias for --staged")
-    .option(
-      AUXILIARY_AGENT_OPTIONS.excludeUntracked.flag,
-      AUXILIARY_AGENT_OPTIONS.excludeUntracked.description,
-    )
-    .addOption(
-      new Option(
-        `--no-${AUXILIARY_AGENT_OPTIONS.excludeUntracked.flag.slice(2)}`,
-        "include untracked files in working tree reviews",
-      ).hideHelp(),
-    )
-    .argument("[targets...]");
+  const command = createCliReferenceCommand("diff").argument("[targets...]");
 
   let parsedTargets: string[] = [];
   let parsedOptions: Record<string, unknown> = {};
@@ -521,9 +655,7 @@ async function parseDiffCommand(tokens: string[], argv: string[]): Promise<Parse
 /** Parse the Git-style `hunk show` command. */
 async function parseShowCommand(tokens: string[], argv: string[]): Promise<ParsedCliInput> {
   const { commandTokens, pathspecs } = splitPathspecArgs(tokens);
-  const command = applyWatchOption(
-    createCommand("show", "review the last commit or a given ref"),
-  ).argument("[ref]");
+  const command = createCliReferenceCommand("show").argument("[ref]");
 
   let parsedRef: string | undefined;
   let parsedOptions: Record<string, unknown> = {};
@@ -549,9 +681,7 @@ async function parseShowCommand(tokens: string[], argv: string[]): Promise<Parse
 
 /** Parse the patch-file / stdin patch entrypoint. */
 async function parsePatchCommand(tokens: string[], argv: string[]): Promise<ParsedCliInput> {
-  const command = applyWatchOption(
-    createCommand("patch", "review a patch file, or read a patch from stdin"),
-  ).argument("[file]");
+  const command = createCliReferenceCommand("patch").argument("[file]");
 
   let parsedFile: string | undefined;
   let parsedOptions: Record<string, unknown> = {};
@@ -579,7 +709,7 @@ async function parsePagerCommand(
   tokens: string[],
   argv: string[],
 ): Promise<PagerCommandInput | HelpCommandInput> {
-  const command = createCommand("pager", "general Git pager wrapper with diff detection");
+  const command = createCliReferenceCommand("pager");
   let parsedOptions: Record<string, unknown> = {};
 
   command.action((options: Record<string, unknown>) => {
@@ -600,7 +730,7 @@ async function parsePagerCommand(
 
 /** Parse Git difftool-style two-file review commands. */
 async function parseDifftoolCommand(tokens: string[], argv: string[]): Promise<ParsedCliInput> {
-  const command = applyWatchOption(createCommand("difftool", "review Git difftool file pairs"))
+  const command = createCliReferenceCommand("difftool")
     .argument("<left>")
     .argument("<right>")
     .argument("[path]");
@@ -1128,17 +1258,11 @@ async function parseMarkupCommand(tokens: string[]): Promise<ParsedCliInput> {
   }
 
   if (subcommand === "render") {
-    const command = new Command("markup render")
-      .description("preview experimental STML markup as terminal text")
-      .argument("[file]", "markup file path, or - for stdin", "-")
-      .option(
-        AUXILIARY_AGENT_OPTIONS.markupWidth.flag,
-        AUXILIARY_AGENT_OPTIONS.markupWidth.description,
-        parsePositiveInt,
-      )
-      .option("--color <mode>", "auto, always, or never", "auto")
-      .option("--theme <id>", "hunk theme used to resolve colors")
-      .option("--json", "emit structured JSON");
+    const command = createCliReferenceCommand("markup-render").argument(
+      "[file]",
+      "markup file path, or - for stdin",
+      "-",
+    );
 
     let parsedFile = "-";
     let parsedOptions: { width?: number; color: string; theme?: string; json?: boolean } = {
@@ -1272,9 +1396,7 @@ async function parseStashCommand(tokens: string[], argv: string[]): Promise<Pars
     throw new Error("Only `hunk stash show` is supported.");
   }
 
-  const command = applyWatchOption(
-    createCommand("stash show", "review a stash entry as a full Hunk changeset"),
-  ).argument("[ref]");
+  const command = createCliReferenceCommand("stash-show").argument("[ref]");
 
   let parsedRef: string | undefined;
   let parsedOptions: Record<string, unknown> = {};

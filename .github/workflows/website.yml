@@ -5,6 +5,16 @@ on:
     paths:
       - "website/**"
       - "package.json"
+      - "bun.lock"
+      - "scripts/generate-docs.ts"
+      - "scripts/generate-docs.test.ts"
+      - "src/core/cli.ts"
+      - "src/core/config.ts"
+      - "src/core/legacySyntaxScopes.ts"
+      - "src/core/tabWidth.ts"
+      - "src/hunk-session/agentSurface.ts"
+      - "src/session-broker/brokerConfig.ts"
+      - "src/ui/lib/shikiThemes.ts"
       - ".github/workflows/website.yml"
   push:
     branches:
@@ -13,6 +23,16 @@ on:
     paths:
       - "website/**"
       - "package.json"
+      - "bun.lock"
+      - "scripts/generate-docs.ts"
+      - "scripts/generate-docs.test.ts"
+      - "src/core/cli.ts"
+      - "src/core/config.ts"
+      - "src/core/legacySyntaxScopes.ts"
+      - "src/core/tabWidth.ts"
+      - "src/hunk-session/agentSurface.ts"
+      - "src/session-broker/brokerConfig.ts"
+      - "src/ui/lib/shikiThemes.ts"
       - ".github/workflows/website.yml"
 
 concurrency:
@@ -32,8 +52,17 @@ jobs:
         with:
           bun-version: 1.3.14
 
+      - name: Install repository dependencies
+        run: bun install --frozen-lockfile
+
       - name: Install website dependencies
         run: bun install --cwd website --frozen-lockfile
+
+      - name: Test generated reference docs
+        run: bun test scripts/generate-docs.test.ts
+
+      - name: Check generated reference docs
+        run: bun run check:docs
 
       - name: Check website
         run: bun run website:check
