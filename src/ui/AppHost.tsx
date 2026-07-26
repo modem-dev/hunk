@@ -8,9 +8,16 @@ import type { AppBootstrap, CliInput } from "../core/types";
 import {
   applyExtensionChangesetTransforms,
   applyExtensionRegistrations,
+  createUnknownVcsNotice,
   reportExtensionApplyIssues,
+  resolveExtensionDetectedVcsId,
+  resolveSessionVcsId,
 } from "../extensions/apply";
-import { emitExtensionEvent, emitExtensionEventBounded } from "../extensions/events";
+import {
+  emitExtensionEvent,
+  emitExtensionEventBounded,
+  emitExtensionEventToExtensions,
+} from "../extensions/events";
 import { loadStartupExtensions } from "../extensions/startup";
 import {
   createInitialSessionSnapshot,
@@ -47,6 +54,16 @@ export function AppHost({
   // Experimental capabilities are launch authority: remote/watch reloads may replace content,
   // but opting in or out requires starting a new Hunk process.
   const launchExperimental = bootstrap.input.options.experimental === true;
+  // Extension authority is launch authority for the same reason. A reload command
+  // names *content* to reopen — `hunk session reload <id> -- diff` — and is parsed
+  // fresh, so it carries none of the extension flags the session was launched
+  // with. Without re-threading them, `--no-extensions` silently stops applying on
+  // the first reload (extensions the user disabled start executing again) and
+  // `--extension` paths silently stop loading. Both are captured raw: `undefined`
+  // means "no flag given", which must keep deferring to the config layers rather
+  // than becoming an explicit choice.
+  const launchExtensionsEnabled = bootstrap.input.options.extensions;
+  const launchExtensionPaths = bootstrap.input.options.extensionPaths;
   const [sessionFileBounds] = useState(() =>
     createSessionReloadBounds(bootstrap, { cwd: bootstrap.reloadContext.cwd }),
   );
@@ -63,10 +80,21 @@ export function AppHost({
     resolver: startupNoticeResolver,
   });
 
+  // Extensions that have already received `startup`. The event is a per-extension
+  // promise, not a per-session one, so a pass that loads extensions later — the
+  // trust grant, or a reload into another repository — owes `startup` to exactly
+  // the ones that missed it, and owes nothing to the ones that already had it.
+  const startedExtensionIdsRef = useRef<Set<string>>(new Set());
+
   useEffect(() => {
     // Child effects run before the parent's, so by the time this fires the review
     // UI is mounted with its first changeset — which is what `startup` promises.
-    emitExtensionEvent(extensionsRef.current, "startup", {
+    const extensions = extensionsRef.current;
+    for (const { id } of extensions?.loaded ?? []) {
+      startedExtensionIdsRef.current.add(id);
+    }
+
+    emitExtensionEvent(extensions, "startup", {
       cwd: bootstrap.reloadContext.cwd,
     });
   }, [bootstrap.reloadContext.cwd]);
@@ -82,12 +110,20 @@ export function AppHost({
         options: {
           ...nextInput.options,
           experimental: launchExperimental,
+          extensions: launchExtensionsEnabled,
+          extensionPaths: launchExtensionPaths,
         },
       });
       const { cwd } = validateSessionReloadWithinBounds(sessionFileBounds, runtimeInput, {
         sourcePath: options?.sourcePath,
       });
       const configured = resolveConfiguredCliInput(runtimeInput, { cwd });
+
+      // Extensions loaded before this pass; used below to tell newly loaded ones apart.
+      const previouslyLoadedIds = new Set(
+        (extensionsRef.current?.loaded ?? []).map((extension) => extension.id),
+      );
+      let reloadedExtensions = false;
 
       if (options?.reloadExtensions || cwd !== extensionsCwdRef.current) {
         // Reuse the session's notification hub so the mounted toast surface keeps
@@ -99,6 +135,7 @@ export function AppHost({
           notifications: extensionsRef.current?.notifications,
         });
         extensionsCwdRef.current = cwd;
+        reloadedExtensions = true;
       }
 
       const extensions = extensionsRef.current;
@@ -115,7 +152,26 @@ export function AppHost({
         configured.customThemes,
         extensions?.registry.themes,
       );
-      const nextBootstrap = await loadAppBootstrap(configured.input, {
+
+      // Config resolution above ran before extension adapters were in hand, exactly
+      // as it does on first launch — so repeat both VCS steps `prepareStartupPlan`
+      // performs, in the same order. Without them, a reload into an extension-only
+      // repository (a daemon cross-directory reload, say) resolves to the default
+      // backend and reviews the wrong thing, while first launch in that same
+      // directory works.
+      const sessionVcs = resolveSessionVcsId(
+        configured.input.options.vcs,
+        cwd,
+        applied.vcsAdapters,
+      );
+      const detectedExtensionVcsId = resolveExtensionDetectedVcsId(cwd, applied.vcsAdapters);
+      const reloadVcsId = detectedExtensionVcsId ?? sessionVcs.vcsId;
+      const reloadInput =
+        reloadVcsId === configured.input.options.vcs
+          ? configured.input
+          : { ...configured.input, options: { ...configured.input.options, vcs: reloadVcsId } };
+
+      const nextBootstrap = await loadAppBootstrap(reloadInput, {
         cwd,
         customThemes: sessionThemes.themes,
         vcsAdapters: applied.vcsAdapters,
@@ -125,7 +181,13 @@ export function AppHost({
         nextBootstrap.changeset,
       );
       nextBootstrap.extensions = extensions;
-      nextBootstrap.startupNotices = configured.startupNotices;
+      nextBootstrap.startupNotices =
+        sessionVcs.unknownVcsId !== undefined
+          ? [
+              ...(configured.startupNotices ?? []),
+              createUnknownVcsNotice(sessionVcs.unknownVcsId, String(sessionVcs.vcsId)),
+            ]
+          : configured.startupNotices;
       nextBootstrap.viewPreferencesConfigPath = configured.viewPreferencesConfigPath;
       const nextSnapshot = createInitialSessionSnapshot(nextBootstrap);
 
@@ -149,6 +211,26 @@ export function AppHost({
         setAppVersion((current) => current + 1);
       }
 
+      if (reloadedExtensions) {
+        // Extensions this pass loaded for the first time — after a trust grant, or
+        // after moving into another repository — never saw the mount emit, so they
+        // get `startup` now that the review UI is showing their changeset. Ordered
+        // before `session_reload` so an extension's own lifecycle stays in sequence.
+        const newlyLoadedIds = new Set(
+          (extensions?.loaded ?? [])
+            .map((extension) => extension.id)
+            .filter(
+              (id) => !previouslyLoadedIds.has(id) && !startedExtensionIdsRef.current.has(id),
+            ),
+        );
+
+        for (const id of newlyLoadedIds) {
+          startedExtensionIdsRef.current.add(id);
+        }
+
+        emitExtensionEventToExtensions(extensions, "startup", { cwd }, newlyLoadedIds);
+      }
+
       emitExtensionEvent(extensions, "session_reload", {
         changeset: nextBootstrap.changeset,
         reason: options?.reason ?? "daemon",
@@ -164,7 +246,13 @@ export function AppHost({
         selectedHunkIndex: nextSnapshot.state.selectedHunkIndex,
       };
     },
-    [hostClient, launchExperimental, sessionFileBounds],
+    [
+      hostClient,
+      launchExperimental,
+      launchExtensionsEnabled,
+      launchExtensionPaths,
+      sessionFileBounds,
+    ],
   );
 
   /** Give `shutdown` handlers a bounded window, then leave regardless. */

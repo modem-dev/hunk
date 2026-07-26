@@ -135,8 +135,13 @@ runBun(["x", "tsc", "-p", path.join(repoRoot, "tsconfig.extension.json")]);
 // The extension entry re-exports core façade types, so its declarations span several
 // source directories. Ship the emitted tree as-is and point the subpath export at a
 // one-line barrel so consumers still resolve `hunkdiff/extension` from a single file.
+// The specifier carries an explicit `.js` extension because `moduleResolution:
+// "nodenext"` consumers reject extensionless relative imports in ESM declarations.
 cpSync(extensionTypesOutdir, extensionOutdir, { recursive: true });
-writeFileSync(path.join(extensionOutdir, "index.d.ts"), 'export * from "./extension-api/index";\n');
+writeFileSync(
+  path.join(extensionOutdir, "index.d.ts"),
+  'export * from "./extension-api/index.js";\n',
+);
 rmSync(extensionTypesOutdir, { recursive: true, force: true });
 
 console.log(`Built ${mainJs}`);

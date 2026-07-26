@@ -2,7 +2,9 @@ import {
   applyExtensionChangesetTransforms,
   applyExtensionRegistrations,
   createExtensionApplyNotices,
+  createUnknownVcsNotice,
   resolveExtensionDetectedVcsId,
+  resolveSessionVcsId,
 } from "../extensions/apply";
 import { loadBundledExtensions } from "../extensions/bundled";
 import {
@@ -286,6 +288,18 @@ export async function prepareStartupPlan(
 
   // File languages register globally; VCS adapters are threaded into loading below.
   const applied = applyExtensionRegistrations(extensionResult);
+  // Config accepts any `vcs` id because it resolves before extensions load. Settle
+  // that choice now: honor it when a loaded backend owns it, otherwise fall back
+  // to detection and tell the user, instead of dropping it in silence.
+  const sessionVcs = resolveSessionVcsId(cliInput.options.vcs, startupCwd, applied.vcsAdapters);
+  const unknownVcsNotices =
+    sessionVcs.unknownVcsId !== undefined
+      ? [createUnknownVcsNotice(sessionVcs.unknownVcsId, String(sessionVcs.vcsId))]
+      : [];
+  if (sessionVcs.vcsId !== cliInput.options.vcs) {
+    cliInput = { ...cliInput, options: { ...cliInput.options, vcs: sessionVcs.vcsId } };
+  }
+
   // Config picked the VCS before extensions existed, so give an extension backend
   // the chance to claim a checkout no built-in adapter recognized.
   const detectedExtensionVcsId = resolveExtensionDetectedVcsId(startupCwd, applied.vcsAdapters);
@@ -319,12 +333,16 @@ export async function prepareStartupPlan(
   bootstrap.initialThemeMode = initialThemeMode ?? bootstrap.initialThemeMode;
   bootstrap.startupNotices = mergeStartupNotices(
     // Keep the resolved array identity when extensions contributed no theme notices.
-    sessionThemes.notices.length > 0 || applied.issues.length > 0 || bundledNotices.length > 0
+    sessionThemes.notices.length > 0 ||
+      applied.issues.length > 0 ||
+      bundledNotices.length > 0 ||
+      unknownVcsNotices.length > 0
       ? [
           ...(configured.startupNotices ?? []),
           ...sessionThemes.notices,
           ...createExtensionApplyNotices(applied.issues),
           ...bundledNotices,
+          ...unknownVcsNotices,
         ]
       : configured.startupNotices,
     extensionResult,

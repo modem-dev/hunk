@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { resolveGlobalExtensionsDir } from "../core/paths";
 import { findVcsRepoRootCandidate } from "../core/vcs";
@@ -75,6 +76,27 @@ function scanExtensionsDir(dir: string) {
 }
 
 /**
+ * Expand a leading `~` to the user's home directory.
+ *
+ * Config files are hand-written and documented with `~/dev/...` paths, but TOML
+ * has no shell to expand them, so `~` arrives literally. Only a bare `~` or a
+ * `~/` prefix is expanded — `~user` is deliberately left alone, since resolving
+ * another account's home is a shell feature Hunk has no business guessing at.
+ * Both separators are accepted so a Windows config may write `~\dev\...`.
+ */
+function expandHomePath(path: string) {
+  if (path === "~") {
+    return homedir();
+  }
+
+  if (path.startsWith("~/") || path.startsWith("~\\")) {
+    return join(homedir(), path.slice(2));
+  }
+
+  return path;
+}
+
+/**
  * Expand one explicit path into entry files.
  *
  * A directory is scanned with the standard patterns; anything else is taken as
@@ -82,7 +104,10 @@ function scanExtensionsDir(dir: string) {
  * reported as a load issue rather than vanishing.
  */
 function expandExplicitPath(path: string, cwd: string) {
-  const resolvedPath = isAbsolute(path) ? resolve(path) : resolve(cwd, path);
+  const homeExpanded = expandHomePath(path);
+  const resolvedPath = isAbsolute(homeExpanded)
+    ? resolve(homeExpanded)
+    : resolve(cwd, homeExpanded);
   return isDirectory(resolvedPath) ? scanExtensionsDir(resolvedPath) : [resolvedPath];
 }
 

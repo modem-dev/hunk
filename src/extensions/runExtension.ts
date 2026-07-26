@@ -121,10 +121,22 @@ function toInternalVcsOperation(
  * untyped extension can produce one, and leaving it out makes the command
  * report "not supported" instead of failing with a TypeError mid-review.
  *
+ * Detection results are normalized to the registered id. Nothing else forces
+ * `detect()` to return the id the adapter registered under, and a mismatch does
+ * not fail locally: the foreign id flows out of detection, into the session's
+ * `vcs` option, and finally into `getVcsAdapter`, which finds no adapter and
+ * throws `Unsupported VCS: <id>` from startup — aborting the session over a typo
+ * in third-party code. The registered id is the one every lookup keys off, so it
+ * wins here, and the mismatch is recorded as a diagnostic for the author.
+ *
  * `detectionPriority` needs no conversion: the published watch-plan shape is
  * the same declaration core planning consumes, so it flows inward whole.
  */
-export function toInternalVcsAdapter(adapter: ExtensionVcsAdapter): VcsAdapter {
+export function toInternalVcsAdapter(
+  adapter: ExtensionVcsAdapter,
+  /** Diagnostic sink for a `detect()` result whose id was rewritten. */
+  reportDetectionIdMismatch?: (returnedId: string) => void,
+): VcsAdapter {
   const operations = adapter.operations;
   if (operations !== undefined && !isPlainObject(operations)) {
     throw new Error("registerVcsAdapter requires operations to be an object of review operations.");
@@ -139,7 +151,40 @@ export function toInternalVcsAdapter(adapter: ExtensionVcsAdapter): VcsAdapter {
     }
   }
 
-  return { ...adapter, operations: internalOperations };
+  const detect = adapter.detect;
+  // Report once per adapter: detection runs on every session and reload, and a
+  // repeated diagnostic for one authoring mistake is noise, not information.
+  let reportedMismatch = false;
+
+  return {
+    ...adapter,
+    detect(cwd: string) {
+      const detected = detect(cwd);
+      if (!detected || !isPlainObject(detected)) {
+        return null;
+      }
+
+      // `repoRoot` is a path every caller measures distance against, and the
+      // measurement happens outside detection's own error handling — so a
+      // detection missing it throws past `detectVcs` and aborts startup rather
+      // than being skipped. Treat it as "did not recognize this directory".
+      if (typeof detected.repoRoot !== "string" || detected.repoRoot.length === 0) {
+        return null;
+      }
+
+      if (detected.id === adapter.id) {
+        return detected;
+      }
+
+      if (!reportedMismatch) {
+        reportedMismatch = true;
+        reportDetectionIdMismatch?.(String(detected.id));
+      }
+
+      return { ...detected, id: adapter.id };
+    },
+    operations: internalOperations,
+  };
 }
 
 /** Pull the default export factory out of an imported extension module. */
@@ -248,7 +293,14 @@ export function createExtensionApi(
 
       registry.vcsAdapters.push({
         extensionId: metadata.id,
-        adapter: toInternalVcsAdapter(adapter),
+        adapter: toInternalVcsAdapter(adapter, (returnedId) => {
+          registry.logs.push({
+            extensionId: metadata.id,
+            message:
+              `VCS adapter "${adapter.id}" returned detection id "${returnedId}" • ` +
+              "using the registered id instead",
+          });
+        }),
       });
     },
     transformChangeset(fn: ChangesetTransform) {

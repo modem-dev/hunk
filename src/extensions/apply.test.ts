@@ -7,8 +7,10 @@ import {
   applyExtensionFileLanguages,
   createExtensionApplyNotices,
   reportExtensionApplyIssues,
+  createUnknownVcsNotice,
   resolveExtensionDetectedVcsId,
   resolveExtensionVcsAdapters,
+  resolveSessionVcsId,
 } from "./apply";
 import { createExtensionNotificationHub } from "./notifications";
 import {
@@ -327,5 +329,51 @@ describe("extension apply issue reporting", () => {
     reportExtensionApplyIssues([{ extensionId: "langs", message: "skipped" }], result.context);
 
     expect(notices).toEqual(["skipped"]);
+  });
+});
+
+describe("resolveSessionVcsId", () => {
+  /** One extension-registered backend, minimal but structurally real. */
+  const hgAdapter: VcsAdapter = {
+    id: "hg",
+    name: "Mercurial",
+    detect: () => null,
+    operations: {},
+  };
+
+  test("honors a configured id a loaded extension backend owns", () => {
+    // `vcs = "hg"` with a Mercurial extension installed is unambiguous intent.
+    expect(resolveSessionVcsId("hg", process.cwd(), [hgAdapter])).toEqual({ vcsId: "hg" });
+  });
+
+  test("honors a configured id a built-in backend owns", () => {
+    expect(resolveSessionVcsId("git", process.cwd(), [])).toEqual({ vcsId: "git" });
+  });
+
+  test("falls back to detection and reports an id nothing owns", () => {
+    const resolved = resolveSessionVcsId("hg", process.cwd(), []);
+
+    expect(resolved.unknownVcsId).toBe("hg");
+    // The repo Hunk lives in is a Git checkout, so detection lands there.
+    expect(resolved.vcsId).toBe("git");
+  });
+
+  test("leaves an unset id alone", () => {
+    expect(resolveSessionVcsId(undefined, process.cwd(), [])).toEqual({ vcsId: undefined });
+  });
+
+  test("names the id and the fallback in the notice", () => {
+    const notice = createUnknownVcsNotice("hg", "git");
+
+    expect(notice.key).toBe("vcs:unknown:hg");
+    expect(notice.message).toContain('Unknown vcs "hg"');
+    expect(notice.message).toContain("falling back to git");
+  });
+
+  test("strips terminal control sequences from a config-authored id", () => {
+    // The id is quoted straight out of a config file, which a repo can control.
+    const notice = createUnknownVcsNotice("h\u001b[31mg", "git");
+
+    expect(notice.message).not.toContain("\u001b");
   });
 });

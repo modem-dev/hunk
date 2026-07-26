@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { homedir, tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { discoverExtensions } from "./discovery";
 
 const tempDirs: string[] = [];
@@ -157,5 +157,64 @@ describe("extension discovery", () => {
     });
 
     expect(candidates).toEqual([{ id: "themed", path: globalPath, origin: "global" }]);
+  });
+});
+
+describe("tilde paths", () => {
+  test("expands a leading ~/ in a config path to the user's home directory", () => {
+    // `[extensions] paths` is hand-written TOML with no shell to expand it, and
+    // the guide documents `~/dev/...`, so discovery has to do the expansion
+    // itself. Before this, `~` resolved relative to cwd and never matched.
+    const candidates = discoverExtensions({
+      cwd: "/somewhere/else",
+      repoRoot: undefined,
+      globalExtensionsDir: undefined,
+      configPaths: ["~/dev/hunk-ext/index.ts"],
+      env: {},
+    });
+
+    expect(candidates).toEqual([
+      { id: "hunk-ext", path: join(homedir(), "dev", "hunk-ext", "index.ts"), origin: "config" },
+    ]);
+  });
+
+  test("expands a bare ~ to the home directory itself", () => {
+    const candidates = discoverExtensions({
+      cwd: "/somewhere/else",
+      repoRoot: undefined,
+      globalExtensionsDir: undefined,
+      flagPaths: ["~"],
+      env: {},
+    });
+
+    // The home directory exists, so it is scanned as a directory rather than
+    // taken as a literal entry file; either way it resolved to the real home.
+    for (const candidate of candidates) {
+      expect(candidate.path.startsWith(homedir())).toBe(true);
+    }
+  });
+
+  test("expands a backslash-separated ~\\ prefix for Windows-written config", () => {
+    const candidates = discoverExtensions({
+      cwd: "/somewhere/else",
+      repoRoot: undefined,
+      globalExtensionsDir: undefined,
+      configPaths: ["~\\dev\\ext.ts"],
+      env: {},
+    });
+
+    expect(candidates[0]?.path.startsWith(homedir())).toBe(true);
+  });
+
+  test("leaves ~user alone, since resolving another account's home is a shell feature", () => {
+    const candidates = discoverExtensions({
+      cwd: "/somewhere/else",
+      repoRoot: undefined,
+      globalExtensionsDir: undefined,
+      configPaths: ["~someone/ext.ts"],
+      env: {},
+    });
+
+    expect(candidates[0]?.path).toBe(resolve("/somewhere/else", "~someone/ext.ts"));
   });
 });

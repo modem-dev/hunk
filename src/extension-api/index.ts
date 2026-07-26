@@ -14,6 +14,12 @@
  * Only façade types belong here. Everything exported is something Hunk intends
  * to keep stable for the declared `apiVersion`, and everything is declared in
  * `./types` so the published declarations stay free of Hunk internals.
+ *
+ * The relative specifiers below carry an explicit `.js` extension. TypeScript
+ * maps them back to `./types.ts` when compiling this repo, and emission copies
+ * them verbatim into the published declarations — where `moduleResolution:
+ * "nodenext"` consumers *require* an explicit extension. Dropping it makes the
+ * published `hunkdiff/extension` types fail to resolve for every ESM consumer.
  */
 export {
   HUNK_CORE_VCS_DETECTION_PRIORITY,
@@ -21,7 +27,7 @@ export {
   HUNK_EXTENSION_API_VERSION,
   HUNK_EXTENSION_USER_ERROR_NAME,
   HunkExtensionUserError,
-} from "./types";
+} from "./types.js";
 export type {
   AgentAnnotation,
   AgentFileContext,
@@ -67,4 +73,4 @@ export type {
   HunkExtensionUserErrorOptions,
   NamedCustomThemeConfig,
   SessionReloadReason,
-} from "./types";
+} from "./types.js";

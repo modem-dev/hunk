@@ -1,5 +1,6 @@
 import type { RegisteredTheme } from "../extensions/types";
-import { BUNDLED_SHIKI_THEME_IDS } from "../ui/lib/shikiThemes";
+import { BUNDLED_SHIKI_THEME_IDS, resolveBundledShikiThemeId } from "../ui/lib/shikiThemes";
+import { LEGACY_CUSTOM_SYNTAX_COLOR_KEYS } from "./legacySyntaxScopes";
 import type { StartupNotice } from "./startupNotice";
 import type { NamedCustomThemeConfig } from "./types";
 
@@ -42,6 +43,229 @@ export function describeCustomThemeIdIssue(id: unknown): string | undefined {
   return undefined;
 }
 
+/** Every color slot a theme table or `registerTheme` call may set, in declaration order. */
+export const CUSTOM_THEME_COLOR_KEYS = [
+  "background",
+  "panel",
+  "panelAlt",
+  "border",
+  "accent",
+  "accentMuted",
+  "text",
+  "muted",
+  "addedBg",
+  "removedBg",
+  "movedAddedBg",
+  "movedRemovedBg",
+  "contextBg",
+  "addedContentBg",
+  "removedContentBg",
+  "contextContentBg",
+  "addedSignColor",
+  "removedSignColor",
+  "lineNumberBg",
+  "lineNumberFg",
+  "selectedHunk",
+  "badgeAdded",
+  "badgeRemoved",
+  "badgeNeutral",
+  "fileNew",
+  "fileDeleted",
+  "fileRenamed",
+  "fileModified",
+  "fileUntracked",
+  "noteBorder",
+  "noteBackground",
+  "noteTitleBackground",
+  "noteTitleText",
+] as const satisfies readonly (keyof NamedCustomThemeConfig)[];
+
+/** The only color literal Hunk's renderers — and OpenTUI's FFI beneath them — accept. */
+const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
+
+/**
+ * Explain why one value cannot be used as a theme color, or return undefined when it can.
+ *
+ * Every theme source funnels through this one predicate. A color that reaches
+ * the renderer without matching it crashes OpenTUI's FFI at parse time, which
+ * is why "the extension registered it" is not a reason to skip the check.
+ */
+export function describeThemeColorIssue(value: unknown): string | undefined {
+  return typeof value === "string" && HEX_COLOR_PATTERN.test(value)
+    ? undefined
+    : "must be a hex color like #112233";
+}
+
+/** Canonicalize one already-validated theme color. */
+export function normalizeThemeColorValue(value: string) {
+  return value.toLowerCase();
+}
+
+/**
+ * Resolve the built-in theme a custom theme inherits from.
+ *
+ * Returns the canonical bundled id (legacy aliases resolve to their current
+ * name), or an issue string when the value names no bundled theme.
+ */
+export function resolveThemeBase(value: unknown): { base: string } | { issue: string } {
+  const resolved = typeof value === "string" ? resolveBundledShikiThemeId(value) : undefined;
+  if (!resolved) {
+    return {
+      issue: `must be a built-in theme id. Known themes: ${BUNDLED_SHIKI_THEME_IDS.join(", ")}`,
+    };
+  }
+
+  return { base: resolved };
+}
+
+/** One theme field that failed validation, named the way the user wrote it. */
+export interface CustomThemeFieldIssue {
+  /** Field path relative to the theme table, e.g. `accent` or `syntaxScopes.keyword`. */
+  key: string;
+  reason: string;
+}
+
+/** Report whether one value is a plain object rather than null or an array. */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Validate every color-bearing field of one theme, in the same terms TOML gets.
+ *
+ * Config themes are validated field by field as their TOML table is read, so
+ * they can never reach the theme model malformed. Extension themes arrive as
+ * whatever a JavaScript factory handed to `registerTheme`, so they are checked
+ * here against the identical rules before they enter the session's theme list —
+ * otherwise a wrong-typed color survives all the way to the renderer.
+ *
+ * Returns the first offending field, so the notice can name one thing to fix.
+ */
+export function describeCustomThemeFieldIssue(theme: unknown): CustomThemeFieldIssue | undefined {
+  if (!isPlainObject(theme)) {
+    return { key: "theme", reason: "must be an object" };
+  }
+
+  if (theme.label !== undefined && typeof theme.label !== "string") {
+    return { key: "label", reason: "must be a string" };
+  }
+
+  if (theme.base !== undefined) {
+    const resolved = resolveThemeBase(theme.base);
+    if ("issue" in resolved) {
+      return { key: "base", reason: resolved.issue };
+    }
+  }
+
+  for (const key of CUSTOM_THEME_COLOR_KEYS) {
+    const value = theme[key];
+    if (value === undefined) {
+      continue;
+    }
+
+    const issue = describeThemeColorIssue(value);
+    if (issue) {
+      return { key, reason: issue };
+    }
+  }
+
+  const legacySyntax = theme.syntax;
+  if (legacySyntax !== undefined) {
+    if (!isPlainObject(legacySyntax)) {
+      return { key: "syntax", reason: "must be an object" };
+    }
+
+    for (const key of LEGACY_CUSTOM_SYNTAX_COLOR_KEYS) {
+      const value = legacySyntax[key];
+      if (value === undefined) {
+        continue;
+      }
+
+      const issue = describeThemeColorIssue(value);
+      if (issue) {
+        return { key: `syntax.${key}`, reason: issue };
+      }
+    }
+  }
+
+  const syntaxScopes = theme.syntaxScopes;
+  if (syntaxScopes !== undefined) {
+    if (!isPlainObject(syntaxScopes)) {
+      return { key: "syntaxScopes", reason: "must be an object" };
+    }
+
+    for (const [scope, color] of Object.entries(syntaxScopes)) {
+      if (scope.trim().length === 0) {
+        return { key: "syntaxScopes", reason: "keys must be non-empty Shiki scopes" };
+      }
+
+      const issue = describeThemeColorIssue(color);
+      if (issue) {
+        return { key: `syntaxScopes.${scope}`, reason: issue };
+      }
+    }
+  }
+
+  return undefined;
+}
+
+/** Report one theme skipped because a field failed the shared color rules. */
+export function createInvalidThemeFieldNotice(
+  source: string,
+  id: string,
+  issue: CustomThemeFieldIssue,
+): StartupNotice {
+  return {
+    key: `theme:invalid-field:${source}:${id}:${issue.key}`,
+    message: `Skipped theme "${id}" from ${source} • ${issue.key} ${issue.reason}`,
+  };
+}
+
+/**
+ * Canonicalize one validated theme's colors the way config normalization does.
+ *
+ * TOML themes are lowercased and base-resolved as they are read, so extension
+ * themes are put through the same normalization here rather than reaching the
+ * theme model in whatever casing the factory happened to write.
+ */
+function normalizeValidatedTheme(theme: NamedCustomThemeConfig): NamedCustomThemeConfig {
+  const normalized: NamedCustomThemeConfig = { ...theme };
+
+  if (theme.base !== undefined) {
+    const resolved = resolveThemeBase(theme.base);
+    if ("base" in resolved) {
+      normalized.base = resolved.base;
+    }
+  }
+
+  for (const key of CUSTOM_THEME_COLOR_KEYS) {
+    const value = normalized[key];
+    if (typeof value === "string") {
+      normalized[key] = normalizeThemeColorValue(value);
+    }
+  }
+
+  if (isPlainObject(theme.syntax)) {
+    normalized.syntax = Object.fromEntries(
+      Object.entries(theme.syntax).map(([key, value]) => [
+        key,
+        typeof value === "string" ? normalizeThemeColorValue(value) : value,
+      ]),
+    );
+  }
+
+  if (isPlainObject(theme.syntaxScopes)) {
+    normalized.syntaxScopes = Object.fromEntries(
+      Object.entries(theme.syntaxScopes).map(([scope, value]) => [
+        scope,
+        typeof value === "string" ? normalizeThemeColorValue(value) : value,
+      ]),
+    );
+  }
+
+  return normalized;
+}
+
 /** Report one theme skipped because its id is invalid or reserved. */
 export function createInvalidThemeIdNotice(
   source: string,
@@ -79,8 +303,12 @@ export interface SessionCustomThemes {
  * Precedence is deliberate and one-directional: config themes are the user's
  * own file and always win, extension themes fill the remaining ids in load
  * order, and every loser is reported once instead of silently disappearing.
- * Config themes arrive pre-validated from the config layer; extension themes
- * are validated here against the same rule.
+ *
+ * Config themes arrive pre-validated from the config layer, which checks every
+ * color as it reads the TOML table. Extension themes are validated here against
+ * those same rules — id *and* every color-bearing field — because `registerTheme`
+ * accepts whatever a JavaScript factory passes it, and a wrong-typed color that
+ * survives this far crashes OpenTUI's FFI the moment the theme is selected.
  */
 export function collectSessionCustomThemes(
   configThemes: readonly NamedCustomThemeConfig[] = [],
@@ -92,9 +320,15 @@ export function collectSessionCustomThemes(
 
   for (const { extensionId, theme } of extensionThemes) {
     const source = `extension ${extensionId}`;
-    const issue = describeCustomThemeIdIssue(theme.id);
-    if (issue) {
-      notices.push(createInvalidThemeIdNotice(source, String(theme.id), issue));
+    const idIssue = describeCustomThemeIdIssue(theme?.id);
+    if (idIssue) {
+      notices.push(createInvalidThemeIdNotice(source, String(theme?.id), idIssue));
+      continue;
+    }
+
+    const fieldIssue = describeCustomThemeFieldIssue(theme);
+    if (fieldIssue) {
+      notices.push(createInvalidThemeFieldNotice(source, theme.id, fieldIssue));
       continue;
     }
 
@@ -105,7 +339,7 @@ export function collectSessionCustomThemes(
     }
 
     claimedBy.set(theme.id, source);
-    themes.push(theme);
+    themes.push(normalizeValidatedTheme(theme));
   }
 
   return { themes, notices };

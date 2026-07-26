@@ -143,7 +143,7 @@ hunk.registerTheme({
   label: "Midnight Review",
   base: "catppuccin-mocha",
   accent: "#7fd1ff",
-  syntax_scopes: { "keyword.operator": "#7fd1ff" },
+  syntaxScopes: { "keyword.operator": "#7fd1ff" },
 });
 ```
 
@@ -299,7 +299,7 @@ async load(input, ctx) {
     sourceLabel: ctx.cwd,
     title: "Mercurial working copy",
     patchText: await runHgDiff(ctx.cwd),
-    readFileSource: ({ path, previousPath, changeType, side }) => {
+    readFileSource: async ({ path, previousPath, changeType, side }) => {
       if (side === "old") {
         return changeType === "new" ? null : hgCat(oldRev, previousPath ?? path);
       }

@@ -779,6 +779,35 @@ describe("config resolution", () => {
     expect(resolved.input.options.watch).toBe(expected);
   });
 
+  test("carries an unrecognized vcs id through for extensions to claim", () => {
+    // Config resolves before user extensions are imported, so it cannot know
+    // whether `hg` will exist. Dropping it here discarded the user's explicit
+    // choice silently; `resolveSessionVcsId` settles it once adapters are known.
+    const home = createTempDir("hunk-config-home-");
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(join(home, ".config", "hunk", "config.toml"), 'vcs = "hg"\n');
+
+    const resolved = resolveConfiguredCliInput(
+      { kind: "vcs", staged: false, options: {} },
+      { cwd: createTempDir("hunk-config-cwd-"), env: { HOME: home } },
+    );
+
+    expect(resolved.input.options.vcs).toBe("hg");
+  });
+
+  test("ignores a non-string vcs value", () => {
+    const home = createTempDir("hunk-config-home-");
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(join(home, ".config", "hunk", "config.toml"), "vcs = 7\n");
+
+    const resolved = resolveConfiguredCliInput(
+      { kind: "vcs", staged: false, options: {} },
+      { cwd: createTempDir("hunk-config-cwd-"), env: { HOME: home } },
+    );
+
+    expect(resolved.input.options.vcs).toBe("git");
+  });
+
   test("defaults to git VCS mode and accepts registered VCS modes from config", () => {
     const home = createTempDir("hunk-config-home-");
     mkdirSync(join(home, ".config", "hunk"), { recursive: true });

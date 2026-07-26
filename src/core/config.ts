@@ -1,18 +1,22 @@
 import fs from "node:fs";
 import { dirname, join } from "node:path";
 import { sanitizeTerminalLine } from "../lib/terminalText";
-import { BUNDLED_SHIKI_THEME_IDS, resolveBundledShikiThemeId } from "../ui/lib/shikiThemes";
+import { BUNDLED_SHIKI_THEME_IDS } from "../ui/lib/shikiThemes";
 import {
   createInvalidThemeIdNotice,
   createThemeCollisionNotice,
+  CUSTOM_THEME_COLOR_KEYS,
   describeCustomThemeIdIssue,
+  describeThemeColorIssue,
   LEGACY_CUSTOM_THEME_ID,
+  normalizeThemeColorValue,
+  resolveThemeBase,
 } from "./customThemes";
 import { LEGACY_CUSTOM_SYNTAX_COLOR_KEYS, resolveSyntaxScopeOverrides } from "./legacySyntaxScopes";
 import { resolveGlobalConfigPath } from "./paths";
 import { LEGACY_CUSTOM_SYNTAX_NOTICES, type StartupNotice } from "./startupNotice";
 import { DEFAULT_TAB_WIDTH, validateTabWidth } from "./tabWidth";
-import { detectVcs, findVcsRepoRootCandidate, getDefaultVcsAdapter, isVcsId } from "./vcs";
+import { detectVcs, findVcsRepoRootCandidate, getDefaultVcsAdapter } from "./vcs";
 import type {
   CliInput,
   CommonOptions,
@@ -26,42 +30,6 @@ import type {
 } from "./types";
 
 const BUILT_IN_THEME_IDS = BUNDLED_SHIKI_THEME_IDS;
-const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
-const CUSTOM_THEME_COLOR_KEYS = [
-  "background",
-  "panel",
-  "panelAlt",
-  "border",
-  "accent",
-  "accentMuted",
-  "text",
-  "muted",
-  "addedBg",
-  "removedBg",
-  "movedAddedBg",
-  "movedRemovedBg",
-  "contextBg",
-  "addedContentBg",
-  "removedContentBg",
-  "contextContentBg",
-  "addedSignColor",
-  "removedSignColor",
-  "lineNumberBg",
-  "lineNumberFg",
-  "selectedHunk",
-  "badgeAdded",
-  "badgeRemoved",
-  "badgeNeutral",
-  "fileNew",
-  "fileDeleted",
-  "fileRenamed",
-  "fileModified",
-  "fileUntracked",
-  "noteBorder",
-  "noteBackground",
-  "noteTitleBackground",
-  "noteTitleText",
-] as const;
 const DEFAULT_VIEW_PREFERENCES: PersistedViewPreferences = {
   mode: "auto",
   showLineNumbers: true,
@@ -153,9 +121,21 @@ function normalizeLayoutMode(value: unknown): LayoutMode | undefined {
   return value === "auto" || value === "split" || value === "stack" ? value : undefined;
 }
 
-/** Accept only the VCS backends Hunk can load directly. */
+/**
+ * Accept any backend id a config layer names, provisionally.
+ *
+ * Config resolution runs before user extensions have been imported, so it
+ * cannot yet know whether `vcs = "hg"` names a backend this session will have.
+ * Rejecting it here discarded the user's explicit choice silently — the session
+ * fell back to detection with nothing said, and an installed Mercurial
+ * extension never got used no matter how plainly it was asked for.
+ *
+ * So unknown ids ride through, and `resolveSessionVcsId` reconciles them
+ * against the adapters that actually loaded: it keeps the id when a backend
+ * owns it, and otherwise falls back to detection *and says so*.
+ */
 function normalizeVcsMode(value: unknown): VcsMode | undefined {
-  return isVcsId(value) ? value : undefined;
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 }
 
 /** Accept only plain booleans from config files. */
@@ -181,17 +161,23 @@ function normalizeTabWidth(value: unknown) {
   return validateTabWidth(value, "tab_width");
 }
 
-/** Accept only #rrggbb theme colors and report the failing TOML key path. */
+/**
+ * Accept only #rrggbb theme colors and report the failing TOML key path.
+ *
+ * The rule itself lives in `./customThemes` so config tables and extension
+ * `registerTheme` calls cannot drift apart; only the error wording — which
+ * names the TOML key the user actually wrote — belongs to this layer.
+ */
 function normalizeThemeColor(value: unknown, keyPath: string) {
   if (value === undefined) {
     return undefined;
   }
 
-  if (typeof value !== "string" || !HEX_COLOR_PATTERN.test(value)) {
+  if (describeThemeColorIssue(value)) {
     throw new Error(`Expected ${keyPath} to be a hex color like #112233.`);
   }
 
-  return value.toLowerCase();
+  return normalizeThemeColorValue(value as string);
 }
 
 /** Accept only built-in theme ids as the base one config-defined theme inherits from. */
@@ -200,14 +186,14 @@ function normalizeCustomThemeBase(value: unknown, keyPath: string) {
     return undefined;
   }
 
-  const resolvedThemeId = typeof value === "string" ? resolveBundledShikiThemeId(value) : undefined;
-  if (!resolvedThemeId) {
+  const resolved = resolveThemeBase(value);
+  if ("issue" in resolved) {
     throw new Error(
       `Expected ${keyPath}.base to be a built-in theme id. Known themes: ${BUILT_IN_THEME_IDS.join(", ")}.`,
     );
   }
 
-  return resolvedThemeId;
+  return resolved.base;
 }
 
 /** Read the deprecated semantic colors retained for one compatibility release window. */

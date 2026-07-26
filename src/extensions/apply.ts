@@ -1,7 +1,7 @@
 import { BUILT_IN_FILE_LANGUAGE_EXTENSIONS, registerFileLanguage } from "../core/fileLanguage";
 import type { StartupNotice } from "../core/startupNotice";
 import type { Changeset } from "../core/types";
-import { detectVcs, isVcsId } from "../core/vcs";
+import { detectVcs, getDefaultVcsAdapter, isVcsId, resolveVcsAdapters } from "../core/vcs";
 import type { VcsAdapter } from "../core/vcs/types";
 import { sanitizeTerminalLine } from "../lib/terminalText";
 import type { ExtensionContext, ExtensionLoadResult, ExtensionRegistry } from "./types";
@@ -148,6 +148,63 @@ export function resolveExtensionDetectedVcsId(
   }
 
   return detectVcs(cwd, adapters)?.id;
+}
+
+/** The backend one session will load with, plus a configured id nothing owned. */
+export interface ResolvedSessionVcsId {
+  vcsId: string | undefined;
+  /** Set when the configured id named no loaded backend, so the caller can report it. */
+  unknownVcsId?: string;
+}
+
+/**
+ * Reconcile the configured VCS id against the backends this session actually has.
+ *
+ * Config accepts any id, because it resolves before user extensions are
+ * imported and cannot know which backends will exist. This is where that
+ * provisional choice is settled, with the full adapter list in hand.
+ *
+ * An id a loaded backend owns is honored — `vcs = "hg"` with a Mercurial
+ * extension installed is unambiguous user intent, and the whole point of
+ * naming a backend explicitly is that it is used. An id nothing owns falls back
+ * to detection, which is what already happened, except that it is now reported
+ * instead of silently discarded: a typo or an extension that failed to load
+ * used to look exactly like working configuration.
+ *
+ * This deliberately does not consult detection *order* — it only asks whether a
+ * backend with that id exists, so it composes with, rather than duplicates,
+ * `resolveExtensionDetectedVcsId`.
+ */
+export function resolveSessionVcsId(
+  configuredVcsId: string | undefined,
+  cwd: string,
+  adapters: readonly VcsAdapter[],
+): ResolvedSessionVcsId {
+  if (!configuredVcsId) {
+    return { vcsId: configuredVcsId };
+  }
+
+  const owned = resolveVcsAdapters(adapters).some((adapter) => adapter.id === configuredVcsId);
+  if (owned) {
+    return { vcsId: configuredVcsId };
+  }
+
+  // Same fallback config itself would have produced had it dropped the id.
+  return {
+    vcsId: detectVcs(cwd)?.id ?? getDefaultVcsAdapter().id,
+    unknownVcsId: configuredVcsId,
+  };
+}
+
+/** Report a configured `vcs` id no loaded backend recognized. */
+export function createUnknownVcsNotice(unknownVcsId: string, fallbackVcsId: string): StartupNotice {
+  return {
+    key: `vcs:unknown:${unknownVcsId}`,
+    message: sanitizeTerminalLine(
+      `Unknown vcs "${unknownVcsId}" • falling back to ${fallbackVcsId}. ` +
+        "Install an extension that registers it, or fix the id in Hunk config.",
+    ),
+  };
 }
 
 /** Report whether one value is a plain object rather than null or an array. */
