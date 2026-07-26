@@ -234,7 +234,11 @@ To use Hunk as Sapling's pager, run `sl config -u` and update:
 pager = hunk pager
 ```
 
-### Extensions
+### Extensions (experimental)
+
+The extension API is experimental and may change in breaking ways between
+minor releases while it stabilizes; breaking changes are called out in
+release notes.
 
 Hunk loads plain TypeScript extensions from `~/.config/hunk/extensions/`, from a
 repository's `.hunk/extensions/` (after you explicitly trust that repository),

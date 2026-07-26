@@ -15,9 +15,11 @@ export default function (hunk: HunkExtensionAPI) {
 }
 ```
 
-> Extensions are an experimental Phase 1 surface. Everything below works today;
-> the API is versioned through `hunk.apiVersion` so a newer Hunk can keep
-> loading extensions written against an older surface.
+> **The extension API is experimental.** Everything below works today, but the
+> `hunkdiff/extension` surface may change in breaking ways between minor
+> releases while it stabilizes against real third-party extensions. Breaking
+> changes will be called out in release notes, and `hunk.apiVersion` identifies
+> the surface an extension was written against.
 
 ## Where Hunk looks for extensions
 
