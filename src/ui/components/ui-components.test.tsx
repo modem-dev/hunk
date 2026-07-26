@@ -943,7 +943,7 @@ describe("UI components", () => {
     expect(noteAwareMemo).not.toContain("onStartUserNoteAtHunk,");
   });
 
-  test("DiffPane only shows the add-note affordance after pointer movement", async () => {
+  test("DiffPane accepts add-note hover on the first wrapped frame", async () => {
     const files = createWindowingFiles(6);
     const theme = resolveTheme("github-dark-default", null);
     const scrollRef = createRef<ScrollBoxRenderable>();
@@ -953,6 +953,7 @@ describe("UI components", () => {
       onStartUserNoteAtHunk: () => {},
       separatorWidth: 84,
       width: 92,
+      wrapLines: true,
     });
     const setup = await testRender(<DiffPane {...props} />, {
       width: 96,
@@ -960,9 +961,8 @@ describe("UI components", () => {
     });
 
     try {
-      await settleDiffPane(setup);
-
       await act(async () => {
+        await setup.renderOnce();
         await setup.mockMouse.moveTo(32, 4);
         await setup.renderOnce();
       });

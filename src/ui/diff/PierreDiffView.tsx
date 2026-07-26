@@ -20,7 +20,6 @@ import { useHighlightedSource } from "./useHighlightedSource";
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
 const EMPTY_EXPANDED_GAP_KEYS: ReadonlySet<string> = new Set();
 const ADD_NOTE_IDLE_HIDE_DELAY_MS = 2000;
-const EMPTY_ADD_NOTE_AFFORDANCE_BY_ROW_KEY = new Map<string, ActiveAddNoteAffordance>();
 
 export interface ActiveAddNoteAffordance {
   hunkIndex: number;
@@ -64,7 +63,6 @@ export function PierreDiffView({
   codeHorizontalOffset = 0,
   copySelectedRowRanges,
   copySelectedSide,
-  deferSecondaryWork = false,
   expandedGapKeys = EMPTY_EXPANDED_GAP_KEYS,
   file,
   layout,
@@ -91,7 +89,6 @@ export function PierreDiffView({
   codeHorizontalOffset?: number;
   copySelectedRowRanges?: Map<string, CopySelectedRowRange>;
   copySelectedSide?: "left" | "right";
-  deferSecondaryWork?: boolean;
   expandedGapKeys?: ReadonlySet<string>;
   file: DiffFile | undefined;
   layout: Exclude<LayoutMode, "auto">;
@@ -255,12 +252,6 @@ export function PierreDiffView({
   // Keyed by the DiffRow key (not the planned-row key) because that is what DiffRowView reports
   // back through onHoverRow.
   const addNoteAffordanceByRowKey = useMemo(() => {
-    // Wrapped first paint defers highlighting and cannot receive pointer input before it commits;
-    // defer this secondary all-row index to the same post-paint update.
-    if (deferSecondaryWork) {
-      return EMPTY_ADD_NOTE_AFFORDANCE_BY_ROW_KEY;
-    }
-
     const next = new Map<string, ActiveAddNoteAffordance>();
     for (const plannedRow of plannedRows) {
       if (plannedRow.kind === "diff-row" && isAddNoteTargetRow(plannedRow.row)) {
@@ -268,7 +259,7 @@ export function PierreDiffView({
       }
     }
     return next;
-  }, [deferSecondaryWork, plannedRows]);
+  }, [plannedRows]);
 
   /** One shared hover handler for every diff row; DiffRowView passes the hovered row's key. */
   const handleHoverRow = useCallback(
