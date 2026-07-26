@@ -45,7 +45,15 @@ export interface VcsPatchResult {
   sourceLabel: string;
   title: string;
   patchText: string;
+  /** Repo-root-relative untracked paths Hunk synthesizes into added-file diffs. */
+  untrackedPaths?: string[];
+  /**
+   * Core-only: exact old/new content lookups for syntax highlighting and word
+   * diffing. Reaching into the diff engine's file model, so it stays off the
+   * published contract; adapters without it fall back to patch-derived content.
+   */
   sourceFetcherBuilder?: BuildDiffFileOptions["sourceFetcherBuilder"];
+  /** Core-only: fully built diff files an adapter assembled itself. */
   extraFiles?: DiffFile[];
 }
 
@@ -54,4 +62,6 @@ export interface VcsAdapter {
   name: string;
   detect(cwd: string): VcsDetection | null;
   operations: VcsOperations;
+  /** Detection order weight; higher is consulted first. See the public contract. */
+  detectionPriority?: number;
 }

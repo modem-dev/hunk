@@ -3,7 +3,15 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import { platform, tmpdir } from "node:os";
 import { join } from "node:path";
 import { SaplingVcsAdapter } from "./sl";
-import type { VcsShowCommandInput, VcsDiffCommandInput } from "../types";
+import type {
+  ExtensionVcsOperations,
+  ExtensionVcsShowInput,
+  ExtensionVcsDiffInput,
+} from "../../extension-api/types";
+
+// The adapter is written against the published contract, so the tests read it
+// through that contract too — including the operations an adapter may omit.
+const slOperations: ExtensionVcsOperations = SaplingVcsAdapter.operations;
 
 const slAvailable = (() => {
   try {
@@ -100,8 +108,8 @@ describe("SaplingVcsAdapter", () => {
       const diffInput = {
         kind: "vcs",
         staged: false,
-        options: { vcs: "sl" },
-      } satisfies VcsDiffCommandInput;
+        options: {},
+      } satisfies ExtensionVcsDiffInput;
       const diffResult = await SaplingVcsAdapter.operations["working-tree-diff"]!.load(diffInput, {
         cwd: repo,
       });
@@ -114,8 +122,8 @@ describe("SaplingVcsAdapter", () => {
       const showInput = {
         kind: "show",
         ref: ".",
-        options: { vcs: "sl" },
-      } satisfies VcsShowCommandInput;
+        options: {},
+      } satisfies ExtensionVcsShowInput;
       const showResult = await SaplingVcsAdapter.operations["revision-show"]!.load(showInput, {
         cwd: repo,
       });
@@ -141,12 +149,12 @@ describe("SaplingVcsAdapter", () => {
       const stagedInput = {
         kind: "vcs",
         staged: true,
-        options: { vcs: "sl" },
-      } satisfies VcsDiffCommandInput;
+        options: {},
+      } satisfies ExtensionVcsDiffInput;
       await expect(
         SaplingVcsAdapter.operations["working-tree-diff"]!.load(stagedInput, { cwd: repo }),
       ).rejects.toThrow("Sapling has no staging area");
-      expect(SaplingVcsAdapter.operations["stash-show"]).toBeUndefined();
+      expect(slOperations["stash-show"]).toBeUndefined();
     },
     SlAdapterIntegrationTestTimeoutMs,
   );
@@ -169,14 +177,14 @@ describe("SaplingVcsAdapter without the sl binary", () => {
     const stagedInput = {
       kind: "vcs",
       staged: true,
-      options: { vcs: "sl" },
-    } satisfies VcsDiffCommandInput;
+      options: {},
+    } satisfies ExtensionVcsDiffInput;
     await expect(
       SaplingVcsAdapter.operations["working-tree-diff"]!.load(stagedInput, { cwd: tmpdir() }),
     ).rejects.toThrow("Sapling has no staging area");
   });
 
   test("does not expose a stash-show operation", () => {
-    expect(SaplingVcsAdapter.operations["stash-show"]).toBeUndefined();
+    expect(slOperations["stash-show"]).toBeUndefined();
   });
 });

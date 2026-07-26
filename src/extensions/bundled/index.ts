@@ -1,0 +1,105 @@
+import jjExtension from "./jj";
+import slExtension from "./sl";
+import { runExtensionFactory } from "../runExtension";
+import {
+  createEmptyExtensionRegistry,
+  type ExtensionFactory,
+  type ExtensionLoadIssue,
+  type ExtensionMetadata,
+  type ExtensionRegistry,
+} from "../types";
+import type { VcsAdapter } from "../../core/vcs/types";
+
+/**
+ * The bundled extension tier.
+ *
+ * Hunk's Jujutsu and Sapling backends are extensions, registered through the
+ * same `registerVcsAdapter` a third-party author calls — which is the point:
+ * a capability Hunk ships on cannot quietly outgrow the API it publishes.
+ *
+ * Three things separate this tier from user extensions:
+ *
+ * - The factories are **statically imported**, so they compile into the binary
+ *   and load synchronously. Adapter resolution happens during config
+ *   resolution, long before the async user-extension pass, and jj support has
+ *   to be there for it.
+ * - They are **implicitly trusted**: they are Hunk's own code, so there is no
+ *   discovery, no trust prompt, and no `[extension.<id>]` config table.
+ * - They stay loaded under `--no-extensions` and `[extensions] enabled =
+ *   false`. Those switches exist to triage *user* extensions; losing jj or
+ *   Sapling support from a debugging flag would break real workflows.
+ *
+ * Failure isolation still applies — a throwing factory becomes a load issue
+ * rather than a crash — even though these factories are Hunk's own and that
+ * path should be unreachable.
+ *
+ * VCS backends are the only registration kind this tier uses today, and the
+ * only one consumed from here (`src/core/vcs` reads `getBundledVcsAdapters`).
+ * A bundled extension that registered a theme or a changeset transform would
+ * also have to be threaded through `applyExtensionRegistrations`, which today
+ * only sees the user-extension load result.
+ */
+
+interface BundledExtensionDefinition {
+  id: string;
+  factory: ExtensionFactory;
+}
+
+/**
+ * Every bundled extension, in load order.
+ *
+ * Load order only breaks ties: detection order comes from each adapter's
+ * `detectionPriority`, assembled in `src/core/vcs`.
+ */
+const BUNDLED_EXTENSIONS: readonly BundledExtensionDefinition[] = [
+  { id: "jj", factory: jjExtension },
+  { id: "sl", factory: slExtension },
+];
+
+/** Everything the bundled tier contributed, plus any factory that failed. */
+export interface BundledExtensionLoad {
+  registry: ExtensionRegistry;
+  issues: readonly ExtensionLoadIssue[];
+}
+
+let bundledLoad: BundledExtensionLoad | undefined;
+
+/**
+ * Build the bundled extension metadata for one definition.
+ *
+ * `sourcePath` names a module inside the binary rather than a file on disk, so
+ * notices keyed by it stay stable and never point at a path a user could edit.
+ */
+function bundledMetadata(id: string): ExtensionMetadata {
+  return { id, sourcePath: `hunk:bundled/${id}`, origin: "bundled" };
+}
+
+/**
+ * Load every bundled extension once per process, synchronously.
+ *
+ * Memoized because adapter resolution asks for it from config resolution, the
+ * static pager, watch planning, and the interactive app — all of which must see
+ * the same adapter identities.
+ */
+export function loadBundledExtensions(): BundledExtensionLoad {
+  if (bundledLoad) {
+    return bundledLoad;
+  }
+
+  const registry = createEmptyExtensionRegistry();
+  const issues: ExtensionLoadIssue[] = [];
+
+  for (const { id, factory } of BUNDLED_EXTENSIONS) {
+    // Bundled factories are synchronous by construction, so `runExtensionFactory`
+    // has fully applied (or rolled back) each one before it returns.
+    runExtensionFactory({ metadata: bundledMetadata(id), registry, issues, factory });
+  }
+
+  bundledLoad = { registry, issues };
+  return bundledLoad;
+}
+
+/** Return the VCS backends the bundled tier registered, in registration order. */
+export function getBundledVcsAdapters(): readonly VcsAdapter[] {
+  return loadBundledExtensions().registry.vcsAdapters.map((entry) => entry.adapter);
+}

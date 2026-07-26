@@ -123,7 +123,7 @@ function applyCommonOptions(command: Command) {
       "load an extension entry file or directory (repeatable)",
       collectRepeatedValue,
     )
-    .option("--no-extensions", "disable all extensions for this run");
+    .option("--no-extensions", "disable user extensions for this run");
 }
 
 /** Attach auto-refresh support to review commands that can reopen their source input. */
@@ -192,7 +192,7 @@ function renderCliHelp() {
     "  --transparent-bg / --no-transparent-bg  let terminal background show through Hunk surfaces",
     "  --theme <theme>                         named theme override",
     "  --extension <path>                      load an extension entry file or directory (repeatable)",
-    "  --no-extensions                         disable all extensions for this run",
+    "  --no-extensions                         disable user extensions for this run",
     "",
     "Git diff options:",
     "  --staged, --cached                      review staged changes",

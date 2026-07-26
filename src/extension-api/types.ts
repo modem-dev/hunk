@@ -201,6 +201,25 @@ export type ExtensionThemeConfig = NamedCustomThemeConfig;
 /* VCS adapters                                                                */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Detection priority of Hunk's core Git backend.
+ *
+ * Adapters are consulted highest priority first, so this is the baseline every
+ * other backend positions itself around. Hunk's bundled Jujutsu and Sapling
+ * backends deliberately register above it: a colocated jj or Sapling checkout
+ * also contains a `.git` directory, and must not be reviewed as plain Git.
+ */
+export const HUNK_CORE_VCS_DETECTION_PRIORITY = 0;
+
+/**
+ * Detection priority an adapter gets when it does not choose one.
+ *
+ * Below Git, so installing a backend never silently changes how an existing
+ * repository is reviewed. Set `detectionPriority` explicitly to sort above a
+ * built-in backend — it is your machine, so it is your call.
+ */
+export const HUNK_DEFAULT_VCS_DETECTION_PRIORITY = -100;
+
 /** What an adapter reports when it recognizes a directory. */
 export interface ExtensionVcsDetection {
   id: string;
@@ -213,12 +232,25 @@ export interface ExtensionVcsLoadContext {
   gitExecutable?: string;
 }
 
+/**
+ * The resolved review options an adapter may need to honor.
+ *
+ * A deliberately narrow window onto the same options object Hunk resolves from
+ * flags and config: an adapter sees the choices that change what a review
+ * *contains*, not the ones that decide how it is drawn.
+ */
+export interface ExtensionVcsReviewOptions {
+  /** True when the user asked for tracked changes only (`--exclude-untracked`). */
+  excludeUntracked?: boolean;
+}
+
 /** Working-tree review request, as extension adapters receive it. */
 export interface ExtensionVcsDiffInput {
   kind: "vcs";
   range?: string;
   staged: boolean;
   pathspecs?: string[];
+  options: ExtensionVcsReviewOptions;
 }
 
 /** Single-revision review request, as extension adapters receive it. */
@@ -226,12 +258,14 @@ export interface ExtensionVcsShowInput {
   kind: "show";
   ref?: string;
   pathspecs?: string[];
+  options: ExtensionVcsReviewOptions;
 }
 
 /** Stash review request, as extension adapters receive it. */
 export interface ExtensionVcsStashShowInput {
   kind: "stash-show";
   ref?: string;
+  options: ExtensionVcsReviewOptions;
 }
 
 /** The patch text one operation produced, plus how to label it in the UI. */
@@ -240,6 +274,56 @@ export interface ExtensionVcsPatchResult {
   sourceLabel: string;
   title: string;
   patchText: string;
+  /**
+   * Untracked files to review beside the patch, as repo-root-relative paths.
+   *
+   * Hunk synthesizes each one into an added-file diff from its current
+   * contents, skipping binaries and files too large to render, so an adapter
+   * only has to list the paths its VCS reports as untracked instead of
+   * fabricating patch text that VCS would never produce.
+   */
+  untrackedPaths?: string[];
+}
+
+/* -------------------------------------------------------------------------- */
+/* Watch capability                                                            */
+/* -------------------------------------------------------------------------- */
+
+/** What kind of state one watch target holds, used to group and explain targets. */
+export type ExtensionVcsWatchTargetSource = "content" | "sidecar" | "worktree" | "vcs-metadata";
+
+/** Watch exactly these files inside one directory. */
+export interface ExtensionVcsDirectoryEntriesWatchTarget {
+  kind: "directory-entries";
+  directory: string;
+  entries: string[];
+  sources: ExtensionVcsWatchTargetSource[];
+}
+
+/** Watch one directory recursively, minus the subtrees listed as noise. */
+export interface ExtensionVcsDirectoryTreeWatchTarget {
+  kind: "directory-tree";
+  directory: string;
+  ignoredRoots: string[];
+  sources: ExtensionVcsWatchTargetSource[];
+}
+
+export type ExtensionVcsWatchTarget =
+  | ExtensionVcsDirectoryEntriesWatchTarget
+  | ExtensionVcsDirectoryTreeWatchTarget;
+
+/**
+ * Where `--watch` looks for changes to the state one operation reviews.
+ *
+ * `hybrid` promises the targets cover that state, so Hunk reacts to filesystem
+ * events and only recomputes the signature when one fires. `poll-only` says
+ * they do not, and is also what an adapter without a `watchPlan` gets: Hunk
+ * then polls `watchSignature` on a timer, which still works but costs a
+ * subprocess per tick.
+ */
+export interface ExtensionVcsWatchPlan {
+  coverage: "hybrid" | "poll-only";
+  targets: ExtensionVcsWatchTarget[];
 }
 
 /** One review operation an adapter implements. */
@@ -247,6 +331,13 @@ export interface ExtensionVcsOperation<Input> {
   load(input: Input, context: ExtensionVcsLoadContext): Promise<ExtensionVcsPatchResult>;
   /** Optional cheap fingerprint of the reviewed state, for `--watch`. */
   watchSignature?: (input: Input, context: ExtensionVcsLoadContext) => string;
+  /**
+   * Optional filesystem targets `--watch` observes instead of polling.
+   *
+   * Leaving this out keeps the polling fallback, so it is a performance
+   * refinement rather than a requirement for watch support.
+   */
+  watchPlan?: (input: Input, context: ExtensionVcsLoadContext) => ExtensionVcsWatchPlan;
 }
 
 /**
@@ -273,6 +364,16 @@ export interface ExtensionVcsAdapter {
   name: string;
   detect(cwd: string): ExtensionVcsDetection | null;
   operations?: ExtensionVcsOperations;
+  /**
+   * Where this adapter sits in detection order; higher is consulted first.
+   *
+   * Detection still prefers the nearest checkout, so priority only decides
+   * which backend wins when several recognize the *same* directory — the
+   * colocated case, where one working copy carries two sets of markers.
+   * Defaults to `HUNK_DEFAULT_VCS_DETECTION_PRIORITY` (below Git), and equal
+   * priorities fall back to registration order.
+   */
+  detectionPriority?: number;
 }
 
 /* -------------------------------------------------------------------------- */

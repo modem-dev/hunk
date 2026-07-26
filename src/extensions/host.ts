@@ -1,24 +1,17 @@
 import { pathToFileURL } from "node:url";
 import { findVcsRepoRootCandidate } from "../core/vcs";
 import { createExtensionNotificationHub, type ExtensionNotificationHub } from "./notifications";
+import { describeError, readExtensionFactory, runExtensionFactory } from "./runExtension";
 import { resolveRepoTrust, type ExtensionTrustOptions, type ExtensionTrustState } from "./trust";
 import {
   createEmptyExtensionRegistry,
   createExtensionContext,
-  HUNK_EXTENSION_API_VERSION,
-  type ChangesetTransform,
   type ExtensionCandidate,
-  type ExtensionEventHandler,
-  type ExtensionEventName,
+  type ExtensionFactory,
   type ExtensionLoadIssue,
   type ExtensionLoadResult,
   type ExtensionMetadata,
-  type ExtensionRegistry,
-  type ExtensionThemeConfig,
-  type ExtensionVcsAdapter,
-  type HunkExtensionAPI,
 } from "./types";
-import type { VcsAdapter } from "../core/vcs/types";
 
 export interface LoadExtensionsOptions {
   candidates: readonly ExtensionCandidate[];
@@ -45,200 +38,6 @@ async function importExtensionModule(path: string): Promise<unknown> {
   return await import(pathToFileURL(path).href);
 }
 
-/** Read an error's message without assuming extensions throw `Error` instances. */
-function describeError(error: unknown) {
-  if (error instanceof Error) {
-    return error.message || error.name;
-  }
-
-  return String(error);
-}
-
-/** Pull the default export factory out of an imported extension module. */
-function readExtensionFactory(module: unknown) {
-  const candidate = (module as { default?: unknown } | null)?.default;
-  if (typeof candidate !== "function") {
-    throw new Error("Extension must default-export a function that receives the Hunk API.");
-  }
-
-  return candidate as (hunk: HunkExtensionAPI) => void | Promise<void>;
-}
-
-/** Normalize a registered file extension to Pierre's dotless, lowercased form. */
-function normalizeFileExtension(extension: string) {
-  const normalized = extension.trim().replace(/^\.+/, "").toLowerCase();
-  if (normalized.length === 0) {
-    throw new Error("registerFileLanguage requires a non-empty file extension.");
-  }
-
-  return normalized;
-}
-
-/** Reject registrations that would leave the registry holding unusable entries. */
-function assertNonEmptyString(value: unknown, message: string) {
-  if (typeof value !== "string" || value.trim().length === 0) {
-    throw new Error(message);
-  }
-
-  return value;
-}
-
-/** Report whether one value is a plain object rather than an array or null. */
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-/**
- * Accept the public adapter shape as the internal one.
- *
- * The published surface leaves `operations` optional, and Hunk's internal
- * adapter type requires it, so an adapter registered without operations gets an
- * empty map here. That is the conversion boundary: everything downstream —
- * detection, operation lookup, the unsupported-operation error — can then rely
- * on the map existing instead of guarding a value only a JS extension can omit.
- */
-function toInternalVcsAdapter(adapter: ExtensionVcsAdapter): VcsAdapter {
-  const operations = adapter.operations;
-  if (operations !== undefined && !isPlainObject(operations)) {
-    throw new Error("registerVcsAdapter requires operations to be an object of review operations.");
-  }
-
-  return { ...adapter, operations: operations ?? {} };
-}
-
-interface ExtensionApiHandle {
-  api: HunkExtensionAPI;
-  /** Invalidate the API so deferred callbacks cannot mutate the registry later. */
-  seal: () => void;
-}
-
-/** Registration counts captured before one extension runs, for failure rollback. */
-interface RegistrySnapshot {
-  themes: number;
-  fileLanguages: number;
-  vcsAdapters: number;
-  changesetTransforms: number;
-  eventHandlers: Record<string, number>;
-}
-
-/** Capture how much each registration list already holds. */
-function snapshotRegistry(registry: ExtensionRegistry): RegistrySnapshot {
-  const eventHandlers: Record<string, number> = {};
-  for (const [event, handlers] of Object.entries(registry.eventHandlers)) {
-    eventHandlers[event] = handlers.length;
-  }
-
-  return {
-    themes: registry.themes.length,
-    fileLanguages: registry.fileLanguages.length,
-    vcsAdapters: registry.vcsAdapters.length,
-    changesetTransforms: registry.changesetTransforms.length,
-    eventHandlers,
-  };
-}
-
-/**
- * Drop registrations made before an extension threw.
- *
- * A factory that fails halfway is not loaded, so its partial contributions must
- * not stay in the registry. Collected logs are kept as failure diagnostics.
- */
-function rollbackRegistry(registry: ExtensionRegistry, snapshot: RegistrySnapshot) {
-  registry.themes.length = snapshot.themes;
-  registry.fileLanguages.length = snapshot.fileLanguages;
-  registry.vcsAdapters.length = snapshot.vcsAdapters;
-  registry.changesetTransforms.length = snapshot.changesetTransforms;
-  for (const [event, handlers] of Object.entries(registry.eventHandlers)) {
-    handlers.length = snapshot.eventHandlers[event] ?? 0;
-  }
-}
-
-/**
- * Build the capability object for one extension.
- *
- * Every registration writes straight into the shared registry, tagged with the
- * owning extension id, and stops working once the factory has returned.
- */
-function createExtensionApi(
-  metadata: ExtensionMetadata,
-  registry: ExtensionRegistry,
-  config: Record<string, unknown>,
-): ExtensionApiHandle {
-  let sealed = false;
-
-  /** Guard one registration call against use after the load pass finished. */
-  const assertOpen = (method: string) => {
-    if (sealed) {
-      throw new Error(
-        `${metadata.id}: hunk.${method}() can only be called while the extension is loading.`,
-      );
-    }
-  };
-
-  const api: HunkExtensionAPI = {
-    apiVersion: HUNK_EXTENSION_API_VERSION,
-    config,
-    registerTheme(theme: ExtensionThemeConfig) {
-      assertOpen("registerTheme");
-      assertNonEmptyString(theme?.id, "registerTheme requires a theme with a non-empty id.");
-      registry.themes.push({ extensionId: metadata.id, theme });
-    },
-    registerFileLanguage(extension: string, language: string) {
-      assertOpen("registerFileLanguage");
-      assertNonEmptyString(language, "registerFileLanguage requires a non-empty language.");
-      registry.fileLanguages.push({
-        extensionId: metadata.id,
-        extension: normalizeFileExtension(extension),
-        language,
-      });
-    },
-    registerVcsAdapter(adapter: ExtensionVcsAdapter) {
-      assertOpen("registerVcsAdapter");
-      assertNonEmptyString(adapter?.id, "registerVcsAdapter requires an adapter with an id.");
-      assertNonEmptyString(adapter?.name, "registerVcsAdapter requires an adapter with a name.");
-      if (typeof adapter.detect !== "function") {
-        throw new Error("registerVcsAdapter requires an adapter with a detect() function.");
-      }
-
-      registry.vcsAdapters.push({
-        extensionId: metadata.id,
-        adapter: toInternalVcsAdapter(adapter),
-      });
-    },
-    transformChangeset(fn: ChangesetTransform) {
-      assertOpen("transformChangeset");
-      if (typeof fn !== "function") {
-        throw new Error("transformChangeset requires a function.");
-      }
-
-      registry.changesetTransforms.push({ extensionId: metadata.id, transform: fn });
-    },
-    on<Event extends ExtensionEventName>(event: Event, handler: ExtensionEventHandler<Event>) {
-      assertOpen("on");
-      const handlers = registry.eventHandlers[event];
-      if (!handlers) {
-        throw new Error(`Unknown Hunk extension event: ${String(event)}`);
-      }
-      if (typeof handler !== "function") {
-        throw new Error(`on("${String(event)}") requires a handler function.`);
-      }
-
-      handlers.push({ extensionId: metadata.id, handler });
-    },
-    log(message: string) {
-      // Logs are collected rather than printed: the TUI owns the terminal.
-      registry.logs.push({ extensionId: metadata.id, message: String(message) });
-    },
-  };
-
-  return {
-    api,
-    seal: () => {
-      sealed = true;
-    },
-  };
-}
-
 /**
  * Load every discovered extension into one registry.
  *
@@ -251,7 +50,6 @@ function createExtensionApi(
 export async function loadExtensions(options: LoadExtensionsOptions): Promise<ExtensionLoadResult> {
   const registry = createEmptyExtensionRegistry();
   const issues: ExtensionLoadIssue[] = [];
-  const loaded: ExtensionMetadata[] = [];
   const importModule = options.importExtensionModuleImpl ?? importExtensionModule;
   const resolveTrust = options.resolveRepoTrustImpl ?? resolveRepoTrust;
   const trustOptions: ExtensionTrustOptions = { env: options.env };
@@ -288,34 +86,36 @@ export async function loadExtensions(options: LoadExtensionsOptions): Promise<Ex
       sourcePath: candidate.path,
       origin: candidate.origin,
     };
-    const { api, seal } = createExtensionApi(
-      metadata,
-      registry,
-      options.extensionConfigs?.[candidate.id] ?? {},
-    );
-
-    const snapshot = snapshotRegistry(registry);
-
+    let factory: ExtensionFactory;
     try {
-      const factory = readExtensionFactory(await importModule(candidate.path));
-      await factory(api);
-      registry.extensions.push(metadata);
-      loaded.push(metadata);
+      // Importing is the host's half of loading: it is the part that differs
+      // from the bundled tier, which has its factories statically in hand.
+      factory = readExtensionFactory(await importModule(candidate.path));
     } catch (error) {
-      rollbackRegistry(registry, snapshot);
       issues.push({
         extensionId: candidate.id,
         path: candidate.path,
         origin: candidate.origin,
         message: describeError(error),
       });
-    } finally {
-      seal();
+      continue;
     }
+
+    await runExtensionFactory({
+      metadata,
+      registry,
+      issues,
+      factory,
+      config: options.extensionConfigs?.[candidate.id],
+    });
   }
 
   const notifications = options.notifications ?? createExtensionNotificationHub();
   const context = createExtensionContext(options.cwd, notifications.notify);
+  // `registry.extensions` already holds exactly the extensions whose factories
+  // completed, in load order, so the loaded list is a copy of it rather than a
+  // second tally that could drift.
+  const loaded = [...registry.extensions];
   return pendingTrustRepoRoot
     ? { registry, issues, loaded, context, notifications, pendingTrustRepoRoot }
     : { registry, issues, loaded, context, notifications };

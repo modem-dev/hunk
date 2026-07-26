@@ -3,6 +3,7 @@ import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildJjDiffArgs, runJjText } from "./jj";
+import type { VcsDiffCommandInput } from "./types";
 
 const tempDirs: string[] = [];
 // Windows subprocess setup can exceed Bun's default 5s timeout while generating enough jj changes.
@@ -15,6 +16,11 @@ function cleanupTempDirs() {
       rmSync(dir, { recursive: true, force: true });
     }
   }
+}
+
+/** Build one working-tree review input for the jj command helpers. */
+function diffInput(overrides: Partial<VcsDiffCommandInput> = {}): VcsDiffCommandInput {
+  return { kind: "vcs", staged: false, options: { mode: "auto", vcs: "jj" }, ...overrides };
 }
 
 function createTempDir(prefix: string) {
@@ -89,11 +95,7 @@ describe("jj command helpers", () => {
   test("reports a friendly error when jj is not installed or not on PATH", () => {
     expect(() =>
       runJjText({
-        input: {
-          kind: "vcs",
-          staged: false,
-          options: { mode: "auto", vcs: "jj" },
-        },
+        input: diffInput(),
         args: ["root"],
         jjExecutable: "definitely-not-a-real-jj-binary",
       }),
@@ -107,11 +109,7 @@ describe("jj command helpers", () => {
 
     expect(() =>
       runJjText({
-        input: {
-          kind: "vcs",
-          staged: false,
-          options: { mode: "auto", vcs: "jj" },
-        },
+        input: diffInput(),
         args: ["root"],
         cwd: dir,
       }),
@@ -120,12 +118,7 @@ describe("jj command helpers", () => {
 
   jjTest("reports a friendly error for invalid revsets", () => {
     const dir = createTempJjRepo("hunk-jj-invalid-revset-");
-    const input = {
-      kind: "vcs" as const,
-      range: "missing_revision",
-      staged: false,
-      options: { mode: "auto" as const, vcs: "jj" as const },
-    };
+    const input = diffInput({ range: "missing_revision" });
 
     expect(() =>
       runJjText({
@@ -155,12 +148,7 @@ describe("jj command helpers", () => {
         throw new Error("Expected generated jj changes to include an ambiguous prefix.");
       }
 
-      const input = {
-        kind: "vcs" as const,
-        range: prefix,
-        staged: false,
-        options: { mode: "auto" as const, vcs: "jj" as const },
-      };
+      const input = diffInput({ range: prefix });
 
       expect(() =>
         runJjText({

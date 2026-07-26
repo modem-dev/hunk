@@ -2,6 +2,7 @@ import fs from "node:fs";
 import { resolve } from "node:path";
 import { createVcsWatchSignature, getConfiguredVcsAdapter, operationFromInput } from "./vcs";
 import type { CliInput } from "./types";
+import type { VcsAdapter } from "./vcs/types";
 
 /** Return whether the current input can be rebuilt from files or VCS state without rereading stdin. */
 export function canReloadInput(input: CliInput) {
@@ -27,7 +28,7 @@ function vcsPatchSignature(
   input: Extract<CliInput, { kind: "vcs" | "show" | "stash-show" }>,
   context: WatchSignatureContext,
 ) {
-  const adapter = getConfiguredVcsAdapter(input.options.vcs);
+  const adapter = getConfiguredVcsAdapter(input.options.vcs, context.vcsAdapters);
   const operation = operationFromInput(input);
   return createVcsWatchSignature(adapter, operation, context);
 }
@@ -35,6 +36,8 @@ function vcsPatchSignature(
 export interface WatchSignatureContext {
   cwd: string;
   gitExecutable?: string;
+  /** Extension-contributed adapters, so a watched review keeps its own backend. */
+  vcsAdapters?: readonly VcsAdapter[];
 }
 
 /** Compute a change-detection signature relative to the source's stable load context. */

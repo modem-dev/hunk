@@ -3,7 +3,15 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import { platform, tmpdir } from "node:os";
 import { join } from "node:path";
 import { JjVcsAdapter } from "./jj";
-import type { VcsShowCommandInput, VcsDiffCommandInput } from "../types";
+import type {
+  ExtensionVcsOperations,
+  ExtensionVcsShowInput,
+  ExtensionVcsDiffInput,
+} from "../../extension-api/types";
+
+// The adapter is written against the published contract, so the tests read it
+// through that contract too — including the operations an adapter may omit.
+const jjOperations: ExtensionVcsOperations = JjVcsAdapter.operations;
 
 const tempDirs: string[] = [];
 const JjAdapterIntegrationTestTimeoutMs = 20_000;
@@ -90,8 +98,8 @@ describe("JjVcsAdapter", () => {
       const diffInput = {
         kind: "vcs",
         staged: false,
-        options: { vcs: "jj" },
-      } satisfies VcsDiffCommandInput;
+        options: {},
+      } satisfies ExtensionVcsDiffInput;
       const diffResult = await JjVcsAdapter.operations["working-tree-diff"]!.load(diffInput, {
         cwd: repo,
       });
@@ -100,13 +108,12 @@ describe("JjVcsAdapter", () => {
       expect(diffResult.title).toContain("working copy");
       expect(diffResult.patchText).toContain("diff --git a/file.txt b/file.txt");
       expect(diffResult.patchText).toContain("+two");
-      expect(diffResult.sourceFetcherBuilder).toBeUndefined();
 
       const showInput = {
         kind: "show",
         ref: "@",
-        options: { vcs: "jj" },
-      } satisfies VcsShowCommandInput;
+        options: {},
+      } satisfies ExtensionVcsShowInput;
       const showResult = await JjVcsAdapter.operations["revision-show"]!.load(showInput, {
         cwd: repo,
       });
@@ -130,12 +137,12 @@ describe("JjVcsAdapter", () => {
       const stagedInput = {
         kind: "vcs",
         staged: true,
-        options: { vcs: "jj" },
-      } satisfies VcsDiffCommandInput;
+        options: {},
+      } satisfies ExtensionVcsDiffInput;
       await expect(
         JjVcsAdapter.operations["working-tree-diff"]!.load(stagedInput, { cwd: repo }),
       ).rejects.toThrow("Jujutsu has no staging area");
-      expect(JjVcsAdapter.operations["stash-show"]).toBeUndefined();
+      expect(jjOperations["stash-show"]).toBeUndefined();
     },
     JjAdapterIntegrationTestTimeoutMs,
   );
@@ -160,14 +167,14 @@ describe("JjVcsAdapter without the jj binary", () => {
     const stagedInput = {
       kind: "vcs",
       staged: true,
-      options: { vcs: "jj" },
-    } satisfies VcsDiffCommandInput;
+      options: {},
+    } satisfies ExtensionVcsDiffInput;
     await expect(
       JjVcsAdapter.operations["working-tree-diff"]!.load(stagedInput, { cwd: tmpdir() }),
     ).rejects.toThrow("Jujutsu has no staging area");
   });
 
   test("does not expose a stash-show operation", () => {
-    expect(JjVcsAdapter.operations["stash-show"]).toBeUndefined();
+    expect(jjOperations["stash-show"]).toBeUndefined();
   });
 });

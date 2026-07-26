@@ -7,9 +7,19 @@ import {
   listSlUntrackedFiles,
   resolveSlRepoRoot,
   runSlText,
-} from "../sl";
-import type { VcsAdapter } from "./types";
-import { buildFilesystemUntrackedDiffFile } from "./untracked";
+} from "../../core/sl";
+import {
+  HUNK_CORE_VCS_DETECTION_PRIORITY,
+  type ExtensionVcsAdapter,
+  type HunkExtensionAPI,
+} from "../../extension-api/types";
+
+/**
+ * Hunk's Sapling backend, as a bundled extension.
+ *
+ * Like the Jujutsu one, this file sees only the published contract plus its own
+ * helpers in `src/core/sl.ts`.
+ */
 
 /** Return the last path segment for review titles. */
 function basename(path: string) {
@@ -56,10 +66,13 @@ function statSignature(path: string) {
 }
 
 /** VCS adapter translating neutral review operations to Sapling commands. */
-export const SaplingVcsAdapter: VcsAdapter = {
+export const SaplingVcsAdapter = {
   id: "sl",
   name: "Sapling",
   detect: detectSlRepo,
+  // Above Git for the same reason Jujutsu is: `sl init --git` leaves Git
+  // metadata behind, and the Sapling working copy is the one under review.
+  detectionPriority: HUNK_CORE_VCS_DETECTION_PRIORITY + 100,
   operations: {
     "working-tree-diff": {
       async load(input, { cwd }) {
@@ -73,9 +86,7 @@ export const SaplingVcsAdapter: VcsAdapter = {
           sourceLabel: repoRoot,
           title: input.range ? `${repoName} ${input.range}` : `${repoName} working copy`,
           patchText: runSlText({ input, args: buildSlDiffArgs(input), cwd }),
-          extraFiles: listSlUntrackedFiles(input, { cwd, repoRoot }).map((filePath, index) =>
-            buildFilesystemUntrackedDiffFile(repoRoot, filePath, index, repoRoot),
-          ),
+          untrackedPaths: listSlUntrackedFiles(input, { cwd, repoRoot }),
         };
       },
       watchSignature(input, { cwd }) {
@@ -104,4 +115,8 @@ export const SaplingVcsAdapter: VcsAdapter = {
       },
     },
   },
-};
+} satisfies ExtensionVcsAdapter;
+
+export default function (hunk: HunkExtensionAPI) {
+  hunk.registerVcsAdapter(SaplingVcsAdapter);
+}

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { computeWatchSignature } from "./watch";
 import type { CliInput } from "./types";
+import type { VcsAdapter } from "./vcs/types";
 
 const tempDirs: string[] = [];
 
@@ -134,6 +135,34 @@ describe("computeWatchSignature", () => {
     );
 
     expect(changedSignature).toEqual(initialSignature);
+  });
+
+  test("signs a review through an extension adapter threaded into the context", () => {
+    const adapter: VcsAdapter = {
+      id: "hg",
+      name: "Mercurial",
+      detect: () => null,
+      operations: {
+        "working-tree-diff": {
+          load: async () => ({
+            repoRoot: "/repo",
+            sourceLabel: "/repo",
+            title: "hg",
+            patchText: "",
+          }),
+          watchSignature: (input) => `hg:${input.range ?? "working-copy"}`,
+        },
+      },
+    };
+    const input = {
+      kind: "vcs",
+      staged: false,
+      options: { mode: "auto", vcs: "hg" },
+    } satisfies CliInput;
+
+    expect(computeWatchSignature(input, { cwd: process.cwd(), vcsAdapters: [adapter] })).toBe(
+      "vcs\n---\nhg:working-copy",
+    );
   });
 
   test("rejects unsupported watch operations before invoking adapter signatures", () => {

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { posix, win32 } from "node:path";
 import { resolveWatchPlan } from "./watchPlan";
 import type { CliInput } from "./types";
+import type { VcsAdapter } from "./vcs/types";
 
 const cwd = posix.join("/", "workspace", "review");
 
@@ -193,6 +194,8 @@ describe("resolveWatchPlan", () => {
   });
 
   test("uses poll-only plans for adapters without event targets and adds file sidecars", () => {
+    // `jj` resolves through the bundled extension tier: if watch planning did
+    // not see bundled adapters, this would fail with "Unsupported VCS: jj".
     const vcsInput = { kind: "vcs", staged: false, options: { vcs: "jj" } } satisfies CliInput;
     const showInput = {
       kind: "show",
@@ -206,6 +209,51 @@ describe("resolveWatchPlan", () => {
     expect(resolveWatchPlan(showInput, { cwd, platform: "linux" })).toEqual({
       coverage: "hybrid",
       targets: [entries(cwd, [posix.join(cwd, "agent.json")], ["sidecar"])],
+    });
+  });
+
+  test("plans through an extension adapter's watch capability", () => {
+    const target = {
+      kind: "directory-tree" as const,
+      directory: posix.join(cwd, ".hg"),
+      ignoredRoots: [],
+      sources: ["vcs-metadata" as const],
+    };
+    const adapter: VcsAdapter = {
+      id: "hg",
+      name: "Mercurial",
+      detect: () => null,
+      operations: {
+        "working-tree-diff": {
+          load: async () => ({ repoRoot: cwd, sourceLabel: cwd, title: "hg", patchText: "" }),
+          watchPlan: () => ({ coverage: "hybrid", targets: [target] }),
+        },
+      },
+    };
+    const input = { kind: "vcs", staged: false, options: { vcs: "hg" } } satisfies CliInput;
+
+    expect(resolveWatchPlan(input, { cwd, platform: "linux", vcsAdapters: [adapter] })).toEqual({
+      coverage: "hybrid",
+      targets: [target],
+    });
+  });
+
+  test("keeps the polling fallback for an extension adapter with no watch plan", () => {
+    const adapter: VcsAdapter = {
+      id: "hg",
+      name: "Mercurial",
+      detect: () => null,
+      operations: {
+        "working-tree-diff": {
+          load: async () => ({ repoRoot: cwd, sourceLabel: cwd, title: "hg", patchText: "" }),
+        },
+      },
+    };
+    const input = { kind: "vcs", staged: false, options: { vcs: "hg" } } satisfies CliInput;
+
+    expect(resolveWatchPlan(input, { cwd, platform: "linux", vcsAdapters: [adapter] })).toEqual({
+      coverage: "poll-only",
+      targets: [],
     });
   });
 

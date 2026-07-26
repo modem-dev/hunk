@@ -3,6 +3,7 @@ import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildSlDiffArgs, runSlText } from "./sl";
+import type { VcsDiffCommandInput } from "./types";
 
 const slAvailable = (() => {
   try {
@@ -23,6 +24,11 @@ function cleanupTempDirs() {
       rmSync(dir, { recursive: true, force: true });
     }
   }
+}
+
+/** Build one working-tree review input for the sl command helpers. */
+function diffInput(overrides: Partial<VcsDiffCommandInput> = {}): VcsDiffCommandInput {
+  return { kind: "vcs", staged: false, options: { mode: "auto", vcs: "sl" }, ...overrides };
 }
 
 function createTempDir(prefix: string) {
@@ -62,11 +68,7 @@ describe("sl command helpers", () => {
   test("reports a friendly error when sl is not installed or not on PATH", () => {
     expect(() =>
       runSlText({
-        input: {
-          kind: "vcs",
-          staged: false,
-          options: { mode: "auto", vcs: "sl" },
-        },
+        input: diffInput(),
         args: ["root"],
         slExecutable: "definitely-not-a-real-sl-binary",
       }),
@@ -80,11 +82,7 @@ describe("sl command helpers", () => {
 
     expect(() =>
       runSlText({
-        input: {
-          kind: "vcs",
-          staged: false,
-          options: { mode: "auto", vcs: "sl" },
-        },
+        input: diffInput(),
         args: ["root"],
         cwd: dir,
       }),
@@ -93,12 +91,7 @@ describe("sl command helpers", () => {
 
   test.skipIf(!slAvailable)("reports a friendly error for invalid revsets", () => {
     const dir = createTempSlRepo("hunk-sl-invalid-revset-");
-    const input = {
-      kind: "vcs" as const,
-      range: "missing_revision",
-      staged: false,
-      options: { mode: "auto" as const, vcs: "sl" as const },
-    };
+    const input = diffInput({ range: "missing_revision" });
 
     expect(() =>
       runSlText({

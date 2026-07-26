@@ -2,9 +2,16 @@ import type { FileDiffMetadata } from "@pierre/diffs";
 // Type-only import; the extension types depend on this module in turn, and
 // `import type` keeps that relationship out of the runtime module graph.
 import type { ExtensionLoadResult } from "../extensions/types";
-import type { AgentFileContext, NamedCustomThemeConfig } from "../extension-api/types";
+import type {
+  AgentFileContext,
+  ExtensionVcsDiffInput,
+  ExtensionVcsShowInput,
+  ExtensionVcsStashShowInput,
+  NamedCustomThemeConfig,
+} from "../extension-api/types";
 import type { FileSourceFetcher } from "./fileSource";
 import type { StartupNotice } from "./startupNotice";
+import type { VcsAdapter } from "./vcs/types";
 
 /**
  * Shapes that are simultaneously internal model types and part of the published
@@ -97,7 +104,7 @@ export interface CommonOptions {
   promptSaveViewPreferences?: boolean;
   transparentBackground?: boolean;
   colorMoved?: boolean;
-  /** False only when `--no-extensions` disables extension loading for this run. */
+  /** False only when `--no-extensions` disables user extension loading for this run. */
   extensions?: boolean;
   /** Entry paths from repeated `--extension` flags, for development and testing. */
   extensionPaths?: string[];
@@ -105,7 +112,13 @@ export interface CommonOptions {
 
 /** Resolved `[extensions]` and `[extension.<id>]` configuration for one invocation. */
 export interface ExtensionsConfig {
-  /** False when `--no-extensions` or `[extensions] enabled = false` disables loading. */
+  /**
+   * False when `--no-extensions` or `[extensions] enabled = false` disables loading.
+   *
+   * Scoped to user extensions. Hunk's bundled tier — the Jujutsu and Sapling
+   * backends — always loads: these switches exist to triage extensions you
+   * installed, not to drop VCS support.
+   */
   enabled: boolean;
   /** Explicit entry paths from the user config layer. */
   paths: string[];
@@ -265,24 +278,21 @@ export type SessionCommandInput =
   | SessionCommentRemoveCommandInput
   | SessionCommentClearCommandInput;
 
-export interface VcsDiffCommandInput {
-  kind: "vcs";
-  range?: string;
-  staged: boolean;
-  pathspecs?: string[];
+/**
+ * Review requests extend the published input views rather than restating them,
+ * so an adapter written against the extension contract accepts the exact values
+ * Hunk's commands produce. `options` is the internal half: resolved CLI and
+ * config state that no adapter — bundled or third-party — needs to see.
+ */
+export interface VcsDiffCommandInput extends ExtensionVcsDiffInput {
   options: CommonOptions;
 }
 
-export interface VcsShowCommandInput {
-  kind: "show";
-  ref?: string;
-  pathspecs?: string[];
+export interface VcsShowCommandInput extends ExtensionVcsShowInput {
   options: CommonOptions;
 }
 
-export interface VcsStashShowCommandInput {
-  kind: "stash-show";
-  ref?: string;
+export interface VcsStashShowCommandInput extends ExtensionVcsStashShowInput {
   options: CommonOptions;
 }
 
@@ -343,6 +353,15 @@ export interface ReloadContext {
   cwd: string;
   repoRoot?: string;
   initialWatchSignature?: string;
+  /**
+   * Extension-contributed VCS backends this session loaded its review through.
+   *
+   * Watch planning and signatures re-resolve the adapter from the input's
+   * configured VCS id, so they need the same adapter set the changeset came
+   * from — otherwise a review backed by an extension backend could not be
+   * watched at all.
+   */
+  vcsAdapters?: readonly VcsAdapter[];
 }
 
 export interface AppBootstrap {

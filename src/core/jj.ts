@@ -1,8 +1,8 @@
 import { HunkUserError } from "./errors";
-import type { VcsDiffCommandInput, VcsShowCommandInput } from "./types";
+import type { ExtensionVcsDiffInput, ExtensionVcsShowInput } from "../extension-api/types";
 import { normalizePathForOS } from "../lib/osPath";
 
-export type JjBackedInput = VcsDiffCommandInput | VcsShowCommandInput;
+export type JjBackedInput = ExtensionVcsDiffInput | ExtensionVcsShowInput;
 
 export interface RunJjTextOptions {
   input: JjBackedInput;
@@ -21,7 +21,7 @@ function appendJjFilesets(args: string[], pathspecs?: string[]) {
 }
 
 /** Build the `jj diff --git` arguments for working-copy and revset reviews. */
-export function buildJjDiffArgs(input: VcsDiffCommandInput) {
+export function buildJjDiffArgs(input: ExtensionVcsDiffInput) {
   const args = ["diff", "--git"];
 
   if (input.range) {
@@ -33,7 +33,7 @@ export function buildJjDiffArgs(input: VcsDiffCommandInput) {
 }
 
 /** Build the `jj diff --git -r` arguments used for `hunk show` in Jujutsu mode. */
-export function buildJjShowArgs(input: VcsShowCommandInput) {
+export function buildJjShowArgs(input: ExtensionVcsShowInput) {
   const args = ["diff", "--git", "-r", input.ref ?? "@"];
 
   appendJjFilesets(args, input.pathspecs);
@@ -96,7 +96,7 @@ function createMissingJjRepoError(input: JjBackedInput) {
   );
 }
 
-export function createJjStagedError(input: VcsDiffCommandInput) {
+export function createJjStagedError(input: ExtensionVcsDiffInput) {
   return new HunkUserError(
     `\`${formatJjCommandLabel(input)}\` requires Git VCS mode because Jujutsu has no staging area.`,
     ['Remove `--staged`, or set `vcs = "git"` in Hunk config.'],

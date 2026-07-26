@@ -238,8 +238,8 @@ pager = hunk pager
 
 Hunk loads plain TypeScript extensions from `~/.config/hunk/extensions/`, from a
 repository's `.hunk/extensions/` (after you explicitly trust that repository),
-and from `--extension <path>` for development. `--no-extensions` turns them all
-off for one run.
+and from `--extension <path>` for development. `--no-extensions` turns those off
+for one run; Hunk's own bundled backends (Jujutsu and Sapling) stay loaded.
 
 A Phase 1 extension can contribute themes and file-extension → language
 mappings, add a VCS backend, rewrite the changeset before review (collapse

@@ -4,7 +4,12 @@ import {
   createExtensionApplyNotices,
   resolveExtensionDetectedVcsId,
 } from "../extensions/apply";
-import { loadStartupExtensions, mergeStartupNotices } from "../extensions/startup";
+import { loadBundledExtensions } from "../extensions/bundled";
+import {
+  createExtensionLoadNotices,
+  loadStartupExtensions,
+  mergeStartupNotices,
+} from "../extensions/startup";
 import { resolveConfiguredCliInput } from "./config";
 import { collectSessionCustomThemes } from "./customThemes";
 import { HunkUserError } from "./errors";
@@ -306,14 +311,20 @@ export async function prepareStartupPlan(
     bootstrap.changeset,
   );
 
+  // Bundled extensions load with the VCS adapters, well before this point, so a
+  // failure there is reported here rather than lost. It should be unreachable —
+  // these factories are Hunk's own — but the isolation contract is the contract.
+  const bundledNotices = createExtensionLoadNotices(loadBundledExtensions().issues);
+
   bootstrap.initialThemeMode = initialThemeMode ?? bootstrap.initialThemeMode;
   bootstrap.startupNotices = mergeStartupNotices(
     // Keep the resolved array identity when extensions contributed no theme notices.
-    sessionThemes.notices.length > 0 || applied.issues.length > 0
+    sessionThemes.notices.length > 0 || applied.issues.length > 0 || bundledNotices.length > 0
       ? [
           ...(configured.startupNotices ?? []),
           ...sessionThemes.notices,
           ...createExtensionApplyNotices(applied.issues),
+          ...bundledNotices,
         ]
       : configured.startupNotices,
     extensionResult,

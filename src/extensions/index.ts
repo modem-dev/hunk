@@ -9,6 +9,7 @@ export {
   type AppliedExtensionRegistrations,
   type ExtensionApplyIssue,
 } from "./apply";
+export { getBundledVcsAdapters, loadBundledExtensions, type BundledExtensionLoad } from "./bundled";
 export { discoverExtensions, type DiscoverExtensionsOptions } from "./discovery";
 export {
   emitExtensionEvent,
@@ -22,6 +23,11 @@ export {
   type ExtensionNotificationHub,
   type ExtensionNotificationListener,
 } from "./notifications";
+export {
+  createExtensionApi,
+  runExtensionFactory,
+  type RunExtensionFactoryOptions,
+} from "./runExtension";
 export {
   createExtensionLoadNotices,
   loadStartupExtensions,

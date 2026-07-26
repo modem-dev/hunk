@@ -15,7 +15,11 @@
  * to keep stable for the declared `apiVersion`, and everything is declared in
  * `./types` so the published declarations stay free of Hunk internals.
  */
-export { HUNK_EXTENSION_API_VERSION } from "./types";
+export {
+  HUNK_CORE_VCS_DETECTION_PRIORITY,
+  HUNK_DEFAULT_VCS_DETECTION_PRIORITY,
+  HUNK_EXTENSION_API_VERSION,
+} from "./types";
 export type {
   AgentAnnotation,
   AgentFileContext,
@@ -35,12 +39,18 @@ export type {
   ExtensionVcsAdapter,
   ExtensionVcsDetection,
   ExtensionVcsDiffInput,
+  ExtensionVcsDirectoryEntriesWatchTarget,
+  ExtensionVcsDirectoryTreeWatchTarget,
   ExtensionVcsLoadContext,
   ExtensionVcsOperation,
   ExtensionVcsOperations,
   ExtensionVcsPatchResult,
+  ExtensionVcsReviewOptions,
   ExtensionVcsShowInput,
   ExtensionVcsStashShowInput,
+  ExtensionVcsWatchPlan,
+  ExtensionVcsWatchTarget,
+  ExtensionVcsWatchTargetSource,
   HunkExtensionAPI,
   HunkExtensionApiVersion,
   NamedCustomThemeConfig,

@@ -34,8 +34,14 @@ export type {
   SessionReloadReason,
 } from "../extension-api/types";
 
-/** Where one extension entry file came from, which decides its trust posture. */
-export type ExtensionOrigin = "global" | "repo" | "config" | "flag";
+/**
+ * Where one extension came from, which decides its trust posture.
+ *
+ * `bundled` is Hunk's own compiled-in tier (`src/extensions/bundled/`): no
+ * discovery, no trust prompt, and never disabled by `--no-extensions`. Every
+ * other origin is a user extension loaded from disk.
+ */
+export type ExtensionOrigin = "bundled" | "global" | "repo" | "config" | "flag";
 
 /** Sink the host routes `ctx.notify` through; the UI supplies a real toast later. */
 export type ExtensionNotifySink = (message: string, type: ExtensionNotifyType) => void;

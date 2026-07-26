@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { SourceTextTooLargeError } from "./fileSource";
 import { loadAppBootstrap } from "./loaders";
 import type { CliInput } from "./types";
+import type { VcsAdapter } from "./vcs/types";
 import { computeWatchSignature } from "./watch";
 
 const tempDirs: string[] = [];
@@ -174,6 +175,41 @@ afterEach(() => {
 });
 
 describe("loadAppBootstrap", () => {
+  test("synthesizes untracked file diffs an adapter reported by path", async () => {
+    const dir = createTempDir("hunk-adapter-untracked-");
+    writeFileSync(join(dir, "note.txt"), "hello\n");
+
+    // The published contract lets an adapter list untracked paths instead of
+    // fabricating patch text, so this exercises the host half of that deal.
+    const adapter: VcsAdapter = {
+      id: "demo",
+      name: "Demo VCS",
+      detect: () => null,
+      operations: {
+        "working-tree-diff": {
+          load: async () => ({
+            repoRoot: dir,
+            sourceLabel: dir,
+            title: "demo working copy",
+            patchText: "",
+            untrackedPaths: ["note.txt"],
+          }),
+        },
+      },
+    };
+
+    const bootstrap = await loadAppBootstrap(
+      { kind: "vcs", staged: false, options: { vcs: "demo" } },
+      { cwd: dir, vcsAdapters: [adapter] },
+    );
+
+    expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["note.txt"]);
+    expect(bootstrap.changeset.files[0]?.isUntracked).toBe(true);
+    expect(bootstrap.changeset.files[0]?.patch).toContain("+hello");
+    // Watch planning has to resolve the same extension adapter the load used.
+    expect(bootstrap.reloadContext.vcsAdapters).toEqual([adapter]);
+  });
+
   test("captures a watched signature before content loading", async () => {
     const dir = createTempDir("hunk-watch-bootstrap-");
     const left = join(dir, "before.ts");

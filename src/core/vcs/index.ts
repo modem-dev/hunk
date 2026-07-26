@@ -1,8 +1,8 @@
 import { dirname, relative, resolve } from "node:path";
+import { HUNK_DEFAULT_VCS_DETECTION_PRIORITY } from "../../extension-api/types";
+import { getBundledVcsAdapters } from "../../extensions/bundled";
 import { HunkUserError } from "../errors";
 import { GitVcsAdapter } from "./git";
-import { JjVcsAdapter } from "./jj";
-import { SaplingVcsAdapter } from "./sl";
 import type {
   VcsAdapter,
   VcsDetection,
@@ -16,21 +16,57 @@ import type {
 } from "./types";
 
 export const DEFAULT_VCS_ADAPTER = GitVcsAdapter;
-export const vcsAdapters: VcsAdapter[] = [JjVcsAdapter, SaplingVcsAdapter, DEFAULT_VCS_ADAPTER];
 
 /**
- * Combine built-in adapters with the session's extension-contributed ones.
+ * Order adapters the way detection consults them: highest priority first.
  *
- * Built-ins stay first so they keep priority in both detection tie-breaks and
- * id lookup; an extension adapter that reuses a built-in id is dropped here
- * (callers report the skip once, at registration time).
+ * The sort is stable, so adapters that declare the same priority keep the order
+ * they were assembled in — core Git, then bundled extensions in load order,
+ * then user extensions in registration order.
+ */
+function orderByDetectionPriority(adapters: readonly VcsAdapter[]): VcsAdapter[] {
+  return [...adapters].sort(
+    (left, right) =>
+      (right.detectionPriority ?? HUNK_DEFAULT_VCS_DETECTION_PRIORITY) -
+      (left.detectionPriority ?? HUNK_DEFAULT_VCS_DETECTION_PRIORITY),
+  );
+}
+
+/** Adapters that are part of the product: core Git plus the bundled extension tier. */
+let builtInAdapters: VcsAdapter[] | undefined;
+
+/**
+ * Return the adapters Hunk ships with, assembled once per process.
+ *
+ * Core Git and the bundled Jujutsu and Sapling extensions are one list from
+ * here on: they are all product behavior, they all take part in first-class
+ * detection, and they all reserve their id against user extensions. Bundled
+ * loading is resolved lazily so this module can be imported from anywhere in
+ * the graph without depending on module evaluation order.
+ */
+export function getBuiltInVcsAdapters(): readonly VcsAdapter[] {
+  builtInAdapters ??= orderByDetectionPriority([DEFAULT_VCS_ADAPTER, ...getBundledVcsAdapters()]);
+  return builtInAdapters;
+}
+
+/**
+ * Combine the built-in adapters with the session's user-extension ones.
+ *
+ * This is the one place adapter order is decided. Ids owned by a built-in
+ * backend are dropped here (callers report the skip once, at registration
+ * time), and everything else sorts by `detectionPriority` — which puts user
+ * adapters below Git unless they explicitly ask for more.
  */
 export function resolveVcsAdapters(extraAdapters: readonly VcsAdapter[] = []): VcsAdapter[] {
+  const builtIns = getBuiltInVcsAdapters();
   if (extraAdapters.length === 0) {
-    return vcsAdapters;
+    return [...builtIns];
   }
 
-  return [...vcsAdapters, ...extraAdapters.filter((adapter) => !isVcsId(adapter.id))];
+  return orderByDetectionPriority([
+    ...builtIns,
+    ...extraAdapters.filter((adapter) => !isVcsId(adapter.id)),
+  ]);
 }
 
 /** Return the fallback adapter used when config has not selected a provider explicitly. */
@@ -54,12 +90,18 @@ export function getVcsAdapter(id: VcsId, extraAdapters: readonly VcsAdapter[] = 
   return adapter;
 }
 
-/** Report whether one value names a built-in VCS backend. */
+/** Report whether one value names a backend Hunk ships with (core Git or a bundled one). */
 export function isVcsId(value: unknown): value is VcsId {
-  return vcsAdapters.some((adapter) => adapter.id === value);
+  return getBuiltInVcsAdapters().some((adapter) => adapter.id === value);
 }
 
-/** Detect the nearest containing VCS checkout, using adapter order only to break same-root ties. */
+/**
+ * Detect the nearest containing VCS checkout.
+ *
+ * Distance decides first, so a Git checkout nested inside a jj workspace is
+ * reviewed as Git. Detection priority only breaks same-root ties — the
+ * colocated case, where one directory carries markers for two backends.
+ */
 export function detectVcs(
   cwd: string,
   extraAdapters: readonly VcsAdapter[] = [],
@@ -94,11 +136,18 @@ export function detectVcs(
   return bestDetection;
 }
 
+/**
+ * Walk upward for the nearest directory a shipped backend calls a repo root.
+ *
+ * Config resolution and extension discovery both run before user extensions
+ * exist, so this deliberately consults built-ins only — which, since jj and
+ * Sapling are bundled, still covers every backend Hunk ships with.
+ */
 export function findVcsRepoRootCandidate(cwd = process.cwd()) {
   let current = resolve(cwd);
 
   for (;;) {
-    if (vcsAdapters.some((adapter) => adapter.detect(current)?.repoRoot === current)) {
+    if (getBuiltInVcsAdapters().some((adapter) => adapter.detect(current)?.repoRoot === current)) {
       return current;
     }
 
@@ -185,7 +234,9 @@ export function createUnsupportedVcsOperationError(
   adapter: VcsAdapter,
   operationKind: VcsReviewOperationKind,
 ) {
-  const supportingAdapter = vcsAdapters.find((candidate) => candidate.operations?.[operationKind]);
+  const supportingAdapter = getBuiltInVcsAdapters().find(
+    (candidate) => candidate.operations?.[operationKind],
+  );
   if (operationKind === "stash-show" && supportingAdapter) {
     return new HunkUserError(`\`hunk stash show\` requires ${supportingAdapter.name} VCS mode.`, [
       `Set \`vcs = "${supportingAdapter.id}"\` in Hunk config, then try again.`,

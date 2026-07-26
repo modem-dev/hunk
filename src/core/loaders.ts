@@ -15,6 +15,7 @@ import { normalizePatchText, stripTerminalControl } from "./patch/normalize";
 import { DEFAULT_TAB_WIDTH } from "./tabWidth";
 import { getConfiguredVcsAdapter, loadVcsReview, operationFromInput } from "./vcs";
 import type { VcsAdapter } from "./vcs/types";
+import { buildFilesystemUntrackedDiffFile } from "./vcs/untracked";
 import { computeWatchSignature } from "./watch";
 import type {
   AppBootstrap,
@@ -391,7 +392,18 @@ async function loadVcsChangeset(
     agentContext,
     result.sourceFetcherBuilder ? { sourceFetcherBuilder: result.sourceFetcherBuilder } : undefined,
   );
-  const adapterFiles = (result.extraFiles ?? []).map((file, index) => ({
+  // Untracked paths are the portable half of the contract: an adapter reports
+  // what its VCS considers unknown, and Hunk synthesizes the added-file diffs.
+  // `extraFiles` is the core-only half, for files an adapter built itself.
+  const untrackedFiles = (result.untrackedPaths ?? []).map((filePath, index) =>
+    buildFilesystemUntrackedDiffFile(
+      result.repoRoot,
+      filePath,
+      (result.extraFiles?.length ?? 0) + index,
+      result.repoRoot,
+    ),
+  );
+  const adapterFiles = [...(result.extraFiles ?? []), ...untrackedFiles].map((file, index) => ({
     ...file,
     id: `${file.id}:extra:${index}`,
     agent: findAgentFileContext(agentContext, file.path, file.previousPath),
@@ -440,7 +452,7 @@ export async function loadAppBootstrap(
   let initialWatchSignature: string | undefined;
   if (input.options.watch) {
     try {
-      initialWatchSignature = computeWatchSignature(input, { cwd, gitExecutable });
+      initialWatchSignature = computeWatchSignature(input, { cwd, gitExecutable, vcsAdapters });
     } catch {
       // A transient signature failure must not prevent an otherwise valid initial review.
     }
@@ -479,7 +491,7 @@ export async function loadAppBootstrap(
 
   return {
     input,
-    reloadContext: { cwd, repoRoot, initialWatchSignature },
+    reloadContext: { cwd, repoRoot, initialWatchSignature, vcsAdapters },
     changeset,
     initialMode: input.options.mode ?? "auto",
     initialTheme: input.options.theme,

@@ -29,6 +29,7 @@ import {
   type GitFileSourceFetcherOptions,
   type GitFileSourceSpec,
 } from "./gitSource";
+import { HUNK_CORE_VCS_DETECTION_PRIORITY } from "../../extension-api/types";
 import type { DiffFile, VcsDiffCommandInput } from "../types";
 import type { DirectoryTreeWatchTarget, WatchPlan } from "../watchPlan";
 import type { VcsAdapter, VcsReviewOperation } from "./types";
@@ -304,11 +305,17 @@ function buildGitWatchPlan(
   return { coverage: "hybrid", targets };
 }
 
-/** VCS adapter translating neutral review operations to Git commands. */
+/**
+ * VCS adapter translating neutral review operations to Git commands.
+ *
+ * Git is Hunk's one core backend: it is the priority baseline every other
+ * adapter — bundled or user-installed — positions itself against.
+ */
 export const GitVcsAdapter: VcsAdapter = {
   id: "git",
   name: "Git",
   detect: detectGitRepo,
+  detectionPriority: HUNK_CORE_VCS_DETECTION_PRIORITY,
   operations: {
     "working-tree-diff": {
       async load(input, { cwd, gitExecutable = "git" }) {

@@ -1,35 +1,39 @@
 import { posix, win32 } from "node:path";
 import { normalizePathForOS } from "../lib/osPath";
+import type {
+  ExtensionVcsDirectoryEntriesWatchTarget,
+  ExtensionVcsDirectoryTreeWatchTarget,
+  ExtensionVcsWatchPlan,
+  ExtensionVcsWatchTarget,
+  ExtensionVcsWatchTargetSource,
+} from "../extension-api/types";
 import type { CliInput } from "./types";
+import type { VcsAdapter } from "./vcs/types";
 import { createVcsWatchPlan, getConfiguredVcsAdapter, operationFromInput } from "./vcs";
 
-export type WatchTargetSource = "content" | "sidecar" | "worktree" | "vcs-metadata";
-
-export interface DirectoryEntriesWatchTarget {
-  kind: "directory-entries";
-  directory: string;
-  entries: string[];
-  sources: WatchTargetSource[];
-}
-
-export interface DirectoryTreeWatchTarget {
-  kind: "directory-tree";
-  directory: string;
-  ignoredRoots: string[];
-  sources: WatchTargetSource[];
-}
-
-export type WatchTarget = DirectoryEntriesWatchTarget | DirectoryTreeWatchTarget;
-
-export interface WatchPlan {
-  coverage: "hybrid" | "poll-only";
-  targets: WatchTarget[];
-}
+/**
+ * Watch shapes are declared once in the published extension contract and
+ * re-exported here under Hunk's internal names, so an adapter's `watchPlan`
+ * returns the same structure core planning consumes with no conversion.
+ */
+export type WatchTargetSource = ExtensionVcsWatchTargetSource;
+export type DirectoryEntriesWatchTarget = ExtensionVcsDirectoryEntriesWatchTarget;
+export type DirectoryTreeWatchTarget = ExtensionVcsDirectoryTreeWatchTarget;
+export type WatchTarget = ExtensionVcsWatchTarget;
+export type WatchPlan = ExtensionVcsWatchPlan;
 
 export interface WatchPlanContext {
   cwd: string;
   platform?: NodeJS.Platform;
   gitExecutable?: string;
+  /**
+   * Extension-contributed adapters this session resolved reviews through.
+   *
+   * Watch planning has to see the same adapter set the changeset was loaded
+   * with, or a review backed by an extension backend would fall back to
+   * polling — or fail to find its adapter at all.
+   */
+  vcsAdapters?: readonly VcsAdapter[];
 }
 
 interface FileTarget {
@@ -120,7 +124,7 @@ export function resolveWatchPlan(input: CliInput, context: WatchPlanContext): Wa
     case "vcs":
     case "show":
     case "stash-show": {
-      const adapter = getConfiguredVcsAdapter(input.options.vcs);
+      const adapter = getConfiguredVcsAdapter(input.options.vcs, context.vcsAdapters);
       const adapterPlan = createVcsWatchPlan(adapter, operationFromInput(input), {
         cwd: context.cwd,
         gitExecutable: context.gitExecutable,

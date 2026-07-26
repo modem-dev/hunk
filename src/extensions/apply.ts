@@ -60,11 +60,13 @@ export interface ResolvedExtensionVcsAdapters {
 }
 
 /**
- * Filter extension VCS adapters down to the ones Hunk will actually consult.
+ * Filter user-extension VCS adapters down to the ones Hunk will actually consult.
  *
- * Built-in ids are reserved: an extension may add `hg`, but it may not replace
- * `git`. Duplicate ids between extensions resolve to the first registration so
- * load order stays the tiebreaker everywhere.
+ * Shipped ids are reserved: an extension may add `hg`, but it may not replace
+ * `git`, `jj`, or `sl` — the last two are reserved by the bundled tier, which
+ * registers through this same API but is loaded with core adapter resolution.
+ * Duplicate ids between extensions resolve to the first registration so load
+ * order stays the tiebreaker everywhere.
  */
 export function resolveExtensionVcsAdapters(
   registry: ExtensionRegistry,
@@ -124,12 +126,18 @@ export function applyExtensionRegistrations(
 }
 
 /**
- * Pick the VCS id an extension adapter detects, when no built-in backend does.
+ * Pick the VCS id a user-extension adapter detects, when no shipped backend does.
  *
- * Config resolves the session's VCS before extensions have loaded, so this is
- * the point where an extension backend can claim a checkout Hunk would
- * otherwise have treated as a plain Git working tree. Built-in detection keeps
- * priority: a repo any built-in recognizes is left alone.
+ * Origin decides how much authority an adapter has over detection. Bundled
+ * adapters are product behavior, so they take part in first-class detection
+ * through `detectVcs` — a pure jj checkout resolves to `jj` during config
+ * resolution, before any user extension has been imported. User adapters get
+ * this conservative rule instead: config has already chosen the session's VCS
+ * by the time they load, so they may claim a directory nothing shipped
+ * recognized, but never override one that was.
+ *
+ * Both paths run through the same `detectVcs` ordering, so there is still one
+ * definition of detection order.
  */
 export function resolveExtensionDetectedVcsId(
   cwd: string,

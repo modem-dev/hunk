@@ -7,12 +7,13 @@ import {
   createVcsWatchPlan,
   detectVcs,
   findVcsRepoRootCandidate,
+  getBuiltInVcsAdapters,
   getVcsAdapter,
   getVcsOperation,
   isVcsId,
   loadVcsReview,
   operationFromInput,
-  vcsAdapters,
+  resolveVcsAdapters,
 } from ".";
 import type { VcsShowCommandInput, VcsStashShowCommandInput, VcsDiffCommandInput } from "../types";
 import type { VcsAdapter } from "./types";
@@ -36,7 +37,7 @@ afterEach(() => {
 
 describe("VCS adapter registry", () => {
   test("registers Git, Jujutsu, and Sapling operation maps", () => {
-    expect(vcsAdapters.map((adapter) => adapter.id)).toEqual(["jj", "sl", "git"]);
+    expect(getBuiltInVcsAdapters().map((adapter) => adapter.id)).toEqual(["jj", "sl", "git"]);
     expect(getVcsAdapter("git").operations["working-tree-diff"]).toBeDefined();
     expect(getVcsAdapter("git").operations["revision-show"]).toBeDefined();
     expect(getVcsAdapter("git").operations["stash-show"]).toBeDefined();
@@ -59,27 +60,72 @@ describe("VCS adapter registry", () => {
     expect(() => getVcsAdapter("hg" as VcsAdapter["id"])).toThrow("Unsupported VCS: hg");
   });
 
-  test("finds repo root candidates through adapter detection instead of id-derived markers", () => {
-    const repo = createTempDir("hunk-vcs-custom-marker-");
+  test("orders built-ins by detection priority, bundled backends above core Git", () => {
+    const priorities = getBuiltInVcsAdapters().map((adapter) => adapter.detectionPriority ?? 0);
+    expect(priorities).toEqual([...priorities].sort((left, right) => right - left));
+    expect(getVcsAdapter("jj").detectionPriority).toBeGreaterThan(
+      getVcsAdapter("git").detectionPriority ?? 0,
+    );
+    expect(getVcsAdapter("sl").detectionPriority).toBeGreaterThan(
+      getVcsAdapter("git").detectionPriority ?? 0,
+    );
+  });
+
+  test("assembles built-ins ahead of unprioritized extension adapters", () => {
+    const createExtensionAdapter = (id: string, detectionPriority?: number): VcsAdapter => ({
+      id,
+      name: id,
+      detect: () => null,
+      operations: {},
+      ...(detectionPriority === undefined ? {} : { detectionPriority }),
+    });
+
+    expect(
+      resolveVcsAdapters([
+        createExtensionAdapter("hg"),
+        createExtensionAdapter("pijul"),
+        // Built-in ids stay reserved, whatever priority an extension claims.
+        createExtensionAdapter("git", 1_000),
+      ]).map((adapter) => adapter.id),
+    ).toEqual(["jj", "sl", "git", "hg", "pijul"]);
+
+    // An extension that explicitly outranks Git is honored: the user's machine.
+    expect(
+      resolveVcsAdapters([createExtensionAdapter("hg", 500)]).map((adapter) => adapter.id),
+    ).toEqual(["hg", "jj", "sl", "git"]);
+  });
+
+  test("finds repo root candidates through bundled adapter detection", () => {
+    const repo = createTempDir("hunk-vcs-bundled-marker-");
     const nested = join(repo, "src", "nested");
-    mkdirSync(join(repo, ".custom"), { recursive: true });
+    // `.jj` is only reachable through the bundled Jujutsu extension's detect(),
+    // so finding this root proves repo discovery consults the bundled tier.
+    mkdirSync(join(repo, ".jj"), { recursive: true });
     mkdirSync(nested, { recursive: true });
 
-    const adapter: VcsAdapter = {
-      id: "git",
-      name: "Custom marker test adapter",
-      detect(cwd) {
-        return cwd === repo ? { id: "git", repoRoot: repo } : null;
-      },
-      operations: {},
-    };
+    expect(findVcsRepoRootCandidate(nested)).toBe(repo);
+  });
 
-    vcsAdapters.unshift(adapter);
-    try {
-      expect(findVcsRepoRootCandidate(nested)).toBe(repo);
-    } finally {
-      expect(vcsAdapters.shift()).toBe(adapter);
-    }
+  test("detects a colocated jj repository as jj rather than git", () => {
+    const repo = createTempDir("hunk-vcs-colocated-jj-");
+    const nested = join(repo, "src", "nested");
+    // `jj git init --colocate` leaves both markers at the same root, so nothing
+    // but detection priority separates them.
+    mkdirSync(join(repo, ".jj"));
+    mkdirSync(join(repo, ".git"));
+    mkdirSync(nested, { recursive: true });
+
+    expect(detectVcs(repo)).toEqual({ id: "jj", repoRoot: repo });
+    expect(detectVcs(nested)).toEqual({ id: "jj", repoRoot: repo });
+    expect(findVcsRepoRootCandidate(nested)).toBe(repo);
+  });
+
+  test("detects a colocated Sapling repository as sl rather than git", () => {
+    const repo = createTempDir("hunk-vcs-colocated-sl-");
+    mkdirSync(join(repo, ".sl"));
+    mkdirSync(join(repo, ".git"));
+
+    expect(detectVcs(repo)).toEqual({ id: "sl", repoRoot: repo });
   });
 
   test("detects repository roots by registered adapter priority", () => {
