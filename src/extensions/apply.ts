@@ -3,6 +3,7 @@ import type { StartupNotice } from "../core/startupNotice";
 import type { Changeset } from "../core/types";
 import { detectVcs, isVcsId } from "../core/vcs";
 import type { VcsAdapter } from "../core/vcs/types";
+import { sanitizeTerminalLine } from "../lib/terminalText";
 import type { ExtensionContext, ExtensionLoadResult, ExtensionRegistry } from "./types";
 
 /**
@@ -141,27 +142,91 @@ export function resolveExtensionDetectedVcsId(
   return detectVcs(cwd, adapters)?.id;
 }
 
-/** Report whether one transform result is shaped enough like a changeset to render. */
-function isChangesetLike(value: unknown): value is Changeset {
-  if (typeof value !== "object" || value === null) {
-    return false;
+/** Report whether one value is a plain object rather than null or an array. */
+function isObjectLike(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Report whether one hunk carries the content list the renderer walks. */
+function isHunkLike(value: unknown) {
+  return isObjectLike(value) && Array.isArray(value.hunkContent);
+}
+
+/**
+ * Explain why one transform result cannot be reviewed, or return undefined when it can.
+ *
+ * This validates deeper than the fields this module itself reads, because a
+ * file that reaches the review UI without usable `metadata.hunks` throws from
+ * inside rendering — well outside the transform's try/catch — and takes the
+ * whole app down. The isolation contract in docs/extensions.md promises a
+ * misbehaving extension costs the user a warning, not the session, so anything
+ * the renderer indexes into unguarded has to be checked here instead.
+ */
+function describeChangesetIssue(value: unknown): string | undefined {
+  if (!isObjectLike(value)) {
+    return "not an object";
   }
 
-  const files = (value as { files?: unknown }).files;
+  const files = value.files;
   if (!Array.isArray(files)) {
-    return false;
+    return "files is not an array";
   }
 
-  // Only the fields every consumer indexes into are checked; deep validation
-  // would just duplicate the DiffFile type without catching more real mistakes.
-  return files.every(
-    (file) =>
-      typeof file === "object" &&
-      file !== null &&
-      typeof (file as { id?: unknown }).id === "string" &&
-      typeof (file as { path?: unknown }).path === "string" &&
-      typeof (file as { metadata?: unknown }).metadata === "object",
-  );
+  const claimedIds = new Set<string>();
+  for (const [index, file] of files.entries()) {
+    const label = `files[${index}]`;
+    if (!isObjectLike(file)) {
+      return `${label} is not an object`;
+    }
+
+    const id = file.id;
+    if (typeof id !== "string" || id.length === 0) {
+      return `${label}.id is not a non-empty string`;
+    }
+
+    // File ids key React rows, the selection model, and note targeting, so two
+    // files sharing one id corrupts review state rather than just rendering oddly.
+    if (claimedIds.has(id)) {
+      return `duplicate file id "${id}"`;
+    }
+    claimedIds.add(id);
+
+    if (typeof file.path !== "string") {
+      return `${label}.path is not a string`;
+    }
+
+    // The sidebar and the changeset totals read stats without guarding.
+    const stats = file.stats;
+    if (
+      !isObjectLike(stats) ||
+      typeof stats.additions !== "number" ||
+      typeof stats.deletions !== "number"
+    ) {
+      return `${label}.stats is missing addition and deletion counts`;
+    }
+
+    // `agent` is optional context, but the note UI treats a present value as a
+    // record with annotations rather than checking each access.
+    const agent = file.agent;
+    if (agent != null && (!isObjectLike(agent) || !Array.isArray(agent.annotations))) {
+      return `${label}.agent has no annotations array`;
+    }
+
+    const metadata = file.metadata;
+    if (!isObjectLike(metadata)) {
+      return `${label}.metadata is not an object`;
+    }
+
+    if (!Array.isArray(metadata.hunks)) {
+      return `${label}.metadata.hunks is not an array`;
+    }
+
+    if (!metadata.hunks.every(isHunkLike)) {
+      return `${label}.metadata.hunks contains an unusable hunk`;
+    }
+  }
+
+  return undefined;
 }
 
 /**
@@ -185,15 +250,18 @@ export async function applyExtensionChangesetTransforms(
   for (const { extensionId, transform } of result.registry.changesetTransforms) {
     try {
       const next = await transform(current, result.context);
-      if (!isChangesetLike(next)) {
+      const issue = describeChangesetIssue(next);
+      if (issue) {
         result.context.notify(
-          `Extension ${extensionId} returned an invalid changeset • keeping the previous one`,
+          `Extension ${extensionId} returned an invalid changeset (${issue}) • keeping the previous one`,
           "warning",
         );
         continue;
       }
 
-      current = next;
+      // Validated above, so the public changeset view is safe to read as the
+      // internal model the rest of the pipeline works with.
+      current = next as Changeset;
     } catch (error) {
       result.context.notify(
         `Extension ${extensionId} failed transforming the changeset • ${describeError(error)}`,
@@ -205,13 +273,18 @@ export async function applyExtensionChangesetTransforms(
   return current;
 }
 
-/** Turn refused registrations into startup notices for the first-launch path. */
+/**
+ * Turn refused registrations into startup notices for the first-launch path.
+ *
+ * The messages quote extension-authored ids, so they are stripped of terminal
+ * control sequences before being drawn into the status bar.
+ */
 export function createExtensionApplyNotices(
   issues: readonly ExtensionApplyIssue[],
 ): StartupNotice[] {
   return issues.map((issue, index) => ({
     key: `extension:apply:${issue.extensionId}:${index}`,
-    message: issue.message,
+    message: sanitizeTerminalLine(issue.message),
   }));
 }
 

@@ -2,8 +2,24 @@ import type { FileDiffMetadata } from "@pierre/diffs";
 // Type-only import; the extension types depend on this module in turn, and
 // `import type` keeps that relationship out of the runtime module graph.
 import type { ExtensionLoadResult } from "../extensions/types";
+import type { AgentFileContext, NamedCustomThemeConfig } from "../extension-api/types";
 import type { FileSourceFetcher } from "./fileSource";
 import type { StartupNotice } from "./startupNotice";
+
+/**
+ * Shapes that are simultaneously internal model types and part of the published
+ * extension contract are declared once in `src/extension-api/types.ts` — the
+ * module whose declarations ship — and re-exported here so internal code keeps
+ * importing them from `core/types`.
+ */
+export type {
+  AgentAnnotation,
+  AgentFileContext,
+  CustomSyntaxColorsConfig,
+  CustomSyntaxScopesConfig,
+  CustomThemeConfig,
+  NamedCustomThemeConfig,
+} from "../extension-api/types";
 
 export type LayoutMode = "auto" | "split" | "stack";
 export type VcsMode = string;
@@ -15,30 +31,6 @@ export type SessionCommentListType = "live" | "all" | ReviewNoteSource;
 export interface UserNoteLineTarget {
   side: "old" | "new";
   line: number;
-}
-
-export interface AgentAnnotation {
-  id?: string;
-  oldRange?: [number, number];
-  newRange?: [number, number];
-  summary: string;
-  rationale?: string;
-  /** Optional STML markup rendered as the note body in place of summary/rationale text. */
-  markup?: string;
-  tags?: string[];
-  confidence?: "low" | "medium" | "high";
-  source?: string;
-  title?: string;
-  author?: string;
-  createdAt?: string;
-  updatedAt?: string;
-  editable?: boolean;
-}
-
-export interface AgentFileContext {
-  path: string;
-  summary?: string;
-  annotations: AgentAnnotation[];
 }
 
 export interface AgentContext {
@@ -109,76 +101,6 @@ export interface CommonOptions {
   extensions?: boolean;
   /** Entry paths from repeated `--extension` flags, for development and testing. */
   extensionPaths?: string[];
-}
-
-/** @deprecated Use exact TextMate selectors through CustomSyntaxScopesConfig instead. */
-export interface CustomSyntaxColorsConfig {
-  default?: string;
-  keyword?: string;
-  string?: string;
-  comment?: string;
-  number?: string;
-  function?: string;
-  property?: string;
-  type?: string;
-  variable?: string;
-  operator?: string;
-  punctuation?: string;
-}
-
-/** Exact Shiki/TextMate selector-to-hex-color overrides, preserved in declaration order. */
-export type CustomSyntaxScopesConfig = Record<string, string>;
-
-export interface CustomThemeConfig {
-  base?: string;
-  label?: string;
-  background?: string;
-  panel?: string;
-  panelAlt?: string;
-  border?: string;
-  accent?: string;
-  accentMuted?: string;
-  text?: string;
-  muted?: string;
-  addedBg?: string;
-  removedBg?: string;
-  movedAddedBg?: string;
-  movedRemovedBg?: string;
-  contextBg?: string;
-  addedContentBg?: string;
-  removedContentBg?: string;
-  contextContentBg?: string;
-  addedSignColor?: string;
-  removedSignColor?: string;
-  lineNumberBg?: string;
-  lineNumberFg?: string;
-  selectedHunk?: string;
-  badgeAdded?: string;
-  badgeRemoved?: string;
-  badgeNeutral?: string;
-  fileNew?: string;
-  fileDeleted?: string;
-  fileRenamed?: string;
-  fileModified?: string;
-  fileUntracked?: string;
-  noteBorder?: string;
-  noteBackground?: string;
-  noteTitleBackground?: string;
-  noteTitleText?: string;
-  /** @deprecated Use syntaxScopes. This compatibility field will be removed next major. */
-  syntax?: CustomSyntaxColorsConfig;
-  syntaxScopes?: CustomSyntaxScopesConfig;
-}
-
-/**
- * One custom theme together with the id it is selected by.
- *
- * Config tables (`[custom_theme]`, `[themes.<id>]`) and extension
- * `registerTheme` calls all normalize into this one shape, so the theme model
- * downstream never has to know where a theme came from.
- */
-export interface NamedCustomThemeConfig extends CustomThemeConfig {
-  id: string;
 }
 
 /** Resolved `[extensions]` and `[extension.<id>]` configuration for one invocation. */

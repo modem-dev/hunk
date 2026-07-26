@@ -1,5 +1,6 @@
 import type { ExtensionNotification } from "../../extensions/notifications";
 import type { ExtensionNotifyType } from "../../extensions/types";
+import { sanitizeTerminalText } from "../../lib/terminalText";
 import type { AppTheme } from "../themes";
 
 /**
@@ -35,10 +36,15 @@ export function extensionToastColor(type: ExtensionNotifyType, theme: AppTheme) 
  * Fit one notification message into the terminal width.
  *
  * The toast is deliberately a single row, so an over-long message is truncated
- * with an ellipsis rather than being allowed to reflow the app chrome.
+ * with an ellipsis rather than being allowed to reflow the app chrome. The text
+ * is extension-authored and routinely carries repo-controlled fragments (paths,
+ * error messages), so escape sequences are stripped before it reaches the
+ * terminal, exactly like every other untrusted-text surface in Hunk.
  */
 export function extensionToastMessage(message: string, terminalWidth: number) {
-  const singleLine = message.replaceAll(/\s+/g, " ").trim();
+  // Strip escapes before collapsing whitespace: collapsing first could split a
+  // control sequence into fragments the sanitizer no longer recognizes.
+  const singleLine = sanitizeTerminalText(message).replaceAll(/\s+/g, " ").trim();
   const available = Math.max(8, terminalWidth - TOAST_CHROME_COLUMNS);
   return singleLine.length > available ? `${singleLine.slice(0, available - 1)}…` : singleLine;
 }

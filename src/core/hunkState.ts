@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 /**
@@ -9,32 +9,119 @@ import { dirname } from "node:path";
  */
 export type HunkStateRecord = Record<string, unknown>;
 
+/** Suffix a state file is moved aside to when its contents cannot be parsed. */
+const CORRUPT_STATE_SUFFIX = ".corrupt";
+
+/** What one read of the state file found on disk. */
+interface HunkStateFileRead {
+  record: HunkStateRecord;
+  /**
+   * True when the file existed with content Hunk could not parse.
+   *
+   * Distinguishes "nothing recorded yet" from "records exist but are
+   * unreadable", which is the difference between a harmless write and one that
+   * destroys every trust decision the user made.
+   */
+  corrupt: boolean;
+}
+
+/** Read and classify the state file without deciding what to do about damage. */
+function readHunkStateFile(path: string): HunkStateFileRead {
+  let contents: string;
+  try {
+    contents = readFileSync(path, "utf8");
+  } catch {
+    // Missing or unreadable: there is nothing to lose by starting empty.
+    return { record: {}, corrupt: false };
+  }
+
+  if (contents.trim().length === 0) {
+    return { record: {}, corrupt: false };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(contents);
+  } catch {
+    return { record: {}, corrupt: true };
+  }
+
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return { record: {}, corrupt: true };
+  }
+
+  return { record: parsed as HunkStateRecord, corrupt: false };
+}
+
 /** Read the persisted state record, treating missing or malformed files as empty. */
 export function readHunkStateRecord(path: string): HunkStateRecord {
-  try {
-    const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-      return {};
-    }
+  return readHunkStateFile(path).record;
+}
 
-    return parsed as HunkStateRecord;
+/**
+ * Write the persisted state record with owner-only permissions.
+ *
+ * The record is staged in a sibling temp file and renamed into place, so a
+ * crash or a concurrent reader never observes a half-written file: readers see
+ * either the old state or the new one. The temp file is a sibling so the rename
+ * stays within one filesystem, which is what makes it atomic.
+ */
+export function writeHunkStateRecord(path: string, record: HunkStateRecord) {
+  mkdirSync(dirname(path), { recursive: true });
+  const serialized = JSON.stringify(record, null, 2);
+  const tempPath = `${path}.${process.pid}.${Date.now()}.tmp`;
+  writeFileSync(tempPath, serialized, { encoding: "utf8", mode: 0o600 });
+
+  try {
+    renameSync(tempPath, path);
   } catch {
-    return {};
+    // Windows can refuse a rename over a file another process still holds open.
+    // Retry once with the target removed, then fall back to writing in place so
+    // a state update is never silently dropped on that platform.
+    try {
+      rmSync(path, { force: true });
+      renameSync(tempPath, path);
+    } catch {
+      writeFileSync(path, serialized, { encoding: "utf8", mode: 0o600 });
+      rmSync(tempPath, { force: true });
+    }
   }
 }
 
-/** Write the persisted state record with owner-only permissions. */
-export function writeHunkStateRecord(path: string, record: HunkStateRecord) {
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(record, null, 2), {
-    encoding: "utf8",
-    mode: 0o600,
-  });
+/**
+ * Move an unparseable state file aside so a fresh one can be written.
+ *
+ * Starting over is the safer of the two options: refusing to write would leave
+ * trust decisions unrecordable until the user hand-repairs a file they never
+ * knew existed, while a fresh file only costs them re-answering prompts —
+ * unknown trust prompts rather than silently running anything. The damaged
+ * bytes are preserved next to the state file so nothing is destroyed outright.
+ */
+function quarantineCorruptStateFile(path: string) {
+  try {
+    renameSync(path, `${path}${CORRUPT_STATE_SUFFIX}`);
+  } catch {
+    // Best effort: if the file cannot be moved aside, the write below still has
+    // to succeed, because the alternative is a feature that can never persist.
+  }
 }
 
-/** Merge one patch into the persisted state record so unrelated keys survive the write. */
+/**
+ * Merge one patch into the persisted state record so unrelated keys survive the write.
+ *
+ * Read-modify-write is not locked across processes: two Hunk sessions updating
+ * different keys at the same instant can still have one update win, because
+ * this reads, merges, and renames without holding the file. That window is
+ * small and the cost is one lost record, so it is accepted rather than paid for
+ * with a lock file that has to be reaped after crashes.
+ */
 export function updateHunkStateRecord(path: string, patch: HunkStateRecord) {
-  const next = { ...readHunkStateRecord(path), ...patch };
+  const { record, corrupt } = readHunkStateFile(path);
+  if (corrupt) {
+    quarantineCorruptStateFile(path);
+  }
+
+  const next = { ...record, ...patch };
   writeHunkStateRecord(path, next);
   return next;
 }

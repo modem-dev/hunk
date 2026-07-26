@@ -1,5 +1,6 @@
 import type { StartupNotice } from "../core/startupNotice";
 import type { ExtensionsConfig } from "../core/types";
+import { sanitizeTerminalText } from "../lib/terminalText";
 import { discoverExtensions } from "./discovery";
 import { loadExtensions, type LoadExtensionsOptions } from "./host";
 import { createExtensionNotificationHub, type ExtensionNotificationHub } from "./notifications";
@@ -72,9 +73,15 @@ export async function loadStartupExtensions(
   });
 }
 
-/** Shorten one failure message so it stays readable in the startup notice row. */
+/**
+ * Shorten one failure message so it stays readable in the startup notice row.
+ *
+ * Load failures quote whatever the module threw, which routinely embeds
+ * repo-controlled text such as file paths, so the message is stripped of
+ * terminal control sequences before it is drawn into the status bar.
+ */
 function truncateIssueMessage(message: string) {
-  const singleLine = message.split("\n")[0]?.trim() ?? "";
+  const singleLine = sanitizeTerminalText(message).split("\n")[0]?.trim() ?? "";
   return singleLine.length > MAX_ISSUE_MESSAGE_LENGTH
     ? `${singleLine.slice(0, MAX_ISSUE_MESSAGE_LENGTH - 1)}…`
     : singleLine;

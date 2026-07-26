@@ -1107,6 +1107,57 @@ describe("extension configuration", () => {
       "copy-as": { severity: "blocking", wrap: true },
       blame: { max_age_days: 30 },
     });
+    // The repo steering a globally configured extension stays visible.
+    expect(resolved.startupNotices?.map((notice) => notice.message)).toEqual([
+      "Repo config overrides settings for extension(s): copy-as",
+    ]);
+  });
+
+  test("says nothing when the repo config configures no extensions", () => {
+    const home = createTempDir("hunk-config-home-");
+    const repo = createTempDir("hunk-config-repo-");
+    createRepo(repo);
+
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(
+      join(home, ".config", "hunk", "config.toml"),
+      ["[extension.blame]", "max_age_days = 30"].join("\n"),
+    );
+    mkdirSync(join(repo, ".hunk"), { recursive: true });
+    // An empty table sets nothing, so it is not an override worth reporting.
+    writeFileSync(join(repo, ".hunk", "config.toml"), ["[extension.blame]"].join("\n"));
+
+    const resolved = resolveConfiguredCliInput(createPatchPagerInput(), {
+      cwd: repo,
+      env: { HOME: home },
+    });
+
+    expect(resolved.startupNotices).toBeUndefined();
+  });
+
+  test("lists every extension id the repo config sets options for", () => {
+    const home = createTempDir("hunk-config-home-");
+    const repo = createTempDir("hunk-config-repo-");
+    createRepo(repo);
+
+    mkdirSync(join(repo, ".hunk"), { recursive: true });
+    writeFileSync(
+      join(repo, ".hunk", "config.toml"),
+      ["[extension.zebra]", 'binary = "/tmp/zebra"', "", "[extension.alpha]", "on = true"].join(
+        "\n",
+      ),
+    );
+
+    const resolved = resolveConfiguredCliInput(createPatchPagerInput(), {
+      cwd: repo,
+      env: { HOME: home },
+    });
+
+    // Reported even without a user-config table for those ids: a repo can
+    // configure a globally installed extension it never declared.
+    expect(resolved.startupNotices?.map((notice) => notice.message)).toEqual([
+      "Repo config overrides settings for extension(s): alpha, zebra",
+    ]);
   });
 
   test("rejects malformed extension sections", () => {

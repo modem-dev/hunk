@@ -15,6 +15,7 @@ import {
   type ExtensionMetadata,
   type ExtensionRegistry,
   type ExtensionThemeConfig,
+  type ExtensionVcsAdapter,
   type HunkExtensionAPI,
 } from "./types";
 import type { VcsAdapter } from "../core/vcs/types";
@@ -80,6 +81,29 @@ function assertNonEmptyString(value: unknown, message: string) {
   }
 
   return value;
+}
+
+/** Report whether one value is a plain object rather than an array or null. */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Accept the public adapter shape as the internal one.
+ *
+ * The published surface leaves `operations` optional, and Hunk's internal
+ * adapter type requires it, so an adapter registered without operations gets an
+ * empty map here. That is the conversion boundary: everything downstream —
+ * detection, operation lookup, the unsupported-operation error — can then rely
+ * on the map existing instead of guarding a value only a JS extension can omit.
+ */
+function toInternalVcsAdapter(adapter: ExtensionVcsAdapter): VcsAdapter {
+  const operations = adapter.operations;
+  if (operations !== undefined && !isPlainObject(operations)) {
+    throw new Error("registerVcsAdapter requires operations to be an object of review operations.");
+  }
+
+  return { ...adapter, operations: operations ?? {} };
 }
 
 interface ExtensionApiHandle {
@@ -168,7 +192,7 @@ function createExtensionApi(
         language,
       });
     },
-    registerVcsAdapter(adapter: VcsAdapter) {
+    registerVcsAdapter(adapter: ExtensionVcsAdapter) {
       assertOpen("registerVcsAdapter");
       assertNonEmptyString(adapter?.id, "registerVcsAdapter requires an adapter with an id.");
       assertNonEmptyString(adapter?.name, "registerVcsAdapter requires an adapter with a name.");
@@ -176,7 +200,10 @@ function createExtensionApi(
         throw new Error("registerVcsAdapter requires an adapter with a detect() function.");
       }
 
-      registry.vcsAdapters.push({ extensionId: metadata.id, adapter });
+      registry.vcsAdapters.push({
+        extensionId: metadata.id,
+        adapter: toInternalVcsAdapter(adapter),
+      });
     },
     transformChangeset(fn: ChangesetTransform) {
       assertOpen("transformChangeset");

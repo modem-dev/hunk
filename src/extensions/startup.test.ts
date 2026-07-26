@@ -103,6 +103,23 @@ describe("extension startup", () => {
     expect(mergeStartupNotices([configNotice], failing)).toHaveLength(2);
   });
 
+  test("strips terminal control sequences out of failure notices", () => {
+    // Import errors quote repo-controlled paths, which reach the status bar raw
+    // unless the notice sanitizes them.
+    const issues = [
+      {
+        extensionId: "broken",
+        path: join("ext", "broken.ts"),
+        origin: "repo" as const,
+        message: "Cannot find module '\x1b[2J\x1b]0;pwned\x07./evil.ts'",
+      },
+    ];
+
+    expect(createExtensionLoadNotices(issues)[0]?.message).toBe(
+      "Extension broken failed to load • Cannot find module './evil.ts'",
+    );
+  });
+
   test("keeps the original notice identity when nothing failed to load", () => {
     const notices = [{ key: "deprecated:custom-theme-syntax", message: "legacy syntax" }];
 

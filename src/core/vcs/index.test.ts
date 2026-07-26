@@ -8,6 +8,7 @@ import {
   detectVcs,
   findVcsRepoRootCandidate,
   getVcsAdapter,
+  getVcsOperation,
   isVcsId,
   loadVcsReview,
   operationFromInput,
@@ -181,6 +182,28 @@ describe("VCS adapter registry", () => {
         },
       ),
     ).toEqual({ coverage: "poll-only", targets: [] });
+  });
+
+  test("treats a missing operation map as unsupported rather than crashing", async () => {
+    // Only reachable from an untyped extension, which is exactly the case that
+    // used to reach `adapter.operations[kind]` on undefined and throw a TypeError.
+    const adapter = { id: "bare", name: "Bare VCS", detect: () => null } as unknown as VcsAdapter;
+    const input = {
+      kind: "vcs",
+      staged: false,
+      options: { vcs: "bare" },
+    } satisfies VcsDiffCommandInput;
+
+    expect(getVcsOperation(adapter, operationFromInput(input))).toBeUndefined();
+    expect(createUnsupportedVcsOperationError(adapter, "working-tree-diff").message).toBe(
+      "Bare VCS does not support working-tree-diff.",
+    );
+    await expect(
+      loadVcsReview(adapter, operationFromInput(input), { cwd: process.cwd() }),
+    ).rejects.toThrow("Bare VCS does not support working-tree-diff.");
+    expect(() => createVcsWatchPlan(adapter, operationFromInput(input), { cwd: "/repo" })).toThrow(
+      "Bare VCS does not support working-tree-diff.",
+    );
   });
 
   test("names the adapter and operation for non-stash unsupported operations", () => {

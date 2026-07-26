@@ -3,6 +3,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Changeset } from "../core/types";
+import { getVcsOperation } from "../core/vcs";
+import type { VcsAdapter } from "../core/vcs/types";
 import { loadExtensions } from "./host";
 import { createExtensionNotificationHub } from "./notifications";
 import { deriveExtensionId, type ExtensionCandidate, type ExtensionOrigin } from "./types";
@@ -186,6 +188,50 @@ export default function (hunk: HunkExtensionAPI) {
     expect(String((globalThis as Record<string, unknown>).hunkLateRegistrationError)).toContain(
       "only be called while the extension is loading",
     );
+  });
+
+  test("defaults a VCS adapter registered without operations to an empty map", async () => {
+    const dir = createTempDir("hunk-host-vcs-");
+    // Written as JavaScript on purpose: the types make `operations` optional,
+    // and only an untyped extension can leave the map off entirely.
+    const candidate = createTestExtension(
+      dir,
+      "bare-adapter.js",
+      `export default function (hunk) {
+  hunk.registerVcsAdapter({ id: "fossil", name: "Fossil", detect: () => null });
+}
+`,
+    );
+
+    const result = await loadExtensions({ candidates: [candidate], cwd: dir });
+    const adapter = result.registry.vcsAdapters[0]?.adapter;
+
+    expect(result.issues).toEqual([]);
+    expect(adapter?.operations).toEqual({});
+    // The lookup that used to throw a raw TypeError now reports "unsupported".
+    expect(
+      getVcsOperation(adapter as VcsAdapter, {
+        kind: "working-tree-diff",
+        input: { kind: "vcs", staged: false, options: {} },
+      }),
+    ).toBeUndefined();
+  });
+
+  test("rejects a VCS adapter whose operations are not an object", async () => {
+    const dir = createTempDir("hunk-host-vcs-invalid-");
+    const candidate = createTestExtension(
+      dir,
+      "bad-adapter.js",
+      `export default function (hunk) {
+  hunk.registerVcsAdapter({ id: "fossil", name: "Fossil", detect: () => null, operations: [] });
+}
+`,
+    );
+
+    const result = await loadExtensions({ candidates: [candidate], cwd: dir });
+
+    expect(result.registry.vcsAdapters).toEqual([]);
+    expect(result.issues[0]?.message).toContain("operations");
   });
 
   test("delivers each extension its own config table", async () => {

@@ -121,12 +121,19 @@ export function operationFromInput(input: VcsReviewInput): VcsReviewOperation {
   }
 }
 
-/** Return the adapter operation handler for one neutral review operation, if supported. */
+/**
+ * Return the adapter operation handler for one neutral review operation, if supported.
+ *
+ * The operation map is optional at the extension-authoring boundary and can be
+ * missing entirely on an adapter registered from JavaScript, so a missing map
+ * reads the same as a missing operation: unsupported, which callers turn into a
+ * `HunkUserError` instead of a TypeError.
+ */
 export function getVcsOperation(
   adapter: VcsAdapter,
   operation: VcsReviewOperation,
 ): VcsOperation<VcsReviewInput> | undefined {
-  return adapter.operations[operation.kind] as VcsOperation<VcsReviewInput> | undefined;
+  return adapter.operations?.[operation.kind] as VcsOperation<VcsReviewInput> | undefined;
 }
 
 /** Load a review through the adapter operation map instead of adapter-local switch dispatch. */
@@ -178,7 +185,7 @@ export function createUnsupportedVcsOperationError(
   adapter: VcsAdapter,
   operationKind: VcsReviewOperationKind,
 ) {
-  const supportingAdapter = vcsAdapters.find((candidate) => candidate.operations[operationKind]);
+  const supportingAdapter = vcsAdapters.find((candidate) => candidate.operations?.[operationKind]);
   if (operationKind === "stash-show" && supportingAdapter) {
     return new HunkUserError(`\`hunk stash show\` requires ${supportingAdapter.name} VCS mode.`, [
       `Set \`vcs = "${supportingAdapter.id}"\` in Hunk config, then try again.`,

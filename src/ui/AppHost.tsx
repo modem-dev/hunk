@@ -50,6 +50,13 @@ export function AppHost({
   const [sessionFileBounds] = useState(() =>
     createSessionReloadBounds(bootstrap, { cwd: bootstrap.reloadContext.cwd }),
   );
+  // Which working directory the current extension set was discovered for.
+  // Discovery is cwd-relative, so a reload that moves the session to another
+  // repository has to re-run it: that repo's extensions — and the trust
+  // question they raise — belong to it, not to the one Hunk launched in. Seeded
+  // from the bounds' cwd so it compares against the same resolved form reloads
+  // produce, and a same-directory reload is not mistaken for a move.
+  const extensionsCwdRef = useRef(sessionFileBounds.defaultCwd);
   const startupNoticeText = useStartupNotices({
     enabled: !activeBootstrap.input.options.pager,
     notices: activeBootstrap.startupNotices,
@@ -82,7 +89,7 @@ export function AppHost({
       });
       const configured = resolveConfiguredCliInput(runtimeInput, { cwd });
 
-      if (options?.reloadExtensions) {
+      if (options?.reloadExtensions || cwd !== extensionsCwdRef.current) {
         // Reuse the session's notification hub so the mounted toast surface keeps
         // receiving `ctx.notify` from the extensions this pass loads.
         extensionsRef.current = await loadStartupExtensions({
@@ -91,6 +98,7 @@ export function AppHost({
           cliExtensionPaths: configured.input.options.extensionPaths,
           notifications: extensionsRef.current?.notifications,
         });
+        extensionsCwdRef.current = cwd;
       }
 
       const extensions = extensionsRef.current;

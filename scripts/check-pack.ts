@@ -83,6 +83,32 @@ for (const file of pack.files) {
   }
 }
 
+// `hunkdiff/extension` is a façade: its declarations must describe the authoring
+// contract and nothing else. Whole-program declaration emission happily ships
+// every module the entry reaches, so the published tree is allowlisted here —
+// a stray `extension/core/**` or `extension/extensions/**` file means the entry
+// grew an import into Hunk's internals and leaked them to consumers.
+const extensionPrefix = "dist/npm/extension/";
+const allowedExtensionEntries = ["index.js", "index.d.ts"];
+const allowedExtensionPrefixes = ["extension-api/"];
+
+for (const file of pack.files) {
+  if (!file.path.startsWith(extensionPrefix)) {
+    continue;
+  }
+
+  const relativePath = file.path.slice(extensionPrefix.length);
+  if (
+    !allowedExtensionEntries.includes(relativePath) &&
+    !allowedExtensionPrefixes.some((prefix) => relativePath.startsWith(prefix))
+  ) {
+    throw new Error(
+      `Unexpected file in the published extension surface: ${file.path}. ` +
+        "The hunkdiff/extension entry must only reach src/extension-api.",
+    );
+  }
+}
+
 if (pack.name !== "hunkdiff") {
   throw new Error(`Expected npm package name to be hunkdiff, got ${pack.name}.`);
 }

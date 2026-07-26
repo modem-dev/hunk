@@ -12,31 +12,37 @@
  * ```
  *
  * Only façade types belong here. Everything exported is something Hunk intends
- * to keep stable for the declared `apiVersion`.
+ * to keep stable for the declared `apiVersion`, and everything is declared in
+ * `./types` so the published declarations stay free of Hunk internals.
  */
-export { HUNK_EXTENSION_API_VERSION } from "../extensions/types";
+export { HUNK_EXTENSION_API_VERSION } from "./types";
 export type {
+  AgentAnnotation,
+  AgentFileContext,
   ChangesetTransform,
+  CustomSyntaxColorsConfig,
+  CustomSyntaxScopesConfig,
+  CustomThemeConfig,
+  ExtensionChangeset,
   ExtensionContext,
+  ExtensionDiffFile,
   ExtensionEventHandler,
   ExtensionEventName,
   ExtensionEventPayloads,
   ExtensionFactory,
   ExtensionNotifyType,
   ExtensionThemeConfig,
+  ExtensionVcsAdapter,
+  ExtensionVcsDetection,
+  ExtensionVcsDiffInput,
+  ExtensionVcsLoadContext,
+  ExtensionVcsOperation,
+  ExtensionVcsOperations,
+  ExtensionVcsPatchResult,
+  ExtensionVcsShowInput,
+  ExtensionVcsStashShowInput,
   HunkExtensionAPI,
   HunkExtensionApiVersion,
+  NamedCustomThemeConfig,
   SessionReloadReason,
-} from "../extensions/types";
-export type { AgentAnnotation, AgentFileContext, Changeset, DiffFile } from "../core/types";
-export type {
-  VcsAdapter,
-  VcsDetection,
-  VcsLoadContext,
-  VcsOperation,
-  VcsOperations,
-  VcsPatchResult,
-  VcsReviewInput,
-  VcsReviewOperation,
-  VcsReviewOperationKind,
-} from "../core/vcs/types";
+} from "./types";

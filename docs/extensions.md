@@ -21,17 +21,22 @@ export default function (hunk: HunkExtensionAPI) {
 
 ## Where Hunk looks for extensions
 
-Discovery runs in a fixed order, alphabetically within each group. The first
-occurrence of a resolved path wins, so a path you pass explicitly keeps its
-origin even if the same file is also discovered somewhere else.
+Discovery runs group by group, alphabetically by resolved path within each
+group. The first occurrence of a resolved path wins, so a path you pass
+explicitly keeps its origin even if the same file is also discovered somewhere
+else.
 
-| Order | Source                                               | Trust                 |
+| Group | Source                                               | Trust                 |
 | ----- | ---------------------------------------------------- | --------------------- |
 | 1     | `--extension <path>` (repeatable)                    | runs immediately      |
 | 2     | `[extensions] paths` in your user config             | runs immediately      |
 | 3     | `~/.config/hunk/extensions/`                         | runs immediately      |
 | 4     | `.hunk/extensions/` in the repo under review         | **prompts for trust** |
-| 5     | `[extensions] paths` in the repo `.hunk/config.toml` | **prompts for trust** |
+| 4     | `[extensions] paths` in the repo `.hunk/config.toml` | **prompts for trust** |
+
+The two repo-local sources share a group number because they are one group:
+both are repo-controlled, so they share a trust decision and their paths are
+sorted together rather than one source being loaded ahead of the other.
 
 A directory source matches `*.ts`, `*.js`, `*.mjs` directly inside it, plus one
 level of `<name>/index.{ts,js,mjs}` so a folder extension can keep helper
@@ -73,6 +78,11 @@ Run this repository's extensions?
 Decisions are stored per repository root in `~/.config/hunk/state.json`. The
 prompt is a normal dialog over the review stream, not a gate in front of it:
 you can dismiss it and keep reviewing.
+
+Trust is keyed by the repo root's **path**, not by the repository's identity —
+the same model VS Code workspace trust uses. If you delete a trusted checkout
+and a different repository later occupies that path, it inherits the decision.
+Clear the entry from `state.json` if that matters for a path you reuse.
 
 ## Failure isolation
 
@@ -153,10 +163,11 @@ hunk.registerVcsAdapter({
 });
 ```
 
-`operations` may implement any of `working-tree-diff`, `revision-show`, and
-`stash-show`; an unimplemented operation produces a clear "not supported"
-error instead of a crash. Watch mode (`--watch`) is not yet wired through
-extension adapters.
+`operations` is optional and may implement any of `working-tree-diff`,
+`revision-show`, and `stash-show`; an operation you leave out — or leaving the
+map off entirely — produces a clear "not supported" error for that command
+instead of a crash. Watch mode (`--watch`) is not yet wired through extension
+adapters.
 
 ### `hunk.transformChangeset(fn)`
 
@@ -172,10 +183,15 @@ hunk.transformChangeset((changeset) => ({
 ```
 
 The function may be async. Filtering and reordering `files` is fully supported —
-the sidebar and the review stream both follow whatever you return. A transform
-that throws, or returns something that is not a changeset with a `files` array,
+the sidebar and the review stream both follow whatever you return.
+
+Each file carries an opaque `metadata` field: it is the parsed diff the renderer
+draws from, so pass it through untouched (spreading a file preserves it). What
+you return is validated before it is reviewed. A transform that throws, or
+returns something the review UI could not draw — not a changeset with a `files`
+array, a file missing `metadata.hunks` or `stats`, two files sharing an `id` —
 is skipped: the previous changeset carries forward and you get a warning naming
-your extension.
+your extension and the problem.
 
 ### `hunk.on(event, handler)`
 
@@ -206,6 +222,15 @@ anyway, so treat it as best-effort flushing rather than guaranteed cleanup.
 Your extension's own `[extension.<id>]` config table, as a plain object. Hunk
 does not interpret the keys — unknown keys pass straight through — and repo
 config overrides user config key by key.
+
+> **Treat these values as untrusted.** Tables merge by extension id with no
+> notion of where the extension was installed from, so a repository under review
+> can set or override configuration for an extension you installed globally.
+> That is deliberate — repo-level tuning of a shared extension is a normal team
+> workflow, and Hunk shows a startup notice listing the extension ids a repo
+> configures — but it means `hunk.config` must never be trusted for
+> exec-adjacent decisions such as binary paths, shell commands, or module
+> loading. Validate those against something the user controls.
 
 ```toml
 # ~/.config/hunk/config.toml

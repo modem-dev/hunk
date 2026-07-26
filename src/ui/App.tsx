@@ -48,6 +48,7 @@ import { useReviewController, type AgentNoteGeometrySnapshot } from "./hooks/use
 import { useWatchedInput, type WatchedInputRuntime } from "./hooks/useWatchedInput";
 import { agentNoteMarkupWidth } from "./lib/agentNoteGeometry";
 import { buildAppMenus } from "./lib/appMenus";
+import { nextExtensionTrustPromptRoot } from "./lib/extensionTrustPrompt";
 import { fileRowId } from "./lib/ids";
 import { openSelectedFileInEditor } from "./lib/openInEditor";
 import { resolveResponsiveLayout } from "./lib/responsive";
@@ -199,10 +200,11 @@ export function App({
   const pendingTrustRepoRoot = extensions?.pendingTrustRepoRoot;
   const extensionToast = useExtensionNotifications(extensions?.notifications);
   // Repo-local extensions were discovered but skipped for want of a trust
-  // decision, so ask once per mounted review rather than on every reload.
-  const [extensionTrustPromptOpen, setExtensionTrustPromptOpen] = useState(
-    () => !pagerMode && Boolean(pendingTrustRepoRoot),
-  );
+  // decision. The prompt tracks the pending root reactively, because a session
+  // reload can point this app at a different repository without remounting.
+  const [extensionTrustPromptRoot, setExtensionTrustPromptRoot] = useState<string | null>(null);
+  const offeredTrustRepoRootsRef = useRef<Set<string>>(new Set());
+  const extensionTrustPromptOpen = extensionTrustPromptRoot !== null;
 
   const themeOptions = useMemo(
     () => availableThemes(bootstrap.customThemes),
@@ -700,9 +702,35 @@ export function App({
     [refreshCurrentInput],
   );
 
+  /**
+   * Open the trust prompt whenever a repo root needs an answer it has not been asked for.
+   *
+   * Each root is marked as offered before the prompt opens, so dismissing with
+   * "not now" is not immediately re-prompted by this effect; only a genuinely
+   * different pending root asks again. When the pending root clears — the usual
+   * case being a trust grant followed by a reload — the prompt closes itself.
+   */
+  useEffect(() => {
+    const nextRoot = nextExtensionTrustPromptRoot({
+      enabled: !pagerMode,
+      pendingRepoRoot: pendingTrustRepoRoot,
+      offeredRepoRoots: offeredTrustRepoRootsRef.current,
+    });
+
+    if (nextRoot) {
+      offeredTrustRepoRootsRef.current.add(nextRoot);
+      setExtensionTrustPromptRoot(nextRoot);
+      return;
+    }
+
+    if (!pendingTrustRepoRoot) {
+      setExtensionTrustPromptRoot(null);
+    }
+  }, [pagerMode, pendingTrustRepoRoot]);
+
   /** Dismiss the repo-extension trust prompt without recording a decision. */
   const closeExtensionTrustPrompt = useCallback(() => {
-    setExtensionTrustPromptOpen(false);
+    setExtensionTrustPromptRoot(null);
   }, []);
 
   /**
@@ -713,13 +741,14 @@ export function App({
    * apply without restarting Hunk.
    */
   const trustRepoExtensions = useCallback(() => {
-    setExtensionTrustPromptOpen(false);
-    if (!pendingTrustRepoRoot) {
+    const repoRoot = extensionTrustPromptRoot;
+    setExtensionTrustPromptRoot(null);
+    if (!repoRoot) {
       return;
     }
 
     try {
-      writeExtensionTrust(pendingTrustRepoRoot, "trusted");
+      writeExtensionTrust(repoRoot, "trusted");
     } catch (error) {
       showSessionNotice(
         error instanceof Error ? error.message : "Failed to record the trust decision.",
@@ -736,24 +765,25 @@ export function App({
     void refreshCurrentInput({ reason: "manual", reloadExtensions: true }).catch(() => {
       showSessionNotice("Failed to reload after trusting this repository's extensions.");
     });
-  }, [canRefreshCurrentInput, pendingTrustRepoRoot, refreshCurrentInput, showSessionNotice]);
+  }, [canRefreshCurrentInput, extensionTrustPromptRoot, refreshCurrentInput, showSessionNotice]);
 
   /** Record this repo as denied so Hunk stops offering to run its extensions. */
   const denyRepoExtensions = useCallback(() => {
-    setExtensionTrustPromptOpen(false);
-    if (!pendingTrustRepoRoot) {
+    const repoRoot = extensionTrustPromptRoot;
+    setExtensionTrustPromptRoot(null);
+    if (!repoRoot) {
       return;
     }
 
     try {
-      writeExtensionTrust(pendingTrustRepoRoot, "denied");
+      writeExtensionTrust(repoRoot, "denied");
       showSessionNotice("Won't run this repository's extensions");
     } catch (error) {
       showSessionNotice(
         error instanceof Error ? error.message : "Failed to record the trust decision.",
       );
     }
-  }, [pendingTrustRepoRoot, showSessionNotice]);
+  }, [extensionTrustPromptRoot, showSessionNotice]);
 
   const triggerEditSelectedFile = useCallback(() => {
     const basePath =
@@ -1382,7 +1412,7 @@ export function App({
         </ConfirmDialog>
       ) : null}
 
-      {!pagerMode && extensionTrustPromptOpen && pendingTrustRepoRoot ? (
+      {!pagerMode && extensionTrustPromptRoot ? (
         <ConfirmDialog
           actions={[
             { keyLabel: "enter/t", label: "trust", run: trustRepoExtensions },
@@ -1407,7 +1437,7 @@ export function App({
           </box>
           <box style={{ width: "100%", height: 1 }} />
           <box style={{ width: "100%", height: 1 }}>
-            <text fg={baseTheme.badgeNeutral}>{pendingTrustRepoRoot}</text>
+            <text fg={baseTheme.badgeNeutral}>{extensionTrustPromptRoot}</text>
           </box>
           <box style={{ width: "100%", height: 1 }}>
             <text fg={baseTheme.muted}>

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { Changeset } from "../core/types";
+import { createTestDiffFile } from "../../test/helpers/diff-helpers";
+import type { Changeset, DiffFile } from "../core/types";
 import type { VcsAdapter } from "../core/vcs/types";
 import {
   applyExtensionChangesetTransforms,
@@ -26,6 +27,21 @@ function createTestLoadResult(): { result: ExtensionLoadResult; notices: string[
 
 function createTestChangeset(overrides: Partial<Changeset> = {}): Changeset {
   return { id: "changeset:test", sourceLabel: "repo", title: "test", files: [], ...overrides };
+}
+
+/**
+ * Build files with real Pierre metadata.
+ *
+ * Transform validation looks at `metadata.hunks`, so fixtures have to carry the
+ * same shape the loader produces; a hand-rolled `metadata: {}` would only prove
+ * that a file the renderer cannot draw is accepted.
+ */
+function createTestFiles(): DiffFile[] {
+  return [
+    createTestDiffFile({ id: "a", path: "a.ts" }),
+    createTestDiffFile({ id: "b", path: "b.lock" }),
+    createTestDiffFile({ id: "c", path: "c.ts" }),
+  ];
 }
 
 /** Build a minimal adapter; only id/name/detect matter to the registration rules. */
@@ -159,7 +175,7 @@ describe("extension changeset transforms", () => {
 
     expect(transformed.title).toBe("test");
     expect(notices).toEqual([
-      "Extension sloppy returned an invalid changeset • keeping the previous one",
+      "Extension sloppy returned an invalid changeset (not an object) • keeping the previous one",
     ]);
   });
 
@@ -173,16 +189,105 @@ describe("extension changeset transforms", () => {
     const transformed = await applyExtensionChangesetTransforms(result, createTestChangeset());
 
     expect(transformed.files).toEqual([]);
-    expect(notices.length).toBe(1);
+    expect(notices).toEqual([
+      "Extension sloppy returned an invalid changeset (files[0].path is not a string) • keeping the previous one",
+    ]);
+  });
+
+  test("rejects a file whose metadata carries no hunks the renderer can draw", async () => {
+    for (const [metadata, reason] of [
+      [{}, "files[0].metadata.hunks is not an array"],
+      [{ hunks: "nope" }, "files[0].metadata.hunks is not an array"],
+      [{ hunks: [{}] }, "files[0].metadata.hunks contains an unusable hunk"],
+      [null, "files[0].metadata is not an object"],
+    ] as const) {
+      const { result, notices } = createTestLoadResult();
+      const files = createTestFiles();
+      addTransform(result, "sloppy", (changeset) => ({
+        ...changeset,
+        files: [{ ...changeset.files[0], metadata }] as unknown as Changeset["files"],
+      }));
+
+      const transformed = await applyExtensionChangesetTransforms(
+        result,
+        createTestChangeset({ files }),
+      );
+
+      // The whole previous changeset carries forward, not a partially applied one.
+      expect(transformed.files.map((file) => file.id)).toEqual(["a", "b", "c"]);
+      expect(notices).toEqual([
+        `Extension sloppy returned an invalid changeset (${reason}) • keeping the previous one`,
+      ]);
+    }
+  });
+
+  test("rejects a file the sidebar and totals could not summarize", async () => {
+    const { result, notices } = createTestLoadResult();
+    addTransform(result, "sloppy", () => ({
+      ...createTestChangeset(),
+      files: [
+        { ...createTestDiffFile({ id: "a" }), stats: undefined },
+      ] as unknown as Changeset["files"],
+    }));
+
+    await applyExtensionChangesetTransforms(result, createTestChangeset());
+
+    expect(notices).toEqual([
+      "Extension sloppy returned an invalid changeset (files[0].stats is missing addition and deletion counts) • keeping the previous one",
+    ]);
+  });
+
+  test("rejects an agent context without annotations", async () => {
+    const { result, notices } = createTestLoadResult();
+    addTransform(result, "sloppy", () => ({
+      ...createTestChangeset(),
+      files: [
+        { ...createTestDiffFile({ id: "a" }), agent: { path: "a.ts" } },
+      ] as unknown as Changeset["files"],
+    }));
+
+    await applyExtensionChangesetTransforms(result, createTestChangeset());
+
+    expect(notices).toEqual([
+      "Extension sloppy returned an invalid changeset (files[0].agent has no annotations array) • keeping the previous one",
+    ]);
+  });
+
+  test("rejects duplicate file ids that would collide in review state", async () => {
+    const { result, notices } = createTestLoadResult();
+    const files = createTestFiles();
+    addTransform(result, "duplicator", (changeset) => ({
+      ...changeset,
+      files: [...changeset.files, changeset.files[0]] as Changeset["files"],
+    }));
+
+    const transformed = await applyExtensionChangesetTransforms(
+      result,
+      createTestChangeset({ files }),
+    );
+
+    expect(transformed.files.map((file) => file.id)).toEqual(["a", "b", "c"]);
+    expect(notices).toEqual([
+      'Extension duplicator returned an invalid changeset (duplicate file id "a") • keeping the previous one',
+    ]);
+  });
+
+  test("rejects a file with an empty id", async () => {
+    const { result, notices } = createTestLoadResult();
+    addTransform(result, "sloppy", (changeset) => ({
+      ...changeset,
+      files: [{ ...createTestDiffFile({ id: "a" }), id: "" }] as unknown as Changeset["files"],
+    }));
+
+    await applyExtensionChangesetTransforms(result, createTestChangeset());
+
+    expect(notices).toEqual([
+      "Extension sloppy returned an invalid changeset (files[0].id is not a non-empty string) • keeping the previous one",
+    ]);
   });
 
   test("accepts a transform that filters and reorders files", async () => {
     const { result } = createTestLoadResult();
-    const files = [
-      { id: "a", path: "a.ts", metadata: {} },
-      { id: "b", path: "b.lock", metadata: {} },
-      { id: "c", path: "c.ts", metadata: {} },
-    ] as unknown as Changeset["files"];
     addTransform(result, "collapse", (changeset) => ({
       ...changeset,
       files: [...changeset.files].filter((file) => !file.path.endsWith(".lock")).reverse(),
@@ -190,7 +295,7 @@ describe("extension changeset transforms", () => {
 
     const transformed = await applyExtensionChangesetTransforms(
       result,
-      createTestChangeset({ files }),
+      createTestChangeset({ files: createTestFiles() }),
     );
 
     expect(transformed.files.map((file) => file.id)).toEqual(["c", "a"]);

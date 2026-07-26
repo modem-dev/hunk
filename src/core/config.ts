@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import { dirname, join } from "node:path";
+import { sanitizeTerminalLine } from "../lib/terminalText";
 import { BUNDLED_SHIKI_THEME_IDS, resolveBundledShikiThemeId } from "../ui/lib/shikiThemes";
 import {
   createInvalidThemeIdNotice,
@@ -417,15 +418,15 @@ function mergeCustomThemeLayer(
  */
 function buildConfigStartupNotices(
   usesLegacyCustomSyntax: boolean,
-  themeNotices: readonly StartupNotice[],
+  configNotices: readonly StartupNotice[],
 ): readonly StartupNotice[] | undefined {
-  if (themeNotices.length === 0) {
+  if (configNotices.length === 0) {
     return usesLegacyCustomSyntax ? LEGACY_CUSTOM_SYNTAX_NOTICES : undefined;
   }
 
   return usesLegacyCustomSyntax
-    ? [...LEGACY_CUSTOM_SYNTAX_NOTICES, ...themeNotices]
-    : [...themeNotices];
+    ? [...LEGACY_CUSTOM_SYNTAX_NOTICES, ...configNotices]
+    : [...configNotices];
 }
 
 /** One config layer's extension settings, before user/repo layers are merged. */
@@ -476,6 +477,35 @@ function readExtensionsLayer(source: Record<string, unknown>): ExtensionsLayer {
     enabled: isRecord(extensionsSource) ? normalizeBoolean(extensionsSource.enabled) : undefined,
     paths: isRecord(extensionsSource) ? normalizeStringArray(extensionsSource.paths) : [],
     extensionConfigs,
+  };
+}
+
+/**
+ * Report the extensions whose settings the repository under review contributes.
+ *
+ * `[extension.<id>]` tables merge repo-over-user by id, with no notion of where
+ * the extension itself was installed from, so a repository can steer the
+ * configuration of a globally installed extension. Repo-level tuning of a
+ * shared extension is a legitimate team workflow, so this is surfaced rather
+ * than blocked — but it is surfaced, because that config can carry
+ * exec-adjacent values such as binary paths.
+ */
+function createRepoExtensionConfigNotice(
+  repoExtensionConfigs: Record<string, Record<string, unknown>>,
+): StartupNotice | undefined {
+  const ids = Object.entries(repoExtensionConfigs)
+    .filter(([, table]) => Object.keys(table).length > 0)
+    .map(([extensionId]) => extensionId)
+    .sort();
+  if (ids.length === 0) {
+    return undefined;
+  }
+
+  // Table names come from the repo, so they are untrusted terminal-bound text.
+  const listed = sanitizeTerminalLine(ids.join(", "));
+  return {
+    key: `extension:repo-config:${listed}`,
+    message: `Repo config overrides settings for extension(s): ${listed}`,
   };
 }
 
@@ -780,6 +810,10 @@ export function resolveConfiguredCliInput(
       repoExtensionsLayer.extensionConfigs,
     ),
   };
+  const repoExtensionConfigNotice = createRepoExtensionConfigNotice(
+    repoExtensionsLayer.extensionConfigs,
+  );
+  const repoExtensionConfigNotices = repoExtensionConfigNotice ? [repoExtensionConfigNotice] : [];
 
   return {
     input: {
@@ -788,7 +822,10 @@ export function resolveConfiguredCliInput(
     },
     customThemes: resolvedCustomThemes,
     extensions,
-    startupNotices: buildConfigStartupNotices(usesLegacyCustomSyntax, [...themeNotices.values()]),
+    startupNotices: buildConfigStartupNotices(usesLegacyCustomSyntax, [
+      ...themeNotices.values(),
+      ...repoExtensionConfigNotices,
+    ]),
     globalConfigPath: userConfigPath,
     repoConfigPath,
     // Persist in the repo config only when the repo already has one; otherwise keep personal view

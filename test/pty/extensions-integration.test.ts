@@ -115,6 +115,53 @@ describe("PTY extensions", () => {
     }
   });
 
+  test("never records a denial and stops asking on later launches", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(TRANSFORM_EXTENSION_SOURCE);
+    const launch = async () =>
+      await harness.launchHunk({
+        args: ["diff", "--mode", "stack"],
+        cwd: fixture.dir,
+        cols: 140,
+        rows: 24,
+        env: { XDG_CONFIG_HOME: configHome },
+      });
+
+    const session = await launch();
+    try {
+      await session.waitForText(/Run this repository's extensions\?/, { timeout: 20_000 });
+      await session.press("n");
+
+      const denied = await harness.waitForSnapshot(
+        session,
+        (text) => !text.includes("Run this repository's extensions?"),
+        10_000,
+      );
+      // The extension never ran, so the review is the untransformed one.
+      expect(denied).toContain("beta.ts");
+      expect(denied).not.toContain("REPO EXTENSION ACTIVE");
+
+      expect(readTrustState(configHome)[fixture.dir]).toBe("denied");
+    } finally {
+      session.close();
+    }
+
+    const relaunched = await launch();
+    try {
+      const reviewed = await harness.waitForSnapshot(
+        relaunched,
+        (text) => text.includes("alpha.ts"),
+        20_000,
+      );
+      // A recorded denial is an answer: Hunk neither asks again nor loads them.
+      expect(reviewed).not.toContain("Run this repository's extensions?");
+      expect(reviewed).not.toContain("REPO EXTENSION ACTIVE");
+      expect(reviewed).toContain("beta.ts");
+    } finally {
+      relaunched.close();
+    }
+  });
+
   test("a startup handler's notify renders as a toast and clears itself", async () => {
     const configHome = harness.createIsolatedConfigHome();
     const fixture = harness.createRepoExtensionFixture(NOTIFY_EXTENSION_SOURCE);

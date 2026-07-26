@@ -1,97 +1,44 @@
 import { basename, dirname, extname } from "node:path";
-import type { Changeset, NamedCustomThemeConfig } from "../core/types";
 import type { VcsAdapter } from "../core/vcs/types";
+import type {
+  ChangesetTransform,
+  ExtensionContext,
+  ExtensionEventHandler,
+  ExtensionEventName,
+  ExtensionNotifyType,
+  ExtensionThemeConfig,
+} from "../extension-api/types";
 import { createExtensionNotificationHub, type ExtensionNotificationHub } from "./notifications";
 
 /**
- * Version of the extension API surface handed to extension factories.
- *
- * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
- * older extensions without guessing at their expectations.
+ * The authoring contract lives in `src/extension-api/types.ts` and is re-exported
+ * here so host code keeps one import site for both halves of the system. That
+ * module is self-contained because its declarations are published; this one is
+ * free to reference Hunk internals.
  */
-export const HUNK_EXTENSION_API_VERSION = 1;
-export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
+export { HUNK_EXTENSION_API_VERSION } from "../extension-api/types";
+export type {
+  ChangesetTransform,
+  ExtensionChangeset,
+  ExtensionContext,
+  ExtensionDiffFile,
+  ExtensionEventHandler,
+  ExtensionEventName,
+  ExtensionEventPayloads,
+  ExtensionFactory,
+  ExtensionNotifyType,
+  ExtensionThemeConfig,
+  ExtensionVcsAdapter,
+  HunkExtensionAPI,
+  HunkExtensionApiVersion,
+  SessionReloadReason,
+} from "../extension-api/types";
 
 /** Where one extension entry file came from, which decides its trust posture. */
 export type ExtensionOrigin = "global" | "repo" | "config" | "flag";
 
-/**
- * A theme contributed by an extension.
- *
- * Identical to a `[themes.<id>]` config table, so config-defined and
- * extension-contributed themes share one validation and merge path.
- */
-export type ExtensionThemeConfig = NamedCustomThemeConfig;
-
-export type ExtensionNotifyType = "info" | "warning" | "error";
-
 /** Sink the host routes `ctx.notify` through; the UI supplies a real toast later. */
 export type ExtensionNotifySink = (message: string, type: ExtensionNotifyType) => void;
-
-/** Capability object handed to every extension event handler and transform. */
-export interface ExtensionContext {
-  cwd: string;
-  notify(message: string, type?: ExtensionNotifyType): void;
-}
-
-/** Rewrite a loaded changeset before it reaches the review UI. */
-export type ChangesetTransform = (
-  changeset: Changeset,
-  ctx: ExtensionContext,
-) => Changeset | Promise<Changeset>;
-
-/**
- * Why a session reload happened.
- *
- * `watch` is a file/VCS change Hunk noticed itself, `daemon` is an agent
- * command routed through the session broker, and `manual` is a user action
- * (the refresh key, or reloading after granting repo-extension trust).
- */
-export type SessionReloadReason = "watch" | "daemon" | "manual";
-
-/** Payload delivered with each lifecycle event, keyed by event name. */
-export interface ExtensionEventPayloads {
-  startup: { cwd: string };
-  changeset_loaded: { changeset: Changeset };
-  selection_changed: { fileId: string | null; hunkIndex: number | null };
-  session_reload: { changeset: Changeset; reason: SessionReloadReason };
-  shutdown: Record<string, never>;
-}
-
-export type ExtensionEventName = keyof ExtensionEventPayloads;
-
-export type ExtensionEventHandler<Event extends ExtensionEventName = ExtensionEventName> = (
-  payload: ExtensionEventPayloads[Event],
-  ctx: ExtensionContext,
-) => void | Promise<void>;
-
-/**
- * The whole capability surface an extension is granted.
- *
- * Registration calls are only valid while the extension factory is running;
- * the host invalidates the object afterwards so deferred callbacks cannot
- * mutate the registry mid-session.
- */
-export interface HunkExtensionAPI {
-  readonly apiVersion: HunkExtensionApiVersion;
-  /** Contribute one selectable theme. */
-  registerTheme(theme: ExtensionThemeConfig): void;
-  /** Map one file extension (with or without a leading dot) to a highlight language. */
-  registerFileLanguage(extension: string, language: string): void;
-  /** Contribute one additional VCS backend. */
-  registerVcsAdapter(adapter: VcsAdapter): void;
-  /** Rewrite every loaded changeset before review. */
-  transformChangeset(fn: ChangesetTransform): void;
-  /** Subscribe to one Hunk lifecycle event. */
-  on<Event extends ExtensionEventName>(event: Event, handler: ExtensionEventHandler<Event>): void;
-  /** This extension's own `[extension.<id>]` config table. */
-  readonly config: Record<string, unknown>;
-  /** Record a diagnostic line; collected per extension instead of written to the terminal. */
-  log(message: string): void;
-}
-
-/** Default export every extension entry file must provide. */
-export type ExtensionFactory = (hunk: HunkExtensionAPI) => void | Promise<void>;
 
 /** Identity of one loaded extension, carried on everything it registered. */
 export interface ExtensionMetadata {
