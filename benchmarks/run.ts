@@ -13,6 +13,7 @@ const defaultScripts = [
   "large-stream.ts",
   "interaction-latency.ts",
   "non-ascii-stream.ts",
+  "wrapped-cjk.ts",
   "terminal-width.ts",
 ];
 

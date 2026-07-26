@@ -1,4 +1,5 @@
-import { memo, type ReactNode } from "react";
+import { Fragment, isValidElement, memo, type ReactNode } from "react";
+import { parseColor, StyledText, type TextChunk } from "@opentui/core";
 import type { DiffFile, UserNoteLineTarget } from "../../core/types";
 import type { AppTheme } from "../themes";
 import {
@@ -25,7 +26,17 @@ import { type PlannedReviewRow } from "./reviewRenderPlan";
 import { inlineNoteTitle } from "../components/panes/AgentInlineNote";
 import { wrapText } from "../lib/agentPopover";
 import { sanitizeTerminalLine, sanitizeTerminalSpans } from "../../lib/terminalText";
-import { measureTextWidth, padText as padTextByWidth, sliceTextByWidth } from "../lib/text";
+import {
+  isPrintableAsciiText,
+  measureSanitizedTextWidth,
+  measureSimpleSanitizedTextWidth,
+  measureTextWidth,
+  padText as padTextByWidth,
+  sliceSanitizedTextByWidth,
+  sliceTextByWidth,
+  textClusters,
+  wrapSanitizedTextByWidth,
+} from "../lib/text";
 import type { CopySelectedRowRange } from "../components/panes/copySelection";
 
 /** Clamp a label to one terminal row with an ellipsis. */
@@ -35,7 +46,7 @@ export function fitText(text: string, width: number) {
     return "";
   }
 
-  if (measureTextWidth(safeText) <= width) {
+  if (measureSanitizedTextWidth(safeText) <= width) {
     return safeText;
   }
 
@@ -43,7 +54,7 @@ export function fitText(text: string, width: number) {
     return "…";
   }
 
-  return `${sliceTextByWidth(safeText, 0, width - 1).text}…`;
+  return `${sliceSanitizedTextByWidth(safeText, 0, width - 1).text}…`;
 }
 
 /** Append a styled span while preserving color-run coalescing. */
@@ -54,6 +65,62 @@ function appendRenderSpan(target: RenderSpan[], span: RenderSpan) {
   } else {
     target.push(span);
   }
+}
+
+/** Return the first or last scalar in one non-empty string. */
+function boundaryScalar(text: string, first: boolean) {
+  if (first) {
+    const codePoint = text.codePointAt(0);
+    return codePoint === undefined ? "" : String.fromCodePoint(codePoint);
+  }
+
+  let scalar = "";
+  for (const candidate of text) {
+    scalar = candidate;
+  }
+  return scalar;
+}
+
+/** Return whether a styled-span boundary may divide one grapheme cluster. */
+function spansMaySplitGrapheme(spans: RenderSpan[]) {
+  for (let index = 1; index < spans.length; index += 1) {
+    const left = boundaryScalar(spans[index - 1]?.text ?? "", false);
+    const right = boundaryScalar(spans[index]?.text ?? "", true);
+    if (
+      (left && measureSimpleSanitizedTextWidth(left) === null) ||
+      (right && measureSimpleSanitizedTextWidth(right) === null)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Merge indivisible graphemes while preserving the style where each cluster starts. */
+function mergeCrossSpanGraphemes(spans: RenderSpan[]) {
+  const normalized: RenderSpan[] = [];
+  const text = spans.map((span) => span.text).join("");
+  let sourceIndex = 0;
+  let sourceEnd = spans[0]?.text.length ?? 0;
+  let cursor = 0;
+
+  for (const cluster of textClusters(text)) {
+    while (cursor >= sourceEnd && sourceIndex < spans.length - 1) {
+      sourceIndex += 1;
+      sourceEnd += spans[sourceIndex]?.text.length ?? 0;
+    }
+    const source = spans[sourceIndex];
+    if (source) {
+      appendRenderSpan(normalized, { ...source, text: cluster });
+    }
+    cursor += cluster.length;
+  }
+  return normalized;
+}
+
+/** Merge only indivisible graphemes that may cross styled-span boundaries. */
+function preserveCrossSpanGraphemes(spans: RenderSpan[]) {
+  return spansMaySplitGrapheme(spans) ? mergeCrossSpanGraphemes(spans) : spans;
 }
 
 /** Slice styled spans to one visible window while preserving color runs. */
@@ -75,9 +142,9 @@ function sliceSpansWindow(spans: RenderSpan[], offset: number, width: number) {
       break;
     }
 
-    const spanWidth = measureTextWidth(span.text);
+    const spanWidth = measureSanitizedTextWidth(span.text);
     if (spanWidth === 0) {
-      appendRenderSpan(sliced, span);
+      appendRenderSpan(sliced, { ...span });
       continue;
     }
 
@@ -86,7 +153,16 @@ function sliceSpansWindow(spans: RenderSpan[], offset: number, width: number) {
       continue;
     }
 
-    const visible = sliceTextByWidth(span.text, remainingOffset, remaining);
+    if (remainingOffset === 0 && spanWidth <= remaining) {
+      // Preserve the full safe span without re-slicing its graphemes. Clone before coalescing so
+      // appendRenderSpan can never mutate the caller-owned highlighted span object.
+      appendRenderSpan(sliced, { ...span });
+      remaining -= spanWidth;
+      usedWidth += spanWidth;
+      continue;
+    }
+
+    const visible = sliceSanitizedTextByWidth(span.text, remainingOffset, remaining);
     remainingOffset = 0;
 
     if (visible.text.length === 0) {
@@ -112,6 +188,131 @@ function sliceSpansWindow(spans: RenderSpan[], offset: number, width: number) {
 
 const marker = diffRailMarker;
 const addNoteBadgeText = "[+]";
+const styledTextColorCache = new Map<string, ReturnType<typeof parseColor>>();
+const addNoteSpacerContentCache = new Map<string, StyledText>();
+
+/** Resolve one OpenTUI color while reusing immutable parsed theme values. */
+function styledTextColor(value: string | undefined) {
+  if (!value) {
+    return undefined;
+  }
+  let parsed = styledTextColorCache.get(value);
+  if (!parsed) {
+    parsed = parseColor(value);
+    styledTextColorCache.set(value, parsed);
+  }
+  return parsed;
+}
+
+/** Convert a React span fragment into OpenTUI's direct styled-text run list. */
+function styledTextFromSpanNodes(nodes: ReactNode[]) {
+  const chunks: TextChunk[] = [];
+  const collect = (node: ReactNode, fg?: string, bg?: string) => {
+    if (node === null || node === undefined || typeof node === "boolean") {
+      return;
+    }
+    if (typeof node === "string" || typeof node === "number") {
+      chunks.push({
+        __isChunk: true,
+        text: String(node),
+        fg: styledTextColor(fg),
+        bg: styledTextColor(bg),
+      });
+      return;
+    }
+    if (Array.isArray(node)) {
+      for (const child of node) {
+        collect(child, fg, bg);
+      }
+      return;
+    }
+    if (!isValidElement<{ children?: ReactNode; fg?: string; bg?: string }>(node)) {
+      return;
+    }
+    if (node.type === Fragment) {
+      collect(node.props.children, fg, bg);
+      return;
+    }
+    if (node.type === "span") {
+      collect(node.props.children, node.props.fg ?? fg, node.props.bg ?? bg);
+    }
+  };
+
+  collect(nodes);
+  return new StyledText(chunks);
+}
+
+/** Append an unselected fixed-width inline span plan directly to StyledText chunks. */
+function appendFixedInlineChunks(
+  chunks: TextChunk[],
+  spans: RenderSpan[],
+  width: number,
+  fallbackColor: string,
+  fallbackBg: string,
+) {
+  const { spans: trimmed, usedWidth } = sliceSpansWindow(spans, 0, width);
+  const paddingAmount = Math.max(0, width - usedWidth);
+  const lastSpan = trimmed.at(-1);
+  let paddingMerged = false;
+  if (
+    paddingAmount > 0 &&
+    lastSpan &&
+    (lastSpan.fg ?? fallbackColor) === fallbackColor &&
+    (lastSpan.bg ?? fallbackBg) === fallbackBg
+  ) {
+    lastSpan.text += " ".repeat(paddingAmount);
+    paddingMerged = true;
+  }
+
+  for (const span of trimmed) {
+    chunks.push({
+      __isChunk: true,
+      text: span.text,
+      fg: styledTextColor(span.fg ?? fallbackColor),
+      bg: styledTextColor(span.bg ?? fallbackBg),
+    });
+  }
+  if (!paddingMerged && paddingAmount > 0) {
+    chunks.push({
+      __isChunk: true,
+      text: " ".repeat(paddingAmount),
+      fg: styledTextColor(fallbackColor),
+      bg: styledTextColor(fallbackBg),
+    });
+  }
+}
+
+/** Append one unselected wrapped cell without constructing intermediate React span elements. */
+function appendWrappedCellChunks(
+  chunks: TextChunk[],
+  line: WrappedCellLine,
+  palette: { numberColor: string; gutterBg: string; contentBg: string },
+  contentWidth: number,
+  theme: AppTheme,
+  prefix: { text: string; fg: string; bg: string },
+) {
+  chunks.push(
+    {
+      __isChunk: true,
+      text: prefix.text,
+      fg: styledTextColor(prefix.fg),
+      bg: styledTextColor(prefix.bg),
+    },
+    {
+      __isChunk: true,
+      text: line.gutterText,
+      fg: styledTextColor(palette.numberColor),
+      bg: styledTextColor(palette.gutterBg),
+    },
+  );
+  appendFixedInlineChunks(
+    chunks,
+    line.spans,
+    contentWidth,
+    theme.syntaxColors.default,
+    palette.contentBg,
+  );
+}
 
 /** Reserve the hover affordance column in wrapped rows so hover cannot reflow code. */
 function wrappedAddNoteReserveWidth(wrapLines: boolean, reserveAddNoteColumn = false) {
@@ -128,13 +329,28 @@ function renderInlineSpans(
   horizontalOffset = 0,
   selectionTheme?: AppTheme,
   selectionColRange?: { start: number; end: number },
+  spansAreSanitized = false,
 ) {
   const { spans: trimmed, usedWidth } = sliceSpansWindow(
-    sanitizeTerminalSpans(spans),
+    spansAreSanitized ? spans : sanitizeTerminalSpans(spans),
     horizontalOffset,
     width,
   );
   const needsBlending = selectionTheme && selectionColRange;
+  const paddingAmount = Math.max(0, width - usedWidth);
+  let paddingMerged = false;
+  const lastSpan = trimmed.at(-1);
+  if (
+    !needsBlending &&
+    paddingAmount > 0 &&
+    lastSpan &&
+    (lastSpan.fg ?? fallbackColor) === fallbackColor &&
+    (lastSpan.bg ?? fallbackBg) === fallbackBg
+  ) {
+    // sliceSpansWindow always returns owned span objects, so padding can share the final native node.
+    lastSpan.text += " ".repeat(paddingAmount);
+    paddingMerged = true;
+  }
 
   // Build the final element list by splitting spans at selection boundaries so the highlight
   // applies at character-level precision rather than whole-token granularity.
@@ -143,16 +359,25 @@ function renderInlineSpans(
   let elementIndex = 0;
 
   for (const span of trimmed) {
+    if (!needsBlending) {
+      elements.push(
+        <span
+          key={`${keyPrefix}:${elementIndex++}`}
+          fg={span.fg ?? fallbackColor}
+          bg={span.bg ?? fallbackBg}
+        >
+          {span.text}
+        </span>,
+      );
+      continue;
+    }
+
     const spanWidth = measureTextWidth(span.text);
     const spanStart = colPos;
     const spanEnd = colPos + spanWidth;
     colPos = spanEnd;
 
-    if (
-      !needsBlending ||
-      spanEnd <= selectionColRange.start ||
-      spanStart >= selectionColRange.end
-    ) {
+    if (spanEnd <= selectionColRange.start || spanStart >= selectionColRange.end) {
       // Span is entirely outside the selection — render with original styling.
       elements.push(
         <span
@@ -231,8 +456,6 @@ function renderInlineSpans(
     // the rendered spans) and extends to `width`.
     const padStart = colPos;
     const padEnd = colPos + Math.max(0, width - usedWidth);
-    const paddingAmount = Math.max(0, width - usedWidth);
-
     if (paddingAmount > 0) {
       if (padStart < selectionColRange.end && padEnd > selectionColRange.start) {
         // Split padding into outside/before, selected, and after.
@@ -274,11 +497,11 @@ function renderInlineSpans(
         );
       }
     }
-  } else if (width - usedWidth > 0) {
-    // No blending — always render a separate padding span.
+  } else if (!paddingMerged && paddingAmount > 0) {
+    // Keep a separate padding span when the final content style differs from the cell fallback.
     elements.push(
       <span key={`${keyPrefix}:pad`} fg={fallbackColor} bg={fallbackBg}>
-        {" ".repeat(width - usedWidth)}
+        {" ".repeat(paddingAmount)}
       </span>,
     );
   }
@@ -298,6 +521,11 @@ interface WrappedCellLayout {
   lines: WrappedCellLine[];
 }
 
+// Repeated offset slicing is faster for short spans, while its repeated grapheme traversal turns
+// quadratic once one span crosses many visual lines. Switch only where the linear planner wins
+// decisively so ordinary wrapped and nowrap text retain their established fast paths.
+const SINGLE_PASS_WRAP_LINE_THRESHOLD = 8;
+
 /** Wrap styled spans into visual lines while preserving color runs across splits. */
 function wrapSpans(spans: RenderSpan[], width: number) {
   if (width <= 0) {
@@ -307,11 +535,50 @@ function wrapSpans(spans: RenderSpan[], width: number) {
   const lines: RenderSpan[][] = [[]];
   let current = lines[0]!;
   let remaining = width;
+  const safeSpans = sanitizeTerminalSpans(spans);
+  let plannedSpans = safeSpans;
+  let hasCompositionSensitiveSpan = false;
+  let simpleSpanWidths: Array<number | null> = [];
+  for (const span of safeSpans) {
+    const spanWidth = measureSimpleSanitizedTextWidth(span.text);
+    simpleSpanWidths.push(spanWidth);
+    hasCompositionSensitiveSpan ||= spanWidth === null;
+  }
+  if (safeSpans.length > 1 && hasCompositionSensitiveSpan) {
+    plannedSpans = mergeCrossSpanGraphemes(safeSpans);
+    simpleSpanWidths = plannedSpans.map((span) => measureSimpleSanitizedTextWidth(span.text));
+  }
 
-  for (const span of sanitizeTerminalSpans(spans)) {
-    const spanWidth = measureTextWidth(span.text);
+  for (let spanIndex = 0; spanIndex < plannedSpans.length; spanIndex += 1) {
+    const span = plannedSpans[spanIndex]!;
+    const simpleSpanWidth = simpleSpanWidths[spanIndex] ?? null;
+    const spanWidth = simpleSpanWidth ?? measureSanitizedTextWidth(span.text);
     if (spanWidth === 0) {
-      appendRenderSpan(current, span);
+      appendRenderSpan(current, { ...span });
+      continue;
+    }
+
+    if (
+      spanWidth > width * SINGLE_PASS_WRAP_LINE_THRESHOLD ||
+      simpleSpanWidth === null ||
+      (width === 1 && !isPrintableAsciiText(span.text))
+    ) {
+      for (const chunk of wrapSanitizedTextByWidth(
+        span.text,
+        width,
+        remaining,
+        current.length > 0,
+      )) {
+        if (chunk.startsNewLine) {
+          current = [];
+          lines.push(current);
+          remaining = width;
+        }
+        if (chunk.text.length > 0) {
+          appendRenderSpan(current, { ...span, text: chunk.text });
+        }
+        remaining -= chunk.width;
+      }
       continue;
     }
 
@@ -324,13 +591,16 @@ function wrapSpans(spans: RenderSpan[], width: number) {
         remaining = width;
       }
 
-      const visible = sliceTextByWidth(span.text, offset, remaining);
+      const visible = sliceSanitizedTextByWidth(span.text, offset, remaining);
       if (visible.width === 0) {
-        // A single wide cluster cannot fit in the remaining cells; continue on the next row.
-        current = [];
-        lines.push(current);
-        remaining = width;
-        const forced = sliceTextByWidth(span.text, offset, width);
+        // Move to a fresh row only when this row already contains content. If the full row itself
+        // is too narrow, keep the single attempted continuation aligned with geometry measurement.
+        if (current.length > 0 || remaining < width) {
+          current = [];
+          lines.push(current);
+          remaining = width;
+        }
+        const forced = sliceSanitizedTextByWidth(span.text, offset, width);
         if (forced.width === 0) {
           break;
         }
@@ -356,6 +626,37 @@ function wrapSpans(spans: RenderSpan[], width: number) {
   }
 
   return lines;
+}
+
+/** Count wrapped visual lines without allocating the styled line arrays used by rendering. */
+function measureWrappedSpansLineCount(spans: RenderSpan[], width: number) {
+  if (width <= 0) {
+    return 1;
+  }
+
+  let lineCount = 1;
+  let remaining = width;
+  let currentLineHasContent = false;
+  const safeSpans = preserveCrossSpanGraphemes(sanitizeTerminalSpans(spans));
+  for (const span of safeSpans) {
+    // Preserve zero-width span presence across styled runs so a later over-wide grapheme makes the
+    // same continuation decision as wrapSpans' concrete line arrays.
+    for (const chunk of wrapSanitizedTextByWidth(
+      span.text,
+      width,
+      remaining,
+      currentLineHasContent,
+    )) {
+      if (chunk.startsNewLine) {
+        lineCount += 1;
+        remaining = width;
+        currentLineHasContent = false;
+      }
+      remaining -= chunk.width;
+      currentLineHasContent ||= chunk.text.length > 0;
+    }
+  }
+  return lineCount;
 }
 
 /** Build wrapped split-cell gutter/content lines while keeping continuation gutters blank. */
@@ -1035,6 +1336,7 @@ function renderWrappedSplitCellLine(
         0,
         selected ? theme : undefined,
         localColRange,
+        true,
       )}
     </>
   );
@@ -1093,6 +1395,7 @@ function renderWrappedStackCellLine(
         0,
         selected ? theme : undefined,
         localColRange,
+        true,
       )}
     </>
   );
@@ -1269,11 +1572,21 @@ function renderAddNoteSpacer(key: string, width: number, bg: string) {
     return null;
   }
 
+  const cacheKey = `${width}:${bg}`;
+  let content = addNoteSpacerContentCache.get(cacheKey);
+  if (!content) {
+    content = new StyledText([
+      {
+        __isChunk: true,
+        text: " ".repeat(width),
+        bg: styledTextColor(bg),
+      },
+    ]);
+    addNoteSpacerContentCache.set(cacheKey, content);
+  }
   return (
     <box key={key} style={{ width, height: 1 }}>
-      <text>
-        <span bg={bg}>{" ".repeat(width)}</span>
-      </text>
+      <text content={content} />
     </box>
   );
 }
@@ -1286,7 +1599,7 @@ export function measureRenderedRowHeight(
   showLineNumbers: boolean,
   showHunkHeaders: boolean,
   wrapLines: boolean,
-  theme: AppTheme,
+  _theme: AppTheme,
   reserveAddNoteColumn = false,
 ) {
   if (row.type === "hunk-header") {
@@ -1305,24 +1618,23 @@ export function measureRenderedRowHeight(
     const markerWidth = 1;
     const hoverReserveWidth = wrappedAddNoteReserveWidth(wrapLines, reserveAddNoteColumn);
     const { leftWidth, rightWidth } = resolveSplitPaneWidths(width);
-    const leftLayout = buildWrappedSplitCell(
-      row.left,
+    const leftGeometry = resolveSplitCellGeometry(
       leftWidth,
       lineNumberDigits,
       showLineNumbers,
       markerWidth,
-      theme,
     );
-    const rightLayout = buildWrappedSplitCell(
-      row.right,
+    const rightGeometry = resolveSplitCellGeometry(
       Math.max(0, rightWidth - hoverReserveWidth),
       lineNumberDigits,
       showLineNumbers,
       markerWidth,
-      theme,
     );
 
-    return Math.max(leftLayout.lines.length, rightLayout.lines.length);
+    return Math.max(
+      measureWrappedSpansLineCount(row.left.spans, leftGeometry.contentWidth),
+      measureWrappedSpansLineCount(row.right.spans, rightGeometry.contentWidth),
+    );
   }
 
   if (row.type !== "stack-line") {
@@ -1333,15 +1645,13 @@ export function measureRenderedRowHeight(
     return 1;
   }
 
-  const layout = buildWrappedStackCell(
-    row.cell,
+  const cellGeometry = resolveStackCellGeometry(
     Math.max(0, width - wrappedAddNoteReserveWidth(wrapLines, reserveAddNoteColumn)),
     lineNumberDigits,
     showLineNumbers,
     marker().length,
-    theme,
   );
-  return layout.lines.length;
+  return measureWrappedSpansLineCount(row.cell.spans, cellGeometry.contentWidth);
 }
 
 /** Render one diff row. */
@@ -1525,62 +1835,97 @@ function renderRow(
             };
 
             const showBadgeOnLine = showAddNoteBadge && index === 0;
+            let styledRow: StyledText;
+            if (hasCopySelection) {
+              styledRow = styledTextFromSpanNodes([
+                renderWrappedSplitCellLine(
+                  leftLine,
+                  leftLayout.palette,
+                  leftContentWidth,
+                  theme,
+                  `${row.key}:left:${index}`,
+                  leftPrefix,
+                  hasLeftSelection,
+                  copySelectedRowRange,
+                  0,
+                ),
+                renderWrappedSplitCellLine(
+                  rightLine,
+                  rightLayout.palette,
+                  rightContentWidth,
+                  theme,
+                  `${row.key}:right:${index}`,
+                  rightPrefix,
+                  hasRightSelection,
+                  copySelectedRowRange,
+                  leftWidth,
+                ),
+                guideOnNewSide ? (
+                  <span key={`${row.key}:note-guide:${index}`} fg={theme.noteBorder}>
+                    │
+                  </span>
+                ) : null,
+              ]);
+            } else {
+              const chunks: TextChunk[] = [];
+              appendWrappedCellChunks(
+                chunks,
+                leftLine,
+                leftLayout.palette,
+                leftContentWidth,
+                theme,
+                leftPrefix,
+              );
+              appendWrappedCellChunks(
+                chunks,
+                rightLine,
+                rightLayout.palette,
+                rightContentWidth,
+                theme,
+                rightPrefix,
+              );
+              if (guideOnNewSide) {
+                chunks.push({
+                  __isChunk: true,
+                  text: "│",
+                  fg: styledTextColor(theme.noteBorder),
+                });
+              }
+              styledRow = new StyledText(chunks);
+            }
+            if (!showBadgeOnLine && addBadgeWidth > 0) {
+              styledRow.chunks.push({
+                __isChunk: true,
+                text: " ".repeat(addBadgeWidth),
+                bg: styledTextColor(rightLayout.palette.contentBg),
+              });
+            }
 
+            if (!showBadgeOnLine) {
+              return (
+                <text
+                  key={`${row.key}:wrap:${index}`}
+                  content={styledRow}
+                  onMouseMove={() => onHoverRow?.(row.key)}
+                />
+              );
+            }
             return (
               <box
                 key={`${row.key}:wrap:${index}`}
                 style={{ width: "100%", height: 1, flexDirection: "row" }}
                 onMouseMove={() => onHoverRow?.(row.key)}
               >
-                <box
-                  style={{
-                    width: addBadgeWidth > 0 ? Math.max(0, width - addBadgeWidth) : "100%",
-                    height: 1,
-                  }}
-                >
-                  <text>
-                    {renderWrappedSplitCellLine(
-                      leftLine,
-                      leftLayout.palette,
-                      leftContentWidth,
-                      theme,
-                      `${row.key}:left:${index}`,
-                      leftPrefix,
-                      hasLeftSelection,
-                      hasLeftSelection ? copySelectedRowRange : undefined,
-                      0,
-                    )}
-                    {renderWrappedSplitCellLine(
-                      rightLine,
-                      rightLayout.palette,
-                      rightContentWidth,
-                      theme,
-                      `${row.key}:right:${index}`,
-                      rightPrefix,
-                      hasRightSelection,
-                      hasRightSelection ? copySelectedRowRange : undefined,
-                      leftWidth,
-                    )}
-                    {guideOnNewSide ? (
-                      <span key={`${row.key}:note-guide:${index}`} fg={theme.noteBorder}>
-                        │
-                      </span>
-                    ) : null}
-                  </text>
+                <box style={{ width: Math.max(0, width - addBadgeWidth), height: 1 }}>
+                  <text content={styledRow} />
                 </box>
-                {showBadgeOnLine
-                  ? renderAddNoteButton(
-                      `${row.key}:add-note:${index}`,
-                      theme,
-                      row.hunkIndex,
-                      addNoteTarget,
-                      onStartUserNoteAtHunk,
-                    )
-                  : renderAddNoteSpacer(
-                      `${row.key}:add-note-spacer:${index}`,
-                      addBadgeWidth,
-                      rightLayout.palette.contentBg,
-                    )}
+                {renderAddNoteButton(
+                  `${row.key}:add-note:${index}`,
+                  theme,
+                  row.hunkIndex,
+                  addNoteTarget,
+                  onStartUserNoteAtHunk,
+                )}
               </box>
             );
           })}
@@ -1669,6 +2014,23 @@ function renderRow(
         <box id={anchorId} style={{ width: "100%", flexDirection: "column" }}>
           {layout.lines.map((line, index) => {
             const showBadgeOnLine = showAddNoteBadge && index === 0;
+            const styledRow = styledTextFromSpanNodes([
+              renderWrappedStackCellLine(
+                line,
+                layout.palette,
+                wrappedContentWidth,
+                theme,
+                `${row.key}:stack:${index}`,
+                prefix,
+                hasCopySelection,
+                hasCopySelection ? copySelectedRowRange : undefined,
+              ),
+              guideOnNewSide ? (
+                <span key={`${row.key}:note-guide:${index}`} fg={theme.noteBorder}>
+                  │
+                </span>
+              ) : null,
+            ]);
 
             return (
               <box
@@ -1682,23 +2044,7 @@ function renderRow(
                     height: 1,
                   }}
                 >
-                  <text>
-                    {renderWrappedStackCellLine(
-                      line,
-                      layout.palette,
-                      wrappedContentWidth,
-                      theme,
-                      `${row.key}:stack:${index}`,
-                      prefix,
-                      hasCopySelection,
-                      hasCopySelection ? copySelectedRowRange : undefined,
-                    )}
-                    {guideOnNewSide ? (
-                      <span key={`${row.key}:note-guide:${index}`} fg={theme.noteBorder}>
-                        │
-                      </span>
-                    ) : null}
-                  </text>
+                  <text content={styledRow} />
                 </box>
                 {showBadgeOnLine
                   ? renderAddNoteButton(

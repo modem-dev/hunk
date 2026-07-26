@@ -21,6 +21,7 @@ interface DiffSectionProps {
   selectedHunkIndex: number;
   copySelectedRowRanges?: Map<string, CopySelectedRowRange>;
   copySelectedSide?: "left" | "right";
+  deferSecondaryWork: boolean;
   shouldLoadHighlight: boolean;
   sectionGeometry?: DiffSectionGeometry;
   separatorWidth: number;
@@ -56,6 +57,7 @@ function DiffSectionComponent({
   selectedHunkIndex,
   copySelectedRowRanges,
   copySelectedSide,
+  deferSecondaryWork,
   shouldLoadHighlight,
   sectionGeometry,
   separatorWidth,
@@ -127,6 +129,7 @@ function DiffSectionComponent({
         codeHorizontalOffset={codeHorizontalOffset}
         copySelectedRowRanges={copySelectedRowRanges}
         copySelectedSide={copySelectedSide}
+        deferSecondaryWork={deferSecondaryWork}
         theme={theme}
         width={viewWidth}
         visibleAgentNotes={visibleAgentNotes}
@@ -162,6 +165,7 @@ export const DiffSection = memo(DiffSectionComponent, (previous, next) => {
     previous.selectedHunkIndex === next.selectedHunkIndex &&
     previous.copySelectedRowRanges === next.copySelectedRowRanges &&
     previous.copySelectedSide === next.copySelectedSide &&
+    previous.deferSecondaryWork === next.deferSecondaryWork &&
     previous.shouldLoadHighlight === next.shouldLoadHighlight &&
     previous.sectionGeometry === next.sectionGeometry &&
     previous.separatorWidth === next.separatorWidth &&

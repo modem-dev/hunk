@@ -27,7 +27,7 @@ const { MenuDropdown } = await import("./chrome/MenuDropdown");
 const { StatusBar } = await import("./chrome/StatusBar");
 const { DiffFileHeaderRow } = await import("./panes/DiffFileHeaderRow");
 const { PierreDiffView } = await import("../diff/PierreDiffView");
-const { DiffRowView } = await import("../diff/renderRows");
+const { DiffRowView, measureRenderedRowHeight } = await import("../diff/renderRows");
 
 function createTestDiffFile(
   id: string,
@@ -743,7 +743,7 @@ describe("UI components", () => {
         kind: "addition" as const,
         sign: "+" as const,
         newLineNumber: 2,
-        spans: [{ text: "e" }, { text: "\u0301" }, { text: "x" }],
+        spans: [{ text: "\u0301" }, { text: "e" }, { text: "x" }],
       },
     };
 
@@ -767,7 +767,157 @@ describe("UI components", () => {
         await act(async () => {
           await setup.renderOnce();
         });
-        expect(setup.captureCharFrame()).toContain("e\u0301x");
+        expect(setup.captureCharFrame()).toContain("\u0301ex");
+        expect(row.cell.spans.map((span) => span.text)).toEqual(["\u0301", "e", "x"]);
+      } finally {
+        await act(async () => {
+          setup.renderer.destroy();
+        });
+      }
+    }
+  });
+
+  test("DiffRowView height matches geometry for repeated composing scalars", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const row = {
+      type: "stack-line" as const,
+      key: "alpha:line:repeated-composition",
+      fileId: "alpha",
+      hunkIndex: 0,
+      cell: {
+        kind: "addition" as const,
+        sign: "+" as const,
+        newLineNumber: 2,
+        spans: [{ text: "ำำ" }],
+      },
+    };
+    const measuredHeight = measureRenderedRowHeight(row, 4, 1, false, true, true, theme);
+    const setup = await testRender(
+      <DiffRowView
+        row={row}
+        width={4}
+        lineNumberDigits={1}
+        showLineNumbers={false}
+        showHunkHeaders={true}
+        wrapLines={true}
+        codeHorizontalOffset={0}
+        theme={theme}
+        selected={false}
+      />,
+      { width: 8, height: 3 },
+    );
+
+    try {
+      await act(async () => {
+        await setup.renderOnce();
+      });
+      const renderedHeight = setup
+        .captureSpans()
+        .lines.filter((line) =>
+          line.spans.some(
+            (span) =>
+              capturedTestColorToHex(span.bg)?.toLowerCase() === theme.addedBg.toLowerCase(),
+          ),
+        ).length;
+      expect(measuredHeight).toBe(1);
+      expect(renderedHeight).toBe(measuredHeight);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("DiffRowView height matches geometry for composition-sensitive styled spans", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+
+    for (const { spans, expectedHeight } of [
+      { spans: [{ text: "\u0301" }, { text: "日" }], expectedHeight: 2 },
+      { spans: [{ text: "\u0301日" }], expectedHeight: 2 },
+      { spans: [{ text: "\u0301" }, { text: "🇯🇵" }], expectedHeight: 2 },
+      {
+        spans: [
+          { text: "👍", fg: "#ff0000" },
+          { text: "🏽", fg: "#00ff00" },
+        ],
+        expectedHeight: 1,
+      },
+      {
+        spans: [
+          { text: "🇯", fg: "#ff0000" },
+          { text: "🇵", fg: "#00ff00" },
+        ],
+        expectedHeight: 1,
+      },
+      {
+        spans: [{ text: "👩", fg: "#ff0000" }, { text: "‍" }, { text: "💻", fg: "#00ff00" }],
+        expectedHeight: 1,
+      },
+      {
+        spans: [
+          { text: "؀", fg: "#ff0000" },
+          { text: "A", fg: "#00ff00" },
+        ],
+        expectedHeight: 1,
+      },
+      {
+        spans: [
+          { text: "A", fg: "#ff0000" },
+          { text: "́", fg: "#00ff00" },
+        ],
+        expectedHeight: 1,
+      },
+      {
+        spans: [
+          { text: "ᄀ", fg: "#ff0000" },
+          { text: "ᅡ", fg: "#00ff00" },
+        ],
+        expectedHeight: 1,
+      },
+      { spans: [{ text: "日" }, { text: "áá" }], expectedHeight: 2 },
+    ]) {
+      const row = {
+        type: "stack-line" as const,
+        key: "alpha:line:zero-before-wide",
+        fileId: "alpha",
+        hunkIndex: 0,
+        cell: {
+          kind: "addition" as const,
+          sign: "+" as const,
+          newLineNumber: 2,
+          spans,
+        },
+      };
+      const measuredHeight = measureRenderedRowHeight(row, 4, 1, false, true, true, theme);
+      const setup = await testRender(
+        <DiffRowView
+          row={row}
+          width={4}
+          lineNumberDigits={1}
+          showLineNumbers={false}
+          showHunkHeaders={true}
+          wrapLines={true}
+          codeHorizontalOffset={0}
+          theme={theme}
+          selected={false}
+        />,
+        { width: 8, height: 3 },
+      );
+
+      try {
+        await act(async () => {
+          await setup.renderOnce();
+        });
+        const renderedHeight = setup
+          .captureSpans()
+          .lines.filter((line) =>
+            line.spans.some(
+              (span) =>
+                capturedTestColorToHex(span.bg)?.toLowerCase() === theme.addedBg.toLowerCase(),
+            ),
+          ).length;
+        expect(measuredHeight).toBe(expectedHeight);
+        expect(renderedHeight).toBe(measuredHeight);
       } finally {
         await act(async () => {
           setup.renderer.destroy();
