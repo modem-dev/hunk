@@ -20,6 +20,7 @@ const VIEWPORT = { width: 240, height: 60 } as const;
 const ISSUE_PHYSICAL_LINES = 518;
 const WHEEL_BURST_EVENTS = 12;
 const LONG_LINE_REPEATS = 96;
+const MINIMUM_VISIBLE_CONTENT_RATIO = 0.8;
 const CJK_CONTENT_PATTERN = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u;
 const CJK_PARAGRAPH =
   "日本語のコメント行および、改行入力されている前提だが、折り返し描画のコストは体感的な引っかかりを生む。長い文章を繰り返して、スクロール中の描画と選択位置が安定していることを確認する。";
@@ -88,7 +89,15 @@ async function measureMountToFirstFrameMs(bootstrap: AppBootstrap) {
 
   try {
     await renderPass(setup);
-    return performance.now() - start;
+    const elapsedMs = performance.now() - start;
+    const contentRows = countCjkContentRows(setup.captureCharFrame());
+    const minimumContentRows = Math.floor(VIEWPORT.height * MINIMUM_VISIBLE_CONTENT_RATIO);
+    if (contentRows < minimumContentRows) {
+      throw new Error(
+        `Wrapped CJK first frame exposed blank rows: content=${contentRows}, minimum=${minimumContentRows}`,
+      );
+    }
+    return elapsedMs;
   } finally {
     await destroyRenderer(setup);
   }
@@ -151,7 +160,10 @@ async function measureWheelBurst(bootstrap: AppBootstrap) {
 
     const immediateContentRows = countCjkContentRows(immediateFrame);
     const settledContentRows = countCjkContentRows(settledFrame);
-    const minimumContentRows = Math.max(1, Math.floor(initialContentRows * 0.8));
+    const minimumContentRows = Math.max(
+      1,
+      Math.floor(initialContentRows * MINIMUM_VISIBLE_CONTENT_RATIO),
+    );
     if (immediateContentRows < minimumContentRows || settledContentRows < minimumContentRows) {
       throw new Error(
         `Wrapped CJK wheel burst exposed blank rows: initial=${initialContentRows}, immediate=${immediateContentRows}, settled=${settledContentRows}`,
