@@ -552,7 +552,7 @@ some_key = "some value"
 `[extensions] enabled` layers like every other option: a repo `.hunk/config.toml`
 overrides your user config. `--no-extensions` is a hard off switch that no config
 layer can re-enable. Both govern **user** extensions only — Hunk's bundled
-Jujutsu and Sapling backends load either way. `[extensions] paths` from a repo
+Git, Jujutsu, and Sapling backends load either way. `[extensions] paths` from a repo
 config is trust-gated the same way `.hunk/extensions` is, because it is
 repo-controlled either way.
 
