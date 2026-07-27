@@ -413,6 +413,74 @@ treated the same way. `HUNK_EXTENSION_USER_ERROR_NAME` is exported if you would
 rather not hard-code the string. Hunk's own bundled Git, Jujutsu, and Sapling
 backends raise their failures exactly this way.
 
+### `hunk.registerSidebarView(view)`
+
+Replace the file-navigation sidebar with your own React component, rendered
+inside Hunk's OpenTUI tree.
+
+```tsx
+// ~/.config/hunk/extensions/flat-sidebar.tsx
+import { useMemo } from "react";
+import type { ExtensionSidebarViewProps, HunkExtensionAPI } from "hunkdiff/extension";
+
+function FlatSidebar({ files, selectedFileId, theme, actions }: ExtensionSidebarViewProps) {
+  const ordered = useMemo(() => [...files].sort((a, b) => a.path.localeCompare(b.path)), [files]);
+
+  return (
+    <scrollbox scrollY={true} width="100%" height="100%">
+      {ordered.map((file) => (
+        <text
+          key={file.id}
+          content={` ${file.path}  +${file.stats.additions} -${file.stats.deletions}`}
+          style={{
+            fg: file.id === selectedFileId ? theme.accent : theme.text,
+            bg: theme.panel,
+          }}
+          onMouseDown={() => actions.selectFile(file.id)}
+        />
+      ))}
+    </scrollbox>
+  );
+}
+
+export default function (hunk: HunkExtensionAPI) {
+  hunk.registerSidebarView({ id: "flat", component: FlatSidebar });
+}
+```
+
+Import `react` normally — Hunk serves its own React instance to extension files
+at import time, so hooks, context, and JSX all run on the reconciler drawing the
+rest of the app. **Never bundle or vendor a copy of React into an extension**: a
+second React means a second hooks dispatcher, and the component will fail to
+render. OpenTUI elements (`box`, `text`, `scrollbox`, ...) are plain intrinsic
+elements and need no import.
+
+The component receives fresh props as the app changes:
+
+| Prop                | What it is                                                              |
+| ------------------- | ----------------------------------------------------------------------- |
+| `files`             | the visible reviewed files, review-stream order, filtered, frozen views |
+| `selectedFileId`    | the selected file, or `null`                                            |
+| `selectedHunkIndex` | the selected hunk within that file, or `null`                           |
+| `width`             | terminal columns the sidebar pane occupies                              |
+| `theme`             | hex color tokens from the active theme, updated on theme switch         |
+| `actions`           | navigation the sidebar may trigger                                      |
+
+`actions.selectFile(fileId)` and `actions.selectHunk(fileId, hunkIndex)` route
+through the same review controller as the built-in sidebar and the keyboard
+shortcuts, so the review stream scrolls, selection updates, and the
+`selection_changed` event fires exactly as if the user had clicked a built-in
+row. `actions.notify(message, type?)` shows a toast attributed to your
+extension. An action given a file id that is not currently visible is refused
+with a warning rather than corrupting the selection.
+
+One sidebar view is active per session: the first registration in load order
+wins and later ones are skipped with a warning. Hunk keeps owning the pane's
+placement — width, the resize divider, responsive show/hide — and your component
+fills it. A component that throws while rendering costs you the pane, not the
+user the session: the failure is reported as a toast naming your extension and
+the built-in sidebar takes over.
+
 ### `hunk.transformChangeset(fn)`
 
 Rewrite the loaded changeset before it reaches the review UI. Transforms run in

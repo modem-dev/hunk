@@ -20,6 +20,7 @@ import type {
   UserNoteLineTarget,
 } from "../core/types";
 import { canReloadInput } from "../core/watch";
+import { resolveExtensionSidebarView } from "../extensions/apply";
 import { emitExtensionEvent } from "../extensions/events";
 import { writeExtensionTrust } from "../extensions/trust";
 import type {
@@ -32,6 +33,7 @@ import { ConfirmDialog, confirmDialogHeight } from "./components/chrome/ConfirmD
 import { ExtensionToast } from "./components/chrome/ExtensionToast";
 import { StatusBar } from "./components/chrome/StatusBar";
 import { DiffPane } from "./components/panes/DiffPane";
+import { ExtensionSidebarPane } from "./components/panes/ExtensionSidebarPane";
 import { SidebarPane } from "./components/panes/SidebarPane";
 import { PaneDivider } from "./components/panes/PaneDivider";
 import {
@@ -332,6 +334,13 @@ export function App({
     // review plus soft reloads; hard reloads remount App and land here again.
     emitExtensionEvent(extensions, "changeset_loaded", { changeset: bootstrap.changeset });
   }, [bootstrap.changeset, extensions]);
+
+  // The one extension-contributed sidebar this session renders with, if any.
+  // Duplicate registrations were already reported when registrations applied.
+  const extensionSidebar = useMemo(
+    () => (extensions ? resolveExtensionSidebarView(extensions.registry).active : undefined),
+    [extensions],
+  );
 
   const selectedFileId = selectedFile?.id ?? null;
   useEffect(() => {
@@ -1174,6 +1183,24 @@ export function App({
     bodyPadding / 2 + (renderSidebar ? clampedSidebarWidth + DIVIDER_WIDTH : 0);
   const diffPaneScreenTop = pagerMode || !showMenuBar ? 0 : 1;
 
+  /** The built-in sidebar: the default pane, and the extension view's fallback. */
+  const renderBuiltInSidebar = () => (
+    <SidebarPane
+      entries={review.sidebarEntries}
+      scrollRef={sidebarScrollRef}
+      selectedFileId={selectedFile?.id}
+      showTopChrome={showMenuBar}
+      textWidth={sidebarTextWidth}
+      theme={activeTheme}
+      width={clampedSidebarWidth}
+      estimatedViewportRows={terminal.height}
+      onSelectFile={(fileId) => {
+        focusFiles();
+        jumpToFile(fileId, 0, { alignFileHeaderTop: true });
+      }}
+    />
+  );
+
   return (
     <box
       style={{
@@ -1223,20 +1250,32 @@ export function App({
       >
         {renderSidebar ? (
           <>
-            <SidebarPane
-              entries={review.sidebarEntries}
-              scrollRef={sidebarScrollRef}
-              selectedFileId={selectedFile?.id}
-              showTopChrome={showMenuBar}
-              textWidth={sidebarTextWidth}
-              theme={activeTheme}
-              width={clampedSidebarWidth}
-              estimatedViewportRows={terminal.height}
-              onSelectFile={(fileId) => {
-                focusFiles();
-                jumpToFile(fileId, 0, { alignFileHeaderTop: true });
-              }}
-            />
+            {extensionSidebar ? (
+              <ExtensionSidebarPane
+                // Remounting on a different registration resets the error
+                // boundary, so a reloaded extension gets a fresh chance.
+                key={`${extensionSidebar.extensionId}:${extensionSidebar.view.id}`}
+                registered={extensionSidebar}
+                files={filteredFiles}
+                selectedFileId={selectedFileId}
+                selectedHunkIndex={selectedFileId === null ? null : selectedHunkIndex}
+                showTopChrome={showMenuBar}
+                theme={activeTheme}
+                width={clampedSidebarWidth}
+                notify={(message, type) => extensions?.context.notify(message, type)}
+                onSelectFile={(fileId) => {
+                  focusFiles();
+                  jumpToFile(fileId, 0, { alignFileHeaderTop: true });
+                }}
+                onSelectHunk={(fileId, hunkIndex) => {
+                  focusFiles();
+                  review.selectHunk(fileId, hunkIndex);
+                }}
+                renderFallback={renderBuiltInSidebar}
+              />
+            ) : (
+              renderBuiltInSidebar()
+            )}
 
             <PaneDivider
               dividerHitLeft={dividerHitLeft}

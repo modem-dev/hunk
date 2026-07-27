@@ -100,6 +100,65 @@ describe("runExtensionFactory", () => {
   });
 });
 
+describe("registerSidebarView", () => {
+  test("collects a valid view tagged with the owning extension", () => {
+    const registry = createEmptyExtensionRegistry();
+    const issues: ExtensionLoadIssue[] = [];
+    const component = () => null;
+
+    runExtensionFactory({
+      metadata: bundledMetadata("side"),
+      registry,
+      issues,
+      factory: (hunk) => {
+        hunk.registerSidebarView({ id: "tree", component });
+      },
+    });
+
+    expect(issues).toEqual([]);
+    expect(registry.sidebarViews).toEqual([
+      { extensionId: "side", view: { id: "tree", component } },
+    ]);
+  });
+
+  test("rejects a view without a component function and rolls the factory back", () => {
+    const registry = createEmptyExtensionRegistry();
+    const issues: ExtensionLoadIssue[] = [];
+
+    runExtensionFactory({
+      metadata: bundledMetadata("broken-side"),
+      registry,
+      issues,
+      factory: (hunk) => {
+        hunk.registerSidebarView({ id: "tree" } as never);
+      },
+    });
+
+    expect(registry.sidebarViews).toEqual([]);
+    expect(issues.map((issue) => issue.extensionId)).toEqual(["broken-side"]);
+    expect(issues[0]?.message).toContain("component function");
+  });
+
+  test("rolls a registered view back when the factory later throws", () => {
+    const registry = createEmptyExtensionRegistry();
+    const issues: ExtensionLoadIssue[] = [];
+
+    runExtensionFactory({
+      metadata: bundledMetadata("half-side"),
+      registry,
+      issues,
+      factory: (hunk) => {
+        hunk.registerSidebarView({ id: "tree", component: () => null });
+        throw new Error("after registering");
+      },
+    });
+
+    // A failed factory is not loaded, so its sidebar must not win the session.
+    expect(registry.sidebarViews).toEqual([]);
+    expect(issues.map((issue) => issue.extensionId)).toEqual(["half-side"]);
+  });
+});
+
 describe("toInternalVcsAdapter detection ids", () => {
   test("forces a mismatched detection id back to the registered adapter id", () => {
     const mismatches: string[] = [];

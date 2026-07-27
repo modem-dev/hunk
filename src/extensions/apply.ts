@@ -4,7 +4,12 @@ import type { Changeset } from "../core/types";
 import { detectVcs, getDefaultVcsAdapter, isVcsId, resolveVcsAdapters } from "../core/vcs";
 import type { VcsAdapter } from "../core/vcs/types";
 import { sanitizeTerminalLine } from "../lib/terminalText";
-import type { ExtensionContext, ExtensionLoadResult, ExtensionRegistry } from "./types";
+import type {
+  ExtensionContext,
+  ExtensionLoadResult,
+  ExtensionRegistry,
+  RegisteredSidebarView,
+} from "./types";
 
 /**
  * One registration Hunk refused to apply.
@@ -99,6 +104,35 @@ export function resolveExtensionVcsAdapters(
   return { adapters, issues };
 }
 
+/** The sidebar view one session renders with, plus the registrations skipped for it. */
+export interface ResolvedExtensionSidebarView {
+  active: RegisteredSidebarView | undefined;
+  issues: ExtensionApplyIssue[];
+}
+
+/**
+ * Pick the one sidebar view a session renders with.
+ *
+ * One sidebar exists, so exactly one registration can hold it. First
+ * registration in load order wins — the same tiebreaker duplicate VCS adapter
+ * ids use — and every later registration is reported rather than silently
+ * ignored, whichever extension it came from.
+ */
+export function resolveExtensionSidebarView(
+  registry: ExtensionRegistry,
+): ResolvedExtensionSidebarView {
+  const [active, ...skipped] = registry.sidebarViews;
+  return {
+    active,
+    issues: skipped.map(({ extensionId, view }) => ({
+      extensionId,
+      message:
+        `Skipped sidebar view "${view.id}" from extension ${extensionId} • ` +
+        `extension ${active?.extensionId} already provides the sidebar`,
+    })),
+  };
+}
+
 /** Everything one load pass contributes to the loading pipeline, plus refused registrations. */
 export interface AppliedExtensionRegistrations {
   /** Extension adapters to thread into `loadAppBootstrap`. */
@@ -122,7 +156,13 @@ export function applyExtensionRegistrations(
 
   const languageIssues = applyExtensionFileLanguages(result.registry);
   const vcs = resolveExtensionVcsAdapters(result.registry);
-  return { vcsAdapters: vcs.adapters, issues: [...languageIssues, ...vcs.issues] };
+  // Resolved again where the UI mounts it; consulted here so skipped duplicate
+  // registrations surface through the same notice path as every other refusal.
+  const sidebar = resolveExtensionSidebarView(result.registry);
+  return {
+    vcsAdapters: vcs.adapters,
+    issues: [...languageIssues, ...vcs.issues, ...sidebar.issues],
+  };
 }
 
 /** Report whether one id names a backend this session actually loaded. */

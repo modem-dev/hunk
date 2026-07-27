@@ -6,6 +6,7 @@ import type {
   ExtensionEventHandler,
   ExtensionEventName,
   ExtensionNotifyType,
+  ExtensionSidebarView,
   ExtensionThemeConfig,
 } from "../extension-api/types";
 import { createExtensionNotificationHub, type ExtensionNotificationHub } from "./notifications";
@@ -27,6 +28,11 @@ export type {
   ExtensionEventPayloads,
   ExtensionFactory,
   ExtensionNotifyType,
+  ExtensionSidebarActions,
+  ExtensionSidebarComponent,
+  ExtensionSidebarTheme,
+  ExtensionSidebarView,
+  ExtensionSidebarViewProps,
   ExtensionThemeConfig,
   ExtensionVcsAdapter,
   HunkExtensionAPI,
@@ -83,6 +89,11 @@ export interface RegisteredChangesetTransform {
   transform: ChangesetTransform;
 }
 
+export interface RegisteredSidebarView {
+  extensionId: string;
+  view: ExtensionSidebarView;
+}
+
 export interface RegisteredEventHandler<Event extends ExtensionEventName = ExtensionEventName> {
   extensionId: string;
   handler: ExtensionEventHandler<Event>;
@@ -104,6 +115,7 @@ export interface ExtensionRegistry {
   fileLanguages: RegisteredFileLanguage[];
   vcsAdapters: RegisteredVcsAdapter[];
   changesetTransforms: RegisteredChangesetTransform[];
+  sidebarViews: RegisteredSidebarView[];
   eventHandlers: ExtensionEventHandlerMap;
   logs: ExtensionLogEntry[];
 }
@@ -164,6 +176,7 @@ export function createEmptyExtensionRegistry(): ExtensionRegistry {
     fileLanguages: [],
     vcsAdapters: [],
     changesetTransforms: [],
+    sidebarViews: [],
     eventHandlers: {
       startup: [],
       changeset_loaded: [],

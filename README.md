@@ -247,8 +247,9 @@ for one run; Hunk's own bundled backends (Git, Jujutsu, and Sapling) stay loaded
 
 A Phase 1 extension can contribute themes and file-extension → language
 mappings, add a VCS backend, rewrite the changeset before review (collapse
-lockfiles, reorder files by review priority), react to lifecycle events, and
-show transient messages:
+lockfiles, reorder files by review priority), replace the file-navigation
+sidebar with its own React component, react to lifecycle events, and show
+transient messages:
 
 ```ts
 // ~/.config/hunk/extensions/collapse-lockfiles.ts

@@ -46,6 +46,29 @@ const NOTIFY_EXTENSION_SOURCE = `export default function (hunk) {
 }
 `;
 
+/**
+ * An extension replacing the sidebar with a React component of its own.
+ *
+ * `useState` matters here: the fixture imports `react` from an ordinary file on
+ * disk, so hooks rendering at all proves the host served its own React instance
+ * to the extension — on a second React copy the component would throw and the
+ * built-in sidebar would take over instead.
+ */
+const SIDEBAR_EXTENSION_SOURCE = `import { createElement, useState } from "react";
+export default function (hunk) {
+  hunk.registerSidebarView({
+    id: "fixture-sidebar",
+    component: (props) => {
+      const [label] = useState("EXTSIDEBAR");
+      return createElement("text", {
+        content: label + " " + props.files.length + " FILES",
+        style: { fg: props.theme.text, bg: props.theme.panel },
+      });
+    },
+  });
+}
+`;
+
 describe("PTY extensions", () => {
   test("trust prompt runs repo extensions after the user trusts the repository", async () => {
     const configHome = harness.createIsolatedConfigHome();
@@ -159,6 +182,35 @@ describe("PTY extensions", () => {
       expect(reviewed).toContain("beta.ts");
     } finally {
       relaunched.close();
+    }
+  });
+
+  test("an extension sidebar view renders in the live app in place of the built-in pane", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(SIDEBAR_EXTENSION_SOURCE);
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        "--mode",
+        "stack",
+        // Load the fixture through the dev flag so it is trusted without a prompt.
+        "--extension",
+        join(fixture.dir, ".hunk", "extensions", "fixture.ts"),
+      ],
+      cwd: fixture.dir,
+      // The sidebar only renders on a "full" viewport, which starts at 220 columns.
+      cols: 240,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      const frame = await session.waitForText(/EXTSIDEBAR 2 FILES/, { timeout: 20_000 });
+      // The custom pane replaced the built-in one, and the review stream is intact.
+      expect(frame).toContain("alpha.ts");
+      expect(frame).not.toContain("Run this repository's extensions?");
+    } finally {
+      session.close();
     }
   });
 

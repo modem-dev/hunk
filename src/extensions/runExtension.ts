@@ -7,6 +7,7 @@ import {
   type ExtensionLoadIssue,
   type ExtensionMetadata,
   type ExtensionRegistry,
+  type ExtensionSidebarView,
   type ExtensionThemeConfig,
   type ExtensionVcsAdapter,
   type HunkExtensionAPI,
@@ -209,6 +210,7 @@ interface RegistrySnapshot {
   fileLanguages: number;
   vcsAdapters: number;
   changesetTransforms: number;
+  sidebarViews: number;
   eventHandlers: Record<string, number>;
 }
 
@@ -224,6 +226,7 @@ function snapshotRegistry(registry: ExtensionRegistry): RegistrySnapshot {
     fileLanguages: registry.fileLanguages.length,
     vcsAdapters: registry.vcsAdapters.length,
     changesetTransforms: registry.changesetTransforms.length,
+    sidebarViews: registry.sidebarViews.length,
     eventHandlers,
   };
 }
@@ -239,6 +242,7 @@ function rollbackRegistry(registry: ExtensionRegistry, snapshot: RegistrySnapsho
   registry.fileLanguages.length = snapshot.fileLanguages;
   registry.vcsAdapters.length = snapshot.vcsAdapters;
   registry.changesetTransforms.length = snapshot.changesetTransforms;
+  registry.sidebarViews.length = snapshot.sidebarViews;
   for (const [event, handlers] of Object.entries(registry.eventHandlers)) {
     handlers.length = snapshot.eventHandlers[event] ?? 0;
   }
@@ -302,6 +306,15 @@ export function createExtensionApi(
           });
         }),
       });
+    },
+    registerSidebarView(view: ExtensionSidebarView) {
+      assertOpen("registerSidebarView");
+      assertNonEmptyString(view?.id, "registerSidebarView requires a view with a non-empty id.");
+      if (typeof view.component !== "function") {
+        throw new Error("registerSidebarView requires a view with a component function.");
+      }
+
+      registry.sidebarViews.push({ extensionId: metadata.id, view });
     },
     transformChangeset(fn: ChangesetTransform) {
       assertOpen("transformChangeset");

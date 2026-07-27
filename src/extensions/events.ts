@@ -42,11 +42,23 @@ function describeError(error: unknown) {
  */
 export function toReadOnlyChangesetView(changeset: ExtensionChangeset): ExtensionChangeset {
   const files = Array.isArray(changeset.files) ? changeset.files : [];
+  return Object.freeze({ ...changeset, files: toReadOnlyFileViews(files) });
+}
+
+/**
+ * Build the read-only file-list view extension UI code receives.
+ *
+ * The same isolation story as `toReadOnlyChangesetView` — frozen shallow
+ * copies, shared opaque `metadata` — factored out so surfaces that hand
+ * extensions a file list without a changeset envelope (a custom sidebar's
+ * props) freeze it identically.
+ */
+export function toReadOnlyFileViews(files: readonly ExtensionDiffFile[]): ExtensionDiffFile[] {
   const frozenFiles = files.map((file) =>
     file !== null && typeof file === "object" ? Object.freeze({ ...file }) : file,
   ) as ExtensionDiffFile[];
 
-  return Object.freeze({ ...changeset, files: Object.freeze(frozenFiles) as ExtensionDiffFile[] });
+  return Object.freeze(frozenFiles) as ExtensionDiffFile[];
 }
 
 /**

@@ -550,6 +550,96 @@ export interface ExtensionVcsAdapter {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Sidebar views                                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Theme tokens a custom sidebar renders with.
+ *
+ * A curated slice of the active theme rather than the whole internal theme
+ * model: every value is a hex color string (or the appearance flag), stable to
+ * build UI against, and updated live when the user switches themes. Field
+ * names match the `[themes.<id>]` config table where a concept exists there.
+ */
+export interface ExtensionSidebarTheme {
+  appearance: "light" | "dark";
+  background: string;
+  panel: string;
+  panelAlt: string;
+  border: string;
+  accent: string;
+  accentMuted: string;
+  text: string;
+  muted: string;
+  /** Background highlighting the selected row or hunk. */
+  selectedHunk: string;
+  badgeAdded: string;
+  badgeRemoved: string;
+  badgeNeutral: string;
+  fileNew: string;
+  fileDeleted: string;
+  fileRenamed: string;
+  fileModified: string;
+  fileUntracked: string;
+}
+
+/**
+ * Navigation a custom sidebar can trigger, exactly as the built-in one does.
+ *
+ * Every action routes through the same review controller the built-in sidebar
+ * and keyboard shortcuts use, so the main review stream scrolls, selection
+ * updates, and the `selection_changed` lifecycle event fires identically —
+ * other extensions cannot tell a custom sidebar drove the navigation. Actions
+ * stay valid for as long as the component is mounted; a failure inside one is
+ * reported as a warning naming the extension instead of thrown back into the
+ * component.
+ */
+export interface ExtensionSidebarActions {
+  /** Jump the review stream to one file, like clicking its sidebar row. */
+  selectFile(fileId: string): void;
+  /** Jump the review stream to one hunk of one file. */
+  selectHunk(fileId: string, hunkIndex: number): void;
+  /** Show one toast, attributed to the owning extension. */
+  notify(message: string, type?: ExtensionNotifyType): void;
+}
+
+/** Everything a custom sidebar component receives, refreshed as the app changes. */
+export interface ExtensionSidebarViewProps {
+  /**
+   * The reviewed files currently visible, in review-stream order.
+   *
+   * Read-only frozen views, filtered the way the built-in sidebar is: the
+   * app's file filter applies before the list reaches the component.
+   */
+  files: ExtensionDiffFile[];
+  selectedFileId: string | null;
+  selectedHunkIndex: number | null;
+  /** Terminal columns the sidebar pane occupies; height comes from flex layout. */
+  width: number;
+  theme: ExtensionSidebarTheme;
+  actions: ExtensionSidebarActions;
+}
+
+/**
+ * A custom sidebar component.
+ *
+ * This is a plain React function component rendered inside Hunk's own tree —
+ * import `react` normally (Hunk serves its own instance to extension files, so
+ * hooks work; never bundle a copy of React into an extension) and return
+ * OpenTUI elements (`box`, `text`, `scrollbox`, ...). The return type is
+ * opaque here only because this module publishes no React types; annotate the
+ * component with your own `@types/react` and it satisfies this shape.
+ */
+export type ExtensionSidebarComponent = (props: ExtensionSidebarViewProps) => unknown;
+
+/** A sidebar replacement contributed by an extension. */
+export interface ExtensionSidebarView {
+  /** Identifies the view in diagnostics and future config selection. */
+  id: string;
+  component: ExtensionSidebarComponent;
+}
+
+/* -------------------------------------------------------------------------- */
 /* Lifecycle events                                                            */
 /* -------------------------------------------------------------------------- */
 
@@ -597,6 +687,14 @@ export interface HunkExtensionAPI {
   registerFileLanguage(extension: string, language: string): void;
   /** Contribute one additional VCS backend. */
   registerVcsAdapter(adapter: ExtensionVcsAdapter): void;
+  /**
+   * Replace the file-navigation sidebar with a custom component.
+   *
+   * One sidebar view is active per session: the first registration in load
+   * order wins, and later ones are skipped with a warning. A view that throws
+   * while rendering is reported and Hunk falls back to the built-in sidebar.
+   */
+  registerSidebarView(view: ExtensionSidebarView): void;
   /** Rewrite every loaded changeset before review. */
   transformChangeset(fn: ChangesetTransform): void;
   /** Subscribe to one Hunk lifecycle event. */

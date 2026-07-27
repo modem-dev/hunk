@@ -1,5 +1,6 @@
 import { pathToFileURL } from "node:url";
 import { findVcsRepoRootCandidate } from "../core/vcs";
+import { registerHostRuntimeModules } from "./hostRuntimeModules";
 import { createExtensionNotificationHub, type ExtensionNotificationHub } from "./notifications";
 import { describeError, readExtensionFactory, runExtensionFactory } from "./runExtension";
 import { resolveRepoTrust, type ExtensionTrustOptions, type ExtensionTrustState } from "./trust";
@@ -48,6 +49,9 @@ async function importExtensionModule(path: string): Promise<unknown> {
  * `pendingTrustRepoRoot` so the UI can ask and reload.
  */
 export async function loadExtensions(options: LoadExtensionsOptions): Promise<ExtensionLoadResult> {
+  // Before any candidate is imported, so its `react` (and `hunkdiff/extension`)
+  // imports resolve to the host's own instances rather than the filesystem.
+  registerHostRuntimeModules(options.candidates.map((candidate) => candidate.path));
   const registry = createEmptyExtensionRegistry();
   const issues: ExtensionLoadIssue[] = [];
   const importModule = options.importExtensionModuleImpl ?? importExtensionModule;

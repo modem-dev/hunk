@@ -16,6 +16,7 @@ import {
   reportExtensionApplyIssues,
   createUnknownVcsNotice,
   resolveDetectedVcsIdWithExtensions,
+  resolveExtensionSidebarView,
   resolveExtensionVcsAdapters,
   resolveSessionVcsId,
 } from "./apply";
@@ -135,6 +136,38 @@ describe("extension VCS adapters", () => {
 
     expect(adapters.length).toBe(1);
     expect(issues[0]?.extensionId).toBe("second");
+  });
+});
+
+describe("extension sidebar views", () => {
+  test("resolves no active view from an empty registry", () => {
+    const result = createEmptyExtensionLoadResult();
+
+    const { active, issues } = resolveExtensionSidebarView(result.registry);
+
+    expect(active).toBeUndefined();
+    expect(issues).toEqual([]);
+  });
+
+  test("first registration wins and later ones are reported", () => {
+    const result = createEmptyExtensionLoadResult();
+    const first = { id: "tree", component: () => null };
+    const second = { id: "flat", component: () => null };
+    result.registry.sidebarViews.push(
+      { extensionId: "alpha", view: first },
+      { extensionId: "beta", view: second },
+    );
+
+    const { active, issues } = resolveExtensionSidebarView(result.registry);
+
+    expect(active).toEqual({ extensionId: "alpha", view: first });
+    expect(issues).toEqual([
+      {
+        extensionId: "beta",
+        message:
+          'Skipped sidebar view "flat" from extension beta • extension alpha already provides the sidebar',
+      },
+    ]);
   });
 });
 
