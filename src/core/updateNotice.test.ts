@@ -114,6 +114,52 @@ describe("startup update notice", () => {
     });
   });
 
+  test("uses a neutral Nix update instruction for Nix installs", async () => {
+    await withTempStatePath(async (statePath) => {
+      await expect(
+        resolveStartupUpdateNotice({
+          env: { HUNK_INSTALL_SOURCE: "nix" },
+          fetchImpl: async () => createDistTagsResponse({ latest: "0.7.1", beta: "0.8.0-beta.1" }),
+          resolveInstalledVersion: () => "0.7.0",
+          statePath,
+        }),
+      ).resolves.toEqual({
+        key: "latest:0.7.1",
+        message: "Update available: 0.7.1 (latest) • update Hunk through your Nix configuration",
+      });
+    });
+  });
+
+  test("detects unmarked nixpkgs installs from their Nix store executable", async () => {
+    await withTempStatePath(async (statePath) => {
+      await expect(
+        resolveStartupUpdateNotice({
+          env: {},
+          fetchImpl: async () => createDistTagsResponse({ latest: "0.7.1" }),
+          resolveExecutablePath: () => "/nix/store/hash-hunk/bin/hunk",
+          resolveInstalledVersion: () => "0.7.0",
+          statePath,
+        }),
+      ).resolves.toEqual({
+        key: "latest:0.7.1",
+        message: "Update available: 0.7.1 (latest) • update Hunk through your Nix configuration",
+      });
+    });
+  });
+
+  test("ignores beta updates for Nix installs", async () => {
+    await withTempStatePath(async (statePath) => {
+      await expect(
+        resolveStartupUpdateNotice({
+          env: { HUNK_INSTALL_SOURCE: "nix" },
+          fetchImpl: async () => createDistTagsResponse({ latest: "0.7.0", beta: "0.8.0-beta.1" }),
+          resolveInstalledVersion: () => "0.7.0",
+          statePath,
+        }),
+      ).resolves.toBeNull();
+    });
+  });
+
   test("returns null when already up to date", async () => {
     await withTempStatePath(async (statePath) => {
       await expect(

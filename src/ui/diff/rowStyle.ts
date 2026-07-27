@@ -4,6 +4,7 @@ import type { SplitLineCell, StackLineCell } from "./pierre";
 
 const INACTIVE_RAIL_BLEND = 0.35;
 const SELECTION_BG_BLEND = 0.75;
+const selectionBackgroundCache = new WeakMap<AppTheme, Map<string, string>>();
 
 /** The diff rail marker is always visible in Hunk stack and split rows. */
 export function diffRailMarker() {
@@ -18,7 +19,17 @@ export function diffRailMarker() {
  * harder toward the visible highlight color.
  */
 export function selectionHighlightBg(baseBg: string, theme: AppTheme) {
-  return blendHex(theme.selectedHunk, baseBg, SELECTION_BG_BLEND);
+  let backgrounds = selectionBackgroundCache.get(theme);
+  if (!backgrounds) {
+    backgrounds = new Map();
+    selectionBackgroundCache.set(theme, backgrounds);
+  }
+  let background = backgrounds.get(baseBg);
+  if (!background) {
+    background = blendHex(theme.selectedHunk, baseBg, SELECTION_BG_BLEND);
+    backgrounds.set(baseBg, background);
+  }
+  return background;
 }
 
 /** Return the neutral active-hunk rail color for the current theme. */

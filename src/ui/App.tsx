@@ -464,17 +464,21 @@ export function App({
     diffScrollRef.current?.scrollBy(delta, unit);
   };
 
-  const maxCodeHorizontalOffset = useMemo(
-    () =>
-      Math.max(
+  const maxCodeHorizontalOffset = useMemo(() => {
+    // Wrapped rows never consume the horizontal offset. Avoid scanning every code line—especially
+    // long Unicode lines—until nowrap mode actually needs a global horizontal extent.
+    if (wrapLines) {
+      return 0;
+    }
+
+    return Math.max(
+      0,
+      filteredFiles.reduce(
+        (maxWidth, file) => Math.max(maxWidth, maxFileCodeLineWidth(file, tabWidth)),
         0,
-        filteredFiles.reduce(
-          (maxWidth, file) => Math.max(maxWidth, maxFileCodeLineWidth(file, tabWidth)),
-          0,
-        ) - codeViewportWidth,
-      ),
-    [codeViewportWidth, filteredFiles, tabWidth],
-  );
+      ) - codeViewportWidth,
+    );
+  }, [codeViewportWidth, filteredFiles, tabWidth, wrapLines]);
 
   useEffect(() => {
     setCodeHorizontalOffset((current) => clamp(current, 0, maxCodeHorizontalOffset));

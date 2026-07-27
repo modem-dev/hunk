@@ -47,6 +47,10 @@ jobs:
         run: |
           bun run bench:large-stream | tee benchmark-results/large-stream.txt
 
+      - name: Run wrapped CJK benchmark
+        run: |
+          bun run bench:wrapped-cjk | tee benchmark-results/wrapped-cjk.txt
+
       - name: Publish benchmark summary
         run: |
           {

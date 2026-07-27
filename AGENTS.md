@@ -98,6 +98,7 @@ CLI input
 - If a local sidecar is present, its file order is intentional, but the visible note UI should stay hunk-note driven rather than showing generic file or changeset explainer cards.
 - `hunk diff` working-tree reviews include untracked files by default. Use `--exclude-untracked` if you explicitly want tracked changes only.
 - Agents review via `skills/hunk-review/SKILL.md` using `hunk session *` commands; do not run interactive TUI commands directly.
+- `skills/hunk-review/SKILL.md` is generated. Edit `src/hunk-review/skillDocument.ts`, `src/hunk-session/agentSurface.ts`, or `src/hunk-session/agentErrors.ts`, then run `bun run generate:skill`; never hand-edit the skill file.
 
 ## commands
 

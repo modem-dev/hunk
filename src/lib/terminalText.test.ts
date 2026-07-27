@@ -84,6 +84,12 @@ describe("sanitizeTerminalText", () => {
     expect(output).toBe("safe0\x1b[31mred\x1b[m");
   });
 
+  test("returns an already-safe mutable span array unchanged", () => {
+    const spans = [{ text: "safe", fg: "#fff" }];
+
+    expect(sanitizeTerminalSpans(spans)).toBe(spans);
+  });
+
   test("sanitizes span text while preserving styling metadata", () => {
     const spans = [
       { text: `before${OSC52_CLIPBOARD}`, fg: "#fff" },

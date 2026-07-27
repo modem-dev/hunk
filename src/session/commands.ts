@@ -4,6 +4,7 @@ import type {
   SessionSelectorInput,
 } from "../core/types";
 import type { SessionLiveCommentSummary, SessionReviewNoteSummary } from "../hunk-session/types";
+import { NO_ACTIVE_SESSIONS_MESSAGE } from "../hunk-session/agentErrors";
 import {
   ensureSessionBrokerAvailable,
   isSessionBrokerHealthy,
@@ -163,9 +164,7 @@ async function resolveDaemonAvailability(action: SessionCommandInput["action"]) 
     return false;
   }
 
-  throw new Error(
-    "No active Hunk sessions are registered with the daemon. Open Hunk and wait for it to connect.",
-  );
+  throw new Error(NO_ACTIVE_SESSIONS_MESSAGE);
 }
 
 function renderOutput(output: SessionCommandOutput, value: unknown, formatText: () => string) {

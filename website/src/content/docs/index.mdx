@@ -1,0 +1,58 @@
+---
+title: Hunk documentation
+description: Find the Hunk guide, workflow, configuration, or reference you need.
+---
+
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+Hunk is a terminal diff viewer for reviewing complete changesets and keeping agent rationale beside the code it explains. Use this page to jump directly to the guide or reference you need.
+
+## New to Hunk?
+
+1. [Install Hunk](/docs/start/install/).
+2. Open your working tree with `hunk diff`.
+3. Follow the [quick start](/docs/start/quick-start/) to learn the review stream and navigation model.
+
+## Browse the docs
+
+<CardGrid>
+  <LinkCard
+    title="Start here"
+    href="/docs/start/install/"
+    description="Install Hunk, open your first review, and learn the keyboard and mouse controls."
+  />
+  <LinkCard
+    title="Review workflows"
+    href="/docs/workflows/working-trees-and-commits/"
+    description="Review working trees, commits, files, patches, pager input, difftool pairs, and other VCS backends."
+  />
+  <LinkCard
+    title="Working with agents"
+    href="/docs/agents/review-with-an-agent/"
+    description="Let an agent inspect a live review, navigate hunks, and leave inline comments and annotations."
+  />
+  <LinkCard
+    title="Configure"
+    href="/docs/configure/configuration/"
+    description="Set layered preferences, choose themes, and control layout and display behavior."
+  />
+  <LinkCard
+    title="Reference"
+    href="/docs/reference/cli/"
+    description="Look up generated CLI and config references or embed Hunk's OpenTUI components."
+  />
+  <LinkCard
+    title="Help"
+    href="/docs/help/troubleshooting/"
+    description="Troubleshoot startup and rendering, check platform support, or plan a docs deployment."
+  />
+</CardGrid>
+
+## Common tasks
+
+- [Review current work or a commit](/docs/workflows/working-trees-and-commits/)
+- [Configure Hunk as a Git pager or difftool](/docs/workflows/git-pager-and-difftool/)
+- [Review a live session with a coding agent](/docs/agents/review-with-an-agent/)
+- [Choose a theme and layout](/docs/configure/themes/)
+- [Look up a command](/docs/reference/cli/)
+- [Troubleshoot terminal behavior](/docs/help/troubleshooting/)

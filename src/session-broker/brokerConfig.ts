@@ -1,7 +1,9 @@
 import { isIP } from "node:net";
 
-const DEFAULT_HUNK_MCP_HOST = "127.0.0.1";
-const DEFAULT_HUNK_MCP_PORT = 47657;
+export const DEFAULT_SESSION_BROKER_HOST = "127.0.0.1";
+export const DEFAULT_SESSION_BROKER_PORT = 47657;
+export const SESSION_BROKER_HOST_ENV = "HUNK_MCP_HOST";
+export const SESSION_BROKER_PORT_ENV = "HUNK_MCP_PORT";
 export const LEGACY_MCP_PATH = "/mcp";
 export const SESSION_BROKER_SOCKET_PATH = "/session";
 export const UNSAFE_ALLOW_REMOTE_SESSION_BROKER_ENV = "HUNK_MCP_UNSAFE_ALLOW_REMOTE";
@@ -49,9 +51,10 @@ export function allowsUnsafeRemoteSessionBroker(env: NodeJS.ProcessEnv = process
 export function resolveSessionBrokerConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): ResolvedSessionBrokerConfig {
-  const host = env.HUNK_MCP_HOST?.trim() || DEFAULT_HUNK_MCP_HOST;
-  const parsedPort = Number.parseInt(env.HUNK_MCP_PORT ?? "", 10);
-  const port = Number.isInteger(parsedPort) && parsedPort > 0 ? parsedPort : DEFAULT_HUNK_MCP_PORT;
+  const host = env[SESSION_BROKER_HOST_ENV]?.trim() || DEFAULT_SESSION_BROKER_HOST;
+  const parsedPort = Number.parseInt(env[SESSION_BROKER_PORT_ENV] ?? "", 10);
+  const port =
+    Number.isInteger(parsedPort) && parsedPort > 0 ? parsedPort : DEFAULT_SESSION_BROKER_PORT;
 
   if (!isLoopbackHost(host) && !allowsUnsafeRemoteSessionBroker(env)) {
     throw new Error(

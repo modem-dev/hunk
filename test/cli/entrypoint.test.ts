@@ -85,8 +85,9 @@ describe("CLI entrypoint contracts", () => {
 
     expect(proc.exitCode).toBe(0);
     expect(stderr).toBe("");
-    expect(stdout).toContain("hunk session review <session-id> [--include-patch]");
-    expect(stdout).toContain("hunk session review --repo <path> [--include-patch]");
+    expect(stdout).toContain(
+      "hunk session review (<session-id> | --repo <path>) [--include-patch] [--include-notes]",
+    );
     expect(stdout).toContain(
       "hunk session comment apply (<session-id> | --repo <path>) --stdin [--focus]",
     );

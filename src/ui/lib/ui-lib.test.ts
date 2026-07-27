@@ -31,6 +31,7 @@ import {
   measureTextWidth,
   padText,
   sliceTextByWidth,
+  wrapTextByWidth,
 } from "./text";
 import { computeHunkRevealScrollTop } from "./hunkScroll";
 import {
@@ -277,8 +278,42 @@ describe("ui helpers", () => {
     expect(sliceTextByWidth("a日本b", 2, 4)).toEqual({ text: " 本b", width: 4 });
     expect(sliceTextByWidth("日本b", 3, 3)).toEqual({ text: " b", width: 2 });
     expect(sliceTextByWidth("日", 1, 1)).toEqual({ text: " ", width: 1 });
+    expect(sliceTextByWidth("👍🏽x", 0, 2)).toEqual({ text: "👍🏽", width: 2 });
+    expect(sliceTextByWidth("🧑‍💻x", 1, 1)).toEqual({ text: " ", width: 1 });
+    expect(sliceTextByWidth("e\u0301x", 0, 1)).toEqual({ text: "e\u0301", width: 1 });
+    expect(sliceTextByWidth("♥️x", 0, 2)).toEqual({ text: "♥️", width: 2 });
     expect(fitText("日本語", 5)).toBe("日本.");
     expect(measureTextWidth(padText("日本", 6))).toBe(6);
+  });
+
+  test("wrapTextByWidth traverses wide graphemes once while honoring remaining line cells", () => {
+    expect(wrapTextByWidth("a日本b", 4)).toEqual([
+      { text: "a日", width: 3, startsNewLine: false },
+      { text: "本b", width: 3, startsNewLine: true },
+    ]);
+    expect(wrapTextByWidth("abcdef", 4, 2)).toEqual([
+      { text: "ab", width: 2, startsNewLine: false },
+      { text: "cdef", width: 4, startsNewLine: true },
+    ]);
+    expect(wrapTextByWidth("e\u0301x", 1)).toEqual([
+      { text: "e\u0301", width: 1, startsNewLine: false },
+      { text: "x", width: 1, startsNewLine: true },
+    ]);
+    expect(sliceTextByWidth("🇯🇵", 0, 1)).toEqual({ text: "", width: 0 });
+    expect(wrapTextByWidth("🇯🇵", 1)).toEqual([]);
+    expect(sliceTextByWidth("\u0d4eകx", 0, 1)).toEqual({ text: "\u0d4eക", width: 1 });
+    expect(wrapTextByWidth("\u0d4eകx", 1)).toEqual([
+      { text: "\u0d4eക", width: 1, startsNewLine: false },
+      { text: "x", width: 1, startsNewLine: true },
+    ]);
+    for (const cluster of ["กำ", "ກຳ", "ｶﾞ", "ｶﾟ"]) {
+      const width = stringWidth(cluster);
+      expect(measureTextWidth(cluster)).toBe(width);
+      expect(sliceTextByWidth(cluster, 0, width)).toEqual({ text: cluster, width });
+      expect(wrapTextByWidth(cluster, width)).toEqual([
+        { text: cluster, width, startsNewLine: false },
+      ]);
+    }
   });
 
   test("cellRangeToCharRange maps inclusive cell ranges onto code-unit slice bounds", () => {
@@ -329,7 +364,16 @@ describe("ui helpers", () => {
       expect(measureClusterWidth(cluster)).toBe(stringWidth(cluster));
     }
 
-    const complexLines = ["🧑‍💻 👩‍🔬 terminal tools", "e\u0301 a\u0308 combining text"];
+    const complexLines = [
+      "日本語 scalar text 👍 🚀",
+      "🧑‍💻 👩‍🔬 terminal tools",
+      "👍🏽 emoji modifier",
+      "1️⃣ keycap sequence",
+      "♥️ variation selector",
+      "🇯🇵 regional indicators",
+      "e\u0301 a\u0308 combining text",
+      "\u1100\u1161\u11a8 Hangul Jamo",
+    ];
     for (const line of complexLines) {
       expect(measureTextWidth(line)).toBe(stringWidth(line));
     }
@@ -348,9 +392,12 @@ describe("ui helpers", () => {
     // Surrogate-pair runs (emoji) skip the fast path and stay correct via string-width.
     expect(measureTextWidth("👍".repeat(3))).toBe(6);
 
-    // Zero-width combining marks defer to string-width instead of multiplying to a bogus width.
+    // Zero-width and composition-sensitive repeated scalars defer to whole grapheme measurement.
     expect(measureTextWidth("\u0301".repeat(4))).toBe(0);
     expect(measureTextWidth("e\u0301")).toBe(1);
+    for (const scalar of ["\u0d4e", "ำ", "ຳ"]) {
+      expect(measureTextWidth(scalar.repeat(2))).toBe(stringWidth(scalar.repeat(2)));
+    }
   });
 
   test("agent popover helpers wrap text and right-align the card within the viewport", () => {

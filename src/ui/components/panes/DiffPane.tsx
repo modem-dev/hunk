@@ -96,6 +96,11 @@ function clampVerticalScrollTop(scrollTop: number, contentHeight: number, viewpo
   return Math.min(Math.max(0, scrollTop), maxScrollTop);
 }
 
+/** Estimate render-only viewport bounds before OpenTUI publishes exact scrollbox geometry. */
+function estimateInitialRenderViewportHeight(rendererHeight: number, screenTop: number) {
+  return Math.max(1, rendererHeight - Math.max(0, screenTop));
+}
+
 /** Keep syntax-highlight warm for the files immediately adjacent to the current selection. */
 function buildAdjacentPrefetchFileIds(files: DiffFile[], selectedFileId?: string) {
   if (!selectedFileId) {
@@ -481,6 +486,9 @@ export function DiffPane({
   // mounting each section; nowrap reviews can window offscreen files behind exact spacers.
   const windowingEnabled = !wrapLines;
   const [scrollViewport, setScrollViewport] = useState({ top: 0, height: 0 });
+  const [initialWrappedRenderWindowWarmed, setInitialWrappedRenderWindowWarmed] = useState(
+    () => !wrapLines,
+  );
   const [rapidScrollOverscanRows, setRapidScrollOverscanRows] = useState(0);
   const [hoveredFileId, setHoveredFileId] = useState<string | null>(null);
   const [copySelectionDrag, setCopySelectionDrag] = useState<CopySelectionDrag | null>(null);
@@ -550,6 +558,17 @@ export function DiffPane({
   }, []);
 
   useEffect(() => {
+    const warmInitialRenderWindow = wrapLines
+      ? setTimeout(() => setInitialWrappedRenderWindowWarmed(true), VIEWPORT_READ_COALESCE_MS)
+      : null;
+    return () => {
+      if (warmInitialRenderWindow) {
+        clearTimeout(warmInitialRenderWindow);
+      }
+    };
+  }, [wrapLines]);
+
+  useEffect(() => {
     return () => {
       if (suppressViewportSelectionSyncTimeoutRef.current) {
         clearTimeout(suppressViewportSelectionSyncTimeoutRef.current);
@@ -587,12 +606,13 @@ export function DiffPane({
         const previousTop = prevScrollTopRef.current;
         scrollbarRef.current?.show();
         clearAddNoteHoverForScroll();
-        activateRapidScrollOverscan(
-          computeRapidScrollOverscanRows({
-            deltaRows: nextTop - previousTop,
-            viewportHeight: nextHeight,
-          }),
-        );
+        const rapidOverscanRows = computeRapidScrollOverscanRows({
+          deltaRows: nextTop - previousTop,
+          viewportHeight: nextHeight,
+        });
+        if (!wrapLines || rapidOverscanRows > nextHeight * 3) {
+          activateRapidScrollOverscan(rapidOverscanRows);
+        }
         prevScrollTopRef.current = nextTop;
       }
 
@@ -608,26 +628,30 @@ export function DiffPane({
     // Calling setScrollViewport directly from the listener can run setState while React
     // is already committing — which downstream layout effects can amplify into a render
     // loop and trip React's max-update-depth guard. Coalesce listener events into one
-    // timer-deferred read so rapid wheel/key bursts collapse into at most one React update
-    // per frame instead of turning every native scroll delta into a full review-stream render.
+    // timer-deferred read so rapid wheel/key bursts collapse into bounded React updates instead of
+    // turning every native scroll delta into a full review-stream render. Wrapped views use a
+    // half-frame interval to reduce blank-band latency; nowrap retains one frame.
     const handleViewportChange = () => {
       if (scheduled) {
         return;
       }
       scheduled = true;
-      scheduledViewportRead = setTimeout(() => {
-        scheduledViewportRead = null;
-        if (cancelled) {
-          scheduled = false;
-          return;
-        }
+      scheduledViewportRead = setTimeout(
+        () => {
+          scheduledViewportRead = null;
+          if (cancelled) {
+            scheduled = false;
+            return;
+          }
 
-        try {
-          readViewport();
-        } finally {
-          scheduled = false;
-        }
-      }, VIEWPORT_READ_COALESCE_MS);
+          try {
+            readViewport();
+          } finally {
+            scheduled = false;
+          }
+        },
+        wrapLines ? Math.floor(VIEWPORT_READ_COALESCE_MS / 2) : VIEWPORT_READ_COALESCE_MS,
+      );
     };
 
     readViewport();
@@ -644,7 +668,7 @@ export function DiffPane({
       scrollBox.viewport.off("layout-changed", handleViewportChange);
       scrollBox.viewport.off("resized", handleViewportChange);
     };
-  }, [activateRapidScrollOverscan, clearAddNoteHoverForScroll, files.length, scrollRef]);
+  }, [activateRapidScrollOverscan, clearAddNoteHoverForScroll, files.length, scrollRef, wrapLines]);
 
   const sectionHeaderHeights = useMemo(() => buildInStreamFileHeaderHeights(files), [files]);
   const reserveAddNoteColumn = Boolean(onStartUserNoteAtHunk);
@@ -1077,7 +1101,7 @@ export function DiffPane({
   // Kick off highlight work from viewport planning rather than waiting for the section to mount.
   // That avoids the "plain rows first, color later" stutter when a file is about to scroll onscreen.
   useEffect(() => {
-    if (files.length === 0) {
+    if (files.length === 0 || (wrapLines && !initialWrappedRenderWindowWarmed)) {
       return;
     }
 
@@ -1091,7 +1115,7 @@ export function DiffPane({
         theme,
       });
     }
-  }, [files, highlightPrefetchFileIds, theme]);
+  }, [files, highlightPrefetchFileIds, initialWrappedRenderWindowWarmed, theme, wrapLines]);
 
   // Keep the selected file/hunk derived from the visible viewport for actual scroll-driven
   // movement, while leaving the initial mount and non-scroll relayouts alone.
@@ -1209,15 +1233,34 @@ export function DiffPane({
   // back the prior object when top/height are numerically unchanged lets mounted sections skip
   // re-rendering even though the Map itself is rebuilt every snapshot.
   const previousVisibleBodyBoundsRef = useRef<Map<string, VisibleBodyBounds>>(new Map());
+  const initialRenderViewportHeight = estimateInitialRenderViewportHeight(
+    renderer.height,
+    screenTop,
+  );
   const visibleBodyBoundsByFile = useMemo(() => {
     const previous = previousVisibleBodyBoundsRef.current;
     const next = new Map<string, VisibleBodyBounds>();
-    if (scrollViewport.height <= 0) {
+    if (!wrapLines && scrollViewport.height <= 0) {
       previousVisibleBodyBoundsRef.current = next;
       return next;
     }
 
-    const overscanTerminalRows = Math.max(24, scrollViewport.height * 2, rapidScrollOverscanRows);
+    // Keep this provisional height render-only. Navigation and selection effects must continue to
+    // wait for the exact scrollbox viewport represented by scrollViewport.height.
+    const hasMeasuredViewport = scrollViewport.height > 0;
+    const renderViewportHeight = hasMeasuredViewport
+      ? scrollViewport.height
+      : initialRenderViewportHeight;
+    // Wrapped startup mounts only the exact estimated viewport (plus a fitting selected hunk), then
+    // warms three viewports after one frame. Nowrap keeps its two-viewport window unchanged.
+    const isInitialWrappedPaint =
+      wrapLines && !hasMeasuredViewport && !initialWrappedRenderWindowWarmed;
+    const baseOverscanRows = isInitialWrappedPaint ? 0 : renderViewportHeight * (wrapLines ? 3 : 2);
+    const overscanTerminalRows = Math.max(
+      isInitialWrappedPaint ? 0 : 24,
+      baseOverscanRows,
+      rapidScrollOverscanRows,
+    );
 
     const indicesToMeasure = mountedFileIndices ?? files.map((_, index) => index);
 
@@ -1232,13 +1275,23 @@ export function DiffPane({
       // Convert the absolute review-stream viewport into file-body-local coordinates.
       // Example: if the viewport starts at row 2_000 globally and this file body starts at row
       // 1_940, then the file-local visible top is 60 rows into this file.
-      const minTop = scrollViewport.top - sectionLayout.bodyTop - overscanTerminalRows;
-      const maxBottom =
-        scrollViewport.top + scrollViewport.height - sectionLayout.bodyTop + overscanTerminalRows;
+      let minTop = scrollViewport.top - sectionLayout.bodyTop - overscanTerminalRows;
+      let maxBottom =
+        scrollViewport.top + renderViewportHeight - sectionLayout.bodyTop + overscanTerminalRows;
 
-      // Keep the mounted rows bounded to the viewport slice. Selection reveal uses planned hunk
-      // geometry as its fallback, so mounting an offscreen selected hunk is not necessary and would
-      // remount very large hunks in full.
+      // A fitting selected hunk must remain fully mounted even during the zero-halo first paint.
+      // Oversized hunks keep ordinary viewport windowing so one selection cannot defeat startup.
+      if (isInitialWrappedPaint && file.id === selectedFileId) {
+        const clampedHunkIndex = Math.max(
+          0,
+          Math.min(selectedHunkIndex, file.metadata.hunks.length - 1),
+        );
+        const selectedBounds = geometry.hunkBounds.get(clampedHunkIndex);
+        if (selectedBounds && selectedBounds.height <= renderViewportHeight) {
+          minTop = Math.min(minTop, selectedBounds.top);
+          maxBottom = Math.max(maxBottom, selectedBounds.top + selectedBounds.height);
+        }
+      }
 
       // Clamp the requested file-local interval back into the real body extent, then store it as
       // { top, height } so the row slicer can rebuild the matching [top, bottom) window later.
@@ -1259,11 +1312,16 @@ export function DiffPane({
   }, [
     fileSectionLayouts,
     files,
+    initialWrappedRenderWindowWarmed,
     rapidScrollOverscanRows,
     scrollViewport.height,
     scrollViewport.top,
+    initialRenderViewportHeight,
     sectionGeometry,
     mountedFileIndices,
+    selectedFileId,
+    selectedHunkIndex,
+    wrapLines,
   ]);
 
   const selectedFileIndex = selectedFileId
@@ -1815,7 +1873,10 @@ export function DiffPane({
                       selectedHunkIndex={file.id === selectedFileId ? selectedHunkIndex : -1}
                       copySelectedRowRanges={copySelectedRowKeysByFile.get(file.id)}
                       copySelectedSide={copySelectionSide}
-                      shouldLoadHighlight={highlightPrefetchFileIds.has(file.id)}
+                      shouldLoadHighlight={
+                        (!wrapLines || initialWrappedRenderWindowWarmed) &&
+                        highlightPrefetchFileIds.has(file.id)
+                      }
                       sectionGeometry={sectionGeometry[index]}
                       separatorWidth={separatorWidth}
                       showHeader={shouldRenderInStreamFileHeader(index)}

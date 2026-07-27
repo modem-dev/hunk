@@ -7,6 +7,7 @@
  * tested without React state in the loop.
  */
 import { findDiffFileByPath, findHunkIndexForLine, hunkLineRange } from "../../core/liveComments";
+import { noDiffFileMatchesMessage } from "../../hunk-session/agentErrors";
 import type { AgentAnnotation, DiffFile } from "../../core/types";
 import type { NavigateToHunkToolInput, SelectedHunkSummary } from "../../hunk-session/types";
 import {
@@ -160,7 +161,7 @@ export function resolveReviewNavigationTarget({
 
   const file = findDiffFileByPath(allFiles, input.filePath);
   if (!file) {
-    throw new Error(`No diff file matches ${input.filePath}.`);
+    throw new Error(noDiffFileMatchesMessage(input.filePath));
   }
 
   let hunkIndex = input.hunkIndex;

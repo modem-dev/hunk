@@ -2,7 +2,13 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { parseCli } from "./cli";
+import {
+  CLI_REFERENCE_COMMANDS,
+  COMMON_REVIEW_OPTIONS,
+  createCliReferenceCommand,
+  parseCli,
+  WATCH_OPTION,
+} from "./cli";
 import { resolveCliVersion } from "./version";
 
 const tempDirs: string[] = [];
@@ -76,6 +82,22 @@ describe("parseCli", () => {
 
   test("resolves the package version metadata", () => {
     expect(resolveCliVersion()).toBe(require("../../package.json").version);
+  });
+
+  test("registers each command's runtime options from its reference metadata", () => {
+    for (const [key, spec] of Object.entries(CLI_REFERENCE_COMMANDS)) {
+      const expectedFlags = [
+        ...("commonReviewOptions" in spec && spec.commonReviewOptions
+          ? COMMON_REVIEW_OPTIONS.map((option) => option.flag)
+          : []),
+        ...("watch" in spec && spec.watch ? [WATCH_OPTION.flag] : []),
+        ...("options" in spec ? spec.options.map((option) => option.flag) : []),
+      ];
+      const command = createCliReferenceCommand(key as keyof typeof CLI_REFERENCE_COMMANDS);
+
+      expect(command.options.map((option) => option.flags)).toEqual(expectedFlags);
+      expect(command.description()).toBe(spec.summary);
+    }
   });
 
   test("prints the package version for --version and version", async () => {

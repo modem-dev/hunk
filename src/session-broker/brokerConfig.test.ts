@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
+  DEFAULT_SESSION_BROKER_HOST,
+  DEFAULT_SESSION_BROKER_PORT,
+  SESSION_BROKER_HOST_ENV,
+  SESSION_BROKER_PORT_ENV,
   UNSAFE_ALLOW_REMOTE_SESSION_BROKER_ENV,
   allowsUnsafeRemoteSessionBroker,
   isLoopbackHost,
@@ -7,6 +11,19 @@ import {
 } from "./brokerConfig";
 
 describe("Hunk session daemon config", () => {
+  test("resolves exported host and port metadata as runtime defaults", () => {
+    expect(resolveSessionBrokerConfig({})).toMatchObject({
+      host: DEFAULT_SESSION_BROKER_HOST,
+      port: DEFAULT_SESSION_BROKER_PORT,
+    });
+    expect(
+      resolveSessionBrokerConfig({
+        [SESSION_BROKER_HOST_ENV]: "localhost",
+        [SESSION_BROKER_PORT_ENV]: "49000",
+      }),
+    ).toMatchObject({ host: "localhost", port: 49000 });
+  });
+
   test("accepts loopback hosts without an unsafe override", () => {
     expect(isLoopbackHost("127.0.0.1")).toBe(true);
     expect(isLoopbackHost("127.1.2.3")).toBe(true);

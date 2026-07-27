@@ -68,8 +68,8 @@ export type SessionDaemonRequest =
   | {
       action: "review";
       selector: SessionSelectorInput;
-      includePatch: SessionReviewCommandInput["includePatch"];
-      includeNotes: SessionReviewCommandInput["includeNotes"];
+      includePatch?: SessionReviewCommandInput["includePatch"];
+      includeNotes?: SessionReviewCommandInput["includeNotes"];
     }
   | {
       action: "navigate";

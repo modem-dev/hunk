@@ -37,9 +37,9 @@ import {
   HUNK_SESSION_DAEMON_VERSION,
   type SessionDaemonAction,
   type SessionDaemonCapabilities,
-  type SessionDaemonRequest,
   type SessionDaemonResponse,
 } from "../session/protocol";
+import { parseSessionDaemonRequest } from "../session/protocolSchemas";
 
 const DEFAULT_STALE_SESSION_TTL_MS = 45_000;
 const DEFAULT_STALE_SESSION_SWEEP_INTERVAL_MS = 15_000;
@@ -208,11 +208,14 @@ export function validateOriginHeader(request: Request, expectedPort: number, all
 
 async function parseJsonRequest(request: Request) {
   const text = await readRequestTextWithLimit(request, MAX_HTTP_BODY_BYTES);
+  let raw: unknown;
   try {
-    return JSON.parse(text) as SessionDaemonRequest;
+    raw = JSON.parse(text);
   } catch {
     throw new Error("Expected one JSON request body.");
   }
+
+  return parseSessionDaemonRequest(raw);
 }
 
 export async function handleSessionApiRequest(state: HunkSessionBrokerState, request: Request) {

@@ -70,13 +70,22 @@ export function sanitizeTerminalLine(text: string) {
 }
 
 /** Sanitize render spans while preserving their non-text styling metadata. */
-export function sanitizeTerminalSpans<T extends { text: string }>(spans: readonly T[]): T[] {
-  const sanitized: T[] = [];
-  for (const span of spans) {
+export function sanitizeTerminalSpans<T extends { text: string }>(spans: T[]): T[] {
+  let sanitized: T[] | null = null;
+  for (let index = 0; index < spans.length; index += 1) {
+    const span = spans[index]!;
     const text = sanitizeTerminalLine(span.text);
+    if (text === span.text && text.length > 0) {
+      sanitized?.push(span);
+      continue;
+    }
+
+    // Delay the output copy until the first actual change so already-safe immutable span arrays can
+    // flow through hot rendering paths without allocating either an array or replacement objects.
+    sanitized ??= spans.slice(0, index);
     if (text.length > 0) {
       sanitized.push({ ...span, text } as T);
     }
   }
-  return sanitized;
+  return sanitized ?? spans;
 }

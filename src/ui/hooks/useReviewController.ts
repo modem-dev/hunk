@@ -22,6 +22,7 @@ import {
   resolveCommentTarget,
 } from "../../core/liveComments";
 import { SourceTextTooLargeError } from "../../core/fileSource";
+import { noDiffFileMatchesMessage } from "../../hunk-session/agentErrors";
 import type { AgentAnnotation, DiffFile, LayoutMode, UserNoteLineTarget } from "../../core/types";
 import type {
   AppliedCommentBatchResult,
@@ -625,7 +626,7 @@ export function useReviewController({
     ): AppliedCommentResult => {
       const file = findDiffFileByPath(allFiles, input.filePath);
       if (!file) {
-        throw new Error(`No diff file matches ${input.filePath}.`);
+        throw new Error(noDiffFileMatchesMessage(input.filePath));
       }
 
       const target = resolveCommentTarget(file, input);
@@ -674,7 +675,7 @@ export function useReviewController({
       const prepared = inputs.map((input, index) => {
         const file = findDiffFileByPath(allFiles, input.filePath);
         if (!file) {
-          throw new Error(`No diff file matches ${input.filePath}.`);
+          throw new Error(noDiffFileMatchesMessage(input.filePath));
         }
 
         const target = resolveCommentTarget(file, input);
@@ -793,7 +794,7 @@ export function useReviewController({
     (filePath?: string, options: { includeUser?: boolean } = {}): ClearedCommentsResult => {
       const file = filePath ? findDiffFileByPath(allFiles, filePath) : undefined;
       if (filePath && !file) {
-        throw new Error(`No diff file matches ${filePath}.`);
+        throw new Error(noDiffFileMatchesMessage(filePath));
       }
 
       let removedLiveCommentCount = 0;
