@@ -48,6 +48,7 @@ export function HelpDialog({
         ["a", "toggle AI notes"],
         ["z", "toggle unchanged context"],
         ["l / w / m / M", "lines / wrap / metadata / menu"],
+        ["x / X", "collapse file / all files"],
         ["e", "open file in $EDITOR"],
       ],
     },

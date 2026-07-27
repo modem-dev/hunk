@@ -22,6 +22,8 @@ export interface BuildAppMenusOptions {
   toggleCopyDecorations: () => void;
   toggleAgentNotes: () => void;
   toggleFocusArea: () => void;
+  toggleSelectedFileCollapsed: () => void;
+  toggleAllFilesCollapsed: () => void;
   openAgentSkill: () => void;
   toggleHelp: () => void;
   toggleHunkHeaders: () => void;
@@ -55,6 +57,8 @@ export function buildAppMenus({
   toggleCopyDecorations,
   toggleAgentNotes,
   toggleFocusArea,
+  toggleSelectedFileCollapsed,
+  toggleAllFilesCollapsed,
   openAgentSkill,
   toggleHelp,
   toggleHunkHeaders,
@@ -212,6 +216,19 @@ export function buildAppMenus({
         label: "Next comment",
         hint: "}",
         action: () => moveToAnnotatedHunk(1),
+      },
+      { kind: "separator" },
+      {
+        kind: "item",
+        label: "Collapse/expand file",
+        hint: "x",
+        action: toggleSelectedFileCollapsed,
+      },
+      {
+        kind: "item",
+        label: "Collapse/expand all files",
+        hint: "X",
+        action: toggleAllFilesCollapsed,
       },
       { kind: "separator" },
       {

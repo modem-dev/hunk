@@ -42,6 +42,14 @@ function isUppercaseGKey(key: KeyEvent) {
   );
 }
 
+/** Detect Shift-X without stealing the lowercase collapse-file toggle. */
+function isUppercaseXKey(key: KeyEvent) {
+  return (
+    (key.sequence === "X" && !key.option && !key.ctrl && !key.meta) ||
+    (key.name === "x" && key.shift && !key.option && !key.ctrl && !key.meta)
+  );
+}
+
 /** Detect Shift-M without stealing the lowercase hunk metadata toggle. */
 function isUppercaseMKey(key: KeyEvent) {
   return (
@@ -91,6 +99,8 @@ export interface UseAppKeyboardShortcutsOptions {
   toggleAgentNotes: () => void;
   toggleFocusArea: () => void;
   toggleGapForSelectedHunk: () => void;
+  toggleSelectedFileCollapsed: () => void;
+  toggleAllFilesCollapsed: () => void;
   toggleHelp: () => void;
   toggleHunkHeaders: () => void;
   toggleLineNumbers: () => void;
@@ -144,6 +154,8 @@ export function useAppKeyboardShortcuts({
   toggleAgentNotes,
   toggleFocusArea,
   toggleGapForSelectedHunk,
+  toggleSelectedFileCollapsed,
+  toggleAllFilesCollapsed,
   toggleHelp,
   themeSelectorOpen,
   toggleHunkHeaders,
@@ -620,6 +632,17 @@ export function useAppKeyboardShortcuts({
 
     if (key.name === "z" || key.sequence === "z") {
       runAndCloseMenu(toggleGapForSelectedHunk);
+      return;
+    }
+
+    // Shift-X collapses/expands every file; check it before the lowercase x binding.
+    if (isUppercaseXKey(key)) {
+      runAndCloseMenu(toggleAllFilesCollapsed);
+      return;
+    }
+
+    if (key.name === "x" || key.sequence === "x") {
+      runAndCloseMenu(toggleSelectedFileCollapsed);
       return;
     }
 
