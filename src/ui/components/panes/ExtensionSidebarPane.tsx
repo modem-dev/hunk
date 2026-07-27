@@ -25,18 +25,38 @@ function describeError(error: unknown) {
  *
  * The isolation contract promises a misbehaving extension costs a warning, not
  * the session: a throw during render lands here instead of unwinding the whole
- * app tree, the extension is named once, and the built-in sidebar takes over
- * for the rest of the session. The boundary is keyed by extension and view id
- * at the call site, so a reloaded registry gets a fresh chance.
+ * app tree, the extension is named once, and the built-in sidebar takes over.
+ *
+ * The failure is scoped to the *registration*, not the session: every
+ * extension load pass registers a fresh `RegisteredSidebarView` object, so a
+ * reload that ships a fixed component arrives as a new identity — even under
+ * the same extension and view ids — and clears the failed state to give it a
+ * real chance instead of leaving the fallback pinned for the session.
  */
 class ExtensionSidebarErrorBoundary extends Component<
-  { fallback: ReactNode; onError: (error: unknown) => void; children: ReactNode },
-  { failed: boolean }
+  {
+    registered: RegisteredSidebarView;
+    fallback: ReactNode;
+    onError: (error: unknown) => void;
+    children: ReactNode;
+  },
+  { failed: boolean; registered: RegisteredSidebarView | null }
 > {
-  override state = { failed: false };
+  override state = { failed: false, registered: null as RegisteredSidebarView | null };
 
   static getDerivedStateFromError() {
     return { failed: true };
+  }
+
+  static getDerivedStateFromProps(
+    props: { registered: RegisteredSidebarView },
+    state: { failed: boolean; registered: RegisteredSidebarView | null },
+  ) {
+    if (props.registered !== state.registered) {
+      return { registered: props.registered, failed: false };
+    }
+
+    return null;
   }
 
   override componentDidCatch(error: unknown) {
@@ -113,14 +133,17 @@ export function ExtensionSidebarPane({
   const publicTheme = useMemo(() => Object.freeze(toSidebarTheme(theme)), [theme]);
 
   const actions = useMemo<ExtensionSidebarActions>(() => {
-    /** Reject a navigation target the review stream cannot show. */
-    const assertVisibleFileId = (method: string, fileId: string) => {
-      if (files.some((file) => file.id === fileId)) {
-        return true;
+    /** Resolve a navigation target, or report one the review stream cannot show. */
+    const resolveVisibleFile = (method: string, fileId: string) => {
+      const file = files.find((candidate) => candidate.id === fileId);
+      if (!file) {
+        notify(
+          `Extension ${extensionId} ${method} targeted unknown file id "${fileId}"`,
+          "warning",
+        );
       }
 
-      notify(`Extension ${extensionId} ${method} targeted unknown file id "${fileId}"`, "warning");
-      return false;
+      return file;
     };
 
     /** Turn one action failure into a warning naming the extension. */
@@ -135,16 +158,32 @@ export function ExtensionSidebarPane({
     return Object.freeze({
       selectFile(fileId: string) {
         guard("selectFile", () => {
-          if (assertVisibleFileId("selectFile", fileId)) {
+          if (resolveVisibleFile("selectFile", fileId)) {
             onSelectFile(fileId);
           }
         });
       },
       selectHunk(fileId: string, hunkIndex: number) {
         guard("selectHunk", () => {
-          if (assertVisibleFileId("selectHunk", fileId)) {
-            onSelectHunk(fileId, Math.max(0, Math.floor(hunkIndex)));
+          const file = resolveVisibleFile("selectHunk", fileId);
+          if (!file) {
+            return;
           }
+
+          // Selection state, reveal scrolling, and `selection_changed` all
+          // carry this index, so an out-of-range or non-numeric value must not
+          // reach the controller: refuse garbage, clamp the rest into the
+          // file's real hunk range.
+          if (typeof hunkIndex !== "number" || !Number.isFinite(hunkIndex)) {
+            notify(
+              `Extension ${extensionId} selectHunk received an invalid hunk index for "${fileId}"`,
+              "warning",
+            );
+            return;
+          }
+
+          const maxHunkIndex = Math.max(0, file.metadata.hunks.length - 1);
+          onSelectHunk(fileId, Math.min(Math.max(0, Math.floor(hunkIndex)), maxHunkIndex));
         });
       },
       notify(message: string, type: ExtensionNotifyType = "info") {
@@ -186,6 +225,7 @@ export function ExtensionSidebarPane({
 
   return (
     <ExtensionSidebarErrorBoundary
+      registered={registered}
       // The bundled sidebar consumes the same props, so a failed extension view
       // degrades to the default sidebar without leaving the extension pipeline's
       // prop model. The bundled view failing is a Hunk bug and crashes as such.
