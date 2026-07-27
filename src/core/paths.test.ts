@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
@@ -67,7 +67,10 @@ describe("paths", () => {
   });
 
   test("canonicalizes two spellings of one directory to the same path", () => {
-    const tempRoot = realpathSync(createTempRoot("hunk-canonical-path-"));
+    // Canonicalize with the same resolver the code under test uses: plain
+    // realpathSync leaves Windows 8.3 short names (RUNNER~1) in place, which
+    // would make the expected values non-canonical on Windows runners.
+    const tempRoot = resolveCanonicalPath(createTempRoot("hunk-canonical-path-"));
 
     try {
       const target = join(tempRoot, "target");

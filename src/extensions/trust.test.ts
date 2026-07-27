@@ -1,14 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import {
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  realpathSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { resolveCanonicalPath } from "../core/paths";
 import { join, resolve } from "node:path";
 import { loadExtensions } from "./host";
 import { readExtensionTrust, resolveRepoTrust, writeExtensionTrust } from "./trust";
@@ -73,7 +66,10 @@ describe("extension trust", () => {
    * `realpathSync.native` expands to its long form.
    */
   function createAliasedRepo(prefix: string) {
-    const root = realpathSync(createTempDir(prefix));
+    // Use the product's own canonicalizer: plain realpathSync does not expand
+    // Windows 8.3 short names, so `canonical` would itself be an alias on
+    // Windows runners and the equality below would compare two aliases.
+    const root = resolveCanonicalPath(createTempDir(prefix));
     const canonical = join(root, "repo");
     const alias = join(root, "alias");
     mkdirSync(canonical, { recursive: true });
