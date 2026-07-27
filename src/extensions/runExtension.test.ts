@@ -159,6 +159,66 @@ describe("registerSidebarView", () => {
   });
 });
 
+describe("registerCommand", () => {
+  test("collects a valid command tagged with the owning extension", () => {
+    const registry = createEmptyExtensionRegistry();
+    const issues: ExtensionLoadIssue[] = [];
+    const handler = () => {};
+
+    runExtensionFactory({
+      metadata: bundledMetadata("cmd"),
+      registry,
+      issues,
+      factory: (hunk) => {
+        hunk.registerCommand({ id: "toggle", title: "Toggle", key: "ctrl+y" }, handler);
+        hunk.registerCommand({ id: "unbound", title: "Unbound" }, handler);
+      },
+    });
+
+    expect(issues).toEqual([]);
+    expect(registry.commands).toEqual([
+      { extensionId: "cmd", command: { id: "toggle", title: "Toggle", key: "ctrl+y" }, handler },
+      { extensionId: "cmd", command: { id: "unbound", title: "Unbound" }, handler },
+    ]);
+  });
+
+  test("rejects an unparsable key chord and rolls the factory back", () => {
+    const registry = createEmptyExtensionRegistry();
+    const issues: ExtensionLoadIssue[] = [];
+
+    runExtensionFactory({
+      metadata: bundledMetadata("bad-key"),
+      registry,
+      issues,
+      factory: (hunk) => {
+        hunk.registerCommand({ id: "toggle", title: "Toggle", key: "ctlr+y" }, () => {});
+      },
+    });
+
+    // A typo'd chord fails the author loudly at registration instead of
+    // registering a binding that silently never fires.
+    expect(registry.commands).toEqual([]);
+    expect(issues[0]?.message).toContain('Unknown modifier "ctlr"');
+  });
+
+  test("rejects a command without a handler function", () => {
+    const registry = createEmptyExtensionRegistry();
+    const issues: ExtensionLoadIssue[] = [];
+
+    runExtensionFactory({
+      metadata: bundledMetadata("no-handler"),
+      registry,
+      issues,
+      factory: (hunk) => {
+        hunk.registerCommand({ id: "toggle", title: "Toggle" }, undefined as never);
+      },
+    });
+
+    expect(registry.commands).toEqual([]);
+    expect(issues[0]?.message).toContain("handler function");
+  });
+});
+
 describe("toInternalVcsAdapter detection ids", () => {
   test("forces a mismatched detection id back to the registered adapter id", () => {
     const mismatches: string[] = [];

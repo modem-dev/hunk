@@ -1,59 +1,15 @@
 import type { KeyEvent } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
 import { useRef } from "react";
-import type { LayoutMode } from "../../core/types";
 import type { MenuId } from "../components/chrome/menu";
-import {
-  isCreateReviewNoteKey,
-  isEscapeKey,
-  isHalfPageDownKey,
-  isHalfPageUpKey,
-  isPageDownKey,
-  isPageUpKey,
-  isSaveDraftNoteKey,
-  isShiftSpacePageUpKey,
-  isStepDownKey,
-  isStepUpKey,
-} from "../lib/keyboard";
+import { dispatchAppCommand, type AppCommand } from "../lib/appCommands";
+import { isEscapeKey, isSaveDraftNoteKey } from "../lib/keyboard";
 
 type FocusArea = "files" | "filter" | "note";
-type ScrollUnit = "step" | "viewport" | "content" | "half";
-
-const FAST_CODE_HORIZONTAL_SCROLL_COLUMNS = 8;
-
-type JumpShortcut = "top" | "bottom";
-
-/** Detect an unmodified lowercase g keypress. */
-function isLowercaseGKey(key: KeyEvent) {
-  return (
-    (key.name === "g" || key.sequence === "g") &&
-    !key.shift &&
-    !key.option &&
-    !key.ctrl &&
-    !key.meta
-  );
-}
-
-/** Detect an unmodified uppercase G keypress. */
-function isUppercaseGKey(key: KeyEvent) {
-  return (
-    (key.sequence === "G" && !key.option && !key.ctrl && !key.meta) ||
-    (key.name === "g" && key.shift && !key.option && !key.ctrl && !key.meta)
-  );
-}
-
-/** Detect Shift-M without stealing the lowercase hunk metadata toggle. */
-function isUppercaseMKey(key: KeyEvent) {
-  return (
-    (key.sequence === "M" && !key.option && !key.ctrl && !key.meta) ||
-    (key.name === "m" && key.shift && !key.option && !key.ctrl && !key.meta)
-  );
-}
 
 export interface UseAppKeyboardShortcutsOptions {
   activeMenuId: MenuId | null;
   activateCurrentMenuItem: () => void;
-  canRefreshCurrentInput: boolean;
   closeAgentSkill: () => void;
   closeHelp: () => void;
   closeMenu: () => void;
@@ -61,52 +17,45 @@ export interface UseAppKeyboardShortcutsOptions {
   cancelDraftNote: () => void;
   closeThemeSelector: () => void;
   closeExtensionTrustPrompt: () => void;
+  /**
+   * Every app-level shortcut, built-in and extension-contributed, in dispatch
+   * order. Modal navigation stays in this hook; commands own the rest.
+   */
+  commands: readonly AppCommand[];
   denyRepoExtensions: () => void;
   extensionTrustPromptOpen: boolean;
   trustRepoExtensions: () => void;
   focusArea: FocusArea;
-  focusFilter: () => void;
-  moveToAnnotatedHunk: (delta: number) => void;
-  moveToFile: (delta: number) => void;
-  moveToHunk: (delta: number) => void;
   moveMenuItem: (delta: number) => void;
   moveThemeSelector: (delta: number) => void;
   openMenu: (menuId: MenuId) => void;
-  openThemeSelector: () => void;
   pagerMode: boolean;
-  requestQuit: () => void;
   saveConfigPromptOpen: boolean;
   saveViewPreferencesAndQuit: () => void;
   discardViewPreferencesAndQuit: () => void;
   neverAskToSaveViewPreferencesAndQuit: () => void;
   closeSaveConfigPrompt: () => void;
-  scrollCodeHorizontally: (delta: number) => void;
-  scrollDiff: (delta: number, unit: ScrollUnit) => void;
   saveDraftNote: () => void;
-  selectLayoutMode: (mode: LayoutMode) => void;
   showAgentSkill: boolean;
   showHelp: boolean;
-  startUserNote: () => void;
   switchMenu: (delta: number) => void;
-  toggleAgentNotes: () => void;
   toggleFocusArea: () => void;
-  toggleGapForSelectedHunk: () => void;
-  toggleHelp: () => void;
-  toggleHunkHeaders: () => void;
-  toggleLineNumbers: () => void;
-  toggleMenuBar: () => void;
-  toggleLineWrap: () => void;
   themeSelectorOpen: boolean;
-  toggleSidebar: () => void;
-  triggerEditSelectedFile: () => void;
-  triggerRefreshCurrentInput: () => void;
 }
 
-/** Register the app's scoped keyboard handling while keeping mode precedence explicit. */
+/**
+ * Register the app's scoped keyboard handling while keeping mode precedence
+ * explicit.
+ *
+ * Modal surfaces (the trust prompt, save-config prompt, dialogs, the theme
+ * selector, open menus, focused text inputs) answer first, in a fixed order —
+ * their keys are the structure of the widget that owns them. Everything that
+ * falls through lands in the command table, where built-in shortcuts and
+ * extension commands share one dispatch path.
+ */
 export function useAppKeyboardShortcuts({
   activeMenuId,
   activateCurrentMenuItem,
-  canRefreshCurrentInput,
   closeAgentSkill,
   closeHelp,
   closeMenu,
@@ -114,47 +63,29 @@ export function useAppKeyboardShortcuts({
   cancelDraftNote,
   closeThemeSelector,
   closeExtensionTrustPrompt,
+  commands,
   denyRepoExtensions,
   extensionTrustPromptOpen,
   trustRepoExtensions,
   focusArea,
-  focusFilter,
-  moveToAnnotatedHunk,
-  moveToFile,
-  moveToHunk,
   moveMenuItem,
   moveThemeSelector,
   openMenu,
-  openThemeSelector,
   pagerMode,
-  requestQuit,
   saveConfigPromptOpen,
   saveViewPreferencesAndQuit,
   discardViewPreferencesAndQuit,
   neverAskToSaveViewPreferencesAndQuit,
   closeSaveConfigPrompt,
-  scrollCodeHorizontally,
   saveDraftNote,
-  scrollDiff,
-  selectLayoutMode,
   showAgentSkill,
   showHelp,
-  startUserNote,
   switchMenu,
-  toggleAgentNotes,
   toggleFocusArea,
-  toggleGapForSelectedHunk,
-  toggleHelp,
   themeSelectorOpen,
-  toggleHunkHeaders,
-  toggleMenuBar,
-  triggerEditSelectedFile,
-  toggleLineNumbers,
-  toggleLineWrap,
-  toggleSidebar,
-  triggerRefreshCurrentInput,
 }: UseAppKeyboardShortcutsOptions) {
   const activeMenuIdRef = useRef(activeMenuId);
+  const commandsRef = useRef(commands);
   const focusAreaRef = useRef(focusArea);
   const pagerModeRef = useRef(pagerMode);
   const showAgentSkillRef = useRef(showAgentSkill);
@@ -164,6 +95,7 @@ export function useAppKeyboardShortcuts({
   const extensionTrustPromptOpenRef = useRef(extensionTrustPromptOpen);
 
   activeMenuIdRef.current = activeMenuId;
+  commandsRef.current = commands;
   focusAreaRef.current = focusArea;
   pagerModeRef.current = pagerMode;
   showAgentSkillRef.current = showAgentSkill;
@@ -171,23 +103,6 @@ export function useAppKeyboardShortcuts({
   saveConfigPromptOpenRef.current = saveConfigPromptOpen;
   themeSelectorOpenRef.current = themeSelectorOpen;
   extensionTrustPromptOpenRef.current = extensionTrustPromptOpen;
-
-  const resolveJumpShortcut = (key: KeyEvent): JumpShortcut | null => {
-    if (isUppercaseGKey(key)) {
-      return "bottom";
-    }
-
-    if (isLowercaseGKey(key)) {
-      return "top";
-    }
-
-    return null;
-  };
-
-  const runAndCloseMenu = (action: () => void) => {
-    action();
-    closeMenu();
-  };
 
   const consumeKey = (key: KeyEvent) => {
     key.preventDefault();
@@ -210,83 +125,6 @@ export function useAppKeyboardShortcuts({
     }
 
     return true;
-  };
-
-  const handlePagerShortcut = (key: KeyEvent) => {
-    const jumpShortcut = resolveJumpShortcut(key);
-    if (jumpShortcut === "top") {
-      scrollDiff(-1, "content");
-      return;
-    }
-
-    if (jumpShortcut === "bottom") {
-      scrollDiff(1, "content");
-      return;
-    }
-
-    if (key.name === "q") {
-      requestQuit();
-      return;
-    }
-
-    if (isPageDownKey(key)) {
-      scrollDiff(1, "viewport");
-      return;
-    }
-
-    if (isPageUpKey(key) || isShiftSpacePageUpKey(key)) {
-      scrollDiff(-1, "viewport");
-      return;
-    }
-
-    if (isHalfPageDownKey(key)) {
-      scrollDiff(1, "half");
-      return;
-    }
-
-    if (isHalfPageUpKey(key)) {
-      scrollDiff(-1, "half");
-      return;
-    }
-
-    if (isStepDownKey(key)) {
-      scrollDiff(1, "step");
-      return;
-    }
-
-    if (isStepUpKey(key)) {
-      scrollDiff(-1, "step");
-      return;
-    }
-
-    if (key.name === "left") {
-      scrollCodeHorizontally(key.shift ? -FAST_CODE_HORIZONTAL_SCROLL_COLUMNS : -1);
-      return;
-    }
-
-    if (key.name === "right") {
-      scrollCodeHorizontally(key.shift ? FAST_CODE_HORIZONTAL_SCROLL_COLUMNS : 1);
-      return;
-    }
-
-    if (key.name === "home") {
-      scrollDiff(-1, "content");
-      return;
-    }
-
-    if (key.name === "end") {
-      scrollDiff(1, "content");
-      return;
-    }
-
-    if (key.name === "w" || key.sequence === "w") {
-      toggleLineWrap();
-      return;
-    }
-
-    if (key.name === "s" || key.sequence === "s") {
-      toggleSidebar();
-    }
   };
 
   const handleDialogShortcut = (key: KeyEvent) => {
@@ -475,189 +313,6 @@ export function useAppKeyboardShortcuts({
     return true;
   };
 
-  const handleAppShortcut = (key: KeyEvent) => {
-    const jumpShortcut = resolveJumpShortcut(key);
-    if (jumpShortcut === "top") {
-      scrollDiff(-1, "content");
-      return;
-    }
-
-    if (jumpShortcut === "bottom") {
-      scrollDiff(1, "content");
-      return;
-    }
-
-    if (key.name === "q") {
-      requestQuit();
-      return;
-    }
-
-    if (key.name === "?" || key.sequence === "?") {
-      toggleHelp();
-      closeMenu();
-      return;
-    }
-
-    if (key.name === "tab") {
-      toggleFocusArea();
-      return;
-    }
-
-    if (key.name === "/") {
-      focusFilter();
-      return;
-    }
-
-    if (isCreateReviewNoteKey(key)) {
-      runAndCloseMenu(startUserNote);
-      return;
-    }
-
-    if (isPageDownKey(key)) {
-      scrollDiff(1, "viewport");
-      return;
-    }
-
-    if (isPageUpKey(key) || isShiftSpacePageUpKey(key)) {
-      scrollDiff(-1, "viewport");
-      return;
-    }
-
-    if (isHalfPageDownKey(key)) {
-      scrollDiff(1, "half");
-      return;
-    }
-
-    if (isHalfPageUpKey(key)) {
-      scrollDiff(-1, "half");
-      return;
-    }
-
-    if (key.name === "home") {
-      scrollDiff(-1, "content");
-      return;
-    }
-
-    if (key.name === "end") {
-      scrollDiff(1, "content");
-      return;
-    }
-
-    if (isStepUpKey(key)) {
-      scrollDiff(-1, "step");
-      return;
-    }
-
-    if (isStepDownKey(key)) {
-      scrollDiff(1, "step");
-      return;
-    }
-
-    if (key.name === "left") {
-      scrollCodeHorizontally(key.shift ? -FAST_CODE_HORIZONTAL_SCROLL_COLUMNS : -1);
-      return;
-    }
-
-    if (key.name === "right") {
-      scrollCodeHorizontally(key.shift ? FAST_CODE_HORIZONTAL_SCROLL_COLUMNS : 1);
-      return;
-    }
-
-    if (key.name === "1") {
-      runAndCloseMenu(() => selectLayoutMode("split"));
-      return;
-    }
-
-    if (key.name === "2") {
-      runAndCloseMenu(() => selectLayoutMode("stack"));
-      return;
-    }
-
-    if (key.name === "0") {
-      runAndCloseMenu(() => selectLayoutMode("auto"));
-      return;
-    }
-
-    if (key.name === "s") {
-      runAndCloseMenu(toggleSidebar);
-      return;
-    }
-
-    if ((key.name === "r" || key.sequence === "r") && canRefreshCurrentInput) {
-      runAndCloseMenu(triggerRefreshCurrentInput);
-      return;
-    }
-
-    if (key.name === "t") {
-      runAndCloseMenu(openThemeSelector);
-      return;
-    }
-
-    if (key.name === "a") {
-      runAndCloseMenu(toggleAgentNotes);
-      return;
-    }
-
-    if (key.name === "l" || key.sequence === "l") {
-      runAndCloseMenu(toggleLineNumbers);
-      return;
-    }
-
-    if (key.name === "w" || key.sequence === "w") {
-      runAndCloseMenu(toggleLineWrap);
-      return;
-    }
-
-    if (isUppercaseMKey(key)) {
-      runAndCloseMenu(toggleMenuBar);
-      return;
-    }
-
-    if (key.name === "m" || key.sequence === "m") {
-      runAndCloseMenu(toggleHunkHeaders);
-      return;
-    }
-
-    if (key.name === "z" || key.sequence === "z") {
-      runAndCloseMenu(toggleGapForSelectedHunk);
-      return;
-    }
-
-    if (key.name === "e" || key.sequence === "e") {
-      runAndCloseMenu(triggerEditSelectedFile);
-      return;
-    }
-
-    if (key.name === "[") {
-      runAndCloseMenu(() => moveToHunk(-1));
-      return;
-    }
-
-    if (key.name === "]") {
-      runAndCloseMenu(() => moveToHunk(1));
-      return;
-    }
-
-    if (key.name === "," || key.sequence === ",") {
-      runAndCloseMenu(() => moveToFile(-1));
-      return;
-    }
-
-    if (key.name === "." || key.sequence === ".") {
-      runAndCloseMenu(() => moveToFile(1));
-      return;
-    }
-
-    if (key.sequence === "{") {
-      runAndCloseMenu(() => moveToAnnotatedHunk(-1));
-      return;
-    }
-
-    if (key.sequence === "}") {
-      runAndCloseMenu(() => moveToAnnotatedHunk(1));
-    }
-  };
-
   useKeyboard((key: KeyEvent) => {
     if (handleExtensionTrustPromptShortcut(key)) {
       return;
@@ -687,11 +342,13 @@ export function useAppKeyboardShortcuts({
       return;
     }
 
-    if (pagerModeRef.current) {
-      handlePagerShortcut(key);
-      return;
+    const matched = dispatchAppCommand(
+      commandsRef.current,
+      pagerModeRef.current ? "pager" : "review",
+      key,
+    );
+    if (matched?.closesMenu) {
+      closeMenu();
     }
-
-    handleAppShortcut(key);
   });
 }

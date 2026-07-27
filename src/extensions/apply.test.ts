@@ -16,7 +16,8 @@ import {
   reportExtensionApplyIssues,
   createUnknownVcsNotice,
   resolveDetectedVcsIdWithExtensions,
-  resolveExtensionSidebarView,
+  resolveExtensionCommands,
+  resolveExtensionSidebarViews,
   resolveExtensionVcsAdapters,
   resolveSessionVcsId,
 } from "./apply";
@@ -140,32 +141,65 @@ describe("extension VCS adapters", () => {
 });
 
 describe("extension sidebar views", () => {
-  test("resolves no active view from an empty registry", () => {
+  test("resolves no views from an empty registry", () => {
     const result = createEmptyExtensionLoadResult();
 
-    const { active, issues } = resolveExtensionSidebarView(result.registry);
+    const { views, issues } = resolveExtensionSidebarViews(result.registry);
 
-    expect(active).toBeUndefined();
+    expect(views).toEqual([]);
     expect(issues).toEqual([]);
   });
 
-  test("first registration wins and later ones are reported", () => {
+  test("keeps every distinct view and reports duplicate keys", () => {
     const result = createEmptyExtensionLoadResult();
-    const first = { id: "tree", component: () => null };
-    const second = { id: "flat", component: () => null };
+    const tree = { id: "tree", component: () => null };
+    const flat = { id: "flat", component: () => null };
+    const treeAgain = { id: "tree", component: () => null };
     result.registry.sidebarViews.push(
-      { extensionId: "alpha", view: first },
-      { extensionId: "beta", view: second },
+      { extensionId: "alpha", view: tree },
+      { extensionId: "beta", view: flat },
+      { extensionId: "alpha", view: treeAgain },
     );
 
-    const { active, issues } = resolveExtensionSidebarView(result.registry);
+    const { views, issues } = resolveExtensionSidebarViews(result.registry);
 
-    expect(active).toEqual({ extensionId: "alpha", view: first });
+    // Registration is additive: distinct views from any extension coexist,
+    // and only an identity collision is refused.
+    expect(views).toEqual([
+      { extensionId: "alpha", view: tree },
+      { extensionId: "beta", view: flat },
+    ]);
     expect(issues).toEqual([
       {
-        extensionId: "beta",
-        message:
-          'Skipped sidebar view "flat" from extension beta • extension alpha already provides the sidebar',
+        extensionId: "alpha",
+        message: 'Skipped duplicate sidebar view "alpha:tree" from extension alpha',
+      },
+    ]);
+  });
+});
+
+describe("extension commands", () => {
+  test("keeps every distinct command and reports duplicate ids", () => {
+    const result = createEmptyExtensionLoadResult();
+    const handler = () => {};
+    result.registry.commands.push(
+      { extensionId: "alpha", command: { id: "toggle", title: "Toggle" }, handler },
+      { extensionId: "beta", command: { id: "toggle", title: "Toggle" }, handler },
+      { extensionId: "alpha", command: { id: "toggle", title: "Again" }, handler },
+    );
+
+    const { commands, issues } = resolveExtensionCommands(result.registry);
+
+    // Ids namespace by extension, so same-named commands from different
+    // extensions coexist while a true duplicate is refused.
+    expect(commands.map((entry) => `${entry.extensionId}.${entry.command.id}`)).toEqual([
+      "alpha.toggle",
+      "beta.toggle",
+    ]);
+    expect(issues).toEqual([
+      {
+        extensionId: "alpha",
+        message: 'Skipped duplicate command "alpha.toggle" from extension alpha',
       },
     ]);
   });

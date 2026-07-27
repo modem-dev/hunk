@@ -2,6 +2,8 @@ import { basename, dirname, extname } from "node:path";
 import type { VcsAdapter } from "../core/vcs/types";
 import type {
   ChangesetTransform,
+  ExtensionCommand,
+  ExtensionCommandHandler,
   ExtensionContext,
   ExtensionEventHandler,
   ExtensionEventName,
@@ -21,6 +23,9 @@ export { HUNK_EXTENSION_API_VERSION } from "../extension-api/types";
 export type {
   ChangesetTransform,
   ExtensionChangeset,
+  ExtensionCommand,
+  ExtensionCommandContext,
+  ExtensionCommandHandler,
   ExtensionContext,
   ExtensionDiffFile,
   ExtensionEventHandler,
@@ -30,6 +35,8 @@ export type {
   ExtensionNotifyType,
   ExtensionSidebarActions,
   ExtensionSidebarComponent,
+  ExtensionSidebarControls,
+  ExtensionSidebarPlacement,
   ExtensionSidebarTheme,
   ExtensionSidebarView,
   ExtensionSidebarViewProps,
@@ -94,6 +101,12 @@ export interface RegisteredSidebarView {
   view: ExtensionSidebarView;
 }
 
+export interface RegisteredCommand {
+  extensionId: string;
+  command: ExtensionCommand;
+  handler: ExtensionCommandHandler;
+}
+
 export interface RegisteredEventHandler<Event extends ExtensionEventName = ExtensionEventName> {
   extensionId: string;
   handler: ExtensionEventHandler<Event>;
@@ -116,6 +129,7 @@ export interface ExtensionRegistry {
   vcsAdapters: RegisteredVcsAdapter[];
   changesetTransforms: RegisteredChangesetTransform[];
   sidebarViews: RegisteredSidebarView[];
+  commands: RegisteredCommand[];
   eventHandlers: ExtensionEventHandlerMap;
   logs: ExtensionLogEntry[];
 }
@@ -177,6 +191,7 @@ export function createEmptyExtensionRegistry(): ExtensionRegistry {
     vcsAdapters: [],
     changesetTransforms: [],
     sidebarViews: [],
+    commands: [],
     eventHandlers: {
       startup: [],
       changeset_loaded: [],

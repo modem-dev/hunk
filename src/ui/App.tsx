@@ -4,7 +4,7 @@ import {
   type ScrollBoxRenderable,
 } from "@opentui/core";
 import { useRenderer, useTerminalDimensions } from "@opentui/react";
-import { Suspense, lazy, useCallback, useEffect, useMemo, useState, useRef } from "react";
+import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useState, useRef } from "react";
 import {
   diffPersistedViewPreferences,
   saveGlobalViewPreferences,
@@ -20,10 +20,14 @@ import type {
   UserNoteLineTarget,
 } from "../core/types";
 import { canReloadInput } from "../core/watch";
-import { resolveExtensionSidebarView } from "../extensions/apply";
-import { getBundledSidebarView } from "../extensions/default/ui/sidebar";
+import { resolveExtensionCommands } from "../extensions/apply";
 import { emitExtensionEvent } from "../extensions/events";
 import { writeExtensionTrust } from "../extensions/trust";
+import type {
+  ExtensionCommandContext,
+  ExtensionSidebarControls,
+  RegisteredCommand,
+} from "../extensions/types";
 import type {
   HunkSessionBrokerClient,
   ReloadedSessionResult,
@@ -49,7 +53,19 @@ import { useMenuController } from "./hooks/useMenuController";
 import { useReviewController, type AgentNoteGeometrySnapshot } from "./hooks/useReviewController";
 import { useWatchedInput, type WatchedInputRuntime } from "./hooks/useWatchedInput";
 import { agentNoteMarkupWidth } from "./lib/agentNoteGeometry";
+import { buildAppCommands, builtinCommandMatchProbes } from "./lib/appCommands";
 import { buildAppMenus } from "./lib/appMenus";
+import { buildExtensionAppCommands } from "./lib/extensionCommands";
+import {
+  buildSessionSidebarViews,
+  bundledSidebarViewKey,
+  initialSidebarOpenState,
+  planSidebarLayout,
+  reconcileSidebarOpenState,
+  resolveSidebarViewKey,
+  type SidebarPanePlan,
+  type SidebarPlacement,
+} from "./lib/sidebarPanes";
 import { nextExtensionTrustPromptRoot } from "./lib/extensionTrustPrompt";
 import { openSelectedFileInEditor } from "./lib/openInEditor";
 import { resolveResponsiveLayout } from "./lib/responsive";
@@ -141,6 +157,7 @@ export function App({
   watchRuntime?: WatchedInputRuntime;
 }) {
   const SIDEBAR_MIN_WIDTH = 22;
+  const SIDEBAR_DEFAULT_WIDTH = 34;
   const DIFF_MIN_WIDTH = 48;
   const BODY_PADDING = 2;
   const DIVIDER_WIDTH = 1;
@@ -191,9 +208,14 @@ export function App({
   const [saveConfigPromptOpen, setSaveConfigPromptOpen] = useState(false);
   const [focusArea, setFocusArea] = useState<FocusArea>("files");
   const [activeAddNoteTarget, setActiveAddNoteTarget] = useState<ActiveAddNoteTarget | null>(null);
-  const [sidebarWidth, setSidebarWidth] = useState(34);
-  const [resizeDragOriginX, setResizeDragOriginX] = useState<number | null>(null);
-  const [resizeStartWidth, setResizeStartWidth] = useState<number | null>(null);
+  const [sidebarWidths, setSidebarWidths] = useState<Record<string, number>>({});
+  const [sidebarResize, setSidebarResize] = useState<{
+    key: string;
+    placement: SidebarPlacement;
+    originX: number;
+    startWidth: number;
+    maxWidth: number;
+  } | null>(null);
   const [sessionNoticeText, setSessionNoticeText] = useState<string | null>(null);
   const sessionNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const extensions = bootstrap.extensions;
@@ -333,16 +355,149 @@ export function App({
     emitExtensionEvent(extensions, "changeset_loaded", { changeset: bootstrap.changeset });
   }, [bootstrap.changeset, extensions]);
 
-  // The sidebar view this session renders with. A user-registered view
-  // overrides the bundled default; duplicate registrations were already
-  // reported when registrations applied. The built-in sidebar is itself a
-  // bundled extension, so every session renders through the extension path.
-  const activeSidebar = useMemo(
-    () =>
-      (extensions ? resolveExtensionSidebarView(extensions.registry).active : undefined) ??
-      getBundledSidebarView(),
+  // Every sidebar view this session offers — the bundled file navigation plus
+  // each registered view — and which of them are open. Registration is
+  // additive; the built-in sidebar is itself a bundled extension, so every
+  // pane renders through the extension path.
+  const sessionSidebarViews = useMemo(() => buildSessionSidebarViews(extensions), [extensions]);
+  const [sidebarOpenState, setSidebarOpenState] = useState(() =>
+    initialSidebarOpenState(sessionSidebarViews),
+  );
+  useEffect(() => {
+    // Reloads may add or remove views; keep the user's open/closed choices for
+    // the ones that survived.
+    setSidebarOpenState((current) => reconcileSidebarOpenState(sessionSidebarViews, current));
+  }, [sessionSidebarViews]);
+  const sessionSidebarViewsRef = useRef(sessionSidebarViews);
+  sessionSidebarViewsRef.current = sessionSidebarViews;
+  const sidebarOpenStateRef = useRef(sidebarOpenState);
+  sidebarOpenStateRef.current = sidebarOpenState;
+
+  const setSidebarOpen = useCallback((key: string, nextOpen: boolean | "toggle") => {
+    setSidebarOpenState((current) => {
+      const isOpen = current.open.includes(key);
+      const resolved = nextOpen === "toggle" ? !isOpen : nextOpen;
+      if (resolved === isOpen) {
+        return current;
+      }
+
+      return {
+        known: current.known,
+        open: resolved ? [...current.open, key] : current.open.filter((open) => open !== key),
+      };
+    });
+  }, []);
+
+  /** Close a sidebar view that failed rendering; never leave the area empty. */
+  const handleSidebarViewFailure = useCallback((key: string) => {
+    setSidebarOpenState((current) => {
+      const open = current.open.filter((openKey) => openKey !== key);
+      return {
+        known: current.known,
+        open: open.length > 0 ? open : [bundledSidebarViewKey()],
+      };
+    });
+  }, []);
+
+  /** Build the sidebar controls one extension's command handlers receive. */
+  const createSidebarControls = useCallback(
+    (extensionId: string): ExtensionSidebarControls => {
+      const resolve = (method: string, viewId: string) => {
+        const key = resolveSidebarViewKey(sessionSidebarViewsRef.current, extensionId, viewId);
+        if (!key) {
+          extensions?.context.notify(
+            `Extension ${extensionId} ${method} targeted unknown sidebar view "${viewId}"`,
+            "warning",
+          );
+        }
+
+        return key;
+      };
+
+      return {
+        open(viewId: string) {
+          const key = resolve("sidebars.open", viewId);
+          if (key) {
+            setSidebarOpen(key, true);
+          }
+        },
+        close(viewId: string) {
+          const key = resolve("sidebars.close", viewId);
+          if (key) {
+            setSidebarOpen(key, false);
+          }
+        },
+        toggle(viewId: string) {
+          const key = resolve("sidebars.toggle", viewId);
+          if (key) {
+            setSidebarOpen(key, "toggle");
+          }
+        },
+        isOpen(viewId: string) {
+          const key = resolveSidebarViewKey(sessionSidebarViewsRef.current, extensionId, viewId);
+          return key !== undefined && sidebarOpenStateRef.current.open.includes(key);
+        },
+      };
+    },
+    [extensions, setSidebarOpen],
+  );
+
+  /** Invoke one extension command with its context, containing any failure. */
+  const runExtensionCommand = useCallback(
+    (registered: RegisteredCommand) => {
+      const report = (error: unknown) => {
+        extensions?.context.notify(
+          `Extension ${registered.extensionId} failed command "${registered.command.id}" • ` +
+            `${error instanceof Error ? error.message || error.name : String(error)}`,
+          "warning",
+        );
+      };
+      const ctx: ExtensionCommandContext = {
+        cwd: extensions?.context.cwd ?? process.cwd(),
+        notify: (message, type) => extensions?.context.notify(message, type),
+        sidebars: createSidebarControls(registered.extensionId),
+      };
+
+      try {
+        const returned = registered.handler(ctx);
+        if (returned && typeof (returned as PromiseLike<void>).then === "function") {
+          Promise.resolve(returned).catch(report);
+        }
+      } catch (error) {
+        report(error);
+      }
+    },
+    [createSidebarControls, extensions],
+  );
+
+  const registeredExtensionCommands = useMemo(
+    () => (extensions ? resolveExtensionCommands(extensions.registry).commands : []),
     [extensions],
   );
+  const extensionAppCommands = useMemo(
+    () =>
+      buildExtensionAppCommands({
+        registered: registeredExtensionCommands,
+        builtins: builtinCommandMatchProbes(),
+        runCommand: runExtensionCommand,
+      }),
+    [registeredExtensionCommands, runExtensionCommand],
+  );
+  const reportedCommandConflictsRef = useRef(new Set<string>());
+  useEffect(() => {
+    for (const conflict of extensionAppCommands.conflicts) {
+      if (reportedCommandConflictsRef.current.has(conflict.fullId)) {
+        continue;
+      }
+
+      reportedCommandConflictsRef.current.add(conflict.fullId);
+      extensions?.context.notify(
+        `Extension ${conflict.extensionId} key "${conflict.key}" is taken by ${conflict.conflictingId} • ` +
+          `command "${conflict.fullId}" left unbound`,
+        "warning",
+      );
+    }
+  }, [extensionAppCommands, extensions]);
 
   const selectedFileId = selectedFile?.id ?? null;
   useEffect(() => {
@@ -360,22 +515,37 @@ export function App({
   const bodyWidth = Math.max(0, terminal.width - bodyPadding);
   const responsiveLayout = resolveResponsiveLayout(layoutMode, terminal.width);
   const canForceShowSidebar = bodyWidth >= SIDEBAR_MIN_WIDTH + DIVIDER_WIDTH + DIFF_MIN_WIDTH;
-  const renderSidebar =
+  const sidebarAreaVisible =
     sidebarVisible && (responsiveLayout.showSidebar || (forceSidebarOpen && canForceShowSidebar));
-  const centerWidth = bodyWidth;
   const resolvedLayout = responsiveLayout.layout;
-  const availableCenterWidth = renderSidebar
-    ? Math.max(0, centerWidth - DIVIDER_WIDTH)
-    : Math.max(0, centerWidth);
-  const maxSidebarWidth = renderSidebar
-    ? Math.max(SIDEBAR_MIN_WIDTH, availableCenterWidth - DIFF_MIN_WIDTH)
-    : SIDEBAR_MIN_WIDTH;
-  const clampedSidebarWidth = renderSidebar
-    ? clamp(sidebarWidth, SIDEBAR_MIN_WIDTH, maxSidebarWidth)
-    : 0;
-  const diffPaneWidth = renderSidebar
-    ? Math.max(DIFF_MIN_WIDTH, availableCenterWidth - clampedSidebarWidth)
-    : Math.max(0, availableCenterWidth);
+  const sidebarLayout = useMemo(
+    () =>
+      sidebarAreaVisible
+        ? planSidebarLayout({
+            views: sessionSidebarViews,
+            openKeys: sidebarOpenState.open,
+            widths: sidebarWidths,
+            defaultWidth: SIDEBAR_DEFAULT_WIDTH,
+            minWidth: SIDEBAR_MIN_WIDTH,
+            dividerWidth: DIVIDER_WIDTH,
+            bodyWidth,
+            diffMinWidth: DIFF_MIN_WIDTH,
+          })
+        : { left: [], right: [], totalWidth: 0, leftWidth: 0 },
+    [
+      bodyWidth,
+      DIFF_MIN_WIDTH,
+      DIVIDER_WIDTH,
+      SIDEBAR_DEFAULT_WIDTH,
+      SIDEBAR_MIN_WIDTH,
+      sessionSidebarViews,
+      sidebarAreaVisible,
+      sidebarOpenState.open,
+      sidebarWidths,
+    ],
+  );
+  const renderSidebar = sidebarLayout.left.length + sidebarLayout.right.length > 0;
+  const diffPaneWidth = Math.max(DIFF_MIN_WIDTH, bodyWidth - sidebarLayout.totalWidth);
   const diffContentWidth = Math.max(12, diffPaneWidth - 2);
   // Publish the live note geometry for daemon-driven markup validation; the
   // note markup width mirrors what AgentInlineNote lays STML out at.
@@ -424,21 +594,13 @@ export function App({
       ),
     [diffContentWidth, maxLineNumberDigits, resolvedLayout, showLineNumbers],
   );
-  const isResizingSidebar = resizeDragOriginX !== null && resizeStartWidth !== null;
-  const dividerHitLeft = Math.max(
-    1,
-    1 + clampedSidebarWidth - Math.floor((DIVIDER_HIT_WIDTH - DIVIDER_WIDTH) / 2),
-  );
+  const isResizingSidebar = sidebarResize !== null;
 
   useEffect(() => {
     if (!renderSidebar) {
-      setResizeDragOriginX(null);
-      setResizeStartWidth(null);
-      return;
+      setSidebarResize(null);
     }
-
-    setSidebarWidth((current) => clamp(current, SIDEBAR_MIN_WIDTH, maxSidebarWidth));
-  }, [maxSidebarWidth, renderSidebar]);
+  }, [renderSidebar]);
 
   useEffect(() => {
     // Force an intermediate redraw when app geometry or row-wrapping changes so pane relayout
@@ -1062,10 +1224,40 @@ export function App({
     toggleMenu,
   } = useMenuController(menus);
 
+  // One dispatch table for every app-level shortcut: the built-in commands
+  // over App's live callbacks, then extension commands, so built-ins always
+  // win a key and extension order follows load order.
+  const appCommands = [
+    ...buildAppCommands({
+      canRefreshCurrentInput,
+      focusFilter,
+      moveToAnnotatedHunk,
+      moveToFile,
+      moveToHunk: review.moveToHunk,
+      openThemeSelector,
+      requestQuit,
+      scrollCodeHorizontally,
+      scrollDiff,
+      selectLayoutMode,
+      startUserNote: () => startUserNote(),
+      toggleAgentNotes,
+      toggleFocusArea,
+      toggleGapForSelectedHunk: review.toggleSelectedHunkGap,
+      toggleHelp,
+      toggleHunkHeaders,
+      toggleLineNumbers,
+      toggleLineWrap,
+      toggleMenuBar,
+      toggleSidebar,
+      triggerEditSelectedFile,
+      triggerRefreshCurrentInput,
+    }),
+    ...extensionAppCommands.commands,
+  ];
+
   useAppKeyboardShortcuts({
     activeMenuId,
     activateCurrentMenuItem,
-    canRefreshCurrentInput,
     closeAgentSkill,
     closeHelp,
     closeMenu,
@@ -1073,74 +1265,63 @@ export function App({
     cancelDraftNote,
     closeThemeSelector,
     closeExtensionTrustPrompt,
+    commands: appCommands,
     denyRepoExtensions,
     extensionTrustPromptOpen,
     trustRepoExtensions,
     focusArea,
-    focusFilter,
-    moveToAnnotatedHunk,
-    moveToFile,
-    moveToHunk: review.moveToHunk,
     moveMenuItem,
     moveThemeSelector,
     openMenu,
-    openThemeSelector,
     pagerMode,
-    requestQuit,
     saveConfigPromptOpen,
     saveViewPreferencesAndQuit,
     discardViewPreferencesAndQuit,
     neverAskToSaveViewPreferencesAndQuit,
     closeSaveConfigPrompt,
-    scrollCodeHorizontally,
     saveDraftNote,
-    scrollDiff,
-    selectLayoutMode,
     showAgentSkill,
     showHelp,
-    startUserNote: () => startUserNote(),
     switchMenu,
-    themeSelectorOpen: themeSelectorState.open,
-    toggleAgentNotes,
     toggleFocusArea,
-    toggleGapForSelectedHunk: review.toggleSelectedHunkGap,
-    toggleHelp,
-    toggleHunkHeaders,
-    toggleLineNumbers,
-    toggleMenuBar,
-    toggleLineWrap,
-    toggleSidebar,
-    triggerEditSelectedFile,
-    triggerRefreshCurrentInput,
+    themeSelectorOpen: themeSelectorState.open,
   });
 
-  /** Start a mouse drag resize for the optional sidebar. */
-  const beginSidebarResize = (event: TuiMouseEvent) => {
-    if (event.button !== MouseButton.LEFT) {
-      return;
-    }
+  /** Start a mouse drag resize for one sidebar pane's divider. */
+  const beginSidebarResize =
+    (key: string, placement: SidebarPlacement, currentWidth: number) => (event: TuiMouseEvent) => {
+      if (event.button !== MouseButton.LEFT) {
+        return;
+      }
 
-    closeMenu();
-    setResizeDragOriginX(event.x);
-    setResizeStartWidth(clampedSidebarWidth);
-    event.preventDefault();
-    event.stopPropagation();
-  };
+      closeMenu();
+      setSidebarResize({
+        key,
+        placement,
+        originX: event.x,
+        startWidth: currentWidth,
+        // The pane may grow by whatever the review stream can give up.
+        maxWidth: currentWidth + Math.max(0, diffPaneWidth - DIFF_MIN_WIDTH),
+      });
+      event.preventDefault();
+      event.stopPropagation();
+    };
 
-  /** Update the sidebar width while a drag resize is active. */
+  /** Update the dragged pane's width while a resize is active. */
   const updateSidebarResize = (event: TuiMouseEvent) => {
-    if (!isResizingSidebar || resizeDragOriginX === null || resizeStartWidth === null) {
+    if (!sidebarResize) {
       return;
     }
 
-    setSidebarWidth(
-      resizeSidebarWidth(
-        resizeStartWidth,
-        resizeDragOriginX,
-        event.x,
-        SIDEBAR_MIN_WIDTH,
-        maxSidebarWidth,
-      ),
+    const { key, placement, originX, startWidth, maxWidth } = sidebarResize;
+    // A right-side pane's divider is its left edge, so the drag delta inverts:
+    // swapping origin and current feeds the same clamp the mirrored motion.
+    const nextWidth =
+      placement === "right"
+        ? resizeSidebarWidth(startWidth, event.x, originX, SIDEBAR_MIN_WIDTH, maxWidth)
+        : resizeSidebarWidth(startWidth, originX, event.x, SIDEBAR_MIN_WIDTH, maxWidth);
+    setSidebarWidths((current) =>
+      current[key] === nextWidth ? current : { ...current, [key]: nextWidth },
     );
     event.preventDefault();
     event.stopPropagation();
@@ -1152,8 +1333,7 @@ export function App({
       return;
     }
 
-    setResizeDragOriginX(null);
-    setResizeStartWidth(null);
+    setSidebarResize(null);
     event?.preventDefault();
     event?.stopPropagation();
   };
@@ -1170,11 +1350,40 @@ export function App({
   const diffHeaderStatsWidth = Math.min(24, Math.max(16, Math.floor(diffContentWidth / 3)));
   const diffHeaderLabelWidth = Math.max(8, diffContentWidth - diffHeaderStatsWidth - 1);
   const diffSeparatorWidth = Math.max(4, diffContentWidth - 2);
-  // Mirror the App layout: bodyPadding/2 left-padding, then sidebar + divider when visible. Keep
-  // this in lockstep with the body container's paddingLeft and the sidebar render branch below.
-  const diffPaneScreenLeft =
-    bodyPadding / 2 + (renderSidebar ? clampedSidebarWidth + DIVIDER_WIDTH : 0);
+  // Mirror the App layout: bodyPadding/2 left-padding, then every left pane
+  // plus its divider. Keep this in lockstep with the body container's
+  // paddingLeft and the sidebar render branch below.
+  const diffPaneScreenLeft = bodyPadding / 2 + sidebarLayout.leftWidth;
   const diffPaneScreenTop = pagerMode || !showMenuBar ? 0 : 1;
+
+  /** Render one open sidebar view at its planned width. */
+  const renderSidebarPane = (pane: SidebarPanePlan) => (
+    <ExtensionSidebarPane
+      registered={pane.view.registered}
+      files={filteredFiles}
+      selectedFileId={selectedFileId}
+      selectedHunkIndex={selectedFileId === null ? null : selectedHunkIndex}
+      showTopChrome={showMenuBar}
+      theme={activeTheme}
+      width={pane.width}
+      notify={(message, type) => extensions?.context.notify(message, type)}
+      onSelectFile={(fileId) => {
+        focusFiles();
+        jumpToFile(fileId, 0, { alignFileHeaderTop: true });
+      }}
+      onSelectHunk={(fileId, hunkIndex) => {
+        focusFiles();
+        review.selectHunk(fileId, hunkIndex);
+      }}
+      // Extension panes close on a render failure; the bundled files pane is
+      // Hunk's own and keeps its in-place fallback semantics.
+      onRenderFailure={
+        pane.view.key === bundledSidebarViewKey()
+          ? undefined
+          : () => handleSidebarViewFailure(pane.view.key)
+      }
+    />
+  );
 
   return (
     <box
@@ -1223,42 +1432,34 @@ export function App({
           cancelCopySelectionRef.current?.();
         }}
       >
-        {renderSidebar ? (
-          <>
-            <ExtensionSidebarPane
-              // Remounting on a different registration resets the error
-              // boundary, so a reloaded extension gets a fresh chance.
-              key={`${activeSidebar.extensionId}:${activeSidebar.view.id}`}
-              registered={activeSidebar}
-              files={filteredFiles}
-              selectedFileId={selectedFileId}
-              selectedHunkIndex={selectedFileId === null ? null : selectedHunkIndex}
-              showTopChrome={showMenuBar}
-              theme={activeTheme}
-              width={clampedSidebarWidth}
-              notify={(message, type) => extensions?.context.notify(message, type)}
-              onSelectFile={(fileId) => {
-                focusFiles();
-                jumpToFile(fileId, 0, { alignFileHeaderTop: true });
-              }}
-              onSelectHunk={(fileId, hunkIndex) => {
-                focusFiles();
-                review.selectHunk(fileId, hunkIndex);
-              }}
-            />
-
-            <PaneDivider
-              dividerHitLeft={dividerHitLeft}
-              dividerHitWidth={DIVIDER_HIT_WIDTH}
-              isResizing={isResizingSidebar}
-              theme={activeTheme}
-              onMouseDown={beginSidebarResize}
-              onMouseDrag={updateSidebarResize}
-              onMouseDragEnd={endSidebarResize}
-              onMouseUp={endSidebarResize}
-            />
-          </>
-        ) : null}
+        {sidebarLayout.left.map((pane, index) => {
+          // Each left pane is followed by its own draggable divider; the hit
+          // zone tracks the divider's absolute column inside the body row.
+          const paneLeft =
+            bodyPadding / 2 +
+            sidebarLayout.left
+              .slice(0, index)
+              .reduce((sum, previous) => sum + previous.width + DIVIDER_WIDTH, 0);
+          const dividerX = paneLeft + pane.width;
+          return (
+            <Fragment key={pane.view.key}>
+              {renderSidebarPane(pane)}
+              <PaneDivider
+                dividerHitLeft={Math.max(
+                  1,
+                  dividerX - Math.floor((DIVIDER_HIT_WIDTH - DIVIDER_WIDTH) / 2),
+                )}
+                dividerHitWidth={DIVIDER_HIT_WIDTH}
+                isResizing={sidebarResize?.key === pane.view.key}
+                theme={activeTheme}
+                onMouseDown={beginSidebarResize(pane.view.key, "left", pane.width)}
+                onMouseDrag={updateSidebarResize}
+                onMouseDragEnd={endSidebarResize}
+                onMouseUp={endSidebarResize}
+              />
+            </Fragment>
+          );
+        })}
 
         <DiffPane
           cancelCopySelectionRef={cancelCopySelectionRef}
@@ -1312,6 +1513,36 @@ export function App({
             review.selectHunk(fileId, hunkIndex, { preserveViewport: true })
           }
         />
+
+        {sidebarLayout.right.map((pane, index) => {
+          // Right panes sit after the review stream; each is preceded by its
+          // divider, and dragging that divider left grows the pane.
+          const dividerX =
+            bodyPadding / 2 +
+            sidebarLayout.leftWidth +
+            diffPaneWidth +
+            sidebarLayout.right
+              .slice(0, index)
+              .reduce((sum, previous) => sum + previous.width + DIVIDER_WIDTH, 0);
+          return (
+            <Fragment key={pane.view.key}>
+              <PaneDivider
+                dividerHitLeft={Math.max(
+                  1,
+                  dividerX - Math.floor((DIVIDER_HIT_WIDTH - DIVIDER_WIDTH) / 2),
+                )}
+                dividerHitWidth={DIVIDER_HIT_WIDTH}
+                isResizing={sidebarResize?.key === pane.view.key}
+                theme={activeTheme}
+                onMouseDown={beginSidebarResize(pane.view.key, "right", pane.width)}
+                onMouseDrag={updateSidebarResize}
+                onMouseDragEnd={endSidebarResize}
+                onMouseUp={endSidebarResize}
+              />
+              {renderSidebarPane(pane)}
+            </Fragment>
+          );
+        })}
       </box>
 
       {!pagerMode && extensionToast ? (

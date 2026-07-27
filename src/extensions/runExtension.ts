@@ -5,6 +5,8 @@ import {
   type ExtensionEventName,
   type ExtensionFactory,
   type ExtensionLoadIssue,
+  type ExtensionCommand,
+  type ExtensionCommandHandler,
   type ExtensionMetadata,
   type ExtensionRegistry,
   type ExtensionSidebarView,
@@ -12,6 +14,7 @@ import {
   type ExtensionVcsAdapter,
   type HunkExtensionAPI,
 } from "./types";
+import { parseKeyChord } from "../lib/commandKeys";
 import { toUserFacingError } from "../core/errors";
 import { toInternalVcsPatchResult } from "./vcsPatchResult";
 import type { ExtensionVcsOperation } from "../extension-api/types";
@@ -211,6 +214,7 @@ interface RegistrySnapshot {
   vcsAdapters: number;
   changesetTransforms: number;
   sidebarViews: number;
+  commands: number;
   eventHandlers: Record<string, number>;
 }
 
@@ -227,6 +231,7 @@ function snapshotRegistry(registry: ExtensionRegistry): RegistrySnapshot {
     vcsAdapters: registry.vcsAdapters.length,
     changesetTransforms: registry.changesetTransforms.length,
     sidebarViews: registry.sidebarViews.length,
+    commands: registry.commands.length,
     eventHandlers,
   };
 }
@@ -243,6 +248,7 @@ function rollbackRegistry(registry: ExtensionRegistry, snapshot: RegistrySnapsho
   registry.vcsAdapters.length = snapshot.vcsAdapters;
   registry.changesetTransforms.length = snapshot.changesetTransforms;
   registry.sidebarViews.length = snapshot.sidebarViews;
+  registry.commands.length = snapshot.commands;
   for (const [event, handlers] of Object.entries(registry.eventHandlers)) {
     handlers.length = snapshot.eventHandlers[event] ?? 0;
   }
@@ -313,8 +319,36 @@ export function createExtensionApi(
       if (typeof view.component !== "function") {
         throw new Error("registerSidebarView requires a view with a component function.");
       }
+      if (view.placement !== undefined && view.placement !== "left" && view.placement !== "right") {
+        throw new Error(
+          `registerSidebarView placement must be "left" or "right", got "${String(view.placement)}".`,
+        );
+      }
 
       registry.sidebarViews.push({ extensionId: metadata.id, view });
+    },
+    registerCommand(command: ExtensionCommand, handler: ExtensionCommandHandler) {
+      assertOpen("registerCommand");
+      assertNonEmptyString(command?.id, "registerCommand requires a command with a non-empty id.");
+      assertNonEmptyString(
+        command?.title,
+        "registerCommand requires a command with a non-empty title.",
+      );
+      if (typeof handler !== "function") {
+        throw new Error("registerCommand requires a handler function.");
+      }
+
+      // Parse the chord at registration so a typo fails the author loudly
+      // here, instead of registering a binding that silently never fires.
+      if (command.key !== undefined) {
+        assertNonEmptyString(command.key, "registerCommand key must be a non-empty chord string.");
+        const parsed = parseKeyChord(command.key);
+        if ("error" in parsed) {
+          throw new Error(`registerCommand: ${parsed.error}`);
+        }
+      }
+
+      registry.commands.push({ extensionId: metadata.id, command, handler });
     },
     transformChangeset(fn: ChangesetTransform) {
       assertOpen("transformChangeset");

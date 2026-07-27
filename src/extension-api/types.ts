@@ -644,12 +644,83 @@ export interface ExtensionSidebarViewProps {
  */
 export type ExtensionSidebarComponent = (props: ExtensionSidebarViewProps) => unknown;
 
-/** A sidebar replacement contributed by an extension. */
+/** Which side of the review stream a sidebar pane sits on. */
+export type ExtensionSidebarPlacement = "left" | "right";
+
+/**
+ * A sidebar view contributed by an extension.
+ *
+ * Registration is additive: every registered view exists alongside the
+ * built-in file navigation, and any number can be open at once. A view opens
+ * when `defaultOpen` asks for it, or when extension code opens it through the
+ * sidebar controls — typically from a `registerCommand` handler bound to a
+ * key.
+ */
 export interface ExtensionSidebarView {
-  /** Identifies the view in diagnostics and future config selection. */
+  /** Identifies the view within its extension; `<extensionId>:<id>` globally. */
   id: string;
+  /** Human-readable name, for diagnostics and future menu listings. */
+  title?: string;
+  /** Which side of the review stream the pane sits on. Defaults to `"left"`. */
+  placement?: ExtensionSidebarPlacement;
+  /** Open this view when the session starts. Defaults to closed. */
+  defaultOpen?: boolean;
+  /**
+   * Stand in for the built-in file navigation instead of joining it.
+   *
+   * Implies `defaultOpen`: the view starts open and the built-in `files`
+   * sidebar starts closed (the user or an extension can still reopen it).
+   */
+  replacesDefault?: boolean;
   component: ExtensionSidebarComponent;
 }
+
+/* -------------------------------------------------------------------------- */
+/* Commands                                                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * One named keyboard command contributed by an extension.
+ *
+ * Commands are the same mechanism Hunk's own shortcuts run on: a key chord
+ * resolves to a command, and the command's handler runs. A chord that
+ * collides with a built-in shortcut or an earlier extension binding is
+ * refused with a warning — the command stays registered, just unbound.
+ */
+export interface ExtensionCommand {
+  /** Identifies the command within its extension; `<extensionId>.<id>` globally. */
+  id: string;
+  /** Human-readable name, for diagnostics and future menu listings. */
+  title: string;
+  /**
+   * Default key chord, e.g. `"ctrl+m"`, `"F2"`, `"G"`, `"y"`.
+   *
+   * Modifiers are `ctrl`, `alt`/`option`, `cmd`/`meta`, and `shift`, joined
+   * with `+`; an uppercase letter means its shifted form. Omit to register a
+   * command with no binding.
+   */
+  key?: string;
+}
+
+/** Open, close, and inspect sidebar views from a command handler. */
+export interface ExtensionSidebarControls {
+  /**
+   * Resolve one view: a bare id names this extension's own view, `"files"`
+   * names the built-in file navigation, and `"<extensionId>:<viewId>"`
+   * addresses any registered view explicitly.
+   */
+  open(viewId: string): void;
+  close(viewId: string): void;
+  toggle(viewId: string): void;
+  isOpen(viewId: string): boolean;
+}
+
+/** What a command handler receives when its key fires. */
+export interface ExtensionCommandContext extends ExtensionContext {
+  sidebars: ExtensionSidebarControls;
+}
+
+export type ExtensionCommandHandler = (ctx: ExtensionCommandContext) => void | Promise<void>;
 
 /* -------------------------------------------------------------------------- */
 /* Lifecycle events                                                            */
@@ -700,13 +771,23 @@ export interface HunkExtensionAPI {
   /** Contribute one additional VCS backend. */
   registerVcsAdapter(adapter: ExtensionVcsAdapter): void;
   /**
-   * Replace the file-navigation sidebar with a custom component.
+   * Contribute a sidebar view beside (or in place of) the built-in one.
    *
-   * One sidebar view is active per session: the first registration in load
-   * order wins, and later ones are skipped with a warning. A view that throws
-   * while rendering is reported and Hunk falls back to the built-in sidebar.
+   * Any number of views can be registered and open simultaneously, on either
+   * side of the review stream. A view that throws while rendering is closed
+   * with a warning naming the extension; the built-in file navigation is
+   * restored if nothing else is showing files.
    */
   registerSidebarView(view: ExtensionSidebarView): void;
+  /**
+   * Register one named command, optionally bound to a key.
+   *
+   * The handler runs when the key fires outside modal UI (dialogs, menus,
+   * focused inputs own their keys first). Handlers receive the standard
+   * context plus sidebar controls, so a command can open the sidebar view its
+   * extension registered.
+   */
+  registerCommand(command: ExtensionCommand, handler: ExtensionCommandHandler): void;
   /** Rewrite every loaded changeset before review. */
   transformChangeset(fn: ChangesetTransform): void;
   /** Subscribe to one Hunk lifecycle event. */

@@ -115,6 +115,7 @@ export function ExtensionSidebarPane({
   notify,
   onSelectFile,
   onSelectHunk,
+  onRenderFailure,
 }: {
   registered: RegisteredSidebarView;
   /** The visible review-stream files, already filtered like the built-in sidebar's. */
@@ -127,6 +128,14 @@ export function ExtensionSidebarPane({
   notify: ExtensionNotifySink;
   onSelectFile: (fileId: string) => void;
   onSelectHunk: (fileId: string, hunkIndex: number) => void;
+  /**
+   * Called when the view fails rendering, in place of the in-pane fallback.
+   *
+   * With several panes open, a crashed extra pane should close rather than
+   * turn into a second copy of the built-in file navigation; the host owns
+   * that policy, so it owns this callback.
+   */
+  onRenderFailure?: () => void;
 }) {
   const { extensionId } = registered;
   const publicFiles = useMemo(() => toReadOnlyFileViews(files), [files]);
@@ -226,16 +235,18 @@ export function ExtensionSidebarPane({
   return (
     <ExtensionSidebarErrorBoundary
       registered={registered}
-      // The bundled sidebar consumes the same props, so a failed extension view
-      // degrades to the default sidebar without leaving the extension pipeline's
-      // prop model. The bundled view failing is a Hunk bug and crashes as such.
-      fallback={paneBox(<BuiltInSidebarView {...viewProps} />)}
+      // The host decides what a failure looks like: a pane it wants closed
+      // renders nothing while the close lands, and the bundled files pane —
+      // which has no better view to fall back to — degrades in place to the
+      // built-in component fed the same props.
+      fallback={onRenderFailure ? null : paneBox(<BuiltInSidebarView {...viewProps} />)}
       onError={(error) => {
         notify(
           `Extension ${extensionId} sidebar view "${registered.view.id}" failed rendering • ` +
-            `${describeError(error)} • using the built-in sidebar`,
+            `${describeError(error)}${onRenderFailure ? "" : " • using the built-in sidebar"}`,
           "warning",
         );
+        onRenderFailure?.();
       }}
     >
       {paneBox(<View {...viewProps} />)}

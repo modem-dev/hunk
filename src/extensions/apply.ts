@@ -8,6 +8,7 @@ import type {
   ExtensionContext,
   ExtensionLoadResult,
   ExtensionRegistry,
+  RegisteredCommand,
   RegisteredSidebarView,
 } from "./types";
 
@@ -104,33 +105,84 @@ export function resolveExtensionVcsAdapters(
   return { adapters, issues };
 }
 
-/** The sidebar view one session renders with, plus the registrations skipped for it. */
-export interface ResolvedExtensionSidebarView {
-  active: RegisteredSidebarView | undefined;
+/** Derive the key one sidebar view is addressed by everywhere in the app. */
+export function sidebarViewKey(registered: RegisteredSidebarView) {
+  return `${registered.extensionId}:${registered.view.id}`;
+}
+
+/** The sidebar views one session offers, plus the registrations skipped as duplicates. */
+export interface ResolvedExtensionSidebarViews {
+  views: RegisteredSidebarView[];
   issues: ExtensionApplyIssue[];
 }
 
 /**
- * Pick the one sidebar view a session renders with.
+ * Collect every sidebar view a session offers.
  *
- * One sidebar exists, so exactly one registration can hold it. First
- * registration in load order wins — the same tiebreaker duplicate VCS adapter
- * ids use — and every later registration is reported rather than silently
- * ignored, whichever extension it came from.
+ * Registration is additive — any number of views coexist beside the built-in
+ * file navigation — so the only thing resolved here is identity: two
+ * registrations sharing one `<extensionId>:<viewId>` key would make open/close
+ * state ambiguous, so the first wins and the duplicate is reported.
  */
-export function resolveExtensionSidebarView(
+export function resolveExtensionSidebarViews(
   registry: ExtensionRegistry,
-): ResolvedExtensionSidebarView {
-  const [active, ...skipped] = registry.sidebarViews;
-  return {
-    active,
-    issues: skipped.map(({ extensionId, view }) => ({
-      extensionId,
-      message:
-        `Skipped sidebar view "${view.id}" from extension ${extensionId} • ` +
-        `extension ${active?.extensionId} already provides the sidebar`,
-    })),
-  };
+): ResolvedExtensionSidebarViews {
+  const views: RegisteredSidebarView[] = [];
+  const issues: ExtensionApplyIssue[] = [];
+  const claimed = new Set<string>();
+
+  for (const registered of registry.sidebarViews) {
+    const key = sidebarViewKey(registered);
+    if (claimed.has(key)) {
+      issues.push({
+        extensionId: registered.extensionId,
+        message: `Skipped duplicate sidebar view "${key}" from extension ${registered.extensionId}`,
+      });
+      continue;
+    }
+
+    claimed.add(key);
+    views.push(registered);
+  }
+
+  return { views, issues };
+}
+
+/** The commands one session offers, plus the registrations skipped as duplicates. */
+export interface ResolvedExtensionCommands {
+  commands: RegisteredCommand[];
+  issues: ExtensionApplyIssue[];
+}
+
+/**
+ * Collect every extension command a session offers.
+ *
+ * Command ids are `<extensionId>.<id>`, so duplicates only arise within one
+ * extension; the first registration wins and the duplicate is reported. Key
+ * *chord* conflicts are not resolved here — they depend on the built-in
+ * command table, which is the UI's to build, so the dispatch layer decides
+ * them and warns.
+ */
+export function resolveExtensionCommands(registry: ExtensionRegistry): ResolvedExtensionCommands {
+  const commands: RegisteredCommand[] = [];
+  const issues: ExtensionApplyIssue[] = [];
+  const claimed = new Set<string>();
+
+  for (const registered of registry.commands) {
+    const fullId = `${registered.extensionId}.${registered.command.id}`;
+    if (claimed.has(fullId)) {
+      issues.push({
+        extensionId: registered.extensionId,
+        message: `Skipped duplicate command "${fullId}" from extension ${registered.extensionId}`,
+      });
+      continue;
+    }
+
+    claimed.add(fullId);
+    commands.push(registered);
+  }
+
+  return { commands, issues };
 }
 
 /** Everything one load pass contributes to the loading pipeline, plus refused registrations. */
@@ -156,12 +208,14 @@ export function applyExtensionRegistrations(
 
   const languageIssues = applyExtensionFileLanguages(result.registry);
   const vcs = resolveExtensionVcsAdapters(result.registry);
-  // Resolved again where the UI mounts it; consulted here so skipped duplicate
-  // registrations surface through the same notice path as every other refusal.
-  const sidebar = resolveExtensionSidebarView(result.registry);
+  // Resolved again where the UI consumes them; consulted here so skipped
+  // duplicate registrations surface through the same notice path as every
+  // other refusal.
+  const sidebars = resolveExtensionSidebarViews(result.registry);
+  const commands = resolveExtensionCommands(result.registry);
   return {
     vcsAdapters: vcs.adapters,
-    issues: [...languageIssues, ...vcs.issues, ...sidebar.issues],
+    issues: [...languageIssues, ...vcs.issues, ...sidebars.issues, ...commands.issues],
   };
 }
 

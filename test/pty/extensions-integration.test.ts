@@ -47,17 +47,20 @@ const NOTIFY_EXTENSION_SOURCE = `export default function (hunk) {
 `;
 
 /**
- * An extension replacing the sidebar with a React component of its own.
+ * An extension contributing an extra sidebar opened by a registered command.
  *
  * `useState` matters here: the fixture imports `react` from an ordinary file on
  * disk, so hooks rendering at all proves the host served its own React instance
  * to the extension — on a second React copy the component would throw and the
- * built-in sidebar would take over instead.
+ * pane would close instead of rendering. The command matters equally: its key
+ * dispatches through the same table as Hunk's built-in shortcuts.
  */
 const SIDEBAR_EXTENSION_SOURCE = `import { createElement, useState } from "react";
 export default function (hunk) {
   hunk.registerSidebarView({
     id: "fixture-sidebar",
+    title: "Fixture",
+    placement: "right",
     component: (props) => {
       const [label] = useState("EXTSIDEBAR");
       return createElement("text", {
@@ -65,6 +68,9 @@ export default function (hunk) {
         style: { fg: props.theme.text, bg: props.theme.panel },
       });
     },
+  });
+  hunk.registerCommand({ id: "toggle-fixture", title: "Toggle fixture", key: "y" }, (ctx) => {
+    ctx.sidebars.toggle("fixture-sidebar");
   });
 }
 `;
@@ -185,7 +191,7 @@ describe("PTY extensions", () => {
     }
   });
 
-  test("an extension sidebar view renders in the live app in place of the built-in pane", async () => {
+  test("a command key opens an extension sidebar beside the built-in pane", async () => {
     const configHome = harness.createIsolatedConfigHome();
     const fixture = harness.createRepoExtensionFixture(SIDEBAR_EXTENSION_SOURCE);
     const session = await harness.launchHunk({
@@ -205,10 +211,23 @@ describe("PTY extensions", () => {
     });
 
     try {
-      const frame = await session.waitForText(/EXTSIDEBAR 2 FILES/, { timeout: 20_000 });
-      // The custom pane replaced the built-in one, and the review stream is intact.
-      expect(frame).toContain("alpha.ts");
-      expect(frame).not.toContain("Run this repository's extensions?");
+      // The extension view starts closed; only the built-in files pane shows.
+      const before = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("alpha.ts") && !text.includes("Run this repository's extensions?"),
+        20_000,
+      );
+      expect(before).not.toContain("EXTSIDEBAR");
+
+      // The registered key dispatches through the shared command table and
+      // opens the extension's right-hand pane beside the built-in one.
+      await session.press("y");
+      const opened = await session.waitForText(/EXTSIDEBAR 2 FILES/, { timeout: 20_000 });
+      expect(opened).toContain("alpha.ts");
+
+      // The same key toggles it away again.
+      await session.press("y");
+      await harness.waitForSnapshot(session, (text) => !text.includes("EXTSIDEBAR"), 20_000);
     } finally {
       session.close();
     }

@@ -447,8 +447,10 @@ backends raise their failures exactly this way.
 
 ### `hunk.registerSidebarView(view)`
 
-Replace the file-navigation sidebar with your own React component, rendered
-inside Hunk's OpenTUI tree.
+Contribute a sidebar view — your own React component, rendered inside Hunk's
+OpenTUI tree. Registration is additive: your view exists beside the built-in
+file navigation, on either side of the review stream, and any number of views
+can be open at once. Pair it with `registerCommand` so a key opens it:
 
 ```tsx
 // ~/.config/hunk/extensions/flat-sidebar.tsx
@@ -476,9 +478,26 @@ function FlatSidebar({ files, selectedFileId, theme, actions }: ExtensionSidebar
 }
 
 export default function (hunk: HunkExtensionAPI) {
-  hunk.registerSidebarView({ id: "flat", component: FlatSidebar });
+  hunk.registerSidebarView({
+    id: "flat",
+    title: "Flat files",
+    placement: "right",
+    component: FlatSidebar,
+  });
+  hunk.registerCommand(
+    { id: "toggle-flat", title: "Toggle flat sidebar", key: "ctrl+f" },
+    (ctx) => {
+      ctx.sidebars.toggle("flat");
+    },
+  );
 }
 ```
+
+Beyond `id` and `component`, a view may declare a `title` (for diagnostics and
+future menu listings), a `placement` of `"left"` (default) or `"right"`,
+`defaultOpen: true` to start open, or `replacesDefault: true` to start open
+_in place of_ the built-in file navigation — which stays available, just
+closed, so a command can reopen it.
 
 Import `react` normally — Hunk serves its own React instance to extension files
 at import time, so hooks, context, and JSX all run on the reconciler drawing the
@@ -506,19 +525,55 @@ row. `actions.notify(message, type?)` shows a toast attributed to your
 extension. An action given a file id that is not currently visible is refused
 with a warning rather than corrupting the selection.
 
-One sidebar view is active per session: a registered view overrides the
-built-in sidebar, the first registration in load order wins, and later ones are
-skipped with a warning. Hunk keeps owning the pane's placement — width, the
-resize divider, responsive show/hide — and your component fills it. A component
-that throws while rendering costs you the pane, not the user the session: the
-failure is reported as a toast naming your extension and the built-in sidebar
-takes over.
+Hunk keeps owning pane arrangement — widths, resize dividers, responsive
+show/hide, and dropping panes that no longer fit a narrow terminal — and your
+component fills the pane it is given. A component that throws while rendering
+costs you the pane, not the user the session: the failure is reported as a
+toast naming your extension, the pane closes, and the built-in file navigation
+reopens if nothing else is showing.
 
 The built-in sidebar is itself a bundled extension
 (`src/extensions/default/ui/sidebar/`): it registers through this exact call and
 its component consumes exactly the props documented above, so it doubles as the
 reference implementation — anything it renders (grouping, change-type icons,
 stat badges, selection follow), yours can too.
+
+### `hunk.registerCommand(command, handler)`
+
+Register a named command, optionally bound to a key. Commands are not a
+sidebar one-off: they are the same mechanism Hunk's own shortcuts dispatch
+through — one table, one loop, built-ins first.
+
+```ts
+import type { HunkExtensionAPI } from "hunkdiff/extension";
+
+export default function (hunk: HunkExtensionAPI) {
+  hunk.registerCommand({ id: "hello", title: "Say hello", key: "ctrl+g" }, (ctx) => {
+    ctx.notify("hello from a command");
+  });
+}
+```
+
+Key chords are `ctrl`, `alt`/`option`, `cmd`/`meta`, and `shift` joined with
+`+` around a base key — a character (`"y"`, `"["`), an uppercase letter for its
+shifted form (`"G"`), or a named key (`"f2"`, `"pageup"`, `"left"`). An
+unparsable chord fails the registration; a chord already owned by a built-in
+shortcut — or by an earlier-loaded extension — leaves the command registered
+but unbound, with a warning toast naming both sides. Omit `key` to register a
+command with no binding.
+
+The handler fires when the key is pressed outside modal UI — dialogs, menus,
+and focused text inputs own their keys first, and pager mode does not dispatch
+extension commands. It receives the standard context plus `ctx.sidebars`, the
+controls for opening sidebar views:
+
+- `ctx.sidebars.open(viewId)` / `close(viewId)` / `toggle(viewId)` — a bare id
+  names your own extension's view, `"files"` names the built-in file
+  navigation, and `"<extensionId>:<viewId>"` addresses any registered view.
+- `ctx.sidebars.isOpen(viewId)` reports current state.
+
+A handler may be async; a failure (sync or rejected) becomes a warning naming
+your extension.
 
 ### `hunk.transformChangeset(fn)`
 
@@ -686,10 +741,11 @@ Git, Jujutsu, and Sapling backends load either way. `[extensions] paths` from a 
 config is trust-gated the same way `.hunk/extensions` is, because it is
 repo-controlled either way.
 
-## Not in Phase 1
+## Not contributable yet
 
-Actions, keybindings, menu entries, custom note renderers, session commands, and
-CLI subcommands are not contributable yet. They depend on a named-action registry
-in Hunk core; see
+Menu entries, user-remappable keybindings, custom note renderers, session
+commands, and CLI subcommands are not contributable yet. Commands and their
+default key bindings landed with `registerCommand` — the named-command registry
+the rest build on; see
 [docs/extension-system-exploration.md](extension-system-exploration.md) for the
 design and phasing.

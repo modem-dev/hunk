@@ -117,7 +117,7 @@ async function withAppHost(
 }
 
 describe("extension sidebar views", () => {
-  test("renders a custom component with live props, hooks, and working actions", async () => {
+  test("a command key opens an extra sidebar beside the built-in one", async () => {
     const repo = createTestRepo("hunk-ext-sidebar-");
     // Outside the repo, so the fixture and its log never join the review as
     // untracked files and the visible file count stays the two changed files.
@@ -125,9 +125,11 @@ describe("extension sidebar views", () => {
     const logPath = join(extDir, "probe.log");
     const extPath = join(extDir, "ext.ts");
     // `useState`/`useEffect` prove the fixture's `react` is the host instance:
-    // hooks on a second React copy would throw an invalid-hook-call error and
-    // trip the fallback instead of rendering. The effect drives `selectFile`,
-    // whose result comes back through the ordinary `selection_changed` event.
+    // hooks on a second React copy would throw an invalid-hook-call error. The
+    // view opens through a registered command's key rather than by default —
+    // the whole point of the command system — and its effect drives
+    // `selectFile`, which comes back through the ordinary `selection_changed`
+    // event.
     writeFileSync(
       extPath,
       `import { appendFileSync } from "node:fs";\n` +
@@ -138,6 +140,7 @@ describe("extension sidebar views", () => {
         `  });\n` +
         `  hunk.registerSidebarView({\n` +
         `    id: "probe",\n` +
+        `    title: "Probe",\n` +
         `    component: (props) => {\n` +
         `      const [mounted] = useState(true);\n` +
         `      const target = props.files[1];\n` +
@@ -153,15 +156,32 @@ describe("extension sidebar views", () => {
         `      });\n` +
         `    },\n` +
         `  });\n` +
+        `  hunk.registerCommand({ id: "toggle-probe", title: "Toggle probe", key: "y" }, (ctx) => {\n` +
+        `    ctx.sidebars.toggle("probe");\n` +
+        `  });\n` +
         `}\n`,
     );
 
     const bootstrap = await launchWithExtension(repo, extPath);
     await withAppHost(bootstrap, async (setup) => {
+      // Before the command fires, only the built-in file navigation is open.
       await flushUntil(
         setup,
-        () => setup.captureCharFrame().includes("EXTSIDEBAR files=2 mounted=true"),
-        "the extension sidebar to render with its props",
+        () => setup.captureCharFrame().includes("alpha.txt"),
+        "the built-in sidebar to render",
+      );
+      expect(setup.captureCharFrame()).not.toContain("EXTSIDEBAR");
+
+      await act(async () => {
+        await setup.mockInput.typeText("y");
+      });
+      await flushUntil(
+        setup,
+        () => {
+          const frame = setup.captureCharFrame();
+          return frame.includes("EXTSIDEBAR files=2 mounted=true") && frame.includes("alpha.txt");
+        },
+        "the command to open the extension sidebar beside the built-in one",
       );
 
       // The effect-driven action lands as a real selection change: the id the
@@ -175,10 +195,45 @@ describe("extension sidebar views", () => {
         },
         "the sidebar action to drive selection_changed",
       );
+
+      // The same key closes it again.
+      await act(async () => {
+        await setup.mockInput.typeText("y");
+      });
+      await flushUntil(
+        setup,
+        () => !setup.captureCharFrame().includes("EXTSIDEBAR"),
+        "the command to close the extension sidebar",
+      );
     });
   });
 
-  test("falls back to the built-in sidebar when the component throws", async () => {
+  test("a replacesDefault view stands in for the built-in file navigation", async () => {
+    const repo = createTestRepo("hunk-ext-sidebar-replace-");
+    const extPath = join(createTempDir("hunk-ext-sidebar-replace-ext-"), "ext.ts");
+    writeFileSync(
+      extPath,
+      `import { createElement } from "react";\n` +
+        `export default function (hunk) {\n` +
+        `  hunk.registerSidebarView({\n` +
+        `    id: "replacement",\n` +
+        `    replacesDefault: true,\n` +
+        `    component: () => createElement("text", { content: "REPLACEMENT SIDEBAR" }),\n` +
+        `  });\n` +
+        `}\n`,
+    );
+
+    const bootstrap = await launchWithExtension(repo, extPath);
+    await withAppHost(bootstrap, async (setup) => {
+      await flushUntil(
+        setup,
+        () => setup.captureCharFrame().includes("REPLACEMENT SIDEBAR"),
+        "the replacement sidebar to render by default",
+      );
+    });
+  });
+
+  test("closes a crashing extra view and restores the built-in sidebar", async () => {
     const repo = createTestRepo("hunk-ext-sidebar-broken-");
     const extPath = join(createTempDir("hunk-ext-sidebar-broken-ext-"), "ext.ts");
     writeFileSync(
@@ -186,6 +241,7 @@ describe("extension sidebar views", () => {
       `export default function (hunk) {\n` +
         `  hunk.registerSidebarView({\n` +
         `    id: "broken",\n` +
+        `    replacesDefault: true,\n` +
         `    component: () => {\n` +
         `      throw new Error("sidebar exploded");\n` +
         `    },\n` +
@@ -195,17 +251,17 @@ describe("extension sidebar views", () => {
 
     const bootstrap = await launchWithExtension(repo, extPath);
     await withAppHost(bootstrap, async (setup) => {
-      // The failure surfaces as a toast naming the extension, and the built-in
-      // sidebar takes over — its file rows are on screen, the session is not.
+      // The failure surfaces as a toast naming the extension; the crashed pane
+      // closes and the built-in file navigation reopens in its place.
       await flushUntil(
         setup,
-        () => setup.captureCharFrame().includes("using the built-in sidebar"),
+        () => setup.captureCharFrame().includes("failed rendering"),
         "the render failure toast to appear",
       );
       await flushUntil(
         setup,
         () => setup.captureCharFrame().includes("alpha.txt"),
-        "the built-in sidebar fallback to render",
+        "the built-in sidebar to reopen after the crash",
       );
     });
   });
