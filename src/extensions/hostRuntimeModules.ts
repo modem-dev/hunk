@@ -1,12 +1,4 @@
 import { dirname } from "node:path";
-import * as HostOpentuiCore from "@opentui/core";
-import * as HostOpentuiReact from "@opentui/react";
-import * as HostOpentuiJsxDevRuntime from "@opentui/react/jsx-dev-runtime";
-import * as HostOpentuiJsxRuntime from "@opentui/react/jsx-runtime";
-import * as HostReact from "react";
-import * as HostJsxDevRuntime from "react/jsx-dev-runtime";
-import * as HostJsxRuntime from "react/jsx-runtime";
-import * as HunkExtensionApi from "../extension-api";
 
 /**
  * Host-owned modules served to dynamically imported extension files.
@@ -36,16 +28,29 @@ import * as HunkExtensionApi from "../extension-api";
  * none of this affects the host bundle in any run mode.
  */
 
-/** Everything an extension may import that must be the host's own instance. */
-const HOST_MODULE_EXPORTS: Record<string, object> = {
-  react: HostReact,
-  "react/jsx-runtime": HostJsxRuntime,
-  "react/jsx-dev-runtime": HostJsxDevRuntime,
-  "@opentui/react": HostOpentuiReact,
-  "@opentui/react/jsx-runtime": HostOpentuiJsxRuntime,
-  "@opentui/react/jsx-dev-runtime": HostOpentuiJsxDevRuntime,
-  "@opentui/core": HostOpentuiCore,
-  "hunkdiff/extension": HunkExtensionApi,
+/**
+ * Everything an extension may import that must be the host's own instance,
+ * resolved lazily the first time an extension actually imports it.
+ *
+ * Laziness is a headless-portability requirement, not a nicety: this module is
+ * reachable from the extension loader, which short-lived headless commands
+ * (`hunk session list`, the daemon) also touch, and evaluating `@opentui/core`
+ * in a compiled binary extracts its native library to disk. Static imports
+ * here made every headless invocation pay that extraction; a dynamic import
+ * inside the module factory runs only when an extension file imports the
+ * specifier, which only happens in sessions that render. Dynamic `import()`
+ * rather than `require()` because `@opentui/core` publishes only an `import`
+ * exports condition, which a compile-time `require` cannot resolve.
+ */
+const HOST_MODULE_LOADERS: Record<string, () => Promise<object>> = {
+  react: () => import("react"),
+  "react/jsx-runtime": () => import("react/jsx-runtime"),
+  "react/jsx-dev-runtime": () => import("react/jsx-dev-runtime"),
+  "@opentui/react": () => import("@opentui/react"),
+  "@opentui/react/jsx-runtime": () => import("@opentui/react/jsx-runtime"),
+  "@opentui/react/jsx-dev-runtime": () => import("@opentui/react/jsx-dev-runtime"),
+  "@opentui/core": () => import("@opentui/core"),
+  "hunkdiff/extension": () => import("../extension-api"),
 };
 
 /** Namespace for the virtual modules, chosen to never collide with a real package. */
@@ -60,7 +65,7 @@ const HOST_MODULE_PREFIX = "hunk-host:";
  * untouched.
  */
 const HOST_SPECIFIER_PATTERN = new RegExp(
-  `((?:\\bfrom|\\bimport|\\brequire)\\s*\\(?\\s*)(["'])(${Object.keys(HOST_MODULE_EXPORTS)
+  `((?:\\bfrom|\\bimport|\\brequire)\\s*\\(?\\s*)(["'])(${Object.keys(HOST_MODULE_LOADERS)
     .map((specifier) => specifier.replace(/[/@]/g, "\\$&"))
     .join("|")})\\2`,
   "g",
@@ -146,8 +151,8 @@ function registerVirtualModules() {
   Bun.plugin({
     name: "hunk-host-runtime-modules",
     setup(build) {
-      for (const [specifier, namespace] of Object.entries(HOST_MODULE_EXPORTS)) {
-        build.module(`${HOST_MODULE_PREFIX}${specifier}`, () => toObjectModule(namespace));
+      for (const [specifier, load] of Object.entries(HOST_MODULE_LOADERS)) {
+        build.module(`${HOST_MODULE_PREFIX}${specifier}`, async () => toObjectModule(await load()));
       }
     },
   });
