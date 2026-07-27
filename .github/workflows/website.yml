@@ -5,48 +5,9 @@ env:
 
 on:
   pull_request:
-    paths:
-      - "website/**"
-      - "package.json"
-      - "bun.lock"
-      - "scripts/generate-docs.ts"
-      - "scripts/generate-docs.test.ts"
-      - "scripts/check-website-links.ts"
-      - "scripts/check-website-links.test.ts"
-      - "src/core/cli.ts"
-      - "src/core/config.ts"
-      - "src/core/customThemes.ts"
-      - "src/core/legacySyntaxScopes.ts"
-      - "src/core/tabWidth.ts"
-      - "src/hunk-session/agentSurface.ts"
-      - "src/hunk-session/agentErrors.ts"
-      - "src/hunk-review/skillDocument.ts"
-      - "src/session-broker/brokerConfig.ts"
-      - "src/ui/lib/shikiThemes.ts"
-      - ".github/workflows/website.yml"
   push:
     branches:
       - main
-      - docs/starlight-website
-    paths:
-      - "website/**"
-      - "package.json"
-      - "bun.lock"
-      - "scripts/generate-docs.ts"
-      - "scripts/generate-docs.test.ts"
-      - "scripts/check-website-links.ts"
-      - "scripts/check-website-links.test.ts"
-      - "src/core/cli.ts"
-      - "src/core/config.ts"
-      - "src/core/customThemes.ts"
-      - "src/core/legacySyntaxScopes.ts"
-      - "src/core/tabWidth.ts"
-      - "src/hunk-session/agentSurface.ts"
-      - "src/hunk-session/agentErrors.ts"
-      - "src/hunk-review/skillDocument.ts"
-      - "src/session-broker/brokerConfig.ts"
-      - "src/ui/lib/shikiThemes.ts"
-      - ".github/workflows/website.yml"
 
 concurrency:
   group: website-${{ github.workflow }}-${{ github.ref }}
@@ -54,7 +15,7 @@ concurrency:
 
 jobs:
   build:
-    name: Check and build docs
+    name: Check and build website
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository

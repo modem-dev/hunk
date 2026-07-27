@@ -1,0 +1,228 @@
+---
+import CopyCommand from "../components/marketing/CopyCommand.astro";
+import PlatformIcons from "../components/marketing/PlatformIcons.astro";
+import ThemeShot from "../components/marketing/ThemeShot.astro";
+import "../styles/marketing.css";
+
+const REPO = "https://github.com/modem-dev/hunk";
+const DISCORD = "https://discord.gg/WZFjaP6Gt8";
+const NPM = "https://www.npmjs.com/package/hunkdiff";
+const title = "hunk — review-first terminal diff viewer";
+const description =
+  "Hunk is a review-first terminal diff viewer for agent-authored changesets. Multi-file review stream, inline AI annotations, watch mode, and Git/Jujutsu integration.";
+
+const features = [
+  [
+    "01",
+    "Multi-file review stream",
+    "The whole changeset in a sidebar. Jump between files, see counts, review top to bottom.",
+  ],
+  [
+    "02",
+    "Inline agent annotations",
+    "AI reasoning renders beside the code it describes — context lives in the diff, not another tab.",
+  ],
+  [
+    "03",
+    "Split · stack · auto",
+    "Layouts that adapt to your terminal width. Toggle wrapping and line numbers at runtime.",
+  ],
+  [
+    "04",
+    "Watch mode",
+    "Auto-reloads as the working tree changes. Keep it open while your agent edits in another pane.",
+  ],
+  [
+    "05",
+    "Syntax highlighting & themes",
+    "Understand code structure, not just lines added/removed. Choose a theme or roll your own.",
+  ],
+  [
+    "06",
+    "Keyboard, mouse, pager",
+    "Drive it however you like — full keys, selectable menus, pipe patches straight in.",
+  ],
+] as const;
+
+const quotes = [
+  {
+    who: "Mitchell Hashimoto, creator of Ghostty & Vagrant",
+    quote: "Hunk is very good. It has replaced any other local diff viewer for me.",
+    href: "https://x.com/mitchellh/status/2052128048288567617",
+  },
+  {
+    who: "DHH, creator of Omarchy and Ruby on Rails",
+    quote: "Love hunk.",
+    href: "https://x.com/dhh/status/2062919431680852164",
+  },
+] as const;
+
+let stars: number | null = null;
+try {
+  const token = process.env.GITHUB_TOKEN;
+  const response = await fetch("https://api.github.com/repos/modem-dev/hunk", {
+    headers: {
+      Accept: "application/vnd.github+json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    signal: AbortSignal.timeout(5000),
+  });
+  if (response.ok) {
+    const data = (await response.json()) as { stargazers_count?: number };
+    if (typeof data.stargazers_count === "number") stars = data.stargazers_count;
+  }
+} catch {
+  // Keep the call to action useful when the optional star count cannot be fetched.
+}
+
+const formattedStars =
+  stars === null
+    ? null
+    : stars >= 1000
+      ? `${stars / 1000 >= 10 ? Math.round(stars / 1000) : (stars / 1000).toFixed(1).replace(/\.0$/, "")}k`
+      : stars.toLocaleString("en-US");
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="theme-color" content="#f4f1ea" />
+    <meta name="description" content={description} />
+    <meta
+      name="keywords"
+      content="diff, terminal, TUI, code review, git, jujutsu, AI agents, OpenTUI"
+    />
+    <meta name="author" content="Modem" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="hunk" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content="https://hunk.dev/" />
+    <meta property="og:image" content="https://hunk.dev/og.png" />
+    <meta property="og:image:alt" content="hunk — terminal diffs for humans & agents" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content="https://hunk.dev/og.png" />
+    <link rel="canonical" href="https://hunk.dev/" />
+    <link rel="icon" href="/icon.png" type="image/png" />
+    <link rel="apple-touch-icon" href="/apple-icon.png" />
+    <title>{title}</title>
+    <script is:inline defer src="/_vercel/insights/script.js"></script>
+  </head>
+  <body>
+    <div class="marketing">
+      <header class="top">
+        <a class="logo" href="/" aria-label="Hunk home">hunk</a>
+        <nav aria-label="Main navigation">
+          <a href="#install">Install</a>
+          <a href="/docs/">Docs</a>
+          <a href={DISCORD}>Discord</a>
+          <a href={REPO}>GitHub ↗</a>
+        </nav>
+      </header>
+
+      <main>
+        <section class="intro">
+          <h1>
+            Terminal diffs<br />
+            for <span class="ink">humans</span> &amp; <span class="mark">agents</span>
+          </h1>
+          <p class="sub">
+            Hunk is a review-first diff viewer that plays nice with agents. It's fast, it looks
+            good, and it works everywhere.
+          </p>
+          <div class="cta">
+            <CopyCommand command="npm i -g hunkdiff" />
+            <a class="ghost" href={REPO}>
+              Star on GitHub
+              {
+                formattedStars && (
+                  <span class="stars">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                      <path d="M12 2.5l2.9 5.88 6.49.94-4.7 4.58 1.11 6.46L12 17.9l-5.8 3.05 1.1-6.46-4.69-4.58 6.49-.94z"></path>
+                    </svg>
+                    {formattedStars}
+                  </span>
+                )
+              }
+            </a>
+          </div>
+        </section>
+
+        <section class="paper" aria-label="Hunk theme preview">
+          <ThemeShot />
+        </section>
+
+        <section class="says" aria-label="What developers say about Hunk">
+          <div class="quotes">
+            {
+              quotes.map(({ who, quote, href }) => (
+                <figure>
+                  <span class="qmark" aria-hidden="true">“</span>
+                  <blockquote>{quote}</blockquote>
+                  <figcaption>
+                    <a href={href} target="_blank" rel="noopener noreferrer">{who}</a>
+                  </figcaption>
+                </figure>
+              ))
+            }
+          </div>
+        </section>
+
+        <section class="feats">
+          <h2>
+            Don't just <span class="mark-del">read</span> code, <span class="mark">understand</span> it.
+          </h2>
+          <div class="grid">
+            {
+              features.map(([number, heading, body]) => (
+                <article>
+                  <span class="num">{number}</span>
+                  <h3>{heading}</h3>
+                  <p>{body}</p>
+                </article>
+              ))
+            }
+          </div>
+        </section>
+
+        <section class="install" id="install">
+          <div class="install-head">
+            <h2>Wherever your terminal lives.</h2>
+            <PlatformIcons />
+          </div>
+          <ul>
+            <li><span class="t">npm</span><code>npm i -g hunkdiff</code></li>
+            <li><span class="t">Homebrew</span><code>brew install hunk</code></li>
+            <li><span class="t">Nix</span><code>nix run github:modem-dev/hunk</code></li>
+          </ul>
+          <p class="req">
+            Then <b>hunk diff</b> to review your working tree, or <b>hunk show</b> to review a commit.
+            npm installs require Node.js 18 or newer.
+          </p>
+        </section>
+      </main>
+
+      <footer class="bottom">
+        <div class="foot-links">
+          <a href="/docs/">Docs</a>
+          <a href={REPO}>GitHub</a>
+          <a href={NPM}>npm</a>
+          <a href={DISCORD}>Discord</a>
+          <a href={`${REPO}/blob/main/LICENSE`}>MIT</a>
+        </div>
+        <a
+          class="modem"
+          href="https://modem.dev?utm_source=hunk_web&utm_medium=oss&utm_campaign=oss_hunk"
+          aria-label="Built by Modem"
+        >
+          <span>Built by</span>
+          <img src="/modem-light.svg" alt="Modem" width="82" height="16" />
+        </a>
+      </footer>
+    </div>
+  </body>
+</html>

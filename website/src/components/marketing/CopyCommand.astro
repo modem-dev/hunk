@@ -1,0 +1,50 @@
+---
+interface Props {
+  command: string;
+}
+
+const { command } = Astro.props;
+---
+
+<button class="copy" type="button" data-copy-command={command} aria-label={`Copy: ${command}`}>
+  <span class="prompt">$</span>
+  <span class="cmd">{command}</span>
+  <span class="ico copy-icon" aria-hidden="true">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+      <rect x="9" y="9" width="11" height="11" rx="2" stroke="currentColor" stroke-width="1.8"></rect>
+      <path d="M5 15V5a2 2 0 0 1 2-2h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+    </svg>
+  </span>
+  <span class="ico success-icon" aria-hidden="true" hidden>
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+      <path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path>
+    </svg>
+  </span>
+  <span class="sr-only" aria-live="polite" data-copy-status></span>
+</button>
+
+<script>
+  for (const button of document.querySelectorAll<HTMLButtonElement>("[data-copy-command]")) {
+    button.addEventListener("click", async () => {
+      const status = button.querySelector<HTMLElement>("[data-copy-status]");
+      const copyIcon = button.querySelector<HTMLElement>(".copy-icon");
+      const successIcon = button.querySelector<HTMLElement>(".success-icon");
+
+      try {
+        await navigator.clipboard.writeText(button.dataset.copyCommand ?? "");
+        button.classList.add("copied");
+        copyIcon?.setAttribute("hidden", "");
+        successIcon?.removeAttribute("hidden");
+        if (status) status.textContent = "Copied to clipboard";
+        window.setTimeout(() => {
+          button.classList.remove("copied");
+          copyIcon?.removeAttribute("hidden");
+          successIcon?.setAttribute("hidden", "");
+          if (status) status.textContent = "";
+        }, 1600);
+      } catch {
+        if (status) status.textContent = "Could not copy. Select the command manually.";
+      }
+    });
+  }
+</script>

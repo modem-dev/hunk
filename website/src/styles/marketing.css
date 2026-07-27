@@ -1,0 +1,595 @@
+@import "@fontsource-variable/jetbrains-mono/index.css";
+
+:root {
+  --mono:
+    "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
+    "Liberation Mono", monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  overflow-x: hidden;
+  background: #f4f1ea;
+  color: #16140f;
+  font-family: var(--mono);
+  font-size: 15px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:focus-visible,
+a:focus-visible {
+  outline: 3px solid #1f7a35;
+  outline-offset: 3px;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.marketing {
+  position: relative;
+  z-index: 2;
+  min-height: 100vh;
+  background: #f4f1ea;
+  color: #16140f;
+  font-family: var(--mono);
+  --acc: #1f7a35;
+  --del: #c0392b;
+  --paper: #fffdf8;
+  --rule: #dcd6c8;
+  --soft: #6b6557;
+  --ink: #16140f;
+}
+
+.marketing ::selection {
+  color: #0d3a18;
+  background: #bfe9c6;
+}
+
+.marketing .top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 22px 36px;
+  border-bottom: 1.5px solid var(--ink);
+}
+
+.marketing .logo {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.marketing .top nav {
+  display: flex;
+  gap: 22px;
+  font-size: 13.5px;
+}
+
+.marketing .top nav a:hover,
+.marketing .foot-links a:hover,
+.marketing .says figcaption a:hover {
+  color: var(--acc);
+}
+
+.marketing .intro {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 76px 36px 56px;
+}
+
+.marketing h1 {
+  margin: 0 0 24px;
+  font-size: clamp(34px, 7vw, 72px);
+  font-weight: 700;
+  line-height: 0.99;
+  letter-spacing: -0.04em;
+}
+
+.marketing .ink {
+  font-style: italic;
+}
+
+.marketing .mark,
+.marketing .mark-del {
+  display: inline-block;
+  padding: 0 0.12em;
+  border-radius: 4px;
+  color: var(--paper);
+}
+
+.marketing .mark {
+  background: var(--acc);
+}
+
+.marketing .mark-del {
+  background: var(--del);
+}
+
+.marketing .sub {
+  max-width: 500px;
+  margin: 0 0 30px;
+  color: #3a352b;
+  font-size: 16.5px;
+  line-height: 1.6;
+}
+
+.marketing .cta {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.marketing .copy,
+.marketing .ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 16px;
+  border: 1.5px solid var(--ink);
+  border-radius: 8px;
+  box-shadow: 3px 3px 0 var(--ink);
+  font-family: var(--mono);
+  font-size: 14px;
+  transition: 0.12s;
+}
+
+.marketing .copy {
+  position: relative;
+  height: auto;
+  background: var(--paper);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.marketing .ghost {
+  padding-inline: 18px;
+  background: var(--acc);
+  color: var(--paper);
+  font-weight: 600;
+}
+
+.marketing .copy:hover,
+.marketing .ghost:hover {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--ink);
+}
+
+.marketing .copy .prompt {
+  color: var(--acc);
+}
+
+.marketing .copy .ico {
+  display: flex;
+  color: var(--soft);
+}
+
+.marketing .copy.copied .ico {
+  color: var(--acc);
+}
+
+.marketing .ghost .stars {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 2px;
+  padding-left: 10px;
+  border-left: 1.5px solid rgb(255 255 255 / 40%);
+  font-variant-numeric: tabular-nums;
+}
+
+.marketing .paper {
+  max-width: 960px;
+  margin: 0 auto 104px;
+  padding: 0 36px;
+}
+
+.marketing .frame {
+  overflow: hidden;
+  margin: 0;
+  border: 1.5px solid var(--ink);
+  border-radius: 10px;
+  background: #0c0e10;
+  box-shadow: 6px 6px 0 var(--ink);
+}
+
+.marketing .paper-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  border-bottom: 1.5px solid var(--ink);
+  background: #e9e4d8;
+}
+
+.marketing .dot {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--ink);
+  border-radius: 50%;
+  background: var(--paper);
+}
+
+.marketing .pt {
+  margin-left: 9px;
+  color: var(--soft);
+  font-size: 12.5px;
+}
+
+.marketing .shot-stack {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 2200 / 1413;
+  background: #0c0e10;
+}
+
+.marketing .shot {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  user-select: none;
+}
+
+.marketing .themes {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+.marketing .tpill {
+  padding: 5px 11px;
+  border: 1.5px solid var(--ink);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: 0.12s;
+}
+
+.marketing .tpill:hover {
+  background: #fff;
+}
+
+.marketing .tpill.on {
+  border-color: var(--acc);
+  background: var(--acc);
+  color: var(--paper);
+}
+
+.marketing .says,
+.marketing .feats,
+.marketing .install {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 36px 104px;
+}
+
+.marketing .says .quotes {
+  display: grid;
+  grid-template-rows: auto auto auto;
+  grid-template-columns: 1fr 1fr;
+}
+
+.marketing .says figure {
+  display: grid;
+  grid-row: span 3;
+  grid-template-rows: subgrid;
+  row-gap: 0;
+  margin: 0;
+}
+
+.marketing .says figure:first-child {
+  padding-right: 42px;
+}
+
+.marketing .says figure + figure {
+  padding-left: 42px;
+  border-left: 1.5px solid var(--rule);
+}
+
+.marketing .says .qmark {
+  margin: 6px 0 14px;
+  color: var(--acc);
+  font-size: 44px;
+  font-weight: 700;
+  line-height: 0.4;
+}
+
+.marketing .says blockquote {
+  margin: 0;
+  color: var(--ink);
+  font-size: clamp(15px, 1.5vw, 19px);
+  font-weight: 500;
+  line-height: 1.5;
+  letter-spacing: -0.01em;
+}
+
+.marketing .says figcaption {
+  margin-top: 16px;
+  color: var(--soft);
+  font-size: 11.5px;
+  line-height: 1.5;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.marketing .says figcaption::before {
+  content: "— ";
+}
+
+.marketing .feats h2,
+.marketing .install h2 {
+  margin: 0 0 30px;
+  font-size: clamp(22px, 3.4vw, 34px);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.marketing .grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
+  border-top: 1.5px solid var(--ink);
+  border-left: 1.5px solid var(--ink);
+}
+
+.marketing .grid article {
+  padding: 22px 20px;
+  border-right: 1.5px solid var(--ink);
+  border-bottom: 1.5px solid var(--ink);
+  background: var(--paper);
+  transition: 0.12s;
+}
+
+.marketing .grid article:hover {
+  background: #fff;
+}
+
+.marketing .num {
+  color: var(--soft);
+  font-size: 11.5px;
+  letter-spacing: 0.1em;
+}
+
+.marketing .grid h3 {
+  margin: 9px 0 7px;
+  font-size: 15.5px;
+  letter-spacing: -0.01em;
+}
+
+.marketing .grid p {
+  margin: 0;
+  color: #3a352b;
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+.marketing .install {
+  padding-bottom: 92px;
+}
+
+.marketing .install-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-bottom: 30px;
+}
+
+.marketing .install-head h2 {
+  margin: 0;
+}
+
+.marketing .os {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  color: var(--soft);
+}
+
+.marketing .os svg {
+  display: block;
+  width: 26px;
+  height: 26px;
+  fill: currentcolor;
+}
+
+.marketing .install ul {
+  margin: 0 0 18px;
+  padding: 0;
+  border-top: 1.5px solid var(--ink);
+  list-style: none;
+}
+
+.marketing .install li {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 20px;
+  align-items: center;
+  padding: 15px 4px;
+  border-bottom: 1.5px solid var(--rule);
+}
+
+.marketing .install .t {
+  color: var(--soft);
+  font-size: 12.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.marketing .install code {
+  overflow-wrap: anywhere;
+  font-family: var(--mono);
+  font-size: 15px;
+}
+
+.marketing .install code::before {
+  color: var(--acc);
+  content: "$ ";
+}
+
+.marketing .req {
+  margin: 0;
+  color: #3a352b;
+  font-size: 13.5px;
+}
+
+.marketing .bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 960px;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin: 0 auto;
+  padding: 26px 36px 52px;
+  border-top: 1.5px solid var(--ink);
+  font-size: 12.5px;
+}
+
+.marketing .foot-links {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.marketing .modem {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--soft);
+}
+
+.marketing .modem img {
+  display: block;
+  width: auto;
+  height: 16px;
+  opacity: 0.82;
+  transition: 0.15s;
+}
+
+.marketing .modem:hover img {
+  opacity: 1;
+}
+
+@media (max-width: 760px) {
+  .marketing .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .marketing .top nav {
+    gap: 15px;
+    font-size: 12.5px;
+  }
+
+  .marketing .top,
+  .marketing .intro,
+  .marketing .paper,
+  .marketing .says,
+  .marketing .feats,
+  .marketing .install,
+  .marketing .bottom {
+    padding-right: 20px;
+    padding-left: 20px;
+  }
+}
+
+@media (max-width: 680px) {
+  .marketing .top {
+    align-items: flex-start;
+  }
+
+  .marketing .top nav {
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+
+  .marketing .says .quotes {
+    display: block;
+  }
+
+  .marketing .says figure {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .marketing .says figure:first-child {
+    padding-right: 0;
+    padding-bottom: 34px;
+  }
+
+  .marketing .says figure + figure {
+    padding-top: 34px;
+    padding-left: 0;
+    border-top: 1.5px solid var(--rule);
+    border-left: 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .marketing .install li {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .marketing *,
+  .marketing *::before,
+  .marketing *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

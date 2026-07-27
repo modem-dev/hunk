@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "hunk-docs",
+      "name": "hunk-website",
       "dependencies": {
         "@astrojs/sitemap": "^3.6.0",
         "@astrojs/starlight": "^0.36.2",

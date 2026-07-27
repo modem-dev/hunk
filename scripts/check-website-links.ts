@@ -3,15 +3,37 @@ import { join, relative, resolve, sep } from "node:path";
 
 const REPO_ROOT = resolve(import.meta.dir, "..");
 const DEFAULT_DIST_DIR = join(REPO_ROOT, "website", "dist");
-const DOCS_PREFIX = "/docs";
 const CANONICAL_ORIGIN = "https://hunk.dev";
 const EDIT_PREFIX = "https://github.com/modem-dev/hunk/edit/main/";
-const REQUIRED_HEAD_TAGS = [
+const DOCS_HEAD_TAGS = [
   '<link rel="icon" href="/docs/favicon.svg"',
   '<meta property="og:type" content="website"',
-  '<meta property="og:image" content="https://hunk.dev/docs/og.png"',
+  '<meta property="og:image" content="https://hunk.dev/og.png"',
   '<meta name="twitter:card" content="summary_large_image"',
-  '<meta name="twitter:image" content="https://hunk.dev/docs/og.png"',
+  '<meta name="twitter:image" content="https://hunk.dev/og.png"',
+] as const;
+const MARKETING_HEAD_TAGS = [
+  '<link rel="icon" href="/icon.png"',
+  '<meta property="og:type" content="website"',
+  '<meta property="og:image" content="https://hunk.dev/og.png"',
+  '<meta name="twitter:card" content="summary_large_image"',
+  '<meta name="twitter:image" content="https://hunk.dev/og.png"',
+] as const;
+const REQUIRED_ASSETS = [
+  "apple-icon.png",
+  "favicon.svg",
+  "icon.png",
+  "modem-light.svg",
+  "og.png",
+  "shot-ember.webp",
+  "shot-graphite.webp",
+  "shot-latte.webp",
+  "shot-midnight.webp",
+  "shot-mocha.webp",
+  "shot-zenburn.webp",
+  "docs/favicon.svg",
+  "docs/hunk-review-skill.md",
+  "pagefind/pagefind.js",
 ] as const;
 
 /** Recursively collect files with one extension in deterministic order. */
@@ -36,10 +58,9 @@ function collectAttributes(html: string, attribute: "href" | "id" | "src") {
   return [...html.matchAll(pattern)].map((match) => decodeAttribute(match[1] ?? ""));
 }
 
-/** Map one deployed /docs URL path to its static build file. */
+/** Map one site-relative URL path to its static build file. */
 function outputPathForUrl(distDir: string, pathname: string) {
-  const withoutBase = pathname === DOCS_PREFIX ? "/" : pathname.slice(DOCS_PREFIX.length);
-  const decoded = decodeURIComponent(withoutBase).replace(/^\/+/, "");
+  const decoded = decodeURIComponent(pathname).replace(/^\/+/, "");
   if (decoded === "" || decoded.endsWith("/")) {
     return join(distDir, decoded, "index.html");
   }
@@ -49,8 +70,15 @@ function outputPathForUrl(distDir: string, pathname: string) {
 
 /** Derive the canonical public URL for one generated HTML path. */
 function canonicalUrlForOutput(label: string) {
-  if (label === "index.html") return `${CANONICAL_ORIGIN}${DOCS_PREFIX}/`;
-  return `${CANONICAL_ORIGIN}${DOCS_PREFIX}/${label.replace(/index\.html$/, "")}`;
+  if (label === "index.html") return `${CANONICAL_ORIGIN}/`;
+  return `${CANONICAL_ORIGIN}/${label.replace(/index\.html$/, "")}`;
+}
+
+/** Return metadata required for one canonical page type. */
+function requiredHeadTags(label: string) {
+  if (label === "index.html") return MARKETING_HEAD_TAGS;
+  if (label.startsWith("docs/")) return DOCS_HEAD_TAGS;
+  return [];
 }
 
 /** Validate links, anchors, metadata, edit targets, and public assets in a static website build. */
@@ -80,9 +108,10 @@ export function checkWebsiteBuild(distDir = DEFAULT_DIST_DIR) {
       } else {
         canonicalUrls.add(canonical.replace(/\/$/, ""));
       }
-      for (const requiredTag of REQUIRED_HEAD_TAGS) {
-        if (!html.includes(requiredTag))
+      for (const requiredTag of requiredHeadTags(label)) {
+        if (!html.includes(requiredTag)) {
           errors.push(`${label}: missing head metadata: ${requiredTag}`);
+        }
       }
     }
 
@@ -103,13 +132,11 @@ export function checkWebsiteBuild(distDir = DEFAULT_DIST_DIR) {
 
       const pageUrl =
         label === "404.html"
-          ? `${CANONICAL_ORIGIN}${DOCS_PREFIX}/${label}`
-          : (canonical ?? `${CANONICAL_ORIGIN}${DOCS_PREFIX}/${label}`);
+          ? `${CANONICAL_ORIGIN}/404.html`
+          : (canonical ?? `${CANONICAL_ORIGIN}/${label}`);
       const parsed = new URL(value, pageUrl);
-      if (!parsed.pathname.startsWith(`${DOCS_PREFIX}/`) && parsed.pathname !== DOCS_PREFIX) {
-        errors.push(`${label}: ${attribute} escapes /docs: ${value}`);
-        continue;
-      }
+      if (parsed.pathname.startsWith("/_vercel/")) continue;
+
       const targetPath = outputPathForUrl(distDir, parsed.pathname);
       if (!existsSync(targetPath)) {
         errors.push(`${label}: missing ${attribute} target: ${value}`);
@@ -124,7 +151,7 @@ export function checkWebsiteBuild(distDir = DEFAULT_DIST_DIR) {
     }
   }
 
-  for (const asset of ["favicon.svg", "og.png", "hunk-review-skill.md", "pagefind/pagefind.js"]) {
+  for (const asset of REQUIRED_ASSETS) {
     if (!existsSync(join(distDir, asset))) errors.push(`missing required public asset: ${asset}`);
   }
 

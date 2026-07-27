@@ -1,0 +1,73 @@
+---
+const themes = [
+  { name: "Graphite", src: "/shot-graphite.webp" },
+  { name: "Midnight", src: "/shot-midnight.webp" },
+  { name: "Ember", src: "/shot-ember.webp" },
+  { name: "Zenburn", src: "/shot-zenburn.webp" },
+  { name: "Catppuccin Mocha", src: "/shot-mocha.webp" },
+  { name: "Catppuccin Latte", src: "/shot-latte.webp" },
+];
+---
+
+<figure class="frame">
+  <div class="paper-bar">
+    <span class="dot"></span>
+    <span class="dot"></span>
+    <span class="dot"></span>
+    <span class="pt">hunk diff — split view</span>
+  </div>
+  <div class="shot-stack">
+    {
+      themes.map((theme, index) => (
+        <img
+          id={`theme-shot-${index}`}
+          class="shot"
+          src={index === 0 ? theme.src : undefined}
+          data-src={theme.src}
+          alt={`Hunk split-view diff in the ${theme.name} theme`}
+          width="2200"
+          height="1413"
+          draggable="false"
+          hidden={index !== 0}
+        />
+      ))
+    }
+  </div>
+</figure>
+<div class="themes" role="group" aria-label="Preview theme">
+  {
+    themes.map((theme, index) => (
+      <button
+        type="button"
+        class:list={["tpill", { on: index === 0 }]}
+        aria-pressed={index === 0 ? "true" : "false"}
+        aria-controls={`theme-shot-${index}`}
+        data-theme-index={index}
+      >
+        {theme.name}
+      </button>
+    ))
+  }
+</div>
+
+<script>
+  const buttons = document.querySelectorAll<HTMLButtonElement>("[data-theme-index]");
+  const shots = document.querySelectorAll<HTMLImageElement>(".shot-stack .shot");
+
+  for (const button of buttons) {
+    button.addEventListener("click", () => {
+      const selectedIndex = Number(button.dataset.themeIndex);
+
+      buttons.forEach((candidate, index) => {
+        const selected = index === selectedIndex;
+        candidate.classList.toggle("on", selected);
+        candidate.setAttribute("aria-pressed", String(selected));
+      });
+      shots.forEach((shot, index) => {
+        const selected = index === selectedIndex;
+        if (selected && !shot.hasAttribute("src") && shot.dataset.src) shot.src = shot.dataset.src;
+        shot.hidden = !selected;
+      });
+    });
+  }
+</script>
