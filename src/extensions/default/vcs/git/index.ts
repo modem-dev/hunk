@@ -19,9 +19,9 @@ import {
   shouldSkipLargeTrackedDiff,
   type GitBackedInput,
   type GitDiffEndpoints,
-} from "../../core/git";
-import { gitEndpointSourceSpec, readGitFileSource } from "../../core/gitSource";
-import { inspectLargeUntrackedFile } from "../../core/largeFile";
+} from "../../../../core/git";
+import { gitEndpointSourceSpec, readGitFileSource } from "../../../../core/gitSource";
+import { inspectLargeUntrackedFile } from "../../../../core/largeFile";
 import {
   HUNK_CORE_VCS_DETECTION_PRIORITY,
   type ExtensionVcsAdapter,
@@ -31,7 +31,7 @@ import {
   type ExtensionVcsFileSourceReader,
   type ExtensionVcsWatchPlan,
   type HunkExtensionAPI,
-} from "../../extension-api/types";
+} from "../../../../extension-api/types";
 
 /**
  * Hunk's Git backend, as a bundled extension.

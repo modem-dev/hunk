@@ -11,7 +11,11 @@ export {
   type ExtensionApplyIssue,
   type ResolvedExtensionSidebarView,
 } from "./apply";
-export { getBundledVcsAdapters, loadBundledExtensions, type BundledExtensionLoad } from "./bundled";
+export {
+  getBundledVcsAdapters,
+  loadBundledExtensions,
+  type BundledExtensionLoad,
+} from "./default/vcs";
 export { discoverExtensions, type DiscoverExtensionsOptions } from "./discovery";
 export {
   emitExtensionEvent,

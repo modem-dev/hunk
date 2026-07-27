@@ -14,7 +14,7 @@ import { normalizePathForOS } from "../lib/osPath";
  * Every Git command Hunk runs, and the failures they translate into.
  *
  * This is the implementation layer behind the bundled Git backend
- * (`src/extensions/bundled/git.ts`), so nothing here reaches into the diff
+ * (`src/extensions/default/vcs/git/`), so nothing here reaches into the diff
  * engine or the adapter registry — user-facing failures are raised as the
  * published `HunkExtensionUserError`, which is exactly what a third-party
  * backend would throw.

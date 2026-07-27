@@ -2,12 +2,12 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { platform, tmpdir } from "node:os";
 import { join } from "node:path";
-import { SaplingVcsAdapter } from "./sl";
+import { SaplingVcsAdapter } from ".";
 import type {
   ExtensionVcsOperations,
   ExtensionVcsShowInput,
   ExtensionVcsDiffInput,
-} from "../../extension-api/types";
+} from "../../../../extension-api/types";
 
 // The adapter is written against the published contract, so the tests read it
 // through that contract too — including the operations an adapter may omit.

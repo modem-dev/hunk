@@ -6,7 +6,7 @@ import {
   resolveDetectedVcsIdWithExtensions,
   resolveSessionVcsId,
 } from "../extensions/apply";
-import { loadBundledExtensions } from "../extensions/bundled";
+import { loadBundledExtensions } from "../extensions/default/vcs";
 import {
   createExtensionLoadNotices,
   loadStartupExtensions,

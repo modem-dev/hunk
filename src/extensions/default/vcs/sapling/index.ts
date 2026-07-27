@@ -7,12 +7,12 @@ import {
   listSlUntrackedFiles,
   resolveSlRepoRoot,
   runSlText,
-} from "../../core/sl";
+} from "../../../../core/sl";
 import {
   HUNK_CORE_VCS_DETECTION_PRIORITY,
   type ExtensionVcsAdapter,
   type HunkExtensionAPI,
-} from "../../extension-api/types";
+} from "../../../../extension-api/types";
 
 /**
  * Hunk's Sapling backend, as a bundled extension.

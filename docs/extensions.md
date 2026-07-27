@@ -61,7 +61,7 @@ repository's own README.
 
 Every VCS backend Hunk ships — **Git, Jujutsu, and Sapling** — is an extension,
 and so is the **built-in file-navigation sidebar**. They live in
-`src/extensions/bundled/`, are compiled into the binary, and register through
+`src/extensions/default/`, are compiled into the binary, and register through
 the same `hunk.registerVcsAdapter` and `hunk.registerSidebarView` this guide
 documents. There is no core-registered backend left, no private sidebar, and no
 private path into the review pipeline.
@@ -485,7 +485,7 @@ failure is reported as a toast naming your extension and the built-in sidebar
 takes over.
 
 The built-in sidebar is itself a bundled extension
-(`src/extensions/bundled/sidebar/`): it registers through this exact call and
+(`src/extensions/default/ui/sidebar/`): it registers through this exact call and
 its component consumes exactly the props documented above, so it doubles as the
 reference implementation — anything it renders (grouping, change-type icons,
 stat badges, selection follow), yours can too.

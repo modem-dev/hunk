@@ -1,15 +1,15 @@
 import gitExtension from "./git";
-import jjExtension from "./jj";
-import slExtension from "./sl";
-import { runExtensionFactory } from "../runExtension";
+import jjExtension from "./jujutsu";
+import slExtension from "./sapling";
+import { runExtensionFactory } from "../../runExtension";
 import {
   createEmptyExtensionRegistry,
   type ExtensionFactory,
   type ExtensionLoadIssue,
   type ExtensionMetadata,
   type ExtensionRegistry,
-} from "../types";
-import type { VcsAdapter } from "../../core/vcs/types";
+} from "../../types";
+import type { VcsAdapter } from "../../../core/vcs/types";
 
 /**
  * The bundled extension tier.

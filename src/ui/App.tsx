@@ -21,7 +21,7 @@ import type {
 } from "../core/types";
 import { canReloadInput } from "../core/watch";
 import { resolveExtensionSidebarView } from "../extensions/apply";
-import { getBundledSidebarView } from "../extensions/bundled/sidebar";
+import { getBundledSidebarView } from "../extensions/default/ui/sidebar";
 import { emitExtensionEvent } from "../extensions/events";
 import { writeExtensionTrust } from "../extensions/trust";
 import type {

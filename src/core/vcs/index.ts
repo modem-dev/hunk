@@ -1,6 +1,6 @@
 import { dirname, relative, resolve } from "node:path";
 import { HUNK_DEFAULT_VCS_DETECTION_PRIORITY } from "../../extension-api/types";
-import { getBundledVcsAdapters } from "../../extensions/bundled";
+import { getBundledVcsAdapters } from "../../extensions/default/vcs";
 import { HunkUserError } from "../errors";
 import type {
   VcsAdapter,

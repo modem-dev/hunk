@@ -5,7 +5,7 @@ import type {
   ExtensionSidebarTheme,
   ExtensionSidebarViewProps,
 } from "../../../extension-api/types";
-import { BuiltInSidebarView } from "../../../extensions/bundled/sidebar";
+import { BuiltInSidebarView } from "../../../extensions/default/ui/sidebar";
 import { toReadOnlyFileViews } from "../../../extensions/events";
 import type { ExtensionNotifySink, RegisteredSidebarView } from "../../../extensions/types";
 import type { DiffFile } from "../../../core/types";

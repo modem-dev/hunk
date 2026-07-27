@@ -1,22 +1,22 @@
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { ExtensionSidebarViewProps } from "../../../extension-api/types";
+import type { ExtensionSidebarViewProps } from "../../../../extension-api/types";
 import {
   buildSidebarEntries,
   sidebarEntryStatsWidth,
   type SidebarEntry,
-} from "../../../ui/lib/files";
-import { fileRowId } from "../../../ui/lib/ids";
-import { buildSidebarRenderWindow } from "../../../ui/lib/sidebarRenderWindow";
-import { FileGroupHeader, FileListItem } from "../../../ui/components/panes/FileListItem";
-import { runExtensionFactory } from "../../runExtension";
+} from "../../../../ui/lib/files";
+import { fileRowId } from "../../../../ui/lib/ids";
+import { buildSidebarRenderWindow } from "../../../../ui/lib/sidebarRenderWindow";
+import { FileGroupHeader, FileListItem } from "../../../../ui/components/panes/FileListItem";
+import { runExtensionFactory } from "../../../runExtension";
 import {
   createEmptyExtensionRegistry,
   type ExtensionFactory,
   type ExtensionLoadIssue,
   type RegisteredSidebarView,
-} from "../../types";
+} from "../../../types";
 
 /**
  * Hunk's file-navigation sidebar, shipped as a bundled extension.

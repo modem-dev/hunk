@@ -6,12 +6,12 @@ import {
   createJjStagedError,
   resolveJjRepoRoot,
   runJjText,
-} from "../../core/jj";
+} from "../../../../core/jj";
 import {
   HUNK_CORE_VCS_DETECTION_PRIORITY,
   type ExtensionVcsAdapter,
   type HunkExtensionAPI,
-} from "../../extension-api/types";
+} from "../../../../extension-api/types";
 
 /**
  * Hunk's Jujutsu backend, as a bundled extension.

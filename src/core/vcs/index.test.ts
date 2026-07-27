@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getBundledVcsAdapters } from "../../extensions/bundled";
+import { getBundledVcsAdapters } from "../../extensions/default/vcs";
 import {
   createUnsupportedVcsOperationError,
   createVcsWatchPlan,

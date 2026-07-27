@@ -43,7 +43,7 @@ export type {
 /**
  * Where one extension came from, which decides its trust posture.
  *
- * `bundled` is Hunk's own compiled-in tier (`src/extensions/bundled/`): no
+ * `bundled` is Hunk's own compiled-in tier (`src/extensions/default/`): no
  * discovery, no trust prompt, and never disabled by `--no-extensions`. Every
  * other origin is a user extension loaded from disk.
  */

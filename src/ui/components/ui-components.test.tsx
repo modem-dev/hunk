@@ -18,7 +18,7 @@ import { buildFileSectionLayouts, buildInStreamFileHeaderHeights } from "../lib/
 
 const { AppHost } = await import("../AppHost");
 const { toReadOnlyFileViews } = await import("../../extensions/events");
-const { BuiltInSidebarView } = await import("../../extensions/bundled/sidebar");
+const { BuiltInSidebarView } = await import("../../extensions/default/ui/sidebar");
 const { HelpDialog } = await import("./chrome/HelpDialog");
 const { AgentCard } = await import("./panes/AgentCard");
 const { AgentInlineNote, measureAgentInlineNoteHeight } = await import("./panes/AgentInlineNote");
