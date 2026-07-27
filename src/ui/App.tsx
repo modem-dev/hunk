@@ -21,6 +21,7 @@ import type {
 } from "../core/types";
 import { canReloadInput } from "../core/watch";
 import { resolveExtensionSidebarView } from "../extensions/apply";
+import { getBundledSidebarView } from "../extensions/bundled/sidebar";
 import { emitExtensionEvent } from "../extensions/events";
 import { writeExtensionTrust } from "../extensions/trust";
 import type {
@@ -34,7 +35,6 @@ import { ExtensionToast } from "./components/chrome/ExtensionToast";
 import { StatusBar } from "./components/chrome/StatusBar";
 import { DiffPane } from "./components/panes/DiffPane";
 import { ExtensionSidebarPane } from "./components/panes/ExtensionSidebarPane";
-import { SidebarPane } from "./components/panes/SidebarPane";
 import { PaneDivider } from "./components/panes/PaneDivider";
 import {
   findMaxLineNumber,
@@ -51,7 +51,6 @@ import { useWatchedInput, type WatchedInputRuntime } from "./hooks/useWatchedInp
 import { agentNoteMarkupWidth } from "./lib/agentNoteGeometry";
 import { buildAppMenus } from "./lib/appMenus";
 import { nextExtensionTrustPromptRoot } from "./lib/extensionTrustPrompt";
-import { fileRowId } from "./lib/ids";
 import { openSelectedFileInEditor } from "./lib/openInEditor";
 import { resolveResponsiveLayout } from "./lib/responsive";
 import { resizeSidebarWidth } from "./lib/sidebar";
@@ -156,7 +155,6 @@ export function App({
   );
   const renderer = useRenderer();
   const terminal = useTerminalDimensions();
-  const sidebarScrollRef = useRef<ScrollBoxRenderable | null>(null);
   const diffScrollRef = useRef<ScrollBoxRenderable | null>(null);
   const wrapToggleScrollTopRef = useRef<number | null>(null);
   const layoutToggleScrollTopRef = useRef<number | null>(null);
@@ -335,10 +333,14 @@ export function App({
     emitExtensionEvent(extensions, "changeset_loaded", { changeset: bootstrap.changeset });
   }, [bootstrap.changeset, extensions]);
 
-  // The one extension-contributed sidebar this session renders with, if any.
-  // Duplicate registrations were already reported when registrations applied.
-  const extensionSidebar = useMemo(
-    () => (extensions ? resolveExtensionSidebarView(extensions.registry).active : undefined),
+  // The sidebar view this session renders with. A user-registered view
+  // overrides the bundled default; duplicate registrations were already
+  // reported when registrations applied. The built-in sidebar is itself a
+  // bundled extension, so every session renders through the extension path.
+  const activeSidebar = useMemo(
+    () =>
+      (extensions ? resolveExtensionSidebarView(extensions.registry).active : undefined) ??
+      getBundledSidebarView(),
     [extensions],
   );
 
@@ -443,14 +445,6 @@ export function App({
     // feels immediate after toggling split/stack or line wrapping.
     renderer.intermediateRender();
   }, [renderer, renderSidebar, resolvedLayout, terminal.height, terminal.width, wrapLines]);
-
-  useEffect(() => {
-    if (!selectedFile) {
-      return;
-    }
-
-    sidebarScrollRef.current?.scrollChildIntoView(fileRowId(selectedFile.id));
-  }, [selectedFile]);
 
   /** Scroll the main review pane by line steps, viewport fractions, or whole-content jumps. */
   const scrollDiff = (
@@ -1173,7 +1167,6 @@ export function App({
     0,
   );
   const topTitle = `${bootstrap.changeset.title}  +${totalAdditions}  -${totalDeletions}`;
-  const sidebarTextWidth = Math.max(8, clampedSidebarWidth - 2);
   const diffHeaderStatsWidth = Math.min(24, Math.max(16, Math.floor(diffContentWidth / 3)));
   const diffHeaderLabelWidth = Math.max(8, diffContentWidth - diffHeaderStatsWidth - 1);
   const diffSeparatorWidth = Math.max(4, diffContentWidth - 2);
@@ -1182,24 +1175,6 @@ export function App({
   const diffPaneScreenLeft =
     bodyPadding / 2 + (renderSidebar ? clampedSidebarWidth + DIVIDER_WIDTH : 0);
   const diffPaneScreenTop = pagerMode || !showMenuBar ? 0 : 1;
-
-  /** The built-in sidebar: the default pane, and the extension view's fallback. */
-  const renderBuiltInSidebar = () => (
-    <SidebarPane
-      entries={review.sidebarEntries}
-      scrollRef={sidebarScrollRef}
-      selectedFileId={selectedFile?.id}
-      showTopChrome={showMenuBar}
-      textWidth={sidebarTextWidth}
-      theme={activeTheme}
-      width={clampedSidebarWidth}
-      estimatedViewportRows={terminal.height}
-      onSelectFile={(fileId) => {
-        focusFiles();
-        jumpToFile(fileId, 0, { alignFileHeaderTop: true });
-      }}
-    />
-  );
 
   return (
     <box
@@ -1250,32 +1225,27 @@ export function App({
       >
         {renderSidebar ? (
           <>
-            {extensionSidebar ? (
-              <ExtensionSidebarPane
-                // Remounting on a different registration resets the error
-                // boundary, so a reloaded extension gets a fresh chance.
-                key={`${extensionSidebar.extensionId}:${extensionSidebar.view.id}`}
-                registered={extensionSidebar}
-                files={filteredFiles}
-                selectedFileId={selectedFileId}
-                selectedHunkIndex={selectedFileId === null ? null : selectedHunkIndex}
-                showTopChrome={showMenuBar}
-                theme={activeTheme}
-                width={clampedSidebarWidth}
-                notify={(message, type) => extensions?.context.notify(message, type)}
-                onSelectFile={(fileId) => {
-                  focusFiles();
-                  jumpToFile(fileId, 0, { alignFileHeaderTop: true });
-                }}
-                onSelectHunk={(fileId, hunkIndex) => {
-                  focusFiles();
-                  review.selectHunk(fileId, hunkIndex);
-                }}
-                renderFallback={renderBuiltInSidebar}
-              />
-            ) : (
-              renderBuiltInSidebar()
-            )}
+            <ExtensionSidebarPane
+              // Remounting on a different registration resets the error
+              // boundary, so a reloaded extension gets a fresh chance.
+              key={`${activeSidebar.extensionId}:${activeSidebar.view.id}`}
+              registered={activeSidebar}
+              files={filteredFiles}
+              selectedFileId={selectedFileId}
+              selectedHunkIndex={selectedFileId === null ? null : selectedHunkIndex}
+              showTopChrome={showMenuBar}
+              theme={activeTheme}
+              width={clampedSidebarWidth}
+              notify={(message, type) => extensions?.context.notify(message, type)}
+              onSelectFile={(fileId) => {
+                focusFiles();
+                jumpToFile(fileId, 0, { alignFileHeaderTop: true });
+              }}
+              onSelectHunk={(fileId, hunkIndex) => {
+                focusFiles();
+                review.selectHunk(fileId, hunkIndex);
+              }}
+            />
 
             <PaneDivider
               dividerHitLeft={dividerHitLeft}

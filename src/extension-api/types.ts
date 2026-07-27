@@ -134,6 +134,16 @@ export interface ExtensionDiffFile {
    * metadata is rejected, and the previous changeset is kept.
    */
   metadata: unknown;
+  /**
+   * How this file changed, using the same vocabulary VCS adapters report.
+   *
+   * Present on the read-only views Hunk hands outward (event payloads, sidebar
+   * props); a transform that synthesizes a file may omit it, and the file is
+   * treated as an ordinary `"change"`.
+   */
+  changeType?: ExtensionVcsFileChangeType;
+  /** True when `stats` were counted from a partial read and undercount the file. */
+  statsTruncated?: boolean;
   agent: AgentFileContext | null;
   isUntracked?: boolean;
   isBinary?: boolean;
@@ -581,6 +591,8 @@ export interface ExtensionSidebarTheme {
   fileRenamed: string;
   fileModified: string;
   fileUntracked: string;
+  /** Accent for agent-note affordances, like the note-count badge on a file row. */
+  noteBorder: string;
 }
 
 /**

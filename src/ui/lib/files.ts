@@ -2,6 +2,7 @@ import { basename, dirname } from "node:path/posix";
 import type { FileDiffMetadata } from "@pierre/diffs";
 import { normalizeDiffPath } from "../../core/diffPaths";
 import type { AgentAnnotation, DiffFile } from "../../core/types";
+import { readMetadataChangeType } from "../../extensions/events";
 import { sanitizeTerminalLine } from "../../lib/terminalText";
 
 export interface FileListEntry {
@@ -15,6 +16,27 @@ export interface FileListEntry {
   isUntracked: boolean;
 }
 
+/**
+ * The slice of one reviewed file the sidebar needs to build its entries.
+ *
+ * Structural on purpose: Hunk's internal `DiffFile` satisfies it through
+ * `metadata.type`, and the public `ExtensionDiffFile` view satisfies it through
+ * its first-class `changeType`, so the built-in sidebar — which is itself a
+ * bundled extension consuming the public props — and internal callers share
+ * this one entry builder.
+ */
+export interface SidebarFileSource {
+  id: string;
+  path: string;
+  previousPath?: string;
+  stats: { additions: number; deletions: number };
+  statsTruncated?: boolean;
+  isUntracked?: boolean;
+  agent?: { annotations: readonly unknown[] } | null;
+  changeType?: FileDiffMetadata["type"];
+  metadata?: unknown;
+}
+
 export interface FileGroupEntry {
   kind: "group";
   id: string;
@@ -24,7 +46,7 @@ export interface FileGroupEntry {
 export type SidebarEntry = FileListEntry | FileGroupEntry;
 
 /** Build the filename-first label shown inside one sidebar row. */
-function sidebarFileName(file: DiffFile) {
+function sidebarFileName(file: SidebarFileSource) {
   const path = sanitizeTerminalLine(normalizeDiffPath(file.path) ?? file.path);
   const previousPath = file.previousPath
     ? sanitizeTerminalLine(normalizeDiffPath(file.previousPath) ?? file.previousPath)
@@ -120,7 +142,7 @@ export function filterReviewFiles(files: DiffFile[], query: string): DiffFile[] 
 }
 
 /** Build the grouped sidebar entries while preserving the review stream order. */
-export function buildSidebarEntries(files: DiffFile[]): SidebarEntry[] {
+export function buildSidebarEntries(files: readonly SidebarFileSource[]): SidebarEntry[] {
   const entries: SidebarEntry[] = [];
   let activeGroup: string | undefined;
 
@@ -146,7 +168,7 @@ export function buildSidebarEntries(files: DiffFile[]): SidebarEntry[] {
       agentCommentsText: agentCommentCount > 0 ? `*${agentCommentCount}` : null,
       additionsText: formatSidebarStat("+", file.stats.additions, file.statsTruncated),
       deletionsText: formatSidebarStat("-", file.stats.deletions),
-      changeType: file.metadata.type,
+      changeType: file.changeType ?? readMetadataChangeType(file.metadata) ?? "change",
       isUntracked: file.isUntracked ?? false,
     });
   });

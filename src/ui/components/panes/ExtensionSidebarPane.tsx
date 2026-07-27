@@ -5,6 +5,7 @@ import type {
   ExtensionSidebarTheme,
   ExtensionSidebarViewProps,
 } from "../../../extension-api/types";
+import { BuiltInSidebarView } from "../../../extensions/bundled/sidebar";
 import { toReadOnlyFileViews } from "../../../extensions/events";
 import type { ExtensionNotifySink, RegisteredSidebarView } from "../../../extensions/types";
 import type { DiffFile } from "../../../core/types";
@@ -68,17 +69,20 @@ function toSidebarTheme(theme: AppTheme): ExtensionSidebarTheme {
     fileRenamed: theme.fileRenamed,
     fileModified: theme.fileModified,
     fileUntracked: theme.fileUntracked,
+    noteBorder: theme.noteBorder,
   };
 }
 
 /**
- * Mount one extension-contributed sidebar view in place of the built-in pane.
+ * Mount the active sidebar view — bundled or extension-contributed.
  *
  * The host stays the authority on layout: this renders inside the exact box
- * the built-in sidebar would occupy — same width, border, and panel surface —
- * and only the contents come from the extension. Everything handed to the
- * component is either a frozen view or a guarded callback, so the review
- * model cannot be corrupted from inside a custom sidebar.
+ * the sidebar occupies — width, border, and panel surface — and only the
+ * contents come from the view component. Everything handed to the component is
+ * either a frozen view or a guarded callback, so the review model cannot be
+ * corrupted from inside a custom sidebar. The built-in sidebar takes this
+ * exact path too: it is a bundled extension consuming these same props, which
+ * is what keeps them sufficient for third-party sidebars.
  */
 export function ExtensionSidebarPane({
   registered,
@@ -91,7 +95,6 @@ export function ExtensionSidebarPane({
   notify,
   onSelectFile,
   onSelectHunk,
-  renderFallback,
 }: {
   registered: RegisteredSidebarView;
   /** The visible review-stream files, already filtered like the built-in sidebar's. */
@@ -104,8 +107,6 @@ export function ExtensionSidebarPane({
   notify: ExtensionNotifySink;
   onSelectFile: (fileId: string) => void;
   onSelectHunk: (fileId: string, hunkIndex: number) => void;
-  /** The built-in sidebar, rendered when the extension component fails. */
-  renderFallback: () => ReactNode;
 }) {
   const { extensionId } = registered;
   const publicFiles = useMemo(() => toReadOnlyFileViews(files), [files]);
@@ -157,9 +158,38 @@ export function ExtensionSidebarPane({
   // an ordinary function component rendered in Hunk's own tree.
   const View = registered.view.component as (props: ExtensionSidebarViewProps) => ReactNode;
 
+  const viewProps: ExtensionSidebarViewProps = {
+    files: publicFiles,
+    selectedFileId,
+    selectedHunkIndex,
+    width,
+    theme: publicTheme,
+    actions,
+  };
+
+  /** The pane chrome the host owns, whichever component fills it. */
+  const paneBox = (children: ReactNode) => (
+    <box
+      style={{
+        width,
+        border: showTopChrome ? ["top"] : [],
+        borderColor: theme.border,
+        backgroundColor: theme.panel,
+        paddingX: 0,
+        flexDirection: "column",
+        ...(showTopChrome ? { paddingY: 1 } : { paddingTop: 0, paddingBottom: 1 }),
+      }}
+    >
+      {children}
+    </box>
+  );
+
   return (
     <ExtensionSidebarErrorBoundary
-      fallback={renderFallback()}
+      // The bundled sidebar consumes the same props, so a failed extension view
+      // degrades to the default sidebar without leaving the extension pipeline's
+      // prop model. The bundled view failing is a Hunk bug and crashes as such.
+      fallback={paneBox(<BuiltInSidebarView {...viewProps} />)}
       onError={(error) => {
         notify(
           `Extension ${extensionId} sidebar view "${registered.view.id}" failed rendering • ` +
@@ -168,26 +198,7 @@ export function ExtensionSidebarPane({
         );
       }}
     >
-      <box
-        style={{
-          width,
-          border: showTopChrome ? ["top"] : [],
-          borderColor: theme.border,
-          backgroundColor: theme.panel,
-          paddingX: 0,
-          flexDirection: "column",
-          ...(showTopChrome ? { paddingY: 1 } : { paddingTop: 0, paddingBottom: 1 }),
-        }}
-      >
-        <View
-          files={publicFiles}
-          selectedFileId={selectedFileId}
-          selectedHunkIndex={selectedHunkIndex}
-          width={width}
-          theme={publicTheme}
-          actions={actions}
-        />
-      </box>
+      {paneBox(<View {...viewProps} />)}
     </ExtensionSidebarErrorBoundary>
   );
 }

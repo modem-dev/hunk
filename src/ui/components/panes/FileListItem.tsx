@@ -1,11 +1,21 @@
 import { memo } from "react";
+import type { ExtensionSidebarTheme } from "../../../extension-api/types";
 import { fileRowId } from "../../lib/ids";
 import { sidebarEntryStats, type FileGroupEntry, type FileListEntry } from "../../lib/files";
 import { fitText, padText } from "../../lib/text";
-import type { AppTheme } from "../../themes";
+
+/**
+ * Rows render from the public sidebar theme tokens rather than the full
+ * internal theme: the built-in sidebar is a bundled extension consuming the
+ * published props, and these rows are what it draws. `AppTheme` satisfies the
+ * token slice structurally, so internal callers pass their theme unchanged.
+ */
 
 /** Get icon and color for file state using standard git status codes. */
-function getFileStateIcon(entry: FileListEntry, theme: AppTheme): { icon: string; color: string } {
+function getFileStateIcon(
+  entry: FileListEntry,
+  theme: ExtensionSidebarTheme,
+): { icon: string; color: string } {
   if (entry.isUntracked) {
     return { icon: "?", color: theme.fileUntracked };
   }
@@ -35,7 +45,7 @@ export function FileGroupHeader({
   entry: FileGroupEntry;
   paddingLeft?: number;
   textWidth: number;
-  theme: AppTheme;
+  theme: ExtensionSidebarTheme;
 }) {
   return (
     <box
@@ -66,7 +76,7 @@ export const FileListItem = memo(function FileListItem({
   selected: boolean;
   statsWidth: number;
   textWidth: number;
-  theme: AppTheme;
+  theme: ExtensionSidebarTheme;
   onSelectFile: (fileId: string) => void;
 }) {
   const rowBackground = selected ? theme.panelAlt : theme.panel;

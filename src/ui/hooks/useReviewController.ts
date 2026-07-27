@@ -48,7 +48,6 @@ import {
   buildReviewState,
   buildSelectedHunkSummary,
   findNextAnnotatedFile,
-  type ReviewState,
   resolveReviewNavigationTarget,
 } from "../lib/reviewState";
 
@@ -150,7 +149,6 @@ export interface ReviewController {
   selectedHunkRevealRequestId: number;
   selectedHunk: DiffFile["metadata"]["hunks"][number] | undefined;
   selectedHunkIndex: number;
-  sidebarEntries: ReviewState["sidebarEntries"];
   sourceStatusByFileId: Record<string, FileSourceStatus>;
   toggleGap: (fileId: string, gapKey: string) => void;
   toggleSelectedHunkGap: () => void;
@@ -270,32 +268,25 @@ export function useReviewController({
 
   const deferredFilter = useDeferredValue(filter);
 
-  const {
-    allFiles,
-    visibleFiles,
-    sidebarEntries,
-    selectedFile,
-    selectedHunk,
-    hunkCursors,
-    annotatedHunkCursors,
-  } = useMemo(
-    () =>
-      buildReviewState({
+  const { allFiles, visibleFiles, selectedFile, selectedHunk, hunkCursors, annotatedHunkCursors } =
+    useMemo(
+      () =>
+        buildReviewState({
+          files,
+          liveCommentsByFileId: mergeAnnotationMaps(liveCommentsByFileId, userNotesByFileId),
+          filterQuery: deferredFilter,
+          selectedFileId,
+          selectedHunkIndex,
+        }),
+      [
+        deferredFilter,
         files,
-        liveCommentsByFileId: mergeAnnotationMaps(liveCommentsByFileId, userNotesByFileId),
-        filterQuery: deferredFilter,
+        liveCommentsByFileId,
         selectedFileId,
         selectedHunkIndex,
-      }),
-    [
-      deferredFilter,
-      files,
-      liveCommentsByFileId,
-      selectedFileId,
-      selectedHunkIndex,
-      userNotesByFileId,
-    ],
-  );
+        userNotesByFileId,
+      ],
+    );
 
   /** Update the selection and reveal intent together so diff scrolling stays explicit. */
   const selectHunk = useCallback(
@@ -1075,7 +1066,6 @@ export function useReviewController({
     selectedHunkRevealRequestId,
     selectedHunk,
     selectedHunkIndex,
-    sidebarEntries,
     sourceStatusByFileId,
     toggleGap,
     toggleSelectedHunkGap,

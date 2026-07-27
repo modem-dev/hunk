@@ -59,10 +59,12 @@ repository's own README.
 
 ## Bundled extensions
 
-Every VCS backend Hunk ships — **Git, Jujutsu, and Sapling** — is an extension.
-They live in `src/extensions/bundled/`, are compiled into the binary, and
-register through the same `hunk.registerVcsAdapter` this guide documents. There
-is no core-registered backend left and no private path into the review pipeline.
+Every VCS backend Hunk ships — **Git, Jujutsu, and Sapling** — is an extension,
+and so is the **built-in file-navigation sidebar**. They live in
+`src/extensions/bundled/`, are compiled into the binary, and register through
+the same `hunk.registerVcsAdapter` and `hunk.registerSidebarView` this guide
+documents. There is no core-registered backend left, no private sidebar, and no
+private path into the review pipeline.
 
 Git in particular is the reason: it is the backend that exercises every
 integration point there is — exact file sources, skipped-too-large placeholders,
@@ -457,14 +459,14 @@ elements and need no import.
 
 The component receives fresh props as the app changes:
 
-| Prop                | What it is                                                              |
-| ------------------- | ----------------------------------------------------------------------- |
-| `files`             | the visible reviewed files, review-stream order, filtered, frozen views |
-| `selectedFileId`    | the selected file, or `null`                                            |
-| `selectedHunkIndex` | the selected hunk within that file, or `null`                           |
-| `width`             | terminal columns the sidebar pane occupies                              |
-| `theme`             | hex color tokens from the active theme, updated on theme switch         |
-| `actions`           | navigation the sidebar may trigger                                      |
+| Prop                | What it is                                                                                                                                            |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `files`             | the visible reviewed files, review-stream order, filtered, frozen views (each carries `changeType` and `statsTruncated` beside the usual file fields) |
+| `selectedFileId`    | the selected file, or `null`                                                                                                                          |
+| `selectedHunkIndex` | the selected hunk within that file, or `null`                                                                                                         |
+| `width`             | terminal columns the sidebar pane occupies                                                                                                            |
+| `theme`             | hex color tokens from the active theme, updated on theme switch                                                                                       |
+| `actions`           | navigation the sidebar may trigger                                                                                                                    |
 
 `actions.selectFile(fileId)` and `actions.selectHunk(fileId, hunkIndex)` route
 through the same review controller as the built-in sidebar and the keyboard
@@ -474,12 +476,19 @@ row. `actions.notify(message, type?)` shows a toast attributed to your
 extension. An action given a file id that is not currently visible is refused
 with a warning rather than corrupting the selection.
 
-One sidebar view is active per session: the first registration in load order
-wins and later ones are skipped with a warning. Hunk keeps owning the pane's
-placement — width, the resize divider, responsive show/hide — and your component
-fills it. A component that throws while rendering costs you the pane, not the
-user the session: the failure is reported as a toast naming your extension and
-the built-in sidebar takes over.
+One sidebar view is active per session: a registered view overrides the
+built-in sidebar, the first registration in load order wins, and later ones are
+skipped with a warning. Hunk keeps owning the pane's placement — width, the
+resize divider, responsive show/hide — and your component fills it. A component
+that throws while rendering costs you the pane, not the user the session: the
+failure is reported as a toast naming your extension and the built-in sidebar
+takes over.
+
+The built-in sidebar is itself a bundled extension
+(`src/extensions/bundled/sidebar/`): it registers through this exact call and
+its component consumes exactly the props documented above, so it doubles as the
+reference implementation — anything it renders (grouping, change-type icons,
+stat badges, selection follow), yours can too.
 
 ### `hunk.transformChangeset(fn)`
 

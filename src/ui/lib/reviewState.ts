@@ -10,12 +10,7 @@ import { findDiffFileByPath, findHunkIndexForLine, hunkLineRange } from "../../c
 import { noDiffFileMatchesMessage } from "../../hunk-session/agentErrors";
 import type { AgentAnnotation, DiffFile } from "../../core/types";
 import type { NavigateToHunkToolInput, SelectedHunkSummary } from "../../hunk-session/types";
-import {
-  buildSidebarEntries,
-  filterReviewFiles,
-  mergeFileAnnotationsByFileId,
-  type SidebarEntry,
-} from "./files";
+import { filterReviewFiles, mergeFileAnnotationsByFileId } from "./files";
 import {
   buildAnnotatedHunkCursors,
   buildHunkCursors,
@@ -34,7 +29,6 @@ export interface BuildReviewStateOptions {
 export interface ReviewState {
   allFiles: DiffFile[];
   visibleFiles: DiffFile[];
-  sidebarEntries: SidebarEntry[];
   selectedFile: DiffFile | undefined;
   selectedHunk: DiffFile["metadata"]["hunks"][number] | undefined;
   hunkCursors: HunkCursor[];
@@ -62,7 +56,6 @@ export function buildReviewState({
   return {
     allFiles,
     visibleFiles,
-    sidebarEntries: buildSidebarEntries(visibleFiles),
     selectedFile,
     selectedHunk: selectedFile?.metadata.hunks[selectedHunkIndex],
     hunkCursors: buildHunkCursors(visibleFiles),

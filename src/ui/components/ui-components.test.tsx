@@ -17,9 +17,9 @@ import { measureDiffSectionGeometry } from "../diff/diffSectionGeometry";
 import { buildFileSectionLayouts, buildInStreamFileHeaderHeights } from "../lib/fileSectionLayout";
 
 const { AppHost } = await import("../AppHost");
-const { buildSidebarEntries } = await import("../lib/files");
+const { toReadOnlyFileViews } = await import("../../extensions/events");
+const { BuiltInSidebarView } = await import("../../extensions/bundled/sidebar");
 const { HelpDialog } = await import("./chrome/HelpDialog");
-const { SidebarPane } = await import("./panes/SidebarPane");
 const { AgentCard } = await import("./panes/AgentCard");
 const { AgentInlineNote, measureAgentInlineNoteHeight } = await import("./panes/AgentInlineNote");
 const { DiffPane } = await import("./panes/DiffPane");
@@ -397,7 +397,7 @@ function renderedWordDiffBackgroundDistance(
 }
 
 describe("UI components", () => {
-  test("SidebarPane renders grouped file rows with indented filenames and right-aligned stats", async () => {
+  test("the bundled sidebar view renders grouped file rows from the public props", async () => {
     const theme = resolveTheme("github-dark-default", null);
     const files = [
       createTestDiffFile(
@@ -449,14 +449,14 @@ describe("UI components", () => {
       ),
     ];
     const frame = await captureFrame(
-      <SidebarPane
-        entries={buildSidebarEntries(files)}
-        scrollRef={createRef()}
+      <BuiltInSidebarView
+        // The exact frozen file views the extension pipeline hands any sidebar.
+        files={toReadOnlyFileViews(files)}
         selectedFileId="app"
-        textWidth={28}
+        selectedHunkIndex={0}
         theme={theme}
-        width={32}
-        onSelectFile={() => {}}
+        width={30}
+        actions={{ selectFile: () => {}, selectHunk: () => {}, notify: () => {} }}
       />,
       36,
       12,

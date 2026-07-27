@@ -5,6 +5,7 @@ import type {
   ExtensionEventPayloads,
   ExtensionLoadResult,
 } from "./types";
+import type { ExtensionVcsFileChangeType } from "../extension-api/types";
 
 /**
  * How long `shutdown` handlers may run before Hunk exits anyway.
@@ -46,17 +47,42 @@ export function toReadOnlyChangesetView(changeset: ExtensionChangeset): Extensio
 }
 
 /**
+ * Read the change type Hunk's diff engine recorded for one file, if any.
+ *
+ * `metadata` is opaque in the public contract, but the change type inside it is
+ * exactly the vocabulary adapters already speak (`ExtensionVcsFileChangeType`),
+ * so the read-only views surface it as a first-class field instead of asking
+ * extensions to poke into an object Hunk promised not to describe.
+ */
+export function readMetadataChangeType(metadata: unknown): ExtensionVcsFileChangeType | undefined {
+  const type = (metadata as { type?: unknown } | null | undefined)?.type;
+  return type === "change" ||
+    type === "rename-pure" ||
+    type === "rename-changed" ||
+    type === "new" ||
+    type === "deleted"
+    ? type
+    : undefined;
+}
+
+/**
  * Build the read-only file-list view extension UI code receives.
  *
  * The same isolation story as `toReadOnlyChangesetView` — frozen shallow
  * copies, shared opaque `metadata` — factored out so surfaces that hand
  * extensions a file list without a changeset envelope (a custom sidebar's
- * props) freeze it identically.
+ * props) freeze it identically. `changeType` is filled from the diff metadata
+ * when the file does not carry it already.
  */
 export function toReadOnlyFileViews(files: readonly ExtensionDiffFile[]): ExtensionDiffFile[] {
-  const frozenFiles = files.map((file) =>
-    file !== null && typeof file === "object" ? Object.freeze({ ...file }) : file,
-  ) as ExtensionDiffFile[];
+  const frozenFiles = files.map((file) => {
+    if (file === null || typeof file !== "object") {
+      return file;
+    }
+
+    const changeType = file.changeType ?? readMetadataChangeType(file.metadata);
+    return Object.freeze(changeType ? { ...file, changeType } : { ...file });
+  }) as ExtensionDiffFile[];
 
   return Object.freeze(frozenFiles) as ExtensionDiffFile[];
 }
