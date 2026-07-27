@@ -235,6 +235,68 @@ const addNoteBadgeText = "[+]";
 const styledTextColorCache = new Map<string, ReturnType<typeof parseColor>>();
 const addNoteSpacerContentCache = new Map<string, StyledText>();
 
+interface RenderedRowWidthBudgetInput {
+  width: number;
+  wrapLines: boolean;
+  reserveAddNoteColumn?: boolean;
+  showAddNoteBadge?: boolean;
+  noteGuideSide?: "old" | "new";
+}
+
+interface RenderedSplitRowWidthBudget {
+  addNoteWidth: number;
+  leftWidth: number;
+  rightRenderWidth: number;
+}
+
+interface RenderedStackRowWidthBudget {
+  addNoteWidth: number;
+  contentWidth: number;
+}
+
+function resolveRenderedRowWidthBudget(
+  rowType: "split-line",
+  input: RenderedRowWidthBudgetInput,
+): RenderedSplitRowWidthBudget;
+function resolveRenderedRowWidthBudget(
+  rowType: "stack-line",
+  input: RenderedRowWidthBudgetInput,
+): RenderedStackRowWidthBudget;
+/**
+ * Resolve the exact widths used to render one diff row.
+ *
+ * Wrapped height depends on these widths, so measurement and rendering must reserve the note guide
+ * and add-note columns through the same path.
+ */
+function resolveRenderedRowWidthBudget(
+  rowType: "split-line" | "stack-line",
+  {
+    width,
+    wrapLines,
+    reserveAddNoteColumn = false,
+    showAddNoteBadge = false,
+    noteGuideSide,
+  }: RenderedRowWidthBudgetInput,
+): RenderedSplitRowWidthBudget | RenderedStackRowWidthBudget {
+  const addNoteWidth =
+    showAddNoteBadge || (wrapLines && reserveAddNoteColumn) ? addNoteBadgeText.length : 0;
+  const newSideGuideWidth = noteGuideSide === "new" ? 1 : 0;
+
+  if (rowType === "stack-line") {
+    return {
+      addNoteWidth,
+      contentWidth: Math.max(0, width - newSideGuideWidth - addNoteWidth),
+    };
+  }
+
+  const { leftWidth, rightWidth } = resolveSplitPaneWidths(width);
+  return {
+    addNoteWidth,
+    leftWidth,
+    rightRenderWidth: Math.max(0, rightWidth - newSideGuideWidth - addNoteWidth),
+  };
+}
+
 /** Resolve one OpenTUI color while reusing immutable parsed theme values. */
 function styledTextColor(value: string | undefined) {
   if (!value) {
@@ -498,11 +560,6 @@ function appendWrappedCellChunks(
     palette.contentBg,
     contentHighlightBg,
   );
-}
-
-/** Reserve the hover affordance column in wrapped rows so hover cannot reflow code. */
-function wrappedAddNoteReserveWidth(wrapLines: boolean, reserveAddNoteColumn = false) {
-  return wrapLines && reserveAddNoteColumn ? addNoteBadgeText.length : 0;
 }
 
 /** Render a fixed-width inline span sequence for one diff cell. */
@@ -1684,6 +1741,14 @@ function renderWrappedStackCellLine(
   );
 }
 
+/**
+ * Rows occupied by a no-hunk file body: one message row and one row of inter-section spacing.
+ *
+ * Keeping this aggregate height shared prevents an unmounted placeholder from changing the review
+ * stream extent when file-level windowing replaces it with a spacer.
+ */
+export const DIFF_MESSAGE_BODY_HEIGHT = 2;
+
 /** Review-stream wording for each shared reason a file renders no diff rows. */
 export const DIFF_MESSAGES: Record<ReviewEmptyDiffReason, string> = {
   "rename-only": "No textual hunks. This change only renames the file.",
@@ -1870,17 +1935,27 @@ function renderAddNoteSpacer(key: string, width: number, bg: string) {
   );
 }
 
+interface RenderedRowHeightOptions {
+  width: number;
+  lineNumberDigits: number;
+  showLineNumbers: boolean;
+  showHunkHeaders: boolean;
+  wrapLines: boolean;
+  reserveAddNoteColumn?: boolean;
+  noteGuideSide?: "old" | "new";
+}
+
 /** Measure how many terminal rows one rendered diff row occupies. */
-export function measureRenderedRowHeight(
-  row: DiffRow,
-  width: number,
-  lineNumberDigits: number,
-  showLineNumbers: boolean,
-  showHunkHeaders: boolean,
-  wrapLines: boolean,
-  _theme: AppTheme,
-  reserveAddNoteColumn = false,
-) {
+export function measureRenderedRowHeight(row: DiffRow, options: RenderedRowHeightOptions) {
+  const {
+    lineNumberDigits,
+    noteGuideSide,
+    reserveAddNoteColumn,
+    showHunkHeaders,
+    showLineNumbers,
+    width,
+    wrapLines,
+  } = options;
   if (row.type === "hunk-header") {
     return showHunkHeaders ? 1 : 0;
   }
@@ -1895,8 +1970,12 @@ export function measureRenderedRowHeight(
     }
 
     const markerWidth = 1;
-    const hoverReserveWidth = wrappedAddNoteReserveWidth(wrapLines, reserveAddNoteColumn);
-    const { leftWidth, rightWidth } = resolveSplitPaneWidths(width);
+    const { leftWidth, rightRenderWidth } = resolveRenderedRowWidthBudget("split-line", {
+      noteGuideSide,
+      reserveAddNoteColumn,
+      width,
+      wrapLines,
+    });
     const leftGeometry = resolveSplitCellGeometry(
       leftWidth,
       lineNumberDigits,
@@ -1904,7 +1983,7 @@ export function measureRenderedRowHeight(
       markerWidth,
     );
     const rightGeometry = resolveSplitCellGeometry(
-      Math.max(0, rightWidth - hoverReserveWidth),
+      rightRenderWidth,
       lineNumberDigits,
       showLineNumbers,
       markerWidth,
@@ -1924,8 +2003,14 @@ export function measureRenderedRowHeight(
     return 1;
   }
 
+  const { contentWidth } = resolveRenderedRowWidthBudget("stack-line", {
+    noteGuideSide,
+    reserveAddNoteColumn,
+    width,
+    wrapLines,
+  });
   const cellGeometry = resolveStackCellGeometry(
-    Math.max(0, width - wrappedAddNoteReserveWidth(wrapLines, reserveAddNoteColumn)),
+    contentWidth,
     lineNumberDigits,
     showLineNumbers,
     marker().length,
@@ -2111,11 +2196,18 @@ function renderRow(
           ? { side: "old", line: row.left.lineNumber }
           : undefined;
 
-    // Reserve fixed columns for the diff rails, center separator slot, and hover affordance.
-    const addBadgeWidth =
-      showAddNoteBadge || (wrapLines && reserveAddNoteColumn) ? addNoteBadgeText.length : 0;
-    const { leftWidth, rightWidth } = resolveSplitPaneWidths(width);
-    const rightRenderWidth = Math.max(0, rightWidth - (guideOnNewSide ? 1 : 0) - addBadgeWidth);
+    // Measurement reads this same budget, so a wrapped row cannot disagree by one reserved column.
+    const {
+      addNoteWidth: addBadgeWidth,
+      leftWidth,
+      rightRenderWidth,
+    } = resolveRenderedRowWidthBudget("split-line", {
+      noteGuideSide,
+      reserveAddNoteColumn,
+      showAddNoteBadge,
+      width,
+      wrapLines,
+    });
     const leftPrefix = {
       text: guideOnOldSide ? "│" : marker(),
       fg: guideOnOldSide
@@ -2372,9 +2464,16 @@ function renderRow(
         : row.cell.oldLineNumber !== undefined
           ? { side: "old", line: row.cell.oldLineNumber }
           : undefined;
-    const addBadgeWidth =
-      showAddNoteBadge || (wrapLines && reserveAddNoteColumn) ? addNoteBadgeText.length : 0;
-    const contentWidth = Math.max(0, width - (guideOnNewSide ? 1 : 0) - addBadgeWidth);
+    const { addNoteWidth: addBadgeWidth, contentWidth } = resolveRenderedRowWidthBudget(
+      "stack-line",
+      {
+        noteGuideSide,
+        reserveAddNoteColumn,
+        showAddNoteBadge,
+        width,
+        wrapLines,
+      },
+    );
     const prefix = {
       text: guideOnOldSide ? "│" : marker(),
       fg: guideOnOldSide

@@ -254,4 +254,73 @@ describe("PTY navigation", () => {
       session.close();
     }
   });
+
+  test("wrapped hunk navigation crosses unmounted file ranges with exact key counts", async () => {
+    const fixture = harness.createWrappedStreamRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split", "--wrap"],
+      cwd: fixture.dir,
+      cols: 160,
+      rows: 10,
+    });
+
+    try {
+      const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+      expect(initial).toContain("marker1Extra = 100");
+      expect(initial).not.toContain("marker8Extra = 800");
+
+      await harness.ensureKeyboardIsLive(session);
+
+      // Observe every semantic destination after exactly one keypress. Requiring the intended
+      // marker while excluding the next one makes a double advance fail on file 2, not only at the
+      // endpoint. waitForSnapshot only observes redraws; it never adds navigation input or retries.
+      for (let fileNumber = 2; fileNumber <= 8; fileNumber += 1) {
+        const targetMarker = `marker${fileNumber}Extra = ${fileNumber * 100}`;
+        const beforePress = await session.text({ immediate: true });
+        expect(beforePress).not.toContain(targetMarker);
+
+        await session.press("]");
+        const skippedMarker =
+          fileNumber < 8 ? `marker${fileNumber + 1}Extra = ${(fileNumber + 1) * 100}` : null;
+        const snapshot = await harness.waitForSnapshot(
+          session,
+          (text) =>
+            text.includes(targetMarker) &&
+            (skippedMarker === null || !text.includes(skippedMarker)),
+          5_000,
+        );
+
+        expect(snapshot).toContain(targetMarker);
+        if (skippedMarker) {
+          expect(snapshot).not.toContain(skippedMarker);
+        }
+      }
+
+      for (let fileNumber = 7; fileNumber >= 1; fileNumber -= 1) {
+        const targetMarker = `marker${fileNumber}Extra = ${fileNumber * 100}`;
+        const beforePress = await session.text({ immediate: true });
+        expect(beforePress).not.toContain(targetMarker);
+
+        await session.press("[");
+        const skippedMarker =
+          fileNumber > 1 ? `marker${fileNumber - 1}Extra = ${(fileNumber - 1) * 100}` : null;
+        const snapshot = await harness.waitForSnapshot(
+          session,
+          (text) =>
+            text.includes(targetMarker) &&
+            (skippedMarker === null || !text.includes(skippedMarker)),
+          5_000,
+        );
+
+        expect(snapshot).toContain(targetMarker);
+        if (skippedMarker) {
+          expect(snapshot).not.toContain(skippedMarker);
+        }
+      }
+    } finally {
+      session.close();
+    }
+  });
 });

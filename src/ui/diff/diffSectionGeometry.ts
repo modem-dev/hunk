@@ -15,7 +15,7 @@ import {
 } from "./reviewRowGeometry";
 import type { PlannedFileViewRow } from "../fileViews/renderPlan";
 import type { PlannedReviewRow } from "./reviewRenderPlan";
-import { measureRenderedRowHeight } from "./renderRows";
+import { DIFF_MESSAGE_BODY_HEIGHT, measureRenderedRowHeight } from "./renderRows";
 
 const EMPTY_EXPANDED_GAP_KEYS: ReadonlySet<string> = new Set();
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
@@ -195,7 +195,6 @@ interface DiffSectionRowHeightOptions {
   showHunkHeaders: boolean;
   showLineNumbers: boolean;
   reserveAddNoteColumn: boolean;
-  theme: AppTheme;
   width: number;
   wrapLines: boolean;
 }
@@ -208,7 +207,6 @@ function buildDiffSectionRowHeightOptions(
     showHunkHeaders,
     showLineNumbers,
     reserveAddNoteColumn,
-    theme,
     width,
     wrapLines,
   }: Omit<DiffSectionRowHeightOptions, "lineNumberDigits">,
@@ -219,7 +217,6 @@ function buildDiffSectionRowHeightOptions(
     showHunkHeaders,
     reserveAddNoteColumn,
     showLineNumbers,
-    theme,
     width,
     wrapLines,
   };
@@ -234,7 +231,6 @@ function measurePlannedDiffSectionRowHeight(
     showHunkHeaders,
     reserveAddNoteColumn,
     showLineNumbers,
-    theme,
     width,
     wrapLines,
   }: DiffSectionRowHeightOptions,
@@ -248,16 +244,15 @@ function measurePlannedDiffSectionRowHeight(
     });
   }
 
-  return measureRenderedRowHeight(
-    row.row,
-    width,
+  return measureRenderedRowHeight(row.row, {
     lineNumberDigits,
-    showLineNumbers,
-    showHunkHeaders,
-    wrapLines,
-    theme,
+    noteGuideSide: row.noteGuideSide,
     reserveAddNoteColumn,
-  );
+    showHunkHeaders,
+    showLineNumbers,
+    width,
+    wrapLines,
+  });
 }
 
 /** Measure one file section from the same render plan used by DiffSectionBody. */
@@ -277,7 +272,7 @@ export function measureDiffSectionGeometry(
 ): DiffSectionGeometry {
   if (file.metadata.hunks.length === 0) {
     return {
-      bodyHeight: 1,
+      bodyHeight: DIFF_MESSAGE_BODY_HEIGHT,
       hunkAnchorRows: new Map(),
       hunkBounds: new Map(),
       lineNumberDigits: String(findMaxLineNumber(file)).length,
@@ -331,7 +326,6 @@ export function measureDiffSectionGeometry(
     showHunkHeaders,
     reserveAddNoteColumn,
     showLineNumbers,
-    theme,
     width,
     wrapLines,
   });

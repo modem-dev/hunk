@@ -62,7 +62,6 @@ import { createReviewMouseWheelScrollAcceleration } from "../../lib/scrollAccele
 import {
   buildFileSectionLayouts,
   buildInStreamFileHeaderHeights,
-  collectIntersectingFileSectionIds,
   findHeaderOwningFileSection,
   shouldRenderInStreamFileHeader,
   type FileSectionLayout,
@@ -91,10 +90,11 @@ import { measureFileViewGeometry } from "../../fileViews/geometry";
 import { buildFileViewRenderPlan } from "../../fileViews/renderPlan";
 import { prefetchHighlightedDiff } from "../../diff/useHighlightedDiff";
 import {
-  buildFileRenderWindow,
-  buildFileSectionIndexById,
-  type FileRenderWindowItem,
-} from "../../lib/fileRenderWindow";
+  buildHighlightPrefetchPlan,
+  prefetchImmediateHighlightedFiles,
+  scheduleSpeculativeHighlightedFiles,
+} from "../../diff/highlightPrefetch";
+import { buildFileRenderWindow, buildFileSectionIndexById } from "../../lib/fileRenderWindow";
 import {
   buildCopySelectedRowKeys,
   clampCopyColumn,
@@ -143,75 +143,6 @@ function streamRowBoundsAt(
   return section && bounds
     ? { top: section.bodyTop + bounds.top, height: bounds.height }
     : undefined;
-}
-
-/** Keep syntax highlighting warm for files immediately adjacent to the selection. */
-function buildAdjacentPrefetchFileIds(files: DiffFile[], selectedFileId?: string) {
-  if (!selectedFileId) {
-    return new Set<string>();
-  }
-
-  const selectedIndex = files.findIndex((file) => file.id === selectedFileId);
-  if (selectedIndex < 0) {
-    return new Set<string>();
-  }
-
-  const next = new Set<string>();
-  const previousFile = files[selectedIndex - 1];
-  const nextFile = files[selectedIndex + 1];
-
-  if (previousFile) {
-    next.add(previousFile.id);
-  }
-
-  if (nextFile) {
-    next.add(nextFile.id);
-  }
-
-  return next;
-}
-
-/**
- * Start highlight work before files visibly enter the review stream.
- *
- * Selected and adjacent files cover direct navigation, while the larger viewport halo keeps
- * wheel and track scrolling warm. Highlight prefetch does not force these files to mount.
- */
-function buildHighlightPrefetchFileIds({
-  adjacentPrefetchFileIds,
-  fileSectionLayouts,
-  rapidScrollOverscanRows,
-  scrollTop,
-  viewportHeight,
-  selectedFileId,
-}: {
-  adjacentPrefetchFileIds: Set<string>;
-  fileSectionLayouts: FileSectionLayout[];
-  rapidScrollOverscanRows: number;
-  scrollTop: number;
-  viewportHeight: number;
-  selectedFileId?: string;
-}) {
-  const next = new Set(adjacentPrefetchFileIds);
-
-  if (selectedFileId) {
-    next.add(selectedFileId);
-  }
-
-  const clampedViewportHeight = Math.max(1, viewportHeight);
-  const prefetchRows = Math.max(24, clampedViewportHeight * 3, rapidScrollOverscanRows);
-  const minPrefetchY = Math.max(0, scrollTop - prefetchRows);
-  const maxPrefetchY = scrollTop + viewportHeight + prefetchRows;
-
-  for (const fileId of collectIntersectingFileSectionIds(
-    fileSectionLayouts,
-    minPrefetchY,
-    maxPrefetchY,
-  )) {
-    next.add(fileId);
-  }
-
-  return next;
 }
 
 const EMPTY_EXPANDED_GAP_KEYS: ReadonlySet<string> = new Set();
@@ -380,11 +311,6 @@ export function DiffPane({
     hoveredFileIdRef.current = null;
     onActiveAddNoteAffordanceChangeRef.current?.(null);
   }, []);
-
-  const adjacentPrefetchFileIds = useMemo(
-    () => buildAdjacentPrefetchFileIds(files, selectedFileId),
-    [files, selectedFileId],
-  );
 
   // Stable per-file select callbacks keep memoized sections from re-rendering just because
   // DiffPane re-rendered. The latest-onSelectFile ref means the cached closures never go
@@ -595,9 +521,6 @@ export function DiffPane({
     return next;
   }, [allAgentNotesByFile, fileViews, files]);
 
-  // Keep the full file-section path for wrapped lines, where exact wrapped heights depend on
-  // mounting each section; nowrap reviews can window offscreen files behind exact spacers.
-  const windowingEnabled = !wrapLines;
   const [scrollViewport, setScrollViewport] = useState({ top: 0, height: 0 });
   const [initialWrappedRenderWindowWarmed, setInitialWrappedRenderWindowWarmed] = useState(
     () => !wrapLines,
@@ -1350,10 +1273,10 @@ export function DiffPane({
     [totalContentHeight],
   );
 
-  const highlightPrefetchFileIds = useMemo(
+  const highlightPrefetchPlan = useMemo(
     () =>
-      buildHighlightPrefetchFileIds({
-        adjacentPrefetchFileIds,
+      buildHighlightPrefetchPlan({
+        files,
         fileSectionLayouts,
         rapidScrollOverscanRows,
         scrollTop: scrollViewport.top,
@@ -1361,7 +1284,7 @@ export function DiffPane({
         selectedFileId,
       }),
     [
-      adjacentPrefetchFileIds,
+      files,
       fileSectionLayouts,
       rapidScrollOverscanRows,
       scrollViewport.height,
@@ -1370,27 +1293,45 @@ export function DiffPane({
     ],
   );
 
-  // Kick off highlight work from viewport planning rather than waiting for the section to mount.
-  // That avoids the "plain rows first, color later" stutter when a file is about to scroll onscreen.
+  // Selected and visible files must be ready for the next frame, so they bypass speculative work.
   useEffect(() => {
     if (files.length === 0 || (wrapLines && !initialWrappedRenderWindowWarmed)) {
       return;
     }
 
-    for (const file of files) {
-      if (!highlightPrefetchFileIds.has(file.id)) {
-        continue;
-      }
-
-      void prefetchHighlightedDiff({
-        file,
-        offloadLargeDiff,
-        theme,
-      });
-    }
+    prefetchImmediateHighlightedFiles({
+      files,
+      immediateFileIds: highlightPrefetchPlan.immediateFileIds,
+      offloadLargeDiff,
+      prefetch: prefetchHighlightedDiff,
+      theme,
+    });
   }, [
     files,
-    highlightPrefetchFileIds,
+    highlightPrefetchPlan.immediateFileIds,
+    initialWrappedRenderWindowWarmed,
+    offloadLargeDiff,
+    theme,
+    wrapLines,
+  ]);
+
+  useEffect(() => {
+    if (files.length === 0 || (wrapLines && !initialWrappedRenderWindowWarmed)) {
+      return;
+    }
+
+    // Highlighting is non-preemptible main-thread work. Delay speculative neighbors until review
+    // navigation and scrolling have been idle long enough to keep the next interaction frame free.
+    return scheduleSpeculativeHighlightedFiles({
+      files,
+      offloadLargeDiff,
+      prefetch: prefetchHighlightedDiff,
+      speculativeFileIds: highlightPrefetchPlan.speculativeFileIds,
+      theme,
+    });
+  }, [
+    files,
+    highlightPrefetchPlan.speculativeFileIds,
     initialWrappedRenderWindowWarmed,
     offloadLargeDiff,
     theme,
@@ -1470,35 +1411,29 @@ export function DiffPane({
     renderer.intermediateRender();
   }, [renderer, pinnedHeaderFileId]);
 
-  const fullFileRenderItems = useMemo(
-    (): FileRenderWindowItem[] =>
-      files.map((file, sectionIndex) => ({ kind: "file", fileId: file.id, sectionIndex })),
-    [files],
-  );
+  // Exact full-stream geometry is available before mount in both modes, so wrapped files can use
+  // the same file-level spacers as nowrap files without changing scrollbar or navigation math.
   const fileRenderWindow = useMemo(
     () =>
-      windowingEnabled
-        ? buildFileRenderWindow({
-            fileSectionLayouts,
-            indexByFileId: fileSectionIndexById,
-            overscanFiles: 1,
-            scrollTop: scrollViewport.top,
-            selectedFileId,
-            viewportHeight: scrollViewport.height,
-          })
-        : null,
+      buildFileRenderWindow({
+        fileSectionLayouts,
+        indexByFileId: fileSectionIndexById,
+        overscanFiles: 1,
+        scrollTop: scrollViewport.top,
+        selectedFileId,
+        viewportHeight: scrollViewport.height,
+      }),
     [
       fileSectionIndexById,
       fileSectionLayouts,
       scrollViewport.height,
       scrollViewport.top,
       selectedFileId,
-      windowingEnabled,
     ],
   );
-  const fileRenderItems = fileRenderWindow?.items ?? fullFileRenderItems;
-  const mountedFileIndices = fileRenderWindow?.mountedFileIndices ?? null;
-  // Render note rows for exactly the mounted sections (all sections when windowing is off).
+  const fileRenderItems = fileRenderWindow.items;
+  const mountedFileIndices = fileRenderWindow.mountedFileIndices;
+  // Render note rows for exactly the mounted sections.
   // Section layouts and spacer heights are measured with the full note set, so a mounted section
   // that skipped its notes would paint shorter than its layout height and transiently shrink the
   // scrollbox content height, clamping bottom-edge scrolls. A viewport-proximity set cannot be
@@ -1507,11 +1442,8 @@ export function DiffPane({
   const visibleAgentNotesByFile = useMemo(() => {
     const next = new Map<string, VisibleAgentNote[]>();
 
-    const mountedFileIds = mountedFileIndices
-      ? mountedFileIndices.map((index) => files[index]?.id)
-      : files.map((file) => file.id);
-
-    for (const fileId of mountedFileIds) {
+    for (const index of mountedFileIndices) {
+      const fileId = files[index]?.id;
       if (!fileId) {
         continue;
       }
@@ -1558,9 +1490,7 @@ export function DiffPane({
       rapidScrollOverscanRows,
     );
 
-    const indicesToMeasure = mountedFileIndices ?? files.map((_, index) => index);
-
-    for (const index of indicesToMeasure) {
+    for (const index of mountedFileIndices) {
       const file = files[index];
       const sectionLayout = fileSectionLayouts[index];
       const geometry = sectionGeometry[index];
@@ -2415,7 +2345,7 @@ export function DiffPane({
                         }
                         shouldLoadHighlight={
                           (!wrapLines || initialWrappedRenderWindowWarmed) &&
-                          highlightPrefetchFileIds.has(file.id)
+                          highlightPrefetchPlan.immediateFileIds.has(file.id)
                         }
                         sectionGeometry={sectionGeometry[index]}
                         separatorWidth={separatorWidth}
