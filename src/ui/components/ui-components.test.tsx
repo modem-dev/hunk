@@ -14,6 +14,7 @@ import { hexColorDistance } from "../lib/color";
 import { RAPID_SCROLL_OVERSCAN_IDLE_MS } from "../lib/adaptiveScrollOverscan";
 import { resolveTheme } from "../themes";
 import { measureDiffSectionGeometry } from "../diff/diffSectionGeometry";
+import type { DiffRow } from "../diff/pierre";
 import { buildFileSectionLayouts, buildInStreamFileHeaderHeights } from "../lib/fileSectionLayout";
 
 const { AppHost } = await import("../AppHost");
@@ -791,7 +792,14 @@ describe("UI components", () => {
         spans: [{ text: "ำำ" }],
       },
     };
-    const measuredHeight = measureRenderedRowHeight(row, 4, 1, false, true, true, theme);
+    const measuredHeight = measureRenderedRowHeight(row, {
+      width: 4,
+      lineNumberDigits: 1,
+      showLineNumbers: false,
+      showHunkHeaders: true,
+      wrapLines: true,
+      theme,
+    });
     const setup = await testRender(
       <DiffRowView
         row={row}
@@ -888,7 +896,14 @@ describe("UI components", () => {
           spans,
         },
       };
-      const measuredHeight = measureRenderedRowHeight(row, 4, 1, false, true, true, theme);
+      const measuredHeight = measureRenderedRowHeight(row, {
+        width: 4,
+        lineNumberDigits: 1,
+        showLineNumbers: false,
+        showHunkHeaders: true,
+        wrapLines: true,
+        theme,
+      });
       const setup = await testRender(
         <DiffRowView
           row={row}
@@ -922,6 +937,101 @@ describe("UI components", () => {
         await act(async () => {
           setup.renderer.destroy();
         });
+      }
+    }
+  });
+
+  test("DiffRowView rendering matches wrapped width reservations at exact boundaries", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const width = 24;
+
+    for (const layout of ["split", "stack"] as const) {
+      const rowForLength = (length: number): DiffRow =>
+        layout === "split"
+          ? {
+              type: "split-line",
+              key: `alpha:split:${length}`,
+              fileId: "alpha",
+              hunkIndex: 0,
+              left: {
+                kind: "context",
+                sign: " ",
+                lineNumber: 1,
+                spans: [{ text: "old" }],
+              },
+              right: {
+                kind: "addition",
+                sign: "+",
+                lineNumber: 1,
+                spans: [{ text: "x".repeat(length) }],
+              },
+            }
+          : {
+              type: "stack-line",
+              key: `alpha:stack:${length}`,
+              fileId: "alpha",
+              hunkIndex: 0,
+              cell: {
+                kind: "addition",
+                sign: "+",
+                newLineNumber: 1,
+                spans: [{ text: "x".repeat(length) }],
+              },
+            };
+      const measure = (length: number) =>
+        measureRenderedRowHeight(rowForLength(length), {
+          width,
+          lineNumberDigits: 1,
+          showLineNumbers: false,
+          showHunkHeaders: true,
+          wrapLines: true,
+          theme,
+          noteGuideSide: "new",
+          reserveAddNoteColumn: true,
+        });
+      let boundary = 1;
+      while (measure(boundary + 1) === 1) {
+        boundary += 1;
+      }
+
+      for (const length of [boundary, boundary + 1]) {
+        const row = rowForLength(length);
+        const measuredHeight = measure(length);
+        const setup = await testRender(
+          <DiffRowView
+            row={row}
+            width={width}
+            lineNumberDigits={1}
+            showLineNumbers={false}
+            showHunkHeaders={true}
+            wrapLines={true}
+            codeHorizontalOffset={0}
+            theme={theme}
+            selected={false}
+            noteGuideSide="new"
+            onStartUserNoteAtHunk={() => {}}
+          />,
+          { width: width + 4, height: 4 },
+        );
+
+        try {
+          await act(async () => {
+            await setup.renderOnce();
+          });
+          const renderedHeight = setup
+            .captureSpans()
+            .lines.filter((line) =>
+              line.spans.some(
+                (span) =>
+                  capturedTestColorToHex(span.bg)?.toLowerCase() === theme.addedBg.toLowerCase(),
+              ),
+            ).length;
+          expect(renderedHeight).toBe(measuredHeight);
+        } finally {
+          await act(async () => {
+            setup.renderer.destroy();
+          });
+        }
       }
     }
   });
@@ -1131,6 +1241,39 @@ describe("UI components", () => {
       expect(frame).toContain("window-6.ts");
       expect(frame).toContain("export const file6Extra = true;");
       expect(frame).not.toContain("window-1.ts");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("DiffPane keeps wrapped reviews bounded to nearby file sections", async () => {
+    const files = createWindowingFiles(12);
+    const theme = resolveTheme("github-dark-default", null);
+    const scrollRef = createRef<ScrollBoxRenderable>();
+    const props = createDiffPaneProps(files, theme, {
+      diffContentWidth: 48,
+      scrollRef,
+      separatorWidth: 44,
+      width: 52,
+      wrapLines: true,
+    });
+    const setup = await testRender(<DiffPane {...props} />, {
+      width: 56,
+      height: 12,
+    });
+
+    try {
+      await settleDiffPane(setup);
+
+      const mountedFileIds = files
+        .filter((file) => scrollRef.current?.content.findDescendantById(`diff-section:${file.id}`))
+        .map((file) => file.id);
+
+      expect(mountedFileIds).toContain(files[0]!.id);
+      expect(mountedFileIds.length).toBeLessThan(files.length);
+      expect(mountedFileIds).not.toContain(files.at(-1)!.id);
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -2992,6 +3135,33 @@ describe("UI components", () => {
       6,
     );
     expect(binaryFileFrame).toContain("Binary file skipped");
+  });
+
+  test("PierreDiffView reserves two rendered rows for a no-hunk message", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const frame = await captureFrame(
+      <box style={{ width: 72, flexDirection: "column" }}>
+        <PierreDiffView
+          file={createEmptyDiffFile("rename-pure")}
+          layout="split"
+          theme={theme}
+          width={72}
+          selectedHunkIndex={0}
+          scrollable={false}
+        />
+        <text>after-placeholder</text>
+      </box>,
+      76,
+      6,
+    );
+    const frameLines = frame.split("\n");
+    const messageLine = frameLines.findIndex((line) =>
+      line.includes("This change only renames the file."),
+    );
+    const sentinelLine = frameLines.findIndex((line) => line.includes("after-placeholder"));
+
+    expect(messageLine).toBeGreaterThanOrEqual(0);
+    expect(sentinelLine - messageLine).toBe(2);
   });
 
   test("PierreDiffView shows the expand chevron only when a source fetcher is attached", async () => {

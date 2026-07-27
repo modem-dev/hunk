@@ -340,4 +340,45 @@ describe("PTY scrolling", () => {
       session.close();
     }
   });
+
+  test("rapid wrapped scrolling returns to stable stream edges", async () => {
+    const fixture = harness.createWrappedStreamRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split", "--wrap"],
+      cwd: fixture.dir,
+      cols: 160,
+      rows: 14,
+    });
+
+    try {
+      const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+      expect(initial).toContain("marker1Extra = 100");
+
+      for (let burst = 0; burst < 6; burst += 1) {
+        await session.scrollDown(20);
+      }
+
+      const bottom = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("marker8Extra = 800"),
+        8_000,
+      );
+      expect(bottom).not.toContain("marker1Extra = 100");
+
+      for (let burst = 0; burst < 8; burst += 1) {
+        await session.scrollUp(20);
+      }
+
+      const top = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("marker1Extra = 100"),
+        8_000,
+      );
+      expect(top).not.toContain("marker8Extra = 800");
+    } finally {
+      session.close();
+    }
+  });
 });

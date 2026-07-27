@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import type { DiffFile } from "../../core/types";
 import type { VisibleAgentNote } from "../lib/agentAnnotations";
 import { measureDiffSectionGeometry } from "./diffSectionGeometry";
+import { DIFF_MESSAGE_BODY_HEIGHT } from "./renderRows";
 import { resolveTheme } from "../themes";
 import {
   createTestDiffFile,
@@ -275,7 +277,7 @@ describe("measureDiffSectionGeometry", () => {
     );
   });
 
-  test("returns a one-row placeholder for files with no visible hunks", () => {
+  test("returns a two-row placeholder for files with no visible hunks", () => {
     const file = createTestDiffFile({
       after: "const stable = true;\n",
       before: "const stable = true;\n",
@@ -286,9 +288,40 @@ describe("measureDiffSectionGeometry", () => {
     const metrics = measureDiffSectionGeometry(file, "split", true, theme);
 
     expect(file.metadata.hunks).toHaveLength(0);
-    expect(metrics.bodyHeight).toBe(1);
+    expect(metrics.bodyHeight).toBe(2);
+    expect(DIFF_MESSAGE_BODY_HEIGHT).toBe(2);
     expect(metrics.hunkBounds.size).toBe(0);
+    expect(metrics.plannedRows).toEqual([]);
     expect(metrics.rowBounds).toEqual([]);
+  });
+
+  test("gives every no-hunk message variant the same placeholder geometry", () => {
+    const base = createTestDiffFile({
+      after: "const stable = true;\n",
+      before: "const stable = true;\n",
+      id: "empty-variants",
+      path: "empty.ts",
+    });
+    const variants: DiffFile[] = [
+      base,
+      {
+        ...base,
+        metadata: { ...base.metadata, type: "rename-pure" },
+        previousPath: "old.ts",
+      },
+      { ...base, isBinary: true },
+      { ...base, isTooLarge: true },
+      { ...base, metadata: { ...base.metadata, type: "new" } },
+      { ...base, metadata: { ...base.metadata, type: "deleted" } },
+    ];
+
+    for (const file of variants) {
+      for (const layout of ["split", "stack"] as const) {
+        expect(
+          measureDiffSectionGeometry(file, layout, true, theme, [], 24, true, true).bodyHeight,
+        ).toBe(2);
+      }
+    }
   });
 
   test("can measure a header-only hunk stream without line rows", () => {
@@ -504,4 +537,146 @@ describe("measureDiffSectionGeometry", () => {
 
     expect(longGeometry.bodyHeight).toBeGreaterThan(shortGeometry.bodyHeight);
   });
+});
+
+describe("measureDiffSectionGeometry note-guide width", () => {
+  const theme = resolveTheme("github-dark-default", null);
+  const width = 120;
+  const addNoteBadgeWidth = 3;
+
+  function createGuideFixture(side: "old" | "new", guidedLineLength: number) {
+    const annotatedLines = lines(
+      "const a = 1;",
+      "const anchor = 2;",
+      `const guided = "${"x".repeat(guidedLineLength)}";`,
+      "const tail = 4;",
+    );
+    const unannotatedLines = lines("const a = 1;");
+
+    return createTestDiffFile({
+      after: side === "new" ? annotatedLines : unannotatedLines,
+      before: side === "new" ? unannotatedLines : annotatedLines,
+      id: `guide-${side}-${guidedLineLength}`,
+      path: "guide.ts",
+    });
+  }
+
+  function guideNotes(side: "old" | "new"): VisibleAgentNote[] {
+    return [
+      {
+        id: "annotation:guide:0",
+        annotation: {
+          ...(side === "new" ? { newRange: [2, 3] } : { oldRange: [2, 3] }),
+          rationale: "Guide every row the note covers.",
+          summary: "Guide",
+        },
+      },
+    ];
+  }
+
+  function guidedRowHeight({
+    layout,
+    side,
+    guidedLineLength,
+    withGuide,
+    reserveAddNoteColumn = false,
+  }: {
+    layout: "split" | "stack";
+    side: "old" | "new";
+    guidedLineLength: number;
+    withGuide: boolean;
+    reserveAddNoteColumn?: boolean;
+  }) {
+    const file = createGuideFixture(side, guidedLineLength);
+    const measure = (notes: VisibleAgentNote[]) =>
+      measureDiffSectionGeometry(
+        file,
+        layout,
+        true,
+        theme,
+        notes,
+        width,
+        true,
+        true,
+        undefined,
+        undefined,
+        reserveAddNoteColumn,
+      );
+    const guided = measure(guideNotes(side));
+    const guidedRow = guided.plannedRows.find(
+      (row) => row.kind === "diff-row" && row.noteGuideSide === side,
+    );
+    expect(guidedRow).toBeDefined();
+
+    if (withGuide) {
+      return guided.rowBoundsByKey.get(guidedRow!.key)!.height;
+    }
+
+    return measure([]).rowBoundsByStableKey.get(guidedRow!.stableKey)!.height;
+  }
+
+  function exactSingleRowBoundary(measure: (guidedLineLength: number) => number) {
+    let low = 1;
+    let high = 400;
+    expect(measure(low)).toBe(1);
+    expect(measure(high)).toBeGreaterThan(1);
+
+    while (low < high) {
+      const middle = Math.ceil((low + high) / 2);
+      if (measure(middle) === 1) {
+        low = middle;
+      } else {
+        high = middle - 1;
+      }
+    }
+    return low;
+  }
+
+  for (const layout of ["split", "stack"] as const) {
+    test(`${layout} measurement reserves exactly one column for a new-side guide`, () => {
+      const boundary = exactSingleRowBoundary((guidedLineLength) =>
+        guidedRowHeight({
+          layout,
+          side: "new",
+          guidedLineLength,
+          withGuide: false,
+        }),
+      );
+
+      expect(
+        guidedRowHeight({
+          layout,
+          side: "new",
+          guidedLineLength: boundary,
+          withGuide: true,
+        }),
+      ).toBe(2);
+      expect(
+        guidedRowHeight({
+          layout,
+          side: "new",
+          guidedLineLength: boundary - 1,
+          withGuide: true,
+        }),
+      ).toBe(1);
+    });
+
+    test(`${layout} measurement combines guide and add-note reservations`, () => {
+      const boundaryFor = (withGuide: boolean, reserveAddNoteColumn: boolean) =>
+        exactSingleRowBoundary((guidedLineLength) =>
+          guidedRowHeight({
+            layout,
+            side: "new",
+            guidedLineLength,
+            withGuide,
+            reserveAddNoteColumn,
+          }),
+        );
+      const plain = boundaryFor(false, false);
+
+      expect(boundaryFor(true, false)).toBe(plain - 1);
+      expect(boundaryFor(false, true)).toBe(plain - addNoteBadgeWidth);
+      expect(boundaryFor(true, true)).toBe(plain - addNoteBadgeWidth - 1);
+    });
+  }
 });

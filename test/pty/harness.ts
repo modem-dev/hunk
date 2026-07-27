@@ -527,6 +527,33 @@ export function createPtyHarness() {
     ]);
   }
 
+  /** Build a many-file stream whose changed lines wrap into tall sections at test widths. */
+  function createWrappedStreamRepoFixture(fileCount = 8) {
+    function markerLine(fileNumber: number, suffix: string) {
+      const filler = Array.from(
+        { length: 3 },
+        (_, part) => `segment${part}OfFile${fileNumber}PaddedWideEnoughToForceContinuationRows`,
+      ).join(" ");
+
+      return `export const marker${fileNumber} = "${filler} ${suffix}";`;
+    }
+
+    return createGitRepoFixture(
+      Array.from({ length: fileCount }, (_, index) => {
+        const fileNumber = index + 1;
+        return {
+          path: `wrapped-${String(fileNumber).padStart(2, "0")}.ts`,
+          before: `${markerLine(fileNumber, "before")}\n`,
+          after: [
+            markerLine(fileNumber, "after"),
+            `export const marker${fileNumber}Extra = ${fileNumber * 100};`,
+            "",
+          ].join("\n"),
+        };
+      }),
+    );
+  }
+
   function createPinnedHeaderRepoFixture() {
     return createGitRepoFixture([
       {
@@ -809,6 +836,21 @@ export function createPtyHarness() {
     return (text.match(pattern) ?? []).length;
   }
 
+  /** Repeat a navigation key until its destination is visible despite occasional PTY input loss. */
+  async function pressUntilVisible(session: Session, key: string, needle: string, maxPresses = 16) {
+    for (let press = 0; press < maxPresses; press += 1) {
+      const text = await session.text({ immediate: true });
+      if (text.includes(needle)) {
+        return text;
+      }
+
+      await session.press(key as Parameters<Session["press"]>[0]);
+      await session.waitIdle({ timeout: 400 });
+    }
+
+    return waitForSnapshot(session, (text) => text.includes(needle), 5_000);
+  }
+
   return {
     cleanup,
     countMatches,
@@ -832,11 +874,13 @@ export function createPtyHarness() {
     createTwoFileRepoFixture,
     createWatchFilePair,
     createWideCharacterFilePair,
+    createWrappedStreamRepoFixture,
     launchHunk,
     launchHunkWithFileBackedStdin,
     launchShellCommand,
     buildHunkCommand,
     shellQuote,
+    pressUntilVisible,
     waitForSnapshot,
   };
 }
