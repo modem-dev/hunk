@@ -13,7 +13,8 @@
  *
  * Only façade types belong here. Everything exported is something Hunk intends
  * to keep stable for the declared `apiVersion`, and everything is declared in
- * `./types` so the published declarations stay free of Hunk internals.
+ * `./types` — or, for the key-chord grammar, `./keys` — so the published
+ * declarations stay free of Hunk internals.
  *
  * The relative specifiers below carry an explicit `.js` extension. TypeScript
  * maps them back to `./types.ts` when compiling this repo, and emission copies
@@ -21,6 +22,8 @@
  * "nodenext"` consumers *require* an explicit extension. Dropping it makes the
  * published `hunkdiff/extension` types fail to resolve for every ESM consumer.
  */
+export { matchesKey, matchesKeyChord, parseKeyChord } from "./keys.js";
+export type { ExtensionKeyEvent, ParsedKeyChord } from "./keys.js";
 export {
   HUNK_CORE_VCS_DETECTION_PRIORITY,
   HUNK_DEFAULT_VCS_DETECTION_PRIORITY,

@@ -128,6 +128,16 @@ export interface ExtensionsConfig {
   extensionConfigs: Record<string, Record<string, unknown>>;
 }
 
+/**
+ * One `[keybindings]` entry: the chord(s) to bind a command to, or `false` to unbind it.
+ *
+ * Command ids are the ones the dispatch table declares — `"app.quit"`,
+ * `"review.nextHunk"`, or `"<extensionId>.<commandId>"` for an extension
+ * command. Resolution against each command's defaults lives in
+ * `src/ui/lib/keymap.ts`.
+ */
+export type UserKeyBinding = string | readonly string[] | false;
+
 export interface PersistedViewPreferences {
   mode: LayoutMode;
   theme?: string;
@@ -382,6 +392,8 @@ export interface AppBootstrap {
   initialCopyDecorations?: boolean;
   startupNotices?: readonly StartupNotice[];
   viewPreferencesConfigPath?: string;
+  /** The user's `[keybindings]` table, resolved against command defaults in App. */
+  keybindings?: Record<string, UserKeyBinding>;
   /** Extensions loaded for this session, and any load failures worth surfacing. */
   extensions?: ExtensionLoadResult;
 }

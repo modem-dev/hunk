@@ -4,7 +4,11 @@ import { synthesizeKeyEvent, parseKeyChord } from "../../lib/commandKeys";
 import { builtinCommandMatchProbes, dispatchAppCommand } from "./appCommands";
 import { buildExtensionAppCommands } from "./extensionCommands";
 
-function registeredCommand(extensionId: string, id: string, key?: string): RegisteredCommand {
+function registeredCommand(
+  extensionId: string,
+  id: string,
+  key?: string | readonly string[],
+): RegisteredCommand {
   return { extensionId, command: { id, title: id, key }, handler: () => {} };
 }
 
@@ -75,5 +79,69 @@ describe("buildExtensionAppCommands", () => {
     });
 
     expect(dispatchAppCommand(commands, "pager", chordEvent("y"))).toBeUndefined();
+  });
+
+  test("binds one command to every chord it declares", () => {
+    const ran: string[] = [];
+    const { commands, conflicts } = buildExtensionAppCommands({
+      registered: [registeredCommand("meta", "toggle", ["y", "ctrl+g"])],
+      builtins: builtinCommandMatchProbes(),
+      runCommand: (registered) => ran.push(`${registered.extensionId}.${registered.command.id}`),
+    });
+
+    expect(conflicts).toEqual([]);
+    // One command, one dispatch entry, matching either chord.
+    expect(commands).toHaveLength(1);
+    expect(commands[0]?.keyLabels).toEqual(["y", "Ctrl+G"]);
+    expect(dispatchAppCommand(commands, "review", chordEvent("y"))?.id).toBe("meta.toggle");
+    expect(dispatchAppCommand(commands, "review", chordEvent("ctrl+g"))?.id).toBe("meta.toggle");
+    expect(ran).toEqual(["meta.toggle", "meta.toggle"]);
+  });
+
+  test("drops only the conflicting chord of a multi-key command", () => {
+    const { commands, conflicts } = buildExtensionAppCommands({
+      // "s" toggles the sidebar; "y" is free.
+      registered: [registeredCommand("meta", "toggle", ["s", "y"])],
+      builtins: builtinCommandMatchProbes(),
+      runCommand: () => {},
+    });
+
+    expect(conflicts).toEqual([
+      {
+        extensionId: "meta",
+        fullId: "meta.toggle",
+        key: "s",
+        conflictingId: "view.toggleSidebar",
+      },
+    ]);
+    // The command stays registered and keeps the chord nobody else owns.
+    expect(commands.map((command) => command.id)).toEqual(["meta.toggle"]);
+    expect(dispatchAppCommand(commands, "review", chordEvent("y"))?.id).toBe("meta.toggle");
+  });
+
+  test("a user keybinding replaces the chords an extension declared", () => {
+    const resolvedKeys = new Map<string, readonly string[]>([["meta.toggle", ["ctrl+j"]]]);
+    const { commands } = buildExtensionAppCommands({
+      registered: [registeredCommand("meta", "toggle", "y")],
+      builtins: builtinCommandMatchProbes(),
+      resolvedKeys,
+      runCommand: () => {},
+    });
+
+    expect(dispatchAppCommand(commands, "review", chordEvent("ctrl+j"))?.id).toBe("meta.toggle");
+    expect(dispatchAppCommand(commands, "review", chordEvent("y"))).toBeUndefined();
+  });
+
+  test("a chord a built-in released is free for an extension to claim", () => {
+    // The user moved the sidebar toggle to "ctrl+b", so "s" belongs to nobody.
+    const resolvedKeys = new Map<string, readonly string[]>([["view.toggleSidebar", ["ctrl+b"]]]);
+    const { commands, conflicts } = buildExtensionAppCommands({
+      registered: [registeredCommand("meta", "steal-s", "s")],
+      builtins: builtinCommandMatchProbes(resolvedKeys),
+      runCommand: () => {},
+    });
+
+    expect(conflicts).toEqual([]);
+    expect(dispatchAppCommand(commands, "review", chordEvent("s"))?.id).toBe("meta.steal-s");
   });
 });

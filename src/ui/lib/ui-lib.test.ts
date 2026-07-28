@@ -12,18 +12,7 @@ import {
 } from "../components/chrome/menu";
 import { buildAgentPopoverContent, resolveAgentPopoverPlacement, wrapText } from "./agentPopover";
 import { buildAppMenus } from "./appMenus";
-import {
-  isCreateReviewNoteKey,
-  isEscapeKey,
-  isHalfPageDownKey,
-  isHalfPageUpKey,
-  isPageDownKey,
-  isPageUpKey,
-  isSaveDraftNoteKey,
-  isShiftSpacePageUpKey,
-  isStepDownKey,
-  isStepUpKey,
-} from "./keyboard";
+import { isEscapeKey, isSaveDraftNoteKey } from "./keyboard";
 import {
   cellRangeToCharRange,
   fitText,
@@ -214,36 +203,10 @@ describe("ui helpers", () => {
     ).toEqual(["Agent notes", "Agent skill", "Next annotated file", "Previous annotated file"]);
   });
 
-  test("keyboard alias helpers normalize the shared scroll shortcut keys", () => {
+  test("escape aliases normalize across terminal input paths", () => {
     expect(isEscapeKey(createKeyEvent({ name: "escape" }))).toBe(true);
     expect(isEscapeKey(createKeyEvent({ name: "esc" }))).toBe(true);
-    expect(isPageDownKey(createKeyEvent({ name: "pagedown" }))).toBe(true);
-    expect(isPageDownKey(createKeyEvent({ name: "space" }))).toBe(true);
-    expect(isPageDownKey(createKeyEvent({ name: "f" }))).toBe(true);
-    expect(isPageDownKey(createKeyEvent({ sequence: "f" }))).toBe(true);
-    expect(isPageUpKey(createKeyEvent({ name: "pageup" }))).toBe(true);
-    expect(isPageUpKey(createKeyEvent({ name: "b" }))).toBe(true);
-    expect(isPageUpKey(createKeyEvent({ sequence: "b" }))).toBe(true);
-    expect(isShiftSpacePageUpKey(createKeyEvent({ name: "space", shift: true }))).toBe(true);
-    expect(isHalfPageDownKey(createKeyEvent({ name: "d" }))).toBe(true);
-    expect(isHalfPageUpKey(createKeyEvent({ sequence: "u" }))).toBe(true);
-    expect(isStepDownKey(createKeyEvent({ name: "down" }))).toBe(true);
-    expect(isStepDownKey(createKeyEvent({ sequence: "j" }))).toBe(true);
-    expect(isStepUpKey(createKeyEvent({ name: "up" }))).toBe(true);
-    expect(isStepUpKey(createKeyEvent({ sequence: "k" }))).toBe(true);
     expect(isEscapeKey(createKeyEvent({ name: "q" }))).toBe(false);
-    expect(isPageDownKey(createKeyEvent({ name: "space", shift: true }))).toBe(false);
-    expect(isPageDownKey(createKeyEvent({ name: "q" }))).toBe(false);
-    expect(isShiftSpacePageUpKey(createKeyEvent({ name: "space", shift: false }))).toBe(false);
-  });
-
-  test("review note shortcut only matches unmodified c", () => {
-    expect(isCreateReviewNoteKey(createKeyEvent({ name: "c" }))).toBe(true);
-    expect(isCreateReviewNoteKey(createKeyEvent({ sequence: "c" }))).toBe(true);
-    expect(isCreateReviewNoteKey(createKeyEvent({ name: "C", shift: true }))).toBe(false);
-    expect(isCreateReviewNoteKey(createKeyEvent({ name: "c", ctrl: true }))).toBe(false);
-    expect(isCreateReviewNoteKey(createKeyEvent({ name: "c", meta: true }))).toBe(false);
-    expect(isCreateReviewNoteKey(createKeyEvent({ name: "c", option: true }))).toBe(false);
   });
 
   test("save-draft-note shortcut matches Ctrl-S across raw, CSI-u, and tmux encodings", () => {

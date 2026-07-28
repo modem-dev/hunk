@@ -356,6 +356,7 @@ export async function prepareStartupPlan(
     extensionResult,
   );
   bootstrap.viewPreferencesConfigPath = configured.viewPreferencesConfigPath;
+  bootstrap.keybindings = configured.keybindings;
   bootstrap.extensions = extensionResult;
 
   controllingTerminal ??= usesPipedPatchInputImpl(cliInput) ? openControllingTerminalImpl() : null;

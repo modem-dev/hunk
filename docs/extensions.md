@@ -525,6 +525,29 @@ row. `actions.notify(message, type?)` shows a toast attributed to your
 extension. An action given a file id that is not currently visible is refused
 with a warning rather than corrupting the selection.
 
+A component that wants keys of its own should match them with the same grammar
+Hunk uses, rather than reading modifier flags by hand:
+
+```ts
+import { matchesKey } from "hunkdiff/extension";
+import type { ExtensionKeyEvent } from "hunkdiff/extension";
+
+export function handleSidebarKey(key: ExtensionKeyEvent) {
+  if (matchesKey("ctrl+n", key)) {
+    return "next";
+  }
+
+  return matchesKey("G", key) ? "last" : "none";
+}
+```
+
+`matchesKey(chord, key)` parses and matches in one call and returns `false` for
+an unparsable chord, so a typo is a binding that never fires rather than one
+that swallows unrelated keys. `parseKeyChord` and `matchesKeyChord` are exported
+too, for a component that would rather parse its chords once up front. Any
+object with `name`, `sequence`, `ctrl`, `meta`, `option`, and `shift` fields
+works — OpenTUI's `KeyEvent` included, so pass the event straight through.
+
 Hunk keeps owning pane arrangement — widths, resize dividers, responsive
 show/hide, and dropping panes that no longer fit a narrow terminal — and your
 component fills the pane it is given. A component that throws while rendering
@@ -561,9 +584,27 @@ applies to letters and named keys only: for a shifted symbol or digit, bind the
 character the shift produces (`"!"`, not `"shift+1"`), since terminals report
 the character rather than the combination. An
 unparsable chord fails the registration; a chord already owned by a built-in
-shortcut — or by an earlier-loaded extension — leaves the command registered
-but unbound, with a warning toast naming both sides. Omit `key` to register a
-command with no binding.
+shortcut — or by an earlier-loaded extension — leaves that chord unbound, with a
+warning toast naming both sides. Omit `key` to register a command with no
+binding.
+
+`key` also takes a list, binding the command to every chord in it:
+
+```ts
+hunk.registerCommand({ id: "hello", title: "Say hello", key: ["ctrl+g", "f9"] }, (ctx) => {
+  ctx.notify("hello from a command");
+});
+```
+
+Chords are refused one at a time: if `ctrl+g` were already taken, the command
+would still answer to `f9`.
+
+Whatever an extension declares is a _default_. Users remap commands by id in the
+`[keybindings]` table of their own config, extension commands included — yours
+is named `"<extensionId>.<commandId>"`. See the
+[keybindings section of the README](../README.md#keybindings) for the rules; the
+practical consequence is that a chord you declare may not be the chord your
+command ends up on.
 
 The handler fires when the key is pressed outside modal UI — dialogs, menus,
 and focused text inputs own their keys first, and pager mode does not dispatch

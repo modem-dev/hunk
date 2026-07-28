@@ -26,6 +26,7 @@ import type {
   LayoutMode,
   NamedCustomThemeConfig,
   PersistedViewPreferences,
+  UserKeyBinding,
   VcsMode,
 } from "./types";
 
@@ -66,6 +67,14 @@ export interface HunkConfigResolution {
   /** Config-defined custom themes in declaration order, user layer before repo layer. */
   customThemes: NamedCustomThemeConfig[];
   extensions: ExtensionsConfig;
+  /**
+   * The user's `[keybindings]` table: command id to chord(s), or `false` to unbind.
+   *
+   * User layer only. Keys are a property of the machine a person types on, not
+   * of the repository under review, so a checkout cannot rearrange the reader's
+   * keyboard.
+   */
+  keybindings: Record<string, UserKeyBinding>;
   /**
    * The `vcs` id a config layer or CLI flag named, when one did.
    *
@@ -685,6 +694,65 @@ function readExtensionsLayer(source: Record<string, unknown>): ExtensionsLayer {
   };
 }
 
+/** One config layer's `[keybindings]` table, with the entries it could not use. */
+interface KeybindingsLayer {
+  bindings: Record<string, UserKeyBinding>;
+  /** Command ids whose value was neither a chord, a list of chords, nor `false`. */
+  unusableIds: string[];
+}
+
+/**
+ * Read one config layer's `[keybindings]` table.
+ *
+ * Values stay close to what TOML can express: a chord, a list of chords, or
+ * `false` to unbind. Whether the ids name real commands is not knowable here —
+ * extension commands do not exist until extensions load — so id validation
+ * belongs to keymap resolution, and this layer only rejects shapes.
+ */
+function readKeybindingsLayer(source: Record<string, unknown>): KeybindingsLayer {
+  const keybindingsSource = source.keybindings;
+  if (keybindingsSource !== undefined && !isRecord(keybindingsSource)) {
+    throw new Error("Expected keybindings to contain a TOML table.");
+  }
+
+  const bindings: Record<string, UserKeyBinding> = {};
+  const unusableIds: string[] = [];
+  if (!isRecord(keybindingsSource)) {
+    return { bindings, unusableIds };
+  }
+
+  for (const [commandId, value] of Object.entries(keybindingsSource)) {
+    if (value === false || typeof value === "string") {
+      bindings[commandId] = value;
+      continue;
+    }
+
+    if (Array.isArray(value) && value.every((entry) => typeof entry === "string")) {
+      bindings[commandId] = value as string[];
+      continue;
+    }
+
+    unusableIds.push(commandId);
+  }
+
+  return { bindings, unusableIds };
+}
+
+/** Report `[keybindings]` entries whose value Hunk could not read as a binding. */
+function createUnusableKeybindingNotice(unusableIds: readonly string[]): StartupNotice | undefined {
+  if (unusableIds.length === 0) {
+    return undefined;
+  }
+
+  const listed = sanitizeTerminalLine([...unusableIds].sort().join(", "));
+  return {
+    key: `keybindings:unusable:${listed}`,
+    message:
+      `Ignored [keybindings] entries with unsupported values: ${listed}. ` +
+      "Use a chord string, a list of chords, or false to unbind.",
+  };
+}
+
 /**
  * Report the extensions whose settings the repository under review contributes.
  *
@@ -951,6 +1019,8 @@ export function resolveConfiguredCliInput(
   const themeNotices = new Map<string, StartupNotice>();
   let userExtensionsLayer: ExtensionsLayer = { paths: [], extensionConfigs: {} };
   let repoExtensionsLayer: ExtensionsLayer = { paths: [], extensionConfigs: {} };
+  // Keybindings are read from the user layer only; see `HunkConfigResolution`.
+  let keybindingsLayer: KeybindingsLayer = { bindings: {}, unusableIds: [] };
 
   let resolvedOptions: CommonOptions = {
     ...buildDefaultConfigPreferences(cwd),
@@ -979,6 +1049,7 @@ export function resolveConfiguredCliInput(
     resolvedOptions = mergeOptions(resolvedOptions, userLayer);
     applyCustomThemeLayer(readCustomThemes(userConfig));
     userExtensionsLayer = readExtensionsLayer(userConfig);
+    keybindingsLayer = readKeybindingsLayer(userConfig);
   }
 
   if (repoConfigPath) {
@@ -1041,6 +1112,8 @@ export function resolveConfiguredCliInput(
     repoExtensionsLayer.extensionConfigs,
   );
   const repoExtensionConfigNotices = repoExtensionConfigNotice ? [repoExtensionConfigNotice] : [];
+  const unusableKeybindingNotice = createUnusableKeybindingNotice(keybindingsLayer.unusableIds);
+  const keybindingNotices = unusableKeybindingNotice ? [unusableKeybindingNotice] : [];
 
   return {
     input: {
@@ -1049,10 +1122,12 @@ export function resolveConfiguredCliInput(
     },
     customThemes: resolvedCustomThemes,
     extensions,
+    keybindings: keybindingsLayer.bindings,
     explicitVcsId,
     startupNotices: buildConfigStartupNotices(usesLegacyCustomSyntax, [
       ...themeNotices.values(),
       ...repoExtensionConfigNotices,
+      ...keybindingNotices,
     ]),
     globalConfigPath: userConfigPath,
     repoConfigPath,

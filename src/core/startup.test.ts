@@ -19,6 +19,7 @@ function createTestConfigResolution(
     input,
     customThemes: [],
     extensions: { enabled: false, paths: [], repoPaths: [], extensionConfigs: {} },
+    keybindings: {},
     ...overrides,
   };
 }

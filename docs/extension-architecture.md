@@ -71,10 +71,20 @@ Every app-level keyboard shortcut is a named command in one dispatch table
 (`src/ui/lib/appCommands.ts`); modal surfaces (dialogs, menus, focused
 inputs) own their keys first and are deliberately not commands. Extension
 `registerCommand` entries join the same table via
-`src/ui/lib/extensionCommands.ts` — built-ins win key conflicts, detected by
-probing matchers with a synthesized event (`src/lib/commandKeys.ts`).
-Command handlers receive sidebar open/close controls, which is how a
-registered key opens an extension's sidebar.
+`src/ui/lib/extensionCommands.ts` — built-ins win key conflicts, refused one
+chord at a time and detected by probing matchers with a synthesized event
+(`src/lib/commandKeys.ts`). Command handlers receive sidebar open/close
+controls, which is how a registered key opens an extension's sidebar.
+
+Commands declare chords, not matchers: `src/ui/lib/keymap.ts` folds every
+command's `defaultKeys` against the user's `[keybindings]` table (user config
+layer only) into one id-to-chords answer, from which matchers, key labels, and
+conflict probes are all derived — a user-bound chord is exclusive, so whatever
+held it by default gives it up. The chord grammar itself lives in
+`src/extension-api/keys.ts` because it is published as `hunkdiff/extension`
+(`matchesKey`, `parseKeyChord`, `matchesKeyChord`) for extension components
+that need internal keys; `src/lib/commandKeys.ts` re-exports it inward and
+keeps the host-only pieces.
 
 ## VCS adapters
 

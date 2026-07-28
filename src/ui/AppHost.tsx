@@ -194,6 +194,7 @@ export function AppHost({
             ]
           : configured.startupNotices;
       nextBootstrap.viewPreferencesConfigPath = configured.viewPreferencesConfigPath;
+      nextBootstrap.keybindings = configured.keybindings;
       const nextSnapshot = createInitialSessionSnapshot(nextBootstrap);
 
       let sessionId = "local-session";

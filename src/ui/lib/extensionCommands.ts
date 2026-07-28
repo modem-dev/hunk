@@ -1,12 +1,20 @@
+import type { KeyEvent } from "@opentui/core";
 import type { RegisteredCommand } from "../../extensions/types";
-import { matchesKeyChord, parseKeyChord, synthesizeKeyEvent } from "../../lib/commandKeys";
-import type { AppCommand } from "./appCommands";
+import {
+  matchesKeyChord,
+  parseKeyChordOrUndefined,
+  synthesizeKeyEvent,
+  toKeyChordList,
+} from "../../lib/commandKeys";
+import type { AppCommand, ResolvedCommandKeys } from "./appCommands";
+import { formatKeyChord } from "./keymap";
 
 /** One extension binding refused because its chord is already taken. */
 export interface ExtensionCommandConflict {
   extensionId: string;
   /** Namespaced command id, `<extensionId>.<id>`. */
   fullId: string;
+  /** The one chord that was refused; the command's other chords may still be bound. */
   key: string;
   /** The command that already owns the chord. */
   conflictingId: string;
@@ -19,6 +27,11 @@ export interface BuildExtensionAppCommandsOptions {
    * and `scopes` are read, so a table built over no-op callbacks works.
    */
   builtins: readonly AppCommand[];
+  /**
+   * Chords resolved against the user's `[keybindings]`, keyed by namespaced
+   * command id. A resolved entry replaces the chords the extension declared.
+   */
+  resolvedKeys?: ResolvedCommandKeys;
   /** Invoke one extension command; the caller owns context and error policy. */
   runCommand: (registered: RegisteredCommand) => void;
 }
@@ -29,51 +42,74 @@ export interface ExtensionAppCommands {
   conflicts: ExtensionCommandConflict[];
 }
 
+/** One chord already claimed, and the command that claimed it. */
+interface ClaimedChord {
+  commandId: string;
+  match: (key: KeyEvent) => boolean;
+}
+
 /**
  * Adapt registered extension commands into dispatch-table entries.
  *
  * A chord that collides with a built-in shortcut — or with an earlier
  * extension's binding — is refused and reported, never silently shadowed:
- * built-ins keep every key they ship with, and between extensions load order
- * is the tiebreaker, same as everywhere else in the registry. Conflicts are
- * detected by synthesizing the key event a chord describes and probing every
- * matcher, because built-in commands match with predicates rather than chords.
- * Extension commands run in the review scope only: pager mode is a pager, and
- * modal surfaces own their keys outright.
+ * built-ins keep every key they hold, and between extensions load order is the
+ * tiebreaker, same as everywhere else in the registry. Conflicts are detected
+ * by synthesizing the key event a chord describes and probing every matcher,
+ * because a command may match with a predicate rather than chords. Refusal is
+ * per chord, not per command: a command bound to three keys, one of them taken,
+ * keeps the other two and reports the one it lost. Extension commands run in
+ * the review scope only: pager mode is a pager, and modal surfaces own their
+ * keys outright.
  */
 export function buildExtensionAppCommands(
   options: BuildExtensionAppCommandsOptions,
 ): ExtensionAppCommands {
   const commands: AppCommand[] = [];
   const conflicts: ExtensionCommandConflict[] = [];
+  // Chords earlier extension commands took, in the order they took them.
+  const claimed: ClaimedChord[] = [];
 
   for (const registered of options.registered) {
     const { command } = registered;
     const fullId = `${registered.extensionId}.${command.id}`;
+    const declared = options.resolvedKeys?.get(fullId) ?? toKeyChordList(command.key);
     // A command without a binding stays registered but has nothing to dispatch.
-    if (command.key === undefined) {
+    if (declared.length === 0) {
       continue;
     }
 
-    // Registration already validated the chord; an error here is unreachable
-    // short of registry tampering, and skipping is the safe answer to it.
-    const parsed = parseKeyChord(command.key);
-    if ("error" in parsed) {
-      continue;
+    const bound: Array<{ chord: string; match: (key: KeyEvent) => boolean }> = [];
+    for (const chord of declared) {
+      // Registration already validated the chord; an error here is unreachable
+      // short of registry tampering, and skipping is the safe answer to it.
+      const parsed = parseKeyChordOrUndefined(chord);
+      if (!parsed) {
+        continue;
+      }
+
+      const probe = synthesizeKeyEvent(parsed);
+      const takenBy =
+        options.builtins.find(
+          (builtin) => builtin.scopes.includes("review") && builtin.match(probe),
+        )?.id ?? claimed.find((entry) => entry.match(probe))?.commandId;
+      if (takenBy !== undefined) {
+        conflicts.push({
+          extensionId: registered.extensionId,
+          fullId,
+          key: chord,
+          conflictingId: takenBy,
+        });
+        continue;
+      }
+
+      const match = (key: KeyEvent) => matchesKeyChord(parsed, key);
+      claimed.push({ commandId: fullId, match });
+      bound.push({ chord, match });
     }
 
-    const probe = synthesizeKeyEvent(parsed);
-    const taken =
-      options.builtins.find(
-        (builtin) => builtin.scopes.includes("review") && builtin.match(probe),
-      ) ?? commands.find((extension) => extension.match(probe));
-    if (taken) {
-      conflicts.push({
-        extensionId: registered.extensionId,
-        fullId,
-        key: command.key,
-        conflictingId: taken.id,
-      });
+    // Every chord was taken: the command stays registered, just unbound.
+    if (bound.length === 0) {
       continue;
     }
 
@@ -81,12 +117,27 @@ export function buildExtensionAppCommands(
       id: fullId,
       title: command.title,
       scopes: ["review"],
-      keyLabels: [command.key],
-      match: (key) => matchesKeyChord(parsed, key),
+      keyLabels: bound.map((binding) => formatKeyChord(binding.chord)),
+      match: (key) => bound.some((binding) => binding.match(key)),
       run: () => options.runCommand(registered),
       closesMenu: true,
     });
   }
 
   return { commands, conflicts };
+}
+
+/**
+ * Every registered extension command's declared chords, for keymap resolution.
+ *
+ * Reported under the namespaced id the user writes in `[keybindings]`, so an
+ * extension command is remappable exactly like a built-in one.
+ */
+export function extensionCommandKeyDefaults(
+  registered: readonly RegisteredCommand[],
+): Array<{ id: string; defaultKeys: readonly string[] }> {
+  return registered.map((entry) => ({
+    id: `${entry.extensionId}.${entry.command.id}`,
+    defaultKeys: toKeyChordList(entry.command.key),
+  }));
 }

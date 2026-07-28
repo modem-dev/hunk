@@ -685,7 +685,8 @@ export interface ExtensionSidebarView {
  * Commands are the same mechanism Hunk's own shortcuts run on: a key chord
  * resolves to a command, and the command's handler runs. A chord that
  * collides with a built-in shortcut or an earlier extension binding is
- * refused with a warning — the command stays registered, just unbound.
+ * refused with a warning — the command stays registered, and any other chord
+ * it declared stays bound.
  */
 export interface ExtensionCommand {
   /** Identifies the command within its extension; `<extensionId>.<id>` globally. */
@@ -693,7 +694,8 @@ export interface ExtensionCommand {
   /** Human-readable name, for diagnostics and future menu listings. */
   title: string;
   /**
-   * Default key chord, e.g. `"ctrl+m"`, `"F2"`, `"G"`, `"y"`.
+   * Default key chord, e.g. `"ctrl+m"`, `"F2"`, `"G"`, `"y"`, or an array of
+   * chords to bind the command to every one of them.
    *
    * Modifiers are `ctrl`, `alt`/`option`, `cmd`/`meta`, and `shift`, joined
    * with `+`; an uppercase letter means its shifted form. `shift` applies to
@@ -701,8 +703,11 @@ export interface ExtensionCommand {
    * character the shift produces (`"!"`, `"{"`), since terminals report the
    * character rather than the combination. Omit to register a command with
    * no binding.
+   *
+   * These are defaults: a user's `[keybindings]` config table may rebind or
+   * unbind the command by its `<extensionId>.<id>` name.
    */
-  key?: string;
+  key?: string | readonly string[];
 }
 
 /** Open, close, and inspect sidebar views from a command handler. */

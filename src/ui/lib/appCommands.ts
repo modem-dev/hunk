@@ -1,20 +1,15 @@
 import type { KeyEvent } from "@opentui/core";
 import type { LayoutMode } from "../../core/types";
-import {
-  isCreateReviewNoteKey,
-  isHalfPageDownKey,
-  isHalfPageUpKey,
-  isPageDownKey,
-  isPageUpKey,
-  isShiftSpacePageUpKey,
-  isStepDownKey,
-  isStepUpKey,
-} from "./keyboard";
+import { matchesAnyKeyChord } from "../../lib/commandKeys";
+import { formatKeyChord, type CommandKeyDefaults } from "./keymap";
 
 type ScrollUnit = "step" | "viewport" | "content" | "half";
 
 /** Top-level input scopes a command can be active in. */
 export type AppCommandScope = "review" | "pager";
+
+/** Chords each command answers to after user keybindings are folded in, by command id. */
+export type ResolvedCommandKeys = ReadonlyMap<string, readonly string[]>;
 
 const FAST_CODE_HORIZONTAL_SCROLL_COLUMNS = 8;
 
@@ -35,6 +30,15 @@ export interface AppCommand {
   scopes: readonly AppCommandScope[];
   /** Human-readable key labels for menus, help, and conflict messages. */
   keyLabels: readonly string[];
+  /**
+   * The chords this command ships with, before user keybindings.
+   *
+   * Present means the command is remappable by id from the `[keybindings]`
+   * config table, and its matcher and labels are derived from the resolved
+   * chords. A command without it matches however it likes and cannot be
+   * remapped.
+   */
+  defaultKeys?: readonly string[];
   /** Report whether the command may run right now; skipped when false. */
   isEnabled?: () => boolean;
   match: (key: KeyEvent) => boolean;
@@ -43,31 +47,16 @@ export interface AppCommand {
   closesMenu?: boolean;
 }
 
-/** Detect an unmodified lowercase g keypress. */
-function isLowercaseGKey(key: KeyEvent) {
-  return (
-    (key.name === "g" || key.sequence === "g") &&
-    !key.shift &&
-    !key.option &&
-    !key.ctrl &&
-    !key.meta
-  );
-}
-
-/** Detect an unmodified uppercase G keypress. */
-function isUppercaseGKey(key: KeyEvent) {
-  return (
-    (key.sequence === "G" && !key.option && !key.ctrl && !key.meta) ||
-    (key.name === "g" && key.shift && !key.option && !key.ctrl && !key.meta)
-  );
-}
-
-/** Detect Shift-M without stealing the lowercase hunk metadata toggle. */
-function isUppercaseMKey(key: KeyEvent) {
-  return (
-    (key.sequence === "M" && !key.option && !key.ctrl && !key.meta) ||
-    (key.name === "m" && key.shift && !key.option && !key.ctrl && !key.meta)
-  );
+/** One built-in command as declared: chords in, matcher and labels derived. */
+interface BuiltinCommandSpec {
+  id: string;
+  title: string;
+  scopes: readonly AppCommandScope[];
+  /** Chords the command ships with; the user's config may replace them. */
+  defaultKeys: readonly string[];
+  isEnabled?: () => boolean;
+  run: (key: KeyEvent) => void;
+  closesMenu?: boolean;
 }
 
 /** The callbacks the built-in command set drives; App supplies its own handlers. */
@@ -79,6 +68,8 @@ export interface BuildAppCommandsOptions {
   moveToHunk: (delta: number) => void;
   openThemeSelector: () => void;
   requestQuit: () => void;
+  /** Chords resolved against the user's `[keybindings]`; defaults apply where absent. */
+  resolvedKeys?: ResolvedCommandKeys;
   scrollCodeHorizontally: (delta: number) => void;
   scrollDiff: (delta: number, unit: ScrollUnit) => void;
   selectLayoutMode: (mode: LayoutMode) => void;
@@ -99,51 +90,41 @@ export interface BuildAppCommandsOptions {
 const REVIEW: readonly AppCommandScope[] = ["review"];
 const REVIEW_AND_PAGER: readonly AppCommandScope[] = ["review", "pager"];
 
-/** Match one unmodified single character by key name or reported sequence. */
-function plainKey(name: string) {
-  return (key: KeyEvent) =>
-    (key.name === name || key.sequence === name) && !key.ctrl && !key.meta && !key.option;
-}
-
 /**
- * Build Hunk's built-in command table.
+ * Declare Hunk's built-in commands as ids, titles, and default chords.
  *
  * Order is the tiebreaker when several commands could match one key, exactly
  * as the old cascade of if-statements was, so entries keep the old cascade's
  * relative order where it mattered (uppercase before lowercase forms).
  */
-export function buildAppCommands(options: BuildAppCommandsOptions): AppCommand[] {
+function builtinCommandSpecs(options: BuildAppCommandsOptions): BuiltinCommandSpec[] {
   return [
     {
       id: "review.jumpToBottom",
       title: "Jump to end",
       scopes: REVIEW_AND_PAGER,
-      keyLabels: ["G", "End"],
-      match: (key) => isUppercaseGKey(key) || key.name === "end",
+      defaultKeys: ["G", "end"],
       run: () => options.scrollDiff(1, "content"),
     },
     {
       id: "review.jumpToTop",
       title: "Jump to start",
       scopes: REVIEW_AND_PAGER,
-      keyLabels: ["g", "Home"],
-      match: (key) => isLowercaseGKey(key) || key.name === "home",
+      defaultKeys: ["g", "home"],
       run: () => options.scrollDiff(-1, "content"),
     },
     {
       id: "app.quit",
       title: "Quit",
       scopes: REVIEW_AND_PAGER,
-      keyLabels: ["q"],
-      match: (key) => key.name === "q",
+      defaultKeys: ["q"],
       run: () => options.requestQuit(),
     },
     {
       id: "app.toggleHelp",
       title: "Toggle help",
       scopes: REVIEW,
-      keyLabels: ["?"],
-      match: (key) => key.name === "?" || key.sequence === "?",
+      defaultKeys: ["?"],
       run: () => options.toggleHelp(),
       closesMenu: true,
     },
@@ -151,24 +132,21 @@ export function buildAppCommands(options: BuildAppCommandsOptions): AppCommand[]
       id: "app.toggleFocusArea",
       title: "Switch focus between files and filter",
       scopes: REVIEW,
-      keyLabels: ["Tab"],
-      match: (key) => key.name === "tab",
+      defaultKeys: ["tab"],
       run: () => options.toggleFocusArea(),
     },
     {
       id: "review.focusFilter",
       title: "Focus the file filter",
       scopes: REVIEW,
-      keyLabels: ["/"],
-      match: (key) => key.name === "/",
+      defaultKeys: ["/"],
       run: () => options.focusFilter(),
     },
     {
       id: "review.startNote",
       title: "Add a review note",
       scopes: REVIEW,
-      keyLabels: ["c"],
-      match: isCreateReviewNoteKey,
+      defaultKeys: ["c"],
       run: () => options.startUserNote(),
       closesMenu: true,
     },
@@ -176,56 +154,51 @@ export function buildAppCommands(options: BuildAppCommandsOptions): AppCommand[]
       id: "review.pageDown",
       title: "Scroll down one page",
       scopes: REVIEW_AND_PAGER,
-      keyLabels: ["PageDown", "Space", "f"],
-      match: isPageDownKey,
+      defaultKeys: ["pagedown", "space", "f"],
       run: () => options.scrollDiff(1, "viewport"),
     },
     {
       id: "review.pageUp",
       title: "Scroll up one page",
       scopes: REVIEW_AND_PAGER,
-      keyLabels: ["PageUp", "b", "Shift+Space"],
-      match: (key) => isPageUpKey(key) || isShiftSpacePageUpKey(key),
+      defaultKeys: ["pageup", "b", "shift+space"],
       run: () => options.scrollDiff(-1, "viewport"),
     },
     {
       id: "review.halfPageDown",
       title: "Scroll down half a page",
       scopes: REVIEW_AND_PAGER,
-      keyLabels: ["d"],
-      match: isHalfPageDownKey,
+      defaultKeys: ["d"],
       run: () => options.scrollDiff(1, "half"),
     },
     {
       id: "review.halfPageUp",
       title: "Scroll up half a page",
       scopes: REVIEW_AND_PAGER,
-      keyLabels: ["u"],
-      match: isHalfPageUpKey,
+      defaultKeys: ["u"],
       run: () => options.scrollDiff(-1, "half"),
     },
     {
       id: "review.stepDown",
       title: "Scroll down one row",
       scopes: REVIEW_AND_PAGER,
-      keyLabels: ["Down", "j"],
-      match: isStepDownKey,
+      defaultKeys: ["down", "j"],
       run: () => options.scrollDiff(1, "step"),
     },
     {
       id: "review.stepUp",
       title: "Scroll up one row",
       scopes: REVIEW_AND_PAGER,
-      keyLabels: ["Up", "k"],
-      match: isStepUpKey,
+      defaultKeys: ["up", "k"],
       run: () => options.scrollDiff(-1, "step"),
     },
     {
       id: "review.scrollCodeLeft",
       title: "Scroll code left",
       scopes: REVIEW_AND_PAGER,
-      keyLabels: ["Left", "Shift+Left"],
-      match: (key) => key.name === "left",
+      // Both chords run the same command; the shifted one scrolls further, so
+      // the handler reads the event rather than splitting into two commands.
+      defaultKeys: ["left", "shift+left"],
       run: (key) =>
         options.scrollCodeHorizontally(key.shift ? -FAST_CODE_HORIZONTAL_SCROLL_COLUMNS : -1),
     },
@@ -233,8 +206,7 @@ export function buildAppCommands(options: BuildAppCommandsOptions): AppCommand[]
       id: "review.scrollCodeRight",
       title: "Scroll code right",
       scopes: REVIEW_AND_PAGER,
-      keyLabels: ["Right", "Shift+Right"],
-      match: (key) => key.name === "right",
+      defaultKeys: ["right", "shift+right"],
       run: (key) =>
         options.scrollCodeHorizontally(key.shift ? FAST_CODE_HORIZONTAL_SCROLL_COLUMNS : 1),
     },
@@ -242,8 +214,7 @@ export function buildAppCommands(options: BuildAppCommandsOptions): AppCommand[]
       id: "view.layoutSplit",
       title: "Split layout",
       scopes: REVIEW,
-      keyLabels: ["1"],
-      match: (key) => key.name === "1",
+      defaultKeys: ["1"],
       run: () => options.selectLayoutMode("split"),
       closesMenu: true,
     },
@@ -251,8 +222,7 @@ export function buildAppCommands(options: BuildAppCommandsOptions): AppCommand[]
       id: "view.layoutStack",
       title: "Stack layout",
       scopes: REVIEW,
-      keyLabels: ["2"],
-      match: (key) => key.name === "2",
+      defaultKeys: ["2"],
       run: () => options.selectLayoutMode("stack"),
       closesMenu: true,
     },
@@ -260,8 +230,7 @@ export function buildAppCommands(options: BuildAppCommandsOptions): AppCommand[]
       id: "view.layoutAuto",
       title: "Auto layout",
       scopes: REVIEW,
-      keyLabels: ["0"],
-      match: (key) => key.name === "0",
+      defaultKeys: ["0"],
       run: () => options.selectLayoutMode("auto"),
       closesMenu: true,
     },
@@ -269,8 +238,7 @@ export function buildAppCommands(options: BuildAppCommandsOptions): AppCommand[]
       id: "view.toggleSidebar",
       title: "Toggle sidebar",
       scopes: REVIEW_AND_PAGER,
-      keyLabels: ["s"],
-      match: (key) => key.name === "s" || key.sequence === "s",
+      defaultKeys: ["s"],
       run: () => options.toggleSidebar(),
       closesMenu: true,
     },
@@ -278,9 +246,8 @@ export function buildAppCommands(options: BuildAppCommandsOptions): AppCommand[]
       id: "app.refresh",
       title: "Refresh the review",
       scopes: REVIEW,
-      keyLabels: ["r"],
+      defaultKeys: ["r"],
       isEnabled: () => options.canRefreshCurrentInput,
-      match: (key) => key.name === "r" || key.sequence === "r",
       run: () => options.triggerRefreshCurrentInput(),
       closesMenu: true,
     },
@@ -288,8 +255,7 @@ export function buildAppCommands(options: BuildAppCommandsOptions): AppCommand[]
       id: "view.openThemeSelector",
       title: "Choose theme",
       scopes: REVIEW,
-      keyLabels: ["t"],
-      match: (key) => key.name === "t",
+      defaultKeys: ["t"],
       run: () => options.openThemeSelector(),
       closesMenu: true,
     },
@@ -297,8 +263,7 @@ export function buildAppCommands(options: BuildAppCommandsOptions): AppCommand[]
       id: "view.toggleAgentNotes",
       title: "Toggle agent notes",
       scopes: REVIEW,
-      keyLabels: ["a"],
-      match: (key) => key.name === "a",
+      defaultKeys: ["a"],
       run: () => options.toggleAgentNotes(),
       closesMenu: true,
     },
@@ -306,8 +271,7 @@ export function buildAppCommands(options: BuildAppCommandsOptions): AppCommand[]
       id: "view.toggleLineNumbers",
       title: "Toggle line numbers",
       scopes: REVIEW,
-      keyLabels: ["l"],
-      match: (key) => key.name === "l" || key.sequence === "l",
+      defaultKeys: ["l"],
       run: () => options.toggleLineNumbers(),
       closesMenu: true,
     },
@@ -315,8 +279,7 @@ export function buildAppCommands(options: BuildAppCommandsOptions): AppCommand[]
       id: "view.toggleLineWrap",
       title: "Toggle line wrapping",
       scopes: REVIEW_AND_PAGER,
-      keyLabels: ["w"],
-      match: (key) => key.name === "w" || key.sequence === "w",
+      defaultKeys: ["w"],
       run: () => options.toggleLineWrap(),
       closesMenu: true,
     },
@@ -324,8 +287,7 @@ export function buildAppCommands(options: BuildAppCommandsOptions): AppCommand[]
       id: "view.toggleMenuBar",
       title: "Toggle menu bar",
       scopes: REVIEW,
-      keyLabels: ["M"],
-      match: isUppercaseMKey,
+      defaultKeys: ["M"],
       run: () => options.toggleMenuBar(),
       closesMenu: true,
     },
@@ -333,8 +295,7 @@ export function buildAppCommands(options: BuildAppCommandsOptions): AppCommand[]
       id: "view.toggleHunkHeaders",
       title: "Toggle hunk headers",
       scopes: REVIEW,
-      keyLabels: ["m"],
-      match: (key) => key.name === "m" || key.sequence === "m",
+      defaultKeys: ["m"],
       run: () => options.toggleHunkHeaders(),
       closesMenu: true,
     },
@@ -342,8 +303,7 @@ export function buildAppCommands(options: BuildAppCommandsOptions): AppCommand[]
       id: "review.toggleHunkGap",
       title: "Expand or collapse context for the selected hunk",
       scopes: REVIEW,
-      keyLabels: ["z"],
-      match: (key) => key.name === "z" || key.sequence === "z",
+      defaultKeys: ["z"],
       run: () => options.toggleGapForSelectedHunk(),
       closesMenu: true,
     },
@@ -351,8 +311,7 @@ export function buildAppCommands(options: BuildAppCommandsOptions): AppCommand[]
       id: "review.editSelectedFile",
       title: "Open the selected file in your editor",
       scopes: REVIEW,
-      keyLabels: ["e"],
-      match: (key) => key.name === "e" || key.sequence === "e",
+      defaultKeys: ["e"],
       run: () => options.triggerEditSelectedFile(),
       closesMenu: true,
     },
@@ -360,8 +319,7 @@ export function buildAppCommands(options: BuildAppCommandsOptions): AppCommand[]
       id: "review.previousHunk",
       title: "Previous hunk",
       scopes: REVIEW,
-      keyLabels: ["["],
-      match: (key) => key.name === "[",
+      defaultKeys: ["["],
       run: () => options.moveToHunk(-1),
       closesMenu: true,
     },
@@ -369,8 +327,7 @@ export function buildAppCommands(options: BuildAppCommandsOptions): AppCommand[]
       id: "review.nextHunk",
       title: "Next hunk",
       scopes: REVIEW,
-      keyLabels: ["]"],
-      match: (key) => key.name === "]",
+      defaultKeys: ["]"],
       run: () => options.moveToHunk(1),
       closesMenu: true,
     },
@@ -378,8 +335,7 @@ export function buildAppCommands(options: BuildAppCommandsOptions): AppCommand[]
       id: "review.previousFile",
       title: "Previous file",
       scopes: REVIEW,
-      keyLabels: [","],
-      match: plainKey(","),
+      defaultKeys: [","],
       run: () => options.moveToFile(-1),
       closesMenu: true,
     },
@@ -387,8 +343,7 @@ export function buildAppCommands(options: BuildAppCommandsOptions): AppCommand[]
       id: "review.nextFile",
       title: "Next file",
       scopes: REVIEW,
-      keyLabels: ["."],
-      match: plainKey("."),
+      defaultKeys: ["."],
       run: () => options.moveToFile(1),
       closesMenu: true,
     },
@@ -396,8 +351,7 @@ export function buildAppCommands(options: BuildAppCommandsOptions): AppCommand[]
       id: "review.previousAnnotatedHunk",
       title: "Previous annotated hunk",
       scopes: REVIEW,
-      keyLabels: ["{"],
-      match: (key) => key.sequence === "{",
+      defaultKeys: ["{"],
       run: () => options.moveToAnnotatedHunk(-1),
       closesMenu: true,
     },
@@ -405,53 +359,110 @@ export function buildAppCommands(options: BuildAppCommandsOptions): AppCommand[]
       id: "review.nextAnnotatedHunk",
       title: "Next annotated hunk",
       scopes: REVIEW,
-      keyLabels: ["}"],
-      match: (key) => key.sequence === "}",
+      defaultKeys: ["}"],
       run: () => options.moveToAnnotatedHunk(1),
       closesMenu: true,
     },
   ];
 }
 
-let cachedMatchProbes: AppCommand[] | undefined;
+/**
+ * Turn one declared command into a dispatchable entry.
+ *
+ * Matcher and labels both come from the resolved chords, so a remapped command
+ * answers to its new key *and* advertises it; a command the user unbound
+ * resolves to no chords and simply never matches.
+ */
+function toAppCommand(spec: BuiltinCommandSpec, resolvedKeys?: ResolvedCommandKeys): AppCommand {
+  const keys = resolvedKeys?.get(spec.id) ?? spec.defaultKeys;
+
+  return {
+    id: spec.id,
+    title: spec.title,
+    scopes: spec.scopes,
+    defaultKeys: spec.defaultKeys,
+    keyLabels: keys.map(formatKeyChord),
+    isEnabled: spec.isEnabled,
+    match: matchesAnyKeyChord(keys),
+    run: spec.run,
+    closesMenu: spec.closesMenu,
+  };
+}
+
+/** Build Hunk's built-in command table over live callbacks. */
+export function buildAppCommands(options: BuildAppCommandsOptions): AppCommand[] {
+  return builtinCommandSpecs(options).map((spec) => toAppCommand(spec, options.resolvedKeys));
+}
+
+const NOOP_COMMAND_OPTIONS: BuildAppCommandsOptions = (() => {
+  const noop = () => {};
+  return {
+    canRefreshCurrentInput: true,
+    focusFilter: noop,
+    moveToAnnotatedHunk: noop,
+    moveToFile: noop,
+    moveToHunk: noop,
+    openThemeSelector: noop,
+    requestQuit: noop,
+    scrollCodeHorizontally: noop,
+    scrollDiff: noop,
+    selectLayoutMode: noop,
+    startUserNote: noop,
+    toggleAgentNotes: noop,
+    toggleFocusArea: noop,
+    toggleGapForSelectedHunk: noop,
+    toggleHelp: noop,
+    toggleHunkHeaders: noop,
+    toggleLineNumbers: noop,
+    toggleLineWrap: noop,
+    toggleMenuBar: noop,
+    toggleSidebar: noop,
+    triggerEditSelectedFile: noop,
+    triggerRefreshCurrentInput: noop,
+  };
+})();
+
+let cachedDefaultProbes: AppCommand[] | undefined;
+const cachedResolvedProbes = new WeakMap<ResolvedCommandKeys, AppCommand[]>();
 
 /**
  * The built-in command table over no-op callbacks, for chord-conflict probing.
  *
- * Matchers are pure functions of the key event and never change between
- * sessions, so one cached table answers "does a built-in own this key?"
- * without threading live callbacks anywhere near conflict detection.
+ * Matchers are a pure function of the resolved chords and never change while a
+ * session's keymap holds, so one cached table per keymap answers "does a
+ * built-in own this key?" without threading live callbacks anywhere near
+ * conflict detection. Cached per keymap identity, because a user rebinding a
+ * built-in frees the key it used to hold for an extension to claim.
  */
-export function builtinCommandMatchProbes(): readonly AppCommand[] {
-  if (!cachedMatchProbes) {
-    const noop = () => {};
-    cachedMatchProbes = buildAppCommands({
-      canRefreshCurrentInput: true,
-      focusFilter: noop,
-      moveToAnnotatedHunk: noop,
-      moveToFile: noop,
-      moveToHunk: noop,
-      openThemeSelector: noop,
-      requestQuit: noop,
-      scrollCodeHorizontally: noop,
-      scrollDiff: noop,
-      selectLayoutMode: noop,
-      startUserNote: noop,
-      toggleAgentNotes: noop,
-      toggleFocusArea: noop,
-      toggleGapForSelectedHunk: noop,
-      toggleHelp: noop,
-      toggleHunkHeaders: noop,
-      toggleLineNumbers: noop,
-      toggleLineWrap: noop,
-      toggleMenuBar: noop,
-      toggleSidebar: noop,
-      triggerEditSelectedFile: noop,
-      triggerRefreshCurrentInput: noop,
-    });
+export function builtinCommandMatchProbes(
+  resolvedKeys?: ResolvedCommandKeys,
+): readonly AppCommand[] {
+  if (!resolvedKeys) {
+    cachedDefaultProbes ??= buildAppCommands(NOOP_COMMAND_OPTIONS);
+    return cachedDefaultProbes;
   }
 
-  return cachedMatchProbes;
+  const cached = cachedResolvedProbes.get(resolvedKeys);
+  if (cached) {
+    return cached;
+  }
+
+  const probes = buildAppCommands({ ...NOOP_COMMAND_OPTIONS, resolvedKeys });
+  cachedResolvedProbes.set(resolvedKeys, probes);
+  return probes;
+}
+
+/**
+ * Every built-in command's shipped chords, for keymap resolution.
+ *
+ * Read back off the command table itself so the defaults the user remaps and
+ * the defaults the app dispatches can never drift apart.
+ */
+export function builtinCommandKeyDefaults(): readonly CommandKeyDefaults[] {
+  return builtinCommandSpecs(NOOP_COMMAND_OPTIONS).map((spec) => ({
+    id: spec.id,
+    defaultKeys: spec.defaultKeys,
+  }));
 }
 
 /**

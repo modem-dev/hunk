@@ -14,7 +14,7 @@ import {
   type ExtensionVcsAdapter,
   type HunkExtensionAPI,
 } from "./types";
-import { parseKeyChord } from "../lib/commandKeys";
+import { parseKeyChord, toKeyChordList } from "../lib/commandKeys";
 import { toUserFacingError } from "../core/errors";
 import { toInternalVcsPatchResult } from "./vcsPatchResult";
 import type { ExtensionVcsOperation } from "../extension-api/types";
@@ -338,13 +338,30 @@ export function createExtensionApi(
         throw new Error("registerCommand requires a handler function.");
       }
 
-      // Parse the chord at registration so a typo fails the author loudly
-      // here, instead of registering a binding that silently never fires.
+      // Parse every chord at registration so a typo fails the author loudly
+      // here, instead of registering a binding that silently never fires. An
+      // array binds the command to each chord it lists, so one bad entry is
+      // still a bad registration rather than a partially applied one.
       if (command.key !== undefined) {
-        assertNonEmptyString(command.key, "registerCommand key must be a non-empty chord string.");
-        const parsed = parseKeyChord(command.key);
-        if ("error" in parsed) {
-          throw new Error(`registerCommand: ${parsed.error}`);
+        const chords =
+          typeof command.key === "string" || Array.isArray(command.key)
+            ? toKeyChordList(command.key)
+            : undefined;
+        if (chords === undefined || chords.length === 0) {
+          throw new Error(
+            "registerCommand key must be a non-empty chord string or array of chords.",
+          );
+        }
+
+        for (const chord of chords) {
+          assertNonEmptyString(
+            chord,
+            "registerCommand key must be a non-empty chord string or array of chords.",
+          );
+          const parsed = parseKeyChord(chord);
+          if ("error" in parsed) {
+            throw new Error(`registerCommand: ${parsed.error}`);
+          }
         }
       }
 

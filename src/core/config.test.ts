@@ -1089,6 +1089,46 @@ describe("extension configuration", () => {
     expect(resolved.extensions.repoPaths).toEqual(["./tools/policy.ts"]);
   });
 
+  test("reads [keybindings] from the user layer only", () => {
+    const home = createTempDir("hunk-config-home-");
+    const repo = createTempDir("hunk-config-repo-");
+    createRepo(repo);
+
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(
+      join(home, ".config", "hunk", "config.toml"),
+      [
+        "[keybindings]",
+        '"app.quit" = "ctrl+x"',
+        '"review.nextHunk" = ["]", "ctrl+n"]',
+        '"view.toggleMenuBar" = false',
+        '"app.refresh" = 7',
+      ].join("\n"),
+    );
+
+    mkdirSync(join(repo, ".hunk"), { recursive: true });
+    writeFileSync(
+      join(repo, ".hunk", "config.toml"),
+      ["[keybindings]", '"app.quit" = "ctrl+q"'].join("\n"),
+    );
+
+    const resolved = resolveConfiguredCliInput(createPatchPagerInput(), {
+      cwd: repo,
+      env: { HOME: home },
+    });
+
+    // The repo layer is ignored on purpose: keys belong to the reader's machine.
+    expect(resolved.keybindings).toEqual({
+      "app.quit": "ctrl+x",
+      "review.nextHunk": ["]", "ctrl+n"],
+      "view.toggleMenuBar": false,
+    });
+    // The entry with an unusable value is skipped, and said so.
+    expect(resolved.startupNotices?.some((notice) => notice.message.includes("app.refresh"))).toBe(
+      true,
+    );
+  });
+
   test("lets repo config disable extensions and --no-extensions win over both layers", () => {
     const home = createTempDir("hunk-config-home-");
     const repo = createTempDir("hunk-config-repo-");

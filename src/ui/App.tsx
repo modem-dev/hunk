@@ -20,6 +20,7 @@ import type {
   UserNoteLineTarget,
 } from "../core/types";
 import { canReloadInput } from "../core/watch";
+import { sanitizeTerminalLine } from "../lib/terminalText";
 import { resolveExtensionCommands } from "../extensions/apply";
 import { emitExtensionEvent } from "../extensions/events";
 import { writeExtensionTrust } from "../extensions/trust";
@@ -53,9 +54,14 @@ import { useMenuController } from "./hooks/useMenuController";
 import { useReviewController, type AgentNoteGeometrySnapshot } from "./hooks/useReviewController";
 import { useWatchedInput, type WatchedInputRuntime } from "./hooks/useWatchedInput";
 import { agentNoteMarkupWidth } from "./lib/agentNoteGeometry";
-import { buildAppCommands, builtinCommandMatchProbes } from "./lib/appCommands";
+import {
+  buildAppCommands,
+  builtinCommandKeyDefaults,
+  builtinCommandMatchProbes,
+} from "./lib/appCommands";
 import { buildAppMenus } from "./lib/appMenus";
-import { buildExtensionAppCommands } from "./lib/extensionCommands";
+import { buildExtensionAppCommands, extensionCommandKeyDefaults } from "./lib/extensionCommands";
+import { resolveCommandKeys } from "./lib/keymap";
 import {
   buildSessionSidebarViews,
   bundledSidebarViewKey,
@@ -487,23 +493,43 @@ export function App({
     () => (extensions ? resolveExtensionCommands(extensions.registry).commands : []),
     [extensions],
   );
+  // The session keymap: every bindable command's defaults folded against the
+  // user's `[keybindings]` table, once. Matchers, key labels, and extension
+  // conflict detection all read this one answer, so nothing downstream has to
+  // know whether a key came from a default or from config.
+  const keymap = useMemo(
+    () =>
+      resolveCommandKeys({
+        defaults: [
+          ...builtinCommandKeyDefaults(),
+          ...extensionCommandKeyDefaults(registeredExtensionCommands),
+        ],
+        userBindings: bootstrap.keybindings,
+      }),
+    [bootstrap.keybindings, registeredExtensionCommands],
+  );
+  const resolvedCommandKeys = keymap.keys;
   const extensionAppCommands = useMemo(
     () =>
       buildExtensionAppCommands({
         registered: registeredExtensionCommands,
-        builtins: builtinCommandMatchProbes(),
+        builtins: builtinCommandMatchProbes(resolvedCommandKeys),
+        resolvedKeys: resolvedCommandKeys,
         runCommand: runExtensionCommand,
       }),
-    [registeredExtensionCommands, runExtensionCommand],
+    [registeredExtensionCommands, resolvedCommandKeys, runExtensionCommand],
   );
   const reportedCommandConflictsRef = useRef(new Set<string>());
   useEffect(() => {
     for (const conflict of extensionAppCommands.conflicts) {
-      if (reportedCommandConflictsRef.current.has(conflict.fullId)) {
+      // One command can lose one chord and keep another, so a conflict is
+      // reported per refused chord rather than per command.
+      const reportKey = `${conflict.fullId}:${conflict.key}`;
+      if (reportedCommandConflictsRef.current.has(reportKey)) {
         continue;
       }
 
-      reportedCommandConflictsRef.current.add(conflict.fullId);
+      reportedCommandConflictsRef.current.add(reportKey);
       extensions?.context.notify(
         `Extension ${conflict.extensionId} key "${conflict.key}" is taken by ${conflict.conflictingId} • ` +
           `command "${conflict.fullId}" left unbound`,
@@ -511,6 +537,34 @@ export function App({
       );
     }
   }, [extensionAppCommands, extensions]);
+
+  const reportedKeymapIssuesRef = useRef(new Set<string>());
+  useEffect(() => {
+    // A bad `[keybindings]` entry is a typo in the user's own config, not a
+    // reason to refuse the session: the rest of the keymap still applies and
+    // the problem is reported on the notice row. The notice row shows one
+    // message at a time, so a burst is summarized rather than overwritten.
+    const unreported = keymap.issues.filter(
+      (issue) => !reportedKeymapIssuesRef.current.has(issue.message),
+    );
+    const first = unreported[0];
+    if (!first) {
+      return;
+    }
+
+    for (const issue of unreported) {
+      reportedKeymapIssuesRef.current.add(issue.message);
+    }
+
+    const remaining = unreported.length - 1;
+    showSessionNotice(
+      sanitizeTerminalLine(
+        remaining > 0
+          ? `${first.message} (+${remaining} more keybinding issue${remaining === 1 ? "" : "s"})`
+          : first.message,
+      ),
+    );
+  }, [keymap, showSessionNotice]);
 
   const selectedFileId = selectedFile?.id ?? null;
   useEffect(() => {
@@ -1257,6 +1311,7 @@ export function App({
       moveToHunk: review.moveToHunk,
       openThemeSelector,
       requestQuit,
+      resolvedKeys: resolvedCommandKeys,
       scrollCodeHorizontally,
       scrollDiff,
       selectLayoutMode,
