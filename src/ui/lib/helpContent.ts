@@ -1,4 +1,4 @@
-import type { AppCommand } from "./appCommands";
+import { isCommandEnabled, type AppCommand } from "./appCommands";
 
 /**
  * The curated content of the controls help dialog.
@@ -131,7 +131,7 @@ function helpEntryKeys(commands: readonly AppCommand[], spec: HelpEntrySpec): st
 
   const labels = spec.commandIds.flatMap((id) => {
     const command = commands.find((candidate) => candidate.id === id);
-    if (!command || (command.isEnabled && !command.isEnabled())) {
+    if (!command || !isCommandEnabled(command)) {
       return [];
     }
 

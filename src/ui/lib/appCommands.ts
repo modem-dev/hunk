@@ -533,6 +533,16 @@ export function builtinCommandKeyDefaults(): readonly CommandKeyDefaults[] {
 }
 
 /**
+ * Report whether one command may run right now.
+ *
+ * The single answer key dispatch, programmatic execution, menu entries, and
+ * help rows all consult — a command without a gate is always runnable.
+ */
+export function isCommandEnabled(command: AppCommand): boolean {
+  return !command.isEnabled || command.isEnabled();
+}
+
+/**
  * Run the first enabled command matching one key in one scope.
  *
  * First match wins, exactly as the old if-cascade did. The matched command is
@@ -549,7 +559,7 @@ export function dispatchAppCommand(
       continue;
     }
 
-    if (command.isEnabled && !command.isEnabled()) {
+    if (!isCommandEnabled(command)) {
       continue;
     }
 
@@ -590,7 +600,7 @@ function commandInvocationEvent(command: AppCommand): KeyEvent {
  */
 export function executeAppCommand(commands: readonly AppCommand[], id: string): boolean {
   const command = commands.find((candidate) => candidate.id === id);
-  if (!command || (command.isEnabled && !command.isEnabled())) {
+  if (!command || !isCommandEnabled(command)) {
     return false;
   }
 

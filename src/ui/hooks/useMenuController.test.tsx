@@ -1,0 +1,123 @@
+import { describe, expect, test } from "bun:test";
+import { testRender } from "@opentui/react/test-utils";
+import { act, useState } from "react";
+import type { AppMenus, MenuEntry } from "../components/chrome/menu";
+import { useMenuController } from "./useMenuController";
+
+/**
+ * The controller's behavior when the menus record changes under an open menu —
+ * the Extensions menu vanishes when a session reload drops the last registered
+ * extension command, and the bar must not keep an invisible menu "open".
+ */
+
+function menuItem(label: string): MenuEntry {
+  return { kind: "item", label, action: () => {} };
+}
+
+const BASE_MENUS: AppMenus = {
+  file: [menuItem("Quit")],
+  view: [menuItem("Sidebar")],
+};
+
+const MENUS_WITH_EXTENSIONS: AppMenus = {
+  ...BASE_MENUS,
+  extensions: [menuItem("Open the probe pane")],
+};
+
+describe("useMenuController", () => {
+  test("treats an open menu as closed when its spec vanishes, without reopening on return", async () => {
+    let controller!: ReturnType<typeof useMenuController>;
+    let setMenus!: (menus: AppMenus) => void;
+
+    function Probe({ initial }: { initial: AppMenus }) {
+      const [menus, set] = useState(initial);
+      setMenus = set;
+      controller = useMenuController(menus);
+      return null;
+    }
+
+    const setup = await testRender(<Probe initial={MENUS_WITH_EXTENSIONS} />, {
+      width: 80,
+      height: 24,
+    });
+
+    try {
+      await act(async () => {
+        await setup.renderOnce();
+      });
+
+      await act(async () => {
+        controller.openMenu("extensions");
+      });
+      expect(controller.activeMenuId).toBe("extensions");
+      expect(controller.activeMenuSpec?.id).toBe("extensions");
+
+      // The registry reload drops the extension commands: the open menu's spec
+      // is gone, and the controller reports it closed rather than invisible.
+      await act(async () => {
+        setMenus(BASE_MENUS);
+      });
+      expect(controller.activeMenuId).toBeNull();
+      expect(controller.activeMenuSpec).toBeUndefined();
+      expect(controller.activeMenuEntries).toEqual([]);
+
+      // Closed means really closed: the next toggle opens the menu it names
+      // instead of dismissing a phantom, exactly what an F10 press goes through.
+      await act(async () => {
+        controller.toggleMenu("file");
+      });
+      expect(controller.activeMenuId).toBe("file");
+
+      await act(async () => {
+        controller.closeMenu();
+      });
+
+      // The Extensions menu coming back does not spring the dropdown back open:
+      // the stale id was cleared, not merely masked.
+      await act(async () => {
+        setMenus(MENUS_WITH_EXTENSIONS);
+      });
+      expect(controller.activeMenuId).toBeNull();
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("cycling skips menus the session does not show", async () => {
+    let controller!: ReturnType<typeof useMenuController>;
+
+    function Probe() {
+      controller = useMenuController(BASE_MENUS);
+      return null;
+    }
+
+    const setup = await testRender(<Probe />, { width: 80, height: 24 });
+
+    try {
+      await act(async () => {
+        await setup.renderOnce();
+      });
+
+      await act(async () => {
+        controller.openMenu("file");
+      });
+      await act(async () => {
+        controller.switchMenu(1);
+      });
+      expect(controller.activeMenuId).toBe("view");
+
+      // Wrapping from the last visible menu lands on the first visible one —
+      // never on extensions or help, which this session does not show.
+      await act(async () => {
+        controller.switchMenu(1);
+      });
+      expect(controller.activeMenuId).toBe("file");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+});

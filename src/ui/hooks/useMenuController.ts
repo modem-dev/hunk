@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   buildMenuSpecs,
   menuEntries,
@@ -13,6 +13,27 @@ export function useMenuController(menus: AppMenus) {
   const [activeMenuId, setActiveMenuId] = useState<MenuId | null>(null);
   const [activeMenuItemIndex, setActiveMenuItemIndex] = useState(0);
 
+  // Plain derivation, not a memo: `menus` is rebuilt every render on purpose
+  // (hints and checked marks must stay live), so a memo keyed on it never hits.
+  const menuSpecs = buildMenuSpecs(menus);
+
+  // A menu can vanish while open — the Extensions menu disappears when a
+  // session reload drops the last registered extension command. The stored id
+  // counts as closed the moment its spec is gone, so the bar never holds an
+  // invisible "open" menu that swallows the next F10 press.
+  const openMenuId =
+    activeMenuId !== null && menuSpecs.some((menu) => menu.id === activeMenuId)
+      ? activeMenuId
+      : null;
+
+  // Also clear the stale id, so the menu does not spring back open if a later
+  // reload re-registers the commands that bring its spec back.
+  useEffect(() => {
+    if (activeMenuId !== null && openMenuId === null) {
+      setActiveMenuId(null);
+    }
+  }, [activeMenuId, openMenuId]);
+
   const closeMenu = () => {
     setActiveMenuId(null);
   };
@@ -23,15 +44,13 @@ export function useMenuController(menus: AppMenus) {
   };
 
   const toggleMenu = (menuId: MenuId) => {
-    if (activeMenuId === menuId) {
+    if (openMenuId === menuId) {
       closeMenu();
       return;
     }
 
     openMenu(menuId);
   };
-
-  const menuSpecs = useMemo(() => buildMenuSpecs(menus), [menus]);
 
   // Cycling walks the menus the bar actually shows, so a session without an
   // Extensions menu never lands on one that is not there.
@@ -42,23 +61,23 @@ export function useMenuController(menus: AppMenus) {
 
     const currentIndex = Math.max(
       0,
-      activeMenuId ? menuSpecs.findIndex((menu) => menu.id === activeMenuId) : 0,
+      openMenuId ? menuSpecs.findIndex((menu) => menu.id === openMenuId) : 0,
     );
     const nextIndex = (currentIndex + delta + menuSpecs.length) % menuSpecs.length;
     openMenu(menuSpecs[nextIndex]!.id);
   };
 
   const moveMenuItem = (delta: number) => {
-    const entries = activeMenuId ? menuEntries(menus, activeMenuId) : [];
+    const entries = openMenuId ? menuEntries(menus, openMenuId) : [];
     setActiveMenuItemIndex((current) => nextMenuItemIndex(entries, current, delta));
   };
 
   const activateCurrentMenuItem = () => {
-    if (!activeMenuId) {
+    if (!openMenuId) {
       return;
     }
 
-    const entry = menuEntries(menus, activeMenuId)[activeMenuItemIndex];
+    const entry = menuEntries(menus, openMenuId)[activeMenuItemIndex];
     if (!entry || entry.kind !== "item") {
       return;
     }
@@ -67,13 +86,13 @@ export function useMenuController(menus: AppMenus) {
     closeMenu();
   };
 
-  const activeMenuEntries = activeMenuId ? menuEntries(menus, activeMenuId) : [];
-  const activeMenuSpec = menuSpecs.find((menu) => menu.id === activeMenuId);
+  const activeMenuEntries = openMenuId ? menuEntries(menus, openMenuId) : [];
+  const activeMenuSpec = menuSpecs.find((menu) => menu.id === openMenuId);
   const activeMenuWidth = menuWidth(activeMenuEntries) + 2;
 
   return {
     activeMenuEntries,
-    activeMenuId,
+    activeMenuId: openMenuId,
     activeMenuItemIndex,
     activeMenuSpec,
     activeMenuWidth,

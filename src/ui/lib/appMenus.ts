@@ -1,6 +1,6 @@
 import type { LayoutMode } from "../../core/types";
 import type { AppMenus, MenuEntry, MenuId } from "../components/chrome/menu";
-import { executeAppCommand, type AppCommand } from "./appCommands";
+import { executeAppCommand, isCommandEnabled, type AppCommand } from "./appCommands";
 
 /**
  * The dropdown menus, expressed as references into the command table.
@@ -63,7 +63,7 @@ function toMenuEntries(
     }
 
     const command = commands.find((candidate) => candidate.id === spec.commandId);
-    if (!command || (command.isEnabled && !command.isEnabled())) {
+    if (!command || !isCommandEnabled(command)) {
       continue;
     }
 
