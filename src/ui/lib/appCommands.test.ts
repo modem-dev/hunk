@@ -39,7 +39,8 @@ function createTestCommands(resolvedKeys?: ResolvedCommandKeys) {
     moveToAnnotatedHunk: record("moveToAnnotatedHunk"),
     moveToFile: record("moveToFile"),
     moveToHunk: record("moveToHunk"),
-    openAgentSkill: record("openAgentSkill"),
+    copyAgentPrompt: record("copyAgentPrompt"),
+    isAgentPromptCopySupported: () => true,
     openThemeSelector: record("openThemeSelector"),
     requestQuit: record("requestQuit"),
     resolvedKeys,
@@ -200,7 +201,7 @@ describe("builtinCommandKeyDefaults", () => {
         .map((entry) => entry.id)
         .sort(),
     ).toEqual([
-      "hunk.app.openAgentSkill",
+      "hunk.app.copyAgentPrompt",
       "hunk.review.nextAnnotatedFile",
       "hunk.review.previousAnnotatedFile",
       "hunk.view.toggleCopyDecorations",
@@ -242,8 +243,8 @@ describe("executeAppCommand", () => {
 
     expect(executeAppCommand(commands, "hunk.app.quit")).toBe(true);
     // Unbound commands are reachable only this way, which is why menus use it.
-    expect(executeAppCommand(commands, "hunk.app.openAgentSkill")).toBe(true);
-    expect(ran).toEqual(["requestQuit", "openAgentSkill"]);
+    expect(executeAppCommand(commands, "hunk.app.copyAgentPrompt")).toBe(true);
+    expect(ran).toEqual(["requestQuit", "copyAgentPrompt"]);
   });
 
   test("passes the command's own first chord to handlers that read the event", () => {

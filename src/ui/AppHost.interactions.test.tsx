@@ -16,7 +16,7 @@ import type { AppBootstrap, LayoutMode } from "../core/types";
 import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
 import { capturedTestColorToHex } from "../../test/helpers/test-color-helpers";
 import { createTestDiffFile as buildTestDiffFile, lines } from "../../test/helpers/diff-helpers";
-import { AGENT_SKILL_COMMAND, AGENT_SKILL_PROMPT } from "./components/chrome/AgentSkillDialog";
+import { AGENT_SKILL_PROMPT } from "../hunk-review/agentPrompt";
 import { resolveTheme } from "./themes";
 
 const { loadAppBootstrap } = await import("../core/loaders");
@@ -1793,12 +1793,18 @@ describe("App interactions", () => {
     }
   });
 
-  test("Agent menu opens copyable agent skill guidance", async () => {
+  test("Agent menu copies the agent prompt and confirms the write", async () => {
     const bootstrap = createBootstrap();
     const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
       width: 120,
       height: 24,
     });
+    let copiedText = "";
+    setup.renderer.isOsc52Supported = () => true;
+    setup.renderer.copyToClipboardOSC52 = (text: string) => {
+      copiedText = text;
+      return true;
+    };
 
     try {
       await flush(setup);
@@ -1818,10 +1824,11 @@ describe("App interactions", () => {
       let frame = await waitForFrame(
         setup,
         (currentFrame) =>
-          currentFrame.includes("Agent skill") && currentFrame.includes("Next annotated file"),
+          currentFrame.includes("Copy agent prompt") &&
+          currentFrame.includes("Next annotated file"),
         12,
       );
-      expect(frame).toContain("Agent skill");
+      expect(frame).toContain("Copy agent prompt");
       expect(frame).toContain("Next annotated file");
 
       await act(async () => {
@@ -1834,17 +1841,51 @@ describe("App interactions", () => {
 
       frame = await waitForFrame(
         setup,
-        (currentFrame) => currentFrame.includes("Teach your agent"),
+        (currentFrame) => currentFrame.includes("Copied agent prompt to clipboard"),
         12,
       );
-      expect(frame).toContain("Load the Hunk skill and use it for this review");
-      expect(AGENT_SKILL_PROMPT).toContain(AGENT_SKILL_COMMAND);
-      expect(frame).toContain(AGENT_SKILL_COMMAND);
-      expect(frame).toContain("Copy");
+      expect(copiedText).toBe(AGENT_SKILL_PROMPT);
+      expect(frame).toContain("Copied agent prompt to clipboard");
+      expect(frame).not.toContain("Teach your agent");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("Agent menu omits copy prompt when OSC 52 is unsupported", async () => {
+    const bootstrap = createBootstrap();
+    const setup = await testRender(<AppHost bootstrap={bootstrap} />, {
+      width: 120,
+      height: 24,
+    });
+    setup.renderer.isOsc52Supported = () => false;
+
+    try {
+      await flush(setup);
 
       await act(async () => {
-        await setup.mockInput.pressEscape();
+        await setup.mockInput.pressKey("F10");
       });
+      await waitForFrame(setup, (frame) => frame.includes("Toggle files/filter focus"), 12);
+
+      for (let index = 0; index < 3; index += 1) {
+        await act(async () => {
+          await setup.mockInput.pressArrow("right");
+        });
+        await flush(setup);
+      }
+
+      const frame = await waitForFrame(
+        setup,
+        (currentFrame) =>
+          currentFrame.includes("Agent notes") && currentFrame.includes("Next annotated file"),
+        12,
+      );
+      expect(frame).not.toContain("Copy agent prompt");
+      expect(frame).toContain("Agent notes");
+      expect(frame).toContain("Next annotated file");
     } finally {
       await act(async () => {
         setup.renderer.destroy();

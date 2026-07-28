@@ -44,7 +44,7 @@ The built-in commands and the keys they ship with:
 | `hunk.app.refresh`                  | Refresh the review                       | `r`                          |
 | `hunk.app.toggleHelp`               | Toggle help                              | `?`                          |
 | `hunk.app.toggleFocusArea`          | Switch focus between files and filter    | `tab`                        |
-| `hunk.app.openAgentSkill`           | Show agent skill                         | _(none)_                     |
+| `hunk.app.copyAgentPrompt`          | Copy agent prompt                        | _(none)_                     |
 | `hunk.review.focusFilter`           | Focus the file filter                    | `/`                          |
 | `hunk.review.startNote`             | Add a review note                        | `c`                          |
 | `hunk.review.editSelectedFile`      | Open the selected file in your editor    | `e`                          |
