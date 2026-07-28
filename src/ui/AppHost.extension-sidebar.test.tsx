@@ -208,6 +208,58 @@ describe("extension sidebar views", () => {
     });
   });
 
+  test("opening a view through a command reveals a sidebar area hidden with s", async () => {
+    const repo = createTestRepo("hunk-ext-sidebar-reveal-");
+    const extPath = join(createTempDir("hunk-ext-sidebar-reveal-ext-"), "ext.ts");
+    writeFileSync(
+      extPath,
+      `import { createElement } from "react";\n` +
+        `export default function (hunk) {\n` +
+        `  hunk.registerSidebarView({\n` +
+        `    id: "probe",\n` +
+        `    component: () => createElement("text", { content: "EXTSIDEBAR" }),\n` +
+        `  });\n` +
+        `  hunk.registerCommand({ id: "open-probe", title: "Open probe", key: "y" }, (ctx) => {\n` +
+        `    ctx.sidebars.open("probe");\n` +
+        `  });\n` +
+        `}\n`,
+    );
+
+    const bootstrap = await launchWithExtension(repo, extPath);
+    await withAppHost(bootstrap, async (setup) => {
+      // The sidebar file rows carry the "M <name>" status prefix; the diff
+      // pane's own headers do not, so the prefix marks the area's visibility.
+      await flushUntil(
+        setup,
+        () => setup.captureCharFrame().includes("M alpha.txt"),
+        "the built-in sidebar to render",
+      );
+
+      await act(async () => {
+        await setup.mockInput.typeText("s");
+      });
+      await flushUntil(
+        setup,
+        () => !setup.captureCharFrame().includes("M alpha.txt"),
+        "the s key to hide the sidebar area",
+      );
+
+      // Opening a view is a request to see it: the hidden area reveals again,
+      // with the extension pane beside the still-open files pane.
+      await act(async () => {
+        await setup.mockInput.typeText("y");
+      });
+      await flushUntil(
+        setup,
+        () => {
+          const frame = setup.captureCharFrame();
+          return frame.includes("EXTSIDEBAR") && frame.includes("M alpha.txt");
+        },
+        "the command to reveal the sidebar area with the opened view",
+      );
+    });
+  });
+
   test("a replacesDefault view stands in for the built-in file navigation", async () => {
     const repo = createTestRepo("hunk-ext-sidebar-replace-");
     const extPath = join(createTempDir("hunk-ext-sidebar-replace-ext-"), "ext.ts");

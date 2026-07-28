@@ -73,6 +73,29 @@ describe("parseKeyChord", () => {
     expect(parseKeyChord("ctrl+")).toHaveProperty("error");
     expect(parseKeyChord("")).toHaveProperty("error");
   });
+
+  test("refuses shift on symbols and digits, keeps it for letters and named keys", () => {
+    // Shifted symbols have no layout-independent identity; the binding must
+    // name the character shift produces instead.
+    expect(parseKeyChord("shift+1")).toHaveProperty("error");
+    expect(parseKeyChord("shift+[")).toHaveProperty("error");
+    expect(parseKeyChord("ctrl+shift+.")).toHaveProperty("error");
+
+    expect(parsed("shift+tab")).toEqual({
+      base: "tab",
+      ctrl: false,
+      meta: false,
+      option: false,
+      shift: true,
+    });
+    expect(parsed("shift+g")).toEqual({
+      base: "g",
+      ctrl: false,
+      meta: false,
+      option: false,
+      shift: true,
+    });
+  });
 });
 
 describe("matchesKeyChord", () => {
@@ -105,6 +128,13 @@ describe("matchesKeyChord", () => {
     expect(matchesKeyChord(parsed("f2"), keyEvent({ name: "f2" }))).toBe(true);
     expect(matchesKeyChord(parsed("enter"), keyEvent({ name: "return" }))).toBe(true);
     expect(matchesKeyChord(parsed("pageup"), keyEvent({ name: "pageup" }))).toBe(true);
+  });
+
+  test("shifted named keys require the shift flag", () => {
+    const chord = parsed("shift+tab");
+    expect(matchesKeyChord(chord, keyEvent({ name: "tab", shift: true }))).toBe(true);
+    expect(matchesKeyChord(chord, keyEvent({ name: "tab" }))).toBe(false);
+    expect(matchesKeyChord(parsed("tab"), keyEvent({ name: "tab", shift: true }))).toBe(false);
   });
 });
 

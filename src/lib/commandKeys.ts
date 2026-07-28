@@ -117,6 +117,18 @@ export function parseKeyChord(chord: string): ParsedKeyChord | { error: string }
     return { error: `Key chord "${chord}" names only modifiers` };
   }
 
+  // Shifted symbols and digits have no layout-independent identity (shift+1 is
+  // "!" on some keyboards and something else on others), so matching them by
+  // modifier would be a guess. Refuse the form and ask for the character the
+  // shift produces, which terminals report directly.
+  if (parsed.shift && !NAMED_KEYS.has(parsed.base) && !isLetterBase(parsed.base)) {
+    return {
+      error:
+        `Key chord "${chord}" uses shift with "${parsed.base}"; ` +
+        `bind the shifted character itself instead (e.g. "!" rather than "shift+1")`,
+    };
+  }
+
   return parsed;
 }
 
@@ -132,7 +144,9 @@ function isLetterBase(base: string) {
  * shifted form also matches by uppercase `sequence` for terminals that report
  * `G` without a shift flag. Symbol bases compare by `sequence` and ignore the
  * shift flag entirely — `{` needs shift to type on most layouts, and whether
- * the terminal reports that is not the binding's business.
+ * the terminal reports that is not the binding's business; the parser refuses
+ * `shift+<symbol>` chords outright, so ignoring the flag here is consistent
+ * rather than lossy.
  */
 export function matchesKeyChord(parsed: ParsedKeyChord, key: KeyEvent): boolean {
   if (Boolean(key.ctrl) !== parsed.ctrl || Boolean(key.meta) !== parsed.meta) {

@@ -556,7 +556,10 @@ export default function (hunk: HunkExtensionAPI) {
 
 Key chords are `ctrl`, `alt`/`option`, `cmd`/`meta`, and `shift` joined with
 `+` around a base key — a character (`"y"`, `"["`), an uppercase letter for its
-shifted form (`"G"`), or a named key (`"f2"`, `"pageup"`, `"left"`). An
+shifted form (`"G"`), or a named key (`"f2"`, `"pageup"`, `"left"`). `shift`
+applies to letters and named keys only: for a shifted symbol or digit, bind the
+character the shift produces (`"!"`, not `"shift+1"`), since terminals report
+the character rather than the combination. An
 unparsable chord fails the registration; a chord already owned by a built-in
 shortcut — or by an earlier-loaded extension — leaves the command registered
 but unbound, with a warning toast naming both sides. Omit `key` to register a
@@ -570,6 +573,8 @@ controls for opening sidebar views:
 - `ctx.sidebars.open(viewId)` / `close(viewId)` / `toggle(viewId)` — a bare id
   names your own extension's view, `"files"` names the built-in file
   navigation, and `"<extensionId>:<viewId>"` addresses any registered view.
+  Opening a view also reveals the sidebar area when the user has hidden it
+  with `s`, so the open is never silent.
 - `ctx.sidebars.isOpen(viewId)` reports current state.
 
 A handler may be async; a failure (sync or rejected) becomes a warning naming

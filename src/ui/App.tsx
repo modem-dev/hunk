@@ -419,6 +419,9 @@ export function App({
           const key = resolve("sidebars.open", viewId);
           if (key) {
             setSidebarOpen(key, true);
+            // Opening a view is a request to *see* it: a sidebar area the
+            // user hid with `s` reveals again, or the open would be silent.
+            revealSidebarAreaRef.current();
           }
         },
         close(viewId: string) {
@@ -430,7 +433,11 @@ export function App({
         toggle(viewId: string) {
           const key = resolve("sidebars.toggle", viewId);
           if (key) {
+            const willOpen = !sidebarOpenStateRef.current.open.includes(key);
             setSidebarOpen(key, "toggle");
+            if (willOpen) {
+              revealSidebarAreaRef.current();
+            }
           }
         },
         isOpen(viewId: string) {
@@ -441,6 +448,12 @@ export function App({
     },
     [extensions, setSidebarOpen],
   );
+
+  /**
+   * Reveal the sidebar area, assigned each render once the responsive layout
+   * is known (the controls above are created before it is computed).
+   */
+  const revealSidebarAreaRef = useRef<() => void>(() => {});
 
   /** Invoke one extension command with its context, containing any failure. */
   const runExtensionCommand = useCallback(
@@ -547,6 +560,14 @@ export function App({
   const renderSidebar = sidebarLayout.left.length + sidebarLayout.right.length > 0;
   const diffPaneWidth = Math.max(DIFF_MIN_WIDTH, bodyWidth - sidebarLayout.totalWidth);
   const diffContentWidth = Math.max(12, diffPaneWidth - 2);
+  // Mirrors toggleSidebar's reveal half: visible again, forced open when the
+  // responsive layout alone would keep it hidden and the terminal has room.
+  revealSidebarAreaRef.current = () => {
+    setSidebarVisible(true);
+    if (!responsiveLayout.showSidebar && canForceShowSidebar) {
+      setForceSidebarOpen(true);
+    }
+  };
   // Publish the live note geometry for daemon-driven markup validation; the
   // note markup width mirrors what AgentInlineNote lays STML out at.
   noteGeometryRef.current = { layout: resolvedLayout, width: diffContentWidth };

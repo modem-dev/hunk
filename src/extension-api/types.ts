@@ -696,8 +696,11 @@ export interface ExtensionCommand {
    * Default key chord, e.g. `"ctrl+m"`, `"F2"`, `"G"`, `"y"`.
    *
    * Modifiers are `ctrl`, `alt`/`option`, `cmd`/`meta`, and `shift`, joined
-   * with `+`; an uppercase letter means its shifted form. Omit to register a
-   * command with no binding.
+   * with `+`; an uppercase letter means its shifted form. `shift` applies to
+   * letters and named keys only — for a shifted symbol or digit, bind the
+   * character the shift produces (`"!"`, `"{"`), since terminals report the
+   * character rather than the combination. Omit to register a command with
+   * no binding.
    */
   key?: string;
 }
@@ -708,6 +711,9 @@ export interface ExtensionSidebarControls {
    * Resolve one view: a bare id names this extension's own view, `"files"`
    * names the built-in file navigation, and `"<extensionId>:<viewId>"`
    * addresses any registered view explicitly.
+   *
+   * Opening a view (here, or via `toggle`) also reveals the sidebar area when
+   * the user has hidden it, so the open is never silent.
    */
   open(viewId: string): void;
   close(viewId: string): void;
