@@ -10,7 +10,6 @@ type FocusArea = "files" | "filter" | "note";
 export interface UseAppKeyboardShortcutsOptions {
   activeMenuId: MenuId | null;
   activateCurrentMenuItem: () => void;
-  closeAgentSkill: () => void;
   closeHelp: () => void;
   closeMenu: () => void;
   acceptThemeSelector: () => void;
@@ -36,7 +35,6 @@ export interface UseAppKeyboardShortcutsOptions {
   neverAskToSaveViewPreferencesAndQuit: () => void;
   closeSaveConfigPrompt: () => void;
   saveDraftNote: () => void;
-  showAgentSkill: boolean;
   showHelp: boolean;
   switchMenu: (delta: number) => void;
   toggleFocusArea: () => void;
@@ -56,7 +54,6 @@ export interface UseAppKeyboardShortcutsOptions {
 export function useAppKeyboardShortcuts({
   activeMenuId,
   activateCurrentMenuItem,
-  closeAgentSkill,
   closeHelp,
   closeMenu,
   acceptThemeSelector,
@@ -78,7 +75,6 @@ export function useAppKeyboardShortcuts({
   neverAskToSaveViewPreferencesAndQuit,
   closeSaveConfigPrompt,
   saveDraftNote,
-  showAgentSkill,
   showHelp,
   switchMenu,
   toggleFocusArea,
@@ -88,7 +84,6 @@ export function useAppKeyboardShortcuts({
   const commandsRef = useRef(commands);
   const focusAreaRef = useRef(focusArea);
   const pagerModeRef = useRef(pagerMode);
-  const showAgentSkillRef = useRef(showAgentSkill);
   const showHelpRef = useRef(showHelp);
   const saveConfigPromptOpenRef = useRef(saveConfigPromptOpen);
   const themeSelectorOpenRef = useRef(themeSelectorOpen);
@@ -98,7 +93,6 @@ export function useAppKeyboardShortcuts({
   commandsRef.current = commands;
   focusAreaRef.current = focusArea;
   pagerModeRef.current = pagerMode;
-  showAgentSkillRef.current = showAgentSkill;
   showHelpRef.current = showHelp;
   saveConfigPromptOpenRef.current = saveConfigPromptOpen;
   themeSelectorOpenRef.current = themeSelectorOpen;
@@ -130,11 +124,6 @@ export function useAppKeyboardShortcuts({
   const handleDialogShortcut = (key: KeyEvent) => {
     if (!isEscapeKey(key)) {
       return false;
-    }
-
-    if (showAgentSkillRef.current) {
-      closeAgentSkill();
-      return true;
     }
 
     if (showHelpRef.current) {

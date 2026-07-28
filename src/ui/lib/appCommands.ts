@@ -87,7 +87,8 @@ export interface BuildAppCommandsOptions {
   moveToAnnotatedHunk: (delta: number) => void;
   moveToFile: (delta: number) => void;
   moveToHunk: (delta: number) => void;
-  openAgentSkill: () => void;
+  copyAgentPrompt: () => void;
+  isAgentPromptCopySupported: () => boolean;
   openThemeSelector: () => void;
   requestQuit: () => void;
   /** Chords resolved against the user's `[keybindings]`; defaults apply where absent. */
@@ -160,11 +161,12 @@ function builtinCommandSpecs(options: BuildAppCommandsOptions): BuiltinCommandSp
       closesMenu: true,
     },
     {
-      id: "hunk.app.openAgentSkill",
-      title: "Show agent skill",
+      id: "hunk.app.copyAgentPrompt",
+      title: "Copy agent prompt",
       scopes: REVIEW,
       defaultKeys: [],
-      run: () => options.openAgentSkill(),
+      isEnabled: () => options.isAgentPromptCopySupported(),
+      run: () => options.copyAgentPrompt(),
       closesMenu: true,
     },
     {
@@ -467,7 +469,8 @@ const NOOP_COMMAND_OPTIONS: BuildAppCommandsOptions = (() => {
     moveToAnnotatedHunk: noop,
     moveToFile: noop,
     moveToHunk: noop,
-    openAgentSkill: noop,
+    copyAgentPrompt: noop,
+    isAgentPromptCopySupported: () => true,
     openThemeSelector: noop,
     requestQuit: noop,
     scrollCodeHorizontally: noop,

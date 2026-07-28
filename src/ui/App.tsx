@@ -34,6 +34,7 @@ import type {
   ReloadedSessionResult,
   ReloadSessionOptions,
 } from "../hunk-session/types";
+import { AGENT_SKILL_PROMPT } from "../hunk-review/agentPrompt";
 import { MenuBar } from "./components/chrome/MenuBar";
 import { ConfirmDialog, confirmDialogHeight } from "./components/chrome/ConfirmDialog";
 import { ExtensionToast } from "./components/chrome/ExtensionToast";
@@ -97,9 +98,6 @@ const FAST_CODE_HORIZONTAL_SCROLL_COLUMNS = 8;
  */
 const SELECTION_CHANGED_DEBOUNCE_MS = 150;
 
-const LazyAgentSkillDialog = lazy(async () => ({
-  default: (await import("./components/chrome/AgentSkillDialog")).AgentSkillDialog,
-}));
 const LazyHelpDialog = lazy(async () => ({
   default: (await import("./components/chrome/HelpDialog")).HelpDialog,
 }));
@@ -210,7 +208,6 @@ export function App({
   const [sidebarVisible, setSidebarVisible] = useState(() => !pagerMode);
   const [forceSidebarOpen, setForceSidebarOpen] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
-  const [showAgentSkill, setShowAgentSkill] = useState(false);
   const [saveConfigPromptOpen, setSaveConfigPromptOpen] = useState(false);
   const [focusArea, setFocusArea] = useState<FocusArea>("files");
   const [activeAddNoteTarget, setActiveAddNoteTarget] = useState<ActiveAddNoteTarget | null>(null);
@@ -1136,27 +1133,19 @@ export function App({
     setShowHelp(false);
   }, []);
 
-  /** Close the agent skill setup overlay. */
-  const closeAgentSkill = useCallback(() => {
-    setShowAgentSkill(false);
-  }, []);
-
-  /** Open the agent skill setup overlay. */
-  const openAgentSkill = useCallback(() => {
-    setShowAgentSkill(true);
-  }, []);
-
   /** Copy the agent skill prompt through the terminal clipboard integration. */
-  const copyAgentSkillPrompt = useCallback(async () => {
-    const { AGENT_SKILL_PROMPT } = await import("./components/chrome/AgentSkillDialog");
-    if (renderer.isOsc52Supported?.() && typeof renderer.copyToClipboardOSC52 === "function") {
-      renderer.copyToClipboardOSC52(AGENT_SKILL_PROMPT);
-      showTransientNotice("Copied agent skill prompt to clipboard");
-      return;
-    }
-
-    showTransientNotice("Clipboard copy unsupported in this terminal (enable OSC 52)");
+  const copyAgentPrompt = useCallback(() => {
+    renderer.copyToClipboardOSC52(AGENT_SKILL_PROMPT);
+    showTransientNotice("Copied agent prompt to clipboard");
   }, [renderer, showTransientNotice]);
+
+  /** Query terminal clipboard support live because capability detection may finish after startup. */
+  const isAgentPromptCopySupported = useCallback(
+    () =>
+      (renderer.isOsc52Supported?.() ?? false) &&
+      typeof renderer.copyToClipboardOSC52 === "function",
+    [renderer],
+  );
 
   /** Toggle the modal keyboard help overlay. */
   const toggleHelp = useCallback(() => {
@@ -1228,7 +1217,8 @@ export function App({
       moveToAnnotatedHunk,
       moveToFile,
       moveToHunk: review.moveToHunk,
-      openAgentSkill,
+      copyAgentPrompt,
+      isAgentPromptCopySupported,
       openThemeSelector,
       requestQuit,
       resolvedKeys: resolvedCommandKeys,
@@ -1290,7 +1280,6 @@ export function App({
   useAppKeyboardShortcuts({
     activeMenuId,
     activateCurrentMenuItem,
-    closeAgentSkill,
     closeHelp,
     closeMenu,
     acceptThemeSelector,
@@ -1312,7 +1301,6 @@ export function App({
     neverAskToSaveViewPreferencesAndQuit,
     closeSaveConfigPrompt,
     saveDraftNote,
-    showAgentSkill,
     showHelp,
     switchMenu,
     toggleFocusArea,
@@ -1617,19 +1605,6 @@ export function App({
               entry.action();
               closeMenu();
             }}
-          />
-        </Suspense>
-      ) : null}
-
-      {!pagerMode && showAgentSkill ? (
-        <Suspense fallback={null}>
-          <LazyAgentSkillDialog
-            copySupported={renderer.isOsc52Supported?.() ?? false}
-            terminalHeight={terminal.height}
-            terminalWidth={terminal.width}
-            theme={baseTheme}
-            onClose={closeAgentSkill}
-            onCopyPrompt={copyAgentSkillPrompt}
           />
         </Suspense>
       ) : null}

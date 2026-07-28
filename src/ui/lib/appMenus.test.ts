@@ -42,7 +42,8 @@ function createTestCommands(overrides: Partial<BuildAppCommandsOptions> = {}) {
     moveToAnnotatedHunk: noop,
     moveToFile: noop,
     moveToHunk: noop,
-    openAgentSkill: record("openAgentSkill"),
+    copyAgentPrompt: record("copyAgentPrompt"),
+    isAgentPromptCopySupported: () => true,
     openThemeSelector: noop,
     requestQuit: record("requestQuit"),
     scrollCodeHorizontally: noop,
@@ -125,7 +126,7 @@ describe("buildAppMenus", () => {
     expect(items(menus.view).map((item) => item.label)).toContain("Themes…");
     expect(items(menus.agent).map((item) => item.label)).toEqual([
       "Agent notes",
-      "Agent skill",
+      "Copy agent prompt",
       "Next annotated file",
       "Previous annotated file",
     ]);
@@ -165,14 +166,14 @@ describe("buildAppMenus", () => {
 
     entry(menus, "view", "Sidebar").action();
     entry(menus, "view", "Copy decorations").action();
-    entry(menus, "agent", "Agent skill").action();
+    entry(menus, "agent", "Copy agent prompt").action();
     entry(menus, "agent", "Next annotated file").action();
     entry(menus, "agent", "Previous annotated file").action();
 
     expect(ran).toEqual([
       "toggleSidebar",
       "toggleCopyDecorations",
-      "openAgentSkill",
+      "copyAgentPrompt",
       "moveToAnnotatedFile:1",
       "moveToAnnotatedFile:-1",
     ]);
