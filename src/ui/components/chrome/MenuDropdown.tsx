@@ -1,5 +1,5 @@
 import type { AppTheme } from "../../themes";
-import { padText } from "../../lib/text";
+import { measureTextWidth, padText } from "../../lib/text";
 import type { MenuEntry, MenuId, MenuSpec } from "./menu";
 
 /** Render one actionable menu line with an optional keyboard hint. */
@@ -14,7 +14,9 @@ function renderMenuLine(
       ? `  ${entry.label}`
       : `${entry.checked ? "[x]" : "[ ]"} ${entry.label}`;
   const hint = entry.hint ? entry.hint : "";
-  const leftWidth = Math.max(0, width - hint.length - (hint.length > 0 ? 1 : 0));
+  // Terminal cells, not code units: a shifted-character chord can be any glyph.
+  const hintWidth = measureTextWidth(hint);
+  const leftWidth = Math.max(0, width - hintWidth - (hintWidth > 0 ? 1 : 0));
 
   return (
     <box
@@ -24,7 +26,7 @@ function renderMenuLine(
         <text fg={theme.text}>{padText(text, leftWidth)}</text>
       </box>
       {hint ? (
-        <box style={{ width: hint.length, height: 1 }}>
+        <box style={{ width: hintWidth, height: 1 }}>
           <text fg={selected ? theme.text : theme.muted}>{hint}</text>
         </box>
       ) : null}
@@ -84,7 +86,9 @@ export function MenuDropdown({
           </box>
         ) : (
           <box
-            key={`${activeMenuId}:${entry.label}`}
+            // Command ids are unique where labels need not be: two extensions
+            // may both title a command "Refresh".
+            key={`${activeMenuId}:${entry.commandId ?? `item-${index}`}`}
             style={{
               height: 1,
               paddingLeft: 1,

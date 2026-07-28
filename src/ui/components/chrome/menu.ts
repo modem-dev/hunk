@@ -1,9 +1,13 @@
+import { measureTextWidth } from "../../lib/text";
+
 export type MenuId = "file" | "view" | "navigate" | "agent" | "extensions" | "help";
 
 export type MenuEntry =
   | {
       kind: "item";
       label: string;
+      /** The command this item runs; a stable render identity, since labels may repeat. */
+      commandId?: string;
       hint?: string;
       checked?: boolean;
       action: () => void;
@@ -99,8 +103,25 @@ function menuEntryText(entry: Extract<MenuEntry, { kind: "item" }>) {
 export function menuWidth(entries: MenuEntry[]) {
   return Math.max(
     20,
-    ...entries.map((entry) => (entry.kind === "separator" ? 6 : menuEntryText(entry).length + 2)),
+    // Terminal cells, not code units: extension command titles can carry CJK or
+    // emoji, which render two cells wide and would otherwise be clipped.
+    ...entries.map((entry) =>
+      entry.kind === "separator" ? 6 : measureTextWidth(menuEntryText(entry)) + 2,
+    ),
   );
+}
+
+/**
+ * Cells available for the changeset title beside the menus on the top bar.
+ *
+ * Derived from the specs the bar actually renders, so a session that shows the
+ * Extensions menu cedes its width to the menus instead of overdrawing the row.
+ * The constant covers the bar's own padding, the title's leading space, and a
+ * little breathing room between the last menu and the title.
+ */
+export function menuBarTitleWidth(menuSpecs: readonly MenuSpec[], terminalWidth: number) {
+  const menusWidth = menuSpecs.reduce((total, spec) => total + spec.width, 0);
+  return Math.max(0, terminalWidth - menusWidth - 6);
 }
 
 /** Return the border-inclusive height of a dropdown menu. */

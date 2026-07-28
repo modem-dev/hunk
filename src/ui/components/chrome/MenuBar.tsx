@@ -1,6 +1,6 @@
 import type { AppTheme } from "../../themes";
 import { fitText } from "../../lib/text";
-import type { MenuId, MenuSpec } from "./menu";
+import { menuBarTitleWidth, type MenuId, type MenuSpec } from "./menu";
 
 /** Render the top menu bar and the current changeset title. */
 export function MenuBar({
@@ -50,7 +50,9 @@ export function MenuBar({
       })}
 
       <box style={{ flexGrow: 1, height: 1, alignItems: "center", justifyContent: "flex-end" }}>
-        <text fg={theme.muted}>{` ${fitText(topTitle, Math.max(0, terminalWidth - 41))}`}</text>
+        <text
+          fg={theme.muted}
+        >{` ${fitText(topTitle, menuBarTitleWidth(menuSpecs, terminalWidth))}`}</text>
       </box>
     </box>
   );

@@ -70,6 +70,7 @@ function toMenuEntries(
     entries.push({
       kind: "item",
       label: spec.label ?? command.title,
+      commandId: spec.commandId,
       // The first resolved chord is the one the menu advertises; a command the
       // user unbound (or that ships unbound) simply shows no key.
       hint: command.keyLabels[0],
@@ -98,7 +99,9 @@ function toExtensionMenuEntries(
   let previousOwner: string | undefined;
 
   for (const command of extensionCommands) {
-    // Extension command ids are `<extensionId>.<commandId>`.
+    // Extension command ids are `<extensionId>.<commandId>`, and the host
+    // refuses extension ids containing dots at load, so the first dot always
+    // splits off the owning extension exactly — whatever the command half holds.
     const owner = command.id.slice(0, command.id.indexOf("."));
     if (previousOwner !== undefined && owner !== previousOwner) {
       specs.push(SEPARATOR);

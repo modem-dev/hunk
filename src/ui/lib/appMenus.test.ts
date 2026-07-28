@@ -129,13 +129,19 @@ describe("buildAppMenus", () => {
       "Next annotated file",
       "Previous annotated file",
     ]);
-    expect(items(menus.navigate).map((item) => item.hint)).toEqual([
-      "[",
-      "]",
-      "{",
-      "}",
-      "/",
-      undefined,
+    expect(items(menus.navigate).map((item) => item.hint)).toEqual(["[", "]", "{", "}", "/"]);
+  });
+
+  test("every item carries the id of the command it runs", () => {
+    const { commands } = createTestCommands();
+    const menus = buildAppMenus({ commands, ...MENU_STATE });
+
+    expect(items(menus.file).map((item) => item.commandId)).toEqual([
+      "hunk.app.toggleFocusArea",
+      "hunk.review.focusFilter",
+      "hunk.review.editSelectedFile",
+      "hunk.app.refresh",
+      "hunk.app.quit",
     ]);
   });
 
@@ -246,5 +252,26 @@ describe("the Extensions menu", () => {
     entry(menus, "extensions", "Quiet mode").action();
 
     expect(ran).toEqual(["sync", "quiet"]);
+  });
+
+  test("commands sharing a title stay distinct entries with their own ids", () => {
+    // Titles only need to be non-empty, so two extensions can both say
+    // "Refresh"; the command id is what keeps the rows and handlers apart.
+    const ran: string[] = [];
+    const menus = menusWithExtensions([
+      registeredCommand("notes", "refresh", "Refresh", "y", () => ran.push("notes")),
+      registeredCommand("blame", "refresh", "Refresh", undefined, () => ran.push("blame")),
+    ]);
+
+    const rows = items(menus.extensions);
+    expect(rows.map((item) => [item.label, item.commandId])).toEqual([
+      ["Refresh", "notes.refresh"],
+      ["Refresh", "blame.refresh"],
+    ]);
+
+    for (const row of rows) {
+      row.action();
+    }
+    expect(ran).toEqual(["notes", "blame"]);
   });
 });

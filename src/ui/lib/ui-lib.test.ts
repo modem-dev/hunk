@@ -5,6 +5,7 @@ import stringWidth from "string-width";
 import type { DiffFile } from "../../core/types";
 import {
   buildMenuSpecs,
+  menuBarTitleWidth,
   menuBoxHeight,
   menuWidth,
   nextMenuItemIndex,
@@ -153,6 +154,33 @@ describe("ui helpers", () => {
 
     expect(menuWidth(entries)).toBeGreaterThanOrEqual(18);
     expect(menuBoxHeight(entries)).toBe(5);
+  });
+
+  test("menuWidth measures terminal cells, so wide characters are not clipped", () => {
+    const ascii: MenuEntry[] = [{ kind: "item", label: "12345678901234567890", action: () => {} }];
+    // Same count of user-visible characters, but CJK renders two cells each.
+    const wide: MenuEntry[] = [
+      { kind: "item", label: "拡張機能のコマンドを実行します", action: () => {} },
+    ];
+
+    expect(menuWidth(wide)).toBe(menuWidth(ascii) + 10);
+  });
+
+  test("menuBarTitleWidth cedes title space to the menus the bar shows", () => {
+    const item: MenuEntry = { kind: "item", label: "One", action: () => {} };
+    const base = { file: [item], view: [item], navigate: [item], agent: [item], help: [item] };
+    const withoutExtensions = buildMenuSpecs(base);
+    const withExtensions = buildMenuSpecs({ ...base, extensions: [item] });
+
+    // Parity with the bar before the Extensions menu existed: five menus over
+    // 35 columns left 39 title cells at 80 columns wide.
+    expect(menuBarTitleWidth(withoutExtensions, 80)).toBe(39);
+    // The Extensions menu's 12 columns come out of the title, not the row.
+    expect(menuBarTitleWidth(withExtensions, 80)).toBe(27);
+    const menusWidth = withExtensions.reduce((total, spec) => total + spec.width, 0);
+    expect(menusWidth + menuBarTitleWidth(withExtensions, 80)).toBeLessThanOrEqual(80 - 3);
+    // A terminal narrower than the menus still never yields a negative width.
+    expect(menuBarTitleWidth(withExtensions, 40)).toBe(0);
   });
 
   test("escape aliases normalize across terminal input paths", () => {
