@@ -13,7 +13,7 @@ import { spansForHighlightedSourceLine, type DiffRow } from "./pierre";
 import { plannedReviewRowVisible } from "./plannedReviewRows";
 import { buildDiffSectionRowPlan } from "./diffSectionRowPlan";
 import { resolveVisiblePlannedRowWindow, type VisibleBodyBounds } from "./rowWindowing";
-import { diffMessage, DiffRowView, fitText } from "./renderRows";
+import { DIFF_MESSAGE_BODY_HEIGHT, diffMessage, DiffRowView, fitText } from "./renderRows";
 import { useHighlightedDiff } from "./useHighlightedDiff";
 import { useHighlightedSource } from "./useHighlightedSource";
 
@@ -314,7 +314,14 @@ export function PierreDiffView({
 
   if (file.metadata.hunks.length === 0) {
     return (
-      <box style={{ width: "100%", paddingLeft: 1, paddingRight: 1, paddingBottom: 1 }}>
+      <box
+        style={{
+          width: "100%",
+          height: DIFF_MESSAGE_BODY_HEIGHT,
+          paddingLeft: 1,
+          paddingRight: 1,
+        }}
+      >
         <text fg={theme.muted}>{fitText(diffMessage(file), Math.max(1, width - 2))}</text>
       </box>
     );

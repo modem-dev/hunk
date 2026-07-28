@@ -13,7 +13,7 @@ import {
   type PlannedHunkBounds,
 } from "./plannedReviewRows";
 import type { PlannedReviewRow } from "./reviewRenderPlan";
-import { measureRenderedRowHeight } from "./renderRows";
+import { DIFF_MESSAGE_BODY_HEIGHT, measureRenderedRowHeight } from "./renderRows";
 
 const EMPTY_EXPANDED_GAP_KEYS: ReadonlySet<string> = new Set();
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
@@ -242,16 +242,16 @@ function measurePlannedDiffSectionRowHeight(
     });
   }
 
-  return measureRenderedRowHeight(
-    row.row,
-    width,
+  return measureRenderedRowHeight(row.row, {
     lineNumberDigits,
-    showLineNumbers,
-    showHunkHeaders,
-    wrapLines,
-    theme,
+    noteGuideSide: row.noteGuideSide,
     reserveAddNoteColumn,
-  );
+    showHunkHeaders,
+    showLineNumbers,
+    theme,
+    width,
+    wrapLines,
+  });
 }
 
 /** Measure one file section from the same render plan used by PierreDiffView. */
@@ -271,7 +271,7 @@ export function measureDiffSectionGeometry(
 ): DiffSectionGeometry {
   if (file.metadata.hunks.length === 0) {
     return {
-      bodyHeight: 1,
+      bodyHeight: DIFF_MESSAGE_BODY_HEIGHT,
       hunkAnchorRows: new Map(),
       hunkBounds: new Map(),
       lineNumberDigits: String(findMaxLineNumber(file)).length,

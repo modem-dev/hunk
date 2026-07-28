@@ -251,4 +251,30 @@ describe("PTY navigation", () => {
       session.close();
     }
   });
+
+  test("wrapped hunk navigation crosses unmounted file ranges in both directions", async () => {
+    const fixture = harness.createWrappedStreamRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split", "--wrap"],
+      cwd: fixture.dir,
+      cols: 160,
+      rows: 14,
+    });
+
+    try {
+      const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+      expect(initial).toContain("marker1Extra = 100");
+      expect(initial).not.toContain("marker8Extra = 800");
+
+      const forward = await harness.pressUntilVisible(session, "]", "marker8Extra = 800");
+      expect(forward).not.toContain("marker1Extra = 100");
+
+      const backward = await harness.pressUntilVisible(session, "[", "marker1Extra = 100");
+      expect(backward).not.toContain("marker8Extra = 800");
+    } finally {
+      session.close();
+    }
+  });
 });
