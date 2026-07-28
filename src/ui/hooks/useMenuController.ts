@@ -67,17 +67,38 @@ export function useMenuController(menus: AppMenus) {
     openMenu(menuSpecs[nextIndex]!.id);
   };
 
+  const activeMenuEntries = openMenuId ? menuEntries(menus, openMenuId) : [];
+
+  // An open menu's entries can also change under the highlight — a watch
+  // reload adds "Reload", extension commands re-register — leaving the stored
+  // positional index on a separator, a shifted row, or past the end. Resolve
+  // a stored index to the nearest selectable item of the list as it is now,
+  // so the visible highlight and Enter always agree on a real entry.
+  const resolveItemIndex = (index: number) => {
+    const entry = activeMenuEntries[index];
+    return entry?.kind === "item"
+      ? index
+      : nextMenuItemIndex(activeMenuEntries, Math.min(index, activeMenuEntries.length) - 1, 1);
+  };
+
+  const openMenuItemIndex = resolveItemIndex(activeMenuItemIndex);
+
+  // Write the resolved index back so later steps start from where the
+  // highlight visibly is, not from the stale position.
+  useEffect(() => {
+    if (openMenuId !== null && openMenuItemIndex !== activeMenuItemIndex) {
+      setActiveMenuItemIndex(openMenuItemIndex);
+    }
+  }, [openMenuId, openMenuItemIndex, activeMenuItemIndex]);
+
   const moveMenuItem = (delta: number) => {
-    const entries = openMenuId ? menuEntries(menus, openMenuId) : [];
-    setActiveMenuItemIndex((current) => nextMenuItemIndex(entries, current, delta));
+    setActiveMenuItemIndex((current) =>
+      nextMenuItemIndex(activeMenuEntries, resolveItemIndex(current), delta),
+    );
   };
 
   const activateCurrentMenuItem = () => {
-    if (!openMenuId) {
-      return;
-    }
-
-    const entry = menuEntries(menus, openMenuId)[activeMenuItemIndex];
+    const entry = activeMenuEntries[openMenuItemIndex];
     if (!entry || entry.kind !== "item") {
       return;
     }
@@ -86,14 +107,13 @@ export function useMenuController(menus: AppMenus) {
     closeMenu();
   };
 
-  const activeMenuEntries = openMenuId ? menuEntries(menus, openMenuId) : [];
   const activeMenuSpec = menuSpecs.find((menu) => menu.id === openMenuId);
   const activeMenuWidth = menuWidth(activeMenuEntries) + 2;
 
   return {
     activeMenuEntries,
     activeMenuId: openMenuId,
-    activeMenuItemIndex,
+    activeMenuItemIndex: openMenuItemIndex,
     activeMenuSpec,
     activeMenuWidth,
     activateCurrentMenuItem,

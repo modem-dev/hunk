@@ -85,6 +85,80 @@ describe("useMenuController", () => {
     }
   });
 
+  test("re-anchors the highlight when an open menu's entries change", async () => {
+    let controller!: ReturnType<typeof useMenuController>;
+    let setMenus!: (menus: AppMenus) => void;
+    const ran: string[] = [];
+    const runItem = (label: string): MenuEntry => ({
+      kind: "item",
+      label,
+      action: () => ran.push(label),
+    });
+
+    const longFileMenu: AppMenus = {
+      file: [runItem("Focus"), runItem("Reload"), runItem("Quit")],
+    };
+    // "Reload" drops out and a separator lands where "Quit" used to sit.
+    const shrunkFileMenu: AppMenus = {
+      file: [runItem("Focus"), { kind: "separator" }, runItem("Quit")],
+    };
+
+    function Probe({ initial }: { initial: AppMenus }) {
+      const [menus, set] = useState(initial);
+      setMenus = set;
+      controller = useMenuController(menus);
+      return null;
+    }
+
+    const setup = await testRender(<Probe initial={longFileMenu} />, { width: 80, height: 24 });
+
+    try {
+      await act(async () => {
+        await setup.renderOnce();
+      });
+
+      await act(async () => {
+        controller.openMenu("file");
+      });
+      await act(async () => {
+        controller.moveMenuItem(1);
+      });
+      expect(controller.activeMenuItemIndex).toBe(1);
+
+      // The stored index now points at the separator; the highlight resolves
+      // to the nearest selectable item and Enter runs it instead of no-oping.
+      await act(async () => {
+        setMenus(shrunkFileMenu);
+      });
+      expect(controller.activeMenuItemIndex).toBe(2);
+      await act(async () => {
+        controller.activateCurrentMenuItem();
+      });
+      expect(ran).toEqual(["Quit"]);
+
+      // An index past a shrunken list resolves back inside it.
+      await act(async () => {
+        controller.openMenu("file");
+      });
+      await act(async () => {
+        controller.moveMenuItem(1);
+      });
+      expect(controller.activeMenuItemIndex).toBe(2);
+      await act(async () => {
+        setMenus({ file: [runItem("Focus")] });
+      });
+      expect(controller.activeMenuItemIndex).toBe(0);
+      await act(async () => {
+        controller.activateCurrentMenuItem();
+      });
+      expect(ran).toEqual(["Quit", "Focus"]);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("cycling skips menus the session does not show", async () => {
     let controller!: ReturnType<typeof useMenuController>;
 
