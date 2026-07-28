@@ -601,8 +601,8 @@ would still answer to `f9`.
 
 Whatever an extension declares is a _default_. Users remap commands by id in the
 `[keybindings]` table of their own config, extension commands included — yours
-is named `"<extensionId>.<commandId>"`. See the
-[keybindings section of the README](../README.md#keybindings) for the rules; the
+is named `"<extensionId>.<commandId>"`. See
+[docs/keybindings.md](keybindings.md) for the rules; the
 practical consequence is that a chord you declare may not be the chord your
 command ends up on.
 
