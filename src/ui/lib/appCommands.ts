@@ -24,7 +24,16 @@ const FAST_CODE_HORIZONTAL_SCROLL_COLUMNS = 8;
  * extension extends.
  */
 export interface AppCommand {
-  /** Stable identifier; extension commands are namespaced `<extensionId>.<id>`. */
+  /**
+   * Stable identifier, always namespaced by whoever owns the command.
+   *
+   * Built-ins live under Hunk's vendor namespace (`hunk.app.quit`,
+   * `hunk.review.nextHunk`); extension commands are `<extensionId>.<id>`.
+   * Since an extension id is a file stem the user chooses, one reserved vendor
+   * namespace is what keeps the two id spaces from ever meeting — an extension
+   * called `app.ts` used to be able to mint `app.quit` and shadow a built-in,
+   * and any built-in namespace Hunk adds later would have had the same problem.
+   */
   id: string;
   title: string;
   scopes: readonly AppCommandScope[];
@@ -93,6 +102,10 @@ const REVIEW_AND_PAGER: readonly AppCommandScope[] = ["review", "pager"];
 /**
  * Declare Hunk's built-in commands as ids, titles, and default chords.
  *
+ * Every id is `hunk.<group>.<name>`: `hunk.` is the reserved vendor namespace
+ * no extension id may take, and the group below it is the menu-level grouping
+ * users read in `[keybindings]`.
+ *
  * Order is the tiebreaker when several commands could match one key, exactly
  * as the old cascade of if-statements was, so entries keep the old cascade's
  * relative order where it mattered (uppercase before lowercase forms).
@@ -100,28 +113,28 @@ const REVIEW_AND_PAGER: readonly AppCommandScope[] = ["review", "pager"];
 function builtinCommandSpecs(options: BuildAppCommandsOptions): BuiltinCommandSpec[] {
   return [
     {
-      id: "review.jumpToBottom",
+      id: "hunk.review.jumpToBottom",
       title: "Jump to end",
       scopes: REVIEW_AND_PAGER,
       defaultKeys: ["G", "end"],
       run: () => options.scrollDiff(1, "content"),
     },
     {
-      id: "review.jumpToTop",
+      id: "hunk.review.jumpToTop",
       title: "Jump to start",
       scopes: REVIEW_AND_PAGER,
       defaultKeys: ["g", "home"],
       run: () => options.scrollDiff(-1, "content"),
     },
     {
-      id: "app.quit",
+      id: "hunk.app.quit",
       title: "Quit",
       scopes: REVIEW_AND_PAGER,
       defaultKeys: ["q"],
       run: () => options.requestQuit(),
     },
     {
-      id: "app.toggleHelp",
+      id: "hunk.app.toggleHelp",
       title: "Toggle help",
       scopes: REVIEW,
       defaultKeys: ["?"],
@@ -129,21 +142,21 @@ function builtinCommandSpecs(options: BuildAppCommandsOptions): BuiltinCommandSp
       closesMenu: true,
     },
     {
-      id: "app.toggleFocusArea",
+      id: "hunk.app.toggleFocusArea",
       title: "Switch focus between files and filter",
       scopes: REVIEW,
       defaultKeys: ["tab"],
       run: () => options.toggleFocusArea(),
     },
     {
-      id: "review.focusFilter",
+      id: "hunk.review.focusFilter",
       title: "Focus the file filter",
       scopes: REVIEW,
       defaultKeys: ["/"],
       run: () => options.focusFilter(),
     },
     {
-      id: "review.startNote",
+      id: "hunk.review.startNote",
       title: "Add a review note",
       scopes: REVIEW,
       defaultKeys: ["c"],
@@ -151,49 +164,49 @@ function builtinCommandSpecs(options: BuildAppCommandsOptions): BuiltinCommandSp
       closesMenu: true,
     },
     {
-      id: "review.pageDown",
+      id: "hunk.review.pageDown",
       title: "Scroll down one page",
       scopes: REVIEW_AND_PAGER,
       defaultKeys: ["pagedown", "space", "f"],
       run: () => options.scrollDiff(1, "viewport"),
     },
     {
-      id: "review.pageUp",
+      id: "hunk.review.pageUp",
       title: "Scroll up one page",
       scopes: REVIEW_AND_PAGER,
       defaultKeys: ["pageup", "b", "shift+space"],
       run: () => options.scrollDiff(-1, "viewport"),
     },
     {
-      id: "review.halfPageDown",
+      id: "hunk.review.halfPageDown",
       title: "Scroll down half a page",
       scopes: REVIEW_AND_PAGER,
       defaultKeys: ["d"],
       run: () => options.scrollDiff(1, "half"),
     },
     {
-      id: "review.halfPageUp",
+      id: "hunk.review.halfPageUp",
       title: "Scroll up half a page",
       scopes: REVIEW_AND_PAGER,
       defaultKeys: ["u"],
       run: () => options.scrollDiff(-1, "half"),
     },
     {
-      id: "review.stepDown",
+      id: "hunk.review.stepDown",
       title: "Scroll down one row",
       scopes: REVIEW_AND_PAGER,
       defaultKeys: ["down", "j"],
       run: () => options.scrollDiff(1, "step"),
     },
     {
-      id: "review.stepUp",
+      id: "hunk.review.stepUp",
       title: "Scroll up one row",
       scopes: REVIEW_AND_PAGER,
       defaultKeys: ["up", "k"],
       run: () => options.scrollDiff(-1, "step"),
     },
     {
-      id: "review.scrollCodeLeft",
+      id: "hunk.review.scrollCodeLeft",
       title: "Scroll code left",
       scopes: REVIEW_AND_PAGER,
       // Both chords run the same command; the shifted one scrolls further, so
@@ -203,7 +216,7 @@ function builtinCommandSpecs(options: BuildAppCommandsOptions): BuiltinCommandSp
         options.scrollCodeHorizontally(key.shift ? -FAST_CODE_HORIZONTAL_SCROLL_COLUMNS : -1),
     },
     {
-      id: "review.scrollCodeRight",
+      id: "hunk.review.scrollCodeRight",
       title: "Scroll code right",
       scopes: REVIEW_AND_PAGER,
       defaultKeys: ["right", "shift+right"],
@@ -211,7 +224,7 @@ function builtinCommandSpecs(options: BuildAppCommandsOptions): BuiltinCommandSp
         options.scrollCodeHorizontally(key.shift ? FAST_CODE_HORIZONTAL_SCROLL_COLUMNS : 1),
     },
     {
-      id: "view.layoutSplit",
+      id: "hunk.view.layoutSplit",
       title: "Split layout",
       scopes: REVIEW,
       defaultKeys: ["1"],
@@ -219,7 +232,7 @@ function builtinCommandSpecs(options: BuildAppCommandsOptions): BuiltinCommandSp
       closesMenu: true,
     },
     {
-      id: "view.layoutStack",
+      id: "hunk.view.layoutStack",
       title: "Stack layout",
       scopes: REVIEW,
       defaultKeys: ["2"],
@@ -227,7 +240,7 @@ function builtinCommandSpecs(options: BuildAppCommandsOptions): BuiltinCommandSp
       closesMenu: true,
     },
     {
-      id: "view.layoutAuto",
+      id: "hunk.view.layoutAuto",
       title: "Auto layout",
       scopes: REVIEW,
       defaultKeys: ["0"],
@@ -235,7 +248,7 @@ function builtinCommandSpecs(options: BuildAppCommandsOptions): BuiltinCommandSp
       closesMenu: true,
     },
     {
-      id: "view.toggleSidebar",
+      id: "hunk.view.toggleSidebar",
       title: "Toggle sidebar",
       scopes: REVIEW_AND_PAGER,
       defaultKeys: ["s"],
@@ -243,7 +256,7 @@ function builtinCommandSpecs(options: BuildAppCommandsOptions): BuiltinCommandSp
       closesMenu: true,
     },
     {
-      id: "app.refresh",
+      id: "hunk.app.refresh",
       title: "Refresh the review",
       scopes: REVIEW,
       defaultKeys: ["r"],
@@ -252,7 +265,7 @@ function builtinCommandSpecs(options: BuildAppCommandsOptions): BuiltinCommandSp
       closesMenu: true,
     },
     {
-      id: "view.openThemeSelector",
+      id: "hunk.view.openThemeSelector",
       title: "Choose theme",
       scopes: REVIEW,
       defaultKeys: ["t"],
@@ -260,7 +273,7 @@ function builtinCommandSpecs(options: BuildAppCommandsOptions): BuiltinCommandSp
       closesMenu: true,
     },
     {
-      id: "view.toggleAgentNotes",
+      id: "hunk.view.toggleAgentNotes",
       title: "Toggle agent notes",
       scopes: REVIEW,
       defaultKeys: ["a"],
@@ -268,7 +281,7 @@ function builtinCommandSpecs(options: BuildAppCommandsOptions): BuiltinCommandSp
       closesMenu: true,
     },
     {
-      id: "view.toggleLineNumbers",
+      id: "hunk.view.toggleLineNumbers",
       title: "Toggle line numbers",
       scopes: REVIEW,
       defaultKeys: ["l"],
@@ -276,7 +289,7 @@ function builtinCommandSpecs(options: BuildAppCommandsOptions): BuiltinCommandSp
       closesMenu: true,
     },
     {
-      id: "view.toggleLineWrap",
+      id: "hunk.view.toggleLineWrap",
       title: "Toggle line wrapping",
       scopes: REVIEW_AND_PAGER,
       defaultKeys: ["w"],
@@ -284,7 +297,7 @@ function builtinCommandSpecs(options: BuildAppCommandsOptions): BuiltinCommandSp
       closesMenu: true,
     },
     {
-      id: "view.toggleMenuBar",
+      id: "hunk.view.toggleMenuBar",
       title: "Toggle menu bar",
       scopes: REVIEW,
       defaultKeys: ["M"],
@@ -292,7 +305,7 @@ function builtinCommandSpecs(options: BuildAppCommandsOptions): BuiltinCommandSp
       closesMenu: true,
     },
     {
-      id: "view.toggleHunkHeaders",
+      id: "hunk.view.toggleHunkHeaders",
       title: "Toggle hunk headers",
       scopes: REVIEW,
       defaultKeys: ["m"],
@@ -300,7 +313,7 @@ function builtinCommandSpecs(options: BuildAppCommandsOptions): BuiltinCommandSp
       closesMenu: true,
     },
     {
-      id: "review.toggleHunkGap",
+      id: "hunk.review.toggleHunkGap",
       title: "Expand or collapse context for the selected hunk",
       scopes: REVIEW,
       defaultKeys: ["z"],
@@ -308,7 +321,7 @@ function builtinCommandSpecs(options: BuildAppCommandsOptions): BuiltinCommandSp
       closesMenu: true,
     },
     {
-      id: "review.editSelectedFile",
+      id: "hunk.review.editSelectedFile",
       title: "Open the selected file in your editor",
       scopes: REVIEW,
       defaultKeys: ["e"],
@@ -316,7 +329,7 @@ function builtinCommandSpecs(options: BuildAppCommandsOptions): BuiltinCommandSp
       closesMenu: true,
     },
     {
-      id: "review.previousHunk",
+      id: "hunk.review.previousHunk",
       title: "Previous hunk",
       scopes: REVIEW,
       defaultKeys: ["["],
@@ -324,7 +337,7 @@ function builtinCommandSpecs(options: BuildAppCommandsOptions): BuiltinCommandSp
       closesMenu: true,
     },
     {
-      id: "review.nextHunk",
+      id: "hunk.review.nextHunk",
       title: "Next hunk",
       scopes: REVIEW,
       defaultKeys: ["]"],
@@ -332,7 +345,7 @@ function builtinCommandSpecs(options: BuildAppCommandsOptions): BuiltinCommandSp
       closesMenu: true,
     },
     {
-      id: "review.previousFile",
+      id: "hunk.review.previousFile",
       title: "Previous file",
       scopes: REVIEW,
       defaultKeys: [","],
@@ -340,7 +353,7 @@ function builtinCommandSpecs(options: BuildAppCommandsOptions): BuiltinCommandSp
       closesMenu: true,
     },
     {
-      id: "review.nextFile",
+      id: "hunk.review.nextFile",
       title: "Next file",
       scopes: REVIEW,
       defaultKeys: ["."],
@@ -348,7 +361,7 @@ function builtinCommandSpecs(options: BuildAppCommandsOptions): BuiltinCommandSp
       closesMenu: true,
     },
     {
-      id: "review.previousAnnotatedHunk",
+      id: "hunk.review.previousAnnotatedHunk",
       title: "Previous annotated hunk",
       scopes: REVIEW,
       defaultKeys: ["{"],
@@ -356,7 +369,7 @@ function builtinCommandSpecs(options: BuildAppCommandsOptions): BuiltinCommandSp
       closesMenu: true,
     },
     {
-      id: "review.nextAnnotatedHunk",
+      id: "hunk.review.nextAnnotatedHunk",
       title: "Next annotated hunk",
       scopes: REVIEW,
       defaultKeys: ["}"],

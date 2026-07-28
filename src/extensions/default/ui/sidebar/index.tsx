@@ -10,6 +10,7 @@ import {
 import { fileRowId } from "../../../../ui/lib/ids";
 import { buildSidebarRenderWindow } from "../../../../ui/lib/sidebarRenderWindow";
 import { FileGroupHeader, FileListItem } from "../../../../ui/components/panes/FileListItem";
+import { HUNK_VENDOR_EXTENSION_ID } from "../../../extensionIds";
 import { runExtensionFactory } from "../../../runExtension";
 import {
   createEmptyExtensionRegistry,
@@ -38,7 +39,16 @@ import {
  * actions, and theme crossing the props — not utility code.
  */
 
-export const BUNDLED_SIDEBAR_EXTENSION_ID = "sidebar";
+/**
+ * The bundled sidebar registers under Hunk's vendor id, not under `sidebar`.
+ *
+ * View keys are `<extensionId>:<viewId>`, and extension ids are file stems a
+ * user picks, so `sidebar.ts` on disk would otherwise mint `sidebar:files` and
+ * collide with this view. `hunk` is reserved at load, so this key cannot be
+ * taken. The `sourcePath` below still names the module, since that is what it
+ * describes.
+ */
+export const BUNDLED_SIDEBAR_EXTENSION_ID = HUNK_VENDOR_EXTENSION_ID;
 export const BUNDLED_SIDEBAR_VIEW_ID = "files";
 
 /** Render the built-in file navigation sidebar from the public sidebar props. */
@@ -206,7 +216,7 @@ export function getBundledSidebarView(): RegisteredSidebarView {
   runExtensionFactory({
     metadata: {
       id: BUNDLED_SIDEBAR_EXTENSION_ID,
-      sourcePath: `hunk:bundled/${BUNDLED_SIDEBAR_EXTENSION_ID}`,
+      sourcePath: "hunk:bundled/sidebar",
       origin: "bundled",
     },
     registry,

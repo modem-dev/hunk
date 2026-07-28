@@ -1,5 +1,6 @@
 import { pathToFileURL } from "node:url";
-import { findVcsRepoRootCandidate } from "../core/vcs";
+import { findVcsRepoRootCandidate, isVcsId } from "../core/vcs";
+import { EXTENSION_ID_RULE, HUNK_VENDOR_EXTENSION_ID, isValidExtensionId } from "./extensionIds";
 import { registerHostRuntimeModules } from "./hostRuntimeModules";
 import { createExtensionNotificationHub, type ExtensionNotificationHub } from "./notifications";
 import { describeError, readExtensionFactory, runExtensionFactory } from "./runExtension";
@@ -40,20 +41,101 @@ async function importExtensionModule(path: string): Promise<unknown> {
 }
 
 /**
+ * Report whether an id belongs to Hunk itself rather than to an extension.
+ *
+ * The bundled tier names each extension after the backend it registers, so
+ * `isVcsId` is the single source for `git`/`jj`/`sl` instead of a second list
+ * that could drift when a backend is added; `hunk` covers everything else Hunk
+ * owns — built-in commands and the bundled sidebar's views alike.
+ */
+function isReservedExtensionId(id: string) {
+  return id === HUNK_VENDOR_EXTENSION_ID || isVcsId(id);
+}
+
+/**
+ * State why one candidate's id disqualifies it, or nothing when it is usable.
+ *
+ * Ids come from file stems, folder names, and manifests, and they decide which
+ * commands, sidebar views, and config table an extension owns. A stem that is
+ * reserved, unparseable, or already taken would silently take over another
+ * extension's namespace, so it is refused here with the rule it broke.
+ */
+function describeIdRefusal(
+  candidate: ExtensionCandidate,
+  claimedBy: ReadonlyMap<string, string>,
+): string | undefined {
+  if (isReservedExtensionId(candidate.id)) {
+    return `"${candidate.id}" is reserved by Hunk and cannot be an extension id • rename ${candidate.path}`;
+  }
+
+  if (!isValidExtensionId(candidate.id)) {
+    return `"${candidate.id}" is not a usable extension id • ${EXTENSION_ID_RULE} • rename ${candidate.path}`;
+  }
+
+  const owner = claimedBy.get(candidate.id);
+  return owner === undefined
+    ? undefined
+    : `another extension already loaded as "${candidate.id}" (${owner}) • rename ${candidate.path}`;
+}
+
+/** One candidate set split into what may load and the ids that were refused. */
+interface AcceptedCandidates {
+  accepted: ExtensionCandidate[];
+  issues: ExtensionLoadIssue[];
+}
+
+/**
+ * Gate every candidate's id before anything is imported.
+ *
+ * This is the one enforcement point: discovery stays a pure filesystem walk
+ * with no issue channel, and every way an id can be produced — file stem,
+ * folder name, single- or multi-entry manifest, explicit `--extension` path —
+ * arrives here as `candidate.id`, so one gate covers all of them. Duplicates
+ * across discovery sources resolve first-wins, the same tiebreak the registry
+ * uses everywhere else, with the loser reported rather than silently sharing
+ * the winner's config table, command ids, and view keys.
+ */
+function acceptCandidateIds(candidates: readonly ExtensionCandidate[]): AcceptedCandidates {
+  const accepted: ExtensionCandidate[] = [];
+  const issues: ExtensionLoadIssue[] = [];
+  const claimedBy = new Map<string, string>();
+
+  for (const candidate of candidates) {
+    const refusal = describeIdRefusal(candidate, claimedBy);
+    if (refusal !== undefined) {
+      issues.push({
+        extensionId: candidate.id,
+        path: candidate.path,
+        origin: candidate.origin,
+        message: refusal,
+      });
+      continue;
+    }
+
+    claimedBy.set(candidate.id, candidate.path);
+    accepted.push(candidate);
+  }
+
+  return { accepted, issues };
+}
+
+/**
  * Load every discovered extension into one registry.
  *
- * Isolation is the contract here: a candidate that fails to import, has no
- * default export, or throws from its factory becomes an `ExtensionLoadIssue`
- * and is skipped. Repo-local candidates additionally require a recorded trust
- * decision; unknown ones are skipped and reported through
- * `pendingTrustRepoRoot` so the UI can ask and reload.
+ * Isolation is the contract here: a candidate whose id is refused, that fails
+ * to import, has no default export, or throws from its factory becomes an
+ * `ExtensionLoadIssue` and is skipped. Repo-local candidates additionally
+ * require a recorded trust decision; unknown ones are skipped and reported
+ * through `pendingTrustRepoRoot` so the UI can ask and reload.
  */
 export async function loadExtensions(options: LoadExtensionsOptions): Promise<ExtensionLoadResult> {
+  // Ids are settled before anything is imported, so a refused candidate never
+  // gets a loader hook, let alone an evaluated module.
+  const { accepted, issues } = acceptCandidateIds(options.candidates);
   // Before any candidate is imported, so its `react` (and `hunkdiff/extension`)
   // imports resolve to the host's own instances rather than the filesystem.
-  registerHostRuntimeModules(options.candidates.map((candidate) => candidate.path));
+  registerHostRuntimeModules(accepted.map((candidate) => candidate.path));
   const registry = createEmptyExtensionRegistry();
-  const issues: ExtensionLoadIssue[] = [];
   const importModule = options.importExtensionModuleImpl ?? importExtensionModule;
   const resolveTrust = options.resolveRepoTrustImpl ?? resolveRepoTrust;
   const trustOptions: ExtensionTrustOptions = { env: options.env };
@@ -73,7 +155,7 @@ export async function loadExtensions(options: LoadExtensionsOptions): Promise<Ex
     return repoTrustState;
   };
 
-  for (const candidate of options.candidates) {
+  for (const candidate of accepted) {
     if (candidate.origin === "repo") {
       const trust = resolveRepoTrustState();
       if (trust !== "trusted") {

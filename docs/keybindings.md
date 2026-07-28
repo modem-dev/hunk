@@ -5,12 +5,17 @@ command ids to the keys you want them on:
 
 ```toml
 [keybindings]
-"app.quit" = "ctrl+x"                 # one chord
-"review.nextHunk" = ["]", "ctrl+n"]   # several chords for one command
-"review.focusFilter" = "f"            # takes "f" away from page-down
-"view.toggleMenuBar" = false          # unbind it entirely
-"myext.toggle" = "ctrl+g"             # extension commands too
+"hunk.app.quit" = "ctrl+x"               # one chord
+"hunk.review.nextHunk" = ["]", "ctrl+n"] # several chords for one command
+"hunk.review.focusFilter" = "f"          # takes "f" away from page-down
+"hunk.view.toggleMenuBar" = false        # unbind it entirely
+"myext.toggle" = "ctrl+g"                # extension commands too
 ```
+
+Every id starts with the name of whoever owns the command: Hunk's own commands
+live under `hunk.`, and an extension's live under its extension id. That split
+is structural — `hunk` is a reserved extension id, so an extension can never
+mint a command id that shadows a built-in, whatever Hunk adds later.
 
 Rules worth knowing:
 
@@ -33,42 +38,42 @@ what terminals report.
 
 The built-in commands and the keys they ship with:
 
-| Command id                     | Does                                     | Default keys                 |
-| ------------------------------ | ---------------------------------------- | ---------------------------- |
-| `app.quit`                     | Quit                                     | `q`                          |
-| `app.refresh`                  | Refresh the review                       | `r`                          |
-| `app.toggleHelp`               | Toggle help                              | `?`                          |
-| `app.toggleFocusArea`          | Switch focus between files and filter    | `tab`                        |
-| `review.focusFilter`           | Focus the file filter                    | `/`                          |
-| `review.startNote`             | Add a review note                        | `c`                          |
-| `review.editSelectedFile`      | Open the selected file in your editor    | `e`                          |
-| `review.nextHunk`              | Next hunk                                | `]`                          |
-| `review.previousHunk`          | Previous hunk                            | `[`                          |
-| `review.nextFile`              | Next file                                | `.`                          |
-| `review.previousFile`          | Previous file                            | `,`                          |
-| `review.nextAnnotatedHunk`     | Next annotated hunk                      | `}`                          |
-| `review.previousAnnotatedHunk` | Previous annotated hunk                  | `{`                          |
-| `review.toggleHunkGap`         | Expand or collapse the selected context  | `z`                          |
-| `review.pageDown`              | Scroll down one page                     | `pagedown`, `space`, `f`     |
-| `review.pageUp`                | Scroll up one page                       | `pageup`, `b`, `shift+space` |
-| `review.halfPageDown`          | Scroll down half a page                  | `d`                          |
-| `review.halfPageUp`            | Scroll up half a page                    | `u`                          |
-| `review.stepDown`              | Scroll down one row                      | `down`, `j`                  |
-| `review.stepUp`                | Scroll up one row                        | `up`, `k`                    |
-| `review.jumpToTop`             | Jump to start                            | `g`, `home`                  |
-| `review.jumpToBottom`          | Jump to end                              | `G`, `end`                   |
-| `review.scrollCodeLeft`        | Scroll code left (shifted scrolls fast)  | `left`, `shift+left`         |
-| `review.scrollCodeRight`       | Scroll code right (shifted scrolls fast) | `right`, `shift+right`       |
-| `view.toggleSidebar`           | Toggle sidebar                           | `s`                          |
-| `view.toggleMenuBar`           | Toggle menu bar                          | `M`                          |
-| `view.toggleHunkHeaders`       | Toggle hunk headers                      | `m`                          |
-| `view.toggleLineNumbers`       | Toggle line numbers                      | `l`                          |
-| `view.toggleLineWrap`          | Toggle line wrapping                     | `w`                          |
-| `view.toggleAgentNotes`        | Toggle agent notes                       | `a`                          |
-| `view.openThemeSelector`       | Choose theme                             | `t`                          |
-| `view.layoutSplit`             | Split layout                             | `1`                          |
-| `view.layoutStack`             | Stack layout                             | `2`                          |
-| `view.layoutAuto`              | Auto layout                              | `0`                          |
+| Command id                          | Does                                     | Default keys                 |
+| ----------------------------------- | ---------------------------------------- | ---------------------------- |
+| `hunk.app.quit`                     | Quit                                     | `q`                          |
+| `hunk.app.refresh`                  | Refresh the review                       | `r`                          |
+| `hunk.app.toggleHelp`               | Toggle help                              | `?`                          |
+| `hunk.app.toggleFocusArea`          | Switch focus between files and filter    | `tab`                        |
+| `hunk.review.focusFilter`           | Focus the file filter                    | `/`                          |
+| `hunk.review.startNote`             | Add a review note                        | `c`                          |
+| `hunk.review.editSelectedFile`      | Open the selected file in your editor    | `e`                          |
+| `hunk.review.nextHunk`              | Next hunk                                | `]`                          |
+| `hunk.review.previousHunk`          | Previous hunk                            | `[`                          |
+| `hunk.review.nextFile`              | Next file                                | `.`                          |
+| `hunk.review.previousFile`          | Previous file                            | `,`                          |
+| `hunk.review.nextAnnotatedHunk`     | Next annotated hunk                      | `}`                          |
+| `hunk.review.previousAnnotatedHunk` | Previous annotated hunk                  | `{`                          |
+| `hunk.review.toggleHunkGap`         | Expand or collapse the selected context  | `z`                          |
+| `hunk.review.pageDown`              | Scroll down one page                     | `pagedown`, `space`, `f`     |
+| `hunk.review.pageUp`                | Scroll up one page                       | `pageup`, `b`, `shift+space` |
+| `hunk.review.halfPageDown`          | Scroll down half a page                  | `d`                          |
+| `hunk.review.halfPageUp`            | Scroll up half a page                    | `u`                          |
+| `hunk.review.stepDown`              | Scroll down one row                      | `down`, `j`                  |
+| `hunk.review.stepUp`                | Scroll up one row                        | `up`, `k`                    |
+| `hunk.review.jumpToTop`             | Jump to start                            | `g`, `home`                  |
+| `hunk.review.jumpToBottom`          | Jump to end                              | `G`, `end`                   |
+| `hunk.review.scrollCodeLeft`        | Scroll code left (shifted scrolls fast)  | `left`, `shift+left`         |
+| `hunk.review.scrollCodeRight`       | Scroll code right (shifted scrolls fast) | `right`, `shift+right`       |
+| `hunk.view.toggleSidebar`           | Toggle sidebar                           | `s`                          |
+| `hunk.view.toggleMenuBar`           | Toggle menu bar                          | `M`                          |
+| `hunk.view.toggleHunkHeaders`       | Toggle hunk headers                      | `m`                          |
+| `hunk.view.toggleLineNumbers`       | Toggle line numbers                      | `l`                          |
+| `hunk.view.toggleLineWrap`          | Toggle line wrapping                     | `w`                          |
+| `hunk.view.toggleAgentNotes`        | Toggle agent notes                       | `a`                          |
+| `hunk.view.openThemeSelector`       | Choose theme                             | `t`                          |
+| `hunk.view.layoutSplit`             | Split layout                             | `1`                          |
+| `hunk.view.layoutStack`             | Stack layout                             | `2`                          |
+| `hunk.view.layoutAuto`              | Auto layout                              | `0`                          |
 
 Extension commands are named `<extensionId>.<commandId>` and remap the same way
 (see [docs/extensions.md](extensions.md)). Keys that belong to a dialog,

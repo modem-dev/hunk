@@ -16,7 +16,7 @@ export type SidebarPlacement = "left" | "right";
 
 /** One sidebar view available to this session, open or not. */
 export interface SessionSidebarView {
-  /** Stable key: `<extensionId>:<viewId>`; the bundled file navigation is `sidebar:files`. */
+  /** Stable key: `<extensionId>:<viewId>`; the bundled file navigation is `hunk:files`. */
   key: string;
   registered: RegisteredSidebarView;
   placement: SidebarPlacement;

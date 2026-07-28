@@ -33,6 +33,17 @@ breaks Hunk's own code first.
 Bundled extensions are implicitly trusted and stay loaded under
 `--no-extensions`, which governs user extensions only.
 
+An extension id is a file stem the user chose, and it is the namespace that id
+owns for commands (`<extensionId>.<commandId>`), sidebar views
+(`<extensionId>:<viewId>`), and config (`[extension.<id>]`). `host.ts` is the
+one place those ids are vetted — discovery stays a pure filesystem walk, and
+every way an id can be derived arrives there as `candidate.id`. It refuses
+reserved ids (`hunk`, plus the bundled backends via `isVcsId`), ids outside
+`/^[A-Za-z0-9][A-Za-z0-9_-]*$/` (a dot or colon would make the composed ids
+unsplittable), and the later of two sources claiming one id; each refusal is a
+load issue and costs only that extension. The rules themselves are stated in
+`src/extensions/extensionIds.ts`.
+
 ## One registry, one apply path
 
 Registrations (themes, file languages, VCS adapters, changeset transforms,
@@ -68,8 +79,11 @@ registration identity.
 ## Command system
 
 Every app-level keyboard shortcut is a named command in one dispatch table
-(`src/ui/lib/appCommands.ts`); modal surfaces (dialogs, menus, focused
-inputs) own their keys first and are deliberately not commands. Extension
+(`src/ui/lib/appCommands.ts`), each id under Hunk's reserved vendor namespace
+(`hunk.app.quit`, `hunk.review.nextHunk`) — which is what keeps built-in ids
+and extension-owned ids in disjoint spaces however either grows; modal surfaces
+(dialogs, menus, focused inputs) own their keys first and are deliberately not
+commands. Extension
 `registerCommand` entries join the same table via
 `src/ui/lib/extensionCommands.ts` — built-ins win key conflicts, refused one
 chord at a time and detected by probing matchers with a synthesized event

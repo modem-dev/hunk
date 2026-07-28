@@ -1099,17 +1099,17 @@ describe("extension configuration", () => {
       join(home, ".config", "hunk", "config.toml"),
       [
         "[keybindings]",
-        '"app.quit" = "ctrl+x"',
-        '"review.nextHunk" = ["]", "ctrl+n"]',
-        '"view.toggleMenuBar" = false',
-        '"app.refresh" = 7',
+        '"hunk.app.quit" = "ctrl+x"',
+        '"hunk.review.nextHunk" = ["]", "ctrl+n"]',
+        '"hunk.view.toggleMenuBar" = false',
+        '"hunk.app.refresh" = 7',
       ].join("\n"),
     );
 
     mkdirSync(join(repo, ".hunk"), { recursive: true });
     writeFileSync(
       join(repo, ".hunk", "config.toml"),
-      ["[keybindings]", '"app.quit" = "ctrl+q"'].join("\n"),
+      ["[keybindings]", '"hunk.app.quit" = "ctrl+q"'].join("\n"),
     );
 
     const resolved = resolveConfiguredCliInput(createPatchPagerInput(), {
@@ -1119,14 +1119,14 @@ describe("extension configuration", () => {
 
     // The repo layer is ignored on purpose: keys belong to the reader's machine.
     expect(resolved.keybindings).toEqual({
-      "app.quit": "ctrl+x",
-      "review.nextHunk": ["]", "ctrl+n"],
-      "view.toggleMenuBar": false,
+      "hunk.app.quit": "ctrl+x",
+      "hunk.review.nextHunk": ["]", "ctrl+n"],
+      "hunk.view.toggleMenuBar": false,
     });
     // The entry with an unusable value is skipped, and said so.
-    expect(resolved.startupNotices?.some((notice) => notice.message.includes("app.refresh"))).toBe(
-      true,
-    );
+    expect(
+      resolved.startupNotices?.some((notice) => notice.message.includes("hunk.app.refresh")),
+    ).toBe(true);
   });
 
   test("lets repo config disable extensions and --no-extensions win over both layers", () => {

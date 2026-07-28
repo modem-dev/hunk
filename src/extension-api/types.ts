@@ -689,7 +689,13 @@ export interface ExtensionSidebarView {
  * it declared stays bound.
  */
 export interface ExtensionCommand {
-  /** Identifies the command within its extension; `<extensionId>.<id>` globally. */
+  /**
+   * Identifies the command within its extension; `<extensionId>.<id>` globally.
+   *
+   * Extension ids and Hunk's own ids never meet: everything built-in is named
+   * under the reserved `hunk` id (`hunk.review.nextHunk`), so a command here
+   * cannot shadow one of Hunk's, whichever id an extension is installed under.
+   */
   id: string;
   /** Human-readable name, for diagnostics and future menu listings. */
   title: string;

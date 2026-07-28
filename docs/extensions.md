@@ -79,6 +79,16 @@ folder's name, whatever the entry file is called. The id is what
 a folder of the same name — or later giving that folder a manifest — keeps its
 config working.
 
+The id is also the namespace your extension owns: its commands are
+`<id>.<commandId>` and its sidebar views `<id>:<viewId>`. So the id has to be
+spelled like a name — starting with a letter or digit, then letters, digits,
+`-`, or `_`. A dot or a colon would make those composed ids ambiguous, and
+`hunk`, `git`, `jj`, and `sl` are reserved for what Hunk ships. An extension
+whose id breaks a rule is skipped with a startup notice naming the file; rename
+it and it loads. If two discovery sources offer the same id, the first in
+[source order](#where-hunk-looks-for-extensions) loads and the other is skipped the
+same way, since one id cannot own two config tables.
+
 `--no-extensions` disables user extensions for one run — nothing on disk is
 read, let alone executed. Use it when triaging a bug.
 
@@ -114,7 +124,8 @@ being Hunk's own code:
   from a debugging flag would break every workflow there is.
 
 Failure isolation still applies to them. The ids `git`, `jj`, and `sl` are
-reserved as a result — see `registerVcsAdapter` below.
+reserved as a result — see `registerVcsAdapter` below — and so is `hunk`, the
+id the bundled sidebar and every built-in command are named under.
 
 ## Trust
 
@@ -601,8 +612,8 @@ would still answer to `f9`.
 
 Whatever an extension declares is a _default_. Users remap commands by id in the
 `[keybindings]` table of their own config, extension commands included — yours
-is named `"<extensionId>.<commandId>"`. See
-[docs/keybindings.md](keybindings.md) for the rules; the
+is named `"<extensionId>.<commandId>"`, while Hunk's own are `"hunk.app.quit"`
+and friends. See [docs/keybindings.md](keybindings.md) for the rules; the
 practical consequence is that a chord you declare may not be the chord your
 command ends up on.
 

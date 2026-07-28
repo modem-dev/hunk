@@ -112,7 +112,7 @@ async function withAppHost(
 describe("user keybindings", () => {
   test("a config table rebinds a built-in command and frees its old key", async () => {
     const repo = createTestRepo("hunk-keybindings-remap-");
-    const bootstrap = await launchWithConfig(repo, '[keybindings]\n"app.quit" = "ctrl+x"\n');
+    const bootstrap = await launchWithConfig(repo, '[keybindings]\n"hunk.app.quit" = "ctrl+x"\n');
 
     await withAppHost(bootstrap, async (setup, quits) => {
       await act(async () => {
@@ -136,7 +136,7 @@ describe("user keybindings", () => {
     // earlier in the dispatch table, so it would win if the claim did nothing.
     const bootstrap = await launchWithConfig(
       repo,
-      '[keybindings]\n"review.focusFilter" = ["q", "/"]\n',
+      '[keybindings]\n"hunk.review.focusFilter" = ["q", "/"]\n',
     );
 
     await withAppHost(bootstrap, async (setup, quits) => {
@@ -150,7 +150,7 @@ describe("user keybindings", () => {
 
   test("unbinding leaves the key doing nothing", async () => {
     const repo = createTestRepo("hunk-keybindings-unbind-");
-    const bootstrap = await launchWithConfig(repo, '[keybindings]\n"app.quit" = false\n');
+    const bootstrap = await launchWithConfig(repo, '[keybindings]\n"hunk.app.quit" = false\n');
 
     await withAppHost(bootstrap, async (setup, quits) => {
       await act(async () => {

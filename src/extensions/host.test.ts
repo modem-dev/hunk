@@ -249,6 +249,105 @@ export default function (hunk: { registerFileLanguage: (e: string, l: string) =>
     ]);
   });
 
+  test("refuses reserved extension ids without touching the rest of the pass", async () => {
+    const dir = createTempDir("hunk-host-reserved-");
+    const source = `export default function (hunk: { registerFileLanguage: (e: string, l: string) => void }) {
+  hunk.registerFileLanguage("prisma", "graphql");
+}
+`;
+    // `hunk` owns every built-in command id and the bundled sidebar's view key;
+    // `git` owns a shipped VCS backend. Neither may be claimed from disk.
+    const vendor = createTestExtension(dir, "hunk.ts", source);
+    const backend = createTestExtension(dir, "git.ts", source);
+    const healthy = createTestExtension(dir, "healthy.ts", source);
+
+    const result = await loadExtensions({ candidates: [vendor, backend, healthy], cwd: dir });
+
+    expect(result.loaded.map((entry) => entry.id)).toEqual(["healthy"]);
+    expect(result.issues.map((issue) => issue.extensionId)).toEqual(["hunk", "git"]);
+    expect(result.issues[0]?.message).toContain("reserved by Hunk");
+    expect(result.issues[0]?.message).toContain(vendor.path);
+    expect(result.issues[1]?.message).toContain("reserved by Hunk");
+    expect(result.registry.fileLanguages).toEqual([
+      { extensionId: "healthy", extension: "prisma", language: "graphql" },
+    ]);
+  });
+
+  test("refuses ids that would not parse as a namespace", async () => {
+    const dir = createTempDir("hunk-host-charset-");
+    const source = `export default function (hunk: { log: (message: string) => void }) {
+  hunk.log("loaded");
+}
+`;
+    // A dot would break `<extensionId>.<commandId>`; a colon would break
+    // `<extensionId>:<viewId>`, so neither can spell an id.
+    const dotted = createTestExtension(dir, "my.ext.ts", source);
+    const leading = createTestExtension(dir, "-lead.ts", source);
+
+    const result = await loadExtensions({ candidates: [dotted, leading], cwd: dir });
+
+    expect(result.loaded).toEqual([]);
+    expect(result.issues.map((issue) => issue.extensionId)).toEqual(["my.ext", "-lead"]);
+    expect(result.issues[0]?.message).toContain("not a usable extension id");
+    expect(result.issues[1]?.message).toContain("not a usable extension id");
+  });
+
+  test("refuses a manifest folder whose declared id breaks the same rules", async () => {
+    const root = createTempDir("hunk-host-manifest-id-");
+    const folder = join(root, "my.ext");
+    writeTestFile(folder, "package.json", `{"hunk":{"extensions":["./entry.ts"]}}`);
+    writeTestFile(folder, "entry.ts", `export default function () {}\n`);
+
+    // A single-entry manifest is named by its folder, so manifest ids reach the
+    // same gate rather than getting a second, looser rule of their own.
+    const candidates = discoverExtensions({
+      cwd: root,
+      repoRoot: undefined,
+      globalExtensionsDir: undefined,
+      flagPaths: [folder],
+      env: {},
+    });
+    const result = await loadExtensions({ candidates, cwd: root });
+
+    expect(candidates.map((candidate) => candidate.id)).toEqual(["my.ext"]);
+    expect(result.loaded).toEqual([]);
+    expect(result.issues[0]?.message).toContain("not a usable extension id");
+  });
+
+  test("keeps the first extension claiming an id when two sources collide", async () => {
+    const first = createTempDir("hunk-host-dup-first-");
+    const second = createTempDir("hunk-host-dup-second-");
+    const winner = createTestExtension(
+      first,
+      "notes.ts",
+      `export default function (hunk: { log: (message: string) => void }) {
+  hunk.log("first");
+}
+`,
+      "config",
+    );
+    const loser = createTestExtension(
+      second,
+      "notes.ts",
+      `export default function (hunk: { log: (message: string) => void }) {
+  hunk.log("second");
+}
+`,
+      "global",
+    );
+
+    const result = await loadExtensions({ candidates: [winner, loser], cwd: first });
+
+    // Sharing an id would mean sharing a config table, command ids, and view
+    // keys, so discovery order decides and the loser is reported.
+    expect(result.loaded).toEqual([{ id: "notes", sourcePath: winner.path, origin: "config" }]);
+    expect(result.registry.logs).toEqual([{ extensionId: "notes", message: "first" }]);
+    expect(result.issues).toHaveLength(1);
+    expect(result.issues[0]?.origin).toBe("global");
+    expect(result.issues[0]?.message).toContain('another extension already loaded as "notes"');
+    expect(result.issues[0]?.message).toContain(winner.path);
+  });
+
   test("rejects registration attempted after the load pass finished", async () => {
     const dir = createTempDir("hunk-host-late-");
     const candidate = createTestExtension(

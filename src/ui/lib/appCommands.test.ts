@@ -66,19 +66,19 @@ describe("built-in command chords", () => {
     const press = (fields: Partial<KeyEvent>) =>
       dispatchAppCommand(commands, "review", keyEvent(fields))?.id;
 
-    expect(press({ name: "pagedown" })).toBe("review.pageDown");
-    expect(press({ name: "space" })).toBe("review.pageDown");
-    expect(press({ name: "f", sequence: "f" })).toBe("review.pageDown");
-    expect(press({ name: "pageup" })).toBe("review.pageUp");
-    expect(press({ name: "b", sequence: "b" })).toBe("review.pageUp");
+    expect(press({ name: "pagedown" })).toBe("hunk.review.pageDown");
+    expect(press({ name: "space" })).toBe("hunk.review.pageDown");
+    expect(press({ name: "f", sequence: "f" })).toBe("hunk.review.pageDown");
+    expect(press({ name: "pageup" })).toBe("hunk.review.pageUp");
+    expect(press({ name: "b", sequence: "b" })).toBe("hunk.review.pageUp");
     // Shift-Space pages backward, and plain space must not.
-    expect(press({ name: "space", shift: true })).toBe("review.pageUp");
-    expect(press({ name: "down" })).toBe("review.stepDown");
-    expect(press({ name: "j", sequence: "j" })).toBe("review.stepDown");
-    expect(press({ name: "up" })).toBe("review.stepUp");
-    expect(press({ name: "k", sequence: "k" })).toBe("review.stepUp");
-    expect(press({ name: "d", sequence: "d" })).toBe("review.halfPageDown");
-    expect(press({ name: "u", sequence: "u" })).toBe("review.halfPageUp");
+    expect(press({ name: "space", shift: true })).toBe("hunk.review.pageUp");
+    expect(press({ name: "down" })).toBe("hunk.review.stepDown");
+    expect(press({ name: "j", sequence: "j" })).toBe("hunk.review.stepDown");
+    expect(press({ name: "up" })).toBe("hunk.review.stepUp");
+    expect(press({ name: "k", sequence: "k" })).toBe("hunk.review.stepUp");
+    expect(press({ name: "d", sequence: "d" })).toBe("hunk.review.halfPageDown");
+    expect(press({ name: "u", sequence: "u" })).toBe("hunk.review.halfPageUp");
     expect(ran).toEqual([
       "scrollDiff:1,viewport",
       "scrollDiff:1,viewport",
@@ -100,12 +100,12 @@ describe("built-in command chords", () => {
     const press = (fields: Partial<KeyEvent>) =>
       dispatchAppCommand(commands, "review", keyEvent(fields))?.id;
 
-    expect(press({ name: "g", sequence: "g" })).toBe("review.jumpToTop");
-    expect(press({ name: "g", sequence: "G", shift: true })).toBe("review.jumpToBottom");
-    expect(press({ name: "m", sequence: "m" })).toBe("view.toggleHunkHeaders");
-    expect(press({ name: "m", sequence: "M", shift: true })).toBe("view.toggleMenuBar");
+    expect(press({ name: "g", sequence: "g" })).toBe("hunk.review.jumpToTop");
+    expect(press({ name: "g", sequence: "G", shift: true })).toBe("hunk.review.jumpToBottom");
+    expect(press({ name: "m", sequence: "m" })).toBe("hunk.view.toggleHunkHeaders");
+    expect(press({ name: "m", sequence: "M", shift: true })).toBe("hunk.view.toggleMenuBar");
     // The note shortcut is the unmodified c only.
-    expect(press({ name: "c", sequence: "c" })).toBe("review.startNote");
+    expect(press({ name: "c", sequence: "c" })).toBe("hunk.review.startNote");
     expect(press({ name: "c", sequence: "c", ctrl: true })).toBeUndefined();
   });
 
@@ -121,9 +121,9 @@ describe("built-in command chords", () => {
     const { commands } = createTestCommands();
     const labels = (id: string) => commands.find((command) => command.id === id)?.keyLabels;
 
-    expect(labels("review.pageUp")).toEqual(["PageUp", "b", "Shift+Space"]);
-    expect(labels("review.jumpToBottom")).toEqual(["G", "End"]);
-    expect(labels("app.quit")).toEqual(["q"]);
+    expect(labels("hunk.review.pageUp")).toEqual(["PageUp", "b", "Shift+Space"]);
+    expect(labels("hunk.review.jumpToBottom")).toEqual(["G", "End"]);
+    expect(labels("hunk.app.quit")).toEqual(["q"]);
   });
 });
 
@@ -131,48 +131,50 @@ describe("built-in commands under user keybindings", () => {
   test("a remapped command answers to its new key and releases the old one", () => {
     const { keys } = resolveCommandKeys({
       defaults: builtinCommandKeyDefaults(),
-      userBindings: { "app.quit": "ctrl+x" },
+      userBindings: { "hunk.app.quit": "ctrl+x" },
     });
     const { commands, ran } = createTestCommands(keys);
 
     expect(dispatchAppCommand(commands, "review", keyEvent({ name: "x", ctrl: true }))?.id).toBe(
-      "app.quit",
+      "hunk.app.quit",
     );
     expect(
       dispatchAppCommand(commands, "review", keyEvent({ name: "q", sequence: "q" })),
     ).toBeUndefined();
     expect(ran).toEqual(["requestQuit"]);
-    expect(commands.find((command) => command.id === "app.quit")?.keyLabels).toEqual(["Ctrl+X"]);
+    expect(commands.find((command) => command.id === "hunk.app.quit")?.keyLabels).toEqual([
+      "Ctrl+X",
+    ]);
   });
 
   test("claiming a key held by default takes it from its old owner only", () => {
     const { keys } = resolveCommandKeys({
       defaults: builtinCommandKeyDefaults(),
       // "f" is one of page-down's three chords.
-      userBindings: { "review.focusFilter": ["f", "/"] },
+      userBindings: { "hunk.review.focusFilter": ["f", "/"] },
     });
     const { commands } = createTestCommands(keys);
     const press = (fields: Partial<KeyEvent>) =>
       dispatchAppCommand(commands, "review", keyEvent(fields))?.id;
 
-    expect(press({ name: "f", sequence: "f" })).toBe("review.focusFilter");
-    expect(press({ name: "/", sequence: "/" })).toBe("review.focusFilter");
+    expect(press({ name: "f", sequence: "f" })).toBe("hunk.review.focusFilter");
+    expect(press({ name: "/", sequence: "/" })).toBe("hunk.review.focusFilter");
     // Page-down keeps the chords nobody claimed.
-    expect(press({ name: "space" })).toBe("review.pageDown");
-    expect(press({ name: "pagedown" })).toBe("review.pageDown");
+    expect(press({ name: "space" })).toBe("hunk.review.pageDown");
+    expect(press({ name: "pagedown" })).toBe("hunk.review.pageDown");
   });
 
   test("an unbound command matches nothing", () => {
     const { keys } = resolveCommandKeys({
       defaults: builtinCommandKeyDefaults(),
-      userBindings: { "app.quit": false },
+      userBindings: { "hunk.app.quit": false },
     });
     const { commands } = createTestCommands(keys);
 
     expect(
       dispatchAppCommand(commands, "review", keyEvent({ name: "q", sequence: "q" })),
     ).toBeUndefined();
-    expect(commands.find((command) => command.id === "app.quit")?.keyLabels).toEqual([]);
+    expect(commands.find((command) => command.id === "hunk.app.quit")?.keyLabels).toEqual([]);
   });
 });
 
@@ -183,7 +185,7 @@ describe("builtinCommandKeyDefaults", () => {
 
     expect(defaults.map((entry) => entry.id)).toEqual(commands.map((command) => command.id));
     expect(defaults.every((entry) => entry.defaultKeys.length > 0)).toBe(true);
-    expect(defaults.find((entry) => entry.id === "review.pageDown")?.defaultKeys).toEqual([
+    expect(defaults.find((entry) => entry.id === "hunk.review.pageDown")?.defaultKeys).toEqual([
       "pagedown",
       "space",
       "f",

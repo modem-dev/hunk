@@ -2,9 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { formatKeyChord, resolveCommandKeys, type CommandKeyDefaults } from "./keymap";
 
 const DEFAULTS: CommandKeyDefaults[] = [
-  { id: "app.quit", defaultKeys: ["q"] },
-  { id: "review.pageDown", defaultKeys: ["pagedown", "space", "f"] },
-  { id: "review.nextHunk", defaultKeys: ["]"] },
+  { id: "hunk.app.quit", defaultKeys: ["q"] },
+  { id: "hunk.review.pageDown", defaultKeys: ["pagedown", "space", "f"] },
+  { id: "hunk.review.nextHunk", defaultKeys: ["]"] },
+  // A loaded extension's command, under that extension's own id.
   { id: "meta.toggle", defaultKeys: ["y"] },
 ];
 
@@ -18,21 +19,21 @@ describe("resolveCommandKeys", () => {
   test("commands keep their defaults with no user config", () => {
     const { keys, issues } = resolveCommandKeys({ defaults: DEFAULTS });
     expect(issues).toEqual([]);
-    expect(keys.get("review.pageDown")).toEqual(["pagedown", "space", "f"]);
-    expect(keys.get("app.quit")).toEqual(["q"]);
+    expect(keys.get("hunk.review.pageDown")).toEqual(["pagedown", "space", "f"]);
+    expect(keys.get("hunk.app.quit")).toEqual(["q"]);
   });
 
   test("a user entry replaces that command's defaults outright", () => {
-    const { keys, issues } = resolve({ "review.pageDown": ["ctrl+d"] });
+    const { keys, issues } = resolve({ "hunk.review.pageDown": ["ctrl+d"] });
     expect(issues).toEqual([]);
     // Declarative, not additive: the shipped chords are gone.
-    expect(keys.get("review.pageDown")).toEqual(["ctrl+d"]);
-    expect(keys.get("app.quit")).toEqual(["q"]);
+    expect(keys.get("hunk.review.pageDown")).toEqual(["ctrl+d"]);
+    expect(keys.get("hunk.app.quit")).toEqual(["q"]);
   });
 
   test("false unbinds a command", () => {
-    expect(resolve({ "app.quit": false }).keys.get("app.quit")).toEqual([]);
-    expect(resolve({ "app.quit": [] }).keys.get("app.quit")).toEqual([]);
+    expect(resolve({ "hunk.app.quit": false }).keys.get("hunk.app.quit")).toEqual([]);
+    expect(resolve({ "hunk.app.quit": [] }).keys.get("hunk.app.quit")).toEqual([]);
   });
 
   test("a user-bound chord is stripped from the command that held it by default", () => {
@@ -40,48 +41,86 @@ describe("resolveCommandKeys", () => {
     expect(issues).toEqual([]);
     expect(keys.get("meta.toggle")).toEqual(["f", "ctrl+y"]);
     // Page-down loses only the claimed chord and keeps the rest.
-    expect(keys.get("review.pageDown")).toEqual(["pagedown", "space"]);
+    expect(keys.get("hunk.review.pageDown")).toEqual(["pagedown", "space"]);
   });
 
   test("claiming compares chords by meaning, not spelling", () => {
     const { keys } = resolveCommandKeys({
       defaults: [
-        { id: "review.jumpToBottom", defaultKeys: ["G", "end"] },
+        { id: "hunk.review.jumpToBottom", defaultKeys: ["G", "end"] },
         { id: "meta.toggle", defaultKeys: [] },
       ],
       userBindings: { "meta.toggle": "shift+g" },
     });
 
-    expect(keys.get("review.jumpToBottom")).toEqual(["end"]);
+    expect(keys.get("hunk.review.jumpToBottom")).toEqual(["end"]);
   });
 
   test("two user entries claiming one chord warn, and the first wins", () => {
-    const { keys, issues } = resolve({ "app.quit": "ctrl+x", "meta.toggle": ["ctrl+x", "ctrl+y"] });
+    const { keys, issues } = resolve({
+      "hunk.app.quit": "ctrl+x",
+      "meta.toggle": ["ctrl+x", "ctrl+y"],
+    });
 
-    expect(keys.get("app.quit")).toEqual(["ctrl+x"]);
+    expect(keys.get("hunk.app.quit")).toEqual(["ctrl+x"]);
     expect(keys.get("meta.toggle")).toEqual(["ctrl+y"]);
     expect(issues).toHaveLength(1);
     expect(issues[0]?.commandId).toBe("meta.toggle");
-    expect(issues[0]?.message).toContain('already bound to "app.quit"');
+    expect(issues[0]?.message).toContain('already bound to "hunk.app.quit"');
   });
 
   test("an unparsable chord is an issue and the entry's other chords survive", () => {
-    const { keys, issues } = resolve({ "app.quit": ["ctlr+q", "ctrl+q"] });
+    const { keys, issues } = resolve({ "hunk.app.quit": ["ctlr+q", "ctrl+q"] });
 
-    expect(keys.get("app.quit")).toEqual(["ctrl+q"]);
+    expect(keys.get("hunk.app.quit")).toEqual(["ctrl+q"]);
     expect(issues).toHaveLength(1);
     expect(issues[0]?.message).toContain("not a usable key chord");
   });
 
   test("unknown ids are reported, softly when they look like extension commands", () => {
-    const { keys, issues } = resolve({ "app.quti": "x", "ghost.command": "z" });
+    const { keys, issues } = resolve({ "hunk.app.quti": "x", "ghost.command": "z" });
 
     // Nothing was bound, and no default lost a chord to a skipped entry.
-    expect(keys.has("app.quti")).toBe(false);
-    expect(keys.get("app.quit")).toEqual(["q"]);
-    expect(issues.map((issue) => issue.commandId)).toEqual(["app.quti", "ghost.command"]);
-    expect(issues[0]?.message).toContain('unknown command "app.quti"');
+    expect(keys.has("hunk.app.quti")).toBe(false);
+    expect(keys.get("hunk.app.quit")).toEqual(["q"]);
+    expect(issues.map((issue) => issue.commandId)).toEqual(["hunk.app.quti", "ghost.command"]);
+    expect(issues[0]?.message).toContain('unknown command "hunk.app.quti"');
     expect(issues[1]?.message).toContain("the extension may not be loaded");
+  });
+
+  test("an id under a loaded extension is a typo, not an absent extension", () => {
+    const { issues } = resolve({ "meta.togle": "z" });
+
+    expect(issues).toHaveLength(1);
+    expect(issues[0]?.message).toContain('unknown command "meta.togle"');
+    expect(issues[0]?.message).not.toContain("may not be loaded");
+  });
+
+  test("an id under the vendor namespace is always a typo", () => {
+    // `hunk` is a reserved extension id, so nothing on disk can be the missing
+    // owner of a `hunk.` command — the built-in table here is the whole story.
+    const { issues } = resolveCommandKeys({
+      defaults: [{ id: "meta.toggle", defaultKeys: ["y"] }],
+      userBindings: { "hunk.review.nextHnuk": "z" },
+    });
+
+    expect(issues).toHaveLength(1);
+    expect(issues[0]?.message).toContain('unknown command "hunk.review.nextHnuk"');
+    expect(issues[0]?.message).not.toContain("may not be loaded");
+  });
+
+  test("duplicate ids in the command table keep the first entry's keys", () => {
+    const { keys, issues } = resolveCommandKeys({
+      defaults: [
+        { id: "meta.toggle", defaultKeys: ["y"] },
+        { id: "meta.toggle", defaultKeys: ["z"] },
+      ],
+    });
+
+    expect(keys.get("meta.toggle")).toEqual(["y"]);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]?.commandId).toBe("meta.toggle");
+    expect(issues[0]?.message).toContain("Duplicate command id");
   });
 
   test("extension command ids are remappable like built-ins", () => {

@@ -51,7 +51,7 @@ describe("buildExtensionAppCommands", () => {
         extensionId: "meta",
         fullId: "meta.steal-s",
         key: "s",
-        conflictingId: "view.toggleSidebar",
+        conflictingId: "hunk.view.toggleSidebar",
       },
     ]);
   });
@@ -111,7 +111,7 @@ describe("buildExtensionAppCommands", () => {
         extensionId: "meta",
         fullId: "meta.toggle",
         key: "s",
-        conflictingId: "view.toggleSidebar",
+        conflictingId: "hunk.view.toggleSidebar",
       },
     ]);
     // The command stays registered and keeps the chord nobody else owns.
@@ -134,7 +134,9 @@ describe("buildExtensionAppCommands", () => {
 
   test("a chord a built-in released is free for an extension to claim", () => {
     // The user moved the sidebar toggle to "ctrl+b", so "s" belongs to nobody.
-    const resolvedKeys = new Map<string, readonly string[]>([["view.toggleSidebar", ["ctrl+b"]]]);
+    const resolvedKeys = new Map<string, readonly string[]>([
+      ["hunk.view.toggleSidebar", ["ctrl+b"]],
+    ]);
     const { commands, conflicts } = buildExtensionAppCommands({
       registered: [registeredCommand("meta", "steal-s", "s")],
       builtins: builtinCommandMatchProbes(resolvedKeys),

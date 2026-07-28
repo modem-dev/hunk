@@ -131,8 +131,8 @@ export interface ExtensionsConfig {
 /**
  * One `[keybindings]` entry: the chord(s) to bind a command to, or `false` to unbind it.
  *
- * Command ids are the ones the dispatch table declares — `"app.quit"`,
- * `"review.nextHunk"`, or `"<extensionId>.<commandId>"` for an extension
+ * Command ids are the ones the dispatch table declares — `"hunk.app.quit"`,
+ * `"hunk.review.nextHunk"`, or `"<extensionId>.<commandId>"` for an extension
  * command. Resolution against each command's defaults lives in
  * `src/ui/lib/keymap.ts`.
  */

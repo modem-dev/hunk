@@ -1,4 +1,5 @@
 import type { UserKeyBinding } from "../../core/types";
+import { HUNK_VENDOR_EXTENSION_ID } from "../../extensions/extensionIds";
 import { parseKeyChord, type ParsedKeyChord } from "../../lib/commandKeys";
 
 /**
@@ -64,8 +65,8 @@ function canonicalizeChordString(chord: string) {
   return "error" in parsed ? undefined : canonicalizeChord(parsed);
 }
 
-/** The namespace part of a command id: `app` for `app.quit`, `""` for a bare id. */
-function commandNamespace(id: string) {
+/** The owner part of a command id: `hunk` for `hunk.app.quit`, `""` for a bare id. */
+function commandOwner(id: string) {
   const dot = id.indexOf(".");
   return dot > 0 ? id.slice(0, dot) : "";
 }
@@ -73,15 +74,17 @@ function commandNamespace(id: string) {
 /**
  * Report whether an unknown id plausibly names a command that is simply absent.
  *
- * Every command id is namespaced, built-ins included (`app.quit`), so a dot
- * cannot tell the two apart. What can is the namespace: an id under a namespace
- * this session knows is a typo worth naming, while one under a namespace nobody
- * registered is most likely an extension the user has not loaded right now —
- * a normal state for a config shared across machines, not a mistake.
+ * Every command id names its owner first — `hunk` for built-ins, the extension
+ * id for everything else — and `hunk` is a reserved extension id, so the owner
+ * segment classifies an unknown id structurally rather than by guesswork. An id
+ * under `hunk.` can only be a typo, since Hunk's own table is fully known here.
+ * An id under an extension this session loaded is a typo too. An id under an
+ * extension nobody loaded is most likely a config shared across machines, not a
+ * mistake, so it is reported softly.
  */
-function namesAnAbsentExtension(id: string, knownNamespaces: ReadonlySet<string>) {
-  const namespace = commandNamespace(id);
-  return namespace.length > 0 && !knownNamespaces.has(namespace);
+function namesAnAbsentExtension(id: string, knownOwners: ReadonlySet<string>) {
+  const owner = commandOwner(id);
+  return owner.length > 0 && owner !== HUNK_VENDOR_EXTENSION_ID && !knownOwners.has(owner);
 }
 
 /** Normalize one `[keybindings]` value into the chords it asks for. */
@@ -110,15 +113,30 @@ export function resolveCommandKeys({
   userBindings,
 }: ResolveCommandKeysOptions): ResolvedKeymap {
   const issues: KeymapIssue[] = [];
-  const keys = new Map<string, readonly string[]>(
-    defaults.map((command) => [command.id, command.defaultKeys]),
-  );
+  const keys = new Map<string, readonly string[]>();
+  // Deduped table: reserved ids and first-wins loading make a repeated id
+  // unreachable, but folding two entries into one would silently merge two
+  // commands' keys, so the guard stays as the cheap backstop for that.
+  const commands: CommandKeyDefaults[] = [];
+  for (const command of defaults) {
+    if (keys.has(command.id)) {
+      issues.push({
+        commandId: command.id,
+        message: `Duplicate command id "${command.id}" ignored • the first registration keeps the keys`,
+      });
+      continue;
+    }
+
+    keys.set(command.id, command.defaultKeys);
+    commands.push(command);
+  }
+
   if (!userBindings) {
     return { keys, issues };
   }
 
-  const known = new Set(defaults.map((command) => command.id));
-  const knownNamespaces = new Set(defaults.map((command) => commandNamespace(command.id)));
+  const known = new Set(commands.map((command) => command.id));
+  const knownOwners = new Set(commands.map((command) => commandOwner(command.id)));
   // Canonical chord -> the user entry that claimed it; first entry in config order wins.
   const claimed = new Map<string, string>();
   const userChords = new Map<string, string[]>();
@@ -127,7 +145,7 @@ export function resolveCommandKeys({
     if (!known.has(commandId)) {
       issues.push({
         commandId,
-        message: namesAnAbsentExtension(commandId, knownNamespaces)
+        message: namesAnAbsentExtension(commandId, knownOwners)
           ? `Keybinding for "${commandId}" ignored • no command with that id is registered ` +
             "(the extension may not be loaded)"
           : `Keybinding for unknown command "${commandId}" ignored`,
@@ -168,7 +186,7 @@ export function resolveCommandKeys({
 
   // Exclusivity: a chord the user bound is that command's alone, so strip it
   // from every command that only held it as a default.
-  for (const command of defaults) {
+  for (const command of commands) {
     if (userChords.has(command.id)) {
       continue;
     }
