@@ -1,4 +1,4 @@
-export type MenuId = "file" | "view" | "navigate" | "agent" | "help";
+export type MenuId = "file" | "view" | "navigate" | "agent" | "extensions" | "help";
 
 export type MenuEntry =
   | {
@@ -19,31 +19,55 @@ export interface MenuSpec {
   label: string;
 }
 
+/**
+ * The dropdown menus one session shows.
+ *
+ * Every id is optional because not all menus always exist: Extensions is there
+ * only when an extension registered a command, and a menu bar with an empty
+ * dropdown on it would be worse than no menu.
+ */
+export type AppMenus = Partial<Record<MenuId, MenuEntry[]>>;
+
 const MENU_LABELS: Record<MenuId, string> = {
   file: "File",
   view: "View",
   navigate: "Navigate",
   agent: "Agent",
+  extensions: "Extensions",
   help: "Help",
 };
 
 export const MENU_ORDER = Object.keys(MENU_LABELS) as MenuId[];
 
-/** Compute menu-bar positions from the fixed top-level menu order. */
-export function buildMenuSpecs() {
-  return MENU_ORDER.reduce<MenuSpec[]>((items, id) => {
-    const previous = items.at(-1);
-    // Each menu label already includes its own leading/trailing padding inside the fixed-width box,
-    // so adjacent menu boxes are packed directly next to each other without an extra inter-box gap.
-    const left = previous ? previous.left + previous.width : 1;
-    items.push({
-      id,
-      left,
-      width: MENU_LABELS[id].length + 2,
-      label: MENU_LABELS[id],
-    });
-    return items;
-  }, []);
+/** The entries of one menu, or none when the session does not show it. */
+export function menuEntries(menus: AppMenus, id: MenuId): MenuEntry[] {
+  return menus[id] ?? [];
+}
+
+/**
+ * Compute menu-bar positions for the menus this session actually has.
+ *
+ * Positions follow `MENU_ORDER`, but a menu with nothing in it takes no space
+ * and no label: what the bar shows and what the keyboard cycles through are the
+ * same derived list, so neither can point at a menu that is not there.
+ */
+export function buildMenuSpecs(menus: AppMenus) {
+  return MENU_ORDER.filter((id) => menuEntries(menus, id).length > 0).reduce<MenuSpec[]>(
+    (items, id) => {
+      const previous = items.at(-1);
+      // Each menu label already includes its own leading/trailing padding inside the fixed-width
+      // box, so adjacent menu boxes are packed directly next to each other without an extra gap.
+      const left = previous ? previous.left + previous.width : 1;
+      items.push({
+        id,
+        left,
+        width: MENU_LABELS[id].length + 2,
+        label: MENU_LABELS[id],
+      });
+      return items;
+    },
+    [],
+  );
 }
 
 /** Find the next selectable menu item, skipping separators. */

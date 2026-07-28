@@ -4,6 +4,7 @@ import {
   buildAppCommands,
   builtinCommandKeyDefaults,
   dispatchAppCommand,
+  executeAppCommand,
   type BuildAppCommandsOptions,
   type ResolvedCommandKeys,
 } from "./appCommands";
@@ -34,9 +35,11 @@ function createTestCommands(resolvedKeys?: ResolvedCommandKeys) {
   const options: BuildAppCommandsOptions = {
     canRefreshCurrentInput: true,
     focusFilter: record("focusFilter"),
+    moveToAnnotatedFile: record("moveToAnnotatedFile"),
     moveToAnnotatedHunk: record("moveToAnnotatedHunk"),
     moveToFile: record("moveToFile"),
     moveToHunk: record("moveToHunk"),
+    openAgentSkill: record("openAgentSkill"),
     openThemeSelector: record("openThemeSelector"),
     requestQuit: record("requestQuit"),
     resolvedKeys,
@@ -45,6 +48,7 @@ function createTestCommands(resolvedKeys?: ResolvedCommandKeys) {
     selectLayoutMode: record("selectLayoutMode"),
     startUserNote: record("startUserNote"),
     toggleAgentNotes: record("toggleAgentNotes"),
+    toggleCopyDecorations: record("toggleCopyDecorations"),
     toggleFocusArea: record("toggleFocusArea"),
     toggleGapForSelectedHunk: record("toggleGapForSelectedHunk"),
     toggleHelp: record("toggleHelp"),
@@ -184,11 +188,80 @@ describe("builtinCommandKeyDefaults", () => {
     const { commands } = createTestCommands();
 
     expect(defaults.map((entry) => entry.id)).toEqual(commands.map((command) => command.id));
-    expect(defaults.every((entry) => entry.defaultKeys.length > 0)).toBe(true);
     expect(defaults.find((entry) => entry.id === "hunk.review.pageDown")?.defaultKeys).toEqual([
       "pagedown",
       "space",
       "f",
     ]);
+    // The menu-only commands ship unbound, and are reported so users can bind them.
+    expect(
+      defaults
+        .filter((entry) => entry.defaultKeys.length === 0)
+        .map((entry) => entry.id)
+        .sort(),
+    ).toEqual([
+      "hunk.app.openAgentSkill",
+      "hunk.review.nextAnnotatedFile",
+      "hunk.review.previousAnnotatedFile",
+      "hunk.view.toggleCopyDecorations",
+    ]);
+  });
+});
+
+describe("commands that ship unbound", () => {
+  test("match no key but stay in the table with no labels", () => {
+    const { commands } = createTestCommands();
+    const unbound = commands.find((command) => command.id === "hunk.view.toggleCopyDecorations");
+
+    expect(unbound?.keyLabels).toEqual([]);
+    expect(unbound?.keys).toEqual([]);
+    // A neutral event is what an empty-chord matcher is asked about most often.
+    expect(unbound?.match(keyEvent({}))).toBe(false);
+  });
+
+  test("become dispatchable once the user binds a key to them", () => {
+    const { keys } = resolveCommandKeys({
+      defaults: builtinCommandKeyDefaults(),
+      userBindings: { "hunk.review.nextAnnotatedFile": "ctrl+n" },
+    });
+    const { commands, ran } = createTestCommands(keys);
+
+    expect(dispatchAppCommand(commands, "review", keyEvent({ name: "n", ctrl: true }))?.id).toBe(
+      "hunk.review.nextAnnotatedFile",
+    );
+    expect(ran).toEqual(["moveToAnnotatedFile:1"]);
+    expect(
+      commands.find((command) => command.id === "hunk.review.nextAnnotatedFile")?.keyLabels,
+    ).toEqual(["Ctrl+N"]);
+  });
+});
+
+describe("executeAppCommand", () => {
+  test("runs a command by id whatever key it is on", () => {
+    const { commands, ran } = createTestCommands();
+
+    expect(executeAppCommand(commands, "hunk.app.quit")).toBe(true);
+    // Unbound commands are reachable only this way, which is why menus use it.
+    expect(executeAppCommand(commands, "hunk.app.openAgentSkill")).toBe(true);
+    expect(ran).toEqual(["requestQuit", "openAgentSkill"]);
+  });
+
+  test("passes the command's own first chord to handlers that read the event", () => {
+    const { commands, ran } = createTestCommands();
+
+    // The shifted arrow scrolls further; invoked by name it takes the plain form.
+    expect(executeAppCommand(commands, "hunk.review.scrollCodeLeft")).toBe(true);
+    expect(ran).toEqual(["scrollCodeHorizontally:-1"]);
+  });
+
+  test("refuses a disabled command and an id nobody registered", () => {
+    const { commands, ran } = createTestCommands();
+    const disabled = commands.map((command) =>
+      command.id === "hunk.app.refresh" ? { ...command, isEnabled: () => false } : command,
+    );
+
+    expect(executeAppCommand(disabled, "hunk.app.refresh")).toBe(false);
+    expect(executeAppCommand(commands, "nobody.registered.this")).toBe(false);
+    expect(ran).toEqual([]);
   });
 });

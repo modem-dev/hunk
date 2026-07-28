@@ -1,6 +1,10 @@
 import type { KeyEvent } from "@opentui/core";
 import type { LayoutMode } from "../../core/types";
-import { matchesAnyKeyChord } from "../../lib/commandKeys";
+import {
+  matchesAnyKeyChord,
+  parseKeyChordOrUndefined,
+  synthesizeKeyEvent,
+} from "../../lib/commandKeys";
 import { formatKeyChord, type CommandKeyDefaults } from "./keymap";
 
 type ScrollUnit = "step" | "viewport" | "content" | "half";
@@ -37,7 +41,14 @@ export interface AppCommand {
   id: string;
   title: string;
   scopes: readonly AppCommandScope[];
-  /** Human-readable key labels for menus, help, and conflict messages. */
+  /**
+   * The chords this command currently answers to, after user keybindings.
+   *
+   * Empty means the command is unbound: it never matches a key, and is reached
+   * only by name through `executeAppCommand` (a menu entry, say).
+   */
+  keys: readonly string[];
+  /** Display form of `keys`, for menus, help, and conflict messages. */
   keyLabels: readonly string[];
   /**
    * The chords this command ships with, before user keybindings.
@@ -72,9 +83,11 @@ interface BuiltinCommandSpec {
 export interface BuildAppCommandsOptions {
   canRefreshCurrentInput: boolean;
   focusFilter: () => void;
+  moveToAnnotatedFile: (delta: number) => void;
   moveToAnnotatedHunk: (delta: number) => void;
   moveToFile: (delta: number) => void;
   moveToHunk: (delta: number) => void;
+  openAgentSkill: () => void;
   openThemeSelector: () => void;
   requestQuit: () => void;
   /** Chords resolved against the user's `[keybindings]`; defaults apply where absent. */
@@ -84,6 +97,7 @@ export interface BuildAppCommandsOptions {
   selectLayoutMode: (mode: LayoutMode) => void;
   startUserNote: () => void;
   toggleAgentNotes: () => void;
+  toggleCopyDecorations: () => void;
   toggleFocusArea: () => void;
   toggleGapForSelectedHunk: () => void;
   toggleHelp: () => void;
@@ -109,6 +123,10 @@ const REVIEW_AND_PAGER: readonly AppCommandScope[] = ["review", "pager"];
  * Order is the tiebreaker when several commands could match one key, exactly
  * as the old cascade of if-statements was, so entries keep the old cascade's
  * relative order where it mattered (uppercase before lowercase forms).
+ *
+ * A few commands ship with no chords at all. They exist because the menus name
+ * them: an action reachable by mouse is a command like any other, and declaring
+ * it here is what makes it bindable from `[keybindings]` and dispatchable by id.
  */
 function builtinCommandSpecs(options: BuildAppCommandsOptions): BuiltinCommandSpec[] {
   return [
@@ -139,6 +157,14 @@ function builtinCommandSpecs(options: BuildAppCommandsOptions): BuiltinCommandSp
       scopes: REVIEW,
       defaultKeys: ["?"],
       run: () => options.toggleHelp(),
+      closesMenu: true,
+    },
+    {
+      id: "hunk.app.openAgentSkill",
+      title: "Show agent skill",
+      scopes: REVIEW,
+      defaultKeys: [],
+      run: () => options.openAgentSkill(),
       closesMenu: true,
     },
     {
@@ -313,6 +339,14 @@ function builtinCommandSpecs(options: BuildAppCommandsOptions): BuiltinCommandSp
       closesMenu: true,
     },
     {
+      id: "hunk.view.toggleCopyDecorations",
+      title: "Toggle copy decorations",
+      scopes: REVIEW,
+      defaultKeys: [],
+      run: () => options.toggleCopyDecorations(),
+      closesMenu: true,
+    },
+    {
       id: "hunk.review.toggleHunkGap",
       title: "Expand or collapse context for the selected hunk",
       scopes: REVIEW,
@@ -376,6 +410,22 @@ function builtinCommandSpecs(options: BuildAppCommandsOptions): BuiltinCommandSp
       run: () => options.moveToAnnotatedHunk(1),
       closesMenu: true,
     },
+    {
+      id: "hunk.review.previousAnnotatedFile",
+      title: "Previous annotated file",
+      scopes: REVIEW,
+      defaultKeys: [],
+      run: () => options.moveToAnnotatedFile(-1),
+      closesMenu: true,
+    },
+    {
+      id: "hunk.review.nextAnnotatedFile",
+      title: "Next annotated file",
+      scopes: REVIEW,
+      defaultKeys: [],
+      run: () => options.moveToAnnotatedFile(1),
+      closesMenu: true,
+    },
   ];
 }
 
@@ -394,6 +444,7 @@ function toAppCommand(spec: BuiltinCommandSpec, resolvedKeys?: ResolvedCommandKe
     title: spec.title,
     scopes: spec.scopes,
     defaultKeys: spec.defaultKeys,
+    keys,
     keyLabels: keys.map(formatKeyChord),
     isEnabled: spec.isEnabled,
     match: matchesAnyKeyChord(keys),
@@ -412,9 +463,11 @@ const NOOP_COMMAND_OPTIONS: BuildAppCommandsOptions = (() => {
   return {
     canRefreshCurrentInput: true,
     focusFilter: noop,
+    moveToAnnotatedFile: noop,
     moveToAnnotatedHunk: noop,
     moveToFile: noop,
     moveToHunk: noop,
+    openAgentSkill: noop,
     openThemeSelector: noop,
     requestQuit: noop,
     scrollCodeHorizontally: noop,
@@ -422,6 +475,7 @@ const NOOP_COMMAND_OPTIONS: BuildAppCommandsOptions = (() => {
     selectLayoutMode: noop,
     startUserNote: noop,
     toggleAgentNotes: noop,
+    toggleCopyDecorations: noop,
     toggleFocusArea: noop,
     toggleGapForSelectedHunk: noop,
     toggleHelp: noop,
@@ -508,4 +562,38 @@ export function dispatchAppCommand(
   }
 
   return undefined;
+}
+
+/**
+ * A key event standing in for "the user asked for this command by name".
+ *
+ * Commands reached without a keypress still take one, because `run` is written
+ * against the event a chord produced. Synthesizing the command's own first
+ * chord keeps the two paths identical for the handful of commands that read the
+ * event (the shifted arrow scrolls further); an unbound command has no chord to
+ * synthesize, so it gets a neutral event with no modifiers set.
+ */
+function commandInvocationEvent(command: AppCommand): KeyEvent {
+  const parsed = command.keys.map(parseKeyChordOrUndefined).find((chord) => chord !== undefined);
+  return parsed
+    ? synthesizeKeyEvent(parsed)
+    : synthesizeKeyEvent({ base: "", ctrl: false, meta: false, option: false, shift: false });
+}
+
+/**
+ * Run one command by id, whatever key it is on.
+ *
+ * This is the programmatic path into the command table: dropdown menu entries
+ * name the command they run rather than closing over a copy of its callback, so
+ * a menu item and its shortcut can never drift apart. Reports whether a command
+ * ran — an id nobody registered, or one whose `isEnabled` says no, does nothing.
+ */
+export function executeAppCommand(commands: readonly AppCommand[], id: string): boolean {
+  const command = commands.find((candidate) => candidate.id === id);
+  if (!command || (command.isEnabled && !command.isEnabled())) {
+    return false;
+  }
+
+  command.run(commandInvocationEvent(command));
+  return true;
 }

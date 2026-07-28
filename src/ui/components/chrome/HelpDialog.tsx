@@ -1,75 +1,43 @@
+import type { AppCommand } from "../../lib/appCommands";
+import { buildHelpSections } from "../../lib/helpContent";
 import { fitText, padText } from "../../lib/text";
 import type { AppTheme } from "../../themes";
 import { ModalFrame } from "./ModalFrame";
 
-/** Render the in-app controls help modal. */
+/**
+ * Render the in-app controls help modal.
+ *
+ * The rows come from the command table, so what the dialog shows is what the
+ * session's keys actually do, remapped or not.
+ */
 export function HelpDialog({
-  canRefresh = false,
+  commands,
   terminalHeight,
   terminalWidth,
   theme,
   onClose,
 }: {
-  canRefresh?: boolean;
+  commands: readonly AppCommand[];
   terminalHeight: number;
   terminalWidth: number;
   theme: AppTheme;
   onClose: () => void;
 }) {
-  const sections = [
-    {
-      title: "Navigation",
-      items: [
-        ["↑ / ↓", "move line-by-line"],
-        ["Space / f", "page down (alt: f)"],
-        ["b", "page up"],
-        ["Shift+Space", "page up (alt)"],
-        ["d / u", "half page down / up"],
-        ["[ / ]", "previous / next hunk"],
-        [", / .", "previous / next file"],
-        ["{ / }", "previous / next comment"],
-        ["← / →", "scroll code left / right (Shift = faster)"],
-        ["Home / End", "jump to top / bottom"],
-        ["g / G", "jump to top / bottom (less-style)"],
-      ],
-    },
-    {
-      title: "Mouse",
-      items: [
-        ["Wheel", "scroll vertically"],
-        ["Shift+Wheel", "scroll code horizontally"],
-      ],
-    },
-    {
-      title: "View",
-      items: [
-        ["1 / 2 / 0", "split / stack / auto"],
-        ["s / t", "sidebar / theme selector"],
-        ["a", "toggle AI notes"],
-        ["z", "toggle unchanged context"],
-        ["l / w / m / M", "lines / wrap / metadata / menu"],
-        ["e", "open file in $EDITOR"],
-      ],
-    },
-    {
-      title: "Review",
-      items: [
-        ["/", "focus file filter"],
-        ["c", "create review note"],
-        ["Tab", "toggle files/filter focus"],
-        ["F10", "open menus"],
-        [canRefresh ? "r / q" : "q", canRefresh ? "reload / quit" : "quit"],
-      ],
-    },
-  ] as const;
+  const sections = buildHelpSections(commands);
 
   const width = Math.min(74, Math.max(56, terminalWidth - 8));
   const bodyWidth = Math.max(1, width - 4);
-  const keyWidth = Math.min(16, Math.max(12, Math.floor(bodyWidth * 0.28)));
+  const rows = sections.flatMap((section) => section.rows);
+  const longestKeys = Math.max(0, ...rows.map((row) => row.keys.length));
+  const longestDescription = Math.max(0, ...rows.map((row) => row.description.length));
+  // Key text is user-controlled once bindings are, so the column is measured
+  // rather than guessed — but descriptions are given the room they need first,
+  // since a truncated key is still recognizable and a truncated sentence is not.
+  const keyWidth = Math.max(12, Math.min(longestKeys + 1, bodyWidth - longestDescription));
   const descriptionWidth = Math.max(1, bodyWidth - keyWidth);
   const sectionSpacerRowCount = Math.max(0, sections.length - 1);
   const contentRowCount =
-    sections.reduce((rowCount, section) => rowCount + 1 + section.items.length, 0) +
+    sections.reduce((rowCount, section) => rowCount + 1 + section.rows.length, 0) +
     sectionSpacerRowCount;
   // ModalFrame contributes the border rows, title row, padding, and one blank spacer row.
   const modalFrameChromeRowCount = 6;
@@ -83,13 +51,13 @@ export function HelpDialog({
           <box style={{ width: "100%", height: 1 }}>
             <text fg={theme.badgeNeutral}>{section.title}</text>
           </box>
-          {section.items.map(([keys, description]) => (
+          {section.rows.map((row) => (
             <box
-              key={`${section.title}:${keys}`}
+              key={`${section.title}:${row.description}`}
               style={{ width: "100%", height: 1, flexDirection: "row" }}
             >
-              <text fg={theme.accent}>{padText(fitText(keys, keyWidth), keyWidth)}</text>
-              <text fg={theme.muted}>{fitText(description, descriptionWidth)}</text>
+              <text fg={theme.accent}>{padText(fitText(row.keys, keyWidth), keyWidth)}</text>
+              <text fg={theme.muted}>{fitText(row.description, descriptionWidth)}</text>
             </box>
           ))}
           {sectionIndex < sections.length - 1 ? <box style={{ width: "100%", height: 1 }} /> : null}

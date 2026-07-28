@@ -61,6 +61,10 @@ interface ClaimedChord {
  * keeps the other two and reports the one it lost. Extension commands run in
  * the review scope only: pager mode is a pager, and modal surfaces own their
  * keys outright.
+ *
+ * Every registered command becomes a table entry, including one left with no
+ * chord at all: it never matches a key, but it is still listed in the
+ * Extensions menu and still runnable by id from there.
  */
 export function buildExtensionAppCommands(
   options: BuildExtensionAppCommandsOptions,
@@ -74,11 +78,6 @@ export function buildExtensionAppCommands(
     const { command } = registered;
     const fullId = `${registered.extensionId}.${command.id}`;
     const declared = options.resolvedKeys?.get(fullId) ?? toKeyChordList(command.key);
-    // A command without a binding stays registered but has nothing to dispatch.
-    if (declared.length === 0) {
-      continue;
-    }
-
     const bound: Array<{ chord: string; match: (key: KeyEvent) => boolean }> = [];
     for (const chord of declared) {
       // Registration already validated the chord; an error here is unreachable
@@ -108,15 +107,11 @@ export function buildExtensionAppCommands(
       bound.push({ chord, match });
     }
 
-    // Every chord was taken: the command stays registered, just unbound.
-    if (bound.length === 0) {
-      continue;
-    }
-
     commands.push({
       id: fullId,
       title: command.title,
       scopes: ["review"],
+      keys: bound.map((binding) => binding.chord),
       keyLabels: bound.map((binding) => formatKeyChord(binding.chord)),
       match: (key) => bound.some((binding) => binding.match(key)),
       run: () => options.runCommand(registered),

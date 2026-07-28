@@ -191,6 +191,47 @@ describe("PTY extensions", () => {
     }
   });
 
+  test("the Extensions menu runs a registered command by mouse", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(SIDEBAR_EXTENSION_SOURCE);
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        "--mode",
+        "stack",
+        "--extension",
+        join(fixture.dir, ".hunk", "extensions", "fixture.ts"),
+      ],
+      cwd: fixture.dir,
+      // The sidebar only renders on a "full" viewport, which starts at 220 columns.
+      cols: 240,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      const before = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("alpha.ts") && !text.includes("Run this repository's extensions?"),
+        20_000,
+      );
+      // The menu exists because an extension registered a command.
+      expect(before).toContain("Extensions");
+      expect(before).not.toContain("EXTSIDEBAR");
+
+      await session.click(/Extensions/);
+      // The dropdown names the command by its title and advertises its key.
+      const menu = await session.waitForText(/Toggle fixture/, { timeout: 20_000 });
+      expect(menu).toMatch(/Toggle fixture\s+y/);
+
+      await session.click(/Toggle fixture/);
+      const opened = await session.waitForText(/EXTSIDEBAR 2 FILES/, { timeout: 20_000 });
+      expect(opened).toContain("alpha.ts");
+    } finally {
+      session.close();
+    }
+  });
+
   test("a command key opens an extension sidebar beside the built-in pane", async () => {
     const configHome = harness.createIsolatedConfigHome();
     const fixture = harness.createRepoExtensionFixture(SIDEBAR_EXTENSION_SOURCE);

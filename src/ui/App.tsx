@@ -1217,71 +1217,59 @@ export function App({
     setFocusArea("files");
   }, [review.cancelDraftNote]);
 
-  const menus = useMemo(
-    () =>
-      buildAppMenus({
-        canRefreshCurrentInput,
-        focusFilter,
-        layoutMode,
-        moveToAnnotatedFile,
-        moveToAnnotatedHunk,
-        moveToHunk: review.moveToHunk,
-        refreshCurrentInput: triggerRefreshCurrentInput,
-        requestQuit,
-        selectLayoutMode,
-        openThemeSelector,
-        copyDecorations,
-        showAgentNotes,
-        showHelp,
-        showHunkHeaders,
-        showLineNumbers,
-        showMenuBar,
-        renderSidebar,
-        toggleCopyDecorations,
-        toggleAgentNotes,
-        toggleFocusArea,
-        openAgentSkill,
-        toggleHelp,
-        toggleHunkHeaders,
-        toggleLineNumbers,
-        toggleMenuBar,
-        toggleLineWrap,
-        toggleSidebar,
-        triggerEditSelectedFile,
-        wrapLines,
-      }),
-    [
+  // One dispatch table for every app-level shortcut: the built-in commands
+  // over App's live callbacks, then extension commands, so built-ins always
+  // win a key and extension order follows load order.
+  const appCommands = [
+    ...buildAppCommands({
       canRefreshCurrentInput,
-      copyDecorations,
       focusFilter,
-      layoutMode,
       moveToAnnotatedFile,
       moveToAnnotatedHunk,
-      requestQuit,
-      review.moveToHunk,
+      moveToFile,
+      moveToHunk: review.moveToHunk,
       openAgentSkill,
-      selectLayoutMode,
       openThemeSelector,
-      triggerRefreshCurrentInput,
-      toggleCopyDecorations,
-      showAgentNotes,
-      showHelp,
-      showHunkHeaders,
-      showLineNumbers,
-      showMenuBar,
-      renderSidebar,
+      requestQuit,
+      resolvedKeys: resolvedCommandKeys,
+      scrollCodeHorizontally,
+      scrollDiff,
+      selectLayoutMode,
+      startUserNote: () => startUserNote(),
       toggleAgentNotes,
+      toggleCopyDecorations,
       toggleFocusArea,
+      toggleGapForSelectedHunk: review.toggleSelectedHunkGap,
       toggleHelp,
       toggleHunkHeaders,
       toggleLineNumbers,
-      toggleMenuBar,
       toggleLineWrap,
+      toggleMenuBar,
       toggleSidebar,
       triggerEditSelectedFile,
-      wrapLines,
-    ],
-  );
+      triggerRefreshCurrentInput,
+    }),
+    ...extensionAppCommands.commands,
+  ];
+
+  // Menus name commands rather than repeating them: every item's key hint and
+  // action come from the table above, so a remapped shortcut shows its new key
+  // and a menu item can never drift from the command it claims to run. Built
+  // fresh each render — construction is a handful of lookups, and both the
+  // hints and the checkbox state have to stay live.
+  const menus = buildAppMenus({
+    commands: appCommands,
+    extensionCommands: extensionAppCommands.commands,
+    copyDecorations,
+    layoutMode,
+    renderSidebar,
+    showAgentNotes,
+    showHelp,
+    showHunkHeaders,
+    showLineNumbers,
+    showMenuBar,
+    wrapLines,
+  });
 
   const {
     activeMenuEntries,
@@ -1298,38 +1286,6 @@ export function App({
     switchMenu,
     toggleMenu,
   } = useMenuController(menus);
-
-  // One dispatch table for every app-level shortcut: the built-in commands
-  // over App's live callbacks, then extension commands, so built-ins always
-  // win a key and extension order follows load order.
-  const appCommands = [
-    ...buildAppCommands({
-      canRefreshCurrentInput,
-      focusFilter,
-      moveToAnnotatedHunk,
-      moveToFile,
-      moveToHunk: review.moveToHunk,
-      openThemeSelector,
-      requestQuit,
-      resolvedKeys: resolvedCommandKeys,
-      scrollCodeHorizontally,
-      scrollDiff,
-      selectLayoutMode,
-      startUserNote: () => startUserNote(),
-      toggleAgentNotes,
-      toggleFocusArea,
-      toggleGapForSelectedHunk: review.toggleSelectedHunkGap,
-      toggleHelp,
-      toggleHunkHeaders,
-      toggleLineNumbers,
-      toggleLineWrap,
-      toggleMenuBar,
-      toggleSidebar,
-      triggerEditSelectedFile,
-      triggerRefreshCurrentInput,
-    }),
-    ...extensionAppCommands.commands,
-  ];
 
   useAppKeyboardShortcuts({
     activeMenuId,
@@ -1681,7 +1637,7 @@ export function App({
       {!pagerMode && showHelp ? (
         <Suspense fallback={null}>
           <LazyHelpDialog
-            canRefresh={canRefreshCurrentInput}
+            commands={appCommands}
             terminalHeight={terminal.height}
             terminalWidth={terminal.width}
             theme={baseTheme}

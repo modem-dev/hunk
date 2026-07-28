@@ -697,7 +697,13 @@ export interface ExtensionCommand {
    * cannot shadow one of Hunk's, whichever id an extension is installed under.
    */
   id: string;
-  /** Human-readable name, for diagnostics and future menu listings. */
+  /**
+   * Human-readable name, shown as the command's item in the Extensions menu.
+   *
+   * Every registered command is listed there with the key it currently answers
+   * to, so a command is reachable by mouse even when it ships without a chord
+   * or the one it wanted was already taken.
+   */
   title: string;
   /**
    * Default key chord, e.g. `"ctrl+m"`, `"F2"`, `"G"`, `"y"`, or an array of

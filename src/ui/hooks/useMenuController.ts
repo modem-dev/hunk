@@ -1,15 +1,15 @@
 import { useMemo, useState } from "react";
 import {
-  MENU_ORDER,
   buildMenuSpecs,
+  menuEntries,
   menuWidth,
   nextMenuItemIndex,
-  type MenuEntry,
+  type AppMenus,
   type MenuId,
 } from "../components/chrome/menu";
 
 /** Drive menu selection/open state for the desktop-style top menu bar. */
-export function useMenuController(menus: Record<MenuId, MenuEntry[]>) {
+export function useMenuController(menus: AppMenus) {
   const [activeMenuId, setActiveMenuId] = useState<MenuId | null>(null);
   const [activeMenuItemIndex, setActiveMenuItemIndex] = useState(0);
 
@@ -19,7 +19,7 @@ export function useMenuController(menus: Record<MenuId, MenuEntry[]>) {
 
   const openMenu = (menuId: MenuId) => {
     setActiveMenuId(menuId);
-    setActiveMenuItemIndex(nextMenuItemIndex(menus[menuId], -1, 1));
+    setActiveMenuItemIndex(nextMenuItemIndex(menuEntries(menus, menuId), -1, 1));
   };
 
   const toggleMenu = (menuId: MenuId) => {
@@ -31,14 +31,25 @@ export function useMenuController(menus: Record<MenuId, MenuEntry[]>) {
     openMenu(menuId);
   };
 
+  const menuSpecs = useMemo(() => buildMenuSpecs(menus), [menus]);
+
+  // Cycling walks the menus the bar actually shows, so a session without an
+  // Extensions menu never lands on one that is not there.
   const switchMenu = (delta: number) => {
-    const currentIndex = Math.max(0, activeMenuId ? MENU_ORDER.indexOf(activeMenuId) : 0);
-    const nextIndex = (currentIndex + delta + MENU_ORDER.length) % MENU_ORDER.length;
-    openMenu(MENU_ORDER[nextIndex]!);
+    if (menuSpecs.length === 0) {
+      return;
+    }
+
+    const currentIndex = Math.max(
+      0,
+      activeMenuId ? menuSpecs.findIndex((menu) => menu.id === activeMenuId) : 0,
+    );
+    const nextIndex = (currentIndex + delta + menuSpecs.length) % menuSpecs.length;
+    openMenu(menuSpecs[nextIndex]!.id);
   };
 
   const moveMenuItem = (delta: number) => {
-    const entries = activeMenuId ? menus[activeMenuId] : [];
+    const entries = activeMenuId ? menuEntries(menus, activeMenuId) : [];
     setActiveMenuItemIndex((current) => nextMenuItemIndex(entries, current, delta));
   };
 
@@ -47,7 +58,7 @@ export function useMenuController(menus: Record<MenuId, MenuEntry[]>) {
       return;
     }
 
-    const entry = menus[activeMenuId][activeMenuItemIndex];
+    const entry = menuEntries(menus, activeMenuId)[activeMenuItemIndex];
     if (!entry || entry.kind !== "item") {
       return;
     }
@@ -56,8 +67,7 @@ export function useMenuController(menus: Record<MenuId, MenuEntry[]>) {
     closeMenu();
   };
 
-  const menuSpecs = useMemo(() => buildMenuSpecs(), []);
-  const activeMenuEntries = activeMenuId ? menus[activeMenuId] : [];
+  const activeMenuEntries = activeMenuId ? menuEntries(menus, activeMenuId) : [];
   const activeMenuSpec = menuSpecs.find((menu) => menu.id === activeMenuId);
   const activeMenuWidth = menuWidth(activeMenuEntries) + 2;
 

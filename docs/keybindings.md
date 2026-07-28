@@ -44,6 +44,7 @@ The built-in commands and the keys they ship with:
 | `hunk.app.refresh`                  | Refresh the review                       | `r`                          |
 | `hunk.app.toggleHelp`               | Toggle help                              | `?`                          |
 | `hunk.app.toggleFocusArea`          | Switch focus between files and filter    | `tab`                        |
+| `hunk.app.openAgentSkill`           | Show agent skill                         | _(none)_                     |
 | `hunk.review.focusFilter`           | Focus the file filter                    | `/`                          |
 | `hunk.review.startNote`             | Add a review note                        | `c`                          |
 | `hunk.review.editSelectedFile`      | Open the selected file in your editor    | `e`                          |
@@ -53,6 +54,8 @@ The built-in commands and the keys they ship with:
 | `hunk.review.previousFile`          | Previous file                            | `,`                          |
 | `hunk.review.nextAnnotatedHunk`     | Next annotated hunk                      | `}`                          |
 | `hunk.review.previousAnnotatedHunk` | Previous annotated hunk                  | `{`                          |
+| `hunk.review.nextAnnotatedFile`     | Next annotated file                      | _(none)_                     |
+| `hunk.review.previousAnnotatedFile` | Previous annotated file                  | _(none)_                     |
 | `hunk.review.toggleHunkGap`         | Expand or collapse the selected context  | `z`                          |
 | `hunk.review.pageDown`              | Scroll down one page                     | `pagedown`, `space`, `f`     |
 | `hunk.review.pageUp`                | Scroll up one page                       | `pageup`, `b`, `shift+space` |
@@ -70,10 +73,18 @@ The built-in commands and the keys they ship with:
 | `hunk.view.toggleLineNumbers`       | Toggle line numbers                      | `l`                          |
 | `hunk.view.toggleLineWrap`          | Toggle line wrapping                     | `w`                          |
 | `hunk.view.toggleAgentNotes`        | Toggle agent notes                       | `a`                          |
+| `hunk.view.toggleCopyDecorations`   | Toggle copy decorations                  | _(none)_                     |
 | `hunk.view.openThemeSelector`       | Choose theme                             | `t`                          |
 | `hunk.view.layoutSplit`             | Split layout                             | `1`                          |
 | `hunk.view.layoutStack`             | Stack layout                             | `2`                          |
 | `hunk.view.layoutAuto`              | Auto layout                              | `0`                          |
+
+Commands marked _(none)_ ship without a key: they are menu items today, and
+binding one gives it a shortcut like any other.
+
+The menus and the controls help dialog (`?`) show the keys each command is
+currently on, so remapping something changes what they advertise. A command you
+unbind keeps its menu item and simply stops showing a key.
 
 Extension commands are named `<extensionId>.<commandId>` and remap the same way
 (see [docs/extensions.md](extensions.md)). Keys that belong to a dialog,

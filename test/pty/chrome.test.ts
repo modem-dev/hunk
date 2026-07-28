@@ -73,7 +73,8 @@ describe("PTY chrome", () => {
       await session.click(/Controls help/);
       const helpDialog = await session.waitForText(/Navigation/, { timeout: 5_000 });
 
-      expect(helpDialog).toContain("g / G");
+      // The key column is rendered from the commands' resolved chords.
+      expect(helpDialog).toContain("g / Home");
     } finally {
       session.close();
     }

@@ -1,259 +1,195 @@
 import type { LayoutMode } from "../../core/types";
-import type { MenuEntry, MenuId } from "../components/chrome/menu";
+import type { AppMenus, MenuEntry, MenuId } from "../components/chrome/menu";
+import { executeAppCommand, type AppCommand } from "./appCommands";
 
+/**
+ * The dropdown menus, expressed as references into the command table.
+ *
+ * A menu item is a command plus presentation: nothing here re-implements an
+ * action or re-states which key runs it. Labels and checkbox state are the two
+ * things the menu genuinely owns — a menu reads "Sidebar" under "View" where
+ * the command is titled "Toggle sidebar", and only App knows whether the
+ * sidebar is currently showing — so those are declared per entry and everything
+ * else is derived from the command the entry names.
+ */
+
+/** One dropdown item, named by the command it runs. */
+interface MenuCommandSpec {
+  commandId: string;
+  /** Short menu wording; defaults to the command's title. */
+  label?: string;
+  /** Checkbox state, supplied by the caller from live app state. */
+  checked?: boolean;
+}
+
+type MenuEntrySpec = MenuCommandSpec | { separator: true };
+
+const SEPARATOR: MenuEntrySpec = { separator: true };
+
+/** The app state menu items reflect, beyond what the command table already knows. */
 export interface BuildAppMenusOptions {
-  canRefreshCurrentInput: boolean;
-  focusFilter: () => void;
-  layoutMode: LayoutMode;
-  moveToAnnotatedFile: (delta: number) => void;
-  moveToAnnotatedHunk: (delta: number) => void;
-  moveToHunk: (delta: number) => void;
-  refreshCurrentInput: () => void;
-  requestQuit: () => void;
-  selectLayoutMode: (mode: LayoutMode) => void;
-  openThemeSelector: () => void;
+  /** Every dispatchable command, built-ins first, then extension commands. */
+  commands: readonly AppCommand[];
+  /** The extension-contributed subset, in registration order, for the Extensions menu. */
+  extensionCommands?: readonly AppCommand[];
   copyDecorations: boolean;
+  layoutMode: LayoutMode;
+  renderSidebar: boolean;
   showAgentNotes: boolean;
   showHelp: boolean;
   showHunkHeaders: boolean;
   showLineNumbers: boolean;
   showMenuBar: boolean;
-  renderSidebar: boolean;
-  toggleCopyDecorations: () => void;
-  toggleAgentNotes: () => void;
-  toggleFocusArea: () => void;
-  openAgentSkill: () => void;
-  toggleHelp: () => void;
-  toggleHunkHeaders: () => void;
-  toggleLineNumbers: () => void;
-  toggleMenuBar: () => void;
-  toggleLineWrap: () => void;
-  toggleSidebar: () => void;
-  triggerEditSelectedFile: () => void;
   wrapLines: boolean;
 }
 
-/** Build the top-level app menus from the current app state and actions. */
+/**
+ * Resolve one menu's specs against the command table.
+ *
+ * An item whose command is missing or currently disabled is dropped rather than
+ * shown dead: "Reload" only appears when the current input can be reloaded, and
+ * that answer lives on the command's `isEnabled`, not in a second flag here.
+ */
+function toMenuEntries(
+  commands: readonly AppCommand[],
+  specs: readonly MenuEntrySpec[],
+): MenuEntry[] {
+  const entries: MenuEntry[] = [];
+
+  for (const spec of specs) {
+    if ("separator" in spec) {
+      entries.push({ kind: "separator" });
+      continue;
+    }
+
+    const command = commands.find((candidate) => candidate.id === spec.commandId);
+    if (!command || (command.isEnabled && !command.isEnabled())) {
+      continue;
+    }
+
+    entries.push({
+      kind: "item",
+      label: spec.label ?? command.title,
+      // The first resolved chord is the one the menu advertises; a command the
+      // user unbound (or that ships unbound) simply shows no key.
+      hint: command.keyLabels[0],
+      checked: spec.checked,
+      action: () => {
+        executeAppCommand(commands, spec.commandId);
+      },
+    });
+  }
+
+  return entries;
+}
+
+/**
+ * The Extensions menu's items, grouped by the extension that registered them.
+ *
+ * Order follows the command table — extension load order, then registration
+ * order within one extension — and a rule between two extensions' groups keeps
+ * it readable when several contribute commands.
+ */
+function toExtensionMenuEntries(
+  commands: readonly AppCommand[],
+  extensionCommands: readonly AppCommand[],
+): MenuEntry[] {
+  const specs: MenuEntrySpec[] = [];
+  let previousOwner: string | undefined;
+
+  for (const command of extensionCommands) {
+    // Extension command ids are `<extensionId>.<commandId>`.
+    const owner = command.id.slice(0, command.id.indexOf("."));
+    if (previousOwner !== undefined && owner !== previousOwner) {
+      specs.push(SEPARATOR);
+    }
+
+    previousOwner = owner;
+    specs.push({ commandId: command.id });
+  }
+
+  return toMenuEntries(commands, specs);
+}
+
+/** Build the top-level app menus from the command table and the current app state. */
 export function buildAppMenus({
-  canRefreshCurrentInput,
-  focusFilter,
-  layoutMode,
-  moveToAnnotatedFile,
-  moveToAnnotatedHunk,
-  moveToHunk,
-  refreshCurrentInput,
-  requestQuit,
-  selectLayoutMode,
-  openThemeSelector,
+  commands,
+  extensionCommands = [],
   copyDecorations,
+  layoutMode,
+  renderSidebar,
   showAgentNotes,
   showHelp,
   showHunkHeaders,
   showLineNumbers,
   showMenuBar,
-  renderSidebar,
-  toggleCopyDecorations,
-  toggleAgentNotes,
-  toggleFocusArea,
-  openAgentSkill,
-  toggleHelp,
-  toggleHunkHeaders,
-  toggleLineNumbers,
-  toggleMenuBar,
-  toggleLineWrap,
-  toggleSidebar,
-  triggerEditSelectedFile,
   wrapLines,
-}: BuildAppMenusOptions): Record<MenuId, MenuEntry[]> {
-  const fileMenuEntries: MenuEntry[] = [
-    {
-      kind: "item",
-      label: "Toggle files/filter focus",
-      hint: "Tab",
-      action: toggleFocusArea,
-    },
-    {
-      kind: "item",
-      label: "Focus filter",
-      hint: "/",
-      action: focusFilter,
-    },
-    {
-      kind: "item",
-      label: "Open file in editor",
-      hint: "e",
-      action: triggerEditSelectedFile,
-    },
-  ];
-
-  if (canRefreshCurrentInput) {
-    fileMenuEntries.push({
-      kind: "item",
-      label: "Reload",
-      hint: "r",
-      action: refreshCurrentInput,
-    });
-  }
-
-  fileMenuEntries.push(
-    { kind: "separator" },
-    {
-      kind: "item",
-      label: "Quit",
-      hint: "q",
-      action: requestQuit,
-    },
-  );
-
-  return {
-    file: fileMenuEntries,
+}: BuildAppMenusOptions): AppMenus {
+  const specs: Record<Exclude<MenuId, "extensions">, MenuEntrySpec[]> = {
+    file: [
+      { commandId: "hunk.app.toggleFocusArea", label: "Toggle files/filter focus" },
+      { commandId: "hunk.review.focusFilter", label: "Focus filter" },
+      { commandId: "hunk.review.editSelectedFile", label: "Open file in editor" },
+      { commandId: "hunk.app.refresh", label: "Reload" },
+      SEPARATOR,
+      { commandId: "hunk.app.quit" },
+    ],
     view: [
+      { commandId: "hunk.view.layoutSplit", label: "Split view", checked: layoutMode === "split" },
       {
-        kind: "item",
-        label: "Split view",
-        hint: "1",
-        checked: layoutMode === "split",
-        action: () => selectLayoutMode("split"),
-      },
-      {
-        kind: "item",
+        commandId: "hunk.view.layoutStack",
         label: "Stacked view",
-        hint: "2",
         checked: layoutMode === "stack",
-        action: () => selectLayoutMode("stack"),
       },
+      { commandId: "hunk.view.layoutAuto", checked: layoutMode === "auto" },
+      SEPARATOR,
+      { commandId: "hunk.view.toggleSidebar", label: "Sidebar", checked: renderSidebar },
+      { commandId: "hunk.view.toggleMenuBar", label: "Menu bar", checked: showMenuBar },
+      SEPARATOR,
+      { commandId: "hunk.view.openThemeSelector", label: "Themes…" },
+      SEPARATOR,
+      { commandId: "hunk.view.toggleAgentNotes", label: "Agent notes", checked: showAgentNotes },
+      { commandId: "hunk.view.toggleLineNumbers", label: "Line numbers", checked: showLineNumbers },
+      { commandId: "hunk.view.toggleLineWrap", label: "Line wrapping", checked: wrapLines },
       {
-        kind: "item",
-        label: "Auto layout",
-        hint: "0",
-        checked: layoutMode === "auto",
-        action: () => selectLayoutMode("auto"),
-      },
-      { kind: "separator" },
-      {
-        kind: "item",
-        label: "Sidebar",
-        hint: "s",
-        checked: renderSidebar,
-        action: toggleSidebar,
-      },
-      {
-        kind: "item",
-        label: "Menu bar",
-        hint: "M",
-        checked: showMenuBar,
-        action: toggleMenuBar,
-      },
-      { kind: "separator" },
-      {
-        kind: "item",
-        label: "Themes…",
-        hint: "t",
-        action: openThemeSelector,
-      },
-      { kind: "separator" },
-      {
-        kind: "item",
-        label: "Agent notes",
-        hint: "a",
-        checked: showAgentNotes,
-        action: toggleAgentNotes,
-      },
-      {
-        kind: "item",
-        label: "Line numbers",
-        hint: "l",
-        checked: showLineNumbers,
-        action: toggleLineNumbers,
-      },
-      {
-        kind: "item",
-        label: "Line wrapping",
-        hint: "w",
-        checked: wrapLines,
-        action: toggleLineWrap,
-      },
-      {
-        kind: "item",
+        commandId: "hunk.view.toggleHunkHeaders",
         label: "Hunk metadata",
-        hint: "m",
         checked: showHunkHeaders,
-        action: toggleHunkHeaders,
       },
       {
-        kind: "item",
+        commandId: "hunk.view.toggleCopyDecorations",
         label: "Copy decorations",
         checked: copyDecorations,
-        action: toggleCopyDecorations,
       },
     ],
     navigate: [
-      {
-        kind: "item",
-        label: "Previous hunk",
-        hint: "[",
-        action: () => moveToHunk(-1),
-      },
-      {
-        kind: "item",
-        label: "Next hunk",
-        hint: "]",
-        action: () => moveToHunk(1),
-      },
-      { kind: "separator" },
-      {
-        kind: "item",
-        label: "Previous comment",
-        hint: "{",
-        action: () => moveToAnnotatedHunk(-1),
-      },
-      {
-        kind: "item",
-        label: "Next comment",
-        hint: "}",
-        action: () => moveToAnnotatedHunk(1),
-      },
-      { kind: "separator" },
-      {
-        kind: "item",
-        label: "Focus filter",
-        hint: "/",
-        action: focusFilter,
-      },
+      { commandId: "hunk.review.previousHunk" },
+      { commandId: "hunk.review.nextHunk" },
+      SEPARATOR,
+      { commandId: "hunk.review.previousAnnotatedHunk", label: "Previous comment" },
+      { commandId: "hunk.review.nextAnnotatedHunk", label: "Next comment" },
+      SEPARATOR,
+      { commandId: "hunk.review.focusFilter", label: "Focus filter" },
     ],
     agent: [
-      {
-        kind: "item",
-        label: "Agent notes",
-        hint: "a",
-        checked: showAgentNotes,
-        action: toggleAgentNotes,
-      },
-      {
-        kind: "item",
-        label: "Agent skill",
-        action: openAgentSkill,
-      },
-      { kind: "separator" },
-      {
-        kind: "item",
-        label: "Next annotated file",
-        action: () => moveToAnnotatedFile(1),
-      },
-      {
-        kind: "item",
-        label: "Previous annotated file",
-        action: () => moveToAnnotatedFile(-1),
-      },
+      { commandId: "hunk.view.toggleAgentNotes", label: "Agent notes", checked: showAgentNotes },
+      { commandId: "hunk.app.openAgentSkill", label: "Agent skill" },
+      SEPARATOR,
+      { commandId: "hunk.review.nextAnnotatedFile" },
+      { commandId: "hunk.review.previousAnnotatedFile" },
     ],
-    help: [
-      {
-        kind: "item",
-        label: "Controls help",
-        hint: "?",
-        checked: showHelp,
-        action: toggleHelp,
-      },
-    ],
+    help: [{ commandId: "hunk.app.toggleHelp", label: "Controls help", checked: showHelp }],
+  };
+
+  const extensions = toExtensionMenuEntries(commands, extensionCommands);
+
+  return {
+    file: toMenuEntries(commands, specs.file),
+    view: toMenuEntries(commands, specs.view),
+    navigate: toMenuEntries(commands, specs.navigate),
+    agent: toMenuEntries(commands, specs.agent),
+    // No extension commands means no menu at all, rather than an empty dropdown.
+    ...(extensions.length > 0 ? { extensions } : {}),
+    help: toMenuEntries(commands, specs.help),
   };
 }

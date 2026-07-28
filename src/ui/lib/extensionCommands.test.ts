@@ -31,8 +31,9 @@ describe("buildExtensionAppCommands", () => {
     });
 
     expect(conflicts).toEqual([]);
-    // The unbound command has nothing to dispatch; the bound one runs on its key.
-    expect(commands.map((command) => command.id)).toEqual(["meta.toggle"]);
+    // Both are listed for the Extensions menu; only the bound one has a key.
+    expect(commands.map((command) => command.id)).toEqual(["meta.toggle", "meta.silent"]);
+    expect(commands.map((command) => command.keyLabels)).toEqual([["y"], []]);
     expect(dispatchAppCommand(commands, "review", chordEvent("y"))?.id).toBe("meta.toggle");
     expect(ran).toEqual(["meta.toggle"]);
   });
@@ -45,7 +46,9 @@ describe("buildExtensionAppCommands", () => {
       runCommand: () => {},
     });
 
-    expect(commands.map((command) => command.id)).toEqual(["meta.ok"]);
+    // The refused command stays in the table, just without the key it wanted.
+    expect(commands.map((command) => command.id)).toEqual(["meta.steal-s", "meta.ok"]);
+    expect(commands.map((command) => command.keyLabels)).toEqual([[], ["y"]]);
     expect(conflicts).toEqual([
       {
         extensionId: "meta",
@@ -66,7 +69,8 @@ describe("buildExtensionAppCommands", () => {
       runCommand: () => {},
     });
 
-    expect(commands.map((command) => command.id)).toEqual(["first.mine"]);
+    expect(commands.map((command) => command.id)).toEqual(["first.mine", "second.mine"]);
+    expect(commands.map((command) => command.keyLabels)).toEqual([["y"], []]);
     expect(conflicts.map((conflict) => conflict.fullId)).toEqual(["second.mine"]);
     expect(conflicts[0]?.conflictingId).toBe("first.mine");
   });

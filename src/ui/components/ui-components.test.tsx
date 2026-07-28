@@ -15,6 +15,8 @@ import { RAPID_SCROLL_OVERSCAN_IDLE_MS } from "../lib/adaptiveScrollOverscan";
 import { resolveTheme } from "../themes";
 import { measureDiffSectionGeometry } from "../diff/diffSectionGeometry";
 import { buildFileSectionLayouts, buildInStreamFileHeaderHeights } from "../lib/fileSectionLayout";
+import { builtinCommandKeyDefaults, builtinCommandMatchProbes } from "../lib/appCommands";
+import { resolveCommandKeys } from "../lib/keymap";
 
 const { AppHost } = await import("../AppHost");
 const { toReadOnlyFileViews } = await import("../../extensions/events");
@@ -2577,7 +2579,7 @@ describe("UI components", () => {
     const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
       <HelpDialog
-        canRefresh={true}
+        commands={builtinCommandMatchProbes()}
         terminalHeight={39}
         terminalWidth={76}
         theme={theme}
@@ -2591,33 +2593,33 @@ describe("UI components", () => {
       "Controls help",
       "[Esc]",
       "Navigation",
-      "↑ / ↓           move line-by-line",
-      "Space / f       page down (alt: f)",
-      "b               page up",
-      "Shift+Space     page up (alt)",
-      "d / u           half page down / up",
-      "[ / ]           previous / next hunk",
-      ", / .           previous / next file",
-      "{ / }           previous / next comment",
-      "← / →           scroll code left / right (Shift = faster)",
-      "Home / End      jump to top / bottom",
-      "g / G           jump to top / bottom (less-style)",
+      "Up / Down                move line-by-line",
+      "PageDown / Space / f     page down",
+      "PageUp / b / Shift+Space page up",
+      "d / u                    half page down / up",
+      "[ / ]                    previous / next hunk",
+      ", / .                    previous / next file",
+      "{ / }                    previous / next comment",
+      "Left / Right             scroll code sideways (Shift = faster)",
+      "g / Home                 jump to start",
+      "G / End                  jump to end",
       "Mouse",
-      "Wheel           scroll vertically",
-      "Shift+Wheel     scroll code horizontally",
+      "Wheel                    scroll vertically",
+      "Shift+Wheel              scroll code horizontally",
       "View",
-      "1 / 2 / 0       split / stack / auto",
-      "s / t           sidebar / theme",
-      "a               toggle AI notes",
-      "z               toggle unchanged context",
-      "l / w / m / M   lines / wrap / metadata / menu",
-      "e               open file in $EDITOR",
+      "1 / 2 / 0                split / stack / auto",
+      "s / t                    sidebar / theme selector",
+      "a                        toggle AI notes",
+      "z                        toggle unchanged context",
+      "l / w / m / M            lines / wrap / metadata / menu",
+      "e                        open file in $EDITOR",
       "Review",
-      "/               focus file filter",
-      "c               create review note",
-      "Tab             toggle files/filter focus",
-      "F10             open menus",
-      "r / q           reload / quit",
+      "/                        focus file filter",
+      "c                        create review note",
+      "Tab                      toggle files/filter focus",
+      "F10                      open menus",
+      "r                        reload the review",
+      "q                        quit",
     ] as const;
 
     for (const expectedRow of expectedRows) {
@@ -2634,7 +2636,28 @@ describe("UI components", () => {
     expect(lines[viewHeaderIndex - 1]).toMatch(blankModalRow);
     expect(lines[reviewHeaderIndex - 1]).toMatch(blankModalRow);
     expect(frame).not.toContain("linese/Awrapt/smetadata");
-    expect(frame).not.toContain("reloade/uquit");
+  });
+
+  test("HelpDialog shows the keys a remapped command actually answers to", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const { keys } = resolveCommandKeys({
+      defaults: builtinCommandKeyDefaults(),
+      userBindings: { "hunk.app.quit": "ctrl+x" },
+    });
+    const frame = await captureFrame(
+      <HelpDialog
+        commands={builtinCommandMatchProbes(keys)}
+        terminalHeight={39}
+        terminalWidth={76}
+        theme={theme}
+        onClose={() => {}}
+      />,
+      76,
+      39,
+    );
+
+    expect(frame).toContain("Ctrl+X");
+    expect(frame).not.toMatch(/q\s+quit/);
   });
 
   test("DiffPane renders an empty-state message when no files are visible", async () => {

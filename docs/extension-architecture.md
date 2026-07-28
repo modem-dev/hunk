@@ -100,6 +100,19 @@ held it by default gives it up. The chord grammar itself lives in
 that need internal keys; `src/lib/commandKeys.ts` re-exports it inward and
 keeps the host-only pieces.
 
+The table is also the only description of what each action is called and which
+key runs it, so the mouse surfaces read from it rather than restating it: the
+dropdown menus (`src/ui/lib/appMenus.ts`) declare items as command ids plus
+menu-specific wording and checkbox state, and the controls help dialog
+(`src/ui/lib/helpContent.ts`) declares curated rows the same way — both render
+their key text from resolved `keyLabels` and run entries through
+`executeAppCommand`. A few commands ship with `defaultKeys: []` because they
+exist for a menu item; they never match a key but remain bindable by id. The
+**Extensions** menu is generated from the registered extension commands, one
+item per command grouped by extension, and is absent entirely when there are
+none — which is why the visible menu list is derived from the menus record
+(`buildMenuSpecs` in `src/ui/components/chrome/menu.ts`) rather than fixed.
+
 ## VCS adapters
 
 `src/core/vcs/index.ts` is the single assembly point ordering bundled + user

@@ -617,6 +617,13 @@ and friends. See [docs/keybindings.md](keybindings.md) for the rules; the
 practical consequence is that a chord you declare may not be the chord your
 command ends up on.
 
+Every registered command is also listed in the menu bar's **Extensions** menu,
+under its `title`, showing whichever key it currently answers to. The menu
+appears only when something registered a command, entries are grouped by
+extension in load order, and running one from the menu is the same dispatch the
+key would have done — so a command with no `key`, or one whose chord was
+refused, is still reachable with the mouse.
+
 The handler fires when the key is pressed outside modal UI — dialogs, menus,
 and focused text inputs own their keys first, and pager mode does not dispatch
 extension commands. It receives the standard context plus `ctx.sidebars`, the

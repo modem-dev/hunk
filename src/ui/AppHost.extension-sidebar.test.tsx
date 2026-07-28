@@ -260,6 +260,68 @@ describe("extension sidebar views", () => {
     });
   });
 
+  test("the Extensions menu lists a registered command and runs it", async () => {
+    const repo = createTestRepo("hunk-ext-sidebar-menu-");
+    const extPath = join(createTempDir("hunk-ext-sidebar-menu-ext-"), "ext.ts");
+    // The command ships without a key on purpose: the menu is the only way to
+    // reach it, which is exactly the mouse/keyboard parity the menu restores.
+    writeFileSync(
+      extPath,
+      `import { createElement } from "react";\n` +
+        `export default function (hunk) {\n` +
+        `  hunk.registerSidebarView({\n` +
+        `    id: "probe",\n` +
+        `    component: () => createElement("text", { content: "EXTSIDEBAR" }),\n` +
+        `  });\n` +
+        `  hunk.registerCommand({ id: "open-probe", title: "Open the probe pane" }, (ctx) => {\n` +
+        `    ctx.sidebars.open("probe");\n` +
+        `  });\n` +
+        `}\n`,
+    );
+
+    const bootstrap = await launchWithExtension(repo, extPath);
+    await withAppHost(bootstrap, async (setup) => {
+      await flushUntil(
+        setup,
+        () => setup.captureCharFrame().includes("alpha.txt"),
+        "the built-in sidebar to render",
+      );
+      expect(setup.captureCharFrame()).toContain("Extensions");
+
+      // F10 opens the File menu; four steps right lands on Extensions, which
+      // only exists because the extension registered a command.
+      await act(async () => {
+        await setup.mockInput.pressKey("F10");
+      });
+      await flushUntil(
+        setup,
+        () => setup.captureCharFrame().includes("Toggle files/filter focus"),
+        "the menu bar to open",
+      );
+
+      for (let step = 0; step < 4; step += 1) {
+        await act(async () => {
+          await setup.mockInput.pressArrow("right");
+        });
+        await flush(setup);
+      }
+      await flushUntil(
+        setup,
+        () => setup.captureCharFrame().includes("Open the probe pane"),
+        "the Extensions menu to list the registered command",
+      );
+
+      await act(async () => {
+        await setup.mockInput.pressEnter();
+      });
+      await flushUntil(
+        setup,
+        () => setup.captureCharFrame().includes("EXTSIDEBAR"),
+        "the menu entry to run the extension's handler",
+      );
+    });
+  });
+
   test("a replacesDefault view stands in for the built-in file navigation", async () => {
     const repo = createTestRepo("hunk-ext-sidebar-replace-");
     const extPath = join(createTempDir("hunk-ext-sidebar-replace-ext-"), "ext.ts");
