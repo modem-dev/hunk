@@ -433,39 +433,71 @@ a:focus-visible {
   line-height: 1.6;
 }
 
-/* Community videos: thumbnails link out, so no third-party player script loads. */
+/* Community videos: paused-embed cards that link out, so no third-party player script loads.
+   The player chrome (scrim, red play button, duration badge) always sits on the dark
+   thumbnail, so it stays fixed-color instead of following the site theme. */
 .marketing .vgrid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  border-top: 1.5px solid var(--ink);
-  border-left: 1.5px solid var(--ink);
+  gap: 28px;
 }
 
 .marketing .vcard {
   display: block;
-  border-right: 1.5px solid var(--ink);
-  border-bottom: 1.5px solid var(--ink);
-  background: var(--paper);
-  transition: 0.12s;
 }
 
-.marketing .vcard:hover {
-  background: var(--hunk-paper-hover);
-}
-
-.marketing .vthumb {
+.marketing .vplayer {
   position: relative;
   display: block;
-  border-bottom: 1.5px solid var(--ink);
+  overflow: hidden;
+  border: 1.5px solid var(--ink);
+  border-radius: 10px;
   background: #0c0e10;
   aspect-ratio: 16 / 9;
 }
 
-.marketing .vthumb img {
+.marketing .vplayer img {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+/* Player UI mimics YouTube's own chrome, so it drops the site's mono face. */
+.marketing .vscrim,
+.marketing .vlength {
+  font-family:
+    Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+}
+
+.marketing .vscrim {
+  position: absolute;
+  inset: 0 0 auto 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px 26px;
+  background: linear-gradient(rgba(0, 0, 0, 0.65), rgba(0, 0, 0, 0));
+}
+
+.marketing .vavatar {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.marketing .vtitle {
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.3;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
 }
 
 .marketing .vplay {
@@ -473,56 +505,51 @@ a:focus-visible {
   inset: 0;
   display: grid;
   place-items: center;
-  width: 46px;
-  height: 46px;
+  width: 62px;
+  height: 44px;
   margin: auto;
-  border: 1.5px solid var(--ink);
-  border-radius: 50%;
-  background: var(--acc);
-  box-shadow: 2px 2px 0 var(--ink);
-  color: var(--paper);
+  border-radius: 12px;
+  background: #f03;
+  color: #fff;
   transition: 0.12s;
 }
 
 .marketing .vcard:hover .vplay,
 .marketing .vcard:focus-visible .vplay {
-  transform: translate(1px, 1px);
-  box-shadow: 1px 1px 0 var(--ink);
+  transform: scale(1.08);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marketing .vcard:hover .vplay,
+  .marketing .vcard:focus-visible .vplay {
+    transform: none;
+  }
 }
 
 .marketing .vplay svg {
-  width: 16px;
-  height: 16px;
+  width: 22px;
+  height: 22px;
   margin-left: 2px;
 }
 
-.marketing .vbody {
-  display: block;
-  padding: 16px 20px 20px;
+.marketing .vlength {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.82);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 
-.marketing .vmeta {
+.marketing .vcaption {
   display: block;
+  margin-top: 10px;
   color: var(--soft);
-  font-size: 11.5px;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-}
-
-.marketing .vtitle {
-  display: block;
-  margin: 8px 0 6px;
-  font-size: 14.5px;
-  font-weight: 700;
-  line-height: 1.35;
-  letter-spacing: -0.01em;
-}
-
-.marketing .vblurb {
-  display: block;
-  color: var(--hunk-body);
-  font-size: 13px;
-  line-height: 1.55;
+  font-size: 12.5px;
 }
 
 /* Agent section: the screenshot carries it, the commands just say who runs what. */

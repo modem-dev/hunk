@@ -92,6 +92,20 @@ test("community videos link out without embedding a third-party player", async (
   await expect(page.locator("iframe")).toHaveCount(0);
 });
 
+test("community video cards read as paused embeds, not marketing tiles", async ({ page }) => {
+  await page.goto("/");
+  const card = page.getByRole("link", { name: /Hunk changed the way I write/ });
+
+  // Player chrome drawn locally: duration badge on the thumbnail, quiet link-out caption.
+  await expect(card.locator(".vlength")).toHaveText("5:14");
+  await expect(card.locator(".vcaption")).toHaveText("Jilles · watch on YouTube");
+  // The old ad-copy blurb is gone on purpose; the title lives on the player scrim.
+  await expect(card.locator(".vscrim")).toContainText(
+    "Hunk changed the way I write and review code with my agent",
+  );
+  await expect(page.locator(".vblurb")).toHaveCount(0);
+});
+
 test("feature cards deep-link into the matching documentation page", async ({ page }) => {
   await page.goto("/");
 
