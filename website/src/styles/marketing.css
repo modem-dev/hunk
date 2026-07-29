@@ -499,6 +499,12 @@ a:focus-visible {
 }
 
 .marketing .vtitle {
+  /* Clamp like YouTube so a long title can't push the scrim into the centered play button. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
   color: #fff;
   font-size: 14px;
   font-weight: 500;
