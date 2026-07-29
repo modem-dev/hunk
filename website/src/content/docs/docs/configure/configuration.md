@@ -59,4 +59,4 @@ Command sections are named after the input Hunk parses, which is not always the 
 
 When you change view preferences and quit, Hunk can offer to persist them. It writes to an existing repository config when one exists; otherwise it keeps personal view choices in the user config. Set `prompt_save_view_preferences = false` to disable that prompt.
 
-The [config reference](/docs/reference/config/) lists every key, default, and alias.
+The [config reference](/docs/reference/config/) lists every key, default, and alias. The root-only `[extensions]` table has its own guide: [Extensions](/docs/extend/extensions/).

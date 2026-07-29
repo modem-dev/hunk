@@ -89,6 +89,16 @@ export default defineConfig({
             { label: "Configuration", slug: "docs/configure/configuration" },
             { label: "Themes", slug: "docs/configure/themes" },
             { label: "Layout and display", slug: "docs/configure/layout-and-display" },
+            { label: "Keybindings", slug: "docs/configure/keybindings" },
+          ],
+        },
+        {
+          label: "Extend",
+          items: [
+            { label: "Extensions", slug: "docs/extend/extensions" },
+            { label: "Extension API", slug: "docs/extend/extension-api" },
+            { label: "VCS adapters", slug: "docs/extend/vcs-adapters" },
+            { label: "Custom sidebars", slug: "docs/extend/custom-sidebars" },
           ],
         },
         {

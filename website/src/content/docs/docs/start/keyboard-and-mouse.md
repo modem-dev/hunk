@@ -54,4 +54,8 @@ Press `c` on the selected hunk or use a visible add-note affordance with the mou
 - Use the wheel or scrollbar to move through the review; hold Shift while scrolling to move horizontally through unwrapped code.
 - Select diff text for copy where the terminal supports it.
 
+## Remap the defaults
+
+Every shortcut above is a named command you can move to different keys with a `[keybindings]` table in your user config. See [Keybindings](/docs/configure/keybindings/).
+
 Terminal mouse protocols vary; see [terminal compatibility](/docs/help/compatibility/) if clicks or selection do not behave as expected.

@@ -34,3 +34,11 @@ magick /tmp/thumb.jpg -resize '900x>' -strip -quality 80 public/video-<channel>.
 ```
 
 Durations in that component are hardcoded because they never change once a video is published. Verify them against the video before adding a new card.
+
+The cards render as paused embeds: the scrim, red play button, and duration badge are drawn locally so nothing loads from YouTube. Channel avatars are currently monogram circles (`initial` + `avatarColor` in the component data). To upgrade a card to the channel's real avatar, self-host it the same way as the thumbnails — save the channel page's avatar image, then:
+
+```bash
+magick avatar.jpg -resize 56x56 -strip -quality 80 public/avatar-<channel>.webp
+```
+
+and swap the component's monogram span for an `<img>` pointing at it. Keep avatars square at 56px; the CSS rounds them.

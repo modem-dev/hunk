@@ -1,47 +1,56 @@
 ---
 /**
- * Independent walkthroughs, linked out rather than embedded.
- * Self-hosted thumbnails keep the landing page free of third-party player scripts.
+ * Independent walkthroughs styled as paused YouTube embeds, linked out rather
+ * than embedded. Self-hosted thumbnails keep the landing page free of
+ * third-party player scripts; the player chrome (scrim, red play button,
+ * duration badge) is drawn locally so the cards read as real videos without
+ * loading anything from YouTube.
+ *
+ * Avatars are monogram fallbacks until a self-hosted channel avatar exists;
+ * see website/MEDIA.md for the swap ritual.
  */
 const videos = [
   {
     href: "https://www.youtube.com/watch?v=FFfz81XM57k",
     thumb: "/video-jilles.webp",
     channel: "Jilles",
+    initial: "J",
+    avatarColor: "#8a5a2b",
     length: "5:14",
     title: "Hunk changed the way I write and review code with my agent",
-    blurb: "Why the diff becomes the main artifact once an agent is writing the code.",
   },
   {
     href: "https://www.youtube.com/watch?v=-4fJbIF8WAs",
     thumb: "/video-devops-toolbox.webp",
     channel: "DevOps Toolbox",
+    initial: "D",
+    avatarColor: "#3b5bdb",
     length: "13:33",
     title: "I Was Definitely Using The Wrong Terminal Code Reviewer",
-    blurb: "A longer hands-on tour — layouts, themes, keyboard and mouse, and daily use.",
   },
 ] as const;
 ---
 
 <div class="vgrid">
   {
-    videos.map(({ href, thumb, channel, length, title, blurb }) => (
+    videos.map(({ href, thumb, channel, initial, avatarColor, length, title }) => (
       <a class="vcard" href={href} target="_blank" rel="noopener noreferrer">
-        <span class="vthumb">
+        <span class="vplayer">
           <img src={thumb} alt="" width="900" height="506" loading="lazy" draggable="false" />
+          <span class="vscrim">
+            <span class="vavatar" style={`background: ${avatarColor}`} aria-hidden="true">
+              {initial}
+            </span>
+            <span class="vtitle">{title}</span>
+          </span>
           <span class="vplay" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="currentColor">
               <path d="M8 5v14l11-7z" />
             </svg>
           </span>
+          <span class="vlength">{length}</span>
         </span>
-        <span class="vbody">
-          <span class="vmeta">
-            {channel} · {length}
-          </span>
-          <span class="vtitle">{title}</span>
-          <span class="vblurb">{blurb}</span>
-        </span>
+        <span class="vcaption">{channel} · watch on YouTube</span>
       </a>
     ))
   }
