@@ -27,6 +27,7 @@ import type {
   LayoutMode,
   NamedCustomThemeConfig,
   PersistedViewPreferences,
+  SidebarVisibility,
   UserKeyBinding,
   VcsMode,
 } from "./types";
@@ -167,6 +168,11 @@ function normalizeVcsMode(value: unknown): VcsMode | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 }
 
+/** Accept a plain boolean, or `auto` for responsive behavior. */
+function normalizeSidebarVisibility(value: unknown): SidebarVisibility | undefined {
+  return typeof value === "boolean" || value === "auto" ? value : undefined;
+}
+
 /** Accept only plain booleans from config files. */
 function normalizeBoolean(value: unknown) {
   return typeof value === "boolean" ? value : undefined;
@@ -300,6 +306,15 @@ export const CONFIG_REFERENCE_OPTIONS: readonly ConfigReferenceOption[] = [
     accepted: "`true` or `false`",
     runtimeDefault: DEFAULT_VIEW_PREFERENCES.showMenuBar,
     description: "Show the top application menu bar.",
+  },
+  {
+    key: "sidebar",
+    property: "sidebar",
+    type: "string or boolean",
+    accepted: '`"auto"`, `true`, or `false`',
+    runtimeDefault: "auto",
+    description:
+      "Show the sidebar if it fits, keep it closed, or let the responsive layout decide. Pager sessions always open with the sidebar closed.",
   },
   {
     key: "agent_notes",
@@ -827,6 +842,8 @@ function normalizeConfigReferenceValue(property: keyof CommonOptions, value: unk
       return normalizeString(value);
     case "tabWidth":
       return normalizeTabWidth(value);
+    case "sidebar":
+      return normalizeSidebarVisibility(value);
     default:
       return normalizeBoolean(value);
   }
@@ -885,6 +902,7 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
     wrapLines: overrides.wrapLines ?? base.wrapLines,
     hunkHeaders: overrides.hunkHeaders ?? base.hunkHeaders,
     menuBar: overrides.menuBar ?? base.menuBar,
+    sidebar: overrides.sidebar ?? base.sidebar,
     agentNotes: overrides.agentNotes ?? base.agentNotes,
     copyDecorations: overrides.copyDecorations ?? base.copyDecorations,
     promptSaveViewPreferences:
@@ -1101,6 +1119,7 @@ export function resolveConfiguredCliInput(
     wrapLines: resolvedOptions.wrapLines ?? DEFAULT_VIEW_PREFERENCES.wrapLines,
     hunkHeaders: resolvedOptions.hunkHeaders ?? DEFAULT_VIEW_PREFERENCES.showHunkHeaders,
     menuBar: resolvedOptions.menuBar ?? DEFAULT_VIEW_PREFERENCES.showMenuBar,
+    sidebar: resolvedOptions.sidebar ?? "auto",
     agentNotes: resolvedOptions.agentNotes ?? DEFAULT_VIEW_PREFERENCES.showAgentNotes,
     copyDecorations: resolvedOptions.copyDecorations ?? DEFAULT_VIEW_PREFERENCES.copyDecorations,
     promptSaveViewPreferences: resolvedOptions.promptSaveViewPreferences ?? true,

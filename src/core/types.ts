@@ -30,6 +30,7 @@ export type {
 
 export type LayoutMode = "auto" | "split" | "stack";
 export type CursorLine = "row" | "number" | "off";
+export type SidebarVisibility = "auto" | "shown" | "hidden";
 export type VcsMode = string;
 export type TerminalThemeMode = "light" | "dark";
 
@@ -101,6 +102,7 @@ export interface CommonOptions {
   wrapLines?: boolean;
   hunkHeaders?: boolean;
   menuBar?: boolean;
+  sidebar?: SidebarVisibility;
   agentNotes?: boolean;
   copyDecorations?: boolean;
   promptSaveViewPreferences?: boolean;
@@ -391,6 +393,7 @@ export interface AppBootstrap {
   initialWrapLines?: boolean;
   initialShowHunkHeaders?: boolean;
   initialShowMenuBar?: boolean;
+  initialSidebar?: SidebarVisibility;
   initialShowAgentNotes?: boolean;
   initialCopyDecorations?: boolean;
   initialCursorLine?: CursorLine;

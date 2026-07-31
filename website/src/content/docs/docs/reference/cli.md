@@ -31,6 +31,8 @@ This reference is generated from the command metadata used by Hunk itself. Run `
 | `--no-wrap`                 | truncate long diff lines to one row                             |
 | `--hunk-headers`            | show hunk metadata rows                                         |
 | `--no-hunk-headers`         | hide hunk metadata rows                                         |
+| `--sidebar`                 | show sidebar                                                    |
+| `--no-sidebar`              | hide sidebar                                                    |
 | `--agent-notes`             | show agent notes by default                                     |
 | `--no-agent-notes`          | hide agent notes by default                                     |
 | `--transparent-bg`          | let terminal background show through Hunk surfaces              |

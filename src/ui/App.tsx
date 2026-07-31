@@ -18,6 +18,7 @@ import type {
   CursorLine,
   LayoutMode,
   PersistedViewPreferences,
+  SidebarVisibility,
   UserNoteLineTarget,
 } from "../core/types";
 import { canReloadInput } from "../core/watch";
@@ -235,8 +236,9 @@ export function App({
     selectedIndex: 0,
     previewThemeId: null,
   });
-  const [sidebarVisible, setSidebarVisible] = useState(() => !pagerMode);
-  const [forceSidebarOpen, setForceSidebarOpen] = useState(false);
+  const [sidebarState, setSidebarState] = useState<SidebarVisibility>(() =>
+    pagerMode ? false : (bootstrap.initialSidebar ?? "auto"),
+  );
   const [showHelp, setShowHelp] = useState(false);
   const [showAgentSkill, setShowAgentSkill] = useState(false);
   const [saveConfigPromptOpen, setSaveConfigPromptOpen] = useState(false);
@@ -869,7 +871,9 @@ export function App({
   const responsiveLayout = resolveResponsiveLayout(layoutMode, terminal.width);
   const canForceShowSidebar = bodyWidth >= SIDEBAR_MIN_WIDTH + DIVIDER_WIDTH + DIFF_MIN_WIDTH;
   const sidebarAreaVisible =
-    sidebarVisible && (responsiveLayout.showSidebar || (forceSidebarOpen && canForceShowSidebar));
+    sidebarState === "auto" ? responsiveLayout.showSidebar : sidebarState && canForceShowSidebar;
+  const openSidebarState: SidebarVisibility =
+    !responsiveLayout.showSidebar && canForceShowSidebar ? true : "auto";
   const resolvedLayout = responsiveLayout.layout;
   const reportedLayoutRef = useRef<string | undefined>(undefined);
   useEffect(() => {
@@ -911,12 +915,10 @@ export function App({
   const renderSidebar = sidebarLayout.left.length + sidebarLayout.right.length > 0;
   const diffPaneWidth = Math.max(DIFF_MIN_WIDTH, bodyWidth - sidebarLayout.totalWidth);
   const diffContentWidth = Math.max(12, diffPaneWidth - 2);
-  // Mirrors toggleSidebar's reveal half: visible again, forced open when the
-  // responsive layout alone would keep it hidden and the terminal has room.
+  // Mirrors toggleSidebar's reveal half, for extensions opening a sidebar view.
   revealSidebarAreaRef.current = () => {
-    setSidebarVisible(true);
-    if (!responsiveLayout.showSidebar && canForceShowSidebar) {
-      setForceSidebarOpen(true);
+    if (!sidebarAreaVisible) {
+      setSidebarState(openSidebarState);
     }
   };
   // Publish the live note geometry for daemon-driven markup validation; the
@@ -1226,21 +1228,7 @@ export function App({
 
   /** Toggle the sidebar, forcing it open on narrower layouts when the app can still fit both panes. */
   const toggleSidebar = () => {
-    if (sidebarVisible && (responsiveLayout.showSidebar || forceSidebarOpen)) {
-      setSidebarVisible(false);
-      setForceSidebarOpen(false);
-      return;
-    }
-
-    if (sidebarVisible && !responsiveLayout.showSidebar) {
-      if (canForceShowSidebar) {
-        setForceSidebarOpen(true);
-      }
-      return;
-    }
-
-    setSidebarVisible(true);
-    setForceSidebarOpen(!responsiveLayout.showSidebar && canForceShowSidebar);
+    setSidebarState(sidebarAreaVisible ? false : openSidebarState);
   };
 
   /** Toggle visibility of hunk metadata rows without changing the actual diff lines. */

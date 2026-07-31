@@ -130,6 +130,16 @@ Show the top application menu bar.
 
 ---
 
+**`sidebar`**
+
+Show the sidebar if it fits, or keep it closed, or let the responsive layout decide. Pager sessions always open with the sidebar closed.
+
+- **Type:** string or boolean
+- **Accepted:** `"auto"`, `true`, or `false`
+- **Built-in default:** `auto`
+
+---
+
 **`agent_notes`**
 
 Show agent notes when a review opens.
