@@ -191,6 +191,45 @@ describe("parseCli", () => {
     });
   });
 
+  test("parses sidebar toggles", async () => {
+    const shown = await parseCli(["bun", "hunk", "diff", "--sidebar"]);
+    const hidden = await parseCli(["bun", "hunk", "diff", "--no-sidebar"]);
+    const unset = await parseCli(["bun", "hunk", "diff"]);
+
+    expect(shown).toMatchObject({ kind: "vcs", options: { sidebar: true } });
+    expect(hidden).toMatchObject({ kind: "vcs", options: { sidebar: false } });
+    expect(unset.kind === "vcs" ? unset.options.sidebar : "unset").toBeUndefined();
+  });
+
+  test("keeps paired-flag-shaped pathspecs after the option separator", async () => {
+    const cases = [
+      ["--exclude-untracked", "excludeUntracked"],
+      ["--no-exclude-untracked", "excludeUntracked"],
+      ["--line-numbers", "lineNumbers"],
+      ["--no-line-numbers", "lineNumbers"],
+      ["--wrap", "wrapLines"],
+      ["--no-wrap", "wrapLines"],
+      ["--hunk-headers", "hunkHeaders"],
+      ["--no-hunk-headers", "hunkHeaders"],
+      ["--sidebar", "sidebar"],
+      ["--no-sidebar", "sidebar"],
+      ["--agent-notes", "agentNotes"],
+      ["--no-agent-notes", "agentNotes"],
+      ["--transparent-bg", "transparentBackground"],
+      ["--no-transparent-bg", "transparentBackground"],
+      ["--extensions", "extensions"],
+      ["--no-extensions", "extensions"],
+    ] as const;
+
+    for (const [pathspec, option] of cases) {
+      const parsed = await parseCli(["bun", "hunk", "diff", "--", pathspec]);
+
+      expect(parsed).toMatchObject({ kind: "vcs", pathspecs: [pathspec] });
+      if (parsed.kind !== "vcs") throw new Error("Expected a VCS diff input.");
+      expect(parsed.options[option]).toBeUndefined();
+    }
+  });
+
   test("parses staged git-style diff aliases", async () => {
     const staged = await parseCli(["bun", "hunk", "diff", "--staged"]);
     const cached = await parseCli(["bun", "hunk", "diff", "--cached"]);

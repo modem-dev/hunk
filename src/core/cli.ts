@@ -91,6 +91,8 @@ export const COMMON_REVIEW_OPTIONS = [
   { flag: "--no-wrap", description: "truncate long diff lines to one row" },
   { flag: "--hunk-headers", description: "show hunk metadata rows" },
   { flag: "--no-hunk-headers", description: "hide hunk metadata rows" },
+  { flag: "--sidebar", description: "show files pane" },
+  { flag: "--no-sidebar", description: "hide files pane" },
   { flag: "--agent-notes", description: "show agent notes by default" },
   { flag: "--no-agent-notes", description: "hide agent notes by default" },
   { flag: "--transparent-bg", description: "let terminal background show through Hunk surfaces" },
@@ -282,11 +284,13 @@ function parseNonNegativeInt(value: string) {
   return parsed;
 }
 
-/** Read one paired positive/negative boolean flag directly from raw argv. */
+/** Read one paired boolean flag before the pathspec separator in raw argv. */
 function resolveBooleanFlag(argv: string[], enabledFlag: string, disabledFlag: string) {
   let resolved: boolean | undefined;
 
   for (const arg of argv) {
+    if (arg === "--") break;
+
     if (arg === enabledFlag) {
       resolved = true;
       continue;
@@ -341,6 +345,7 @@ function buildCommonOptions(
     tabWidth: options.tabWidth,
     wrapLines: resolveBooleanFlag(argv, "--wrap", "--no-wrap"),
     hunkHeaders: resolveBooleanFlag(argv, "--hunk-headers", "--no-hunk-headers"),
+    sidebar: resolveBooleanFlag(argv, "--sidebar", "--no-sidebar"),
     agentNotes: resolveBooleanFlag(argv, "--agent-notes", "--no-agent-notes"),
     transparentBackground: resolveBooleanFlag(argv, "--transparent-bg", "--no-transparent-bg"),
     // Read straight from argv so the absence of the flag stays undefined rather than
@@ -457,6 +462,7 @@ function renderCliHelp() {
     "  -x, --tab-width <columns>                tab stop width: 1-16 (default: 4)",
     "  --wrap / --no-wrap                      wrap or truncate long diff lines",
     "  --hunk-headers / --no-hunk-headers      show or hide hunk metadata rows",
+    "  --sidebar / --no-sidebar                show or hide files pane by default",
     "  --agent-notes / --no-agent-notes        show or hide agent notes by default",
     "  --transparent-bg / --no-transparent-bg  let terminal background show through Hunk surfaces",
     "  --theme <theme>                         named theme override",

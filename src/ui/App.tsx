@@ -331,7 +331,9 @@ export function App({
     previewThemeId: null,
   });
   const [sidebarVisible, setSidebarVisible] = useState(() => !pagerMode);
-  const [forceSidebarOpen, setForceSidebarOpen] = useState(false);
+  const [forceSidebarOpen, setForceSidebarOpen] = useState(
+    () => !pagerMode && bootstrap.initialSidebar === true,
+  );
   const [showHelp, setShowHelp] = useState(false);
   const [showAgentSkill, setShowAgentSkill] = useState(false);
   const [saveConfigPromptOpen, setSaveConfigPromptOpen] = useState(false);
@@ -351,7 +353,18 @@ export function App({
   const sessionNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const extensions = bootstrap.extensions as ExtensionLoadResult | undefined;
   const sessionPanes = useMemo(() => buildSessionPanes(extensions), [extensions]);
-  const [paneOpenState, setPaneOpenState] = useState(() => initialPaneOpenState(sessionPanes));
+  const [paneOpenState, setPaneOpenState] = useState(() => {
+    const initial = initialPaneOpenState(sessionPanes);
+    if (bootstrap.initialSidebar !== false) return initial;
+
+    // The preference targets the active files slot, not independently open extension panes.
+    const filesPaneKey = resolvePaneSlotKey({
+      panes: sessionPanes,
+      slotKey: HUNK_FILES_PANE_KEY,
+      openKeys: initial.open,
+    });
+    return { ...initial, open: initial.open.filter((key) => key !== filesPaneKey) };
+  });
   useEffect(
     () => setPaneOpenState((current) => reconcilePaneOpenState(sessionPanes, current)),
     [sessionPanes],

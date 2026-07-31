@@ -396,6 +396,35 @@ describe("PTY pager", () => {
     }
   });
 
+  test("pager mode opens with the sidebar closed even when --sidebar asks for one", async () => {
+    const fixture = harness.createPagerPatchFixture();
+    const session = await harness.launchHunkWithFileBackedStdin({
+      stdinFile: fixture.patchFile,
+      args: ["pager", "--sidebar"],
+      cols: 120,
+      rows: 14,
+    });
+
+    try {
+      const initial = await session.waitForText(/scroll\.ts/, { timeout: 15_000 });
+
+      expect(harness.countMatches(initial, /scroll\.ts/g)).toBe(1);
+
+      await session.waitIdle({ timeout: 200 });
+      await session.press("s");
+      const sidebarRow = /\bM scroll\.ts\s+\+40 -40/;
+      const withSidebar = await harness.waitForSnapshot(
+        session,
+        (text) => sidebarRow.test(text),
+        5_000,
+      );
+
+      expect(withSidebar).toMatch(sidebarRow);
+    } finally {
+      session.close();
+    }
+  });
+
   test("explicit pager mode still supports mouse wheel scrolling on a TTY", async () => {
     const fixture = harness.createPagerPatchFixture(60);
     const session = await harness.launchHunk({
