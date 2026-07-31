@@ -4,17 +4,7 @@ import {
   type ScrollBoxRenderable,
 } from "@opentui/core";
 import { useRenderer, useTerminalDimensions } from "@opentui/react";
-import {
-  Fragment,
-  Suspense,
-  lazy,
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-  useRef,
-  useSyncExternalStore,
-} from "react";
+import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useState, useRef } from "react";
 import {
   diffPersistedViewPreferences,
   saveGlobalViewPreferences,
@@ -66,6 +56,7 @@ import {
 } from "./diff/codeColumns";
 import type { ActiveAddNoteAffordance } from "./diff/PierreDiffView";
 import { useAppKeyboardShortcuts } from "./hooks/useAppKeyboardShortcuts";
+import { useExtensionDialogController } from "./hooks/useExtensionDialogController";
 import { useExtensionNotifications } from "./hooks/useExtensionNotifications";
 import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
 import { useMenuController } from "./hooks/useMenuController";
@@ -79,7 +70,6 @@ import {
 } from "./lib/appCommands";
 import { buildAppMenus } from "./lib/appMenus";
 import { buildExtensionAppCommands, extensionCommandKeyDefaults } from "./lib/extensionCommands";
-import { createExtensionDialogQueue } from "./lib/extensionDialogs";
 import { createGuardedReviewNavigation } from "./lib/extensionNavigation";
 import { buildExtensionReviewSelection } from "./lib/extensionSelection";
 import { useFileViewLayouts } from "./fileViews/useFileViews";
@@ -667,84 +657,17 @@ export function App({
    */
   const revealSidebarAreaRef = useRef<() => void>(() => {});
 
-  // One dialog queue per review: every extension's `ctx.dialogs` is minted from
-  // it, so questions from different extensions share one FIFO and one modal.
-  const [extensionDialogQueue] = useState(createExtensionDialogQueue);
-  const extensionDialog = useSyncExternalStore(
-    extensionDialogQueue.subscribe,
-    extensionDialogQueue.current,
-    extensionDialogQueue.current,
-  );
-  const [extensionDialogSelectedIndex, setExtensionDialogSelectedIndex] = useState(0);
-  const [extensionDialogInputValue, setExtensionDialogInputValue] = useState("");
-  const extensionDialogId = extensionDialog?.id ?? null;
-  const extensionDialogInitialText =
-    extensionDialog?.kind === "input" ? extensionDialog.initial : "";
-  useEffect(() => {
-    // Per-dialog answer state, reset whenever a different question becomes the
-    // visible one: a queued dialog opens fresh rather than inheriting the
-    // highlight or the text the user was giving the dialog before it.
-    setExtensionDialogSelectedIndex(0);
-    setExtensionDialogInputValue(extensionDialogInitialText);
-  }, [extensionDialogId, extensionDialogInitialText]);
-
-  // A session reload that keeps App mounted — the refresh key, a watch
-  // reload, an agent command through the session bridge — swaps `bootstrap`
-  // under the open dialogs, and the questions were about the replaced review.
-  // Watching the swap itself covers every reload path in one place, and firing
-  // after it means a dialog an old handler enqueued while the reload was in
-  // flight drains too.
-  const dialogBootstrapRef = useRef(bootstrap);
-  useEffect(() => {
-    if (dialogBootstrapRef.current !== bootstrap) {
-      dialogBootstrapRef.current = bootstrap;
-      extensionDialogQueue.cancelAll();
-    }
-  }, [bootstrap, extensionDialogQueue]);
-
-  useEffect(() => {
-    // Teardown answers everything still waiting. A handler that awaits a dialog
-    // across a session reload or an exit gets its cancel value instead of a
-    // promise nothing will ever settle.
-    return () => extensionDialogQueue.shutdown();
-  }, [extensionDialogQueue]);
-
-  /** Answer the open dialog with the user's acceptance. */
-  const acceptExtensionDialog = () => {
-    if (!extensionDialog) {
-      return;
-    }
-
-    if (extensionDialog.kind === "select") {
-      extensionDialogQueue.accept(
-        extensionDialog.id,
-        extensionDialog.options[extensionDialogSelectedIndex],
-      );
-      return;
-    }
-
-    extensionDialogQueue.accept(
-      extensionDialog.id,
-      extensionDialog.kind === "input" ? extensionDialogInputValue : undefined,
-    );
-  };
-
-  /** Dismiss the open dialog, resolving its cancel value. */
-  const cancelExtensionDialog = () => {
-    if (extensionDialog) {
-      extensionDialogQueue.cancel(extensionDialog.id);
-    }
-  };
-
-  /** Move the highlight within a select dialog, wrapping at both ends. */
-  const moveExtensionDialogSelection = (delta: number) => {
-    if (extensionDialog?.kind !== "select") {
-      return;
-    }
-
-    const optionCount = extensionDialog.options.length;
-    setExtensionDialogSelectedIndex((current) => (current + delta + optionCount) % optionCount);
-  };
+  const {
+    accept: acceptExtensionDialog,
+    cancel: cancelExtensionDialog,
+    createDialogs: createExtensionDialogs,
+    inputValue: extensionDialogInputValue,
+    moveSelection: moveExtensionDialogSelection,
+    pickOption: setExtensionDialogSelectedIndex,
+    request: extensionDialog,
+    selectedIndex: extensionDialogSelectedIndex,
+    updateInput: setExtensionDialogInputValue,
+  } = useExtensionDialogController({ reviewGeneration: bootstrap });
 
   // Lifecycle and bus listeners receive the same sidebar controls as commands,
   // so an extension can react to loaded content by revealing its own pane.
@@ -783,7 +706,7 @@ export function App({
         // Bound to the requesting extension for attribution, and valid for the
         // whole life of the handler's promise — a handler may ask several
         // questions in sequence with work between them.
-        dialogs: extensionDialogQueue.createDialogs(registered.extensionId),
+        dialogs: createExtensionDialogs(registered.extensionId),
         // Live, unlike `selection`: reads the visible files and delegates to
         // the same focus/jump callbacks a sidebar row click runs, so a handler
         // that awaits a dialog before navigating still acts on the current
@@ -814,9 +737,9 @@ export function App({
     // dispatch table, keymap, and Extensions menu derived from this callback
     // do not rebuild on every `[`/`]` press.
     [
+      createExtensionDialogs,
       createFileViewControls,
       createSidebarControls,
-      extensionDialogQueue,
       extensions,
       getExtensionSelection,
     ],
