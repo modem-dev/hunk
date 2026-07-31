@@ -4,83 +4,69 @@
 
 ### Minor Changes
 
-- [#570](https://github.com/modem-dev/hunk/pull/570) - Add exact Shiki/TextMate overrides via `custom_theme.syntax_scopes`, with compatibility for deprecated `custom_theme.syntax`.
+- 94d61e1: Add exact Shiki/TextMate syntax color overrides under `custom_theme.syntax_scopes`, while temporarily translating the deprecated `custom_theme.syntax` role table for compatibility.
+- e65e84a: Extension command handlers can now navigate the review stream: `ctx.navigation.selectFile(fileId)` and `ctx.navigation.selectHunk(fileId, hunkIndex)` carry the same guarded navigation a custom sidebar's `actions` do — validated against the currently visible files, hunk indexes clamped, failures reported as warnings — routed through the same review controller, so a "jump to the next flagged hunk" command no longer needs a mounted sidebar to move the selection. Unlike `ctx.selection`, which stays a snapshot from when the key fired, `navigation` is live: a handler that awaits a dialog and then navigates acts on the review as it is now.
+- fe21ef9: Extension command handlers receive the current review selection as `ctx.selection` — the selected file as a frozen read-only view plus its selected hunk index, captured when the command fires. A command that acts on what the user is looking at (copy this path, open this hunk elsewhere) no longer has to shadow-track the `selection_changed` event to know where the review is.
+- 928f607: Render source tabs at four-column stops by default and add `tab_width`, `-x`, and `--tab-width` overrides for projects with different conventions.
+- 86bf722: Experiment with fixed-height React and OpenTUI row components in extension file views, with a shared live semantic paint theme, while Hunk retains review-stream geometry, windowing, hunk navigation, inline-note placement, and symbolic fallback. Advance the extension API to version 2 for the streamlined file-view contract, with checked-in TypeScript, CSS palette, and dependency-delta demos.
+- 548f56d: Extension command handlers can ask the user a question through `ctx.dialogs`: `confirm` for a yes/no prompt, `select` for a list of choices, and `input` for a line of text, each returning a promise that resolves the answer (or a cancel value on Escape). Hunk draws the modal itself and labels it with the extension that raised it, one dialog shows at a time with concurrent requests queued in call order, and a dialog still pending when the review goes away resolves as cancelled instead of leaving a handler waiting.
+- 926324d: Add extension UI lifecycle events, sidebar controls for event handlers, and an inter-extension event bus.
+- 883fad7: Add an experimental TypeScript extension system (phase 1). The `hunkdiff/extension` API may change in breaking ways between minor releases while it stabilizes; breaking changes will be called out in release notes. Hunk now loads user extensions from `~/.config/hunk/extensions/`, repo-local `.hunk/extensions/` (behind a trust prompt), `[extensions] paths` in config, and a repeatable `--extension` flag (`--no-extensions` disables loading). Extensions export a default factory receiving the `hunkdiff/extension` API and can register themes, file-language mappings, and VCS adapters, transform the loaded changeset, subscribe to lifecycle events (`startup`, `changeset_loaded`, `selection_changed`, `session_reload`, `shutdown`), read their own `[extension.<id>]` config table, and show toast notifications. Every VCS backend Hunk ships — Git, Jujutsu, and Sapling — is now a bundled extension registered through that same API, with no core-registered adapter left, so extension VCS adapters are first-class: they can set a detection priority, report untracked paths, supply exact old/new file contents for context expansion and syntax highlighting, list files reviewed outside the patch (including too-large placeholders), honor `--color-moved`, support `--watch` through optional watch signatures and watch plans, and raise user-facing failures with suggestions through `HunkExtensionUserError`. `--no-extensions` and `[extensions] enabled = false` scope to user extensions, so VCS support is never disabled by them. Custom themes are also generalized from the single `[custom_theme]` slot to any number of named `[themes.<id>]` tables. See `docs/extensions.md` for the authoring guide.
+- 1501eb6: Expose resolved command keybindings to custom extension sidebar components so local handlers honor user remapping and unbinding.
+- 8a8dbc7: Agent notes can now carry STML markup (**experimental**) — a small HTML-like markup rendered as real terminal UI inside the inline note card (bordered boxes, rows of shapes, gauges, lists, badges, code blocks, styled text). Provide it via the `markup` field on agent-context sidecar annotations, `hunk session comment add --markup`, or a `markup` field on `comment apply` batch items; the plain `summary` stays as the fallback and list view text. While the feature is experimental, the tag and color vocabulary may change between releases without a major bump.
 
-- [#629](https://github.com/modem-dev/hunk/pull/629) - Add live `ctx.navigation.selectFile` and `selectHunk` APIs for guarded review-stream navigation.
+  Two new commands make markup easy to author well: `hunk markup guide` prints a pattern-driven authoring guide (gauges, pipelines, scorecards, checklists), and `hunk markup render (<file> | -)` previews markup as terminal text at any width without launching the TUI, with render notes on stderr or in `--json` output. Markup feedback follows the live session geometry: `hunk session context` reports `noteMarkupWidth` (the width notes render at in the current layout and terminal size), and `comment add`/`apply` responses echo the `markupWidth` they validated at plus `markupNotes` when the markup degraded — so agents design for the width the user is actually looking at, whether that is a narrow split dock or a full-width unified pane on a large screen.
 
-- [#616](https://github.com/modem-dev/hunk/pull/616) - Give extension commands a frozen snapshot of the current review selection through `ctx.selection`.
+- fa0500d: Menus and the controls help dialog now show the keys your commands are actually on. Both are built from the same command table the keyboard dispatches through, so a shortcut remapped in `[keybindings]` is advertised under its new key everywhere instead of only in the config file, and a command you unbind stops claiming a key it no longer answers to.
 
-- [#588](https://github.com/modem-dev/hunk/pull/588) - Render tabs at four-column stops by default, configurable through `tab_width`, `-x`, or `--tab-width`.
+  Extensions get a menu of their own: registered commands are listed in a new **Extensions** menu with their titles and current keys, grouped per extension. A command whose chord was already taken — or that never declared one — is still reachable there with the mouse. The menu appears only when an extension registered a command.
 
-- [#632](https://github.com/modem-dev/hunk/pull/632) - Advance the extension API to v2 with experimental fixed-height React/OpenTUI file-view rows and semantic theme painting.
+  Four actions that were previously menu-only are now named commands, so they can be bound to keys: `hunk.view.toggleCopyDecorations`, `hunk.app.openAgentSkill`, `hunk.review.nextAnnotatedFile`, and `hunk.review.previousAnnotatedFile`.
 
-- [#617](https://github.com/modem-dev/hunk/pull/617) - Add queued `ctx.dialogs.confirm`, `select`, and `input` prompts to extension commands.
+- 449b328: Extensions can now register keyboard commands and any number of sidebar views. `hunk.registerCommand({ id, title, key }, handler)` joins the same dispatch table Hunk's own shortcuts run on — built-ins win key conflicts, and every app-level shortcut is now a named command in that one table. Command handlers receive `ctx.sidebars` controls, so a registered key can open, close, or toggle sidebar views. `hunk.registerSidebarView` is additive: views declare a `title`, `placement` (`"left"` or `"right"` of the review stream), `defaultOpen`, or `replacesDefault` to stand in for the built-in file navigation, and multiple panes can be open at once with per-pane resize. A view that fails rendering closes with a warning and the built-in file navigation reopens if nothing else is showing.
 
-- [#619](https://github.com/modem-dev/hunk/pull/619) - Add extension UI lifecycle events, sidebar controls for event handlers, and an inter-extension event bus.
+  Keys are now yours to arrange: the new `[keybindings]` table in your user config remaps any command by id — `"hunk.app.quit" = "ctrl+x"`, `"hunk.review.nextHunk" = ["]", "ctrl+n"]`, `false` to unbind — including commands extensions register. A key you bind is exclusively yours: whatever held it by default gives it up. Commands can also ship with several default chords (`key: ["ctrl+g", "f9"]` in `registerCommand`), and a chord that collides is refused on its own without costing the command its other keys. Extensions that need their own internal keys can now import the same grammar Hunk matches with: `matchesKey`, `parseKeyChord`, and `matchesKeyChord` from `hunkdiff/extension`.
 
-- [#599](https://github.com/modem-dev/hunk/pull/599) - Add experimental TypeScript extensions, bundled VCS adapters, multiple custom themes, trust controls, and configurable loading paths.
+  Ids are namespaced by their owner, structurally. Every built-in command is named under `hunk.` and the built-in sidebar's view key is `hunk:files`, while an extension owns its own id — its commands are `<extensionId>.<commandId>` and its views `<extensionId>:<viewId>`. So extension ids are now validated when they load: `hunk`, `git`, `jj`, and `sl` are reserved, an id must start with a letter or digit and use only letters, digits, `-`, and `_`, and when two sources offer the same id the first one loads. An extension that breaks a rule is skipped with a startup notice naming the file; the rest of the session is unaffected.
 
-- [#615](https://github.com/modem-dev/hunk/pull/615) - Expose resolved command keybindings to custom extension sidebars so they honor remapping and unbinding.
-
-- [#512](https://github.com/modem-dev/hunk/pull/512) - Add experimental STML agent-note markup, `hunk markup guide`/`render`, and live note-width validation APIs.
-
-- [#614](https://github.com/modem-dev/hunk/pull/614) - Make menus and help reflect remapped keys, add an Extensions menu, and expose formerly menu-only actions as commands.
-
-- [#611](https://github.com/modem-dev/hunk/pull/611) - Add extension commands, multiple sidebar views, configurable `[keybindings]`, shared key APIs, and namespaced command/view IDs.
-
-- [#647](https://github.com/modem-dev/hunk/pull/647) - Give `hunk pager` the full review controls while keeping its menu bar and sidebar initially hidden.
-
-- [#626](https://github.com/modem-dev/hunk/pull/626) - Expose ordered `ExtensionDiffHunk` summaries with headers, indexes, and inclusive line spans in public file views.
-
-- [#632](https://github.com/modem-dev/hunk/pull/632) - Add an experimental host-rendered extension file-view contract and an optional Markdown preview example.
-
-- [#468](https://github.com/modem-dev/hunk/pull/468) - Offer to save changed view preferences on quit, with a persistent “never ask” option.
-
-- [#609](https://github.com/modem-dev/hunk/pull/609) - Let extensions replace file navigation with React sidebars that receive live review props and safe navigation actions.
+- aa1c24a: Give pager mode the full review controls, so `git diff | hunk pager` supports everything `hunk diff` does: file and hunk navigation, file filter, layout switching, etc. Pager mode now only decides where the chrome starts — the menu bar and sidebar begin hidden, and `M` and `s` bring them back.
+- b6737d8: The extension API now exposes public hunk summaries: every read-only file view Hunk hands outward (event payloads, sidebar props, a command's selection) carries a `hunks` list of `ExtensionDiffHunk` records — `index`, the `@@` header, and inclusive old/new line spans, in render order. The index is the same one `selectedHunkIndex` reports and `actions.selectHunk` accepts, so hunk checklists, per-hunk progress views, and agent-annotation navigators no longer need to cast into the opaque `metadata`. The summaries derive through the same helper the agent session surface reports hunks with, so the two external views of a review cannot drift apart.
+- 86bf722: Add a streamlined experimental extension file-view contract plus an optional, user-installable Markdown preview example. File views read exact source lazily, return generic host-rendered rows, and may bind rows to exact source ranges so Hunk can place inline notes. Raw diff remains the default and the all-or-raw fallback for unresolved note bindings. The View menu can apply the active presentation to every matching file in the changeset without widening extension command controls.
+- e098b3a: Offer to save changed view preferences to the user config on quit, including theme, layout, line numbers, wrapping, hunk headers, agent notes, and copy decorations. The prompt also includes a “never ask” option that persists `prompt_save_view_preferences = false`.
+- 46ef38a: Extensions can replace the file-navigation sidebar with their own React component via `hunk.registerSidebarView`. Extension files now receive Hunk's own React (and `hunkdiff/extension` runtime values) when imported, so hooks and JSX work without bundling anything; the component gets live props (visible files with change types, selection, theme tokens) plus actions that drive review navigation exactly like the built-in sidebar, and a component that fails to render falls back to the built-in sidebar with a warning instead of taking down the session. The built-in sidebar is itself a bundled extension registered through this same API — the reference implementation a user-registered view overrides.
 
 ### Patch Changes
 
-- [#531](https://github.com/modem-dev/hunk/pull/531) - Reduce Git polling and CPU use in watch mode while preserving continuous refreshes with a polling fallback.
+- 2458366: Reduce Git polling and CPU use in watch mode while preserving continuous refreshes with a polling fallback.
+- 883fad7: Record repo-extension trust decisions under a canonical repo root, so granting trust actually loads that repository's extensions when Hunk was launched through a symlinked path (or a Windows 8.3 short path). Previously the reload that follows the grant canonicalized its working directory and looked the decision up under a different spelling of the same directory, leaving the extensions skipped and the prompt ready to ask again. Decisions recorded by earlier versions are still honored.
+- 8396284: Extension discovery now recognizes `.tsx` and `.jsx` entry files everywhere `.ts` entries are found — standalone files in an extensions directory and `index.tsx`/`index.jsx` folder fallbacks — matching what the runtime loader already supported. A TSX sidebar extension no longer needs a `package.json` manifest just to name its entry file. The authoring guide also gains a recipe for feeding lifecycle-event state into sidebar components, documents the pane width/height contract, qualifies exactly which notes the `note_created`/`note_edited` events report, and fixes the "not contributable yet" list to say standalone keybindings rather than contradicting the remappable-command docs.
+- a9910f1: Folder extensions can now declare their entry points through a `package.json` `"hunk": { "extensions": [...] }` manifest, which takes precedence over the `index.*` fallback and lets an extension ship several entries and its own npm dependencies.
+- 883fad7: Fix extension-system issues found reviewing the published surface:
+  - `hunkdiff/extension` types now resolve for consumers using `moduleResolution: "nodenext"`, not just `bundler`.
+  - A VCS adapter whose `detect()` returns an id different from the one it registered under no longer aborts the session with `Unsupported VCS`.
+  - Extension-registered themes are validated against the same color rules config themes get, so a malformed theme is skipped with a notice instead of crashing the renderer when selected.
+  - Lifecycle handlers receive a read-only view of the changeset, so an extension that mutates it is reported instead of corrupting the review.
+  - `startup` now fires for extensions loaded after granting repository trust.
+  - `--no-extensions` and `--extension` paths survive daemon-driven session reloads, and reloads re-run extension VCS detection the way first launch does.
+  - An unknown `vcs` id in config is resolved against loaded extension backends, and reported instead of silently discarded when nothing owns it.
+  - Extension VCS adapters take part in checkout detection on the same terms as bundled ones: the nearest checkout wins, so a Mercurial checkout nested inside a Git repository is reviewed as Mercurial, while `detectionPriority` still decides colocated ties and an explicit `vcs` in config still wins outright.
+  - `[extensions] paths` now expands a leading `~`, matching the documented examples.
 
-- [#599](https://github.com/modem-dev/hunk/pull/599) - Store repo-extension trust by canonical root so trusted extensions load through symlinked and Windows short paths.
-
-- [#625](https://github.com/modem-dev/hunk/pull/625) - Discover `.tsx` and `.jsx` extension entries alongside TypeScript and JavaScript entries.
-
-- [#606](https://github.com/modem-dev/hunk/pull/606) - Support folder-extension entry points and multiple entries through `package.json` `hunk.extensions` manifests.
-
-- [#599](https://github.com/modem-dev/hunk/pull/599) - Harden extension types, themes, lifecycle data, reloads, VCS detection, configured paths, and user-facing failures.
-
-- [#606](https://github.com/modem-dev/hunk/pull/606) - Load directories with `index.ts`, `index.js`, or `index.mjs` as single folder extensions.
-
-- [#649](https://github.com/modem-dev/hunk/pull/649) - Prevent one keypress from triggering both a modal action and the focused widget beneath it.
-
-- [#589](https://github.com/modem-dev/hunk/pull/589) - Require `--experimental` for STML note rendering and advertise the `stml` capability only in opted-in sessions.
-
-- [#519](https://github.com/modem-dev/hunk/pull/519) - Label repo-root file runs with a `./` sidebar header without changing review order.
-
-- [#531](https://github.com/modem-dev/hunk/pull/531) - Reduce watch-mode startup cost on macOS and Windows with bounded native recursive filesystem observation.
-
-- [#574](https://github.com/modem-dev/hunk/pull/574) - Show a startup notice when deprecated `custom_theme.syntax` colors are translated to approximate Shiki scopes.
-
-- [#572](https://github.com/modem-dev/hunk/pull/572) - Restart stale session daemons during upgrades so rich STML comments reach live reviews.
-
-- [#627](https://github.com/modem-dev/hunk/pull/627) - Upgrade `shell-quote` against a denial-of-service flaw and keep file-watch refreshes responsive after missed events.
-
-- [#630](https://github.com/modem-dev/hunk/pull/630) - Document the supported scrollbox ref, stable row IDs, selection following, and pane geometry APIs for custom sidebars.
-
-- [#596](https://github.com/modem-dev/hunk/pull/596) - Generate the hunk-review skill from typed session commands and document missing note, markup, rationale, and author flags.
-
-- [#652](https://github.com/modem-dev/hunk/pull/652) - Skip inactive custom file-view preparation to reduce rerenders and retained memory in raw-diff reviews.
-
-- [#655](https://github.com/modem-dev/hunk/pull/655) - Keep delayed scroll alignment from changing the file selected by navigation.
-
-- [#645](https://github.com/modem-dev/hunk/pull/645) - Preserve one-line keyboard scrolling after clicking in the review stream.
-
-- [#599](https://github.com/modem-dev/hunk/pull/599) - Write `state.json` atomically and preserve unreadable state as `state.json.corrupt`.
-
-- [#573](https://github.com/modem-dev/hunk/pull/573) - Teach STML authors to compose within Hunk’s native note frame while preserving focused inset boxes.
-
-- [#598](https://github.com/modem-dev/hunk/pull/598) - Show Nix-aware update guidance instead of suggesting npm installation for the Nix package.
+- a9910f1: Pointing `--extension` or `[extensions] paths` at a directory that contains an `index.ts`/`index.js`/`index.mjs` now loads it as a single folder extension instead of scanning every file inside it as separate extensions.
+- 815f343: One keypress no longer triggers two actions when a modal surface and the focused widget both want it. In pager mode, opening a menu or the theme selector and pressing an arrow no longer scrolls the diff behind the dialog. Escape closing the Controls help or Agent skill overlay no longer wipes typed filter text, Enter on a menu item no longer also submits the focused filter, and F10 no longer pops the menu bar over an in-progress note draft. Global key handlers now answer one three-state ownership question (`notMine` / `mine` / `focused`) and consumption is enforced centrally, so a handler can no longer act on a key while leaving it live for the focused widget.
+- 6ccc3a6: Require reviews to opt into experimental STML agent-note rendering with `--experimental`. Normal reviews now use plain-text note fallbacks and reject live STML comments, while opted-in live sessions advertise the `stml` capability to agents.
+- dcf66e8: Label repo-root file runs with an in-place `./` sidebar header so root files remain visually distinct without changing review order.
+- 2458366: Reduce watch-mode startup cost on macOS and Windows by using bounded native recursive filesystem observation.
+- 53fcb2c: Show a transient startup footer notice when deprecated `custom_theme.syntax` colors are translated into approximate Shiki scopes.
+- d3d90d8: Restart stale session daemons during upgrades so rich STML comments reach live Hunk reviews.
+- afc2b89: Upgrade shell-quote to resolve the denial-of-service vulnerability and keep direct file watch refreshes responsive when filesystem events are missed.
+- 076ac6f: The extension authoring guide now documents the supported scrollbox ref contract for custom sidebars: hold a React ref to your `<scrollbox>`, give rows stable `id` props, and use `scrollChildIntoView` to follow the selection, with `scrollTop`/`viewport.height` and the scrollbar/viewport change events for pane geometry — the exact surface the built-in sidebar runs on, now committed as the supported way to scroll, follow, and window a third-party sidebar instead of being described as an unsupported gap.
+- 31fc677: Generate the hunk-review skill from the typed session command surface so agent docs cannot drift from the CLI. Fixes stale error quotes in the skill and documents previously missing flags (`--include-notes`, `--markup`, `--rationale`, `--author`) in session help and skill synopsis lines.
+- abb28e8: Skip inactive custom file-view preparation so ordinary raw-diff reviews avoid unnecessary rerenders and retain less memory during navigation.
+- 8e1f5fd: Keep scrolling one line at a time after a click in the review stream, instead of jumping several lines once the click handed keyboard focus to the scroll box.
+- 883fad7: Make Hunk's saved state (`state.json`) durable: writes now land atomically through a temp file and rename, and an unreadable state file is preserved as `state.json.corrupt` instead of being silently overwritten, so update notices and extension trust decisions are no longer lost to a torn or damaged write.
+- 1887d46: Teach STML authors to compose within Hunk's native note frame while preserving focused inset boxes.
+- cbf652e: Show Nix-aware update guidance instead of suggesting an npm install command for Hunk's Nix package.
 
 ## 0.17.7
 
