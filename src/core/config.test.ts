@@ -303,6 +303,27 @@ describe("config resolution", () => {
     }
   });
 
+  test("resolves the sidebar preference from config, CLI flags, and the auto default", () => {
+    const home = createTempDir("hunk-config-home-");
+    const repo = createTempDir("hunk-config-repo-");
+    createRepo(repo);
+
+    const resolveSidebar = (input: CliInput) =>
+      resolveConfiguredCliInput(input, { cwd: repo, env: { HOME: home } }).input.options.sidebar;
+
+    expect(resolveSidebar(createPatchPagerInput())).toBe("auto");
+
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(join(home, ".config", "hunk", "config.toml"), "sidebar = false\n");
+    expect(resolveSidebar(createPatchPagerInput())).toBe(false);
+    // `--sidebar` outranks the config layer.
+    expect(resolveSidebar(createPatchPagerInput({ sidebar: true }))).toBe(true);
+
+    // Values outside `true`, `false`, and "auto" fall back to the built-in default.
+    writeFileSync(join(home, ".config", "hunk", "config.toml"), 'sidebar = "always"\n');
+    expect(resolveSidebar(createPatchPagerInput())).toBe("auto");
+  });
+
   test("merges custom theme overrides from global and repo config", () => {
     const home = createTempDir("hunk-config-home-");
     const repo = createTempDir("hunk-config-repo-");
@@ -999,6 +1020,7 @@ describe("config resolution", () => {
         "tab_width = 8",
         "wrap_lines = true",
         "menu_bar = false",
+        "sidebar = true",
         "hunk_headers = false",
         "agent_notes = true",
         "copy_decorations = false",
@@ -1027,6 +1049,7 @@ describe("config resolution", () => {
     expect(bootstrap.initialTabWidth).toBe(8);
     expect(bootstrap.initialWrapLines).toBe(true);
     expect(bootstrap.initialShowMenuBar).toBe(false);
+    expect(bootstrap.initialSidebar).toBe(true);
     expect(bootstrap.initialShowHunkHeaders).toBe(false);
     expect(bootstrap.initialShowAgentNotes).toBe(true);
     expect(bootstrap.initialCopyDecorations).toBe(false);
