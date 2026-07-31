@@ -25,7 +25,7 @@ function ensureExecutable(target) {
   }
 }
 
-function run(target, args) {
+function run(target, args, options = {}) {
   ensureExecutable(target);
   const result = childProcess.spawnSync(target, args, {
     stdio: "inherit",
@@ -34,10 +34,20 @@ function run(target, args) {
 
   if (result.error) {
     console.error(result.error.message);
-    process.exit(1);
+    return { status: 1 };
   }
 
-  process.exit(typeof result.status === "number" ? result.status : 1);
+  if (options.fallbackOnSigill && result.signal === "SIGILL") {
+    return null;
+  }
+
+  return { status: typeof result.status === "number" ? result.status : 1 };
+}
+
+function exitIfHandled(result) {
+  if (result) {
+    process.exit(result.status);
+  }
 }
 
 function hostCandidates() {
@@ -116,19 +126,19 @@ if (forwardedArgs.length === 2 && forwardedArgs[0] === "skill" && forwardedArgs[
 
 const overrideBinary = process.env.HUNK_BIN_PATH;
 if (overrideBinary) {
-  run(overrideBinary, forwardedArgs);
+  exitIfHandled(run(overrideBinary, forwardedArgs));
 }
 
 const scriptDir = path.dirname(fs.realpathSync(__filename));
 const prebuiltBinary = findInstalledBinary(scriptDir);
 if (prebuiltBinary) {
-  run(prebuiltBinary, forwardedArgs);
+  exitIfHandled(run(prebuiltBinary, forwardedArgs, { fallbackOnSigill: true }));
 }
 
 const bunBinary = bundledBunRuntime();
 if (bunBinary) {
   const entrypoint = path.join(__dirname, "..", "dist", "npm", "main.js");
-  run(bunBinary, [entrypoint, ...forwardedArgs]);
+  exitIfHandled(run(bunBinary, [entrypoint, ...forwardedArgs]));
 }
 
 const printablePackages = hostCandidates()
