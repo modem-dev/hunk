@@ -55,8 +55,7 @@ const EXTENSIONS_CARD = `
 const OUTRO_CARD = `
   <h2>hunk beta — out now</h2>
   <div class="cmds">
-    <div class="cmd"><span class="p">❯</span> npm i -g hunkdiff</div>
-    <div class="cmd"><span class="p">❯</span> brew install hunk</div>
+    <div class="cmd"><span class="p">❯</span> npm i -g hunkdiff@beta</div>
   </div>
   <div class="foot">STML notes: --experimental &nbsp;·&nbsp; extensions: docs/extensions.md &nbsp;·&nbsp; github.com/modem-dev/hunk</div>
 `;
@@ -143,7 +142,7 @@ const SHOTS = [
     title: TRIAGE_TITLE,
     dur: 3.4,
     capKey: "board",
-    caption: `a live triage board — <span class="hl">state, events, theme</span> in one API`,
+    caption: `<span class="dim">example:</span> a live triage board — <span class="hl">state, events, theme</span> in one API`,
   },
   {
     kind: "term",
@@ -159,7 +158,7 @@ const SHOTS = [
     title: GALLERY_TITLE,
     dur: 3.6,
     capKey: "swatches",
-    caption: `press <span class="hl">F8</span> — a CSS palette becomes swatches`,
+    caption: `<span class="dim">example:</span> press <span class="hl">F8</span> — a CSS palette becomes swatches`,
   },
   {
     kind: "term",
@@ -167,7 +166,7 @@ const SHOTS = [
     title: GALLERY_TITLE,
     dur: 3.2,
     capKey: "semver",
-    caption: `dependency bumps, highlighted by <span class="hl">semver</span>`,
+    caption: `<span class="dim">example:</span> dependency bumps, highlighted by <span class="hl">semver</span>`,
   },
   { kind: "card", html: OUTRO_CARD, dur: 4.8, enter: true },
 ];
