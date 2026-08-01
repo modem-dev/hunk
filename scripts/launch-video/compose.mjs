@@ -1,0 +1,249 @@
+// Composites captured terminal keyframes into the launch-video frame sequence.
+//
+// Renders scripts/launch-video/stage.html in headless Chromium, drives it
+// through the storyboard below, screenshots each unique frame, and writes an
+// ffmpeg concat list with per-frame durations.
+//
+//   node scripts/launch-video/compose.mjs <workDir>
+//
+// <workDir> is the capture output dir (contains frames/ + manifest.json) and
+// must have a node_modules with playwright-core@1.56.x installed (matching the
+// preinstalled Chromium build). Composited frames land in <workDir>/out.
+import { createRequire } from "node:module";
+import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { pathToFileURL } from "node:url";
+
+const scriptDir = dirname(fileURLToPath(import.meta.url));
+const workDir = resolve(process.argv[2] ?? join(scriptDir, "../../.video-work"));
+const framesDir = join(workDir, "frames");
+const outDir = join(workDir, "out");
+mkdirSync(outDir, { recursive: true });
+
+const require = createRequire(join(workDir, "package.json"));
+const { chromium } = require("playwright-core");
+
+const FPS = 30;
+const CAPTION_ANIM_SECONDS = 0.45;
+
+const FONT_PATH = resolve(
+  scriptDir,
+  "../../node_modules/.bun/node_modules/ghostty-opentui/public/jetbrains-mono-nerd.ttf",
+);
+
+/** file:// URL for a captured terminal keyframe. */
+const frame = (name) => pathToFileURL(join(framesDir, `${name}.png`)).href;
+
+const STML_TITLE = "hunk patch — agent review";
+const CLI_TITLE = "zsh — authoring a note";
+const TRIAGE_TITLE = "hunk diff — review-triage extension";
+const GALLERY_TITLE = "hunk diff — file-view gallery extension";
+
+const OPEN_CARD = `
+  <div class="badge">BETA</div>
+  <h1>hunk</h1>
+  <div class="sub">review agent changesets — <span class="hl">in your terminal</span></div>
+`;
+
+const EXTENSIONS_CARD = `
+  <div class="badge">NEW</div>
+  <h2>Extensions</h2>
+  <div class="sub">one TypeScript file · <span class="hl">no build step</span></div>
+`;
+
+const OUTRO_CARD = `
+  <h2>hunk beta — out now</h2>
+  <div class="cmds">
+    <div class="cmd"><span class="p">❯</span> npm i -g hunkdiff</div>
+    <div class="cmd"><span class="p">❯</span> brew install hunk</div>
+  </div>
+  <div class="foot">STML notes: --experimental &nbsp;·&nbsp; extensions: docs/extensions.md &nbsp;·&nbsp; github.com/modem-dev/hunk</div>
+`;
+
+// One entry per storyboard shot. `capKey` identifies caption identity so a
+// caption only animates in when it actually changes between shots; `enter`
+// animates the whole surface (cards, and the first terminal reveal).
+const SHOTS = [
+  { kind: "card", html: OPEN_CARD, dur: 3.2, enter: true },
+  {
+    kind: "term",
+    img: "stml-review",
+    title: STML_TITLE,
+    dur: 3.0,
+    enter: true,
+    capKey: "notes",
+    caption: `Agent notes ride along with <span class="hl">every diff</span>`,
+  },
+  {
+    kind: "term",
+    img: "stml-notes",
+    title: STML_TITLE,
+    dur: 4.6,
+    capKey: "stml",
+    caption: `<span class="badge">NEW</span> STML — notes are <span class="hl">markup</span>, rendered as terminal UI`,
+  },
+  {
+    kind: "term",
+    img: "stml-scroll-4",
+    title: STML_TITLE,
+    dur: 0.25,
+    capKey: "stml",
+    captionFrom: "stml",
+  },
+  { kind: "term", img: "stml-scroll-9", title: STML_TITLE, dur: 0.25, capKey: "stml" },
+  {
+    kind: "term",
+    img: "stml-note-2",
+    title: STML_TITLE,
+    dur: 3.4,
+    capKey: "vocab",
+    caption: `badges · flow boxes · gauges · <span class="hl">code blocks</span>`,
+  },
+  {
+    kind: "term",
+    img: "cli-typing-10",
+    title: CLI_TITLE,
+    dur: 0.4,
+    capKey: "cli",
+    caption: `write it <span class="dim">→</span> preview it, straight from the CLI`,
+  },
+  { kind: "term", img: "cli-typing-22", title: CLI_TITLE, dur: 0.3, capKey: "cli" },
+  { kind: "term", img: "cli-typing-34", title: CLI_TITLE, dur: 0.3, capKey: "cli" },
+  { kind: "term", img: "cli-typed", title: CLI_TITLE, dur: 0.6, capKey: "cli" },
+  {
+    kind: "term",
+    img: "cli-rendered",
+    title: CLI_TITLE,
+    dur: 3.6,
+    capKey: "cli-out",
+    caption: `<span class="hl">hunk markup render</span> — the exact output your reviewer sees`,
+  },
+  { kind: "card", html: EXTENSIONS_CARD, dur: 2.6, enter: true },
+  {
+    kind: "term",
+    img: "triage-sidebar",
+    title: TRIAGE_TITLE,
+    dur: 3.4,
+    capKey: "sidebar",
+    caption: `<span class="badge">NEW</span> build <span class="hl">custom sidebars</span>`,
+  },
+  {
+    kind: "term",
+    img: "triage-select",
+    title: TRIAGE_TITLE,
+    dur: 2.8,
+    capKey: "dialogs",
+    caption: `register <span class="hl">commands & dialogs</span> on your own keys`,
+  },
+  { kind: "term", img: "triage-rationale", title: TRIAGE_TITLE, dur: 2.0, capKey: "dialogs" },
+  {
+    kind: "term",
+    img: "triage-board",
+    title: TRIAGE_TITLE,
+    dur: 3.4,
+    capKey: "board",
+    caption: `a live triage board — <span class="hl">state, events, theme</span> in one API`,
+  },
+  {
+    kind: "term",
+    img: "fileview-palette-raw",
+    title: GALLERY_TITLE,
+    dur: 2.6,
+    capKey: "fileview",
+    caption: `<span class="badge">NEW</span> replace any diff with a <span class="hl">custom file view</span>`,
+  },
+  {
+    kind: "term",
+    img: "fileview-palette-rendered",
+    title: GALLERY_TITLE,
+    dur: 3.6,
+    capKey: "swatches",
+    caption: `press <span class="hl">F8</span> — a CSS palette becomes swatches`,
+  },
+  {
+    kind: "term",
+    img: "fileview-deps-rendered",
+    title: GALLERY_TITLE,
+    dur: 3.2,
+    capKey: "semver",
+    caption: `dependency bumps, highlighted by <span class="hl">semver</span>`,
+  },
+  { kind: "card", html: OUTRO_CARD, dur: 4.8, enter: true },
+];
+
+async function main() {
+  // Bake the caption font into a work-dir copy of the stage.
+  const stageSource = readFileSync(join(scriptDir, "stage.html"), "utf8");
+  if (!existsSync(FONT_PATH)) {
+    throw new Error(`caption font not found: ${FONT_PATH}`);
+  }
+  const stagePath = join(workDir, "stage-built.html");
+  writeFileSync(
+    stageSource ? stagePath : stagePath,
+    stageSource.replace("FONT_URL", pathToFileURL(FONT_PATH).href),
+  );
+
+  const browser = await chromium.launch({
+    executablePath: "/opt/pw-browsers/chromium",
+    headless: true,
+    // Frame images load via file:// and get sampled through a canvas.
+    args: ["--allow-file-access-from-files"],
+  });
+  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+  await page.goto(pathToFileURL(stagePath).href);
+
+  const entries = [];
+  let frameIndex = 0;
+
+  async function emit(state, duration) {
+    await page.evaluate((s) => window.renderShot(s), state);
+    const file = `f${String(frameIndex).padStart(4, "0")}.png`;
+    await page.screenshot({ path: join(outDir, file) });
+    entries.push({ file, duration });
+    frameIndex += 1;
+  }
+
+  let previousCapKey = null;
+  for (const shot of SHOTS) {
+    const base =
+      shot.kind === "card"
+        ? { kind: "card", html: shot.html }
+        : { kind: "term", img: frame(shot.img), title: shot.title, caption: shot.caption ?? null };
+    const captionChanges = shot.kind === "term" && shot.caption && shot.capKey !== previousCapKey;
+    const animSeconds =
+      shot.enter || captionChanges ? Math.min(CAPTION_ANIM_SECONDS, shot.dur * 0.6) : 0;
+    const animFrames = Math.round(animSeconds * FPS);
+
+    for (let k = 0; k < animFrames; k += 1) {
+      const t = (k + 1) / animFrames;
+      await emit({ ...base, shotT: shot.enter ? t : 1, capT: captionChanges ? t : 1 }, 1 / FPS);
+    }
+    await emit({ ...base, shotT: 1, capT: 1 }, Math.max(shot.dur - animFrames / FPS, 1 / FPS));
+
+    if (shot.kind === "term" && shot.caption) {
+      previousCapKey = shot.capKey;
+    } else if (shot.kind === "card") {
+      previousCapKey = null;
+    }
+    console.log(`shot ${shot.kind === "term" ? shot.img : "card"} -> ${frameIndex} frames total`);
+  }
+
+  await browser.close();
+
+  // ffmpeg concat demuxer input; the last file is repeated per the format spec.
+  const lines = ["ffconcat version 1.0"];
+  for (const entry of entries) {
+    lines.push(`file '${join(outDir, entry.file)}'`);
+    lines.push(`duration ${entry.duration.toFixed(5)}`);
+  }
+  lines.push(`file '${join(outDir, entries[entries.length - 1].file)}'`);
+  writeFileSync(join(workDir, "concat.txt"), `${lines.join("\n")}\n`);
+
+  const total = entries.reduce((sum, entry) => sum + entry.duration, 0);
+  console.log(
+    `${entries.length} unique frames, ${total.toFixed(1)}s total -> ${join(workDir, "concat.txt")}`,
+  );
+}
+
+await main();
