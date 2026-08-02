@@ -317,6 +317,11 @@ export interface PatchCommandInput {
   kind: "patch";
   file?: string;
   text?: string;
+  /**
+   * Header label for in-memory patches that have no backing file, such as a
+   * pull request fetched via `hunk diff --pr`. Ignored when `file` is set.
+   */
+  label?: string;
   options: CommonOptions;
 }
 

@@ -432,7 +432,7 @@ async function loadPatchChangeset(
       ? await new Response(Bun.stdin.stream()).text()
       : await Bun.file(resolvePath(cwd, input.file)).text());
 
-  const label = input.file && input.file !== "-" ? input.file : "stdin patch";
+  const label = input.file && input.file !== "-" ? input.file : (input.label ?? "stdin patch");
   return normalizePatchChangeset(
     patchText,
     `Patch review: ${basename(label)}`,

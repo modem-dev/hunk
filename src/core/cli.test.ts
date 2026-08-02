@@ -186,6 +186,41 @@ describe("parseCli", () => {
     expect(cached).toMatchObject({ kind: "vcs", staged: true });
   });
 
+  test("parses a GitHub pull request into a patch review", async () => {
+    const originalSpawn = Bun.spawn;
+    const mutableBun = Bun as unknown as { spawn: typeof Bun.spawn };
+    const patch = "diff --git a/a b/a\n--- a/a\n+++ b/a\n@@ -1 +1 @@\n-x\n+y\n";
+
+    mutableBun.spawn = ((command: string[]) =>
+      originalSpawn(
+        [
+          process.execPath,
+          "--eval",
+          `process.stdout.write(${JSON.stringify(patch)});` +
+            `globalThis.__hunkPrArgs = ${JSON.stringify(command)};`,
+        ],
+        { stdin: "ignore", stdout: "pipe", stderr: "pipe" },
+      )) as typeof Bun.spawn;
+
+    try {
+      const parsed = await parseCli(["bun", "hunk", "diff", "--pr", "68"]);
+
+      expect(parsed).toMatchObject({
+        kind: "patch",
+        text: patch,
+        label: "PR #68",
+      });
+    } finally {
+      mutableBun.spawn = originalSpawn;
+    }
+  });
+
+  test("rejects combining --pr with a target", async () => {
+    await expect(parseCli(["bun", "hunk", "diff", "--pr", "68", "HEAD~1"])).rejects.toThrow(
+      /--pr` cannot be combined/,
+    );
+  });
+
   test("parses untracked file toggles for git diff", async () => {
     const excluded = await parseCli(["bun", "hunk", "diff", "--exclude-untracked"]);
     const included = await parseCli(["bun", "hunk", "diff", "--no-exclude-untracked"]);

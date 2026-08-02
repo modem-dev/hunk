@@ -49,6 +49,7 @@ review diffs or compare two concrete files
 hunk diff [target] [-- <pathspec...>]
 hunk diff --staged [-- <pathspec...>]
 hunk diff <left> <right>
+hunk diff --pr <number|url> [--repo <owner/repo>]
 ```
 
 ### Command-specific options
@@ -57,6 +58,8 @@ hunk diff <left> <right>
 | ------------------------ | --------------------------------------------------------------------------------------------- |
 | `--staged`               | show staged changes instead of the working tree                                               |
 | `--cached`               | alias for --staged                                                                            |
+| `--pr <number\|url>`     | review a GitHub pull request via `gh pr diff` (requires gh)                                   |
+| `--repo <owner/repo>`    | target repository for --pr (defaults to the current directory)                                |
 | `--exclude-untracked`    | exclude untracked files from working tree reviews                                             |
 | `--no-exclude-untracked` | include untracked files in working tree reviews Compatibility inverse; omitted from `--help`. |
 

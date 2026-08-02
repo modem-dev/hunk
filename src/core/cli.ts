@@ -31,6 +31,7 @@ import {
   RELOAD_SEPARATOR_MESSAGE,
 } from "../session/agent/errors";
 import { detectVcs } from "./vcs";
+import { fetchPullRequestPatch } from "./github";
 import { DEFAULT_TAB_WIDTH, parseTabWidth } from "./tabWidth";
 import { resolveCliVersion } from "./version";
 
@@ -96,6 +97,14 @@ export const WATCH_OPTION = {
 const DIFF_OPTIONS = [
   { flag: "--staged", description: "show staged changes instead of the working tree" },
   { flag: "--cached", description: "alias for --staged" },
+  {
+    flag: "--pr <number|url>",
+    description: "review a GitHub pull request via `gh pr diff` (requires gh)",
+  },
+  {
+    flag: "--repo <owner/repo>",
+    description: "target repository for --pr (defaults to the current directory)",
+  },
   AUXILIARY_AGENT_OPTIONS.excludeUntracked,
   {
     flag: `--no-${AUXILIARY_AGENT_OPTIONS.excludeUntracked.flag.slice(2)}`,
@@ -113,6 +122,7 @@ export const CLI_REFERENCE_COMMANDS = {
       "hunk diff [target] [-- <pathspec...>]",
       "hunk diff --staged [-- <pathspec...>]",
       "hunk diff <left> <right>",
+      "hunk diff --pr <number|url> [--repo <owner/repo>]",
     ],
     options: DIFF_OPTIONS,
     commonReviewOptions: true,
@@ -350,6 +360,7 @@ function renderCliHelp() {
     "  hunk diff [target] [-- <pathspec...>]   review working tree changes or compare against a target",
     "  hunk diff --staged [-- <pathspec...>]   review staged changes",
     "  hunk diff <left> <right>                compare two concrete files",
+    "  hunk diff --pr <number|url>             review a GitHub pull request (requires gh)",
     "  hunk show [target] [-- <pathspec...>]   review the last commit or a given target",
     "  hunk stash show [ref]                   review a stash entry (git only)",
     "  hunk patch [file]                       review a patch file or stdin",
@@ -629,6 +640,17 @@ async function parseDiffCommand(tokens: string[], argv: string[]): Promise<Parse
   const staged = Boolean(parsedOptions.staged) || Boolean(parsedOptions.cached);
   const options = buildCommonOptions(parsedOptions, argv);
   const normalizedPathspecs = pathspecs.length > 0 ? pathspecs : undefined;
+
+  const prRef = typeof parsedOptions.pr === "string" ? parsedOptions.pr : undefined;
+  if (prRef !== undefined) {
+    if (parsedTargets.length > 0 || staged || normalizedPathspecs) {
+      throw new Error("`--pr` cannot be combined with targets, `--staged`, or pathspecs.");
+    }
+
+    const repo = typeof parsedOptions.repo === "string" ? parsedOptions.repo : undefined;
+    const { text, label } = await fetchPullRequestPatch(prRef, repo);
+    return { kind: "patch", text, label, options };
+  }
 
   if (parsedTargets.length === 0) {
     return {
