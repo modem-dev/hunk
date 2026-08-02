@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { DiffFileHeaderRow } from "../ui/components/panes/DiffFileHeaderRow";
+import { maxFileHeaderStatsWidth } from "../ui/lib/fileHeader";
 import { resolveTheme } from "../ui/themes";
 import { toInternalDiffFile } from "./model";
 import type { HunkDiffFileHeaderProps } from "./types";
@@ -13,16 +14,12 @@ export function HunkDiffFileHeader({
 }: HunkDiffFileHeaderProps) {
   const resolvedTheme = resolveTheme(theme, null);
   const internalFile = useMemo(() => toInternalDiffFile(file), [file]);
-  const headerStatsWidth = Math.max(
-    7,
-    `+${internalFile.stats.additions}${internalFile.statsTruncated ? "+" : ""} -${internalFile.stats.deletions}`
-      .length,
-  );
+  const headerStatsWidth = maxFileHeaderStatsWidth([internalFile]);
 
   return (
     <DiffFileHeaderRow
       file={internalFile}
-      headerLabelWidth={Math.max(1, width - headerStatsWidth - 2)}
+      headerLabelWidth={Math.max(0, width - 2 - headerStatsWidth - 1)}
       headerStatsWidth={headerStatsWidth}
       theme={resolvedTheme}
       onSelect={onSelect}

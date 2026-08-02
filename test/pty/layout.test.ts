@@ -186,6 +186,31 @@ describe("PTY layout", () => {
     }
   });
 
+  test("narrow terminals preserve stats and use three dots for truncated file paths", async () => {
+    const fixture = harness.createNarrowHeaderTestRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "auto"],
+      cwd: fixture.dir,
+      cols: 40,
+      rows: 12,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+      const snapshot = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("packages/visual-studio-cod... +1 -1"),
+        5_000,
+      );
+
+      expect(snapshot).not.toContain("packages/visual-studio-code-.");
+    } finally {
+      session.close();
+    }
+  });
+
   test("auto layout responds to live terminal resize in a real PTY", async () => {
     const fixture = harness.createTwoFileRepoFixture();
     const session = await harness.launchHunk({

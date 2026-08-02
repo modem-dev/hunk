@@ -95,6 +95,7 @@ import {
   type SidebarPlacement,
 } from "./lib/sidebarPanes";
 import { nextExtensionTrustPromptRoot } from "./lib/extensionTrustPrompt";
+import { maxFileHeaderStatsWidth } from "./lib/fileHeader";
 import { openSelectedFileInEditor } from "./lib/openInEditor";
 import { resolveResponsiveLayout } from "./lib/responsive";
 import { resizeSidebarWidth } from "./lib/sidebar";
@@ -902,8 +903,10 @@ export function App({
     ],
   );
   const renderSidebar = sidebarLayout.left.length + sidebarLayout.right.length > 0;
-  const diffPaneWidth = Math.max(DIFF_MIN_WIDTH, bodyWidth - sidebarLayout.totalWidth);
-  const diffContentWidth = Math.max(12, diffPaneWidth - 2);
+  // DIFF_MIN_WIDTH reserves room while planning sidebars; the pane itself must
+  // still fit terminals narrower than that preferred minimum.
+  const diffPaneWidth = Math.max(0, bodyWidth - sidebarLayout.totalWidth);
+  const diffContentWidth = Math.max(0, diffPaneWidth - 2);
   // Mirrors toggleSidebar's reveal half: visible again, forced open when the
   // responsive layout alone would keep it hidden and the terminal has room.
   revealSidebarAreaRef.current = () => {
@@ -1880,9 +1883,9 @@ export function App({
     0,
   );
   const topTitle = `${bootstrap.changeset.title}  +${totalAdditions}  -${totalDeletions}`;
-  const diffHeaderStatsWidth = Math.min(24, Math.max(16, Math.floor(diffContentWidth / 3)));
-  const diffHeaderLabelWidth = Math.max(8, diffContentWidth - diffHeaderStatsWidth - 1);
-  const diffSeparatorWidth = Math.max(4, diffContentWidth - 2);
+  const diffHeaderStatsWidth = maxFileHeaderStatsWidth(filteredFiles);
+  const diffHeaderLabelWidth = Math.max(0, diffContentWidth - diffHeaderStatsWidth - 1);
+  const diffSeparatorWidth = Math.max(0, diffContentWidth - 2);
   // Mirror the App layout: bodyPadding/2 left-padding, then every left pane
   // plus its divider. Keep this in lockstep with the body container's
   // paddingLeft and the sidebar render branch below.

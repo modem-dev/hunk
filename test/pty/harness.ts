@@ -540,6 +540,17 @@ export function createPtyHarness() {
     return { dir };
   }
 
+  /** Build the long-path fixture used to verify narrow file-header layout. */
+  function createNarrowHeaderTestRepoFixture() {
+    return createGitRepoFixture([
+      {
+        path: "packages/visual-studio-code-vscode/extension-postgres.ts",
+        before: "export const value = 1;\n",
+        after: "export const value = 2;\n",
+      },
+    ]);
+  }
+
   function createTwoFileRepoFixture() {
     return createGitRepoFixture([
       {
@@ -906,6 +917,7 @@ export function createPtyHarness() {
     createLongWrapFilePair,
     createMultiFilePagerPatchFixture,
     createMultiHunkFilePair,
+    createNarrowHeaderTestRepoFixture,
     createPagerPatchFixture,
     createPinnedHeaderRepoFixture,
     createScrollableFilePair,
