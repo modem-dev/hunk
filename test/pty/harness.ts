@@ -571,6 +571,31 @@ export function createPtyHarness() {
     return { dir, path, previousPath };
   }
 
+  /** Build issue #664's Elixir heredoc edit in a real source-backed Git review. */
+  function createElixirHeredocRepoFixture() {
+    const before = `defmodule Repro do
+  @doc """
+  Line one.
+  Line two.
+  Line three.
+  Line four.
+  Line five.
+  """
+  def hello do
+    :world
+  end
+end
+`;
+
+    return createGitRepoFixture([
+      {
+        path: "repro.ex",
+        before,
+        after: before.replace("Line five.", "Line five, edited."),
+      },
+    ]);
+  }
+
   function createTwoFileRepoFixture() {
     return createGitRepoFixture([
       {
@@ -931,6 +956,7 @@ export function createPtyHarness() {
     createExpandableContextFilePair,
     createCrossFileHunkNavigationRepoFixture,
     createDeletionOnlyFilePair,
+    createElixirHeredocRepoFixture,
     createIsolatedConfigHome,
     createRepoExtensionFixture,
     createLinkedWorktreeWatchFixture,

@@ -16,6 +16,11 @@ import { sanitizeTerminalLine } from "../../lib/terminalText";
 import { TRANSPARENT_BACKGROUND, type AppTheme } from "../themes";
 import { expandDiffTabs } from "./codeColumns";
 import {
+  createSourceBackedHighlightPlan,
+  remapSourceBackedHighlight,
+  type SourceBackedHighlightPlan,
+} from "./sourceBackedHighlight";
+import {
   ensureSyntaxHighlightThemeRegistered,
   syntaxHighlightThemeName,
 } from "./syntaxHighlightTheme";
@@ -593,38 +598,97 @@ function aliasHighlightedContextLines(file: DiffFile, highlighted: HighlightedDi
   return highlighted;
 }
 
+/** Load and validate authoritative source snapshots for one partial diff when available. */
+async function loadSourceBackedHighlightPlan(file: DiffFile) {
+  if (!file.metadata.isPartial || !file.sourceFetcher || file.metadata.hunks.length === 0) {
+    return null;
+  }
+
+  try {
+    const [oldText, newText] = await Promise.all([
+      file.sourceFetcher.getFullText("old"),
+      file.sourceFetcher.getFullText("new"),
+    ]);
+    return createSourceBackedHighlightPlan(file.metadata, oldText, newText);
+  } catch {
+    // Full-source highlighting is an enhancement over the patch-only path. Source races,
+    // unavailable sides, and size limits must fall back without hiding the visible diff.
+    return null;
+  }
+}
+
+/** Convert Pierre output into partial-diff line indexes without losing side-specific grammar state. */
+function finalizeHighlightedDiff(
+  file: DiffFile,
+  sourcePlan: SourceBackedHighlightPlan | null,
+  highlighted: ReturnType<typeof renderDiffWithHighlighter>,
+): HighlightedDiffCode {
+  const code = {
+    deletionLines: highlighted.code.deletionLines as Array<HastNode | undefined>,
+    additionLines: highlighted.code.additionLines as Array<HastNode | undefined>,
+  };
+
+  // Full old/new sources can put identical context text in different lexical states. Preserve
+  // those authoritative per-side nodes; aliasing remains safe only for patch-fragment highlighting.
+  return sourcePlan
+    ? remapSourceBackedHighlight(sourcePlan, code)
+    : aliasHighlightedContextLines(file, code);
+}
+
+/** Render one metadata snapshot through an already prepared highlighter. */
+function renderHighlightedDiff(
+  file: DiffFile,
+  metadata: FileDiffMetadata,
+  highlighter: Awaited<ReturnType<typeof prepareHighlighter>>,
+  theme: HighlightThemeInput,
+  sourcePlan: SourceBackedHighlightPlan | null,
+) {
+  return queueHighlightedWork(() => {
+    const highlighted = renderDiffWithHighlighter(
+      metadata,
+      highlighter,
+      pierreRenderOptions(theme),
+    );
+    return finalizeHighlightedDiff(file, sourcePlan, highlighted);
+  });
+}
+
 /** Highlight a diff file and return just the rendered line trees the UI needs. */
 export async function loadHighlightedDiff(
   file: DiffFile,
   theme: HighlightThemeInput = "dark",
 ): Promise<HighlightedDiffCode> {
+  const sourcePlan = await loadSourceBackedHighlightPlan(file);
+
   try {
     const highlighter = await prepareHighlighter(file.language, theme);
-    return queueHighlightedWork(() => {
-      const highlighted = renderDiffWithHighlighter(
-        file.metadata,
+    try {
+      return await renderHighlightedDiff(
+        file,
+        sourcePlan?.metadata ?? file.metadata,
         highlighter,
-        pierreRenderOptions(theme),
+        theme,
+        sourcePlan,
       );
-      return aliasHighlightedContextLines(file, {
-        deletionLines: highlighted.code.deletionLines as Array<HastNode | undefined>,
-        additionLines: highlighted.code.additionLines as Array<HastNode | undefined>,
-      });
-    });
+    } catch (error) {
+      if (!sourcePlan) {
+        throw error;
+      }
+
+      // A validated source graft should render like ordinary complete-file metadata. If Pierre
+      // still rejects it, preserve the pre-existing patch-fragment behavior rather than blanking it.
+      return await renderHighlightedDiff(file, file.metadata, highlighter, theme, null);
+    }
   } catch {
     const fallbackTheme = highlightThemeAppearance(theme);
     const highlighter = await prepareHighlighter("text", fallbackTheme);
-    return queueHighlightedWork(() => {
-      const highlighted = renderDiffWithHighlighter(
-        { ...file.metadata, lang: "text" },
-        highlighter,
-        pierreRenderOptions(fallbackTheme),
-      );
-      return aliasHighlightedContextLines(file, {
-        deletionLines: highlighted.code.deletionLines as Array<HastNode | undefined>,
-        additionLines: highlighted.code.additionLines as Array<HastNode | undefined>,
-      });
-    });
+    return await renderHighlightedDiff(
+      file,
+      { ...file.metadata, lang: "text" },
+      highlighter,
+      fallbackTheme,
+      null,
+    );
   }
 }
 
