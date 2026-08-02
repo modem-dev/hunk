@@ -690,6 +690,37 @@ describe("loadAppBootstrap", () => {
     expect(paths).toHaveLength(fixtureFiles.length);
   });
 
+  test("loads exact tracked Unicode paths regardless of Git quoting", async () => {
+    const dir = createTempRepo("hunk-git-unicode-tracked-");
+    const relativePaths = [
+      "国際化/日本語-변경-🧪.txt",
+      ...(platform() === "win32" ? [] : ['国際化/tab\tquote"back\\🧪.txt']),
+    ];
+    mkdirSync(join(dir, "国際化"), { recursive: true });
+    for (const relativePath of relativePaths) {
+      writeFileSync(join(dir, ...relativePath.split("/")), "before\n");
+    }
+    git(dir, "add", ".");
+    git(dir, "commit", "-m", "initial");
+    git(dir, "config", "core.quotePath", "false");
+    for (const relativePath of relativePaths) {
+      writeFileSync(join(dir, ...relativePath.split("/")), "after\n");
+    }
+
+    const bootstrap = await loadFromRepo(dir, {
+      kind: "vcs",
+      staged: false,
+      options: { mode: "auto" },
+    });
+
+    for (const relativePath of relativePaths) {
+      const file = bootstrap.changeset.files.find((candidate) => candidate.path === relativePath);
+      expect(file?.metadata.name).toBe(relativePath);
+      expect(await file?.sourceFetcher?.getFullText("old")).toBe("before\n");
+      expect(await file?.sourceFetcher?.getFullText("new")).toBe("after\n");
+    }
+  });
+
   test("loads untracked files even when diff.external is configured in the repo", async () => {
     // Regression: a user-configured `diff.external` (e.g. difftastic) silently replaces
     // git's unified-diff output, which left the untracked-file synthesizer with patch
@@ -955,11 +986,12 @@ describe("loadAppBootstrap", () => {
     expect(bootstrap.changeset.files.map((file) => file.path)).toEqual(["alpha.ts"]);
   });
 
-  test("loads staged new files before the first commit", async () => {
+  test("loads staged new Unicode files before the first commit", async () => {
     const dir = createTempRepo("hunk-git-staged-unborn-");
+    const path = "追加-🧪.ts";
 
-    writeFileSync(join(dir, "alpha.ts"), "export const alpha = 1;\n");
-    git(dir, "add", "alpha.ts");
+    writeFileSync(join(dir, path), "export const alpha = 1;\n");
+    git(dir, "add", path);
 
     const bootstrap = await loadFromRepo(dir, {
       kind: "vcs",
@@ -968,7 +1000,7 @@ describe("loadAppBootstrap", () => {
     });
 
     const file = bootstrap.changeset.files[0];
-    expect(bootstrap.changeset.files.map((entry) => entry.path)).toEqual(["alpha.ts"]);
+    expect(bootstrap.changeset.files.map((entry) => entry.path)).toEqual([path]);
     expect(file?.metadata.type).toBe("new");
     expect(file?.sourceFetcher).toBeDefined();
     expect(await file?.sourceFetcher?.getFullText("old")).toBeNull();
@@ -1565,12 +1597,79 @@ describe("loadAppBootstrap", () => {
 
     expect(bootstrap.changeset.files).toHaveLength(1);
     expect(bootstrap.changeset.files[0]).toMatchObject({
-      path: "src\\tfile.txt",
-      metadata: { name: "src\\tfile.txt", type: "change" },
+      path: "src\tfile.txt",
+      metadata: { name: "src\tfile.txt", type: "change" },
     });
     expect(bootstrap.changeset.files[0]?.stats).toEqual({
       additions: 1,
       deletions: 1,
+    });
+  });
+
+  test("preserves trailing control characters in exact Git-quoted paths", async () => {
+    const escapedPath = String.raw`line\n`;
+    const bootstrap = await loadAppBootstrap({
+      kind: "patch",
+      text: [
+        `diff --git "a/${escapedPath}" "b/${escapedPath}"`,
+        `--- "a/${escapedPath}"`,
+        `+++ "b/${escapedPath}"`,
+        "@@ -1 +1 @@",
+        "-one",
+        "+two",
+      ].join("\n"),
+      options: { mode: "auto" },
+    });
+
+    expect(bootstrap.changeset.files[0]?.path).toBe("line\n");
+    expect(bootstrap.changeset.files[0]?.metadata.name).toBe("line\n");
+  });
+
+  test("decodes Git-quoted UTF-8 paths from external patch input", async () => {
+    const escapedPath = String.raw`\345\233\275\351\232\233\345\214\226/\346\227\245\346\234\254\350\252\236-\353\263\200\352\262\275-\360\237\247\252.txt`;
+    const path = "国際化/日本語-변경-🧪.txt";
+    const bootstrap = await loadAppBootstrap({
+      kind: "patch",
+      text: [
+        `diff --git "a/${escapedPath}" "b/${escapedPath}"`,
+        "index 5626abf..f719efd 100644",
+        `--- "a/${escapedPath}"`,
+        `+++ "b/${escapedPath}"`,
+        "@@ -1 +1 @@",
+        "-one",
+        "+two",
+        "",
+      ].join("\n"),
+      options: { mode: "auto" },
+    });
+
+    expect(bootstrap.changeset.files).toHaveLength(1);
+    expect(bootstrap.changeset.files[0]).toMatchObject({
+      path,
+      metadata: { name: path, type: "change" },
+    });
+    expect(bootstrap.changeset.files[0]?.patch).toContain(`diff --git a/${path} b/${path}`);
+  });
+
+  test("decodes both sides of Git-quoted UTF-8 rename metadata", async () => {
+    const escapedOldPath = String.raw`\346\227\245\346\234\254\350\252\236.txt`;
+    const escapedNewPath = String.raw`\355\225\234\352\265\255\354\226\264\360\237\247\252.txt`;
+    const bootstrap = await loadAppBootstrap({
+      kind: "patch",
+      text: [
+        `diff --git "a/${escapedOldPath}" "b/${escapedNewPath}"`,
+        "similarity index 100%",
+        `rename from "${escapedOldPath}"`,
+        `rename to "${escapedNewPath}"`,
+      ].join("\n"),
+      options: { mode: "auto" },
+    });
+
+    expect(bootstrap.changeset.files).toHaveLength(1);
+    expect(bootstrap.changeset.files[0]).toMatchObject({
+      path: "한국어🧪.txt",
+      previousPath: "日本語.txt",
+      metadata: { name: "한국어🧪.txt", prevName: "日本語.txt", type: "rename-pure" },
     });
   });
 
@@ -1862,12 +1961,13 @@ describe("loadAppBootstrap source fetcher attachment", () => {
     expect(await untracked?.sourceFetcher?.getFullText("old")).toBeNull();
   });
 
-  test("deleted files attach a fetcher with new=null and old reading the prior contents", async () => {
+  test("deleted Unicode files attach a fetcher with new=null and old source", async () => {
     const dir = createTempRepo("hunk-source-deleted-");
-    writeFileSync(join(dir, "victim.txt"), "going away\n");
-    git(dir, "add", "victim.txt");
+    const path = "削除-🧪.txt";
+    writeFileSync(join(dir, path), "going away\n");
+    git(dir, "add", path);
     git(dir, "commit", "-m", "add victim");
-    git(dir, "rm", "victim.txt");
+    git(dir, "rm", path);
     git(dir, "commit", "-m", "remove victim");
 
     const bootstrap = await loadFromRepo(dir, {
@@ -1877,20 +1977,21 @@ describe("loadAppBootstrap source fetcher attachment", () => {
     });
 
     const file = bootstrap.changeset.files[0];
+    expect(file?.path).toBe(path);
     expect(file?.metadata.type).toBe("deleted");
     expect(file?.sourceFetcher).toBeDefined();
     expect(await file?.sourceFetcher?.getFullText("new")).toBeNull();
     expect(await file?.sourceFetcher?.getFullText("old")).toBe("going away\n");
   });
 
-  test("renamed files read the old side from previousPath blob", async () => {
+  test("renamed Unicode files read the old side from previousPath blob", async () => {
     const dir = createTempRepo("hunk-source-renamed-");
-    writeFileSync(join(dir, "before.txt"), "shared\nold-only\nshared\n");
-    git(dir, "add", "before.txt");
+    writeFileSync(join(dir, "日本語.txt"), "shared\nold-only\nshared\n");
+    git(dir, "add", "日本語.txt");
     git(dir, "commit", "-m", "add before");
-    git(dir, "mv", "before.txt", "after.txt");
-    writeFileSync(join(dir, "after.txt"), "shared\nnew-only\nshared\n");
-    git(dir, "add", "after.txt");
+    git(dir, "mv", "日本語.txt", "한국어🧪.txt");
+    writeFileSync(join(dir, "한국어🧪.txt"), "shared\nnew-only\nshared\n");
+    git(dir, "add", "한국어🧪.txt");
     git(dir, "commit", "-m", "rename and modify");
 
     const bootstrap = await loadFromRepo(dir, {
@@ -1900,8 +2001,8 @@ describe("loadAppBootstrap source fetcher attachment", () => {
     });
 
     const file = bootstrap.changeset.files[0];
-    expect(file?.path).toBe("after.txt");
-    expect(file?.previousPath).toBe("before.txt");
+    expect(file?.path).toBe("한국어🧪.txt");
+    expect(file?.previousPath).toBe("日本語.txt");
     expect(file?.sourceFetcher).toBeDefined();
     expect(await file?.sourceFetcher?.getFullText("old")).toBe("shared\nold-only\nshared\n");
     expect(await file?.sourceFetcher?.getFullText("new")).toBe("shared\nnew-only\nshared\n");

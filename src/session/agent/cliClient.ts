@@ -1,3 +1,4 @@
+import { sanitizeTerminalText } from "../../lib/terminalText";
 import { resolveSessionBrokerConfig } from "../broker/brokerConfig";
 import type { SessionTerminalLocation, SessionTerminalMetadata } from "@hunk/session-broker-core";
 import { readHunkSessionDaemonCapabilities } from "../client/capabilities";
@@ -223,7 +224,9 @@ export function stringifyJson(value: unknown) {
 }
 
 function formatSelectedSummary(session: ListedSession) {
-  const filePath = session.snapshot.state.selectedFilePath ?? "(none)";
+  const filePath = session.snapshot.state.selectedFilePath
+    ? formatSessionPath(session.snapshot.state.selectedFilePath)
+    : "(none)";
   const hunkNumber = session.snapshot.state.selectedFilePath
     ? session.snapshot.state.selectedHunkIndex + 1
     : 0;
@@ -291,9 +294,9 @@ export function formatListOutput(sessions: ListedSession[]) {
     .map((session) => {
       const terminal = session.terminal;
       return [
-        `${session.sessionId}  ${session.title}`,
-        `  path: ${session.cwd}`,
-        `  repo: ${session.repoRoot ?? "-"}`,
+        `${session.sessionId}  ${formatSessionPath(session.title)}`,
+        `  path: ${formatSessionPath(session.cwd)}`,
+        `  repo: ${session.repoRoot ? formatSessionPath(session.repoRoot) : "-"}`,
         ...formatTerminalLines(terminal, {
           headerLabel: "  terminal",
           locationLabel: "  location",
@@ -306,15 +309,25 @@ export function formatListOutput(sessions: ListedSession[]) {
     .join("\n\n")}\n`;
 }
 
+/** Keep exact session paths in JSON while neutralizing controls in human-readable output. */
+function formatSessionPath(path: string) {
+  return sanitizeTerminalText(path, { preserveNewlines: false, preserveTabs: false });
+}
+
+/** Sanitize selectors because session-path targets can contain arbitrary filesystem characters. */
+function formatSessionSelector(selector: SessionSelectorInput) {
+  return formatSessionPath(describeSessionSelector(selector));
+}
+
 export function formatSessionOutput(session: ListedSession) {
   const terminal = session.terminal;
 
   return [
     `Session: ${session.sessionId}`,
-    `Title: ${session.title}`,
-    `Source: ${session.sourceLabel}`,
-    `Path: ${session.cwd}`,
-    `Repo: ${session.repoRoot ?? "-"}`,
+    `Title: ${formatSessionPath(session.title)}`,
+    `Source: ${formatSessionPath(session.sourceLabel)}`,
+    `Path: ${formatSessionPath(session.cwd)}`,
+    `Repo: ${session.repoRoot ? formatSessionPath(session.repoRoot) : "-"}`,
     `Input: ${session.inputKind}`,
     ...((session.experimentalFeatures?.length ?? 0) > 0
       ? [`Experimental features: ${session.experimentalFeatures!.join(", ")}`]
@@ -330,14 +343,16 @@ export function formatSessionOutput(session: ListedSession) {
     "Files:",
     ...session.files.map(
       (file) =>
-        `  - ${file.path} (+${file.additions} -${file.deletions}, hunks: ${file.hunkCount})`,
+        `  - ${formatSessionPath(file.path)} (+${file.additions} -${file.deletions}, hunks: ${file.hunkCount})`,
     ),
     "",
   ].join("\n");
 }
 
 export function formatContextOutput(context: SelectedSessionContext) {
-  const selectedFile = context.selectedFile?.path ?? "(none)";
+  const selectedFile = context.selectedFile?.path
+    ? formatSessionPath(context.selectedFile.path)
+    : "(none)";
   const hunkNumber = context.selectedHunk ? context.selectedHunk.index + 1 : 0;
   const oldRange = context.selectedHunk?.oldRange
     ? `${context.selectedHunk.oldRange[0]}..${context.selectedHunk.oldRange[1]}`
@@ -348,9 +363,9 @@ export function formatContextOutput(context: SelectedSessionContext) {
 
   return [
     `Session: ${context.sessionId}`,
-    `Title: ${context.title}`,
-    `Path: ${context.cwd ?? "-"}`,
-    `Repo: ${context.repoRoot ?? "-"}`,
+    `Title: ${formatSessionPath(context.title)}`,
+    `Path: ${context.cwd ? formatSessionPath(context.cwd) : "-"}`,
+    `Repo: ${context.repoRoot ? formatSessionPath(context.repoRoot) : "-"}`,
     `File: ${selectedFile}`,
     `Hunk: ${context.selectedHunk ? hunkNumber : "-"}`,
     `Old range: ${oldRange}`,
@@ -369,15 +384,17 @@ export function formatContextOutput(context: SelectedSessionContext) {
 
 /** Render one human-readable summary of the exported live session review model. */
 export function formatReviewOutput(review: SessionReview) {
-  const selectedFile = review.selectedFile?.path ?? "(none)";
+  const selectedFile = review.selectedFile?.path
+    ? formatSessionPath(review.selectedFile.path)
+    : "(none)";
   const hunkNumber = review.selectedHunk ? review.selectedHunk.index + 1 : "-";
 
   return [
     `Session: ${review.sessionId}`,
-    `Title: ${review.title}`,
-    `Source: ${review.sourceLabel}`,
-    `Path: ${review.cwd ?? "-"}`,
-    `Repo: ${review.repoRoot ?? "-"}`,
+    `Title: ${formatSessionPath(review.title)}`,
+    `Source: ${formatSessionPath(review.sourceLabel)}`,
+    `Path: ${review.cwd ? formatSessionPath(review.cwd) : "-"}`,
+    `Repo: ${review.repoRoot ? formatSessionPath(review.repoRoot) : "-"}`,
     `Input: ${review.inputKind}`,
     ...((review.experimentalFeatures?.length ?? 0) > 0
       ? [`Experimental features: ${review.experimentalFeatures!.join(", ")}`]
@@ -391,13 +408,14 @@ export function formatReviewOutput(review: SessionReview) {
       ? [
           "Notes:",
           ...review.reviewNotes.map(
-            (note) => `  - ${note.noteId} [${note.source}] ${note.filePath}: ${note.body}`,
+            (note) =>
+              `  - ${note.noteId} [${note.source}] ${formatSessionPath(note.filePath)}: ${note.body}`,
           ),
         ]
       : []),
     "Files:",
     ...review.files.flatMap((file) => [
-      `  - ${file.path} (+${file.additions} -${file.deletions}, hunks: ${file.hunkCount})`,
+      `  - ${formatSessionPath(file.path)} (+${file.additions} -${file.deletions}, hunks: ${file.hunkCount})`,
       ...file.hunks.map((hunk) => `      hunk ${hunk.index + 1}: ${hunk.header}`),
     ]),
     "",
@@ -408,14 +426,14 @@ export function formatNavigationOutput(
   selector: SessionSelectorInput,
   result: NavigatedSelectionResult,
 ) {
-  return `Focused ${result.filePath} hunk ${result.hunkIndex + 1} in ${describeSessionSelector(selector)}.\n`;
+  return `Focused ${formatSessionPath(result.filePath)} hunk ${result.hunkIndex + 1} in ${formatSessionSelector(selector)}.\n`;
 }
 
 export function formatReloadOutput(selector: SessionSelectorInput, result: ReloadedSessionResult) {
   const selected = result.selectedFilePath
-    ? `${result.selectedFilePath} hunk ${result.selectedHunkIndex + 1}`
+    ? `${formatSessionPath(result.selectedFilePath)} hunk ${result.selectedHunkIndex + 1}`
     : "(no files)";
-  return `Reloaded ${describeSessionSelector(selector)} with ${result.title} (${result.fileCount} files). Selected: ${selected}.\n`;
+  return `Reloaded ${formatSessionSelector(selector)} with ${formatSessionPath(result.title)} (${result.fileCount} files). Selected: ${selected}.\n`;
 }
 
 /** Format the STML render notes attached to one applied comment, if any. */
@@ -429,7 +447,7 @@ function formatMarkupNotes(result: AppliedCommentResult, indent = "") {
 
 export function formatCommentOutput(selector: SessionSelectorInput, result: AppliedCommentResult) {
   return `${[
-    `Added live comment ${result.commentId} on ${result.filePath}:${result.line} (${result.side}) in hunk ${result.hunkIndex + 1} for ${describeSessionSelector(selector)}.`,
+    `Added live comment ${result.commentId} on ${formatSessionPath(result.filePath)}:${result.line} (${result.side}) in hunk ${result.hunkIndex + 1} for ${formatSessionSelector(selector)}.`,
     ...formatMarkupNotes(result),
   ].join("\n")}\n`;
 }
@@ -439,13 +457,13 @@ export function formatCommentApplyOutput(
   result: AppliedCommentBatchResult,
 ) {
   if (result.applied.length === 0) {
-    return `Applied 0 live comments to ${describeSessionSelector(selector)}.\n`;
+    return `Applied 0 live comments to ${formatSessionSelector(selector)}.\n`;
   }
 
   return `${[
-    `Applied ${result.applied.length} live comments to ${describeSessionSelector(selector)}:`,
+    `Applied ${result.applied.length} live comments to ${formatSessionSelector(selector)}:`,
     ...result.applied.flatMap((comment) => [
-      `  - ${comment.commentId} on ${comment.filePath}:${comment.line} (${comment.side}) hunk ${comment.hunkIndex + 1}`,
+      `  - ${comment.commentId} on ${formatSessionPath(comment.filePath)}:${comment.line} (${comment.side}) hunk ${comment.hunkIndex + 1}`,
       ...formatMarkupNotes(comment, "    "),
     ]),
     "",
@@ -457,13 +475,13 @@ export function formatCommentListOutput(
   comments: SessionLiveCommentSummary[],
 ) {
   if (comments.length === 0) {
-    return `No live comments for ${describeSessionSelector(selector)}.\n`;
+    return `No live comments for ${formatSessionSelector(selector)}.\n`;
   }
 
   return `${comments
     .map((comment) =>
       [
-        `${comment.commentId}  ${comment.filePath}:${comment.line} (${comment.side})`,
+        `${comment.commentId}  ${formatSessionPath(comment.filePath)}:${comment.line} (${comment.side})`,
         `  hunk: ${comment.hunkIndex + 1}`,
         `  summary: ${comment.summary}`,
         ...(comment.author ? [`  author: ${comment.author}`] : []),
@@ -477,7 +495,7 @@ export function formatRemoveCommentOutput(
   result: RemovedCommentResult,
 ) {
   const label = result.source === "user" ? "user note" : "live comment";
-  return `Removed ${label} ${result.commentId} from ${describeSessionSelector(selector)}. Remaining comments: ${result.remainingCommentCount}.\n`;
+  return `Removed ${label} ${result.commentId} from ${formatSessionSelector(selector)}. Remaining comments: ${result.remainingCommentCount}.\n`;
 }
 
 export function formatNoteListOutput(
@@ -485,13 +503,13 @@ export function formatNoteListOutput(
   notes: SessionReviewNoteSummary[],
 ) {
   if (notes.length === 0) {
-    return `No review notes for ${describeSessionSelector(selector)}.\n`;
+    return `No review notes for ${formatSessionSelector(selector)}.\n`;
   }
 
   return `${notes
     .map((note) =>
       [
-        `${note.noteId}  ${note.filePath} [${note.source}]`,
+        `${note.noteId}  ${formatSessionPath(note.filePath)} [${note.source}]`,
         ...(note.hunkIndex !== undefined ? [`  hunk: ${note.hunkIndex + 1}`] : []),
         `  body: ${note.body}`,
         ...(note.author ? [`  author: ${note.author}`] : []),
@@ -505,8 +523,8 @@ export function formatClearCommentsOutput(
   result: ClearedCommentsResult,
 ) {
   const scope = result.filePath
-    ? `${result.filePath} in ${describeSessionSelector(selector)}`
-    : describeSessionSelector(selector);
+    ? `${formatSessionPath(result.filePath)} in ${formatSessionSelector(selector)}`
+    : formatSessionSelector(selector);
   const label = result.includeUser ? "comments" : "live comments";
   return `Cleared ${result.removedCount} ${label} from ${scope}. Remaining comments: ${result.remainingCommentCount}.\n`;
 }

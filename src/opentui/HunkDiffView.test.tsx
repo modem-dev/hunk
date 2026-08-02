@@ -171,6 +171,35 @@ describe("OpenTUI public components", () => {
     expect(files[0]?.patch).toContain("diff --git a/example.ts b/example.ts");
   });
 
+  test("decodes Git-quoted Unicode paths for public file models", () => {
+    const escapedPath = String.raw`\345\233\275\351\232\233\345\214\226/\346\227\245\346\234\254\350\252\236-\360\237\247\252.txt`;
+    const files = createHunkDiffFilesFromPatch(`diff --git "a/${escapedPath}" "b/${escapedPath}"
+--- "a/${escapedPath}"
++++ "b/${escapedPath}"
+@@ -1 +1 @@
+-before
++after
+`);
+
+    expect(files).toHaveLength(1);
+    expect(files[0]?.path).toBe("国際化/日本語-🧪.txt");
+    expect(files[0]?.metadata.name).toBe("国際化/日本語-🧪.txt");
+  });
+
+  test("preserves exact trailing controls from Git-quoted public patch paths", () => {
+    const escapedPath = String.raw`line\n`;
+    const files = createHunkDiffFilesFromPatch(`diff --git "a/${escapedPath}" "b/${escapedPath}"
+--- "a/${escapedPath}"
++++ "b/${escapedPath}"
+@@ -1 +1 @@
+-before
++after
+`);
+
+    expect(files[0]?.path).toBe("line\n");
+    expect(files[0]?.metadata.name).toBe("line\n");
+  });
+
   test("exports the bundled theme names", () => {
     expect(HUNK_DIFF_THEME_NAMES).toContain("github-dark-default");
     expect(HUNK_DIFF_THEME_NAMES).toContain("github-light-default");

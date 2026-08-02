@@ -83,6 +83,29 @@ describe("PTY layout", () => {
     }
   });
 
+  test("renamed CJK and emoji paths render as Unicode in the sidebar and file header", async () => {
+    const fixture = harness.createUnicodePathRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--staged", "--mode", "split"],
+      cwd: fixture.dir,
+      cols: 220,
+      rows: 16,
+    });
+
+    try {
+      const snapshot = await session.waitForText(/한국어-🧪\.txt/, {
+        timeout: 15_000,
+      });
+
+      expect(snapshot).toContain("国際化/");
+      expect(snapshot).toContain("日本語.txt");
+      expect(snapshot).toContain("한국어-🧪.txt");
+      expect(snapshot).not.toContain("\\345\\233\\275");
+    } finally {
+      session.close();
+    }
+  });
+
   test("the CLI tab width reaches interactive app rendering", async () => {
     const fixture = harness.createTabbedFilePair();
     const session = await harness.launchHunk({

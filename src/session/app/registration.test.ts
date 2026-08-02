@@ -74,6 +74,23 @@ describe("session registration", () => {
     });
   });
 
+  test("registration and initial selection preserve exact Unicode rename paths", () => {
+    const bootstrap = createBootstrap();
+    const file = bootstrap.changeset.files[0]!;
+    bootstrap.changeset.files = [
+      { ...file, path: "国際化/한국어-🧪.txt", previousPath: "国際化/日本語.txt" },
+    ];
+
+    const registration = createSessionRegistration(bootstrap);
+    const snapshot = createInitialSessionSnapshot(bootstrap);
+
+    expect(registration.info.files[0]).toMatchObject({
+      path: "国際化/한국어-🧪.txt",
+      previousPath: "国際化/日本語.txt",
+    });
+    expect(snapshot.state.selectedFilePath).toBe("国際化/한국어-🧪.txt");
+  });
+
   // Intent: reloads refresh review metadata without changing the live session identity.
   test("updateSessionRegistration preserves identity while refreshing input metadata", () => {
     const current = createSessionRegistration(createBootstrap());

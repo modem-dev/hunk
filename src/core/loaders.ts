@@ -11,7 +11,7 @@ import { createSkippedBinaryMetadata, isProbablyBinaryFile } from "./binary";
 import { buildDiffFile, type BuildDiffFileOptions, type DiffFileSourceContext } from "./diffFile";
 import { createFileSourceFetcher, type FileSourceSpec } from "./fileSource";
 import { splitPatchIntoFileChunks, findPatchChunk } from "./patch/chunks";
-import { normalizePatchText, stripTerminalControl } from "./patch/normalize";
+import { normalizePatch, stripTerminalControl } from "./patch/normalize";
 import { DEFAULT_TAB_WIDTH } from "./tabWidth";
 import { getConfiguredVcsAdapter, loadVcsReview, operationFromInput } from "./vcs";
 import type { VcsAdapter } from "./vcs/types";
@@ -220,7 +220,8 @@ function normalizePatchChangeset(
   perFileOptions?: Pick<BuildDiffFileOptions, "sourceFetcherBuilder">,
 ): Changeset {
   const lineMoveKinds = collectLineMoveKinds(patchText);
-  const normalizedPatchText = normalizePatchText(patchText);
+  const normalizedPatch = normalizePatch(patchText);
+  const normalizedPatchText = normalizedPatch.text;
 
   let parsedPatches: ReturnType<typeof parsePatchFiles>;
   try {
@@ -249,19 +250,25 @@ function normalizePatchChangeset(
         .filter(Boolean)
         .join("\n\n") || undefined,
     agentSummary: agentContext?.summary,
-    files: metadataFiles.map((metadata, index) =>
-      buildDiffFile(
-        metadata,
+    files: metadataFiles.map((metadata, index) => {
+      const decodedPaths = normalizedPatch.filePaths[index];
+      const normalizedMetadata = decodedPaths
+        ? { ...metadata, name: decodedPaths.path, prevName: decodedPaths.previousPath }
+        : metadata;
+
+      return buildDiffFile(
+        normalizedMetadata,
         findPatchChunk(metadata, chunks, index),
         index,
         sourceLabel,
         agentContext,
         {
           ...perFileOptions,
+          pathsAreExact: Boolean(decodedPaths),
           lineMoveKinds: hasLineMoveKinds(lineMoveKinds[index]) ? lineMoveKinds[index] : undefined,
         },
-      ),
-    ),
+      );
+    }),
   };
 }
 
