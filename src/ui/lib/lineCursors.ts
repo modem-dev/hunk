@@ -144,3 +144,92 @@ export function resolveLineCursor(
 
 /** Read one cursor's measured extent in whole-stream rows. */
 export type LineCursorBoundsLookup = (cursor: LineCursor) => VerticalBounds | undefined;
+
+/**
+ * Find the first cursor whose row starts at or after one stream offset.
+ *
+ * Cursor tops are non-decreasing, so both edges of the viewport resolve by binary search instead of
+ * a walk over every row in the changeset.
+ */
+function firstCursorIndexFrom(
+  cursors: LineCursor[],
+  boundsOf: LineCursorBoundsLookup,
+  offset: number,
+) {
+  let low = 0;
+  let high = cursors.length;
+
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    const bounds = boundsOf(cursors[middle]!);
+    if (bounds && bounds.top >= offset) {
+      high = middle;
+    } else {
+      low = middle + 1;
+    }
+  }
+
+  return low;
+}
+
+/** Find the last cursor whose row ends at or before one stream offset. */
+function lastCursorIndexBefore(
+  cursors: LineCursor[],
+  boundsOf: LineCursorBoundsLookup,
+  offset: number,
+) {
+  let low = 0;
+  let high = cursors.length;
+
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    const bounds = boundsOf(cursors[middle]!);
+    if (bounds && bounds.top + bounds.height > offset) {
+      high = middle;
+    } else {
+      low = middle + 1;
+    }
+  }
+
+  return low - 1;
+}
+
+/**
+ * Keep the current line inside the viewport after the reviewer scrolls past it.
+ *
+ * Paging and wheel scrolling move the viewport without the marker, so the marker follows only once
+ * it would otherwise be off screen, landing on the nearest row it left through.
+ */
+export function clampLineCursorToViewport({
+  boundsOf,
+  current,
+  cursors,
+  scrollTop,
+  viewportHeight,
+}: {
+  boundsOf: LineCursorBoundsLookup;
+  current: LineCursor | null;
+  cursors: LineCursor[];
+  scrollTop: number;
+  viewportHeight: number;
+}): LineCursor | null {
+  if (cursors.length === 0 || viewportHeight <= 0) {
+    return current;
+  }
+
+  const viewportBottom = scrollTop + viewportHeight;
+  const currentBounds = current ? boundsOf(current) : undefined;
+  if (
+    currentBounds &&
+    currentBounds.top >= scrollTop &&
+    currentBounds.top + currentBounds.height <= viewportBottom
+  ) {
+    return current;
+  }
+
+  const scrolledPastAbove = !currentBounds || currentBounds.top < scrollTop;
+  const index = scrolledPastAbove
+    ? firstCursorIndexFrom(cursors, boundsOf, scrollTop)
+    : lastCursorIndexBefore(cursors, boundsOf, viewportBottom);
+  return cursors[Math.min(Math.max(index, 0), cursors.length - 1)] ?? null;
+}

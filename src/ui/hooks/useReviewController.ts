@@ -178,6 +178,7 @@ export interface ReviewController {
   userNotesByFileId: Record<string, UserReviewNote[]>;
   lineCursor: LineCursor | null;
   lineCursorRevealRequestId: number;
+  anchorLineCursor: (cursor: LineCursor) => void;
   moveLineCursor: (delta: number) => void;
   moveToAnnotatedFile: (delta: number) => void;
   moveToAnnotatedHunk: (delta: number) => void;
@@ -436,6 +437,15 @@ export function useReviewController({
   useEffect(() => {
     reconcileLineCursor();
   }, [reconcileLineCursor]);
+
+  /** Adopt a current line the viewport already settled on, without scrolling back to it. */
+  const anchorLineCursor = useCallback(
+    (cursor: LineCursor) => {
+      applyLineCursor(cursor);
+      selectHunk(cursor.fileId, cursor.hunkIndex, { preserveViewport: true });
+    },
+    [applyLineCursor, selectHunk],
+  );
 
   /** Move the current line one row through the visible review stream. */
   const moveLineCursor = useCallback(
@@ -1173,6 +1183,7 @@ export function useReviewController({
     visibleFiles,
     addLiveComment,
     addLiveCommentBatch,
+    anchorLineCursor,
     clearFilter,
     cancelDraftNote,
     clearLiveComments,

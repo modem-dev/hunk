@@ -1876,6 +1876,7 @@ export function App({
             review.selectHunk(fileId, hunkIndex, { preserveViewport: true })
           }
           onLineCursorsChange={setLineCursors}
+          onViewportLineCursorChange={review.anchorLineCursor}
         />
 
         {sidebarLayout.right.map((pane, index) => {
