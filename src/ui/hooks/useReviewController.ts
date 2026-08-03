@@ -266,6 +266,12 @@ export function useReviewController({
   // same pre-batch state and the cursor would advance a single row.
   const lineCursorRef = useRef<LineCursor | null>(null);
   const [lineCursorRevealRequestId, setLineCursorRevealRequestId] = useState(0);
+  // Expanding a gap is a request to read what it hid, so the marker moves to the first revealed
+  // line; collapsing puts it back where it was, but only if the collapse retired the row it is on.
+  const previousLineCursorsRef = useRef(lineCursors);
+  const revealExpandedFileIdRef = useRef<string | null>(null);
+  const restoreLineCursorRef = useRef<LineCursor | null>(null);
+  const lineCursorBeforeExpandRef = useRef(new Map<string, LineCursor>());
   const [scrollToNote, setScrollToNote] = useState(false);
   const [liveCommentsByFileId, setLiveCommentsByFileId] = useState<Record<string, LiveComment[]>>(
     {},
@@ -287,6 +293,10 @@ export function useReviewController({
   // waiting for React's state updater to commit.
   const sourceStatusRef = useRef(sourceStatusByFileId);
   sourceStatusRef.current = sourceStatusByFileId;
+  // Mirror the expansion set for the same reason: toggleGap has to know which way it is toggling
+  // before its own updater commits.
+  const expandedGapsRef = useRef(expandedGapsByFileId);
+  expandedGapsRef.current = expandedGapsByFileId;
   const sourceLoadRequestsRef = useRef(new Map<string, SourceLoadRequest>());
   const nextSourceLoadRequestIdRef = useRef(1);
 
@@ -422,7 +432,61 @@ export function useReviewController({
     setLineCursor(next);
   }, []);
 
+  /** Move the current line to a row the reviewer just asked to see, and scroll to it. */
+  const revealLineCursor = useCallback(
+    (cursor: LineCursor) => {
+      applyLineCursor(cursor);
+      setLineCursorRevealRequestId((current) => current + 1);
+      selectHunk(cursor.fileId, cursor.hunkIndex, { preserveViewport: true });
+    },
+    [applyLineCursor, selectHunk],
+  );
+
   const reconcileLineCursor = useCallback(() => {
+    // Expansion remeasures before its source text loads, so a toggle records what it wants and
+    // this waits for the list that actually carries the revealed rows. Each request survives until
+    // it resolves or the next toggle replaces it.
+    const previousCursors = previousLineCursorsRef.current;
+    previousLineCursorsRef.current = lineCursors;
+
+    const revealFileId = revealExpandedFileIdRef.current;
+    if (revealFileId !== null) {
+      const alreadyStopped = new Set(
+        previousCursors
+          .filter((cursor) => cursor.fileId === revealFileId)
+          .map((cursor) => cursor.stableKey),
+      );
+      const firstRevealed = lineCursors.find(
+        (cursor) => cursor.fileId === revealFileId && !alreadyStopped.has(cursor.stableKey),
+      );
+      if (firstRevealed) {
+        revealExpandedFileIdRef.current = null;
+        revealLineCursor(firstRevealed);
+        return;
+      }
+    }
+
+    // Only take the restore point when the collapse actually retired the row the marker was on;
+    // the reviewer may have stepped well clear of the gap since expanding it.
+    const restorePoint = restoreLineCursorRef.current;
+    const current = lineCursorRef.current;
+    if (
+      restorePoint &&
+      !(
+        current &&
+        lineCursors.some(
+          (cursor) => cursor.fileId === current.fileId && cursor.stableKey === current.stableKey,
+        )
+      )
+    ) {
+      const restored = resolveLineCursor(lineCursors, restorePoint);
+      if (restored) {
+        restoreLineCursorRef.current = null;
+        revealLineCursor(restored);
+        return;
+      }
+    }
+
     const resolved = resolveLineCursor(lineCursors, lineCursorRef.current);
     if (resolved?.fileId === selectedFileId && resolved?.hunkIndex === selectedHunkIndex) {
       applyLineCursor(resolved);
@@ -432,7 +496,7 @@ export function useReviewController({
     // Selection moved without the cursor, so `]` and the sidebar leave one review position
     // rather than stranding the marker in the hunk the reviewer just left.
     applyLineCursor(firstLineCursorInHunk(lineCursors, selectedFileId, selectedHunkIndex));
-  }, [applyLineCursor, lineCursors, selectedFileId, selectedHunkIndex]);
+  }, [applyLineCursor, lineCursors, revealLineCursor, selectedFileId, selectedHunkIndex]);
 
   useEffect(() => {
     reconcileLineCursor();
@@ -557,16 +621,31 @@ export function useReviewController({
         return;
       }
 
-      setExpandedGapsByFileId((prev) => {
-        const current = prev[fileId];
-        const next = new Set(current ?? []);
-        if (next.has(gapKey)) {
-          next.delete(gapKey);
-        } else {
-          next.add(gapKey);
+      // Decide against the mirror, not the state: a held `z` drains as one chunk and every toggle
+      // in the burst would otherwise read the same pre-batch expansion set.
+      const restorePointKey = `${fileId}:${gapKey}`;
+      const expanding = !expandedGapsRef.current[fileId]?.has(gapKey);
+      if (expanding) {
+        if (lineCursorRef.current) {
+          lineCursorBeforeExpandRef.current.set(restorePointKey, lineCursorRef.current);
         }
-        return { ...prev, [fileId]: next };
-      });
+        revealExpandedFileIdRef.current = fileId;
+        restoreLineCursorRef.current = null;
+      } else {
+        revealExpandedFileIdRef.current = null;
+        restoreLineCursorRef.current =
+          lineCursorBeforeExpandRef.current.get(restorePointKey) ?? null;
+        lineCursorBeforeExpandRef.current.delete(restorePointKey);
+      }
+
+      const nextGaps = new Set(expandedGapsRef.current[fileId] ?? []);
+      if (expanding) {
+        nextGaps.add(gapKey);
+      } else {
+        nextGaps.delete(gapKey);
+      }
+      expandedGapsRef.current = { ...expandedGapsRef.current, [fileId]: nextGaps };
+      setExpandedGapsByFileId((prev) => ({ ...prev, [fileId]: nextGaps }));
 
       // The fetcher caches its own resolved text; we mirror it into React state
       // as a tagged status so the UI can distinguish loading, loaded, and error
