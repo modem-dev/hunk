@@ -188,6 +188,7 @@ const EMPTY_EXPANDED_GAP_KEYS: ReadonlySet<string> = new Set();
 const EMPTY_EXPANDED_GAPS_BY_FILE_ID: Record<string, ReadonlySet<string>> = {};
 const EMPTY_FILE_VIEWS: ReadonlyMap<string, ResolvedFileViewLayout> = new Map();
 const EMPTY_SOURCE_STATUS_BY_FILE_ID: Record<string, FileSourceStatus> = {};
+const EMPTY_LINE_CURSORS: LineCursor[] = [];
 const NOOP_TOGGLE_GAP = () => {};
 
 /** Render the main multi-file review stream. */
@@ -826,8 +827,10 @@ export function DiffPane({
 
   // The measured stream is what the reviewer actually sees, so it is also what `j` and `k` walk.
   const lineCursors = useMemo(
-    () => buildLineCursors(files, sectionGeometry),
-    [files, sectionGeometry],
+    // Nothing reads the stops while the marker is off, and enumerating them costs one object per
+    // rendered row of the whole changeset every time geometry is remeasured.
+    () => (cursorLine === "off" ? EMPTY_LINE_CURSORS : buildLineCursors(files, sectionGeometry)),
+    [cursorLine, files, sectionGeometry],
   );
   /** Locate one measured row in whole-stream rows, addressed by its file and plan anchor. */
   const rowBoundsInStream = useCallback(
