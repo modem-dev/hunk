@@ -121,9 +121,9 @@ describe("file-view geometry", () => {
     });
 
     expect(geometry.fileViewRows).toBe(plan.rows);
-    expect(geometry.rowBounds.map((row) => row.height)).toEqual([noteHeight, 2]);
+    expect(geometry.rowBounds.map((row) => row.height)).toEqual([2, noteHeight]);
     expect(geometry.bodyHeight).toBe(noteHeight + 2);
-    expect(geometry.hunkAnchorRows.get(0)).toBe(noteHeight);
+    expect(geometry.hunkAnchorRows.get(0)).toBe(0);
     expect(geometry.hunkBounds.get(0)).toMatchObject({ top: 0, height: noteHeight + 2 });
   });
 

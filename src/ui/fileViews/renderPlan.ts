@@ -111,21 +111,6 @@ export function buildFileViewRenderPlan(
   const rows: PlannedFileViewRow[] = [];
   const claimedLineKeys = new Set<string>();
   for (const [rowIndex, row] of layout.rows.entries()) {
-    const anchoredNotes = notesByRow.get(rowIndex) ?? [];
-    for (const [noteIndex, placement] of anchoredNotes.entries()) {
-      rows.push({
-        kind: "inline-note",
-        key: `inline-note:${placement.note.id}:file-view:${row.id}:${noteIndex}`,
-        stableKey: `inline-note:${placement.note.id}`,
-        annotation: placement.note.annotation,
-        anchorRowIndex: rowIndex,
-        anchorSide: placement.anchorSide,
-        hunkIndex: placement.hunkIndex,
-        note: placement.note,
-        noteCount: anchoredNotes.length,
-        noteIndex,
-      });
-    }
     const key = `file-view:${row.id}`;
     const lineKey = rowLineStableKey(row, hunkOwnerByRow[rowIndex]!);
     // Only the first row on a line claims it, matching how measured bounds resolve duplicates.
@@ -142,6 +127,22 @@ export function buildFileViewRenderPlan(
       row,
       rowIndex,
     });
+
+    const anchoredNotes = notesByRow.get(rowIndex) ?? [];
+    for (const [noteIndex, placement] of anchoredNotes.entries()) {
+      rows.push({
+        kind: "inline-note",
+        key: `inline-note:${placement.note.id}:file-view:${row.id}:${noteIndex}`,
+        stableKey: `inline-note:${placement.note.id}`,
+        annotation: placement.note.annotation,
+        anchorRowIndex: rowIndex,
+        anchorSide: placement.anchorSide,
+        hunkIndex: placement.hunkIndex,
+        note: placement.note,
+        noteCount: anchoredNotes.length,
+        noteIndex,
+      });
+    }
   }
 
   return {

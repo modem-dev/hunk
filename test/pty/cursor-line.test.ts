@@ -104,9 +104,9 @@ describe("PTY current line", () => {
       await session.press("c");
       const draft = await session.waitForText(/Draft note/, { timeout: 5_000 });
 
-      // The revealed line is a stop of its own, so the card lands above it rather than above the
+      // The revealed line is a stop of its own, so the card lands under it rather than under the
       // first line the parsed hunk knows about.
-      expect(lineIndexOf(draft, "Draft note")).toBeLessThan(lineIndexOf(draft, "hiddenLine01"));
+      expect(lineIndexOf(draft, "Draft note")).toBe(lineIndexOf(draft, "hiddenLine01") + 1);
     } finally {
       session.close();
     }

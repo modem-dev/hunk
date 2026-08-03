@@ -97,7 +97,7 @@ describe("FileView custom rows", () => {
     }
   });
 
-  test("renders a host-owned note immediately before its bound alternate row", async () => {
+  test("renders a host-owned note immediately after its bound alternate row", async () => {
     const file = createTestDiffFile({ id: "noted", path: "noted.ts" });
     const fileView = resolveTestLayout(
       {
@@ -140,7 +140,7 @@ describe("FileView custom rows", () => {
       const frame = setup.captureCharFrame();
       expect(frame).toContain("Review bound output");
       expect(frame).toContain("BOUND PRESENTATION");
-      expect(frame.indexOf("Review bound output")).toBeLessThan(
+      expect(frame.indexOf("Review bound output")).toBeGreaterThan(
         frame.indexOf("BOUND PRESENTATION"),
       );
       expect(

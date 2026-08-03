@@ -60,7 +60,7 @@ function firstInlineNote(plannedRows: PlannedReviewRow[]) {
 
 function inlineNoteAnchorRow(plannedRows: PlannedReviewRow[]) {
   const noteIndex = plannedRows.findIndex((row) => row.kind === "inline-note");
-  return noteIndex >= 0 ? plannedRows[noteIndex + 1] : undefined;
+  return noteIndex > 0 ? plannedRows[noteIndex - 1] : undefined;
 }
 
 function guidedSplitLineNumbers(plannedRows: PlannedReviewRow[], side: "old" | "new") {
@@ -74,7 +74,7 @@ function guidedSplitLineNumbers(plannedRows: PlannedReviewRow[], side: "old" | "
 }
 
 describe("review render plan", () => {
-  test("inserts an inline note before the anchor row and starts the guide after the anchor", () => {
+  test("inserts an inline note after the anchor row and starts the guide below the note", () => {
     const theme = resolveTheme("github-dark-default", null);
     const file = createDiffFile(
       "alpha",
@@ -120,7 +120,7 @@ describe("review render plan", () => {
     expect(guidedSplitLineNumbers(plannedRows, "new")).toEqual([3]);
   });
 
-  test("anchors deletion-only notes to old-side rows without a dangling guide below the note", () => {
+  test("anchors deletion-only notes to old-side rows without a dangling guide above the note", () => {
     const theme = resolveTheme("github-dark-default", null);
     const file = createDiffFile(
       "deleted",
