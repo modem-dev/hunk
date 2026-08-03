@@ -72,6 +72,7 @@ import {
 import { buildAppMenus } from "./lib/appMenus";
 import { buildExtensionAppCommands, extensionCommandKeyDefaults } from "./lib/extensionCommands";
 import { createGuardedReviewNavigation } from "./lib/extensionNavigation";
+import type { LineCursor } from "./lib/lineCursors";
 import { buildExtensionReviewSelection } from "./lib/extensionSelection";
 import { useFileViewLayouts } from "./fileViews/useFileViews";
 import type { FileViewRowFailure } from "./components/panes/FileView";
@@ -113,6 +114,7 @@ type ThemeSelectorState = {
 };
 
 const FAST_CODE_HORIZONTAL_SCROLL_COLUMNS = 8;
+const EMPTY_LINE_CURSORS: LineCursor[] = [];
 
 /**
  * Trailing debounce before one `selection_changed` event is emitted.
@@ -339,11 +341,11 @@ export function App({
   // App computes layout geometry below this hook call, so the controller reads
   // the current values through a ref instead of a render-time parameter.
   const noteGeometryRef = useRef<AgentNoteGeometrySnapshot | null>(null);
-  const responsiveLayout = resolveResponsiveLayout(layoutMode, terminal.width);
-  const resolvedLayout = responsiveLayout.layout;
+  // The diff pane measures the review stream, so it is the one that can enumerate navigable lines.
+  const [lineCursors, setLineCursors] = useState<LineCursor[]>(EMPTY_LINE_CURSORS);
   const review = useReviewController({
     files: reviewFiles,
-    layout: resolvedLayout,
+    lineCursors,
     noteGeometry: noteGeometryRef,
     stmlEnabled,
   });
@@ -866,9 +868,11 @@ export function App({
 
   const bodyPadding = pagerMode ? 0 : BODY_PADDING;
   const bodyWidth = Math.max(0, terminal.width - bodyPadding);
+  const responsiveLayout = resolveResponsiveLayout(layoutMode, terminal.width);
   const canForceShowSidebar = bodyWidth >= SIDEBAR_MIN_WIDTH + DIVIDER_WIDTH + DIFF_MIN_WIDTH;
   const sidebarAreaVisible =
     sidebarVisible && (responsiveLayout.showSidebar || (forceSidebarOpen && canForceShowSidebar));
+  const resolvedLayout = responsiveLayout.layout;
   const reportedLayoutRef = useRef<string | undefined>(undefined);
   useEffect(() => {
     const signature = `${layoutMode}:${resolvedLayout}`;
@@ -2086,6 +2090,7 @@ export function App({
           onViewportCenteredHunkChange={(fileId, hunkIndex) =>
             review.selectHunk(fileId, hunkIndex, { preserveViewport: true })
           }
+          onLineCursorsChange={setLineCursors}
         />
 
         {sidebarLayout.right.map((pane, index) => {

@@ -24,6 +24,7 @@ import type {
 import type { LineCursor } from "../../lib/lineCursors";
 import type { FileSourceStatus } from "../../diff/expandCollapsedRows";
 import type { ActiveAddNoteAffordance } from "../../diff/PierreDiffView";
+import type { CursorHighlight } from "../../diff/renderRows";
 import type { DraftReviewNote } from "../../hooks/useReviewController";
 import {
   alwaysShowReviewNote,
@@ -35,7 +36,7 @@ import {
   RAPID_SCROLL_OVERSCAN_IDLE_MS,
 } from "../../lib/adaptiveScrollOverscan";
 import { computeHunkRevealScrollTop, computeLineRevealScrollTop } from "../../lib/hunkScroll";
-import { lineStableKey } from "../../diff/reviewRenderPlan";
+import { buildLineCursors, type LineCursorBoundsLookup } from "../../lib/lineCursors";
 import {
   measureDiffSectionGeometry,
   type DiffSectionGeometry,
@@ -238,6 +239,7 @@ export function DiffPane({
   onScrollCodeHorizontally = () => {},
   onSelectFile,
   onToggleGap = NOOP_TOGGLE_GAP,
+  onLineCursorsChange,
   onViewportCenteredHunkChange,
 }: {
   codeHorizontalOffset?: number;
@@ -294,6 +296,7 @@ export function DiffPane({
   onScrollCodeHorizontally?: (delta: number) => void;
   onSelectFile: (fileId: string) => void;
   onToggleGap?: (fileId: string, gapKey: string) => void;
+  onLineCursorsChange?: (cursors: LineCursor[]) => void;
   onViewportCenteredHunkChange?: (fileId: string, hunkIndex: number) => void;
 }) {
   const renderTopChrome = showTopChrome ?? !pagerMode;
@@ -810,6 +813,35 @@ export function DiffPane({
     [estimatedBodyHeights, files, sectionHeaderHeights],
   );
   const totalContentHeight = fileSectionLayouts[fileSectionLayouts.length - 1]?.sectionBottom ?? 0;
+  const fileSectionIndexById = useMemo(
+    () => buildFileSectionIndexById(fileSectionLayouts),
+    [fileSectionLayouts],
+  );
+
+  // The measured stream is what the reviewer actually sees, so it is also what `j` and `k` walk.
+  const lineCursors = useMemo(
+    () => buildLineCursors(files, sectionGeometry),
+    [files, sectionGeometry],
+  );
+  const lineCursorBoundsOf = useCallback<LineCursorBoundsLookup>(
+    (cursor) => {
+      const sectionIndex = fileSectionIndexById.get(cursor.fileId);
+      if (sectionIndex === undefined) {
+        return undefined;
+      }
+
+      const section = fileSectionLayouts[sectionIndex];
+      const bounds = sectionGeometry[sectionIndex]?.rowBoundsByStableKey.get(cursor.stableKey);
+      return section && bounds
+        ? { top: section.bodyTop + bounds.top, height: bounds.height }
+        : undefined;
+    },
+    [fileSectionIndexById, fileSectionLayouts, sectionGeometry],
+  );
+
+  useEffect(() => {
+    onLineCursorsChange?.(lineCursors);
+  }, [lineCursors, onLineCursorsChange]);
 
   // Read the live scroll box position during render so pinned-header ownership flips
   // immediately after imperative scrolls instead of waiting for the polled viewport snapshot.
@@ -877,9 +909,16 @@ export function DiffPane({
 
   // One object per cursor move, so the section and row memos below only see a new reference when
   // the current line actually moves.
-  const cursorLineTarget = useMemo(
-    () => (lineCursor ? { hunkIndex: lineCursor.hunkIndex, ...lineCursor.target } : undefined),
-    [lineCursor],
+  const cursorHighlight = useMemo(
+    () =>
+      cursorLine === "off" || !lineCursor
+        ? undefined
+        : ({
+            stableKey: lineCursor.stableKey,
+            style: cursorLine,
+            side: lineCursor.target.side,
+          } satisfies CursorHighlight),
+    [cursorLine, lineCursor],
   );
 
   const copySelectedRowKeysByFile = useMemo(
@@ -1234,10 +1273,6 @@ export function DiffPane({
     (): FileRenderWindowItem[] =>
       files.map((file, sectionIndex) => ({ kind: "file", fileId: file.id, sectionIndex })),
     [files],
-  );
-  const fileSectionIndexById = useMemo(
-    () => buildFileSectionIndexById(fileSectionLayouts),
-    [fileSectionLayouts],
   );
   const fileRenderWindow = useMemo(
     () =>
@@ -1889,22 +1924,18 @@ export function DiffPane({
     previousLineCursorRevealRequestIdRef.current = lineCursorRevealRequestId;
 
     const scrollBox = scrollRef.current;
-    if (!scrollBox || !lineCursor || !cursorLineTarget) {
+    if (!scrollBox || !lineCursor) {
       return;
     }
 
-    const sectionIndex = files.findIndex((file) => file.id === lineCursor.fileId);
-    const section = fileSectionLayouts[sectionIndex];
-    const bounds = sectionGeometry[sectionIndex]?.rowBoundsByStableKey.get(
-      lineStableKey(cursorLineTarget.hunkIndex, cursorLineTarget.side, cursorLineTarget.line),
-    );
-    if (!section || !bounds) {
+    const bounds = lineCursorBoundsOf(lineCursor);
+    if (!bounds) {
       return;
     }
 
     const viewportHeight = scrollBox.viewport.height || scrollViewport.height;
     const revealScrollTop = computeLineRevealScrollTop({
-      lineTop: section.bodyTop + bounds.top,
+      lineTop: bounds.top,
       lineHeight: bounds.height,
       scrollTop: scrollBox.scrollTop,
       viewportHeight,
@@ -1917,14 +1948,11 @@ export function DiffPane({
     scrollBox.scrollTo(clampReviewScrollTop(revealScrollTop, viewportHeight));
   }, [
     clampReviewScrollTop,
-    cursorLineTarget,
-    fileSectionLayouts,
-    files,
     lineCursor,
+    lineCursorBoundsOf,
     lineCursorRevealRequestId,
     scrollRef,
     scrollViewport.height,
-    sectionGeometry,
     suppressViewportSelectionSync,
   ]);
 
@@ -2028,10 +2056,7 @@ export function DiffPane({
                       selectedHunkIndex={file.id === selectedFileId ? selectedHunkIndex : -1}
                       copySelectedRowRanges={copySelectedRowKeysByFile.get(file.id)}
                       copySelectedSide={copySelectionSide}
-                      cursorLine={cursorLine}
-                      cursorLineTarget={
-                        file.id === lineCursor?.fileId ? cursorLineTarget : undefined
-                      }
+                      cursorHighlight={file.id === lineCursor?.fileId ? cursorHighlight : undefined}
                       shouldLoadHighlight={
                         (!wrapLines || initialWrappedRenderWindowWarmed) &&
                         highlightPrefetchFileIds.has(file.id)

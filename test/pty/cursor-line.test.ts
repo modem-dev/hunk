@@ -84,6 +84,34 @@ describe("PTY current line", () => {
     }
   });
 
+  test("stepping reaches the lines an expanded gap reveals", async () => {
+    const fixture = harness.createExpandableContextFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "stack"],
+      cols: 140,
+      rows: 16,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+      await session.press("z");
+      await harness.waitForSnapshot(session, (text) => text.includes("hiddenLine01"), 5_000);
+      // The revealed rows reach navigation one commit after they reach the screen.
+      await session.waitIdle({ timeout: 500 });
+
+      await session.press("k");
+      await session.waitIdle({ timeout: 200 });
+      await session.press("c");
+      const draft = await session.waitForText(/Draft note/, { timeout: 5_000 });
+
+      // The revealed line is a stop of its own, so the card lands above it rather than above the
+      // first line the parsed hunk knows about.
+      expect(lineIndexOf(draft, "Draft note")).toBeLessThan(lineIndexOf(draft, "hiddenLine01"));
+    } finally {
+      session.close();
+    }
+  });
+
   test("a note anchors at the current line instead of the top of the hunk", async () => {
     const fixture = harness.createPinnedHeaderRepoFixture();
     const session = await harness.launchHunk({

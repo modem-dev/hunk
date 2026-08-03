@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { createTestDiffFile, lines } from "../../../test/helpers/diff-helpers";
+import type { DiffFile, LayoutMode } from "../../core/types";
+import { gapKey } from "../diff/expandCollapsedRows";
+import { measureDiffSectionGeometry } from "../diff/diffSectionGeometry";
+import { resolveTheme } from "../themes";
 import {
   buildLineCursors,
   findNextLineCursor,
@@ -7,6 +11,16 @@ import {
   resolveLineCursor,
   type LineCursor,
 } from "./lineCursors";
+
+const theme = resolveTheme("github-dark-default", null);
+
+/** Enumerate the stops the review stream renders for these files in one layout. */
+function cursorsFor(files: DiffFile[], layout: Exclude<LayoutMode, "auto">) {
+  return buildLineCursors(
+    files,
+    files.map((file) => measureDiffSectionGeometry(file, layout, true, theme)),
+  );
+}
 
 /** Build a file whose single hunk wraps one changed line in context. */
 function createContextWrappedFile(id: string, path: string) {
@@ -30,26 +44,58 @@ function createTwoHunkFile(id: string, path: string) {
   });
 }
 
+/** Build a file whose only change sits below a collapsible gap. */
+function createCollapsedGapFile() {
+  const before = lines("one", "two", "three", "four", "five", "six");
+  return createTestDiffFile({
+    id: "alpha",
+    path: "alpha.ts",
+    before,
+    after: lines("one", "two", "three", "four", "five", "SIX"),
+    context: 1,
+  });
+}
+
 describe("buildLineCursors", () => {
   test("walks context and changed lines in rendered order", () => {
-    const cursors = buildLineCursors([createContextWrappedFile("alpha", "alpha.ts")], "stack");
+    const cursors = cursorsFor([createContextWrappedFile("alpha", "alpha.ts")], "stack");
 
     expect(cursors).toEqual([
-      { fileId: "alpha", hunkIndex: 0, target: { side: "new", line: 1 } },
-      { fileId: "alpha", hunkIndex: 0, target: { side: "old", line: 2 } },
-      { fileId: "alpha", hunkIndex: 0, target: { side: "new", line: 2 } },
-      { fileId: "alpha", hunkIndex: 0, target: { side: "new", line: 3 } },
+      {
+        fileId: "alpha",
+        hunkIndex: 0,
+        stableKey: "line:0:context:1:1",
+        target: { side: "new", line: 1 },
+      },
+      {
+        fileId: "alpha",
+        hunkIndex: 0,
+        stableKey: "line:0:old:2",
+        target: { side: "old", line: 2 },
+      },
+      {
+        fileId: "alpha",
+        hunkIndex: 0,
+        stableKey: "line:0:new:2",
+        target: { side: "new", line: 2 },
+      },
+      {
+        fileId: "alpha",
+        hunkIndex: 0,
+        stableKey: "line:0:context:3:3",
+        target: { side: "new", line: 3 },
+      },
     ]);
   });
 
   test("keeps old and new line numbering independent across hunks", () => {
-    const cursors = buildLineCursors([createTwoHunkFile("alpha", "alpha.ts")], "stack");
+    const cursors = cursorsFor([createTwoHunkFile("alpha", "alpha.ts")], "stack");
 
-    expect(cursors).toEqual([
-      { fileId: "alpha", hunkIndex: 0, target: { side: "old", line: 1 } },
-      { fileId: "alpha", hunkIndex: 0, target: { side: "new", line: 1 } },
-      { fileId: "alpha", hunkIndex: 1, target: { side: "old", line: 10 } },
-      { fileId: "alpha", hunkIndex: 1, target: { side: "new", line: 10 } },
+    expect(cursors.map((cursor) => ({ hunkIndex: cursor.hunkIndex, ...cursor.target }))).toEqual([
+      { hunkIndex: 0, side: "old", line: 1 },
+      { hunkIndex: 0, side: "new", line: 1 },
+      { hunkIndex: 1, side: "old", line: 10 },
+      { hunkIndex: 1, side: "new", line: 10 },
     ]);
   });
 
@@ -62,7 +108,7 @@ describe("buildLineCursors", () => {
       context: 0,
     });
 
-    expect(buildLineCursors([file], "split").map((cursor) => cursor.target)).toEqual([
+    expect(cursorsFor([file], "split").map((cursor) => cursor.target)).toEqual([
       { side: "old", line: 1 },
       { side: "new", line: 1 },
       { side: "old", line: 2 },
@@ -81,7 +127,7 @@ describe("buildLineCursors", () => {
       context: 0,
     });
 
-    expect(buildLineCursors([file], "stack").map((cursor) => cursor.target)).toEqual([
+    expect(cursorsFor([file], "stack").map((cursor) => cursor.target)).toEqual([
       { side: "old", line: 1 },
       { side: "old", line: 2 },
       { side: "old", line: 3 },
@@ -91,8 +137,35 @@ describe("buildLineCursors", () => {
     ]);
   });
 
+  test("stops on the lines an expanded gap reveals", () => {
+    const file = createCollapsedGapFile();
+    const source = lines("one", "two", "three", "four", "five", "SIX");
+    const collapsed = measureDiffSectionGeometry(file, "stack", true, theme);
+    const expanded = measureDiffSectionGeometry(
+      file,
+      "stack",
+      true,
+      theme,
+      [],
+      120,
+      true,
+      false,
+      new Set([gapKey("before", 0)]),
+      { kind: "loaded", text: source },
+    );
+
+    const collapsedLines = buildLineCursors([file], [collapsed]).map(
+      (cursor) => cursor.target.line,
+    );
+    const expandedLines = buildLineCursors([file], [expanded]).map((cursor) => cursor.target.line);
+
+    expect(collapsedLines).not.toContain(1);
+    expect(expandedLines).toContain(1);
+    expect(expandedLines.length).toBeGreaterThan(collapsedLines.length);
+  });
+
   test("flattens every visible file into one review stream", () => {
-    const cursors = buildLineCursors(
+    const cursors = cursorsFor(
       [createTwoHunkFile("alpha", "alpha.ts"), createTwoHunkFile("beta", "beta.ts")],
       "stack",
     );
@@ -103,12 +176,12 @@ describe("buildLineCursors", () => {
   });
 
   test("returns nothing when no files are visible", () => {
-    expect(buildLineCursors([], "stack")).toEqual([]);
+    expect(buildLineCursors([], [])).toEqual([]);
   });
 });
 
 describe("findNextLineCursor", () => {
-  const cursors = buildLineCursors(
+  const cursors = cursorsFor(
     [createTwoHunkFile("alpha", "alpha.ts"), createTwoHunkFile("beta", "beta.ts")],
     "stack",
   );
@@ -140,6 +213,7 @@ describe("findNextLineCursor", () => {
     const retired: LineCursor = {
       fileId: "gamma",
       hunkIndex: 4,
+      stableKey: "line:4:new:99",
       target: { side: "new", line: 99 },
     };
 
@@ -152,7 +226,7 @@ describe("findNextLineCursor", () => {
 });
 
 describe("firstLineCursorInHunk", () => {
-  const cursors = buildLineCursors(
+  const cursors = cursorsFor(
     [createTwoHunkFile("alpha", "alpha.ts"), createTwoHunkFile("beta", "beta.ts")],
     "stack",
   );
@@ -161,6 +235,7 @@ describe("firstLineCursorInHunk", () => {
     expect(firstLineCursorInHunk(cursors, "beta", 1)).toEqual({
       fileId: "beta",
       hunkIndex: 1,
+      stableKey: "line:1:old:10",
       target: { side: "old", line: 10 },
     });
   });
@@ -173,13 +248,17 @@ describe("firstLineCursorInHunk", () => {
     expect(firstLineCursorInHunk(cursors, undefined, 0)).toEqual(cursors[0]!);
   });
 
+  test("returns nothing when the selected file has no navigable lines", () => {
+    expect(firstLineCursorInHunk(cursors, "gamma", 0)).toBeNull();
+  });
+
   test("returns nothing when the stream is empty", () => {
     expect(firstLineCursorInHunk([], "alpha", 0)).toBeNull();
   });
 });
 
 describe("resolveLineCursor", () => {
-  const cursors = buildLineCursors([createTwoHunkFile("alpha", "alpha.ts")], "stack");
+  const cursors = cursorsFor([createTwoHunkFile("alpha", "alpha.ts")], "stack");
 
   test("keeps a cursor that still points at a real line", () => {
     expect(resolveLineCursor(cursors, cursors[2]!)).toEqual(cursors[2]!);
@@ -189,12 +268,14 @@ describe("resolveLineCursor", () => {
     const movedLine: LineCursor = {
       fileId: "alpha",
       hunkIndex: 1,
+      stableKey: "line:1:new:42",
       target: { side: "new", line: 42 },
     };
 
     expect(resolveLineCursor(cursors, movedLine)).toEqual({
       fileId: "alpha",
       hunkIndex: 1,
+      stableKey: "line:1:old:10",
       target: { side: "old", line: 10 },
     });
   });
@@ -203,6 +284,7 @@ describe("resolveLineCursor", () => {
     const retiredHunk: LineCursor = {
       fileId: "alpha",
       hunkIndex: 9,
+      stableKey: "line:9:new:1",
       target: { side: "new", line: 1 },
     };
 
@@ -213,6 +295,7 @@ describe("resolveLineCursor", () => {
     const filteredOut: LineCursor = {
       fileId: "gamma",
       hunkIndex: 0,
+      stableKey: "line:0:new:1",
       target: { side: "new", line: 1 },
     };
 

@@ -2,113 +2,80 @@
  * Line-granular navigation targets for the review stream.
  *
  * `hunks.ts` flattens the stream into hunks for `[` and `]`; this does the same one level down.
- * Targets come from `hunkContent` rather than the render plan, so they stay cheap to hold, but
- * they are ordered to match the rows the active layout actually draws. Lines revealed by
- * expanding a collapsed gap are still out of reach.
+ * Stops come from the measured render plan rather than the parsed diff, so the marker visits exactly
+ * the rows the active layout draws — expanded gaps and alternate file presentations included — and
+ * every stop carries the plan anchor that rendering, reveal, and note placement already key on.
  */
 
-import type { Hunk } from "@pierre/diffs";
-import type { DiffFile, LayoutMode, UserNoteLineTarget } from "../../core/types";
-
-type ResolvedLayout = Exclude<LayoutMode, "auto">;
+import type { DiffFile, UserNoteLineTarget } from "../../core/types";
+import type { DiffSectionGeometry, DiffSectionRowBounds } from "../diff/diffSectionGeometry";
+import { contextLineStableKeyTarget, lineStableKeyTarget } from "../diff/reviewRenderPlan";
+import type { VerticalBounds } from "./diffSpatial";
 
 export interface LineCursor {
   fileId: string;
   hunkIndex: number;
+  /** The render plan's anchor for this row, shared with reveal and highlight lookups. */
+  stableKey: string;
   target: UserNoteLineTarget;
 }
 
-const cursorsByFileMetadata = new WeakMap<
-  DiffFile["metadata"],
-  Map<ResolvedLayout, LineCursor[]>
->();
+const cursorsBySectionGeometry = new WeakMap<DiffSectionGeometry, LineCursor[]>();
 
-/** Enumerate the source lines one hunk renders, top to bottom. */
-function hunkLineTargets(hunk: Hunk, layout: ResolvedLayout): UserNoteLineTarget[] {
-  const targets: UserNoteLineTarget[] = [];
-  let deletionLineNumber = hunk.deletionStart;
-  let additionLineNumber = hunk.additionStart;
+/** Enumerate the navigable stops one measured row renders, left to right. */
+function rowLineCursors(fileId: string, bounds: DiffSectionRowBounds): LineCursor[] {
+  // A context row shows one source line on both sides, so its sided anchors name the same position.
+  const context = contextLineStableKeyTarget(bounds.stableKey);
+  if (context) {
+    const { hunkIndex, ...target } = context;
+    return [{ fileId, hunkIndex, stableKey: bounds.stableKey, target }];
+  }
 
-  for (const content of hunk.hunkContent) {
-    if (content.type === "context") {
-      for (let offset = 0; offset < content.lines; offset += 1) {
-        // Both sides exist here; the new side is what the mouse affordance already anchors to.
-        targets.push({ side: "new", line: additionLineNumber + offset });
-      }
-
-      deletionLineNumber += content.lines;
-      additionLineNumber += content.lines;
+  const cursors: LineCursor[] = [];
+  for (const stableKey of bounds.stableKeys) {
+    const anchor = lineStableKeyTarget(stableKey);
+    if (!anchor) {
       continue;
     }
 
-    if (layout === "split") {
-      // Split draws one row per pair, padding the shorter side, so the marker has to cross each
-      // row before moving down instead of walking the whole old column first.
-      const pairedLines = Math.max(content.deletions, content.additions);
-      for (let offset = 0; offset < pairedLines; offset += 1) {
-        if (offset < content.deletions) {
-          targets.push({ side: "old", line: deletionLineNumber + offset });
-        }
-
-        if (offset < content.additions) {
-          targets.push({ side: "new", line: additionLineNumber + offset });
-        }
-      }
-    } else {
-      for (let offset = 0; offset < content.deletions; offset += 1) {
-        targets.push({ side: "old", line: deletionLineNumber + offset });
-      }
-
-      for (let offset = 0; offset < content.additions; offset += 1) {
-        targets.push({ side: "new", line: additionLineNumber + offset });
-      }
-    }
-
-    deletionLineNumber += content.deletions;
-    additionLineNumber += content.additions;
+    const { hunkIndex, ...target } = anchor;
+    cursors.push({ fileId, hunkIndex, stableKey, target });
   }
 
-  return targets;
+  return cursors;
 }
 
 /**
- * List one file's cursors, reusing the last result while its parsed diff is unchanged.
+ * List one file's cursors, reusing the last result while its measured rows are unchanged.
  *
- * Selection changes rebuild the visible file array without reparsing, so this keeps a keypress
- * from reallocating one object per source line across the whole changeset.
+ * Geometry is already cached per file, so this keeps a keypress from reallocating one object per
+ * rendered row across the whole changeset.
  */
-function fileLineCursors(file: DiffFile, layout: ResolvedLayout): LineCursor[] {
-  let byLayout = cursorsByFileMetadata.get(file.metadata);
-  if (!byLayout) {
-    byLayout = new Map();
-    cursorsByFileMetadata.set(file.metadata, byLayout);
-  }
-
-  const cached = byLayout.get(layout);
+function fileLineCursors(file: DiffFile, geometry: DiffSectionGeometry): LineCursor[] {
+  const cached = cursorsBySectionGeometry.get(geometry);
   if (cached) {
     return cached;
   }
 
-  const cursors = file.metadata.hunks.flatMap((hunk, hunkIndex) =>
-    hunkLineTargets(hunk, layout).map((target) => ({ fileId: file.id, hunkIndex, target })),
-  );
-  byLayout.set(layout, cursors);
+  const cursors = geometry.rowBounds.flatMap((bounds) => rowLineCursors(file.id, bounds));
+  cursorsBySectionGeometry.set(geometry, cursors);
   return cursors;
 }
 
-/** Flatten the visible files into one review-stream line cursor list. */
-export function buildLineCursors(files: DiffFile[], layout: ResolvedLayout): LineCursor[] {
-  return files.flatMap((file) => fileLineCursors(file, layout));
+/** Flatten the measured review stream into one ordered line cursor list. */
+export function buildLineCursors(
+  files: DiffFile[],
+  sectionGeometry: DiffSectionGeometry[],
+): LineCursor[] {
+  return files.flatMap((file, index) => {
+    const geometry = sectionGeometry[index];
+    return geometry ? fileLineCursors(file, geometry) : [];
+  });
 }
 
-/** Check whether two cursors name the same review-stream line. */
+/** Check whether two cursors name the same review-stream row. */
 function sameLineCursor(left: LineCursor, right: LineCursor) {
-  return (
-    left.fileId === right.fileId &&
-    left.hunkIndex === right.hunkIndex &&
-    left.target.side === right.target.side &&
-    left.target.line === right.target.line
-  );
+  return left.fileId === right.fileId && left.stableKey === right.stableKey;
 }
 
 /** Find the first cursor in one hunk, then anywhere in its file. */
@@ -174,3 +141,6 @@ export function resolveLineCursor(
 
   return nearestCursorInFile(cursors, current.fileId, current.hunkIndex) ?? null;
 }
+
+/** Read one cursor's measured extent in whole-stream rows. */
+export type LineCursorBoundsLookup = (cursor: LineCursor) => VerticalBounds | undefined;
