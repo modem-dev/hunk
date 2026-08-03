@@ -1,5 +1,6 @@
 import type { AgentAnnotation } from "../../core/types";
 import type { ExtensionFileViewLayout, ExtensionFileViewRow } from "../../extension-api/types";
+import { lineStableKey } from "../diff/reviewRenderPlan";
 import { annotationAnchor, type VisibleAgentNote } from "../lib/agentAnnotations";
 
 /** One validated extension row or host-owned inline note in an alternate file presentation. */
@@ -8,6 +9,8 @@ export type PlannedFileViewRow =
       readonly kind: "file-view-row";
       readonly key: string;
       readonly stableKey: string;
+      /** The source line this row presents, so review-stream navigation can address it. */
+      readonly stableAliasKeys?: readonly string[];
       readonly row: ExtensionFileViewRow;
       readonly rowIndex: number;
     }
@@ -45,6 +48,19 @@ function hunkOwnersByRow(layout: ExtensionFileViewLayout) {
     for (const hunkIndex of starts[rowIndex]!) active.add(hunkIndex);
     return active.size === 1 ? active.values().next().value! : -1;
   });
+}
+
+/**
+ * Build the line anchor one presentation row shares with the raw diff, if it has exactly one hunk.
+ *
+ * Reusing the raw diff's anchor is what lets the current line walk, highlight, and reveal inside an
+ * alternate view, and what keeps it in place when a draft note forces the file back to raw diff.
+ */
+function rowLineStableKey(row: ExtensionFileViewRow, hunkIndex: number) {
+  const sourceRange = row.sourceRanges?.[0];
+  return hunkIndex < 0 || !sourceRange
+    ? undefined
+    : lineStableKey(hunkIndex, sourceRange.side, sourceRange.range[0]);
 }
 
 /** Find the unique validated presentation row containing one note's preferred source anchor. */
@@ -93,6 +109,7 @@ export function buildFileViewRenderPlan(
   }
 
   const rows: PlannedFileViewRow[] = [];
+  const claimedLineKeys = new Set<string>();
   for (const [rowIndex, row] of layout.rows.entries()) {
     const anchoredNotes = notesByRow.get(rowIndex) ?? [];
     for (const [noteIndex, placement] of anchoredNotes.entries()) {
@@ -110,7 +127,21 @@ export function buildFileViewRenderPlan(
       });
     }
     const key = `file-view:${row.id}`;
-    rows.push({ kind: "file-view-row", key, stableKey: key, row, rowIndex });
+    const lineKey = rowLineStableKey(row, hunkOwnerByRow[rowIndex]!);
+    // Only the first row on a line claims it, matching how measured bounds resolve duplicates.
+    const claimsLine = lineKey !== undefined && !claimedLineKeys.has(lineKey);
+    if (claimsLine) {
+      claimedLineKeys.add(lineKey);
+    }
+
+    rows.push({
+      kind: "file-view-row",
+      key,
+      stableKey: key,
+      ...(claimsLine ? { stableAliasKeys: [lineKey] } : {}),
+      row,
+      rowIndex,
+    });
   }
 
   return {
