@@ -506,5 +506,6 @@ export async function loadAppBootstrap(
     initialShowMenuBar: input.options.menuBar ?? true,
     initialShowAgentNotes: input.options.agentNotes ?? false,
     initialCopyDecorations: input.options.copyDecorations ?? false,
+    initialCursorLine: input.options.cursorLine ?? "row",
   };
 }

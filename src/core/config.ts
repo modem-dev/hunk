@@ -20,6 +20,7 @@ import { detectVcs, findVcsRepoRootCandidate, getDefaultVcsAdapter } from "./vcs
 import type {
   CliInput,
   CommonOptions,
+  CursorLine,
   CustomSyntaxColorsConfig,
   CustomSyntaxScopesConfig,
   ExtensionsConfig,
@@ -42,6 +43,7 @@ const DEFAULT_VIEW_PREFERENCES: PersistedViewPreferences = {
   showMenuBar: true,
   showAgentNotes: false,
   copyDecorations: false,
+  cursorLine: "row",
 };
 
 const VIEW_PREFERENCES_PROMPT_CONFIG_KEY = "prompt_save_view_preferences";
@@ -57,6 +59,7 @@ const PERSISTED_VIEW_PREFERENCE_KEYS: Array<{
   { configKey: "menu_bar", value: (preferences) => preferences.showMenuBar },
   { configKey: "agent_notes", value: (preferences) => preferences.showAgentNotes },
   { configKey: "copy_decorations", value: (preferences) => preferences.copyDecorations },
+  { configKey: "cursor_line", value: (preferences) => preferences.cursorLine },
 ];
 
 interface ConfigResolutionOptions {
@@ -142,6 +145,11 @@ function normalizeLayoutMode(value: unknown): LayoutMode | undefined {
   return value === "auto" || value === "split" || value === "stack" ? value : undefined;
 }
 
+/** Accept only the current-line styles the review stream can draw. */
+function normalizeCursorLine(value: unknown): CursorLine | undefined {
+  return value === "row" || value === "number" || value === "off" ? value : undefined;
+}
+
 /**
  * Accept any backend id a config layer names, provisionally.
  *
@@ -210,6 +218,15 @@ export const CONFIG_REFERENCE_OPTIONS: readonly ConfigReferenceOption[] = [
     accepted: "`auto`, `split`, or `stack`",
     runtimeDefault: DEFAULT_VIEW_PREFERENCES.mode,
     description: "Choose responsive, side-by-side, or stacked diff layout.",
+  },
+  {
+    key: "cursor_line",
+    property: "cursorLine",
+    type: "string",
+    accepted: "`row`, `number`, or `off`",
+    runtimeDefault: DEFAULT_VIEW_PREFERENCES.cursorLine,
+    description:
+      "Mark the current line as a full-row highlight or on its line number. `off` restores plain `j`/`k` scrolling.",
   },
   {
     key: "vcs",
@@ -802,6 +819,8 @@ function normalizeConfigReferenceValue(property: keyof CommonOptions, value: unk
   switch (property) {
     case "mode":
       return normalizeLayoutMode(value);
+    case "cursorLine":
+      return normalizeCursorLine(value);
     case "vcs":
       return normalizeVcsMode(value);
     case "theme":
@@ -853,6 +872,7 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
   return {
     ...base,
     mode: overrides.mode ?? base.mode,
+    cursorLine: overrides.cursorLine ?? base.cursorLine,
     vcs: overrides.vcs ?? base.vcs,
     theme: overrides.theme ?? base.theme,
     agentContext: overrides.agentContext ?? base.agentContext,
