@@ -98,7 +98,7 @@ function ReviewControllerHarness({
   onSetFiles?: (setFiles: (nextFiles: DiffFile[]) => void) => void;
 }) {
   const [files, setFiles] = useState(initialFiles);
-  const controller = useReviewController({ files, noteGeometry, stmlEnabled });
+  const controller = useReviewController({ files, layout: "stack", noteGeometry, stmlEnabled });
 
   useEffect(() => {
     onController(controller);
@@ -1299,6 +1299,203 @@ describe("useReviewController", () => {
       expect(String(loggedErrors[0]?.[0])).toContain("alpha");
     } finally {
       console.error = originalConsoleError;
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("seeds the current line at the selected hunk so the indicator is visible on launch", async () => {
+    const { controllerRef, setup } = await renderReviewController([createAlphaFile()]);
+
+    try {
+      await flush(setup);
+
+      const cursor = expectValue(expectValue(controllerRef.current).lineCursor);
+      expect(cursor.fileId).toBe("alpha");
+      expect(cursor.hunkIndex).toBe(0);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("moves the current line one row at a time and clamps at the top of the stream", async () => {
+    const { controllerRef, setup } = await renderReviewController([createTwoHunkFile()]);
+
+    try {
+      await flush(setup);
+      const first = expectValue(expectValue(controllerRef.current).lineCursor);
+
+      await act(async () => {
+        expectValue(controllerRef.current).moveLineCursor(1);
+      });
+      await flush(setup);
+      const second = expectValue(expectValue(controllerRef.current).lineCursor);
+      expect(second).not.toEqual(first);
+
+      await act(async () => {
+        expectValue(controllerRef.current).moveLineCursor(-1);
+      });
+      await flush(setup);
+      expect(expectValue(controllerRef.current).lineCursor).toEqual(first);
+
+      await act(async () => {
+        expectValue(controllerRef.current).moveLineCursor(-1);
+      });
+      await flush(setup);
+      expect(expectValue(controllerRef.current).lineCursor).toEqual(first);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("requests a reveal every time the current line moves", async () => {
+    const { controllerRef, setup } = await renderReviewController([createTwoHunkFile()]);
+
+    try {
+      await flush(setup);
+      const initialRequestId = expectValue(controllerRef.current).lineCursorRevealRequestId;
+
+      await act(async () => {
+        expectValue(controllerRef.current).moveLineCursor(1);
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).lineCursorRevealRequestId).toBe(
+        initialRequestId + 1,
+      );
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("carries hunk selection along as the current line crosses a hunk boundary", async () => {
+    const { controllerRef, setup } = await renderReviewController([createTwoHunkFile()]);
+
+    try {
+      await flush(setup);
+      expect(expectValue(controllerRef.current).selectedHunkIndex).toBe(0);
+
+      // Walk far enough that the stream has to roll into the file's second hunk.
+      for (let step = 0; step < 40; step += 1) {
+        await act(async () => {
+          expectValue(controllerRef.current).moveLineCursor(1);
+        });
+      }
+      await flush(setup);
+
+      const cursor = expectValue(expectValue(controllerRef.current).lineCursor);
+      expect(cursor.hunkIndex).toBe(1);
+      expect(expectValue(controllerRef.current).selectedHunkIndex).toBe(1);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("moves the current line to the row a note is started on", async () => {
+    const { controllerRef, setup } = await renderReviewController([createTwoHunkFile()]);
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        expectValue(controllerRef.current).startUserNote("alpha", 1, { side: "new", line: 12 });
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).lineCursor).toEqual({
+        fileId: "alpha",
+        hunkIndex: 1,
+        target: { side: "new", line: 12 },
+      });
+      expect(expectValue(controllerRef.current).selectedHunkIndex).toBe(1);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("carries the current line along when hunk navigation moves the selection", async () => {
+    const { controllerRef, setup } = await renderReviewController([createTwoHunkFile()]);
+
+    try {
+      await flush(setup);
+      expect(expectValue(expectValue(controllerRef.current).lineCursor).hunkIndex).toBe(0);
+
+      await act(async () => {
+        expectValue(controllerRef.current).moveToHunk(1);
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).selectedHunkIndex).toBe(1);
+      expect(expectValue(expectValue(controllerRef.current).lineCursor).hunkIndex).toBe(1);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("recovers the current line when a reload retires the hunk it was on", async () => {
+    const { controllerRef, setFilesRef, setup } = await renderReviewController([
+      createTwoHunkFile(),
+    ]);
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        expectValue(controllerRef.current).selectHunk("alpha", 1);
+      });
+      await flush(setup);
+      expect(expectValue(expectValue(controllerRef.current).lineCursor).hunkIndex).toBe(1);
+
+      await act(async () => {
+        expectValue(setFilesRef.current)([createSingleHunkFile()]);
+      });
+      await flush(setup);
+
+      const cursor = expectValue(expectValue(controllerRef.current).lineCursor);
+      expect(cursor.fileId).toBe("alpha");
+      expect(cursor.hunkIndex).toBe(0);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("re-seeds the current line into the file a filter leaves visible", async () => {
+    const { controllerRef, setup } = await renderReviewController([
+      createDiffFile("alpha", "alpha.ts", "export const alpha = 1;\n", "export const alpha = 2;\n"),
+      createDiffFile(
+        "beta",
+        "beta.ts",
+        "export const beta = 1;\n",
+        "export const betaValue = 2;\n",
+      ),
+    ]);
+
+    try {
+      await flush(setup);
+      expect(expectValue(expectValue(controllerRef.current).lineCursor).fileId).toBe("alpha");
+
+      await act(async () => {
+        expectValue(controllerRef.current).setFilter("beta");
+      });
+      await flush(setup);
+
+      expect(expectValue(expectValue(controllerRef.current).lineCursor).fileId).toBe("beta");
+    } finally {
       await act(async () => {
         setup.renderer.destroy();
       });
