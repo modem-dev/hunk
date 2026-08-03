@@ -1,7 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { parseDiffFromFile } from "@pierre/diffs";
 import type { DiffFile } from "../../core/types";
-import type { PlannedReviewRow } from "./reviewRenderPlan";
+import {
+  contextLineStableKeyTarget,
+  lineStableKey,
+  lineStableKeyTarget,
+  type PlannedReviewRow,
+} from "./reviewRenderPlan";
 import { resolveTheme } from "../themes";
 
 const { buildSplitRows, buildStackRows } = await import("./pierre");
@@ -364,5 +369,40 @@ describe("review render plan", () => {
       "annotation:counted:0:0",
     ]);
     expect(inlineNotes.every((row) => row.noteIndex === 0 && row.noteCount === 1)).toBe(true);
+  });
+});
+
+describe("line stable key targets", () => {
+  test("reads a single-sided anchor back into a note target", () => {
+    expect(lineStableKeyTarget(lineStableKey(2, "old", 41))).toEqual({
+      hunkIndex: 2,
+      side: "old",
+      line: 41,
+    });
+    expect(lineStableKeyTarget(lineStableKey(0, "new", 7))).toEqual({
+      hunkIndex: 0,
+      side: "new",
+      line: 7,
+    });
+  });
+
+  test("reads a shared context anchor as its new-side line", () => {
+    expect(contextLineStableKeyTarget("line:3:context:12:14")).toEqual({
+      hunkIndex: 3,
+      side: "new",
+      line: 14,
+    });
+  });
+
+  test("keeps the two anchor shapes apart", () => {
+    expect(lineStableKeyTarget("line:3:context:12:14")).toBeNull();
+    expect(contextLineStableKeyTarget(lineStableKey(3, "new", 14))).toBeNull();
+  });
+
+  test("ignores anchors that do not name a source line", () => {
+    for (const stableKey of ["meta:hunk-header:1", "meta:collapsed:before:0", "inline-note:x"]) {
+      expect(lineStableKeyTarget(stableKey)).toBeNull();
+      expect(contextLineStableKeyTarget(stableKey)).toBeNull();
+    }
   });
 });
