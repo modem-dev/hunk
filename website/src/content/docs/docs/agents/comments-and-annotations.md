@@ -39,4 +39,4 @@ Use `--all --yes` to clear both live agent comments and human notes. Destructive
 
 ## Add a human note
 
-In the TUI, move to the line you mean with `k` / `j` and press `c`, or click an add-note affordance. Human and agent notes are labeled by source. Use `{` and `}` to move through annotated hunks across the review stream.
+In the TUI, select a hunk and press `c` or click an add-note affordance. Human and agent notes are labeled by source. Use `{` and `}` to move through annotated hunks across the review stream.

@@ -9,7 +9,7 @@ Press `?` at any time for Hunk's in-app shortcut reference. Menus and primary re
 
 | Keys                      | Action                                                |
 | ------------------------- | ----------------------------------------------------- |
-| `↑` / `↓`, `k` / `j`      | Move the current line up / down                       |
+| `↑` / `↓`, `k` / `j`      | Scroll one row                                        |
 | `Space` / `f`, `b`        | Page down / up                                        |
 | `Shift+Space`             | Page up                                               |
 | `d` / `u`                 | Half page down / up                                   |
@@ -21,7 +21,7 @@ Press `?` at any time for Hunk's in-app shortcut reference. Menus and primary re
 
 Hunk navigation stays review-wide: hunk and file shortcuts move through the same multi-file stream shown in the main pane.
 
-The current line is highlighted as you move it, and the view scrolls only far enough to keep it visible. Paging or scrolling past it moves it to the nearest line still on screen. Pick the marker from the View menu, or set [`cursor_line`](/docs/configure/layout-and-display/): `number` marks only the line number, and `off` turns the marker off and lets `↑` / `↓` and `k` / `j` scroll the view one row at a time instead.
+`↑` / `↓` and `k` / `j` move a highlighted current line, and the view scrolls only far enough to keep it visible. Paging or scrolling past it moves it to the nearest line still on screen, and `c` anchors a note on it. Pick the marker from the View menu, or set [`cursor_line`](/docs/configure/layout-and-display/): `number` marks only the line number, and `off` turns the marker off and lets `↑` / `↓` and `k` / `j` scroll the view one row at a time instead.
 
 ## Change the view
 
@@ -47,7 +47,7 @@ Hunk may offer to save view changes on quit. Saving writes personal preferences 
 
 ## Add a human note
 
-Press `c` to add a note on the current line, or use a visible add-note affordance with the mouse. With `cursor_line = "off"` the note anchors at the top of the selected hunk instead. While editing, app shortcuts are suspended so normal text entry works. Save with the note editor's displayed action or cancel with Escape.
+Press `c` on the selected hunk or use a visible add-note affordance with the mouse. While editing, app shortcuts are suspended so normal text entry works. Save with the note editor's displayed action or cancel with Escape.
 
 ## Mouse behavior
 
