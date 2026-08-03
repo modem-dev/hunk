@@ -41,6 +41,13 @@ import type { FileSourceStatus } from "../diff/expandCollapsedRows";
 import { selectGapForKeyboardToggle } from "../diff/expandCollapsedRows";
 import { trailingCollapsedLines } from "../diff/pierre";
 import { findNextHunkCursor } from "../lib/hunks";
+import {
+  buildLineCursors,
+  findNextLineCursor,
+  firstLineCursorInHunk,
+  resolveLineCursor,
+  type LineCursor,
+} from "../lib/lineCursors";
 import { agentNoteMarkupWidth } from "../lib/agentNoteGeometry";
 import { reviewNoteSource } from "../lib/agentAnnotations";
 import { STML_REFERENCE_WIDTH, validateStmlMarkup } from "../lib/stml/layout";
@@ -138,6 +145,9 @@ export interface ReviewController {
   reviewNoteCount: number;
   reviewNoteSummaries: SessionReviewNoteSummary[];
   userNotesByFileId: Record<string, UserReviewNote[]>;
+  lineCursor: LineCursor | null;
+  lineCursorRevealRequestId: number;
+  moveLineCursor: (delta: number) => void;
   moveToAnnotatedFile: (delta: number) => void;
   moveToAnnotatedHunk: (delta: number) => void;
   moveToFile: (delta: number) => void;
@@ -179,6 +189,7 @@ export interface ReviewController {
     fileId?: string,
     hunkIndex?: number,
     target?: UserNoteLineTarget,
+    options?: { preserveViewport?: boolean },
   ) => DraftReviewNote | null;
   setFilter: (value: string) => void;
   updateDraftNote: (body: string) => void;
@@ -194,10 +205,13 @@ export interface AgentNoteGeometrySnapshot {
 
 export function useReviewController({
   files,
+  layout,
   noteGeometry,
   stmlEnabled = false,
 }: {
   files: DiffFile[];
+  /** Resolved layout, so line navigation follows the order rows are actually rendered in. */
+  layout: Exclude<LayoutMode, "auto">;
   /** Allow STML bodies for live comments in this explicitly opted-in session. */
   stmlEnabled?: boolean;
   /**
@@ -212,6 +226,11 @@ export function useReviewController({
   const [selectedHunkIndex, setSelectedHunkIndex] = useState(0);
   const [selectedFileTopAlignRequestId, setSelectedFileTopAlignRequestId] = useState(0);
   const [selectedHunkRevealRequestId, setSelectedHunkRevealRequestId] = useState(0);
+  const [lineCursor, setLineCursor] = useState<LineCursor | null>(null);
+  // A held key drains as one stdin chunk, so every press in the burst would otherwise read the
+  // same pre-batch state and the cursor would advance a single row.
+  const lineCursorRef = useRef<LineCursor | null>(null);
+  const [lineCursorRevealRequestId, setLineCursorRevealRequestId] = useState(0);
   const [scrollToNote, setScrollToNote] = useState(false);
   const [liveCommentsByFileId, setLiveCommentsByFileId] = useState<Record<string, LiveComment[]>>(
     {},
@@ -356,6 +375,52 @@ export function useReviewController({
   useEffect(() => {
     reconcileSelectedHunkIndex();
   }, [reconcileSelectedHunkIndex]);
+
+  const lineCursors = useMemo(() => buildLineCursors(visibleFiles, layout), [layout, visibleFiles]);
+
+  /**
+   * Keep the current line on a row the review stream still renders.
+   *
+   * Seeding from the selected hunk makes the marker visible from launch, not just after the
+   * first keypress.
+   */
+  const applyLineCursor = useCallback((next: LineCursor | null) => {
+    lineCursorRef.current = next;
+    setLineCursor(next);
+  }, []);
+
+  const reconcileLineCursor = useCallback(() => {
+    const resolved = resolveLineCursor(lineCursors, lineCursorRef.current);
+    if (resolved?.fileId === selectedFileId && resolved?.hunkIndex === selectedHunkIndex) {
+      applyLineCursor(resolved);
+      return;
+    }
+
+    // Selection moved without the cursor, so `]` and the sidebar leave one review position
+    // rather than stranding the marker in the hunk the reviewer just left.
+    applyLineCursor(firstLineCursorInHunk(lineCursors, selectedFileId, selectedHunkIndex));
+  }, [applyLineCursor, lineCursors, selectedFileId, selectedHunkIndex]);
+
+  useEffect(() => {
+    reconcileLineCursor();
+  }, [reconcileLineCursor]);
+
+  /** Move the current line one row through the visible review stream. */
+  const moveLineCursor = useCallback(
+    (delta: number) => {
+      const nextCursor = findNextLineCursor(lineCursors, lineCursorRef.current, delta);
+      if (!nextCursor) {
+        return;
+      }
+
+      applyLineCursor(nextCursor);
+      setLineCursorRevealRequestId((current) => current + 1);
+      // Selection follows the line so notes and `[`/`]` agree on where the reviewer is; the
+      // reveal above already owns scrolling, so this must not scroll too.
+      selectHunk(nextCursor.fileId, nextCursor.hunkIndex, { preserveViewport: true });
+    },
+    [applyLineCursor, lineCursors, selectHunk],
+  );
 
   /** Move through the full visible review stream one hunk at a time. */
   const moveToHunk = useCallback(
@@ -861,6 +926,7 @@ export function useReviewController({
       fileId = selectedFile?.id,
       hunkIndex = selectedHunkIndex,
       requestedTarget?: UserNoteLineTarget,
+      options?: { preserveViewport?: boolean },
     ): DraftReviewNote | null => {
       const file = allFiles.find((candidate) => candidate.id === fileId);
       const hunk = file?.metadata.hunks[hunkIndex];
@@ -869,6 +935,7 @@ export function useReviewController({
       }
 
       const target = requestedTarget ?? firstCommentTargetForHunk(hunk);
+      applyLineCursor({ fileId: file.id, hunkIndex, target });
       const draft: DraftReviewNote = {
         id: `draft:${file.id}:${hunkIndex}:${Date.now()}`,
         fileId: file.id,
@@ -885,11 +952,11 @@ export function useReviewController({
       selectHunk(
         file.id,
         hunkIndex,
-        requestedTarget ? { preserveViewport: true } : { scrollToNote: true },
+        options?.preserveViewport ? { preserveViewport: true } : { scrollToNote: true },
       );
       return draft;
     },
-    [allFiles, selectHunk, selectedFile?.id, selectedHunkIndex],
+    [allFiles, applyLineCursor, selectHunk, selectedFile?.id, selectedHunkIndex],
   );
 
   /** Update the body of the active draft note. */
@@ -1056,6 +1123,8 @@ export function useReviewController({
     liveCommentCount,
     liveCommentSummaries,
     liveCommentsByFileId,
+    lineCursor,
+    lineCursorRevealRequestId,
     reviewNoteCount,
     reviewNoteSummaries,
     userNotesByFileId,
@@ -1075,6 +1144,7 @@ export function useReviewController({
     clearFilter,
     cancelDraftNote,
     clearLiveComments,
+    moveLineCursor,
     moveToAnnotatedFile,
     moveToAnnotatedHunk,
     moveToFile,
