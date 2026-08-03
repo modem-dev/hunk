@@ -112,6 +112,48 @@ describe("PTY current line", () => {
     }
   });
 
+  test("expanding a gap moves the current line into it and collapsing puts it back", async () => {
+    const fixture = harness.createExpandableContextFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "stack"],
+      cols: 140,
+      rows: 16,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+      await session.waitIdle({ timeout: 300 });
+      await session.press("c");
+      const beforeExpand = await session.waitForText(/Draft note/, { timeout: 5_000 });
+      const startRow = /Draft note[^R]*R(\d+)/.exec(beforeExpand)?.[1];
+      expect(startRow).toBeDefined();
+      await session.press("escape");
+      await harness.waitForSnapshot(session, (text) => !text.includes("Draft note"), 5_000);
+
+      await session.press("z");
+      await harness.waitForSnapshot(session, (text) => text.includes("hiddenLine01"), 5_000);
+      await session.waitIdle({ timeout: 500 });
+      await session.press("c");
+      const expanded = await session.waitForText(/Draft note/, { timeout: 5_000 });
+
+      // Expanding is a request to read what the gap hid, so the marker lands on its first line.
+      expect(expanded).toContain("R1 ");
+      expect(lineIndexOf(expanded, "Draft note")).toBe(lineIndexOf(expanded, "hiddenLine01") + 1);
+      await session.press("escape");
+      await harness.waitForSnapshot(session, (text) => !text.includes("Draft note"), 5_000);
+
+      await session.press("z");
+      await harness.waitForSnapshot(session, (text) => !text.includes("hiddenLine01"), 5_000);
+      await session.waitIdle({ timeout: 500 });
+      await session.press("c");
+      const collapsed = await session.waitForText(/Draft note/, { timeout: 5_000 });
+
+      expect(collapsed).toContain(`R${startRow} `);
+    } finally {
+      session.close();
+    }
+  });
+
   test("paging leaves the current line on screen", async () => {
     const fixture = harness.createPinnedHeaderRepoFixture();
     const session = await harness.launchHunk({
