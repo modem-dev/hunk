@@ -829,20 +829,25 @@ export function DiffPane({
     () => buildLineCursors(files, sectionGeometry),
     [files, sectionGeometry],
   );
-  const lineCursorBoundsOf = useCallback<LineCursorBoundsLookup>(
-    (cursor) => {
-      const sectionIndex = fileSectionIndexById.get(cursor.fileId);
+  /** Locate one measured row in whole-stream rows, addressed by its file and plan anchor. */
+  const rowBoundsInStream = useCallback(
+    (fileId: string, stableKey: string) => {
+      const sectionIndex = fileSectionIndexById.get(fileId);
       if (sectionIndex === undefined) {
         return undefined;
       }
 
       const section = fileSectionLayouts[sectionIndex];
-      const bounds = sectionGeometry[sectionIndex]?.rowBoundsByStableKey.get(cursor.stableKey);
+      const bounds = sectionGeometry[sectionIndex]?.rowBoundsByStableKey.get(stableKey);
       return section && bounds
         ? { top: section.bodyTop + bounds.top, height: bounds.height }
         : undefined;
     },
     [fileSectionIndexById, fileSectionLayouts, sectionGeometry],
+  );
+  const lineCursorBoundsOf = useCallback<LineCursorBoundsLookup>(
+    (cursor) => rowBoundsInStream(cursor.fileId, cursor.stableKey),
+    [rowBoundsInStream],
   );
 
   useEffect(() => {
@@ -1498,12 +1503,15 @@ export function DiffPane({
     const sectionRelativeHunkTop =
       selectedEstimatedHunkBounds.top - selectedEstimatedHunkBounds.sectionTop;
     const sectionRelativeHunkBottom = sectionRelativeHunkTop + selectedEstimatedHunkBounds.height;
-    const noteRow = geometry.rowBounds.find(
-      (row) =>
-        row.key.startsWith("inline-note:") &&
-        row.top >= sectionRelativeHunkTop &&
-        row.top < sectionRelativeHunkBottom,
-    );
+    // An open draft is the note the reviewer is waiting on, even when earlier notes share its hunk.
+    const noteRow =
+      (draftNote ? geometry.rowBoundsByStableKey.get(`inline-note:${draftNote.id}`) : undefined) ??
+      geometry.rowBounds.find(
+        (row) =>
+          row.key.startsWith("inline-note:") &&
+          row.top >= sectionRelativeHunkTop &&
+          row.top < sectionRelativeHunkBottom,
+      );
 
     if (!noteRow) {
       return null;
@@ -1513,7 +1521,7 @@ export function DiffPane({
       top: selectedEstimatedHunkBounds.sectionTop + noteRow.top,
       height: noteRow.height,
     };
-  }, [scrollToNote, sectionGeometry, selectedEstimatedHunkBounds, selectedFileIndex]);
+  }, [draftNote, scrollToNote, sectionGeometry, selectedEstimatedHunkBounds, selectedFileIndex]);
   const selectedEstimatedHunkTop = selectedEstimatedHunkBounds?.top ?? null;
   const selectedEstimatedHunkHeight = selectedEstimatedHunkBounds?.height ?? null;
   const selectedEstimatedHunkStartRowId = selectedEstimatedHunkBounds?.startRowId ?? null;
@@ -1608,12 +1616,25 @@ export function DiffPane({
           buildInStreamFileHeaderHeights(previousFiles),
         );
       if (anchor) {
-        const nextTop = resolveViewportRowAnchorTop(
+        const anchorTop = resolveViewportRowAnchorTop(
           files,
           sectionGeometry,
           anchor,
           sectionHeaderHeights,
         );
+        // Holding the anchor row still keeps the code from jumping, but the card opens below it and
+        // can hang off the bottom, so give up the minimum height needed to show all of it.
+        const draftBounds = draftNote
+          ? rowBoundsInStream(draftNote.fileId, `inline-note:${draftNote.id}`)
+          : undefined;
+        const nextTop = draftBounds
+          ? computeLineRevealScrollTop({
+              lineTop: draftBounds.top,
+              lineHeight: draftBounds.height,
+              scrollTop: anchorTop,
+              viewportHeight: scrollRef.current?.viewport.height || scrollViewport.height,
+            })
+          : anchorTop;
         const restoreViewportAnchor = () => {
           scrollRef.current?.scrollTo(nextTop);
         };
@@ -1693,12 +1714,14 @@ export function DiffPane({
     previousSectionGeometryRef.current = sectionGeometry;
     previousFilesRef.current = files;
   }, [
-    draftNote?.id,
+    draftNote,
     files,
     layout,
     layoutToggleRequestId,
     layoutToggleScrollTop,
+    rowBoundsInStream,
     scrollRef,
+    scrollViewport.height,
     scrollViewport.top,
     sectionGeometry,
     sectionHeaderHeights,
