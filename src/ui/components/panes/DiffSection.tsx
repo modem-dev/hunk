@@ -1,5 +1,5 @@
 import { memo } from "react";
-import type { DiffFile, LayoutMode, UserNoteLineTarget } from "../../../core/types";
+import type { CursorLine, DiffFile, LayoutMode, UserNoteLineTarget } from "../../../core/types";
 import type { FileSourceStatus } from "../../diff/expandCollapsedRows";
 import { PierreDiffView, type ActiveAddNoteAffordance } from "../../diff/PierreDiffView";
 import type { VisibleBodyBounds } from "../../diff/rowWindowing";
@@ -24,6 +24,8 @@ interface DiffSectionProps {
   selectedHunkIndex: number;
   copySelectedRowRanges?: Map<string, CopySelectedRowRange>;
   copySelectedSide?: "left" | "right";
+  cursorLine?: CursorLine;
+  cursorLineTarget?: UserNoteLineTarget & { hunkIndex: number };
   shouldLoadHighlight: boolean;
   sectionGeometry?: DiffSectionGeometry;
   separatorWidth: number;
@@ -61,6 +63,8 @@ function DiffSectionComponent({
   selectedHunkIndex,
   copySelectedRowRanges,
   copySelectedSide,
+  cursorLine,
+  cursorLineTarget,
   shouldLoadHighlight,
   sectionGeometry,
   separatorWidth,
@@ -156,6 +160,8 @@ function DiffSectionComponent({
           codeHorizontalOffset={codeHorizontalOffset}
           copySelectedRowRanges={copySelectedRowRanges}
           copySelectedSide={copySelectedSide}
+          cursorLine={cursorLine}
+          cursorLineTarget={cursorLineTarget}
           theme={theme}
           width={viewWidth}
           visibleAgentNotes={visibleAgentNotes}
@@ -193,6 +199,8 @@ export const DiffSection = memo(DiffSectionComponent, (previous, next) => {
     previous.selectedHunkIndex === next.selectedHunkIndex &&
     previous.copySelectedRowRanges === next.copySelectedRowRanges &&
     previous.copySelectedSide === next.copySelectedSide &&
+    previous.cursorLine === next.cursorLine &&
+    previous.cursorLineTarget === next.cursorLineTarget &&
     previous.shouldLoadHighlight === next.shouldLoadHighlight &&
     previous.sectionGeometry === next.sectionGeometry &&
     previous.separatorWidth === next.separatorWidth &&

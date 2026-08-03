@@ -67,14 +67,19 @@ function uniqueStableKeys(keys: Array<string | undefined>) {
   return next;
 }
 
+/** Build the file-scoped stable anchor for one source line on either diff side. */
+export function lineStableKey(hunkIndex: number, side: "old" | "new", lineNumber: number) {
+  return `line:${hunkIndex}:${side}:${lineNumber}`;
+}
+
 /** Build the file-scoped stable anchor for one old-side source line. */
 function oldLineStableKey(hunkIndex: number, lineNumber?: number) {
-  return lineNumber === undefined ? undefined : `line:${hunkIndex}:old:${lineNumber}`;
+  return lineNumber === undefined ? undefined : lineStableKey(hunkIndex, "old", lineNumber);
 }
 
 /** Build the file-scoped stable anchor for one new-side source line. */
 function newLineStableKey(hunkIndex: number, lineNumber?: number) {
-  return lineNumber === undefined ? undefined : `line:${hunkIndex}:new:${lineNumber}`;
+  return lineNumber === undefined ? undefined : lineStableKey(hunkIndex, "new", lineNumber);
 }
 
 /** Build the file-scoped stable anchor for one context row shared by both sides. */

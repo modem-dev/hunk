@@ -16,10 +16,12 @@ import {
 import { DEFAULT_TAB_WIDTH } from "../../../core/tabWidth";
 import type {
   AgentAnnotation,
+  CursorLine,
   DiffFile,
   LayoutMode,
   UserNoteLineTarget,
 } from "../../../core/types";
+import type { LineCursor } from "../../lib/lineCursors";
 import type { FileSourceStatus } from "../../diff/expandCollapsedRows";
 import type { ActiveAddNoteAffordance } from "../../diff/PierreDiffView";
 import type { DraftReviewNote } from "../../hooks/useReviewController";
@@ -32,7 +34,8 @@ import {
   computeRapidScrollOverscanRows,
   RAPID_SCROLL_OVERSCAN_IDLE_MS,
 } from "../../lib/adaptiveScrollOverscan";
-import { computeHunkRevealScrollTop } from "../../lib/hunkScroll";
+import { computeHunkRevealScrollTop, computeLineRevealScrollTop } from "../../lib/hunkScroll";
+import { lineStableKey } from "../../diff/reviewRenderPlan";
 import {
   measureDiffSectionGeometry,
   type DiffSectionGeometry,
@@ -195,6 +198,9 @@ export function DiffPane({
   scrollRef,
   selectedFileId,
   selectedHunkIndex,
+  cursorLine = "off",
+  lineCursor = null,
+  lineCursorRevealRequestId = 0,
   scrollToNote = false,
   draftNote = null,
   draftNoteFocused = false,
@@ -246,6 +252,9 @@ export function DiffPane({
   scrollRef: RefObject<ScrollBoxRenderable | null>;
   selectedFileId?: string;
   selectedHunkIndex: number;
+  cursorLine?: CursorLine;
+  lineCursor?: LineCursor | null;
+  lineCursorRevealRequestId?: number;
   scrollToNote?: boolean;
   draftNote?: DraftReviewNote | null;
   draftNoteFocused?: boolean;
@@ -865,6 +874,13 @@ export function DiffPane({
     }
     return resolveCopySelectionSide(copySelectionDrag.anchor.column, layout, diffContentWidth);
   }, [copySelectionDrag, diffContentWidth, layout]);
+
+  // One object per cursor move, so the section and row memos below only see a new reference when
+  // the current line actually moves.
+  const cursorLineTarget = useMemo(
+    () => (lineCursor ? { hunkIndex: lineCursor.hunkIndex, ...lineCursor.target } : undefined),
+    [lineCursor],
+  );
 
   const copySelectedRowKeysByFile = useMemo(
     () =>
@@ -1863,6 +1879,55 @@ export function DiffPane({
     suppressViewportSelectionSync,
   ]);
 
+  const previousLineCursorRevealRequestIdRef = useRef(lineCursorRevealRequestId);
+
+  // Measured bounds rather than a row count, so wrapped rows taller than one row still fit.
+  useLayoutEffect(() => {
+    if (previousLineCursorRevealRequestIdRef.current === lineCursorRevealRequestId) {
+      return;
+    }
+    previousLineCursorRevealRequestIdRef.current = lineCursorRevealRequestId;
+
+    const scrollBox = scrollRef.current;
+    if (!scrollBox || !lineCursor || !cursorLineTarget) {
+      return;
+    }
+
+    const sectionIndex = files.findIndex((file) => file.id === lineCursor.fileId);
+    const section = fileSectionLayouts[sectionIndex];
+    const bounds = sectionGeometry[sectionIndex]?.rowBoundsByStableKey.get(
+      lineStableKey(cursorLineTarget.hunkIndex, cursorLineTarget.side, cursorLineTarget.line),
+    );
+    if (!section || !bounds) {
+      return;
+    }
+
+    const viewportHeight = scrollBox.viewport.height || scrollViewport.height;
+    const revealScrollTop = computeLineRevealScrollTop({
+      lineTop: section.bodyTop + bounds.top,
+      lineHeight: bounds.height,
+      scrollTop: scrollBox.scrollTop,
+      viewportHeight,
+    });
+    if (revealScrollTop === scrollBox.scrollTop) {
+      return;
+    }
+
+    suppressViewportSelectionSync();
+    scrollBox.scrollTo(clampReviewScrollTop(revealScrollTop, viewportHeight));
+  }, [
+    clampReviewScrollTop,
+    cursorLineTarget,
+    fileSectionLayouts,
+    files,
+    lineCursor,
+    lineCursorRevealRequestId,
+    scrollRef,
+    scrollViewport.height,
+    sectionGeometry,
+    suppressViewportSelectionSync,
+  ]);
+
   // Keep keyboard step scrolling at exactly one row while wheel scrolling uses its own multiplier.
   useEffect(() => {
     const scrollBox = scrollRef.current;
@@ -1963,6 +2028,10 @@ export function DiffPane({
                       selectedHunkIndex={file.id === selectedFileId ? selectedHunkIndex : -1}
                       copySelectedRowRanges={copySelectedRowKeysByFile.get(file.id)}
                       copySelectedSide={copySelectionSide}
+                      cursorLine={cursorLine}
+                      cursorLineTarget={
+                        file.id === lineCursor?.fileId ? cursorLineTarget : undefined
+                      }
                       shouldLoadHighlight={
                         (!wrapLines || initialWrappedRenderWindowWarmed) &&
                         highlightPrefetchFileIds.has(file.id)
