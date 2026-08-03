@@ -78,6 +78,9 @@ The built-in commands and the keys they ship with:
 | `hunk.view.layoutSplit`             | Split layout                             | `1`                          |
 | `hunk.view.layoutStack`             | Stack layout                             | `2`                          |
 | `hunk.view.layoutAuto`              | Auto layout                              | `0`                          |
+| `hunk.view.cursorLineRow`           | Highlight the current row                | _(none)_                     |
+| `hunk.view.cursorLineNumber`        | Mark the current line number             | _(none)_                     |
+| `hunk.view.cursorLineOff`           | Hide the current-line marker             | _(none)_                     |
 
 Commands marked _(none)_ ship without a key: they are menu items today, and
 binding one gives it a shortcut like any other.

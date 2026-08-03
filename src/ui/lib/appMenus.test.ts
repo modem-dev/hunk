@@ -16,6 +16,7 @@ import { resolveCommandKeys } from "./keymap";
 /** The app-state half of the menu options, so tests only state what they exercise. */
 const MENU_STATE: Omit<BuildAppMenusOptions, "commands" | "extensionCommands"> = {
   copyDecorations: true,
+  cursorLine: "row" as const,
   layoutMode: "stack",
   renderSidebar: false,
   showAgentNotes: true,
@@ -49,6 +50,8 @@ function createTestCommands(overrides: Partial<BuildAppCommandsOptions> = {}) {
     requestQuit: record("requestQuit"),
     scrollCodeHorizontally: noop,
     scrollDiff: noop,
+    selectCursorLine: noop,
+    stepDiffLine: noop,
     selectLayoutMode: noop,
     startUserNote: noop,
     toggleAgentNotes: noop,
@@ -96,6 +99,19 @@ function registeredCommand(
 }
 
 describe("buildAppMenus", () => {
+  test("the current-line entries check the active style", () => {
+    const { commands } = createTestCommands();
+
+    const checkedFor = (cursorLine: BuildAppMenusOptions["cursorLine"]) =>
+      items(buildAppMenus({ commands, ...MENU_STATE, cursorLine }).view)
+        .filter((item) => item.checked && item.label.startsWith("Current line:"))
+        .map((item) => item.label);
+
+    expect(checkedFor("row")).toEqual(["Current line: full row"]);
+    expect(checkedFor("number")).toEqual(["Current line: line number"]);
+    expect(checkedFor("off")).toEqual(["Current line: off"]);
+  });
+
   test("labels, hints, and checked state come from the commands and app state", () => {
     const { commands } = createTestCommands();
     const menus = buildAppMenus({ commands, ...MENU_STATE });
@@ -123,6 +139,7 @@ describe("buildAppMenus", () => {
       "Line numbers",
       "Line wrapping",
       "Copy decorations",
+      "Current line: full row",
     ]);
     expect(items(menus.view).map((item) => item.label)).toContain("Themes…");
     expect(items(menus.agent).map((item) => item.label)).toEqual([
