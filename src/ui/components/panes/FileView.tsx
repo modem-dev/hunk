@@ -9,7 +9,7 @@ import type {
 } from "../../../extension-api/types";
 import type { AppTheme } from "../../themes";
 import type { DiffSectionGeometry } from "../../diff/diffSectionGeometry";
-import type { CursorHighlight } from "../../diff/renderRows";
+import { plannedRowMatchesCursor, type CursorHighlight } from "../../diff/renderRows";
 import { cursorLineHighlightBg } from "../../diff/rowStyle";
 import { resolveVisibleRowIndexWindow, type VisibleBodyBounds } from "../../diff/rowWindowing";
 import { reviewRowId } from "../../lib/ids";
@@ -185,9 +185,7 @@ function FileViewComponent({
         const row = plannedRow.row;
         const index = plannedRow.rowIndex;
         const selected = isFileViewRowSelected(layout, index, selectedHunkIndex);
-        const onCursorRow =
-          cursorHighlight !== undefined &&
-          plannedRow.stableAliasKeys?.includes(cursorHighlight.stableKey) === true;
+        const onCursorRow = plannedRowMatchesCursor(plannedRow, cursorHighlight);
         const rowBackground = selected ? theme.selectedHunk : theme.panel;
         const fixedHeight = row.component?.height;
         const View = row.component?.render as

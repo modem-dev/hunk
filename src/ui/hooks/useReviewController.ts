@@ -40,11 +40,13 @@ import type {
 import type { FileSourceStatus } from "../diff/expandCollapsedRows";
 import { selectGapForKeyboardToggle } from "../diff/expandCollapsedRows";
 import { trailingCollapsedLines } from "../diff/pierre";
-import { lineStableKey } from "../diff/reviewRenderPlan";
 import { findNextHunkCursor } from "../lib/hunks";
 import {
+  EMPTY_LINE_CURSORS,
   findNextLineCursor,
   firstLineCursorInHunk,
+  hasLineCursor,
+  lineCursorAt,
   resolveLineCursor,
   type LineCursor,
 } from "../lib/lineCursors";
@@ -58,35 +60,15 @@ import {
   resolveReviewNavigationTarget,
 } from "../lib/reviewState";
 
-const EMPTY_LINE_CURSORS: LineCursor[] = [];
-
-/**
- * Resolve the navigable line one note target sits on.
- *
- * Notes can address a side the stream does not stop on — the old half of a context row, say — so
- * fall back to that line's own anchor, which reveal and rendering still resolve through aliases.
- */
-function lineCursorAt(
-  cursors: LineCursor[],
-  fileId: string,
-  hunkIndex: number,
-  target: UserNoteLineTarget,
-): LineCursor {
-  const stop = cursors.find(
-    (cursor) =>
-      cursor.fileId === fileId &&
-      cursor.hunkIndex === hunkIndex &&
-      cursor.target.side === target.side &&
-      cursor.target.line === target.line,
-  );
-  return (
-    stop ?? {
-      fileId,
-      hunkIndex,
-      stableKey: lineStableKey(hunkIndex, target.side, target.line),
-      target,
-    }
-  );
+/** Add or remove one gap key from a file's expansion set. */
+function toggledGaps(current: ReadonlySet<string> | undefined, gapKey: string, expanding: boolean) {
+  const next = new Set(current ?? []);
+  if (expanding) {
+    next.add(gapKey);
+  } else {
+    next.delete(gapKey);
+  }
+  return next;
 }
 
 /** Clamp one numeric index into an inclusive range. */
@@ -266,11 +248,10 @@ export function useReviewController({
   // same pre-batch state and the cursor would advance a single row.
   const lineCursorRef = useRef<LineCursor | null>(null);
   const [lineCursorRevealRequestId, setLineCursorRevealRequestId] = useState(0);
-  // Expanding a gap is a request to read what it hid, so the marker moves to the first revealed
-  // line; collapsing puts it back where it was, but only if the collapse retired the row it is on.
   const previousLineCursorsRef = useRef(lineCursors);
-  const revealExpandedFileIdRef = useRef<string | null>(null);
-  const restoreLineCursorRef = useRef<LineCursor | null>(null);
+  const pendingLineCursorRef = useRef<
+    { kind: "reveal"; fileId: string } | { kind: "restore"; cursor: LineCursor } | null
+  >(null);
   const lineCursorBeforeExpandRef = useRef(new Map<string, LineCursor>());
   const [scrollToNote, setScrollToNote] = useState(false);
   const [liveCommentsByFileId, setLiveCommentsByFileId] = useState<Record<string, LiveComment[]>>(
@@ -324,6 +305,11 @@ export function useReviewController({
     if (staleFileIds.size > 0) {
       for (const fileId of staleFileIds) {
         sourceLoadRequestsRef.current.delete(fileId);
+        for (const restorePointKey of lineCursorBeforeExpandRef.current.keys()) {
+          if (restorePointKey.startsWith(`${fileId}:`)) {
+            lineCursorBeforeExpandRef.current.delete(restorePointKey);
+          }
+        }
       }
       setSourceStatusByFileId((prev) => removeKeys(prev, staleFileIds));
       setExpandedGapsByFileId((prev) => removeKeys(prev, staleFileIds));
@@ -449,18 +435,18 @@ export function useReviewController({
     const previousCursors = previousLineCursorsRef.current;
     previousLineCursorsRef.current = lineCursors;
 
-    const revealFileId = revealExpandedFileIdRef.current;
-    if (revealFileId !== null) {
+    const pending = pendingLineCursorRef.current;
+    if (pending?.kind === "reveal") {
       const alreadyStopped = new Set(
         previousCursors
-          .filter((cursor) => cursor.fileId === revealFileId)
+          .filter((cursor) => cursor.fileId === pending.fileId)
           .map((cursor) => cursor.stableKey),
       );
       const firstRevealed = lineCursors.find(
-        (cursor) => cursor.fileId === revealFileId && !alreadyStopped.has(cursor.stableKey),
+        (cursor) => cursor.fileId === pending.fileId && !alreadyStopped.has(cursor.stableKey),
       );
       if (firstRevealed) {
-        revealExpandedFileIdRef.current = null;
+        pendingLineCursorRef.current = null;
         revealLineCursor(firstRevealed);
         return;
       }
@@ -468,20 +454,10 @@ export function useReviewController({
 
     // Only take the restore point when the collapse actually retired the row the marker was on;
     // the reviewer may have stepped well clear of the gap since expanding it.
-    const restorePoint = restoreLineCursorRef.current;
-    const current = lineCursorRef.current;
-    if (
-      restorePoint &&
-      !(
-        current &&
-        lineCursors.some(
-          (cursor) => cursor.fileId === current.fileId && cursor.stableKey === current.stableKey,
-        )
-      )
-    ) {
-      const restored = resolveLineCursor(lineCursors, restorePoint);
+    if (pending?.kind === "restore" && !hasLineCursor(lineCursors, lineCursorRef.current)) {
+      const restored = resolveLineCursor(lineCursors, pending.cursor);
       if (restored) {
-        restoreLineCursorRef.current = null;
+        pendingLineCursorRef.current = null;
         revealLineCursor(restored);
         return;
       }
@@ -493,8 +469,6 @@ export function useReviewController({
       return;
     }
 
-    // Selection moved without the cursor, so `]` and the sidebar leave one review position
-    // rather than stranding the marker in the hunk the reviewer just left.
     applyLineCursor(firstLineCursorInHunk(lineCursors, selectedFileId, selectedHunkIndex));
   }, [applyLineCursor, lineCursors, revealLineCursor, selectedFileId, selectedHunkIndex]);
 
@@ -519,13 +493,9 @@ export function useReviewController({
         return;
       }
 
-      applyLineCursor(nextCursor);
-      setLineCursorRevealRequestId((current) => current + 1);
-      // Selection follows the line so notes and `[`/`]` agree on where the reviewer is; the
-      // reveal above already owns scrolling, so this must not scroll too.
-      selectHunk(nextCursor.fileId, nextCursor.hunkIndex, { preserveViewport: true });
+      revealLineCursor(nextCursor);
     },
-    [applyLineCursor, lineCursors, selectHunk],
+    [lineCursors, revealLineCursor],
   );
 
   /** Move through the full visible review stream one hunk at a time. */
@@ -621,31 +591,29 @@ export function useReviewController({
         return;
       }
 
-      // Decide against the mirror, not the state: a held `z` drains as one chunk and every toggle
-      // in the burst would otherwise read the same pre-batch expansion set.
       const restorePointKey = `${fileId}:${gapKey}`;
+      const restorePoint = lineCursorBeforeExpandRef.current.get(restorePointKey) ?? null;
       const expanding = !expandedGapsRef.current[fileId]?.has(gapKey);
       if (expanding) {
         if (lineCursorRef.current) {
           lineCursorBeforeExpandRef.current.set(restorePointKey, lineCursorRef.current);
         }
-        revealExpandedFileIdRef.current = fileId;
-        restoreLineCursorRef.current = null;
+        pendingLineCursorRef.current = { kind: "reveal", fileId };
       } else {
-        revealExpandedFileIdRef.current = null;
-        restoreLineCursorRef.current =
-          lineCursorBeforeExpandRef.current.get(restorePointKey) ?? null;
         lineCursorBeforeExpandRef.current.delete(restorePointKey);
+        pendingLineCursorRef.current = restorePoint
+          ? { kind: "restore", cursor: restorePoint }
+          : null;
       }
 
-      const nextGaps = new Set(expandedGapsRef.current[fileId] ?? []);
-      if (expanding) {
-        nextGaps.add(gapKey);
-      } else {
-        nextGaps.delete(gapKey);
-      }
-      expandedGapsRef.current = { ...expandedGapsRef.current, [fileId]: nextGaps };
-      setExpandedGapsByFileId((prev) => ({ ...prev, [fileId]: nextGaps }));
+      expandedGapsRef.current = {
+        ...expandedGapsRef.current,
+        [fileId]: toggledGaps(expandedGapsRef.current[fileId], gapKey, expanding),
+      };
+      setExpandedGapsByFileId((prev) => ({
+        ...prev,
+        [fileId]: toggledGaps(prev[fileId], gapKey, expanding),
+      }));
 
       // The fetcher caches its own resolved text; we mirror it into React state
       // as a tagged status so the UI can distinguish loading, loaded, and error

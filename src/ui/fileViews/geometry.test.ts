@@ -152,7 +152,6 @@ describe("file-view geometry", () => {
       width: 80,
     });
 
-    // The reveal effect resolves a cursor through this map, so an unindexed anchor scrolls nowhere.
     expect(geometry.rowBoundsByStableKey.get("line:0:new:1")).toMatchObject({ top: 0 });
     expect(geometry.rowBoundsByStableKey.get("file-view:summary")).toMatchObject({ top: 0 });
   });

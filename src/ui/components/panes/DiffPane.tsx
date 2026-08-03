@@ -36,9 +36,11 @@ import {
   RAPID_SCROLL_OVERSCAN_IDLE_MS,
 } from "../../lib/adaptiveScrollOverscan";
 import { computeHunkRevealScrollTop, computeLineRevealScrollTop } from "../../lib/hunkScroll";
+import { inlineNoteStableKey } from "../../diff/reviewRenderPlan";
 import {
   buildLineCursors,
   clampLineCursorToViewport,
+  EMPTY_LINE_CURSORS,
   type LineCursorBoundsLookup,
 } from "../../lib/lineCursors";
 import {
@@ -188,7 +190,6 @@ const EMPTY_EXPANDED_GAP_KEYS: ReadonlySet<string> = new Set();
 const EMPTY_EXPANDED_GAPS_BY_FILE_ID: Record<string, ReadonlySet<string>> = {};
 const EMPTY_FILE_VIEWS: ReadonlyMap<string, ResolvedFileViewLayout> = new Map();
 const EMPTY_SOURCE_STATUS_BY_FILE_ID: Record<string, FileSourceStatus> = {};
-const EMPTY_LINE_CURSORS: LineCursor[] = [];
 const NOOP_TOGGLE_GAP = () => {};
 
 /** Render the main multi-file review stream. */
@@ -554,7 +555,9 @@ export function DiffPane({
   const previousFilesRef = useRef<DiffFile[]>(files);
   const previousLayoutRef = useRef(layout);
   const previousWrapLinesRef = useRef(wrapLines);
-  const previousDraftNoteIdRef = useRef(draftNote?.id ?? null);
+  const draftNoteId = draftNote?.id ?? null;
+  const draftNoteFileId = draftNote?.fileId ?? null;
+  const previousDraftNoteIdRef = useRef(draftNoteId);
   const previousSelectedFileTopAlignRequestIdRef = useRef(selectedFileTopAlignRequestId);
   const previousLayoutToggleRequestIdRef = useRef(layoutToggleRequestId);
   const previousSelectedHunkRevealRequestIdRef = useRef(selectedHunkRevealRequestId);
@@ -825,7 +828,6 @@ export function DiffPane({
     [fileSectionLayouts],
   );
 
-  // The measured stream is what the reviewer actually sees, so it is also what `j` and `k` walk.
   const lineCursors = useMemo(
     // Nothing reads the stops while the marker is off, and enumerating them costs one object per
     // rendered row of the whole changeset every time geometry is remeasured.
@@ -1248,9 +1250,7 @@ export function DiffPane({
       return;
     }
 
-    // One review position per settled scroll: the current line owns it whenever there is one, so
-    // the marker and the selection cannot drift apart on the same wheel tick.
-    if (cursorLine !== "off" && lineCursors.length > 0) {
+    if (lineCursors.length > 0) {
       const clampedCursor = clampLineCursorToViewport({
         boundsOf: lineCursorBoundsOf,
         current: lineCursor,
@@ -1284,7 +1284,6 @@ export function DiffPane({
 
     onViewportCenteredHunkChange?.(centeredTarget.fileId, centeredTarget.hunkIndex);
   }, [
-    cursorLine,
     fileSectionLayouts,
     files,
     lineCursor,
@@ -1506,9 +1505,10 @@ export function DiffPane({
     const sectionRelativeHunkTop =
       selectedEstimatedHunkBounds.top - selectedEstimatedHunkBounds.sectionTop;
     const sectionRelativeHunkBottom = sectionRelativeHunkTop + selectedEstimatedHunkBounds.height;
-    // An open draft is the note the reviewer is waiting on, even when earlier notes share its hunk.
     const noteRow =
-      (draftNote ? geometry.rowBoundsByStableKey.get(`inline-note:${draftNote.id}`) : undefined) ??
+      (draftNoteId
+        ? geometry.rowBoundsByStableKey.get(inlineNoteStableKey(draftNoteId))
+        : undefined) ??
       geometry.rowBounds.find(
         (row) =>
           row.key.startsWith("inline-note:") &&
@@ -1524,7 +1524,7 @@ export function DiffPane({
       top: selectedEstimatedHunkBounds.sectionTop + noteRow.top,
       height: noteRow.height,
     };
-  }, [draftNote, scrollToNote, sectionGeometry, selectedEstimatedHunkBounds, selectedFileIndex]);
+  }, [draftNoteId, scrollToNote, sectionGeometry, selectedEstimatedHunkBounds, selectedFileIndex]);
   const selectedEstimatedHunkTop = selectedEstimatedHunkBounds?.top ?? null;
   const selectedEstimatedHunkHeight = selectedEstimatedHunkBounds?.height ?? null;
   const selectedEstimatedHunkStartRowId = selectedEstimatedHunkBounds?.startRowId ?? null;
@@ -1605,7 +1605,7 @@ export function DiffPane({
     const wrapChanged = previousWrapLinesRef.current !== wrapLines;
     const previousSectionMetrics = previousSectionGeometryRef.current;
     const previousFiles = previousFilesRef.current;
-    const currentDraftNoteId = draftNote?.id ?? null;
+    const currentDraftNoteId = draftNoteId;
     const draftChanged = previousDraftNoteIdRef.current !== currentDraftNoteId;
 
     if (draftChanged && previousSectionMetrics && previousFiles.length > 0) {
@@ -1625,11 +1625,10 @@ export function DiffPane({
           anchor,
           sectionHeaderHeights,
         );
-        // Holding the anchor row still keeps the code from jumping, but the card opens below it and
-        // can hang off the bottom, so give up the minimum height needed to show all of it.
-        const draftBounds = draftNote
-          ? rowBoundsInStream(draftNote.fileId, `inline-note:${draftNote.id}`)
-          : undefined;
+        const draftBounds =
+          draftNoteId && draftNoteFileId
+            ? rowBoundsInStream(draftNoteFileId, inlineNoteStableKey(draftNoteId))
+            : undefined;
         const nextTop = draftBounds
           ? computeLineRevealScrollTop({
               lineTop: draftBounds.top,
@@ -1717,7 +1716,8 @@ export function DiffPane({
     previousSectionGeometryRef.current = sectionGeometry;
     previousFilesRef.current = files;
   }, [
-    draftNote,
+    draftNoteFileId,
+    draftNoteId,
     files,
     layout,
     layoutToggleRequestId,
@@ -1968,7 +1968,6 @@ export function DiffPane({
 
   const previousLineCursorRevealRequestIdRef = useRef(lineCursorRevealRequestId);
 
-  // Measured bounds rather than a row count, so wrapped rows taller than one row still fit.
   useLayoutEffect(() => {
     if (previousLineCursorRevealRequestIdRef.current === lineCursorRevealRequestId) {
       return;

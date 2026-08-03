@@ -49,6 +49,17 @@ export interface CursorHighlight {
   side: "old" | "new";
 }
 
+/** Report whether one planned row carries the anchor the cursor rests on. */
+export function plannedRowMatchesCursor(
+  row: { stableKey: string; stableAliasKeys?: readonly string[] },
+  cursor: CursorHighlight | undefined,
+) {
+  return (
+    cursor !== undefined &&
+    (row.stableKey === cursor.stableKey || row.stableAliasKeys?.includes(cursor.stableKey) === true)
+  );
+}
+
 interface RowHighlight {
   bg: (baseBg: string) => string;
   /** Global columns to blend; absent blends the gutter alone. */
@@ -1157,6 +1168,23 @@ function applyHighlightPalette<P extends { gutterBg: string; contentBg: string }
   };
 }
 
+/**
+ * Choose which highlight paints one half of a row.
+ *
+ * An active drag outranks the resting cursor, so copy selection keeps its exact extent.
+ */
+function pickRowHighlight(
+  selection: RowHighlight,
+  cursor: RowHighlight | undefined,
+  hasSelection: boolean,
+  onCursor: boolean,
+) {
+  if (hasSelection) {
+    return selection;
+  }
+  return onCursor ? cursor : undefined;
+}
+
 /** Apply a highlight blend to a prefix descriptor. */
 function applyHighlightPrefix<P extends { bg: string }>(
   prefix: P,
@@ -1690,40 +1718,39 @@ function renderRow(
   const hasLeftSelection = hasCopySelection && copySelectedSide !== "right";
   const hasRightSelection = hasCopySelection && copySelectedSide !== "left";
 
-  // An active drag outranks the resting cursor, so copy selection keeps its exact extent. On a
-  // split change row the two sides are different note targets, so each resolves separately.
-  const resolveHighlight = (hasSelection: boolean, onCursor: boolean): RowHighlight | undefined => {
-    if (hasSelection) {
-      return {
-        bg: (baseBg) => selectionHighlightBg(baseBg, theme),
-        colRange: copySelectedRowRange,
-      };
-    }
-
-    if (!onCursor) {
-      return undefined;
-    }
-
-    return {
-      bg: (baseBg) => cursorLineHighlightBg(baseBg, theme),
-      colRange: cursorHighlight?.style === "row" ? FULL_ROW_COL_RANGE : undefined,
-    };
-  };
-
   // A split context row shows the same source line on both halves, so marking one of them would
   // read as half a row. Change rows keep the split, since the halves are different note targets.
   const splitContextRow =
     row.type === "split-line" && row.left.kind === "context" && row.right.kind === "context";
   const onCursorRow = cursorHighlight !== undefined;
-  const leftHighlight = resolveHighlight(
+  const selectionHighlight: RowHighlight = {
+    bg: (baseBg) => selectionHighlightBg(baseBg, theme),
+    colRange: copySelectedRowRange,
+  };
+  const cursorRowHighlight: RowHighlight | undefined = onCursorRow
+    ? {
+        bg: (baseBg) => cursorLineHighlightBg(baseBg, theme),
+        colRange: cursorHighlight.style === "row" ? FULL_ROW_COL_RANGE : undefined,
+      }
+    : undefined;
+  const leftHighlight = pickRowHighlight(
+    selectionHighlight,
+    cursorRowHighlight,
     hasLeftSelection,
     onCursorRow && (splitContextRow || cursorHighlight.side === "old"),
   );
-  const rightHighlight = resolveHighlight(
+  const rightHighlight = pickRowHighlight(
+    selectionHighlight,
+    cursorRowHighlight,
     hasRightSelection,
     onCursorRow && (splitContextRow || cursorHighlight.side === "new"),
   );
-  const cellHighlight = resolveHighlight(hasCopySelection, cursorHighlight !== undefined);
+  const cellHighlight = pickRowHighlight(
+    selectionHighlight,
+    cursorRowHighlight,
+    hasCopySelection,
+    onCursorRow,
+  );
   let baseRow: ReactNode;
 
   if (row.type === "collapsed") {

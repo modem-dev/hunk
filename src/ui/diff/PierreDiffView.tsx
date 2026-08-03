@@ -13,7 +13,13 @@ import { spansForHighlightedSourceLine, type DiffRow } from "./pierre";
 import { plannedReviewRowVisible } from "./plannedReviewRows";
 import { buildDiffSectionRowPlan } from "./diffSectionRowPlan";
 import { resolveVisiblePlannedRowWindow, type VisibleBodyBounds } from "./rowWindowing";
-import { diffMessage, DiffRowView, fitText, type CursorHighlight } from "./renderRows";
+import {
+  diffMessage,
+  DiffRowView,
+  fitText,
+  plannedRowMatchesCursor,
+  type CursorHighlight,
+} from "./renderRows";
 import { useHighlightedDiff } from "./useHighlightedDiff";
 import { useHighlightedSource } from "./useHighlightedSource";
 
@@ -374,11 +380,7 @@ export function PierreDiffView({
           );
         }
 
-        // Matching on the render plan's own anchor lets split and stack share one lookup.
-        const isCursorRow =
-          cursorHighlight !== undefined &&
-          (plannedRow.stableKey === cursorHighlight.stableKey ||
-            plannedRow.stableAliasKeys?.includes(cursorHighlight.stableKey) === true);
+        const isCursorRow = plannedRowMatchesCursor(plannedRow, cursorHighlight);
 
         return (
           <box key={plannedRow.key} id={rowId} style={{ width: "100%", flexDirection: "column" }}>

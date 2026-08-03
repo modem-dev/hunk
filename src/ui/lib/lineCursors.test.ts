@@ -323,7 +323,6 @@ describe("resolveLineCursor", () => {
 
 describe("clampLineCursorToViewport", () => {
   const cursors = cursorsFor([createTwoHunkFile("alpha", "alpha.ts")], "stack");
-  // One row per stop, stacked from the top of the stream.
   const boundsOf = (cursor: LineCursor) => {
     const index = cursors.findIndex((candidate) => candidate.stableKey === cursor.stableKey);
     return index < 0 ? undefined : { top: index, height: 1 };

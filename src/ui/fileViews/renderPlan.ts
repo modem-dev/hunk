@@ -1,6 +1,6 @@
 import type { AgentAnnotation } from "../../core/types";
 import type { ExtensionFileViewLayout, ExtensionFileViewRow } from "../../extension-api/types";
-import { lineStableKey } from "../diff/reviewRenderPlan";
+import { inlineNoteStableKey, lineStableKey } from "../diff/reviewRenderPlan";
 import { annotationAnchor, type VisibleAgentNote } from "../lib/agentAnnotations";
 
 /** One validated extension row or host-owned inline note in an alternate file presentation. */
@@ -50,12 +50,7 @@ function hunkOwnersByRow(layout: ExtensionFileViewLayout) {
   });
 }
 
-/**
- * Build the line anchor one presentation row shares with the raw diff, if it has exactly one hunk.
- *
- * Reusing the raw diff's anchor is what lets the current line walk, highlight, and reveal inside an
- * alternate view, and what keeps it in place when a draft note forces the file back to raw diff.
- */
+/** Build the line anchor one presentation row shares with the raw diff, if it owns exactly one hunk. */
 function rowLineStableKey(row: ExtensionFileViewRow, hunkIndex: number) {
   const sourceRange = row.sourceRanges?.[0];
   return hunkIndex < 0 || !sourceRange
@@ -133,7 +128,7 @@ export function buildFileViewRenderPlan(
       rows.push({
         kind: "inline-note",
         key: `inline-note:${placement.note.id}:file-view:${row.id}:${noteIndex}`,
-        stableKey: `inline-note:${placement.note.id}`,
+        stableKey: inlineNoteStableKey(placement.note.id),
         annotation: placement.note.annotation,
         anchorRowIndex: rowIndex,
         anchorSide: placement.anchorSide,

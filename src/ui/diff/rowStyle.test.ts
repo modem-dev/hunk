@@ -32,8 +32,6 @@ describe("cursorLineHighlightBg", () => {
     const context = stackCellPalette("context", DARK).contentBg;
     const added = stackCellPalette("addition", DARK).contentBg;
 
-    // Blending toward one fixed highlight color barely moved a background already sharing its
-    // hue, which left the marker invisible on added rows.
     const shift = (from: string) => {
       const to = cursorLineHighlightBg(from, DARK);
       return contrastRatio(to, from);

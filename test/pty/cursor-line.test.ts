@@ -24,8 +24,6 @@ describe("PTY current line", () => {
       await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
       await session.waitIdle({ timeout: 300 });
 
-      // The cursor starts inside the first hunk, well above the fold, so the first step only
-      // moves the highlight. This is the behavior `cursor_line = "off"` trades away.
       expect(await measureKeyScroll(session, "j", 12)).toBe(0);
 
       let stepsBeforeScrolling = 1;
@@ -35,12 +33,9 @@ describe("PTY current line", () => {
         stepsBeforeScrolling += 1;
       }
 
-      // The highlight has to reach the bottom edge before the viewport moves at all.
       expect(stepsBeforeScrolling).toBeGreaterThan(5);
       expect(firstScroll).toBeGreaterThan(0);
 
-      // From there the viewport follows the current line by exactly one row per step, rather
-      // than jumping a quarter screen the way hunk reveal does.
       expect(await measureKeyScroll(session, "j", 12)).toBe(1);
       expect(await measureKeyScroll(session, "j", 12)).toBe(1);
       expect(await measureKeyScroll(session, "k", 12)).toBe(0);
@@ -104,8 +99,6 @@ describe("PTY current line", () => {
       await session.press("c");
       const draft = await session.waitForText(/Draft note/, { timeout: 5_000 });
 
-      // The revealed line is a stop of its own, so the card lands under it rather than under the
-      // first line the parsed hunk knows about.
       expect(lineIndexOf(draft, "Draft note")).toBe(lineIndexOf(draft, "hiddenLine01") + 1);
     } finally {
       session.close();
@@ -136,7 +129,6 @@ describe("PTY current line", () => {
       await session.press("c");
       const expanded = await session.waitForText(/Draft note/, { timeout: 5_000 });
 
-      // Expanding is a request to read what the gap hid, so the marker lands on its first line.
       expect(expanded).toContain("R1 ");
       expect(lineIndexOf(expanded, "Draft note")).toBe(lineIndexOf(expanded, "hiddenLine01") + 1);
       await session.press("escape");
@@ -170,8 +162,6 @@ describe("PTY current line", () => {
       await session.press("space");
       await session.waitIdle({ timeout: 400 });
 
-      // The page left the marker behind, so it re-anchors into the new viewport instead of
-      // dragging the whole page back the moment the reviewer steps again.
       expect(await measureKeyScroll(session, "j", 12)).toBeLessThanOrEqual(1);
     } finally {
       session.close();
@@ -235,7 +225,6 @@ describe("PTY current line", () => {
       await session.press("c");
       const draftAtCursor = await session.waitForText(/Draft note/, { timeout: 5_000 });
 
-      // Without a keyboard line target `c` would open the same card in the same place every time.
       expect(lineIndexOf(draftAtCursor, "Draft note")).toBeGreaterThan(draftRowAtTop);
     } finally {
       session.close();

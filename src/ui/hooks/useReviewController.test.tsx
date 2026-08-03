@@ -101,7 +101,6 @@ function ReviewControllerHarness({
   onSetFiles?: (setFiles: (nextFiles: DiffFile[]) => void) => void;
 }) {
   const [files, setFiles] = useState(initialFiles);
-  // Mirror the diff pane: navigable lines are published from the measured review stream.
   const [lineCursors, setLineCursors] = useState<LineCursor[]>([]);
   const controller = useReviewController({ files, lineCursors, noteGeometry, stmlEnabled });
   const visibleFiles = controller.visibleFiles;
@@ -1404,7 +1403,6 @@ describe("useReviewController", () => {
       await flush(setup);
       expect(expectValue(controllerRef.current).selectedHunkIndex).toBe(0);
 
-      // Walk far enough that the stream has to roll into the file's second hunk.
       for (let step = 0; step < 40; step += 1) {
         await act(async () => {
           expectValue(controllerRef.current).moveLineCursor(1);

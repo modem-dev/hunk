@@ -1,15 +1,17 @@
 /**
  * Line-granular navigation targets for the review stream.
  *
- * `hunks.ts` flattens the stream into hunks for `[` and `]`; this does the same one level down.
- * Stops come from the measured render plan rather than the parsed diff, so the marker visits exactly
- * the rows the active layout draws — expanded gaps and alternate file presentations included — and
- * every stop carries the plan anchor that rendering, reveal, and note placement already key on.
+ * Stops come from the measured render plan rather than the parsed diff, so they match the rows the
+ * active layout draws and carry the plan anchor rendering, reveal, and note placement already use.
  */
 
 import type { DiffFile, UserNoteLineTarget } from "../../core/types";
 import type { DiffSectionGeometry, DiffSectionRowBounds } from "../diff/diffSectionGeometry";
-import { contextLineStableKeyTarget, lineStableKeyTarget } from "../diff/reviewRenderPlan";
+import {
+  contextLineStableKeyTarget,
+  lineStableKey,
+  lineStableKeyTarget,
+} from "../diff/reviewRenderPlan";
 import type { VerticalBounds } from "./diffSpatial";
 
 export interface LineCursor {
@@ -20,7 +22,25 @@ export interface LineCursor {
   target: UserNoteLineTarget;
 }
 
+export const EMPTY_LINE_CURSORS: LineCursor[] = [];
+
 const cursorsBySectionGeometry = new WeakMap<DiffSectionGeometry, LineCursor[]>();
+const indexesByCursorList = new WeakMap<LineCursor[], Map<string, number>>();
+
+/** Index one cursor list by position, so stepping does not rescan the changeset per keypress. */
+function cursorIndexes(cursors: LineCursor[]) {
+  let indexes = indexesByCursorList.get(cursors);
+  if (!indexes) {
+    indexes = new Map(cursors.map((cursor, index) => [cursorId(cursor), index]));
+    indexesByCursorList.set(cursors, indexes);
+  }
+  return indexes;
+}
+
+/** Identify one navigable line across the whole review stream. */
+function cursorId(cursor: LineCursor) {
+  return `${cursor.fileId}\u0000${cursor.stableKey}`;
+}
 
 /** Enumerate the navigable stops one measured row renders, left to right. */
 function rowLineCursors(fileId: string, bounds: DiffSectionRowBounds): LineCursor[] {
@@ -45,12 +65,7 @@ function rowLineCursors(fileId: string, bounds: DiffSectionRowBounds): LineCurso
   return cursors;
 }
 
-/**
- * List one file's cursors, reusing the last result while its measured rows are unchanged.
- *
- * Geometry is already cached per file, so this keeps a keypress from reallocating one object per
- * rendered row across the whole changeset.
- */
+/** List one file's cursors, reusing the last result while its measured rows are unchanged. */
 function fileLineCursors(file: DiffFile, geometry: DiffSectionGeometry): LineCursor[] {
   const cached = cursorsBySectionGeometry.get(geometry);
   if (cached) {
@@ -71,11 +86,6 @@ export function buildLineCursors(
     const geometry = sectionGeometry[index];
     return geometry ? fileLineCursors(file, geometry) : [];
   });
-}
-
-/** Check whether two cursors name the same review-stream row. */
-function sameLineCursor(left: LineCursor, right: LineCursor) {
-  return left.fileId === right.fileId && left.stableKey === right.stableKey;
 }
 
 /** Find the first cursor in one hunk, then anywhere in its file. */
@@ -110,23 +120,21 @@ export function findNextLineCursor(
   current: LineCursor | null,
   delta: number,
 ): LineCursor | null {
-  const currentIndex = current
-    ? cursors.findIndex((cursor) => sameLineCursor(cursor, current))
-    : -1;
+  const currentIndex = current ? (cursorIndexes(cursors).get(cursorId(current)) ?? -1) : -1;
   if (currentIndex < 0) {
     return cursors[0] ?? null;
   }
 
-  // Line navigation is non-cyclic like hunk navigation, so both ends of the stream clamp.
   const nextIndex = Math.min(Math.max(currentIndex + delta, 0), cursors.length - 1);
   return cursors[nextIndex] ?? null;
 }
 
-/**
- * Keep a cursor pointing at a real line after filtering or a reload retires the one it was on.
- *
- * Falls back toward the same hunk and then the same file, mirroring how file selection recovers.
- */
+/** Check whether one cursor still names a row the review stream renders. */
+export function hasLineCursor(cursors: LineCursor[], cursor: LineCursor | null) {
+  return cursor !== null && cursorIndexes(cursors).has(cursorId(cursor));
+}
+
+/** Keep a cursor pointing at a real line after filtering or a reload retires the one it was on. */
 export function resolveLineCursor(
   cursors: LineCursor[],
   current: LineCursor | null,
@@ -135,26 +143,55 @@ export function resolveLineCursor(
     return null;
   }
 
-  if (cursors.some((cursor) => sameLineCursor(cursor, current))) {
+  if (hasLineCursor(cursors, current)) {
     return current;
   }
 
   return nearestCursorInFile(cursors, current.fileId, current.hunkIndex) ?? null;
 }
 
+/**
+ * Resolve the navigable line one note target sits on.
+ *
+ * Notes can address a side the stream does not stop on, so fall back to that line's own anchor,
+ * which reveal and rendering still resolve through aliases.
+ */
+export function lineCursorAt(
+  cursors: LineCursor[],
+  fileId: string,
+  hunkIndex: number,
+  target: UserNoteLineTarget,
+): LineCursor {
+  const stop = cursors.find(
+    (cursor) =>
+      cursor.fileId === fileId &&
+      cursor.hunkIndex === hunkIndex &&
+      cursor.target.side === target.side &&
+      cursor.target.line === target.line,
+  );
+  return (
+    stop ?? {
+      fileId,
+      hunkIndex,
+      stableKey: lineStableKey(hunkIndex, target.side, target.line),
+      target,
+    }
+  );
+}
+
 /** Read one cursor's measured extent in whole-stream rows. */
 export type LineCursorBoundsLookup = (cursor: LineCursor) => VerticalBounds | undefined;
 
 /**
- * Find the first cursor whose row starts at or after one stream offset.
+ * Find the first cursor whose row satisfies a monotonic viewport test.
  *
  * Cursor tops are non-decreasing, so both edges of the viewport resolve by binary search instead of
  * a walk over every row in the changeset.
  */
-function firstCursorIndexFrom(
+function firstCursorIndexWhere(
   cursors: LineCursor[],
   boundsOf: LineCursorBoundsLookup,
-  offset: number,
+  reached: (bounds: VerticalBounds) => boolean,
 ) {
   let low = 0;
   let high = cursors.length;
@@ -162,7 +199,7 @@ function firstCursorIndexFrom(
   while (low < high) {
     const middle = (low + high) >>> 1;
     const bounds = boundsOf(cursors[middle]!);
-    if (bounds && bounds.top >= offset) {
+    if (bounds && reached(bounds)) {
       high = middle;
     } else {
       low = middle + 1;
@@ -172,34 +209,7 @@ function firstCursorIndexFrom(
   return low;
 }
 
-/** Find the last cursor whose row ends at or before one stream offset. */
-function lastCursorIndexBefore(
-  cursors: LineCursor[],
-  boundsOf: LineCursorBoundsLookup,
-  offset: number,
-) {
-  let low = 0;
-  let high = cursors.length;
-
-  while (low < high) {
-    const middle = (low + high) >>> 1;
-    const bounds = boundsOf(cursors[middle]!);
-    if (bounds && bounds.top + bounds.height > offset) {
-      high = middle;
-    } else {
-      low = middle + 1;
-    }
-  }
-
-  return low - 1;
-}
-
-/**
- * Keep the current line inside the viewport after the reviewer scrolls past it.
- *
- * Paging and wheel scrolling move the viewport without the marker, so the marker follows only once
- * it would otherwise be off screen, landing on the nearest row it left through.
- */
+/** Keep the current line inside the viewport after the reviewer scrolls past it. */
 export function clampLineCursorToViewport({
   boundsOf,
   current,
@@ -229,7 +239,11 @@ export function clampLineCursorToViewport({
 
   const scrolledPastAbove = !currentBounds || currentBounds.top < scrollTop;
   const index = scrolledPastAbove
-    ? firstCursorIndexFrom(cursors, boundsOf, scrollTop)
-    : lastCursorIndexBefore(cursors, boundsOf, viewportBottom);
+    ? firstCursorIndexWhere(cursors, boundsOf, (bounds) => bounds.top >= scrollTop)
+    : firstCursorIndexWhere(
+        cursors,
+        boundsOf,
+        (bounds) => bounds.top + bounds.height > viewportBottom,
+      ) - 1;
   return cursors[Math.min(Math.max(index, 0), cursors.length - 1)] ?? null;
 }

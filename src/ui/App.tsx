@@ -102,7 +102,6 @@ type ThemeSelectorState = {
 };
 
 const FAST_CODE_HORIZONTAL_SCROLL_COLUMNS = 8;
-const EMPTY_LINE_CURSORS: LineCursor[] = [];
 
 /**
  * Trailing debounce before one `selection_changed` event is emitted.
@@ -329,8 +328,7 @@ export function App({
   // App computes layout geometry below this hook call, so the controller reads
   // the current values through a ref instead of a render-time parameter.
   const noteGeometryRef = useRef<AgentNoteGeometrySnapshot | null>(null);
-  // The diff pane measures the review stream, so it is the one that can enumerate navigable lines.
-  const [lineCursors, setLineCursors] = useState<LineCursor[]>(EMPTY_LINE_CURSORS);
+  const [lineCursors, setLineCursors] = useState<LineCursor[]>([]);
   const review = useReviewController({
     files: reviewFiles,
     lineCursors,
@@ -920,7 +918,6 @@ export function App({
 
   /** Step one line: move the current line, or scroll the viewport when there is no marker. */
   const stepDiffLine = (delta: number) => {
-    // Changesets with no navigable lines, such as binary-only reviews, still have to scroll.
     if (cursorLine === "off" || !review.lineCursor) {
       scrollDiff(delta, "step");
       return;
@@ -960,11 +957,6 @@ export function App({
     },
     [maxCodeHorizontalOffset, wrapLines],
   );
-
-  /** Choose how the review stream marks the line the reviewer is on. */
-  const selectCursorLine = useCallback((style: CursorLine) => {
-    setCursorLine(style);
-  }, []);
 
   /** Preserve the current review position before changing the active diff layout. */
   const selectLayoutMode = useCallback((mode: LayoutMode) => {
@@ -1436,15 +1428,13 @@ export function App({
   /** Start a user-authored inline note and move keyboard focus into it. */
   const startUserNote = useCallback(
     (fileId?: string, hunkIndex?: number, target?: UserNoteLineTarget) => {
-      // A live hover is the more recent intent, so it outranks the resting current line.
-      const restingTarget = cursorLine === "off" ? null : review.lineCursor;
       const hoverTarget = fileId === undefined ? activeAddNoteTarget : null;
-      const keyboardTarget = fileId === undefined ? (hoverTarget ?? restingTarget) : null;
+      const keyboardTarget =
+        hoverTarget ?? (fileId === undefined && cursorLine !== "off" ? review.lineCursor : null);
       const draft = review.startUserNote(
         fileId ?? keyboardTarget?.fileId,
         hunkIndex ?? keyboardTarget?.hunkIndex,
         target ?? keyboardTarget?.target,
-        // A pointer-placed note is already on screen; one placed from the current line may not be.
         { preserveViewport: fileId !== undefined || hoverTarget !== null },
       );
       if (draft) {
@@ -1544,7 +1534,7 @@ export function App({
       scrollCodeHorizontally,
       scrollDiff,
       stepDiffLine,
-      selectCursorLine,
+      selectCursorLine: setCursorLine,
       selectLayoutMode,
       startUserNote: () => startUserNote(),
       toggleAgentNotes,
