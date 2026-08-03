@@ -72,6 +72,11 @@ export function lineStableKey(hunkIndex: number, side: "old" | "new", lineNumber
   return `line:${hunkIndex}:${side}:${lineNumber}`;
 }
 
+/** Build the stable anchor for one inline note card. */
+export function inlineNoteStableKey(noteId: string) {
+  return `inline-note:${noteId}`;
+}
+
 /** Build the file-scoped stable anchor for one old-side source line. */
 function oldLineStableKey(hunkIndex: number, lineNumber?: number) {
   return lineNumber === undefined ? undefined : lineStableKey(hunkIndex, "old", lineNumber);
@@ -92,12 +97,7 @@ function contextLineStableKey(hunkIndex: number, oldLineNumber?: number, newLine
 const SIDED_LINE_STABLE_KEY = /^line:(\d+):(old|new):(\d+)$/;
 const CONTEXT_LINE_STABLE_KEY = /^line:(\d+):context:\d+:(\d+)$/;
 
-/**
- * Recover the source line one single-sided stable anchor names.
- *
- * Line navigation walks measured rows, so it has to read targets back out of the same anchors the
- * plan writes rather than re-deriving them from the parsed diff.
- */
+/** Recover the source line one single-sided stable anchor names. */
 export function lineStableKeyTarget(
   stableKey: string,
 ): (UserNoteLineTarget & { hunkIndex: number }) | null {
@@ -250,8 +250,6 @@ function buildInlineVisibleNotePlacements(rows: DiffRow[], visibleAgentNotes: Vi
 
     const anchorSide = annotationAnchor(note.annotation)?.side;
     const coveredRows = fileLineRows.filter((row) => rowOverlapsAnnotation(row, note.annotation));
-    // The card sits directly below its anchor, so guiding that row too would draw a connector
-    // above the note with nothing above it to connect to.
     const guideRows = coveredRows.filter((row) => row.key !== anchorRow.key);
     const anchorPlacements = placementsByAnchor.get(anchorRow.key) ?? [];
 
@@ -365,7 +363,7 @@ export function buildReviewRenderPlan({
       plannedRows.push({
         kind: "inline-note",
         key: `inline-note:${placement.note.id}:${row.key}:${placement.noteIndex}`,
-        stableKey: `inline-note:${placement.note.id}`,
+        stableKey: inlineNoteStableKey(placement.note.id),
         fileId,
         hunkIndex: placement.hunkIndex,
         annotationId: placement.note.id,

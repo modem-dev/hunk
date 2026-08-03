@@ -361,8 +361,6 @@ describe("AppHost file views", () => {
       let frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("▶ Hunk 1"));
       expect(frame).not.toContain("▶ Hunk 2");
 
-      // Presentation rows bound to a source line are stops of their own, so the default step key
-      // walks them instead of an invisible raw-diff cursor.
       await act(async () => {
         await setup.mockInput.typeText("j");
       });

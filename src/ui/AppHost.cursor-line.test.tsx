@@ -110,7 +110,6 @@ describe("current line highlight", () => {
     const setup = await renderCursorLineApp("row");
 
     try {
-      // The cursor seeds on the hunk's first line, so only that context row is marked.
       expect(rowBackground(setup, "alpha = 1")).not.toEqual(rowBackground(setup, "gamma = 3"));
       expect(rowBackground(setup, "gamma = 3")).toEqual(rowBackground(setup, "delta = 4"));
     } finally {
@@ -163,8 +162,6 @@ describe("current line highlight", () => {
         await flush(marked);
       }
 
-      // Blending toward one fixed highlight color left added rows barely moving, because the
-      // highlight and the added background already shared a hue. Every row must lift alike.
       const addedLift = lift("beta = 22222");
       const contextLift = lift("alpha = 1");
       expect(addedLift).toBeGreaterThan(0.1);
@@ -198,7 +195,6 @@ describe("current line highlight", () => {
     const setup = await renderCursorLineApp("row", "split");
 
     try {
-      // Both halves show the same source line, so marking one would read as half a row.
       expect(rowBackground(setup, "alpha = 1")).not.toEqual(rowBackground(setup, "gamma = 3"));
     } finally {
       await act(async () => {

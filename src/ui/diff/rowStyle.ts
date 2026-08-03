@@ -8,6 +8,26 @@ const CURSOR_LINE_BG_BLEND = 0.2;
 const selectionBackgroundCache = new WeakMap<AppTheme, Map<string, string>>();
 const cursorLineBackgroundCache = new WeakMap<AppTheme, Map<string, string>>();
 
+/** Memoize one derived row background per theme and base color. */
+function cachedRowBackground(
+  cache: WeakMap<AppTheme, Map<string, string>>,
+  theme: AppTheme,
+  baseBg: string,
+  blend: () => string,
+) {
+  let backgrounds = cache.get(theme);
+  if (!backgrounds) {
+    backgrounds = new Map();
+    cache.set(theme, backgrounds);
+  }
+  let background = backgrounds.get(baseBg);
+  if (background === undefined) {
+    background = blend();
+    backgrounds.set(baseBg, background);
+  }
+  return background;
+}
+
 /** The diff rail marker is always visible in Hunk stack and split rows. */
 export function diffRailMarker() {
   return "▌";
@@ -21,17 +41,9 @@ export function diffRailMarker() {
  * harder toward the visible highlight color.
  */
 export function selectionHighlightBg(baseBg: string, theme: AppTheme) {
-  let backgrounds = selectionBackgroundCache.get(theme);
-  if (!backgrounds) {
-    backgrounds = new Map();
-    selectionBackgroundCache.set(theme, backgrounds);
-  }
-  let background = backgrounds.get(baseBg);
-  if (!background) {
-    background = blendHex(theme.selectedHunk, baseBg, SELECTION_BG_BLEND);
-    backgrounds.set(baseBg, background);
-  }
-  return background;
+  return cachedRowBackground(selectionBackgroundCache, theme, baseBg, () =>
+    blendHex(theme.selectedHunk, baseBg, SELECTION_BG_BLEND),
+  );
 }
 
 /**
@@ -41,26 +53,17 @@ export function selectionHighlightBg(baseBg: string, theme: AppTheme) {
  * already sharing that hue, which left the marker invisible on added rows.
  */
 export function cursorLineHighlightBg(baseBg: string, theme: AppTheme) {
-  // Marking a row means painting it, so a transparent surface still gets a band. Blend from the
-  // appearance's own extreme, since reading the sentinel as a color yields black on light themes.
-  const source =
-    baseBg === TRANSPARENT_BACKGROUND
-      ? theme.appearance === "dark"
-        ? "#000000"
-        : "#ffffff"
-      : baseBg;
-
-  let backgrounds = cursorLineBackgroundCache.get(theme);
-  if (!backgrounds) {
-    backgrounds = new Map();
-    cursorLineBackgroundCache.set(theme, backgrounds);
-  }
-  let background = backgrounds.get(baseBg);
-  if (!background) {
-    background = blendHex(theme.text, source, CURSOR_LINE_BG_BLEND);
-    backgrounds.set(baseBg, background);
-  }
-  return background;
+  return cachedRowBackground(cursorLineBackgroundCache, theme, baseBg, () => {
+    // Reading the sentinel as a color yields black, so a transparent surface blends from the
+    // appearance's own extreme instead.
+    const source =
+      baseBg === TRANSPARENT_BACKGROUND
+        ? theme.appearance === "dark"
+          ? "#000000"
+          : "#ffffff"
+        : baseBg;
+    return blendHex(theme.text, source, CURSOR_LINE_BG_BLEND);
+  });
 }
 
 /** Return the neutral active-hunk rail color for the current theme. */

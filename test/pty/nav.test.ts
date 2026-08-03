@@ -222,7 +222,6 @@ describe("PTY navigation", () => {
       expect(initial).toContain("first.ts");
       expect(initial).toContain("second.ts");
 
-      // Split pairs both sides of a change row, so a row costs two presses.
       for (let index = 0; index < 16; index += 1) {
         await session.press("down");
       }
