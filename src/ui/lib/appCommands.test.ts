@@ -50,6 +50,8 @@ function createTestCommands(resolvedKeys?: ResolvedCommandKeys) {
     resolvedKeys,
     scrollCodeHorizontally: record("scrollCodeHorizontally"),
     scrollDiff: record("scrollDiff"),
+    selectCursorLine: record("selectCursorLine"),
+    stepDiffLine: record("stepDiffLine"),
     selectLayoutMode: record("selectLayoutMode"),
     startUserNote: record("startUserNote"),
     toggleAgentNotes: record("toggleAgentNotes"),
@@ -95,10 +97,10 @@ describe("built-in command chords", () => {
       "scrollDiff:-1,viewport",
       "scrollDiff:-1,viewport",
       "scrollDiff:-1,viewport",
-      "scrollDiff:1,step",
-      "scrollDiff:1,step",
-      "scrollDiff:-1,step",
-      "scrollDiff:-1,step",
+      "stepDiffLine:1",
+      "stepDiffLine:1",
+      "stepDiffLine:-1",
+      "stepDiffLine:-1",
       "scrollDiff:1,half",
       "scrollDiff:-1,half",
     ]);
@@ -219,6 +221,9 @@ describe("builtinCommandKeyDefaults", () => {
       "hunk.review.nextAnnotatedFile",
       "hunk.review.previousAnnotatedFile",
       "hunk.view.applyFilePresentationToAllMatching",
+      "hunk.view.cursorLineNumber",
+      "hunk.view.cursorLineOff",
+      "hunk.view.cursorLineRow",
       "hunk.view.toggleCopyDecorations",
     ]);
   });

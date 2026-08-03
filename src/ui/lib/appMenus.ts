@@ -1,4 +1,4 @@
-import type { LayoutMode } from "../../core/types";
+import type { CursorLine, LayoutMode } from "../../core/types";
 import type { AppMenus, MenuEntry, MenuId } from "../components/chrome/menu";
 import { executeAppCommand, isCommandEnabled, type AppCommand } from "./appCommands";
 
@@ -37,6 +37,7 @@ export interface BuildAppMenusOptions {
   /** Live label for the stable host command that applies the selected presentation changeset-wide. */
   fileViewApplyAllLabel?: string;
   copyDecorations: boolean;
+  cursorLine: CursorLine;
   layoutMode: LayoutMode;
   renderSidebar: boolean;
   showAgentNotes: boolean;
@@ -125,6 +126,7 @@ export function buildAppMenus({
   fileViewEntries = [],
   fileViewApplyAllLabel,
   copyDecorations,
+  cursorLine,
   layoutMode,
   renderSidebar,
   showAgentNotes,
@@ -169,6 +171,21 @@ export function buildAppMenus({
         commandId: "hunk.view.toggleCopyDecorations",
         label: "Copy decorations",
         checked: copyDecorations,
+      },
+      {
+        commandId: "hunk.view.cursorLineRow",
+        label: "Current line: full row",
+        checked: cursorLine === "row",
+      },
+      {
+        commandId: "hunk.view.cursorLineNumber",
+        label: "Current line: line number",
+        checked: cursorLine === "number",
+      },
+      {
+        commandId: "hunk.view.cursorLineOff",
+        label: "Current line: off",
+        checked: cursorLine === "off",
       },
     ],
     navigate: [

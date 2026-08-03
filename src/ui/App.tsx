@@ -15,6 +15,7 @@ import { DEFAULT_TAB_WIDTH } from "../core/tabWidth";
 import type {
   AppBootstrap,
   CliInput,
+  CursorLine,
   LayoutMode,
   PersistedViewPreferences,
   UserNoteLineTarget,
@@ -213,6 +214,7 @@ export function App({
   const [wrapLines, setWrapLines] = useState(bootstrap.initialWrapLines ?? false);
   const [copyDecorations, setCopyDecorations] = useState(bootstrap.initialCopyDecorations ?? false);
   const [codeHorizontalOffset, setCodeHorizontalOffset] = useState(0);
+  const [cursorLine, setCursorLine] = useState<CursorLine>(bootstrap.initialCursorLine ?? "row");
   const [showHunkHeaders, setShowHunkHeaders] = useState(bootstrap.initialShowHunkHeaders ?? true);
   const [showMenuBar, setShowMenuBar] = useState(bootstrap.initialShowMenuBar ?? true);
   const [themeSelectorState, setThemeSelectorState] = useState<ThemeSelectorState>({
@@ -284,9 +286,11 @@ export function App({
       showMenuBar,
       showAgentNotes,
       copyDecorations,
+      cursorLine,
     }),
     [
       copyDecorations,
+      cursorLine,
       layoutMode,
       showAgentNotes,
       showHunkHeaders,
@@ -323,8 +327,11 @@ export function App({
   // App computes layout geometry below this hook call, so the controller reads
   // the current values through a ref instead of a render-time parameter.
   const noteGeometryRef = useRef<AgentNoteGeometrySnapshot | null>(null);
+  const responsiveLayout = resolveResponsiveLayout(layoutMode, terminal.width);
+  const resolvedLayout = responsiveLayout.layout;
   const review = useReviewController({
     files: reviewFiles,
+    layout: resolvedLayout,
     noteGeometry: noteGeometryRef,
     stmlEnabled,
   });
@@ -759,11 +766,9 @@ export function App({
 
   const bodyPadding = pagerMode ? 0 : BODY_PADDING;
   const bodyWidth = Math.max(0, terminal.width - bodyPadding);
-  const responsiveLayout = resolveResponsiveLayout(layoutMode, terminal.width);
   const canForceShowSidebar = bodyWidth >= SIDEBAR_MIN_WIDTH + DIVIDER_WIDTH + DIFF_MIN_WIDTH;
   const sidebarAreaVisible =
     sidebarVisible && (responsiveLayout.showSidebar || (forceSidebarOpen && canForceShowSidebar));
-  const resolvedLayout = responsiveLayout.layout;
   const reportedLayoutRef = useRef<string | undefined>(undefined);
   useEffect(() => {
     const signature = `${layoutMode}:${resolvedLayout}`;
@@ -909,6 +914,17 @@ export function App({
     diffScrollRef.current?.scrollBy(delta, unit);
   };
 
+  /** Step one line: move the current line, or scroll the viewport when there is no marker. */
+  const stepDiffLine = (delta: number) => {
+    // Changesets with no navigable lines, such as binary-only reviews, still have to scroll.
+    if (cursorLine === "off" || !review.lineCursor) {
+      scrollDiff(delta, "step");
+      return;
+    }
+
+    review.moveLineCursor(delta);
+  };
+
   const maxCodeHorizontalOffset = useMemo(() => {
     // Wrapped rows never consume the horizontal offset. Avoid scanning every code line—especially
     // long Unicode lines—until nowrap mode actually needs a global horizontal extent.
@@ -940,6 +956,11 @@ export function App({
     },
     [maxCodeHorizontalOffset, wrapLines],
   );
+
+  /** Choose how the review stream marks the line the reviewer is on. */
+  const selectCursorLine = useCallback((style: CursorLine) => {
+    setCursorLine(style);
+  }, []);
 
   /** Preserve the current review position before changing the active diff layout. */
   const selectLayoutMode = useCallback((mode: LayoutMode) => {
@@ -1411,18 +1432,23 @@ export function App({
   /** Start a user-authored inline note and move keyboard focus into it. */
   const startUserNote = useCallback(
     (fileId?: string, hunkIndex?: number, target?: UserNoteLineTarget) => {
+      // A live hover is the more recent intent, so it outranks the resting current line.
+      const restingTarget = cursorLine === "off" ? null : review.lineCursor;
       const hoverTarget = fileId === undefined ? activeAddNoteTarget : null;
+      const keyboardTarget = fileId === undefined ? (hoverTarget ?? restingTarget) : null;
       const draft = review.startUserNote(
-        fileId ?? hoverTarget?.fileId,
-        hunkIndex ?? hoverTarget?.hunkIndex,
-        target ?? hoverTarget?.target,
+        fileId ?? keyboardTarget?.fileId,
+        hunkIndex ?? keyboardTarget?.hunkIndex,
+        target ?? keyboardTarget?.target,
+        // A pointer-placed note is already on screen; one placed from the current line may not be.
+        { preserveViewport: fileId !== undefined || hoverTarget !== null },
       );
       if (draft) {
         setActiveAddNoteTarget(null);
         setFocusArea("note");
       }
     },
-    [activeAddNoteTarget, review.startUserNote],
+    [activeAddNoteTarget, cursorLine, review.lineCursor, review.startUserNote],
   );
 
   /** Mark the inline draft note textarea as the active keyboard input. */
@@ -1513,6 +1539,8 @@ export function App({
       resolvedKeys: resolvedCommandKeys,
       scrollCodeHorizontally,
       scrollDiff,
+      stepDiffLine,
+      selectCursorLine,
       selectLayoutMode,
       startUserNote: () => startUserNote(),
       toggleAgentNotes,
@@ -1538,6 +1566,7 @@ export function App({
   // hints and the checkbox state have to stay live.
   const menus = buildAppMenus({
     commands: appCommands,
+    cursorLine,
     extensionCommands: extensionAppCommands.commands,
     fileViewEntries: selectedFileViewEntries,
     fileViewApplyAllLabel: selectedFileViewBulkTarget
@@ -1819,6 +1848,9 @@ export function App({
           layoutToggleRequestId={layoutToggleRequestId}
           selectedFileTopAlignRequestId={review.selectedFileTopAlignRequestId}
           selectedHunkRevealRequestId={review.selectedHunkRevealRequestId}
+          cursorLine={cursorLine}
+          lineCursor={review.lineCursor}
+          lineCursorRevealRequestId={review.lineCursorRevealRequestId}
           theme={activeTheme}
           width={diffPaneWidth}
           onActiveAddNoteAffordanceChange={setActiveAddNoteTarget}
