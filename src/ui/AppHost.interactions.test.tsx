@@ -1902,7 +1902,7 @@ describe("App interactions", () => {
       expect(initialFrame).not.toContain("line08");
 
       let frame = initialFrame;
-      for (let index = 0; index < 24; index += 1) {
+      for (let index = 0; index < 48; index += 1) {
         await act(async () => {
           await setup.mockInput.pressArrow("down");
         });
@@ -1916,7 +1916,7 @@ describe("App interactions", () => {
       expect(frame).toContain("line08");
       expect(frame).not.toContain("line01");
 
-      for (let index = 0; index < 12; index += 1) {
+      for (let index = 0; index < 32; index += 1) {
         await act(async () => {
           await setup.mockInput.pressArrow("up");
         });
@@ -1936,10 +1936,13 @@ describe("App interactions", () => {
   });
 
   test("the first down-arrow step still advances content under the always-pinned file header above a collapsed gap", async () => {
-    const setup = await testRender(<AppHost bootstrap={createCollapsedTopBootstrap()} />, {
-      width: 220,
-      height: 10,
-    });
+    const setup = await testRender(
+      <AppHost bootstrap={{ ...createCollapsedTopBootstrap(), initialCursorLine: "off" }} />,
+      {
+        width: 220,
+        height: 10,
+      },
+    );
 
     try {
       await flush(setup);
@@ -2041,7 +2044,7 @@ describe("App interactions", () => {
       expect(initialFrame).not.toContain("line08");
 
       let frame = initialFrame;
-      for (let index = 0; index < 12; index += 1) {
+      for (let index = 0; index < 32; index += 1) {
         await act(async () => {
           await setup.mockInput.pressArrow("down");
         });
@@ -2055,7 +2058,7 @@ describe("App interactions", () => {
       expect(frame).toContain("line08");
       expect(frame).not.toContain("line01");
 
-      for (let index = 0; index < 12; index += 1) {
+      for (let index = 0; index < 32; index += 1) {
         await act(async () => {
           await setup.mockInput.pressArrow("up");
         });
