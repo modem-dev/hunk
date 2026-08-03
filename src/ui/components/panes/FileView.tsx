@@ -9,9 +9,12 @@ import type {
 } from "../../../extension-api/types";
 import type { AppTheme } from "../../themes";
 import type { DiffSectionGeometry } from "../../diff/diffSectionGeometry";
+import type { CursorHighlight } from "../../diff/renderRows";
+import { cursorLineHighlightBg } from "../../diff/rowStyle";
 import { resolveVisibleRowIndexWindow, type VisibleBodyBounds } from "../../diff/rowWindowing";
 import { reviewRowId } from "../../lib/ids";
 import { toExtensionPaintTheme } from "../../lib/extensionPaintTheme";
+import type { PlannedFileViewRow } from "../../fileViews/renderPlan";
 import type { FileViewRowFailure } from "../../fileViews/types";
 import type { ResolvedFileViewLayout } from "../../fileViews/useFileViews";
 import { AgentInlineNote } from "./AgentInlineNote";
@@ -104,6 +107,7 @@ function FileViewComponent({
   file,
   fileView,
   geometry,
+  cursorHighlight,
   selectedHunkIndex,
   theme,
   visibleBodyBounds,
@@ -113,6 +117,8 @@ function FileViewComponent({
   file: DiffFile;
   fileView: ResolvedFileViewLayout;
   geometry: DiffSectionGeometry;
+  /** The current line within this file, when the review-stream cursor rests in it. */
+  cursorHighlight?: CursorHighlight;
   selectedHunkIndex: number;
   theme: AppTheme;
   visibleBodyBounds?: VisibleBodyBounds;
@@ -121,7 +127,7 @@ function FileViewComponent({
 }) {
   const { layout } = fileView;
   const publicTheme = useMemo(() => toExtensionPaintTheme(theme), [theme]);
-  const plannedRows =
+  const plannedRows: readonly PlannedFileViewRow[] =
     geometry.fileViewRows ??
     layout.rows.map((row, rowIndex) => ({
       kind: "file-view-row" as const,
@@ -179,6 +185,10 @@ function FileViewComponent({
         const row = plannedRow.row;
         const index = plannedRow.rowIndex;
         const selected = isFileViewRowSelected(layout, index, selectedHunkIndex);
+        const onCursorRow =
+          cursorHighlight !== undefined &&
+          plannedRow.stableAliasKeys?.includes(cursorHighlight.stableKey) === true;
+        const rowBackground = selected ? theme.selectedHunk : theme.panel;
         const fixedHeight = row.component?.height;
         const View = row.component?.render as
           | ((props: ExtensionFileViewRowComponentProps) => ReactNode)
@@ -203,7 +213,10 @@ function FileViewComponent({
                     overflow: "hidden" as const,
                   }),
               flexDirection: "row",
-              backgroundColor: selected ? theme.selectedHunk : theme.panel,
+              // Presentation rows carry no line-number column, so both marker styles paint a band.
+              backgroundColor: onCursorRow
+                ? cursorLineHighlightBg(rowBackground, theme)
+                : rowBackground,
             }}
           >
             {View && fixedHeight !== undefined ? (

@@ -50,6 +50,44 @@ describe("file-view render plan", () => {
     });
   });
 
+  test("anchors each row on the source line the raw diff addresses", () => {
+    const plan = buildFileViewRenderPlan(layout, []);
+
+    expect(
+      plan.rows.map((row) => (row.kind === "file-view-row" ? row.stableAliasKeys : [])),
+    ).toEqual([["line:0:old:2"], ["line:0:new:5"]]);
+  });
+
+  test("gives one source line to the first row that presents it", () => {
+    const repeated: ExtensionFileViewLayout = {
+      rows: [
+        { id: "first", spans: [{ text: "a" }], sourceRanges: [{ side: "new", range: [5, 5] }] },
+        { id: "second", spans: [{ text: "b" }], sourceRanges: [{ side: "new", range: [5, 5] }] },
+      ],
+      hunkRows: [{ startRow: 0, endRow: 1 }],
+    };
+    const plan = buildFileViewRenderPlan(repeated, []);
+
+    expect(
+      plan.rows.map((row) => (row.kind === "file-view-row" ? row.stableAliasKeys : [])),
+    ).toEqual([["line:0:new:5"], undefined]);
+  });
+
+  test("leaves rows outside one hunk unaddressable by line navigation", () => {
+    const spanningHunks: ExtensionFileViewLayout = {
+      ...layout,
+      hunkRows: [
+        { startRow: 0, endRow: 1 },
+        { startRow: 0, endRow: 1 },
+      ],
+    };
+    const plan = buildFileViewRenderPlan(spanningHunks, []);
+
+    expect(plan.rows.every((row) => row.kind !== "file-view-row" || !row.stableAliasKeys)).toBe(
+      true,
+    );
+  });
+
   test("groups notes at one anchor in stable input order", () => {
     const plan = buildFileViewRenderPlan(layout, [
       note("first", { newRange: [5, 5] }),

@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { createTestDiffFile, lines } from "../../../test/helpers/diff-helpers";
+import {
+  createTestDiffFile,
+  createTestHeaderOnlyDiffFile,
+  lines,
+} from "../../../test/helpers/diff-helpers";
 import type { DiffFile, LayoutMode } from "../../core/types";
 import { gapKey } from "../diff/expandCollapsedRows";
 import { measureDiffSectionGeometry } from "../diff/diffSectionGeometry";
@@ -174,6 +178,15 @@ describe("buildLineCursors", () => {
     expect(cursors).toHaveLength(8);
     expect(cursors.slice(0, 4).every((cursor) => cursor.fileId === "alpha")).toBe(true);
     expect(cursors.slice(4).every((cursor) => cursor.fileId === "beta")).toBe(true);
+  });
+
+  test("gives no stops to a file the stream renders no source lines for", () => {
+    const empty = createTestHeaderOnlyDiffFile();
+    const cursors = cursorsFor([createTwoHunkFile("alpha", "alpha.ts"), empty], "stack");
+
+    expect(cursors.some((cursor) => cursor.fileId === "alpha")).toBe(true);
+    expect(cursors.some((cursor) => cursor.fileId === empty.id)).toBe(false);
+    expect(firstLineCursorInHunk(cursors, empty.id, 0)).toBeNull();
   });
 
   test("returns nothing when no files are visible", () => {
