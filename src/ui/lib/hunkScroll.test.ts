@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { computeHunkRevealScrollTop } from "./hunkScroll";
+import { computeHunkRevealScrollTop, computeLineRevealScrollTop } from "./hunkScroll";
 
 describe("computeHunkRevealScrollTop", () => {
   test("keeps a fitting hunk fully visible when the preferred padding would clip the end", () => {
@@ -55,5 +55,37 @@ describe("computeHunkRevealScrollTop", () => {
         viewportHeight: 0,
       }),
     ).toBe(19);
+  });
+});
+
+describe("computeLineRevealScrollTop", () => {
+  test("leaves the viewport alone when the line is already visible", () => {
+    expect(
+      computeLineRevealScrollTop({ lineTop: 12, lineHeight: 1, scrollTop: 10, viewportHeight: 20 }),
+    ).toBe(10);
+  });
+
+  test("scrolls up just far enough to reach a line above the viewport", () => {
+    expect(
+      computeLineRevealScrollTop({ lineTop: 4, lineHeight: 1, scrollTop: 10, viewportHeight: 20 }),
+    ).toBe(4);
+  });
+
+  test("scrolls down just far enough to reach a line below the viewport", () => {
+    expect(
+      computeLineRevealScrollTop({ lineTop: 40, lineHeight: 1, scrollTop: 10, viewportHeight: 20 }),
+    ).toBe(21);
+  });
+
+  test("keeps a tall wrapped line's end on screen", () => {
+    expect(
+      computeLineRevealScrollTop({ lineTop: 28, lineHeight: 3, scrollTop: 10, viewportHeight: 20 }),
+    ).toBe(11);
+  });
+
+  test("never scrolls above the top of the stream", () => {
+    expect(
+      computeLineRevealScrollTop({ lineTop: 0, lineHeight: 40, scrollTop: 5, viewportHeight: 20 }),
+    ).toBe(0);
   });
 });
