@@ -1,4 +1,4 @@
-import type { AgentAnnotation } from "../../core/types";
+import type { AgentAnnotation, UserNoteLineTarget } from "../../core/types";
 import { annotationAnchor, type VisibleAgentNote } from "../lib/agentAnnotations";
 import { diffHunkId } from "../lib/ids";
 import type { DiffRow } from "./pierre";
@@ -87,6 +87,42 @@ function contextLineStableKey(hunkIndex: number, oldLineNumber?: number, newLine
   return oldLineNumber === undefined || newLineNumber === undefined
     ? undefined
     : `line:${hunkIndex}:context:${oldLineNumber}:${newLineNumber}`;
+}
+
+const SIDED_LINE_STABLE_KEY = /^line:(\d+):(old|new):(\d+)$/;
+const CONTEXT_LINE_STABLE_KEY = /^line:(\d+):context:\d+:(\d+)$/;
+
+/**
+ * Recover the source line one single-sided stable anchor names.
+ *
+ * Line navigation walks measured rows, so it has to read targets back out of the same anchors the
+ * plan writes rather than re-deriving them from the parsed diff.
+ */
+export function lineStableKeyTarget(
+  stableKey: string,
+): (UserNoteLineTarget & { hunkIndex: number }) | null {
+  const match = SIDED_LINE_STABLE_KEY.exec(stableKey);
+  if (!match) {
+    return null;
+  }
+
+  return { hunkIndex: Number(match[1]), side: match[2] as "old" | "new", line: Number(match[3]) };
+}
+
+/**
+ * Recover the source line one shared context anchor names.
+ *
+ * Resolves to the new side, which is what the add-note affordance already anchors to.
+ */
+export function contextLineStableKeyTarget(
+  stableKey: string,
+): (UserNoteLineTarget & { hunkIndex: number }) | null {
+  const match = CONTEXT_LINE_STABLE_KEY.exec(stableKey);
+  if (!match) {
+    return null;
+  }
+
+  return { hunkIndex: Number(match[1]), side: "new", line: Number(match[2]) };
 }
 
 /** Resolve the stable anchor keys for one rendered diff row across split and stack layouts. */
