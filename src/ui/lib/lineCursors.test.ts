@@ -6,6 +6,7 @@ import { measureDiffSectionGeometry } from "../diff/diffSectionGeometry";
 import { resolveTheme } from "../themes";
 import {
   buildLineCursors,
+  clampLineCursorToViewport,
   findNextLineCursor,
   firstLineCursorInHunk,
   resolveLineCursor,
@@ -304,5 +305,81 @@ describe("resolveLineCursor", () => {
 
   test("gives up when there is no cursor to resolve", () => {
     expect(resolveLineCursor(cursors, null)).toBeNull();
+  });
+});
+
+describe("clampLineCursorToViewport", () => {
+  const cursors = cursorsFor([createTwoHunkFile("alpha", "alpha.ts")], "stack");
+  // One row per stop, stacked from the top of the stream.
+  const boundsOf = (cursor: LineCursor) => {
+    const index = cursors.findIndex((candidate) => candidate.stableKey === cursor.stableKey);
+    return index < 0 ? undefined : { top: index, height: 1 };
+  };
+
+  test("leaves a visible current line where it is", () => {
+    expect(
+      clampLineCursorToViewport({
+        boundsOf,
+        current: cursors[1]!,
+        cursors,
+        scrollTop: 0,
+        viewportHeight: 3,
+      }),
+    ).toEqual(cursors[1]!);
+  });
+
+  test("snaps down to the first visible line after scrolling past it", () => {
+    expect(
+      clampLineCursorToViewport({
+        boundsOf,
+        current: cursors[0]!,
+        cursors,
+        scrollTop: 2,
+        viewportHeight: 2,
+      }),
+    ).toEqual(cursors[2]!);
+  });
+
+  test("snaps up to the last visible line after scrolling back above it", () => {
+    expect(
+      clampLineCursorToViewport({
+        boundsOf,
+        current: cursors[3]!,
+        cursors,
+        scrollTop: 0,
+        viewportHeight: 2,
+      }),
+    ).toEqual(cursors[1]!);
+  });
+
+  test("adopts the first visible line when the current one left the stream", () => {
+    const retired: LineCursor = {
+      fileId: "alpha",
+      hunkIndex: 9,
+      stableKey: "line:9:new:1",
+      target: { side: "new", line: 1 },
+    };
+
+    expect(
+      clampLineCursorToViewport({
+        boundsOf,
+        current: retired,
+        cursors,
+        scrollTop: 1,
+        viewportHeight: 2,
+      }),
+    ).toEqual(cursors[1]!);
+  });
+
+  test("keeps the current line when there is nothing to clamp to", () => {
+    expect(
+      clampLineCursorToViewport({
+        boundsOf,
+        current: cursors[0]!,
+        cursors: [],
+        scrollTop: 40,
+        viewportHeight: 4,
+      }),
+    ).toEqual(cursors[0]!);
   });
 });

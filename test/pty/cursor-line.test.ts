@@ -112,6 +112,58 @@ describe("PTY current line", () => {
     }
   });
 
+  test("paging leaves the current line on screen", async () => {
+    const fixture = harness.createPinnedHeaderRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["show", "HEAD", "--mode", "stack"],
+      cwd: fixture.dir,
+      cols: 120,
+      rows: 24,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+      await session.waitIdle({ timeout: 300 });
+
+      await session.press("space");
+      await session.waitIdle({ timeout: 400 });
+
+      // The page left the marker behind, so it re-anchors into the new viewport instead of
+      // dragging the whole page back the moment the reviewer steps again.
+      expect(await measureKeyScroll(session, "j", 12)).toBeLessThanOrEqual(1);
+    } finally {
+      session.close();
+    }
+  });
+
+  test("a note after paging opens where the reviewer is looking", async () => {
+    const fixture = harness.createPinnedHeaderRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["show", "HEAD", "--mode", "stack"],
+      cwd: fixture.dir,
+      cols: 120,
+      rows: 24,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+      await session.waitIdle({ timeout: 300 });
+
+      await session.press("space");
+      await session.waitIdle({ timeout: 400 });
+      const paged = (await session.text({ immediate: true })).split("\n");
+      const anchor = paged[12]?.trim() ?? "";
+      expect(anchor.length).toBeGreaterThan(0);
+
+      await session.press("c");
+      const draft = await session.waitForText(/Draft note/, { timeout: 5_000 });
+
+      expect(draft).toContain(anchor);
+    } finally {
+      session.close();
+    }
+  });
+
   test("a note anchors at the current line instead of the top of the hunk", async () => {
     const fixture = harness.createPinnedHeaderRepoFixture();
     const session = await harness.launchHunk({

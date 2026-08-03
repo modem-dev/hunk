@@ -36,7 +36,11 @@ import {
   RAPID_SCROLL_OVERSCAN_IDLE_MS,
 } from "../../lib/adaptiveScrollOverscan";
 import { computeHunkRevealScrollTop, computeLineRevealScrollTop } from "../../lib/hunkScroll";
-import { buildLineCursors, type LineCursorBoundsLookup } from "../../lib/lineCursors";
+import {
+  buildLineCursors,
+  clampLineCursorToViewport,
+  type LineCursorBoundsLookup,
+} from "../../lib/lineCursors";
 import {
   measureDiffSectionGeometry,
   type DiffSectionGeometry,
@@ -241,6 +245,7 @@ export function DiffPane({
   onToggleGap = NOOP_TOGGLE_GAP,
   onLineCursorsChange,
   onViewportCenteredHunkChange,
+  onViewportLineCursorChange,
 }: {
   codeHorizontalOffset?: number;
   diffContentWidth: number;
@@ -298,6 +303,7 @@ export function DiffPane({
   onToggleGap?: (fileId: string, gapKey: string) => void;
   onLineCursorsChange?: (cursors: LineCursor[]) => void;
   onViewportCenteredHunkChange?: (fileId: string, hunkIndex: number) => void;
+  onViewportLineCursorChange?: (cursor: LineCursor) => void;
 }) {
   const renderTopChrome = showTopChrome ?? !pagerMode;
   const renderer = useRenderer();
@@ -1222,7 +1228,6 @@ export function DiffPane({
     if (
       previousViewportTop === null ||
       previousViewportTop === scrollViewport.top ||
-      !onViewportCenteredHunkChange ||
       suppressViewportSelectionSyncRef.current ||
       // A requested file-top align is still settling, so this viewport move is our own scroll
       // rather than the user's. The timed suppression above can expire before the align lands on
@@ -1232,6 +1237,22 @@ export function DiffPane({
       files.length === 0 ||
       scrollViewport.height <= 0
     ) {
+      return;
+    }
+
+    // One review position per settled scroll: the current line owns it whenever there is one, so
+    // the marker and the selection cannot drift apart on the same wheel tick.
+    if (cursorLine !== "off" && lineCursors.length > 0) {
+      const clampedCursor = clampLineCursorToViewport({
+        boundsOf: lineCursorBoundsOf,
+        current: lineCursor,
+        cursors: lineCursors,
+        scrollTop: scrollViewport.top,
+        viewportHeight: scrollViewport.height,
+      });
+      if (clampedCursor && clampedCursor !== lineCursor) {
+        onViewportLineCursorChange?.(clampedCursor);
+      }
       return;
     }
 
@@ -1253,11 +1274,16 @@ export function DiffPane({
       return;
     }
 
-    onViewportCenteredHunkChange(centeredTarget.fileId, centeredTarget.hunkIndex);
+    onViewportCenteredHunkChange?.(centeredTarget.fileId, centeredTarget.hunkIndex);
   }, [
+    cursorLine,
     fileSectionLayouts,
     files,
+    lineCursor,
+    lineCursorBoundsOf,
+    lineCursors,
     onViewportCenteredHunkChange,
+    onViewportLineCursorChange,
     scrollViewport.height,
     scrollViewport.top,
     sectionGeometry,

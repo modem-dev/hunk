@@ -21,7 +21,7 @@ Press `?` at any time for Hunk's in-app shortcut reference. Menus and primary re
 
 Hunk navigation stays review-wide: hunk and file shortcuts move through the same multi-file stream shown in the main pane.
 
-The current line is highlighted as you move it, and the view scrolls only far enough to keep it visible. Pick the marker from the View menu, or set [`cursor_line`](/docs/configure/layout-and-display/): `number` marks only the line number, and `off` turns the marker off and lets `↑` / `↓` and `k` / `j` scroll the view one row at a time instead.
+The current line is highlighted as you move it, and the view scrolls only far enough to keep it visible. Paging or scrolling past it moves it to the nearest line still on screen. Pick the marker from the View menu, or set [`cursor_line`](/docs/configure/layout-and-display/): `number` marks only the line number, and `off` turns the marker off and lets `↑` / `↓` and `k` / `j` scroll the view one row at a time instead.
 
 ## Change the view
 
