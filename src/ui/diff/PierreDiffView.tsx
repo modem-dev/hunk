@@ -1,7 +1,7 @@
 import { useRenderer } from "@opentui/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_TAB_WIDTH } from "../../core/tabWidth";
-import type { DiffFile, LayoutMode, UserNoteLineTarget } from "../../core/types";
+import type { CursorLine, DiffFile, LayoutMode, UserNoteLineTarget } from "../../core/types";
 import { AgentInlineNote } from "../components/panes/AgentInlineNote";
 import type { VisibleAgentNote } from "../lib/agentAnnotations";
 import type { CopySelectedRowRange } from "../components/panes/copySelection";
@@ -13,7 +13,8 @@ import { spansForHighlightedSourceLine, type DiffRow } from "./pierre";
 import { plannedReviewRowVisible } from "./plannedReviewRows";
 import { buildDiffSectionRowPlan } from "./diffSectionRowPlan";
 import { resolveVisiblePlannedRowWindow, type VisibleBodyBounds } from "./rowWindowing";
-import { diffMessage, DiffRowView, fitText } from "./renderRows";
+import { diffMessage, DiffRowView, fitText, type CursorHighlight } from "./renderRows";
+import { lineStableKey } from "./reviewRenderPlan";
 import { useHighlightedDiff } from "./useHighlightedDiff";
 import { useHighlightedSource } from "./useHighlightedSource";
 
@@ -63,6 +64,8 @@ export function PierreDiffView({
   codeHorizontalOffset = 0,
   copySelectedRowRanges,
   copySelectedSide,
+  cursorLine = "off",
+  cursorLineTarget,
   expandedGapKeys = EMPTY_EXPANDED_GAP_KEYS,
   file,
   layout,
@@ -89,6 +92,9 @@ export function PierreDiffView({
   codeHorizontalOffset?: number;
   copySelectedRowRanges?: Map<string, CopySelectedRowRange>;
   copySelectedSide?: "left" | "right";
+  cursorLine?: CursorLine;
+  /** The current line within this file, when the review-stream cursor sits in it. */
+  cursorLineTarget?: UserNoteLineTarget & { hunkIndex: number };
   expandedGapKeys?: ReadonlySet<string>;
   file: DiffFile | undefined;
   layout: Exclude<LayoutMode, "auto">;
@@ -261,6 +267,23 @@ export function PierreDiffView({
     return next;
   }, [plannedRows]);
 
+  // Matching on the render plan's own line anchor lets split and stack share one lookup. One
+  // object per cursor position keeps DiffRowView's memo effective for every other row.
+  const cursor = useMemo(
+    () =>
+      cursorLine === "off" || !cursorLineTarget
+        ? null
+        : {
+            stableKey: lineStableKey(
+              cursorLineTarget.hunkIndex,
+              cursorLineTarget.side,
+              cursorLineTarget.line,
+            ),
+            highlight: { style: cursorLine, side: cursorLineTarget.side } satisfies CursorHighlight,
+          },
+    [cursorLine, cursorLineTarget],
+  );
+
   /** One shared hover handler for every diff row; DiffRowView passes the hovered row's key. */
   const handleHoverRow = useCallback(
     (rowKey: string) => {
@@ -371,6 +394,11 @@ export function PierreDiffView({
           );
         }
 
+        const isCursorRow =
+          cursor !== null &&
+          (plannedRow.stableKey === cursor.stableKey ||
+            plannedRow.stableAliasKeys?.includes(cursor.stableKey) === true);
+
         return (
           <box key={plannedRow.key} id={rowId} style={{ width: "100%", flexDirection: "column" }}>
             <DiffRowView
@@ -385,6 +413,7 @@ export function PierreDiffView({
               selected={plannedRow.row.hunkIndex === selectedHunkIndex}
               copySelectedRowRange={copySelectedRowRanges?.get(plannedRow.key)}
               copySelectedSide={copySelectedSide}
+              cursorHighlight={isCursorRow ? cursor.highlight : undefined}
               anchorId={plannedRow.anchorId}
               noteGuideSide={plannedRow.noteGuideSide}
               showAddNoteBadge={
