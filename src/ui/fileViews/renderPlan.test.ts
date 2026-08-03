@@ -31,7 +31,7 @@ function note(
 }
 
 describe("file-view render plan", () => {
-  test("inserts notes before the uniquely bound preferred-side row", () => {
+  test("inserts notes after the uniquely bound preferred-side row", () => {
     const plan = buildFileViewRenderPlan(layout, [
       note("both", { oldRange: [3, 3], newRange: [6, 7] }),
     ]);
@@ -39,10 +39,10 @@ describe("file-view render plan", () => {
     expect(plan.unresolvedNoteIds).toEqual([]);
     expect(plan.rows.map((row) => `${row.kind}:${row.key}`)).toEqual([
       "file-view-row:file-view:old-summary",
-      "inline-note:inline-note:both:file-view:new-summary:0",
       "file-view-row:file-view:new-summary",
+      "inline-note:inline-note:both:file-view:new-summary:0",
     ]);
-    expect(plan.rows[1]).toMatchObject({
+    expect(plan.rows[2]).toMatchObject({
       kind: "inline-note",
       anchorRowIndex: 1,
       anchorSide: "new",

@@ -1446,7 +1446,7 @@ describe("App interactions", () => {
       expect(frame).toContain("Why prefs.ts changed");
       expect(frame).not.toContain("@@ -1,1 +1,2 @@");
       expect(frame).not.toContain("1 - export const message");
-      expect(frame.indexOf("Agent note - prefs.ts R2")).toBeLessThan(
+      expect(frame.indexOf("Agent note - prefs.ts R2")).toBeGreaterThan(
         frame.indexOf("export const added = true;"),
       );
     } finally {

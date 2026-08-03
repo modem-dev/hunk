@@ -225,9 +225,9 @@ function rowOverlapsAnnotation(row: DiffLineRow, annotation: AgentAnnotation) {
 }
 
 /**
- * Resolve the rendered diff row before which the inline note should appear.
+ * Resolve the rendered diff row after which the inline note should appear.
  * Range-less notes intentionally anchor beside the first code row in the file,
- * not above hunk header metadata.
+ * not against hunk header metadata.
  */
 function findInlineNoteAnchorRow(rows: DiffRow[], annotation: AgentAnnotation) {
   const fileLineRows = lineRows(rows);
@@ -250,8 +250,8 @@ function buildInlineVisibleNotePlacements(rows: DiffRow[], visibleAgentNotes: Vi
 
     const anchorSide = annotationAnchor(note.annotation)?.side;
     const coveredRows = fileLineRows.filter((row) => rowOverlapsAnnotation(row, note.annotation));
-    // The inline card already sits directly above its anchor; start any range guide after that row
-    // so the first code line below the note does not show a dangling right-gutter connector.
+    // The card sits directly below its anchor, so guiding that row too would draw a connector
+    // above the note with nothing above it to connect to.
     const guideRows = coveredRows.filter((row) => row.key !== anchorRow.key);
     const anchorPlacements = placementsByAnchor.get(anchorRow.key) ?? [];
 
@@ -348,6 +348,18 @@ export function buildReviewRenderPlan({
       anchoredHunks.add(row.hunkIndex);
     }
 
+    plannedRows.push({
+      kind: "diff-row",
+      key: `diff-row:${row.key}`,
+      stableKey: diffStableKey,
+      stableAliasKeys: diffStableAliasKeys,
+      fileId: row.fileId,
+      hunkIndex: row.hunkIndex,
+      row,
+      anchorId,
+      noteGuideSide: noteGuideSideByRowKey.get(row.key),
+    });
+
     const anchoredNotes = placementsByAnchor.get(row.key) ?? [];
     anchoredNotes.forEach((placement) => {
       plannedRows.push({
@@ -363,18 +375,6 @@ export function buildReviewRenderPlan({
         noteCount: placement.noteCount,
         noteIndex: placement.noteIndex,
       });
-    });
-
-    plannedRows.push({
-      kind: "diff-row",
-      key: `diff-row:${row.key}`,
-      stableKey: diffStableKey,
-      stableAliasKeys: diffStableAliasKeys,
-      fileId: row.fileId,
-      hunkIndex: row.hunkIndex,
-      row,
-      anchorId,
-      noteGuideSide: noteGuideSideByRowKey.get(row.key),
     });
   }
 

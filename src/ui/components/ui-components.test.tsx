@@ -2413,7 +2413,7 @@ describe("UI components", () => {
     expect(frame).toContain("Agent note - alpha.ts R2");
     expect(frame).toContain("Annotation for alpha.ts");
     expect(frame).toContain("Why alpha.ts changed");
-    expect(frame.indexOf("Agent note - alpha.ts R2")).toBeLessThan(
+    expect(frame.indexOf("Agent note - alpha.ts R2")).toBeGreaterThan(
       frame.indexOf("2 + export const add = true;"),
     );
     expect(frame).toContain("Agent note - beta.ts R1");
@@ -2424,7 +2424,7 @@ describe("UI components", () => {
     expect(frame).not.toContain("confidence");
   });
 
-  test("DiffPane split inline notes hand off directly to the anchored row without shifting it", async () => {
+  test("DiffPane split inline notes hand off directly from the anchored row without shifting it", async () => {
     const bootstrap = createBootstrap();
     const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
@@ -2452,10 +2452,10 @@ describe("UI components", () => {
     );
 
     const lines = frame.split("\n");
-    const noteBottomIndex = lines.findIndex((line) => line.includes("╰") && line.includes("╯"));
-    expect(noteBottomIndex).toBeGreaterThanOrEqual(0);
-    expect(lines[noteBottomIndex + 1]).toContain("export const add = true;");
-    expect(lines[noteBottomIndex + 1]?.trim()).not.toBe("│");
+    const noteTopIndex = lines.findIndex((line) => line.includes("╭") && line.includes("╮"));
+    expect(noteTopIndex).toBeGreaterThan(0);
+    expect(lines[noteTopIndex - 1]).toContain("export const add = true;");
+    expect(lines[noteTopIndex - 1]?.trim()).not.toBe("│");
 
     const changedLine = lines.find((line) => line.includes("export const alpha = 2;"));
     const annotatedLine = lines.find((line) => line.includes("export const add = true;"));
@@ -3020,7 +3020,7 @@ describe("UI components", () => {
     expect(frame).toContain("Ungrounded note");
     expect(frame).toContain("Falls back to the first visible");
     expect(frame).toContain("row.");
-    expect(frame.indexOf("Agent note - note-fallback.ts hunk")).toBeLessThan(
+    expect(frame.indexOf("Agent note - note-fallback.ts hunk")).toBeGreaterThan(
       frame.indexOf("1 - export const value = 1;"),
     );
   });
