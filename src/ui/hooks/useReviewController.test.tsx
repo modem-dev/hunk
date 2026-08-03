@@ -9,6 +9,9 @@ import {
   createTestSourceFetcher,
   lines,
 } from "../../../test/helpers/diff-helpers";
+import { measureDiffSectionGeometry } from "../diff/diffSectionGeometry";
+import { buildLineCursors, type LineCursor } from "../lib/lineCursors";
+import { resolveTheme } from "../themes";
 import { useReviewController, type ReviewController } from "./useReviewController";
 
 /** Build a DiffFile with real parsed hunks using the controller's preferred defaults. */
@@ -98,7 +101,26 @@ function ReviewControllerHarness({
   onSetFiles?: (setFiles: (nextFiles: DiffFile[]) => void) => void;
 }) {
   const [files, setFiles] = useState(initialFiles);
-  const controller = useReviewController({ files, layout: "stack", noteGeometry, stmlEnabled });
+  // Mirror the diff pane: navigable lines are published from the measured review stream.
+  const [lineCursors, setLineCursors] = useState<LineCursor[]>([]);
+  const controller = useReviewController({ files, lineCursors, noteGeometry, stmlEnabled });
+  const visibleFiles = controller.visibleFiles;
+
+  useEffect(() => {
+    setLineCursors(
+      buildLineCursors(
+        visibleFiles,
+        visibleFiles.map((file) =>
+          measureDiffSectionGeometry(
+            file,
+            "stack",
+            true,
+            resolveTheme("github-dark-default", null),
+          ),
+        ),
+      ),
+    );
+  }, [visibleFiles]);
 
   useEffect(() => {
     onController(controller);
@@ -1414,6 +1436,7 @@ describe("useReviewController", () => {
       expect(expectValue(controllerRef.current).lineCursor).toEqual({
         fileId: "alpha",
         hunkIndex: 1,
+        stableKey: "line:1:new:12",
         target: { side: "new", line: 12 },
       });
       expect(expectValue(controllerRef.current).selectedHunkIndex).toBe(1);

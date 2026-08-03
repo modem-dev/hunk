@@ -40,9 +40,9 @@ import type {
 import type { FileSourceStatus } from "../diff/expandCollapsedRows";
 import { selectGapForKeyboardToggle } from "../diff/expandCollapsedRows";
 import { trailingCollapsedLines } from "../diff/pierre";
+import { lineStableKey } from "../diff/reviewRenderPlan";
 import { findNextHunkCursor } from "../lib/hunks";
 import {
-  buildLineCursors,
   findNextLineCursor,
   firstLineCursorInHunk,
   resolveLineCursor,
@@ -57,6 +57,37 @@ import {
   findNextAnnotatedFile,
   resolveReviewNavigationTarget,
 } from "../lib/reviewState";
+
+const EMPTY_LINE_CURSORS: LineCursor[] = [];
+
+/**
+ * Resolve the navigable line one note target sits on.
+ *
+ * Notes can address a side the stream does not stop on — the old half of a context row, say — so
+ * fall back to that line's own anchor, which reveal and rendering still resolve through aliases.
+ */
+function lineCursorAt(
+  cursors: LineCursor[],
+  fileId: string,
+  hunkIndex: number,
+  target: UserNoteLineTarget,
+): LineCursor {
+  const stop = cursors.find(
+    (cursor) =>
+      cursor.fileId === fileId &&
+      cursor.hunkIndex === hunkIndex &&
+      cursor.target.side === target.side &&
+      cursor.target.line === target.line,
+  );
+  return (
+    stop ?? {
+      fileId,
+      hunkIndex,
+      stableKey: lineStableKey(hunkIndex, target.side, target.line),
+      target,
+    }
+  );
+}
 
 /** Clamp one numeric index into an inclusive range. */
 function clamp(value: number, min: number, max: number) {
@@ -205,13 +236,16 @@ export interface AgentNoteGeometrySnapshot {
 
 export function useReviewController({
   files,
-  layout,
+  lineCursors = EMPTY_LINE_CURSORS,
   noteGeometry,
   stmlEnabled = false,
 }: {
   files: DiffFile[];
-  /** Resolved layout, so line navigation follows the order rows are actually rendered in. */
-  layout: Exclude<LayoutMode, "auto">;
+  /**
+   * Navigable lines in rendered order, published by the pane that measures the review stream.
+   * Headless callers get none, which leaves `j` and `k` scrolling the viewport.
+   */
+  lineCursors?: LineCursor[];
   /** Allow STML bodies for live comments in this explicitly opted-in session. */
   stmlEnabled?: boolean;
   /**
@@ -375,8 +409,6 @@ export function useReviewController({
   useEffect(() => {
     reconcileSelectedHunkIndex();
   }, [reconcileSelectedHunkIndex]);
-
-  const lineCursors = useMemo(() => buildLineCursors(visibleFiles, layout), [layout, visibleFiles]);
 
   /**
    * Keep the current line on a row the review stream still renders.
@@ -935,7 +967,7 @@ export function useReviewController({
       }
 
       const target = requestedTarget ?? firstCommentTargetForHunk(hunk);
-      applyLineCursor({ fileId: file.id, hunkIndex, target });
+      applyLineCursor(lineCursorAt(lineCursors, file.id, hunkIndex, target));
       const draft: DraftReviewNote = {
         id: `draft:${file.id}:${hunkIndex}:${Date.now()}`,
         fileId: file.id,
@@ -956,7 +988,7 @@ export function useReviewController({
       );
       return draft;
     },
-    [allFiles, applyLineCursor, selectHunk, selectedFile?.id, selectedHunkIndex],
+    [allFiles, applyLineCursor, lineCursors, selectHunk, selectedFile?.id, selectedHunkIndex],
   );
 
   /** Update the body of the active draft note. */

@@ -42,6 +42,8 @@ import type { CopySelectedRowRange } from "../components/panes/copySelection";
 import type { CursorLine } from "../../core/types";
 
 export interface CursorHighlight {
+  /** The render plan anchor of the row the cursor rests on, shared with reveal lookups. */
+  stableKey: string;
   style: Exclude<CursorLine, "off">;
   /** Which half of a split row the cursor sits on, and where a note would anchor. */
   side: "old" | "new";
