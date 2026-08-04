@@ -1,33 +1,42 @@
 /**
  * The one policy behind `ctx.workspace`: whether a reviewed file may be written
- * back to disk, and where that write would land.
+ * back to disk and where that write would land, and which read answers a
+ * request for one of a reviewed file's document sides.
  *
  * Free of React and of the filesystem on purpose. `canWriteDocument` is meant
  * to be exactly the question `writeDocument` asks itself before prompting, so
  * both go through this module and neither re-derives the answer — an affordance
  * that disagreed with the action it advertises would be worse than no
- * affordance at all.
+ * affordance at all. Reads resolve to the fetcher that would answer them rather
+ * than performing the read, which keeps the whole module a pure decision.
  */
 
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { normalizeDiffPath } from "../../core/diffPaths";
+import type { FileSourceSide } from "../../core/fileSource";
 import type { CliInput } from "../../core/types";
 import { readMetadataChangeType } from "../../extensions/events";
 
 /**
- * The slice of one reviewed file the write policy inspects.
+ * The slice of one reviewed file the workspace policy inspects.
  *
  * Structural like `SidebarFileSource`: Hunk's internal `DiffFile` satisfies it
  * as it is, and the policy never needs the parsed diff itself — only which file
- * this is, where it lives, and whether it has writable new-side text at all.
+ * this is, where it lives, whether it has writable new-side text at all, and
+ * how its source would be read.
  */
-export interface WorkspaceWriteFileSource {
+export interface WorkspaceFileSource {
   id: string;
   path: string;
   metadata?: unknown;
   isBinary?: boolean;
   isTooLarge?: boolean;
+  /** Absent when the loader had no reachable source for this file. */
+  sourceFetcher?: { getFullText(side: FileSourceSide): Promise<string | null> };
 }
+
+/** One reviewed document side's read, already bound to the file that answers it. */
+export type WorkspaceDocumentRead = () => Promise<string | null>;
 
 /** Where an allowed write lands, or why the reviewed file cannot be written. */
 export type ExtensionWorkspaceWriteTarget =
@@ -116,7 +125,7 @@ export function resolveExtensionWorkspaceWriteTarget({
 }: {
   fileId: string;
   /** The full current changeset, unfiltered: a hidden file is still a reviewed file. */
-  files: readonly WorkspaceWriteFileSource[];
+  files: readonly WorkspaceFileSource[];
   input: CliInput;
   /** The repo root this review was loaded from, or its working directory. */
   root: string;
@@ -162,4 +171,37 @@ export function resolveExtensionWorkspaceWriteTarget({
   }
 
   return { writable: true, path, absolutePath };
+}
+
+/**
+ * Resolve one reviewed file id and side into the read that would answer it.
+ *
+ * Reads are not gated the way writes are: every review kind shows the user
+ * source documents, so reading one back is never more than the review already
+ * discloses. What is left is a lookup, and `null` is its ordinary answer — no
+ * reviewed file carries the id, or the file it names has no reachable source.
+ *
+ * Returning the bound read rather than its text keeps the policy free of the
+ * filesystem: the caller decides what a rejected read means (it resolves
+ * `null`), and the caching the fetcher already does is not duplicated here.
+ *
+ * A `side` that is neither `"old"` nor `"new"` throws, the way a malformed
+ * write request does: it is a bug in the extension, not a fact about the review.
+ */
+export function resolveExtensionWorkspaceRead({
+  fileId,
+  files,
+  side,
+}: {
+  fileId: string;
+  /** The full current changeset, unfiltered: a hidden file is still a reviewed file. */
+  files: readonly WorkspaceFileSource[];
+  side: unknown;
+}): WorkspaceDocumentRead | null {
+  if (side !== "old" && side !== "new") {
+    throw new Error('workspace.readDocument requires side to be "old" or "new".');
+  }
+
+  const fetcher = files.find((candidate) => candidate.id === fileId)?.sourceFetcher;
+  return fetcher ? () => fetcher.getFullText(side) : null;
 }

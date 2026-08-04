@@ -109,9 +109,15 @@ export default function (hunk: HunkExtensionAPI) {
       return;
     }
 
+    // A read answers with the document or with nothing; a side outside the
+    // union is a compile error rather than a runtime surprise.
+    const current: string | null = await ctx.workspace.readDocument(file.id, "new");
+    // @ts-expect-error Only the two document sides can be read.
+    void ctx.workspace.readDocument(file.id, "both");
+
     const written: ExtensionWorkspaceWriteResult = await ctx.workspace.writeDocument({
       fileId: file.id,
-      text: "",
+      text: (current ?? "").toUpperCase(),
     });
     // The result is a discriminated union: \`detail\` exists only on refusals.
     hunk.log(written.ok ? "written" : written.detail);
