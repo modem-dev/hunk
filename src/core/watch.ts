@@ -38,10 +38,19 @@ export interface WatchSignatureContext {
   gitExecutable?: string;
   /** Extension-contributed adapters, so a watched review keeps its own backend. */
   vcsAdapters?: readonly VcsAdapter[];
+  /** Abandon the check when the watcher closes before it finishes. */
+  signal?: AbortSignal;
 }
 
-/** Compute a change-detection signature relative to the source's stable load context. */
-export function computeWatchSignature(input: CliInput, context: WatchSignatureContext) {
+/**
+ * Compute a change-detection signature relative to the source's stable load context.
+ *
+ * Asynchronous because watch mode re-runs this on every debounced file event and
+ * every safety poll: an adapter that shells out — Git computes a whole patch —
+ * would otherwise stall the terminal UI each time. Adapters may still answer
+ * synchronously; this awaits either shape.
+ */
+export async function computeWatchSignature(input: CliInput, context: WatchSignatureContext) {
   const parts: string[] = [input.kind];
   const resolveInputPath = (path: string) => resolve(context.cwd, path);
 
@@ -49,7 +58,7 @@ export function computeWatchSignature(input: CliInput, context: WatchSignatureCo
     case "vcs":
     case "show":
     case "stash-show":
-      parts.push(vcsPatchSignature(input, context));
+      parts.push(await vcsPatchSignature(input, context));
       break;
     case "diff":
     case "difftool":

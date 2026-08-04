@@ -67,14 +67,14 @@ afterEach(() => {
 });
 
 describe("computeWatchSignature", () => {
-  test("resolves direct files, patch files, and agent sidecars against the supplied cwd", () => {
+  test("resolves direct files, patch files, and agent sidecars against the supplied cwd", async () => {
     const dir = createTempRepo("hunk-watch-files-cwd-");
     writeFileSync(join(dir, "left.ts"), "one\n");
     writeFileSync(join(dir, "right.ts"), "two\n");
     writeFileSync(join(dir, "review.patch"), "patch\n");
     writeFileSync(join(dir, "agent.json"), "{}\n");
 
-    const direct = computeWatchSignature(
+    const direct = await computeWatchSignature(
       {
         kind: "diff",
         left: "left.ts",
@@ -83,7 +83,7 @@ describe("computeWatchSignature", () => {
       },
       { cwd: dir },
     );
-    const patch = computeWatchSignature(
+    const patch = await computeWatchSignature(
       { kind: "patch", file: "review.patch", options: {} },
       { cwd: dir },
     );
@@ -94,7 +94,7 @@ describe("computeWatchSignature", () => {
     expect(patch).toContain(join(dir, "review.patch"));
   });
 
-  test("does not embed full untracked file contents in git watch signatures", () => {
+  test("does not embed full untracked file contents in git watch signatures", async () => {
     const dir = createTempRepo("hunk-watch-untracked-");
 
     writeFileSync(join(dir, "tracked.ts"), "export const tracked = 1;\n");
@@ -105,16 +105,16 @@ describe("computeWatchSignature", () => {
     const untrackedPath = join(dir, "large-untracked.txt");
     writeFileSync(untrackedPath, largeMarker);
 
-    const initialSignature = computeWatchSignature(createGitInput(), { cwd: dir });
+    const initialSignature = await computeWatchSignature(createGitInput(), { cwd: dir });
     writeFileSync(untrackedPath, `${largeMarker}changed`);
-    const changedSignature = computeWatchSignature(createGitInput(), { cwd: dir });
+    const changedSignature = await computeWatchSignature(createGitInput(), { cwd: dir });
 
     expect(initialSignature).not.toContain(largeMarker);
     expect(changedSignature).not.toContain(largeMarker);
     expect(changedSignature).not.toEqual(initialSignature);
   });
 
-  test("ignores untracked file changes when the git input excludes them", () => {
+  test("ignores untracked file changes when the git input excludes them", async () => {
     const dir = createTempRepo("hunk-watch-exclude-untracked-");
 
     writeFileSync(join(dir, "tracked.ts"), "export const tracked = 1;\n");
@@ -124,12 +124,12 @@ describe("computeWatchSignature", () => {
     const untrackedPath = join(dir, "note.txt");
     writeFileSync(untrackedPath, "first\n");
 
-    const initialSignature = computeWatchSignature(
+    const initialSignature = await computeWatchSignature(
       createGitInput({ options: { excludeUntracked: true } }),
       { cwd: dir },
     );
     writeFileSync(untrackedPath, "second\n");
-    const changedSignature = computeWatchSignature(
+    const changedSignature = await computeWatchSignature(
       createGitInput({ options: { excludeUntracked: true } }),
       { cwd: dir },
     );
@@ -137,7 +137,7 @@ describe("computeWatchSignature", () => {
     expect(changedSignature).toEqual(initialSignature);
   });
 
-  test("signs a review through an extension adapter threaded into the context", () => {
+  test("signs a review through an extension adapter threaded into the context", async () => {
     const adapter: VcsAdapter = {
       id: "hg",
       name: "Mercurial",
@@ -160,13 +160,13 @@ describe("computeWatchSignature", () => {
       options: { mode: "auto", vcs: "hg" },
     } satisfies CliInput;
 
-    expect(computeWatchSignature(input, { cwd: process.cwd(), vcsAdapters: [adapter] })).toBe(
+    expect(await computeWatchSignature(input, { cwd: process.cwd(), vcsAdapters: [adapter] })).toBe(
       "vcs\n---\nhg:working-copy",
     );
   });
 
-  test("rejects unsupported watch operations before invoking adapter signatures", () => {
-    expect(() =>
+  test("rejects unsupported watch operations before invoking adapter signatures", async () => {
+    await expect(
       computeWatchSignature(
         {
           kind: "stash-show",
@@ -174,10 +174,10 @@ describe("computeWatchSignature", () => {
         },
         { cwd: process.cwd() },
       ),
-    ).toThrow("`hunk stash show` requires Git VCS mode.");
+    ).rejects.toThrow("`hunk stash show` requires Git VCS mode.");
   });
 
-  test("tracks untracked file changes when diff compares the working tree against one ref", () => {
+  test("tracks untracked file changes when diff compares the working tree against one ref", async () => {
     const dir = createTempRepo("hunk-watch-ref-untracked-");
 
     writeFileSync(join(dir, "tracked.ts"), "export const tracked = 1;\n");
@@ -192,11 +192,11 @@ describe("computeWatchSignature", () => {
     const untrackedPath = join(dir, "note.txt");
     writeFileSync(untrackedPath, "first\n");
 
-    const initialSignature = computeWatchSignature(createGitInput({ range: "main" }), {
+    const initialSignature = await computeWatchSignature(createGitInput({ range: "main" }), {
       cwd: dir,
     });
     writeFileSync(untrackedPath, "second\n");
-    const changedSignature = computeWatchSignature(createGitInput({ range: "main" }), {
+    const changedSignature = await computeWatchSignature(createGitInput({ range: "main" }), {
       cwd: dir,
     });
 

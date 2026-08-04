@@ -31,6 +31,15 @@ export interface RunGitTextOptions {
   cwd?: string;
   gitExecutable?: string;
   preventOptionalLocks?: boolean;
+  /**
+   * Abandon the command when the caller loses interest.
+   *
+   * Only the async runners honor this: a synchronous spawn cannot be
+   * interrupted once it has started. Watch-mode polling passes the controller's
+   * signal so closing a review kills the `git diff` it started rather than
+   * waiting for it and discarding the result.
+   */
+  signal?: AbortSignal;
 }
 
 interface RunGitCommandResult {
@@ -431,49 +440,117 @@ function translateGitExitFailure(input: GitBackedInput, stderr: string) {
   return createGenericGitError(input, stderr);
 }
 
-/** Spawn one Git command and accept only the exit codes the caller declared as non-errors. */
-function runGitCommand({
-  input,
-  args,
+/**
+ * Build the environment-shaped spawn options both runners share.
+ *
+ * The stdio literals stay at each call site so Bun can narrow the subprocess
+ * type to its piped form; only the parts that encode a policy decision live here.
+ */
+function gitSpawnEnvironment({
   cwd = process.cwd(),
-  gitExecutable = "git",
   preventOptionalLocks = false,
-  acceptedExitCodes = [0],
-}: RunGitCommandOptions): RunGitCommandResult {
-  let proc: ReturnType<typeof Bun.spawnSync>;
+}: Pick<RunGitTextOptions, "cwd" | "preventOptionalLocks">) {
+  return {
+    cwd,
+    env: preventOptionalLocks ? { ...process.env, GIT_OPTIONAL_LOCKS: "0" } : undefined,
+  };
+}
 
-  try {
-    proc = Bun.spawnSync([gitExecutable, ...args], {
-      cwd,
-      stdin: "ignore",
-      stdout: "pipe",
-      stderr: "pipe",
-      env: preventOptionalLocks ? { ...process.env, GIT_OPTIONAL_LOCKS: "0" } : undefined,
-    });
-  } catch (error) {
-    throw translateGitSpawnFailure(input, error, gitExecutable);
-  }
+/**
+ * Turn one finished Git invocation into a result or a user-facing failure.
+ *
+ * Both the sync and async runners funnel through here, so the two paths cannot
+ * disagree about which exit codes are acceptable or how stderr is translated.
+ */
+function interpretGitResult(
+  { input, args, gitExecutable = "git", acceptedExitCodes = [0] }: RunGitCommandOptions,
+  raw: { stdout?: Uint8Array | null; stderr?: Uint8Array | null; exitCode: number },
+): RunGitCommandResult {
+  const stdout = Buffer.from(raw.stdout ?? []).toString("utf8");
+  const stderr = Buffer.from(raw.stderr ?? []).toString("utf8");
 
-  const stdout = Buffer.from(proc.stdout ?? []).toString("utf8");
-  const stderr = Buffer.from(proc.stderr ?? []).toString("utf8");
-
-  if (!acceptedExitCodes.includes(proc.exitCode)) {
+  if (!acceptedExitCodes.includes(raw.exitCode)) {
     throw translateGitExitFailure(
       input,
       stderr.trim() || `Command failed: ${gitExecutable} ${args.join(" ")}`,
     );
   }
 
-  return {
-    stderr,
-    stdout,
-    exitCode: proc.exitCode,
-  };
+  return { stderr, stdout, exitCode: raw.exitCode };
+}
+
+/** Spawn one Git command and accept only the exit codes the caller declared as non-errors. */
+function runGitCommand(options: RunGitCommandOptions): RunGitCommandResult {
+  const { input, args, gitExecutable = "git" } = options;
+  let proc: ReturnType<typeof Bun.spawnSync>;
+
+  try {
+    proc = Bun.spawnSync([gitExecutable, ...args], {
+      ...gitSpawnEnvironment(options),
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+  } catch (error) {
+    throw translateGitSpawnFailure(input, error, gitExecutable);
+  }
+
+  return interpretGitResult(options, proc);
+}
+
+/** Start one piped Git subprocess, translating a failed launch the way the sync runner does. */
+function spawnGitAsync(options: RunGitCommandOptions) {
+  const { input, args, gitExecutable = "git", signal } = options;
+
+  try {
+    return Bun.spawn([gitExecutable, ...args], {
+      ...gitSpawnEnvironment(options),
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+      signal,
+    });
+  } catch (error) {
+    throw translateGitSpawnFailure(input, error, gitExecutable);
+  }
+}
+
+/**
+ * Spawn one Git command without blocking the event loop.
+ *
+ * The synchronous runner stays the default for one-shot CLI work, where
+ * blocking is free and simpler. This variant exists for the interactive paths
+ * that run Git repeatedly while the TUI is drawing — watch-mode polling above
+ * all — where a synchronous `git diff` stalls rendering and input for as long
+ * as Git takes on the repo.
+ */
+async function runGitCommandAsync(options: RunGitCommandOptions): Promise<RunGitCommandResult> {
+  const { signal } = options;
+  const proc = spawnGitAsync(options);
+
+  // Drain both pipes concurrently with the exit wait: a large `git diff` fills
+  // the stdout pipe buffer, and a process blocked on a full pipe never exits.
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(proc.stdout).bytes(),
+    new Response(proc.stderr).bytes(),
+    proc.exited,
+  ]);
+
+  // An aborted command has no meaningful output; surfacing Git's exit status
+  // here would report a spurious failure for work the caller already dropped.
+  signal?.throwIfAborted();
+
+  return interpretGitResult(options, { stdout, stderr, exitCode });
 }
 
 /** Run a git command and translate common failures into user-facing Hunk errors. */
 export function runGitText(options: RunGitTextOptions) {
   return runGitCommand(options).stdout;
+}
+
+/** Run a git command off the event loop, translating failures the same way `runGitText` does. */
+export async function runGitTextAsync(options: RunGitTextOptions) {
+  return (await runGitCommandAsync(options)).stdout;
 }
 
 const GIT_BOOLEAN_TRUE_VALUES = new Set(["true", "yes", "on", "1", "always"]);
@@ -542,6 +619,55 @@ export function resolveGitColorMovedOptions(
   };
 }
 
+/** Memoized `rev-parse` answers, so repeated watch polls re-ask Git only for new ranges. */
+const workingTreeGitDiffInputCache = new Map<string, boolean>();
+
+type WorkingTreeGitDiffOptions = Pick<
+  RunGitTextOptions,
+  "cwd" | "gitExecutable" | "preventOptionalLocks" | "signal"
+> & { repoRoot?: string };
+
+/**
+ * Decide the parts of the working-tree question that need no subprocess.
+ *
+ * Returns a definite answer when the input alone settles it, or the arguments
+ * and cache key the caller needs to ask Git. Both the sync and async variants
+ * below share this so they cannot drift on which inputs count as working-tree
+ * reviews or on how the cache is keyed.
+ */
+function planWorkingTreeGitDiffCheck(
+  input: ExtensionVcsDiffInput,
+  { cwd = process.cwd(), gitExecutable = "git", repoRoot }: WorkingTreeGitDiffOptions,
+): { settled: boolean } | { settled?: undefined; cacheKey: string; args: string[] } {
+  if (input.staged) {
+    return { settled: false };
+  }
+
+  if (!input.range) {
+    return { settled: true };
+  }
+
+  const cacheKey = `${gitExecutable}\0${repoRoot ?? cwd}\0${input.range}`;
+  const cached = workingTreeGitDiffInputCache.get(cacheKey);
+  if (cached !== undefined) {
+    return { settled: cached };
+  }
+
+  return { cacheKey, args: ["rev-parse", "--revs-only", input.range] };
+}
+
+/** Classify `rev-parse --revs-only` output: one positive revision and no negatives keeps the working tree. */
+function revsIncludeWorkingTree(revsText: string) {
+  const revs = revsText
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const positiveRevs = revs.filter((line) => !line.startsWith("^"));
+  const negativeRevs = revs.filter((line) => line.startsWith("^"));
+  return positiveRevs.length === 1 && negativeRevs.length === 0;
+}
+
 /**
  * Return whether one `hunk diff` input still compares against the live working tree.
  *
@@ -549,60 +675,55 @@ export function resolveGitColorMovedOptions(
  * appear. Explicit revision-set expressions like `a..b`, `a...b`, or `rev^!` expand into positive
  * and negative revisions and should stay commit-to-commit only.
  */
-const workingTreeGitDiffInputCache = new Map<string, boolean>();
-
 function isWorkingTreeGitDiffInput(
   input: ExtensionVcsDiffInput,
-  {
-    cwd = process.cwd(),
-    gitExecutable = "git",
-    repoRoot,
-    preventOptionalLocks = false,
-  }: Pick<RunGitTextOptions, "cwd" | "gitExecutable" | "preventOptionalLocks"> & {
-    repoRoot?: string;
-  } = {},
+  options: WorkingTreeGitDiffOptions = {},
 ) {
-  if (input.staged) {
-    return false;
+  const plan = planWorkingTreeGitDiffCheck(input, options);
+  if (plan.settled !== undefined) {
+    return plan.settled;
   }
 
-  if (!input.range) {
-    return true;
+  const includesWorkingTree = revsIncludeWorkingTree(
+    runGitText({ input, args: plan.args, ...options }),
+  );
+  workingTreeGitDiffInputCache.set(plan.cacheKey, includesWorkingTree);
+  return includesWorkingTree;
+}
+
+async function isWorkingTreeGitDiffInputAsync(
+  input: ExtensionVcsDiffInput,
+  options: WorkingTreeGitDiffOptions = {},
+) {
+  const plan = planWorkingTreeGitDiffCheck(input, options);
+  if (plan.settled !== undefined) {
+    return plan.settled;
   }
 
-  const cacheKey = `${gitExecutable}\0${repoRoot ?? cwd}\0${input.range}`;
-  const cached = workingTreeGitDiffInputCache.get(cacheKey);
-  if (cached !== undefined) {
-    return cached;
-  }
-
-  const revs = runGitText({
-    input,
-    args: ["rev-parse", "--revs-only", input.range],
-    cwd,
-    gitExecutable,
-    preventOptionalLocks,
-  })
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  const positiveRevs = revs.filter((line) => !line.startsWith("^"));
-  const negativeRevs = revs.filter((line) => line.startsWith("^"));
-  const includesWorkingTree = positiveRevs.length === 1 && negativeRevs.length === 0;
-
-  workingTreeGitDiffInputCache.set(cacheKey, includesWorkingTree);
+  const includesWorkingTree = revsIncludeWorkingTree(
+    await runGitTextAsync({ input, args: plan.args, ...options }),
+  );
+  workingTreeGitDiffInputCache.set(plan.cacheKey, includesWorkingTree);
   return includesWorkingTree;
 }
 
 /** Return whether working-tree review should synthesize untracked files into the patch stream. */
 function shouldIncludeUntrackedFiles(
   input: ExtensionVcsDiffInput,
-  options: Pick<RunGitTextOptions, "cwd" | "gitExecutable" | "preventOptionalLocks"> & {
-    repoRoot?: string;
-  } = {},
+  options: WorkingTreeGitDiffOptions = {},
 ) {
   return input.options.excludeUntracked !== true && isWorkingTreeGitDiffInput(input, options);
+}
+
+/** Non-blocking `shouldIncludeUntrackedFiles`. */
+async function shouldIncludeUntrackedFilesAsync(
+  input: ExtensionVcsDiffInput,
+  options: WorkingTreeGitDiffOptions = {},
+) {
+  return (
+    input.options.excludeUntracked !== true &&
+    (await isWorkingTreeGitDiffInputAsync(input, options))
+  );
 }
 
 /** Parse porcelain status output down to repo-root-relative untracked file paths. */
@@ -695,24 +816,60 @@ export function listGitUntrackedFiles(
     return [];
   }
 
-  const statusText = runGitText({
-    input,
-    args: buildGitStatusArgs(input),
-    cwd,
-    gitExecutable,
-    preventOptionalLocks,
-  });
+  const untrackedFiles = parseUntrackedFilePaths(
+    runGitText({
+      input,
+      args: buildGitStatusArgs(input),
+      cwd,
+      gitExecutable,
+      preventOptionalLocks,
+    }),
+  );
 
-  const untrackedFiles = parseUntrackedFilePaths(statusText);
   if (untrackedFiles.length === 0) {
     return [];
   }
 
-  const normalizedRepoRoot =
-    repoRoot ?? resolveGitRepoRoot(input, { cwd, gitExecutable, preventOptionalLocks });
-  return untrackedFiles.filter((filePath) =>
-    isReviewableUntrackedPath(normalizedRepoRoot, filePath),
+  return filterReviewableUntrackedPaths(
+    untrackedFiles,
+    repoRoot ?? resolveGitRepoRoot(input, { cwd, gitExecutable, preventOptionalLocks }),
   );
+}
+
+/** Non-blocking `listGitUntrackedFiles`, for callers already running off the event loop. */
+export async function listGitUntrackedFilesAsync(
+  input: ExtensionVcsDiffInput,
+  {
+    cwd = process.cwd(),
+    repoRoot,
+    gitExecutable = "git",
+    preventOptionalLocks = false,
+    signal,
+  }: Omit<RunGitTextOptions, "input" | "args"> & { repoRoot?: string } = {},
+) {
+  const gitOptions = { cwd, gitExecutable, preventOptionalLocks, signal };
+
+  if (!(await shouldIncludeUntrackedFilesAsync(input, gitOptions))) {
+    return [];
+  }
+
+  const untrackedFiles = parseUntrackedFilePaths(
+    await runGitTextAsync({ input, args: buildGitStatusArgs(input), ...gitOptions }),
+  );
+
+  if (untrackedFiles.length === 0) {
+    return [];
+  }
+
+  return filterReviewableUntrackedPaths(
+    untrackedFiles,
+    repoRoot ?? (await resolveGitRepoRootAsync(input, gitOptions)),
+  );
+}
+
+/** Drop untracked entries Git reports that Hunk cannot synthesize a file patch for. */
+function filterReviewableUntrackedPaths(untrackedFiles: string[], repoRoot: string) {
+  return untrackedFiles.filter((filePath) => isReviewableUntrackedPath(repoRoot, filePath));
 }
 
 /** Rewrite Git's quoted untracked-file headers into parser-friendly paths. */
@@ -794,16 +951,29 @@ export function resolveGitMetadata(
   return { repoRoot, gitDir, commonDir };
 }
 
+const REPO_ROOT_ARGS = ["rev-parse", "--show-toplevel"];
+
+/** Normalize `rev-parse --show-toplevel` output into a comparable absolute path. */
+function normalizeRepoRootOutput(output: string) {
+  return normalizePathForOS(output.trim());
+}
+
+/** Resolve the repository root for one Git-backed review input. */
 export function resolveGitRepoRoot(
   input: GitBackedInput,
   options: Omit<RunGitTextOptions, "input" | "args"> = {},
 ) {
-  const repoRoot = runGitText({
-    input,
-    args: ["rev-parse", "--show-toplevel"],
-    ...options,
-  }).trim();
-  return normalizePathForOS(repoRoot);
+  return normalizeRepoRootOutput(runGitText({ input, args: REPO_ROOT_ARGS, ...options }));
+}
+
+/** Non-blocking `resolveGitRepoRoot`, for callers already running off the event loop. */
+export async function resolveGitRepoRootAsync(
+  input: GitBackedInput,
+  options: Omit<RunGitTextOptions, "input" | "args"> = {},
+) {
+  return normalizeRepoRootOutput(
+    await runGitTextAsync({ input, args: REPO_ROOT_ARGS, ...options }),
+  );
 }
 
 /** Resolve one commit-ish ref to the exact commit object used for later blob reads. */

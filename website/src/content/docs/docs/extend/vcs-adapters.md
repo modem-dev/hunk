@@ -74,7 +74,7 @@ What detection never overrides is an explicit choice: a `vcs = "<id>"` in Hunk c
 
 `--watch` works through extension adapters. Each operation may add:
 
-- `watchSignature(input, ctx)` — a cheap fingerprint of the reviewed state. Hunk polls it and reloads when it changes.
+- `watchSignature(input, ctx)` — a cheap fingerprint of the reviewed state. Hunk polls it and reloads when it changes. It may return a promise, and should when it shells out: this runs on every debounced file event and every safety poll, so a blocking implementation stalls the review UI each time. `ctx.signal` aborts when the watcher closes.
 - `watchPlan(input, ctx)` — the filesystem targets that cover that state, so Hunk reacts to events instead of polling on a timer.
 
 ```ts
