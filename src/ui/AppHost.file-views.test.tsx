@@ -96,6 +96,50 @@ function createBulkFileViewExtension() {
   return { extension, root };
 }
 
+/** Write a stateful preview whose layout only changes when the extension asks for a refresh. */
+function createStatefulFileViewExtension() {
+  const root = mkdtempSync(join(tmpdir(), "hunk-apphost-stateful-view-"));
+  tempDirs.push(root);
+  const extension = join(root, "stateful-view");
+  mkdirSync(extension, { recursive: true });
+  writeFileSync(
+    join(extension, "package.json"),
+    JSON.stringify({ name: "stateful-view", private: true, hunk: { extensions: ["./index.ts"] } }),
+  );
+  writeFileSync(
+    join(extension, "index.ts"),
+    `export default function (hunk) {
+  let expanded = false;
+  hunk.registerFileView({
+    id: "stateful",
+    title: "Stateful view",
+    matches: () => true,
+    layout: ({ file }) => ({
+      rows: [{ id: "state", spans: [{ text: expanded ? "STATE EXPANDED" : "STATE COLLAPSED" }] }],
+      hunkRows: (file.hunks ?? []).map(() => ({ startRow: 0, endRow: 0 })),
+    }),
+  });
+  hunk.registerCommand(
+    { id: "toggle-stateful", title: "Toggle stateful view", key: "f8" },
+    (ctx) => ctx.fileViews.toggle("stateful"),
+  );
+  hunk.registerCommand(
+    { id: "expand-stateful", title: "Expand stateful view", key: "f9" },
+    (ctx) => {
+      expanded = !expanded;
+      ctx.fileViews.refresh("stateful");
+    },
+  );
+  hunk.registerCommand(
+    { id: "refresh-unknown", title: "Refresh unknown view", key: "f7" },
+    (ctx) => ctx.fileViews.refresh("not-a-view"),
+  );
+}
+`,
+  );
+  return { extension, root };
+}
+
 /** Build the separated changes that exercise public summaries and cross-hunk selection. */
 function createTwoHunkFile() {
   const beforeLines = Array.from(
@@ -180,6 +224,48 @@ describe("AppHost file views", () => {
       ]);
     } finally {
       console.error = originalConsoleError;
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
+  test("re-lays out a stateful view on refresh and warns for an unknown view id", async () => {
+    const { extension, root } = createStatefulFileViewExtension();
+    const extensions = await loadStartupExtensions({
+      cliExtensionPaths: [extension],
+      cwd: root,
+      env: { XDG_CONFIG_HOME: root } as NodeJS.ProcessEnv,
+      extensions: { enabled: true, extensionConfigs: {}, paths: [], repoPaths: [] },
+    });
+    expect(extensions.issues).toEqual([]);
+    const bootstrap = createTestVcsAppBootstrap({
+      changesetId: "changeset:stateful-view",
+      files: [createTestDiffFile({ id: "stateful", path: "stateful.ts" })],
+      initialMode: "stack",
+      inputMode: "stack",
+      vcsOptions: { extensionPaths: [extension] },
+    });
+    bootstrap.extensions = extensions;
+    const setup = await testRender(<AppHost bootstrap={bootstrap} onQuit={() => {}} />, {
+      width: 120,
+      height: 24,
+    });
+
+    try {
+      await waitForFrame(setup, (frame) => frame.includes("stateful.ts"));
+      await act(async () => setup.mockInput.pressKey("F8"));
+      await waitForFrame(setup, (frame) => frame.includes("STATE COLLAPSED"));
+
+      // Neither the file nor the width changed, so only the refresh can re-derive these rows.
+      await act(async () => setup.mockInput.pressKey("F9"));
+      await waitForFrame(setup, (frame) => frame.includes("STATE EXPANDED"));
+
+      await act(async () => setup.mockInput.pressKey("F7"));
+      const warned = await waitForFrame(setup, (frame) =>
+        frame.includes('targeted unknown file view "not-a-view"'),
+      );
+      // An unknown id refuses without disturbing the presentation the user is looking at.
+      expect(warned).toContain("STATE EXPANDED");
+    } finally {
       await act(async () => setup.renderer.destroy());
     }
   });

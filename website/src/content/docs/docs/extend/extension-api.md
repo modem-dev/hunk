@@ -97,6 +97,7 @@ The handler fires when the key is pressed outside modal UI (dialogs, menus, and 
 
 - `ctx.sidebars.open(viewId)` / `close(viewId)` / `toggle(viewId)` / `isOpen(viewId)` — a bare id names your own view, `"files"` the built-in file navigation, `"<extensionId>:<viewId>"` any registered view. Opening also reveals a hidden sidebar area.
 - `ctx.fileViews.select(viewId)` / `toggle(viewId)` / `isActive(viewId)` — controls a matching [file preview](/docs/extend/file-previews/) for the current file; `select(null)` restores raw diff.
+- `ctx.fileViews.refresh(viewId)` — marks that view's prepared layouts stale so a stateful view re-derives; every file presenting it re-lays out, keeping its current rows visible until the replacement resolves.
 - `ctx.selection` — where the review was pointing when the command fired.
 - `ctx.navigation` — moves the review stream.
 - `ctx.dialogs` — asks the user, below.

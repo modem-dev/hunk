@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import type { ExtensionDiffFile } from "../../extension-api/types";
 import type { RegisteredFileView } from "../../extensions/types";
 import {
+  bumpFileViewEpoch,
+  reconcileFileViewEpochs,
   reconcileFileViewSelections,
   registeredFileViewKey,
   resolveBulkFileViewTarget,
@@ -89,6 +91,32 @@ describe("file-view selection state", () => {
     });
     expect(selectFileViewForFiles(selected, ["first", "second"], "preview:new")).toBe(selected);
     expect(selectFileViewForFiles(current, [], "preview:new")).toBe(current);
+  });
+
+  test("counts refreshes per view from an implicit zero and always changes map identity", () => {
+    const first = bumpFileViewEpoch(new Map(), "preview:rendered");
+    expect([...first]).toEqual([["preview:rendered", 1]]);
+
+    const second = bumpFileViewEpoch(first, "preview:rendered");
+    expect(second).not.toBe(first);
+    expect(second.get("preview:rendered")).toBe(2);
+    // One view's invalidation never disturbs another's prepared layouts.
+    expect(bumpFileViewEpoch(second, "other:view").get("preview:rendered")).toBe(2);
+  });
+
+  test("drops epochs for views a reload removed while preserving identity otherwise", () => {
+    const current = bumpFileViewEpoch(
+      bumpFileViewEpoch(new Map(), "preview:rendered"),
+      "gone:view",
+    );
+    expect([...reconcileFileViewEpochs(current, new Set(["preview:rendered"]))]).toEqual([
+      ["preview:rendered", 1],
+    ]);
+    expect(reconcileFileViewEpochs(current, new Set(["preview:rendered", "gone:view"]))).toBe(
+      current,
+    );
+    const empty = new Map<string, number>();
+    expect(reconcileFileViewEpochs(empty, new Set())).toBe(empty);
   });
 
   test("allows an extension view id named raw because only null is the raw sentinel", () => {

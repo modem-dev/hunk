@@ -76,12 +76,15 @@ import { useFileViewLayouts } from "./fileViews/useFileViews";
 import type { FileViewRowFailure } from "./components/panes/FileView";
 import { availableFileViewSelections, fileViewUnavailableReason } from "./fileViews/availability";
 import {
+  bumpFileViewEpoch,
+  reconcileFileViewEpochs,
   reconcileFileViewSelections,
   registeredFileViewKey,
   resolveBulkFileViewTarget,
   resolveRegisteredFileView,
   selectFileView,
   selectFileViewForFiles,
+  type FileViewEpochState,
 } from "./fileViews/state";
 import { createExtensionSidebarKeybindings, resolveCommandKeys } from "./lib/keymap";
 import {
@@ -351,6 +354,11 @@ export function App({
     [extensions],
   );
   const [fileViewSelections, setFileViewSelections] = useState<Record<string, string>>({});
+  // Layout invalidation an extension asked for. Session-scoped on purpose: a reload replaces every
+  // registration object, which already invalidates prepared layouts on its own.
+  const [fileViewEpochs, setFileViewEpochs] = useState<FileViewEpochState>(
+    () => new Map<string, number>(),
+  );
   const fileViewSelectionsRef = useRef(fileViewSelections);
   fileViewSelectionsRef.current = fileViewSelections;
   const sessionFileViewsRef = useRef(sessionFileViews);
@@ -380,6 +388,7 @@ export function App({
         viewKeys,
       ),
     );
+    setFileViewEpochs((current) => reconcileFileViewEpochs(current, viewKeys));
   }, [reviewFiles, sessionFileViews]);
   // The one conversion of the visible review files into the frozen views every
   // extension surface sees: sidebar props and command-handler selection both
@@ -644,6 +653,18 @@ export function App({
             !fileViewUnavailableReasonsRef.current.has(fileId) &&
             registered &&
             fileViewSelectionsRef.current[fileId] === registeredFileViewKey(registered),
+          );
+        },
+        refresh(viewId: string) {
+          const registered = resolve(viewId);
+          if (!registered) {
+            showSessionNotice(`Extension ${extensionId} targeted unknown file view "${viewId}"`);
+            return;
+          }
+          // View-wide rather than current-file: a stateful view's state is the view's, and every
+          // file presenting it is showing geometry derived from it.
+          setFileViewEpochs((current) =>
+            bumpFileViewEpoch(current, registeredFileViewKey(registered)),
           );
         },
       };
@@ -956,6 +977,7 @@ export function App({
     selections: availableFileViewSelectionState,
     views: sessionFileViews,
     width: diffContentWidth,
+    epochs: fileViewEpochs,
     onIssue: showSessionNotice,
   });
   useEffect(() => {

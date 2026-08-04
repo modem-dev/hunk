@@ -829,6 +829,50 @@ changeset that passes that view's `matches` function, including files hidden by
 the current filter. Nonmatches retain their existing choices, and host
 constraints such as an active draft may temporarily keep a selected file raw.
 
+`ctx.fileViews.refresh("view-id")` invalidates that view's prepared layouts.
+Hunk treats `layout` as a pure derivation of `(file, width)` and reuses a
+prepared result until one of those changes, so a view holding its own state — a
+fold, a toggled overlay, a display mode — has nothing to change and would
+otherwise keep painting its first answer. Flip the state, then ask for the
+re-derivation:
+
+```ts
+import type { HunkExtensionAPI } from "hunkdiff/extension";
+
+export default function (hunk: HunkExtensionAPI) {
+  let expanded = false;
+
+  hunk.registerFileView({
+    id: "outline",
+    title: "Outline",
+    matches: (file) => file.path.endsWith(".ts"),
+    layout: ({ file }) => ({
+      rows: (file.hunks ?? []).map((entry) => ({
+        id: `hunk:${entry.index}`,
+        spans: [{ text: expanded ? `Hunk ${entry.index + 1} · ${entry.header}` : entry.header }],
+      })),
+      hunkRows: (file.hunks ?? []).map((entry) => ({ startRow: entry.index, endRow: entry.index })),
+    }),
+  });
+
+  hunk.registerCommand(
+    { id: "toggle-detail", title: "Toggle outline detail", key: "f9" },
+    (ctx) => {
+      expanded = !expanded;
+      ctx.fileViews.refresh("outline");
+    },
+  );
+}
+```
+
+Refresh is view-wide, not current-file: every file presenting the view re-runs
+`matches` and `layout`, while files on raw diff or on another view do no work.
+The rows already on screen stay there until their replacement resolves, so a
+refresh never flashes back to raw diff mid-flight; a re-layout that declines,
+throws, or times out falls back to raw exactly like any other failed layout.
+Unknown ids warn and do nothing, and ids resolve the same way `select` resolves
+them.
+
 ### `hunk.registerCommand(command, handler)`
 
 Register a named command, optionally bound to a key. Commands are not a

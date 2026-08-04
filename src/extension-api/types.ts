@@ -934,6 +934,26 @@ export interface ExtensionFileViewControls {
   toggle(viewId: string): void;
   /** Report whether this extension's view is active for the current file. */
   isActive(viewId: string): boolean;
+  /**
+   * Mark this view's prepared layouts stale so a stateful view can redraw.
+   *
+   * Hunk treats `layout` as a pure derivation of `(file, width)` and reuses a
+   * prepared result until one of those — or the registration itself — changes.
+   * A view that keeps its own state (a fold, a toggled overlay) has no such
+   * change to announce, so this is how it asks for a re-derivation.
+   *
+   * Every prepared layout of this view is invalidated at once, and each file
+   * currently presenting it re-runs `matches` and `layout`. Files on raw diff
+   * or on another view do no work. The previously prepared rows stay on screen
+   * until the replacement resolves, so a refresh never flashes back to raw
+   * diff; a re-layout that declines, throws, or times out falls back to raw
+   * exactly like any other failed layout, with the same single warning.
+   *
+   * Bare ids address the calling extension's own view, `"<extensionId>:<viewId>"`
+   * addresses any registered one, and an unknown id warns and does nothing —
+   * the same resolution and refusal `select` uses.
+   */
+  refresh(viewId: string): void;
 }
 
 /**

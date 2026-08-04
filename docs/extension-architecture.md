@@ -85,7 +85,11 @@ File-view registrations are selected per file but remain inside the one
 host-owned review stream. `src/ui/fileViews/useFileViews.ts` bounds asynchronous
 extension work and retains only immutable layouts accepted by
 `src/ui/fileViews/layout.ts`; width and registration identity are part of that
-accepted geometry. `src/ui/fileViews/renderPlan.ts` is the shared insertion
+accepted geometry. A stateful view has no such identity to change, so
+`ctx.fileViews.refresh` bumps a per-view epoch held in `App`
+(`src/ui/fileViews/state.ts`) that participates in the same retention key,
+re-preparing the files presenting that view while their current rows stay
+visible. `src/ui/fileViews/renderPlan.ts` is the shared insertion
 plan for validated extension rows and host-owned inline notes. It resolves only
 unambiguous exact-source bindings and returns an explicit unresolved set, so
 `DiffPane` falls the complete file back to Pierre rather than guessing or
