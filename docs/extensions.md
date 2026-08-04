@@ -177,7 +177,9 @@ This is crash containment, not a sandbox. Per-file `metadata` inside event
 payloads is shared with the renderer for performance and is not frozen, and an
 extension runs with your full user permissions — it can do anything your shell
 can. The containment protects you from bugs, not from code you should not have
-loaded in the first place.
+loaded in the first place. What Hunk does offer is a mediated path for the one
+thing extensions most want the filesystem for: [writing a reviewed
+file](#writing-a-reviewed-file) goes through the host, which asks you first.
 
 ## The API
 
@@ -1048,6 +1050,83 @@ the same way, and a request made after that point cancels immediately. A blank
 `title`, or a `select` with no options, is a bug in the extension rather than an
 answer from the user, so the promise **rejects**; like any other handler
 failure, that surfaces as a warning naming your extension.
+
+#### Writing a reviewed file
+
+`ctx.workspace` replaces a reviewed file's contents on disk, through Hunk rather
+than around it. Two methods:
+
+- `canWriteDocument(fileId)` → whether a write could currently succeed
+- `writeDocument({ fileId, text })` → `{ ok: true }`, or `{ ok: false, reason, detail }`
+
+```ts
+hunk.registerCommand(
+  { id: "format", title: "Format the selected file", key: "f6" },
+  async (ctx) => {
+    const file = ctx.selection.file;
+    if (!file || !ctx.workspace.canWriteDocument(file.id)) {
+      ctx.notify("Nothing writable is selected", "warning");
+      return;
+    }
+
+    const result = await ctx.workspace.writeDocument({
+      fileId: file.id,
+      text: await formatDocument(file.path),
+    });
+
+    if (result.ok) {
+      ctx.notify(`Formatted ${file.path}`);
+      return;
+    }
+
+    // "cancelled" is the user answering, not something to complain about.
+    if (result.reason !== "cancelled") {
+      ctx.notify(result.detail, "warning");
+    }
+  },
+);
+```
+
+[Failure isolation](#failure-isolation) is crash containment, not a sandbox: an
+extension can already `import "node:fs"` and write wherever your shell can. This
+is the supported alternative, and what it buys is everything a direct write
+skips. The target can only be a file the user is already reviewing. The user is
+asked before anything is touched, and the prompt names the extension asking. The
+review reloads afterwards, so what the user is looking at is what is on disk.
+Writing files any other way is outside the contract, and outside anything the
+user agreed to when they loaded you.
+
+Writes are working-tree only. They are available exactly when the session is
+reviewing the working tree — `hunk diff` with no revision range and without
+`--staged`. A revision show, a stash show, a range diff, a staged diff, patch
+input, and a file-pair diff have no working-tree document to replace, so every
+write against them comes back `unavailable`.
+
+The target is a reviewed-file id, never a path: `writeDocument` takes the `id`
+of a file in the current changeset, so an extension can ask to write something
+the user is looking at and nothing else. Files with no new side are
+`unavailable` for the same reason there is nothing to replace — a deletion, a
+binary file, a file skipped for size.
+
+Every write asks first. Hunk raises a confirm dialog through the same queue as
+`ctx.dialogs` — one modal at a time, in call order, carrying your `ext <your-id>`
+attribution — naming the file's path and saying plainly that its contents will
+be replaced. Declining, or pressing Escape, resolves
+`{ ok: false, reason: "cancelled" }`. That is an answer, not an error: a handler
+should treat it as the user saying no rather than as something to report.
+
+On success Hunk reloads the session, the same reload the refresh key runs, so
+the review reflects what you wrote. The promise settles on the write itself, not
+on the reload — a handler that resumes immediately still holds the changeset it
+was called with, and should read the new one from `changeset_loaded` or
+`session_reload` if it needs it.
+
+The remaining refusal is `failed`: Hunk attempted the write and the filesystem
+said no — permissions, a path that is now a directory, a full disk. `detail`
+carries a sentence fit to show a person. The promise **rejects** only for a
+malformed request, a missing or non-string `fileId` or `text`, which is a bug in
+the extension rather than an answer; like any other handler failure, that
+surfaces as a warning naming your extension.
 
 ### `hunk.transformChangeset(fn)`
 

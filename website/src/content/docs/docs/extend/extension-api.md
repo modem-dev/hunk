@@ -101,6 +101,7 @@ The handler fires when the key is pressed outside modal UI (dialogs, menus, and 
 - `ctx.selection` — where the review was pointing when the command fired.
 - `ctx.navigation` — moves the review stream.
 - `ctx.dialogs` — asks the user, below.
+- `ctx.workspace` — writes a reviewed file back to the working tree, with the user's consent, below.
 
 ```ts
 hunk.registerCommand(
@@ -175,6 +176,44 @@ hunk.registerCommand({ id: "pick-hunk", title: "Pick a hunk", key: "ctrl+k" }, a
 Hunk draws the dialog; your text fills the title, body, and choices, and the frame carries an `ext <your-id>` attribution line — the same marker `notify` toasts use — so a prompt cannot present itself as Hunk asking.
 
 One dialog shows at a time; concurrent requests queue in call order, across extensions. Escape cancels (`false` or `null`), Enter accepts; confirm dialogs also answer to `y`/`n`, select dialogs to `↑`/`↓`, and everything is clickable. A session reload cancels open and queued dialogs, and a dialog pending at shutdown resolves its cancel value.
+
+### Writing a reviewed file
+
+`ctx.workspace` replaces a reviewed file's contents on disk, through Hunk rather than around it: `canWriteDocument(fileId)` reports whether a write could currently succeed, and `writeDocument({ fileId, text })` resolves `{ ok: true }` or `{ ok: false, reason, detail }`.
+
+```ts
+hunk.registerCommand(
+  { id: "format", title: "Format the selected file", key: "f6" },
+  async (ctx) => {
+    const file = ctx.selection.file;
+    if (!file || !ctx.workspace.canWriteDocument(file.id)) {
+      ctx.notify("Nothing writable is selected", "warning");
+      return;
+    }
+
+    const result = await ctx.workspace.writeDocument({
+      fileId: file.id,
+      text: await formatDocument(file.path),
+    });
+
+    if (result.ok) {
+      ctx.notify(`Formatted ${file.path}`);
+      return;
+    }
+
+    // "cancelled" is the user answering, not something to complain about.
+    if (result.reason !== "cancelled") {
+      ctx.notify(result.detail, "warning");
+    }
+  },
+);
+```
+
+Extension isolation is crash containment, not a sandbox — an extension can already `import "node:fs"` and write wherever your shell can. This is the supported alternative, and what it buys is everything a direct write skips: the target can only be a file the user is already reviewing, the user is asked before anything is touched, the prompt names the extension asking, and the review reloads so what the user sees is what is on disk.
+
+Writes are working-tree only — `hunk diff` with no revision range and without `--staged`. A revision show, a stash show, a range diff, a staged diff, patch input, and a file-pair diff resolve `unavailable`, as do files with no new side to replace: a deletion, a binary file, a file skipped for size. The target is named by reviewed-file id, never by path.
+
+Every write asks first, through the same attributed, FIFO-queued modal as `ctx.dialogs`, naming the path and saying plainly that its contents will be replaced. Declining or pressing Escape resolves `{ ok: false, reason: "cancelled" }` — an answer, not an error. On success Hunk reloads the session exactly as the refresh key does; the promise settles on the write itself, not on the reload. A filesystem that refuses the write resolves `failed` with a readable `detail`, and the promise **rejects** only for a malformed request — a missing or non-string `fileId` or `text`.
 
 ## `hunk.on(event, handler)`
 

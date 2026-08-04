@@ -1041,6 +1041,86 @@ export interface ExtensionDialogs {
   input(options: ExtensionInputOptions): Promise<string | null>;
 }
 
+/** One whole-document replacement an extension asks the host to write. */
+export interface ExtensionWorkspaceWriteRequest {
+  /** The reviewed file to write, by its `ExtensionDiffFile.id`. */
+  fileId: string;
+  /** The complete replacement text for the file's new side. */
+  text: string;
+}
+
+/**
+ * How a write attempt settled.
+ *
+ * The three refusals are different kinds of answer, not degrees of failure:
+ * `"unavailable"` means the write was never possible for this review or this
+ * file, `"cancelled"` means the user was asked and said no, and `"failed"`
+ * means the filesystem refused the write Hunk actually attempted. Each carries
+ * a `detail` sentence fit to show a person.
+ */
+export type ExtensionWorkspaceWriteResult =
+  | { ok: true }
+  | { ok: false; reason: "unavailable" | "cancelled" | "failed"; detail: string };
+
+/**
+ * Write a reviewed file back to the working tree, through the host.
+ *
+ * Extension isolation is crash containment rather than a sandbox, so an
+ * extension can already reach `node:fs` and write wherever your shell can.
+ * This is the supported alternative, and what it buys is everything that a
+ * direct write skips: the target can only be a file the user is reviewing, the
+ * user is asked before anything is touched, the prompt names the extension
+ * doing the asking, and the review reloads afterwards so what you are looking
+ * at is what is on disk. An extension that writes files any other way is
+ * outside the contract, and outside anything the user agreed to.
+ *
+ * Writes are working-tree only. They are available exactly when the session is
+ * reviewing the working tree — a `vcs` diff review with no revision range and
+ * without `--staged`. A revision show, a stash show, a range diff, a staged
+ * diff, patch input, and a file-pair diff have no working-tree document to
+ * replace, and every write against them resolves `"unavailable"`.
+ *
+ * The target is named by reviewed-file id, never by path: an extension can ask
+ * to write a file the user is already looking at, and nothing else. A file with
+ * no new side (deleted) and a file Hunk never read as text (binary, skipped for
+ * size) are `"unavailable"` for the same reason — there is no document to
+ * replace.
+ */
+export interface ExtensionWorkspace {
+  /**
+   * Whether `writeDocument` could currently succeed for this reviewed file.
+   *
+   * The affordance probe behind a menu entry or a mode indicator: the same
+   * review, file, and path checks a write makes, minus the dialog and the
+   * filesystem. It never prompts and never touches disk, so a `true` here still
+   * describes what the user could allow rather than what they have allowed, and
+   * a write can still come back `"cancelled"` or `"failed"`.
+   */
+  canWriteDocument(fileId: string): boolean;
+  /**
+   * Replace one reviewed file's contents on disk, with the user's consent.
+   *
+   * Every write asks first. Hunk draws a confirm dialog through the same
+   * attributed, FIFO-queued modal system as `ctx.dialogs` — naming your
+   * extension and the file's path, and framing the write as the overwrite it
+   * is — so a write can no more present itself as Hunk's own than a dialog can.
+   * Declining, or pressing Escape, resolves `{ ok: false, reason: "cancelled" }`:
+   * a normal answer, never an exception.
+   *
+   * On success Hunk reloads the session the same way the refresh key does, so
+   * the review an extension sees afterwards reflects what it wrote. The
+   * returned promise settles on the write itself, not on the reload — a handler
+   * that resumes immediately is looking at the changeset it was called with.
+   *
+   * A filesystem that refuses the write resolves `"failed"` with a
+   * human-readable `detail`. The promise **rejects** only for a malformed
+   * request — a missing or non-string `fileId` or `text` — which is a bug in
+   * the extension rather than an answer, and surfaces through the same warning
+   * path as any other handler failure.
+   */
+  writeDocument(request: ExtensionWorkspaceWriteRequest): Promise<ExtensionWorkspaceWriteResult>;
+}
+
 /** What a command handler receives when its key fires. */
 export interface ExtensionCommandContext extends ExtensionContext {
   sidebars: ExtensionSidebarControls;
@@ -1069,6 +1149,13 @@ export interface ExtensionCommandContext extends ExtensionContext {
    * several dialogs in sequence with work in between.
    */
   readonly dialogs: ExtensionDialogs;
+  /**
+   * Write a reviewed file back to the working tree, with the user's consent.
+   *
+   * Host-mediated on purpose: the file is named by review id, the user is asked
+   * first, and the review reloads after a successful write.
+   */
+  readonly workspace: ExtensionWorkspace;
 }
 
 export type ExtensionCommandHandler = (ctx: ExtensionCommandContext) => void | Promise<void>;
