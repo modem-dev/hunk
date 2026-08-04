@@ -2667,13 +2667,13 @@ describe("UI components", () => {
     const frame = await captureFrame(
       <HelpDialog
         commands={builtinCommandMatchProbes()}
-        terminalHeight={39}
+        terminalHeight={40}
         terminalWidth={76}
         theme={theme}
         onClose={() => {}}
       />,
       76,
-      39,
+      40,
     );
 
     const expectedRows = [
@@ -2681,6 +2681,7 @@ describe("UI components", () => {
       "[Esc]",
       "Navigation",
       "Up / Down                move line-by-line",
+      "h / l                    select old / new side",
       "PageDown / Space / f     page down",
       "PageUp / b / Shift+Space page up",
       "d / u                    half page down / up",
@@ -2698,7 +2699,7 @@ describe("UI components", () => {
       "s / t                    sidebar / theme selector",
       "a                        toggle AI notes",
       "z                        toggle unchanged context",
-      "l / w / m / M            lines / wrap / metadata / menu",
+      "w / m / M                wrap / metadata / menu",
       "e                        open file in $EDITOR",
       "Review",
       "/                        focus file filter",
@@ -2734,13 +2735,13 @@ describe("UI components", () => {
     const frame = await captureFrame(
       <HelpDialog
         commands={builtinCommandMatchProbes(keys)}
-        terminalHeight={39}
+        terminalHeight={40}
         terminalWidth={76}
         theme={theme}
         onClose={() => {}}
       />,
       76,
-      39,
+      40,
     );
 
     expect(frame).toContain("Ctrl+X");

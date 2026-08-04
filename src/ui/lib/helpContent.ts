@@ -44,6 +44,10 @@ const HELP_SECTIONS: readonly HelpSectionSpec[] = [
         commandIds: ["hunk.review.stepUp", "hunk.review.stepDown"],
         description: "move line-by-line",
       },
+      {
+        commandIds: ["hunk.review.selectOldSide", "hunk.review.selectNewSide"],
+        description: "select old / new side",
+      },
       { commandIds: ["hunk.review.pageDown"], description: "page down" },
       { commandIds: ["hunk.review.pageUp"], description: "page up" },
       {
@@ -97,7 +101,7 @@ const HELP_SECTIONS: readonly HelpSectionSpec[] = [
           "hunk.view.toggleHunkHeaders",
           "hunk.view.toggleMenuBar",
         ],
-        description: "lines / wrap / metadata / menu",
+        description: "wrap / metadata / menu",
       },
       { commandIds: ["hunk.review.editSelectedFile"], description: "open file in $EDITOR" },
     ],

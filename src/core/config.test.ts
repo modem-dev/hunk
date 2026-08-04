@@ -315,11 +315,17 @@ describe("config resolution", () => {
 
     mkdirSync(join(home, ".config", "hunk"), { recursive: true });
     writeFileSync(join(home, ".config", "hunk", "config.toml"), "sidebar = false\n");
-    expect(resolveSidebar(createPatchPagerInput())).toBe(false);
+    expect(resolveSidebar(createPatchPagerInput())).toBe("hidden");
     // `--sidebar` outranks the config layer.
-    expect(resolveSidebar(createPatchPagerInput({ sidebar: true }))).toBe(true);
+    expect(resolveSidebar(createPatchPagerInput({ sidebar: "shown" }))).toBe("shown");
 
-    // Values outside `true`, `false`, and "auto" fall back to the built-in default.
+    writeFileSync(join(home, ".config", "hunk", "config.toml"), 'sidebar = "shown"\n');
+    expect(resolveSidebar(createPatchPagerInput())).toBe("shown");
+
+    writeFileSync(join(home, ".config", "hunk", "config.toml"), 'sidebar = "hidden"\n');
+    expect(resolveSidebar(createPatchPagerInput())).toBe("hidden");
+
+    // Values outside the named policies fall back to the built-in default.
     writeFileSync(join(home, ".config", "hunk", "config.toml"), 'sidebar = "always"\n');
     expect(resolveSidebar(createPatchPagerInput())).toBe("auto");
   });
@@ -1049,7 +1055,7 @@ describe("config resolution", () => {
     expect(bootstrap.initialTabWidth).toBe(8);
     expect(bootstrap.initialWrapLines).toBe(true);
     expect(bootstrap.initialShowMenuBar).toBe(false);
-    expect(bootstrap.initialSidebar).toBe(true);
+    expect(bootstrap.initialSidebar).toBe("shown");
     expect(bootstrap.initialShowHunkHeaders).toBe(false);
     expect(bootstrap.initialShowAgentNotes).toBe(true);
     expect(bootstrap.initialCopyDecorations).toBe(false);

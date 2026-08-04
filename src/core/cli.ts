@@ -265,6 +265,7 @@ function buildCommonOptions(
   },
   argv: string[],
 ): CommonOptions {
+  const sidebarFlag = resolveBooleanFlag(argv, "--sidebar", "--no-sidebar");
   return {
     mode: options.mode,
     cursorLine: options.cursorLine,
@@ -285,7 +286,7 @@ function buildCommonOptions(
     tabWidth: options.tabWidth,
     wrapLines: resolveBooleanFlag(argv, "--wrap", "--no-wrap"),
     hunkHeaders: resolveBooleanFlag(argv, "--hunk-headers", "--no-hunk-headers"),
-    sidebar: resolveBooleanFlag(argv, "--sidebar", "--no-sidebar"),
+    sidebar: sidebarFlag === undefined ? undefined : sidebarFlag ? "shown" : "hidden",
     agentNotes: resolveBooleanFlag(argv, "--agent-notes", "--no-agent-notes"),
     transparentBackground: resolveBooleanFlag(argv, "--transparent-bg", "--no-transparent-bg"),
     // Read straight from argv so the absence of the flag stays undefined rather than

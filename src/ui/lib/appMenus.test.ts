@@ -51,6 +51,7 @@ function createTestCommands(overrides: Partial<BuildAppCommandsOptions> = {}) {
     scrollCodeHorizontally: noop,
     scrollDiff: noop,
     selectCursorLine: noop,
+    selectLineCursorSide: noop,
     stepDiffLine: noop,
     selectLayoutMode: noop,
     startUserNote: noop,

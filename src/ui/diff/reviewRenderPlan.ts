@@ -125,6 +125,23 @@ export function contextLineStableKeyTarget(
   return { hunkIndex: Number(match[1]), side: "new", line: Number(match[2]) };
 }
 
+/** Resolve either side of a context row, whose stable key carries both line numbers. */
+export function contextLineStableKeyTargetForSide(
+  stableKey: string,
+  side: "old" | "new",
+): (UserNoteLineTarget & { hunkIndex: number }) | null {
+  const match = CONTEXT_LINE_STABLE_KEY.exec(stableKey);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    hunkIndex: Number(match[1]),
+    side,
+    line: Number(side === "old" ? match[2] : match[3]),
+  };
+}
+
 /** Resolve the stable anchor keys for one rendered diff row across split and stack layouts. */
 function diffRowStableKeys(row: DiffRow) {
   if (row.type === "collapsed") {

@@ -9,6 +9,7 @@ import type { DiffFile, UserNoteLineTarget } from "../../core/types";
 import type { DiffSectionGeometry, DiffSectionRowBounds } from "../diff/diffSectionGeometry";
 import {
   contextLineStableKeyTarget,
+  contextLineStableKeyTargetForSide,
   lineStableKey,
   lineStableKeyTarget,
 } from "../diff/reviewRenderPlan";
@@ -127,6 +128,35 @@ export function findNextLineCursor(
 
   const nextIndex = Math.min(Math.max(currentIndex + delta, 0), cursors.length - 1);
   return cursors[nextIndex] ?? null;
+}
+
+/** Select the old or new target rendered on the current split row. */
+export function findLineCursorOnSide(
+  cursors: LineCursor[],
+  current: LineCursor | null,
+  side: "old" | "new",
+): LineCursor | null {
+  if (!current || current.target.side === side) {
+    return current;
+  }
+
+  const context = contextLineStableKeyTargetForSide(current.stableKey, side);
+  if (context) {
+    const { hunkIndex, ...target } = context;
+    return { ...current, hunkIndex, target };
+  }
+
+  const currentIndex = cursorIndexes(cursors).get(cursorId(current));
+  if (currentIndex === undefined) {
+    return current;
+  }
+
+  const candidate = cursors[currentIndex + (side === "old" ? -1 : 1)];
+  return candidate?.fileId === current.fileId &&
+    candidate.hunkIndex === current.hunkIndex &&
+    candidate.target.side === side
+    ? candidate
+    : current;
 }
 
 /** Check whether one cursor still names a row the review stream renders. */

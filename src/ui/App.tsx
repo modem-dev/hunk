@@ -237,7 +237,7 @@ export function App({
     previewThemeId: null,
   });
   const [sidebarState, setSidebarState] = useState<SidebarVisibility>(() =>
-    pagerMode ? false : (bootstrap.initialSidebar ?? "auto"),
+    pagerMode ? "hidden" : (bootstrap.initialSidebar ?? "auto"),
   );
   const [showHelp, setShowHelp] = useState(false);
   const [showAgentSkill, setShowAgentSkill] = useState(false);
@@ -871,9 +871,11 @@ export function App({
   const responsiveLayout = resolveResponsiveLayout(layoutMode, terminal.width);
   const canForceShowSidebar = bodyWidth >= SIDEBAR_MIN_WIDTH + DIVIDER_WIDTH + DIFF_MIN_WIDTH;
   const sidebarAreaVisible =
-    sidebarState === "auto" ? responsiveLayout.showSidebar : sidebarState && canForceShowSidebar;
+    sidebarState === "auto"
+      ? responsiveLayout.showSidebar
+      : sidebarState === "shown" && canForceShowSidebar;
   const openSidebarState: SidebarVisibility =
-    !responsiveLayout.showSidebar && canForceShowSidebar ? true : "auto";
+    !responsiveLayout.showSidebar && canForceShowSidebar ? "shown" : "auto";
   const resolvedLayout = responsiveLayout.layout;
   const reportedLayoutRef = useRef<string | undefined>(undefined);
   useEffect(() => {
@@ -1228,7 +1230,7 @@ export function App({
 
   /** Toggle the sidebar, forcing it open on narrower layouts when the app can still fit both panes. */
   const toggleSidebar = () => {
-    setSidebarState(sidebarAreaVisible ? false : openSidebarState);
+    setSidebarState(sidebarAreaVisible ? "hidden" : openSidebarState);
   };
 
   /** Toggle visibility of hunk metadata rows without changing the actual diff lines. */
@@ -1696,6 +1698,11 @@ export function App({
       scrollDiff,
       stepDiffLine,
       selectCursorLine: setCursorLine,
+      selectLineCursorSide: (side) => {
+        if (resolvedLayout === "split" && cursorLine !== "off") {
+          review.selectLineCursorSide(side);
+        }
+      },
       selectLayoutMode,
       startUserNote: () => startUserNote(),
       toggleAgentNotes,

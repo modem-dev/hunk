@@ -680,7 +680,7 @@ describe("App interactions", () => {
     }
   }, 20_000);
 
-  test("keyboard shortcuts toggle notes, line numbers, and hunk metadata", async () => {
+  test("keyboard shortcuts toggle notes and hunk metadata", async () => {
     const setup = await testRender(<AppHost bootstrap={createSingleFileBootstrap()} />, {
       width: 240,
       height: 24,
@@ -707,22 +707,13 @@ describe("App interactions", () => {
       expect(frame).not.toContain("Annotation for alpha.ts");
 
       await act(async () => {
-        await setup.mockInput.typeText("l");
-      });
-      await flush(setup);
-
-      frame = setup.captureCharFrame();
-      expect(frame).not.toContain("1 - export const alpha = 1;");
-      expect(frame).toContain("- export const alpha = 1;");
-
-      await act(async () => {
         await setup.mockInput.typeText("m");
       });
       await flush(setup);
 
       frame = setup.captureCharFrame();
       expect(frame).not.toContain("@@ -1,1 +1,2 @@");
-      expect(frame).toContain("- export const alpha = 1;");
+      expect(frame).toContain("1 - export const alpha = 1;");
     } finally {
       await act(async () => {
         setup.renderer.destroy();

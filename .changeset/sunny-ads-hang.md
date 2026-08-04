@@ -2,4 +2,4 @@
 "hunkdiff": minor
 ---
 
-Add configuration and CLI flags to control the sidebar in non-pager mode.
+Add `sidebar = "auto" | "shown" | "hidden"` configuration and CLI flags to control the sidebar in non-pager mode.

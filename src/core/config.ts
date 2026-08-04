@@ -168,9 +168,11 @@ function normalizeVcsMode(value: unknown): VcsMode | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 }
 
-/** Accept a plain boolean, or `auto` for responsive behavior. */
+/** Accept the named sidebar policy, with booleans retained as compatibility aliases. */
 function normalizeSidebarVisibility(value: unknown): SidebarVisibility | undefined {
-  return typeof value === "boolean" || value === "auto" ? value : undefined;
+  if (value === true) return "shown";
+  if (value === false) return "hidden";
+  return value === "auto" || value === "shown" || value === "hidden" ? value : undefined;
 }
 
 /** Accept only plain booleans from config files. */
@@ -310,11 +312,11 @@ export const CONFIG_REFERENCE_OPTIONS: readonly ConfigReferenceOption[] = [
   {
     key: "sidebar",
     property: "sidebar",
-    type: "string or boolean",
-    accepted: '`"auto"`, `true`, or `false`',
+    type: "string",
+    accepted: '`"auto"`, `"shown"`, or `"hidden"`',
     runtimeDefault: "auto",
     description:
-      "Show the sidebar if it fits, keep it closed, or let the responsive layout decide. Pager sessions always open with the sidebar closed.",
+      "Always show the sidebar when it fits, keep it closed, or let the responsive layout decide. Pager sessions always open with the sidebar closed.",
   },
   {
     key: "agent_notes",

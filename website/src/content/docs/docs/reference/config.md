@@ -132,10 +132,10 @@ Show the top application menu bar.
 
 **`sidebar`**
 
-Show the sidebar if it fits, or keep it closed, or let the responsive layout decide. Pager sessions always open with the sidebar closed.
+Always show the sidebar when it fits, keep it closed, or let the responsive layout decide. Pager sessions always open with the sidebar closed.
 
-- **Type:** string or boolean
-- **Accepted:** `"auto"`, `true`, or `false`
+- **Type:** string
+- **Accepted:** `"auto"`, `"shown"`, or `"hidden"`
 - **Built-in default:** `auto`
 
 ---

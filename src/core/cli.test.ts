@@ -196,8 +196,8 @@ describe("parseCli", () => {
     const hidden = await parseCli(["bun", "hunk", "diff", "--no-sidebar"]);
     const unset = await parseCli(["bun", "hunk", "diff"]);
 
-    expect(shown).toMatchObject({ kind: "vcs", options: { sidebar: true } });
-    expect(hidden).toMatchObject({ kind: "vcs", options: { sidebar: false } });
+    expect(shown).toMatchObject({ kind: "vcs", options: { sidebar: "shown" } });
+    expect(hidden).toMatchObject({ kind: "vcs", options: { sidebar: "hidden" } });
     expect(unset.kind === "vcs" ? unset.options.sidebar : "unset").toBeUndefined();
   });
 

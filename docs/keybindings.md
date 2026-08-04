@@ -67,10 +67,12 @@ The built-in commands and the keys they ship with:
 | `hunk.review.jumpToBottom`          | Jump to end                              | `G`, `end`                   |
 | `hunk.review.scrollCodeLeft`        | Scroll code left (shifted scrolls fast)  | `left`, `shift+left`         |
 | `hunk.review.scrollCodeRight`       | Scroll code right (shifted scrolls fast) | `right`, `shift+right`       |
+| `hunk.review.selectOldSide`         | Select old side of current line          | `h`                          |
+| `hunk.review.selectNewSide`         | Select new side of current line          | `l`                          |
 | `hunk.view.toggleSidebar`           | Toggle sidebar                           | `s`                          |
 | `hunk.view.toggleMenuBar`           | Toggle menu bar                          | `M`                          |
 | `hunk.view.toggleHunkHeaders`       | Toggle hunk headers                      | `m`                          |
-| `hunk.view.toggleLineNumbers`       | Toggle line numbers                      | `l`                          |
+| `hunk.view.toggleLineNumbers`       | Toggle line numbers                      | _(none)_                     |
 | `hunk.view.toggleLineWrap`          | Toggle line wrapping                     | `w`                          |
 | `hunk.view.toggleAgentNotes`        | Toggle agent notes                       | `a`                          |
 | `hunk.view.toggleCopyDecorations`   | Toggle copy decorations                  | _(none)_                     |

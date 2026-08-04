@@ -93,6 +93,7 @@ export interface BuildAppCommandsOptions {
   scrollDiff: (delta: number, unit: ScrollUnit) => void;
   stepDiffLine: (delta: number) => void;
   selectCursorLine: (style: CursorLine) => void;
+  selectLineCursorSide: (side: "old" | "new") => void;
   selectLayoutMode: (mode: LayoutMode) => void;
   startUserNote: () => void;
   toggleAgentNotes: () => void;
@@ -230,6 +231,18 @@ function builtinCommandSpecs(options: BuildAppCommandsOptions): BuiltinCommandSp
         options.scrollCodeHorizontally(key.shift ? FAST_CODE_HORIZONTAL_SCROLL_COLUMNS : 1),
     },
     {
+      id: "hunk.review.selectOldSide",
+      title: "Select old side of current line",
+      defaultKeys: ["h"],
+      run: () => options.selectLineCursorSide("old"),
+    },
+    {
+      id: "hunk.review.selectNewSide",
+      title: "Select new side of current line",
+      defaultKeys: ["l"],
+      run: () => options.selectLineCursorSide("new"),
+    },
+    {
       id: "hunk.view.cursorLineRow",
       title: "Highlight the current row",
       defaultKeys: [],
@@ -311,7 +324,7 @@ function builtinCommandSpecs(options: BuildAppCommandsOptions): BuiltinCommandSp
     {
       id: "hunk.view.toggleLineNumbers",
       title: "Toggle line numbers",
-      defaultKeys: ["l"],
+      defaultKeys: [],
       run: () => options.toggleLineNumbers(),
       closesMenu: true,
     },
@@ -462,6 +475,7 @@ const NOOP_COMMAND_OPTIONS: BuildAppCommandsOptions = (() => {
     scrollDiff: noop,
     stepDiffLine: noop,
     selectCursorLine: noop,
+    selectLineCursorSide: noop,
     selectLayoutMode: noop,
     startUserNote: noop,
     toggleAgentNotes: noop,

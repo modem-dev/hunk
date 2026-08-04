@@ -11,6 +11,7 @@ import { resolveTheme } from "../themes";
 import {
   buildLineCursors,
   clampLineCursorToViewport,
+  findLineCursorOnSide,
   findNextLineCursor,
   firstLineCursorInHunk,
   resolveLineCursor,
@@ -191,6 +192,33 @@ describe("buildLineCursors", () => {
 
   test("returns nothing when no files are visible", () => {
     expect(buildLineCursors([], [])).toEqual([]);
+  });
+});
+
+describe("findLineCursorOnSide", () => {
+  test("switches between paired old and new targets in split layout", () => {
+    const file = createTestDiffFile({
+      id: "alpha",
+      path: "alpha.ts",
+      before: lines("a"),
+      after: lines("A"),
+      context: 0,
+    });
+    const cursors = cursorsFor([file], "split");
+
+    expect(findLineCursorOnSide(cursors, cursors[0]!, "new")).toEqual(cursors[1]!);
+    expect(findLineCursorOnSide(cursors, cursors[1]!, "old")).toEqual(cursors[0]!);
+  });
+
+  test("selects either side of a context row without adding another vertical stop", () => {
+    const cursors = cursorsFor([createContextWrappedFile("alpha", "alpha.ts")], "split");
+    const context = cursors[0]!;
+
+    expect(findLineCursorOnSide(cursors, context, "old")).toEqual({
+      ...context,
+      target: { side: "old", line: 1 },
+    });
+    expect(findLineCursorOnSide(cursors, context, "new")).toEqual(context);
   });
 });
 

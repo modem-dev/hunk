@@ -96,15 +96,15 @@ describe("AppHost sidebar visibility preference", () => {
     expect(sidebarVisible(setup)).toBe(false);
   });
 
-  test("true shows the sidebar where auto would hide it", async () => {
-    setup = await testRender(<AppHost bootstrap={createSidebarBootstrap(true)} />, MEDIUM);
+  test("shown displays the sidebar where auto would hide it", async () => {
+    setup = await testRender(<AppHost bootstrap={createSidebarBootstrap("shown")} />, MEDIUM);
     await flush(setup);
 
     expect(sidebarVisible(setup)).toBe(true);
   });
 
-  test("false starts the sidebar closed but leaves the toggle working", async () => {
-    setup = await testRender(<AppHost bootstrap={createSidebarBootstrap(false)} />, WIDE);
+  test("hidden starts the sidebar closed but leaves the toggle working", async () => {
+    setup = await testRender(<AppHost bootstrap={createSidebarBootstrap("hidden")} />, WIDE);
     await flush(setup);
     expect(sidebarVisible(setup)).toBe(false);
 

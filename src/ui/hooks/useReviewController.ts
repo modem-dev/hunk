@@ -43,6 +43,7 @@ import { trailingCollapsedLines } from "../diff/pierre";
 import { findNextHunkCursor } from "../lib/hunks";
 import {
   EMPTY_LINE_CURSORS,
+  findLineCursorOnSide,
   findNextLineCursor,
   firstLineCursorInHunk,
   hasLineCursor,
@@ -162,6 +163,7 @@ export interface ReviewController {
   lineCursorRevealRequestId: number;
   anchorLineCursor: (cursor: LineCursor) => void;
   moveLineCursor: (delta: number) => void;
+  selectLineCursorSide: (side: "old" | "new") => void;
   moveToAnnotatedFile: (delta: number) => void;
   moveToAnnotatedHunk: (delta: number) => void;
   moveToFile: (delta: number) => void;
@@ -490,6 +492,19 @@ export function useReviewController({
     (delta: number) => {
       const nextCursor = findNextLineCursor(lineCursors, lineCursorRef.current, delta);
       if (!nextCursor) {
+        return;
+      }
+
+      revealLineCursor(nextCursor);
+    },
+    [lineCursors, revealLineCursor],
+  );
+
+  /** Move the current split row's target between its old and new sides. */
+  const selectLineCursorSide = useCallback(
+    (side: "old" | "new") => {
+      const nextCursor = findLineCursorOnSide(lineCursors, lineCursorRef.current, side);
+      if (!nextCursor || nextCursor === lineCursorRef.current) {
         return;
       }
 
@@ -1235,6 +1250,7 @@ export function useReviewController({
     cancelDraftNote,
     clearLiveComments,
     moveLineCursor,
+    selectLineCursorSide,
     moveToAnnotatedFile,
     moveToAnnotatedHunk,
     moveToFile,
