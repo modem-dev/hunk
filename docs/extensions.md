@@ -876,6 +876,107 @@ throws, or times out falls back to raw exactly like any other failed layout.
 Unknown ids warn and do nothing, and ids resolve the same way `select` resolves
 them.
 
+#### Interactive file views
+
+A file view is otherwise a pure presentation: Hunk owns the keyboard, so a view
+that wants a cursor, fold controls, or a picker has no way to hear about a
+keypress. A **mode** is the opt-in. While one is active, keys the app's modal
+surfaces do not claim reach the view's `onKey` before Hunk's command table.
+
+```ts
+import type { HunkExtensionAPI } from "hunkdiff/extension";
+
+export default function (hunk: HunkExtensionAPI) {
+  let highlighted = 0;
+  const folded = new Set<number>();
+
+  hunk.registerFileView({
+    id: "outline",
+    title: "Outline",
+    matches: (file) => file.path.endsWith(".ts"),
+    layout: ({ file }) => {
+      const hunks = file.hunks ?? [];
+      return {
+        rows: hunks.map((entry) => ({
+          id: `hunk:${entry.index}`,
+          spans: [
+            { text: entry.index === highlighted ? "▸ " : "  " },
+            { text: folded.has(entry.index) ? "…" : entry.header },
+          ],
+        })),
+        hunkRows: hunks.map((entry) => ({ startRow: entry.index, endRow: entry.index })),
+      };
+    },
+    mode: {
+      onEnter: (ctx) => ctx.notify(`Outline keys active for ${ctx.file.path}`),
+      onKey: (key, ctx) => {
+        if (key.name === "j" || key.name === "k") {
+          const last = Math.max((ctx.file.hunks?.length ?? 1) - 1, 0);
+          highlighted = Math.min(Math.max(highlighted + (key.name === "j" ? 1 : -1), 0), last);
+          ctx.fileViews.refresh("outline");
+          return "handled";
+        }
+
+        if (key.name === "space") {
+          if (!folded.delete(highlighted)) folded.add(highlighted);
+          ctx.fileViews.refresh("outline");
+          return "handled";
+        }
+
+        // Everything else stays Hunk's: `]` still moves to the next hunk,
+        // `q` still quits, `/` still focuses the filter.
+        return "pass";
+      },
+    },
+  });
+
+  hunk.registerCommand({ id: "outline-keys", title: "Outline keys", key: "f9" }, (ctx) => {
+    if (!ctx.fileViews.isActive("outline")) {
+      ctx.fileViews.select("outline");
+      ctx.notify("Outline is showing — press F9 again for its keys");
+      return;
+    }
+
+    ctx.fileViews.enterMode("outline");
+  });
+}
+```
+
+`ctx.fileViews.enterMode("outline")` starts the mode for the selected file and
+returns whether it did. It succeeds only when the view resolves, declares a
+`mode`, and is already that file's presentation; otherwise it warns naming the
+refusal — unknown id, no mode, or view not active — and returns `false`. A
+`select` earlier in the same handler has not taken effect yet, which is why the
+example above asks the user for a second press rather than selecting and
+entering in one go. `exitMode()` leaves whichever mode is running (it is global,
+because only one can be active at a time, and idempotent), and
+`isModeActive("outline")` reports whether the mode is this view's.
+
+`onKey` answers with one of three results, and its return value _is_ the routing
+decision, so it must answer synchronously — kick off async work and report it
+afterwards through `ctx.notify` or `ctx.fileViews.refresh`:
+
+- `"handled"` — the mode acted; the key is consumed and reaches nothing else.
+- `"pass"` — the mode declined; the key flows on to the command table and
+  scrolling exactly as if no mode were running.
+- `"exit"` — the key is consumed and the mode ends.
+
+Every key the modal surfaces do not claim arrives, plain printable characters
+included, which is what makes `j`/`k`/`space` usable above — and the reason a
+mode should decline generously. Escape is the one exception: it is host-owned,
+exits the mode, and never reaches `onKey`, so there is always a way out.
+
+Hunk also exits the mode by itself when the review moves out from under it: the
+selected file changes, the view stops being that file's presentation (selected
+or toggled away), or a session reload replaces the review. `onExit` runs exactly
+once on every exit path, including a contained failure. A throw from `onKey`,
+`onEnter`, or `onExit` is isolated like any other extension failure — one
+warning naming your extension, the mode exits, and the review keeps working.
+
+While a mode is active, Hunk shows `<extension>:<view> mode — Esc exits` on its
+status line. Modes are session-scoped: nothing about them persists, and a fresh
+Hunk starts with no mode running.
+
 ### `hunk.registerCommand(command, handler)`
 
 Register a named command, optionally bound to a key. Commands are not a

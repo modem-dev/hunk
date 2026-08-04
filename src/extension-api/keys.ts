@@ -7,30 +7,18 @@
  * speak this one grammar, and extension components that need their own internal
  * keys match with it too, instead of hand-reading key events.
  *
- * Like every module the `hunkdiff/extension` entry reaches, this file imports
- * nothing: declaration emission ships whatever it can reach, so an import here
- * would publish Hunk internals. `ExtensionKeyEvent` is therefore declared
- * structurally rather than pulled from OpenTUI — OpenTUI's `KeyEvent` satisfies
- * it, so a component can pass the event it was handed straight through.
+ * Every module the `hunkdiff/extension` entry reaches is published by
+ * declaration emission, so this file reaches nothing but the contract itself:
+ * its one import is a type-only import of `./types`, the other published
+ * module, and no Hunk internal is reachable from either. `ExtensionKeyEvent`
+ * lives there because the file-view mode contract needs it too; it is declared
+ * structurally rather than pulled from OpenTUI, so a component can pass the
+ * event it was handed straight through.
  */
 
-/**
- * The parts of a terminal key event chord matching reads.
- *
- * Structural on purpose: any object carrying these fields works, including
- * OpenTUI's `KeyEvent` and the synthetic events Hunk probes matchers with.
- */
-export interface ExtensionKeyEvent {
-  /** Normalized key name, e.g. `"g"`, `"pageup"`, `"space"`. */
-  name?: string;
-  /** The characters the terminal reported, e.g. `"G"`, `"{"`. */
-  sequence?: string;
-  ctrl?: boolean;
-  meta?: boolean;
-  /** The alt/option modifier. */
-  option?: boolean;
-  shift?: boolean;
-}
+import type { ExtensionKeyEvent } from "./types.js";
+
+export type { ExtensionKeyEvent };
 
 /** Modifier-normalized description of one parsed chord. */
 export interface ParsedKeyChord {

@@ -34,12 +34,17 @@ import type {
   ExtensionEventContext,
   ExtensionFileSide,
   ExtensionFileViewControls,
+  ExtensionFileViewMode,
+  ExtensionFileViewModeContext,
+  ExtensionFileViewModeKeyResult,
+  ExtensionKeyEvent,
   ExtensionReviewNote,
   ExtensionSidebarControls,
   ExtensionWorkspace,
   ExtensionWorkspaceWriteRequest,
   ExtensionWorkspaceWriteResult,
   RegisteredCommand,
+  RegisteredFileView,
 } from "../extensions/types";
 import type {
   HunkSessionBrokerClient,
@@ -79,7 +84,19 @@ import { createGuardedReviewNavigation } from "./lib/extensionNavigation";
 import { buildExtensionReviewSelection } from "./lib/extensionSelection";
 import { useFileViewLayouts } from "./fileViews/useFileViews";
 import type { FileViewRowFailure } from "./components/panes/FileView";
-import { availableFileViewSelections, fileViewUnavailableReason } from "./fileViews/availability";
+import {
+  availableFileViewSelections,
+  fileViewUnavailableReason,
+  presentedFileViewKey,
+} from "./fileViews/availability";
+import {
+  deliverFileViewModeKey,
+  fileViewModeStatusHint,
+  fileViewModeStillValid,
+  resolveFileViewModeActivation,
+  runFileViewModeLifecycle,
+  type ActiveFileViewMode,
+} from "./fileViews/mode";
 import {
   bumpFileViewEpoch,
   reconcileFileViewEpochs,
@@ -605,12 +622,133 @@ export function App({
     [extensions, setSidebarOpen],
   );
 
+  // The one interactive file-view mode a session can have running. The ref is
+  // what the key handler reads, written eagerly so a mode entered inside a
+  // keypress routes the next key correctly; the state mirror exists only so the
+  // status hint repaints. Both are written through one setter so they cannot
+  // disagree about who holds the keyboard.
+  const [activeFileViewMode, setActiveFileViewModeState] = useState<ActiveFileViewMode | null>(
+    null,
+  );
+  const activeFileViewModeRef = useRef<ActiveFileViewMode | null>(null);
+  const setActiveFileViewMode = useCallback((next: ActiveFileViewMode | null) => {
+    activeFileViewModeRef.current = next;
+    setActiveFileViewModeState(next);
+  }, []);
+  /** Attribute one contained mode failure through the extension warning surface. */
+  const warnFileViewMode = useCallback(
+    (message: string) => extensions?.context.notify(message, "warning"),
+    [extensions],
+  );
+
+  /**
+   * Leave the active mode, running `onExit` exactly once.
+   *
+   * Every exit path routes through here — a key result, Escape, a host
+   * auto-exit, a contained throw, unmount — so the teardown exists once rather
+   * than at each trigger. Clearing the ref before `onExit` also makes a
+   * re-entrant `exitMode()` from inside that callback a no-op instead of a
+   * second teardown.
+   */
+  const exitFileViewMode = useCallback(() => {
+    const active = activeFileViewModeRef.current;
+    if (!active) return;
+
+    setActiveFileViewMode(null);
+    runFileViewModeLifecycle(active, "onExit", warnFileViewMode);
+  }, [setActiveFileViewMode, warnFileViewMode]);
+  const exitFileViewModeRef = useRef(exitFileViewMode);
+  exitFileViewModeRef.current = exitFileViewMode;
+  useEffect(
+    // A hard reload remounts App under a running mode; its `onExit` is owed
+    // regardless of which instance is on screen when the session moves on.
+    () => () => exitFileViewModeRef.current(),
+    [],
+  );
+
+  /** Hand one key to the active mode; the key hook turns the answer into ownership. */
+  const sendFileViewModeKey = useCallback(
+    (key: ExtensionKeyEvent): ExtensionFileViewModeKeyResult => {
+      const active = activeFileViewModeRef.current;
+      // Declining is the honest answer for a key that arrived with no mode
+      // running: the routing chain then treats it exactly as it always would.
+      return active ? deliverFileViewModeKey(active, key, warnFileViewMode) : "pass";
+    },
+    [warnFileViewMode],
+  );
+
+  /**
+   * Start one resolved mode, or refuse because its `onEnter` threw.
+   *
+   * The context is built once here and handed to every later callback, so a
+   * mode's `file` and controls describe the review as it was when the user
+   * entered it — the same snapshot semantics a command's `selection` has.
+   */
+  const beginFileViewMode = useCallback(
+    (callerId: string, registered: RegisteredFileView, mode: ExtensionFileViewMode) => {
+      const file = getExtensionSelection().file;
+      if (!file) {
+        showSessionNotice(`Extension ${callerId} cannot enter a mode without a selected file`);
+        return false;
+      }
+
+      // The mode's code belongs to whoever registered the view, not to whoever
+      // asked for it: one extension may enter another's mode by qualified id,
+      // and every later warning names the code that actually ran.
+      const ownerId = registered.extensionId;
+      const ctx: ExtensionFileViewModeContext = {
+        cwd: extensions?.context.cwd ?? process.cwd(),
+        notify: (message, type) => extensions?.context.notify(message, type),
+        file,
+        // The owning extension's own controls, so a bare id inside the mode
+        // resolves to its views and `refresh` redraws what it just changed.
+        fileViews: createFileViewControlsRef.current(ownerId),
+      };
+      const active: ActiveFileViewMode = {
+        ctx,
+        extensionId: ownerId,
+        fileId: file.id,
+        mode,
+        registered,
+        // A reload replaces the bootstrap under a mounted App, which is exactly
+        // when a mode's file snapshot stops describing the review.
+        reviewGeneration: bootstrap,
+        viewId: registered.view.id,
+        viewKey: registeredFileViewKey(registered),
+      };
+      setActiveFileViewMode(active);
+      if (!runFileViewModeLifecycle(active, "onEnter", warnFileViewMode)) {
+        exitFileViewMode();
+        return false;
+      }
+
+      return true;
+    },
+    [
+      bootstrap,
+      exitFileViewMode,
+      extensions,
+      getExtensionSelection,
+      setActiveFileViewMode,
+      showSessionNotice,
+      warnFileViewMode,
+    ],
+  );
+
   /** Build host-owned file-presentation controls for one extension command. */
   const createFileViewControls = useCallback(
     (extensionId: string): ExtensionFileViewControls => {
       const resolve = (viewId: string) =>
         resolveRegisteredFileView(sessionFileViewsRef.current, extensionId, viewId);
       const selectedId = () => extensionSelectionInputsRef.current.selectedFileId;
+      // What the selected file is actually showing right now, which both
+      // `isActive` and every mode decision answer from.
+      const presentedKey = () =>
+        presentedFileViewKey(
+          fileViewSelectionsRef.current,
+          fileViewUnavailableReasonsRef.current,
+          selectedId(),
+        );
       const select = (viewId: string | null) => {
         const fileId = selectedId();
         if (!fileId) {
@@ -670,13 +808,7 @@ export function App({
         },
         isActive(viewId: string) {
           const registered = resolve(viewId);
-          const fileId = selectedId();
-          return Boolean(
-            fileId &&
-            !fileViewUnavailableReasonsRef.current.has(fileId) &&
-            registered &&
-            fileViewSelectionsRef.current[fileId] === registeredFileViewKey(registered),
-          );
+          return Boolean(registered && presentedKey() === registeredFileViewKey(registered));
         },
         refresh(viewId: string) {
           const registered = resolve(viewId);
@@ -690,10 +822,75 @@ export function App({
             bumpFileViewEpoch(current, registeredFileViewKey(registered)),
           );
         },
+        enterMode(viewId: string) {
+          const activation = resolveFileViewModeActivation({
+            activeViewKey: presentedKey(),
+            extensionId,
+            registered: resolve(viewId),
+            viewId,
+          });
+          if (!activation.ok) {
+            showSessionNotice(activation.refusal);
+            return false;
+          }
+
+          return beginFileViewMode(extensionId, activation.registered, activation.mode);
+        },
+        exitMode() {
+          exitFileViewMode();
+        },
+        isModeActive(viewId: string) {
+          const registered = resolve(viewId);
+          const active = activeFileViewModeRef.current;
+          return Boolean(
+            registered && active && active.viewKey === registeredFileViewKey(registered),
+          );
+        },
       };
     },
-    [getExtensionSelection, showSessionNotice],
+    [beginFileViewMode, exitFileViewMode, getExtensionSelection, showSessionNotice],
   );
+  // Assigned rather than captured: a mode's context carries the same controls
+  // object commands get, and the factory cannot reference itself while it is
+  // still being defined.
+  const createFileViewControlsRef = useRef(createFileViewControls);
+  createFileViewControlsRef.current = createFileViewControls;
+
+  // One place the host decides a running mode no longer describes what the user
+  // is looking at. Every auto-exit trigger — selecting another file, switching
+  // the presentation away (single or bulk), a reload replacing the review or the
+  // registrations — is a change in these inputs, so the exit is derived once
+  // here instead of being remembered at each of those call sites.
+  const presentedViewKeyForSelectedFile = presentedFileViewKey(
+    fileViewSelections,
+    fileViewUnavailableReasons,
+    selectedFileId,
+  );
+  useEffect(() => {
+    const active = activeFileViewModeRef.current;
+    if (
+      !active ||
+      fileViewModeStillValid(active, {
+        activeViewKey: presentedViewKeyForSelectedFile,
+        reviewGeneration: bootstrap,
+        selectedFileId,
+        views: sessionFileViews,
+      })
+    ) {
+      return;
+    }
+
+    exitFileViewMode();
+  }, [
+    bootstrap,
+    exitFileViewMode,
+    presentedViewKeyForSelectedFile,
+    selectedFileId,
+    sessionFileViews,
+  ]);
+  // The one visible sign a mode is running, shown on the existing status line
+  // rather than in new chrome, and yielding to any real notice.
+  const fileViewModeHint = activeFileViewMode ? fileViewModeStatusHint(activeFileViewMode) : null;
 
   /**
    * Reveal the sidebar area, assigned each render once the responsive layout
@@ -1944,6 +2141,9 @@ export function App({
     moveExtensionDialogSelection,
     extensionTrustPromptOpen,
     trustRepoExtensions,
+    fileViewModeActive: activeFileViewMode !== null,
+    exitFileViewMode,
+    sendFileViewModeKey,
     focusArea,
     moveMenuItem,
     moveThemeSelector,
@@ -2238,11 +2438,13 @@ export function App({
 
       {focusArea === "filter" ||
       Boolean(review.filter) ||
-      Boolean(sessionNoticeText ?? transientNoticeText ?? noticeText) ? (
+      Boolean(sessionNoticeText ?? transientNoticeText ?? noticeText ?? fileViewModeHint) ? (
         <StatusBar
           filter={review.filter}
           filterFocused={focusArea === "filter"}
-          noticeText={sessionNoticeText ?? transientNoticeText ?? noticeText ?? undefined}
+          noticeText={
+            sessionNoticeText ?? transientNoticeText ?? noticeText ?? fileViewModeHint ?? undefined
+          }
           terminalWidth={terminal.width}
           theme={activeTheme}
           onCloseMenu={closeMenu}

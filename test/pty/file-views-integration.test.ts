@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { cpSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createPtyHarness } from "./harness";
@@ -43,6 +43,59 @@ function createMarkdownPairTest(noteRange: [number, number] = [3, 3]) {
     "utf8",
   );
   return { after, agentContext, before, directory };
+}
+
+/**
+ * Write a file view whose interactive mode moves a highlight with `j`.
+ *
+ * The mode answers `j`, leaves on `x`, and declines everything else, so one real
+ * terminal run shows every routing answer: a handled key redrawing through
+ * `refresh`, a declined key reaching Hunk's own commands, and Escape handing the
+ * keyboard back.
+ */
+function createInteractiveViewExtension(directory: string) {
+  const extension = join(directory, "cursor-mode");
+  mkdirSync(extension, { recursive: true });
+  writeFileSync(
+    join(extension, "package.json"),
+    JSON.stringify({ name: "cursor-mode", private: true, hunk: { extensions: ["./index.ts"] } }),
+    "utf8",
+  );
+  writeFileSync(
+    join(extension, "index.ts"),
+    `export default function (hunk) {
+  let cursor = 0;
+  hunk.registerFileView({
+    id: "cursor",
+    title: "Cursor demo",
+    matches: () => true,
+    layout: ({ file }) => ({
+      rows: [{ id: "cursor", spans: [{ text: "CURSOR AT " + cursor }] }],
+      hunkRows: (file.hunks ?? []).map(() => ({ startRow: 0, endRow: 0 })),
+    }),
+    mode: {
+      onKey: (key, ctx) => {
+        if (key.name === "j") {
+          cursor += 1;
+          ctx.fileViews.refresh("cursor");
+          return "handled";
+        }
+        if (key.name === "x") return "exit";
+        return "pass";
+      },
+    },
+  });
+  hunk.registerCommand({ id: "toggle", title: "Toggle cursor demo", key: "f8" }, (ctx) =>
+    ctx.fileViews.toggle("cursor"),
+  );
+  hunk.registerCommand({ id: "enter", title: "Enter cursor mode", key: "f9" }, (ctx) =>
+    ctx.fileViews.enterMode("cursor"),
+  );
+}
+`,
+    "utf8",
+  );
+  return extension;
 }
 
 describe("PTY file views", () => {
@@ -261,6 +314,55 @@ describe("PTY file views", () => {
       await session.click(/Toggle JSX hunk cards \(POC\)/);
       const menuDispatched = await session.waitForText(/▶ Hunk 2/);
       expect(menuDispatched).toContain("Hunk 1");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("routes real keypresses into a file view's interactive mode and back out", async () => {
+    const pair = harness.createMultiHunkFilePair();
+    const extension = createInteractiveViewExtension(pair.dir);
+    const session = await harness.launchHunk({
+      args: ["diff", "--extension", extension, "--mode", "stack", pair.before, pair.after],
+      cwd: pair.dir,
+      cols: 140,
+      rows: 24,
+    });
+
+    try {
+      await session.waitForText(/before\.ts/, { timeout: 20_000 });
+      await harness.ensureKeyboardIsLive(session);
+      await session.press("f8");
+      await session.waitForText(/CURSOR AT 0/, { timeout: 20_000 });
+
+      await session.press("f9");
+      await session.waitForText(/cursor-mode:cursor mode — Esc exits/, { timeout: 20_000 });
+
+      // Handled keys reach the extension, and the redraw it asks for is what
+      // the terminal actually shows.
+      await session.press("j");
+      await session.waitForText(/CURSOR AT 1/, { timeout: 20_000 });
+      await session.press("j");
+      await session.waitForText(/CURSOR AT 2/, { timeout: 20_000 });
+
+      // A declined key reaches Hunk's own commands, and the overlay it opens
+      // outranks the mode: its Escape closes the overlay, not the mode.
+      await session.press("?");
+      await session.waitForText(/Controls help/, { timeout: 20_000 });
+      await session.press("escape");
+      const stillActive = await session.waitForText(/cursor-mode:cursor mode — Esc exits/, {
+        timeout: 20_000,
+      });
+      expect(stillActive).not.toContain("Controls help");
+
+      await session.press("escape");
+      const exited = await session.waitForText(/CURSOR AT 2/, { timeout: 20_000 });
+      expect(exited).not.toContain("Esc exits");
+
+      // The command table owns the keyboard again.
+      await session.press("f8");
+      const raw = await session.waitForText(/line60 = 6000/, { timeout: 20_000 });
+      expect(raw).not.toContain("CURSOR AT");
     } finally {
       session.close();
     }

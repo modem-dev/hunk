@@ -211,6 +211,50 @@ describe("registerFileView", () => {
     expect(registry.fileViews).toEqual([]);
     expect(issues[0]?.message).toContain("layout() function");
   });
+
+  test("keeps an interactive mode optional but refuses one that could never be entered", () => {
+    const registry = createEmptyExtensionRegistry();
+    const issues: ExtensionLoadIssue[] = [];
+    const mode = { onKey: () => "handled" as const };
+
+    runExtensionFactory({
+      metadata: bundledMetadata("interactive"),
+      registry,
+      issues,
+      factory: (hunk) => {
+        hunk.registerFileView({
+          id: "keyed",
+          title: "Keyed",
+          matches: () => true,
+          layout: () => null,
+          mode,
+        });
+      },
+    });
+
+    expect(issues).toEqual([]);
+    expect(registry.fileViews[0]?.view.mode).toBe(mode);
+
+    const brokenRegistry = createEmptyExtensionRegistry();
+    const brokenIssues: ExtensionLoadIssue[] = [];
+    runExtensionFactory({
+      metadata: bundledMetadata("broken-mode"),
+      registry: brokenRegistry,
+      issues: brokenIssues,
+      factory: (hunk) => {
+        hunk.registerFileView({
+          id: "keyed",
+          title: "Keyed",
+          matches: () => true,
+          layout: () => null,
+          mode: {} as never,
+        });
+      },
+    });
+
+    expect(brokenRegistry.fileViews).toEqual([]);
+    expect(brokenIssues[0]?.message).toContain("onKey() function");
+  });
 });
 
 describe("hunk.events", () => {

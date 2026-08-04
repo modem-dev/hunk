@@ -1,0 +1,200 @@
+import { describe, expect, test } from "bun:test";
+import type {
+  ExtensionDiffFile,
+  ExtensionFileViewMode,
+  ExtensionFileViewModeContext,
+} from "../../extension-api/types";
+import type { RegisteredFileView } from "../../extensions/types";
+import {
+  deliverFileViewModeKey,
+  fileViewModeStatusHint,
+  fileViewModeStillValid,
+  resolveFileViewModeActivation,
+  runFileViewModeLifecycle,
+  type ActiveFileViewMode,
+} from "./mode";
+
+/** Build a registration whose view optionally carries an interactive mode. */
+function createTestRegisteredFileView(mode?: ExtensionFileViewMode): RegisteredFileView {
+  return {
+    extensionId: "preview",
+    view: {
+      id: "rendered",
+      title: "Rendered",
+      matches: () => true,
+      layout: () => null,
+      mode,
+    },
+  };
+}
+
+/** Build the active-mode record the host routes keys against. */
+function createTestActiveMode(
+  mode: ExtensionFileViewMode,
+  overrides: Partial<ActiveFileViewMode> = {},
+): ActiveFileViewMode {
+  const registered = createTestRegisteredFileView(mode);
+  const ctx = {
+    cwd: "/repo",
+    notify: () => {},
+    file: { id: "readme", path: "README.md" } as unknown as ExtensionDiffFile,
+    fileViews: {} as ExtensionFileViewModeContext["fileViews"],
+  } satisfies ExtensionFileViewModeContext;
+  return {
+    ctx,
+    extensionId: "preview",
+    fileId: "readme",
+    mode,
+    registered,
+    reviewGeneration: "generation-1",
+    viewId: "rendered",
+    viewKey: "preview:rendered",
+    ...overrides,
+  };
+}
+
+describe("file-view mode state", () => {
+  test("names each refusal enterMode can answer with", () => {
+    const mode: ExtensionFileViewMode = { onKey: () => "handled" };
+    const registered = createTestRegisteredFileView(mode);
+
+    expect(
+      resolveFileViewModeActivation({
+        activeViewKey: "preview:rendered",
+        extensionId: "preview",
+        registered: undefined,
+        viewId: "missing",
+      }),
+    ).toEqual({
+      ok: false,
+      refusal: 'Extension preview targeted unknown file view "missing"',
+    });
+
+    expect(
+      resolveFileViewModeActivation({
+        activeViewKey: "preview:plain",
+        extensionId: "preview",
+        registered: createTestRegisteredFileView(),
+        viewId: "rendered",
+      }),
+    ).toEqual({
+      ok: false,
+      refusal: 'Extension preview file view "rendered" has no interactive mode',
+    });
+
+    // Declared mode, but the user is looking at something else.
+    expect(
+      resolveFileViewModeActivation({
+        activeViewKey: null,
+        extensionId: "preview",
+        registered,
+        viewId: "rendered",
+      }),
+    ).toEqual({
+      ok: false,
+      refusal: 'File view "rendered" is not the selected file\'s presentation • select it first',
+    });
+
+    expect(
+      resolveFileViewModeActivation({
+        activeViewKey: "preview:rendered",
+        extensionId: "preview",
+        registered,
+        viewId: "rendered",
+      }),
+    ).toEqual({ ok: true, registered, mode });
+  });
+
+  test("holds a mode only while the review still matches what it was entered on", () => {
+    const active = createTestActiveMode({ onKey: () => "handled" });
+    const valid = {
+      activeViewKey: "preview:rendered",
+      reviewGeneration: "generation-1",
+      selectedFileId: "readme",
+      views: [active.registered],
+    };
+    expect(fileViewModeStillValid(active, valid)).toBe(true);
+    expect(fileViewModeStillValid(active, { ...valid, selectedFileId: "other" })).toBe(false);
+    expect(fileViewModeStillValid(active, { ...valid, activeViewKey: null })).toBe(false);
+    expect(fileViewModeStillValid(active, { ...valid, reviewGeneration: "generation-2" })).toBe(
+      false,
+    );
+    // An extension reload keeps the key but replaces the registration object.
+    expect(
+      fileViewModeStillValid(active, {
+        ...valid,
+        views: [createTestRegisteredFileView(active.mode)],
+      }),
+    ).toBe(false);
+  });
+
+  test("names the mode and its way out in the status hint", () => {
+    expect(fileViewModeStatusHint(createTestActiveMode({ onKey: () => "handled" }))).toBe(
+      "preview:rendered mode — Esc exits",
+    );
+  });
+
+  test("runs lifecycle callbacks and contains a throwing one as a warning", () => {
+    const warnings: string[] = [];
+    const entered: string[] = [];
+    const active = createTestActiveMode({
+      onKey: () => "handled",
+      onEnter: (ctx) => entered.push(ctx.file.id),
+    });
+    expect(runFileViewModeLifecycle(active, "onEnter", (message) => warnings.push(message))).toBe(
+      true,
+    );
+    expect(entered).toEqual(["readme"]);
+    // A mode with no callback for the phase is a silent success.
+    expect(runFileViewModeLifecycle(active, "onExit", (message) => warnings.push(message))).toBe(
+      true,
+    );
+    expect(warnings).toEqual([]);
+
+    const broken = createTestActiveMode({
+      onKey: () => "handled",
+      onExit: () => {
+        throw new Error("teardown exploded");
+      },
+    });
+    expect(runFileViewModeLifecycle(broken, "onExit", (message) => warnings.push(message))).toBe(
+      false,
+    );
+    expect(warnings).toEqual([
+      'Extension preview file view "rendered" mode failed onExit • teardown exploded',
+    ]);
+  });
+
+  test("normalizes key answers and turns a throwing handler into an exit", () => {
+    const warnings: string[] = [];
+    const seen: string[] = [];
+    const push = (message: string) => warnings.push(message);
+
+    const handled = createTestActiveMode({
+      onKey: (key) => {
+        seen.push(key.name ?? "");
+        return "handled";
+      },
+    });
+    expect(deliverFileViewModeKey(handled, { name: "j" }, push)).toBe("handled");
+    expect(seen).toEqual(["j"]);
+
+    // Anything outside the documented answers declines, which is the reading
+    // that leaves the app behaving as if no mode were running.
+    const forgetful = createTestActiveMode({
+      onKey: () => undefined as unknown as "pass",
+    });
+    expect(deliverFileViewModeKey(forgetful, { name: "j" }, push)).toBe("pass");
+    expect(warnings).toEqual([]);
+
+    const broken = createTestActiveMode({
+      onKey: () => {
+        throw new Error("key exploded");
+      },
+    });
+    expect(deliverFileViewModeKey(broken, { name: "j" }, push)).toBe("exit");
+    expect(warnings).toEqual([
+      'Extension preview file view "rendered" mode failed onKey • key exploded',
+    ]);
+  });
+});

@@ -376,6 +376,11 @@ export function createExtensionApi(
       if (typeof view.layout !== "function") {
         throw new Error("registerFileView requires a layout() function.");
       }
+      // A mode is optional, but one declared without a key handler could never
+      // be entered — fail the registration rather than the first `enterMode`.
+      if (view.mode !== undefined && typeof view.mode?.onKey !== "function") {
+        throw new Error("registerFileView mode requires an onKey() function.");
+      }
 
       registry.fileViews.push({ extensionId: metadata.id, view });
     },

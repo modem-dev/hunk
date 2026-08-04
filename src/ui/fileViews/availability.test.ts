@@ -3,6 +3,7 @@ import {
   availableFileViewSelections,
   FILE_VIEW_DRAFT_UNAVAILABLE_REASON,
   fileViewUnavailableReason,
+  presentedFileViewKey,
 } from "./availability";
 
 describe("file-view availability", () => {
@@ -38,5 +39,20 @@ describe("file-view availability", () => {
       ),
     ).toEqual({ other: "ext:view" });
     expect(selections).toEqual({ readme: "preview:rendered", other: "ext:view" });
+  });
+
+  test("reports the presentation one file actually shows, not just its stored choice", () => {
+    const selections = { readme: "preview:rendered" };
+    expect(presentedFileViewKey(selections, new Map(), "readme")).toBe("preview:rendered");
+    expect(presentedFileViewKey(selections, new Map(), "other")).toBeNull();
+    expect(presentedFileViewKey(selections, new Map(), null)).toBeNull();
+    // A host constraint (an open draft note) keeps the file raw despite the choice.
+    expect(
+      presentedFileViewKey(
+        selections,
+        new Map([["readme", FILE_VIEW_DRAFT_UNAVAILABLE_REASON]]),
+        "readme",
+      ),
+    ).toBeNull();
   });
 });

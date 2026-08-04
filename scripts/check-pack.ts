@@ -23,6 +23,8 @@ import {
 } from "hunkdiff/extension";
 import type {
   ExtensionChangeset,
+  ExtensionFileViewMode,
+  ExtensionFileViewModeKeyResult,
   ExtensionFileViewRow,
   ExtensionFileViewRowComponentProps,
   ExtensionFileViewSourceRange,
@@ -76,10 +78,24 @@ export default function (hunk: HunkExtensionAPI) {
     spans: [{ text: "invalid", tone: "text" }],
   };
   void invalidToneRow;
+  const mode: ExtensionFileViewMode = {
+    onEnter: (ctx) => ctx.notify(\`editing \${ctx.file.path}\`),
+    onExit: () => {},
+    onKey: (key, ctx): ExtensionFileViewModeKeyResult => {
+      if (key.name === "space") {
+        ctx.fileViews.refresh("raw");
+        return "handled";
+      }
+
+      // @ts-expect-error A mode answers synchronously; the routing decision cannot be awaited.
+      return Promise.resolve("pass");
+    },
+  };
   hunk.registerFileView({
     id: "raw",
     title: "A view whose extension id is raw",
     matches: (file) => file.path.endsWith(".md"),
+    mode,
     async layout(input) {
       const document: string | null = await input.readDocument("new");
       const firstRange: readonly [number, number] | undefined = input.changes[0]?.range;
@@ -101,6 +117,11 @@ export default function (hunk: HunkExtensionAPI) {
     ctx.fileViews.select("raw");
     ctx.fileViews.select(null);
     ctx.fileViews.refresh("raw");
+    if (ctx.fileViews.isActive("raw") && !ctx.fileViews.isModeActive("raw")) {
+      const entered: boolean = ctx.fileViews.enterMode("raw");
+      hunk.log(entered ? "mode running" : "mode refused");
+    }
+    ctx.fileViews.exitMode();
   });
 
   hunk.registerCommand({ id: "rewrite", title: "Rewrite the selection" }, async (ctx) => {

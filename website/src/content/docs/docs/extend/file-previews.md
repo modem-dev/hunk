@@ -171,6 +171,40 @@ Always provide useful `spans`. If the component throws, Hunk paints those spans 
 
 React hook state is temporary paint state. It is lost when windowing unmounts the row, a width change creates a new layout, the user switches presentations, or the extension/session reloads. Keep durable extension state outside the row component.
 
+## Interactive previews
+
+A preview is otherwise a pure presentation: Hunk owns the keyboard, so a view that wants a cursor, fold controls, or a picker has no way to hear about a keypress. An optional `mode` is the opt-in. While it is active, keys the app's modal surfaces do not claim reach `onKey` before Hunk's command table.
+
+```ts
+hunk.registerFileView({
+  id: "preview",
+  title: "Line preview",
+  matches: (file) => file.path.endsWith(".md"),
+  layout: () => null,
+  mode: {
+    onEnter: (ctx) => ctx.notify(`Preview keys active for ${ctx.file.path}`),
+    onKey: (key, ctx) => {
+      if (key.name === "j" || key.name === "k") {
+        // Move your own highlight here, then ask for the redraw.
+        ctx.fileViews.refresh("preview");
+        return "handled";
+      }
+
+      // Everything else stays Hunk's: `]` still moves to the next hunk.
+      return "pass";
+    },
+  },
+});
+```
+
+A command starts the mode with `ctx.fileViews.enterMode("preview")`, which returns whether it did. It succeeds only when the view resolves, declares a `mode`, and is already the selected file's presentation; otherwise Hunk warns naming the refusal and returns `false`. A `select` earlier in the same handler has not taken effect yet, so entering a mode belongs to a later keypress than the one that chose the view. `exitMode()` leaves whichever mode is running — it is global, because only one can be active at a time — and `isModeActive("preview")` reports whether that mode is yours.
+
+`onKey` answers `"handled"` (the key is consumed and reaches nothing else), `"pass"` (the key flows on to the command table and scrolling exactly as if no mode were running), or `"exit"` (the key is consumed and the mode ends). The return value is the routing decision, so it must be synchronous; start async work and report it afterwards through `ctx.notify` or `ctx.fileViews.refresh`.
+
+Every key the modal surfaces do not claim arrives, plain printable characters included — which is why a mode should decline generously. Escape is host-owned: it exits the mode and never reaches `onKey`, so there is always a way out.
+
+Hunk also exits the mode when the review moves out from under it: the selected file changes, the view stops being that file's presentation, or a session reload replaces the review. `onExit` runs exactly once on every exit path. A throw from any of the three callbacks is contained like other extension failures — one warning naming the extension, the mode exits, and the review keeps working. While a mode is active, Hunk shows `<extension>:<view> mode — Esc exits` on its status line. Modes are session-scoped: nothing persists.
+
 ## Validation and fallback
 
 Hunk validates every returned layout before using it. Current request limits are:
