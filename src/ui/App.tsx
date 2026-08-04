@@ -21,7 +21,7 @@ import type {
   PersistedViewPreferences,
   UserNoteLineTarget,
 } from "../core/types";
-import { canReloadInput } from "../core/watch";
+import { canReloadInput } from "../core/inputReload";
 import { sanitizeTerminalLine } from "../lib/terminalText";
 import { resolveExtensionCommands, resolveExtensionFileViews } from "../extensions/apply";
 import {
@@ -98,6 +98,7 @@ import {
   resolveExtensionWorkspaceWriteTarget,
 } from "./lib/extensionWorkspace";
 import { maxFileHeaderStatsWidth } from "./lib/fileHeader";
+import { verifyWorkspaceWriteTarget } from "./lib/workspaceWriteGuard";
 import { openSelectedFileInEditor } from "./lib/openInEditor";
 import { resolveResponsiveLayout } from "./lib/responsive";
 import { resizeSidebarWidth } from "./lib/sidebar";
@@ -647,6 +648,23 @@ export function App({
             return { ok: false, reason: "unavailable", detail: target.detail };
           }
 
+          // The policy's confinement is lexical; only the filesystem can say
+          // whether the reviewed path is a link, or sits under one, and would
+          // land the write somewhere the prompt never named. Ask both before
+          // prompting and again after consent, since the filesystem can change
+          // while the user is deciding.
+          const root = extensionWorkspaceInputsRef.current.root;
+          const verifyTarget = () =>
+            verifyWorkspaceWriteTarget({
+              absolutePath: target.absolutePath,
+              path: target.path,
+              root,
+            });
+          const refusal = await verifyTarget();
+          if (refusal) {
+            return { ok: false, reason: "unavailable", detail: refusal };
+          }
+
           // The same attributed, FIFO-queued modal `ctx.dialogs` uses, so a
           // write prompt queues behind an extension's own questions and can
           // never present itself as Hunk asking.
@@ -661,6 +679,11 @@ export function App({
               reason: "cancelled",
               detail: `The write to ${target.path} was declined.`,
             };
+          }
+
+          const changedTargetRefusal = await verifyTarget();
+          if (changedTargetRefusal) {
+            return { ok: false, reason: "unavailable", detail: changedTargetRefusal };
           }
 
           try {

@@ -1189,11 +1189,26 @@ reviewing the working tree — `hunk diff` with no revision range and without
 input, and a file-pair diff have no working-tree document to replace, so every
 write against them comes back `unavailable`.
 
+They also need a session that can reload, because every successful write
+reloads one. A session started with `--agent-context -` read its agent context
+from stdin and cannot rebuild its review, so it comes back `unavailable` too
+rather than accepting a write the review would never show.
+
 The target is a reviewed-file id, never a path: `writeDocument` takes the `id`
 of a file in the current changeset, so an extension can ask to write something
 the user is looking at and nothing else. Files with no new side are
 `unavailable` for the same reason there is nothing to replace — a deletion, a
 binary file, a file skipped for size.
+
+Before it asks, Hunk checks that the path it would write is the file the prompt
+names. A reviewed path that is a symlink, or that sits under a directory link
+leading out of the repository, is `unavailable` — Hunk refuses to follow links
+out of the review rather than showing a repo-relative name over a write that
+lands elsewhere. So is a file that has left the working tree since the review
+was built: a write replaces a reviewed file, it never recreates a deleted one.
+Hunk checks again after consent, so a target deleted or replaced by an unsafe
+path while the dialog was open is refused too. `canWriteDocument` skips the filesystem and is optimistic about
+these; the write itself never is.
 
 Every write asks first. Hunk raises a confirm dialog through the same queue as
 `ctx.dialogs` — one modal at a time, in call order, carrying your `ext <your-id>`
@@ -1203,10 +1218,11 @@ be replaced. Declining, or pressing Escape, resolves
 should treat it as the user saying no rather than as something to report.
 
 On success Hunk reloads the session, the same reload the refresh key runs, so
-the review reflects what you wrote. The promise settles on the write itself, not
-on the reload — a handler that resumes immediately still holds the changeset it
-was called with, and should read the new one from `changeset_loaded` or
-`session_reload` if it needs it.
+the review reflects what you wrote — which is why a session that cannot reload
+cannot write. The promise settles on the write itself, not on the reload — a
+handler that resumes immediately still holds the changeset it was called with,
+and should read the new one from `changeset_loaded` or `session_reload` if it
+needs it.
 
 The remaining refusal is `failed`: Hunk attempted the write and the filesystem
 said no — permissions, a path that is now a directory, a full disk. `detail`

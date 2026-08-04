@@ -1096,12 +1096,15 @@ export type ExtensionWorkspaceWriteResult =
  * the user's files, so it is working-tree only and always asks.
  *
  * Writes are available exactly when the session is reviewing the working tree —
- * a `vcs` diff review with no revision range and without `--staged`. A revision
- * show, a stash show, a range diff, a staged diff, patch input, and a file-pair
- * diff have no working-tree document to replace, and every write against them
- * resolves `"unavailable"`. A file with no new side (deleted) and a file Hunk
- * never read as text (binary, skipped for size) are `"unavailable"` for the
- * same reason — there is no document to replace.
+ * a `vcs` diff review with no revision range and without `--staged` — and can
+ * reload it. A revision show, a stash show, a range diff, a staged diff, patch
+ * input, and a file-pair diff have no working-tree document to replace, and
+ * every write against them resolves `"unavailable"`; so does a session whose
+ * review cannot be rebuilt after a write, which is one started with
+ * `--agent-context -`, since the reload every write promises could not happen.
+ * A file with no new side (deleted) and a file Hunk never read as text (binary,
+ * skipped for size) are `"unavailable"` for the same reason as the first group
+ * — there is no document to replace.
  */
 export interface ExtensionWorkspace {
   /**
@@ -1136,6 +1139,13 @@ export interface ExtensionWorkspace {
    * filesystem. It never prompts and never touches disk, so a `true` here still
    * describes what the user could allow rather than what they have allowed, and
    * a write can still come back `"cancelled"` or `"failed"`.
+   *
+   * Because it asks nothing of the filesystem, it is optimistic about what only
+   * the filesystem knows: a write additionally verifies its target at write
+   * time and refuses `"unavailable"` for a reviewed path that is a symlink,
+   * sits under a linked directory pointing out of the repository, or has left
+   * the working tree since the review was built. The action is never optimistic
+   * about those; only the affordance is.
    */
   canWriteDocument(fileId: string): boolean;
   /**
@@ -1148,8 +1158,18 @@ export interface ExtensionWorkspace {
    * Declining, or pressing Escape, resolves `{ ok: false, reason: "cancelled" }`:
    * a normal answer, never an exception.
    *
+   * Before the prompt, Hunk verifies that the path it would write is the file
+   * the prompt names: a reviewed path that is a symlink, or that sits under a
+   * directory link leading out of the repository, resolves `"unavailable"`
+   * without asking, and so does one that has left the working tree since the
+   * review was built — a write recreates nothing the user deleted. Hunk checks
+   * again after consent, refusing a target deleted or replaced by an unsafe
+   * path while the prompt was open.
+   *
    * On success Hunk reloads the session the same way the refresh key does, so
-   * the review an extension sees afterwards reflects what it wrote. The
+   * the review an extension sees afterwards reflects what it wrote. That holds
+   * for every write that can happen: a session whose review could not be
+   * rebuilt refuses writes rather than accepting one it would then hide. The
    * returned promise settles on the write itself, not on the reload — a handler
    * that resumes immediately is looking at the changeset it was called with.
    *

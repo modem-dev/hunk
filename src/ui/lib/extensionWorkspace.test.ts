@@ -72,6 +72,26 @@ describe("extension workspace write policy", () => {
     expect(show.writable ? "" : show.detail).toContain("a single revision");
   });
 
+  test("refuses a session that cannot reload after the write", () => {
+    // Every successful write reloads the session, so a review that can never be
+    // rebuilt — `--agent-context -` consumed stdin — must not accept one.
+    const target = resolveTestTarget({
+      input: { kind: "vcs", staged: false, options: { agentContext: "-" } },
+    });
+
+    expect(target.writable).toBe(false);
+    expect(target.writable ? "" : target.detail).toContain("a session that can reload");
+    expect(target.writable ? "" : target.detail).toContain("--agent-context -");
+  });
+
+  test("keeps an agent context read from a file writable", () => {
+    const target = resolveTestTarget({
+      input: { kind: "vcs", staged: false, options: { agentContext: "notes.json" } },
+    });
+
+    expect(target.writable).toBe(true);
+  });
+
   test("refuses a file id no reviewed file carries", () => {
     const target = resolveTestTarget({ fileId: "missing" });
 

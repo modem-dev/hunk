@@ -24,7 +24,7 @@ import type {
   ParsedCliInput,
   SessionCommandInput,
 } from "../core/types";
-import { canReloadInput } from "../core/watch";
+import { canReloadInput } from "../core/inputReload";
 import { parseCli } from "../core/cli";
 
 export type StartupPlan =

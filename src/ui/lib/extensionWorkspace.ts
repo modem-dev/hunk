@@ -9,11 +9,18 @@
  * that disagreed with the action it advertises would be worse than no
  * affordance at all. Reads resolve to the fetcher that would answer them rather
  * than performing the read, which keeps the whole module a pure decision.
+ *
+ * Confinement here is therefore lexical, and lexical confinement is only as
+ * true as the assumption that a reviewed path names a real file inside the
+ * root. `./workspaceWriteGuard` is the syscall half that checks that assumption
+ * before a write is ever proposed to the user; a `writable: true` answer from
+ * this module is a policy verdict, not yet a permit.
  */
 
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { normalizeDiffPath } from "../../core/diffPaths";
 import type { FileSourceSide } from "../../core/fileSource";
+import { canReloadInput } from "../../core/inputReload";
 import type { CliInput } from "../../core/types";
 import { readMetadataChangeType } from "../../extensions/events";
 
@@ -88,6 +95,18 @@ function nonWorkingTreeReview(input: CliInput): string | null {
 }
 
 /**
+ * Whether `candidate` is the root itself or a path beneath it, lexically.
+ *
+ * The one containment rule behind workspace writes, so the lexical policy and
+ * the filesystem guard that re-asks it of real, link-resolved paths cannot
+ * disagree about what "inside the review root" means.
+ */
+export function isWithinRoot(root: string, candidate: string) {
+  const relativePath = relative(root, candidate);
+  return relativePath !== ".." && !relativePath.startsWith(`..${sep}`) && !isAbsolute(relativePath);
+}
+
+/**
  * Reject a malformed write request the way `dialogs` rejects a malformed
  * question: a bug in the extension is not an answer from the user, so it throws
  * rather than resolving one of the refusal reasons.
@@ -115,7 +134,12 @@ export function normalizeWorkspaceWriteRequest(request: unknown): WorkspaceWrite
  *
  * The path comes out of VCS patch text rather than from the extension, which
  * can only ever name a file id — but patch text is not a trust boundary Hunk
- * controls, so the resolved path is still confined to the review root.
+ * controls, so the resolved path is still confined to the review root
+ * (lexically here, and against the filesystem in `./workspaceWriteGuard`).
+ *
+ * A session that cannot reload is refused along with the review kinds that have
+ * no working-tree document: a write whose result the review can never show is a
+ * write the user is looking away from, and the contract promises the opposite.
  */
 export function resolveExtensionWorkspaceWriteTarget({
   fileId,
@@ -135,6 +159,19 @@ export function resolveExtensionWorkspaceWriteTarget({
     return {
       writable: false,
       detail: `Workspace writes are working-tree only; this session is reviewing ${reviewing}.`,
+    };
+  }
+
+  // Every successful write reloads the session, so a session that cannot reload
+  // cannot write. The reachable case here is `--agent-context -`: the sidecar
+  // came from stdin and cannot be read a second time. (`canReloadInput` also
+  // refuses patch input from stdin, which the working-tree check already
+  // refused.)
+  if (!canReloadInput(input)) {
+    return {
+      writable: false,
+      detail:
+        "Workspace writes need a session that can reload; this one cannot, because part of its input came from stdin (--agent-context -).",
     };
   }
 
@@ -158,15 +195,9 @@ export function resolveExtensionWorkspaceWriteTarget({
   }
 
   const absolutePath = resolve(root, path);
-  const relativePath = relative(root, absolutePath);
   // An empty relative path means the file resolved to the root itself, which is
   // a directory rather than anything writable.
-  if (
-    relativePath.length === 0 ||
-    relativePath === ".." ||
-    relativePath.startsWith(`..${sep}`) ||
-    isAbsolute(relativePath)
-  ) {
+  if (relative(root, absolutePath).length === 0 || !isWithinRoot(root, absolutePath)) {
     return { writable: false, detail: `${path} resolves outside the reviewed repository.` };
   }
 
