@@ -32,8 +32,9 @@ describe("buildHelpSections", () => {
     expect(keysFor(sections, "previous / next hunk")).toBe("[ / ]");
     expect(keysFor(sections, "half page down / up")).toBe("d / u");
     expect(keysFor(sections, "move line-by-line")).toBe("Up / Down");
+    expect(keysFor(sections, "select old / new side")).toBe("h / l");
     expect(keysFor(sections, "split / stack / auto")).toBe("1 / 2 / 0");
-    expect(keysFor(sections, "lines / wrap / metadata / menu")).toBe("l / w / m / M");
+    expect(keysFor(sections, "wrap / metadata / menu")).toBe("w / m / M");
   });
 
   test("a row about one command lists every chord it answers to", () => {

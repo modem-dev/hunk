@@ -19,6 +19,7 @@ This reference is generated from the command metadata used by Hunk itself. Run `
 | Option                      | Description                                                     |
 | --------------------------- | --------------------------------------------------------------- |
 | `--mode <mode>`             | layout mode: auto, split, stack                                 |
+| `--cursor-line <style>`     | current-line marker: row, number, off                           |
 | `--theme <theme>`           | named theme override                                            |
 | `--agent-context <path>`    | JSON sidecar with agent rationale                               |
 | `--pager`                   | use pager-style chrome                                          |
@@ -30,6 +31,8 @@ This reference is generated from the command metadata used by Hunk itself. Run `
 | `--no-wrap`                 | truncate long diff lines to one row                             |
 | `--hunk-headers`            | show hunk metadata rows                                         |
 | `--no-hunk-headers`         | hide hunk metadata rows                                         |
+| `--sidebar`                 | show sidebar                                                    |
+| `--no-sidebar`              | hide sidebar                                                    |
 | `--agent-notes`             | show agent notes by default                                     |
 | `--no-agent-notes`          | hide agent notes by default                                     |
 | `--transparent-bg`          | let terminal background show through Hunk surfaces              |

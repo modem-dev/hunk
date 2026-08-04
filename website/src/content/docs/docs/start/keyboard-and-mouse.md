@@ -21,6 +21,8 @@ Press `?` at any time for Hunk's in-app shortcut reference. Menus and primary re
 
 Hunk navigation stays review-wide: hunk and file shortcuts move through the same multi-file stream shown in the main pane.
 
+`↑` / `↓` and `k` / `j` move a highlighted current line, and the view scrolls only far enough to keep it visible. In split mode, `h` / `l` select the old or new side of that row. Paging or scrolling past it moves it to the nearest line still on screen, and `c` anchors a note on the selected side. Pick the marker from the View menu, or set [`cursor_line`](/docs/configure/layout-and-display/): `number` marks only the line number, and `off` turns the marker off and lets `↑` / `↓` and `k` / `j` scroll the view one row at a time instead.
+
 ## Change the view
 
 | Key             | Action                                           |
@@ -28,7 +30,7 @@ Hunk navigation stays review-wide: hunk and file shortcuts move through the same
 | `0` / `1` / `2` | Auto / split / stack layout                      |
 | `s`             | Toggle sidebar                                   |
 | `t`             | Choose a theme                                   |
-| `l`             | Toggle line numbers                              |
+| `h` / `l`       | Select old / new side of the current split row   |
 | `w`             | Toggle line wrapping                             |
 | `m`             | Toggle hunk metadata                             |
 | `M`             | Toggle menu bar                                  |

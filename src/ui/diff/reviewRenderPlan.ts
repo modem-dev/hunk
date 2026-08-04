@@ -1,4 +1,4 @@
-import type { AgentAnnotation } from "../../core/types";
+import type { AgentAnnotation, UserNoteLineTarget } from "../../core/types";
 import { annotationAnchor, type VisibleAgentNote } from "../lib/agentAnnotations";
 import { diffHunkId } from "../lib/ids";
 import type { DiffRow } from "./pierre";
@@ -67,14 +67,24 @@ function uniqueStableKeys(keys: Array<string | undefined>) {
   return next;
 }
 
+/** Build the file-scoped stable anchor for one source line on either diff side. */
+export function lineStableKey(hunkIndex: number, side: "old" | "new", lineNumber: number) {
+  return `line:${hunkIndex}:${side}:${lineNumber}`;
+}
+
+/** Build the stable anchor for one inline note card. */
+export function inlineNoteStableKey(noteId: string) {
+  return `inline-note:${noteId}`;
+}
+
 /** Build the file-scoped stable anchor for one old-side source line. */
 function oldLineStableKey(hunkIndex: number, lineNumber?: number) {
-  return lineNumber === undefined ? undefined : `line:${hunkIndex}:old:${lineNumber}`;
+  return lineNumber === undefined ? undefined : lineStableKey(hunkIndex, "old", lineNumber);
 }
 
 /** Build the file-scoped stable anchor for one new-side source line. */
 function newLineStableKey(hunkIndex: number, lineNumber?: number) {
-  return lineNumber === undefined ? undefined : `line:${hunkIndex}:new:${lineNumber}`;
+  return lineNumber === undefined ? undefined : lineStableKey(hunkIndex, "new", lineNumber);
 }
 
 /** Build the file-scoped stable anchor for one context row shared by both sides. */
@@ -82,6 +92,54 @@ function contextLineStableKey(hunkIndex: number, oldLineNumber?: number, newLine
   return oldLineNumber === undefined || newLineNumber === undefined
     ? undefined
     : `line:${hunkIndex}:context:${oldLineNumber}:${newLineNumber}`;
+}
+
+const SIDED_LINE_STABLE_KEY = /^line:(\d+):(old|new):(\d+)$/;
+const CONTEXT_LINE_STABLE_KEY = /^line:(\d+):context:\d+:(\d+)$/;
+
+/** Recover the source line one single-sided stable anchor names. */
+export function lineStableKeyTarget(
+  stableKey: string,
+): (UserNoteLineTarget & { hunkIndex: number }) | null {
+  const match = SIDED_LINE_STABLE_KEY.exec(stableKey);
+  if (!match) {
+    return null;
+  }
+
+  return { hunkIndex: Number(match[1]), side: match[2] as "old" | "new", line: Number(match[3]) };
+}
+
+/**
+ * Recover the source line one shared context anchor names.
+ *
+ * Resolves to the new side, which is what the add-note affordance already anchors to.
+ */
+export function contextLineStableKeyTarget(
+  stableKey: string,
+): (UserNoteLineTarget & { hunkIndex: number }) | null {
+  const match = CONTEXT_LINE_STABLE_KEY.exec(stableKey);
+  if (!match) {
+    return null;
+  }
+
+  return { hunkIndex: Number(match[1]), side: "new", line: Number(match[2]) };
+}
+
+/** Resolve either side of a context row, whose stable key carries both line numbers. */
+export function contextLineStableKeyTargetForSide(
+  stableKey: string,
+  side: "old" | "new",
+): (UserNoteLineTarget & { hunkIndex: number }) | null {
+  const match = CONTEXT_LINE_STABLE_KEY.exec(stableKey);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    hunkIndex: Number(match[1]),
+    side,
+    line: Number(side === "old" ? match[2] : match[3]),
+  };
 }
 
 /** Resolve the stable anchor keys for one rendered diff row across split and stack layouts. */
@@ -184,9 +242,9 @@ function rowOverlapsAnnotation(row: DiffLineRow, annotation: AgentAnnotation) {
 }
 
 /**
- * Resolve the rendered diff row before which the inline note should appear.
+ * Resolve the rendered diff row after which the inline note should appear.
  * Range-less notes intentionally anchor beside the first code row in the file,
- * not above hunk header metadata.
+ * not against hunk header metadata.
  */
 function findInlineNoteAnchorRow(rows: DiffRow[], annotation: AgentAnnotation) {
   const fileLineRows = lineRows(rows);
@@ -209,8 +267,6 @@ function buildInlineVisibleNotePlacements(rows: DiffRow[], visibleAgentNotes: Vi
 
     const anchorSide = annotationAnchor(note.annotation)?.side;
     const coveredRows = fileLineRows.filter((row) => rowOverlapsAnnotation(row, note.annotation));
-    // The inline card already sits directly above its anchor; start any range guide after that row
-    // so the first code line below the note does not show a dangling right-gutter connector.
     const guideRows = coveredRows.filter((row) => row.key !== anchorRow.key);
     const anchorPlacements = placementsByAnchor.get(anchorRow.key) ?? [];
 
@@ -307,23 +363,6 @@ export function buildReviewRenderPlan({
       anchoredHunks.add(row.hunkIndex);
     }
 
-    const anchoredNotes = placementsByAnchor.get(row.key) ?? [];
-    anchoredNotes.forEach((placement) => {
-      plannedRows.push({
-        kind: "inline-note",
-        key: `inline-note:${placement.note.id}:${row.key}:${placement.noteIndex}`,
-        stableKey: `inline-note:${placement.note.id}`,
-        fileId,
-        hunkIndex: placement.hunkIndex,
-        annotationId: placement.note.id,
-        annotation: placement.note.annotation,
-        note: placement.note,
-        anchorSide: placement.anchorSide,
-        noteCount: placement.noteCount,
-        noteIndex: placement.noteIndex,
-      });
-    });
-
     plannedRows.push({
       kind: "diff-row",
       key: `diff-row:${row.key}`,
@@ -334,6 +373,23 @@ export function buildReviewRenderPlan({
       row,
       anchorId,
       noteGuideSide: noteGuideSideByRowKey.get(row.key),
+    });
+
+    const anchoredNotes = placementsByAnchor.get(row.key) ?? [];
+    anchoredNotes.forEach((placement) => {
+      plannedRows.push({
+        kind: "inline-note",
+        key: `inline-note:${placement.note.id}:${row.key}:${placement.noteIndex}`,
+        stableKey: inlineNoteStableKey(placement.note.id),
+        fileId,
+        hunkIndex: placement.hunkIndex,
+        annotationId: placement.note.id,
+        annotation: placement.note.annotation,
+        note: placement.note,
+        anchorSide: placement.anchorSide,
+        noteCount: placement.noteCount,
+        noteIndex: placement.noteIndex,
+      });
     });
   }
 

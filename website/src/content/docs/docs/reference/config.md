@@ -30,6 +30,16 @@ Choose responsive, side-by-side, or stacked diff layout.
 
 ---
 
+**`cursor_line`**
+
+Mark the current line as a full-row highlight or on its line number. `off` restores plain `j`/`k` scrolling.
+
+- **Type:** string
+- **Accepted:** `row`, `number`, or `off`
+- **Built-in default:** `row`
+
+---
+
 **`vcs`**
 
 Select the version-control adapter explicitly. An explicit id outranks detection; an id no loaded backend owns falls back to detection with a startup notice.
@@ -117,6 +127,16 @@ Show the top application menu bar.
 - **Type:** boolean
 - **Accepted:** `true` or `false`
 - **Built-in default:** `true`
+
+---
+
+**`sidebar`**
+
+Always show the sidebar when it fits, keep it closed, or let the responsive layout decide. Pager sessions always open with the sidebar closed.
+
+- **Type:** string
+- **Accepted:** `"auto"`, `"shown"`, or `"hidden"`
+- **Built-in default:** `auto`
 
 ---
 

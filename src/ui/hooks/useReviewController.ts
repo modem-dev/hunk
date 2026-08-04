@@ -41,6 +41,16 @@ import type { FileSourceStatus } from "../diff/expandCollapsedRows";
 import { selectGapForKeyboardToggle } from "../diff/expandCollapsedRows";
 import { trailingCollapsedLines } from "../diff/pierre";
 import { findNextHunkCursor } from "../lib/hunks";
+import {
+  EMPTY_LINE_CURSORS,
+  findLineCursorOnSide,
+  findNextLineCursor,
+  firstLineCursorInHunk,
+  hasLineCursor,
+  lineCursorAt,
+  resolveLineCursor,
+  type LineCursor,
+} from "../lib/lineCursors";
 import { agentNoteMarkupWidth } from "../lib/agentNoteGeometry";
 import { reviewNoteSource } from "../lib/agentAnnotations";
 import { STML_REFERENCE_WIDTH, validateStmlMarkup } from "../lib/stml/layout";
@@ -50,6 +60,17 @@ import {
   findNextAnnotatedFile,
   resolveReviewNavigationTarget,
 } from "../lib/reviewState";
+
+/** Add or remove one gap key from a file's expansion set. */
+function toggledGaps(current: ReadonlySet<string> | undefined, gapKey: string, expanding: boolean) {
+  const next = new Set(current ?? []);
+  if (expanding) {
+    next.add(gapKey);
+  } else {
+    next.delete(gapKey);
+  }
+  return next;
+}
 
 /** Clamp one numeric index into an inclusive range. */
 function clamp(value: number, min: number, max: number) {
@@ -138,6 +159,11 @@ export interface ReviewController {
   reviewNoteCount: number;
   reviewNoteSummaries: SessionReviewNoteSummary[];
   userNotesByFileId: Record<string, UserReviewNote[]>;
+  lineCursor: LineCursor | null;
+  lineCursorRevealRequestId: number;
+  anchorLineCursor: (cursor: LineCursor) => void;
+  moveLineCursor: (delta: number) => void;
+  selectLineCursorSide: (side: "old" | "new") => void;
   moveToAnnotatedFile: (delta: number) => void;
   moveToAnnotatedHunk: (delta: number) => void;
   moveToFile: (delta: number) => void;
@@ -179,6 +205,7 @@ export interface ReviewController {
     fileId?: string,
     hunkIndex?: number,
     target?: UserNoteLineTarget,
+    options?: { preserveViewport?: boolean },
   ) => DraftReviewNote | null;
   setFilter: (value: string) => void;
   updateDraftNote: (body: string) => void;
@@ -194,10 +221,16 @@ export interface AgentNoteGeometrySnapshot {
 
 export function useReviewController({
   files,
+  lineCursors = EMPTY_LINE_CURSORS,
   noteGeometry,
   stmlEnabled = false,
 }: {
   files: DiffFile[];
+  /**
+   * Navigable lines in rendered order, published by the pane that measures the review stream.
+   * Headless callers get none, which leaves `j` and `k` scrolling the viewport.
+   */
+  lineCursors?: LineCursor[];
   /** Allow STML bodies for live comments in this explicitly opted-in session. */
   stmlEnabled?: boolean;
   /**
@@ -212,6 +245,16 @@ export function useReviewController({
   const [selectedHunkIndex, setSelectedHunkIndex] = useState(0);
   const [selectedFileTopAlignRequestId, setSelectedFileTopAlignRequestId] = useState(0);
   const [selectedHunkRevealRequestId, setSelectedHunkRevealRequestId] = useState(0);
+  const [lineCursor, setLineCursor] = useState<LineCursor | null>(null);
+  // A held key drains as one stdin chunk, so every press in the burst would otherwise read the
+  // same pre-batch state and the cursor would advance a single row.
+  const lineCursorRef = useRef<LineCursor | null>(null);
+  const [lineCursorRevealRequestId, setLineCursorRevealRequestId] = useState(0);
+  const previousLineCursorsRef = useRef(lineCursors);
+  const pendingLineCursorRef = useRef<
+    { kind: "reveal"; fileId: string } | { kind: "restore"; cursor: LineCursor } | null
+  >(null);
+  const lineCursorBeforeExpandRef = useRef(new Map<string, LineCursor>());
   const [scrollToNote, setScrollToNote] = useState(false);
   const [liveCommentsByFileId, setLiveCommentsByFileId] = useState<Record<string, LiveComment[]>>(
     {},
@@ -233,6 +276,10 @@ export function useReviewController({
   // waiting for React's state updater to commit.
   const sourceStatusRef = useRef(sourceStatusByFileId);
   sourceStatusRef.current = sourceStatusByFileId;
+  // Mirror the expansion set for the same reason: toggleGap has to know which way it is toggling
+  // before its own updater commits.
+  const expandedGapsRef = useRef(expandedGapsByFileId);
+  expandedGapsRef.current = expandedGapsByFileId;
   const sourceLoadRequestsRef = useRef(new Map<string, SourceLoadRequest>());
   const nextSourceLoadRequestIdRef = useRef(1);
 
@@ -260,6 +307,11 @@ export function useReviewController({
     if (staleFileIds.size > 0) {
       for (const fileId of staleFileIds) {
         sourceLoadRequestsRef.current.delete(fileId);
+        for (const restorePointKey of lineCursorBeforeExpandRef.current.keys()) {
+          if (restorePointKey.startsWith(`${fileId}:`)) {
+            lineCursorBeforeExpandRef.current.delete(restorePointKey);
+          }
+        }
       }
       setSourceStatusByFileId((prev) => removeKeys(prev, staleFileIds));
       setExpandedGapsByFileId((prev) => removeKeys(prev, staleFileIds));
@@ -357,6 +409,110 @@ export function useReviewController({
     reconcileSelectedHunkIndex();
   }, [reconcileSelectedHunkIndex]);
 
+  /**
+   * Keep the current line on a row the review stream still renders.
+   *
+   * Seeding from the selected hunk makes the marker visible from launch, not just after the
+   * first keypress.
+   */
+  const applyLineCursor = useCallback((next: LineCursor | null) => {
+    lineCursorRef.current = next;
+    setLineCursor(next);
+  }, []);
+
+  /** Move the current line to a row the reviewer just asked to see, and scroll to it. */
+  const revealLineCursor = useCallback(
+    (cursor: LineCursor) => {
+      applyLineCursor(cursor);
+      setLineCursorRevealRequestId((current) => current + 1);
+      selectHunk(cursor.fileId, cursor.hunkIndex, { preserveViewport: true });
+    },
+    [applyLineCursor, selectHunk],
+  );
+
+  const reconcileLineCursor = useCallback(() => {
+    // Expansion remeasures before its source text loads, so a toggle records what it wants and
+    // this waits for the list that actually carries the revealed rows. Each request survives until
+    // it resolves or the next toggle replaces it.
+    const previousCursors = previousLineCursorsRef.current;
+    previousLineCursorsRef.current = lineCursors;
+
+    const pending = pendingLineCursorRef.current;
+    if (pending?.kind === "reveal") {
+      const alreadyStopped = new Set(
+        previousCursors
+          .filter((cursor) => cursor.fileId === pending.fileId)
+          .map((cursor) => cursor.stableKey),
+      );
+      const firstRevealed = lineCursors.find(
+        (cursor) => cursor.fileId === pending.fileId && !alreadyStopped.has(cursor.stableKey),
+      );
+      if (firstRevealed) {
+        pendingLineCursorRef.current = null;
+        revealLineCursor(firstRevealed);
+        return;
+      }
+    }
+
+    // Only take the restore point when the collapse actually retired the row the marker was on;
+    // the reviewer may have stepped well clear of the gap since expanding it.
+    if (pending?.kind === "restore" && !hasLineCursor(lineCursors, lineCursorRef.current)) {
+      const restored = resolveLineCursor(lineCursors, pending.cursor);
+      if (restored) {
+        pendingLineCursorRef.current = null;
+        revealLineCursor(restored);
+        return;
+      }
+    }
+
+    const resolved = resolveLineCursor(lineCursors, lineCursorRef.current);
+    if (resolved?.fileId === selectedFileId && resolved?.hunkIndex === selectedHunkIndex) {
+      applyLineCursor(resolved);
+      return;
+    }
+
+    applyLineCursor(firstLineCursorInHunk(lineCursors, selectedFileId, selectedHunkIndex));
+  }, [applyLineCursor, lineCursors, revealLineCursor, selectedFileId, selectedHunkIndex]);
+
+  useEffect(() => {
+    reconcileLineCursor();
+  }, [reconcileLineCursor]);
+
+  /** Adopt a current line the viewport already settled on, without scrolling back to it. */
+  const anchorLineCursor = useCallback(
+    (cursor: LineCursor) => {
+      applyLineCursor(cursor);
+      selectHunk(cursor.fileId, cursor.hunkIndex, { preserveViewport: true });
+    },
+    [applyLineCursor, selectHunk],
+  );
+
+  /** Move the current line one row through the visible review stream. */
+  const moveLineCursor = useCallback(
+    (delta: number) => {
+      const nextCursor = findNextLineCursor(lineCursors, lineCursorRef.current, delta);
+      if (!nextCursor) {
+        return;
+      }
+
+      revealLineCursor(nextCursor);
+    },
+    [lineCursors, revealLineCursor],
+  );
+
+  /** Move the current split row's target between its old and new sides. */
+  const selectLineCursorSide = useCallback(
+    (side: "old" | "new") => {
+      const nextCursor = findLineCursorOnSide(lineCursors, lineCursorRef.current, side);
+      if (!nextCursor || nextCursor === lineCursorRef.current) {
+        return;
+      }
+
+      revealLineCursor(nextCursor);
+    },
+    [lineCursors, revealLineCursor],
+  );
+
   /** Move through the full visible review stream one hunk at a time. */
   const moveToHunk = useCallback(
     (delta: number) => {
@@ -450,16 +606,29 @@ export function useReviewController({
         return;
       }
 
-      setExpandedGapsByFileId((prev) => {
-        const current = prev[fileId];
-        const next = new Set(current ?? []);
-        if (next.has(gapKey)) {
-          next.delete(gapKey);
-        } else {
-          next.add(gapKey);
+      const restorePointKey = `${fileId}:${gapKey}`;
+      const restorePoint = lineCursorBeforeExpandRef.current.get(restorePointKey) ?? null;
+      const expanding = !expandedGapsRef.current[fileId]?.has(gapKey);
+      if (expanding) {
+        if (lineCursorRef.current) {
+          lineCursorBeforeExpandRef.current.set(restorePointKey, lineCursorRef.current);
         }
-        return { ...prev, [fileId]: next };
-      });
+        pendingLineCursorRef.current = { kind: "reveal", fileId };
+      } else {
+        lineCursorBeforeExpandRef.current.delete(restorePointKey);
+        pendingLineCursorRef.current = restorePoint
+          ? { kind: "restore", cursor: restorePoint }
+          : null;
+      }
+
+      expandedGapsRef.current = {
+        ...expandedGapsRef.current,
+        [fileId]: toggledGaps(expandedGapsRef.current[fileId], gapKey, expanding),
+      };
+      setExpandedGapsByFileId((prev) => ({
+        ...prev,
+        [fileId]: toggledGaps(prev[fileId], gapKey, expanding),
+      }));
 
       // The fetcher caches its own resolved text; we mirror it into React state
       // as a tagged status so the UI can distinguish loading, loaded, and error
@@ -861,6 +1030,7 @@ export function useReviewController({
       fileId = selectedFile?.id,
       hunkIndex = selectedHunkIndex,
       requestedTarget?: UserNoteLineTarget,
+      options?: { preserveViewport?: boolean },
     ): DraftReviewNote | null => {
       const file = allFiles.find((candidate) => candidate.id === fileId);
       const hunk = file?.metadata.hunks[hunkIndex];
@@ -869,6 +1039,7 @@ export function useReviewController({
       }
 
       const target = requestedTarget ?? firstCommentTargetForHunk(hunk);
+      applyLineCursor(lineCursorAt(lineCursors, file.id, hunkIndex, target));
       const draft: DraftReviewNote = {
         id: `draft:${file.id}:${hunkIndex}:${Date.now()}`,
         fileId: file.id,
@@ -885,11 +1056,11 @@ export function useReviewController({
       selectHunk(
         file.id,
         hunkIndex,
-        requestedTarget ? { preserveViewport: true } : { scrollToNote: true },
+        options?.preserveViewport ? { preserveViewport: true } : { scrollToNote: true },
       );
       return draft;
     },
-    [allFiles, selectHunk, selectedFile?.id, selectedHunkIndex],
+    [allFiles, applyLineCursor, lineCursors, selectHunk, selectedFile?.id, selectedHunkIndex],
   );
 
   /** Update the body of the active draft note. */
@@ -1056,6 +1227,8 @@ export function useReviewController({
     liveCommentCount,
     liveCommentSummaries,
     liveCommentsByFileId,
+    lineCursor,
+    lineCursorRevealRequestId,
     reviewNoteCount,
     reviewNoteSummaries,
     userNotesByFileId,
@@ -1072,9 +1245,12 @@ export function useReviewController({
     visibleFiles,
     addLiveComment,
     addLiveCommentBatch,
+    anchorLineCursor,
     clearFilter,
     cancelDraftNote,
     clearLiveComments,
+    moveLineCursor,
+    selectLineCursorSide,
     moveToAnnotatedFile,
     moveToAnnotatedHunk,
     moveToFile,

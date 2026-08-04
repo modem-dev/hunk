@@ -15,8 +15,10 @@ import { DEFAULT_TAB_WIDTH } from "../core/tabWidth";
 import type {
   AppBootstrap,
   CliInput,
+  CursorLine,
   LayoutMode,
   PersistedViewPreferences,
+  SidebarVisibility,
   UserNoteLineTarget,
 } from "../core/types";
 import { canReloadInput } from "../core/watch";
@@ -71,6 +73,7 @@ import {
 import { buildAppMenus } from "./lib/appMenus";
 import { buildExtensionAppCommands, extensionCommandKeyDefaults } from "./lib/extensionCommands";
 import { createGuardedReviewNavigation } from "./lib/extensionNavigation";
+import type { LineCursor } from "./lib/lineCursors";
 import { buildExtensionReviewSelection } from "./lib/extensionSelection";
 import { useFileViewLayouts } from "./fileViews/useFileViews";
 import type { FileViewRowFailure } from "./components/panes/FileView";
@@ -225,6 +228,7 @@ export function App({
   const [wrapLines, setWrapLines] = useState(bootstrap.initialWrapLines ?? false);
   const [copyDecorations, setCopyDecorations] = useState(bootstrap.initialCopyDecorations ?? false);
   const [codeHorizontalOffset, setCodeHorizontalOffset] = useState(0);
+  const [cursorLine, setCursorLine] = useState<CursorLine>(bootstrap.initialCursorLine ?? "row");
   const [showHunkHeaders, setShowHunkHeaders] = useState(bootstrap.initialShowHunkHeaders ?? true);
   const [showMenuBar, setShowMenuBar] = useState(bootstrap.initialShowMenuBar ?? true);
   const [themeSelectorState, setThemeSelectorState] = useState<ThemeSelectorState>({
@@ -232,8 +236,9 @@ export function App({
     selectedIndex: 0,
     previewThemeId: null,
   });
-  const [sidebarVisible, setSidebarVisible] = useState(() => !pagerMode);
-  const [forceSidebarOpen, setForceSidebarOpen] = useState(false);
+  const [sidebarState, setSidebarState] = useState<SidebarVisibility>(() =>
+    pagerMode ? "hidden" : (bootstrap.initialSidebar ?? "auto"),
+  );
   const [showHelp, setShowHelp] = useState(false);
   const [showAgentSkill, setShowAgentSkill] = useState(false);
   const [saveConfigPromptOpen, setSaveConfigPromptOpen] = useState(false);
@@ -296,9 +301,11 @@ export function App({
       showMenuBar,
       showAgentNotes,
       copyDecorations,
+      cursorLine,
     }),
     [
       copyDecorations,
+      cursorLine,
       layoutMode,
       showAgentNotes,
       showHunkHeaders,
@@ -335,8 +342,10 @@ export function App({
   // App computes layout geometry below this hook call, so the controller reads
   // the current values through a ref instead of a render-time parameter.
   const noteGeometryRef = useRef<AgentNoteGeometrySnapshot | null>(null);
+  const [lineCursors, setLineCursors] = useState<LineCursor[]>([]);
   const review = useReviewController({
     files: reviewFiles,
+    lineCursors,
     noteGeometry: noteGeometryRef,
     stmlEnabled,
   });
@@ -862,7 +871,11 @@ export function App({
   const responsiveLayout = resolveResponsiveLayout(layoutMode, terminal.width);
   const canForceShowSidebar = bodyWidth >= SIDEBAR_MIN_WIDTH + DIVIDER_WIDTH + DIFF_MIN_WIDTH;
   const sidebarAreaVisible =
-    sidebarVisible && (responsiveLayout.showSidebar || (forceSidebarOpen && canForceShowSidebar));
+    sidebarState === "auto"
+      ? responsiveLayout.showSidebar
+      : sidebarState === "shown" && canForceShowSidebar;
+  const openSidebarState: SidebarVisibility =
+    !responsiveLayout.showSidebar && canForceShowSidebar ? "shown" : "auto";
   const resolvedLayout = responsiveLayout.layout;
   const reportedLayoutRef = useRef<string | undefined>(undefined);
   useEffect(() => {
@@ -904,12 +917,10 @@ export function App({
   const renderSidebar = sidebarLayout.left.length + sidebarLayout.right.length > 0;
   const diffPaneWidth = Math.max(DIFF_MIN_WIDTH, bodyWidth - sidebarLayout.totalWidth);
   const diffContentWidth = Math.max(12, diffPaneWidth - 2);
-  // Mirrors toggleSidebar's reveal half: visible again, forced open when the
-  // responsive layout alone would keep it hidden and the terminal has room.
+  // Mirrors toggleSidebar's reveal half, for extensions opening a sidebar view.
   revealSidebarAreaRef.current = () => {
-    setSidebarVisible(true);
-    if (!responsiveLayout.showSidebar && canForceShowSidebar) {
-      setForceSidebarOpen(true);
+    if (!sidebarAreaVisible) {
+      setSidebarState(openSidebarState);
     }
   };
   // Publish the live note geometry for daemon-driven markup validation; the
@@ -1042,6 +1053,16 @@ export function App({
       return;
     }
     diffScrollRef.current?.scrollBy(delta, unit);
+  };
+
+  /** Step one line: move the current line, or scroll the viewport when there is no marker. */
+  const stepDiffLine = (delta: number) => {
+    if (cursorLine === "off" || !review.lineCursor) {
+      scrollDiff(delta, "step");
+      return;
+    }
+
+    review.moveLineCursor(delta);
   };
 
   const maxCodeHorizontalOffset = useMemo(() => {
@@ -1209,21 +1230,7 @@ export function App({
 
   /** Toggle the sidebar, forcing it open on narrower layouts when the app can still fit both panes. */
   const toggleSidebar = () => {
-    if (sidebarVisible && (responsiveLayout.showSidebar || forceSidebarOpen)) {
-      setSidebarVisible(false);
-      setForceSidebarOpen(false);
-      return;
-    }
-
-    if (sidebarVisible && !responsiveLayout.showSidebar) {
-      if (canForceShowSidebar) {
-        setForceSidebarOpen(true);
-      }
-      return;
-    }
-
-    setSidebarVisible(true);
-    setForceSidebarOpen(!responsiveLayout.showSidebar && canForceShowSidebar);
+    setSidebarState(sidebarAreaVisible ? "hidden" : openSidebarState);
   };
 
   /** Toggle visibility of hunk metadata rows without changing the actual diff lines. */
@@ -1547,17 +1554,20 @@ export function App({
   const startUserNote = useCallback(
     (fileId?: string, hunkIndex?: number, target?: UserNoteLineTarget) => {
       const hoverTarget = fileId === undefined ? activeAddNoteTarget : null;
+      const keyboardTarget =
+        hoverTarget ?? (fileId === undefined && cursorLine !== "off" ? review.lineCursor : null);
       const draft = review.startUserNote(
-        fileId ?? hoverTarget?.fileId,
-        hunkIndex ?? hoverTarget?.hunkIndex,
-        target ?? hoverTarget?.target,
+        fileId ?? keyboardTarget?.fileId,
+        hunkIndex ?? keyboardTarget?.hunkIndex,
+        target ?? keyboardTarget?.target,
+        { preserveViewport: fileId !== undefined || hoverTarget !== null },
       );
       if (draft) {
         setActiveAddNoteTarget(null);
         setFocusArea("note");
       }
     },
-    [activeAddNoteTarget, review.startUserNote],
+    [activeAddNoteTarget, cursorLine, review.lineCursor, review.startUserNote],
   );
 
   /** Mark the inline draft note textarea as the active keyboard input. */
@@ -1686,6 +1696,13 @@ export function App({
       resolvedKeys: resolvedCommandKeys,
       scrollCodeHorizontally,
       scrollDiff,
+      stepDiffLine,
+      selectCursorLine: setCursorLine,
+      selectLineCursorSide: (side) => {
+        if (resolvedLayout === "split" && cursorLine !== "off") {
+          review.selectLineCursorSide(side);
+        }
+      },
       selectLayoutMode,
       startUserNote: () => startUserNote(),
       toggleAgentNotes,
@@ -1753,6 +1770,7 @@ export function App({
   // hints and the checkbox state have to stay live.
   const menus = buildAppMenus({
     commands: appCommands,
+    cursorLine,
     extensionCommands: extensionAppCommands.commands,
     fileViewEntries: selectedFileViewEntries,
     fileViewApplyAllLabel: selectedFileViewBulkTarget
@@ -2034,6 +2052,9 @@ export function App({
           layoutToggleRequestId={layoutToggleRequestId}
           selectedFileTopAlignRequestId={review.selectedFileTopAlignRequestId}
           selectedHunkRevealRequestId={review.selectedHunkRevealRequestId}
+          cursorLine={cursorLine}
+          lineCursor={review.lineCursor}
+          lineCursorRevealRequestId={review.lineCursorRevealRequestId}
           theme={activeTheme}
           width={diffPaneWidth}
           onActiveAddNoteAffordanceChange={setActiveAddNoteTarget}
@@ -2054,6 +2075,8 @@ export function App({
           onViewportCenteredHunkChange={(fileId, hunkIndex) =>
             review.selectHunk(fileId, hunkIndex, { preserveViewport: true })
           }
+          onLineCursorsChange={setLineCursors}
+          onViewportLineCursorChange={review.anchorLineCursor}
         />
 
         {sidebarLayout.right.map((pane, index) => {

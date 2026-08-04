@@ -1,5 +1,5 @@
 import type { KeyEvent } from "@opentui/core";
-import type { LayoutMode } from "../../core/types";
+import type { CursorLine, LayoutMode } from "../../core/types";
 import {
   matchesAnyKeyChord,
   parseKeyChordOrUndefined,
@@ -91,6 +91,9 @@ export interface BuildAppCommandsOptions {
   resolvedKeys?: ResolvedCommandKeys;
   scrollCodeHorizontally: (delta: number) => void;
   scrollDiff: (delta: number, unit: ScrollUnit) => void;
+  stepDiffLine: (delta: number) => void;
+  selectCursorLine: (style: CursorLine) => void;
+  selectLineCursorSide: (side: "old" | "new") => void;
   selectLayoutMode: (mode: LayoutMode) => void;
   startUserNote: () => void;
   toggleAgentNotes: () => void;
@@ -203,13 +206,13 @@ function builtinCommandSpecs(options: BuildAppCommandsOptions): BuiltinCommandSp
       id: "hunk.review.stepDown",
       title: "Scroll down one row",
       defaultKeys: ["down", "j"],
-      run: () => options.scrollDiff(1, "step"),
+      run: () => options.stepDiffLine(1),
     },
     {
       id: "hunk.review.stepUp",
       title: "Scroll up one row",
       defaultKeys: ["up", "k"],
-      run: () => options.scrollDiff(-1, "step"),
+      run: () => options.stepDiffLine(-1),
     },
     {
       id: "hunk.review.scrollCodeLeft",
@@ -226,6 +229,39 @@ function builtinCommandSpecs(options: BuildAppCommandsOptions): BuiltinCommandSp
       defaultKeys: ["right", "shift+right"],
       run: (key) =>
         options.scrollCodeHorizontally(key.shift ? FAST_CODE_HORIZONTAL_SCROLL_COLUMNS : 1),
+    },
+    {
+      id: "hunk.review.selectOldSide",
+      title: "Select old side of current line",
+      defaultKeys: ["h"],
+      run: () => options.selectLineCursorSide("old"),
+    },
+    {
+      id: "hunk.review.selectNewSide",
+      title: "Select new side of current line",
+      defaultKeys: ["l"],
+      run: () => options.selectLineCursorSide("new"),
+    },
+    {
+      id: "hunk.view.cursorLineRow",
+      title: "Highlight the current row",
+      defaultKeys: [],
+      run: () => options.selectCursorLine("row"),
+      closesMenu: true,
+    },
+    {
+      id: "hunk.view.cursorLineNumber",
+      title: "Mark the current line number",
+      defaultKeys: [],
+      run: () => options.selectCursorLine("number"),
+      closesMenu: true,
+    },
+    {
+      id: "hunk.view.cursorLineOff",
+      title: "Hide the current-line marker",
+      defaultKeys: [],
+      run: () => options.selectCursorLine("off"),
+      closesMenu: true,
     },
     {
       id: "hunk.view.layoutSplit",
@@ -288,7 +324,7 @@ function builtinCommandSpecs(options: BuildAppCommandsOptions): BuiltinCommandSp
     {
       id: "hunk.view.toggleLineNumbers",
       title: "Toggle line numbers",
-      defaultKeys: ["l"],
+      defaultKeys: [],
       run: () => options.toggleLineNumbers(),
       closesMenu: true,
     },
@@ -437,6 +473,9 @@ const NOOP_COMMAND_OPTIONS: BuildAppCommandsOptions = (() => {
     requestQuit: noop,
     scrollCodeHorizontally: noop,
     scrollDiff: noop,
+    stepDiffLine: noop,
+    selectCursorLine: noop,
+    selectLineCursorSide: noop,
     selectLayoutMode: noop,
     startUserNote: noop,
     toggleAgentNotes: noop,

@@ -328,4 +328,48 @@ describe("AppHost file views", () => {
       });
     }
   });
+
+  test("steps the current line through the rows an alternate presentation renders", async () => {
+    const { extension, root } = copyJsxFileViewExtension();
+    const extensions = await loadStartupExtensions({
+      cliExtensionPaths: [extension],
+      cwd: root,
+      env: { XDG_CONFIG_HOME: root } as NodeJS.ProcessEnv,
+      extensions: { enabled: true, extensionConfigs: {}, paths: [], repoPaths: [] },
+    });
+    expect(extensions.issues).toEqual([]);
+
+    const bootstrap = createTestVcsAppBootstrap({
+      changesetId: "changeset:jsx-runtime-proof",
+      files: [createTwoHunkFile()],
+      initialMode: "stack",
+      inputMode: "stack",
+      vcsOptions: { extensionPaths: [extension] },
+    });
+    bootstrap.extensions = extensions;
+
+    const setup = await testRender(<AppHost bootstrap={bootstrap} onQuit={() => {}} />, {
+      width: 120,
+      height: 24,
+    });
+
+    try {
+      await waitForFrame(setup, (frame) => frame.includes("runtime-proof.ts"));
+      await act(async () => {
+        await setup.mockInput.pressKey("F8");
+      });
+      let frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("▶ Hunk 1"));
+      expect(frame).not.toContain("▶ Hunk 2");
+
+      await act(async () => {
+        await setup.mockInput.typeText("j");
+      });
+      frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("▶ Hunk 2"));
+      expect(frame).not.toContain("▶ Hunk 1");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
 });

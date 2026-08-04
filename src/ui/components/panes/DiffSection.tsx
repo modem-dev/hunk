@@ -2,6 +2,7 @@ import { memo } from "react";
 import type { DiffFile, LayoutMode, UserNoteLineTarget } from "../../../core/types";
 import type { FileSourceStatus } from "../../diff/expandCollapsedRows";
 import { PierreDiffView, type ActiveAddNoteAffordance } from "../../diff/PierreDiffView";
+import type { CursorHighlight } from "../../diff/renderRows";
 import type { VisibleBodyBounds } from "../../diff/rowWindowing";
 import type { DiffSectionGeometry } from "../../diff/diffSectionGeometry";
 import type { VisibleAgentNote } from "../../lib/agentAnnotations";
@@ -24,6 +25,7 @@ interface DiffSectionProps {
   selectedHunkIndex: number;
   copySelectedRowRanges?: Map<string, CopySelectedRowRange>;
   copySelectedSide?: "left" | "right";
+  cursorHighlight?: CursorHighlight;
   shouldLoadHighlight: boolean;
   sectionGeometry?: DiffSectionGeometry;
   separatorWidth: number;
@@ -61,6 +63,7 @@ function DiffSectionComponent({
   selectedHunkIndex,
   copySelectedRowRanges,
   copySelectedSide,
+  cursorHighlight,
   shouldLoadHighlight,
   sectionGeometry,
   separatorWidth,
@@ -137,6 +140,7 @@ function DiffSectionComponent({
               rowBoundsByStableKey: new Map(),
             }
           }
+          cursorHighlight={cursorHighlight}
           selectedHunkIndex={selectedHunkIndex}
           theme={theme}
           visibleBodyBounds={visibleBodyBounds}
@@ -156,6 +160,7 @@ function DiffSectionComponent({
           codeHorizontalOffset={codeHorizontalOffset}
           copySelectedRowRanges={copySelectedRowRanges}
           copySelectedSide={copySelectedSide}
+          cursorHighlight={cursorHighlight}
           theme={theme}
           width={viewWidth}
           visibleAgentNotes={visibleAgentNotes}
@@ -193,6 +198,7 @@ export const DiffSection = memo(DiffSectionComponent, (previous, next) => {
     previous.selectedHunkIndex === next.selectedHunkIndex &&
     previous.copySelectedRowRanges === next.copySelectedRowRanges &&
     previous.copySelectedSide === next.copySelectedSide &&
+    previous.cursorHighlight === next.cursorHighlight &&
     previous.shouldLoadHighlight === next.shouldLoadHighlight &&
     previous.sectionGeometry === next.sectionGeometry &&
     previous.separatorWidth === next.separatorWidth &&

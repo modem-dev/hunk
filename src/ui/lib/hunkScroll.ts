@@ -33,3 +33,37 @@ export function computeHunkRevealScrollTop({
 
   return desiredTop;
 }
+
+/**
+ * Pick a scroll target that brings the current line just into view.
+ *
+ * This runs on every step key, so it moves the minimum distance and stays put while the line is
+ * already on screen; hunk reveal's top bias would yank the viewport on each keystroke.
+ */
+export function computeLineRevealScrollTop({
+  lineTop,
+  lineHeight,
+  scrollTop,
+  viewportHeight,
+}: {
+  lineTop: number;
+  lineHeight: number;
+  scrollTop: number;
+  viewportHeight: number;
+}) {
+  const clampedTop = Math.max(0, lineTop);
+  const clampedHeight = Math.max(1, lineHeight);
+  const clampedViewportHeight = Math.max(0, viewportHeight);
+
+  if (clampedTop < scrollTop) {
+    return clampedTop;
+  }
+
+  const lineBottom = clampedTop + clampedHeight;
+  const viewportBottom = scrollTop + clampedViewportHeight;
+  if (lineBottom > viewportBottom) {
+    return Math.max(0, lineBottom - clampedViewportHeight);
+  }
+
+  return scrollTop;
+}

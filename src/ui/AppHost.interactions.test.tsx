@@ -680,7 +680,7 @@ describe("App interactions", () => {
     }
   }, 20_000);
 
-  test("keyboard shortcuts toggle notes, line numbers, and hunk metadata", async () => {
+  test("keyboard shortcuts toggle notes and hunk metadata", async () => {
     const setup = await testRender(<AppHost bootstrap={createSingleFileBootstrap()} />, {
       width: 240,
       height: 24,
@@ -707,22 +707,13 @@ describe("App interactions", () => {
       expect(frame).not.toContain("Annotation for alpha.ts");
 
       await act(async () => {
-        await setup.mockInput.typeText("l");
-      });
-      await flush(setup);
-
-      frame = setup.captureCharFrame();
-      expect(frame).not.toContain("1 - export const alpha = 1;");
-      expect(frame).toContain("- export const alpha = 1;");
-
-      await act(async () => {
         await setup.mockInput.typeText("m");
       });
       await flush(setup);
 
       frame = setup.captureCharFrame();
       expect(frame).not.toContain("@@ -1,1 +1,2 @@");
-      expect(frame).toContain("- export const alpha = 1;");
+      expect(frame).toContain("1 - export const alpha = 1;");
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -1446,7 +1437,7 @@ describe("App interactions", () => {
       expect(frame).toContain("Why prefs.ts changed");
       expect(frame).not.toContain("@@ -1,1 +1,2 @@");
       expect(frame).not.toContain("1 - export const message");
-      expect(frame.indexOf("Agent note - prefs.ts R2")).toBeLessThan(
+      expect(frame.indexOf("Agent note - prefs.ts R2")).toBeGreaterThan(
         frame.indexOf("export const added = true;"),
       );
     } finally {
@@ -1902,7 +1893,7 @@ describe("App interactions", () => {
       expect(initialFrame).not.toContain("line08");
 
       let frame = initialFrame;
-      for (let index = 0; index < 24; index += 1) {
+      for (let index = 0; index < 48; index += 1) {
         await act(async () => {
           await setup.mockInput.pressArrow("down");
         });
@@ -1916,7 +1907,7 @@ describe("App interactions", () => {
       expect(frame).toContain("line08");
       expect(frame).not.toContain("line01");
 
-      for (let index = 0; index < 12; index += 1) {
+      for (let index = 0; index < 32; index += 1) {
         await act(async () => {
           await setup.mockInput.pressArrow("up");
         });
@@ -1936,10 +1927,13 @@ describe("App interactions", () => {
   });
 
   test("the first down-arrow step still advances content under the always-pinned file header above a collapsed gap", async () => {
-    const setup = await testRender(<AppHost bootstrap={createCollapsedTopBootstrap()} />, {
-      width: 220,
-      height: 10,
-    });
+    const setup = await testRender(
+      <AppHost bootstrap={{ ...createCollapsedTopBootstrap(), initialCursorLine: "off" }} />,
+      {
+        width: 220,
+        height: 10,
+      },
+    );
 
     try {
       await flush(setup);
@@ -2041,7 +2035,7 @@ describe("App interactions", () => {
       expect(initialFrame).not.toContain("line08");
 
       let frame = initialFrame;
-      for (let index = 0; index < 12; index += 1) {
+      for (let index = 0; index < 32; index += 1) {
         await act(async () => {
           await setup.mockInput.pressArrow("down");
         });
@@ -2055,7 +2049,7 @@ describe("App interactions", () => {
       expect(frame).toContain("line08");
       expect(frame).not.toContain("line01");
 
-      for (let index = 0; index < 12; index += 1) {
+      for (let index = 0; index < 32; index += 1) {
         await act(async () => {
           await setup.mockInput.pressArrow("up");
         });

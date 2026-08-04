@@ -67,10 +67,12 @@ The built-in commands and the keys they ship with:
 | `hunk.review.jumpToBottom`          | Jump to end                              | `G`, `end`                   |
 | `hunk.review.scrollCodeLeft`        | Scroll code left (shifted scrolls fast)  | `left`, `shift+left`         |
 | `hunk.review.scrollCodeRight`       | Scroll code right (shifted scrolls fast) | `right`, `shift+right`       |
+| `hunk.review.selectOldSide`         | Select old side of current line          | `h`                          |
+| `hunk.review.selectNewSide`         | Select new side of current line          | `l`                          |
 | `hunk.view.toggleSidebar`           | Toggle sidebar                           | `s`                          |
 | `hunk.view.toggleMenuBar`           | Toggle menu bar                          | `M`                          |
 | `hunk.view.toggleHunkHeaders`       | Toggle hunk headers                      | `m`                          |
-| `hunk.view.toggleLineNumbers`       | Toggle line numbers                      | `l`                          |
+| `hunk.view.toggleLineNumbers`       | Toggle line numbers                      | _(none)_                     |
 | `hunk.view.toggleLineWrap`          | Toggle line wrapping                     | `w`                          |
 | `hunk.view.toggleAgentNotes`        | Toggle agent notes                       | `a`                          |
 | `hunk.view.toggleCopyDecorations`   | Toggle copy decorations                  | _(none)_                     |
@@ -78,6 +80,9 @@ The built-in commands and the keys they ship with:
 | `hunk.view.layoutSplit`             | Split layout                             | `1`                          |
 | `hunk.view.layoutStack`             | Stack layout                             | `2`                          |
 | `hunk.view.layoutAuto`              | Auto layout                              | `0`                          |
+| `hunk.view.cursorLineRow`           | Highlight the current row                | _(none)_                     |
+| `hunk.view.cursorLineNumber`        | Mark the current line number             | _(none)_                     |
+| `hunk.view.cursorLineOff`           | Hide the current-line marker             | _(none)_                     |
 
 Commands marked _(none)_ ship without a key: they are menu items today, and
 binding one gives it a shortcut like any other.

@@ -20,12 +20,14 @@ import { detectVcs, findVcsRepoRootCandidate, getDefaultVcsAdapter } from "./vcs
 import type {
   CliInput,
   CommonOptions,
+  CursorLine,
   CustomSyntaxColorsConfig,
   CustomSyntaxScopesConfig,
   ExtensionsConfig,
   LayoutMode,
   NamedCustomThemeConfig,
   PersistedViewPreferences,
+  SidebarVisibility,
   UserKeyBinding,
   VcsMode,
 } from "./types";
@@ -42,6 +44,7 @@ const DEFAULT_VIEW_PREFERENCES: PersistedViewPreferences = {
   showMenuBar: true,
   showAgentNotes: false,
   copyDecorations: false,
+  cursorLine: "row",
 };
 
 const VIEW_PREFERENCES_PROMPT_CONFIG_KEY = "prompt_save_view_preferences";
@@ -57,6 +60,7 @@ const PERSISTED_VIEW_PREFERENCE_KEYS: Array<{
   { configKey: "menu_bar", value: (preferences) => preferences.showMenuBar },
   { configKey: "agent_notes", value: (preferences) => preferences.showAgentNotes },
   { configKey: "copy_decorations", value: (preferences) => preferences.copyDecorations },
+  { configKey: "cursor_line", value: (preferences) => preferences.cursorLine },
 ];
 
 interface ConfigResolutionOptions {
@@ -142,6 +146,11 @@ function normalizeLayoutMode(value: unknown): LayoutMode | undefined {
   return value === "auto" || value === "split" || value === "stack" ? value : undefined;
 }
 
+/** Accept only the current-line styles the review stream can draw. */
+function normalizeCursorLine(value: unknown): CursorLine | undefined {
+  return value === "row" || value === "number" || value === "off" ? value : undefined;
+}
+
 /**
  * Accept any backend id a config layer names, provisionally.
  *
@@ -157,6 +166,13 @@ function normalizeLayoutMode(value: unknown): LayoutMode | undefined {
  */
 function normalizeVcsMode(value: unknown): VcsMode | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value : undefined;
+}
+
+/** Accept the named sidebar policy, with booleans retained as compatibility aliases. */
+function normalizeSidebarVisibility(value: unknown): SidebarVisibility | undefined {
+  if (value === true) return "shown";
+  if (value === false) return "hidden";
+  return value === "auto" || value === "shown" || value === "hidden" ? value : undefined;
 }
 
 /** Accept only plain booleans from config files. */
@@ -210,6 +226,15 @@ export const CONFIG_REFERENCE_OPTIONS: readonly ConfigReferenceOption[] = [
     accepted: "`auto`, `split`, or `stack`",
     runtimeDefault: DEFAULT_VIEW_PREFERENCES.mode,
     description: "Choose responsive, side-by-side, or stacked diff layout.",
+  },
+  {
+    key: "cursor_line",
+    property: "cursorLine",
+    type: "string",
+    accepted: "`row`, `number`, or `off`",
+    runtimeDefault: DEFAULT_VIEW_PREFERENCES.cursorLine,
+    description:
+      "Mark the current line as a full-row highlight or on its line number. `off` restores plain `j`/`k` scrolling.",
   },
   {
     key: "vcs",
@@ -283,6 +308,15 @@ export const CONFIG_REFERENCE_OPTIONS: readonly ConfigReferenceOption[] = [
     accepted: "`true` or `false`",
     runtimeDefault: DEFAULT_VIEW_PREFERENCES.showMenuBar,
     description: "Show the top application menu bar.",
+  },
+  {
+    key: "sidebar",
+    property: "sidebar",
+    type: "string",
+    accepted: '`"auto"`, `"shown"`, or `"hidden"`',
+    runtimeDefault: "auto",
+    description:
+      "Always show the sidebar when it fits, keep it closed, or let the responsive layout decide. Pager sessions always open with the sidebar closed.",
   },
   {
     key: "agent_notes",
@@ -802,12 +836,16 @@ function normalizeConfigReferenceValue(property: keyof CommonOptions, value: unk
   switch (property) {
     case "mode":
       return normalizeLayoutMode(value);
+    case "cursorLine":
+      return normalizeCursorLine(value);
     case "vcs":
       return normalizeVcsMode(value);
     case "theme":
       return normalizeString(value);
     case "tabWidth":
       return normalizeTabWidth(value);
+    case "sidebar":
+      return normalizeSidebarVisibility(value);
     default:
       return normalizeBoolean(value);
   }
@@ -853,6 +891,7 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
   return {
     ...base,
     mode: overrides.mode ?? base.mode,
+    cursorLine: overrides.cursorLine ?? base.cursorLine,
     vcs: overrides.vcs ?? base.vcs,
     theme: overrides.theme ?? base.theme,
     agentContext: overrides.agentContext ?? base.agentContext,
@@ -865,6 +904,7 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
     wrapLines: overrides.wrapLines ?? base.wrapLines,
     hunkHeaders: overrides.hunkHeaders ?? base.hunkHeaders,
     menuBar: overrides.menuBar ?? base.menuBar,
+    sidebar: overrides.sidebar ?? base.sidebar,
     agentNotes: overrides.agentNotes ?? base.agentNotes,
     copyDecorations: overrides.copyDecorations ?? base.copyDecorations,
     promptSaveViewPreferences:
@@ -1081,6 +1121,7 @@ export function resolveConfiguredCliInput(
     wrapLines: resolvedOptions.wrapLines ?? DEFAULT_VIEW_PREFERENCES.wrapLines,
     hunkHeaders: resolvedOptions.hunkHeaders ?? DEFAULT_VIEW_PREFERENCES.showHunkHeaders,
     menuBar: resolvedOptions.menuBar ?? DEFAULT_VIEW_PREFERENCES.showMenuBar,
+    sidebar: resolvedOptions.sidebar ?? "auto",
     agentNotes: resolvedOptions.agentNotes ?? DEFAULT_VIEW_PREFERENCES.showAgentNotes,
     copyDecorations: resolvedOptions.copyDecorations ?? DEFAULT_VIEW_PREFERENCES.copyDecorations,
     promptSaveViewPreferences: resolvedOptions.promptSaveViewPreferences ?? true,

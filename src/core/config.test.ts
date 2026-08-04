@@ -79,6 +79,7 @@ describe("config persistence", () => {
         showMenuBar: false,
         showAgentNotes: true,
         copyDecorations: true,
+        cursorLine: "row",
       },
       { env: { HOME: home } },
     );
@@ -95,6 +96,7 @@ describe("config persistence", () => {
         "menu_bar = false",
         "agent_notes = true",
         "copy_decorations = true",
+        'cursor_line = "row"',
         "",
         "[custom_theme]",
         'label = "Keep me"',
@@ -133,6 +135,7 @@ describe("config persistence", () => {
       showMenuBar: true,
       showAgentNotes: true,
       copyDecorations: false,
+      cursorLine: "row",
     } as const;
 
     expect(diffPersistedViewPreferences(initial, { ...initial })).toEqual([]);
@@ -219,6 +222,43 @@ describe("config resolution", () => {
     });
   });
 
+  test("reads the current-line style from config and lets CLI flags outrank it", () => {
+    const home = createTempDir("hunk-config-home-");
+    const repo = createTempDir("hunk-config-repo-");
+    createRepo(repo);
+
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(join(home, ".config", "hunk", "config.toml"), 'cursor_line = "number"');
+
+    const fromConfig = resolveConfiguredCliInput(createPatchPagerInput(), {
+      cwd: repo,
+      env: { HOME: home },
+    });
+    expect(fromConfig.input.options.cursorLine).toBe("number");
+
+    const fromFlag = resolveConfiguredCliInput(createPatchPagerInput({ cursorLine: "off" }), {
+      cwd: repo,
+      env: { HOME: home },
+    });
+    expect(fromFlag.input.options.cursorLine).toBe("off");
+  });
+
+  test("falls back to the built-in current-line style when config names an unknown one", () => {
+    const home = createTempDir("hunk-config-home-");
+    const repo = createTempDir("hunk-config-repo-");
+    createRepo(repo);
+
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(join(home, ".config", "hunk", "config.toml"), 'cursor_line = "sparkles"');
+
+    const resolved = resolveConfiguredCliInput(createPatchPagerInput(), {
+      cwd: repo,
+      env: { HOME: home },
+    });
+
+    expect(resolved.input.options.cursorLine).toBe("row");
+  });
+
   test("starts pager mode with the menu bar hidden unless a later layer asks for it", () => {
     const home = createTempDir("hunk-config-home-");
     const repo = createTempDir("hunk-config-repo-");
@@ -261,6 +301,33 @@ describe("config resolution", () => {
         /tab_width/,
       );
     }
+  });
+
+  test("resolves the sidebar preference from config, CLI flags, and the auto default", () => {
+    const home = createTempDir("hunk-config-home-");
+    const repo = createTempDir("hunk-config-repo-");
+    createRepo(repo);
+
+    const resolveSidebar = (input: CliInput) =>
+      resolveConfiguredCliInput(input, { cwd: repo, env: { HOME: home } }).input.options.sidebar;
+
+    expect(resolveSidebar(createPatchPagerInput())).toBe("auto");
+
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(join(home, ".config", "hunk", "config.toml"), "sidebar = false\n");
+    expect(resolveSidebar(createPatchPagerInput())).toBe("hidden");
+    // `--sidebar` outranks the config layer.
+    expect(resolveSidebar(createPatchPagerInput({ sidebar: "shown" }))).toBe("shown");
+
+    writeFileSync(join(home, ".config", "hunk", "config.toml"), 'sidebar = "shown"\n');
+    expect(resolveSidebar(createPatchPagerInput())).toBe("shown");
+
+    writeFileSync(join(home, ".config", "hunk", "config.toml"), 'sidebar = "hidden"\n');
+    expect(resolveSidebar(createPatchPagerInput())).toBe("hidden");
+
+    // Values outside the named policies fall back to the built-in default.
+    writeFileSync(join(home, ".config", "hunk", "config.toml"), 'sidebar = "always"\n');
+    expect(resolveSidebar(createPatchPagerInput())).toBe("auto");
   });
 
   test("merges custom theme overrides from global and repo config", () => {
@@ -959,6 +1026,7 @@ describe("config resolution", () => {
         "tab_width = 8",
         "wrap_lines = true",
         "menu_bar = false",
+        "sidebar = true",
         "hunk_headers = false",
         "agent_notes = true",
         "copy_decorations = false",
@@ -987,6 +1055,7 @@ describe("config resolution", () => {
     expect(bootstrap.initialTabWidth).toBe(8);
     expect(bootstrap.initialWrapLines).toBe(true);
     expect(bootstrap.initialShowMenuBar).toBe(false);
+    expect(bootstrap.initialSidebar).toBe("shown");
     expect(bootstrap.initialShowHunkHeaders).toBe(false);
     expect(bootstrap.initialShowAgentNotes).toBe(true);
     expect(bootstrap.initialCopyDecorations).toBe(false);
