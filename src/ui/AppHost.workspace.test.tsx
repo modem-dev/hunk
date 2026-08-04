@@ -11,11 +11,12 @@ import { loadStartupExtensions } from "../extensions/startup";
 import { AppHost } from "./AppHost";
 
 /**
- * `ctx.workspace`, driven through the real app: a fixture extension asks to
- * replace a reviewed file, Hunk raises the confirm the user actually answers,
- * and the bytes on disk are what the answer decided. The policy behind the
- * refusals is unit-tested in `lib/extensionWorkspace.test.ts`; only the whole
- * stack can show the prompt, the write, and the reload.
+ * `ctx.workspace`, driven through the real app: a fixture extension reads a
+ * reviewed file's document and asks to replace it, Hunk raises the confirm the
+ * user actually answers, and the bytes on disk are what the answer decided. The
+ * policy behind the refusals is unit-tested in `lib/extensionWorkspace.test.ts`;
+ * only the whole stack can show the real loader-attached source behind a read,
+ * the prompt, the write, and the reload.
  */
 
 const tempDirs: string[] = [];
@@ -103,6 +104,53 @@ function writeWorkspaceFixture(extPath: string, logPath: string) {
   );
 }
 
+/**
+ * Write the fixture whose `y` command reads both document sides of the
+ * selection, plus a file id no review carries, and logs each answer.
+ */
+function writeReadFixture(extPath: string, logPath: string) {
+  writeFileSync(
+    extPath,
+    `import { appendFileSync } from "node:fs";\n` +
+      `export default function (hunk) {\n` +
+      `  hunk.registerCommand({ id: "read", title: "Read", key: "y" }, async (ctx) => {\n` +
+      `    const file = ctx.selection.file;\n` +
+      `    if (!file) return;\n` +
+      `    const log = (line) => appendFileSync(${JSON.stringify(logPath)}, line + "\\n");\n` +
+      `    log("new " + JSON.stringify(await ctx.workspace.readDocument(file.id, "new")));\n` +
+      `    log("old " + JSON.stringify(await ctx.workspace.readDocument(file.id, "old")));\n` +
+      `    log("unknown " + JSON.stringify(await ctx.workspace.readDocument("no-such-file", "new")));\n` +
+      `    log("can " + String(ctx.workspace.canWriteDocument(file.id)));\n` +
+      `  });\n` +
+      `}\n`,
+  );
+}
+
+/**
+ * Write the fixture whose `y` command runs the pairing the API exists for:
+ * read the new side, transform the text, write the result back.
+ */
+function writeReadWriteFixture(extPath: string, logPath: string) {
+  writeFileSync(
+    extPath,
+    `import { appendFileSync } from "node:fs";\n` +
+      `export default function (hunk) {\n` +
+      `  hunk.registerCommand({ id: "shout", title: "Shout", key: "y" }, async (ctx) => {\n` +
+      `    const file = ctx.selection.file;\n` +
+      `    if (!file) return;\n` +
+      `    const log = (line) => appendFileSync(${JSON.stringify(logPath)}, line + "\\n");\n` +
+      `    const current = await ctx.workspace.readDocument(file.id, "new");\n` +
+      `    if (current === null) { log("read null"); return; }\n` +
+      `    const result = await ctx.workspace.writeDocument({\n` +
+      `      fileId: file.id,\n` +
+      `      text: current.toUpperCase(),\n` +
+      `    });\n` +
+      `    log("result " + JSON.stringify(result));\n` +
+      `  });\n` +
+      `}\n`,
+  );
+}
+
 /** Launch a bootstrap for one review input whose extensions come from one fixture path. */
 async function launchWithExtension(
   repo: string,
@@ -138,6 +186,159 @@ async function withAppHost(
     });
   }
 }
+
+describe("extension workspace reads", () => {
+  test("reads the working tree's current document for a working-tree review", async () => {
+    const repo = createTestRepo("hunk-ext-read-worktree-");
+    const extDir = createTempDir("hunk-ext-read-worktree-ext-");
+    const logPath = join(extDir, "probe.log");
+    const extPath = join(extDir, "ext.ts");
+    writeReadFixture(extPath, logPath);
+
+    const bootstrap = await launchWithExtension(repo, extPath, {
+      kind: "vcs",
+      staged: false,
+      options: { mode: "stack", extensionPaths: [extPath] },
+    });
+    await withAppHost(bootstrap, async (setup) => {
+      await flushUntil(
+        setup,
+        () => setup.captureCharFrame().includes("alpha.txt"),
+        "the review to render",
+      );
+
+      await act(async () => {
+        await setup.mockInput.typeText("y");
+      });
+      await flushUntil(
+        setup,
+        () => readProbeLog(logPath).length >= 4,
+        "the handler to log every read",
+      );
+
+      const log = readProbeLog(logPath);
+      // The new side is the file on disk right now; the old side is what the
+      // review is comparing it against.
+      expect(log).toContain(`new ${JSON.stringify("one\ntwo\n")}`);
+      expect(log).toContain(`old ${JSON.stringify("one\n")}`);
+      // A read never asks, so nothing was raised on the way to the answer.
+      expect(setup.captureCharFrame()).not.toContain("Write alpha.txt?");
+    });
+  });
+
+  test("reads a revision's document in a review that refuses writes", async () => {
+    const repo = createTestRepo("hunk-ext-read-show-");
+    const extDir = createTempDir("hunk-ext-read-show-ext-");
+    const logPath = join(extDir, "probe.log");
+    const extPath = join(extDir, "ext.ts");
+    writeReadFixture(extPath, logPath);
+
+    const bootstrap = await launchWithExtension(repo, extPath, {
+      kind: "show",
+      ref: "HEAD",
+      options: { mode: "stack", extensionPaths: [extPath] },
+    });
+    await withAppHost(bootstrap, async (setup) => {
+      await flushUntil(
+        setup,
+        () => setup.captureCharFrame().includes("alpha.txt"),
+        "the review to render",
+      );
+
+      await act(async () => {
+        await setup.mockInput.typeText("y");
+      });
+      await flushUntil(
+        setup,
+        () => readProbeLog(logPath).length >= 4,
+        "the handler to log every read",
+      );
+
+      const log = readProbeLog(logPath);
+      // Reads are available where writes are not, and they answer with the
+      // reviewed revision rather than the working tree that has moved past it.
+      expect(log).toContain("can false");
+      expect(log).toContain(`new ${JSON.stringify("one\n")}`);
+      // The commit added the file, so it has no old side to read.
+      expect(log).toContain("old null");
+    });
+  });
+
+  test("resolves null for a file id no review carries", async () => {
+    const repo = createTestRepo("hunk-ext-read-unknown-");
+    const extDir = createTempDir("hunk-ext-read-unknown-ext-");
+    const logPath = join(extDir, "probe.log");
+    const extPath = join(extDir, "ext.ts");
+    writeReadFixture(extPath, logPath);
+
+    const bootstrap = await launchWithExtension(repo, extPath, {
+      kind: "vcs",
+      staged: false,
+      options: { mode: "stack", extensionPaths: [extPath] },
+    });
+    await withAppHost(bootstrap, async (setup) => {
+      await flushUntil(
+        setup,
+        () => setup.captureCharFrame().includes("alpha.txt"),
+        "the review to render",
+      );
+
+      await act(async () => {
+        await setup.mockInput.typeText("y");
+      });
+      await flushUntil(
+        setup,
+        () => readProbeLog(logPath).length >= 4,
+        "the handler to log every read",
+      );
+
+      // An unknown id is a probe with an answer, not a thrown handler failure.
+      expect(readProbeLog(logPath)).toContain("unknown null");
+    });
+  });
+
+  test("reads a document, transforms it, and writes it back", async () => {
+    const repo = createTestRepo("hunk-ext-read-write-");
+    const extDir = createTempDir("hunk-ext-read-write-ext-");
+    const logPath = join(extDir, "probe.log");
+    const extPath = join(extDir, "ext.ts");
+    writeReadWriteFixture(extPath, logPath);
+
+    const bootstrap = await launchWithExtension(repo, extPath, {
+      kind: "vcs",
+      staged: false,
+      options: { mode: "stack", extensionPaths: [extPath] },
+    });
+    await withAppHost(bootstrap, async (setup) => {
+      await flushUntil(
+        setup,
+        () => setup.captureCharFrame().includes("alpha.txt"),
+        "the review to render",
+      );
+
+      await act(async () => {
+        await setup.mockInput.typeText("y");
+      });
+      await flushUntil(
+        setup,
+        () => setup.captureCharFrame().includes("Write alpha.txt?"),
+        "the write confirm to open",
+      );
+
+      await act(async () => {
+        await setup.mockInput.pressEnter();
+      });
+      await flushUntil(
+        setup,
+        () => readProbeLog(logPath).includes('result {"ok":true}'),
+        "the handler to resolve a successful write",
+      );
+      // The written text is the read text transformed, so the read reached the
+      // whole document rather than the patch the review was built from.
+      expect(readFileSync(join(repo, "alpha.txt"), "utf8")).toBe("ONE\nTWO\n");
+    });
+  });
+});
 
 describe("extension workspace writes", () => {
   test("a confirmed write replaces the reviewed file and reloads the review", async () => {

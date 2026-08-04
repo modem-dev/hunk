@@ -33,6 +33,7 @@ import { writeExtensionTrust } from "../extensions/trust";
 import type {
   ExtensionCommandContext,
   ExtensionEventContext,
+  ExtensionFileSide,
   ExtensionReviewNote,
   ExtensionSidebarControls,
   ExtensionWorkspace,
@@ -93,6 +94,7 @@ import {
 import { nextExtensionTrustPromptRoot } from "./lib/extensionTrustPrompt";
 import {
   normalizeWorkspaceWriteRequest,
+  resolveExtensionWorkspaceRead,
   resolveExtensionWorkspaceWriteTarget,
 } from "./lib/extensionWorkspace";
 import { maxFileHeaderStatsWidth } from "./lib/fileHeader";
@@ -366,8 +368,10 @@ export function App({
   extensionSelectionInputsRef.current = { filteredFiles, selectedFileId, selectedHunkIndex };
   // What `ctx.workspace` decides against, re-read on every render because a soft
   // reload swaps the bootstrap under a mounted App: the input can change what is
-  // writable at all, and the changeset decides which ids exist. Unfiltered on
-  // purpose — a file hidden by the filter is still a reviewed file.
+  // writable at all, and the changeset decides which ids exist and which source
+  // a read reaches. Unfiltered on purpose — a file hidden by the filter is still
+  // a reviewed file. These are internal `DiffFile`s, so each carries the
+  // `sourceFetcher` a read delegates to.
   const extensionWorkspaceInputs = {
     files: reviewFiles,
     input: bootstrap.input,
@@ -603,7 +607,7 @@ export function App({
     updateInput: setExtensionDialogInputValue,
   } = useExtensionDialogController({ reviewGeneration: bootstrap });
 
-  /** Build host-mediated working-tree write controls for one extension command. */
+  /** Build host-mediated reviewed-document read and write controls for one extension command. */
   const createWorkspaceControls = useCallback(
     (extensionId: string): ExtensionWorkspace => {
       const resolveTarget = (fileId: string) =>
@@ -613,6 +617,19 @@ export function App({
         });
 
       return {
+        async readDocument(fileId: string, side: ExtensionFileSide) {
+          // Unlike a write, a read asks nothing of the user and nothing of the
+          // review kind: it hands back the document the review is already
+          // showing. Only a malformed side throws, from inside the policy.
+          const read = resolveExtensionWorkspaceRead({
+            fileId,
+            files: extensionWorkspaceInputsRef.current.files,
+            side,
+          });
+          // Every failure the fetcher can raise — a missing side, a read error,
+          // the host's source-size cap — is the same "no document" answer.
+          return read ? read().catch(() => null) : null;
+        },
         canWriteDocument(fileId: string) {
           // The probe answers for anything, including an id that is not even a
           // string: an affordance question should not throw at a caller who is

@@ -3,17 +3,18 @@ import { describe, expect, test } from "bun:test";
 import type { CliInput, CommonOptions } from "../../core/types";
 import {
   normalizeWorkspaceWriteRequest,
+  resolveExtensionWorkspaceRead,
   resolveExtensionWorkspaceWriteTarget,
-  type WorkspaceWriteFileSource,
+  type WorkspaceFileSource,
 } from "./extensionWorkspace";
 
 const ROOT = resolve(sep, "repo");
 const NO_OPTIONS: CommonOptions = {};
 
-/** One reviewed file as the write policy sees it, changed unless told otherwise. */
+/** One reviewed file as the workspace policy sees it, changed unless told otherwise. */
 function createTestWorkspaceFile(
-  overrides: Partial<WorkspaceWriteFileSource> = {},
-): WorkspaceWriteFileSource {
+  overrides: Partial<WorkspaceFileSource> = {},
+): WorkspaceFileSource {
   return { id: "alpha", path: "src/alpha.ts", metadata: { type: "change" }, ...overrides };
 }
 
@@ -25,7 +26,7 @@ function resolveTestTarget({
   root = ROOT,
 }: {
   fileId?: string;
-  files?: WorkspaceWriteFileSource[];
+  files?: WorkspaceFileSource[];
   input?: CliInput;
   root?: string;
 } = {}) {
@@ -122,6 +123,69 @@ describe("extension workspace write policy", () => {
       path: "src/alpha.ts",
       absolutePath: join(ROOT, "src", "alpha.ts"),
     });
+  });
+});
+
+describe("extension workspace document reads", () => {
+  /** One reviewed file whose fetcher reports the side it was asked for. */
+  function createTestReadableFile(overrides: Partial<WorkspaceFileSource> = {}) {
+    return createTestWorkspaceFile({
+      sourceFetcher: { getFullText: async (side) => `${side} text` },
+      ...overrides,
+    });
+  }
+
+  test("binds the read to the side the caller asked for", async () => {
+    const files = [createTestReadableFile()];
+
+    await expect(
+      resolveExtensionWorkspaceRead({ fileId: "alpha", files, side: "new" })?.(),
+    ).resolves.toBe("new text");
+    await expect(
+      resolveExtensionWorkspaceRead({ fileId: "alpha", files, side: "old" })?.(),
+    ).resolves.toBe("old text");
+  });
+
+  test("answers with no read for an unknown file id", () => {
+    // A probe is an ordinary question: an id nothing carries is an answer, not
+    // a failure, exactly as `canWriteDocument` treats one.
+    expect(
+      resolveExtensionWorkspaceRead({
+        fileId: "missing",
+        files: [createTestReadableFile()],
+        side: "new",
+      }),
+    ).toBeNull();
+  });
+
+  test("answers with no read for a file the loader gave no source", () => {
+    expect(
+      resolveExtensionWorkspaceRead({
+        fileId: "alpha",
+        files: [createTestWorkspaceFile()],
+        side: "new",
+      }),
+    ).toBeNull();
+  });
+
+  test("reads a file in review kinds that refuse writes", () => {
+    // Reads are review-kind blind on purpose, so nothing here consults the
+    // input the write policy branches on.
+    const read = resolveExtensionWorkspaceRead({
+      fileId: "alpha",
+      files: [createTestReadableFile({ metadata: { type: "deleted" } })],
+      side: "old",
+    });
+
+    expect(read).not.toBeNull();
+  });
+
+  test("throws for a side that names neither document", () => {
+    for (const side of [undefined, null, "both", "New", 0]) {
+      expect(() =>
+        resolveExtensionWorkspaceRead({ fileId: "alpha", files: [createTestReadableFile()], side }),
+      ).toThrow('side to be "old" or "new"');
+    }
   });
 });
 

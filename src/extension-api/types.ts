@@ -1078,30 +1078,56 @@ export type ExtensionWorkspaceWriteResult =
   | { ok: false; reason: "unavailable" | "cancelled" | "failed"; detail: string };
 
 /**
- * Write a reviewed file back to the working tree, through the host.
+ * The reviewed files as whole documents, read and written through the host.
  *
  * Extension isolation is crash containment rather than a sandbox, so an
- * extension can already reach `node:fs` and write wherever your shell can.
- * This is the supported alternative, and what it buys is everything that a
- * direct write skips: the target can only be a file the user is reviewing, the
- * user is asked before anything is touched, the prompt names the extension
- * doing the asking, and the review reloads afterwards so what you are looking
- * at is what is on disk. An extension that writes files any other way is
- * outside the contract, and outside anything the user agreed to.
+ * extension can already reach `node:fs` and read or write wherever your shell
+ * can. This is the supported alternative, and what it buys is everything that a
+ * direct filesystem call skips: the target can only be a file the user is
+ * reviewing, named by review id rather than by path; a write asks the user
+ * first, in a prompt naming the extension doing the asking; and the review
+ * reloads afterwards so what you are looking at is what is on disk. An
+ * extension that reaches reviewed files any other way is outside the contract,
+ * and outside anything the user agreed to.
  *
- * Writes are working-tree only. They are available exactly when the session is
- * reviewing the working tree — a `vcs` diff review with no revision range and
- * without `--staged`. A revision show, a stash show, a range diff, a staged
- * diff, patch input, and a file-pair diff have no working-tree document to
- * replace, and every write against them resolves `"unavailable"`.
+ * The two halves are deliberately not symmetric, because they are not the same
+ * kind of act. Reading exposes exactly what the review already shows the user,
+ * so it is available in every review kind and never prompts. Writing changes
+ * the user's files, so it is working-tree only and always asks.
  *
- * The target is named by reviewed-file id, never by path: an extension can ask
- * to write a file the user is already looking at, and nothing else. A file with
- * no new side (deleted) and a file Hunk never read as text (binary, skipped for
- * size) are `"unavailable"` for the same reason — there is no document to
- * replace.
+ * Writes are available exactly when the session is reviewing the working tree —
+ * a `vcs` diff review with no revision range and without `--staged`. A revision
+ * show, a stash show, a range diff, a staged diff, patch input, and a file-pair
+ * diff have no working-tree document to replace, and every write against them
+ * resolves `"unavailable"`. A file with no new side (deleted) and a file Hunk
+ * never read as text (binary, skipped for size) are `"unavailable"` for the
+ * same reason — there is no document to replace.
  */
 export interface ExtensionWorkspace {
+  /**
+   * Read one exact full source document from a reviewed file.
+   *
+   * The document a file view gets from `ExtensionFileViewInput.readDocument`,
+   * reachable from a command handler: ask for the `"old"` or `"new"` side of a
+   * file in the current changeset and get its complete source text. Patch text
+   * is already at hand as `ExtensionDiffFile.patch` and is deliberately not
+   * this, because a patch is not an exact source file.
+   *
+   * Resolves `null`, rather than rejecting, for every way a read comes back
+   * empty-handed: no reviewed file carries that id, the side does not exist
+   * (the `"old"` side of an added file, the `"new"` side of a deletion), Hunk
+   * has no source to read for this file at all, the read failed, or the
+   * document is past the host's source-size cap. A probe is an ordinary
+   * question here, the same way `canWriteDocument` answers instead of throwing.
+   * The promise **rejects** only for a `side` that is neither `"old"` nor
+   * `"new"`, which is a bug in the extension rather than an answer.
+   *
+   * Unlike writes, reads work in every review kind — a revision show, a stash
+   * entry, a range diff, patch input — and never prompt. Reading the `"new"`
+   * side, transforming the text, and passing the result to `writeDocument` is
+   * the pairing this exists for.
+   */
+  readDocument(fileId: string, side: ExtensionFileSide): Promise<string | null>;
   /**
    * Whether `writeDocument` could currently succeed for this reviewed file.
    *
@@ -1165,10 +1191,11 @@ export interface ExtensionCommandContext extends ExtensionContext {
    */
   readonly dialogs: ExtensionDialogs;
   /**
-   * Write a reviewed file back to the working tree, with the user's consent.
+   * Read reviewed files, and write them back to the working tree with the
+   * user's consent.
    *
-   * Host-mediated on purpose: the file is named by review id, the user is asked
-   * first, and the review reloads after a successful write.
+   * Host-mediated on purpose: the file is named by review id, a write asks the
+   * user first, and the review reloads after a successful write.
    */
   readonly workspace: ExtensionWorkspace;
 }

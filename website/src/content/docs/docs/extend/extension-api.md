@@ -101,7 +101,7 @@ The handler fires when the key is pressed outside modal UI (dialogs, menus, and 
 - `ctx.selection` — where the review was pointing when the command fired.
 - `ctx.navigation` — moves the review stream.
 - `ctx.dialogs` — asks the user, below.
-- `ctx.workspace` — writes a reviewed file back to the working tree, with the user's consent, below.
+- `ctx.workspace` — reads reviewed files, and writes one back to the working tree with the user's consent, below.
 
 ```ts
 hunk.registerCommand(
@@ -177,9 +177,42 @@ Hunk draws the dialog; your text fills the title, body, and choices, and the fra
 
 One dialog shows at a time; concurrent requests queue in call order, across extensions. Escape cancels (`false` or `null`), Enter accepts; confirm dialogs also answer to `y`/`n`, select dialogs to `↑`/`↓`, and everything is clickable. A session reload cancels open and queued dialogs, and a dialog pending at shutdown resolves its cancel value.
 
-### Writing a reviewed file
+### Reading and writing a reviewed file
 
-`ctx.workspace` replaces a reviewed file's contents on disk, through Hunk rather than around it: `canWriteDocument(fileId)` reports whether a write could currently succeed, and `writeDocument({ fileId, text })` resolves `{ ok: true }` or `{ ok: false, reason, detail }`.
+`ctx.workspace` reaches the reviewed files as whole documents, through Hunk rather than around it: `readDocument(fileId, "old" | "new")` resolves one file's exact full source text or `null`, `canWriteDocument(fileId)` reports whether a write could currently succeed, and `writeDocument({ fileId, text })` resolves `{ ok: true }` or `{ ok: false, reason, detail }`.
+
+Reading the new side, transforming the text, and writing the result back is the pairing this exists for:
+
+```ts
+hunk.registerCommand(
+  { id: "shout-headings", title: "Shout the selected file's headings", key: "f7" },
+  async (ctx) => {
+    const file = ctx.selection.file;
+    if (!file) {
+      return;
+    }
+
+    const current = await ctx.workspace.readDocument(file.id, "new");
+    if (current === null) {
+      ctx.notify("Nothing readable is selected", "warning");
+      return;
+    }
+
+    const result = await ctx.workspace.writeDocument({
+      fileId: file.id,
+      text: current.replace(/^(#+ .+)$/gm, (heading) => heading.toUpperCase()),
+    });
+
+    if (!result.ok && result.reason !== "cancelled") {
+      ctx.notify(result.detail, "warning");
+    }
+  },
+);
+```
+
+`readDocument` is the document a [file view](/docs/extend/file-previews/) gets from `input.readDocument`, reachable from a command handler; `file.patch` is already at hand and is deliberately not this, because a patch is not an exact source file. It resolves `null` rather than rejecting for every way a read comes back empty-handed — no reviewed file carries that id, the side does not exist, Hunk has no source to read for the file, the read failed, or the document is past Hunk's source-size cap — so `null` means "no document", never "something broke". The promise **rejects** only for a `side` that is neither `"old"` nor `"new"`.
+
+Reads work in every review kind, including the ones that refuse writes, and answer with what that review is showing: in `hunk show HEAD` the `"new"` side is the file at that commit, not the file in your working tree. Reads never prompt, because they expose exactly what the user is already looking at. Writes are the half that asks.
 
 ```ts
 hunk.registerCommand(

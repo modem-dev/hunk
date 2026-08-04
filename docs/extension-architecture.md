@@ -151,6 +151,15 @@ parallel prompt, and a successful write reloads through the same
 `refreshCurrentInput` the refresh key uses, fire-and-forget so the extension's
 promise settles on the write itself.
 
+`readDocument` is the same module's other half and deliberately a much smaller
+one: `resolveExtensionWorkspaceRead` validates the side, finds the reviewed file
+by id, and hands back that file's `sourceFetcher.getFullText` bound to the side,
+or `null`. It consults no review kind and no root, because a read discloses only
+what the review already renders, and it performs no read itself, so the module
+stays a pure decision and the fetcher keeps owning its caching and its size cap.
+App turns every rejection into `null`, making the same document a file view
+receives from `ExtensionFileViewInput.readDocument` reachable from a handler.
+
 Commands declare chords, not matchers: `src/ui/lib/keymap.ts` folds every
 command's `defaultKeys` against the user's `[keybindings]` table (user config
 layer only) into one id-to-chords answer, from which matchers, key labels, and

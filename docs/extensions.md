@@ -178,8 +178,9 @@ payloads is shared with the renderer for performance and is not frozen, and an
 extension runs with your full user permissions — it can do anything your shell
 can. The containment protects you from bugs, not from code you should not have
 loaded in the first place. What Hunk does offer is a mediated path for the one
-thing extensions most want the filesystem for: [writing a reviewed
-file](#writing-a-reviewed-file) goes through the host, which asks you first.
+thing extensions most want the filesystem for: [reading and writing a reviewed
+file](#reading-and-writing-a-reviewed-file) goes through the host, which asks
+you before anything is written.
 
 ## The API
 
@@ -1079,13 +1080,71 @@ the same way, and a request made after that point cancels immediately. A blank
 answer from the user, so the promise **rejects**; like any other handler
 failure, that surfaces as a warning naming your extension.
 
-#### Writing a reviewed file
+#### Reading and writing a reviewed file
 
-`ctx.workspace` replaces a reviewed file's contents on disk, through Hunk rather
-than around it. Two methods:
+`ctx.workspace` reaches the reviewed files as whole documents, through Hunk
+rather than around it. Three methods:
 
+- `readDocument(fileId, "old" | "new")` → the full source text, or `null`
 - `canWriteDocument(fileId)` → whether a write could currently succeed
 - `writeDocument({ fileId, text })` → `{ ok: true }`, or `{ ok: false, reason, detail }`
+
+Reading the new side, transforming the text, and writing the result back is the
+pairing this exists for:
+
+```ts
+hunk.registerCommand(
+  { id: "shout-headings", title: "Shout the selected file's headings", key: "f7" },
+  async (ctx) => {
+    const file = ctx.selection.file;
+    if (!file) {
+      return;
+    }
+
+    const current = await ctx.workspace.readDocument(file.id, "new");
+    if (current === null) {
+      ctx.notify("Nothing readable is selected", "warning");
+      return;
+    }
+
+    const result = await ctx.workspace.writeDocument({
+      fileId: file.id,
+      text: current.replace(/^(#+ .+)$/gm, (heading) => heading.toUpperCase()),
+    });
+
+    if (!result.ok && result.reason !== "cancelled") {
+      ctx.notify(result.detail, "warning");
+    }
+  },
+);
+```
+
+`readDocument` is the document a
+[file view](#hunkregisterfileviewview-experimental) gets from
+`input.readDocument`, reachable from a command handler: the exact `"old"` or
+`"new"` source text of a file in the current changeset. `file.patch` is already
+at hand and is deliberately not this, because a patch is not an exact source
+file.
+
+It resolves `null` rather than rejecting for every way a read comes back
+empty-handed — no reviewed file carries that id, the side does not exist (the
+`"old"` side of an added file, the `"new"` side of a deletion), Hunk has no
+source to read for the file at all, the read failed, or the document is past
+Hunk's source-size cap. So `null` means "no document", never "something broke";
+handle it, do not branch on why. The promise **rejects** only for a `side` that
+is neither `"old"` nor `"new"`, which is a bug in your extension rather than an
+answer.
+
+Reads work in every review kind — a working-tree diff, a revision show, a stash
+entry, a range diff, patch input — and they answer with what that review is
+showing: in `hunk show HEAD` the `"new"` side is the file at that commit, not
+the file in your working tree. Reads never prompt, because they expose exactly
+what the user is already looking at, so there is nothing to consent to. Writes
+are the half that asks.
+
+A write does not need a read in front of it, and `canWriteDocument` is the
+affordance probe behind an action you offer — the same review, file, and path
+checks a write makes, minus the dialog and the filesystem:
 
 ```ts
 hunk.registerCommand(
