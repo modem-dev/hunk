@@ -283,7 +283,7 @@ describe("GitVcsAdapter", () => {
     ]);
   });
 
-  test("computes watch signatures for each review operation", () => {
+  test("computes watch signatures for each review operation", async () => {
     const repo = createTempRepo("hunk-git-adapter-watch-");
     writeFileSync(join(repo, "file.txt"), "one\n");
     git(repo, "add", "file.txt");
@@ -293,14 +293,14 @@ describe("GitVcsAdapter", () => {
 
     // Measure the working-tree signature while the tree is actually dirty, so the assertion is
     // meaningful: it must carry the tracked diff and an untracked-file stat signature.
-    const diffSignature = GitVcsAdapter.operations["working-tree-diff"]!.watchSignature!(
+    const diffSignature = await GitVcsAdapter.operations["working-tree-diff"]!.watchSignature!(
       { kind: "vcs", staged: false, options: {} },
       { cwd: repo },
     );
     expect(diffSignature).toContain("diff --git a/file.txt b/file.txt");
     expect(diffSignature).toContain("untracked:");
 
-    const showSignature = GitVcsAdapter.operations["revision-show"]!.watchSignature!(
+    const showSignature = await GitVcsAdapter.operations["revision-show"]!.watchSignature!(
       { kind: "show", ref: "HEAD", options: {} },
       { cwd: repo },
     );
@@ -308,7 +308,7 @@ describe("GitVcsAdapter", () => {
 
     // Stash the dirty state so a stash entry exists for the stash-show signature.
     git(repo, "stash", "push", "--include-untracked", "-m", "watch stash");
-    const stashSignature = GitVcsAdapter.operations["stash-show"]!.watchSignature!(
+    const stashSignature = await GitVcsAdapter.operations["stash-show"]!.watchSignature!(
       { kind: "stash-show", options: {} },
       { cwd: repo },
     );

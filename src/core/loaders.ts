@@ -455,7 +455,11 @@ export async function loadAppBootstrap(
   let initialWatchSignature: string | undefined;
   if (input.options.watch) {
     try {
-      initialWatchSignature = computeWatchSignature(input, { cwd, gitExecutable, vcsAdapters });
+      initialWatchSignature = await computeWatchSignature(input, {
+        cwd,
+        gitExecutable,
+        vcsAdapters,
+      });
     } catch {
       // A transient signature failure must not prevent an otherwise valid initial review.
     }
