@@ -32,6 +32,7 @@ import type {
   ExtensionVcsDiffInput,
   ExtensionVcsLoadContext,
   ExtensionVcsPatchResult,
+  ExtensionWorkspaceWriteResult,
   HunkExtensionAPI,
   NamedCustomThemeConfig,
 } from "hunkdiff/extension";
@@ -99,6 +100,21 @@ export default function (hunk: HunkExtensionAPI) {
   hunk.registerCommand({ id: "raw-view", title: "Raw view" }, (ctx) => {
     ctx.fileViews.select("raw");
     ctx.fileViews.select(null);
+    ctx.fileViews.refresh("raw");
+  });
+
+  hunk.registerCommand({ id: "rewrite", title: "Rewrite the selection" }, async (ctx) => {
+    const file = ctx.selection.file;
+    if (!file || !ctx.workspace.canWriteDocument(file.id)) {
+      return;
+    }
+
+    const written: ExtensionWorkspaceWriteResult = await ctx.workspace.writeDocument({
+      fileId: file.id,
+      text: "",
+    });
+    // The result is a discriminated union: \`detail\` exists only on refusals.
+    hunk.log(written.ok ? "written" : written.detail);
   });
 
   const adapter: ExtensionVcsAdapter = {

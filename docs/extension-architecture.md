@@ -138,6 +138,19 @@ frame always carries an `ext <id>` attribution row — the toast marker — beca
 the title is extension-authored and a prompt must not be able to impersonate
 Hunk.
 
+`ctx.workspace` is the only way extension code can change the reviewed files,
+and it is deliberately a thin host wrapper: `src/ui/lib/extensionWorkspace.ts`
+holds the whole policy as one pure classification of `(input, file, root)` —
+working-tree-only reviews, reviewed ids rather than paths, no deleted or
+unreadable files, no path escaping the review root — so `canWriteDocument` and
+`writeDocument` cannot drift apart, and an affordance never advertises an action
+the write would refuse. App resolves it against a ref holding the current input,
+unfiltered changeset, and repo root, because a soft reload replaces all three
+under a mounted App. Consent runs through the dialog queue above rather than a
+parallel prompt, and a successful write reloads through the same
+`refreshCurrentInput` the refresh key uses, fire-and-forget so the extension's
+promise settles on the write itself.
+
 Commands declare chords, not matchers: `src/ui/lib/keymap.ts` folds every
 command's `defaultKeys` against the user's `[keybindings]` table (user config
 layer only) into one id-to-chords answer, from which matchers, key labels, and

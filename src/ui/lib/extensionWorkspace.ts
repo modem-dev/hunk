@@ -1,0 +1,165 @@
+/**
+ * The one policy behind `ctx.workspace`: whether a reviewed file may be written
+ * back to disk, and where that write would land.
+ *
+ * Free of React and of the filesystem on purpose. `canWriteDocument` is meant
+ * to be exactly the question `writeDocument` asks itself before prompting, so
+ * both go through this module and neither re-derives the answer — an affordance
+ * that disagreed with the action it advertises would be worse than no
+ * affordance at all.
+ */
+
+import { isAbsolute, relative, resolve, sep } from "node:path";
+import { normalizeDiffPath } from "../../core/diffPaths";
+import type { CliInput } from "../../core/types";
+import { readMetadataChangeType } from "../../extensions/events";
+
+/**
+ * The slice of one reviewed file the write policy inspects.
+ *
+ * Structural like `SidebarFileSource`: Hunk's internal `DiffFile` satisfies it
+ * as it is, and the policy never needs the parsed diff itself — only which file
+ * this is, where it lives, and whether it has writable new-side text at all.
+ */
+export interface WorkspaceWriteFileSource {
+  id: string;
+  path: string;
+  metadata?: unknown;
+  isBinary?: boolean;
+  isTooLarge?: boolean;
+}
+
+/** Where an allowed write lands, or why the reviewed file cannot be written. */
+export type ExtensionWorkspaceWriteTarget =
+  | {
+      writable: true;
+      /** The reviewed path, root-relative, as the review and the prompt name it. */
+      path: string;
+      /** The absolute path the host writes to. */
+      absolutePath: string;
+    }
+  | {
+      writable: false;
+      /** Human-readable `detail` for the `"unavailable"` result. */
+      detail: string;
+    };
+
+/** A normalized write request, once its fields are known to be well-formed. */
+export interface WorkspaceWriteRequestFields {
+  fileId: string;
+  text: string;
+}
+
+/**
+ * Name what this session is reviewing when it is not the working tree.
+ *
+ * Writes exist to edit the files under review, and only a working-tree review
+ * has any: every other input describes content that already happened (a
+ * revision, a stash, a staged snapshot) or content with no working-tree
+ * identity at all (a patch, two arbitrary files).
+ */
+function nonWorkingTreeReview(input: CliInput): string | null {
+  switch (input.kind) {
+    case "vcs":
+      if (input.range) {
+        return "a revision range";
+      }
+
+      return input.staged ? "staged changes" : null;
+    case "show":
+      return "a single revision";
+    case "stash-show":
+      return "a stash entry";
+    case "patch":
+      return "patch input";
+    case "diff":
+    case "difftool":
+      return "a file comparison";
+  }
+}
+
+/**
+ * Reject a malformed write request the way `dialogs` rejects a malformed
+ * question: a bug in the extension is not an answer from the user, so it throws
+ * rather than resolving one of the refusal reasons.
+ */
+export function normalizeWorkspaceWriteRequest(request: unknown): WorkspaceWriteRequestFields {
+  const fields = request as Partial<WorkspaceWriteRequestFields> | null | undefined;
+
+  if (typeof fields?.fileId !== "string" || fields.fileId.length === 0) {
+    throw new Error("workspace.writeDocument requires a non-empty fileId.");
+  }
+
+  if (typeof fields.text !== "string") {
+    throw new Error("workspace.writeDocument requires text to be a string.");
+  }
+
+  return { fileId: fields.fileId, text: fields.text };
+}
+
+/**
+ * Resolve one reviewed file id into the working-tree path a write may replace.
+ *
+ * Every refusal carries the sentence the extension receives as `detail`, so the
+ * reason a write is unavailable is decided once, here, instead of being
+ * reconstructed at each call site.
+ *
+ * The path comes out of VCS patch text rather than from the extension, which
+ * can only ever name a file id — but patch text is not a trust boundary Hunk
+ * controls, so the resolved path is still confined to the review root.
+ */
+export function resolveExtensionWorkspaceWriteTarget({
+  fileId,
+  files,
+  input,
+  root,
+}: {
+  fileId: string;
+  /** The full current changeset, unfiltered: a hidden file is still a reviewed file. */
+  files: readonly WorkspaceWriteFileSource[];
+  input: CliInput;
+  /** The repo root this review was loaded from, or its working directory. */
+  root: string;
+}): ExtensionWorkspaceWriteTarget {
+  const reviewing = nonWorkingTreeReview(input);
+  if (reviewing) {
+    return {
+      writable: false,
+      detail: `Workspace writes are working-tree only; this session is reviewing ${reviewing}.`,
+    };
+  }
+
+  const file = files.find((candidate) => candidate.id === fileId);
+  if (!file) {
+    return { writable: false, detail: `No reviewed file has the id "${fileId}".` };
+  }
+
+  const path = normalizeDiffPath(file.path) ?? file.path;
+
+  if (readMetadataChangeType(file.metadata) === "deleted") {
+    return { writable: false, detail: `${path} was deleted in this review; it has no new side.` };
+  }
+
+  if (file.isBinary) {
+    return { writable: false, detail: `${path} is binary; workspace writes are text-only.` };
+  }
+
+  if (file.isTooLarge) {
+    return { writable: false, detail: `${path} was skipped as too large to load.` };
+  }
+
+  const absolutePath = resolve(root, path);
+  const relativePath = relative(root, absolutePath);
+  // An empty relative path means the file resolved to the root itself, which is
+  // a directory rather than anything writable.
+  if (
+    relativePath.length === 0 ||
+    relativePath === ".." ||
+    relativePath.startsWith(`..${sep}`) ||
+    isAbsolute(relativePath)
+  ) {
+    return { writable: false, detail: `${path} resolves outside the reviewed repository.` };
+  }
+
+  return { writable: true, path, absolutePath };
+}
