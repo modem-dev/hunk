@@ -145,10 +145,12 @@ describe("matchesKeyChord", () => {
     expect(matchesKeyChord(parsed("space"), keyEvent({ sequence: " " }))).toBe(true);
   });
 
-  test("ctrl+letter also matches the bare control character a terminal sends", () => {
-    // Ctrl-S as many terminals report it: the C0 byte, no ctrl flag, no name.
+  test("ctrl+letter also matches the bare control character it is sent as", () => {
+    // Ctrl-S from a source that never decoded the byte: no ctrl flag, no name.
+    // Hunk's own parser decodes it (see the named-key case below); this is the
+    // compatibility net for synthetic and embedder-built events.
     expect(matchesKeyChord(parsed("ctrl+s"), keyEvent({ sequence: "\u0013" }))).toBe(true);
-    // And as terminals that do set the flag but still name nothing report it.
+    // And with the flag set but still nothing named.
     expect(matchesKeyChord(parsed("ctrl+s"), keyEvent({ sequence: "\u0013", ctrl: true }))).toBe(
       true,
     );
@@ -162,7 +164,7 @@ describe("matchesKeyChord", () => {
   });
 
   test("a named key keeps its own identity against the control-character fallback", () => {
-    // Tab is 0x09 (ctrl+i) and Enter is 0x0d (ctrl+m): a terminal that decoded
+    // Tab is 0x09 (ctrl+i) and Enter is 0x0d (ctrl+m): a source that decoded
     // them told us which key it was, so those chords must not swallow them.
     expect(matchesKeyChord(parsed("ctrl+i"), keyEvent({ name: "tab", sequence: "\u0009" }))).toBe(
       false,

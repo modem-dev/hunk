@@ -147,16 +147,23 @@ function isLetterBase(base: string) {
 }
 
 /**
- * Report whether a key event is the bare C0 byte a terminal sends for `ctrl+<letter>`.
+ * Report whether a key event is the bare C0 byte `ctrl+<letter>` is sent as.
  *
- * Terminals disagree about how much they decode: many report Ctrl-S as
+ * A compatibility net, not the primary path. `ExtensionKeyEvent` is a
+ * structural type and this matcher is published, so it is handed events Hunk's
+ * own input pipeline never built — synthetic events from tests, events an
+ * embedder or another host passes to an extension component, events assembled
+ * by hand — and such a source may forward the byte without decoding it. Under
+ * Hunk's own OpenTUI parser the byte arrives already decoded as `ctrl: true`
+ * with `name: "s"`, which the normal path below matches, so this clause never
+ * fires for a real Hunk keypress. The undecoded form is
  * `sequence: "\u0013"` with no `ctrl` flag and no `name` at all, so matching on
  * the flag alone would silently never fire. `ctrl+a`…`ctrl+z` map onto
  * `0x01`…`0x1a`, which is the whole of this fallback — it never makes a control
  * byte printable or matchable as text anywhere else.
  *
  * An event that carries a `name` is left to name-based matching: Tab is `0x09`
- * (`ctrl+i`) and Enter is `0x0d` (`ctrl+m`), and a terminal that decoded those
+ * (`ctrl+i`) and Enter is `0x0d` (`ctrl+m`), and a source that decoded those
  * into `name: "tab"` / `name: "return"` has told us which key it was, so a
  * `ctrl+i` binding must not swallow Tab. Other modifier flags disqualify the
  * event for the same reason the normal path compares them exactly: a C0 byte
@@ -201,12 +208,14 @@ function matchesNamedKey(base: string, key: ExtensionKeyEvent) {
  * rather than lossy.
  *
  * A plain `ctrl+<letter>` chord additionally matches the bare C0 control
- * character terminals send for it — see {@link matchesControlCharacter} for
- * that rule and why a named event (Tab, Enter) is never claimed by it.
+ * character the combination is sent as, for events from sources that do not
+ * decode it — see {@link matchesControlCharacter} for who those are, why
+ * Hunk's own keypresses take the normal path instead, and why a named event
+ * (Tab, Enter) is never claimed by the fallback.
  */
 export function matchesKeyChord(parsed: ParsedKeyChord, key: ExtensionKeyEvent): boolean {
-  // Before the modifier gate: the whole point of the C0 form is that the
-  // terminal reported no `ctrl` flag to compare against.
+  // Before the modifier gate: the whole point of the C0 form is that the event
+  // carries no `ctrl` flag to compare against.
   if (matchesControlCharacter(parsed, key)) {
     return true;
   }

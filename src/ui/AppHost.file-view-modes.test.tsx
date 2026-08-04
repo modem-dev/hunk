@@ -2,10 +2,13 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { KeyEvent, type ParsedKey } from "@opentui/core";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
 import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
 import { createTestDiffFile } from "../../test/helpers/diff-helpers";
+import { createWatchTestRuntime } from "../../test/helpers/watchTest";
+import { loadAppBootstrap } from "../core/loaders";
 import { loadStartupExtensions } from "../extensions/startup";
 import { AppHost } from "./AppHost";
 
@@ -17,6 +20,29 @@ afterEach(() => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+/**
+ * Build one key event to publish directly to the renderer's key handler.
+ *
+ * Only the multi-key-in-one-flush case needs this: `mockInput` writes bytes and
+ * lets each parsed key settle, so it can never put two keys in front of the
+ * routing chain without a render between them.
+ */
+function testKeyEvent(fields: Partial<ParsedKey>): KeyEvent {
+  return new KeyEvent({
+    name: "",
+    sequence: "",
+    raw: "",
+    ctrl: false,
+    meta: false,
+    option: false,
+    shift: false,
+    number: false,
+    eventType: "press",
+    source: "raw",
+    ...fields,
+  });
+}
 
 /** Write one folder extension whose factory source is given verbatim. */
 function createModeExtension(name: string, source: string) {
@@ -118,6 +144,57 @@ function createInteractiveModeExtension() {
   );
 }
 
+/**
+ * Two views that both declare modes, plus a command bound to Escape.
+ *
+ * The pair is what "one session runs one mode" is checked against: entering the
+ * second while the first holds the keyboard must tear the first down. The
+ * Escape binding is the observable for the other question — whether a second
+ * Escape arriving in the same input flush, after the first already exited the
+ * mode, is still swallowed as if the mode were running.
+ */
+function createModeHandoffExtension() {
+  return createModeExtension(
+    "mode-handoff",
+    `export default function (hunk) {
+  const view = (id) => ({
+    id,
+    title: id,
+    matches: () => true,
+    layout: ({ file }) => ({
+      rows: [{ id, spans: [{ text: id.toUpperCase() + " VIEW" }] }],
+      hunkRows: (file.hunks ?? []).map(() => ({ startRow: 0, endRow: 0 })),
+    }),
+    mode: {
+      onEnter: (ctx) => ctx.notify("ENTER " + id),
+      onExit: (ctx) => ctx.notify("EXIT " + id),
+      onKey: (key, ctx) => {
+        ctx.notify("KEY " + id + " " + key.name);
+        if (key.name === "r") {
+          ctx.fileViews.enterMode("beta");
+          return "exit";
+        }
+        if (key.name === "x") return "exit";
+        return key.name === "n" ? "handled" : "pass";
+      },
+    },
+  });
+  hunk.registerFileView(view("alpha"));
+  hunk.registerFileView(view("beta"));
+  hunk.registerCommand({ id: "enter-alpha", title: "Enter alpha", key: "f9" }, (ctx) =>
+    ctx.notify("ALPHA RESULT " + ctx.fileViews.enterMode("alpha")),
+  );
+  hunk.registerCommand({ id: "enter-beta", title: "Enter beta", key: "f7" }, (ctx) =>
+    ctx.notify("BETA RESULT " + ctx.fileViews.enterMode("beta")),
+  );
+  hunk.registerCommand({ id: "escaped", title: "Escaped", key: "escape" }, (ctx) =>
+    ctx.notify("ESCAPE COMMAND RAN"),
+  );
+}
+`,
+  );
+}
+
 /** A mode whose key handler throws, to prove the host contains it. */
 function createBrokenModeExtension() {
   return createModeExtension(
@@ -185,6 +262,91 @@ async function renderWithExtension(
     height: 24,
   });
   return { notices, setup };
+}
+
+/**
+ * A mode entered only after an awaited dialog settles.
+ *
+ * The await is the point: a soft reload lands while the handler is parked, and
+ * the mode it then enters belongs to the review that reload produced.
+ */
+function createDeferredModeExtension() {
+  return createModeExtension(
+    "mode-reload",
+    `export default function (hunk) {
+  hunk.registerFileView({
+    id: "editor",
+    title: "Editor",
+    matches: () => true,
+    layout: ({ file }) => ({
+      rows: [{ id: "editor", spans: [{ text: "EDITOR VIEW" }] }],
+      hunkRows: (file.hunks ?? []).map(() => ({ startRow: 0, endRow: 0 })),
+    }),
+    mode: {
+      onEnter: (ctx) => ctx.notify("MODE ENTER " + ctx.file.path),
+      onExit: (ctx) => ctx.notify("MODE EXIT " + ctx.file.path),
+      onKey: () => "handled",
+    },
+  });
+  hunk.registerCommand({ id: "ask-then-enter", title: "Ask then enter", key: "f9" }, async (ctx) => {
+    const answered = await ctx.dialogs.confirm({ title: "Ready to edit?" });
+    ctx.notify("DIALOG ANSWER " + answered);
+    ctx.notify("LATE RESULT " + ctx.fileViews.enterMode("editor"));
+  });
+}
+`,
+  );
+}
+
+/**
+ * Boot AppHost over a real file-pair review whose reloads the test drives.
+ *
+ * A watched input is the seam: the injected runtime turns "the source changed"
+ * into the same soft reload the refresh key takes, without the test needing a
+ * daemon or a keypress that a modal surface would swallow.
+ */
+async function renderWatchedWithExtension({
+  extension,
+  root,
+}: {
+  extension: string;
+  root: string;
+}) {
+  // The reviewed pair lives under the process cwd: a session's reload bounds are
+  // seeded from it, so a diff assembled somewhere else would be refused before
+  // the watch ever mattered.
+  const reviewDir = mkdtempSync(join(process.cwd(), ".hunk-mode-reload-"));
+  tempDirs.push(reviewDir);
+  const left = join(reviewDir, "before.ts");
+  const right = join(reviewDir, "after.ts");
+  writeFileSync(left, "export const answer = 41;\n");
+  writeFileSync(right, "export const answer = 42;\n");
+  const bootstrap = await loadAppBootstrap({
+    kind: "diff",
+    left,
+    right,
+    options: { mode: "stack", watch: true },
+  });
+  const extensions = await loadStartupExtensions({
+    cliExtensionPaths: [extension],
+    cwd: root,
+    env: { XDG_CONFIG_HOME: root } as NodeJS.ProcessEnv,
+    extensions: { enabled: true, extensionConfigs: {}, paths: [], repoPaths: [] },
+  });
+  expect(extensions.issues).toEqual([]);
+  const notices: string[] = [];
+  const notify = extensions.context.notify;
+  extensions.context.notify = (message, type) => {
+    notices.push(String(message));
+    notify(message, type);
+  };
+  bootstrap.extensions = extensions;
+  const watch = createWatchTestRuntime();
+  const setup = await testRender(
+    <AppHost bootstrap={bootstrap} onQuit={() => {}} watchRuntime={watch.runtime} />,
+    { width: 120, height: 24 },
+  );
+  return { notices, right, setup, watch };
 }
 
 /** Paint frames until live extension layout work reaches the renderer. */
@@ -379,6 +541,135 @@ describe("AppHost file-view modes", () => {
       await waitForFrame(setup, (frame) =>
         frame.includes('file view "plain" has no interactive mode'),
       );
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
+  test("entering a second mode exits the first before the new one starts", async () => {
+    const { notices, setup } = await renderWithExtension(createModeHandoffExtension());
+
+    try {
+      await waitForFrame(setup, (frame) => frame.includes("alpha.ts"));
+
+      await act(async () => setup.mockInput.pressKey("F9"));
+      await waitForNotice(setup, notices, "ALPHA RESULT true");
+      await waitForFrame(setup, (frame) => frame.includes("mode-handoff:alpha mode — Esc exits"));
+
+      await act(async () => setup.mockInput.pressKey("F7"));
+      await waitForNotice(setup, notices, "BETA RESULT true");
+      await waitForFrame(setup, (frame) => frame.includes("mode-handoff:beta mode — Esc exits"));
+
+      // The replaced mode is owed its teardown exactly once, and it runs before
+      // the replacement starts rather than being skipped.
+      expect(notices.filter((notice) => notice === "EXIT alpha")).toHaveLength(1);
+      expect(notices.indexOf("EXIT alpha")).toBeLessThan(notices.indexOf("ENTER beta"));
+      expect(notices).not.toContain("EXIT beta");
+
+      // And the keyboard belongs to the mode that replaced it.
+      await act(async () => setup.mockInput.typeText("n"));
+      await waitForNotice(setup, notices, "KEY beta n");
+      expect(notices).not.toContain("KEY alpha n");
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
+  test("an exiting key handler does not tear down the mode it handed off to", async () => {
+    const { notices, setup } = await renderWithExtension(createModeHandoffExtension());
+
+    try {
+      await waitForFrame(setup, (frame) => frame.includes("alpha.ts"));
+      await act(async () => setup.mockInput.pressKey("F9"));
+      await waitForNotice(setup, notices, "ALPHA RESULT true");
+      await waitForFrame(setup, (frame) => frame.includes("mode-handoff:alpha mode — Esc exits"));
+
+      await act(async () => setup.mockInput.typeText("r"));
+      await waitForNotice(setup, notices, "KEY alpha r");
+      await waitForFrame(setup, (frame) => frame.includes("mode-handoff:beta mode — Esc exits"));
+
+      expect(notices.filter((notice) => notice === "EXIT alpha")).toHaveLength(1);
+      expect(notices.filter((notice) => notice === "ENTER beta")).toHaveLength(1);
+      expect(notices).not.toContain("EXIT beta");
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
+  test("a mode entered after a soft reload belongs to the review the reload produced", async () => {
+    const { notices, right, setup, watch } = await renderWatchedWithExtension(
+      createDeferredModeExtension(),
+    );
+
+    try {
+      await waitForFrame(setup, (frame) => frame.includes("after.ts"));
+
+      // The handler parks on its dialog, holding the controls it was dispatched
+      // with, and the review moves underneath it.
+      await act(async () => setup.mockInput.pressKey("F9"));
+      await waitForFrame(setup, (frame) => frame.includes("Ready to edit?"));
+
+      writeFileSync(right, "export const answer = 42;\nexport const reloaded = true;\n");
+      watch.setSignature("signature:reloaded");
+      watch.emit();
+      await act(async () => {
+        watch.advanceBy(200);
+        await Promise.resolve();
+      });
+      // The reload cancels the dialog, which is both the proof it landed — only
+      // a replaced review generation cancels a queued request — and what wakes
+      // the handler, which now enters against the review that replaced the one
+      // it started in.
+      await waitForNotice(setup, notices, "DIALOG ANSWER false");
+      await waitForNotice(setup, notices, "LATE RESULT true");
+      await waitForFrame(setup, (frame) => frame.includes("mode-reload:editor mode — Esc exits"));
+
+      // And it stays: a mode tagged with the pre-reload review would be torn
+      // down by the very next render, `onEnter` and `onExit` back to back.
+      for (let settle = 0; settle < 5; settle += 1) {
+        await act(async () => {
+          await setup.renderOnce();
+          await Bun.sleep(20);
+        });
+      }
+      expect(setup.captureCharFrame()).toContain("mode-reload:editor mode — Esc exits");
+      expect(notices.filter((notice) => notice.startsWith("MODE ENTER"))).toHaveLength(1);
+      expect(notices.filter((notice) => notice.startsWith("MODE EXIT"))).toHaveLength(0);
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
+  test("a second Escape in one input flush is routed as if no mode were running", async () => {
+    const { notices, setup } = await renderWithExtension(createModeHandoffExtension());
+
+    try {
+      await waitForFrame(setup, (frame) => frame.includes("alpha.ts"));
+
+      await act(async () => setup.mockInput.pressKey("F9"));
+      await waitForNotice(setup, notices, "ALPHA RESULT true");
+      await waitForFrame(setup, (frame) => frame.includes("mode-handoff:alpha mode — Esc exits"));
+
+      // Both keys are published straight to the key handler, back to back, with
+      // no chance for a render in between — which is what one input chunk
+      // carrying two keys does, and what `mockInput` cannot reproduce because
+      // each of its writes settles before the next. The first key ends the mode
+      // through its "exit" result; the second belongs to the command table, and
+      // a handler answering from the last rendered state would still read "a
+      // mode is running" and swallow Escape as the mode's way out.
+      await act(async () => {
+        setup.renderer.keyInput.emit("keypress", testKeyEvent({ name: "x", sequence: "x" }));
+        setup.renderer.keyInput.emit(
+          "keypress",
+          testKeyEvent({ name: "escape", sequence: "", raw: "" }),
+        );
+      });
+      await waitForNotice(setup, notices, "EXIT alpha");
+      await waitForNotice(setup, notices, "ESCAPE COMMAND RAN");
+      // Escape is host-owned while a mode runs, so the mode never saw it.
+      expect(notices).not.toContain("KEY alpha escape");
+      expect(notices.filter((notice) => notice === "EXIT alpha")).toHaveLength(1);
+      expect(notices.filter((notice) => notice === "ESCAPE COMMAND RAN")).toHaveLength(1);
     } finally {
       await act(async () => setup.renderer.destroy());
     }

@@ -33,8 +33,12 @@ export interface UseAppKeyboardShortcutsOptions {
   moveExtensionDialogSelection: (delta: number) => void;
   extensionTrustPromptOpen: boolean;
   trustRepoExtensions: () => void;
-  /** Whether an extension file view's interactive mode currently holds the keyboard. */
-  fileViewModeActive: boolean;
+  /**
+   * Whether an extension file view's interactive mode holds the keyboard right
+   * now — a live question, not a rendered snapshot, because several keys of one
+   * input chunk are delivered before any render answers again.
+   */
+  isFileViewModeActive: () => boolean;
   /** Leave that mode, running its `onExit`. Idempotent. */
   exitFileViewMode: () => void;
   /** Offer one key to the active mode and report what it decided. */
@@ -93,7 +97,7 @@ export function useAppKeyboardShortcuts({
   moveExtensionDialogSelection,
   extensionTrustPromptOpen,
   trustRepoExtensions,
-  fileViewModeActive,
+  isFileViewModeActive,
   exitFileViewMode,
   sendFileViewModeKey,
   focusArea,
@@ -121,9 +125,9 @@ export function useAppKeyboardShortcuts({
   const themeSelectorOpenRef = useRef(themeSelectorOpen);
   const extensionTrustPromptOpenRef = useRef(extensionTrustPromptOpen);
   const extensionDialogRef = useRef(extensionDialog);
-  const fileViewModeActiveRef = useRef(fileViewModeActive);
   // The mode callbacks read live App state (which mode is running, its context),
   // so they are reached through refs rather than captured when the chain is built.
+  const isFileViewModeActiveRef = useRef(isFileViewModeActive);
   const exitFileViewModeRef = useRef(exitFileViewMode);
   const sendFileViewModeKeyRef = useRef(sendFileViewModeKey);
   // These three close over live dialog state (the highlighted option, the typed
@@ -141,7 +145,7 @@ export function useAppKeyboardShortcuts({
   themeSelectorOpenRef.current = themeSelectorOpen;
   extensionTrustPromptOpenRef.current = extensionTrustPromptOpen;
   extensionDialogRef.current = extensionDialog;
-  fileViewModeActiveRef.current = fileViewModeActive;
+  isFileViewModeActiveRef.current = isFileViewModeActive;
   exitFileViewModeRef.current = exitFileViewMode;
   sendFileViewModeKeyRef.current = sendFileViewModeKey;
   acceptExtensionDialogRef.current = acceptExtensionDialog;
@@ -464,9 +468,15 @@ export function useAppKeyboardShortcuts({
    * scroll box exactly as if no mode were running. `"focused"` would be wrong
    * in both directions: a mode is not a text input, and ending the chain
    * without consuming would suppress commands while still scrolling.
+   *
+   * Ownership is asked of App, never remembered from the last render. OpenTUI
+   * hands over every key of one input chunk synchronously, so the mode can end
+   * partway through a flush — an Escape that exits, an `"exit"` result — and each
+   * later key in that same chunk must be routed exactly as if no mode had ever
+   * been running, Escape included.
    */
   const handleFileViewModeShortcut = (key: KeyEvent): KeyOwner => {
-    if (!fileViewModeActiveRef.current) {
+    if (!isFileViewModeActiveRef.current()) {
       return "notMine";
     }
 

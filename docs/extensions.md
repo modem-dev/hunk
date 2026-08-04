@@ -1026,14 +1026,15 @@ shifted form (`"G"`), or a named key (`"f2"`, `"pageup"`, `"left"`). `shift`
 applies to letters and named keys only: for a shifted symbol or digit, bind the
 character the shift produces (`"!"`, not `"shift+1"`), since terminals report
 the character rather than the combination. A `ctrl+<letter>` chord also matches
-the bare control character terminals send for it (Ctrl-S often arrives as
-the `0x13` byte with no `ctrl` flag and no name at all), so you never have to test for
-that encoding yourself; a key the terminal did name keeps its own identity, so
-`ctrl+i` never claims Tab and `ctrl+m` never claims Enter. An
-unparsable chord fails the registration; a chord already owned by a built-in
-shortcut — or by an earlier-loaded extension — leaves that chord unbound, with a
-warning toast naming both sides. Omit `key` to register a command with no
-binding.
+the bare control character the combination is sent as (Ctrl-S as the `0x13`
+byte with no `ctrl` flag and no name), which is the compatibility net for events
+Hunk did not parse itself — synthetic events in tests, or events an embedder
+hands your component; Hunk's own input decodes `ctrl+<letter>` before you see
+it. A key that arrives named keeps its own identity either way, so `ctrl+i`
+never claims Tab and `ctrl+m` never claims Enter. An unparsable chord fails the
+registration; a chord already owned by a built-in shortcut — or by an
+earlier-loaded extension — leaves that chord unbound, with a warning toast
+naming both sides. Omit `key` to register a command with no binding.
 
 `key` also takes a list, binding the command to every chord in it:
 

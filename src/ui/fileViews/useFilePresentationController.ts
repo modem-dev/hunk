@@ -48,8 +48,8 @@ export interface FilePresentationController {
   menuEntries: readonly MenuEntry[];
   /** Build live host-owned file-presentation controls for one extension command. */
   createControls: (extensionId: string) => ExtensionFileViewControls;
-  /** Whether one extension file-view mode currently owns non-modal keys. */
-  modeActive: boolean;
+  /** Whether one extension file-view mode owns non-modal keys right now. */
+  isModeActive: () => boolean;
   /** Lowest-precedence status text for the active mode. */
   modeStatusHint: string | null;
   /** Leave the active mode and run its teardown exactly once. */
@@ -161,13 +161,29 @@ export function useFilePresentationController({
   }, [setActiveMode, warnMode]);
   const exitModeRef = useRef(exitMode);
   exitModeRef.current = exitMode;
-  useEffect(() => () => exitModeRef.current(), []);
+  const aliveRef = useRef(true);
+  useEffect(
+    () => () => {
+      // Async command handlers may outlive a hard App remount. Mark their controls dead before
+      // teardown so a resumed handler cannot start an orphaned mode in this unmounted controller.
+      aliveRef.current = false;
+      exitModeRef.current();
+    },
+    [],
+  );
+
+  /** Report live ownership between keys delivered in the same input flush. */
+  const isModeActive = useCallback(() => activeModeRef.current !== null, []);
 
   /** Offer one key to the active mode without capturing a stale activation. */
   const sendModeKey = useCallback(
     (key: ExtensionKeyEvent): ExtensionFileViewModeKeyResult => {
       const active = activeModeRef.current;
-      return active ? deliverFileViewModeKey(active, key, warnMode) : "pass";
+      if (!active) return "pass";
+      const result = deliverFileViewModeKey(active, key, warnMode);
+      // A handler may hand off to another mode through its own controls. An `exit` result belongs
+      // to the mode that produced it, so keyboard routing must not tear down its replacement.
+      return result === "exit" && activeModeRef.current !== active ? "handled" : result;
     },
     [warnMode],
   );
@@ -179,14 +195,21 @@ export function useFilePresentationController({
   /** Start one resolved mode with a snapshot of the review it acts on. */
   const beginMode = useCallback(
     (callerId: string, registered: RegisteredFileView, mode: ExtensionFileViewMode) => {
+      if (!aliveRef.current) {
+        showNotice(`Extension ${callerId} cannot enter a mode after its review session closed`);
+        return false;
+      }
       const file = getExtensionSelection().file;
       if (!file) {
         showNotice(`Extension ${callerId} cannot enter a mode without a selected file`);
         return false;
       }
 
-      // A successful handoff always tears the previous mode down before the new mode enters.
+      // A successful handoff always tears the previous mode down before the new mode enters. If
+      // its onExit deliberately enters another mode, that re-entrant activation wins rather than
+      // being overwritten without receiving its own teardown.
       exitMode();
+      if (activeModeRef.current) return false;
       const ownerId = registered.extensionId;
       const ctx: ExtensionFileViewModeContext = {
         cwd: cwdRef.current,
@@ -206,7 +229,9 @@ export function useFilePresentationController({
       };
       setActiveMode(active);
       if (!runFileViewModeLifecycle(active, "onEnter", warnMode)) {
-        exitMode();
+        // onEnter may itself hand off through ctx.fileViews. Only tear down the activation that
+        // actually failed; its replacement owns an independent lifecycle.
+        if (activeModeRef.current === active) exitMode();
         return false;
       }
       return true;
@@ -297,15 +322,19 @@ export function useFilePresentationController({
           );
         },
         enterMode(viewId: string) {
+          if (!aliveRef.current) {
+            showNotice(
+              `Extension ${extensionId} cannot enter a mode after its review session closed`,
+            );
+            return false;
+          }
           const file = getExtensionSelection().file;
           const activation = resolveFileViewModeActivation({
             activeViewKey: presentedKey(),
             extensionId,
             file,
             registered: resolve(viewId),
-            unavailableReason: file
-              ? unavailableReasonsRef.current.get(file.id)
-              : undefined,
+            unavailableReason: file ? unavailableReasonsRef.current.get(file.id) : undefined,
             viewId,
           });
           if (!activation.ok) {
@@ -349,7 +378,14 @@ export function useFilePresentationController({
       return;
     }
     exitMode();
-  }, [activeMode, exitMode, presentedKeyForSelectedFile, reviewGeneration, selectedFile?.id, views]);
+  }, [
+    activeMode,
+    exitMode,
+    presentedKeyForSelectedFile,
+    reviewGeneration,
+    selectedFile?.id,
+    views,
+  ]);
 
   const modeStatusHint = activeMode ? fileViewModeStatusHint(activeMode) : null;
 
@@ -423,7 +459,7 @@ export function useFilePresentationController({
     bulkTarget,
     menuEntries,
     createControls,
-    modeActive: activeMode !== null,
+    isModeActive,
     modeStatusHint,
     exitMode,
     sendModeKey,

@@ -1074,6 +1074,10 @@ export interface ExtensionFileViewControls {
    * (selected or toggled away), a session reload replaces the review — or when
    * `onEnter`/`onKey` throws. `onExit` runs on every one of those paths.
    *
+   * One session runs one mode: entering while another mode is active exits that
+   * one first, so its `onExit` runs — exactly once, as on any other exit path —
+   * before the new mode's `onEnter`.
+   *
    * Ids resolve exactly as `select` resolves them.
    */
   enterMode(viewId: string): boolean;

@@ -23,11 +23,13 @@ function createTestView({
   id = "preview",
   title = "Preview",
   matches = () => true,
+  mode,
 }: {
   extensionId?: string;
   id?: string;
   title?: string;
   matches?: RegisteredFileView["view"]["matches"];
+  mode?: RegisteredFileView["view"]["mode"];
 } = {}): RegisteredFileView {
   return {
     extensionId,
@@ -36,6 +38,7 @@ function createTestView({
       title,
       matches,
       layout: () => null,
+      mode,
     },
   };
 }
@@ -330,6 +333,128 @@ describe("useFilePresentationController", () => {
       expect(controls.isActive("preview")).toBe(true);
       await act(async () => controls.toggle("preview"));
       expect(controls.isActive("preview")).toBe(false);
+    } finally {
+      await act(async () => harness.setup.renderer.destroy());
+    }
+  });
+
+  test("refuses mode entry from controls that outlived a hard remount", async () => {
+    const alpha = createTestDiffFile({ id: "alpha", path: "alpha.ts" });
+    let enterCalls = 0;
+    const preview = createTestView({
+      mode: {
+        onEnter: () => {
+          enterCalls += 1;
+        },
+        onKey: () => "handled",
+      },
+    });
+    const harness = await renderController({
+      files: [alpha],
+      visibleFileIds: ["alpha"],
+      selectedFileId: "alpha",
+      draftFileId: null,
+      views: [preview],
+    });
+    const controls = harness.controller().createControls("probe");
+
+    await act(async () => harness.setup.renderer.destroy());
+
+    expect(controls.enterMode("preview")).toBe(false);
+    expect(enterCalls).toBe(0);
+    expect(harness.notices.at(-1)).toBe(
+      "Extension probe cannot enter a mode after its review session closed",
+    );
+  });
+
+  test("preserves a mode entered re-entrantly from the outgoing mode's onExit", async () => {
+    const alpha = createTestDiffFile({ id: "alpha", path: "alpha.ts" });
+    const events: string[] = [];
+    const alphaView = createTestView({
+      id: "alpha-view",
+      mode: {
+        onExit: (ctx) => {
+          events.push("exit alpha");
+          ctx.fileViews.enterMode("gamma-view");
+        },
+        onKey: () => "handled",
+      },
+    });
+    const betaView = createTestView({
+      id: "beta-view",
+      mode: {
+        onEnter: () => events.push("enter beta"),
+        onKey: () => "handled",
+      },
+    });
+    const gammaView = createTestView({
+      id: "gamma-view",
+      mode: {
+        onEnter: () => events.push("enter gamma"),
+        onKey: () => "handled",
+      },
+    });
+    const harness = await renderController({
+      files: [alpha],
+      visibleFileIds: ["alpha"],
+      selectedFileId: "alpha",
+      draftFileId: null,
+      views: [alphaView, betaView, gammaView],
+    });
+    const controls = harness.controller().createControls("probe");
+
+    try {
+      await act(async () => expect(controls.enterMode("alpha-view")).toBe(true));
+      let enteredBeta = true;
+      await act(async () => {
+        enteredBeta = controls.enterMode("beta-view");
+      });
+
+      expect(enteredBeta).toBe(false);
+      expect(controls.isModeActive("gamma-view")).toBe(true);
+      expect(events).toEqual(["exit alpha", "enter gamma"]);
+    } finally {
+      await act(async () => harness.setup.renderer.destroy());
+    }
+  });
+
+  test("does not exit a replacement mode when the outgoing onEnter throws", async () => {
+    const alpha = createTestDiffFile({ id: "alpha", path: "alpha.ts" });
+    const events: string[] = [];
+    const alphaView = createTestView({
+      id: "alpha-view",
+      mode: {
+        onEnter: (ctx) => {
+          events.push("enter alpha");
+          ctx.fileViews.enterMode("beta-view");
+          throw new Error("alpha enter failed");
+        },
+        onExit: () => events.push("exit alpha"),
+        onKey: () => "handled",
+      },
+    });
+    const betaView = createTestView({
+      id: "beta-view",
+      mode: {
+        onEnter: () => events.push("enter beta"),
+        onKey: () => "handled",
+      },
+    });
+    const harness = await renderController({
+      files: [alpha],
+      visibleFileIds: ["alpha"],
+      selectedFileId: "alpha",
+      draftFileId: null,
+      views: [alphaView, betaView],
+    });
+    const controls = harness.controller().createControls("probe");
+
+    try {
+      await act(async () => expect(controls.enterMode("alpha-view")).toBe(false));
+
+      expect(controls.isModeActive("beta-view")).toBe(true);
+      expect(events).toEqual(["enter alpha", "exit alpha", "enter beta"]);
+      expect(harness.notices.join("\n")).toContain("failed onEnter • alpha enter failed");
     } finally {
       await act(async () => harness.setup.renderer.destroy());
     }

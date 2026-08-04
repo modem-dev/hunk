@@ -87,7 +87,7 @@ export default function (hunk: HunkExtensionAPI) {
 }
 ```
 
-Key chords join `ctrl`, `alt`/`option`, `cmd`/`meta`, and `shift` with `+` around a base key — a character (`"y"`), an uppercase letter for its shifted form (`"G"`), or a named key (`"f2"`, `"pageup"`). For a shifted symbol or digit, bind the character shift produces (`"!"`, not `"shift+1"`). A `ctrl+<letter>` chord also matches the bare control byte terminals send for it, without ever claiming a key the terminal named (`ctrl+i` is not Tab). `key` also takes a list of chords; omit it to register a command with no binding. A chord already owned by a built-in or an earlier-loaded extension stays with its owner.
+Key chords join `ctrl`, `alt`/`option`, `cmd`/`meta`, and `shift` with `+` around a base key — a character (`"y"`), an uppercase letter for its shifted form (`"G"`), or a named key (`"f2"`, `"pageup"`). For a shifted symbol or digit, bind the character shift produces (`"!"`, not `"shift+1"`). A `ctrl+<letter>` chord also matches the bare control byte the combination is sent as — the compatibility net for events Hunk did not parse itself, since its own input decodes `ctrl+<letter>` for you — without ever claiming a key that arrived named (`ctrl+i` is not Tab). `key` also takes a list of chords; omit it to register a command with no binding. A chord already owned by a built-in or an earlier-loaded extension stays with its owner.
 
 Declared keys are defaults: users remap commands by id in their `[keybindings]` table — yours is `"<extensionId>.<commandId>"`. See [`docs/keybindings.md`](https://github.com/modem-dev/hunk/blob/main/docs/keybindings.md).
 
