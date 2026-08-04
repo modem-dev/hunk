@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import type { DiffFile } from "../../core/types";
 import type { RegisteredFileView } from "../../extensions/types";
-import type { FileViewSelectionState } from "./state";
+import type { FileViewEpochState, FileViewSelectionState } from "./state";
 import type { FileViewRowFailure } from "./types";
 import { useFileViewLayouts } from "./useFileViews";
 
@@ -17,6 +17,7 @@ export interface FilePresentationRendering {
 export function useFilePresentationRendering({
   files,
   selections,
+  epochs,
   views,
   width,
   onIssue,
@@ -24,12 +25,13 @@ export function useFilePresentationRendering({
 }: {
   files: readonly DiffFile[];
   selections: Readonly<FileViewSelectionState>;
+  epochs: FileViewEpochState;
   views: readonly RegisteredFileView[];
   width: number;
   onIssue: (message: string) => void;
   onWarning: (message: string) => void;
 }): FilePresentationRendering {
-  const layouts = useFileViewLayouts({ files, selections, views, width, onIssue });
+  const layouts = useFileViewLayouts({ files, selections, views, width, epochs, onIssue });
   const reportedRowFailuresRef = useRef(
     new Map<string, { fileId: string; layoutGeneration: number }>(),
   );

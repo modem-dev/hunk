@@ -27,6 +27,8 @@ hunk.registerCommand({ id: "toggle-preview", title: "Toggle preview", key: "f8" 
 
 `ctx.fileViews.select("preview")` selects a view, `select(null)` returns to raw diff, and `isActive("preview")` reports the current selection. A bare id names the calling extension's view; `"other-extension:preview"` addresses another registered view. These controls intentionally target only the current file; applying a view across the changeset remains a host-owned View-menu action.
 
+`ctx.fileViews.refresh("preview")` invalidates that view's prepared layouts. Hunk treats `layout` as a pure derivation of `(file, width)` and reuses its result until one of those changes, so a view holding its own state — a fold, a toggled overlay — flips that state and then asks for the re-derivation. Refresh defaults to view-wide: every file presenting the view re-runs `matches` and `layout`, while files on raw diff or another view do no work. The rows already on screen stay visible until their replacement resolves, so a refresh never flashes back to raw diff. When the state that changed belongs to one file — a fold, a per-file edit buffer — pass `refresh("preview", { fileId })` so only that file re-lays out and the other presenting files keep their prepared rows. A `fileId` no reviewed file carries invalidates nothing.
+
 ## Register a view
 
 A view has an id, a title, a cheap file matcher, and a layout function:

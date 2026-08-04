@@ -30,6 +30,7 @@ async function renderPresentation() {
   const views = [view];
   const selected = { [file.id]: key };
   const raw = {};
+  const epochs = new Map<string, number>();
   const warnings: string[] = [];
   const ignoreIssue = () => {};
   const collectWarning = (message: string) => warnings.push(message);
@@ -42,6 +43,7 @@ async function renderPresentation() {
     rendering = useFilePresentationRendering({
       files,
       selections: enabled ? selected : raw,
+      epochs,
       views,
       width: 80,
       onIssue: ignoreIssue,

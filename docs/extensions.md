@@ -836,6 +836,71 @@ changeset that passes that view's `matches` function, including files hidden by
 the current filter. Nonmatches retain their existing choices, and host
 constraints such as an active draft may temporarily keep a selected file raw.
 
+`ctx.fileViews.refresh("view-id")` invalidates that view's prepared layouts.
+Hunk treats `layout` as a pure derivation of `(file, width)` and reuses a
+prepared result until one of those changes, so a view holding its own state — a
+fold, a toggled overlay, a display mode — has nothing to change and would
+otherwise keep painting its first answer. Flip the state, then ask for the
+re-derivation:
+
+```ts
+import type { HunkExtensionAPI } from "hunkdiff/extension";
+
+export default function (hunk: HunkExtensionAPI) {
+  let expanded = false;
+
+  hunk.registerFileView({
+    id: "outline",
+    title: "Outline",
+    matches: (file) => file.path.endsWith(".ts"),
+    layout: ({ file }) => ({
+      rows: (file.hunks ?? []).map((entry) => ({
+        id: `hunk:${entry.index}`,
+        spans: [{ text: expanded ? `Hunk ${entry.index + 1} · ${entry.header}` : entry.header }],
+      })),
+      hunkRows: (file.hunks ?? []).map((entry) => ({ startRow: entry.index, endRow: entry.index })),
+    }),
+  });
+
+  hunk.registerCommand(
+    { id: "toggle-detail", title: "Toggle outline detail", key: "f9" },
+    (ctx) => {
+      expanded = !expanded;
+      ctx.fileViews.refresh("outline");
+    },
+  );
+}
+```
+
+Refresh defaults to view-wide, not current-file: every file presenting the view
+re-runs `matches` and `layout`, while files on raw diff or on another view do no
+work. The rows already on screen stay there until their replacement resolves, so
+a refresh never flashes back to raw diff mid-flight; a re-layout that declines,
+throws, or times out falls back to raw exactly like any other failed layout.
+Unknown ids warn and do nothing, and ids resolve the same way `select` resolves
+them.
+
+When the state that changed belongs to one file rather than the whole view — a
+fold, a per-file edit buffer — scope the invalidation with `{ fileId }` so the
+other files presenting the view keep their prepared rows:
+
+```ts
+const folded = new Map<string, boolean>();
+
+hunk.registerCommand({ id: "fold", title: "Fold this file", key: "f10" }, (ctx) => {
+  const fileId = ctx.selection.file?.id;
+  if (!fileId) return;
+  folded.set(fileId, !folded.get(fileId));
+  ctx.fileViews.refresh("outline", { fileId });
+});
+```
+
+That matters because **View → Apply “…” to all matching files** can leave one
+view presenting every matching file in the changeset, and each of those files
+would otherwise re-run third-party `layout` for a change only one of them made.
+A `fileId` no reviewed file carries invalidates nothing and warns about nothing,
+since ids can race a reload.
+
 ### `hunk.registerCommand(command, handler)`
 
 Register a named command, optionally bound to a key. Commands are not a

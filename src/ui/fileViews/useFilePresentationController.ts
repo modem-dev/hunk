@@ -6,18 +6,23 @@ import type { ExtensionFileViewControls, RegisteredFileView } from "../../extens
 import type { MenuEntry } from "../components/chrome/menu";
 import { availableFileViewSelections, fileViewUnavailableReason } from "./availability";
 import {
+  bumpFileViewEpoch,
+  reconcileFileViewEpochs,
   reconcileFileViewSelections,
   registeredFileViewKey,
   resolveBulkFileViewTarget,
   resolveRegisteredFileView,
   selectFileView,
   selectFileViewForFiles,
+  type FileViewEpochState,
   type FileViewSelectionState,
 } from "./state";
 
 export interface FilePresentationController {
   /** Stored choices with temporarily unavailable files omitted for rendering. */
   availableSelections: FileViewSelectionState;
+  /** Layout invalidation epochs requested by stateful extension views. */
+  epochs: FileViewEpochState;
   bulkTarget: { readonly title: string } | null;
   menuEntries: readonly MenuEntry[];
   /** Build live host-owned file-presentation controls for one extension command. */
@@ -54,10 +59,16 @@ export function useFilePresentationController({
 }): FilePresentationController {
   // Raw is implicit, so an empty state is the guaranteed default and fallback.
   const [selections, setSelections] = useState<FileViewSelectionState>({});
+  // A registration replacement already invalidates prepared layouts; these counters cover state
+  // changes inside one stable registration for the lifetime of this controller.
+  const [epochs, setEpochs] = useState<FileViewEpochState>(() => new Map<string, number>());
   const selectionsRef = useRef(selections);
   selectionsRef.current = selections;
   const viewsRef = useRef(views);
   viewsRef.current = views;
+  const fileIds = useMemo(() => new Set(files.map((file) => file.id)), [files]);
+  const fileIdsRef = useRef<ReadonlySet<string>>(fileIds);
+  fileIdsRef.current = fileIds;
 
   const unavailableReasons = useMemo(() => {
     const reasons = new Map<string, string>();
@@ -77,14 +88,10 @@ export function useFilePresentationController({
 
   useEffect(() => {
     const viewKeys = new Set(views.map(registeredFileViewKey));
-    setSelections((current) =>
-      reconcileFileViewSelections(
-        current,
-        files.map((file) => file.id),
-        viewKeys,
-      ),
-    );
-  }, [files, views]);
+    const reviewedFileIds = [...fileIds];
+    setSelections((current) => reconcileFileViewSelections(current, reviewedFileIds, viewKeys));
+    setEpochs((current) => reconcileFileViewEpochs(current, reviewedFileIds, viewKeys));
+  }, [fileIds, views]);
 
   /** Select raw or one registered presentation for a file. */
   const select = useCallback((fileId: string, viewKey: string | null) => {
@@ -158,6 +165,19 @@ export function useFilePresentationController({
             selectionsRef.current[fileId] === registeredFileViewKey(registered),
           );
         },
+        refresh(viewId: string, options?: { fileId?: string }) {
+          const registered = resolve(viewId);
+          if (!registered) {
+            showNotice(`Extension ${extensionId} targeted unknown file view "${viewId}"`);
+            return;
+          }
+          const fileId = typeof options?.fileId === "string" ? options.fileId : undefined;
+          // A stale id can race a reload. It invalidates nothing and does not warn the extension.
+          if (fileId !== undefined && !fileIdsRef.current.has(fileId)) return;
+          setEpochs((current) =>
+            bumpFileViewEpoch(current, registeredFileViewKey(registered), fileId),
+          );
+        },
       };
     },
     [getExtensionSelection, getSelectedFileId, select, showNotice],
@@ -229,6 +249,7 @@ export function useFilePresentationController({
 
   return {
     availableSelections,
+    epochs,
     bulkTarget,
     menuEntries,
     createControls,
