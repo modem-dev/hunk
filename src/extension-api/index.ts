@@ -23,7 +23,7 @@
  * published `hunkdiff/extension` types fail to resolve for every ESM consumer.
  */
 export { matchesKey, matchesKeyChord, parseKeyChord } from "./keys.js";
-export type { ExtensionKeyEvent, ParsedKeyChord } from "./keys.js";
+export type { ParsedKeyChord } from "./keys.js";
 export {
   HUNK_CORE_VCS_DETECTION_PRIORITY,
   HUNK_DEFAULT_VCS_DETECTION_PRIORITY,
@@ -48,10 +48,14 @@ export type {
   ExtensionFileViewControls,
   ExtensionFileViewInput,
   ExtensionFileViewLayout,
+  ExtensionFileViewMode,
+  ExtensionFileViewModeContext,
+  ExtensionFileViewModeKeyResult,
   ExtensionFileViewRow,
   ExtensionFileViewRowComponentProps,
   ExtensionFileViewSourceRange,
   ExtensionFileViewSpan,
+  ExtensionKeyEvent,
   ExtensionCustomEventHandler,
   ExtensionEventBus,
   ExtensionEventContext,

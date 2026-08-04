@@ -87,7 +87,7 @@ export default function (hunk: HunkExtensionAPI) {
 }
 ```
 
-Key chords join `ctrl`, `alt`/`option`, `cmd`/`meta`, and `shift` with `+` around a base key — a character (`"y"`), an uppercase letter for its shifted form (`"G"`), or a named key (`"f2"`, `"pageup"`). For a shifted symbol or digit, bind the character shift produces (`"!"`, not `"shift+1"`). `key` also takes a list of chords; omit it to register a command with no binding. A chord already owned by a built-in or an earlier-loaded extension stays with its owner.
+Key chords join `ctrl`, `alt`/`option`, `cmd`/`meta`, and `shift` with `+` around a base key — a character (`"y"`), an uppercase letter for its shifted form (`"G"`), or a named key (`"f2"`, `"pageup"`). For a shifted symbol or digit, bind the character shift produces (`"!"`, not `"shift+1"`). A `ctrl+<letter>` chord also matches the bare control byte terminals send for it, without ever claiming a key the terminal named (`ctrl+i` is not Tab). `key` also takes a list of chords; omit it to register a command with no binding. A chord already owned by a built-in or an earlier-loaded extension stays with its owner.
 
 Declared keys are defaults: users remap commands by id in their `[keybindings]` table — yours is `"<extensionId>.<commandId>"`. See [`docs/keybindings.md`](https://github.com/modem-dev/hunk/blob/main/docs/keybindings.md).
 
@@ -98,6 +98,7 @@ The handler fires when the key is pressed outside modal UI (dialogs, menus, and 
 - `ctx.sidebars.open(viewId)` / `close(viewId)` / `toggle(viewId)` / `isOpen(viewId)` — a bare id names your own view, `"files"` the built-in file navigation, `"<extensionId>:<viewId>"` any registered view. Opening also reveals a hidden sidebar area.
 - `ctx.fileViews.select(viewId)` / `toggle(viewId)` / `isActive(viewId)` — controls a matching [file preview](/docs/extend/file-previews/) for the current file; `select(null)` restores raw diff.
 - `ctx.fileViews.refresh(viewId, options?)` — marks that view's prepared layouts stale so a stateful view re-derives; every file presenting it re-lays out, keeping its current rows visible until the replacement resolves. Pass `{ fileId }` to scope the invalidation to one reviewed file's presentation of the view.
+- `ctx.fileViews.enterMode(viewId)` / `exitMode()` / `isModeActive(viewId)` — starts an [interactive preview's](/docs/extend/file-previews/#interactive-previews) key handling for the selected file, and reports whether it is running. Entering is one step: it makes the view that file's presentation and gives its mode the keys, refusing only where no selection would help — an unknown id, no selected file, a view that does not match the file, a file kept on raw diff, or a view with no `mode`.
 - `ctx.selection` — where the review was pointing when the command fired.
 - `ctx.navigation` — moves the review stream.
 - `ctx.dialogs` — asks the user, below.

@@ -21,6 +21,65 @@ export function resolveRegisteredFileView(
   return views.find((view) => registeredFileViewKey(view) === key);
 }
 
+/** The registration one selection call resolved to, or why it cannot be shown. */
+export type FileViewSelectionTarget =
+  | { readonly ok: true; readonly registered: RegisteredFileView }
+  | { readonly ok: false; readonly refusal: string };
+
+/**
+ * Decide whether one view can become the selected file's presentation.
+ *
+ * The single containment check behind `fileViews.select` and
+ * `fileViews.enterMode`: an unknown id, a host constraint keeping the file on
+ * raw diff, a view that does not claim the file, and a matcher that throws are
+ * all reasons the view cannot be shown — and entering a mode now shows the view,
+ * so both entry points must answer them identically rather than each deciding
+ * for itself. The caller supplies the selected file and its unavailability
+ * reason, so this stays a pure policy over what the host already computed.
+ */
+export function resolveFileViewSelectionTarget({
+  extensionId,
+  file,
+  registered,
+  unavailableReason,
+  viewId,
+}: {
+  extensionId: string;
+  file: ExtensionDiffFile;
+  registered: RegisteredFileView | undefined;
+  unavailableReason: string | undefined;
+  viewId: string;
+}): FileViewSelectionTarget {
+  if (unavailableReason) {
+    return { ok: false, refusal: unavailableReason };
+  }
+
+  if (!registered) {
+    return {
+      ok: false,
+      refusal: `Extension ${extensionId} targeted unknown file view "${viewId}"`,
+    };
+  }
+
+  try {
+    if (!registered.view.matches(file)) {
+      return {
+        ok: false,
+        refusal: `File view "${viewId}" does not match the selected file • using raw diff`,
+      };
+    }
+  } catch {
+    return {
+      ok: false,
+      refusal:
+        `Extension ${registered.extensionId} file view "${registered.view.id}" ` +
+        `failed matching the selected file`,
+    };
+  }
+
+  return { ok: true, registered };
+}
+
 /**
  * Layout invalidation counters for one session, in two kinds of key.
  *

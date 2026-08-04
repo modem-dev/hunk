@@ -8,6 +8,7 @@ import {
   reconcileFileViewSelections,
   registeredFileViewKey,
   resolveBulkFileViewTarget,
+  resolveFileViewSelectionTarget,
   resolveRegisteredFileView,
   selectFileView,
   selectFileViewForFiles,
@@ -163,6 +164,47 @@ describe("file-view selection state", () => {
     ).toBe(current);
     const empty = new Map<string, number>();
     expect(reconcileFileViewEpochs(empty, [], new Set())).toBe(empty);
+  });
+
+  test("names why a view cannot become the selected file's presentation", () => {
+    const file = { id: "readme", path: "README.md" } as unknown as ExtensionDiffFile;
+    const view = (matches: (file: ExtensionDiffFile) => boolean) =>
+      ({ extensionId: "preview", view: { id: "rendered", matches } }) as RegisteredFileView;
+    const target = {
+      extensionId: "preview",
+      file,
+      unavailableReason: undefined,
+      viewId: "rendered",
+    };
+
+    const registered = view(() => true);
+    expect(resolveFileViewSelectionTarget({ ...target, registered })).toEqual({
+      ok: true,
+      registered,
+    });
+    expect(resolveFileViewSelectionTarget({ ...target, registered: undefined })).toEqual({
+      ok: false,
+      refusal: 'Extension preview targeted unknown file view "rendered"',
+    });
+    expect(resolveFileViewSelectionTarget({ ...target, registered: view(() => false) })).toEqual({
+      ok: false,
+      refusal: 'File view "rendered" does not match the selected file • using raw diff',
+    });
+    expect(
+      resolveFileViewSelectionTarget({
+        ...target,
+        registered: view(() => {
+          throw new Error("matcher exploded");
+        }),
+      }),
+    ).toEqual({
+      ok: false,
+      refusal: 'Extension preview file view "rendered" failed matching the selected file',
+    });
+    // A host constraint outranks the view: the file is staying on raw diff.
+    expect(
+      resolveFileViewSelectionTarget({ ...target, registered, unavailableReason: "raw only" }),
+    ).toEqual({ ok: false, refusal: "raw only" });
   });
 
   test("allows an extension view id named raw because only null is the raw sentinel", () => {

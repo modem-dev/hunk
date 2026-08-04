@@ -101,6 +101,11 @@ export default function (hunk: HunkExtensionAPI) {
     ctx.fileViews.select("raw");
     ctx.fileViews.select(null);
     ctx.fileViews.refresh("raw");
+    if (ctx.fileViews.isActive("raw") && !ctx.fileViews.isModeActive("raw")) {
+      const entered: boolean = ctx.fileViews.enterMode("raw");
+      hunk.log(entered ? "mode running" : "mode refused");
+    }
+    ctx.fileViews.exitMode();
   });
 
   hunk.registerCommand({ id: "rewrite", title: "Rewrite the selection" }, async (ctx) => {

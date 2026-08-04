@@ -78,6 +78,9 @@ async function renderController(initial: HarnessState) {
       getSelectedFileId,
       getExtensionSelection,
       showNotice,
+      cwd: "/repo",
+      notify: (message) => notices.push(message),
+      reviewGeneration: state.files,
     });
     return null;
   }

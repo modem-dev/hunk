@@ -211,6 +211,28 @@ export type ChangesetTransform = (
 ) => ExtensionChangeset | Promise<ExtensionChangeset>;
 
 /* -------------------------------------------------------------------------- */
+/* Terminal key events                                                         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The parts of a terminal key event chord matching reads.
+ *
+ * Structural on purpose: any object carrying these fields works, including
+ * OpenTUI's `KeyEvent` and the synthetic events Hunk probes matchers with.
+ */
+export interface ExtensionKeyEvent {
+  /** Normalized key name, e.g. `"g"`, `"pageup"`, `"space"`. */
+  name?: string;
+  /** The characters the terminal reported, e.g. `"G"`, `"{"`. */
+  sequence?: string;
+  ctrl?: boolean;
+  meta?: boolean;
+  /** The alt/option modifier. */
+  option?: boolean;
+  shift?: boolean;
+}
+
+/* -------------------------------------------------------------------------- */
 /* File views                                                                  */
 /* -------------------------------------------------------------------------- */
 
@@ -308,6 +330,54 @@ export interface ExtensionFileViewInput {
   readDocument(side: ExtensionFileSide): Promise<string | null>;
 }
 
+/** What an interactive file view's key handler did with one key. */
+export type ExtensionFileViewModeKeyResult = "handled" | "pass" | "exit";
+
+/** What a mode key handler receives alongside each key. */
+export interface ExtensionFileViewModeContext extends ExtensionContext {
+  /** The file the view is presenting, as the mode's keys act on it. */
+  readonly file: ExtensionDiffFile;
+  /** Host-owned presentation controls, including `refresh` for redraws. */
+  readonly fileViews: ExtensionFileViewControls;
+}
+
+/**
+ * An opt-in interactive mode for one registered file view.
+ *
+ * A file view is otherwise a pure presentation: Hunk owns the keyboard, and a
+ * view that wants fold controls, a picker, or a cursor has no way to hear
+ * about a keypress. A mode is the opt-in — entered deliberately through
+ * `fileViews.enterMode`, never on its own — during which keys reach `onKey`
+ * before Hunk's command table. Modes are session-scoped: nothing persists.
+ *
+ * Only one mode is active at a time, app-wide, and the host guarantees a way
+ * out: Escape always exits, and every exit path runs `onExit` exactly once.
+ */
+export interface ExtensionFileViewMode {
+  /**
+   * Decide what happens to one key, synchronously.
+   *
+   * The return value *is* the routing decision, so it cannot be awaited:
+   * `"handled"` consumes the key, `"pass"` declines it (the key then flows on
+   * to the command table and scrolling exactly as if no mode were active), and
+   * `"exit"` consumes the key and leaves the mode. Start async work here and
+   * report it afterwards through `ctx.notify` or `ctx.fileViews.refresh`.
+   *
+   * Every key the app's modal surfaces do not claim arrives — including plain
+   * printable characters, which would otherwise run whatever command is bound
+   * to them. Escape is the one exception: it is host-owned and exits the mode
+   * without ever reaching this handler.
+   *
+   * A throw is contained: Hunk warns naming the extension, exits the mode, and
+   * the review keeps working.
+   */
+  onKey(key: ExtensionKeyEvent, ctx: ExtensionFileViewModeContext): ExtensionFileViewModeKeyResult;
+  /** Runs once when the mode is entered, before any key reaches `onKey`. */
+  onEnter?(ctx: ExtensionFileViewModeContext): void;
+  /** Runs on every exit — key result, Escape, host auto-exit, or a contained throw. */
+  onExit?(ctx: ExtensionFileViewModeContext): void;
+}
+
 /** A host-rendered alternative presentation for an individual file in the review stream. */
 export interface ExtensionFileView {
   id: string;
@@ -317,6 +387,13 @@ export interface ExtensionFileView {
   layout(
     input: ExtensionFileViewInput,
   ): ExtensionFileViewLayout | null | Promise<ExtensionFileViewLayout | null>;
+  /**
+   * Opt this view into receiving keys while its mode is active.
+   *
+   * Registering a mode changes nothing on its own; a command must call
+   * `ctx.fileViews.enterMode(viewId)` to start it.
+   */
+  mode?: ExtensionFileViewMode;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -969,6 +1046,46 @@ export interface ExtensionFileViewControls {
    * the same resolution and refusal `select` uses.
    */
   refresh(viewId: string, options?: { fileId?: string }): void;
+  /**
+   * Make this view the selected file's presentation and give its mode the keys.
+   *
+   * One step: if the file is not already showing the view, entering selects it
+   * — the same state change `select` makes — so the rows the mode acts on are
+   * on screen from the moment it holds the keyboard. A command can bind a
+   * single key to "enter my editor" rather than asking for two presses.
+   *
+   * Succeeds — and returns `true` — unless something no selection could fix
+   * stops it, each warned by name and answered with `false`: the id resolves to
+   * nothing, no file is selected, the view does not `matches` the selected file
+   * (or its matcher throws), the file is one Hunk is keeping on raw diff, or the
+   * view declares no `mode`. That is exactly the containment `select` applies,
+   * so a command can offer the mode without duplicating the host's checks.
+   *
+   * The view's rows may still be preparing when the mode starts, exactly as
+   * after a `refresh`: the previous rows stay on screen until the layout
+   * resolves, and a layout that declines or fails falls back to raw diff.
+   *
+   * While the mode is active, keys the app's modal surfaces do not claim reach
+   * `onKey` before Hunk's command table. Escape is host-owned: it exits the
+   * mode and never reaches the handler, so there is always a way out.
+   *
+   * Hunk also exits the mode by itself when the review moves out from under it
+   * — the selected file changes, the view stops being that file's presentation
+   * (selected or toggled away), a session reload replaces the review — or when
+   * `onEnter`/`onKey` throws. `onExit` runs on every one of those paths.
+   *
+   * Ids resolve exactly as `select` resolves them.
+   */
+  enterMode(viewId: string): boolean;
+  /**
+   * Leave the active mode, whichever view owns it.
+   *
+   * Global rather than per-view, because only one mode is active at a time,
+   * and idempotent: calling it with no mode active does nothing.
+   */
+  exitMode(): void;
+  /** Report whether this view's mode is the one currently active. */
+  isModeActive(viewId: string): boolean;
 }
 
 /**

@@ -101,6 +101,26 @@ plan, and `src/ui/components/panes/FileView.tsx` windows and paints it. Extensio
 components can paint only their fixed validated rectangles; note cards,
 scrolling, hunk bounds, and navigation remain host-owned.
 
+A registered `mode` is the one way a view takes keys, and it stays a routing
+decision rather than a second input system. `src/ui/fileViews/mode.ts` holds the
+whole policy as pure functions over the active-mode record — which presentation
+a file is actually showing, whether an `enterMode` can start (and either which
+refusal to name or which selection the host must apply alongside it, resolved
+through the same `resolveFileViewSelectionTarget` containment `select` uses),
+whether a running mode still describes the review, and how a
+lifecycle callback or key answer is contained — so App keeps only the ref/state
+pair the key handler reads and one effect that exits when those inputs stop
+holding. `useAppKeyboardShortcuts` places `handleFileViewModeShortcut` after the
+focused text inputs and before the command table: a filter or note draft still
+outranks a mode, Escape is host-owned so there is always a way out, and the
+extension's answer maps onto the `KeyOwner` contract — `"handled"`/`"exit"` are
+`"mine"` (consumed, so the focused scroll box never also acts on the key),
+`"pass"` is `"notMine"` (the command table and scrolling behave as if no mode
+were running). `"focused"` is deliberately never returned: a mode is not a text
+input. Every exit path — key result, Escape, auto-exit, contained throw, App
+unmount — runs through one teardown that clears the ref before `onExit`, so the
+callback fires exactly once and a re-entrant `exitMode()` is a no-op.
+
 ## Command system
 
 Every app-level keyboard shortcut is a named command in one dispatch table

@@ -34,6 +34,7 @@ import type {
   ExtensionCommandContext,
   ExtensionEventContext,
   ExtensionFileSide,
+  ExtensionNotifyType,
   ExtensionReviewNote,
   ExtensionSidebarControls,
   ExtensionWorkspace,
@@ -455,6 +456,10 @@ export function App({
       sessionNoticeTimeoutRef.current = null;
     }, 4000);
   }, []);
+  const notifyFileViewMode = useCallback(
+    (message: string, type?: ExtensionNotifyType) => extensions?.context.notify(message, type),
+    [extensions],
+  );
 
   const {
     applyBulkTarget: applyFilePresentationToAllMatching,
@@ -463,6 +468,10 @@ export function App({
     bulkTarget: selectedFileViewBulkTarget,
     createControls: createFileViewControls,
     menuEntries: selectedFileViewEntries,
+    modeActive: fileViewModeActive,
+    modeStatusHint: fileViewModeHint,
+    exitMode: exitFileViewMode,
+    sendModeKey: sendFileViewModeKey,
   } = useFilePresentationController({
     files: reviewFiles,
     visibleFiles: filteredFiles,
@@ -473,6 +482,9 @@ export function App({
     getSelectedFileId,
     getExtensionSelection,
     showNotice: showSessionNotice,
+    cwd: extensions?.context.cwd ?? process.cwd(),
+    notify: notifyFileViewMode,
+    reviewGeneration: bootstrap,
   });
 
   useEffect(() => {
@@ -1755,6 +1767,9 @@ export function App({
     moveExtensionDialogSelection,
     extensionTrustPromptOpen,
     trustRepoExtensions,
+    fileViewModeActive,
+    exitFileViewMode,
+    sendFileViewModeKey,
     focusArea,
     moveMenuItem,
     moveThemeSelector,
@@ -2054,11 +2069,13 @@ export function App({
 
       {focusArea === "filter" ||
       Boolean(review.filter) ||
-      Boolean(sessionNoticeText ?? transientNoticeText ?? noticeText) ? (
+      Boolean(sessionNoticeText ?? transientNoticeText ?? noticeText ?? fileViewModeHint) ? (
         <StatusBar
           filter={review.filter}
           filterFocused={focusArea === "filter"}
-          noticeText={sessionNoticeText ?? transientNoticeText ?? noticeText ?? undefined}
+          noticeText={
+            sessionNoticeText ?? transientNoticeText ?? noticeText ?? fileViewModeHint ?? undefined
+          }
           terminalWidth={terminal.width}
           theme={activeTheme}
           onCloseMenu={closeMenu}
