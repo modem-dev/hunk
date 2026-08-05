@@ -176,6 +176,18 @@ describe("git command helpers", () => {
     );
   });
 
+  test("reports a friendly async error when git is not installed or not on PATH", async () => {
+    await expect(
+      runGitTextAsync({
+        input: makeGitInput(),
+        args: ["status"],
+        gitExecutable: "definitely-not-a-real-git-binary",
+      }),
+    ).rejects.toThrow(
+      "Git is required for `hunk diff`, but `definitely-not-a-real-git-binary` was not found in PATH.",
+    );
+  });
+
   test.skipIf(process.platform === "win32")(
     "aborting async Git kills descendants after the root process exits",
     async () => {
