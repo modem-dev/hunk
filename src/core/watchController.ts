@@ -32,6 +32,8 @@ export interface WatchEventSourceCallbacks {
 
 export const DEFAULT_WATCH_EVENT_SOURCE_STARTUP_TIMEOUT_MS = 2_000;
 export const WATCH_EVENT_SOURCE_STARTUP_TIMEOUT_CODE = "HUNK_WATCH_EVENT_SOURCE_STARTUP_TIMEOUT";
+/** Intentional cancellation of one check without closing its controller. */
+export const WATCH_CHECK_CANCELLED_CODE = "HUNK_WATCH_CHECK_CANCELLED";
 
 export interface WatchControllerOptions {
   initialSignature: string;
@@ -145,11 +147,18 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
 
   const safetyInterval = () => (state.degraded ? degradedCheckMs : healthyCheckMs);
 
-  /** Arm the next deadline unless a check owns the controller right now. */
+  /** Arm the next relevant deadline, retaining source startup coverage during a check. */
   const schedule = () => {
-    if (state.phase === "closed" || state.phase === "checking" || state.phase === "refreshing") {
+    if (state.phase === "closed") return;
+
+    if (state.phase === "checking" || state.phase === "refreshing") {
+      // Debounce and safety deadlines pause while a check owns the controller,
+      // but source registration must remain bounded even when that check awaits.
+      if (deadlines.has("startup")) deadlines.arm();
+      else deadlines.disarm();
       return;
     }
+
     deadlines.arm();
   };
 
@@ -198,8 +207,11 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       return { done: true, value };
     } catch (error) {
       if (isClosed()) return { done: false };
-      // An abort that is not our own close still deserves a report.
-      if (!isAbortError(error) || !lifetime.signal.aborted) {
+      // An abort that is neither our close nor an explicitly superseded check
+      // still deserves a report.
+      const checkWasSuperseded =
+        isAbortError(error) && getErrorCode(error) === WATCH_CHECK_CANCELLED_CODE;
+      if (!checkWasSuperseded && (!isAbortError(error) || !lifetime.signal.aborted)) {
         reportError(error);
       }
       finishCheck();
@@ -215,6 +227,9 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     deadlines.disarm();
     deadlines.clear("quiet", "maximum", "safety");
     state.phase = "checking";
+    // The source may still be registering. Keep that independent deadline live
+    // while an asynchronous signature check owns every other controller phase.
+    schedule();
 
     const signature = await runCheckStep(() => options.getSignature(lifetime.signal));
     if (!signature.done) return;
@@ -235,9 +250,10 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
   /** Degrade one source that failed to establish readiness before its deadline. */
   const degradeStalledSource = () => {
     if (sourceStatus !== "starting") return;
+    const checkInFlight = state.phase === "checking" || state.phase === "refreshing";
     closeEventSource();
     state.degraded = true;
-    state.phase = "idle";
+    if (!checkInFlight) state.phase = "idle";
     deadlines.clear("quiet", "maximum");
     deadlines.set("safety", clock.now() + degradedCheckMs);
     reportError(createEventSourceStartupTimeoutError(startupTimeoutMs));
@@ -288,6 +304,9 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     sourceStatus = "ready";
     deadlines.clear("startup");
     if (state.phase === "checking" || state.phase === "refreshing") {
+      // The startup timer can be the one deadline still armed during a check.
+      // Readiness retires it while preserving one trailing verification pass.
+      schedule();
       state.dirty = true;
       return;
     }

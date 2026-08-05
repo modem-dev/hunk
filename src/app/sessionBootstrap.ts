@@ -18,6 +18,8 @@ export interface SessionBootstrapOptions {
   initialThemeMode?: AppBootstrap["initialThemeMode"];
   /** Reloads can reopen another directory; initial launch relies on the loader's default cwd. */
   loadAtCwd?: boolean;
+  /** Abort a retired reload before its bootstrap is returned to the host. */
+  signal?: AbortSignal;
   loadAppBootstrapImpl?: typeof loadAppBootstrap;
 }
 
@@ -42,8 +44,10 @@ export async function loadConfiguredSessionBootstrap({
   extensions,
   initialThemeMode,
   loadAtCwd = false,
+  signal,
   loadAppBootstrapImpl = loadAppBootstrap,
 }: SessionBootstrapOptions): Promise<SessionBootstrapResult> {
+  signal?.throwIfAborted();
   const sessionThemes = collectSessionCustomThemes(
     configured.customThemes,
     extensions?.registry.themes,
@@ -69,8 +73,11 @@ export async function loadConfiguredSessionBootstrap({
     ...(loadAtCwd ? { cwd } : {}),
     customThemes: sessionThemes.themes,
     vcsAdapters: applied.vcsAdapters,
+    signal,
   });
+  signal?.throwIfAborted();
   bootstrap.changeset = await applyExtensionChangesetTransforms(extensions, bootstrap.changeset);
+  signal?.throwIfAborted();
   bootstrap.initialThemeMode = initialThemeMode ?? bootstrap.initialThemeMode;
   bootstrap.extensions = extensions;
   bootstrap.viewPreferencesConfigPath = configured.viewPreferencesConfigPath;

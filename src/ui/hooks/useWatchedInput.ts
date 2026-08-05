@@ -43,7 +43,7 @@ export function useWatchedInput({
   input: CliInput;
   onReloadPending?: () => void;
   reloadContext: ReloadContext;
-  refresh: () => void | Promise<void>;
+  refresh: (signal: AbortSignal) => void | Promise<void>;
   runtime?: WatchedInputRuntime;
 }) {
   const refreshRef = useRef(refresh);
@@ -70,6 +70,7 @@ export function useWatchedInput({
     // only awaits on the fallback path; either way the controller is created
     // once and torn down by whichever of the two branches below runs last.
     let controller: WatchController | undefined;
+    const initialization = new AbortController();
     let cancelled = false;
 
     const start = (initialSignature: string) => {
@@ -88,7 +89,7 @@ export function useWatchedInput({
         initialSignature,
         onReloadPending: () => pendingRef.current?.(),
         pollOnly: watchedPlan.coverage === "poll-only",
-        refresh: () => refreshRef.current(),
+        refresh: (signal) => refreshRef.current(signal),
         reportError: (error) => console.error("Failed to auto-reload the current diff.", error),
       });
     };
@@ -97,13 +98,16 @@ export function useWatchedInput({
       start(reloadContext.initialWatchSignature);
     } else {
       void Promise.resolve()
-        .then(() => getSignature(input, reloadContext))
+        .then(() => getSignature(input, { ...reloadContext, signal: initialization.signal }))
         .then(start)
-        .catch((error) => console.error("Failed to initialize watch mode.", error));
+        .catch((error) => {
+          if (!cancelled) console.error("Failed to initialize watch mode.", error);
+        });
     }
 
     return () => {
       cancelled = true;
+      initialization.abort();
       controller?.close();
     };
   }, [enabled, input, reloadContext, runtime]);

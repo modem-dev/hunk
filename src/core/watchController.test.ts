@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   createWatchController,
+  WATCH_CHECK_CANCELLED_CODE,
   WATCH_EVENT_SOURCE_STARTUP_TIMEOUT_CODE,
   type WatchControllerClock,
   type WatchEventSourceCallbacks,
@@ -380,6 +381,69 @@ describe("createWatchController", () => {
     expect(checks).toBe(2);
   });
 
+  test("keeps the source startup timeout live during an asynchronous signature check", async () => {
+    const clock = new FakeWatchClock();
+    const source = fakeSource();
+    const signature = deferred<string>();
+    const errors: unknown[] = [];
+    const controller = createWatchController({
+      initialSignature: "same",
+      clock,
+      createEventSource: source.create,
+      getSignature: () => signature.promise,
+      refresh: () => {},
+      reportError: (error) => errors.push(error),
+      startupTimeoutMs: 500,
+    });
+
+    source.event();
+    clock.advance(200);
+    await settle();
+    expect(controller.getState().phase).toBe("checking");
+
+    // The event check is still parked, but it must not suspend the independent
+    // bound on source registration.
+    clock.advance(300);
+    expect(controller.getState()).toMatchObject({ phase: "checking", degraded: true });
+    expect(source.closes).toBe(1);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({ code: WATCH_EVENT_SOURCE_STARTUP_TIMEOUT_CODE });
+
+    signature.resolve("same");
+    await settle();
+    expect(controller.getState().phase).toBe("idle");
+  });
+
+  test("keeps the source startup timeout live during an asynchronous refresh", async () => {
+    const clock = new FakeWatchClock();
+    const source = fakeSource();
+    const refresh = deferred<void>();
+    const errors: unknown[] = [];
+    const controller = createWatchController({
+      initialSignature: "old",
+      clock,
+      createEventSource: source.create,
+      getSignature: () => "new",
+      refresh: () => refresh.promise,
+      reportError: (error) => errors.push(error),
+      startupTimeoutMs: 500,
+    });
+
+    source.event();
+    clock.advance(200);
+    await settle();
+    expect(controller.getState().phase).toBe("refreshing");
+
+    clock.advance(300);
+    expect(controller.getState()).toMatchObject({ phase: "refreshing", degraded: true });
+    expect(source.closes).toBe(1);
+    expect(errors[0]).toMatchObject({ code: WATCH_EVENT_SOURCE_STARTUP_TIMEOUT_CODE });
+
+    refresh.resolve();
+    await settle();
+    expect(controller.getState()).toMatchObject({ phase: "idle", appliedSignature: "new" });
+  });
+
   test("accepts readiness just before an injected startup deadline", async () => {
     const clock = new FakeWatchClock();
     const source = fakeSource();
@@ -723,6 +787,46 @@ describe("createWatchController", () => {
 
     expect(errors).toHaveLength(1);
     expect((errors[0] as Error).message).toBe("upstream gave up");
+  });
+
+  test("an explicitly superseded check is silent and keeps its baseline retryable", async () => {
+    const clock = new FakeWatchClock();
+    const source = fakeSource();
+    const errors: unknown[] = [];
+    const signatures = [
+      Object.assign(new Error("superseded"), {
+        name: "AbortError",
+        code: WATCH_CHECK_CANCELLED_CODE,
+      }),
+      "new",
+    ];
+    let refreshes = 0;
+    const controller = createWatchController({
+      initialSignature: "old",
+      clock,
+      createEventSource: source.create,
+      getSignature: () => {
+        const result = signatures.shift();
+        if (result instanceof Error) throw result;
+        return result!;
+      },
+      refresh: () => {
+        refreshes++;
+      },
+      reportError: (error) => errors.push(error),
+    });
+
+    source.event();
+    clock.advance(200);
+    await settle();
+    expect(errors).toEqual([]);
+    expect(controller.getState().appliedSignature).toBe("old");
+
+    source.event();
+    clock.advance(200);
+    await settle();
+    expect(refreshes).toBe(1);
+    expect(controller.getState().appliedSignature).toBe("new");
   });
 
   test("an asynchronous signature check does not block the caller between polls", async () => {

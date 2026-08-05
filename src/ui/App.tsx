@@ -171,6 +171,7 @@ function withCurrentViewOptions(
 /** Orchestrate global app state, layout, navigation, and pane coordination. */
 export function App({
   bootstrap,
+  contentGeneration = 0,
   hostClient,
   noticeText,
   onQuit = () => process.exit(0),
@@ -178,6 +179,8 @@ export function App({
   watchRuntime,
 }: {
   bootstrap: AppBootstrap;
+  /** Host generation that owns this mounted review's watch reloads. */
+  contentGeneration?: number;
   hostClient?: HunkSessionBrokerClient;
   noticeText?: string | null;
   onQuit?: () => void;
@@ -1241,7 +1244,12 @@ export function App({
 
   /** Rebuild the current diff source while preserving the active app view options. */
   const refreshCurrentInput = useCallback(
-    async (options?: Pick<ReloadSessionOptions, "reason" | "reloadExtensions">) => {
+    async (
+      options?: Pick<
+        ReloadSessionOptions,
+        "reason" | "reloadExtensions" | "signal" | "watchContentGeneration"
+      >,
+    ) => {
       if (!canRefreshCurrentInput) {
         return;
       }
@@ -1290,8 +1298,9 @@ export function App({
 
   /** Reload because the watcher saw the reviewed source change on disk. */
   const refreshWatchedInput = useCallback(
-    () => refreshCurrentInput({ reason: "watch" }),
-    [refreshCurrentInput],
+    (signal: AbortSignal) =>
+      refreshCurrentInput({ reason: "watch", signal, watchContentGeneration: contentGeneration }),
+    [contentGeneration, refreshCurrentInput],
   );
 
   /**

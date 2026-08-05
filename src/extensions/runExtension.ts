@@ -95,9 +95,9 @@ function toInternalVcsOperation(
     // Watch support stays optional inward as well as outward: an absent hook is
     // what tells planning to fall back to signature polling.
     ...(watchSignature && {
-      watchSignature(input, context) {
+      async watchSignature(input, context) {
         try {
-          return watchSignature(input, context);
+          return await watchSignature(input, context);
         } catch (error) {
           throw toUserFacingError(error);
         }

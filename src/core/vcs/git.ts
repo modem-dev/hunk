@@ -503,16 +503,86 @@ function spawnGitAsync(options: RunGitCommandOptions) {
   const { input, args, gitExecutable = "git", signal } = options;
 
   try {
+    signal?.throwIfAborted();
     return Bun.spawn([gitExecutable, ...args], {
       ...gitSpawnEnvironment(options),
       stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",
-      signal,
+      // A separate POSIX process group lets cancellation terminate textconv
+      // and other helpers that inherit Git's output pipes. Windows falls back
+      // to Bun's direct-process kill below.
+      detached: process.platform !== "win32",
     });
   } catch (error) {
     throw translateGitSpawnFailure(input, error, gitExecutable);
   }
+}
+
+/** Terminate Git and, where process groups are available, every helper it started. */
+function terminateGitProcess(proc: ReturnType<typeof spawnGitAsync>) {
+  if (process.platform === "win32") {
+    try {
+      // Bun's direct kill does not include descendants on Windows; taskkill's
+      // tree mode covers helpers before they can retain Git's output handles.
+      const killed = Bun.spawnSync(["taskkill", "/pid", String(proc.pid), "/t", "/f"], {
+        stdin: "ignore",
+        stdout: "ignore",
+        stderr: "ignore",
+      });
+      if (killed.exitCode === 0) return;
+    } catch {
+      // Fall through to Bun's direct-process kill when taskkill is unavailable.
+    }
+  } else {
+    try {
+      // Signal the group even when Git itself has already exited: a textconv
+      // descendant can remain in that group while retaining Git's pipes.
+      process.kill(-proc.pid, "SIGKILL");
+      return;
+    } catch {
+      // The group may have exited between the abort and this signal.
+    }
+  }
+
+  if (proc.exitCode !== null) return;
+  try {
+    proc.kill();
+  } catch {
+    // Cancellation is best effort once the subprocess has already exited.
+  }
+}
+
+/** Drain one subprocess pipe, closing the read side immediately on cancellation. */
+async function readGitPipe(stream: ReadableStream<Uint8Array>, signal?: AbortSignal) {
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let byteLength = 0;
+  const cancel = () => {
+    void reader.cancel(signal?.reason).catch(() => {});
+  };
+
+  signal?.addEventListener("abort", cancel, { once: true });
+  if (signal?.aborted) cancel();
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      byteLength += value.byteLength;
+    }
+  } finally {
+    signal?.removeEventListener("abort", cancel);
+  }
+
+  const output = new Uint8Array(byteLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    output.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return output;
 }
 
 /**
@@ -527,14 +597,27 @@ function spawnGitAsync(options: RunGitCommandOptions) {
 async function runGitCommandAsync(options: RunGitCommandOptions): Promise<RunGitCommandResult> {
   const { signal } = options;
   const proc = spawnGitAsync(options);
+  const terminate = () => terminateGitProcess(proc);
+  signal?.addEventListener("abort", terminate, { once: true });
+  if (signal?.aborted) terminate();
 
-  // Drain both pipes concurrently with the exit wait: a large `git diff` fills
-  // the stdout pipe buffer, and a process blocked on a full pipe never exits.
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(proc.stdout).bytes(),
-    new Response(proc.stderr).bytes(),
-    proc.exited,
-  ]);
+  let stdout: Uint8Array;
+  let stderr: Uint8Array;
+  let exitCode: number;
+  try {
+    // Drain both pipes concurrently with the exit wait: a large `git diff`
+    // fills stdout, and a process blocked on a full pipe never exits.
+    [stdout, stderr, exitCode] = await Promise.all([
+      readGitPipe(proc.stdout, signal),
+      readGitPipe(proc.stderr, signal),
+      proc.exited,
+    ]);
+  } catch (error) {
+    signal?.throwIfAborted();
+    throw error;
+  } finally {
+    signal?.removeEventListener("abort", terminate);
+  }
 
   // An aborted command has no meaningful output; surfacing Git's exit status
   // here would report a spurious failure for work the caller already dropped.
