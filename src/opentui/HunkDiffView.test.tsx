@@ -125,6 +125,32 @@ describe("OpenTUI public components", () => {
     expect(frame).toContain("@@ -1,1 +1,2 @@");
   });
 
+  test("renders filename tabs as fixed-width escapes in headers and navigation", async () => {
+    const example = createExampleDiff();
+    const diff = createHunkDiffFile({
+      ...example,
+      id: "tabbed-path",
+      path: "src/tab\tname.ts",
+    });
+    const frame = await captureFrame(
+      <box style={{ width: "100%", flexDirection: "column" }}>
+        <HunkDiffFileHeader file={diff} width={88} theme="github-dark-default" />
+        <HunkFileNav
+          files={[diff]}
+          selectedFileId="tabbed-path"
+          width={32}
+          theme="github-dark-default"
+        />
+      </box>,
+      92,
+      8,
+    );
+
+    expect(frame).toContain("src/tab\\tname.ts");
+    expect(frame).toContain("tab\\tname.ts");
+    expect(frame).not.toContain("\t");
+  });
+
   test("renders the dedicated file navigation primitive", async () => {
     const frame = await captureFrame(
       <HunkFileNav

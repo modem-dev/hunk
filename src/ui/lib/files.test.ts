@@ -143,6 +143,19 @@ describe("files helpers", () => {
     ]);
   });
 
+  test("file labels and sidebar entries render path tabs as fixed-width escapes", () => {
+    const file = createTestDiffFile({ id: "tabbed-path", path: "src/tab\tname.ts" });
+
+    expect(fileLabelParts(file)).toEqual({
+      filename: "src/tab\\tname.ts",
+      stateLabel: null,
+    });
+    expect(buildSidebarEntries([file])).toEqual([
+      { kind: "group", id: "group:src:0", label: "src/" },
+      expect.objectContaining({ kind: "file", name: "tab\\tname.ts" }),
+    ]);
+  });
+
   test("fileLabelParts strips parser-added line endings from rename labels", () => {
     const renamedAcrossDirectories = {
       ...createTestDiffFile({
