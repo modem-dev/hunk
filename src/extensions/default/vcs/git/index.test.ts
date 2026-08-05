@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { platform, tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
@@ -14,6 +14,10 @@ import type {
 // through that contract too — including the capabilities Git is the only
 // bundled backend to use.
 const gitOperations: ExtensionVcsOperations = GitVcsAdapter.operations;
+
+// Hosted Windows runners can spend several seconds starting each real Git process.
+// Keep this integration-like adapter suite bounded without using Bun's five-second default.
+setDefaultTimeout(30_000);
 
 describe("GitVcsAdapter published surface", () => {
   test("implements every review operation the contract defines", () => {
