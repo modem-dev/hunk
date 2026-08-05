@@ -20,6 +20,8 @@ export interface LineCursor {
   /** The render plan's anchor for this row, shared with reveal and highlight lookups. */
   stableKey: string;
   target: UserNoteLineTarget;
+  /** Exact collapsed gap that produced this cursor, when it is a revealed source line. */
+  expandedGapKey?: string;
 }
 
 export const EMPTY_LINE_CURSORS: LineCursor[] = [];
@@ -48,7 +50,15 @@ function rowLineCursors(fileId: string, bounds: DiffSectionRowBounds): LineCurso
   const context = contextLineStableKeyTarget(bounds.stableKey);
   if (context) {
     const { hunkIndex, ...target } = context;
-    return [{ fileId, hunkIndex, stableKey: bounds.stableKey, target }];
+    return [
+      {
+        fileId,
+        hunkIndex,
+        stableKey: bounds.stableKey,
+        target,
+        ...(bounds.expandedGapKey ? { expandedGapKey: bounds.expandedGapKey } : {}),
+      },
+    ];
   }
 
   const cursors: LineCursor[] = [];
@@ -59,7 +69,13 @@ function rowLineCursors(fileId: string, bounds: DiffSectionRowBounds): LineCurso
     }
 
     const { hunkIndex, ...target } = anchor;
-    cursors.push({ fileId, hunkIndex, stableKey, target });
+    cursors.push({
+      fileId,
+      hunkIndex,
+      stableKey,
+      target,
+      ...(bounds.expandedGapKey ? { expandedGapKey: bounds.expandedGapKey } : {}),
+    });
   }
 
   return cursors;

@@ -250,7 +250,9 @@ export function useReviewController({
   const [lineCursorRevealRequestId, setLineCursorRevealRequestId] = useState(0);
   const previousLineCursorsRef = useRef(lineCursors);
   const pendingLineCursorRef = useRef<
-    { kind: "reveal"; fileId: string } | { kind: "restore"; cursor: LineCursor } | null
+    | { kind: "reveal"; fileId: string; gapKey: string }
+    | { kind: "restore"; cursor: LineCursor }
+    | null
   >(null);
   const lineCursorBeforeExpandRef = useRef(new Map<string, LineCursor>());
   const [scrollToNote, setScrollToNote] = useState(false);
@@ -443,7 +445,10 @@ export function useReviewController({
           .map((cursor) => cursor.stableKey),
       );
       const firstRevealed = lineCursors.find(
-        (cursor) => cursor.fileId === pending.fileId && !alreadyStopped.has(cursor.stableKey),
+        (cursor) =>
+          cursor.fileId === pending.fileId &&
+          cursor.expandedGapKey === pending.gapKey &&
+          !alreadyStopped.has(cursor.stableKey),
       );
       if (firstRevealed) {
         pendingLineCursorRef.current = null;
@@ -598,7 +603,7 @@ export function useReviewController({
         if (lineCursorRef.current) {
           lineCursorBeforeExpandRef.current.set(restorePointKey, lineCursorRef.current);
         }
-        pendingLineCursorRef.current = { kind: "reveal", fileId };
+        pendingLineCursorRef.current = { kind: "reveal", fileId, gapKey };
       } else {
         lineCursorBeforeExpandRef.current.delete(restorePointKey);
         pendingLineCursorRef.current = restorePoint

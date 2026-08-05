@@ -72,6 +72,22 @@ function createAlphaFile(sourceFetcher?: DiffFile["sourceFetcher"]) {
   );
 }
 
+/** Build one file with two independently expandable gaps. */
+function createTwoGapFile(sourceFetcher: DiffFile["sourceFetcher"]) {
+  const beforeLines = Array.from({ length: 50 }, (_, index) => `line ${index + 1}`);
+  const afterLines = [...beforeLines];
+  afterLines[9] = "line 10 changed";
+  afterLines[39] = "line 40 changed";
+  return createDiffFile(
+    "alpha",
+    "alpha.ts",
+    lines(...beforeLines),
+    lines(...afterLines),
+    null,
+    sourceFetcher,
+  );
+}
+
 /** Let deferred filters and follow-up effects settle before reading controller state. */
 async function flush(setup: Awaited<ReturnType<typeof testRender>>) {
   await act(async () => {
@@ -104,6 +120,7 @@ function ReviewControllerHarness({
   const [lineCursors, setLineCursors] = useState<LineCursor[]>([]);
   const controller = useReviewController({ files, lineCursors, noteGeometry, stmlEnabled });
   const visibleFiles = controller.visibleFiles;
+  const { expandedGapsByFileId, sourceStatusByFileId } = controller;
 
   useEffect(() => {
     setLineCursors(
@@ -115,11 +132,17 @@ function ReviewControllerHarness({
             "stack",
             true,
             resolveTheme("github-dark-default", null),
+            [],
+            0,
+            true,
+            false,
+            expandedGapsByFileId[file.id],
+            sourceStatusByFileId[file.id],
           ),
         ),
       ),
     );
-  }, [visibleFiles]);
+  }, [expandedGapsByFileId, sourceStatusByFileId, visibleFiles]);
 
   useEffect(() => {
     onController(controller);
@@ -911,6 +934,43 @@ describe("useReviewController", () => {
 
       const reCollapsed = expectValue(controllerRef.current).expandedGapsByFileId["alpha"];
       expect(reCollapsed?.has("before:0")).toBe(false);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("the latest gap expansion receives the current line when one source load reveals two gaps", async () => {
+    const deferred = createTestDeferred<string | null>();
+    const sourceFetcher = createTestSourceFetcher(() => deferred.promise);
+    const sourceLines = Array.from({ length: 50 }, (_, index) => `line ${index + 1}`);
+    sourceLines[9] = "line 10 changed";
+    sourceLines[39] = "line 40 changed";
+    const { controllerRef, setup } = await renderReviewController([
+      createTwoGapFile(sourceFetcher),
+    ]);
+
+    try {
+      await flush(setup);
+      expect(expectValue(controllerRef.current).selectedFile?.metadata.hunks).toHaveLength(2);
+
+      await act(async () => {
+        expectValue(controllerRef.current).toggleGap("alpha", "before:0");
+        expectValue(controllerRef.current).toggleGap("alpha", "before:1");
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).sourceStatusByFileId.alpha?.kind).toBe("loading");
+      expect(sourceFetcher.calls).toEqual(["new"]);
+
+      deferred.resolve(lines(...sourceLines));
+      await flush(setup);
+
+      const controller = expectValue(controllerRef.current);
+      expect(controller.expandedGapsByFileId.alpha?.has("before:0")).toBe(true);
+      expect(controller.expandedGapsByFileId.alpha?.has("before:1")).toBe(true);
+      expect(expectValue(controller.lineCursor).expandedGapKey).toBe("before:1");
     } finally {
       await act(async () => {
         setup.renderer.destroy();

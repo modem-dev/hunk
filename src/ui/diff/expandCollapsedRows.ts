@@ -115,6 +115,7 @@ function buildSplitContextRow(
     left: cell(oldLineNumber),
     right: cell(newLineNumber),
     isExpansionRow: true,
+    expandedGapKey: gapKey(position, hunkIndex),
   };
 }
 
@@ -142,6 +143,7 @@ function buildStackContextRow(
     hunkIndex,
     cell,
     isExpansionRow: true,
+    expandedGapKey: gapKey(position, hunkIndex),
   };
 }
 

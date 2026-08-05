@@ -23,6 +23,8 @@ export interface DiffSectionRowBounds extends VerticalBounds {
   key: string;
   stableKey: string;
   stableKeys: string[];
+  /** Exact collapsed gap that produced this synthesized source row. */
+  expandedGapKey?: string;
 }
 
 /**
@@ -348,6 +350,11 @@ export function measureDiffSectionGeometry(
       key: row.key,
       stableKey: row.stableKey,
       stableKeys,
+      ...(row.kind === "diff-row" &&
+      (row.row.type === "split-line" || row.row.type === "stack-line") &&
+      row.row.expandedGapKey
+        ? { expandedGapKey: row.row.expandedGapKey }
+        : {}),
       // Record both the starting top and the measured height so callers can translate between
       // scroll positions and stable review-row identities across wrap/layout changes.
       top: bodyHeight,

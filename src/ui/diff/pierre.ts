@@ -129,6 +129,8 @@ export type DiffRow =
       // Expanded rows carry the neighbor hunk's index for ordering but must not
       // count toward that hunk's bounds or anchor position.
       isExpansionRow?: true;
+      /** Exact collapsed gap this synthesized row reveals. */
+      expandedGapKey?: string;
     }
   | {
       type: "stack-line";
@@ -137,6 +139,8 @@ export type DiffRow =
       hunkIndex: number;
       cell: StackLineCell;
       isExpansionRow?: true;
+      /** Exact collapsed gap this synthesized row reveals. */
+      expandedGapKey?: string;
     };
 
 /** Expand source tabs before terminal rendering so downstream geometry stays predictable. */
