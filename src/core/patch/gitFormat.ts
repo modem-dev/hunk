@@ -13,7 +13,7 @@
  * intentionally limited to each file header block and stop after the `+++ ` file header so hunk
  * body lines that merely look like file headers are preserved verbatim.
  */
-type GitHeaderRewriteMode = "add" | "force-add" | "strip";
+type GitHeaderRewriteMode = "add" | "prepend-prefix" | "strip";
 
 export interface NormalizedGitPatchFilePaths {
   path: string;
@@ -271,13 +271,19 @@ function rewriteGitDiffHeader(
 
     // Non-rename noprefix: identical halves regardless of whether the path contains spaces.
     if (firstHalf === secondHalf && firstHalf.length > 0) {
-      return { line: `diff --git a/${firstHalf} b/${secondHalf}`, rewriteMode: "force-add" };
+      return {
+        line: `diff --git a/${firstHalf} b/${secondHalf}`,
+        rewriteMode: "prepend-prefix",
+      };
     }
   }
 
   // Two-token rename without prefix and without spaces in either path.
   if (tokens.length === 2 && tokens[0] && tokens[1]) {
-    return { line: `diff --git a/${tokens[0]} b/${tokens[1]}`, rewriteMode: "force-add" };
+    return {
+      line: `diff --git a/${tokens[0]} b/${tokens[1]}`,
+      rewriteMode: "prepend-prefix",
+    };
   }
 
   // Genuinely ambiguous (rename with spaces and no quoting). Leave untouched and let the
@@ -424,7 +430,7 @@ function canonicalizeGitPathPair(oldPath: string, newPath: string, blockLines: s
     canonicalizeKnownGitPathPair(oldPath, newPath, blockLines) ?? {
       oldPath: `a/${oldPath}`,
       newPath: `b/${newPath}`,
-      rewriteMode: "force-add" as const,
+      rewriteMode: "prepend-prefix" as const,
       changed: true,
       isCanonical: false,
     }
@@ -454,6 +460,8 @@ function rewriteUnifiedFileLine(
       : decodedPathName;
 
   const prefixedPath =
-    mode === "force-add" ? `${prefix}${normalizedPath}` : withGitPrefix(normalizedPath, prefix);
+    mode === "prepend-prefix"
+      ? `${prefix}${normalizedPath}`
+      : withGitPrefix(normalizedPath, prefix);
   return `${marker}${prefixedPath}${suffix}`;
 }
