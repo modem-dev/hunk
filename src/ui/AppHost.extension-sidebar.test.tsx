@@ -1,10 +1,11 @@
 import { execSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
+import { removeTestDirectory } from "../../test/helpers/filesystem";
 import { loadAppBootstrap } from "../core/loaders";
 import type { AppBootstrap } from "../core/types";
 import { loadStartupExtensions } from "../extensions/startup";
@@ -19,9 +20,9 @@ import { AppHost } from "./AppHost";
 
 const tempDirs: string[] = [];
 
-afterEach(() => {
+afterEach(async () => {
   for (const dir of tempDirs.splice(0)) {
-    rmSync(dir, { recursive: true, force: true });
+    await removeTestDirectory(dir);
   }
 });
 
