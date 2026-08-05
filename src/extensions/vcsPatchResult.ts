@@ -34,7 +34,10 @@ type SourceFetcherBuilder = NonNullable<BuildDiffFileOptions["sourceFetcherBuild
  * stateless. A rejected read is deliberately left uncached: a source that was
  * too large to expand once should be retried, not remembered as broken.
  */
-function toSourceFetcherBuilder(read: ExtensionVcsFileSourceReader): SourceFetcherBuilder {
+function toSourceFetcherBuilder(
+  read: ExtensionVcsFileSourceReader,
+  sourceCacheKey: string | undefined,
+): SourceFetcherBuilder {
   return (file) => {
     if (file.isBinary) {
       return undefined;
@@ -43,6 +46,7 @@ function toSourceFetcherBuilder(read: ExtensionVcsFileSourceReader): SourceFetch
     const cache = new Map<FileSourceSide, string | null>();
 
     return {
+      cacheKey: sourceCacheKey,
       async getFullText(side) {
         if (cache.has(side)) {
           return cache.get(side) ?? null;
@@ -109,7 +113,7 @@ function toInternalExtraFile(
 /** Convert one published patch result into the internal result loaders consume. */
 export function toInternalVcsPatchResult(result: ExtensionVcsPatchResult): VcsPatchResult {
   const sourceFetcherBuilder = result.readFileSource
-    ? toSourceFetcherBuilder(result.readFileSource)
+    ? toSourceFetcherBuilder(result.readFileSource, result.sourceCacheKey)
     : undefined;
 
   return {

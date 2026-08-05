@@ -612,6 +612,14 @@ export interface ExtensionVcsPatchResult {
    */
   readFileSource?: ExtensionVcsFileSourceReader;
   /**
+   * Opaque stable identity for source state not already represented by each file's patch.
+   *
+   * Reuse a value across loads only when an equal per-file patch plus this key guarantees
+   * the same old/new source answers for that file. Hunk uses the combination to retain
+   * highlighted output; when omitted, every new reader is treated as a new snapshot.
+   */
+  sourceCacheKey?: string;
+  /**
    * Files to review beside `patchText`, in the order they should appear.
    *
    * Each entry is either its own one-file patch or a skipped placeholder.

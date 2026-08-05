@@ -86,6 +86,10 @@ function sourceFetcherFingerprint(file: DiffFile) {
     return "patch-only";
   }
 
+  if (file.sourceFetcher.cacheKey !== undefined) {
+    return `source-cache:${file.sourceFetcher.cacheKey.length}:${file.sourceFetcher.cacheKey}`;
+  }
+
   let id = sourceFetcherIds.get(file.sourceFetcher);
   if (id === undefined) {
     id = nextSourceFetcherId;

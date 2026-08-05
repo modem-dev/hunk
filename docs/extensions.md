@@ -260,11 +260,12 @@ instead of a crash.
 A `load` result is patch text plus how to label it. Everything else on it is
 optional, and each optional field buys one thing:
 
-| Field            | What it adds                                                      |
-| ---------------- | ----------------------------------------------------------------- |
-| `untrackedPaths` | files your VCS calls unknown, synthesized into added-file diffs   |
-| `readFileSource` | exact whole-file contents, for context expansion and highlighting |
-| `extraFiles`     | files reviewed outside the patch, including skipped placeholders  |
+| Field            | What it adds                                                       |
+| ---------------- | ------------------------------------------------------------------ |
+| `untrackedPaths` | files your VCS calls unknown, synthesized into added-file diffs    |
+| `readFileSource` | exact whole-file contents, for context expansion and highlighting  |
+| `sourceCacheKey` | stable source-snapshot identity for highlight reuse across reloads |
+| `extraFiles`     | files reviewed outside the patch, including skipped placeholders   |
 
 `untrackedPaths` is the shorthand: list the repo-root-relative paths your VCS
 reports as unknown and Hunk synthesizes the added-file diffs for you, skipping
@@ -364,6 +365,7 @@ async load(input, ctx) {
     sourceLabel: ctx.cwd,
     title: "Mercurial working copy",
     patchText: await runHgDiff(ctx.cwd),
+    sourceCacheKey: `${oldRev}:${newRev}`,
     readFileSource: async ({ path, previousPath, changeType, side }) => {
       if (side === "old") {
         return changeType === "new" ? null : hgCat(oldRev, previousPath ?? path);
@@ -378,8 +380,13 @@ Return `null` for a side that has no content — the old side of an added file, 
 path the revision never contained — rather than throwing. Hunk calls the reader
 **at most once per file and side** and caches what it resolves, so you do not
 need your own cache, and it never calls it for a file the diff reports as
-binary. Leaving `readFileSource` off is fine: Hunk falls back to the content the
-patch itself carries, which renders the same diff with less context available.
+binary. When equivalent reloads close over the same source base, return the same
+opaque `sourceCacheKey` so Hunk can reuse its highlighted output. An equal per-file
+patch plus that key must guarantee equal old/new source answers for the file; change
+it when source state outside the patch changes. Omit it when the adapter cannot prove
+stable identity and Hunk will invalidate conservatively. Leaving
+`readFileSource` off is fine: Hunk falls back to the content the patch itself carries,
+which renders the same diff with less context available.
 
 #### Files outside the patch
 

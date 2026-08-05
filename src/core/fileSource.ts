@@ -12,6 +12,8 @@ export type FileSourceSpec = { kind: "none" } | { kind: "fs"; absolutePath: stri
 export type FileSourceSide = "old" | "new";
 
 export interface FileSourceFetcher {
+  /** Stable identity for source state not already represented by the file's patch. */
+  readonly cacheKey?: string;
   /**
    * Returns the file's full source text on the requested side, or `null` when
    * the side is not reachable (deleted side, missing path, provider error).
