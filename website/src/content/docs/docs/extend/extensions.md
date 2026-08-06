@@ -93,7 +93,7 @@ Decisions are stored per repository root in `~/.config/hunk/state.json`, keyed b
 
 A broken extension is contained, not fatal: a failed import, missing default export, or throwing factory is skipped and rolled back with a startup notice; a handler or transform that throws later becomes a warning naming the extension. Event handlers receive frozen changeset copies, so accidental mutation throws instead of corrupting the review.
 
-This is crash containment, not a sandbox — an extension can do anything your shell can. What Hunk offers instead is a mediated path for the one thing extensions most want to reach the filesystem for: [`ctx.workspace`](/docs/extend/extension-api/#reading-and-writing-a-reviewed-file) reads reviewed files, and writes one only after asking you, naming the extension and the file.
+Extensions run with your shell permissions. For reviewed files, prefer [`ctx.workspace`](/docs/extend/extension-api/#workspace-documents); writes require consent and identify the extension and file.
 
 ## CLI flags and config
 

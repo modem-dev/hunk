@@ -177,10 +177,8 @@ This is crash containment, not a sandbox. Per-file `metadata` inside event
 payloads is shared with the renderer for performance and is not frozen, and an
 extension runs with your full user permissions — it can do anything your shell
 can. The containment protects you from bugs, not from code you should not have
-loaded in the first place. What Hunk does offer is a mediated path for the one
-thing extensions most want the filesystem for: [reading and writing a reviewed
-file](#reading-and-writing-a-reviewed-file) goes through the host, which asks
-you before anything is written.
+loaded in the first place. For reviewed files, prefer [`ctx.workspace`](#workspace-documents). It attributes
+writes to the extension and asks for consent.
 
 ## The API
 
@@ -1080,156 +1078,70 @@ the same way, and a request made after that point cancels immediately. A blank
 answer from the user, so the promise **rejects**; like any other handler
 failure, that surfaces as a warning naming your extension.
 
-#### Reading and writing a reviewed file
+#### Workspace documents
 
-`ctx.workspace` reaches the reviewed files as whole documents, through Hunk
-rather than around it. Three methods:
+`ctx.workspace` reads full documents from the current review and can replace an
+eligible working-tree file.
 
-- `readDocument(fileId, "old" | "new")` → the full source text, or `null`
-- `canWriteDocument(fileId)` → whether a write could currently succeed
-- `writeDocument({ fileId, text })` → `{ ok: true }`, or `{ ok: false, reason, detail }`
+| Method                                 | Result                                            |
+| -------------------------------------- | ------------------------------------------------- |
+| `readDocument(fileId, "old" \| "new")` | The reviewed source text, or `null`               |
+| `canWriteDocument(fileId)`             | Whether the review and file allow writes          |
+| `writeDocument({ fileId, text })`      | `{ ok: true }` or `{ ok: false, reason, detail }` |
 
-Reading the new side, transforming the text, and writing the result back is the
-pairing this exists for:
-
-```ts
-hunk.registerCommand(
-  { id: "shout-headings", title: "Shout the selected file's headings", key: "f7" },
-  async (ctx) => {
-    const file = ctx.selection.file;
-    if (!file) {
-      return;
-    }
-
-    const current = await ctx.workspace.readDocument(file.id, "new");
-    if (current === null) {
-      ctx.notify("Nothing readable is selected", "warning");
-      return;
-    }
-
-    const result = await ctx.workspace.writeDocument({
-      fileId: file.id,
-      text: current.replace(/^(#+ .+)$/gm, (heading) => heading.toUpperCase()),
-    });
-
-    if (!result.ok && result.reason !== "cancelled") {
-      ctx.notify(result.detail, "warning");
-    }
-  },
-);
-```
-
-`readDocument` is the document a
-[file view](#hunkregisterfileviewview-experimental) gets from
-`input.readDocument`, reachable from a command handler: the exact `"old"` or
-`"new"` source text of a file in the current changeset. `file.patch` is already
-at hand and is deliberately not this, because a patch is not an exact source
-file.
-
-It resolves `null` rather than rejecting for every way a read comes back
-empty-handed — no reviewed file carries that id, the side does not exist (the
-`"old"` side of an added file, the `"new"` side of a deletion), Hunk has no
-source to read for the file at all, the read failed, or the document is past
-Hunk's source-size cap. So `null` means "no document", never "something broke";
-handle it, do not branch on why. The promise **rejects** only for a `side` that
-is neither `"old"` nor `"new"`, which is a bug in your extension rather than an
-answer.
-
-Reads work in every review kind — a working-tree diff, a revision show, a stash
-entry, a range diff, patch input — and they answer with what that review is
-showing: in `hunk show HEAD` the `"new"` side is the file at that commit, not
-the file in your working tree. Reads never prompt, because they expose exactly
-what the user is already looking at, so there is nothing to consent to. Writes
-are the half that asks.
-
-A write does not need a read in front of it, and `canWriteDocument` is the
-affordance probe behind an action you offer — the same review, file, and path
-checks a write makes, minus the dialog and the filesystem:
+A command can read, transform, and write a selected file:
 
 ```ts
-hunk.registerCommand(
-  { id: "format", title: "Format the selected file", key: "f6" },
-  async (ctx) => {
-    const file = ctx.selection.file;
-    if (!file || !ctx.workspace.canWriteDocument(file.id)) {
-      ctx.notify("Nothing writable is selected", "warning");
-      return;
-    }
+hunk.registerCommand({ id: "shout-headings", title: "Shout headings", key: "f7" }, async (ctx) => {
+  const file = ctx.selection.file;
+  if (!file || !ctx.workspace.canWriteDocument(file.id)) return;
 
-    const result = await ctx.workspace.writeDocument({
-      fileId: file.id,
-      text: await formatDocument(file.path),
-    });
+  const current = await ctx.workspace.readDocument(file.id, "new");
+  if (current === null) return;
 
-    if (result.ok) {
-      ctx.notify(`Formatted ${file.path}`);
-      return;
-    }
+  const result = await ctx.workspace.writeDocument({
+    fileId: file.id,
+    text: current.replace(/^(#+ .+)$/gm, (heading) => heading.toUpperCase()),
+  });
 
-    // "cancelled" is the user answering, not something to complain about.
-    if (result.reason !== "cancelled") {
-      ctx.notify(result.detail, "warning");
-    }
-  },
-);
+  if (!result.ok && result.reason !== "cancelled") {
+    ctx.notify(result.detail, "warning");
+  }
+});
 ```
 
-[Failure isolation](#failure-isolation) is crash containment, not a sandbox: an
-extension can already `import "node:fs"` and write wherever your shell can. This
-is the supported alternative, and what it buys is everything a direct write
-skips. The target can only be a file the user is already reviewing. The user is
-asked before anything is touched, and the prompt names the extension asking. The
-review reloads afterwards, so what the user is looking at is what is on disk.
-Writing files any other way is outside the contract, and outside anything the
-user agreed to when they loaded you.
+`readDocument` returns the exact source represented by the review, not the
+file's patch. It works for every review kind. For example, the `"new"` side in
+`hunk show HEAD` is the file at that commit, not the working-tree file. It
+returns `null` when the file or side is absent, no source is available, reading
+fails, or the document exceeds Hunk's size limit. Reads never prompt. An invalid
+side rejects the promise.
 
-Writes are working-tree only. They are available exactly when the session is
-reviewing the working tree — `hunk diff` with no revision range and without
-`--staged`. A revision show, a stash show, a range diff, a staged diff, patch
-input, and a file-pair diff have no working-tree document to replace, so every
-write against them comes back `unavailable`.
+Writes require all of the following:
 
-They also need a session that can reload, because every successful write
-reloads one. A session started with `--agent-context -` read its agent context
-from stdin and cannot rebuild its review, so it comes back `unavailable` too
-rather than accepting a write the review would never show.
+- an unstaged working-tree review (`hunk diff` with no revision range)
+- a reloadable session; `--agent-context -` sessions cannot write
+- a reviewed file with writable new-side text
+- a regular target inside the review root
 
-The target is a reviewed-file id, never a path: `writeDocument` takes the `id`
-of a file in the current changeset, so an extension can ask to write something
-the user is looking at and nothing else. Files with no new side are
-`unavailable` for the same reason there is nothing to replace — a deletion, a
-binary file, a file skipped for size.
+Revision, stash, range, staged, patch, and file-pair reviews are read-only.
+Deleted, binary, oversized, missing, symlinked, and root-escaping targets are
+also refused. Targets are identified by reviewed file id, never by an arbitrary
+path.
 
-Before it asks, Hunk checks that the path it would write is the file the prompt
-names. A reviewed path that is a symlink, or that sits under a directory link
-leading out of the repository, is `unavailable` — Hunk refuses to follow links
-out of the review rather than showing a repo-relative name over a write that
-lands elsewhere. So is a file that has left the working tree since the review
-was built: a write replaces a reviewed file, it never recreates a deleted one.
-Hunk checks again after consent, so a target deleted or replaced by an unsafe
-path while the dialog was open is refused too. `canWriteDocument` skips the filesystem and is optimistic about
-these; the write itself never is.
+`canWriteDocument` checks the review and file policy without prompting or
+inspecting the filesystem. A later `writeDocument` can still refuse if the file
+has moved or become unsafe.
 
-Every write asks first. Hunk raises a confirm dialog through the same queue as
-`ctx.dialogs` — one modal at a time, in call order, carrying your `ext <your-id>`
-attribution — naming the file's path and saying plainly that its contents will
-be replaced. Declining, or pressing Escape, resolves
-`{ ok: false, reason: "cancelled" }`. That is an answer, not an error: a handler
-should treat it as the user saying no rather than as something to report.
+`writeDocument` verifies the target, asks for consent through the attributed
+`ctx.dialogs` queue, then verifies it again before writing. The second check
+prevents deletion and symlink-swap races while the dialog is open. A successful
+write starts a session reload; the write promise may settle before that reload
+finishes.
 
-On success Hunk reloads the session, the same reload the refresh key runs, so
-the review reflects what you wrote — which is why a session that cannot reload
-cannot write. The promise settles on the write itself, not on the reload — a
-handler that resumes immediately still holds the changeset it was called with,
-and should read the new one from `changeset_loaded` or `session_reload` if it
-needs it.
-
-The remaining refusal is `failed`: Hunk attempted the write and the filesystem
-said no — permissions, a path that is now a directory, a full disk. `detail`
-carries a sentence fit to show a person. The promise **rejects** only for a
-malformed request, a missing or non-string `fileId` or `text`, which is a bug in
-the extension rather than an answer; like any other handler failure, that
-surfaces as a warning naming your extension.
+A declined prompt returns `cancelled`, an ineligible or unsafe target returns
+`unavailable`, and an attempted write failure returns `failed` with a
+displayable `detail`. Malformed requests reject the promise.
 
 ### `hunk.transformChangeset(fn)`
 

@@ -138,27 +138,16 @@ frame always carries an `ext <id>` attribution row — the toast marker — beca
 the title is extension-authored and a prompt must not be able to impersonate
 Hunk.
 
-`ctx.workspace` is the only way extension code can change the reviewed files,
-and it is deliberately a thin host wrapper: `src/ui/lib/extensionWorkspace.ts`
-holds the whole policy as one pure classification of `(input, file, root)` —
-working-tree-only reviews, reviewed ids rather than paths, no deleted or
-unreadable files, no path escaping the review root — so `canWriteDocument` and
-`writeDocument` cannot drift apart, and an affordance never advertises an action
-the write would refuse. App resolves it against a ref holding the current input,
-unfiltered changeset, and repo root, because a soft reload replaces all three
-under a mounted App. Consent runs through the dialog queue above rather than a
-parallel prompt, and a successful write reloads through the same
-`refreshCurrentInput` the refresh key uses, fire-and-forget so the extension's
-promise settles on the write itself.
+`src/ui/lib/extensionWorkspace.ts` owns the policy for `ctx.workspace`. Reads
+resolve reviewed file ids through the existing source fetcher, which retains
+ownership of caching and size limits. Missing or unreadable sources become
+`null`.
 
-`readDocument` is the same module's other half and deliberately a much smaller
-one: `resolveExtensionWorkspaceRead` validates the side, finds the reviewed file
-by id, and hands back that file's `sourceFetcher.getFullText` bound to the side,
-or `null`. It consults no review kind and no root, because a read discloses only
-what the review already renders, and it performs no read itself, so the module
-stays a pure decision and the fetcher keeps owning its caching and its size cap.
-App turns every rejection into `null`, making the same document a file view
-receives from `ExtensionFileViewInput.readDocument` reachable from a handler.
+Writes are limited to reloadable working-tree reviews and reviewed paths inside
+the review root. App supplies the current input, unfiltered changeset, and root
+through refs so soft reloads update the policy inputs. The host verifies the
+filesystem target before and after consent, writes it, then calls
+`refreshCurrentInput`. Consent uses the existing extension-dialog queue.
 
 Commands declare chords, not matchers: `src/ui/lib/keymap.ts` folds every
 command's `defaultKeys` against the user's `[keybindings]` table (user config
