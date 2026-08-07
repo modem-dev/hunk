@@ -1,5 +1,139 @@
 # Changelog
 
+## 0.18.0-beta.0
+
+### Minor Changes
+
+- [#570](https://github.com/modem-dev/hunk/pull/570) - Add exact Shiki/TextMate overrides via `custom_theme.syntax_scopes`, with compatibility for deprecated `custom_theme.syntax`.
+
+- [#629](https://github.com/modem-dev/hunk/pull/629) - Add live `ctx.navigation.selectFile` and `selectHunk` APIs for guarded review-stream navigation.
+
+- [#616](https://github.com/modem-dev/hunk/pull/616) - Give extension commands a frozen snapshot of the current review selection through `ctx.selection`.
+
+- [#588](https://github.com/modem-dev/hunk/pull/588) - Render tabs at four-column stops by default, configurable through `tab_width`, `-x`, or `--tab-width`.
+
+- [#632](https://github.com/modem-dev/hunk/pull/632) - Advance the extension API to v2 with experimental fixed-height React/OpenTUI file-view rows and semantic theme painting.
+
+- [#617](https://github.com/modem-dev/hunk/pull/617) - Add queued `ctx.dialogs.confirm`, `select`, and `input` prompts to extension commands.
+
+- [#619](https://github.com/modem-dev/hunk/pull/619) - Add extension UI lifecycle events, sidebar controls for event handlers, and an inter-extension event bus.
+
+- [#599](https://github.com/modem-dev/hunk/pull/599) - Add experimental TypeScript extensions, bundled VCS adapters, multiple custom themes, trust controls, and configurable loading paths.
+
+- [#615](https://github.com/modem-dev/hunk/pull/615) - Expose resolved command keybindings to custom extension sidebars so they honor remapping and unbinding.
+
+- [#512](https://github.com/modem-dev/hunk/pull/512) - Add experimental STML agent-note markup, `hunk markup guide`/`render`, and live note-width validation APIs.
+
+- [#614](https://github.com/modem-dev/hunk/pull/614) - Make menus and help reflect remapped keys, add an Extensions menu, and expose formerly menu-only actions as commands.
+
+- [#611](https://github.com/modem-dev/hunk/pull/611) - Add extension commands, multiple sidebar views, configurable `[keybindings]`, shared key APIs, and namespaced command/view IDs.
+
+- [#647](https://github.com/modem-dev/hunk/pull/647) - Give `hunk pager` the full review controls while keeping its menu bar and sidebar initially hidden.
+
+- [#626](https://github.com/modem-dev/hunk/pull/626) - Expose ordered `ExtensionDiffHunk` summaries with headers, indexes, and inclusive line spans in public file views.
+
+- [#632](https://github.com/modem-dev/hunk/pull/632) - Add an experimental host-rendered extension file-view contract and an optional Markdown preview example.
+
+- [#468](https://github.com/modem-dev/hunk/pull/468) - Offer to save changed view preferences on quit, with a persistent “never ask” option.
+
+- [#609](https://github.com/modem-dev/hunk/pull/609) - Let extensions replace file navigation with React sidebars that receive live review props and safe navigation actions.
+
+### Patch Changes
+
+- [#531](https://github.com/modem-dev/hunk/pull/531) - Reduce Git polling and CPU use in watch mode while preserving continuous refreshes with a polling fallback.
+
+- [#599](https://github.com/modem-dev/hunk/pull/599) - Store repo-extension trust by canonical root so trusted extensions load through symlinked and Windows short paths.
+
+- [#625](https://github.com/modem-dev/hunk/pull/625) - Discover `.tsx` and `.jsx` extension entries alongside TypeScript and JavaScript entries.
+
+- [#606](https://github.com/modem-dev/hunk/pull/606) - Support folder-extension entry points and multiple entries through `package.json` `hunk.extensions` manifests.
+
+- [#599](https://github.com/modem-dev/hunk/pull/599) - Harden extension types, themes, lifecycle data, reloads, VCS detection, configured paths, and user-facing failures.
+
+- [#606](https://github.com/modem-dev/hunk/pull/606) - Load directories with `index.ts`, `index.js`, or `index.mjs` as single folder extensions.
+
+- [#649](https://github.com/modem-dev/hunk/pull/649) - Prevent one keypress from triggering both a modal action and the focused widget beneath it.
+
+- [#589](https://github.com/modem-dev/hunk/pull/589) - Require `--experimental` for STML note rendering and advertise the `stml` capability only in opted-in sessions.
+
+- [#519](https://github.com/modem-dev/hunk/pull/519) - Label repo-root file runs with a `./` sidebar header without changing review order.
+
+- [#531](https://github.com/modem-dev/hunk/pull/531) - Reduce watch-mode startup cost on macOS and Windows with bounded native recursive filesystem observation.
+
+- [#574](https://github.com/modem-dev/hunk/pull/574) - Show a startup notice when deprecated `custom_theme.syntax` colors are translated to approximate Shiki scopes.
+
+- [#572](https://github.com/modem-dev/hunk/pull/572) - Restart stale session daemons during upgrades so rich STML comments reach live reviews.
+
+- [#627](https://github.com/modem-dev/hunk/pull/627) - Upgrade `shell-quote` against a denial-of-service flaw and keep file-watch refreshes responsive after missed events.
+
+- [#630](https://github.com/modem-dev/hunk/pull/630) - Document the supported scrollbox ref, stable row IDs, selection following, and pane geometry APIs for custom sidebars.
+
+- [#596](https://github.com/modem-dev/hunk/pull/596) - Generate the hunk-review skill from typed session commands and document missing note, markup, rationale, and author flags.
+
+- [#652](https://github.com/modem-dev/hunk/pull/652) - Skip inactive custom file-view preparation to reduce rerenders and retained memory in raw-diff reviews.
+
+- [#655](https://github.com/modem-dev/hunk/pull/655) - Keep delayed scroll alignment from changing the file selected by navigation.
+
+- [#645](https://github.com/modem-dev/hunk/pull/645) - Preserve one-line keyboard scrolling after clicking in the review stream.
+
+- [#599](https://github.com/modem-dev/hunk/pull/599) - Write `state.json` atomically and preserve unreadable state as `state.json.corrupt`.
+
+- [#573](https://github.com/modem-dev/hunk/pull/573) - Teach STML authors to compose within Hunk’s native note frame while preserving focused inset boxes.
+
+- [#598](https://github.com/modem-dev/hunk/pull/598) - Show Nix-aware update guidance instead of suggesting npm installation for the Nix package.
+
+## 0.17.7
+
+### Patch Changes
+
+- f7eff9d: Fix session commands when the local daemon uses the IPv6 loopback address.
+- dc61750: Fix Nix flake evaluation on Nixpkgs 26.11, which dropped `x86_64-darwin`. Hunk's flake no longer declares that system, and it now pins bun2nix's `systems` input to the same list so building the `aarch64-darwin` package never forces an Intel macOS Nixpkgs. The system list is exposed as a `systems` flake input for consumers that need to override it.
+
+## 0.17.6
+
+### Patch Changes
+
+- 736b1d7: Republish the 0.17.5 application changes as 0.17.6 so the GitHub release includes downloadable binaries for every supported platform. Application behavior is unchanged from 0.17.5.
+
+## 0.17.5
+
+### Patch Changes
+
+- 034ec93: Avoid loading OpenTUI's embedded native library for headless commands. Help, version, session polling, daemon serving, markup rendering, and non-interactive pager paths now stay behind a lightweight CLI entrypoint, preventing Bun from leaking a native temp file for commands that never open the review UI.
+- aa123df: Optimize terminal cell width measurement so diffs with CJK, emoji, and chrome-glyph runs render faster: single-scalar clusters now measure through a fast zero-width check plus the East Asian Width table instead of string-width's expensive emoji regexes, while multi-scalar clusters still defer to string-width for identical results.
+
+## 0.17.4
+
+### Patch Changes
+
+- a9b8694: Restore OpenTUI's platform-default renderer threading to improve interactive startup on macOS.
+- 67674fa: Rapidly pressing Ctrl+S (or double-clicking Save) while saving a draft note no longer saves the same note twice, and saved note ids stay unique even within one millisecond.
+
+## 0.17.3
+
+### Patch Changes
+
+- 9d1c346: Extend static pager diff-row backgrounds to the edge of host panels such as Lazygit.
+- 05d6c17: Wrap plain-text agent notes by terminal cells instead of UTF-16 code
+  units, so CJK and emoji text wraps correctly instead of being truncated
+  with silent content loss. Long unbroken words split on grapheme
+  boundaries, so wide characters and surrogate pairs are never cut apart.
+
+## 0.17.2
+
+### Patch Changes
+
+- 7e934a0: Reject malformed and unsafe line and hunk numbers instead of accepting their numeric prefix.
+- d1d36fc: Fix mouse-selection copy misalignment on lines with wide (CJK, emoji) characters: drag, double-click, and triple-click selections now convert terminal cell columns into string indices before slicing, so the copied text matches the selected cells exactly. File-header rows with wide-character filenames now copy with the same cell alignment, and invisible zero-width characters at a selection boundary round-trip through the clipboard.
+
+## 0.17.1
+
+### Patch Changes
+
+- cb8d626: Prevent Windows crashes when scrolling to the end of a diff and suppress Yoga NaN warning spam in Apple Silicon npm installs by upgrading OpenTUI to 0.4.3.
+- 45f6402: Reduced retained memory for large reviews by lazily materializing cached geometry row plans only when copy selection needs them.
+- 7ae443d: Fix global config discovery on Windows when `HOME` is unavailable.
+
 ## 0.17.0
 
 ### Minor Changes

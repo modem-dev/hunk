@@ -93,6 +93,10 @@ describe("git command helpers", () => {
     expect(args).toContain("color.diff.newMoved=cyan bold");
   });
 
+  test("forces byte-safe Git path quoting before stdout decoding", () => {
+    expect(buildGitDiffArgs(makeGitInput())).toContain("core.quotePath=true");
+  });
+
   test("disables external diff tools for stash patches", () => {
     const args = buildGitStashShowArgs({
       kind: "stash-show",

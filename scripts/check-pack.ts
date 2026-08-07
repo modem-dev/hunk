@@ -23,11 +23,16 @@ import {
 } from "hunkdiff/extension";
 import type {
   ExtensionChangeset,
+  ExtensionFileViewRow,
+  ExtensionFileViewRowComponentProps,
+  ExtensionFileViewSourceRange,
+  ExtensionPaintTheme,
   ExtensionReviewSelection,
   ExtensionVcsAdapter,
   ExtensionVcsDiffInput,
   ExtensionVcsLoadContext,
   ExtensionVcsPatchResult,
+  ExtensionWorkspaceWriteResult,
   HunkExtensionAPI,
   NamedCustomThemeConfig,
 } from "hunkdiff/extension";
@@ -45,6 +50,83 @@ export default function (hunk: HunkExtensionAPI) {
   };
   hunk.registerTheme(theme);
   hunk.registerFileLanguage(".zig", "zig");
+
+  const renderRow = (props: ExtensionFileViewRowComponentProps) => {
+    const paintTheme: ExtensionPaintTheme = props.theme;
+    hunk.log(paintTheme.text);
+    return null;
+  };
+  const sourceRange: ExtensionFileViewSourceRange = { side: "new", range: [1, 1] };
+  const componentRow: ExtensionFileViewRow = {
+    id: "component",
+    spans: [{ text: "fallback" }],
+    sourceRanges: [sourceRange],
+    component: { height: 2, render: renderRow },
+  };
+  const invalidComponentRow: ExtensionFileViewRow = {
+    id: "invalid",
+    spans: [],
+    // @ts-expect-error Height and render cannot be unpaired in a component descriptor.
+    component: { height: 1 },
+  };
+  void invalidComponentRow;
+  const invalidToneRow: ExtensionFileViewRow = {
+    id: "invalid-tone",
+    // @ts-expect-error Ordinary text omits tone; "text" is not a semantic tone.
+    spans: [{ text: "invalid", tone: "text" }],
+  };
+  void invalidToneRow;
+  hunk.registerFileView({
+    id: "raw",
+    title: "A view whose extension id is raw",
+    matches: (file) => file.path.endsWith(".md"),
+    async layout(input) {
+      const document: string | null = await input.readDocument("new");
+      const firstRange: readonly [number, number] | undefined = input.changes[0]?.range;
+      const firstChange = input.changes[0];
+      if (firstChange) {
+        // @ts-expect-error File-view ranges are immutable tuples.
+        firstChange.range[0] = 1;
+      }
+      // @ts-expect-error The single layout input is readonly.
+      input.width = 1;
+      hunk.log(document ?? String(firstRange?.[0] ?? input.width));
+      return {
+        rows: [componentRow],
+        hunkRows: (input.file.hunks ?? []).map(() => ({ startRow: 0, endRow: 0 })),
+      };
+    },
+  });
+  hunk.registerCommand({ id: "raw-view", title: "Raw view" }, (ctx) => {
+    ctx.fileViews.select("raw");
+    ctx.fileViews.select(null);
+    ctx.fileViews.refresh("raw");
+    if (ctx.fileViews.isActive("raw") && !ctx.fileViews.isModeActive("raw")) {
+      const entered: boolean = ctx.fileViews.enterMode("raw");
+      hunk.log(entered ? "mode running" : "mode refused");
+    }
+    ctx.fileViews.exitMode();
+  });
+
+  hunk.registerCommand({ id: "rewrite", title: "Rewrite the selection" }, async (ctx) => {
+    const file = ctx.selection.file;
+    if (!file || !ctx.workspace.canWriteDocument(file.id)) {
+      return;
+    }
+
+    // A read answers with the document or with nothing; a side outside the
+    // union is a compile error rather than a runtime surprise.
+    const current: string | null = await ctx.workspace.readDocument(file.id, "new");
+    // @ts-expect-error Only the two document sides can be read.
+    void ctx.workspace.readDocument(file.id, "both");
+
+    const written: ExtensionWorkspaceWriteResult = await ctx.workspace.writeDocument({
+      fileId: file.id,
+      text: (current ?? "").toUpperCase(),
+    });
+    // The result is a discriminated union: \`detail\` exists only on refusals.
+    hunk.log(written.ok ? "written" : written.detail);
+  });
 
   const adapter: ExtensionVcsAdapter = {
     id: "hg",
@@ -229,6 +311,26 @@ for (const file of pack.files) {
 
 if (pack.name !== "hunkdiff") {
   throw new Error(`Expected npm package name to be hunkdiff, got ${pack.name}.`);
+}
+
+const extensionTypes = readFileSync(
+  path.join(repoRoot, "dist", "npm", "extension", "extension-api", "types.d.ts"),
+  "utf8",
+);
+if (/^\s*import\b/m.test(extensionTypes)) {
+  throw new Error("The public extension-api/types declaration must remain import-free.");
+}
+for (const removedType of [
+  "ExtensionExactFileDocument",
+  "ExtensionFileDocuments",
+  "ExtensionFileViewHunkBounds",
+  "ExtensionFileViewLayoutContext",
+  "ExtensionFileViewTextAttribute",
+  "ExtensionFileViewTone",
+]) {
+  if (extensionTypes.includes(removedType)) {
+    throw new Error(`Removed file-view helper type was emitted: ${removedType}`);
+  }
 }
 
 // The allowlist above proves the published extension surface contains only what

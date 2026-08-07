@@ -9,6 +9,7 @@ import type {
   ExtensionLoadResult,
   ExtensionRegistry,
   RegisteredCommand,
+  RegisteredFileView,
   RegisteredSidebarView,
 } from "./types";
 
@@ -105,9 +106,24 @@ export function resolveExtensionVcsAdapters(
   return { adapters, issues };
 }
 
+/**
+ * Join one extension id and a local view id into the address every registered view is known by.
+ *
+ * Duplicate resolution, selection lookup, and command-facing id qualification must agree on this
+ * exactly, so the format lives here once rather than being re-templated per caller.
+ */
+export function qualifiedViewKey(extensionId: string, viewId: string) {
+  return `${extensionId}:${viewId}`;
+}
+
+/** Derive the `<extensionId>:<viewId>` key one registered view is addressed by. */
+export function registeredViewKey(registered: { extensionId: string; view: { id: string } }) {
+  return qualifiedViewKey(registered.extensionId, registered.view.id);
+}
+
 /** Derive the key one sidebar view is addressed by everywhere in the app. */
 export function sidebarViewKey(registered: RegisteredSidebarView) {
-  return `${registered.extensionId}:${registered.view.id}`;
+  return registeredViewKey(registered);
 }
 
 /** The sidebar views one session offers, plus the registrations skipped as duplicates. */
@@ -137,6 +153,40 @@ export function resolveExtensionSidebarViews(
       issues.push({
         extensionId: registered.extensionId,
         message: `Skipped duplicate sidebar view "${key}" from extension ${registered.extensionId}`,
+      });
+      continue;
+    }
+
+    claimed.add(key);
+    views.push(registered);
+  }
+
+  return { views, issues };
+}
+
+/** Derive the key one file view is addressed by everywhere in the app. */
+export function fileViewKey(registered: RegisteredFileView) {
+  return registeredViewKey(registered);
+}
+
+/** The file views one session offers, plus registrations skipped as duplicates. */
+export interface ResolvedExtensionFileViews {
+  views: RegisteredFileView[];
+  issues: ExtensionApplyIssue[];
+}
+
+/** Resolve file-view identities while retaining registration order as the priority rule. */
+export function resolveExtensionFileViews(registry: ExtensionRegistry): ResolvedExtensionFileViews {
+  const views: RegisteredFileView[] = [];
+  const issues: ExtensionApplyIssue[] = [];
+  const claimed = new Set<string>();
+
+  for (const registered of registry.fileViews) {
+    const key = fileViewKey(registered);
+    if (claimed.has(key)) {
+      issues.push({
+        extensionId: registered.extensionId,
+        message: `Skipped duplicate file view "${key}" from extension ${registered.extensionId}`,
       });
       continue;
     }
@@ -212,10 +262,17 @@ export function applyExtensionRegistrations(
   // duplicate registrations surface through the same notice path as every
   // other refusal.
   const sidebars = resolveExtensionSidebarViews(result.registry);
+  const fileViews = resolveExtensionFileViews(result.registry);
   const commands = resolveExtensionCommands(result.registry);
   return {
     vcsAdapters: vcs.adapters,
-    issues: [...languageIssues, ...vcs.issues, ...sidebars.issues, ...commands.issues],
+    issues: [
+      ...languageIssues,
+      ...vcs.issues,
+      ...sidebars.issues,
+      ...fileViews.issues,
+      ...commands.issues,
+    ],
   };
 }
 

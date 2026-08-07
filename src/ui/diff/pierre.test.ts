@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { parseDiffFromFile } from "@pierre/diffs";
+import { parseDiffFromFile, parsePatchFiles } from "@pierre/diffs";
+import { createTwoFilesPatch } from "diff";
 import type { DiffFile } from "../../core/types";
 import {
   buildSplitRows,
@@ -15,6 +16,7 @@ import { stackCellPalette } from "./rowStyle";
 import { buildReviewRenderPlan } from "./reviewRenderPlan";
 import { measureTextWidth } from "../lib/text";
 import { TRANSPARENT_BACKGROUND, resolveTheme } from "../themes";
+import { createTestSourceFetcher } from "../../../test/helpers/diff-helpers";
 import { createTestCustomThemes } from "../../../test/helpers/theme-helpers";
 
 function createDiffFile(): DiffFile {
@@ -45,6 +47,55 @@ function createDiffFile(): DiffFile {
     },
     metadata,
     agent: null,
+  };
+}
+
+const ELIXIR_HEREDOC_BEFORE = `defmodule Repro do
+  @doc """
+  Line one.
+  Line two.
+  Line three.
+  Line four.
+  Line five.
+  """
+  def hello do
+    :world
+  end
+end
+`;
+const ELIXIR_HEREDOC_AFTER = ELIXIR_HEREDOC_BEFORE.replace("Line five.", "Line five, edited.");
+const ELIXIR_HEREDOC_PATCH = `diff --git a/repro.ex b/repro.ex
+--- a/repro.ex
++++ b/repro.ex
+@@ -4,9 +4,9 @@
+   Line two.
+   Line three.
+   Line four.
+-  Line five.
++  Line five, edited.
+   """
+   def hello do
+     :world
+   end
+ end
+`;
+
+/** Build issue #664's partial Elixir diff with optional authoritative source text. */
+function createElixirHeredocDiffFile(sourceFetcher?: DiffFile["sourceFetcher"]): DiffFile {
+  const metadata = parsePatchFiles(ELIXIR_HEREDOC_PATCH, "issue-664", true)[0]?.files[0];
+  if (!metadata) {
+    throw new Error("Expected issue #664 patch metadata");
+  }
+
+  return {
+    id: "issue-664",
+    path: "repro.ex",
+    patch: ELIXIR_HEREDOC_PATCH,
+    language: "elixir",
+    stats: { additions: 1, deletions: 1 },
+    metadata,
+    agent: null,
+    sourceFetcher,
   };
 }
 
@@ -116,6 +167,107 @@ describe("Pierre diff rows", () => {
         (span) => span.text.includes("export") && typeof span.fg === "string",
       ),
     ).toBe(true);
+  });
+
+  test("uses full source to keep partial Elixir hunks inside the correct heredoc state", async () => {
+    const sourceFetcher = createTestSourceFetcher((side) =>
+      side === "old" ? ELIXIR_HEREDOC_BEFORE : ELIXIR_HEREDOC_AFTER,
+    );
+    const file = createElixirHeredocDiffFile(sourceFetcher);
+    const theme = resolveTheme("github-dark-default", null);
+    const highlighted = await loadHighlightedDiff(file, theme);
+    const rows = buildStackRows(file, highlighted, theme);
+    const rowFor = (text: string) =>
+      rows.find(
+        (row) =>
+          row.type === "stack-line" && row.cell.spans.some((span) => span.text.includes(text)),
+      );
+    const docRow = rowFor("Line two.");
+    const functionRow = rowFor("def");
+    const additionRow = rowFor("edited");
+
+    expect(sourceFetcher.calls).toEqual(["old", "new"]);
+    expect(docRow?.type === "stack-line" ? docRow.cell.spans[0]?.fg : undefined).toBe("#8B949E");
+    expect(
+      functionRow?.type === "stack-line"
+        ? functionRow.cell.spans.find((span) => span.text.includes("def"))?.fg
+        : undefined,
+    ).toBe("#FF7B72");
+    expect(
+      additionRow?.type === "stack-line"
+        ? additionRow.cell.spans.find((span) => span.text.includes("edited"))?.bg
+        : undefined,
+    ).toBeDefined();
+  });
+
+  test("falls back to patch-fragment highlighting when authoritative source cannot load", async () => {
+    const sourceFetcher = createTestSourceFetcher(() => {
+      throw new Error("source unavailable");
+    });
+    const file = createElixirHeredocDiffFile(sourceFetcher);
+    const theme = resolveTheme("github-dark-default", null);
+    const highlighted = await loadHighlightedDiff(file, theme);
+    const rows = buildStackRows(file, highlighted, theme);
+    const functionRow = rows.find(
+      (row) =>
+        row.type === "stack-line" && row.cell.spans.some((span) => span.text.includes("def hello")),
+    );
+
+    expect(sourceFetcher.calls).toEqual(["old", "new"]);
+    expect(functionRow?.type).toBe("stack-line");
+    expect(functionRow?.type === "stack-line" ? functionRow.cell.spans[0]?.fg : undefined).toBe(
+      "#A5D6FF",
+    );
+  });
+
+  test("preserves different old and new grammar states across partial diff hunks", async () => {
+    const oldText = [
+      'const message = "closed";',
+      ...Array.from({ length: 8 }, (_, index) => `const gap${index + 1} = ${index + 1};`),
+      "const target = 1;",
+      "",
+    ].join("\n");
+    const newText = [
+      "const message = `open",
+      ...Array.from({ length: 8 }, (_, index) => `const gap${index + 1} = ${index + 1};`),
+      "const target = 2;`;",
+      "",
+    ].join("\n");
+    const patch = createTwoFilesPatch("state.ts", "state.ts", oldText, newText, "", "", {
+      context: 1,
+    });
+    const metadata = parsePatchFiles(patch, "grammar-state", true)[0]?.files[0];
+    if (!metadata) {
+      throw new Error("Expected partial grammar-state metadata");
+    }
+    const sourceFetcher = createTestSourceFetcher((side) => (side === "old" ? oldText : newText));
+    const file: DiffFile = {
+      id: "grammar-state",
+      path: "state.ts",
+      patch,
+      language: "typescript",
+      stats: { additions: 2, deletions: 2 },
+      metadata,
+      agent: null,
+      sourceFetcher,
+    };
+    const theme = resolveTheme("github-dark-default", null);
+    const highlighted = await loadHighlightedDiff(file, theme);
+    const rows = buildSplitRows(file, highlighted, theme);
+    const contextRow = rows.find(
+      (row) =>
+        row.type === "split-line" &&
+        row.left.spans.some((span) => span.text.includes("gap8")) &&
+        row.right.spans.some((span) => span.text.includes("gap8")),
+    );
+
+    expect(contextRow?.type).toBe("split-line");
+    if (!contextRow || contextRow.type !== "split-line") {
+      throw new Error("Expected second-hunk context row");
+    }
+    expect(contextRow.left.spans.map((span) => span.fg)).not.toEqual(
+      contextRow.right.spans.map((span) => span.fg),
+    );
   });
 
   test("keeps word-diff highlight backgrounds transparent when a theme uses transparent tints", async () => {

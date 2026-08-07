@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Session } from "tuistory";
+import type { Key, Session } from "tuistory";
 
 const integrationDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(integrationDir, "../..");
@@ -60,6 +60,34 @@ interface ChangedFileSpec {
 
 export function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Count how many rows one keypress moved the stream by following the text that
+ * sat on a fixed screen row.
+ *
+ * Positive means the content moved up (scrolled down); zero means the anchor
+ * row did not move at all.
+ */
+export async function measureKeyScroll(session: Session, key: Key, anchorRow: number) {
+  const before = (await session.text({ immediate: true })).split("\n");
+  const anchor = before[anchorRow]?.trim() ?? "";
+  if (anchor.length === 0) {
+    throw new Error(`measureKeyScroll: anchor row ${anchorRow} is empty.`);
+  }
+
+  await session.press(key);
+  await session.waitIdle({ timeout: 400 });
+
+  const after = (await session.text({ immediate: true })).split("\n");
+  const movedTo = after.findIndex((line) => line.trim() === anchor);
+  if (movedTo < 0) {
+    throw new Error(
+      `measureKeyScroll: anchor ${JSON.stringify(anchor)} left the screen after pressing ${String(key)}.`,
+    );
+  }
+
+  return anchorRow - movedTo;
 }
 
 /** Send an SGR mouse motion event at zero-based terminal coordinates. */
@@ -512,6 +540,62 @@ export function createPtyHarness() {
     return { dir };
   }
 
+  /** Build the long-path fixture used to verify narrow file-header layout. */
+  function createNarrowHeaderTestRepoFixture() {
+    return createGitRepoFixture([
+      {
+        path: "packages/visual-studio-code-vscode/extension-postgres.ts",
+        before: "export const value = 1;\n",
+        after: "export const value = 2;\n",
+      },
+    ]);
+  }
+
+  /** Build a staged Unicode rename for exact Git path rendering coverage. */
+  function createUnicodePathRepoFixture() {
+    const dir = makeTempDir("hunk-tuistory-unicode-path-");
+    const previousPath = "国際化/日本語.txt";
+    const path = "国際化/한국어-🧪.txt";
+
+    runGit(["init"], dir);
+    runGit(["config", "user.name", "Pi"], dir);
+    runGit(["config", "user.email", "pi@example.com"], dir);
+    writeText(join(dir, previousPath), "shared\nold-only\nshared\n");
+    runGit(["add", "."], dir);
+    runGit(["commit", "-m", "initial"], dir);
+    runGit(["config", "core.quotePath", "false"], dir);
+    runGit(["mv", previousPath, path], dir);
+    writeText(join(dir, path), "shared\nnew-only\nshared\n");
+    runGit(["add", "."], dir);
+
+    return { dir, path, previousPath };
+  }
+
+  /** Build issue #664's Elixir heredoc edit in a real source-backed Git review. */
+  function createElixirHeredocRepoFixture() {
+    const before = `defmodule Repro do
+  @doc """
+  Line one.
+  Line two.
+  Line three.
+  Line four.
+  Line five.
+  """
+  def hello do
+    :world
+  end
+end
+`;
+
+    return createGitRepoFixture([
+      {
+        path: "repro.ex",
+        before,
+        after: before.replace("Line five.", "Line five, edited."),
+      },
+    ]);
+  }
+
   function createTwoFileRepoFixture() {
     return createGitRepoFixture([
       {
@@ -692,6 +776,33 @@ export function createPtyHarness() {
     return { dir, patchFile };
   }
 
+  /**
+   * Capture a multi-file working-tree diff as a patch file.
+   *
+   * Pager tests feed this on stdin to get the same review `git diff | hunk
+   * pager` produces, with a leading file tall enough that the second one only
+   * becomes visible once the reader navigates to it.
+   */
+  function createMultiFilePagerPatchFixture() {
+    const fixture = createGitRepoFixture([
+      {
+        path: "first.ts",
+        before: `${createNumberedExportLines(1, 40)}\n`,
+        after: `${createNumberedExportLines(1, 40, 100)}\n`,
+      },
+      {
+        path: "second.ts",
+        before: "export const secondValue = 1;\n",
+        after: "export const secondValue = 2;\n",
+      },
+    ]);
+    // Kept outside the repo so capturing it cannot change what the diff shows.
+    const patchFile = join(makeTempDir("hunk-tuistory-pager-patch-"), "working-tree.patch");
+    writeText(patchFile, runGit(["diff"], fixture.dir));
+
+    return { ...fixture, patchFile };
+  }
+
   /** Build the configured Hunk command so PTY tests can reuse it inside shell pipelines. */
   function buildHunkCommand(args: string[]) {
     if (explicitHunkExecutable) {
@@ -845,17 +956,21 @@ export function createPtyHarness() {
     createExpandableContextFilePair,
     createCrossFileHunkNavigationRepoFixture,
     createDeletionOnlyFilePair,
+    createElixirHeredocRepoFixture,
     createIsolatedConfigHome,
     createRepoExtensionFixture,
     createLinkedWorktreeWatchFixture,
     createLongWrapFilePair,
+    createMultiFilePagerPatchFixture,
     createMultiHunkFilePair,
+    createNarrowHeaderTestRepoFixture,
     createPagerPatchFixture,
     createPinnedHeaderRepoFixture,
     createScrollableFilePair,
     createSidebarJumpRepoFixture,
     createTabbedFilePair,
     createTwoFileRepoFixture,
+    createUnicodePathRepoFixture,
     createWatchFilePair,
     createWideCharacterFilePair,
     ensureKeyboardIsLive,

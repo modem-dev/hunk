@@ -79,6 +79,7 @@ describe("config persistence", () => {
         showMenuBar: false,
         showAgentNotes: true,
         copyDecorations: true,
+        cursorLine: "row",
       },
       { env: { HOME: home } },
     );
@@ -95,6 +96,7 @@ describe("config persistence", () => {
         "menu_bar = false",
         "agent_notes = true",
         "copy_decorations = true",
+        'cursor_line = "row"',
         "",
         "[custom_theme]",
         'label = "Keep me"',
@@ -133,6 +135,7 @@ describe("config persistence", () => {
       showMenuBar: true,
       showAgentNotes: true,
       copyDecorations: false,
+      cursorLine: "row",
     } as const;
 
     expect(diffPersistedViewPreferences(initial, { ...initial })).toEqual([]);
@@ -217,6 +220,68 @@ describe("config resolution", () => {
       transparentBackground: true,
       colorMoved: true,
     });
+  });
+
+  test("reads the current-line style from config and lets CLI flags outrank it", () => {
+    const home = createTempDir("hunk-config-home-");
+    const repo = createTempDir("hunk-config-repo-");
+    createRepo(repo);
+
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(join(home, ".config", "hunk", "config.toml"), 'cursor_line = "number"');
+
+    const fromConfig = resolveConfiguredCliInput(createPatchPagerInput(), {
+      cwd: repo,
+      env: { HOME: home },
+    });
+    expect(fromConfig.input.options.cursorLine).toBe("number");
+
+    const fromFlag = resolveConfiguredCliInput(createPatchPagerInput({ cursorLine: "off" }), {
+      cwd: repo,
+      env: { HOME: home },
+    });
+    expect(fromFlag.input.options.cursorLine).toBe("off");
+  });
+
+  test("falls back to the built-in current-line style when config names an unknown one", () => {
+    const home = createTempDir("hunk-config-home-");
+    const repo = createTempDir("hunk-config-repo-");
+    createRepo(repo);
+
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(join(home, ".config", "hunk", "config.toml"), 'cursor_line = "sparkles"');
+
+    const resolved = resolveConfiguredCliInput(createPatchPagerInput(), {
+      cwd: repo,
+      env: { HOME: home },
+    });
+
+    expect(resolved.input.options.cursorLine).toBe("row");
+  });
+
+  test("starts pager mode with the menu bar hidden unless a later layer asks for it", () => {
+    const home = createTempDir("hunk-config-home-");
+    const repo = createTempDir("hunk-config-repo-");
+    createRepo(repo);
+    const env = { HOME: home };
+
+    expect(
+      resolveConfiguredCliInput(createPatchPagerInput(), { cwd: repo, env }).input.options.menuBar,
+    ).toBe(false);
+    expect(
+      resolveConfiguredCliInput({ kind: "patch", file: "-", options: {} }, { cwd: repo, env }).input
+        .options.menuBar,
+    ).toBe(true);
+
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(
+      join(home, ".config", "hunk", "config.toml"),
+      ["[pager]", "menu_bar = true"].join("\n"),
+    );
+
+    expect(
+      resolveConfiguredCliInput(createPatchPagerInput(), { cwd: repo, env }).input.options.menuBar,
+    ).toBe(true);
   });
 
   test("defaults tab width to 4 and rejects invalid configured widths", () => {

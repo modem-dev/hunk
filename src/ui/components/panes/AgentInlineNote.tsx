@@ -5,7 +5,7 @@ import type { AgentAnnotation, DiffFile, LayoutMode } from "../../../core/types"
 import { agentNoteBoxLayout } from "../../lib/agentNoteGeometry";
 import { annotationRangeLabel, reviewNoteSource } from "../../lib/agentAnnotations";
 import { wrapText } from "../../lib/agentPopover";
-import { isEscapeKey, isSaveDraftNoteKey } from "../../lib/keyboard";
+
 import { sanitizeTerminalLine } from "../../../lib/terminalText";
 import { fitText, measureTextWidth, padText } from "../../lib/text";
 import { resolveStmlColor } from "../../lib/stml/colors";
@@ -371,6 +371,11 @@ export function AgentInlineNote({
               draft.onInput(nextBody);
             }}
             onKeyDown={(key) => {
+              // Escape (cancel) and Ctrl-S (save) never reach this textarea:
+              // the global key chain owns and consumes them while the draft is
+              // focused (`useAppKeyboardShortcuts`, focus area "note"). Only
+              // sizing bookkeeping for keys the editor itself handles lives
+              // here.
               if (isNewlineKey(key)) {
                 updateDraftLineCountHint(
                   draftVisualLineCount(
@@ -378,19 +383,6 @@ export function AgentInlineNote({
                     draftContentWidth,
                   ) + 1,
                 );
-              }
-
-              if (isSaveDraftNoteKey(key)) {
-                key.preventDefault();
-                key.stopPropagation();
-                draft.onSave();
-                return;
-              }
-
-              if (isEscapeKey(key)) {
-                key.preventDefault();
-                key.stopPropagation();
-                draft.onCancel();
               }
             }}
           />

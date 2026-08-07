@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { createPtyHarness, dragMouse } from "./harness";
+import { createPtyHarness, dragMouse, lineIndexOf, measureKeyScroll } from "./harness";
 
 const harness = createPtyHarness();
 
@@ -14,7 +14,7 @@ describe("PTY scrolling", () => {
   test("a short last file does not trap upward scrolling at the bottom edge", async () => {
     const fixture = harness.createBottomClampedRepoFixture();
     const session = await harness.launchHunk({
-      args: ["diff", "--mode", "split"],
+      args: ["diff", "--mode", "split", "--cursor-line", "off"],
       cwd: fixture.dir,
       cols: 220,
       rows: 10,
@@ -46,6 +46,58 @@ describe("PTY scrolling", () => {
       );
 
       expect(movedUp).toContain("line30 = 130");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("step keys move one row in pager mode, where the scroll box holds focus", async () => {
+    const fixture = harness.createPagerPatchFixture(60);
+    const session = await harness.launchHunkWithFileBackedStdin({
+      stdinFile: fixture.patchFile,
+      args: ["pager", "--cursor-line", "off"],
+      cols: 140,
+      rows: 24,
+    });
+
+    try {
+      await session.waitForText(/scroll\.ts/, { timeout: 15_000 });
+      await session.waitIdle({ timeout: 300 });
+
+      expect(await measureKeyScroll(session, "j", 12)).toBe(1);
+      expect(await measureKeyScroll(session, "j", 12)).toBe(1);
+      expect(await measureKeyScroll(session, "k", 12)).toBe(-1);
+    } finally {
+      session.close();
+    }
+  });
+
+  test("step keys still move one row after a click in the review stream", async () => {
+    const fixture = harness.createPinnedHeaderRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["show", "HEAD", "--cursor-line", "off"],
+      cwd: fixture.dir,
+      cols: 120,
+      rows: 24,
+    });
+
+    try {
+      const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+      await session.waitIdle({ timeout: 300 });
+
+      expect(await measureKeyScroll(session, "j", 12)).toBe(1);
+      expect(await measureKeyScroll(session, "k", 12)).toBe(-1);
+
+      const codeRow = lineIndexOf(initial, "line16 = 16;");
+      expect(codeRow).toBeGreaterThan(0);
+      await session.clickAt(60, codeRow);
+      await session.waitIdle({ timeout: 400 });
+
+      expect(await measureKeyScroll(session, "j", 12)).toBe(1);
+      expect(await measureKeyScroll(session, "j", 12)).toBe(1);
+      expect(await measureKeyScroll(session, "k", 12)).toBe(-1);
     } finally {
       session.close();
     }

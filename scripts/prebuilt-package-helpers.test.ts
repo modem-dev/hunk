@@ -84,11 +84,18 @@ describe("prebuilt package helpers", () => {
     );
   });
 
-  test("buildPlatformPackageManifest declares the native binary as a bin entry", () => {
+  test("buildPlatformPackageManifest carries provenance metadata without a native bin script", () => {
+    const repository = {
+      type: "git",
+      url: "git+https://github.com/modem-dev/hunk.git",
+    };
     const manifest = buildPlatformPackageManifest(
       {
         version: "1.2.3",
         description: "Desktop diff viewer",
+        repository,
+        homepage: "https://github.com/modem-dev/hunk#readme",
+        bugs: { url: "https://github.com/modem-dev/hunk/issues" },
         license: "MIT",
       },
       getPlatformPackageSpecForHost("linux", "x64"),
@@ -96,9 +103,10 @@ describe("prebuilt package helpers", () => {
 
     expect(manifest.name).toBe("hunkdiff-linux-x64");
     expect(manifest.version).toBe("1.2.3");
-    expect(manifest.bin).toEqual({
-      hunk: "./bin/hunk",
-    });
+    expect(manifest).not.toHaveProperty("bin");
+    expect(manifest.repository).toEqual(repository);
+    expect(manifest.homepage).toBe("https://github.com/modem-dev/hunk#readme");
+    expect(manifest.bugs).toEqual({ url: "https://github.com/modem-dev/hunk/issues" });
     expect(manifest.os).toEqual(["linux"]);
     expect(manifest.cpu).toEqual(["x64"]);
   });
@@ -114,9 +122,7 @@ describe("prebuilt package helpers", () => {
     );
 
     expect(manifest.name).toBe("hunkdiff-windows-x64");
-    expect(manifest.bin).toEqual({
-      hunk: "./bin/hunk.exe",
-    });
+    expect(manifest).not.toHaveProperty("bin");
     expect(manifest.os).toEqual(["win32"]);
     expect(manifest.cpu).toEqual(["x64"]);
   });

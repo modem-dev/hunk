@@ -2,6 +2,7 @@ import { memo } from "react";
 import type { DiffFile, LayoutMode, UserNoteLineTarget } from "../../../core/types";
 import type { FileSourceStatus } from "../../diff/expandCollapsedRows";
 import { PierreDiffView, type ActiveAddNoteAffordance } from "../../diff/PierreDiffView";
+import type { CursorHighlight } from "../../diff/renderRows";
 import type { VisibleBodyBounds } from "../../diff/rowWindowing";
 import type { DiffSectionGeometry } from "../../diff/diffSectionGeometry";
 import type { VisibleAgentNote } from "../../lib/agentAnnotations";
@@ -10,17 +11,22 @@ import { diffSectionId } from "../../lib/ids";
 import { fitText } from "../../lib/text";
 import type { AppTheme } from "../../themes";
 import { DiffFileHeaderRow } from "./DiffFileHeaderRow";
+import { FileView } from "./FileView";
+import type { FileViewRowFailure } from "../../fileViews/types";
+import type { ResolvedFileViewLayout } from "../../fileViews/useFileViews";
 
 interface DiffSectionProps {
   codeHorizontalOffset: number;
   expandedGapKeys: ReadonlySet<string>;
   file: DiffFile;
+  fileView?: ResolvedFileViewLayout;
   headerLabelWidth: number;
   headerStatsWidth: number;
   layout: Exclude<LayoutMode, "auto">;
   selectedHunkIndex: number;
   copySelectedRowRanges?: Map<string, CopySelectedRowRange>;
   copySelectedSide?: "left" | "right";
+  cursorHighlight?: CursorHighlight;
   shouldLoadHighlight: boolean;
   sectionGeometry?: DiffSectionGeometry;
   separatorWidth: number;
@@ -39,6 +45,7 @@ interface DiffSectionProps {
   hoverClearSignal?: number;
   onHover: () => void;
   onMouseScroll?: () => void;
+  onFileViewRowFailure?: (failure: FileViewRowFailure) => void;
   onActiveAddNoteAffordanceChange?: (affordance: ActiveAddNoteAffordance | null) => void;
   onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void;
   onSelect: () => void;
@@ -50,12 +57,14 @@ function DiffSectionComponent({
   codeHorizontalOffset,
   expandedGapKeys,
   file,
+  fileView,
   headerLabelWidth,
   headerStatsWidth,
   layout,
   selectedHunkIndex,
   copySelectedRowRanges,
   copySelectedSide,
+  cursorHighlight,
   shouldLoadHighlight,
   sectionGeometry,
   separatorWidth,
@@ -74,6 +83,7 @@ function DiffSectionComponent({
   hoverClearSignal = 0,
   onHover,
   onMouseScroll,
+  onFileViewRowFailure,
   onActiveAddNoteAffordanceChange,
   onStartUserNoteAtHunk,
   onSelect,
@@ -115,34 +125,60 @@ function DiffSectionComponent({
         />
       ) : null}
 
-      <PierreDiffView
-        expandedGapKeys={expandedGapKeys}
-        file={file}
-        layout={layout}
-        showLineNumbers={showLineNumbers}
-        showHunkHeaders={showHunkHeaders}
-        sourceStatus={sourceStatus}
-        tabWidth={tabWidth}
-        wrapLines={wrapLines}
-        codeHorizontalOffset={codeHorizontalOffset}
-        copySelectedRowRanges={copySelectedRowRanges}
-        copySelectedSide={copySelectedSide}
-        theme={theme}
-        width={viewWidth}
-        visibleAgentNotes={visibleAgentNotes}
-        hoverActive={hoverActive}
-        hoverClearSignal={hoverClearSignal}
-        onHover={onHover}
-        onActiveAddNoteAffordanceChange={onActiveAddNoteAffordanceChange}
-        onStartUserNoteAtHunk={onStartUserNoteAtHunk}
-        onToggleGap={onToggleGap}
-        selectedHunkIndex={selectedHunkIndex}
-        sectionGeometry={sectionGeometry}
-        shouldLoadHighlight={shouldLoadHighlight}
-        // The parent review stream owns scrolling across files.
-        scrollable={false}
-        visibleBodyBounds={visibleBodyBounds}
-      />
+      {fileView ? (
+        <FileView
+          file={file}
+          fileView={fileView}
+          geometry={
+            sectionGeometry ?? {
+              bodyHeight: 0,
+              hunkAnchorRows: new Map(),
+              hunkBounds: new Map(),
+              lineNumberDigits: 1,
+              plannedRows: [],
+              rowBounds: [],
+              rowBoundsByKey: new Map(),
+              rowBoundsByStableKey: new Map(),
+            }
+          }
+          cursorHighlight={cursorHighlight}
+          selectedHunkIndex={selectedHunkIndex}
+          theme={theme}
+          visibleBodyBounds={visibleBodyBounds}
+          width={viewWidth}
+          onRowFailure={onFileViewRowFailure}
+        />
+      ) : (
+        <PierreDiffView
+          expandedGapKeys={expandedGapKeys}
+          file={file}
+          layout={layout}
+          showLineNumbers={showLineNumbers}
+          showHunkHeaders={showHunkHeaders}
+          sourceStatus={sourceStatus}
+          tabWidth={tabWidth}
+          wrapLines={wrapLines}
+          codeHorizontalOffset={codeHorizontalOffset}
+          copySelectedRowRanges={copySelectedRowRanges}
+          copySelectedSide={copySelectedSide}
+          cursorHighlight={cursorHighlight}
+          theme={theme}
+          width={viewWidth}
+          visibleAgentNotes={visibleAgentNotes}
+          hoverActive={hoverActive}
+          hoverClearSignal={hoverClearSignal}
+          onHover={onHover}
+          onActiveAddNoteAffordanceChange={onActiveAddNoteAffordanceChange}
+          onStartUserNoteAtHunk={onStartUserNoteAtHunk}
+          onToggleGap={onToggleGap}
+          selectedHunkIndex={selectedHunkIndex}
+          sectionGeometry={sectionGeometry}
+          shouldLoadHighlight={shouldLoadHighlight}
+          // The parent review stream owns scrolling across files.
+          scrollable={false}
+          visibleBodyBounds={visibleBodyBounds}
+        />
+      )}
     </box>
   );
 }
@@ -156,12 +192,14 @@ export const DiffSection = memo(DiffSectionComponent, (previous, next) => {
     previous.codeHorizontalOffset === next.codeHorizontalOffset &&
     previous.expandedGapKeys === next.expandedGapKeys &&
     previous.file === next.file &&
+    previous.fileView === next.fileView &&
     previous.headerLabelWidth === next.headerLabelWidth &&
     previous.headerStatsWidth === next.headerStatsWidth &&
     previous.layout === next.layout &&
     previous.selectedHunkIndex === next.selectedHunkIndex &&
     previous.copySelectedRowRanges === next.copySelectedRowRanges &&
     previous.copySelectedSide === next.copySelectedSide &&
+    previous.cursorHighlight === next.cursorHighlight &&
     previous.shouldLoadHighlight === next.shouldLoadHighlight &&
     previous.sectionGeometry === next.sectionGeometry &&
     previous.separatorWidth === next.separatorWidth &&
@@ -175,6 +213,7 @@ export const DiffSection = memo(DiffSectionComponent, (previous, next) => {
     previous.hoverActive === next.hoverActive &&
     previous.hoverClearSignal === next.hoverClearSignal &&
     previous.onMouseScroll === next.onMouseScroll &&
+    previous.onFileViewRowFailure === next.onFileViewRowFailure &&
     previous.onActiveAddNoteAffordanceChange === next.onActiveAddNoteAffordanceChange &&
     previous.onStartUserNoteAtHunk === next.onStartUserNoteAtHunk &&
     previous.theme === next.theme &&

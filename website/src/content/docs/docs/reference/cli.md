@@ -19,9 +19,10 @@ This reference is generated from the command metadata used by Hunk itself. Run `
 | Option                      | Description                                                     |
 | --------------------------- | --------------------------------------------------------------- |
 | `--mode <mode>`             | layout mode: auto, split, stack                                 |
+| `--cursor-line <style>`     | current-line marker: row, number, off                           |
 | `--theme <theme>`           | named theme override                                            |
 | `--agent-context <path>`    | JSON sidecar with agent rationale                               |
-| `--pager`                   | use pager-style chrome and controls                             |
+| `--pager`                   | use pager-style chrome                                          |
 | `--experimental`            | enable experimental features (currently STML agent-note markup) |
 | `--line-numbers`            | show line numbers                                               |
 | `--no-line-numbers`         | hide line numbers                                               |

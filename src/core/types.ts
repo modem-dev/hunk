@@ -29,6 +29,7 @@ export type {
 } from "../extension-api/types";
 
 export type LayoutMode = "auto" | "split" | "stack";
+export type CursorLine = "row" | "number" | "off";
 export type VcsMode = string;
 export type TerminalThemeMode = "light" | "dark";
 
@@ -86,6 +87,7 @@ export interface Changeset {
 
 export interface CommonOptions {
   mode?: LayoutMode;
+  cursorLine?: CursorLine;
   vcs?: VcsMode;
   theme?: string;
   agentContext?: string;
@@ -147,6 +149,7 @@ export interface PersistedViewPreferences {
   showMenuBar: boolean;
   showAgentNotes: boolean;
   copyDecorations: boolean;
+  cursorLine: CursorLine;
 }
 
 export interface HelpCommandInput {
@@ -390,6 +393,7 @@ export interface AppBootstrap {
   initialShowMenuBar?: boolean;
   initialShowAgentNotes?: boolean;
   initialCopyDecorations?: boolean;
+  initialCursorLine?: CursorLine;
   startupNotices?: readonly StartupNotice[];
   viewPreferencesConfigPath?: string;
   /** The user's `[keybindings]` table, resolved against command defaults in App. */

@@ -1,9 +1,10 @@
 ---
-import AgentFlow from "../components/marketing/AgentFlow.astro";
 import BrandFooter from "../components/BrandFooter.astro";
 import BrandHeader from "../components/BrandHeader.astro";
 import CommunityVideos from "../components/marketing/CommunityVideos.astro";
 import CopyCommand from "../components/marketing/CopyCommand.astro";
+import FeatureShowcase from "../components/marketing/FeatureShowcase.astro";
+import MoreFeatures from "../components/marketing/MoreFeatures.astro";
 import PlatformIcons from "../components/marketing/PlatformIcons.astro";
 import ThemeShot from "../components/marketing/ThemeShot.astro";
 import "../styles/marketing.css";
@@ -12,59 +13,6 @@ const REPO = "https://github.com/modem-dev/hunk";
 const title = "hunk — review-first terminal diff viewer";
 const description =
   "Hunk is a review-first terminal diff viewer for agent-authored changesets. Multi-file review stream, inline AI annotations, watch mode, and Git/Jujutsu integration.";
-
-/** Every card deep-links to the documentation page that teaches it. */
-const features = [
-  [
-    "01",
-    "Multi-file review stream",
-    "The whole changeset in a sidebar. Jump between files, see counts, review top to bottom.",
-    "/docs/workflows/working-trees-and-commits/",
-  ],
-  [
-    "02",
-    "Inline agent annotations",
-    "AI reasoning renders beside the code it describes — context lives in the diff, not another tab.",
-    "/docs/agents/comments-and-annotations/",
-  ],
-  [
-    "03",
-    "Split · stack · auto",
-    "Layouts that adapt to your terminal width. Toggle wrapping and line numbers at runtime.",
-    "/docs/configure/layout-and-display/",
-  ],
-  [
-    "04",
-    "Watch mode",
-    "Auto-reloads as the working tree changes. Keep it open while your agent edits in another pane.",
-    "/docs/workflows/watch-mode/",
-  ],
-  [
-    "05",
-    "Syntax highlighting & themes",
-    "Understand code structure, not just lines added/removed. Choose a theme or roll your own.",
-    "/docs/configure/themes/",
-  ],
-  [
-    "06",
-    "Keyboard, mouse, pager",
-    "Drive it however you like — full keys, selectable menus, pipe patches straight in.",
-    "/docs/start/keyboard-and-mouse/",
-  ],
-] as const;
-
-const quotes = [
-  {
-    who: "Mitchell Hashimoto, creator of Ghostty & Vagrant",
-    quote: "Hunk is very good. It has replaced any other local diff viewer for me.",
-    href: "https://x.com/mitchellh/status/2052128048288567617",
-  },
-  {
-    who: "DHH, creator of Omarchy and Ruby on Rails",
-    quote: "Love hunk.",
-    href: "https://x.com/dhh/status/2062919431680852164",
-  },
-] as const;
 
 let stars: number | null = null;
 try {
@@ -159,22 +107,6 @@ const formattedStars =
           <ThemeShot />
         </section>
 
-        <section class="says" aria-label="What developers say about Hunk">
-          <div class="quotes">
-            {
-              quotes.map(({ who, quote, href }) => (
-                <figure>
-                  <span class="qmark" aria-hidden="true">“</span>
-                  <blockquote>{quote}</blockquote>
-                  <figcaption>
-                    <a href={href} target="_blank" rel="noopener noreferrer">{who}</a>
-                  </figcaption>
-                </figure>
-              ))
-            }
-          </div>
-        </section>
-
         <section class="band videos" aria-labelledby="videos-title">
           <div class="band-head">
             <p class="kicker"># from the community</p>
@@ -188,28 +120,8 @@ const formattedStars =
           <h2>
             Don't just <span class="mark-del">read</span> code, <span class="mark">understand</span> it.
           </h2>
-          <div class="grid">
-            {
-              features.map(([number, heading, body, href]) => (
-                <a class="feat" href={href}>
-                  <span class="num">{number}</span>
-                  <h3>{heading}</h3>
-                  <p>{body}</p>
-                  <span class="more" aria-hidden="true">
-                    Read the docs →
-                  </span>
-                </a>
-              ))
-            }
-          </div>
-        </section>
-
-        <section class="band agents" aria-labelledby="agents-title">
-          <div class="band-head">
-            <p class="kicker"># for agents</p>
-            <h2 id="agents-title">Your agent reviews with you, not instead of you.</h2>
-          </div>
-          <AgentFlow />
+          <FeatureShowcase />
+          <MoreFeatures />
         </section>
 
         <section class="install" id="install">

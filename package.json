@@ -1,6 +1,6 @@
 {
   "name": "hunkdiff",
-  "version": "0.17.0",
+  "version": "0.18.0-beta.0",
   "description": "Desktop-inspired terminal diff viewer for understanding agent-authored changesets.",
   "keywords": [
     "ai",
@@ -119,6 +119,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@changesets/changelog-github": "^0.7.0",
     "@hunk/session-broker": "workspace:*",
     "@hunk/session-broker-bun": "workspace:*",
     "@hunk/session-broker-core": "workspace:*",
@@ -130,6 +131,7 @@
     "@types/shell-quote": "1.7.5",
     "@types/ws": "^8.18.1",
     "lint-staged": "^16.4.0",
+    "marked": "17.0.1",
     "oxfmt": "^0.41.0",
     "oxlint": "^1.56.0",
     "react": "^19.2.4",

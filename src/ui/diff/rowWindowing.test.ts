@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { DiffSectionGeometry } from "./diffSectionGeometry";
 import type { PlannedReviewRow } from "./reviewRenderPlan";
-import { resolveVisiblePlannedRowWindow } from "./rowWindowing";
+import { resolveVisiblePlannedRowWindow, resolveVisibleRowIndexWindow } from "./rowWindowing";
 
 /** Build one minimal planned row for row-window slicing tests. */
 function createTestPlannedRow(key: string): PlannedReviewRow {
@@ -138,6 +138,36 @@ describe("resolveVisiblePlannedRowWindow", () => {
     expect(window.topSpacerHeight).toBe(0);
     expect(window.bottomSpacerHeight).toBe(4);
     expect(window.plannedRows).toHaveLength(0);
+  });
+
+  test("bounds indexed geometry access for a 10,000-row alternate layout", () => {
+    const source = Array.from({ length: 10_000 }, (_, index) => ({
+      key: `row:${index}`,
+      stableKey: `row:${index}`,
+      stableKeys: [`row:${index}`],
+      top: index * 2,
+      height: 2,
+    }));
+    let indexedAccesses = 0;
+    const rowBounds = new Proxy(source, {
+      get(target, property, receiver) {
+        if (typeof property === "string" && /^\d+$/.test(property)) indexedAccesses += 1;
+        return Reflect.get(target, property, receiver);
+      },
+    });
+
+    const window = resolveVisibleRowIndexWindow({
+      bodyHeight: 20_000,
+      rowBounds,
+      visibleBodyBounds: { top: 12_000, height: 10 },
+    });
+
+    expect(window.endIndex - window.startIndex).toBe(5);
+    expect(indexedAccesses).toBeLessThan(80);
+    const mountedHeight = source
+      .slice(window.startIndex, window.endIndex)
+      .reduce((sum, row) => sum + row.height, 0);
+    expect(window.topSpacerHeight + mountedHeight + window.bottomSpacerHeight).toBe(20_000);
   });
 
   test("finds visible rows in a very large row-bound array", () => {

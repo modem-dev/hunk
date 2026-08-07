@@ -1,6 +1,14 @@
 @import "./brand.css";
 
 :root {
+  /*
+   * Wide-viewport shell: cap the whole docs frame (sidebar + article + TOC)
+   * and center it, instead of pinning the sidebar to the viewport edge and
+   * letting the gap grow with the window.
+   */
+  --hunk-shell-max: 100rem;
+  --hunk-shell-inset: max(0rem, calc((100vw - var(--hunk-shell-max)) / 2));
+  --sl-content-width: 60rem;
   --sl-font: var(--hunk-font);
   --sl-font-mono: var(--hunk-font);
   --sl-nav-height: 4.625rem;
@@ -73,10 +81,32 @@ h4 {
   letter-spacing: -0.015em;
 }
 
-.sl-markdown-content > p,
-.sl-markdown-content > ul,
-.sl-markdown-content > ol {
-  max-width: 48rem;
+/*
+ * Center the fixed left sidebar with the capped shell, and mirror the shell
+ * inset on the main frame so the article + TOC track the same 100rem column.
+ */
+@media (min-width: 50rem) {
+  .sidebar-pane {
+    inset-inline-start: var(--hunk-shell-inset);
+  }
+
+  .main-frame {
+    padding-inline-start: calc(var(--hunk-shell-inset) + var(--sl-content-inline-start, 0rem));
+    padding-inline-end: var(--hunk-shell-inset);
+  }
+}
+
+/* Starlight sizes the fixed TOC panel text off 100vw; cap it to the shell. */
+@media (min-width: 72rem) {
+  .right-sidebar-panel .sl-container {
+    max-width: calc(
+      (
+          min(100vw, var(--hunk-shell-max)) - var(--sl-sidebar-width) - 2 *
+            var(--sl-content-pad-x) - 2 * var(--sl-sidebar-pad-x)
+        ) *
+        0.25
+    );
+  }
 }
 
 a:focus-visible,

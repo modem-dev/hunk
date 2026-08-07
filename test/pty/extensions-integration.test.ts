@@ -1,9 +1,13 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createPtyHarness } from "./harness";
 
 const harness = createPtyHarness();
+const REVIEW_TRIAGE_EXTENSION = resolve(
+  fileURLToPath(new URL("../../examples/extensions/review-triage", import.meta.url)),
+);
 
 /** Give PTY-backed startup, reloads, and redraws headroom on slower CI machines. */
 setDefaultTimeout(30_000);
@@ -343,6 +347,52 @@ describe("PTY extensions", () => {
         20_000,
       );
       expect(answered).not.toContain("Reformat the changeset?");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("the real review-triage extension loads as a folder extension and exposes its menu commands", async () => {
+    const configHome = harness.createIsolatedConfigHome();
+    const fixture = harness.createRepoExtensionFixture(TRANSFORM_EXTENSION_SOURCE);
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "stack", "--extension", REVIEW_TRIAGE_EXTENSION],
+      cwd: fixture.dir,
+      cols: 140,
+      rows: 24,
+      env: { XDG_CONFIG_HOME: configHome },
+    });
+
+    try {
+      const before = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("alpha.ts") && text.includes("Extensions"),
+        20_000,
+      );
+      expect(before).not.toContain("Review triage (session only)");
+
+      // The command is a real Extensions-menu item, not a private menu hook.
+      // `Extensions` also appears in the temporary fixture path, so target its chrome position.
+      // Folder extension registration may finish after the first review frame, so retry the menu
+      // gesture until the command itself proves that the extension is ready.
+      let menu: string | null = null;
+      for (let attempt = 0; attempt < 5 && menu === null; attempt += 1) {
+        await session.clickAt(33, 0);
+        try {
+          menu = await harness.waitForSnapshot(
+            session,
+            (text) => text.includes("Toggle review triage"),
+            3_000,
+          );
+        } catch {
+          // A click may land before command registration or close an earlier empty menu; retry it.
+        }
+      }
+      expect(menu).not.toBeNull();
+      expect(menu!).toMatch(/Toggle review triage\s+y/);
+      expect(menu).toMatch(/Mark selected hunk…\s+x/);
+      expect(menu).toContain("Set review focus…");
+      expect(menu).toContain("Clear triage decisions");
     } finally {
       session.close();
     }

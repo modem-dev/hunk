@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, test } from "bun:test";
+import { TextAttributes } from "@opentui/core";
 import { isValidElement, useState } from "react";
 import { HunkExtensionUserError } from "../extension-api";
 import { registerHostRuntimeModules } from "./hostRuntimeModules";
@@ -83,6 +84,39 @@ describe("registerHostRuntimeModules", () => {
     // Valid under the host's React means the automatic-runtime import the
     // transpiler emitted (`react/jsx-runtime` or the dev variant) was served.
     expect(isValidElement(makeElement())).toBe(true);
+  });
+
+  test("loads a hook-using OpenTUI file-row component through host runtime modules", async () => {
+    const path = writeTempExtension(
+      "file-view.tsx",
+      `import { TextAttributes } from "@opentui/core";\n` +
+        `import { useState } from "react";\n` +
+        `const Row = ({ width, height, selected, rowIndex }) => {\n` +
+        `  const [label] = useState("custom");\n` +
+        `  return <box style={{ width, height }}><text attributes={TextAttributes.BOLD} content={selected ? label + rowIndex : label} /></box>;\n` +
+        `};\n` +
+        `const register = (hunk) => hunk.registerFileView({\n` +
+        `  id: "tsx", title: "TSX", matches: () => true,\n` +
+        `  layout: () => ({ rows: [{ id: "row", spans: [{ text: "fallback" }], component: { height: 2, render: Row } }], hunkRows: [] }),\n` +
+        `});\n` +
+        `export default { Row, TextAttributes, makeElement: () => <Row width={20} height={2} selected={false} rowIndex={0} />, register, useState };\n`,
+    );
+
+    const mod = await importTempExtension(path);
+    const registered: {
+      layout: () => { rows: Array<{ component: unknown }> };
+    }[] = [];
+    const register = mod.default.register as (hunk: {
+      registerFileView(view: (typeof registered)[number]): void;
+    }) => void;
+    register({ registerFileView: (view) => registered.push(view) });
+
+    expect(mod.default.useState).toBe(useState);
+    expect(mod.default.TextAttributes).toBe(TextAttributes);
+    expect(isValidElement((mod.default.makeElement as () => unknown)())).toBe(true);
+    expect(
+      (registered[0]?.layout().rows[0]?.component as { render?: unknown } | undefined)?.render,
+    ).toBe(mod.default.Row);
   });
 
   test("serves hunkdiff/extension runtime values", async () => {

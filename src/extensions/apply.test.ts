@@ -17,6 +17,7 @@ import {
   createUnknownVcsNotice,
   resolveDetectedVcsIdWithExtensions,
   resolveExtensionCommands,
+  resolveExtensionFileViews,
   resolveExtensionSidebarViews,
   resolveExtensionVcsAdapters,
   resolveSessionVcsId,
@@ -175,6 +176,22 @@ describe("extension sidebar views", () => {
         message: 'Skipped duplicate sidebar view "alpha:tree" from extension alpha',
       },
     ]);
+  });
+});
+
+describe("extension file views", () => {
+  test("keeps the first duplicate view identity in registration order", () => {
+    const result = createEmptyExtensionLoadResult();
+    const plain = { id: "plain", title: "Plain", matches: () => true, layout: () => null };
+    result.registry.fileViews.push(
+      { extensionId: "first", view: plain },
+      { extensionId: "first", view: { ...plain, title: "Later" } },
+    );
+
+    const { views, issues } = resolveExtensionFileViews(result.registry);
+
+    expect(views).toEqual([{ extensionId: "first", view: plain }]);
+    expect(issues[0]?.message).toContain('duplicate file view "first:plain"');
   });
 });
 

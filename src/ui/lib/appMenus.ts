@@ -1,4 +1,4 @@
-import type { LayoutMode } from "../../core/types";
+import type { CursorLine, LayoutMode } from "../../core/types";
 import type { AppMenus, MenuEntry, MenuId } from "../components/chrome/menu";
 import { executeAppCommand, isCommandEnabled, type AppCommand } from "./appCommands";
 
@@ -32,7 +32,12 @@ export interface BuildAppMenusOptions {
   commands: readonly AppCommand[];
   /** The extension-contributed subset, in registration order, for the Extensions menu. */
   extensionCommands?: readonly AppCommand[];
+  /** Host-owned per-file presentation choices appended to View. */
+  fileViewEntries?: readonly MenuEntry[];
+  /** Live label for the stable host command that applies the selected presentation changeset-wide. */
+  fileViewApplyAllLabel?: string;
   copyDecorations: boolean;
+  cursorLine: CursorLine;
   layoutMode: LayoutMode;
   renderSidebar: boolean;
   showAgentNotes: boolean;
@@ -118,7 +123,10 @@ function toExtensionMenuEntries(
 export function buildAppMenus({
   commands,
   extensionCommands = [],
+  fileViewEntries = [],
+  fileViewApplyAllLabel,
   copyDecorations,
+  cursorLine,
   layoutMode,
   renderSidebar,
   showAgentNotes,
@@ -164,6 +172,21 @@ export function buildAppMenus({
         label: "Copy decorations",
         checked: copyDecorations,
       },
+      {
+        commandId: "hunk.view.cursorLineRow",
+        label: "Current line: full row",
+        checked: cursorLine === "row",
+      },
+      {
+        commandId: "hunk.view.cursorLineNumber",
+        label: "Current line: line number",
+        checked: cursorLine === "number",
+      },
+      {
+        commandId: "hunk.view.cursorLineOff",
+        label: "Current line: off",
+        checked: cursorLine === "off",
+      },
     ],
     navigate: [
       { commandId: "hunk.review.previousHunk" },
@@ -184,11 +207,27 @@ export function buildAppMenus({
     help: [{ commandId: "hunk.app.toggleHelp", label: "Controls help", checked: showHelp }],
   };
 
+  if (fileViewEntries.length > 0) {
+    specs.view.push(SEPARATOR);
+  }
+
   const extensions = toExtensionMenuEntries(commands, extensionCommands);
+  const applyAllEntries = fileViewApplyAllLabel
+    ? toMenuEntries(commands, [
+        {
+          commandId: "hunk.view.applyFilePresentationToAllMatching",
+          label: fileViewApplyAllLabel,
+        },
+      ])
+    : [];
 
   return {
     file: toMenuEntries(commands, specs.file),
-    view: toMenuEntries(commands, specs.view),
+    view: [
+      ...toMenuEntries(commands, specs.view),
+      ...fileViewEntries,
+      ...(applyAllEntries.length > 0 ? [{ kind: "separator" as const }, ...applyAllEntries] : []),
+    ],
     navigate: toMenuEntries(commands, specs.navigate),
     agent: toMenuEntries(commands, specs.agent),
     // No extension commands means no menu at all, rather than an empty dropdown.

@@ -1,13 +1,13 @@
 ---
 title: Extension API
-description: Register themes, languages, transforms, commands, dialogs, and events through the extension API object.
+description: Register themes, file previews, transforms, commands, dialogs, and events through the extension API object.
 ---
 
-The extension factory receives one API object. Registration calls are only valid while the factory is running; Hunk seals the object afterwards so a deferred callback cannot mutate the registry mid-session. This page indexes the whole object; the two largest registration calls are documented in depth on their own pages and summarized in place below.
+The extension factory receives one API object. Registration calls are only valid while the factory is running; Hunk seals the object afterwards so a deferred callback cannot mutate the registry mid-session. This page indexes the whole object; larger registration calls are documented in depth on their own pages and summarized in place below.
 
 ## `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `1`). Branch on it if you want one file to support several Hunk versions.
+The API generation this Hunk speaks (currently `2`). Branch on it if you want one file to support several Hunk versions. Version 2 adds the experimental file-view contract and its command controls.
 
 ## `hunk.registerTheme(theme)`
 
@@ -48,6 +48,14 @@ Contribute a sidebar view — your own React component, rendered inside Hunk's O
 
 Full contract: [Custom sidebars](/docs/extend/custom-sidebars/).
 
+## `hunk.registerFileView(view)`
+
+Contribute an opt-in alternate presentation for matching files. A view receives the public file and hunk model, typed change ranges, terminal width, cancellation, and lazy exact-source reads. It returns deterministic symbolic rows, optional fixed-height React/OpenTUI row painters, source bindings for inline notes, and positional hunk extents.
+
+Raw diff remains the default and fallback. Hunk continues to own review-stream geometry, scrolling, windowing, hunk navigation, selection, and note rendering.
+
+Full contract and examples: [File previews](/docs/extend/file-previews/).
+
 ## `hunk.transformChangeset(fn)`
 
 Rewrite the loaded changeset before it reaches the review UI. Transforms run in registration order, each seeing the previous one's output, on first load and on every reload.
@@ -79,18 +87,22 @@ export default function (hunk: HunkExtensionAPI) {
 }
 ```
 
-Key chords join `ctrl`, `alt`/`option`, `cmd`/`meta`, and `shift` with `+` around a base key — a character (`"y"`), an uppercase letter for its shifted form (`"G"`), or a named key (`"f2"`, `"pageup"`). For a shifted symbol or digit, bind the character shift produces (`"!"`, not `"shift+1"`). `key` also takes a list of chords; omit it to register a command with no binding. A chord already owned by a built-in or an earlier-loaded extension stays with its owner.
+Key chords join `ctrl`, `alt`/`option`, `cmd`/`meta`, and `shift` with `+` around a character or named key. For shifted symbols or digits, bind the resulting character (`"!"`, not `"shift+1"`). `ctrl+<letter>` also matches an unnamed bare control byte; named keys stay distinct. `key` may be a list. Omit it for no binding. Existing bindings keep priority.
 
 Declared keys are defaults: users remap commands by id in their `[keybindings]` table — yours is `"<extensionId>.<commandId>"`. See [`docs/keybindings.md`](https://github.com/modem-dev/hunk/blob/main/docs/keybindings.md).
 
 Registered commands are also listed in the menu bar's **Extensions** menu under their `title`, showing whichever key they currently answer to — a command with no binding is still reachable with the mouse.
 
-The handler fires when the key is pressed outside modal UI (dialogs, menus, and focused text inputs own their keys; pager mode does not dispatch extension commands). It receives the standard context plus:
+The handler fires when the key is pressed outside modal UI (dialogs, menus, and focused text inputs own their keys). It receives the standard context plus:
 
 - `ctx.sidebars.open(viewId)` / `close(viewId)` / `toggle(viewId)` / `isOpen(viewId)` — a bare id names your own view, `"files"` the built-in file navigation, `"<extensionId>:<viewId>"` any registered view. Opening also reveals a hidden sidebar area.
+- `ctx.fileViews.select(viewId)` / `toggle(viewId)` / `isActive(viewId)` — controls a matching [file preview](/docs/extend/file-previews/) for the current file; `select(null)` restores raw diff.
+- `ctx.fileViews.refresh(viewId, options?)` — marks that view's prepared layouts stale so a stateful view re-derives; every file presenting it re-lays out, keeping its current rows visible until the replacement resolves. Pass `{ fileId }` to scope the invalidation to one reviewed file's presentation of the view.
+- `ctx.fileViews.enterMode(viewId)` / `exitMode()` / `isModeActive(viewId)` — starts, stops, or checks an [interactive preview](/docs/extend/file-previews/#interactive-previews). Entering selects the view and returns whether its mode started.
 - `ctx.selection` — where the review was pointing when the command fired.
 - `ctx.navigation` — moves the review stream.
 - `ctx.dialogs` — asks the user, below.
+- `ctx.workspace` — reads reviewed files, and writes one back to the working tree with the user's consent, below.
 
 ```ts
 hunk.registerCommand(
@@ -166,6 +178,32 @@ Hunk draws the dialog; your text fills the title, body, and choices, and the fra
 
 One dialog shows at a time; concurrent requests queue in call order, across extensions. Escape cancels (`false` or `null`), Enter accepts; confirm dialogs also answer to `y`/`n`, select dialogs to `↑`/`↓`, and everything is clickable. A session reload cancels open and queued dialogs, and a dialog pending at shutdown resolves its cancel value.
 
+### Workspace documents
+
+`ctx.workspace` reads full documents from the current review and writes eligible working-tree files.
+
+| Method                                 | Result                                            |
+| -------------------------------------- | ------------------------------------------------- |
+| `readDocument(fileId, "old" \| "new")` | Reviewed source text or `null`                    |
+| `canWriteDocument(fileId)`             | Whether review policy allows a write              |
+| `writeDocument({ fileId, text })`      | `{ ok: true }` or `{ ok: false, reason, detail }` |
+
+```ts
+const file = ctx.selection.file;
+if (file && ctx.workspace.canWriteDocument(file.id)) {
+  const text = await ctx.workspace.readDocument(file.id, "new");
+  if (text !== null) {
+    await ctx.workspace.writeDocument({ fileId: file.id, text: transform(text) });
+  }
+}
+```
+
+Reads return the source represented by the review, including historical content in revision and stash reviews. Missing, unreadable, or oversized sources return `null`; reads never prompt.
+
+Writes require a reloadable, unstaged working-tree review and a writable reviewed-file id. Hunk verifies the target, asks for attributed consent, verifies it again, writes it, and reloads the review. Other review kinds and deleted, binary, oversized, missing, symlinked, or root-escaping targets return `unavailable`. Cancellation returns `cancelled`; an attempted write failure returns `failed` with a displayable `detail`.
+
+`canWriteDocument` does not inspect the filesystem, so `writeDocument` can still refuse a changed target. See the [full workspace guide](https://github.com/modem-dev/hunk/blob/main/docs/extensions.md#workspace-documents) for lifecycle and error details.
+
 ## `hunk.on(event, handler)`
 
 Subscribe to a lifecycle or UI event. Handlers may be async; Hunk never blocks the UI waiting for one. Every handler receives `ctx.sidebars` alongside `cwd` and `notify`, so a `changeset_loaded` handler can reveal its extension's sidebar without a keypress.
@@ -229,7 +267,7 @@ const patterns = (hunk.config.patterns as string[] | undefined) ?? ["*.lock"];
 
 ## `ctx.notify(message, type?)`
 
-Every handler and transform receives a context with `cwd` and `notify`; event and bus handlers add `sidebars` and `events.emit`, command handlers add `sidebars`, `selection`, `navigation`, and `dialogs`. `notify` shows one transient line at the bottom of the app; `type` is `"info"` (default), `"warning"`, or `"error"`. Messages raised before the UI mounts are buffered, so a `startup` handler can notify safely.
+Every handler and transform receives a context with `cwd` and `notify`; event and bus handlers add `sidebars` and `events.emit`, command handlers add `sidebars`, `fileViews`, `selection`, `navigation`, and `dialogs`. `notify` shows one transient line at the bottom of the app; `type` is `"info"` (default), `"warning"`, or `"error"`. Messages raised before the UI mounts are buffered, so a `startup` handler can notify safely.
 
 ## `hunk.log(message)`
 

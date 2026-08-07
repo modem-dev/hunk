@@ -13,7 +13,13 @@ import { spansForHighlightedSourceLine, type DiffRow } from "./pierre";
 import { plannedReviewRowVisible } from "./plannedReviewRows";
 import { buildDiffSectionRowPlan } from "./diffSectionRowPlan";
 import { resolveVisiblePlannedRowWindow, type VisibleBodyBounds } from "./rowWindowing";
-import { diffMessage, DiffRowView, fitText } from "./renderRows";
+import {
+  diffMessage,
+  DiffRowView,
+  fitText,
+  plannedRowMatchesCursor,
+  type CursorHighlight,
+} from "./renderRows";
 import { useHighlightedDiff } from "./useHighlightedDiff";
 import { useHighlightedSource } from "./useHighlightedSource";
 
@@ -63,6 +69,7 @@ export function PierreDiffView({
   codeHorizontalOffset = 0,
   copySelectedRowRanges,
   copySelectedSide,
+  cursorHighlight,
   expandedGapKeys = EMPTY_EXPANDED_GAP_KEYS,
   file,
   layout,
@@ -89,6 +96,8 @@ export function PierreDiffView({
   codeHorizontalOffset?: number;
   copySelectedRowRanges?: Map<string, CopySelectedRowRange>;
   copySelectedSide?: "left" | "right";
+  /** The current line within this file, when the review-stream cursor rests in it. */
+  cursorHighlight?: CursorHighlight;
   expandedGapKeys?: ReadonlySet<string>;
   file: DiffFile | undefined;
   layout: Exclude<LayoutMode, "auto">;
@@ -371,6 +380,8 @@ export function PierreDiffView({
           );
         }
 
+        const isCursorRow = plannedRowMatchesCursor(plannedRow, cursorHighlight);
+
         return (
           <box key={plannedRow.key} id={rowId} style={{ width: "100%", flexDirection: "column" }}>
             <DiffRowView
@@ -385,6 +396,7 @@ export function PierreDiffView({
               selected={plannedRow.row.hunkIndex === selectedHunkIndex}
               copySelectedRowRange={copySelectedRowRanges?.get(plannedRow.key)}
               copySelectedSide={copySelectedSide}
+              cursorHighlight={isCursorRow ? cursorHighlight : undefined}
               anchorId={plannedRow.anchorId}
               noteGuideSide={plannedRow.noteGuideSide}
               showAddNoteBadge={

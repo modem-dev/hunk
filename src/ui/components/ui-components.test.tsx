@@ -1258,6 +1258,92 @@ describe("UI components", () => {
     }
   });
 
+  test("DiffPane releases viewport-follow selection after an align request that needs no scrolling", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const files = [
+      createTestDiffFile(
+        "first",
+        "first.ts",
+        lines("export const alpha = 1;"),
+        lines("export const alpha = 2;"),
+      ),
+      createWideTwoHunkDiffFile("second", "second.ts", 100),
+    ];
+    const scrollRef = createRef<ScrollBoxRenderable>();
+    let latestSelection = { fileId: files[0]!.id, hunkIndex: 0 };
+    let bumpAlignRequest = () => {};
+
+    function FileTopAlignHarness() {
+      const [selection, setSelection] = useState(latestSelection);
+      const [alignRequestId, setAlignRequestId] = useState(0);
+      bumpAlignRequest = () => setAlignRequestId((current) => current + 1);
+
+      return (
+        <DiffPane
+          {...createDiffPaneProps(files, theme, {
+            diffContentWidth: 96,
+            headerLabelWidth: 48,
+            scrollRef,
+            selectedFileId: selection.fileId,
+            selectedFileTopAlignRequestId: alignRequestId,
+            selectedHunkIndex: selection.hunkIndex,
+            selectedHunkRevealRequestId: 0,
+            separatorWidth: 92,
+            width: 100,
+          })}
+          onViewportCenteredHunkChange={(fileId, hunkIndex) => {
+            latestSelection = { fileId, hunkIndex };
+            setSelection(latestSelection);
+          }}
+        />
+      );
+    }
+
+    const setup = await testRender(<FileTopAlignHarness />, {
+      width: 104,
+      height: 12,
+    });
+
+    const sectionGeometry = files.map((file) =>
+      measureDiffSectionGeometry(file, "split", true, theme, [], 96, true, false),
+    );
+    const fileSectionLayouts = buildFileSectionLayouts(
+      files,
+      sectionGeometry.map((geometry) => geometry.bodyHeight),
+      buildInStreamFileHeaderHeights(files),
+    );
+
+    try {
+      await settleDiffPane(setup);
+
+      // Align the already-aligned first file: the stream has nowhere to travel, so the align is
+      // done the moment it is requested and must not keep owning the viewport afterwards.
+      await act(async () => {
+        bumpAlignRequest();
+      });
+      await settleDiffPane(setup);
+
+      const viewportHeight = scrollRef.current?.viewport.height ?? 0;
+      expect(viewportHeight).toBeGreaterThan(0);
+
+      const secondFileSecondHunkTop =
+        fileSectionLayouts[1]!.bodyTop + sectionGeometry[1]!.hunkBounds.get(1)!.top;
+      const targetScrollTop = scrollTopForCenter(secondFileSecondHunkTop, viewportHeight);
+
+      await act(async () => {
+        scrollRef.current?.scrollTo(targetScrollTop);
+      });
+      await settleDiffPane(setup);
+
+      expect(latestSelection).toEqual({ fileId: "second", hunkIndex: 1 });
+      expect(scrollRef.current?.scrollTop ?? 0).toBe(targetScrollTop);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("DiffPane keeps the sticky-header lane stable through the divider and next-header handoff", async () => {
     const theme = resolveTheme("github-dark-default", null);
     const firstFile = createTallDiffFile("first", "first.ts", 18);
@@ -2327,7 +2413,7 @@ describe("UI components", () => {
     expect(frame).toContain("Agent note - alpha.ts R2");
     expect(frame).toContain("Annotation for alpha.ts");
     expect(frame).toContain("Why alpha.ts changed");
-    expect(frame.indexOf("Agent note - alpha.ts R2")).toBeLessThan(
+    expect(frame.indexOf("Agent note - alpha.ts R2")).toBeGreaterThan(
       frame.indexOf("2 + export const add = true;"),
     );
     expect(frame).toContain("Agent note - beta.ts R1");
@@ -2338,7 +2424,7 @@ describe("UI components", () => {
     expect(frame).not.toContain("confidence");
   });
 
-  test("DiffPane split inline notes hand off directly to the anchored row without shifting it", async () => {
+  test("DiffPane split inline notes hand off directly from the anchored row without shifting it", async () => {
     const bootstrap = createBootstrap();
     const theme = resolveTheme("github-dark-default", null);
     const frame = await captureFrame(
@@ -2366,10 +2452,10 @@ describe("UI components", () => {
     );
 
     const lines = frame.split("\n");
-    const noteBottomIndex = lines.findIndex((line) => line.includes("╰") && line.includes("╯"));
-    expect(noteBottomIndex).toBeGreaterThanOrEqual(0);
-    expect(lines[noteBottomIndex + 1]).toContain("export const add = true;");
-    expect(lines[noteBottomIndex + 1]?.trim()).not.toBe("│");
+    const noteTopIndex = lines.findIndex((line) => line.includes("╭") && line.includes("╮"));
+    expect(noteTopIndex).toBeGreaterThan(0);
+    expect(lines[noteTopIndex - 1]).toContain("export const add = true;");
+    expect(lines[noteTopIndex - 1]?.trim()).not.toBe("│");
 
     const changedLine = lines.find((line) => line.includes("export const alpha = 2;"));
     const annotatedLine = lines.find((line) => line.includes("export const add = true;"));
@@ -2934,7 +3020,7 @@ describe("UI components", () => {
     expect(frame).toContain("Ungrounded note");
     expect(frame).toContain("Falls back to the first visible");
     expect(frame).toContain("row.");
-    expect(frame.indexOf("Agent note - note-fallback.ts hunk")).toBeLessThan(
+    expect(frame.indexOf("Agent note - note-fallback.ts hunk")).toBeGreaterThan(
       frame.indexOf("1 - export const value = 1;"),
     );
   });

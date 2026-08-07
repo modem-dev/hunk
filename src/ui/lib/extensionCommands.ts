@@ -23,8 +23,8 @@ export interface ExtensionCommandConflict {
 export interface BuildExtensionAppCommandsOptions {
   registered: readonly RegisteredCommand[];
   /**
-   * The built-in command table, consulted for chord conflicts. Only `match`
-   * and `scopes` are read, so a table built over no-op callbacks works.
+   * The built-in command table, consulted for chord conflicts. Only `match` is
+   * read, so a table built over no-op callbacks works.
    */
   builtins: readonly AppCommand[];
   /**
@@ -58,9 +58,8 @@ interface ClaimedChord {
  * by synthesizing the key event a chord describes and probing every matcher,
  * because a command may match with a predicate rather than chords. Refusal is
  * per chord, not per command: a command bound to three keys, one of them taken,
- * keeps the other two and reports the one it lost. Extension commands run in
- * the review scope only: pager mode is a pager, and modal surfaces own their
- * keys outright.
+ * keeps the other two and reports the one it lost. Modal surfaces still own
+ * their keys outright, so a dialog or an open menu answers before any command.
  *
  * Every registered command becomes a table entry, including one left with no
  * chord at all: it never matches a key, but it is still listed in the
@@ -89,9 +88,8 @@ export function buildExtensionAppCommands(
 
       const probe = synthesizeKeyEvent(parsed);
       const takenBy =
-        options.builtins.find(
-          (builtin) => builtin.scopes.includes("review") && builtin.match(probe),
-        )?.id ?? claimed.find((entry) => entry.match(probe))?.commandId;
+        options.builtins.find((builtin) => builtin.match(probe))?.id ??
+        claimed.find((entry) => entry.match(probe))?.commandId;
       if (takenBy !== undefined) {
         conflicts.push({
           extensionId: registered.extensionId,
@@ -110,7 +108,6 @@ export function buildExtensionAppCommands(
     commands.push({
       id: fullId,
       title: command.title,
-      scopes: ["review"],
       keys: bound.map((binding) => binding.chord),
       keyLabels: bound.map((binding) => formatKeyChord(binding.chord)),
       match: (key) => bound.some((binding) => binding.match(key)),

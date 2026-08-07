@@ -1,0 +1,36 @@
+---
+/**
+ * The long tail of features as a quick-hit link list, boxed like the capture
+ * frames so it reads as the tour's closing card. Copy is deliberately short:
+ * every line must stay on one line at the two-column desktop width.
+ */
+const features = [
+  { title: "Watch mode", note: "reloads as the tree changes", href: "/docs/workflows/watch-mode/" },
+  { title: "Extensions", note: "script Hunk in TypeScript", href: "/docs/extend/extensions/" },
+  {
+    title: "Jujutsu & Sapling",
+    note: "first-class, like Git",
+    href: "/docs/workflows/jujutsu-and-sapling/",
+  },
+  {
+    title: "Pager & difftool",
+    note: "pipe any patch in",
+    href: "/docs/workflows/git-pager-and-difftool/",
+  },
+  { title: "Cross-platform", note: "macOS, Linux, Windows", href: "/docs/start/install/" },
+  { title: "Your own themes", note: "roll a palette in config", href: "/docs/configure/themes/" },
+] as const;
+---
+
+<div class="mfeats">
+  <p class="mf-kicker"># and the rest</p>
+  <div class="mf-grid">
+    {
+      features.map(({ title, note, href }) => (
+        <a href={href}>
+          <b>{title}</b> <span>— {note}</span>
+        </a>
+      ))
+    }
+  </div>
+</div>

@@ -79,6 +79,36 @@ registration identity. The frozen views fill `changeType` and the public
 (`src/extensions/events.ts`, deriving through `src/core/hunkSummary.ts` — the
 same helper the agent session surface reports hunks with).
 
+## File-view system
+
+File-view registrations are selected per file but remain inside the one
+host-owned review stream. `src/ui/fileViews/useFileViews.ts` bounds asynchronous
+extension work and retains only immutable layouts accepted by
+`src/ui/fileViews/layout.ts`; width and registration identity are part of that
+accepted geometry. A stateful view has no such identity to change, so
+`ctx.fileViews.refresh` bumps an invalidation epoch owned by
+`src/ui/fileViews/useFilePresentationController.ts` and modeled in
+`src/ui/fileViews/state.ts`. That epoch participates in the same retention key,
+re-preparing the files presenting that view while their current rows stay
+visible. One map counts both view-wide and per-file invalidation, and
+`fileViewLayoutEpoch` is the single place that composes them into the epoch a
+`(file, view)` preparation is retained under. `src/ui/fileViews/renderPlan.ts` is the shared insertion
+plan for validated extension rows and host-owned inline notes. It resolves only
+unambiguous exact-source bindings and returns an explicit unresolved set, so
+`DiffPane` falls the complete file back to Pierre rather than guessing or
+silently dropping review data. `src/ui/fileViews/geometry.ts` measures that same
+plan, and `src/ui/components/panes/FileView.tsx` windows and paints it. Extension
+components can paint only their fixed validated rectangles; note cards,
+scrolling, hunk bounds, and navigation remain host-owned.
+
+`src/ui/fileViews/mode.ts` owns file-view mode activation, validity, and callback
+containment. The presentation controller stores the active mode and funnels all
+exit paths through one teardown, including re-entrant handoffs.
+
+Keyboard routing checks modes after focused inputs and before app commands.
+`"handled"` and `"exit"` consume the key; `"pass"` continues normal routing.
+Escape remains host-owned.
+
 ## Command system
 
 Every app-level keyboard shortcut is a named command in one dispatch table
@@ -115,6 +145,17 @@ interrupt review navigation, never a decision about the session itself. The
 frame always carries an `ext <id>` attribution row — the toast marker — because
 the title is extension-authored and a prompt must not be able to impersonate
 Hunk.
+
+`src/ui/lib/extensionWorkspace.ts` owns the policy for `ctx.workspace`. Reads
+resolve reviewed file ids through the existing source fetcher, which retains
+ownership of caching and size limits. Missing or unreadable sources become
+`null`.
+
+Writes are limited to reloadable working-tree reviews and reviewed paths inside
+the review root. App supplies the current input, unfiltered changeset, and root
+through refs so soft reloads update the policy inputs. The host verifies the
+filesystem target before and after consent, writes it, then calls
+`refreshCurrentInput`. Consent uses the existing extension-dialog queue.
 
 Commands declare chords, not matchers: `src/ui/lib/keymap.ts` folds every
 command's `defaultKeys` against the user's `[keybindings]` table (user config

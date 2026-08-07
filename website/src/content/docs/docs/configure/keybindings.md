@@ -25,7 +25,7 @@ Every id starts with the name of whoever owns the command: Hunk's own commands l
 
 ## Chord grammar
 
-Chords join `ctrl`, `alt`/`option`, `cmd`/`meta`, and `shift` with `+` around a base key: a character (`"y"`, `"["`), an uppercase letter for its shifted form (`"G"`), or a named key (`"tab"`, `"pageup"`, `"left"`, `"f2"`). `shift` applies to letters and named keys only — for a shifted symbol or digit, write the character shift produces (`"!"`, not `"shift+1"`), since that is what terminals report.
+Chords join `ctrl`, `alt`/`option`, `cmd`/`meta`, and `shift` with `+` around a base key: a character (`"y"`, `"["`), an uppercase letter for its shifted form (`"G"`), or a named key (`"tab"`, `"pageup"`, `"left"`, `"f2"`). For shifted symbols or digits, write the resulting character (`"!"`, not `"shift+1"`). `ctrl+<letter>` also matches an unnamed bare control byte; named Tab and Enter events stay distinct.
 
 ## Find command ids
 

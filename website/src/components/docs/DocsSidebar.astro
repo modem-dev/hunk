@@ -28,7 +28,8 @@ const { sidebar } = Astro.locals.starlightRoute;
     align-items: center;
     gap: 0.5rem;
     position: fixed;
-    inset-inline-start: var(--sl-sidebar-pad-x);
+    /* Track the centered docs shell, not the viewport edge. */
+    inset-inline-start: calc(var(--hunk-shell-inset, 0rem) + var(--sl-sidebar-pad-x));
     bottom: 1rem;
     z-index: 1;
     width: calc(var(--sl-sidebar-width) - 2 * var(--sl-sidebar-pad-x));

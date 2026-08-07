@@ -30,6 +30,16 @@ Choose responsive, side-by-side, or stacked diff layout.
 
 ---
 
+**`cursor_line`**
+
+Mark the current line as a full-row highlight or on its line number. `off` restores plain `j`/`k` scrolling.
+
+- **Type:** string
+- **Accepted:** `row`, `number`, or `off`
+- **Built-in default:** `row`
+
+---
+
 **`vcs`**
 
 Select the version-control adapter explicitly. An explicit id outranks detection; an id no loaded backend owns falls back to detection with a startup notice.

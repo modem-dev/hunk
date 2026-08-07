@@ -34,7 +34,7 @@ describe("buildExtensionAppCommands", () => {
     // Both are listed for the Extensions menu; only the bound one has a key.
     expect(commands.map((command) => command.id)).toEqual(["meta.toggle", "meta.silent"]);
     expect(commands.map((command) => command.keyLabels)).toEqual([["y"], []]);
-    expect(dispatchAppCommand(commands, "review", chordEvent("y"))?.id).toBe("meta.toggle");
+    expect(dispatchAppCommand(commands, chordEvent("y"))?.id).toBe("meta.toggle");
     expect(ran).toEqual(["meta.toggle"]);
   });
 
@@ -75,20 +75,10 @@ describe("buildExtensionAppCommands", () => {
     expect(conflicts[0]?.conflictingId).toBe("first.mine");
   });
 
-  test("extension commands never dispatch in pager scope", () => {
-    const { commands } = buildExtensionAppCommands({
-      registered: [registeredCommand("meta", "toggle", "y")],
-      builtins: builtinCommandMatchProbes(),
-      runCommand: () => {},
-    });
-
-    expect(dispatchAppCommand(commands, "pager", chordEvent("y"))).toBeUndefined();
-  });
-
   test("binds one command to every chord it declares", () => {
     const ran: string[] = [];
     const { commands, conflicts } = buildExtensionAppCommands({
-      registered: [registeredCommand("meta", "toggle", ["y", "ctrl+g"])],
+      registered: [registeredCommand("meta", "toggle", ["y", "ctrl+o"])],
       builtins: builtinCommandMatchProbes(),
       runCommand: (registered) => ran.push(`${registered.extensionId}.${registered.command.id}`),
     });
@@ -96,9 +86,9 @@ describe("buildExtensionAppCommands", () => {
     expect(conflicts).toEqual([]);
     // One command, one dispatch entry, matching either chord.
     expect(commands).toHaveLength(1);
-    expect(commands[0]?.keyLabels).toEqual(["y", "Ctrl+G"]);
-    expect(dispatchAppCommand(commands, "review", chordEvent("y"))?.id).toBe("meta.toggle");
-    expect(dispatchAppCommand(commands, "review", chordEvent("ctrl+g"))?.id).toBe("meta.toggle");
+    expect(commands[0]?.keyLabels).toEqual(["y", "Ctrl+O"]);
+    expect(dispatchAppCommand(commands, chordEvent("y"))?.id).toBe("meta.toggle");
+    expect(dispatchAppCommand(commands, chordEvent("ctrl+o"))?.id).toBe("meta.toggle");
     expect(ran).toEqual(["meta.toggle", "meta.toggle"]);
   });
 
@@ -120,7 +110,7 @@ describe("buildExtensionAppCommands", () => {
     ]);
     // The command stays registered and keeps the chord nobody else owns.
     expect(commands.map((command) => command.id)).toEqual(["meta.toggle"]);
-    expect(dispatchAppCommand(commands, "review", chordEvent("y"))?.id).toBe("meta.toggle");
+    expect(dispatchAppCommand(commands, chordEvent("y"))?.id).toBe("meta.toggle");
   });
 
   test("a user keybinding replaces the chords an extension declared", () => {
@@ -132,8 +122,8 @@ describe("buildExtensionAppCommands", () => {
       runCommand: () => {},
     });
 
-    expect(dispatchAppCommand(commands, "review", chordEvent("ctrl+j"))?.id).toBe("meta.toggle");
-    expect(dispatchAppCommand(commands, "review", chordEvent("y"))).toBeUndefined();
+    expect(dispatchAppCommand(commands, chordEvent("ctrl+j"))?.id).toBe("meta.toggle");
+    expect(dispatchAppCommand(commands, chordEvent("y"))).toBeUndefined();
   });
 
   test("a chord a built-in released is free for an extension to claim", () => {
@@ -148,6 +138,6 @@ describe("buildExtensionAppCommands", () => {
     });
 
     expect(conflicts).toEqual([]);
-    expect(dispatchAppCommand(commands, "review", chordEvent("s"))?.id).toBe("meta.steal-s");
+    expect(dispatchAppCommand(commands, chordEvent("s"))?.id).toBe("meta.steal-s");
   });
 });

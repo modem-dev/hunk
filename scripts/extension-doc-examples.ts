@@ -50,6 +50,7 @@ declare function resolveHgRevisions(
   input: __HunkDiffInput,
   cwd: string,
 ): Promise<[string, string]>;
+declare function formatDocument(path: string): Promise<string>;
 declare function existsSync(path: string): boolean;
 declare function join(...parts: string[]): string;
 declare function detect(cwd: string): { id: string; repoRoot: string } | null;

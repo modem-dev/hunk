@@ -177,7 +177,8 @@ This is crash containment, not a sandbox. Per-file `metadata` inside event
 payloads is shared with the renderer for performance and is not frozen, and an
 extension runs with your full user permissions — it can do anything your shell
 can. The containment protects you from bugs, not from code you should not have
-loaded in the first place.
+loaded in the first place. For reviewed files, prefer [`ctx.workspace`](#workspace-documents). It attributes
+writes to the extension and asks for consent.
 
 ## The API
 
@@ -187,7 +188,7 @@ cannot mutate the registry mid-session.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `1`). Branch on it if you want
+The API generation this Hunk speaks (currently `2`). Branch on it if you want
 one file to support several Hunk versions.
 
 ### `hunk.registerTheme(theme)`
@@ -260,11 +261,12 @@ instead of a crash.
 A `load` result is patch text plus how to label it. Everything else on it is
 optional, and each optional field buys one thing:
 
-| Field            | What it adds                                                      |
-| ---------------- | ----------------------------------------------------------------- |
-| `untrackedPaths` | files your VCS calls unknown, synthesized into added-file diffs   |
-| `readFileSource` | exact whole-file contents, for context expansion and highlighting |
-| `extraFiles`     | files reviewed outside the patch, including skipped placeholders  |
+| Field            | What it adds                                                       |
+| ---------------- | ------------------------------------------------------------------ |
+| `untrackedPaths` | files your VCS calls unknown, synthesized into added-file diffs    |
+| `readFileSource` | exact whole-file contents, for context expansion and highlighting  |
+| `sourceCacheKey` | stable source-snapshot identity for highlight reuse across reloads |
+| `extraFiles`     | files reviewed outside the patch, including skipped placeholders   |
 
 `untrackedPaths` is the shorthand: list the repo-root-relative paths your VCS
 reports as unknown and Hunk synthesizes the added-file diffs for you, skipping
@@ -364,6 +366,7 @@ async load(input, ctx) {
     sourceLabel: ctx.cwd,
     title: "Mercurial working copy",
     patchText: await runHgDiff(ctx.cwd),
+    sourceCacheKey: `${oldRev}:${newRev}`,
     readFileSource: async ({ path, previousPath, changeType, side }) => {
       if (side === "old") {
         return changeType === "new" ? null : hgCat(oldRev, previousPath ?? path);
@@ -378,8 +381,13 @@ Return `null` for a side that has no content — the old side of an added file, 
 path the revision never contained — rather than throwing. Hunk calls the reader
 **at most once per file and side** and caches what it resolves, so you do not
 need your own cache, and it never calls it for a file the diff reports as
-binary. Leaving `readFileSource` off is fine: Hunk falls back to the content the
-patch itself carries, which renders the same diff with less context available.
+binary. When equivalent reloads close over the same source base, return the same
+opaque `sourceCacheKey` so Hunk can reuse its highlighted output. An equal per-file
+patch plus that key must guarantee equal old/new source answers for the file; change
+it when source state outside the patch changes. Omit it when the adapter cannot prove
+stable identity and Hunk will invalidate conservatively. Leaving
+`readFileSource` off is fine: Hunk falls back to the content the patch itself carries,
+which renders the same diff with less context available.
 
 #### Files outside the patch
 
@@ -720,6 +728,227 @@ Snapshots must be immutable — replace the set instead of mutating it, so
 `useSyncExternalStore` can compare references. Storing state in a hook inside
 the component instead would lose it every time the pane closes and unmounts.
 
+### `hunk.registerFileView(view)` (experimental)
+
+A file view is an alternate **host-rendered** presentation of one file in the
+same top-to-bottom review stream. It is not a whole-file React component: Hunk
+owns row measurement, scrolling/windowing, hunk navigation, and fallback to
+Pierre's raw diff. A constrained, experimental
+[fixed-height JSX row POC](file-view-jsx-poc.md) lets individual validated rows
+paint OpenTUI content without taking over that geometry. Raw is always the
+default; users select a matching view from **View** for the selected file.
+Rows may bind themselves to exact old/new source ranges so Hunk can insert its
+own inline review-note cards without giving the extension note contents or
+geometry.
+
+The installable
+[`examples/extensions/rendered-markdown/`](../examples/extensions/rendered-markdown/)
+uses this contract for a parsed Markdown preview. It is intentionally not bundled
+or loaded by default; copy the folder into `~/.config/hunk/extensions/`, install
+its dependency there, and its View entry and `F8` command become available.
+
+```ts
+import type { HunkExtensionAPI } from "hunkdiff/extension";
+
+export default function (hunk: HunkExtensionAPI) {
+  hunk.registerFileView({
+    id: "plain-markdown",
+    title: "Plain Markdown",
+    matches: (file) => file.path.endsWith(".md"),
+    async layout(input) {
+      const document = await input.readDocument("new");
+      if (!document || document.length > 100_000) return null;
+
+      const sourceLines = (document.endsWith("\n") ? document.slice(0, -1) : document).split("\n");
+      const rows = sourceLines.map((text, index) => ({
+        id: `line:${index + 1}`,
+        spans: [{ text: text || " " }],
+        sourceRanges: [{ side: "new" as const, range: [index + 1, index + 1] as const }],
+      }));
+      if (rows.length === 0) return null;
+
+      return {
+        rows,
+        hunkRows: (input.file.hunks ?? []).map((hunk) => ({
+          startRow: Math.max(0, (hunk.newRange?.[0] ?? 1) - 1),
+          endRow: Math.min(rows.length - 1, (hunk.newRange?.[1] ?? 1) - 1),
+        })),
+      };
+    },
+  });
+}
+```
+
+`layout` receives one readonly input containing `file`, `width`, `signal`,
+`changes`, and `readDocument`. `input.file` is the same frozen public
+`ExtensionDiffFile` sidebars receive. `input.changes` exposes typed added and
+removed ranges without Pierre metadata;
+complete old/new hunk ranges remain available through `input.file.hunks`.
+`readDocument("old" | "new")` is lazy and cached by Hunk; it resolves exact
+text or `null` when that side is absent, unavailable, too large, or fails to
+load. Never treat `null` as an exception: return `null` from `layout` to keep
+raw diff active.
+
+Layouts use an omitted tone for ordinary text and generic symbolic tones
+(`muted`, `accent`, `accent-muted`, `syntax`, `added`, `removed`) plus optional
+terminal attributes (`bold`, `italic`, `underline`, `strikethrough`). Hunk
+resolves those primitives only while painting, so the host does not learn the
+extension's content format and measurement remains theme-independent. Every
+parsed hunk needs one in-bounds, inclusive `hunkRows` entry at the same array
+position as `input.file.hunks`.
+
+A row's optional `sourceRanges` contains inclusive, one-based exact-source
+bindings such as `{ side: "new", range: [12, 18] }`. Hunk reads only the bound
+source sides, verifies every range is in bounds, rejects overlapping ranges on
+the same side across rows, and requires each bound row to belong to exactly one
+`hunkRows` extent. One source line and one bound row therefore resolve to one
+presentation/hunk target. Inline notes anchor by their existing preferred-side start
+line and are inserted before the bound row. Placement is **all-or-raw** per
+file: if any visible note is range-less or unbound, Hunk temporarily renders
+the complete raw diff rather than guessing or dropping review data. The stored
+presentation selection returns when the note layer is hidden or the mapping
+becomes resolvable. Draft note editing remains raw-only.
+
+Invalid, oversized, cancelled, or throwing layouts are isolated with one
+warning per concrete extension registration and fall back to raw diff. Rapid width changes are coalesced, and Hunk never paints
+geometry measured for a stale width. An experimental custom row keeps symbolic
+fallback spans and declares its fixed painter
+atomically as `component: { height, render }`. Painter props include the same
+curated semantic `theme` palette as custom sidebars. It updates live at paint
+time without entering `layout` or changing deterministic geometry. If painting
+fails, the fallback spans are clipped to that same declared height rather than
+changing stream geometry. Custom rows are non-focusable
+paint surfaces: registered commands are their supported keyboard path. A
+cooperatively delivered, handled left-button mouse-up may act and stop
+propagation, while wheel, drag, and unhandled input remain host-owned. Hunk
+makes no portal, renderer, focus, or input-delivery guarantee; see the linked
+JSX POC for state lifetime, clipping, and error boundaries. The opt-in
+[`jsx-file-view-gallery`](../examples/extensions/jsx-file-view-gallery/) runs
+fixed JSX rows against checked-in TypeScript, CSS, and package dependency diffs.
+
+A command handler can control the selected file's view through
+`ctx.fileViews.select("view-id")`, `toggle("view-id")`, and
+`isActive("view-id")`; pass `null` to `select` to restore raw rendering.
+Bare ids address the calling extension; use `"other-extension:view-id"` to
+address another registered view. The public command API remains current-file
+only. When the current file already uses an alternate presentation, **View →
+Apply “…” to all matching files** applies it to every file in the complete
+changeset that passes that view's `matches` function, including files hidden by
+the current filter. Nonmatches retain their existing choices, and host
+constraints such as an active draft may temporarily keep a selected file raw.
+
+`ctx.fileViews.refresh("view-id")` invalidates that view's prepared layouts.
+Hunk treats `layout` as a pure derivation of `(file, width)` and reuses a
+prepared result until one of those changes, so a view holding its own state — a
+fold, a toggled overlay, a display mode — has nothing to change and would
+otherwise keep painting its first answer. Flip the state, then ask for the
+re-derivation:
+
+```ts
+import type { HunkExtensionAPI } from "hunkdiff/extension";
+
+export default function (hunk: HunkExtensionAPI) {
+  let expanded = false;
+
+  hunk.registerFileView({
+    id: "outline",
+    title: "Outline",
+    matches: (file) => file.path.endsWith(".ts"),
+    layout: ({ file }) => ({
+      rows: (file.hunks ?? []).map((entry) => ({
+        id: `hunk:${entry.index}`,
+        spans: [{ text: expanded ? `Hunk ${entry.index + 1} · ${entry.header}` : entry.header }],
+      })),
+      hunkRows: (file.hunks ?? []).map((entry) => ({ startRow: entry.index, endRow: entry.index })),
+    }),
+  });
+
+  hunk.registerCommand(
+    { id: "toggle-detail", title: "Toggle outline detail", key: "f9" },
+    (ctx) => {
+      expanded = !expanded;
+      ctx.fileViews.refresh("outline");
+    },
+  );
+}
+```
+
+Refresh defaults to view-wide, not current-file: every file presenting the view
+re-runs `matches` and `layout`, while files on raw diff or on another view do no
+work. The rows already on screen stay there until their replacement resolves, so
+a refresh never flashes back to raw diff mid-flight; a re-layout that declines,
+throws, or times out falls back to raw exactly like any other failed layout.
+Unknown ids warn and do nothing, and ids resolve the same way `select` resolves
+them.
+
+When the state that changed belongs to one file rather than the whole view — a
+fold, a per-file edit buffer — scope the invalidation with `{ fileId }` so the
+other files presenting the view keep their prepared rows:
+
+```ts
+const folded = new Map<string, boolean>();
+
+hunk.registerCommand({ id: "fold", title: "Fold this file", key: "f10" }, (ctx) => {
+  const fileId = ctx.selection.file?.id;
+  if (!fileId) return;
+  folded.set(fileId, !folded.get(fileId));
+  ctx.fileViews.refresh("outline", { fileId });
+});
+```
+
+That matters because **View → Apply “…” to all matching files** can leave one
+view presenting every matching file in the changeset, and each of those files
+would otherwise re-run third-party `layout` for a change only one of them made.
+A `fileId` no reviewed file carries invalidates nothing and warns about nothing,
+since ids can race a reload.
+
+#### Interactive file views
+
+Add a `mode` when a file view needs keyboard input. Hunk sends it keys after
+focused inputs and dialogs, but before app commands.
+
+```ts
+let showPath = true;
+
+hunk.registerFileView({
+  id: "outline",
+  title: "Outline",
+  matches: () => true,
+  layout: ({ file }) => ({
+    rows: [{ id: "summary", spans: [{ text: showPath ? file.path : "Outline" }] }],
+    hunkRows: [],
+  }),
+  mode: {
+    onKey: (key, ctx) => {
+      if (key.name !== "space") return "pass";
+      showPath = !showPath;
+      ctx.fileViews.refresh("outline");
+      return "handled";
+    },
+  },
+});
+
+hunk.registerCommand({ id: "outline-keys", title: "Outline keys", key: "f9" }, (ctx) => {
+  ctx.fileViews.enterMode("outline");
+});
+```
+
+`enterMode(viewId)` selects the view and starts its mode, returning `false` if it
+cannot. Only one mode runs at a time. `exitMode()` stops it;
+`isModeActive(viewId)` checks it.
+
+`onKey` must return synchronously:
+
+- `"handled"` consumes the key.
+- `"pass"` leaves it for Hunk's commands and scrolling.
+- `"exit"` consumes the key and stops the mode.
+
+Escape always exits and never reaches `onKey`. Hunk also exits when the selected
+file, active presentation, extensions, or review session changes. `onEnter` and
+`onExit` are optional lifecycle callbacks, and `onExit` runs exactly once per
+activation. A failing `onEnter` or `onKey` exits the mode; any callback failure
+warns without breaking the review.
+
 ### `hunk.registerCommand(command, handler)`
 
 Register a named command, optionally bound to a key. Commands are not a
@@ -741,11 +970,11 @@ Key chords are `ctrl`, `alt`/`option`, `cmd`/`meta`, and `shift` joined with
 shifted form (`"G"`), or a named key (`"f2"`, `"pageup"`, `"left"`). `shift`
 applies to letters and named keys only: for a shifted symbol or digit, bind the
 character the shift produces (`"!"`, not `"shift+1"`), since terminals report
-the character rather than the combination. An
-unparsable chord fails the registration; a chord already owned by a built-in
-shortcut — or by an earlier-loaded extension — leaves that chord unbound, with a
-warning toast naming both sides. Omit `key` to register a command with no
-binding.
+the character rather than the combination. `ctrl+<letter>` also matches an
+unnamed bare control byte; named Tab and Enter events stay distinct. An
+unparsable chord fails registration. A chord already owned by a built-in or an
+earlier extension stays with its owner and produces a warning. Omit `key` to
+register a command with no binding.
 
 `key` also takes a list, binding the command to every chord in it:
 
@@ -773,9 +1002,8 @@ key would have done — so a command with no `key`, or one whose chord was
 refused, is still reachable with the mouse.
 
 The handler fires when the key is pressed outside modal UI — dialogs, menus,
-and focused text inputs own their keys first, and pager mode does not dispatch
-extension commands. It receives the standard context plus `ctx.sidebars`, the
-controls for opening sidebar views:
+and focused text inputs own their keys first. It receives the standard context
+plus `ctx.sidebars`, the controls for opening sidebar views:
 
 - `ctx.sidebars.open(viewId)` / `close(viewId)` / `toggle(viewId)` — a bare id
   names your own extension's view, `"files"` names the built-in file
@@ -896,6 +1124,71 @@ the same way, and a request made after that point cancels immediately. A blank
 `title`, or a `select` with no options, is a bug in the extension rather than an
 answer from the user, so the promise **rejects**; like any other handler
 failure, that surfaces as a warning naming your extension.
+
+#### Workspace documents
+
+`ctx.workspace` reads full documents from the current review and can replace an
+eligible working-tree file.
+
+| Method                                 | Result                                            |
+| -------------------------------------- | ------------------------------------------------- |
+| `readDocument(fileId, "old" \| "new")` | The reviewed source text, or `null`               |
+| `canWriteDocument(fileId)`             | Whether the review and file allow writes          |
+| `writeDocument({ fileId, text })`      | `{ ok: true }` or `{ ok: false, reason, detail }` |
+
+A command can read, transform, and write a selected file:
+
+```ts
+hunk.registerCommand({ id: "shout-headings", title: "Shout headings", key: "f7" }, async (ctx) => {
+  const file = ctx.selection.file;
+  if (!file || !ctx.workspace.canWriteDocument(file.id)) return;
+
+  const current = await ctx.workspace.readDocument(file.id, "new");
+  if (current === null) return;
+
+  const result = await ctx.workspace.writeDocument({
+    fileId: file.id,
+    text: current.replace(/^(#+ .+)$/gm, (heading) => heading.toUpperCase()),
+  });
+
+  if (!result.ok && result.reason !== "cancelled") {
+    ctx.notify(result.detail, "warning");
+  }
+});
+```
+
+`readDocument` returns the exact source represented by the review, not the
+file's patch. It works for every review kind. For example, the `"new"` side in
+`hunk show HEAD` is the file at that commit, not the working-tree file. It
+returns `null` when the file or side is absent, no source is available, reading
+fails, or the document exceeds Hunk's size limit. Reads never prompt. An invalid
+side rejects the promise.
+
+Writes require all of the following:
+
+- an unstaged working-tree review (`hunk diff` with no revision range)
+- a reloadable session; `--agent-context -` sessions cannot write
+- a reviewed file with writable new-side text
+- a regular target inside the review root
+
+Revision, stash, range, staged, patch, and file-pair reviews are read-only.
+Deleted, binary, oversized, missing, symlinked, and root-escaping targets are
+also refused. Targets are identified by reviewed file id, never by an arbitrary
+path.
+
+`canWriteDocument` checks the review and file policy without prompting or
+inspecting the filesystem. A later `writeDocument` can still refuse if the file
+has moved or become unsafe.
+
+`writeDocument` verifies the target, asks for consent through the attributed
+`ctx.dialogs` queue, then verifies it again before writing. The second check
+prevents deletion and symlink-swap races while the dialog is open. A successful
+write starts a session reload; the write promise may settle before that reload
+finishes.
+
+A declined prompt returns `cancelled`, an ineligible or unsafe target returns
+`unavailable`, and an attempted write failure returns `failed` with a
+displayable `detail`. Malformed requests reject the promise.
 
 ### `hunk.transformChangeset(fn)`
 
@@ -1040,6 +1333,17 @@ Record a diagnostic line. Logs are collected per extension rather than written
 to the terminal, because the TUI owns the screen.
 
 ## A complete example
+
+The examples directory contains two user-installable folder extensions:
+
+- [`examples/extensions/review-triage/`](../examples/extensions/review-triage/)
+  is a session-local hunk triage board combining a sidebar, commands, dialogs,
+  lifecycle listeners, and the extension event bus. Its API evaluation and
+  follow-up opportunities are recorded in
+  [Extension API field notes](extension-api-evaluation.md).
+- [`examples/extensions/rendered-markdown/`](../examples/extensions/rendered-markdown/)
+  parses Markdown into generic host-owned file-view rows. Its README shows how
+  to run it from the checkout or copy it into the global extensions directory.
 
 Collapse lockfiles and generated output out of every review, and say how many
 files were hidden.

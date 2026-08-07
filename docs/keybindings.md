@@ -34,7 +34,8 @@ around a base key: a character (`"y"`, `"["`), an uppercase letter for its
 shifted form (`"G"`), or a named key (`"tab"`, `"pageup"`, `"left"`, `"f2"`).
 `shift` applies to letters and named keys only — for a shifted symbol or digit,
 write the character the shift produces (`"!"`, not `"shift+1"`), since that is
-what terminals report.
+what terminals report. `ctrl+<letter>` also matches an unnamed bare control
+byte; named Tab and Enter events stay distinct.
 
 The built-in commands and the keys they ship with:
 
@@ -78,6 +79,9 @@ The built-in commands and the keys they ship with:
 | `hunk.view.layoutSplit`             | Split layout                             | `1`                          |
 | `hunk.view.layoutStack`             | Stack layout                             | `2`                          |
 | `hunk.view.layoutAuto`              | Auto layout                              | `0`                          |
+| `hunk.view.cursorLineRow`           | Highlight the current row                | _(none)_                     |
+| `hunk.view.cursorLineNumber`        | Mark the current line number             | _(none)_                     |
+| `hunk.view.cursorLineOff`           | Hide the current-line marker             | _(none)_                     |
 
 Commands marked _(none)_ ship without a key: they are menu items today, and
 binding one gives it a shortcut like any other.

@@ -81,6 +81,7 @@ test("core documentation has no serious automated accessibility violations", asy
 test("key human and machine-readable routes load", async ({ page, request }) => {
   for (const route of [
     "/docs/agents/review-with-an-agent/",
+    "/docs/extend/file-previews/",
     "/docs/reference/cli/",
     "/docs/help/deployment/",
   ]) {

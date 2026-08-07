@@ -18,7 +18,7 @@ export default function (hunk: HunkExtensionAPI) {
 
 **The API is experimental**: `hunkdiff/extension` may change in breaking ways between minor releases while it stabilizes. Breaking changes are called out in release notes, and `hunk.apiVersion` identifies the surface an extension was written against.
 
-What an extension can register is covered by the companion pages: the [extension API](/docs/extend/extension-api/), [VCS adapters](/docs/extend/vcs-adapters/), and [custom sidebars](/docs/extend/custom-sidebars/).
+What an extension can register is covered by the companion pages: the [extension API](/docs/extend/extension-api/), [file previews](/docs/extend/file-previews/), [VCS adapters](/docs/extend/vcs-adapters/), and [custom sidebars](/docs/extend/custom-sidebars/).
 
 ## Where Hunk looks
 
@@ -60,6 +60,7 @@ The **id** is the file stem, or the folder name for `<name>/index.ts` and single
 - config: `[extension.<id>]`
 - commands: `<id>.<commandId>`
 - sidebar views: `<id>:<viewId>`
+- file previews: `<id>:<viewId>`
 
 Ids start with a letter or digit, then letters, digits, `-`, or `_`. `hunk`, `git`, `jj`, and `sl` are reserved. An invalid id — or a second source offering an already-loaded id — is skipped with a startup notice.
 
@@ -92,7 +93,7 @@ Decisions are stored per repository root in `~/.config/hunk/state.json`, keyed b
 
 A broken extension is contained, not fatal: a failed import, missing default export, or throwing factory is skipped and rolled back with a startup notice; a handler or transform that throws later becomes a warning naming the extension. Event handlers receive frozen changeset copies, so accidental mutation throws instead of corrupting the review.
 
-This is crash containment, not a sandbox — an extension can do anything your shell can.
+Extensions run with your shell permissions. For reviewed files, prefer [`ctx.workspace`](/docs/extend/extension-api/#workspace-documents); writes require consent and identify the extension and file.
 
 ## CLI flags and config
 

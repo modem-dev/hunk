@@ -1,0 +1,12 @@
+{
+  "name": "hunk-rendered-markdown-extension",
+  "private": true,
+  "dependencies": {
+    "marked": "17.0.1"
+  },
+  "hunk": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

@@ -127,29 +127,31 @@ export function binaryFilenameForSpec(spec: PlatformPackageSpec) {
 /**
  * Build the published manifest for one prebuilt platform package.
  *
- * Declaring the native binary in `bin` makes npm restore execute bits on install,
- * including root-owned global installs where the JS wrapper cannot chmod later.
+ * Platform packages are implementation dependencies, so their native executables
+ * stay out of `bin`; npm 11 rejects native files there as invalid scripts. The
+ * staged executable bit and top-level wrapper preserve direct execution instead.
  */
 export function buildPlatformPackageManifest(
   rootPackage: {
     version: string;
     description?: string;
+    repository?: unknown;
+    homepage?: string;
+    bugs?: unknown;
     license?: string;
   },
   spec: PlatformPackageSpec,
 ) {
-  const binaryName = binaryFilenameForSpec(spec);
-
   return {
     name: spec.packageName,
     version: rootPackage.version,
     description: `${rootPackage.description} (${spec.os} ${spec.cpu} binary)`,
     os: [spec.os === "windows" ? "win32" : spec.os],
     cpu: [spec.cpu],
-    bin: {
-      hunk: `./bin/${binaryName}`,
-    },
     files: ["bin", "LICENSE"],
+    repository: rootPackage.repository,
+    homepage: rootPackage.homepage,
+    bugs: rootPackage.bugs,
     license: rootPackage.license,
     publishConfig: {
       access: "public",

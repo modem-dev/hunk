@@ -325,6 +325,40 @@ describe("Hunk session CLI formatters", () => {
     expect(formatSessionOutput(session)).toContain("  - src/app.ts (+3 -1, hunks: 1)");
   });
 
+  test("human-readable session paths cannot emit terminal controls", () => {
+    const unsafePath = "src/日本語\x1b[2J\tline\n🧪.ts";
+    const session = createTestListedSession({
+      title: unsafePath,
+      sourceLabel: unsafePath,
+      cwd: unsafePath,
+      repoRoot: unsafePath,
+      files: [createTestSessionFileSummary({ path: unsafePath })],
+      snapshot: createTestSessionSnapshot({ selectedFilePath: unsafePath }),
+    });
+    const output = formatSessionOutput(session);
+
+    expect(output).not.toContain("\x1b");
+    expect(output).not.toContain("\t");
+    expect(output).toContain("src/日本語line🧪.ts");
+
+    const reloadOutput = formatReloadOutput(
+      { sessionPath: unsafePath },
+      {
+        sessionId: "session-1",
+        inputKind: "vcs",
+        title: "repo working tree",
+        sourceLabel: "/repo",
+        fileCount: 1,
+        selectedFilePath: unsafePath,
+        selectedHunkIndex: 0,
+      },
+    );
+    expect(reloadOutput).not.toContain("\x1b");
+    expect(reloadOutput).not.toContain("\t");
+    expect(reloadOutput).toContain("session path src/日本語line🧪.ts");
+    expect(reloadOutput).toContain("Selected: src/日本語line🧪.ts hunk 1");
+  });
+
   test("empty and unselected summaries stay explicit in human-readable output", () => {
     const session = createTestListedSession({
       snapshot: createTestSessionSnapshot({

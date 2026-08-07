@@ -230,7 +230,9 @@ export default function (hunk: HunkExtensionAPI) {
 ```
 
 See [docs/extensions.md](docs/extensions.md) for the full API, the trust model,
-and the `[extensions]` / `[extension.<id>]` config reference.
+and the `[extensions]` / `[extension.<id>]` config reference. Installable examples
+include [review triage](examples/extensions/review-triage/) and an optional
+[rendered Markdown file view](examples/extensions/rendered-markdown/).
 
 ### OpenTUI component
 

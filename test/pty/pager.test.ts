@@ -304,6 +304,98 @@ describe("PTY pager", () => {
     }
   });
 
+  test("general pager mode navigates between files in the review stream", async () => {
+    const fixture = harness.createMultiFilePagerPatchFixture();
+    const session = await harness.launchHunkWithFileBackedStdin({
+      stdinFile: fixture.patchFile,
+      args: ["pager"],
+      cwd: fixture.dir,
+      cols: 120,
+      rows: 16,
+    });
+
+    try {
+      const initial = await session.waitForText(/first\.ts/, { timeout: 15_000 });
+
+      expect(initial).toContain("line01 = 1;");
+      expect(initial).not.toContain("secondValue = 2;");
+
+      // The keypress handler is bound after the first paint, so proving one key landed keeps a
+      // slow start from being misread as broken file navigation.
+      await harness.ensureKeyboardIsLive(session);
+      await session.press(".");
+      // second.ts is the last file and too short to own the viewport top, so the only correct
+      // landing spot is the bottom of the stream. Assert that exact position -- reaching it while
+      // first.ts's opening line is gone is what separates a real jump from an incidental redraw.
+      const nextFile = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("secondValue = 2;") && !text.includes("line01 = 1;"),
+        5_000,
+      );
+
+      expect(nextFile).toContain("secondValue = 2;");
+      expect(nextFile).not.toContain("line01 = 1;");
+
+      await session.press(",");
+      const previousFile = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("line01 = 1;") && !text.includes("secondValue = 2;"),
+        5_000,
+      );
+
+      expect(previousFile).toContain("line01 = 1;");
+      expect(previousFile).not.toContain("secondValue = 2;");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("general pager mode switches layout and reveals the menu bar on demand", async () => {
+    const fixture = harness.createMultiFilePagerPatchFixture();
+    const session = await harness.launchHunkWithFileBackedStdin({
+      stdinFile: fixture.patchFile,
+      args: ["pager"],
+      cwd: fixture.dir,
+      cols: 220,
+      rows: 20,
+    });
+
+    try {
+      const initial = await session.waitForText(/first\.ts/, { timeout: 15_000 });
+
+      // Pager chrome starts out of the way, but nothing about it is disabled.
+      expect(initial).not.toContain("View  Navigate  Agent  Help");
+      expect(initial).toMatch(/▌.*▌/);
+
+      await session.waitIdle({ timeout: 200 });
+      await session.press("2");
+      const stacked = await harness.waitForSnapshot(
+        session,
+        (text) => !/▌.*▌/.test(text) && text.includes("line01 = 1;"),
+        5_000,
+      );
+
+      expect(stacked).not.toMatch(/▌.*▌/);
+
+      await session.press("1");
+      const split = await harness.waitForSnapshot(session, (text) => /▌.*▌/.test(text), 5_000);
+
+      expect(split).toMatch(/▌.*▌/);
+
+      await session.type("M");
+      const withMenuBar = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("View  Navigate  Agent  Help"),
+        5_000,
+      );
+
+      expect(withMenuBar).toContain("View  Navigate  Agent  Help");
+      expect(withMenuBar).toContain("first.ts");
+    } finally {
+      session.close();
+    }
+  });
+
   test("explicit pager mode still supports mouse wheel scrolling on a TTY", async () => {
     const fixture = harness.createPagerPatchFixture(60);
     const session = await harness.launchHunk({

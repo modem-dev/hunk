@@ -4,6 +4,7 @@ import { Command, Option } from "commander";
 import type {
   CliInput,
   CommonOptions,
+  CursorLine,
   HelpCommandInput,
   LayoutMode,
   PagerCommandInput,
@@ -38,7 +39,7 @@ import { resolveCliVersion } from "./version";
 export interface CliReferenceOption {
   readonly flag: string;
   readonly description: string;
-  readonly parse?: "layout" | "positiveInt" | "tabWidth" | "collect";
+  readonly parse?: "layout" | "cursorLine" | "positiveInt" | "tabWidth" | "collect";
   readonly defaultValue?: string;
   /** Default applied directly by Commander (as opposed to a config-resolved default). */
   readonly commanderDefault?: string;
@@ -59,9 +60,14 @@ export interface CliReferenceCommand {
 /** Review flags registered on every full-screen review command. */
 export const COMMON_REVIEW_OPTIONS = [
   { flag: "--mode <mode>", description: "layout mode: auto, split, stack", parse: "layout" },
+  {
+    flag: "--cursor-line <style>",
+    description: "current-line marker: row, number, off",
+    parse: "cursorLine",
+  },
   { flag: "--theme <theme>", description: "named theme override" },
   AUXILIARY_AGENT_OPTIONS.agentContext,
-  { flag: "--pager", description: "use pager-style chrome and controls" },
+  { flag: "--pager", description: "use pager-style chrome" },
   AUXILIARY_AGENT_OPTIONS.experimental,
   { flag: "--line-numbers", description: "show line numbers" },
   { flag: "--no-line-numbers", description: "hide line numbers" },
@@ -195,6 +201,15 @@ function parseLayoutMode(value: string): LayoutMode {
   throw new Error(`Invalid layout mode: ${value}`);
 }
 
+/** Validate one requested current-line style from CLI input. */
+function parseCursorLine(value: string): CursorLine {
+  if (value === "row" || value === "number" || value === "off") {
+    return value;
+  }
+
+  throw new Error(`Invalid cursor line style: ${value}`);
+}
+
 /** Parse one required positive integer CLI value. */
 function parsePositiveInt(value: string) {
   if (!/^[1-9]\d*$/.test(value)) {
@@ -236,6 +251,7 @@ function collectRepeatedValue(value: string, previous: string[] = []) {
 function buildCommonOptions(
   options: {
     mode?: LayoutMode;
+    cursorLine?: CursorLine;
     theme?: string;
     agentContext?: string;
     pager?: boolean;
@@ -249,6 +265,7 @@ function buildCommonOptions(
 ): CommonOptions {
   return {
     mode: options.mode,
+    cursorLine: options.cursorLine,
     theme: options.theme,
     agentContext: options.agentContext,
     pager: options.pager ? true : undefined,
@@ -281,6 +298,8 @@ function applyReferenceOption(command: Command, option: CliReferenceOption) {
   const commanderOption = new Option(option.flag, option.description);
   if (option.parse === "layout") {
     commanderOption.argParser(parseLayoutMode);
+  } else if (option.parse === "cursorLine") {
+    commanderOption.argParser(parseCursorLine);
   } else if (option.parse === "positiveInt") {
     commanderOption.argParser(parsePositiveInt);
   } else if (option.parse === "tabWidth") {
@@ -370,7 +389,7 @@ function renderCliHelp() {
     "  --mode <mode>                           layout mode: auto, split, stack",
     "  --watch                                 auto-reload when the current diff input changes",
     "  --agent-context <path>                  JSON sidecar with agent rationale",
-    "  --pager                                 use pager-style chrome and controls",
+    "  --pager                                 use pager-style chrome",
     "  --line-numbers / --no-line-numbers      show or hide line numbers",
     "  -x, --tab-width <columns>                tab stop width: 1-16 (default: 4)",
     "  --wrap / --no-wrap                      wrap or truncate long diff lines",

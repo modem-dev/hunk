@@ -8,6 +8,7 @@ import type {
   ExtensionCustomEventHandler,
   ExtensionEventHandler,
   ExtensionEventName,
+  ExtensionFileView,
   ExtensionNotifyType,
   ExtensionSidebarView,
   ExtensionThemeConfig,
@@ -37,10 +38,25 @@ export type {
   ExtensionEventHandler,
   ExtensionEventName,
   ExtensionEventPayloads,
+  ExtensionFileChangeRange,
+  ExtensionFileSide,
+  ExtensionFileView,
+  ExtensionFileViewControls,
+  ExtensionFileViewInput,
+  ExtensionFileViewLayout,
+  ExtensionFileViewMode,
+  ExtensionFileViewModeContext,
+  ExtensionFileViewModeKeyResult,
+  ExtensionFileViewRow,
+  ExtensionFileViewRowComponentProps,
+  ExtensionFileViewSourceRange,
+  ExtensionFileViewSpan,
   ExtensionFactory,
   ExtensionInputOptions,
+  ExtensionKeyEvent,
   ExtensionReviewNote,
   ExtensionNotifyType,
+  ExtensionPaintTheme,
   ExtensionSelectOptions,
   ExtensionSidebarActions,
   ExtensionSidebarComponent,
@@ -51,6 +67,9 @@ export type {
   ExtensionSidebarViewProps,
   ExtensionThemeConfig,
   ExtensionVcsAdapter,
+  ExtensionWorkspace,
+  ExtensionWorkspaceWriteRequest,
+  ExtensionWorkspaceWriteResult,
   HunkExtensionAPI,
   HunkExtensionApiVersion,
   SessionReloadReason,
@@ -110,6 +129,12 @@ export interface RegisteredSidebarView {
   view: ExtensionSidebarView;
 }
 
+/** A host-rendered alternative file presentation registered by one extension. */
+export interface RegisteredFileView {
+  extensionId: string;
+  view: ExtensionFileView;
+}
+
 export interface RegisteredCommand {
   extensionId: string;
   command: ExtensionCommand;
@@ -152,6 +177,7 @@ export interface ExtensionRegistry {
   vcsAdapters: RegisteredVcsAdapter[];
   changesetTransforms: RegisteredChangesetTransform[];
   sidebarViews: RegisteredSidebarView[];
+  fileViews: RegisteredFileView[];
   commands: RegisteredCommand[];
   eventHandlers: ExtensionEventHandlerMap;
   customEventHandlers: RegisteredCustomEventHandler[];
@@ -227,6 +253,7 @@ export function createEmptyExtensionRegistry(): ExtensionRegistry {
     vcsAdapters: [],
     changesetTransforms: [],
     sidebarViews: [],
+    fileViews: [],
     commands: [],
     eventHandlers: {
       startup: [],

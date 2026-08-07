@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import {
@@ -81,50 +82,89 @@ export function statSignature(path: string) {
 /* Exact file sources                                                          */
 /* -------------------------------------------------------------------------- */
 
-/**
- * Build a source reader that answers from exact Git old/new endpoints.
- *
- * The endpoints are resolved once, while the operation loads, and closed over:
- * by the time Hunk asks for a file's text the revisions are already pinned to
- * concrete commits, so expanded context can never be read from a ref that moved
- * mid-review.
- */
-function createGitSourceReader(
-  repoRoot: string,
-  endpoints: GitDiffEndpoints,
-  gitExecutable: string,
-): ExtensionVcsFileSourceReader {
-  return ({ path, previousPath, changeType, side }) => {
-    // An added file has no old side and a deleted one has no new side; asking
-    // Git for either would just be a failed lookup.
-    if (side === "old") {
-      return changeType === "new"
-        ? Promise.resolve(null)
-        : readGitFileSource(gitEndpointSourceSpec(endpoints.old, repoRoot, previousPath ?? path), {
-            gitExecutable,
-          });
-    }
+/** Exact source reader plus a stable identity for its complete old/new snapshot. */
+interface GitSourceCapability {
+  readFileSource: ExtensionVcsFileSourceReader;
+  sourceCacheKey: string;
+}
 
-    return changeType === "deleted"
-      ? Promise.resolve(null)
-      : readGitFileSource(gitEndpointSourceSpec(endpoints.new, repoRoot, path), { gitExecutable });
-  };
+/** Hash semantic index entries so filesystem-stat refreshes do not defeat cache reuse. */
+function gitIndexCacheKey(input: GitBackedInput, repoRoot: string, gitExecutable: string) {
+  const entries = runGitText({
+    input,
+    args: ["ls-files", "--stage", "-z"],
+    cwd: repoRoot,
+    gitExecutable,
+  });
+  return createHash("sha256").update(entries).digest("hex");
+}
+
+/** Describe one resolved endpoint for source-cache reuse across adapter reloads. */
+function gitEndpointCacheKey(endpoint: GitDiffEndpoints["old"], indexCacheKey: string) {
+  if (endpoint.kind === "git-ref") {
+    return `ref:${endpoint.ref}`;
+  }
+  if (endpoint.kind === "index") {
+    return `index:${indexCacheKey}`;
+  }
+  return endpoint.kind;
 }
 
 /**
- * Build a source reader for a single-revision review.
+ * Build a source reader that answers from exact Git old/new endpoints.
  *
- * The ref is pinned to a commit object here so the reader keeps naming the same
- * revision even if the branch or stash it was spelled as moves afterwards.
+ * The endpoint key omits worktree contents because the per-file patch fingerprint
+ * already describes their delta. Immutable refs and the index hash identify the
+ * base, so unchanged files can safely retain highlighting across watch reloads.
  */
-function createGitRevisionSourceReader(
+function createGitSourceCapability(
+  input: GitBackedInput,
+  repoRoot: string,
+  endpoints: GitDiffEndpoints,
+  gitExecutable: string,
+): GitSourceCapability {
+  const needsIndex = endpoints.old.kind === "index" || endpoints.new.kind === "index";
+  const indexCacheKey = needsIndex ? gitIndexCacheKey(input, repoRoot, gitExecutable) : "unused";
+
+  return {
+    sourceCacheKey: [
+      "git-source-v1",
+      gitEndpointCacheKey(endpoints.old, indexCacheKey),
+      gitEndpointCacheKey(endpoints.new, indexCacheKey),
+    ].join(":"),
+    readFileSource: ({ path, previousPath, changeType, side }) => {
+      // An added file has no old side and a deleted one has no new side; asking
+      // Git for either would just be a failed lookup.
+      if (side === "old") {
+        return changeType === "new"
+          ? Promise.resolve(null)
+          : readGitFileSource(
+              gitEndpointSourceSpec(endpoints.old, repoRoot, previousPath ?? path),
+              {
+                gitExecutable,
+              },
+            );
+      }
+
+      return changeType === "deleted"
+        ? Promise.resolve(null)
+        : readGitFileSource(gitEndpointSourceSpec(endpoints.new, repoRoot, path), {
+            gitExecutable,
+          });
+    },
+  };
+}
+
+/** Build a pinned source capability for a single-revision review. */
+function createGitRevisionSourceCapability(
   input: GitBackedInput,
   ref: string,
   repoRoot: string,
   gitExecutable: string,
-): ExtensionVcsFileSourceReader {
+): GitSourceCapability {
   const newRef = resolveGitCommitRef(input, ref, { cwd: repoRoot, gitExecutable });
-  return createGitSourceReader(
+  return createGitSourceCapability(
+    input,
     repoRoot,
     { old: { kind: "git-ref", ref: `${newRef}^` }, new: { kind: "git-ref", ref: newRef } },
     gitExecutable,
@@ -132,20 +172,22 @@ function createGitRevisionSourceReader(
 }
 
 /**
- * Build a source reader for a working-tree review, when both sides are exact.
+ * Build a source capability for a working-tree review, when both sides are exact.
  *
  * Ranges that do not reduce to one old/new pair — octopus merges, multi-positive
  * revision sets — deliberately get no reader at all rather than a guess, so
  * expanded rows are never read from the wrong revision.
  */
-function createGitDiffSourceReader(
+function createGitDiffSourceCapability(
   input: ExtensionVcsDiffInput,
   repoRoot: string,
   cwd: string,
   gitExecutable: string,
-): ExtensionVcsFileSourceReader | undefined {
+): GitSourceCapability | undefined {
   const endpoints = resolveGitDiffEndpoints(input, { cwd, repoRoot, gitExecutable });
-  return endpoints ? createGitSourceReader(repoRoot, endpoints, gitExecutable) : undefined;
+  return endpoints
+    ? createGitSourceCapability(input, repoRoot, endpoints, gitExecutable)
+    : undefined;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -288,6 +330,7 @@ export const GitVcsAdapter = {
           runGitText({ input, args: buildGitDiffNumstatArgs(input), cwd, gitExecutable }),
         ).filter((file) => shouldSkipLargeTrackedDiff(file, repoRoot));
         const colorMoved = resolveGitColorMovedOptions(input, { cwd, gitExecutable });
+        const sourceCapability = createGitDiffSourceCapability(input, repoRoot, cwd, gitExecutable);
 
         return {
           repoRoot,
@@ -303,7 +346,7 @@ export const GitVcsAdapter = {
             cwd,
             gitExecutable,
           }),
-          readFileSource: createGitDiffSourceReader(input, repoRoot, cwd, gitExecutable),
+          ...sourceCapability,
           extraFiles: [
             ...largeTrackedFiles.map(
               (file): ExtensionVcsExtraFile => ({
@@ -349,6 +392,12 @@ export const GitVcsAdapter = {
       async load(input, { cwd, gitExecutable = "git" }) {
         const repoRoot = resolveGitRepoRoot(input, { cwd, gitExecutable });
         const repoName = basename(repoRoot);
+        const sourceCapability = createGitRevisionSourceCapability(
+          input,
+          input.ref ?? "HEAD",
+          repoRoot,
+          gitExecutable,
+        );
 
         return {
           repoRoot,
@@ -363,12 +412,7 @@ export const GitVcsAdapter = {
             cwd,
             gitExecutable,
           }),
-          readFileSource: createGitRevisionSourceReader(
-            input,
-            input.ref ?? "HEAD",
-            repoRoot,
-            gitExecutable,
-          ),
+          ...sourceCapability,
         };
       },
       watchPlan(input, { cwd, gitExecutable = "git" }) {
@@ -388,6 +432,12 @@ export const GitVcsAdapter = {
       async load(input, { cwd, gitExecutable = "git" }) {
         const repoRoot = resolveGitRepoRoot(input, { cwd, gitExecutable });
         const repoName = basename(repoRoot);
+        const sourceCapability = createGitRevisionSourceCapability(
+          input,
+          input.ref ?? "stash@{0}",
+          repoRoot,
+          gitExecutable,
+        );
 
         return {
           repoRoot,
@@ -402,12 +452,7 @@ export const GitVcsAdapter = {
             cwd,
             gitExecutable,
           }),
-          readFileSource: createGitRevisionSourceReader(
-            input,
-            input.ref ?? "stash@{0}",
-            repoRoot,
-            gitExecutable,
-          ),
+          ...sourceCapability,
         };
       },
       watchPlan(input, { cwd, gitExecutable = "git" }) {

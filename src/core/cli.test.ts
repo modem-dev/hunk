@@ -151,6 +151,19 @@ describe("parseCli", () => {
     });
   });
 
+  test("parses the current-line style and rejects an unknown one", async () => {
+    const parsed = await parseCli(["bun", "hunk", "diff", "--cursor-line", "number"]);
+
+    expect(parsed).toMatchObject({
+      kind: "vcs",
+      options: { cursorLine: "number" },
+    });
+
+    await expect(parseCli(["bun", "hunk", "diff", "--cursor-line", "sparkles"])).rejects.toThrow(
+      "Invalid cursor line style: sparkles",
+    );
+  });
+
   test("accepts --experimental before the review command", async () => {
     const parsed = await parseCli(["bun", "hunk", "--experimental", "diff"]);
 

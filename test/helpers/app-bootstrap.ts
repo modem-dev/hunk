@@ -14,6 +14,7 @@ export function createTestVcsAppBootstrap({
   initialWrapLines,
   inputMode = initialMode,
   pager = false,
+  initialShowMenuBar = !pager,
   sourceLabel = "repo",
   summary,
   title = "repo working tree",
@@ -27,6 +28,7 @@ export function createTestVcsAppBootstrap({
   initialShowAgentNotes?: boolean;
   initialShowHunkHeaders?: boolean;
   initialShowLineNumbers?: boolean;
+  initialShowMenuBar?: boolean;
   initialTheme?: string;
   initialWrapLines?: boolean;
   inputMode?: LayoutMode;
@@ -59,6 +61,7 @@ export function createTestVcsAppBootstrap({
     initialShowAgentNotes,
     initialShowHunkHeaders,
     initialShowLineNumbers,
+    initialShowMenuBar,
     initialTheme,
     initialWrapLines,
   };

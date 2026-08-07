@@ -97,6 +97,7 @@ export default defineConfig({
           items: [
             { label: "Extensions", slug: "docs/extend/extensions" },
             { label: "Extension API", slug: "docs/extend/extension-api" },
+            { label: "File previews", slug: "docs/extend/file-previews" },
             { label: "VCS adapters", slug: "docs/extend/vcs-adapters" },
             { label: "Custom sidebars", slug: "docs/extend/custom-sidebars" },
           ],

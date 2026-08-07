@@ -28,9 +28,12 @@ function hasLineNumbers(hunk: Hunk) {
  */
 export function summarizeHunk(hunk: Hunk, index: number): ExtensionDiffHunk {
   const rangesDerivable = hasLineNumbers(hunk);
+  const formattedHeader = hunk.hunkSpecs != null || rangesDerivable ? formatHunkHeader(hunk) : "";
   return {
     index,
-    header: hunk.hunkSpecs != null || rangesDerivable ? formatHunkHeader(hunk) : "",
+    // Public summaries are commonly embedded in terminal-safe extension rows, so keep this
+    // boundary single-line without changing the raw header formatter used by Hunk itself.
+    header: formattedHeader.replace(/[\r\n]+/g, " ").trimEnd(),
     ...(rangesDerivable ? hunkLineRange(hunk) : {}),
   };
 }

@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import type { Hunk } from "@pierre/diffs";
+import { createJsxFileViewLayout } from "../../examples/extensions/jsx-file-view";
 import { createTestDiffFile } from "../../test/helpers/diff-helpers";
+import { createFileViewInput } from "../ui/fileViews/host";
+import { validateFileViewLayout } from "../ui/fileViews/layout";
 import { formatHunkHeader } from "./hunkHeader";
 import { summarizeHunk } from "./hunkSummary";
 import { hunkLineRange } from "./liveComments";
@@ -18,16 +21,65 @@ describe("summarizeHunk", () => {
     const summaries = file.metadata.hunks.map((hunk, index) => summarizeHunk(hunk, index));
 
     for (const [index, hunk] of file.metadata.hunks.entries()) {
-      // The header and spans come from the same helpers every review surface
-      // uses, so a summary can never disagree with rendering or navigation.
+      // Pierre includes a trailing line break in parsed specs. Raw formatting preserves it,
+      // while the public summary boundary makes the same semantic header row-safe.
+      expect(formatHunkHeader(hunk)).toMatch(/[\r\n]$/);
       expect(summaries[index]).toEqual({
         index,
-        header: formatHunkHeader(hunk),
+        header: formatHunkHeader(hunk)
+          .replace(/[\r\n]+/g, " ")
+          .trimEnd(),
         ...hunkLineRange(hunk),
       });
       expect(summaries[index]!.header).toMatch(/^@@ -\d/);
+      expect(summaries[index]!.header).not.toMatch(/[\r\n]/);
       expect(summaries[index]!.oldRange).toBeDefined();
       expect(summaries[index]!.newRange).toBeDefined();
+    }
+
+    const publicFile = createFileViewInput(file, 80, new AbortController().signal).file;
+    const jsxLayout = createJsxFileViewLayout(publicFile);
+    expect(jsxLayout).not.toBeNull();
+    expect(validateFileViewLayout(jsxLayout, summaries.length, 80)).toMatchObject({ valid: true });
+  });
+
+  test("JSX example omits nonexistent added/deleted source sides", () => {
+    const publicFile = createFileViewInput(
+      createTestDiffFile(),
+      80,
+      new AbortController().signal,
+    ).file;
+    const template = publicFile.hunks?.[0];
+    if (!template) throw new Error("Expected one parsed hunk");
+
+    for (const [missingSide, firstOldRange, firstNewRange, secondOldRange, secondNewRange] of [
+      ["old", [0, 0], [1, 1], [0, 0], [2, 2]],
+      ["new", [1, 1], [0, 0], [2, 2], [0, 0]],
+    ] as const) {
+      const layout = createJsxFileViewLayout({
+        ...publicFile,
+        hunks: [
+          {
+            ...template,
+            index: 0,
+            oldRange: [...firstOldRange] as [number, number],
+            newRange: [...firstNewRange] as [number, number],
+          },
+          {
+            ...template,
+            index: 1,
+            oldRange: [...secondOldRange] as [number, number],
+            newRange: [...secondNewRange] as [number, number],
+          },
+        ],
+      });
+      expect(layout).not.toBeNull();
+      expect(validateFileViewLayout(layout, 2, 80)).toMatchObject({ valid: true });
+      expect(
+        layout?.rows
+          .flatMap((row) => row.sourceRanges ?? [])
+          .some((range) => range.side === missingSide),
+      ).toBe(false);
     }
   });
 
@@ -39,9 +91,15 @@ describe("summarizeHunk", () => {
     expect(summarizeHunk(bare, 3)).toEqual({ index: 3, header: "" });
   });
 
-  test("keeps a synthesized hunk's declared header text when it has one", () => {
-    const declared = { hunkContent: [], hunkSpecs: "@@ synthesized @@" } as unknown as Hunk;
+  test("normalizes CR/LF runs and trailing whitespace in a synthesized public header", () => {
+    const declared = {
+      hunkContent: [],
+      hunkSpecs: "@@ synthesized @@\r\nfunction name\n\t",
+    } as unknown as Hunk;
 
-    expect(summarizeHunk(declared, 0)).toEqual({ index: 0, header: "@@ synthesized @@" });
+    expect(summarizeHunk(declared, 0)).toEqual({
+      index: 0,
+      header: "@@ synthesized @@ function name",
+    });
   });
 });

@@ -51,9 +51,9 @@
   font-family: var(--hunk-font);
 }
 
-/* Documentation navigation intentionally uses the full browser width. */
+/* Documentation navigation tracks the centered docs shell, not the full browser width. */
 .brand-header-inner[data-context="docs"] {
-  max-width: none;
+  max-width: var(--hunk-shell-max, none);
 }
 
 .brand-logo {

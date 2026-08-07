@@ -125,6 +125,32 @@ describe("OpenTUI public components", () => {
     expect(frame).toContain("@@ -1,1 +1,2 @@");
   });
 
+  test("renders filename tabs as fixed-width escapes in headers and navigation", async () => {
+    const example = createExampleDiff();
+    const diff = createHunkDiffFile({
+      ...example,
+      id: "tabbed-path",
+      path: "src/tab\tname.ts",
+    });
+    const frame = await captureFrame(
+      <box style={{ width: "100%", flexDirection: "column" }}>
+        <HunkDiffFileHeader file={diff} width={88} theme="github-dark-default" />
+        <HunkFileNav
+          files={[diff]}
+          selectedFileId="tabbed-path"
+          width={32}
+          theme="github-dark-default"
+        />
+      </box>,
+      92,
+      8,
+    );
+
+    expect(frame).toContain("src/tab\\tname.ts");
+    expect(frame).toContain("tab\\tname.ts");
+    expect(frame).not.toContain("\t");
+  });
+
   test("renders the dedicated file navigation primitive", async () => {
     const frame = await captureFrame(
       <HunkFileNav
@@ -169,6 +195,35 @@ describe("OpenTUI public components", () => {
     expect(files).toHaveLength(1);
     expect(files[0]?.path).toBe("example.ts");
     expect(files[0]?.patch).toContain("diff --git a/example.ts b/example.ts");
+  });
+
+  test("decodes Git-quoted Unicode paths for public file models", () => {
+    const escapedPath = String.raw`\345\233\275\351\232\233\345\214\226/\346\227\245\346\234\254\350\252\236-\360\237\247\252.txt`;
+    const files = createHunkDiffFilesFromPatch(`diff --git "a/${escapedPath}" "b/${escapedPath}"
+--- "a/${escapedPath}"
++++ "b/${escapedPath}"
+@@ -1 +1 @@
+-before
++after
+`);
+
+    expect(files).toHaveLength(1);
+    expect(files[0]?.path).toBe("国際化/日本語-🧪.txt");
+    expect(files[0]?.metadata.name).toBe("国際化/日本語-🧪.txt");
+  });
+
+  test("preserves exact trailing controls from Git-quoted public patch paths", () => {
+    const escapedPath = String.raw`line\n`;
+    const files = createHunkDiffFilesFromPatch(`diff --git "a/${escapedPath}" "b/${escapedPath}"
+--- "a/${escapedPath}"
++++ "b/${escapedPath}"
+@@ -1 +1 @@
+-before
++after
+`);
+
+    expect(files[0]?.path).toBe("line\n");
+    expect(files[0]?.metadata.name).toBe("line\n");
   });
 
   test("exports the bundled theme names", () => {

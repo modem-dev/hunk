@@ -81,12 +81,13 @@ describe("PTY chrome", () => {
   });
 
   test("quit prompt shows the config diff and saves preferences on mouse click", async () => {
-    // Own the config home instead of the shared harness one so the test can
-    // assert what the save action wrote.
+    // Own both config scopes so the test can assert what the save action wrote without an
+    // ambient repository `.hunk/config.toml` changing the starting preferences.
     const configHome = mkdtempSync(join(tmpdir(), "hunk-tuistory-save-view-"));
     const fixture = harness.createMultiHunkFilePair();
     const session = await harness.launchHunk({
       args: ["diff", fixture.before, fixture.after],
+      cwd: fixture.dir,
       cols: 120,
       rows: 24,
       env: { XDG_CONFIG_HOME: configHome },

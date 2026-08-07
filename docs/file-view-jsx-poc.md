@@ -1,0 +1,23 @@
+# Fixed-height JSX file-view rows (POC)
+
+This worktree experiments with one constrained escape hatch in the symbolic file-view contract. A validated row may include one atomic `component: { height, render }` descriptor. Hunk mounts `render` as a real React/OpenTUI component while keeping the normal review-stream layout declarative and host-owned. Like all Hunk extensions, this is a cooperative trusted-code contract rather than a sandbox.
+
+## Contract
+
+- Layout still happens before paint and supplies stable row IDs plus one inclusive row range for every parsed hunk.
+- Every custom row must retain symbolic `spans`. They are rendered if the component fails, clipped to the same declared fixed height as the component painter. Symbolic-only layouts continue through the existing renderer unchanged.
+- A component row declares height and renderer atomically as `component: { height, render }`. `render` must be a function, one row is limited to 256 terminal lines, and the measured height of all symbolic and component rows together is limited to 100,000 terminal lines. Existing row/span/text limits still apply. An invalid layout falls back to raw diff.
+- Hunk passes only `width`, fixed `height`, `selected`, zero-based `rowIndex`, and the shared semantic `theme` palette used by extension sidebars. Theme is paint-only: switching it rerenders mounted painters without relayout or geometry changes. A per-row closure can capture arbitrary parsed or semantic data without adding an opaque payload to the host contract.
+- Hunk mounts `component.render` inside a fixed `component.height`/`minHeight`/`maxHeight`, `flexShrink: 0`, overflow-hidden wrapper. No post-mount measurement feeds back into geometry. Stable IDs, hunk bounds, selection, scrolling, and row windowing remain host-owned.
+
+## Deliberate limits
+
+- **Hook state is ephemeral paint state.** It is retained while a row stays mounted across selected-hunk prop updates. A component outside the host row window is unmounted and loses that state. State also resets for a file-view switch, extension/session reload, width-driven relayout, or any replacement layout generation. Extensions that need a durable review action must use registered commands rather than component-local state.
+- **Component resizing is ignored.** Content that asks for a different size is clipped to the declared row height. There is no resize callback or measurement pass.
+- **Custom rows are non-focusable paint surfaces.** They do not own review keyboard input; registered commands and menus are the supported keyboard path and preserve mouse/keyboard parity. Pointer delivery is experimental and cooperative: when normal routing delivers an un-dragged left-button mouse-up, a row may act, call `preventDefault()`, and stop propagation. Wheel, drag, and every unhandled input remain host-owned for scrolling and copy selection. Hunk provides no focus, portal, renderer, or input-delivery guarantee to custom rows.
+- **Inline notes require exact bindings.** Rows may expose non-overlapping `sourceRanges`; Hunk inserts note cards before the uniquely bound row using the same plan for measurement and rendering. If any visible note lacks a bound preferred-side anchor, the complete file temporarily falls back to raw diff rather than hiding or guessing at review data. Draft editing remains raw-only.
+- **Error containment is row-local only.** Synchronous render/lifecycle errors caught by React's row boundary replace that component with its symbolic spans. Hunk emits one attributed warning per extension, view, file, row, layout generation, and error message through the extension notice path; a new generation may warn again. Event-handler, promise, timer, portal, renderer-global, and other asynchronous errors are outside React error-boundary containment.
+- **Clipping is not a security boundary.** Host-served runtime modules may expose capabilities outside normal row composition, but file views make no promise that portals, renderer access, focus, or input hooks work. A malicious or careless extension can still affect its trusted process. The POC proves geometry preservation for cooperative components, not enforceable containment of arbitrary code.
+- Cooperative custom rows cannot replace the file section, control outer flex layout, request post-mount geometry changes, or bypass the host's raw fallback and resource validation through normal descendant rendering.
+
+See `examples/extensions/jsx-file-view/` for the smallest opt-in hook-using example. The checked-in `examples/extensions/jsx-file-view-gallery/` adds three real-diff demos: a responsive TypeScript change atlas, exact-source CSS color swatches, and semantic `package.json` version highlights.

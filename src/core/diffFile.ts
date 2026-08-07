@@ -40,6 +40,7 @@ export interface BuildDiffFileOptions {
   stats?: DiffFile["stats"];
   statsTruncated?: boolean;
   lineMoveKinds?: DiffLineMoveKinds;
+  pathsAreExact?: boolean;
 }
 
 /** Build the normalized per-file model used by the UI regardless of input mode. */
@@ -58,11 +59,14 @@ export function buildDiffFile(
     stats,
     statsTruncated,
     lineMoveKinds,
+    pathsAreExact,
   }: BuildDiffFileOptions = {},
 ): DiffFile {
-  const normalizedMetadata = normalizeDiffMetadataPaths(metadata);
+  const normalizedMetadata = pathsAreExact ? metadata : normalizeDiffMetadataPaths(metadata);
   const path = normalizedMetadata.name;
-  const resolvedPreviousPath = normalizeDiffPath(previousPath) ?? normalizedMetadata.prevName;
+  const resolvedPreviousPath = pathsAreExact
+    ? (previousPath ?? normalizedMetadata.prevName)
+    : (normalizeDiffPath(previousPath) ?? normalizedMetadata.prevName);
   const resolvedIsBinary = isBinary ?? patchLooksBinary(patch);
   const sourceFetcher = sourceFetcherBuilder?.({
     path,

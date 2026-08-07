@@ -157,6 +157,7 @@ CLI input
 - After publishing, verify npm packages and GitHub release assets point at the new version. For Homebrew, Hunk is distributed through `Homebrew/homebrew-core`; do not open manual simple version-bump PRs yourself. Let Homebrew Autobump create the `hunk <version>` PR, then verify it merges and `brew install hunk` resolves to the new version. Only use `brew bump-formula-pr hunk --version <version>` if Homebrew maintainers request a manual bump or Autobump stalls unexpectedly.
 - For patch releases and backports, list only changes actually present between the previous tag and the new tag on that release branch.
 - Prefer concise, user-visible entries over internal refactors unless the refactor changes user-visible behavior.
+- Keep each changeset summary to one concise user-facing sentence; put implementation detail in the PR or supporting docs.
 
 ## repo notes
 

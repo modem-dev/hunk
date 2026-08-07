@@ -89,7 +89,7 @@ a:focus-visible {
 }
 
 .marketing .top nav a:hover,
-.marketing .says figcaption a:hover {
+.marketing .show-quote figcaption a:hover {
   color: var(--acc);
 }
 
@@ -285,65 +285,11 @@ a:focus-visible {
   color: var(--paper);
 }
 
-.marketing .says,
 .marketing .feats,
 .marketing .install {
   max-width: 960px;
   margin: 0 auto;
   padding: 0 36px 104px;
-}
-
-.marketing .says .quotes {
-  display: grid;
-  grid-template-rows: auto auto auto;
-  grid-template-columns: 1fr 1fr;
-}
-
-.marketing .says figure {
-  display: grid;
-  grid-row: span 3;
-  grid-template-rows: subgrid;
-  row-gap: 0;
-  margin: 0;
-}
-
-.marketing .says figure:first-child {
-  padding-right: 42px;
-}
-
-.marketing .says figure + figure {
-  padding-left: 42px;
-  border-left: 1.5px solid var(--rule);
-}
-
-.marketing .says .qmark {
-  margin: 6px 0 14px;
-  color: var(--acc);
-  font-size: 44px;
-  font-weight: 700;
-  line-height: 0.4;
-}
-
-.marketing .says blockquote {
-  margin: 0;
-  color: var(--ink);
-  font-size: clamp(15px, 1.5vw, 19px);
-  font-weight: 500;
-  line-height: 1.5;
-  letter-spacing: -0.01em;
-}
-
-.marketing .says figcaption {
-  margin-top: 16px;
-  color: var(--soft);
-  font-size: 11.5px;
-  line-height: 1.5;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-}
-
-.marketing .says figcaption::before {
-  content: "— ";
 }
 
 .marketing .feats h2,
@@ -379,58 +325,177 @@ a:focus-visible {
   margin: 0;
 }
 
-.marketing .grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0;
-  border-top: 1.5px solid var(--ink);
-  border-left: 1.5px solid var(--ink);
-}
-
-.marketing .feat {
-  display: block;
-  padding: 22px 20px;
-  border-right: 1.5px solid var(--ink);
-  border-bottom: 1.5px solid var(--ink);
+/* The long tail as a boxed quick-hit list: same frame language as the
+   showcase media, made of text instead of pixels. */
+.marketing .mfeats {
+  padding: 22px 26px 24px;
+  border: 1.5px solid var(--ink);
+  border-radius: 10px;
   background: var(--paper);
-  color: inherit;
-  transition: 0.12s;
+  box-shadow: 6px 6px 0 var(--ink);
 }
 
-.marketing .feat:hover {
-  background: var(--hunk-paper-hover);
-}
-
-.marketing .feat .more {
-  display: block;
-  margin-top: 12px;
+.marketing .mf-kicker {
+  margin: 0 0 14px;
   color: var(--soft);
   font-size: 12px;
-  transition: 0.12s;
+  letter-spacing: 0.08em;
 }
 
-.marketing .feat:hover .more,
-.marketing .feat:focus-visible .more {
+.marketing .mf-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 48px;
+}
+
+.marketing .mf-grid a {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 2px 0;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.marketing .mf-grid a::before {
+  content: "+";
+  color: var(--acc);
+  font-weight: 700;
+}
+
+.marketing .mf-grid b {
+  color: var(--ink);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.marketing .mf-grid span {
+  color: var(--soft);
+}
+
+.marketing .mf-grid a:hover b,
+.marketing .mf-grid a:focus-visible b {
   color: var(--acc);
 }
 
-.marketing .num {
-  color: var(--soft);
-  font-size: 11.5px;
-  letter-spacing: 0.1em;
+/* Feature showcase: explainer reads first on the left, the real TUI capture
+   proves it on the right. Every row shares one geometry — the media column
+   stays wide because terminal text needs physical size. */
+.marketing .show {
+  display: grid;
+  gap: 56px;
+  margin-bottom: 64px;
 }
 
-.marketing .grid h3 {
-  margin: 9px 0 7px;
-  font-size: 15.5px;
+.marketing .show-item {
+  display: grid;
+  grid-template-columns: minmax(0, 0.75fr) minmax(0, 1.25fr);
+  gap: 38px;
+  align-items: center;
+}
+
+.marketing .show-copy h3 {
+  margin: 0 0 10px;
+  font-size: clamp(17px, 2.2vw, 21px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.3;
+}
+
+.marketing .show-copy p {
+  margin: 0 0 12px;
+  color: var(--hunk-body);
+  font-size: 13.5px;
+  line-height: 1.65;
+}
+
+.marketing .show-copy .more {
+  color: var(--acc);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.marketing .show-copy .more:hover {
+  text-decoration: underline;
+}
+
+.marketing .show-media {
+  overflow: hidden;
+  margin: 0;
+  border: 1.5px solid var(--ink);
+  border-radius: 10px;
+  background: #0c0e10;
+  box-shadow: 6px 6px 0 var(--ink);
+}
+
+.marketing .show-media img,
+.marketing .show-media video {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* Pull-quote interludes: centered breathers between feature rows. */
+.marketing .show-quote {
+  margin: 0;
+  padding: 14px 0 6px;
+  text-align: center;
+}
+
+.marketing .show-quote .qmark {
+  display: block;
+  margin-bottom: 14px;
+  color: var(--acc);
+  font-size: 42px;
+  font-weight: 700;
+  line-height: 0.5;
+}
+
+.marketing .show-quote blockquote {
+  max-width: 40ch;
+  margin: 0 auto;
+  color: var(--ink);
+  font-size: clamp(18px, 2.4vw, 23px);
+  font-weight: 500;
+  line-height: 1.45;
   letter-spacing: -0.01em;
 }
 
-.marketing .grid p {
-  margin: 0;
-  color: var(--hunk-body);
-  font-size: 13.5px;
-  line-height: 1.6;
+.marketing .show-quote figcaption {
+  margin-top: 14px;
+  color: var(--soft);
+  font-size: 11.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.marketing .show-quote figcaption::before {
+  content: "— ";
+}
+
+/* Scroll-driven entrance: each capture rises and settles as it scrolls into
+   view. Progressive enhancement — browsers without scroll timelines and
+   readers preferring reduced motion get the static frame. */
+@media (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: view()) {
+    .marketing .show-media {
+      animation: show-media-rise linear both;
+      animation-timeline: view();
+      animation-range: entry 5% entry 55%;
+    }
+  }
+}
+
+@keyframes show-media-rise {
+  from {
+    box-shadow: 2px 2px 0 var(--ink);
+    transform: scale(0.965) translateY(18px);
+  }
+
+  to {
+    box-shadow: 6px 6px 0 var(--ink);
+    transform: scale(1) translateY(0);
+  }
 }
 
 /* Community videos: paused-embed cards that link out, so no third-party player script loads.
@@ -564,83 +629,6 @@ a:focus-visible {
   font-size: 12.5px;
 }
 
-/* Agent section: the screenshot carries it, the commands just say who runs what. */
-.marketing .agent-cols {
-  display: grid;
-  grid-template-columns: minmax(0, 1.3fr) minmax(0, 0.7fr);
-  align-items: center;
-  gap: 40px;
-}
-
-.marketing .agent-flow dl {
-  margin: 0;
-  border-top: 1.5px solid var(--rule);
-}
-
-.marketing .agent-flow dl > div {
-  padding: 14px 0;
-  border-bottom: 1.5px solid var(--rule);
-}
-
-.marketing .agent-flow dt {
-  color: var(--soft);
-  font-size: 11.5px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.marketing .agent-flow dd {
-  margin: 8px 0 0;
-}
-
-.marketing .agent-flow code {
-  display: block;
-  overflow-wrap: anywhere;
-  font-family: var(--mono);
-  font-size: 13px;
-  line-height: 1.6;
-}
-
-.marketing .agent-flow code::before {
-  color: var(--acc);
-  content: "$ ";
-}
-
-.marketing .pills {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin: 16px 0 0;
-}
-
-.marketing .pills a {
-  padding: 5px 11px;
-  border: 1.5px solid var(--ink);
-  border-radius: 6px;
-  background: var(--paper);
-  font-size: 12px;
-  transition: 0.12s;
-}
-
-.marketing .pills a:hover {
-  border-color: var(--acc);
-  background: var(--acc);
-  color: var(--paper);
-}
-
-.marketing .agent-shot {
-  margin: 0;
-}
-
-.marketing .agent-shot img {
-  display: block;
-  width: 100%;
-  height: auto;
-  border: 1.5px solid var(--ink);
-  border-radius: 10px;
-  box-shadow: 4px 4px 0 var(--ink);
-}
-
 /* Closing call to action: one line, then the way in. */
 .marketing .last {
   max-width: 960px;
@@ -745,17 +733,15 @@ a:focus-visible {
 }
 
 @media (max-width: 980px) {
-  .marketing .agent-cols {
+  /* Copy stacks above its capture on narrow screens. */
+  .marketing .show-item {
     grid-template-columns: 1fr;
-  }
-
-  .marketing .agent-shot {
-    max-width: 560px;
+    gap: 16px;
   }
 }
 
 @media (max-width: 760px) {
-  .marketing .grid,
+  .marketing .mf-grid,
   .marketing .vgrid {
     grid-template-columns: 1fr;
   }
@@ -767,7 +753,6 @@ a:focus-visible {
 
   .marketing .intro,
   .marketing .paper,
-  .marketing .says,
   .marketing .feats,
   .marketing .band,
   .marketing .install,
@@ -781,27 +766,6 @@ a:focus-visible {
   .marketing .top nav {
     justify-content: flex-end;
     flex-wrap: wrap;
-  }
-
-  .marketing .says .quotes {
-    display: block;
-  }
-
-  .marketing .says figure {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .marketing .says figure:first-child {
-    padding-right: 0;
-    padding-bottom: 34px;
-  }
-
-  .marketing .says figure + figure {
-    padding-top: 34px;
-    padding-left: 0;
-    border-top: 1.5px solid var(--rule);
-    border-left: 0;
   }
 }
 
