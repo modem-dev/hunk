@@ -2,6 +2,17 @@
 
 ## 0.18.0
 
+### Highlights
+
+Hunk 0.18.0 makes reviews more precise, customizable, and extensible—while improving performance and reliability across large repositories and diverse terminals.
+
+- **A full extension platform.** Install TypeScript extensions that add VCS backends, commands, sidebars, dialogs, interactive file views, themes, and workspace actions.
+- **Line-level review and commenting.** A visible cursor moves with `j`/`k`, and `c` adds a comment exactly where you are looking—even across large reviews and wrapped lines.
+- **Richer agent context.** Experimental STML notes can present structured, terminal-native explanations with preview tools and layout-aware feedback.
+- **Full reviews from pipelines.** Piped diffs now retain Hunk’s navigation, filtering, layouts, sidebars, and other review controls.
+- **A UI that follows your preferences.** Remappable shortcuts appear correctly in menus and help, view settings can be saved on quit, and tabs and syntax colors are configurable.
+- **Faster and more dependable reviews.** Watch mode uses less CPU, navigation retains less memory, Unicode filenames render correctly, narrow terminals stay readable, and saved state and session behavior are more resilient.
+
 ### Minor Changes
 
 - [#570](https://github.com/modem-dev/hunk/pull/570) [`94d61e1`](https://github.com/modem-dev/hunk/commit/94d61e173c1934513b53b178f3b3c2e55ae98aa5) - Let custom themes override exact Shiki/TextMate syntax scopes while keeping deprecated syntax-role colors compatible.
