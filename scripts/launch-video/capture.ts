@@ -141,6 +141,134 @@ async function captureStmlScene() {
   }
 }
 
+/** Write a `hunk` wrapper onto PATH so shell scenes read like the real CLI. */
+function createHunkPathWrapper(dir: string) {
+  const binDir = join(dir, "bin");
+  mkdirSync(binDir, { recursive: true });
+  const wrapper = join(binDir, "hunk");
+  writeFileSync(
+    wrapper,
+    `#!/bin/bash\nexec "${process.execPath}" run "${join(repoRoot, "src/main.tsx")}" -- "$@"\n`,
+  );
+  chmodSync(wrapper, 0o755);
+  return binDir;
+}
+
+/** Launch an interactive bash in the PTY with `hunk` on PATH and a clean prompt. */
+async function launchShell(cwd: string, binDir: string) {
+  return launchTerminal({
+    command: "/bin/bash",
+    args: ["--noprofile", "--norc", "-i"],
+    cwd,
+    cols: COLS,
+    rows: ROWS,
+    env: {
+      ...process.env,
+      PATH: `${binDir}:${process.env.PATH}`,
+      XDG_CONFIG_HOME: configHome,
+      HUNK_MCP_DISABLE: "1",
+      HUNK_DISABLE_UPDATE_NOTICE: "1",
+      PS1: "\\[\\e[38;5;213m\\]❯\\[\\e[0m\\] ",
+      TERM: "xterm-256color",
+    },
+  });
+}
+
+/** Type a shell command character by character, snapping the requested frames. */
+async function typeCommand(session: Session, command: string, snapAt: Record<number, string>) {
+  let index = 0;
+  for (const char of command) {
+    session.writeRaw(char);
+    await sleep(30);
+    if (snapAt[index]) {
+      await snap(session, snapAt[index]);
+    }
+    index += 1;
+  }
+}
+
+/**
+ * Build a real git repo from the mini-app refactor example: commit the
+ * "before" tree, overlay the "after" tree as the working diff.
+ */
+function createDemoRepo() {
+  const repoDir = makeTempDir("hunk-video-repo-");
+  runGit(["init"], repoDir);
+  runGit(["config", "user.name", "Demo"], repoDir);
+  runGit(["config", "user.email", "demo@example.com"], repoDir);
+  cpSync(join(repoRoot, "examples/2-mini-app-refactor/before"), repoDir, { recursive: true });
+  runGit(["add", "."], repoDir);
+  runGit(["commit", "-m", "before"], repoDir);
+  cpSync(join(repoRoot, "examples/2-mini-app-refactor/after"), repoDir, { recursive: true });
+  return repoDir;
+}
+
+// ---------------------------------------------------------------------------
+// Scene: line-level review — the cursor moves with j/k, `c` comments there.
+// ---------------------------------------------------------------------------
+async function captureReviewScene() {
+  console.log("scene: review");
+  const repoDir = createDemoRepo();
+  const session = await launchHunk(["diff", "--mode", "stack"], { cwd: repoDir });
+  try {
+    await session.waitForText(/src\//, { timeout: 60_000 });
+    await ensureKeyboardIsLive(session);
+    await sleep(500);
+
+    // Walk the cursor down the diff so its line-by-line movement is visible.
+    for (let step = 0; step < 6; step += 1) {
+      await session.press("j");
+      await sleep(120);
+      if (step === 1 || step === 3 || step === 5) {
+        await snap(session, `review-cursor-${step}`);
+      }
+    }
+
+    await session.press("c");
+    await session.waitForText(/Draft note/, { timeout: 10_000 });
+    await sleep(300);
+    await snap(session, "review-draft");
+
+    await session.type("edge case: empty task list renders a blank summary");
+    await sleep(300);
+    await snap(session, "review-typed");
+
+    await session.type("\x13"); // Ctrl+S saves the note
+    await session.waitForText(/Your note/, { timeout: 10_000 });
+    await sleep(500);
+    await snap(session, "review-note");
+  } finally {
+    session.close();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Scene: piped pager review — `git diff | hunk` keeps the full review UI.
+// ---------------------------------------------------------------------------
+async function capturePagerScene() {
+  console.log("scene: pager");
+  const repoDir = createDemoRepo();
+  const binDir = createHunkPathWrapper(makeTempDir("hunk-video-pager-"));
+  const session = await launchShell(repoDir, binDir);
+  try {
+    await session.waitForText(/❯/, { timeout: 15_000 });
+    await sleep(300);
+    await typeCommand(session, "git diff | hunk pager", { 9: "pager-typing-9", 20: "pager-typed" });
+    await sleep(200);
+    await session.press("enter");
+    await session.waitForText(/src\/format\.ts/, { timeout: 60_000 });
+    await sleep(900);
+    await snap(session, "pager-review");
+
+    // The 0.18 pager keeps the full review controls: show the sidebar.
+    await session.press("s");
+    await sleep(700);
+    await snap(session, "pager-sidebar");
+  } finally {
+    session.close();
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Scene: authoring STML from the CLI (`hunk markup render`).
 // ---------------------------------------------------------------------------
@@ -161,48 +289,17 @@ async function captureMarkupCliScene() {
   console.log("scene: markup-cli");
   const demoDir = makeTempDir("hunk-video-cli-");
   writeFileSync(join(demoDir, "note.stml"), CLI_NOTE_STML);
+  const binDir = createHunkPathWrapper(demoDir);
 
-  // A `hunk` wrapper on PATH so the on-screen command reads like the real CLI.
-  const binDir = join(demoDir, "bin");
-  mkdirSync(binDir);
-  const wrapper = join(binDir, "hunk");
-  writeFileSync(
-    wrapper,
-    `#!/bin/bash\nexec "${process.execPath}" run "${join(repoRoot, "src/main.tsx")}" -- "$@"\n`,
-  );
-  chmodSync(wrapper, 0o755);
-
-  const session = await launchTerminal({
-    command: "/bin/bash",
-    args: ["--noprofile", "--norc", "-i"],
-    cwd: demoDir,
-    cols: COLS,
-    rows: ROWS,
-    env: {
-      ...process.env,
-      PATH: `${binDir}:${process.env.PATH}`,
-      XDG_CONFIG_HOME: configHome,
-      HUNK_MCP_DISABLE: "1",
-      HUNK_DISABLE_UPDATE_NOTICE: "1",
-      PS1: "\\[\\e[38;5;213m\\]❯\\[\\e[0m\\] ",
-      TERM: "xterm-256color",
-    },
-  });
+  const session = await launchShell(demoDir, binDir);
   try {
     await session.waitForText(/❯/, { timeout: 15_000 });
     await sleep(300);
-
-    // Type the command character by character for the playback typing effect.
-    const command = "hunk markup render note.stml --width 72";
-    let typedFrame = 0;
-    for (const char of command) {
-      session.writeRaw(char);
-      await sleep(30);
-      if ([10, 22, 34].includes(typedFrame)) {
-        await snap(session, `cli-typing-${typedFrame}`);
-      }
-      typedFrame += 1;
-    }
+    await typeCommand(session, "hunk markup render note.stml --width 72", {
+      10: "cli-typing-10",
+      22: "cli-typing-22",
+      34: "cli-typing-34",
+    });
     await sleep(200);
     await snap(session, "cli-typed");
     await session.press("enter");
@@ -219,16 +316,7 @@ async function captureMarkupCliScene() {
 // ---------------------------------------------------------------------------
 async function captureTriageScene() {
   console.log("scene: triage");
-  // Real git repo built from the mini-app refactor example: commit the
-  // "before" tree, overlay the "after" tree as the working diff.
-  const repoDir = makeTempDir("hunk-video-triage-");
-  runGit(["init"], repoDir);
-  runGit(["config", "user.name", "Demo"], repoDir);
-  runGit(["config", "user.email", "demo@example.com"], repoDir);
-  cpSync(join(repoRoot, "examples/2-mini-app-refactor/before"), repoDir, { recursive: true });
-  runGit(["add", "."], repoDir);
-  runGit(["commit", "-m", "before"], repoDir);
-  cpSync(join(repoRoot, "examples/2-mini-app-refactor/after"), repoDir, { recursive: true });
+  const repoDir = createDemoRepo();
 
   const session = await launchHunk(
     ["diff", "--extension", join(repoRoot, "examples/extensions/review-triage"), "--mode", "stack"],
@@ -315,8 +403,10 @@ async function captureFileViewScene(
 
 async function main() {
   try {
+    await captureReviewScene();
     await captureStmlScene();
     await captureMarkupCliScene();
+    await capturePagerScene();
     await captureTriageScene();
     await captureFileViewScene(
       "palette",

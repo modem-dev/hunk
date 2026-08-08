@@ -35,13 +35,15 @@ const FONT_PATH = resolve(
 /** file:// URL for a captured terminal keyframe. */
 const frame = (name) => pathToFileURL(join(framesDir, `${name}.png`)).href;
 
+const REVIEW_TITLE = "hunk diff — line-level review";
 const STML_TITLE = "hunk patch — agent review";
 const CLI_TITLE = "zsh — authoring a note";
+const PAGER_TITLE = "zsh — git diff | hunk pager";
 const TRIAGE_TITLE = "hunk diff — review-triage extension";
 const GALLERY_TITLE = "hunk diff — file-view gallery extension";
 
 const OPEN_CARD = `
-  <div class="badge">BETA</div>
+  <div class="badge">v0.18.0</div>
   <h1>hunk</h1>
   <div class="sub">review agent changesets — <span class="hl">in your terminal</span></div>
 `;
@@ -50,12 +52,14 @@ const EXTENSIONS_CARD = `
   <div class="badge">NEW</div>
   <h2>Extensions</h2>
   <div class="sub">one TypeScript file · <span class="hl">no build step</span></div>
+  <div class="foot">sidebars · file views · commands · dialogs · themes · VCS backends</div>
 `;
 
 const OUTRO_CARD = `
-  <h2>hunk beta — out now</h2>
+  <h2>hunk 0.18 — out now</h2>
   <div class="cmds">
-    <div class="cmd"><span class="p">❯</span> npm i -g hunkdiff@beta</div>
+    <div class="cmd"><span class="p">❯</span> npm i -g hunkdiff</div>
+    <div class="cmd"><span class="p">❯</span> brew install hunk</div>
   </div>
   <div class="foot">STML notes: --experimental &nbsp;·&nbsp; extensions: docs/extensions.md &nbsp;·&nbsp; github.com/modem-dev/hunk</div>
 `;
@@ -64,13 +68,40 @@ const OUTRO_CARD = `
 // caption only animates in when it actually changes between shots; `enter`
 // animates the whole surface (cards, and the first terminal reveal).
 const SHOTS = [
-  { kind: "card", html: OPEN_CARD, dur: 3.2, enter: true },
+  { kind: "card", html: OPEN_CARD, dur: 3.0, enter: true },
+  {
+    kind: "term",
+    img: "review-cursor-1",
+    title: REVIEW_TITLE,
+    dur: 1.2,
+    enter: true,
+    capKey: "cursor",
+    caption: `<span class="badge">NEW</span> line-level review — <span class="hl">j/k</span> moves a real cursor`,
+  },
+  { kind: "term", img: "review-cursor-3", title: REVIEW_TITLE, dur: 0.35, capKey: "cursor" },
+  { kind: "term", img: "review-cursor-5", title: REVIEW_TITLE, dur: 1.6, capKey: "cursor" },
+  {
+    kind: "term",
+    img: "review-draft",
+    title: REVIEW_TITLE,
+    dur: 1.4,
+    capKey: "comment",
+    caption: `press <span class="hl">c</span> — comment exactly where you're looking`,
+  },
+  { kind: "term", img: "review-typed", title: REVIEW_TITLE, dur: 2.0, capKey: "comment" },
+  {
+    kind: "term",
+    img: "review-note",
+    title: REVIEW_TITLE,
+    dur: 2.6,
+    capKey: "note",
+    caption: `saved inline — right beside the change`,
+  },
   {
     kind: "term",
     img: "stml-review",
     title: STML_TITLE,
-    dur: 3.0,
-    enter: true,
+    dur: 2.6,
     capKey: "notes",
     caption: `Agent notes ride along with <span class="hl">every diff</span>`,
   },
@@ -78,7 +109,7 @@ const SHOTS = [
     kind: "term",
     img: "stml-notes",
     title: STML_TITLE,
-    dur: 4.6,
+    dur: 4.2,
     capKey: "stml",
     caption: `<span class="badge">NEW</span> STML — notes are <span class="hl">markup</span>, rendered as terminal UI`,
   },
@@ -114,11 +145,29 @@ const SHOTS = [
     kind: "term",
     img: "cli-rendered",
     title: CLI_TITLE,
-    dur: 3.6,
+    dur: 3.0,
     capKey: "cli-out",
     caption: `<span class="hl">hunk markup render</span> — the exact output your reviewer sees`,
   },
-  { kind: "card", html: EXTENSIONS_CARD, dur: 2.6, enter: true },
+  {
+    kind: "term",
+    img: "pager-typing-9",
+    title: PAGER_TITLE,
+    dur: 0.5,
+    capKey: "pipe",
+    caption: `<span class="badge">NEW</span> pipe anything — <span class="hl">git diff | hunk pager</span>`,
+  },
+  { kind: "term", img: "pager-typed", title: PAGER_TITLE, dur: 0.6, capKey: "pipe" },
+  { kind: "term", img: "pager-review", title: PAGER_TITLE, dur: 2.2, capKey: "pipe" },
+  {
+    kind: "term",
+    img: "pager-sidebar",
+    title: PAGER_TITLE,
+    dur: 2.6,
+    capKey: "pipe-full",
+    caption: `a <span class="hl">full review</span> from any pipe — sidebar, layouts, navigation`,
+  },
+  { kind: "card", html: EXTENSIONS_CARD, dur: 2.8, enter: true },
   {
     kind: "term",
     img: "triage-sidebar",
