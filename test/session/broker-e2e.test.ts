@@ -12,12 +12,23 @@ const testConfigHome = createTestConfigHome();
 
 afterAll(cleanupTestConfigHomes);
 const tempDirs: string[] = [];
-const ttyToolsAvailable =
-  Bun.spawnSync(["bash", "-lc", "command -v script >/dev/null && command -v timeout >/dev/null"], {
-    stdin: "ignore",
-    stdout: "ignore",
-    stderr: "ignore",
-  }).exitCode === 0;
+
+/** Check for the util-linux `script` interface these Unix-only terminal tests require. */
+function supportsControllableScript() {
+  try {
+    return (
+      Bun.spawnSync(["script", "-q", "-f", "-e", "-c", "exit 0", "/dev/null"], {
+        stdin: "ignore",
+        stdout: "ignore",
+        stderr: "ignore",
+      }).exitCode === 0
+    );
+  } catch {
+    return false;
+  }
+}
+
+const ttyToolsAvailable = supportsControllableScript();
 
 interface HealthResponse {
   ok: boolean;
@@ -103,29 +114,14 @@ async function reserveLoopbackPort() {
   return port;
 }
 
-function spawnHunkSession(
-  fixture: FixtureFiles,
-  {
-    port,
-    quitAfterSeconds = 6,
-    timeoutSeconds = 8,
-  }: {
-    port: number;
-    quitAfterSeconds?: number;
-    timeoutSeconds?: number;
-  },
-) {
+/** Start one real terminal session whose input the test can control directly. */
+function spawnHunkSession(fixture: FixtureFiles, port: number) {
   const innerCommand = `bun run ${shellQuote(sourceEntrypoint)} diff ${shellQuote(fixture.before)} ${shellQuote(fixture.after)}`;
-  const hunkCommand = [
-    `(sleep ${quitAfterSeconds}; printf q) | timeout ${timeoutSeconds} script -q -f -e -c`,
-    shellQuote(innerCommand),
-    shellQuote(fixture.transcript),
-  ].join(" ");
 
-  return Bun.spawn(["bash", "-lc", hunkCommand], {
+  return Bun.spawn(["script", "-q", "-f", "-e", "-c", innerCommand, fixture.transcript], {
     cwd: fixture.dir,
-    stdin: "ignore",
-    stdout: "pipe",
+    stdin: "pipe",
+    stdout: "ignore",
     stderr: "pipe",
     env: {
       ...process.env,
@@ -136,6 +132,56 @@ function spawnHunkSession(
       HUNK_MCP_PORT: String(port),
     },
   });
+}
+
+type HunkSessionProcess = ReturnType<typeof spawnHunkSession>;
+
+/** Ask the live app to quit, discarding a prompted view change when necessary. */
+async function quitHunkSession(proc: HunkSessionProcess, fixture: FixtureFiles, timeoutMs = 2_000) {
+  proc.stdin.write("q");
+  await proc.stdin.flush();
+
+  const outcome = await waitUntil(
+    "Hunk session exit or save-preferences prompt",
+    async () => {
+      if (proc.exitCode !== null) {
+        return "exited" as const;
+      }
+
+      const file = Bun.file(fixture.transcript);
+      if (!(await file.exists())) {
+        return null;
+      }
+
+      const transcript = stripTerminalControl(await file.text());
+      return transcript.includes("Save view preferences?") ? ("prompt" as const) : null;
+    },
+    timeoutMs,
+    25,
+  );
+
+  if (outcome === "prompt") {
+    proc.stdin.write("q");
+    await proc.stdin.flush();
+  }
+
+  const result = await Promise.race([
+    proc.exited.then((exitCode) => ({ exitCode })),
+    Bun.sleep(timeoutMs).then(() => null),
+  ]);
+  if (!result) {
+    proc.kill();
+    await proc.exited.catch(() => undefined);
+    throw new Error(`Timed out waiting ${timeoutMs}ms for the Hunk session to quit.`);
+  }
+
+  return result.exitCode;
+}
+
+/** Force-stop a live test session without masking the original test failure. */
+async function cleanupHunkSession(proc: HunkSessionProcess) {
+  proc.kill();
+  await proc.exited.catch(() => undefined);
 }
 
 function runSessionCli(args: string[], port: number) {
@@ -197,6 +243,29 @@ async function waitForHealth(port: number, timeoutMs = 15_000) {
   );
 }
 
+/** Wait until the flushed terminal transcript shows an observable app state. */
+async function waitForTranscript(
+  fixture: FixtureFiles,
+  label: string,
+  predicate: (transcript: string) => boolean,
+  timeoutMs = 10_000,
+) {
+  return waitUntil(
+    label,
+    async () => {
+      const file = Bun.file(fixture.transcript);
+      if (!(await file.exists())) {
+        return null;
+      }
+
+      const transcript = stripTerminalControl(await file.text());
+      return predicate(transcript) ? transcript : null;
+    },
+    timeoutMs,
+    50,
+  );
+}
+
 afterEach(() => {
   cleanupTempDirs();
 });
@@ -213,7 +282,7 @@ describe("session broker end-to-end", () => {
       ["export const alpha = 2;", "export const keep = true;", "export const gamma = true;"],
     );
     const port = await reserveLoopbackPort();
-    const hunkProc = spawnHunkSession(fixture, { port });
+    const hunkProc = spawnHunkSession(fixture, port);
 
     let daemonPid: number | null = null;
 
@@ -264,15 +333,17 @@ describe("session broker end-to-end", () => {
         },
       });
 
-      const hunkExitCode = await hunkProc.exited;
-      expect([0, 124]).toContain(hunkExitCode);
-
-      const transcript = stripTerminalControl(await Bun.file(fixture.transcript).text());
+      const transcript = await waitForTranscript(
+        fixture,
+        "rendered CLI comment",
+        (current) =>
+          current.includes("CLI autostart note") && current.includes("Injected after the Hunk"),
+      );
       expect(transcript).toContain("CLI autostart note");
       expect(transcript).toContain("Injected after the Hunk");
+      expect(await quitHunkSession(hunkProc, fixture)).toBe(0);
     } finally {
-      hunkProc.kill();
-      await hunkProc.exited.catch(() => undefined);
+      await cleanupHunkSession(hunkProc);
 
       if (daemonPid) {
         try {
@@ -317,7 +388,7 @@ describe("session broker end-to-end", () => {
       ],
     );
     const port = await reserveLoopbackPort();
-    const hunkProc = spawnHunkSession(fixture, { port, quitAfterSeconds: 14, timeoutSeconds: 16 });
+    const hunkProc = spawnHunkSession(fixture, port);
 
     let daemonPid: number | null = null;
 
@@ -376,11 +447,9 @@ describe("session broker end-to-end", () => {
         return parsed.context?.selectedHunk?.index === 1 ? parsed : null;
       });
 
-      const hunkExitCode = await hunkProc.exited;
-      expect([0, 124]).toContain(hunkExitCode);
+      expect(await quitHunkSession(hunkProc, fixture)).toBe(0);
     } finally {
-      hunkProc.kill();
-      await hunkProc.exited.catch(() => undefined);
+      await cleanupHunkSession(hunkProc);
 
       if (daemonPid) {
         try {
@@ -408,16 +477,8 @@ describe("session broker end-to-end", () => {
       ["export const beta = 2;", "export const shared = true;", "export const onlyBeta = true;"],
     );
     const port = await reserveLoopbackPort();
-    const hunkProcA = spawnHunkSession(fixtureA, {
-      port,
-      quitAfterSeconds: 10,
-      timeoutSeconds: 12,
-    });
-    const hunkProcB = spawnHunkSession(fixtureB, {
-      port,
-      quitAfterSeconds: 10,
-      timeoutSeconds: 12,
-    });
+    const hunkProcA = spawnHunkSession(fixtureA, port);
+    const hunkProcB = spawnHunkSession(fixtureB, port);
 
     let daemonPid: number | null = null;
 
@@ -483,13 +544,34 @@ describe("session broker end-to-end", () => {
       );
       expect(commentB.proc.exitCode).toBe(0);
 
-      const [exitCodeA, exitCodeB] = await Promise.all([hunkProcA.exited, hunkProcB.exited]);
-      expect([0, 124]).toContain(exitCodeA);
-      expect([0, 124]).toContain(exitCodeB);
+      await Promise.all([
+        waitForTranscript(
+          fixtureA,
+          "alpha comment rendering",
+          (current) =>
+            current.includes("Alpha note") && current.includes("Delivered only to the alpha"),
+        ),
+        waitForTranscript(
+          fixtureB,
+          "beta comment rendering",
+          (current) =>
+            current.includes("Beta note") && current.includes("Delivered only to the beta"),
+        ),
+      ]);
 
-      const transcriptA = stripTerminalControl(await Bun.file(fixtureA.transcript).text());
-      const transcriptB = stripTerminalControl(await Bun.file(fixtureB.transcript).text());
+      const [exitCodeA, exitCodeB] = await Promise.all([
+        quitHunkSession(hunkProcA, fixtureA),
+        quitHunkSession(hunkProcB, fixtureB),
+      ]);
+      expect(exitCodeA).toBe(0);
+      expect(exitCodeB).toBe(0);
 
+      // Read both finalized transcripts at one common barrier so a late cross-session render
+      // cannot escape the negative routing assertions.
+      const [transcriptA, transcriptB] = await Promise.all([
+        Bun.file(fixtureA.transcript).text().then(stripTerminalControl),
+        Bun.file(fixtureB.transcript).text().then(stripTerminalControl),
+      ]);
       expect(transcriptA).toContain("Alpha note");
       expect(transcriptA).toContain("Delivered only to the alpha");
       expect(transcriptA).not.toContain("Beta note");
@@ -498,9 +580,7 @@ describe("session broker end-to-end", () => {
       expect(transcriptB).toContain("Delivered only to the beta");
       expect(transcriptB).not.toContain("Alpha note");
     } finally {
-      hunkProcA.kill();
-      hunkProcB.kill();
-      await Promise.allSettled([hunkProcA.exited, hunkProcB.exited]);
+      await Promise.all([cleanupHunkSession(hunkProcA), cleanupHunkSession(hunkProcB)]);
 
       if (daemonPid) {
         try {
@@ -523,7 +603,9 @@ describe("session broker end-to-end", () => {
       ["export const alpha = 2;", "export const keep = true;", "export const gamma = true;"],
     );
 
+    let conflictingRequestCount = 0;
     const conflictingListener = createServer((_request, response) => {
+      conflictingRequestCount += 1;
       response.writeHead(404, { "content-type": "text/plain" });
       response.end("not hunk");
     });
@@ -535,23 +617,25 @@ describe("session broker end-to-end", () => {
     const address = conflictingListener.address();
     const port = typeof address === "object" && address ? address.port : 0;
 
-    const hunkProc = spawnHunkSession(fixture, {
-      port,
-      quitAfterSeconds: 6,
-      timeoutSeconds: 8,
-    });
+    const hunkProc = spawnHunkSession(fixture, port);
 
     try {
-      const exitCode = await hunkProc.exited;
-      expect([0, 124]).toContain(exitCode);
-
-      const transcript = stripTerminalControl(await Bun.file(fixture.transcript).text());
+      const transcript = await waitForTranscript(
+        fixture,
+        "rendered session after probing a conflicting broker listener",
+        (current) =>
+          conflictingRequestCount > 0 &&
+          current.includes("View  Navigate  Agent  Help") &&
+          current.includes(fixture.afterName) &&
+          current.includes("export const gamma = true;"),
+      );
+      expect(conflictingRequestCount).toBeGreaterThan(0);
       expect(transcript).toContain("View  Navigate  Agent  Help");
       expect(transcript).toContain(`${fixture.afterName}`);
       expect(transcript).toContain("export const gamma = true;");
+      expect(await quitHunkSession(hunkProc, fixture)).toBe(0);
     } finally {
-      hunkProc.kill();
-      await hunkProc.exited.catch(() => undefined);
+      await cleanupHunkSession(hunkProc);
       await new Promise<void>((resolve) => conflictingListener.close(() => resolve()));
     }
   }, 20_000);
