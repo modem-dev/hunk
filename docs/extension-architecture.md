@@ -46,12 +46,16 @@ load issue and costs only that extension. The rules themselves are stated in
 
 ## One registry, one apply path
 
-Registrations (themes, file languages, VCS adapters, changeset transforms,
+Registrations (themes, syntax languages, file languages, VCS adapters, changeset transforms,
 sidebar views, commands, lifecycle/UI events, and inter-extension bus listeners) collect into one
 `ExtensionRegistry` (`src/extensions/types.ts`) and are resolved/applied
 through `src/extensions/apply.ts` on both startup and reload. A factory that
 throws is rolled back to its pre-run registration counts
-(`runExtension.ts`); failures cost a warning, not the session.
+(`runExtension.ts`); failures cost a warning, not the session. Syntax-language
+loaders are registered with Pierre only at this apply boundary, preserving
+factory rollback. Pierre owns the process-wide grammar cache, so an extension
+reload may add a new syntax id but changing or removing an applied grammar needs
+a Hunk restart.
 
 ## Host-served runtime modules
 

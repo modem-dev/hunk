@@ -1,4 +1,8 @@
-import { BUILT_IN_FILE_LANGUAGE_EXTENSIONS, registerFileLanguage } from "../core/fileLanguage";
+import {
+  BUILT_IN_FILE_LANGUAGE_EXTENSIONS,
+  registerSyntaxLanguage,
+  replaceExtensionFileLanguages,
+} from "../core/fileLanguage";
 import type { StartupNotice } from "../core/startupNotice";
 import type { Changeset } from "../core/types";
 import { detectVcs, getDefaultVcsAdapter, isVcsId, resolveVcsAdapters } from "../core/vcs";
@@ -34,6 +38,123 @@ function describeError(error: unknown) {
   return String(error);
 }
 
+const RESERVED_SYNTAX_LANGUAGE_IDS = new Set(["text", "ansi"]);
+
+interface AppliedSyntaxLanguage {
+  extensionId: string;
+  sourcePath: string;
+}
+
+// Pierre exposes no supported replace/unregister operation, so claims live for
+// the process and extension reloads may only add previously unseen language ids.
+const appliedSyntaxLanguages = new Map<string, AppliedSyntaxLanguage>();
+
+/** Report whether one lazy module contains usable TextMate grammar records. */
+function isSyntaxLanguageModule(
+  value: unknown,
+): value is Awaited<ReturnType<import("../extension-api/types").ExtensionSyntaxLanguageLoader>> {
+  const module = value as { default?: unknown } | null;
+  return (
+    typeof module === "object" &&
+    module !== null &&
+    Array.isArray(module.default) &&
+    module.default.length > 0 &&
+    module.default.every(
+      (grammar) =>
+        typeof grammar === "object" &&
+        grammar !== null &&
+        typeof (grammar as { name?: unknown }).name === "string" &&
+        (grammar as { name: string }).name.trim().length > 0 &&
+        typeof (grammar as { scopeName?: unknown }).scopeName === "string" &&
+        (grammar as { scopeName: string }).scopeName.trim().length > 0,
+    )
+  );
+}
+
+/** Add extension-contributed lazy grammars to Pierre's process-wide registry. */
+export function applyExtensionSyntaxLanguages(
+  registry: ExtensionRegistry,
+  context?: ExtensionContext,
+): ExtensionApplyIssue[] {
+  const issues: ExtensionApplyIssue[] = [];
+  const claimedThisPass = new Map<string, string>();
+
+  for (const { extensionId, language, loader } of registry.syntaxLanguages) {
+    if (RESERVED_SYNTAX_LANGUAGE_IDS.has(language)) {
+      issues.push({
+        extensionId,
+        message: `Skipped syntax language "${language}" from extension ${extensionId} • Hunk reserves it`,
+      });
+      continue;
+    }
+
+    const passOwner = claimedThisPass.get(language);
+    if (passOwner) {
+      issues.push({
+        extensionId,
+        message: `Skipped syntax language "${language}" from extension ${extensionId} • extension ${passOwner} registered it first`,
+      });
+      continue;
+    }
+    claimedThisPass.set(language, extensionId);
+
+    const sourcePath =
+      registry.extensions.find((extension) => extension.id === extensionId)?.sourcePath ??
+      extensionId;
+    const applied = appliedSyntaxLanguages.get(language);
+    if (applied) {
+      // Reapplying the same extension is idempotent. Pierre cannot replace the
+      // old loader, so a changed grammar takes effect after Hunk restarts.
+      if (applied.extensionId === extensionId && applied.sourcePath === sourcePath) {
+        continue;
+      }
+      issues.push({
+        extensionId,
+        message: `Skipped syntax language "${language}" from extension ${extensionId} • already loaded by extension ${applied.extensionId}; restart Hunk to replace it`,
+      });
+      continue;
+    }
+
+    let reportedFailure = false;
+    const reportFailure = (error: unknown) => {
+      if (reportedFailure) {
+        return;
+      }
+      reportedFailure = true;
+      context?.notify(
+        `Failed to highlight syntax language "${language}" from extension ${extensionId} • ${sanitizeTerminalLine(describeError(error))}`,
+        "warning",
+      );
+    };
+    const attributedLoader: typeof loader = async () => {
+      try {
+        const module = await loader();
+        if (!isSyntaxLanguageModule(module)) {
+          throw new Error(
+            "loader must resolve to { default: Grammar[] } with non-empty name and scopeName fields",
+          );
+        }
+        return module;
+      } catch (error) {
+        reportFailure(error);
+        throw error;
+      }
+    };
+
+    try {
+      registerSyntaxLanguage(language, attributedLoader, reportFailure);
+      appliedSyntaxLanguages.set(language, { extensionId, sourcePath });
+    } catch (error) {
+      issues.push({
+        extensionId,
+        message: `Skipped syntax language "${language}" from extension ${extensionId} • ${sanitizeTerminalLine(describeError(error))}`,
+      });
+    }
+  }
+
+  return issues;
+}
+
 /**
  * Register every extension-contributed file-extension → language mapping.
  *
@@ -44,6 +165,7 @@ function describeError(error: unknown) {
  */
 export function applyExtensionFileLanguages(registry: ExtensionRegistry): ExtensionApplyIssue[] {
   const issues: ExtensionApplyIssue[] = [];
+  const mappings: Array<{ extension: string; language: string }> = [];
 
   for (const { extensionId, extension, language } of registry.fileLanguages) {
     if (BUILT_IN_FILE_LANGUAGE_EXTENSIONS.has(extension)) {
@@ -54,9 +176,10 @@ export function applyExtensionFileLanguages(registry: ExtensionRegistry): Extens
       continue;
     }
 
-    registerFileLanguage(extension, language);
+    mappings.push({ extension, language });
   }
 
+  replaceExtensionFileLanguages(mappings);
   return issues;
 }
 
@@ -256,7 +379,8 @@ export function applyExtensionRegistrations(
     return { vcsAdapters: [], issues: [] };
   }
 
-  const languageIssues = applyExtensionFileLanguages(result.registry);
+  const syntaxLanguageIssues = applyExtensionSyntaxLanguages(result.registry, result.context);
+  const fileLanguageIssues = applyExtensionFileLanguages(result.registry);
   const vcs = resolveExtensionVcsAdapters(result.registry);
   // Resolved again where the UI consumes them; consulted here so skipped
   // duplicate registrations surface through the same notice path as every
@@ -267,7 +391,8 @@ export function applyExtensionRegistrations(
   return {
     vcsAdapters: vcs.adapters,
     issues: [
-      ...languageIssues,
+      ...syntaxLanguageIssues,
+      ...fileLanguageIssues,
       ...vcs.issues,
       ...sidebars.issues,
       ...fileViews.issues,

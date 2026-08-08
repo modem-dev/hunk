@@ -4,6 +4,15 @@ import { resolveTheme } from "../themes";
 import { highlightedDiffCacheKey } from "./useHighlightedDiff";
 
 describe("highlighted diff cache keys", () => {
+  test("invalidates a cached result when extension reload changes the detected language", () => {
+    const file = createTestDiffFile({ id: "cache-language", path: "example.custom" });
+    const theme = resolveTheme("github-dark-default", null);
+
+    expect(highlightedDiffCacheKey(theme, { ...file, language: undefined })).not.toBe(
+      highlightedDiffCacheKey(theme, { ...file, language: "custom-syntax" }),
+    );
+  });
+
   test("invalidates source-backed partial highlights when an unversioned provider changes", () => {
     const base = createTestDiffFile({ id: "cache", path: "cache.ts" });
     const firstFetcher = createTestSourceFetcher(() => "first source\n");
