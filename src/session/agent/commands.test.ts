@@ -951,6 +951,50 @@ describe("session command compatibility checks", () => {
     expect(output).toBe("No active Hunk sessions.\n");
   });
 
+  // Intent: the JSON list value must distinguish a down daemon (available: false) from a healthy
+  // daemon with zero sessions (available: true). Text output stays unchanged in both states.
+  test("list reports daemon unavailable in JSON when no daemon is present", async () => {
+    setSessionCommandTestHooks({
+      createClient: () => {
+        throw new Error("list should not create a client without a daemon");
+      },
+      resolveDaemonAvailability: async () => false,
+    });
+
+    const output = await runSessionCommand({
+      kind: "session",
+      action: "list",
+      output: "json",
+    } satisfies SessionCommandInput);
+
+    expect(JSON.parse(output)).toEqual({
+      sessions: [],
+      daemon: { available: false },
+    });
+  });
+
+  test("list reports daemon available in JSON when a daemon is present", async () => {
+    setSessionCommandTestHooks({
+      createClient: () =>
+        createClient({
+          listSessions: async () => [createTestListedSession("session-1")],
+        }),
+      resolveDaemonAvailability: async () => true,
+    });
+
+    const output = await runSessionCommand({
+      kind: "session",
+      action: "list",
+      output: "json",
+    } satisfies SessionCommandInput);
+
+    const parsed = JSON.parse(output);
+    expect(parsed.daemon).toEqual({ available: true });
+    expect(parsed).toMatchObject({
+      sessions: [{ sessionId: "session-1" }],
+    });
+  });
+
   // Intent: remaining command branches dispatch to the daemon and keep text output stable.
   test("routes remaining session actions through the daemon and formats text output", async () => {
     const selector: SessionSelectorInput = { sessionId: "session-1" };

@@ -176,7 +176,11 @@ export async function runSessionCommand(input: SessionCommandInput) {
     input.action,
   ) ?? resolveDaemonAvailability(input.action));
   if (!daemonAvailable && input.action === "list") {
-    return renderOutput(input.output, { sessions: [] }, () => formatListOutput([]));
+    // Report daemon reachability in the JSON value so callers can tell a down daemon from a
+    // healthy daemon with zero sessions — both otherwise render an empty session list.
+    return renderOutput(input.output, { sessions: [], daemon: { available: false } }, () =>
+      formatListOutput([]),
+    );
   }
 
   const normalizedSelector = "selector" in input ? normalizeSessionSelector(input.selector) : null;
@@ -188,7 +192,9 @@ export async function runSessionCommand(input: SessionCommandInput) {
   switch (input.action) {
     case "list": {
       const sessions = await client.listSessions();
-      return renderOutput(input.output, { sessions }, () => formatListOutput(sessions));
+      return renderOutput(input.output, { sessions, daemon: { available: true } }, () =>
+        formatListOutput(sessions),
+      );
     }
     case "get": {
       const session = await client.getSession(normalizedSelector!);
