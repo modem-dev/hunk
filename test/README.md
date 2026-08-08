@@ -35,3 +35,9 @@ These tests do not belong to a single source file. They usually verify product-l
 
 If a test mainly targets one module or helper, keep it colocated in `src/`.
 If it needs a real repo, subprocess, daemon, PTY, or transcript-level assertion, it likely belongs under `test/`.
+
+## Coverage
+
+Run `bun run test:coverage` to execute the main test suite, print Bun's coverage table, and write `coverage/lcov.info`. CI requires at least 90% line and function coverage across loaded production modules and uploads the LCOV report as a workflow artifact.
+
+Bun only measures modules loaded by the test process. Black-box subprocess, PTY, and TTY smoke coverage remains enforced by their dedicated CI steps but is not merged into the LCOV report.
