@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   createWatchController,
+  WATCH_CHECK_CANCELLED_CODE,
   WATCH_EVENT_SOURCE_STARTUP_TIMEOUT_CODE,
   type WatchControllerClock,
   type WatchEventSourceCallbacks,
@@ -380,6 +381,69 @@ describe("createWatchController", () => {
     expect(checks).toBe(2);
   });
 
+  test("keeps the source startup timeout live during an asynchronous signature check", async () => {
+    const clock = new FakeWatchClock();
+    const source = fakeSource();
+    const signature = deferred<string>();
+    const errors: unknown[] = [];
+    const controller = createWatchController({
+      initialSignature: "same",
+      clock,
+      createEventSource: source.create,
+      getSignature: () => signature.promise,
+      refresh: () => {},
+      reportError: (error) => errors.push(error),
+      startupTimeoutMs: 500,
+    });
+
+    source.event();
+    clock.advance(200);
+    await settle();
+    expect(controller.getState().phase).toBe("checking");
+
+    // The event check is still parked, but it must not suspend the independent
+    // bound on source registration.
+    clock.advance(300);
+    expect(controller.getState()).toMatchObject({ phase: "checking", degraded: true });
+    expect(source.closes).toBe(1);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({ code: WATCH_EVENT_SOURCE_STARTUP_TIMEOUT_CODE });
+
+    signature.resolve("same");
+    await settle();
+    expect(controller.getState().phase).toBe("idle");
+  });
+
+  test("keeps the source startup timeout live during an asynchronous refresh", async () => {
+    const clock = new FakeWatchClock();
+    const source = fakeSource();
+    const refresh = deferred<void>();
+    const errors: unknown[] = [];
+    const controller = createWatchController({
+      initialSignature: "old",
+      clock,
+      createEventSource: source.create,
+      getSignature: () => "new",
+      refresh: () => refresh.promise,
+      reportError: (error) => errors.push(error),
+      startupTimeoutMs: 500,
+    });
+
+    source.event();
+    clock.advance(200);
+    await settle();
+    expect(controller.getState().phase).toBe("refreshing");
+
+    clock.advance(300);
+    expect(controller.getState()).toMatchObject({ phase: "refreshing", degraded: true });
+    expect(source.closes).toBe(1);
+    expect(errors[0]).toMatchObject({ code: WATCH_EVENT_SOURCE_STARTUP_TIMEOUT_CODE });
+
+    refresh.resolve();
+    await settle();
+    expect(controller.getState()).toMatchObject({ phase: "idle", appliedSignature: "new" });
+  });
+
   test("accepts readiness just before an injected startup deadline", async () => {
     const clock = new FakeWatchClock();
     const source = fakeSource();
@@ -638,5 +702,162 @@ describe("createWatchController", () => {
     expect(oldSource.closes).toBe(1);
     expect(newSource.closes).toBe(0);
     expect(errors).toEqual([]);
+  });
+
+  test("aborts the signal it handed to an in-flight signature check on close", async () => {
+    const clock = new FakeWatchClock();
+    const source = fakeSource();
+    const pending = deferred<string>();
+    let observed: AbortSignal | undefined;
+    const controller = createWatchController({
+      initialSignature: "same",
+      clock,
+      createEventSource: source.create,
+      getSignature: (signal) => {
+        observed = signal;
+        return pending.promise;
+      },
+      refresh: () => {},
+    });
+
+    source.event();
+    clock.advance(200);
+    await settle();
+
+    expect(observed?.aborted).toBe(false);
+    controller.close();
+    // Work started for a check nobody will read can now stop, instead of
+    // running to completion so its result can be discarded.
+    expect(observed?.aborted).toBe(true);
+    pending.resolve("changed");
+    await settle();
+  });
+
+  test("closing during a refresh neither applies the signature nor reports the abort", async () => {
+    const clock = new FakeWatchClock();
+    const source = fakeSource();
+    const pending = deferred<void>();
+    const errors: unknown[] = [];
+    let refreshSignal: AbortSignal | undefined;
+    const controller = createWatchController({
+      initialSignature: "old",
+      clock,
+      createEventSource: source.create,
+      getSignature: () => "new",
+      refresh: (signal) => {
+        refreshSignal = signal;
+        return pending.promise;
+      },
+      reportError: (error) => errors.push(error),
+    });
+
+    source.event();
+    clock.advance(200);
+    await settle();
+    expect(refreshSignal?.aborted).toBe(false);
+
+    controller.close();
+    pending.reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
+    await settle();
+
+    // The refresh never completed, so the new signature must not be recorded,
+    // and our own abort is not a diagnostic worth showing the user.
+    expect(controller.getState().appliedSignature).toBe("old");
+    expect(errors).toEqual([]);
+  });
+
+  test("an abort that is not the controller's own close is still reported", async () => {
+    const clock = new FakeWatchClock();
+    const source = fakeSource();
+    const errors: unknown[] = [];
+    createWatchController({
+      initialSignature: "same",
+      clock,
+      createEventSource: source.create,
+      getSignature: () => {
+        throw Object.assign(new Error("upstream gave up"), { name: "AbortError" });
+      },
+      refresh: () => {},
+      reportError: (error) => errors.push(error),
+    });
+
+    source.event();
+    clock.advance(200);
+    await settle();
+
+    expect(errors).toHaveLength(1);
+    expect((errors[0] as Error).message).toBe("upstream gave up");
+  });
+
+  test("an explicitly superseded check is silent and keeps its baseline retryable", async () => {
+    const clock = new FakeWatchClock();
+    const source = fakeSource();
+    const errors: unknown[] = [];
+    const signatures = [
+      Object.assign(new Error("superseded"), {
+        name: "AbortError",
+        code: WATCH_CHECK_CANCELLED_CODE,
+      }),
+      "new",
+    ];
+    let refreshes = 0;
+    const controller = createWatchController({
+      initialSignature: "old",
+      clock,
+      createEventSource: source.create,
+      getSignature: () => {
+        const result = signatures.shift();
+        if (result instanceof Error) throw result;
+        return result!;
+      },
+      refresh: () => {
+        refreshes++;
+      },
+      reportError: (error) => errors.push(error),
+    });
+
+    source.event();
+    clock.advance(200);
+    await settle();
+    expect(errors).toEqual([]);
+    expect(controller.getState().appliedSignature).toBe("old");
+
+    source.event();
+    clock.advance(200);
+    await settle();
+    expect(refreshes).toBe(1);
+    expect(controller.getState().appliedSignature).toBe("new");
+  });
+
+  test("an asynchronous signature check does not block the caller between polls", async () => {
+    const clock = new FakeWatchClock();
+    const source = fakeSource();
+    const gate = deferred<string>();
+    let refreshes = 0;
+    createWatchController({
+      initialSignature: "old",
+      clock,
+      createEventSource: source.create,
+      getSignature: () => gate.promise,
+      refresh: () => {
+        refreshes++;
+      },
+    });
+
+    source.event();
+    clock.advance(200);
+    await settle();
+
+    // The check is parked on the pending signature; events arriving meanwhile
+    // are held as one trailing check rather than starting a second one.
+    expect(refreshes).toBe(0);
+    source.event();
+    source.event();
+    await settle();
+    expect(refreshes).toBe(0);
+
+    gate.resolve("new");
+    await settle();
+    expect(refreshes).toBe(1);
   });
 });

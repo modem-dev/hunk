@@ -17,6 +17,8 @@ export interface VcsDetection {
 export interface VcsLoadContext {
   cwd: string;
   gitExecutable?: string;
+  /** Set when the caller can lose interest before the work finishes; see the public contract. */
+  signal?: AbortSignal;
 }
 
 export type VcsReviewInput = VcsDiffCommandInput | VcsShowCommandInput | VcsStashShowCommandInput;
@@ -30,7 +32,7 @@ export type VcsReviewOperationKind = VcsReviewOperation["kind"];
 
 export interface VcsOperation<Input extends VcsReviewInput> {
   load(input: Input, context: VcsLoadContext): Promise<VcsPatchResult>;
-  watchSignature?: (input: Input, context: VcsLoadContext) => string;
+  watchSignature?: (input: Input, context: VcsLoadContext) => string | Promise<string>;
   watchPlan?: (input: Input, context: VcsLoadContext) => WatchPlan;
 }
 
