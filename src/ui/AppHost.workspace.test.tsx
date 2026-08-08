@@ -3,7 +3,6 @@ import {
   existsSync,
   mkdtempSync,
   readFileSync,
-  rmSync,
   symlinkSync,
   unlinkSync,
   writeFileSync,
@@ -13,6 +12,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
+import { removeTestDirectory } from "../../test/helpers/filesystem";
 import { loadAppBootstrap } from "../core/loaders";
 import type { AppBootstrap, CliInput } from "../core/types";
 import { loadStartupExtensions } from "../extensions/startup";
@@ -29,10 +29,8 @@ import { AppHost } from "./AppHost";
 
 const tempDirs: string[] = [];
 
-afterEach(() => {
-  for (const dir of tempDirs.splice(0)) {
-    rmSync(dir, { recursive: true, force: true });
-  }
+afterEach(async () => {
+  await Promise.all(tempDirs.splice(0).map((dir) => removeTestDirectory(dir)));
 });
 
 function createTempDir(prefix: string) {
