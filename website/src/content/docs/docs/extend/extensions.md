@@ -115,7 +115,18 @@ some_key = "some value"
 
 `[extensions] enabled` layers like every other option (repo config overrides user config); `--no-extensions` is a hard off switch no config layer can re-enable. `[extension.<id>]` tables pass through to the extension uninterpreted — see [`hunk.config`](/docs/extend/extension-api/#hunkconfig) for the merge rules and their caveats.
 
-## A complete example
+## Example gallery
+
+The repository's [extension example gallery](https://github.com/modem-dev/hunk/tree/main/examples/extensions) collects four opt-in folder extensions:
+
+- [Review triage](https://github.com/modem-dev/hunk/tree/main/examples/extensions/review-triage) combines a React sidebar, commands, dialogs, navigation, lifecycle events, and the extension event bus.
+- [Rendered Markdown](https://github.com/modem-dev/hunk/tree/main/examples/extensions/rendered-markdown) builds a host-rendered file preview with exact-source bindings and inline notes.
+- [JSX file view](https://github.com/modem-dev/hunk/tree/main/examples/extensions/jsx-file-view) is the smallest fixed-height React/OpenTUI row example.
+- [JSX file-view gallery](https://github.com/modem-dev/hunk/tree/main/examples/extensions/jsx-file-view-gallery) includes TypeScript, CSS color, dependency-version, and mixed-review demos.
+
+Each README includes an exact command. The examples are not bundled or loaded automatically.
+
+## A single-file example
 
 Collapse lockfiles and generated output out of every review, and say how many files were hidden.
 
