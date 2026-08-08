@@ -124,6 +124,7 @@
     "@hunk/session-broker-bun": "workspace:*",
     "@hunk/session-broker-core": "workspace:*",
     "@hunk/session-broker-node": "workspace:*",
+    "@hunk/term-video": "workspace:*",
     "@opentui/core": "^0.4.3",
     "@opentui/react": "^0.4.3",
     "@types/bun": "1.3.14",

@@ -1,5 +1,6 @@
-// Drives real Hunk sessions in a headless PTY and captures styled keyframes
-// as PNGs for the beta launch video. Run from the repo root with Bun:
+// Hunk's release-video scenes: drives real Hunk sessions in a headless PTY
+// and captures styled keyframes as PNGs via @hunk/term-video. Run from the
+// repo root with Bun:
 //
 //   bun run scripts/launch-video/capture.ts [outDir]
 //
@@ -7,53 +8,39 @@
 // this run only — compose.mjs resolves frames by name from its SHOTS table and
 // ignores it, and after a SCENES= run the manifest is partial while frames/
 // stays cumulative.
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync, cpSync, chmodSync } from "node:fs";
+import { cpSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { launchTerminal, type Session } from "tuistory";
+import {
+  createCommandWrapper,
+  createKeyframer,
+  ensureKeyboardIsLive,
+  launchApp,
+  launchShell,
+  makeSceneFilter,
+  sleep,
+  typeCommand,
+  type KeyboardProbe,
+} from "@hunk/term-video/capture";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-
-// ghostty-opentui is a transitive dependency (via tuistory), so resolve its
-// image renderer relative to tuistory's own module graph.
-const ghosttyImagePath = Bun.resolveSync(
-  "ghostty-opentui/image",
-  dirname(Bun.resolveSync("tuistory", repoRoot)),
-);
-const { renderTerminalToImage } = (await import(ghosttyImagePath)) as {
-  renderTerminalToImage: (data: unknown, options?: Record<string, unknown>) => Promise<Buffer>;
-};
+const hunkEntrypoint = join(repoRoot, "src/main.tsx");
 
 const outDir = resolve(process.argv[2] ?? join(repoRoot, ".video-work"));
-const framesDir = join(outDir, "frames");
-mkdirSync(framesDir, { recursive: true });
 
 // One shared terminal geometry so every scene composes into the same window.
 const COLS = 140;
 const ROWS = 32;
-const RENDER_OPTIONS = { fontSize: 16, lineHeight: 1.5, devicePixelRatio: 2 };
 
-interface KeyframeEntry {
-  name: string;
-  file: string;
-  cols: number;
-  rows: number;
-}
-const manifest: KeyframeEntry[] = [];
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-/** Render the current PTY screen to a named PNG keyframe. */
-async function snap(session: Session, name: string) {
-  const data = session.getTerminalData();
-  const png = await renderTerminalToImage(data, RENDER_OPTIONS);
-  const file = `${name}.png`;
-  writeFileSync(join(framesDir, file), png);
-  manifest.push({ name, file, cols: COLS, rows: ROWS });
-  console.log(`  snap ${name}`);
-}
+const keyframer = await createKeyframer({
+  framesDir: join(outDir, "frames"),
+  resolveFrom: repoRoot,
+  cols: COLS,
+  rows: ROWS,
+});
+const snap = keyframer.snap.bind(keyframer);
 
 const tempDirs: string[] = [];
 function makeTempDir(prefix: string) {
@@ -64,6 +51,18 @@ function makeTempDir(prefix: string) {
 
 // Isolated config home so captures always show built-in defaults.
 const configHome = makeTempDir("hunk-video-config-");
+const hunkEnv = {
+  XDG_CONFIG_HOME: configHome,
+  HUNK_MCP_DISABLE: "1",
+  HUNK_DISABLE_UPDATE_NOTICE: "1",
+};
+
+// Hunk's help overlay is the cheap, unmistakable probe surface.
+const HUNK_KEYBOARD_PROBE: KeyboardProbe = {
+  probeKey: "?",
+  expect: /Controls help/,
+  dismissKey: "escape",
+};
 
 function runGit(args: string[], cwd: string) {
   const proc = spawnSync("git", args, { cwd, encoding: "utf8" });
@@ -73,121 +72,25 @@ function runGit(args: string[], cwd: string) {
 }
 
 async function launchHunk(args: string[], options: { cwd?: string } = {}) {
-  return launchTerminal({
+  return launchApp({
     command: process.execPath,
-    args: ["run", join(repoRoot, "src/main.tsx"), "--", ...args],
+    args: ["run", hunkEntrypoint, "--", ...args],
     cwd: options.cwd ?? repoRoot,
     cols: COLS,
     rows: ROWS,
-    env: {
-      ...process.env,
-      XDG_CONFIG_HOME: configHome,
-      HUNK_MCP_DISABLE: "1",
-      HUNK_DISABLE_UPDATE_NOTICE: "1",
-    },
+    env: hunkEnv,
   });
 }
 
-/** Prove the app is accepting keys before scripted presses (startup race). */
-async function ensureKeyboardIsLive(session: Session) {
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    await session.press("?");
-    try {
-      await session.waitForText(/Controls help/, { timeout: 2_000 });
-      await session.press("escape");
-      await sleep(300);
-      return;
-    } catch {
-      // Key dropped before the handler was bound; retry.
-    }
-  }
-  throw new Error("App never reacted to a keypress.");
-}
-
-// ---------------------------------------------------------------------------
-// Scene: STML agent notes inside a review (examples/9-agent-markup-notes).
-// ---------------------------------------------------------------------------
-async function captureStmlScene() {
-  console.log("scene: stml");
-  const session = await launchHunk([
-    "patch",
-    join(repoRoot, "examples/9-agent-markup-notes/change.patch"),
-    "--agent-context",
-    join(repoRoot, "examples/9-agent-markup-notes/agent-context.json"),
-    "--experimental",
-    "--mode",
-    "stack",
+/** Interactive bash with a real `hunk` command on PATH for shell scenes. */
+async function launchHunkShell(cwd: string) {
+  const binDir = createCommandWrapper(join(makeTempDir("hunk-video-bin-"), "bin"), "hunk", [
+    process.execPath,
+    "run",
+    hunkEntrypoint,
+    "--",
   ]);
-  try {
-    await session.waitForText(/retry\.ts/, { timeout: 60_000 });
-    await ensureKeyboardIsLive(session);
-    await sleep(500);
-    await snap(session, "stml-review");
-
-    await session.press("a");
-    await sleep(900);
-    await snap(session, "stml-notes");
-
-    // Step down the stream so the second (code-block) note fills the screen.
-    for (let step = 0; step < 10; step += 1) {
-      await session.press("down");
-      await sleep(60);
-      if (step === 4 || step === 9) {
-        await snap(session, `stml-scroll-${step}`);
-      }
-    }
-    await sleep(400);
-    await snap(session, "stml-note-2");
-  } finally {
-    session.close();
-  }
-}
-
-/** Write a `hunk` wrapper onto PATH so shell scenes read like the real CLI. */
-function createHunkPathWrapper(dir: string) {
-  const binDir = join(dir, "bin");
-  mkdirSync(binDir, { recursive: true });
-  const wrapper = join(binDir, "hunk");
-  writeFileSync(
-    wrapper,
-    `#!/bin/bash\nexec "${process.execPath}" run "${join(repoRoot, "src/main.tsx")}" -- "$@"\n`,
-  );
-  chmodSync(wrapper, 0o755);
-  return binDir;
-}
-
-/** Launch an interactive bash in the PTY with `hunk` on PATH and a clean prompt. */
-async function launchShell(cwd: string, binDir: string) {
-  return launchTerminal({
-    command: "/bin/bash",
-    args: ["--noprofile", "--norc", "-i"],
-    cwd,
-    cols: COLS,
-    rows: ROWS,
-    env: {
-      ...process.env,
-      PATH: `${binDir}:${process.env.PATH}`,
-      XDG_CONFIG_HOME: configHome,
-      HUNK_MCP_DISABLE: "1",
-      HUNK_DISABLE_UPDATE_NOTICE: "1",
-      PS1: "\\[\\e[38;5;213m\\]❯\\[\\e[0m\\] ",
-      TERM: "xterm-256color",
-    },
-  });
-}
-
-/** Type a shell command character by character, snapping the requested frames. */
-async function typeCommand(session: Session, command: string, snapAt: Record<number, string>) {
-  let index = 0;
-  for (const char of command) {
-    session.writeRaw(char);
-    await sleep(30);
-    const name = snapAt[index];
-    if (name) {
-      await snap(session, name);
-    }
-    index += 1;
-  }
+  return launchShell({ cwd, cols: COLS, rows: ROWS, pathPrepend: [binDir], env: hunkEnv });
 }
 
 /**
@@ -215,7 +118,7 @@ async function captureReviewScene() {
   const session = await launchHunk(["diff", "--mode", "stack"], { cwd: repoDir });
   try {
     await session.waitForText(/src\//, { timeout: 60_000 });
-    await ensureKeyboardIsLive(session);
+    await ensureKeyboardIsLive(session, HUNK_KEYBOARD_PROBE);
     await sleep(500);
 
     // Walk the cursor down and back up, snapping every step so playback shows
@@ -251,27 +154,39 @@ async function captureReviewScene() {
 }
 
 // ---------------------------------------------------------------------------
-// Scene: piped pager review — `git diff | hunk` keeps the full review UI.
+// Scene: STML agent notes inside a review (examples/9-agent-markup-notes).
 // ---------------------------------------------------------------------------
-async function capturePagerScene() {
-  console.log("scene: pager");
-  const repoDir = createDemoRepo();
-  const binDir = createHunkPathWrapper(makeTempDir("hunk-video-pager-"));
-  const session = await launchShell(repoDir, binDir);
+async function captureStmlScene() {
+  console.log("scene: stml");
+  const session = await launchHunk([
+    "patch",
+    join(repoRoot, "examples/9-agent-markup-notes/change.patch"),
+    "--agent-context",
+    join(repoRoot, "examples/9-agent-markup-notes/agent-context.json"),
+    "--experimental",
+    "--mode",
+    "stack",
+  ]);
   try {
-    await session.waitForText(/❯/, { timeout: 15_000 });
-    await sleep(300);
-    await typeCommand(session, "git diff | hunk pager", { 9: "pager-typing-9", 20: "pager-typed" });
-    await sleep(200);
-    await session.press("enter");
-    await session.waitForText(/src\/format\.ts/, { timeout: 60_000 });
-    await sleep(900);
-    await snap(session, "pager-review");
+    await session.waitForText(/retry\.ts/, { timeout: 60_000 });
+    await ensureKeyboardIsLive(session, HUNK_KEYBOARD_PROBE);
+    await sleep(500);
+    await snap(session, "stml-review");
 
-    // Piped pager reviews keep the full review controls: show the sidebar.
-    await session.press("s");
-    await sleep(700);
-    await snap(session, "pager-sidebar");
+    await session.press("a");
+    await sleep(900);
+    await snap(session, "stml-notes");
+
+    // Step down the stream so the second (code-block) note fills the screen.
+    for (let step = 0; step < 10; step += 1) {
+      await session.press("down");
+      await sleep(60);
+      if (step === 4 || step === 9) {
+        await snap(session, `stml-scroll-${step}`);
+      }
+    }
+    await sleep(400);
+    await snap(session, "stml-note-2");
   } finally {
     session.close();
   }
@@ -297,13 +212,12 @@ async function captureMarkupCliScene() {
   console.log("scene: markup-cli");
   const demoDir = makeTempDir("hunk-video-cli-");
   writeFileSync(join(demoDir, "note.stml"), CLI_NOTE_STML);
-  const binDir = createHunkPathWrapper(demoDir);
 
-  const session = await launchShell(demoDir, binDir);
+  const session = await launchHunkShell(demoDir);
   try {
     await session.waitForText(/❯/, { timeout: 15_000 });
     await sleep(300);
-    await typeCommand(session, "hunk markup render note.stml --width 72", {
+    await typeCommand(session, keyframer, "hunk markup render note.stml --width 72", {
       10: "cli-typing-10",
       22: "cli-typing-22",
       34: "cli-typing-34",
@@ -314,6 +228,35 @@ async function captureMarkupCliScene() {
     await session.waitForText(/hit rate/, { timeout: 60_000 });
     await sleep(400);
     await snap(session, "cli-rendered");
+  } finally {
+    session.close();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Scene: piped pager review — `git diff | hunk pager` keeps the full UI.
+// ---------------------------------------------------------------------------
+async function capturePagerScene() {
+  console.log("scene: pager");
+  const repoDir = createDemoRepo();
+  const session = await launchHunkShell(repoDir);
+  try {
+    await session.waitForText(/❯/, { timeout: 15_000 });
+    await sleep(300);
+    await typeCommand(session, keyframer, "git diff | hunk pager", {
+      9: "pager-typing-9",
+      20: "pager-typed",
+    });
+    await sleep(200);
+    await session.press("enter");
+    await session.waitForText(/src\/format\.ts/, { timeout: 60_000 });
+    await sleep(900);
+    await snap(session, "pager-review");
+
+    // Piped pager reviews keep the full review controls: show the sidebar.
+    await session.press("s");
+    await sleep(700);
+    await snap(session, "pager-sidebar");
   } finally {
     session.close();
   }
@@ -332,7 +275,7 @@ async function captureTriageScene() {
   );
   try {
     await session.waitForText(/src\//, { timeout: 60_000 });
-    await ensureKeyboardIsLive(session);
+    await ensureKeyboardIsLive(session, HUNK_KEYBOARD_PROBE);
     await sleep(500);
     await snap(session, "triage-review");
 
@@ -396,7 +339,7 @@ async function captureFileViewScene(
   ]);
   try {
     await session.waitForText(readyPattern, { timeout: 60_000 });
-    await ensureKeyboardIsLive(session);
+    await ensureKeyboardIsLive(session, HUNK_KEYBOARD_PROBE);
     await sleep(500);
     await snap(session, `fileview-${label}-raw`);
 
@@ -411,8 +354,7 @@ async function captureFileViewScene(
 
 // Optional comma-separated scene filter for fast iteration, e.g.
 // SCENES=review bun run scripts/launch-video/capture.ts
-const sceneFilter = process.env.SCENES?.split(",").map((s) => s.trim());
-const wants = (name: string) => !sceneFilter || sceneFilter.includes(name);
+const wants = makeSceneFilter(process.env.SCENES);
 
 async function main() {
   try {
@@ -444,8 +386,8 @@ async function main() {
       );
     }
 
-    writeFileSync(join(outDir, "manifest.json"), JSON.stringify(manifest, null, 2));
-    console.log(`wrote ${manifest.length} keyframes to ${framesDir}`);
+    keyframer.writeManifest(join(outDir, "manifest.json"));
+    console.log(`wrote ${keyframer.manifest.length} keyframes to ${keyframer.framesDir}`);
   } finally {
     for (const dir of tempDirs) {
       rmSync(dir, { recursive: true, force: true });

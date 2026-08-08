@@ -18,6 +18,11 @@ compose.mjs  (node)  composite keyframes onto a 1920x1080 stage, emit frames + c
 ffmpeg               encode the concat list at 30fps to mp4/webm
 ```
 
+The generic machinery (PTY driving, keyframe rendering, storyboard planning,
+Chromium compositing, the stage template) is the `@hunk/term-video` workspace
+package in `packages/term-video/`; `scripts/launch-video/` holds only hunk's
+scenes, captions, and cards on top of it.
+
 ## Recreating a video
 
 Expect ~3–6 min for capture and ~2–4 min for compose — run both with a long
@@ -81,12 +86,16 @@ As of this writing it reflects 0.18.0:
   `<span class="badge">NEW</span>` in captions — a NEW badge is a claim about
   _this_ release, so drop or move them as features age.
 - `capture.ts`: the scene functions and the `wants()` guards in `main()` are
-  the current storyboard's scene list.
+  the current storyboard's scene list, plus hunk-side glue (`launchHunk`,
+  `launchHunkShell`, `createDemoRepo`, the keyboard probe).
 
-Reusable machinery — extend, don't rewrite: `snap`, `launchHunk`,
-`launchShell`, `createHunkPathWrapper`, `createDemoRepo`, `typeCommand`,
-`ensureKeyboardIsLive`, the `COLS`/`ROWS`/`RENDER_OPTIONS` geometry, all of
-`stage.html`, and the compositor loop in `compose.mjs`.
+Reusable machinery lives in `@hunk/term-video` (`packages/term-video/`) —
+extend it there, don't fork it into the scripts: `createKeyframer`,
+`launchApp`/`launchShell`, `createCommandWrapper`, `typeCommand`,
+`ensureKeyboardIsLive`, `makeSceneFilter` (`src/capture.ts`); the unit-tested
+storyboard planner with the caption/timing semantics (`src/plan.mjs`);
+`composeStoryboard` with font/Chromium resolution and the missing-keyframe
+preflight (`src/compose.mjs`); and the stage template (`src/stage.html`).
 
 ## Environment gotchas
 
@@ -99,7 +108,8 @@ Sandbox-specific bullets are marked; each cost real debugging time.
   to `<repo>/.video-work/` via `import.meta.url`.)
 - **ghostty-opentui is a transitive dep** (via tuistory) with an exports map:
   import `"ghostty-opentui/image"` (not `.../dist/image.js`), resolved
-  relative to tuistory — `capture.ts` shows the `Bun.resolveSync` dance.
+  relative to tuistory — `@hunk/term-video/capture`'s `createKeyframer` does
+  the `Bun.resolveSync` dance.
 - **playwright-core must match the Chromium it drives.** In the Anthropic
   sandbox, resolve the exact version from the preinstalled toolchain:
 
@@ -127,21 +137,21 @@ bunx playwright install chromium`, leave `CHROMIUM_PATH` unset, and match
   encoding — playwright's bundled `ffmpeg-*/ffmpeg-linux` only does VP8/WebM
   and cannot produce the mp4.
 - **Caption font**: JetBrains Mono ships inside ghostty-opentui;
-  `compose.mjs` searches bun's isolated layout
-  (`node_modules/.bun/node_modules/…`) then a hoisted `node_modules/…`. If it
-  still throws `caption font not found`, locate the file with
-  `find node_modules -name jetbrains-mono-nerd.ttf` and add that path to
-  `FONT_CANDIDATES`.
+  `findCaptionFont` in `packages/term-video/src/compose.mjs` searches bun's
+  isolated layout (`node_modules/.bun/node_modules/…`) then a hoisted
+  `node_modules/…`. If it still throws `caption font not found`, locate the
+  file with `find node_modules -name jetbrains-mono-nerd.ttf` and pass it as
+  `fontPath` to `composeStoryboard`.
 
 ## Authoring scenes (capture.ts)
 
 - Shared geometry is 140x32 cells rendered at fontSize 16 / dpr 2 → 2688x1536
   PNGs. Keep every scene at this size so all frames fit one window.
-- Reusable helpers: `createDemoRepo()` (git repo built from
-  `examples/2-mini-app-refactor` with the after-tree as the working diff),
-  `createHunkPathWrapper()` + `launchShell()` (interactive bash with a real
-  `hunk` command on PATH and a clean `❯` prompt), `typeCommand()` (per-char
-  typing with mid-command snaps), `snap(session, name)` (styled PNG keyframe).
+- Helpers: `createDemoRepo()` and `launchHunkShell()` are hunk-side glue in
+  the script (git repo built from `examples/2-mini-app-refactor`; interactive
+  bash with a real `hunk` command on PATH and a clean `❯` prompt); `snap`,
+  `typeCommand`, `launchApp`/`launchShell`, and `createCommandWrapper` come
+  from `@hunk/term-video/capture`.
 - Always `waitForText` on scene-specific content before the first snap, and
   call `ensureKeyboardIsLive()` before scripted keypresses — the first key
   after startup can be dropped (real race, the helper toggles `?` to prove
@@ -181,7 +191,7 @@ bunx playwright install chromium`, leave `CHROMIUM_PATH` unset, and match
 - Caption HTML vocabulary: `<span class="badge">NEW</span>` amber pill,
   `<span class="hl">` amber highlight, `<span class="dim">` muted. Cards use
   `badge` / `h1`/`h2` / `sub` / `cmds`+`cmd` / `foot` classes from
-  `stage.html`.
+  `packages/term-video/src/stage.html`.
 - Target pacing: money shots hold 3–4s, context shots 2–3s, typing/walk frames
   0.2–0.6s; keep the total near 60s.
 
