@@ -1838,6 +1838,8 @@ export function App({
     event?.stopPropagation();
   };
 
+  const changedFileCount = bootstrap.changeset.files.length;
+  const changedFileLabel = changedFileCount === 1 ? "file" : "files";
   const totalAdditions = bootstrap.changeset.files.reduce(
     (sum, file) => sum + file.stats.additions,
     0,
@@ -1846,7 +1848,7 @@ export function App({
     (sum, file) => sum + file.stats.deletions,
     0,
   );
-  const topTitle = `${bootstrap.changeset.title}  +${totalAdditions}  -${totalDeletions}`;
+  const topTitle = `${bootstrap.changeset.title}  ${changedFileCount} ${changedFileLabel}  +${totalAdditions}  -${totalDeletions}`;
   const diffHeaderStatsWidth = maxFileHeaderStatsWidth(filteredFiles);
   const diffHeaderLabelWidth = Math.max(0, diffContentWidth - diffHeaderStatsWidth - 1);
   const diffSeparatorWidth = Math.max(0, diffContentWidth - 2);

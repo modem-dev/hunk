@@ -751,6 +751,22 @@ describe("App interactions", () => {
     }
   });
 
+  test("menu bar summarizes changed files, additions, and deletions", async () => {
+    const setup = await testRender(<AppHost bootstrap={createBootstrap()} />, {
+      width: 240,
+      height: 24,
+    });
+
+    try {
+      await flush(setup);
+      expect(setup.captureCharFrame()).toContain("repo working tree  2 files  +3  -2");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("Shift-M hides the menu bar without disabling F10 menus", async () => {
     const setup = await testRender(<AppHost bootstrap={createSingleFileBootstrap()} />, {
       width: 240,
