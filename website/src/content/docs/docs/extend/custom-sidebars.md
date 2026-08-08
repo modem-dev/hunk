@@ -3,7 +3,9 @@ title: Custom sidebars
 description: Render your own React sidebar view inside Hunk, with selection, scrolling, and event-driven state.
 ---
 
-`hunk.registerSidebarView(view)` contributes a sidebar view — your own React component, rendered inside Hunk's OpenTUI tree. Registration is additive: your view exists beside the built-in file navigation, on either side of the review stream, and any number of views can be open at once. Pair it with [`registerCommand`](/docs/extend/extension-api/#hunkregistercommandcommand-handler) so a key opens it:
+`hunk.registerSidebarView(view)` contributes a sidebar view — your own React component, rendered inside Hunk's OpenTUI tree. Registration is additive: your view exists beside the built-in file navigation, on either side of the review stream, and any number of views can be open at once. Pair it with [`registerCommand`](/docs/extend/extension-api/#hunkregistercommandcommand-handler) so a key opens it.
+
+For a complete installable example, [review triage](https://github.com/modem-dev/hunk/tree/main/examples/extensions/review-triage) combines a right sidebar with hunk navigation, commands, dialogs, lifecycle events, and session-local state. The smallest standalone sidebar looks like this:
 
 ```tsx
 // ~/.config/hunk/extensions/flat-sidebar.tsx

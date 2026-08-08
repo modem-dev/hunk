@@ -20,6 +20,8 @@ Each folder tells a small review story and includes the exact command to run fro
 
 ## Installable extension examples
 
+Browse the [extension example gallery](extensions/) for API coverage, exact run commands, and reference implementations.
+
 - [`extensions/review-triage/`](extensions/review-triage/) adds a session-local hunk triage sidebar.
 - [`extensions/rendered-markdown/`](extensions/rendered-markdown/) adds an optional parsed Markdown file presentation.
 - [`extensions/jsx-file-view/`](extensions/jsx-file-view/) is the smallest hook-using fixed-row JSX proof of concept.

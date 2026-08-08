@@ -1332,21 +1332,18 @@ raised before the UI has mounted are buffered and flushed once it does, so a
 Record a diagnostic line. Logs are collected per extension rather than written
 to the terminal, because the TUI owns the screen.
 
-## A complete example
+## Complete examples
 
-The examples directory contains two user-installable folder extensions:
+The [extension example gallery](../examples/extensions/) contains four opt-in folder extensions:
 
-- [`examples/extensions/review-triage/`](../examples/extensions/review-triage/)
-  is a session-local hunk triage board combining a sidebar, commands, dialogs,
-  lifecycle listeners, and the extension event bus. Its API evaluation and
-  follow-up opportunities are recorded in
-  [Extension API field notes](extension-api-evaluation.md).
-- [`examples/extensions/rendered-markdown/`](../examples/extensions/rendered-markdown/)
-  parses Markdown into generic host-owned file-view rows. Its README shows how
-  to run it from the checkout or copy it into the global extensions directory.
+- [`review-triage`](../examples/extensions/review-triage/) combines a React sidebar, commands, dialogs, navigation, lifecycle listeners, and the extension event bus.
+- [`rendered-markdown`](../examples/extensions/rendered-markdown/) parses Markdown into host-owned file-view rows with source bindings and inline notes.
+- [`jsx-file-view`](../examples/extensions/jsx-file-view/) is the smallest hook-using fixed-row React/OpenTUI file view.
+- [`jsx-file-view-gallery`](../examples/extensions/jsx-file-view-gallery/) adds TypeScript change-atlas cards, CSS color swatches, dependency-version deltas, and a mixed raw/custom review.
 
-Collapse lockfiles and generated output out of every review, and say how many
-files were hidden.
+The gallery also points to Hunk's bundled sidebar and VCS backends as production reference implementations. Review triage's API evaluation and follow-up opportunities are recorded in [Extension API field notes](extension-api-evaluation.md).
+
+For a small single-file extension, collapse generated output out of every review and report how many files were hidden.
 
 ```ts
 // ~/.config/hunk/extensions/collapse-generated.ts
