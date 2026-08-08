@@ -43,7 +43,7 @@ hunk.registerSyntaxLanguage("example-lang", async () => ({
 hunk.registerFileLanguage("example", "example-lang");
 ```
 
-Folder extensions can install a grammar package and pass its dynamic import directly, such as `() => import("@shikijs/langs/odin")`. Syntax registrations last for the Hunk process; restart Hunk to replace or remove one. The first custom registration for an id wins, while `text` and `ansi` remain reserved.
+Folder extensions can install a grammar package and pass its dynamic import directly, such as `() => import("@shikijs/langs/odin")`. Syntax registrations last for the Hunk process; restart Hunk to replace or remove one. The first custom registration for an id wins, while `text` and `ansi` remain reserved. Loaders that reject, take longer than five seconds, or return an invalid grammar fall back to plaintext with an attributed warning. Hunk retries that fallback when the file is highlighted again.
 
 ## `hunk.registerFileLanguage(extension, language)`
 

@@ -5,6 +5,7 @@ import {
 } from "../core/fileLanguage";
 import type { StartupNotice } from "../core/startupNotice";
 import type { Changeset } from "../core/types";
+import type { ExtensionSyntaxGrammar, ExtensionSyntaxLanguageLoader } from "../extension-api/types";
 import { detectVcs, extendVcsCatalog, getDefaultVcsAdapter } from "../core/vcs";
 import type { VcsAdapter, VcsCatalog } from "../core/vcs/types";
 import { sanitizeTerminalLine } from "../lib/terminalText";
@@ -40,6 +41,7 @@ function describeError(error: unknown) {
 }
 
 const RESERVED_SYNTAX_LANGUAGE_IDS = new Set(["text", "ansi"]);
+export const EXTENSION_SYNTAX_LANGUAGE_LOAD_TIMEOUT_MS = 5_000;
 
 interface AppliedSyntaxLanguage {
   extensionId: string;
@@ -50,32 +52,66 @@ interface AppliedSyntaxLanguage {
 // the process and extension reloads may only add previously unseen language ids.
 const appliedSyntaxLanguages = new Map<string, AppliedSyntaxLanguage>();
 
+type SyntaxLanguageModule = Awaited<ReturnType<ExtensionSyntaxLanguageLoader>>;
+
+interface ApplyExtensionSyntaxLanguageOptions {
+  loaderTimeoutMs?: number;
+}
+
+/** Report whether a value is a non-empty string. */
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+/** Report whether a value has the required TextMate grammar fields. */
+function isSyntaxGrammar(value: unknown): value is ExtensionSyntaxGrammar {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const grammar = value as { name?: unknown; scopeName?: unknown };
+  return isNonEmptyString(grammar.name) && isNonEmptyString(grammar.scopeName);
+}
+
 /** Report whether one lazy module contains usable TextMate grammar records. */
-function isSyntaxLanguageModule(
-  value: unknown,
-): value is Awaited<ReturnType<import("../extension-api/types").ExtensionSyntaxLanguageLoader>> {
-  const module = value as { default?: unknown } | null;
-  return (
-    typeof module === "object" &&
-    module !== null &&
-    Array.isArray(module.default) &&
-    module.default.length > 0 &&
-    module.default.every(
-      (grammar) =>
-        typeof grammar === "object" &&
-        grammar !== null &&
-        typeof (grammar as { name?: unknown }).name === "string" &&
-        (grammar as { name: string }).name.trim().length > 0 &&
-        typeof (grammar as { scopeName?: unknown }).scopeName === "string" &&
-        (grammar as { scopeName: string }).scopeName.trim().length > 0,
-    )
-  );
+function isSyntaxLanguageModule(value: unknown): value is SyntaxLanguageModule {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const grammars = (value as { default?: unknown }).default;
+  return Array.isArray(grammars) && grammars.length > 0 && grammars.every(isSyntaxGrammar);
+}
+
+/** Bound extension-controlled grammar loading so one loader cannot block all highlighting. */
+async function loadSyntaxLanguageWithin(
+  loader: ExtensionSyntaxLanguageLoader,
+  timeoutMs: number,
+): Promise<SyntaxLanguageModule> {
+  const loading = Promise.resolve().then(loader);
+  let timeout: ReturnType<typeof setTimeout>;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(
+      () => reject(new Error(`loader did not resolve within ${timeoutMs}ms`)),
+      timeoutMs,
+    );
+  });
+
+  try {
+    return await Promise.race([loading, deadline]);
+  } finally {
+    clearTimeout(timeout!);
+    loading.catch(() => undefined);
+  }
 }
 
 /** Add extension-contributed lazy grammars to Pierre's process-wide registry. */
 export function applyExtensionSyntaxLanguages(
   registry: ExtensionRegistry,
   context?: ExtensionContext,
+  {
+    loaderTimeoutMs = EXTENSION_SYNTAX_LANGUAGE_LOAD_TIMEOUT_MS,
+  }: ApplyExtensionSyntaxLanguageOptions = {},
 ): ExtensionApplyIssue[] {
   const issues: ExtensionApplyIssue[] = [];
   const claimedThisPass = new Map<string, string>();
@@ -97,7 +133,6 @@ export function applyExtensionSyntaxLanguages(
       });
       continue;
     }
-    claimedThisPass.set(language, extensionId);
 
     const sourcePath =
       registry.extensions.find((extension) => extension.id === extensionId)?.sourcePath ??
@@ -107,6 +142,7 @@ export function applyExtensionSyntaxLanguages(
       // Reapplying the same extension is idempotent. Pierre cannot replace the
       // old loader, so a changed grammar takes effect after Hunk restarts.
       if (applied.extensionId === extensionId && applied.sourcePath === sourcePath) {
+        claimedThisPass.set(language, extensionId);
         continue;
       }
       issues.push({
@@ -129,7 +165,7 @@ export function applyExtensionSyntaxLanguages(
     };
     const attributedLoader: typeof loader = async () => {
       try {
-        const module = await loader();
+        const module = await loadSyntaxLanguageWithin(loader, loaderTimeoutMs);
         if (!isSyntaxLanguageModule(module)) {
           throw new Error(
             "loader must resolve to { default: Grammar[] } with non-empty name and scopeName fields",
@@ -145,6 +181,7 @@ export function applyExtensionSyntaxLanguages(
     try {
       registerSyntaxLanguage(language, attributedLoader, reportFailure);
       appliedSyntaxLanguages.set(language, { extensionId, sourcePath });
+      claimedThisPass.set(language, extensionId);
     } catch (error) {
       issues.push({
         extensionId,
