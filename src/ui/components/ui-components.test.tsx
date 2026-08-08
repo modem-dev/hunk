@@ -1374,14 +1374,10 @@ describe("UI components", () => {
     ).bodyHeight;
     const secondHeaderTop = firstBodyHeight + 1;
     const separatorTop = firstBodyHeight;
-    const settleStickyScroll = async () => {
-      await act(async () => {
-        for (let iteration = 0; iteration < 6; iteration += 1) {
-          await Bun.sleep(60);
-          await setup.renderOnce();
-        }
+    const renderStickyScroll = () =>
+      act(async () => {
+        await setup.renderOnce();
       });
-    };
 
     try {
       await settleDiffPane(setup);
@@ -1392,7 +1388,7 @@ describe("UI components", () => {
       await act(async () => {
         scrollRef.current?.scrollTo(3);
       });
-      await settleStickyScroll();
+      await renderStickyScroll();
 
       frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("first.ts"));
       expect(frame).toContain("first.ts");
@@ -1402,7 +1398,7 @@ describe("UI components", () => {
       await act(async () => {
         scrollRef.current?.scrollTo(separatorTop);
       });
-      await settleStickyScroll();
+      await renderStickyScroll();
 
       frame = await waitForFrame(
         setup,
@@ -1415,7 +1411,7 @@ describe("UI components", () => {
       await act(async () => {
         scrollRef.current?.scrollTo(secondHeaderTop);
       });
-      await settleStickyScroll();
+      await renderStickyScroll();
 
       frame = await waitForFrame(
         setup,
@@ -1428,7 +1424,7 @@ describe("UI components", () => {
       await act(async () => {
         scrollRef.current?.scrollTo(secondHeaderTop + 1);
       });
-      await settleStickyScroll();
+      await renderStickyScroll();
 
       frame = await waitForFrame(
         setup,
@@ -1442,7 +1438,7 @@ describe("UI components", () => {
       await act(async () => {
         scrollRef.current?.scrollTo(secondHeaderTop + 2);
       });
-      await settleStickyScroll();
+      await renderStickyScroll();
 
       frame = await waitForFrame(
         setup,

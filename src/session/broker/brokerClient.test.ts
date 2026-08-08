@@ -251,14 +251,16 @@ describe("Hunk session daemon client", () => {
       messages.push(args.map((value) => String(value)).join(" "));
     };
 
-    const client = new SessionBrokerClient(createRegistration(), createSnapshot());
+    const client = new SessionBrokerClient(createRegistration(), createSnapshot(), {
+      daemonStartupTimeoutMs: 100,
+      reconnectDelayMs: 10_000,
+    });
 
     try {
-      client.start();
-      await waitUntil("initial session-daemon conflict warning", () => messages.length === 1);
+      await client.start();
+      expect(messages).toHaveLength(1);
 
-      client.start();
-      await Bun.sleep(2_000);
+      await client.start();
 
       expect(messages).toHaveLength(1);
       expect(messages[0]).toContain(

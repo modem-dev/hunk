@@ -364,15 +364,15 @@ function createRapidViewportLoopBootstrap(): AppBootstrap {
 function createMouseScrollSelectionBootstrap(): AppBootstrap {
   const firstBeforeLines = createNumberedAssignmentLines(1, 12);
   const secondBeforeLines = Array.from(
-    { length: 90 },
+    { length: 50 },
     (_, index) => `export const line${String(index + 13).padStart(2, "0")} = ${index + 13};`,
   );
   const secondAfterLines = [...secondBeforeLines];
 
   secondAfterLines[0] = "export const line13 = 1300;";
-  secondAfterLines[59] = "export const line72 = 7200;";
-  secondAfterLines[60] = "export const line73 = 7300;";
-  secondAfterLines[61] = "export const line74 = 7400;";
+  secondAfterLines[29] = "export const line42 = 4200;";
+  secondAfterLines[30] = "export const line43 = 4300;";
+  secondAfterLines[31] = "export const line44 = 4400;";
 
   return createTestVcsAppBootstrap({
     changesetId: "changeset:mouse-scroll-selection",
@@ -3220,25 +3220,26 @@ describe("App interactions", () => {
       });
 
       let snapshot = getLatestSnapshot();
-      for (let index = 0; index < 24; index += 1) {
+      for (let index = 0; index < 16; index += 1) {
         await act(async () => {
           await setup.mockMouse.scroll(120, 7, "down");
         });
         await flush(setup);
 
-        snapshot = await waitForSnapshot(
-          setup,
-          getLatestSnapshot,
-          (currentSnapshot) =>
-            currentSnapshot.selectedFilePath === "second.ts" &&
-            currentSnapshot.selectedHunkIndex === 1,
-          4,
-        );
+        snapshot = getLatestSnapshot();
         if (snapshot?.selectedFilePath === "second.ts" && snapshot.selectedHunkIndex === 1) {
           break;
         }
       }
 
+      snapshot = await waitForSnapshot(
+        setup,
+        getLatestSnapshot,
+        (currentSnapshot) =>
+          currentSnapshot.selectedFilePath === "second.ts" &&
+          currentSnapshot.selectedHunkIndex === 1,
+        4,
+      );
       expect(snapshot).toMatchObject({
         selectedFilePath: "second.ts",
         selectedHunkIndex: 1,
@@ -3275,16 +3276,18 @@ describe("App interactions", () => {
         });
         await flush(setup);
 
-        snapshot = await waitForSnapshot(
-          setup,
-          getLatestSnapshot,
-          (currentSnapshot) => currentSnapshot.selectedFilePath === "second.ts",
-          4,
-        );
+        snapshot = getLatestSnapshot();
         if (snapshot?.selectedFilePath === "second.ts") {
           break;
         }
       }
+
+      snapshot = await waitForSnapshot(
+        setup,
+        getLatestSnapshot,
+        (currentSnapshot) => currentSnapshot.selectedFilePath === "second.ts",
+        4,
+      );
 
       // Page-sized scrolling should move selection ownership into the later file. The exact hunk
       // can vary with viewport handoff timing because the page jump may land near either visible
@@ -3299,17 +3302,18 @@ describe("App interactions", () => {
         });
         await flush(setup);
 
-        snapshot = await waitForSnapshot(
-          setup,
-          getLatestSnapshot,
-          (currentSnapshot) => currentSnapshot.selectedFilePath === "first.ts",
-          4,
-        );
+        snapshot = getLatestSnapshot();
         if (snapshot?.selectedFilePath === "first.ts") {
           break;
         }
       }
 
+      snapshot = await waitForSnapshot(
+        setup,
+        getLatestSnapshot,
+        (currentSnapshot) => currentSnapshot.selectedFilePath === "first.ts",
+        4,
+      );
       expect(snapshot).toMatchObject({
         selectedFilePath: "first.ts",
         selectedHunkIndex: 0,
@@ -3340,25 +3344,26 @@ describe("App interactions", () => {
       });
 
       let snapshot = getLatestSnapshot();
-      for (let index = 0; index < 80; index += 1) {
+      for (let index = 0; index < 50; index += 1) {
         await act(async () => {
           await setup.mockInput.pressArrow("down");
         });
         await flush(setup);
 
-        snapshot = await waitForSnapshot(
-          setup,
-          getLatestSnapshot,
-          (currentSnapshot) =>
-            currentSnapshot.selectedFilePath === "second.ts" &&
-            currentSnapshot.selectedHunkIndex === 1,
-          4,
-        );
+        snapshot = getLatestSnapshot();
         if (snapshot?.selectedFilePath === "second.ts" && snapshot.selectedHunkIndex === 1) {
           break;
         }
       }
 
+      snapshot = await waitForSnapshot(
+        setup,
+        getLatestSnapshot,
+        (currentSnapshot) =>
+          currentSnapshot.selectedFilePath === "second.ts" &&
+          currentSnapshot.selectedHunkIndex === 1,
+        4,
+      );
       expect(snapshot).toMatchObject({
         selectedFilePath: "second.ts",
         selectedHunkIndex: 1,
