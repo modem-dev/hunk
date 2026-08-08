@@ -11,6 +11,7 @@ import type {
   ExtensionFileView,
   ExtensionNotifyType,
   ExtensionSidebarView,
+  ExtensionSyntaxLanguageLoader,
   ExtensionThemeConfig,
 } from "../extension-api/types";
 import { createExtensionNotificationHub, type ExtensionNotificationHub } from "./notifications";
@@ -65,6 +66,8 @@ export type {
   ExtensionSidebarTheme,
   ExtensionSidebarView,
   ExtensionSidebarViewProps,
+  ExtensionSyntaxGrammar,
+  ExtensionSyntaxLanguageLoader,
   ExtensionThemeConfig,
   ExtensionVcsAdapter,
   ExtensionWorkspace,
@@ -105,6 +108,12 @@ export interface ExtensionCandidate {
 export interface RegisteredTheme {
   extensionId: string;
   theme: ExtensionThemeConfig;
+}
+
+export interface RegisteredSyntaxLanguage {
+  extensionId: string;
+  language: string;
+  loader: ExtensionSyntaxLanguageLoader;
 }
 
 export interface RegisteredFileLanguage {
@@ -173,6 +182,7 @@ export type ExtensionEventHandlerMap = {
 export interface ExtensionRegistry {
   extensions: ExtensionMetadata[];
   themes: RegisteredTheme[];
+  syntaxLanguages: RegisteredSyntaxLanguage[];
   fileLanguages: RegisteredFileLanguage[];
   vcsAdapters: RegisteredVcsAdapter[];
   changesetTransforms: RegisteredChangesetTransform[];
@@ -247,6 +257,7 @@ export function createEmptyExtensionRegistry(): ExtensionRegistry {
   return {
     extensions: [],
     themes: [],
+    syntaxLanguages: [],
     fileLanguages: [],
     vcsAdapters: [],
     changesetTransforms: [],

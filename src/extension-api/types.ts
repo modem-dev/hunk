@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 2;
+export const HUNK_EXTENSION_API_VERSION = 3;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -478,6 +478,21 @@ export interface NamedCustomThemeConfig extends CustomThemeConfig {
  * extension-contributed themes share one validation and merge path.
  */
 export type ExtensionThemeConfig = NamedCustomThemeConfig;
+
+/* -------------------------------------------------------------------------- */
+/* Syntax languages                                                            */
+/* -------------------------------------------------------------------------- */
+
+/** Minimum public shape of one Shiki-compatible TextMate grammar. */
+export interface ExtensionSyntaxGrammar {
+  readonly name: string;
+  readonly scopeName: string;
+}
+
+/** Lazy ES module containing the grammar registrations for one syntax language. */
+export type ExtensionSyntaxLanguageLoader<
+  Grammar extends ExtensionSyntaxGrammar = ExtensionSyntaxGrammar,
+> = () => Promise<{ readonly default: readonly Grammar[] }>;
 
 /* -------------------------------------------------------------------------- */
 /* VCS adapters                                                                */
@@ -1444,6 +1459,11 @@ export interface HunkExtensionAPI {
   readonly apiVersion: HunkExtensionApiVersion;
   /** Contribute one selectable theme. */
   registerTheme(theme: ExtensionThemeConfig): void;
+  /** Register a lazy Shiki/TextMate grammar under one highlight-language id. */
+  registerSyntaxLanguage<Grammar extends ExtensionSyntaxGrammar>(
+    language: string,
+    loader: ExtensionSyntaxLanguageLoader<Grammar>,
+  ): void;
   /** Map one file extension (with or without a leading dot) to a highlight language. */
   registerFileLanguage(extension: string, language: string): void;
   /** Contribute one additional VCS backend. */

@@ -28,6 +28,7 @@ import type {
   ExtensionFileViewSourceRange,
   ExtensionPaintTheme,
   ExtensionReviewSelection,
+  ExtensionSyntaxLanguageLoader,
   ExtensionVcsAdapter,
   ExtensionVcsDiffInput,
   ExtensionVcsLoadContext,
@@ -49,6 +50,10 @@ export default function (hunk: HunkExtensionAPI) {
     syntaxScopes: { "keyword.operator": "#7fd1ff" },
   };
   hunk.registerTheme(theme);
+  const syntaxLoader: ExtensionSyntaxLanguageLoader = async () => ({
+    default: [{ name: "hunk-pack-fixture", scopeName: "source.hunk-pack-fixture" }],
+  });
+  hunk.registerSyntaxLanguage("hunk-pack-fixture", syntaxLoader);
   hunk.registerFileLanguage(".zig", "zig");
 
   const renderRow = (props: ExtensionFileViewRowComponentProps) => {
@@ -317,7 +322,7 @@ const extensionTypes = readFileSync(
   path.join(repoRoot, "dist", "npm", "extension", "extension-api", "types.d.ts"),
   "utf8",
 );
-if (/^\s*import\b/m.test(extensionTypes)) {
+if (/^\s*import\b/m.test(extensionTypes) || /\bimport\s*\(/m.test(extensionTypes)) {
   throw new Error("The public extension-api/types declaration must remain import-free.");
 }
 for (const removedType of [

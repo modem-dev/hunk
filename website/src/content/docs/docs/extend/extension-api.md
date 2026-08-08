@@ -1,13 +1,13 @@
 ---
 title: Extension API
-description: Register themes, file previews, transforms, commands, dialogs, and events through the extension API object.
+description: Register themes, syntax languages, file previews, transforms, commands, dialogs, and events through the extension API object.
 ---
 
 The extension factory receives one API object. Registration calls are only valid while the factory is running; Hunk seals the object afterwards so a deferred callback cannot mutate the registry mid-session. This page indexes the whole object; larger registration calls are documented in depth on their own pages and summarized in place below.
 
 ## `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `2`). Branch on it if you want one file to support several Hunk versions. Version 2 adds the experimental file-view contract and its command controls.
+The API generation this Hunk speaks (currently `3`). Branch on it if you want one file to support several Hunk versions. Version 3 adds lazy custom syntax-language registration.
 
 ## `hunk.registerTheme(theme)`
 
@@ -25,9 +25,29 @@ hunk.registerTheme({
 
 Theme ids are lowercase words separated by `-` or `_` and cannot reuse a built-in id. Config-defined themes win over extension themes for the same id. Extension themes appear in the selector after config themes, in load order.
 
+## `hunk.registerSyntaxLanguage(language, loader)`
+
+Register a lazy Shiki-compatible TextMate grammar under a highlighting language id. The loader resolves to an ES-module-shaped object with a non-empty grammar array as its `default` export:
+
+```ts
+hunk.registerSyntaxLanguage("example-lang", async () => ({
+  default: [
+    {
+      name: "example-lang",
+      scopeName: "source.example-lang",
+      patterns: [{ match: "\\bexample\\b", name: "keyword.control.example-lang" }],
+      repository: {},
+    },
+  ],
+}));
+hunk.registerFileLanguage("example", "example-lang");
+```
+
+Folder extensions can install a grammar package and pass its dynamic import directly, such as `() => import("@shikijs/langs/odin")`. Syntax registrations last for the Hunk process; restart Hunk to replace or remove one. The first custom registration for an id wins, while `text` and `ansi` remain reserved. Loaders that reject, take longer than five seconds, or return an invalid grammar fall back to plaintext with an attributed warning. Hunk retries that fallback when the file is highlighted again.
+
 ## `hunk.registerFileLanguage(extension, language)`
 
-Map a file extension to a syntax-highlighting language. The extension may be written with or without a leading dot and is lowercased.
+Map a file extension to a syntax-highlighting language. The extension may be written with or without a leading dot and is lowercased. Register a custom syntax language first when Pierre does not bundle it.
 
 ```ts
 hunk.registerFileLanguage(".zig", "zig");

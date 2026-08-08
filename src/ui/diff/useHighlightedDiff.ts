@@ -102,12 +102,11 @@ function sourceFetcherFingerprint(file: DiffFile) {
 
 /** Cache key that includes patch and source-provider identity so reloads cannot reuse stale grammar state. */
 export function highlightedDiffCacheKey(theme: AppTheme, file: DiffFile) {
-  return `${theme.id}:${syntaxHighlightThemeName(theme)}:${file.id}:${patchFingerprint(file)}:${sourceFetcherFingerprint(file)}`;
+  return `${theme.id}:${syntaxHighlightThemeName(theme)}:${file.language ?? "text"}:${file.id}:${patchFingerprint(file)}:${sourceFetcherFingerprint(file)}`;
 }
 
-/** Only commit a highlight result if the promise is still the active one for that key.
- *  Prevents a superseded or late-resolving promise from overwriting a newer entry. */
-function commitHighlightResult(
+/** Settle the active request, caching only results that do not need a later retry. */
+function settleHighlightResult(
   cacheKey: string,
   promise: Promise<HighlightedDiffCode>,
   result: HighlightedDiffCode,
@@ -117,6 +116,10 @@ function commitHighlightResult(
   }
 
   SHARED_HIGHLIGHT_PROMISES.delete(cacheKey);
+  if (result.cachePolicy === "retry") {
+    return true;
+  }
+
   SHARED_HIGHLIGHTED_DIFF_CACHE.set(cacheKey, result);
   enforceCacheLimit();
   return true;
@@ -141,15 +144,16 @@ function ensureHighlightedDiffLoaded(
   let pending: Promise<HighlightedDiffCode>;
   pending = loadHighlightedDiff(file, theme)
     .then((nextHighlighted) => {
-      commitHighlightResult(cacheKey, pending, nextHighlighted);
+      settleHighlightResult(cacheKey, pending, nextHighlighted);
       return nextHighlighted;
     })
     .catch(() => {
       const fallback = {
         deletionLines: [],
         additionLines: [],
+        cachePolicy: "retry",
       } satisfies HighlightedDiffCode;
-      commitHighlightResult(cacheKey, pending, fallback);
+      settleHighlightResult(cacheKey, pending, fallback);
       return fallback;
     });
 

@@ -131,6 +131,46 @@ describe("registerTheme with junk", () => {
   });
 });
 
+describe("registerSyntaxLanguage with junk", () => {
+  test("refuses unusable language ids and loaders as load issues", () => {
+    for (const [language, loader] of [
+      ["", async () => ({ default: [] })],
+      ["   ", async () => ({ default: [] })],
+      [null, async () => ({ default: [] })],
+      ["demo", null],
+      ["demo", {}],
+      [undefined, undefined],
+    ] as Array<[unknown, unknown]>) {
+      const { registry, issues } = loadFactory(
+        (hunk: { registerSyntaxLanguage: (language: unknown, loader: unknown) => void }) => {
+          hunk.registerSyntaxLanguage(language, loader);
+        },
+      );
+
+      expect(issues).toHaveLength(1);
+      expect(issues[0]?.extensionId).toBe("fuzz-ext");
+      expect(registry.syntaxLanguages).toEqual([]);
+      expect(registry.extensions).toEqual([]);
+    }
+  });
+
+  test("preserves a case-sensitive language id while trimming whitespace", () => {
+    const loader = async () => ({
+      default: [{ name: "DemoLang", scopeName: "source.DemoLang" }],
+    });
+    const { registry, issues } = loadFactory(
+      (hunk: { registerSyntaxLanguage: (language: string, candidate: typeof loader) => void }) => {
+        hunk.registerSyntaxLanguage("  DemoLang  ", loader);
+      },
+    );
+
+    expect(issues).toEqual([]);
+    expect(registry.syntaxLanguages).toEqual([
+      { extensionId: "fuzz-ext", language: "DemoLang", loader },
+    ]);
+  });
+});
+
 describe("registerFileLanguage with junk", () => {
   test("refuses unusable extensions and languages as load issues", () => {
     for (const [extension, language] of [

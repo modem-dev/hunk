@@ -13,6 +13,7 @@ import {
   type ExtensionRegistry,
   type ExtensionSidebarView,
   type ExtensionFileView,
+  type ExtensionSyntaxLanguageLoader,
   type ExtensionThemeConfig,
   type ExtensionVcsAdapter,
   type HunkExtensionAPI,
@@ -49,6 +50,11 @@ function normalizeFileExtension(extension: string) {
   }
 
   return normalized;
+}
+
+/** Normalize one highlighting id while preserving its case-sensitive spelling. */
+function normalizeSyntaxLanguageId(language: unknown, method: string) {
+  return assertNonEmptyString(language, `${method} requires a non-empty language.`).trim();
 }
 
 /** Reject registrations that would leave the registry holding unusable entries. */
@@ -213,6 +219,7 @@ interface ExtensionApiHandle {
 /** Registration counts captured before one extension runs, for failure rollback. */
 interface RegistrySnapshot {
   themes: number;
+  syntaxLanguages: number;
   fileLanguages: number;
   vcsAdapters: number;
   changesetTransforms: number;
@@ -233,6 +240,7 @@ function snapshotRegistry(registry: ExtensionRegistry): RegistrySnapshot {
 
   return {
     themes: registry.themes.length,
+    syntaxLanguages: registry.syntaxLanguages.length,
     fileLanguages: registry.fileLanguages.length,
     vcsAdapters: registry.vcsAdapters.length,
     changesetTransforms: registry.changesetTransforms.length,
@@ -253,6 +261,7 @@ function snapshotRegistry(registry: ExtensionRegistry): RegistrySnapshot {
  */
 function rollbackRegistry(registry: ExtensionRegistry, snapshot: RegistrySnapshot) {
   registry.themes.length = snapshot.themes;
+  registry.syntaxLanguages.length = snapshot.syntaxLanguages;
   registry.fileLanguages.length = snapshot.fileLanguages;
   registry.vcsAdapters.length = snapshot.vcsAdapters;
   registry.changesetTransforms.length = snapshot.changesetTransforms;
@@ -323,13 +332,23 @@ export function createExtensionApi(
       assertNonEmptyString(theme?.id, "registerTheme requires a theme with a non-empty id.");
       registry.themes.push({ extensionId: metadata.id, theme });
     },
+    registerSyntaxLanguage(language: string, loader: ExtensionSyntaxLanguageLoader) {
+      assertOpen("registerSyntaxLanguage");
+      if (typeof loader !== "function") {
+        throw new Error("registerSyntaxLanguage requires a loader function.");
+      }
+      registry.syntaxLanguages.push({
+        extensionId: metadata.id,
+        language: normalizeSyntaxLanguageId(language, "registerSyntaxLanguage"),
+        loader,
+      });
+    },
     registerFileLanguage(extension: string, language: string) {
       assertOpen("registerFileLanguage");
-      assertNonEmptyString(language, "registerFileLanguage requires a non-empty language.");
       registry.fileLanguages.push({
         extensionId: metadata.id,
         extension: normalizeFileExtension(extension),
-        language,
+        language: normalizeSyntaxLanguageId(language, "registerFileLanguage"),
       });
     },
     registerVcsAdapter(adapter: ExtensionVcsAdapter) {
