@@ -121,6 +121,12 @@ async function flushUntil(
   }
 }
 
+/** Require both review chrome and row content so lazy Git source reads have completed. */
+function hasRenderedAlphaReview(setup: Awaited<ReturnType<typeof testRender>>) {
+  const frame = setup.captureCharFrame();
+  return frame.includes("alpha.txt") && frame.includes("one");
+}
+
 /**
  * Write the fixture whose `y` command probes the affordance and then asks for a
  * whole-document replacement, logging both answers.
@@ -239,11 +245,7 @@ describe("extension workspace reads", () => {
       options: { mode: "stack", extensionPaths: [extPath] },
     });
     await withAppHost(bootstrap, async (setup) => {
-      await flushUntil(
-        setup,
-        () => setup.captureCharFrame().includes("alpha.txt"),
-        "the review to render",
-      );
+      await flushUntil(setup, () => hasRenderedAlphaReview(setup), "the review to render");
 
       await act(async () => {
         await setup.mockInput.typeText("y");
@@ -277,11 +279,7 @@ describe("extension workspace reads", () => {
       options: { mode: "stack", extensionPaths: [extPath] },
     });
     await withAppHost(bootstrap, async (setup) => {
-      await flushUntil(
-        setup,
-        () => setup.captureCharFrame().includes("alpha.txt"),
-        "the review to render",
-      );
+      await flushUntil(setup, () => hasRenderedAlphaReview(setup), "the review to render");
 
       await act(async () => {
         await setup.mockInput.typeText("y");
@@ -315,11 +313,7 @@ describe("extension workspace reads", () => {
       options: { mode: "stack", extensionPaths: [extPath] },
     });
     await withAppHost(bootstrap, async (setup) => {
-      await flushUntil(
-        setup,
-        () => setup.captureCharFrame().includes("alpha.txt"),
-        "the review to render",
-      );
+      await flushUntil(setup, () => hasRenderedAlphaReview(setup), "the review to render");
 
       await act(async () => {
         await setup.mockInput.typeText("y");
@@ -348,11 +342,7 @@ describe("extension workspace reads", () => {
       options: { mode: "stack", extensionPaths: [extPath] },
     });
     await withAppHost(bootstrap, async (setup) => {
-      await flushUntil(
-        setup,
-        () => setup.captureCharFrame().includes("alpha.txt"),
-        "the review to render",
-      );
+      await flushUntil(setup, () => hasRenderedAlphaReview(setup), "the review to render");
 
       await act(async () => {
         await setup.mockInput.typeText("y");
@@ -374,6 +364,14 @@ describe("extension workspace reads", () => {
       // The written text is the read text transformed, so the read reached the
       // whole document rather than the patch the review was built from.
       expect(readFileSync(join(repo, "alpha.txt"), "utf8")).toBe("ONE\nTWO\n");
+
+      // The successful write starts a review reload. Wait for it to finish before teardown so a
+      // Git child process cannot retain the temporary checkout on Windows.
+      await flushUntil(
+        setup,
+        () => setup.captureCharFrame().includes("ONE"),
+        "the reloaded review to show the transformed content",
+      );
     });
   });
 });
@@ -393,11 +391,7 @@ describe("extension workspace writes", () => {
       options: { mode: "stack", extensionPaths: [extPath] },
     });
     await withAppHost(bootstrap, async (setup) => {
-      await flushUntil(
-        setup,
-        () => setup.captureCharFrame().includes("alpha.txt"),
-        "the review to render",
-      );
+      await flushUntil(setup, () => hasRenderedAlphaReview(setup), "the review to render");
 
       await act(async () => {
         await setup.mockInput.typeText("y");
@@ -451,11 +445,7 @@ describe("extension workspace writes", () => {
       options: { mode: "stack", extensionPaths: [extPath] },
     });
     await withAppHost(bootstrap, async (setup) => {
-      await flushUntil(
-        setup,
-        () => setup.captureCharFrame().includes("alpha.txt"),
-        "the review to render",
-      );
+      await flushUntil(setup, () => hasRenderedAlphaReview(setup), "the review to render");
       await act(async () => {
         await setup.mockInput.typeText("y");
       });
@@ -499,11 +489,7 @@ describe("extension workspace writes", () => {
         options: { mode: "stack", extensionPaths: [extPath] },
       });
       await withAppHost(bootstrap, async (setup) => {
-        await flushUntil(
-          setup,
-          () => setup.captureCharFrame().includes("alpha.txt"),
-          "the review to render",
-        );
+        await flushUntil(setup, () => hasRenderedAlphaReview(setup), "the review to render");
         await act(async () => {
           await setup.mockInput.typeText("y");
         });
@@ -543,11 +529,7 @@ describe("extension workspace writes", () => {
       options: { mode: "stack", extensionPaths: [extPath] },
     });
     await withAppHost(bootstrap, async (setup) => {
-      await flushUntil(
-        setup,
-        () => setup.captureCharFrame().includes("alpha.txt"),
-        "the review to render",
-      );
+      await flushUntil(setup, () => hasRenderedAlphaReview(setup), "the review to render");
 
       await act(async () => {
         await setup.mockInput.typeText("y");
@@ -628,11 +610,7 @@ describe("extension workspace writes", () => {
       options: { mode: "stack", extensionPaths: [extPath] },
     });
     await withAppHost(bootstrap, async (setup) => {
-      await flushUntil(
-        setup,
-        () => setup.captureCharFrame().includes("alpha.txt"),
-        "the review to render",
-      );
+      await flushUntil(setup, () => hasRenderedAlphaReview(setup), "the review to render");
 
       await act(async () => {
         await setup.mockInput.typeText("y");

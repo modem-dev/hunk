@@ -902,13 +902,16 @@ end
     let snapshot = await session.text({ immediate: true });
 
     while (Date.now() - start < timeoutMs) {
-      if (predicate(snapshot)) {
-        return snapshot;
-      }
-
+      // A resize can make structural markers visible before their row text finishes painting.
+      // Only evaluate frames after the PTY has had a quiet period instead of accepting that
+      // transitional first capture.
       await session.waitIdle({ timeout: 50 });
       await sleep(30);
       snapshot = await session.text({ immediate: true });
+
+      if (predicate(snapshot)) {
+        return snapshot;
+      }
     }
 
     throw new Error(
@@ -935,12 +938,16 @@ end
       await session.press("?");
       try {
         await waitForSnapshot(session, (text) => text.includes("Controls help"), 2_000);
-        await session.press("escape");
-        await waitForSnapshot(session, (text) => !text.includes("Controls help"), 5_000);
-        return;
       } catch {
         // Dropped before the app was listening; the next press is the retry.
+        continue;
       }
+
+      // Once the probe opens, closing it is part of the test contract. Surface a dropped Escape
+      // rather than sending another probe that could hide which transition failed.
+      await session.press("escape");
+      await waitForSnapshot(session, (text) => !text.includes("Controls help"), 5_000);
+      return;
     }
 
     throw new Error("The app never reacted to a keypress.");

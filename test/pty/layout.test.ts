@@ -314,7 +314,11 @@ describe("PTY layout", () => {
       session.resize({ cols: 140, rows: 24 });
       const tight = await harness.waitForSnapshot(
         session,
-        (text) => /▌.*▌/.test(text) && harness.countMatches(text, /alpha\.ts/g) === 1,
+        // Structural resize markers can appear before the row text finishes painting.
+        (text) =>
+          /▌.*▌/.test(text) &&
+          harness.countMatches(text, /alpha\.ts/g) === 1 &&
+          text.includes("betaValue = 1"),
         5_000,
       );
 
