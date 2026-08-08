@@ -11,6 +11,7 @@ import type {
   HunkExtensionAPI,
 } from "../src/extension-api/types";
 import { validateFileViewLayout } from "../src/ui/fileViews/layout";
+import { buildFileViewRenderPlan } from "../src/ui/fileViews/renderPlan";
 import inlineEditExtension from "../examples/extensions/inline-edit";
 
 const TEST_FILE = {
@@ -122,6 +123,7 @@ function createInlineEditTestHost({
   const writes: string[] = [];
   const documentReads: string[] = [];
   let modeActive = false;
+  let viewActive = false;
   let releaseDocumentReads = () => {};
   const readGate = holdDocumentReads
     ? new Promise<void>((resolve) => {
@@ -130,12 +132,16 @@ function createInlineEditTestHost({
     : null;
 
   const fileViews = {
-    select: (viewId: string | null) => selected.push(viewId),
+    select: (viewId: string | null) => {
+      selected.push(viewId);
+      viewActive = viewId === "inline-edit";
+    },
     refresh: (viewId: string, options?: { fileId?: string }) =>
       refreshed.push({
         viewId,
         ...(options?.fileId === undefined ? {} : { fileId: options.fileId }),
       }),
+    isActive: () => viewActive,
     isModeActive: () => modeActive,
     // One step in the real host too: entering selects the view for the file
     // when it is not already showing it, so there is nothing to activate first.
@@ -144,6 +150,7 @@ function createInlineEditTestHost({
         return false;
       }
       modeActive = true;
+      viewActive = true;
       view.mode?.onEnter?.({ ...modeContext(), file } as never);
       return true;
     },
@@ -200,10 +207,10 @@ function createInlineEditTestHost({
     /** Escape is host-owned: it exits without ever reaching `onKey`. */
     escape: () => fileViews.exitMode(),
     /** Lay the current file out at a fixed width, as the review stream does. */
-    layout: (changes: ExtensionFileChangeRange[] = []) =>
+    layout: (changes: ExtensionFileChangeRange[] = [], width = 40) =>
       view.layout({
         file,
-        width: 40,
+        width,
         signal: new AbortController().signal,
         changes,
         readDocument: async () => {
@@ -285,6 +292,18 @@ describe("inline edit example extension", () => {
     expect(rowText(await host.layout(), 0)).toBe(" 1 alpha");
   });
 
+  test("restores raw presentation when the opening document is unreadable", async () => {
+    const host = createInlineEditTestHost({ document: null });
+
+    await host.run();
+    expect(host.isModeActive()).toBe(false);
+    expect(host.selected).toEqual([null]);
+    expect(host.notices.at(-1)).toMatchObject({
+      message: "No readable document for alpha.ts",
+      type: "warning",
+    });
+  });
+
   test("refuses to edit a review it could not write back to", async () => {
     const host = createInlineEditTestHost({ canWrite: false });
 
@@ -361,14 +380,77 @@ describe("inline edit example extension", () => {
     expect(rowText(await host.layout(), 0)).toContain("MODIFIED");
   });
 
-  test("claims printable keys bound to commands and passes on everything else", async () => {
+  test("edits whole Unicode graphemes without corrupting surrogate pairs", async () => {
+    const host = createInlineEditTestHost({ document: "😀\n" });
+    const running = host.run();
+    await flush();
+
+    const initialLayout = await host.layout();
+    expect(initialLayout?.rows[1]?.spans[1]).toMatchObject({ text: "😀", tone: "accent" });
+
+    expect(host.press({ name: "right" })).toBe("handled");
+    expect(host.press({ name: "backspace", sequence: "\u007f" })).toBe("handled");
+    expect(host.press({ name: "s", ctrl: true })).toBe("handled");
+    await flush();
+    expect(host.writes).toEqual(["\n"]);
+
+    expect(host.press({ name: "😀", sequence: "😀" })).toBe("handled");
+    expect(host.press({ name: "s", ctrl: true })).toBe("handled");
+    await flush();
+    expect(host.writes).toEqual(["\n", "😀\n"]);
+
+    host.escape();
+    await running;
+  });
+
+  test("preserves the grapheme column during vertical Unicode movement", async () => {
+    const twoLineFile = {
+      ...TEST_FILE,
+      hunks: [{ index: 0, header: "@@ -1,2 +1,2 @@", newRange: [1, 2] }],
+    } as unknown as ExtensionDiffFile;
+    const host = createInlineEditTestHost({ file: twoLineFile, document: "éx\nab\n" });
+    const running = host.run();
+    await flush();
+
+    // One Right crosses the combining grapheme's two UTF-16 units. Down keeps
+    // grapheme column 1, rather than mistaking that offset for column 2.
+    expect(host.press({ name: "right" })).toBe("handled");
+    expect(host.press({ name: "down" })).toBe("handled");
+    const layout = await host.layout();
+    expect(layout?.rows[2]?.spans.slice(1)).toEqual([
+      { text: "a" },
+      { text: "b", tone: "accent", attributes: ["underline", "bold"] },
+    ]);
+
+    host.escape();
+    await running;
+  });
+
+  test("truncates wide graphemes by terminal cells without wrapping", async () => {
+    const host = createInlineEditTestHost({ document: "界界\n" });
+    const running = host.run();
+    await flush();
+
+    const layout = await host.layout([], 4);
+    expect(rowText(layout, 1)).toBe("▎1 …");
+    expect(validateFileViewLayout(layout, TEST_FILE.hunks.length, 4)).toMatchObject({
+      valid: true,
+    });
+
+    host.escape();
+    await running;
+  });
+
+  test("claims editable printable keys and preserves documented host shortcuts", async () => {
     const host = createInlineEditTestHost();
     void host.run();
     await flush();
     const refreshesBefore = host.refreshed.length;
 
-    // `]` is Hunk's next-hunk key; while the editor runs it is text.
-    expect(host.press({ name: "]", sequence: "]" })).toBe("handled");
+    expect(host.press({ name: "z", sequence: "z" })).toBe("handled");
+    expect(host.press({ name: "]", sequence: "]" })).toBe("pass");
+    expect(host.press({ name: "?", sequence: "?", shift: true })).toBe("pass");
+    expect(host.press({ name: "q", sequence: "q" })).toBe("pass");
     expect(host.press({ name: "tab", sequence: "\t" })).toBe("pass");
     expect(host.press({ name: "f8" })).toBe("pass");
     expect(host.press({ name: "g", sequence: "g", ctrl: true })).toBe("pass");
@@ -503,6 +585,25 @@ describe("inline edit example extension", () => {
     expect(host.isModeActive()).toBe(false);
   });
 
+  test("enters the selected file's mode before awaiting its document read", async () => {
+    const host = createInlineEditTestHost({ holdDocumentReads: true });
+
+    const running = host.run();
+    // Entry is synchronous with the command's selection snapshot, so a later
+    // selection change cannot attach this buffer to another file.
+    expect(host.isModeActive()).toBe(true);
+    expect(host.documentReads).toEqual([]);
+    expect(host.refreshed).toEqual([]);
+
+    host.releaseDocumentReads();
+    await flush();
+    expect(host.documentReads).toEqual(["alpha"]);
+    expect(host.refreshed).toEqual([{ viewId: "inline-edit", fileId: "alpha" }]);
+
+    host.escape();
+    await running;
+  });
+
   test("answers a second press while a session is live, leaving the buffer alone", async () => {
     const host = createInlineEditTestHost();
     const running = host.run();
@@ -583,7 +684,7 @@ describe("inline edit example extension", () => {
     expect(await settlement(running)).toBe("settled");
   });
 
-  test("keeps the first line's binding through a join, and typing keeps its own", async () => {
+  test("keeps both source bindings through a join, and typing keeps them", async () => {
     const host = createInlineEditTestHost({
       file: WHOLE_FILE_HUNK_FILE as unknown as ExtensionDiffFile,
       document: THREE_LINE_DOCUMENT,
@@ -602,21 +703,29 @@ describe("inline edit example extension", () => {
     expect(rowText(layout, 1)).toBe("▎1 alphazbeta");
     expect(layout?.rows.map((row) => row.sourceRanges ?? null)).toEqual([
       null,
-      // The merged line keeps the first line's provenance; the second line's is
-      // dropped, so `gamma` still binds 3 rather than sliding onto 2.
-      [{ side: "new", range: [1, 1] }],
+      // The merged row presents both original lines, while `gamma` still binds
+      // line 3 rather than sliding onto the removed row position.
+      [
+        { side: "new", range: [1, 1] },
+        { side: "new", range: [2, 2] },
+      ],
       [{ side: "new", range: [3, 3] }],
     ]);
     expect(layout?.hunkRows).toEqual([{ startRow: 1, endRow: 2 }]);
     expect(validateFileViewLayout(layout, WHOLE_FILE_HUNK_FILE.hunks.length, 40)).toMatchObject({
       valid: true,
     });
+    expect(
+      buildFileViewRenderPlan(layout!, [
+        { id: "line-two", annotation: { id: "line-two", summary: "Line two", newRange: [2, 2] } },
+      ]).unresolvedNoteIds,
+    ).toEqual([]);
 
     host.escape();
     expect(await settlement(running)).toBe("settled");
   });
 
-  test("gives a hunk whose lines were joined away an in-bounds extent", async () => {
+  test("keeps a single-line hunk bound when its line joins the row above", async () => {
     const host = createInlineEditTestHost({ document: THREE_LINE_DOCUMENT });
     const running = host.run();
     await flush();
@@ -626,11 +735,13 @@ describe("inline edit example extension", () => {
 
     const layout = await host.layout();
     expect(rowText(layout, 1)).toBe("▎1 alphabeta");
-    // Nothing left in the buffer is line 2, so nothing claims to be, and the
-    // hunk collapses onto the header row: in bounds, and never a row a binding
-    // would then belong to.
-    expect(layout?.rows.every((row) => row.sourceRanges === undefined)).toBe(true);
-    expect(layout?.hunkRows).toEqual([{ startRow: 0, endRow: 0 }]);
+    // The merged row still presents line 2, so notes on that hunk keep an exact
+    // anchor and the editor never falls back to a hidden raw-diff state.
+    expect(layout?.rows[1]?.sourceRanges).toEqual([
+      { side: "new", range: [1, 1] },
+      { side: "new", range: [2, 2] },
+    ]);
+    expect(layout?.hunkRows).toEqual([{ startRow: 1, endRow: 1 }]);
     expect(validateFileViewLayout(layout, TEST_FILE.hunks.length, 40)).toMatchObject({
       valid: true,
     });

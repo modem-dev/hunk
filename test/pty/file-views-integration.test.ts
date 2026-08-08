@@ -412,6 +412,13 @@ describe("PTY file views", () => {
       const typed = await session.waitForText(/zzzexport const alpha = 2;/, { timeout: 20_000 });
       expect(typed).toContain("MODIFIED");
 
+      // `?` is an explicitly host-owned printable key, so help remains
+      // reachable and one Escape closes only the overlay, not the editor.
+      await session.press("?");
+      await session.waitForText(/Controls help/, { timeout: 20_000 });
+      await session.press("escape");
+      await session.waitForText(/inline-edit:inline-edit mode — Esc exits/, { timeout: 20_000 });
+
       // The mode can only request the write; the command handler awaiting the
       // session performs it, and the host asks the user first.
       await session.press(["ctrl", "s"]);
@@ -434,6 +441,90 @@ describe("PTY file views", () => {
       const afterExit = await session.text();
       expect(afterExit).toContain("zzzexport const alpha = 2;");
       expect(afterExit).not.toContain("zzzz");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("keeps an annotated joined line visible in the active editor", async () => {
+    const repo = harness.createTwoFileRepoFixture();
+    const agentContext = join(repo.dir, "agent.json");
+    writeFileSync(
+      agentContext,
+      JSON.stringify({
+        version: 1,
+        files: [
+          {
+            path: "alpha.ts",
+            annotations: [{ newRange: [2, 2], summary: "Keep this note visible." }],
+          },
+        ],
+      }),
+      "utf8",
+    );
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        "--extension",
+        INLINE_EDIT_EXTENSION,
+        "--mode",
+        "stack",
+        "--agent-context",
+        agentContext,
+        "--agent-notes",
+      ],
+      cwd: repo.dir,
+      cols: 140,
+      rows: 24,
+    });
+
+    try {
+      await session.waitForText(/Keep this note visible\./, { timeout: 20_000 });
+      await harness.ensureKeyboardIsLive(session);
+      await session.press(["ctrl", "e"]);
+      await session.waitForText(/EDITING — Esc exits/, { timeout: 20_000 });
+
+      await session.press("down");
+      await session.press("backspace");
+      const joined = await session.waitForText(/export const alpha = 2;export const add = true;/, {
+        timeout: 20_000,
+      });
+      expect(joined).toContain("EDITING — Esc exits");
+      expect(joined).toContain("Keep this note visible.");
+
+      await session.press("z");
+      await session.waitForText(/export const alpha = 2;zexport const add = true;/, {
+        timeout: 20_000,
+      });
+      await session.press("escape");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("deletes and writes a whole emoji without surrogate corruption", async () => {
+    const repo = harness.createTwoFileRepoFixture();
+    const edited = join(repo.dir, "alpha.ts");
+    writeFileSync(edited, "😀\n", "utf8");
+    const session = await harness.launchHunk({
+      args: ["diff", "--extension", INLINE_EDIT_EXTENSION, "--mode", "stack"],
+      cwd: repo.dir,
+      cols: 140,
+      rows: 24,
+    });
+
+    try {
+      await session.waitForText(/😀/, { timeout: 20_000 });
+      await harness.ensureKeyboardIsLive(session);
+      await session.press(["ctrl", "e"]);
+      await session.waitForText(/EDITING — Esc exits/, { timeout: 20_000 });
+      await session.press("right");
+      await session.press("backspace");
+      await session.press(["ctrl", "s"]);
+      await session.waitForText(/Write alpha\.ts\?/, { timeout: 20_000 });
+      await session.press("enter");
+
+      expect(await waitForWrittenFile(edited, "\n")).toBe("\n");
     } finally {
       session.close();
     }

@@ -6,12 +6,12 @@ This example is **not bundled or loaded by Hunk**. Install it explicitly if you 
 
 It exists to demonstrate that Hunk's interactive extension surfaces compose, so it uses them all at once:
 
-| Capability                              | Where this extension uses it                                                                                                                                                                                                                                                  |
-| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ctx.workspace`                         | `canWriteDocument` gates the affordance, `readDocument("new")` fills the buffer, `writeDocument` performs the consented write and reloads the review.                                                                                                                         |
-| `mode` on a registered file view        | `onKey` claims arrows, printable characters, Backspace, Enter, and `Ctrl-S`, and returns `"pass"` for everything else so the rest of Hunk keeps working while you edit. `Ctrl-S` is recognized with `matchesKey`, so the bare control byte terminals send for it matches too. |
-| `fileViews.enterMode(viewId)`           | One call makes the view the file's presentation _and_ gives its mode the keyboard, so `Ctrl-E` opens the editor in a single press.                                                                                                                                            |
-| `fileViews.refresh(viewId, { fileId })` | Every buffer or caret change re-derives the layout. A view's layout is a pure function of `(file, width)`, so this is the only way a stateful presentation redraws — and the buffer belongs to one file, so the refresh is scoped to it and no other file re-lays out.        |
+| Capability                              | Where this extension uses it                                                                                                                                                                                                                                           |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ctx.workspace`                         | `canWriteDocument` gates the affordance, `readDocument("new")` fills the buffer, `writeDocument` performs the consented write and reloads the review.                                                                                                                  |
+| `mode` on a registered file view        | `onKey` claims arrows, editable characters, Backspace, Enter, and `Ctrl-S`, while `]`, `?`, and `q` pass through so navigation, help, and quit keep working. `Ctrl-S` is recognized with `matchesKey`, so the bare control byte terminals send for it matches too.     |
+| `fileViews.enterMode(viewId)`           | One call makes the view the file's presentation _and_ gives its mode the keyboard, so `Ctrl-E` opens the editor in a single press.                                                                                                                                     |
+| `fileViews.refresh(viewId, { fileId })` | Every buffer or caret change re-derives the layout. A view's layout is a pure function of `(file, width)`, so this is the only way a stateful presentation redraws — and the buffer belongs to one file, so the refresh is scoped to it and no other file re-lays out. |
 
 ## Try it from this checkout
 
@@ -32,22 +32,22 @@ Hunk discovers the folder automatically on later launches. Open **View** and cho
 
 ## Keys
 
-| Key                     | Does                                                                          |
-| ----------------------- | ----------------------------------------------------------------------------- |
-| `Ctrl-E`                | Starts editing the selected file, showing the view if it was not already.     |
-| `↑` `↓` `←` `→`         | Move the caret. `←`/`→` wrap across line ends.                                |
-| any printable character | Types at the caret — including characters bound to Hunk commands, like `z`.   |
-| `Backspace`             | Deletes back one character, joining with the previous line at column 0.       |
-| `Enter`                 | Splits the line at the caret.                                                 |
-| `Ctrl-S`                | Asks Hunk to write the buffer. Hunk confirms, writes, and reloads the review. |
-| `Esc`                   | Leaves the editor and **discards** everything typed since the last write.     |
-| everything else         | Still Hunk's: `]` moves to the next hunk, `?` opens help, `q` quits.          |
+| Key                           | Does                                                                          |
+| ----------------------------- | ----------------------------------------------------------------------------- |
+| `Ctrl-E`                      | Starts editing the selected file, showing the view if it was not already.     |
+| `↑` `↓` `←` `→`               | Move the caret. `←`/`→` wrap across line ends.                                |
+| any other printable character | Types at the caret — including characters bound to Hunk commands, like `z`.   |
+| `Backspace`                   | Deletes back one character, joining with the previous line at column 0.       |
+| `Enter`                       | Splits the line at the caret.                                                 |
+| `Ctrl-S`                      | Asks Hunk to write the buffer. Hunk confirms, writes, and reloads the review. |
+| `Esc`                         | Leaves the editor and **discards** everything typed since the last write.     |
+| everything else               | Still Hunk's: `]` moves to the next hunk, `?` opens help, `q` quits.          |
 
 The header row reads `EDITING — Esc exits · ctrl+s writes`, plus a `MODIFIED` marker whenever the buffer differs from the text on disk.
 
 ## How the pieces fit
 
-`Ctrl-E` is one press. The command gates on `canWriteDocument`, reads the document, builds the buffer, and calls `fileViews.enterMode` — which makes the view the file's presentation and gives its mode the keyboard together, so the rows the editor acts on are on screen from the moment it holds the keys. When `enterMode` refuses (no `mode`, a file Hunk keeps on raw diff, a view that does not match), it warns by name and returns `false`, and the command drops the buffer it just built rather than leaving a session with no keyboard behind it.
+`Ctrl-E` is one press. The command gates on `canWriteDocument`, starts reading the document, and calls `fileViews.enterMode` before awaiting that read. Entry therefore uses the same selected file the command captured; a selection change cannot attach a late buffer to another file. `enterMode` makes the view that file's presentation and gives its mode the keyboard together, then the completed read builds the buffer and refreshes the view. When entry refuses (no `mode`, a file Hunk keeps on raw diff, a view that does not match), it warns by name and returns `false` without installing a buffer.
 
 The editor slot is claimed synchronously, before that command's first `await`. Reading the document suspends the handler, so a guard that only checked "is a session live?" would let a second `Ctrl-E` through the window in between, and one of the two handlers would then be parked forever on a session nothing could end. The claim is released on every way out — an unwritable review, an unreadable document, a refused `enterMode` — and once a session is live it is the live session that answers the next press.
 
@@ -74,13 +74,13 @@ This is a demonstration, not an editor:
 
 Rows carry `sourceRanges` so Hunk can place its own inline notes inside this presentation, and a row may only bind a line it honestly still _is_. Row position cannot answer that once you split or join a line, so the edit session keeps **provenance**: for each buffer line, the document line it came from, or nothing at all.
 
-| Edit               | Provenance                                                           |
-| ------------------ | -------------------------------------------------------------------- |
-| typing in a line   | kept — an edited line is still the line it came from                 |
-| `Enter` (split)    | the first line keeps it; the new tail gets none                      |
-| `Backspace` (join) | the merged line keeps the first line's; the second line's is dropped |
+| Edit               | Provenance                                                               |
+| ------------------ | ------------------------------------------------------------------------ |
+| typing in a line   | kept — an edited line is still the line it came from                     |
+| `Enter` (split)    | the first line keeps it; the new tail gets none                          |
+| `Backspace` (join) | the merged line presents both source lines so either note stays attached |
 
-So a line you inserted binds nothing, the lines below a split keep the numbers they had, and a join is the exact inverse of the split it undoes. The hunk extents in `hunkRows` are derived from the same provenance, so the hunk highlight follows the rows still holding a hunk's lines instead of drifting down by however many lines you added above them. A hunk whose lines were all joined away collapses onto the first row.
+So a line you inserted binds nothing, the lines below a split keep the numbers they had, and a joined row keeps every source line it now presents. The hunk extents in `hunkRows` are derived from the same provenance, so the hunk highlight follows the rows still holding a hunk's lines instead of drifting down by however many lines you added above them. A join across two distinct hunks is refused because one bound row cannot belong to two hunk extents.
 
 One thing this shows that is easy to get wrong: Hunk accepts a binding only on a row exactly one `hunkRows` extent owns, and rejects the whole layout otherwise — so a last pass drops the bindings no extent owns, and context lines outside every hunk are presented without one. The [rendered Markdown example](../rendered-markdown/) ends its layout with the same pass, for the same reason.
 

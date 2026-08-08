@@ -7,8 +7,8 @@
  * - `ctx.workspace` fills the buffer with `readDocument`, gates the affordance
  *   with `canWriteDocument`, and performs the consented `writeDocument`.
  * - a file view `mode` routes real keystrokes into the view: it claims arrows,
- *   printable characters, Backspace, Enter, and Ctrl-S, and declines the rest
- *   so `]`, `?`, and `q` keep working while the editor is running. One
+ *   most printable characters, Backspace, Enter, and Ctrl-S, and declines
+ *   `]`, `?`, and `q` so navigation, help, and quit keep working. One
  *   `enterMode` selects the view *and* takes the keyboard, so one Ctrl-E opens
  *   the editor rather than two.
  * - `fileViews.refresh(VIEW_ID, { fileId })` re-derives the layout after every
@@ -74,10 +74,12 @@ interface EditSession {
   readonly endsWithNewline: boolean;
   /** Mutated in place — never reassigned, since `text()` closes over it. */
   readonly lines: string[];
+  /** New-side ranges used to keep one merged row owned by at most one hunk. */
+  readonly hunkRanges: readonly (readonly [number, number])[];
   /**
    * The **provenance policy**: for each buffer line, the one-based line of the
-   * document it was loaded from that this line still *is*, or `null` for a line
-   * the document never had.
+   * document lines it was loaded from that this line still presents, or an
+   * empty array for a line the document never had.
    *
    * Row positions stop describing the document the moment a line is split or
    * joined, so this array — not the row's index — is what a source binding may
@@ -85,12 +87,12 @@ interface EditSession {
    *
    * - typing in a line keeps its provenance; an edited line still corresponds
    *   to the line it came from;
-   * - a split keeps the first line's provenance and gives the tail `null`,
+   * - a split keeps the first line's provenance and gives the tail none,
    *   because the tail is a line the document does not have;
-   * - a join keeps the first line's provenance and drops the second's, which
-   *   makes a join the exact inverse of the split it undoes.
+   * - a join combines both lines' provenance, so notes bound to either source
+   *   line remain attached to the merged row.
    */
-  readonly provenance: (number | null)[];
+  readonly provenance: number[][];
   /** The text on disk as far as this session knows, so `MODIFIED` is a fact. */
   savedText: string;
   cursorLine: number;
@@ -110,12 +112,95 @@ function clamp(value: number, low: number, high: number) {
   return Math.min(Math.max(value, low), high);
 }
 
-/** Cut text to a column budget, marking the cut so truncation is never silent. */
+/** Segment text by user-perceived characters so editing never splits UTF-16 pairs. */
+const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+/** Return every grapheme in a string without splitting emoji or combining sequences. */
+function graphemes(value: string) {
+  return Array.from(graphemeSegmenter.segment(value), ({ segment }) => segment);
+}
+
+/** Return the previous valid caret boundary in one line. */
+function previousGraphemeBoundary(value: string, column: number) {
+  let previous = 0;
+  for (const { index } of graphemeSegmenter.segment(value)) {
+    if (index >= column) {
+      break;
+    }
+    previous = index;
+  }
+  return previous;
+}
+
+/** Snap an arbitrary column backward onto a valid caret boundary. */
+function snapGraphemeBoundary(value: string, column: number) {
+  if (column >= value.length) {
+    return value.length;
+  }
+  let boundary = 0;
+  for (const { index } of graphemeSegmenter.segment(value)) {
+    if (index > column) {
+      break;
+    }
+    boundary = index;
+  }
+  return boundary;
+}
+
+/** Return the next valid caret boundary in one line. */
+function nextGraphemeBoundary(value: string, column: number) {
+  for (const { index, segment } of graphemeSegmenter.segment(value)) {
+    if (index >= column) {
+      return index + segment.length;
+    }
+  }
+  return value.length;
+}
+
+/** Return the zero-based grapheme column at one valid string boundary. */
+function graphemeColumn(value: string, boundary: number) {
+  let column = 0;
+  for (const { index } of graphemeSegmenter.segment(value)) {
+    if (index >= boundary) {
+      break;
+    }
+    column += 1;
+  }
+  return column;
+}
+
+/** Return the string boundary at one zero-based grapheme column. */
+function boundaryAtGraphemeColumn(value: string, column: number) {
+  let current = 0;
+  for (const { index } of graphemeSegmenter.segment(value)) {
+    if (current === column) {
+      return index;
+    }
+    current += 1;
+  }
+  return value.length;
+}
+
+/** Cut text to a terminal-cell budget without splitting a grapheme. */
 function truncate(value: string, width: number) {
-  if (value.length <= width) {
+  if (Bun.stringWidth(value) <= width) {
     return value;
   }
-  return width <= 1 ? value.slice(0, Math.max(0, width)) : `${value.slice(0, width - 1)}…`;
+  if (width <= 0) {
+    return "";
+  }
+  const budget = width - Bun.stringWidth("…");
+  let used = 0;
+  let visible = "";
+  for (const segment of graphemes(value)) {
+    const segmentWidth = Bun.stringWidth(segment);
+    if (used + segmentWidth > budget) {
+      break;
+    }
+    visible += segment;
+    used += segmentWidth;
+  }
+  return `${visible}…`;
 }
 
 /** Split a document into editable lines, dropping the terminator's empty tail. */
@@ -164,7 +249,7 @@ function printableCharacter(key: ExtensionKeyEvent) {
     return null;
   }
   const sequence = key.sequence ?? "";
-  if (sequence.length !== 1) {
+  if (graphemes(sequence).length !== 1) {
     return null;
   }
   const code = sequence.codePointAt(0) ?? 0;
@@ -206,9 +291,10 @@ function createEditSession(file: ExtensionDiffFile, text: string, cursorLine: nu
     newline,
     endsWithNewline,
     lines,
+    hunkRanges: (file.hunks ?? []).map((hunk) => hunk.newRange ?? [1, 1]),
     // Loading the document is the one moment buffer and document agree, so
     // every line starts out being exactly the line it was read from.
-    provenance: lines.map((_, index) => index + 1),
+    provenance: lines.map((_, index) => [index + 1]),
     // Normalized rather than the raw read, so a document with mixed terminators
     // is not reported as modified before anyone has typed into it.
     savedText: lines.join(newline) + (endsWithNewline ? newline : ""),
@@ -240,7 +326,7 @@ function createEditSession(file: ExtensionDiffFile, text: string, cursorLine: nu
 function clampCursor(session: EditSession) {
   session.cursorLine = clamp(session.cursorLine, 0, session.lines.length - 1);
   const line = session.lines[session.cursorLine] ?? "";
-  session.cursorColumn = clamp(session.cursorColumn, 0, line.length);
+  session.cursorColumn = snapGraphemeBoundary(line, clamp(session.cursorColumn, 0, line.length));
 }
 
 /**
@@ -261,20 +347,37 @@ function insertText(session: EditSession, text: string) {
 function deleteBackwards(session: EditSession) {
   const line = session.lines[session.cursorLine] ?? "";
   if (session.cursorColumn > 0) {
+    const previousColumn = previousGraphemeBoundary(line, session.cursorColumn);
     session.lines[session.cursorLine] =
-      line.slice(0, session.cursorColumn - 1) + line.slice(session.cursorColumn);
-    session.cursorColumn -= 1;
+      line.slice(0, previousColumn) + line.slice(session.cursorColumn);
+    session.cursorColumn = previousColumn;
     clampCursor(session);
     return;
   }
   if (session.cursorLine === 0) {
     return;
   }
+  const mergedSources = [
+    ...session.provenance[session.cursorLine - 1]!,
+    ...session.provenance[session.cursorLine]!,
+  ];
+  const sourceHunkOwners = new Set(
+    mergedSources.flatMap((source) =>
+      session.hunkRanges.flatMap((range, hunkIndex) =>
+        source >= range[0] && source <= range[1] ? [hunkIndex] : [],
+      ),
+    ),
+  );
+  // One row cannot belong to two hunk extents under the host layout contract.
+  // Refuse only that boundary join instead of dropping bindings and hiding the editor.
+  if (sourceHunkOwners.size > 1) {
+    return;
+  }
   const previous = session.lines[session.cursorLine - 1] ?? "";
   session.lines.splice(session.cursorLine - 1, 2, previous + line);
-  // Provenance policy: the merged line keeps the first line's provenance and
-  // the second line's is dropped, so the lines below keep the numbers they had.
-  session.provenance.splice(session.cursorLine - 1, 2, session.provenance[session.cursorLine - 1]!);
+  // A merged row presents both source lines, so notes bound to either line stay
+  // visible instead of forcing the host back to raw diff around a hidden mode.
+  session.provenance.splice(session.cursorLine - 1, 2, mergedSources);
   session.cursorLine -= 1;
   session.cursorColumn = previous.length;
   clampCursor(session);
@@ -292,7 +395,7 @@ function splitLine(session: EditSession) {
   // Provenance policy: the head is still the line it was, and the tail is a
   // line the document has never had — so it gets no provenance rather than
   // inheriting the number of whatever line used to sit below it.
-  session.provenance.splice(session.cursorLine, 1, session.provenance[session.cursorLine]!, null);
+  session.provenance.splice(session.cursorLine, 1, session.provenance[session.cursorLine]!, []);
   session.cursorLine += 1;
   session.cursorColumn = 0;
   clampCursor(session);
@@ -301,8 +404,17 @@ function splitLine(session: EditSession) {
 /** Move the caret one line or one column, wrapping columns across line ends. */
 function moveCursor(session: EditSession, key: ExtensionKeyEvent) {
   if (key.name === "up" || key.name === "down") {
-    session.cursorLine += key.name === "down" ? 1 : -1;
-    clampCursor(session);
+    const line = session.lines[session.cursorLine] ?? "";
+    const column = graphemeColumn(line, session.cursorColumn);
+    session.cursorLine = clamp(
+      session.cursorLine + (key.name === "down" ? 1 : -1),
+      0,
+      session.lines.length - 1,
+    );
+    session.cursorColumn = boundaryAtGraphemeColumn(
+      session.lines[session.cursorLine] ?? "",
+      column,
+    );
     return;
   }
   if (key.name === "left") {
@@ -310,7 +422,8 @@ function moveCursor(session: EditSession, key: ExtensionKeyEvent) {
       session.cursorLine -= 1;
       session.cursorColumn = (session.lines[session.cursorLine] ?? "").length;
     } else {
-      session.cursorColumn -= 1;
+      const line = session.lines[session.cursorLine] ?? "";
+      session.cursorColumn = previousGraphemeBoundary(line, session.cursorColumn);
     }
     clampCursor(session);
     return;
@@ -320,7 +433,7 @@ function moveCursor(session: EditSession, key: ExtensionKeyEvent) {
     session.cursorLine += 1;
     session.cursorColumn = 0;
   } else {
-    session.cursorColumn += 1;
+    session.cursorColumn = nextGraphemeBoundary(line, session.cursorColumn);
   }
   clampCursor(session);
 }
@@ -362,6 +475,7 @@ const inlineEditExtension: ExtensionFactory = (hunk) => {
    * through the window in between.
    */
   let opening = false;
+  let openingFileId: string | null = null;
 
   /**
    * Claim the one editor slot, then build the session `file` is edited through
@@ -373,6 +487,7 @@ const inlineEditExtension: ExtensionFactory = (hunk) => {
    */
   const beginEditSession = async (ctx: ExtensionCommandContext, file: ExtensionDiffFile) => {
     opening = true;
+    openingFileId = file.id;
     try {
       // The affordance gate. Reads work in every review kind, but writes are
       // working-tree only, and an editor that cannot save is a lie.
@@ -384,9 +499,30 @@ const inlineEditExtension: ExtensionFactory = (hunk) => {
         return null;
       }
 
-      const document = await ctx.workspace.readDocument(file.id, "new");
+      // Start the read, but enter before awaiting it. Nothing can change the
+      // live selection between these synchronous operations, so the mode and
+      // the command's file are guaranteed to agree.
+      const documentPromise = ctx.workspace.readDocument(file.id, "new");
+      const viewWasActive = ctx.fileViews.isActive(VIEW_ID);
+      if (!ctx.fileViews.enterMode(VIEW_ID)) {
+        return null;
+      }
+
+      const document = await documentPromise;
+      // Selection changes and Escape auto-exit the mode while the read is in
+      // flight. Never install the late buffer after its keyboard disappeared.
+      if (!ctx.fileViews.isModeActive(VIEW_ID)) {
+        ctx.notify(`Editor closed while ${file.path} was loading`, "warning");
+        return null;
+      }
       if (document === null) {
         ctx.notify(`No readable document for ${file.path}`, "warning");
+        ctx.fileViews.exitMode();
+        // Entry selected this view before the read failed. Restore raw unless
+        // this presentation was already selected when the command began.
+        if (!viewWasActive) {
+          ctx.fileViews.select(null);
+        }
         return null;
       }
 
@@ -395,21 +531,14 @@ const inlineEditExtension: ExtensionFactory = (hunk) => {
       const hunks = file.hunks ?? [];
       const selectedHunk = hunks[ctx.selection.hunkIndex ?? 0] ?? hunks[0];
       const session = createEditSession(file, document, (selectedHunk?.newRange?.[0] ?? 1) - 1);
-
       editSession = session;
-      // One step: if the file was on raw diff or another view, entering selects
-      // this one too, so a single Ctrl-E goes straight into the editor.
-      if (!ctx.fileViews.enterMode(VIEW_ID)) {
-        // `enterMode` already warned naming the refusal; drop the buffer that
-        // now has no keyboard behind it.
-        editSession = null;
-        return null;
-      }
+      ctx.fileViews.refresh(VIEW_ID, { fileId: file.id });
       return session;
     } finally {
       // Held across the opening window only. A live session is guarded by
       // `editSession` from here on, and a refused one left it null.
       opening = false;
+      openingFileId = null;
     }
   };
 
@@ -448,9 +577,9 @@ const inlineEditExtension: ExtensionFactory = (hunk) => {
       // session exists the buffer *is* the document, so the mapping is the
       // identity; while one runs it is the session's provenance, which survives
       // splits and joins that row positions do not.
-      const provenance: (number | null)[] = session
+      const provenance: number[][] = session
         ? session.provenance
-        : lines.map((_, index) => index + 1);
+        : lines.map((_, index) => [index + 1]);
       // The new-side line spans this file's changeset declares, which both the
       // hunk extents and the bindings that must sit inside them come from.
       const hunkRanges: [number, number][] = (input.file.hunks ?? []).map(
@@ -476,17 +605,21 @@ const inlineEditExtension: ExtensionFactory = (hunk) => {
         if (session && onCursor) {
           // Three spans put the caret on a column without needing an inverse
           // attribute the row contract does not have.
-          const caret = clamp(session.cursorColumn, 0, visible.length);
+          const caret = snapGraphemeBoundary(
+            visible,
+            clamp(session.cursorColumn, 0, visible.length),
+          );
+          const caretEnd = nextGraphemeBoundary(visible, caret);
           if (caret > 0) {
             spans.push({ text: visible.slice(0, caret) });
           }
           spans.push({
-            text: visible.slice(caret, caret + 1) || " ",
+            text: visible.slice(caret, caretEnd) || " ",
             tone: "accent",
             attributes: ["underline", "bold"],
           });
-          if (caret + 1 < visible.length) {
-            spans.push({ text: visible.slice(caret + 1) });
+          if (caretEnd < visible.length) {
+            spans.push({ text: visible.slice(caretEnd) });
           }
         } else if (added.has(lineNumber)) {
           spans.push({ text: visible, tone: "added" });
@@ -494,18 +627,20 @@ const inlineEditExtension: ExtensionFactory = (hunk) => {
           spans.push({ text: visible });
         }
 
-        const source = provenance[index] ?? null;
+        const sources = provenance[index] ?? [];
         rows.push({
           id: `line:${lineNumber}`,
           spans,
-          // One row per source line is what lets Hunk place inline agent notes
-          // inside this presentation — so a row may only bind the line it still
-          // *is*, never the line its position would suggest. A line the split
-          // key invented binds nothing at all rather than shifting every note
-          // below it onto the wrong code.
-          ...(source === null
+          // One row may present several source lines after a join. Preserve all
+          // of them so notes never disappear behind a still-active edit mode.
+          ...(sources.length === 0
             ? {}
-            : { sourceRanges: [{ side: "new" as const, range: [source, source] as const }] }),
+            : {
+                sourceRanges: sources.map((source) => ({
+                  side: "new" as const,
+                  range: [source, source] as const,
+                })),
+              }),
         });
       });
 
@@ -515,15 +650,15 @@ const inlineEditExtension: ExtensionFactory = (hunk) => {
       const hunkRows = hunkRanges.map((range) => {
         let startRow = -1;
         let endRow = -1;
-        provenance.forEach((line, index) => {
-          if (line === null || line < range[0] || line > range[1]) {
+        provenance.forEach((sources, index) => {
+          if (!sources.some((line) => line >= range[0] && line <= range[1])) {
             return;
           }
           const row = headerOffset + index;
           startRow = startRow === -1 ? row : startRow;
           endRow = row;
         });
-        // A hunk whose every line was joined away has no row left to point at.
+        // A malformed or source-less hunk may have no represented row left.
         // Collapse it onto the first row: in bounds, which is all the host asks
         // of an extent, and the pass below keeps it from claiming a binding.
         return startRow === -1 ? { startRow: 0, endRow: 0 } : { startRow, endRow };
@@ -548,11 +683,12 @@ const inlineEditExtension: ExtensionFactory = (hunk) => {
     },
     mode: {
       onEnter(ctx) {
-        // The session was created before `enterMode`, so this is the redraw
-        // that swaps the read-only rows for the editable buffer. Scoped to the
-        // edited file: every other file presenting this view still shows the
-        // document it read, and has no reason to lay out again.
-        ctx.fileViews.refresh(VIEW_ID, { fileId: ctx.file.id });
+        // The command enters synchronously before awaiting its document read,
+        // so the live mode file must be the file that claimed the opening slot.
+        if (openingFileId !== ctx.file.id) {
+          ctx.notify("Inline edit mode must be opened with Ctrl-E", "warning");
+          ctx.fileViews.exitMode();
+        }
       },
       onKey(key, ctx) {
         const session = sessionFor(ctx.file.id);
@@ -567,6 +703,12 @@ const inlineEditExtension: ExtensionFactory = (hunk) => {
         if (matchesKey("ctrl+s", key)) {
           session.requestSave();
           return "handled";
+        }
+
+        // These printable keys remain host-owned by the example's explicit
+        // policy: hunk navigation, help, and quit must stay reachable.
+        if (key.sequence === "]" || key.sequence === "?" || key.sequence === "q") {
+          return "pass";
         }
 
         if (
