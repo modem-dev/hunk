@@ -135,7 +135,8 @@ describe("startup planning", () => {
       },
     });
 
-    expect(plan).toEqual({ kind: "passthrough", text });
+    // Captured hosts draw this text themselves, so Git's colors have to survive.
+    expect(plan).toEqual({ kind: "passthrough", text, preserveColor: true });
     expect(loaded).toBe(false);
   });
 
@@ -155,7 +156,8 @@ describe("startup planning", () => {
       },
     });
 
-    expect(plan).toEqual({ kind: "passthrough", text });
+    // A genuinely dumb terminal would print the escape sequences as literal text.
+    expect(plan).toEqual({ kind: "passthrough", text, preserveColor: false });
     expect(loaded).toBe(false);
   });
 
@@ -216,13 +218,14 @@ describe("startup planning", () => {
       readStdinText: async () => patchText,
       looksLikePatchInputImpl: () => true,
       stdoutIsTTY: false,
+      env: { TERM: "xterm-256color" },
       loadAppBootstrapImpl: async () => {
         loaded = true;
         throw new Error("unreachable");
       },
     });
 
-    expect(plan).toEqual({ kind: "passthrough", text: patchText });
+    expect(plan).toEqual({ kind: "passthrough", text: patchText, preserveColor: false });
     expect(loaded).toBe(false);
   });
 
@@ -242,7 +245,7 @@ describe("startup planning", () => {
       },
     });
 
-    expect(plan).toEqual({ kind: "passthrough", text: patchText });
+    expect(plan).toEqual({ kind: "passthrough", text: patchText, preserveColor: false });
     expect(loaded).toBe(false);
   });
 
