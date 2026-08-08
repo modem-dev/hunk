@@ -16,6 +16,8 @@ const outdir = path.join(repoRoot, "dist", "npm");
 const typesOutdir = path.join(repoRoot, "dist", "npm-types");
 const opentuiOutdir = path.join(outdir, "opentui");
 const opentuiTypesDir = path.join(typesOutdir, "opentui");
+const staticOutdir = path.join(outdir, "static");
+const staticTypesDir = path.join(typesOutdir, "static");
 const extensionOutdir = path.join(outdir, "extension");
 const extensionTypesOutdir = path.join(repoRoot, "dist", "npm-extension-types");
 
@@ -43,6 +45,7 @@ rmSync(outdir, { recursive: true, force: true });
 rmSync(typesOutdir, { recursive: true, force: true });
 rmSync(extensionTypesOutdir, { recursive: true, force: true });
 mkdirSync(opentuiOutdir, { recursive: true });
+mkdirSync(staticOutdir, { recursive: true });
 mkdirSync(extensionOutdir, { recursive: true });
 
 const opentuiNativePackages = [
@@ -113,6 +116,28 @@ for (const entry of readdirSync(opentuiTypesDir)) {
   }
 }
 
+runBun([
+  "build",
+  path.join(repoRoot, "src", "static", "index.ts"),
+  "--target",
+  "node",
+  "--format",
+  "esm",
+  "--external",
+  "@pierre/diffs",
+  "--outdir",
+  staticOutdir,
+  "--entry-naming",
+  "index.js",
+]);
+
+runBun(["x", "tsc", "-p", path.join(repoRoot, "tsconfig.static.json")]);
+for (const entry of readdirSync(staticTypesDir)) {
+  if (entry.endsWith(".d.ts")) {
+    copyFileSync(path.join(staticTypesDir, entry), path.join(staticOutdir, entry));
+  }
+}
+
 rmSync(typesOutdir, { recursive: true, force: true });
 
 runBun([
@@ -146,4 +171,5 @@ rmSync(extensionTypesOutdir, { recursive: true, force: true });
 
 console.log(`Built ${mainJs}`);
 console.log(`Built ${path.join(opentuiOutdir, "index.js")}`);
+console.log(`Built ${path.join(staticOutdir, "index.js")}`);
 console.log(`Built ${path.join(extensionOutdir, "index.js")}`);

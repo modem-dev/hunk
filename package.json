@@ -44,6 +44,10 @@
       "types": "./dist/npm/opentui/index.d.ts",
       "import": "./dist/npm/opentui/index.js"
     },
+    "./static": {
+      "types": "./dist/npm/static/index.d.ts",
+      "import": "./dist/npm/static/index.js"
+    },
     "./package.json": "./package.json"
   },
   "publishConfig": {
