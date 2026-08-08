@@ -1182,6 +1182,11 @@ export function App({
     },
     [showTransientNotice, themeOptions],
   );
+  // Wire hunk.setTheme into the React theme state so extensions can switch
+  // themes programmatically at runtime.
+  if (extensions) {
+    extensions.registry.setTheme = selectTheme;
+  }
 
   /** Open the keyboard-driven theme selector with the current theme highlighted. */
   const openThemeSelector = useCallback(() => {

@@ -448,6 +448,12 @@ export function createExtensionApi(
       // Logs are collected rather than printed: the TUI owns the terminal.
       registry.logs.push({ extensionId: metadata.id, message: String(message) });
     },
+    setTheme(themeId: string) {
+      // Runtime action, not a registration — no assertOpen guard.
+      // The callback is bound after the UI mounts; before that, calls are a
+      // silent no-op since there is nothing to switch yet.
+      registry.setTheme?.(themeId);
+    },
   };
 
   return {

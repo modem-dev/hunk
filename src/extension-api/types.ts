@@ -1489,6 +1489,14 @@ export interface HunkExtensionAPI {
   readonly config: Record<string, unknown>;
   /** Record a diagnostic line; collected per extension instead of written to the terminal. */
   log(message: string): void;
+  /**
+   * Switch the active theme programmatically.
+   *
+   * Valid at any time — during the factory, from a lifecycle handler, or from
+   * a command handler. The theme id must match a built-in, config-defined, or
+   * extension-registered theme.
+   */
+  setTheme(themeId: string): void;
 }
 
 /** Default export every extension entry file must provide. */
