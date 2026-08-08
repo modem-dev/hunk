@@ -191,6 +191,16 @@ describe("parseCli", () => {
     });
   });
 
+  test("parses sidebar toggles", async () => {
+    const shown = await parseCli(["bun", "hunk", "diff", "--sidebar"]);
+    const hidden = await parseCli(["bun", "hunk", "diff", "--no-sidebar"]);
+    const unset = await parseCli(["bun", "hunk", "diff"]);
+
+    expect(shown).toMatchObject({ kind: "vcs", options: { sidebar: true } });
+    expect(hidden).toMatchObject({ kind: "vcs", options: { sidebar: false } });
+    expect(unset.kind === "vcs" ? unset.options.sidebar : "unset").toBeUndefined();
+  });
+
   test("parses staged git-style diff aliases", async () => {
     const staged = await parseCli(["bun", "hunk", "diff", "--staged"]);
     const cached = await parseCli(["bun", "hunk", "diff", "--cached"]);

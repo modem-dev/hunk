@@ -1,0 +1,118 @@
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { testRender } from "@opentui/react/test-utils";
+import { act } from "react";
+import type { AppBootstrap, SidebarVisibility } from "../core/types";
+import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
+import { createTestDiffFile as buildTestDiffFile, lines } from "../../test/helpers/diff-helpers";
+
+const { AppHost } = await import("./AppHost");
+
+/** Wide enough for the responsive layout to show the sidebar on its own. */
+const WIDE = { width: 240, height: 24 };
+/** Narrower than the full viewport, so `auto` hides the sidebar but both panes still fit. */
+const MEDIUM = { width: 180, height: 24 };
+// Default sidebar width (34) plus the body's 1-column left padding puts the divider at column 35.
+const SIDEBAR_DIVIDER_COLUMN = 35;
+// A stable mid-height row that always falls inside the sidebar/divider band.
+const PROBE_ROW = 10;
+
+function createSidebarBootstrap(initialSidebar?: SidebarVisibility): AppBootstrap {
+  return {
+    ...createTestVcsAppBootstrap({
+      changesetId: "changeset:sidebar-visibility",
+      initialMode: "split",
+      files: [
+        buildTestDiffFile({
+          after: lines("export const a = 10;"),
+          agent: false,
+          before: lines("export const a = 1;"),
+          context: 3,
+          id: "alpha",
+          path: "src/alpha.ts",
+        }),
+      ],
+    }),
+    initialSidebar,
+  };
+}
+
+/** Drive one or two render passes so pending state commits land before assertions. */
+async function flush(setup: Awaited<ReturnType<typeof testRender>>) {
+  await act(async () => {
+    await setup.renderOnce();
+    await Bun.sleep(0);
+    await setup.renderOnce();
+  });
+}
+
+/** Whether the sidebar/diff divider sits at its default column on the probe row. */
+function sidebarVisible(setup: Awaited<ReturnType<typeof testRender>>) {
+  const row = setup.captureCharFrame().split("\n")[PROBE_ROW] ?? "";
+  return row.indexOf("│") === SIDEBAR_DIVIDER_COLUMN;
+}
+
+let setup: Awaited<ReturnType<typeof testRender>> | null = null;
+
+beforeEach(() => {
+  setup = null;
+});
+
+afterEach(() => {
+  setup?.renderer.destroy();
+  setup = null;
+});
+
+describe("AppHost sidebar visibility preference", () => {
+  test("auto shows the sidebar on a full-width viewport", async () => {
+    setup = await testRender(<AppHost bootstrap={createSidebarBootstrap("auto")} />, WIDE);
+    await flush(setup);
+
+    expect(sidebarVisible(setup)).toBe(true);
+  });
+
+  test("auto hides the sidebar below the full-width viewport", async () => {
+    setup = await testRender(<AppHost bootstrap={createSidebarBootstrap("auto")} />, MEDIUM);
+    await flush(setup);
+
+    expect(sidebarVisible(setup)).toBe(false);
+  });
+
+  test("the toggle forces the sidebar open where auto hides it", async () => {
+    setup = await testRender(<AppHost bootstrap={createSidebarBootstrap("auto")} />, MEDIUM);
+    await flush(setup);
+    expect(sidebarVisible(setup)).toBe(false);
+
+    await act(async () => {
+      setup!.mockInput.pressKey("s");
+    });
+    await flush(setup);
+    expect(sidebarVisible(setup)).toBe(true);
+
+    // A second press closes it again rather than returning to the responsive default.
+    await act(async () => {
+      setup!.mockInput.pressKey("s");
+    });
+    await flush(setup);
+    expect(sidebarVisible(setup)).toBe(false);
+  });
+
+  test("true shows the sidebar where auto would hide it", async () => {
+    setup = await testRender(<AppHost bootstrap={createSidebarBootstrap(true)} />, MEDIUM);
+    await flush(setup);
+
+    expect(sidebarVisible(setup)).toBe(true);
+  });
+
+  test("false starts the sidebar closed but leaves the toggle working", async () => {
+    setup = await testRender(<AppHost bootstrap={createSidebarBootstrap(false)} />, WIDE);
+    await flush(setup);
+    expect(sidebarVisible(setup)).toBe(false);
+
+    await act(async () => {
+      setup!.mockInput.pressKey("s");
+    });
+    await flush(setup);
+
+    expect(sidebarVisible(setup)).toBe(true);
+  });
+});
