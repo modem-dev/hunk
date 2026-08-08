@@ -266,6 +266,50 @@ describe("parseCli", () => {
     });
   });
 
+  test("treats two revision positionals as an A..B range", async () => {
+    const parsed = await parseCli(["bun", "hunk", "diff", "main", "feature"]);
+
+    expect(parsed).toMatchObject({
+      kind: "vcs",
+      range: "main..feature",
+      staged: false,
+    });
+  });
+
+  test("treats two revision positionals with -- pathspecs as an A..B range", async () => {
+    const parsed = await parseCli(["bun", "hunk", "diff", "main", "feature", "--", "src/app.ts"]);
+
+    expect(parsed).toMatchObject({
+      kind: "vcs",
+      range: "main..feature",
+      pathspecs: ["src/app.ts"],
+    });
+  });
+
+  test("keeps a single revision followed by an on-disk path as a pathspec", async () => {
+    const dir = createTempDir("hunk-cli-rev-path-");
+    const pathspec = join(dir, "src");
+    mkdirSync(pathspec);
+
+    const parsed = await parseCli(["bun", "hunk", "diff", "HEAD", pathspec]);
+
+    expect(parsed).toMatchObject({
+      kind: "vcs",
+      range: "HEAD",
+      pathspecs: [pathspec],
+    });
+  });
+
+  test("keeps a spelled-out range with a trailing pathspec that is not on disk", async () => {
+    const parsed = await parseCli(["bun", "hunk", "diff", "main..feature", "src/missing.ts"]);
+
+    expect(parsed).toMatchObject({
+      kind: "vcs",
+      range: "main..feature",
+      pathspecs: ["src/missing.ts"],
+    });
+  });
+
   test("parses show mode with optional ref and pathspecs", async () => {
     const parsed = await parseCli(["bun", "hunk", "show", "HEAD~1", "--", "src/app.ts"]);
 
