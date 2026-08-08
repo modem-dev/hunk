@@ -3,8 +3,10 @@
 //
 //   bun run scripts/launch-video/capture.ts [outDir]
 //
-// Output: <outDir>/frames/*.png plus <outDir>/manifest.json describing each
-// captured keyframe. The compositor (compose.mjs) turns those into the video.
+// Output: <outDir>/frames/*.png. manifest.json is a capture-side inventory of
+// this run only — compose.mjs resolves frames by name from its SHOTS table and
+// ignores it, and after a SCENES= run the manifest is partial while frames/
+// stays cumulative.
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync, cpSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -180,8 +182,9 @@ async function typeCommand(session: Session, command: string, snapAt: Record<num
   for (const char of command) {
     session.writeRaw(char);
     await sleep(30);
-    if (snapAt[index]) {
-      await snap(session, snapAt[index]);
+    const name = snapAt[index];
+    if (name) {
+      await snap(session, name);
     }
     index += 1;
   }
@@ -265,7 +268,7 @@ async function capturePagerScene() {
     await sleep(900);
     await snap(session, "pager-review");
 
-    // The 0.18 pager keeps the full review controls: show the sidebar.
+    // Piped pager reviews keep the full review controls: show the sidebar.
     await session.press("s");
     await sleep(700);
     await snap(session, "pager-sidebar");

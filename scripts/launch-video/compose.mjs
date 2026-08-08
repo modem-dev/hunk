@@ -27,18 +27,23 @@ const { chromium } = require("playwright-core");
 const FPS = 30;
 const CAPTION_ANIM_SECONDS = 0.45;
 
-const FONT_PATH = resolve(
-  scriptDir,
-  "../../node_modules/.bun/node_modules/ghostty-opentui/public/jetbrains-mono-nerd.ttf",
-);
+// JetBrains Mono ships inside ghostty-opentui; its on-disk location depends on
+// the package layout (bun isolated linker vs. hoisted node_modules).
+const FONT_CANDIDATES = [
+  "node_modules/.bun/node_modules/ghostty-opentui/public/jetbrains-mono-nerd.ttf",
+  "node_modules/ghostty-opentui/public/jetbrains-mono-nerd.ttf",
+].map((candidate) => resolve(scriptDir, "../..", candidate));
+const FONT_PATH = FONT_CANDIDATES.find(existsSync);
 
 /** file:// URL for a captured terminal keyframe. */
 const frame = (name) => pathToFileURL(join(framesDir, `${name}.png`)).href;
 
 const REVIEW_TITLE = "hunk diff — line-level review";
 const STML_TITLE = "hunk patch — agent review";
-const CLI_TITLE = "zsh — authoring a note";
-const PAGER_TITLE = "zsh — git diff | hunk pager";
+// Shell scenes actually run bash; keep titles generic rather than naming a
+// shell the capture doesn't launch.
+const CLI_TITLE = "shell — authoring a note";
+const PAGER_TITLE = "shell — git diff | hunk pager";
 const TRIAGE_TITLE = "hunk diff — review-triage extension";
 const GALLERY_TITLE = "hunk diff — file-view gallery extension";
 
@@ -235,10 +240,23 @@ const SHOTS = [
 ];
 
 async function main() {
+  // Every terminal shot needs its keyframe on disk before we start a long
+  // composite run; fail fast with the frame names instead of an opaque
+  // img.decode error hundreds of frames in.
+  const missing = SHOTS.filter(
+    (shot) => shot.kind === "term" && !existsSync(join(framesDir, `${shot.img}.png`)),
+  );
+  if (missing.length > 0) {
+    throw new Error(
+      `missing keyframes in ${framesDir}:\n${missing.map((shot) => `  ${shot.img}`).join("\n")}\n` +
+        `run capture.ts first (optionally SCENES=<scene> for a partial recapture)`,
+    );
+  }
+
   // Bake the caption font into a work-dir copy of the stage.
   const stageSource = readFileSync(join(scriptDir, "stage.html"), "utf8");
-  if (!existsSync(FONT_PATH)) {
-    throw new Error(`caption font not found: ${FONT_PATH}`);
+  if (!FONT_PATH) {
+    throw new Error(`caption font not found; searched:\n${FONT_CANDIDATES.join("\n")}`);
   }
   const stagePath = join(workDir, "stage-built.html");
   writeFileSync(
@@ -246,8 +264,14 @@ async function main() {
     stageSource.replace("FONT_URL", pathToFileURL(FONT_PATH).href),
   );
 
+  // Prefer an explicit override, then the sandbox's preinstalled Chromium,
+  // then whatever playwright-core resolves on its own (e.g. after
+  // `bunx playwright install chromium`).
+  const executablePath =
+    process.env.CHROMIUM_PATH ??
+    (existsSync("/opt/pw-browsers/chromium") ? "/opt/pw-browsers/chromium" : undefined);
   const browser = await chromium.launch({
-    executablePath: "/opt/pw-browsers/chromium",
+    executablePath,
     headless: true,
     // Frame images load via file:// and get sampled through a canvas.
     args: ["--allow-file-access-from-files"],

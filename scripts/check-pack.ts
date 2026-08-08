@@ -271,6 +271,8 @@ const forbiddenPrefixes = [
   "tmp/",
   "dist/npm/core/",
   "dist/npm/ui/",
+  // Maintainer-only release engineering; it references scripts/ which never ships.
+  "skills/launch-video/",
 ];
 const forbiddenPaths = ["AGENTS.md", "bun.lock"];
 

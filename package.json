@@ -30,7 +30,7 @@
   "files": [
     "bin",
     "dist/npm",
-    "skills",
+    "skills/hunk-review",
     "README.md",
     "LICENSE"
   ],
