@@ -1,4 +1,9 @@
-import { dirname } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { parse as parseJavaScript } from "acorn";
+import { parse as parseModuleSpecifiers } from "es-module-lexer/js";
+import { moduleResolve } from "import-meta-resolve";
 
 /**
  * Host-owned modules served to dynamically imported extension files.
@@ -23,6 +28,12 @@ import { dirname } from "node:path";
  * JSX lowering emits automatic-runtime imports (`react/jsx-runtime`, or
  * `@opentui/react/jsx-runtime` under a pragma), and they only pass through the
  * rewrite if they exist before Bun's own loader would have added them.
+ *
+ * The same pass resolves extension-owned imports against adjacent
+ * `node_modules` and rewrites them to filesystem URLs. Bun's compiled runtime
+ * cannot resolve packages installed after the executable was built, so Hunk
+ * performs the package-exports lookup itself and enrolls resolved dependency
+ * directories in the scoped loader path recursively.
  *
  * Modules linked into the compiled binary never re-resolve their imports, so
  * none of this affects the host bundle in any run mode.
@@ -56,28 +67,227 @@ const HOST_MODULE_LOADERS: Record<string, () => Promise<object>> = {
 /** Namespace for the virtual modules, chosen to never collide with a real package. */
 const HOST_MODULE_PREFIX = "hunk-host:";
 
-/**
- * Match one host-owned specifier in import position in transpiled output.
- *
- * `from "x"` covers static imports and re-exports; `import("x")` and
- * `require("x")` cover the dynamic forms. Matching quoted specifiers only in
- * these positions keeps a *data* string like `"react"` (say, a language id)
- * untouched.
- */
-const HOST_SPECIFIER_PATTERN = new RegExp(
-  `((?:\\bfrom|\\bimport|\\brequire)\\s*\\(?\\s*)(["'])(${Object.keys(HOST_MODULE_LOADERS)
-    .map((specifier) => specifier.replace(/[/@]/g, "\\$&"))
-    .join("|")})\\2`,
-  "g",
-);
+/** Specifier schemes Bun already resolves without consulting extension node_modules. */
+const RUNTIME_SPECIFIER_SCHEME = /^(?:bun|data|file|hunk-host|node):/;
+
+interface ModuleSpecifierRange {
+  start: number;
+  end: number;
+  specifier: string;
+  requireCondition: boolean;
+}
+
+interface JavaScriptNode {
+  type?: string;
+  start?: number;
+  end?: number;
+  name?: string;
+  value?: unknown;
+  callee?: JavaScriptNode;
+  arguments?: JavaScriptNode[];
+  [key: string]: unknown;
+}
+
+/** Collect literal CommonJS require calls from a real JavaScript syntax tree. */
+function collectRequireSpecifiers(code: string): ModuleSpecifierRange[] {
+  let root: JavaScriptNode;
+  try {
+    root = parseJavaScript(code, {
+      ecmaVersion: "latest",
+      sourceType: "module",
+      allowAwaitOutsideFunction: true,
+      allowReturnOutsideFunction: true,
+    }) as unknown as JavaScriptNode;
+  } catch {
+    // ESM imports still resolve through es-module-lexer; preserve unsupported syntax unchanged.
+    return [];
+  }
+
+  const ranges: ModuleSpecifierRange[] = [];
+  const visit = (value: unknown) => {
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item);
+      return;
+    }
+    if (typeof value !== "object" || value === null) {
+      return;
+    }
+
+    const node = value as JavaScriptNode;
+    const argument = node.arguments?.[0];
+    if (
+      node.type === "CallExpression" &&
+      node.callee?.type === "Identifier" &&
+      node.callee.name === "require" &&
+      node.arguments?.length === 1 &&
+      argument?.type === "Literal" &&
+      typeof argument.value === "string" &&
+      typeof argument.start === "number" &&
+      typeof argument.end === "number"
+    ) {
+      ranges.push({
+        start: argument.start + 1,
+        end: argument.end - 1,
+        specifier: argument.value,
+        requireCondition: true,
+      });
+    }
+
+    for (const [key, child] of Object.entries(node)) {
+      if (key !== "start" && key !== "end") visit(child);
+    }
+  };
+  visit(root);
+  return ranges;
+}
+
+/** Collect syntax-aware static imports, dynamic imports, re-exports, and requires. */
+function collectModuleSpecifiers(code: string): ModuleSpecifierRange[] {
+  const esmRanges = parseModuleSpecifiers(code)[0].flatMap((specifier) =>
+    specifier.n === undefined || specifier.d === -2
+      ? []
+      : [
+          {
+            start:
+              code[specifier.s] === '"' || code[specifier.s] === "'"
+                ? specifier.s + 1
+                : specifier.s,
+            end:
+              code[specifier.e - 1] === '"' || code[specifier.e - 1] === "'"
+                ? specifier.e - 1
+                : specifier.e,
+            specifier: specifier.n,
+            requireCondition: false,
+          },
+        ],
+  );
+  return [...esmRanges, ...collectRequireSpecifiers(code)];
+}
+
+/** Escape one replacement for the quote surrounding its original module specifier. */
+function escapeModuleSpecifier(code: string, range: ModuleSpecifierRange, value: string) {
+  const escaped = JSON.stringify(value).slice(1, -1);
+  return code[range.start - 1] === "'" ? escaped.replaceAll("'", "\\'") : escaped;
+}
+
+/** Apply non-overlapping module-specifier replacements without shifting earlier ranges. */
+function replaceModuleSpecifiers(
+  code: string,
+  replacements: Array<{ range: ModuleSpecifierRange; value: string }>,
+) {
+  let rewritten = code;
+  for (const { range, value } of replacements.sort((a, b) => b.range.start - a.range.start)) {
+    rewritten =
+      rewritten.slice(0, range.start) +
+      escapeModuleSpecifier(code, range, value) +
+      rewritten.slice(range.end);
+  }
+  return rewritten;
+}
 
 /** Redirect host-owned imports in transpiled source to the virtual modules. */
 export function rewriteHostSpecifiers(code: string) {
-  return code.replace(
-    HOST_SPECIFIER_PATTERN,
-    (_all, lead: string, quote: string, specifier: string) =>
-      `${lead}${quote}${HOST_MODULE_PREFIX}${specifier}${quote}`,
-  );
+  const replacements = collectModuleSpecifiers(code)
+    .filter(({ specifier }) => specifier in HOST_MODULE_LOADERS)
+    .map((range) => ({ range, value: `${HOST_MODULE_PREFIX}${range.specifier}` }));
+  return replaceModuleSpecifiers(code, replacements);
+}
+
+/** Report whether one resolved dependency should pass through Hunk's ESM source hook. */
+function shouldRegisterDependencySource(path: string) {
+  if (/\.(?:mjs|mts|ts|tsx|jsx)$/i.test(path)) {
+    return true;
+  }
+  if (!/\.js$/i.test(path)) {
+    return false;
+  }
+
+  let directory = dirname(path);
+  while (true) {
+    const packageJsonPath = join(directory, "package.json");
+    if (existsSync(packageJsonPath)) {
+      try {
+        return JSON.parse(readFileSync(packageJsonPath, "utf8")).type === "module";
+      } catch {
+        return false;
+      }
+    }
+
+    const parent = dirname(directory);
+    if (parent === directory) {
+      return false;
+    }
+    directory = parent;
+  }
+}
+
+type RuntimeModuleResolver = (specifier: string, directory: string) => string;
+
+/** Resolve one extension import in both source and compiled Hunk runtimes. */
+function resolveExtensionDependency(
+  specifier: string,
+  importerPath: string,
+  requireCondition: boolean,
+  runtimeResolve: RuntimeModuleResolver,
+) {
+  try {
+    return runtimeResolve(specifier, dirname(importerPath));
+  } catch {
+    try {
+      const conditions = new Set(["bun", "node", requireCondition ? "require" : "import"]);
+      const resolved = moduleResolve(specifier, pathToFileURL(importerPath), conditions, false);
+      return resolved.protocol === "file:" ? fileURLToPath(resolved) : resolved.href;
+    } catch {
+      return undefined;
+    }
+  }
+}
+
+/**
+ * Resolve extension-owned imports to filesystem URLs before a compiled Hunk evaluates them.
+ *
+ * Bun's source runtime resolves a bare package from the importing extension, but a compiled
+ * executable resolves only modules embedded at build time. Absolute URLs preserve ordinary
+ * folder-extension dependency resolution in both modes. Registering each resolved module's
+ * directory also gives its own imports the same treatment when Bun loads it later.
+ */
+export function rewriteExtensionDependencySpecifiers(
+  code: string,
+  importerPath: string,
+  runtimeResolve: RuntimeModuleResolver = Bun.resolveSync,
+) {
+  const replacements: Array<{ range: ModuleSpecifierRange; value: string }> = [];
+
+  for (const range of collectModuleSpecifiers(code)) {
+    if (RUNTIME_SPECIFIER_SCHEME.test(range.specifier)) {
+      continue;
+    }
+
+    const resolved = resolveExtensionDependency(
+      range.specifier,
+      importerPath,
+      range.requireCondition,
+      runtimeResolve,
+    );
+    if (!resolved) {
+      // Preserve Bun's normal diagnostic for an unavailable package or local module.
+      continue;
+    }
+
+    if (shouldRegisterDependencySource(resolved)) {
+      registerSourceRoot(dirname(resolved));
+    }
+
+    replacements.push({
+      range,
+      value:
+        range.requireCondition || RUNTIME_SPECIFIER_SCHEME.test(resolved)
+          ? resolved
+          : pathToFileURL(resolved).href,
+    });
+  }
+
+  return replaceModuleSpecifiers(code, replacements);
 }
 
 type TranspilerLoader = "js" | "jsx" | "ts" | "tsx";
@@ -177,7 +387,11 @@ function registerSourceRoot(directory: string) {
       build.onLoad({ filter }, async (args) => {
         const source = await Bun.file(args.path).text();
         const transpiled = transpilerFor(resolveLoader(args.path)).transformSync(source);
-        return { contents: rewriteHostSpecifiers(transpiled), loader: "js" };
+        const hostRewritten = rewriteHostSpecifiers(transpiled);
+        return {
+          contents: rewriteExtensionDependencySpecifiers(hostRewritten, args.path),
+          loader: "js",
+        };
       });
     },
   });

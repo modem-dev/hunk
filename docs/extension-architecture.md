@@ -64,10 +64,15 @@ host-served runtime modules (`src/extensions/hostRuntimeModules.ts`): a
 per-extension-directory Bun loader hook transpiles extension source and
 rewrites those specifiers to prefixed virtual modules backed by the host's
 own instances. That identity is what lets `registerSidebarView` components
-render inside the app's React tree with working hooks. The module header
-documents why the obvious alternatives don't work (process-wide specifier
-claims break the host's lazy imports; the loaders resolve lazily so headless
-commands never pay OpenTUI's native-library extraction).
+render inside the app's React tree with working hooks. Other literal imports
+resolve from the extension's own `node_modules` and are rewritten to filesystem
+URLs, including package export/import maps, because Bun's compiled runtime
+cannot resolve packages that were installed after Hunk itself was built. Resolved
+package modules join the same scoped loader path so their dependencies work
+recursively. The module header documents why the obvious alternatives don't
+work (process-wide specifier claims break the host's lazy imports; the loaders
+resolve lazily so headless commands never pay OpenTUI's native-library
+extraction).
 
 ## Sidebar system
 

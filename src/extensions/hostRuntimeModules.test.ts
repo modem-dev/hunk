@@ -6,7 +6,11 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { TextAttributes } from "@opentui/core";
 import { isValidElement, useState } from "react";
 import { HunkExtensionUserError } from "../extension-api";
-import { registerHostRuntimeModules } from "./hostRuntimeModules";
+import {
+  registerHostRuntimeModules,
+  rewriteExtensionDependencySpecifiers,
+  rewriteHostSpecifiers,
+} from "./hostRuntimeModules";
 
 /**
  * These tests import real files from a temp directory, the way extension
@@ -144,6 +148,135 @@ describe("registerHostRuntimeModules", () => {
     const mod = await importTempExtension(path);
 
     expect(mod.default.helperUseState).toBe(useState);
+  });
+
+  test("resolves package exports when compiled Bun cannot resolve filesystem packages", () => {
+    const path = writeTempExtension(
+      "ext.ts",
+      `export default () => import("@fixture/langs/odin");\n`,
+    );
+    const packageDir = join(dirname(path), "node_modules", "@fixture", "langs");
+    const grammarPath = join(packageDir, "dist", "odin.mjs");
+    const internalPath = join(packageDir, "dist", "grammar.mjs");
+    mkdirSync(dirname(grammarPath), { recursive: true });
+    writeFileSync(
+      join(packageDir, "package.json"),
+      JSON.stringify({
+        name: "@fixture/langs",
+        type: "module",
+        exports: { "./odin": "./dist/odin.mjs" },
+        imports: { "#grammar": "./dist/grammar.mjs" },
+      }),
+    );
+    writeFileSync(grammarPath, `import grammar from "#grammar";\nexport default grammar;\n`);
+    writeFileSync(internalPath, `export default [{ name: "odin", scopeName: "source.odin" }];\n`);
+
+    const rewritten = rewriteExtensionDependencySpecifiers(
+      `export default () => import("@fixture/langs/odin");\n`,
+      path,
+      () => {
+        throw new Error("compiled resolver unavailable");
+      },
+    );
+
+    const rewrittenInternal = rewriteExtensionDependencySpecifiers(
+      `import grammar from "#grammar";\nexport default grammar;\n`,
+      grammarPath,
+      () => {
+        throw new Error("compiled resolver unavailable");
+      },
+    );
+
+    const importLikeData =
+      `const quoted = 'import("@fixture/langs/odin")';\n` +
+      `const templated = \`import("@fixture/langs/odin")\`;\n` +
+      `// import("@fixture/langs/odin")\n` +
+      `export default quoted + templated;\n`;
+
+    expect(rewritten).toContain(JSON.stringify(pathToFileURL(grammarPath).href));
+    expect(rewrittenInternal).toContain(JSON.stringify(pathToFileURL(internalPath).href));
+    expect(
+      rewriteExtensionDependencySpecifiers(importLikeData, path, () => {
+        throw new Error("compiled resolver unavailable");
+      }),
+    ).toBe(importLikeData);
+    expect(rewriteHostSpecifiers(`export default 'import("react")';\n`)).toBe(
+      `export default 'import("react")';\n`,
+    );
+  });
+
+  test("matches Bun's main-before-module legacy package fallback", () => {
+    const path = writeTempExtension("ext.ts", `export { default } from "fixture-legacy";\n`);
+    const packageDir = join(dirname(path), "node_modules", "fixture-legacy");
+    const mainPath = join(packageDir, "main.cjs");
+    mkdirSync(packageDir, { recursive: true });
+    writeFileSync(
+      join(packageDir, "package.json"),
+      JSON.stringify({
+        name: "fixture-legacy",
+        main: "./main.cjs",
+        module: "./module.mjs",
+      }),
+    );
+    writeFileSync(mainPath, `module.exports = "main";\n`);
+    writeFileSync(join(packageDir, "module.mjs"), `export default "module";\n`);
+
+    const rewritten = rewriteExtensionDependencySpecifiers(
+      `export { default } from "fixture-legacy";\n`,
+      path,
+      () => {
+        throw new Error("compiled resolver unavailable");
+      },
+    );
+
+    const regexData = `export default /require("fixture-legacy")/;\n`;
+    const templateExpression = `export default \`\${require("fixture-legacy")}\`;\n`;
+    const rewrittenTemplate = rewriteExtensionDependencySpecifiers(templateExpression, path, () => {
+      throw new Error("compiled resolver unavailable");
+    });
+
+    expect(rewritten).toContain(JSON.stringify(pathToFileURL(mainPath).href));
+    expect(
+      rewriteExtensionDependencySpecifiers(regexData, path, () => {
+        throw new Error("compiled resolver unavailable");
+      }),
+    ).toBe(regexData);
+    expect(rewrittenTemplate).toContain(JSON.stringify(mainPath));
+  });
+
+  test("loads a folder extension's lazy package and its package dependencies", async () => {
+    const path = writeTempExtension(
+      "ext.ts",
+      `export default { load: () => import("fixture-parent") };\n`,
+    );
+    const nodeModules = join(dirname(path), "node_modules");
+    const parentDir = join(nodeModules, "fixture-parent");
+    const childDir = join(nodeModules, "fixture-child");
+    mkdirSync(parentDir, { recursive: true });
+    mkdirSync(childDir, { recursive: true });
+    writeFileSync(
+      join(parentDir, "package.json"),
+      JSON.stringify({
+        name: "fixture-parent",
+        type: "module",
+        exports: "./index.js",
+        imports: { "#child": "fixture-child" },
+      }),
+    );
+    writeFileSync(
+      join(parentDir, "index.js"),
+      `import value from "#child";\nexport default { value };\n`,
+    );
+    writeFileSync(
+      join(childDir, "package.json"),
+      JSON.stringify({ name: "fixture-child", type: "module", exports: "./index.js" }),
+    );
+    writeFileSync(join(childDir, "index.js"), `export default "from nested dependency";\n`);
+
+    const mod = await importTempExtension(path);
+    const load = mod.default.load as () => Promise<{ default: { value: string } }>;
+
+    expect((await load()).default.value).toBe("from nested dependency");
   });
 
   test("does not claim bare specifiers outside registered extension directories", async () => {
