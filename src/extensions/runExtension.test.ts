@@ -231,6 +231,72 @@ describe("registerPane", () => {
   });
 });
 
+describe("registerSyntaxLanguage", () => {
+  test("collects a trimmed language id and lazy grammar loader", async () => {
+    const registry = createEmptyExtensionRegistry();
+    const issues: ExtensionLoadIssue[] = [];
+    const loader = async () => ({
+      default: [{ name: "demo-syntax", scopeName: "source.demo-syntax" }],
+    });
+
+    runExtensionFactory({
+      metadata: bundledMetadata("syntax"),
+      registry,
+      issues,
+      factory: (hunk) => {
+        hunk.registerSyntaxLanguage("  demo-syntax  ", loader);
+      },
+    });
+
+    expect(issues).toEqual([]);
+    expect(registry.syntaxLanguages).toEqual([
+      { extensionId: "syntax", language: "demo-syntax", loader },
+    ]);
+    expect(await registry.syntaxLanguages[0]?.loader()).toEqual(await loader());
+  });
+
+  test("rolls grammar registration back when the factory fails", () => {
+    const registry = createEmptyExtensionRegistry();
+    const issues: ExtensionLoadIssue[] = [];
+
+    runExtensionFactory({
+      metadata: bundledMetadata("broken-syntax"),
+      registry,
+      issues,
+      factory: (hunk) => {
+        hunk.registerSyntaxLanguage("broken-syntax", async () => ({
+          default: [{ name: "broken-syntax", scopeName: "source.broken-syntax" }],
+        }));
+        throw new Error("boom");
+      },
+    });
+
+    expect(registry.syntaxLanguages).toEqual([]);
+    expect(issues.map((issue) => issue.message)).toEqual(["boom"]);
+  });
+
+  test("seals grammar registration with the rest of the factory API", () => {
+    const registry = createEmptyExtensionRegistry();
+    let register:
+      | ((language: string, loader: () => Promise<{ default: never[] }>) => void)
+      | undefined;
+
+    runExtensionFactory({
+      metadata: bundledMetadata("late-syntax"),
+      registry,
+      issues: [],
+      factory: (hunk) => {
+        register = hunk.registerSyntaxLanguage;
+      },
+    });
+
+    expect(() => register?.("late-syntax", async () => ({ default: [] }))).toThrow(
+      "late-syntax: hunk.registerSyntaxLanguage() can only be called while the extension is loading.",
+    );
+    expect(registry.syntaxLanguages).toEqual([]);
+  });
+});
+
 describe("registerSidebarView", () => {
   test("collects a valid view tagged with the owning extension", () => {
     const registry = createEmptyExtensionRegistry();

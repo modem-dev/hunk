@@ -105,6 +105,8 @@ export type {
   ExtensionSidebarTheme,
   ExtensionSidebarView,
   ExtensionSidebarViewProps,
+  ExtensionSyntaxGrammar,
+  ExtensionSyntaxLanguageLoader,
   ExtensionThemeConfig,
   ExtensionVcsAdapter,
   ExtensionVcsDetection,

@@ -1,12 +1,16 @@
 import {
   cleanLastNewline,
+  disposeHighlighter,
   getHighlighterOptions,
   getSharedHighlighter,
   renderDiffWithHighlighter,
   renderFileWithHighlighter,
+  ResolvingLanguages,
+  ResolvingThemes,
   type FileContents,
   type FileDiffMetadata,
 } from "@pierre/diffs";
+import { reportSyntaxLanguageFailure } from "../../core/fileLanguage";
 import { formatHunkHeader } from "../../core/hunkHeader";
 import {
   reviewLeadingGap,
@@ -498,19 +502,15 @@ async function prepareHighlighter(language: string | undefined, theme: Highlight
   });
 }
 
-/** Queue highlight rendering so startup work stays serialized without starving input/render timers. */
-function queueHighlightedWork<T>(run: () => T) {
+/** Queue one complete highlighter lifecycle without starving input/render timers. */
+function queueHighlightedWork<T>(run: () => T | Promise<T>) {
   const queued = queuedHighlightWork.then(
     () =>
       new Promise<T>((resolve, reject) => {
         // Highlighting is CPU-heavy background work. Scheduling each serialized job as a timer,
         // rather than a microtask, yields back to OpenTUI input and frame timers between files.
         setTimeout(() => {
-          try {
-            resolve(run());
-          } catch (error) {
-            reject(error);
-          }
+          Promise.resolve().then(run).then(resolve, reject);
         }, 0);
       }),
   );
@@ -521,6 +521,12 @@ function queueHighlightedWork<T>(run: () => T) {
   );
 
   return queued;
+}
+
+/** Let Pierre's sibling resolver work finish before clearing its shared highlighter state. */
+async function resetHighlighterAfterFailure() {
+  await Promise.allSettled([...ResolvingLanguages.values(), ...ResolvingThemes.values()]);
+  await disposeHighlighter();
 }
 
 /** Normalize source text the same way expanded-row slicing does before highlighting. */
@@ -626,14 +632,8 @@ function renderHighlightedDiff(
   theme: HighlightThemeInput,
   sourcePlan: SourceBackedHighlightPlan | null,
 ) {
-  return queueHighlightedWork(() => {
-    const highlighted = renderDiffWithHighlighter(
-      metadata,
-      highlighter,
-      pierreRenderOptions(theme),
-    );
-    return finalizeHighlightedDiff(file, sourcePlan, highlighted);
-  });
+  const highlighted = renderDiffWithHighlighter(metadata, highlighter, pierreRenderOptions(theme));
+  return finalizeHighlightedDiff(file, sourcePlan, highlighted);
 }
 
 /** Highlight a diff file and return just the rendered line trees the UI needs. */
@@ -643,36 +643,43 @@ export async function loadHighlightedDiff(
 ): Promise<HighlightedDiffCode> {
   const sourcePlan = await loadSourceBackedHighlightPlan(file);
 
-  try {
-    const highlighter = await prepareHighlighter(file.language, theme);
+  return queueHighlightedWork(async () => {
     try {
-      return await renderHighlightedDiff(
-        file,
-        sourcePlan?.metadata ?? file.metadata,
-        highlighter,
-        theme,
-        sourcePlan,
-      );
-    } catch (error) {
-      if (!sourcePlan) {
-        throw error;
-      }
+      const highlighter = await prepareHighlighter(file.language, theme);
+      try {
+        return renderHighlightedDiff(
+          file,
+          sourcePlan?.metadata ?? file.metadata,
+          highlighter,
+          theme,
+          sourcePlan,
+        );
+      } catch (error) {
+        if (!sourcePlan) {
+          throw error;
+        }
 
-      // A validated source graft should render like ordinary complete-file metadata. If Pierre
-      // still rejects it, preserve the pre-existing patch-fragment behavior rather than blanking it.
-      return await renderHighlightedDiff(file, file.metadata, highlighter, theme, null);
+        // A validated source graft should render like ordinary complete-file metadata. If Pierre
+        // still rejects it, preserve the pre-existing patch-fragment behavior rather than blanking it.
+        return renderHighlightedDiff(file, file.metadata, highlighter, theme, null);
+      }
+    } catch (error) {
+      reportSyntaxLanguageFailure(file.language, error);
+      // A rejected grammar can leave Shiki's shared instance partially mutated.
+      // Wait for sibling theme/language resolvers before cleanup so a late
+      // attachment cannot mark the replacement highlighter's state as loaded.
+      await resetHighlighterAfterFailure();
+      const fallbackTheme = highlightThemeAppearance(theme);
+      const highlighter = await prepareHighlighter("text", fallbackTheme);
+      return renderHighlightedDiff(
+        file,
+        { ...file.metadata, lang: "text" },
+        highlighter,
+        fallbackTheme,
+        null,
+      );
     }
-  } catch {
-    const fallbackTheme = highlightThemeAppearance(theme);
-    const highlighter = await prepareHighlighter("text", fallbackTheme);
-    return await renderHighlightedDiff(
-      file,
-      { ...file.metadata, lang: "text" },
-      highlighter,
-      fallbackTheme,
-      null,
-    );
-  }
+  });
 }
 
 /** Highlight a full source file for unchanged lines synthesized during gap expansion. */
@@ -685,9 +692,9 @@ export async function loadHighlightedSourceLines({
   text: string;
   theme?: HighlightThemeInput;
 }): Promise<HighlightedSourceCode> {
-  try {
-    const highlighter = await prepareHighlighter(file.language, theme);
-    return queueHighlightedWork(() => {
+  return queueHighlightedWork(async () => {
+    try {
+      const highlighter = await prepareHighlighter(file.language, theme);
       const highlighted = renderFileWithHighlighter(
         sourceFileContents(file, text, file.language),
         highlighter,
@@ -696,11 +703,11 @@ export async function loadHighlightedSourceLines({
       return {
         lines: highlighted.code as Array<HastNode | undefined>,
       };
-    });
-  } catch {
-    const fallbackTheme = highlightThemeAppearance(theme);
-    const highlighter = await prepareHighlighter("text", fallbackTheme);
-    return queueHighlightedWork(() => {
+    } catch (error) {
+      reportSyntaxLanguageFailure(file.language, error);
+      await resetHighlighterAfterFailure();
+      const fallbackTheme = highlightThemeAppearance(theme);
+      const highlighter = await prepareHighlighter("text", fallbackTheme);
       const highlighted = renderFileWithHighlighter(
         sourceFileContents(file, text, "text"),
         highlighter,
@@ -709,8 +716,8 @@ export async function loadHighlightedSourceLines({
       return {
         lines: highlighted.code as Array<HastNode | undefined>,
       };
-    });
-  }
+    }
+  });
 }
 
 /** Convert one highlighted full-source line into the spans used by expanded context rows. */

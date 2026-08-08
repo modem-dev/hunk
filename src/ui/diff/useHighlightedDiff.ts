@@ -102,7 +102,7 @@ function sourceFetcherFingerprint(file: DiffFile) {
 
 /** Cache key that includes patch and source-provider identity so reloads cannot reuse stale grammar state. */
 export function highlightedDiffCacheKey(theme: AppTheme, file: DiffFile) {
-  return `${theme.id}:${syntaxHighlightThemeName(theme)}:${file.id}:${patchFingerprint(file)}:${sourceFetcherFingerprint(file)}`;
+  return `${theme.id}:${syntaxHighlightThemeName(theme)}:${file.language ?? "text"}:${file.id}:${patchFingerprint(file)}:${sourceFetcherFingerprint(file)}`;
 }
 
 /** Only commit a highlight result if the promise is still the active one for that key.

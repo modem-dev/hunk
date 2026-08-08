@@ -278,8 +278,9 @@ new instances and run that shutdown/startup pair around the replacement.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `4`). Version 4 adds keyboard
-modes and docked panes; API-v3 sidebar names remain as deprecated aliases.
+The API generation this Hunk speaks (currently `5`). Version 5 adds lazy custom
+syntax-language registration. Version 4 adds keyboard modes and docked panes;
+API-v3 sidebar names remain as deprecated aliases.
 
 ### `hunk.registerTheme(theme)`
 
@@ -301,10 +302,53 @@ built-in id. Config-defined themes always win over extension themes for the same
 id; the loser is reported as a startup notice. Extension themes appear in the
 selector after config themes, in load order.
 
+### `hunk.registerSyntaxLanguage(language, loader)`
+
+Register a Shiki-compatible TextMate grammar under a highlighting language id.
+The loader is lazy: Hunk calls it only when Pierre first highlights that
+language. It resolves to an ES-module-shaped object whose `default` export is a
+non-empty grammar array. Every grammar needs at least `name` and `scopeName`;
+normal TextMate fields such as `patterns` and `repository` pass through to
+Shiki.
+
+```ts
+hunk.registerSyntaxLanguage("example-lang", async () => ({
+  default: [
+    {
+      name: "example-lang",
+      scopeName: "source.example-lang",
+      patterns: [{ match: "\\b(example|language)\\b", name: "keyword.control.example-lang" }],
+      repository: {},
+    },
+  ],
+}));
+hunk.registerFileLanguage("example", "example-lang");
+```
+
+A folder extension can keep a generated grammar in a helper module or install a
+language package in its own `node_modules`, then pass its dynamic import directly
+(for example, `() => import("@shikijs/langs/odin")`). Import Pierre through neither
+the extension nor that helper: Hunk forwards the loader to the host's own Pierre
+instance so the grammar reaches the highlighter that renders the review.
+
+Syntax ids are trimmed but remain case-sensitive. `text` and `ansi` are
+reserved. The first extension to register another id wins; later claims are
+skipped with an attributed notice. When registered before Pierre first resolves
+it, a custom id takes precedence over a Pierre-bundled grammar with the same id,
+so choose a new id unless replacing the built-in grammar is deliberate.
+
+Pierre's grammar registry lasts for the Hunk process and cannot safely replace
+or unregister a loader. Reloading the same extension is idempotent, but grammar
+changes, removals, and replacing a grammar already used by this process require
+restarting Hunk. A loader that rejects, returns an invalid module, or supplies a
+grammar Shiki cannot attach produces one attributed warning when first used,
+and that file falls back to unhighlighted text.
+
 ### `hunk.registerFileLanguage(extension, language)`
 
 Map a file extension to a syntax-highlighting language. The extension may be
-written with or without a leading dot and is lowercased.
+written with or without a leading dot and is lowercased. Use
+`registerSyntaxLanguage` first when the language is not bundled with Pierre.
 
 ```ts
 hunk.registerFileLanguage(".zig", "zig");
