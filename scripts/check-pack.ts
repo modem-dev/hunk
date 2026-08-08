@@ -2,6 +2,7 @@
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { checkExtensionConsumerTypes } from "./extension-consumer-check";
 import { buildDocExamples } from "./extension-doc-examples";
 import { npmCommand } from "./script-helpers";
@@ -394,6 +395,9 @@ const requiredPaths = [
   "dist/npm/extension/index.js",
   "dist/npm/opentui/index.d.ts",
   "dist/npm/opentui/index.js",
+  "dist/npm/static/index.d.ts",
+  "dist/npm/static/index.js",
+  "dist/npm/static/types.d.ts",
   "README.md",
   "LICENSE",
   "package.json",
@@ -407,6 +411,19 @@ for (const path of requiredPaths) {
   if (!publishedPaths.has(path)) {
     throw new Error(`Expected npm package to include ${path}.`);
   }
+}
+
+const staticEntry = path.join(repoRoot, "dist", "npm", "static", "index.js");
+const staticRenderer = (await import(pathToFileURL(staticEntry).href)) as {
+  renderStaticDiff?: (patch: string, options?: { width?: number }) => Promise<string>;
+};
+const staticOutput = await staticRenderer.renderStaticDiff?.(
+  "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-const value = 1;\n+const value = 2;\n",
+  { width: 80 },
+);
+const plainStaticOutput = staticOutput?.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+if (!plainStaticOutput?.includes("a.ts modified +1 -1")) {
+  throw new Error("The published static renderer did not render a patch.");
 }
 
 const forbiddenPrefixes = [

@@ -20,6 +20,8 @@ import { DEFAULT_TAB_WIDTH } from "../core/run/tabWidth";
 import type { DiffFile } from "../core/changeset/model";
 import type { CommonOptions } from "../core/run/commandInputs";
 import type { NamedCustomThemeConfig } from "../extension-api/types";
+import { createHunkDiffFilesFromPatch, toInternalDiffFile } from "../opentui/model";
+import type { StaticDiffOptions } from "../static/types.js";
 import {
   buildSplitRows,
   buildStackRows,
@@ -407,6 +409,41 @@ function warnFallback(deps: StaticDiffPagerDeps, reason: string) {
   deps.stderr?.write(
     `hunk: static pager render failed; falling back to raw diff (${sanitizeTerminalLine(reason)}).\n`,
   );
+}
+
+/** Parse and render one patch through Hunk's static ANSI presentation pipeline. */
+async function renderStaticPatch(
+  text: string,
+  options: CommonOptions,
+  theme: AppTheme,
+  width: number,
+) {
+  const files = createHunkDiffFilesFromPatch(text, "static").map(toInternalDiffFile);
+  if (files.length === 0) {
+    throw new Error("No diff files could be parsed.");
+  }
+
+  const rendered = await Promise.all(
+    files.map((file) => renderStaticFile(file, theme, options, width)),
+  );
+  return `${rendered.join("\n\n")}\n`;
+}
+
+/** Render a unified patch as ANSI text without starting Hunk's interactive application. */
+export async function renderStaticDiff(text: string, options: StaticDiffOptions = {}) {
+  const commonOptions: CommonOptions = {
+    hunkHeaders: options.hunkHeaders,
+    lineNumbers: options.lineNumbers,
+    mode: options.layout,
+    tabWidth: options.tabWidth,
+    theme: options.theme,
+    transparentBackground: options.transparentBackground,
+  };
+  const theme = commonOptions.transparentBackground
+    ? withTransparentSurfaces(resolveTheme(commonOptions.theme, null))
+    : resolveTheme(commonOptions.theme, null);
+  const width = resolveStaticWidth({ terminalColumns: options.width });
+  return renderStaticPatch(text, commonOptions, theme, width);
 }
 
 /** Render diff-like pager stdin as colored static output, falling back to the original patch on failure. */
