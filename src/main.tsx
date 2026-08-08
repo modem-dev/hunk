@@ -6,13 +6,24 @@ import { prepareStartupPlan } from "./app/startup";
 import { sanitizeTerminalText } from "./lib/terminalText";
 import { serveSessionBrokerDaemon } from "./session/broker/brokerServer";
 import { runSessionCommand } from "./session/agent/commands";
+import { sweepStaleTmpArtifacts } from "./core/tmpArtifactSweep";
 
 async function main() {
+  // Start the best-effort sweep of stale Bun-extracted tmp artifacts up front so
+  // even the shortest-lived commands can await it right before exiting.
+  const sweep = sweepStaleTmpArtifacts();
+
+  /** Await the best-effort tmp sweep before exiting, since process.exit drops pending work. */
+  async function exitAfterSweep(code: number): Promise<never> {
+    await sweep;
+    process.exit(code);
+  }
+
   const startupPlan = await prepareStartupPlan();
 
   if (startupPlan.kind === "help") {
     process.stdout.write(startupPlan.text);
-    process.exit(0);
+    await exitAfterSweep(0);
   }
 
   if (startupPlan.kind === "daemon-serve") {
@@ -23,17 +34,17 @@ async function main() {
 
   if (startupPlan.kind === "session-command") {
     process.stdout.write(await runSessionCommand(startupPlan.input));
-    process.exit(0);
+    await exitAfterSweep(0);
   }
 
   if (startupPlan.kind === "markup-guide") {
     const { runMarkupGuideCommand } = await import("./ui/lib/stml/cli");
-    process.exit(runMarkupGuideCommand({ stdout: (text) => process.stdout.write(text) }));
+    await exitAfterSweep(runMarkupGuideCommand({ stdout: (text) => process.stdout.write(text) }));
   }
 
   if (startupPlan.kind === "markup-render") {
     const { runMarkupRenderCommand } = await import("./ui/lib/stml/cli");
-    process.exit(
+    await exitAfterSweep(
       await runMarkupRenderCommand(startupPlan.input, {
         stdout: (text) => process.stdout.write(text),
         stderr: (text) => process.stderr.write(text),
@@ -45,12 +56,12 @@ async function main() {
 
   if (startupPlan.kind === "plain-text-pager") {
     await pagePlainText(startupPlan.text);
-    process.exit(0);
+    await exitAfterSweep(0);
   }
 
   if (startupPlan.kind === "passthrough") {
     process.stdout.write(sanitizeTerminalText(startupPlan.text));
-    process.exit(0);
+    await exitAfterSweep(0);
   }
 
   if (startupPlan.kind === "static-diff-pager") {
@@ -61,7 +72,7 @@ async function main() {
         stderr: process.stderr,
       }),
     );
-    process.exit(0);
+    await exitAfterSweep(0);
   }
 
   if (startupPlan.kind !== "app") {
