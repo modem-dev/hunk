@@ -215,14 +215,19 @@ async function captureReviewScene() {
     await ensureKeyboardIsLive(session);
     await sleep(500);
 
-    // Walk the cursor down the diff so its line-by-line movement is visible.
-    for (let step = 0; step < 6; step += 1) {
-      await session.press("j");
-      await sleep(120);
-      if (step === 1 || step === 3 || step === 5) {
-        await snap(session, `review-cursor-${step}`);
+    // Walk the cursor down and back up, snapping every step so playback shows
+    // the line cursor actually traveling through the diff.
+    let walkFrame = 0;
+    const walk = async (key: "j" | "k", steps: number) => {
+      for (let step = 0; step < steps; step += 1) {
+        await session.press(key);
+        await sleep(120);
+        await snap(session, `review-walk-${String(walkFrame).padStart(2, "0")}`);
+        walkFrame += 1;
       }
-    }
+    };
+    await walk("j", 10);
+    await walk("k", 4);
 
     await session.press("c");
     await session.waitForText(/Draft note/, { timeout: 10_000 });
@@ -401,33 +406,40 @@ async function captureFileViewScene(
   }
 }
 
+// Optional comma-separated scene filter for fast iteration, e.g.
+// SCENES=review bun run scripts/launch-video/capture.ts
+const sceneFilter = process.env.SCENES?.split(",").map((s) => s.trim());
+const wants = (name: string) => !sceneFilter || sceneFilter.includes(name);
+
 async function main() {
   try {
-    await captureReviewScene();
-    await captureStmlScene();
-    await captureMarkupCliScene();
-    await capturePagerScene();
-    await captureTriageScene();
-    await captureFileViewScene(
-      "palette",
-      join(repoRoot, "examples/extensions/jsx-file-view-gallery/fixtures/css-palette/before.css"),
-      join(repoRoot, "examples/extensions/jsx-file-view-gallery/fixtures/css-palette/after.css"),
-      /after\.css/,
-      /#|palette|swatch/i,
-    );
-    await captureFileViewScene(
-      "deps",
-      join(
-        repoRoot,
-        "examples/extensions/jsx-file-view-gallery/fixtures/package-dependencies/before/package.json",
-      ),
-      join(
-        repoRoot,
-        "examples/extensions/jsx-file-view-gallery/fixtures/package-dependencies/after/package.json",
-      ),
-      /package\.json/,
-      /dependencies/i,
-    );
+    if (wants("review")) await captureReviewScene();
+    if (wants("stml")) await captureStmlScene();
+    if (wants("cli")) await captureMarkupCliScene();
+    if (wants("pager")) await capturePagerScene();
+    if (wants("triage")) await captureTriageScene();
+    if (wants("fileview")) {
+      await captureFileViewScene(
+        "palette",
+        join(repoRoot, "examples/extensions/jsx-file-view-gallery/fixtures/css-palette/before.css"),
+        join(repoRoot, "examples/extensions/jsx-file-view-gallery/fixtures/css-palette/after.css"),
+        /after\.css/,
+        /#|palette|swatch/i,
+      );
+      await captureFileViewScene(
+        "deps",
+        join(
+          repoRoot,
+          "examples/extensions/jsx-file-view-gallery/fixtures/package-dependencies/before/package.json",
+        ),
+        join(
+          repoRoot,
+          "examples/extensions/jsx-file-view-gallery/fixtures/package-dependencies/after/package.json",
+        ),
+        /package\.json/,
+        /dependencies/i,
+      );
+    }
 
     writeFileSync(join(outDir, "manifest.json"), JSON.stringify(manifest, null, 2));
     console.log(`wrote ${manifest.length} keyframes to ${framesDir}`);

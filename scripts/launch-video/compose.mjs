@@ -71,15 +71,29 @@ const SHOTS = [
   { kind: "card", html: OPEN_CARD, dur: 3.0, enter: true },
   {
     kind: "term",
-    img: "review-cursor-1",
+    img: "review-walk-00",
     title: REVIEW_TITLE,
-    dur: 1.2,
+    dur: 1.0,
     enter: true,
     capKey: "cursor",
     caption: `<span class="badge">NEW</span> line-level review — <span class="hl">j/k</span> moves a real cursor`,
   },
-  { kind: "term", img: "review-cursor-3", title: REVIEW_TITLE, dur: 0.35, capKey: "cursor" },
-  { kind: "term", img: "review-cursor-5", title: REVIEW_TITLE, dur: 1.6, capKey: "cursor" },
+  // The captured j/k walk plays back step by step: 9 more frames down the
+  // diff (pausing at the bottom), then 4 back up to the line we comment on.
+  ...Array.from({ length: 9 }, (_, i) => ({
+    kind: "term",
+    img: `review-walk-${String(i + 1).padStart(2, "0")}`,
+    title: REVIEW_TITLE,
+    dur: i === 8 ? 0.55 : 0.22,
+    capKey: "cursor",
+  })),
+  ...Array.from({ length: 4 }, (_, i) => ({
+    kind: "term",
+    img: `review-walk-${10 + i}`,
+    title: REVIEW_TITLE,
+    dur: i === 3 ? 0.8 : 0.22,
+    capKey: "cursor",
+  })),
   {
     kind: "term",
     img: "review-draft",
@@ -253,11 +267,16 @@ async function main() {
   }
 
   let previousCapKey = null;
+  let previousCaption = null;
   for (const shot of SHOTS) {
+    // Continuation shots (same capKey, no caption of their own) keep the
+    // caption their sequence opened with instead of blanking it.
+    const caption =
+      shot.caption ?? (shot.capKey && shot.capKey === previousCapKey ? previousCaption : null);
     const base =
       shot.kind === "card"
         ? { kind: "card", html: shot.html }
-        : { kind: "term", img: frame(shot.img), title: shot.title, caption: shot.caption ?? null };
+        : { kind: "term", img: frame(shot.img), title: shot.title, caption };
     const captionChanges = shot.kind === "term" && shot.caption && shot.capKey !== previousCapKey;
     const animSeconds =
       shot.enter || captionChanges ? Math.min(CAPTION_ANIM_SECONDS, shot.dur * 0.6) : 0;
@@ -271,8 +290,10 @@ async function main() {
 
     if (shot.kind === "term" && shot.caption) {
       previousCapKey = shot.capKey;
+      previousCaption = shot.caption;
     } else if (shot.kind === "card") {
       previousCapKey = null;
+      previousCaption = null;
     }
     console.log(`shot ${shot.kind === "term" ? shot.img : "card"} -> ${frameIndex} frames total`);
   }
