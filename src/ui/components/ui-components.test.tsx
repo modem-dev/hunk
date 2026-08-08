@@ -2223,8 +2223,8 @@ describe("UI components", () => {
     const saveLineIndex = lines.findIndex(
       (line) => line.includes("Save (^S)") && line.includes("Cancel (Esc)"),
     );
-    expect(lines.some((line) => line.includes("soft"))).toBe(true);
-    expect(lines.some((line) => line.includes("wrap inside"))).toBe(true);
+    expect(lines.some((line) => line.includes(body.slice(0, 10)))).toBe(true);
+    expect(lines.some((line) => line.includes(body.slice(-10)))).toBe(true);
     expect(saveLineIndex).toBeGreaterThan(5);
   });
 

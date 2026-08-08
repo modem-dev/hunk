@@ -145,6 +145,42 @@ describe("PTY notes", () => {
     }
   });
 
+  test("CJK draft notes wrap instead of scrolling out of view in a real PTY", async () => {
+    const fixture = harness.createLongWrapFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      cols: 120,
+      rows: 24,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      await session.press("c");
+      await session.waitForText(/Draft note/, { timeout: 5_000 });
+
+      // 48 characters, 86 cells: past the wrap point of any reasonable
+      // composer width, and long enough that a code-unit row estimate would
+      // keep the composer at one row.
+      const body =
+        "这个包主要是为了在普通的chatmodel外面包一层,把工具调用的编号统一转换后再返回给调用方使用";
+      await session.type(body);
+
+      const draft = await session.waitForText(/这个包主要是为了/, { timeout: 5_000 });
+      expect(draft).toContain(body.slice(0, 10));
+      expect(draft).toContain(body.slice(-6));
+
+      await session.type("\x13");
+      const savedNote = await session.waitForText(/Your note/, { timeout: 5_000 });
+      expect(savedNote).toContain(body.slice(0, 10));
+      expect(savedNote).toContain(body.slice(-6));
+    } finally {
+      session.close();
+    }
+  });
+
   test("rapid Ctrl+S presses save a draft note exactly once", async () => {
     const fixture = harness.createLongWrapFilePair();
     const session = await harness.launchHunk({

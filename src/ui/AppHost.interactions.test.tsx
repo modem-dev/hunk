@@ -2838,6 +2838,72 @@ describe("App interactions", () => {
     }
   });
 
+  test("draft note wraps long CJK input instead of scrolling it out of view", async () => {
+    const setup = await testRender(<AppHost bootstrap={createBootstrap()} />, {
+      width: 160,
+      height: 40,
+    });
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.typeText("c");
+      });
+      await flush(setup);
+
+      const body =
+        "这个包主要是为了在普通的chatmodel外面包一层,在外层把toolcallid统一转换,方便后续处理";
+      for (const chunk of body.match(/.{1,12}/g) ?? []) {
+        await act(async () => {
+          await setup.mockInput.typeText(chunk);
+        });
+        await flush(setup);
+      }
+
+      const frame = setup.captureCharFrame();
+      expect(frame).toContain("Draft note");
+      expect(frame).toContain(body.slice(0, 10));
+      expect(frame).toContain(body.slice(-4));
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("draft note survives a large burst of input in one chunk", async () => {
+    const setup = await testRender(<AppHost bootstrap={createBootstrap()} />, {
+      width: 160,
+      height: 40,
+    });
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        await setup.mockInput.typeText("c");
+      });
+      await flush(setup);
+
+      // One synchronous burst, the shape chunked pastes and key repeats take.
+      const text = "the quick brown fox jumps over the lazy dog 0123456789".repeat(3);
+      await act(async () => {
+        await setup.mockInput.typeText(text);
+      });
+      await flush(setup);
+
+      const frame = setup.captureCharFrame();
+      expect(frame).toContain("Draft note");
+      expect(frame).toContain(text.slice(0, 10));
+      expect(frame).toContain(text.slice(-6));
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("draft note saves Ctrl-S when tmux sends CSI-u input", async () => {
     const setup = await testRender(<AppHost bootstrap={createBootstrap()} />, {
       width: 240,
