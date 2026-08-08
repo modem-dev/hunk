@@ -21,7 +21,6 @@ import type {
   LayoutMode,
   UserNoteLineTarget,
 } from "../../../core/types";
-import type { LineCursor } from "../../lib/lineCursors";
 import type { FileSourceStatus } from "../../diff/expandCollapsedRows";
 import type { ActiveAddNoteAffordance } from "../../diff/PierreDiffView";
 import type { CursorHighlight } from "../../diff/renderRows";
@@ -41,6 +40,8 @@ import {
   buildLineCursors,
   clampLineCursorToViewport,
   EMPTY_LINE_CURSORS,
+  firstLineCursorInHunk,
+  type LineCursor,
   type LineCursorBoundsLookup,
 } from "../../lib/lineCursors";
 import {
@@ -923,18 +924,26 @@ export function DiffPane({
     return resolveCopySelectionSide(copySelectionDrag.anchor.column, layout, diffContentWidth);
   }, [copySelectionDrag, diffContentWidth, layout]);
 
+  // Display the selected hunk's first line on the initial mount while the controller adopts the
+  // measured cursor list. Because both paths reuse the same cursor object, the follow-up state
+  // publication does not invalidate and repaint an expensive wrapped row.
+  const renderedLineCursor = useMemo(
+    () => lineCursor ?? firstLineCursorInHunk(lineCursors, selectedFileId, selectedHunkIndex),
+    [lineCursor, lineCursors, selectedFileId, selectedHunkIndex],
+  );
+
   // One object per cursor move, so the section and row memos below only see a new reference when
   // the current line actually moves.
   const cursorHighlight = useMemo(
     () =>
-      cursorLine === "off" || !lineCursor
+      cursorLine === "off" || !renderedLineCursor
         ? undefined
         : ({
-            stableKey: lineCursor.stableKey,
+            stableKey: renderedLineCursor.stableKey,
             style: cursorLine,
-            side: lineCursor.target.side,
+            side: renderedLineCursor.target.side,
           } satisfies CursorHighlight),
-    [cursorLine, lineCursor],
+    [cursorLine, renderedLineCursor],
   );
 
   const copySelectedRowKeysByFile = useMemo(
@@ -2107,7 +2116,9 @@ export function DiffPane({
                       selectedHunkIndex={file.id === selectedFileId ? selectedHunkIndex : -1}
                       copySelectedRowRanges={copySelectedRowKeysByFile.get(file.id)}
                       copySelectedSide={copySelectionSide}
-                      cursorHighlight={file.id === lineCursor?.fileId ? cursorHighlight : undefined}
+                      cursorHighlight={
+                        file.id === renderedLineCursor?.fileId ? cursorHighlight : undefined
+                      }
                       shouldLoadHighlight={
                         (!wrapLines || initialWrappedRenderWindowWarmed) &&
                         highlightPrefetchFileIds.has(file.id)

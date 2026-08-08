@@ -254,6 +254,28 @@ describe("useReviewController", () => {
     }
   });
 
+  test("keeps review stream identities stable across selection-only navigation", async () => {
+    const { controllerRef, setup } = await renderReviewController([createTwoHunkFile()]);
+
+    try {
+      await flush(setup);
+      const initialVisibleFiles = expectValue(controllerRef.current).visibleFiles;
+
+      await act(async () => {
+        expectValue(controllerRef.current).selectHunk("alpha", 1);
+      });
+      await flush(setup);
+
+      const controller = expectValue(controllerRef.current);
+      expect(controller.selectedHunkIndex).toBe(1);
+      expect(controller.visibleFiles).toBe(initialVisibleFiles);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("moves through visible files with clamped file-header alignment", async () => {
     const controllerRef: { current: ReviewController | null } = { current: null };
     const setup = await testRender(
