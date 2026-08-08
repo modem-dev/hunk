@@ -69,6 +69,7 @@ interface HastElementNode {
 export interface HighlightedDiffCode {
   deletionLines: Array<HastNode | undefined>;
   additionLines: Array<HastNode | undefined>;
+  cachePolicy: "reuse" | "retry";
 }
 
 export interface HighlightedSourceCode {
@@ -636,13 +637,16 @@ function finalizeHighlightedDiff(
   const code = {
     deletionLines: highlighted.code.deletionLines as Array<HastNode | undefined>,
     additionLines: highlighted.code.additionLines as Array<HastNode | undefined>,
+    cachePolicy: "reuse" as const,
   };
 
   // Full old/new sources can put identical context text in different lexical states. Preserve
   // those authoritative per-side nodes; aliasing remains safe only for patch-fragment highlighting.
-  return sourcePlan
-    ? remapSourceBackedHighlight(sourcePlan, code)
-    : aliasHighlightedContextLines(file, code);
+  if (sourcePlan) {
+    return { ...remapSourceBackedHighlight(sourcePlan, code), cachePolicy: "reuse" };
+  }
+
+  return aliasHighlightedContextLines(file, code);
 }
 
 /** Render one metadata snapshot through an already prepared highlighter. */
@@ -692,13 +696,16 @@ export async function loadHighlightedDiff(
       await resetHighlighterAfterFailure();
       const fallbackTheme = highlightThemeAppearance(theme);
       const highlighter = await prepareHighlighter("text", fallbackTheme);
-      return renderHighlightedDiff(
-        file,
-        { ...file.metadata, lang: "text" },
-        highlighter,
-        fallbackTheme,
-        null,
-      );
+      return {
+        ...renderHighlightedDiff(
+          file,
+          { ...file.metadata, lang: "text" },
+          highlighter,
+          fallbackTheme,
+          null,
+        ),
+        cachePolicy: "retry",
+      };
     }
   });
 }

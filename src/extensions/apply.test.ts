@@ -13,6 +13,7 @@ import { getFiletypeFromFileName } from "../core/fileLanguage";
 import type { Changeset, DiffFile } from "../core/types";
 import type { VcsAdapter } from "../core/vcs/types";
 import { buildStackRows, loadHighlightedDiff } from "../ui/diff/pierre";
+import { prefetchHighlightedDiff } from "../ui/diff/useHighlightedDiff";
 import { resolveTheme } from "../ui/themes";
 import {
   applyExtensionChangesetTransforms,
@@ -252,6 +253,83 @@ describe("extension syntax languages", () => {
     );
   });
 
+  test("times out a stalled loader without blocking later highlighting", async () => {
+    const { result, notices } = createTestLoadResult();
+    const language = "hunk-stalled-syntax-fixture";
+    result.registry.syntaxLanguages.push({
+      extensionId: "stalled-syntax",
+      language,
+      loader: () => new Promise<never>(() => undefined),
+    });
+    applyExtensionSyntaxLanguages(result.registry, result.context, { loaderTimeoutMs: 10 });
+
+    const stalledFile = createTestDiffFile({
+      id: "stalled-syntax",
+      language,
+      path: "stalled.hunksyntaxfixture",
+    });
+    const recoveryFile = createTestDiffFile({
+      id: "stalled-syntax-recovery",
+      language: "typescript",
+      path: "recovery.ts",
+    });
+    const theme = resolveTheme("github-dark-default", null);
+    const [fallback, recovery] = await Promise.all([
+      loadHighlightedDiff(stalledFile, theme),
+      loadHighlightedDiff(recoveryFile, theme),
+    ]);
+
+    expect(fallback.cachePolicy).toBe("retry");
+    expect(recovery.cachePolicy).toBe("reuse");
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toContain("loader did not resolve within 10ms");
+    const recoverySpans = buildStackRows(recoveryFile, recovery, theme)
+      .filter((row) => row.type === "stack-line" && row.cell.kind === "addition")
+      .flatMap((row) => (row.type === "stack-line" ? row.cell.spans : []));
+    expect(recoverySpans.some((span) => span.fg !== undefined)).toBe(true);
+  });
+
+  test("retries plaintext fallbacks instead of retaining them in the shared cache", async () => {
+    const { result } = createTestLoadResult();
+    const language = "hunk-transient-syntax-fixture";
+    let loadAttempts = 0;
+    result.registry.syntaxLanguages.push({
+      extensionId: "transient-syntax",
+      language,
+      loader: async () => {
+        loadAttempts += 1;
+        if (loadAttempts === 1) {
+          throw new Error("transient grammar failure");
+        }
+        return createTestSyntaxLoader(language)();
+      },
+    });
+    applyExtensionSyntaxLanguages(result.registry, result.context);
+
+    const theme = resolveTheme("github-dark-default", null);
+    const firstFile = createTestDiffFile({
+      id: "transient-syntax-first",
+      language,
+      path: "first.hunksyntaxfixture",
+    });
+    const secondFile = createTestDiffFile({
+      id: "transient-syntax-second",
+      language,
+      path: "second.hunksyntaxfixture",
+    });
+
+    const fallback = await prefetchHighlightedDiff({ file: firstFile, theme });
+    const recovered = await prefetchHighlightedDiff({ file: secondFile, theme });
+    const revisited = await prefetchHighlightedDiff({ file: firstFile, theme });
+
+    expect(fallback.cachePolicy).toBe("retry");
+    expect(recovered.cachePolicy).toBe("reuse");
+    expect(revisited.cachePolicy).toBe("reuse");
+    expect(revisited).not.toBe(fallback);
+    expect(await prefetchHighlightedDiff({ file: firstFile, theme })).toBe(revisited);
+    expect(loadAttempts).toBe(2);
+  });
+
   test("attributes grammar attachment failures before falling back to text", async () => {
     const { result, notices } = createTestLoadResult();
     const language = "hunk-broken-render-syntax-fixture";
@@ -368,6 +446,47 @@ describe("extension syntax languages", () => {
       {
         extensionId: "syntax-pack",
         message: `Skipped syntax language "${language}" from extension syntax-pack • already loaded by extension syntax-pack; restart Hunk to replace it`,
+      },
+    ]);
+  });
+
+  test("does not let a reload challenger claim the retained owner's language", () => {
+    const language = "hunk-reload-order-syntax-fixture";
+    const initial = createTestLoadResult().result;
+    initial.registry.extensions.push({
+      id: "owner",
+      sourcePath: "/extensions/owner.ts",
+      origin: "global",
+    });
+    initial.registry.syntaxLanguages.push({
+      extensionId: "owner",
+      language,
+      loader: createTestSyntaxLoader(language),
+    });
+    expect(applyExtensionSyntaxLanguages(initial.registry, initial.context)).toEqual([]);
+
+    const reload = createTestLoadResult().result;
+    reload.registry.extensions.push(
+      { id: "challenger", sourcePath: "/extensions/challenger.ts", origin: "global" },
+      { id: "owner", sourcePath: "/extensions/owner.ts", origin: "global" },
+    );
+    reload.registry.syntaxLanguages.push(
+      {
+        extensionId: "challenger",
+        language,
+        loader: createTestSyntaxLoader("ignored-reload-order-syntax-fixture"),
+      },
+      {
+        extensionId: "owner",
+        language,
+        loader: createTestSyntaxLoader(language),
+      },
+    );
+
+    expect(applyExtensionSyntaxLanguages(reload.registry, reload.context)).toEqual([
+      {
+        extensionId: "challenger",
+        message: `Skipped syntax language "${language}" from extension challenger • already loaded by extension owner; restart Hunk to replace it`,
       },
     ]);
   });

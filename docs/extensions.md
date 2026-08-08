@@ -249,9 +249,11 @@ so choose a new id unless replacing the built-in grammar is deliberate.
 Pierre's grammar registry lasts for the Hunk process and cannot safely replace
 or unregister a loader. Reloading the same extension is idempotent, but grammar
 changes, removals, and replacing a grammar already used by this process require
-restarting Hunk. A loader that rejects, returns an invalid module, or supplies a
-grammar Shiki cannot attach produces one attributed warning when first used,
-and that file falls back to unhighlighted text.
+restarting Hunk. A loader that rejects, takes longer than five seconds, returns
+an invalid module, or supplies a grammar Shiki cannot attach produces one
+attributed warning when first used, and that file falls back to unhighlighted
+text. Fallback results are retried when the file is highlighted again, so a
+transient loader failure does not remain cached for the session.
 
 ### `hunk.registerFileLanguage(extension, language)`
 
