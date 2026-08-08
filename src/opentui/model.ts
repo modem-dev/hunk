@@ -2,6 +2,7 @@ import { parsePatchFiles } from "@pierre/diffs";
 import { patchLooksBinary } from "../core/binary";
 import { normalizeDiffMetadataPaths, normalizeDiffPath } from "../core/diffPaths";
 import { countDiffStats } from "../core/diffFile";
+import { getFiletypeFromFileName } from "../core/fileLanguage";
 import { splitPatchIntoFileChunks, findPatchChunk } from "../core/patch/chunks";
 import { normalizePatch } from "../core/patch/normalize";
 import type { DiffFile } from "../core/types";
@@ -85,6 +86,7 @@ export function createHunkDiffFilesFromPatch(patchText: string, sourceId = "patc
       return buildHunkDiffFile(
         {
           id: `${sourceId}:${index}:${normalizedMetadata.name}`,
+          language: getFiletypeFromFileName(normalizedMetadata.name) ?? undefined,
           metadata: normalizedMetadata,
           patch: findPatchChunk(metadata, chunks, index),
         },

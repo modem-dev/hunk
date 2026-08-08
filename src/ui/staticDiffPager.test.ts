@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { renderStaticDiff } from "../static";
 import { renderStaticDiffPager } from "./staticDiffPager";
 
 function stripAnsi(text: string) {
@@ -31,6 +32,16 @@ function expectNoUnsafeTerminalControls(text: string) {
 }
 
 describe("static diff pager", () => {
+  test("renders a patch through the public static API", async () => {
+    const patchText =
+      "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-const value = 1;\n+const value = 2;\n";
+
+    const output = await renderStaticDiff(patchText, { layout: "stack", width: 80 });
+
+    expect(stripAnsi(output)).toContain("a.ts modified +1 -1");
+    expect(output).toContain("\x1b[38;2;");
+  });
+
   test("renders diff-like stdin as non-interactive ANSI output", async () => {
     const patchText =
       "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-const value = 1;\n+const value = 2;\n";
