@@ -337,6 +337,7 @@ describe("Hunk session daemon server", () => {
           "get",
           "context",
           "review",
+          "open",
           "navigate",
           "reload",
           "comment-add",
@@ -363,30 +364,17 @@ describe("Hunk session daemon server", () => {
     }
   });
 
-  test("keeps browser routes feature-disabled unless explicitly enabled", async () => {
+  test("serves production browser routes on the safe loopback daemon", async () => {
     const port = await reserveLoopbackPort();
     process.env.HUNK_MCP_HOST = "127.0.0.1";
     process.env.HUNK_MCP_PORT = String(port);
-    const disabled = serveSessionBrokerDaemon();
+    const server = serveSessionBrokerDaemon();
     try {
-      expect((await fetch(`http://127.0.0.1:${port}/review-auth`, { method: "POST" })).status).toBe(
-        404,
-      );
-    } finally {
-      disabled.stop(true);
-    }
-
-    const enabledPort = await reserveLoopbackPort();
-    process.env.HUNK_MCP_PORT = String(enabledPort);
-    const enabled = serveSessionBrokerDaemon({ browserReview: {} });
-    try {
-      const response = await fetch(`http://127.0.0.1:${enabledPort}/review-auth`, {
-        method: "POST",
-      });
+      const response = await fetch(`http://127.0.0.1:${port}/review-auth`, { method: "POST" });
       expect(response.status).toBe(403);
       expect(response.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
     } finally {
-      enabled.stop(true);
+      server.stop(true);
     }
   });
 
@@ -400,6 +388,16 @@ describe("Hunk session daemon server", () => {
       const response = await fetch(`http://127.0.0.1:${port}/review/session-1/`);
       expect(response.status).toBe(403);
       await expect(response.json()).resolves.toEqual({
+        error: "Browser review is unavailable when unsafe remote broker access is enabled.",
+      });
+
+      const openResponse = await fetch(`http://127.0.0.1:${port}/session-api`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "open", selector: { sessionId: "session-1" } }),
+      });
+      expect(openResponse.status).toBe(403);
+      await expect(openResponse.json()).resolves.toEqual({
         error: "Browser review is unavailable when unsafe remote broker access is enabled.",
       });
     } finally {

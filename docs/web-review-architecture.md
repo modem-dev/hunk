@@ -162,8 +162,8 @@ elements, valid markup replaces plain fallback text, and raw markup is never ins
 
 Browser review transport is a Hunk-only extension of the existing loopback daemon. Its route set is
 closed to one review shell, capability exchange, snapshot, generation-addressed resources, observer
-SSE, and semantic actions. The routes are internal-gated until product/CLI work enables them; unsafe
-remote broker mode refuses them even when the internal gate is requested.
+SSE, and semantic actions. Production safe-loopback daemons enable these routes; unsafe remote
+broker mode always refuses them.
 
 The review process creates 256 bits of random capability material and registers only its SHA-256
 verifier. The clear capability stays process-local and appears only in the review URL fragment. The

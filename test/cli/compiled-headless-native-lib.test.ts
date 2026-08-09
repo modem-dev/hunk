@@ -1,6 +1,15 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { createServer } from "node:net";
-import { mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
@@ -9,6 +18,7 @@ const executable = process.env.HUNK_TEST_EXECUTABLE
   : undefined;
 const compiledTest = executable ? test : test.skip;
 const compiledLinuxTest = executable && process.platform === "linux" ? test : test.skip;
+const compiledUnixTest = executable && process.platform !== "win32" ? test : test.skip;
 const BUN_NATIVE_ARTIFACT_PATTERN = /^\.[0-9a-f]{16}-[0-9a-f]{8}\.(?:so|dylib|dll)$/;
 const positiveControlBuildRoot = executable
   ? mkdtempSync(resolve(tmpdir(), "hunk-compiled-opentui-control-"))
@@ -203,6 +213,130 @@ describe("compiled headless native-library loading", () => {
     expect(Buffer.from(proc.stdout).toString("utf8")).toContain("a.txt");
     expect(nativeArtifacts(temp)).toEqual([]);
   });
+
+  compiledUnixTest(
+    "opens compiled web reviews without printing bearer capabilities",
+    async () => {
+      const port = await reserveFreePort();
+      const { env, temp } = createTestEnvironment(port);
+      const patchPath = resolve(temp, "default-open.patch");
+      const bin = resolve(temp, "bin");
+      const openedUrlPath = resolve(temp, "opened-url.txt");
+      mkdirSync(bin, { recursive: true });
+      writeFileSync(
+        patchPath,
+        "diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-old\n+new\n",
+      );
+      const opener = resolve(bin, process.platform === "darwin" ? "open" : "xdg-open");
+      writeFileSync(opener, '#!/bin/sh\nprintf "%s" "$1" > "$HUNK_TEST_BROWSER_OUTPUT"\n');
+      chmodSync(opener, 0o755);
+      const review = Bun.spawn([executable!, "patch", patchPath, "--web"], {
+        env: {
+          ...env,
+          HUNK_TEST_BROWSER_OUTPUT: openedUrlPath,
+          PATH: `${bin}:${process.env.PATH ?? ""}`,
+        },
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+
+      try {
+        const deadline = Date.now() + 8_000;
+        while (Date.now() < deadline && !existsSync(openedUrlPath)) await Bun.sleep(50);
+        const url = readFileSync(openedUrlPath, "utf8");
+        expect(url).toContain("#capability=");
+        const sessionId = new URL(url).pathname.split("/")[2]!;
+        rmSync(openedUrlPath, { force: true });
+        const sessionOpen = Bun.spawnSync([executable!, "session", "open", sessionId], {
+          env: {
+            ...env,
+            HUNK_TEST_BROWSER_OUTPUT: openedUrlPath,
+            PATH: `${bin}:${process.env.PATH ?? ""}`,
+          },
+          stdin: "ignore",
+          stdout: "pipe",
+          stderr: "pipe",
+        });
+        const sessionStdout = Buffer.from(sessionOpen.stdout).toString("utf8");
+        const sessionStderr = Buffer.from(sessionOpen.stderr).toString("utf8");
+        expect(sessionOpen.exitCode).toBe(0);
+        expect(sessionStdout).toBe("Browser review opened.\n");
+        expect(`${sessionStdout}${sessionStderr}`).not.toContain("capability=");
+        expect(readFileSync(openedUrlPath, "utf8")).toBe(url);
+
+        await Bun.sleep(100);
+        review.kill("SIGTERM");
+        await review.exited;
+        const stdout = await new Response(review.stdout).text();
+        const stderr = await new Response(review.stderr).text();
+        expect(stdout).toBe("Browser review opened.\n");
+        expect(`${stdout}${stderr}`).not.toContain("capability=");
+        expect(nativeArtifacts(temp)).toEqual([]);
+      } finally {
+        if (review.exitCode === null) {
+          review.kill("SIGTERM");
+          await review.exited;
+        }
+        try {
+          const health = (await (await fetch(`http://127.0.0.1:${port}/health`)).json()) as {
+            pid?: number;
+          };
+          if (health.pid) process.kill(health.pid, "SIGTERM");
+        } catch {
+          // The isolated daemon may already have stopped with its last producer.
+        }
+      }
+    },
+    15_000,
+  );
+
+  compiledTest(
+    "keeps a live web-only review OpenTUI-free",
+    async () => {
+      const port = await reserveFreePort();
+      const { env, temp } = createTestEnvironment(port);
+      const patchPath = resolve(temp, "change.patch");
+      writeFileSync(
+        patchPath,
+        "diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-old\n+new\n",
+      );
+      const review = Bun.spawn([executable!, "patch", patchPath, "--web", "--no-open"], {
+        env,
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+
+      try {
+        await waitForDaemon(port);
+        const deadline = Date.now() + 8_000;
+        let sessions = 0;
+        while (Date.now() < deadline) {
+          const health = (await (await fetch(`http://127.0.0.1:${port}/health`)).json()) as {
+            sessions?: number;
+          };
+          sessions = health.sessions ?? 0;
+          if (sessions > 0) break;
+          await Bun.sleep(50);
+        }
+        expect(sessions).toBe(1);
+        expect(nativeArtifacts(temp)).toEqual([]);
+      } finally {
+        review.kill("SIGTERM");
+        await review.exited;
+        try {
+          const health = (await (await fetch(`http://127.0.0.1:${port}/health`)).json()) as {
+            pid?: number;
+          };
+          if (health.pid) process.kill(health.pid, "SIGTERM");
+        } catch {
+          // The isolated daemon may already have stopped with its last producer.
+        }
+      }
+    },
+    15_000,
+  );
 
   compiledTest("keeps the daemon and session polling paths OpenTUI-free", async () => {
     const port = await reserveFreePort();

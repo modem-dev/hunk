@@ -39,6 +39,7 @@ import {
 } from "../session/agent/errors";
 import { DEFAULT_TAB_WIDTH, parseTabWidth } from "./tabWidth";
 import { resolveCliVersion } from "./version";
+import { HunkUserError } from "./errors";
 
 /** Structured option metadata shared by Commander registration and generated CLI docs. */
 export interface CliReferenceOption {
@@ -64,6 +65,8 @@ export interface CliReferenceCommand {
 
 /** Review flags registered on every full-screen review command. */
 export const COMMON_REVIEW_OPTIONS = [
+  { flag: "--web", description: "open the review in the local browser surface" },
+  { flag: "--no-open", description: "print the browser review URL without opening it" },
   { flag: "--mode <mode>", description: "layout mode: auto, split, stack", parse: "layout" },
   {
     flag: "--cursor-line <style>",
@@ -289,6 +292,8 @@ function collectRepeatedValue(value: string, previous: string[] = []) {
 /** Normalize the flags shared by every input mode. */
 function buildCommonOptions(
   options: {
+    web?: boolean;
+    open?: boolean;
     mode?: LayoutMode;
     cursorLine?: CursorLine;
     theme?: string;
@@ -302,7 +307,19 @@ function buildCommonOptions(
   },
   argv: string[],
 ): CommonOptions {
+  const pathspecDelimiter = argv.indexOf("--");
+  const optionArgv = pathspecDelimiter >= 0 ? argv.slice(0, pathspecDelimiter) : argv;
+  const web = options.web === true;
+  const noOpen = options.open === false;
+  if (noOpen && !web) {
+    throw new HunkUserError("`--no-open` requires `--web`.", [
+      "Use `--web --no-open` to print a browser review URL without opening it.",
+    ]);
+  }
+
   return {
+    web: web ? true : undefined,
+    openBrowser: noOpen ? false : undefined,
     mode: options.mode,
     cursorLine: options.cursorLine,
     theme: options.theme,
@@ -310,23 +327,27 @@ function buildCommonOptions(
     pager: options.pager ? true : undefined,
     watch: options.watch ? true : undefined,
     experimental:
-      options.experimental || argv[2] === AUXILIARY_AGENT_OPTIONS.experimental.flag
+      options.experimental || optionArgv[2] === AUXILIARY_AGENT_OPTIONS.experimental.flag
         ? true
         : undefined,
     excludeUntracked: resolveBooleanFlag(
-      argv,
+      optionArgv,
       AUXILIARY_AGENT_OPTIONS.excludeUntracked.flag,
       `--no-${AUXILIARY_AGENT_OPTIONS.excludeUntracked.flag.slice(2)}`,
     ),
-    lineNumbers: resolveBooleanFlag(argv, "--line-numbers", "--no-line-numbers"),
+    lineNumbers: resolveBooleanFlag(optionArgv, "--line-numbers", "--no-line-numbers"),
     tabWidth: options.tabWidth,
-    wrapLines: resolveBooleanFlag(argv, "--wrap", "--no-wrap"),
-    hunkHeaders: resolveBooleanFlag(argv, "--hunk-headers", "--no-hunk-headers"),
-    agentNotes: resolveBooleanFlag(argv, "--agent-notes", "--no-agent-notes"),
-    transparentBackground: resolveBooleanFlag(argv, "--transparent-bg", "--no-transparent-bg"),
-    // Read straight from argv so the absence of the flag stays undefined rather than
+    wrapLines: resolveBooleanFlag(optionArgv, "--wrap", "--no-wrap"),
+    hunkHeaders: resolveBooleanFlag(optionArgv, "--hunk-headers", "--no-hunk-headers"),
+    agentNotes: resolveBooleanFlag(optionArgv, "--agent-notes", "--no-agent-notes"),
+    transparentBackground: resolveBooleanFlag(
+      optionArgv,
+      "--transparent-bg",
+      "--no-transparent-bg",
+    ),
+    // Read straight from pre-pathspec argv so absence stays undefined instead of
     // becoming Commander's implicit `true` default for a negatable option.
-    extensions: resolveBooleanFlag(argv, "--extensions", "--no-extensions"),
+    extensions: resolveBooleanFlag(optionArgv, "--extensions", "--no-extensions"),
     extensionPaths:
       options.extension && options.extension.length > 0 ? options.extension : undefined,
   };
@@ -430,6 +451,8 @@ function renderCliHelp() {
     "  --experimental                          enable experimental review features (currently STML)",
     "",
     "Common review options:",
+    "  --web                                   open the review in the local browser surface",
+    "  --no-open                               print the browser review URL without opening it",
     "  --mode <mode>                           layout mode: auto, split, stack",
     "  --watch                                 auto-reload when the current diff input changes",
     "  --agent-context <path>                  JSON sidecar with agent rationale",
@@ -954,6 +977,30 @@ async function parseSessionCommand(tokens: string[]): Promise<ParsedCliInput> {
       kind: "session",
       action: "list",
       output: resolveJsonOutput(parsedOptions),
+    };
+  }
+
+  if (subcommand === "open") {
+    const command = buildSessionCommand(SESSION_AGENT_COMMANDS.open);
+    let parsedSessionId: string | undefined;
+    let parsedOptions: SessionCommandOptions<"open"> = {};
+
+    command.action((sessionId: string | undefined, options: SessionCommandOptions<"open">) => {
+      parsedSessionId = sessionId;
+      parsedOptions = options;
+    });
+
+    if (rest.includes("--help") || rest.includes("-h")) {
+      return sessionCommandHelpText(command, SESSION_AGENT_COMMANDS.open);
+    }
+
+    await parseStandaloneCommand(command, rest);
+    return {
+      kind: "session",
+      action: "open",
+      output: "text",
+      selector: resolveExplicitSessionSelector(parsedSessionId, parsedOptions.repo),
+      openBrowser: parsedOptions.open !== false,
     };
   }
 

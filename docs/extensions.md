@@ -26,6 +26,11 @@ Writing one with a coding agent? `hunk skill path hunk-extensions` prints a
 bundled skill that maps the touchpoints below for agents, the way
 `hunk skill path` does for reviewing.
 
+
+## Browser UI scope
+
+Extension loading, changeset transforms, commands, and lifecycle hooks run once in the owning review process and are shared by terminal and browser review. Browser UI v1 does not render OpenTUI sidebar components or terminal-only file views; those renderer-specific components remain terminal-only. The browser renders Hunk's synchronized review document and semantic actions instead of importing extension React/OpenTUI UI code.
+
 ## Where Hunk looks for extensions
 
 Discovery runs group by group, alphabetically by resolved path within each

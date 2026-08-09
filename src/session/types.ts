@@ -252,6 +252,12 @@ export interface SelectedSessionContext {
   liveCommentCount: number;
 }
 
+export interface BrowserReviewUrlResult {
+  url: string;
+}
+
+export interface BrowserReviewUrlToolInput extends SessionTargetInput {}
+
 export interface SessionReview {
   sessionId: string;
   title: string;
@@ -276,7 +282,8 @@ export type HunkSessionCommandResult =
   | NavigatedSelectionResult
   | RemovedCommentResult
   | ClearedCommentsResult
-  | ReloadedSessionResult;
+  | ReloadedSessionResult
+  | BrowserReviewUrlResult;
 
 export type HunkSessionClientMessage = SessionClientMessage<
   HunkSessionInfo,
@@ -295,6 +302,7 @@ export type HunkSessionServerMessage =
   | SessionServerMessage<"read_review_resource", ReadReviewResourceInput>
   | SessionServerMessage<"apply_review_action", ApplyReviewActionInput>
   | SessionServerMessage<"get_review_snapshot", GetReviewSnapshotInput>
+  | SessionServerMessage<"get_browser_review_url", BrowserReviewUrlToolInput>
   | SessionServerMessage<"comment", CommentToolInput>
   | SessionServerMessage<"comment_batch", CommentBatchToolInput>
   | SessionServerMessage<"navigate_to_hunk", NavigateToHunkToolInput>

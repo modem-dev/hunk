@@ -1,6 +1,4 @@
-import { resolveConfiguredExtensions } from "./extensionBootstrap";
 import { loadConfiguredSessionBootstrap, type SessionBootstrapResult } from "./sessionBootstrap";
-import { getBundledVcsCatalog } from "./vcsCatalog";
 import { createExtensionApplyNotices, createUnknownVcsNotice } from "../extensions/apply";
 import { loadBundledExtensions } from "../extensions/default/vcs";
 import {
@@ -19,17 +17,15 @@ import {
   usesPipedPatchInput,
   type ControllingTerminal,
 } from "../core/terminal";
-import type { AppBootstrap } from "./types";
 import type {
+  AppBootstrap,
   CliInput,
-  ExtensionManageCommandInput,
   MarkupRenderCommandInput,
   ParsedCliInput,
   SessionCommandInput,
 } from "../core/types";
 import { canReloadInput } from "../core/inputReload";
 import { parseCli } from "../core/cli";
-import { resolveSessionSelectorBoundary } from "./sessionSelector";
 
 export type StartupPlan =
   | {
@@ -64,10 +60,6 @@ export type StartupPlan =
     }
   | {
       kind: "markup-guide";
-    }
-  | {
-      kind: "extension-manage";
-      input: ExtensionManageCommandInput;
     }
   | {
       kind: "app";
@@ -124,7 +116,6 @@ export async function prepareStartupPlan(
   const stdoutIsTTY = deps.stdoutIsTTY ?? Boolean(process.stdout.isTTY);
   const stdout = deps.stdout ?? process.stdout;
   const env = deps.env ?? process.env;
-  const baseVcsCatalog = getBundledVcsCatalog();
 
   let parsedCliInput = await parseCliImpl(argv);
   let controllingTerminal: ControllingTerminal | null = null;
@@ -143,16 +134,9 @@ export async function prepareStartupPlan(
   }
 
   if (parsedCliInput.kind === "session") {
-    const sessionInput =
-      "selector" in parsedCliInput
-        ? {
-            ...parsedCliInput,
-            selector: resolveSessionSelectorBoundary(parsedCliInput.selector, baseVcsCatalog),
-          }
-        : parsedCliInput;
     return {
       kind: "session-command",
-      input: sessionInput,
+      input: parsedCliInput,
     };
   }
 
@@ -166,13 +150,6 @@ export async function prepareStartupPlan(
   if (parsedCliInput.kind === "markup-guide") {
     return {
       kind: "markup-guide",
-    };
-  }
-
-  if (parsedCliInput.kind === "extension-manage") {
-    return {
-      kind: "extension-manage",
-      input: parsedCliInput,
     };
   }
 
@@ -192,9 +169,6 @@ export async function prepareStartupPlan(
       };
       const configuredStatic = resolveConfiguredCliInputImpl(
         resolveRuntimeCliInputImpl(staticPatchInput),
-        {
-          vcsCatalog: baseVcsCatalog,
-        },
       );
       const staticPlan = {
         kind: "static-diff-pager" as const,
@@ -228,36 +202,53 @@ export async function prepareStartupPlan(
       };
     }
 
-    if (!stdoutIsTTY) {
+    // Browser review owns patch-like pager input even without a terminal. Plain pager input above
+    // keeps its existing fallback because it has no semantic review document to render.
+    if (parsedCliInput.options.web) {
+      parsedCliInput = {
+        kind: "patch",
+        file: "-",
+        text: stdinText,
+        options: {
+          ...parsedCliInput.options,
+          pager: true,
+        },
+      };
+    } else if (!stdoutIsTTY) {
       return passthroughPlan;
     }
 
-    if (env.TERM === "dumb" && !capturedPagerHost) {
+    if (!parsedCliInput.options.web && env.TERM === "dumb" && !capturedPagerHost) {
       return passthroughPlan;
     }
 
     // Captured pager hosts like LazyGit can provide a PTY while advertising TERM=dumb.
     // In that mode, emit static colored diff output instead of launching the TUI.
-    if (capturedPagerHost) {
-      return staticPagerPlan();
-    }
+    if (!parsedCliInput.options.web) {
+      if (capturedPagerHost) {
+        return staticPagerPlan();
+      }
 
-    controllingTerminal = openControllingTerminalImpl();
-    if (!controllingTerminal) {
-      return staticPagerPlan();
-    }
+      controllingTerminal = openControllingTerminalImpl();
+      if (!controllingTerminal) {
+        return staticPagerPlan();
+      }
 
-    parsedCliInput = {
-      kind: "patch",
-      file: "-",
-      text: stdinText,
-      options: {
-        ...parsedCliInput.options,
-        pager: true,
-      },
-    };
+      parsedCliInput = {
+        kind: "patch",
+        file: "-",
+        text: stdinText,
+        options: {
+          ...parsedCliInput.options,
+          pager: true,
+        },
+      };
+    }
   }
 
+  if (parsedCliInput.kind === "pager") {
+    throw new Error("Unreachable pager startup plan.");
+  }
   const runtimeCliInput = resolveRuntimeCliInputImpl(parsedCliInput);
   const startupCwd = process.cwd();
   let configured = resolveConfiguredCliInputImpl(runtimeCliInput, {
@@ -271,12 +262,12 @@ export async function prepareStartupPlan(
   // Any app session launched with piped stdin still needs a real terminal input stream for
   // keyboard, mouse, and terminal query responses. Auto-theme happened to open this path during
   // probing; make it unconditional so concrete themes behave the same way.
-  if (!controllingTerminal && !stdinIsTTY && stdoutIsTTY) {
+  if (!cliInput.options.web && !controllingTerminal && !stdinIsTTY && stdoutIsTTY) {
     controllingTerminal = openControllingTerminalImpl();
   }
 
   let initialThemeMode: AppBootstrap["initialThemeMode"];
-  if (cliInput.options.theme === "auto" && stdoutIsTTY) {
+  if (!cliInput.options.web && cliInput.options.theme === "auto" && stdoutIsTTY) {
     const themeInput = controllingTerminal?.stdin ?? (stdinIsTTY ? process.stdin : null);
     if (themeInput) {
       initialThemeMode =
@@ -295,22 +286,14 @@ export async function prepareStartupPlan(
   }
 
   // Extensions load before the changeset so later stages can hand their VCS adapters and
-  // changeset transforms to the loading pipeline. External adapters may settle a root the
-  // bundled catalog could not; the shared resolver then appends newly discovered repo
-  // candidates without executing the provisional factory prefix twice.
-  const resolvedExtensions = await resolveConfiguredExtensions(
-    {
-      runtimeInput: runtimeCliInput,
-      configured,
-      cwd: startupCwd,
-      env,
-      baseVcsCatalog,
-    },
-    { resolveConfiguredCliInputImpl, loadStartupExtensionsImpl },
-  );
-  configured = resolvedExtensions.configured;
-  cliInput = configured.input;
-  const extensionResult = resolvedExtensions.extensions;
+  // changeset transforms to the loading pipeline. Failures never reach here: the host
+  // isolates them into issues that become startup notices below.
+  const extensionResult = await loadStartupExtensionsImpl({
+    extensions: configured.extensions,
+    cwd: startupCwd,
+    env,
+    cliExtensionPaths: cliInput.options.extensionPaths,
+  });
 
   let preparedSession: SessionBootstrapResult;
   try {
@@ -320,7 +303,6 @@ export async function prepareStartupPlan(
       extensions: extensionResult,
       initialThemeMode,
       loadAppBootstrapImpl,
-      baseVcsCatalog,
     });
   } catch (error) {
     controllingTerminal?.close();
@@ -356,7 +338,10 @@ export async function prepareStartupPlan(
       : configured.startupNotices,
     extensionResult,
   );
-  controllingTerminal ??= usesPipedPatchInputImpl(cliInput) ? openControllingTerminalImpl() : null;
+  controllingTerminal ??=
+    !cliInput.options.web && usesPipedPatchInputImpl(cliInput)
+      ? openControllingTerminalImpl()
+      : null;
 
   return {
     kind: "app",

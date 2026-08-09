@@ -80,6 +80,11 @@ import { loadConfiguredSessionBootstrap, type SessionBootstrapResult } from "./s
 import { createWatchedInputController, type WatchedInputRuntime } from "./watchRuntime";
 import type { WatchController } from "../core/watchController";
 import {
+  allowsUnsafeRemoteSessionBroker,
+  isLoopbackHost,
+  resolveSessionBrokerConfig,
+} from "../session/broker/brokerConfig";
+import {
   buildBrowserReviewUrl,
   createBrowserReviewCapability,
   openBrowserUrl,
@@ -259,15 +264,26 @@ export class ReviewSessionRuntime {
     return this.browserReviewCapability.hash;
   }
 
-  /** Build the internal local review URL while keeping the clear capability process-local. */
-  getBrowserReviewUrl(origin: string) {
+  /** Build the safe local review URL while keeping the clear capability process-local. */
+  getBrowserReviewUrl(origin?: string) {
+    if (process.env.HUNK_MCP_DISABLE === "1") {
+      throw new Error("Browser review is unavailable because HUNK_MCP_DISABLE is set.");
+    }
+    const config = resolveSessionBrokerConfig();
+    if (!isLoopbackHost(config.host) || allowsUnsafeRemoteSessionBroker()) {
+      throw new Error("Browser review requires Hunk's safe loopback session daemon.");
+    }
     const sessionId = this.hostClient?.getRegistration().sessionId;
     if (!sessionId) throw new Error("Review session is not attached to the local broker.");
-    return buildBrowserReviewUrl(origin, sessionId, this.browserReviewCapability.capability);
+    return buildBrowserReviewUrl(
+      origin ?? config.httpOrigin,
+      sessionId,
+      this.browserReviewCapability.capability,
+    );
   }
 
-  /** Open the internal browser review without exposing a public CLI surface. */
-  openBrowserReview(origin: string) {
+  /** Open this runtime's browser review using the shared shell-free platform opener. */
+  openBrowserReview(origin?: string) {
     return openBrowserUrl(this.getBrowserReviewUrl(origin));
   }
 
@@ -1744,6 +1760,21 @@ export class ReviewSessionRuntime {
         return input
           ? this.getReviewSnapshot(input)
           : this.reviewCommandError("invalid-command", "Review snapshot payload is invalid.");
+      }
+      case "get_browser_review_url": {
+        const input = message.input;
+        const sessionId = this.hostClient?.getRegistration().sessionId;
+        if (
+          !exactCommandEnvelope ||
+          !sessionId ||
+          input.sessionId !== sessionId ||
+          Object.keys(input).some((key) => !["sessionId", "sessionPath", "repoRoot"].includes(key))
+        ) {
+          throw new Error("Browser review URL request is invalid for this session.");
+        }
+        const result = { url: this.getBrowserReviewUrl() };
+        this.assertCommandResultWithinBounds(result, "Browser review URL result");
+        return result;
       }
       case "comment": {
         const cached = this.getSessionCommentResult("comment", message.requestId);
