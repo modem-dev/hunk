@@ -1,7 +1,9 @@
 /** @jsxImportSource react */
 import { FileDiff, type DiffLineAnnotation } from "@pierre/diffs/react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { ReviewExpandedGapState } from "../../core/review/state";
 import type { ReviewNoteV1 } from "../../core/review/types";
+import type { HunkReviewActionV1, HunkReviewStateV1 } from "../../session/reviewProtocol";
 import type { BrowserReviewApiClient } from "../lib/apiClient";
 import {
   findReviewResource,
@@ -25,6 +27,7 @@ type FileResourceState =
 
 const WINDOW_OVERSCAN_PX = 900;
 const WINDOW_UNLOAD_HYSTERESIS_MS = 300;
+type BrowserSourceStatus = NonNullable<HunkReviewStateV1["sourceStatusByFileKey"]>[string];
 
 export interface ReviewStreamProps {
   api: BrowserReviewApiClient;
@@ -33,6 +36,11 @@ export interface ReviewStreamProps {
   selectedFileKey?: string;
   theme: HunkWebTheme;
   onVisibleFile: (fileKey: string) => void;
+  mutationsEnabled?: boolean;
+  stateRevision?: number;
+  expandedGaps?: readonly ReviewExpandedGapState[];
+  sourceStatusByFileKey?: HunkReviewStateV1["sourceStatusByFileKey"];
+  onAction?: (action: HunkReviewActionV1, expectedRevision?: number) => Promise<boolean>;
 }
 
 /** Render every authoritative file wrapper in order while loading only nearby canonical data. */
@@ -66,6 +74,11 @@ function ReviewFile({
   theme,
   onVisibleFile,
   initiallyNear,
+  mutationsEnabled = false,
+  stateRevision = 0,
+  expandedGaps = [],
+  sourceStatusByFileKey = {},
+  onAction,
 }: ReviewStreamProps & { file: BrowserReviewFile; initiallyNear: boolean }) {
   const selected = selectedFileKey === file.key;
   const resourceKey = `${document.generation}\0${file.canonicalResourceId}`;
@@ -82,12 +95,39 @@ function ReviewFile({
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const unloadTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const notes = [...file.notes, ...mutableNotes.filter((note) => note.fileKey === file.key)];
+  const fileExpandedGaps = useMemo(
+    () => expandedGaps.filter((gap) => gap.fileKey === file.key && gap.expanded),
+    [expandedGaps, file.key],
+  );
+  const sourceStatus = sourceStatusByFileKey?.[file.key];
   const shouldLoad = nearViewport || selected;
   const mounted = !windowable || shouldLoad;
   const activeResource =
     resource.key === resourceKey
       ? resource
       : ({ key: resourceKey, state: shouldLoad ? "loading" : "deferred" } as const);
+  const noteActions = (note: ReviewNoteV1) => ({
+    mutationsEnabled,
+    ...(onAction && note.origin === "user"
+      ? {
+          onUpdate: (body: string, markup: string, editStartRevision: number) =>
+            onAction(
+              { type: "notes/update-user", noteId: note.id, body, markup },
+              editStartRevision,
+            ),
+          editStartRevision: stateRevision,
+        }
+      : {}),
+    ...(onAction && (note.origin === "user" || note.origin === "live-agent")
+      ? {
+          onRemove: () =>
+            onAction({
+              type: note.origin === "user" ? "notes/remove-user" : "notes/remove-live",
+              noteId: note.id,
+            }),
+        }
+      : {}),
+  });
   const pierre = useMemo<PierreReviewFile | undefined>(() => {
     if (!mounted || activeResource.state !== "ready") return undefined;
     return toPierreReviewFile(
@@ -130,7 +170,15 @@ function ReviewFile({
         try {
           const canonical = parseCanonicalReviewFile(document, file, content);
           const sourceIds = [
-            ...new Set(canonical.expandedContext.map((entry) => entry.sourceResourceId)),
+            ...new Set([
+              ...canonical.expandedContext.map((entry) => entry.sourceResourceId),
+              ...(sourceStatus?.kind === "loaded"
+                ? fileExpandedGaps.flatMap((entry) => {
+                    const id = file.sourceResourceIds[entry.side];
+                    return id ? [id] : [];
+                  })
+                : []),
+            ]),
           ];
           const expandedSourceTextById = Object.fromEntries(
             await Promise.all(
@@ -175,8 +223,10 @@ function ReviewFile({
     document.generation,
     file.canonicalResourceId,
     file.key,
+    fileExpandedGaps,
     resourceKey,
     shouldLoad,
+    sourceStatus?.kind,
     windowable,
   ]);
 
@@ -255,6 +305,43 @@ function ReviewFile({
         </div>
         <div className="review-file__badges">
           <FileStateBadges file={file} />
+          {file.sourceResourceIds.new || file.sourceResourceIds.old
+            ? file.hunks.map((hunk, hunkIndex) =>
+                (hunk.newRange?.[0] ?? hunk.oldRange?.[0] ?? 1) > 1 ? (
+                  <button
+                    key={hunk.index}
+                    type="button"
+                    disabled={!mutationsEnabled}
+                    title={`Expand or collapse source before hunk ${hunkIndex + 1}`}
+                    onClick={() =>
+                      void onAction?.({
+                        type: "expansion/toggle",
+                        fileKey: file.key,
+                        gapId: `before:${hunkIndex}`,
+                      })
+                    }
+                  >
+                    Context {hunkIndex + 1}
+                  </button>
+                ) : null,
+              )
+            : null}
+          {file.hasTrailingContext ? (
+            <button
+              type="button"
+              disabled={!mutationsEnabled}
+              title="Expand or collapse source after the final hunk"
+              onClick={() =>
+                void onAction?.({
+                  type: "expansion/toggle",
+                  fileKey: file.key,
+                  gapId: `trailing:${Math.max(0, file.hunks.length - 1)}`,
+                })
+              }
+            >
+              Trailing context
+            </button>
+          ) : null}
           <span className="stat stat--add">+{file.additions}</span>
           <span className="stat stat--delete">−{file.deletions}</span>
           {file.statsTruncated ? <span>stats truncated</span> : null}
@@ -327,34 +414,107 @@ function ReviewFile({
                     : ""}
                 </div>
               ) : null}
-              {pierre.expandedContext.map((context) => (
-                <ExpandedContextBlock
-                  key={`${context.gapId}:${context.side}`}
-                  context={context}
-                  source={pierre.expandedSourceTextById[context.sourceResourceId]}
-                />
-              ))}
-              <FileDiff<ReviewNoteV1>
-                disableWorkerPool
-                fileDiff={pierre.fileDiff}
-                lineAnnotations={pierre.annotations}
-                options={{
-                  theme: theme.diffs,
-                  themeType: theme.type,
-                  diffStyle: "unified",
-                  diffIndicators: "bars",
-                  disableFileHeader: true,
-                  overflow: "scroll",
-                  hunkSeparators: "line-info-basic",
-                  lineDiffType: "word-alt",
-                  unsafeCSS: DIFF_UNSAFE_CSS,
-                }}
-                renderAnnotation={(annotation: DiffLineAnnotation<ReviewNoteV1>) => (
-                  <ReviewNote note={annotation.metadata} />
-                )}
-              />
+              {pierre.fileDiff.hunks.map((hunk, hunkIndex) => {
+                const before = pierre.expandedContext.filter(
+                  (context) => context.gapId === `before:${hunkIndex}`,
+                );
+                const trailing = pierre.expandedContext.filter(
+                  (context) => context.gapId === `trailing:${hunkIndex}`,
+                );
+                const dynamicBefore = fileExpandedGaps.filter(
+                  (context) => context.gapId === `before:${hunkIndex}`,
+                );
+                const dynamicTrailing = fileExpandedGaps.filter(
+                  (context) => context.gapId === `trailing:${hunkIndex}`,
+                );
+                const manifestHunk = file.hunks[hunkIndex];
+                const annotations = pierre.annotations.filter((annotation) => {
+                  const range =
+                    annotation.side === "additions"
+                      ? manifestHunk?.newRange
+                      : manifestHunk?.oldRange;
+                  return Boolean(
+                    range && annotation.lineNumber >= range[0] && annotation.lineNumber <= range[1],
+                  );
+                });
+                return (
+                  <div key={hunkIndex} data-review-hunk={hunkIndex}>
+                    {before.map((context) => (
+                      <ExpandedContextBlock
+                        key={`${context.gapId}:${context.side}`}
+                        context={context}
+                        source={pierre.expandedSourceTextById[context.sourceResourceId]}
+                      />
+                    ))}
+                    {dynamicBefore.map((context) => (
+                      <AuthoritativeGapBlock
+                        key={`${context.gapId}:${context.side}`}
+                        context={context}
+                        sourceStatus={sourceStatus}
+                        source={
+                          pierre.expandedSourceTextById[file.sourceResourceIds[context.side] ?? ""]
+                        }
+                      />
+                    ))}
+                    <FileDiff<ReviewNoteV1>
+                      disableWorkerPool
+                      fileDiff={{
+                        ...pierre.fileDiff,
+                        hunks: [hunk],
+                        cacheKey: `${pierre.fileDiff.cacheKey}:hunk:${hunkIndex}`,
+                      }}
+                      lineAnnotations={annotations}
+                      options={{
+                        theme: theme.diffs,
+                        themeType: theme.type,
+                        diffStyle: "unified",
+                        diffIndicators: "bars",
+                        disableFileHeader: true,
+                        overflow: "scroll",
+                        hunkSeparators: "line-info-basic",
+                        lineDiffType: "word-alt",
+                        unsafeCSS: DIFF_UNSAFE_CSS,
+                        lineHoverHighlight: "both",
+                        onLineClick: ({ lineNumber, annotationSide }) => {
+                          void onAction?.({
+                            type: "selection/set-line",
+                            fileKey: file.key,
+                            hunkIndex,
+                            side: annotationSide === "additions" ? "new" : "old",
+                            line: lineNumber,
+                            reveal: true,
+                          });
+                        },
+                      }}
+                      renderAnnotation={(annotation: DiffLineAnnotation<ReviewNoteV1>) => (
+                        <ReviewNote
+                          note={annotation.metadata}
+                          {...noteActions(annotation.metadata)}
+                        />
+                      )}
+                    />
+                    {trailing.map((context) => (
+                      <ExpandedContextBlock
+                        key={`${context.gapId}:${context.side}`}
+                        context={context}
+                        source={pierre.expandedSourceTextById[context.sourceResourceId]}
+                      />
+                    ))}
+                    {dynamicTrailing.map((context) => (
+                      <AuthoritativeGapBlock
+                        key={`${context.gapId}:${context.side}`}
+                        context={context}
+                        sourceStatus={sourceStatus}
+                        source={
+                          pierre.expandedSourceTextById[file.sourceResourceIds[context.side] ?? ""]
+                        }
+                      />
+                    ))}
+                  </div>
+                );
+              })}
               {pierre.fileNotes.map((note) => (
-                <ReviewNote key={note.id} note={note} />
+                <ReviewNote key={note.id} note={note} {...noteActions(note)} />
               ))}
             </>
           )}
@@ -364,11 +524,43 @@ function ReviewFile({
   );
 }
 
+/** Keep non-materialized expansion feedback at the semantic gap without hiding the base diff. */
+function AuthoritativeGapBlock({
+  context,
+  sourceStatus,
+  source,
+}: {
+  context: ReviewExpandedGapState;
+  sourceStatus?: BrowserSourceStatus;
+  source?: string;
+}) {
+  if (sourceStatus?.kind === "loaded" && source !== undefined) {
+    return <ExpandedContextBlock context={context} source={source} />;
+  }
+  if (sourceStatus?.kind === "error") {
+    return (
+      <div
+        className="review-file__state review-file__state--error"
+        data-gap-id={context.gapId}
+        role="alert"
+      >
+        Expanded source could not be loaded.
+      </div>
+    );
+  }
+  return (
+    <div className="review-file__state" data-gap-id={context.gapId} role="status">
+      Loading expanded source…
+    </div>
+  );
+}
+
+/** Render one materialized source range with singular/plural line grammar. */
 function ExpandedContextBlock({
   context,
   source,
 }: {
-  context: PierreReviewFile["expandedContext"][number];
+  context: PierreReviewFile["expandedContext"][number] | ReviewExpandedGapState;
   source?: string;
 }) {
   const range = context.side === "new" ? context.newRange : context.oldRange;
@@ -377,10 +569,11 @@ function ExpandedContextBlock({
       ?.split("\n")
       .slice(Math.max(0, range[0] - 1), range[1])
       .join("\n") ?? "";
+  const lineLabel = range[0] === range[1] ? `line ${range[0]}` : `lines ${range[0]}–${range[1]}`;
   return (
     <div className="review-file__expanded" data-gap-id={context.gapId}>
       <span>
-        Expanded {context.side} lines {range[0]}–{range[1]}
+        Expanded {context.side} {lineLabel}
       </span>
       <pre>{lines}</pre>
     </div>

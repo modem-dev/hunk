@@ -1,4 +1,5 @@
 import type { ReviewResourceDescriptorV1 } from "../../core/review/types";
+import type { HunkReviewActionV1, ReviewActionResult } from "../../session/reviewProtocol";
 import { ReviewSseChunks, sha256, type ReviewMirrorEvent } from "./mirror";
 import type { BrowserReviewSnapshot } from "./reviewTypes";
 
@@ -8,10 +9,15 @@ export class BrowserReviewApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    readonly code?: string,
+    readonly currentGeneration?: string,
   ) {
     super(message);
   }
 }
+
+/** Typed conflict returned when the browser mirror must reconcile before retrying. */
+export class BrowserReviewConflictError extends BrowserReviewApiError {}
 
 interface QueuedResource {
   generation: string;
@@ -20,7 +26,7 @@ interface QueuedResource {
   reject: (error: Error) => void;
 }
 
-/** Authenticated, read-only client for the closed browser-review route set. */
+/** Authenticated client for the closed browser-review route set. */
 export class BrowserReviewApiClient {
   private readonly base: string;
   private readonly resourceQueue: QueuedResource[] = [];
@@ -29,7 +35,10 @@ export class BrowserReviewApiClient {
   private resourceActive = 0;
   private currentGeneration?: string;
 
-  constructor(readonly sessionId: string) {
+  constructor(
+    readonly sessionId: string,
+    private readonly fetchImpl: typeof fetch = globalThis.fetch.bind(globalThis),
+  ) {
     this.base = `/review-api/${encodeURIComponent(sessionId)}`;
   }
 
@@ -47,6 +56,44 @@ export class BrowserReviewApiClient {
 
   async snapshot() {
     return this.json<BrowserReviewSnapshot>(`${this.base}/snapshot`);
+  }
+
+  /** Apply one semantic action with the mirror generation and revision preconditions. */
+  async action(generation: string, expectedStateRevision: number, action: HunkReviewActionV1) {
+    const response = await this.fetchImpl(`${this.base}/actions`, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ generation, expectedStateRevision, action }),
+    });
+    const payload = (await response.json().catch(() => null)) as unknown;
+    const record =
+      payload && typeof payload === "object" ? (payload as Record<string, unknown>) : null;
+    const commandError =
+      record?.kind === "review-error" && record.error && typeof record.error === "object"
+        ? (record.error as Record<string, unknown>)
+        : null;
+    const routeError = typeof record?.error === "string" ? record : null;
+    if (!response.ok || commandError) {
+      const details = commandError ?? routeError;
+      const message =
+        typeof details?.message === "string"
+          ? details.message
+          : typeof details?.error === "string"
+            ? details.error
+            : response.status === 409
+              ? "The review changed before this action was applied."
+              : "The review action was rejected.";
+      const ErrorType =
+        response.status === 409 ? BrowserReviewConflictError : BrowserReviewApiError;
+      throw new ErrorType(
+        message,
+        response.status,
+        typeof details?.code === "string" ? details.code : undefined,
+        typeof details?.currentGeneration === "string" ? details.currentGeneration : undefined,
+      );
+    }
+    return payload as ReviewActionResult;
   }
 
   /** Abort obsolete queued/inflight resources and retain only the active generation cache. */
@@ -156,7 +203,14 @@ export class BrowserReviewApiClient {
     }
     source.onopen = callbacks.onOpen;
     source.onerror = () => {
-      void this.probeStatus().then(callbacks.onError, () => callbacks.onError());
+      // Close the mutation gate synchronously; status probing must never leave a stale write window.
+      callbacks.onError();
+      void this.probeStatus().then(
+        (status) => {
+          if (status !== undefined) callbacks.onError(status);
+        },
+        () => {},
+      );
     };
     return () => source.close();
   }
@@ -177,7 +231,7 @@ export class BrowserReviewApiClient {
     let total: number | undefined = descriptor.byteLength;
     do {
       const end = offset + RESOURCE_RANGE_BYTES - 1;
-      const response = await fetch(
+      const response = await this.fetchImpl(
         `${this.base}/resources/${encodeURIComponent(generation)}/${encodeURIComponent(descriptor.id)}`,
         {
           credentials: "same-origin",
@@ -220,12 +274,14 @@ export class BrowserReviewApiClient {
   }
 
   private async probeStatus() {
-    const response = await fetch(`${this.base}/snapshot`, { credentials: "same-origin" });
+    const response = await this.fetchImpl(`${this.base}/snapshot`, {
+      credentials: "same-origin",
+    });
     return response.ok ? undefined : response.status;
   }
 
   private async json<T>(url: string): Promise<T> {
-    const response = await fetch(url, { credentials: "same-origin" });
+    const response = await this.fetchImpl(url, { credentials: "same-origin" });
     if (!response.ok) {
       throw new BrowserReviewApiError(
         response.status === 401

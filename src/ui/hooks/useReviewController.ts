@@ -1,10 +1,9 @@
 /**
- * Shared review-stream state for both the app shell and the session bridge.
+ * Terminal review-stream state projected from the runtime-owned semantic store.
  *
- * This hook owns the live review state that both callers need to agree on:
- * filtering, merged live comments, selected file and hunk, and relative review
- * navigation. `App` uses it for rendering and keyboard or menu actions, while
- * the session bridge uses the same state and actions for daemon-driven navigation.
+ * This hook owns renderer-local filtering, merged note presentation, selection,
+ * drafts, cursor movement, and relative terminal navigation. Session commands
+ * mutate the same store exclusively through ReviewSessionRuntime.
  */
 import {
   useCallback,
@@ -15,34 +14,14 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import {
-  buildLiveComment,
-  findDiffFileByPath,
-  firstCommentTargetForHunk,
-  resolveCommentTarget,
-} from "../../core/liveComments";
-import { SourceTextTooLargeError } from "../../core/fileSource";
-import { reviewLineContextDigest, reviewHunkRange } from "../../core/review/reconcile";
+import { firstCommentTargetForHunk } from "../../core/liveComments";
+import { reviewLineContextDigest } from "../../core/review/reconcile";
 import { projectReviewNote } from "../../core/review/notes";
 import { isRenderableStoredReviewNote } from "../../core/review/state";
 import type { ReviewStore } from "../../core/review/store";
 import type { ReviewFileV1, ReviewNoteV1 } from "../../core/review/types";
-import { noDiffFileMatchesMessage } from "../../session/agent/errors";
-import { createSessionSnapshotFromReviewState } from "../../session/app/reviewSnapshot";
-import type { AgentAnnotation, DiffFile, LayoutMode, UserNoteLineTarget } from "../../core/types";
-import type {
-  AppliedCommentBatchResult,
-  AppliedCommentResult,
-  ClearedCommentsResult,
-  CommentBatchItemInput,
-  CommentToolInput,
-  LiveComment,
-  NavigateToHunkToolInput,
-  NavigatedSelectionResult,
-  RemovedCommentResult,
-  SessionLiveCommentSummary,
-  SessionReviewNoteSummary,
-} from "../../session/types";
+import type { AgentAnnotation, DiffFile, UserNoteLineTarget } from "../../core/types";
+import type { LiveComment } from "../../session/types";
 import type { FileSourceStatus } from "../diff/expandCollapsedRows";
 import { selectGapForKeyboardToggle } from "../diff/expandCollapsedRows";
 import { trailingCollapsedLines } from "../diff/pierre";
@@ -56,13 +35,9 @@ import {
   resolveLineCursor,
   type LineCursor,
 } from "../lib/lineCursors";
-import { agentNoteMarkupWidth } from "../lib/agentNoteGeometry";
-import { STML_REFERENCE_WIDTH, validateStmlMarkup } from "../lib/stml/layout";
 import {
   buildReviewStreamState,
-  buildSelectedHunkSummary,
   findNextAnnotatedFile,
-  resolveReviewNavigationTarget,
   resolveSelectedFile,
 } from "../lib/reviewState";
 
@@ -111,12 +86,6 @@ export interface DraftReviewNote {
   body: string;
 }
 
-interface SourceLoadRequest {
-  fetcher: NonNullable<DiffFile["sourceFetcher"]>;
-  requestId: number;
-  side: "old" | "new";
-}
-
 export interface ReviewSelectionOptions {
   alignFileHeaderTop?: boolean;
   preserveViewport?: boolean;
@@ -129,11 +98,7 @@ export interface ReviewController {
   expandedGapsByFileId: Record<string, ReadonlySet<string>>;
   filter: string;
   draftNote: DraftReviewNote | null;
-  liveCommentCount: number;
-  liveCommentSummaries: SessionLiveCommentSummary[];
   liveCommentsByFileId: Record<string, LiveComment[]>;
-  reviewNoteCount: number;
-  reviewNoteSummaries: SessionReviewNoteSummary[];
   showAgentNotes: boolean;
   setShowAgentNotes: (visible: boolean) => void;
   userNotesByFileId: Record<string, UserReviewNote[]>;
@@ -156,23 +121,7 @@ export interface ReviewController {
   toggleGap: (fileId: string, gapKey: string) => void;
   toggleSelectedHunkGap: () => void;
   visibleFiles: DiffFile[];
-  addLiveComment: (
-    input: CommentToolInput,
-    commentId: string,
-    options?: { reveal?: boolean },
-  ) => AppliedCommentResult;
-  addLiveCommentBatch: (
-    inputs: CommentBatchItemInput[],
-    requestId: string,
-    options?: { revealMode?: "none" | "first" },
-  ) => AppliedCommentBatchResult;
   clearFilter: () => void;
-  clearLiveComments: (
-    filePath?: string,
-    options?: { includeUser?: boolean },
-  ) => ClearedCommentsResult;
-  navigateToLocation: (input: NavigateToHunkToolInput) => NavigatedSelectionResult;
-  removeLiveComment: (commentId: string) => RemovedCommentResult;
   cancelDraftNote: () => void;
   removeUserNote: (noteId: string) => void;
   saveDraftNote: () => UserReviewNote | null;
@@ -186,14 +135,6 @@ export interface ReviewController {
   ) => DraftReviewNote | null;
   setFilter: (value: string) => void;
   updateDraftNote: (body: string) => void;
-}
-
-/** Own the shared review stream state used by both the UI and session bridge. */
-/** Live note-card geometry the app publishes for markup validation. */
-export interface AgentNoteGeometrySnapshot {
-  layout: Exclude<LayoutMode, "auto">;
-  /** Diff pane content width — the width the diff view renders at. */
-  width: number;
 }
 
 /** Adapt one renderer-neutral mutable note back to the terminal annotation model. */
@@ -227,37 +168,12 @@ function mutableNoteContextDigests(
   };
 }
 
-/** Resolve one collapsed-gap address from renderer-neutral hunk content. */
-function semanticGapAddress(file: ReviewFileV1, gapId: string) {
-  const [position, rawIndex] = gapId.split(":");
-  const hunkIndex = Number(rawIndex);
-  const hunk = file.hunks[hunkIndex];
-  if (!hunk || (position !== "before" && position !== "trailing")) return undefined;
-  if (position === "before") {
-    const count = hunk.collapsedBefore;
-    return {
-      oldRange: [hunk.deletionStart - count, hunk.deletionStart - 1] as const,
-      newRange: [hunk.additionStart - count, hunk.additionStart - 1] as const,
-    };
-  }
-  const oldStart = reviewHunkRange(hunk, "old")[1] + 1;
-  const newStart = reviewHunkRange(hunk, "new")[1] + 1;
-  const count = Math.max(
-    0,
-    Math.min(file.deletionLines.length - oldStart + 1, file.additionLines.length - newStart + 1),
-  );
-  return {
-    oldRange: [oldStart, oldStart + count - 1] as const,
-    newRange: [newStart, newStart + count - 1] as const,
-  };
-}
-
 export function useReviewController({
   files,
   reviewStore,
   lineCursors = EMPTY_LINE_CURSORS,
-  noteGeometry,
-  stmlEnabled = false,
+  onMutationError,
+  toggleSourceGap,
 }: {
   files: DiffFile[];
   reviewStore: ReviewStore;
@@ -266,18 +182,12 @@ export function useReviewController({
    * Headless callers get none, which leaves `j` and `k` scrolling the viewport.
    */
   lineCursors?: LineCursor[];
-  /** Allow STML bodies for live comments in this explicitly opted-in session. */
-  stmlEnabled?: boolean;
-  /**
-   * Mutable ref the app keeps pointed at the current layout and pane width.
-   * A ref (not a value) because App computes geometry after this hook runs;
-   * daemon commands arrive asynchronously, so reads always see fresh state.
-   */
-  noteGeometry?: { current: AgentNoteGeometrySnapshot | null };
+  /** Surface a rejected authoritative mutation without discarding local draft state. */
+  onMutationError?: (error: unknown) => void;
+  /** Runtime-owned generation-safe source expansion adapter. */
+  toggleSourceGap?: (fileKey: string, gapId: string) => void;
 }): ReviewController {
   const store = reviewStore;
-  const activeStoreRef = useRef(store);
-  activeStoreRef.current = store;
   const document = reviewStore.getSnapshot().document;
   const reviewSnapshot = useSyncExternalStore(
     store.subscribe,
@@ -392,9 +302,6 @@ export function useReviewController({
     }
     return result;
   }, [reviewSnapshot.sourceStatusByFileKey, terminalFileByKey]);
-  const sourceLoadRequestsRef = useRef(new Map<string, SourceLoadRequest>());
-  const nextSourceLoadRequestIdRef = useRef(1);
-
   const deferredFilter = useDeferredValue(filter);
 
   const { allFiles, visibleFiles, hunkCursors, annotatedHunkCursors } = useMemo(
@@ -681,31 +588,19 @@ export function useReviewController({
     setFilter("");
   }, [setFilter]);
 
-  /** Toggle expansion of one collapsed gap and lazily load source when needed. */
+  /** Keep terminal cursor restoration local while runtime owns expansion and source loading. */
   const toggleGap = useCallback(
     (fileId: string, gapKey: string) => {
       const file = allFiles.find((entry) => entry.id === fileId);
-      if (!file?.sourceFetcher) {
-        return;
-      }
-
       const fileKey = keyByFileId.get(fileId);
-      const semanticFile = fileKey ? semanticFileByKey.get(fileKey) : undefined;
-      if (!fileKey || !semanticFile) return;
-      const side = file.metadata.type === "deleted" ? "old" : "new";
-      const address = semanticGapAddress(semanticFile, gapKey);
-      const sourceId = semanticFile.sourceResourceIds[side];
-      const source = document.resources.find(
-        (resource) => resource.id === sourceId && resource.kind === "source",
-      );
-      if (!address || !source || source.kind !== "source") return;
-
+      if (!file?.sourceFetcher || !fileKey || !toggleSourceGap) return;
       const restorePointKey = `${fileId}:${gapKey}`;
       const restorePoint = lineCursorBeforeExpandRef.current.get(restorePointKey) ?? null;
-      const snapshot = store.getSnapshot();
-      const expanding = !snapshot.expandedGaps.some(
-        (gap) => gap.fileKey === fileKey && gap.gapId === gapKey && gap.expanded,
-      );
+      const expanding = !store
+        .getSnapshot()
+        .expandedGaps.some(
+          (gap) => gap.fileKey === fileKey && gap.gapId === gapKey && gap.expanded,
+        );
       if (expanding) {
         if (lineCursorRef.current) {
           lineCursorBeforeExpandRef.current.set(restorePointKey, lineCursorRef.current);
@@ -717,102 +612,9 @@ export function useReviewController({
           ? { kind: "restore", cursor: restorePoint }
           : null;
       }
-
-      const generation = snapshot.documentGeneration;
-      store.dispatch({
-        type: "expansion/toggle",
-        expectedGeneration: generation,
-        gap: {
-          fileKey,
-          gapId: gapKey,
-          side,
-          ...address,
-          sourceIdentity: source.sourceIdentity,
-          expanded: expanding,
-        },
-      });
-
-      // The fetcher caches its own resolved text; we mirror it into React state
-      // as a tagged status so the UI can distinguish loading, loaded, and error
-      // states. Skip the fetch when one is already in flight or has resolved
-      // to avoid redundant work and stale "loading" flicker.
-      if (!expanding) return;
-      const currentStatus = store.getSnapshot().sourceStatusByFileKey[fileKey]?.kind;
-      if (currentStatus === "loaded" || currentStatus === "loading") {
-        return;
-      }
-
-      const request = {
-        fetcher: file.sourceFetcher,
-        requestId: nextSourceLoadRequestIdRef.current,
-        side,
-      } satisfies SourceLoadRequest;
-      nextSourceLoadRequestIdRef.current += 1;
-      sourceLoadRequestsRef.current.set(fileId, request);
-
-      const loadingStatus = { kind: "loading" } satisfies FileSourceStatus;
-      store.dispatch({
-        type: "expansion/set-source-status",
-        expectedGeneration: generation,
-        fileKey,
-        status: loadingStatus,
-      });
-
-      const isCurrentRequest = () => {
-        const current = sourceLoadRequestsRef.current.get(fileId);
-        const currentSnapshot = store.getSnapshot();
-        return (
-          activeStoreRef.current === store &&
-          currentSnapshot.documentGeneration === generation &&
-          current?.requestId === request.requestId &&
-          current.fetcher === request.fetcher &&
-          current.side === request.side
-        );
-      };
-
-      const setSettledStatus = (nextStatus: FileSourceStatus) => {
-        if (!isCurrentRequest()) {
-          return;
-        }
-
-        sourceLoadRequestsRef.current.delete(fileId);
-        if (store.getSnapshot().documentGeneration !== generation) return;
-        store.dispatch({
-          type: "expansion/set-source-status",
-          expectedGeneration: generation,
-          fileKey,
-          status: nextStatus,
-        });
-      };
-
-      void file.sourceFetcher
-        .getFullText(side)
-        .then((text) => {
-          setSettledStatus(text === null ? { kind: "error" } : { kind: "loaded", text });
-        })
-        .catch((error: unknown) => {
-          if (!isCurrentRequest()) {
-            console.error(
-              `hunk: ignored stale ${side} source load failure for ${file.path} (${file.id}).`,
-              error,
-            );
-            return;
-          }
-
-          const reason = error instanceof SourceTextTooLargeError ? "too-large" : undefined;
-          if (reason !== "too-large") {
-            console.error(
-              `hunk: failed to load ${side} source for ${file.path} (${file.id}).`,
-              error,
-            );
-          }
-          setSettledStatus({
-            kind: "error",
-            reason,
-          });
-        });
+      toggleSourceGap(fileKey, gapKey);
     },
-    [allFiles, document.resources, keyByFileId, semanticFileByKey, store],
+    [allFiles, keyByFileId, store, toggleSourceGap],
   );
 
   /** Toggle the collapsed gap nearest to the current hunk selection. */
@@ -831,295 +633,6 @@ export function useReviewController({
       toggleGap(file.id, target);
     }
   }, [selectedFile, selectedHunkIndex, toggleGap]);
-
-  /** Resolve one session-daemon navigation request against the current review state and select it. */
-  const navigateToLocation = useCallback(
-    (input: NavigateToHunkToolInput): NavigatedSelectionResult => {
-      const target = resolveReviewNavigationTarget({
-        allFiles,
-        currentFileId: selectedFile?.id,
-        currentHunkIndex: selectedHunkIndex,
-        input,
-        visibleFiles,
-      });
-
-      selectHunk(target.file.id, target.hunkIndex, { scrollToNote: target.scrollToNote });
-      return {
-        fileId: target.file.id,
-        filePath: target.file.path,
-        hunkIndex: target.hunkIndex,
-        selectedHunk: buildSelectedHunkSummary(target.file, target.hunkIndex),
-      };
-    },
-    [allFiles, selectHunk, selectedFile?.id, selectedHunkIndex, visibleFiles],
-  );
-
-  /**
-   * Validate one comment's STML markup at the width the note will actually
-   * render at right now — live layout mode and pane width, falling back to
-   * the documented reference width when geometry is not published (tests,
-   * headless callers). Reports the width back so agents can preview at it.
-   */
-  const markupFeedback = useCallback(
-    (
-      markup: string | undefined,
-      anchorSide: "old" | "new",
-    ): Pick<AppliedCommentResult, "markupWidth" | "markupNotes"> => {
-      if (!markup) {
-        return {};
-      }
-
-      if (!stmlEnabled) {
-        throw new Error(
-          "STML markup is disabled for this session. Relaunch Hunk with --experimental, or omit markup.",
-        );
-      }
-
-      const geometry = noteGeometry?.current;
-      const markupWidth = geometry
-        ? agentNoteMarkupWidth({ anchorSide, layout: geometry.layout, width: geometry.width })
-        : STML_REFERENCE_WIDTH;
-      const markupNotes = validateStmlMarkup(markup, markupWidth);
-      return {
-        markupWidth,
-        ...(markupNotes.length > 0 ? { markupNotes } : {}),
-      };
-    },
-    [noteGeometry, stmlEnabled],
-  );
-
-  /** Add one live comment, optionally revealing its hunk in the active review. */
-  const addLiveComment = useCallback(
-    (
-      input: CommentToolInput,
-      commentId: string,
-      options?: { reveal?: boolean },
-    ): AppliedCommentResult => {
-      const file = findDiffFileByPath(allFiles, input.filePath);
-      if (!file) {
-        throw new Error(noDiffFileMatchesMessage(input.filePath));
-      }
-
-      const target = resolveCommentTarget(file, input);
-      const feedback = markupFeedback(input.markup, target.side);
-
-      const liveComment = buildLiveComment(
-        {
-          ...input,
-          side: target.side,
-          line: target.line,
-        },
-        commentId,
-        new Date().toISOString(),
-        target.hunkIndex,
-      );
-      const fileKey = keyByFileId.get(file.id)!;
-      const semanticFile = semanticFileByKey.get(fileKey)!;
-      const beforeCount = store.getSnapshot().liveNotes.length;
-      store.dispatch({
-        type: "notes/add-live",
-        expectedGeneration: store.getSnapshot().documentGeneration,
-        notes: [
-          {
-            note: projectReviewNote({
-              annotation: liveComment,
-              fileKey,
-              hunks: file.metadata.hunks,
-              origin: "live-agent",
-            }),
-            contextDigest: reviewLineContextDigest(semanticFile, target.side, target.line),
-            contextDigests: mutableNoteContextDigests(semanticFile, liveComment),
-            resolution: "active",
-          },
-        ],
-      });
-
-      if (options?.reveal ?? false) {
-        selectHunk(file.id, target.hunkIndex);
-      }
-
-      const storedCommentId = store.getSnapshot().liveNotes[beforeCount]?.note.id ?? commentId;
-      return {
-        commentId: storedCommentId,
-        fileId: file.id,
-        filePath: file.path,
-        hunkIndex: target.hunkIndex,
-        side: target.side,
-        line: target.line,
-        ...feedback,
-      };
-    },
-    [allFiles, markupFeedback, selectHunk],
-  );
-
-  /** Apply several live comments together after validating every target first. */
-  const addLiveCommentBatch = useCallback(
-    (
-      inputs: CommentBatchItemInput[],
-      requestId: string,
-      options?: { revealMode?: "none" | "first" },
-    ): AppliedCommentBatchResult => {
-      const createdAt = new Date().toISOString();
-      const prepared = inputs.map((input, index) => {
-        const file = findDiffFileByPath(allFiles, input.filePath);
-        if (!file) {
-          throw new Error(noDiffFileMatchesMessage(input.filePath));
-        }
-
-        const target = resolveCommentTarget(file, input);
-        const feedback = markupFeedback(input.markup, target.side);
-        return {
-          file,
-          target,
-          feedback,
-          liveComment: buildLiveComment(
-            {
-              ...input,
-              side: target.side,
-              line: target.line,
-            },
-            `mcp:${requestId}:${index}`,
-            createdAt,
-            target.hunkIndex,
-          ),
-        };
-      });
-
-      const firstAddedIndex = store.getSnapshot().liveNotes.length;
-      if (prepared.length > 0) {
-        store.dispatch({
-          type: "notes/add-live",
-          expectedGeneration: store.getSnapshot().documentGeneration,
-          notes: prepared.map((entry) => {
-            const fileKey = keyByFileId.get(entry.file.id)!;
-            return {
-              note: projectReviewNote({
-                annotation: entry.liveComment,
-                fileKey,
-                hunks: entry.file.metadata.hunks,
-                origin: "live-agent",
-              }),
-              contextDigest: reviewLineContextDigest(
-                semanticFileByKey.get(fileKey)!,
-                entry.target.side,
-                entry.target.line,
-              ),
-              contextDigests: mutableNoteContextDigests(
-                semanticFileByKey.get(fileKey)!,
-                entry.liveComment,
-              ),
-              resolution: "active" as const,
-            };
-          }),
-        });
-      }
-
-      if (options?.revealMode === "first" && prepared.length > 0) {
-        const first = prepared[0]!;
-        selectHunk(first.file.id, first.target.hunkIndex);
-      }
-
-      const addedNotes = store.getSnapshot().liveNotes.slice(firstAddedIndex);
-      return {
-        applied: prepared.map(({ feedback, file, target, liveComment }, index) => ({
-          commentId: addedNotes[index]?.note.id ?? liveComment.id,
-          fileId: file.id,
-          filePath: file.path,
-          hunkIndex: target.hunkIndex,
-          side: target.side,
-          line: target.line,
-          ...feedback,
-        })),
-      };
-    },
-    [allFiles, markupFeedback, selectHunk],
-  );
-
-  /** Remove exactly one daemon-addressable mutable note by its globally unique id. */
-  const removeLiveComment = useCallback(
-    (commentId: string): RemovedCommentResult => {
-      const snapshot = store.getSnapshot();
-      const isLive = snapshot.liveNotes.some((entry) => entry.note.id === commentId);
-      const isUser = snapshot.userNotes.some((entry) => entry.note.id === commentId);
-      if (!isLive && !isUser) {
-        throw new Error(`No live comment or user note matches id ${commentId}.`);
-      }
-      store.dispatch({
-        type: isLive ? "notes/remove-live" : "notes/remove-user",
-        expectedGeneration: snapshot.documentGeneration,
-        noteId: commentId,
-      });
-      const remaining = store.getSnapshot();
-      return {
-        commentId,
-        removed: true,
-        remainingCommentCount: remaining.liveNotes.length + remaining.userNotes.length,
-        source: isLive ? "agent" : "user",
-      };
-    },
-    [store],
-  );
-
-  /** Clear authoritative mutable notes, including retained stale and orphan entries. */
-  const clearLiveComments = useCallback(
-    (filePath?: string, options: { includeUser?: boolean } = {}): ClearedCommentsResult => {
-      const snapshot = store.getSnapshot();
-      const file = filePath ? findDiffFileByPath(allFiles, filePath) : undefined;
-      const fileKey = file ? keyByFileId.get(file.id) : undefined;
-      const matchesScope = (entry: (typeof snapshot.liveNotes)[number]) => {
-        if (!filePath) return true;
-        if (fileKey && entry.note.fileKey === fileKey) return true;
-        const currentFile = snapshot.document.files.find(
-          (candidate) => candidate.key === entry.note.fileKey,
-        );
-        if (
-          currentFile &&
-          (currentFile.path === filePath || currentFile.previousPath === filePath)
-        ) {
-          return true;
-        }
-        return (
-          entry.originalAddress?.path === filePath ||
-          entry.originalAddress?.previousPath === filePath
-        );
-      };
-      const scopedLive = snapshot.liveNotes.filter(matchesScope);
-      const scopedUser = snapshot.userNotes.filter(matchesScope);
-      if (filePath && !file && scopedLive.length === 0 && scopedUser.length === 0) {
-        throw new Error(noDiffFileMatchesMessage(filePath));
-      }
-
-      const removedLiveCommentCount = scopedLive.length;
-      const removedUserNoteCount = options.includeUser ? scopedUser.length : 0;
-      if (removedLiveCommentCount > 0 || removedUserNoteCount > 0) {
-        store.dispatch({
-          type: "notes/clear-live",
-          expectedGeneration: snapshot.documentGeneration,
-          ...(fileKey ? { fileKey } : {}),
-          ...(filePath ? { noteIds: scopedLive.map((entry) => entry.note.id) } : {}),
-          ...(filePath && options.includeUser
-            ? { userNoteIds: scopedUser.map((entry) => entry.note.id) }
-            : {}),
-          includeUser: options.includeUser,
-        });
-      }
-
-      const remaining = store.getSnapshot();
-      const remainingLiveCommentCount = remaining.liveNotes.length;
-      const remainingUserNoteCount = remaining.userNotes.length;
-      return {
-        removedCount: removedLiveCommentCount + removedUserNoteCount,
-        remainingCommentCount: remainingLiveCommentCount + remainingUserNoteCount,
-        filePath,
-        includeUser: options.includeUser,
-        removedLiveCommentCount,
-        removedUserNoteCount,
-        remainingLiveCommentCount,
-        remainingUserNoteCount,
-      };
-    },
-    [allFiles, keyByFileId, store],
-  );
 
   /** Start a human-authored draft note at the selected or requested hunk. */
   const startUserNote = useCallback(
@@ -1229,29 +742,34 @@ export function useReviewController({
     };
     const semanticFile = semanticFileByKey.get(semanticDraft.fileKey)!;
     const beforeCount = snapshot.userNotes.length;
-    store.dispatch({
-      type: "draft/save",
-      expectedGeneration: snapshot.documentGeneration,
-      note: {
-        note: projectReviewNote({
-          annotation: savedNote,
-          fileKey: semanticDraft.fileKey,
-          hunks: file.metadata.hunks,
-          origin: "user",
-          editable: true,
-        }),
-        contextDigest: reviewLineContextDigest(
-          semanticFile,
-          semanticDraft.side,
-          semanticDraft.line,
-        ),
-        contextDigests: mutableNoteContextDigests(semanticFile, semanticDraft),
-        resolution: "active",
-      },
-    });
+    try {
+      store.dispatch({
+        type: "draft/save",
+        expectedGeneration: snapshot.documentGeneration,
+        note: {
+          note: projectReviewNote({
+            annotation: savedNote,
+            fileKey: semanticDraft.fileKey,
+            hunks: file.metadata.hunks,
+            origin: "user",
+            editable: true,
+          }),
+          contextDigest: reviewLineContextDigest(
+            semanticFile,
+            semanticDraft.side,
+            semanticDraft.line,
+          ),
+          contextDigests: mutableNoteContextDigests(semanticFile, semanticDraft),
+          resolution: "active",
+        },
+      });
+    } catch (error) {
+      onMutationError?.(error);
+      return null;
+    }
     const storedId = store.getSnapshot().userNotes[beforeCount]?.note.id;
     return storedId && storedId !== savedNote.id ? { ...savedNote, id: storedId } : savedNote;
-  }, [semanticFileByKey, store, terminalFileByKey]);
+  }, [onMutationError, semanticFileByKey, store, terminalFileByKey]);
 
   /** Remove one in-memory user note by id. */
   const removeUserNote = useCallback(
@@ -1269,29 +787,15 @@ export function useReviewController({
     [store],
   );
 
-  // Session-facing summaries use the same sole semantic adapter as broker publication.
-  const sessionReviewState = useMemo(
-    () => createSessionSnapshotFromReviewState(reviewSnapshot).state,
-    [reviewSnapshot],
-  );
-  const liveCommentSummaries: SessionLiveCommentSummary[] = sessionReviewState.liveComments;
-  const liveCommentCount = sessionReviewState.liveCommentCount;
-  const reviewNoteSummaries: SessionReviewNoteSummary[] = sessionReviewState.reviewNotes ?? [];
-  const reviewNoteCount = sessionReviewState.reviewNoteCount ?? reviewNoteSummaries.length;
-
   return {
     store,
     allFiles,
     draftNote,
     expandedGapsByFileId,
     filter,
-    liveCommentCount,
-    liveCommentSummaries,
     liveCommentsByFileId,
     lineCursor,
     lineCursorRevealRequestId,
-    reviewNoteCount,
-    reviewNoteSummaries,
     showAgentNotes: reviewSnapshot.showAgentNotes,
     setShowAgentNotes,
     userNotesByFileId,
@@ -1306,19 +810,14 @@ export function useReviewController({
     toggleGap,
     toggleSelectedHunkGap,
     visibleFiles,
-    addLiveComment,
-    addLiveCommentBatch,
     anchorLineCursor,
     clearFilter,
     cancelDraftNote,
-    clearLiveComments,
     moveLineCursor,
     moveToAnnotatedFile,
     moveToAnnotatedHunk,
     moveToFile,
     moveToHunk,
-    navigateToLocation,
-    removeLiveComment,
     removeUserNote,
     saveDraftNote,
     selectFile,

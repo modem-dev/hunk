@@ -410,6 +410,10 @@ export function App({
     width: number;
   } | null>(null);
   const [lineCursors, setLineCursors] = useState<LineCursor[]>([]);
+  const toggleRuntimeSourceGap = useCallback(
+    (fileKey: string, gapId: string) => void sessionRuntime.toggleSourceGap(fileKey, gapId),
+    [sessionRuntime],
+  );
   const showReviewMutationError = useCallback(
     (error: unknown) => {
       const message =
@@ -425,6 +429,9 @@ export function App({
     dispatchReviewIntent: sessionRuntime.executeReviewIntent,
     lineCursors,
     onMutationError: showReviewMutationError,
+    noteGeometry: noteGeometryRef,
+    stmlEnabled,
+    toggleSourceGap: toggleRuntimeSourceGap,
   });
   const filteredFiles = review.visibleFiles;
   const selectedFile = review.selectedFile;

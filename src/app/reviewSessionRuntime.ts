@@ -1,15 +1,29 @@
 import { canReloadInput } from "../core/inputReload";
+import { SourceTextTooLargeError } from "../core/fileSource";
+import { buildLiveComment, findDiffFileByPath, resolveCommentTarget } from "../core/liveComments";
 import { resolveConfiguredCliInput } from "../core/config";
 import { resolveExperimentalDiffFiles } from "../core/experimental";
 import { projectReviewDocument } from "../core/review/document";
-import { reconcileReviewState } from "../core/review/reconcile";
+import { reviewGapAddress } from "../core/review/expansion";
+import { reviewDigest } from "../core/review/identity";
+import { projectReviewNote } from "../core/review/notes";
+import { parseStml } from "../core/review/stml";
+import { reviewFileMatchesFilter } from "../core/review/selectors";
+import { reconcileReviewState, reviewLineContextDigest } from "../core/review/reconcile";
 import { reviewInputSourceIdentity } from "../core/review/sourceIdentity";
 import {
   createReviewStore,
   createReviewStoreFromState,
+  prepareReviewState,
   type ReviewStore,
 } from "../core/review/store";
-import type { ReviewDocumentProjectionV1 } from "../core/review/types";
+import type { ReviewAction } from "../core/review/actions";
+import type { ReviewState, ReviewStoredNote } from "../core/review/state";
+import type {
+  ReviewDocumentProjectionV1,
+  ReviewFileV1,
+  ReviewSourceResourceDescriptorV1,
+} from "../core/review/types";
 import { resolveRuntimeCliInput } from "../core/terminal";
 import type { AppBootstrap, CliInput } from "../core/types";
 import { createUnknownVcsNotice, reportExtensionApplyIssues } from "../extensions/apply";
@@ -32,6 +46,7 @@ import {
   type SessionRendererSnapshotFields,
 } from "../session/app/reviewSnapshot";
 import {
+  MAX_REVIEW_SOURCE_RESOURCE_BYTES,
   REVIEW_RESOURCE_CHUNK_BYTES,
   assertReviewProducerEnvelopeWithinBounds,
   parseApplyReviewActionInput,
@@ -53,8 +68,13 @@ import type {
   HunkSessionBrokerClient,
   HunkSessionCommandResult,
   HunkSessionServerMessage,
+  AppliedCommentBatchResult,
+  AppliedCommentResult,
+  ClearedCommentsResult,
+  NavigatedSelectionResult,
   ReloadedSessionResult,
   ReloadSessionOptions,
+  RemovedCommentResult,
 } from "../session/types";
 import { loadConfiguredSessionBootstrap, type SessionBootstrapResult } from "./sessionBootstrap";
 import { createWatchedInputController, type WatchedInputRuntime } from "./watchRuntime";
@@ -97,11 +117,6 @@ export interface ReviewSessionRuntimeOptions {
   deps?: ReviewSessionRuntimeDeps;
 }
 
-/** Renderer-neutral command authority registered by the mounted terminal adapter. */
-export interface ReviewSessionCommandAdapter {
-  dispatchCommand(message: HunkSessionServerMessage): Promise<HunkSessionCommandResult>;
-}
-
 interface QueuedReload {
   epoch: number;
   reason: SessionReloadReason;
@@ -122,6 +137,14 @@ interface PreparedReload {
   reloadedExtensions: boolean;
   previouslyLoadedIds: Set<string>;
 }
+
+type AppliedSessionCommentResult = AppliedCommentResult | AppliedCommentBatchResult;
+
+type CachedSessionCommentResult =
+  | { command: "comment"; requestId: string; result: AppliedCommentResult }
+  | { command: "comment_batch"; requestId: string; result: AppliedCommentBatchResult };
+
+const MAX_SESSION_COMMENT_RESULTS = 256;
 
 /** Project the renderer-neutral generation and all of its materialized resources. */
 function projectBootstrap(bootstrap: AppBootstrap, generation: string) {
@@ -155,18 +178,20 @@ export class ReviewSessionRuntime {
   private rendererFields: SessionRendererSnapshotFields = {};
   private watchController: WatchController | null = null;
   private storeSubscription: (() => void) | null = null;
-  private commandAdapter: {
-    token: number;
-    store: ReviewStore;
-    adapter: ReviewSessionCommandAdapter;
-  } | null = null;
-  private commandAdapterSequence = 0;
   private reloadQueue: QueuedReload[] = [];
   private supersededReloads: QueuedReload[] = [];
   private activeReload: QueuedReload | null = null;
   private processingReloads = false;
+  private reloadEpochSequence = 0;
   private latestRequestedEpoch = 0;
   private generationSequence = 0;
+  private userNoteSequence = 0;
+  private readonly sessionCommentIds = new Map<string, string>();
+  private readonly sessionCommentResults = new Map<string, CachedSessionCommentResult>();
+  private readonly sourceLoads = new Map<string, Promise<void>>();
+  private asynchronousActionReservation:
+    | { generation: string; stateRevision: number; token: symbol }
+    | undefined;
   private started = false;
   private disposed = false;
   private noticeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -191,11 +216,13 @@ export class ReviewSessionRuntime {
     this.reloadBounds = createSessionReloadBounds(bootstrap, { cwd: bootstrap.reloadContext.cwd });
     this.extensionsCwd = this.reloadBounds.defaultCwd;
     const projection = projectBootstrap(bootstrap, "generation:runtime:0");
-    const store = createReviewStore(projection.document, {
-      showAgentNotes: bootstrap.initialShowAgentNotes ?? false,
-    });
     const pendingRepoRoot = bootstrap.extensions?.pendingTrustRepoRoot ?? null;
     const promptRepoRoot = bootstrap.input.options.pager ? null : pendingRepoRoot;
+    const store = createReviewStore(projection.document, {
+      showAgentNotes: bootstrap.initialShowAgentNotes ?? false,
+      trustPromptRepoRoot: promptRepoRoot,
+      validateNextSnapshot: (next) => this.validateReviewStoreSnapshot(next),
+    });
     if (promptRepoRoot) this.offeredTrustRepoRoots.add(promptRepoRoot);
     this.snapshot = {
       revision: 0,
@@ -274,17 +301,6 @@ export class ReviewSessionRuntime {
     this.publishBrokerSnapshot(this.snapshot.store);
   }
 
-  /** Attach a renderer adapter only while it targets the current semantic store generation. */
-  registerSessionCommandAdapter(store: ReviewStore, adapter: ReviewSessionCommandAdapter) {
-    if (this.disposed || store !== this.snapshot.store) return () => undefined;
-    const token = ++this.commandAdapterSequence;
-    this.commandAdapter = { token, store, adapter };
-    return () => {
-      if (this.commandAdapter?.token !== token) return;
-      this.commandAdapter = null;
-    };
-  }
-
   /** Queue every reload trigger through one ordered executor. */
   reload(
     reason: SessionReloadReason,
@@ -292,7 +308,12 @@ export class ReviewSessionRuntime {
     options: ReloadSessionOptions = {},
   ): Promise<ReloadedSessionResult> {
     if (this.disposed) return Promise.reject(new Error("Review session runtime is disposed."));
-    const epoch = ++this.latestRequestedEpoch;
+    const epoch = ++this.reloadEpochSequence;
+    const requiredExtensionReloadPending =
+      options.reloadExtensions !== true &&
+      (this.activeReload?.options.reloadExtensions === true ||
+        this.reloadQueue.some((request) => request.options.reloadExtensions === true));
+    if (!requiredExtensionReloadPending) this.latestRequestedEpoch = epoch;
     return new Promise((resolve, reject) => {
       this.reloadQueue.push({
         epoch,
@@ -307,45 +328,81 @@ export class ReviewSessionRuntime {
     });
   }
 
+  /** Toggle one canonical collapsed gap and let the runtime own generation-safe source loading. */
+  toggleSourceGap(fileKey: string, gapId: string) {
+    const state = this.snapshot.store.getSnapshot();
+    return this.toggleSourceGapForState(
+      fileKey,
+      gapId,
+      state.documentGeneration,
+      state.stateRevision,
+    );
+  }
+
   /** Dismiss the current trust question without persisting a decision. */
   dismissTrustPrompt() {
     if (!this.snapshot.trust.promptRepoRoot) return;
+    const state = this.snapshot.store.getSnapshot();
+    this.commitReviewActions([
+      {
+        type: "trust/set-prompt",
+        expectedGeneration: state.documentGeneration,
+        repoRoot: null,
+      },
+    ]);
     this.publishMetadata({
       trust: { ...this.snapshot.trust, promptRepoRoot: null },
     });
   }
 
-  /** Persist a repo-extension trust answer and load newly trusted code only through reload. */
+  /** Persist trust and clear its prompt only after any required extension reload succeeds. */
   async decideExtensionTrust(decision: ExtensionTrustDecision) {
     const repoRoot = this.snapshot.trust.promptRepoRoot;
     if (!repoRoot) return;
-    this.publishMetadata({ trust: { ...this.snapshot.trust, promptRepoRoot: null } });
     try {
       this.deps.writeExtensionTrustImpl(repoRoot, decision);
     } catch (error) {
-      this.showNotice(
-        error instanceof Error ? error.message : "Failed to record the trust decision.",
-      );
+      const failure =
+        error instanceof Error ? error : new Error("Failed to record the trust decision.");
+      this.showNotice(failure.message);
+      throw failure;
+    }
+
+    if (canReloadInput(this.snapshot.bootstrap.input)) {
+      try {
+        await this.reload("manual", this.rawInput, {
+          resetApp: false,
+          reloadExtensions: true,
+          sourcePath: this.currentSourcePath(),
+        });
+      } catch (error) {
+        const failure =
+          error instanceof Error ? error : new Error("Failed to reload repository extensions.");
+        this.showNotice(
+          decision === "denied"
+            ? "Denied repository extensions, but failed to refresh the review."
+            : "Failed to reload after trusting this repository's extensions.",
+        );
+        throw failure;
+      }
+      if (decision === "denied") this.showNotice("Won't run this repository's extensions");
       return;
     }
 
-    if (decision === "denied") {
-      this.showNotice("Won't run this repository's extensions");
-      return;
-    }
-    if (!canReloadInput(this.snapshot.bootstrap.input)) {
-      this.showNotice("Trusted this repository • restart Hunk to load its extensions");
-      return;
-    }
-    try {
-      await this.reload("manual", this.rawInput, {
-        resetApp: false,
-        reloadExtensions: true,
-        sourcePath: this.currentSourcePath(),
-      });
-    } catch {
-      this.showNotice("Failed to reload after trusting this repository's extensions.");
-    }
+    const state = this.snapshot.store.getSnapshot();
+    this.commitReviewActions([
+      {
+        type: "trust/set-prompt",
+        expectedGeneration: state.documentGeneration,
+        repoRoot: null,
+      },
+    ]);
+    this.publishMetadata({ trust: { ...this.snapshot.trust, promptRepoRoot: null } });
+    this.showNotice(
+      decision === "denied"
+        ? "Won't run this repository's extensions"
+        : "Trusted this repository • restart Hunk to load its extensions",
+    );
   }
 
   /** Emit bounded shutdown and release observers and queued work. */
@@ -358,6 +415,9 @@ export class ReviewSessionRuntime {
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
+    this.asynchronousActionReservation = undefined;
+    this.sessionCommentIds.clear();
+    this.sessionCommentResults.clear();
     this.watchController?.close();
     this.watchController = null;
     if (this.noticeTimer) clearTimeout(this.noticeTimer);
@@ -391,8 +451,9 @@ export class ReviewSessionRuntime {
           continue;
         }
         this.activeReload = request;
+        let prepared: PreparedReload | undefined;
         try {
-          const prepared = await this.prepareReload(request);
+          prepared = await this.prepareReload(request);
           if (this.disposed) {
             if (prepared.reloadedExtensions) this.closeExtensionResult(prepared.extensions);
             this.rejectReload(request, new Error("Review session runtime is disposed."));
@@ -409,6 +470,9 @@ export class ReviewSessionRuntime {
             this.resolveReload(superseded, result);
           }
         } catch (error) {
+          if (prepared?.reloadedExtensions && prepared.extensions !== this.snapshot.extensions) {
+            this.closeExtensionResult(prepared.extensions);
+          }
           if (request.epoch !== this.latestRequestedEpoch) {
             this.supersededReloads.push(request);
             continue;
@@ -420,6 +484,10 @@ export class ReviewSessionRuntime {
         } finally {
           this.preparingExtensionResults.delete(request.epoch);
           if (this.activeReload === request) this.activeReload = null;
+          // Weaker reloads queued behind a required extension refresh compete only after it settles.
+          if (request.epoch === this.latestRequestedEpoch && this.reloadQueue.length > 0) {
+            this.latestRequestedEpoch = this.reloadQueue.at(-1)!.epoch;
+          }
         }
       }
     } finally {
@@ -511,55 +579,53 @@ export class ReviewSessionRuntime {
     };
   }
 
-  /** Atomically replace bootstrap, projection, resources, store, extensions, and trust state. */
+  /** Preflight a complete candidate before atomically replacing the live session generation. */
   private publishReload(reload: PreparedReload): ReloadedSessionResult {
-    const { bootstrap, applied } = reload.prepared;
-    this.generationSequence += 1;
-    const projection = projectBootstrap(bootstrap, `generation:runtime:${this.generationSequence}`);
-    const previousState = this.snapshot.store.getSnapshot();
-    const store =
+    const { applied } = reload.prepared;
+    const bootstrap: AppBootstrap = {
+      ...reload.prepared.bootstrap,
+      extensions: reload.extensions,
+    };
+    const nextGenerationSequence = this.generationSequence + 1;
+    const projection = projectBootstrap(bootstrap, `generation:runtime:${nextGenerationSequence}`);
+    const previousSnapshot = this.snapshot;
+    const previousState = previousSnapshot.store.getSnapshot();
+    let store =
       reload.options.resetApp === false
-        ? createReviewStoreFromState({
-            ...reconcileReviewState(previousState, projection.document),
-            stateRevision: previousState.stateRevision + 1,
-          })
+        ? createReviewStoreFromState(
+            {
+              ...reconcileReviewState(previousState, projection.document),
+              stateRevision: previousState.stateRevision + 1,
+            },
+            { validateNextSnapshot: (next) => this.validateReviewStoreSnapshot(next) },
+          )
         : createReviewStore(projection.document, {
             showAgentNotes: bootstrap.initialShowAgentNotes ?? false,
+            validateNextSnapshot: (next) => this.validateReviewStoreSnapshot(next),
           });
-    const previousExtensions = this.snapshot.extensions;
-    if (reload.reloadedExtensions) {
-      if (previousExtensions !== reload.extensions) this.closeExtensionResult(previousExtensions);
-      this.extensionsCwd = reload.cwd;
-    }
-    bootstrap.extensions = reload.extensions;
-    if (reload.extensions) {
-      reportExtensionApplyIssues(applied.issues, reload.extensions.context);
-    }
-    if (this.disposed) {
-      if (reload.reloadedExtensions) this.closeExtensionResult(reload.extensions);
-      throw new Error("Review session runtime is disposed.");
-    }
     const pendingRepoRoot = reload.extensions?.pendingTrustRepoRoot ?? null;
-    let promptRepoRoot: string | null = null;
-    if (
+    const promptRepoRoot =
       !bootstrap.input.options.pager &&
       pendingRepoRoot &&
       !this.offeredTrustRepoRoots.has(pendingRepoRoot)
-    ) {
-      this.offeredTrustRepoRoots.add(pendingRepoRoot);
-      promptRepoRoot = pendingRepoRoot;
+        ? pendingRepoRoot
+        : null;
+    if (store.getSnapshot().trustPromptRepoRoot !== promptRepoRoot) {
+      store = createReviewStoreFromState(
+        { ...store.getSnapshot(), trustPromptRepoRoot: promptRepoRoot },
+        { validateNextSnapshot: (next) => this.validateReviewStoreSnapshot(next) },
+      );
     }
     const nextSnapshot: ReviewSessionRuntimeSnapshot = {
-      revision: this.snapshot.revision + 1,
+      revision: previousSnapshot.revision + 1,
       bootstrap,
       projection,
       store,
       extensions: reload.extensions,
       trust: { pendingRepoRoot, promptRepoRoot },
-      notice: this.snapshot.notice,
-      remountVersion: this.snapshot.remountVersion + (reload.options.resetApp === false ? 0 : 1),
+      notice: previousSnapshot.notice,
+      remountVersion: previousSnapshot.remountVersion + (reload.options.resetApp === false ? 0 : 1),
     };
-
     const nextSessionSnapshot = createSessionSnapshotFromReviewState(
       store.getSnapshot(),
       this.rendererFields,
@@ -571,21 +637,6 @@ export class ReviewSessionRuntime {
       assertSessionRegistrationEnvelopeWithinBounds(nextRegistration, nextSessionSnapshot);
     }
     const sessionId = nextRegistration?.sessionId ?? "local-session";
-    if (this.disposed) {
-      if (reload.reloadedExtensions) this.closeExtensionResult(reload.extensions);
-      throw new Error("Review session runtime is disposed.");
-    }
-    // Cutover order is deliberate: no old callback or adapter remains live while the broker
-    // registration and runtime generation are being replaced.
-    this.retireStoreAndCommandAuthority();
-    if (this.disposed) throw new Error("Review session runtime is disposed.");
-    this.snapshot = nextSnapshot;
-    if (this.hostClient && nextRegistration) {
-      this.hostClient.replaceSession(nextRegistration, nextSessionSnapshot);
-      this.hostClient.setBridge({
-        dispatchCommand: (message) => this.dispatchSessionCommand(message),
-      });
-    }
     const result = {
       sessionId,
       inputKind: bootstrap.input.kind,
@@ -594,11 +645,40 @@ export class ReviewSessionRuntime {
       fileCount: bootstrap.changeset.files.length,
       selectedFilePath: nextSessionSnapshot.state.selectedFilePath,
       selectedHunkIndex: nextSessionSnapshot.state.selectedHunkIndex,
-    };
+    } satisfies ReloadedSessionResult;
+    this.assertCommandResultWithinBounds(result, "Reload result");
+    this.assertCommandResultWithinBounds(
+      {
+        kind: "review-snapshot",
+        generation: projection.document.generation,
+        manifest: createHunkReviewManifest(bootstrap, projection.document),
+        state: createHunkReviewState(store.getSnapshot()),
+      },
+      "Review reconnect snapshot",
+    );
+    if (this.disposed) throw new Error("Review session runtime is disposed.");
+
+    // No active authority, registry, trust history, watch, or broker state changes before here.
+    this.retireStoreAndCommandAuthority();
+    if (this.disposed) throw new Error("Review session runtime is disposed.");
+    this.generationSequence = nextGenerationSequence;
+    this.snapshot = nextSnapshot;
+    if (reload.reloadedExtensions) this.extensionsCwd = reload.cwd;
+    if (promptRepoRoot) this.offeredTrustRepoRoots.add(promptRepoRoot);
+    if (reload.reloadedExtensions && previousSnapshot.extensions !== reload.extensions) {
+      this.closeExtensionResult(previousSnapshot.extensions);
+    }
+    if (this.hostClient && nextRegistration) {
+      this.hostClient.replaceSession(nextRegistration, nextSessionSnapshot);
+      this.hostClient.setBridge({
+        dispatchCommand: (message) => this.dispatchSessionCommand(message),
+      });
+    }
     if (this.disposed) return result;
 
     this.bindStore(store);
     if (this.disposed) return result;
+    if (reload.extensions) reportExtensionApplyIssues(applied.issues, reload.extensions.context);
     this.notify();
     if (this.disposed) return result;
     if (this.started) this.restartWatch();
@@ -623,7 +703,6 @@ export class ReviewSessionRuntime {
       changeset: bootstrap.changeset,
       reason: reload.reason,
     });
-
     return result;
   }
 
@@ -691,8 +770,6 @@ export class ReviewSessionRuntime {
   private retireStoreAndCommandAuthority() {
     this.storeSubscription?.();
     this.storeSubscription = null;
-    this.commandAdapter = null;
-    this.commandAdapterSequence += 1;
     this.hostClient?.setBridge(null);
   }
 
@@ -792,6 +869,274 @@ export class ReviewSessionRuntime {
     return keys.length === allowed.length && keys.every((key) => allowed.includes(key));
   }
 
+  /** Resolve the active terminal file and semantic file through the generation projection. */
+  private reviewFilePair(fileKey: string) {
+    const semantic = this.snapshot.projection.document.files.find((file) => file.key === fileKey);
+    const file = semantic
+      ? this.snapshot.bootstrap.changeset.files.find(
+          (candidate) => candidate.id === semantic.runtimeId,
+        )
+      : undefined;
+    return semantic && file ? { semantic, file } : null;
+  }
+
+  /** Retain independent reload evidence for every side range of one mutable note. */
+  private mutableNoteDigests(
+    file: ReviewFileV1,
+    ranges: { oldRange?: readonly [number, number]; newRange?: readonly [number, number] },
+  ) {
+    return {
+      ...(ranges.oldRange ? { old: reviewLineContextDigest(file, "old", ranges.oldRange[0]) } : {}),
+      ...(ranges.newRange ? { new: reviewLineContextDigest(file, "new", ranges.newRange[0]) } : {}),
+    };
+  }
+
+  /** Validate every prospective store revision against its broker snapshot envelope. */
+  private validateReviewStoreSnapshot(next: ReviewState) {
+    const snapshot = createSessionSnapshotFromReviewState(next, this.rendererFields);
+    assertReviewProducerEnvelopeWithinBounds(
+      { type: "snapshot", snapshot },
+      "Review snapshot update",
+    );
+  }
+
+  /** Preflight one producer command result with conservative websocket framing. */
+  private assertCommandResultWithinBounds(result: unknown, label: string) {
+    assertReviewProducerEnvelopeWithinBounds(
+      {
+        type: "command-result",
+        requestId: "00000000-0000-0000-0000-000000000000",
+        ok: true,
+        result,
+      },
+      label,
+    );
+  }
+
+  /** Preflight broker projections and atomically publish one logical review mutation. */
+  private commitReviewActions(actions: readonly ReviewAction[], includeActionResult = false) {
+    const store = this.snapshot.store;
+    const before = store.getSnapshot();
+    const next = prepareReviewState(before, actions);
+    if (next === before) return next;
+    if (includeActionResult) {
+      const result = {
+        kind: "review-action" as const,
+        generation: next.documentGeneration,
+        stateRevision: next.stateRevision,
+        state: createHunkReviewState(next),
+      };
+      this.assertCommandResultWithinBounds(result, "Review action result");
+    }
+    return store.commitPrepared(before, next);
+  }
+
+  /** Validate optional STML at the terminal's live width while preserving safe degradation notes. */
+  private reviewMarkupFeedback(markup: string | undefined) {
+    if (markup === undefined || markup.length === 0) return {};
+    if (!this.snapshot.bootstrap.input.options.experimental) {
+      throw new Error(
+        "STML markup is disabled for this session. Relaunch Hunk with --experimental, or omit markup.",
+      );
+    }
+    const markupWidth = this.rendererFields.noteMarkupWidth ?? 56;
+    const markupNotes = this.rendererFields.validateMarkup
+      ? this.rendererFields.validateMarkup(markup, markupWidth)
+      : parseStml(markup).errors;
+    return {
+      markupWidth,
+      ...(markupNotes.length > 0 ? { markupNotes } : {}),
+    };
+  }
+
+  /** Build one core-resolved human note action at an authoritative semantic address. */
+  private prepareUserNote(
+    input: Extract<HunkReviewActionV1, { type: "notes/create-user" }>["note"],
+  ): ReviewAction {
+    const pair = this.reviewFilePair(input.fileKey);
+    if (!pair) throw new Error("The selected review file no longer exists.");
+    if (!pair.semantic.hunks[input.hunkIndex])
+      throw new Error("The selected review hunk no longer exists.");
+    if (!input.body.trim()) throw new Error("A user note body is required.");
+    this.reviewMarkupFeedback(input.markup);
+    const range = [input.line, input.line] as [number, number];
+    const annotation = {
+      id: `user:${Date.now()}-${++this.userNoteSequence}`,
+      source: "user" as const,
+      summary: input.body.trim(),
+      ...(input.markup ? { markup: input.markup } : {}),
+      author: "user",
+      createdAt: new Date().toISOString(),
+      editable: true,
+      ...(input.side === "old" ? { oldRange: range } : { newRange: range }),
+    };
+    const note = projectReviewNote({
+      annotation,
+      fileKey: input.fileKey,
+      hunks: pair.file.metadata.hunks,
+      origin: "user",
+      editable: true,
+    });
+    return {
+      type: "notes/add-user",
+      expectedGeneration: this.snapshot.projection.document.generation,
+      note: {
+        note,
+        contextDigest: reviewLineContextDigest(pair.semantic, input.side, input.line),
+        contextDigests: this.mutableNoteDigests(pair.semantic, annotation),
+        resolution: "active",
+      },
+    };
+  }
+
+  /** Prepare replacement of one editable human note while retaining its core-owned anchor. */
+  private prepareUserNoteUpdate(noteId: string, body: string, markup?: string): ReviewAction {
+    const state = this.snapshot.store.getSnapshot();
+    const existing = state.userNotes.find((entry) => entry.note.id === noteId);
+    if (!existing) throw new Error(`No user note matches id ${noteId}.`);
+    if (!body.trim()) throw new Error("A user note body is required.");
+    this.reviewMarkupFeedback(markup);
+    const { markup: existingMarkup, ...withoutMarkup } = existing.note;
+    return {
+      type: "notes/update-user",
+      expectedGeneration: state.documentGeneration,
+      noteId,
+      note: {
+        ...existing,
+        note: {
+          ...withoutMarkup,
+          summary: body.trim(),
+          ...(markup === undefined
+            ? existingMarkup === undefined
+              ? {}
+              : { markup: existingMarkup }
+            : markup.trim()
+              ? { markup }
+              : {}),
+          updatedAt: new Date().toISOString(),
+        },
+      },
+    };
+  }
+
+  /** Toggle and materialize one generation-addressed source capability exactly once. */
+  private async toggleSourceGapForState(
+    fileKey: string,
+    gapId: string,
+    expectedGeneration: string,
+    expectedRevision: number,
+  ) {
+    const state = this.snapshot.store.getSnapshot();
+    if (state.documentGeneration !== expectedGeneration) throw new Error("stale-generation");
+    if (state.stateRevision !== expectedRevision) throw new Error("stale-revision");
+    const pair = this.reviewFilePair(fileKey);
+    if (!pair?.file.sourceFetcher) throw new Error("Expanded source is unavailable for this file.");
+    const address = reviewGapAddress(pair.semantic, gapId);
+    const side = pair.file.metadata.type === "deleted" ? "old" : "new";
+    const resourceId = pair.semantic.sourceResourceIds[side];
+    const descriptor = this.snapshot.projection.document.resources.find(
+      (resource) => resource.id === resourceId && resource.kind === "source",
+    ) as ReviewSourceResourceDescriptorV1 | undefined;
+    if (!address || !descriptor) throw new Error("The collapsed source gap is invalid.");
+    const expanding = !state.expandedGaps.some(
+      (gap) => gap.fileKey === fileKey && gap.gapId === gapId && gap.expanded,
+    );
+    this.commitReviewActions([
+      {
+        type: "expansion/toggle",
+        expectedGeneration,
+        gap: {
+          fileKey,
+          gapId,
+          side,
+          ...address,
+          sourceIdentity: descriptor.sourceIdentity,
+          expanded: expanding,
+        },
+      },
+    ]);
+    if (!expanding) return;
+    const status = this.snapshot.store.getSnapshot().sourceStatusByFileKey[fileKey];
+    if (status?.kind === "loaded" || status?.kind === "loading") return;
+    this.commitReviewActions([
+      {
+        type: "expansion/set-source-status",
+        expectedGeneration,
+        fileKey,
+        status: { kind: "loading" },
+      },
+    ]);
+    const loadKey = `${expectedGeneration}\0${fileKey}\0${side}`;
+    let load = this.sourceLoads.get(loadKey);
+    if (!load) {
+      const fetcher = pair.file.sourceFetcher;
+      load = fetcher
+        .getFullText(side)
+        .then((text) => {
+          if (
+            this.disposed ||
+            this.snapshot.store.getSnapshot().documentGeneration !== expectedGeneration ||
+            this.reviewFilePair(fileKey)?.file.sourceFetcher !== fetcher
+          )
+            return;
+          if (text === null) {
+            this.commitReviewActions([
+              {
+                type: "expansion/set-source-status",
+                expectedGeneration,
+                fileKey,
+                status: { kind: "error" },
+              },
+            ]);
+            return;
+          }
+          const bytes = Buffer.byteLength(text, "utf8");
+          if (bytes > MAX_REVIEW_SOURCE_RESOURCE_BYTES)
+            throw new SourceTextTooLargeError(MAX_REVIEW_SOURCE_RESOURCE_BYTES);
+          descriptor.byteLength = bytes;
+          descriptor.digest = reviewDigest(text);
+          this.snapshot.projection.resourceContents[descriptor.id] = text;
+          this.commitReviewActions([
+            {
+              type: "expansion/set-source-status",
+              expectedGeneration,
+              fileKey,
+              status: { kind: "loaded", text },
+            },
+          ]);
+        })
+        .catch((error: unknown) => {
+          if (
+            this.disposed ||
+            this.snapshot.store.getSnapshot().documentGeneration !== expectedGeneration
+          )
+            return;
+          if (!(error instanceof SourceTextTooLargeError)) {
+            console.error(
+              `hunk: failed to load ${side} source for ${pair.file.path} (${pair.file.id}).`,
+              error,
+            );
+          }
+          this.commitReviewActions([
+            {
+              type: "expansion/set-source-status",
+              expectedGeneration,
+              fileKey,
+              status: {
+                kind: "error",
+                ...(error instanceof SourceTextTooLargeError
+                  ? { reason: "too-large" as const }
+                  : {}),
+              },
+            },
+          ]);
+        })
+        .finally(() => this.sourceLoads.delete(loadKey));
+      this.sourceLoads.set(loadKey, load);
+    }
+    await load;
+  }
+
   /** Strictly validate every nested field of one advertised semantic action DTO. */
   private parseReviewAction(action: unknown): HunkReviewActionV1 | "invalid" | "unsupported" {
     if (!action || typeof action !== "object" || Array.isArray(action)) return "invalid";
@@ -881,13 +1226,81 @@ export class ReviewSessionRuntime {
           ? (candidate as unknown as HunkReviewActionV1)
           : "invalid";
       }
+      case "notes/create-user": {
+        const note = candidate.note;
+        if (
+          !this.hasExactKeys(candidate, ["type", "note"]) ||
+          !note ||
+          typeof note !== "object" ||
+          Array.isArray(note)
+        )
+          return "invalid";
+        const value = note as Record<string, unknown>;
+        return this.hasExactKeys(value, [
+          "fileKey",
+          "hunkIndex",
+          "side",
+          "line",
+          "body",
+          ...(value.markup === undefined ? [] : ["markup"]),
+        ]) &&
+          typeof value.fileKey === "string" &&
+          Number.isInteger(value.hunkIndex) &&
+          (value.hunkIndex as number) >= 0 &&
+          (value.side === "old" || value.side === "new") &&
+          Number.isInteger(value.line) &&
+          (value.line as number) > 0 &&
+          typeof value.body === "string" &&
+          Buffer.byteLength(value.body, "utf8") <= 256 * 1024 &&
+          (value.markup === undefined ||
+            (typeof value.markup === "string" &&
+              Buffer.byteLength(value.markup, "utf8") <= 256 * 1024))
+          ? (candidate as unknown as HunkReviewActionV1)
+          : "invalid";
+      }
+      case "notes/update-user":
+        return this.hasExactKeys(candidate, [
+          "type",
+          "noteId",
+          "body",
+          ...(candidate.markup === undefined ? [] : ["markup"]),
+        ]) &&
+          typeof candidate.noteId === "string" &&
+          typeof candidate.body === "string" &&
+          Buffer.byteLength(candidate.body, "utf8") <= 256 * 1024 &&
+          (candidate.markup === undefined ||
+            (typeof candidate.markup === "string" &&
+              Buffer.byteLength(candidate.markup, "utf8") <= 256 * 1024))
+          ? (candidate as unknown as HunkReviewActionV1)
+          : "invalid";
+      case "notes/remove-user":
+      case "notes/remove-live":
+        return this.hasExactKeys(candidate, ["type", "noteId"]) &&
+          typeof candidate.noteId === "string"
+          ? (candidate as unknown as HunkReviewActionV1)
+          : "invalid";
+      case "expansion/toggle":
+        return this.hasExactKeys(candidate, ["type", "fileKey", "gapId"]) &&
+          typeof candidate.fileKey === "string" &&
+          typeof candidate.gapId === "string"
+          ? (candidate as unknown as HunkReviewActionV1)
+          : "invalid";
+      case "session/reload":
+        return this.hasExactKeys(candidate, ["type"])
+          ? (candidate as unknown as HunkReviewActionV1)
+          : "invalid";
+      case "trust/decide":
+        return this.hasExactKeys(candidate, ["type", "decision"]) &&
+          (candidate.decision === "trusted" || candidate.decision === "denied")
+          ? (candidate as unknown as HunkReviewActionV1)
+          : "invalid";
       default:
         return "unsupported";
     }
   }
 
-  /** Apply only a strictly validated generation-guarded semantic action. */
-  private applyReviewAction(input: ApplyReviewActionInput): HunkReviewCommandResult {
+  /** Apply only a strictly validated generation- and revision-guarded semantic action. */
+  private async applyReviewAction(input: ApplyReviewActionInput): Promise<HunkReviewCommandResult> {
     if (typeof input.generation !== "string" || input.generation.length === 0) {
       return this.reviewCommandError("invalid-generation", "Action generation is required.");
     }
@@ -900,7 +1313,121 @@ export class ReviewSessionRuntime {
     if (action === "invalid") {
       return this.reviewCommandError("invalid-action", "Review action payload is invalid.");
     }
-    const next = this.snapshot.store.dispatch(action);
+    const selectionAction =
+      action.type === "selection/select" || action.type === "selection/set-line";
+    const before = this.snapshot.store.getSnapshot();
+    if (!selectionAction && this.asynchronousActionReservation) {
+      return this.reviewCommandError(
+        "stale-revision",
+        "Another asynchronous review action already claimed this state revision.",
+      );
+    }
+    if (
+      !selectionAction &&
+      (input.expectedStateRevision === undefined ||
+        input.expectedStateRevision !== before.stateRevision)
+    ) {
+      return this.reviewCommandError(
+        "stale-revision",
+        `Review state revision ${String(input.expectedStateRevision)} is stale; current revision is ${before.stateRevision}.`,
+      );
+    }
+    const asynchronous = action.type === "session/reload" || action.type === "trust/decide";
+    const reservationToken = Symbol("review-action");
+    if (asynchronous) {
+      this.asynchronousActionReservation = {
+        generation: before.documentGeneration,
+        stateRevision: before.stateRevision,
+        token: reservationToken,
+      };
+    }
+    try {
+      switch (action.type) {
+        case "notes/create-user":
+          this.commitReviewActions([this.prepareUserNote(action.note)], true);
+          break;
+        case "notes/update-user":
+          this.commitReviewActions(
+            [this.prepareUserNoteUpdate(action.noteId, action.body, action.markup)],
+            true,
+          );
+          break;
+        case "notes/remove-user": {
+          if (!before.userNotes.some((entry) => entry.note.id === action.noteId)) {
+            throw new Error(`No user note matches id ${action.noteId}.`);
+          }
+          this.commitReviewActions(
+            [
+              {
+                type: "notes/remove-user",
+                expectedGeneration: before.documentGeneration,
+                noteId: action.noteId,
+              },
+            ],
+            true,
+          );
+          break;
+        }
+        case "notes/remove-live": {
+          const note = before.liveNotes.find((entry) => entry.note.id === action.noteId);
+          if (!note || (note.note.origin !== "live-agent" && note.note.editable === false)) {
+            throw new Error(`Live note ${action.noteId} cannot be removed.`);
+          }
+          this.commitReviewActions(
+            [
+              {
+                type: "notes/remove-live",
+                expectedGeneration: before.documentGeneration,
+                noteId: action.noteId,
+              },
+            ],
+            true,
+          );
+          this.releaseSessionCommentIdentity(action.noteId);
+          break;
+        }
+        case "expansion/toggle":
+          await this.toggleSourceGapForState(
+            action.fileKey,
+            action.gapId,
+            input.generation,
+            before.stateRevision,
+          );
+          break;
+        case "session/reload":
+          if (!canReloadInput(this.snapshot.bootstrap.input))
+            throw new Error("This review cannot be reloaded.");
+          await this.reload("manual", this.rawInput, {
+            resetApp: false,
+            reloadExtensions: true,
+            sourcePath: this.currentSourcePath(),
+          });
+          break;
+        case "trust/decide":
+          if (!this.snapshot.trust.promptRepoRoot)
+            throw new Error("No repository extension trust decision is pending.");
+          await this.decideExtensionTrust(action.decision);
+          break;
+        default:
+          this.commitReviewActions([action], true);
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message === "stale-generation") {
+        return this.reviewCommandError("stale-generation", "The review generation changed.");
+      }
+      if (error instanceof Error && error.message === "stale-revision") {
+        return this.reviewCommandError("stale-revision", "The review state changed.");
+      }
+      return this.reviewCommandError(
+        "invalid-action",
+        error instanceof Error ? error.message : "Review action failed.",
+      );
+    } finally {
+      if (this.asynchronousActionReservation?.token === reservationToken) {
+        this.asynchronousActionReservation = undefined;
+      }
+    }
+    const next = this.snapshot.store.getSnapshot();
     const result = {
       kind: "review-action" as const,
       generation: next.documentGeneration,
@@ -943,7 +1470,250 @@ export class ReviewSessionRuntime {
     return result;
   }
 
-  /** Handle runtime-native protocol commands before delegating legacy terminal commands. */
+  /** Return one cached applied result before retry inputs are resolved or revalidated. */
+  private getSessionCommentResult(command: "comment" | "comment_batch", requestId: string) {
+    const key = `${command}\0${requestId}`;
+    const cached = this.sessionCommentResults.get(key);
+    if (!cached) return undefined;
+    this.sessionCommentResults.delete(key);
+    this.sessionCommentResults.set(key, cached);
+    return cached.result;
+  }
+
+  /** Retain bounded retry metadata and release generated-id bookkeeping on LRU eviction. */
+  private cacheSessionCommentResult(
+    command: "comment" | "comment_batch",
+    requestId: string,
+    result: AppliedSessionCommentResult,
+  ) {
+    const key = `${command}\0${requestId}`;
+    this.sessionCommentResults.delete(key);
+    this.sessionCommentResults.set(
+      key,
+      command === "comment"
+        ? { command, requestId, result: result as AppliedCommentResult }
+        : { command, requestId, result: result as AppliedCommentBatchResult },
+    );
+    while (this.sessionCommentResults.size > MAX_SESSION_COMMENT_RESULTS) {
+      const oldestKey = this.sessionCommentResults.keys().next().value;
+      if (oldestKey === undefined) break;
+      const oldest = this.sessionCommentResults.get(oldestKey)!;
+      this.sessionCommentResults.delete(oldestKey);
+      if (oldest.command === "comment") {
+        this.sessionCommentIds.delete(oldest.requestId);
+      } else {
+        oldest.result.applied.forEach((_, index) =>
+          this.sessionCommentIds.delete(`${oldest.requestId}:${index}`),
+        );
+      }
+    }
+  }
+
+  /** Allocate one collision-free generated id and retain it for request-identity retries. */
+  private allocateSessionCommentId(requestIdentity: string) {
+    const retained = this.sessionCommentIds.get(requestIdentity);
+    if (retained) return { commentId: retained, allocated: false };
+    const state = this.snapshot.store.getSnapshot();
+    const occupied = new Set([
+      ...state.document.files.flatMap((file) => file.notes.map((note) => note.id)),
+      ...state.liveNotes.map((entry) => entry.note.id),
+      ...state.userNotes.map((entry) => entry.note.id),
+      ...this.sessionCommentIds.values(),
+    ]);
+    const base = `mcp:${requestIdentity}`;
+    let commentId = base;
+    for (let suffix = 1; occupied.has(commentId); suffix += 1) commentId = `${base}:${suffix}`;
+    this.sessionCommentIds.set(requestIdentity, commentId);
+    return { commentId, allocated: true };
+  }
+
+  /** Forget retry identities whose generated mutable note was explicitly removed. */
+  private releaseSessionCommentIdentity(commentId: string) {
+    for (const [identity, allocated] of this.sessionCommentIds) {
+      if (allocated === commentId) this.sessionCommentIds.delete(identity);
+    }
+  }
+
+  /** Resolve and validate one agent comment without mutating authoritative state. */
+  private prepareSessionComment(
+    input: Extract<HunkSessionServerMessage, { command: "comment" }>["input"],
+    commentId: string,
+    createdAt: string,
+  ) {
+    const file = findDiffFileByPath(this.snapshot.bootstrap.changeset.files, input.filePath);
+    if (!file) throw new Error(`No diff file matches ${input.filePath}.`);
+    const target = resolveCommentTarget(file, input);
+    const feedback = this.reviewMarkupFeedback(input.markup);
+    const semantic = this.snapshot.projection.document.files.find(
+      (candidate) => candidate.runtimeId === file.id,
+    )!;
+    const annotation = buildLiveComment(
+      { ...input, side: target.side, line: target.line },
+      commentId,
+      createdAt,
+      target.hunkIndex,
+    );
+    const note: ReviewStoredNote = {
+      note: projectReviewNote({
+        annotation,
+        fileKey: semantic.key,
+        hunks: file.metadata.hunks,
+        origin: "live-agent",
+      }),
+      contextDigest: reviewLineContextDigest(semantic, target.side, target.line),
+      contextDigests: this.mutableNoteDigests(semantic, annotation),
+      resolution: "active",
+    };
+    return {
+      semantic,
+      note,
+      result: {
+        commentId,
+        fileId: file.id,
+        filePath: file.path,
+        hunkIndex: target.hunkIndex,
+        side: target.side,
+        line: target.line,
+        ...feedback,
+      } satisfies AppliedCommentResult,
+    };
+  }
+
+  /** Add one agent comment through one preflighted state publication. */
+  private addSessionComment(
+    input: Extract<HunkSessionServerMessage, { command: "comment" }>["input"],
+    requestIdentity: string,
+  ): AppliedCommentResult {
+    const allocated = this.allocateSessionCommentId(requestIdentity);
+    let prepared: ReturnType<ReviewSessionRuntime["prepareSessionComment"]>;
+    try {
+      prepared = this.prepareSessionComment(input, allocated.commentId, new Date().toISOString());
+    } catch (error) {
+      if (allocated.allocated) this.sessionCommentIds.delete(requestIdentity);
+      throw error;
+    }
+    const existing = this.snapshot.store
+      .getSnapshot()
+      .liveNotes.find((entry) => entry.note.id === allocated.commentId);
+    if (existing) return prepared.result;
+    const before = this.snapshot.store.getSnapshot();
+    const actions: ReviewAction[] = [
+      {
+        type: "notes/add-live",
+        expectedGeneration: before.documentGeneration,
+        notes: [prepared.note],
+      },
+    ];
+    if (input.reveal) {
+      actions.push(
+        { type: "notes/set-visibility", visible: true },
+        {
+          type: "selection/select",
+          selection: { fileKey: prepared.semantic.key, hunkIndex: prepared.result.hunkIndex },
+          reveal: { kind: "hunk", scrollToNote: true },
+        },
+      );
+    }
+    this.assertCommandResultWithinBounds(prepared.result, "Comment result");
+    this.commitReviewActions(actions);
+    return prepared.result;
+  }
+
+  /** Resolve one legacy agent navigation request against the same semantic store. */
+  private navigateSession(
+    input: Extract<HunkSessionServerMessage, { command: "navigate_to_hunk" }>["input"],
+  ): NavigatedSelectionResult {
+    const state = this.snapshot.store.getSnapshot();
+    const visible = state.document.files.filter((file) =>
+      reviewFileMatchesFilter(file, state.filter),
+    );
+    let semantic: ReviewFileV1 | undefined;
+    let hunkIndex = input.hunkIndex;
+    if (input.commentDirection) {
+      const annotatedKeys = new Set(
+        [
+          ...state.document.files.flatMap((file) => file.notes),
+          ...state.liveNotes.map((entry) => entry.note),
+          ...state.userNotes.map((entry) => entry.note),
+        ].flatMap((note) =>
+          note.anchor.ownerHunkIndex === undefined
+            ? []
+            : [`${note.fileKey}\0${note.anchor.ownerHunkIndex}`],
+        ),
+      );
+      const annotated = visible.flatMap((file) =>
+        file.hunks.flatMap((_, index) =>
+          annotatedKeys.has(`${file.key}\0${index}`)
+            ? [{ fileKey: file.key, hunkIndex: index }]
+            : [],
+        ),
+      );
+      if (annotated.length === 0)
+        throw new Error("No annotated hunks found in the current review.");
+      const visibleFileIndex = visible.findIndex((file) => file.key === state.selection.fileKey);
+      const compareToSelection = (target: (typeof annotated)[number]) => {
+        const fileIndex = visible.findIndex((file) => file.key === target.fileKey);
+        return fileIndex === visibleFileIndex
+          ? target.hunkIndex - state.selection.hunkIndex
+          : fileIndex - visibleFileIndex;
+      };
+      const target =
+        input.commentDirection === "next"
+          ? (annotated.find((candidate) => compareToSelection(candidate) > 0) ?? annotated[0]!)
+          : ([...annotated].reverse().find((candidate) => compareToSelection(candidate) < 0) ??
+            annotated.at(-1)!);
+      semantic = state.document.files.find((file) => file.key === target.fileKey);
+      hunkIndex = target.hunkIndex;
+    } else {
+      if (!input.filePath) throw new Error("navigate requires a file target.");
+      semantic = state.document.files.find(
+        (file) => file.path === input.filePath || file.previousPath === input.filePath,
+      );
+      if (!semantic) throw new Error(`No diff file matches ${input.filePath}.`);
+      if (hunkIndex === undefined) {
+        if (!input.side || input.line === undefined)
+          throw new Error("navigate requires a hunk or line target.");
+        const targetSide = input.side;
+        const targetLine = input.line;
+        hunkIndex = semantic.hunks.findIndex((hunk) => {
+          const range =
+            targetSide === "new"
+              ? [hunk.additionStart, hunk.additionStart + Math.max(1, hunk.additionCount) - 1]
+              : [hunk.deletionStart, hunk.deletionStart + Math.max(1, hunk.deletionCount) - 1];
+          return targetLine >= range[0]! && targetLine <= range[1]!;
+        });
+      }
+    }
+    if (!semantic || hunkIndex === undefined || hunkIndex < 0 || !semantic.hunks[hunkIndex]) {
+      throw new Error("No diff hunk matches the requested target.");
+    }
+    this.commitReviewActions([
+      {
+        type: "selection/select",
+        selection: { fileKey: semantic.key, hunkIndex },
+        reveal: {
+          kind: input.line === undefined ? "hunk" : "line",
+          scrollToNote: Boolean(input.commentDirection),
+        },
+      },
+    ]);
+    const file = this.snapshot.bootstrap.changeset.files.find(
+      (candidate) => candidate.id === semantic!.runtimeId,
+    )!;
+    const hunk = semantic.hunks[hunkIndex]!;
+    return {
+      fileId: file.id,
+      filePath: file.path,
+      hunkIndex,
+      selectedHunk: {
+        index: hunkIndex,
+        oldRange: [hunk.deletionStart, hunk.deletionStart + Math.max(1, hunk.deletionCount) - 1],
+        newRange: [hunk.additionStart, hunk.additionStart + Math.max(1, hunk.additionCount) - 1],
+      },
+    };
+  }
+
+  /** Handle runtime-native protocol commands and legacy public session names through one store. */
   private async dispatchSessionCommand(
     message: HunkSessionServerMessage,
   ): Promise<HunkSessionCommandResult> {
@@ -975,12 +1745,154 @@ export class ReviewSessionRuntime {
           ? this.getReviewSnapshot(input)
           : this.reviewCommandError("invalid-command", "Review snapshot payload is invalid.");
       }
-      default: {
-        const adapter = this.commandAdapter;
-        if (!adapter || adapter.store !== this.snapshot.store) {
-          throw new Error("The terminal command adapter is not ready.");
+      case "comment": {
+        const cached = this.getSessionCommentResult("comment", message.requestId);
+        if (cached) return cached as AppliedCommentResult;
+        const result = this.addSessionComment(message.input, message.requestId);
+        this.cacheSessionCommentResult("comment", message.requestId, result);
+        return result;
+      }
+      case "comment_batch": {
+        const cached = this.getSessionCommentResult("comment_batch", message.requestId);
+        if (cached) return cached as AppliedCommentBatchResult;
+        const createdAt = new Date().toISOString();
+        const allocated: Array<{
+          requestIdentity: string;
+          commentId: string;
+          allocated: boolean;
+        }> = [];
+        let prepared: Array<ReturnType<ReviewSessionRuntime["prepareSessionComment"]>>;
+        try {
+          // Resolve every target and validate every markup body before preparing one publication.
+          prepared = message.input.comments.map((comment, index) => {
+            const requestIdentity = `${message.requestId}:${index}`;
+            const id = this.allocateSessionCommentId(requestIdentity);
+            allocated.push({ requestIdentity, ...id });
+            return this.prepareSessionComment(
+              { ...comment, sessionId: message.input.sessionId, reveal: false },
+              id.commentId,
+              createdAt,
+            );
+          });
+        } catch (error) {
+          for (const id of allocated) {
+            if (id.allocated) this.sessionCommentIds.delete(id.requestIdentity);
+          }
+          throw error;
         }
-        return adapter.adapter.dispatchCommand(message);
+        const before = this.snapshot.store.getSnapshot();
+        const existingIds = new Set(before.liveNotes.map((entry) => entry.note.id));
+        const additions = prepared.filter((entry) => !existingIds.has(entry.note.note.id));
+        const actions: ReviewAction[] = [];
+        if (additions.length > 0) {
+          actions.push({
+            type: "notes/add-live",
+            expectedGeneration: before.documentGeneration,
+            notes: additions.map((entry) => entry.note),
+          });
+        }
+        const first = prepared[0];
+        if (message.input.revealMode === "first" && first) {
+          actions.push(
+            { type: "notes/set-visibility", visible: true },
+            {
+              type: "selection/select",
+              selection: { fileKey: first.semantic.key, hunkIndex: first.result.hunkIndex },
+              reveal: { kind: "hunk", scrollToNote: true },
+            },
+          );
+        }
+        this.assertCommandResultWithinBounds(
+          { applied: prepared.map((entry) => entry.result) },
+          "Comment batch result",
+        );
+        this.commitReviewActions(actions);
+        const result = {
+          applied: prepared.map((entry) => entry.result),
+        } satisfies AppliedCommentBatchResult;
+        this.cacheSessionCommentResult("comment_batch", message.requestId, result);
+        return result;
+      }
+      case "navigate_to_hunk":
+        return this.navigateSession(message.input);
+      case "reload_session":
+        return this.reload("daemon", message.input.nextInput, {
+          resetApp: false,
+          sourcePath: message.input.sourcePath,
+        });
+      case "remove_comment": {
+        const state = this.snapshot.store.getSnapshot();
+        const live = state.liveNotes.some((entry) => entry.note.id === message.input.commentId);
+        const user = state.userNotes.some((entry) => entry.note.id === message.input.commentId);
+        if (!live && !user)
+          throw new Error(`No mutable note matches id ${message.input.commentId}.`);
+        this.commitReviewActions([
+          {
+            type: live ? "notes/remove-live" : "notes/remove-user",
+            expectedGeneration: state.documentGeneration,
+            noteId: message.input.commentId,
+          },
+        ]);
+        if (live) this.releaseSessionCommentIdentity(message.input.commentId);
+        const next = this.snapshot.store.getSnapshot();
+        return {
+          commentId: message.input.commentId,
+          removed: true,
+          remainingCommentCount: next.liveNotes.length + next.userNotes.length,
+          source: live ? "agent" : "user",
+        } satisfies RemovedCommentResult;
+      }
+      case "clear_comments": {
+        const state = this.snapshot.store.getSnapshot();
+        const file = message.input.filePath
+          ? state.document.files.find(
+              (candidate) =>
+                candidate.path === message.input.filePath ||
+                candidate.previousPath === message.input.filePath,
+            )
+          : undefined;
+        const matchesScope = (entry: ReviewStoredNote) => {
+          if (!message.input.filePath) return true;
+          if (file && entry.note.fileKey === file.key) return true;
+          const currentFile = state.document.files.find(
+            (candidate) => candidate.key === entry.note.fileKey,
+          );
+          return Boolean(
+            (currentFile &&
+              (currentFile.path === message.input.filePath ||
+                currentFile.previousPath === message.input.filePath)) ||
+            entry.originalAddress?.path === message.input.filePath ||
+            entry.originalAddress?.previousPath === message.input.filePath,
+          );
+        };
+        const live = state.liveNotes.filter(matchesScope);
+        const user = state.userNotes.filter(matchesScope);
+        if (message.input.filePath && !file && live.length === 0 && user.length === 0) {
+          throw new Error(`No diff file matches ${message.input.filePath}.`);
+        }
+        this.commitReviewActions([
+          {
+            type: "notes/clear-live",
+            expectedGeneration: state.documentGeneration,
+            ...(message.input.filePath ? { noteIds: live.map((entry) => entry.note.id) } : {}),
+            ...(message.input.filePath && message.input.includeUser
+              ? { userNoteIds: user.map((entry) => entry.note.id) }
+              : {}),
+            includeUser: message.input.includeUser,
+          },
+        ]);
+        for (const entry of live) this.releaseSessionCommentIdentity(entry.note.id);
+        const next = this.snapshot.store.getSnapshot();
+        return {
+          removedCount: live.length + (message.input.includeUser ? user.length : 0),
+          remainingCommentCount: next.liveNotes.length + next.userNotes.length,
+          filePath: message.input.filePath,
+          includeUser: message.input.includeUser,
+          removedLiveCommentCount: live.length,
+          removedUserNoteCount: message.input.includeUser ? user.length : 0,
+          remainingLiveCommentCount: next.liveNotes.length,
+          remainingUserNoteCount: next.userNotes.length,
+        } satisfies ClearedCommentsResult;
       }
     }
   }

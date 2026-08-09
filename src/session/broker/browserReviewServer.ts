@@ -552,7 +552,18 @@ export class BrowserReviewServer {
         ? (value as Record<string, unknown>)
         : null;
     const generation = parseGenerationIdentifier(record?.generation);
-    if (!record || Object.keys(record).length !== 2 || !generation || !("action" in record)) {
+    const expectedStateRevision = record?.expectedStateRevision;
+    if (
+      !record ||
+      ![2, 3].includes(Object.keys(record).length) ||
+      Object.keys(record).some(
+        (key) => !["generation", "expectedStateRevision", "action"].includes(key),
+      ) ||
+      !generation ||
+      (expectedStateRevision !== undefined &&
+        (!Number.isSafeInteger(expectedStateRevision) || (expectedStateRevision as number) < 0)) ||
+      !("action" in record)
+    ) {
       return this.jsonError("Invalid review action envelope.", 400);
     }
     try {
@@ -560,9 +571,13 @@ export class BrowserReviewServer {
         sessionId,
         generation,
         record.action as HunkReviewActionV1,
+        expectedStateRevision as number | undefined,
       );
       if (result.kind === "review-error") {
-        const status = result.error.code === "stale-generation" ? 409 : 400;
+        const status =
+          result.error.code === "stale-generation" || result.error.code === "stale-revision"
+            ? 409
+            : 400;
         return this.json(result, { status });
       }
       return this.json(result);

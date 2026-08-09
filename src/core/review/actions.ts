@@ -20,6 +20,7 @@ export type ReviewAction =
     }
   | { type: "filter/set"; filter: string }
   | { type: "notes/set-visibility"; visible: boolean }
+  | (GenerationAction & { type: "trust/set-prompt"; repoRoot: string | null })
   | (GenerationAction & { type: "notes/add-live"; notes: ReviewStoredNote[] })
   | (GenerationAction & { type: "notes/remove-live"; noteId: string })
   | (GenerationAction & {
@@ -29,6 +30,8 @@ export type ReviewAction =
       userNoteIds?: string[];
       includeUser?: boolean;
     })
+  | (GenerationAction & { type: "notes/add-user"; note: ReviewStoredNote })
+  | (GenerationAction & { type: "notes/update-user"; noteId: string; note: ReviewStoredNote })
   | (GenerationAction & { type: "notes/remove-user"; noteId: string })
   | (GenerationAction & { type: "draft/start"; draft: ReviewDraftNote })
   | (GenerationAction & { type: "draft/update"; body: string })

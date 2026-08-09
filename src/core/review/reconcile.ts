@@ -1,3 +1,4 @@
+import { reviewGapAddress } from "./expansion";
 import { reviewDigest } from "./identity";
 import { reviewFileMatchesFilter } from "./selectors";
 import type {
@@ -314,29 +315,6 @@ function reconcileStoredNote(
   };
 }
 
-/** Resolve one document gap address from its stable hunk-relative id. */
-function reviewGapAddress(file: ReviewFileV1, gapId: string) {
-  const [position, rawIndex] = gapId.split(":");
-  const hunk = file.hunks[Number(rawIndex)];
-  if (!hunk || (position !== "before" && position !== "trailing")) return undefined;
-  if (position === "before") {
-    return {
-      oldRange: [hunk.deletionStart - hunk.collapsedBefore, hunk.deletionStart - 1] as const,
-      newRange: [hunk.additionStart - hunk.collapsedBefore, hunk.additionStart - 1] as const,
-    };
-  }
-  const oldStart = reviewHunkRange(hunk, "old")[1] + 1;
-  const newStart = reviewHunkRange(hunk, "new")[1] + 1;
-  const count = Math.max(
-    0,
-    Math.min(file.deletionLines.length - oldStart + 1, file.additionLines.length - newStart + 1),
-  );
-  return {
-    oldRange: [oldStart, oldStart + count - 1] as const,
-    newRange: [newStart, newStart + count - 1] as const,
-  };
-}
-
 /** Preserve only expansions whose file, source identity, and gap address remain valid. */
 function reconcileExpandedGap(
   gap: ReviewExpandedGapState,
@@ -348,8 +326,14 @@ function reconcileExpandedGap(
   if (!file) return undefined;
   const sourceId = file.sourceResourceIds[gap.side];
   const source = document.resources.find((resource) => resource.id === sourceId);
+  const previousAddress = previousFile ? reviewGapAddress(previousFile, gap.gapId) : undefined;
   const address = reviewGapAddress(file, gap.gapId);
   const validGap = Boolean(
+    previousAddress &&
+    previousAddress.oldRange[0] === gap.oldRange[0] &&
+    previousAddress.oldRange[1] === gap.oldRange[1] &&
+    previousAddress.newRange[0] === gap.newRange[0] &&
+    previousAddress.newRange[1] === gap.newRange[1] &&
     address &&
     address.oldRange[0] === gap.oldRange[0] &&
     address.oldRange[1] === gap.oldRange[1] &&

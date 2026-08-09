@@ -5,9 +5,10 @@ import {
   lines,
 } from "../../../test/helpers/diff-helpers";
 import { projectReviewDocument } from "./document";
+import { reviewGapAddress } from "./expansion";
 import { projectReviewNote } from "./notes";
-import { reviewLineContextDigest } from "./reconcile";
-import { createReviewStore } from "./store";
+import { reconcileReviewState, reviewLineContextDigest } from "./reconcile";
+import { createReviewStore, prepareReviewState } from "./store";
 import type { DiffFile } from "../types";
 
 /** Build an ordered review document from small real diff files. */
@@ -91,6 +92,37 @@ describe("ReviewStore", () => {
     });
     expect(store.getSnapshot().stateRevision).toBe(2);
     expect(observed).toEqual([1, 2]);
+  });
+
+  test("preflights dispatches and prepared commits before revision publication", () => {
+    const document = documentFor([file("alpha", "alpha.ts", 1)], "generation:one");
+    let reject = true;
+    const validated: number[] = [];
+    const store = createReviewStore(document, {
+      validateNextSnapshot(next) {
+        validated.push(next.stateRevision);
+        if (reject) throw new Error("snapshot rejected");
+      },
+    });
+    const observed: number[] = [];
+    store.subscribe(() => observed.push(store.getSnapshot().stateRevision));
+    const initial = store.getSnapshot();
+
+    expect(() => store.dispatch({ type: "filter/set", filter: "alpha" })).toThrow(
+      "snapshot rejected",
+    );
+    expect(store.getSnapshot()).toBe(initial);
+    expect(observed).toEqual([]);
+
+    const prepared = prepareReviewState(initial, [{ type: "notes/set-visibility", visible: true }]);
+    expect(() => store.commitPrepared(initial, prepared)).toThrow("snapshot rejected");
+    expect(store.getSnapshot()).toBe(initial);
+    expect(observed).toEqual([]);
+
+    reject = false;
+    expect(store.dispatch({ type: "filter/set", filter: "alpha" }).stateRevision).toBe(1);
+    expect(validated).toEqual([1, 1, 1]);
+    expect(observed).toEqual([1]);
   });
 
   test("shares filter fallback and semantic selection across file reorder", () => {
@@ -265,6 +297,109 @@ describe("ReviewStore", () => {
     });
     expect(store.getSnapshot().expandedGaps).toEqual([]);
     expect(store.getSnapshot().sourceStatusByFileKey).toEqual({});
+  });
+
+  test("drops malformed, non-final, partial, and unequal trailing gaps during reconciliation", () => {
+    const before = Array.from({ length: 30 }, (_, index) => `line ${index + 1}`);
+    const after = [...before];
+    after[4] = "line 5 changed";
+    after[19] = "line 20 changed";
+    const sourceFile = createTestDiffFile({
+      id: "trailing",
+      path: "trailing.ts",
+      before: lines(...before),
+      after: lines(...after),
+      sourceFetcher: {
+        ...createTestSourceFetcher(() => lines(...after)),
+        cacheKey: "source:trailing",
+      },
+    });
+    const first = documentFor([sourceFile], "generation:one");
+    const semantic = first.files[0]!;
+    expect(semantic.hunks).toHaveLength(2);
+    const validAddress = reviewGapAddress(semantic, "trailing:1")!;
+    const source = first.resources.find(
+      (resource) => resource.id === semantic.sourceResourceIds.new,
+    )!;
+    expect(source.kind).toBe("source");
+    const sourceIdentity = source.kind === "source" ? source.sourceIdentity : "";
+    const initial = createReviewStore(first).getSnapshot();
+    const validGap = {
+      fileKey: semantic.key,
+      gapId: "trailing:1",
+      side: "new" as const,
+      ...validAddress,
+      sourceIdentity,
+      expanded: true,
+    };
+    const nextDocument = (file: typeof semantic) => ({
+      ...first,
+      generation: "generation:two",
+      files: [file],
+      resources: first.resources.map((resource) => ({
+        ...resource,
+        generation: "generation:two",
+      })),
+    });
+    const cases = [
+      {
+        gap: { ...validGap, gapId: "trailing:not-an-index" },
+        previousDocument: first,
+        document: nextDocument(semantic),
+      },
+      {
+        gap: { ...validGap, gapId: "trailing:0" },
+        previousDocument: first,
+        document: nextDocument(semantic),
+      },
+      {
+        gap: validGap,
+        previousDocument: first,
+        document: nextDocument({ ...semantic, flags: { ...semantic.flags, partial: true } }),
+      },
+      {
+        gap: validGap,
+        previousDocument: first,
+        document: nextDocument({
+          ...semantic,
+          additionLines: semantic.additionLines.slice(0, -1),
+        }),
+      },
+      {
+        gap: validGap,
+        previousDocument: {
+          ...first,
+          files: [{ ...semantic, flags: { ...semantic.flags, partial: true } }],
+        },
+        document: nextDocument(semantic),
+      },
+      {
+        gap: validGap,
+        previousDocument: {
+          ...first,
+          files: [
+            {
+              ...semantic,
+              additionLines: semantic.additionLines.slice(0, -1),
+            },
+          ],
+        },
+        document: nextDocument(semantic),
+      },
+    ];
+
+    for (const candidate of cases) {
+      const reconciled = reconcileReviewState(
+        {
+          ...initial,
+          document: candidate.previousDocument,
+          expandedGaps: [candidate.gap],
+        },
+        candidate.document,
+      );
+      expect(reconciled.expandedGaps).toEqual([]);
+      expect(reconciled.sourceStatusByFileKey).toEqual({});
+    }
   });
 
   test("preserves loaded source only when materialized digests prove equality", () => {

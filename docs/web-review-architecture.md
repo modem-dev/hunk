@@ -128,10 +128,12 @@ OpenTUI-only extension components, and independent daemon/browser VCS loading ar
 
 The browser entry lives under `src/web/` and is bundled into the embedded offline asset module. It
 is the only entry that imports React DOM. `pierreDocument.ts` is the sole adapter from broker
-manifest/resources to `@pierre/diffs/react`; the browser never loads VCS state. The read-only v1
-client authenticates, mirrors complete snapshot/document events, reconstructs digest-checked SSE
-chunks, rejects stale generations/revisions, and recovers revision gaps with a complete snapshot.
-It never calls the actions route.
+manifest/resources to `@pierre/diffs/react`; the browser never loads VCS state. The browser client
+authenticates, mirrors complete snapshot/document events, reconstructs digest-checked SSE chunks,
+rejects stale generations/revisions, and recovers revision gaps with a complete snapshot. Semantic
+mutations use the existing actions route with generation and state-revision preconditions; selection
+remains last-writer-wins within the active generation. A reconnect keeps mutations disabled until a
+complete snapshot has been reconciled.
 
 The main pane maps every semantically visible manifest file, in manifest order, into one continuous
 stream. Shared core predicates apply the authoritative filter and note-source policy, including the
@@ -184,5 +186,7 @@ and otherwise receive a chunked current snapshot. Open streams retain their cook
 capability identity, revalidate on timers and every publication/heartbeat, and close on expiry,
 capability rotation, or session retirement. Resource reads use the same generation guard, verified
 cache, and producer chunk protocol as daemon review exports.
-Browser actions proxy the existing generation-guarded `apply_review_action` command without adding a
-second reducer.
+Browser actions proxy the existing generation- and revision-guarded `apply_review_action` command
+without adding a second reducer. Terminal source expansion and legacy session navigation/comment
+commands enter the same `ReviewSessionRuntime` and `ReviewStore`; renderer adapters retain only local
+cursor/scroll affordances.

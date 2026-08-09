@@ -141,6 +141,11 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
       return action.visible === state.showAgentNotes
         ? state
         : { ...state, showAgentNotes: action.visible };
+    case "trust/set-prompt":
+      assertGeneration(state, action);
+      return action.repoRoot === state.trustPromptRepoRoot
+        ? state
+        : { ...state, trustPromptRepoRoot: action.repoRoot };
     case "notes/add-live": {
       assertGeneration(state, action);
       if (action.notes.length === 0) return state;
@@ -177,6 +182,26 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
         userNotes.length === state.userNotes.length
         ? state
         : { ...state, liveNotes, userNotes };
+    }
+    case "notes/add-user": {
+      assertGeneration(state, action);
+      const id = allocateNoteId(action.note.note.id, liveNoteIds(state));
+      const note =
+        id === action.note.note.id
+          ? action.note
+          : { ...action.note, note: { ...action.note.note, id } };
+      return { ...state, userNotes: [...state.userNotes, note] };
+    }
+    case "notes/update-user": {
+      assertGeneration(state, action);
+      const index = state.userNotes.findIndex((entry) => entry.note.id === action.noteId);
+      if (index < 0) return state;
+      const userNotes = [...state.userNotes];
+      userNotes[index] = {
+        ...action.note,
+        note: { ...action.note.note, id: action.noteId },
+      };
+      return { ...state, userNotes };
     }
     case "notes/remove-user": {
       assertGeneration(state, action);

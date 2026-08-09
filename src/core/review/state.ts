@@ -81,6 +81,7 @@ export interface ReviewState {
   reveal: ReviewRevealIntent;
   filter: string;
   showAgentNotes: boolean;
+  trustPromptRepoRoot: string | null;
   liveNotes: ReviewStoredNote[];
   userNotes: ReviewStoredNote[];
   draftNote: ReviewDraftNote | null;
@@ -91,7 +92,7 @@ export interface ReviewState {
 /** Create the first authoritative semantic state for one review document. */
 export function createInitialReviewState(
   document: ReviewDocumentV1,
-  options: { showAgentNotes?: boolean } = {},
+  options: { showAgentNotes?: boolean; trustPromptRepoRoot?: string | null } = {},
 ): ReviewState {
   return {
     document,
@@ -112,6 +113,7 @@ export function createInitialReviewState(
     },
     filter: "",
     showAgentNotes: options.showAgentNotes ?? false,
+    trustPromptRepoRoot: options.trustPromptRepoRoot ?? null,
     liveNotes: [],
     userNotes: [],
     draftNote: null,

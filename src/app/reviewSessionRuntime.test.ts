@@ -4,11 +4,12 @@ import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
 import { createTestDeferred, createTestDiffFile } from "../../test/helpers/diff-helpers";
 import { createWatchTestRuntime } from "../../test/helpers/watchTest";
 import type { HunkConfigResolution } from "../core/config";
+import { projectReviewNote } from "../core/review/notes";
+import { reviewLineContextDigest } from "../core/review/reconcile";
 import type { AppBootstrap, CliInput } from "../core/types";
 import { createEmptyExtensionLoadResult } from "../extensions/types";
 import type {
   HunkSessionBrokerClient,
-  HunkSessionCommandResult,
   HunkSessionRegistration,
   HunkSessionServerMessage,
   HunkSessionSnapshot,
@@ -163,22 +164,541 @@ describe("ReviewSessionRuntime", () => {
       hostClient: host.hostClient,
     });
     const previousStore = runtime.getSnapshot().store;
-    const adapter = {
-      async dispatchCommand(_message: HunkSessionServerMessage): Promise<HunkSessionCommandResult> {
-        previousStore.dispatch({ type: "notes/set-visibility", visible: true });
-        return { removedCount: 0, remainingCommentCount: 0 };
-      },
-    };
-    runtime.registerSessionCommandAdapter(previousStore, adapter);
-
     await runtime.reload("manual", reloadInput("cutover"), { resetApp: false });
     expect(cutoverAttempt).toBe("unavailable");
     expect(host.getBridge()).not.toBeNull();
     expect(runtime.getSnapshot().store.getSnapshot().showAgentNotes).toBe(false);
 
-    // Even a caller retaining the old adapter can only reach a generation-guarded retired store.
+    // A retained old store can no longer publish after the runtime generation cutover.
     previousStore.dispatch({ type: "notes/set-visibility", visible: true });
     expect(runtime.getSnapshot().store.getSnapshot().showAgentNotes).toBe(false);
+    runtime.dispose();
+  });
+
+  test("applies browser selection reveals and revision-guarded note CRUD through one store", async () => {
+    const bootstrap = createBootstrap();
+    const host = createHeadlessHostClient(bootstrap);
+    const runtime = createReviewSessionRuntime(bootstrap, { hostClient: host.hostClient });
+    const sessionId = host.hostClient.getRegistration().sessionId;
+    const state = runtime.getSnapshot().store.getSnapshot();
+    const file = state.document.files[0]!;
+    const apply = (requestId: string, action: any, expectedStateRevision?: number) =>
+      host.dispatchCommand({
+        type: "command",
+        requestId,
+        command: "apply_review_action",
+        input: {
+          sessionId,
+          generation: runtime.getSnapshot().store.getSnapshot().documentGeneration,
+          ...(expectedStateRevision === undefined ? {} : { expectedStateRevision }),
+          action,
+        },
+      });
+
+    await apply("reveal-1", {
+      type: "selection/select",
+      selection: { fileKey: file.key, hunkIndex: 0 },
+      reveal: { kind: "hunk" },
+    });
+    await apply("reveal-2", {
+      type: "selection/select",
+      selection: { fileKey: file.key, hunkIndex: 0 },
+      reveal: { kind: "hunk" },
+    });
+    expect(runtime.getSnapshot().store.getSnapshot().reveal.hunkToken).toBe(2);
+
+    const revision = runtime.getSnapshot().store.getSnapshot().stateRevision;
+    const created = await apply(
+      "note-create",
+      {
+        type: "notes/create-user",
+        note: { fileKey: file.key, hunkIndex: 0, side: "new", line: 1, body: "Browser note" },
+      },
+      revision,
+    );
+    expect(created).toMatchObject({ kind: "review-action" });
+    const noteId = runtime.getSnapshot().store.getSnapshot().userNotes[0]!.note.id;
+    expect(runtime.getSnapshot().store.getSnapshot().userNotes).toHaveLength(1);
+
+    const stale = await apply(
+      "note-stale",
+      { type: "notes/update-user", noteId, body: "stale" },
+      revision,
+    );
+    expect(stale).toMatchObject({ kind: "review-error", error: { code: "stale-revision" } });
+    expect(runtime.getSnapshot().store.getSnapshot().userNotes[0]!.note.summary).toBe(
+      "Browser note",
+    );
+
+    const updateRevision = runtime.getSnapshot().store.getSnapshot().stateRevision;
+    await apply(
+      "note-update",
+      { type: "notes/update-user", noteId, body: "Edited note" },
+      updateRevision,
+    );
+    expect(runtime.getSnapshot().store.getSnapshot().userNotes[0]!.note.summary).toBe(
+      "Edited note",
+    );
+    const removeRevision = runtime.getSnapshot().store.getSnapshot().stateRevision;
+    await apply("note-remove", { type: "notes/remove-user", noteId }, removeRevision);
+    expect(runtime.getSnapshot().store.getSnapshot().userNotes).toHaveLength(0);
+    runtime.dispose();
+  });
+
+  test("rejects a near-limit note before publishing state or revision", async () => {
+    const bootstrap = createBootstrap();
+    const host = createHeadlessHostClient(bootstrap);
+    const runtime = createReviewSessionRuntime(bootstrap, { hostClient: host.hostClient });
+    const before = runtime.getSnapshot().store.getSnapshot();
+    const updatesBefore = host.updated.length;
+    const file = before.document.files[0]!;
+    const result = await host.dispatchCommand({
+      type: "command",
+      requestId: "oversized-note",
+      command: "apply_review_action",
+      input: {
+        sessionId: host.hostClient.getRegistration().sessionId,
+        generation: before.documentGeneration,
+        expectedStateRevision: before.stateRevision,
+        action: {
+          type: "notes/create-user",
+          note: {
+            fileKey: file.key,
+            hunkIndex: 0,
+            side: "new",
+            line: file.hunks[0]!.additionStart,
+            body: "x".repeat(256 * 1024),
+          },
+        },
+      },
+    });
+    expect(result).toMatchObject({ kind: "review-error", error: { code: "invalid-action" } });
+    expect(runtime.getSnapshot().store.getSnapshot()).toBe(before);
+    expect(host.updated).toHaveLength(updatesBefore);
+    runtime.dispose();
+  });
+
+  test("rejects an oversized direct terminal note before state or revision publication", () => {
+    const bootstrap = createBootstrap();
+    const host = createHeadlessHostClient(bootstrap);
+    const runtime = createReviewSessionRuntime(bootstrap, { hostClient: host.hostClient });
+    const store = runtime.getSnapshot().store;
+    const before = store.getSnapshot();
+    const semantic = before.document.files[0]!;
+    const sourceFile = bootstrap.changeset.files[0]!;
+    const updatesBefore = host.updated.length;
+    const oversizedSummary = "x".repeat(256 * 1024);
+
+    expect(() =>
+      store.dispatch({
+        type: "notes/add-user",
+        expectedGeneration: before.documentGeneration,
+        note: {
+          note: projectReviewNote({
+            annotation: {
+              id: "user:terminal-oversized",
+              source: "user",
+              summary: oversizedSummary,
+              newRange: [semantic.hunks[0]!.additionStart, semantic.hunks[0]!.additionStart],
+            },
+            fileKey: semantic.key,
+            hunks: sourceFile.metadata.hunks,
+            origin: "user",
+            editable: true,
+          }),
+          contextDigest: reviewLineContextDigest(semantic, "new", semantic.hunks[0]!.additionStart),
+          resolution: "active",
+        },
+      }),
+    ).toThrow(/metadata limit|message metadata limit|websocket envelope limit/);
+    expect(store.getSnapshot()).toBe(before);
+    expect(store.getSnapshot().stateRevision).toBe(before.stateRevision);
+    expect(host.updated).toHaveLength(updatesBefore);
+    runtime.dispose();
+  });
+
+  test("owns source loading, deduplicates fetches, and rejects retired completions", async () => {
+    const deferred = createTestDeferred<string | null>();
+    let reads = 0;
+    const lines = Array.from({ length: 30 }, (_, index) => `line ${index + 1}`);
+    const after = [...lines];
+    after[15] = "changed";
+    const sourceFetcher = {
+      cacheKey: "source:test",
+      getFullText: async () => {
+        reads += 1;
+        return deferred.promise;
+      },
+    };
+    const file = createTestDiffFile({
+      id: "source",
+      path: "source.ts",
+      before: `${lines.join("\n")}\n`,
+      after: `${after.join("\n")}\n`,
+      sourceFetcher,
+    });
+    const bootstrap = createBootstrap({
+      changeset: { ...createBootstrap().changeset, files: [file] },
+    });
+    const runtime = createReviewSessionRuntime(bootstrap);
+    const semantic = runtime.getSnapshot().projection.document.files[0]!;
+    const first = runtime.toggleSourceGap(semantic.key, "before:0");
+    expect(runtime.getSnapshot().store.getSnapshot().sourceStatusByFileKey[semantic.key]).toEqual({
+      kind: "loading",
+    });
+    const second = runtime.toggleSourceGap(semantic.key, "before:0");
+    expect(reads).toBe(1);
+    deferred.resolve(`${after.join("\n")}\n`);
+    await Promise.all([first, second]);
+    expect(
+      runtime.getSnapshot().store.getSnapshot().sourceStatusByFileKey[semantic.key]?.kind,
+    ).toBe("loaded");
+    const sourceId = semantic.sourceResourceIds.new!;
+    expect(runtime.getResource(sourceId)).toContain("changed");
+    runtime.dispose();
+  });
+
+  test("routes legacy agent comments directly and publishes each exactly once", async () => {
+    const bootstrap = createBootstrap();
+    const host = createHeadlessHostClient(bootstrap);
+    const runtime = createReviewSessionRuntime(bootstrap, { hostClient: host.hostClient });
+    const result = await host.dispatchCommand({
+      type: "command",
+      requestId: "agent-comment",
+      command: "comment",
+      input: {
+        sessionId: host.hostClient.getRegistration().sessionId,
+        filePath: "alpha.ts",
+        hunkIndex: 0,
+        summary: "Agent rationale",
+        reveal: true,
+      },
+    });
+    expect(result).toMatchObject({ commentId: "mcp:agent-comment" });
+    expect(runtime.getSnapshot().store.getSnapshot().liveNotes).toHaveLength(1);
+    expect(host.updated.at(-1)?.state.liveComments).toHaveLength(1);
+    runtime.dispose();
+  });
+
+  test("allocates a stable generated id when an immutable note collides", async () => {
+    const file = createTestDiffFile({
+      path: "alpha.ts",
+      agent: {
+        path: "alpha.ts",
+        annotations: [{ id: "mcp:collision", source: "ai", summary: "Static collision" }],
+      },
+    });
+    const bootstrap = createBootstrap({
+      changeset: { ...createBootstrap().changeset, files: [file] },
+    });
+    const host = createHeadlessHostClient(bootstrap);
+    const runtime = createReviewSessionRuntime(bootstrap, { hostClient: host.hostClient });
+    const command = {
+      type: "command",
+      requestId: "collision",
+      command: "comment",
+      input: {
+        sessionId: host.hostClient.getRegistration().sessionId,
+        filePath: "alpha.ts",
+        hunkIndex: 0,
+        summary: "Mutable comment",
+        reveal: false,
+      },
+    } as const;
+
+    const first = await host.dispatchCommand(command);
+    const retry = await host.dispatchCommand(command);
+    expect(first).toMatchObject({ commentId: "mcp:collision:1" });
+    expect(retry).toEqual(first);
+    expect(runtime.getSnapshot().store.getSnapshot().liveNotes).toHaveLength(1);
+    expect(runtime.getSnapshot().store.getSnapshot().liveNotes[0]!.note.id).toBe("mcp:collision:1");
+    runtime.dispose();
+  });
+
+  test("allocates a stable generated id when an existing mutable note collides", async () => {
+    const bootstrap = createBootstrap();
+    const host = createHeadlessHostClient(bootstrap);
+    const runtime = createReviewSessionRuntime(bootstrap, { hostClient: host.hostClient });
+    const state = runtime.getSnapshot().store.getSnapshot();
+    const semantic = state.document.files[0]!;
+    runtime.getSnapshot().store.dispatch({
+      type: "notes/add-live",
+      expectedGeneration: state.documentGeneration,
+      notes: [
+        {
+          note: projectReviewNote({
+            annotation: {
+              id: "mcp:mutable-collision",
+              source: "mcp",
+              newRange: [1, 1],
+              summary: "Existing mutable note",
+            },
+            fileKey: semantic.key,
+            hunks: bootstrap.changeset.files[0]!.metadata.hunks,
+            origin: "live-agent",
+          }),
+          contextDigest: reviewLineContextDigest(semantic, "new", 1),
+          resolution: "active",
+        },
+      ],
+    });
+    const command = {
+      type: "command",
+      requestId: "mutable-collision",
+      command: "comment",
+      input: {
+        sessionId: host.hostClient.getRegistration().sessionId,
+        filePath: "alpha.ts",
+        hunkIndex: 0,
+        summary: "Generated mutable note",
+        reveal: false,
+      },
+    } as const;
+
+    const first = await host.dispatchCommand(command);
+    const retry = await host.dispatchCommand(command);
+    expect(first).toMatchObject({ commentId: "mcp:mutable-collision:1" });
+    expect(retry).toEqual(first);
+    expect(runtime.getSnapshot().store.getSnapshot().liveNotes).toHaveLength(2);
+    runtime.dispose();
+  });
+
+  test("returns a cached single result after reload orphaning even when a retry retargets", async () => {
+    const bootstrap = createBootstrap();
+    const beta = createTestDiffFile({ id: "beta", path: "beta.ts" });
+    const host = createHeadlessHostClient(bootstrap);
+    const runtime = createReviewSessionRuntime(bootstrap, {
+      hostClient: host.hostClient,
+      deps: createReloadDeps(async (input, cwd, extensions) => ({
+        ...createBootstrap(),
+        input,
+        reloadContext: { cwd },
+        extensions,
+        changeset: { ...createBootstrap().changeset, files: [beta], title: "beta reload" },
+      })),
+    });
+    const command = (filePath: string) =>
+      host.dispatchCommand({
+        type: "command",
+        requestId: "cached-single",
+        command: "comment",
+        input: {
+          sessionId: host.hostClient.getRegistration().sessionId,
+          filePath,
+          hunkIndex: 0,
+          summary: `target ${filePath}`,
+          reveal: false,
+        },
+      });
+
+    const applied = await command("alpha.ts");
+    await runtime.reload("manual", reloadInput("beta"), { resetApp: false });
+    expect(runtime.getSnapshot().store.getSnapshot().liveNotes[0]?.resolution).toBe("orphaned");
+    const beforeRetry = runtime.getSnapshot().store.getSnapshot();
+    const updatesBeforeRetry = host.updated.length;
+    const retry = await command("beta.ts");
+
+    expect(retry).toEqual(applied);
+    expect(retry).toMatchObject({ filePath: "alpha.ts" });
+    expect(runtime.getSnapshot().store.getSnapshot()).toBe(beforeRetry);
+    expect(host.updated).toHaveLength(updatesBeforeRetry);
+    runtime.dispose();
+  });
+
+  test("prepares comment batches atomically and keeps retries idempotent", async () => {
+    const file = createTestDiffFile({
+      path: "alpha.ts",
+      agent: {
+        path: "alpha.ts",
+        annotations: [{ id: "mcp:valid-batch:0", source: "ai", summary: "Batch collision" }],
+      },
+    });
+    const bootstrap = createBootstrap({
+      changeset: { ...createBootstrap().changeset, files: [file] },
+    });
+    const host = createHeadlessHostClient(bootstrap);
+    const runtime = createReviewSessionRuntime(bootstrap, { hostClient: host.hostClient });
+    const before = runtime.getSnapshot().store.getSnapshot();
+    const batch = (requestId: string, comments: Array<Record<string, unknown>>) =>
+      host.dispatchCommand({
+        type: "command",
+        requestId,
+        command: "comment_batch",
+        input: {
+          sessionId: host.hostClient.getRegistration().sessionId,
+          comments,
+          revealMode: "none",
+        },
+      } as unknown as HunkSessionServerMessage);
+
+    await expect(
+      batch("invalid-batch", [
+        { filePath: "alpha.ts", summary: "first", hunkIndex: 0 },
+        { filePath: "missing.ts", summary: "second", hunkIndex: 0 },
+      ]),
+    ).rejects.toThrow("No diff file matches missing.ts");
+    expect(runtime.getSnapshot().store.getSnapshot()).toBe(before);
+
+    const result = await batch("valid-batch", [
+      { filePath: "alpha.ts", summary: "first", hunkIndex: 0 },
+      { filePath: "alpha.ts", summary: "second", hunkIndex: 0 },
+    ]);
+    expect(result).toMatchObject({
+      applied: [{ commentId: "mcp:valid-batch:0:1" }, { commentId: "mcp:valid-batch:1" }],
+    });
+    const committed = runtime.getSnapshot().store.getSnapshot();
+    expect(committed.stateRevision).toBe(before.stateRevision + 1);
+    expect(committed.liveNotes.map((entry) => entry.note.summary)).toEqual(["first", "second"]);
+    const retry = await batch("valid-batch", [
+      { filePath: "alpha.ts", summary: "first", hunkIndex: 0 },
+      { filePath: "alpha.ts", summary: "second", hunkIndex: 0 },
+    ]);
+    expect(retry).toEqual(result);
+    expect(runtime.getSnapshot().store.getSnapshot()).toBe(committed);
+    runtime.dispose();
+  });
+
+  test("caches batch first-reveal results without repeating visibility, revision, or reveal", async () => {
+    const bootstrap = createBootstrap();
+    const host = createHeadlessHostClient(bootstrap);
+    const runtime = createReviewSessionRuntime(bootstrap, { hostClient: host.hostClient });
+    const batch = (filePath: string) =>
+      host.dispatchCommand({
+        type: "command",
+        requestId: "cached-reveal-batch",
+        command: "comment_batch",
+        input: {
+          sessionId: host.hostClient.getRegistration().sessionId,
+          comments: [{ filePath, summary: `target ${filePath}`, hunkIndex: 0 }],
+          revealMode: "first",
+        },
+      });
+
+    const result = await batch("alpha.ts");
+    const committed = runtime.getSnapshot().store.getSnapshot();
+    const updatesAfterCommit = host.updated.length;
+    expect(committed.showAgentNotes).toBe(true);
+    expect(committed.reveal).toMatchObject({ kind: "hunk", scrollToNote: true });
+
+    const retry = await batch("missing.ts");
+    expect(retry).toEqual(result);
+    expect(runtime.getSnapshot().store.getSnapshot()).toBe(committed);
+    expect(runtime.getSnapshot().store.getSnapshot().stateRevision).toBe(committed.stateRevision);
+    expect(runtime.getSnapshot().store.getSnapshot().reveal).toEqual(committed.reveal);
+    expect(host.updated).toHaveLength(updatesAfterCommit);
+    runtime.dispose();
+  });
+
+  test("bounds applied comment retries with least-recently-used eviction", async () => {
+    const bootstrap = createBootstrap();
+    const host = createHeadlessHostClient(bootstrap);
+    const runtime = createReviewSessionRuntime(bootstrap, { hostClient: host.hostClient });
+    const comment = (requestId: string, filePath = "alpha.ts") =>
+      host.dispatchCommand({
+        type: "command",
+        requestId,
+        command: "comment",
+        input: {
+          sessionId: host.hostClient.getRegistration().sessionId,
+          filePath,
+          hunkIndex: 0,
+          summary: requestId,
+          reveal: false,
+        },
+      });
+
+    for (let index = 0; index < 256; index += 1) await comment(`bounded:${index}`);
+    await expect(comment("bounded:0", "missing.ts")).resolves.toMatchObject({
+      commentId: "mcp:bounded:0",
+      filePath: "alpha.ts",
+    });
+    await comment("bounded:256");
+    await expect(comment("bounded:0", "missing.ts")).resolves.toMatchObject({
+      commentId: "mcp:bounded:0",
+      filePath: "alpha.ts",
+    });
+    await expect(comment("bounded:1", "missing.ts")).rejects.toThrow(
+      "No diff file matches missing.ts",
+    );
+    expect(runtime.getSnapshot().store.getSnapshot().liveNotes).toHaveLength(257);
+    runtime.dispose();
+  });
+
+  test("returns terminal width-sensitive STML degradation feedback", async () => {
+    const base = createBootstrap();
+    const bootstrap = createBootstrap({
+      input: { ...base.input, options: { ...base.input.options, experimental: true } },
+    });
+    const host = createHeadlessHostClient(bootstrap);
+    const runtime = createReviewSessionRuntime(bootstrap, { hostClient: host.hostClient });
+    runtime.setSessionRendererFields({
+      noteMarkupWidth: 42,
+      validateMarkup: (markup, width) => [`degraded ${markup} at ${width}`],
+    });
+    const result = await host.dispatchCommand({
+      type: "command",
+      requestId: "stml-feedback",
+      command: "comment",
+      input: {
+        sessionId: host.hostClient.getRegistration().sessionId,
+        filePath: "alpha.ts",
+        hunkIndex: 0,
+        summary: "markup",
+        markup: "<box>markup</box>",
+        reveal: false,
+      },
+    });
+    expect(result).toMatchObject({
+      markupWidth: 42,
+      markupNotes: ["degraded <box>markup</box> at 42"],
+    });
+    runtime.dispose();
+  });
+
+  test("reserves one asynchronous browser action per generation revision", async () => {
+    const deferred = createTestDeferred<AppBootstrap>();
+    const bootstrap = createBootstrap();
+    const host = createHeadlessHostClient(bootstrap);
+    const runtime = createReviewSessionRuntime(bootstrap, {
+      hostClient: host.hostClient,
+      deps: createReloadDeps(async () => deferred.promise),
+    });
+    const state = runtime.getSnapshot().store.getSnapshot();
+    const action = (requestId: string) =>
+      host.dispatchCommand({
+        type: "command",
+        requestId,
+        command: "apply_review_action",
+        input: {
+          sessionId: host.hostClient.getRegistration().sessionId,
+          generation: state.documentGeneration,
+          expectedStateRevision: state.stateRevision,
+          action: { type: "session/reload" },
+        },
+      });
+    const first = action("reload-first");
+    await Bun.sleep(0);
+    const second = await action("reload-second");
+    expect(second).toMatchObject({ kind: "review-error", error: { code: "stale-revision" } });
+    const synchronous = await host.dispatchCommand({
+      type: "command",
+      requestId: "filter-during-reload",
+      command: "apply_review_action",
+      input: {
+        sessionId: host.hostClient.getRegistration().sessionId,
+        generation: state.documentGeneration,
+        expectedStateRevision: state.stateRevision,
+        action: { type: "filter/set", filter: "blocked" },
+      },
+    });
+    expect(synchronous).toMatchObject({
+      kind: "review-error",
+      error: { code: "stale-revision" },
+    });
+    expect(runtime.getSnapshot().store.getSnapshot().filter).toBe("");
+    deferred.resolve(createBootstrap());
+    await expect(first).resolves.toMatchObject({ kind: "review-action" });
+    expect(host.replaced).toHaveLength(1);
     runtime.dispose();
   });
 
@@ -198,6 +718,73 @@ describe("ReviewSessionRuntime", () => {
     expect(next.store).not.toBe(previous.store);
     expect(next.store.getSnapshot().filter).toBe("alpha");
     expect(next.store.getSnapshot().document).toBe(next.projection.document);
+    runtime.dispose();
+  });
+
+  test("failed reload preflight preserves active extensions, trust eligibility, watch, and broker state", async () => {
+    const activeExtensions = createEmptyExtensionLoadResult(process.cwd());
+    const bootstrap = createBootstrap({
+      extensions: activeExtensions,
+      input: { kind: "vcs", staged: false, options: { watch: true } },
+    });
+    const watch = createWatchTestRuntime();
+    const failedExtensions = createEmptyExtensionLoadResult(process.cwd());
+    failedExtensions.pendingTrustRepoRoot = process.cwd();
+    const validExtensions = createEmptyExtensionLoadResult(process.cwd());
+    validExtensions.pendingTrustRepoRoot = process.cwd();
+    let extensionLoads = 0;
+    const host = createHeadlessHostClient(bootstrap);
+    const runtime = createReviewSessionRuntime(bootstrap, {
+      hostClient: host.hostClient,
+      watchRuntime: watch.runtime,
+      deps: {
+        ...createReloadDeps(async (input, cwd, extensions) => ({
+          ...createBootstrap(),
+          input,
+          reloadContext: { cwd },
+          extensions,
+          changeset: {
+            ...createBootstrap().changeset,
+            title: extensionLoads === 1 ? "x".repeat(5 * 1024 * 1024) : "validated reload",
+          },
+        })),
+        loadStartupExtensionsImpl: async () => {
+          extensionLoads += 1;
+          return extensionLoads === 1 ? failedExtensions : validExtensions;
+        },
+      },
+    });
+    runtime.start();
+    const before = runtime.getSnapshot();
+    const updatesBefore = host.updated.length;
+    expect(watch.sources).toHaveLength(1);
+
+    await expect(
+      runtime.reload("manual", reloadInput("invalid"), {
+        resetApp: false,
+        reloadExtensions: true,
+      }),
+    ).rejects.toThrow(/metadata limit|websocket envelope limit/);
+    expect(runtime.getSnapshot()).toBe(before);
+    expect(runtime.getSnapshot().extensions).toBe(activeExtensions);
+    expect(activeExtensions.registry.eventBusPhase).not.toBe("closed");
+    expect(failedExtensions.registry.eventBusPhase).toBe("closed");
+    expect(watch.sources[0]!.closeCount).toBe(0);
+    expect(host.updated).toHaveLength(updatesBefore);
+    expect(host.replaced).toHaveLength(0);
+    runtime.getSnapshot().store.dispatch({ type: "notes/set-visibility", visible: true });
+    expect(host.updated.at(-1)?.state.showAgentNotes).toBe(true);
+
+    await runtime.reload("manual", reloadInput("valid"), {
+      resetApp: false,
+      reloadExtensions: true,
+    });
+    expect(runtime.getSnapshot().bootstrap.changeset.title).toBe("validated reload");
+    expect(runtime.getSnapshot().extensions).toBe(validExtensions);
+    expect(runtime.getSnapshot().trust.promptRepoRoot).toBe(process.cwd());
+    expect(activeExtensions.registry.eventBusPhase).toBe("closed");
+    expect(watch.sources[0]!.closeCount).toBe(1);
+    expect(host.replaced).toHaveLength(1);
     runtime.dispose();
   });
 
@@ -317,11 +904,185 @@ describe("ReviewSessionRuntime", () => {
     });
 
     expect(runtime.getSnapshot().trust.promptRepoRoot).toBe(process.cwd());
+    expect(runtime.getSnapshot().store.getSnapshot().trustPromptRepoRoot).toBe(process.cwd());
     expect(discover).toHaveBeenCalledTimes(0);
     await runtime.decideExtensionTrust("trusted");
     expect(writeTrust).toHaveBeenCalledWith(process.cwd(), "trusted");
     expect(discover).toHaveBeenCalledTimes(1);
     expect(runtime.getSnapshot().trust.promptRepoRoot).toBeNull();
+    expect(runtime.getSnapshot().store.getSnapshot().trustPromptRepoRoot).toBeNull();
+    runtime.dispose();
+
+    const deniedExtensions = createEmptyExtensionLoadResult(process.cwd());
+    deniedExtensions.pendingTrustRepoRoot = process.cwd();
+    const deniedDiscover = mock(async () => createEmptyExtensionLoadResult(process.cwd()));
+    const deniedRuntime = createReviewSessionRuntime(
+      createBootstrap({ extensions: deniedExtensions }),
+      {
+        deps: {
+          ...createReloadDeps(),
+          writeExtensionTrustImpl: writeTrust,
+          loadStartupExtensionsImpl: deniedDiscover,
+        },
+      },
+    );
+    await deniedRuntime.decideExtensionTrust("denied");
+    expect(writeTrust).toHaveBeenCalledWith(process.cwd(), "denied");
+    expect(deniedDiscover).toHaveBeenCalledTimes(1);
+    expect(deniedRuntime.getSnapshot().trust.promptRepoRoot).toBeNull();
+    deniedRuntime.dispose();
+  });
+
+  test("publishes mandatory trust extension reload before a later watch reload", async () => {
+    const activeExtensions = createEmptyExtensionLoadResult(process.cwd());
+    activeExtensions.pendingTrustRepoRoot = process.cwd();
+    const refreshedExtensions = createEmptyExtensionLoadResult(process.cwd());
+    const bootstrap = createBootstrap({ extensions: activeExtensions });
+    const enteredTrustLoad = createTestDeferred<void>();
+    const releaseTrustLoad = createTestDeferred<void>();
+    const extensionsSeen: AppBootstrap["extensions"][] = [];
+    let loads = 0;
+    const runtime = createReviewSessionRuntime(bootstrap, {
+      deps: {
+        ...createReloadDeps(async (input, cwd, extensions) => {
+          loads += 1;
+          extensionsSeen.push(extensions);
+          if (loads === 1) {
+            enteredTrustLoad.resolve();
+            await releaseTrustLoad.promise;
+          }
+          return {
+            ...createBootstrap(),
+            input,
+            reloadContext: { cwd },
+            extensions,
+            changeset: { ...createBootstrap().changeset, title: `reload-${loads}` },
+          };
+        }),
+        writeExtensionTrustImpl: () => "state.json",
+        loadStartupExtensionsImpl: async () => refreshedExtensions,
+      },
+    });
+
+    const trust = runtime.decideExtensionTrust("trusted");
+    await enteredTrustLoad.promise;
+    const watch = runtime.reload("watch", bootstrap.input, { resetApp: false });
+    releaseTrustLoad.resolve();
+
+    await trust;
+    expect(runtime.getSnapshot().extensions).toBe(refreshedExtensions);
+    expect(runtime.getSnapshot().bootstrap.changeset.title).toBe("reload-1");
+    await watch;
+    expect(runtime.getSnapshot().bootstrap.changeset.title).toBe("reload-2");
+    expect(runtime.getSnapshot().extensions).toBe(refreshedExtensions);
+    expect(extensionsSeen).toEqual([refreshedExtensions, refreshedExtensions]);
+    expect(activeExtensions.registry.eventBusPhase).toBe("closed");
+    runtime.dispose();
+  });
+
+  test("keeps a failed trust decision visible and retryable through the typed action boundary", async () => {
+    const extensions = createEmptyExtensionLoadResult(process.cwd());
+    extensions.pendingTrustRepoRoot = process.cwd();
+    const bootstrap = createBootstrap({ extensions });
+    const host = createHeadlessHostClient(bootstrap);
+    let attempts = 0;
+    const writeTrust = mock(() => {
+      attempts += 1;
+      if (attempts === 1) throw new Error("trust store unavailable");
+      return "state.json";
+    });
+    const runtime = createReviewSessionRuntime(bootstrap, {
+      hostClient: host.hostClient,
+      deps: { ...createReloadDeps(), writeExtensionTrustImpl: writeTrust },
+    });
+    const before = runtime.getSnapshot().store.getSnapshot();
+    const decide = (requestId: string) =>
+      host.dispatchCommand({
+        type: "command",
+        requestId,
+        command: "apply_review_action",
+        input: {
+          sessionId: host.hostClient.getRegistration().sessionId,
+          generation: before.documentGeneration,
+          expectedStateRevision: before.stateRevision,
+          action: { type: "trust/decide", decision: "denied" },
+        },
+      });
+
+    await expect(decide("trust-fails")).resolves.toMatchObject({
+      kind: "review-error",
+      error: { code: "invalid-action", message: "trust store unavailable" },
+    });
+    expect(runtime.getSnapshot().trust.promptRepoRoot).toBe(process.cwd());
+    expect(runtime.getSnapshot().store.getSnapshot()).toMatchObject({
+      stateRevision: before.stateRevision,
+      trustPromptRepoRoot: process.cwd(),
+    });
+    expect(runtime.getSnapshot().notice).toBe("trust store unavailable");
+
+    await expect(decide("trust-retry")).resolves.toMatchObject({ kind: "review-action" });
+    expect(writeTrust).toHaveBeenCalledTimes(2);
+    expect(runtime.getSnapshot().trust.promptRepoRoot).toBeNull();
+    expect(runtime.getSnapshot().store.getSnapshot().trustPromptRepoRoot).toBeNull();
+    runtime.dispose();
+  });
+
+  test("keeps persisted trust retryable when extension reload fails and manual reload rediscovers", async () => {
+    const extensions = createEmptyExtensionLoadResult(process.cwd());
+    extensions.pendingTrustRepoRoot = process.cwd();
+    const bootstrap = createBootstrap({ extensions });
+    const host = createHeadlessHostClient(bootstrap);
+    const writeTrust = mock(() => "state.json");
+    let discoveries = 0;
+    const discover = mock(async () => {
+      discoveries += 1;
+      if (discoveries === 1) throw new Error("extension reload failed");
+      return createEmptyExtensionLoadResult(process.cwd());
+    });
+    const runtime = createReviewSessionRuntime(bootstrap, {
+      hostClient: host.hostClient,
+      deps: {
+        ...createReloadDeps(),
+        writeExtensionTrustImpl: writeTrust,
+        loadStartupExtensionsImpl: discover,
+      },
+    });
+    const before = runtime.getSnapshot().store.getSnapshot();
+    const action = (
+      requestId: string,
+      nextAction: { type: "trust/decide"; decision: "trusted" } | { type: "session/reload" },
+    ) =>
+      host.dispatchCommand({
+        type: "command",
+        requestId,
+        command: "apply_review_action",
+        input: {
+          sessionId: host.hostClient.getRegistration().sessionId,
+          generation: before.documentGeneration,
+          expectedStateRevision: before.stateRevision,
+          action: nextAction,
+        },
+      });
+
+    await expect(
+      action("trust-reload-fails", { type: "trust/decide", decision: "trusted" }),
+    ).resolves.toMatchObject({
+      kind: "review-error",
+      error: { code: "invalid-action", message: "extension reload failed" },
+    });
+    expect(writeTrust).toHaveBeenCalledTimes(1);
+    expect(discover).toHaveBeenCalledTimes(1);
+    expect(runtime.getSnapshot().trust.promptRepoRoot).toBe(process.cwd());
+    expect(runtime.getSnapshot().store.getSnapshot()).toBe(before);
+
+    await expect(
+      action("reload-trusted-extensions", { type: "session/reload" }),
+    ).resolves.toMatchObject({
+      kind: "review-action",
+    });
+    expect(discover).toHaveBeenCalledTimes(2);
+    expect(runtime.getSnapshot().trust.promptRepoRoot).toBeNull();
+    expect(runtime.getSnapshot().store.getSnapshot().trustPromptRepoRoot).toBeNull();
     runtime.dispose();
   });
 

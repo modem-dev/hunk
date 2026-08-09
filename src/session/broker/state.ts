@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   buildHunkSessionReview,
   buildListedHunkSession,
@@ -17,6 +18,7 @@ import type {
   SessionReview,
 } from "../types";
 import {
+  MAX_REVIEW_SOURCE_RESOURCE_BYTES,
   REVIEW_RESOURCE_CHUNK_BYTES,
   type HunkReviewActionV1,
   type HunkReviewCommandResult,
@@ -33,7 +35,7 @@ import {
   type SessionBrokerViewAdapter,
   type SessionTargetInput,
 } from "@hunk/session-broker-core";
-import { ReviewResourceCache } from "./reviewResourceCache";
+import { ReviewResourceCache, type ReviewResourceReservation } from "./reviewResourceCache";
 import { projectManifestReviewCompatibility } from "../reviewCompatibility";
 
 const hunkSessionBrokerView: SessionBrokerViewAdapter<
@@ -307,12 +309,20 @@ export class HunkSessionBrokerState extends SessionBrokerState<
       (candidate) => candidate.id === resourceId,
     );
     if (!descriptor) throw new Error("The review resource does not exist.");
-    const bytes = await this.loadReviewResource(sessionId, generation, descriptor);
+    const bytes =
+      descriptor.byteLength === undefined || !descriptor.digest
+        ? await this.loadMaterializingReviewResource(sessionId, generation, descriptor)
+        : await this.loadReviewResource(sessionId, generation, descriptor);
     return { descriptor, bytes };
   }
 
   /** Proxy one strictly generation-scoped action through the existing producer command. */
-  applyBrowserReviewAction(sessionId: string, generation: string, action: HunkReviewActionV1) {
+  applyBrowserReviewAction(
+    sessionId: string,
+    generation: string,
+    action: HunkReviewActionV1,
+    expectedStateRevision?: number,
+  ) {
     const registration = this.registrations.get(sessionId);
     if (!registration) throw new Error("The review session is not connected.");
     if (registration.info.documentGeneration !== generation) {
@@ -321,7 +331,12 @@ export class HunkSessionBrokerState extends SessionBrokerState<
     return this.dispatchCommand<HunkReviewCommandResult, "apply_review_action">({
       selector: { sessionId },
       command: "apply_review_action",
-      input: { sessionId, generation, action },
+      input: {
+        sessionId,
+        generation,
+        ...(expectedStateRevision !== undefined ? { expectedStateRevision } : {}),
+        action,
+      },
       timeoutMessage: "Timed out waiting for the session to apply a browser review action.",
     });
   }
@@ -363,6 +378,129 @@ export class HunkSessionBrokerState extends SessionBrokerState<
   /** Expose cache occupancy for bounded lifecycle tests. */
   getReviewResourceCacheEntryCount() {
     return this.resourceCache.getEntryCount();
+  }
+
+  /** Deduplicate, verify, and cache one producer-materialized source for all browser ranges. */
+  private async loadMaterializingReviewResource(
+    sessionId: string,
+    generation: string,
+    descriptor: HunkSessionRegistration["info"]["reviewManifest"]["resources"][number],
+  ) {
+    this.assertReviewGenerationActive(sessionId, generation);
+    const cached = this.resourceCache.get(sessionId, generation, descriptor.id);
+    if (cached) return cached;
+    const key = JSON.stringify([sessionId, generation, descriptor.id]);
+    let active = this.resourceLoads.get(key);
+    if (!active) {
+      const reservation = this.resourceCache.reserveMaterialization(
+        sessionId,
+        generation,
+        descriptor,
+        MAX_REVIEW_SOURCE_RESOURCE_BYTES,
+      );
+      active = this.fetchMaterializingReviewResource(
+        sessionId,
+        generation,
+        descriptor,
+        reservation,
+      ).finally(() => {
+        this.resourceCache.release(reservation);
+        this.resourceLoads.delete(key);
+      });
+      this.resourceLoads.set(key, active);
+    }
+    try {
+      const bytes = await active;
+      this.assertReviewGenerationActive(sessionId, generation);
+      return bytes;
+    } catch (error) {
+      this.assertReviewGenerationActive(sessionId, generation);
+      throw error;
+    }
+  }
+
+  /** Read one lazily materialized source while retaining generation and digest verification. */
+  private async fetchMaterializingReviewResource(
+    sessionId: string,
+    generation: string,
+    descriptor: HunkSessionRegistration["info"]["reviewManifest"]["resources"][number],
+    reservation: ReviewResourceReservation,
+  ) {
+    const chunks: Uint8Array[] = [];
+    let offset = 0;
+    let contentSize: number | undefined;
+    let contentDigest: string | undefined;
+    for (;;) {
+      this.assertReviewGenerationActive(sessionId, generation);
+      const result = await this.dispatchCommand<
+        ReviewResourceReadResult | ReviewCommandErrorResult,
+        "read_review_resource"
+      >({
+        selector: { sessionId },
+        command: "read_review_resource",
+        input: {
+          sessionId,
+          generation,
+          resourceId: descriptor.id,
+          offset,
+          length: REVIEW_RESOURCE_CHUNK_BYTES,
+        },
+        timeoutMessage: "Timed out reading expanded review source.",
+        timeoutMs: 30_000,
+      });
+      if (result.kind === "review-error")
+        throw new Error(`${result.error.code}: ${result.error.message}`);
+      contentSize ??= result.contentSize;
+      contentDigest ??= result.contentDigest;
+      if (
+        result.generation !== generation ||
+        result.id !== descriptor.id ||
+        result.resourceId !== descriptor.id ||
+        result.offset !== offset ||
+        result.contentSize !== contentSize ||
+        result.contentDigest !== contentDigest ||
+        contentSize > MAX_REVIEW_SOURCE_RESOURCE_BYTES ||
+        !/^[a-f\d]{64}$/i.test(contentDigest)
+      ) {
+        throw new Error(`Review resource ${descriptor.id} returned inconsistent metadata.`);
+      }
+      if (
+        typeof result.data !== "string" ||
+        result.data.length > Math.ceil(REVIEW_RESOURCE_CHUNK_BYTES / 3) * 4 + 4 ||
+        !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(result.data)
+      ) {
+        throw new Error(`Review resource ${descriptor.id} returned invalid base64 data.`);
+      }
+      const chunk = Buffer.from(result.data, "base64");
+      if (
+        chunk.byteLength !== result.byteLength ||
+        chunk.byteLength > REVIEW_RESOURCE_CHUNK_BYTES
+      ) {
+        throw new Error(`Review resource ${descriptor.id} returned an invalid chunk.`);
+      }
+      chunks.push(chunk);
+      offset += chunk.byteLength;
+      if (result.eof) break;
+      if (chunk.byteLength === 0 || offset >= contentSize) {
+        throw new Error(`Review resource ${descriptor.id} did not make bounded progress.`);
+      }
+    }
+    if (contentSize === undefined || contentDigest === undefined || offset !== contentSize) {
+      throw new Error(`Review resource ${descriptor.id} ended inconsistently.`);
+    }
+    const bytes = new Uint8Array(contentSize);
+    let cursor = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, cursor);
+      cursor += chunk.byteLength;
+    }
+    if (createHash("sha256").update(bytes).digest("hex") !== contentDigest.toLowerCase()) {
+      throw new Error(`Review resource ${descriptor.id} failed digest verification.`);
+    }
+    this.assertReviewGenerationActive(sessionId, generation);
+    const materialized = { ...descriptor, byteLength: contentSize, digest: contentDigest };
+    this.resourceCache.complete(reservation, materialized, bytes);
+    return bytes;
   }
 
   private async loadReviewResource(
