@@ -94,3 +94,43 @@ test("key human and machine-readable routes load", async ({ page, request }) => 
   expect(skill.ok()).toBe(true);
   expect(await skill.text()).toContain("# Hunk Review");
 });
+
+test("llms.txt routes expose the docs to coding agents", async ({ request }) => {
+  const index = await request.get("/llms.txt");
+  expect(index.ok()).toBe(true);
+  const indexBody = await index.text();
+  expect(indexBody).toContain("# Hunk");
+  // The index is only useful if it routes agents to the two full-text variants.
+  expect(indexBody).toContain("https://hunk.dev/llms-small.txt");
+  expect(indexBody).toContain("https://hunk.dev/llms-full.txt");
+
+  const full = await request.get("/llms-full.txt");
+  expect(full.ok()).toBe(true);
+  const fullBody = await full.text();
+  expect(fullBody).toContain("# Extension API");
+  expect(fullBody).toContain("# CLI reference");
+
+  const small = await request.get("/llms-small.txt");
+  expect(small.ok()).toBe(true);
+  const smallBody = await small.text();
+  // Extension authoring is excluded from the abridged variant; core docs are not.
+  expect(smallBody).not.toContain("# Extension API");
+  expect(smallBody).toContain("# CLI reference");
+
+  // Heading anchor links must be stripped from both variants, not just the abridged one.
+  expect(fullBody).not.toContain("Section titled");
+  expect(smallBody).not.toContain("Section titled");
+
+  // The `promote` globs are matched against page slugs and fail open: a docs
+  // reorganization would silently drop onboarding back into alphabetical order.
+  expect(fullBody.indexOf("# Install")).toBeLessThan(fullBody.indexOf("# Configuration"));
+
+  // The static link checker only scans .html, so URLs hand-written into the llms.txt
+  // config are otherwise unverified.
+  for (const match of indexBody.matchAll(/https:\/\/hunk\.dev(\/[^\s)]*)/g)) {
+    // Trim sentence punctuation trailing a bare URL in prose.
+    const path = match[1].replace(/[.,]+$/, "");
+    const linked = await request.get(path);
+    expect(linked.ok(), path).toBe(true);
+  }
+});
