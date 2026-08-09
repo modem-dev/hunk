@@ -3,7 +3,7 @@ title: Live session control
 description: Inspect, target, navigate, and reload Hunk windows through the local session broker.
 ---
 
-Each normal Hunk TUI registers with one loopback daemon. `hunk session ...` finds a registered window and sends it review actions.
+Each normal Hunk review process registers with one loopback daemon. `hunk session ...` finds a registered terminal or headless review and sends it review actions.
 
 ## Find the session
 
@@ -14,6 +14,15 @@ hunk session context --repo .
 ```
 
 Use `--repo <path>` for normal worktrees. Use an explicit session ID when multiple windows share a repository.
+
+## Open the live review in a browser
+
+```bash
+hunk session open --repo .
+hunk session open --repo . --no-open
+```
+
+The producer creates the capability URL on demand; clear capabilities never appear in session listings or daemon health. `--no-open` prints the URL instead of launching the default browser. Browser routes remain local-only and refuse unsafe remote daemon mode.
 
 ## Inspect without overloading context
 

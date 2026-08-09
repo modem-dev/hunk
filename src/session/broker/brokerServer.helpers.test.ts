@@ -247,6 +247,21 @@ describe("handleSessionApiRequest", () => {
     ]);
   });
 
+  test("rejects unsafe-remote browser opens before resolving or dispatching to a producer", async () => {
+    const { state, calls } = createFakeState();
+    const response = await handleSessionApiRequest(
+      state,
+      apiRequest({ action: "open", selector: { sessionId: "s-1" } }),
+      { allowBrowserReview: false },
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({
+      error: "Browser review is unavailable when unsafe remote broker access is enabled.",
+    });
+    expect(calls).toEqual([]);
+  });
+
   test("rejects a navigate request missing both hunk and line targets", async () => {
     const { state } = createFakeState();
     const response = await handleSessionApiRequest(

@@ -207,6 +207,35 @@ describe("startup planning", () => {
     expect(seenInputs).toHaveLength(3);
   });
 
+  test("routes web pager patches through app startup without opening a controlling terminal", async () => {
+    let openedTerminal = false;
+    const patchText = "diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n";
+
+    const plan = await prepareStartupPlan(["bun", "hunk", "pager", "--web", "--no-open"], {
+      parseCliImpl: async () => ({
+        kind: "pager",
+        options: { web: true, openBrowser: false },
+      }),
+      readStdinText: async () => patchText,
+      looksLikePatchInputImpl: () => true,
+      stdinIsTTY: false,
+      stdoutIsTTY: false,
+      openControllingTerminalImpl: () => {
+        openedTerminal = true;
+        return null;
+      },
+      resolveConfiguredCliInputImpl: (input) => createTestConfigResolution(input),
+      loadAppBootstrapImpl: async (input) => createBootstrap(input),
+    });
+
+    expect(plan).toMatchObject({
+      kind: "app",
+      controllingTerminal: null,
+      rawInput: { kind: "patch", text: patchText, options: { web: true, pager: true } },
+    });
+    expect(openedTerminal).toBe(false);
+  });
+
   test("passes diff-like pager stdin through when stdout is not interactive", async () => {
     let loaded = false;
     const patchText = "diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n";

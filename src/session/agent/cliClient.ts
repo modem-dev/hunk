@@ -14,6 +14,7 @@ import {
 import type {
   AppliedCommentBatchResult,
   AppliedCommentResult,
+  BrowserReviewUrlResult,
   ClearedCommentsResult,
   ListedSession,
   NavigatedSelectionResult,
@@ -43,6 +44,7 @@ export interface HunkSessionCliClient {
   getSession(selector: SessionSelectorInput): Promise<ListedSession>;
   getSelectedContext(selector: SessionSelectorInput): Promise<SelectedSessionContext>;
   getSessionReview(input: SessionReviewCommandInput): Promise<SessionReview>;
+  getBrowserReviewUrl(selector: SessionSelectorInput): Promise<BrowserReviewUrlResult>;
   navigateToHunk(input: SessionNavigateCommandInput): Promise<NavigatedSelectionResult>;
   reloadSession(input: SessionReloadCommandInput): Promise<ReloadedSessionResult>;
   addComment(input: SessionCommentAddCommandInput): Promise<AppliedCommentResult>;
@@ -122,6 +124,15 @@ class HttpHunkSessionCliClient implements HunkSessionCliClient {
         includeNotes: input.includeNotes,
       })
     ).review;
+  }
+
+  async getBrowserReviewUrl(selector: SessionSelectorInput) {
+    return (
+      await this.request<{ result: BrowserReviewUrlResult }>({
+        action: "open",
+        selector,
+      })
+    ).result;
   }
 
   async navigateToHunk(input: SessionNavigateCommandInput) {

@@ -10,6 +10,7 @@ Hunk is a review-first terminal diff viewer for agent-authored changesets, built
 - inline AI and agent annotations beside the code
 - split, stack, and responsive auto layouts
 - watch mode for auto-reloading file and Git-backed reviews
+- synchronized terminal and local browser review surfaces
 - keyboard, mouse, pager, and Git difftool support
 
 <table>
@@ -81,6 +82,24 @@ git diff --no-color | hunk patch -          # review a patch from stdin
 ```
 
 Watch mode remains continuous. Direct-file and Git-backed reviews normally use filesystem observation to refresh promptly, with periodic polling retained as a fallback for missed events or unavailable watchers. Jujutsu and Sapling reviews currently use polling rather than filesystem observation.
+
+### Browser review
+
+Add `--web` to any review command to use the synchronized browser surface instead of the terminal UI:
+
+```bash
+hunk diff --web
+hunk diff --watch --web
+hunk patch changes.patch --web --no-open
+hunk session open --repo .
+hunk session open --repo . --no-open
+```
+
+`--web` opens the default browser and keeps the owning Hunk process alive until `SIGINT` or `SIGTERM`; closing a tab does not stop a watched review. `--no-open` prints the capability URL without launching a browser. The URL grants access to that one live review, so treat it as a secret and do not share it.
+
+Browser review is served only by Hunk's loopback session daemon. It is refused when unsafe remote daemon access is enabled, and there is no hosted or remote-sharing mode. If session brokering is disabled, omit `--web` to keep using the terminal UI.
+
+Browser extension UI v1 includes host-rendered review data and semantic actions. OpenTUI sidebar components, terminal-only file views, and other renderer-specific extension components remain terminal-only; extension transforms and lifecycle hooks still run once in the owning review process for both surfaces.
 
 ### Working with agents
 
@@ -210,7 +229,7 @@ repository's `.hunk/extensions/` (after you explicitly trust that repository),
 and from `--extension <path>` for development. `--no-extensions` turns those off
 for one run; Hunk's own bundled backends (Git, Jujutsu, and Sapling) stay loaded.
 
-A Phase 1 extension can contribute themes and file-extension → language
+A v1 extension can contribute themes and file-extension → language
 mappings, add a VCS backend, rewrite the changeset before review (collapse
 lockfiles, reorder files by review priority), replace the file-navigation
 sidebar with its own React component, react to lifecycle events, and show

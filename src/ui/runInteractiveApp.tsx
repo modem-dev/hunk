@@ -10,25 +10,16 @@ import { shutdownSession } from "../core/shutdown";
 import { shouldUseMouseForApp, type ControllingTerminal } from "../core/terminal";
 import type { AppBootstrap, CliInput } from "../core/types";
 import { resolveStartupUpdateNotice } from "../core/updateNotice";
-import {
-  assertSessionRegistrationEnvelopeWithinBounds,
-  createSessionRegistration,
-} from "../session/app/registration";
-import type {
-  HunkSessionCommandResult,
-  HunkSessionInfo,
-  HunkSessionServerMessage,
-  HunkSessionState,
-} from "../session/types";
-import { SessionBrokerClient } from "../session/broker/brokerClient";
-import { createReviewSessionRuntime } from "../app/reviewSessionRuntime";
-import { createSessionSnapshotFromReviewState } from "../session/app/reviewSnapshot";
+import type { ReviewSessionRuntime } from "../app/reviewSessionRuntime";
+import type { HunkSessionBrokerClient } from "../session/types";
 import { AppHost } from "./AppHost";
 
 export interface InteractiveAppInput {
   bootstrap: AppBootstrap;
   rawInput: CliInput;
   controllingTerminal: ControllingTerminal | null;
+  runtime: ReviewSessionRuntime;
+  hostClient: HunkSessionBrokerClient;
 }
 
 /** Load and run the OpenTUI review app after startup has selected an interactive plan. */
@@ -36,23 +27,9 @@ export async function runInteractiveApp({
   bootstrap,
   rawInput,
   controllingTerminal,
+  runtime,
+  hostClient,
 }: InteractiveAppInput): Promise<void> {
-  const runtime = createReviewSessionRuntime(bootstrap, { rawInput });
-  const runtimeSnapshot = runtime.getSnapshot();
-  const registration = createSessionRegistration(bootstrap, runtimeSnapshot.projection.document, {
-    browserReviewCapabilityHash: runtime.getBrowserReviewCapabilityHash(),
-  });
-  const initialSnapshot = createSessionSnapshotFromReviewState(runtimeSnapshot.store.getSnapshot());
-  assertSessionRegistrationEnvelopeWithinBounds(registration, initialSnapshot);
-  const hostClient = new SessionBrokerClient<
-    HunkSessionInfo,
-    HunkSessionState,
-    HunkSessionServerMessage,
-    HunkSessionCommandResult
-  >(registration, initialSnapshot);
-  runtime.attachHostClient(hostClient);
-  hostClient.start();
-
   // Keep OpenTUI's platform-safe threading default (enabled on macOS, disabled on Linux).
   const renderer = await createCliRenderer({
     stdin: controllingTerminal?.stdin,

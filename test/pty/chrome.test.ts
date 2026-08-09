@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createPtyHarness } from "./harness";
@@ -12,6 +13,19 @@ setDefaultTimeout(20_000);
 afterEach(() => {
   harness.cleanup();
 });
+
+/** Reserve one loopback port for a menu-triggered browser review daemon. */
+async function reservePort() {
+  const server = createServer();
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const address = server.address();
+  const port = typeof address === "object" && address ? address.port : 0;
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+  return port;
+}
 
 describe("PTY chrome", () => {
   test("top menu mouse navigation can open themes, toggle agent notes, and open help", async () => {
@@ -77,6 +91,55 @@ describe("PTY chrome", () => {
       expect(helpDialog).toContain("g / Home");
     } finally {
       session.close();
+    }
+  });
+
+  test("File menu opens the current review in a browser through the shell-free opener", async () => {
+    const fixture = harness.createMultiHunkFilePair();
+    const port = await reservePort();
+    const openerDir = mkdtempSync(join(tmpdir(), "hunk-browser-opener-"));
+    const outputPath = join(openerDir, "opened-url.txt");
+    const openerName = process.platform === "darwin" ? "open" : "xdg-open";
+    const openerPath = join(openerDir, openerName);
+    writeFileSync(openerPath, '#!/bin/sh\nprintf "%s" "$1" > "$HUNK_TEST_BROWSER_OUTPUT"\n');
+    chmodSync(openerPath, 0o755);
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after],
+      cols: 120,
+      rows: 24,
+      env: {
+        HUNK_MCP_DISABLE: "0",
+        HUNK_MCP_PORT: String(port),
+        HUNK_TEST_BROWSER_OUTPUT: outputPath,
+        PATH: `${openerDir}:${process.env.PATH ?? ""}`,
+      },
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+      await session.click(/File/, { first: true });
+      await session.waitForText(/Open in browser/, { timeout: 5_000 });
+      await session.click(/Open in browser/);
+
+      const deadline = Date.now() + 8_000;
+      while (Date.now() < deadline && !existsSync(outputPath)) {
+        await Bun.sleep(50);
+      }
+      expect(readFileSync(outputPath, "utf8")).toMatch(
+        new RegExp(`^http://127\\.0\\.0\\.1:${port}/review/[^/]+/#capability=`),
+      );
+      await session.waitForText(/Opened review in browser/, { timeout: 5_000 });
+    } finally {
+      session.close();
+      try {
+        const health = (await (await fetch(`http://127.0.0.1:${port}/health`)).json()) as {
+          pid?: number;
+        };
+        if (health.pid) process.kill(health.pid);
+      } catch {
+        // The isolated daemon may already be gone after the terminal closes.
+      }
+      rmSync(openerDir, { recursive: true, force: true });
     }
   });
 

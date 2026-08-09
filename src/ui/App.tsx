@@ -1454,6 +1454,19 @@ export function App({
     setShowAgentSkill(true);
   }, []);
 
+  /** Open the synchronized browser adapter and report local daemon/opener failures in chrome. */
+  const openBrowserReview = useCallback(() => {
+    void sessionRuntime
+      .openBrowserReview()
+      .then(() => showTransientNotice("Opened review in browser"))
+      .catch((error: unknown) =>
+        showTransientNotice(
+          error instanceof Error ? error.message : "Could not open the browser review.",
+          5000,
+        ),
+      );
+  }, [sessionRuntime, showTransientNotice]);
+
   /** Copy the agent skill prompt through the terminal clipboard integration. */
   const copyAgentSkillPrompt = useCallback(async () => {
     const { AGENT_SKILL_PROMPT } = await import("./components/chrome/AgentSkillDialog");
@@ -1605,6 +1618,7 @@ export function App({
       moveToFile,
       moveToHunk: review.moveToHunk,
       openAgentSkill,
+      openBrowserReview,
       openThemeSelector,
       requestQuit,
       resolvedKeys: resolvedCommandKeys,

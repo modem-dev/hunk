@@ -68,10 +68,10 @@ async function main() {
     throw new Error("Unreachable startup plan.");
   }
 
-  // OpenTUI stays behind the interactive plan so headless commands never
-  // materialize its embedded native library.
-  const { runInteractiveApp } = await import("./ui/runInteractiveApp");
-  await runInteractiveApp(startupPlan);
+  // Renderer selection stays behind the app plan. Browser-only review orchestration does not
+  // import OpenTUI; the terminal adapter remains lazy inside runReviewSession.
+  const { runReviewSession } = await import("./app/runReviewSession");
+  await runReviewSession(startupPlan);
 }
 
 await main().catch((error) => {

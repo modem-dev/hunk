@@ -45,6 +45,7 @@ function createTestCommands(resolvedKeys?: ResolvedCommandKeys) {
     moveToFile: record("moveToFile"),
     moveToHunk: record("moveToHunk"),
     openAgentSkill: record("openAgentSkill"),
+    openBrowserReview: record("openBrowserReview"),
     openThemeSelector: record("openThemeSelector"),
     requestQuit: record("requestQuit"),
     resolvedKeys,
@@ -218,6 +219,7 @@ describe("builtinCommandKeyDefaults", () => {
         .sort(),
     ).toEqual([
       "hunk.app.openAgentSkill",
+      "hunk.app.openBrowserReview",
       "hunk.review.nextAnnotatedFile",
       "hunk.review.previousAnnotatedFile",
       "hunk.view.applyFilePresentationToAllMatching",

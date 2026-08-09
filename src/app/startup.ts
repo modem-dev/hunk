@@ -195,14 +195,26 @@ export async function prepareStartupPlan(
       };
     }
 
-    if (!stdoutIsTTY) {
+    // Browser review owns patch-like pager input even without a terminal. Plain pager input above
+    // keeps its existing fallback because it has no semantic review document to render.
+    if (parsedCliInput.options.web) {
+      parsedCliInput = {
+        kind: "patch",
+        file: "-",
+        text: stdinText,
+        options: {
+          ...parsedCliInput.options,
+          pager: true,
+        },
+      };
+    } else if (!stdoutIsTTY) {
       return {
         kind: "passthrough",
         text: stdinText,
       };
     }
 
-    if (env.TERM === "dumb" && !isCapturedPagerHost(env)) {
+    if (!parsedCliInput.options.web && env.TERM === "dumb" && !isCapturedPagerHost(env)) {
       return {
         kind: "passthrough",
         text: stdinText,
@@ -211,26 +223,31 @@ export async function prepareStartupPlan(
 
     // Captured pager hosts like LazyGit can provide a PTY while advertising TERM=dumb.
     // In that mode, emit static colored diff output instead of launching the TUI.
-    if (isCapturedPagerHost(env)) {
-      return staticPagerPlan();
-    }
+    if (!parsedCliInput.options.web) {
+      if (isCapturedPagerHost(env)) {
+        return staticPagerPlan();
+      }
 
-    controllingTerminal = openControllingTerminalImpl();
-    if (!controllingTerminal) {
-      return staticPagerPlan();
-    }
+      controllingTerminal = openControllingTerminalImpl();
+      if (!controllingTerminal) {
+        return staticPagerPlan();
+      }
 
-    parsedCliInput = {
-      kind: "patch",
-      file: "-",
-      text: stdinText,
-      options: {
-        ...parsedCliInput.options,
-        pager: true,
-      },
-    };
+      parsedCliInput = {
+        kind: "patch",
+        file: "-",
+        text: stdinText,
+        options: {
+          ...parsedCliInput.options,
+          pager: true,
+        },
+      };
+    }
   }
 
+  if (parsedCliInput.kind === "pager") {
+    throw new Error("Unreachable pager startup plan.");
+  }
   const runtimeCliInput = resolveRuntimeCliInputImpl(parsedCliInput);
   const configured = resolveConfiguredCliInputImpl(runtimeCliInput);
   // Reassigned once below if an extension VCS backend claims this checkout.
@@ -239,12 +256,12 @@ export async function prepareStartupPlan(
   // Any app session launched with piped stdin still needs a real terminal input stream for
   // keyboard, mouse, and terminal query responses. Auto-theme happened to open this path during
   // probing; make it unconditional so concrete themes behave the same way.
-  if (!controllingTerminal && !stdinIsTTY && stdoutIsTTY) {
+  if (!cliInput.options.web && !controllingTerminal && !stdinIsTTY && stdoutIsTTY) {
     controllingTerminal = openControllingTerminalImpl();
   }
 
   let initialThemeMode: AppBootstrap["initialThemeMode"];
-  if (cliInput.options.theme === "auto" && stdoutIsTTY) {
+  if (!cliInput.options.web && cliInput.options.theme === "auto" && stdoutIsTTY) {
     const themeInput = controllingTerminal?.stdin ?? (stdinIsTTY ? process.stdin : null);
     if (themeInput) {
       initialThemeMode =
@@ -316,7 +333,10 @@ export async function prepareStartupPlan(
       : configured.startupNotices,
     extensionResult,
   );
-  controllingTerminal ??= usesPipedPatchInputImpl(cliInput) ? openControllingTerminalImpl() : null;
+  controllingTerminal ??=
+    !cliInput.options.web && usesPipedPatchInputImpl(cliInput)
+      ? openControllingTerminalImpl()
+      : null;
 
   return {
     kind: "app",
