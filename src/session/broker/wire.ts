@@ -684,6 +684,7 @@ function parseReviewManifest(value: unknown): HunkReviewManifestV1 | null {
             "deletions",
             "statsTruncated",
             "hunkCount",
+            "hasTrailingContext",
             "flags",
             "patchResourceId",
             "canonicalResourceId",
@@ -703,6 +704,7 @@ function parseReviewManifest(value: unknown): HunkReviewManifestV1 | null {
       statsTruncated === null ||
       hunkCount === null ||
       hunkCount !== hunks.length ||
+      (file.hasTrailingContext !== undefined && typeof file.hasTrailingContext !== "boolean") ||
       !flags ||
       !patchResourceId ||
       !canonicalResourceId ||
@@ -728,6 +730,9 @@ function parseReviewManifest(value: unknown): HunkReviewManifestV1 | null {
       deletions,
       statsTruncated,
       hunkCount,
+      ...(typeof file.hasTrailingContext === "boolean"
+        ? { hasTrailingContext: file.hasTrailingContext }
+        : {}),
       flags,
       patchResourceId,
       canonicalResourceId,
@@ -758,14 +763,23 @@ function parseReviewManifest(value: unknown): HunkReviewManifestV1 | null {
   const actions = capabilities?.actions;
   if (
     !capabilities ||
-    Object.keys(capabilities).length !== 1 ||
+    Object.keys(capabilities).some((key) => !["actions", "canReload"].includes(key)) ||
+    (capabilities.canReload !== undefined && typeof capabilities.canReload !== "boolean") ||
     !Array.isArray(actions) ||
-    !actions.every(
-      (action) =>
-        action === "selection/select" ||
-        action === "selection/set-line" ||
-        action === "filter/set" ||
-        action === "notes/set-visibility",
+    !actions.every((action) =>
+      [
+        "selection/select",
+        "selection/set-line",
+        "filter/set",
+        "notes/set-visibility",
+        "notes/create-user",
+        "notes/update-user",
+        "notes/remove-user",
+        "notes/remove-live",
+        "expansion/toggle",
+        "session/reload",
+        "trust/decide",
+      ].includes(String(action)),
     )
   )
     return null;
@@ -780,7 +794,10 @@ function parseReviewManifest(value: unknown): HunkReviewManifestV1 | null {
     agentSummary: brokerWireParsers.parseOptionalString(record.agentSummary),
     files: parsedFiles,
     resources: resources as ReviewResourceDescriptorV1[],
-    capabilities: { actions: actions as HunkReviewManifestV1["capabilities"]["actions"] },
+    capabilities: {
+      actions: actions as HunkReviewManifestV1["capabilities"]["actions"],
+      ...(typeof capabilities.canReload === "boolean" ? { canReload: capabilities.canReload } : {}),
+    },
   };
 }
 
@@ -905,14 +922,22 @@ function parseReviewState(value: unknown): HunkReviewStateV1 | null {
           "documentGeneration",
           "stateRevision",
           "selection",
+          "reveal",
           "filter",
           "showAgentNotes",
+          "trustPromptRepoRoot",
           "notes",
+          "expandedGaps",
+          "sourceStatusByFileKey",
         ].includes(key),
     ) ||
     !selection ||
     !Array.isArray(record.notes) ||
-    record.notes.length > MAX_SNAPSHOT_REVIEW_NOTES
+    record.notes.length > MAX_SNAPSHOT_REVIEW_NOTES ||
+    (record.expandedGaps !== undefined && !Array.isArray(record.expandedGaps)) ||
+    (record.reveal !== undefined && !brokerWireParsers.asRecord(record.reveal)) ||
+    (record.sourceStatusByFileKey !== undefined &&
+      !brokerWireParsers.asRecord(record.sourceStatusByFileKey))
   )
     return null;
   const documentGeneration = parseGenerationIdentifier(record.documentGeneration);
@@ -923,6 +948,62 @@ function parseReviewState(value: unknown): HunkReviewStateV1 | null {
   const filter = typeof record.filter === "string" ? record.filter : null;
   const showAgentNotes = typeof record.showAgentNotes === "boolean" ? record.showAgentNotes : null;
   const notes = record.notes.map(parseReviewNote);
+  const reveal = (record.reveal ?? {
+    token: 0,
+    fileTopToken: 0,
+    hunkToken: 0,
+    lineToken: 0,
+    kind: "hunk",
+    scrollToNote: false,
+  }) as Record<string, unknown>;
+  const revealKind =
+    reveal.kind === "hunk" || reveal.kind === "file-top" || reveal.kind === "line"
+      ? reveal.kind
+      : undefined;
+  const revealToken = brokerWireParsers.parseNonNegativeInt(reveal.token);
+  const fileTopToken = brokerWireParsers.parseNonNegativeInt(reveal.fileTopToken);
+  const hunkToken = brokerWireParsers.parseNonNegativeInt(reveal.hunkToken);
+  const lineToken = brokerWireParsers.parseNonNegativeInt(reveal.lineToken);
+  const rawExpandedGaps = (record.expandedGaps ?? []) as unknown[];
+  const expandedGaps = rawExpandedGaps.flatMap((value) => {
+    const gap = brokerWireParsers.asRecord(value);
+    const oldRange = parseOptionalRange(gap?.oldRange);
+    const newRange = parseOptionalRange(gap?.newRange);
+    return gap &&
+      typeof gap.fileKey === "string" &&
+      typeof gap.gapId === "string" &&
+      (gap.side === "old" || gap.side === "new") &&
+      oldRange &&
+      newRange &&
+      typeof gap.sourceIdentity === "string" &&
+      typeof gap.expanded === "boolean" &&
+      Object.keys(gap).every((key) =>
+        ["fileKey", "gapId", "side", "oldRange", "newRange", "sourceIdentity", "expanded"].includes(
+          key,
+        ),
+      )
+      ? [{ ...gap, oldRange, newRange }]
+      : [];
+  });
+  const sourceStatusByFileKey: HunkReviewStateV1["sourceStatusByFileKey"] = {};
+  let sourceStatusesValid = true;
+  for (const [key, value] of Object.entries(
+    (record.sourceStatusByFileKey ?? {}) as Record<string, unknown>,
+  )) {
+    const status = brokerWireParsers.asRecord(value);
+    if (
+      !status ||
+      !["idle", "loading", "loaded", "error"].includes(String(status.kind)) ||
+      (status.reason !== undefined && status.reason !== "too-large") ||
+      Object.keys(status).some((field) => !["kind", "reason"].includes(field))
+    ) {
+      sourceStatusesValid = false;
+      break;
+    }
+    sourceStatusByFileKey[key] = status as NonNullable<
+      HunkReviewStateV1["sourceStatusByFileKey"]
+    >[string];
+  }
   const side = selection.side === "old" || selection.side === "new" ? selection.side : undefined;
   const line =
     selection.line === undefined ? undefined : brokerWireParsers.parsePositiveInt(selection.line);
@@ -933,6 +1014,20 @@ function parseReviewState(value: unknown): HunkReviewStateV1 | null {
     hunkIndex === null ||
     filter === null ||
     showAgentNotes === null ||
+    (record.trustPromptRepoRoot !== undefined &&
+      brokerWireParsers.parseRequiredString(record.trustPromptRepoRoot) === null) ||
+    revealToken === null ||
+    fileTopToken === null ||
+    hunkToken === null ||
+    lineToken === null ||
+    revealKind === undefined ||
+    typeof reveal.scrollToNote !== "boolean" ||
+    Object.keys(reveal).some(
+      (key) =>
+        !["token", "fileTopToken", "hunkToken", "lineToken", "kind", "scrollToNote"].includes(key),
+    ) ||
+    expandedGaps.length !== rawExpandedGaps.length ||
+    !sourceStatusesValid ||
     notes.some((entry) => !entry) ||
     new Set((notes as ReviewNoteV1[]).map((note) => note.id)).size !== notes.length ||
     ("side" in selection && side === undefined) ||
@@ -954,9 +1049,22 @@ function parseReviewState(value: unknown): HunkReviewStateV1 | null {
       line,
       contextDigest: "contextDigest" in selection ? (selection.contextDigest as string) : undefined,
     },
+    reveal: {
+      token: revealToken,
+      fileTopToken,
+      hunkToken,
+      lineToken,
+      kind: revealKind,
+      scrollToNote: reveal.scrollToNote as boolean,
+    },
     filter,
     showAgentNotes,
+    ...(typeof record.trustPromptRepoRoot === "string"
+      ? { trustPromptRepoRoot: record.trustPromptRepoRoot }
+      : {}),
     notes: notes as ReviewNoteV1[],
+    expandedGaps: expandedGaps as unknown as HunkReviewStateV1["expandedGaps"],
+    sourceStatusByFileKey,
   };
 }
 

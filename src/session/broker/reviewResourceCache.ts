@@ -32,6 +32,7 @@ export interface ReviewResourceReservation {
   generation: string;
   resourceId: string;
   byteLength: number;
+  exact: boolean;
 }
 
 /** Bounded daemon-wide LRU for verified resources and reserved in-flight assemblies. */
@@ -123,18 +124,47 @@ export class ReviewResourceCache {
     ) {
       throw new Error("Review resource descriptor is not complete for this generation.");
     }
-    if (descriptor.byteLength > this.limits.perResourceBytes) {
-      throw new Error(`Review resource ${descriptor.id} exceeds the per-resource cache limit.`);
+    return this.reserveCapacity(sessionId, generation, descriptor.id, descriptor.byteLength, true);
+  }
+
+  /** Reserve a strict maximum before materializing a source whose final size is unknown. */
+  reserveMaterialization(
+    sessionId: string,
+    generation: string,
+    descriptor: ReviewResourceDescriptorV1,
+    maximumByteLength: number,
+  ) {
+    if (
+      descriptor.generation !== generation ||
+      descriptor.kind !== "source" ||
+      !Number.isInteger(maximumByteLength) ||
+      maximumByteLength < 0
+    ) {
+      throw new Error("Review source materialization reservation is invalid.");
     }
-    const key = this.key(sessionId, generation, descriptor.id);
+    return this.reserveCapacity(sessionId, generation, descriptor.id, maximumByteLength, false);
+  }
+
+  /** Apply all cache and in-flight bounds to one exact or maximum-sized reservation. */
+  private reserveCapacity(
+    sessionId: string,
+    generation: string,
+    resourceId: string,
+    byteLength: number,
+    exact: boolean,
+  ): ReviewResourceReservation {
+    if (byteLength > this.limits.perResourceBytes) {
+      throw new Error(`Review resource ${resourceId} exceeds the per-resource cache limit.`);
+    }
+    const key = this.key(sessionId, generation, resourceId);
     if (this.reservations.has(key)) {
-      throw new Error(`Review resource ${descriptor.id} already has an in-flight reservation.`);
+      throw new Error(`Review resource ${resourceId} already has an in-flight reservation.`);
     }
     const inFlight = this.daemonReservationBytes();
     if (this.reservations.size >= this.limits.inFlightResources) {
       throw new Error("Review resource assemblies exceed the daemon concurrency limit.");
     }
-    if (inFlight + descriptor.byteLength > this.limits.inFlightBytes) {
+    if (inFlight + byteLength > this.limits.inFlightBytes) {
       throw new Error("Review resource assemblies exceed the daemon in-flight limit.");
     }
     const generationBytes =
@@ -146,13 +176,13 @@ export class ReviewResourceCache {
         (reservation) =>
           reservation.sessionId === sessionId && reservation.generation === generation,
       );
-    if (generationBytes + descriptor.byteLength > this.limits.perGenerationBytes) {
+    if (generationBytes + byteLength > this.limits.perGenerationBytes) {
       throw new Error(`Review generation ${generation} exceeds the generation cache limit.`);
     }
     const sessionBytes =
       this.entryBytes(([entrySession]) => entrySession === sessionId) +
       this.reservationBytes((reservation) => reservation.sessionId === sessionId);
-    if (sessionBytes + descriptor.byteLength > this.limits.perSessionBytes) {
+    if (sessionBytes + byteLength > this.limits.perSessionBytes) {
       throw new Error(`Review session ${sessionId} exceeds the session cache limit.`);
     }
 
@@ -160,11 +190,11 @@ export class ReviewResourceCache {
     this.ensureDaemonResourceSlots(1);
     while (
       this.entries.size > 0 &&
-      this.daemonEntryBytes() + inFlight + descriptor.byteLength > this.limits.daemonBytes
+      this.daemonEntryBytes() + inFlight + byteLength > this.limits.daemonBytes
     ) {
       this.entries.delete(this.entries.keys().next().value!);
     }
-    if (this.daemonEntryBytes() + inFlight + descriptor.byteLength > this.limits.daemonBytes) {
+    if (this.daemonEntryBytes() + inFlight + byteLength > this.limits.daemonBytes) {
       throw new Error("Review resources exceed the daemon cache limit.");
     }
 
@@ -172,8 +202,9 @@ export class ReviewResourceCache {
       key,
       sessionId,
       generation,
-      resourceId: descriptor.id,
-      byteLength: descriptor.byteLength,
+      resourceId,
+      byteLength,
+      exact,
     };
     this.reservations.set(key, reservation);
     return reservation;
@@ -188,8 +219,17 @@ export class ReviewResourceCache {
     if (this.reservations.get(reservation.key) !== reservation) {
       throw new Error(`Review resource ${descriptor.id} has no active reservation.`);
     }
-    if (bytes.byteLength !== reservation.byteLength || bytes.byteLength !== descriptor.byteLength) {
-      throw new Error(`Review resource ${descriptor.id} size does not match its descriptor.`);
+    if (
+      descriptor.id !== reservation.resourceId ||
+      descriptor.generation !== reservation.generation ||
+      descriptor.byteLength === undefined ||
+      bytes.byteLength !== descriptor.byteLength ||
+      (reservation.exact
+        ? bytes.byteLength !== reservation.byteLength
+        : bytes.byteLength > reservation.byteLength) ||
+      !isReviewSha256Digest(descriptor.digest)
+    ) {
+      throw new Error(`Review resource ${descriptor.id} size does not match its reservation.`);
     }
     const digest = createHash("sha256").update(bytes).digest("hex");
     if (digest !== descriptor.digest?.toLowerCase()) {

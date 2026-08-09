@@ -11,10 +11,15 @@ import type {
   ReviewSide,
   ReviewFileChangeKind,
 } from "../core/review/types";
-import type { ReviewSemanticSelection } from "../core/review/state";
+import type {
+  ReviewExpandedGapState,
+  ReviewRevealIntent,
+  ReviewSemanticSelection,
+} from "../core/review/state";
 
 export const HUNK_REVIEW_PROTOCOL_VERSION = 1 as const;
 export const REVIEW_RESOURCE_CHUNK_BYTES = 256 * 1024;
+export const MAX_REVIEW_SOURCE_RESOURCE_BYTES = 1_000_000;
 export const MAX_REVIEW_RESOURCE_BYTES = 32 * 1024 * 1024;
 export const MAX_REVIEW_GENERATION_CACHE_BYTES = 128 * 1024 * 1024;
 export const MAX_REVIEW_SESSION_CACHE_BYTES = 256 * 1024 * 1024;
@@ -51,6 +56,7 @@ export interface HunkReviewManifestFileV1 {
   deletions: number;
   statsTruncated: boolean;
   hunkCount: number;
+  hasTrailingContext?: boolean;
   flags: {
     untracked: boolean;
     binary: boolean;
@@ -78,25 +84,50 @@ export interface HunkReviewManifestV1 {
   resources: ReviewResourceDescriptorV1[];
   capabilities: {
     actions: HunkReviewActionV1["type"][];
+    canReload?: boolean;
   };
 }
 
-/** Small semantic action subset exposed through the source-process command bridge. */
-export type HunkReviewActionV1 = Extract<
-  ReviewAction,
-  | { type: "selection/select" }
-  | { type: "selection/set-line" }
-  | { type: "filter/set" }
-  | { type: "notes/set-visibility" }
->;
+export interface HunkReviewUserNoteInputV1 {
+  fileKey: string;
+  hunkIndex: number;
+  side: ReviewSide;
+  line: number;
+  body: string;
+  markup?: string;
+}
+
+/** Semantic renderer actions accepted by the authoritative source process. */
+export type HunkReviewActionV1 =
+  | Extract<
+      ReviewAction,
+      | { type: "selection/select" }
+      | { type: "selection/set-line" }
+      | { type: "filter/set" }
+      | { type: "notes/set-visibility" }
+    >
+  | { type: "notes/create-user"; note: HunkReviewUserNoteInputV1 }
+  | { type: "notes/update-user"; noteId: string; body: string; markup?: string }
+  | { type: "notes/remove-user"; noteId: string }
+  | { type: "notes/remove-live"; noteId: string }
+  | { type: "expansion/toggle"; fileKey: string; gapId: string }
+  | { type: "session/reload" }
+  | { type: "trust/decide"; decision: "trusted" | "denied" };
 
 export interface HunkReviewStateV1 {
   documentGeneration: ReviewDocumentGeneration;
   stateRevision: number;
   selection: ReviewSemanticSelection;
+  reveal?: ReviewRevealIntent;
   filter: string;
   showAgentNotes: boolean;
+  trustPromptRepoRoot?: string;
   notes: ReviewNoteV1[];
+  expandedGaps?: ReviewExpandedGapState[];
+  sourceStatusByFileKey?: Record<
+    string,
+    { kind: "idle" | "loading" | "loaded" | "error"; reason?: "too-large" }
+  >;
 }
 
 export interface ReadReviewResourceInput {
@@ -110,6 +141,8 @@ export interface ReadReviewResourceInput {
 export interface ApplyReviewActionInput {
   sessionId: string;
   generation: ReviewDocumentGeneration;
+  /** Required by non-selection mutations; selection remains last-writer-wins in one generation. */
+  expectedStateRevision?: number;
   action: HunkReviewActionV1;
 }
 
@@ -148,6 +181,7 @@ export interface ReviewActionResult {
 
 export type ReviewCommandErrorCode =
   | "stale-generation"
+  | "stale-revision"
   | "cross-session"
   | "unknown-resource"
   | "invalid-range"
@@ -197,11 +231,16 @@ export function parseApplyReviewActionInput(value: unknown): ApplyReviewActionIn
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
   if (
-    Object.keys(record).length !== 3 ||
-    Object.keys(record).some((key) => !["sessionId", "generation", "action"].includes(key)) ||
+    (Object.keys(record).length !== 3 && Object.keys(record).length !== 4) ||
+    Object.keys(record).some(
+      (key) => !["sessionId", "generation", "expectedStateRevision", "action"].includes(key),
+    ) ||
     typeof record.sessionId !== "string" ||
     record.sessionId.length === 0 ||
     parseGenerationIdentifier(record.generation) === null ||
+    (record.expectedStateRevision !== undefined &&
+      (!Number.isSafeInteger(record.expectedStateRevision) ||
+        (record.expectedStateRevision as number) < 0)) ||
     !("action" in record)
   )
     return null;

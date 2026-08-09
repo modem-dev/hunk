@@ -38,8 +38,28 @@ body {
   color: var(--hunk-fg);
 }
 button,
-input {
+input,
+textarea {
   font: inherit;
+}
+button {
+  padding: 0.3rem 0.55rem;
+  border: 1px solid var(--hunk-border);
+  border-radius: 5px;
+  background: var(--hunk-raised);
+  color: var(--hunk-fg);
+  cursor: pointer;
+}
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+input,
+textarea {
+  border: 1px solid var(--hunk-border);
+  border-radius: 5px;
+  background: var(--hunk-bg);
+  color: var(--hunk-fg);
 }
 .wordmark {
   color: var(--hunk-fg);
@@ -80,6 +100,14 @@ input {
   border-bottom: 1px solid var(--hunk-border);
   background: color-mix(in srgb, var(--hunk-panel) 94%, transparent);
   backdrop-filter: blur(12px);
+}
+.topbar__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+.topbar__actions button {
+  font-size: 0.7rem;
 }
 .topbar__source {
   margin-left: 0.8rem;
@@ -140,6 +168,21 @@ input {
   display: block;
   margin-top: 0.65rem;
   color: var(--hunk-muted);
+  font-size: 0.7rem;
+}
+.semantic-filter {
+  display: grid;
+  gap: 0.3rem;
+  margin-top: 0.8rem;
+  color: var(--hunk-muted);
+  font-size: 0.7rem;
+}
+.semantic-filter input {
+  width: 100%;
+  padding: 0.4rem;
+}
+.review-summary > button {
+  margin-top: 0.45rem;
   font-size: 0.7rem;
 }
 .sidebar__tree {
@@ -307,6 +350,17 @@ input {
   margin: 0.45rem 0;
   color: color-mix(in srgb, var(--hunk-fg) 85%, var(--hunk-muted));
 }
+.review-note__editor {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 0.4rem;
+  margin: 0.5rem 0;
+}
+.review-note__editor textarea {
+  grid-column: 1 / -1;
+  min-height: 5rem;
+  padding: 0.5rem;
+}
 .review-note__markup {
   margin: 0.5rem 0;
 }
@@ -337,6 +391,64 @@ input {
   padding: 0.05rem 0.35rem;
   border-radius: 999px;
   background: var(--hunk-selected);
+}
+.note-composer {
+  position: sticky;
+  bottom: 1rem;
+  width: min(42rem, calc(100% - 2rem));
+  margin: 1rem auto;
+  padding: 0.75rem;
+  border: 1px solid var(--hunk-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--hunk-panel) 96%, transparent);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 20%);
+}
+.note-composer label {
+  display: grid;
+  gap: 0.35rem;
+  color: var(--hunk-muted);
+  font-size: 0.7rem;
+}
+.note-composer textarea {
+  min-height: 4.5rem;
+  padding: 0.5rem;
+  resize: vertical;
+}
+.note-composer button {
+  margin-top: 0.5rem;
+}
+.note-composer kbd {
+  color: var(--hunk-muted);
+  font-size: 0.65rem;
+}
+.trust-prompt,
+.action-banner {
+  position: fixed;
+  z-index: 35;
+  right: 1rem;
+  bottom: 1rem;
+  display: flex;
+  max-width: 32rem;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid #8b672f;
+  border-radius: 8px;
+  background: #2a2114;
+  box-shadow: 0 8px 28px rgb(0 0 0 / 35%);
+  font-size: 0.76rem;
+}
+.trust-prompt > div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+.action-banner {
+  color: #f1d292;
+}
+.trust-prompt ~ .action-banner,
+.trust-prompt ~ .connection-banner {
+  bottom: 7rem;
 }
 .connection-banner {
   position: fixed;

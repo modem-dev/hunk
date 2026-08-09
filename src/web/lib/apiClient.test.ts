@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import type { ReviewCanonicalFileResourceDescriptorV1 } from "../../core/review/types";
-import { BrowserReviewApiClient } from "./apiClient";
+import { BrowserReviewApiClient, BrowserReviewConflictError } from "./apiClient";
 
 const originalFetch = globalThis.fetch;
 afterEach(() => {
@@ -79,6 +79,59 @@ describe("browser canonical resource queue", () => {
     expect(await client.resource(generation, resource)).toBe("{}");
     expect(await client.resource(generation, resource)).toBe("{}");
     expect(requests).toBe(2);
+  });
+
+  test("sends generation and revision preconditions with every semantic action", async () => {
+    let body: unknown;
+    globalThis.fetch = (async (_url, init) => {
+      body = JSON.parse(String(init?.body));
+      return Response.json({
+        kind: "review-action",
+        generation: "generation:action",
+        stateRevision: 4,
+        state: {
+          documentGeneration: "generation:action",
+          stateRevision: 4,
+          selection: { fileKey: "file", hunkIndex: 0 },
+          filter: "src",
+          showAgentNotes: false,
+          notes: [],
+        },
+      });
+    }) as typeof fetch;
+    const client = new BrowserReviewApiClient("session");
+    await client.action("generation:action", 3, { type: "filter/set", filter: "src" });
+    expect(body).toEqual({
+      generation: "generation:action",
+      expectedStateRevision: 3,
+      action: { type: "filter/set", filter: "src" },
+    });
+  });
+
+  test("parses typed generation and revision conflicts", async () => {
+    globalThis.fetch = (async () =>
+      Response.json(
+        {
+          kind: "review-error",
+          error: {
+            code: "stale-revision",
+            message: "Review state changed.",
+            currentGeneration: "generation:new",
+          },
+        },
+        { status: 409 },
+      )) as unknown as typeof fetch;
+    const client = new BrowserReviewApiClient("session");
+    const pending = client.action("generation:old", 1, {
+      type: "notes/set-visibility",
+      visible: true,
+    });
+    await expect(pending).rejects.toBeInstanceOf(BrowserReviewConflictError);
+    await expect(pending).rejects.toMatchObject({
+      status: 409,
+      code: "stale-revision",
+      currentGeneration: "generation:new",
+    });
   });
 
   test("never starts more than six large-review resources concurrently", async () => {

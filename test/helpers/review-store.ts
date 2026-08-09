@@ -4,6 +4,7 @@ import {
   createReviewStore,
   createReviewStoreFromState,
   type ReviewStore,
+  type ReviewStoreOptions,
 } from "../../src/core/review/store";
 import type { Changeset, DiffFile } from "../../src/core/types";
 
@@ -15,6 +16,7 @@ export function createTestReviewStore(
     generation?: string;
     showAgentNotes?: boolean;
     sourceIdentity?: string;
+    validateNextSnapshot?: ReviewStoreOptions["validateNextSnapshot"];
   } = {},
 ) {
   const document = projectReviewDocument(
@@ -33,7 +35,10 @@ export function createTestReviewStore(
       sourceIdentity: options.sourceIdentity ?? "test://review",
     },
   ).document;
-  return createReviewStore(document, { showAgentNotes: options.showAgentNotes });
+  return createReviewStore(document, {
+    showAgentNotes: options.showAgentNotes,
+    validateNextSnapshot: options.validateNextSnapshot,
+  });
 }
 
 /** Replace a test authority the same way production runtime replaces a soft-reload generation. */

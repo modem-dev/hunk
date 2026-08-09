@@ -56,9 +56,11 @@ function connectRuntime(
   } as unknown as HunkSessionBrokerClient;
   runtime.attachHostClient(host);
 
+  const commandCounts = new Map<string, number>();
   const socket = {
     send(data: string) {
       const message = JSON.parse(data) as HunkSessionServerMessage;
+      commandCounts.set(message.command, (commandCounts.get(message.command) ?? 0) + 1);
       if (!bridge) throw new Error("Expected runtime bridge.");
       void bridge.dispatchCommand(message).then(
         (result) =>
@@ -78,6 +80,7 @@ function connectRuntime(
     state,
     socket,
     registration,
+    commandCounts,
     dispatch: (message: HunkSessionServerMessage) => bridge!.dispatchCommand(message),
   };
 }
@@ -164,6 +167,98 @@ describe("chunked review resources", () => {
     connected.runtime.dispose();
   });
 
+  test("deduplicates and caches one lazy source materialization across concurrent browser reads", async () => {
+    const lines = Array.from({ length: 80_000 }, (_, index) => `line ${index + 1}`);
+    const after = [...lines];
+    after[40_000] = "changed";
+    let sourceReads = 0;
+    const bootstrap = bootstrapWithPatch("patch");
+    bootstrap.changeset.files = [
+      createTestDiffFile({
+        id: "source-file",
+        path: "source.ts",
+        before: `${lines.join("\n")}\n`,
+        after: `${after.join("\n")}\n`,
+        sourceFetcher: {
+          cacheKey: "source:materialized",
+          getFullText: async () => {
+            sourceReads += 1;
+            await Bun.sleep(5);
+            return `${after.join("\n")}\n`;
+          },
+        },
+      }),
+    ];
+    const connected = connectRuntime(bootstrap);
+    const semantic = connected.runtime.getSnapshot().projection.document.files[0]!;
+    await connected.runtime.toggleSourceGap(semantic.key, "before:0");
+    const resourceId = semantic.sourceResourceIds.new!;
+    const reads = await Promise.all(
+      Array.from({ length: 4 }, () =>
+        connected.state.getBrowserReviewResource(
+          connected.registration.sessionId,
+          connected.registration.info.documentGeneration,
+          resourceId,
+        ),
+      ),
+    );
+    expect(sourceReads).toBe(1);
+    expect(new Set(reads.map((entry) => entry.bytes)).size).toBe(1);
+    expect(connected.commandCounts.get("read_review_resource")).toBeLessThanOrEqual(5);
+    expect(connected.state.getReviewResourceCacheEntryCount()).toBe(1);
+    await connected.state.getBrowserReviewResource(
+      connected.registration.sessionId,
+      connected.registration.info.documentGeneration,
+      resourceId,
+    );
+    expect(connected.commandCounts.get("read_review_resource")).toBeLessThanOrEqual(5);
+    connected.runtime.dispose();
+  });
+
+  test("reserves strict maxima before concurrent distinct lazy source assemblies", async () => {
+    const bootstrap = bootstrapWithPatch("patch");
+    const sourceText = `${"source line\n".repeat(50_000)}`;
+    bootstrap.changeset.files = ["first", "second"].map((id) =>
+      createTestDiffFile({
+        id,
+        path: `${id}.ts`,
+        before: `before\n${sourceText}`,
+        after: `after\n${sourceText}`,
+        sourceFetcher: {
+          cacheKey: `source:${id}`,
+          getFullText: async () => `after\n${sourceText}`,
+        },
+      }),
+    );
+    const cache = new ReviewResourceCache({ inFlightBytes: 1_500_000 });
+    const connected = connectRuntime(bootstrap, undefined, new HunkSessionBrokerState(cache));
+    const semantics = connected.runtime.getSnapshot().projection.document.files;
+    await Promise.all(
+      semantics.map((file) => connected.runtime.toggleSourceGap(file.key, "trailing:0")),
+    );
+    const [firstId, secondId] = semantics.map((file) => file.sourceResourceIds.new!);
+    const read = (resourceId: string) =>
+      connected.state.getBrowserReviewResource(
+        connected.registration.sessionId,
+        connected.registration.info.documentGeneration,
+        resourceId,
+      );
+
+    const first = read(firstId!);
+    const second = read(secondId!);
+    expect(cache.getReservationCount()).toBe(1);
+    await expect(second).rejects.toThrow("in-flight");
+    await expect(first).resolves.toMatchObject({ descriptor: { id: firstId } });
+    expect(cache.getReservationCount()).toBe(0);
+    const materializedBytes = Buffer.byteLength(`after\n${sourceText}`);
+    expect(cache.getTotalBytes()).toBe(materializedBytes);
+    await expect(read(secondId!)).resolves.toMatchObject({ descriptor: { id: secondId } });
+    expect(cache.getReservationCount()).toBe(0);
+    expect(cache.getTotalBytes()).toBe(materializedBytes * 2);
+    expect(connected.state.getReviewResourceCacheEntryCount()).toBe(2);
+    connected.runtime.dispose();
+  });
+
   test("rejects undescribed lazy sources without loading or allocating them", async () => {
     const bootstrap = bootstrapWithPatch("patch");
     let sourceReads = 0;
@@ -220,6 +315,7 @@ describe("chunked review resources", () => {
       input: {
         sessionId: connected.registration.sessionId,
         generation,
+        expectedStateRevision: 0,
         action: { type: "notes/set-visibility", visible: true },
       },
     });

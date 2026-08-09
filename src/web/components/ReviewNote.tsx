@@ -1,10 +1,26 @@
 /** @jsxImportSource react */
-import { Fragment, type ReactNode } from "react";
+import { Fragment, useState, type ReactNode } from "react";
 import type { ReviewNoteV1 } from "../../core/review/types";
 import { parseStml, type StmlNode } from "../../core/review/stml";
 
 /** Render every core-projected note field without interpreting ownership or unsafe HTML. */
-export function ReviewNote({ note }: { note: ReviewNoteV1 }) {
+export function ReviewNote({
+  note,
+  mutationsEnabled = false,
+  onUpdate,
+  onRemove,
+  editStartRevision = 0,
+}: {
+  note: ReviewNoteV1;
+  mutationsEnabled?: boolean;
+  onUpdate?: (body: string, markup: string, editStartRevision: number) => Promise<boolean>;
+  onRemove?: () => Promise<boolean>;
+  editStartRevision?: number;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [body, setBody] = useState(note.summary);
+  const [markupBody, setMarkupBody] = useState(note.markup ?? "");
+  const [startedRevision, setStartedRevision] = useState(editStartRevision);
   const markup = note.markup ? parseStml(note.markup).nodes : [];
   const useMarkup = hasRenderableMarkup(markup);
   return (
@@ -28,6 +44,32 @@ export function ReviewNote({ note }: { note: ReviewNoteV1 }) {
           {note.rationale ? <p className="review-note__rationale">{note.rationale}</p> : null}
         </>
       )}
+      {editing ? (
+        <div className="review-note__editor">
+          <textarea value={body} onChange={(event) => setBody(event.currentTarget.value)} />
+          <label>
+            STML markup
+            <textarea
+              value={markupBody}
+              onChange={(event) => setMarkupBody(event.currentTarget.value)}
+            />
+          </label>
+          <button type="button" onClick={() => setEditing(false)}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={!body.trim()}
+            onClick={() =>
+              void onUpdate?.(body, markupBody, startedRevision).then(
+                (saved) => saved && setEditing(false),
+              )
+            }
+          >
+            Save
+          </button>
+        </div>
+      ) : null}
       <footer className="review-note__meta">
         <span>{note.origin}</span>
         {note.originalSource ? <span>source: {note.originalSource}</span> : null}
@@ -35,6 +77,25 @@ export function ReviewNote({ note }: { note: ReviewNoteV1 }) {
         {note.tags?.map((tag) => (
           <span key={tag}>#{tag}</span>
         ))}
+        {note.origin === "user" && note.editable && onUpdate ? (
+          <button
+            type="button"
+            disabled={!mutationsEnabled}
+            onClick={() => {
+              setBody(note.summary);
+              setMarkupBody(note.markup ?? "");
+              setStartedRevision(editStartRevision);
+              setEditing(true);
+            }}
+          >
+            Edit
+          </button>
+        ) : null}
+        {(note.origin === "user" || note.origin === "live-agent") && onRemove ? (
+          <button type="button" disabled={!mutationsEnabled} onClick={() => void onRemove()}>
+            Remove
+          </button>
+        ) : null}
       </footer>
     </article>
   );

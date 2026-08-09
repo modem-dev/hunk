@@ -65,8 +65,12 @@ export function AppHost({
       sessionRuntime={runtime}
       extensionTrustPromptRoot={snapshot.trust.promptRepoRoot}
       onCloseExtensionTrustPrompt={() => runtime.dismissTrustPrompt()}
-      onDenyRepoExtensions={() => void runtime.decideExtensionTrust("denied")}
-      onTrustRepoExtensions={() => void runtime.decideExtensionTrust("trusted")}
+      onDenyRepoExtensions={() =>
+        void runtime.decideExtensionTrust("denied").catch(() => undefined)
+      }
+      onTrustRepoExtensions={() =>
+        void runtime.decideExtensionTrust("trusted").catch(() => undefined)
+      }
       onSessionRendererFieldsChange={(fields) => runtime.setSessionRendererFields(fields)}
       onQuit={quitAfterShutdownEvent}
       onReloadSession={(input, options) =>

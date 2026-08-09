@@ -71,10 +71,10 @@ import type { ActiveAddNoteAffordance } from "./diff/PierreDiffView";
 import { useAppKeyboardShortcuts } from "./hooks/useAppKeyboardShortcuts";
 import { useExtensionDialogController } from "./hooks/useExtensionDialogController";
 import { useExtensionNotifications } from "./hooks/useExtensionNotifications";
-import { useHunkSessionBridge } from "./hooks/useHunkSessionBridge";
 import { useMenuController } from "./hooks/useMenuController";
-import { useReviewController, type AgentNoteGeometrySnapshot } from "./hooks/useReviewController";
+import { useReviewController } from "./hooks/useReviewController";
 import { agentNoteMarkupWidth } from "./lib/agentNoteGeometry";
+import { validateStmlMarkup } from "./lib/stml/layout";
 import {
   buildAppCommands,
   builtinCommandKeyDefaults,
@@ -196,7 +196,10 @@ export function App({
   extensionTrustPromptRoot?: string | null;
   onCloseExtensionTrustPrompt?: () => void;
   onDenyRepoExtensions?: () => void;
-  onSessionRendererFieldsChange?: (fields: { noteMarkupWidth?: number }) => void;
+  onSessionRendererFieldsChange?: (fields: {
+    noteMarkupWidth?: number;
+    validateMarkup?: (markup: string, width: number) => string[];
+  }) => void;
   onTrustRepoExtensions?: () => void;
   onQuit?: () => void;
   onReloadSession: (
@@ -243,10 +246,6 @@ export function App({
     reviewStore.getSnapshot,
   );
   const showAgentNotes = semanticReviewSnapshot.showAgentNotes;
-  const setShowAgentNotes = useCallback(
-    (visible: boolean) => reviewStore.dispatch({ type: "notes/set-visibility", visible }),
-    [reviewStore],
-  );
   const [showLineNumbers, setShowLineNumbers] = useState(bootstrap.initialShowLineNumbers ?? true);
   const [wrapLines, setWrapLines] = useState(bootstrap.initialWrapLines ?? false);
   const [copyDecorations, setCopyDecorations] = useState(bootstrap.initialCopyDecorations ?? false);
@@ -358,16 +357,31 @@ export function App({
       ? `~${path.slice(process.env.HOME.length)}`
       : path;
   }, [bootstrap.viewPreferencesConfigPath]);
-  // App computes layout geometry below this hook call, so the controller reads
-  // current values through refs instead of making geometry shared state.
-  const noteGeometryRef = useRef<AgentNoteGeometrySnapshot | null>(null);
+  // App publishes current renderer geometry directly to the runtime command authority below.
+  const noteGeometryRef = useRef<{
+    layout: "split" | "stack";
+    width: number;
+  } | null>(null);
   const [lineCursors, setLineCursors] = useState<LineCursor[]>([]);
+  const toggleRuntimeSourceGap = useCallback(
+    (fileKey: string, gapId: string) => void sessionRuntime.toggleSourceGap(fileKey, gapId),
+    [sessionRuntime],
+  );
+  const showReviewMutationError = useCallback(
+    (error: unknown) => {
+      const message =
+        error instanceof Error ? error.message : "The review change could not be saved.";
+      if (extensions) extensions.context.notify(message, "error");
+      else setSessionNoticeText(message);
+    },
+    [extensions],
+  );
   const review = useReviewController({
     files: reviewFiles,
     reviewStore,
     lineCursors,
-    noteGeometry: noteGeometryRef,
-    stmlEnabled,
+    onMutationError: showReviewMutationError,
+    toggleSourceGap: toggleRuntimeSourceGap,
   });
   const filteredFiles = review.visibleFiles;
   const selectedFile = review.selectedFile;
@@ -462,10 +476,6 @@ export function App({
     },
     [review.selectFile],
   );
-
-  const openAgentNotes = useCallback(() => {
-    setShowAgentNotes(true);
-  }, [setShowAgentNotes]);
 
   const showSessionNotice = useCallback((message: string) => {
     setSessionNoticeText(message);
@@ -1005,6 +1015,7 @@ export function App({
   useEffect(() => {
     onSessionRendererFieldsChange?.({
       noteMarkupWidth: stmlEnabled ? noteMarkupWidth : undefined,
+      validateMarkup: stmlEnabled ? validateStmlMarkup : undefined,
     });
   }, [noteMarkupWidth, onSessionRendererFieldsChange, stmlEnabled]);
   const showFileViewWarning = useCallback(
@@ -1022,17 +1033,6 @@ export function App({
       onWarning: showFileViewWarning,
     });
 
-  useHunkSessionBridge({
-    addLiveComment: review.addLiveComment,
-    addLiveCommentBatch: review.addLiveCommentBatch,
-    clearLiveComments: review.clearLiveComments,
-    navigateToLocation: review.navigateToLocation,
-    openAgentNotes,
-    reloadSession: onReloadSession,
-    removeLiveComment: review.removeLiveComment,
-    reviewStore: review.store,
-    runtime: sessionRuntime,
-  });
   const maxVisibleLineNumber = useMemo(
     () =>
       filteredFiles.reduce(

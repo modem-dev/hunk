@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { canReloadInput } from "../../core/inputReload";
 import { spawnSync } from "node:child_process";
 import { resolveExperimentalFeatures, resolveExperimentalDiffFiles } from "../../core/experimental";
 import { summarizeHunk } from "../../core/hunkSummary";
@@ -106,6 +107,15 @@ export function createHunkReviewManifest(
         deletions: file.stats.deletions,
         statsTruncated: file.stats.truncated,
         hunkCount: file.hunks.length,
+        hasTrailingContext: (() => {
+          const last = file.hunks.at(-1);
+          if (!last || file.flags.partial) return false;
+          const additions =
+            file.additionLines.length - (last.additionLineIndex + last.additionCount);
+          const deletions =
+            file.deletionLines.length - (last.deletionLineIndex + last.deletionCount);
+          return additions > 0 && additions === deletions;
+        })(),
         flags: { ...file.flags },
         patchResourceId: file.patchResourceId,
         canonicalResourceId: file.canonicalResourceId,
@@ -116,7 +126,20 @@ export function createHunkReviewManifest(
     }),
     resources: document.resources.map((resource) => ({ ...resource })),
     capabilities: {
-      actions: ["selection/select", "selection/set-line", "filter/set", "notes/set-visibility"],
+      actions: [
+        "selection/select",
+        "selection/set-line",
+        "filter/set",
+        "notes/set-visibility",
+        "notes/create-user",
+        "notes/update-user",
+        "notes/remove-user",
+        "notes/remove-live",
+        "expansion/toggle",
+        "session/reload",
+        "trust/decide",
+      ],
+      canReload: canReloadInput(bootstrap.input),
     },
   };
 
