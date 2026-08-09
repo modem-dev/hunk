@@ -142,6 +142,21 @@ export function rightmostColumnOf(text: string, needle: string) {
   );
 }
 
+/**
+ * Expand one rendered row into its per-cell background colors.
+ *
+ * Chrome rows and body rows only line up visually when their gutter cells paint
+ * the same background, which plain text snapshots cannot show.
+ */
+export function rowCellBackgrounds(session: Session, row: number) {
+  const line = session.getTerminalData().lines[row];
+  if (!line) {
+    throw new Error(`rowCellBackgrounds: row ${row} is not on screen.`);
+  }
+
+  return line.spans.flatMap((span) => [...span.text].map(() => span.bg));
+}
+
 /** Locate a visible terminal row containing text so mouse tests can target rendered content. */
 export function lineIndexOf(text: string, needle: string) {
   return text.split("\n").findIndex((line) => line.includes(needle));
