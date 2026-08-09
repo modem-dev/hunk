@@ -13,10 +13,15 @@ Generates release videos where every terminal frame is the real Hunk TUI —
 no screen recording, no mockups. Three stages:
 
 ```text
-capture.ts   (bun)   drive Hunk over a PTY, snap styled keyframes to PNG
-compose.mjs  (node)  composite keyframes onto a 1920x1080 stage, emit frames + concat list
-ffmpeg               encode the concat list at 30fps to mp4/webm
+capture.ts   (bun)               drive Hunk over a PTY, snap styled keyframes to PNG
+compose.mjs  (node + Playwright) render each PNG on a 1920x1080 HTML stage in Chromium
+ffmpeg                           encode the composited PNGs at 30fps to mp4/webm
 ```
+
+Playwright controls headless Chromium: for each planned frame it loads the
+terminal PNG onto the HTML stage, applies the window chrome, cards, captions,
+and transition state, then screenshots the completed stage back to PNG. ffmpeg
+sequences those composited screenshots into the final videos.
 
 The generic machinery (PTY driving, keyframe rendering, storyboard planning,
 Chromium compositing, the stage template) is the `@hunk/term-video` workspace
@@ -38,10 +43,14 @@ bun install    # if a postinstall hook fails in a sandbox, retry with --ignore-s
 #    repo root — see gotchas.
 bun run scripts/launch-video/capture.ts
 
-# 2. one-time compositor setup: playwright-core matching the Chromium you'll
-#    render with (resolution procedure in gotchas)
+# 2. one-time portable compositor setup. Playwright installs a Chromium build
+#    that exactly matches its browser driver (see gotchas to reuse a system or
+#    sandbox browser instead).
 printf '{"name":"hunk-video-work","private":true}\n' > .video-work/package.json
-cd .video-work && bun add playwright-core@<exact-version> && cd ..
+cd .video-work
+bun add playwright playwright-core
+bunx playwright install chromium
+cd ..
 
 # 3. composite the storyboard
 node scripts/launch-video/compose.mjs .video-work
@@ -64,6 +73,45 @@ Scene names are the `wants("...")` guards in `capture.ts`'s `main()`. Note
 `SCENES=` only narrows _capture_; `compose.mjs` preflights that every frame its
 `SHOTS` table references exists in `frames/` and fails fast listing any missing
 ones, so a full composite still needs every scene captured at least once.
+
+## Making a scoped single-feature video
+
+For a short test or one-feature announcement, capture and composite only the
+scene for that feature instead of producing the full release storyboard:
+
+1. Pick one user-visible release highlight and find its scene name in the
+   `wants("...")` guards. Capture only that scene:
+
+   ```sh
+   SCENES=review bun run scripts/launch-video/capture.ts
+   ```
+
+2. Make a scratch compositor beside the canonical one so its imports and
+   repo-relative paths continue to work:
+
+   ```sh
+   cp scripts/launch-video/compose.mjs scripts/launch-video/compose-one-feature.mjs
+   ```
+
+3. In the scratch copy, trim `SHOTS` to an opening card, only the selected
+   feature's frames, and an outro card. Rewrite those cards and captions for
+   the scoped cut. Sequence lengths must still match the captured frame names.
+4. Composite into the same work directory, then run the normal ffmpeg commands
+   with descriptive output names:
+
+   ```sh
+   node scripts/launch-video/compose-one-feature.mjs .video-work
+   cd .video-work
+   ffmpeg -y -f concat -safe 0 -i concat.txt -vf "fps=30,format=yuv420p" \
+     -c:v libx264 -preset slow -crf 18 -movflags +faststart hunk-0.18-line-review.mp4
+   ffmpeg -y -f concat -safe 0 -i concat.txt -vf "fps=30,format=yuv420p" \
+     -c:v libvpx-vp9 -b:v 0 -crf 32 -row-mt 1 hunk-0.18-line-review.webm
+   cd ..
+   rm scripts/launch-video/compose-one-feature.mjs
+   ```
+
+Keep the scratch compositor uncommitted. The canonical `compose.mjs` remains
+the complete release storyboard.
 
 ## Updating for a new release
 
@@ -110,19 +158,39 @@ Sandbox-specific bullets are marked; each cost real debugging time.
   import `"ghostty-opentui/image"` (not `.../dist/image.js`), resolved
   relative to tuistory — `@hunk/term-video/capture`'s `createKeyframer` does
   the `Bun.resolveSync` dance.
-- **playwright-core must match the Chromium it drives.** In the Anthropic
-  sandbox, resolve the exact version from the preinstalled toolchain:
+- **Playwright must match the Chromium it drives.** The portable setup above
+  installs `playwright` and `playwright-core` together, then downloads their
+  matching Chromium build. It works on macOS and Linux and is preferred when
+  bandwidth and browser downloads are available; leave `CHROMIUM_PATH` unset
+  so Playwright uses that managed browser. On Linux, if Chromium reports
+  missing system libraries, run `bunx playwright install-deps chromium` (it
+  may require sudo) before retrying.
+
+  To reuse an existing system, CI, or sandbox Chromium instead, install the
+  `playwright-core` version provided by that environment and set its executable
+  explicitly:
+
+  ```sh
+  cd .video-work
+  bun add playwright-core@<matching-version>
+  cd ..
+  CHROMIUM_PATH=/path/to/chromium node scripts/launch-video/compose.mjs .video-work
+  ```
+
+  Common executable locations include `$(command -v chromium)` or
+  `$(command -v google-chrome)` on Linux and
+  `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome` on macOS.
+  In an environment with a preinstalled Playwright toolchain, read that
+  toolchain's `package.json` to get the exact driver version. For example, the
+  Anthropic sandbox exposes it through `/opt/pw-browsers/.links/*`:
 
   ```sh
   cat "$(cat /opt/pw-browsers/.links/* | head -1)/package.json" | grep '"version"'
   # e.g. "1.56.1" -> bun add playwright-core@1.56.1
   ```
 
-  `compose.mjs` picks its browser as `$CHROMIUM_PATH`, else
-  `/opt/pw-browsers/chromium` (sandbox), else playwright-core's own
-  resolution. Off the sandbox: `cd .video-work && bun add playwright &&
-bunx playwright install chromium`, leave `CHROMIUM_PATH` unset, and match
-  `playwright-core` to that `playwright` version.
+  `compose.mjs` picks its browser as `$CHROMIUM_PATH`, then
+  `/opt/pw-browsers/chromium` when present, then Playwright's managed browser.
 
 - **Give `.video-work/` its own `package.json` before `bun add`.** Without
   one, bun walks up and installs into the repo's `package.json` — revert with
