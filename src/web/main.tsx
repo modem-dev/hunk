@@ -12,18 +12,25 @@ history.replaceState(null, "", location.pathname + location.search);
 const sessionId = parseSessionId(location.pathname);
 const root = createRoot(mount);
 
-if (!sessionId || !capability) {
+if (!sessionId) {
   root.render(
     <StartupFailure
       title="Review link is incomplete"
-      body="This local review link is missing its authorization capability."
+      body="This local review link does not identify a review session."
     />,
   );
 } else {
   root.render(<StartupStatus>Authenticating local review…</StartupStatus>);
-  void BrowserReviewApiClient.authenticate(sessionId, capability)
-    .then(async (api) => ({ api, snapshot: await api.snapshot() }))
-    .then(({ api, snapshot }) => root.render(<WebReviewApp api={api} initialSnapshot={snapshot} />))
+  // The first navigation exchanges the fragment capability. Later refreshes have only the
+  // scoped HttpOnly cookie, so retry the snapshot directly instead of requiring the removed hash.
+  const api = capability
+    ? BrowserReviewApiClient.authenticate(sessionId, capability)
+    : Promise.resolve(new BrowserReviewApiClient(sessionId));
+  void api
+    .then(async (client) => ({ api: client, snapshot: await client.snapshot() }))
+    .then(({ api: client, snapshot }) =>
+      root.render(<WebReviewApp api={client} initialSnapshot={snapshot} />),
+    )
     .catch((error) => {
       const expired = error instanceof BrowserReviewApiError && error.status === 401;
       root.render(

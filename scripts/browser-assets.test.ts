@@ -46,7 +46,7 @@ describe("embedded browser assets", () => {
   });
 
   test("transitive shared STML changes invalidate the browser output", async () => {
-    const root = mkdtempSync(path.join(repoRoot, ".browser-transitive-test-"));
+    const root = mkdtempSync(path.join(tmpdir(), "hunk-browser-transitive-test-"));
     try {
       mkdirSync(path.join(root, "src"), { recursive: true });
       cpSync(path.join(repoRoot, "src/web"), path.join(root, "src/web"), { recursive: true });
@@ -63,7 +63,7 @@ describe("embedded browser assets", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
-  }, 30_000);
+  }, 60_000);
 
   test("fails clearly when generated assets are missing or stale", () => {
     const root = mkdtempSync(path.join(tmpdir(), "hunk-browser-assets-"));

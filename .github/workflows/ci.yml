@@ -189,6 +189,11 @@ jobs:
         env:
           HUNK_TEST_EXECUTABLE: ${{ github.workspace }}/${{ matrix.executable }}
 
+      - name: Verify compiled browser review assets
+        run: bun test ./test/cli/compiled-browser-review-assets.test.ts
+        env:
+          HUNK_TEST_EXECUTABLE: ${{ github.workspace }}/${{ matrix.executable }}
+
       - name: Verify staged prebuilt packs
         run: bun run check:prebuilt-pack
 

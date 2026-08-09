@@ -107,7 +107,6 @@ compiledTest(
         ...process.env,
         HUNK_MCP_HOST: "127.0.0.1",
         HUNK_MCP_PORT: String(port),
-        HUNK_INTERNAL_ENABLE_BROWSER_REVIEW: "1",
         HOME: path.join(cleanupRoot, "home"),
         USERPROFILE: path.join(cleanupRoot, "home"),
         XDG_CACHE_HOME: path.join(cleanupRoot, "cache"),

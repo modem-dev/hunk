@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "node:net";
 import { SESSION_BROKER_REGISTRATION_VERSION } from "@hunk/session-broker-core";
+import { reviewDigest } from "../src/core/review/identity";
+import { parseSessionRegistration, parseSessionSnapshot } from "../src/session/broker/wire";
 import { HUNK_SESSION_API_PATH } from "../src/session/protocol";
 
 type MemorySample = {
@@ -24,6 +26,14 @@ type HealthResponse = {
   pendingCommands: number;
 };
 
+type ResourceMetrics = {
+  commands: number;
+  patchCommands: number;
+  canonicalCommands: number;
+  chunkBytes: number;
+  multiChunkResources: number;
+};
+
 type CliOptions = {
   cycles: number;
   warmupCycles: number;
@@ -38,6 +48,8 @@ type CliOptions = {
   maxRssSlopeKb: number;
   jsonOut?: string;
 };
+
+const MEMORY_LINE_PAYLOAD = "x".repeat(1_536);
 
 const defaultOptions: CliOptions = {
   cycles: 50,
@@ -237,9 +249,13 @@ function makePatch(fileIndex: number, hunksPerFile: number, linesPerHunk: number
     const start = hunkIndex * (linesPerHunk + 3) + 1;
     chunks.push(`@@ -${start},${linesPerHunk} +${start},${linesPerHunk} @@`);
     for (let lineIndex = 0; lineIndex < linesPerHunk; lineIndex += 1) {
-      chunks.push(`-old_${fileIndex}_${hunkIndex}_${lineIndex} = ${lineIndex};`);
-      chunks.push(`+new_${fileIndex}_${hunkIndex}_${lineIndex} = ${lineIndex + 1};`);
-      chunks.push(` context_${fileIndex}_${hunkIndex}_${lineIndex}();`);
+      chunks.push(
+        `-old_${fileIndex}_${hunkIndex}_${lineIndex} = ${lineIndex}; // ${MEMORY_LINE_PAYLOAD}`,
+      );
+      chunks.push(
+        `+new_${fileIndex}_${hunkIndex}_${lineIndex} = ${lineIndex + 1}; // ${MEMORY_LINE_PAYLOAD}`,
+      );
+      chunks.push(` context_${fileIndex}_${hunkIndex}_${lineIndex}(); // ${MEMORY_LINE_PAYLOAD}`);
     }
   }
   return chunks.join("\n");
@@ -252,8 +268,8 @@ function makeReviewFile(sessionId: string, fileIndex: number, options: CliOption
     return {
       index: hunkIndex,
       header: `@@ -${start},${options.linesPerHunk} +${start},${options.linesPerHunk} @@`,
-      oldRange: [start, options.linesPerHunk],
-      newRange: [start, options.linesPerHunk],
+      oldRange: [start, start + options.linesPerHunk - 1],
+      newRange: [start, start + options.linesPerHunk - 1],
     };
   });
 
@@ -274,12 +290,37 @@ function makeRegistration(
   sessionIndex: number,
   options: CliOptions,
 ) {
-  const cwd = `/tmp/hunk-daemon-memory/${cycle}/${sessionIndex}`;
-  const files = Array.from({ length: options.filesPerSession }, (_, fileIndex) =>
+  const cwd = join(tmpdir(), "hunk-daemon-memory", String(cycle), String(sessionIndex));
+  const generation = `generation:${sessionId}`;
+  const reviewFiles = Array.from({ length: options.filesPerSession }, (_, fileIndex) =>
     makeReviewFile(sessionId, fileIndex, options),
   );
+  const files = reviewFiles.map(({ patch: _patch, ...file }) => ({
+    ...file,
+    flags: { untracked: false, binary: false, tooLarge: false, partial: true },
+  }));
+  const canonicalContents = reviewFiles.map((file) => JSON.stringify(file));
+  const patchResources = reviewFiles.map((file, fileIndex) => ({
+    id: `resource:patch:${sessionId}:${fileIndex}`,
+    kind: "patch" as const,
+    generation,
+    fileKey: `file-key:${sessionId}:${fileIndex}`,
+    contentType: "text/x-diff; charset=utf-8" as const,
+    byteLength: Buffer.byteLength(file.patch, "utf8"),
+    digest: reviewDigest(file.patch),
+  }));
+  const canonicalResources = canonicalContents.map((content, fileIndex) => ({
+    id: `resource:canonical:${sessionId}:${fileIndex}`,
+    kind: "canonical-file" as const,
+    generation,
+    fileKey: `file-key:${sessionId}:${fileIndex}`,
+    contentType: "application/vnd.hunk.review-file+json; charset=utf-8" as const,
+    byteLength: Buffer.byteLength(content, "utf8"),
+    digest: reviewDigest(content),
+  }));
+  const capability = `memory-capability:${sessionId}`;
 
-  return {
+  const registration = {
     registrationVersion: SESSION_BROKER_REGISTRATION_VERSION,
     sessionId,
     pid: process.pid,
@@ -290,51 +331,85 @@ function makeRegistration(
       inputKind: "vcs",
       title: `memory test ${sessionId}`,
       sourceLabel: cwd,
+      documentGeneration: generation,
+      browserReviewCapabilityHash: reviewDigest(capability),
       files,
+      reviewManifest: {
+        version: 1,
+        generation,
+        documentIdentity: `document:${sessionId}`,
+        changesetId: `changeset:${sessionId}`,
+        title: `memory test ${sessionId}`,
+        sourceLabel: cwd,
+        files: files.map((file, fileIndex) => ({
+          key: `file-key:${sessionId}:${fileIndex}`,
+          runtimeId: file.id,
+          path: file.path,
+          changeKind: "change" as const,
+          additions: file.additions,
+          deletions: file.deletions,
+          statsTruncated: false,
+          hunkCount: file.hunks.length,
+          flags: file.flags,
+          patchResourceId: patchResources[fileIndex]!.id,
+          canonicalResourceId: canonicalResources[fileIndex]!.id,
+          sourceResourceIds: {},
+          hunks: file.hunks,
+          notes: [],
+        })),
+        resources: [...patchResources, ...canonicalResources],
+        capabilities: { actions: [] },
+      },
     },
+  };
+  return {
+    registration,
+    capability,
+    canonicalResourceIds: canonicalResources.map((resource) => resource.id),
+    resources: new Map([
+      ...reviewFiles.map((file, index) => [patchResources[index]!.id, file.patch] as const),
+      ...canonicalContents.map(
+        (content, index) => [canonicalResources[index]!.id, content] as const,
+      ),
+    ]),
   };
 }
 
 function makeSnapshot(sessionId: string, updateIndex = 0, options: CliOptions = defaultOptions) {
+  const generation = `generation:${sessionId}`;
   const fileIndex = updateIndex % Math.max(1, options.filesPerSession);
   const hunkIndex = updateIndex % Math.max(1, options.hunksPerFile);
+  const fileKey = `file-key:${sessionId}:${fileIndex}`;
   const filePath = `src/${sessionId}/file-${fileIndex}.ts`;
-  const liveComments = Array.from({ length: 3 }, (_, commentIndex) => ({
-    commentId: `${sessionId}-comment-${updateIndex}-${commentIndex}`,
-    filePath,
-    hunkIndex,
-    side: "new",
-    line: hunkIndex * (options.linesPerHunk + 3) + commentIndex + 1,
-    summary: `Memory harness comment ${updateIndex}.${commentIndex}`,
-    rationale: `Snapshot churn rationale ${sessionId} ${updateIndex} ${commentIndex}`,
-    author: "daemon-memory-check",
-    createdAt: new Date().toISOString(),
-  }));
+  const rangeStart = hunkIndex * (options.linesPerHunk + 3) + 1;
+  const range = [rangeStart, rangeStart + options.linesPerHunk - 1] as [number, number];
+  const showAgentNotes = updateIndex % 2 === 0;
 
   return {
     updatedAt: new Date().toISOString(),
     state: {
+      documentGeneration: generation,
+      stateRevision: updateIndex,
+      review: {
+        documentGeneration: generation,
+        stateRevision: updateIndex,
+        selection: { fileKey, hunkIndex },
+        filter: "",
+        showAgentNotes,
+        notes: [],
+        expandedGaps: [],
+        sourceStatusByFileKey: {},
+      },
       selectedFileId: `${sessionId}-file-${fileIndex}`,
       selectedFilePath: filePath,
       selectedHunkIndex: hunkIndex,
-      selectedHunkOldRange: [hunkIndex * (options.linesPerHunk + 3) + 1, options.linesPerHunk],
-      selectedHunkNewRange: [hunkIndex * (options.linesPerHunk + 3) + 1, options.linesPerHunk],
-      showAgentNotes: updateIndex % 2 === 0,
-      liveCommentCount: liveComments.length,
-      liveComments,
-      reviewNoteCount: liveComments.length,
-      reviewNotes: liveComments.map((comment) => ({
-        noteId: `note-${comment.commentId}`,
-        source: "user",
-        filePath: comment.filePath,
-        hunkIndex: comment.hunkIndex,
-        newRange: [comment.line, 1],
-        body: comment.rationale,
-        title: comment.summary,
-        author: comment.author,
-        createdAt: comment.createdAt,
-        editable: true,
-      })),
+      selectedHunkOldRange: range,
+      selectedHunkNewRange: range,
+      showAgentNotes,
+      liveCommentCount: 0,
+      liveComments: [],
+      reviewNoteCount: 0,
+      reviewNotes: [],
     },
   };
 }
@@ -345,6 +420,7 @@ async function openRegisteredSocket(
   cycle: number,
   sessionIndex: number,
   options: CliOptions,
+  resourceMetrics: ResourceMetrics,
 ) {
   const socket = new WebSocket(`ws://127.0.0.1:${port}/session`);
   await new Promise<void>((resolve, reject) => {
@@ -370,14 +446,65 @@ async function openRegisteredSocket(
     );
   });
 
-  socket.send(
-    JSON.stringify({
-      type: "register",
-      registration: makeRegistration(sessionId, cycle, sessionIndex, options),
-      snapshot: makeSnapshot(sessionId, 0, options),
-    }),
-  );
-  return socket;
+  const fixture = makeRegistration(sessionId, cycle, sessionIndex, options);
+  const snapshot = makeSnapshot(sessionId, 0, options);
+  if (!parseSessionRegistration(fixture.registration)) {
+    throw new Error(`Memory harness produced an invalid registration for ${sessionId}.`);
+  }
+  if (!parseSessionSnapshot(snapshot)) {
+    throw new Error(`Memory harness produced an invalid snapshot for ${sessionId}.`);
+  }
+  socket.addEventListener("message", (event) => {
+    const command = JSON.parse(String(event.data)) as {
+      command?: string;
+      requestId: string;
+      input?: { generation: string; resourceId: string; offset: number; length: number };
+    };
+    if (command.command !== "read_review_resource" || !command.input) return;
+    const content = fixture.resources.get(command.input.resourceId);
+    if (content === undefined) {
+      socket.send(
+        JSON.stringify({
+          type: "command-result",
+          requestId: command.requestId,
+          ok: false,
+          error: `Unknown memory resource ${command.input.resourceId}.`,
+        }),
+      );
+      return;
+    }
+    const bytes = Buffer.from(content, "utf8");
+    const chunk = bytes.subarray(command.input.offset, command.input.offset + command.input.length);
+    resourceMetrics.commands += 1;
+    resourceMetrics.chunkBytes += chunk.byteLength;
+    if (command.input.resourceId.includes(":patch:")) resourceMetrics.patchCommands += 1;
+    else resourceMetrics.canonicalCommands += 1;
+    if (command.input.offset === 0 && bytes.byteLength > chunk.byteLength) {
+      resourceMetrics.multiChunkResources += 1;
+    }
+    socket.send(
+      JSON.stringify({
+        type: "command-result",
+        requestId: command.requestId,
+        ok: true,
+        result: {
+          kind: "review-resource",
+          generation: command.input.generation,
+          id: command.input.resourceId,
+          resourceId: command.input.resourceId,
+          offset: command.input.offset,
+          byteLength: chunk.byteLength,
+          encoding: "base64",
+          data: chunk.toString("base64"),
+          contentDigest: reviewDigest(content),
+          contentSize: bytes.byteLength,
+          eof: command.input.offset + chunk.byteLength === bytes.byteLength,
+        },
+      }),
+    );
+  });
+  socket.send(JSON.stringify({ type: "register", registration: fixture.registration, snapshot }));
+  return { socket, ...fixture };
 }
 
 async function sendSnapshotUpdates(
@@ -414,26 +541,77 @@ async function postSessionApi(port: number, body: Record<string, unknown>) {
       `Session API ${body.action} failed: ${response.status} ${await response.text()}`,
     );
   }
-  await response.arrayBuffer();
+  return response.text();
 }
 
+/** Authenticate once and load every canonical resource through the browser server/cache path. */
+async function exerciseCanonicalResources(
+  port: number,
+  fixtures: Awaited<ReturnType<typeof openRegisteredSocket>>[],
+) {
+  const origin = `http://127.0.0.1:${port}`;
+  for (const fixture of fixtures) {
+    const auth = await fetch(`${origin}/review-auth`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin },
+      body: JSON.stringify({
+        sessionId: fixture.registration.sessionId,
+        capability: fixture.capability,
+      }),
+    });
+    if (!auth.ok) throw new Error(`Browser resource authentication failed: ${await auth.text()}`);
+    const cookie = auth.headers.get("set-cookie")?.split(";", 1)[0];
+    if (!cookie) throw new Error("Browser resource authentication did not return a cookie.");
+    for (const resourceId of fixture.canonicalResourceIds) {
+      const resourceUrl =
+        `${origin}/review-api/${encodeURIComponent(fixture.registration.sessionId)}/resources/` +
+        `${encodeURIComponent(fixture.registration.info.documentGeneration)}/${encodeURIComponent(resourceId)}`;
+      const expected = fixture.resources.get(resourceId)!;
+      const chunks: Buffer[] = [];
+      let offset = 0;
+      while (offset < Buffer.byteLength(expected, "utf8")) {
+        const response = await fetch(resourceUrl, {
+          headers: { cookie, ...(offset > 0 ? { range: `bytes=${offset}-` } : {}) },
+        });
+        if (!response.ok) {
+          throw new Error(`Canonical resource ${resourceId} failed: ${response.status}.`);
+        }
+        const chunk = Buffer.from(await response.arrayBuffer());
+        if (chunk.byteLength === 0) {
+          throw new Error(`Canonical resource ${resourceId} returned an empty range.`);
+        }
+        chunks.push(chunk);
+        offset += chunk.byteLength;
+      }
+      if (Buffer.concat(chunks).toString("utf8") !== expected) {
+        throw new Error(`Canonical resource ${resourceId} was assembled incorrectly.`);
+      }
+    }
+  }
+}
+
+/** Exercise opt-in patch reconstruction plus the remaining public session API surface. */
 async function exerciseSessionApi(port: number, sessionIds: string[], requests: number) {
-  const actions = ["list", "context", "review", "comment-list"] as const;
+  for (const sessionId of sessionIds) {
+    const review = await postSessionApi(port, {
+      action: "review",
+      selector: { sessionId },
+      includePatch: true,
+      includeNotes: true,
+    });
+    if (!review.includes(`old_0_0_0`) || !review.includes(MEMORY_LINE_PAYLOAD)) {
+      throw new Error(`Session review for ${sessionId} did not contain reconstructed patches.`);
+    }
+  }
+
+  const actions = ["list", "context", "comment-list"] as const;
   for (let index = 0; index < requests; index += 1) {
     const action = actions[index % actions.length];
     const sessionId = sessionIds[index % sessionIds.length];
-    if (action === "list") {
-      await postSessionApi(port, { action });
-    } else if (action === "review") {
-      await postSessionApi(port, {
-        action,
-        selector: { sessionId },
-        includePatch: true,
-        includeNotes: true,
-      });
-    } else {
-      await postSessionApi(port, { action, selector: { sessionId } });
-    }
+    await postSessionApi(
+      port,
+      action === "list" ? { action } : { action, selector: { sessionId } },
+    );
   }
 }
 
@@ -512,6 +690,13 @@ async function main() {
   });
 
   const samples: MemorySample[] = [];
+  const resourceMetrics: ResourceMetrics = {
+    commands: 0,
+    patchCommands: 0,
+    canonicalCommands: 0,
+    chunkBytes: 0,
+    multiChunkResources: 0,
+  };
 
   try {
     const health = await waitUntil("daemon health", () => readHealth(port), 10_000);
@@ -520,15 +705,22 @@ async function main() {
     samples.push(await sample("startup", 0, pid, port));
 
     for (let cycle = 1; cycle <= options.cycles; cycle += 1) {
-      const sockets: WebSocket[] = [];
+      const fixtures: Awaited<ReturnType<typeof openRegisteredSocket>>[] = [];
       const sessionIds = Array.from(
         { length: options.sessionsPerCycle },
         (_, sessionIndex) => `memory-${cycle}-${sessionIndex}`,
       );
 
       for (let sessionIndex = 0; sessionIndex < sessionIds.length; sessionIndex += 1) {
-        sockets.push(
-          await openRegisteredSocket(port, sessionIds[sessionIndex]!, cycle, sessionIndex, options),
+        fixtures.push(
+          await openRegisteredSocket(
+            port,
+            sessionIds[sessionIndex]!,
+            cycle,
+            sessionIndex,
+            options,
+            resourceMetrics,
+          ),
         );
       }
 
@@ -536,14 +728,24 @@ async function main() {
         const nextHealth = await readHealth(port);
         return nextHealth?.sessions === options.sessionsPerCycle ? nextHealth : null;
       });
-      await sendSnapshotUpdates(sockets, sessionIds, options.snapshotUpdatesPerCycle, options);
+      await sendSnapshotUpdates(
+        fixtures.map((fixture) => fixture.socket),
+        sessionIds,
+        options.snapshotUpdatesPerCycle,
+        options,
+      );
       await exerciseSessionApi(port, sessionIds, options.apiRequestsPerCycle);
-      samples.push(await sample("live", cycle, pid, port));
+      await exerciseCanonicalResources(port, fixtures);
+      const liveSample = await sample("live", cycle, pid, port);
+      if (liveSample.pendingCommands !== 0) {
+        throw new Error(`Cycle ${cycle} retained pending resource commands after assembly.`);
+      }
+      samples.push(liveSample);
 
-      await closeSockets(sockets);
+      await closeSockets(fixtures.map((fixture) => fixture.socket));
       await waitUntil("session cleanup", async () => {
         const nextHealth = await readHealth(port);
-        return nextHealth?.sessions === 0 ? nextHealth : null;
+        return nextHealth?.sessions === 0 && nextHealth.pendingCommands === 0 ? nextHealth : null;
       });
       await Bun.sleep(options.settleMs);
       const cleanupSample = await sample("cleanup", cycle, pid, port);
@@ -574,8 +776,13 @@ async function main() {
   const maxAllowedSlopeBytes = options.maxRssSlopeKb * 1024;
   const passed = growthBytes <= maxAllowedGrowthBytes && slopeBytesPerCycle <= maxAllowedSlopeBytes;
 
+  if (resourceMetrics.patchCommands === 0 || resourceMetrics.canonicalCommands === 0) {
+    throw new Error(`Resource exercise was incomplete: ${JSON.stringify(resourceMetrics)}.`);
+  }
+
   const summary = {
     options,
+    resourceMetrics,
     sampleCount: samples.length,
     analyzedCleanupSamples: analyzedSamples.length,
     firstAnalyzedRssBytes: first.rssBytes,
@@ -602,6 +809,11 @@ async function main() {
   console.log(`METRIC daemon_rss_slope_bytes_per_cycle=${slopeBytesPerCycle}`);
   console.log(`METRIC daemon_max_rss_bytes=${maxRssBytes}`);
   console.log(`METRIC daemon_max_hwm_bytes=${maxHwmBytes}`);
+  console.log(`METRIC daemon_resource_read_commands=${resourceMetrics.commands}`);
+  console.log(`METRIC daemon_patch_read_commands=${resourceMetrics.patchCommands}`);
+  console.log(`METRIC daemon_canonical_read_commands=${resourceMetrics.canonicalCommands}`);
+  console.log(`METRIC daemon_resource_chunk_bytes=${resourceMetrics.chunkBytes}`);
+  console.log(`METRIC daemon_multi_chunk_resources=${resourceMetrics.multiChunkResources}`);
 
   if (options.jsonOut) {
     await Bun.write(options.jsonOut, JSON.stringify(summary, null, 2));
