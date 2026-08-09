@@ -1,6 +1,6 @@
 ---
 name: hunk-extensions
-description: Maps the `hunkdiff/extension` authoring surface for Hunk, the terminal diff viewer — themes, file languages, VCS backends, sidebar views, file views, commands, dialogs, workspace writes, changeset transforms, events. Use when writing, debugging, or reviewing a Hunk extension.
+description: Maps the `hunkdiff/extension` authoring surface for Hunk, the terminal diff viewer — hiding or reordering reviewed files, sidebar panes, alternate file views, commands and key bindings, dialogs, workspace writes, themes, syntax languages, VCS backends, lifecycle events. Use when writing, debugging, or installing a Hunk extension, or when a request asks Hunk itself to behave differently. Not for reviewing a diff in a live session — that is hunk-review.
 ---
 
 # Building Hunk extensions
@@ -32,7 +32,9 @@ material before writing code.
 | `docs/extension-architecture.md`        | Hunk's internals. Needed only when changing the host.        |
 | `docs/keybindings.md`, `docs/themes.md` | Chord grammar and theme token rules that extensions inherit. |
 
-Outside a Hunk checkout the same guide lives at <https://hunk.dev/docs/extend/extensions/>
+Outside a Hunk checkout the guide is split across
+<https://hunk.dev/docs/extend/extensions/> (discovery, trust, config) and its
+companion pages — extension-api, file-previews, vcs-adapters, custom-sidebars —
 and the contract ships as `node_modules/hunkdiff/dist/npm/extension/index.d.ts`.
 
 The examples, by what they demonstrate:
@@ -63,9 +65,12 @@ repository's own README.
 
 A directory matches `*.ts`/`*.tsx`/`*.js`/`*.jsx`/`*.mjs` at its top level, plus
 one level of folder extensions. A folder is an extension if it has a
-`package.json` with `{"hunk": {"extensions": ["./index.ts"]}}`, or an `index.*`.
-Folder extensions may depend on npm packages — install into the folder's own
-`node_modules`.
+`package.json` with `{"hunk": {"extensions": ["./index.ts"]}}`, or an
+`index.{ts,tsx,js,jsx,mjs}`. Reach for a folder only when you need npm
+dependencies, helper modules, or a README; a single file keeps the install to one
+`cp`. Hunk never installs anything, so a folder extension's `node_modules` has to
+exist on every machine that loads it — keep a repo-shared extension
+dependency-free.
 
 The **id** is the file stem (or folder name), and it is the namespace the
 extension owns: commands are `<id>.<commandId>`, sidebar views `<id>:<viewId>`,
@@ -75,42 +80,47 @@ startup notice.
 
 ## Pick the touchpoint
 
-| To do this                                             | Call                                         |
-| ------------------------------------------------------ | -------------------------------------------- |
-| Add a selectable color theme                           | `hunk.registerTheme(theme)`                  |
-| Highlight an unrecognized file extension               | `hunk.registerFileLanguage(ext, lang)`       |
-| Support another VCS, or change how one is diffed       | `hunk.registerVcsAdapter(adapter)`           |
-| Add a navigation/list/status pane beside the review    | `hunk.registerSidebarView(view)`             |
-| Present a file as something other than a raw diff      | `hunk.registerFileView(view)` (experimental) |
-| Bind a key / add an Extensions-menu entry              | `hunk.registerCommand(command, handler)`     |
-| Hide, reorder, retitle files before review             | `hunk.transformChangeset(fn)`                |
-| React to loads, selection, notes, theme, reloads, exit | `hunk.on(event, handler)`                    |
-| Coordinate with another loaded extension               | `hunk.events.emit` / `hunk.events.on`        |
-| Read user-supplied settings                            | `hunk.config` (`[extension.<id>]` table)     |
-| Branch on the API generation (currently `2`)           | `hunk.apiVersion`                            |
+| To do this                                              | Call                                         |
+| ------------------------------------------------------- | -------------------------------------------- |
+| Add a selectable color theme                            | `hunk.registerTheme(theme)`                  |
+| Highlight an unrecognized file extension                | `hunk.registerFileLanguage(ext, lang)`       |
+| Support another VCS (`git`/`jj`/`sl` are reserved)      | `hunk.registerVcsAdapter(adapter)`           |
+| Add a navigation/list/status pane beside the review     | `hunk.registerSidebarView(view)`             |
+| Present a file as something other than a raw diff       | `hunk.registerFileView(view)` (experimental) |
+| Bind a key / add an Extensions-menu entry               | `hunk.registerCommand(command, handler)`     |
+| Hide, reorder, retitle files before review              | `hunk.transformChangeset(fn)`                |
+| React to loads, selection, viewed files, notes, reloads | `hunk.on(event, handler)`                    |
+| Coordinate with another loaded extension                | `hunk.events.emit` / `hunk.events.on`        |
+| Read user-supplied settings                             | `hunk.config` (`[extension.<id>]` table)     |
+| Branch on the API generation (currently `2`)            | `hunk.apiVersion`                            |
 
 Registration is only valid while the factory runs — Hunk seals the API object
 afterwards.
 
 ## What handlers receive
 
-Every handler and transform gets `ctx.cwd` and `ctx.notify(message, type?)`.
-Beyond that:
+Every event, bus, command, and file-view mode handler — plus every changeset
+transform — gets `ctx.cwd` and `ctx.notify(message, type?)`. A file view's
+`matches` and `layout` get no context at all. Beyond that:
 
-- **Event and bus handlers** also get `ctx.sidebars` (open/close/toggle any view)
-  and `ctx.events.emit`.
-- **Command handlers** get `ctx.sidebars`, `ctx.fileViews` (select/toggle/refresh/
-  enterMode), `ctx.selection` (a snapshot of file + hunk index at invocation),
+- **Event and bus handlers** also get `ctx.sidebars` (open/close/toggle/isOpen on
+  any view) and `ctx.events.emit`.
+- **Command handlers** get `ctx.sidebars`, `ctx.fileViews` (select/toggle/isActive/
+  refresh/enterMode/exitMode), `ctx.selection` (a snapshot of file + hunk index),
   `ctx.navigation` (live, guarded `selectFile`/`selectHunk`), `ctx.dialogs`
   (`confirm`/`select`/`input`, queued and attributed), and `ctx.workspace`
   (`readDocument`, `canWriteDocument`, `writeDocument` with consent).
 - **Sidebar components** get props: `files` (frozen, filtered, review order, each
   with `hunks` summaries), `selectedFileId`, `selectedHunkIndex`, `width`,
-  `theme` (hex tokens — see `ExtensionPaintTheme`), `keybindings` (ask by command
-  id, never hard-code a chord), and `actions` (`selectFile`, `selectHunk`,
-  `notify`).
+  `theme` (hex tokens plus an `appearance` flag — see `ExtensionPaintTheme`),
+  `keybindings` (ask by command id, never hard-code a chord), and `actions`
+  (`selectFile`, `selectHunk`, `notify`).
 - **File-view `layout`** gets `file`, `width`, `signal`, `changes`, and a lazy
   `readDocument(side)`.
+- **File-view `mode` handlers** get `ctx.file` and `ctx.fileViews`. `onKey` must
+  answer **synchronously** — its return value (`"handled"`/`"pass"`/`"exit"`) is
+  the routing decision, so kick off async work and report it later through
+  `notify` or `refresh`. Escape is host-owned and never reaches `onKey`.
 
 Public file/hunk data is always the frozen `ExtensionDiffFile` /
 `ExtensionDiffHunk` shape; the opaque `metadata` is the renderer's parsed diff and
@@ -120,6 +130,15 @@ should only ever be passed through untouched.
 
 Most extension bugs are one of these:
 
+- **Registering a surface does not show it.** A sidebar view starts closed unless
+  it declares `defaultOpen` (or `replacesDefault`, which starts open in place of
+  the built-in file list). A file view never activates itself — raw diff is the
+  default and the user picks the view from the **View** menu. Ship a command that
+  toggles it and say which key, or correct code looks like it did nothing.
+- **A rejected file-view layout silently becomes raw diff.** `hunkRows` needs one
+  in-bounds, inclusive entry per parsed hunk at the same array index, and
+  `sourceRanges` may not overlap on a side; invalid, oversized, cancelled, and
+  throwing layouts warn once and fall back.
 - **Never bundle or vendor React.** Hunk serves its own `react` and `@opentui/*`
   to extension files; a second copy means a second hooks dispatcher and the
   component fails to render. Import them normally. OpenTUI intrinsics (`box`,
@@ -129,7 +148,12 @@ Most extension bugs are one of these:
   `{ fileId }` when the state belongs to one file.
 - **Handler state must live outside the component.** Panes unmount when closed;
   bridge module-level state into React with `useSyncExternalStore` and immutable
-  snapshots.
+  snapshots (`review-triage/index.tsx` is the working version).
+- **A reload keeps your factory and renames the files.** Factories re-run only
+  after a trust grant or a cwd change, so module state survives — but a file's
+  `id` encodes its position in the changeset, so a reload that adds or drops a
+  file renumbers the rest. Key durable per-file state by `path`, or reconcile it
+  on `changeset_loaded`. Pick one deliberately.
 - **Transforms must preserve `metadata`** (spreading a file does), keep ids
   unique, and return a real changeset — otherwise the transform is skipped with a
   warning and the previous changeset carries forward.
@@ -145,26 +169,35 @@ Most extension bugs are one of these:
 - **File-view note placement is all-or-raw per file**: an unbound or range-less
   visible note makes Hunk render the complete raw diff instead of guessing.
 - **Failures are contained, not sandboxed.** A throwing factory is rolled back to
-  zero registrations; a throwing handler is a warning naming the extension. But
-  extensions run with full user permissions — that containment protects against
-  bugs, not against code that should not have been loaded.
-- **`hunk.log` is collected as diagnostics, not printed** (the TUI owns the
-  screen). Use `ctx.notify` for anything a user should see, or write your own file.
-- **Throw `HunkExtensionUserError`** (detected structurally by `name`) for
-  problems the user can fix — it prints the message plus `suggestions` with no
-  stack trace.
+  zero registrations and a throwing handler is a warning naming the extension —
+  containment against bugs, not against code that should not have been loaded.
+- **The API touches nothing outside the review.** No clipboard, no filesystem, no
+  process surface beyond `ctx.workspace` — an extension is ordinary code, so shell
+  out for the rest. Never write to stdout: the renderer owns it. For the same
+  reason `hunk.log` is collected as diagnostics and printed nowhere; `ctx.notify`
+  is how a user hears from you.
+- **`HunkExtensionUserError`** (detected structurally by `name`) buys the full
+  treatment — message plus `suggestions`, no stack trace — only from a VCS adapter
+  operation, which is where Hunk formats it for the CLI. From a command or event
+  handler only the message survives, as a warning toast.
 
 ## Verifying
 
 Hunk's TUI needs a real terminal, and the review UI is the user's — **do not
-launch `hunk diff`/`hunk show` interactively to test.** Practical checks, in
-order of cost:
+launch `hunk diff`/`hunk show` to test, and do not reach for a pipe.** No
+invocation applies extensions headlessly: `hunk diff … | cat` still starts the
+app and still takes the keyboard, so it hangs holding the user's terminal.
+Practical checks, in order of cost:
 
 1. **Typecheck.** In a checkout, `bun run typecheck` covers
    `examples/extensions/**` via the `hunkdiff/extension` path mapping. Standalone,
-   add `hunkdiff` as a dev dependency and run `tsc --noEmit`.
-2. **Unit-test the logic.** Keep parsing, matching, and formatting in helper
-   modules with plain `bun test` coverage; keep the factory thin.
+   add `hunkdiff` as a dev dependency and run `tsc --noEmit`; for a `.tsx`
+   extension also add `react`, `@opentui/core`, and `@opentui/react` as **dev**
+   dependencies and set `"jsx": "react-jsx"` with
+   `"jsxImportSource": "@opentui/react"`, or every `<box>` and `<text>` is an
+   untyped intrinsic. Types only — shipping those packages is the second-React bug.
+2. **Unit-test the logic.** When parsing, matching, or formatting is worth
+   testing, put it in helper modules with plain `bun test` coverage.
 3. **PTY integration.** In a checkout, `test/pty/extensions-integration.test.ts`
    launches Hunk over a PTY with `--extension <path>` and asserts on rendered
    snapshots; extend it via `test/pty/harness.ts` and run `bun run test:integration`.
@@ -172,18 +205,20 @@ order of cost:
    loads immediately with no trust prompt, so it is the iteration path. Ask them
    what the footer notices and toasts said.
 5. **Triage with `--no-extensions`** to confirm a symptom belongs to an extension
-   (bundled VCS backends stay loaded either way).
+   (bundled VCS backends and the built-in sidebar stay loaded either way).
 
 ## If it does not load
 
 - No startup notice at all → discovery never saw the file. Check the directory,
   the entry suffix, or the folder's `package.json` `hunk.extensions` paths.
-- Notice naming the file → id rejected (reserved, malformed, or already claimed),
-  import failure, missing default export, or a throwing factory.
+- Notice naming the extension → id rejected (reserved, malformed, or already
+  claimed), import failure, missing default export, or a throwing factory.
 - Repo-local extension silently absent → the trust prompt was dismissed or denied;
   decisions are stored per repo root in `~/.config/hunk/state.json`.
 - Sidebar pane closes with a toast → the component threw; a second React copy is
   the usual cause.
+- Sidebar or file view never appears → nothing opened it (no `defaultOpen`, no
+  command), `matches` returned false, or the layout was rejected.
 - Command never fires → its chord lost to a built-in or an earlier extension (a
   warning says so); it is still reachable from the **Extensions** menu and
   bindable by `<id>.<commandId>`.
@@ -195,13 +230,14 @@ Only when the work is in the `hunk` repo rather than in a user extension:
 - Shipped VCS backends and the built-in sidebar are **bundled extensions** in
   `src/extensions/default/`, registering through the same public API. That
   dogfooding is deliberate — if the public contract cannot express something,
-  that is a real gap, not a reason for a private path.
+  that is a real gap, not a reason for a private path. `default/vcs/` loads from
+  VCS adapter resolution and must stay renderer-free.
 - `src/extension-api/types.ts` must stay **import-free**; declaration emission
   publishes whatever it reaches, and `scripts/check-pack.ts` fails the pack
   otherwise. Shapes shared with internal code are declared there and re-exported
   inward.
-- `src/extensions/default/vcs/` loads from VCS adapter resolution and must stay
-  renderer-free.
 - New API surface means updating `docs/extensions.md` (its examples are
-  typechecked as consumer code), `docs/extension-architecture.md` if ownership
-  moves, and adding a changeset with `bun run changeset`.
+  typechecked as consumer code), the matching hand-written page under
+  `website/src/content/docs/docs/extend/` (only `cli.md` and `config.md` are
+  generated), `docs/extension-architecture.md` if ownership moves, and a changeset.
+- `AGENTS.md` and `docs/extension-architecture.md` own the rest of these rules.
