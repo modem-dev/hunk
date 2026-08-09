@@ -127,6 +127,11 @@ jobs:
         env:
           HUNK_TEST_EXECUTABLE: ${{ github.workspace }}/${{ matrix.executable }}
 
+      - name: Verify compiled browser review assets
+        run: bun test ./test/cli/compiled-browser-review-assets.test.ts
+        env:
+          HUNK_TEST_EXECUTABLE: ${{ github.workspace }}/${{ matrix.executable }}
+
   pr-validate:
     name: Typecheck + Test + Smoke
     needs: changes
@@ -218,6 +223,11 @@ jobs:
 
       - name: Verify compiled headless commands skip OpenTUI
         run: bun test ./test/cli/compiled-headless-native-lib.test.ts
+        env:
+          HUNK_TEST_EXECUTABLE: ${{ github.workspace }}/dist/hunk
+
+      - name: Verify compiled browser review assets
+        run: bun test ./test/cli/compiled-browser-review-assets.test.ts
         env:
           HUNK_TEST_EXECUTABLE: ${{ github.workspace }}/dist/hunk
 

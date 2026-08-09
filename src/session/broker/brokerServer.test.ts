@@ -14,7 +14,6 @@ import { HunkSessionBrokerState } from "./state";
 const originalHost = process.env.HUNK_MCP_HOST;
 const originalPort = process.env.HUNK_MCP_PORT;
 const originalUnsafeRemote = process.env.HUNK_MCP_UNSAFE_ALLOW_REMOTE;
-const originalInternalBrowserReview = process.env.HUNK_INTERNAL_ENABLE_BROWSER_REVIEW;
 
 interface HealthResponse {
   ok: boolean;
@@ -257,12 +256,6 @@ afterEach(() => {
     delete process.env.HUNK_MCP_UNSAFE_ALLOW_REMOTE;
   } else {
     process.env.HUNK_MCP_UNSAFE_ALLOW_REMOTE = originalUnsafeRemote;
-  }
-
-  if (originalInternalBrowserReview === undefined) {
-    delete process.env.HUNK_INTERNAL_ENABLE_BROWSER_REVIEW;
-  } else {
-    process.env.HUNK_INTERNAL_ENABLE_BROWSER_REVIEW = originalInternalBrowserReview;
   }
 });
 
