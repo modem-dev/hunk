@@ -8,10 +8,10 @@ import {
 } from "../core/jobControl";
 import { shutdownSession } from "../core/shutdown";
 import { shouldUseMouseForApp, type ControllingTerminal } from "../core/terminal";
-import type { AppBootstrap } from "../core/types";
+import type { AppBootstrap, CliInput } from "../core/types";
 import { resolveStartupUpdateNotice } from "../core/updateNotice";
 import {
-  createInitialSessionSnapshot,
+  assertSessionRegistrationEnvelopeWithinBounds,
   createSessionRegistration,
 } from "../session/app/registration";
 import type {
@@ -21,24 +21,36 @@ import type {
   HunkSessionState,
 } from "../session/types";
 import { SessionBrokerClient } from "../session/broker/brokerClient";
+import { createReviewSessionRuntime } from "../app/reviewSessionRuntime";
+import { createSessionSnapshotFromReviewState } from "../session/app/reviewSnapshot";
 import { AppHost } from "./AppHost";
 
 export interface InteractiveAppInput {
   bootstrap: AppBootstrap;
+  rawInput: CliInput;
   controllingTerminal: ControllingTerminal | null;
 }
 
 /** Load and run the OpenTUI review app after startup has selected an interactive plan. */
 export async function runInteractiveApp({
   bootstrap,
+  rawInput,
   controllingTerminal,
 }: InteractiveAppInput): Promise<void> {
+  const runtime = createReviewSessionRuntime(bootstrap, { rawInput });
+  const runtimeSnapshot = runtime.getSnapshot();
+  const registration = createSessionRegistration(bootstrap, runtimeSnapshot.projection.document, {
+    browserReviewCapabilityHash: runtime.getBrowserReviewCapabilityHash(),
+  });
+  const initialSnapshot = createSessionSnapshotFromReviewState(runtimeSnapshot.store.getSnapshot());
+  assertSessionRegistrationEnvelopeWithinBounds(registration, initialSnapshot);
   const hostClient = new SessionBrokerClient<
     HunkSessionInfo,
     HunkSessionState,
     HunkSessionServerMessage,
     HunkSessionCommandResult
-  >(createSessionRegistration(bootstrap), createInitialSessionSnapshot(bootstrap));
+  >(registration, initialSnapshot);
+  runtime.attachHostClient(hostClient);
   hostClient.start();
 
   // Keep OpenTUI's platform-safe threading default (enabled on macOS, disabled on Linux).
@@ -88,8 +100,10 @@ export async function runInteractiveApp({
     <AppHost
       bootstrap={bootstrap}
       hostClient={hostClient}
+      rawInput={rawInput}
       onQuit={shutdown}
       startupNoticeResolver={resolveStartupUpdateNotice}
+      runtime={runtime}
     />,
   );
 }

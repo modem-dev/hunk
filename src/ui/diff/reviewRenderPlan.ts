@@ -1,5 +1,7 @@
+import type { Hunk } from "@pierre/diffs";
+import { annotationAnchor, annotationOwnerHunkIndex } from "../../core/review/notes";
 import type { AgentAnnotation, UserNoteLineTarget } from "../../core/types";
-import { annotationAnchor, type VisibleAgentNote } from "../lib/agentAnnotations";
+import type { VisibleAgentNote } from "../lib/agentAnnotations";
 import { diffHunkId } from "../lib/ids";
 import type { DiffRow } from "./pierre";
 
@@ -225,25 +227,40 @@ function rowOverlapsAnnotation(row: DiffLineRow, annotation: AgentAnnotation) {
 }
 
 /**
- * Resolve the rendered diff row after which the inline note should appear.
- * Range-less notes intentionally anchor beside the first code row in the file,
- * not against hunk header metadata.
+ * Resolve the rendered row after which an inline note appears inside its core-owned hunk.
+ * Prefer the declared anchor line, then the first intersecting line, then the owner's first
+ * code row. The renderer owns only row choice; hunk ownership stays renderer-neutral in core.
  */
-function findInlineNoteAnchorRow(rows: DiffRow[], annotation: AgentAnnotation) {
+function findInlineNoteAnchorRow(
+  rows: DiffRow[],
+  hunks: readonly Hunk[],
+  annotation: AgentAnnotation,
+) {
   const fileLineRows = lineRows(rows);
-  const headerRow = rows.find((row) => row.type === "hunk-header");
+  const ownerHunkIndex = annotationOwnerHunkIndex(annotation, hunks);
+  if (ownerHunkIndex === undefined) {
+    return fileLineRows[0] ?? rows.find((row) => row.type === "hunk-header");
+  }
 
+  const ownerLineRows = fileLineRows.filter((row) => row.hunkIndex === ownerHunkIndex);
   return (
-    fileLineRows.find((row) => rowMatchesNote(row, annotation)) ?? fileLineRows[0] ?? headerRow
+    ownerLineRows.find((row) => rowMatchesNote(row, annotation)) ??
+    ownerLineRows.find((row) => rowOverlapsAnnotation(row, annotation)) ??
+    ownerLineRows[0] ??
+    rows.find((row) => row.type === "hunk-header" && row.hunkIndex === ownerHunkIndex)
   );
 }
 
-function buildInlineVisibleNotePlacements(rows: DiffRow[], visibleAgentNotes: VisibleAgentNote[]) {
+function buildInlineVisibleNotePlacements(
+  rows: DiffRow[],
+  hunks: readonly Hunk[],
+  visibleAgentNotes: VisibleAgentNote[],
+) {
   const fileLineRows = lineRows(rows);
   const placementsByAnchor = new Map<string, InlineVisibleNotePlacement[]>();
 
   for (const note of visibleAgentNotes) {
-    const anchorRow = findInlineNoteAnchorRow(rows, note.annotation);
+    const anchorRow = findInlineNoteAnchorRow(rows, hunks, note.annotation);
     if (!anchorRow) {
       continue;
     }
@@ -318,18 +335,20 @@ function rowCanAnchorHunk(row: DiffRow, showHunkHeaders: boolean) {
  */
 export function buildReviewRenderPlan({
   fileId,
+  hunks,
   rows,
   showHunkHeaders,
   visibleAgentNotes = EMPTY_VISIBLE_AGENT_NOTES,
   selectedHunkIndex: _selectedHunkIndex,
 }: {
   fileId: string;
+  hunks: readonly Hunk[];
   rows: DiffRow[];
   showHunkHeaders: boolean;
   visibleAgentNotes?: VisibleAgentNote[];
   selectedHunkIndex?: number;
 }) {
-  const placementsByAnchor = buildInlineVisibleNotePlacements(rows, visibleAgentNotes);
+  const placementsByAnchor = buildInlineVisibleNotePlacements(rows, hunks, visibleAgentNotes);
   const noteGuideSideByRowKey = buildNoteGuideSideByRowKey(placementsByAnchor);
   const plannedRows: PlannedReviewRow[] = [];
   const anchoredHunks = new Set<number>();

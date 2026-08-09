@@ -1,5 +1,5 @@
+import { getAnnotationOwnerHunkIndices } from "../../core/review/notes";
 import type { DiffFile } from "../../core/types";
-import { getAnnotatedHunkIndices } from "./agentAnnotations";
 
 export interface HunkCursor {
   fileId: string;
@@ -13,13 +13,13 @@ export function buildHunkCursors(files: DiffFile[]): HunkCursor[] {
   );
 }
 
-/** Flatten only the annotated hunks into a cursor list for comment navigation. */
-export function buildAnnotatedHunkCursors(files: DiffFile[]): HunkCursor[] {
+/** Flatten only note-owner hunks into a cursor list for comment navigation. */
+export function buildNoteOwnerHunkCursors(files: DiffFile[]): HunkCursor[] {
   return files.flatMap((file) => {
-    const annotated = getAnnotatedHunkIndices(file);
+    const owners = getAnnotationOwnerHunkIndices(file);
     return file.metadata.hunks
       .map((_, hunkIndex) => ({ fileId: file.id, hunkIndex }))
-      .filter((cursor) => annotated.has(cursor.hunkIndex));
+      .filter((cursor) => owners.has(cursor.hunkIndex));
   });
 }
 

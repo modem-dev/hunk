@@ -14,6 +14,7 @@ import {
   type RefObject,
 } from "react";
 import { DEFAULT_TAB_WIDTH } from "../../../core/tabWidth";
+import { alwaysShowReviewNote, reviewNoteSource } from "../../../core/review/notes";
 import type {
   AgentAnnotation,
   CursorLine,
@@ -25,11 +26,7 @@ import type { FileSourceStatus } from "../../diff/expandCollapsedRows";
 import type { ActiveAddNoteAffordance } from "../../diff/PierreDiffView";
 import type { CursorHighlight } from "../../diff/renderRows";
 import type { DraftReviewNote } from "../../hooks/useReviewController";
-import {
-  alwaysShowReviewNote,
-  reviewNoteSource,
-  type VisibleAgentNote,
-} from "../../lib/agentAnnotations";
+import type { VisibleAgentNote } from "../../lib/agentAnnotations";
 import {
   computeRapidScrollOverscanRows,
   RAPID_SCROLL_OVERSCAN_IDLE_MS,

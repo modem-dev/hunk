@@ -43,10 +43,11 @@ function parseState(value: unknown): TestSessionState | null {
   return selectedIndex === null ? null : { selectedIndex };
 }
 
-function createBroker() {
+function createBroker(limits: { liveSessions?: number; aggregateMetadataBytes?: number } = {}) {
   return new SessionBroker<TestSessionInfo, TestSessionState, TestServerMessage>({
     parseRegistration: (value) => parseSessionRegistrationEnvelope(value, parseInfo),
     parseSnapshot: (value) => parseSessionSnapshotEnvelope(value, parseState),
+    limits,
   });
 }
 
@@ -148,6 +149,59 @@ describe("session broker daemon", () => {
     });
 
     daemon.shutdown();
+  });
+
+  test("rejects capacity-exceeding registrations and snapshot growth without mutation", () => {
+    const countDaemon = createSessionBrokerDaemon({
+      broker: createBroker({ liveSessions: 1 }),
+      capabilities: { version: 1 },
+    });
+    const owner = createConnection();
+    countDaemon.handleConnectionMessage(
+      owner.connection,
+      JSON.stringify({
+        type: "register",
+        registration: createRegistration(),
+        snapshot: createSnapshot(),
+      }),
+    );
+    const excess = createConnection();
+    countDaemon.handleConnectionMessage(
+      excess.connection,
+      JSON.stringify({
+        type: "register",
+        registration: createRegistration({ sessionId: "session-2" }),
+        snapshot: createSnapshot(),
+      }),
+    );
+    expect(excess.closed).toBeNull();
+    expect(countDaemon.getSession({ sessionId: "session-1" }).snapshot).toEqual(createSnapshot());
+    countDaemon.shutdown();
+
+    const byteDaemon = createSessionBrokerDaemon({
+      broker: createBroker({ aggregateMetadataBytes: 1_024 }),
+      capabilities: { version: 1 },
+    });
+    const growing = createConnection();
+    byteDaemon.handleConnectionMessage(
+      growing.connection,
+      JSON.stringify({
+        type: "register",
+        registration: createRegistration(),
+        snapshot: createSnapshot(),
+      }),
+    );
+    byteDaemon.handleConnectionMessage(
+      growing.connection,
+      JSON.stringify({
+        type: "snapshot",
+        sessionId: "session-1",
+        snapshot: createSnapshot({ updatedAt: "x".repeat(2_000) }),
+      }),
+    );
+    expect(growing.closed).toBeNull();
+    expect(byteDaemon.getSession({ sessionId: "session-1" }).snapshot).toEqual(createSnapshot());
+    byteDaemon.shutdown();
   });
 
   test("does not expose the raw broker HTTP API by default", async () => {
@@ -268,6 +322,123 @@ describe("session broker daemon", () => {
 
     const response = await pendingResponse;
     await expect(response?.json()).resolves.toEqual({ result: { applied: true } });
+    daemon.shutdown();
+  });
+
+  test("rejects snapshot, heartbeat, and command-result mutation from a second socket", async () => {
+    const daemon = createSessionBrokerDaemon({
+      broker: createBroker(),
+      capabilities: { version: 1 },
+      exposeHttpApi: true,
+    });
+    const owner = createConnection();
+    const attackerSnapshot = createConnection();
+    daemon.handleConnectionMessage(
+      owner.connection,
+      JSON.stringify({
+        type: "register",
+        registration: createRegistration(),
+        snapshot: createSnapshot(),
+      }),
+    );
+    daemon.handleConnectionMessage(
+      attackerSnapshot.connection,
+      JSON.stringify({
+        type: "snapshot",
+        sessionId: "session-1",
+        snapshot: createSnapshot({ selectedIndex: 99 }),
+      }),
+    );
+    expect(attackerSnapshot.closed).toEqual({
+      code: 1008,
+      reason: "Connection does not own session.",
+    });
+    expect(daemon.getSession({ sessionId: "session-1" }).snapshot.state.selectedIndex).toBe(0);
+
+    const attackerRegistration = createConnection();
+    daemon.handleConnectionMessage(
+      attackerRegistration.connection,
+      JSON.stringify({
+        type: "register",
+        registration: createRegistration({ info: { title: "hijacked" } }),
+        snapshot: createSnapshot({ selectedIndex: 42 }),
+      }),
+    );
+    expect(attackerRegistration.closed).toEqual({
+      code: 1008,
+      reason: "Incompatible session registration.",
+    });
+    expect(daemon.getSession({ sessionId: "session-1" })).toMatchObject({
+      registration: { info: { title: "repo working tree" } },
+      snapshot: { state: { selectedIndex: 0 } },
+    });
+
+    const attackerHeartbeat = createConnection();
+    daemon.handleConnectionMessage(
+      attackerHeartbeat.connection,
+      JSON.stringify({ type: "heartbeat", sessionId: "session-1" }),
+    );
+    expect(attackerHeartbeat.closed).toEqual({
+      code: 1008,
+      reason: "Connection does not own session.",
+    });
+
+    const pendingResponse = daemon.handleRequest(
+      new Request("http://broker.test/broker", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "dispatch",
+          selector: { sessionId: "session-1" },
+          command: "annotate",
+          input: { summary: "Review note" },
+        }),
+      }),
+    );
+    await Bun.sleep(0);
+    const outgoing = JSON.parse(owner.sent.at(-1)!) as { requestId: string };
+    const attackerResult = createConnection();
+    daemon.handleConnectionMessage(
+      attackerResult.connection,
+      JSON.stringify({
+        type: "command-result",
+        requestId: outgoing.requestId,
+        ok: true,
+        result: { applied: "attacker" },
+      }),
+    );
+    expect(attackerResult.closed).toEqual({
+      code: 1008,
+      reason: "Connection does not own command.",
+    });
+    expect(daemon.getHealth().pendingCommands).toBe(1);
+    daemon.handleConnectionMessage(
+      owner.connection,
+      JSON.stringify({
+        type: "command-result",
+        requestId: outgoing.requestId,
+        ok: true,
+        result: { applied: true },
+      }),
+    );
+    await expect((await pendingResponse)?.json()).resolves.toEqual({ result: { applied: true } });
+    daemon.shutdown();
+  });
+
+  test("closes websocket envelopes over the complete message limit", () => {
+    const daemon = createSessionBrokerDaemon({
+      broker: createBroker(),
+      capabilities: { version: 1 },
+    });
+    const session = createConnection();
+    daemon.handleConnectionMessage(
+      session.connection,
+      JSON.stringify({ type: "heartbeat", sessionId: "x", filler: "x".repeat(8 * 1024 * 1024) }),
+    );
+    expect(session.closed).toEqual({
+      code: 1008,
+      reason: "Session message exceeds broker limit.",
+    });
     daemon.shutdown();
   });
 

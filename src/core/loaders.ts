@@ -36,6 +36,8 @@ import type {
 
 interface LoadAppBootstrapOptions {
   cwd?: string;
+  /** Override stdin reads for non-interactive hosts and focused loader tests. */
+  readStdinText?: () => Promise<string>;
   /** Selectable custom themes for this session, already merged into menu order. */
   customThemes?: readonly NamedCustomThemeConfig[];
   /** Extension-contributed VCS backends this session may load reviews through. */
@@ -427,25 +429,30 @@ async function loadVcsChangeset(
   };
 }
 
-/** Build a changeset from patch text supplied by file or stdin. */
+/** Build a changeset and resolved input from patch text supplied by file or stdin. */
 async function loadPatchChangeset(
   input: PatchCommandInput,
   agentContext: AgentContext | null,
   cwd = process.cwd(),
+  readStdinText = () => new Response(Bun.stdin.stream()).text(),
 ) {
+  // A real file remains authoritative even after a previous bootstrap recorded its loaded text;
+  // this preserves refresh/watch behavior while stdin-backed sessions retain otherwise-lost input.
   const patchText =
-    input.text ??
-    (!input.file || input.file === "-"
-      ? await new Response(Bun.stdin.stream()).text()
-      : await Bun.file(resolvePath(cwd, input.file)).text());
+    input.file && input.file !== "-"
+      ? await Bun.file(resolvePath(cwd, input.file)).text()
+      : (input.text ?? (await readStdinText()));
 
   const label = input.file && input.file !== "-" ? input.file : "stdin patch";
-  return normalizePatchChangeset(
-    patchText,
-    `Patch review: ${basename(label)}`,
-    label,
-    agentContext,
-  );
+  return {
+    changeset: normalizePatchChangeset(
+      patchText,
+      `Patch review: ${basename(label)}`,
+      label,
+      agentContext,
+    ),
+    input: { ...input, text: patchText },
+  };
 }
 
 /** Resolve CLI input into the fully loaded app bootstrap state. */
@@ -456,6 +463,7 @@ export async function loadAppBootstrap(
     customThemes,
     vcsAdapters,
     gitExecutable = "git",
+    readStdinText,
   }: LoadAppBootstrapOptions = {},
 ): Promise<AppBootstrap> {
   // Capture before loading content so watch mode can detect mutations that race initial loading.
@@ -471,6 +479,7 @@ export async function loadAppBootstrap(
   const agentContext = await loadAgentContext(input.options.agentContext, { cwd });
 
   let changeset: Changeset;
+  let resolvedInput = input;
   let repoRoot: string | undefined;
 
   switch (input.kind) {
@@ -487,7 +496,11 @@ export async function loadAppBootstrap(
       changeset = await loadFileDiffChangeset(input, agentContext, cwd);
       break;
     case "patch":
-      changeset = await loadPatchChangeset(input, agentContext, cwd);
+      {
+        const result = await loadPatchChangeset(input, agentContext, cwd, readStdinText);
+        changeset = result.changeset;
+        resolvedInput = result.input;
+      }
       break;
     case "difftool":
       changeset = await loadFileDiffChangeset(input, agentContext, cwd);
@@ -500,7 +513,7 @@ export async function loadAppBootstrap(
   };
 
   return {
-    input,
+    input: resolvedInput,
     reloadContext: { cwd, repoRoot, initialWatchSignature, vcsAdapters },
     changeset,
     initialMode: input.options.mode ?? "auto",

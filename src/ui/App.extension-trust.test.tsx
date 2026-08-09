@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
-import { act, useState } from "react";
+import { act, useEffect, useState } from "react";
+import { createReviewSessionRuntime } from "../app/reviewSessionRuntime";
 import type { AppBootstrap } from "../core/types";
 import { createEmptyExtensionLoadResult } from "../extensions/types";
 import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
@@ -24,21 +25,38 @@ function createBootstrap(pendingTrustRepoRoot?: string): AppBootstrap {
 }
 
 /**
- * Drive `App` directly so the bootstrap can be replaced without a remount.
+ * Drive the terminal trust adapter while replacing its runtime-provided state.
  *
- * That is what a daemon-driven session reload does (`resetApp: false`), and it
- * is the case where a launch-time-only prompt state would go stale.
+ * This mirrors a soft runtime publication without making App own trust policy.
  */
 function createTrustHarness(initial: AppBootstrap) {
+  const initialRoot = initial.extensions?.pendingTrustRepoRoot ?? null;
+  const offeredRoots = new Set(initialRoot ? [initialRoot] : []);
   let replaceBootstrap: (next: AppBootstrap) => void = () => {};
 
   function Harness() {
+    const [runtime] = useState(() => createReviewSessionRuntime(initial));
     const [bootstrap, setBootstrap] = useState(initial);
-    replaceBootstrap = setBootstrap;
+    const [promptRoot, setPromptRoot] = useState(initialRoot);
+    useEffect(() => () => runtime.dispose(), [runtime]);
+    replaceBootstrap = (next) => {
+      setBootstrap(next);
+      const nextRoot = next.extensions?.pendingTrustRepoRoot ?? null;
+      if (!nextRoot) {
+        setPromptRoot(null);
+      } else if (!offeredRoots.has(nextRoot)) {
+        offeredRoots.add(nextRoot);
+        setPromptRoot(nextRoot);
+      }
+    };
 
     return (
       <App
         bootstrap={bootstrap}
+        reviewStore={runtime.getSnapshot().store}
+        sessionRuntime={runtime}
+        extensionTrustPromptRoot={promptRoot}
+        onCloseExtensionTrustPrompt={() => setPromptRoot(null)}
         onReloadSession={async () => ({
           sessionId: "test",
           inputKind: bootstrap.input.kind,

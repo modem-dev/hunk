@@ -4,6 +4,8 @@ import { platform, tmpdir } from "node:os";
 import { join } from "node:path";
 import { SourceTextTooLargeError } from "./fileSource";
 import { loadAppBootstrap } from "./loaders";
+import { projectReviewDocument } from "./review/document";
+import { reviewInputSourceIdentity } from "./review/sourceIdentity";
 import type { CliInput } from "./types";
 import type { VcsAdapter } from "./vcs/types";
 import { computeWatchSignature } from "./watch";
@@ -175,6 +177,58 @@ afterEach(() => {
 });
 
 describe("loadAppBootstrap", () => {
+  test("retains real stdin patch text for private source identity without exposing it in ReviewDocument", async () => {
+    const patch = (value: string) =>
+      [
+        "diff --git a/stdin.ts b/stdin.ts",
+        "--- a/stdin.ts",
+        "+++ b/stdin.ts",
+        "@@ -1 +1 @@",
+        "-before",
+        `+${value}`,
+        "",
+      ].join("\n");
+    const firstPatch = patch("first-stdin-body");
+    const secondPatch = patch("second-stdin-body");
+    const loadStdinPatch = (text: string, file?: "-") =>
+      loadAppBootstrap(
+        { kind: "patch", file, options: { mode: "auto" } },
+        { cwd: process.cwd(), readStdinText: async () => text },
+      );
+
+    const first = await loadStdinPatch(firstPatch);
+    const second = await loadStdinPatch(secondPatch, "-");
+    expect(first.input).toMatchObject({ kind: "patch", text: firstPatch });
+    expect(first.input.kind === "patch" ? first.input.file : null).toBeUndefined();
+    expect(second.input).toMatchObject({ kind: "patch", file: "-", text: secondPatch });
+
+    const firstIdentity = reviewInputSourceIdentity(first.input, first.reloadContext);
+    const secondIdentity = reviewInputSourceIdentity(second.input, second.reloadContext);
+    expect(firstIdentity).not.toBe(secondIdentity);
+
+    const document = projectReviewDocument(first.changeset, {
+      sourceIdentity: firstIdentity,
+    }).document;
+    expect(JSON.stringify(document)).not.toContain("diff --git");
+    expect(JSON.stringify(document)).not.toContain(firstPatch);
+  });
+
+  test("keeps patch files authoritative after recording their loaded text", async () => {
+    const dir = createTempDir("hunk-resolved-patch-file-");
+    const file = join(dir, "input.patch");
+    const patch = (value: string) =>
+      `diff --git a/file.ts b/file.ts\n--- a/file.ts\n+++ b/file.ts\n@@ -1 +1 @@\n-old\n+${value}\n`;
+    writeFileSync(file, patch("first"));
+
+    const first = await loadAppBootstrap({ kind: "patch", file, options: { mode: "auto" } });
+    expect(first.input).toMatchObject({ kind: "patch", file, text: patch("first") });
+
+    writeFileSync(file, patch("second"));
+    const second = await loadAppBootstrap(first.input);
+    expect(second.input).toMatchObject({ kind: "patch", file, text: patch("second") });
+    expect(second.changeset.files[0]?.metadata.additionLines).toContain("second\n");
+  });
+
   test("synthesizes untracked file diffs an adapter reported by path", async () => {
     const dir = createTempDir("hunk-adapter-untracked-");
     writeFileSync(join(dir, "note.txt"), "hello\n");

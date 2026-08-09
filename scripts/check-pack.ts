@@ -5,8 +5,10 @@ import path from "node:path";
 import { checkExtensionConsumerTypes } from "./extension-consumer-check";
 import { buildDocExamples } from "./extension-doc-examples";
 import { npmCommand } from "./script-helpers";
+import { assertBrowserAssetsCurrent } from "./browser-assets";
 
 const repoRoot = path.resolve(import.meta.dir, "..");
+assertBrowserAssetsCurrent(repoRoot);
 
 /**
  * A representative extension, written the way an author would write one.

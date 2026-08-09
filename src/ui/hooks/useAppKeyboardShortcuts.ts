@@ -424,6 +424,7 @@ export function useAppKeyboardShortcuts({
       // Deliberately no modifier check: Shift+Tab toggles focus exactly like
       // Tab, in both its CSI-u and legacy backtab encodings.
       if (key.name === "tab") {
+        focusAreaRef.current = "files";
         toggleFocusArea();
         return "mine";
       }
@@ -525,6 +526,10 @@ export function useAppKeyboardShortcuts({
     // Dispatch consumes on match (preventDefault inside the loop), so a key
     // that runs a command never doubles as a scroll-box or input key.
     const matched = dispatchAppCommand(commandsRef.current, key);
+    // Input bursts can carry Tab and following text before React commits focus state.
+    if (matched?.id === "hunk.app.toggleFocusArea") {
+      focusAreaRef.current = focusAreaRef.current === "files" ? "filter" : "files";
+    }
     if (matched?.closesMenu) {
       closeMenu();
     }

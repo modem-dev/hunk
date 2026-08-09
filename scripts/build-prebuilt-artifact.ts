@@ -7,6 +7,7 @@ import {
   getHostPlatformPackageSpec,
   releaseArtifactsDir,
 } from "./prebuilt-package-helpers";
+import { assertBrowserAssetsCurrent } from "./browser-assets";
 
 function parseArgs(argv: string[]) {
   let outputRoot: string | undefined;
@@ -41,6 +42,7 @@ export interface StagePrebuiltArtifactOptions {
 /** Stage one standalone prebuilt release artifact for the current host. */
 export function stagePrebuiltArtifact(options: StagePrebuiltArtifactOptions = {}) {
   const repoRoot = path.resolve(options.repoRoot ?? path.resolve(import.meta.dir, ".."));
+  assertBrowserAssetsCurrent(repoRoot);
   const spec = getHostPlatformPackageSpec();
   const binaryName = binaryFilenameForSpec(spec);
   const compiledBinaryCandidates = [

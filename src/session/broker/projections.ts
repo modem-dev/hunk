@@ -9,6 +9,7 @@ import type {
   SessionReviewNoteSummary,
   SessionReviewFile,
 } from "../types";
+import { projectManifestReviewCompatibility } from "../reviewCompatibility";
 
 export interface HunkSessionEntryLike {
   registration: HunkSessionRegistration;
@@ -115,6 +116,10 @@ export function buildHunkSessionReview(
 ): SessionReview {
   const selectedFile = findSelectedReviewFile(entry);
   const includePatch = options.includePatch ?? false;
+  const compatibility = projectManifestReviewCompatibility(
+    entry.registration.info.reviewManifest,
+    entry.snapshot.state.review,
+  );
 
   return {
     sessionId: entry.registration.sessionId,
@@ -129,10 +134,9 @@ export function buildHunkSessionReview(
       ? (selectedFile.hunks[entry.snapshot.state.selectedHunkIndex] ?? null)
       : null,
     showAgentNotes: entry.snapshot.state.showAgentNotes,
-    liveCommentCount: entry.snapshot.state.liveCommentCount,
-    reviewNoteCount:
-      entry.snapshot.state.reviewNoteCount ?? entry.snapshot.state.reviewNotes?.length ?? 0,
-    reviewNotes: options.includeNotes ? (entry.snapshot.state.reviewNotes ?? []) : undefined,
+    liveCommentCount: compatibility.liveComments.length,
+    reviewNoteCount: compatibility.reviewNotes.length,
+    reviewNotes: options.includeNotes ? compatibility.reviewNotes : undefined,
     files: entry.registration.info.files.map((file) => serializeReviewFile(file, includePatch)),
   };
 }

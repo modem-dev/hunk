@@ -63,7 +63,8 @@ export type StartupPlan =
   | {
       kind: "app";
       bootstrap: AppBootstrap;
-      cliInput: CliInput;
+      /** Invocation after terminal normalization but before config resolution. */
+      rawInput: CliInput;
       controllingTerminal: ControllingTerminal | null;
     };
 
@@ -320,7 +321,7 @@ export async function prepareStartupPlan(
   return {
     kind: "app",
     bootstrap,
-    cliInput,
+    rawInput: runtimeCliInput,
     controllingTerminal,
   };
 }

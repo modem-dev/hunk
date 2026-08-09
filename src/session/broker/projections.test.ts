@@ -65,34 +65,43 @@ describe("hunk session projections", () => {
     );
   });
 
-  test("buildHunkSessionReview strips patch text by default and includes it on demand", () => {
+  test("buildHunkSessionReview never embeds registration patch text", () => {
     const entry = createEntry();
 
     const withoutPatch = buildHunkSessionReview(entry);
     expect(withoutPatch.files[0]).not.toHaveProperty("patch");
 
     const withPatch = buildHunkSessionReview(entry, { includePatch: true });
-    expect(withPatch.files[0]).toEqual(expect.objectContaining({ patch: "@@ -1,1 +1,1 @@" }));
+    expect(withPatch.files[0]).not.toHaveProperty("patch");
   });
 
-  test("buildHunkSessionReview can include live review notes on demand", () => {
-    const entry = {
-      registration: createTestSessionRegistration(),
-      snapshot: createTestSessionSnapshot({
-        reviewNoteCount: 1,
-        reviewNotes: [
-          {
-            noteId: "user:1",
-            source: "user",
-            filePath: "src/example.ts",
-            body: "Please cover this case.",
-            author: "user",
-            createdAt: "2026-05-10T00:00:00.000Z",
-            editable: true,
-          },
-        ],
-      }),
-    };
+  test("buildHunkSessionReview derives included notes from canonical semantic state", () => {
+    const registration = createTestSessionRegistration();
+    const snapshot = createTestSessionSnapshot({
+      reviewNoteCount: 1,
+      reviewNotes: [
+        {
+          noteId: "compatibility:contradiction",
+          source: "agent",
+          filePath: "wrong.ts",
+          body: "Must not leak",
+          createdAt: "2026-05-10T00:00:00.000Z",
+          editable: false,
+        },
+      ],
+    });
+    snapshot.state.review.notes.push({
+      id: "user:1",
+      source: "user",
+      origin: "user",
+      fileKey: registration.info.reviewManifest.files[0]!.key,
+      anchor: { intersectingHunkIndices: [], ownerHunkIndex: 0 },
+      summary: "Please cover this case.",
+      author: "user",
+      createdAt: "2026-05-10T00:00:00.000Z",
+      editable: true,
+    });
+    const entry = { registration, snapshot };
 
     expect(buildHunkSessionReview(entry).reviewNotes).toBeUndefined();
     expect(buildHunkSessionReview(entry, { includeNotes: true }).reviewNotes).toEqual([

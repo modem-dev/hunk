@@ -10,8 +10,10 @@ import {
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
+import { assertBrowserAssetsCurrent } from "./browser-assets";
 
 const repoRoot = path.resolve(import.meta.dir, "..");
+assertBrowserAssetsCurrent(repoRoot);
 const outdir = path.join(repoRoot, "dist", "npm");
 const typesOutdir = path.join(repoRoot, "dist", "npm-types");
 const opentuiOutdir = path.join(outdir, "opentui");

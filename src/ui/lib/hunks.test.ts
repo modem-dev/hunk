@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { parseDiffFromFile } from "@pierre/diffs";
 import type { DiffFile } from "../../core/types";
-import { buildAnnotatedHunkCursors, findNextHunkCursor, type HunkCursor } from "./hunks";
+import { buildNoteOwnerHunkCursors, findNextHunkCursor, type HunkCursor } from "./hunks";
 
 /** Build a minimal DiffFile with real Pierre-parsed hunks and optional annotations. */
 function createTestFile(
@@ -85,7 +85,7 @@ describe("annotated hunk navigation", () => {
     });
 
     expect(fileA.metadata.hunks.length).toBe(2);
-    const annotatedCursors = buildAnnotatedHunkCursors([fileA, fileB]);
+    const annotatedCursors = buildNoteOwnerHunkCursors([fileA, fileB]);
 
     // Alpha hunk 0 (line 1) has no annotation, so it should be skipped.
     expect(annotatedCursors).toEqual([
@@ -94,21 +94,51 @@ describe("annotated hunk navigation", () => {
     ]);
   });
 
+  test("navigates a dual-range note only through its preferred-side owner", () => {
+    const fileA = createTestFile("alpha", "alpha.ts", beforeA, afterA, {
+      path: "alpha.ts",
+      annotations: [
+        {
+          oldRange: [1, 1],
+          newRange: [17, 17],
+          summary: "Old side intersects hunk 0, preferred new side owns hunk 1",
+        },
+      ],
+    });
+
+    expect(buildNoteOwnerHunkCursors([fileA])).toEqual([{ fileId: "alpha", hunkIndex: 1 }]);
+  });
+
+  test("navigates a partial preferred range instead of its old-side intersection", () => {
+    const fileA = createTestFile("alpha", "alpha.ts", beforeA, afterA, {
+      path: "alpha.ts",
+      annotations: [
+        {
+          oldRange: [1, 1],
+          newRange: [16, 17],
+          summary: "The new range starts in the gap but intersects hunk 1",
+        },
+      ],
+    });
+
+    expect(buildNoteOwnerHunkCursors([fileA])).toEqual([{ fileId: "alpha", hunkIndex: 1 }]);
+  });
+
   test("returns an empty list when no files have annotations", () => {
     const fileA = createTestFile("alpha", "alpha.ts", beforeA, afterA, null);
     const fileB = createTestFile("beta", "beta.ts", beforeB, afterB, null);
 
-    expect(buildAnnotatedHunkCursors([fileA, fileB])).toEqual([]);
+    expect(buildNoteOwnerHunkCursors([fileA, fileB])).toEqual([]);
   });
 
-  test("skips files with agent context but no matching annotations", () => {
-    // Annotation range doesn't overlap any hunk (line 10 is in the gap between hunks).
+  test("uses the first-hunk owner for ranged annotations outside visible hunks", () => {
+    // Line 10 is in the gap between hunks, so terminal placement and navigation share the fallback.
     const fileA = createTestFile("alpha", "alpha.ts", beforeA, afterA, {
       path: "alpha.ts",
       annotations: [{ newRange: [10, 10], summary: "Note in gap, no hunk overlap" }],
     });
 
-    expect(buildAnnotatedHunkCursors([fileA])).toEqual([]);
+    expect(buildNoteOwnerHunkCursors([fileA])).toEqual([{ fileId: "alpha", hunkIndex: 0 }]);
   });
 
   test("navigates forward and backward through annotated cursors only", () => {
@@ -122,7 +152,7 @@ describe("annotated hunk navigation", () => {
       annotations: [{ newRange: [1, 1], summary: "Note on beta" }],
     });
 
-    const annotatedCursors = buildAnnotatedHunkCursors([fileA, fileB]);
+    const annotatedCursors = buildNoteOwnerHunkCursors([fileA, fileB]);
 
     // Forward from alpha hunk 1 → beta hunk 0
     expect(findNextHunkCursor(annotatedCursors, "alpha", 1, 1)).toEqual({
@@ -154,7 +184,7 @@ describe("annotated hunk navigation", () => {
       annotations: [{ newRange: [17, 17], summary: "Note on hunk 1 only" }],
     });
 
-    const annotatedCursors = buildAnnotatedHunkCursors([fileA]);
+    const annotatedCursors = buildNoteOwnerHunkCursors([fileA]);
 
     // Current position is alpha hunk 0, which is not in the annotated list.
     // Forward should land on the first annotated cursor.

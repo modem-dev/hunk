@@ -1,4 +1,12 @@
-import { existsSync, mkdtempSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
@@ -16,6 +24,19 @@ function createTestRepo() {
 
   mkdirSync(path.join(repoRoot, "dist"), { recursive: true });
   mkdirSync(path.join(repoRoot, "skills", "hunk-review"), { recursive: true });
+  mkdirSync(path.join(repoRoot, "src", "browser"), { recursive: true });
+  cpSync(
+    path.resolve(import.meta.dir, "../src/browser/assets"),
+    path.join(repoRoot, "src/browser/assets"),
+    {
+      recursive: true,
+    },
+  );
+  cpSync(
+    path.resolve(import.meta.dir, "../src/browser/generated"),
+    path.join(repoRoot, "src/browser/generated"),
+    { recursive: true },
+  );
   writeFileSync(path.join(repoRoot, "dist", binaryName), "#!/bin/sh\necho hunk\n", {
     mode: 0o600,
   });
@@ -32,6 +53,13 @@ afterEach(() => {
 });
 
 describe("stagePrebuiltArtifact", () => {
+  test("rejects missing embedded browser assets with an actionable error", () => {
+    const { repoRoot } = createTestRepo();
+    rmSync(path.join(repoRoot, "src", "browser", "generated"), { recursive: true, force: true });
+
+    expect(() => stagePrebuiltArtifact({ repoRoot })).toThrow("Missing generated browser assets");
+  });
+
   test("rejects missing skills directory with an actionable error", () => {
     const { repoRoot } = createTestRepo();
     rmSync(path.join(repoRoot, "skills"), { recursive: true, force: true });

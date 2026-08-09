@@ -63,6 +63,7 @@ export type SessionClientMessage<Info = unknown, State = unknown, Result = unkno
       requestId: string;
       ok: false;
       error: string;
+      errorCode?: string;
     };
 
 export type SessionServerMessage<CommandName extends string = string, Input = unknown> = {

@@ -42,6 +42,7 @@ function measureScenario(name: string, files: ReturnType<typeof createLargeSplit
       const rows = buildSplitRows(file, null, theme);
       plannedRows += buildReviewRenderPlan({
         fileId: file.id,
+        hunks: file.metadata.hunks,
         rows,
         showHunkHeaders: true,
         visibleAgentNotes: [],

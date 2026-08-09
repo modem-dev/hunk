@@ -157,7 +157,7 @@ describe("session broker wrapper", () => {
     const outgoing = JSON.parse(sent[0]!) as { requestId: string; command: string };
     expect(outgoing.command).toBe("annotate");
 
-    broker.handleCommandResult({
+    broker.handleCommandResult(connection, {
       requestId: outgoing.requestId,
       ok: true,
       result: { ok: true },

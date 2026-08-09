@@ -1,57 +1,35 @@
 import { useEffect, useMemo } from "react";
-import type { CliInput, DiffFile } from "../../core/types";
-import { hunkLineRange } from "../../core/liveComments";
+import type { ReviewSessionRuntime } from "../../app/reviewSessionRuntime";
+import type { CliInput } from "../../core/types";
+import type { ReviewStore } from "../../core/review/store";
 import { createHunkSessionBridge } from "../../session/app/bridge";
-import type {
-  HunkSessionBrokerClient,
-  ReloadedSessionResult,
-  ReloadSessionOptions,
-  SessionLiveCommentSummary,
-  SessionReviewNoteSummary,
-} from "../../session/types";
+import type { ReloadedSessionResult, ReloadSessionOptions } from "../../session/types";
 import type { ReviewController } from "./useReviewController";
 
-/** Bridge one live Hunk review session to the local session daemon. */
+/** Register the mounted terminal command adapter with the renderer-neutral runtime authority. */
 export function useHunkSessionBridge({
   addLiveComment,
   addLiveCommentBatch,
   clearLiveComments,
-  hostClient,
-  liveCommentCount,
-  liveCommentSummaries,
   navigateToLocation,
-  noteMarkupWidth,
   openAgentNotes,
   reloadSession,
   removeLiveComment,
-  reviewNoteCount,
-  reviewNoteSummaries,
-  selectedFile,
-  selectedHunk,
-  selectedHunkIndex,
-  showAgentNotes,
+  reviewStore,
+  runtime,
 }: {
   addLiveComment: ReviewController["addLiveComment"];
   addLiveCommentBatch: ReviewController["addLiveCommentBatch"];
   clearLiveComments: ReviewController["clearLiveComments"];
-  hostClient?: HunkSessionBrokerClient;
-  liveCommentCount: number;
-  liveCommentSummaries: SessionLiveCommentSummary[];
   navigateToLocation: ReviewController["navigateToLocation"];
-  /** Width STML note markup currently renders at (see agentNoteMarkupWidth). */
-  noteMarkupWidth?: number;
   openAgentNotes: () => void;
   reloadSession: (
     nextInput: CliInput,
     options?: ReloadSessionOptions,
   ) => Promise<ReloadedSessionResult>;
   removeLiveComment: ReviewController["removeLiveComment"];
-  reviewNoteCount: number;
-  reviewNoteSummaries: SessionReviewNoteSummary[];
-  selectedFile: DiffFile | undefined;
-  selectedHunk: DiffFile["metadata"]["hunks"][number] | undefined;
-  selectedHunkIndex: number;
-  showAgentNotes: boolean;
+  reviewStore: ReviewStore;
+  runtime: ReviewSessionRuntime;
 }) {
   const bridge = useMemo(
     () =>
@@ -75,48 +53,8 @@ export function useHunkSessionBridge({
     ],
   );
 
-  useEffect(() => {
-    if (!hostClient) {
-      return;
-    }
-
-    hostClient.setBridge(bridge);
-
-    return () => {
-      hostClient.setBridge(null);
-    };
-  }, [bridge, hostClient]);
-
-  useEffect(() => {
-    const selectedRange = selectedHunk ? hunkLineRange(selectedHunk) : undefined;
-
-    hostClient?.updateSnapshot({
-      updatedAt: new Date().toISOString(),
-      state: {
-        selectedFileId: selectedFile?.id,
-        selectedFilePath: selectedFile?.path,
-        selectedHunkIndex,
-        selectedHunkOldRange: selectedRange?.oldRange,
-        selectedHunkNewRange: selectedRange?.newRange,
-        showAgentNotes,
-        noteMarkupWidth,
-        liveCommentCount,
-        liveComments: liveCommentSummaries,
-        reviewNoteCount,
-        reviewNotes: reviewNoteSummaries,
-      },
-    });
-  }, [
-    hostClient,
-    liveCommentCount,
-    liveCommentSummaries,
-    noteMarkupWidth,
-    reviewNoteCount,
-    reviewNoteSummaries,
-    selectedFile?.id,
-    selectedFile?.path,
-    selectedHunk,
-    selectedHunkIndex,
-    showAgentNotes,
-  ]);
+  useEffect(
+    () => runtime.registerSessionCommandAdapter(reviewStore, bridge),
+    [bridge, reviewStore, runtime],
+  );
 }

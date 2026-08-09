@@ -2,6 +2,14 @@ import type { ExperimentalFeature } from "../core/experimental";
 import type { CommentTargetInput, DiffSide } from "../core/liveComments";
 import type { CliInput, ReviewNoteSource } from "../core/types";
 import type { SessionReloadReason } from "../extensions/types";
+import type {
+  ApplyReviewActionInput,
+  GetReviewSnapshotInput,
+  HunkReviewCommandResult,
+  HunkReviewManifestV1,
+  HunkReviewStateV1,
+  ReadReviewResourceInput,
+} from "./reviewProtocol";
 import type { SessionBrokerClient } from "../session/broker/brokerClient";
 import type {
   SessionClientMessage,
@@ -21,6 +29,12 @@ export interface SessionFileSummary {
   additions: number;
   deletions: number;
   hunkCount: number;
+  flags?: {
+    untracked: boolean;
+    binary: boolean;
+    tooLarge: boolean;
+    partial: boolean;
+  };
 }
 
 export interface SessionReviewHunk {
@@ -47,11 +61,18 @@ export interface HunkSessionInfo {
   title: string;
   sourceLabel: string;
   experimentalFeatures?: ExperimentalFeature[];
+  /** SHA-256 verifier for the process-local browser review capability; never projected publicly. */
+  browserReviewCapabilityHash?: string;
+  documentGeneration: string;
+  reviewManifest: HunkReviewManifestV1;
   files: SessionReviewFile[];
 }
 
 /** App-owned live state that the broker snapshots and rebroadcasts. */
 export interface HunkSessionState {
+  documentGeneration: string;
+  stateRevision: number;
+  review: HunkReviewStateV1;
   selectedFileId?: string;
   selectedFilePath?: string;
   selectedHunkIndex: number;
@@ -249,6 +270,7 @@ export interface SessionReview {
 }
 
 export type HunkSessionCommandResult =
+  | HunkReviewCommandResult
   | AppliedCommentResult
   | AppliedCommentBatchResult
   | NavigatedSelectionResult
@@ -270,6 +292,9 @@ export type HunkSessionBrokerClient = SessionBrokerClient<
 >;
 
 export type HunkSessionServerMessage =
+  | SessionServerMessage<"read_review_resource", ReadReviewResourceInput>
+  | SessionServerMessage<"apply_review_action", ApplyReviewActionInput>
+  | SessionServerMessage<"get_review_snapshot", GetReviewSnapshotInput>
   | SessionServerMessage<"comment", CommentToolInput>
   | SessionServerMessage<"comment_batch", CommentBatchToolInput>
   | SessionServerMessage<"navigate_to_hunk", NavigateToHunkToolInput>

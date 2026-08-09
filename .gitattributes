@@ -1,0 +1,2 @@
+# Generated browser bundle contains third-party template literals with intentional trailing whitespace.
+src/browser/assets/bootstrap.js -whitespace
