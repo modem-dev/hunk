@@ -15,6 +15,7 @@
     "@astrojs/starlight": "^0.41.5",
     "@fontsource-variable/jetbrains-mono": "^5.2.8",
     "astro": "^7.1.4",
+    "starlight-dot-md": "^0.2.1",
     "starlight-llms-txt": "^0.11.0"
   },
   "devDependencies": {

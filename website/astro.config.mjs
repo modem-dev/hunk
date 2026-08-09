@@ -2,6 +2,7 @@ import { unified } from "@astrojs/markdown-remark";
 import { defineConfig } from "astro/config";
 import sitemap from "@astrojs/sitemap";
 import starlight from "@astrojs/starlight";
+import starlightDotMd from "starlight-dot-md";
 import starlightLlmsTxt from "starlight-llms-txt";
 
 export default defineConfig({
@@ -15,6 +16,11 @@ export default defineConfig({
         "Review code changes and collaborate with coding agents in a desktop-inspired terminal diff viewer.",
       social: [{ icon: "github", label: "GitHub", href: "https://github.com/modem-dev/hunk" }],
       plugins: [
+        // Serves every docs page's Markdown source at the same URL plus `.md`, so a
+        // hunk.dev link pasted into an agent resolves to clean Markdown instead of
+        // HTML that has to be converted back. Complements the llms.txt corpus below:
+        // that is for learning Hunk, this is for reading one page.
+        starlightDotMd(),
         // Publishes /llms.txt, /llms-small.txt, and /llms-full.txt so coding agents can
         // pull Hunk's docs directly instead of scraping rendered HTML. The full corpus is
         // small enough (~130KB of Markdown) that an agent can fetch llms-full.txt in one go.

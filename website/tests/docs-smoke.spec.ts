@@ -134,3 +134,27 @@ test("llms.txt routes expose the docs to coding agents", async ({ request }) => 
     expect(linked.ok(), path).toBe(true);
   }
 });
+
+test("docs pages serve their Markdown source at .md URLs", async ({ request }) => {
+  const install = await request.get("/docs/start/install.md");
+  expect(install.ok()).toBe(true);
+  const body = await install.text();
+
+  // Raw source, not an HTML page that merely ends in .md.
+  expect(body).not.toContain("<!DOCTYPE html");
+  expect(body.startsWith("---")).toBe(true);
+  expect(body).toContain("title: Install");
+  // Content matches the rendered page, including fenced code blocks.
+  expect(body).toContain("```bash");
+  expect(body).toContain("npm install --global hunkdiff");
+
+  // The .md route is a companion to the HTML page, which must still render.
+  const html = await request.get("/docs/start/install/");
+  expect(html.ok()).toBe(true);
+  expect(await html.text()).toContain("<!DOCTYPE html");
+
+  // The plugin must not shadow the hand-authored skill file served from public/.
+  const skill = await request.get("/docs/hunk-review-skill.md");
+  expect(skill.ok()).toBe(true);
+  expect(await skill.text()).toContain("name: hunk-review");
+});
