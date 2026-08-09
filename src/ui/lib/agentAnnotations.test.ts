@@ -2,10 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { createTestDiffFile, lines } from "../../../test/helpers/diff-helpers";
 import { buildLiveComment, resolveCommentTarget } from "../../core/liveComments";
 import {
-  annotationRangeLabel,
-  getAnnotatedHunkIndices,
-  getSelectedAnnotations,
-} from "./agentAnnotations";
+  getAnnotationOwnerHunkIndices,
+  getAnnotationsVisibleInHunk,
+} from "../../core/review/notes";
+import { annotationRangeLabel } from "./agentAnnotations";
 
 function createContextHeavyHunkFile() {
   const beforeLines = Array.from({ length: 25 }, (_, i) => `line${i + 1}`);
@@ -71,7 +71,7 @@ describe("agent annotations", () => {
       },
     };
 
-    expect([...getAnnotatedHunkIndices(annotatedFile)]).toEqual([0]);
-    expect(getSelectedAnnotations(annotatedFile, hunk)).toEqual([comment]);
+    expect([...getAnnotationOwnerHunkIndices(annotatedFile)]).toEqual([0]);
+    expect(getAnnotationsVisibleInHunk(annotatedFile, hunk)).toEqual([comment]);
   });
 });

@@ -10,6 +10,8 @@ Use it when adding a new module or deciding where an existing responsibility bel
 src/app/             executable composition: startup plans and shared session bootstrap
 src/core/            normalized review model, loading, patch handling, VCS contracts,
                      configuration, and runtime primitives
+src/core/review/     versioned renderer-neutral review documents, semantic identity,
+                     note policy, resources, and parity manifests
 src/core/vcs/        provider-neutral VCS catalog, contracts, operation dispatch, and host support
 src/extensions/      extension host, registry, trust, lifecycle, and bundled extensions
 src/session/         shared session protocol, schemas, types, agent surface, app bridge, and broker transport
@@ -37,12 +39,26 @@ one owns its behaviour.
   Renderer access remains limited to `extensions/default/ui/`, the bundled-sidebar boundary.
 - `core` must not import `ui` or `extensions`. Shared data needed by both belongs in core-owned
   structural contracts or `src/lib`, never in a reverse dependency.
+- `extensions` may consume core model and VCS contracts, but must stay renderer-free except for
+  `extensions/default/ui/`, which is the explicit bundled-sidebar boundary.
+- `core` must not import `ui`. Shared data needed by both belongs in `core`, not `ui/lib`.
+- `core/review` owns renderer-neutral document/identity/note policy. Terminal row insertion,
+  note geometry, syntax-highlight spans, and deterministic STML line layout remain in `ui`.
 - `extension-api/types.ts` stays import-free. It is a published declaration boundary, enforced by
   the package checks.
 - `opentui` and `extension-api` are public entrypoint directories, not general internal buckets.
 
 `scripts/source-boundaries.test.ts` mechanically enforces `core -> ui`, `core -> extensions`,
 and bundled-provider -> core boundaries, including the public extension-barrel requirement.
+
+## Review document invariant
+
+The phased web-review boundary is described in
+[the web review architecture](web-review-architecture.md). `ReviewDocumentV1` is initially a
+serialization-safe projection of the normalized `Changeset`; it preserves exact stream order
+and addresses patch/source bodies by generation without changing the terminal model. The review
+process is authoritative. The loopback broker may mirror documents/state and proxy actions but
+must not load repositories, run transforms, or derive note ownership.
 
 ## Bootstrap invariant
 

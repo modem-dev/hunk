@@ -1,11 +1,28 @@
 import { describe, expect, test } from "bun:test";
 import {
+  MAX_GENERATION_IDENTIFIER_BYTES,
+  MAX_GENERATION_IDENTIFIER_CHARACTERS,
   SESSION_BROKER_REGISTRATION_VERSION,
+  parseGenerationIdentifier,
   parseSessionRegistrationEnvelope,
   parseSessionSnapshotEnvelope,
 } from "./brokerWire";
 
 describe("session broker wire parsing", () => {
+  test("generation identifiers use one compact ASCII wire syntax", () => {
+    expect(parseGenerationIdentifier("generation:0123-ab_CD.9")).toBe("generation:0123-ab_CD.9");
+    expect(
+      parseGenerationIdentifier("g".repeat(MAX_GENERATION_IDENTIFIER_CHARACTERS)),
+    ).not.toBeNull();
+    expect(
+      parseGenerationIdentifier("g".repeat(MAX_GENERATION_IDENTIFIER_CHARACTERS + 1)),
+    ).toBeNull();
+    expect(parseGenerationIdentifier("g".repeat(300 * 1024))).toBeNull();
+    expect(parseGenerationIdentifier("generation with spaces")).toBeNull();
+    expect(parseGenerationIdentifier("generation:💥")).toBeNull();
+    expect(MAX_GENERATION_IDENTIFIER_BYTES).toBe(MAX_GENERATION_IDENTIFIER_CHARACTERS);
+  });
+
   test("registration requires the current websocket registration version", () => {
     expect(
       parseSessionRegistrationEnvelope(

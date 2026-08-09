@@ -197,7 +197,7 @@ describe("startup planning", () => {
       throw new Error("Expected app startup plan.");
     }
 
-    expect(plan.cliInput).toMatchObject({
+    expect(plan.rawInput).toMatchObject({
       kind: "patch",
       file: "-",
       text: "diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n",
@@ -373,6 +373,29 @@ describe("startup planning", () => {
     }
   });
 
+  test("keeps the raw invocation separate from config-resolved bootstrap input", async () => {
+    const rawInput: CliInput = { kind: "vcs", staged: false, options: {} };
+    const configuredInput: CliInput = {
+      ...rawInput,
+      options: { theme: "config-theme", mode: "stack" },
+    };
+    const plan = await prepareStartupPlan(["bun", "hunk", "diff"], {
+      parseCliImpl: async () => rawInput as ParsedCliInput,
+      resolveRuntimeCliInputImpl: (input) => input,
+      resolveConfiguredCliInputImpl: () => createTestConfigResolution(configuredInput),
+      loadStartupExtensionsImpl: async () => createEmptyExtensionLoadResult(),
+      loadAppBootstrapImpl: async (input) => createBootstrap(input),
+      stdinIsTTY: true,
+      stdoutIsTTY: false,
+    });
+
+    expect(plan).toMatchObject({
+      kind: "app",
+      rawInput: { options: {} },
+      bootstrap: { input: { options: { theme: "config-theme", mode: "stack" } } },
+    });
+  });
+
   test("rejects watch mode for stdin-backed patch inputs", async () => {
     const cliInput: CliInput = {
       kind: "patch",
@@ -420,7 +443,7 @@ describe("startup planning", () => {
 
     expect(plan).toMatchObject({
       kind: "app",
-      cliInput,
+      rawInput: cliInput,
       controllingTerminal,
     });
     expect(opened).toBe(1);
@@ -497,7 +520,7 @@ describe("startup planning", () => {
 
     expect(plan).toMatchObject({
       kind: "app",
-      cliInput,
+      rawInput: cliInput,
       controllingTerminal,
     });
     expect(opened).toBe(1);

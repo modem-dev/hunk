@@ -45,6 +45,10 @@ export function createHunkSessionBridge(handlers: HunkSessionBridgeHandlers) {
       message: HunkSessionServerMessage,
     ): Promise<HunkSessionCommandResult> => {
       switch (message.command) {
+        case "read_review_resource":
+        case "apply_review_action":
+        case "get_review_snapshot":
+          throw new Error(`${message.command} must be handled by ReviewSessionRuntime.`);
         case "comment": {
           const result = handlers.addLiveComment(message.input, `mcp:${message.requestId}`, {
             reveal: message.input.reveal,

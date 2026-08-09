@@ -12,7 +12,7 @@ import type { AgentAnnotation, DiffFile } from "../../core/types";
 import type { NavigateToHunkToolInput, SelectedHunkSummary } from "../../session/types";
 import { filterReviewFiles, mergeFileAnnotationsByFileId } from "./files";
 import {
-  buildAnnotatedHunkCursors,
+  buildNoteOwnerHunkCursors,
   buildHunkCursors,
   findNextHunkCursor,
   type HunkCursor,
@@ -50,21 +50,13 @@ export function buildReviewStreamState({
     allFiles,
     visibleFiles,
     hunkCursors: buildHunkCursors(visibleFiles),
-    annotatedHunkCursors: buildAnnotatedHunkCursors(visibleFiles),
+    annotatedHunkCursors: buildNoteOwnerHunkCursors(visibleFiles),
   };
 }
 
-/** Resolve the selected file using the visible stream first, then the hidden current selection. */
-export function resolveSelectedFile(
-  allFiles: DiffFile[],
-  visibleFiles: DiffFile[],
-  selectedFileId: string,
-) {
-  return (
-    visibleFiles.find((file) => file.id === selectedFileId) ??
-    allFiles.find((file) => file.id === selectedFileId) ??
-    visibleFiles[0]
-  );
+/** Resolve the store-authoritative selection only when it is in the visible stream. */
+export function resolveSelectedFile(visibleFiles: DiffFile[], selectedFileId: string) {
+  return visibleFiles.find((file) => file.id === selectedFileId);
 }
 
 /** Format the currently selected hunk for daemon snapshots and session command replies. */
@@ -116,7 +108,7 @@ export function resolveReviewNavigationTarget({
   if (input.commentDirection) {
     const delta = input.commentDirection === "next" ? 1 : -1;
     const hunkCursors = buildHunkCursors(visibleFiles);
-    const annotatedCursors = buildAnnotatedHunkCursors(visibleFiles);
+    const annotatedCursors = buildNoteOwnerHunkCursors(visibleFiles);
     const nextCursor = findNextHunkCursor(
       annotatedCursors,
       currentFileId,

@@ -1,9 +1,10 @@
 import { createTextAttributes, type TextareaRenderable } from "@opentui/core";
 import { flushSync } from "@opentui/react";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { reviewNoteSource } from "../../../core/review/notes";
 import type { AgentAnnotation, DiffFile, LayoutMode } from "../../../core/types";
 import { agentNoteBoxLayout } from "../../lib/agentNoteGeometry";
-import { annotationRangeLabel, reviewNoteSource } from "../../lib/agentAnnotations";
+import { annotationRangeLabel } from "../../lib/agentAnnotations";
 import { wrapText } from "../../lib/agentPopover";
 
 import { sanitizeTerminalLine } from "../../../lib/terminalText";

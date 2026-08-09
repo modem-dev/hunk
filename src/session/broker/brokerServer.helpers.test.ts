@@ -54,8 +54,17 @@ describe("parseHostAndPort", () => {
     expect(parseHostAndPort("127.0.0.1:7000")).toEqual({ host: "127.0.0.1", port: 7000 });
   });
 
-  test("rejects host:port with a non-numeric port", () => {
-    expect(parseHostAndPort("127.0.0.1:abc")).toBeNull();
+  test("rejects incomplete, suffixed, zero, and out-of-range decimal ports", () => {
+    for (const authority of [
+      "127.0.0.1:abc",
+      "127.0.0.1:7000junk",
+      "localhost:7000.5",
+      "localhost:+7000",
+      "localhost:0",
+      "localhost:65536",
+    ]) {
+      expect(parseHostAndPort(authority)).toBeNull();
+    }
   });
 
   test("parses a bracketed IPv6 literal with a port", () => {
@@ -74,12 +83,16 @@ describe("parseHostAndPort", () => {
     expect(parseHostAndPort("[::1]x")).toBeNull();
   });
 
-  test("rejects a bracketed host with a zero port", () => {
-    expect(parseHostAndPort("[::1]:0")).toBeNull();
+  test("rejects malformed bracketed IPv6 ports without accepting numeric prefixes", () => {
+    for (const authority of ["[::1]:0", "[::1]:7000junk", "[::1]:65536", "[::1]:70.00"]) {
+      expect(parseHostAndPort(authority)).toBeNull();
+    }
   });
 
-  test("tolerates an unbracketed IPv6 literal by dropping the port", () => {
-    expect(parseHostAndPort("::1")).toEqual({ host: "::1", port: undefined });
+  test("rejects every unbracketed IPv6 literal", () => {
+    for (const authority of ["::1", "::ffff:127.0.0.1", "0:0:0:0:0:0:0:1"]) {
+      expect(parseHostAndPort(authority)).toBeNull();
+    }
   });
 });
 
@@ -122,6 +135,11 @@ describe("validateHostHeader", () => {
       headers: { host: `127.0.0.1:${PORT}` },
     });
     expect(validateHostHeader(request, PORT, false)).toBeNull();
+  });
+
+  test("rejects unbracketed IPv6 even when the broker expects default port 80", () => {
+    const request = new Request("http://127.0.0.1/", { headers: { host: "::1" } });
+    expect(validateHostHeader(request, 80, false)?.status).toBe(403);
   });
 });
 
@@ -172,6 +190,7 @@ describe("handleSessionApiRequest", () => {
       getSession: record("getSession", createTestListedSession({ sessionId: "s-1" })),
       getSelectedContext: record("getSelectedContext", { sessionId: "s-1" }),
       getSessionReview: record("getSessionReview", { title: "review" }),
+      getSessionReviewWithResources: record("getSessionReviewWithResources", { title: "review" }),
       listComments: record("listComments", []),
       dispatchCommand: record("dispatchCommand", { ok: true }),
       ...overrides,
@@ -224,7 +243,7 @@ describe("handleSessionApiRequest", () => {
       "listSessions",
       "getSession",
       "getSelectedContext",
-      "getSessionReview",
+      "getSessionReviewWithResources",
     ]);
   });
 

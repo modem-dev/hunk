@@ -403,6 +403,7 @@ describe("Pierre diff rows", () => {
     const rows = buildSplitRows(file, null, theme);
     const plannedRows = buildReviewRenderPlan({
       fileId: file.id,
+      hunks: file.metadata.hunks,
       rows,
       showHunkHeaders: true,
     });
@@ -455,7 +456,12 @@ describe("Pierre diff rows", () => {
     };
     const theme = resolveTheme("github-dark-default", null);
     const rows = buildSplitRows(file, null, theme);
-    const plannedRows = buildReviewRenderPlan({ fileId: file.id, rows, showHunkHeaders: true });
+    const plannedRows = buildReviewRenderPlan({
+      fileId: file.id,
+      hunks: file.metadata.hunks,
+      rows,
+      showHunkHeaders: true,
+    });
     const changedRow = plannedRows.find(
       (row) =>
         row.kind === "diff-row" &&
@@ -495,6 +501,7 @@ describe("Pierre diff rows", () => {
     const rows = buildStackRows(file, null, theme);
     const plannedRows = buildReviewRenderPlan({
       fileId: file.id,
+      hunks: file.metadata.hunks,
       rows,
       showHunkHeaders: true,
     });
@@ -530,6 +537,7 @@ describe("Pierre diff rows", () => {
     const rows = buildSplitRows(file, null, theme);
     const plannedRows = buildReviewRenderPlan({
       fileId: file.id,
+      hunks: file.metadata.hunks,
       rows,
       showHunkHeaders: true,
     });

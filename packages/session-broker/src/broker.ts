@@ -1,6 +1,7 @@
 import {
   SessionBrokerState,
   type SessionBrokerEntry,
+  type SessionBrokerStateLimits,
   type SessionRegistration,
   type SessionServerMessage,
   type SessionSnapshot,
@@ -30,6 +31,7 @@ export interface SessionBrokerRecord<Info = unknown, State = unknown> {
 export interface SessionBrokerOptions<Info, State> {
   parseRegistration: (value: unknown) => SessionRegistration<Info> | null;
   parseSnapshot: (value: unknown) => SessionSnapshot<State> | null;
+  limits?: Partial<SessionBrokerStateLimits>;
   describeSession?: (
     registration: SessionRegistration<Info>,
     snapshot: SessionSnapshot<State>,
@@ -51,8 +53,12 @@ export interface SessionBrokerController<
     registrationInput: unknown,
     snapshotInput: unknown,
   ): boolean;
-  updateSnapshot(sessionId: string, snapshotInput: unknown): UpdateSnapshotResult;
-  markSessionSeen(sessionId: string): void;
+  updateSnapshot(
+    connection: SessionBrokerPeer,
+    sessionId: string,
+    snapshotInput: unknown,
+  ): UpdateSnapshotResult;
+  markSessionSeen(connection: SessionBrokerPeer, sessionId: string): boolean;
   unregisterConnection(connection: SessionBrokerPeer): void;
   pruneStaleSessions(options: { ttlMs: number; now?: number }): number;
   dispatchCommand(options: {
@@ -62,12 +68,16 @@ export interface SessionBrokerController<
     timeoutMessage: string;
     timeoutMs?: number;
   }): Promise<CommandResult>;
-  handleCommandResult(message: {
-    requestId: string;
-    ok: boolean;
-    result?: CommandResult;
-    error?: string;
-  }): void;
+  handleCommandResult(
+    connection: SessionBrokerPeer,
+    message: {
+      requestId: string;
+      ok: boolean;
+      result?: CommandResult;
+      error?: string;
+      errorCode?: string;
+    },
+  ): "accepted" | "not-owner" | "not-found";
   shutdown(error?: Error): void;
 }
 
@@ -116,14 +126,17 @@ export class SessionBroker<
     this.describeSession =
       options.describeSession ?? ((registration, _snapshot) => defaultSessionTitle(registration));
 
-    this.state = new SessionBrokerState({
-      parseRegistration: options.parseRegistration,
-      parseSnapshot: options.parseSnapshot,
-      buildListedSession: (entry) => this.buildRecord(entry),
-      buildSelectedContext: (session) => session,
-      buildSessionReview: (entry) => this.buildRecord(entry),
-      listComments: () => [],
-    });
+    this.state = new SessionBrokerState(
+      {
+        parseRegistration: options.parseRegistration,
+        parseSnapshot: options.parseSnapshot,
+        buildListedSession: (entry) => this.buildRecord(entry),
+        buildSelectedContext: (session) => session,
+        buildSessionReview: (entry) => this.buildRecord(entry),
+        listComments: () => [],
+      },
+      options.limits,
+    );
   }
 
   listSessions() {
@@ -150,12 +163,16 @@ export class SessionBroker<
     return this.state.registerSession(connection, registrationInput, snapshotInput);
   }
 
-  updateSnapshot(sessionId: string, snapshotInput: unknown): UpdateSnapshotResult {
-    return this.state.updateSnapshot(sessionId, snapshotInput);
+  updateSnapshot(
+    connection: SessionBrokerPeer,
+    sessionId: string,
+    snapshotInput: unknown,
+  ): UpdateSnapshotResult {
+    return this.state.updateSnapshot(connection, sessionId, snapshotInput);
   }
 
-  markSessionSeen(sessionId: string) {
-    this.state.markSessionSeen(sessionId);
+  markSessionSeen(connection: SessionBrokerPeer, sessionId: string) {
+    return this.state.markSessionSeen(connection, sessionId);
   }
 
   unregisterConnection(connection: SessionBrokerPeer) {
@@ -201,13 +218,17 @@ export class SessionBroker<
     });
   }
 
-  handleCommandResult(message: {
-    requestId: string;
-    ok: boolean;
-    result?: CommandResult;
-    error?: string;
-  }) {
-    this.state.handleCommandResult(message);
+  handleCommandResult(
+    connection: SessionBrokerPeer,
+    message: {
+      requestId: string;
+      ok: boolean;
+      result?: CommandResult;
+      error?: string;
+      errorCode?: string;
+    },
+  ) {
+    return this.state.handleCommandResult(connection, message);
   }
 
   shutdown(error = new Error("The session broker shut down.")) {

@@ -4,11 +4,30 @@ import type {
   SessionTerminalLocation,
   SessionTerminalMetadata,
 } from "./types";
+import { utf8ByteLength } from "./limits";
 
 /** Version the live broker registration payload separately from the public session CLI API. */
 export const SESSION_BROKER_REGISTRATION_VERSION = 2;
+export const MAX_GENERATION_IDENTIFIER_CHARACTERS = 128;
+export const MAX_GENERATION_IDENTIFIER_BYTES = 128;
+
+const GENERATION_IDENTIFIER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
 
 type JsonRecord = Record<string, unknown>;
+
+/** Parse one compact ASCII generation identifier before app-owned data is retained. */
+export function parseGenerationIdentifier(value: unknown): string | null {
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    value.length > MAX_GENERATION_IDENTIFIER_CHARACTERS ||
+    utf8ByteLength(value) > MAX_GENERATION_IDENTIFIER_BYTES ||
+    !GENERATION_IDENTIFIER_PATTERN.test(value)
+  ) {
+    return null;
+  }
+  return value;
+}
 
 /** Return one JSON object record when the wire payload is object-shaped. */
 function asRecord(value: unknown): JsonRecord | null {

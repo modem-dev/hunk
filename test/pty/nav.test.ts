@@ -53,6 +53,37 @@ describe("PTY navigation", () => {
     }
   });
 
+  test("comment navigation follows the preferred partial range to its later hunk", async () => {
+    const fixture = harness.createPartialRangeNavigationRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "stack", "--agent-context", fixture.agentContext, "--agent-notes"],
+      cwd: fixture.dir,
+      cols: 120,
+      rows: 14,
+    });
+
+    try {
+      const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+      expect(initial).toContain("line01 = 1001");
+      expect(initial).not.toContain("line20 = 2000");
+
+      await session.press("}");
+      const laterHunk = await harness.waitForSnapshot(
+        session,
+        (text) =>
+          text.includes("Preferred partial range owns the later hunk.") &&
+          text.includes("export const line20 = 20;"),
+        5_000,
+      );
+
+      expect(laterHunk).not.toContain("line01 = 1001");
+    } finally {
+      session.close();
+    }
+  });
+
   test("real hunk navigation jumps to later hunks in the review stream", async () => {
     const fixture = harness.createMultiHunkFilePair();
     const session = await harness.launchHunk({

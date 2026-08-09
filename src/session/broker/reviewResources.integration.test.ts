@@ -1,0 +1,387 @@
+import { describe, expect, test } from "bun:test";
+import { createReviewSessionRuntime } from "../../app/reviewSessionRuntime";
+import type { AppBootstrap } from "../../core/types";
+import { createSessionRegistration } from "../app/registration";
+import { createSessionSnapshotFromReviewState } from "../app/reviewSnapshot";
+import type {
+  HunkSessionBrokerClient,
+  HunkSessionCommandResult,
+  HunkSessionServerMessage,
+} from "../types";
+import { createTestDiffFile } from "../../../test/helpers/diff-helpers";
+import { ReviewResourceCache } from "./reviewResourceCache";
+import { HunkSessionBrokerState } from "./state";
+
+function bootstrapWithPatch(patch: string): AppBootstrap {
+  const file = createTestDiffFile({
+    id: "file-1",
+    path: "large.patch.txt",
+    before: "old\n",
+    after: "new\n",
+  });
+  return {
+    input: { kind: "diff", left: "before", right: "after", options: {} },
+    changeset: {
+      id: "large-review",
+      title: "large review",
+      sourceLabel: "before → after",
+      files: [{ ...file, patch }],
+    },
+    initialMode: "split",
+    reloadContext: { cwd: process.cwd() },
+  };
+}
+
+/** Connect a runtime-native command bridge to one in-memory daemon state. */
+function connectRuntime(
+  bootstrap: AppBootstrap,
+  mutateRegistration?: (registration: ReturnType<typeof createSessionRegistration>) => void,
+  state = new HunkSessionBrokerState(),
+) {
+  const runtime = createReviewSessionRuntime(bootstrap);
+  const runtimeSnapshot = runtime.getSnapshot();
+  const registration = createSessionRegistration(bootstrap, runtimeSnapshot.projection.document);
+  mutateRegistration?.(registration);
+  const snapshot = createSessionSnapshotFromReviewState(runtimeSnapshot.store.getSnapshot());
+  let bridge: {
+    dispatchCommand(message: HunkSessionServerMessage): Promise<HunkSessionCommandResult>;
+  } | null = null;
+  const host = {
+    getRegistration: () => registration,
+    setBridge: (next: typeof bridge) => {
+      bridge = next;
+    },
+    replaceSession: () => {},
+    updateSnapshot: () => {},
+  } as unknown as HunkSessionBrokerClient;
+  runtime.attachHostClient(host);
+
+  const socket = {
+    send(data: string) {
+      const message = JSON.parse(data) as HunkSessionServerMessage;
+      if (!bridge) throw new Error("Expected runtime bridge.");
+      void bridge.dispatchCommand(message).then(
+        (result) =>
+          state.handleCommandResult(socket, { requestId: message.requestId, ok: true, result }),
+        (error) =>
+          state.handleCommandResult(socket, {
+            requestId: message.requestId,
+            ok: false,
+            error: error instanceof Error ? error.message : String(error),
+          }),
+      );
+    },
+  };
+  expect(state.registerSession(socket, registration, snapshot)).toBe(true);
+  return {
+    runtime,
+    state,
+    socket,
+    registration,
+    dispatch: (message: HunkSessionServerMessage) => bridge!.dispatchCommand(message),
+  };
+}
+
+class RacingReviewResourceCache extends ReviewResourceCache {
+  onCacheHit: (() => void) | null = null;
+
+  override get(sessionId: string, generation: string, resourceId: string) {
+    const bytes = super.get(sessionId, generation, resourceId);
+    if (bytes) this.onCacheHit?.();
+    return bytes;
+  }
+}
+
+describe("chunked review resources", () => {
+  test("keeps >2 MiB patches out of registration and reconstructs them in bounded chunks", async () => {
+    const patch = `@@ -1 +1 @@\n-${"a".repeat(1_100_000)}\n+${"b".repeat(1_100_000)}\n`;
+    const connected = connectRuntime(bootstrapWithPatch(patch));
+    expect(JSON.stringify(connected.registration)).not.toContain(patch);
+    expect(Buffer.byteLength(JSON.stringify(connected.registration))).toBeLessThan(100_000);
+
+    const review = await connected.state.getSessionReviewWithResources(
+      { sessionId: connected.registration.sessionId },
+      { includePatch: true },
+    );
+    expect(review.files[0]?.patch).toBe(patch);
+    expect(connected.state.getReviewResourceCacheEntryCount()).toBe(1);
+
+    connected.state.unregisterSocket(connected.socket);
+    expect(connected.state.getReviewResourceCacheEntryCount()).toBe(0);
+    connected.runtime.dispose();
+  });
+
+  test("never returns a retired generation from a cache-hit replacement race", async () => {
+    const cache = new RacingReviewResourceCache();
+    const state = new HunkSessionBrokerState(cache);
+    const connected = connectRuntime(bootstrapWithPatch("cached patch"), undefined, state);
+    await state.getSessionReviewWithResources(
+      { sessionId: connected.registration.sessionId },
+      { includePatch: true },
+    );
+    const replacement = structuredClone(connected.registration);
+    replacement.info.documentGeneration = "generation:replacement";
+    replacement.info.reviewManifest.generation = "generation:replacement";
+    for (const resource of replacement.info.reviewManifest.resources) {
+      resource.generation = "generation:replacement";
+    }
+    const replacementSnapshot = createSessionSnapshotFromReviewState(
+      connected.runtime.getSnapshot().store.getSnapshot(),
+    );
+    replacementSnapshot.state.documentGeneration = "generation:replacement";
+    replacementSnapshot.state.review.documentGeneration = "generation:replacement";
+    cache.onCacheHit = () => {
+      cache.onCacheHit = null;
+      state.registerSession(connected.socket, replacement, replacementSnapshot);
+    };
+    await expect(
+      state.getSessionReviewWithResources(
+        { sessionId: connected.registration.sessionId },
+        { includePatch: true },
+      ),
+    ).rejects.toThrow("retired");
+    connected.runtime.dispose();
+  });
+
+  test("rejects digest mismatches and releases the failed assembly reservation", async () => {
+    const patch = "@@ -1 +1 @@\n-old\n+new\n";
+    const cache = new ReviewResourceCache();
+    const connected = connectRuntime(
+      bootstrapWithPatch(patch),
+      (registration) => {
+        registration.info.reviewManifest.resources[0]!.digest = "0".repeat(64);
+      },
+      new HunkSessionBrokerState(cache),
+    );
+    await expect(
+      connected.state.getSessionReviewWithResources(
+        { sessionId: connected.registration.sessionId },
+        { includePatch: true },
+      ),
+    ).rejects.toThrow("inconsistent metadata");
+    expect(connected.state.getReviewResourceCacheEntryCount()).toBe(0);
+    expect(cache.getReservationCount()).toBe(0);
+    connected.runtime.dispose();
+  });
+
+  test("rejects undescribed lazy sources without loading or allocating them", async () => {
+    const bootstrap = bootstrapWithPatch("patch");
+    let sourceReads = 0;
+    bootstrap.changeset.files[0]!.sourceFetcher = {
+      cacheKey: "source:test",
+      getFullText: async () => {
+        sourceReads += 1;
+        return "x".repeat(33 * 1024 * 1024);
+      },
+    };
+    const connected = connectRuntime(bootstrap);
+    const descriptor = connected.registration.info.reviewManifest.resources.find(
+      (resource) => resource.kind === "source" && resource.side === "new",
+    )!;
+    const result = await connected.dispatch({
+      type: "command",
+      requestId: "source-1",
+      command: "read_review_resource",
+      input: {
+        sessionId: connected.registration.sessionId,
+        generation: connected.registration.info.documentGeneration,
+        resourceId: descriptor.id,
+        offset: 0,
+        length: 256 * 1024,
+      },
+    });
+    expect(result).toMatchObject({
+      kind: "review-error",
+      error: { code: "unknown-resource" },
+    });
+    expect(sourceReads).toBe(0);
+    connected.runtime.dispose();
+  });
+
+  test("serves reconnect snapshots and applies generation-guarded semantic actions", async () => {
+    const connected = connectRuntime(bootstrapWithPatch("patch"));
+    const generation = connected.registration.info.documentGeneration;
+    const snapshot = await connected.dispatch({
+      type: "command",
+      requestId: "snapshot-1",
+      command: "get_review_snapshot",
+      input: { sessionId: connected.registration.sessionId, generation },
+    });
+    expect(snapshot).toMatchObject({
+      kind: "review-snapshot",
+      generation,
+      state: { stateRevision: 0, showAgentNotes: false },
+    });
+
+    const applied = await connected.dispatch({
+      type: "command",
+      requestId: "action-1",
+      command: "apply_review_action",
+      input: {
+        sessionId: connected.registration.sessionId,
+        generation,
+        action: { type: "notes/set-visibility", visible: true },
+      },
+    });
+    expect(applied).toMatchObject({
+      kind: "review-action",
+      generation,
+      stateRevision: 1,
+      state: { showAgentNotes: true },
+    });
+    const stale = await connected.dispatch({
+      type: "command",
+      requestId: "action-stale",
+      command: "apply_review_action",
+      input: {
+        sessionId: connected.registration.sessionId,
+        generation: "generation:retired",
+        action: { type: "filter/set", filter: "src" },
+      },
+    });
+    expect(stale).toMatchObject({ kind: "review-error", error: { code: "stale-generation" } });
+    connected.runtime.dispose();
+  });
+
+  test("rejects malformed action DTOs and missing generations without mutating state", async () => {
+    const connected = connectRuntime(bootstrapWithPatch("patch"));
+    const generation = connected.registration.info.documentGeneration;
+    const initialRevision = connected.runtime.getSnapshot().store.getSnapshot().stateRevision;
+    const malformed = [
+      { type: "selection/select", selection: { fileKey: "file", hunkIndex: -1 } },
+      {
+        type: "selection/select",
+        selection: { fileKey: "file", hunkIndex: 0, contextDigest: { bad: true } },
+      },
+      {
+        type: "selection/select",
+        selection: { fileKey: "file", hunkIndex: 0 },
+        reveal: true,
+      },
+      {
+        type: "selection/select",
+        selection: { fileKey: "file", hunkIndex: 0 },
+        reveal: { kind: "viewport" },
+      },
+      { type: "filter/set", filter: "src", extra: true },
+      {
+        type: "selection/set-line",
+        fileKey: "file",
+        hunkIndex: 0,
+        side: "new",
+        line: 1,
+        reveal: "yes",
+      },
+    ];
+    for (const action of malformed) {
+      const result = await connected.dispatch({
+        type: "command",
+        requestId: crypto.randomUUID(),
+        command: "apply_review_action",
+        input: { sessionId: connected.registration.sessionId, generation, action },
+      } as HunkSessionServerMessage);
+      expect(result).toMatchObject({ kind: "review-error", error: { code: "invalid-action" } });
+    }
+    const missingGeneration = await connected.dispatch({
+      type: "command",
+      requestId: "missing-generation",
+      command: "apply_review_action",
+      input: { action: { type: "notes/set-visibility", visible: true } },
+    } as HunkSessionServerMessage);
+    expect(missingGeneration).toMatchObject({
+      kind: "review-error",
+      error: { code: "invalid-command" },
+    });
+    expect(connected.runtime.getSnapshot().store.getSnapshot().stateRevision).toBe(initialRevision);
+    connected.runtime.dispose();
+  });
+
+  test("rejects malformed complete review command DTOs without mutation", async () => {
+    const connected = connectRuntime(bootstrapWithPatch("patch"));
+    const sessionId = connected.registration.sessionId;
+    const generation = connected.registration.info.documentGeneration;
+    const resourceId = connected.registration.info.reviewManifest.resources[0]!.id;
+    const revision = connected.runtime.getSnapshot().store.getSnapshot().stateRevision;
+    const malformed = [
+      {
+        type: "command",
+        requestId: "bad-read-extra",
+        command: "read_review_resource",
+        input: { sessionId, generation, resourceId, offset: 0, length: 1, extra: true },
+      },
+      {
+        type: "command",
+        requestId: "bad-read-id",
+        command: "read_review_resource",
+        input: { sessionId, generation, resourceId: "", offset: 0, length: 1 },
+      },
+      {
+        type: "command",
+        requestId: "bad-action-session",
+        command: "apply_review_action",
+        input: { sessionId: "", generation, action: { type: "filter/set", filter: "changed" } },
+      },
+      {
+        type: "command",
+        requestId: "bad-snapshot-extra",
+        command: "get_review_snapshot",
+        input: { sessionId, generation, extra: true },
+      },
+      {
+        type: "command",
+        requestId: "bad-outer-extra",
+        command: "get_review_snapshot",
+        input: { sessionId, generation },
+        extra: true,
+      },
+    ];
+    for (const message of malformed) {
+      const result = await connected.dispatch(message as unknown as HunkSessionServerMessage);
+      expect(result).toMatchObject({ kind: "review-error", error: { code: "invalid-command" } });
+    }
+    expect(connected.runtime.getSnapshot().store.getSnapshot().stateRevision).toBe(revision);
+    connected.runtime.dispose();
+  });
+
+  test("returns typed failures for invalid, stale, cross-session, and unknown resource reads", async () => {
+    const connected = connectRuntime(bootstrapWithPatch("patch"));
+    const generation = connected.registration.info.documentGeneration;
+    const resourceId = connected.registration.info.reviewManifest.resources[0]!.id;
+    const read = (input: Record<string, unknown>) =>
+      connected.dispatch({
+        type: "command",
+        requestId: crypto.randomUUID(),
+        command: "read_review_resource",
+        input: {
+          sessionId: connected.registration.sessionId,
+          generation,
+          resourceId,
+          offset: 0,
+          length: 1,
+          ...input,
+        },
+      } as HunkSessionServerMessage);
+
+    await expect(read({ generation: "" })).resolves.toMatchObject({
+      kind: "review-error",
+      error: { code: "invalid-command" },
+    });
+    await expect(read({ offset: -1 })).resolves.toMatchObject({
+      kind: "review-error",
+      error: { code: "invalid-range" },
+    });
+    await expect(read({ generation: "generation:retired" })).resolves.toMatchObject({
+      kind: "review-error",
+      error: { code: "stale-generation" },
+    });
+    await expect(read({ sessionId: "another-session" })).resolves.toMatchObject({
+      kind: "review-error",
+      error: { code: "cross-session" },
+    });
+    await expect(read({ resourceId: "resource:unknown" })).resolves.toMatchObject({
+      kind: "review-error",
+      error: { code: "unknown-resource" },
+    });
+    connected.runtime.dispose();
+  });
+});

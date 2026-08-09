@@ -1,0 +1,686 @@
+import { describe, expect, test } from "bun:test";
+import {
+  createTestDiffFile,
+  createTestSourceFetcher,
+  lines,
+} from "../../../test/helpers/diff-helpers";
+import { projectReviewDocument } from "./document";
+import { projectReviewNote } from "./notes";
+import { reviewLineContextDigest } from "./reconcile";
+import { createReviewStore } from "./store";
+import type { DiffFile } from "../types";
+
+/** Build an ordered review document from small real diff files. */
+function documentFor(files: DiffFile[], generation: string, sourceLabel = "repo:test") {
+  return projectReviewDocument(
+    { id: generation, sourceLabel, title: "Review", files },
+    { generation, sourceIdentity: sourceLabel },
+  ).document;
+}
+
+/** Build one one-hunk file suitable for semantic store tests. */
+function file(id: string, path: string, value: number) {
+  return createTestDiffFile({
+    id,
+    path,
+    before: `export const value = ${value};\n`,
+    after: `export const value = ${value + 1};\n`,
+  });
+}
+
+/** Build one stored mutable note at a file line. */
+function storedNoteAt(
+  document: ReturnType<typeof documentFor>,
+  sourceFile: DiffFile,
+  id: string,
+  line = 1,
+) {
+  const semanticFile = document.files.find((entry) => entry.runtimeId === sourceFile.id)!;
+  const note = projectReviewNote({
+    annotation: {
+      id,
+      source: "mcp",
+      summary: `note ${id}`,
+      newRange: [line, line + 1],
+      oldRange: [line, line + 1],
+    },
+    fileKey: semanticFile.key,
+    hunks: sourceFile.metadata.hunks,
+    origin: "live-agent",
+  });
+  return {
+    note,
+    resolution: "active" as const,
+    contextDigest: reviewLineContextDigest(semanticFile, "new", line),
+  };
+}
+
+/** Build one stored mutable note at a file's first changed line. */
+function storedNote(document: ReturnType<typeof documentFor>, sourceFile: DiffFile, id: string) {
+  return storedNoteAt(document, sourceFile, id);
+}
+
+describe("ReviewStore", () => {
+  test("publishes synchronously and increments revisions only for real mutations", () => {
+    const document = documentFor([file("alpha", "alpha.ts", 1)], "generation:one");
+    const store = createReviewStore(document);
+    const observed: number[] = [];
+    store.subscribe(() => observed.push(store.getSnapshot().stateRevision));
+
+    const returned = store.dispatch({ type: "filter/set", filter: "alpha" });
+    expect(returned).toBe(store.getSnapshot());
+    expect(returned.stateRevision).toBe(1);
+    expect(observed).toEqual([1]);
+
+    store.dispatch({ type: "filter/set", filter: "alpha" });
+    expect(store.getSnapshot().stateRevision).toBe(1);
+    expect(observed).toEqual([1]);
+
+    const fileKey = document.files[0]!.key;
+    store.dispatch({
+      type: "expansion/set-source-status",
+      expectedGeneration: document.generation,
+      fileKey,
+      status: { kind: "loading" },
+    });
+    store.dispatch({
+      type: "expansion/set-source-status",
+      expectedGeneration: document.generation,
+      fileKey,
+      status: { kind: "loading" },
+    });
+    expect(store.getSnapshot().stateRevision).toBe(2);
+    expect(observed).toEqual([1, 2]);
+  });
+
+  test("shares filter fallback and semantic selection across file reorder", () => {
+    const alpha = file("alpha", "alpha.ts", 1);
+    const beta = file("beta", "beta.ts", 2);
+    const first = documentFor([alpha, beta], "generation:one");
+    const store = createReviewStore(first);
+    const betaKey = first.files[1]!.key;
+
+    store.dispatch({
+      type: "selection/select",
+      selection: { fileKey: betaKey, hunkIndex: 0, side: "new", line: 1 },
+    });
+    store.dispatch({ type: "filter/set", filter: "alpha" });
+    expect(store.getSnapshot().selection.fileKey).toBe(first.files[0]!.key);
+    store.dispatch({ type: "filter/set", filter: "" });
+    store.dispatch({
+      type: "selection/select",
+      selection: { fileKey: betaKey, hunkIndex: 0, side: "new", line: 1 },
+    });
+
+    const reordered = documentFor(
+      [
+        { ...beta, id: "beta-reload" },
+        { ...alpha, id: "alpha-reload" },
+      ],
+      "generation:two",
+    );
+    store.dispatch({
+      type: "document/reconcile",
+      expectedGeneration: "generation:one",
+      document: reordered,
+    });
+    expect(store.getSnapshot().selection.fileKey).toBe(betaKey);
+    expect(reordered.files.find((entry) => entry.key === betaKey)?.path).toBe("beta.ts");
+  });
+
+  test("reconciles live and user notes without sidecar reorder moving them", () => {
+    const alpha = file("alpha", "alpha.ts", 1);
+    const beta = file("beta", "beta.ts", 2);
+    const first = documentFor([alpha, beta], "generation:one");
+    const store = createReviewStore(first);
+    const live = storedNote(first, beta, "live:1");
+    const user = {
+      ...storedNote(first, beta, "user:1"),
+      note: {
+        ...storedNote(first, beta, "user:1").note,
+        source: "user" as const,
+        origin: "user" as const,
+      },
+    };
+    store.dispatch({
+      type: "notes/add-live",
+      expectedGeneration: first.generation,
+      notes: [live],
+    });
+    store.dispatch({
+      type: "draft/start",
+      expectedGeneration: first.generation,
+      draft: {
+        id: "draft:1",
+        fileKey: user.note.fileKey,
+        hunkIndex: 0,
+        side: "new",
+        line: 1,
+        body: "user",
+      },
+    });
+    store.dispatch({ type: "draft/save", expectedGeneration: first.generation, note: user });
+
+    const reordered = documentFor([beta, alpha], "generation:two");
+    store.dispatch({
+      type: "document/reconcile",
+      expectedGeneration: first.generation,
+      document: reordered,
+    });
+    expect(store.getSnapshot().liveNotes[0]).toMatchObject({
+      resolution: "active",
+      note: { fileKey: reordered.files[0]!.key },
+    });
+    expect(store.getSnapshot().userNotes[0]).toMatchObject({
+      resolution: "active",
+      note: { fileKey: reordered.files[0]!.key },
+    });
+  });
+
+  test("retains notes on removed files as explicit orphans", () => {
+    const alpha = file("alpha", "alpha.ts", 1);
+    const first = documentFor([alpha], "generation:one");
+    const store = createReviewStore(first);
+    store.dispatch({
+      type: "notes/add-live",
+      expectedGeneration: first.generation,
+      notes: [storedNote(first, alpha, "live:orphan")],
+    });
+    const empty = documentFor([], "generation:two");
+    store.dispatch({
+      type: "document/reconcile",
+      expectedGeneration: first.generation,
+      document: empty,
+    });
+    expect(store.getSnapshot().liveNotes[0]?.resolution).toBe("orphaned");
+    expect(store.getSnapshot().selection.fileKey).toBeNull();
+  });
+
+  test("preserves valid gaps but resets unproven source text across generations", () => {
+    const before = Array.from({ length: 20 }, (_, index) => `line ${index + 1}`);
+    const after = [...before];
+    after[9] = "line 10 changed";
+    const alpha = createTestDiffFile({
+      id: "alpha",
+      path: "alpha.ts",
+      before: lines(...before),
+      after: lines(...after),
+      sourceFetcher: {
+        ...createTestSourceFetcher(() => "alpha-source"),
+        cacheKey: "source:alpha",
+      },
+    });
+    const beta = file("beta", "beta.ts", 1);
+    const first = documentFor([alpha, beta], "generation:one");
+    const store = createReviewStore(first);
+    const semanticAlpha = first.files[0]!;
+    const hunk = semanticAlpha.hunks[0]!;
+    const side = "new" as const;
+    const source = first.resources.find(
+      (resource) => resource.id === semanticAlpha.sourceResourceIds[side],
+    );
+    expect(source?.kind).toBe("source");
+    store.dispatch({
+      type: "expansion/toggle",
+      expectedGeneration: first.generation,
+      gap: {
+        fileKey: semanticAlpha.key,
+        gapId: "before:0",
+        side,
+        oldRange: [hunk.deletionStart - hunk.collapsedBefore, hunk.deletionStart - 1],
+        newRange: [hunk.additionStart - hunk.collapsedBefore, hunk.additionStart - 1],
+        sourceIdentity: source!.kind === "source" ? source!.sourceIdentity : "",
+        expanded: true,
+      },
+    });
+    store.dispatch({
+      type: "expansion/set-source-status",
+      expectedGeneration: first.generation,
+      fileKey: semanticAlpha.key,
+      status: { kind: "loaded", text: lines(...after) },
+    });
+
+    const reordered = documentFor([beta, alpha], "generation:two");
+    store.dispatch({
+      type: "document/reconcile",
+      expectedGeneration: first.generation,
+      document: reordered,
+    });
+    expect(store.getSnapshot().expandedGaps).toHaveLength(1);
+    expect(store.getSnapshot().sourceStatusByFileKey[semanticAlpha.key]).toBeUndefined();
+
+    const changedSource = {
+      ...reordered,
+      generation: "generation:three",
+      resources: reordered.resources.map((resource) =>
+        resource.kind === "source" && resource.fileKey === semanticAlpha.key
+          ? { ...resource, generation: "generation:three", sourceIdentity: "source:changed" }
+          : { ...resource, generation: "generation:three" },
+      ),
+    };
+    store.dispatch({
+      type: "document/reconcile",
+      expectedGeneration: reordered.generation,
+      document: changedSource,
+    });
+    expect(store.getSnapshot().expandedGaps).toEqual([]);
+    expect(store.getSnapshot().sourceStatusByFileKey).toEqual({});
+  });
+
+  test("preserves loaded source only when materialized digests prove equality", () => {
+    const sourceFile = createTestDiffFile({
+      id: "materialized",
+      path: "materialized.ts",
+      before: lines(...Array.from({ length: 20 }, (_, index) => `line ${index + 1}`)),
+      after: lines(
+        ...Array.from({ length: 20 }, (_, index) =>
+          index === 9 ? "line 10 changed" : `line ${index + 1}`,
+        ),
+      ),
+      sourceFetcher: {
+        ...createTestSourceFetcher(() => "source"),
+        cacheKey: "source:materialized",
+      },
+    });
+    const projection = (generation: string) =>
+      projectReviewDocument(
+        { id: generation, sourceLabel: "repo:test", title: "Review", files: [sourceFile] },
+        {
+          generation,
+          sourceIdentity: "repo:test",
+          expandedContextByFileId: {
+            [sourceFile.id]: [
+              {
+                gapId: "before:0",
+                side: "new",
+                oldRange: [1, 9],
+                newRange: [1, 9],
+                sourceText: "materialized source\n",
+              },
+            ],
+          },
+        },
+      ).document;
+    const first = projection("generation:one");
+    const store = createReviewStore(first);
+    const semantic = first.files[0]!;
+    const expanded = semantic.expandedContext[0]!;
+    const source = first.resources.find((resource) => resource.id === expanded.sourceResourceId)!;
+    store.dispatch({
+      type: "expansion/toggle",
+      expectedGeneration: first.generation,
+      gap: {
+        fileKey: semantic.key,
+        gapId: expanded.gapId,
+        side: expanded.side,
+        oldRange: expanded.oldRange,
+        newRange: expanded.newRange,
+        sourceIdentity: source.kind === "source" ? source.sourceIdentity : "",
+        expanded: true,
+      },
+    });
+    store.dispatch({
+      type: "expansion/set-source-status",
+      expectedGeneration: first.generation,
+      fileKey: semantic.key,
+      status: { kind: "loaded", text: "materialized source\n" },
+    });
+    const next = projection("generation:two");
+    store.dispatch({
+      type: "document/reconcile",
+      expectedGeneration: first.generation,
+      document: next,
+    });
+    expect(store.getSnapshot().expandedGaps).toHaveLength(1);
+    expect(store.getSnapshot().sourceStatusByFileKey[semantic.key]).toEqual({
+      kind: "loaded",
+      text: "materialized source\n",
+    });
+  });
+
+  test("does not reconcile selection, notes, or expansions through paths in another source", () => {
+    const sourceFile = createTestDiffFile({
+      id: "same-a",
+      path: "same.ts",
+      before: lines(...Array.from({ length: 12 }, (_, index) => `line ${index + 1}`)),
+      after: lines(
+        ...Array.from({ length: 12 }, (_, index) =>
+          index === 5 ? "line 6 changed" : `line ${index + 1}`,
+        ),
+      ),
+      sourceFetcher: {
+        ...createTestSourceFetcher(() => "source"),
+        cacheKey: "shared-cache-key",
+      },
+    });
+    const first = documentFor([sourceFile], "generation:one", "repo:first");
+    const store = createReviewStore(first);
+    const semantic = first.files[0]!;
+    const hunk = semantic.hunks[0]!;
+    store.dispatch({
+      type: "selection/set-line",
+      fileKey: semantic.key,
+      hunkIndex: 0,
+      side: "new",
+      line: 6,
+      contextDigest: reviewLineContextDigest(semantic, "new", 6),
+    });
+    store.dispatch({
+      type: "notes/add-live",
+      expectedGeneration: first.generation,
+      notes: [storedNoteAt(first, sourceFile, "live:cross-source", 6)],
+    });
+    store.dispatch({
+      type: "expansion/toggle",
+      expectedGeneration: first.generation,
+      gap: {
+        fileKey: semantic.key,
+        gapId: "before:0",
+        side: "new",
+        oldRange: [hunk.deletionStart - hunk.collapsedBefore, hunk.deletionStart - 1],
+        newRange: [hunk.additionStart - hunk.collapsedBefore, hunk.additionStart - 1],
+        sourceIdentity: "shared-cache-key",
+        expanded: true,
+      },
+    });
+
+    const other = documentFor([{ ...sourceFile, id: "same-b" }], "generation:two", "repo:other");
+    store.dispatch({
+      type: "document/reconcile",
+      expectedGeneration: first.generation,
+      document: other,
+    });
+
+    expect(store.getSnapshot().selection).toEqual({ fileKey: other.files[0]!.key, hunkIndex: 0 });
+    expect(store.getSnapshot().liveNotes[0]?.resolution).toBe("orphaned");
+    expect(store.getSnapshot().expandedGaps).toEqual([]);
+  });
+
+  test("falls back to the first filtered file when reload changes filter matches", () => {
+    const alpha = file("alpha", "alpha.ts", 1);
+    const beta = file("beta", "beta.ts", 2);
+    const firstBase = documentFor([alpha, beta], "generation:one");
+    const first = {
+      ...firstBase,
+      files: firstBase.files.map((entry) => ({
+        ...entry,
+        agentSummary: entry.path === "beta.ts" ? "needle" : undefined,
+      })),
+    };
+    const store = createReviewStore(first);
+    store.dispatch({ type: "filter/set", filter: "needle" });
+    expect(store.getSnapshot().selection.fileKey).toBe(first.files[1]!.key);
+
+    const nextBase = documentFor([beta, alpha], "generation:two");
+    const next = {
+      ...nextBase,
+      files: nextBase.files.map((entry) => ({
+        ...entry,
+        agentSummary: entry.path === "alpha.ts" ? "needle" : undefined,
+      })),
+    };
+    store.dispatch({
+      type: "document/reconcile",
+      expectedGeneration: first.generation,
+      document: next,
+    });
+    expect(store.getSnapshot().selection).toEqual({ fileKey: next.files[1]!.key, hunkIndex: 0 });
+  });
+
+  test("updates every anchor field when note context moves", () => {
+    const originalLines = Array.from({ length: 12 }, (_, index) => `line ${index + 1}`);
+    const changedLines = [...originalLines];
+    changedLines[5] = "line 6 changed";
+    const original = createTestDiffFile({
+      id: "moved",
+      path: "moved.ts",
+      before: lines(...originalLines),
+      after: lines(...changedLines),
+    });
+    const first = documentFor([original], "generation:one");
+    const store = createReviewStore(first);
+    store.dispatch({
+      type: "notes/add-live",
+      expectedGeneration: first.generation,
+      notes: [storedNoteAt(first, original, "live:moved", 6)],
+    });
+
+    const prefix = ["prefix 1", "prefix 2", "prefix 3"];
+    const moved = createTestDiffFile({
+      id: "moved-reload",
+      path: "moved.ts",
+      before: lines(...prefix, ...originalLines),
+      after: lines(...prefix, ...changedLines),
+    });
+    const next = documentFor([moved], "generation:two");
+    store.dispatch({
+      type: "document/reconcile",
+      expectedGeneration: first.generation,
+      document: next,
+    });
+
+    const entry = store.getSnapshot().liveNotes[0]!;
+    expect(entry.resolution).toBe("active");
+    expect(entry.note.anchor).toEqual({
+      oldRange: [9, 10],
+      newRange: [9, 10],
+      preferred: { side: "new", line: 9 },
+      intersectingHunkIndices: [0],
+      ownerHunkIndex: 0,
+    });
+    expect(entry.contextDigest).toBe(reviewLineContextDigest(next.files[0]!, "new", 9));
+  });
+
+  test("rematches dual ranges independently when only the new side moves", () => {
+    const originalLines = Array.from({ length: 12 }, (_, index) => `line ${index + 1}`);
+    const changedLines = [...originalLines];
+    changedLines[5] = "line 6 changed";
+    const original = createTestDiffFile({
+      id: "asymmetric",
+      path: "asymmetric.ts",
+      before: lines(...originalLines),
+      after: lines(...changedLines),
+    });
+    const first = documentFor([original], "generation:one");
+    const store = createReviewStore(first);
+    store.dispatch({
+      type: "notes/add-live",
+      expectedGeneration: first.generation,
+      notes: [storedNoteAt(first, original, "live:asymmetric", 6)],
+    });
+
+    const prefix = ["prefix 1", "prefix 2", "prefix 3"];
+    const movedNewSide = createTestDiffFile({
+      id: "asymmetric-reload",
+      path: "asymmetric.ts",
+      before: lines(...originalLines),
+      after: lines(...prefix, ...changedLines),
+    });
+    const next = documentFor([movedNewSide], "generation:two");
+    store.dispatch({
+      type: "document/reconcile",
+      expectedGeneration: first.generation,
+      document: next,
+    });
+
+    expect(store.getSnapshot().liveNotes[0]).toMatchObject({
+      resolution: "active",
+      note: {
+        anchor: {
+          oldRange: [6, 7],
+          newRange: [9, 10],
+          preferred: { side: "new", line: 9 },
+        },
+      },
+    });
+  });
+
+  test("marks a dual-range note stale when one declared side cannot be verified", () => {
+    const originalLines = Array.from({ length: 12 }, (_, index) => `line ${index + 1}`);
+    const changedLines = [...originalLines];
+    changedLines[5] = "line 6 changed";
+    const original = createTestDiffFile({
+      id: "unverified",
+      path: "unverified.ts",
+      before: lines(...originalLines),
+      after: lines(...changedLines),
+    });
+    const first = documentFor([original], "generation:one");
+    const store = createReviewStore(first);
+    store.dispatch({
+      type: "notes/add-live",
+      expectedGeneration: first.generation,
+      notes: [storedNoteAt(first, original, "live:unverified", 6)],
+    });
+    const replacedOldSide = createTestDiffFile({
+      id: "unverified-reload",
+      path: "unverified.ts",
+      before: lines(...Array.from({ length: 12 }, (_, index) => `replacement ${index + 1}`)),
+      after: lines("prefix 1", "prefix 2", "prefix 3", ...changedLines),
+    });
+    const next = documentFor([replacedOldSide], "generation:two");
+    store.dispatch({
+      type: "document/reconcile",
+      expectedGeneration: first.generation,
+      document: next,
+    });
+    expect(store.getSnapshot().liveNotes[0]).toMatchObject({
+      resolution: "stale",
+      contextDigest: reviewLineContextDigest(next.files[0]!, "new", 9),
+      note: { anchor: { oldRange: [6, 7], newRange: [9, 10] } },
+    });
+  });
+
+  test("reattaches orphan notes when their source-scoped file and context return", () => {
+    const alpha = file("alpha", "alpha.ts", 1);
+    const first = documentFor([alpha], "generation:one");
+    const store = createReviewStore(first);
+    store.dispatch({
+      type: "notes/add-live",
+      expectedGeneration: first.generation,
+      notes: [storedNote(first, alpha, "live:return")],
+    });
+    const empty = documentFor([], "generation:two");
+    store.dispatch({
+      type: "document/reconcile",
+      expectedGeneration: first.generation,
+      document: empty,
+    });
+    const returned = documentFor([{ ...alpha, id: "alpha-returned" }], "generation:three");
+    store.dispatch({
+      type: "document/reconcile",
+      expectedGeneration: empty.generation,
+      document: returned,
+    });
+    expect(store.getSnapshot().liveNotes[0]).toMatchObject({
+      resolution: "active",
+      note: { fileKey: returned.files[0]!.key },
+    });
+  });
+
+  test("disambiguates mutable note ids globally and removes only one addressed note", () => {
+    const alpha = {
+      ...file("alpha", "alpha.ts", 1),
+      agent: { path: "alpha.ts", annotations: [{ id: "duplicate", summary: "document" }] },
+    };
+    const document = documentFor([alpha], "generation:one");
+    const store = createReviewStore(document);
+    const first = storedNote(document, alpha, "duplicate");
+    store.dispatch({
+      type: "notes/add-live",
+      expectedGeneration: document.generation,
+      notes: [first, first],
+    });
+    expect(store.getSnapshot().liveNotes.map((entry) => entry.note.id)).toEqual([
+      "duplicate:1",
+      "duplicate:2",
+    ]);
+    store.dispatch({
+      type: "notes/remove-live",
+      expectedGeneration: document.generation,
+      noteId: "duplicate:1",
+    });
+    expect(store.getSnapshot().liveNotes.map((entry) => entry.note.id)).toEqual(["duplicate:2"]);
+  });
+
+  test("disambiguates retained mutable ids when replacement document introduces a collision", () => {
+    const alpha = file("alpha", "alpha.ts", 1);
+    const first = documentFor([alpha], "generation:one");
+    const store = createReviewStore(first);
+    store.dispatch({
+      type: "notes/add-live",
+      expectedGeneration: first.generation,
+      notes: [storedNote(first, alpha, "arriving")],
+    });
+    const annotated = {
+      ...alpha,
+      agent: { path: alpha.path, annotations: [{ id: "arriving", summary: "document note" }] },
+    };
+    const next = documentFor([annotated], "generation:two");
+    store.dispatch({
+      type: "document/reconcile",
+      expectedGeneration: first.generation,
+      document: next,
+    });
+    expect(next.files[0]!.notes[0]!.id).toBe("arriving");
+    expect(store.getSnapshot().liveNotes[0]!.note.id).toBe("arriving:1");
+  });
+
+  test("treats equivalent reconcile and draft starts as no-ops but context changes as mutations", () => {
+    const document = documentFor([file("alpha", "alpha.ts", 1)], "generation:one");
+    const store = createReviewStore(document);
+    store.dispatch({
+      type: "document/reconcile",
+      expectedGeneration: document.generation,
+      document: structuredClone(document),
+    });
+    expect(store.getSnapshot().stateRevision).toBe(0);
+    const draft = {
+      id: "draft:one",
+      fileKey: document.files[0]!.key,
+      hunkIndex: 0,
+      side: "new" as const,
+      line: 1,
+      body: "",
+    };
+    store.dispatch({ type: "draft/start", expectedGeneration: document.generation, draft });
+    store.dispatch({
+      type: "draft/start",
+      expectedGeneration: document.generation,
+      draft: structuredClone(draft),
+    });
+    expect(store.getSnapshot().stateRevision).toBe(1);
+    store.dispatch({
+      type: "selection/set-line",
+      fileKey: document.files[0]!.key,
+      hunkIndex: 0,
+      side: "new",
+      line: 1,
+      contextDigest: "digest:first",
+    });
+    store.dispatch({
+      type: "selection/set-line",
+      fileKey: document.files[0]!.key,
+      hunkIndex: 0,
+      side: "new",
+      line: 1,
+      contextDigest: "digest:second",
+    });
+    expect(store.getSnapshot().selection.contextDigest).toBe("digest:second");
+    expect(store.getSnapshot().stateRevision).toBe(3);
+  });
+
+  test("rejects stale generation note and expansion actions", () => {
+    const alpha = file("alpha", "alpha.ts", 1);
+    const document = documentFor([alpha], "generation:current");
+    const store = createReviewStore(document);
+    expect(() =>
+      store.dispatch({
+        type: "notes/add-live",
+        expectedGeneration: "generation:stale",
+        notes: [],
+      }),
+    ).toThrow("Stale review action");
+    expect(store.getSnapshot().stateRevision).toBe(0);
+  });
+});

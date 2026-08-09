@@ -2,6 +2,7 @@ import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createServer } from "node:net";
 import { cleanupTestConfigHomes, createTestConfigHome } from "../helpers/config-home";
 
 const repoRoot = process.cwd();
@@ -44,6 +45,21 @@ function cleanupTempDirs() {
       rmSync(dir, { recursive: true, force: true });
     }
   }
+}
+
+/** Reserve and release one loopback port for an isolated daemon-backed test. */
+async function reserveLoopbackPort() {
+  const server = createServer();
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("Expected loopback TCP address.");
+  await new Promise<void>((resolve, reject) =>
+    server.close((error) => (error ? reject(error) : resolve())),
+  );
+  return address.port;
 }
 
 function shellQuote(value: string) {
@@ -283,6 +299,46 @@ sessionDescribe("session CLI integration", () => {
       });
     } finally {
       await quitHunkSession(session, fixture);
+    }
+  });
+
+  test("review --include-patch reconstructs patch bytes through the daemon producer", async () => {
+    if (!ttyToolsAvailable) return;
+
+    const port = await reserveLoopbackPort();
+    const fixture = createFixtureFiles(
+      "review-patch",
+      ["export const value = 1;"],
+      ["export const value = 2;"],
+    );
+    const session = spawnHunkSession(fixture, { port });
+
+    try {
+      const listed = await waitUntil("registered patch-producing session", () => {
+        const { proc, stdout } = runSessionCli(["list", "--json"], port);
+        if (proc.exitCode !== 0) return null;
+        const parsed = JSON.parse(stdout) as SessionListJson;
+        return parsed.sessions.length > 0 ? parsed.sessions : null;
+      });
+      const review = runSessionCli(
+        ["review", listed[0]!.sessionId, "--include-patch", "--json"],
+        port,
+      );
+      expect(review.proc.exitCode).toBe(0);
+      expect(review.stderr).toBe("");
+      expect(JSON.parse(review.stdout)).toMatchObject({
+        review: {
+          sessionId: listed[0]!.sessionId,
+          files: [{ path: fixture.afterName, patch: expect.any(String) }],
+        },
+      });
+      const patch = (JSON.parse(review.stdout) as { review: { files: Array<{ patch: string }> } })
+        .review.files[0]!.patch;
+      expect(patch).toContain("-export const value = 1;");
+      expect(patch).toContain("+export const value = 2;");
+    } finally {
+      session.kill();
+      await session.exited;
     }
   });
 

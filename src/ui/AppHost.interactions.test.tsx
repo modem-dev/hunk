@@ -4,7 +4,6 @@ import { join } from "node:path";
 import { describe, expect, mock, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
-import { SESSION_BROKER_REGISTRATION_VERSION } from "@hunk/session-broker-core";
 import type {
   HunkSessionBrokerClient,
   HunkSessionRegistration,
@@ -15,6 +14,7 @@ import { LEGACY_CUSTOM_SYNTAX_NOTICE } from "../core/startupNotice";
 import type { AppBootstrap, LayoutMode } from "../core/types";
 import { createTestVcsAppBootstrap } from "../../test/helpers/app-bootstrap";
 import { capturedTestColorToHex } from "../../test/helpers/test-color-helpers";
+import { createTestSessionRegistration } from "../../test/helpers/session-daemon-fixtures";
 import { createTestDiffFile as buildTestDiffFile, lines } from "../../test/helpers/diff-helpers";
 import { AGENT_SKILL_COMMAND, AGENT_SKILL_PROMPT } from "./components/chrome/AgentSkillDialog";
 import { resolveTheme } from "./themes";
@@ -75,25 +75,24 @@ function createMockHostClient({
 
   let bridge: Bridge = null;
   let latestSnapshot: HunkSessionSnapshot["state"] | null = null;
-  let registration: HunkSessionRegistration = {
-    registrationVersion: SESSION_BROKER_REGISTRATION_VERSION,
-    sessionId: "session-1",
+  const replacedSnapshots: HunkSessionSnapshot["state"][] = [];
+  let registration: HunkSessionRegistration = createTestSessionRegistration({
     pid: process.pid,
     cwd,
     repoRoot,
-    launchedAt: "2026-03-24T00:00:00.000Z",
-    info: {
-      inputKind: "vcs",
-      title: "repo working tree",
-      sourceLabel: "repo",
-      files: [],
-    },
-  };
+    files: [],
+    sourceLabel: "repo",
+  });
   return {
     hostClient: {
       getRegistration: () => registration,
-      replaceSession: (nextRegistration: HunkSessionRegistration) => {
+      replaceSession: (
+        nextRegistration: HunkSessionRegistration,
+        snapshot: HunkSessionSnapshot,
+      ) => {
         registration = nextRegistration;
+        latestSnapshot = snapshot.state;
+        replacedSnapshots.push(snapshot.state);
       },
       setBridge: (nextBridge: Bridge) => {
         bridge = nextBridge;
@@ -112,6 +111,7 @@ function createMockHostClient({
     getBridge: () => bridge,
     getLatestRegistration: () => registration,
     getLatestSnapshot: () => latestSnapshot,
+    getReplacedSnapshots: () => replacedSnapshots,
     navigateToHunk: async (
       input: Extract<HunkSessionServerMessage, { command: "navigate_to_hunk" }>["input"],
     ) => {
@@ -624,6 +624,49 @@ describe("App interactions", () => {
       await act(async () => {
         setup.renderer.destroy();
       });
+    }
+  });
+
+  test("batched agent-note toggles use store-current visibility", async () => {
+    const { getLatestSnapshot, hostClient } = createMockHostClient();
+    const setup = await testRender(
+      <AppHost bootstrap={createSingleFileBootstrap()} hostClient={hostClient} />,
+      { width: 160, height: 20 },
+    );
+
+    try {
+      await flush(setup);
+      expect(getLatestSnapshot()?.showAgentNotes).toBe(false);
+      await act(async () => {
+        await setup.mockInput.typeText("a");
+        await setup.mockInput.typeText("a");
+      });
+      await flush(setup);
+      expect(getLatestSnapshot()?.showAgentNotes).toBe(false);
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
+  test("renderer note width republishes on layout changes without semantic mutations", async () => {
+    const bootstrap = createSingleFileBootstrap();
+    bootstrap.input.options.experimental = true;
+    const { getLatestSnapshot, hostClient } = createMockHostClient();
+    const setup = await testRender(<AppHost bootstrap={bootstrap} hostClient={hostClient} />, {
+      width: 180,
+      height: 20,
+    });
+
+    try {
+      await flush(setup);
+      const splitWidth = getLatestSnapshot()?.noteMarkupWidth;
+      expect(splitWidth).toBeGreaterThan(0);
+      await act(async () => setup.mockInput.typeText("2"));
+      await flush(setup);
+      const stackWidth = getLatestSnapshot()?.noteMarkupWidth;
+      expect(stackWidth).toBeGreaterThan(splitWidth ?? 0);
+    } finally {
+      await act(async () => setup.renderer.destroy());
     }
   });
 
@@ -1591,10 +1634,12 @@ describe("App interactions", () => {
       left,
       right,
       options: {
+        experimental: true,
         mode: "split",
       },
     });
-    const { dispatchCommand, hostClient } = createMockHostClient();
+    const { dispatchCommand, getLatestSnapshot, getReplacedSnapshots, hostClient } =
+      createMockHostClient();
 
     const setup = await testRender(<AppHost bootstrap={bootstrap} hostClient={hostClient} />, {
       width: 220,
@@ -1622,6 +1667,8 @@ describe("App interactions", () => {
 
       let frame = await waitForFrame(setup, (currentFrame) => currentFrame.includes(reviewNote));
       expect(frame).toContain(reviewNote);
+      const widthBeforeReload = getLatestSnapshot()?.noteMarkupWidth;
+      expect(widthBeforeReload).toBeGreaterThan(0);
 
       writeFileSync(right, "export const answer = 42;\nexport const added = true;\n");
 
@@ -1652,10 +1699,84 @@ describe("App interactions", () => {
 
       expect(frame).toContain("export const added = true;");
       expect(frame).toContain(reviewNote);
+      expect(getLatestSnapshot()?.liveComments.map((comment) => comment.summary)).toContain(
+        reviewNote,
+      );
+      expect(
+        getReplacedSnapshots()
+          .at(-1)
+          ?.liveComments.map((comment) => comment.summary),
+      ).toContain(reviewNote);
+      expect(getReplacedSnapshots().at(-1)?.noteMarkupWidth).toBe(widthBeforeReload);
     } finally {
       await act(async () => {
         setup.renderer.destroy();
       });
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
+  test("post-reload daemon batches reveal notes through the current store authority", async () => {
+    const dir = mkdtempSync(join(process.cwd(), ".hunk-session-batch-reload-"));
+    const left = join(dir, "before.ts");
+    const right = join(dir, "after.ts");
+    writeFileSync(left, "export const answer = 41;\n");
+    writeFileSync(right, "export const answer = 42;\n");
+    const bootstrap = await loadAppBootstrap({
+      kind: "diff",
+      left,
+      right,
+      options: { mode: "split" },
+    });
+    const { dispatchCommand, getLatestSnapshot, hostClient } = createMockHostClient();
+    const setup = await testRender(<AppHost bootstrap={bootstrap} hostClient={hostClient} />, {
+      width: 220,
+      height: 20,
+    });
+
+    try {
+      await flush(setup);
+      await act(async () => {
+        await dispatchCommand({
+          type: "command",
+          requestId: "reload-before-batch",
+          command: "reload_session",
+          input: {
+            sessionId: "session-1",
+            nextInput: { kind: "diff", left, right, options: { mode: "split" } },
+          },
+        });
+      });
+      await flush(setup);
+      expect(getLatestSnapshot()?.showAgentNotes).toBe(false);
+
+      await act(async () => {
+        await dispatchCommand({
+          type: "command",
+          requestId: "batch-after-reload",
+          command: "comment_batch",
+          input: {
+            sessionId: "session-1",
+            revealMode: "first",
+            comments: [
+              {
+                filePath: "after.ts",
+                side: "new",
+                line: 1,
+                summary: "Batch note after soft reload",
+              },
+            ],
+          },
+        });
+      });
+
+      expect(getLatestSnapshot()?.showAgentNotes).toBe(true);
+      const frame = await waitForFrame(setup, (text) =>
+        text.includes("Batch note after soft reload"),
+      );
+      expect(frame).toContain("Batch note after soft reload");
+    } finally {
+      await act(async () => setup.renderer.destroy());
       rmSync(dir, { force: true, recursive: true });
     }
   });
@@ -2649,8 +2770,8 @@ describe("App interactions", () => {
     }
   });
 
-  test("CLI comment navigation scrolls the inline note into view", async () => {
-    const { hostClient, navigateToHunk } = createMockHostClient();
+  test("CLI comment navigation publishes store selection synchronously and scrolls the note", async () => {
+    const { getLatestSnapshot, hostClient, navigateToHunk } = createMockHostClient();
     const setup = await testRender(
       <AppHost bootstrap={createDeepNoteBootstrap()} hostClient={hostClient} />,
       {
@@ -2673,6 +2794,11 @@ describe("App interactions", () => {
       expect(result).toMatchObject({
         filePath: "deep-note.ts",
         hunkIndex: 1,
+      });
+      // The broker sees the authoritative selection before any follow-up React render or effect.
+      expect(getLatestSnapshot()).toMatchObject({
+        selectedFilePath: "deep-note.ts",
+        selectedHunkIndex: 1,
       });
 
       frame = await waitForFrame(setup, (currentFrame) =>

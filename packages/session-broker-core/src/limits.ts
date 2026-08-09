@@ -28,6 +28,18 @@ export const MAX_SNAPSHOT_LIVE_COMMENTS = 10_000;
 /** Maximum number of review notes accepted in one session snapshot. */
 export const MAX_SNAPSHOT_REVIEW_NOTES = 10_000;
 
+/** Maximum broker commands awaiting producer results across all sessions. */
+export const MAX_PENDING_COMMANDS = 64;
+
+/** Maximum broker commands awaiting producer results for one live session. */
+export const MAX_PENDING_COMMANDS_PER_SESSION = 16;
+
+/** Maximum number of live sessions retained by one daemon. */
+export const MAX_LIVE_SESSIONS = 128;
+
+/** Maximum aggregate bytes retained for live registration and snapshot metadata. */
+export const MAX_SESSION_METADATA_BYTES = 64 * 1024 * 1024;
+
 /** Raised when an inbound payload exceeds its configured byte budget. */
 export class PayloadTooLargeError extends Error {
   constructor(readonly limitBytes: number) {

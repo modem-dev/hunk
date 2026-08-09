@@ -403,6 +403,43 @@ export function createPtyHarness() {
     return { ...fixture, agentContext };
   }
 
+  function createPartialRangeNavigationRepoFixture() {
+    const beforeLines = createNumberedExportLines(1, 30).split("\n");
+    const afterLines = [...beforeLines];
+    afterLines[0] = "export const line01 = 1001;";
+    afterLines[19] = "export const line20 = 2000;";
+
+    const fixture = createGitRepoFixture([
+      {
+        path: "partial.ts",
+        before: `${beforeLines.join("\n")}\n`,
+        after: `${afterLines.join("\n")}\n`,
+      },
+    ]);
+    const agentContext = join(fixture.dir, "agent-context.json");
+
+    writeText(
+      agentContext,
+      JSON.stringify({
+        version: 1,
+        files: [
+          {
+            path: "partial.ts",
+            annotations: [
+              {
+                oldRange: [1, 1],
+                newRange: [16, 17],
+                summary: "Preferred partial range owns the later hunk.",
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    return { ...fixture, agentContext };
+  }
+
   function createMultiHunkFilePair() {
     const dir = makeTempDir("hunk-tuistory-hunks-");
     const before = join(dir, "before.ts");
@@ -980,6 +1017,7 @@ end
     createMultiHunkFilePair,
     createNarrowHeaderTestRepoFixture,
     createPagerPatchFixture,
+    createPartialRangeNavigationRepoFixture,
     createPinnedHeaderRepoFixture,
     createScrollableFilePair,
     createSidebarJumpRepoFixture,

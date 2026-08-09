@@ -21,6 +21,7 @@ import {
   sortPlatformPackageSpecs,
   type PlatformPackageSpec,
 } from "./prebuilt-package-helpers";
+import { assertBrowserAssetsCurrent } from "./browser-assets";
 
 type RootPackageJson = {
   name: string;
@@ -164,6 +165,7 @@ function collectArtifactSpecs(artifactRoot: string) {
 }
 
 const repoRoot = path.resolve(import.meta.dir, "..");
+assertBrowserAssetsCurrent(repoRoot);
 const options = parseArgs(process.argv.slice(2));
 const rootPackage = loadRootPackage(repoRoot);
 const releaseRoot = releaseNpmDir(repoRoot);

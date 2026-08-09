@@ -135,8 +135,8 @@ describe("live comment helpers", () => {
 
   // Regression: a hunk with one addition surrounded by lots of context used to report
   // newRange = [start, start] (additions-only), so a comment anchored past the leading
-  // context fell outside the hunk's range, annotationOverlapsHunk returned false, and
-  // the hunk silently disappeared from getAnnotatedHunkIndices / annotated-cursor lists.
+  // context fell outside the hunk's range, range intersection returned false, and
+  // the hunk silently disappeared from annotated-owner cursor lists.
   // Fix: hunkLineRange uses additionCount/deletionCount (header total, includes context)
   // instead of additionLines/deletionLines (just '+' / '-' counts).
   test("includes context lines when one hunk has many context rows around few changes", () => {

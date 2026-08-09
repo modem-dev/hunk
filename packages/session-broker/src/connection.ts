@@ -1,3 +1,4 @@
+import { MAX_WS_MESSAGE_BYTES, utf8ByteLength } from "@hunk/session-broker-core";
 import type {
   SessionClientMessage,
   SessionRegistration,
@@ -13,6 +14,8 @@ import type {
 const DEFAULT_RECONNECT_DELAY_MS = 3_000;
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 10_000;
 const DEFAULT_SOCKET_OPEN_STATE = 1;
+export const DEFAULT_MAX_QUEUED_COMMANDS = 16;
+export const DEFAULT_MAX_CONCURRENT_COMMANDS = 8;
 
 export interface SessionBrokerConnectionBridge<
   ServerMessage extends SessionServerMessage = SessionServerMessage,
@@ -38,6 +41,8 @@ export interface SessionBrokerConnectionOptions<
   openState?: number;
   resolveClose?: (event: SessionBrokerSocketCloseEvent) => SessionBrokerConnectionCloseDirective;
   onWarning?: (message: string) => void;
+  maxQueuedCommands?: number;
+  maxConcurrentCommands?: number;
 }
 
 /**
@@ -53,7 +58,8 @@ export class SessionBrokerConnection<
 > {
   private socket: Socket | null = null;
   private bridge: SessionBrokerConnectionBridge<ServerMessage, Result> | null;
-  private queuedMessages: ServerMessage[] = [];
+  private queuedMessages: Array<{ message: ServerMessage; socket: Socket }> = [];
+  private activeExecutions = new Map<symbol, Socket>();
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private stopped = false;
@@ -92,6 +98,8 @@ export class SessionBrokerConnection<
     this.stopHeartbeat();
     this.socket?.close();
     this.socket = null;
+    this.queuedMessages = [];
+    this.activeExecutions.clear();
   }
 
   getRegistration() {
@@ -156,7 +164,7 @@ export class SessionBrokerConnection<
         return;
       }
 
-      void this.handleServerMessage(parsed);
+      void this.handleServerMessage(parsed, socket);
     };
 
     socket.onclose = (event) => {
@@ -165,6 +173,9 @@ export class SessionBrokerConnection<
       }
 
       this.stopHeartbeat();
+      this.queuedMessages = this.queuedMessages.filter((queued) => queued.socket !== socket);
+      // Executing bridge work cannot be cancelled generically. Keep its slot until settlement so
+      // repeated reconnects cannot accumulate unbounded abandoned command promises.
       if (this.stopped) {
         return;
       }
@@ -231,33 +242,94 @@ export class SessionBrokerConnection<
       return;
     }
 
-    this.socket.send(JSON.stringify(message));
+    const encoded = JSON.stringify(message);
+    if (utf8ByteLength(encoded) > MAX_WS_MESSAGE_BYTES) {
+      this.options.onWarning?.(
+        `Session message exceeds the ${MAX_WS_MESSAGE_BYTES}-byte websocket limit.`,
+      );
+      this.socket.close();
+      return;
+    }
+    this.socket.send(encoded);
   }
 
-  private async handleServerMessage(message: ServerMessage) {
+  private async handleServerMessage(message: ServerMessage, socket: Socket) {
     if (!this.bridge) {
-      // Sessions may connect before the host app has finished wiring its command bridge. Queue
-      // broker commands so startup races do not drop user-triggered actions.
-      this.queuedMessages.push(message);
+      // Sessions may connect before the host app has finished wiring its command bridge. Queue a
+      // bounded number so startup races cannot become an unbounded command-memory sink.
+      if (
+        this.queuedMessages.length >=
+        (this.options.maxQueuedCommands ?? DEFAULT_MAX_QUEUED_COMMANDS)
+      ) {
+        this.sendCommandError(
+          socket,
+          message,
+          "Session command queue capacity exceeded.",
+          "session-command-capacity",
+        );
+        return;
+      }
+      this.queuedMessages.push({ message, socket });
+      return;
+    }
+    if (
+      this.activeExecutions.size >=
+      (this.options.maxConcurrentCommands ?? DEFAULT_MAX_CONCURRENT_COMMANDS)
+    ) {
+      this.sendCommandError(
+        socket,
+        message,
+        "Session command execution capacity exceeded.",
+        "session-command-capacity",
+      );
       return;
     }
 
+    const token = Symbol(message.requestId);
+    this.activeExecutions.set(token, socket);
     try {
       const result = await this.bridge.dispatchCommand(message);
-      this.send({
+      this.sendOnSocket(socket, {
         type: "command-result",
         requestId: message.requestId,
         ok: true,
         result,
       });
     } catch (error) {
-      this.send({
-        type: "command-result",
-        requestId: message.requestId,
-        ok: false,
-        error: error instanceof Error ? error.message : "Unknown broker connection error.",
-      });
+      this.sendCommandError(
+        socket,
+        message,
+        error instanceof Error ? error.message : "Unknown broker connection error.",
+      );
+    } finally {
+      this.activeExecutions.delete(token);
     }
+  }
+
+  /** Reject one broker command on its originating live socket without queueing more work. */
+  private sendCommandError(
+    socket: Socket,
+    message: ServerMessage,
+    error: string,
+    errorCode?: string,
+  ) {
+    this.sendOnSocket(socket, {
+      type: "command-result",
+      requestId: message.requestId,
+      ok: false,
+      error,
+      ...(errorCode ? { errorCode } : {}),
+    });
+  }
+
+  /** Send a result only while its originating socket is still the active connection. */
+  private sendOnSocket(socket: Socket, message: SessionClientMessage<Info, State, Result>) {
+    if (
+      socket !== this.socket ||
+      socket.readyState !== (this.options.openState ?? DEFAULT_SOCKET_OPEN_STATE)
+    )
+      return;
+    this.send(message);
   }
 
   private async flushQueuedMessages() {
@@ -270,8 +342,8 @@ export class SessionBrokerConnection<
     const queued = [...this.queuedMessages];
     this.queuedMessages = [];
 
-    for (const message of queued) {
-      await this.handleServerMessage(message);
+    for (const { message, socket } of queued) {
+      if (socket === this.socket) await this.handleServerMessage(message, socket);
     }
   }
 }

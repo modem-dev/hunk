@@ -40,8 +40,8 @@ export interface ResolvedCommentTarget {
  * is only the `+` / `-` lines. Comments anchored at a context-region line
  * (e.g. resolved by `firstCommentTargetForHunk` walking past leading context)
  * fall outside the additions-only range and silently disappear from
- * `getAnnotatedHunkIndices` / `findHunkIndexForLine` if those use the wrong
- * extent.
+ * note intersection/ownership helpers or `findHunkIndexForLine` if those use
+ * the wrong extent.
  */
 export function hunkLineRange(hunk: Hunk) {
   const newEnd = Math.max(

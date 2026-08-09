@@ -1,4 +1,5 @@
 import { SESSION_BROKER_REGISTRATION_VERSION } from "@hunk/session-broker-core";
+import { reviewDigest } from "../../src/core/review/identity";
 import type {
   HunkSessionRegistration,
   HunkSessionSnapshot,
@@ -20,6 +21,7 @@ export function createTestSessionFileSummary(
     additions: 1,
     deletions: 1,
     hunkCount: 1,
+    flags: { untracked: false, binary: false, tooLarge: false, partial: false },
     ...overrides,
   };
 }
@@ -60,12 +62,26 @@ export function createTestSessionSnapshot(
   return {
     updatedAt,
     state: {
+      documentGeneration: "generation:test",
+      stateRevision: 0,
+      review: {
+        documentGeneration: "generation:test",
+        stateRevision: 0,
+        selection: { fileKey: "file-key-1", hunkIndex: 0 },
+        filter: "",
+        showAgentNotes: false,
+        notes: [],
+      },
       selectedFileId: "file-1",
       selectedFilePath: "src/example.ts",
       selectedHunkIndex: 0,
+      selectedHunkOldRange: [1, 1],
+      selectedHunkNewRange: [1, 1],
       showAgentNotes: false,
       liveCommentCount: 0,
       liveComments: [],
+      reviewNoteCount: 0,
+      reviewNotes: [],
       ...stateOverrides,
     },
   };
@@ -92,6 +108,37 @@ export function createTestSessionRegistration(
     ...registrationOverrides
   } = overrides;
   const resolvedFiles = files ?? infoOverrides?.files ?? [createTestSessionReviewFile()];
+  const generation = infoOverrides?.documentGeneration ?? "generation:test";
+  const registrationFiles = resolvedFiles.map(({ patch: _patch, ...file }) => ({
+    ...file,
+    hunkCount: file.hunks.length,
+    flags: file.flags ?? { untracked: false, binary: false, tooLarge: false, partial: false },
+  }));
+  const patchResources = resolvedFiles.map((file, index) => {
+    const patch = file.patch ?? "";
+    return {
+      id: `resource:test:${index}`,
+      kind: "patch" as const,
+      generation,
+      fileKey: `file-key-${index + 1}`,
+      contentType: "text/x-diff; charset=utf-8" as const,
+      byteLength: new TextEncoder().encode(patch).byteLength,
+      digest: reviewDigest(patch),
+    };
+  });
+  const canonicalResources = resolvedFiles.map((_file, index) => {
+    const content = "{}";
+    return {
+      id: `resource:canonical:test:${index}`,
+      kind: "canonical-file" as const,
+      generation,
+      fileKey: `file-key-${index + 1}`,
+      contentType: "application/vnd.hunk.review-file+json; charset=utf-8" as const,
+      byteLength: new TextEncoder().encode(content).byteLength,
+      digest: reviewDigest(content),
+    };
+  });
+  const resources = [...patchResources, ...canonicalResources];
 
   return {
     registrationVersion: SESSION_BROKER_REGISTRATION_VERSION,
@@ -106,7 +153,42 @@ export function createTestSessionRegistration(
       title: title ?? infoOverrides?.title ?? "repo working tree",
       sourceLabel: sourceLabel ?? infoOverrides?.sourceLabel ?? "/repo",
       experimentalFeatures: experimentalFeatures ?? infoOverrides?.experimentalFeatures ?? [],
-      files: resolvedFiles,
+      documentGeneration: generation,
+      reviewManifest: infoOverrides?.reviewManifest ?? {
+        version: 1,
+        generation,
+        documentIdentity: "review:test",
+        changesetId: "changeset:test",
+        title: title ?? infoOverrides?.title ?? "repo working tree",
+        sourceLabel: sourceLabel ?? infoOverrides?.sourceLabel ?? "/repo",
+        files: registrationFiles.map((file, index) => ({
+          key: `file-key-${index + 1}`,
+          runtimeId: file.id,
+          path: file.path,
+          ...(file.previousPath !== undefined ? { previousPath: file.previousPath } : {}),
+          changeKind: file.previousPath ? "rename-changed" : "change",
+          additions: file.additions,
+          deletions: file.deletions,
+          statsTruncated: false,
+          hunkCount: file.hunks.length,
+          flags: {
+            untracked: file.flags?.untracked ?? false,
+            binary: file.flags?.binary ?? false,
+            tooLarge: file.flags?.tooLarge ?? false,
+            partial: file.flags?.partial ?? false,
+          },
+          patchResourceId: patchResources[index]!.id,
+          canonicalResourceId: canonicalResources[index]!.id,
+          sourceResourceIds: {},
+          hunks: file.hunks,
+          notes: [],
+        })),
+        resources,
+        capabilities: {
+          actions: ["selection/select", "selection/set-line", "filter/set", "notes/set-visibility"],
+        },
+      },
+      files: registrationFiles,
     },
   };
 }
