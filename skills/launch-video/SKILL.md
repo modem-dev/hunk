@@ -1,15 +1,15 @@
 ---
 name: launch-video
-description: Produces hunk launch/release videos by driving the real TUI headlessly in a PTY, compositing captioned 1080p frames in Chromium, and encoding with ffmpeg. Use when asked to create, update, or re-cut a release announcement, demo, or launch video for hunk.
+description: Produces Hunk videos by driving the real TUI headlessly in a PTY, compositing captioned 1080p frames in Chromium, and encoding with ffmpeg. Use for feature demos, workflow explainers, announcements, launch videos, and full-release roundups.
 ---
 
-# Launch video pipeline
+# Hunk video pipeline
 
 Maintainer-only: requires a hunk source checkout (the pipeline lives in
 `scripts/launch-video/`, which never ships to npm). Unix-only — the capture
 scripts exec `/bin/bash`.
 
-Generates release videos where every terminal frame is the real Hunk TUI —
+Generates product videos where every terminal frame is the real Hunk TUI —
 no screen recording, no mockups. Three stages:
 
 ```text
@@ -25,10 +25,23 @@ sequences those composited screenshots into the final videos.
 
 The generic machinery (PTY driving, keyframe rendering, storyboard planning,
 Chromium compositing, the stage template) is the `@hunk/term-video` workspace
-package in `packages/term-video/`; `scripts/launch-video/` holds only hunk's
+package in `packages/term-video/`; `scripts/launch-video/` holds only Hunk's
 scenes, captions, and cards on top of it.
 
-## Recreating a video
+## Choosing a recipe
+
+The pipeline is not release-specific. Choose the editorial scope, then use the
+same capture → composite → encode stages:
+
+- **Single feature:** a short demonstration of one capability or workflow. Use
+  the single-feature recipe below and capture only the required scene.
+- **Full release:** a multi-feature roundup based on a release's changelog or
+  highlights. Use the full-release recipe and update the canonical storyboard.
+- **Custom video:** author any set of scenes and `SHOTS` for tutorials,
+  comparisons, announcements, or workflow explainers; follow the scene and
+  storyboard rules below.
+
+## Creating a video
 
 Expect ~3–6 min for capture and ~2–4 min for compose — run both with a long
 timeout (or in the background); each logs per-snap / per-shot progress.
@@ -74,13 +87,14 @@ Scene names are the `wants("...")` guards in `capture.ts`'s `main()`. Note
 `SHOTS` table references exists in `frames/` and fails fast listing any missing
 ones, so a full composite still needs every scene captured at least once.
 
-## Making a scoped single-feature video
+## Single-feature recipe
 
-For a short test or one-feature announcement, capture and composite only the
-scene for that feature instead of producing the full release storyboard:
+For a short test, demo, or one-feature announcement, capture and composite only
+the scene for that feature:
 
-1. Pick one user-visible release highlight and find its scene name in the
-   `wants("...")` guards. Capture only that scene:
+1. Pick one user-visible capability and find its scene name in the
+   `wants("...")` guards. If it does not have a scene, author one using the
+   guidance below. Capture only that scene:
 
    ```sh
    SCENES=review bun run scripts/launch-video/capture.ts
@@ -111,23 +125,26 @@ scene for that feature instead of producing the full release storyboard:
    ```
 
 Keep the scratch compositor uncommitted. The canonical `compose.mjs` remains
-the complete release storyboard.
+the checked-in reference storyboard.
 
-## Updating for a new release
+## Full-release recipe
 
-1. Read the new release section in `CHANGELOG.md`. If it has a hand-written
-   **Highlights** list (0.18.0 has one; Changesets does not generate them),
-   that list is the storyboard. Otherwise distill 4–6 user-visible headlines
+1. Read the release section in `CHANGELOG.md`. If it has a hand-written
+   **Highlights** list (0.18.0 has one; Changesets does not generate them), use
+   that list as the storyboard. Otherwise distill 4–6 user-visible headlines
    from the Minor Changes — per-PR entries are too granular to shoot — and
    confirm the shortlist with the user before capturing.
-2. Rewrite the per-release editorial surface (next section), adding or
-   adjusting capture scenes as needed (see "Authoring scenes").
-3. Re-run the pipeline, verify (see "Verification"), and deliver both files.
+2. Rewrite the canonical storyboard's editorial surface (next section), adding
+   or adjusting capture scenes as needed (see "Authoring scenes").
+3. Capture every scene referenced by the full storyboard, composite it, and
+   encode both formats using the main workflow above.
+4. Verify the complete cut (see "Verification") and deliver both files.
 
-## Per-release editorial surface
+## Per-video editorial surface
 
-Everything here is content about a specific release — rewrite it each time.
-As of this writing it reflects 0.18.0:
+The capture machinery is reusable, but the storyboard is editorial content for
+one video. Rewrite it to match the video's scope. As of this writing, the
+checked-in reference storyboard is the full 0.18.0 release video:
 
 - `compose.mjs`: the whole `SHOTS` table; `OPEN_CARD` (version badge);
   `OUTRO_CARD` (headline, install commands, footer); `EXTENSIONS_CARD`; every
