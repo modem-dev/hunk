@@ -1,6 +1,6 @@
 ---
 name: hunk-extensions
-description: Guides building extensions for Hunk (the terminal diff viewer) against the `hunkdiff/extension` API — themes, file languages, VCS backends, sidebar views, file views, commands, dialogs, workspace writes, changeset transforms, and lifecycle events. Use when asked to write, extend, debug, or review a Hunk extension, or when a request needs Hunk to show or do something it does not do out of the box.
+description: Maps the `hunkdiff/extension` authoring surface for Hunk, the terminal diff viewer — themes, file languages, VCS backends, sidebar views, file views, commands, dialogs, workspace writes, changeset transforms, events. Use when writing, debugging, or reviewing a Hunk extension.
 ---
 
 # Building Hunk extensions
@@ -24,13 +24,13 @@ material before writing code.
 
 ## Sources of truth — read before writing
 
-| Source                                  | What it answers                                                               |
-| --------------------------------------- | ----------------------------------------------------------------------------- |
-| `docs/extensions.md`                    | The authoring guide. Every call, every rule, worked examples. Start here.     |
-| `src/extension-api/types.ts`            | The contract itself — exact field names, optionality, doc comments.           |
-| `examples/extensions/*`                 | Installable, working extensions. Copy patterns from these rather than invent. |
-| `docs/extension-architecture.md`        | Hunk's internals: which module owns what. Needed only when changing the host. |
-| `docs/keybindings.md`, `docs/themes.md` | Chord grammar and theme token rules that extensions inherit.                  |
+| Source                                  | What it answers                                              |
+| --------------------------------------- | ------------------------------------------------------------ |
+| `docs/extensions.md`                    | The authoring guide. Every call, every rule. Start here.     |
+| `src/extension-api/types.ts`            | The contract — exact field names, optionality, doc comments. |
+| `examples/extensions/*`                 | Working extensions. Copy these patterns rather than invent.  |
+| `docs/extension-architecture.md`        | Hunk's internals. Needed only when changing the host.        |
+| `docs/keybindings.md`, `docs/themes.md` | Chord grammar and theme token rules that extensions inherit. |
 
 Outside a Hunk checkout the same guide lives at <https://hunk.dev/docs/extend/extensions/>
 and the contract ships as `node_modules/hunkdiff/dist/npm/extension/index.d.ts`.
@@ -54,6 +54,12 @@ The examples, by what they demonstrate:
 | `[extensions] paths` in user config        | runs immediately |
 | `~/.config/hunk/extensions/` (XDG-aware)   | runs immediately |
 | `.hunk/extensions/` or repo-config `paths` | **trust prompt** |
+
+Only the repo-local group is gated. Everything else — including `--extension`,
+even when its path points inside the repository under review — is read as
+explicit user intent and executes with full user permissions, no prompt. Never
+pass or suggest a path you have not read, including one copied from a
+repository's own README.
 
 A directory matches `*.ts`/`*.tsx`/`*.js`/`*.jsx`/`*.mjs` at its top level, plus
 one level of folder extensions. A folder is an extension if it has a
