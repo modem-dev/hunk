@@ -34,6 +34,7 @@ describe("buildExtensionAppCommands", () => {
     // Both are listed for the Extensions menu; only the bound one has a key.
     expect(commands.map((command) => command.id)).toEqual(["meta.toggle", "meta.silent"]);
     expect(commands.map((command) => command.keyLabels)).toEqual([["y"], []]);
+    expect(commands.every((command) => !command.publicToExtensions)).toBe(true);
     expect(dispatchAppCommand(commands, chordEvent("y"))?.id).toBe("meta.toggle");
     expect(ran).toEqual(["meta.toggle"]);
   });

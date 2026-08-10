@@ -94,7 +94,7 @@ bad or duplicate id is skipped with a startup notice.
 | React to loads, selection, viewed files, notes, reloads | `hunk.on(event, handler)`                    |
 | Coordinate with another loaded extension                | `hunk.events.emit` / `hunk.events.on`        |
 | Read user-supplied settings                             | `hunk.config` (`[extension.<id>]` table)     |
-| Branch on the API generation (currently `2`)            | `hunk.apiVersion`                            |
+| Branch on the API generation (currently `3`)            | `hunk.apiVersion`                            |
 
 Registration is only valid while the factory runs — Hunk seals the API object
 afterwards.
@@ -109,7 +109,8 @@ transform — gets `ctx.cwd` and `ctx.notify(message, type?)`. A file view's
   any view) and `ctx.events.emit`.
 - **Command handlers** get `ctx.sidebars`, `ctx.fileViews` (select/toggle/isActive/
   refresh/enterMode/exitMode), `ctx.selection` (a snapshot of file + hunk index),
-  `ctx.navigation` (live, guarded `selectFile`/`selectHunk`), `ctx.dialogs`
+  `ctx.navigation` (live, guarded `selectFile`/`selectHunk`), `ctx.commands`
+  (`isEnabled`/`execute` for public semantic `hunk.*` commands), `ctx.dialogs`
   (`confirm`/`select`/`input`, queued and attributed), and `ctx.workspace`
   (`readDocument`, `canWriteDocument`, `writeDocument` with consent).
 - **Sidebar components** get props: `files` (frozen, filtered, review order, each
@@ -164,6 +165,11 @@ Most extension bugs are one of these:
 - **Chords are defaults.** Users remap by command id in `[keybindings]`; built-ins
   win conflicts, refused one chord at a time. Bind the character shift produces
   (`"!"`, not `"shift+1"`).
+- **`ctx.commands` invokes Hunk, not other extensions.** Probe with
+  `isEnabled("hunk.review.nextHunk")`, then call `execute(id, { count })` for an
+  explicitly public built-in. Counts are positive whole numbers up to 10,000,
+  applied atomically to movement; one-shot actions run once. Unknown, disabled,
+  private, extension-owned, or stale commands return `false`.
 - **Repo config can set `[extension.<id>]` for a globally installed extension.**
   Treat `hunk.config` as untrusted for anything exec-adjacent (binary paths,
   shell commands, module loading).

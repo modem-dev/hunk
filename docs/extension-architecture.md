@@ -174,8 +174,17 @@ menu-specific wording and checkbox state, and the controls help dialog
 (`src/ui/lib/helpContent.ts`) declares curated rows the same way — both render
 their key text from resolved `keyLabels` and run entries through
 `executeAppCommand`. A few commands ship with `defaultKeys: []` because they
-exist for a menu item; they never match a key but remain bindable by id. The
-**Extensions** menu is generated from the registered extension commands, one
+exist for a menu item; they never match a key but remain bindable by id.
+
+Command handlers receive guarded `ctx.commands` controls built by
+`src/ui/lib/extensionCommandControls.ts`. They resolve the live App command table on every call,
+then expose only built-ins carrying explicit public metadata. Counted movement reaches the same
+command callback once with a normalized delta; it is never implemented as repeated synchronous
+dispatch. Current-line alignment is also semantic: App raises an alignment request and `DiffPane`
+resolves it against its private row geometry, so no renderer or scrollbox leaks into the API.
+Extension commands remain private to prevent recursion and cross-extension execution.
+
+The **Extensions** menu is generated from the registered extension commands, one
 item per command grouped by extension, and is absent entirely when there are
 none — which is why the visible menu list is derived from the menus record
 (`buildMenuSpecs` in `src/ui/components/chrome/menu.ts`) rather than fixed.

@@ -236,6 +236,12 @@ export default function registerReviewTriage(hunk: HunkExtensionAPI) {
     ctx.sidebars.toggle("triage"),
   );
 
+  hunk.registerCommand({ id: "center", title: "Center current review line" }, (ctx) => {
+    if (!ctx.commands.execute("hunk.review.alignCurrentLineCenter")) {
+      ctx.notify("Enable the current-line marker before centering it", "warning");
+    }
+  });
+
   hunk.registerCommand({ id: "mark", title: "Mark selected hunk…", key: "x" }, async (ctx) => {
     const { file, hunkIndex } = ctx.selection;
     if (!file || hunkIndex === null) {

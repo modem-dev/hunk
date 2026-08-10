@@ -34,7 +34,12 @@ import {
   computeRapidScrollOverscanRows,
   RAPID_SCROLL_OVERSCAN_IDLE_MS,
 } from "../../lib/adaptiveScrollOverscan";
-import { computeHunkRevealScrollTop, computeLineRevealScrollTop } from "../../lib/hunkScroll";
+import {
+  computeHunkRevealScrollTop,
+  computeLineAlignmentScrollTop,
+  computeLineRevealScrollTop,
+  type CurrentLineAlignment,
+} from "../../lib/hunkScroll";
 import { inlineNoteStableKey } from "../../diff/reviewRenderPlan";
 import {
   buildLineCursors,
@@ -209,6 +214,7 @@ export function DiffPane({
   cursorLine = "off",
   lineCursor = null,
   lineCursorRevealRequestId = 0,
+  lineCursorAlignmentRequest = { id: 0, alignment: "center" },
   scrollToNote = false,
   draftNote = null,
   draftNoteFocused = false,
@@ -265,6 +271,7 @@ export function DiffPane({
   cursorLine?: CursorLine;
   lineCursor?: LineCursor | null;
   lineCursorRevealRequestId?: number;
+  lineCursorAlignmentRequest?: { id: number; alignment: CurrentLineAlignment };
   scrollToNote?: boolean;
   draftNote?: DraftReviewNote | null;
   draftNoteFocused?: boolean;
@@ -1549,6 +1556,21 @@ export function DiffPane({
   const prevSelectedAnchorIdRef = useRef<string | null>(null);
   const prevPinnedHeaderFileIdRef = useRef<string | null>(null);
   const pendingSelectionSettleRef = useRef(false);
+  const pendingSelectionRevealTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  /** Clear scheduled selection-reveal retries without changing the resettle policy. */
+  const clearPendingSelectionRevealTimers = useCallback(() => {
+    for (const timeout of pendingSelectionRevealTimeoutsRef.current) {
+      clearTimeout(timeout);
+    }
+    pendingSelectionRevealTimeoutsRef.current = [];
+  }, []);
+
+  /** Retire selection reveal work once an explicit line alignment becomes authoritative. */
+  const supersedePendingSelectionReveal = useCallback(() => {
+    clearPendingSelectionRevealTimers();
+    pendingSelectionSettleRef.current = false;
+  }, [clearPendingSelectionRevealTimers]);
 
   /** Clear any pending "selected file to top" follow-up. */
   const clearPendingFileTopAlign = useCallback(() => {
@@ -1940,24 +1962,23 @@ export function DiffPane({
 
     // Run after this pane renders the selected section/hunk, then retry once on the next task
     // after the mounted row bounds settle.
+    clearPendingSelectionRevealTimers();
     suppressViewportSelectionSync();
     scrollSelectionIntoView();
     pendingSelectionSettleRef.current = shouldTrackPinnedHeaderResettle;
-    const retryDelays = [0];
-    const timeouts = retryDelays.map((delay) => setTimeout(scrollSelectionIntoView, delay));
-    const settleReset = shouldTrackPinnedHeaderResettle
-      ? setTimeout(() => {
+    const timeouts = [setTimeout(scrollSelectionIntoView, 0)];
+    if (shouldTrackPinnedHeaderResettle) {
+      timeouts.push(
+        setTimeout(() => {
           pendingSelectionSettleRef.current = false;
-        }, 120)
-      : null;
-    return () => {
-      timeouts.forEach((timeout) => clearTimeout(timeout));
-      if (settleReset) {
-        clearTimeout(settleReset);
-      }
-    };
+        }, 120),
+      );
+    }
+    pendingSelectionRevealTimeoutsRef.current = timeouts;
+    return clearPendingSelectionRevealTimers;
   }, [
     clampReviewScrollTop,
+    clearPendingSelectionRevealTimers,
     pinnedHeaderFileId,
     scrollRef,
     scrollViewport.height,
@@ -2013,6 +2034,55 @@ export function DiffPane({
     lineCursorRevealRequestId,
     scrollRef,
     scrollViewport.height,
+    suppressViewportSelectionSync,
+  ]);
+
+  const previousLineCursorAlignmentRequestIdRef = useRef(lineCursorAlignmentRequest.id);
+
+  useLayoutEffect(() => {
+    if (previousLineCursorAlignmentRequestIdRef.current === lineCursorAlignmentRequest.id) {
+      return;
+    }
+
+    const scrollBox = scrollRef.current;
+    if (
+      !scrollBox ||
+      !lineCursor ||
+      lineCursor.fileId !== selectedFileId ||
+      lineCursor.hunkIndex !== selectedHunkIndex
+    ) {
+      return;
+    }
+    const bounds = lineCursorBoundsOf(lineCursor);
+    if (!bounds) return;
+
+    const viewportHeight = scrollBox.viewport.height || scrollViewport.height;
+    const desiredTop = computeLineAlignmentScrollTop({
+      alignment: lineCursorAlignmentRequest.alignment,
+      lineTop: bounds.top,
+      lineHeight: bounds.height,
+      viewportHeight,
+    });
+    // Explicit alignment is the final scroll policy for a composed semantic
+    // command sequence; selection/file reveal retries must not overwrite it.
+    supersedePendingSelectionReveal();
+    clearPendingFileTopAlign();
+    suppressViewportSelectionSync();
+    scrollBox.scrollTo(clampReviewScrollTop(desiredTop, viewportHeight));
+    // Consume only after the selected cursor was measured and aligned. A
+    // navigation command may update selection before cursor reconciliation.
+    previousLineCursorAlignmentRequestIdRef.current = lineCursorAlignmentRequest.id;
+  }, [
+    clampReviewScrollTop,
+    clearPendingFileTopAlign,
+    lineCursor,
+    lineCursorAlignmentRequest,
+    lineCursorBoundsOf,
+    scrollRef,
+    scrollViewport.height,
+    selectedFileId,
+    selectedHunkIndex,
+    supersedePendingSelectionReveal,
     suppressViewportSelectionSync,
   ]);
 

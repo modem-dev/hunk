@@ -23,6 +23,8 @@ import {
 } from "hunkdiff/extension";
 import type {
   ExtensionChangeset,
+  ExtensionCommandControls,
+  ExtensionCommandExecutionOptions,
   ExtensionFileViewRow,
   ExtensionFileViewRowComponentProps,
   ExtensionFileViewSourceRange,
@@ -98,6 +100,14 @@ export default function (hunk: HunkExtensionAPI) {
     },
   });
   hunk.registerCommand({ id: "raw-view", title: "Raw view" }, (ctx) => {
+    const commandControls: ExtensionCommandControls = ctx.commands;
+    const execution: ExtensionCommandExecutionOptions = { count: 2 };
+    if (commandControls.isEnabled("hunk.review.nextHunk")) {
+      const executed: boolean = commandControls.execute("hunk.review.nextHunk", execution);
+      hunk.log(executed ? "moved" : "not moved");
+    }
+    // @ts-expect-error Count must be numeric.
+    commandControls.execute("hunk.review.nextHunk", { count: "two" });
     ctx.fileViews.select("raw");
     ctx.fileViews.select(null);
     ctx.fileViews.refresh("raw");

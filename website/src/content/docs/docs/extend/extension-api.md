@@ -7,7 +7,7 @@ The extension factory receives one API object. Registration calls are only valid
 
 ## `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `2`). Branch on it if you want one file to support several Hunk versions. Version 2 adds the experimental file-view contract and its command controls.
+The API generation this Hunk speaks (currently `3`). Branch on it if you want one file to support several Hunk versions. Version 3 adds live execution of public Hunk commands from extension command handlers.
 
 ## `hunk.registerTheme(theme)`
 
@@ -95,6 +95,7 @@ Registered commands are also listed in the menu bar's **Extensions** menu under 
 
 The handler fires when the key is pressed outside modal UI (dialogs, menus, and focused text inputs own their keys). It receives the standard context plus:
 
+- `ctx.commands.isEnabled(commandId)` / `execute(commandId, { count? })` — probes or invokes an explicitly public built-in `hunk.*` command through the same live table as keyboard and menu actions. Relative movement applies counts atomically; extension-owned and cross-extension commands return `false`.
 - `ctx.sidebars.open(viewId)` / `close(viewId)` / `toggle(viewId)` / `isOpen(viewId)` — a bare id names your own view, `"files"` the built-in file navigation, `"<extensionId>:<viewId>"` any registered view. Opening also reveals a hidden sidebar area.
 - `ctx.fileViews.select(viewId)` / `toggle(viewId)` / `isActive(viewId)` — controls a matching [file preview](/docs/extend/file-previews/) for the current file; `select(null)` restores raw diff.
 - `ctx.fileViews.refresh(viewId, options?)` — marks that view's prepared layouts stale so a stateful view re-derives; every file presenting it re-lays out, keeping its current rows visible until the replacement resolves. Pass `{ fileId }` to scope the invalidation to one reviewed file's presentation of the view.
@@ -122,6 +123,8 @@ hunk.registerCommand(
 `selection.file` is a frozen view, identical to a sidebar's `files` entries; it is `null` only when no files are visible. `selection.hunkIndex` is `null` whenever `file` is, or when the file has no hunks. The values are captured when the command fires, so an async handler keeps the selection it started from.
 
 `ctx.navigation.selectFile(fileId)` and `selectHunk(fileId, hunkIndex)` route through the same guarded review controller as a sidebar's `actions` — the stream scrolls, selection updates, `selection_changed` fires. Unlike `selection` it is live: a handler that awaits a dialog and then navigates still works.
+
+All built-ins listed in the [keybindings reference](https://github.com/modem-dev/hunk/blob/main/docs/keybindings.md) are public to command handlers. This includes the unbound `hunk.review.alignCurrentLineTop`, `hunk.review.alignCurrentLineCenter`, and `hunk.review.alignCurrentLineBottom` commands. `count` defaults to `1`, is capped at `10,000`, and scales relative row, viewport, horizontal, file, hunk, and annotated navigation in one host transition. Absolute and one-shot commands run once. Unknown, disabled, non-public, extension-owned, or stale commands return `false`. `isEnabled` also returns `false` for a malformed id; malformed `execute` ids, options, and counts throw into normal extension failure containment.
 
 A handler may be async; a failure becomes a warning naming your extension.
 
@@ -267,7 +270,7 @@ const patterns = (hunk.config.patterns as string[] | undefined) ?? ["*.lock"];
 
 ## `ctx.notify(message, type?)`
 
-Every handler and transform receives a context with `cwd` and `notify`; event and bus handlers add `sidebars` and `events.emit`, command handlers add `sidebars`, `fileViews`, `selection`, `navigation`, and `dialogs`. `notify` shows one transient line at the bottom of the app; `type` is `"info"` (default), `"warning"`, or `"error"`. Messages raised before the UI mounts are buffered, so a `startup` handler can notify safely.
+Every handler and transform receives a context with `cwd` and `notify`; event and bus handlers add `sidebars` and `events.emit`, command handlers add `commands`, `sidebars`, `fileViews`, `selection`, `navigation`, and `dialogs`. `notify` shows one transient line at the bottom of the app; `type` is `"info"` (default), `"warning"`, or `"error"`. Messages raised before the UI mounts are buffered, so a `startup` handler can notify safely.
 
 ## `hunk.log(message)`
 
