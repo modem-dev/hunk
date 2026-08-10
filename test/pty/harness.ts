@@ -67,7 +67,8 @@ export function sleep(ms: number) {
  * sat on a fixed screen row.
  *
  * Positive means the content moved up (scrolled down); zero means the anchor
- * row did not move at all.
+ * row did not move at all. `press` already performs Tuistory's bounded idle
+ * wait, so another wait would only repeat the same readiness contract.
  */
 export async function measureKeyScroll(session: Session, key: Key, anchorRow: number) {
   const before = (await session.text({ immediate: true })).split("\n");
@@ -77,7 +78,6 @@ export async function measureKeyScroll(session: Session, key: Key, anchorRow: nu
   }
 
   await session.press(key);
-  await session.waitIdle({ timeout: 400 });
 
   const after = (await session.text({ immediate: true })).split("\n");
   const movedTo = after.findIndex((line) => line.trim() === anchor);
