@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { parseDiffFromFile } from "@pierre/diffs";
 import type { KeyEvent } from "@opentui/core";
-import stringWidth from "string-width";
 import type { DiffFile } from "../../core/types";
 import {
   buildMenuSpecs,
@@ -251,8 +250,12 @@ describe("ui helpers", () => {
     ]);
     expect(measureTextWidth("ｶﾞ")).toBe(2);
     expect(sliceTextByWidth("ｶﾞ", 0, 2)).toEqual({ text: "ｶﾞ", width: 2 });
-    for (const cluster of ["กำ", "ກຳ", "ｶﾞ", "ｶﾟ"]) {
-      const width = stringWidth(cluster);
+    for (const [cluster, width] of [
+      ["กำ", 1],
+      ["ກຳ", 1],
+      ["ｶﾞ", 2],
+      ["ｶﾟ", 2],
+    ] as const) {
       expect(measureTextWidth(cluster)).toBe(width);
       expect(sliceTextByWidth(cluster, 0, width)).toEqual({ text: cluster, width });
       expect(wrapTextByWidth(cluster, width)).toEqual([
@@ -288,39 +291,51 @@ describe("ui helpers", () => {
     expect(cellRangeToCharRange("\u200bab", 1, 1)).toEqual({ startIndex: 2, endIndex: 3 });
   });
 
-  test("cluster width measurement matches string-width across terminal text shapes", () => {
+  test("cluster width measurement follows Hunk's terminal profile", () => {
     const clusters = [
-      "",
-      "\0",
-      "\u200b",
-      "\u0301",
-      "\ud800",
-      "─",
-      "·",
-      "日",
-      "👍",
-      "e\u0301",
-      "1\u20e3",
-      "🧑‍💻",
-      "\u1100\u1161\u11a8",
-    ];
+      ["", 0],
+      ["\0", 0],
+      ["\u200b", 0],
+      ["\u0301", 0],
+      ["\ud800", 0],
+      ["─", 1],
+      ["·", 1],
+      ["日", 2],
+      ["👍", 2],
+      ["e\u0301", 1],
+      ["1\u20e3", 2],
+      ["🧑‍💻", 2],
+      ["\u1100\u1161\u11a8", 2],
+      ["का", 2],
+      ["কি", 2],
+      ["ᄀ가", 4],
+      ["؀日", 2],
+      ["Aﾞ", 2],
+      ["\u05b0", 0],
+      ["\u093e", 1],
+      ["⚠︎", 1],
+      ["⚠️", 2],
+      ["🖐🏻", 2],
+      ["🇦🇦", 1],
+      ["\u{1F02C}\uFE0F", 1],
+    ] as const;
 
-    for (const cluster of clusters) {
-      expect(measureClusterWidth(cluster)).toBe(stringWidth(cluster));
+    for (const [cluster, width] of clusters) {
+      expect(measureClusterWidth(cluster)).toBe(width);
     }
 
     const complexLines = [
-      "日本語 scalar text 👍 🚀",
-      "🧑‍💻 👩‍🔬 terminal tools",
-      "👍🏽 emoji modifier",
-      "1️⃣ keycap sequence",
-      "♥️ variation selector",
-      "🇯🇵 regional indicators",
-      "e\u0301 a\u0308 combining text",
-      "\u1100\u1161\u11a8 Hangul Jamo",
-    ];
-    for (const line of complexLines) {
-      expect(measureTextWidth(line)).toBe(stringWidth(line));
+      ["日本語 scalar text 👍 🚀", 24],
+      ["🧑‍💻 👩‍🔬 terminal tools", 20],
+      ["👍🏽 emoji modifier", 17],
+      ["1️⃣ keycap sequence", 18],
+      ["♥️ variation selector", 21],
+      ["🇯🇵 regional indicators", 22],
+      ["e\u0301 a\u0308 combining text", 18],
+      ["\u1100\u1161\u11a8 Hangul Jamo", 14],
+    ] as const;
+    for (const [line, width] of complexLines) {
+      expect(measureTextWidth(line)).toBe(width);
     }
   });
 
@@ -334,14 +349,14 @@ describe("ui helpers", () => {
     expect(measureTextWidth("好".repeat(120))).toBe(240);
     expect(fitText("好".repeat(4), 6)).toBe("好好.");
 
-    // Surrogate-pair runs (emoji) skip the fast path and stay correct via string-width.
+    // Surrogate-pair runs (emoji) skip the repeated-code-unit fast path and stay correct.
     expect(measureTextWidth("👍".repeat(3))).toBe(6);
 
     // Zero-width and composition-sensitive repeated scalars defer to whole grapheme measurement.
     expect(measureTextWidth("\u0301".repeat(4))).toBe(0);
     expect(measureTextWidth("e\u0301")).toBe(1);
     for (const scalar of ["\u0d4e", "ำ", "ຳ"]) {
-      expect(measureTextWidth(scalar.repeat(2))).toBe(stringWidth(scalar.repeat(2)));
+      expect(measureTextWidth(scalar.repeat(2))).toBe(1);
     }
   });
 

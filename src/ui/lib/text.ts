@@ -1,5 +1,5 @@
 import { eastAsianWidth } from "get-east-asian-width";
-import stringWidth from "string-width";
+import emojiRegex from "emoji-regex";
 import { sanitizeTerminalLine } from "../../lib/terminalText";
 
 const printableAsciiRegex = /^[\u0020-\u007E]*$/;
@@ -22,13 +22,107 @@ export function textClusters(text: string) {
   return Array.from(graphemeSegmenter.segment(text), (segment) => segment.segment);
 }
 
-// Zero-width cluster classes restricted to a single code point. A plain u-flag character
-// class stays fast per call, unlike string-width's \p{RGI_Emoji} property-of-strings regex.
+// Hunk's terminal profile follows string-width 8.2.2 without its Node 20-only Unicode Sets
+// syntax: https://github.com/sindresorhus/string-width/blob/64dc20cddd374df0ff43ba3469491ae98cf0cdfc/index.js
 const zeroWidthScalarRegex =
-  /^[\p{Default_Ignorable_Code_Point}\p{Control}\p{Format}\p{Mark}\p{Surrogate}]$/u;
+  /^[\p{Default_Ignorable_Code_Point}\p{Control}\p{Format}\p{Nonspacing_Mark}\p{Enclosing_Mark}\p{Surrogate}]$/u;
+const zeroWidthClusterRegex =
+  /^(?:\p{Default_Ignorable_Code_Point}|\p{Control}|\p{Format}|\p{Nonspacing_Mark}|\p{Enclosing_Mark}|\p{Surrogate})+$/u;
+const leadingNonPrintingRegex =
+  /^[\p{Default_Ignorable_Code_Point}\p{Control}\p{Format}\p{Nonspacing_Mark}\p{Enclosing_Mark}\p{Surrogate}]+/u;
+const spacingMarkRegex = /\p{Spacing_Mark}/u;
 const emojiModifierRegex = /^\p{Emoji_Modifier}$/u;
 const regionalIndicatorRegex = /^\p{Regional_Indicator}$/u;
-const halfwidthKatakanaClusterRegex = /^[\uFF61-\uFF9F]+$/u;
+const extendedPictographicRegex = /\p{Extended_Pictographic}/gu;
+const unqualifiedKeycapRegex = /^[\d#*]\u20E3$/u;
+const emojiSequenceRegex = emojiRegex();
+
+/** Return whether a multi-scalar cluster follows Hunk's double-width emoji policy. */
+function isDoubleWidthEmojiCluster(cluster: string) {
+  emojiSequenceRegex.lastIndex = 0;
+  const emojiMatch = emojiSequenceRegex.exec(cluster);
+  if (emojiMatch?.index === 0 && emojiMatch[0].length === cluster.length) {
+    return true;
+  }
+
+  if (unqualifiedKeycapRegex.test(cluster)) {
+    return true;
+  }
+
+  // Minimally-qualified ZWJ sequences still render as one emoji in the terminals Hunk targets.
+  if (!cluster.includes("\u200D") || cluster.length > 50) {
+    return false;
+  }
+
+  const pictographics = cluster.match(extendedPictographicRegex);
+  return pictographics !== null && pictographics.length >= 2;
+}
+
+function isHangulLeadingJamo(codePoint: number) {
+  return (
+    (codePoint >= 0x1100 && codePoint <= 0x115f) || (codePoint >= 0xa960 && codePoint <= 0xa97c)
+  );
+}
+
+function isHangulVowelJamo(codePoint: number | undefined) {
+  return (
+    codePoint !== undefined &&
+    ((codePoint >= 0x1160 && codePoint <= 0x11a7) || (codePoint >= 0xd7b0 && codePoint <= 0xd7c6))
+  );
+}
+
+function isHangulTrailingJamo(codePoint: number | undefined) {
+  return (
+    codePoint !== undefined &&
+    ((codePoint >= 0x11a8 && codePoint <= 0x11ff) || (codePoint >= 0xd7cb && codePoint <= 0xd7fb))
+  );
+}
+
+function isHangulJamo(codePoint: number) {
+  return (
+    isHangulLeadingJamo(codePoint) ||
+    isHangulVowelJamo(codePoint) ||
+    isHangulTrailingJamo(codePoint)
+  );
+}
+
+/** Measure a Hangul Jamo cluster, or return null when ordinary cluster rules should handle it. */
+function measureHangulClusterWidth(cluster: string): number | null {
+  const codePoints: number[] = [];
+  for (const scalar of cluster) {
+    if (!zeroWidthScalarRegex.test(scalar)) {
+      codePoints.push(scalar.codePointAt(0)!);
+    }
+  }
+
+  if (codePoints.length === 0) {
+    return null;
+  }
+
+  let width = 0;
+  for (let index = 0; index < codePoints.length; index += 1) {
+    const codePoint = codePoints[index]!;
+    if (!isHangulJamo(codePoint)) {
+      if (width === 0) {
+        return null;
+      }
+
+      for (let remaining = index; remaining < codePoints.length; remaining += 1) {
+        width += eastAsianWidth(codePoints[remaining]!);
+      }
+      return width;
+    }
+
+    if (isHangulLeadingJamo(codePoint) && isHangulVowelJamo(codePoints[index + 1])) {
+      width += 2;
+      index += isHangulTrailingJamo(codePoints[index + 2]) ? 2 : 1;
+      continue;
+    }
+
+    width += eastAsianWidth(codePoint);
+  }
+  return width;
+}
 
 /** Return whether one scalar prepends itself to the following grapheme cluster. */
 function isGraphemePrepend(codePoint: number) {
@@ -103,11 +197,10 @@ export function measureSimpleSanitizedTextWidth(text: string) {
 }
 
 /**
- * Measure one grapheme cluster in terminal cells, matching string-width on every input.
+ * Measure one grapheme cluster in terminal cells.
  *
- * A single-scalar cluster can never be an emoji sequence, and every single-scalar emoji is East
- * Asian Wide, so a zero-width check plus the EAW table reproduces string-width exactly.
- * Multi-scalar clusters delegate to string-width itself.
+ * Single-scalar emoji are East Asian Wide. Multi-scalar clusters additionally account for emoji
+ * sequences, composed Hangul, spacing marks, and Halfwidth/Fullwidth Forms.
  */
 export function measureClusterWidth(cluster: string): number {
   const codePoint = cluster.codePointAt(0);
@@ -121,16 +214,33 @@ export function measureClusterWidth(cluster: string): number {
     return zeroWidthScalarRegex.test(cluster) ? 0 : eastAsianWidth(codePoint);
   }
 
-  // Halfwidth Katakana combining marks form one grapheme but still occupy one cell per scalar.
-  if (halfwidthKatakanaClusterRegex.test(cluster)) {
-    let width = 0;
-    for (const scalar of cluster) {
-      width += eastAsianWidth(scalar.codePointAt(0)!);
-    }
-    return width;
+  if (zeroWidthClusterRegex.test(cluster)) {
+    return 0;
   }
 
-  return stringWidth(cluster);
+  if (isDoubleWidthEmojiCluster(cluster)) {
+    return 2;
+  }
+
+  const visibleCluster = cluster.replace(leadingNonPrintingRegex, "");
+  const hangulWidth = measureHangulClusterWidth(visibleCluster);
+  if (hangulWidth !== null) {
+    return hangulWidth;
+  }
+
+  let width = eastAsianWidth(visibleCluster.codePointAt(0)!);
+  let isFirstScalar = true;
+  for (const scalar of visibleCluster) {
+    if (isFirstScalar) {
+      isFirstScalar = false;
+      continue;
+    }
+
+    if (spacingMarkRegex.test(scalar) || (scalar >= "\uFF00" && scalar <= "\uFFEF")) {
+      width += eastAsianWidth(scalar.codePointAt(0)!);
+    }
+  }
+  return width;
 }
 
 /**
@@ -178,7 +288,16 @@ export function measureSanitizedTextWidth(text: string) {
 
   // Most source text is a sequence of independent scalars. Scan code points directly instead of
   // allocating Intl.Segmenter records; composition-sensitive text keeps the whole-string fallback.
-  return measureSimpleSanitizedTextWidth(text) ?? stringWidth(text);
+  const simpleWidth = measureSimpleSanitizedTextWidth(text);
+  if (simpleWidth !== null) {
+    return simpleWidth;
+  }
+
+  let width = 0;
+  for (const cluster of textClusters(text)) {
+    width += measureClusterWidth(cluster);
+  }
+  return width;
 }
 
 /** Measure text in terminal cells, treating CJK and emoji clusters as wide. */
