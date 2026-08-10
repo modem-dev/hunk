@@ -21,7 +21,7 @@
  * Extensions can branch on `hunk.apiVersion` so a newer Hunk can keep loading
  * older extensions without guessing at their expectations.
  */
-export const HUNK_EXTENSION_API_VERSION = 2;
+export const HUNK_EXTENSION_API_VERSION = 3;
 export type HunkExtensionApiVersion = typeof HUNK_EXTENSION_API_VERSION;
 
 export type ExtensionNotifyType = "info" | "warning" | "error";
@@ -995,6 +995,31 @@ export interface ExtensionCommand {
   key?: string | readonly string[];
 }
 
+/** Options for invoking one public Hunk command from an extension command. */
+export interface ExtensionCommandExecutionOptions {
+  /**
+   * Positive whole-number magnitude for commands that support counted movement.
+   *
+   * Counts are applied atomically by the host rather than by repeatedly dispatching the command.
+   * Commands without count semantics run once. Values above 10,000 or outside the safe positive
+   * integer range are rejected as extension programming errors.
+   */
+  count?: number;
+}
+
+/** Inspect and invoke the public semantic commands owned by Hunk. */
+export interface ExtensionCommandControls {
+  /** Report whether one public `hunk.*` command exists and can run right now; malformed ids return false. */
+  isEnabled(commandId: string): boolean;
+  /**
+   * Invoke one enabled public `hunk.*` command through Hunk's normal command table.
+   *
+   * Returns `false` for unknown, disabled, non-public, extension-owned, or stale commands.
+   * Malformed ids, options, and counts are extension programming errors and throw.
+   */
+  execute(commandId: string, options?: ExtensionCommandExecutionOptions): boolean;
+}
+
 /** Open, close, and inspect sidebar views from a command handler. */
 export interface ExtensionSidebarControls {
   /**
@@ -1305,6 +1330,8 @@ export interface ExtensionWorkspace {
 
 /** What a command handler receives when its key fires. */
 export interface ExtensionCommandContext extends ExtensionContext {
+  /** Live access to the public built-in command table. */
+  readonly commands: ExtensionCommandControls;
   sidebars: ExtensionSidebarControls;
   /** Host-owned selection controls for alternate file presentations. */
   fileViews: ExtensionFileViewControls;

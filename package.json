@@ -1,6 +1,6 @@
 {
   "name": "hunkdiff",
-  "version": "0.18.0-beta.0",
+  "version": "0.18.0",
   "description": "Desktop-inspired terminal diff viewer for understanding agent-authored changesets.",
   "keywords": [
     "ai",
@@ -30,7 +30,8 @@
   "files": [
     "bin",
     "dist/npm",
-    "skills",
+    "skills/hunk-review",
+    "skills/hunk-extensions",
     "README.md",
     "LICENSE"
   ],
@@ -128,6 +129,7 @@
     "@hunk/session-broker-bun": "workspace:*",
     "@hunk/session-broker-core": "workspace:*",
     "@hunk/session-broker-node": "workspace:*",
+    "@hunk/term-video": "workspace:*",
     "@opentui/core": "^0.4.3",
     "@opentui/react": "^0.4.3",
     "@types/bun": "1.3.14",

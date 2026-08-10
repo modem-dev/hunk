@@ -359,7 +359,7 @@ describe("PTY extensions", () => {
       args: ["diff", "--mode", "stack", "--extension", REVIEW_TRIAGE_EXTENSION],
       cwd: fixture.dir,
       cols: 140,
-      rows: 24,
+      rows: 30,
       env: { XDG_CONFIG_HOME: configHome },
     });
 
@@ -391,6 +391,7 @@ describe("PTY extensions", () => {
       expect(menu).not.toBeNull();
       expect(menu!).toMatch(/Toggle review triage\s+y/);
       expect(menu).toMatch(/Mark selected hunk…\s+x/);
+      expect(menu).toContain("Center current review line");
       expect(menu).toContain("Set review focus…");
       expect(menu).toContain("Clear triage decisions");
     } finally {

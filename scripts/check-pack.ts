@@ -24,6 +24,8 @@ import {
 } from "hunkdiff/extension";
 import type {
   ExtensionChangeset,
+  ExtensionCommandControls,
+  ExtensionCommandExecutionOptions,
   ExtensionFileViewRow,
   ExtensionFileViewRowComponentProps,
   ExtensionFileViewSourceRange,
@@ -99,6 +101,14 @@ export default function (hunk: HunkExtensionAPI) {
     },
   });
   hunk.registerCommand({ id: "raw-view", title: "Raw view" }, (ctx) => {
+    const commandControls: ExtensionCommandControls = ctx.commands;
+    const execution: ExtensionCommandExecutionOptions = { count: 2 };
+    if (commandControls.isEnabled("hunk.review.nextHunk")) {
+      const executed: boolean = commandControls.execute("hunk.review.nextHunk", execution);
+      hunk.log(executed ? "moved" : "not moved");
+    }
+    // @ts-expect-error Count must be numeric.
+    commandControls.execute("hunk.review.nextHunk", { count: "two" });
     ctx.fileViews.select("raw");
     ctx.fileViews.select(null);
     ctx.fileViews.refresh("raw");
@@ -259,6 +269,10 @@ const requiredPaths = [
   "README.md",
   "LICENSE",
   "package.json",
+  // The bundled skills must survive the narrowed per-skill files entries —
+  // `hunk skill path [name]` resolves them at runtime.
+  "skills/hunk-review/SKILL.md",
+  "skills/hunk-extensions/SKILL.md",
 ];
 
 for (const path of requiredPaths) {
@@ -288,6 +302,8 @@ const forbiddenPrefixes = [
   "tmp/",
   "dist/npm/core/",
   "dist/npm/ui/",
+  // Maintainer-only release engineering; it references scripts/ which never ships.
+  "skills/launch-video/",
 ];
 const forbiddenPaths = ["AGENTS.md", "bun.lock"];
 

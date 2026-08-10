@@ -1,6 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "astro",
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- ./website ./vercel.json ./scripts/generate-docs.ts",
   "installCommand": "SKIP_INSTALL_SIMPLE_GIT_HOOKS=1 bun install --frozen-lockfile && bun install --cwd website --frozen-lockfile",
   "buildCommand": "bun run website:build",
   "outputDirectory": "website/dist"

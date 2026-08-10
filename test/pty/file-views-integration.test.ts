@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createPtyHarness } from "./harness";
@@ -9,6 +9,7 @@ const RENDERED_MARKDOWN_EXTENSION = join(
   import.meta.dir,
   "../../examples/extensions/rendered-markdown",
 );
+const INLINE_EDIT_EXTENSION = join(import.meta.dir, "../../examples/extensions/inline-edit");
 const JSX_FILE_VIEW_EXTENSION = join(import.meta.dir, "../../examples/extensions/jsx-file-view");
 const JSX_FILE_VIEW_GALLERY = join(
   import.meta.dir,
@@ -96,6 +97,17 @@ function createInteractiveViewExtension(directory: string) {
     "utf8",
   );
   return extension;
+}
+
+/** Poll one file until the host's write lands, so the assertion is not a race. */
+async function waitForWrittenFile(path: string, expected: string, timeout = 15_000) {
+  const deadline = Date.now() + timeout;
+  let text = readFileSync(path, "utf8");
+  while (text !== expected && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    text = readFileSync(path, "utf8");
+  }
+  return text;
 }
 
 describe("PTY file views", () => {
@@ -364,6 +376,155 @@ describe("PTY file views", () => {
       await session.press("f8");
       const raw = await session.waitForText(/line60 = 6000/, { timeout: 20_000 });
       expect(raw).not.toContain("CURSOR AT");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("runs the inline edit example from typed keys to a written working-tree file", async () => {
+    const repo = harness.createTwoFileRepoFixture();
+    const edited = join(repo.dir, "alpha.ts");
+    const session = await harness.launchHunk({
+      args: ["diff", "--extension", INLINE_EDIT_EXTENSION, "--mode", "stack"],
+      cwd: repo.dir,
+      cols: 140,
+      rows: 24,
+    });
+
+    try {
+      await session.waitForText(/alpha\.ts/, { timeout: 20_000 });
+      await harness.ensureKeyboardIsLive(session);
+
+      // One press: `enterMode` selects the view for the file and takes the
+      // keyboard together, so the editor opens without a second Ctrl-E.
+      await session.press(["ctrl", "e"]);
+      // The view shows the new document alone, so the removed old-side line is
+      // how the terminal reports that the presentation actually switched.
+      await harness.waitForSnapshot(session, (text) => !text.includes("alpha = 1"), 20_000);
+      await session.waitForText(/EDITING — Esc exits · ctrl\+s writes/, { timeout: 20_000 });
+      await session.waitForText(/inline-edit:inline-edit mode — Esc exits/, { timeout: 20_000 });
+
+      // `z` is Hunk's expand-context key; while the mode runs it is text, and
+      // each keystroke reaches the screen only through `fileViews.refresh`.
+      await session.press("z");
+      await session.press("z");
+      await session.press("z");
+      const typed = await session.waitForText(/zzzexport const alpha = 2;/, { timeout: 20_000 });
+      expect(typed).toContain("MODIFIED");
+
+      // `?` is an explicitly host-owned printable key, so help remains
+      // reachable and one Escape closes only the overlay, not the editor.
+      await session.press("?");
+      await session.waitForText(/Controls help/, { timeout: 20_000 });
+      await session.press("escape");
+      await session.waitForText(/inline-edit:inline-edit mode — Esc exits/, { timeout: 20_000 });
+
+      // The mode can only request the write; the command handler awaiting the
+      // session performs it, and the host asks the user first.
+      await session.press(["ctrl", "s"]);
+      await session.waitForText(/Write alpha\.ts\?/, { timeout: 20_000 });
+      const prompt = await session.waitForText(/ext inline-edit/, { timeout: 20_000 });
+      expect(prompt).toContain("replace this file's contents on disk");
+      await session.press("enter");
+
+      expect(
+        await waitForWrittenFile(edited, "zzzexport const alpha = 2;\nexport const add = true;\n"),
+      ).toBe("zzzexport const alpha = 2;\nexport const add = true;\n");
+
+      // A successful write reloads the review, and the reload exits the mode.
+      await session.waitForText(/zzzexport const alpha = 2;/, { timeout: 20_000 });
+      await harness.waitForSnapshot(session, (text) => !text.includes("Esc exits"), 20_000);
+
+      // The command table owns the keyboard again: `z` no longer types.
+      await session.press("z");
+      await session.waitIdle();
+      const afterExit = await session.text();
+      expect(afterExit).toContain("zzzexport const alpha = 2;");
+      expect(afterExit).not.toContain("zzzz");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("keeps an annotated joined line visible in the active editor", async () => {
+    const repo = harness.createTwoFileRepoFixture();
+    const agentContext = join(repo.dir, "agent.json");
+    writeFileSync(
+      agentContext,
+      JSON.stringify({
+        version: 1,
+        files: [
+          {
+            path: "alpha.ts",
+            annotations: [{ newRange: [2, 2], summary: "Keep this note visible." }],
+          },
+        ],
+      }),
+      "utf8",
+    );
+    const session = await harness.launchHunk({
+      args: [
+        "diff",
+        "--extension",
+        INLINE_EDIT_EXTENSION,
+        "--mode",
+        "stack",
+        "--agent-context",
+        agentContext,
+        "--agent-notes",
+      ],
+      cwd: repo.dir,
+      cols: 140,
+      rows: 24,
+    });
+
+    try {
+      await session.waitForText(/Keep this note visible\./, { timeout: 20_000 });
+      await harness.ensureKeyboardIsLive(session);
+      await session.press(["ctrl", "e"]);
+      await session.waitForText(/EDITING — Esc exits/, { timeout: 20_000 });
+
+      await session.press("down");
+      await session.press("backspace");
+      const joined = await session.waitForText(/export const alpha = 2;export const add = true;/, {
+        timeout: 20_000,
+      });
+      expect(joined).toContain("EDITING — Esc exits");
+      expect(joined).toContain("Keep this note visible.");
+
+      await session.press("z");
+      await session.waitForText(/export const alpha = 2;zexport const add = true;/, {
+        timeout: 20_000,
+      });
+      await session.press("escape");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("deletes and writes a whole emoji without surrogate corruption", async () => {
+    const repo = harness.createTwoFileRepoFixture();
+    const edited = join(repo.dir, "alpha.ts");
+    writeFileSync(edited, "😀\n", "utf8");
+    const session = await harness.launchHunk({
+      args: ["diff", "--extension", INLINE_EDIT_EXTENSION, "--mode", "stack"],
+      cwd: repo.dir,
+      cols: 140,
+      rows: 24,
+    });
+
+    try {
+      await session.waitForText(/😀/, { timeout: 20_000 });
+      await harness.ensureKeyboardIsLive(session);
+      await session.press(["ctrl", "e"]);
+      await session.waitForText(/EDITING — Esc exits/, { timeout: 20_000 });
+      await session.press("right");
+      await session.press("backspace");
+      await session.press(["ctrl", "s"]);
+      await session.waitForText(/Write alpha\.ts\?/, { timeout: 20_000 });
+      await session.press("enter");
+
+      expect(await waitForWrittenFile(edited, "\n")).toBe("\n");
     } finally {
       session.close();
     }

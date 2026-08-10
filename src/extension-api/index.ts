@@ -65,6 +65,8 @@ export type {
   ExtensionFactory,
   ExtensionCommand,
   ExtensionCommandContext,
+  ExtensionCommandControls,
+  ExtensionCommandExecutionOptions,
   ExtensionCommandHandler,
   ExtensionReviewSelection,
   ExtensionConfirmOptions,

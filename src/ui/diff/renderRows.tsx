@@ -272,15 +272,18 @@ function styledTextFromSpanNodes(nodes: ReactNode[]) {
   return new StyledText(chunks);
 }
 
-/** Append an unselected fixed-width inline span plan directly to StyledText chunks. */
+/** Append a fixed-width inline span plan directly to StyledText chunks. */
 function appendFixedInlineChunks(
   chunks: TextChunk[],
   spans: RenderSpan[],
   width: number,
   fallbackColor: string,
   fallbackBg: string,
+  highlightBg?: (baseBg: string) => string,
 ) {
   const { spans: trimmed, usedWidth } = sliceSpansWindow(spans, 0, width);
+  const renderedBackground = (background: string) =>
+    highlightBg ? highlightBg(background) : background;
   const paddingAmount = Math.max(0, width - usedWidth);
   const lastSpan = trimmed.at(-1);
   let paddingMerged = false;
@@ -299,7 +302,7 @@ function appendFixedInlineChunks(
       __isChunk: true,
       text: span.text,
       fg: styledTextColor(span.fg ?? fallbackColor),
-      bg: styledTextColor(span.bg ?? fallbackBg),
+      bg: styledTextColor(renderedBackground(span.bg ?? fallbackBg)),
     });
   }
   if (!paddingMerged && paddingAmount > 0) {
@@ -307,12 +310,17 @@ function appendFixedInlineChunks(
       __isChunk: true,
       text: " ".repeat(paddingAmount),
       fg: styledTextColor(fallbackColor),
-      bg: styledTextColor(fallbackBg),
+      bg: styledTextColor(renderedBackground(fallbackBg)),
     });
   }
 }
 
-/** Append one unselected wrapped cell without constructing intermediate React span elements. */
+/** Report whether a wrapped highlight can paint existing chunks without slicing token spans. */
+function isChunkCompatibleWrappedHighlight(highlight: RowHighlight | undefined) {
+  return !highlight?.colRange || highlight.colRange === FULL_ROW_COL_RANGE;
+}
+
+/** Append one wrapped cell without constructing intermediate React span elements. */
 function appendWrappedCellChunks(
   chunks: TextChunk[],
   line: WrappedCellLine,
@@ -320,19 +328,23 @@ function appendWrappedCellChunks(
   contentWidth: number,
   theme: AppTheme,
   prefix: { text: string; fg: string; bg: string },
+  highlight?: RowHighlight,
 ) {
+  const renderedBackground = (background: string) =>
+    highlight ? highlight.bg(background) : background;
+  const contentHighlightBg = highlight?.colRange === FULL_ROW_COL_RANGE ? highlight.bg : undefined;
   chunks.push(
     {
       __isChunk: true,
       text: prefix.text,
       fg: styledTextColor(prefix.fg),
-      bg: styledTextColor(prefix.bg),
+      bg: styledTextColor(renderedBackground(prefix.bg)),
     },
     {
       __isChunk: true,
       text: line.gutterText,
       fg: styledTextColor(palette.numberColor),
-      bg: styledTextColor(palette.gutterBg),
+      bg: styledTextColor(renderedBackground(palette.gutterBg)),
     },
   );
   appendFixedInlineChunks(
@@ -341,6 +353,7 @@ function appendWrappedCellChunks(
     contentWidth,
     theme.syntaxColors.default,
     palette.contentBg,
+    contentHighlightBg,
   );
 }
 
@@ -366,7 +379,19 @@ function renderInlineSpans(
     horizontalOffset,
     width,
   );
-  const needsBlending = highlightBg && selectionColRange;
+  // A whole-row cursor covers this complete rendered window, so it can recolor each existing span
+  // directly. Treating it like a partial copy selection would remeasure and split every token — a
+  // particularly expensive duplicate width pass for long wrapped CJK lines.
+  const fullHighlightBg =
+    highlightBg &&
+    selectionColRange &&
+    selectionColRange.start <= 0 &&
+    selectionColRange.end >= width
+      ? highlightBg
+      : undefined;
+  const needsBlending = !fullHighlightBg && highlightBg && selectionColRange;
+  const renderedBackground = (background: string) =>
+    fullHighlightBg ? fullHighlightBg(background) : background;
   const paddingAmount = Math.max(0, width - usedWidth);
   let paddingMerged = false;
   const lastSpan = trimmed.at(-1);
@@ -394,7 +419,7 @@ function renderInlineSpans(
         <span
           key={`${keyPrefix}:${elementIndex++}`}
           fg={span.fg ?? fallbackColor}
-          bg={span.bg ?? fallbackBg}
+          bg={renderedBackground(span.bg ?? fallbackBg)}
         >
           {span.text}
         </span>,
@@ -526,7 +551,7 @@ function renderInlineSpans(
   } else if (!paddingMerged && paddingAmount > 0) {
     // Keep a separate padding span when the final content style differs from the cell fallback.
     elements.push(
-      <span key={`${keyPrefix}:pad`} fg={fallbackColor} bg={fallbackBg}>
+      <span key={`${keyPrefix}:pad`} fg={fallbackColor} bg={renderedBackground(fallbackBg)}>
         {" ".repeat(paddingAmount)}
       </span>,
     );
@@ -1903,7 +1928,10 @@ function renderRow(
 
             const showBadgeOnLine = showAddNoteBadge && index === 0;
             let styledRow: StyledText;
-            if (leftHighlight || rightHighlight) {
+            if (
+              !isChunkCompatibleWrappedHighlight(leftHighlight) ||
+              !isChunkCompatibleWrappedHighlight(rightHighlight)
+            ) {
               styledRow = styledTextFromSpanNodes([
                 renderWrappedSplitCellLine(
                   leftLine,
@@ -1940,6 +1968,7 @@ function renderRow(
                 leftContentWidth,
                 theme,
                 leftPrefix,
+                leftHighlight,
               );
               appendWrappedCellChunks(
                 chunks,
@@ -1948,6 +1977,7 @@ function renderRow(
                 rightContentWidth,
                 theme,
                 rightPrefix,
+                rightHighlight,
               );
               if (guideOnNewSide) {
                 chunks.push({
@@ -2078,22 +2108,44 @@ function renderRow(
         <box id={anchorId} style={{ width: "100%", flexDirection: "column" }}>
           {layout.lines.map((line, index) => {
             const showBadgeOnLine = showAddNoteBadge && index === 0;
-            const styledRow = styledTextFromSpanNodes([
-              renderWrappedStackCellLine(
+            let styledRow: StyledText;
+            if (isChunkCompatibleWrappedHighlight(cellHighlight)) {
+              const chunks: TextChunk[] = [];
+              appendWrappedCellChunks(
+                chunks,
                 line,
                 layout.palette,
                 wrappedContentWidth,
                 theme,
-                `${row.key}:stack:${index}`,
                 prefix,
                 cellHighlight,
-              ),
-              guideOnNewSide ? (
-                <span key={`${row.key}:note-guide:${index}`} fg={theme.noteBorder}>
-                  │
-                </span>
-              ) : null,
-            ]);
+              );
+              if (guideOnNewSide) {
+                chunks.push({
+                  __isChunk: true,
+                  text: "│",
+                  fg: styledTextColor(theme.noteBorder),
+                });
+              }
+              styledRow = new StyledText(chunks);
+            } else {
+              styledRow = styledTextFromSpanNodes([
+                renderWrappedStackCellLine(
+                  line,
+                  layout.palette,
+                  wrappedContentWidth,
+                  theme,
+                  `${row.key}:stack:${index}`,
+                  prefix,
+                  cellHighlight,
+                ),
+                guideOnNewSide ? (
+                  <span key={`${row.key}:note-guide:${index}`} fg={theme.noteBorder}>
+                    │
+                  </span>
+                ) : null,
+              ]);
+            }
 
             return (
               <box

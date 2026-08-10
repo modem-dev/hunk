@@ -1,0 +1,276 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      /* The stage is a fixed 1920x1080 canvas screenshotted frame by frame. */
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+      }
+      @font-face {
+        font-family: "JetBrains Mono";
+        src: url("FONT_URL") format("truetype");
+      }
+      body {
+        font-family: "JetBrains Mono", monospace;
+        background:
+          radial-gradient(1200px 800px at 18% -10%, #232f55 0%, rgba(35, 47, 85, 0) 60%),
+          radial-gradient(1000px 700px at 105% 110%, #3b2140 0%, rgba(59, 33, 64, 0) 55%),
+          linear-gradient(160deg, #0c101c 0%, #080b13 100%);
+        color: #e6ecff;
+        position: relative;
+      }
+
+      /* ---- terminal window ---- */
+      #stage-term {
+        position: absolute;
+        left: 50%;
+        top: 44px;
+        width: 1560px;
+        transform: translateX(-50%);
+        border-radius: 14px;
+        overflow: hidden;
+        box-shadow:
+          0 34px 90px rgba(0, 0, 0, 0.65),
+          0 0 0 1px rgba(255, 255, 255, 0.07);
+        background: #10141f;
+      }
+      #term-bar {
+        height: 46px;
+        display: flex;
+        align-items: center;
+        background: linear-gradient(#1d2331, #171c28);
+        position: relative;
+      }
+      #term-bar .lights {
+        display: flex;
+        gap: 9px;
+        padding-left: 18px;
+      }
+      #term-bar .lights i {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        display: block;
+      }
+      #term-bar .lights i:nth-child(1) {
+        background: #ff5f57;
+      }
+      #term-bar .lights i:nth-child(2) {
+        background: #febc2e;
+      }
+      #term-bar .lights i:nth-child(3) {
+        background: #28c840;
+      }
+      #term-title {
+        position: absolute;
+        left: 0;
+        right: 0;
+        text-align: center;
+        font-size: 19px;
+        color: #8b93ad;
+        letter-spacing: 0.02em;
+      }
+      #term-content {
+        width: 1560px;
+        height: 892px;
+        position: relative;
+      }
+      #term-img {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        display: block;
+      }
+
+      /* ---- caption band ---- */
+      #caption {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 992px;
+        text-align: center;
+      }
+      #caption .line {
+        display: inline-block;
+        font-size: 40px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+        text-shadow: 0 4px 24px rgba(0, 0, 0, 0.7);
+      }
+      #caption .badge {
+        display: inline-block;
+        font-size: 26px;
+        font-weight: 700;
+        padding: 6px 16px;
+        margin-right: 16px;
+        border-radius: 999px;
+        background: #e0af68;
+        color: #171003;
+        letter-spacing: 0.06em;
+        vertical-align: 4px;
+      }
+      #caption .hl {
+        color: #e0af68;
+      }
+      #caption .dim {
+        color: #9aa3bd;
+        font-weight: 500;
+      }
+
+      /* ---- full-screen cards ---- */
+      #card {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 30px;
+        text-align: center;
+      }
+      #card .badge {
+        font-size: 30px;
+        font-weight: 700;
+        padding: 8px 26px;
+        border-radius: 999px;
+        background: #e0af68;
+        color: #171003;
+        letter-spacing: 0.12em;
+      }
+      #card h1 {
+        font-size: 190px;
+        font-weight: 700;
+        letter-spacing: -0.03em;
+        line-height: 1;
+        background: linear-gradient(120deg, #f2f6ff 30%, #aab8e8 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+      #card h2 {
+        font-size: 74px;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+      }
+      #card .sub {
+        font-size: 42px;
+        color: #9aa3bd;
+        font-weight: 500;
+      }
+      #card .sub .hl {
+        color: #e0af68;
+      }
+      #card .cmds {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        margin-top: 14px;
+      }
+      #card .cmd {
+        font-size: 44px;
+        font-weight: 600;
+        padding: 18px 42px;
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.055);
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+      }
+      #card .cmd .p {
+        color: #bb9af7;
+      }
+      #card .foot {
+        font-size: 28px;
+        color: #6c7590;
+        margin-top: 26px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="stage-term" style="display: none">
+      <div id="term-bar">
+        <div class="lights"><i></i><i></i><i></i></div>
+        <div id="term-title"></div>
+      </div>
+      <div id="term-content"><img id="term-img" alt="" /></div>
+    </div>
+    <div id="caption"></div>
+    <div id="card" style="display: none"></div>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const easeOut = (t) => 1 - Math.pow(1 - Math.min(Math.max(t, 0), 1), 4);
+
+      // Sample a background color from an image's bottom-left corner so shorter
+      // terminal captures (auto-trimmed height) extend seamlessly.
+      const bgCache = new Map();
+      function sampleBg(img) {
+        if (bgCache.has(img.src)) return bgCache.get(img.src);
+        const canvas = document.createElement("canvas");
+        canvas.width = 8;
+        canvas.height = 8;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 2, img.naturalHeight - 10, 8, 8, 0, 0, 8, 8);
+        const d = ctx.getImageData(4, 4, 1, 1).data;
+        const color = `rgb(${d[0]}, ${d[1]}, ${d[2]})`;
+        bgCache.set(img.src, color);
+        return color;
+      }
+
+      function renderCaption(cap, capT) {
+        const el = $("caption");
+        if (!cap) {
+          el.innerHTML = "";
+          return;
+        }
+        const t = easeOut(capT);
+        el.innerHTML = `<span class="line">${cap}</span>`;
+        el.style.opacity = String(t);
+        el.style.transform = `translateY(${(1 - t) * 26}px)`;
+      }
+
+      // Called by the compositor for every frame. Returns a promise that resolves
+      // once the frame's image (if any) is decoded and painted.
+      window.renderShot = async function renderShot(state) {
+        const term = $("stage-term");
+        const card = $("card");
+
+        if (state.kind === "card") {
+          term.style.display = "none";
+          card.style.display = "flex";
+          card.innerHTML = state.html;
+          const t = easeOut(state.shotT ?? 1);
+          card.style.opacity = String(t);
+          card.style.transform = `scale(${0.965 + 0.035 * t})`;
+          renderCaption(null, 0);
+        } else {
+          card.style.display = "none";
+          term.style.display = "block";
+          $("term-title").textContent = state.title ?? "hunk";
+          const img = $("term-img");
+          if (img.getAttribute("src") !== state.img) {
+            img.setAttribute("src", state.img);
+            await img.decode();
+            $("term-content").style.background = sampleBg(img);
+          }
+          const t = easeOut(state.shotT ?? 1);
+          term.style.opacity = String(t);
+          term.style.transform = `translateX(-50%) scale(${0.975 + 0.025 * t})`;
+          renderCaption(state.caption ?? null, state.capT ?? 1);
+        }
+
+        // Two RAFs so styles and the decoded image are definitely painted before
+        // the compositor screenshots this frame.
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+        return true;
+      };
+    </script>
+  </body>
+</html>

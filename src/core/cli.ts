@@ -12,7 +12,12 @@ import type {
   SessionCommentListType,
   SessionCommentApplyItemInput,
 } from "./types";
-import { resolveBundledHunkReviewSkillPath } from "./paths";
+import {
+  BUNDLED_SKILL_NAMES,
+  resolveBundledSkillName,
+  resolveBundledSkillPath,
+  type BundledSkillName,
+} from "./paths";
 import {
   type AgentCommandConstraint,
   type AgentCommandSpec,
@@ -181,8 +186,8 @@ export const CLI_REFERENCE_COMMANDS = {
   },
   "skill-path": {
     path: "skill path",
-    summary: "print the bundled Hunk review skill path",
-    synopsis: ["hunk skill path"],
+    summary: "print a bundled Hunk skill path",
+    synopsis: ["hunk skill path [name]"],
   },
   "daemon-serve": {
     path: "daemon serve",
@@ -342,18 +347,22 @@ function renderCliVersion() {
   return `${resolveCliVersion()}\n`;
 }
 
-/** Render the bundled Hunk review skill path for shell usage. */
-function renderHunkReviewSkillPath() {
-  return `${resolveBundledHunkReviewSkillPath()}\n`;
+/** Render one bundled skill path for shell usage. */
+function renderBundledSkillPath(name?: BundledSkillName) {
+  return `${resolveBundledSkillPath(name)}\n`;
 }
 
 /** Build the `hunk skill` help text. */
 function renderSkillHelp() {
   return [
-    "Usage: hunk skill path",
+    "Usage: hunk skill path [name]",
     "",
-    "Print the bundled Hunk review skill path.",
+    "Print a bundled Hunk skill path.",
     "Load or symlink that file in your coding agent to keep it in sync across Hunk upgrades.",
+    "",
+    "Skills:",
+    `  hunk-review (default, "review")   review a live Hunk session with \`hunk session\` commands`,
+    `  hunk-extensions ("extensions")    build extensions against the hunkdiff/extension API`,
     "",
   ].join("\n");
 }
@@ -377,7 +386,7 @@ function renderCliHelp() {
     "  hunk session <subcommand>               inspect or control a live Hunk session",
     "  hunk markup render (<file> | -)         preview experimental STML note markup",
     "  hunk markup guide                       print the experimental STML authoring guide",
-    "  hunk skill path                         print the bundled Hunk review skill path",
+    "  hunk skill path [name]                  print a bundled Hunk skill path",
     "  hunk daemon serve                       run the local Hunk session daemon",
     "",
     "Global options:",
@@ -1362,13 +1371,25 @@ async function parseSkillCommand(tokens: string[]): Promise<HelpCommandInput> {
     };
   }
 
-  if (rest.length > 0) {
-    throw new Error("`hunk skill path` does not accept additional arguments.");
+  if (rest.length > 1) {
+    throw new Error("`hunk skill path` accepts at most one skill name.");
+  }
+
+  const [requestedName] = rest;
+  if (requestedName === undefined) {
+    return { kind: "help", text: renderBundledSkillPath() };
+  }
+
+  const name = resolveBundledSkillName(requestedName);
+  if (!name) {
+    throw new Error(
+      `Unknown skill "${requestedName}". Bundled skills are ${BUNDLED_SKILL_NAMES.join(" and ")}.`,
+    );
   }
 
   return {
     kind: "help",
-    text: renderHunkReviewSkillPath(),
+    text: renderBundledSkillPath(name),
   };
 }
 

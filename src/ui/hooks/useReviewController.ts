@@ -54,10 +54,11 @@ import { agentNoteMarkupWidth } from "../lib/agentNoteGeometry";
 import { reviewNoteSource } from "../lib/agentAnnotations";
 import { STML_REFERENCE_WIDTH, validateStmlMarkup } from "../lib/stml/layout";
 import {
-  buildReviewState,
+  buildReviewStreamState,
   buildSelectedHunkSummary,
   findNextAnnotatedFile,
   resolveReviewNavigationTarget,
+  resolveSelectedFile,
 } from "../lib/reviewState";
 
 /** Add or remove one gap key from a file's expansion set. */
@@ -320,25 +321,20 @@ export function useReviewController({
 
   const deferredFilter = useDeferredValue(filter);
 
-  const { allFiles, visibleFiles, selectedFile, selectedHunk, hunkCursors, annotatedHunkCursors } =
-    useMemo(
-      () =>
-        buildReviewState({
-          files,
-          liveCommentsByFileId: mergeAnnotationMaps(liveCommentsByFileId, userNotesByFileId),
-          filterQuery: deferredFilter,
-          selectedFileId,
-          selectedHunkIndex,
-        }),
-      [
-        deferredFilter,
+  const { allFiles, visibleFiles, hunkCursors, annotatedHunkCursors } = useMemo(
+    () =>
+      buildReviewStreamState({
         files,
-        liveCommentsByFileId,
-        selectedFileId,
-        selectedHunkIndex,
-        userNotesByFileId,
-      ],
-    );
+        liveCommentsByFileId: mergeAnnotationMaps(liveCommentsByFileId, userNotesByFileId),
+        filterQuery: deferredFilter,
+      }),
+    [deferredFilter, files, liveCommentsByFileId, userNotesByFileId],
+  );
+  const selectedFile = useMemo(
+    () => resolveSelectedFile(allFiles, visibleFiles, selectedFileId),
+    [allFiles, selectedFileId, visibleFiles],
+  );
+  const selectedHunk = selectedFile?.metadata.hunks[selectedHunkIndex];
 
   /** Update the selection and reveal intent together so diff scrolling stays explicit. */
   const selectHunk = useCallback(

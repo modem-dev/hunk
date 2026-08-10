@@ -22,6 +22,10 @@ export default function (hunk: HunkExtensionAPI) {
 > changes will be called out in release notes, and `hunk.apiVersion` identifies
 > the surface an extension was written against.
 
+Writing one with a coding agent? `hunk skill path hunk-extensions` prints a
+bundled skill that maps the touchpoints below for agents, the way
+`hunk skill path` does for reviewing.
+
 ## Where Hunk looks for extensions
 
 Discovery runs group by group, alphabetically by resolved path within each
@@ -188,7 +192,7 @@ cannot mutate the registry mid-session.
 
 ### `hunk.apiVersion`
 
-The API generation this Hunk speaks (currently `2`). Branch on it if you want
+The API generation this Hunk speaks (currently `3`). Branch on it if you want
 one file to support several Hunk versions.
 
 ### `hunk.registerTheme(theme)`
@@ -1039,6 +1043,33 @@ selected hunk, and `null` whenever `file` is — or when the file has no hunks t
 select. The values are captured when the command fires: a handler that awaits
 still sees the selection it was run from, not wherever the user navigated to
 meanwhile.
+
+`ctx.commands` invokes Hunk's documented semantic commands through the exact same live command
+table used by the keyboard, menus, and help:
+
+```ts
+hunk.registerCommand({ id: "skip-three", title: "Skip three hunks", key: "ctrl+j" }, (ctx) => {
+  if (ctx.commands.isEnabled("hunk.review.nextHunk")) {
+    ctx.commands.execute("hunk.review.nextHunk", { count: 3 });
+  }
+});
+```
+
+Only explicitly public built-in `hunk.*` commands can be invoked. Unknown, disabled,
+extension-owned, or stale-session commands return `false`; an extension cannot recursively invoke
+itself or another extension. `isEnabled` also returns `false` for malformed ids, while malformed
+`execute` ids, options, and counts throw as extension programming errors. The public ids are the built-ins listed in
+[keybindings](keybindings.md), including the unbound
+`hunk.review.alignCurrentLineTop`, `hunk.review.alignCurrentLineCenter`, and
+`hunk.review.alignCurrentLineBottom` commands.
+
+`count` defaults to `1` and must be a positive safe integer no greater than `10,000`. Relative
+line, viewport, horizontal, file, hunk, and annotated navigation applies the count atomically in
+one host transition. Absolute positioning and one-shot commands run once. This avoids stale React
+state without exposing scroll boxes, renderer refs, or coordinates. Both methods read live command
+state, so they remain valid after an `await` or an ordinary content soft reload that retains the
+extension registry. Controls retained across an extension-registry reload or App remount return
+`false`.
 
 `ctx.navigation` moves the review stream: `selectFile(fileId)` and
 `selectHunk(fileId, hunkIndex)`, the same guarded navigation a sidebar's

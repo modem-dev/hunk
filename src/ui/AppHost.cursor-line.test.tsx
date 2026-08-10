@@ -105,6 +105,33 @@ async function renderCursorLineApp(
   return setup;
 }
 
+/** Render a long wrapped CJK addition through the split-row chunk path. */
+async function renderWrappedCursorLineApp(cursorLine: CursorLine) {
+  const content = `export const message = "${"日本語".repeat(80)}";\n`;
+  const bootstrap = {
+    ...createTestVcsAppBootstrap({
+      files: [
+        createTestDiffFile({
+          id: "wrapped",
+          path: "wrapped.ts",
+          before: "",
+          after: content,
+          context: 3,
+        }),
+      ],
+      initialMode: "split",
+      initialWrapLines: true,
+    }),
+    initialCursorLine: cursorLine,
+  };
+  const setup = await testRender(<AppHost bootstrap={bootstrap as never} />, {
+    width: 120,
+    height: 16,
+  });
+  await flush(setup);
+  return setup;
+}
+
 describe("current line highlight", () => {
   test("marks the current row apart from the rows around it", async () => {
     const setup = await renderCursorLineApp("row");
@@ -199,6 +226,22 @@ describe("current line highlight", () => {
     } finally {
       await act(async () => {
         setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("marks a wrapped CJK row through the chunk renderer", async () => {
+    const marked = await renderWrappedCursorLineApp("row");
+    const plain = await renderWrappedCursorLineApp("off");
+
+    try {
+      expect(rowBackground(marked, "日本語日本語")).not.toEqual(
+        rowBackground(plain, "日本語日本語"),
+      );
+    } finally {
+      await act(async () => {
+        marked.renderer.destroy();
+        plain.renderer.destroy();
       });
     }
   });
