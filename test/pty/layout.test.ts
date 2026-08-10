@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
-import stringWidth from "string-width";
 import { createPtyHarness, dragMouse, rightmostColumnOf, sleep } from "./harness";
 
 const harness = createPtyHarness();
@@ -186,14 +185,13 @@ describe("PTY layout", () => {
         throw new Error(`Expected wide and plain split rows in snapshot:\n${snapshot}`);
       }
 
-      const wideSeparatorIndex = wideLine.indexOf("▌", 1);
-      const plainSeparatorIndex = plainLine.indexOf("▌", 1);
+      const wideSeparatorIndex = wideLine.indexOf("▌", wideLine.indexOf("▌") + 1);
+      const plainSeparatorIndex = plainLine.indexOf("▌", plainLine.indexOf("▌") + 1);
 
       expect(wideSeparatorIndex).toBeGreaterThan(0);
       expect(plainSeparatorIndex).toBeGreaterThan(0);
-      expect(stringWidth(wideLine.slice(0, wideSeparatorIndex))).toBe(
-        stringWidth(plainLine.slice(0, plainSeparatorIndex)),
-      );
+      // The Japanese prefix has three two-cell scalars; every other prefix character is ASCII.
+      expect(wideSeparatorIndex + 3).toBe(plainSeparatorIndex);
     } finally {
       session.close();
     }

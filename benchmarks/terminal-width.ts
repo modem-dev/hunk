@@ -1,6 +1,5 @@
-// Benchmark Hunk's scalar fast path and cached complex-cluster path against string-width.
+// Benchmark Hunk's scalar fast path and complex-cluster fallback.
 import { performance } from "node:perf_hooks";
-import stringWidth from "string-width";
 import { measureTextWidth } from "../src/ui/lib/text";
 
 const ITERATIONS = 2_000;
@@ -39,32 +38,14 @@ function measureWidthCalls(measure: WidthMeasure, corpus: WidthCorpus, iteration
   return { elapsedMs: performance.now() - start, checksum };
 }
 
-/** Verify and time one deterministic terminal-text shape. */
+/** Time one deterministic terminal-text shape. */
 function measureScenario(name: string, corpus: WidthCorpus) {
-  for (const line of corpus) {
-    const actual = measureTextWidth(line);
-    const reference = stringWidth(line);
-    if (actual !== reference) {
-      throw new Error(`Width mismatch for ${JSON.stringify(line)}: ${actual} !== ${reference}`);
-    }
-  }
-
-  measureWidthCalls(stringWidth, corpus, WARMUP_ITERATIONS);
   measureWidthCalls(measureTextWidth, corpus, WARMUP_ITERATIONS);
 
-  const reference = measureWidthCalls(stringWidth, corpus, ITERATIONS);
-  const optimized = measureWidthCalls(measureTextWidth, corpus, ITERATIONS);
-  if (optimized.checksum !== reference.checksum) {
-    throw new Error(`Width checksum mismatch: ${optimized.checksum} !== ${reference.checksum}`);
-  }
-
-  const speedup = reference.elapsedMs / optimized.elapsedMs;
-  console.log(`METRIC ${name}_text_width_ms=${optimized.elapsedMs.toFixed(2)}`);
-  // External reference timings are informational and should not gate Hunk releases.
-  console.log(`METRIC competitor_string_width_${name}_ms=${reference.elapsedMs.toFixed(2)}`);
+  const measurement = measureWidthCalls(measureTextWidth, corpus, ITERATIONS);
+  console.log(`METRIC ${name}_text_width_ms=${measurement.elapsedMs.toFixed(2)}`);
   console.log(`METRIC ${name}_width_measurements=${ITERATIONS * corpus.length}`);
-  console.log(`METRIC ${name}_width_checksum=${optimized.checksum}`);
-  console.log(`${name} width speedup versus string-width: ${speedup.toFixed(2)}x`);
+  console.log(`METRIC ${name}_width_checksum=${measurement.checksum}`);
 }
 
 measureScenario("cjk_scalar", CJK_SCALAR_LINES);

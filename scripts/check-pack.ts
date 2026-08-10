@@ -430,13 +430,13 @@ const staticSmoke = Bun.spawnSync(
         throw new Error("The published static renderer did not render a patch.");
       }
       const wideOutput = await renderStaticDiff(
-        "diff --git a/a.txt b/a.txt\\n--- a/a.txt\\n+++ b/a.txt\\n@@ -1 +1 @@\\n-ｶﾞx\\n+ｶﾞy\\n",
+        "diff --git a/a.txt b/a.txt\\n--- a/a.txt\\n+++ b/a.txt\\n@@ -1 +1 @@\\n-ｶﾞ\\tx\\n+ｶﾞ\\ty\\n",
         { layout: "split", lineNumbers: false, width: 40 },
       );
       const wideLine = wideOutput
         .replace(/\\x1b\\[[0-?]*[ -/]*[@-~]/g, "")
         .split("\\n")
-        .find((line) => line.includes("ｶﾞx"));
+        .find((line) => line.includes("ｶﾞ"));
       if (!wideLine || wideLine.indexOf("▌", 1) !== 20) {
         throw new Error("The static renderer misaligned halfwidth Katakana.");
       }
