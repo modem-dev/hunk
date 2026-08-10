@@ -167,12 +167,12 @@ hunk markup guide
 
 ## `hunk skill path`
 
-print the bundled Hunk review skill path
+print a bundled Hunk skill path
 
 ### Usage
 
 ```bash
-hunk skill path
+hunk skill path [name]
 ```
 
 ## `hunk daemon serve`

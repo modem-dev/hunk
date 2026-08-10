@@ -3,7 +3,7 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createPtyHarness } from "./harness";
+import { createPtyHarness, lineIndexOf, rowCellBackgrounds } from "./harness";
 
 const harness = createPtyHarness();
 
@@ -382,6 +382,36 @@ describe("PTY chrome", () => {
 
       expect(stacked).not.toMatch(/▌.*▌/);
       expect(stacked).toContain("1   -  export const alpha = 1;");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("the menu bar leaves the same one-column gutter the body panes leave", async () => {
+    const fixture = harness.createTwoFileRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff"],
+      cwd: fixture.dir,
+      cols: 100,
+      rows: 20,
+    });
+
+    try {
+      const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+
+      const menuRow = rowCellBackgrounds(session, 0);
+      const bodyRow = rowCellBackgrounds(session, lineIndexOf(initial, "export const alpha"));
+      const lastColumn = menuRow.length - 1;
+
+      // Outer gutters match the body, so the app keeps one continuous margin.
+      expect(menuRow[0]).toBe(bodyRow[0]);
+      expect(menuRow[lastColumn]).toBe(bodyRow[bodyRow.length - 1]);
+
+      // The menu bar's own chrome band still fills everything between them.
+      expect(menuRow[1]).not.toBe(menuRow[0]);
+      expect(menuRow[lastColumn - 1]).not.toBe(menuRow[lastColumn]);
     } finally {
       session.close();
     }

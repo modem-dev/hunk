@@ -1,7 +1,7 @@
-import { describe, expect, mock, test } from "bun:test";
+import { describe, expect, mock, spyOn, test } from "bun:test";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { testRender } from "@opentui/react/test-utils";
-import { act, createRef, useCallback, useEffect, useState, type ReactNode } from "react";
+import { act, createRef, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { AppBootstrap, DiffFile } from "../../core/types";
 import { createTestVcsAppBootstrap } from "../../../test/helpers/app-bootstrap";
 import { capturedTestColorToHex } from "../../../test/helpers/test-color-helpers";
@@ -17,6 +17,8 @@ import { measureDiffSectionGeometry } from "../diff/diffSectionGeometry";
 import { buildFileSectionLayouts, buildInStreamFileHeaderHeights } from "../lib/fileSectionLayout";
 import { builtinCommandKeyDefaults, builtinCommandMatchProbes } from "../lib/appCommands";
 import { resolveCommandKeys } from "../lib/keymap";
+import type { CurrentLineAlignment } from "../lib/hunkScroll";
+import type { LineCursor } from "../lib/lineCursors";
 
 const { AppHost } = await import("../AppHost");
 const { toReadOnlyFileViews } = await import("../../extensions/events");
@@ -1183,6 +1185,184 @@ describe("UI components", () => {
     }
   });
 
+  test("DiffPane aligns the current rendered line to top, center, and bottom", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const files = [createTallDiffFile("target", "target.ts", 100)];
+    const scrollRef = createRef<ScrollBoxRenderable>();
+    let requestAlignment: (alignment: CurrentLineAlignment) => void = () => {};
+    let targetReady = false;
+
+    function LineAlignmentHarness() {
+      const [lineCursor, setLineCursor] = useState<LineCursor | null>(null);
+      const [request, setRequest] = useState<{
+        id: number;
+        alignment: CurrentLineAlignment;
+      }>({ id: 0, alignment: "center" });
+      requestAlignment = (alignment) =>
+        setRequest((current) => ({ id: current.id + 1, alignment }));
+
+      return (
+        <DiffPane
+          {...createDiffPaneProps(files, theme, {
+            cursorLine: "row",
+            diffContentWidth: 96,
+            lineCursor,
+            lineCursorAlignmentRequest: request,
+            scrollRef,
+            selectedHunkRevealRequestId: 0,
+            separatorWidth: 92,
+            width: 100,
+          })}
+          onLineCursorsChange={(cursors) => {
+            if (lineCursor || cursors.length === 0) return;
+            const target = cursors[Math.floor(cursors.length / 2)];
+            if (!target) return;
+            targetReady = true;
+            setLineCursor(target);
+          }}
+        />
+      );
+    }
+
+    const setup = await testRender(<LineAlignmentHarness />, {
+      width: 104,
+      height: 14,
+    });
+
+    try {
+      for (let attempt = 0; attempt < 10 && !targetReady; attempt += 1) {
+        await settleDiffPane(setup);
+      }
+      expect(targetReady).toBe(true);
+      expect(scrollRef.current?.viewport.height ?? 0).toBeGreaterThan(0);
+
+      const positions = {} as Record<CurrentLineAlignment, number>;
+      for (const alignment of ["top", "center", "bottom"] as const) {
+        await act(async () => {
+          requestAlignment(alignment);
+          await setup.renderOnce();
+          await Bun.sleep(0);
+          await setup.renderOnce();
+        });
+        positions[alignment] = scrollRef.current?.scrollTop ?? 0;
+      }
+
+      // For one row well inside a tall stream, putting it at the viewport top
+      // requires the greatest scroll, followed by center and then bottom.
+      expect(positions.top).toBeGreaterThan(positions.center);
+      expect(positions.center).toBeGreaterThan(positions.bottom);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("DiffPane defers command alignment until navigation reconciles the current line", async () => {
+    const theme = resolveTheme("github-dark-default", null);
+    const files = [createWideTwoHunkDiffFile("target", "target.ts")];
+    const scrollRef = createRef<ScrollBoxRenderable>();
+    let requestNavigationAndAlignment = () => {};
+    let reconcileCurrentLine = () => {};
+    let cursorsReady = false;
+
+    function DeferredAlignmentHarness() {
+      const [selectedHunkIndex, setSelectedHunkIndex] = useState(0);
+      const [selectedHunkRevealRequestId, setSelectedHunkRevealRequestId] = useState(0);
+      const [lineCursor, setLineCursor] = useState<LineCursor | null>(null);
+      const [request, setRequest] = useState<{
+        id: number;
+        alignment: CurrentLineAlignment;
+      }>({ id: 0, alignment: "top" });
+      const targetCursorRef = useRef<LineCursor | null>(null);
+
+      requestNavigationAndAlignment = () => {
+        setSelectedHunkIndex(1);
+        setSelectedHunkRevealRequestId((current) => current + 1);
+        setRequest((current) => ({ id: current.id + 1, alignment: "top" }));
+      };
+      reconcileCurrentLine = () => {
+        if (targetCursorRef.current) setLineCursor(targetCursorRef.current);
+      };
+
+      return (
+        <DiffPane
+          {...createDiffPaneProps(files, theme, {
+            cursorLine: "row",
+            diffContentWidth: 96,
+            lineCursor,
+            lineCursorAlignmentRequest: request,
+            scrollRef,
+            selectedHunkIndex,
+            selectedHunkRevealRequestId,
+            separatorWidth: 92,
+            width: 100,
+          })}
+          onLineCursorsChange={(cursors) => {
+            const initialCursor = cursors.find((cursor) => cursor.hunkIndex === 0);
+            targetCursorRef.current = cursors.find((cursor) => cursor.hunkIndex === 1) ?? null;
+            if (!initialCursor || !targetCursorRef.current) return;
+            cursorsReady = true;
+            if (!lineCursor) setLineCursor(initialCursor);
+          }}
+        />
+      );
+    }
+
+    const setup = await testRender(<DeferredAlignmentHarness />, {
+      width: 104,
+      height: 14,
+    });
+
+    try {
+      for (let attempt = 0; attempt < 10 && !cursorsReady; attempt += 1) {
+        await settleDiffPane(setup);
+      }
+      expect(cursorsReady).toBe(true);
+      const scrollBox = scrollRef.current;
+      expect(scrollBox).not.toBeNull();
+      const scrollToSpy = spyOn(scrollBox!, "scrollTo");
+      scrollToSpy.mockClear();
+
+      await act(async () => {
+        requestNavigationAndAlignment();
+        await setup.renderOnce();
+        await setup.renderOnce();
+      });
+      expect(scrollToSpy).toHaveBeenCalled();
+      const selectionRevealCallCount = scrollToSpy.mock.calls.length;
+      const selectionRevealTarget = scrollToSpy.mock.calls.at(-1)?.[0];
+      expect(typeof selectionRevealTarget).toBe("number");
+      const selectionRevealScrollTop =
+        typeof selectionRevealTarget === "number" ? selectionRevealTarget : 0;
+
+      await act(async () => {
+        // Reconcile before the selection reveal's zero-delay retry fires. The
+        // successful explicit alignment must supersede that scheduled work.
+        reconcileCurrentLine();
+        await setup.renderOnce();
+      });
+      expect(scrollToSpy.mock.calls.length).toBeGreaterThan(selectionRevealCallCount);
+      const alignedTarget = scrollToSpy.mock.calls.at(-1)?.[0];
+      expect(typeof alignedTarget).toBe("number");
+      const alignedScrollTop = typeof alignedTarget === "number" ? alignedTarget : 0;
+      expect(alignedScrollTop).toBeGreaterThan(selectionRevealScrollTop);
+
+      const alignedCallCount = scrollToSpy.mock.calls.length;
+      await act(async () => {
+        await Bun.sleep(150);
+        await setup.renderOnce();
+      });
+      expect(scrollToSpy).toHaveBeenCalledTimes(alignedCallCount);
+      expect(scrollBox?.scrollTop ?? 0).toBe(alignedScrollTop);
+      scrollToSpy.mockRestore();
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("DiffPane viewport-follow selection does not move the scroll position", async () => {
     const theme = resolveTheme("github-dark-default", null);
     const files = [
@@ -1374,14 +1554,10 @@ describe("UI components", () => {
     ).bodyHeight;
     const secondHeaderTop = firstBodyHeight + 1;
     const separatorTop = firstBodyHeight;
-    const settleStickyScroll = async () => {
-      await act(async () => {
-        for (let iteration = 0; iteration < 6; iteration += 1) {
-          await Bun.sleep(60);
-          await setup.renderOnce();
-        }
+    const renderStickyScroll = () =>
+      act(async () => {
+        await setup.renderOnce();
       });
-    };
 
     try {
       await settleDiffPane(setup);
@@ -1392,7 +1568,7 @@ describe("UI components", () => {
       await act(async () => {
         scrollRef.current?.scrollTo(3);
       });
-      await settleStickyScroll();
+      await renderStickyScroll();
 
       frame = await waitForFrame(setup, (nextFrame) => nextFrame.includes("first.ts"));
       expect(frame).toContain("first.ts");
@@ -1402,7 +1578,7 @@ describe("UI components", () => {
       await act(async () => {
         scrollRef.current?.scrollTo(separatorTop);
       });
-      await settleStickyScroll();
+      await renderStickyScroll();
 
       frame = await waitForFrame(
         setup,
@@ -1415,7 +1591,7 @@ describe("UI components", () => {
       await act(async () => {
         scrollRef.current?.scrollTo(secondHeaderTop);
       });
-      await settleStickyScroll();
+      await renderStickyScroll();
 
       frame = await waitForFrame(
         setup,
@@ -1428,7 +1604,7 @@ describe("UI components", () => {
       await act(async () => {
         scrollRef.current?.scrollTo(secondHeaderTop + 1);
       });
-      await settleStickyScroll();
+      await renderStickyScroll();
 
       frame = await waitForFrame(
         setup,
@@ -1442,7 +1618,7 @@ describe("UI components", () => {
       await act(async () => {
         scrollRef.current?.scrollTo(secondHeaderTop + 2);
       });
-      await settleStickyScroll();
+      await renderStickyScroll();
 
       frame = await waitForFrame(
         setup,

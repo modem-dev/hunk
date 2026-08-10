@@ -67,7 +67,8 @@ export function sleep(ms: number) {
  * sat on a fixed screen row.
  *
  * Positive means the content moved up (scrolled down); zero means the anchor
- * row did not move at all.
+ * row did not move at all. `press` already performs Tuistory's bounded idle
+ * wait, so another wait would only repeat the same readiness contract.
  */
 export async function measureKeyScroll(session: Session, key: Key, anchorRow: number) {
   const before = (await session.text({ immediate: true })).split("\n");
@@ -77,7 +78,6 @@ export async function measureKeyScroll(session: Session, key: Key, anchorRow: nu
   }
 
   await session.press(key);
-  await session.waitIdle({ timeout: 400 });
 
   const after = (await session.text({ immediate: true })).split("\n");
   const movedTo = after.findIndex((line) => line.trim() === anchor);
@@ -140,6 +140,21 @@ export function rightmostColumnOf(text: string, needle: string) {
       .filter((column) => column >= 0),
     -1,
   );
+}
+
+/**
+ * Expand one rendered row into its per-cell background colors.
+ *
+ * Chrome rows and body rows only line up visually when their gutter cells paint
+ * the same background, which plain text snapshots cannot show.
+ */
+export function rowCellBackgrounds(session: Session, row: number) {
+  const line = session.getTerminalData().lines[row];
+  if (!line) {
+    throw new Error(`rowCellBackgrounds: row ${row} is not on screen.`);
+  }
+
+  return line.spans.flatMap((span) => [...span.text].map(() => span.bg));
 }
 
 /** Locate a visible terminal row containing text so mouse tests can target rendered content. */

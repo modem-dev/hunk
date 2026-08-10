@@ -34,6 +34,29 @@ export function computeHunkRevealScrollTop({
   return desiredTop;
 }
 
+export type CurrentLineAlignment = "top" | "center" | "bottom";
+
+/** Place the current rendered line at one semantic viewport edge or center. */
+export function computeLineAlignmentScrollTop({
+  alignment,
+  lineTop,
+  lineHeight,
+  viewportHeight,
+}: {
+  alignment: CurrentLineAlignment;
+  lineTop: number;
+  lineHeight: number;
+  viewportHeight: number;
+}) {
+  const top = Math.max(0, lineTop);
+  const height = Math.max(1, lineHeight);
+  const viewport = Math.max(1, viewportHeight);
+
+  if (alignment === "top") return top;
+  if (alignment === "bottom") return Math.max(0, top + height - viewport);
+  return Math.max(0, top - Math.floor((viewport - height) / 2));
+}
+
 /**
  * Pick a scroll target that brings the current line just into view.
  *

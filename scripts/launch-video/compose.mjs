@@ -1,5 +1,5 @@
-// Hunk's release-video storyboard: the shot list, cards, and captions for the
-// current release, composited by @hunk/term-video.
+// Hunk's current video storyboard: its shot list, cards, and captions,
+// composited by @hunk/term-video.
 //
 //   node scripts/launch-video/compose.mjs <workDir>
 //

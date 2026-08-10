@@ -27,6 +27,8 @@ export type {
   ExtensionChangeset,
   ExtensionCommand,
   ExtensionCommandContext,
+  ExtensionCommandControls,
+  ExtensionCommandExecutionOptions,
   ExtensionCommandHandler,
   ExtensionConfirmOptions,
   ExtensionContext,

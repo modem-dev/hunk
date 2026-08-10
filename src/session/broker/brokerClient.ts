@@ -37,6 +37,11 @@ type SessionAppBridge<
   Result = unknown,
 > = SessionBrokerConnectionBridge<ServerMessage, Result>;
 
+interface SessionBrokerClientTiming {
+  daemonStartupTimeoutMs?: number;
+  reconnectDelayMs?: number;
+}
+
 /** Keep one running app session registered with the local session broker daemon. */
 export class SessionBrokerClient<
   Info = unknown,
@@ -60,6 +65,7 @@ export class SessionBrokerClient<
   constructor(
     private registration: SessionRegistration<Info>,
     private snapshot: SessionSnapshot<State>,
+    private timing: SessionBrokerClientTiming = {},
   ) {}
 
   start() {
@@ -68,7 +74,7 @@ export class SessionBrokerClient<
     }
 
     if (this.startupPromise) {
-      return;
+      return this.startupPromise;
     }
 
     this.startupPromise = this.ensureDaemonAndConnect()
@@ -83,6 +89,8 @@ export class SessionBrokerClient<
       .finally(() => {
         this.startupPromise = null;
       });
+
+    return this.startupPromise;
   }
 
   stop() {
@@ -119,7 +127,7 @@ export class SessionBrokerClient<
   private async ensureDaemonAvailable(config: ResolvedSessionBrokerConfig) {
     await ensureSessionBrokerAvailable({
       config,
-      timeoutMs: DAEMON_STARTUP_TIMEOUT_MS,
+      timeoutMs: this.timing.daemonStartupTimeoutMs ?? DAEMON_STARTUP_TIMEOUT_MS,
     });
 
     const capabilities = await readHunkSessionDaemonCapabilities(config);
@@ -127,7 +135,7 @@ export class SessionBrokerClient<
       await this.restartIncompatibleDaemon(config);
       await ensureSessionBrokerAvailable({
         config,
-        timeoutMs: DAEMON_STARTUP_TIMEOUT_MS,
+        timeoutMs: this.timing.daemonStartupTimeoutMs ?? DAEMON_STARTUP_TIMEOUT_MS,
       });
 
       if (!(await readHunkSessionDaemonCapabilities(config))) {
@@ -205,7 +213,7 @@ export class SessionBrokerClient<
       snapshot: this.snapshot,
       bridge: this.bridge,
       heartbeatIntervalMs: HEARTBEAT_INTERVAL_MS,
-      reconnectDelayMs: RECONNECT_DELAY_MS,
+      reconnectDelayMs: this.timing.reconnectDelayMs ?? RECONNECT_DELAY_MS,
       resolveClose: (event) =>
         this.isIncompatibleSessionClose(event)
           ? { reconnect: false, warning: INCOMPATIBLE_SESSION_CLOSE_MESSAGE }
@@ -216,7 +224,7 @@ export class SessionBrokerClient<
     this.connection.start();
   }
 
-  private scheduleReconnect(delayMs = RECONNECT_DELAY_MS) {
+  private scheduleReconnect(delayMs = this.timing.reconnectDelayMs ?? RECONNECT_DELAY_MS) {
     if (this.reconnectTimer || this.stopped) {
       return;
     }

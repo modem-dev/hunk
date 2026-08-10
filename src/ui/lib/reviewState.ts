@@ -57,6 +57,8 @@ export function findNextAnnotatedFile(
 
   const currentIndex = annotatedFiles.findIndex((file) => file.id === currentFileId);
   const normalizedIndex = currentIndex >= 0 ? currentIndex : 0;
-  const nextIndex = (normalizedIndex + delta + annotatedFiles.length) % annotatedFiles.length;
+  const nextIndex =
+    (((normalizedIndex + delta) % annotatedFiles.length) + annotatedFiles.length) %
+    annotatedFiles.length;
   return annotatedFiles[nextIndex] ?? null;
 }

@@ -1,29 +1,47 @@
 ---
 name: launch-video
-description: Produces hunk launch/release videos by driving the real TUI headlessly in a PTY, compositing captioned 1080p frames in Chromium, and encoding with ffmpeg. Use when asked to create, update, or re-cut a release announcement, demo, or launch video for hunk.
+description: Produces Hunk videos by driving the real TUI headlessly in a PTY, compositing captioned 1080p frames in Chromium, and encoding with ffmpeg. Use for feature demos, workflow explainers, announcements, launch videos, and full-release roundups.
 ---
 
-# Launch video pipeline
+# Hunk video pipeline
 
 Maintainer-only: requires a hunk source checkout (the pipeline lives in
 `scripts/launch-video/`, which never ships to npm). Unix-only — the capture
 scripts exec `/bin/bash`.
 
-Generates release videos where every terminal frame is the real Hunk TUI —
+Generates product videos where every terminal frame is the real Hunk TUI —
 no screen recording, no mockups. Three stages:
 
 ```text
-capture.ts   (bun)   drive Hunk over a PTY, snap styled keyframes to PNG
-compose.mjs  (node)  composite keyframes onto a 1920x1080 stage, emit frames + concat list
-ffmpeg               encode the concat list at 30fps to mp4/webm
+capture.ts   (bun)               drive Hunk over a PTY, snap styled keyframes to PNG
+compose.mjs  (node + Playwright) render each PNG on a 1920x1080 HTML stage in Chromium
+ffmpeg                           encode the composited PNGs at 30fps to mp4/webm
 ```
+
+Playwright controls headless Chromium: for each planned frame it loads the
+terminal PNG onto the HTML stage, applies the window chrome, cards, captions,
+and transition state, then screenshots the completed stage back to PNG. ffmpeg
+sequences those composited screenshots into the final videos.
 
 The generic machinery (PTY driving, keyframe rendering, storyboard planning,
 Chromium compositing, the stage template) is the `@hunk/term-video` workspace
-package in `packages/term-video/`; `scripts/launch-video/` holds only hunk's
+package in `packages/term-video/`; `scripts/launch-video/` holds only Hunk's
 scenes, captions, and cards on top of it.
 
-## Recreating a video
+## Choosing a recipe
+
+The pipeline is not release-specific. Choose the editorial scope, then use the
+same capture → composite → encode stages:
+
+- **Single feature:** a short demonstration of one capability or workflow. Use
+  the single-feature recipe below and capture only the required scene.
+- **Full release:** a multi-feature roundup based on a release's changelog or
+  highlights. Use the full-release recipe and update the canonical storyboard.
+- **Custom video:** author any set of scenes and `SHOTS` for tutorials,
+  comparisons, announcements, or workflow explainers; follow the scene and
+  storyboard rules below.
+
+## Creating a video
 
 Expect ~3–6 min for capture and ~2–4 min for compose — run both with a long
 timeout (or in the background); each logs per-snap / per-shot progress.
@@ -38,10 +56,14 @@ bun install    # if a postinstall hook fails in a sandbox, retry with --ignore-s
 #    repo root — see gotchas.
 bun run scripts/launch-video/capture.ts
 
-# 2. one-time compositor setup: playwright-core matching the Chromium you'll
-#    render with (resolution procedure in gotchas)
+# 2. one-time portable compositor setup. Playwright installs a Chromium build
+#    that exactly matches its browser driver (see gotchas to reuse a system or
+#    sandbox browser instead).
 printf '{"name":"hunk-video-work","private":true}\n' > .video-work/package.json
-cd .video-work && bun add playwright-core@<exact-version> && cd ..
+cd .video-work
+bun add playwright playwright-core
+bunx playwright install chromium
+cd ..
 
 # 3. composite the storyboard
 node scripts/launch-video/compose.mjs .video-work
@@ -65,21 +87,64 @@ Scene names are the `wants("...")` guards in `capture.ts`'s `main()`. Note
 `SHOTS` table references exists in `frames/` and fails fast listing any missing
 ones, so a full composite still needs every scene captured at least once.
 
-## Updating for a new release
+## Single-feature recipe
 
-1. Read the new release section in `CHANGELOG.md`. If it has a hand-written
-   **Highlights** list (0.18.0 has one; Changesets does not generate them),
-   that list is the storyboard. Otherwise distill 4–6 user-visible headlines
+For a short test, demo, or one-feature announcement, capture and composite only
+the scene for that feature:
+
+1. Pick one user-visible capability and find its scene name in the
+   `wants("...")` guards. If it does not have a scene, author one using the
+   guidance below. Capture only that scene:
+
+   ```sh
+   SCENES=review bun run scripts/launch-video/capture.ts
+   ```
+
+2. Make a scratch compositor beside the canonical one so its imports and
+   repo-relative paths continue to work:
+
+   ```sh
+   cp scripts/launch-video/compose.mjs scripts/launch-video/compose-one-feature.mjs
+   ```
+
+3. In the scratch copy, trim `SHOTS` to an opening card, only the selected
+   feature's frames, and an outro card. Rewrite those cards and captions for
+   the scoped cut. Sequence lengths must still match the captured frame names.
+4. Composite into the same work directory, then run the normal ffmpeg commands
+   with descriptive output names:
+
+   ```sh
+   node scripts/launch-video/compose-one-feature.mjs .video-work
+   cd .video-work
+   ffmpeg -y -f concat -safe 0 -i concat.txt -vf "fps=30,format=yuv420p" \
+     -c:v libx264 -preset slow -crf 18 -movflags +faststart hunk-0.18-line-review.mp4
+   ffmpeg -y -f concat -safe 0 -i concat.txt -vf "fps=30,format=yuv420p" \
+     -c:v libvpx-vp9 -b:v 0 -crf 32 -row-mt 1 hunk-0.18-line-review.webm
+   cd ..
+   rm scripts/launch-video/compose-one-feature.mjs
+   ```
+
+Keep the scratch compositor uncommitted. The canonical `compose.mjs` remains
+the checked-in reference storyboard.
+
+## Full-release recipe
+
+1. Read the release section in `CHANGELOG.md`. If it has a hand-written
+   **Highlights** list (0.18.0 has one; Changesets does not generate them), use
+   that list as the storyboard. Otherwise distill 4–6 user-visible headlines
    from the Minor Changes — per-PR entries are too granular to shoot — and
    confirm the shortlist with the user before capturing.
-2. Rewrite the per-release editorial surface (next section), adding or
-   adjusting capture scenes as needed (see "Authoring scenes").
-3. Re-run the pipeline, verify (see "Verification"), and deliver both files.
+2. Rewrite the canonical storyboard's editorial surface (next section), adding
+   or adjusting capture scenes as needed (see "Authoring scenes").
+3. Capture every scene referenced by the full storyboard, composite it, and
+   encode both formats using the main workflow above.
+4. Verify the complete cut (see "Verification") and deliver both files.
 
-## Per-release editorial surface
+## Per-video editorial surface
 
-Everything here is content about a specific release — rewrite it each time.
-As of this writing it reflects 0.18.0:
+The capture machinery is reusable, but the storyboard is editorial content for
+one video. Rewrite it to match the video's scope. As of this writing, the
+checked-in reference storyboard is the full 0.18.0 release video:
 
 - `compose.mjs`: the whole `SHOTS` table; `OPEN_CARD` (version badge);
   `OUTRO_CARD` (headline, install commands, footer); `EXTENSIONS_CARD`; every
@@ -110,19 +175,39 @@ Sandbox-specific bullets are marked; each cost real debugging time.
   import `"ghostty-opentui/image"` (not `.../dist/image.js`), resolved
   relative to tuistory — `@hunk/term-video/capture`'s `createKeyframer` does
   the `Bun.resolveSync` dance.
-- **playwright-core must match the Chromium it drives.** In the Anthropic
-  sandbox, resolve the exact version from the preinstalled toolchain:
+- **Playwright must match the Chromium it drives.** The portable setup above
+  installs `playwright` and `playwright-core` together, then downloads their
+  matching Chromium build. It works on macOS and Linux and is preferred when
+  bandwidth and browser downloads are available; leave `CHROMIUM_PATH` unset
+  so Playwright uses that managed browser. On Linux, if Chromium reports
+  missing system libraries, run `bunx playwright install-deps chromium` (it
+  may require sudo) before retrying.
+
+  To reuse an existing system, CI, or sandbox Chromium instead, install the
+  `playwright-core` version provided by that environment and set its executable
+  explicitly:
+
+  ```sh
+  cd .video-work
+  bun add playwright-core@<matching-version>
+  cd ..
+  CHROMIUM_PATH=/path/to/chromium node scripts/launch-video/compose.mjs .video-work
+  ```
+
+  Common executable locations include `$(command -v chromium)` or
+  `$(command -v google-chrome)` on Linux and
+  `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome` on macOS.
+  In an environment with a preinstalled Playwright toolchain, read that
+  toolchain's `package.json` to get the exact driver version. For example, the
+  Anthropic sandbox exposes it through `/opt/pw-browsers/.links/*`:
 
   ```sh
   cat "$(cat /opt/pw-browsers/.links/* | head -1)/package.json" | grep '"version"'
   # e.g. "1.56.1" -> bun add playwright-core@1.56.1
   ```
 
-  `compose.mjs` picks its browser as `$CHROMIUM_PATH`, else
-  `/opt/pw-browsers/chromium` (sandbox), else playwright-core's own
-  resolution. Off the sandbox: `cd .video-work && bun add playwright &&
-bunx playwright install chromium`, leave `CHROMIUM_PATH` unset, and match
-  `playwright-core` to that `playwright` version.
+  `compose.mjs` picks its browser as `$CHROMIUM_PATH`, then
+  `/opt/pw-browsers/chromium` when present, then Playwright's managed browser.
 
 - **Give `.video-work/` its own `package.json` before `bun add`.** Without
   one, bun walks up and installs into the repo's `package.json` — revert with

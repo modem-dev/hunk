@@ -11,6 +11,7 @@ import {
   lazy,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -79,10 +80,13 @@ import {
   buildAppCommands,
   builtinCommandKeyDefaults,
   builtinCommandMatchProbes,
+  type AppCommand,
 } from "./lib/appCommands";
 import { buildAppMenus } from "./lib/appMenus";
 import { buildExtensionAppCommands, extensionCommandKeyDefaults } from "./lib/extensionCommands";
+import { createExtensionCommandControls } from "./lib/extensionCommandControls";
 import { createGuardedReviewNavigation } from "./lib/extensionNavigation";
+import type { CurrentLineAlignment } from "./lib/hunkScroll";
 import type { LineCursor } from "./lib/lineCursors";
 import { buildExtensionReviewSelection } from "./lib/extensionSelection";
 import { useFilePresentationController } from "./fileViews/useFilePresentationController";
@@ -251,6 +255,10 @@ export function App({
   const [copyDecorations, setCopyDecorations] = useState(bootstrap.initialCopyDecorations ?? false);
   const [codeHorizontalOffset, setCodeHorizontalOffset] = useState(0);
   const [cursorLine, setCursorLine] = useState<CursorLine>(bootstrap.initialCursorLine ?? "row");
+  const [lineCursorAlignmentRequest, setLineCursorAlignmentRequest] = useState<{
+    id: number;
+    alignment: CurrentLineAlignment;
+  }>({ id: 0, alignment: "center" });
   const [showHunkHeaders, setShowHunkHeaders] = useState(bootstrap.initialShowHunkHeaders ?? true);
   const [showMenuBar, setShowMenuBar] = useState(bootstrap.initialShowMenuBar ?? true);
   const [themeSelectorState, setThemeSelectorState] = useState<ThemeSelectorState>({
@@ -442,12 +450,31 @@ export function App({
   // warning instead of validating against the dead instance's file list or
   // driving a controller whose state updates no longer render.
   const appAliveForNavigationRef = useRef(true);
-  useEffect(
-    () => () => {
+  const extensionHostCommandsRef = useRef<readonly AppCommand[]>([]);
+  // A soft extension reload keeps App mounted but replaces the authority that
+  // created each handler. Retain the current registry separately so controls
+  // captured by a retired async handler cannot drive the replacement registry.
+  const activeExtensionRegistryRef = useRef(extensions?.registry);
+  useLayoutEffect(() => {
+    activeExtensionRegistryRef.current = extensions?.registry;
+  }, [extensions?.registry]);
+  const extensionCommandControls = useMemo(() => {
+    const owningRegistry = extensions?.registry;
+    return createExtensionCommandControls({
+      getCommands: () => extensionHostCommandsRef.current,
+      isLive: () =>
+        appAliveForNavigationRef.current &&
+        owningRegistry?.eventBusPhase !== "closed" &&
+        activeExtensionRegistryRef.current === owningRegistry,
+    });
+  }, [extensions?.registry]);
+  useEffect(() => {
+    // StrictMode replays setup/cleanup/setup while the same App remains mounted.
+    appAliveForNavigationRef.current = true;
+    return () => {
       appAliveForNavigationRef.current = false;
-    },
-    [],
-  );
+    };
+  }, []);
 
   /** Build the selection snapshot a command handler receives, at invocation. */
   const getExtensionSelection = useCallback(() => {
@@ -781,6 +808,7 @@ export function App({
       };
       const ctx: ExtensionCommandContext = {
         cwd: extensions?.context.cwd ?? process.cwd(),
+        commands: extensionCommandControls,
         notify: (message, type) => extensions?.context.notify(message, type),
         sidebars: createSidebarControls(registered.extensionId),
         fileViews: createFileViewControls(registered.extensionId),
@@ -829,6 +857,7 @@ export function App({
       createExtensionDialogs,
       createFileViewControls,
       createSidebarControls,
+      extensionCommandControls,
       createWorkspaceControls,
       extensions,
       getExtensionSelection,
@@ -1086,6 +1115,14 @@ export function App({
     }
     diffScrollRef.current?.scrollBy(delta, unit);
   };
+
+  /** Ask DiffPane to align the current rendered line using its authoritative row geometry. */
+  const alignCurrentLine = useCallback((alignment: CurrentLineAlignment) => {
+    setLineCursorAlignmentRequest((current) => ({
+      id: current.id + 1,
+      alignment,
+    }));
+  }, []);
 
   /** Step one line: move the current line, or scroll the viewport when there is no marker. */
   const stepDiffLine = (delta: number) => {
@@ -1609,8 +1646,10 @@ export function App({
   // win a key and extension order follows load order.
   const appCommands = [
     ...buildAppCommands({
+      canAlignCurrentLine: cursorLine !== "off" && review.lineCursor !== null,
       canApplyFilePresentationToAllMatching: selectedFileViewBulkTarget !== null,
       canRefreshCurrentInput,
+      alignCurrentLine,
       applyFilePresentationToAllMatching,
       focusFilter,
       moveToAnnotatedFile,
@@ -1643,6 +1682,7 @@ export function App({
     }),
     ...extensionAppCommands.commands,
   ];
+  extensionHostCommandsRef.current = appCommands;
 
   // Menus name commands rather than repeating them: every item's key hint and
   // action come from the table above, so a remapped shortcut shows its new key
@@ -1941,6 +1981,7 @@ export function App({
           cursorLine={cursorLine}
           lineCursor={review.lineCursor}
           lineCursorRevealRequestId={review.lineCursorRevealRequestId}
+          lineCursorAlignmentRequest={lineCursorAlignmentRequest}
           theme={activeTheme}
           width={diffPaneWidth}
           onActiveAddNoteAffordanceChange={setActiveAddNoteTarget}

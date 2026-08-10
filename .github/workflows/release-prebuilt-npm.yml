@@ -264,10 +264,12 @@ jobs:
               echo "Missing release binary in $directory" >&2
               exit 1
             fi
-            if [ ! -f "$directory/skills/hunk-review/SKILL.md" ]; then
-              echo "Missing bundled Hunk review skill in $directory" >&2
-              exit 1
-            fi
+            for skill in hunk-review hunk-extensions; do
+              if [ ! -f "$directory/skills/$skill/SKILL.md" ]; then
+                echo "Missing bundled Hunk $skill skill in $directory" >&2
+                exit 1
+              fi
+            done
             chmod 0755 "$binary"
             tar -C "$(dirname "$directory")" -czf "dist/release/github/${package_name}.tar.gz" "$package_name"
           done < <(find dist/release/artifacts -mindepth 1 -maxdepth 1 -type d -name 'hunkdiff-*' -print0 | sort -z)

@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, test } from "bun:test";
 import { KeyEvent, type ParsedKey } from "@opentui/core";
 import {
@@ -36,8 +38,10 @@ function createTestCommands(resolvedKeys?: ResolvedCommandKeys) {
       ran.push(args.length > 0 ? `${name}:${args.join(",")}` : name);
     };
   const options: BuildAppCommandsOptions = {
+    canAlignCurrentLine: true,
     canApplyFilePresentationToAllMatching: false,
     canRefreshCurrentInput: true,
+    alignCurrentLine: record("alignCurrentLine"),
     applyFilePresentationToAllMatching: record("applyFilePresentationToAllMatching"),
     focusFilter: record("focusFilter"),
     moveToAnnotatedFile: record("moveToAnnotatedFile"),
@@ -201,11 +205,24 @@ describe("built-in commands under user keybindings", () => {
 });
 
 describe("builtinCommandKeyDefaults", () => {
+  test("keeps the documented command-id table sorted and identical to the runtime catalog", () => {
+    const markdown = readFileSync(resolve(import.meta.dir, "../../../docs/keybindings.md"), "utf8");
+    const documentedIds = Array.from(
+      markdown.matchAll(/^\| `(hunk\.[^`]+)`\s+\|/gm),
+      (match) => match[1],
+    );
+    const { commands } = createTestCommands();
+    const sortedRuntimeIds = commands.map((command) => command.id).toSorted();
+
+    expect(documentedIds).toEqual(sortedRuntimeIds);
+  });
+
   test("reports every built-in command with the chords it ships with", () => {
     const defaults = builtinCommandKeyDefaults();
     const { commands } = createTestCommands();
 
     expect(defaults.map((entry) => entry.id)).toEqual(commands.map((command) => command.id));
+    expect(commands.every((command) => command.publicToExtensions)).toBe(true);
     expect(defaults.find((entry) => entry.id === "hunk.review.pageDown")?.defaultKeys).toEqual([
       "pagedown",
       "space",
@@ -220,6 +237,9 @@ describe("builtinCommandKeyDefaults", () => {
     ).toEqual([
       "hunk.app.openAgentSkill",
       "hunk.app.openBrowserReview",
+      "hunk.review.alignCurrentLineBottom",
+      "hunk.review.alignCurrentLineCenter",
+      "hunk.review.alignCurrentLineTop",
       "hunk.review.nextAnnotatedFile",
       "hunk.review.previousAnnotatedFile",
       "hunk.view.applyFilePresentationToAllMatching",
@@ -269,12 +289,36 @@ describe("executeAppCommand", () => {
     expect(ran).toEqual(["requestQuit", "openAgentSkill"]);
   });
 
-  test("passes the command's own first chord to handlers that read the event", () => {
+  test("uses shipped semantics rather than a remapped chord for programmatic execution", () => {
+    const { keys } = resolveCommandKeys({
+      defaults: builtinCommandKeyDefaults(),
+      userBindings: { "hunk.review.scrollCodeLeft": "shift+left" },
+    });
+    const { commands, ran } = createTestCommands(keys);
+
+    // Invoking by id moves ordinary columns even when the user's only key is the fast shifted form.
+    expect(executeAppCommand(commands, "hunk.review.scrollCodeLeft", { count: 3 })).toBe(true);
+    // Keyboard Shift+Left retains its accelerated behavior.
+    expect(dispatchAppCommand(commands, keyEvent({ name: "left", shift: true }))?.id).toBe(
+      "hunk.review.scrollCodeLeft",
+    );
+    expect(ran).toEqual(["scrollCodeHorizontally:-3", "scrollCodeHorizontally:-8"]);
+  });
+
+  test("applies movement counts in one semantic callback", () => {
     const { commands, ran } = createTestCommands();
 
-    // The shifted arrow scrolls further; invoked by name it takes the plain form.
-    expect(executeAppCommand(commands, "hunk.review.scrollCodeLeft")).toBe(true);
-    expect(ran).toEqual(["scrollCodeHorizontally:-1"]);
+    expect(executeAppCommand(commands, "hunk.review.nextHunk", { count: 3 })).toBe(true);
+    expect(executeAppCommand(commands, "hunk.review.stepUp", { count: 4 })).toBe(true);
+    expect(executeAppCommand(commands, "hunk.review.pageDown", { count: 2 })).toBe(true);
+    expect(ran).toEqual(["moveToHunk:3", "stepDiffLine:-4", "scrollDiff:2,viewport"]);
+  });
+
+  test("runs one-shot commands once regardless of count", () => {
+    const { commands, ran } = createTestCommands();
+
+    expect(executeAppCommand(commands, "hunk.app.toggleHelp", { count: 9 })).toBe(true);
+    expect(ran).toEqual(["toggleHelp"]);
   });
 
   test("refuses a disabled command and an id nobody registered", () => {

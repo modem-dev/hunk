@@ -1,4 +1,4 @@
-// Hunk's release-video scenes: drives real Hunk sessions in a headless PTY
+// Hunk video scenes: drives real Hunk sessions in a headless PTY
 // and captures styled keyframes as PNGs via @hunk/term-video. Run from the
 // repo root with Bun:
 //

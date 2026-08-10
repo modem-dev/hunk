@@ -46,6 +46,7 @@ export type StartupPlan =
   | {
       kind: "passthrough";
       text: string;
+      preserveColor: boolean;
     }
   | {
       kind: "static-diff-pager";
@@ -155,6 +156,7 @@ export async function prepareStartupPlan(
   if (parsedCliInput.kind === "pager") {
     const stdinText = await readStdinText();
     const pagerOptions = parsedCliInput.options;
+    const capturedPagerHost = isCapturedPagerHost(env);
     const staticPagerPlan = () => {
       const staticPatchInput: CliInput = {
         kind: "patch",
@@ -180,13 +182,18 @@ export async function prepareStartupPlan(
         : staticPlan;
     };
 
+    // Captured hosts render Hunk's stdout in their own panel, so passed-through text keeps
+    // the color Git already put in it.
+    const passthroughPlan = {
+      kind: "passthrough" as const,
+      text: stdinText,
+      preserveColor: capturedPagerHost,
+    };
+
     if (!looksLikePatchInputImpl(stdinText)) {
       // Dumb-terminal and captured pager hosts cannot safely own an interactive text pager.
       if (env.TERM === "dumb") {
-        return {
-          kind: "passthrough",
-          text: stdinText,
-        };
+        return passthroughPlan;
       }
 
       return {
@@ -208,23 +215,17 @@ export async function prepareStartupPlan(
         },
       };
     } else if (!stdoutIsTTY) {
-      return {
-        kind: "passthrough",
-        text: stdinText,
-      };
+      return passthroughPlan;
     }
 
-    if (!parsedCliInput.options.web && env.TERM === "dumb" && !isCapturedPagerHost(env)) {
-      return {
-        kind: "passthrough",
-        text: stdinText,
-      };
+    if (!parsedCliInput.options.web && env.TERM === "dumb" && !capturedPagerHost) {
+      return passthroughPlan;
     }
 
     // Captured pager hosts like LazyGit can provide a PTY while advertising TERM=dumb.
     // In that mode, emit static colored diff output instead of launching the TUI.
     if (!parsedCliInput.options.web) {
-      if (isCapturedPagerHost(env)) {
+      if (capturedPagerHost) {
         return staticPagerPlan();
       }
 

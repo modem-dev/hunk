@@ -37,8 +37,10 @@ function createTestCommands(overrides: Partial<BuildAppCommandsOptions> = {}) {
     };
   const noop = () => {};
   const commands = buildAppCommands({
+    canAlignCurrentLine: true,
     canApplyFilePresentationToAllMatching: false,
     canRefreshCurrentInput: true,
+    alignCurrentLine: record("alignCurrentLine"),
     applyFilePresentationToAllMatching: record("applyFilePresentationToAllMatching"),
     focusFilter: noop,
     moveToAnnotatedFile: record("moveToAnnotatedFile"),

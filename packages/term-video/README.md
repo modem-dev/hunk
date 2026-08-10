@@ -24,6 +24,7 @@ inspectable PNG before anything is encoded.
 
 ## Consumers
 
-`scripts/launch-video/` holds hunk's release-video storyboard (scenes,
-captions, cards) on top of this package; `skills/launch-video/SKILL.md`
-documents the end-to-end workflow, environment gotchas included.
+`scripts/launch-video/` holds Hunk's current storyboard (scenes, captions,
+cards) on top of this package; `skills/launch-video/SKILL.md` documents the
+end-to-end workflow and recipes for single-feature, custom, and full-release
+videos, environment gotchas included.

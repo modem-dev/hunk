@@ -1,5 +1,6 @@
 import type { KeyEvent } from "@opentui/core";
 import type { CursorLine, LayoutMode } from "../../core/types";
+import type { ExtensionCommandExecutionOptions } from "../../extension-api/types";
 import {
   matchesAnyKeyChord,
   parseKeyChordOrUndefined,
@@ -24,6 +25,8 @@ const FAST_CODE_HORIZONTAL_SCROLL_COLUMNS = 8;
  * structure of the widget that owns them, not shortcuts a user rebinds or an
  * extension extends.
  */
+export const MAX_APP_COMMAND_COUNT = 10_000;
+
 export interface AppCommand {
   /**
    * Stable identifier, always namespaced by whoever owns the command.
@@ -40,8 +43,8 @@ export interface AppCommand {
   /**
    * The chords this command currently answers to, after user keybindings.
    *
-   * Empty means the command is unbound: it never matches a key, and is reached
-   * only by name through `executeAppCommand` (a menu entry, say).
+   * Empty means the command is unbound: it never matches a key, but remains
+   * callable by id through `executeAppCommand` and may also appear in a menu.
    */
   keys: readonly string[];
   /** Display form of `keys`, for menus, help, and conflict messages. */
@@ -58,7 +61,10 @@ export interface AppCommand {
   /** Report whether the command may run right now; skipped when false. */
   isEnabled?: () => boolean;
   match: (key: KeyEvent) => boolean;
-  run: (key: KeyEvent) => void;
+  /** True when extension command controls may invoke this host command by id. */
+  publicToExtensions: boolean;
+  /** Run once with a host-normalized positive movement count. */
+  run: (key: KeyEvent, count: number) => void;
   /** Close an open dropdown menu after running. */
   closesMenu?: boolean;
 }
@@ -70,14 +76,16 @@ interface BuiltinCommandSpec {
   /** Chords the command ships with; the user's config may replace them. */
   defaultKeys: readonly string[];
   isEnabled?: () => boolean;
-  run: (key: KeyEvent) => void;
+  run: (key: KeyEvent, count: number) => void;
   closesMenu?: boolean;
 }
 
 /** The callbacks the built-in command set drives; App supplies its own handlers. */
 export interface BuildAppCommandsOptions {
+  canAlignCurrentLine: boolean;
   canApplyFilePresentationToAllMatching: boolean;
   canRefreshCurrentInput: boolean;
+  alignCurrentLine: (alignment: "top" | "center" | "bottom") => void;
   applyFilePresentationToAllMatching: () => void;
   focusFilter: () => void;
   moveToAnnotatedFile: (delta: number) => void;
@@ -121,10 +129,59 @@ export interface BuildAppCommandsOptions {
  * as the old cascade of if-statements was, so entries keep the old cascade's
  * relative order where it mattered (uppercase before lowercase forms).
  *
- * A few commands ship with no chords at all. They exist because the menus name
- * them: an action reachable by mouse is a command like any other, and declaring
- * it here is what makes it bindable from `[keybindings]` and dispatchable by id.
+ * A few commands ship with no chords at all. Declaring them here keeps semantic
+ * actions bindable from `[keybindings]` and dispatchable by id whether or not a
+ * menu currently presents them.
  */
+const PUBLIC_EXTENSION_COMMAND_IDS = new Set([
+  "hunk.review.jumpToBottom",
+  "hunk.review.jumpToTop",
+  "hunk.app.quit",
+  "hunk.app.toggleHelp",
+  "hunk.app.openAgentSkill",
+  "hunk.app.openBrowserReview",
+  "hunk.app.toggleFocusArea",
+  "hunk.review.focusFilter",
+  "hunk.review.startNote",
+  "hunk.review.pageDown",
+  "hunk.review.pageUp",
+  "hunk.review.halfPageDown",
+  "hunk.review.halfPageUp",
+  "hunk.review.stepDown",
+  "hunk.review.stepUp",
+  "hunk.review.scrollCodeLeft",
+  "hunk.review.scrollCodeRight",
+  "hunk.review.alignCurrentLineTop",
+  "hunk.review.alignCurrentLineCenter",
+  "hunk.review.alignCurrentLineBottom",
+  "hunk.view.cursorLineRow",
+  "hunk.view.cursorLineNumber",
+  "hunk.view.cursorLineOff",
+  "hunk.view.layoutSplit",
+  "hunk.view.layoutStack",
+  "hunk.view.layoutAuto",
+  "hunk.view.applyFilePresentationToAllMatching",
+  "hunk.view.toggleSidebar",
+  "hunk.app.refresh",
+  "hunk.view.openThemeSelector",
+  "hunk.view.toggleAgentNotes",
+  "hunk.view.toggleLineNumbers",
+  "hunk.view.toggleLineWrap",
+  "hunk.view.toggleMenuBar",
+  "hunk.view.toggleHunkHeaders",
+  "hunk.view.toggleCopyDecorations",
+  "hunk.review.toggleHunkGap",
+  "hunk.review.editSelectedFile",
+  "hunk.review.previousHunk",
+  "hunk.review.nextHunk",
+  "hunk.review.previousFile",
+  "hunk.review.nextFile",
+  "hunk.review.previousAnnotatedHunk",
+  "hunk.review.nextAnnotatedHunk",
+  "hunk.review.previousAnnotatedFile",
+  "hunk.review.nextAnnotatedFile",
+]);
+
 function builtinCommandSpecs(options: BuildAppCommandsOptions): BuiltinCommandSpec[] {
   return [
     {
@@ -189,37 +246,37 @@ function builtinCommandSpecs(options: BuildAppCommandsOptions): BuiltinCommandSp
       id: "hunk.review.pageDown",
       title: "Scroll down one page",
       defaultKeys: ["pagedown", "space", "f"],
-      run: () => options.scrollDiff(1, "viewport"),
+      run: (_key, count) => options.scrollDiff(count, "viewport"),
     },
     {
       id: "hunk.review.pageUp",
       title: "Scroll up one page",
       defaultKeys: ["pageup", "b", "shift+space"],
-      run: () => options.scrollDiff(-1, "viewport"),
+      run: (_key, count) => options.scrollDiff(-count, "viewport"),
     },
     {
       id: "hunk.review.halfPageDown",
       title: "Scroll down half a page",
       defaultKeys: ["d"],
-      run: () => options.scrollDiff(1, "half"),
+      run: (_key, count) => options.scrollDiff(count, "half"),
     },
     {
       id: "hunk.review.halfPageUp",
       title: "Scroll up half a page",
       defaultKeys: ["u"],
-      run: () => options.scrollDiff(-1, "half"),
+      run: (_key, count) => options.scrollDiff(-count, "half"),
     },
     {
       id: "hunk.review.stepDown",
       title: "Scroll down one row",
       defaultKeys: ["down", "j"],
-      run: () => options.stepDiffLine(1),
+      run: (_key, count) => options.stepDiffLine(count),
     },
     {
       id: "hunk.review.stepUp",
       title: "Scroll up one row",
       defaultKeys: ["up", "k"],
-      run: () => options.stepDiffLine(-1),
+      run: (_key, count) => options.stepDiffLine(-count),
     },
     {
       id: "hunk.review.scrollCodeLeft",
@@ -227,15 +284,40 @@ function builtinCommandSpecs(options: BuildAppCommandsOptions): BuiltinCommandSp
       // Both chords run the same command; the shifted one scrolls further, so
       // the handler reads the event rather than splitting into two commands.
       defaultKeys: ["left", "shift+left"],
-      run: (key) =>
-        options.scrollCodeHorizontally(key.shift ? -FAST_CODE_HORIZONTAL_SCROLL_COLUMNS : -1),
+      run: (key, count) =>
+        options.scrollCodeHorizontally(
+          (key.shift ? -FAST_CODE_HORIZONTAL_SCROLL_COLUMNS : -1) * count,
+        ),
     },
     {
       id: "hunk.review.scrollCodeRight",
       title: "Scroll code right",
       defaultKeys: ["right", "shift+right"],
-      run: (key) =>
-        options.scrollCodeHorizontally(key.shift ? FAST_CODE_HORIZONTAL_SCROLL_COLUMNS : 1),
+      run: (key, count) =>
+        options.scrollCodeHorizontally(
+          (key.shift ? FAST_CODE_HORIZONTAL_SCROLL_COLUMNS : 1) * count,
+        ),
+    },
+    {
+      id: "hunk.review.alignCurrentLineTop",
+      title: "Align current line to top",
+      defaultKeys: [],
+      isEnabled: () => options.canAlignCurrentLine,
+      run: () => options.alignCurrentLine("top"),
+    },
+    {
+      id: "hunk.review.alignCurrentLineCenter",
+      title: "Align current line to center",
+      defaultKeys: [],
+      isEnabled: () => options.canAlignCurrentLine,
+      run: () => options.alignCurrentLine("center"),
+    },
+    {
+      id: "hunk.review.alignCurrentLineBottom",
+      title: "Align current line to bottom",
+      defaultKeys: [],
+      isEnabled: () => options.canAlignCurrentLine,
+      run: () => options.alignCurrentLine("bottom"),
     },
     {
       id: "hunk.view.cursorLineRow",
@@ -369,56 +451,56 @@ function builtinCommandSpecs(options: BuildAppCommandsOptions): BuiltinCommandSp
       id: "hunk.review.previousHunk",
       title: "Previous hunk",
       defaultKeys: ["["],
-      run: () => options.moveToHunk(-1),
+      run: (_key, count) => options.moveToHunk(-count),
       closesMenu: true,
     },
     {
       id: "hunk.review.nextHunk",
       title: "Next hunk",
       defaultKeys: ["]"],
-      run: () => options.moveToHunk(1),
+      run: (_key, count) => options.moveToHunk(count),
       closesMenu: true,
     },
     {
       id: "hunk.review.previousFile",
       title: "Previous file",
       defaultKeys: [","],
-      run: () => options.moveToFile(-1),
+      run: (_key, count) => options.moveToFile(-count),
       closesMenu: true,
     },
     {
       id: "hunk.review.nextFile",
       title: "Next file",
       defaultKeys: ["."],
-      run: () => options.moveToFile(1),
+      run: (_key, count) => options.moveToFile(count),
       closesMenu: true,
     },
     {
       id: "hunk.review.previousAnnotatedHunk",
       title: "Previous annotated hunk",
       defaultKeys: ["{"],
-      run: () => options.moveToAnnotatedHunk(-1),
+      run: (_key, count) => options.moveToAnnotatedHunk(-count),
       closesMenu: true,
     },
     {
       id: "hunk.review.nextAnnotatedHunk",
       title: "Next annotated hunk",
       defaultKeys: ["}"],
-      run: () => options.moveToAnnotatedHunk(1),
+      run: (_key, count) => options.moveToAnnotatedHunk(count),
       closesMenu: true,
     },
     {
       id: "hunk.review.previousAnnotatedFile",
       title: "Previous annotated file",
       defaultKeys: [],
-      run: () => options.moveToAnnotatedFile(-1),
+      run: (_key, count) => options.moveToAnnotatedFile(-count),
       closesMenu: true,
     },
     {
       id: "hunk.review.nextAnnotatedFile",
       title: "Next annotated file",
       defaultKeys: [],
-      run: () => options.moveToAnnotatedFile(1),
+      run: (_key, count) => options.moveToAnnotatedFile(count),
       closesMenu: true,
     },
   ];
@@ -441,6 +523,7 @@ function toAppCommand(spec: BuiltinCommandSpec, resolvedKeys?: ResolvedCommandKe
     keys,
     keyLabels: keys.map(formatKeyChord),
     isEnabled: spec.isEnabled,
+    publicToExtensions: PUBLIC_EXTENSION_COMMAND_IDS.has(spec.id),
     match: matchesAnyKeyChord(keys),
     run: spec.run,
     closesMenu: spec.closesMenu,
@@ -455,8 +538,10 @@ export function buildAppCommands(options: BuildAppCommandsOptions): AppCommand[]
 const NOOP_COMMAND_OPTIONS: BuildAppCommandsOptions = (() => {
   const noop = () => {};
   return {
+    canAlignCurrentLine: false,
     canApplyFilePresentationToAllMatching: false,
     canRefreshCurrentInput: true,
+    alignCurrentLine: noop,
     applyFilePresentationToAllMatching: noop,
     focusFilter: noop,
     moveToAnnotatedFile: noop,
@@ -562,7 +647,7 @@ export function dispatchAppCommand(
     }
 
     key.preventDefault();
-    command.run(key);
+    command.run(key, 1);
     return command;
   }
 
@@ -573,16 +658,43 @@ export function dispatchAppCommand(
  * A key event standing in for "the user asked for this command by name".
  *
  * Commands reached without a keypress still take one, because `run` is written
- * against the event a chord produced. Synthesizing the command's own first
- * chord keeps the two paths identical for the handful of commands that read the
- * event (the shifted arrow scrolls further); an unbound command has no chord to
- * synthesize, so it gets a neutral event with no modifiers set.
+ * against the event a chord produced. Synthesize from the command's shipped
+ * first chord rather than the user's resolved binding: invoking a semantic
+ * command by id must not change behavior when that command is remapped. An
+ * unbound command gets a neutral event with no modifiers set.
  */
 function commandInvocationEvent(command: AppCommand): KeyEvent {
-  const parsed = command.keys.map(parseKeyChordOrUndefined).find((chord) => chord !== undefined);
+  const parsed = (command.defaultKeys ?? [])
+    .map(parseKeyChordOrUndefined)
+    .find((chord) => chord !== undefined);
   return parsed
     ? synthesizeKeyEvent(parsed)
-    : synthesizeKeyEvent({ base: "", ctrl: false, meta: false, option: false, shift: false });
+    : synthesizeKeyEvent({
+        base: "",
+        ctrl: false,
+        meta: false,
+        option: false,
+        shift: false,
+      });
+}
+
+/** Validate and normalize a programmatic command count once at the dispatch boundary. */
+export function normalizeAppCommandCount(options?: ExtensionCommandExecutionOptions): number {
+  if (
+    options !== undefined &&
+    (options === null || typeof options !== "object" || Array.isArray(options))
+  ) {
+    throw new TypeError("Command execution options must be an object.");
+  }
+
+  const count = options?.count ?? 1;
+  if (!Number.isSafeInteger(count) || count < 1 || count > MAX_APP_COMMAND_COUNT) {
+    throw new RangeError(
+      `Command execution count must be a positive safe integer no greater than ${MAX_APP_COMMAND_COUNT}.`,
+    );
+  }
+
+  return count;
 }
 
 /**
@@ -593,12 +705,25 @@ function commandInvocationEvent(command: AppCommand): KeyEvent {
  * a menu item and its shortcut can never drift apart. Reports whether a command
  * ran — an id nobody registered, or one whose `isEnabled` says no, does nothing.
  */
-export function executeAppCommand(commands: readonly AppCommand[], id: string): boolean {
+export function executeAppCommand(
+  commands: readonly AppCommand[],
+  id: string,
+  options?: ExtensionCommandExecutionOptions,
+): boolean {
+  return executeAppCommandWithCount(commands, id, normalizeAppCommandCount(options));
+}
+
+/** Execute one command after the caller has normalized its count exactly once. */
+export function executeAppCommandWithCount(
+  commands: readonly AppCommand[],
+  id: string,
+  count: number,
+): boolean {
   const command = commands.find((candidate) => candidate.id === id);
   if (!command || !isCommandEnabled(command)) {
     return false;
   }
 
-  command.run(commandInvocationEvent(command));
+  command.run(commandInvocationEvent(command), count);
   return true;
 }

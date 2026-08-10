@@ -49,7 +49,9 @@ async function main() {
   }
 
   if (startupPlan.kind === "passthrough") {
-    process.stdout.write(sanitizeTerminalText(startupPlan.text));
+    process.stdout.write(
+      sanitizeTerminalText(startupPlan.text, { preserveAnsiStyle: startupPlan.preserveColor }),
+    );
     process.exit(0);
   }
 
