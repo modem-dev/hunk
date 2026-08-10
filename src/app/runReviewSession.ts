@@ -11,7 +11,9 @@ import {
   isLoopbackHost,
   resolveSessionBrokerConfig,
 } from "../session/broker/brokerConfig";
+import { HUNK_SESSION_API_PATH } from "../session/protocol";
 import type {
+  BrowserReviewUrlResult,
   HunkSessionCommandResult,
   HunkSessionInfo,
   HunkSessionServerMessage,
@@ -68,6 +70,47 @@ async function waitForBrowserReview(url: string, timeoutMs = 8_000) {
   ]);
 }
 
+/** Ask the loopback daemon to lazily enable Tailscale and issue its validated review origin. */
+async function requestTailscaleBrowserUrl(
+  config: ReturnType<typeof resolveSessionBrokerConfig>,
+  sessionId: string,
+  timeoutMs = 8_000,
+) {
+  const deadline = Date.now() + timeoutMs;
+  let lastError = "session registration is not ready";
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(`${config.httpOrigin}${HUNK_SESSION_API_PATH}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "open", selector: { sessionId }, tailscale: true }),
+        // Tailscale detection is bounded to three seconds in the daemon; leave enough time for
+        // that actionable result to cross the loopback API instead of masking it as a retry.
+        signal: AbortSignal.timeout(5_000),
+      });
+      const payload = (await response.json()) as {
+        result?: BrowserReviewUrlResult;
+        error?: string;
+      };
+      if (response.ok && payload.result?.url) return payload.result.url;
+      lastError = payload.error ?? `daemon returned HTTP ${response.status}`;
+      const registrationPending = lastError.startsWith(
+        `No active session matches sessionId ${sessionId}.`,
+      );
+      if (!registrationPending) {
+        throw new HunkUserError("Could not publish the browser review through Tailscale.", [
+          lastError,
+        ]);
+      }
+    } catch (error) {
+      if (error instanceof HunkUserError) throw error;
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+    await Bun.sleep(100);
+  }
+  throw new HunkUserError("Could not publish the browser review through Tailscale.", [lastError]);
+}
+
 /** Keep a renderer-free browser-owned review alive until the owning process receives a signal. */
 async function runWebReview(
   runtime: ReturnType<typeof createReviewSessionRuntime>,
@@ -94,9 +137,12 @@ async function runWebReview(
 
   hostClient.start();
   runtime.start();
-  const url = runtime.getBrowserReviewUrl(config.httpOrigin);
+  const sessionId = hostClient.getRegistration().sessionId;
 
   try {
+    const url = options.tailscale
+      ? await requestTailscaleBrowserUrl(config, sessionId)
+      : runtime.getBrowserReviewUrl(config.httpOrigin);
     await waitForBrowserReview(url);
     if (options.openBrowser === false) {
       process.stdout.write(`${url}\n`);

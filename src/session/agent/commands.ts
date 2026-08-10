@@ -214,7 +214,10 @@ export async function runSessionCommand(input: SessionCommandInput) {
       return renderOutput(input.output, { review }, () => formatReviewOutput(review));
     }
     case "open": {
-      const result = await client.getBrowserReviewUrl(normalizedSelector!);
+      const result = await client.getBrowserReviewUrl({
+        selector: normalizedSelector!,
+        tailscale: input.tailscale,
+      });
       if (!input.openBrowser) return `${result.url}\n`;
       await (sessionCommandTestHooks?.openBrowserUrl?.(result.url) ?? openBrowserUrl(result.url));
       return "Browser review opened.\n";

@@ -894,6 +894,7 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
     extensions: overrides.extensions ?? base.extensions,
     extensionPaths: overrides.extensionPaths ?? base.extensionPaths,
     web: overrides.web ?? base.web,
+    tailscale: overrides.tailscale ?? base.tailscale,
     openBrowser: overrides.openBrowser ?? base.openBrowser,
   };
 }

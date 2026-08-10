@@ -256,7 +256,10 @@ export interface BrowserReviewUrlResult {
   url: string;
 }
 
-export interface BrowserReviewUrlToolInput extends SessionTargetInput {}
+export interface BrowserReviewUrlToolInput extends SessionTargetInput {
+  /** Exact daemon-issued tailnet origin; producers reject every other remote origin. */
+  browserOrigin?: string;
+}
 
 export interface SessionReview {
   sessionId: string;

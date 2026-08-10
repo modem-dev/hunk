@@ -2,4 +2,4 @@
 "hunkdiff": minor
 ---
 
-Open synchronized local browser reviews from review commands and live Hunk sessions.
+Open synchronized capability-authenticated browser reviews locally or across your Tailscale network.

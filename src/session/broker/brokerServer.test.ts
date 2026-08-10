@@ -371,6 +371,65 @@ describe("Hunk session daemon server", () => {
     }
   });
 
+  test("lazily enables one Tailscale listener and forwards only its daemon-issued origin", async () => {
+    const port = await reserveLoopbackPort();
+    process.env.HUNK_MCP_HOST = "127.0.0.1";
+    process.env.HUNK_MCP_PORT = String(port);
+    let serveCount = 0;
+    let stopCount = 0;
+    const server = serveSessionBrokerDaemon({
+      tailscaleBrowser: {
+        detectIp: () => "100.70.1.2",
+        serve: () => {
+          serveCount += 1;
+          return { stop: () => (stopCount += 1) };
+        },
+      },
+    });
+    const socket = await openRegisteredSession(port);
+    socket.addEventListener("message", (event) => {
+      const command = JSON.parse(String(event.data)) as {
+        requestId: string;
+        command: string;
+        input: { browserOrigin?: string };
+      };
+      if (command.command !== "get_browser_review_url") return;
+      expect(command.input.browserOrigin).toBe("http://100.70.1.2:" + port);
+      socket.send(
+        JSON.stringify({
+          type: "command-result",
+          requestId: command.requestId,
+          ok: true,
+          result: {
+            url: `http://100.70.1.2:${port}/review/session-1/#capability=test`,
+          },
+        }),
+      );
+    });
+    try {
+      for (let index = 0; index < 2; index += 1) {
+        const response = await fetch(`http://127.0.0.1:${port}/session-api`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            action: "open",
+            selector: { sessionId: "session-1" },
+            tailscale: true,
+          }),
+        });
+        expect(response.status).toBe(200);
+        await expect(response.json()).resolves.toMatchObject({
+          result: { url: `http://100.70.1.2:${port}/review/session-1/#capability=test` },
+        });
+      }
+      expect(serveCount).toBe(1);
+    } finally {
+      socket.close();
+      server.stop(true);
+    }
+    expect(stopCount).toBe(1);
+  });
+
   test("refuses browser routes whenever unsafe remote broker access is enabled", async () => {
     const port = await reserveLoopbackPort();
     process.env.HUNK_MCP_HOST = "127.0.0.1";

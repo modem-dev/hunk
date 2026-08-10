@@ -244,17 +244,21 @@ export const SESSION_AGENT_COMMANDS = {
   },
   open: {
     name: "session open",
-    summary: "open one live Hunk review in the local browser",
+    summary: "open one live Hunk review in the browser",
     positionals: [{ token: "[sessionId]" }],
     options: [
       repoOption,
+      {
+        flag: "--tailscale",
+        description: "publish browser review routes on the local tailnet",
+      },
       {
         flag: "--no-open",
         description: "print the capability URL without opening the default browser",
       },
     ],
-    synopsis: [`hunk session open ${SESSION_SELECTOR_SYNOPSIS} [--no-open]`],
-    examples: ["hunk session open --repo .", "hunk session open --repo . --no-open"],
+    synopsis: [`hunk session open ${SESSION_SELECTOR_SYNOPSIS} [--tailscale] [--no-open]`],
+    examples: ["hunk session open --repo .", "hunk session open --repo . --tailscale --no-open"],
   },
   navigate: {
     name: "session navigate",

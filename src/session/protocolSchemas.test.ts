@@ -23,6 +23,7 @@ describe("session daemon request validation", () => {
       { action: "context", selector: { repoRoot: "/repo" } },
       { action: "review", selector: { sessionId: "s-1" } },
       { action: "review", selector: { sessionId: "s-1" }, includePatch: true, includeNotes: true },
+      { action: "open", selector: { sessionId: "s-1" }, tailscale: true },
       { action: "navigate", selector: { sessionId: "s-1" }, hunkNumber: 2 },
       {
         action: "navigate",

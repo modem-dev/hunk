@@ -47,7 +47,7 @@ hunk session list [--json]
 hunk session get (<session-id> | --repo <path>) [--json]
 hunk session context (<session-id> | --repo <path>) [--json]
 hunk session review (<session-id> | --repo <path>) [--include-patch] [--include-notes] [--json]
-hunk session open (<session-id> | --repo <path>) [--no-open]
+hunk session open (<session-id> | --repo <path>) [--tailscale] [--no-open]
 ```
 
 - `get` shows the session `Path`, `Repo`, and `Source`, which helps when choosing between `--repo` and `--session-path`

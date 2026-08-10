@@ -158,12 +158,17 @@ render, aborting obsolete work before new resource effects run. Mutable selectio
 reuse retained in-window generation cache entries. Only sanitized shared STML nodes become React
 elements, valid markup replaces plain fallback text, and raw markup is never inserted as HTML.
 
-## Local browser transport boundary
+## Browser transport boundary
 
 Browser review transport is a Hunk-only extension of the existing loopback daemon. Its route set is
 closed to one review shell, capability exchange, snapshot, generation-addressed resources, observer
 SSE, and semantic actions. Production safe-loopback daemons enable these routes; unsafe remote
-broker mode always refuses them.
+broker mode always refuses them. Explicit `--tailscale` lazily adds one daemon-wide secondary
+listener bound to the exact detected 100.64.0.0/10 address. That listener routes only the browser
+surface through the same capability-authenticated handler: health, broker websocket, session API,
+capabilities, and legacy routes remain unavailable. The daemon never changes global `tailscale
+serve` state. Plain HTTP is acceptable on this listener because Tailscale/WireGuard encrypts the
+tailnet transport; capability authentication and exact Host/Origin validation still apply.
 
 The review process creates 256 bits of random capability material and registers only its SHA-256
 verifier. The clear capability stays process-local and appears only in the review URL fragment. The

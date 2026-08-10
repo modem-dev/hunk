@@ -114,6 +114,8 @@ export interface CommonOptions {
   web?: boolean;
   /** False when browser startup should print the capability URL without opening it. */
   openBrowser?: boolean;
+  /** Publish browser routes on this machine's tailnet IPv4 address. */
+  tailscale?: boolean;
 }
 
 /** Resolved `[extensions]` and `[extension.<id>]` configuration for one invocation. */
@@ -206,6 +208,7 @@ export interface SessionOpenCommandInput {
   output: "text";
   selector: SessionSelectorInput;
   openBrowser: boolean;
+  tailscale?: boolean;
 }
 
 export interface SessionNavigateCommandInput {
