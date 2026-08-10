@@ -21,6 +21,7 @@ import {
   MAX_REVIEW_PRODUCER_METADATA_BYTES,
   MAX_REVIEW_RESOURCE_BYTES,
   MAX_REVIEW_RESOURCE_DESCRIPTORS,
+  ReviewProducerCapacityError,
   isReviewSha256Digest,
   type HunkReviewManifestV1,
 } from "../reviewProtocol";
@@ -67,11 +68,13 @@ export function createHunkReviewManifest(
     throw new Error("Review manifest file count does not match the authoritative document.");
   }
   if (document.resources.length > MAX_REVIEW_RESOURCE_DESCRIPTORS) {
-    throw new Error("Review manifest has too many resource descriptors.");
+    throw new ReviewProducerCapacityError("Review manifest has too many resource descriptors.");
   }
   for (const resource of document.resources) {
     if (resource.byteLength !== undefined && resource.byteLength > MAX_REVIEW_RESOURCE_BYTES) {
-      throw new Error(`Review resource ${resource.id} exceeds the per-resource limit.`);
+      throw new ReviewProducerCapacityError(
+        `Review resource ${resource.id} exceeds the per-resource limit.`,
+      );
     }
     if (resource.digest !== undefined && !isReviewSha256Digest(resource.digest)) {
       throw new Error(`Review resource ${resource.id} has an invalid SHA-256 digest.`);
@@ -80,7 +83,9 @@ export function createHunkReviewManifest(
   for (const file of document.files) {
     for (const note of file.notes) {
       if (utf8ByteLength(JSON.stringify(note)) > MAX_REVIEW_NOTE_BYTES) {
-        throw new Error(`Review note ${note.id} exceeds the note metadata limit.`);
+        throw new ReviewProducerCapacityError(
+          `Review note ${note.id} exceeds the note metadata limit.`,
+        );
       }
     }
   }
@@ -144,7 +149,7 @@ export function createHunkReviewManifest(
   };
 
   if (utf8ByteLength(JSON.stringify(manifest)) > MAX_REVIEW_MANIFEST_BYTES) {
-    throw new Error("Review manifest exceeds the producer metadata limit.");
+    throw new ReviewProducerCapacityError("Review manifest exceeds the producer metadata limit.");
   }
   return manifest;
 }
@@ -205,7 +210,9 @@ export function createSessionRegistration(
     files: buildSessionFiles(reviewManifest),
   };
   if (utf8ByteLength(JSON.stringify(info)) > MAX_REVIEW_PRODUCER_METADATA_BYTES) {
-    throw new Error("Review registration exceeds the producer message metadata limit.");
+    throw new ReviewProducerCapacityError(
+      "Review registration exceeds the producer message metadata limit.",
+    );
   }
   return {
     registrationVersion: SESSION_BROKER_REGISTRATION_VERSION,

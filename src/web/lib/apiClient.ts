@@ -176,43 +176,103 @@ export class BrowserReviewApiClient {
     }
   }
 
-  /** Observe full semantic events; EventSource owns Last-Event-ID reconnect replay. */
+  /** Observe full semantic events and rebuild terminal EventSource failures with backoff. */
   events(callbacks: {
     onEvent: (event: ReviewMirrorEvent) => void | Promise<void>;
     onOpen: () => void;
     onError: (status?: number) => void;
     onMalformed: () => void | Promise<void>;
   }) {
-    const source = new EventSource(`${this.base}/events`, { withCredentials: true });
-    const chunks = new ReviewSseChunks(callbacks.onEvent, callbacks.onMalformed);
+    let source: EventSource | undefined;
+    let statusProbe: AbortController | undefined;
+    let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+    let reconnectAttempt = 0;
+    let epoch = 0;
+    let disposed = false;
     let eventQueue = Promise.resolve();
     const types = ["snapshot", "document", "state", "disconnect"] as const;
-    for (const type of types) {
-      for (const eventType of [type, `${type}-begin`, `${type}-chunk`, `${type}-end`]) {
-        source.addEventListener(eventType, (event) => {
-          const message = event as MessageEvent<string>;
-          eventQueue = eventQueue.then(async () => {
-            try {
-              await chunks.accept(eventType, JSON.parse(message.data));
-            } catch {
-              await callbacks.onMalformed();
-            }
-          });
-        });
-      }
-    }
-    source.onopen = callbacks.onOpen;
-    source.onerror = () => {
-      // Close the mutation gate synchronously; status probing must never leave a stale write window.
-      callbacks.onError();
-      void this.probeStatus().then(
-        (status) => {
-          if (status !== undefined) callbacks.onError(status);
-        },
-        () => {},
-      );
+
+    const scheduleReconnect = () => {
+      if (disposed || reconnectTimer) return;
+      const delay = Math.min(250 * 2 ** reconnectAttempt, 4_000);
+      reconnectAttempt += 1;
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = undefined;
+        connect();
+      }, delay);
     };
-    return () => source.close();
+
+    const connect = () => {
+      if (disposed) return;
+      statusProbe?.abort();
+      statusProbe = undefined;
+      const candidate = new EventSource(`${this.base}/events`, { withCredentials: true });
+      source = candidate;
+      const candidateEpoch = ++epoch;
+      const isCurrent = () => !disposed && source === candidate && epoch === candidateEpoch;
+      const chunks = new ReviewSseChunks(
+        (event) => (isCurrent() ? callbacks.onEvent(event) : undefined),
+        () => (isCurrent() ? callbacks.onMalformed() : undefined),
+      );
+      for (const type of types) {
+        for (const eventType of [type, `${type}-begin`, `${type}-chunk`, `${type}-end`]) {
+          candidate.addEventListener(eventType, (event) => {
+            if (disposed || source !== candidate) return;
+            const message = event as MessageEvent<string>;
+            const messageEpoch = epoch;
+            eventQueue = eventQueue.then(async () => {
+              if (!isCurrent() || epoch !== messageEpoch) return;
+              try {
+                await chunks.accept(eventType, JSON.parse(message.data));
+              } catch {
+                if (isCurrent() && epoch === messageEpoch) await callbacks.onMalformed();
+              }
+            });
+          });
+        }
+      }
+      candidate.onopen = () => {
+        if (!isCurrent()) return;
+        statusProbe?.abort();
+        statusProbe = undefined;
+        reconnectAttempt = 0;
+        callbacks.onOpen();
+      };
+      candidate.onerror = () => {
+        if (!isCurrent()) return;
+        // Close the mutation gate synchronously before probing or rebuilding transport.
+        const failedEpoch = ++epoch;
+        callbacks.onError();
+        candidate.close();
+        scheduleReconnect();
+        statusProbe?.abort();
+        const probe = new AbortController();
+        statusProbe = probe;
+        void this.probeStatus(probe.signal).then(
+          (status) => {
+            if (disposed || epoch !== failedEpoch) return;
+            statusProbe = undefined;
+            if (status === 401 || status === 404) {
+              if (reconnectTimer) clearTimeout(reconnectTimer);
+              reconnectTimer = undefined;
+              callbacks.onError(status);
+            }
+          },
+          () => {
+            if (!disposed && epoch === failedEpoch) statusProbe = undefined;
+          },
+        );
+      };
+    };
+
+    connect();
+    return () => {
+      disposed = true;
+      epoch += 1;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      statusProbe?.abort();
+      source?.close();
+    };
   }
 
   private pumpResourceQueue() {
@@ -273,9 +333,10 @@ export class BrowserReviewApiClient {
     return new TextDecoder().decode(bytes);
   }
 
-  private async probeStatus() {
+  private async probeStatus(signal: AbortSignal) {
     const response = await this.fetchImpl(`${this.base}/snapshot`, {
       credentials: "same-origin",
+      signal: AbortSignal.any([signal, AbortSignal.timeout(2_000)]),
     });
     return response.ok ? undefined : response.status;
   }

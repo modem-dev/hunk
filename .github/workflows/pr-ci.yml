@@ -88,6 +88,9 @@ jobs:
       - name: Typecheck
         run: bun run typecheck
 
+      - name: Check embedded browser assets
+        run: bun run check:browser-assets
+
       - name: Theme contrast check
         run: bun run test:theme-contrast
 
@@ -179,6 +182,9 @@ jobs:
 
       - name: Typecheck
         run: bun run typecheck
+
+      - name: Check embedded browser assets
+        run: bun run check:browser-assets
 
       - name: Theme contrast check
         run: bun run test:theme-contrast

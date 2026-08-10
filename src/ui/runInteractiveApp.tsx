@@ -19,7 +19,8 @@ export interface InteractiveAppInput {
   rawInput: CliInput;
   controllingTerminal: ControllingTerminal | null;
   runtime: ReviewSessionRuntime;
-  hostClient: HunkSessionBrokerClient;
+  hostClient?: HunkSessionBrokerClient;
+  sessionNotice?: string;
 }
 
 /** Load and run the OpenTUI review app after startup has selected an interactive plan. */
@@ -29,6 +30,7 @@ export async function runInteractiveApp({
   controllingTerminal,
   runtime,
   hostClient,
+  sessionNotice,
 }: InteractiveAppInput): Promise<void> {
   // Keep OpenTUI's platform-safe threading default (enabled on macOS, disabled on Linux).
   const renderer = await createCliRenderer({
@@ -44,43 +46,63 @@ export async function runInteractiveApp({
   });
 
   const appRenderer = renderer;
-  const root = createRoot(appRenderer);
+  let root: ReturnType<typeof createRoot>;
+  try {
+    root = createRoot(appRenderer);
+  } catch (error) {
+    appRenderer.destroy();
+    throw error;
+  }
   const shutdownSignals: NodeJS.Signals[] = ["SIGINT", "SIGTERM"];
   let shuttingDown = false;
   let jobControlSuspendSupport: JobControlSuspendSupport = { dispose: () => undefined };
   let jobControlInterruptSupport: JobControlInterruptSupport = { dispose: () => undefined };
 
-  /** Tear down the renderer before exit so the primary terminal screen comes back cleanly. */
-  function shutdown() {
-    if (shuttingDown) {
-      return;
-    }
-
+  /** Release terminal-owned resources, optionally completing a normal process exit. */
+  function teardown(exit: boolean) {
+    if (shuttingDown) return;
     shuttingDown = true;
-    for (const signal of shutdownSignals) {
-      process.off(signal, shutdown);
-    }
+    for (const signal of shutdownSignals) process.off(signal, shutdown);
     jobControlInterruptSupport.dispose();
     jobControlSuspendSupport.dispose();
-    hostClient.stop();
-    shutdownSession({ root, renderer: appRenderer });
+    hostClient?.stop();
+    if (exit) {
+      shutdownSession({ root, renderer: appRenderer });
+      return;
+    }
+    try {
+      root.unmount();
+    } finally {
+      appRenderer.destroy();
+    }
   }
 
-  for (const signal of shutdownSignals) {
-    process.once(signal, shutdown);
+  /** Tear down the renderer before exit so the primary terminal screen comes back cleanly. */
+  function shutdown() {
+    teardown(true);
   }
-  jobControlInterruptSupport = installJobControlInterruptSupport(appRenderer, shutdown);
-  jobControlSuspendSupport = installJobControlSuspendSupport(appRenderer);
 
-  // The app owns the full alternate screen session from this point on.
-  root.render(
-    <AppHost
-      bootstrap={bootstrap}
-      hostClient={hostClient}
-      rawInput={rawInput}
-      onQuit={shutdown}
-      startupNoticeResolver={resolveStartupUpdateNotice}
-      runtime={runtime}
-    />,
-  );
+  try {
+    for (const signal of shutdownSignals) {
+      process.once(signal, shutdown);
+    }
+    jobControlInterruptSupport = installJobControlInterruptSupport(appRenderer, shutdown);
+    jobControlSuspendSupport = installJobControlSuspendSupport(appRenderer);
+
+    // The app owns the full alternate screen session from this point on.
+    root.render(
+      <AppHost
+        bootstrap={bootstrap}
+        hostClient={hostClient}
+        rawInput={rawInput}
+        onQuit={shutdown}
+        startupNoticeResolver={resolveStartupUpdateNotice}
+        runtime={runtime}
+        initialNotice={sessionNotice}
+      />,
+    );
+  } catch (error) {
+    teardown(false);
+    throw error;
+  }
 }

@@ -16,6 +16,7 @@ export function AppHost({
   rawInput,
   watchRuntime,
   runtime: injectedRuntime,
+  initialNotice,
 }: {
   bootstrap: AppBootstrap;
   hostClient?: HunkSessionBrokerClient;
@@ -25,6 +26,7 @@ export function AppHost({
   rawInput?: CliInput;
   watchRuntime?: WatchedInputRuntime;
   runtime?: ReviewSessionRuntime;
+  initialNotice?: string;
 }) {
   const [runtime] = useState(
     () =>
@@ -60,7 +62,7 @@ export function AppHost({
     <App
       key={snapshot.remountVersion}
       bootstrap={snapshot.bootstrap}
-      noticeText={snapshot.notice ?? startupNoticeText}
+      noticeText={snapshot.notice ?? initialNotice ?? startupNoticeText}
       reviewStore={snapshot.store}
       sessionRuntime={runtime}
       extensionTrustPromptRoot={snapshot.trust.promptRepoRoot}

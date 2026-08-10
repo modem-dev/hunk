@@ -371,10 +371,6 @@ export function App({
     width: number;
   } | null>(null);
   const [lineCursors, setLineCursors] = useState<LineCursor[]>([]);
-  const toggleRuntimeSourceGap = useCallback(
-    (fileKey: string, gapId: string) => void sessionRuntime.toggleSourceGap(fileKey, gapId),
-    [sessionRuntime],
-  );
   const showReviewMutationError = useCallback(
     (error: unknown) => {
       const message =
@@ -383,6 +379,11 @@ export function App({
       else setSessionNoticeText(message);
     },
     [extensions],
+  );
+  const toggleRuntimeSourceGap = useCallback(
+    (fileKey: string, gapId: string) =>
+      void sessionRuntime.toggleSourceGap(fileKey, gapId).catch(showReviewMutationError),
+    [sessionRuntime, showReviewMutationError],
   );
   const review = useReviewController({
     files: reviewFiles,

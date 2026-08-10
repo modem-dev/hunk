@@ -468,6 +468,77 @@ describe("browser review server", () => {
     expect(stale?.status).toBe(409);
   });
 
+  test("rejects a resource when its capability rotates during an asynchronous read", async () => {
+    const connected = createRegisteredState();
+    const originalRead = connected.state.getBrowserReviewResource.bind(connected.state);
+    let releaseRead!: () => void;
+    const readGate = new Promise<void>((resolve) => {
+      releaseRead = resolve;
+    });
+    connected.state.getBrowserReviewResource = async (...args) => {
+      const result = await originalRead(...args);
+      await readGate;
+      return result;
+    };
+    const server = new BrowserReviewServer(connected.state);
+    servers.push(server);
+    const cookie = await authorize(server, "session-1", "capability-one");
+    const pending = server.handle(
+      request("/review-api/session-1/resources/generation%3Atest/resource%3Atest%3A0", {
+        headers: { cookie },
+      }),
+    );
+    await Bun.sleep(0);
+    const replacement = structuredClone(connected.registration);
+    replacement.info.browserReviewCapabilityHash = capabilityHash("rotated-capability");
+    expect(
+      connected.state.registerSession(connected.socket, replacement, createTestSessionSnapshot()),
+    ).toBe(true);
+    releaseRead();
+    expect((await pending)?.status).toBe(401);
+  });
+
+  test("rejects an action when its capability rotates while reading the body", async () => {
+    const connected = createRegisteredState();
+    const server = new BrowserReviewServer(connected.state);
+    servers.push(server);
+    const cookie = await authorize(server, "session-1", "capability-one");
+    const body = JSON.stringify({
+      generation: "generation:test",
+      action: { type: "notes/set-visibility", visible: true },
+    });
+    let releaseBody!: () => void;
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        releaseBody = () => {
+          controller.enqueue(new TextEncoder().encode(body));
+          controller.close();
+        };
+      },
+    });
+    const pending = server.handle(
+      new Request("http://127.0.0.1:47657/review-api/session-1/actions", {
+        method: "POST",
+        headers: {
+          cookie,
+          host: "127.0.0.1:47657",
+          origin: ORIGIN,
+          "content-type": "application/json",
+        },
+        body: stream,
+        duplex: "half",
+      } as RequestInit & { duplex: "half" }),
+    );
+    await Bun.sleep(0);
+    const replacement = structuredClone(connected.registration);
+    replacement.info.browserReviewCapabilityHash = capabilityHash("rotated-capability");
+    expect(
+      connected.state.registerSession(connected.socket, replacement, createTestSessionSnapshot()),
+    ).toBe(true);
+    releaseBody();
+    expect((await pending)?.status).toBe(401);
+  });
+
   test("expires idle SSE streams on their auth timer and rejects events after fake-clock expiry", async () => {
     const clock = createFakeClock();
     const { state, socket } = createRegisteredState();
@@ -738,6 +809,40 @@ describe("browser review server", () => {
       );
     }
     expect(server.getSubscriberCount()).toBe(0);
+  });
+
+  test("wakes an idle SSE reader when a later state revision is published", async () => {
+    const { state, socket } = createRegisteredState();
+    const server = new BrowserReviewServer(state, { heartbeatMs: 60_000 });
+    servers.push(server);
+    const cookie = await authorize(server, "session-1", "capability-one");
+    const response = await server.handle(
+      request("/review-api/session-1/events", { headers: { cookie } }),
+    );
+    const reader = response!.body!.getReader();
+    expect(new TextDecoder().decode((await reader.read()).value)).toContain("event: snapshot");
+
+    const pending = reader.read();
+    await Bun.sleep(0);
+    const review = { ...createTestSessionSnapshot().state.review, stateRevision: 1 };
+    expect(
+      state.updateSnapshot(
+        socket,
+        "session-1",
+        createTestSessionSnapshot({ stateRevision: 1, review }),
+      ),
+    ).toBe("updated");
+
+    const delivered = await Promise.race([
+      pending,
+      Bun.sleep(250).then(() => ({ timeout: true as const })),
+    ]);
+    expect(delivered).not.toHaveProperty("timeout");
+    expect(
+      new TextDecoder().decode((delivered as ReadableStreamReadResult<Uint8Array>).value),
+    ).toContain("event: state");
+    await reader.cancel();
+    expect(server.getSubscriberBufferedByteCount()).toBe(0);
   });
 
   test("streams initial snapshots, state revisions, reconnect recovery, and disconnect cleanup", async () => {

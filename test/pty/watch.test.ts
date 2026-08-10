@@ -42,6 +42,36 @@ describe("PTY watch mode", () => {
     }
   });
 
+  test("preserves an in-progress note draft while watched code reloads", async () => {
+    const fixture = harness.createWatchFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--watch", "--mode", "stack"],
+      cwd: fixture.dir,
+      cols: 120,
+      rows: 20,
+    });
+
+    try {
+      await session.waitForText(/watchedValue = 'initial change'/, { timeout: 15_000 });
+      await session.press("c");
+      await session.type("Keep this draft while the agent writes.");
+      await session.waitForText(/Keep this draft while the agent writes\./, { timeout: 5_000 });
+
+      const replacement = join(dirname(fixture.after), "after-replacement.ts");
+      writeFileSync(
+        replacement,
+        "// written during review\nexport const watchedValue = 'initial change';\n",
+      );
+      renameSync(replacement, fixture.after);
+
+      const refreshed = await session.waitForText(/written during review/, { timeout: 5_000 });
+      expect(refreshed).toContain("Keep this draft while the agent writes.");
+      expect(refreshed).toContain("Draft note");
+    } finally {
+      session.close();
+    }
+  });
+
   test("passively refreshes an agent sidecar through the runtime watch controller", async () => {
     const fixture = harness.createAgentFilePair();
     execFileSync("git", ["init"], { cwd: fixture.dir, stdio: "ignore" });

@@ -512,7 +512,9 @@ test("one terminal-owned review synchronizes browser and session actions end to 
 
     await page.getByLabel("Add review note").getByRole("textbox").fill("Browser to terminal note");
     await page.getByRole("button", { name: /Add note/ }).click();
-    await expect(page.getByText("Browser to terminal note", { exact: true })).toBeVisible();
+    await expect(
+      page.locator(".review-note__summary").getByText("Browser to terminal note", { exact: true }),
+    ).toBeVisible();
     const review = await waitUntil("browser note in broker review export", () => {
       const exported = runSessionCommand(isolated, [
         "review",

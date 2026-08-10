@@ -702,6 +702,33 @@ describe("ReviewSessionRuntime", () => {
     runtime.dispose();
   });
 
+  test("detached terminal reloads do not build broker-limited reconnect manifests", async () => {
+    const oversized = createTestDiffFile({
+      id: "oversized",
+      path: "oversized.ts",
+      agent: {
+        path: "oversized.ts",
+        summary: "x".repeat(4 * 1024 * 1024),
+        annotations: [],
+      },
+    });
+    const runtime = createReviewSessionRuntime(createBootstrap(), {
+      deps: createReloadDeps(async (input, cwd, extensions) => ({
+        ...createBootstrap(),
+        input,
+        reloadContext: { cwd },
+        extensions,
+        changeset: { ...createBootstrap().changeset, files: [oversized], title: "oversized" },
+      })),
+    });
+
+    await expect(
+      runtime.reload("manual", reloadInput("oversized"), { resetApp: false }),
+    ).resolves.toMatchObject({ title: "oversized", fileCount: 1 });
+    expect(runtime.getSnapshot().bootstrap.changeset.title).toBe("oversized");
+    runtime.dispose();
+  });
+
   test("manual reload atomically replaces bootstrap, resources, and reconciled store", async () => {
     const runtime = createReviewSessionRuntime(createBootstrap(), {
       deps: createReloadDeps(),

@@ -192,11 +192,17 @@ export class BrowserReviewServer {
           : this.methodNotAllowed("GET");
       case "resource":
         return request.method === "GET"
-          ? this.handleResource(request, api.sessionId, api.generation, api.resourceId)
+          ? this.handleResource(
+              request,
+              api.sessionId,
+              api.generation,
+              api.resourceId,
+              authentication,
+            )
           : this.methodNotAllowed("GET");
       case "actions":
         return request.method === "POST"
-          ? this.handleAction(request, api.sessionId)
+          ? this.handleAction(request, api.sessionId, authentication)
           : this.methodNotAllowed("POST");
     }
   }
@@ -407,6 +413,14 @@ export class BrowserReviewServer {
       : null;
   }
 
+  /** Revalidate captured HTTP authority after any asynchronous request work. */
+  private revalidateAuth(auth: AuthSession) {
+    return (
+      auth.expiresAt > this.now() &&
+      auth.capabilityHash === this.state.getBrowserReviewCapabilityHash(auth.sessionId)
+    );
+  }
+
   private tokenKey(token: string) {
     return createHash("sha256").update(token, "utf8").digest("hex");
   }
@@ -478,6 +492,7 @@ export class BrowserReviewServer {
     sessionId: string,
     generation: string,
     resourceId: string,
+    auth: AuthSession,
   ) {
     try {
       const { descriptor, bytes } = await this.state.getBrowserReviewResource(
@@ -485,6 +500,9 @@ export class BrowserReviewServer {
         generation,
         resourceId,
       );
+      if (!this.revalidateAuth(auth)) {
+        return this.jsonError("Review authorization is missing or expired.", 401);
+      }
       const range = this.parseRange(request.headers.get("range"), bytes.byteLength);
       if (range === "invalid") {
         return new Response(null, {
@@ -534,7 +552,7 @@ export class BrowserReviewServer {
       : "invalid";
   }
 
-  private async handleAction(request: Request, sessionId: string) {
+  private async handleAction(request: Request, sessionId: string, auth: AuthSession) {
     const originError = this.validatePostOrigin(request);
     if (originError) return originError;
     if (!this.hasJsonContentType(request)) return this.jsonError("Expected JSON.", 415);
@@ -565,6 +583,9 @@ export class BrowserReviewServer {
       !("action" in record)
     ) {
       return this.jsonError("Invalid review action envelope.", 400);
+    }
+    if (!this.revalidateAuth(auth)) {
+      return this.jsonError("Review authorization is missing or expired.", 401);
     }
     try {
       const result = await this.state.applyBrowserReviewAction(
@@ -832,7 +853,13 @@ export class BrowserReviewServer {
     ) {
       return this.jsonError("Review event subscriber limit reached.", 503);
     }
-    const current = this.state.getBrowserReviewSnapshot(sessionId);
+    let current: ReturnType<HunkSessionBrokerState["getBrowserReviewSnapshot"]>;
+    try {
+      current = this.state.getBrowserReviewSnapshot(sessionId);
+    } catch {
+      // The producer may retire between capability authentication and stream construction.
+      return this.jsonError("Review session is no longer active.", 404);
+    }
     let subscriber!: Subscriber;
     const stream = new ReadableStream<Uint8Array>(
       {
@@ -864,7 +891,12 @@ export class BrowserReviewServer {
             this.enqueueFrames(subscriber, snapshot.frames);
           }
         },
-        pull: () => this.flushSubscriber(subscriber),
+        pull: () => {
+          // A pull after enqueue proves the controller-owned frame was consumed. Only this path
+          // releases its byte accounting; producer wakeups must not manufacture consumption.
+          this.consumeControllerFrame(subscriber);
+          this.flushSubscriber(subscriber);
+        },
         cancel: () => this.removeSubscriber(subscriber),
       },
       { highWaterMark: 1 },
@@ -922,6 +954,9 @@ export class BrowserReviewServer {
     subscriber.bufferedBytes += bytes;
     this.totalSubscriberBytes += bytes;
     subscriber.closeAfterDrain ||= closeAfterDrain;
+    // ReadableStream does not call pull again merely because our private queue changed. Wake an
+    // idle consumer directly while preserving controller-owned backpressure accounting.
+    this.flushSubscriber(subscriber);
   }
 
   /** Account for one frame consumed from the ReadableStream controller. */
@@ -932,10 +967,14 @@ export class BrowserReviewServer {
     subscriber.controllerBytes = 0;
   }
 
-  /** Move one queued frame into the controller while retaining byte accounting. */
+  /** Move one queued frame into an idle controller while retaining byte accounting. */
   private flushSubscriber(subscriber: Subscriber) {
-    if (!this.revalidateSubscriber(subscriber)) return;
-    this.consumeControllerFrame(subscriber);
+    if (
+      !this.revalidateSubscriber(subscriber) ||
+      subscriber.controllerBytes > 0 ||
+      (subscriber.controller.desiredSize ?? 0) <= 0
+    )
+      return;
     const next = subscriber.queue.shift();
     if (next) {
       subscriber.controllerBytes = next.bytes.byteLength;
