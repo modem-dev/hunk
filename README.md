@@ -39,6 +39,12 @@ Or with Homebrew:
 brew install hunk
 ```
 
+Or with [mise](https://mise.jdx.dev):
+
+```bash
+mise use -g hunk
+```
+
 > [!NOTE]
 > If you previously installed hunk via `modem-dev/tap`, be sure to uninstall it first with `brew uninstall modem-dev/tap/hunk`.
 
