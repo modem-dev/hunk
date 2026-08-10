@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { ReviewSnapshotMirror, ReviewSseChunks, type ReviewMirrorEvent } from "./mirror";
+import {
+  ReviewSnapshotMirror,
+  ReviewSseChunks,
+  softwareSha256,
+  type ReviewMirrorEvent,
+} from "./mirror";
 import type { BrowserReviewSnapshot } from "./reviewTypes";
 
 function snapshot(generation = "generation:a", revision = 1): BrowserReviewSnapshot {
@@ -27,6 +32,20 @@ function snapshot(generation = "generation:a", revision = 1): BrowserReviewSnaps
     },
   };
 }
+
+describe("browser SHA-256", () => {
+  test("software fallback matches standard vectors for non-secure tailnet origins", () => {
+    const encode = (value: string) => new TextEncoder().encode(value);
+    expect(softwareSha256(encode(""))).toBe(
+      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    );
+    expect(softwareSha256(encode("abc"))).toBe(
+      "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+    );
+    const payload = encode("Hunk tailnet resource integrity\n".repeat(10_000));
+    expect(softwareSha256(payload)).toBe(createHash("sha256").update(payload).digest("hex"));
+  });
+});
 
 describe("ReviewSnapshotMirror", () => {
   test("ignores stale revisions, reports gaps, and retires replaced generations", () => {
