@@ -213,6 +213,8 @@ A `null`, invalid, oversized, cancelled, timed-out, or throwing layout produces 
 
 ## Examples
 
+Browse the complete [extension example gallery](https://github.com/modem-dev/hunk/tree/main/examples/extensions), or jump directly to a file-view example:
+
 - [Rendered Markdown](https://github.com/modem-dev/hunk/tree/main/examples/extensions/rendered-markdown) is an installable symbolic-row preview with exact-source bindings and inline notes.
 - [JSX file view](https://github.com/modem-dev/hunk/tree/main/examples/extensions/jsx-file-view) demonstrates fixed-height React/OpenTUI rows.
 - [JSX file-view gallery](https://github.com/modem-dev/hunk/tree/main/examples/extensions/jsx-file-view-gallery) includes TypeScript, CSS color, package dependency, and mixed raw/custom review examples.
