@@ -282,16 +282,34 @@ for (const path of requiredPaths) {
 }
 
 const staticEntry = path.join(repoRoot, "dist", "npm", "static", "index.js");
-const staticRenderer = (await import(pathToFileURL(staticEntry).href)) as {
-  renderStaticDiff?: (patch: string, options?: { width?: number }) => Promise<string>;
-};
-const staticOutput = await staticRenderer.renderStaticDiff?.(
-  "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-const value = 1;\n+const value = 2;\n",
-  { width: 80 },
+const staticSmoke = Bun.spawnSync(
+  [
+    "node",
+    "--input-type=module",
+    "--eval",
+    `
+      const { renderStaticDiff } = await import(${JSON.stringify(pathToFileURL(staticEntry).href)});
+      const output = await renderStaticDiff(
+        "diff --git a/a.ts b/a.ts\\n--- a/a.ts\\n+++ b/a.ts\\n@@ -1 +1 @@\\n-const value = 1;\\n+const value = 2;\\n",
+        { width: 80 },
+      );
+      const plain = output.replace(/\\x1b\\[[0-?]*[ -/]*[@-~]/g, "");
+      if (!plain.includes("a.ts modified +1 -1")) {
+        throw new Error("The published static renderer did not render a patch.");
+      }
+    `,
+  ],
+  {
+    cwd: repoRoot,
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+    env: process.env,
+  },
 );
-const plainStaticOutput = staticOutput?.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
-if (!plainStaticOutput?.includes("a.ts modified +1 -1")) {
-  throw new Error("The published static renderer did not render a patch.");
+if (staticSmoke.exitCode !== 0) {
+  const output = Buffer.from(staticSmoke.stderr).toString("utf8").trim();
+  throw new Error(`The published static renderer failed under Node.\n${output}`);
 }
 
 const forbiddenPrefixes = [
