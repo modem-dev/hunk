@@ -1,5 +1,6 @@
 import { reviewHunkRange } from "../../core/review/reconcile";
 import { isRenderableStoredReviewNote, type ReviewState } from "../../core/review/state";
+import type { ReviewHunkV1, ReviewSide } from "../../core/review/types";
 import {
   MAX_SNAPSHOT_LIVE_COMMENTS,
   MAX_SNAPSHOT_REVIEW_NOTES,
@@ -46,6 +47,12 @@ export function createHunkReviewState(snapshot: ReviewState): HunkReviewStateV1 
   };
 }
 
+/** Return a protocol range only when that side has positive source line coordinates. */
+function sessionHunkRange(hunk: ReviewHunkV1, side: ReviewSide) {
+  const range = reviewHunkRange(hunk, side);
+  return range[0] > 0 ? ([...range] as [number, number]) : undefined;
+}
+
 /** Adapt the authoritative renderer-neutral store snapshot to the broker contract. */
 export function createSessionSnapshotFromReviewState(
   snapshot: ReviewState,
@@ -55,6 +62,8 @@ export function createSessionSnapshotFromReviewState(
     (candidate) => candidate.key === snapshot.selection.fileKey,
   );
   const hunk = file?.hunks[snapshot.selection.hunkIndex];
+  const selectedOldRange = hunk ? sessionHunkRange(hunk, "old") : undefined;
+  const selectedNewRange = hunk ? sessionHunkRange(hunk, "new") : undefined;
   const mutableNotes = [...snapshot.liveNotes, ...snapshot.userNotes].filter(
     isRenderableStoredReviewNote,
   );
@@ -71,12 +80,8 @@ export function createSessionSnapshotFromReviewState(
       review: createHunkReviewState(snapshot),
       ...(file ? { selectedFileId: file.runtimeId, selectedFilePath: file.path } : {}),
       selectedHunkIndex: snapshot.selection.hunkIndex,
-      ...(hunk
-        ? {
-            selectedHunkOldRange: [...reviewHunkRange(hunk, "old")] as [number, number],
-            selectedHunkNewRange: [...reviewHunkRange(hunk, "new")] as [number, number],
-          }
-        : {}),
+      ...(selectedOldRange ? { selectedHunkOldRange: selectedOldRange } : {}),
+      ...(selectedNewRange ? { selectedHunkNewRange: selectedNewRange } : {}),
       showAgentNotes: snapshot.showAgentNotes,
       ...(renderer.noteMarkupWidth !== undefined
         ? { noteMarkupWidth: renderer.noteMarkupWidth }

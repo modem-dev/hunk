@@ -1,13 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  cpSync,
-  mkdtempSync,
-  mkdirSync,
-  readFileSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { EMBEDDED_BROWSER_ASSETS } from "../src/browser/generated/assets";
@@ -45,25 +37,25 @@ describe("embedded browser assets", () => {
     expect(server).toContain('import("../../browser/generated/assets")');
   });
 
-  test("transitive shared STML changes invalidate the browser output", async () => {
+  test("rejects a rebuild changed by transitive shared input", async () => {
     const root = mkdtempSync(path.join(tmpdir(), "hunk-browser-transitive-test-"));
     try {
-      mkdirSync(path.join(root, "src"), { recursive: true });
-      cpSync(path.join(repoRoot, "src/web"), path.join(root, "src/web"), { recursive: true });
-      cpSync(path.join(repoRoot, "src/core/review"), path.join(root, "src/core/review"), {
-        recursive: true,
-      });
-      symlinkSync(path.join(repoRoot, "node_modules"), path.join(root, "node_modules"), "dir");
       const shared = path.join(root, "src/core/review/stml.ts");
-      const original = readFileSync(shared, "utf8");
-      const baseline = await subprocessBundleDigest(root);
-      writeFileSync(shared, original.replace("maxDepth: 32", "maxDepth: 31"));
-      expect(await subprocessBundleDigest(root)).not.toBe(baseline);
-      await assertBrowserBundleCurrent(repoRoot);
+      const bundle = path.join(root, "src/browser/assets/bootstrap.js");
+      mkdirSync(path.dirname(shared), { recursive: true });
+      mkdirSync(path.dirname(bundle), { recursive: true });
+      writeFileSync(shared, "maxDepth: 32");
+      const rebuild = async (currentRoot: string) =>
+        `bundle:${readFileSync(path.join(currentRoot, "src/core/review/stml.ts"), "utf8")}`;
+      writeFileSync(bundle, await rebuild(root));
+
+      await expect(assertBrowserBundleCurrent(root, rebuild)).resolves.toBeUndefined();
+      writeFileSync(shared, "maxDepth: 31");
+      await expect(assertBrowserBundleCurrent(root, rebuild)).rejects.toThrow("stale");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
-  }, 60_000);
+  });
 
   test("fails clearly when generated assets are missing or stale", () => {
     const root = mkdtempSync(path.join(tmpdir(), "hunk-browser-assets-"));
@@ -82,22 +74,3 @@ describe("embedded browser assets", () => {
     }
   });
 });
-
-async function subprocessBundleDigest(root: string) {
-  const modulePath = path.join(repoRoot, "scripts/browser-assets.ts");
-  const child = Bun.spawn(
-    [
-      "bun",
-      "-e",
-      `import { createHash } from "node:crypto"; import { buildBrowserAssetBundle } from ${JSON.stringify(modulePath)}; const output = await buildBrowserAssetBundle(${JSON.stringify(root)}, false); console.log(createHash("sha256").update(output).digest("hex"));`,
-    ],
-    { stdout: "pipe", stderr: "pipe" },
-  );
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ]);
-  if (exitCode !== 0) throw new Error(stderr);
-  return stdout.trim();
-}
