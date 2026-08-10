@@ -3,6 +3,7 @@ import { createTestDiffFile } from "../../../test/helpers/diff-helpers";
 import type { AppBootstrap } from "../../core/types";
 import { SESSION_BROKER_REGISTRATION_VERSION, utf8ByteLength } from "@hunk/session-broker-core";
 import { MAX_REVIEW_MANIFEST_BYTES, MAX_REVIEW_PRODUCER_METADATA_BYTES } from "../reviewProtocol";
+import { parseSessionRegistration, parseSessionSnapshot } from "../broker/wire";
 import {
   assertSessionRegistrationEnvelopeWithinBounds,
   createInitialSessionSnapshot,
@@ -88,6 +89,48 @@ describe("session registration", () => {
       oldRange: [1, 1],
       newRange: [1, 1],
     });
+  });
+
+  test("pure additions and deletions omit zero-line sentinel ranges on the broker wire", () => {
+    const bootstrap = createBootstrap();
+    const addition = createTestDiffFile({
+      id: "added-file",
+      path: "src/added.ts",
+      before: "",
+      after: "export const added = true;\n",
+    });
+    const deletion = createTestDiffFile({
+      id: "deleted-file",
+      path: "src/deleted.ts",
+      before: "export const deleted = true;\n",
+      after: "",
+    });
+    bootstrap.changeset.files = [
+      {
+        ...addition,
+        patch: "@@ -0,0 +1 @@\n+export const added = true;\n",
+      },
+      {
+        ...deletion,
+        patch: "@@ -1 +0,0 @@\n-export const deleted = true;\n",
+      },
+    ];
+
+    const registration = createSessionRegistration(bootstrap);
+    const snapshot = createInitialSessionSnapshot(bootstrap);
+
+    expect(registration.info.reviewManifest.files[0]?.hunks[0]).toMatchObject({
+      newRange: [1, 1],
+    });
+    expect(registration.info.reviewManifest.files[0]?.hunks[0]).not.toHaveProperty("oldRange");
+    expect(registration.info.reviewManifest.files[1]?.hunks[0]).toMatchObject({
+      oldRange: [1, 1],
+    });
+    expect(registration.info.reviewManifest.files[1]?.hunks[0]).not.toHaveProperty("newRange");
+    expect(snapshot.state).not.toHaveProperty("selectedHunkOldRange");
+    expect(snapshot.state.selectedHunkNewRange).toEqual([1, 1]);
+    expect(parseSessionRegistration(registration)).not.toBeNull();
+    expect(parseSessionSnapshot(snapshot)).not.toBeNull();
   });
 
   test("registration preserves duplicate current paths through distinct semantic keys", () => {

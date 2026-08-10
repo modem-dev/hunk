@@ -26,11 +26,14 @@ export async function buildBrowserAssetBundle(repoRoot: string, write = true) {
 }
 
 /** Rebuild to memory so transitive source changes cannot pass the freshness check. */
-export async function assertBrowserBundleCurrent(repoRoot: string) {
+export async function assertBrowserBundleCurrent(
+  repoRoot: string,
+  buildBundle: (root: string, write: boolean) => Promise<string> = buildBrowserAssetBundle,
+) {
   const bundlePath = path.join(repoRoot, "src", "browser", "assets", "bootstrap.js");
   if (
     !existsSync(bundlePath) ||
-    readFileSync(bundlePath, "utf8") !== (await buildBrowserAssetBundle(repoRoot, false))
+    readFileSync(bundlePath, "utf8") !== (await buildBundle(repoRoot, false))
   ) {
     throw new Error("Embedded browser bundle is stale. Run `bun run generate:browser-assets`.");
   }

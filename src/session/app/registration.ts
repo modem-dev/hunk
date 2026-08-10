@@ -120,7 +120,7 @@ export function createHunkReviewManifest(
         patchResourceId: file.patchResourceId,
         canonicalResourceId: file.canonicalResourceId,
         sourceResourceIds: { ...file.sourceResourceIds },
-        hunks: file.hunks.map((hunk, hunkIndex) => summarizeHunk(hunk, hunkIndex)),
+        hunks: file.hunks.map((hunk, hunkIndex) => summarizeSessionHunk(hunk, hunkIndex)),
         notes: file.notes.map((note) => structuredClone(note)),
       };
     }),
@@ -147,6 +147,20 @@ export function createHunkReviewManifest(
     throw new Error("Review manifest exceeds the producer metadata limit.");
   }
   return manifest;
+}
+
+/** Omit Pierre's zero-line sentinel ranges from the positive-line session protocol. */
+function summarizeSessionHunk(
+  hunk: Parameters<typeof summarizeHunk>[0],
+  index: number,
+): SessionReviewFile["hunks"][number] {
+  const summary = summarizeHunk(hunk, index);
+  return {
+    index: summary.index,
+    header: summary.header,
+    ...(summary.oldRange?.[0] && summary.oldRange[0] > 0 ? { oldRange: summary.oldRange } : {}),
+    ...(summary.newRange?.[0] && summary.newRange[0] > 0 ? { newRange: summary.newRange } : {}),
+  };
 }
 
 /** Convert manifest files into the legacy daemon review projection without patch bodies. */

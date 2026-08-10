@@ -15,6 +15,8 @@ import { join } from "node:path";
 const roots: string[] = [];
 const processes: Bun.Subprocess[] = [];
 const PATCH = "diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-old\n+new\n";
+const ADDITION_PATCH =
+  "diff --git a/added.txt b/added.txt\nnew file mode 100644\n--- /dev/null\n+++ b/added.txt\n@@ -0,0 +1 @@\n+new\n";
 
 /** Reserve one local port without relying on a fixed developer-machine daemon. */
 async function reservePort() {
@@ -199,15 +201,16 @@ describe("browser review CLI", () => {
   );
 
   test.each([
-    ["patch file", false],
-    ["static stdin patch", true],
+    ["patch file", false, PATCH],
+    ["static stdin patch", true, PATCH],
+    ["pure addition patch", false, ADDITION_PATCH],
   ])(
     "publishes %s without mounting terminal chrome",
-    async (_label, stdinPatch) => {
+    async (_label, stdinPatch, patch) => {
       const port = await reservePort();
       const { root, env } = createEnvironment(port);
       const patchPath = join(root, "change.patch");
-      writeFileSync(patchPath, PATCH);
+      writeFileSync(patchPath, patch);
       const args = [
         "bun",
         "run",
@@ -220,7 +223,7 @@ describe("browser review CLI", () => {
       const child = Bun.spawn(args, {
         cwd: process.cwd(),
         env,
-        stdin: stdinPatch ? Buffer.from(PATCH) : "ignore",
+        stdin: stdinPatch ? Buffer.from(patch) : "ignore",
         stdout: "pipe",
         stderr: "pipe",
       });
