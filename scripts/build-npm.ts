@@ -41,6 +41,32 @@ function runBun(args: string[]) {
   }
 }
 
+/** Build the Node static entry with a Node-18-compatible width engine. */
+async function buildStaticEntry() {
+  const result = await Bun.build({
+    entrypoints: [path.join(repoRoot, "src", "static", "index.ts")],
+    target: "node",
+    format: "esm",
+    splitting: true,
+    external: ["@pierre/diffs"],
+    outdir: staticOutdir,
+    naming: { entry: "index.js" },
+    plugins: [
+      {
+        name: "static-node18-string-width",
+        setup(build) {
+          build.onResolve({ filter: /^string-width$/ }, () => ({
+            path: Bun.resolveSync("string-width-node18", repoRoot),
+          }));
+        },
+      },
+    ],
+  });
+  if (!result.success) {
+    throw new AggregateError(result.logs, "Static renderer build failed");
+  }
+}
+
 rmSync(outdir, { recursive: true, force: true });
 rmSync(typesOutdir, { recursive: true, force: true });
 rmSync(extensionTypesOutdir, { recursive: true, force: true });
@@ -116,21 +142,7 @@ for (const entry of readdirSync(opentuiTypesDir)) {
   }
 }
 
-runBun([
-  "build",
-  path.join(repoRoot, "src", "static", "index.ts"),
-  "--target",
-  "node",
-  "--format",
-  "esm",
-  "--splitting",
-  "--external",
-  "@pierre/diffs",
-  "--outdir",
-  staticOutdir,
-  "--entry-naming",
-  "index.js",
-]);
+await buildStaticEntry();
 
 runBun(["x", "tsc", "-p", path.join(repoRoot, "tsconfig.static.json")]);
 for (const entry of readdirSync(staticTypesDir)) {

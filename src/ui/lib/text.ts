@@ -22,6 +22,7 @@ const zeroWidthScalarRegex =
   /^[\p{Default_Ignorable_Code_Point}\p{Control}\p{Format}\p{Mark}\p{Surrogate}]$/u;
 const emojiModifierRegex = /^\p{Emoji_Modifier}$/u;
 const regionalIndicatorRegex = /^\p{Regional_Indicator}$/u;
+const halfwidthKatakanaClusterRegex = /^[\uFF61-\uFF9F]+$/u;
 
 /** Return whether one scalar prepends itself to the following grapheme cluster. */
 function isGraphemePrepend(codePoint: number) {
@@ -173,6 +174,15 @@ export function measureClusterWidth(cluster: string): number {
 
   if (cluster.length === scalarUnitLength) {
     return zeroWidthScalarRegex.test(cluster) ? 0 : eastAsianWidth(codePoint);
+  }
+
+  // Halfwidth Katakana combining marks form one grapheme but still occupy one cell per scalar.
+  if (halfwidthKatakanaClusterRegex.test(cluster)) {
+    let width = 0;
+    for (const scalar of cluster) {
+      width += eastAsianWidth(scalar.codePointAt(0)!);
+    }
+    return width;
   }
 
   return measureCachedClusterWidth(cluster);
